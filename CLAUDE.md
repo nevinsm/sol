@@ -20,6 +20,16 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Prime**: Inject execution context on session start
 - **Done**: Signal work complete (push branch, clear hook, stop session)
 
+## Commits
+Use [Conventional Commits](https://www.conventionalcommits.org/):
+- `feat: add session manager` — new feature
+- `fix: handle nil agent in dispatch` — bug fix
+- `refactor: extract store helpers` — restructure without behavior change
+- `test: add concurrent WAL access tests` — tests only
+- `docs: update architecture spec` — documentation only
+- `chore: update dependencies` — maintenance
+- Use scope when helpful: `feat(store): add label filtering`
+
 ## Conventions
 - Go module: github.com/nevinsm/gt
 - All timestamps: RFC3339 in UTC
