@@ -64,14 +64,13 @@ type SlingOpts struct {
 }
 
 // Sling assigns a work item to a polecat agent and starts its session.
+// Supports re-sling (crash recovery): if the item is already hooked to the
+// same agent, Sling recreates the worktree and session without error.
 func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionManager) (*SlingResult, error) {
-	// 1. Get work item, verify it's open.
+	// 1. Get work item.
 	item, err := rigStore.GetWorkItem(opts.WorkItemID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get work item %q: %w", opts.WorkItemID, err)
-	}
-	if item.Status != "open" {
-		return nil, fmt.Errorf("work item %q has status %q, expected \"open\"", opts.WorkItemID, item.Status)
 	}
 
 	// 2. Find the agent.
@@ -82,10 +81,10 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 		if err != nil {
 			return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
 		}
-		if agent.State != "idle" {
-			return nil, fmt.Errorf("agent %q has state %q, expected \"idle\"", agentID, agent.State)
-		}
 	} else {
+		if item.Status != "open" {
+			return nil, fmt.Errorf("work item %q has status %q, expected \"open\"", opts.WorkItemID, item.Status)
+		}
 		agent, err = townStore.FindIdleAgent(opts.Rig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to find idle agent for rig %q: %w", opts.Rig, err)
@@ -95,22 +94,50 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 		}
 	}
 
+	agentID := opts.Rig + "/" + agent.Name
+
+	// 3. Determine if this is a re-sling (crash recovery).
+	reSling := item.Status == "hooked" && item.Assignee == agentID &&
+		agent.State == "working" && agent.HookItem == opts.WorkItemID
+
+	// 4. Validate state.
+	if !reSling {
+		if item.Status != "open" {
+			return nil, fmt.Errorf("work item %q has status %q, expected \"open\"", opts.WorkItemID, item.Status)
+		}
+		if agent.State != "idle" {
+			return nil, fmt.Errorf("agent %q has state %q, expected \"idle\"", agentID, agent.State)
+		}
+	}
+
 	worktreeDir := WorktreePath(opts.Rig, agent.Name)
 	sessName := SessionName(opts.Rig, agent.Name)
 	branchName := fmt.Sprintf("polecat/%s/%s", agent.Name, opts.WorkItemID)
 
-	// 3. Create worktree directory.
+	// For re-sling, stop existing session if it's still around.
+	if reSling && mgr.Exists(sessName) {
+		mgr.Stop(sessName, true)
+	}
+
+	// 5. Create worktree directory.
 	// Remove existing worktree if present.
 	if _, err := os.Stat(worktreeDir); err == nil {
-		// Try to remove it as a git worktree first.
 		rmCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
 		rmCmd.Run() // best-effort
 		os.RemoveAll(worktreeDir)
 	}
+	// Prune stale worktree references.
+	pruneCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "prune")
+	pruneCmd.Run()
 
+	// Try creating worktree with new branch; fall back to existing branch (re-sling).
 	addCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "add", worktreeDir, "-b", branchName, "HEAD")
 	if out, err := addCmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("failed to create worktree: %s: %w", strings.TrimSpace(string(out)), err)
+		addCmd2 := exec.Command("git", "-C", opts.SourceRepo, "worktree", "add", worktreeDir, branchName)
+		if out2, err2 := addCmd2.CombinedOutput(); err2 != nil {
+			return nil, fmt.Errorf("failed to create worktree: %s: %w", strings.TrimSpace(string(out2)), err)
+		}
+		_ = out // suppress unused
 	}
 
 	// From here on, rollback on failure.
