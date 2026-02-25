@@ -176,13 +176,13 @@ filtering, dependency graph — are all natural SQL.
 the execution context, and starting the session.
 
 **Hard constraints:**
-- Must be serialized per-bead (prevent double-assignment)
-- Must be atomic: if session start fails, the bead returns to open status
-- Must support batch dispatch (10+ beads at once)
+- Must be serialized per-work-item (prevent double-assignment)
+- Must be atomic: if session start fails, the work item returns to open status
+- Must support batch dispatch (10+ work items at once)
 - Latency budget: <5s per single dispatch, <30s for batch of 10
 
-**Existing tools:** Per-bead flock (advisory file lock) for serialization.
-The dispatch operation is inherently sequential per bead — validate, assign,
+**Existing tools:** Per-work-item flock (advisory file lock) for serialization.
+The dispatch operation is inherently sequential per work item — validate, assign,
 prepare context, start session. Composition of smaller operations.
 
 ### 2.3 Agent Lifecycle (Essential)
@@ -384,12 +384,12 @@ is `cp backup.db store.db`.
 ```sql
 -- town.db
 CREATE TABLE agents (
-    id          TEXT PRIMARY KEY,    -- e.g., "gastown/Toast"
+    id          TEXT PRIMARY KEY,    -- e.g., "myrig/Toast"
     name        TEXT NOT NULL,       -- e.g., "Toast"
-    rig         TEXT NOT NULL,       -- e.g., "gastown"
+    rig         TEXT NOT NULL,       -- e.g., "myrig"
     role        TEXT NOT NULL,       -- polecat|witness|refinery|crew
-    state       TEXT NOT NULL DEFAULT 'idle',  -- idle|working|stuck|zombie
-    hook_bead   TEXT,                -- currently hooked work item ID
+    state       TEXT NOT NULL DEFAULT 'idle',  -- idle|working|stalled|stuck|zombie
+    hook_item   TEXT,                -- currently hooked work item ID
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -397,7 +397,7 @@ CREATE TABLE agents (
 CREATE TABLE agent_history (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id    TEXT NOT NULL REFERENCES agents(id),
-    bead_id     TEXT NOT NULL,
+    work_item_id TEXT NOT NULL,
     action      TEXT NOT NULL,       -- assigned|completed|escalated|deferred
     started_at  TEXT NOT NULL,
     ended_at    TEXT,
@@ -432,10 +432,10 @@ CREATE TABLE convoys (
 );
 
 CREATE TABLE convoy_items (
-    convoy_id   TEXT NOT NULL REFERENCES convoys(id),
-    bead_id     TEXT NOT NULL,
-    rig         TEXT NOT NULL,
-    PRIMARY KEY (convoy_id, bead_id)
+    convoy_id    TEXT NOT NULL REFERENCES convoys(id),
+    work_item_id TEXT NOT NULL,
+    rig          TEXT NOT NULL,
+    PRIMARY KEY (convoy_id, work_item_id)
 );
 
 CREATE TABLE escalations (
@@ -514,7 +514,7 @@ gt store query --db=<rig> --sql="SELECT ..." (escape hatch for complex queries)
 are serialized by SQLite's built-in locking with `PRAGMA busy_timeout=5000`
 (5s retry). For the actual workload (30 agents, mostly non-overlapping writes
 to different work items), this is sufficient. Write contention happens only
-when multiple agents try to claim the same work item — handled by per-bead
+when multiple agents try to claim the same work item — handled by per-work-item
 flock before the SQLite write.
 
 **Why not Dolt:** Dolt is a server process (single point of failure), requires
@@ -736,7 +736,7 @@ needs = ["implement"]
 **Interface:**
 
 ```
-gt workflow instantiate <formula-dir> --bead=<id> --var=key=val
+gt workflow instantiate <formula-dir> --item=<id> --var=key=val
     → creates .workflow/ directory with state.json and step files
 gt workflow current [--agent=<name>]
     → outputs current step instructions to stdout
@@ -835,12 +835,18 @@ func triageDeacon(heartbeat time.Time) action {
 
 **Interface:**
 
+The supervisor is town-level — one instance monitors all rigs. It reads
+all agents from `town.db` and checks sessions across every rig.
+
 ```
-gt supervisor start     (background, writes PID file)
-gt supervisor stop
-gt supervisor status    (show all monitored sessions)
-gt supervisor logs [-f]
+gt supervisor run       (foreground, writes PID file, blocks until interrupted)
+gt supervisor stop      (sends SIGTERM to running supervisor)
+gt status <rig>         (show agents, sessions, hooked work, supervisor health)
 ```
+
+Daemon mode (`gt supervisor start` as a background process) is deferred.
+`gt supervisor logs` is deferred — the operator can `tail -f` the log
+file directly.
 
 ### 3.7 Deacon (AI Agent)
 
@@ -1162,25 +1168,28 @@ convoys, supervisor, deacon, events.
 detects crashes and restarts sessions. Basic health monitoring.
 
 **What it requires:**
-- Themed name pool (a text file of 50 names + an allocation index in the
-  `agents` table). When scanning 30 tmux sessions, "Toast" vs "Jasper" is
-  immediately distinguishable; "agent-07" vs "agent-12" is not. This serves
-  the GLASS principle. Configurable by replacing the names file.
-- Per-bead flock for dispatch serialization
-- Supervisor process (heartbeat loop, session liveness checks, respawn)
-- `gt up` / `gt down` (ordered service start/stop)
-- `gt status` (show running agents, hooked work, session health)
+- Themed name pool (a `go:embed` default list of 50+ names, with file
+  override at `$GT_HOME/{rig}/names.txt`). When scanning 30 tmux sessions,
+  "Toast" vs "Jasper" is immediately distinguishable; "agent-07" vs
+  "agent-12" is not. This serves the GLASS principle. Allocation is
+  scan-based: pick the first pool name not already in the agents table.
+- Per-work-item flock for dispatch serialization
+- Supervisor process (town-level, heartbeat loop, session liveness checks,
+  respawn with backoff, mass-death detection)
+- `gt supervisor run` / `gt supervisor stop` (foreground supervisor lifecycle)
+- `gt status <rig>` (show running agents, hooked work, session health)
 
-**What it defers:** Witness, refinery, mail, workflows, convoys, deacon, events.
+**What it defers:** Witness, refinery, mail, workflows, convoys, deacon,
+events, heartbeat files (stale/hung detection), daemon mode.
 
 **Definition of done:**
 1. `gt sling <item1> myrig && gt sling <item2> myrig` dispatches to two different polecats
 2. No two polecats get the same work item (flock serialization)
 3. Kill a polecat's tmux session → supervisor detects and restarts within 3 minutes
 4. Restarted polecat picks up hooked work (GUPP)
-5. `gt status` shows all running polecats with their states and hooked work
-6. `gt up` starts supervisor; `gt down` gracefully stops all sessions
-7. Kill 5 polecats within 10 seconds → supervisor enters degraded mode (no respawns)
+5. `gt status myrig` shows all running polecats with their states and hooked work
+6. `gt supervisor run` starts supervisor; `gt supervisor stop` gracefully stops all sessions
+7. Kill 3+ polecats within 30 seconds → supervisor enters degraded mode (no respawns)
 
 **Key risks:**
 - Concurrent worktree creation from shared bare repo may need locking
@@ -1305,7 +1314,7 @@ continuity for long-running agents.
 5. `gt escalate --severity=high "tests are failing on myrig"` creates escalation
 6. High-severity escalation emails human operator
 7. Agents can `gt handoff` for clean session restart with context preservation
-8. Full `gt up` / `gt down` lifecycle works across all agent types
+8. Full `gt supervisor run` / `gt supervisor stop` lifecycle works across all agent types
 
 **Key risks:**
 - Deacon patrol may create too much activity (needs rate limiting)
@@ -1340,8 +1349,8 @@ The system's primary failure modes are operational (tmux quirks, SQLite
 locking, agent behavior), not memory safety. Go is the pragmatic choice for
 a system where the operator is the primary debugger.
 
-**Why not Shell:** Shell scripts are appropriate for glue (the `gt up` /
-`gt down` orchestration could be shell), but the supervisor, store, and
+**Why not Shell:** Shell scripts are appropriate for glue (the supervisor
+lifecycle orchestration could be shell), but the supervisor, store, and
 workflow engine need structured error handling, JSON parsing, and SQLite
 access that shell does poorly. Shell is used where it's natural: Claude Code
 hooks, simple wrappers.
@@ -1420,7 +1429,7 @@ end-to-end. Key scenarios:
 **CRASH acceptance tests:** For each build loop, a specific crash test
 that exercises the recovery path:
 - Loop 0: Kill tmux session mid-work → re-sling → agent resumes from hook
-- Loop 1: Kill 5 sessions simultaneously → supervisor enters degraded mode
+- Loop 1: Kill 3+ sessions within 30s → supervisor enters degraded mode
 - Loop 2: Kill refinery mid-merge → merge request released after TTL
 - Loop 3: Kill witness mid-patrol → supervisor restarts, no data loss
 
