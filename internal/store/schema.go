@@ -48,6 +48,10 @@ CREATE INDEX IF NOT EXISTS idx_mr_phase ON merge_requests(phase);
 CREATE INDEX IF NOT EXISTS idx_mr_work_item ON merge_requests(work_item_id);
 `
 
+const rigSchemaV3 = `
+ALTER TABLE merge_requests ADD COLUMN blocked_by TEXT;
+`
+
 const townSchemaV1 = `
 CREATE TABLE IF NOT EXISTS agents (
     id          TEXT PRIMARY KEY,
@@ -95,12 +99,17 @@ func (s *Store) migrateRig() error {
 			return fmt.Errorf("failed to create rig schema v2: %w", err)
 		}
 	}
+	if v < 3 {
+		if _, err := s.db.Exec(rigSchemaV3); err != nil {
+			return fmt.Errorf("failed to apply rig schema v3: %w", err)
+		}
+	}
 	if v < 1 {
-		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (2)"); err != nil {
+		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (3)"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
-	} else if v < 2 {
-		if _, err := s.db.Exec("UPDATE schema_version SET version = 2"); err != nil {
+	} else if v < 3 {
+		if _, err := s.db.Exec("UPDATE schema_version SET version = 3"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	}

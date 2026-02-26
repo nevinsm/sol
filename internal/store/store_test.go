@@ -92,8 +92,8 @@ func TestSchemaCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 {
-		t.Fatalf("expected schema version 2, got %d", version)
+	if version != 3 {
+		t.Fatalf("expected schema version 3, got %d", version)
 	}
 }
 
@@ -567,14 +567,14 @@ func TestMigrationIdempotent(t *testing.T) {
 		t.Fatalf("expected merge_requests table after reopen, got count=%d", count)
 	}
 
-	// Verify schema version is 2.
+	// Verify schema version is 3.
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 {
-		t.Fatalf("expected schema version 2 after reopen, got %d", version)
+	if version != 3 {
+		t.Fatalf("expected schema version 3 after reopen, got %d", version)
 	}
 }
 
@@ -631,13 +631,95 @@ func TestMigrateRigV1ToV2(t *testing.T) {
 		t.Fatalf("expected title 'V1 item', got %q", item.Title)
 	}
 
-	// Verify schema version is 2.
+	// Verify schema version is 3 (V1→V2→V3 all applied).
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 {
-		t.Fatalf("expected schema version 2, got %d", version)
+	if version != 3 {
+		t.Fatalf("expected schema version 3, got %d", version)
+	}
+}
+
+func TestCreateWorkItemWithOpts(t *testing.T) {
+	s := setupRig(t)
+
+	id, err := s.CreateWorkItemWithOpts(CreateWorkItemOpts{
+		Title:       "Resolve conflicts",
+		Description: "Resolve merge conflicts for branch X",
+		CreatedBy:   "myrig/refinery",
+		Priority:    1,
+		Labels:      []string{"conflict-resolution", "source-mr:mr-12345678"},
+		ParentID:    "gt-parent01",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item, err := s.GetWorkItem(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Title != "Resolve conflicts" {
+		t.Errorf("title = %q, want %q", item.Title, "Resolve conflicts")
+	}
+	if item.Priority != 1 {
+		t.Errorf("priority = %d, want 1", item.Priority)
+	}
+	if item.ParentID != "gt-parent01" {
+		t.Errorf("parent_id = %q, want %q", item.ParentID, "gt-parent01")
+	}
+	if item.CreatedBy != "myrig/refinery" {
+		t.Errorf("created_by = %q, want %q", item.CreatedBy, "myrig/refinery")
+	}
+	if len(item.Labels) != 2 {
+		t.Fatalf("expected 2 labels, got %d: %v", len(item.Labels), item.Labels)
+	}
+}
+
+func TestCreateWorkItemWithOptsNoParent(t *testing.T) {
+	s := setupRig(t)
+
+	id, err := s.CreateWorkItemWithOpts(CreateWorkItemOpts{
+		Title:     "No parent",
+		CreatedBy: "operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item, err := s.GetWorkItem(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.ParentID != "" {
+		t.Errorf("parent_id = %q, want empty", item.ParentID)
+	}
+	if item.Priority != 2 {
+		t.Errorf("priority = %d, want 2 (default)", item.Priority)
+	}
+}
+
+func TestHasLabel(t *testing.T) {
+	item := &WorkItem{Labels: []string{"bug", "urgent", "conflict-resolution"}}
+
+	if !item.HasLabel("bug") {
+		t.Error("expected HasLabel(\"bug\") = true")
+	}
+	if !item.HasLabel("conflict-resolution") {
+		t.Error("expected HasLabel(\"conflict-resolution\") = true")
+	}
+	if item.HasLabel("feature") {
+		t.Error("expected HasLabel(\"feature\") = false")
+	}
+	if item.HasLabel("") {
+		t.Error("expected HasLabel(\"\") = false")
+	}
+
+	// Empty labels.
+	empty := &WorkItem{}
+	if empty.HasLabel("anything") {
+		t.Error("expected HasLabel on empty labels = false")
 	}
 }

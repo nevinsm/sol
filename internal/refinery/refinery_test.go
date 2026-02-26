@@ -33,6 +33,18 @@ func newMockRigStore() *mockRigStore {
 	}
 }
 
+func (m *mockRigStore) GetMergeRequest(id string) (*store.MergeRequest, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.mrs {
+		if m.mrs[i].ID == id {
+			mr := m.mrs[i]
+			return &mr, nil
+		}
+	}
+	return nil, fmt.Errorf("merge request %q not found", id)
+}
+
 func (m *mockRigStore) ClaimMergeRequest(claimerID string) (*store.MergeRequest, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -92,6 +104,83 @@ func (m *mockRigStore) UpdateWorkItem(id string, updates store.WorkItemUpdates) 
 	if updates.Status != "" {
 		item.Status = updates.Status
 	}
+	return nil
+}
+
+func (m *mockRigStore) ListMergeRequests(phase string) ([]store.MergeRequest, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []store.MergeRequest
+	for _, mr := range m.mrs {
+		if phase == "" || mr.Phase == phase {
+			result = append(result, mr)
+		}
+	}
+	return result, nil
+}
+
+func (m *mockRigStore) BlockMergeRequest(mrID, blockerID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.mrs {
+		if m.mrs[i].ID == mrID {
+			m.mrs[i].BlockedBy = blockerID
+			m.mrs[i].Phase = "ready"
+			return nil
+		}
+	}
+	return fmt.Errorf("merge request %q not found", mrID)
+}
+
+func (m *mockRigStore) UnblockMergeRequest(mrID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.mrs {
+		if m.mrs[i].ID == mrID {
+			m.mrs[i].BlockedBy = ""
+			m.mrs[i].Phase = "ready"
+			return nil
+		}
+	}
+	return fmt.Errorf("merge request %q not found", mrID)
+}
+
+func (m *mockRigStore) FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, mr := range m.mrs {
+		if mr.BlockedBy == blockerID {
+			mrCopy := mr
+			return &mrCopy, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *mockRigStore) CreateWorkItemWithOpts(opts store.CreateWorkItemOpts) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := fmt.Sprintf("gt-%08x", len(m.items))
+	m.items[id] = &store.WorkItem{
+		ID:        id,
+		Title:     opts.Title,
+		Status:    "open",
+		Priority:  opts.Priority,
+		ParentID:  opts.ParentID,
+		CreatedBy: opts.CreatedBy,
+		Labels:    opts.Labels,
+	}
+	return id, nil
+}
+
+func (m *mockRigStore) CloseWorkItem(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	item, ok := m.items[id]
+	if !ok {
+		return fmt.Errorf("work item %q not found", id)
+	}
+	item.Status = "closed"
 	return nil
 }
 
@@ -720,7 +809,7 @@ func TestEnsureWorktreeCreatesNew(t *testing.T) {
 		logger:     testLogger(),
 	}
 
-	if err := r.ensureWorktree(); err != nil {
+	if err := r.EnsureWorktree(); err != nil {
 		t.Fatalf("ensureWorktree() error: %v", err)
 	}
 
@@ -731,7 +820,7 @@ func TestEnsureWorktreeCreatesNew(t *testing.T) {
 	}
 
 	// Calling again should be idempotent.
-	if err := r.ensureWorktree(); err != nil {
+	if err := r.EnsureWorktree(); err != nil {
 		t.Fatalf("ensureWorktree() second call error: %v", err)
 	}
 

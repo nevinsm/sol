@@ -154,13 +154,10 @@ func (s *Supervisor) heartbeat() {
 }
 
 // respawnCommand returns the startup command for an agent based on its role.
+// Both polecats and the refinery run Claude sessions — the CLAUDE.md and hooks
+// installed in the worktree provide the execution context.
 func respawnCommand(agent store.Agent) string {
-	switch agent.Role {
-	case "refinery":
-		return fmt.Sprintf("gt refinery run %s", agent.Rig)
-	default:
-		return "claude --dangerously-skip-permissions"
-	}
+	return "claude --dangerously-skip-permissions"
 }
 
 // worktreeForAgent returns the worktree path for an agent based on its role.

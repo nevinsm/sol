@@ -28,6 +28,10 @@ type RigStore interface {
 	GetWorkItem(id string) (*store.WorkItem, error)
 	UpdateWorkItem(id string, updates store.WorkItemUpdates) error
 	CreateMergeRequest(workItemID, branch string, priority int) (string, error)
+	CreateWorkItemWithOpts(opts store.CreateWorkItemOpts) (string, error)
+	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
+	UnblockMergeRequest(mrID string) error
+	CloseWorkItem(id string) error
 	Close() error
 }
 
@@ -267,6 +271,11 @@ type PrimeResult struct {
 
 // Prime assembles execution context from durable state and returns it.
 func Prime(rig, agentName string, rigStore RigStore) (*PrimeResult, error) {
+	// Refinery gets a special prime context.
+	if agentName == "refinery" {
+		return primeRefinery(rig)
+	}
+
 	// Read the hook file.
 	workItemID, err := hook.Read(rig, agentName)
 	if err != nil {
@@ -295,6 +304,19 @@ Instructions:
 Execute this work item. When complete, run: gt done
 If stuck, run: gt escalate "description"
 === END CONTEXT ===`, agentName, rig, item.ID, item.Title, item.Status, item.Description)
+
+	return &PrimeResult{Output: output}, nil
+}
+
+// primeRefinery returns refinery-specific context for the prime command.
+func primeRefinery(rig string) (*PrimeResult, error) {
+	output := fmt.Sprintf(`=== REFINERY CONTEXT ===
+Rig: %s
+Role: refinery (merge queue processor)
+
+Begin your patrol loop. Run 'gt refinery check-unblocked %s' first,
+then scan the queue with 'gt refinery ready %s --json'.
+=== END CONTEXT ===`, rig, rig, rig)
 
 	return &PrimeResult{Output: output}, nil
 }
@@ -331,10 +353,16 @@ func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionMana
 
 	branchName := fmt.Sprintf("polecat/%s/%s", opts.AgentName, workItemID)
 
-	// Get the work item title for output.
+	// Get the work item for output and conflict-resolution detection.
 	item, err := rigStore.GetWorkItem(workItemID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get work item %q: %w", workItemID, err)
+	}
+
+	// Detect conflict-resolution tasks and handle separately.
+	if item.HasLabel("conflict-resolution") {
+		return doneConflictResolution(opts, item, branchName, worktreeDir,
+			agentID, sessName, rigStore, townStore, mgr)
 	}
 
 	// 2. Git operations in the worktree.
@@ -388,6 +416,73 @@ func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionMana
 		AgentName:      opts.AgentName,
 		BranchName:     branchName,
 		MergeRequestID: mrID,
+	}, nil
+}
+
+// doneConflictResolution handles the done flow for conflict-resolution tasks.
+// Differences from normal done:
+// 1. Uses --force-with-lease for push (branch was rebased)
+// 2. Does NOT create a new merge request (original MR already exists)
+// 3. Unblocks the original MR
+// 4. Closes the resolution work item
+func doneConflictResolution(opts DoneOpts, item *store.WorkItem, branchName, worktreeDir,
+	agentID, sessName string, rigStore RigStore, townStore TownStore, mgr SessionManager) (*DoneResult, error) {
+
+	// 1. Git operations: add, commit, force-push (branch was rebased).
+	addCmd := exec.Command("git", "-C", worktreeDir, "add", "-A")
+	if out, err := addCmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("git add failed: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+
+	commitMsg := fmt.Sprintf("gt done: %s", item.Title)
+	commitCmd := exec.Command("git", "-C", worktreeDir, "commit", "-m", commitMsg)
+	commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
+
+	// Force push with lease — branch was rebased, needs force push.
+	pushCmd := exec.Command("git", "-C", worktreeDir, "push", "--force-with-lease", "origin", "HEAD")
+	if out, err := pushCmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: git push --force-with-lease failed: %s\n",
+			strings.TrimSpace(string(out)))
+	}
+
+	// 2. Find and unblock the original MR.
+	blockedMR, err := rigStore.FindMergeRequestByBlocker(item.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find blocked MR for %q: %w", item.ID, err)
+	}
+	if blockedMR != nil {
+		if err := rigStore.UnblockMergeRequest(blockedMR.ID); err != nil {
+			return nil, fmt.Errorf("failed to unblock MR %q: %w", blockedMR.ID, err)
+		}
+	}
+
+	// 3. Close the resolution work item.
+	if err := rigStore.CloseWorkItem(item.ID); err != nil {
+		return nil, fmt.Errorf("failed to close resolution work item: %w", err)
+	}
+
+	// 4. Update agent: state → idle, clear hook.
+	if err := townStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+		return nil, fmt.Errorf("failed to update agent state: %w", err)
+	}
+
+	// 5. Clear hook file.
+	if err := hook.Clear(opts.Rig, opts.AgentName); err != nil {
+		return nil, fmt.Errorf("failed to clear hook: %w", err)
+	}
+
+	// 6. Stop session.
+	go func() {
+		time.Sleep(1 * time.Second)
+		mgr.Stop(sessName, true)
+	}()
+
+	return &DoneResult{
+		WorkItemID:     item.ID,
+		Title:          item.Title,
+		AgentName:      opts.AgentName,
+		BranchName:     branchName,
+		MergeRequestID: "", // No new MR for conflict resolution.
 	}, nil
 }
 

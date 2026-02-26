@@ -1,6 +1,6 @@
 # ADR-0002: Refinery as Go Process
 
-Status: accepted
+Status: superseded by ADR-0005
 Date: 2026-02-26
 Loop: 2
 

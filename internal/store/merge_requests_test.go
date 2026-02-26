@@ -363,3 +363,127 @@ func TestGetMergeRequestNotFound(t *testing.T) {
 		t.Fatalf("expected error %q, got %q", expected, err.Error())
 	}
 }
+
+func TestBlockAndUnblockMergeRequest(t *testing.T) {
+	s := setupRig(t)
+
+	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
+
+	// Block the MR.
+	if err := s.BlockMergeRequest(mrID, "gt-blocker1"); err != nil {
+		t.Fatalf("BlockMergeRequest() error: %v", err)
+	}
+
+	// Verify blocked_by is set and phase is ready.
+	mr, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr.BlockedBy != "gt-blocker1" {
+		t.Errorf("blocked_by = %q, want %q", mr.BlockedBy, "gt-blocker1")
+	}
+	if mr.Phase != "ready" {
+		t.Errorf("phase = %q, want %q", mr.Phase, "ready")
+	}
+
+	// Unblock the MR.
+	if err := s.UnblockMergeRequest(mrID); err != nil {
+		t.Fatalf("UnblockMergeRequest() error: %v", err)
+	}
+
+	// Verify blocked_by is cleared.
+	mr, err = s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr.BlockedBy != "" {
+		t.Errorf("blocked_by after unblock = %q, want empty", mr.BlockedBy)
+	}
+	if mr.Phase != "ready" {
+		t.Errorf("phase after unblock = %q, want %q", mr.Phase, "ready")
+	}
+}
+
+func TestClaimSkipsBlockedMRs(t *testing.T) {
+	s := setupRig(t)
+
+	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 1, nil)
+	id2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
+	mr1ID, _ := s.CreateMergeRequest(id1, "branch1", 1) // Higher priority.
+	mr2ID, _ := s.CreateMergeRequest(id2, "branch2", 2)
+
+	// Block the higher-priority MR.
+	s.BlockMergeRequest(mr1ID, "gt-blocker1")
+
+	// Claim should skip the blocked MR and get the second one.
+	mr, err := s.ClaimMergeRequest("refinery/Forge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr == nil {
+		t.Fatal("expected a claimed MR, got nil")
+	}
+	if mr.ID != mr2ID {
+		t.Errorf("claimed MR = %q, want %q (should skip blocked)", mr.ID, mr2ID)
+	}
+}
+
+func TestFindMergeRequestByBlocker(t *testing.T) {
+	s := setupRig(t)
+
+	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
+
+	// No blocker yet.
+	result, err := s.FindMergeRequestByBlocker("gt-blocker1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != nil {
+		t.Fatalf("expected nil, got %+v", result)
+	}
+
+	// Block the MR.
+	s.BlockMergeRequest(mrID, "gt-blocker1")
+
+	// Now find it.
+	result, err = s.FindMergeRequestByBlocker("gt-blocker1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil {
+		t.Fatal("expected a MR, got nil")
+	}
+	if result.ID != mrID {
+		t.Errorf("found MR = %q, want %q", result.ID, mrID)
+	}
+	if result.BlockedBy != "gt-blocker1" {
+		t.Errorf("blocked_by = %q, want %q", result.BlockedBy, "gt-blocker1")
+	}
+}
+
+func TestV3Migration(t *testing.T) {
+	s := setupRig(t)
+
+	// Verify the schema version is 3.
+	var v int
+	if err := s.DB().QueryRow("SELECT version FROM schema_version").Scan(&v); err != nil {
+		t.Fatalf("failed to get schema version: %v", err)
+	}
+	if v != 3 {
+		t.Errorf("schema version = %d, want 3", v)
+	}
+
+	// Verify blocked_by column exists.
+	itemID, _ := s.CreateWorkItem("Test", "", "operator", 2, nil)
+	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
+
+	// Should be able to block/unblock without error.
+	if err := s.BlockMergeRequest(mrID, "gt-test"); err != nil {
+		t.Fatalf("BlockMergeRequest failed (blocked_by column missing?): %v", err)
+	}
+	if err := s.UnblockMergeRequest(mrID); err != nil {
+		t.Fatalf("UnblockMergeRequest failed: %v", err)
+	}
+}

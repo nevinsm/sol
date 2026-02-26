@@ -499,6 +499,118 @@ func TestDoneNoHook(t *testing.T) {
 	}
 }
 
+func TestDoneConflictResolution(t *testing.T) {
+	rigStore, townStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create the original work item.
+	origItemID, err := rigStore.CreateWorkItem("Add feature X", "Implement feature X", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	// Create a merge request for the original work item.
+	mrID, err := rigStore.CreateMergeRequest(origItemID, "polecat/Alpha/"+origItemID, 2)
+	if err != nil {
+		t.Fatalf("failed to create merge request: %v", err)
+	}
+
+	// Create the conflict-resolution task.
+	resolutionID, err := rigStore.CreateWorkItemWithOpts(store.CreateWorkItemOpts{
+		Title:       "Resolve merge conflicts: Add feature X",
+		Description: "Resolve merge conflicts",
+		CreatedBy:   "testrig/refinery",
+		Priority:    1,
+		Labels:      []string{"conflict-resolution", "source-mr:" + mrID},
+		ParentID:    origItemID,
+	})
+	if err != nil {
+		t.Fatalf("failed to create resolution task: %v", err)
+	}
+
+	// Block the MR with the resolution task.
+	if err := rigStore.BlockMergeRequest(mrID, resolutionID); err != nil {
+		t.Fatalf("failed to block MR: %v", err)
+	}
+
+	// Set up agent and hook the resolution task.
+	if err := rigStore.UpdateWorkItem(resolutionID, store.WorkItemUpdates{Status: "hooked", Assignee: "testrig/Toast"}); err != nil {
+		t.Fatalf("failed to update work item: %v", err)
+	}
+	if _, err := townStore.CreateAgent("Toast", "testrig", "polecat"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := townStore.UpdateAgentState("testrig/Toast", "working", resolutionID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+	if err := hook.Write("testrig", "Toast", resolutionID); err != nil {
+		t.Fatalf("failed to write hook: %v", err)
+	}
+
+	// Create worktree dir with git repo.
+	worktreeDir := WorktreePath("testrig", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+
+	sessName := SessionName("testrig", "Toast")
+	mgr.started[sessName] = true
+
+	result, err := Done(DoneOpts{
+		Rig:       "testrig",
+		AgentName: "Toast",
+	}, rigStore, townStore, mgr)
+	if err != nil {
+		t.Fatalf("Done (conflict-resolution) failed: %v", err)
+	}
+
+	// Verify NO new merge request was created.
+	if result.MergeRequestID != "" {
+		t.Errorf("expected empty MergeRequestID for conflict-resolution, got %q", result.MergeRequestID)
+	}
+
+	// Verify the resolution work item is closed.
+	resItem, err := rigStore.GetWorkItem(resolutionID)
+	if err != nil {
+		t.Fatalf("failed to get resolution item: %v", err)
+	}
+	if resItem.Status != "closed" {
+		t.Errorf("expected resolution item status 'closed', got %q", resItem.Status)
+	}
+
+	// Verify the original MR is unblocked.
+	mr, err := rigStore.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatalf("failed to get MR: %v", err)
+	}
+	if mr.BlockedBy != "" {
+		t.Errorf("expected MR blocked_by to be empty (unblocked), got %q", mr.BlockedBy)
+	}
+	if mr.Phase != "ready" {
+		t.Errorf("expected MR phase 'ready' after unblock, got %q", mr.Phase)
+	}
+
+	// Verify agent is idle.
+	agent, err := townStore.GetAgent("testrig/Toast")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("expected agent state 'idle', got %q", agent.State)
+	}
+
+	// Verify hook is cleared.
+	hookID, err := hook.Read("testrig", "Toast")
+	if err != nil {
+		t.Fatalf("failed to read hook: %v", err)
+	}
+	if hookID != "" {
+		t.Errorf("expected empty hook, got %q", hookID)
+	}
+}
+
 func TestDoneCreatesMergeRequest(t *testing.T) {
 	rigStore, townStore := setupStores(t)
 	mgr := newMockSessionManager()

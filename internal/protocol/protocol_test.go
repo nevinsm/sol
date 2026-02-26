@@ -64,6 +64,70 @@ func TestInstallClaudeMD(t *testing.T) {
 	}
 }
 
+func TestGenerateRefineryClaudeMD(t *testing.T) {
+	ctx := RefineryClaudeMDContext{
+		Rig:          "myrig",
+		TargetBranch: "main",
+		WorktreeDir:  "/home/user/gt/myrig/refinery/rig",
+		QualityGates: []string{"go test ./...", "go vet ./..."},
+	}
+
+	content := GenerateRefineryClaudeMD(ctx)
+
+	checks := []string{
+		"Refinery Agent (rig: myrig)",
+		"merge processor, NOT a developer",
+		"FORBIDDEN",
+		"Patrol Loop",
+		"gt refinery check-unblocked myrig",
+		"gt refinery ready myrig --json",
+		"gt refinery claim myrig --json",
+		"gt refinery run-gates myrig",
+		"gt refinery push myrig",
+		"gt refinery mark-merged myrig",
+		"gt refinery mark-failed myrig",
+		"gt refinery create-resolution myrig",
+		"git rebase origin/main",
+		"Conflict Judgment Framework",
+		"Sequential Rebase Rule",
+		"go test ./...",
+		"go vet ./...",
+	}
+	for _, check := range checks {
+		if !strings.Contains(content, check) {
+			t.Errorf("GenerateRefineryClaudeMD missing %q", check)
+		}
+	}
+}
+
+func TestInstallRefineryClaudeMD(t *testing.T) {
+	dir := t.TempDir()
+	ctx := RefineryClaudeMDContext{
+		Rig:          "myrig",
+		TargetBranch: "main",
+		WorktreeDir:  dir,
+		QualityGates: []string{"go test ./..."},
+	}
+
+	if err := InstallRefineryClaudeMD(dir, ctx); err != nil {
+		t.Fatalf("InstallRefineryClaudeMD failed: %v", err)
+	}
+
+	path := filepath.Join(dir, ".claude", "CLAUDE.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read CLAUDE.md: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "Refinery Agent") {
+		t.Error("CLAUDE.md missing 'Refinery Agent'")
+	}
+	if !strings.Contains(content, "myrig") {
+		t.Error("CLAUDE.md missing rig name")
+	}
+}
+
 func TestInstallHooks(t *testing.T) {
 	dir := t.TempDir()
 

@@ -88,6 +88,71 @@ func (s *Store) CreateWorkItem(title, description, createdBy string, priority in
 	return id, nil
 }
 
+// CreateWorkItemOpts holds options for creating a work item with full control.
+type CreateWorkItemOpts struct {
+	Title, Description, CreatedBy string
+	Priority                      int
+	Labels                        []string
+	ParentID                      string // optional
+}
+
+// CreateWorkItemWithOpts creates a new work item with full options including parent_id.
+func (s *Store) CreateWorkItemWithOpts(opts CreateWorkItemOpts) (string, error) {
+	id, err := generateID()
+	if err != nil {
+		return "", err
+	}
+	if opts.Priority == 0 {
+		opts.Priority = 2
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if opts.ParentID != "" {
+		_, err = tx.Exec(
+			`INSERT INTO work_items (id, title, description, status, priority, parent_id, created_by, created_at, updated_at)
+			 VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?)`,
+			id, opts.Title, opts.Description, opts.Priority, opts.ParentID, opts.CreatedBy, now, now,
+		)
+	} else {
+		_, err = tx.Exec(
+			`INSERT INTO work_items (id, title, description, status, priority, created_by, created_at, updated_at)
+			 VALUES (?, ?, ?, 'open', ?, ?, ?, ?)`,
+			id, opts.Title, opts.Description, opts.Priority, opts.CreatedBy, now, now,
+		)
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to insert work item: %w", err)
+	}
+
+	for _, label := range opts.Labels {
+		_, err = tx.Exec(`INSERT INTO labels (work_item_id, label) VALUES (?, ?)`, id, label)
+		if err != nil {
+			return "", fmt.Errorf("failed to insert label %q: %w", label, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("failed to commit work item: %w", err)
+	}
+	return id, nil
+}
+
+// HasLabel returns true if the work item has the given label.
+func (w *WorkItem) HasLabel(label string) bool {
+	for _, l := range w.Labels {
+		if l == label {
+			return true
+		}
+	}
+	return false
+}
+
 // GetWorkItem returns a work item by ID, including its labels.
 func (s *Store) GetWorkItem(id string) (*WorkItem, error) {
 	w := &WorkItem{}

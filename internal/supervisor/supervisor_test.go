@@ -571,9 +571,10 @@ func TestRespawnCommandByRole(t *testing.T) {
 	refineryAgent := store.Agent{Name: "refinery", Rig: "myrig", Role: "refinery"}
 	polecatAgent := store.Agent{Name: "Toast", Rig: "myrig", Role: "polecat"}
 
+	// Both roles now use Claude sessions.
 	refCmd := respawnCommand(refineryAgent)
-	if refCmd != "gt refinery run myrig" {
-		t.Errorf("refinery command = %q, want %q", refCmd, "gt refinery run myrig")
+	if refCmd != "claude --dangerously-skip-permissions" {
+		t.Errorf("refinery command = %q, want %q", refCmd, "claude --dangerously-skip-permissions")
 	}
 
 	polCmd := respawnCommand(polecatAgent)

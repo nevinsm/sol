@@ -17,11 +17,18 @@ import (
 
 // RigStore abstracts rig store operations for testing.
 type RigStore interface {
+	GetMergeRequest(id string) (*store.MergeRequest, error)
 	ClaimMergeRequest(claimerID string) (*store.MergeRequest, error)
 	UpdateMergeRequestPhase(id, phase string) error
 	ReleaseStaleClaims(ttl time.Duration) (int, error)
 	GetWorkItem(id string) (*store.WorkItem, error)
 	UpdateWorkItem(id string, updates store.WorkItemUpdates) error
+	ListMergeRequests(phase string) ([]store.MergeRequest, error)
+	BlockMergeRequest(mrID, blockerID string) error
+	UnblockMergeRequest(mrID string) error
+	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
+	CreateWorkItemWithOpts(opts store.CreateWorkItemOpts) (string, error)
+	CloseWorkItem(id string) error
 	Close() error
 }
 
@@ -93,7 +100,7 @@ func New(rig, sourceRepo string, rigStore RigStore, townStore TownStore,
 // Run starts the refinery's merge loop. Blocks until ctx is cancelled.
 func (r *Refinery) Run(ctx context.Context) error {
 	// 1. Ensure worktree exists.
-	if err := r.ensureWorktree(); err != nil {
+	if err := r.EnsureWorktree(); err != nil {
 		return err
 	}
 
@@ -121,8 +128,8 @@ func (r *Refinery) Run(ctx context.Context) error {
 	}
 }
 
-// ensureWorktree creates or verifies the refinery's persistent worktree.
-func (r *Refinery) ensureWorktree() error {
+// EnsureWorktree creates or verifies the refinery's persistent worktree.
+func (r *Refinery) EnsureWorktree() error {
 	branch := RefineryBranch(r.rig)
 
 	// If the worktree directory already exists, verify it's valid.
