@@ -2,8 +2,14 @@ package integration
 
 import (
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nevinsm/gt/internal/dispatch"
+	"github.com/nevinsm/gt/internal/session"
 )
 
 func TestCLIRefineryRunHelp(t *testing.T) {
@@ -122,6 +128,58 @@ func TestCLIRefineryQueue(t *testing.T) {
 	}
 	if !strings.Contains(out, mrID) {
 		t.Errorf("queue --json output missing MR ID %q: %s", mrID, out)
+	}
+}
+
+func TestCLIDoneShowsMergeRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome, sourceRepo := setupTestEnv(t)
+	rigStore, townStore := openStores(t, "testrig")
+	mgr := session.New()
+
+	// Create work item, agent, and sling via API.
+	townStore.CreateAgent("Smoke", "testrig", "polecat")
+	itemID, err := rigStore.CreateWorkItem("CLI done test", "Test done CLI output", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("create work item: %v", err)
+	}
+
+	result, err := dispatch.Sling(dispatch.SlingOpts{
+		WorkItemID: itemID,
+		Rig:        "testrig",
+		AgentName:  "Smoke",
+		SourceRepo: sourceRepo,
+	}, rigStore, townStore, mgr)
+	if err != nil {
+		t.Fatalf("sling: %v", err)
+	}
+
+	// Write a file in the worktree so there's something to commit.
+	os.WriteFile(filepath.Join(result.WorktreeDir, "done_test.go"),
+		[]byte("package main\n"), 0o644)
+
+	// Close stores before CLI invocation (CLI opens its own).
+	rigStore.Close()
+	townStore.Close()
+
+	// Run gt done via CLI.
+	bin := gtBin(t)
+	cmd := exec.Command(bin, "done", "--rig=testrig", "--agent=Smoke")
+	cmd.Env = append(os.Environ(), "GT_HOME="+gtHome)
+	out, err := cmd.CombinedOutput()
+	outStr := strings.TrimSpace(string(out))
+	if err != nil {
+		t.Fatalf("gt done failed: %v: %s", err, outStr)
+	}
+
+	// Verify output contains "Merge request:" and "mr-".
+	if !strings.Contains(outStr, "Merge request:") {
+		t.Errorf("done output missing 'Merge request:': %s", outStr)
+	}
+	if !strings.Contains(outStr, "mr-") {
+		t.Errorf("done output missing MR ID (mr- prefix): %s", outStr)
 	}
 }
 
