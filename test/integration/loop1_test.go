@@ -134,6 +134,8 @@ func TestMultiAgentDispatch(t *testing.T) {
 }
 
 // --- Test 2: Flock Serialization ---
+// Uses two separate OS processes to test advisory flock, since flock is
+// per-process (goroutines in the same process share the file descriptor).
 
 func TestFlockSerialization(t *testing.T) {
 	if testing.Short() {
@@ -142,7 +144,6 @@ func TestFlockSerialization(t *testing.T) {
 
 	_, sourceRepo := setupTestEnv(t)
 	rigStore, townStore := openStores(t, "testrig")
-	mgr := session.New()
 
 	// Create one work item and two idle agents.
 	itemID, err := rigStore.CreateWorkItem("Contested task", "Flock test", "operator", 2, nil)
@@ -152,27 +153,32 @@ func TestFlockSerialization(t *testing.T) {
 	townStore.CreateAgent("Alpha", "testrig", "polecat")
 	townStore.CreateAgent("Beta", "testrig", "polecat")
 
-	// Launch two goroutines, each trying to sling the same work item
-	// with a different agent.
+	// Build the gt binary for subprocess testing.
+	binary := filepath.Join(t.TempDir(), "gt")
+	buildCmd := exec.Command("go", "build", "-o", binary, "github.com/nevinsm/gt")
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("build gt binary: %s: %v", out, err)
+	}
+
+	// Launch two subprocesses concurrently, each trying to sling the same
+	// work item with a different agent. Flock serialization means exactly
+	// one process acquires the lock; the other gets EAGAIN immediately.
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var successes []string
-	var errors []error
+	var failures []string
 
 	for _, agentName := range []string{"Alpha", "Beta"} {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			_, err := dispatch.Sling(dispatch.SlingOpts{
-				WorkItemID: itemID,
-				Rig:        "testrig",
-				AgentName:  name,
-				SourceRepo: sourceRepo,
-			}, rigStore, townStore, mgr)
+			cmd := exec.Command(binary, "sling", itemID, "testrig", "--agent="+name)
+			cmd.Dir = sourceRepo // gt sling discovers source repo from cwd
+			out, err := cmd.CombinedOutput()
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				errors = append(errors, err)
+				failures = append(failures, name+": "+strings.TrimSpace(string(out)))
 			} else {
 				successes = append(successes, name)
 			}
@@ -183,10 +189,10 @@ func TestFlockSerialization(t *testing.T) {
 
 	// Exactly one should succeed.
 	if len(successes) != 1 {
-		t.Errorf("expected 1 success, got %d (successes: %v, errors: %v)", len(successes), successes, errors)
+		t.Errorf("expected 1 success, got %d (successes: %v, failures: %v)", len(successes), successes, failures)
 	}
-	if len(errors) != 1 {
-		t.Errorf("expected 1 error, got %d (errors: %v)", len(errors), errors)
+	if len(failures) != 1 {
+		t.Errorf("expected 1 failure, got %d (failures: %v)", len(failures), failures)
 	}
 
 	// The winning agent has the work item hooked.

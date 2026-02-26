@@ -50,7 +50,7 @@ func DefaultConfig() Config {
 // Supervisor monitors agent sessions and restarts crashed ones.
 // It is town-level: one supervisor watches all rigs.
 type Supervisor struct {
-	townStore *store.Store
+	townStore TownStore
 	sessions  SessionManager
 	logger    *slog.Logger
 	cfg       Config
@@ -64,7 +64,7 @@ type Supervisor struct {
 }
 
 // New creates a new Supervisor.
-func New(cfg Config, townStore *store.Store, mgr SessionManager, logger *slog.Logger) *Supervisor {
+func New(cfg Config, townStore TownStore, mgr SessionManager, logger *slog.Logger) *Supervisor {
 	return &Supervisor{
 		townStore:   townStore,
 		sessions:    mgr,
