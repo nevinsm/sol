@@ -67,6 +67,36 @@ CREATE TABLE IF NOT EXISTS agents (
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
 `
 
+const townSchemaV2 = `
+CREATE TABLE IF NOT EXISTS messages (
+    id          TEXT PRIMARY KEY,
+    sender      TEXT NOT NULL,
+    recipient   TEXT NOT NULL,
+    subject     TEXT NOT NULL,
+    body        TEXT,
+    priority    INTEGER NOT NULL DEFAULT 2,
+    type        TEXT NOT NULL DEFAULT 'notification',
+    thread_id   TEXT,
+    delivery    TEXT NOT NULL DEFAULT 'pending',
+    read        INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL,
+    acked_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient, delivery);
+CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id);
+
+CREATE TABLE IF NOT EXISTS escalations (
+    id           TEXT PRIMARY KEY,
+    severity     TEXT NOT NULL,
+    source       TEXT NOT NULL,
+    description  TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'open',
+    acknowledged INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+`
+
 func (s *Store) schemaVersion() (int, error) {
 	var exists bool
 	err := s.db.QueryRow(`SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='schema_version'`).Scan(&exists)
@@ -121,14 +151,24 @@ func (s *Store) migrateTown() error {
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
-	if v >= 1 {
-		return nil
+	if v < 1 {
+		if _, err := s.db.Exec(townSchemaV1); err != nil {
+			return fmt.Errorf("failed to create town schema v1: %w", err)
+		}
 	}
-	if _, err := s.db.Exec(townSchemaV1); err != nil {
-		return fmt.Errorf("failed to create town schema: %w", err)
+	if v < 2 {
+		if _, err := s.db.Exec(townSchemaV2); err != nil {
+			return fmt.Errorf("failed to create town schema v2: %w", err)
+		}
 	}
-	if _, err := s.db.Exec("INSERT INTO schema_version VALUES (1)"); err != nil {
-		return fmt.Errorf("failed to set schema version: %w", err)
+	if v < 1 {
+		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (2)"); err != nil {
+			return fmt.Errorf("failed to set schema version: %w", err)
+		}
+	} else if v < 2 {
+		if _, err := s.db.Exec("UPDATE schema_version SET version = 2"); err != nil {
+			return fmt.Errorf("failed to set schema version: %w", err)
+		}
 	}
 	return nil
 }

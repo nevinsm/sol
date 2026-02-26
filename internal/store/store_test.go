@@ -110,6 +110,114 @@ func TestTownSchemaCreation(t *testing.T) {
 	}
 }
 
+func TestMigrateTownV2(t *testing.T) {
+	s := setupTown(t)
+
+	// Verify messages table exists.
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'`).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected messages table, got count=%d", count)
+	}
+
+	// Verify escalations table exists.
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='escalations'`).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected escalations table, got count=%d", count)
+	}
+
+	// Verify schema_version is 2.
+	var version int
+	err = s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 2 {
+		t.Fatalf("expected schema version 2, got %d", version)
+	}
+
+	// Verify indexes exist.
+	for _, idx := range []string{"idx_messages_recipient", "idx_messages_thread"} {
+		err = s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?`, idx).Scan(&count)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("expected index %s, got count=%d", idx, count)
+		}
+	}
+}
+
+func TestMigrateTownV1ToV2(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("GT_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	// Simulate a V1-only town database.
+	dbPath := filepath.Join(dir, ".store", "town.db")
+	s, err := open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(townSchemaV1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("INSERT INTO schema_version VALUES (1)"); err != nil {
+		t.Fatal(err)
+	}
+	// Create an agent at V1.
+	_, err = s.db.Exec(
+		`INSERT INTO agents (id, name, rig, role, state, created_at, updated_at)
+		 VALUES ('myrig/Toast', 'Toast', 'myrig', 'polecat', 'idle', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Reopen through OpenTown — should migrate to V2.
+	s2, err := OpenTown()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+
+	// Verify messages table exists.
+	var count int
+	err = s2.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'`).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected messages table, got count=%d", count)
+	}
+
+	// Verify existing agents are untouched.
+	agent, err := s2.GetAgent("myrig/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.Name != "Toast" {
+		t.Fatalf("expected agent name 'Toast', got %q", agent.Name)
+	}
+
+	// Verify schema_version is 2.
+	var version int
+	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 2 {
+		t.Fatalf("expected schema version 2, got %d", version)
+	}
+}
+
 func TestWorkItemCRUD(t *testing.T) {
 	s := setupRig(t)
 
