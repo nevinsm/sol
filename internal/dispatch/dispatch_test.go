@@ -449,6 +449,11 @@ func TestDoneHappyPath(t *testing.T) {
 		t.Errorf("expected branch %q, got %q", expectedBranch, result.BranchName)
 	}
 
+	// Verify merge request was created.
+	if result.MergeRequestID == "" {
+		t.Error("expected MergeRequestID to be set")
+	}
+
 	// Verify work item was updated to done.
 	item, err := rigStore.GetWorkItem(itemID)
 	if err != nil {
@@ -491,5 +496,92 @@ func TestDoneNoHook(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no work hooked") {
 		t.Errorf("expected 'no work hooked' error, got: %v", err)
+	}
+}
+
+func TestDoneCreatesMergeRequest(t *testing.T) {
+	rigStore, townStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := rigStore.CreateWorkItem("Implement login page", "Build the login page", "operator", 1, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+	if err := rigStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "hooked", Assignee: "testrig/Toast"}); err != nil {
+		t.Fatalf("failed to update work item: %v", err)
+	}
+
+	if _, err := townStore.CreateAgent("Toast", "testrig", "polecat"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := townStore.UpdateAgentState("testrig/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := hook.Write("testrig", "Toast", itemID); err != nil {
+		t.Fatalf("failed to write hook: %v", err)
+	}
+
+	worktreeDir := WorktreePath("testrig", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+
+	sessName := SessionName("testrig", "Toast")
+	mgr.started[sessName] = true
+
+	result, err := Done(DoneOpts{
+		Rig:       "testrig",
+		AgentName: "Toast",
+	}, rigStore, townStore, mgr)
+
+	if err != nil {
+		t.Fatalf("Done failed: %v", err)
+	}
+
+	// Verify MergeRequestID is set.
+	if result.MergeRequestID == "" {
+		t.Fatal("expected MergeRequestID to be set")
+	}
+	if !strings.HasPrefix(result.MergeRequestID, "mr-") {
+		t.Errorf("expected MergeRequestID to start with 'mr-', got %q", result.MergeRequestID)
+	}
+
+	// Verify merge request exists in store with correct fields.
+	mr, err := rigStore.GetMergeRequest(result.MergeRequestID)
+	if err != nil {
+		t.Fatalf("failed to get merge request: %v", err)
+	}
+	if mr.Phase != "ready" {
+		t.Errorf("expected MR phase 'ready', got %q", mr.Phase)
+	}
+	if mr.WorkItemID != itemID {
+		t.Errorf("expected MR work_item_id %q, got %q", itemID, mr.WorkItemID)
+	}
+	expectedBranch := fmt.Sprintf("polecat/Toast/%s", itemID)
+	if mr.Branch != expectedBranch {
+		t.Errorf("expected MR branch %q, got %q", expectedBranch, mr.Branch)
+	}
+	if mr.Priority != 1 {
+		t.Errorf("expected MR priority 1, got %d", mr.Priority)
+	}
+
+	// Verify agent is idle and work item is done (existing behavior).
+	item, err := rigStore.GetWorkItem(itemID)
+	if err != nil {
+		t.Fatalf("failed to get work item: %v", err)
+	}
+	if item.Status != "done" {
+		t.Errorf("expected work item status 'done', got %q", item.Status)
+	}
+
+	agent, err := townStore.GetAgent("testrig/Toast")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("expected agent state 'idle', got %q", agent.State)
 	}
 }

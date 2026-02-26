@@ -30,6 +30,24 @@ CREATE INDEX IF NOT EXISTS idx_labels_label ON labels(label);
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
 `
 
+const rigSchemaV2 = `
+CREATE TABLE IF NOT EXISTS merge_requests (
+    id           TEXT PRIMARY KEY,
+    work_item_id TEXT NOT NULL REFERENCES work_items(id),
+    branch       TEXT NOT NULL,
+    phase        TEXT NOT NULL DEFAULT 'ready',
+    claimed_by   TEXT,
+    claimed_at   TEXT,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    priority     INTEGER NOT NULL DEFAULT 2,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    merged_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mr_phase ON merge_requests(phase);
+CREATE INDEX IF NOT EXISTS idx_mr_work_item ON merge_requests(work_item_id);
+`
+
 const townSchemaV1 = `
 CREATE TABLE IF NOT EXISTS agents (
     id          TEXT PRIMARY KEY,
@@ -67,14 +85,24 @@ func (s *Store) migrateRig() error {
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
-	if v >= 1 {
-		return nil
+	if v < 1 {
+		if _, err := s.db.Exec(rigSchemaV1); err != nil {
+			return fmt.Errorf("failed to create rig schema v1: %w", err)
+		}
 	}
-	if _, err := s.db.Exec(rigSchemaV1); err != nil {
-		return fmt.Errorf("failed to create rig schema: %w", err)
+	if v < 2 {
+		if _, err := s.db.Exec(rigSchemaV2); err != nil {
+			return fmt.Errorf("failed to create rig schema v2: %w", err)
+		}
 	}
-	if _, err := s.db.Exec("INSERT INTO schema_version VALUES (1)"); err != nil {
-		return fmt.Errorf("failed to set schema version: %w", err)
+	if v < 1 {
+		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (2)"); err != nil {
+			return fmt.Errorf("failed to set schema version: %w", err)
+		}
+	} else if v < 2 {
+		if _, err := s.db.Exec("UPDATE schema_version SET version = 2"); err != nil {
+			return fmt.Errorf("failed to set schema version: %w", err)
+		}
 	}
 	return nil
 }

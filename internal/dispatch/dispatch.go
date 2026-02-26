@@ -27,6 +27,7 @@ type SessionManager interface {
 type RigStore interface {
 	GetWorkItem(id string) (*store.WorkItem, error)
 	UpdateWorkItem(id string, updates store.WorkItemUpdates) error
+	CreateMergeRequest(workItemID, branch string, priority int) (string, error)
 	Close() error
 }
 
@@ -300,10 +301,11 @@ If stuck, run: gt escalate "description"
 
 // DoneResult holds the output of a done operation.
 type DoneResult struct {
-	WorkItemID string
-	Title      string
-	AgentName  string
-	BranchName string
+	WorkItemID     string
+	Title          string
+	AgentName      string
+	BranchName     string
+	MergeRequestID string
 }
 
 // DoneOpts holds the inputs for a done operation.
@@ -353,32 +355,39 @@ func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionMana
 		fmt.Fprintf(os.Stderr, "Warning: git push failed: %s\n", strings.TrimSpace(string(out)))
 	}
 
-	// 3. Update work item: status → done.
+	// 3. Create merge request for the refinery to process.
+	mrID, err := rigStore.CreateMergeRequest(workItemID, branchName, item.Priority)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create merge request for %q: %w", workItemID, err)
+	}
+
+	// 4. Update work item: status → done.
 	if err := rigStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{Status: "done"}); err != nil {
 		return nil, fmt.Errorf("failed to update work item status: %w", err)
 	}
 
-	// 4. Update agent: state → idle, hook_item → clear.
+	// 5. Update agent: state → idle, hook_item → clear.
 	if err := townStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
 
-	// 5. Clear hook file.
+	// 6. Clear hook file.
 	if err := hook.Clear(opts.Rig, opts.AgentName); err != nil {
 		return nil, fmt.Errorf("failed to clear hook: %w", err)
 	}
 
-	// 6. Stop session — use a brief delay then stop in background.
+	// 7. Stop session — use a brief delay then stop in background.
 	go func() {
 		time.Sleep(1 * time.Second)
 		mgr.Stop(sessName, true)
 	}()
 
 	return &DoneResult{
-		WorkItemID: workItemID,
-		Title:      item.Title,
-		AgentName:  opts.AgentName,
-		BranchName: branchName,
+		WorkItemID:     workItemID,
+		Title:          item.Title,
+		AgentName:      opts.AgentName,
+		BranchName:     branchName,
+		MergeRequestID: mrID,
 	}, nil
 }
 

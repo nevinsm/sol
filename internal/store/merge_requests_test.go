@@ -1,0 +1,365 @@
+package store
+
+import (
+	"regexp"
+	"testing"
+	"time"
+)
+
+func TestCreateMergeRequest(t *testing.T) {
+	s := setupRig(t)
+
+	// Create a work item first (FK dependency).
+	itemID, err := s.CreateWorkItem("Test item", "A test work item", "operator", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a merge request.
+	mrID, err := s.CreateMergeRequest(itemID, "polecat/Toast/"+itemID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify ID format.
+	pattern := regexp.MustCompile(`^mr-[0-9a-f]{8}$`)
+	if !pattern.MatchString(mrID) {
+		t.Fatalf("MR ID %q does not match pattern mr-[0-9a-f]{8}", mrID)
+	}
+
+	// Get it back and verify all fields.
+	mr, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr.ID != mrID {
+		t.Fatalf("expected ID %q, got %q", mrID, mr.ID)
+	}
+	if mr.WorkItemID != itemID {
+		t.Fatalf("expected work_item_id %q, got %q", itemID, mr.WorkItemID)
+	}
+	if mr.Branch != "polecat/Toast/"+itemID {
+		t.Fatalf("expected branch 'polecat/Toast/%s', got %q", itemID, mr.Branch)
+	}
+	if mr.Phase != "ready" {
+		t.Fatalf("expected phase 'ready', got %q", mr.Phase)
+	}
+	if mr.ClaimedBy != "" {
+		t.Fatalf("expected empty claimed_by, got %q", mr.ClaimedBy)
+	}
+	if mr.ClaimedAt != nil {
+		t.Fatalf("expected nil claimed_at, got %v", mr.ClaimedAt)
+	}
+	if mr.Attempts != 0 {
+		t.Fatalf("expected 0 attempts, got %d", mr.Attempts)
+	}
+	if mr.Priority != 2 {
+		t.Fatalf("expected priority 2, got %d", mr.Priority)
+	}
+	if mr.MergedAt != nil {
+		t.Fatalf("expected nil merged_at, got %v", mr.MergedAt)
+	}
+}
+
+func TestListMergeRequests(t *testing.T) {
+	s := setupRig(t)
+
+	// Create work items (FK dependency).
+	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 1, nil)
+	id2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
+	id3, _ := s.CreateWorkItem("Item 3", "", "operator", 3, nil)
+
+	// Create 3 MRs with different priorities.
+	s.CreateMergeRequest(id1, "branch1", 1)
+	s.CreateMergeRequest(id2, "branch2", 2)
+	s.CreateMergeRequest(id3, "branch3", 3)
+
+	// List all.
+	all, err := s.ListMergeRequests("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("expected 3 MRs, got %d", len(all))
+	}
+	// Verify ordered by priority.
+	if all[0].Priority != 1 {
+		t.Fatalf("expected first MR priority 1, got %d", all[0].Priority)
+	}
+	if all[2].Priority != 3 {
+		t.Fatalf("expected last MR priority 3, got %d", all[2].Priority)
+	}
+
+	// List by phase.
+	ready, err := s.ListMergeRequests("ready")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ready) != 3 {
+		t.Fatalf("expected 3 ready MRs, got %d", len(ready))
+	}
+
+	claimed, err := s.ListMergeRequests("claimed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 0 {
+		t.Fatalf("expected 0 claimed MRs, got %d", len(claimed))
+	}
+}
+
+func TestClaimMergeRequest(t *testing.T) {
+	s := setupRig(t)
+
+	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 1, nil)
+	id2, _ := s.CreateWorkItem("Item 2", "", "operator", 3, nil)
+
+	// Create 2 MRs: priority 1 and priority 3.
+	s.CreateMergeRequest(id1, "branch1", 1)
+	s.CreateMergeRequest(id2, "branch2", 3)
+
+	// Claim -> should get priority 1 first.
+	mr, err := s.ClaimMergeRequest("refinery/Forge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr == nil {
+		t.Fatal("expected a claimed MR, got nil")
+	}
+	if mr.Priority != 1 {
+		t.Fatalf("expected priority 1 MR, got priority %d", mr.Priority)
+	}
+	if mr.Phase != "claimed" {
+		t.Fatalf("expected phase 'claimed', got %q", mr.Phase)
+	}
+	if mr.ClaimedBy != "refinery/Forge" {
+		t.Fatalf("expected claimed_by 'refinery/Forge', got %q", mr.ClaimedBy)
+	}
+	if mr.Attempts != 1 {
+		t.Fatalf("expected 1 attempt, got %d", mr.Attempts)
+	}
+	if mr.ClaimedAt == nil {
+		t.Fatal("expected claimed_at to be set")
+	}
+
+	// Claim again -> should get priority 3.
+	mr2, err := s.ClaimMergeRequest("refinery/Forge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr2 == nil {
+		t.Fatal("expected a second claimed MR, got nil")
+	}
+	if mr2.Priority != 3 {
+		t.Fatalf("expected priority 3 MR, got priority %d", mr2.Priority)
+	}
+
+	// Claim again -> nil (no more ready MRs).
+	mr3, err := s.ClaimMergeRequest("refinery/Forge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr3 != nil {
+		t.Fatalf("expected nil when no ready MRs, got %+v", mr3)
+	}
+}
+
+func TestClaimMergeRequestOrdering(t *testing.T) {
+	s := setupRig(t)
+
+	// Create 3 work items.
+	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	id2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
+	id3, _ := s.CreateWorkItem("Item 3", "", "operator", 2, nil)
+
+	// Create 3 MRs with same priority — claim order should be FIFO.
+	mr1ID, _ := s.CreateMergeRequest(id1, "branch1", 2)
+	time.Sleep(10 * time.Millisecond) // ensure different created_at
+	s.CreateMergeRequest(id2, "branch2", 2)
+	time.Sleep(10 * time.Millisecond)
+	s.CreateMergeRequest(id3, "branch3", 2)
+
+	// Claim -> should get oldest first.
+	mr, err := s.ClaimMergeRequest("refinery/Forge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr.ID != mr1ID {
+		t.Fatalf("expected oldest MR %q first, got %q", mr1ID, mr.ID)
+	}
+}
+
+func TestUpdateMergeRequestPhase(t *testing.T) {
+	s := setupRig(t)
+
+	// Create and claim a MR, then update to "merged".
+	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
+	s.ClaimMergeRequest("refinery/Forge")
+
+	err := s.UpdateMergeRequestPhase(mrID, "merged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mr, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr.Phase != "merged" {
+		t.Fatalf("expected phase 'merged', got %q", mr.Phase)
+	}
+	if mr.MergedAt == nil {
+		t.Fatal("expected merged_at to be set")
+	}
+
+	// Create another, claim, update to "failed" -> verify merged_at is nil.
+	itemID2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
+	mrID2, _ := s.CreateMergeRequest(itemID2, "branch2", 2)
+	s.ClaimMergeRequest("refinery/Forge")
+
+	err = s.UpdateMergeRequestPhase(mrID2, "failed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mr2, err := s.GetMergeRequest(mrID2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr2.Phase != "failed" {
+		t.Fatalf("expected phase 'failed', got %q", mr2.Phase)
+	}
+	if mr2.MergedAt != nil {
+		t.Fatalf("expected nil merged_at for failed MR, got %v", mr2.MergedAt)
+	}
+
+	// Create another, claim, update to "ready" -> verify claimed_by cleared.
+	itemID3, _ := s.CreateWorkItem("Item 3", "", "operator", 2, nil)
+	mrID3, _ := s.CreateMergeRequest(itemID3, "branch3", 2)
+	s.ClaimMergeRequest("refinery/Forge")
+
+	err = s.UpdateMergeRequestPhase(mrID3, "ready")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mr3, err := s.GetMergeRequest(mrID3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr3.Phase != "ready" {
+		t.Fatalf("expected phase 'ready', got %q", mr3.Phase)
+	}
+	if mr3.ClaimedBy != "" {
+		t.Fatalf("expected empty claimed_by after release, got %q", mr3.ClaimedBy)
+	}
+	if mr3.ClaimedAt != nil {
+		t.Fatalf("expected nil claimed_at after release, got %v", mr3.ClaimedAt)
+	}
+
+	// Test invalid phase.
+	err = s.UpdateMergeRequestPhase(mrID, "invalid")
+	if err == nil {
+		t.Fatal("expected error for invalid phase")
+	}
+}
+
+func TestReleaseStaleClaims(t *testing.T) {
+	s := setupRig(t)
+
+	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
+	s.ClaimMergeRequest("refinery/Forge")
+
+	// ReleaseStaleClaims with 1-hour TTL -> 0 released (claim is fresh).
+	released, err := s.ReleaseStaleClaims(1 * time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released != 0 {
+		t.Fatalf("expected 0 released, got %d", released)
+	}
+
+	// Manually set claimed_at to 31 minutes ago.
+	staleTime := time.Now().UTC().Add(-31 * time.Minute).Format(time.RFC3339)
+	_, err = s.db.Exec(`UPDATE merge_requests SET claimed_at = ? WHERE id = ?`, staleTime, mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ReleaseStaleClaims with 30-minute TTL -> 1 released.
+	released, err = s.ReleaseStaleClaims(30 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released != 1 {
+		t.Fatalf("expected 1 released, got %d", released)
+	}
+
+	// Verify MR is back to ready.
+	mr, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr.Phase != "ready" {
+		t.Fatalf("expected phase 'ready' after release, got %q", mr.Phase)
+	}
+	if mr.ClaimedBy != "" {
+		t.Fatalf("expected empty claimed_by after release, got %q", mr.ClaimedBy)
+	}
+	if mr.ClaimedAt != nil {
+		t.Fatalf("expected nil claimed_at after release, got %v", mr.ClaimedAt)
+	}
+}
+
+func TestReleaseStaleLeavesRecentClaims(t *testing.T) {
+	s := setupRig(t)
+
+	itemID1, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	itemID2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
+	mrID1, _ := s.CreateMergeRequest(itemID1, "branch1", 2)
+	s.CreateMergeRequest(itemID2, "branch2", 2)
+
+	// Claim both.
+	s.ClaimMergeRequest("refinery/Forge")
+	s.ClaimMergeRequest("refinery/Forge")
+
+	// Set one claimed_at to 31 minutes ago, leave other fresh.
+	staleTime := time.Now().UTC().Add(-31 * time.Minute).Format(time.RFC3339)
+	_, err := s.db.Exec(`UPDATE merge_requests SET claimed_at = ? WHERE id = ?`, staleTime, mrID1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ReleaseStaleClaims(30min) -> 1 released.
+	released, err := s.ReleaseStaleClaims(30 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released != 1 {
+		t.Fatalf("expected 1 released, got %d", released)
+	}
+
+	// Verify only the stale one was released.
+	mr1, _ := s.GetMergeRequest(mrID1)
+	if mr1.Phase != "ready" {
+		t.Fatalf("expected stale MR to be ready, got %q", mr1.Phase)
+	}
+
+	// The fresh one should still be claimed.
+	claimed, _ := s.ListMergeRequests("claimed")
+	if len(claimed) != 1 {
+		t.Fatalf("expected 1 still-claimed MR, got %d", len(claimed))
+	}
+}
+
+func TestGetMergeRequestNotFound(t *testing.T) {
+	s := setupRig(t)
+
+	_, err := s.GetMergeRequest("mr-nonexist")
+	if err == nil {
+		t.Fatal("expected error for nonexistent merge request")
+	}
+	expected := `merge request "mr-nonexist" not found`
+	if err.Error() != expected {
+		t.Fatalf("expected error %q, got %q", expected, err.Error())
+	}
+}

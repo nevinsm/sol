@@ -60,6 +60,7 @@ var doneCmd = &cobra.Command{
 
 		fmt.Printf("Done: %s (%s)\n", result.WorkItemID, result.Title)
 		fmt.Printf("  Branch: %s\n", result.BranchName)
+		fmt.Printf("  Merge request: %s (queued)\n", result.MergeRequestID)
 		fmt.Printf("  Agent %s is now idle.\n", result.AgentName)
 		return nil
 	},

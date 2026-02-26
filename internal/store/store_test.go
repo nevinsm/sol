@@ -66,8 +66,17 @@ func TestSchemaCreation(t *testing.T) {
 		t.Fatalf("expected labels table, got count=%d", count)
 	}
 
+	// Verify merge_requests table exists (V2).
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='merge_requests'`).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected merge_requests table, got count=%d", count)
+	}
+
 	// Verify indexes exist.
-	for _, idx := range []string{"idx_work_status", "idx_work_assignee", "idx_work_priority", "idx_labels_label"} {
+	for _, idx := range []string{"idx_work_status", "idx_work_assignee", "idx_work_priority", "idx_labels_label", "idx_mr_phase", "idx_mr_work_item"} {
 		err = s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?`, idx).Scan(&count)
 		if err != nil {
 			t.Fatal(err)
@@ -83,8 +92,8 @@ func TestSchemaCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 1 {
-		t.Fatalf("expected schema version 1, got %d", version)
+	if version != 2 {
+		t.Fatalf("expected schema version 2, got %d", version)
 	}
 }
 
@@ -546,5 +555,89 @@ func TestMigrationIdempotent(t *testing.T) {
 	}
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item after reopen, got %d", len(items))
+	}
+
+	// Verify merge_requests table exists after reopen.
+	var count int
+	err = s2.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='merge_requests'`).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected merge_requests table after reopen, got count=%d", count)
+	}
+
+	// Verify schema version is 2.
+	var version int
+	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 2 {
+		t.Fatalf("expected schema version 2 after reopen, got %d", version)
+	}
+}
+
+func TestMigrateRigV1ToV2(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("GT_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	// Simulate a V1-only database by manually creating it.
+	dbPath := filepath.Join(dir, ".store", "v1test.db")
+	s, err := open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(rigSchemaV1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("INSERT INTO schema_version VALUES (1)"); err != nil {
+		t.Fatal(err)
+	}
+	// Create a work item while at V1.
+	_, err = s.db.Exec(
+		`INSERT INTO work_items (id, title, status, priority, created_by, created_at, updated_at)
+		 VALUES ('gt-v1item01', 'V1 item', 'open', 2, 'operator', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Reopen through OpenRig — should migrate to V2.
+	s2, err := OpenRig("v1test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+
+	// Verify merge_requests table exists.
+	var count int
+	err = s2.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='merge_requests'`).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected merge_requests table, got count=%d", count)
+	}
+
+	// Verify existing work items are untouched.
+	item, err := s2.GetWorkItem("gt-v1item01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Title != "V1 item" {
+		t.Fatalf("expected title 'V1 item', got %q", item.Title)
+	}
+
+	// Verify schema version is 2.
+	var version int
+	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 2 {
+		t.Fatalf("expected schema version 2, got %d", version)
 	}
 }
