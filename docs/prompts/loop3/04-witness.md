@@ -358,7 +358,10 @@ case "none":
     log assessment for audit trail
 
 case "nudge":
-    // Inject nudge message into the agent's session
+    // Inject nudge message into the agent's session.
+    // NOTE: Direct tmux injection is temporary. When the nudge queue
+    // is implemented (future loop), replace with nudge queue submission
+    // for turn-boundary delivery.
     w.sessions.Inject(sessionName, result.NudgeMessage)
     emit EventNudge event
     send informational mail to operator
@@ -491,7 +494,83 @@ for this rig.
 
 ## Task 7: Supervisor Integration
 
-Extend the supervisor to handle witness agents.
+Extend the supervisor to handle witness agents and defer polecat
+management to the witness when it's active (ADR-0006).
+
+### Supervisor Defers to Witness (ADR-0006)
+
+When a witness is active for a rig, the supervisor must skip polecat
+management in that rig. The witness owns polecat supervision (respawn,
+max-respawn tracking, return-to-open). The supervisor still manages the
+witness itself and the refinery.
+
+**A rig is "witnessed" when both conditions hold:**
+1. The `{rig}/witness` agent has `state=working` in the town store
+2. The witness tmux session (`gt-{rig}-witness`) is alive
+
+Read `docs/decisions/0006-supervisor-defers-to-witness.md` for full
+context.
+
+#### heartbeat changes
+
+In `heartbeat()`, before processing working agents:
+
+1. Query all witness agents (`role=witness`, `state=working`)
+2. For each, check if its tmux session is alive
+3. Build a set of witnessed rigs
+4. When iterating working agents, skip `role=polecat` agents in
+   witnessed rigs
+
+```go
+// Build set of witnessed rigs.
+witnessedRigs := s.getWitnessedRigs()
+
+for _, agent := range workingAgents {
+    sessName := dispatch.SessionName(agent.Rig, agent.Name)
+    if !s.sessions.Exists(sessName) {
+        deadCount++
+        s.recordDeath() // All deaths count toward mass-death, always.
+
+        // Polecats in witnessed rigs are the witness's responsibility.
+        if agent.Role == "polecat" && witnessedRigs[agent.Rig] {
+            continue
+        }
+
+        if s.degraded {
+            // ... existing degraded handling ...
+            continue
+        }
+        s.respawn(agent)
+    }
+}
+```
+
+```go
+// getWitnessedRigs returns the set of rigs with an active witness.
+// A rig is witnessed when its witness agent is working AND the
+// witness tmux session is alive.
+func (s *Supervisor) getWitnessedRigs() map[string]bool {
+    witnesses, err := s.townStore.ListAgents("", "working")
+    if err != nil {
+        return nil
+    }
+    rigs := make(map[string]bool)
+    for _, w := range witnesses {
+        if w.Role != "witness" {
+            continue
+        }
+        sessName := dispatch.SessionName(w.Rig, w.Name)
+        if s.sessions.Exists(sessName) {
+            rigs[w.Rig] = true
+        }
+    }
+    return rigs
+}
+```
+
+**Note:** Dead polecats in witnessed rigs still count toward mass-death
+detection. This is intentional — infrastructure failures are worth
+detecting even if another component handles the per-agent response.
 
 ### respawnCommand
 

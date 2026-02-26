@@ -12,21 +12,6 @@ import (
 	"github.com/nevinsm/gt/internal/session"
 )
 
-func TestCLIRefineryRunHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome := t.TempDir()
-
-	out, err := runGT(t, gtHome, "refinery", "run", "--help")
-	if err != nil {
-		t.Fatalf("gt refinery run --help failed: %v: %s", err, out)
-	}
-	if !strings.Contains(out, "Run the refinery") {
-		t.Errorf("output missing expected text: %s", out)
-	}
-}
-
 func TestCLIRefineryStartHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

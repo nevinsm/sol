@@ -1,13 +1,10 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -23,71 +20,6 @@ import (
 var refineryCmd = &cobra.Command{
 	Use:   "refinery",
 	Short: "Manage the merge pipeline refinery",
-}
-
-var refineryRunCmd = &cobra.Command{
-	Use:   "run <rig>",
-	Short: "Run the refinery Go poll loop (deprecated: use 'gt refinery start' for Claude session)",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		rig := args[0]
-
-		fmt.Fprintf(os.Stderr, "DEPRECATED: 'gt refinery run' runs the pure Go poll loop.\n")
-		fmt.Fprintf(os.Stderr, "Use 'gt refinery start %s' for the Claude-backed refinery.\n\n", rig)
-
-		if err := config.EnsureDirs(); err != nil {
-			return fmt.Errorf("failed to ensure directories: %w", err)
-		}
-
-		logPath := filepath.Join(config.RuntimeDir(), fmt.Sprintf("refinery-%s.log", rig))
-		logger, logFile, err := refinery.NewLogger(logPath)
-		if err != nil {
-			return fmt.Errorf("failed to create logger: %w", err)
-		}
-		if logFile != nil {
-			defer logFile.Close()
-		}
-
-		rigStore, err := store.OpenRig(rig)
-		if err != nil {
-			return err
-		}
-		defer rigStore.Close()
-
-		townStore, err := store.OpenTown()
-		if err != nil {
-			return err
-		}
-		defer townStore.Close()
-
-		sourceRepo, err := dispatch.DiscoverSourceRepo()
-		if err != nil {
-			return err
-		}
-
-		cfg := refinery.DefaultConfig()
-
-		// Load quality gates from config file.
-		gatesPath := filepath.Join(config.RigDir(rig), "refinery", "quality-gates.txt")
-		gates, err := refinery.LoadQualityGates(gatesPath, cfg.QualityGates)
-		if err != nil {
-			return fmt.Errorf("failed to load quality gates: %w", err)
-		}
-		cfg.QualityGates = gates
-
-		ref := refinery.New(rig, sourceRepo, rigStore, townStore, cfg, logger)
-
-		// Signal handling.
-		ctx, cancel := context.WithCancel(cmd.Context())
-		defer cancel()
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
-		go func() { <-sigCh; cancel() }()
-
-		fmt.Fprintf(os.Stderr, "Refinery started for rig %q (pid %d)\n", rig, os.Getpid())
-		fmt.Fprintf(os.Stderr, "Log: %s\n", logPath)
-		return ref.Run(ctx)
-	},
 }
 
 var refineryStartCmd = &cobra.Command{
@@ -634,7 +566,6 @@ func printQueue(rig string, mrs []store.MergeRequest) {
 
 func init() {
 	rootCmd.AddCommand(refineryCmd)
-	refineryCmd.AddCommand(refineryRunCmd)
 	refineryCmd.AddCommand(refineryStartCmd)
 	refineryCmd.AddCommand(refineryStopCmd)
 	refineryCmd.AddCommand(refineryQueueCmd)

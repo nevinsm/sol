@@ -363,5 +363,17 @@ func TestCLICuratorStopHelp(t *testing.T)
 - The curator is **town-level** (not per-rig). One curator processes
   events from all rigs.
 - All existing tests must continue to pass.
+- **Add curator to `gt status` output.** The curator runs as a
+  town-level tmux session (`gt-curator`). Extend
+  `internal/status/status.go` to check for the curator session and
+  include it in the status output:
+  ```
+  Curator: running (gt-curator)
+  ```
+  Add a `CuratorInfo` struct (similar to `RefineryInfo`) to
+  `RigStatus` — or better, add it to a new `TownStatus` if one
+  exists, since the curator is town-level. If `gt status` only
+  gathers per-rig status, add the curator check at the display
+  layer in `cmd/status.go`.
 - Commit after tests pass with message:
   `feat(events): add curator with dedup, aggregation, and feed truncation`

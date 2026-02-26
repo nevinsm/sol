@@ -45,8 +45,8 @@ Refinery becomes a Claude session backed by Go CLI subcommands.
 - `gt refinery create-resolution` — conflict delegation
 - `gt refinery check-unblocked` — resolution tracking
 
-The existing `gt refinery run` Go poll loop is preserved (deprecated) for
-testing and environments without Claude API access.
+The `gt refinery run` Go poll loop has been removed. The system has not
+been released, so there are no backward-compatibility concerns.
 
 ## Consequences
 
@@ -63,8 +63,7 @@ testing and environments without Claude API access.
   MRs are in queue)
 - Non-deterministic conflict resolution (mitigated by the judgment
   framework in CLAUDE.md and the "when in doubt, delegate" rule)
-- Requires Claude API access for full functionality (mitigated by
-  preserved Go poll loop fallback)
+- Requires Claude API access for functionality (no Go fallback)
 
 **Schema change:**
 - `merge_requests.blocked_by` (TEXT, nullable) — tracks which

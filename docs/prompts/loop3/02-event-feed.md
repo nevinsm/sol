@@ -250,11 +250,11 @@ working.
 
 ### Refinery Package
 
-> **Note:** The refinery is now a Claude session backed by Go CLI
+> **Note:** The refinery is a Claude session backed by Go CLI
 > subcommands (see [ADR-0005](../../decisions/0005-refinery-claude-session.md)).
-> The Go CLI subcommands live in `cmd/refinery.go` and call into
-> `internal/refinery/`. Add event logging to the Go subcommand
-> implementations that handle state transitions:
+> The Go poll loop (`gt refinery run`) has been removed. Add event
+> logging only to the toolbox subcommands in `cmd/refinery.go` that
+> handle state transitions:
 
 - On merge claimed (`claim`): `EventMergeClaimed`
 - On merge success (`mark-merged`): `EventMerged`

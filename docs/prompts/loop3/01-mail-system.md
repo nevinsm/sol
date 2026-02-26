@@ -477,6 +477,16 @@ func TestMessageNotFound(t *testing.T)
 - The escalations table is created now but CRUD operations are deferred
   to Loop 5 (Deacon). We create the table now to avoid another town
   schema migration later.
+- **Protocol message wiring is deferred.** The payload structs and
+  `SendProtocolMessage` helper are defined now for schema stability,
+  but only `RECOVERY_NEEDED` has a sender (the witness, prompt 04)
+  and consumer (the operator) in Loop 3. The following wiring is
+  deferred to future loops: `POLECAT_DONE` emission from `gt done`,
+  `MERGED`/`MERGE_FAILED` emission from refinery subcommands,
+  `MERGE_READY` emission from the witness.
+- **Nudge-based delivery is deferred.** Messages are written to the
+  store and polled by recipients. No real-time push notification or
+  nudge queue is implemented in this loop.
 - Don't modify the rig schema. Messages are town-level.
 - Keep backward compatibility — all Loop 0, 1, and 2 tests must pass.
 - Commit after tests pass with message:
