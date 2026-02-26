@@ -149,7 +149,7 @@ func TestReadEvents(t *testing.T) {
 		logger.Emit(EventDone, "gt", "agent", "both", nil)
 	}
 
-	reader := NewReader(dir)
+	reader := NewReader(dir, false)
 
 	// Read with no filters -> 10 events.
 	evts, err := reader.Read(ReadOpts{})
@@ -201,7 +201,7 @@ func TestReadSince(t *testing.T) {
 		logger.Emit("new", "gt", "operator", "feed", nil)
 	}
 
-	reader := NewReader(dir)
+	reader := NewReader(dir, false)
 	evts, err := reader.Read(ReadOpts{Since: cutoff})
 	if err != nil {
 		t.Fatalf("read with since: %v", err)
@@ -227,7 +227,7 @@ func TestReadFiltersAuditOnly(t *testing.T) {
 	// Log events with visibility="feed" — should be included.
 	logger.Emit("feed_event", "gt", "system", "feed", nil)
 
-	reader := NewReader(dir)
+	reader := NewReader(dir, false)
 	evts, err := reader.Read(ReadOpts{})
 	if err != nil {
 		t.Fatalf("read: %v", err)
@@ -259,7 +259,7 @@ func TestFollow(t *testing.T) {
 	// Pre-create the file with one event so Follow can open it.
 	logger.Emit("setup", "gt", "setup", "feed", nil)
 
-	reader := NewReader(dir)
+	reader := NewReader(dir, false)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

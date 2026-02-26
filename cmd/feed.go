@@ -20,13 +20,23 @@ var (
 	feedSince  string
 	feedType   string
 	feedJSON   bool
+	feedRaw    bool
 )
 
 var feedCmd = &cobra.Command{
 	Use:   "feed",
 	Short: "View the event activity feed",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		reader := events.NewReader(config.Home())
+		// Default: curated feed. --raw: raw event log.
+		// If curated feed doesn't exist, fall back to raw silently.
+		curated := !feedRaw
+		if curated {
+			feedPath := config.Home() + "/.feed.jsonl"
+			if _, err := os.Stat(feedPath); os.IsNotExist(err) {
+				curated = false
+			}
+		}
+		reader := events.NewReader(config.Home(), curated)
 
 		opts := events.ReadOpts{
 			Limit: feedLimit,
@@ -148,4 +158,5 @@ func init() {
 	feedCmd.Flags().StringVar(&feedSince, "since", "", "show events from the last duration (e.g., 1h, 30m)")
 	feedCmd.Flags().StringVar(&feedType, "type", "", "filter by event type")
 	feedCmd.Flags().BoolVar(&feedJSON, "json", false, "output raw JSONL")
+	feedCmd.Flags().BoolVar(&feedRaw, "raw", false, "read raw event log instead of curated feed")
 }

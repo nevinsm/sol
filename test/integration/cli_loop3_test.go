@@ -109,3 +109,48 @@ func TestCLIMailCheckHelp(t *testing.T) {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
+
+func TestCLICuratorRunHelp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+
+	out, err := runGT(t, gtHome, "curator", "run", "--help")
+	if err != nil {
+		t.Fatalf("gt curator run --help failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "Run the curator") {
+		t.Errorf("output missing expected text: %s", out)
+	}
+}
+
+func TestCLICuratorStartHelp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+
+	out, err := runGT(t, gtHome, "curator", "start", "--help")
+	if err != nil {
+		t.Fatalf("gt curator start --help failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "background tmux session") {
+		t.Errorf("output missing expected text: %s", out)
+	}
+}
+
+func TestCLICuratorStopHelp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+
+	out, err := runGT(t, gtHome, "curator", "stop", "--help")
+	if err != nil {
+		t.Fatalf("gt curator stop --help failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "Stop the curator") {
+		t.Errorf("output missing expected text: %s", out)
+	}
+}

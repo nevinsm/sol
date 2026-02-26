@@ -24,9 +24,15 @@ type Reader struct {
 }
 
 // NewReader creates an event feed reader.
-func NewReader(gtHome string) *Reader {
+// If curated=true, reads from .feed.jsonl (curated feed).
+// If curated=false, reads from .events.jsonl (raw feed).
+func NewReader(gtHome string, curated bool) *Reader {
+	filename := ".events.jsonl"
+	if curated {
+		filename = ".feed.jsonl"
+	}
 	return &Reader{
-		path: filepath.Join(gtHome, ".events.jsonl"),
+		path: filepath.Join(gtHome, filename),
 	}
 }
 

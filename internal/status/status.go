@@ -13,6 +13,7 @@ type RigStatus struct {
 	Rig        string         `json:"rig"`
 	Supervisor SupervisorInfo `json:"supervisor"`
 	Refinery   RefineryInfo   `json:"refinery"`
+	Curator    CuratorInfo    `json:"curator"`
 	Agents     []AgentStatus  `json:"agents"`
 	MergeQueue MergeQueueInfo `json:"merge_queue"`
 	Summary    Summary        `json:"summary"`
@@ -26,6 +27,12 @@ type SupervisorInfo struct {
 
 // RefineryInfo holds refinery process state.
 type RefineryInfo struct {
+	Running     bool   `json:"running"`
+	SessionName string `json:"session_name,omitempty"`
+}
+
+// CuratorInfo holds curator process state (town-level).
+type CuratorInfo struct {
 	Running     bool   `json:"running"`
 	SessionName string `json:"session_name,omitempty"`
 }
@@ -125,6 +132,12 @@ func Gather(rig string, townStore TownStore, rigStore RigStore,
 	refSessName := dispatch.SessionName(rig, "refinery")
 	if checker.Exists(refSessName) {
 		result.Refinery = RefineryInfo{Running: true, SessionName: refSessName}
+	}
+
+	// 2b. Check curator session (town-level).
+	const curatorSessionName = "gt-curator"
+	if checker.Exists(curatorSessionName) {
+		result.Curator = CuratorInfo{Running: true, SessionName: curatorSessionName}
 	}
 
 	// 3. List all agents for this rig.

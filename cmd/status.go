@@ -75,6 +75,12 @@ func printStatus(rs *status.RigStatus) {
 		fmt.Println("Refinery: not running")
 	}
 
+	if rs.Curator.Running {
+		fmt.Printf("Curator: running (%s)\n", rs.Curator.SessionName)
+	} else {
+		fmt.Println("Curator: not running")
+	}
+
 	fmt.Println()
 
 	if len(rs.Agents) == 0 {
