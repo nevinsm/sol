@@ -32,7 +32,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 		WorkItemID: itemID,
 		Rig:        "testrig",
 		SourceRepo: sourceClone,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 	_, err = dispatch.Done(dispatch.DoneOpts{
 		Rig:       "testrig",
 		AgentName: result.AgentName,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("done: %v", err)
 	}

@@ -99,7 +99,7 @@ func TestSlingHappyPath(t *testing.T) {
 		Rig:        "testrig",
 		AgentName:  "Toast",
 		SourceRepo: repoDir,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 
 	if err != nil {
 		t.Fatalf("Sling failed: %v", err)
@@ -185,7 +185,7 @@ func TestSlingAutoAgent(t *testing.T) {
 		WorkItemID: itemID,
 		Rig:        "testrig",
 		SourceRepo: repoDir,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 
 	if err != nil {
 		t.Fatalf("Sling failed: %v", err)
@@ -213,7 +213,7 @@ func TestSlingAutoProvision(t *testing.T) {
 		WorkItemID: itemID,
 		Rig:        "testrig",
 		SourceRepo: repoDir,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 
 	if err != nil {
 		t.Fatalf("Sling failed: %v", err)
@@ -265,7 +265,7 @@ func TestSlingAutoProvisionSkipsUsed(t *testing.T) {
 		WorkItemID: itemID,
 		Rig:        "testrig",
 		SourceRepo: repoDir,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 
 	if err != nil {
 		t.Fatalf("Sling failed: %v", err)
@@ -302,7 +302,7 @@ func TestSlingFlockPreventsDoubleDispatch(t *testing.T) {
 		WorkItemID: itemID,
 		Rig:        "testrig",
 		SourceRepo: "/tmp",
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 
 	if err == nil {
 		t.Fatal("expected contention error")
@@ -334,7 +334,7 @@ func TestSlingItemNotOpen(t *testing.T) {
 		Rig:        "testrig",
 		AgentName:  "Toast",
 		SourceRepo: "/tmp",
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 
 	if err == nil {
 		t.Fatal("expected error for non-open work item")
@@ -432,7 +432,7 @@ func TestDoneHappyPath(t *testing.T) {
 	result, err := Done(DoneOpts{
 		Rig:       "testrig",
 		AgentName: "Toast",
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 
 	if err != nil {
 		t.Fatalf("Done failed: %v", err)
@@ -489,7 +489,7 @@ func TestDoneNoHook(t *testing.T) {
 	_, err := Done(DoneOpts{
 		Rig:       "testrig",
 		AgentName: "Toast",
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 
 	if err == nil {
 		t.Fatal("expected error when no hook exists")
@@ -561,7 +561,7 @@ func TestDoneConflictResolution(t *testing.T) {
 	result, err := Done(DoneOpts{
 		Rig:       "testrig",
 		AgentName: "Toast",
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("Done (conflict-resolution) failed: %v", err)
 	}
@@ -647,7 +647,7 @@ func TestDoneCreatesMergeRequest(t *testing.T) {
 	result, err := Done(DoneOpts{
 		Rig:       "testrig",
 		AgentName: "Toast",
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 
 	if err != nil {
 		t.Fatalf("Done failed: %v", err)

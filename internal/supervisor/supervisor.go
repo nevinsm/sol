@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/gt/internal/config"
 	"github.com/nevinsm/gt/internal/dispatch"
+	"github.com/nevinsm/gt/internal/events"
 	"github.com/nevinsm/gt/internal/hook"
 	"github.com/nevinsm/gt/internal/refinery"
 	"github.com/nevinsm/gt/internal/session"
@@ -54,6 +55,7 @@ type Supervisor struct {
 	townStore TownStore
 	sessions  SessionManager
 	logger    *slog.Logger
+	eventLog  *events.Logger // optional event feed logger
 	cfg       Config
 
 	mu            sync.Mutex
@@ -65,11 +67,17 @@ type Supervisor struct {
 }
 
 // New creates a new Supervisor.
-func New(cfg Config, townStore TownStore, mgr SessionManager, logger *slog.Logger) *Supervisor {
+// The eventLog parameter is optional — if nil, no events are emitted.
+func New(cfg Config, townStore TownStore, mgr SessionManager, logger *slog.Logger, eventLog ...*events.Logger) *Supervisor {
+	var el *events.Logger
+	if len(eventLog) > 0 {
+		el = eventLog[0]
+	}
 	return &Supervisor{
 		townStore:   townStore,
 		sessions:    mgr,
 		logger:      logger,
+		eventLog:    el,
 		cfg:         cfg,
 		backoff:     make(map[string]int),
 		lastStalled: make(map[string]time.Time),
@@ -237,6 +245,15 @@ func (s *Supervisor) respawn(agent store.Agent) {
 	s.logger.Info("respawned session",
 		"agent", agent.Name, "rig", agent.Rig,
 		"work_item", agent.HookItem, "restart", restartCount)
+
+	if s.eventLog != nil {
+		s.eventLog.Emit(events.EventRespawn, "supervisor", agent.Name, "both", map[string]any{
+			"agent":     agent.Name,
+			"rig":       agent.Rig,
+			"work_item": agent.HookItem,
+			"restart":   restartCount,
+		})
+	}
 }
 
 // recordDeath records a session death timestamp and checks for mass death.
@@ -265,6 +282,13 @@ func (s *Supervisor) checkMassDeath() bool {
 		s.degradedSince = now
 		s.logger.Error("mass death detected",
 			"deaths", recentDeaths, "window", s.cfg.MassDeathWindow)
+		if s.eventLog != nil {
+			s.eventLog.Emit(events.EventMassDeath, "supervisor", "supervisor", "both", map[string]any{
+				"deaths": recentDeaths,
+				"window": s.cfg.MassDeathWindow.String(),
+			})
+			s.eventLog.Emit(events.EventDegraded, "supervisor", "supervisor", "both", nil)
+		}
 		return true
 	}
 	return false
@@ -288,6 +312,11 @@ func (s *Supervisor) checkDegradedRecovery() {
 
 	s.degraded = false
 	s.logger.Info("exited degraded mode", "duration", now.Sub(s.degradedSince))
+	if s.eventLog != nil {
+		s.eventLog.Emit(events.EventRecovered, "supervisor", "supervisor", "both", map[string]string{
+			"duration": now.Sub(s.degradedSince).String(),
+		})
+	}
 }
 
 // resetBackoffForIdle resets backoff counters for agents that went idle.

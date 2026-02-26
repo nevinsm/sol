@@ -136,7 +136,7 @@ func TestCLIDoneShowsMergeRequest(t *testing.T) {
 		Rig:        "testrig",
 		AgentName:  "Smoke",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling: %v", err)
 	}

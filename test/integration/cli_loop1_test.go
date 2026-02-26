@@ -83,7 +83,7 @@ func TestCLIStatusJSON(t *testing.T) {
 		Rig:        "testrig",
 		AgentName:  "Smoke",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 
 	// Close stores before running the CLI (CLI opens its own).
 	rigStore.Close()

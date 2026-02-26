@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/gt/internal/config"
 	"github.com/nevinsm/gt/internal/dispatch"
+	"github.com/nevinsm/gt/internal/events"
 	"github.com/nevinsm/gt/internal/protocol"
 	"github.com/nevinsm/gt/internal/refinery"
 	"github.com/nevinsm/gt/internal/session"
@@ -319,6 +320,13 @@ var refineryClaimCmd = &cobra.Command{
 			return nil
 		}
 
+		eventLog := events.NewLogger(config.Home())
+		eventLog.Emit(events.EventMergeClaimed, "refinery", "refinery", "both", map[string]string{
+			"merge_request_id": mr.ID,
+			"work_item_id":     mr.WorkItemID,
+			"branch":           mr.Branch,
+		})
+
 		if refineryToolboxJSON {
 			return printJSON(mr)
 		}
@@ -435,6 +443,11 @@ var refineryMarkMergedCmd = &cobra.Command{
 			return err
 		}
 
+		eventLog := events.NewLogger(config.Home())
+		eventLog.Emit(events.EventMerged, "refinery", "refinery", "both", map[string]string{
+			"merge_request_id": mrID,
+		})
+
 		fmt.Printf("Merged: %s\n", mrID)
 		return nil
 	},
@@ -456,6 +469,11 @@ var refineryMarkFailedCmd = &cobra.Command{
 		if err := ref.MarkFailed(mrID); err != nil {
 			return err
 		}
+
+		eventLog := events.NewLogger(config.Home())
+		eventLog.Emit(events.EventMergeFailed, "refinery", "refinery", "both", map[string]string{
+			"merge_request_id": mrID,
+		})
 
 		fmt.Printf("Failed: %s\n", mrID)
 		return nil

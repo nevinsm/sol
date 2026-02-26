@@ -3,7 +3,9 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/nevinsm/gt/internal/config"
 	"github.com/nevinsm/gt/internal/dispatch"
+	"github.com/nevinsm/gt/internal/events"
 	"github.com/nevinsm/gt/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -37,13 +39,14 @@ var slingCmd = &cobra.Command{
 		defer townStore.Close()
 
 		mgr := dispatch.NewSessionManager()
+		logger := events.NewLogger(config.Home())
 
 		result, err := dispatch.Sling(dispatch.SlingOpts{
 			WorkItemID: workItemID,
 			Rig:        rig,
 			AgentName:  slingAgent,
 			SourceRepo: sourceRepo,
-		}, rigStore, townStore, mgr)
+		}, rigStore, townStore, mgr, logger)
 		if err != nil {
 			return err
 		}

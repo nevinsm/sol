@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/nevinsm/gt/internal/config"
+	"github.com/nevinsm/gt/internal/events"
 	"github.com/nevinsm/gt/internal/session"
 	"github.com/nevinsm/gt/internal/store"
 	"github.com/nevinsm/gt/internal/supervisor"
@@ -42,7 +43,8 @@ var supervisorRunCmd = &cobra.Command{
 
 		mgr := session.New()
 		cfg := supervisor.DefaultConfig()
-		sup := supervisor.New(cfg, townStore, mgr, logger)
+		eventLog := events.NewLogger(config.Home())
+		sup := supervisor.New(cfg, townStore, mgr, logger, eventLog)
 
 		// Signal handling.
 		ctx, cancel := context.WithCancel(cmd.Context())

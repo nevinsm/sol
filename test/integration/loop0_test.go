@@ -43,7 +43,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		Rig:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	doneResult, err := dispatch.Done(dispatch.DoneOpts{
 		Rig:       "testrig",
 		AgentName: "TestBot",
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("done: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestCrashRecoveryResling(t *testing.T) {
 		Rig:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("initial sling: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestCrashRecoveryResling(t *testing.T) {
 		Rig:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("re-sling failed: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 		Rig:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("first sling: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 		Rig:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err == nil {
 		t.Fatal("expected error for double dispatch, got nil")
 	}
@@ -276,7 +276,7 @@ func TestPrimeOutput(t *testing.T) {
 		Rig:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 
 	// Run Prime.
 	result, err := dispatch.Prime("testrig", "TestBot", rigStore)
@@ -340,7 +340,7 @@ func TestStoreInspection(t *testing.T) {
 		Rig:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 
 	// Query the rig DB directly via database/sql.
 	db := rigStore.DB()

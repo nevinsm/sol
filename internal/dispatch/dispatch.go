@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/gt/internal/config"
+	"github.com/nevinsm/gt/internal/events"
 	"github.com/nevinsm/gt/internal/hook"
 	"github.com/nevinsm/gt/internal/namepool"
 	"github.com/nevinsm/gt/internal/protocol"
@@ -74,7 +75,8 @@ type SlingOpts struct {
 // Sling assigns a work item to a polecat agent and starts its session.
 // Supports re-sling (crash recovery): if the item is already hooked to the
 // same agent, Sling recreates the worktree and session without error.
-func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionManager) (*SlingResult, error) {
+// The logger parameter is optional — if nil, no events are emitted.
+func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionManager, logger *events.Logger) (*SlingResult, error) {
 	// 0. Acquire per-work-item advisory lock to prevent double dispatch.
 	lock, err := AcquireWorkItemLock(opts.WorkItemID)
 	if err != nil {
@@ -219,6 +221,14 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 		return nil, fmt.Errorf("failed to start session: %w", err)
 	}
 
+	if logger != nil {
+		logger.Emit(events.EventSling, "gt", "operator", "both", map[string]string{
+			"work_item_id": opts.WorkItemID,
+			"agent":        agent.Name,
+			"rig":          opts.Rig,
+		})
+	}
+
 	return &SlingResult{
 		WorkItemID:  opts.WorkItemID,
 		AgentName:   agent.Name,
@@ -337,7 +347,8 @@ type DoneOpts struct {
 }
 
 // Done signals work completion: git operations, state updates, hook clear.
-func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionManager) (*DoneResult, error) {
+// The logger parameter is optional — if nil, no events are emitted.
+func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionManager, logger *events.Logger) (*DoneResult, error) {
 	agentID := opts.Rig + "/" + opts.AgentName
 	sessName := SessionName(opts.Rig, opts.AgentName)
 	worktreeDir := WorktreePath(opts.Rig, opts.AgentName)
@@ -362,7 +373,7 @@ func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionMana
 	// Detect conflict-resolution tasks and handle separately.
 	if item.HasLabel("conflict-resolution") {
 		return doneConflictResolution(opts, item, branchName, worktreeDir,
-			agentID, sessName, rigStore, townStore, mgr)
+			agentID, sessName, rigStore, townStore, mgr, logger)
 	}
 
 	// 2. Git operations in the worktree.
@@ -410,6 +421,15 @@ func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionMana
 		mgr.Stop(sessName, true)
 	}()
 
+	if logger != nil {
+		logger.Emit(events.EventDone, "gt", opts.AgentName, "both", map[string]string{
+			"work_item_id":  workItemID,
+			"agent":         opts.AgentName,
+			"branch":        branchName,
+			"merge_request": mrID,
+		})
+	}
+
 	return &DoneResult{
 		WorkItemID:     workItemID,
 		Title:          item.Title,
@@ -426,7 +446,7 @@ func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionMana
 // 3. Unblocks the original MR
 // 4. Closes the resolution work item
 func doneConflictResolution(opts DoneOpts, item *store.WorkItem, branchName, worktreeDir,
-	agentID, sessName string, rigStore RigStore, townStore TownStore, mgr SessionManager) (*DoneResult, error) {
+	agentID, sessName string, rigStore RigStore, townStore TownStore, mgr SessionManager, logger *events.Logger) (*DoneResult, error) {
 
 	// 1. Git operations: add, commit, force-push (branch was rebased).
 	addCmd := exec.Command("git", "-C", worktreeDir, "add", "-A")
@@ -476,6 +496,14 @@ func doneConflictResolution(opts DoneOpts, item *store.WorkItem, branchName, wor
 		time.Sleep(1 * time.Second)
 		mgr.Stop(sessName, true)
 	}()
+
+	if logger != nil {
+		logger.Emit(events.EventDone, "gt", opts.AgentName, "both", map[string]string{
+			"work_item_id": item.ID,
+			"agent":        opts.AgentName,
+			"branch":       branchName,
+		})
+	}
 
 	return &DoneResult{
 		WorkItemID:     item.ID,

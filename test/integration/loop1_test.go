@@ -44,7 +44,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 		WorkItemID: item1ID,
 		Rig:        "testrig",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling item 1: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 		WorkItemID: item2ID,
 		Rig:        "testrig",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling item 2: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestSupervisorSessionRestart(t *testing.T) {
 		WorkItemID: itemID,
 		Rig:        "testrig",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestMassDeathDegradation(t *testing.T) {
 			WorkItemID: itemID,
 			Rig:        "testrig",
 			SourceRepo: sourceRepo,
-		}, rigStore, townStore, mgr)
+		}, rigStore, townStore, mgr, nil)
 		if err != nil {
 			t.Fatalf("sling %d: %v", i, err)
 		}
@@ -401,7 +401,7 @@ func TestMassDeathDegradation(t *testing.T) {
 		WorkItemID: newItemID,
 		Rig:        "testrig",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling after degraded recovery: %v", err)
 	}
@@ -443,7 +443,7 @@ func TestGUPPRecovery(t *testing.T) {
 		WorkItemID: itemID,
 		Rig:        "testrig",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling: %v", err)
 	}
@@ -480,7 +480,7 @@ func TestGUPPRecovery(t *testing.T) {
 		Rig:        "testrig",
 		AgentName:  agentName,
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("re-sling: %v", err)
 	}
@@ -535,7 +535,7 @@ func TestStatusAccuracy(t *testing.T) {
 			WorkItemID: itemID,
 			Rig:        "testrig",
 			SourceRepo: sourceRepo,
-		}, rigStore, townStore, mgr)
+		}, rigStore, townStore, mgr, nil)
 		if err != nil {
 			t.Fatalf("sling %q: %v", title, err)
 		}
@@ -659,7 +659,7 @@ func TestNamePoolExhaustion(t *testing.T) {
 			WorkItemID: itemID,
 			Rig:        "testrig",
 			SourceRepo: sourceRepo,
-		}, rigStore, townStore, mgr)
+		}, rigStore, townStore, mgr, nil)
 		if err != nil {
 			t.Fatalf("sling %d: %v", i, err)
 		}
@@ -675,7 +675,7 @@ func TestNamePoolExhaustion(t *testing.T) {
 		WorkItemID: item3ID,
 		Rig:        "testrig",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr)
+	}, rigStore, townStore, mgr, nil)
 	if err == nil {
 		t.Fatal("expected error for exhausted name pool, got nil")
 	}

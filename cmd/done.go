@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nevinsm/gt/internal/config"
 	"github.com/nevinsm/gt/internal/dispatch"
+	"github.com/nevinsm/gt/internal/events"
 	"github.com/nevinsm/gt/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -49,11 +51,12 @@ var doneCmd = &cobra.Command{
 		defer townStore.Close()
 
 		mgr := dispatch.NewSessionManager()
+		logger := events.NewLogger(config.Home())
 
 		result, err := dispatch.Done(dispatch.DoneOpts{
 			Rig:       rig,
 			AgentName: agent,
-		}, rigStore, townStore, mgr)
+		}, rigStore, townStore, mgr, logger)
 		if err != nil {
 			return err
 		}
