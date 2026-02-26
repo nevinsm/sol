@@ -195,7 +195,7 @@ func TestSlingAutoAgent(t *testing.T) {
 	}
 }
 
-func TestSlingNoIdleAgents(t *testing.T) {
+func TestSlingAutoProvision(t *testing.T) {
 	rigStore, townStore := setupStores(t)
 	mgr := newMockSessionManager()
 
@@ -204,12 +204,94 @@ func TestSlingNoIdleAgents(t *testing.T) {
 		t.Fatalf("failed to create work item: %v", err)
 	}
 
-	if _, err := townStore.CreateAgent("Toast", "testrig", "polecat"); err != nil {
-		t.Fatalf("failed to create agent: %v", err)
+	// No agent exists — Sling should auto-provision from the name pool.
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	result, err := Sling(SlingOpts{
+		WorkItemID: itemID,
+		Rig:        "testrig",
+		SourceRepo: repoDir,
+	}, rigStore, townStore, mgr)
+
+	if err != nil {
+		t.Fatalf("Sling failed: %v", err)
 	}
-	if err := townStore.UpdateAgentState("testrig/Toast", "working", "gt-other"); err != nil {
-		t.Fatalf("failed to update agent: %v", err)
+
+	// First name in the default pool is "Toast".
+	if result.AgentName != "Toast" {
+		t.Errorf("expected auto-provisioned agent 'Toast', got %q", result.AgentName)
 	}
+
+	// Verify the agent was created in the store.
+	agent, err := townStore.GetAgent("testrig/Toast")
+	if err != nil {
+		t.Fatalf("failed to get auto-provisioned agent: %v", err)
+	}
+	if agent.State != "working" {
+		t.Errorf("expected agent state 'working', got %q", agent.State)
+	}
+	if agent.HookItem != itemID {
+		t.Errorf("expected agent hook_item %q, got %q", itemID, agent.HookItem)
+	}
+}
+
+func TestSlingAutoProvisionSkipsUsed(t *testing.T) {
+	rigStore, townStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create agents with the first 3 pool names and set them to "working".
+	poolNames := []string{"Toast", "Jasper", "Sage"}
+	for _, name := range poolNames {
+		if _, err := townStore.CreateAgent(name, "testrig", "polecat"); err != nil {
+			t.Fatalf("failed to create agent %q: %v", name, err)
+		}
+		if err := townStore.UpdateAgentState("testrig/"+name, "working", "gt-other"); err != nil {
+			t.Fatalf("failed to update agent %q: %v", name, err)
+		}
+	}
+
+	itemID, err := rigStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	result, err := Sling(SlingOpts{
+		WorkItemID: itemID,
+		Rig:        "testrig",
+		SourceRepo: repoDir,
+	}, rigStore, townStore, mgr)
+
+	if err != nil {
+		t.Fatalf("Sling failed: %v", err)
+	}
+
+	// 4th name in the default pool is "Copper".
+	if result.AgentName != "Copper" {
+		t.Errorf("expected auto-provisioned agent 'Copper' (4th in pool), got %q", result.AgentName)
+	}
+}
+
+func TestSlingFlockPreventsDoubleDispatch(t *testing.T) {
+	rigStore, townStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := rigStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	// Acquire the lock manually before calling Sling.
+	lock, err := AcquireWorkItemLock(itemID)
+	if err != nil {
+		t.Fatalf("failed to acquire lock: %v", err)
+	}
+	defer lock.Release()
 
 	_, err = Sling(SlingOpts{
 		WorkItemID: itemID,
@@ -218,10 +300,10 @@ func TestSlingNoIdleAgents(t *testing.T) {
 	}, rigStore, townStore, mgr)
 
 	if err == nil {
-		t.Fatal("expected error for no idle agents")
+		t.Fatal("expected contention error")
 	}
-	if !strings.Contains(err.Error(), "no idle agents") {
-		t.Errorf("expected 'no idle agents' error, got: %v", err)
+	if !strings.Contains(err.Error(), "being dispatched by another process") {
+		t.Errorf("expected contention error, got: %v", err)
 	}
 }
 

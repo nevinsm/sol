@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/gt/internal/config"
 	"github.com/nevinsm/gt/internal/hook"
+	"github.com/nevinsm/gt/internal/namepool"
 	"github.com/nevinsm/gt/internal/protocol"
 	"github.com/nevinsm/gt/internal/session"
 	"github.com/nevinsm/gt/internal/store"
@@ -34,6 +35,8 @@ type TownStore interface {
 	GetAgent(id string) (*store.Agent, error)
 	FindIdleAgent(rig string) (*store.Agent, error)
 	UpdateAgentState(id, state, hookItem string) error
+	ListAgents(rig string, state string) ([]store.Agent, error)
+	CreateAgent(name, rig, role string) (string, error)
 	Close() error
 }
 
@@ -67,6 +70,13 @@ type SlingOpts struct {
 // Supports re-sling (crash recovery): if the item is already hooked to the
 // same agent, Sling recreates the worktree and session without error.
 func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionManager) (*SlingResult, error) {
+	// 0. Acquire per-work-item advisory lock to prevent double dispatch.
+	lock, err := AcquireWorkItemLock(opts.WorkItemID)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Release()
+
 	// 1. Get work item.
 	item, err := rigStore.GetWorkItem(opts.WorkItemID)
 	if err != nil {
@@ -90,7 +100,11 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 			return nil, fmt.Errorf("failed to find idle agent for rig %q: %w", opts.Rig, err)
 		}
 		if agent == nil {
-			return nil, fmt.Errorf("no idle agents available for rig %q", opts.Rig)
+			// Auto-provision a new agent from the name pool.
+			agent, err = autoProvision(opts.Rig, townStore)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -205,6 +219,43 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 		AgentName:   agent.Name,
 		SessionName: sessName,
 		WorktreeDir: worktreeDir,
+	}, nil
+}
+
+// autoProvision creates a new agent from the name pool.
+func autoProvision(rig string, townStore TownStore) (*store.Agent, error) {
+	overridePath := filepath.Join(config.Home(), rig, "names.txt")
+	pool, err := namepool.Load(overridePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load name pool: %w", err)
+	}
+
+	agents, err := townStore.ListAgents(rig, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agents for rig %q: %w", rig, err)
+	}
+
+	usedNames := make([]string, len(agents))
+	for i, a := range agents {
+		usedNames[i] = a.Name
+	}
+
+	name, err := pool.AllocateName(usedNames)
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := townStore.CreateAgent(name, rig, "polecat")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create agent %q: %w", name, err)
+	}
+
+	return &store.Agent{
+		ID:    id,
+		Name:  name,
+		Rig:   rig,
+		Role:  "polecat",
+		State: "idle",
 	}, nil
 }
 

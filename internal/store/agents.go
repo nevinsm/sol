@@ -84,10 +84,15 @@ func (s *Store) UpdateAgentState(id, state, hookItem string) error {
 	return nil
 }
 
-// ListAgents returns agents for a rig, optionally filtered by state.
+// ListAgents returns agents, optionally filtered by rig and/or state.
+// When rig is empty, agents across all rigs are returned.
 func (s *Store) ListAgents(rig string, state string) ([]Agent, error) {
-	query := `SELECT id, name, rig, role, state, hook_item, created_at, updated_at FROM agents WHERE rig = ?`
-	args := []interface{}{rig}
+	query := `SELECT id, name, rig, role, state, hook_item, created_at, updated_at FROM agents WHERE 1=1`
+	var args []interface{}
+	if rig != "" {
+		query += ` AND rig = ?`
+		args = append(args, rig)
+	}
 	if state != "" {
 		query += ` AND state = ?`
 		args = append(args, state)
