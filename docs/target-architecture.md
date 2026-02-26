@@ -3,6 +3,10 @@
 > Informed by Gastown as a requirements document, Unix philosophy as a
 > stability guide, and production-readiness as the primary constraint.
 
+**Decision records:** Architectural decisions that diverge from this
+document are recorded in [`docs/decisions/`](decisions/) using lightweight
+ADR format.
+
 ---
 
 ## 1. Design Principles (Inherited and New)
