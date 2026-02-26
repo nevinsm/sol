@@ -250,11 +250,15 @@ working.
 
 ### Refinery Package
 
-Modify `internal/refinery/refinery.go` to accept an optional logger:
+> **Note:** The refinery is now a Claude session backed by Go CLI
+> subcommands (see [ADR-0005](../../decisions/0005-refinery-claude-session.md)).
+> The Go CLI subcommands live in `cmd/refinery.go` and call into
+> `internal/refinery/`. Add event logging to the Go subcommand
+> implementations that handle state transitions:
 
-- On merge claimed: `EventMergeClaimed`
-- On merge success: `EventMerged`
-- On merge failure: `EventMergeFailed`
+- On merge claimed (`claim`): `EventMergeClaimed`
+- On merge success (`mark-merged`): `EventMerged`
+- On merge failure (`mark-failed`): `EventMergeFailed`
 
 ### Supervisor Package
 

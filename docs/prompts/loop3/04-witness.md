@@ -499,7 +499,10 @@ Extend the supervisor to handle witness agents.
 func respawnCommand(agent store.Agent) string {
     switch agent.Role {
     case "refinery":
-        return fmt.Sprintf("gt refinery run %s", agent.Rig)
+        // Refinery is a Claude session (ADR-0005). Start it the same
+        // way as a polecat — Claude handles the patrol loop using Go
+        // CLI subcommands as tools.
+        return "claude --dangerously-skip-permissions"
     case "witness":
         return fmt.Sprintf("gt witness run %s", agent.Rig)
     default:

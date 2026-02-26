@@ -108,7 +108,7 @@ acceptance tests.
 | Supervisor (3.6) | PID file, session registry | Heartbeat loop state | Restart supervisor (systemd/launchd) | <10s |
 | Deacon (3.7) | Heartbeat file | Patrol cycle state | Supervisor restarts, re-patrols | <3 min |
 | Witness (3.8) | Patrol state file | Current patrol cycle | Supervisor restarts, re-patrols | <3 min |
-| Refinery (3.9) | `merge_requests` table, slot lock | In-progress merge | TTL expiry releases claimed MR | <30 min |
+| Refinery (3.9) | `merge_requests` table, slot lock | In-progress merge | Supervisor restarts Claude session; TTL expiry releases claimed MR | <30 min |
 | Polecat (3.10) | Hook file, worktree, identity | Session memory | `gt prime` re-injects context (GUPP) | <30s |
 | Event Feed (3.11) | JSONL files | Curator buffer | Curator restarts, tails from last position | <10s |
 
@@ -135,7 +135,7 @@ capacity rather than halting entirely.
 | SQLite store | Agents with hooked work continue executing (hook is a local file). New dispatch fails. Pending messages unavailable. |
 | Supervisor | Running agents continue. No crash recovery or new spawns. |
 | Witness | Polecats work normally. Completed work waits in queue. |
-| Refinery | Work accumulates in merge queue. No merges land. |
+| Refinery | Work accumulates in merge queue. No merges land. Go fallback (`gt refinery run`) available without Claude API. |
 | Network/git remote | Agents work locally. `gt done` push phase retries. |
 
 The key insight: **an agent with work on its hook and a local worktree needs
@@ -926,32 +926,57 @@ the witness logs a warning and continues its patrol. This keeps AI costs low
 (calls only when heuristic triggers) while catching stuck agents that a pure
 heuristic would miss.
 
-### 3.9 Refinery (Go Process, Per-Rig)
+### 3.9 Refinery (Claude Session + Go Toolbox, Per-Rig)
+
+> **See [ADR-0005](decisions/0005-refinery-claude-session.md)** — supersedes
+> the original pure Go design (ADR-0002).
 
 **What it does:** Merge queue processor that claims, validates, and merges
-completed work into the target branch.
+completed work into the target branch. Claude runs the patrol loop and
+makes judgment calls (conflict resolution, test failure attribution). Go
+CLI subcommands provide the mechanical toolbox.
 
-**Dependencies:** Store, mail, git, session manager.
+**Dependencies:** Store, mail, git, session manager, Claude API (degraded
+fallback via `gt refinery run` without API).
 
 **What depends on it:** Nothing directly — it is a terminal consumer of
 the merge pipeline.
 
-**Failure mode:** If the refinery crashes, the supervisor restarts it. Claimed
-merge requests with expired TTL (30 min) are automatically released for
-re-claim. No merges land while down; the queue accumulates.
+**Failure mode:** If the refinery session crashes, the supervisor restarts
+it. Claimed merge requests with expired TTL (30 min) are automatically
+released for re-claim. No merges land while down; the queue accumulates.
 
-**State:** Merge queue in rig SQLite DB (`merge_requests` table). Merge slot
-lock file (`~/gt/{rig}/refinery/.merge-slot.lock`).
+**State:** Merge queue in rig SQLite DB (`merge_requests` table, including
+`blocked_by` column for conflict-resolution tracking). Merge slot lock
+file (`~/gt/{rig}/refinery/.merge-slot.lock`).
+
+**Claude handles:**
+- The patrol loop (scan queue, claim, rebase, test, push, repeat)
+- Rebase execution (where conflicts surface)
+- Conflict judgment: trivial (resolve directly) vs complex (delegate to
+  polecat via `gt refinery create-resolution`)
+- Test failure attribution (branch vs pre-existing)
+- Wait/retry decisions
+
+**Go CLI subcommands:**
+- `gt refinery ready/blocked/claim/release` — queue management
+- `gt refinery run-gates` — quality gate execution
+- `gt refinery push` — merge slot acquisition and push
+- `gt refinery mark-merged/mark-failed` — state updates
+- `gt refinery create-resolution` — conflict delegation
+- `gt refinery check-unblocked` — resolution tracking
 
 **Merge pipeline:**
 1. Poll for `phase=ready` merge requests, sorted by priority + age
 2. Claim (set `phase=claimed`, `claimed_by`, `claimed_at`)
 3. Rebase onto latest target branch
-4. Run quality gates (test, build, lint — configurable per rig)
-5. If conflict → send REWORK_REQUEST to witness
-6. If gates fail → send MERGE_FAILED to witness
-7. Merge to target branch → send MERGED to witness
-8. If convoy-eligible → send CONVOY_NEEDS_FEEDING to deacon
+4. If trivial conflict → resolve directly
+5. If complex conflict → delegate to polecat via `create-resolution`,
+   set `phase=blocked`
+6. Run quality gates (test, build, lint — configurable per rig)
+7. If gates fail → attribute failure; retry or mark failed
+8. Merge to target branch → send MERGED to witness
+9. If convoy-eligible → send CONVOY_NEEDS_FEEDING to deacon
 
 ### 3.10 Polecat (Worker Agent)
 
@@ -1230,28 +1255,31 @@ agent validates and merges work into the target branch. Quality gates (tests)
 run before merge.
 
 **What it requires:**
-- Merge request records in store (merge_requests table)
-- Refinery agent (long-running, polls merge queue)
+- Merge request records in store (merge_requests table, including `blocked_by`)
+- Refinery as Claude session + Go CLI toolbox (see [ADR-0005](decisions/0005-refinery-claude-session.md))
 - Merge slot serialization (file lock)
 - Quality gate execution (configurable test/build commands)
 - `gt done` extended to submit merge request
+- Conflict-resolution delegation (create work items for complex conflicts)
 
 **What it defers:** Witness, mail system, nudge queue (introduced in Loop 3
-when witnesses need notification), convoys, workflows, deacon, events,
-conflict resolution.
+when witnesses need notification), convoys, workflows, deacon, events.
 
 **Definition of done:**
 1. Polecat calls `gt done` → merge request created in store with `phase=ready`
-2. Refinery polls `merge_requests` table, claims the MR, rebases onto main, runs `go test ./...`
-3. Tests pass → refinery merges to main, updates MR and work item status in DB
-4. Tests fail → refinery updates MR status, MR stays in queue for retry
-5. Operator can `gt refinery queue myrig` to see pending merges
-6. Only one merge in progress at a time per rig (slot lock)
-7. Operator can `gt refinery attach myrig` to watch the refinery work
+2. Refinery Claude session patrols `merge_requests` table, claims the MR, rebases onto main, runs quality gates
+3. Trivial conflicts → refinery resolves directly during rebase
+4. Complex conflicts → refinery delegates to polecat via `create-resolution`, MR blocked until resolved
+5. Tests pass → refinery merges to main, updates MR and work item status in DB
+6. Tests fail → refinery attributes failure (branch vs pre-existing), retries or marks failed
+7. Operator can `gt refinery queue myrig` to see pending merges
+8. Only one merge in progress at a time per rig (slot lock)
+9. Operator can `gt refinery attach myrig` to watch the refinery work
 
 **Key risks:**
-- Rebase conflicts during merge (deferred: conflict resolution in Loop 4)
+- Non-deterministic conflict resolution (mitigated by "when in doubt, delegate" rule)
 - Flaky tests causing repeated merge failures
+- API cost proportional to queue activity (mitigated: Go fallback available)
 
 ### Loop 3: Witness, Health Monitoring, and Observability
 
@@ -1321,7 +1349,7 @@ tracking for batches of related work items. Conflict resolution in merges.
 3. Workflow state survives session crash and restart
 4. `gt convoy create "auth-feature" item1 item2 item3` tracks batch
 5. As items merge, convoy auto-checks readiness
-6. Merge conflict → refinery sends REWORK_REQUEST → witness assigns polecat
+6. Complex merge conflict → refinery delegates via `create-resolution` → polecat resolves → `done --force-with-lease` unblocks MR
 7. `gt workflow status` shows progress through multi-step work
 
 **Key risks:**
