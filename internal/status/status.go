@@ -12,7 +12,9 @@ import (
 type RigStatus struct {
 	Rig        string         `json:"rig"`
 	Supervisor SupervisorInfo `json:"supervisor"`
+	Refinery   RefineryInfo   `json:"refinery"`
 	Agents     []AgentStatus  `json:"agents"`
+	MergeQueue MergeQueueInfo `json:"merge_queue"`
 	Summary    Summary        `json:"summary"`
 }
 
@@ -20,6 +22,21 @@ type RigStatus struct {
 type SupervisorInfo struct {
 	Running bool `json:"running"`
 	PID     int  `json:"pid,omitempty"`
+}
+
+// RefineryInfo holds refinery process state.
+type RefineryInfo struct {
+	Running     bool   `json:"running"`
+	SessionName string `json:"session_name,omitempty"`
+}
+
+// MergeQueueInfo holds merge queue summary.
+type MergeQueueInfo struct {
+	Ready   int `json:"ready"`
+	Claimed int `json:"claimed"`
+	Failed  int `json:"failed"`
+	Merged  int `json:"merged"`
+	Total   int `json:"total"`
 }
 
 // AgentStatus holds the combined state of one agent.
@@ -44,6 +61,8 @@ type Summary struct {
 // 0 = healthy (all sessions alive or idle)
 // 1 = unhealthy (at least one dead session)
 // 2 = degraded (supervisor not running)
+// Refinery state does not affect health — an absent refinery just means
+// merges won't happen, the system is still operational.
 func (r *RigStatus) Health() int {
 	if !r.Supervisor.Running {
 		return 2
@@ -83,8 +102,14 @@ type TownStore interface {
 	ListAgents(rig string, state string) ([]store.Agent, error)
 }
 
+// MergeQueueStore abstracts merge request queries for testing.
+type MergeQueueStore interface {
+	ListMergeRequests(phase string) ([]store.MergeRequest, error)
+}
+
 // Gather collects runtime state for a rig.
-func Gather(rig string, townStore TownStore, rigStore RigStore, checker SessionChecker) (*RigStatus, error) {
+func Gather(rig string, townStore TownStore, rigStore RigStore,
+	mqStore MergeQueueStore, checker SessionChecker) (*RigStatus, error) {
 	result := &RigStatus{Rig: rig}
 
 	// 1. Check supervisor (town-level).
@@ -96,13 +121,19 @@ func Gather(rig string, townStore TownStore, rigStore RigStore, checker SessionC
 		result.Supervisor = SupervisorInfo{Running: true, PID: pid}
 	}
 
-	// 2. List all agents for this rig.
+	// 2. Check refinery session.
+	refSessName := dispatch.SessionName(rig, "refinery")
+	if checker.Exists(refSessName) {
+		result.Refinery = RefineryInfo{Running: true, SessionName: refSessName}
+	}
+
+	// 3. List all agents for this rig.
 	agents, err := townStore.ListAgents(rig, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	// 3. Build agent statuses.
+	// 4. Build agent statuses.
 	for _, agent := range agents {
 		as := AgentStatus{
 			Name:  agent.Name,
@@ -127,7 +158,7 @@ func Gather(rig string, townStore TownStore, rigStore RigStore, checker SessionC
 		result.Agents = append(result.Agents, as)
 	}
 
-	// 4. Compute summary counts.
+	// 5. Compute summary counts.
 	for _, as := range result.Agents {
 		result.Summary.Total++
 		switch as.State {
@@ -140,6 +171,25 @@ func Gather(rig string, townStore TownStore, rigStore RigStore, checker SessionC
 			result.Summary.Idle++
 		case "stalled":
 			result.Summary.Stalled++
+		}
+	}
+
+	// 6. Gather merge queue info.
+	mrs, err := mqStore.ListMergeRequests("")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list merge requests: %w", err)
+	}
+	for _, mr := range mrs {
+		result.MergeQueue.Total++
+		switch mr.Phase {
+		case "ready":
+			result.MergeQueue.Ready++
+		case "claimed":
+			result.MergeQueue.Claimed++
+		case "failed":
+			result.MergeQueue.Failed++
+		case "merged":
+			result.MergeQueue.Merged++
 		}
 	}
 

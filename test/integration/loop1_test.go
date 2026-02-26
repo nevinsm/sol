@@ -547,7 +547,7 @@ func TestStatusAccuracy(t *testing.T) {
 	exec.Command("tmux", "kill-session", "-t", deadAgent.SessionName).Run()
 
 	// Run status.Gather().
-	rs, err := status.Gather("testrig", townStore, rigStore, mgr)
+	rs, err := status.Gather("testrig", townStore, rigStore, rigStore, mgr)
 	if err != nil {
 		t.Fatalf("status.Gather: %v", err)
 	}
@@ -611,7 +611,7 @@ func TestStatusAccuracy(t *testing.T) {
 	}
 
 	// Run status.Gather() again.
-	rs2, err := status.Gather("testrig", townStore, rigStore, mgr)
+	rs2, err := status.Gather("testrig", townStore, rigStore, rigStore, mgr)
 	if err != nil {
 		t.Fatalf("status.Gather after supervisor: %v", err)
 	}

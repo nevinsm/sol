@@ -53,6 +53,32 @@ func (m *mockRigStore) GetWorkItem(id string) (*store.WorkItem, error) {
 	return item, nil
 }
 
+type mockMergeQueueStore struct {
+	mrs []store.MergeRequest
+	err error
+}
+
+func (m *mockMergeQueueStore) ListMergeRequests(phase string) ([]store.MergeRequest, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if phase == "" {
+		return m.mrs, nil
+	}
+	var result []store.MergeRequest
+	for _, mr := range m.mrs {
+		if mr.Phase == phase {
+			result = append(result, mr)
+		}
+	}
+	return result, nil
+}
+
+// emptyMQStore returns a mock merge queue store with no items.
+func emptyMQStore() *mockMergeQueueStore {
+	return &mockMergeQueueStore{}
+}
+
 // writeSupervisorPID writes a PID file for testing. Returns cleanup func.
 func writeSupervisorPID(t *testing.T, pid int) func() {
 	t.Helper()
@@ -116,7 +142,7 @@ func TestGatherHealthy(t *testing.T) {
 		},
 	}
 
-	result, err := Gather("myrig", town, rig, checker)
+	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -158,7 +184,7 @@ func TestGatherUnhealthy(t *testing.T) {
 		},
 	}
 
-	result, err := Gather("myrig", town, rig, checker)
+	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -192,7 +218,7 @@ func TestGatherDegraded(t *testing.T) {
 		alive: map[string]bool{"gt-myrig-Toast": true},
 	}
 
-	result, err := Gather("myrig", town, rig, checker)
+	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -216,7 +242,7 @@ func TestGatherNoAgents(t *testing.T) {
 	rig := &mockRigStore{items: nil}
 	checker := &mockChecker{alive: nil}
 
-	result, err := Gather("myrig", town, rig, checker)
+	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -240,7 +266,7 @@ func TestGatherNoAgentsDegraded(t *testing.T) {
 	rig := &mockRigStore{items: nil}
 	checker := &mockChecker{alive: nil}
 
-	result, err := Gather("myrig", town, rig, checker)
+	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -274,7 +300,7 @@ func TestGatherWithHookedWork(t *testing.T) {
 		alive: map[string]bool{"gt-myrig-Toast": true},
 	}
 
-	result, err := Gather("myrig", town, rig, checker)
+	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -308,7 +334,7 @@ func TestGatherMissingWorkItem(t *testing.T) {
 		alive: map[string]bool{"gt-myrig-Toast": true},
 	}
 
-	result, err := Gather("myrig", town, rig, checker)
+	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v (should not fail on missing work item)", err)
 	}
@@ -353,7 +379,7 @@ func TestGatherMixedStates(t *testing.T) {
 		},
 	}
 
-	result, err := Gather("myrig", town, rig, checker)
+	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -425,5 +451,131 @@ func TestHealthExitCodes(t *testing.T) {
 				t.Errorf("Health() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGatherWithRefinery(t *testing.T) {
+	cleanup := setupTestHome(t)
+	defer cleanup()
+
+	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	defer pidCleanup()
+
+	town := &mockTownStore{agents: nil}
+	rig := &mockRigStore{items: nil}
+	checker := &mockChecker{
+		alive: map[string]bool{
+			"gt-myrig-refinery": true, // refinery session alive
+		},
+	}
+
+	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if !result.Refinery.Running {
+		t.Error("Refinery.Running = false, want true")
+	}
+	if result.Refinery.SessionName != "gt-myrig-refinery" {
+		t.Errorf("Refinery.SessionName = %q, want %q", result.Refinery.SessionName, "gt-myrig-refinery")
+	}
+}
+
+func TestGatherWithoutRefinery(t *testing.T) {
+	cleanup := setupTestHome(t)
+	defer cleanup()
+
+	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	defer pidCleanup()
+
+	town := &mockTownStore{agents: nil}
+	rig := &mockRigStore{items: nil}
+	checker := &mockChecker{alive: nil} // refinery session not alive
+
+	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if result.Refinery.Running {
+		t.Error("Refinery.Running = true, want false")
+	}
+	if result.Refinery.SessionName != "" {
+		t.Errorf("Refinery.SessionName = %q, want empty", result.Refinery.SessionName)
+	}
+}
+
+func TestGatherMergeQueue(t *testing.T) {
+	cleanup := setupTestHome(t)
+	defer cleanup()
+
+	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	defer pidCleanup()
+
+	town := &mockTownStore{agents: nil}
+	rig := &mockRigStore{items: nil}
+	checker := &mockChecker{alive: nil}
+
+	mqStore := &mockMergeQueueStore{
+		mrs: []store.MergeRequest{
+			{ID: "mr-11111111", Phase: "ready"},
+			{ID: "mr-22222222", Phase: "ready"},
+			{ID: "mr-33333333", Phase: "claimed"},
+		},
+	}
+
+	result, err := Gather("myrig", town, rig, mqStore, checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if result.MergeQueue.Total != 3 {
+		t.Errorf("MergeQueue.Total = %d, want 3", result.MergeQueue.Total)
+	}
+	if result.MergeQueue.Ready != 2 {
+		t.Errorf("MergeQueue.Ready = %d, want 2", result.MergeQueue.Ready)
+	}
+	if result.MergeQueue.Claimed != 1 {
+		t.Errorf("MergeQueue.Claimed = %d, want 1", result.MergeQueue.Claimed)
+	}
+	if result.MergeQueue.Failed != 0 {
+		t.Errorf("MergeQueue.Failed = %d, want 0", result.MergeQueue.Failed)
+	}
+	if result.MergeQueue.Merged != 0 {
+		t.Errorf("MergeQueue.Merged = %d, want 0", result.MergeQueue.Merged)
+	}
+}
+
+func TestGatherMergeQueueEmpty(t *testing.T) {
+	cleanup := setupTestHome(t)
+	defer cleanup()
+
+	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	defer pidCleanup()
+
+	town := &mockTownStore{agents: nil}
+	rig := &mockRigStore{items: nil}
+	checker := &mockChecker{alive: nil}
+
+	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if result.MergeQueue.Total != 0 {
+		t.Errorf("MergeQueue.Total = %d, want 0", result.MergeQueue.Total)
+	}
+	if result.MergeQueue.Ready != 0 {
+		t.Errorf("MergeQueue.Ready = %d, want 0", result.MergeQueue.Ready)
+	}
+	if result.MergeQueue.Claimed != 0 {
+		t.Errorf("MergeQueue.Claimed = %d, want 0", result.MergeQueue.Claimed)
+	}
+	if result.MergeQueue.Failed != 0 {
+		t.Errorf("MergeQueue.Failed = %d, want 0", result.MergeQueue.Failed)
+	}
+	if result.MergeQueue.Merged != 0 {
+		t.Errorf("MergeQueue.Merged = %d, want 0", result.MergeQueue.Merged)
 	}
 }

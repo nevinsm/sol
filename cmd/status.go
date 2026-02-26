@@ -38,7 +38,8 @@ var statusCmd = &cobra.Command{
 
 		mgr := session.New()
 
-		result, err := status.Gather(rig, townStore, rigStore, mgr)
+		// rigStore satisfies both RigStore and MergeQueueStore.
+		result, err := status.Gather(rig, townStore, rigStore, rigStore, mgr)
 		if err != nil {
 			return err
 		}
@@ -68,35 +69,48 @@ func printStatus(rs *status.RigStatus) {
 		fmt.Println("Supervisor: not running")
 	}
 
+	if rs.Refinery.Running {
+		fmt.Printf("Refinery: running (%s)\n", rs.Refinery.SessionName)
+	} else {
+		fmt.Println("Refinery: not running")
+	}
+
 	fmt.Println()
 
 	if len(rs.Agents) == 0 {
 		fmt.Println("No agents registered.")
-		return
-	}
-
-	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "AGENT\tSTATE\tSESSION\tWORK\n")
-	for _, a := range rs.Agents {
-		sess := "-"
-		if a.State == "working" || a.State == "stalled" {
-			if a.SessionAlive {
-				sess = "alive"
-			} else {
-				sess = "dead!"
+	} else {
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintf(tw, "AGENT\tSTATE\tSESSION\tWORK\n")
+		for _, a := range rs.Agents {
+			sess := "-"
+			if a.State == "working" || a.State == "stalled" {
+				if a.SessionAlive {
+					sess = "alive"
+				} else {
+					sess = "dead!"
+				}
 			}
-		}
 
-		work := "-"
-		if a.HookItem != "" {
-			work = fmt.Sprintf("%s: %s", a.HookItem, a.WorkTitle)
-		}
+			work := "-"
+			if a.HookItem != "" {
+				work = fmt.Sprintf("%s: %s", a.HookItem, a.WorkTitle)
+			}
 
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", a.Name, a.State, sess, work)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", a.Name, a.State, sess, work)
+		}
+		tw.Flush()
+		fmt.Println()
 	}
-	tw.Flush()
 
-	fmt.Println()
+	// Merge queue line.
+	mq := rs.MergeQueue
+	if mq.Total == 0 {
+		fmt.Println("Merge Queue: empty")
+	} else {
+		fmt.Printf("Merge Queue: %d ready, %d in progress, %d failed\n",
+			mq.Ready, mq.Claimed, mq.Failed)
+	}
 
 	// Summary line.
 	parts := fmt.Sprintf("%d working, %d idle", rs.Summary.Working, rs.Summary.Idle)
