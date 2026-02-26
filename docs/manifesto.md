@@ -141,9 +141,10 @@ every component, every interface, every failure mode. Then decompose it into
 incremental build loops where each loop produces a working system.
 
 **Each loop is a working system.** Not a half-built foundation waiting for the
-next loop to become useful. Loop 1 dispatches work to an agent and the agent
-executes it. Loop 2 adds supervision. Loop 3 adds merge queuing. Each loop can
-be used, tested, and validated independently.
+next loop to become useful. Loop 0 dispatches work to an agent and the agent
+executes it. Loop 1 adds multi-agent supervision. Loop 2 adds merge queuing.
+Loop 3 adds health monitoring and observability. Each loop can be used, tested,
+and validated independently.
 
 **Never throw away work.** Each loop builds on the previous. No "we'll rewrite
 this properly later." If it's built, it stays built. This is how stable systems

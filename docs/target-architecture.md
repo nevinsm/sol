@@ -353,7 +353,8 @@ JSON state files for progress. Topological sort for dependency resolution.
      │     │     │     │    │    │
      ▼     ▼     ▼     ▼    ▼    ▼
    Wit.  Ref.  Wit.  Dogs  Stale  Stranded
-   (rig1)(rig1)(rig2)       hooks  convoys
+  (Go+AI)(Go) (Go+AI)      hooks  convoys
+  (rig1)(rig1)(rig2)
      │
      ├── Polecat sessions (×M per rig)
      └── Crew sessions (×K per rig, human-managed)
@@ -872,34 +873,56 @@ wait (dispatched on restart). No data loss.
 4. Process lifecycle requests (cycle, restart, shutdown from operator mail).
 5. Run health checks on agents with low activity (complement supervisor's process-level checks with behavior-level assessment).
 
-### 3.8 Witness (AI Agent, Per-Rig)
+### 3.8 Witness (Go Process with AI Call-outs, Per-Rig)
 
-**What it does:** Per-rig health monitor that patrols polecats, verifies work
-completion, and routes completed work to the refinery.
+**What it does:** Per-rig health monitor that patrols polecats, detects
+stalled and zombie sessions, triggers recovery, and uses targeted AI
+assessment to evaluate potentially stuck agents. The witness is primarily a
+Go process for speed and determinism — the patrol loop, state detection,
+respawn logic, and zombie cleanup are all deterministic code. AI is used
+only for judgment calls: when the heuristic detects no progress, the witness
+shells out to `claude -p` for a one-off assessment of the agent's session
+output.
 
-**Dependencies:** Store, mail, session manager, tmux.
+**Dependencies:** Store, mail, session manager, tmux, `claude` CLI (for
+AI-assisted assessment).
 
 **What depends on it:** Polecats (for crash recovery, stuck detection).
-Refinery (receives MERGE_READY messages).
 
 **Failure mode:** If the witness crashes, the supervisor restarts it. While
-down: completed polecat work waits for verification, crashed polecats are not
-respawned (supervisor handles session restarts, but witness handles
-work-level recovery). No data loss.
+down: crashed polecats are not respawned at the work level (supervisor
+handles session restarts, but witness handles work-level recovery like
+returning work to the open pool after max respawns). In-memory state
+(respawn counts, output hashes) is lost on crash and re-derived on restart.
+No data loss.
 
-**State:** Patrol state file (`~/gt/{rig}/witness/.patrol-state.json`).
+**State:** In-memory respawn counts and tmux output hashes (lost on crash,
+re-derived). Agent record in town.db (`{rig}/witness`).
 
 **Patrol cycle:**
-1. Scan polecat directories
+1. List polecat agents in rig (filter by role=polecat)
 2. For each polecat:
-   a. Check tmux session health
-   b. If session dead + work hooked → mark stalled, attempt respawn (max 2)
-   c. If session alive + no progress for threshold → nudge
-   d. If explicitly stuck → escalate
-3. Process POLECAT_DONE messages: verify clean git state, send MERGE_READY
-4. Process MERGED/MERGE_FAILED messages: update work item status
+   a. Check tmux session liveness
+   b. If session dead + work hooked → mark stalled, attempt respawn (max 2),
+      then return work to open if max exceeded
+   c. If session alive + working: capture tmux output, hash it, compare with
+      previous patrol's hash. If unchanged → trigger AI assessment via
+      `claude -p`. Assessment determines: progressing (no action), stuck
+      (nudge with specific guidance), or stuck beyond help (escalate to
+      operator). Low-confidence assessments are ignored.
+   d. If idle + session alive + no hook → zombie, clean up session
+3. Emit patrol summary event (healthy/stalled/zombie/assessed/nudged counts)
 
-### 3.9 Refinery (AI Agent, Per-Rig)
+**AI assessment details:** The witness captures the last ~80 lines of tmux
+output and sends it to `claude -p` with a structured prompt requesting JSON
+assessment. The assessment command is configurable (`AssessCommand` in
+witness config) for operators who want to use a different model or tool.
+Assessment failure (timeout, parse error, AI unavailable) is non-blocking —
+the witness logs a warning and continues its patrol. This keeps AI costs low
+(calls only when heuristic triggers) while catching stuck agents that a pure
+heuristic would miss.
+
+### 3.9 Refinery (Go Process, Per-Rig)
 
 **What it does:** Merge queue processor that claims, validates, and merges
 completed work into the target branch.
@@ -1226,39 +1249,51 @@ conflict resolution.
 - Rebase conflicts during merge (deferred: conflict resolution in Loop 4)
 - Flaky tests causing repeated merge failures
 
-### Loop 3: Witness and Health Monitoring
+### Loop 3: Witness, Health Monitoring, and Observability
 
-**What it adds:** Per-rig witness agents that monitor polecats, detect
-stalled/zombie sessions, and route completed work to the refinery. The event
-feed for observability. This is where inter-agent communication first becomes
-necessary — the witness needs to send MERGE_READY to the refinery, and the
-refinery needs to send MERGED/MERGE_FAILED back.
+**What it adds:** Per-rig witness process that monitors polecats, detects
+stalled/zombie sessions, and uses AI-assisted assessment for stuck agent
+detection. Mail system for inter-agent communication. Event feed and curator
+for observability. This is where inter-agent communication first becomes
+necessary — protocol messages (POLECAT_DONE, MERGE_READY, RECOVERY_NEEDED)
+flow through the mail system.
 
 **What it requires:**
-- Witness agent (long-running, per-rig)
-- Polecat state detection (session liveness + hook state + activity)
+- Mail system (SQLite-backed `messages` table in town.db + protocol message
+  helpers) — new infrastructure, first loop with inter-agent communication
+- Event feed (append-only JSONL with cross-process flock)
+- Curator process (dedup, aggregation, feed truncation)
+- Witness process (Go process with AI call-outs, long-running, per-rig)
+- Polecat state detection (session liveness + hook state + tmux output hashing)
 - Stalled/zombie detection and recovery
-- Mail system (SQLite-backed messages + nudge queue for delivery) — new
-  infrastructure, first loop that requires inter-agent communication
-- POLECAT_DONE → verify → MERGE_READY pipeline
-- Event feed (raw JSONL + curator)
-- `gt feed` command
+- AI-assisted assessment via `claude -p` when tmux output unchanged between
+  patrols — targeted AI calls for judgment, not a full AI agent session
+- Event instrumentation of existing operations (sling, done, refinery,
+  supervisor)
+- `gt mail`, `gt feed`, `gt curator`, `gt witness` commands
 
-**What it defers:** Convoys, workflows, deacon, escalations, conflict resolution.
+**What it defers:** Convoys, workflows, deacon, nudge queue (real-time
+delivery to agents at turn boundaries), escalation CRUD, conflict resolution.
 
 **Definition of done:**
 1. Witness patrols polecats every 3 minutes
 2. Dead polecat with hooked work → witness triggers respawn (max 2 attempts)
 3. After 2 failed respawns → work item returned to open status
-4. Polecat calls `gt done` → witness verifies clean git state → sends MERGE_READY
-5. `gt feed --follow` shows real-time activity stream
-6. `gt feed --type=patrol` shows witness patrol activity
-7. Zombie polecat (tmux session with no worktree) → witness cleans up
+4. Working polecat with unchanged tmux output → AI assessment via `claude -p`
+5. AI assessment returns "stuck" with high confidence → nudge injected into session
+6. AI assessment failure → patrol continues (non-blocking, best-effort)
+7. Zombie polecat (live session + idle + no hook) → session cleaned up
+8. `gt feed --follow` shows real-time activity stream
+9. `gt feed --type=patrol` shows witness patrol activity
+10. Curator deduplicates and aggregates events in curated feed
+11. `gt mail send/inbox/read/ack/check` work for inter-agent messaging
+12. Existing operations (sling, done, refinery, supervisor) emit events
 
 **Key risks:**
+- AI assessment cost at scale (mitigated: only fires when heuristic triggers)
+- AI assessment quality (mitigated: low confidence → no action)
 - Witness patrol timing may conflict with polecat work (nudging a working agent)
-- Stalled detection heuristics need tuning (what counts as "no progress"?)
-- Event feed volume may be high with 30 agents
+- Event feed volume may be high with 30 agents (mitigated: curator aggregation)
 
 ### Loop 4: Workflows and Convoys
 
