@@ -494,3 +494,110 @@ func TestRespawnMissingWorktree(t *testing.T) {
 		t.Errorf("agent state = %q, want %q for missing worktree", agent.State, "idle")
 	}
 }
+
+func TestRespawnRefinery(t *testing.T) {
+	townStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create a refinery agent in working state.
+	townStore.CreateAgent("refinery", "myrig", "refinery")
+	townStore.UpdateAgentState("myrig/refinery", "working", "")
+
+	// Create the refinery worktree directory.
+	worktreeDir := filepath.Join(os.Getenv("GT_HOME"), "myrig", "refinery", "rig")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Session is dead (not in mock).
+	sup := New(cfg, townStore, mock, logger)
+	sup.heartbeat()
+
+	// Should have started a session.
+	started := mock.GetStarted()
+	if len(started) != 1 {
+		t.Fatalf("expected 1 session started, got %d", len(started))
+	}
+	if started[0] != "gt-myrig-refinery" {
+		t.Errorf("started session = %q, want %q", started[0], "gt-myrig-refinery")
+	}
+
+	// Verify the session was started with the right command by checking agent is working.
+	agent, err := townStore.GetAgent("myrig/refinery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.State != "working" {
+		t.Errorf("agent state = %q, want %q", agent.State, "working")
+	}
+}
+
+func TestRespawnPolecatUnchanged(t *testing.T) {
+	townStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create a polecat agent in working state.
+	townStore.CreateAgent("Toast", "myrig", "polecat")
+	townStore.UpdateAgentState("myrig/Toast", "working", "gt-abc12345")
+
+	// Create the polecat worktree directory.
+	worktreeDir := filepath.Join(os.Getenv("GT_HOME"), "myrig", "polecats", "Toast", "rig")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, townStore, mock, logger)
+	sup.heartbeat()
+
+	// Should have started with polecat session name.
+	started := mock.GetStarted()
+	if len(started) != 1 {
+		t.Fatalf("expected 1 session started, got %d", len(started))
+	}
+	if started[0] != "gt-myrig-Toast" {
+		t.Errorf("started session = %q, want %q", started[0], "gt-myrig-Toast")
+	}
+
+	agent, err := townStore.GetAgent("myrig/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.State != "working" {
+		t.Errorf("agent state = %q, want %q", agent.State, "working")
+	}
+}
+
+func TestRespawnCommandByRole(t *testing.T) {
+	refineryAgent := store.Agent{Name: "refinery", Rig: "myrig", Role: "refinery"}
+	polecatAgent := store.Agent{Name: "Toast", Rig: "myrig", Role: "polecat"}
+
+	refCmd := respawnCommand(refineryAgent)
+	if refCmd != "gt refinery run myrig" {
+		t.Errorf("refinery command = %q, want %q", refCmd, "gt refinery run myrig")
+	}
+
+	polCmd := respawnCommand(polecatAgent)
+	if polCmd != "claude --dangerously-skip-permissions" {
+		t.Errorf("polecat command = %q, want %q", polCmd, "claude --dangerously-skip-permissions")
+	}
+}
+
+func TestWorktreeForAgentByRole(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GT_HOME", dir)
+
+	refineryAgent := store.Agent{Name: "refinery", Rig: "myrig", Role: "refinery"}
+	polecatAgent := store.Agent{Name: "Toast", Rig: "myrig", Role: "polecat"}
+
+	refPath := worktreeForAgent(refineryAgent)
+	expected := filepath.Join(dir, "myrig", "refinery", "rig")
+	if refPath != expected {
+		t.Errorf("refinery worktree = %q, want %q", refPath, expected)
+	}
+
+	polPath := worktreeForAgent(polecatAgent)
+	expected = filepath.Join(dir, "myrig", "polecats", "Toast", "rig")
+	if polPath != expected {
+		t.Errorf("polecat worktree = %q, want %q", polPath, expected)
+	}
+}

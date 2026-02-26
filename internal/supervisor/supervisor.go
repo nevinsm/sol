@@ -11,6 +11,7 @@ import (
 	"github.com/nevinsm/gt/internal/config"
 	"github.com/nevinsm/gt/internal/dispatch"
 	"github.com/nevinsm/gt/internal/hook"
+	"github.com/nevinsm/gt/internal/refinery"
 	"github.com/nevinsm/gt/internal/session"
 	"github.com/nevinsm/gt/internal/store"
 )
@@ -152,11 +153,31 @@ func (s *Supervisor) heartbeat() {
 	s.logger.Info("heartbeat", "working_agents", len(workingAgents), "dead_sessions", deadCount)
 }
 
+// respawnCommand returns the startup command for an agent based on its role.
+func respawnCommand(agent store.Agent) string {
+	switch agent.Role {
+	case "refinery":
+		return fmt.Sprintf("gt refinery run %s", agent.Rig)
+	default:
+		return "claude --dangerously-skip-permissions"
+	}
+}
+
+// worktreeForAgent returns the worktree path for an agent based on its role.
+func worktreeForAgent(agent store.Agent) string {
+	switch agent.Role {
+	case "refinery":
+		return refinery.RefineryWorktreePath(agent.Rig)
+	default:
+		return dispatch.WorktreePath(agent.Rig, agent.Name)
+	}
+}
+
 // respawn restarts a crashed agent session with backoff.
 func (s *Supervisor) respawn(agent store.Agent) {
 	agentID := agent.ID
 	sessName := dispatch.SessionName(agent.Rig, agent.Name)
-	worktreeDir := dispatch.WorktreePath(agent.Rig, agent.Name)
+	worktreeDir := worktreeForAgent(agent)
 
 	restartCount := s.backoff[agentID] + 1
 	delay := backoffDuration(restartCount)
@@ -202,7 +223,7 @@ func (s *Supervisor) respawn(agent store.Agent) {
 		"GT_AGENT": agent.Name,
 	}
 	if err := s.sessions.Start(sessName, worktreeDir,
-		"claude --dangerously-skip-permissions", env, "polecat", agent.Rig); err != nil {
+		respawnCommand(agent), env, agent.Role, agent.Rig); err != nil {
 		s.logger.Error("failed to respawn session",
 			"agent", agent.Name, "rig", agent.Rig, "error", err)
 		return
