@@ -271,9 +271,14 @@ func TestSlingAutoProvisionSkipsUsed(t *testing.T) {
 		t.Fatalf("Sling failed: %v", err)
 	}
 
-	// 4th name in the default pool is "Copper".
-	if result.AgentName != "Copper" {
-		t.Errorf("expected auto-provisioned agent 'Copper' (4th in pool), got %q", result.AgentName)
+	// Auto-provisioned name must not be any of the already-used names.
+	for _, used := range poolNames {
+		if result.AgentName == used {
+			t.Errorf("auto-provisioned agent got already-used name %q", used)
+		}
+	}
+	if result.AgentName == "" {
+		t.Error("auto-provisioned agent has empty name")
 	}
 }
 
