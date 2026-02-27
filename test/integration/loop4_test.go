@@ -634,6 +634,120 @@ func TestConvoyAutoClose(t *testing.T) {
 	}
 }
 
+func TestConvoyMultiRig(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	gtHome := t.TempDir()
+	t.Setenv("GT_HOME", gtHome)
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	townStore, err := store.OpenTown()
+	if err != nil {
+		t.Fatalf("open town store: %v", err)
+	}
+	defer townStore.Close()
+
+	// Create work items in rig "alpha".
+	alphaStore, err := store.OpenRig("alpha")
+	if err != nil {
+		t.Fatalf("open alpha rig: %v", err)
+	}
+	idA, _ := alphaStore.CreateWorkItem("Alpha task", "Task in alpha rig", "operator", 2, nil)
+	alphaStore.Close()
+
+	// Create work items in rig "beta".
+	betaStore, err := store.OpenRig("beta")
+	if err != nil {
+		t.Fatalf("open beta rig: %v", err)
+	}
+	idB, _ := betaStore.CreateWorkItem("Beta task 1", "First task in beta", "operator", 2, nil)
+	idC, _ := betaStore.CreateWorkItem("Beta task 2", "Second task in beta", "operator", 2, nil)
+	// C depends on B within beta rig.
+	betaStore.AddDependency(idC, idB)
+	betaStore.Close()
+
+	// Create convoy spanning both rigs.
+	convoyID, err := townStore.CreateConvoy("multi-rig-convoy", "operator")
+	if err != nil {
+		t.Fatalf("CreateConvoy: %v", err)
+	}
+	townStore.AddConvoyItem(convoyID, idA, "alpha")
+	townStore.AddConvoyItem(convoyID, idB, "beta")
+	townStore.AddConvoyItem(convoyID, idC, "beta")
+
+	// Check readiness: A ready (no deps), B ready (no deps), C blocked (depends on B).
+	statuses, err := townStore.CheckConvoyReadiness(convoyID, store.OpenRig)
+	if err != nil {
+		t.Fatalf("CheckConvoyReadiness: %v", err)
+	}
+
+	if len(statuses) != 3 {
+		t.Fatalf("expected 3 statuses, got %d", len(statuses))
+	}
+
+	statusMap := map[string]store.ConvoyItemStatus{}
+	for _, st := range statuses {
+		statusMap[st.WorkItemID] = st
+	}
+
+	// A (alpha) should be ready.
+	if st, ok := statusMap[idA]; !ok {
+		t.Error("missing status for alpha item")
+	} else {
+		if st.Rig != "alpha" {
+			t.Errorf("alpha item rig: got %q, want alpha", st.Rig)
+		}
+		if !st.Ready {
+			t.Error("alpha item should be ready (no deps)")
+		}
+	}
+
+	// B (beta) should be ready.
+	if st, ok := statusMap[idB]; !ok {
+		t.Error("missing status for beta item B")
+	} else if !st.Ready {
+		t.Error("beta item B should be ready (no deps)")
+	}
+
+	// C (beta) should be blocked.
+	if st, ok := statusMap[idC]; !ok {
+		t.Error("missing status for beta item C")
+	} else if st.Ready {
+		t.Error("beta item C should be blocked (depends on B)")
+	}
+
+	// Mark B as done → C should become ready.
+	bs, _ := store.OpenRig("beta")
+	bs.UpdateWorkItem(idB, store.WorkItemUpdates{Status: "done"})
+	bs.Close()
+
+	statuses, _ = townStore.CheckConvoyReadiness(convoyID, store.OpenRig)
+	for _, st := range statuses {
+		if st.WorkItemID == idC && !st.Ready {
+			t.Error("beta item C should be ready after B is done")
+		}
+	}
+
+	// Mark all items done → convoy should auto-close.
+	as, _ := store.OpenRig("alpha")
+	as.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"})
+	as.Close()
+
+	bs, _ = store.OpenRig("beta")
+	bs.UpdateWorkItem(idC, store.WorkItemUpdates{Status: "done"})
+	bs.Close()
+
+	closed, err := townStore.TryCloseConvoy(convoyID, store.OpenRig)
+	if err != nil {
+		t.Fatalf("TryCloseConvoy: %v", err)
+	}
+	if !closed {
+		t.Error("multi-rig convoy should auto-close when all items done")
+	}
+}
+
 // --- End-to-End Workflow Test ---
 
 func TestWorkflowPropulsionLoop(t *testing.T) {
