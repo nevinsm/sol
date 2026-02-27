@@ -133,19 +133,19 @@ func TestResolveVariables(t *testing.T) {
 	}
 
 	// Required variable provided, default not overridden.
-	resolved, err := ResolveVariables(m, map[string]string{"issue": "gt-abc12345"})
+	resolved, err := ResolveVariables(m, map[string]string{"issue": "sol-abc12345"})
 	if err != nil {
 		t.Fatalf("ResolveVariables() error: %v", err)
 	}
-	if resolved["issue"] != "gt-abc12345" {
-		t.Errorf("issue: got %q, want %q", resolved["issue"], "gt-abc12345")
+	if resolved["issue"] != "sol-abc12345" {
+		t.Errorf("issue: got %q, want %q", resolved["issue"], "sol-abc12345")
 	}
 	if resolved["base_branch"] != "main" {
 		t.Errorf("base_branch: got %q, want %q", resolved["base_branch"], "main")
 	}
 
 	// Override default.
-	resolved, err = ResolveVariables(m, map[string]string{"issue": "gt-abc12345", "base_branch": "develop"})
+	resolved, err = ResolveVariables(m, map[string]string{"issue": "sol-abc12345", "base_branch": "develop"})
 	if err != nil {
 		t.Fatalf("ResolveVariables() error: %v", err)
 	}
@@ -169,13 +169,13 @@ func TestRenderStepInstructions(t *testing.T) {
 	os.WriteFile(filepath.Join(stepsDir, "step.md"), []byte(content), 0o644)
 
 	step := StepDef{ID: "test", Instructions: "steps/step.md"}
-	vars := map[string]string{"issue": "gt-abc12345", "base_branch": "main"}
+	vars := map[string]string{"issue": "sol-abc12345", "base_branch": "main"}
 
 	rendered, err := RenderStepInstructions(dir, step, vars)
 	if err != nil {
 		t.Fatalf("RenderStepInstructions() error: %v", err)
 	}
-	if rendered != "Work on gt-abc12345 from main. Also {{unknown}}.\n" {
+	if rendered != "Work on sol-abc12345 from main. Also {{unknown}}.\n" {
 		t.Errorf("rendered: got %q", rendered)
 	}
 }
@@ -203,7 +203,7 @@ func TestInstantiate(t *testing.T) {
 
 	// Instantiate.
 	inst, state, err := Instantiate("myrig", "Toast", "test-wf",
-		map[string]string{"issue": "gt-abc12345"})
+		map[string]string{"issue": "sol-abc12345"})
 	if err != nil {
 		t.Fatalf("Instantiate() error: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestReadState(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(gtHome, "myrig", "outposts", "Toast"), 0o755)
 
-	Instantiate("myrig", "Toast", "test-wf", map[string]string{"issue": "gt-test"})
+	Instantiate("myrig", "Toast", "test-wf", map[string]string{"issue": "sol-test"})
 
 	state, err = ReadState("myrig", "Toast")
 	if err != nil {
@@ -332,7 +332,7 @@ func TestReadCurrentStep(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(gtHome, "myrig", "outposts", "Toast"), 0o755)
 
-	Instantiate("myrig", "Toast", "test-wf", map[string]string{"issue": "gt-abc"})
+	Instantiate("myrig", "Toast", "test-wf", map[string]string{"issue": "sol-abc"})
 
 	step, err := ReadCurrentStep("myrig", "Toast")
 	if err != nil {
@@ -344,8 +344,8 @@ func TestReadCurrentStep(t *testing.T) {
 	if step.ID != "load-context" {
 		t.Errorf("step ID: got %q, want %q", step.ID, "load-context")
 	}
-	if step.Instructions != "Do gt-abc" {
-		t.Errorf("instructions: got %q, want %q", step.Instructions, "Do gt-abc")
+	if step.Instructions != "Do sol-abc" {
+		t.Errorf("instructions: got %q, want %q", step.Instructions, "Do sol-abc")
 	}
 }
 
@@ -364,7 +364,7 @@ func TestAdvance(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(gtHome, "myrig", "outposts", "Toast"), 0o755)
 
-	Instantiate("myrig", "Toast", "test-wf", map[string]string{"issue": "gt-test"})
+	Instantiate("myrig", "Toast", "test-wf", map[string]string{"issue": "sol-test"})
 
 	// Advance 1: load-context → implement.
 	next, done, err := Advance("myrig", "Toast")
@@ -443,7 +443,7 @@ func TestAdvanceDAG(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(gtHome, "myrig", "outposts", "Toast"), 0o755)
 
-	_, state, err := Instantiate("myrig", "Toast", "dag-wf", map[string]string{"issue": "gt-test"})
+	_, state, err := Instantiate("myrig", "Toast", "dag-wf", map[string]string{"issue": "sol-test"})
 	if err != nil {
 		t.Fatalf("Instantiate() error: %v", err)
 	}
@@ -554,7 +554,7 @@ func TestRemove(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(gtHome, "myrig", "outposts", "Toast"), 0o755)
 
-	Instantiate("myrig", "Toast", "test-wf", map[string]string{"issue": "gt-test"})
+	Instantiate("myrig", "Toast", "test-wf", map[string]string{"issue": "sol-test"})
 
 	wfDir := WorkflowDir("myrig", "Toast")
 	if _, err := os.Stat(wfDir); err != nil {

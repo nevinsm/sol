@@ -41,7 +41,7 @@ func TestEscalationCreateAndRoute(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -124,7 +124,7 @@ func TestEscalationLifecycle(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -197,7 +197,7 @@ func TestEscalationFromAgent(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -252,7 +252,7 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	sphereStore.CreateAgent("HandBot", "testrig", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Handoff task", "Test handoff", "operator", 2, nil)
 
-	// Sling the work item.
+	// Cast the work item.
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "testrig",
@@ -319,9 +319,9 @@ func TestHandoffPreservesHook(t *testing.T) {
 
 	// Create agent and work item.
 	sphereStore.CreateAgent("HookBot", "testrig", "agent")
-	itemID, _ := worldStore.CreateWorkItem("Hook task", "Test hook preservation", "operator", 2, nil)
+	itemID, _ := worldStore.CreateWorkItem("Tether task", "Test tether preservation", "operator", 2, nil)
 
-	// Sling the work item.
+	// Cast the work item.
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "testrig",
@@ -341,22 +341,22 @@ func TestHandoffPreservesHook(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 
-	// Verify hook file still exists.
-	hookContent, err := tether.Read("testrig", "HookBot")
+	// Verify tether file still exists.
+	tetherContent, err := tether.Read("testrig", "HookBot")
 	if err != nil {
 		t.Fatalf("tether.Read: %v", err)
 	}
-	if hookContent != itemID {
-		t.Errorf("hook content: got %q, want %q", hookContent, itemID)
+	if tetherContent != itemID {
+		t.Errorf("tether content: got %q, want %q", tetherContent, itemID)
 	}
 
-	// Verify work item status unchanged (still hooked).
+	// Verify work item status unchanged (still tethered).
 	item, err := worldStore.GetWorkItem(itemID)
 	if err != nil {
 		t.Fatalf("GetWorkItem: %v", err)
 	}
-	if item.Status != "hooked" {
-		t.Errorf("work item status: got %q, want hooked", item.Status)
+	if item.Status != "tethered" {
+		t.Errorf("work item status: got %q, want tethered", item.Status)
 	}
 }
 
@@ -401,7 +401,7 @@ needs = ["step1"]
 	sphereStore.CreateAgent("WFHandBot", "testrig", "agent")
 	itemID, _ := worldStore.CreateWorkItem("WF Handoff task", "Workflow handoff test", "operator", 2, nil)
 
-	// Sling with formula.
+	// Cast with formula.
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "testrig",
@@ -493,7 +493,7 @@ instructions = "steps/01.md"
 	sphereStore.CreateAgent("OverBot", "testrig", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Override task", "Override test", "operator", 2, nil)
 
-	// Sling with formula.
+	// Cast with formula.
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "testrig",
@@ -539,7 +539,7 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -549,9 +549,9 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	// Create work item in "hooked" status.
-	itemID, _ := worldStore.CreateWorkItem("Stale task", "Stale hook test", "operator", 2, nil)
-	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "hooked", Assignee: "myrig/StaleBot"})
+	// Create work item in "tethered" status.
+	itemID, _ := worldStore.CreateWorkItem("Stale task", "Stale tether test", "operator", 2, nil)
+	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "myrig/StaleBot"})
 
 	// Create agent in "working" state.
 	sphereStore.CreateAgent("StaleBot", "myrig", "agent")
@@ -561,7 +561,7 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "myrig/StaleBot")
 
-	// Write hook file.
+	// Write tether file.
 	tether.Write("myrig", "StaleBot", itemID)
 
 	// Mock session checker — no session alive.
@@ -593,13 +593,13 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 		t.Errorf("agent state: got %q, want idle", agent.State)
 	}
 
-	// Verify: hook file cleared.
-	hookContent, err := tether.Read("myrig", "StaleBot")
+	// Verify: tether file cleared.
+	tetherContent, err := tether.Read("myrig", "StaleBot")
 	if err != nil {
 		t.Fatalf("tether.Read: %v", err)
 	}
-	if hookContent != "" {
-		t.Errorf("hook should be cleared, got %q", hookContent)
+	if tetherContent != "" {
+		t.Errorf("tether should be cleared, got %q", tetherContent)
 	}
 }
 
@@ -614,7 +614,7 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -624,8 +624,8 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	itemID, _ := worldStore.CreateWorkItem("Recent task", "Recent hook test", "operator", 2, nil)
-	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "hooked", Assignee: "myrig/RecentBot"})
+	itemID, _ := worldStore.CreateWorkItem("Recent task", "Recent tether test", "operator", 2, nil)
+	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "myrig/RecentBot"})
 
 	sphereStore.CreateAgent("RecentBot", "myrig", "agent")
 	sphereStore.UpdateAgentState("myrig/RecentBot", "working", itemID)
@@ -651,10 +651,10 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 
 	d.Patrol()
 
-	// Work item should still be hooked (not recovered — too recent).
+	// Work item should still be tethered (not recovered — too recent).
 	item, _ := worldStore.GetWorkItem(itemID)
-	if item.Status != "hooked" {
-		t.Errorf("work item status: got %q, want hooked (too recent)", item.Status)
+	if item.Status != "tethered" {
+		t.Errorf("work item status: got %q, want tethered (too recent)", item.Status)
 	}
 }
 
@@ -669,7 +669,7 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -679,8 +679,8 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	itemID, _ := worldStore.CreateWorkItem("Alive task", "Alive hook test", "operator", 2, nil)
-	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "hooked", Assignee: "myrig/AliveBot"})
+	itemID, _ := worldStore.CreateWorkItem("Alive task", "Alive tether test", "operator", 2, nil)
+	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "myrig/AliveBot"})
 
 	sphereStore.CreateAgent("AliveBot", "myrig", "agent")
 	sphereStore.UpdateAgentState("myrig/AliveBot", "working", itemID)
@@ -709,10 +709,10 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 
 	d.Patrol()
 
-	// Work item should still be hooked (session is alive).
+	// Work item should still be tethered (session is alive).
 	item, _ := worldStore.GetWorkItem(itemID)
-	if item.Status != "hooked" {
-		t.Errorf("work item status: got %q, want hooked (session alive)", item.Status)
+	if item.Status != "tethered" {
+		t.Errorf("work item status: got %q, want tethered (session alive)", item.Status)
 	}
 }
 
@@ -727,7 +727,7 @@ func TestConsulCaravanFeeding(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -743,9 +743,9 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	worldStore.Close()
 
 	// Create caravan with both items.
-	convoyID, _ := sphereStore.CreateCaravan("feed-convoy", "operator")
-	sphereStore.AddCaravanItem(convoyID, idA, "testrig")
-	sphereStore.AddCaravanItem(convoyID, idB, "testrig")
+	caravanID, _ := sphereStore.CreateCaravan("feed-convoy", "operator")
+	sphereStore.AddCaravanItem(caravanID, idA, "testrig")
+	sphereStore.AddCaravanItem(caravanID, idB, "testrig")
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(gtHome)
@@ -763,12 +763,12 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	// Run patrol → should detect A is ready.
 	d.Patrol()
 
-	// Verify CONVOY_NEEDS_FEEDING message sent.
+	// Verify CARAVAN_NEEDS_FEEDING message sent.
 	msgs, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
 	if len(msgs) == 0 {
-		t.Fatal("expected CONVOY_NEEDS_FEEDING message")
+		t.Fatal("expected CARAVAN_NEEDS_FEEDING message")
 	}
-	if !strings.Contains(msgs[0].Body, convoyID) {
+	if !strings.Contains(msgs[0].Body, caravanID) {
 		t.Error("message body should contain caravan ID")
 	}
 
@@ -783,10 +783,10 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	// Run another patrol → B is now ready.
 	d.Patrol()
 
-	// Verify new CONVOY_NEEDS_FEEDING for B.
+	// Verify new CARAVAN_NEEDS_FEEDING for B.
 	msgs, _ = sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
 	if len(msgs) == 0 {
-		t.Fatal("expected new CONVOY_NEEDS_FEEDING message after A done")
+		t.Fatal("expected new CARAVAN_NEEDS_FEEDING message after A done")
 	}
 }
 
@@ -801,7 +801,7 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -812,8 +812,8 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	idA, _ := worldStore.CreateWorkItem("Dup task", "No dup test", "operator", 2, nil)
 	worldStore.Close()
 
-	convoyID, _ := sphereStore.CreateCaravan("nodup-convoy", "operator")
-	sphereStore.AddCaravanItem(convoyID, idA, "testrig")
+	caravanID, _ := sphereStore.CreateCaravan("nodup-convoy", "operator")
+	sphereStore.AddCaravanItem(caravanID, idA, "testrig")
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(gtHome)
@@ -832,7 +832,7 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	d.Patrol()
 	msgs1, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
 	if len(msgs1) == 0 {
-		t.Fatal("expected CONVOY_NEEDS_FEEDING message")
+		t.Fatal("expected CARAVAN_NEEDS_FEEDING message")
 	}
 
 	// Run patrol again → no duplicate message.
@@ -854,7 +854,7 @@ func TestConsulHeartbeat(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -908,7 +908,7 @@ func TestConsulLifecycleShutdown(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -1015,7 +1015,7 @@ func TestPrefectConsulStartup(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -1059,7 +1059,7 @@ func TestPrefectConsulRestart(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -1110,7 +1110,7 @@ func TestPrefectConsulHealthy(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -1160,7 +1160,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -1176,9 +1176,9 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	worldStore.Close()
 
 	// 2. Create caravan spanning the items.
-	convoyID, _ := sphereStore.CreateCaravan("e2e-convoy", "operator")
-	sphereStore.AddCaravanItem(convoyID, idA, "testrig")
-	sphereStore.AddCaravanItem(convoyID, idB, "testrig")
+	caravanID, _ := sphereStore.CreateCaravan("e2e-convoy", "operator")
+	sphereStore.AddCaravanItem(caravanID, idA, "testrig")
+	sphereStore.AddCaravanItem(caravanID, idB, "testrig")
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(gtHome)
@@ -1196,10 +1196,10 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	// 3. Run consul patrol → detects stranded caravan.
 	d.Patrol()
 
-	// 4. Verify CONVOY_NEEDS_FEEDING message sent.
+	// 4. Verify CARAVAN_NEEDS_FEEDING message sent.
 	msgs, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
 	if len(msgs) == 0 {
-		t.Fatal("expected CONVOY_NEEDS_FEEDING message")
+		t.Fatal("expected CARAVAN_NEEDS_FEEDING message")
 	}
 	// Ack to clean up.
 	sphereStore.AckMessage(msgs[0].ID)
@@ -1219,13 +1219,13 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 
 	// 7. Simulate handoff: write handoff file, call Prime.
-	// First, set up an agent with a hook.
+	// First, set up an agent with a tether.
 	worldStore2, _ := store.OpenWorld("testrig")
 	defer worldStore2.Close()
 
 	sphereStore.CreateAgent("E2EBot", "testrig", "agent")
 	sphereStore.UpdateAgentState("testrig/E2EBot", "working", idA)
-	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "hooked", Assignee: "testrig/E2EBot"})
+	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "testrig/E2EBot"})
 	tether.Write("testrig", "E2EBot", idA)
 
 	handoffState := &handoff.State{
@@ -1246,15 +1246,15 @@ func TestFullOrchestrationCycle(t *testing.T) {
 		t.Error("prime should contain handoff context")
 	}
 
-	// 9. Simulate stale hook: mark agent working but session is dead.
+	// 9. Simulate stale tether: mark agent working but session is dead.
 	sphereStore.UpdateAgentState("testrig/E2EBot", "working", idA)
 	// Set updated_at to 2 hours ago.
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "testrig/E2EBot")
 	tether.Write("testrig", "E2EBot", idA)
-	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "hooked", Assignee: "testrig/E2EBot"})
+	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "testrig/E2EBot"})
 
-	// 10. Run consul patrol → recovers stale hook.
+	// 10. Run consul patrol → recovers stale tether.
 	d.Patrol()
 
 	// 11. Verify work item returned to open.
@@ -1264,9 +1264,9 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 
 	// Verify events emitted.
-	assertEventEmitted(t, gtHome, events.EventDeaconPatrol)
-	assertEventEmitted(t, gtHome, events.EventDeaconCaravanFeed)
-	assertEventEmitted(t, gtHome, events.EventDeaconStaleTether)
+	assertEventEmitted(t, gtHome, events.EventConsulPatrol)
+	assertEventEmitted(t, gtHome, events.EventConsulCaravanFeed)
+	assertEventEmitted(t, gtHome, events.EventConsulStaleTether)
 }
 
 // Ensure unused imports don't cause issues.

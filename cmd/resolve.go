@@ -18,7 +18,7 @@ var (
 
 var resolveCmd = &cobra.Command{
 	Use:   "resolve",
-	Short: "Signal work completion — push branch, update state, clear hook",
+	Short: "Signal work completion — push branch, update state, clear tether",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := resolveWorld
 		agent := resolveAgent

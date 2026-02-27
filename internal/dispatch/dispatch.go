@@ -42,7 +42,7 @@ type WorldStore interface {
 type SphereStore interface {
 	GetAgent(id string) (*store.Agent, error)
 	FindIdleAgent(world string) (*store.Agent, error)
-	UpdateAgentState(id, state, hookItem string) error
+	UpdateAgentState(id, state, tetherItem string) error
 	ListAgents(world string, state string) ([]store.Agent, error)
 	CreateAgent(name, world, role string) (string, error)
 	Close() error
@@ -123,8 +123,8 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	agentID := opts.World + "/" + agent.Name
 
 	// 3. Determine if this is a re-cast (crash recovery).
-	reCast := item.Status == "hooked" && item.Assignee == agentID &&
-		agent.State == "working" && agent.HookItem == opts.WorkItemID
+	reCast := item.Status == "tethered" && item.Assignee == agentID &&
+		agent.State == "working" && agent.TetherItem == opts.WorkItemID
 
 	// 4. Validate state.
 	if !reCast {
@@ -181,16 +181,16 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		return nil, fmt.Errorf("failed to write tether: %w", err)
 	}
 
-	// 5. Update work item: status → hooked, assignee → agent ID.
+	// 5. Update work item: status → tethered, assignee → agent ID.
 	if err := worldStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{
-		Status:   "hooked",
+		Status:   "tethered",
 		Assignee: agent.ID,
 	}); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to update work item: %w", err)
 	}
 
-	// 6. Update agent: state → working, hook_item → work item ID.
+	// 6. Update agent: state → working, tether_item → work item ID.
 	if err := sphereStore.UpdateAgentState(agent.ID, "working", opts.WorkItemID); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
@@ -249,7 +249,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		"world":        opts.World,
 	}
 	if logger != nil {
-		logger.Emit(events.EventSling, "sol", "operator", "both", castPayload)
+		logger.Emit(events.EventCast, "sol", "operator", "both", castPayload)
 	}
 
 	// Emit workflow instantiation event if formula was used.
@@ -315,9 +315,9 @@ type PrimeResult struct {
 
 // Prime assembles execution context from durable state and returns it.
 func Prime(world, agentName string, worldStore WorldStore) (*PrimeResult, error) {
-	// Refinery gets a special prime context.
-	if agentName == "refinery" {
-		return primeRefinery(world)
+	// Forge gets a special prime context.
+	if agentName == "forge" {
+		return primeForge(world)
 	}
 
 	// Read the tether file.
@@ -465,11 +465,11 @@ If you need to hand off again: sol handoff --summary="<what you've done>"
 	return &PrimeResult{Output: output}, nil
 }
 
-// primeRefinery returns refinery-specific context for the prime command.
-func primeRefinery(world string) (*PrimeResult, error) {
-	output := fmt.Sprintf(`=== REFINERY CONTEXT ===
+// primeForge returns forge-specific context for the prime command.
+func primeForge(world string) (*PrimeResult, error) {
+	output := fmt.Sprintf(`=== FORGE CONTEXT ===
 World: %s
-Role: refinery (merge queue processor)
+Role: forge (merge queue processor)
 
 Begin your patrol loop. Run 'sol forge check-unblocked %s' first,
 then scan the queue with 'sol forge ready %s --json'.
@@ -552,7 +552,7 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		return nil, fmt.Errorf("failed to update work item status: %w", err)
 	}
 
-	// 5. Update agent: state → idle, hook_item → clear.
+	// 5. Update agent: state → idle, tether_item → clear.
 	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
@@ -574,7 +574,7 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	}()
 
 	if logger != nil {
-		logger.Emit(events.EventDone, "sol", opts.AgentName, "both", map[string]string{
+		logger.Emit(events.EventResolve, "sol", opts.AgentName, "both", map[string]string{
 			"work_item_id":  workItemID,
 			"agent":         opts.AgentName,
 			"branch":        branchName,
@@ -650,7 +650,7 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 	}()
 
 	if logger != nil {
-		logger.Emit(events.EventDone, "sol", opts.AgentName, "both", map[string]string{
+		logger.Emit(events.EventResolve, "sol", opts.AgentName, "both", map[string]string{
 			"work_item_id": item.ID,
 			"agent":        opts.AgentName,
 			"branch":       branchName,

@@ -11,7 +11,7 @@ import (
 // Event represents a single system event.
 type Event struct {
 	Timestamp  time.Time `json:"ts"`
-	Source     string    `json:"source"`     // "gt", agent ID, or component name
+	Source     string    `json:"source"`     // "sol", agent ID, or component name
 	Type      string    `json:"type"`       // event type (see constants)
 	Actor     string    `json:"actor"`      // who triggered the event
 	Visibility string   `json:"visibility"` // "feed", "audit", or "both"
@@ -20,23 +20,23 @@ type Event struct {
 
 // Event type constants.
 const (
-	EventSling        = "sling"         // work dispatched to agent
-	EventDone         = "done"          // agent completed work
-	EventMergeQueued  = "merge_queued"  // merge request created (emitted by refinery CLI toolbox)
-	EventMergeClaimed = "merge_claimed" // refinery claimed MR (emitted by refinery CLI toolbox)
-	EventMerged       = "merged"        // merge successful (emitted by refinery CLI toolbox)
-	EventMergeFailed  = "merge_failed"  // merge failed (emitted by refinery CLI toolbox)
+	EventCast         = "cast"          // work dispatched to agent
+	EventResolve      = "resolve"       // agent completed work
+	EventMergeQueued  = "merge_queued"  // merge request created (emitted by forge CLI toolbox)
+	EventMergeClaimed = "merge_claimed" // forge claimed MR (emitted by forge CLI toolbox)
+	EventMerged       = "merged"        // merge successful (emitted by forge CLI toolbox)
+	EventMergeFailed  = "merge_failed"  // merge failed (emitted by forge CLI toolbox)
 	EventSessionStart = "session_start" // tmux session started
 	EventSessionStop  = "session_stop"  // tmux session stopped
-	EventRespawn      = "respawn"       // supervisor respawned agent
+	EventRespawn      = "respawn"       // prefect respawned agent
 	EventMassDeath    = "mass_death"    // mass death detected
 	EventDegraded     = "degraded"      // entered degraded mode
 	EventRecovered    = "recovered"     // exited degraded mode
-	EventPatrol       = "patrol"        // witness patrol completed
+	EventPatrol       = "patrol"        // sentinel patrol completed
 	EventStalled      = "stalled"       // agent detected as stalled
 	EventAssess       = "assess"        // AI assessment performed
 	EventNudge        = "nudge"         // nudge injected into agent session
-	EventMailSent     = "mail_sent"     // message sent (reserved for Loop 5 Deacon)
+	EventMailSent     = "mail_sent"     // message sent (reserved for Loop 5 Consul)
 
 	// Loop 4 events.
 	EventWorkflowInstantiate = "workflow_instantiate" // workflow instantiated for agent
@@ -51,9 +51,9 @@ const (
 	EventEscalationAcked    = "escalation_acked"    // escalation acknowledged
 	EventEscalationResolved = "escalation_resolved" // escalation resolved
 	EventHandoff            = "handoff"              // agent handed off session
-	EventDeaconPatrol       = "deacon_patrol"        // deacon patrol completed
-	EventDeaconStaleTether  = "deacon_stale_tether"  // stale tether recovered
-	EventDeaconCaravanFeed   = "deacon_caravan_feed"   // caravan needs feeding
+	EventConsulPatrol       = "consul_patrol"        // consul patrol completed
+	EventConsulStaleTether  = "consul_stale_tether"  // stale tether recovered
+	EventConsulCaravanFeed   = "consul_caravan_feed"   // caravan needs feeding
 )
 
 // Logger handles event logging to the JSONL event feed.
@@ -64,9 +64,9 @@ type Logger struct {
 // NewLogger creates an event logger.
 // The events file is at $SOL_HOME/.events.jsonl.
 // Creates the file if it doesn't exist.
-func NewLogger(gtHome string) *Logger {
+func NewLogger(solHome string) *Logger {
 	return &Logger{
-		path: filepath.Join(gtHome, ".events.jsonl"),
+		path: filepath.Join(solHome, ".events.jsonl"),
 	}
 }
 

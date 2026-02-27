@@ -20,7 +20,7 @@ func testEscalation() store.Escalation {
 	return store.Escalation{
 		ID:          "esc-test0001",
 		Severity:    "high",
-		Source:      "myrig/witness",
+		Source:      "myrig/sentinel",
 		Description: "Agent Toast stalled for 30 minutes",
 		Status:      "open",
 		CreatedAt:   time.Date(2026, 2, 27, 10, 30, 0, 0, time.UTC),
@@ -167,7 +167,7 @@ func TestWebhookNotifier(t *testing.T) {
 		t.Fatalf("expected Content-Type 'application/json', got %q", receivedContentType)
 	}
 	if receivedUserAgent != "sol-escalation/1.0" {
-		t.Fatalf("expected User-Agent 'gt-escalation/1.0', got %q", receivedUserAgent)
+		t.Fatalf("expected User-Agent 'sol-escalation/1.0', got %q", receivedUserAgent)
 	}
 
 	// Verify JSON body.
@@ -181,8 +181,8 @@ func TestWebhookNotifier(t *testing.T) {
 	if payload["severity"] != "high" {
 		t.Fatalf("expected severity 'high', got %q", payload["severity"])
 	}
-	if payload["source"] != "myrig/witness" {
-		t.Fatalf("expected source 'myrig/witness', got %q", payload["source"])
+	if payload["source"] != "myrig/sentinel" {
+		t.Fatalf("expected source 'myrig/sentinel', got %q", payload["source"])
 	}
 }
 
@@ -225,11 +225,11 @@ func TestRouterDefaultRouting(t *testing.T) {
 	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
-	townStore, err := store.OpenSphere()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
 	logger := events.NewLogger(dir)
 
@@ -241,14 +241,14 @@ func TestRouterDefaultRouting(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	router := DefaultRouter(logger, townStore, srv.URL)
+	router := DefaultRouter(logger, sphereStore, srv.URL)
 
 	// Route low -> only log fires (no mail, no webhook).
 	esc := testEscalation()
 	esc.Severity = "low"
 	router.Route(context.Background(), esc)
 
-	msgs, _ := townStore.Inbox("operator")
+	msgs, _ := sphereStore.Inbox("operator")
 	if len(msgs) != 0 {
 		t.Fatalf("expected 0 messages for low severity, got %d", len(msgs))
 	}
@@ -260,7 +260,7 @@ func TestRouterDefaultRouting(t *testing.T) {
 	esc.Severity = "medium"
 	router.Route(context.Background(), esc)
 
-	msgs, _ = townStore.Inbox("operator")
+	msgs, _ = sphereStore.Inbox("operator")
 	if len(msgs) != 1 {
 		t.Fatalf("expected 1 message for medium severity, got %d", len(msgs))
 	}
@@ -272,7 +272,7 @@ func TestRouterDefaultRouting(t *testing.T) {
 	esc.Severity = "high"
 	router.Route(context.Background(), esc)
 
-	msgs, _ = townStore.Inbox("operator")
+	msgs, _ = sphereStore.Inbox("operator")
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages after high severity, got %d", len(msgs))
 	}
@@ -284,7 +284,7 @@ func TestRouterDefaultRouting(t *testing.T) {
 	esc.Severity = "critical"
 	router.Route(context.Background(), esc)
 
-	msgs, _ = townStore.Inbox("operator")
+	msgs, _ = sphereStore.Inbox("operator")
 	if len(msgs) != 3 {
 		t.Fatalf("expected 3 messages after critical severity, got %d", len(msgs))
 	}
@@ -298,23 +298,23 @@ func TestRouterNoWebhook(t *testing.T) {
 	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
-	townStore, err := store.OpenSphere()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
 	logger := events.NewLogger(dir)
 
 	// DefaultRouter with empty webhookURL.
-	router := DefaultRouter(logger, townStore, "")
+	router := DefaultRouter(logger, sphereStore, "")
 
 	// Route high -> log + mail fire (no webhook).
 	esc := testEscalation()
 	esc.Severity = "high"
 	router.Route(context.Background(), esc)
 
-	msgs, _ := townStore.Inbox("operator")
+	msgs, _ := sphereStore.Inbox("operator")
 	if len(msgs) != 1 {
 		t.Fatalf("expected 1 message for high severity without webhook, got %d", len(msgs))
 	}

@@ -60,7 +60,7 @@ func TestCLIHelp(t *testing.T) {
 
 	out, err := runGT(t, gtHome, "--help")
 	if err != nil {
-		t.Fatalf("gt --help failed: %v: %s", err, out)
+		t.Fatalf("sol --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "sol") {
 		t.Errorf("sol --help output missing 'sol': %s", out)
@@ -75,7 +75,7 @@ func TestCLIStoreHelp(t *testing.T) {
 
 	out, err := runGT(t, gtHome, "store", "--help")
 	if err != nil {
-		t.Fatalf("gt store --help failed: %v: %s", err, out)
+		t.Fatalf("sol store --help failed: %v: %s", err, out)
 	}
 }
 
@@ -87,7 +87,7 @@ func TestCLISessionHelp(t *testing.T) {
 
 	out, err := runGT(t, gtHome, "session", "--help")
 	if err != nil {
-		t.Fatalf("gt session --help failed: %v: %s", err, out)
+		t.Fatalf("sol session --help failed: %v: %s", err, out)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestCLICastHelp(t *testing.T) {
 
 	out, err := runGT(t, gtHome, "cast", "--help")
 	if err != nil {
-		t.Fatalf("gt cast --help failed: %v: %s", err, out)
+		t.Fatalf("sol cast --help failed: %v: %s", err, out)
 	}
 }
 
@@ -111,7 +111,7 @@ func TestCLIStoreCreate(t *testing.T) {
 
 	out, err := runGT(t, gtHome, "store", "create", "--world=testrig", "--title=test")
 	if err != nil {
-		t.Fatalf("gt store create failed: %v: %s", err, out)
+		t.Fatalf("sol store create failed: %v: %s", err, out)
 	}
 	if !strings.HasPrefix(out, "sol-") {
 		t.Errorf("store create output not an ID: %q", out)
@@ -129,7 +129,7 @@ func TestCLIStoreListJSON(t *testing.T) {
 
 	out, err := runGT(t, gtHome, "store", "list", "--world=testrig", "--json")
 	if err != nil {
-		t.Fatalf("gt store list --json failed: %v: %s", err, out)
+		t.Fatalf("sol store list --json failed: %v: %s", err, out)
 	}
 	if !json.Valid([]byte(out)) {
 		t.Errorf("store list --json output is not valid JSON: %s", out)
@@ -144,7 +144,7 @@ func TestCLIAgentCreate(t *testing.T) {
 
 	out, err := runGT(t, gtHome, "agent", "create", "Smoke", "--world=testrig")
 	if err != nil {
-		t.Fatalf("gt agent create failed: %v: %s", err, out)
+		t.Fatalf("sol agent create failed: %v: %s", err, out)
 	}
 }
 
@@ -159,7 +159,7 @@ func TestCLIAgentList(t *testing.T) {
 
 	out, err := runGT(t, gtHome, "agent", "list", "--world=testrig")
 	if err != nil {
-		t.Fatalf("gt agent list failed: %v: %s", err, out)
+		t.Fatalf("sol agent list failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Smoke") {
 		t.Errorf("agent list missing 'Smoke': %s", out)

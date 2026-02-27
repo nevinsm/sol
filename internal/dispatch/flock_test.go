@@ -16,13 +16,13 @@ func TestAcquireRelease(t *testing.T) {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
 
-	lock, err := AcquireWorkItemLock("gt-aabbccdd")
+	lock, err := AcquireWorkItemLock("sol-aabbccdd")
 	if err != nil {
 		t.Fatalf("AcquireWorkItemLock failed: %v", err)
 	}
 
 	// Verify lock file exists.
-	lockPath := filepath.Join(config.RuntimeDir(), "locks", "gt-aabbccdd.lock")
+	lockPath := filepath.Join(config.RuntimeDir(), "locks", "sol-aabbccdd.lock")
 	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
 		t.Error("expected lock file to exist")
 	}
@@ -44,13 +44,13 @@ func TestDoubleAcquire(t *testing.T) {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
 
-	lock1, err := AcquireWorkItemLock("gt-11223344")
+	lock1, err := AcquireWorkItemLock("sol-11223344")
 	if err != nil {
 		t.Fatalf("first acquire failed: %v", err)
 	}
 	defer lock1.Release()
 
-	_, err = AcquireWorkItemLock("gt-11223344")
+	_, err = AcquireWorkItemLock("sol-11223344")
 	if err == nil {
 		t.Fatal("expected contention error on second acquire")
 	}
@@ -66,12 +66,12 @@ func TestDifferentItems(t *testing.T) {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
 
-	lock1, err := AcquireWorkItemLock("gt-aaaaaaaa")
+	lock1, err := AcquireWorkItemLock("sol-aaaaaaaa")
 	if err != nil {
 		t.Fatalf("first acquire failed: %v", err)
 	}
 
-	lock2, err := AcquireWorkItemLock("gt-bbbbbbbb")
+	lock2, err := AcquireWorkItemLock("sol-bbbbbbbb")
 	if err != nil {
 		t.Fatalf("second acquire (different item) failed: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestReleaseIdempotent(t *testing.T) {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
 
-	lock, err := AcquireWorkItemLock("gt-cccccccc")
+	lock, err := AcquireWorkItemLock("sol-cccccccc")
 	if err != nil {
 		t.Fatalf("acquire failed: %v", err)
 	}

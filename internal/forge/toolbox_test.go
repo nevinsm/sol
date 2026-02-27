@@ -15,7 +15,7 @@ func TestListReady(t *testing.T) {
 	rigStore := newMockWorldStore()
 	rigStore.mrs = []store.MergeRequest{
 		{ID: "mr-00000001", Phase: "ready", BlockedBy: ""},
-		{ID: "mr-00000002", Phase: "ready", BlockedBy: "gt-blocker1"},
+		{ID: "mr-00000002", Phase: "ready", BlockedBy: "sol-blocker1"},
 		{ID: "mr-00000003", Phase: "ready", BlockedBy: ""},
 		{ID: "mr-00000004", Phase: "claimed", BlockedBy: ""},
 	}
@@ -44,8 +44,8 @@ func TestListBlocked(t *testing.T) {
 	rigStore := newMockWorldStore()
 	rigStore.mrs = []store.MergeRequest{
 		{ID: "mr-00000001", Phase: "ready", BlockedBy: ""},
-		{ID: "mr-00000002", Phase: "ready", BlockedBy: "gt-blocker1"},
-		{ID: "mr-00000003", Phase: "ready", BlockedBy: "gt-blocker2"},
+		{ID: "mr-00000002", Phase: "ready", BlockedBy: "sol-blocker1"},
+		{ID: "mr-00000003", Phase: "ready", BlockedBy: "sol-blocker2"},
 	}
 
 	r := &Forge{
@@ -74,13 +74,13 @@ func TestCreateResolutionTask(t *testing.T) {
 	run(t, "git", "-C", repoDir, "commit", "--allow-empty", "-m", "init")
 
 	rigStore := newMockWorldStore()
-	rigStore.items["gt-original1"] = &store.WorkItem{
-		ID:       "gt-original1",
+	rigStore.items["sol-original1"] = &store.WorkItem{
+		ID:       "sol-original1",
 		Title:    "Add feature X",
 		Priority: 2,
 	}
 	rigStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WorkItemID: "gt-original1", Branch: "outpost/Toast/gt-original1", Phase: "claimed"},
+		{ID: "mr-00000001", WorkItemID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: "claimed"},
 	}
 
 	r := &Forge{
@@ -94,8 +94,8 @@ func TestCreateResolutionTask(t *testing.T) {
 
 	mr := &store.MergeRequest{
 		ID:         "mr-00000001",
-		WorkItemID: "gt-original1",
-		Branch:     "outpost/Toast/gt-original1",
+		WorkItemID: "sol-original1",
+		Branch:     "outpost/Toast/sol-original1",
 		Phase:      "claimed",
 	}
 
@@ -118,8 +118,8 @@ func TestCreateResolutionTask(t *testing.T) {
 	if item.Priority != 1 {
 		t.Errorf("task priority = %d, want 1 (boosted from 2)", item.Priority)
 	}
-	if item.ParentID != "gt-original1" {
-		t.Errorf("task parent_id = %q, want %q", item.ParentID, "gt-original1")
+	if item.ParentID != "sol-original1" {
+		t.Errorf("task parent_id = %q, want %q", item.ParentID, "sol-original1")
 	}
 	if !item.HasLabel("conflict-resolution") {
 		t.Error("task missing 'conflict-resolution' label")
@@ -140,11 +140,11 @@ func TestCreateResolutionTask(t *testing.T) {
 func TestCheckUnblocked(t *testing.T) {
 	rigStore := newMockWorldStore()
 	rigStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", Phase: "ready", BlockedBy: "gt-resolved1"},
-		{ID: "mr-00000002", Phase: "ready", BlockedBy: "gt-pending1"},
+		{ID: "mr-00000001", Phase: "ready", BlockedBy: "sol-resolved1"},
+		{ID: "mr-00000002", Phase: "ready", BlockedBy: "sol-pending1"},
 	}
-	rigStore.items["gt-resolved1"] = &store.WorkItem{ID: "gt-resolved1", Status: "closed"}
-	rigStore.items["gt-pending1"] = &store.WorkItem{ID: "gt-pending1", Status: "open"}
+	rigStore.items["sol-resolved1"] = &store.WorkItem{ID: "sol-resolved1", Status: "closed"}
+	rigStore.items["sol-pending1"] = &store.WorkItem{ID: "sol-pending1", Status: "open"}
 
 	r := &Forge{
 		world:      "testrig",
@@ -175,8 +175,8 @@ func TestCheckUnblocked(t *testing.T) {
 	rigStore.mu.Lock()
 	mr2 := rigStore.mrs[1]
 	rigStore.mu.Unlock()
-	if mr2.BlockedBy != "gt-pending1" {
-		t.Errorf("MR blocked_by = %q, want %q", mr2.BlockedBy, "gt-pending1")
+	if mr2.BlockedBy != "sol-pending1" {
+		t.Errorf("MR blocked_by = %q, want %q", mr2.BlockedBy, "sol-pending1")
 	}
 }
 
@@ -279,9 +279,9 @@ func TestPush(t *testing.T) {
 func TestMarkMergedClosesWorkItem(t *testing.T) {
 	rigStore := newMockWorldStore()
 	rigStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WorkItemID: "gt-aaa11111", Branch: "outpost/Toast/gt-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
 	}
-	rigStore.items["gt-aaa11111"] = &store.WorkItem{ID: "gt-aaa11111", Title: "Test", Status: "done"}
+	rigStore.items["sol-aaa11111"] = &store.WorkItem{ID: "sol-aaa11111", Title: "Test", Status: "done"}
 
 	// Create a temp dir for git operations.
 	dir := t.TempDir()
@@ -309,8 +309,8 @@ func TestMarkMergedClosesWorkItem(t *testing.T) {
 	}
 
 	// Verify work item closed.
-	if rigStore.items["gt-aaa11111"].Status != "closed" {
-		t.Errorf("work item status = %q, want 'closed'", rigStore.items["gt-aaa11111"].Status)
+	if rigStore.items["sol-aaa11111"].Status != "closed" {
+		t.Errorf("work item status = %q, want 'closed'", rigStore.items["sol-aaa11111"].Status)
 	}
 }
 

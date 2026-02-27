@@ -22,7 +22,7 @@ func (n *LogNotifier) Notify(_ context.Context, esc store.Escalation) error {
 	if n.logger == nil {
 		return nil
 	}
-	n.logger.Emit(events.EventEscalationCreated, esc.Source, "gt", "both", map[string]string{
+	n.logger.Emit(events.EventEscalationCreated, esc.Source, "sol", "both", map[string]string{
 		"id":          esc.ID,
 		"severity":    esc.Severity,
 		"source":      esc.Source,

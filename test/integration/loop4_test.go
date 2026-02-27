@@ -63,7 +63,7 @@ needs = ["step2"]
 	agent := "TestBot"
 
 	// 1. Instantiate.
-	inst, state, err := workflow.Instantiate(rig, agent, "test-formula", map[string]string{"issue": "gt-12345678"})
+	inst, state, err := workflow.Instantiate(rig, agent, "test-formula", map[string]string{"issue": "sol-12345678"})
 	if err != nil {
 		t.Fatalf("Instantiate: %v", err)
 	}
@@ -85,7 +85,7 @@ needs = ["step2"]
 	if step.ID != "step1" {
 		t.Errorf("current step ID: got %q, want step1", step.ID)
 	}
-	if !strings.Contains(step.Instructions, "gt-12345678") {
+	if !strings.Contains(step.Instructions, "sol-12345678") {
 		t.Error("step instructions should contain variable substitution")
 	}
 
@@ -182,7 +182,7 @@ needs = ["s2"]
 	agent := "CrashBot"
 
 	// 1. Instantiate and advance to step 2.
-	workflow.Instantiate(rig, agent, "crash-formula", map[string]string{"issue": "gt-crash"})
+	workflow.Instantiate(rig, agent, "crash-formula", map[string]string{"issue": "sol-crash"})
 	workflow.Advance(rig, agent) // step1 → step2
 
 	// 2. Simulate crash: read state from disk (no in-memory state to clear).
@@ -229,13 +229,13 @@ func TestCastWithWorkflow(t *testing.T) {
 	mgr := newMockSessionChecker()
 
 	// Create formula.
-	formulaDir := filepath.Join(gtHome, "formulas", "sling-formula")
+	formulaDir := filepath.Join(gtHome, "formulas", "cast-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
 	os.MkdirAll(stepsDir, 0o755)
 
-	manifest := `name = "sling-formula"
+	manifest := `name = "cast-formula"
 type = "agent"
-description = "Sling test"
+description = "Cast test"
 
 [variables]
 [variables.issue]
@@ -255,26 +255,26 @@ instructions = "steps/01.md"
 
 	logger := events.NewLogger(gtHome)
 
-	// Sling with formula.
+	// Cast with formula.
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "testrig",
 		AgentName:  "WorkflowBot",
 		SourceRepo: sourceRepo,
-		Formula:    "sling-formula",
+		Formula:    "cast-formula",
 	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
-		t.Fatalf("sling with formula: %v", err)
+		t.Fatalf("cast with formula: %v", err)
 	}
 
-	if result.Formula != "sling-formula" {
-		t.Errorf("result formula: got %q, want sling-formula", result.Formula)
+	if result.Formula != "cast-formula" {
+		t.Errorf("result formula: got %q, want cast-formula", result.Formula)
 	}
 
 	// Verify .workflow/ directory created in agent's outpost dir.
 	wfDir := filepath.Join(gtHome, "testrig", "outposts", "WorkflowBot", ".workflow")
 	if _, err := os.Stat(wfDir); os.IsNotExist(err) {
-		t.Error(".workflow/ directory should exist after sling with formula")
+		t.Error(".workflow/ directory should exist after cast with formula")
 	}
 
 	// Verify state.json exists with current_step set.
@@ -348,7 +348,7 @@ needs = ["step1"]
 	sphereStore.CreateAgent("PrimeBot", "testrig", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Prime WF task", "Prime workflow test", "operator", 2, nil)
 
-	// Sling with formula.
+	// Cast with formula.
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "testrig",
@@ -370,13 +370,13 @@ needs = ["step1"]
 
 	// Verify output contains propulsion loop commands.
 	if !strings.Contains(result.Output, "sol workflow advance") {
-		t.Error("prime output should contain 'gt workflow advance'")
+		t.Error("prime output should contain 'sol workflow advance'")
 	}
 	if !strings.Contains(result.Output, "sol workflow status") {
-		t.Error("prime output should contain 'gt workflow status'")
+		t.Error("prime output should contain 'sol workflow status'")
 	}
 	if !strings.Contains(result.Output, "sol resolve") {
-		t.Error("prime output should contain 'gt done'")
+		t.Error("prime output should contain 'sol resolve'")
 	}
 
 	// Verify workflow formula name appears.
@@ -394,7 +394,7 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := newMockSessionChecker()
 
-	// Create agent and work item — sling without formula.
+	// Create agent and work item — cast without formula.
 	sphereStore.CreateAgent("PlainBot", "testrig", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Plain task", "No workflow test", "operator", 2, nil)
 
@@ -421,7 +421,7 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 
 	// Should contain standard instructions.
 	if !strings.Contains(result.Output, "sol resolve") {
-		t.Error("prime output should contain 'gt done'")
+		t.Error("prime output should contain 'sol resolve'")
 	}
 	if !strings.Contains(result.Output, itemID) {
 		t.Error("prime output should contain work item ID")
@@ -462,7 +462,7 @@ instructions = "steps/01.md"
 	sphereStore.CreateAgent("DoneBot", "testrig", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Done WF task", "Done workflow test", "operator", 2, nil)
 
-	// Sling with formula.
+	// Cast with formula.
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "testrig",
@@ -471,7 +471,7 @@ instructions = "steps/01.md"
 		Formula:    "done-formula",
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
-		t.Fatalf("sling: %v", err)
+		t.Fatalf("cast: %v", err)
 	}
 
 	// Verify .workflow/ exists.
@@ -483,18 +483,18 @@ instructions = "steps/01.md"
 	// Simulate agent work in worktree.
 	os.WriteFile(filepath.Join(result.WorktreeDir, "work.txt"), []byte("done\n"), 0o644)
 
-	// Call Done.
+	// Call Resolve.
 	_, err = dispatch.Resolve(dispatch.ResolveOpts{
 		World:       "testrig",
 		AgentName: "DoneBot",
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
-		t.Fatalf("done: %v", err)
+		t.Fatalf("resolve: %v", err)
 	}
 
 	// Verify .workflow/ directory is removed.
 	if _, err := os.Stat(wfDir); !os.IsNotExist(err) {
-		t.Error(".workflow/ should be removed after done")
+		t.Error(".workflow/ should be removed after resolve")
 	}
 }
 
@@ -511,7 +511,7 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -528,16 +528,16 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	worldStore.Close()
 
 	// Create caravan with all 3.
-	convoyID, err := sphereStore.CreateCaravan("test-convoy", "operator")
+	caravanID, err := sphereStore.CreateCaravan("test-convoy", "operator")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
-	sphereStore.AddCaravanItem(convoyID, idA, "testrig")
-	sphereStore.AddCaravanItem(convoyID, idB, "testrig")
-	sphereStore.AddCaravanItem(convoyID, idC, "testrig")
+	sphereStore.AddCaravanItem(caravanID, idA, "testrig")
+	sphereStore.AddCaravanItem(caravanID, idB, "testrig")
+	sphereStore.AddCaravanItem(caravanID, idC, "testrig")
 
 	// Check readiness: A and B ready, C blocked.
-	statuses, err := sphereStore.CheckCaravanReadiness(convoyID, store.OpenWorld)
+	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
 	if err != nil {
 		t.Fatalf("CheckCaravanReadiness: %v", err)
 	}
@@ -564,7 +564,7 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	rs.Close()
 
 	// Check again: B ready, C still blocked (B not done).
-	statuses, _ = sphereStore.CheckCaravanReadiness(convoyID, store.OpenWorld)
+	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
 	for _, st := range statuses {
 		if st.WorkItemID == idC && st.Ready {
 			t.Error("C should still be blocked (B not done)")
@@ -577,7 +577,7 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	rs.Close()
 
 	// Check again: C now ready.
-	statuses, _ = sphereStore.CheckCaravanReadiness(convoyID, store.OpenWorld)
+	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
 	for _, st := range statuses {
 		if st.WorkItemID == idC && !st.Ready {
 			t.Error("C should be ready now (A and B done)")
@@ -596,7 +596,7 @@ func TestCaravanAutoClose(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -611,12 +611,12 @@ func TestCaravanAutoClose(t *testing.T) {
 	worldStore.Close()
 
 	// Create caravan.
-	convoyID, _ := sphereStore.CreateCaravan("auto-close-test", "operator")
-	sphereStore.AddCaravanItem(convoyID, id1, "testrig")
-	sphereStore.AddCaravanItem(convoyID, id2, "testrig")
+	caravanID, _ := sphereStore.CreateCaravan("auto-close-test", "operator")
+	sphereStore.AddCaravanItem(caravanID, id1, "testrig")
+	sphereStore.AddCaravanItem(caravanID, id2, "testrig")
 
 	// TryCloseCaravan → should return true.
-	closed, err := sphereStore.TryCloseCaravan(convoyID, store.OpenWorld)
+	closed, err := sphereStore.TryCloseCaravan(caravanID, store.OpenWorld)
 	if err != nil {
 		t.Fatalf("TryCloseCaravan: %v", err)
 	}
@@ -625,11 +625,11 @@ func TestCaravanAutoClose(t *testing.T) {
 	}
 
 	// Verify caravan status.
-	convoy, _ := sphereStore.GetCaravan(convoyID)
-	if convoy.Status != "closed" {
-		t.Errorf("caravan status: got %q, want closed", convoy.Status)
+	caravan, _ := sphereStore.GetCaravan(caravanID)
+	if caravan.Status != "closed" {
+		t.Errorf("caravan status: got %q, want closed", caravan.Status)
 	}
-	if convoy.ClosedAt == nil {
+	if caravan.ClosedAt == nil {
 		t.Error("closed_at should be set")
 	}
 }
@@ -645,7 +645,7 @@ func TestCaravanMultiRig(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -669,16 +669,16 @@ func TestCaravanMultiRig(t *testing.T) {
 	betaStore.Close()
 
 	// Create caravan spanning both rigs.
-	convoyID, err := sphereStore.CreateCaravan("multi-rig-convoy", "operator")
+	caravanID, err := sphereStore.CreateCaravan("multi-rig-convoy", "operator")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
-	sphereStore.AddCaravanItem(convoyID, idA, "alpha")
-	sphereStore.AddCaravanItem(convoyID, idB, "beta")
-	sphereStore.AddCaravanItem(convoyID, idC, "beta")
+	sphereStore.AddCaravanItem(caravanID, idA, "alpha")
+	sphereStore.AddCaravanItem(caravanID, idB, "beta")
+	sphereStore.AddCaravanItem(caravanID, idC, "beta")
 
 	// Check readiness: A ready (no deps), B ready (no deps), C blocked (depends on B).
-	statuses, err := sphereStore.CheckCaravanReadiness(convoyID, store.OpenWorld)
+	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
 	if err != nil {
 		t.Fatalf("CheckCaravanReadiness: %v", err)
 	}
@@ -723,7 +723,7 @@ func TestCaravanMultiRig(t *testing.T) {
 	bs.UpdateWorkItem(idB, store.WorkItemUpdates{Status: "done"})
 	bs.Close()
 
-	statuses, _ = sphereStore.CheckCaravanReadiness(convoyID, store.OpenWorld)
+	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
 	for _, st := range statuses {
 		if st.WorkItemID == idC && !st.Ready {
 			t.Error("beta item C should be ready after B is done")
@@ -739,7 +739,7 @@ func TestCaravanMultiRig(t *testing.T) {
 	bs.UpdateWorkItem(idC, store.WorkItemUpdates{Status: "done"})
 	bs.Close()
 
-	closed, err := sphereStore.TryCloseCaravan(convoyID, store.OpenWorld)
+	closed, err := sphereStore.TryCloseCaravan(caravanID, store.OpenWorld)
 	if err != nil {
 		t.Fatalf("TryCloseCaravan: %v", err)
 	}
@@ -800,7 +800,7 @@ needs = ["implement"]
 
 	logger := events.NewLogger(gtHome)
 
-	// 1. Sling with formula (mock session).
+	// 1. Cast with formula (mock session).
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "testrig",
@@ -809,7 +809,7 @@ needs = ["implement"]
 		Formula:    "propulsion-formula",
 	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
-		t.Fatalf("sling: %v", err)
+		t.Fatalf("cast: %v", err)
 	}
 
 	// 2. Prime → get step 1 instructions.
@@ -866,13 +866,13 @@ needs = ["implement"]
 	// 7. Simulate work in worktree.
 	os.WriteFile(filepath.Join(result.WorktreeDir, "feature.go"), []byte("package main\n"), 0o644)
 
-	// 8. Done → workflow cleaned up, work item marked done.
+	// 8. Resolve → workflow cleaned up, work item marked done.
 	_, err = dispatch.Resolve(dispatch.ResolveOpts{
 		World:       "testrig",
 		AgentName: "PropBot",
 	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
-		t.Fatalf("done: %v", err)
+		t.Fatalf("resolve: %v", err)
 	}
 
 	// Verify work item is done.
@@ -884,13 +884,13 @@ needs = ["implement"]
 	// Verify workflow cleaned up.
 	wfDir := filepath.Join(gtHome, "testrig", "outposts", "PropBot", ".workflow")
 	if _, err := os.Stat(wfDir); !os.IsNotExist(err) {
-		t.Error(".workflow/ should be removed after done")
+		t.Error(".workflow/ should be removed after resolve")
 	}
 
 	// Verify events.
-	assertEventEmitted(t, gtHome, events.EventSling)
+	assertEventEmitted(t, gtHome, events.EventCast)
 	assertEventEmitted(t, gtHome, events.EventWorkflowInstantiate)
-	assertEventEmitted(t, gtHome, events.EventDone)
+	assertEventEmitted(t, gtHome, events.EventResolve)
 }
 
 // --- CLAUDE.md Tests ---
@@ -899,7 +899,7 @@ func TestClaudeMDWithWorkflow(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "testrig",
-		WorkItemID:  "gt-12345678",
+		WorkItemID:  "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 		HasWorkflow: true,
@@ -909,13 +909,13 @@ func TestClaudeMDWithWorkflow(t *testing.T) {
 
 	// Should contain workflow commands.
 	if !strings.Contains(content, "sol workflow current") {
-		t.Error("CLAUDE.md should contain 'gt workflow current'")
+		t.Error("CLAUDE.md should contain 'sol workflow current'")
 	}
 	if !strings.Contains(content, "sol workflow advance") {
-		t.Error("CLAUDE.md should contain 'gt workflow advance'")
+		t.Error("CLAUDE.md should contain 'sol workflow advance'")
 	}
 	if !strings.Contains(content, "sol workflow status") {
-		t.Error("CLAUDE.md should contain 'gt workflow status'")
+		t.Error("CLAUDE.md should contain 'sol workflow status'")
 	}
 
 	// Should have workflow protocol.
@@ -928,7 +928,7 @@ func TestClaudeMDWithoutWorkflow(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "testrig",
-		WorkItemID:  "gt-12345678",
+		WorkItemID:  "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 		HasWorkflow: false,
@@ -943,7 +943,7 @@ func TestClaudeMDWithoutWorkflow(t *testing.T) {
 
 	// Should have standard protocol.
 	if !strings.Contains(content, "sol resolve") {
-		t.Error("CLAUDE.md should contain 'gt done'")
+		t.Error("CLAUDE.md should contain 'sol resolve'")
 	}
 }
 
@@ -957,7 +957,7 @@ func TestCLICastFormulaHelp(t *testing.T) {
 
 	out, err := runGT(t, gtHome, "cast", "--help")
 	if err != nil {
-		t.Fatalf("gt cast --help failed: %v: %s", err, out)
+		t.Fatalf("sol cast --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "--formula") {
 		t.Errorf("cast help missing --formula flag: %s", out)

@@ -132,14 +132,14 @@ func TestMigrateTownV2(t *testing.T) {
 		t.Fatalf("expected escalations table, got count=%d", count)
 	}
 
-	// Verify schema_version is 3.
+	// Verify schema_version is 4.
 	var version int
 	err = s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 3 {
-		t.Fatalf("expected schema version 3, got %d", version)
+	if version != 4 {
+		t.Fatalf("expected schema version 4, got %d", version)
 	}
 
 	// Verify indexes exist.
@@ -166,7 +166,7 @@ func TestMigrateTownV1ToV2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(townSchemaV1); err != nil {
+	if _, err := s.db.Exec(sphereSchemaV1); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec("INSERT INTO schema_version VALUES (1)"); err != nil {
@@ -175,7 +175,7 @@ func TestMigrateTownV1ToV2(t *testing.T) {
 	// Create an agent at V1.
 	_, err = s.db.Exec(
 		`INSERT INTO agents (id, name, rig, role, state, created_at, updated_at)
-		 VALUES ('myrig/Toast', 'Toast', 'myrig', 'polecat', 'idle', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`)
+		 VALUES ('myrig/Toast', 'Toast', 'myrig', 'agent', 'idle', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,14 +207,14 @@ func TestMigrateTownV1ToV2(t *testing.T) {
 		t.Fatalf("expected agent name 'Toast', got %q", agent.Name)
 	}
 
-	// Verify schema_version is 3 (V1→V2→V3 all applied).
+	// Verify schema_version is 4 (V1→V2→V3→V4 all applied).
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 3 {
-		t.Fatalf("expected schema version 3, got %d", version)
+	if version != 4 {
+		t.Fatalf("expected schema version 4, got %d", version)
 	}
 }
 
@@ -467,11 +467,11 @@ func TestConcurrentAccess(t *testing.T) {
 func TestNotFound(t *testing.T) {
 	s := setupRig(t)
 
-	_, err := s.GetWorkItem("gt-nonexist")
+	_, err := s.GetWorkItem("sol-nonexist")
 	if err == nil {
 		t.Fatal("expected error for nonexistent work item")
 	}
-	expected := `work item "gt-nonexist" not found`
+	expected := `work item "sol-nonexist" not found`
 	if err.Error() != expected {
 		t.Fatalf("expected error %q, got %q", expected, err.Error())
 	}
@@ -506,12 +506,12 @@ func TestAgentCRUD(t *testing.T) {
 	if agent.State != "idle" {
 		t.Fatalf("expected state 'idle', got %q", agent.State)
 	}
-	if agent.HookItem != "" {
-		t.Fatalf("expected empty hook_item, got %q", agent.HookItem)
+	if agent.TetherItem != "" {
+		t.Fatalf("expected empty tether_item, got %q", agent.TetherItem)
 	}
 
-	// Update state with hook.
-	err = s.UpdateAgentState("myrig/Toast", "working", "gt-abc12345")
+	// Update state with tether.
+	err = s.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,11 +522,11 @@ func TestAgentCRUD(t *testing.T) {
 	if agent.State != "working" {
 		t.Fatalf("expected state 'working', got %q", agent.State)
 	}
-	if agent.HookItem != "gt-abc12345" {
-		t.Fatalf("expected hook_item 'gt-abc12345', got %q", agent.HookItem)
+	if agent.TetherItem != "sol-abc12345" {
+		t.Fatalf("expected tether_item 'sol-abc12345', got %q", agent.TetherItem)
 	}
 
-	// Clear hook (back to idle).
+	// Clear tether (back to idle).
 	err = s.UpdateAgentState("myrig/Toast", "idle", "")
 	if err != nil {
 		t.Fatal(err)
@@ -538,13 +538,13 @@ func TestAgentCRUD(t *testing.T) {
 	if agent.State != "idle" {
 		t.Fatalf("expected state 'idle', got %q", agent.State)
 	}
-	if agent.HookItem != "" {
-		t.Fatalf("expected empty hook_item, got %q", agent.HookItem)
+	if agent.TetherItem != "" {
+		t.Fatalf("expected empty tether_item, got %q", agent.TetherItem)
 	}
 
 	// List agents.
 	s.CreateAgent("Jasper", "myrig", "agent")
-	s.CreateAgent("Wren", "myrig", "witness")
+	s.CreateAgent("Wren", "myrig", "sentinel")
 
 	agents, err := s.ListAgents("myrig", "")
 	if err != nil {
@@ -576,8 +576,8 @@ func TestAgentCRUD(t *testing.T) {
 	}
 
 	// Set all agents to working, FindIdleAgent should return nil.
-	s.UpdateAgentState("myrig/Toast", "working", "gt-item1")
-	s.UpdateAgentState("myrig/Jasper", "working", "gt-item2")
+	s.UpdateAgentState("myrig/Toast", "working", "sol-item1")
+	s.UpdateAgentState("myrig/Jasper", "working", "sol-item2")
 
 	idle, err = s.FindIdleAgent("myrig")
 	if err != nil {
@@ -698,7 +698,7 @@ func TestMigrateRigV1ToV2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(rigSchemaV1); err != nil {
+	if _, err := s.db.Exec(worldSchemaV1); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec("INSERT INTO schema_version VALUES (1)"); err != nil {
@@ -707,7 +707,7 @@ func TestMigrateRigV1ToV2(t *testing.T) {
 	// Create a work item while at V1.
 	_, err = s.db.Exec(
 		`INSERT INTO work_items (id, title, status, priority, created_by, created_at, updated_at)
-		 VALUES ('gt-v1item01', 'V1 item', 'open', 2, 'operator', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`)
+		 VALUES ('sol-v1item01', 'V1 item', 'open', 2, 'operator', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -731,7 +731,7 @@ func TestMigrateRigV1ToV2(t *testing.T) {
 	}
 
 	// Verify existing work items are untouched.
-	item, err := s2.GetWorkItem("gt-v1item01")
+	item, err := s2.GetWorkItem("sol-v1item01")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -756,10 +756,10 @@ func TestCreateWorkItemWithOpts(t *testing.T) {
 	id, err := s.CreateWorkItemWithOpts(CreateWorkItemOpts{
 		Title:       "Resolve conflicts",
 		Description: "Resolve merge conflicts for branch X",
-		CreatedBy:   "myrig/refinery",
+		CreatedBy:   "myrig/forge",
 		Priority:    1,
 		Labels:      []string{"conflict-resolution", "source-mr:mr-12345678"},
-		ParentID:    "gt-parent01",
+		ParentID:    "sol-parent01",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -775,11 +775,11 @@ func TestCreateWorkItemWithOpts(t *testing.T) {
 	if item.Priority != 1 {
 		t.Errorf("priority = %d, want 1", item.Priority)
 	}
-	if item.ParentID != "gt-parent01" {
-		t.Errorf("parent_id = %q, want %q", item.ParentID, "gt-parent01")
+	if item.ParentID != "sol-parent01" {
+		t.Errorf("parent_id = %q, want %q", item.ParentID, "sol-parent01")
 	}
-	if item.CreatedBy != "myrig/refinery" {
-		t.Errorf("created_by = %q, want %q", item.CreatedBy, "myrig/refinery")
+	if item.CreatedBy != "myrig/forge" {
+		t.Errorf("created_by = %q, want %q", item.CreatedBy, "myrig/forge")
 	}
 	if len(item.Labels) != 2 {
 		t.Fatalf("expected 2 labels, got %d: %v", len(item.Labels), item.Labels)

@@ -75,7 +75,7 @@ func openStores(t *testing.T, rig string) (*store.Store, *store.Store) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	t.Cleanup(func() { sphereStore.Close() })
 

@@ -69,7 +69,7 @@ type AgentStatus struct {
 	Name         string `json:"name"`
 	State        string `json:"state"`
 	SessionAlive bool   `json:"session_alive"`
-	HookItem     string `json:"hook_item,omitempty"`
+	TetherItem     string `json:"tether_item,omitempty"`
 	WorkTitle    string `json:"work_title,omitempty"`
 }
 
@@ -189,9 +189,9 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		as.SessionAlive = checker.Exists(sessName)
 
 		// Look up tethered work item title.
-		if agent.HookItem != "" {
-			as.HookItem = agent.HookItem
-			item, err := worldStore.GetWorkItem(agent.HookItem)
+		if agent.TetherItem != "" {
+			as.TetherItem = agent.TetherItem
+			item, err := worldStore.GetWorkItem(agent.TetherItem)
 			if err != nil {
 				as.WorkTitle = "(unknown)"
 			} else {

@@ -34,7 +34,7 @@ type WorldStore interface {
 type SphereStore interface {
 	CreateAgent(name, rig, role string) (string, error)
 	GetAgent(id string) (*store.Agent, error)
-	UpdateAgentState(id, state, hookItem string) error
+	UpdateAgentState(id, state, tetherItem string) error
 	Close() error
 }
 

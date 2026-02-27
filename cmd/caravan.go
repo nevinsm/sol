@@ -65,7 +65,7 @@ var caravanCreateCmd = &cobra.Command{
 
 		logger := events.NewLogger(config.Home())
 		logger.Emit(events.EventCaravanCreated, "sol", "operator", "both", map[string]string{
-			"convoy_id": caravanID,
+			"caravan_id": caravanID,
 			"name":      name,
 			"count":     fmt.Sprintf("%d", len(itemIDs)),
 		})
@@ -396,7 +396,7 @@ var caravanLaunchCmd = &cobra.Command{
 		}
 
 		logger.Emit(events.EventCaravanLaunched, "sol", "operator", "both", map[string]string{
-			"convoy_id":  caravanID,
+			"caravan_id":  caravanID,
 			"world":      caravanWorld,
 			"dispatched": fmt.Sprintf("%d", dispatched),
 		})
@@ -417,7 +417,7 @@ var caravanLaunchCmd = &cobra.Command{
 				carName = caravan.Name
 			}
 			logger.Emit(events.EventCaravanClosed, "sol", "operator", "both", map[string]string{
-				"convoy_id": caravanID,
+				"caravan_id": caravanID,
 				"name":      carName,
 			})
 			fmt.Println("Caravan auto-closed (all items complete).")

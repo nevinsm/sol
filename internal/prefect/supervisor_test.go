@@ -120,7 +120,7 @@ func TestHeartbeatDetectsDead(t *testing.T) {
 
 	// Create a working agent with a worktree.
 	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
 
 	// Create the worktree directory so respawn doesn't bail.
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
@@ -178,9 +178,9 @@ func TestHeartbeatMultipleWorlds(t *testing.T) {
 
 	// Create working agents in different worlds.
 	sphereStore.CreateAgent("Toast", "rig1", "agent")
-	sphereStore.UpdateAgentState("rig1/Toast", "working", "gt-aaa11111")
+	sphereStore.UpdateAgentState("rig1/Toast", "working", "sol-aaa11111")
 	sphereStore.CreateAgent("Jasper", "rig2", "agent")
-	sphereStore.UpdateAgentState("rig2/Jasper", "working", "gt-bbb22222")
+	sphereStore.UpdateAgentState("rig2/Jasper", "working", "sol-bbb22222")
 
 	// Create worktree directories.
 	for _, p := range []string{
@@ -207,7 +207,7 @@ func TestBackoffEscalation(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
 
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
@@ -305,7 +305,7 @@ func TestDegradedModeSkipsRespawn(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
 
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
@@ -379,7 +379,7 @@ func TestBackoffReset(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
 
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
@@ -472,7 +472,7 @@ func TestRespawnMissingWorktree(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Ghost", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Ghost", "working", "gt-ghost123")
+	sphereStore.UpdateAgentState("myrig/Ghost", "working", "sol-ghost123")
 
 	// Do NOT create worktree directory.
 
@@ -540,7 +540,7 @@ func TestRespawnOutpostUnchanged(t *testing.T) {
 
 	// Create an agent in working state.
 	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
 
 	// Create the agent worktree directory.
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
@@ -631,7 +631,7 @@ func TestHeartbeatDefersToSentinel(t *testing.T) {
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 	// Session is dead (not started in mock for this agent).
@@ -661,7 +661,7 @@ func TestHeartbeatRespondsWithoutSentinel(t *testing.T) {
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 

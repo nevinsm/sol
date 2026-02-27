@@ -22,7 +22,7 @@ func OpenWorld(world string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open world database %q: %w", world, err)
 	}
-	if err := s.migrateRig(); err != nil {
+	if err := s.migrateWorld(); err != nil {
 		s.Close()
 		return nil, fmt.Errorf("failed to migrate world database %q: %w", world, err)
 	}
@@ -36,7 +36,7 @@ func OpenSphere() (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sphere database: %w", err)
 	}
-	if err := s.migrateTown(); err != nil {
+	if err := s.migrateSphere(); err != nil {
 		s.Close()
 		return nil, fmt.Errorf("failed to migrate sphere database: %w", err)
 	}

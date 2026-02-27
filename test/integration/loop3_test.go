@@ -31,7 +31,7 @@ func TestMailSendAndReceive(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
@@ -116,18 +116,18 @@ func TestProtocolMessageFlow(t *testing.T) {
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		t.Fatalf("open town store: %v", err)
+		t.Fatalf("open sphere store: %v", err)
 	}
 	defer sphereStore.Close()
 
-	// Send POLECAT_DONE protocol message.
+	// Send AGENT_DONE protocol message.
 	payload := store.AgentDonePayload{
-		WorkItemID: "gt-abc12345",
+		WorkItemID: "sol-abc12345",
 		AgentID:    "testrig/Toast",
-		Branch:     "outpost/Toast/gt-abc12345",
+		Branch:     "outpost/Toast/sol-abc12345",
 		World:        "testrig",
 	}
-	msgID, err := sphereStore.SendProtocolMessage("testrig/Toast", "testrig/witness",
+	msgID, err := sphereStore.SendProtocolMessage("testrig/Toast", "testrig/sentinel",
 		store.ProtoAgentDone, payload)
 	if err != nil {
 		t.Fatalf("SendProtocolMessage: %v", err)
@@ -137,7 +137,7 @@ func TestProtocolMessageFlow(t *testing.T) {
 	}
 
 	// Verify PendingProtocol returns it.
-	msgs, err := sphereStore.PendingProtocol("testrig/witness", store.ProtoAgentDone)
+	msgs, err := sphereStore.PendingProtocol("testrig/sentinel", store.ProtoAgentDone)
 	if err != nil {
 		t.Fatalf("PendingProtocol: %v", err)
 	}
@@ -150,11 +150,11 @@ func TestProtocolMessageFlow(t *testing.T) {
 	if err := json.Unmarshal([]byte(msgs[0].Body), &parsed); err != nil {
 		t.Fatalf("parse protocol body: %v", err)
 	}
-	if parsed.WorkItemID != "gt-abc12345" {
-		t.Errorf("work_item_id: got %q, want %q", parsed.WorkItemID, "gt-abc12345")
+	if parsed.WorkItemID != "sol-abc12345" {
+		t.Errorf("work_item_id: got %q, want %q", parsed.WorkItemID, "sol-abc12345")
 	}
-	if parsed.Branch != "outpost/Toast/gt-abc12345" {
-		t.Errorf("branch: got %q, want %q", parsed.Branch, "outpost/Toast/gt-abc12345")
+	if parsed.Branch != "outpost/Toast/sol-abc12345" {
+		t.Errorf("branch: got %q, want %q", parsed.Branch, "outpost/Toast/sol-abc12345")
 	}
 
 	// Ack the message.
@@ -163,7 +163,7 @@ func TestProtocolMessageFlow(t *testing.T) {
 	}
 
 	// Verify empty after ack.
-	msgs, err = sphereStore.PendingProtocol("testrig/witness", store.ProtoAgentDone)
+	msgs, err = sphereStore.PendingProtocol("testrig/sentinel", store.ProtoAgentDone)
 	if err != nil {
 		t.Fatalf("PendingProtocol after ack: %v", err)
 	}
@@ -185,8 +185,8 @@ func TestEventFeedEndToEnd(t *testing.T) {
 	logger := events.NewLogger(gtHome)
 
 	// Emit events of different types.
-	logger.Emit(events.EventSling, "gt", "operator", "both", map[string]string{"item": "1"})
-	logger.Emit(events.EventDone, "gt", "Toast", "both", map[string]string{"item": "1"})
+	logger.Emit(events.EventCast, "sol", "operator", "both", map[string]string{"item": "1"})
+	logger.Emit(events.EventResolve, "sol", "Toast", "both", map[string]string{"item": "1"})
 	logger.Emit(events.EventPatrol, "testrig/sentinel", "sentinel", "feed", map[string]string{"rig": "testrig"})
 
 	// Read with no filter — all present.
@@ -200,15 +200,15 @@ func TestEventFeedEndToEnd(t *testing.T) {
 	}
 
 	// Read with type filter.
-	evts, err = reader.Read(events.ReadOpts{Type: events.EventSling})
+	evts, err = reader.Read(events.ReadOpts{Type: events.EventCast})
 	if err != nil {
 		t.Fatalf("Read filtered: %v", err)
 	}
 	if len(evts) != 1 {
 		t.Errorf("filtered count: got %d, want 1", len(evts))
 	}
-	if evts[0].Type != events.EventSling {
-		t.Errorf("filtered type: got %q, want %q", evts[0].Type, events.EventSling)
+	if evts[0].Type != events.EventCast {
+		t.Errorf("filtered type: got %q, want %q", evts[0].Type, events.EventCast)
 	}
 
 	// Read with limit.
@@ -258,19 +258,19 @@ func TestChronicleDedupAndAggregation(t *testing.T) {
 	logger := events.NewLogger(gtHome)
 
 	// Write duplicate events (same type/source/actor within DedupWindow).
-	logger.Emit(events.EventDone, "gt", "Toast", "both", map[string]string{"run": "1"})
-	logger.Emit(events.EventDone, "gt", "Toast", "both", map[string]string{"run": "2"})
-	logger.Emit(events.EventDone, "gt", "Toast", "both", map[string]string{"run": "3"})
+	logger.Emit(events.EventResolve, "sol", "Toast", "both", map[string]string{"run": "1"})
+	logger.Emit(events.EventResolve, "sol", "Toast", "both", map[string]string{"run": "2"})
+	logger.Emit(events.EventResolve, "sol", "Toast", "both", map[string]string{"run": "3"})
 
-	// Write a burst of sling events (aggregatable type) with different actors
+	// Write a burst of cast events (aggregatable type) with different actors
 	// so they survive dedup but get aggregated.
-	logger.Emit(events.EventSling, "gt", "operator-a", "both", map[string]string{"item": "a"})
-	logger.Emit(events.EventSling, "gt", "operator-b", "both", map[string]string{"item": "b"})
-	logger.Emit(events.EventSling, "gt", "operator-c", "both", map[string]string{"item": "c"})
+	logger.Emit(events.EventCast, "sol", "operator-a", "both", map[string]string{"item": "a"})
+	logger.Emit(events.EventCast, "sol", "operator-b", "both", map[string]string{"item": "b"})
+	logger.Emit(events.EventCast, "sol", "operator-c", "both", map[string]string{"item": "c"})
 
 	// Write unique done events (different actors).
-	logger.Emit(events.EventDone, "gt", "Jasper", "both", map[string]string{"item": "x"})
-	logger.Emit(events.EventDone, "gt", "Sage", "both", map[string]string{"item": "y"})
+	logger.Emit(events.EventResolve, "sol", "Jasper", "both", map[string]string{"item": "x"})
+	logger.Emit(events.EventResolve, "sol", "Sage", "both", map[string]string{"item": "y"})
 
 	// Small delay so aggregation window passes.
 	time.Sleep(5 * time.Millisecond)
@@ -299,17 +299,17 @@ func TestChronicleDedupAndAggregation(t *testing.T) {
 
 	// Duplicate done events from Toast should be deduped to 1.
 	// Unique done events from Jasper and Sage should be deduped individually
-	// (same type+source "gt" but different actors).
-	// Sling events should be aggregated into sling_batch.
-	// Expect: 1 done (Toast deduped) + 1 done (Jasper) + 1 done (Sage) + 1 sling_batch = 4
-	// But: Jasper and Sage done events have same type+source("gt"), different actors → not deduped.
-	if typeCounts["done"] != 3 {
-		t.Errorf("expected 3 done events (Toast deduped, Jasper+Sage unique), got %d", typeCounts["done"])
+	// (same type+source "sol" but different actors).
+	// Cast events should be aggregated into cast_batch.
+	// Expect: 1 done (Toast deduped) + 1 done (Jasper) + 1 done (Sage) + 1 cast_batch = 4
+	// But: Jasper and Sage done events have same type+source("sol"), different actors → not deduped.
+	if typeCounts["resolve"] != 3 {
+		t.Errorf("expected 3 resolve events (Toast deduped, Jasper+Sage unique), got %d", typeCounts["resolve"])
 	}
 
-	// Sling burst should produce a sling_batch.
-	if typeCounts["sling_batch"] != 1 {
-		t.Errorf("expected 1 sling_batch event, got %d", typeCounts["sling_batch"])
+	// Cast burst should produce a cast_batch.
+	if typeCounts["cast_batch"] != 1 {
+		t.Errorf("expected 1 cast_batch event, got %d", typeCounts["cast_batch"])
 	}
 
 	if len(curated) == 0 {
@@ -399,20 +399,20 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	logger := events.NewLogger(gtHome)
 	mock := newMockSessionChecker()
 
-	// Create agent with state=working, hook_item set.
+	// Create agent with state=working, tether_item set.
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
 
 	// Create work item.
 	now := time.Now().UTC().Format(time.RFC3339)
 	worldStore.DB().Exec(
 		`INSERT INTO work_items (id, title, description, status, priority, created_by, created_at, updated_at)
-		 VALUES (?, ?, '', 'hooked', 3, 'test', ?, ?)`,
-		"gt-abc12345", "Test task", now, now,
+		 VALUES (?, ?, '', 'tethered', 3, 'test', ?, ?)`,
+		"sol-abc12345", "Test task", now, now,
 	)
 
-	// Write hook file.
-	if err := tether.Write("testrig", "Toast", "gt-abc12345"); err != nil {
+	// Write tether file.
+	if err := tether.Write("testrig", "Toast", "sol-abc12345"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
@@ -458,16 +458,16 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	mock := newMockSessionChecker()
 
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	worldStore.DB().Exec(
 		`INSERT INTO work_items (id, title, description, status, priority, created_by, created_at, updated_at)
-		 VALUES (?, ?, '', 'hooked', 3, 'test', ?, ?)`,
-		"gt-abc12345", "Test task", now, now,
+		 VALUES (?, ?, '', 'tethered', 3, 'test', ?, ?)`,
+		"sol-abc12345", "Test task", now, now,
 	)
 
-	if err := tether.Write("testrig", "Toast", "gt-abc12345"); err != nil {
+	if err := tether.Write("testrig", "Toast", "sol-abc12345"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
@@ -512,7 +512,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	}
 
 	// Work item should be open.
-	item, err := worldStore.GetWorkItem("gt-abc12345")
+	item, err := worldStore.GetWorkItem("sol-abc12345")
 	if err != nil {
 		t.Fatalf("GetWorkItem: %v", err)
 	}
@@ -520,9 +520,9 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 		t.Errorf("work item status: got %q, want %q", item.Status, "open")
 	}
 
-	// Hook file should be removed.
+	// Tether file should be removed.
 	if tether.IsTethered("testrig", "Toast") {
-		t.Error("hook file should be removed after max respawns")
+		t.Error("tether file should be removed after max respawns")
 	}
 
 	// Stalled event should be emitted.
@@ -545,7 +545,7 @@ func TestSentinelCleanupZombies(t *testing.T) {
 	logger := events.NewLogger(gtHome)
 	mock := newMockSessionChecker()
 
-	// Create idle agent with no hook_item, no tether file.
+	// Create idle agent with no tether_item, no tether file.
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
 	// Session is alive.
 	mock.alive["sol-testrig-Toast"] = true
@@ -588,7 +588,7 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 	mock := newMockSessionChecker()
 
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
 	mock.alive["sol-testrig-Toast"] = true
 	mock.captures["sol-testrig-Toast"] = "same output both patrols"
 
@@ -639,7 +639,7 @@ func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
 	mock := newMockSessionChecker()
 
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
 	mock.alive["sol-testrig-Toast"] = true
 	mock.captures["sol-testrig-Toast"] = "same output"
 
@@ -683,7 +683,7 @@ func TestSentinelAIAssessmentFailure(t *testing.T) {
 	mock := newMockSessionChecker()
 
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
 	mock.alive["sol-testrig-Toast"] = true
 	mock.captures["sol-testrig-Toast"] = "same output"
 
@@ -732,34 +732,34 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 		t.Fatalf("create work item: %v", err)
 	}
 
-	// Sling with logger.
+	// Cast with logger.
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "testrig",
 		SourceRepo: sourceClone,
 	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
-		t.Fatalf("sling: %v", err)
+		t.Fatalf("cast: %v", err)
 	}
 
-	// Verify EventSling in feed.
-	assertEventEmitted(t, gtHome, events.EventSling)
+	// Verify EventCast in feed.
+	assertEventEmitted(t, gtHome, events.EventCast)
 
 	// Simulate work.
 	os.WriteFile(filepath.Join(result.WorktreeDir, "dispatch_test.go"),
 		[]byte("package main\n\nfunc dispatchTest() {}\n"), 0o644)
 
-	// Done with logger.
+	// Resolve with logger.
 	_, err = dispatch.Resolve(dispatch.ResolveOpts{
 		World:       "testrig",
 		AgentName: result.AgentName,
 	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
-		t.Fatalf("done: %v", err)
+		t.Fatalf("resolve: %v", err)
 	}
 
-	// Verify EventDone in feed.
-	assertEventEmitted(t, gtHome, events.EventDone)
+	// Verify EventResolve in feed.
+	assertEventEmitted(t, gtHome, events.EventResolve)
 }
 
 // --- Test 13: Status Shows Sentinel State ---

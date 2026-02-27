@@ -132,7 +132,7 @@ func init() {
 	consulCmd.AddCommand(consulStatusCmd)
 
 	consulRunCmd.Flags().StringVar(&consulInterval, "interval", "5m", "patrol interval")
-	consulRunCmd.Flags().StringVar(&consulStaleTimeout, "stale-timeout", "1h", "stale hook timeout")
+	consulRunCmd.Flags().StringVar(&consulStaleTimeout, "stale-timeout", "1h", "stale tether timeout")
 	consulRunCmd.Flags().StringVar(&consulWebhook, "webhook", "", "escalation webhook URL")
 
 	consulStatusCmd.Flags().BoolVar(&consulStatusJSON, "json", false, "output as JSON")

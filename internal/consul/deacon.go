@@ -217,7 +217,7 @@ func (d *Consul) Patrol() error {
 
 	// 6. Emit patrol event.
 	if d.logger != nil {
-		d.logger.Emit(events.EventDeaconPatrol, "sphere/consul", "sphere/consul", "feed",
+		d.logger.Emit(events.EventConsulPatrol, "sphere/consul", "sphere/consul", "feed",
 			map[string]any{
 				"patrol_count":  fmt.Sprintf("%d", d.patrolCount),
 				"stale_tethers": fmt.Sprintf("%d", staleTethers),
@@ -269,13 +269,13 @@ func (d *Consul) recoverStaleTethers() (int, error) {
 
 	var recovered int
 	for _, agent := range agents {
-		// Skip non-agent agents (don't recover witness/refinery/consul).
+		// Skip non-agent agents (don't recover sentinel/forge/consul).
 		if agent.Role != "agent" {
 			continue
 		}
 
 		// Skip agents without tethered work.
-		if agent.HookItem == "" {
+		if agent.TetherItem == "" {
 			continue
 		}
 
@@ -303,7 +303,7 @@ func (d *Consul) recoverStaleTethers() (int, error) {
 
 // recoverOneTether recovers a single stale tether.
 func (d *Consul) recoverOneTether(agent store.Agent) error {
-	log.Printf("consul: recovering stale tether for %s (work item: %s)", agent.ID, agent.HookItem)
+	log.Printf("consul: recovering stale tether for %s (work item: %s)", agent.ID, agent.TetherItem)
 
 	// 1. Open the world store to update the work item.
 	worldStore, err := d.worldOpener(agent.World)
@@ -313,11 +313,11 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 	defer worldStore.Close()
 
 	// 2. Update work item: status -> "open", clear assignee.
-	if err := worldStore.UpdateWorkItem(agent.HookItem, store.WorkItemUpdates{
+	if err := worldStore.UpdateWorkItem(agent.TetherItem, store.WorkItemUpdates{
 		Status:   "open",
 		Assignee: "-", // "-" clears assignee
 	}); err != nil {
-		return fmt.Errorf("failed to update work item %q: %w", agent.HookItem, err)
+		return fmt.Errorf("failed to update work item %q: %w", agent.TetherItem, err)
 	}
 
 	// 3. Update agent state -> "idle", clear tether_item.
@@ -332,10 +332,10 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 
 	// 5. Emit event.
 	if d.logger != nil {
-		d.logger.Emit(events.EventDeaconStaleTether, "sphere/consul", "sphere/consul", "both",
+		d.logger.Emit(events.EventConsulStaleTether, "sphere/consul", "sphere/consul", "both",
 			map[string]any{
 				"agent_id":     agent.ID,
-				"work_item_id": agent.HookItem,
+				"work_item_id": agent.TetherItem,
 				"world":        agent.World,
 			})
 	}
@@ -417,7 +417,7 @@ func (d *Consul) feedStrandedCaravans() (int, error) {
 
 		// Emit event.
 		if d.logger != nil {
-			d.logger.Emit(events.EventDeaconCaravanFeed, "sphere/consul", "sphere/consul", "both",
+			d.logger.Emit(events.EventConsulCaravanFeed, "sphere/consul", "sphere/consul", "both",
 				map[string]any{
 					"caravan_id":  caravan.ID,
 					"ready_count": fmt.Sprintf("%d", readyCount),

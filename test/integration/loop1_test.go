@@ -39,14 +39,14 @@ func TestMultiAgentDispatch(t *testing.T) {
 		t.Fatalf("create item 2: %v", err)
 	}
 
-	// Sling both without specifying agents (auto-provision).
+	// Cast both without specifying agents (auto-provision).
 	result1, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item1ID,
 		World:        "testrig",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
-		t.Fatalf("sling item 1: %v", err)
+		t.Fatalf("cast item 1: %v", err)
 	}
 
 	result2, err := dispatch.Cast(dispatch.CastOpts{
@@ -55,7 +55,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
-		t.Fatalf("sling item 2: %v", err)
+		t.Fatalf("cast item 2: %v", err)
 	}
 
 	// Verify: two different agents were auto-provisioned.
@@ -104,21 +104,21 @@ func TestMultiAgentDispatch(t *testing.T) {
 		t.Errorf("both items have same assignee: %s", item1.Assignee)
 	}
 
-	// Both hook files exist with their respective work item IDs.
+	// Both tether files exist with their respective work item IDs.
 	hookID1, err := tether.Read("testrig", result1.AgentName)
 	if err != nil {
-		t.Fatalf("read hook 1: %v", err)
+		t.Fatalf("read tether 1: %v", err)
 	}
 	if hookID1 != item1ID {
-		t.Errorf("hook 1: got %q, want %q", hookID1, item1ID)
+		t.Errorf("tether 1: got %q, want %q", hookID1, item1ID)
 	}
 
 	hookID2, err := tether.Read("testrig", result2.AgentName)
 	if err != nil {
-		t.Fatalf("read hook 2: %v", err)
+		t.Fatalf("read tether 2: %v", err)
 	}
 	if hookID2 != item2ID {
-		t.Errorf("hook 2: got %q, want %q", hookID2, item2ID)
+		t.Errorf("tether 2: got %q, want %q", hookID2, item2ID)
 	}
 
 	// Both worktrees exist at different paths.
@@ -160,7 +160,7 @@ func TestFlockSerialization(t *testing.T) {
 		t.Fatalf("build sol binary: %s: %v", out, err)
 	}
 
-	// Launch two subprocesses concurrently, each trying to sling the same
+	// Launch two subprocesses concurrently, each trying to cast the same
 	// work item with a different agent. Flock serialization means exactly
 	// one process acquires the lock; the other gets EAGAIN immediately.
 	var wg sync.WaitGroup
@@ -173,7 +173,7 @@ func TestFlockSerialization(t *testing.T) {
 		go func(name string) {
 			defer wg.Done()
 			cmd := exec.Command(binary, "cast", itemID, "testrig", "--agent="+name)
-			cmd.Dir = sourceRepo // gt cast discovers source repo from cwd
+			cmd.Dir = sourceRepo // sol cast discovers source repo from cwd
 			out, err := cmd.CombinedOutput()
 			mu.Lock()
 			defer mu.Unlock()
@@ -195,17 +195,17 @@ func TestFlockSerialization(t *testing.T) {
 		t.Errorf("expected 1 failure, got %d (failures: %v)", len(failures), failures)
 	}
 
-	// The winning agent has the work item hooked.
+	// The winning agent has the work item tethered.
 	if len(successes) == 1 {
 		winner := successes[0]
 		hookID, _ := tether.Read("testrig", winner)
 		if hookID != itemID {
-			t.Errorf("winner %s hook: got %q, want %q", winner, hookID, itemID)
+			t.Errorf("winner %s tether: got %q, want %q", winner, hookID, itemID)
 		}
 
 		item, _ := worldStore.GetWorkItem(itemID)
-		if item.Status != "hooked" {
-			t.Errorf("work item status: got %q, want hooked", item.Status)
+		if item.Status != "tethered" {
+			t.Errorf("work item status: got %q, want tethered", item.Status)
 		}
 		if item.Assignee != "testrig/"+winner {
 			t.Errorf("work item assignee: got %q, want testrig/%s", item.Assignee, winner)
@@ -224,7 +224,7 @@ func TestPrefectSessionRestart(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
-	// Create a work item and sling it (auto-provisions an agent).
+	// Create a work item and cast it (auto-provisions an agent).
 	itemID, err := worldStore.CreateWorkItem("Prefect test", "Restart test", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create work item: %v", err)
@@ -236,7 +236,7 @@ func TestPrefectSessionRestart(t *testing.T) {
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
-		t.Fatalf("sling: %v", err)
+		t.Fatalf("cast: %v", err)
 	}
 
 	agentName := result.AgentName
@@ -282,13 +282,13 @@ func TestPrefectSessionRestart(t *testing.T) {
 		t.Errorf("agent state after restart: got %q, want working", agent.State)
 	}
 
-	// Hook file still contains the same work item ID.
+	// Tether file still contains the same work item ID.
 	hookID, err := tether.Read("testrig", agentName)
 	if err != nil {
-		t.Fatalf("read hook: %v", err)
+		t.Fatalf("read tether: %v", err)
 	}
 	if hookID != itemID {
-		t.Errorf("hook after restart: got %q, want %q", hookID, itemID)
+		t.Errorf("tether after restart: got %q, want %q", hookID, itemID)
 	}
 
 	// The restarted session has the same name.
@@ -311,7 +311,7 @@ func TestMassDeathDegradation(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
-	// Create and sling 5 work items (auto-provisions 5 agents).
+	// Create and cast 5 work items (auto-provisions 5 agents).
 	var sessionNames []string
 	for i := 0; i < 5; i++ {
 		itemID, err := worldStore.CreateWorkItem("Mass death task", "Mass death test", "operator", 2, nil)
@@ -324,7 +324,7 @@ func TestMassDeathDegradation(t *testing.T) {
 			SourceRepo: sourceRepo,
 		}, worldStore, sphereStore, mgr, nil)
 		if err != nil {
-			t.Fatalf("sling %d: %v", i, err)
+			t.Fatalf("cast %d: %v", i, err)
 		}
 		sessionNames = append(sessionNames, result.SessionName)
 	}
@@ -403,7 +403,7 @@ func TestMassDeathDegradation(t *testing.T) {
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
-		t.Fatalf("sling after degraded recovery: %v", err)
+		t.Fatalf("cast after degraded recovery: %v", err)
 	}
 
 	newSessName := newResult.SessionName
@@ -433,7 +433,7 @@ func TestGUPPRecovery(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
-	// Create a work item, sling it.
+	// Create a work item, cast it.
 	itemID, err := worldStore.CreateWorkItem("GUPP test task", "GUPP recovery test", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create work item: %v", err)
@@ -445,16 +445,16 @@ func TestGUPPRecovery(t *testing.T) {
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
-		t.Fatalf("sling: %v", err)
+		t.Fatalf("cast: %v", err)
 	}
 
 	agentName := result.AgentName
 	sessName := result.SessionName
 	worktreeDir := result.WorktreeDir
 
-	// Verify: hook file exists, CLAUDE.md in worktree has work item context.
+	// Verify: tether file exists, CLAUDE.md in worktree has work item context.
 	if !tether.IsTethered("testrig", agentName) {
-		t.Error("hook file does not exist after sling")
+		t.Error("tether file does not exist after cast")
 	}
 
 	claudeMD := filepath.Join(worktreeDir, ".claude", "CLAUDE.md")
@@ -469,12 +469,12 @@ func TestGUPPRecovery(t *testing.T) {
 	// Kill the tmux session.
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
 
-	// Verify: hook file still exists (durability).
+	// Verify: tether file still exists (durability).
 	if !tether.IsTethered("testrig", agentName) {
-		t.Error("hook file missing after crash")
+		t.Error("tether file missing after crash")
 	}
 
-	// Re-sling the same work item to the same agent (simulate prefect restart).
+	// Re-cast the same work item to the same agent (simulate prefect restart).
 	_, err = dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "testrig",
@@ -482,15 +482,15 @@ func TestGUPPRecovery(t *testing.T) {
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
-		t.Fatalf("re-sling: %v", err)
+		t.Fatalf("re-cast: %v", err)
 	}
 
 	// New session is running.
 	if !mgr.Exists(sessName) {
-		t.Errorf("session %s not running after re-sling", sessName)
+		t.Errorf("session %s not running after re-cast", sessName)
 	}
 
-	// gt prime returns the work item context.
+	// sol prime returns the work item context.
 	primeResult, err := dispatch.Prime("testrig", agentName, worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
@@ -502,13 +502,13 @@ func TestGUPPRecovery(t *testing.T) {
 		t.Errorf("prime output missing work item title")
 	}
 
-	// Hook file still contains the same work item ID.
+	// Tether file still contains the same work item ID.
 	hookID, err := tether.Read("testrig", agentName)
 	if err != nil {
-		t.Fatalf("read hook: %v", err)
+		t.Fatalf("read tether: %v", err)
 	}
 	if hookID != itemID {
-		t.Errorf("hook after re-sling: got %q, want %q", hookID, itemID)
+		t.Errorf("tether after re-cast: got %q, want %q", hookID, itemID)
 	}
 }
 
@@ -523,7 +523,7 @@ func TestStatusAccuracy(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
-	// Create 3 work items, sling all 3 (auto-provisions 3 agents).
+	// Create 3 work items, cast all 3 (auto-provisions 3 agents).
 	var results []*dispatch.CastResult
 	titles := []string{"Status task A", "Status task B", "Status task C"}
 	for _, title := range titles {
@@ -537,7 +537,7 @@ func TestStatusAccuracy(t *testing.T) {
 			SourceRepo: sourceRepo,
 		}, worldStore, sphereStore, mgr, nil)
 		if err != nil {
-			t.Fatalf("sling %q: %v", title, err)
+			t.Fatalf("cast %q: %v", title, err)
 		}
 		results = append(results, result)
 	}
@@ -649,7 +649,7 @@ func TestNamePoolExhaustion(t *testing.T) {
 		t.Fatalf("write names.txt: %v", err)
 	}
 
-	// Create and sling 2 work items (exhausts the pool).
+	// Create and cast 2 work items (exhausts the pool).
 	for i := 0; i < 2; i++ {
 		itemID, err := worldStore.CreateWorkItem("Pool test", "Exhaustion test", "operator", 2, nil)
 		if err != nil {
@@ -661,11 +661,11 @@ func TestNamePoolExhaustion(t *testing.T) {
 			SourceRepo: sourceRepo,
 		}, worldStore, sphereStore, mgr, nil)
 		if err != nil {
-			t.Fatalf("sling %d: %v", i, err)
+			t.Fatalf("cast %d: %v", i, err)
 		}
 	}
 
-	// Create a third work item and attempt to sling it.
+	// Create a third work item and attempt to cast it.
 	item3ID, err := worldStore.CreateWorkItem("Pool overflow", "Should fail", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create work item 3: %v", err)

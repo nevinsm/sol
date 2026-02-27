@@ -16,8 +16,8 @@ func TestLogEvent(t *testing.T) {
 	dir := t.TempDir()
 	logger := NewLogger(dir)
 
-	logger.Emit(EventSling, "gt", "operator", "both", map[string]string{
-		"work_item_id": "gt-a1b2c3d4",
+	logger.Emit(EventCast, "sol", "operator", "both", map[string]string{
+		"work_item_id": "sol-a1b2c3d4",
 		"agent":        "Toast",
 		"rig":          "myrig",
 	})
@@ -39,11 +39,11 @@ func TestLogEvent(t *testing.T) {
 		t.Fatalf("unmarshal event: %v", err)
 	}
 
-	if ev.Type != EventSling {
-		t.Errorf("type: got %q, want %q", ev.Type, EventSling)
+	if ev.Type != EventCast {
+		t.Errorf("type: got %q, want %q", ev.Type, EventCast)
 	}
-	if ev.Source != "gt" {
-		t.Errorf("source: got %q, want %q", ev.Source, "gt")
+	if ev.Source != "sol" {
+		t.Errorf("source: got %q, want %q", ev.Source, "sol")
 	}
 	if ev.Actor != "operator" {
 		t.Errorf("actor: got %q, want %q", ev.Actor, "operator")
@@ -61,7 +61,7 @@ func TestLogMultipleEvents(t *testing.T) {
 	logger := NewLogger(dir)
 
 	for i := 0; i < 5; i++ {
-		logger.Emit(EventDone, "gt", "agent", "feed", map[string]int{"index": i})
+		logger.Emit(EventResolve, "sol", "agent", "feed", map[string]int{"index": i})
 	}
 
 	path := filepath.Join(dir, ".events.jsonl")
@@ -109,7 +109,7 @@ func TestLogConcurrent(t *testing.T) {
 		go func(goroutine int) {
 			defer wg.Done()
 			for i := 0; i < 10; i++ {
-				logger.Emit("test", "gt", "goroutine", "feed", map[string]int{
+				logger.Emit("test", "sol", "goroutine", "feed", map[string]int{
 					"goroutine": goroutine,
 					"index":     i,
 				})
@@ -143,10 +143,10 @@ func TestReadEvents(t *testing.T) {
 
 	// Log 10 events of mixed types.
 	for i := 0; i < 5; i++ {
-		logger.Emit(EventSling, "gt", "operator", "feed", nil)
+		logger.Emit(EventCast, "sol", "operator", "feed", nil)
 	}
 	for i := 0; i < 5; i++ {
-		logger.Emit(EventDone, "gt", "agent", "both", nil)
+		logger.Emit(EventResolve, "sol", "agent", "both", nil)
 	}
 
 	reader := NewReader(dir, false)
@@ -170,18 +170,18 @@ func TestReadEvents(t *testing.T) {
 	}
 	// Should be the last 5 (all "done" events).
 	for _, ev := range evts {
-		if ev.Type != EventDone {
+		if ev.Type != EventResolve {
 			t.Errorf("expected done event, got %q", ev.Type)
 		}
 	}
 
 	// Read with Type filter -> only matching events.
-	evts, err = reader.Read(ReadOpts{Type: EventSling})
+	evts, err = reader.Read(ReadOpts{Type: EventCast})
 	if err != nil {
 		t.Fatalf("read with type: %v", err)
 	}
 	if len(evts) != 5 {
-		t.Fatalf("expected 5 sling events, got %d", len(evts))
+		t.Fatalf("expected 5 cast events, got %d", len(evts))
 	}
 }
 
@@ -191,14 +191,14 @@ func TestReadSince(t *testing.T) {
 
 	// Log some events.
 	for i := 0; i < 3; i++ {
-		logger.Emit("old", "gt", "operator", "feed", nil)
+		logger.Emit("old", "sol", "operator", "feed", nil)
 	}
 
 	cutoff := time.Now()
 	time.Sleep(10 * time.Millisecond)
 
 	for i := 0; i < 2; i++ {
-		logger.Emit("new", "gt", "operator", "feed", nil)
+		logger.Emit("new", "sol", "operator", "feed", nil)
 	}
 
 	reader := NewReader(dir, false)
@@ -221,11 +221,11 @@ func TestReadFiltersAuditOnly(t *testing.T) {
 	logger := NewLogger(dir)
 
 	// Log events with visibility="audit" — should be excluded from reads.
-	logger.Emit("audit_event", "gt", "system", "audit", nil)
+	logger.Emit("audit_event", "sol", "system", "audit", nil)
 	// Log events with visibility="both" — should be included.
-	logger.Emit("both_event", "gt", "system", "both", nil)
+	logger.Emit("both_event", "sol", "system", "both", nil)
 	// Log events with visibility="feed" — should be included.
-	logger.Emit("feed_event", "gt", "system", "feed", nil)
+	logger.Emit("feed_event", "sol", "system", "feed", nil)
 
 	reader := NewReader(dir, false)
 	evts, err := reader.Read(ReadOpts{})
@@ -257,7 +257,7 @@ func TestFollow(t *testing.T) {
 	logger := NewLogger(dir)
 
 	// Pre-create the file with one event so Follow can open it.
-	logger.Emit("setup", "gt", "setup", "feed", nil)
+	logger.Emit("setup", "sol", "setup", "feed", nil)
 
 	reader := NewReader(dir, false)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -274,7 +274,7 @@ func TestFollow(t *testing.T) {
 
 	// Log new events.
 	for i := 0; i < 3; i++ {
-		logger.Emit("follow_test", "gt", "operator", "feed", map[string]int{"i": i})
+		logger.Emit("follow_test", "sol", "operator", "feed", map[string]int{"i": i})
 	}
 
 	// Collect events from channel.
@@ -313,7 +313,7 @@ func TestFollowSurvivesTruncation(t *testing.T) {
 
 	// Write initial events so Follow can open the file.
 	for i := 0; i < 5; i++ {
-		logger.Emit("initial", "gt", "operator", "feed", nil)
+		logger.Emit("initial", "sol", "operator", "feed", nil)
 	}
 
 	reader := NewReader(dir, false)
@@ -329,7 +329,7 @@ func TestFollowSurvivesTruncation(t *testing.T) {
 	// Give Follow time to start and seek to end.
 	time.Sleep(200 * time.Millisecond)
 
-	// Simulate curator truncation: write a new file and atomically rename
+	// Simulate chronicle truncation: write a new file and atomically rename
 	// over the feed path. This replaces the inode.
 	tmp, err := os.CreateTemp(dir, ".truncate-*.jsonl")
 	if err != nil {
@@ -338,8 +338,8 @@ func TestFollowSurvivesTruncation(t *testing.T) {
 	ev := Event{
 		Timestamp:  time.Now().UTC(),
 		Type:       "survived",
-		Source:     "curator",
-		Actor:      "curator",
+		Source:     "chronicle",
+		Actor:      "chronicle",
 		Visibility: "feed",
 	}
 	data, _ := json.Marshal(ev)
@@ -350,7 +350,7 @@ func TestFollowSurvivesTruncation(t *testing.T) {
 	// Write new events after truncation (appended to new inode).
 	time.Sleep(100 * time.Millisecond)
 	for i := 0; i < 3; i++ {
-		logger.Emit("post_truncation", "gt", "operator", "feed", nil)
+		logger.Emit("post_truncation", "sol", "operator", "feed", nil)
 	}
 
 	// Should receive the "survived" event plus the 3 post-truncation events.

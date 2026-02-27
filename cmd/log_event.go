@@ -40,7 +40,7 @@ func init() {
 	rootCmd.AddCommand(logEventCmd)
 	logEventCmd.Flags().StringVar(&logEventType, "type", "", "event type (required)")
 	logEventCmd.Flags().StringVar(&logEventActor, "actor", "", "who triggered the event (required)")
-	logEventCmd.Flags().StringVar(&logEventSource, "source", "gt", "event source")
+	logEventCmd.Flags().StringVar(&logEventSource, "source", "sol", "event source")
 	logEventCmd.Flags().StringVar(&logEventVisibility, "visibility", "both", "event visibility (feed, audit, or both)")
 	logEventCmd.Flags().StringVar(&logEventPayload, "payload", "{}", "JSON payload")
 	logEventCmd.MarkFlagRequired("type")

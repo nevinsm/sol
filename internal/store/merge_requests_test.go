@@ -371,7 +371,7 @@ func TestBlockAndUnblockMergeRequest(t *testing.T) {
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
 
 	// Block the MR.
-	if err := s.BlockMergeRequest(mrID, "gt-blocker1"); err != nil {
+	if err := s.BlockMergeRequest(mrID, "sol-blocker1"); err != nil {
 		t.Fatalf("BlockMergeRequest() error: %v", err)
 	}
 
@@ -380,8 +380,8 @@ func TestBlockAndUnblockMergeRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mr.BlockedBy != "gt-blocker1" {
-		t.Errorf("blocked_by = %q, want %q", mr.BlockedBy, "gt-blocker1")
+	if mr.BlockedBy != "sol-blocker1" {
+		t.Errorf("blocked_by = %q, want %q", mr.BlockedBy, "sol-blocker1")
 	}
 	if mr.Phase != "ready" {
 		t.Errorf("phase = %q, want %q", mr.Phase, "ready")
@@ -414,7 +414,7 @@ func TestClaimSkipsBlockedMRs(t *testing.T) {
 	mr2ID, _ := s.CreateMergeRequest(id2, "branch2", 2)
 
 	// Block the higher-priority MR.
-	s.BlockMergeRequest(mr1ID, "gt-blocker1")
+	s.BlockMergeRequest(mr1ID, "sol-blocker1")
 
 	// Claim should skip the blocked MR and get the second one.
 	mr, err := s.ClaimMergeRequest("refinery/Forge")
@@ -436,7 +436,7 @@ func TestFindMergeRequestByBlocker(t *testing.T) {
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
 
 	// No blocker yet.
-	result, err := s.FindMergeRequestByBlocker("gt-blocker1")
+	result, err := s.FindMergeRequestByBlocker("sol-blocker1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,10 +445,10 @@ func TestFindMergeRequestByBlocker(t *testing.T) {
 	}
 
 	// Block the MR.
-	s.BlockMergeRequest(mrID, "gt-blocker1")
+	s.BlockMergeRequest(mrID, "sol-blocker1")
 
 	// Now find it.
-	result, err = s.FindMergeRequestByBlocker("gt-blocker1")
+	result, err = s.FindMergeRequestByBlocker("sol-blocker1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -458,8 +458,8 @@ func TestFindMergeRequestByBlocker(t *testing.T) {
 	if result.ID != mrID {
 		t.Errorf("found MR = %q, want %q", result.ID, mrID)
 	}
-	if result.BlockedBy != "gt-blocker1" {
-		t.Errorf("blocked_by = %q, want %q", result.BlockedBy, "gt-blocker1")
+	if result.BlockedBy != "sol-blocker1" {
+		t.Errorf("blocked_by = %q, want %q", result.BlockedBy, "sol-blocker1")
 	}
 }
 
@@ -480,7 +480,7 @@ func TestV3Migration(t *testing.T) {
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
 
 	// Should be able to block/unblock without error.
-	if err := s.BlockMergeRequest(mrID, "gt-test"); err != nil {
+	if err := s.BlockMergeRequest(mrID, "sol-test"); err != nil {
 		t.Fatalf("BlockMergeRequest failed (blocked_by column missing?): %v", err)
 	}
 	if err := s.UnblockMergeRequest(mrID); err != nil {

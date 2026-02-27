@@ -13,7 +13,7 @@ type Agent struct {
 	World     string
 	Role      string
 	State     string
-	HookItem  string
+	TetherItem  string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -23,7 +23,7 @@ func (s *Store) CreateAgent(name, world, role string) (string, error) {
 	id := world + "/" + name
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.Exec(
-		`INSERT INTO agents (id, name, rig, role, state, created_at, updated_at)
+		`INSERT INTO agents (id, name, world, role, state, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, 'idle', ?, ?)`,
 		id, name, world, role, now, now,
 	)
@@ -33,16 +33,16 @@ func (s *Store) CreateAgent(name, world, role string) (string, error) {
 	return id, nil
 }
 
-// GetAgent returns an agent by ID ("rig/name").
+// GetAgent returns an agent by ID ("world/name").
 func (s *Store) GetAgent(id string) (*Agent, error) {
 	a := &Agent{}
-	var hookItem sql.NullString
+	var tetherItem sql.NullString
 	var createdAt, updatedAt string
 
 	err := s.db.QueryRow(
-		`SELECT id, name, rig, role, state, hook_item, created_at, updated_at
+		`SELECT id, name, world, role, state, tether_item, created_at, updated_at
 		 FROM agents WHERE id = ?`, id,
-	).Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &hookItem, &createdAt, &updatedAt)
+	).Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &tetherItem, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("agent %q not found", id)
 	}
@@ -50,28 +50,28 @@ func (s *Store) GetAgent(id string) (*Agent, error) {
 		return nil, fmt.Errorf("failed to get agent %q: %w", id, err)
 	}
 
-	a.HookItem = hookItem.String
+	a.TetherItem = tetherItem.String
 	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 	return a, nil
 }
 
-// UpdateAgentState updates an agent's state and optionally its hook_item.
-// Pass empty hookItem to clear it, or a work item ID to set it.
-func (s *Store) UpdateAgentState(id, state, hookItem string) error {
+// UpdateAgentState updates an agent's state and optionally its tether_item.
+// Pass empty tetherItem to clear it, or a work item ID to set it.
+func (s *Store) UpdateAgentState(id, state, tetherItem string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	var result sql.Result
 	var err error
 
-	if hookItem == "" {
+	if tetherItem == "" {
 		result, err = s.db.Exec(
-			`UPDATE agents SET state = ?, hook_item = NULL, updated_at = ? WHERE id = ?`,
+			`UPDATE agents SET state = ?, tether_item = NULL, updated_at = ? WHERE id = ?`,
 			state, now, id,
 		)
 	} else {
 		result, err = s.db.Exec(
-			`UPDATE agents SET state = ?, hook_item = ?, updated_at = ? WHERE id = ?`,
-			state, hookItem, now, id,
+			`UPDATE agents SET state = ?, tether_item = ?, updated_at = ? WHERE id = ?`,
+			state, tetherItem, now, id,
 		)
 	}
 	if err != nil {
@@ -87,10 +87,10 @@ func (s *Store) UpdateAgentState(id, state, hookItem string) error {
 // ListAgents returns agents, optionally filtered by world and/or state.
 // When world is empty, agents across all worlds are returned.
 func (s *Store) ListAgents(world string, state string) ([]Agent, error) {
-	query := `SELECT id, name, rig, role, state, hook_item, created_at, updated_at FROM agents WHERE 1=1`
+	query := `SELECT id, name, world, role, state, tether_item, created_at, updated_at FROM agents WHERE 1=1`
 	var args []interface{}
 	if world != "" {
-		query += ` AND rig = ?`
+		query += ` AND world = ?`
 		args = append(args, world)
 	}
 	if state != "" {
@@ -108,12 +108,12 @@ func (s *Store) ListAgents(world string, state string) ([]Agent, error) {
 	var agents []Agent
 	for rows.Next() {
 		var a Agent
-		var hookItem sql.NullString
+		var tetherItem sql.NullString
 		var createdAt, updatedAt string
-		if err := rows.Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &hookItem, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &tetherItem, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan agent: %w", err)
 		}
-		a.HookItem = hookItem.String
+		a.TetherItem = tetherItem.String
 		a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 		agents = append(agents, a)
@@ -127,14 +127,14 @@ func (s *Store) ListAgents(world string, state string) ([]Agent, error) {
 // FindIdleAgent returns the first idle agent for a world, or nil if none available.
 func (s *Store) FindIdleAgent(world string) (*Agent, error) {
 	a := &Agent{}
-	var hookItem sql.NullString
+	var tetherItem sql.NullString
 	var createdAt, updatedAt string
 
 	err := s.db.QueryRow(
-		`SELECT id, name, rig, role, state, hook_item, created_at, updated_at
-		 FROM agents WHERE rig = ? AND role = 'agent' AND state = 'idle'
+		`SELECT id, name, world, role, state, tether_item, created_at, updated_at
+		 FROM agents WHERE world = ? AND role = 'agent' AND state = 'idle'
 		 ORDER BY name LIMIT 1`, world,
-	).Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &hookItem, &createdAt, &updatedAt)
+	).Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &tetherItem, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -142,7 +142,7 @@ func (s *Store) FindIdleAgent(world string) (*Agent, error) {
 		return nil, fmt.Errorf("failed to find idle agent for world %q: %w", world, err)
 	}
 
-	a.HookItem = hookItem.String
+	a.TetherItem = tetherItem.String
 	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 	return a, nil

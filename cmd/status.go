@@ -108,8 +108,8 @@ func printStatus(rs *status.WorldStatus) {
 			}
 
 			work := "-"
-			if a.HookItem != "" {
-				work = fmt.Sprintf("%s: %s", a.HookItem, a.WorkTitle)
+			if a.TetherItem != "" {
+				work = fmt.Sprintf("%s: %s", a.TetherItem, a.WorkTitle)
 			}
 
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", a.Name, a.State, sess, work)

@@ -64,22 +64,22 @@ func testChronicleConfig(dir string) ChronicleConfig {
 func TestChronicleProcessesNewEvents(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)
-	curator := NewChronicle(cfg)
+	chronicle := NewChronicle(cfg)
 
 	// Write 5 events to raw feed.
 	for i := 0; i < 5; i++ {
 		writeRawEvent(t, cfg.RawPath, Event{
 			Timestamp:  time.Now().UTC(),
-			Source:     "gt",
-			Type:       EventDone,
+			Source:     "sol",
+			Type:       EventResolve,
 			Actor:      "agent" + string(rune('A'+i)),
 			Visibility: "feed",
 			Payload:    map[string]int{"i": i},
 		})
 	}
 
-	// Run one curator cycle.
-	if err := curator.ProcessOnce(); err != nil {
+	// Run one chronicle cycle.
+	if err := chronicle.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce: %v", err)
 	}
 
@@ -93,23 +93,23 @@ func TestChronicleProcessesNewEvents(t *testing.T) {
 func TestChronicleFiltersAuditOnly(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)
-	curator := NewChronicle(cfg)
+	chronicle := NewChronicle(cfg)
 
 	// Write events: 2 with visibility="both", 1 with visibility="audit".
 	writeRawEvent(t, cfg.RawPath, Event{
-		Timestamp: time.Now().UTC(), Source: "gt", Type: EventDone,
+		Timestamp: time.Now().UTC(), Source: "sol", Type: EventResolve,
 		Actor: "agentA", Visibility: "both",
 	})
 	writeRawEvent(t, cfg.RawPath, Event{
-		Timestamp: time.Now().UTC(), Source: "gt", Type: EventDone,
+		Timestamp: time.Now().UTC(), Source: "sol", Type: EventResolve,
 		Actor: "agentB", Visibility: "both",
 	})
 	writeRawEvent(t, cfg.RawPath, Event{
-		Timestamp: time.Now().UTC(), Source: "gt", Type: EventDone,
+		Timestamp: time.Now().UTC(), Source: "sol", Type: EventResolve,
 		Actor: "agentC", Visibility: "audit",
 	})
 
-	if err := curator.ProcessOnce(); err != nil {
+	if err := chronicle.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce: %v", err)
 	}
 
@@ -122,18 +122,18 @@ func TestChronicleFiltersAuditOnly(t *testing.T) {
 func TestChronicleDeduplicates(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)
-	curator := NewChronicle(cfg)
+	chronicle := NewChronicle(cfg)
 
 	// Write 3 identical events (same type/source/actor) within 10s.
 	now := time.Now().UTC()
 	for i := 0; i < 3; i++ {
 		writeRawEvent(t, cfg.RawPath, Event{
 			Timestamp: now.Add(time.Duration(i) * time.Second),
-			Source:    "gt", Type: EventDone, Actor: "Toast", Visibility: "feed",
+			Source:    "sol", Type: EventResolve, Actor: "Toast", Visibility: "feed",
 		})
 	}
 
-	if err := curator.ProcessOnce(); err != nil {
+	if err := chronicle.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce: %v", err)
 	}
 
@@ -147,15 +147,15 @@ func TestChronicleDeduplicateWindowExpiry(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)
 	cfg.DedupWindow = 100 * time.Millisecond // short window for testing
-	curator := NewChronicle(cfg)
+	chronicle := NewChronicle(cfg)
 
 	// Write event A.
 	writeRawEvent(t, cfg.RawPath, Event{
-		Timestamp: time.Now().UTC(), Source: "gt", Type: EventDone,
+		Timestamp: time.Now().UTC(), Source: "sol", Type: EventResolve,
 		Actor: "Toast", Visibility: "feed",
 	})
 
-	if err := curator.ProcessOnce(); err != nil {
+	if err := chronicle.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce 1: %v", err)
 	}
 
@@ -164,11 +164,11 @@ func TestChronicleDeduplicateWindowExpiry(t *testing.T) {
 
 	// Write event A again.
 	writeRawEvent(t, cfg.RawPath, Event{
-		Timestamp: time.Now().UTC(), Source: "gt", Type: EventDone,
+		Timestamp: time.Now().UTC(), Source: "sol", Type: EventResolve,
 		Actor: "Toast", Visibility: "feed",
 	})
 
-	if err := curator.ProcessOnce(); err != nil {
+	if err := chronicle.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce 2: %v", err)
 	}
 
@@ -179,24 +179,24 @@ func TestChronicleDeduplicateWindowExpiry(t *testing.T) {
 	}
 }
 
-func TestChronicleAggregatesSlingBurst(t *testing.T) {
+func TestChronicleAggregatesCastBurst(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)
 	cfg.AggWindow = 100 * time.Millisecond // short window for testing
-	curator := NewChronicle(cfg)
+	chronicle := NewChronicle(cfg)
 
-	// Write 10 sling events within the window.
+	// Write 10 cast events within the window.
 	now := time.Now().UTC()
 	for i := 0; i < 10; i++ {
 		writeRawEvent(t, cfg.RawPath, Event{
 			Timestamp: now.Add(time.Duration(i) * time.Millisecond),
-			Source:    "gt", Type: EventSling,
+			Source:    "sol", Type: EventCast,
 			Actor: "operator" + string(rune('0'+i)), Visibility: "feed",
 		})
 	}
 
 	// First cycle: events go into agg buffer.
-	if err := curator.ProcessOnce(); err != nil {
+	if err := chronicle.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce 1: %v", err)
 	}
 
@@ -204,7 +204,7 @@ func TestChronicleAggregatesSlingBurst(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 
 	// Second cycle: flushes the agg buffer.
-	if err := curator.ProcessOnce(); err != nil {
+	if err := chronicle.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce 2: %v", err)
 	}
 
@@ -213,8 +213,8 @@ func TestChronicleAggregatesSlingBurst(t *testing.T) {
 		t.Fatalf("expected 1 aggregated event, got %d", len(events))
 	}
 
-	if events[0].Type != "sling_batch" {
-		t.Errorf("expected type sling_batch, got %q", events[0].Type)
+	if events[0].Type != "cast_batch" {
+		t.Errorf("expected type cast_batch, got %q", events[0].Type)
 	}
 	if events[0].Source != "chronicle" {
 		t.Errorf("expected source chronicle, got %q", events[0].Source)
@@ -237,19 +237,19 @@ func TestChronicleDoesNotAggregateNonBatchable(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)
 	cfg.AggWindow = 100 * time.Millisecond
-	curator := NewChronicle(cfg)
+	chronicle := NewChronicle(cfg)
 
 	// Write 3 "done" events within 30s (different actors to avoid dedup).
 	now := time.Now().UTC()
 	for i := 0; i < 3; i++ {
 		writeRawEvent(t, cfg.RawPath, Event{
 			Timestamp: now.Add(time.Duration(i) * time.Millisecond),
-			Source:    "gt", Type: EventDone,
+			Source:    "sol", Type: EventResolve,
 			Actor: "agent" + string(rune('A'+i)), Visibility: "feed",
 		})
 	}
 
-	if err := curator.ProcessOnce(); err != nil {
+	if err := chronicle.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce: %v", err)
 	}
 
@@ -259,7 +259,7 @@ func TestChronicleDoesNotAggregateNonBatchable(t *testing.T) {
 		t.Fatalf("expected 3 individual events, got %d", len(events))
 	}
 	for _, ev := range events {
-		if ev.Type != EventDone {
+		if ev.Type != EventResolve {
 			t.Errorf("expected done event, got %q", ev.Type)
 		}
 	}
@@ -269,21 +269,21 @@ func TestChronicleTruncatesFeed(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)
 	cfg.MaxFeedSize = 1024 // 1KB for testing
-	curator := NewChronicle(cfg)
+	chronicle := NewChronicle(cfg)
 
 	// Write enough events to exceed the limit.
 	for i := 0; i < 50; i++ {
 		writeRawEvent(t, cfg.RawPath, Event{
 			Timestamp:  time.Now().UTC(),
-			Source:     "gt",
-			Type:       EventDone,
+			Source:     "sol",
+			Type:       EventResolve,
 			Actor:      "agent" + string(rune('A'+(i%26))),
 			Visibility: "feed",
 			Payload:    map[string]string{"data": "padding-to-make-event-bigger-for-truncation-test"},
 		})
 	}
 
-	if err := curator.ProcessOnce(); err != nil {
+	if err := chronicle.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce: %v", err)
 	}
 
@@ -321,29 +321,29 @@ func TestChronicleTruncatesFeed(t *testing.T) {
 func TestChronicleCheckpoint(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)
-	curator := NewChronicle(cfg)
+	chronicle := NewChronicle(cfg)
 
-	// Write 5 events, run curator.
+	// Write 5 events, run chronicle.
 	for i := 0; i < 5; i++ {
 		writeRawEvent(t, cfg.RawPath, Event{
 			Timestamp:  time.Now().UTC(),
-			Source:     "gt",
-			Type:       EventDone,
+			Source:     "sol",
+			Type:       EventResolve,
 			Actor:      "agent" + string(rune('A'+i)),
 			Visibility: "feed",
 		})
 	}
 
-	if err := curator.ProcessOnce(); err != nil {
+	if err := chronicle.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce 1: %v", err)
 	}
 
-	// Stop curator, verify checkpoint file exists with offset.
+	// Stop chronicle, verify checkpoint file exists with offset.
 	checkpointPath := filepath.Join(dir, ".chronicle-checkpoint")
 	if _, err := os.Stat(checkpointPath); os.IsNotExist(err) {
 		t.Fatal("checkpoint file should exist")
 	}
-	savedOffset := curator.Offset()
+	savedOffset := chronicle.Offset()
 	if savedOffset == 0 {
 		t.Fatal("offset should be non-zero after processing events")
 	}
@@ -352,21 +352,21 @@ func TestChronicleCheckpoint(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		writeRawEvent(t, cfg.RawPath, Event{
 			Timestamp:  time.Now().UTC(),
-			Source:     "gt",
-			Type:       EventDone,
+			Source:     "sol",
+			Type:       EventResolve,
 			Actor:      "new-agent" + string(rune('A'+i)),
 			Visibility: "feed",
 		})
 	}
 
-	// Start new curator (should resume from checkpoint).
-	curator2 := NewChronicle(cfg)
-	curator2.LoadCheckpoint()
-	if curator2.Offset() != savedOffset {
-		t.Fatalf("new curator offset %d != saved offset %d", curator2.Offset(), savedOffset)
+	// Start new chronicle (should resume from checkpoint).
+	chronicle2 := NewChronicle(cfg)
+	chronicle2.LoadCheckpoint()
+	if chronicle2.Offset() != savedOffset {
+		t.Fatalf("new chronicle offset %d != saved offset %d", chronicle2.Offset(), savedOffset)
 	}
 
-	if err := curator2.ProcessOnce(); err != nil {
+	if err := chronicle2.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce 2: %v", err)
 	}
 
@@ -381,15 +381,15 @@ func TestChronicleRunLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)
 	cfg.PollInterval = 50 * time.Millisecond // fast polling for test
-	curator := NewChronicle(cfg)
+	chronicle := NewChronicle(cfg)
 
-	// Start curator with cancellable context.
+	// Start chronicle with cancellable context.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- curator.Run(ctx)
+		errCh <- chronicle.Run(ctx)
 	}()
 
 	// Give it time to start and set initial offset.
@@ -399,8 +399,8 @@ func TestChronicleRunLifecycle(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		writeRawEvent(t, cfg.RawPath, Event{
 			Timestamp:  time.Now().UTC(),
-			Source:     "gt",
-			Type:       EventDone,
+			Source:     "sol",
+			Type:       EventResolve,
 			Actor:      "agent" + string(rune('A'+i)),
 			Visibility: "feed",
 		})

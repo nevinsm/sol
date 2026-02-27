@@ -2,7 +2,7 @@ package store
 
 import "fmt"
 
-const rigSchemaV1 = `
+const worldSchemaV1 = `
 CREATE TABLE IF NOT EXISTS work_items (
     id          TEXT PRIMARY KEY,
     title       TEXT NOT NULL,
@@ -30,7 +30,7 @@ CREATE INDEX IF NOT EXISTS idx_labels_label ON labels(label);
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
 `
 
-const rigSchemaV2 = `
+const worldSchemaV2 = `
 CREATE TABLE IF NOT EXISTS merge_requests (
     id           TEXT PRIMARY KEY,
     work_item_id TEXT NOT NULL REFERENCES work_items(id),
@@ -48,11 +48,11 @@ CREATE INDEX IF NOT EXISTS idx_mr_phase ON merge_requests(phase);
 CREATE INDEX IF NOT EXISTS idx_mr_work_item ON merge_requests(work_item_id);
 `
 
-const rigSchemaV3 = `
+const worldSchemaV3 = `
 ALTER TABLE merge_requests ADD COLUMN blocked_by TEXT;
 `
 
-const rigSchemaV4 = `
+const worldSchemaV4 = `
 CREATE TABLE IF NOT EXISTS dependencies (
     from_id TEXT NOT NULL REFERENCES work_items(id),
     to_id   TEXT NOT NULL REFERENCES work_items(id),
@@ -62,7 +62,7 @@ CREATE INDEX IF NOT EXISTS idx_deps_from ON dependencies(from_id);
 CREATE INDEX IF NOT EXISTS idx_deps_to ON dependencies(to_id);
 `
 
-const townSchemaV1 = `
+const sphereSchemaV1 = `
 CREATE TABLE IF NOT EXISTS agents (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS agents (
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
 `
 
-const townSchemaV2 = `
+const sphereSchemaV2 = `
 CREATE TABLE IF NOT EXISTS messages (
     id          TEXT PRIMARY KEY,
     sender      TEXT NOT NULL,
@@ -124,29 +124,29 @@ func (s *Store) schemaVersion() (int, error) {
 	return v, nil
 }
 
-func (s *Store) migrateRig() error {
+func (s *Store) migrateWorld() error {
 	v, err := s.schemaVersion()
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
 	if v < 1 {
-		if _, err := s.db.Exec(rigSchemaV1); err != nil {
-			return fmt.Errorf("failed to create rig schema v1: %w", err)
+		if _, err := s.db.Exec(worldSchemaV1); err != nil {
+			return fmt.Errorf("failed to create world schema v1: %w", err)
 		}
 	}
 	if v < 2 {
-		if _, err := s.db.Exec(rigSchemaV2); err != nil {
-			return fmt.Errorf("failed to create rig schema v2: %w", err)
+		if _, err := s.db.Exec(worldSchemaV2); err != nil {
+			return fmt.Errorf("failed to create world schema v2: %w", err)
 		}
 	}
 	if v < 3 {
-		if _, err := s.db.Exec(rigSchemaV3); err != nil {
-			return fmt.Errorf("failed to apply rig schema v3: %w", err)
+		if _, err := s.db.Exec(worldSchemaV3); err != nil {
+			return fmt.Errorf("failed to apply world schema v3: %w", err)
 		}
 	}
 	if v < 4 {
-		if _, err := s.db.Exec(rigSchemaV4); err != nil {
-			return fmt.Errorf("failed to apply rig schema v4: %w", err)
+		if _, err := s.db.Exec(worldSchemaV4); err != nil {
+			return fmt.Errorf("failed to apply world schema v4: %w", err)
 		}
 	}
 	if v < 1 {
@@ -161,7 +161,7 @@ func (s *Store) migrateRig() error {
 	return nil
 }
 
-const townSchemaV3 = `
+const sphereSchemaV3 = `
 CREATE TABLE IF NOT EXISTS convoys (
     id         TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
@@ -181,32 +181,46 @@ CREATE TABLE IF NOT EXISTS convoy_items (
 CREATE INDEX IF NOT EXISTS idx_convoy_items_convoy ON convoy_items(convoy_id);
 `
 
-func (s *Store) migrateTown() error {
+const sphereSchemaV4 = `
+ALTER TABLE agents RENAME COLUMN hook_item TO tether_item;
+ALTER TABLE agents RENAME COLUMN rig TO world;
+ALTER TABLE convoys RENAME TO caravans;
+ALTER TABLE convoy_items RENAME TO caravan_items;
+ALTER TABLE caravan_items RENAME COLUMN convoy_id TO caravan_id;
+ALTER TABLE caravan_items RENAME COLUMN rig TO world;
+`
+
+func (s *Store) migrateSphere() error {
 	v, err := s.schemaVersion()
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
 	if v < 1 {
-		if _, err := s.db.Exec(townSchemaV1); err != nil {
-			return fmt.Errorf("failed to create town schema v1: %w", err)
+		if _, err := s.db.Exec(sphereSchemaV1); err != nil {
+			return fmt.Errorf("failed to create sphere schema v1: %w", err)
 		}
 	}
 	if v < 2 {
-		if _, err := s.db.Exec(townSchemaV2); err != nil {
-			return fmt.Errorf("failed to create town schema v2: %w", err)
+		if _, err := s.db.Exec(sphereSchemaV2); err != nil {
+			return fmt.Errorf("failed to create sphere schema v2: %w", err)
 		}
 	}
 	if v < 3 {
-		if _, err := s.db.Exec(townSchemaV3); err != nil {
-			return fmt.Errorf("failed to create town schema v3: %w", err)
+		if _, err := s.db.Exec(sphereSchemaV3); err != nil {
+			return fmt.Errorf("failed to create sphere schema v3: %w", err)
+		}
+	}
+	if v < 4 {
+		if _, err := s.db.Exec(sphereSchemaV4); err != nil {
+			return fmt.Errorf("failed to apply sphere schema v4: %w", err)
 		}
 	}
 	if v < 1 {
-		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (3)"); err != nil {
+		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (4)"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
-	} else if v < 3 {
-		if _, err := s.db.Exec("UPDATE schema_version SET version = 3"); err != nil {
+	} else if v < 4 {
+		if _, err := s.db.Exec("UPDATE schema_version SET version = 4"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	}

@@ -59,7 +59,7 @@ type aggBuffer struct {
 
 // aggregatableTypes are event types that can be collapsed into batch events.
 var aggregatableTypes = map[string]bool{
-	EventSling:   true,
+	EventCast:    true,
 	EventRespawn: true,
 }
 

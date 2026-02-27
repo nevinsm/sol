@@ -273,8 +273,8 @@ func TestPatrolDetectsStalled(t *testing.T) {
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
-	createWorkItem(t, worldStore, "gt-abc12345", "Test task")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
+	createWorkItem(t, worldStore, "sol-abc12345", "Test task")
 	// Session is NOT alive (not in mock.alive).
 
 	// Create worktree directory so respawn doesn't fail on missing dir.
@@ -305,8 +305,8 @@ func TestPatrolMaxRespawns(t *testing.T) {
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
-	createWorkItem(t, worldStore, "gt-abc12345", "Test task")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
+	createWorkItem(t, worldStore, "sol-abc12345", "Test task")
 
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "testrig", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
@@ -314,7 +314,7 @@ func TestPatrolMaxRespawns(t *testing.T) {
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 
 	// Pre-set respawn count to max.
-	w.respawnCounts[respawnKey{AgentID: "testrig/Toast", WorkItemID: "gt-abc12345"}] = 2
+	w.respawnCounts[respawnKey{AgentID: "testrig/Toast", WorkItemID: "sol-abc12345"}] = 2
 
 	if err := w.patrol(); err != nil {
 		t.Fatalf("patrol() error: %v", err)
@@ -327,7 +327,7 @@ func TestPatrolMaxRespawns(t *testing.T) {
 	}
 
 	// Work item should be open.
-	item, err := worldStore.GetWorkItem("gt-abc12345")
+	item, err := worldStore.GetWorkItem("sol-abc12345")
 	if err != nil {
 		t.Fatalf("GetWorkItem() error: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestPatrolDetectsZombie(t *testing.T) {
 
 	// Create an idle agent with a live session but no tether.
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	// State is idle (default), no hook item.
+	// State is idle (default), no tether item.
 	mock.alive["sol-testrig-Toast"] = true
 
 	w := New(cfg, sphereStore, nil, mock, nil)
@@ -425,7 +425,7 @@ func TestProgressDetectionOutputChanged(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
 	mock.alive["sol-testrig-Toast"] = true
 
 	assessCalled := false
@@ -454,7 +454,7 @@ func TestProgressDetectionOutputUnchanged(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
 	mock.alive["sol-testrig-Toast"] = true
 	mock.captures["sol-testrig-Toast"] = "same output"
 
@@ -482,7 +482,7 @@ func TestAssessmentNudge(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
 	mock.alive["sol-testrig-Toast"] = true
 	mock.captures["sol-testrig-Toast"] = "stuck output"
 
@@ -516,7 +516,7 @@ func TestAssessmentEscalate(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
 	mock.alive["sol-testrig-Toast"] = true
 	mock.captures["sol-testrig-Toast"] = "error output"
 
@@ -557,7 +557,7 @@ func TestAssessmentNone(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
 	mock.alive["sol-testrig-Toast"] = true
 	mock.captures["sol-testrig-Toast"] = "output"
 
@@ -589,7 +589,7 @@ func TestAssessmentLowConfidenceIgnored(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
 	mock.alive["sol-testrig-Toast"] = true
 	mock.captures["sol-testrig-Toast"] = "output"
 
@@ -620,7 +620,7 @@ func TestAssessmentFailureNonBlocking(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
 	mock.alive["sol-testrig-Toast"] = true
 	mock.captures["sol-testrig-Toast"] = "output"
 
@@ -652,8 +652,8 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 	cfg.MaxRespawns = 2
 
 	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
-	createWorkItem(t, worldStore, "gt-abc12345", "Test task")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
+	createWorkItem(t, worldStore, "sol-abc12345", "Test task")
 
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "testrig", "outposts", "Toast", "rig")
 	os.MkdirAll(worktreeDir, 0o755)
@@ -700,7 +700,7 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 		t.Errorf("agent state = %q, want %q after max respawns", agent.State, "idle")
 	}
 
-	item, err := worldStore.GetWorkItem("gt-abc12345")
+	item, err := worldStore.GetWorkItem("sol-abc12345")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -22,7 +22,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
-	// Create work item, sling, simulate work, done.
+	// Create work item, cast, simulate work, done.
 	itemID, err := worldStore.CreateWorkItem("Status test", "Status with merge queue", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create work item: %v", err)
@@ -34,7 +34,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 		SourceRepo: sourceClone,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
-		t.Fatalf("sling: %v", err)
+		t.Fatalf("cast: %v", err)
 	}
 
 	os.WriteFile(filepath.Join(result.WorktreeDir, "status_test.go"),
@@ -45,7 +45,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 		AgentName: result.AgentName,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
-		t.Fatalf("done: %v", err)
+		t.Fatalf("resolve: %v", err)
 	}
 
 	// Gather status (no forge running).

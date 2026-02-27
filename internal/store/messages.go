@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Message represents a message in the town database.
+// Message represents a message in the sphere database.
 type Message struct {
 	ID        string
 	Sender    string

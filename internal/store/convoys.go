@@ -51,7 +51,7 @@ func (s *Store) CreateCaravan(name, owner string) (string, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	_, err = s.db.Exec(
-		`INSERT INTO convoys (id, name, status, owner, created_at) VALUES (?, ?, 'open', ?, ?)`,
+		`INSERT INTO caravans (id, name, status, owner, created_at) VALUES (?, ?, 'open', ?, ?)`,
 		id, name, owner, now,
 	)
 	if err != nil {
@@ -68,7 +68,7 @@ func (s *Store) GetCaravan(id string) (*Caravan, error) {
 	var createdAt string
 
 	err := s.db.QueryRow(
-		`SELECT id, name, status, owner, created_at, closed_at FROM convoys WHERE id = ?`, id,
+		`SELECT id, name, status, owner, created_at, closed_at FROM caravans WHERE id = ?`, id,
 	).Scan(&c.ID, &c.Name, &c.Status, &owner, &createdAt, &closedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("caravan %q not found", id)
@@ -90,7 +90,7 @@ func (s *Store) GetCaravan(id string) (*Caravan, error) {
 // If status is empty, returns all caravans.
 // Ordered by created_at DESC (newest first).
 func (s *Store) ListCaravans(status string) ([]Caravan, error) {
-	query := `SELECT id, name, status, owner, created_at, closed_at FROM convoys`
+	query := `SELECT id, name, status, owner, created_at, closed_at FROM caravans`
 	var args []interface{}
 
 	if status != "" {
@@ -138,12 +138,12 @@ func (s *Store) UpdateCaravanStatus(id, status string) error {
 	if status == "closed" {
 		now := time.Now().UTC().Format(time.RFC3339)
 		result, err = s.db.Exec(
-			`UPDATE convoys SET status = ?, closed_at = ? WHERE id = ?`,
+			`UPDATE caravans SET status = ?, closed_at = ? WHERE id = ?`,
 			status, now, id,
 		)
 	} else {
 		result, err = s.db.Exec(
-			`UPDATE convoys SET status = ? WHERE id = ?`,
+			`UPDATE caravans SET status = ? WHERE id = ?`,
 			status, id,
 		)
 	}
@@ -160,7 +160,7 @@ func (s *Store) UpdateCaravanStatus(id, status string) error {
 // AddCaravanItem associates a work item with a caravan.
 func (s *Store) AddCaravanItem(caravanID, workItemID, world string) error {
 	_, err := s.db.Exec(
-		`INSERT OR IGNORE INTO convoy_items (convoy_id, work_item_id, rig) VALUES (?, ?, ?)`,
+		`INSERT OR IGNORE INTO caravan_items (caravan_id, work_item_id, world) VALUES (?, ?, ?)`,
 		caravanID, workItemID, world,
 	)
 	if err != nil {
@@ -172,7 +172,7 @@ func (s *Store) AddCaravanItem(caravanID, workItemID, world string) error {
 // RemoveCaravanItem removes a work item from a caravan.
 func (s *Store) RemoveCaravanItem(caravanID, workItemID string) error {
 	_, err := s.db.Exec(
-		`DELETE FROM convoy_items WHERE convoy_id = ? AND work_item_id = ?`,
+		`DELETE FROM caravan_items WHERE caravan_id = ? AND work_item_id = ?`,
 		caravanID, workItemID,
 	)
 	if err != nil {
@@ -184,7 +184,7 @@ func (s *Store) RemoveCaravanItem(caravanID, workItemID string) error {
 // ListCaravanItems returns all items in a caravan.
 func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
 	rows, err := s.db.Query(
-		`SELECT convoy_id, work_item_id, rig FROM convoy_items WHERE convoy_id = ? ORDER BY work_item_id`,
+		`SELECT caravan_id, work_item_id, world FROM caravan_items WHERE caravan_id = ? ORDER BY work_item_id`,
 		caravanID,
 	)
 	if err != nil {
@@ -220,7 +220,7 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 		return nil, err
 	}
 
-	// Group items by world (rig column in DB).
+	// Group items by world.
 	byWorld := map[string][]CaravanItem{}
 	for _, item := range items {
 		byWorld[item.World] = append(byWorld[item.World], item)

@@ -44,7 +44,7 @@ func DefaultConfig(world, sourceRepo, gtHome string) Config {
 type SphereStore interface {
 	GetAgent(id string) (*store.Agent, error)
 	ListAgents(rig string, state string) ([]store.Agent, error)
-	UpdateAgentState(id, state, hookItem string) error
+	UpdateAgentState(id, state, tetherItem string) error
 	CreateAgent(name, rig, role string) (string, error)
 	SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
 }
@@ -200,14 +200,14 @@ func (w *Sentinel) patrol() error {
 			_ = w.checkProgress(agent, sessionName)
 			healthyCount++
 
-		case agent.State == "working" && !alive && agent.HookItem != "":
-			// Session died while work was hooked — stalled.
+		case agent.State == "working" && !alive && agent.TetherItem != "":
+			// Session died while work was tethered — stalled.
 			stalledCount++
 			_ = w.handleStalled(agent)
 			actionsTaken = append(actionsTaken, "stalled:"+agent.Name)
 
 		case agent.State == "idle" && alive && !tether.IsTethered(w.config.World, agent.Name):
-			// Idle agent with live session and no hook — zombie.
+			// Idle agent with live session and no tether — zombie.
 			zombieCount++
 			_ = w.handleZombie(agent)
 			actionsTaken = append(actionsTaken, "zombie:"+agent.Name)
@@ -360,10 +360,10 @@ Status meanings:
 - "waiting": Agent is waiting for external input or a resource. May
   need a nudge to check its mail or retry.
 - "idle": Agent appears to have finished or is not doing anything.
-  May be a zombie or may have completed work without calling gt done.
+  May be a zombie or may have completed work without calling sol resolve.
 
 Only suggest "escalate" if the situation requires human intervention
-(e.g., repeated failures, auth issues, infrastructure problems).`, agent.Name, agent.ID, agent.HookItem, capturedOutput)
+(e.g., repeated failures, auth issues, infrastructure problems).`, agent.Name, agent.ID, agent.TetherItem, capturedOutput)
 }
 
 func extractJSON(data []byte) (AssessmentResult, error) {
@@ -417,7 +417,7 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 			store.ProtoRecoveryNeeded,
 			store.RecoveryNeededPayload{
 				AgentID:    agent.ID,
-				WorkItemID: agent.HookItem,
+				WorkItemID: agent.TetherItem,
 				Reason:     fmt.Sprintf("nudged: %s", result.Reason),
 			},
 		); err != nil && w.logger != nil {
@@ -432,7 +432,7 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 			store.ProtoRecoveryNeeded,
 			store.RecoveryNeededPayload{
 				AgentID:    agent.ID,
-				WorkItemID: agent.HookItem,
+				WorkItemID: agent.TetherItem,
 				Reason:     result.Reason,
 			},
 		); err != nil && w.logger != nil {
@@ -455,7 +455,7 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 
 // handleStalled handles an agent whose session died while work was tethered.
 func (w *Sentinel) handleStalled(agent store.Agent) error {
-	key := respawnKey{AgentID: agent.ID, WorkItemID: agent.HookItem}
+	key := respawnKey{AgentID: agent.ID, WorkItemID: agent.TetherItem}
 	attempts := w.respawnCounts[key]
 
 	if attempts >= w.config.MaxRespawns {
@@ -467,11 +467,11 @@ func (w *Sentinel) handleStalled(agent store.Agent) error {
 }
 
 // respawnAgent restarts a crashed agent's tmux session.
-// The sentinel does NOT re-sling or re-prime. The tether file is durable,
+// The sentinel does NOT re-cast or re-prime. The tether file is durable,
 // and the Claude Code SessionStart hook fires sol prime automatically (GUPP).
 func (w *Sentinel) respawnAgent(agent store.Agent) error {
 	// Ensure agent state is working.
-	if err := w.sphereStore.UpdateAgentState(agent.ID, "working", agent.HookItem); err != nil {
+	if err := w.sphereStore.UpdateAgentState(agent.ID, "working", agent.TetherItem); err != nil {
 		return fmt.Errorf("failed to set agent %s working: %w", agent.ID, err)
 	}
 
@@ -488,14 +488,14 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 		return fmt.Errorf("failed to start session for %s: %w", agent.Name, err)
 	}
 
-	key := respawnKey{AgentID: agent.ID, WorkItemID: agent.HookItem}
+	key := respawnKey{AgentID: agent.ID, WorkItemID: agent.TetherItem}
 	attempts := w.respawnCounts[key]
 
 	if w.logger != nil {
 		w.logger.Emit(events.EventRespawn, w.agentID(), agent.ID, "both",
 			map[string]any{
 				"agent":     agent.ID,
-				"work_item": agent.HookItem,
+				"work_item": agent.TetherItem,
 				"attempt":   attempts,
 			})
 	}
@@ -506,7 +506,7 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
 			AgentID:    agent.ID,
-			WorkItemID: agent.HookItem,
+			WorkItemID: agent.TetherItem,
 			Reason:     fmt.Sprintf("respawned (attempt %d)", attempts),
 			Attempts:   attempts,
 		},
@@ -522,19 +522,19 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 // after exceeding max respawn attempts.
 func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 	// 1. Update work item: status → open, clear assignee.
-	if agent.HookItem != "" {
-		if err := w.worldStore.UpdateWorkItem(agent.HookItem, store.WorkItemUpdates{
+	if agent.TetherItem != "" {
+		if err := w.worldStore.UpdateWorkItem(agent.TetherItem, store.WorkItemUpdates{
 			Status:   "open",
 			Assignee: "-", // "-" clears assignee
 		}); err != nil {
-			return fmt.Errorf("failed to return work item %s to open: %w", agent.HookItem, err)
+			return fmt.Errorf("failed to return work item %s to open: %w", agent.TetherItem, err)
 		}
 	}
 
-	// 2. Set agent state → idle, clear hook_item.
-	// Done before clearing hook so a crash leaves the agent idle with a stale
-	// hook (harmless — next dispatch overwrites it) rather than "working" with
-	// no hook (would trigger a wasted respawn).
+	// 2. Set agent state → idle, clear tether_item.
+	// Done before clearing tether so a crash leaves the agent idle with a stale
+	// tether (harmless — next dispatch overwrites it) rather than "working" with
+	// no tether (would trigger a wasted respawn).
 	if err := w.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
 		return fmt.Errorf("failed to set agent %s idle: %w", agent.ID, err)
 	}
@@ -545,7 +545,7 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 	}
 
 	// 4. Clear respawn count.
-	key := respawnKey{AgentID: agent.ID, WorkItemID: agent.HookItem}
+	key := respawnKey{AgentID: agent.ID, WorkItemID: agent.TetherItem}
 	delete(w.respawnCounts, key)
 
 	// 5. Emit stalled event with recovered: false.
@@ -553,7 +553,7 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 		w.logger.Emit(events.EventStalled, w.agentID(), agent.ID, "both",
 			map[string]any{
 				"agent":     agent.ID,
-				"work_item": agent.HookItem,
+				"work_item": agent.TetherItem,
 				"recovered": false,
 			})
 	}
@@ -564,7 +564,7 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
 			AgentID:    agent.ID,
-			WorkItemID: agent.HookItem,
+			WorkItemID: agent.TetherItem,
 			Reason:     fmt.Sprintf("max respawns (%d) exceeded, work returned to open", w.config.MaxRespawns),
 			Attempts:   w.config.MaxRespawns,
 		},

@@ -121,9 +121,9 @@ func formatEventDescription(ev events.Event) string {
 	}
 
 	switch ev.Type {
-	case events.EventSling:
-		return fmt.Sprintf("Dispatched %s → %s (%s)", get("work_item_id"), get("agent"), get("rig"))
-	case events.EventDone:
+	case events.EventCast:
+		return fmt.Sprintf("Dispatched %s → %s (%s)", get("work_item_id"), get("agent"), get("world"))
+	case events.EventResolve:
 		return fmt.Sprintf("Completed %s", get("work_item_id"))
 	case events.EventMergeClaimed:
 		return fmt.Sprintf("Claimed %s for merge", get("merge_request_id"))
@@ -156,11 +156,11 @@ func formatEventDescription(ev events.Event) string {
 	case events.EventWorkflowComplete:
 		return fmt.Sprintf("Workflow complete: %s", get("work_item_id"))
 	case events.EventCaravanCreated:
-		return fmt.Sprintf("Convoy created: %s (%s items)", get("name"), get("count"))
+		return fmt.Sprintf("Caravan created: %s (%s items)", get("name"), get("count"))
 	case events.EventCaravanLaunched:
-		return fmt.Sprintf("Convoy launched: %s dispatched in %s", get("dispatched"), get("rig"))
+		return fmt.Sprintf("Caravan launched: %s dispatched in %s", get("dispatched"), get("world"))
 	case events.EventCaravanClosed:
-		return fmt.Sprintf("Convoy closed: %s", get("name"))
+		return fmt.Sprintf("Caravan closed: %s", get("name"))
 	case events.EventEscalationCreated:
 		return fmt.Sprintf("[%s] Escalation: %s (from %s)", get("severity"), get("description"), get("source"))
 	case events.EventEscalationAcked:
@@ -169,15 +169,15 @@ func formatEventDescription(ev events.Event) string {
 		return fmt.Sprintf("Escalation resolved: %s", get("id"))
 	case events.EventHandoff:
 		return fmt.Sprintf("Agent %s handed off: %s", get("agent"), get("work_item_id"))
-	case events.EventDeaconPatrol:
-		return fmt.Sprintf("Deacon patrol #%s: %s stale hooks, %s convoy feeds",
-			get("patrol_count"), get("stale_hooks"), get("convoy_feeds"))
-	case events.EventDeaconStaleTether:
-		return fmt.Sprintf("Stale hook recovered: %s (%s)", get("agent_id"), get("work_item_id"))
-	case events.EventDeaconCaravanFeed:
-		return fmt.Sprintf("Convoy needs feeding: %s (%s ready items)", get("convoy_id"), get("ready_count"))
-	case "sling_batch":
-		return fmt.Sprintf("Sling burst: %s dispatches in %s", get("count"), get("rig"))
+	case events.EventConsulPatrol:
+		return fmt.Sprintf("Consul patrol #%s: %s stale tethers, %s caravan feeds",
+			get("patrol_count"), get("stale_tethers"), get("caravan_feeds"))
+	case events.EventConsulStaleTether:
+		return fmt.Sprintf("Stale tether recovered: %s (%s)", get("agent_id"), get("work_item_id"))
+	case events.EventConsulCaravanFeed:
+		return fmt.Sprintf("Caravan needs feeding: %s (%s ready items)", get("caravan_id"), get("ready_count"))
+	case "cast_batch":
+		return fmt.Sprintf("Cast burst: %s dispatches in %s", get("count"), get("world"))
 	case "respawn_batch":
 		return fmt.Sprintf("Respawn burst: %s respawns in %s", get("count"), get("rig"))
 	default:

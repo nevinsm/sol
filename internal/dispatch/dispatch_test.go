@@ -130,8 +130,8 @@ func TestCastHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get work item: %v", err)
 	}
-	if item.Status != "hooked" {
-		t.Errorf("expected work item status 'hooked', got %q", item.Status)
+	if item.Status != "tethered" {
+		t.Errorf("expected work item status 'tethered', got %q", item.Status)
 	}
 	if item.Assignee != "testrig/Toast" {
 		t.Errorf("expected assignee 'testrig/Toast', got %q", item.Assignee)
@@ -145,8 +145,8 @@ func TestCastHappyPath(t *testing.T) {
 	if agent.State != "working" {
 		t.Errorf("expected agent state 'working', got %q", agent.State)
 	}
-	if agent.HookItem != itemID {
-		t.Errorf("expected agent hook_item %q, got %q", itemID, agent.HookItem)
+	if agent.TetherItem != itemID {
+		t.Errorf("expected agent tether_item %q, got %q", itemID, agent.TetherItem)
 	}
 
 	// Verify session was started.
@@ -233,8 +233,8 @@ func TestCastAutoProvision(t *testing.T) {
 	if agent.State != "working" {
 		t.Errorf("expected agent state 'working', got %q", agent.State)
 	}
-	if agent.HookItem != itemID {
-		t.Errorf("expected agent hook_item %q, got %q", itemID, agent.HookItem)
+	if agent.TetherItem != itemID {
+		t.Errorf("expected agent tether_item %q, got %q", itemID, agent.TetherItem)
 	}
 }
 
@@ -248,7 +248,7 @@ func TestCastAutoProvisionSkipsUsed(t *testing.T) {
 		if _, err := sphereStore.CreateAgent(name, "testrig", "agent"); err != nil {
 			t.Fatalf("failed to create agent %q: %v", name, err)
 		}
-		if err := sphereStore.UpdateAgentState("testrig/"+name, "working", "gt-other"); err != nil {
+		if err := sphereStore.UpdateAgentState("testrig/"+name, "working", "sol-other"); err != nil {
 			t.Fatalf("failed to update agent %q: %v", name, err)
 		}
 	}
@@ -404,7 +404,7 @@ func TestResolveHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create work item: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "hooked", Assignee: "testrig/Toast"}); err != nil {
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "testrig/Toast"}); err != nil {
 		t.Fatalf("failed to update work item: %v", err)
 	}
 
@@ -520,7 +520,7 @@ func TestResolveConflictResolution(t *testing.T) {
 	resolutionID, err := worldStore.CreateWorkItemWithOpts(store.CreateWorkItemOpts{
 		Title:       "Resolve merge conflicts: Add feature X",
 		Description: "Resolve merge conflicts",
-		CreatedBy:   "testrig/refinery",
+		CreatedBy:   "testrig/forge",
 		Priority:    1,
 		Labels:      []string{"conflict-resolution", "source-mr:" + mrID},
 		ParentID:    origItemID,
@@ -535,7 +535,7 @@ func TestResolveConflictResolution(t *testing.T) {
 	}
 
 	// Set up agent and tether the resolution task.
-	if err := worldStore.UpdateWorkItem(resolutionID, store.WorkItemUpdates{Status: "hooked", Assignee: "testrig/Toast"}); err != nil {
+	if err := worldStore.UpdateWorkItem(resolutionID, store.WorkItemUpdates{Status: "tethered", Assignee: "testrig/Toast"}); err != nil {
 		t.Fatalf("failed to update work item: %v", err)
 	}
 	if _, err := sphereStore.CreateAgent("Toast", "testrig", "agent"); err != nil {
@@ -620,7 +620,7 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create work item: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "hooked", Assignee: "testrig/Toast"}); err != nil {
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "testrig/Toast"}); err != nil {
 		t.Fatalf("failed to update work item: %v", err)
 	}
 

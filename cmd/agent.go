@@ -85,13 +85,13 @@ var agentListCmd = &cobra.Command{
 		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "ID\tNAME\tWORLD\tROLE\tSTATE\tHOOK ITEM\n")
+		fmt.Fprintf(tw, "ID\tNAME\tWORLD\tROLE\tSTATE\tTETHER ITEM\n")
 		for _, a := range agents {
-			hookItem := a.HookItem
-			if hookItem == "" {
-				hookItem = "-"
+			tetherItem := a.TetherItem
+			if tetherItem == "" {
+				tetherItem = "-"
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", a.ID, a.Name, a.World, a.Role, a.State, hookItem)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", a.ID, a.Name, a.World, a.Role, a.State, tetherItem)
 		}
 		tw.Flush()
 		return nil

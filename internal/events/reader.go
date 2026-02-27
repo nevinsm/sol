@@ -113,8 +113,8 @@ opened:
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			// Detect file replacement (e.g., curator truncation).
-			// The curator atomically renames a new file over the feed path.
+			// Detect file replacement (e.g., chronicle truncation).
+			// The chronicle atomically renames a new file over the feed path.
 			// The open fd still points to the old (unlinked) inode and would
 			// never see new events without reopening.
 			pathInfo, pathErr := os.Stat(r.path)

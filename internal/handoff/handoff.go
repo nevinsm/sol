@@ -73,7 +73,7 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		opts.CommitCount = 10
 	}
 
-	// 1. Read hook file to get work item ID.
+	// 1. Read tether file to get work item ID.
 	workItemID, err := tether.Read(opts.World, opts.AgentName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tether: %w", err)
@@ -251,7 +251,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 
 	// Emit event after writing handoff file (before stopping session).
 	if logger != nil {
-		logger.Emit(events.EventHandoff, "gt", opts.AgentName, "both", map[string]string{
+		logger.Emit(events.EventHandoff, "sol", opts.AgentName, "both", map[string]string{
 			"work_item_id": state.WorkItemID,
 			"agent":        opts.AgentName,
 			"world":        opts.World,

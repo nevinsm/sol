@@ -169,7 +169,7 @@ Original work item: %s — %s
 Instructions:
 1. Rebase branch %s onto origin/%s
 2. Resolve all merge conflicts
-3. Run 'gt done' when conflicts are resolved`,
+3. Run 'sol resolve' when conflicts are resolved`,
 		mr.Branch, r.cfg.TargetBranch, targetSHA, mr.ID,
 		item.ID, item.Title,
 		mr.Branch, r.cfg.TargetBranch)

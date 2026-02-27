@@ -10,7 +10,7 @@ import (
 func TestSendMessage(t *testing.T) {
 	s := setupTown(t)
 
-	id, err := s.SendMessage("myrig/Toast", "operator", "Work done", "Finished task gt-abc12345", 2, "notification")
+	id, err := s.SendMessage("myrig/Toast", "operator", "Work done", "Finished task sol-abc12345", 2, "notification")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,8 +35,8 @@ func TestSendMessage(t *testing.T) {
 	if msg.Subject != "Work done" {
 		t.Fatalf("expected subject 'Work done', got %q", msg.Subject)
 	}
-	if msg.Body != "Finished task gt-abc12345" {
-		t.Fatalf("expected body 'Finished task gt-abc12345', got %q", msg.Body)
+	if msg.Body != "Finished task sol-abc12345" {
+		t.Fatalf("expected body 'Finished task sol-abc12345', got %q", msg.Body)
 	}
 	if msg.Priority != 2 {
 		t.Fatalf("expected priority 2, got %d", msg.Priority)
@@ -279,18 +279,18 @@ func TestSendProtocolMessage(t *testing.T) {
 	s := setupTown(t)
 
 	payload := AgentDonePayload{
-		WorkItemID: "gt-abc12345",
+		WorkItemID: "sol-abc12345",
 		AgentID:    "myrig/Toast",
-		Branch:     "outpost/Toast/gt-abc12345",
+		Branch:     "outpost/Toast/sol-abc12345",
 		World:      "myrig",
 	}
 
-	id, err := s.SendProtocolMessage("myrig/Toast", "myrig/witness", ProtoAgentDone, payload)
+	id, err := s.SendProtocolMessage("myrig/Toast", "myrig/sentinel", ProtoAgentDone, payload)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Verify: type='protocol', subject='POLECAT_DONE', body is valid JSON.
+	// Verify: type='protocol', subject='AGENT_DONE', body is valid JSON.
 	msg, err := s.ReadMessage(id)
 	if err != nil {
 		t.Fatal(err)
@@ -299,7 +299,7 @@ func TestSendProtocolMessage(t *testing.T) {
 		t.Fatalf("expected type 'protocol', got %q", msg.Type)
 	}
 	if msg.Subject != "AGENT_DONE" {
-		t.Fatalf("expected subject 'POLECAT_DONE', got %q", msg.Subject)
+		t.Fatalf("expected subject 'AGENT_DONE', got %q", msg.Subject)
 	}
 	if msg.Priority != 1 {
 		t.Fatalf("expected priority 1, got %d", msg.Priority)
@@ -310,24 +310,24 @@ func TestSendProtocolMessage(t *testing.T) {
 	if err := json.Unmarshal([]byte(msg.Body), &parsed); err != nil {
 		t.Fatalf("failed to unmarshal body: %v", err)
 	}
-	if parsed.WorkItemID != "gt-abc12345" {
-		t.Fatalf("expected work_item_id 'gt-abc12345', got %q", parsed.WorkItemID)
+	if parsed.WorkItemID != "sol-abc12345" {
+		t.Fatalf("expected work_item_id 'sol-abc12345', got %q", parsed.WorkItemID)
 	}
 	if parsed.AgentID != "myrig/Toast" {
 		t.Fatalf("expected agent_id 'myrig/Toast', got %q", parsed.AgentID)
 	}
 
 	// PendingProtocol(recipient, "AGENT_DONE") -> returns message.
-	msgs, err := s.PendingProtocol("myrig/witness", ProtoAgentDone)
+	msgs, err := s.PendingProtocol("myrig/sentinel", ProtoAgentDone)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(msgs) != 1 {
-		t.Fatalf("expected 1 pending POLECAT_DONE, got %d", len(msgs))
+		t.Fatalf("expected 1 pending AGENT_DONE, got %d", len(msgs))
 	}
 
 	// PendingProtocol(recipient, "MERGE_READY") -> empty (wrong type).
-	msgs, err = s.PendingProtocol("myrig/witness", ProtoMergeReady)
+	msgs, err = s.PendingProtocol("myrig/sentinel", ProtoMergeReady)
 	if err != nil {
 		t.Fatal(err)
 	}

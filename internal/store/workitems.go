@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// WorkItem represents a tracked work item in a rig database.
+// WorkItem represents a tracked work item in a world database.
 type WorkItem struct {
 	ID          string
 	Title       string

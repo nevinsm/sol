@@ -22,9 +22,9 @@ func setupGTHome(t *testing.T) string {
 func TestCapture(t *testing.T) {
 	gtHome := setupGTHome(t)
 
-	// Set up hook file.
-	if err := tether.Write("testrig", "Toast", "gt-abc12345"); err != nil {
-		t.Fatalf("failed to write hook: %v", err)
+	// Set up tether file.
+	if err := tether.Write("testrig", "Toast", "sol-abc12345"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	// Set up workflow state.
@@ -37,7 +37,7 @@ func TestCapture(t *testing.T) {
 		t.Fatalf("failed to write workflow state: %v", err)
 	}
 	// Minimal instance manifest for step counting.
-	instanceJSON := `{"formula":"default-work","work_item_id":"gt-abc12345","variables":{},"instantiated_at":"2026-02-27T10:00:00Z"}`
+	instanceJSON := `{"formula":"default-work","work_item_id":"sol-abc12345","variables":{},"instantiated_at":"2026-02-27T10:00:00Z"}`
 	if err := os.WriteFile(filepath.Join(wfDir, "manifest.json"), []byte(instanceJSON), 0o644); err != nil {
 		t.Fatalf("failed to write workflow instance: %v", err)
 	}
@@ -62,8 +62,8 @@ func TestCapture(t *testing.T) {
 		t.Fatalf("Capture failed: %v", err)
 	}
 
-	if state.WorkItemID != "gt-abc12345" {
-		t.Errorf("expected WorkItemID gt-abc12345, got %q", state.WorkItemID)
+	if state.WorkItemID != "sol-abc12345" {
+		t.Errorf("expected WorkItemID sol-abc12345, got %q", state.WorkItemID)
 	}
 	if state.AgentName != "Toast" {
 		t.Errorf("expected AgentName Toast, got %q", state.AgentName)
@@ -91,9 +91,9 @@ func TestCapture(t *testing.T) {
 func TestCaptureNoWorkflow(t *testing.T) {
 	setupGTHome(t)
 
-	// Set up hook file only, no workflow.
-	if err := tether.Write("testrig", "Toast", "gt-abc12345"); err != nil {
-		t.Fatalf("failed to write hook: %v", err)
+	// Set up tether file only, no workflow.
+	if err := tether.Write("testrig", "Toast", "sol-abc12345"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	state, err := Capture(CaptureOpts{
@@ -117,8 +117,8 @@ func TestCaptureNoWorkflow(t *testing.T) {
 func TestCaptureNoSummary(t *testing.T) {
 	setupGTHome(t)
 
-	if err := tether.Write("testrig", "Toast", "gt-abc12345"); err != nil {
-		t.Fatalf("failed to write hook: %v", err)
+	if err := tether.Write("testrig", "Toast", "sol-abc12345"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	mockGitLog := func(dir string, count int) ([]string, error) {
@@ -138,7 +138,7 @@ func TestCaptureNoSummary(t *testing.T) {
 	if !strings.Contains(state.Summary, "Toast") {
 		t.Errorf("auto-generated summary missing agent name: %q", state.Summary)
 	}
-	if !strings.Contains(state.Summary, "gt-abc12345") {
+	if !strings.Contains(state.Summary, "sol-abc12345") {
 		t.Errorf("auto-generated summary missing work item ID: %q", state.Summary)
 	}
 	if !strings.Contains(state.Summary, "abc1234") {
@@ -150,7 +150,7 @@ func TestWriteAndRead(t *testing.T) {
 	setupGTHome(t)
 
 	original := &State{
-		WorkItemID:       "gt-abc12345",
+		WorkItemID:       "sol-abc12345",
 		AgentName:        "Toast",
 		World:              "testrig",
 		PreviousSession:  "sol-testrig-Toast",
@@ -219,7 +219,7 @@ func TestRemove(t *testing.T) {
 
 	// Write then remove.
 	state := &State{
-		WorkItemID: "gt-abc12345",
+		WorkItemID: "sol-abc12345",
 		AgentName:  "Toast",
 		World:        "testrig",
 		Summary:    "test",
@@ -257,7 +257,7 @@ func TestHasHandoff(t *testing.T) {
 
 	// Write handoff.
 	state := &State{
-		WorkItemID: "gt-abc12345",
+		WorkItemID: "sol-abc12345",
 		AgentName:  "Toast",
 		World:        "testrig",
 		Summary:    "test",
@@ -364,9 +364,9 @@ func (m *mockSphereStore) SendMessage(sender, recipient, subject, body string, p
 func TestExec(t *testing.T) {
 	gtHome := setupGTHome(t)
 
-	// Set up hook file.
-	if err := tether.Write("testrig", "Toast", "gt-abc12345"); err != nil {
-		t.Fatalf("failed to write hook: %v", err)
+	// Set up tether file.
+	if err := tether.Write("testrig", "Toast", "sol-abc12345"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	// Create worktree directory.
@@ -424,8 +424,8 @@ func TestExec(t *testing.T) {
 	if msg.Recipient != "testrig/Toast" {
 		t.Errorf("expected recipient testrig/Toast, got %q", msg.Recipient)
 	}
-	if msg.Subject != "HANDOFF: gt-abc12345" {
-		t.Errorf("expected subject 'HANDOFF: gt-abc12345', got %q", msg.Subject)
+	if msg.Subject != "HANDOFF: sol-abc12345" {
+		t.Errorf("expected subject 'HANDOFF: sol-abc12345', got %q", msg.Subject)
 	}
 	if msg.Priority != 2 {
 		t.Errorf("expected priority 2, got %d", msg.Priority)

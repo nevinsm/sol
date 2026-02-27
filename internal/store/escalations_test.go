@@ -9,7 +9,7 @@ import (
 func TestCreateEscalation(t *testing.T) {
 	s := setupTown(t)
 
-	id, err := s.CreateEscalation("high", "myrig/witness", "Agent Toast stalled for 30m")
+	id, err := s.CreateEscalation("high", "myrig/sentinel", "Agent Toast stalled for 30m")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,8 +28,8 @@ func TestCreateEscalation(t *testing.T) {
 	if esc.Severity != "high" {
 		t.Fatalf("expected severity 'high', got %q", esc.Severity)
 	}
-	if esc.Source != "myrig/witness" {
-		t.Fatalf("expected source 'myrig/witness', got %q", esc.Source)
+	if esc.Source != "myrig/sentinel" {
+		t.Fatalf("expected source 'myrig/sentinel', got %q", esc.Source)
 	}
 	if esc.Description != "Agent Toast stalled for 30m" {
 		t.Fatalf("expected description 'Agent Toast stalled for 30m', got %q", esc.Description)

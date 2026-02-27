@@ -125,14 +125,14 @@ func TestGatherHealthy(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
-			{ID: "myrig/Sage", Name: "Sage", World: "myrig", State: "working", HookItem: "gt-11223344"},
+			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", TetherItem: "sol-a1b2c3d4"},
+			{ID: "myrig/Sage", Name: "Sage", World: "myrig", State: "working", TetherItem: "sol-11223344"},
 		},
 	}
 	world := &mockWorldStore{
 		items: map[string]*store.WorkItem{
-			"gt-a1b2c3d4": {ID: "gt-a1b2c3d4", Title: "Implement login page"},
-			"gt-11223344": {ID: "gt-11223344", Title: "Add unit tests"},
+			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Implement login page"},
+			"sol-11223344": {ID: "sol-11223344", Title: "Add unit tests"},
 		},
 	}
 	checker := &mockChecker{
@@ -167,14 +167,14 @@ func TestGatherUnhealthy(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
-			{ID: "myrig/Jasper", Name: "Jasper", World: "myrig", State: "working", HookItem: "gt-c5d6e7f8"},
+			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", TetherItem: "sol-a1b2c3d4"},
+			{ID: "myrig/Jasper", Name: "Jasper", World: "myrig", State: "working", TetherItem: "sol-c5d6e7f8"},
 		},
 	}
 	world := &mockWorldStore{
 		items: map[string]*store.WorkItem{
-			"gt-a1b2c3d4": {ID: "gt-a1b2c3d4", Title: "Implement login page"},
-			"gt-c5d6e7f8": {ID: "gt-c5d6e7f8", Title: "Fix CSS regression"},
+			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Implement login page"},
+			"sol-c5d6e7f8": {ID: "sol-c5d6e7f8", Title: "Fix CSS regression"},
 		},
 	}
 	checker := &mockChecker{
@@ -206,12 +206,12 @@ func TestGatherDegraded(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
+			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", TetherItem: "sol-a1b2c3d4"},
 		},
 	}
 	world := &mockWorldStore{
 		items: map[string]*store.WorkItem{
-			"gt-a1b2c3d4": {ID: "gt-a1b2c3d4", Title: "Test task"},
+			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Test task"},
 		},
 	}
 	checker := &mockChecker{
@@ -288,12 +288,12 @@ func TestGatherWithHookedWork(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
+			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", TetherItem: "sol-a1b2c3d4"},
 		},
 	}
 	world := &mockWorldStore{
 		items: map[string]*store.WorkItem{
-			"gt-a1b2c3d4": {ID: "gt-a1b2c3d4", Title: "Implement login page"},
+			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Implement login page"},
 		},
 	}
 	checker := &mockChecker{
@@ -309,8 +309,8 @@ func TestGatherWithHookedWork(t *testing.T) {
 		t.Fatalf("len(Agents) = %d, want 1", len(result.Agents))
 	}
 	as := result.Agents[0]
-	if as.HookItem != "gt-a1b2c3d4" {
-		t.Errorf("HookItem = %q, want %q", as.HookItem, "gt-a1b2c3d4")
+	if as.TetherItem != "sol-a1b2c3d4" {
+		t.Errorf("TetherItem = %q, want %q", as.TetherItem, "sol-a1b2c3d4")
 	}
 	if as.WorkTitle != "Implement login page" {
 		t.Errorf("WorkTitle = %q, want %q", as.WorkTitle, "Implement login page")
@@ -326,7 +326,7 @@ func TestGatherMissingWorkItem(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", HookItem: "gt-nonexist"},
+			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", TetherItem: "sol-nonexist"},
 		},
 	}
 	world := &mockWorldStore{items: map[string]*store.WorkItem{}} // item not found
@@ -357,17 +357,17 @@ func TestGatherMixedStates(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
-			{ID: "myrig/Jasper", Name: "Jasper", World: "myrig", State: "working", HookItem: "gt-c5d6e7f8"},
+			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", TetherItem: "sol-a1b2c3d4"},
+			{ID: "myrig/Jasper", Name: "Jasper", World: "myrig", State: "working", TetherItem: "sol-c5d6e7f8"},
 			{ID: "myrig/Sage", Name: "Sage", World: "myrig", State: "idle"},
-			{ID: "myrig/Copper", Name: "Copper", World: "myrig", State: "stalled", HookItem: "gt-11223344"},
+			{ID: "myrig/Copper", Name: "Copper", World: "myrig", State: "stalled", TetherItem: "sol-11223344"},
 		},
 	}
 	world := &mockWorldStore{
 		items: map[string]*store.WorkItem{
-			"gt-a1b2c3d4": {ID: "gt-a1b2c3d4", Title: "Implement login page"},
-			"gt-c5d6e7f8": {ID: "gt-c5d6e7f8", Title: "Fix CSS regression"},
-			"gt-11223344": {ID: "gt-11223344", Title: "Add unit tests"},
+			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Implement login page"},
+			"sol-c5d6e7f8": {ID: "sol-c5d6e7f8", Title: "Fix CSS regression"},
+			"sol-11223344": {ID: "sol-11223344", Title: "Add unit tests"},
 		},
 	}
 	checker := &mockChecker{

@@ -218,7 +218,7 @@ func (m *mockSphereStore) GetAgent(id string) (*store.Agent, error) {
 	return agent, nil
 }
 
-func (m *mockSphereStore) UpdateAgentState(id, state, hookItem string) error {
+func (m *mockSphereStore) UpdateAgentState(id, state, tetherItem string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	agent, ok := m.agents[id]
@@ -226,7 +226,7 @@ func (m *mockSphereStore) UpdateAgentState(id, state, hookItem string) error {
 		return fmt.Errorf("agent %q not found", id)
 	}
 	agent.State = state
-	agent.HookItem = hookItem
+	agent.TetherItem = tetherItem
 	return nil
 }
 
