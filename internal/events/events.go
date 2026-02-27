@@ -37,6 +37,14 @@ const (
 	EventAssess       = "assess"        // AI assessment performed
 	EventNudge        = "nudge"         // nudge injected into agent session
 	EventMailSent     = "mail_sent"     // message sent (reserved for Loop 5 Deacon)
+
+	// Loop 4 events.
+	EventWorkflowInstantiate = "workflow_instantiate" // workflow instantiated for agent
+	EventWorkflowAdvance     = "workflow_advance"     // workflow step advanced
+	EventWorkflowComplete    = "workflow_complete"    // workflow completed all steps
+	EventConvoyCreated       = "convoy_created"       // convoy created
+	EventConvoyLaunched      = "convoy_launched"      // convoy items dispatched
+	EventConvoyClosed        = "convoy_closed"        // convoy auto-closed
 )
 
 // Logger handles event logging to the JSONL event feed.

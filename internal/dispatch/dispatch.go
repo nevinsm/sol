@@ -15,6 +15,7 @@ import (
 	"github.com/nevinsm/gt/internal/protocol"
 	"github.com/nevinsm/gt/internal/session"
 	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/gt/internal/workflow"
 )
 
 // SessionManager defines the session operations used by the dispatch package.
@@ -62,14 +63,17 @@ type SlingResult struct {
 	AgentName   string
 	SessionName string
 	WorktreeDir string
+	Formula     string // empty if no workflow
 }
 
 // SlingOpts holds the inputs for a sling operation.
 type SlingOpts struct {
 	WorkItemID string
 	Rig        string
-	AgentName  string // optional: if empty, find an idle agent
-	SourceRepo string // path to the source git repo
+	AgentName  string            // optional: if empty, find an idle agent
+	SourceRepo string            // path to the source git repo
+	Formula    string            // optional: formula name for workflow
+	Variables  map[string]string // optional: workflow variables
 }
 
 // Sling assigns a work item to a polecat agent and starts its session.
@@ -198,6 +202,7 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 		WorkItemID:  opts.WorkItemID,
 		Title:       item.Title,
 		Description: item.Description,
+		HasWorkflow: opts.Formula != "",
 	}
 	if err := protocol.InstallClaudeMD(worktreeDir, ctx); err != nil {
 		rollback()
@@ -208,6 +213,22 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 	if err := protocol.InstallHooks(worktreeDir, opts.Rig, agent.Name); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to install hooks: %w", err)
+	}
+
+	// 8b. Instantiate workflow if formula provided.
+	if opts.Formula != "" {
+		vars := opts.Variables
+		if vars == nil {
+			vars = map[string]string{}
+		}
+		// Always set "issue" variable to the work item ID.
+		if _, ok := vars["issue"]; !ok {
+			vars["issue"] = opts.WorkItemID
+		}
+		if _, _, err := workflow.Instantiate(opts.Rig, agent.Name, opts.Formula, vars); err != nil {
+			rollback()
+			return nil, fmt.Errorf("failed to instantiate workflow %q: %w", opts.Formula, err)
+		}
 	}
 
 	// 9. Start tmux session.
@@ -221,8 +242,19 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 		return nil, fmt.Errorf("failed to start session: %w", err)
 	}
 
+	slingPayload := map[string]string{
+		"work_item_id": opts.WorkItemID,
+		"agent":        agent.Name,
+		"rig":          opts.Rig,
+	}
 	if logger != nil {
-		logger.Emit(events.EventSling, "gt", "operator", "both", map[string]string{
+		logger.Emit(events.EventSling, "gt", "operator", "both", slingPayload)
+	}
+
+	// Emit workflow instantiation event if formula was used.
+	if opts.Formula != "" && logger != nil {
+		logger.Emit(events.EventWorkflowInstantiate, "gt", "operator", "both", map[string]string{
+			"formula":      opts.Formula,
 			"work_item_id": opts.WorkItemID,
 			"agent":        agent.Name,
 			"rig":          opts.Rig,
@@ -234,6 +266,7 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 		AgentName:   agent.Name,
 		SessionName: sessName,
 		WorktreeDir: worktreeDir,
+		Formula:     opts.Formula,
 	}, nil
 }
 
@@ -301,6 +334,17 @@ func Prime(rig, agentName string, rigStore RigStore) (*PrimeResult, error) {
 		return nil, fmt.Errorf("failed to get work item %q: %w", workItemID, err)
 	}
 
+	// Check for active workflow.
+	state, err := workflow.ReadState(rig, agentName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read workflow state: %w", err)
+	}
+
+	if state != nil && state.Status == "running" {
+		return primeWithWorkflow(rig, agentName, item, state)
+	}
+
+	// No workflow — standard prime (existing behavior).
 	output := fmt.Sprintf(`=== WORK CONTEXT ===
 Agent: %s (rig: %s)
 Work Item: %s
@@ -314,6 +358,54 @@ Instructions:
 Execute this work item. When complete, run: gt done
 If stuck, run: gt escalate "description"
 === END CONTEXT ===`, agentName, rig, item.ID, item.Title, item.Status, item.Description)
+
+	return &PrimeResult{Output: output}, nil
+}
+
+// primeWithWorkflow returns workflow-aware context for the prime command.
+func primeWithWorkflow(rig, agentName string, item *store.WorkItem,
+	state *workflow.State) (*PrimeResult, error) {
+
+	step, err := workflow.ReadCurrentStep(rig, agentName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read current step: %w", err)
+	}
+	if step == nil {
+		// Workflow exists but no current step — treat as complete.
+		return &PrimeResult{
+			Output: fmt.Sprintf("Workflow complete for %s. Run: gt done", item.ID),
+		}, nil
+	}
+
+	// Count progress.
+	completed := len(state.Completed)
+	instance, _ := workflow.ReadInstance(rig, agentName)
+	formula := ""
+	if instance != nil {
+		formula = instance.Formula
+	}
+
+	output := fmt.Sprintf(`=== WORK CONTEXT ===
+Agent: %s (rig: %s)
+Work Item: %s
+Title: %s
+
+Workflow: %s (step %d/%d+%d: %s)
+
+--- CURRENT STEP ---
+%s
+--- END STEP ---
+
+Propulsion loop:
+1. Execute the step above
+2. When done: gt workflow advance --rig=%s --agent=%s
+3. Check progress: gt workflow status --rig=%s --agent=%s
+4. After final step: gt done
+=== END CONTEXT ===`,
+		agentName, rig, item.ID, item.Title,
+		formula, completed+1, completed, 1, step.Title,
+		step.Instructions,
+		rig, agentName, rig, agentName)
 
 	return &PrimeResult{Output: output}, nil
 }
@@ -413,6 +505,11 @@ func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionMana
 	// 6. Clear hook file.
 	if err := hook.Clear(opts.Rig, opts.AgentName); err != nil {
 		return nil, fmt.Errorf("failed to clear hook: %w", err)
+	}
+
+	// 6b. Clean up workflow if present.
+	if _, err := workflow.ReadState(opts.Rig, opts.AgentName); err == nil {
+		workflow.Remove(opts.Rig, opts.AgentName) // best-effort cleanup
 	}
 
 	// 7. Stop session — use a brief delay then stop in background.

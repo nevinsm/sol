@@ -149,6 +149,18 @@ func formatEventDescription(ev events.Event) string {
 		return fmt.Sprintf("Assessed %s: %s (%s confidence)", get("agent"), get("status"), get("confidence"))
 	case events.EventNudge:
 		return fmt.Sprintf("Nudged %s: %s", get("agent"), get("message"))
+	case events.EventWorkflowInstantiate:
+		return fmt.Sprintf("Workflow %s instantiated for %s", get("formula"), get("work_item_id"))
+	case events.EventWorkflowAdvance:
+		return fmt.Sprintf("Advanced to step: %s (%s)", get("step"), get("work_item_id"))
+	case events.EventWorkflowComplete:
+		return fmt.Sprintf("Workflow complete: %s", get("work_item_id"))
+	case events.EventConvoyCreated:
+		return fmt.Sprintf("Convoy created: %s (%s items)", get("name"), get("count"))
+	case events.EventConvoyLaunched:
+		return fmt.Sprintf("Convoy launched: %s dispatched in %s", get("dispatched"), get("rig"))
+	case events.EventConvoyClosed:
+		return fmt.Sprintf("Convoy closed: %s", get("name"))
 	case "sling_batch":
 		return fmt.Sprintf("Sling burst: %s dispatches in %s", get("count"), get("rig"))
 	case "respawn_batch":

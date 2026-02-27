@@ -63,6 +63,13 @@ var convoyCreateCmd = &cobra.Command{
 			}
 		}
 
+		logger := events.NewLogger(config.Home())
+		logger.Emit(events.EventConvoyCreated, "gt", "operator", "both", map[string]string{
+			"convoy_id": convoyID,
+			"name":      name,
+			"count":     fmt.Sprintf("%d", len(itemIDs)),
+		})
+
 		fmt.Printf("Created convoy %s: %q (%d items)\n", convoyID, name, len(itemIDs))
 		return nil
 	},
@@ -365,13 +372,21 @@ var convoyLaunchCmd = &cobra.Command{
 		mgr := dispatch.NewSessionManager()
 		logger := events.NewLogger(config.Home())
 
+		// Parse --var flags into a map.
+		vars := parseConvoyVarFlags(convoyVars)
+
 		dispatched := 0
 		for _, st := range readyItems {
-			result, err := dispatch.Sling(dispatch.SlingOpts{
+			slingOpts := dispatch.SlingOpts{
 				WorkItemID: st.WorkItemID,
 				Rig:        convoyRig,
 				SourceRepo: sourceRepo,
-			}, rigStore, townStore, mgr, logger)
+			}
+			if convoyFormula != "" {
+				slingOpts.Formula = convoyFormula
+				slingOpts.Variables = vars
+			}
+			result, err := dispatch.Sling(slingOpts, rigStore, townStore, mgr, logger)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to dispatch %s: %v\n", st.WorkItemID, err)
 				continue
@@ -379,6 +394,12 @@ var convoyLaunchCmd = &cobra.Command{
 			fmt.Printf("Dispatched %s -> %s (%s)\n", result.WorkItemID, result.AgentName, result.SessionName)
 			dispatched++
 		}
+
+		logger.Emit(events.EventConvoyLaunched, "gt", "operator", "both", map[string]string{
+			"convoy_id":  convoyID,
+			"rig":        convoyRig,
+			"dispatched": fmt.Sprintf("%d", dispatched),
+		})
 
 		fmt.Printf("\nDispatched %d items.\n", dispatched)
 		if len(blockedItems) > 0 {
@@ -390,6 +411,15 @@ var convoyLaunchCmd = &cobra.Command{
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to check convoy closure: %v\n", err)
 		} else if closed {
+			convoy, _ := townStore.GetConvoy(convoyID)
+			conName := convoyID
+			if convoy != nil {
+				conName = convoy.Name
+			}
+			logger.Emit(events.EventConvoyClosed, "gt", "operator", "both", map[string]string{
+				"convoy_id": convoyID,
+				"name":      conName,
+			})
 			fmt.Println("Convoy auto-closed (all items complete).")
 		}
 
@@ -410,6 +440,21 @@ func itemTitle(workItemID, rig string) string {
 		return "(unknown)"
 	}
 	return item.Title
+}
+
+// parseConvoyVarFlags splits "key=val" strings into a map.
+func parseConvoyVarFlags(vars []string) map[string]string {
+	if len(vars) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(vars))
+	for _, v := range vars {
+		parts := strings.SplitN(v, "=", 2)
+		if len(parts) == 2 {
+			m[parts[0]] = parts[1]
+		}
+	}
+	return m
 }
 
 func blockedByList(workItemID, rig string) string {

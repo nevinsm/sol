@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nevinsm/gt/internal/config"
+	"github.com/nevinsm/gt/internal/events"
 	"github.com/nevinsm/gt/internal/workflow"
 	"github.com/spf13/cobra"
 )
@@ -75,14 +77,36 @@ var workflowAdvanceCmd = &cobra.Command{
 	Short: "Advance to the next workflow step",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Read work item ID for event payload before advancing.
+		inst, _ := workflow.ReadInstance(wfRig, wfAgent)
+		workItemID := ""
+		if inst != nil {
+			workItemID = inst.WorkItemID
+		}
+
 		nextStep, done, err := workflow.Advance(wfRig, wfAgent)
 		if err != nil {
 			return err
 		}
+
+		logger := events.NewLogger(config.Home())
 		if done {
+			logger.Emit(events.EventWorkflowComplete, "gt", wfAgent, "both", map[string]string{
+				"work_item_id": workItemID,
+				"agent":        wfAgent,
+				"rig":          wfRig,
+			})
 			fmt.Println("Workflow complete.")
 			return nil
 		}
+
+		logger.Emit(events.EventWorkflowAdvance, "gt", wfAgent, "both", map[string]string{
+			"work_item_id": workItemID,
+			"step":         nextStep.Title,
+			"step_id":      nextStep.ID,
+			"agent":        wfAgent,
+			"rig":          wfRig,
+		})
 		fmt.Printf("Advanced to step: %s\n", nextStep.Title)
 		return nil
 	},

@@ -13,11 +13,39 @@ type ClaudeMDContext struct {
 	WorkItemID  string
 	Title       string
 	Description string
+	HasWorkflow bool // if true, include workflow commands
 }
 
 // GenerateClaudeMD returns the contents of a CLAUDE.md file for a polecat agent.
 // This file is the agent's entire understanding of the system.
 func GenerateClaudeMD(ctx ClaudeMDContext) string {
+	workflowSection := ""
+	protocolSection := ""
+
+	if ctx.HasWorkflow {
+		workflowSection = fmt.Sprintf(`
+## Workflow Commands
+- `+"`gt workflow current --rig=%s --agent=%s`"+` — Read current step instructions
+- `+"`gt workflow advance --rig=%s --agent=%s`"+` — Mark step complete, advance to next
+- `+"`gt workflow status --rig=%s --agent=%s`"+` — Check progress
+`, ctx.Rig, ctx.AgentName, ctx.Rig, ctx.AgentName, ctx.Rig, ctx.AgentName)
+
+		protocolSection = fmt.Sprintf(`## Protocol
+1. Read your current step: `+"`gt workflow current --rig=%s --agent=%s`"+`
+2. Execute the step instructions.
+3. When the step is complete: `+"`gt workflow advance --rig=%s --agent=%s`"+`
+4. Repeat from step 1 until all steps are done.
+5. When the workflow is complete, run `+"`gt done`"+`.
+`, ctx.Rig, ctx.AgentName, ctx.Rig, ctx.AgentName)
+	} else {
+		protocolSection = `## Protocol
+1. Read your assignment above carefully.
+2. Execute the work in this worktree.
+3. When finished, run ` + "`gt done`" + `.
+4. If you cannot complete the work, run ` + "`gt escalate \"description of problem\"`" + `.
+`
+	}
+
 	return fmt.Sprintf(`# Polecat Agent: %s (rig: %s)
 
 You are a polecat agent in a multi-agent orchestration system.
@@ -33,18 +61,14 @@ Your job is to execute the assigned work item.
   clears your hook, and ends your session. Only run this when you are
   confident the work is done.
 - `+"`gt escalate`"+` — Request help if you are stuck. Describe the problem.
-
-## Protocol
-1. Read your assignment above carefully.
-2. Execute the work in this worktree.
-3. When finished, run `+"`gt done`"+`.
-4. If you cannot complete the work, run `+"`gt escalate \"description of problem\"`"+`.
-
+%s
+%s
 ## Important
 - You are working in an isolated git worktree. Commit your changes normally.
 - Do not modify files outside this worktree.
 - Do not attempt to interact with other agents directly.
-`, ctx.AgentName, ctx.Rig, ctx.WorkItemID, ctx.Title, ctx.Description)
+`, ctx.AgentName, ctx.Rig, ctx.WorkItemID, ctx.Title, ctx.Description,
+		workflowSection, protocolSection)
 }
 
 // RefineryClaudeMDContext holds the fields used to generate a CLAUDE.md for the refinery.
