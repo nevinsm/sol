@@ -124,6 +124,16 @@ func (s *Store) ListAgents(world string, state string) ([]Agent, error) {
 	return agents, nil
 }
 
+// DeleteAgentsForWorld removes all agent records for the given world.
+// Used during world deletion to clean up sphere state.
+func (s *Store) DeleteAgentsForWorld(world string) error {
+	_, err := s.db.Exec(`DELETE FROM agents WHERE world = ?`, world)
+	if err != nil {
+		return fmt.Errorf("failed to delete agents for world %q: %w", world, err)
+	}
+	return nil
+}
+
 // FindIdleAgent returns the first idle agent for a world, or nil if none available.
 func (s *Store) FindIdleAgent(world string) (*Agent, error) {
 	a := &Agent{}

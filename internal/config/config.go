@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -30,6 +31,29 @@ func RuntimeDir() string {
 // WorldDir returns the path to $SOL_HOME/{world}/.
 func WorldDir(world string) string {
 	return filepath.Join(Home(), world)
+}
+
+// RequireWorld checks that a world has been initialized.
+// Returns nil if world.toml exists at $SOL_HOME/{world}/world.toml.
+//
+// Distinguishes two error cases:
+// - Pre-Arc1 world (DB exists but no world.toml): tells user to run
+//   "sol world init <world>" to adopt the existing world.
+// - Nonexistent world: tells user to run "sol world init <world>".
+func RequireWorld(world string) error {
+	path := WorldConfigPath(world)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		// Check if this is a pre-Arc1 world (DB exists but no config).
+		dbPath := filepath.Join(StoreDir(), world+".db")
+		if _, err := os.Stat(dbPath); err == nil {
+			return fmt.Errorf("world %q was created before world lifecycle management; "+
+				"run: sol world init %s", world, world)
+		}
+		return fmt.Errorf("world %q does not exist; run: sol world init %s", world, world)
+	} else if err != nil {
+		return fmt.Errorf("failed to check world %q: %w", world, err)
+	}
+	return nil
 }
 
 // EnsureDirs creates .store/ and .runtime/ if they don't exist.

@@ -588,6 +588,47 @@ func TestAgentCRUD(t *testing.T) {
 	}
 }
 
+func TestDeleteAgentsForWorld(t *testing.T) {
+	s := setupSphere(t)
+
+	// Create agents in world "alpha" and "beta".
+	s.CreateAgent("Toast", "alpha", "agent")
+	s.CreateAgent("Jasper", "alpha", "agent")
+	s.CreateAgent("Wren", "beta", "agent")
+
+	// Delete agents for "alpha".
+	if err := s.DeleteAgentsForWorld("alpha"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify alpha agents are gone.
+	agents, err := s.ListAgents("alpha", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 0 {
+		t.Fatalf("expected 0 agents for alpha, got %d", len(agents))
+	}
+
+	// Verify beta agents still exist.
+	agents, err = s.ListAgents("beta", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 1 {
+		t.Fatalf("expected 1 agent for beta, got %d", len(agents))
+	}
+}
+
+func TestDeleteAgentsForWorldEmpty(t *testing.T) {
+	s := setupSphere(t)
+
+	// Delete agents for a world that has none — should not error.
+	if err := s.DeleteAgentsForWorld("nonexistent"); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
 func TestAgentNotFound(t *testing.T) {
 	s := setupSphere(t)
 

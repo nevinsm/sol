@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -256,5 +257,61 @@ func TestGlobalConfigPath(t *testing.T) {
 	got := GlobalConfigPath()
 	if got != expected {
 		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestRequireWorldExists(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("SOL_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+
+	// Create $SOL_HOME/{world}/world.toml.
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte("[world]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RequireWorld("testworld"); err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+}
+
+func TestRequireWorldNotExists(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("SOL_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+
+	err := RequireWorld("nonexistent")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("expected error containing 'does not exist', got: %v", err)
+	}
+}
+
+func TestRequireWorldPreArc1(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("SOL_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+
+	// Create $SOL_HOME/.store/{world}.db but NO world.toml.
+	storeDir := filepath.Join(dir, ".store")
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "legacy.db"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := RequireWorld("legacy")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "before world lifecycle") {
+		t.Fatalf("expected error containing 'before world lifecycle', got: %v", err)
 	}
 }
