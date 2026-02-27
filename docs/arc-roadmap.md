@@ -78,7 +78,7 @@ Production operations at scale.
 
 - `sol world export <name>` — backup world state (database + directory tree)
 - `sol world import <archive>` — restore from backup
-- Multi-world governor selection: `sol governor run --worlds=a,b`
+- Multi-world prefect selection: `sol prefect run --worlds=a,b`
 - Schema migration tooling for upgrades
 - World cloning: `sol world clone <source> <target>`
 

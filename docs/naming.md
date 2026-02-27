@@ -41,7 +41,7 @@ structure; the action layer names the mechanisms.
 
 | Term | Definition | Replaces |
 |---|---|---|
-| **Governor** | Per-world supervisor. Manages agent health, respawns dead sessions, detects mass failures. | Supervisor |
+| **Prefect** | Sphere-wide supervisor. Manages agent health across all worlds, respawns dead sessions, detects mass failures. | Supervisor |
 | **Forge** | Merge pipeline. Processes merge requests through quality gates, resolves conflicts, integrates output. | Refinery |
 | **Sentinel** | Per-world health monitor. Detects stalled/stuck/zombie agents, performs AI-assisted assessment, injects nudges. | Witness |
 | **Chronicle** | Event log maintenance. Deduplication, aggregation, feed truncation. | Curator |
@@ -89,5 +89,5 @@ For contributors familiar with the previous naming (gt/Gastown):
 | curator | chronicle |
 | deacon | consul |
 | convoy | caravan |
-| supervisor | governor |
+| supervisor | prefect |
 | prime | prime |
