@@ -81,6 +81,12 @@ func printStatus(rs *status.RigStatus) {
 		fmt.Println("Curator: not running")
 	}
 
+	if rs.Witness.Running {
+		fmt.Printf("Witness: running (%s)\n", rs.Witness.SessionName)
+	} else {
+		fmt.Println("Witness: not running")
+	}
+
 	fmt.Println()
 
 	if len(rs.Agents) == 0 {

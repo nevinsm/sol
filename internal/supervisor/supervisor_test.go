@@ -570,8 +570,9 @@ func TestRespawnPolecatUnchanged(t *testing.T) {
 func TestRespawnCommandByRole(t *testing.T) {
 	refineryAgent := store.Agent{Name: "refinery", Rig: "myrig", Role: "refinery"}
 	polecatAgent := store.Agent{Name: "Toast", Rig: "myrig", Role: "polecat"}
+	witnessAgent := store.Agent{Name: "witness", Rig: "myrig", Role: "witness"}
 
-	// Both roles now use Claude sessions.
+	// Refinery and polecats use Claude sessions.
 	refCmd := respawnCommand(refineryAgent)
 	if refCmd != "claude --dangerously-skip-permissions" {
 		t.Errorf("refinery command = %q, want %q", refCmd, "claude --dangerously-skip-permissions")
@@ -581,6 +582,13 @@ func TestRespawnCommandByRole(t *testing.T) {
 	if polCmd != "claude --dangerously-skip-permissions" {
 		t.Errorf("polecat command = %q, want %q", polCmd, "claude --dangerously-skip-permissions")
 	}
+
+	// Witness uses gt witness run.
+	witCmd := respawnCommand(witnessAgent)
+	want := "gt witness run myrig"
+	if witCmd != want {
+		t.Errorf("witness command = %q, want %q", witCmd, want)
+	}
 }
 
 func TestWorktreeForAgentByRole(t *testing.T) {
@@ -589,6 +597,7 @@ func TestWorktreeForAgentByRole(t *testing.T) {
 
 	refineryAgent := store.Agent{Name: "refinery", Rig: "myrig", Role: "refinery"}
 	polecatAgent := store.Agent{Name: "Toast", Rig: "myrig", Role: "polecat"}
+	witnessAgent := store.Agent{Name: "witness", Rig: "myrig", Role: "witness"}
 
 	refPath := worktreeForAgent(refineryAgent)
 	expected := filepath.Join(dir, "myrig", "refinery", "rig")
@@ -600,5 +609,74 @@ func TestWorktreeForAgentByRole(t *testing.T) {
 	expected = filepath.Join(dir, "myrig", "polecats", "Toast", "rig")
 	if polPath != expected {
 		t.Errorf("polecat worktree = %q, want %q", polPath, expected)
+	}
+
+	// Witness uses GT_HOME as working directory.
+	witPath := worktreeForAgent(witnessAgent)
+	if witPath != dir {
+		t.Errorf("witness worktree = %q, want %q", witPath, dir)
+	}
+}
+
+func TestHeartbeatDefersToWitness(t *testing.T) {
+	townStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create a witness agent in working state with a live session.
+	townStore.CreateAgent("witness", "myrig", "witness")
+	townStore.UpdateAgentState("myrig/witness", "working", "")
+	mock.Start("gt-myrig-witness", "/tmp", "gt witness run myrig", nil, "witness", "myrig")
+
+	// Create a working polecat with a dead session.
+	townStore.CreateAgent("Toast", "myrig", "polecat")
+	townStore.UpdateAgentState("myrig/Toast", "working", "gt-abc12345")
+	worktreeDir := filepath.Join(os.Getenv("GT_HOME"), "myrig", "polecats", "Toast", "rig")
+	os.MkdirAll(worktreeDir, 0o755)
+	// Session is dead (not started in mock for this agent).
+
+	sup := New(cfg, townStore, mock, logger)
+	sup.heartbeat()
+
+	// The polecat should NOT have been respawned by the supervisor
+	// because the rig is witnessed.
+	started := mock.GetStarted()
+	for _, s := range started {
+		if s == "gt-myrig-Toast" {
+			t.Error("supervisor should not respawn polecats in witnessed rigs")
+		}
+	}
+}
+
+func TestHeartbeatRespondsWithoutWitness(t *testing.T) {
+	townStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create a witness agent that is NOT active (state=idle).
+	townStore.CreateAgent("witness", "myrig", "witness")
+	// State is idle (default).
+
+	// Create a working polecat with a dead session.
+	townStore.CreateAgent("Toast", "myrig", "polecat")
+	townStore.UpdateAgentState("myrig/Toast", "working", "gt-abc12345")
+	worktreeDir := filepath.Join(os.Getenv("GT_HOME"), "myrig", "polecats", "Toast", "rig")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, townStore, mock, logger)
+	sup.heartbeat()
+
+	// Without a working witness, the supervisor should respawn the polecat.
+	started := mock.GetStarted()
+	found := false
+	for _, s := range started {
+		if s == "gt-myrig-Toast" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("supervisor should respawn polecats in unwitnessed rigs")
 	}
 }

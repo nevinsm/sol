@@ -132,12 +132,20 @@ func (s *Supervisor) heartbeat() {
 		return
 	}
 
+	// Build set of witnessed rigs (ADR-0006).
+	witnessedRigs := s.getWitnessedRigs()
+
 	deadCount := 0
 	for _, agent := range workingAgents {
 		sessName := dispatch.SessionName(agent.Rig, agent.Name)
 		if !s.sessions.Exists(sessName) {
 			deadCount++
 			s.recordDeath()
+
+			// Polecats in witnessed rigs are the witness's responsibility.
+			if agent.Role == "polecat" && witnessedRigs[agent.Rig] {
+				continue
+			}
 
 			if s.degraded {
 				s.logger.Warn("session dead but degraded, setting stalled",
@@ -162,10 +170,15 @@ func (s *Supervisor) heartbeat() {
 }
 
 // respawnCommand returns the startup command for an agent based on its role.
-// Both polecats and the refinery run Claude sessions — the CLAUDE.md and hooks
-// installed in the worktree provide the execution context.
 func respawnCommand(agent store.Agent) string {
-	return "claude --dangerously-skip-permissions"
+	switch agent.Role {
+	case "witness":
+		return fmt.Sprintf("gt witness run %s", agent.Rig)
+	default:
+		// Polecats and refinery run Claude sessions — the CLAUDE.md and hooks
+		// installed in the worktree provide the execution context.
+		return "claude --dangerously-skip-permissions"
+	}
 }
 
 // worktreeForAgent returns the worktree path for an agent based on its role.
@@ -173,6 +186,9 @@ func worktreeForAgent(agent store.Agent) string {
 	switch agent.Role {
 	case "refinery":
 		return refinery.RefineryWorktreePath(agent.Rig)
+	case "witness":
+		// Witness is a Go process, not a worktree-based agent.
+		return config.Home()
 	default:
 		return dispatch.WorktreePath(agent.Rig, agent.Name)
 	}
@@ -350,6 +366,27 @@ func (s *Supervisor) pruneDeathTimes() {
 		}
 	}
 	s.deathTimes = s.deathTimes[:n]
+}
+
+// getWitnessedRigs returns the set of rigs with an active witness.
+// A rig is witnessed when its witness agent is working AND the
+// witness tmux session is alive.
+func (s *Supervisor) getWitnessedRigs() map[string]bool {
+	witnesses, err := s.townStore.ListAgents("", "working")
+	if err != nil {
+		return nil
+	}
+	rigs := make(map[string]bool)
+	for _, w := range witnesses {
+		if w.Role != "witness" {
+			continue
+		}
+		sessName := dispatch.SessionName(w.Rig, w.Name)
+		if s.sessions.Exists(sessName) {
+			rigs[w.Rig] = true
+		}
+	}
+	return rigs
 }
 
 // shutdown gracefully stops all working agent sessions.

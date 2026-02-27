@@ -14,6 +14,7 @@ type RigStatus struct {
 	Supervisor SupervisorInfo `json:"supervisor"`
 	Refinery   RefineryInfo   `json:"refinery"`
 	Curator    CuratorInfo    `json:"curator"`
+	Witness    WitnessInfo    `json:"witness"`
 	Agents     []AgentStatus  `json:"agents"`
 	MergeQueue MergeQueueInfo `json:"merge_queue"`
 	Summary    Summary        `json:"summary"`
@@ -33,6 +34,12 @@ type RefineryInfo struct {
 
 // CuratorInfo holds curator process state (town-level).
 type CuratorInfo struct {
+	Running     bool   `json:"running"`
+	SessionName string `json:"session_name,omitempty"`
+}
+
+// WitnessInfo holds witness process state (per-rig).
+type WitnessInfo struct {
 	Running     bool   `json:"running"`
 	SessionName string `json:"session_name,omitempty"`
 }
@@ -138,6 +145,12 @@ func Gather(rig string, townStore TownStore, rigStore RigStore,
 	const curatorSessionName = "gt-curator"
 	if checker.Exists(curatorSessionName) {
 		result.Curator = CuratorInfo{Running: true, SessionName: curatorSessionName}
+	}
+
+	// 2c. Check witness session.
+	witnessSessName := dispatch.SessionName(rig, "witness")
+	if checker.Exists(witnessSessName) {
+		result.Witness = WitnessInfo{Running: true, SessionName: witnessSessName}
 	}
 
 	// 3. List all agents for this rig.

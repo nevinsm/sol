@@ -34,6 +34,8 @@ const (
 	EventRecovered    = "recovered"     // exited degraded mode
 	EventPatrol       = "patrol"        // witness patrol completed
 	EventStalled      = "stalled"       // agent detected as stalled
+	EventAssess       = "assess"        // AI assessment performed
+	EventNudge        = "nudge"         // nudge injected into agent session
 	EventMailSent     = "mail_sent"     // message sent
 )
 
