@@ -467,6 +467,21 @@ func (c *Curator) loadCheckpoint() {
 }
 
 // saveCheckpoint writes the curator's current byte offset to the checkpoint file.
+// Uses temp-file-then-rename for crash safety.
 func (c *Curator) saveCheckpoint() {
-	os.WriteFile(c.checkpointPath(), []byte(strconv.FormatInt(c.offset, 10)), 0644)
+	tmp, err := os.CreateTemp(filepath.Dir(c.checkpointPath()), ".curator-checkpoint-*.tmp")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.WriteString(strconv.FormatInt(c.offset, 10)); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return
+	}
+	os.Rename(tmpName, c.checkpointPath())
 }

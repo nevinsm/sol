@@ -306,6 +306,86 @@ func TestFollow(t *testing.T) {
 	}
 }
 
+func TestFollowSurvivesTruncation(t *testing.T) {
+	dir := t.TempDir()
+	feedPath := filepath.Join(dir, ".events.jsonl")
+	logger := NewLogger(dir)
+
+	// Write initial events so Follow can open the file.
+	for i := 0; i < 5; i++ {
+		logger.Emit("initial", "gt", "operator", "feed", nil)
+	}
+
+	reader := NewReader(dir, false)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch := make(chan Event, 32)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- reader.Follow(ctx, ReadOpts{}, ch)
+	}()
+
+	// Give Follow time to start and seek to end.
+	time.Sleep(200 * time.Millisecond)
+
+	// Simulate curator truncation: write a new file and atomically rename
+	// over the feed path. This replaces the inode.
+	tmp, err := os.CreateTemp(dir, ".truncate-*.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := Event{
+		Timestamp:  time.Now().UTC(),
+		Type:       "survived",
+		Source:     "curator",
+		Actor:      "curator",
+		Visibility: "feed",
+	}
+	data, _ := json.Marshal(ev)
+	tmp.Write(append(data, '\n'))
+	tmp.Close()
+	os.Rename(tmp.Name(), feedPath)
+
+	// Write new events after truncation (appended to new inode).
+	time.Sleep(100 * time.Millisecond)
+	for i := 0; i < 3; i++ {
+		logger.Emit("post_truncation", "gt", "operator", "feed", nil)
+	}
+
+	// Should receive the "survived" event plus the 3 post-truncation events.
+	var received []Event
+	timeout := time.After(5 * time.Second)
+	for len(received) < 4 {
+		select {
+		case ev := <-ch:
+			received = append(received, ev)
+		case <-timeout:
+			t.Fatalf("timed out waiting for events after truncation, got %d", len(received))
+		}
+	}
+
+	foundSurvived := false
+	postCount := 0
+	for _, ev := range received {
+		if ev.Type == "survived" {
+			foundSurvived = true
+		}
+		if ev.Type == "post_truncation" {
+			postCount++
+		}
+	}
+	if !foundSurvived {
+		t.Error("expected to receive 'survived' event from truncated file")
+	}
+	if postCount != 3 {
+		t.Errorf("expected 3 post_truncation events, got %d", postCount)
+	}
+
+	cancel()
+	<-errCh
+}
+
 // splitLines splits data by newline, ignoring trailing empty line.
 func splitLines(data []byte) []string {
 	var lines []string

@@ -97,7 +97,7 @@ func (r *Reader) Follow(ctx context.Context, opts ReadOpts, ch chan<- Event) err
 		return err
 	}
 opened:
-	defer f.Close()
+	defer func() { f.Close() }()
 
 	// Seek to end to only get new events.
 	offset, err := f.Seek(0, io.SeekEnd)
@@ -113,6 +113,22 @@ opened:
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+			// Detect file replacement (e.g., curator truncation).
+			// The curator atomically renames a new file over the feed path.
+			// The open fd still points to the old (unlinked) inode and would
+			// never see new events without reopening.
+			pathInfo, pathErr := os.Stat(r.path)
+			fdInfo, fdErr := f.Stat()
+			if pathErr == nil && fdErr == nil && !os.SameFile(pathInfo, fdInfo) {
+				f.Close()
+				newF, err := os.Open(r.path)
+				if err != nil {
+					continue // file may be temporarily unavailable during rename
+				}
+				f = newF
+				offset = 0
+			}
+
 			info, err := f.Stat()
 			if err != nil {
 				continue

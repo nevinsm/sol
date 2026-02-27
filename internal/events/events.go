@@ -22,10 +22,10 @@ type Event struct {
 const (
 	EventSling        = "sling"         // work dispatched to agent
 	EventDone         = "done"          // agent completed work
-	EventMergeQueued  = "merge_queued"  // merge request created
-	EventMergeClaimed = "merge_claimed" // refinery claimed MR
-	EventMerged       = "merged"        // merge successful
-	EventMergeFailed  = "merge_failed"  // merge failed
+	EventMergeQueued  = "merge_queued"  // merge request created (emitted by refinery CLI toolbox)
+	EventMergeClaimed = "merge_claimed" // refinery claimed MR (emitted by refinery CLI toolbox)
+	EventMerged       = "merged"        // merge successful (emitted by refinery CLI toolbox)
+	EventMergeFailed  = "merge_failed"  // merge failed (emitted by refinery CLI toolbox)
 	EventSessionStart = "session_start" // tmux session started
 	EventSessionStop  = "session_stop"  // tmux session stopped
 	EventRespawn      = "respawn"       // supervisor respawned agent
@@ -36,7 +36,7 @@ const (
 	EventStalled      = "stalled"       // agent detected as stalled
 	EventAssess       = "assess"        // AI assessment performed
 	EventNudge        = "nudge"         // nudge injected into agent session
-	EventMailSent     = "mail_sent"     // message sent
+	EventMailSent     = "mail_sent"     // message sent (reserved for Loop 5 Deacon)
 )
 
 // Logger handles event logging to the JSONL event feed.

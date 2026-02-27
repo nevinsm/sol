@@ -518,12 +518,17 @@ func (w *Witness) returnWorkToOpen(agent store.Agent) error {
 		}
 	}
 
-	// 2. Clear the hook file.
-	hook.Clear(w.config.Rig, agent.Name)
-
-	// 3. Set agent state → idle, clear hook_item.
+	// 2. Set agent state → idle, clear hook_item.
+	// Done before clearing hook so a crash leaves the agent idle with a stale
+	// hook (harmless — next dispatch overwrites it) rather than "working" with
+	// no hook (would trigger a wasted respawn).
 	if err := w.townStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
 		return fmt.Errorf("failed to set agent %s idle: %w", agent.ID, err)
+	}
+
+	// 3. Clear the hook file.
+	if err := hook.Clear(w.config.Rig, agent.Name); err != nil {
+		return fmt.Errorf("failed to clear hook for agent %s: %w", agent.ID, err)
 	}
 
 	// 4. Clear respawn count.
