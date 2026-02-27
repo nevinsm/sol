@@ -84,7 +84,10 @@ func (s *Store) ReadMessage(id string) (*Message, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read message %q: %w", id, err)
 	}
-	n, _ := result.RowsAffected()
+	n, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("failed to check rows affected for message %q: %w", id, err)
+	}
 	if n == 0 {
 		return nil, fmt.Errorf("message %q not found", id)
 	}
@@ -125,7 +128,10 @@ func (s *Store) AckMessage(id string) error {
 	if err != nil {
 		return fmt.Errorf("failed to ack message %q: %w", id, err)
 	}
-	n, _ := result.RowsAffected()
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected for message %q: %w", id, err)
+	}
 	if n == 0 {
 		return fmt.Errorf("message %q not found", id)
 	}
@@ -201,6 +207,9 @@ func (s *Store) scanMessages(query string, args ...interface{}) ([]Message, erro
 			msg.AckedAt = &t
 		}
 		msgs = append(msgs, msg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating messages: %w", err)
 	}
 	return msgs, nil
 }

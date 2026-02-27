@@ -26,7 +26,8 @@ var curatorRunCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := events.DefaultCuratorConfig(config.Home())
-		curator := events.NewCurator(cfg)
+		logger := events.NewLogger(config.Home())
+		curator := events.NewCurator(cfg, events.WithLogger(logger))
 
 		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()

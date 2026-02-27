@@ -303,8 +303,8 @@ func TestCuratorDedupAndAggregation(t *testing.T) {
 	// Sling events should be aggregated into sling_batch.
 	// Expect: 1 done (Toast deduped) + 1 done (Jasper) + 1 done (Sage) + 1 sling_batch = 4
 	// But: Jasper and Sage done events have same type+source("gt"), different actors → not deduped.
-	if typeCounts["done"] < 1 {
-		t.Errorf("expected at least 1 done event, got %d", typeCounts["done"])
+	if typeCounts["done"] != 3 {
+		t.Errorf("expected 3 done events (Toast deduped, Jasper+Sage unique), got %d", typeCounts["done"])
 	}
 
 	// Sling burst should produce a sling_batch.

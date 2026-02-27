@@ -118,6 +118,9 @@ func (s *Store) ListAgents(rig string, state string) ([]Agent, error) {
 		a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 		agents = append(agents, a)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating agents: %w", err)
+	}
 	return agents, nil
 }
 

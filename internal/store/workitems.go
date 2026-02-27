@@ -194,6 +194,9 @@ func (s *Store) GetWorkItem(id string) (*WorkItem, error) {
 		}
 		w.Labels = append(w.Labels, label)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating labels for work item %q: %w", id, err)
+	}
 	return w, nil
 }
 
@@ -253,6 +256,9 @@ func (s *Store) ListWorkItems(filters ListFilters) ([]WorkItem, error) {
 			w.ClosedAt = &t
 		}
 		items = append(items, w)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating work items: %w", err)
 	}
 
 	// Fetch labels for each item.

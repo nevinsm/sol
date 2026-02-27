@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -261,6 +262,7 @@ func assertEventEmitted(t *testing.T, gtHome, eventType string) {
 
 // mockSessionChecker implements witness.SessionChecker for integration tests.
 type mockSessionChecker struct {
+	mu       sync.Mutex
 	alive    map[string]bool
 	captures map[string]string
 	started  []string
@@ -281,10 +283,14 @@ func newMockSessionChecker() *mockSessionChecker {
 }
 
 func (m *mockSessionChecker) Exists(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.alive[name]
 }
 
 func (m *mockSessionChecker) Capture(name string, lines int) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if output, ok := m.captures[name]; ok {
 		return output, nil
 	}
@@ -292,18 +298,24 @@ func (m *mockSessionChecker) Capture(name string, lines int) (string, error) {
 }
 
 func (m *mockSessionChecker) Start(name, workdir, cmd string, env map[string]string, role, rig string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.alive[name] = true
 	m.started = append(m.started, name)
 	return nil
 }
 
 func (m *mockSessionChecker) Stop(name string, force bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	delete(m.alive, name)
 	m.stopped = append(m.stopped, name)
 	return nil
 }
 
 func (m *mockSessionChecker) Inject(name string, text string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.injected = append(m.injected, mockInjectCall{Session: name, Text: text})
 	return nil
 }

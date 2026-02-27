@@ -39,6 +39,7 @@ func DefaultCuratorConfig(gtHome string) CuratorConfig {
 // Curator processes raw events into a curated feed.
 type Curator struct {
 	config     CuratorConfig
+	logger     *Logger
 	offset     int64 // file offset — tracks position in raw feed
 	dedupCache []dedupEntry
 	aggBuffers map[string]*aggBuffer // keyed by event type
@@ -63,10 +64,24 @@ var aggregatableTypes = map[string]bool{
 }
 
 // NewCurator creates a curator.
-func NewCurator(config CuratorConfig) *Curator {
-	return &Curator{
+func NewCurator(config CuratorConfig, opts ...CuratorOption) *Curator {
+	c := &Curator{
 		config:     config,
 		aggBuffers: make(map[string]*aggBuffer),
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
+}
+
+// CuratorOption configures optional Curator settings.
+type CuratorOption func(*Curator)
+
+// WithLogger sets the event logger on the Curator.
+func WithLogger(logger *Logger) CuratorOption {
+	return func(c *Curator) {
+		c.logger = logger
 	}
 }
 
@@ -96,6 +111,10 @@ func (c *Curator) Run(ctx context.Context) error {
 			if err := c.processCycle(); err != nil {
 				// Best-effort: log but continue.
 				fmt.Fprintf(os.Stderr, "curator cycle error: %v\n", err)
+				if c.logger != nil {
+					c.logger.Emit("curator_error", "curator", "curator", "audit",
+						map[string]any{"error": err.Error()})
+				}
 			}
 		}
 	}
@@ -483,5 +502,8 @@ func (c *Curator) saveCheckpoint() {
 		os.Remove(tmpName)
 		return
 	}
-	os.Rename(tmpName, c.checkpointPath())
+	if err := os.Rename(tmpName, c.checkpointPath()); err != nil {
+		os.Remove(tmpName)
+		fmt.Fprintf(os.Stderr, "curator: failed to save checkpoint: %v\n", err)
+	}
 }

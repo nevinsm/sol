@@ -282,6 +282,10 @@ func (w *Witness) assessAgent(agent store.Agent, sessionName, capturedOutput str
 	}
 	if err != nil {
 		// AI call failed — log and move on, don't block patrol.
+		if w.logger != nil {
+			w.logger.Emit("assess_error", w.agentID(), agent.ID, "audit",
+				map[string]any{"error": err.Error()})
+		}
 		return nil
 	}
 
@@ -408,7 +412,7 @@ func (w *Witness) actOnAssessment(agent store.Agent, sessionName string,
 		}
 
 		// Send informational mail to operator.
-		w.townStore.SendProtocolMessage(
+		if _, err := w.townStore.SendProtocolMessage(
 			w.agentID(), "operator",
 			store.ProtoRecoveryNeeded,
 			store.RecoveryNeededPayload{
@@ -416,11 +420,14 @@ func (w *Witness) actOnAssessment(agent store.Agent, sessionName string,
 				WorkItemID: agent.HookItem,
 				Reason:     fmt.Sprintf("nudged: %s", result.Reason),
 			},
-		)
+		); err != nil && w.logger != nil {
+			w.logger.Emit("mail_error", w.agentID(), agent.ID, "audit",
+				map[string]any{"error": err.Error()})
+		}
 
 	case "escalate":
 		// Send RECOVERY_NEEDED protocol message to operator.
-		w.townStore.SendProtocolMessage(
+		if _, err := w.townStore.SendProtocolMessage(
 			w.agentID(), "operator",
 			store.ProtoRecoveryNeeded,
 			store.RecoveryNeededPayload{
@@ -428,7 +435,10 @@ func (w *Witness) actOnAssessment(agent store.Agent, sessionName string,
 				WorkItemID: agent.HookItem,
 				Reason:     result.Reason,
 			},
-		)
+		); err != nil && w.logger != nil {
+			w.logger.Emit("mail_error", w.agentID(), agent.ID, "audit",
+				map[string]any{"error": err.Error()})
+		}
 
 		if w.logger != nil {
 			w.logger.Emit(events.EventStalled, w.agentID(), agent.ID, "both",
@@ -491,7 +501,7 @@ func (w *Witness) respawnAgent(agent store.Agent) error {
 	}
 
 	// Send informational protocol message.
-	w.townStore.SendProtocolMessage(
+	if _, err := w.townStore.SendProtocolMessage(
 		w.agentID(), "operator",
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
@@ -500,7 +510,10 @@ func (w *Witness) respawnAgent(agent store.Agent) error {
 			Reason:     fmt.Sprintf("respawned (attempt %d)", attempts),
 			Attempts:   attempts,
 		},
-	)
+	); err != nil && w.logger != nil {
+		w.logger.Emit("mail_error", w.agentID(), agent.ID, "audit",
+			map[string]any{"error": err.Error()})
+	}
 
 	return nil
 }
@@ -546,7 +559,7 @@ func (w *Witness) returnWorkToOpen(agent store.Agent) error {
 	}
 
 	// 6. Send RECOVERY_NEEDED protocol message to operator.
-	w.townStore.SendProtocolMessage(
+	if _, err := w.townStore.SendProtocolMessage(
 		w.agentID(), "operator",
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
@@ -555,7 +568,10 @@ func (w *Witness) returnWorkToOpen(agent store.Agent) error {
 			Reason:     fmt.Sprintf("max respawns (%d) exceeded, work returned to open", w.config.MaxRespawns),
 			Attempts:   w.config.MaxRespawns,
 		},
-	)
+	); err != nil && w.logger != nil {
+		w.logger.Emit("mail_error", w.agentID(), agent.ID, "audit",
+			map[string]any{"error": err.Error()})
+	}
 
 	return nil
 }

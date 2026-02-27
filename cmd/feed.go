@@ -145,6 +145,14 @@ func formatEventDescription(ev events.Event) string {
 		return fmt.Sprintf("Agent stalled: %s", get("agent"))
 	case events.EventMailSent:
 		return fmt.Sprintf("Message sent to %s", get("recipient"))
+	case events.EventAssess:
+		return fmt.Sprintf("Assessed %s: %s (%s confidence)", get("agent"), get("status"), get("confidence"))
+	case events.EventNudge:
+		return fmt.Sprintf("Nudged %s: %s", get("agent"), get("message"))
+	case "sling_batch":
+		return fmt.Sprintf("Sling burst: %s dispatches in %s", get("count"), get("rig"))
+	case "respawn_batch":
+		return fmt.Sprintf("Respawn burst: %s respawns in %s", get("count"), get("rig"))
 	default:
 		data, _ := json.Marshal(payload)
 		return string(data)

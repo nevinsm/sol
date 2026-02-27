@@ -133,6 +133,9 @@ func (s *Store) ListMergeRequests(phase string) ([]MergeRequest, error) {
 		}
 		mrs = append(mrs, mr)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating merge requests: %w", err)
+	}
 	return mrs, nil
 }
 

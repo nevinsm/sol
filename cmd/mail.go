@@ -25,6 +25,9 @@ var mailSendCmd = &cobra.Command{
 		subject, _ := cmd.Flags().GetString("subject")
 		body, _ := cmd.Flags().GetString("body")
 		priority, _ := cmd.Flags().GetInt("priority")
+		if priority < 1 || priority > 3 {
+			return fmt.Errorf("priority must be 1 (urgent), 2 (normal), or 3 (low)")
+		}
 
 		s, err := store.OpenTown()
 		if err != nil {
