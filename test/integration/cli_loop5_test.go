@@ -109,3 +109,21 @@ func TestCLIDeaconStatusHelp(t *testing.T) {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
+
+func TestCLISupervisorRunDeaconFlag(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+
+	out, err := runGT(t, gtHome, "supervisor", "run", "--help")
+	if err != nil {
+		t.Fatalf("gt supervisor run --help failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "--deacon") {
+		t.Errorf("supervisor run help missing --deacon flag: %s", out)
+	}
+	if !strings.Contains(out, "--source-repo") {
+		t.Errorf("supervisor run help missing --source-repo flag: %s", out)
+	}
+}

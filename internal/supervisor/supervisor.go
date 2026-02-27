@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/gt/internal/config"
+	"github.com/nevinsm/gt/internal/deacon"
 	"github.com/nevinsm/gt/internal/dispatch"
 	"github.com/nevinsm/gt/internal/events"
 	"github.com/nevinsm/gt/internal/hook"
@@ -37,6 +38,11 @@ type Config struct {
 	MassDeathThreshold int           // default: 3 deaths in 30 seconds
 	MassDeathWindow    time.Duration // default: 30 seconds
 	DegradedCooldown   time.Duration // default: 5 minutes
+
+	DeaconEnabled      bool          // whether to monitor the deacon (default: false)
+	DeaconHeartbeatMax time.Duration // max heartbeat age before restart (default: 15 minutes)
+	DeaconCommand      string        // command to start deacon (default: "gt deacon run")
+	DeaconSourceRepo   string        // source repo path for deacon config
 }
 
 // DefaultConfig returns the default supervisor configuration.
@@ -46,6 +52,9 @@ func DefaultConfig() Config {
 		MassDeathThreshold: 3,
 		MassDeathWindow:    30 * time.Second,
 		DegradedCooldown:   5 * time.Minute,
+
+		DeaconHeartbeatMax: 15 * time.Minute,
+		DeaconCommand:      "gt deacon run",
 	}
 }
 
@@ -64,6 +73,8 @@ type Supervisor struct {
 	deathTimes    []time.Time    // timestamps of recent session deaths
 	backoff       map[string]int // agent ID -> consecutive restart count
 	lastStalled   map[string]time.Time // agent ID -> time when stalled (for backoff delay)
+
+	heartbeatCount int // total heartbeat cycles, used for deacon check frequency
 }
 
 // New creates a new Supervisor.
@@ -122,6 +133,8 @@ func (s *Supervisor) heartbeat() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.heartbeatCount++
+
 	// Check for degraded recovery before processing.
 	s.checkDegradedRecovery()
 
@@ -165,6 +178,14 @@ func (s *Supervisor) heartbeat() {
 
 	// Prune old death times.
 	s.pruneDeathTimes()
+
+	// Check deacon health (only if enabled).
+	// Check on first heartbeat (startup) and every other patrol thereafter.
+	if s.cfg.DeaconEnabled && (s.heartbeatCount == 1 || s.heartbeatCount%2 == 0) {
+		if err := s.checkDeacon(); err != nil {
+			s.logger.Error("deacon health check failed", "error", err)
+		}
+	}
 
 	s.logger.Info("heartbeat", "working_agents", len(workingAgents), "dead_sessions", deadCount)
 }
@@ -270,6 +291,63 @@ func (s *Supervisor) respawn(agent store.Agent) {
 			"restart":   restartCount,
 		})
 	}
+}
+
+// deaconSessionName is the tmux session name for the deacon.
+const deaconSessionName = "gt-town-deacon"
+
+// checkDeacon reads the deacon heartbeat and restarts if stale.
+// The deacon is exempt from degraded mode — it is infrastructure, not a worker.
+func (s *Supervisor) checkDeacon() error {
+	hb, err := deacon.ReadHeartbeat(config.Home())
+	if err != nil {
+		return fmt.Errorf("failed to read deacon heartbeat: %w", err)
+	}
+
+	if hb == nil {
+		// No heartbeat exists — start the deacon.
+		s.logger.Info("no deacon heartbeat found, starting deacon")
+		return s.startDeacon()
+	}
+
+	if !hb.IsStale(s.cfg.DeaconHeartbeatMax) {
+		// Heartbeat is fresh — no action needed.
+		return nil
+	}
+
+	// Heartbeat is stale — restart the deacon.
+	s.logger.Warn("deacon heartbeat is stale, restarting",
+		"last_heartbeat", hb.Timestamp,
+		"max_age", s.cfg.DeaconHeartbeatMax)
+
+	// Stop existing session if present (might be hung).
+	if s.sessions.Exists(deaconSessionName) {
+		if err := s.sessions.Stop(deaconSessionName, true); err != nil {
+			s.logger.Error("failed to stop stale deacon session", "error", err)
+		}
+	}
+
+	return s.startDeacon()
+}
+
+// startDeacon starts the deacon in a tmux session.
+func (s *Supervisor) startDeacon() error {
+	env := map[string]string{
+		"GT_HOME": config.Home(),
+	}
+	cmd := s.cfg.DeaconCommand
+	if s.cfg.DeaconSourceRepo != "" {
+		cmd += " --source-repo=" + s.cfg.DeaconSourceRepo
+	}
+	if err := s.sessions.Start(deaconSessionName, config.Home(), cmd, env, "deacon", "town"); err != nil {
+		return fmt.Errorf("failed to start deacon session: %w", err)
+	}
+
+	// Track backoff for the deacon.
+	s.backoff[deaconSessionName] = s.backoff[deaconSessionName] + 1
+
+	s.logger.Info("deacon session started", "session", deaconSessionName)
+	return nil
 }
 
 // recordDeath records a session death timestamp and checks for mass death.
@@ -423,6 +501,16 @@ func (s *Supervisor) shutdown() {
 		if err := s.townStore.UpdateAgentState(agent.ID, "stalled", agent.HookItem); err != nil {
 			s.logger.Error("failed to set agent stalled during shutdown",
 				"agent", agent.Name, "error", err)
+		}
+	}
+
+	// Stop deacon session if enabled.
+	if s.cfg.DeaconEnabled && s.sessions.Exists(deaconSessionName) {
+		if err := s.sessions.Stop(deaconSessionName, false); err != nil {
+			s.logger.Error("failed to stop deacon session during shutdown", "error", err)
+		} else {
+			stopped++
+			s.logger.Info("deacon session stopped during shutdown")
 		}
 	}
 

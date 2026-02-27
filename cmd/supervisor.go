@@ -43,6 +43,16 @@ var supervisorRunCmd = &cobra.Command{
 
 		mgr := session.New()
 		cfg := supervisor.DefaultConfig()
+
+		deaconEnabled, _ := cmd.Flags().GetBool("deacon")
+		sourceRepo, _ := cmd.Flags().GetString("source-repo")
+		if deaconEnabled {
+			cfg.DeaconEnabled = true
+		}
+		if sourceRepo != "" {
+			cfg.DeaconSourceRepo = sourceRepo
+		}
+
 		eventLog := events.NewLogger(config.Home())
 		sup := supervisor.New(cfg, townStore, mgr, logger, eventLog)
 
@@ -87,4 +97,7 @@ func init() {
 	rootCmd.AddCommand(supervisorCmd)
 	supervisorCmd.AddCommand(supervisorRunCmd)
 	supervisorCmd.AddCommand(supervisorStopCmd)
+
+	supervisorRunCmd.Flags().Bool("deacon", false, "Enable deacon monitoring and auto-start")
+	supervisorRunCmd.Flags().String("source-repo", "", "Source repository path (for deacon dispatch)")
 }

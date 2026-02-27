@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/gt/internal/events"
+	"github.com/nevinsm/gt/internal/session"
 	"github.com/nevinsm/gt/internal/store"
 )
 
@@ -318,4 +319,14 @@ func (m *mockSessionChecker) Inject(name string, text string) error {
 	defer m.mu.Unlock()
 	m.injected = append(m.injected, mockInjectCall{Session: name, Text: text})
 	return nil
+}
+
+func (m *mockSessionChecker) List() ([]session.SessionInfo, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var infos []session.SessionInfo
+	for name, alive := range m.alive {
+		infos = append(infos, session.SessionInfo{Name: name, Alive: alive})
+	}
+	return infos, nil
 }
