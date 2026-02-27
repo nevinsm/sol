@@ -238,6 +238,130 @@ func TestCastAutoProvision(t *testing.T) {
 	}
 }
 
+func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Set capacity = 1 via world config.
+	solHome := os.Getenv("SOL_HOME")
+	worldDir := solHome + "/ember"
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(worldDir+"/world.toml", []byte("[agents]\ncapacity = 1\n"), 0o644)
+
+	// Create first work item and cast — should auto-provision one agent.
+	item1, err := worldStore.CreateWorkItem("Item 1", "First item", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	_, err = Cast(CastOpts{
+		WorkItemID: item1,
+		World:      "ember",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("first Cast failed: %v", err)
+	}
+
+	// Create second work item and cast — should fail with capacity error.
+	item2, err := worldStore.CreateWorkItem("Item 2", "Second item", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	_, err = Cast(CastOpts{
+		WorkItemID: item2,
+		World:      "ember",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err == nil {
+		t.Fatal("expected capacity error on second cast")
+	}
+	if !strings.Contains(err.Error(), "reached agent capacity") {
+		t.Errorf("expected 'reached agent capacity' error, got: %v", err)
+	}
+}
+
+func TestCastAutoProvisionCapacityZeroUnlimited(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Default capacity = 0 (unlimited). No world.toml needed.
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	// Create and cast multiple work items — all should succeed.
+	for i := 0; i < 3; i++ {
+		itemID, err := worldStore.CreateWorkItem(
+			fmt.Sprintf("Item %d", i), "desc", "operator", 2, nil)
+		if err != nil {
+			t.Fatalf("failed to create work item %d: %v", i, err)
+		}
+
+		_, err = Cast(CastOpts{
+			WorkItemID: itemID,
+			World:      "ember",
+			SourceRepo: repoDir,
+		}, worldStore, sphereStore, mgr, nil)
+		if err != nil {
+			t.Fatalf("Cast %d failed: %v", i, err)
+		}
+	}
+
+	// Verify 3 agents exist.
+	agents, err := sphereStore.ListAgents("ember", "")
+	if err != nil {
+		t.Fatalf("failed to list agents: %v", err)
+	}
+	if len(agents) != 3 {
+		t.Errorf("expected 3 agents, got %d", len(agents))
+	}
+}
+
+func TestCastAutoProvisionCustomNamePool(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create a custom name pool file.
+	solHome := os.Getenv("SOL_HOME")
+	customPoolPath := solHome + "/custom-names.txt"
+	os.WriteFile(customPoolPath, []byte("Mercury\nVenus\nEarth\n"), 0o644)
+
+	// Write world config pointing to custom pool.
+	worldDir := solHome + "/ember"
+	os.MkdirAll(worldDir, 0o755)
+	toml := fmt.Sprintf("[agents]\nname_pool_path = %q\n", customPoolPath)
+	os.WriteFile(worldDir+"/world.toml", []byte(toml), 0o644)
+
+	itemID, err := worldStore.CreateWorkItem("Test item", "desc", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	result, err := Cast(CastOpts{
+		WorkItemID: itemID,
+		World:      "ember",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Cast failed: %v", err)
+	}
+
+	// Agent name should come from the custom pool.
+	if result.AgentName != "Mercury" {
+		t.Errorf("expected agent name 'Mercury' from custom pool, got %q", result.AgentName)
+	}
+}
+
 func TestCastAutoProvisionSkipsUsed(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()

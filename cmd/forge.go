@@ -34,6 +34,11 @@ var forgeStartCmd = &cobra.Command{
 			return err
 		}
 
+		worldCfg, err := config.LoadWorldConfig(world)
+		if err != nil {
+			return err
+		}
+
 		sessName := dispatch.SessionName(world, "forge")
 		mgr := session.New()
 
@@ -42,9 +47,12 @@ var forgeStartCmd = &cobra.Command{
 			return fmt.Errorf("forge already running for world %q (session %s)", world, sessName)
 		}
 
-		sourceRepo, err := dispatch.DiscoverSourceRepo()
-		if err != nil {
-			return err
+		sourceRepo := worldCfg.World.SourceRepo
+		if sourceRepo == "" {
+			sourceRepo, err = dispatch.DiscoverSourceRepo()
+			if err != nil {
+				return err
+			}
 		}
 
 		worldStore, err := store.OpenWorld(world)
@@ -60,12 +68,21 @@ var forgeStartCmd = &cobra.Command{
 		defer sphereStore.Close()
 
 		cfg := forge.DefaultConfig()
-		gatesPath := filepath.Join(config.WorldDir(world), "forge", "quality-gates.txt")
-		gates, err := forge.LoadQualityGates(gatesPath, cfg.QualityGates)
-		if err != nil {
-			return fmt.Errorf("failed to load quality gates: %w", err)
+		if len(worldCfg.Forge.QualityGates) > 0 {
+			cfg.QualityGates = worldCfg.Forge.QualityGates
+		} else {
+			// Fallback to flat file for backwards compatibility.
+			gatesPath := filepath.Join(config.WorldDir(world), "forge", "quality-gates.txt")
+			gates, err := forge.LoadQualityGates(gatesPath, cfg.QualityGates)
+			if err != nil {
+				return fmt.Errorf("failed to load quality gates: %w", err)
+			}
+			cfg.QualityGates = gates
 		}
-		cfg.QualityGates = gates
+
+		if worldCfg.Forge.TargetBranch != "" {
+			cfg.TargetBranch = worldCfg.Forge.TargetBranch
+		}
 
 		logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 		ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger)
@@ -204,6 +221,11 @@ var forgeQueueCmd = &cobra.Command{
 
 // openForge is a helper to create a Forge for toolbox subcommands.
 func openForge(world string) (*forge.Forge, *store.Store, *store.Store, error) {
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
 	worldStore, err := store.OpenWorld(world)
 	if err != nil {
 		return nil, nil, nil, err
@@ -215,22 +237,32 @@ func openForge(world string) (*forge.Forge, *store.Store, *store.Store, error) {
 		return nil, nil, nil, err
 	}
 
-	sourceRepo, err := dispatch.DiscoverSourceRepo()
-	if err != nil {
-		worldStore.Close()
-		sphereStore.Close()
-		return nil, nil, nil, err
+	sourceRepo := worldCfg.World.SourceRepo
+	if sourceRepo == "" {
+		sourceRepo, err = dispatch.DiscoverSourceRepo()
+		if err != nil {
+			worldStore.Close()
+			sphereStore.Close()
+			return nil, nil, nil, err
+		}
 	}
 
 	cfg := forge.DefaultConfig()
-	gatesPath := filepath.Join(config.WorldDir(world), "forge", "quality-gates.txt")
-	gates, err := forge.LoadQualityGates(gatesPath, cfg.QualityGates)
-	if err != nil {
-		worldStore.Close()
-		sphereStore.Close()
-		return nil, nil, nil, fmt.Errorf("failed to load quality gates: %w", err)
+	if len(worldCfg.Forge.QualityGates) > 0 {
+		cfg.QualityGates = worldCfg.Forge.QualityGates
+	} else {
+		gatesPath := filepath.Join(config.WorldDir(world), "forge", "quality-gates.txt")
+		gates, err := forge.LoadQualityGates(gatesPath, cfg.QualityGates)
+		if err != nil {
+			worldStore.Close()
+			sphereStore.Close()
+			return nil, nil, nil, fmt.Errorf("failed to load quality gates: %w", err)
+		}
+		cfg.QualityGates = gates
 	}
-	cfg.QualityGates = gates
+	if worldCfg.Forge.TargetBranch != "" {
+		cfg.TargetBranch = worldCfg.Forge.TargetBranch
+	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger)

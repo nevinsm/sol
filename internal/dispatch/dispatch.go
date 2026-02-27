@@ -82,20 +82,23 @@ type CastOpts struct {
 // same agent, Cast recreates the worktree and session without error.
 // The logger parameter is optional — if nil, no events are emitted.
 func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*CastResult, error) {
-	// 0. Acquire per-work-item advisory lock to prevent double dispatch.
+	// 0. Load world config once for all consumers.
+	worldCfg, _ := config.LoadWorldConfig(opts.World)
+
+	// 1. Acquire per-work-item advisory lock to prevent double dispatch.
 	lock, err := AcquireWorkItemLock(opts.WorkItemID)
 	if err != nil {
 		return nil, err
 	}
 	defer lock.Release()
 
-	// 1. Get work item.
+	// 2. Get work item.
 	item, err := worldStore.GetWorkItem(opts.WorkItemID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get work item %q: %w", opts.WorkItemID, err)
 	}
 
-	// 2. Find the agent.
+	// 3. Find the agent.
 	var agent *store.Agent
 	if opts.AgentName != "" {
 		agentID := opts.World + "/" + opts.AgentName
@@ -113,7 +116,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		}
 		if agent == nil {
 			// Auto-provision a new agent from the name pool.
-			agent, err = autoProvision(opts.World, sphereStore)
+			agent, err = autoProvision(opts.World, sphereStore, worldCfg.Agents.NamePoolPath, worldCfg.Agents.Capacity)
 			if err != nil {
 				return nil, err
 			}
@@ -122,11 +125,11 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 
 	agentID := opts.World + "/" + agent.Name
 
-	// 3. Determine if this is a re-cast (crash recovery).
+	// 4. Determine if this is a re-cast (crash recovery).
 	reCast := item.Status == "tethered" && item.Assignee == agentID &&
 		agent.State == "working" && agent.TetherItem == opts.WorkItemID
 
-	// 4. Validate state.
+	// 5. Validate state.
 	if !reCast {
 		if item.Status != "open" {
 			return nil, fmt.Errorf("work item %q has status %q, expected \"open\"", opts.WorkItemID, item.Status)
@@ -204,6 +207,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		Title:       item.Title,
 		Description: item.Description,
 		HasWorkflow: opts.Formula != "",
+		ModelTier:   worldCfg.Agents.ModelTier,
 	}
 	if err := protocol.InstallClaudeMD(worktreeDir, ctx); err != nil {
 		rollback()
@@ -272,8 +276,11 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 }
 
 // autoProvision creates a new agent from the name pool.
-func autoProvision(world string, sphereStore SphereStore) (*store.Agent, error) {
-	overridePath := filepath.Join(config.Home(), world, "names.txt")
+func autoProvision(world string, sphereStore SphereStore, namePoolPath string, capacity int) (*store.Agent, error) {
+	overridePath := namePoolPath
+	if overridePath == "" {
+		overridePath = filepath.Join(config.Home(), world, "names.txt")
+	}
 	pool, err := namepool.Load(overridePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load name pool: %w", err)
@@ -282,6 +289,11 @@ func autoProvision(world string, sphereStore SphereStore) (*store.Agent, error) 
 	agents, err := sphereStore.ListAgents(world, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents for world %q: %w", world, err)
+	}
+
+	// Enforce agent capacity.
+	if capacity > 0 && len(agents) >= capacity {
+		return nil, fmt.Errorf("world %q has reached agent capacity (%d)", world, capacity)
 	}
 
 	usedNames := make([]string, len(agents))

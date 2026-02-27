@@ -143,7 +143,7 @@ func TestFlockSerialization(t *testing.T) {
 	}
 
 	solHome, sourceRepo := setupTestEnv(t)
-	initWorld(t, solHome, "ember")
+	initWorldWithRepo(t, solHome, "ember", sourceRepo)
 	worldStore, sphereStore := openStores(t, "ember")
 
 	// Create one work item and two idle agents.

@@ -29,10 +29,18 @@ var castCmd = &cobra.Command{
 			return err
 		}
 
-		// Discover source repo from current directory.
-		sourceRepo, err := dispatch.DiscoverSourceRepo()
+		// Config-first source repo discovery.
+		worldCfg, err := config.LoadWorldConfig(world)
 		if err != nil {
-			return fmt.Errorf("must run sol cast from within a git repository: %w", err)
+			return err
+		}
+		sourceRepo := worldCfg.World.SourceRepo
+		if sourceRepo == "" {
+			// Fallback to cwd discovery for convenience.
+			sourceRepo, err = dispatch.DiscoverSourceRepo()
+			if err != nil {
+				return fmt.Errorf("no source_repo in world.toml and not in a git repo: %w", err)
+			}
 		}
 
 		worldStore, err := store.OpenWorld(world)

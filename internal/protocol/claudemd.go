@@ -13,7 +13,8 @@ type ClaudeMDContext struct {
 	WorkItemID  string
 	Title       string
 	Description string
-	HasWorkflow bool // if true, include workflow commands
+	HasWorkflow bool   // if true, include workflow commands
+	ModelTier   string // "sonnet", "opus", "haiku" — informational
 }
 
 // GenerateClaudeMD returns the contents of a CLAUDE.md file for an outpost agent.
@@ -46,11 +47,16 @@ func GenerateClaudeMD(ctx ClaudeMDContext) string {
 `
 	}
 
+	modelSection := ""
+	if ctx.ModelTier != "" {
+		modelSection = fmt.Sprintf("\n## Model\nConfigured model tier: %s\n", ctx.ModelTier)
+	}
+
 	return fmt.Sprintf(`# Outpost Agent: %s (world: %s)
 
 You are an outpost agent in a multi-agent orchestration system.
 Your job is to execute the assigned work item.
-
+%s
 ## Your Assignment
 - Work item: %s
 - Title: %s
@@ -71,7 +77,7 @@ Your job is to execute the assigned work item.
 - You are working in an isolated git worktree. Commit your changes normally.
 - Do not modify files outside this worktree.
 - Do not attempt to interact with other agents directly.
-`, ctx.AgentName, ctx.World, ctx.WorkItemID, ctx.Title, ctx.Description,
+`, ctx.AgentName, ctx.World, modelSection, ctx.WorkItemID, ctx.Title, ctx.Description,
 		workflowSection, protocolSection)
 }
 

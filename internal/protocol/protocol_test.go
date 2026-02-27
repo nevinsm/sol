@@ -128,6 +128,42 @@ func TestInstallForgeClaudeMD(t *testing.T) {
 	}
 }
 
+func TestGenerateClaudeMDWithModelTier(t *testing.T) {
+	ctx := ClaudeMDContext{
+		AgentName:   "Toast",
+		World:       "myworld",
+		WorkItemID:  "sol-a1b2c3d4",
+		Title:       "Test task",
+		Description: "Testing model tier",
+		ModelTier:   "opus",
+	}
+
+	content := GenerateClaudeMD(ctx)
+
+	if !strings.Contains(content, "## Model") {
+		t.Error("GenerateClaudeMD missing Model section header")
+	}
+	if !strings.Contains(content, "model tier: opus") {
+		t.Error("GenerateClaudeMD missing model tier value")
+	}
+}
+
+func TestGenerateClaudeMDWithoutModelTier(t *testing.T) {
+	ctx := ClaudeMDContext{
+		AgentName:   "Toast",
+		World:       "myworld",
+		WorkItemID:  "sol-a1b2c3d4",
+		Title:       "Test task",
+		Description: "Testing no model tier",
+	}
+
+	content := GenerateClaudeMD(ctx)
+
+	if strings.Contains(content, "## Model") {
+		t.Error("GenerateClaudeMD should not contain Model section when ModelTier is empty")
+	}
+}
+
 func TestInstallHooks(t *testing.T) {
 	dir := t.TempDir()
 

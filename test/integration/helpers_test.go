@@ -74,6 +74,16 @@ func initWorld(t *testing.T, gtHome, world string) {
 	}
 }
 
+// initWorldWithRepo initializes a world with a real source repo path.
+// Use this when the test will call cast or other commands that read source_repo from config.
+func initWorldWithRepo(t *testing.T, gtHome, world, sourceRepo string) {
+	t.Helper()
+	out, err := runGT(t, gtHome, "world", "init", world, "--source-repo="+sourceRepo)
+	if err != nil {
+		t.Fatalf("world init %s failed: %v: %s", world, err, out)
+	}
+}
+
 func openStores(t *testing.T, world string) (*store.Store, *store.Store) {
 	t.Helper()
 	worldStore, err := store.OpenWorld(world)

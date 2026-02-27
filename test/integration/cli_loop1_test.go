@@ -121,7 +121,7 @@ func TestCLICastAutoProvision(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	solHome, sourceRepo := setupTestEnv(t)
-	initWorld(t, solHome, "ember")
+	initWorldWithRepo(t, solHome, "ember", sourceRepo)
 
 	// Create a work item via CLI.
 	itemID, err := runGT(t, solHome, "store", "create", "--world=ember", "--title=auto provision test")
