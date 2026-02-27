@@ -79,3 +79,33 @@ func TestCLIHandoffHelp(t *testing.T) {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
+
+func TestCLIDeaconRunHelp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+
+	out, err := runGT(t, gtHome, "deacon", "run", "--help")
+	if err != nil {
+		t.Fatalf("gt deacon run --help failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "Run the deacon patrol loop") {
+		t.Errorf("output missing expected text: %s", out)
+	}
+}
+
+func TestCLIDeaconStatusHelp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+
+	out, err := runGT(t, gtHome, "deacon", "status", "--help")
+	if err != nil {
+		t.Fatalf("gt deacon status --help failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "Show deacon status") {
+		t.Errorf("output missing expected text: %s", out)
+	}
+}

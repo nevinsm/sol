@@ -169,6 +169,13 @@ func formatEventDescription(ev events.Event) string {
 		return fmt.Sprintf("Escalation resolved: %s", get("id"))
 	case events.EventHandoff:
 		return fmt.Sprintf("Agent %s handed off: %s", get("agent"), get("work_item_id"))
+	case events.EventDeaconPatrol:
+		return fmt.Sprintf("Deacon patrol #%s: %s stale hooks, %s convoy feeds",
+			get("patrol_count"), get("stale_hooks"), get("convoy_feeds"))
+	case events.EventDeaconStaleHook:
+		return fmt.Sprintf("Stale hook recovered: %s (%s)", get("agent_id"), get("work_item_id"))
+	case events.EventDeaconConvoyFeed:
+		return fmt.Sprintf("Convoy needs feeding: %s (%s ready items)", get("convoy_id"), get("ready_count"))
 	case "sling_batch":
 		return fmt.Sprintf("Sling burst: %s dispatches in %s", get("count"), get("rig"))
 	case "respawn_batch":

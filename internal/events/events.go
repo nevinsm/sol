@@ -51,6 +51,9 @@ const (
 	EventEscalationAcked    = "escalation_acked"    // escalation acknowledged
 	EventEscalationResolved = "escalation_resolved" // escalation resolved
 	EventHandoff            = "handoff"              // agent handed off session
+	EventDeaconPatrol       = "deacon_patrol"        // deacon patrol completed
+	EventDeaconStaleHook    = "deacon_stale_hook"    // stale hook recovered
+	EventDeaconConvoyFeed   = "deacon_convoy_feed"   // convoy needs feeding
 )
 
 // Logger handles event logging to the JSONL event feed.
