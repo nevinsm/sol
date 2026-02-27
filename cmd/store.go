@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -47,6 +48,9 @@ var storeCreateCmd = &cobra.Command{
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
 		if createTitle == "" {
 			return fmt.Errorf("--title is required")
 		}
@@ -85,6 +89,9 @@ var storeGetCmd = &cobra.Command{
 		world := cmd.Flag("world").Value.String()
 		if world == "" {
 			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(world); err != nil {
+			return err
 		}
 		s, err := store.OpenWorld(world)
 		if err != nil {
@@ -126,6 +133,9 @@ var storeListCmd = &cobra.Command{
 		world := cmd.Flag("world").Value.String()
 		if world == "" {
 			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(world); err != nil {
+			return err
 		}
 		s, err := store.OpenWorld(world)
 		if err != nil {
@@ -193,6 +203,9 @@ var storeUpdateCmd = &cobra.Command{
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
 		updates := store.WorkItemUpdates{
 			Status:   updateStatus,
 			Assignee: updateAssignee,
@@ -230,6 +243,9 @@ var storeCloseCmd = &cobra.Command{
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
 		s, err := store.OpenWorld(world)
 		if err != nil {
 			return err
@@ -262,6 +278,9 @@ var storeQueryCmd = &cobra.Command{
 		world := cmd.Flag("world").Value.String()
 		if world == "" {
 			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(world); err != nil {
+			return err
 		}
 		if querySQL == "" {
 			return fmt.Errorf("--sql is required")

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -22,6 +23,9 @@ var primeCmd = &cobra.Command{
 		}
 		if primeAgent == "" {
 			return fmt.Errorf("--agent is required")
+		}
+		if err := config.RequireWorld(primeWorld); err != nil {
+			return err
 		}
 
 		worldStore, err := store.OpenWorld(primeWorld)

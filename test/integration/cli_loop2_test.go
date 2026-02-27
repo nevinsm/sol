@@ -77,6 +77,7 @@ func TestCLIForgeQueue(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	solHome, sourceRepo := setupTestEnv(t)
+	initWorld(t, solHome, "ember")
 	worldStore, _ := openStores(t, "ember")
 
 	// Create a work item and a merge request.
@@ -121,6 +122,7 @@ func TestCLIResolveShowsMergeRequest(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	solHome, sourceRepo := setupTestEnv(t)
+	initWorld(t, solHome, "ember")
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
@@ -173,6 +175,7 @@ func TestCLIForgeQueueEmpty(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	solHome, _ := setupTestEnv(t)
+	initWorld(t, solHome, "ember")
 	openStores(t, "ember") // ensure world DB exists
 
 	out, err := runGT(t, solHome, "forge", "queue", "ember")
@@ -189,6 +192,7 @@ func TestCLIStatusWithForge(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	solHome, _ := setupTestEnv(t)
+	initWorld(t, solHome, "ember")
 	openStores(t, "ember") // ensure stores exist
 
 	// Status without forge running.

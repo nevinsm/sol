@@ -6,6 +6,7 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -30,6 +31,9 @@ var agentCreateCmd = &cobra.Command{
 		name := args[0]
 		if agentCreateWorld == "" {
 			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(agentCreateWorld); err != nil {
+			return err
 		}
 
 		sphereStore, err := store.OpenSphere()
@@ -60,6 +64,9 @@ var agentListCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if agentListWorld == "" {
 			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(agentListWorld); err != nil {
+			return err
 		}
 
 		sphereStore, err := store.OpenSphere()

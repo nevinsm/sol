@@ -108,6 +108,8 @@ func TestCLIStoreCreate(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	initWorld(t, gtHome, "ember")
 
 	out, err := runGT(t, gtHome, "store", "create", "--world=ember", "--title=test")
 	if err != nil {
@@ -123,6 +125,8 @@ func TestCLIStoreListJSON(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	initWorld(t, gtHome, "ember")
 
 	// Create an item first.
 	runGT(t, gtHome, "store", "create", "--world=ember", "--title=json test")
@@ -141,6 +145,8 @@ func TestCLIAgentCreate(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	initWorld(t, gtHome, "ember")
 
 	out, err := runGT(t, gtHome, "agent", "create", "Smoke", "--world=ember")
 	if err != nil {
@@ -153,6 +159,8 @@ func TestCLIAgentList(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	initWorld(t, gtHome, "ember")
 
 	// Create first.
 	runGT(t, gtHome, "agent", "create", "Smoke", "--world=ember")

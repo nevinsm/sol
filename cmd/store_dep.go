@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +27,9 @@ var storeDepAddCmd = &cobra.Command{
 		world := cmd.Flag("world").Value.String()
 		if world == "" {
 			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(world); err != nil {
+			return err
 		}
 
 		s, err := store.OpenWorld(world)
@@ -53,6 +57,9 @@ var storeDepRemoveCmd = &cobra.Command{
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
 
 		s, err := store.OpenWorld(world)
 		if err != nil {
@@ -78,6 +85,9 @@ var storeDepListCmd = &cobra.Command{
 		world := cmd.Flag("world").Value.String()
 		if world == "" {
 			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(world); err != nil {
+			return err
 		}
 
 		s, err := store.OpenWorld(world)

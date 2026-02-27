@@ -142,7 +142,8 @@ func TestFlockSerialization(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	_, sourceRepo := setupTestEnv(t)
+	solHome, sourceRepo := setupTestEnv(t)
+	initWorld(t, solHome, "ember")
 	worldStore, sphereStore := openStores(t, "ember")
 
 	// Create one work item and two idle agents.

@@ -40,6 +40,11 @@ var caravanCreateCmd = &cobra.Command{
 		if caravanWorld == "" && len(itemIDs) > 0 {
 			return fmt.Errorf("--world is required when adding items")
 		}
+		if caravanWorld != "" {
+			if err := config.RequireWorld(caravanWorld); err != nil {
+				return err
+			}
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -87,6 +92,9 @@ var caravanAddCmd = &cobra.Command{
 
 		if caravanWorld == "" {
 			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(caravanWorld); err != nil {
+			return err
 		}
 
 		sphereStore, err := store.OpenSphere()
@@ -322,6 +330,9 @@ var caravanLaunchCmd = &cobra.Command{
 
 		if caravanWorld == "" {
 			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(caravanWorld); err != nil {
+			return err
 		}
 
 		sphereStore, err := store.OpenSphere()

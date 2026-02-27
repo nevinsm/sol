@@ -39,6 +39,9 @@ var handoffCmd = &cobra.Command{
 		if agent == "" {
 			return fmt.Errorf("--agent is required (or set SOL_AGENT env var)")
 		}
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {

@@ -69,6 +69,7 @@ func TestCLIStatusJSON(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	solHome, sourceRepo := setupTestEnv(t)
+	initWorld(t, solHome, "ember")
 	worldStore, sphereStore := openStores(t, "ember")
 
 	// Create an agent and work item, cast.
@@ -120,6 +121,7 @@ func TestCLICastAutoProvision(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	solHome, sourceRepo := setupTestEnv(t)
+	initWorld(t, solHome, "ember")
 
 	// Create a work item via CLI.
 	itemID, err := runGT(t, solHome, "store", "create", "--world=ember", "--title=auto provision test")

@@ -6,6 +6,7 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
@@ -23,6 +24,10 @@ var statusCmd = &cobra.Command{
 	SilenceUsage:  true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {

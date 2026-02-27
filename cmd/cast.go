@@ -25,6 +25,10 @@ var castCmd = &cobra.Command{
 		workItemID := args[0]
 		world := args[1]
 
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		// Discover source repo from current directory.
 		sourceRepo, err := dispatch.DiscoverSourceRepo()
 		if err != nil {

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nevinsm/sol/internal/store"
 )
 
 func TestWorldInitBasic(t *testing.T) {
@@ -98,11 +100,17 @@ func TestWorldInitPreArc1World(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	// Create a world DB manually (simulate pre-Arc1 by creating a work item).
-	out, err := runGT(t, gtHome, "store", "create", "--world=legacy", "--title=Old item")
+	// Create a world DB directly (simulate pre-Arc1 — DB exists, no world.toml).
+	t.Setenv("SOL_HOME", gtHome)
+	s, err := store.OpenWorld("legacy")
 	if err != nil {
-		t.Fatalf("store create failed: %v: %s", err, out)
+		t.Fatalf("open world store: %v", err)
 	}
+	_, err = s.CreateWorkItem("Old item", "", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("create work item: %v", err)
+	}
+	s.Close()
 
 	// Verify DB exists but world.toml does not.
 	dbPath := filepath.Join(gtHome, ".store", "legacy.db")
@@ -115,7 +123,7 @@ func TestWorldInitPreArc1World(t *testing.T) {
 	}
 
 	// Init the pre-Arc1 world — should succeed (adoption).
-	out, err = runGT(t, gtHome, "world", "init", "legacy")
+	out, err := runGT(t, gtHome, "world", "init", "legacy")
 	if err != nil {
 		t.Fatalf("world init legacy failed: %v: %s", err, out)
 	}

@@ -28,6 +28,10 @@ var sentinelRunCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
@@ -69,6 +73,11 @@ var sentinelStartCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		sessName := dispatch.SessionName(world, "sentinel")
 		mgr := session.New()
 
@@ -101,6 +110,11 @@ var sentinelStopCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		sessName := dispatch.SessionName(world, "sentinel")
 		mgr := session.New()
 
@@ -123,6 +137,11 @@ var sentinelAttachCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		sessName := dispatch.SessionName(world, "sentinel")
 		mgr := session.New()
 

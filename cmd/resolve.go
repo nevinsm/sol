@@ -37,6 +37,9 @@ var resolveCmd = &cobra.Command{
 		if agent == "" {
 			return fmt.Errorf("--agent is required (or set SOL_AGENT env var)")
 		}
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
 
 		worldStore, err := store.OpenWorld(world)
 		if err != nil {

@@ -29,6 +29,10 @@ var workflowInstantiateCmd = &cobra.Command{
 	Short: "Instantiate a workflow from a formula",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.RequireWorld(wfWorld); err != nil {
+			return err
+		}
+
 		formula := args[0]
 
 		// Parse --var flags into map.
@@ -58,6 +62,10 @@ var workflowCurrentCmd = &cobra.Command{
 	Short: "Print the current step's instructions",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.RequireWorld(wfWorld); err != nil {
+			return err
+		}
+
 		step, err := workflow.ReadCurrentStep(wfWorld, wfAgent)
 		if err != nil {
 			return err
@@ -77,6 +85,10 @@ var workflowAdvanceCmd = &cobra.Command{
 	Short: "Advance to the next workflow step",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.RequireWorld(wfWorld); err != nil {
+			return err
+		}
+
 		// Read work item ID for event payload before advancing.
 		inst, _ := workflow.ReadInstance(wfWorld, wfAgent)
 		workItemID := ""
@@ -117,6 +129,10 @@ var workflowStatusCmd = &cobra.Command{
 	Short: "Show workflow status",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.RequireWorld(wfWorld); err != nil {
+			return err
+		}
+
 		inst, err := workflow.ReadInstance(wfWorld, wfAgent)
 		if err != nil {
 			return err

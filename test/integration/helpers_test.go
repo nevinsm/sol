@@ -65,6 +65,15 @@ func gitRun(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// initWorld initializes a world via CLI so world-scoped commands pass the hard gate.
+func initWorld(t *testing.T, gtHome, world string) {
+	t.Helper()
+	out, err := runGT(t, gtHome, "world", "init", world, "--source-repo=/tmp/fakerepo")
+	if err != nil {
+		t.Fatalf("world init %s failed: %v: %s", world, err, out)
+	}
+}
+
 func openStores(t *testing.T, world string) (*store.Store, *store.Store) {
 	t.Helper()
 	worldStore, err := store.OpenWorld(world)

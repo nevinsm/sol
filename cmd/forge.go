@@ -29,6 +29,11 @@ var forgeStartCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		sessName := dispatch.SessionName(world, "forge")
 		mgr := session.New()
 
@@ -119,6 +124,11 @@ var forgeStopCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		sessName := dispatch.SessionName(world, "forge")
 		mgr := session.New()
 
@@ -141,6 +151,11 @@ var forgeAttachCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		sessName := dispatch.SessionName(world, "forge")
 		mgr := session.New()
 
@@ -160,6 +175,10 @@ var forgeQueueCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
 
 		worldStore, err := store.OpenWorld(world)
 		if err != nil {
@@ -226,6 +245,11 @@ var forgeReadyCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
 			return err
@@ -263,6 +287,11 @@ var forgeBlockedCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
 			return err
@@ -300,6 +329,11 @@ var forgeClaimCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
 			return err
@@ -346,6 +380,11 @@ var forgeReleaseCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, mrID := args[0], args[1]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
 			return err
@@ -368,6 +407,11 @@ var forgeRunGatesCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
 			return err
@@ -410,6 +454,11 @@ var forgePushCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
 			return err
@@ -432,6 +481,11 @@ var forgeMarkMergedCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, mrID := args[0], args[1]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
 			return err
@@ -459,6 +513,11 @@ var forgeMarkFailedCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, mrID := args[0], args[1]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
 			return err
@@ -486,6 +545,11 @@ var forgeCreateResolutionCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, mrID := args[0], args[1]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
 			return err
@@ -522,6 +586,11 @@ var forgeCheckUnblockedCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
 			return err
