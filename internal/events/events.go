@@ -50,6 +50,7 @@ const (
 	EventEscalationCreated  = "escalation_created"  // escalation created
 	EventEscalationAcked    = "escalation_acked"    // escalation acknowledged
 	EventEscalationResolved = "escalation_resolved" // escalation resolved
+	EventHandoff            = "handoff"              // agent handed off session
 )
 
 // Logger handles event logging to the JSONL event feed.

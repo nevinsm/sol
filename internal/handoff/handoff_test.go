@@ -1,0 +1,452 @@
+package handoff
+
+import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/nevinsm/gt/internal/hook"
+)
+
+func setupGTHome(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("GT_HOME", dir)
+	return dir
+}
+
+func TestCapture(t *testing.T) {
+	gtHome := setupGTHome(t)
+
+	// Set up hook file.
+	if err := hook.Write("testrig", "Toast", "gt-abc12345"); err != nil {
+		t.Fatalf("failed to write hook: %v", err)
+	}
+
+	// Set up workflow state.
+	wfDir := filepath.Join(gtHome, "testrig", "polecats", "Toast", ".workflow")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatalf("failed to create workflow dir: %v", err)
+	}
+	stateJSON := `{"current_step":"implement","completed":["plan"],"status":"running","started_at":"2026-02-27T10:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(stateJSON), 0o644); err != nil {
+		t.Fatalf("failed to write workflow state: %v", err)
+	}
+	// Minimal instance manifest for step counting.
+	instanceJSON := `{"formula":"polecat-work","work_item_id":"gt-abc12345","variables":{},"instantiated_at":"2026-02-27T10:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(wfDir, "manifest.json"), []byte(instanceJSON), 0o644); err != nil {
+		t.Fatalf("failed to write workflow instance: %v", err)
+	}
+
+	// Mock session capture.
+	mockCapture := func(name string, lines int) (string, error) {
+		return "$ make test\nAll tests passed.\n$", nil
+	}
+
+	// Mock git log.
+	mockGitLog := func(dir string, count int) ([]string, error) {
+		return []string{"abc1234 feat: add login form", "def5678 test: add login tests"}, nil
+	}
+
+	state, err := Capture(CaptureOpts{
+		Rig:       "testrig",
+		AgentName: "Toast",
+		Summary:   "Implemented login form. Tests passing.",
+	}, mockCapture, mockGitLog)
+
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	if state.WorkItemID != "gt-abc12345" {
+		t.Errorf("expected WorkItemID gt-abc12345, got %q", state.WorkItemID)
+	}
+	if state.AgentName != "Toast" {
+		t.Errorf("expected AgentName Toast, got %q", state.AgentName)
+	}
+	if state.Rig != "testrig" {
+		t.Errorf("expected Rig testrig, got %q", state.Rig)
+	}
+	if state.PreviousSession != "gt-testrig-Toast" {
+		t.Errorf("expected PreviousSession gt-testrig-Toast, got %q", state.PreviousSession)
+	}
+	if state.Summary != "Implemented login form. Tests passing." {
+		t.Errorf("expected summary to match, got %q", state.Summary)
+	}
+	if !strings.Contains(state.RecentOutput, "All tests passed") {
+		t.Errorf("expected recent output to contain test output, got %q", state.RecentOutput)
+	}
+	if len(state.RecentCommits) != 2 {
+		t.Errorf("expected 2 recent commits, got %d", len(state.RecentCommits))
+	}
+	if state.WorkflowStep != "implement" {
+		t.Errorf("expected workflow step 'implement', got %q", state.WorkflowStep)
+	}
+}
+
+func TestCaptureNoWorkflow(t *testing.T) {
+	setupGTHome(t)
+
+	// Set up hook file only, no workflow.
+	if err := hook.Write("testrig", "Toast", "gt-abc12345"); err != nil {
+		t.Fatalf("failed to write hook: %v", err)
+	}
+
+	state, err := Capture(CaptureOpts{
+		Rig:       "testrig",
+		AgentName: "Toast",
+		Summary:   "Working on it.",
+	}, nil, nil)
+
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	if state.WorkflowStep != "" {
+		t.Errorf("expected empty workflow step, got %q", state.WorkflowStep)
+	}
+	if state.WorkflowProgress != "" {
+		t.Errorf("expected empty workflow progress, got %q", state.WorkflowProgress)
+	}
+}
+
+func TestCaptureNoSummary(t *testing.T) {
+	setupGTHome(t)
+
+	if err := hook.Write("testrig", "Toast", "gt-abc12345"); err != nil {
+		t.Fatalf("failed to write hook: %v", err)
+	}
+
+	mockGitLog := func(dir string, count int) ([]string, error) {
+		return []string{"abc1234 feat: add login form"}, nil
+	}
+
+	state, err := Capture(CaptureOpts{
+		Rig:       "testrig",
+		AgentName: "Toast",
+	}, nil, mockGitLog)
+
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	// Auto-generated summary should contain agent name and work item.
+	if !strings.Contains(state.Summary, "Toast") {
+		t.Errorf("auto-generated summary missing agent name: %q", state.Summary)
+	}
+	if !strings.Contains(state.Summary, "gt-abc12345") {
+		t.Errorf("auto-generated summary missing work item ID: %q", state.Summary)
+	}
+	if !strings.Contains(state.Summary, "abc1234") {
+		t.Errorf("auto-generated summary missing last commit: %q", state.Summary)
+	}
+}
+
+func TestWriteAndRead(t *testing.T) {
+	setupGTHome(t)
+
+	original := &State{
+		WorkItemID:       "gt-abc12345",
+		AgentName:        "Toast",
+		Rig:              "testrig",
+		PreviousSession:  "gt-testrig-Toast",
+		Summary:          "Implemented login form.",
+		RecentOutput:     "All tests passed.\n$",
+		RecentCommits:    []string{"abc1234 feat: add login form", "def5678 test: tests"},
+		WorkflowStep:     "implement",
+		WorkflowProgress: "1/3 complete",
+		HandedOffAt:      time.Date(2026, 2, 27, 10, 30, 0, 0, time.UTC),
+	}
+
+	if err := Write(original); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	// Verify JSON on disk is valid.
+	data, err := os.ReadFile(HandoffPath("testrig", "Toast"))
+	if err != nil {
+		t.Fatalf("failed to read handoff file: %v", err)
+	}
+	var diskState State
+	if err := json.Unmarshal(data, &diskState); err != nil {
+		t.Fatalf("invalid JSON on disk: %v", err)
+	}
+
+	// Read back.
+	read, err := Read("testrig", "Toast")
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+
+	if read.WorkItemID != original.WorkItemID {
+		t.Errorf("WorkItemID mismatch: got %q, want %q", read.WorkItemID, original.WorkItemID)
+	}
+	if read.AgentName != original.AgentName {
+		t.Errorf("AgentName mismatch: got %q, want %q", read.AgentName, original.AgentName)
+	}
+	if read.Summary != original.Summary {
+		t.Errorf("Summary mismatch: got %q, want %q", read.Summary, original.Summary)
+	}
+	if len(read.RecentCommits) != len(original.RecentCommits) {
+		t.Errorf("RecentCommits length mismatch: got %d, want %d", len(read.RecentCommits), len(original.RecentCommits))
+	}
+	if read.WorkflowStep != original.WorkflowStep {
+		t.Errorf("WorkflowStep mismatch: got %q, want %q", read.WorkflowStep, original.WorkflowStep)
+	}
+	if read.WorkflowProgress != original.WorkflowProgress {
+		t.Errorf("WorkflowProgress mismatch: got %q, want %q", read.WorkflowProgress, original.WorkflowProgress)
+	}
+}
+
+func TestReadNoFile(t *testing.T) {
+	setupGTHome(t)
+
+	state, err := Read("testrig", "Toast")
+	if err != nil {
+		t.Fatalf("Read returned error for missing file: %v", err)
+	}
+	if state != nil {
+		t.Errorf("expected nil state for missing file, got %+v", state)
+	}
+}
+
+func TestRemove(t *testing.T) {
+	setupGTHome(t)
+
+	// Write then remove.
+	state := &State{
+		WorkItemID: "gt-abc12345",
+		AgentName:  "Toast",
+		Rig:        "testrig",
+		Summary:    "test",
+	}
+	if err := Write(state); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	if err := Remove("testrig", "Toast"); err != nil {
+		t.Fatalf("Remove failed: %v", err)
+	}
+
+	// Verify file is gone.
+	read, err := Read("testrig", "Toast")
+	if err != nil {
+		t.Fatalf("Read failed after remove: %v", err)
+	}
+	if read != nil {
+		t.Error("expected nil state after remove")
+	}
+
+	// Remove non-existent — no error.
+	if err := Remove("testrig", "Toast"); err != nil {
+		t.Fatalf("Remove non-existent returned error: %v", err)
+	}
+}
+
+func TestHasHandoff(t *testing.T) {
+	setupGTHome(t)
+
+	// No file.
+	if HasHandoff("testrig", "Toast") {
+		t.Error("expected HasHandoff to be false with no file")
+	}
+
+	// Write handoff.
+	state := &State{
+		WorkItemID: "gt-abc12345",
+		AgentName:  "Toast",
+		Rig:        "testrig",
+		Summary:    "test",
+	}
+	if err := Write(state); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	if !HasHandoff("testrig", "Toast") {
+		t.Error("expected HasHandoff to be true after write")
+	}
+}
+
+func TestGitLog(t *testing.T) {
+	// Create temp git repo with commits.
+	dir := t.TempDir()
+
+	cmd := exec.Command("git", "-C", dir, "init")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %s: %v", out, err)
+	}
+	cmd = exec.Command("git", "-C", dir, "config", "user.email", "test@test.com")
+	cmd.Run()
+	cmd = exec.Command("git", "-C", dir, "config", "user.name", "Test")
+	cmd.Run()
+
+	// Create 5 commits.
+	for i := 1; i <= 5; i++ {
+		msg := "commit " + string(rune('A'-1+i))
+		cmd = exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", msg)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git commit failed: %s: %v", out, err)
+		}
+	}
+
+	// Request 3 most recent.
+	commits, err := GitLog(dir, 3)
+	if err != nil {
+		t.Fatalf("GitLog failed: %v", err)
+	}
+	if len(commits) != 3 {
+		t.Fatalf("expected 3 commits, got %d: %v", len(commits), commits)
+	}
+
+	// Most recent should be last commit.
+	if !strings.Contains(commits[0], "commit E") {
+		t.Errorf("expected first commit to contain 'commit E', got %q", commits[0])
+	}
+
+	// Empty repo (non-existent dir).
+	commits, err = GitLog("/nonexistent/dir", 3)
+	if err != nil {
+		t.Fatalf("GitLog for nonexistent dir returned error: %v", err)
+	}
+	if len(commits) != 0 {
+		t.Errorf("expected empty slice for nonexistent dir, got %v", commits)
+	}
+}
+
+// --- Mock types for Exec test ---
+
+type mockSessionMgr struct {
+	captureResult string
+	captureErr    error
+	stopped       []string
+	started       []startCall
+}
+
+type startCall struct {
+	Name, Workdir, Cmd string
+	Env                map[string]string
+	Role, Rig          string
+}
+
+func (m *mockSessionMgr) Capture(name string, lines int) (string, error) {
+	return m.captureResult, m.captureErr
+}
+
+func (m *mockSessionMgr) Stop(name string, force bool) error {
+	m.stopped = append(m.stopped, name)
+	return nil
+}
+
+func (m *mockSessionMgr) Start(name, workdir, cmd string, env map[string]string, role, rig string) error {
+	m.started = append(m.started, startCall{name, workdir, cmd, env, role, rig})
+	return nil
+}
+
+type mockTownStore struct {
+	messages []msgCall
+}
+
+type msgCall struct {
+	Sender, Recipient, Subject, Body string
+	Priority                         int
+	MsgType                          string
+}
+
+func (m *mockTownStore) SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error) {
+	m.messages = append(m.messages, msgCall{sender, recipient, subject, body, priority, msgType})
+	return "msg-00000001", nil
+}
+
+func TestExec(t *testing.T) {
+	gtHome := setupGTHome(t)
+
+	// Set up hook file.
+	if err := hook.Write("testrig", "Toast", "gt-abc12345"); err != nil {
+		t.Fatalf("failed to write hook: %v", err)
+	}
+
+	// Create worktree directory.
+	worktreeDir := filepath.Join(gtHome, "testrig", "polecats", "Toast", "rig")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	mgr := &mockSessionMgr{captureResult: "$ make test\nAll tests passed."}
+	ts := &mockTownStore{}
+
+	err := Exec(ExecOpts{
+		Rig:       "testrig",
+		AgentName: "Toast",
+		Summary:   "Implemented login form.",
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// Verify handoff file was written.
+	if !HasHandoff("testrig", "Toast") {
+		t.Error("expected handoff file to exist after Exec")
+	}
+
+	// Verify session was stopped then started.
+	if len(mgr.stopped) != 1 || mgr.stopped[0] != "gt-testrig-Toast" {
+		t.Errorf("expected session stopped once, got %v", mgr.stopped)
+	}
+	if len(mgr.started) != 1 {
+		t.Fatalf("expected 1 start call, got %d", len(mgr.started))
+	}
+	if mgr.started[0].Name != "gt-testrig-Toast" {
+		t.Errorf("expected session name gt-testrig-Toast, got %q", mgr.started[0].Name)
+	}
+	if mgr.started[0].Workdir != worktreeDir {
+		t.Errorf("expected workdir %q, got %q", worktreeDir, mgr.started[0].Workdir)
+	}
+	if mgr.started[0].Cmd != "claude --dangerously-skip-permissions" {
+		t.Errorf("expected claude command, got %q", mgr.started[0].Cmd)
+	}
+
+	// Verify mail was sent to self.
+	if len(ts.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(ts.messages))
+	}
+	msg := ts.messages[0]
+	if msg.Sender != "testrig/Toast" {
+		t.Errorf("expected sender testrig/Toast, got %q", msg.Sender)
+	}
+	if msg.Recipient != "testrig/Toast" {
+		t.Errorf("expected recipient testrig/Toast, got %q", msg.Recipient)
+	}
+	if msg.Subject != "HANDOFF: gt-abc12345" {
+		t.Errorf("expected subject 'HANDOFF: gt-abc12345', got %q", msg.Subject)
+	}
+	if msg.Priority != 2 {
+		t.Errorf("expected priority 2, got %d", msg.Priority)
+	}
+	if msg.MsgType != "notification" {
+		t.Errorf("expected msgType notification, got %q", msg.MsgType)
+	}
+}
+
+func TestExecNoHook(t *testing.T) {
+	setupGTHome(t)
+
+	mgr := &mockSessionMgr{}
+	ts := &mockTownStore{}
+
+	err := Exec(ExecOpts{
+		Rig:       "testrig",
+		AgentName: "Toast",
+	}, mgr, ts, nil)
+
+	if err == nil {
+		t.Fatal("expected error when no hook exists")
+	}
+	if !strings.Contains(err.Error(), "no work hooked") {
+		t.Errorf("expected 'no work hooked' error, got: %v", err)
+	}
+}

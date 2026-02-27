@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/gt/internal/config"
 	"github.com/nevinsm/gt/internal/events"
+	"github.com/nevinsm/gt/internal/handoff"
 	"github.com/nevinsm/gt/internal/hook"
 	"github.com/nevinsm/gt/internal/namepool"
 	"github.com/nevinsm/gt/internal/protocol"
@@ -334,6 +335,22 @@ func Prime(rig, agentName string, rigStore RigStore) (*PrimeResult, error) {
 		return nil, fmt.Errorf("failed to get work item %q: %w", workItemID, err)
 	}
 
+	// Check for handoff context (session continuity).
+	handoffState, err := handoff.Read(rig, agentName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read handoff state: %w", err)
+	}
+
+	if handoffState != nil {
+		result, err := primeWithHandoff(rig, agentName, item, handoffState)
+		if err != nil {
+			return nil, err
+		}
+		// Clean up handoff file after successful injection.
+		handoff.Remove(rig, agentName)
+		return result, nil
+	}
+
 	// Check for active workflow.
 	state, err := workflow.ReadState(rig, agentName)
 	if err != nil {
@@ -406,6 +423,44 @@ Propulsion loop:
 		formula, completed+1, completed, 1, step.Title,
 		step.Instructions,
 		rig, agentName, rig, agentName)
+
+	return &PrimeResult{Output: output}, nil
+}
+
+// primeWithHandoff returns handoff-aware context for the prime command.
+func primeWithHandoff(rig, agentName string, item *store.WorkItem,
+	state *handoff.State) (*PrimeResult, error) {
+
+	output := fmt.Sprintf(`=== HANDOFF CONTEXT ===
+Agent: %s (rig: %s)
+Work Item: %s
+Title: %s
+
+This is a continuation of a previous session. The previous session
+handed off to preserve context.
+
+--- PREVIOUS SESSION SUMMARY ---
+%s
+--- END SUMMARY ---
+
+--- RECENT COMMITS ---
+%s
+--- END COMMITS ---
+`, agentName, rig, item.ID, item.Title, state.Summary, strings.Join(state.RecentCommits, "\n"))
+
+	// Add workflow context if the agent has an active workflow.
+	if state.WorkflowStep != "" {
+		output += fmt.Sprintf(`
+Workflow progress: %s (current step: %s)
+Read your current step: gt workflow current --rig=%s --agent=%s
+
+`, state.WorkflowProgress, state.WorkflowStep, rig, agentName)
+	}
+
+	output += fmt.Sprintf(`Continue from where the previous session left off.
+When complete, run: gt done
+If you need to hand off again: gt handoff --summary="<what you've done>"
+=== END HANDOFF ===`)
 
 	return &PrimeResult{Output: output}, nil
 }

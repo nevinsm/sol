@@ -64,3 +64,18 @@ func TestCLIEscalationResolveHelp(t *testing.T) {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
+
+func TestCLIHandoffHelp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+
+	out, err := runGT(t, gtHome, "handoff", "--help")
+	if err != nil {
+		t.Fatalf("gt handoff --help failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "Hand off") {
+		t.Errorf("output missing expected text: %s", out)
+	}
+}

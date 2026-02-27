@@ -63,6 +63,10 @@ Your job is to execute the assigned work item.
 - `+"`gt escalate`"+` — Request help if you are stuck. Describe the problem.
 %s
 %s
+## Session Management
+- `+"`gt handoff`"+` — Hand off to a fresh session (preserves context)
+- `+"`gt handoff --summary=\"what I've done so far\"`"+` — Hand off with a summary
+
 ## Important
 - You are working in an isolated git worktree. Commit your changes normally.
 - Do not modify files outside this worktree.

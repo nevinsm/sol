@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevinsm/gt/internal/handoff"
 	"github.com/nevinsm/gt/internal/hook"
 	"github.com/nevinsm/gt/internal/store"
 )
@@ -695,5 +696,145 @@ func TestDoneCreatesMergeRequest(t *testing.T) {
 	}
 	if agent.State != "idle" {
 		t.Errorf("expected agent state 'idle', got %q", agent.State)
+	}
+}
+
+// --- Prime with handoff tests ---
+
+func TestPrimeWithHandoff(t *testing.T) {
+	rigStore, _ := setupStores(t)
+
+	itemID, err := rigStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	// Write hook file.
+	if err := hook.Write("testrig", "Toast", itemID); err != nil {
+		t.Fatalf("failed to write hook: %v", err)
+	}
+
+	// Write handoff file.
+	state := &handoff.State{
+		WorkItemID:      itemID,
+		AgentName:       "Toast",
+		Rig:             "testrig",
+		PreviousSession: "gt-testrig-Toast",
+		Summary:         "Implemented login form. Tests passing.",
+		RecentCommits:   []string{"abc1234 feat: add login form"},
+	}
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("failed to write handoff: %v", err)
+	}
+
+	result, err := Prime("testrig", "Toast", rigStore)
+	if err != nil {
+		t.Fatalf("Prime with handoff failed: %v", err)
+	}
+
+	if !strings.Contains(result.Output, "HANDOFF CONTEXT") {
+		t.Error("output missing HANDOFF CONTEXT header")
+	}
+	if !strings.Contains(result.Output, "Toast") {
+		t.Error("output missing agent name")
+	}
+	if !strings.Contains(result.Output, itemID) {
+		t.Error("output missing work item ID")
+	}
+	if !strings.Contains(result.Output, "Implemented login form") {
+		t.Error("output missing summary")
+	}
+	if !strings.Contains(result.Output, "abc1234 feat: add login form") {
+		t.Error("output missing recent commits")
+	}
+	if !strings.Contains(result.Output, "gt handoff") {
+		t.Error("output missing handoff instruction")
+	}
+
+	// Handoff file should be deleted after prime.
+	if handoff.HasHandoff("testrig", "Toast") {
+		t.Error("expected handoff file to be removed after prime")
+	}
+}
+
+func TestPrimeHandoffTakesPriority(t *testing.T) {
+	rigStore, _ := setupStores(t)
+	gtHome := os.Getenv("GT_HOME")
+
+	itemID, err := rigStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	// Write hook file.
+	if err := hook.Write("testrig", "Toast", itemID); err != nil {
+		t.Fatalf("failed to write hook: %v", err)
+	}
+
+	// Write handoff file.
+	state := &handoff.State{
+		WorkItemID:       itemID,
+		AgentName:        "Toast",
+		Rig:              "testrig",
+		PreviousSession:  "gt-testrig-Toast",
+		Summary:          "Handoff summary here.",
+		RecentCommits:    []string{"abc1234 feat: work"},
+		WorkflowStep:     "implement",
+		WorkflowProgress: "1/3 complete",
+	}
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("failed to write handoff: %v", err)
+	}
+
+	// Also set up workflow state (should be ignored in favor of handoff).
+	wfDir := fmt.Sprintf("%s/testrig/polecats/Toast/.workflow", gtHome)
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatalf("failed to create workflow dir: %v", err)
+	}
+	stateJSON := `{"current_step":"implement","completed":["plan"],"status":"running","started_at":"2026-02-27T10:00:00Z"}`
+	os.WriteFile(wfDir+"/state.json", []byte(stateJSON), 0o644)
+
+	result, err := Prime("testrig", "Toast", rigStore)
+	if err != nil {
+		t.Fatalf("Prime with handoff+workflow failed: %v", err)
+	}
+
+	// Should have handoff context, not workflow context.
+	if !strings.Contains(result.Output, "HANDOFF CONTEXT") {
+		t.Error("output missing HANDOFF CONTEXT — handoff should take priority")
+	}
+	if strings.Contains(result.Output, "WORK CONTEXT") {
+		t.Error("output contains WORK CONTEXT — handoff should take priority over workflow")
+	}
+
+	// Handoff file should be deleted.
+	if handoff.HasHandoff("testrig", "Toast") {
+		t.Error("expected handoff file to be removed after prime")
+	}
+}
+
+func TestPrimeNoHandoff(t *testing.T) {
+	rigStore, _ := setupStores(t)
+
+	itemID, err := rigStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	if err := hook.Write("testrig", "Toast", itemID); err != nil {
+		t.Fatalf("failed to write hook: %v", err)
+	}
+
+	// No handoff file — should use standard prime.
+	result, err := Prime("testrig", "Toast", rigStore)
+	if err != nil {
+		t.Fatalf("Prime failed: %v", err)
+	}
+
+	if !strings.Contains(result.Output, "WORK CONTEXT") {
+		t.Error("expected standard WORK CONTEXT output when no handoff")
+	}
+	if strings.Contains(result.Output, "HANDOFF CONTEXT") {
+		t.Error("unexpected HANDOFF CONTEXT when no handoff file exists")
 	}
 }
