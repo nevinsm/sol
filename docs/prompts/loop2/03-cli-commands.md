@@ -1,17 +1,17 @@
 # Prompt 03: Loop 2 — CLI Commands + Status Updates
 
-You are adding the CLI commands for the refinery and updating the status
+You are adding the CLI commands for the forge and updating the status
 command to include merge pipeline state. These commands give the operator
-full lifecycle control over the refinery and visibility into the merge
+full lifecycle control over the forge and visibility into the merge
 queue.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Prompts 01 and 02 are complete.
 
-Read all existing code first. Understand the refinery package
-(`internal/refinery/`), the session manager
+Read all existing code first. Understand the forge package
+(`internal/forge/`), the session manager
 (`internal/session/manager.go` — especially `Start`, `Stop`, `Attach`),
-the existing CLI commands (`cmd/supervisor.go` for the lifecycle pattern,
+the existing CLI commands (`cmd/prefect.go` for the lifecycle pattern,
 `cmd/status.go` for the status pattern), and the status package
 (`internal/status/`).
 
@@ -20,42 +20,42 @@ done, items 5 and 7) for the CLI requirements.
 
 ---
 
-## Task 1: Refinery Command Group
+## Task 1: Forge Command Group
 
-Create `cmd/refinery.go` with the refinery command group and all
+Create `cmd/forge.go` with the forge command group and all
 subcommands.
 
 ### Command Structure
 
 ```
-gt refinery run <rig>       — run the merge loop (foreground)
-gt refinery start <rig>     — start refinery in a tmux session
-gt refinery stop <rig>      — stop the refinery tmux session
-gt refinery queue <rig>     — show merge requests
-gt refinery attach <rig>    — attach to refinery tmux session
+sol forge run <world>       — run the merge loop (foreground)
+sol forge start <world>     — start forge in a tmux session
+sol forge stop <world>      — stop the forge tmux session
+sol forge queue <world>     — show merge requests
+sol forge attach <world>    — attach to forge tmux session
 ```
 
-### `gt refinery run <rig>`
+### `sol forge run <world>`
 
-Runs the refinery in the foreground. Blocks until interrupted
+Runs the forge in the foreground. Blocks until interrupted
 (SIGTERM/SIGINT). This is the core command — it runs the merge loop
 directly.
 
 ```go
 var refineryCmd = &cobra.Command{
-    Use:   "refinery",
-    Short: "Manage the merge refinery",
+    Use:   "forge",
+    Short: "Manage the merge forge",
 }
 
 var refineryRunCmd = &cobra.Command{
-    Use:   "run <rig>",
-    Short: "Run the refinery merge loop (foreground)",
+    Use:   "run <world>",
+    Short: "Run the forge merge loop (foreground)",
     Args:  cobra.ExactArgs(1),
     RunE: func(cmd *cobra.Command, args []string) error {
-        rig := args[0]
+        world := args[0]
 
-        logPath := filepath.Join(config.RuntimeDir(), "refinery-"+rig+".log")
-        logger, logFile, err := refinery.NewLogger(logPath)
+        logPath := filepath.Join(config.RuntimeDir(), "forge-"+world+".log")
+        logger, logFile, err := forge.NewLogger(logPath)
         if err != nil {
             return fmt.Errorf("failed to create logger: %w", err)
         }
@@ -63,26 +63,26 @@ var refineryRunCmd = &cobra.Command{
             defer logFile.Close()
         }
 
-        rigStore, err := store.OpenRig(rig)
+        worldStore, err := store.OpenWorld(world)
         if err != nil { return err }
-        defer rigStore.Close()
+        defer worldStore.Close()
 
-        townStore, err := store.OpenTown()
+        sphereStore, err := store.OpenSphere()
         if err != nil { return err }
-        defer townStore.Close()
+        defer sphereStore.Close()
 
         // Discover source repo
         sourceRepo, err := dispatch.DiscoverSourceRepo()
         if err != nil { return err }
 
         // Load quality gates
-        gatesPath := filepath.Join(config.RigDir(rig), "refinery", "quality-gates.txt")
-        cfg := refinery.DefaultConfig()
-        gates, err := refinery.LoadQualityGates(gatesPath, cfg.QualityGates)
+        gatesPath := filepath.Join(config.RigDir(world), "forge", "quality-gates.txt")
+        cfg := forge.DefaultConfig()
+        gates, err := forge.LoadQualityGates(gatesPath, cfg.QualityGates)
         if err != nil { return err }
         cfg.QualityGates = gates
 
-        ref := refinery.New(rig, sourceRepo, rigStore, townStore, cfg, logger)
+        ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger)
 
         // Signal handling
         ctx, cancel := context.WithCancel(cmd.Context())
@@ -91,103 +91,103 @@ var refineryRunCmd = &cobra.Command{
         signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
         go func() { <-sigCh; cancel() }()
 
-        fmt.Fprintf(os.Stderr, "Refinery started for rig %q\n", rig)
+        fmt.Fprintf(os.Stderr, "Forge started for world %q\n", world)
         fmt.Fprintf(os.Stderr, "Log: %s\n", logPath)
         return ref.Run(ctx)
     },
 }
 ```
 
-### `gt refinery start <rig>`
+### `sol forge start <world>`
 
-Starts the refinery in a tmux session named `gt-{rig}-refinery`. This
+Starts the forge in a tmux session named `sol-{world}-forge`. This
 is a convenience command — it creates the session running
-`gt refinery run <rig>`.
+`sol forge run <world>`.
 
 ```go
 var refineryStartCmd = &cobra.Command{
-    Use:   "start <rig>",
-    Short: "Start the refinery in a tmux session",
+    Use:   "start <world>",
+    Short: "Start the forge in a tmux session",
     Args:  cobra.ExactArgs(1),
     RunE: func(cmd *cobra.Command, args []string) error {
-        rig := args[0]
-        sessName := dispatch.SessionName(rig, "refinery")
+        world := args[0]
+        sessName := dispatch.SessionName(world, "forge")
         mgr := session.New()
 
         // Check if already running
         if mgr.Exists(sessName) {
-            return fmt.Errorf("refinery already running for rig %q (session %s)", rig, sessName)
+            return fmt.Errorf("forge already running for world %q (session %s)", world, sessName)
         }
 
         // Discover source repo for working directory
         sourceRepo, err := dispatch.DiscoverSourceRepo()
         if err != nil { return err }
 
-        // Start session running the refinery
+        // Start session running the forge
         err = mgr.Start(sessName, sourceRepo,
-            fmt.Sprintf("gt refinery run %s", rig),
+            fmt.Sprintf("sol forge run %s", world),
             map[string]string{
-                "GT_HOME": config.Home(),
-                "GT_RIG":  rig,
+                "SOL_HOME": config.Home(),
+                "SOL_WORLD":  world,
             },
-            "refinery", rig)
+            "forge", world)
         if err != nil {
-            return fmt.Errorf("failed to start refinery session: %w", err)
+            return fmt.Errorf("failed to start forge session: %w", err)
         }
 
-        fmt.Printf("Refinery started for rig %q\n", rig)
+        fmt.Printf("Forge started for world %q\n", world)
         fmt.Printf("  Session: %s\n", sessName)
-        fmt.Printf("  Attach:  gt refinery attach %s\n", rig)
+        fmt.Printf("  Attach:  sol forge attach %s\n", world)
         return nil
     },
 }
 ```
 
-### `gt refinery stop <rig>`
+### `sol forge stop <world>`
 
-Stops the refinery's tmux session.
+Stops the forge's tmux session.
 
 ```go
 var refineryStopCmd = &cobra.Command{
-    Use:   "stop <rig>",
-    Short: "Stop the refinery",
+    Use:   "stop <world>",
+    Short: "Stop the forge",
     Args:  cobra.ExactArgs(1),
     RunE: func(cmd *cobra.Command, args []string) error {
-        rig := args[0]
-        sessName := dispatch.SessionName(rig, "refinery")
+        world := args[0]
+        sessName := dispatch.SessionName(world, "forge")
         mgr := session.New()
 
         if !mgr.Exists(sessName) {
-            return fmt.Errorf("no refinery running for rig %q", rig)
+            return fmt.Errorf("no forge running for world %q", world)
         }
 
         if err := mgr.Stop(sessName, false); err != nil {
-            return fmt.Errorf("failed to stop refinery: %w", err)
+            return fmt.Errorf("failed to stop forge: %w", err)
         }
 
-        fmt.Printf("Refinery stopped for rig %q\n", rig)
+        fmt.Printf("Forge stopped for world %q\n", world)
         return nil
     },
 }
 ```
 
-### `gt refinery attach <rig>`
+### `sol forge attach <world>`
 
-Attaches to the refinery's tmux session. Uses `session.Manager.Attach()`
+Attaches to the forge's tmux session. Uses `session.Manager.Attach()`
 which replaces the current process via `syscall.Exec`.
 
 ```go
 var refineryAttachCmd = &cobra.Command{
-    Use:   "attach <rig>",
-    Short: "Attach to the refinery tmux session",
+    Use:   "attach <world>",
+    Short: "Attach to the forge tmux session",
     Args:  cobra.ExactArgs(1),
     RunE: func(cmd *cobra.Command, args []string) error {
-        rig := args[0]
-        sessName := dispatch.SessionName(rig, "refinery")
+        world := args[0]
+        sessName := dispatch.SessionName(world, "forge")
         mgr := session.New()
 
         if !mgr.Exists(sessName) {
-            return fmt.Errorf("no refinery session for rig %q (run 'gt refinery start %s' first)", rig, rig)
+            return fmt.Errorf("no forge session for world %q (run 'sol forge start %s' first)", world, world)
         }
 
         return mgr.Attach(sessName)
@@ -195,34 +195,34 @@ var refineryAttachCmd = &cobra.Command{
 }
 ```
 
-### `gt refinery queue <rig> [--json]`
+### `sol forge queue <world> [--json]`
 
-Displays the merge queue for a rig. Default output is a human-readable
+Displays the merge queue for a world. Default output is a human-readable
 table. `--json` outputs the full list as JSON.
 
 ```go
 var refineryQueueJSON bool
 
 var refineryQueueCmd = &cobra.Command{
-    Use:   "queue <rig>",
+    Use:   "queue <world>",
     Short: "Show the merge request queue",
     Args:  cobra.ExactArgs(1),
     RunE: func(cmd *cobra.Command, args []string) error {
-        rig := args[0]
+        world := args[0]
 
-        rigStore, err := store.OpenRig(rig)
+        worldStore, err := store.OpenWorld(world)
         if err != nil { return err }
-        defer rigStore.Close()
+        defer worldStore.Close()
 
         // List all merge requests (all phases)
-        mrs, err := rigStore.ListMergeRequests("")
+        mrs, err := worldStore.ListMergeRequests("")
         if err != nil { return err }
 
         if refineryQueueJSON {
             return printJSON(mrs)
         }
 
-        printQueue(rig, mrs)
+        printQueue(world, mrs)
         return nil
     },
 }
@@ -231,22 +231,22 @@ var refineryQueueCmd = &cobra.Command{
 ### Human-Readable Queue Output
 
 ```
-Merge Queue: myrig (3 items)
+Merge Queue: myworld (3 items)
 
 ID            WORK ITEM      BRANCH                              PHASE    ATTEMPTS
-mr-a1b2c3d4   gt-11223344    polecat/Toast/gt-11223344           ready    0
-mr-e5f6a7b8   gt-55667788    polecat/Jasper/gt-55667788          claimed  1
-mr-c9d0e1f2   gt-99aabbcc    polecat/Sage/gt-99aabbcc            merged   1
+mr-a1b2c3d4   sol-11223344    outpost/Toast/sol-11223344           ready    0
+mr-e5f6a7b8   sol-55667788    outpost/Jasper/sol-55667788          claimed  1
+mr-c9d0e1f2   sol-99aabbcc    outpost/Sage/sol-99aabbcc            merged   1
 
 Summary: 1 ready, 1 in progress, 1 merged
 ```
 
 When the queue is empty:
 ```
-Merge Queue: myrig (empty)
+Merge Queue: myworld (empty)
 ```
 
-Use `text/tabwriter` for column alignment (same pattern as `gt status`).
+Use `text/tabwriter` for column alignment (same pattern as `sol status`).
 
 ### Init
 
@@ -266,7 +266,7 @@ func init() {
 
 ## Task 2: Update Status Command
 
-Extend `gt status` to show refinery state and merge queue depth. The
+Extend `sol status` to show forge state and merge queue depth. The
 status package gathers this information alongside existing agent data.
 
 ### New Fields in RigStatus
@@ -276,15 +276,15 @@ status package gathers this information alongside existing agent data.
 
 // RigStatus — add new fields:
 type RigStatus struct {
-    Rig           string          `json:"rig"`
-    Supervisor    SupervisorInfo  `json:"supervisor"`
-    Refinery      RefineryInfo    `json:"refinery"`     // NEW
+    World           string          `json:"world"`
+    Prefect    SupervisorInfo  `json:"prefect"`
+    Forge      RefineryInfo    `json:"forge"`     // NEW
     Agents        []AgentStatus   `json:"agents"`
     MergeQueue    MergeQueueInfo  `json:"merge_queue"`  // NEW
     Summary       Summary         `json:"summary"`
 }
 
-// RefineryInfo holds refinery process state.
+// RefineryInfo holds forge process state.
 type RefineryInfo struct {
     Running      bool   `json:"running"`
     SessionName  string `json:"session_name,omitempty"`
@@ -314,30 +314,30 @@ type MergeQueueStore interface {
 Update `Gather()` to accept this interface and populate the new fields:
 
 ```go
-func Gather(rig string, townStore TownStore, rigStore RigStore,
+func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
     mqStore MergeQueueStore, checker SessionChecker) (*RigStatus, error)
 ```
 
 In the gather logic:
-1. Check refinery session: `checker.Exists(dispatch.SessionName(rig, "refinery"))`
+1. Check forge session: `checker.Exists(dispatch.SessionName(world, "forge"))`
 2. List all merge requests: `mqStore.ListMergeRequests("")`
 3. Count by phase to populate `MergeQueueInfo`
 
 **Note:** `*store.Store` already implements `ListMergeRequests`, so the
-caller can pass the same rig store for both `RigStore` and
+caller can pass the same world store for both `WorldStore` and
 `MergeQueueStore`. Adjust the call sites in `cmd/status.go`.
 
 ### Updated Human-Readable Output
 
-Add refinery and merge queue lines to the status output:
+Add forge and merge queue lines to the status output:
 
 ```
-Rig: myrig
-Supervisor: running (pid 12345)
-Refinery: running (gt-myrig-refinery)
+World: myworld
+Prefect: running (pid 12345)
+Forge: running (sol-myworld-forge)
 
 AGENT      STATE     SESSION   WORK
-Toast      working   alive     gt-a1b2c3d4: Implement login page
+Toast      working   alive     sol-a1b2c3d4: Implement login page
 Jasper     idle      -         -
 
 Merge Queue: 2 ready, 1 in progress, 0 failed
@@ -345,9 +345,9 @@ Summary: 2 agents (1 working, 1 idle, 0 stalled, 0 dead sessions)
 Health: healthy
 ```
 
-When the refinery is not running:
+When the forge is not running:
 ```
-Refinery: not running
+Forge: not running
 ```
 
 When there are no merge requests:
@@ -357,21 +357,21 @@ Merge Queue: empty
 
 ### Updated Health Logic
 
-The refinery state does not affect the health exit code in Loop 2. An
-absent refinery just means merges won't happen — the system is still
-operational. Keep health based on supervisor + session liveness only.
-The operator can see refinery state in the output and take action.
+The forge state does not affect the health exit code in Loop 2. An
+absent forge just means merges won't happen — the system is still
+operational. Keep health based on prefect + session liveness only.
+The operator can see forge state in the output and take action.
 
 ---
 
 ## Task 3: Shared printJSON Helper
 
 If `cmd/status.go` already has a `printJSON` function, make sure it's
-accessible from `cmd/refinery.go`. If it's a package-level function in
+accessible from `cmd/forge.go`. If it's a package-level function in
 `cmd/`, it's already shared. If it's a local function, either:
 
 - Move it to a shared file like `cmd/helpers.go`, or
-- Duplicate the 4-line function in `cmd/refinery.go`
+- Duplicate the 4-line function in `cmd/forge.go`
 
 ```go
 func printJSON(v any) error {
@@ -392,33 +392,33 @@ Add to `test/integration/cli_test.go` (or create
 
 ```go
 func TestCLIRefineryRunHelp(t *testing.T)
-    // bin/gt refinery run --help exits 0
+    // bin/sol forge run --help exits 0
 
 func TestCLIRefineryStartHelp(t *testing.T)
-    // bin/gt refinery start --help exits 0
+    // bin/sol forge start --help exits 0
 
 func TestCLIRefineryStopHelp(t *testing.T)
-    // bin/gt refinery stop --help exits 0
+    // bin/sol forge stop --help exits 0
 
 func TestCLIRefineryQueueHelp(t *testing.T)
-    // bin/gt refinery queue --help exits 0
+    // bin/sol forge queue --help exits 0
 
 func TestCLIRefineryAttachHelp(t *testing.T)
-    // bin/gt refinery attach --help exits 0
+    // bin/sol forge attach --help exits 0
 
 func TestCLIRefineryQueue(t *testing.T)
-    // Create a work item, sling, and done
-    // bin/gt refinery queue testrig
+    // Create a work item, cast, and done
+    // bin/sol forge queue testrig
     // Verify: output contains the MR ID
-    // bin/gt refinery queue testrig --json
+    // bin/sol forge queue testrig --json
     // Verify: valid JSON with expected fields
 
 func TestCLIStatusWithRefinery(t *testing.T)
-    // Start refinery for a rig
-    // bin/gt status testrig
-    // Verify: output contains "Refinery:" line
-    // bin/gt status testrig --json
-    // Verify: JSON contains refinery and merge_queue fields
+    // Start forge for a world
+    // bin/sol status testrig
+    // Verify: output contains "Forge:" line
+    // bin/sol status testrig --json
+    // Verify: JSON contains forge and merge_queue fields
 ```
 
 ### Status Package Tests
@@ -433,11 +433,11 @@ type mockMergeQueueStore struct {
 func (m *mockMergeQueueStore) ListMergeRequests(phase string) ([]store.MergeRequest, error)
 
 func TestGatherWithRefinery(t *testing.T)
-    // Mock: refinery session alive
+    // Mock: forge session alive
     // Verify: RefineryInfo.Running == true
 
 func TestGatherWithoutRefinery(t *testing.T)
-    // Mock: refinery session not alive
+    // Mock: forge session not alive
     // Verify: RefineryInfo.Running == false
 
 func TestGatherMergeQueue(t *testing.T)
@@ -461,53 +461,53 @@ a mock that returns empty results.
 2. `make build` — succeeds
 3. Manual smoke test:
    ```bash
-   export GT_HOME=/tmp/gt-test
-   # Setup: create work, sling, done (creates MR)
-   bin/gt store create --db=testrig --title="Test item"
-   bin/gt sling <id> testrig
-   bin/gt done --rig=testrig --agent=<name>
+   export SOL_HOME=/tmp/sol-test
+   # Setup: create work, cast, done (creates MR)
+   bin/sol store create --world=testrig --title="Test item"
+   bin/sol cast <id> testrig
+   bin/sol done --world=testrig --agent=<name>
 
    # View queue
-   bin/gt refinery queue testrig
-   bin/gt refinery queue testrig --json | jq .
+   bin/sol forge queue testrig
+   bin/sol forge queue testrig --json | jq .
 
-   # Start refinery in tmux
-   bin/gt refinery start testrig
+   # Start forge in tmux
+   bin/sol forge start testrig
    # Attach to watch it work
-   bin/gt refinery attach testrig
+   bin/sol forge attach testrig
    # Detach with Ctrl-B D
 
    # Check status
-   bin/gt status testrig
-   bin/gt status testrig --json | jq .refinery
-   bin/gt status testrig --json | jq .merge_queue
+   bin/sol status testrig
+   bin/sol status testrig --json | jq .forge
+   bin/sol status testrig --json | jq .merge_queue
 
-   # Stop refinery
-   bin/gt refinery stop testrig
+   # Stop forge
+   bin/sol forge stop testrig
    ```
-4. Clean up `/tmp/gt-test` after verification.
+4. Clean up `/tmp/sol-test` after verification.
 
 ---
 
 ## Guidelines
 
-- Follow the existing CLI patterns exactly. `cmd/supervisor.go` is the
+- Follow the existing CLI patterns exactly. `cmd/prefect.go` is the
   reference for lifecycle commands (run/stop). `cmd/status.go` is the
   reference for display commands.
-- `gt refinery start` creates a tmux session running `gt refinery run`.
-  The operator can also run the refinery in the foreground directly —
+- `sol forge start` creates a tmux session running `sol forge run`.
+  The operator can also run the forge in the foreground directly —
   the `start` command is a convenience.
-- `gt refinery attach` is a thin wrapper around
+- `sol forge attach` is a thin wrapper around
   `session.Manager.Attach()`. It replaces the current process with
   `tmux attach-session`.
 - The `printQueue` function should handle the case where there are no
   merge requests gracefully.
 - When updating the `Gather` function signature, update all call sites:
   `cmd/status.go` and any tests. The `*store.Store` type satisfies both
-  `RigStore` and `MergeQueueStore` — pass the same store for both.
-- The refinery session name follows the existing convention:
-  `gt-{rig}-refinery` (via `dispatch.SessionName(rig, "refinery")`).
-- Don't add `--watch` or `--follow` mode to `gt refinery queue`. A
+  `WorldStore` and `MergeQueueStore` — pass the same store for both.
+- The forge session name follows the existing convention:
+  `sol-{world}-forge` (via `dispatch.SessionName(world, "forge")`).
+- Don't add `--watch` or `--follow` mode to `sol forge queue`. A
   simple one-shot listing is sufficient for Loop 2.
 - Commit after tests pass with message:
-  `feat(cli): add refinery lifecycle commands and merge queue status`
+  `feat(cli): add forge lifecycle commands and merge queue status`

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // MailNotifier sends an escalation as a protocol message via the town store.

@@ -11,19 +11,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nevinsm/gt/internal/events"
-	"github.com/nevinsm/gt/internal/session"
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/store"
 )
 
-// setupTestEnv creates an isolated test environment with temp GT_HOME,
+// setupTestEnv creates an isolated test environment with temp SOL_HOME,
 // a real git repo, and an isolated tmux server.
 func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 	t.Helper()
 
-	// 1. Create temp dir for GT_HOME.
+	// 1. Create temp dir for SOL_HOME.
 	gtHome = t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
 	// 2. Create .store and .runtime dirs.
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
@@ -48,7 +48,7 @@ func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 	t.Cleanup(func() {
 		out, _ := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
 		for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if strings.HasPrefix(name, "gt-") {
+			if strings.HasPrefix(name, "sol-") {
 				exec.Command("tmux", "kill-session", "-t", name).Run()
 			}
 		}
@@ -67,19 +67,19 @@ func gitRun(t *testing.T, dir string, args ...string) {
 
 func openStores(t *testing.T, rig string) (*store.Store, *store.Store) {
 	t.Helper()
-	rigStore, err := store.OpenRig(rig)
+	worldStore, err := store.OpenWorld(rig)
 	if err != nil {
 		t.Fatalf("open rig store: %v", err)
 	}
-	t.Cleanup(func() { rigStore.Close() })
+	t.Cleanup(func() { worldStore.Close() })
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	t.Cleanup(func() { townStore.Close() })
+	t.Cleanup(func() { sphereStore.Close() })
 
-	return rigStore, townStore
+	return worldStore, sphereStore
 }
 
 // createSourceRepo creates a bare git repo and a clone with an initial commit.
@@ -145,14 +145,14 @@ func createBranchWithFile(t *testing.T, repoDir, branch, filename, content strin
 }
 
 // waitForMergePhase polls the store until a MR reaches the expected phase.
-func waitForMergePhase(t *testing.T, rigStore *store.Store, mrID, expectedPhase string, timeout time.Duration) {
+func waitForMergePhase(t *testing.T, worldStore *store.Store, mrID, expectedPhase string, timeout time.Duration) {
 	t.Helper()
 	ok := pollUntil(timeout, 500*time.Millisecond, func() bool {
-		mr, err := rigStore.GetMergeRequest(mrID)
+		mr, err := worldStore.GetMergeRequest(mrID)
 		return err == nil && mr != nil && mr.Phase == expectedPhase
 	})
 	if !ok {
-		mr, err := rigStore.GetMergeRequest(mrID)
+		mr, err := worldStore.GetMergeRequest(mrID)
 		phase := "unknown"
 		if err == nil && mr != nil {
 			phase = mr.Phase
@@ -177,14 +177,14 @@ func pollUntil(timeout, interval time.Duration, fn func() bool) bool {
 
 // sendAndVerifyMessage sends a message and verifies it appears in the
 // recipient's inbox. Returns the message ID.
-func sendAndVerifyMessage(t *testing.T, townStore *store.Store,
+func sendAndVerifyMessage(t *testing.T, sphereStore *store.Store,
 	sender, recipient, subject, body string) string {
 	t.Helper()
-	id, err := townStore.SendMessage(sender, recipient, subject, body, 2, "notification")
+	id, err := sphereStore.SendMessage(sender, recipient, subject, body, 2, "notification")
 	if err != nil {
 		t.Fatalf("SendMessage() error: %v", err)
 	}
-	msgs, err := townStore.Inbox(recipient)
+	msgs, err := sphereStore.Inbox(recipient)
 	if err != nil {
 		t.Fatalf("Inbox() error: %v", err)
 	}
@@ -204,12 +204,12 @@ func sendAndVerifyMessage(t *testing.T, townStore *store.Store,
 // waitForProtocolMessage polls for a specific protocol message type
 // addressed to a recipient. Returns the message when found or fails
 // after timeout.
-func waitForProtocolMessage(t *testing.T, townStore *store.Store,
+func waitForProtocolMessage(t *testing.T, sphereStore *store.Store,
 	recipient, protoType string, timeout time.Duration) *store.Message {
 	t.Helper()
 	var found *store.Message
 	ok := pollUntil(timeout, 100*time.Millisecond, func() bool {
-		msgs, err := townStore.PendingProtocol(recipient, protoType)
+		msgs, err := sphereStore.PendingProtocol(recipient, protoType)
 		if err != nil || len(msgs) == 0 {
 			return false
 		}
@@ -261,7 +261,7 @@ func assertEventEmitted(t *testing.T, gtHome, eventType string) {
 	}
 }
 
-// mockSessionChecker implements witness.SessionChecker for integration tests.
+// mockSessionChecker implements sentinel.SessionChecker for integration tests.
 type mockSessionChecker struct {
 	mu       sync.Mutex
 	alive    map[string]bool

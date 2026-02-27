@@ -110,107 +110,107 @@ func TestCLIMailCheckHelp(t *testing.T) {
 	}
 }
 
-func TestCLICuratorRunHelp(t *testing.T) {
+func TestCLIChronicleRunHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "curator", "run", "--help")
+	out, err := runGT(t, gtHome, "chronicle", "run", "--help")
 	if err != nil {
-		t.Fatalf("gt curator run --help failed: %v: %s", err, out)
+		t.Fatalf("gt chronicle run --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Run the curator") {
+	if !strings.Contains(out, "Run the chronicle") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLICuratorStartHelp(t *testing.T) {
+func TestCLIChronicleStartHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "curator", "start", "--help")
+	out, err := runGT(t, gtHome, "chronicle", "start", "--help")
 	if err != nil {
-		t.Fatalf("gt curator start --help failed: %v: %s", err, out)
+		t.Fatalf("gt chronicle start --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "background tmux session") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLICuratorStopHelp(t *testing.T) {
+func TestCLIChronicleStopHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "curator", "stop", "--help")
+	out, err := runGT(t, gtHome, "chronicle", "stop", "--help")
 	if err != nil {
-		t.Fatalf("gt curator stop --help failed: %v: %s", err, out)
+		t.Fatalf("gt chronicle stop --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Stop the curator") {
+	if !strings.Contains(out, "Stop the chronicle") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLIWitnessRunHelp(t *testing.T) {
+func TestCLISentinelRunHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "witness", "run", "--help")
+	out, err := runGT(t, gtHome, "sentinel", "run", "--help")
 	if err != nil {
-		t.Fatalf("gt witness run --help failed: %v: %s", err, out)
+		t.Fatalf("gt sentinel run --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "patrol loop") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLIWitnessStartHelp(t *testing.T) {
+func TestCLISentinelStartHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "witness", "start", "--help")
+	out, err := runGT(t, gtHome, "sentinel", "start", "--help")
 	if err != nil {
-		t.Fatalf("gt witness start --help failed: %v: %s", err, out)
+		t.Fatalf("gt sentinel start --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "background tmux session") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLIWitnessStopHelp(t *testing.T) {
+func TestCLISentinelStopHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "witness", "stop", "--help")
+	out, err := runGT(t, gtHome, "sentinel", "stop", "--help")
 	if err != nil {
-		t.Fatalf("gt witness stop --help failed: %v: %s", err, out)
+		t.Fatalf("gt sentinel stop --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Stop the witness") {
+	if !strings.Contains(out, "Stop the sentinel") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLIWitnessAttachHelp(t *testing.T) {
+func TestCLISentinelAttachHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "witness", "attach", "--help")
+	out, err := runGT(t, gtHome, "sentinel", "attach", "--help")
 	if err != nil {
-		t.Fatalf("gt witness attach --help failed: %v: %s", err, out)
+		t.Fatalf("gt sentinel attach --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Attach to the witness") {
+	if !strings.Contains(out, "Attach to the sentinel") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }

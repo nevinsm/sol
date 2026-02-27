@@ -9,15 +9,15 @@ import (
 	"testing"
 )
 
-// gtBin returns the path to the built gt binary, building it if needed.
+// gtBin returns the path to the built sol binary, building it if needed.
 func gtBin(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(projectRoot(t), "bin", "gt")
+	bin := filepath.Join(projectRoot(t), "bin", "sol")
 	if _, err := os.Stat(bin); os.IsNotExist(err) {
 		cmd := exec.Command("go", "build", "-o", bin, ".")
 		cmd.Dir = projectRoot(t)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("build gt binary: %s: %v", out, err)
+			t.Fatalf("build sol binary: %s: %v", out, err)
 		}
 	}
 	return bin
@@ -42,12 +42,12 @@ func projectRoot(t *testing.T) string {
 	}
 }
 
-// runGT runs the gt binary with the given args and GT_HOME set.
+// runGT runs the sol binary with the given args and SOL_HOME set.
 func runGT(t *testing.T, gtHome string, args ...string) (string, error) {
 	t.Helper()
 	bin := gtBin(t)
 	cmd := exec.Command(bin, args...)
-	cmd.Env = append(os.Environ(), "GT_HOME="+gtHome)
+	cmd.Env = append(os.Environ(), "SOL_HOME="+gtHome)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
@@ -62,8 +62,8 @@ func TestCLIHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gt --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "gt") {
-		t.Errorf("gt --help output missing 'gt': %s", out)
+	if !strings.Contains(out, "sol") {
+		t.Errorf("sol --help output missing 'sol': %s", out)
 	}
 }
 
@@ -91,15 +91,15 @@ func TestCLISessionHelp(t *testing.T) {
 	}
 }
 
-func TestCLISlingHelp(t *testing.T) {
+func TestCLICastHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "sling", "--help")
+	out, err := runGT(t, gtHome, "cast", "--help")
 	if err != nil {
-		t.Fatalf("gt sling --help failed: %v: %s", err, out)
+		t.Fatalf("gt cast --help failed: %v: %s", err, out)
 	}
 }
 
@@ -109,11 +109,11 @@ func TestCLIStoreCreate(t *testing.T) {
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "store", "create", "--db=testrig", "--title=test")
+	out, err := runGT(t, gtHome, "store", "create", "--world=testrig", "--title=test")
 	if err != nil {
 		t.Fatalf("gt store create failed: %v: %s", err, out)
 	}
-	if !strings.HasPrefix(out, "gt-") {
+	if !strings.HasPrefix(out, "sol-") {
 		t.Errorf("store create output not an ID: %q", out)
 	}
 }
@@ -125,9 +125,9 @@ func TestCLIStoreListJSON(t *testing.T) {
 	gtHome := t.TempDir()
 
 	// Create an item first.
-	runGT(t, gtHome, "store", "create", "--db=testrig", "--title=json test")
+	runGT(t, gtHome, "store", "create", "--world=testrig", "--title=json test")
 
-	out, err := runGT(t, gtHome, "store", "list", "--db=testrig", "--json")
+	out, err := runGT(t, gtHome, "store", "list", "--world=testrig", "--json")
 	if err != nil {
 		t.Fatalf("gt store list --json failed: %v: %s", err, out)
 	}
@@ -142,7 +142,7 @@ func TestCLIAgentCreate(t *testing.T) {
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "agent", "create", "Smoke", "--rig=testrig")
+	out, err := runGT(t, gtHome, "agent", "create", "Smoke", "--world=testrig")
 	if err != nil {
 		t.Fatalf("gt agent create failed: %v: %s", err, out)
 	}
@@ -155,9 +155,9 @@ func TestCLIAgentList(t *testing.T) {
 	gtHome := t.TempDir()
 
 	// Create first.
-	runGT(t, gtHome, "agent", "create", "Smoke", "--rig=testrig")
+	runGT(t, gtHome, "agent", "create", "Smoke", "--world=testrig")
 
-	out, err := runGT(t, gtHome, "agent", "list", "--rig=testrig")
+	out, err := runGT(t, gtHome, "agent", "list", "--world=testrig")
 	if err != nil {
 		t.Fatalf("gt agent list failed: %v: %s", err, out)
 	}

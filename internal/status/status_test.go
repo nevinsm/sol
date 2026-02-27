@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/nevinsm/gt/internal/config"
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // --- Mock implementations ---
@@ -19,18 +19,18 @@ type mockChecker struct {
 
 func (m *mockChecker) Exists(name string) bool { return m.alive[name] }
 
-type mockTownStore struct {
+type mockSphereStore struct {
 	agents []store.Agent
 	err    error
 }
 
-func (m *mockTownStore) ListAgents(rig, state string) ([]store.Agent, error) {
+func (m *mockSphereStore) ListAgents(rig, state string) ([]store.Agent, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	var result []store.Agent
 	for _, a := range m.agents {
-		if rig != "" && a.Rig != rig {
+		if rig != "" && a.World != rig {
 			continue
 		}
 		if state != "" && a.State != state {
@@ -41,11 +41,11 @@ func (m *mockTownStore) ListAgents(rig, state string) ([]store.Agent, error) {
 	return result, nil
 }
 
-type mockRigStore struct {
+type mockWorldStore struct {
 	items map[string]*store.WorkItem
 }
 
-func (m *mockRigStore) GetWorkItem(id string) (*store.WorkItem, error) {
+func (m *mockWorldStore) GetWorkItem(id string) (*store.WorkItem, error) {
 	item, ok := m.items[id]
 	if !ok {
 		return nil, fmt.Errorf("work item %q not found", id)
@@ -79,38 +79,38 @@ func emptyMQStore() *mockMergeQueueStore {
 	return &mockMergeQueueStore{}
 }
 
-// writeSupervisorPID writes a PID file for testing. Returns cleanup func.
-func writeSupervisorPID(t *testing.T, pid int) func() {
+// writePrefectPID writes a PID file for testing. Returns cleanup func.
+func writePrefectPID(t *testing.T, pid int) func() {
 	t.Helper()
 	dir := config.RuntimeDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "supervisor.pid")
+	path := filepath.Join(dir, "prefect.pid")
 	if err := os.WriteFile(path, []byte(strconv.Itoa(pid)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return func() { os.Remove(path) }
 }
 
-// clearSupervisorPID removes the PID file to simulate supervisor not running.
-func clearSupervisorPID(t *testing.T) {
+// clearPrefectPID removes the PID file to simulate prefect not running.
+func clearPrefectPID(t *testing.T) {
 	t.Helper()
-	path := filepath.Join(config.RuntimeDir(), "supervisor.pid")
+	path := filepath.Join(config.RuntimeDir(), "prefect.pid")
 	os.Remove(path)
 }
 
-// setupTestHome sets GT_HOME to a temp dir and returns cleanup func.
+// setupTestHome sets SOL_HOME to a temp dir and returns cleanup func.
 func setupTestHome(t *testing.T) func() {
 	t.Helper()
 	dir := t.TempDir()
-	old := os.Getenv("GT_HOME")
-	os.Setenv("GT_HOME", dir)
+	old := os.Getenv("SOL_HOME")
+	os.Setenv("SOL_HOME", dir)
 	return func() {
 		if old == "" {
-			os.Unsetenv("GT_HOME")
+			os.Unsetenv("SOL_HOME")
 		} else {
-			os.Setenv("GT_HOME", old)
+			os.Setenv("SOL_HOME", old)
 		}
 	}
 }
@@ -120,16 +120,16 @@ func TestGatherHealthy(t *testing.T) {
 	defer cleanup()
 
 	// Write a PID file with our own PID (we know we're running).
-	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	town := &mockTownStore{
+	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", Rig: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
-			{ID: "myrig/Sage", Name: "Sage", Rig: "myrig", State: "working", HookItem: "gt-11223344"},
+			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
+			{ID: "myrig/Sage", Name: "Sage", World: "myrig", State: "working", HookItem: "gt-11223344"},
 		},
 	}
-	rig := &mockRigStore{
+	world := &mockWorldStore{
 		items: map[string]*store.WorkItem{
 			"gt-a1b2c3d4": {ID: "gt-a1b2c3d4", Title: "Implement login page"},
 			"gt-11223344": {ID: "gt-11223344", Title: "Add unit tests"},
@@ -137,12 +137,12 @@ func TestGatherHealthy(t *testing.T) {
 	}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"gt-myrig-Toast": true,
-			"gt-myrig-Sage":  true,
+			"sol-myrig-Toast": true,
+			"sol-myrig-Sage":  true,
 		},
 	}
 
-	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -162,16 +162,16 @@ func TestGatherUnhealthy(t *testing.T) {
 	cleanup := setupTestHome(t)
 	defer cleanup()
 
-	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	town := &mockTownStore{
+	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", Rig: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
-			{ID: "myrig/Jasper", Name: "Jasper", Rig: "myrig", State: "working", HookItem: "gt-c5d6e7f8"},
+			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
+			{ID: "myrig/Jasper", Name: "Jasper", World: "myrig", State: "working", HookItem: "gt-c5d6e7f8"},
 		},
 	}
-	rig := &mockRigStore{
+	world := &mockWorldStore{
 		items: map[string]*store.WorkItem{
 			"gt-a1b2c3d4": {ID: "gt-a1b2c3d4", Title: "Implement login page"},
 			"gt-c5d6e7f8": {ID: "gt-c5d6e7f8", Title: "Fix CSS regression"},
@@ -179,12 +179,12 @@ func TestGatherUnhealthy(t *testing.T) {
 	}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"gt-myrig-Toast":  true,
-			"gt-myrig-Jasper": false, // dead session
+			"sol-myrig-Toast":  true,
+			"sol-myrig-Jasper": false, // dead session
 		},
 	}
 
-	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -201,24 +201,24 @@ func TestGatherDegraded(t *testing.T) {
 	cleanup := setupTestHome(t)
 	defer cleanup()
 
-	// No PID file — supervisor not running.
-	clearSupervisorPID(t)
+	// No PID file — prefect not running.
+	clearPrefectPID(t)
 
-	town := &mockTownStore{
+	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", Rig: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
+			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
 		},
 	}
-	rig := &mockRigStore{
+	world := &mockWorldStore{
 		items: map[string]*store.WorkItem{
 			"gt-a1b2c3d4": {ID: "gt-a1b2c3d4", Title: "Test task"},
 		},
 	}
 	checker := &mockChecker{
-		alive: map[string]bool{"gt-myrig-Toast": true},
+		alive: map[string]bool{"sol-myrig-Toast": true},
 	}
 
-	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -226,8 +226,8 @@ func TestGatherDegraded(t *testing.T) {
 	if result.Health() != 2 {
 		t.Errorf("Health() = %d, want 2", result.Health())
 	}
-	if result.Supervisor.Running {
-		t.Errorf("Supervisor.Running = true, want false")
+	if result.Prefect.Running {
+		t.Errorf("Prefect.Running = true, want false")
 	}
 }
 
@@ -235,14 +235,14 @@ func TestGatherNoAgents(t *testing.T) {
 	cleanup := setupTestHome(t)
 	defer cleanup()
 
-	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	town := &mockTownStore{agents: nil}
-	rig := &mockRigStore{items: nil}
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
 	checker := &mockChecker{alive: nil}
 
-	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestGatherNoAgents(t *testing.T) {
 		t.Errorf("Summary.Total = %d, want 0", result.Summary.Total)
 	}
 	if result.Health() != 0 {
-		t.Errorf("Health() = %d, want 0 (supervisor running, no agents)", result.Health())
+		t.Errorf("Health() = %d, want 0 (prefect running, no agents)", result.Health())
 	}
 }
 
@@ -259,14 +259,14 @@ func TestGatherNoAgentsDegraded(t *testing.T) {
 	cleanup := setupTestHome(t)
 	defer cleanup()
 
-	// No supervisor running.
-	clearSupervisorPID(t)
+	// No prefect running.
+	clearPrefectPID(t)
 
-	town := &mockTownStore{agents: nil}
-	rig := &mockRigStore{items: nil}
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
 	checker := &mockChecker{alive: nil}
 
-	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestGatherNoAgentsDegraded(t *testing.T) {
 		t.Errorf("Summary.Total = %d, want 0", result.Summary.Total)
 	}
 	if result.Health() != 2 {
-		t.Errorf("Health() = %d, want 2 (supervisor not running)", result.Health())
+		t.Errorf("Health() = %d, want 2 (prefect not running)", result.Health())
 	}
 }
 
@@ -283,24 +283,24 @@ func TestGatherWithHookedWork(t *testing.T) {
 	cleanup := setupTestHome(t)
 	defer cleanup()
 
-	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	town := &mockTownStore{
+	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", Rig: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
+			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
 		},
 	}
-	rig := &mockRigStore{
+	world := &mockWorldStore{
 		items: map[string]*store.WorkItem{
 			"gt-a1b2c3d4": {ID: "gt-a1b2c3d4", Title: "Implement login page"},
 		},
 	}
 	checker := &mockChecker{
-		alive: map[string]bool{"gt-myrig-Toast": true},
+		alive: map[string]bool{"sol-myrig-Toast": true},
 	}
 
-	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -321,20 +321,20 @@ func TestGatherMissingWorkItem(t *testing.T) {
 	cleanup := setupTestHome(t)
 	defer cleanup()
 
-	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	town := &mockTownStore{
+	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", Rig: "myrig", State: "working", HookItem: "gt-nonexist"},
+			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", HookItem: "gt-nonexist"},
 		},
 	}
-	rig := &mockRigStore{items: map[string]*store.WorkItem{}} // item not found
+	world := &mockWorldStore{items: map[string]*store.WorkItem{}} // item not found
 	checker := &mockChecker{
-		alive: map[string]bool{"gt-myrig-Toast": true},
+		alive: map[string]bool{"sol-myrig-Toast": true},
 	}
 
-	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v (should not fail on missing work item)", err)
 	}
@@ -352,18 +352,18 @@ func TestGatherMixedStates(t *testing.T) {
 	cleanup := setupTestHome(t)
 	defer cleanup()
 
-	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	town := &mockTownStore{
+	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", Rig: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
-			{ID: "myrig/Jasper", Name: "Jasper", Rig: "myrig", State: "working", HookItem: "gt-c5d6e7f8"},
-			{ID: "myrig/Sage", Name: "Sage", Rig: "myrig", State: "idle"},
-			{ID: "myrig/Copper", Name: "Copper", Rig: "myrig", State: "stalled", HookItem: "gt-11223344"},
+			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", HookItem: "gt-a1b2c3d4"},
+			{ID: "myrig/Jasper", Name: "Jasper", World: "myrig", State: "working", HookItem: "gt-c5d6e7f8"},
+			{ID: "myrig/Sage", Name: "Sage", World: "myrig", State: "idle"},
+			{ID: "myrig/Copper", Name: "Copper", World: "myrig", State: "stalled", HookItem: "gt-11223344"},
 		},
 	}
-	rig := &mockRigStore{
+	world := &mockWorldStore{
 		items: map[string]*store.WorkItem{
 			"gt-a1b2c3d4": {ID: "gt-a1b2c3d4", Title: "Implement login page"},
 			"gt-c5d6e7f8": {ID: "gt-c5d6e7f8", Title: "Fix CSS regression"},
@@ -372,14 +372,14 @@ func TestGatherMixedStates(t *testing.T) {
 	}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"gt-myrig-Toast":  true,
-			"gt-myrig-Jasper": false, // dead session
-			"gt-myrig-Sage":   false, // idle — no session expected
-			"gt-myrig-Copper": false, // stalled, dead session
+			"sol-myrig-Toast":  true,
+			"sol-myrig-Jasper": false, // dead session
+			"sol-myrig-Sage":   false, // idle — no session expected
+			"sol-myrig-Copper": false, // stalled, dead session
 		},
 	}
 
-	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -403,49 +403,49 @@ func TestGatherMixedStates(t *testing.T) {
 
 func TestHealthExitCodes(t *testing.T) {
 	tests := []struct {
-		name       string
-		supervisor SupervisorInfo
-		summary    Summary
-		want       int
+		name    string
+		prefect PrefectInfo
+		summary Summary
+		want    int
 	}{
 		{
-			name:       "supervisor running, all healthy",
-			supervisor: SupervisorInfo{Running: true, PID: 123},
-			summary:    Summary{Total: 3, Working: 2, Idle: 1},
-			want:       0,
+			name:    "prefect running, all healthy",
+			prefect: PrefectInfo{Running: true, PID: 123},
+			summary: Summary{Total: 3, Working: 2, Idle: 1},
+			want:    0,
 		},
 		{
-			name:       "supervisor running, dead session",
-			supervisor: SupervisorInfo{Running: true, PID: 123},
-			summary:    Summary{Total: 3, Working: 2, Idle: 1, Dead: 1},
-			want:       1,
+			name:    "prefect running, dead session",
+			prefect: PrefectInfo{Running: true, PID: 123},
+			summary: Summary{Total: 3, Working: 2, Idle: 1, Dead: 1},
+			want:    1,
 		},
 		{
-			name:       "supervisor not running",
-			supervisor: SupervisorInfo{Running: false},
-			summary:    Summary{Total: 3, Working: 2, Idle: 1},
-			want:       2,
+			name:    "prefect not running",
+			prefect: PrefectInfo{Running: false},
+			summary: Summary{Total: 3, Working: 2, Idle: 1},
+			want:    2,
 		},
 		{
-			name:       "supervisor not running trumps dead sessions",
-			supervisor: SupervisorInfo{Running: false},
-			summary:    Summary{Total: 3, Working: 2, Idle: 1, Dead: 1},
-			want:       2,
+			name:    "prefect not running trumps dead sessions",
+			prefect: PrefectInfo{Running: false},
+			summary: Summary{Total: 3, Working: 2, Idle: 1, Dead: 1},
+			want:    2,
 		},
 		{
-			name:       "no agents, supervisor running",
-			supervisor: SupervisorInfo{Running: true, PID: 123},
-			summary:    Summary{},
-			want:       0,
+			name:    "no agents, prefect running",
+			prefect: PrefectInfo{Running: true, PID: 123},
+			summary: Summary{},
+			want:    0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rs := &RigStatus{
-				Rig:        "test",
-				Supervisor: tt.supervisor,
-				Summary:    tt.summary,
+			rs := &WorldStatus{
+				World:   "test",
+				Prefect: tt.prefect,
+				Summary: tt.summary,
 			}
 			if got := rs.Health(); got != tt.want {
 				t.Errorf("Health() = %d, want %d", got, tt.want)
@@ -454,55 +454,55 @@ func TestHealthExitCodes(t *testing.T) {
 	}
 }
 
-func TestGatherWithRefinery(t *testing.T) {
+func TestGatherWithForge(t *testing.T) {
 	cleanup := setupTestHome(t)
 	defer cleanup()
 
-	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	town := &mockTownStore{agents: nil}
-	rig := &mockRigStore{items: nil}
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"gt-myrig-refinery": true, // refinery session alive
+			"sol-myrig-forge": true, // forge session alive
 		},
 	}
 
-	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
 
-	if !result.Refinery.Running {
-		t.Error("Refinery.Running = false, want true")
+	if !result.Forge.Running {
+		t.Error("Forge.Running = false, want true")
 	}
-	if result.Refinery.SessionName != "gt-myrig-refinery" {
-		t.Errorf("Refinery.SessionName = %q, want %q", result.Refinery.SessionName, "gt-myrig-refinery")
+	if result.Forge.SessionName != "sol-myrig-forge" {
+		t.Errorf("Forge.SessionName = %q, want %q", result.Forge.SessionName, "sol-myrig-forge")
 	}
 }
 
-func TestGatherWithoutRefinery(t *testing.T) {
+func TestGatherWithoutForge(t *testing.T) {
 	cleanup := setupTestHome(t)
 	defer cleanup()
 
-	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	town := &mockTownStore{agents: nil}
-	rig := &mockRigStore{items: nil}
-	checker := &mockChecker{alive: nil} // refinery session not alive
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
+	checker := &mockChecker{alive: nil} // forge session not alive
 
-	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
 
-	if result.Refinery.Running {
-		t.Error("Refinery.Running = true, want false")
+	if result.Forge.Running {
+		t.Error("Forge.Running = true, want false")
 	}
-	if result.Refinery.SessionName != "" {
-		t.Errorf("Refinery.SessionName = %q, want empty", result.Refinery.SessionName)
+	if result.Forge.SessionName != "" {
+		t.Errorf("Forge.SessionName = %q, want empty", result.Forge.SessionName)
 	}
 }
 
@@ -510,11 +510,11 @@ func TestGatherMergeQueue(t *testing.T) {
 	cleanup := setupTestHome(t)
 	defer cleanup()
 
-	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	town := &mockTownStore{agents: nil}
-	rig := &mockRigStore{items: nil}
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
 	checker := &mockChecker{alive: nil}
 
 	mqStore := &mockMergeQueueStore{
@@ -525,7 +525,7 @@ func TestGatherMergeQueue(t *testing.T) {
 		},
 	}
 
-	result, err := Gather("myrig", town, rig, mqStore, checker)
+	result, err := Gather("myrig", sphere, world, mqStore, checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -551,14 +551,14 @@ func TestGatherMergeQueueEmpty(t *testing.T) {
 	cleanup := setupTestHome(t)
 	defer cleanup()
 
-	pidCleanup := writeSupervisorPID(t, os.Getpid())
+	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	town := &mockTownStore{agents: nil}
-	rig := &mockRigStore{items: nil}
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
 	checker := &mockChecker{alive: nil}
 
-	result, err := Gather("myrig", town, rig, emptyMQStore(), checker)
+	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}

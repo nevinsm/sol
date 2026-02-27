@@ -1,46 +1,46 @@
 # Prompt 04: Loop 5 — Integration and Acceptance
 
 You are wiring the Loop 5 components (escalation system, handoff,
-deacon) into the existing supervision pipeline and verifying the
+consul) into the existing supervision pipeline and verifying the
 complete Loop 5 feature set with integration tests. This is the final
-prompt — after this, the gt core system is complete.
+prompt — after this, the sol core system is complete.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Loop 5 prompts 01–03 are complete.
 
 Read all existing code first. Understand:
-- `internal/supervisor/supervisor.go` — current agent monitoring logic,
-  respawn with backoff, degraded mode, witness deferral (ADR-0006)
-- `internal/deacon/deacon.go` — the patrol loop and heartbeat (prompt 03)
+- `internal/prefect/prefect.go` — current agent monitoring logic,
+  respawn with backoff, degraded mode, sentinel deferral (ADR-0006)
+- `internal/consul/consul.go` — the patrol loop and heartbeat (prompt 03)
 - `internal/handoff/handoff.go` — state capture and session restart
   (prompt 02)
 - `internal/escalation/` — notifier routing (prompt 01)
-- `internal/dispatch/dispatch.go` — Sling, Prime, Done
+- `internal/dispatch/dispatch.go` — Cast, Prime, Done
 - `internal/session/manager.go` — session start/stop/health
 - `internal/store/escalations.go` — escalation CRUD
-- `cmd/deacon.go`, `cmd/escalate.go`, `cmd/handoff.go` — new CLI
+- `cmd/consul.go`, `cmd/escalate.go`, `cmd/handoff.go` — new CLI
 
 Read `docs/target-architecture.md` Loop 5 definition of done — all
 eight acceptance criteria must be met.
 
 ---
 
-## Task 1: Supervisor Integration — Deacon Monitoring
+## Task 1: Prefect Integration — Consul Monitoring
 
-Extend the supervisor to monitor the deacon via its heartbeat file and
+Extend the prefect to monitor the consul via its heartbeat file and
 restart it if the heartbeat goes stale.
 
 ### Config Extension
 
-In `internal/supervisor/supervisor.go`, extend `Config`:
+In `internal/prefect/prefect.go`, extend `Config`:
 
 ```go
 type Config struct {
     // ... existing fields ...
-    DeaconEnabled       bool          // whether to monitor the deacon (default: false)
+    DeaconEnabled       bool          // whether to monitor the consul (default: false)
     DeaconHeartbeatMax  time.Duration // max heartbeat age before restart (default: 15 minutes)
-    DeaconCommand       string        // command to start deacon (default: "gt deacon run")
-    DeaconSourceRepo    string        // source repo path for deacon config
+    DeaconCommand       string        // command to start consul (default: "sol consul run")
+    DeaconSourceRepo    string        // source repo path for consul config
 }
 ```
 
@@ -48,54 +48,54 @@ Update `DefaultConfig()` to include the new fields.
 
 ### Heartbeat Check
 
-Add a deacon-specific check to the supervisor's heartbeat loop:
+Add a consul-specific check to the prefect's heartbeat loop:
 
 ```go
-// checkDeacon reads the deacon heartbeat and restarts if stale.
+// checkDeacon reads the consul heartbeat and restarts if stale.
 // This runs as part of the regular heartbeat loop, not on every tick —
 // check every other patrol (e.g., every 6 minutes with 3-minute interval).
-func (s *Supervisor) checkDeacon() error
+func (s *Prefect) checkDeacon() error
 ```
 
 Implementation:
-1. Read heartbeat file via `deacon.ReadHeartbeat()`
-2. If no heartbeat exists and deacon is expected (DeaconEnabled): start it
+1. Read heartbeat file via `consul.ReadHeartbeat()`
+2. If no heartbeat exists and consul is expected (DeaconEnabled): start it
 3. If heartbeat is stale (older than `DeaconHeartbeatMax`):
-   - Check if deacon session exists (`gt-town-deacon`)
+   - Check if consul session exists (`sol-sphere-consul`)
    - If session exists: stop it (might be hung)
-   - Start a new deacon session
+   - Start a new consul session
    - Log the restart event
 4. If heartbeat is fresh: no action
 
-### Deacon Session Management
+### Consul Session Management
 
-The supervisor starts the deacon in a tmux session like other agents:
-- Session name: `gt-town-deacon`
-- Command: the `DeaconCommand` config value (default: `gt deacon run`)
-- Workdir: `$GT_HOME`
-- Role: `"deacon"`
-- Rig: `"town"`
-- Env: `GT_HOME`
+The prefect starts the consul in a tmux session like other agents:
+- Session name: `sol-sphere-consul`
+- Command: the `DeaconCommand` config value (default: `sol consul run`)
+- Workdir: `$SOL_HOME`
+- Role: `"consul"`
+- World: `"sphere"`
+- Env: `SOL_HOME`
 
 ### Integration with Existing Logic
 
-The deacon check should:
-- NOT be affected by degraded mode (deacon is infrastructure, not a
+The consul check should:
+- NOT be affected by degraded mode (consul is infrastructure, not a
   worker — it should run even when degraded)
 - Have its own backoff tracking (reuse existing `backoff` map)
-- NOT trigger mass-death detection (deacon death is a single event)
+- NOT trigger mass-death detection (consul death is a single event)
 
-In the `heartbeat` function (the main patrol loop), add the deacon
+In the `heartbeat` function (the main patrol loop), add the consul
 check after processing regular agents:
 
 ```go
-func (s *Supervisor) heartbeat() {
+func (s *Prefect) heartbeat() {
     // ... existing agent monitoring ...
 
-    // Check deacon health (only if enabled).
+    // Check consul health (only if enabled).
     if s.cfg.DeaconEnabled {
         if err := s.checkDeacon(); err != nil {
-            s.logger.Error("deacon health check failed", "error", err)
+            s.logger.Error("consul health check failed", "error", err)
         }
     }
 }
@@ -103,72 +103,72 @@ func (s *Supervisor) heartbeat() {
 
 ---
 
-## Task 2: Supervisor Startup/Shutdown
+## Task 2: Prefect Startup/Shutdown
 
 ### Startup
 
-When `gt supervisor run` is called with `--deacon` flag, the supervisor:
+When `sol prefect run` is called with `--consul` flag, the prefect:
 1. Sets `DeaconEnabled = true`
-2. On first heartbeat: starts the deacon if not already running
-3. The deacon registers itself as an agent on startup
+2. On first heartbeat: starts the consul if not already running
+3. The consul registers itself as an agent on startup
 
 ### Shutdown
 
-When the supervisor shuts down (context cancelled):
+When the prefect shuts down (context cancelled):
 1. Stop all regular agents (existing behavior)
-2. If deacon is enabled: stop the deacon session
+2. If consul is enabled: stop the consul session
 3. Log the shutdown
 
 ### CLI Extension
 
-In `cmd/supervisor.go`, add flag:
+In `cmd/prefect.go`, add flag:
 
 ```go
-supervisorRunCmd.Flags().Bool("deacon", false, "Enable deacon monitoring and auto-start")
-supervisorRunCmd.Flags().String("source-repo", "", "Source repository path (for deacon dispatch)")
+supervisorRunCmd.Flags().Bool("consul", false, "Enable consul monitoring and auto-start")
+supervisorRunCmd.Flags().String("source-repo", "", "Source repository path (for consul dispatch)")
 ```
 
-When `--deacon` is set:
+When `--consul` is set:
 - Set `DeaconEnabled = true` in config
 - Set `DeaconSourceRepo` if provided
-- The supervisor auto-starts and monitors the deacon
+- The prefect auto-starts and monitors the consul
 
 ---
 
-## Task 3: Full Lifecycle — gt supervisor run
+## Task 3: Full Lifecycle — sol prefect run
 
-Update `gt supervisor run` to support the complete agent hierarchy:
+Update `sol prefect run` to support the complete agent hierarchy:
 
 ```
-gt supervisor run --rig=<rig> [--deacon] [--source-repo=<path>]
+sol prefect run --world=<world> [--consul] [--source-repo=<path>]
                   [--interval=<duration>]
 ```
 
-The supervisor manages:
-- **Polecats** (per-rig workers): monitored via session, respawned
+The prefect manages:
+- **Outposts** (per-world workers): monitored via session, respawned
   with backoff
-- **Witness** (per-rig health monitor): monitored via session,
+- **Sentinel** (per-world health monitor): monitored via session,
   restarted on crash (ADR-0006)
-- **Refinery** (per-rig merge processor): monitored via session,
+- **Forge** (per-world merge processor): monitored via session,
   restarted on crash
-- **Deacon** (town-level, optional): monitored via heartbeat, restarted
+- **Consul** (sphere-level, optional): monitored via heartbeat, restarted
   on stale
 
 ### Full Lifecycle Test
 
 The complete startup sequence should be:
 
-1. Supervisor starts, begins heartbeat loop
-2. If `--deacon`: check for deacon, start if missing
-3. Deacon starts, begins patrol loop
-4. Supervisor monitors all agents (including deacon) each heartbeat
+1. Prefect starts, begins heartbeat loop
+2. If `--consul`: check for consul, start if missing
+3. Consul starts, begins patrol loop
+4. Prefect monitors all agents (including consul) each heartbeat
 
 The complete shutdown sequence:
 
-1. Supervisor receives SIGINT/SIGTERM
-2. Stop all polecats (set state to stalled)
-3. Stop witness, refinery sessions
-4. Stop deacon session (if enabled)
+1. Prefect receives SIGINT/SIGTERM
+2. Stop all outposts (set state to stalled)
+3. Stop sentinel, forge sessions
+4. Stop consul session (if enabled)
 5. Write final state, exit
 
 ---
@@ -181,7 +181,7 @@ Create `test/integration/loop5_test.go`:
 
 ```go
 func TestEscalationCreateAndRoute(t *testing.T)
-    // 1. Create town store with escalation table
+    // 1. Create sphere store with escalation table
     // 2. Set up DefaultRouter with test webhook (httptest.Server)
     // 3. Create high-severity escalation
     // 4. Route it
@@ -199,8 +199,8 @@ func TestEscalationLifecycle(t *testing.T)
 
 func TestEscalationFromAgent(t *testing.T)
     // Simulate an agent creating an escalation:
-    // 1. Create town store
-    // 2. Create escalation with source="myrig/Toast"
+    // 1. Create sphere store
+    // 2. Create escalation with source="myworld/Toast"
     // 3. Verify escalation stored correctly
     // 4. Verify mail notification sent
 ```
@@ -209,7 +209,7 @@ func TestEscalationFromAgent(t *testing.T)
 
 ```go
 func TestHandoffCaptureAndRestore(t *testing.T)
-    // 1. Set up GT_HOME with hook file, workflow state, git repo
+    // 1. Set up SOL_HOME with tether file, workflow state, git repo
     // 2. Capture state
     // 3. Write handoff file
     // 4. Verify file on disk
@@ -217,37 +217,37 @@ func TestHandoffCaptureAndRestore(t *testing.T)
     // 6. Verify handoff file deleted after prime
 
 func TestHandoffPreservesHook(t *testing.T)
-    // 1. Set up agent with hook file
+    // 1. Set up agent with tether file
     // 2. Write handoff file
-    // 3. Verify hook file still exists (not cleared)
+    // 3. Verify tether file still exists (not cleared)
     // 4. Verify work item status unchanged
 
 func TestHandoffWithWorkflow(t *testing.T)
-    // 1. Set up agent with hook, active workflow at step 2
+    // 1. Set up agent with tether, active workflow at step 2
     // 2. Capture → state includes workflow step and progress
     // 3. Write handoff → file includes workflow info
     // 4. Prime with handoff → output references workflow step
     // 5. After handoff consumed: subsequent Prime → normal workflow prime
 
 func TestHandoffPrimeOverridesWorkflow(t *testing.T)
-    // 1. Set up agent with hook, handoff file, AND active workflow
+    // 1. Set up agent with tether, handoff file, AND active workflow
     // 2. Prime() → returns handoff context (not workflow)
     // 3. Handoff takes priority
 ```
 
-### Deacon Integration Tests
+### Consul Integration Tests
 
 ```go
 func TestDeaconStaleHookRecovery(t *testing.T)
-    // 1. Set up GT_HOME with:
-    //    - Rig "myrig" with work item in "hooked" status
-    //    - Agent in "working" state with hook file
+    // 1. Set up SOL_HOME with:
+    //    - World "myworld" with work item in "tethered" status
+    //    - Agent in "working" state with tether file
     //    - Agent updated_at is 2 hours ago
     //    - No tmux session for the agent
-    // 2. Run one deacon Patrol()
+    // 2. Run one consul Patrol()
     // 3. Verify: work item status back to "open"
     // 4. Verify: agent state is "idle"
-    // 5. Verify: hook file cleared
+    // 5. Verify: tether file cleared
 
 func TestDeaconStaleHookIgnoresRecent(t *testing.T)
     // Same setup but updated_at is 5 minutes ago
@@ -259,15 +259,15 @@ func TestDeaconStaleHookIgnoresAlive(t *testing.T)
 
 func TestDeaconConvoyFeeding(t *testing.T)
     // 1. Create work items with dependencies: A (no deps), B→A
-    // 2. Create convoy with both items
-    // 3. Run deacon Patrol()
-    // 4. Verify: CONVOY_NEEDS_FEEDING message sent (A is ready)
+    // 2. Create caravan with both items
+    // 3. Run consul Patrol()
+    // 4. Verify: CARAVAN_NEEDS_FEEDING message sent (A is ready)
     // 5. Mark A as done
     // 6. Run another Patrol()
-    // 7. Verify: new CONVOY_NEEDS_FEEDING for B (now ready)
+    // 7. Verify: new CARAVAN_NEEDS_FEEDING for B (now ready)
 
 func TestDeaconConvoyFeedingNoDuplicates(t *testing.T)
-    // 1. Set up convoy with ready items
+    // 1. Set up caravan with ready items
     // 2. Run Patrol() → message sent
     // 3. Run Patrol() again → no duplicate message
 
@@ -279,30 +279,30 @@ func TestDeaconHeartbeat(t *testing.T)
     // 5. Verify: patrol_count=2
 
 func TestDeaconLifecycleShutdown(t *testing.T)
-    // 1. Register deacon
-    // 2. Send SHUTDOWN protocol message to "town/deacon"
+    // 1. Register consul
+    // 2. Send SHUTDOWN protocol message to "sphere/consul"
     // 3. processLifecycleRequests → returns shutdown=true
     // 4. Message acknowledged
 ```
 
-### Supervisor + Deacon Integration Tests
+### Prefect + Consul Integration Tests
 
 ```go
 func TestSupervisorDeaconStartup(t *testing.T)
-    // 1. Create supervisor with DeaconEnabled=true
+    // 1. Create prefect with DeaconEnabled=true
     // 2. Mock session manager
     // 3. Run one heartbeat cycle
-    // 4. Verify: deacon session started (gt-town-deacon)
+    // 4. Verify: consul session started (sol-sphere-consul)
 
 func TestSupervisorDeaconRestart(t *testing.T)
-    // 1. Create supervisor with DeaconEnabled=true
+    // 1. Create prefect with DeaconEnabled=true
     // 2. Write stale heartbeat (15+ minutes old)
-    // 3. Mock session manager (deacon session does not exist)
+    // 3. Mock session manager (consul session does not exist)
     // 4. Run one heartbeat cycle
-    // 5. Verify: deacon session started
+    // 5. Verify: consul session started
 
 func TestSupervisorDeaconHealthy(t *testing.T)
-    // 1. Create supervisor with DeaconEnabled=true
+    // 1. Create prefect with DeaconEnabled=true
     // 2. Write fresh heartbeat (1 minute old)
     // 3. Mock session manager
     // 4. Run one heartbeat cycle
@@ -314,16 +314,16 @@ func TestSupervisorDeaconHealthy(t *testing.T)
 ```go
 func TestFullOrchestrationCycle(t *testing.T)
     // Simulate the full orchestration cycle:
-    // 1. Create rig with work items and dependencies
-    // 2. Create convoy spanning the items
-    // 3. Run deacon patrol → detects stranded convoy
-    // 4. Verify CONVOY_NEEDS_FEEDING message sent
+    // 1. Create world with work items and dependencies
+    // 2. Create caravan spanning the items
+    // 3. Run consul patrol → detects stranded caravan
+    // 4. Verify CARAVAN_NEEDS_FEEDING message sent
     // 5. Create escalation (simulating stuck agent)
     // 6. Verify escalation routed correctly
     // 7. Simulate handoff: write handoff file, call Prime
     // 8. Verify handoff context injected
-    // 9. Simulate stale hook: mark agent working but kill session
-    // 10. Run deacon patrol → recovers stale hook
+    // 9. Simulate stale tether: mark agent working but kill session
+    // 10. Run consul patrol → recovers stale tether
     // 11. Verify work item returned to open
 ```
 
@@ -333,7 +333,7 @@ Add to `test/integration/cli_loop5_test.go`:
 
 ```go
 func TestCLISupervisorRunDeaconFlag(t *testing.T)
-    // Verify --deacon flag appears in supervisor run help
+    // Verify --consul flag appears in prefect run help
 ```
 
 ---
@@ -345,13 +345,13 @@ are emitted correctly:
 
 | Event | Source | When |
 |-------|--------|------|
-| `escalation_created` | `gt escalate` CLI / LogNotifier | Escalation created |
-| `escalation_acked` | `gt escalation ack` CLI | Escalation acknowledged |
-| `escalation_resolved` | `gt escalation resolve` CLI | Escalation resolved |
+| `escalation_created` | `sol escalate` CLI / LogNotifier | Escalation created |
+| `escalation_acked` | `sol escalation ack` CLI | Escalation acknowledged |
+| `escalation_resolved` | `sol escalation resolve` CLI | Escalation resolved |
 | `handoff` | `handoff.Exec()` | Agent hands off |
-| `deacon_patrol` | Deacon patrol loop | Each patrol cycle |
-| `deacon_stale_hook` | Deacon stale hook recovery | Hook recovered |
-| `deacon_convoy_feed` | Deacon convoy feeding | Convoy needs feeding |
+| `deacon_patrol` | Consul patrol loop | Each patrol cycle |
+| `deacon_stale_hook` | Consul stale tether recovery | Tether recovered |
+| `deacon_convoy_feed` | Consul caravan feeding | Caravan needs feeding |
 
 Verify formatter cases exist in `cmd/feed.go` for all new event types.
 
@@ -371,30 +371,30 @@ the checklist with check marks as items are verified.
 3. `go vet ./...` — clean
 4. Walk through the acceptance checklist manually
 5. Verify backwards compatibility:
-   - `gt sling` without workflow still works
-   - `gt prime` without handoff or workflow still works
-   - `gt done` still works for all scenarios
-   - `gt supervisor run` without `--deacon` still works (deacon disabled)
+   - `sol cast` without workflow still works
+   - `sol prime` without handoff or workflow still works
+   - `sol resolve` still works for all scenarios
+   - `sol prefect run` without `--consul` still works (consul disabled)
    - All Loop 0–4 tests still pass
 6. Commit with message:
-   `feat: integrate deacon, escalations, and handoff into supervision pipeline`
+   `feat: integrate consul, escalations, and handoff into supervision pipeline`
 
 ---
 
 ## Guidelines
 
-- **Backwards compatibility is critical.** The supervisor must work
-  exactly as before when `--deacon` is not set. All Loop 0–4 tests must
+- **Backwards compatibility is critical.** The prefect must work
+  exactly as before when `--consul` is not set. All Loop 0–4 tests must
   pass unchanged.
-- The deacon is **optional infrastructure** — it enhances the system but
-  is not required for basic operation. When the deacon is down, stale
-  hooks accumulate and stranded convoys wait. When it comes back, it
+- The consul is **optional infrastructure** — it enhances the system but
+  is not required for basic operation. When the consul is down, stale
+  tethers accumulate and stranded caravans wait. When it comes back, it
   catches up (DEGRADE principle).
-- The supervisor monitors the deacon via heartbeat, NOT via session
-  liveness. The deacon writes its heartbeat file atomically. The
-  supervisor reads it. If stale: restart.
-- The deacon is exempt from degraded mode. It should run even when the
-  supervisor is degraded (polecats are down). The deacon is
+- The prefect monitors the consul via heartbeat, NOT via session
+  liveness. The consul writes its heartbeat file atomically. The
+  prefect reads it. If stale: restart.
+- The consul is exempt from degraded mode. It should run even when the
+  prefect is degraded (outposts are down). The consul is
   infrastructure that helps recovery, not a worker that might cause
   more problems.
 - The full lifecycle test (Task 4, `TestFullOrchestrationCycle`) is the

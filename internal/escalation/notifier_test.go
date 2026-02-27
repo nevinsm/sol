@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nevinsm/gt/internal/events"
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 func testEscalation() store.Escalation {
@@ -28,15 +28,15 @@ func testEscalation() store.Escalation {
 	}
 }
 
-func setupTownStore(t *testing.T) *store.Store {
+func setupSphereStore(t *testing.T) *store.Store {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("GT_HOME", dir)
+	t.Setenv("SOL_HOME", dir)
 
 	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.OpenTown()
+	s, err := store.OpenSphere()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestLogNotifierNilLogger(t *testing.T) {
 }
 
 func TestMailNotifier(t *testing.T) {
-	s := setupTownStore(t)
+	s := setupSphereStore(t)
 
 	n := NewMailNotifier(s)
 
@@ -166,7 +166,7 @@ func TestWebhookNotifier(t *testing.T) {
 	if receivedContentType != "application/json" {
 		t.Fatalf("expected Content-Type 'application/json', got %q", receivedContentType)
 	}
-	if receivedUserAgent != "gt-escalation/1.0" {
+	if receivedUserAgent != "sol-escalation/1.0" {
 		t.Fatalf("expected User-Agent 'gt-escalation/1.0', got %q", receivedUserAgent)
 	}
 
@@ -222,10 +222,10 @@ func TestWebhookNotifierTimeout(t *testing.T) {
 
 func TestRouterDefaultRouting(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("GT_HOME", dir)
+	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
-	townStore, err := store.OpenTown()
+	townStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,10 +295,10 @@ func TestRouterDefaultRouting(t *testing.T) {
 
 func TestRouterNoWebhook(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("GT_HOME", dir)
+	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
-	townStore, err := store.OpenTown()
+	townStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +17,7 @@ var storeCmd = &cobra.Command{
 }
 
 // Shared flags
-var dbFlag string
+var worldFlag string
 
 func init() {
 	rootCmd.AddCommand(storeCmd)
@@ -30,7 +30,7 @@ func init() {
 	storeCmd.AddCommand(storeQueryCmd)
 }
 
-// --- gt store create ---
+// --- sol store create ---
 
 var (
 	createTitle       string
@@ -43,14 +43,14 @@ var storeCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a work item",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db := cmd.Flag("db").Value.String()
-		if db == "" {
-			return fmt.Errorf("--db is required")
+		world := cmd.Flag("world").Value.String()
+		if world == "" {
+			return fmt.Errorf("--world is required")
 		}
 		if createTitle == "" {
 			return fmt.Errorf("--title is required")
 		}
-		s, err := store.OpenRig(db)
+		s, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
@@ -66,14 +66,14 @@ var storeCreateCmd = &cobra.Command{
 }
 
 func init() {
-	storeCreateCmd.Flags().StringVar(&dbFlag, "db", "", "rig database name")
+	storeCreateCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
 	storeCreateCmd.Flags().StringVar(&createTitle, "title", "", "work item title")
 	storeCreateCmd.Flags().StringVar(&createDescription, "description", "", "work item description")
 	storeCreateCmd.Flags().IntVar(&createPriority, "priority", 2, "priority (1=high, 2=normal, 3=low)")
 	storeCreateCmd.Flags().StringArrayVar(&createLabels, "label", nil, "label (can be repeated)")
 }
 
-// --- gt store get ---
+// --- sol store get ---
 
 var getJSON bool
 
@@ -82,11 +82,11 @@ var storeGetCmd = &cobra.Command{
 	Short: "Get a work item by ID",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db := cmd.Flag("db").Value.String()
-		if db == "" {
-			return fmt.Errorf("--db is required")
+		world := cmd.Flag("world").Value.String()
+		if world == "" {
+			return fmt.Errorf("--world is required")
 		}
-		s, err := store.OpenRig(db)
+		s, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
@@ -106,11 +106,11 @@ var storeGetCmd = &cobra.Command{
 }
 
 func init() {
-	storeGetCmd.Flags().StringVar(&dbFlag, "db", "", "rig database name")
+	storeGetCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
 	storeGetCmd.Flags().BoolVar(&getJSON, "json", false, "output as JSON")
 }
 
-// --- gt store list ---
+// --- sol store list ---
 
 var (
 	listStatus   string
@@ -123,11 +123,11 @@ var storeListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List work items",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db := cmd.Flag("db").Value.String()
-		if db == "" {
-			return fmt.Errorf("--db is required")
+		world := cmd.Flag("world").Value.String()
+		if world == "" {
+			return fmt.Errorf("--world is required")
 		}
-		s, err := store.OpenRig(db)
+		s, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
@@ -169,14 +169,14 @@ var storeListCmd = &cobra.Command{
 }
 
 func init() {
-	storeListCmd.Flags().StringVar(&dbFlag, "db", "", "rig database name")
+	storeListCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
 	storeListCmd.Flags().StringVar(&listStatus, "status", "", "filter by status")
 	storeListCmd.Flags().StringVar(&listLabel, "label", "", "filter by label")
 	storeListCmd.Flags().StringVar(&listAssignee, "assignee", "", "filter by assignee")
 	storeListCmd.Flags().BoolVar(&listJSON, "json", false, "output as JSON")
 }
 
-// --- gt store update ---
+// --- sol store update ---
 
 var (
 	updateStatus   string
@@ -189,16 +189,16 @@ var storeUpdateCmd = &cobra.Command{
 	Short: "Update a work item",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db := cmd.Flag("db").Value.String()
-		if db == "" {
-			return fmt.Errorf("--db is required")
+		world := cmd.Flag("world").Value.String()
+		if world == "" {
+			return fmt.Errorf("--world is required")
 		}
 		updates := store.WorkItemUpdates{
 			Status:   updateStatus,
 			Assignee: updateAssignee,
 			Priority: updatePriority,
 		}
-		s, err := store.OpenRig(db)
+		s, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
@@ -213,24 +213,24 @@ var storeUpdateCmd = &cobra.Command{
 }
 
 func init() {
-	storeUpdateCmd.Flags().StringVar(&dbFlag, "db", "", "rig database name")
+	storeUpdateCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
 	storeUpdateCmd.Flags().StringVar(&updateStatus, "status", "", "new status")
 	storeUpdateCmd.Flags().StringVar(&updateAssignee, "assignee", "", "new assignee (- to clear)")
 	storeUpdateCmd.Flags().IntVar(&updatePriority, "priority", 0, "new priority")
 }
 
-// --- gt store close ---
+// --- sol store close ---
 
 var storeCloseCmd = &cobra.Command{
 	Use:   "close <id>",
 	Short: "Close a work item",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db := cmd.Flag("db").Value.String()
-		if db == "" {
-			return fmt.Errorf("--db is required")
+		world := cmd.Flag("world").Value.String()
+		if world == "" {
+			return fmt.Errorf("--world is required")
 		}
-		s, err := store.OpenRig(db)
+		s, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
@@ -245,10 +245,10 @@ var storeCloseCmd = &cobra.Command{
 }
 
 func init() {
-	storeCloseCmd.Flags().StringVar(&dbFlag, "db", "", "rig database name")
+	storeCloseCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
 }
 
-// --- gt store query ---
+// --- sol store query ---
 
 var (
 	querySQL  string
@@ -259,9 +259,9 @@ var storeQueryCmd = &cobra.Command{
 	Use:   "query",
 	Short: "Run a read-only SQL query",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db := cmd.Flag("db").Value.String()
-		if db == "" {
-			return fmt.Errorf("--db is required")
+		world := cmd.Flag("world").Value.String()
+		if world == "" {
+			return fmt.Errorf("--world is required")
 		}
 		if querySQL == "" {
 			return fmt.Errorf("--sql is required")
@@ -272,7 +272,7 @@ var storeQueryCmd = &cobra.Command{
 			return fmt.Errorf("only SELECT queries are allowed")
 		}
 
-		s, err := store.OpenRig(db)
+		s, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
@@ -297,7 +297,7 @@ var storeQueryCmd = &cobra.Command{
 }
 
 func init() {
-	storeQueryCmd.Flags().StringVar(&dbFlag, "db", "", "rig database name")
+	storeQueryCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
 	storeQueryCmd.Flags().StringVar(&querySQL, "sql", "", "SQL SELECT query")
 	storeQueryCmd.Flags().BoolVar(&queryJSON, "json", false, "output as JSON")
 }

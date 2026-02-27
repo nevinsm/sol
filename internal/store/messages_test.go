@@ -278,14 +278,14 @@ func TestListMessagesThreadFilter(t *testing.T) {
 func TestSendProtocolMessage(t *testing.T) {
 	s := setupTown(t)
 
-	payload := PolecatDonePayload{
+	payload := AgentDonePayload{
 		WorkItemID: "gt-abc12345",
 		AgentID:    "myrig/Toast",
-		Branch:     "polecat/Toast/gt-abc12345",
-		Rig:        "myrig",
+		Branch:     "outpost/Toast/gt-abc12345",
+		World:      "myrig",
 	}
 
-	id, err := s.SendProtocolMessage("myrig/Toast", "myrig/witness", ProtoPolecatDone, payload)
+	id, err := s.SendProtocolMessage("myrig/Toast", "myrig/witness", ProtoAgentDone, payload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,15 +298,15 @@ func TestSendProtocolMessage(t *testing.T) {
 	if msg.Type != "protocol" {
 		t.Fatalf("expected type 'protocol', got %q", msg.Type)
 	}
-	if msg.Subject != "POLECAT_DONE" {
+	if msg.Subject != "AGENT_DONE" {
 		t.Fatalf("expected subject 'POLECAT_DONE', got %q", msg.Subject)
 	}
 	if msg.Priority != 1 {
 		t.Fatalf("expected priority 1, got %d", msg.Priority)
 	}
 
-	// Parse body back into PolecatDonePayload, verify fields.
-	var parsed PolecatDonePayload
+	// Parse body back into AgentDonePayload, verify fields.
+	var parsed AgentDonePayload
 	if err := json.Unmarshal([]byte(msg.Body), &parsed); err != nil {
 		t.Fatalf("failed to unmarshal body: %v", err)
 	}
@@ -317,8 +317,8 @@ func TestSendProtocolMessage(t *testing.T) {
 		t.Fatalf("expected agent_id 'myrig/Toast', got %q", parsed.AgentID)
 	}
 
-	// PendingProtocol(recipient, "POLECAT_DONE") -> returns message.
-	msgs, err := s.PendingProtocol("myrig/witness", ProtoPolecatDone)
+	// PendingProtocol(recipient, "AGENT_DONE") -> returns message.
+	msgs, err := s.PendingProtocol("myrig/witness", ProtoAgentDone)
 	if err != nil {
 		t.Fatal(err)
 	}

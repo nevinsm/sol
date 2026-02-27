@@ -6,15 +6,15 @@ Loop: 3
 
 ## Context
 
-The witness needs to detect when a polecat is stuck. A polecat's session
-is alive, it has work on its hook, but it isn't making progress. The
+The sentinel needs to detect when a outpost is stuck. A outpost's session
+is alive, it has work on its tether, but it isn't making progress. The
 architecture spec (Section 3.8) described this as "no progress for
 threshold → nudge" without specifying the mechanism.
 
 We considered three approaches:
 
 1. **Heuristic only:** No output change for N minutes → send a generic
-   nudge ("Are you stuck? Run `gt escalate`"). Cheap but dumb — can't
+   nudge ("Are you stuck? Run `sol escalate`"). Cheap but dumb — can't
    distinguish "stuck" from "running a long compilation" or "waiting
    for a large file write."
 
@@ -32,11 +32,11 @@ We considered three approaches:
 
 Use approach 3: heuristic-gated AI assessment.
 
-On each patrol, the witness captures the last ~80 lines of each working
-polecat's tmux output and computes a SHA-256 hash. It compares this hash
+On each patrol, the sentinel captures the last ~80 lines of each working
+outpost's tmux output and computes a SHA-256 hash. It compares this hash
 with the previous patrol's hash for that agent. If the hash changed, the
 agent is making visible progress — no AI call needed. If unchanged, the
-witness sends the captured output to `claude -p` for assessment.
+sentinel sends the captured output to `claude -p` for assessment.
 
 The AI returns a structured JSON response with status (progressing /
 stuck / waiting / idle), confidence (high / medium / low), suggested

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/nevinsm/gt/internal/config"
+	"github.com/nevinsm/sol/internal/config"
 	_ "modernc.org/sqlite"
 )
 
@@ -15,30 +15,30 @@ type Store struct {
 	path string
 }
 
-// OpenRig opens (or creates) a rig database at $GT_HOME/.store/{rig}.db.
-func OpenRig(rig string) (*Store, error) {
-	path := filepath.Join(config.StoreDir(), rig+".db")
+// OpenWorld opens (or creates) a world database at $SOL_HOME/.store/{world}.db.
+func OpenWorld(world string) (*Store, error) {
+	path := filepath.Join(config.StoreDir(), world+".db")
 	s, err := open(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open rig database %q: %w", rig, err)
+		return nil, fmt.Errorf("failed to open world database %q: %w", world, err)
 	}
 	if err := s.migrateRig(); err != nil {
 		s.Close()
-		return nil, fmt.Errorf("failed to migrate rig database %q: %w", rig, err)
+		return nil, fmt.Errorf("failed to migrate world database %q: %w", world, err)
 	}
 	return s, nil
 }
 
-// OpenTown opens (or creates) the town database at $GT_HOME/.store/town.db.
-func OpenTown() (*Store, error) {
-	path := filepath.Join(config.StoreDir(), "town.db")
+// OpenSphere opens (or creates) the sphere database at $SOL_HOME/.store/sphere.db.
+func OpenSphere() (*Store, error) {
+	path := filepath.Join(config.StoreDir(), "sphere.db")
 	s, err := open(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open town database: %w", err)
+		return nil, fmt.Errorf("failed to open sphere database: %w", err)
 	}
 	if err := s.migrateTown(); err != nil {
 		s.Close()
-		return nil, fmt.Errorf("failed to migrate town database: %w", err)
+		return nil, fmt.Errorf("failed to migrate sphere database: %w", err)
 	}
 	return s, nil
 }

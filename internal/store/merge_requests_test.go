@@ -16,7 +16,7 @@ func TestCreateMergeRequest(t *testing.T) {
 	}
 
 	// Create a merge request.
-	mrID, err := s.CreateMergeRequest(itemID, "polecat/Toast/"+itemID, 2)
+	mrID, err := s.CreateMergeRequest(itemID, "outpost/Toast/"+itemID, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,8 +38,8 @@ func TestCreateMergeRequest(t *testing.T) {
 	if mr.WorkItemID != itemID {
 		t.Fatalf("expected work_item_id %q, got %q", itemID, mr.WorkItemID)
 	}
-	if mr.Branch != "polecat/Toast/"+itemID {
-		t.Fatalf("expected branch 'polecat/Toast/%s', got %q", itemID, mr.Branch)
+	if mr.Branch != "outpost/Toast/"+itemID {
+		t.Fatalf("expected branch 'outpost/Toast/%s', got %q", itemID, mr.Branch)
 	}
 	if mr.Phase != "ready" {
 		t.Fatalf("expected phase 'ready', got %q", mr.Phase)

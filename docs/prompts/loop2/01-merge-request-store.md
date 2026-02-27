@@ -1,12 +1,12 @@
 # Prompt 01: Loop 2 — Merge Request Store + Done Extension
 
-You are extending the `gt` orchestration system with the data layer for the
-merge pipeline. This prompt adds the `merge_requests` table to the rig
-database, store CRUD operations for merge requests, a per-rig merge slot
-lock, and modifies `gt done` to submit completed work to the merge queue
+You are extending the `sol` orchestration system with the data layer for the
+merge pipeline. This prompt adds the `merge_requests` table to the world
+database, store CRUD operations for merge requests, a per-world merge slot
+lock, and modifies `sol resolve` to submit completed work to the merge queue
 instead of finalizing it immediately.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Loop 1 is complete (prompts 01–04).
 
 Read all existing code first. Understand the store package
@@ -14,13 +14,13 @@ Read all existing code first. Understand the store package
 package (`internal/dispatch/` — especially `Done()` and the flock pattern
 in `flock.go`), and the config package (`internal/config/config.go`).
 
-Read `docs/target-architecture.md` Section 3.9 (Refinery) and Section 5
+Read `docs/target-architecture.md` Section 3.9 (Forge) and Section 5
 (Build Loops, Loop 2 requirements) for design context. Pay close attention
 to the `merge_requests` table schema and the merge pipeline flow.
 
 ---
 
-## Task 1: Rig Schema V2 — Merge Requests Table
+## Task 1: World Schema V2 — Merge Requests Table
 
 Add a V2 migration to `internal/store/schema.go` that creates the
 `merge_requests` table. The V1 schema (work items, labels) is unchanged.
@@ -48,9 +48,9 @@ CREATE INDEX IF NOT EXISTS idx_mr_work_item ON merge_requests(work_item_id);
 **Fields:**
 - `id`: `"mr-"` + 8 random hex chars (e.g., `mr-a1b2c3d4`)
 - `work_item_id`: FK to work_items — the work this merge request is for
-- `branch`: the polecat's branch name (e.g., `polecat/Toast/gt-a1b2c3d4`)
+- `branch`: the outpost's branch name (e.g., `outpost/Toast/sol-a1b2c3d4`)
 - `phase`: state machine — `ready`, `claimed`, `merged`, `failed`
-- `claimed_by`: refinery agent ID that claimed this MR (null when ready)
+- `claimed_by`: forge agent ID that claimed this MR (null when ready)
 - `claimed_at`: RFC3339 UTC timestamp when claimed (null when ready)
 - `attempts`: number of merge attempts (incremented on each claim)
 - `priority`: inherited from work item priority (lower = higher priority)
@@ -59,11 +59,11 @@ CREATE INDEX IF NOT EXISTS idx_mr_work_item ON merge_requests(work_item_id);
 
 ### Migration Pattern
 
-Follow the existing V1 migration pattern. Add a `rigSchemaV2` constant
+Follow the existing V1 migration pattern. Add a `worldSchemaV2` constant
 and extend `migrateRig()`:
 
 ```go
-const rigSchemaV2 = `
+const worldSchemaV2 = `
 CREATE TABLE IF NOT EXISTS merge_requests (
     ...
 );
@@ -78,14 +78,14 @@ func (s *Store) migrateRig() error {
     }
     if v < 1 {
         // Apply V1 schema (existing)
-        if _, err := s.db.Exec(rigSchemaV1); err != nil {
-            return fmt.Errorf("failed to create rig schema v1: %w", err)
+        if _, err := s.db.Exec(worldSchemaV1); err != nil {
+            return fmt.Errorf("failed to create world schema v1: %w", err)
         }
     }
     if v < 2 {
         // Apply V2 schema (new)
-        if _, err := s.db.Exec(rigSchemaV2); err != nil {
-            return fmt.Errorf("failed to create rig schema v2: %w", err)
+        if _, err := s.db.Exec(worldSchemaV2); err != nil {
+            return fmt.Errorf("failed to create world schema v2: %w", err)
         }
     }
     if v < 2 {
@@ -116,13 +116,13 @@ package store
 
 import "time"
 
-// MergeRequest represents a merge request in the rig database.
+// MergeRequest represents a merge request in the world database.
 type MergeRequest struct {
     ID         string
     WorkItemID string
     Branch     string
     Phase      string    // ready, claimed, merged, failed
-    ClaimedBy  string    // refinery agent ID (empty if unclaimed)
+    ClaimedBy  string    // forge agent ID (empty if unclaimed)
     ClaimedAt  *time.Time
     Attempts   int
     Priority   int
@@ -176,7 +176,7 @@ func generateMRID() string {
 }
 ```
 
-**ClaimMergeRequest** must be atomic to prevent two refineries from
+**ClaimMergeRequest** must be atomic to prevent two forges from
 claiming the same MR. Use a single SQL statement:
 
 ```sql
@@ -231,23 +231,23 @@ Where the threshold is `time.Now().UTC().Add(-ttl)`.
 
 ## Task 3: Merge Slot Lock
 
-Add a per-rig merge slot lock to `internal/dispatch/flock.go`, following
+Add a per-world merge slot lock to `internal/dispatch/flock.go`, following
 the existing `WorkItemLock` pattern exactly.
 
 ### Go Interface
 
 ```go
-// MergeSlotLock holds an advisory flock on a rig's merge slot.
+// MergeSlotLock holds an advisory flock on a world's merge slot.
 type MergeSlotLock struct {
     file *os.File
     path string
 }
 
 // AcquireMergeSlotLock takes an exclusive advisory lock on the merge slot
-// for the given rig. Only one merge may be in progress per rig at a time.
-// Lock file: $GT_HOME/.runtime/locks/{rig}-merge-slot.lock.
+// for the given world. Only one merge may be in progress per world at a time.
+// Lock file: $SOL_HOME/.runtime/locks/{world}-merge-slot.lock.
 // Uses LOCK_EX | LOCK_NB (non-blocking exclusive lock).
-func AcquireMergeSlotLock(rig string) (*MergeSlotLock, error)
+func AcquireMergeSlotLock(world string) (*MergeSlotLock, error)
 
 // Release releases the merge slot lock and removes the lock file.
 func (l *MergeSlotLock) Release() error
@@ -257,24 +257,24 @@ The implementation is nearly identical to `AcquireWorkItemLock` — same
 lock directory, same flock pattern, different file name.
 
 **Error messages:**
-- Contention: `"merge slot busy for rig %q"` (when EAGAIN)
-- File errors: `"failed to acquire merge slot for rig %s: %w"`
+- Contention: `"merge slot busy for world %q"` (when EAGAIN)
+- File errors: `"failed to acquire merge slot for world %s: %w"`
 
 ---
 
 ## Task 4: Extend dispatch.Done()
 
 Modify `dispatch.Done()` in `internal/dispatch/dispatch.go` to create a
-merge request after the git push. The polecat's work is done — it goes
-idle — but the merge request enters the queue for the refinery.
+merge request after the git push. The outpost's work is done — it goes
+idle — but the merge request enters the queue for the forge.
 
 ### Interface Changes
 
-Add merge request creation to the `RigStore` interface:
+Add merge request creation to the `WorldStore` interface:
 
 ```go
-// RigStore defines the rig store operations used by dispatch.
-type RigStore interface {
+// WorldStore defines the world store operations used by dispatch.
+type WorldStore interface {
     GetWorkItem(id string) (*store.WorkItem, error)
     UpdateWorkItem(id string, updates store.WorkItemUpdates) error
     CreateMergeRequest(workItemID, branch string, priority int) (string, error) // NEW
@@ -289,12 +289,12 @@ the git push and the work item status update:
 
 ```
 Done() {
-    1. Read hook → get workItemID              (unchanged)
+    1. Read tether → get workItemID              (unchanged)
     2. Git add, commit, push                   (unchanged)
     3. Create merge request (phase=ready)      (NEW)
     4. Update work item: status → "done"       (unchanged)
     5. Update agent: state → "idle"            (unchanged)
-    6. Clear hook file                         (unchanged)
+    6. Clear tether file                         (unchanged)
     7. Stop session (background)               (unchanged)
 }
 ```
@@ -302,8 +302,8 @@ Done() {
 Insert after the git push (after step 2, before existing step 3):
 
 ```go
-// 3. Create merge request for the refinery to process.
-mrID, err := rigStore.CreateMergeRequest(workItemID, branchName, item.Priority)
+// 3. Create merge request for the forge to process.
+mrID, err := worldStore.CreateMergeRequest(workItemID, branchName, item.Priority)
 if err != nil {
     return nil, fmt.Errorf("failed to create merge request for %q: %w", workItemID, err)
 }
@@ -328,8 +328,8 @@ type DoneResult struct {
 In `cmd/done.go`, update the output to mention the merge request:
 
 ```
-Done: gt-a1b2c3d4 (Implement login page)
-  Branch: polecat/Toast/gt-a1b2c3d4
+Done: sol-a1b2c3d4 (Implement login page)
+  Branch: outpost/Toast/sol-a1b2c3d4
   Merge request: mr-e5f6a7b8 (queued)
   Agent Toast is now idle.
 ```
@@ -344,12 +344,12 @@ Add to `internal/store/store_test.go` (or a new file):
 
 ```go
 func TestMigrateRigV2(t *testing.T)
-    // Open a fresh rig store
+    // Open a fresh world store
     // Verify merge_requests table exists
     // Verify schema_version is 2
 
 func TestMigrateRigV1ToV2(t *testing.T)
-    // Open a rig store (creates V1)
+    // Open a world store (creates V1)
     // Close and reopen (should apply V2 migration)
     // Verify merge_requests table exists
     // Verify existing work_items are untouched
@@ -410,7 +410,7 @@ Add to `internal/dispatch/flock_test.go`:
 
 ```go
 func TestMergeSlotAcquireRelease(t *testing.T)
-    // Set GT_HOME to temp dir
+    // Set SOL_HOME to temp dir
     // Acquire merge slot for "testrig"
     // Verify lock file exists at .runtime/locks/testrig-merge-slot.lock
     // Release
@@ -421,9 +421,9 @@ func TestMergeSlotDoubleAcquire(t *testing.T)
     // Attempt second acquire for "testrig" -> error containing "busy"
     // Release first, acquire again -> succeeds
 
-func TestMergeSlotDifferentRigs(t *testing.T)
+func TestMergeSlotDifferentWorlds(t *testing.T)
     // Acquire merge slot for "rig1"
-    // Acquire merge slot for "rig2" -> succeeds (different rigs)
+    // Acquire merge slot for "rig2" -> succeeds (different worlds)
     // Release both
 ```
 
@@ -433,7 +433,7 @@ Add to `internal/dispatch/dispatch_test.go`:
 
 ```go
 func TestDoneCreatesMergeRequest(t *testing.T)
-    // Sling a work item to an agent (standard setup)
+    // Cast a work item to an agent (standard setup)
     // Call Done
     // Verify: MergeRequestID is set in DoneResult
     // Verify: merge request exists in store with phase=ready
@@ -441,7 +441,7 @@ func TestDoneCreatesMergeRequest(t *testing.T)
     // Verify: agent is idle, work item is done (existing behavior unchanged)
 ```
 
-Update the existing mock `RigStore` to include the new
+Update the existing mock `WorldStore` to include the new
 `CreateMergeRequest` method. The mock can store MRs in a slice and
 return a generated ID.
 
@@ -453,38 +453,38 @@ return a generated ID.
 2. `make build` — succeeds
 3. Manual smoke test:
    ```bash
-   export GT_HOME=/tmp/gt-test
-   bin/gt store create --db=testrig --title="Test merge pipeline"
-   bin/gt sling <id> testrig
+   export SOL_HOME=/tmp/sol-test
+   bin/sol store create --world=testrig --title="Test merge pipeline"
+   bin/sol cast <id> testrig
    # In the agent's session, do some work, then:
-   bin/gt done --rig=testrig --agent=<name>
+   bin/sol done --world=testrig --agent=<name>
    # Should show: Merge request: mr-XXXXXXXX (queued)
    # Verify in SQLite:
-   sqlite3 /tmp/gt-test/.store/testrig.db \
+   sqlite3 /tmp/sol-test/.store/testrig.db \
      "SELECT id, work_item_id, branch, phase FROM merge_requests"
    ```
-4. Clean up `/tmp/gt-test` after verification.
+4. Clean up `/tmp/sol-test` after verification.
 
 ---
 
 ## Guidelines
 
-- The `merge_requests` table is in the **rig** database (not town). Each
-  rig has its own merge queue.
+- The `merge_requests` table is in the **world** database (not sphere). Each
+  world has its own merge queue.
 - Merge request IDs use the `mr-` prefix to distinguish them from work
-  item IDs (`gt-` prefix).
-- `ClaimMergeRequest` is designed for a single refinery per rig. The
-  atomic `UPDATE ... WHERE` prevents races even if multiple refineries
+  item IDs (`sol-` prefix).
+- `ClaimMergeRequest` is designed for a single forge per world. The
+  atomic `UPDATE ... WHERE` prevents races even if multiple forges
   exist (future-proofing).
 - The `attempts` field tracks how many times a MR has been claimed. This
-  is used by the refinery (prompt 02) to detect repeated failures.
+  is used by the forge (prompt 02) to detect repeated failures.
 - `Done()` now creates a merge request but still sets the work item to
-  "done" and the agent to "idle". From the polecat's perspective, its
+  "done" and the agent to "idle". From the outpost's perspective, its
   work is done. The merge request tracks the merge lifecycle separately.
-- Don't modify the town schema. The refinery agent is registered in
-  town.db using the existing `CreateAgent` method (handled in prompt 02).
-- Keep the `RigStore` interface additions minimal — only add what's
-  needed for the Done extension. The refinery in prompt 02 will call
+- Don't modify the sphere schema. The forge agent is registered in
+  sphere.db using the existing `CreateAgent` method (handled in prompt 02).
+- Keep the `WorldStore` interface additions minimal — only add what's
+  needed for the Done extension. The forge in prompt 02 will call
   store methods directly (not through the dispatch interface).
 - Commit after tests pass with message:
   `feat(store): add merge request schema, CRUD, and done extension for merge pipeline`

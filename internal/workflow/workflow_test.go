@@ -182,7 +182,7 @@ func TestRenderStepInstructions(t *testing.T) {
 
 func TestInstantiate(t *testing.T) {
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
 	// Create formula dir.
 	formulaDir := filepath.Join(gtHome, "formulas", "test-wf")
@@ -198,8 +198,8 @@ func TestInstantiate(t *testing.T) {
 		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte(content), 0o644)
 	}
 
-	// Create polecat dir.
-	os.MkdirAll(filepath.Join(gtHome, "myrig", "polecats", "Toast"), 0o755)
+	// Create outpost dir.
+	os.MkdirAll(filepath.Join(gtHome, "myrig", "outposts", "Toast"), 0o755)
 
 	// Instantiate.
 	inst, state, err := Instantiate("myrig", "Toast", "test-wf",
@@ -251,7 +251,7 @@ func TestInstantiate(t *testing.T) {
 
 func TestInstantiateRequiredVariableMissing(t *testing.T) {
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
 	formulaDir := filepath.Join(gtHome, "formulas", "test-wf")
 	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
@@ -264,7 +264,7 @@ func TestInstantiateRequiredVariableMissing(t *testing.T) {
 		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
 	}
 
-	os.MkdirAll(filepath.Join(gtHome, "myrig", "polecats", "Toast"), 0o755)
+	os.MkdirAll(filepath.Join(gtHome, "myrig", "outposts", "Toast"), 0o755)
 
 	_, _, err := Instantiate("myrig", "Toast", "test-wf", map[string]string{})
 	if err == nil {
@@ -280,7 +280,7 @@ func TestInstantiateRequiredVariableMissing(t *testing.T) {
 
 func TestReadState(t *testing.T) {
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
 	// Non-existent workflow.
 	state, err := ReadState("myrig", "Ghost")
@@ -301,7 +301,7 @@ func TestReadState(t *testing.T) {
 	for _, s := range steps {
 		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
 	}
-	os.MkdirAll(filepath.Join(gtHome, "myrig", "polecats", "Toast"), 0o755)
+	os.MkdirAll(filepath.Join(gtHome, "myrig", "outposts", "Toast"), 0o755)
 
 	Instantiate("myrig", "Toast", "test-wf", map[string]string{"issue": "gt-test"})
 
@@ -319,7 +319,7 @@ func TestReadState(t *testing.T) {
 
 func TestReadCurrentStep(t *testing.T) {
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
 	formulaDir := filepath.Join(gtHome, "formulas", "test-wf")
 	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
@@ -330,7 +330,7 @@ func TestReadCurrentStep(t *testing.T) {
 	for _, s := range steps {
 		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("Do {{issue}}"), 0o644)
 	}
-	os.MkdirAll(filepath.Join(gtHome, "myrig", "polecats", "Toast"), 0o755)
+	os.MkdirAll(filepath.Join(gtHome, "myrig", "outposts", "Toast"), 0o755)
 
 	Instantiate("myrig", "Toast", "test-wf", map[string]string{"issue": "gt-abc"})
 
@@ -351,7 +351,7 @@ func TestReadCurrentStep(t *testing.T) {
 
 func TestAdvance(t *testing.T) {
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
 	formulaDir := filepath.Join(gtHome, "formulas", "test-wf")
 	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
@@ -362,7 +362,7 @@ func TestAdvance(t *testing.T) {
 	for _, s := range steps {
 		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
 	}
-	os.MkdirAll(filepath.Join(gtHome, "myrig", "polecats", "Toast"), 0o755)
+	os.MkdirAll(filepath.Join(gtHome, "myrig", "outposts", "Toast"), 0o755)
 
 	Instantiate("myrig", "Toast", "test-wf", map[string]string{"issue": "gt-test"})
 
@@ -423,7 +423,7 @@ func TestAdvance(t *testing.T) {
 
 func TestAdvanceDAG(t *testing.T) {
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
 	// DAG: A (no deps), B needs A, C needs A, D needs B and C.
 	dagSteps := []StepDef{
@@ -441,7 +441,7 @@ func TestAdvanceDAG(t *testing.T) {
 	for _, s := range dagSteps {
 		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
 	}
-	os.MkdirAll(filepath.Join(gtHome, "myrig", "polecats", "Toast"), 0o755)
+	os.MkdirAll(filepath.Join(gtHome, "myrig", "outposts", "Toast"), 0o755)
 
 	_, state, err := Instantiate("myrig", "Toast", "dag-wf", map[string]string{"issue": "gt-test"})
 	if err != nil {
@@ -541,7 +541,7 @@ func TestNextReadySteps(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
 	formulaDir := filepath.Join(gtHome, "formulas", "test-wf")
 	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
@@ -552,7 +552,7 @@ func TestRemove(t *testing.T) {
 	for _, s := range steps {
 		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
 	}
-	os.MkdirAll(filepath.Join(gtHome, "myrig", "polecats", "Toast"), 0o755)
+	os.MkdirAll(filepath.Join(gtHome, "myrig", "outposts", "Toast"), 0o755)
 
 	Instantiate("myrig", "Toast", "test-wf", map[string]string{"issue": "gt-test"})
 
@@ -572,12 +572,12 @@ func TestRemove(t *testing.T) {
 
 func TestEnsureFormula(t *testing.T) {
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
 	// Known formula not on disk → extracted.
-	dir, err := EnsureFormula("polecat-work")
+	dir, err := EnsureFormula("default-work")
 	if err != nil {
-		t.Fatalf("EnsureFormula(polecat-work) error: %v", err)
+		t.Fatalf("EnsureFormula(default-work) error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "manifest.toml")); err != nil {
 		t.Errorf("manifest.toml not found after extraction: %v", err)
@@ -587,9 +587,9 @@ func TestEnsureFormula(t *testing.T) {
 	}
 
 	// Already exists → no-op.
-	dir2, err := EnsureFormula("polecat-work")
+	dir2, err := EnsureFormula("default-work")
 	if err != nil {
-		t.Fatalf("EnsureFormula(polecat-work) second call error: %v", err)
+		t.Fatalf("EnsureFormula(default-work) second call error: %v", err)
 	}
 	if dir != dir2 {
 		t.Errorf("paths differ: %q vs %q", dir, dir2)

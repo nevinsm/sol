@@ -1,18 +1,18 @@
 # Prompt 02: Loop 3 — Event Feed and Observability
 
-You are extending the `gt` orchestration system with the event feed — an
+You are extending the `sol` orchestration system with the event feed — an
 append-only activity log that provides real-time observability into system
 operations. This prompt adds event logging infrastructure, instruments
-existing operations to emit events, and provides the `gt feed` CLI command.
+existing operations to emit events, and provides the `sol feed` CLI command.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Loop 3 prompt 01 (mail system) is complete.
 
 Read all existing code first. Understand the store package
 (`internal/store/`), the dispatch package (`internal/dispatch/` —
-especially `Sling()` and `Done()`), the refinery package
-(`internal/refinery/`), and the supervisor package
-(`internal/supervisor/`).
+especially `Cast()` and `Done()`), the forge package
+(`internal/forge/`), and the prefect package
+(`internal/prefect/`).
 
 Read `docs/target-architecture.md` Section 3.11 (Event Feed) for design
 context.
@@ -35,7 +35,7 @@ import "time"
 // Event represents a single system event.
 type Event struct {
     Timestamp  time.Time `json:"ts"`
-    Source     string    `json:"source"`      // "gt", agent ID, or component name
+    Source     string    `json:"source"`      // "sol", agent ID, or component name
     Type      string    `json:"type"`         // event type (see constants)
     Actor     string    `json:"actor"`        // who triggered the event
     Visibility string   `json:"visibility"`   // "feed", "audit", or "both"
@@ -48,19 +48,19 @@ type Event struct {
 ```go
 // Event type constants
 const (
-    EventSling          = "sling"           // work dispatched to agent
-    EventDone           = "done"            // agent completed work
+    EventCast          = "cast"           // work dispatched to agent
+    EventResolve           = "done"            // agent completed work
     EventMergeQueued    = "merge_queued"    // merge request created
-    EventMergeClaimed   = "merge_claimed"   // refinery claimed MR
+    EventMergeClaimed   = "merge_claimed"   // forge claimed MR
     EventMerged         = "merged"          // merge successful
     EventMergeFailed    = "merge_failed"    // merge failed
     EventSessionStart   = "session_start"   // tmux session started
     EventSessionStop    = "session_stop"    // tmux session stopped
-    EventRespawn        = "respawn"         // supervisor respawned agent
+    EventRespawn        = "respawn"         // prefect respawned agent
     EventMassDeath      = "mass_death"      // mass death detected
     EventDegraded       = "degraded"        // entered degraded mode
     EventRecovered      = "recovered"       // exited degraded mode
-    EventPatrol         = "patrol"          // witness patrol completed
+    EventPatrol         = "patrol"          // sentinel patrol completed
     EventStalled        = "stalled"         // agent detected as stalled
     EventMailSent       = "mail_sent"       // message sent
 )
@@ -75,7 +75,7 @@ type Logger struct {
 }
 
 // NewLogger creates an event logger.
-// The events file is at $GT_HOME/.events.jsonl.
+// The events file is at $SOL_HOME/.events.jsonl.
 // Creates the file if it doesn't exist.
 func NewLogger(gtHome string) *Logger
 
@@ -92,7 +92,7 @@ func (l *Logger) Emit(eventType, source, actor, visibility string, payload any)
 
 ### Implementation Notes
 
-**File path:** `$GT_HOME/.events.jsonl` — append-only, one JSON object
+**File path:** `$SOL_HOME/.events.jsonl` — append-only, one JSON object
 per line.
 
 **Concurrent writes:** Use `syscall.Flock` with `LOCK_EX` (exclusive
@@ -122,7 +122,7 @@ func (l *Logger) Log(event Event) {
 ```
 
 **Visibility levels:**
-- `"feed"` — shown in `gt feed` (operator-facing activity stream)
+- `"feed"` — shown in `sol feed` (operator-facing activity stream)
 - `"audit"` — logged for audit trail only (not in feed)
 - `"both"` — shown in feed AND logged for audit
 
@@ -183,7 +183,7 @@ and more portable than inotify/fsnotify.
 **Tail semantics for Read:** When Limit is set, read the entire file but
 only keep the last N events. For large files this is O(n), but the event
 feed is expected to be reasonable in size. If performance becomes an
-issue, the curator (future) will truncate the file.
+issue, the chronicle (future) will truncate the file.
 
 ---
 
@@ -197,14 +197,14 @@ is passed as an optional dependency — if nil, no events are emitted
 
 Modify `internal/dispatch/dispatch.go`:
 
-**Sling()** — emit after successful dispatch:
+**Cast()** — emit after successful dispatch:
 ```go
-// After successful sling:
+// After successful cast:
 if logger != nil {
-    logger.Emit(events.EventSling, "gt", "operator", "both", map[string]string{
+    logger.Emit(events.EventCast, "sol", "operator", "both", map[string]string{
         "work_item_id": workItemID,
         "agent":        agentName,
-        "rig":          rig,
+        "world":          world,
     })
 }
 ```
@@ -213,7 +213,7 @@ if logger != nil {
 ```go
 // After successful done:
 if logger != nil {
-    logger.Emit(events.EventDone, "gt", result.AgentName, "both", map[string]string{
+    logger.Emit(events.EventResolve, "sol", result.AgentName, "both", map[string]string{
         "work_item_id": result.WorkItemID,
         "agent":        result.AgentName,
         "branch":       result.BranchName,
@@ -231,7 +231,7 @@ signatures.
 
 **Option A — Pass logger to functions that emit:**
 ```go
-func Sling(opts SlingOpts, logger *events.Logger) (*SlingResult, error)
+func Cast(opts SlingOpts, logger *events.Logger) (*SlingResult, error)
 func Done(opts DoneOpts, logger *events.Logger) (*DoneResult, error)
 ```
 
@@ -248,21 +248,21 @@ The critical constraint is: **nil logger must be safe** — no panics, no
 errors. All existing callers that don't pass a logger must continue
 working.
 
-### Refinery Package
+### Forge Package
 
-> **Note:** The refinery is a Claude session backed by Go CLI
-> subcommands (see [ADR-0005](../../decisions/0005-refinery-claude-session.md)).
-> The Go poll loop (`gt refinery run`) has been removed. Add event
-> logging only to the toolbox subcommands in `cmd/refinery.go` that
+> **Note:** The forge is a Claude session backed by Go CLI
+> subcommands (see [ADR-0005](../../decisions/0005-forge-claude-session.md)).
+> The Go poll loop (`sol forge run`) has been removed. Add event
+> logging only to the toolbox subcommands in `cmd/forge.go` that
 > handle state transitions:
 
 - On merge claimed (`claim`): `EventMergeClaimed`
 - On merge success (`mark-merged`): `EventMerged`
 - On merge failure (`mark-failed`): `EventMergeFailed`
 
-### Supervisor Package
+### Prefect Package
 
-Modify `internal/supervisor/supervisor.go` to accept an optional logger:
+Modify `internal/prefect/prefect.go` to accept an optional logger:
 
 - On respawn: `EventRespawn`
 - On mass death detected: `EventMassDeath`
@@ -271,7 +271,7 @@ Modify `internal/supervisor/supervisor.go` to accept an optional logger:
 
 ### CLI Layer
 
-Create the logger in `cmd/` and pass it to dispatch/refinery/supervisor.
+Create the logger in `cmd/` and pass it to dispatch/forge/prefect.
 The logger is created once per command invocation:
 
 ```go
@@ -282,12 +282,12 @@ logger := events.NewLogger(config.Home())
 
 ## Task 4: CLI Commands
 
-### gt feed
+### sol feed
 
-Create `cmd/feed.go` with the `gt feed` command.
+Create `cmd/feed.go` with the `sol feed` command.
 
 ```
-gt feed [--follow] [--limit=N] [--since=<duration>] [--type=<type>] [--json]
+sol feed [--follow] [--limit=N] [--since=<duration>] [--type=<type>] [--json]
 ```
 
 - `--follow` (`-f`): tail mode — stream events as they appear (Ctrl+C
@@ -295,17 +295,17 @@ gt feed [--follow] [--limit=N] [--since=<duration>] [--type=<type>] [--json]
 - `--limit` (`-n`): show only the last N events (default 20)
 - `--since`: show events from the last duration (e.g., `1h`, `30m`,
   `24h`)
-- `--type`: filter by event type (e.g., `sling`, `done`, `patrol`)
+- `--type`: filter by event type (e.g., `cast`, `resolve`, `patrol`)
 - `--json`: output raw JSONL (one JSON object per line)
 
 **Human output format:**
 ```
-[14:23:05] sling     operator    Dispatched gt-a1b2c3d4 → Toast (myrig)
-[14:23:08] session   supervisor  Started session gt-myrig-Toast
-[14:25:12] done      Toast       Completed gt-a1b2c3d4 (Add login validation)
-[14:25:13] merge     refinery    Claimed mr-e5f6a7b8 for merge
-[14:26:01] merged    refinery    Merged mr-e5f6a7b8 to main
-[14:30:00] patrol    witness     Patrol complete: 3 healthy, 0 stalled (myrig)
+[14:23:05] cast     operator    Dispatched sol-a1b2c3d4 → Toast (myworld)
+[14:23:08] session   prefect  Started session sol-myworld-Toast
+[14:25:12] done      Toast       Completed sol-a1b2c3d4 (Add login validation)
+[14:25:13] merge     forge    Claimed mr-e5f6a7b8 for merge
+[14:26:01] merged    forge    Merged mr-e5f6a7b8 to main
+[14:30:00] patrol    sentinel     Patrol complete: 3 healthy, 0 stalled (myworld)
 ```
 
 Use fixed-width columns for timestamp, type, and actor. The description
@@ -314,19 +314,19 @@ is derived from the event payload.
 **Follow mode:** Uses the Reader's Follow method. Print each event as it
 arrives. Handle SIGINT/SIGTERM for graceful exit.
 
-### gt log-event
+### sol log-event
 
 Create a plumbing command for manual event emission:
 
 ```
-gt log-event --type=<type> --actor=<actor> [--source=<source>] [--visibility=feed|audit|both] [--payload=<json>]
+sol log-event --type=<type> --actor=<actor> [--source=<source>] [--visibility=feed|audit|both] [--payload=<json>]
 ```
 
-This is a plumbing command for scripts and hooks to emit custom events.
+This is a plumbing command for scripts and tethers to emit custom events.
 
 - `--type` (required): event type
 - `--actor` (required): who triggered the event
-- `--source`: event source (default: "gt")
+- `--source`: event source (default: "sol")
 - `--visibility`: event visibility (default: "both")
 - `--payload`: JSON payload (default: "{}")
 
@@ -412,17 +412,17 @@ func TestCLIMailCheckHelp(t *testing.T)
 2. `make build` — succeeds
 3. Manual smoke test:
    ```bash
-   export GT_HOME=/tmp/gt-test
+   export SOL_HOME=/tmp/sol-test
    # Log some events manually
-   bin/gt log-event --type=test --actor=operator --payload='{"msg":"hello"}'
-   bin/gt log-event --type=test --actor=operator --payload='{"msg":"world"}'
+   bin/sol log-event --type=test --actor=operator --payload='{"msg":"hello"}'
+   bin/sol log-event --type=test --actor=operator --payload='{"msg":"world"}'
    # View the feed
-   bin/gt feed --limit=5
-   bin/gt feed --type=test
+   bin/sol feed --limit=5
+   bin/sol feed --type=test
    # Check the raw file
-   cat /tmp/gt-test/.events.jsonl | jq .
+   cat /tmp/sol-test/.events.jsonl | jq .
    ```
-4. Clean up `/tmp/gt-test` after verification.
+4. Clean up `/tmp/sol-test` after verification.
 
 ---
 
@@ -434,10 +434,10 @@ func TestCLIMailCheckHelp(t *testing.T)
   `grep`, and `tail -f` all work naturally (GLASS principle).
 - Cross-process flock ensures no interleaved writes even with 30+
   concurrent agents.
-- The curator process (dedup, aggregation, truncation) is deferred.
-  For now, `gt feed` reads the raw event file directly. The raw file
+- The chronicle process (dedup, aggregation, truncation) is deferred.
+  For now, `sol feed` reads the raw event file directly. The raw file
   will grow unbounded — this is acceptable for the initial
-  implementation and can be addressed with log rotation or the curator
+  implementation and can be addressed with log rotation or the chronicle
   later.
 - Event emission sites should be minimal — only log events that are
   useful for the operator. Don't log every function call.

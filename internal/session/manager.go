@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nevinsm/gt/internal/config"
+	"github.com/nevinsm/sol/internal/config"
 )
 
 // Manager wraps tmux to provide process containers for AI agents.
@@ -30,7 +30,7 @@ type SessionInfo struct {
 	Name      string    `json:"name"`
 	PID       int       `json:"pid"`
 	Role      string    `json:"role"`
-	Rig       string    `json:"rig"`
+	World     string    `json:"world"`
 	WorkDir   string    `json:"workdir"`
 	StartedAt time.Time `json:"started_at"`
 	Alive     bool      `json:"alive"`
@@ -66,7 +66,7 @@ func (h HealthStatus) ExitCode() int {
 	return int(h)
 }
 
-// sessionsDir returns the path to $GT_HOME/.runtime/sessions/.
+// sessionsDir returns the path to $SOL_HOME/.runtime/sessions/.
 func sessionsDir() string {
 	return filepath.Join(config.RuntimeDir(), "sessions")
 }
@@ -97,7 +97,7 @@ func tmuxCmd(args ...string) *exec.Cmd {
 type sessionMeta struct {
 	Name      string    `json:"name"`
 	Role      string    `json:"role"`
-	Rig       string    `json:"rig"`
+	World     string    `json:"world"`
 	WorkDir   string    `json:"workdir"`
 	StartedAt time.Time `json:"started_at"`
 }
@@ -109,7 +109,7 @@ type captureHash struct {
 }
 
 // Start creates a tmux session with the given name and runs cmd inside it.
-// Writes session metadata to $GT_HOME/.runtime/sessions/{name}.json.
+// Writes session metadata to $SOL_HOME/.runtime/sessions/{name}.json.
 // Env vars are set in the tmux session environment.
 // Returns error if session already exists.
 func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, rig string) error {
@@ -141,7 +141,7 @@ func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, 
 	meta := sessionMeta{
 		Name:      name,
 		Role:      role,
-		Rig:       rig,
+		World:     rig,
 		WorkDir:   workdir,
 		StartedAt: time.Now().UTC(),
 	}
@@ -226,7 +226,7 @@ func (m *Manager) List() ([]SessionInfo, error) {
 		info := SessionInfo{
 			Name:      meta.Name,
 			Role:      meta.Role,
-			Rig:       meta.Rig,
+			World:     meta.World,
 			WorkDir:   meta.WorkDir,
 			StartedAt: meta.StartedAt,
 			Alive:     m.Exists(meta.Name),

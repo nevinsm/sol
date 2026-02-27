@@ -1,31 +1,31 @@
 # Loop 0 Acceptance Criteria
 
 ## 1. Create work item via store
-- [x] `gt store create --title="Add tests for login" --db=myrig` prints an ID
-- [x] ID format: gt-[0-9a-f]{8}
+- [x] `sol store create --title="Add tests for login" --world=myworld` prints an ID
+- [x] ID format: sol-[0-9a-f]{8}
 
-## 2. Dispatch to polecat
-- [x] `gt sling <id> myrig` spawns a polecat in a fresh worktree
-- [x] Worktree is at $GT_HOME/myrig/polecats/{name}/rig/
+## 2. Dispatch to outpost
+- [x] `sol cast <id> myworld` spawns a outpost in a fresh worktree
+- [x] Worktree is at $SOL_HOME/myworld/outposts/{name}/world/
 - [x] .claude/CLAUDE.md exists with work item details
 
 ## 3. GUPP — work context injected on start
 - [x] Session starts with execution context visible
-- [x] `gt prime` output includes work item title and instructions
+- [x] `sol prime` output includes work item title and instructions
 
-## 4. gt done completes work
+## 4. sol resolve completes work
 - [x] Branch pushed (or push attempted)
-- [x] Hook file cleared
-- [x] Work item status → done
+- [x] Tether file cleared
+- [x] Work item status → resolve
 - [x] Agent state → idle
 
 ## 5. Operator observability
-- [x] `tmux attach -t gt-myrig-{name}` shows the agent working
-- [x] `sqlite3 $GT_HOME/.store/myrig.db "SELECT * FROM work_items"` shows state
+- [x] `tmux attach -t sol-myworld-{name}` shows the agent working
+- [x] `sqlite3 $SOL_HOME/.store/myworld.db "SELECT * FROM work_items"` shows state
 
 ## 6. Crash recovery
-- [x] Kill tmux session → hook file persists
-- [x] Re-sling same item → agent picks up work
+- [x] Kill tmux session → tether file persists
+- [x] Re-cast same item → agent picks up work
 
 ## 7. All tests pass
 - [x] `make test` exits 0

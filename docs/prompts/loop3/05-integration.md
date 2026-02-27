@@ -1,11 +1,11 @@
 # Prompt 05: Loop 3 — Integration Tests and Acceptance
 
 You are writing the integration tests and acceptance checklist for Loop 3
-of the `gt` orchestration system. This prompt verifies that all Loop 3
-components (mail system, event feed, curator, witness) work together
+of the `sol` orchestration system. This prompt verifies that all Loop 3
+components (mail system, event feed, chronicle, sentinel) work together
 correctly and that backward compatibility with Loops 0–2 is maintained.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Loop 3 prompts 01–04 are complete.
 
 Read all existing code first. Study the Loop 2 integration tests in
@@ -47,13 +47,13 @@ Loop 3 tests.
 ```go
 // sendAndVerifyMessage sends a message and verifies it appears in the
 // recipient's inbox. Returns the message ID.
-func sendAndVerifyMessage(t *testing.T, townStore *store.Store,
+func sendAndVerifyMessage(t *testing.T, sphereStore *store.Store,
     sender, recipient, subject, body string) string
 
 // waitForProtocolMessage polls for a specific protocol message type
 // addressed to a recipient. Returns the message when found or fails
 // after timeout.
-func waitForProtocolMessage(t *testing.T, townStore *store.Store,
+func waitForProtocolMessage(t *testing.T, sphereStore *store.Store,
     recipient, protoType string, timeout time.Duration) *store.Message
 ```
 
@@ -69,15 +69,15 @@ func collectEvents(t *testing.T, gtHome, eventType string) []events.Event
 func assertEventEmitted(t *testing.T, gtHome, eventType string)
 ```
 
-### Witness Helpers
+### Sentinel Helpers
 
 ```go
-// newTestWitness creates a witness configured for testing with short
-// intervals and a mock assessment function. Returns the witness and
+// newTestWitness creates a sentinel configured for testing with short
+// intervals and a mock assessment function. Returns the sentinel and
 // a cancel function.
-func newTestWitness(t *testing.T, rig string, townStore TownStore,
-    rigStore RigStore, sessions SessionChecker,
-    logger *events.Logger) (*witness.Witness, context.CancelFunc)
+func newTestWitness(t *testing.T, world string, sphereStore SphereStore,
+    worldStore WorldStore, sessions SessionChecker,
+    logger *events.Logger) (*sentinel.Sentinel, context.CancelFunc)
 ```
 
 ---
@@ -96,7 +96,7 @@ func TestMailSendAndReceive(t *testing.T)
 **Scenario:** Messages flow correctly through the mail system.
 
 **Steps:**
-1. Open town store
+1. Open sphere store
 2. Send message from `operator` to `testrig/Toast`
 3. Verify: `Inbox("testrig/Toast")` returns the message
 4. Verify: `CountUnread("testrig/Toast")` returns 1
@@ -114,14 +114,14 @@ func TestProtocolMessageFlow(t *testing.T)
 **Scenario:** Typed protocol messages work correctly.
 
 **Steps:**
-1. Open town store
-2. Send POLECAT_DONE protocol message from `testrig/Toast` to
-   `testrig/witness`
-3. Verify: `PendingProtocol("testrig/witness", "POLECAT_DONE")`
+1. Open sphere store
+2. Send OUTPOST_DONE protocol message from `testrig/Toast` to
+   `testrig/sentinel`
+3. Verify: `PendingProtocol("testrig/sentinel", "OUTPOST_DONE")`
    returns the message
 4. Parse body as PolecatDonePayload — verify fields
 5. Ack the message
-6. Verify: `PendingProtocol("testrig/witness", "POLECAT_DONE")`
+6. Verify: `PendingProtocol("testrig/sentinel", "OUTPOST_DONE")`
    returns empty
 
 ### Test 3: Event Feed End-to-End
@@ -133,82 +133,82 @@ func TestEventFeedEndToEnd(t *testing.T)
 **Scenario:** Events are emitted and readable via the feed reader.
 
 **Steps:**
-1. Set up GT_HOME, create event logger
-2. Emit events of different types (sling, done, patrol)
+1. Set up SOL_HOME, create event logger
+2. Emit events of different types (cast, done, patrol)
 3. Read with no filter → all present
 4. Read with type filter → only matching
 5. Read with limit → correct count
 6. Verify JSONL file lines are valid JSON
 
-### Test 4: Curator Dedup and Aggregation
+### Test 4: Chronicle Dedup and Aggregation
 
 ```go
 func TestCuratorDedupAndAggregation(t *testing.T)
 ```
 
-**Scenario:** Curator correctly deduplicates and aggregates events.
+**Scenario:** Chronicle correctly deduplicates and aggregates events.
 
 **Steps:**
 1. Write duplicate events to raw feed (same type/source/actor within
    DedupWindow)
-2. Write a burst of sling events within AggWindow
+2. Write a burst of cast events within AggWindow
 3. Write several unique done events
-4. Run curator cycle
+4. Run chronicle cycle
 5. Verify: duplicates collapsed to one event
-6. Verify: sling burst collapsed to one sling_batch event
+6. Verify: cast burst collapsed to one sling_batch event
 7. Verify: done events preserved individually
 8. Read curated feed via reader — verify correct event count
 
-### Test 5: Curator Feed Truncation
+### Test 5: Chronicle Feed Truncation
 
 ```go
 func TestCuratorFeedTruncation(t *testing.T)
 ```
 
-**Scenario:** Curator truncates the curated feed when it exceeds max size.
+**Scenario:** Chronicle truncates the curated feed when it exceeds max size.
 
 **Steps:**
 1. Set MaxFeedSize to a small value (e.g., 1KB)
 2. Write enough events to raw feed to exceed the limit after curation
-3. Run curator cycle
+3. Run chronicle cycle
 4. Verify: curated feed size is at or below MaxFeedSize
 5. Verify: remaining events are valid JSON lines (no partial lines)
 6. Verify: most recent events are preserved
 
-### Test 6: Witness Detects Stalled Agent
+### Test 6: Sentinel Detects Stalled Agent
 
 ```go
 func TestWitnessDetectsStalledAgent(t *testing.T)
 ```
 
-**Scenario:** Witness detects a polecat whose session died mid-work.
+**Scenario:** Sentinel detects a outpost whose session died mid-work.
 
 **Steps:**
-1. Set up stores, create polecat with state=`working`, hook_item set
-2. Create work item in `hooked` status
-3. Write hook file to disk
-4. Mock session checker: dead for this polecat
-5. Run one witness patrol
+1. Set up stores, create outpost with state=`working`, hook_item set
+2. Create work item in `tethered` status
+3. Write tether file to disk
+4. Mock session checker: dead for this outpost
+5. Run one sentinel patrol
 6. Verify: respawn attempted (session start called)
 7. Verify: respawn event emitted
 
-### Test 7: Witness Max Respawns Returns Work to Open
+### Test 7: Sentinel Max Respawns Returns Work to Open
 
 ```go
 func TestWitnessMaxRespawnsReturnsWork(t *testing.T)
 ```
 
-**Scenario:** After max respawn attempts, witness returns work to open.
+**Scenario:** After max respawn attempts, sentinel returns work to open.
 
 **Steps:**
-1. Set up stores, polecat working, hook set, hook file on disk
+1. Set up stores, outpost working, tether set, tether file on disk
 2. Mock session checker: always dead
 3. Patrol MaxRespawns + 1 times (e.g., 3 patrols with MaxRespawns=2)
 4. After first 2: agent still working (respawn attempted each time)
-5. After 3rd: agent idle, work item `open`, hook file removed
+5. After 3rd: agent idle, work item `open`, tether file removed
 6. Verify: stalled event with appropriate payload
 
-### Test 8: Witness Cleans Up Zombie Sessions
+### Test 8: Sentinel Cleans Up Zombie Sessions
 
 ```go
 func TestWitnessCleanupZombies(t *testing.T)
@@ -217,23 +217,23 @@ func TestWitnessCleanupZombies(t *testing.T)
 **Scenario:** Zombie sessions are detected and cleaned up.
 
 **Steps:**
-1. Create idle polecat with no hook_item, no hook file on disk
+1. Create idle outpost with no hook_item, no tether file on disk
 2. Mock session checker: alive
 3. Run patrol
 4. Verify: session stop called
 5. Verify: patrol event shows zombie count > 0
 
-### Test 9: Witness AI Assessment — Nudge
+### Test 9: Sentinel AI Assessment — Nudge
 
 ```go
 func TestWitnessAIAssessmentNudge(t *testing.T)
 ```
 
-**Scenario:** When output hasn't changed between patrols, the witness
+**Scenario:** When output hasn't changed between patrols, the sentinel
 runs an AI assessment and nudges a stuck agent.
 
 **Steps:**
-1. Create working polecat with live session
+1. Create working outpost with live session
 2. Mock session capture returns same output on consecutive calls
 3. Mock assessment function returns: status=stuck, confidence=high,
    action=nudge, message="Try checking the error output"
@@ -242,7 +242,7 @@ runs an AI assessment and nudges a stuck agent.
 6. Verify: nudge injected into session with the assessment's message
 7. Verify: assess event emitted
 
-### Test 10: Witness AI Assessment — Low Confidence Ignored
+### Test 10: Sentinel AI Assessment — Low Confidence Ignored
 
 ```go
 func TestWitnessAIAssessmentLowConfidence(t *testing.T)
@@ -251,12 +251,12 @@ func TestWitnessAIAssessmentLowConfidence(t *testing.T)
 **Scenario:** Low-confidence assessments are ignored.
 
 **Steps:**
-1. Create working polecat, same output both patrols
+1. Create working outpost, same output both patrols
 2. Mock assessment returns: status=stuck, confidence=low, action=nudge
 3. Patrol twice
 4. Verify: NO nudge injected (low confidence → no action)
 
-### Test 11: Witness AI Assessment Failure Non-Blocking
+### Test 11: Sentinel AI Assessment Failure Non-Blocking
 
 ```go
 func TestWitnessAIAssessmentFailure(t *testing.T)
@@ -265,7 +265,7 @@ func TestWitnessAIAssessmentFailure(t *testing.T)
 **Scenario:** AI assessment failure doesn't break the patrol.
 
 **Steps:**
-1. Create working polecat, same output both patrols
+1. Create working outpost, same output both patrols
 2. Mock assessment function returns error
 3. Patrol twice
 4. Verify: patrol completes without error
@@ -279,28 +279,28 @@ func TestWitnessAIAssessmentFailure(t *testing.T)
 func TestEventsEmittedDuringDispatch(t *testing.T)
 ```
 
-**Scenario:** Sling and done operations emit events when logger provided.
+**Scenario:** Cast and done operations emit events when logger provided.
 
 **Steps:**
 1. Set up stores, source repo, logger
-2. Create work item, sling it (with logger)
-3. Verify: `EventSling` in feed
+2. Create work item, cast it (with logger)
+3. Verify: `EventCast` in feed
 4. Run done (with logger)
-5. Verify: `EventDone` in feed
+5. Verify: `EventResolve` in feed
 
-### Test 13: Status Shows Witness and Curator State
+### Test 13: Status Shows Sentinel and Chronicle State
 
 ```go
 func TestStatusShowsWitnessState(t *testing.T)
 ```
 
-**Scenario:** Status command reports witness state.
+**Scenario:** Status command reports sentinel state.
 
 **Steps:**
 1. Set up stores
-2. Gather status — witness not running
-3. Mock witness session as alive
-4. Gather status — witness running with session name
+2. Gather status — sentinel not running
+3. Mock sentinel session as alive
+4. Gather status — sentinel running with session name
 
 ---
 
@@ -325,7 +325,7 @@ func TestCLIFeedHelp(t *testing.T)
 func TestCLILogEventHelp(t *testing.T)
 ```
 
-### Curator CLI
+### Chronicle CLI
 
 ```go
 func TestCLICuratorRunHelp(t *testing.T)
@@ -333,7 +333,7 @@ func TestCLICuratorStartHelp(t *testing.T)
 func TestCLICuratorStopHelp(t *testing.T)
 ```
 
-### Witness CLI
+### Sentinel CLI
 
 ```go
 func TestCLIWitnessRunHelp(t *testing.T)
@@ -354,13 +354,13 @@ make test
 
 Common compatibility issues to check and fix:
 
-- **Dispatch interface changes:** If Sling/Done gained a logger
+- **Dispatch interface changes:** If Cast/Done gained a logger
   parameter, existing tests and mocks must pass nil.
-- **Status Gather() changes:** If it gained new parameters (witness
+- **Status Gather() changes:** If it gained new parameters (sentinel
   info), existing callers need updating.
-- **Supervisor changes:** New cases in respawnCommand/worktreeForAgent
-  must not break existing polecat/refinery handling.
-- **Town schema V1→V2:** Migration must preserve existing agents table.
+- **Prefect changes:** New cases in respawnCommand/worktreeForAgent
+  must not break existing outpost/forge handling.
+- **Sphere schema V1→V2:** Migration must preserve existing agents table.
 - **Store interface extensions:** New methods (SendMessage, etc.) need
   mock implementations in existing test files.
 
@@ -374,9 +374,9 @@ Create `test/integration/LOOP3_ACCEPTANCE.md`:
 # Loop 3 Acceptance Checklist
 
 ## Mail System
-- [ ] Messages table created in town.db (schema V2)
-- [ ] Escalations table created in town.db (schema V2)
-- [ ] Town schema V1→V2 migration preserves existing agents
+- [ ] Messages table created in sphere.db (schema V2)
+- [ ] Escalations table created in sphere.db (schema V2)
+- [ ] Sphere schema V1→V2 migration preserves existing agents
 - [ ] SendMessage creates message with msg- prefix ID
 - [ ] Inbox returns pending messages ordered by priority then age
 - [ ] ReadMessage fetches content and marks as read
@@ -384,47 +384,47 @@ Create `test/integration/LOOP3_ACCEPTANCE.md`:
 - [ ] CountUnread returns correct unread count
 - [ ] Protocol messages sent with type=protocol and JSON body
 - [ ] PendingProtocol filters by recipient and protocol type
-- [ ] CLI: gt mail send creates message
-- [ ] CLI: gt mail inbox lists pending messages
-- [ ] CLI: gt mail read displays message content
-- [ ] CLI: gt mail ack acknowledges message
-- [ ] CLI: gt mail check reports unread count
+- [ ] CLI: sol mail send creates message
+- [ ] CLI: sol mail inbox lists pending messages
+- [ ] CLI: sol mail read displays message content
+- [ ] CLI: sol mail ack acknowledges message
+- [ ] CLI: sol mail check reports unread count
 
 ## Event Feed
-- [ ] Events logged to $GT_HOME/.events.jsonl as valid JSONL
+- [ ] Events logged to $SOL_HOME/.events.jsonl as valid JSONL
 - [ ] Concurrent writes are flock-serialized (no interleaving)
 - [ ] Logger is best-effort (nil-safe, errors swallowed silently)
 - [ ] Reader filters by type, since, limit
 - [ ] Follow mode streams new events via channel
-- [ ] Sling emits EventSling when logger provided
-- [ ] Done emits EventDone when logger provided
-- [ ] Refinery emits merge events when logger provided
-- [ ] Supervisor emits respawn/degraded events when logger provided
-- [ ] CLI: gt feed displays events with human-readable format
-- [ ] CLI: gt feed --follow streams events
-- [ ] CLI: gt feed --type filters by event type
-- [ ] CLI: gt feed --json outputs raw JSONL
-- [ ] CLI: gt log-event emits custom events
+- [ ] Cast emits EventCast when logger provided
+- [ ] Done emits EventResolve when logger provided
+- [ ] Forge emits merge events when logger provided
+- [ ] Prefect emits respawn/degraded events when logger provided
+- [ ] CLI: sol feed displays events with human-readable format
+- [ ] CLI: sol feed --follow streams events
+- [ ] CLI: sol feed --type filters by event type
+- [ ] CLI: sol feed --json outputs raw JSONL
+- [ ] CLI: sol log-event emits custom events
 
-## Curator
-- [ ] Curator reads raw events and writes curated feed
+## Chronicle
+- [ ] Chronicle reads raw events and writes curated feed
 - [ ] Audit-only events filtered from curated feed
 - [ ] Duplicate events deduplicated within 10s window
-- [ ] Sling bursts aggregated within 30s window
+- [ ] Cast bursts aggregated within 30s window
 - [ ] Non-aggregatable events (done, merged) preserved individually
 - [ ] Curated feed truncated when exceeding max size
 - [ ] Truncation preserves complete JSON lines (no partials)
 - [ ] Checkpoint file tracks read position across restarts
-- [ ] gt feed reads curated feed by default, raw with --raw
-- [ ] CLI: gt curator run/start/stop all work
+- [ ] sol feed reads curated feed by default, raw with --raw
+- [ ] CLI: sol chronicle run/start/stop all work
 
-## Witness
-- [ ] Witness registers as {rig}/witness with role=witness
+## Sentinel
+- [ ] Sentinel registers as {world}/sentinel with role=sentinel
 - [ ] Patrol cycle runs every PatrolInterval
-- [ ] Dead session + hooked work → stalled detection
+- [ ] Dead session + tethered work → stalled detection
 - [ ] Stalled agent → respawn attempted (max 2 per work item)
-- [ ] After max respawns → work returned to open, hook cleared, agent idle
-- [ ] Zombie session (idle + no hook + live session) → session stopped
+- [ ] After max respawns → work returned to open, tether cleared, agent idle
+- [ ] Zombie session (idle + no tether + live session) → session stopped
 - [ ] Healthy agents → no action taken
 - [ ] Progress heuristic: captures tmux output and hashes between patrols
 - [ ] No output change → AI assessment triggered
@@ -435,9 +435,9 @@ Create `test/integration/LOOP3_ACCEPTANCE.md`:
 - [ ] Patrol emits EventPatrol with summary counts
 - [ ] Assessment emits EventAssess
 - [ ] Nudge emits EventNudge
-- [ ] Supervisor handles witness role (respawnCommand, worktreeForAgent)
-- [ ] Status shows witness running/stopped
-- [ ] CLI: gt witness run/start/stop/attach all work
+- [ ] Prefect handles sentinel role (respawnCommand, worktreeForAgent)
+- [ ] Status shows sentinel running/stopped
+- [ ] CLI: sol sentinel run/start/stop/attach all work
 
 ## Backward Compatibility
 - [ ] All Loop 0 tests pass
@@ -463,12 +463,12 @@ Mark each item as checked (`[x]`) as you verify it.
 3. Review test coverage:
    - Mail: send, inbox, read, ack, check, protocol, filters
    - Events: log, read, concurrent, follow, filter, visibility
-   - Curator: dedup, aggregation, truncation, checkpoint, lifecycle
-   - Witness: stalled, max-respawn, zombie, healthy, progress
+   - Chronicle: dedup, aggregation, truncation, checkpoint, lifecycle
+   - Sentinel: stalled, max-respawn, zombie, healthy, progress
      detection, AI assessment (nudge, escalate, low-confidence,
      failure), lifecycle
    - CLI: all new commands have help smoke tests
-   - Dispatch: events emitted during sling/done
+   - Dispatch: events emitted during cast/done
 4. Verify the acceptance checklist is complete (all items checked)
 5. Clean up any test artifacts
 
@@ -478,9 +478,9 @@ Mark each item as checked (`[x]`) as you verify it.
 
 - Integration tests use real stores (SQLite in temp dirs) but mock
   session managers (no real tmux in CI).
-- Mock the AI assessment function in witness tests — never make real
+- Mock the AI assessment function in sentinel tests — never make real
   AI calls in tests.
-- Follow Loop 2 test patterns: `t.TempDir()` for isolation, `GT_HOME`
+- Follow Loop 2 test patterns: `t.TempDir()` for isolation, `SOL_HOME`
   via env var, cleanup after each test.
 - Tests should be independent — no shared state between tests.
 - Use `t.Parallel()` where safe.

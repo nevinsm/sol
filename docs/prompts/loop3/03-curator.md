@@ -1,30 +1,30 @@
-# Prompt 03: Loop 3 — Event Feed Curator
+# Prompt 03: Loop 3 — Event Feed Chronicle
 
-You are extending the `gt` orchestration system with the curator — a
+You are extending the `sol` orchestration system with the chronicle — a
 background process that consumes the raw event feed, deduplicates and
 aggregates events, and produces a curated feed suitable for operator
 consumption and agent situational awareness.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Loop 3 prompt 02 (event feed) is complete.
 
 Read all existing code first. Understand the events package
 (`internal/events/` — Logger, Reader, Event struct, event types).
 
 Read `docs/target-architecture.md` Section 3.11 (Event Feed) for design
-context, paying attention to the curator's role: filtering by visibility,
+context, paying attention to the chronicle's role: filtering by visibility,
 deduplication, aggregation, and feed truncation.
 
 ---
 
-## Task 1: Curator Process
+## Task 1: Chronicle Process
 
-Create `internal/events/curator.go` with the curator implementation.
+Create `internal/events/chronicle.go` with the chronicle implementation.
 
 ### Configuration
 
 ```go
-// CuratorConfig holds curator configuration.
+// CuratorConfig holds chronicle configuration.
 type CuratorConfig struct {
     RawPath      string        // path to raw .events.jsonl
     FeedPath     string        // path to curated .feed.jsonl
@@ -34,29 +34,29 @@ type CuratorConfig struct {
     MaxFeedSize  int64         // max curated feed file size in bytes (default: 10MB)
 }
 
-// DefaultCuratorConfig returns defaults for the given GT_HOME.
+// DefaultCuratorConfig returns defaults for the given SOL_HOME.
 func DefaultCuratorConfig(gtHome string) CuratorConfig
 ```
 
-### Curator Struct
+### Chronicle Struct
 
 ```go
-// Curator processes raw events into a curated feed.
-type Curator struct {
+// Chronicle processes raw events into a curated feed.
+type Chronicle struct {
     config CuratorConfig
     offset int64 // file offset — tracks position in raw feed
 }
 
-// NewCurator creates a curator.
-func NewCurator(config CuratorConfig) *Curator
+// NewCurator creates a chronicle.
+func NewCurator(config CuratorConfig) *Chronicle
 
-// Run starts the curator loop. Blocks until context is cancelled.
-func (c *Curator) Run(ctx context.Context) error
+// Run starts the chronicle loop. Blocks until context is cancelled.
+func (c *Chronicle) Run(ctx context.Context) error
 ```
 
 ### Run Loop
 
-The curator uses a simple tail-and-process loop:
+The chronicle uses a simple tail-and-process loop:
 
 1. Open (or create) the curated feed file
 2. Determine starting offset in the raw feed (read from a checkpoint
@@ -74,10 +74,10 @@ The curator uses a simple tail-and-process loop:
 
 ### Checkpoint File
 
-Store the curator's read position so it resumes correctly after restart:
+Store the chronicle's read position so it resumes correctly after restart:
 
 ```
-$GT_HOME/.curator-checkpoint
+$SOL_HOME/.chronicle-checkpoint
 ```
 
 Contents: just the byte offset as a decimal string. Read on startup,
@@ -95,7 +95,7 @@ Two events are duplicates if ALL of the following match within the
 - Same `source`
 - Same `actor`
 
-This catches common duplicates like multiple `done` events from the
+This catches common duplicates like multiple `resolve` events from the
 same agent in quick succession (e.g., retry logic).
 
 ### Implementation
@@ -123,28 +123,28 @@ Clean expired entries from the window on each cycle (entries older than
 
 When multiple events of the same type arrive within the `AggWindow`
 (default 30s), collapse them into a single summary event. This primarily
-handles sling bursts (dispatching 10+ work items at once).
+handles cast bursts (dispatching 10+ work items at once).
 
 **Events that aggregate:**
-- `sling` — "Dispatched 10 work items to myrig"
-- `respawn` — "Respawned 3 agents in myrig"
+- `cast` — "Dispatched 10 work items to myworld"
+- `respawn` — "Respawned 3 agents in myworld"
 
 **Events that do NOT aggregate** (each one is individually important):
-- `done`, `merged`, `merge_failed`, `stalled`, `patrol`
+- `resolve`, `merged`, `merge_failed`, `stalled`, `patrol`
 
 ### Aggregated Event Format
 
-When events are aggregated, the curator emits a synthetic event:
+When events are aggregated, the chronicle emits a synthetic event:
 
 ```json
 {
     "ts": "<timestamp of last event in batch>",
-    "source": "curator",
+    "source": "chronicle",
     "type": "sling_batch",
-    "actor": "curator",
+    "actor": "chronicle",
     "visibility": "feed",
     "payload": {
-        "type": "sling",
+        "type": "cast",
         "count": 10,
         "window_seconds": 30,
         "first_ts": "<timestamp of first event>",
@@ -192,113 +192,113 @@ from the curated feed as well as the raw feed.
 func NewReader(gtHome string, curated bool) *Reader
 ```
 
-Update `gt feed` in `cmd/feed.go` to read from the curated feed by
+Update `sol feed` in `cmd/feed.go` to read from the curated feed by
 default, with a `--raw` flag for the unprocessed feed:
 
 ```
-gt feed [--raw] [--follow] [--limit=N] [--since=<duration>] [--type=<type>] [--json]
+sol feed [--raw] [--follow] [--limit=N] [--since=<duration>] [--type=<type>] [--json]
 ```
 
 - Default: reads curated feed (`.feed.jsonl`)
 - `--raw`: reads raw event log (`.events.jsonl`)
 
-If the curated feed doesn't exist (curator hasn't run), fall back to
+If the curated feed doesn't exist (chronicle hasn't run), fall back to
 the raw feed silently.
 
 ---
 
 ## Task 6: CLI Commands
 
-### gt curator
+### sol chronicle
 
-Add curator commands to `cmd/curator.go`:
+Add chronicle commands to `cmd/chronicle.go`:
 
-**`gt curator run`** — Foreground curator loop:
+**`sol chronicle run`** — Foreground chronicle loop:
 ```
-gt curator run
+sol chronicle run
 ```
 - Signal handling (SIGTERM, SIGINT)
-- Creates curator with default config
+- Creates chronicle with default config
 - Runs until cancelled
-- Output on start: `Curator started (raw: .events.jsonl → feed: .feed.jsonl)`
-- Output on stop: `Curator stopped (offset: NNNNN)`
+- Output on start: `Chronicle started (raw: .events.jsonl → feed: .feed.jsonl)`
+- Output on stop: `Chronicle stopped (offset: NNNNN)`
 
-**`gt curator start`** — Background session:
+**`sol chronicle start`** — Background session:
 ```
-gt curator start
+sol chronicle start
 ```
-- Starts tmux session `gt-curator`
-- Runs `gt curator run` inside session
-- Output: `Curator started: gt-curator`
+- Starts tmux session `sol-chronicle`
+- Runs `sol chronicle run` inside session
+- Output: `Chronicle started: sol-chronicle`
 
-**`gt curator stop`** — Stop session:
+**`sol chronicle stop`** — Stop session:
 ```
-gt curator stop
+sol chronicle stop
 ```
-- Stops the `gt-curator` tmux session
-- Output: `Curator stopped: gt-curator`
+- Stops the `sol-chronicle` tmux session
+- Output: `Chronicle stopped: sol-chronicle`
 
 ### Registration
 
-Register the `curator` command group under the root command in
+Register the `chronicle` command group under the root command in
 `cmd/root.go`.
 
 ---
 
 ## Task 7: Tests
 
-### Curator Unit Tests
+### Chronicle Unit Tests
 
 Create `internal/events/curator_test.go`:
 
 ```go
 func TestCuratorProcessesNewEvents(t *testing.T)
     // Write 5 events to raw feed
-    // Run one curator cycle
+    // Run one chronicle cycle
     // Verify: 5 events appear in curated feed
 
 func TestCuratorFiltersAuditOnly(t *testing.T)
     // Write events: 2 with visibility="both", 1 with visibility="audit"
-    // Run curator cycle
+    // Run chronicle cycle
     // Verify: curated feed has 2 events (audit-only filtered out)
 
 func TestCuratorDeduplicates(t *testing.T)
     // Write 3 identical events (same type/source/actor) within 10s
-    // Run curator cycle
+    // Run chronicle cycle
     // Verify: curated feed has 1 event
 
 func TestCuratorDeduplicateWindowExpiry(t *testing.T)
     // Write event A
     // Write event A again with timestamp > DedupWindow later
-    // Run curator cycle
+    // Run chronicle cycle
     // Verify: curated feed has 2 events (dedup window expired)
 
 func TestCuratorAggregatesSlingBurst(t *testing.T)
-    // Write 10 sling events within 30s
-    // Run curator cycle (after AggWindow expires)
+    // Write 10 cast events within 30s
+    // Run chronicle cycle (after AggWindow expires)
     // Verify: curated feed has 1 sling_batch event with count=10
 
 func TestCuratorDoesNotAggregateNonBatchable(t *testing.T)
     // Write 3 "done" events within 30s
-    // Run curator cycle
+    // Run chronicle cycle
     // Verify: curated feed has 3 individual events (done is not aggregated)
 
 func TestCuratorTruncatesFeed(t *testing.T)
     // Set MaxFeedSize to a small value (e.g., 1KB)
     // Write enough events to exceed the limit
-    // Run curator cycle
+    // Run chronicle cycle
     // Verify: curated feed size is ~75% of max
     // Verify: remaining events are valid JSON lines
     // Verify: no truncated/partial lines
 
 func TestCuratorCheckpoint(t *testing.T)
-    // Write 5 events, run curator
-    // Stop curator, verify checkpoint file exists with offset
-    // Write 5 more events, start new curator
+    // Write 5 events, run chronicle
+    // Stop chronicle, verify checkpoint file exists with offset
+    // Write 5 more events, start new chronicle
     // Verify: only the 5 new events are processed (resumes from checkpoint)
 
 func TestCuratorRunLifecycle(t *testing.T)
-    // Start curator with cancellable context
+    // Start chronicle with cancellable context
     // Write events to raw feed
     // Wait for one poll cycle
     // Verify events appear in curated feed
@@ -311,13 +311,13 @@ Add to `test/integration/cli_loop3_test.go`:
 
 ```go
 func TestCLICuratorRunHelp(t *testing.T)
-    // Run: gt curator run --help
+    // Run: sol chronicle run --help
 
 func TestCLICuratorStartHelp(t *testing.T)
-    // Run: gt curator start --help
+    // Run: sol chronicle start --help
 
 func TestCLICuratorStopHelp(t *testing.T)
-    // Run: gt curator stop --help
+    // Run: sol chronicle stop --help
 ```
 
 ---
@@ -328,29 +328,29 @@ func TestCLICuratorStopHelp(t *testing.T)
 2. `make build` — succeeds
 3. Manual smoke test:
    ```bash
-   export GT_HOME=/tmp/gt-test
+   export SOL_HOME=/tmp/sol-test
    # Generate some raw events
-   bin/gt log-event --type=sling --actor=operator --payload='{"rig":"test"}'
-   bin/gt log-event --type=sling --actor=operator --payload='{"rig":"test"}'
-   bin/gt log-event --type=done --actor=Toast --payload='{"item":"gt-123"}'
-   # Run curator once
-   bin/gt curator run &
+   bin/sol log-event --type=cast --actor=operator --payload='{"world":"test"}'
+   bin/sol log-event --type=cast --actor=operator --payload='{"world":"test"}'
+   bin/sol log-event --type=done --actor=Toast --payload='{"item":"sol-123"}'
+   # Run chronicle once
+   bin/sol chronicle run &
    sleep 3
    kill %1
    # Check curated feed
-   cat /tmp/gt-test/.feed.jsonl | jq .
-   # Should show: deduped sling events, individual done event
-   bin/gt feed --limit=5
-   bin/gt feed --raw --limit=5
+   cat /tmp/sol-test/.feed.jsonl | jq .
+   # Should show: deduped cast events, individual done event
+   bin/sol feed --limit=5
+   bin/sol feed --raw --limit=5
    ```
-4. Clean up `/tmp/gt-test` after verification.
+4. Clean up `/tmp/sol-test` after verification.
 
 ---
 
 ## Guidelines
 
-- The curator is a **background process**, not a critical path component.
-  If it crashes, the raw event feed continues growing and `gt feed`
+- The chronicle is a **background process**, not a critical path component.
+  If it crashes, the raw event feed continues growing and `sol feed`
   falls back to reading raw events. No primary operations are affected
   (DEGRADE principle).
 - Dedup and aggregation windows are intentionally short (10s, 30s).
@@ -358,22 +358,22 @@ func TestCLICuratorStopHelp(t *testing.T)
 - Truncation is atomic (write temp file, rename). No reader ever sees
   a partial file.
 - The checkpoint file is simple (just a byte offset). If corrupted, the
-  curator restarts from the current end of the raw file — it misses
+  chronicle restarts from the current end of the raw file — it misses
   events that arrived while it was down, but doesn't reprocess old ones.
-- The curator is **town-level** (not per-rig). One curator processes
-  events from all rigs.
+- The chronicle is **sphere-level** (not per-world). One chronicle processes
+  events from all worlds.
 - All existing tests must continue to pass.
-- **Add curator to `gt status` output.** The curator runs as a
-  town-level tmux session (`gt-curator`). Extend
-  `internal/status/status.go` to check for the curator session and
+- **Add chronicle to `sol status` output.** The chronicle runs as a
+  sphere-level tmux session (`sol-chronicle`). Extend
+  `internal/status/status.go` to check for the chronicle session and
   include it in the status output:
   ```
-  Curator: running (gt-curator)
+  Chronicle: running (sol-chronicle)
   ```
   Add a `CuratorInfo` struct (similar to `RefineryInfo`) to
   `RigStatus` — or better, add it to a new `TownStatus` if one
-  exists, since the curator is town-level. If `gt status` only
-  gathers per-rig status, add the curator check at the display
+  exists, since the chronicle is sphere-level. If `sol status` only
+  gathers per-world status, add the chronicle check at the display
   layer in `cmd/status.go`.
 - Commit after tests pass with message:
-  `feat(events): add curator with dedup, aggregation, and feed truncation`
+  `feat(events): add chronicle with dedup, aggregation, and feed truncation`

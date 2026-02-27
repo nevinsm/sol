@@ -1,51 +1,51 @@
-# Prompt 04: Loop 3 — Witness Agent with AI-Assisted Assessment
+# Prompt 04: Loop 3 — Sentinel Agent with AI-Assisted Assessment
 
-You are extending the `gt` orchestration system with the witness — a
-per-rig health monitor that patrols polecat agents, detects stalled and
+You are extending the `sol` orchestration system with the sentinel — a
+per-world health monitor that patrols outpost agents, detects stalled and
 zombie sessions, triggers recovery, and uses AI-assisted analysis to
-evaluate stuck agents. The witness is primarily a Go process for speed
+evaluate stuck agents. The sentinel is primarily a Go process for speed
 and determinism, but shells out to an AI model for judgment calls when
 the heuristic detects potential trouble.
 
-**Working directory:** `~/gt-src/`
-**Prerequisite:** Loop 3 prompts 01–03 (mail system, event feed, curator)
+**Working directory:** `~/sol-src/`
+**Prerequisite:** Loop 3 prompts 01–03 (mail system, event feed, chronicle)
 are complete.
 
 Read all existing code first. Understand the store package
 (`internal/store/` — agents, work items, messages), the session package
-(`internal/session/` — Health, Capture, Inject), the supervisor package
-(`internal/supervisor/`), the dispatch package (`internal/dispatch/`),
-the events package (`internal/events/`), and the refinery package
-(`internal/refinery/`) for pattern reference.
+(`internal/session/` — Health, Capture, Inject), the prefect package
+(`internal/prefect/`), the dispatch package (`internal/dispatch/`),
+the events package (`internal/events/`), and the forge package
+(`internal/forge/`) for pattern reference.
 
-Read `docs/target-architecture.md` Section 3.8 (Witness) for design
+Read `docs/target-architecture.md` Section 3.8 (Sentinel) for design
 context.
 
 ---
 
-## Task 1: Witness Package
+## Task 1: Sentinel Package
 
-Create `internal/witness/` package with the core witness implementation.
+Create `internal/sentinel/` package with the core sentinel implementation.
 
 ### Configuration
 
 ```go
-// internal/witness/witness.go
-package witness
+// internal/sentinel/sentinel.go
+package sentinel
 
-// Config holds witness configuration.
+// Config holds sentinel configuration.
 type Config struct {
-    Rig             string
+    World             string
     PatrolInterval  time.Duration // default: 3 minutes
     MaxRespawns     int           // default: 2 (per work item)
     CaptureLines    int           // default: 80 (lines of tmux output to capture)
     AssessCommand   string        // default: "claude -p" (AI assessment command)
     SourceRepo      string        // path to source git repo
-    GTHome          string        // GT_HOME path
+    GTHome          string        // SOL_HOME path
 }
 
 // DefaultConfig returns a Config with default values.
-func DefaultConfig(rig, sourceRepo, gtHome string) Config
+func DefaultConfig(world, sourceRepo, gtHome string) Config
 ```
 
 ### Store Interfaces
@@ -53,17 +53,17 @@ func DefaultConfig(rig, sourceRepo, gtHome string) Config
 Define narrow store interfaces for testability:
 
 ```go
-// TownStore is the subset of town store operations the witness needs.
-type TownStore interface {
+// SphereStore is the subset of sphere store operations the sentinel needs.
+type SphereStore interface {
     GetAgent(id string) (*store.Agent, error)
-    ListAgents(rig string) ([]store.Agent, error)
+    ListAgents(world string) ([]store.Agent, error)
     UpdateAgentState(id, state string) error
-    CreateAgent(id, name, rig, role string) error
+    CreateAgent(id, name, world, role string) error
     SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
 }
 
-// RigStore is the subset of rig store operations the witness needs.
-type RigStore interface {
+// WorldStore is the subset of world store operations the sentinel needs.
+type WorldStore interface {
     GetWorkItem(id string) (*store.WorkItem, error)
     UpdateWorkItem(id string, updates store.WorkItemUpdates) error
 }
@@ -83,14 +83,14 @@ type SessionChecker interface {
 }
 ```
 
-### Witness Struct
+### Sentinel Struct
 
 ```go
-// Witness monitors polecats in a single rig.
-type Witness struct {
+// Sentinel monitors outposts in a single world.
+type Sentinel struct {
     config         Config
-    townStore      TownStore
-    rigStore       RigStore
+    sphereStore      SphereStore
+    worldStore       WorldStore
     sessions       SessionChecker
     logger         *events.Logger   // optional, nil-safe
     respawnCounts  map[respawnKey]int
@@ -102,9 +102,9 @@ type respawnKey struct {
     WorkItemID string
 }
 
-// New creates a new Witness.
-func New(cfg Config, town TownStore, rig RigStore,
-    sessions SessionChecker, logger *events.Logger) *Witness
+// New creates a new Sentinel.
+func New(cfg Config, sphere SphereStore, world WorldStore,
+    sessions SessionChecker, logger *events.Logger) *Sentinel
 ```
 
 ---
@@ -114,28 +114,28 @@ func New(cfg Config, town TownStore, rig RigStore,
 ### Agent Registration
 
 ```go
-// Register registers the witness agent in the town store.
-// Agent ID: "{rig}/witness", role: "witness".
+// Register registers the sentinel agent in the sphere store.
+// Agent ID: "{world}/sentinel", role: "sentinel".
 // Creates if not exists, reuses if already registered.
-func (w *Witness) Register() error
+func (w *Sentinel) Register() error
 ```
 
 ### Run Lifecycle
 
 ```go
-// Run starts the witness patrol loop. Blocks until context is cancelled.
+// Run starts the sentinel patrol loop. Blocks until context is cancelled.
 // Patrols immediately on start, then on each interval.
-func (w *Witness) Run(ctx context.Context) error
+func (w *Sentinel) Run(ctx context.Context) error
 ```
 
 **Lifecycle:**
-1. Register witness agent (create or reuse)
+1. Register sentinel agent (create or reuse)
 2. Set agent state to `working`
 3. Patrol immediately, then on ticker at `PatrolInterval`
 4. On context cancellation: set agent state to `idle`, log stop event
 5. Return nil
 
-Follow the refinery's `Run()` pattern — ticker loop with immediate
+Follow the forge's `Run()` pattern — ticker loop with immediate
 first poll, graceful shutdown on context cancellation.
 
 ---
@@ -143,31 +143,31 @@ first poll, graceful shutdown on context cancellation.
 ## Task 3: Patrol Cycle
 
 ```go
-// patrol runs one patrol cycle across all polecats in the rig.
-func (w *Witness) patrol() error
+// patrol runs one patrol cycle across all outposts in the world.
+func (w *Sentinel) patrol() error
 ```
 
 ### Patrol Steps
 
-**Step 1: List polecat agents**
+**Step 1: List outpost agents**
 
 ```go
-agents, err := w.townStore.ListAgents(w.config.Rig)
-// Filter to role="polecat" only
+agents, err := w.sphereStore.ListAgents(w.config.World)
+// Filter to role="outpost" only
 ```
 
-**Step 2: Check each polecat**
+**Step 2: Check each outpost**
 
-For each polecat with `role="polecat"`, call `checkPolecat(agent)`:
+For each outpost with `role="outpost"`, call `checkPolecat(agent)`:
 
 ```go
-func (w *Witness) checkPolecat(agent store.Agent) error
+func (w *Sentinel) checkPolecat(agent store.Agent) error
 ```
 
 **Case A: Working agent — verify session is alive**
 
 ```go
-sessionName := fmt.Sprintf("gt-%s-%s", w.config.Rig, agent.Name)
+sessionName := fmt.Sprintf("sol-%s-%s", w.config.World, agent.Name)
 alive, err := w.sessions.IsAlive(sessionName)
 ```
 
@@ -190,8 +190,8 @@ alive, err := w.sessions.IsAlive(sessionName)
 ```go
 w.logger.Emit(events.EventPatrol, w.agentID(), w.agentID(), "feed",
     map[string]any{
-        "rig":       w.config.Rig,
-        "total":     len(polecats),
+        "world":       w.config.World,
+        "total":     len(outposts),
         "healthy":   healthyCount,
         "stalled":   stalledCount,
         "zombies":   zombieCount,
@@ -205,9 +205,9 @@ w.logger.Emit(events.EventPatrol, w.agentID(), w.agentID(), "feed",
 
 ## Task 4: AI-Assisted Assessment
 
-This is the key differentiator. When a working polecat's session is
+This is the key differentiator. When a working outpost's session is
 alive but appears to have stalled (no output change since last patrol),
-the witness uses an AI call to assess the situation and decide how to
+the sentinel uses an AI call to assess the situation and decide how to
 respond.
 
 ### Heuristic Trigger
@@ -221,7 +221,7 @@ On each patrol, for each working agent with a live session:
 5. Update `w.lastCaptures[agentID]` with the new hash
 
 ```go
-func (w *Witness) checkProgress(agent store.Agent, sessionName string) error {
+func (w *Sentinel) checkProgress(agent store.Agent, sessionName string) error {
     output, err := w.sessions.Capture(sessionName, w.config.CaptureLines)
     if err != nil {
         return nil // can't capture, skip assessment
@@ -247,7 +247,7 @@ func (w *Witness) checkProgress(agent store.Agent, sessionName string) error {
 
 ```go
 // assessAgent uses an AI model to evaluate a potentially stuck agent.
-func (w *Witness) assessAgent(agent store.Agent, sessionName, capturedOutput string) error
+func (w *Sentinel) assessAgent(agent store.Agent, sessionName, capturedOutput string) error
 ```
 
 **Implementation:** Shell out to `claude -p` (Claude Code's print mode)
@@ -255,7 +255,7 @@ with a structured prompt. The prompt asks the model to analyze the
 agent's session output and return a JSON assessment.
 
 ```go
-func (w *Witness) assessAgent(agent store.Agent, sessionName, capturedOutput string) error {
+func (w *Sentinel) assessAgent(agent store.Agent, sessionName, capturedOutput string) error {
     prompt := buildAssessmentPrompt(agent, capturedOutput)
 
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -293,13 +293,13 @@ func buildAssessmentPrompt(agent store.Agent, capturedOutput string) string
 The prompt should be clear, structured, and request JSON output:
 
 ```
-You are a witness agent monitoring AI coding agents in a multi-agent
+You are a sentinel agent monitoring AI coding agents in a multi-agent
 orchestration system. An agent's tmux session output has not changed
 since the last patrol cycle (3 minutes ago). Analyze the session output
 below and determine the agent's status.
 
 Agent: {agent.Name} (ID: {agent.ID})
-Work item: {agent.HookItem}
+Work item: {agent.TetherItem}
 Session output (last 80 lines):
 ---
 {capturedOutput}
@@ -323,7 +323,7 @@ Status meanings:
 - "waiting": Agent is waiting for external input or a resource. May
   need a nudge to check its mail or retry.
 - "idle": Agent appears to have finished or is not doing anything.
-  May be a zombie or may have completed work without calling gt done.
+  May be a zombie or may have completed work without calling sol resolve.
 
 Only suggest "escalate" if the situation requires human intervention
 (e.g., repeated failures, auth issues, infrastructure problems).
@@ -345,7 +345,7 @@ type AssessmentResult struct {
 ### Acting on Assessment
 
 ```go
-func (w *Witness) actOnAssessment(agent store.Agent, sessionName string,
+func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
     result AssessmentResult) error
 ```
 
@@ -368,12 +368,12 @@ case "nudge":
 
 case "escalate":
     // Send RECOVERY_NEEDED protocol message to operator
-    w.townStore.SendProtocolMessage(
+    w.sphereStore.SendProtocolMessage(
         w.agentID(), "operator",
         store.ProtoRecoveryNeeded,
         store.RecoveryNeededPayload{
             AgentID:    agent.ID,
-            WorkItemID: agent.HookItem,
+            WorkItemID: agent.TetherItem,
             Reason:     result.Reason,
         },
     )
@@ -402,8 +402,8 @@ const (
 ## Task 5: Stalled Agent Recovery
 
 ```go
-// handleStalled handles a polecat whose session died while work was hooked.
-func (w *Witness) handleStalled(agent store.Agent) error
+// handleStalled handles a outpost whose session died while work was tethered.
+func (w *Sentinel) handleStalled(agent store.Agent) error
 ```
 
 ### Recovery Logic
@@ -412,7 +412,7 @@ Track respawn attempts with an in-memory map keyed by agent ID + work
 item ID:
 
 ```go
-key := respawnKey{AgentID: agent.ID, WorkItemID: agent.HookItem}
+key := respawnKey{AgentID: agent.ID, WorkItemID: agent.TetherItem}
 attempts := w.respawnCounts[key]
 ```
 
@@ -430,39 +430,39 @@ if attempts >= w.config.MaxRespawns {
 ### Respawn Agent
 
 ```go
-func (w *Witness) respawnAgent(agent store.Agent) error
+func (w *Sentinel) respawnAgent(agent store.Agent) error
 ```
 
-1. Ensure agent state is `working` in town store
+1. Ensure agent state is `working` in sphere store
 2. Start a new tmux session:
    ```go
-   sessionName := fmt.Sprintf("gt-%s-%s", w.config.Rig, agent.Name)
-   workdir := config.WorktreePath(w.config.GTHome, w.config.Rig, agent.Name)
+   sessionName := fmt.Sprintf("sol-%s-%s", w.config.World, agent.Name)
+   workdir := config.WorktreePath(w.config.GTHome, w.config.World, agent.Name)
    cmd := "claude --dangerously-skip-permissions"
    ```
 3. Emit `EventRespawn` event
 4. Send `RECOVERY_NEEDED` protocol message to operator (informational)
 
-**The witness does NOT re-sling or re-prime.** The hook file is durable,
-and the Claude Code `SessionStart` hook fires `gt prime` automatically
+**The sentinel does NOT re-cast or re-prime.** The tether file is durable,
+and the Claude Code `SessionStart` tether fires `sol prime` automatically
 (GUPP principle). Restarting the tmux session is sufficient.
 
 ### Return Work to Open
 
 ```go
-func (w *Witness) returnWorkToOpen(agent store.Agent) error
+func (w *Sentinel) returnWorkToOpen(agent store.Agent) error
 ```
 
 1. Update work item: status → `open`, clear assignee
-2. Clear the hook file: `os.Remove(hookPath)`
+2. Clear the tether file: `os.Remove(tetherPath)`
 3. Set agent state → `idle`, clear hook_item
 4. Clear respawn count for this key
 5. Emit `EventStalled` event with `"recovered": false`
 6. Send `RECOVERY_NEEDED` protocol message to operator
 
-Hook file path: `$GT_HOME/{rig}/polecats/{agent.Name}/.hook`
+Tether file path: `$SOL_HOME/{world}/outposts/{agent.Name}/.tether`
 
-Use the hook package's `Clear()` function if available, or
+Use the tether package's `Clear()` function if available, or
 `os.Remove()` directly.
 
 ---
@@ -470,16 +470,16 @@ Use the hook package's `Clear()` function if available, or
 ## Task 6: Zombie Detection and Cleanup
 
 ```go
-// handleZombie handles a polecat with a live session but no hooked work.
-func (w *Witness) handleZombie(agent store.Agent) error
+// handleZombie handles a outpost with a live session but no tethered work.
+func (w *Sentinel) handleZombie(agent store.Agent) error
 ```
 
 ### Zombie Criteria
 
 An agent is a zombie if ALL of:
 1. Agent state is `idle` (no hook_item in store)
-2. Hook file does not exist on disk
-3. A tmux session with `gt-{rig}-{name}` exists
+2. Tether file does not exist on disk
+3. A tmux session with `sol-{world}-{name}` exists
 
 ### Cleanup
 
@@ -487,52 +487,52 @@ An agent is a zombie if ALL of:
 2. Log the cleanup
 3. Emit patrol event noting zombie cleanup
 
-**Safety:** Only touch sessions matching `gt-{rig}-{name}` convention
-for this rig.
+**Safety:** Only touch sessions matching `sol-{world}-{name}` convention
+for this world.
 
 ---
 
-## Task 7: Supervisor Integration
+## Task 7: Prefect Integration
 
-Extend the supervisor to handle witness agents and defer polecat
-management to the witness when it's active (ADR-0006).
+Extend the prefect to handle sentinel agents and defer outpost
+management to the sentinel when it's active (ADR-0006).
 
-### Supervisor Defers to Witness (ADR-0006)
+### Prefect Defers to Sentinel (ADR-0006)
 
-When a witness is active for a rig, the supervisor must skip polecat
-management in that rig. The witness owns polecat supervision (respawn,
-max-respawn tracking, return-to-open). The supervisor still manages the
-witness itself and the refinery.
+When a sentinel is active for a world, the prefect must skip outpost
+management in that world. The sentinel owns outpost supervision (respawn,
+max-respawn tracking, return-to-open). The prefect still manages the
+sentinel itself and the forge.
 
-**A rig is "witnessed" when both conditions hold:**
-1. The `{rig}/witness` agent has `state=working` in the town store
-2. The witness tmux session (`gt-{rig}-witness`) is alive
+**A world is "sentineled" when both conditions hold:**
+1. The `{world}/sentinel` agent has `state=working` in the sphere store
+2. The sentinel tmux session (`sol-{world}-sentinel`) is alive
 
-Read `docs/decisions/0006-supervisor-defers-to-witness.md` for full
+Read `docs/decisions/0006-prefect-defers-to-sentinel.md` for full
 context.
 
 #### heartbeat changes
 
 In `heartbeat()`, before processing working agents:
 
-1. Query all witness agents (`role=witness`, `state=working`)
+1. Query all sentinel agents (`role=sentinel`, `state=working`)
 2. For each, check if its tmux session is alive
-3. Build a set of witnessed rigs
-4. When iterating working agents, skip `role=polecat` agents in
-   witnessed rigs
+3. Build a set of sentineled worlds
+4. When iterating working agents, skip `role=outpost` agents in
+   sentineled worlds
 
 ```go
-// Build set of witnessed rigs.
+// Build set of sentineled worlds.
 witnessedRigs := s.getWitnessedRigs()
 
 for _, agent := range workingAgents {
-    sessName := dispatch.SessionName(agent.Rig, agent.Name)
+    sessName := dispatch.SessionName(agent.World, agent.Name)
     if !s.sessions.Exists(sessName) {
         deadCount++
         s.recordDeath() // All deaths count toward mass-death, always.
 
-        // Polecats in witnessed rigs are the witness's responsibility.
-        if agent.Role == "polecat" && witnessedRigs[agent.Rig] {
+        // Outposts in sentineled worlds are the sentinel's responsibility.
+        if agent.Role == "outpost" && witnessedRigs[agent.World] {
             continue
         }
 
@@ -546,29 +546,29 @@ for _, agent := range workingAgents {
 ```
 
 ```go
-// getWitnessedRigs returns the set of rigs with an active witness.
-// A rig is witnessed when its witness agent is working AND the
-// witness tmux session is alive.
-func (s *Supervisor) getWitnessedRigs() map[string]bool {
-    witnesses, err := s.townStore.ListAgents("", "working")
+// getWitnessedRigs returns the set of worlds with an active sentinel.
+// A world is sentineled when its sentinel agent is working AND the
+// sentinel tmux session is alive.
+func (s *Prefect) getWitnessedRigs() map[string]bool {
+    sentinels, err := s.sphereStore.ListAgents("", "working")
     if err != nil {
         return nil
     }
-    rigs := make(map[string]bool)
-    for _, w := range witnesses {
-        if w.Role != "witness" {
+    worlds := make(map[string]bool)
+    for _, w := range sentinels {
+        if w.Role != "sentinel" {
             continue
         }
-        sessName := dispatch.SessionName(w.Rig, w.Name)
+        sessName := dispatch.SessionName(w.World, w.Name)
         if s.sessions.Exists(sessName) {
-            rigs[w.Rig] = true
+            worlds[w.World] = true
         }
     }
-    return rigs
+    return worlds
 }
 ```
 
-**Note:** Dead polecats in witnessed rigs still count toward mass-death
+**Note:** Dead outposts in sentineled worlds still count toward mass-death
 detection. This is intentional — infrastructure failures are worth
 detecting even if another component handles the per-agent response.
 
@@ -577,13 +577,13 @@ detecting even if another component handles the per-agent response.
 ```go
 func respawnCommand(agent store.Agent) string {
     switch agent.Role {
-    case "refinery":
-        // Refinery is a Claude session (ADR-0005). Start it the same
-        // way as a polecat — Claude handles the patrol loop using Go
+    case "forge":
+        // Forge is a Claude session (ADR-0005). Start it the same
+        // way as a outpost — Claude handles the patrol loop using Go
         // CLI subcommands as tools.
         return "claude --dangerously-skip-permissions"
-    case "witness":
-        return fmt.Sprintf("gt witness run %s", agent.Rig)
+    case "sentinel":
+        return fmt.Sprintf("sol sentinel run %s", agent.World)
     default:
         return "claude --dangerously-skip-permissions"
     }
@@ -595,14 +595,14 @@ func respawnCommand(agent store.Agent) string {
 ```go
 func worktreeForAgent(agent store.Agent, gtHome string) string {
     switch agent.Role {
-    case "refinery":
-        return config.RefineryWorktreePath(gtHome, agent.Rig)
-    case "witness":
-        // Witness is a Go process, not a worktree-based agent.
-        // Use GT_HOME as working directory.
+    case "forge":
+        return config.RefineryWorktreePath(gtHome, agent.World)
+    case "sentinel":
+        // Sentinel is a Go process, not a worktree-based agent.
+        // Use SOL_HOME as working directory.
         return gtHome
     default:
-        return config.WorktreePath(gtHome, agent.Rig, agent.Name)
+        return config.WorktreePath(gtHome, agent.World, agent.Name)
     }
 }
 ```
@@ -611,37 +611,37 @@ func worktreeForAgent(agent store.Agent, gtHome string) string {
 
 ## Task 8: CLI Commands
 
-Create `cmd/witness.go` following the refinery CLI pattern exactly.
+Create `cmd/sentinel.go` following the forge CLI pattern exactly.
 
 ### Commands
 
-**`gt witness run <rig>`** — Foreground witness loop:
+**`sol sentinel run <world>`** — Foreground sentinel loop:
 - Signal handling (SIGTERM, SIGINT)
-- Opens town store and rig store
+- Opens sphere store and world store
 - Creates event logger
 - Discovers source repo
-- Runs witness patrol loop until cancelled
+- Runs sentinel patrol loop until cancelled
 
-**`gt witness start <rig>`** — Background session:
-- Starts tmux session `gt-{rig}-witness`
-- Runs `gt witness run <rig>` inside session
-- Output: `Witness started: gt-{rig}-witness`
+**`sol sentinel start <world>`** — Background session:
+- Starts tmux session `sol-{world}-sentinel`
+- Runs `sol sentinel run <world>` inside session
+- Output: `Sentinel started: sol-{world}-sentinel`
 
-**`gt witness stop <rig>`** — Stop session:
-- Stops `gt-{rig}-witness` tmux session
+**`sol sentinel stop <world>`** — Stop session:
+- Stops `sol-{world}-sentinel` tmux session
 
-**`gt witness attach <rig>`** — Attach to session:
+**`sol sentinel attach <world>`** — Attach to session:
 - `syscall.Exec()` to tmux attach
 
 ### Registration
 
-Register `witness` under root in `cmd/root.go`.
+Register `sentinel` under root in `cmd/root.go`.
 
 ---
 
 ## Task 9: Status Integration
 
-Extend `internal/status/status.go` to include witness state.
+Extend `internal/status/status.go` to include sentinel state.
 
 ### Updated RigStatus
 
@@ -655,15 +655,15 @@ type WitnessInfo struct {
 
 ```go
 // In RigStatus:
-Witness WitnessInfo `json:"witness"`
+Sentinel WitnessInfo `json:"sentinel"`
 ```
 
 ### Updated Gather()
 
 ```go
-witnessSession := fmt.Sprintf("gt-%s-witness", rig)
+witnessSession := fmt.Sprintf("sol-%s-sentinel", world)
 witnessAlive, _ := checker.IsAlive(witnessSession)
-status.Witness = WitnessInfo{
+status.Sentinel = WitnessInfo{
     Running:     witnessAlive,
     SessionName: witnessSession,
 }
@@ -672,13 +672,13 @@ status.Witness = WitnessInfo{
 ### Updated Human Output
 
 ```
-Rig: myrig
-Supervisor: running (pid 12345)
-Refinery: running (gt-myrig-refinery)
-Witness: running (gt-myrig-witness)
+World: myworld
+Prefect: running (pid 12345)
+Forge: running (sol-myworld-forge)
+Sentinel: running (sol-myworld-sentinel)
 
 AGENT      STATE     SESSION   WORK
-Toast      working   alive     gt-a1b2c3d4: Implement login page
+Toast      working   alive     sol-a1b2c3d4: Implement login page
 Jasper     idle      -         -
 
 Merge Queue: 2 ready, 1 in progress, 0 failed
@@ -690,38 +690,38 @@ Health: healthy
 
 ## Task 10: Tests
 
-### Witness Unit Tests
+### Sentinel Unit Tests
 
-Create `internal/witness/witness_test.go` with mock stores and mock
+Create `internal/sentinel/witness_test.go` with mock stores and mock
 session checker:
 
 ```go
 func TestPatrolHealthyAgents(t *testing.T)
-    // 3 polecats working with live sessions, output changes each patrol
+    // 3 outposts working with live sessions, output changes each patrol
     // Patrol → no actions taken
     // Verify: patrol event with healthy=3, stalled=0
 
 func TestPatrolDetectsStalled(t *testing.T)
-    // 1 polecat working, dead session, hook_item set
+    // 1 outpost working, dead session, hook_item set
     // Patrol → respawn attempted
     // Verify: session start called, respawn event emitted
 
 func TestPatrolMaxRespawns(t *testing.T)
-    // Polecat respawned MaxRespawns times already
+    // Outpost respawned MaxRespawns times already
     // Patrol → work returned to open
-    // Verify: work item open, agent idle, hook cleared, event emitted
+    // Verify: work item open, agent idle, tether cleared, event emitted
 
 func TestPatrolDetectsZombie(t *testing.T)
-    // Idle polecat, no hook, but live session
+    // Idle outpost, no tether, but live session
     // Patrol → session stopped
     // Verify: session stop called
 
 func TestPatrolIgnoresIdleClean(t *testing.T)
-    // Idle polecat, no hook, no session
+    // Idle outpost, no tether, no session
     // Patrol → no action
 
 func TestPatrolIgnoresNonPolecats(t *testing.T)
-    // Agents with role=refinery and role=witness
+    // Agents with role=forge and role=sentinel
     // Patrol → skipped entirely
 
 func TestProgressDetectionOutputChanged(t *testing.T)
@@ -776,10 +776,10 @@ The simplest approach: make `assessAgent` call a function that can be
 overridden in tests:
 
 ```go
-// In witness.go:
+// In sentinel.go:
 type assessFunc func(agent store.Agent, sessionName, output string) (*AssessmentResult, error)
 
-// In Witness struct:
+// In Sentinel struct:
 assessFn assessFunc // nil = use real AI call
 
 // In tests:
@@ -810,20 +810,20 @@ func TestCLIWitnessAttachHelp(t *testing.T)
 2. `make build` — succeeds
 3. Manual smoke test:
    ```bash
-   export GT_HOME=/tmp/gt-test
-   bin/gt witness run testrig   # foreground, Ctrl+C to stop
+   export SOL_HOME=/tmp/sol-test
+   bin/sol sentinel run testrig   # foreground, Ctrl+C to stop
    # In another terminal:
-   bin/gt status testrig        # should show witness running
-   bin/gt feed --type=patrol    # should show patrol events
-   bin/gt feed --type=assess    # should show assessments (if triggered)
+   bin/sol status testrig        # should show sentinel running
+   bin/sol feed --type=patrol    # should show patrol events
+   bin/sol feed --type=assess    # should show assessments (if triggered)
    ```
-4. Clean up `/tmp/gt-test` after verification.
+4. Clean up `/tmp/sol-test` after verification.
 
 ---
 
 ## Guidelines
 
-- The witness is **primarily a Go process**. The AI assessment is a
+- The sentinel is **primarily a Go process**. The AI assessment is a
   targeted call-out, not a persistent AI session. The patrol loop,
   state detection, respawn logic, and zombie cleanup are all
   deterministic Go code.
@@ -831,7 +831,7 @@ func TestCLIWitnessAttachHelp(t *testing.T)
   output change since the last patrol. This keeps AI costs low while
   catching stuck agents that a pure heuristic would miss.
 - **Assessment failure is non-blocking.** If the AI call times out,
-  returns garbage, or fails entirely, the witness logs a warning and
+  returns garbage, or fails entirely, the sentinel logs a warning and
   continues its patrol. The assessment is additive — the mechanical
   checks (session liveness, stall detection) work regardless.
 - **Low confidence = no action.** When the AI is unsure, wait another
@@ -841,12 +841,12 @@ func TestCLIWitnessAttachHelp(t *testing.T)
   command. It uses whatever auth the operator has configured. The
   command is configurable via `AssessCommand` for operators who want
   to use a different tool or model.
-- **Respawn tracking is in-memory.** If the witness restarts, counts
-  reset. This is acceptable — witness restarts are rare, and resetting
+- **Respawn tracking is in-memory.** If the sentinel restarts, counts
+  reset. This is acceptable — sentinel restarts are rare, and resetting
   gives agents another chance.
-- The witness **does not re-sling or re-prime** crashed agents. It
+- The sentinel **does not re-cast or re-prime** crashed agents. It
   only restarts the tmux session. GUPP handles the rest.
-- One witness per rig. Agent ID: `{rig}/witness`.
+- One sentinel per world. Agent ID: `{world}/sentinel`.
 - All Loop 0, 1, and 2 tests must continue to pass.
 - Commit after tests pass with message:
-  `feat(witness): add per-rig health monitor with AI-assisted assessment`
+  `feat(sentinel): add per-world health monitor with AI-assisted assessment`

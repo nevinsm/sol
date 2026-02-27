@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // WebhookNotifier POSTs escalation data to an HTTP endpoint.
@@ -65,7 +65,7 @@ func (n *WebhookNotifier) Notify(ctx context.Context, esc store.Escalation) erro
 		return fmt.Errorf("failed to create webhook request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "gt-escalation/1.0")
+	req.Header.Set("User-Agent", "sol-escalation/1.0")
 
 	resp, err := n.Client.Do(req)
 	if err != nil {

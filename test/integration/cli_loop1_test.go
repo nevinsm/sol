@@ -7,30 +7,30 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nevinsm/gt/internal/dispatch"
+	"github.com/nevinsm/sol/internal/dispatch"
 )
 
-func TestCLISupervisorRunHelp(t *testing.T) {
+func TestCLIPrefectRunHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "supervisor", "run", "--help")
+	out, err := runGT(t, gtHome, "prefect", "run", "--help")
 	if err != nil {
-		t.Fatalf("gt supervisor run --help failed: %v: %s", err, out)
+		t.Fatalf("gt prefect run --help failed: %v: %s", err, out)
 	}
 }
 
-func TestCLISupervisorStopHelp(t *testing.T) {
+func TestCLIPrefectStopHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "supervisor", "stop", "--help")
+	out, err := runGT(t, gtHome, "prefect", "stop", "--help")
 	if err != nil {
-		t.Fatalf("gt supervisor stop --help failed: %v: %s", err, out)
+		t.Fatalf("gt prefect stop --help failed: %v: %s", err, out)
 	}
 }
 
@@ -53,7 +53,7 @@ func TestCLIStatusRig(t *testing.T) {
 	gtHome := t.TempDir()
 
 	// gt status testrig exits non-zero (no agents, but should not crash).
-	// Expect exit code 2 (degraded — no supervisor running).
+	// Expect exit code 2 (degraded — no prefect running).
 	out, err := runGT(t, gtHome, "status", "testrig")
 	if err == nil {
 		t.Log("gt status exited 0 (no agents, expected non-zero)")
@@ -69,25 +69,25 @@ func TestCLIStatusJSON(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	gtHome, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 
-	// Create an agent and work item, sling.
-	townStore.CreateAgent("Smoke", "testrig", "polecat")
-	itemID, _ := rigStore.CreateWorkItem("CLI status test", "JSON test", "operator", 2, nil)
+	// Create an agent and work item, cast.
+	sphereStore.CreateAgent("Smoke", "testrig", "agent")
+	itemID, _ := worldStore.CreateWorkItem("CLI status test", "JSON test", "operator", 2, nil)
 
-	// Need to sling from a git repo context via CLI.
+	// Need to cast from a git repo context via CLI.
 	// Use the API directly since the CLI discovers the repo from cwd.
 	mgr := dispatch.NewSessionManager()
-	dispatch.Sling(dispatch.SlingOpts{
+	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  "Smoke",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 
 	// Close stores before running the CLI (CLI opens its own).
-	rigStore.Close()
-	townStore.Close()
+	worldStore.Close()
+	sphereStore.Close()
 
 	// Run gt status testrig --json.
 	out, _ := runGT(t, gtHome, "status", "testrig", "--json")
@@ -103,42 +103,42 @@ func TestCLIStatusJSON(t *testing.T) {
 		t.Fatalf("unmarshal status JSON: %v", err)
 	}
 
-	for _, field := range []string{"rig", "supervisor", "agents", "summary"} {
+	for _, field := range []string{"world", "prefect", "agents", "summary"} {
 		if _, ok := result[field]; !ok {
 			t.Errorf("status JSON missing field %q", field)
 		}
 	}
 
-	// Verify rig name is correct.
-	if rig, ok := result["rig"].(string); !ok || rig != "testrig" {
-		t.Errorf("status JSON rig: got %v, want testrig", result["rig"])
+	// Verify world name is correct.
+	if world, ok := result["world"].(string); !ok || world != "testrig" {
+		t.Errorf("status JSON world: got %v, want testrig", result["world"])
 	}
 }
 
-func TestCLISlingAutoProvision(t *testing.T) {
+func TestCLICastAutoProvision(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome, sourceRepo := setupTestEnv(t)
 
 	// Create a work item via CLI.
-	itemID, err := runGT(t, gtHome, "store", "create", "--db=testrig", "--title=auto provision test")
+	itemID, err := runGT(t, gtHome, "store", "create", "--world=testrig", "--title=auto provision test")
 	if err != nil {
 		t.Fatalf("gt store create failed: %v: %s", err, itemID)
 	}
 
-	// Sling without --agent flag. Must run from a git repo directory.
+	// Cast without --agent flag. Must run from a git repo directory.
 	bin := gtBin(t)
-	cmd := exec.Command(bin, "sling", itemID, "testrig")
-	cmd.Env = append(os.Environ(), "GT_HOME="+gtHome)
+	cmd := exec.Command(bin, "cast", itemID, "testrig")
+	cmd.Env = append(os.Environ(), "SOL_HOME="+gtHome)
 	cmd.Dir = sourceRepo // Run from the git repo directory.
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("gt sling (auto-provision) failed: %v: %s", err, strings.TrimSpace(string(out)))
+		t.Fatalf("gt cast (auto-provision) failed: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 
 	// Verify: agent list contains an auto-provisioned agent name.
-	agentOut, err := runGT(t, gtHome, "agent", "list", "--rig=testrig")
+	agentOut, err := runGT(t, gtHome, "agent", "list", "--world=testrig")
 	if err != nil {
 		t.Fatalf("gt agent list failed: %v: %s", err, agentOut)
 	}

@@ -7,7 +7,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/nevinsm/gt/internal/session"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/spf13/cobra"
 )
 
@@ -28,14 +28,14 @@ func init() {
 	sessionCmd.AddCommand(sessionInjectCmd)
 }
 
-// --- gt session start ---
+// --- sol session start ---
 
 var (
 	startWorkdir string
 	startCmd     string
 	startEnv     []string
 	startRole    string
-	startRig     string
+	startWorld   string
 )
 
 var sessionStartCmd = &cobra.Command{
@@ -55,7 +55,7 @@ var sessionStartCmd = &cobra.Command{
 		}
 
 		mgr := session.New()
-		if err := mgr.Start(name, startWorkdir, startCmd, env, startRole, startRig); err != nil {
+		if err := mgr.Start(name, startWorkdir, startCmd, env, startRole, startWorld); err != nil {
 			return err
 		}
 		fmt.Printf("Session %s started\n", name)
@@ -67,11 +67,11 @@ func init() {
 	sessionStartCmd.Flags().StringVar(&startWorkdir, "workdir", ".", "working directory")
 	sessionStartCmd.Flags().StringVar(&startCmd, "cmd", "", "command to run")
 	sessionStartCmd.Flags().StringArrayVar(&startEnv, "env", nil, "environment variable KEY=VAL (can be repeated)")
-	sessionStartCmd.Flags().StringVar(&startRole, "role", "polecat", "session role")
-	sessionStartCmd.Flags().StringVar(&startRig, "rig", "", "rig name")
+	sessionStartCmd.Flags().StringVar(&startRole, "role", "agent", "session role")
+	sessionStartCmd.Flags().StringVar(&startWorld, "world", "", "world name")
 }
 
-// --- gt session stop ---
+// --- sol session stop ---
 
 var stopForce bool
 
@@ -93,7 +93,7 @@ func init() {
 	sessionStopCmd.Flags().BoolVar(&stopForce, "force", false, "force kill without graceful shutdown")
 }
 
-// --- gt session list ---
+// --- sol session list ---
 
 var sessionListJSON bool
 
@@ -119,13 +119,13 @@ var sessionListCmd = &cobra.Command{
 		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "NAME\tROLE\tRIG\tALIVE\tSTARTED\n")
+		fmt.Fprintf(tw, "NAME\tROLE\tWORLD\tALIVE\tSTARTED\n")
 		for _, s := range sessions {
 			alive := "no"
 			if s.Alive {
 				alive = "yes"
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s.Name, s.Role, s.Rig, alive, s.StartedAt.Format("2006-01-02 15:04:05"))
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s.Name, s.Role, s.World, alive, s.StartedAt.Format("2006-01-02 15:04:05"))
 		}
 		tw.Flush()
 		return nil
@@ -136,7 +136,7 @@ func init() {
 	sessionListCmd.Flags().BoolVar(&sessionListJSON, "json", false, "output as JSON")
 }
 
-// --- gt session health ---
+// --- sol session health ---
 
 var healthMaxInactivity time.Duration
 
@@ -162,7 +162,7 @@ func init() {
 	sessionHealthCmd.Flags().DurationVar(&healthMaxInactivity, "max-inactivity", 30*time.Minute, "max inactivity before reporting hung")
 }
 
-// --- gt session capture ---
+// --- sol session capture ---
 
 var captureLines int
 
@@ -185,7 +185,7 @@ func init() {
 	sessionCaptureCmd.Flags().IntVar(&captureLines, "lines", 50, "number of lines to capture")
 }
 
-// --- gt session attach ---
+// --- sol session attach ---
 
 var sessionAttachCmd = &cobra.Command{
 	Use:   "attach <name>",
@@ -197,7 +197,7 @@ var sessionAttachCmd = &cobra.Command{
 	},
 }
 
-// --- gt session inject ---
+// --- sol session inject ---
 
 var injectMessage string
 

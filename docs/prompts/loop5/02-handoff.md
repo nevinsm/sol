@@ -1,19 +1,19 @@
 # Prompt 02: Loop 5 — Handoff
 
-You are extending the `gt` orchestration system with a handoff mechanism
+You are extending the `sol` orchestration system with a handoff mechanism
 for session continuity. When an agent approaches its context limit or
-has been running for a long time, it calls `gt handoff` to save its
+has been running for a long time, it calls `sol handoff` to save its
 current state, stop the session, and immediately restart with the
 preserved context injected. This allows long-running work to continue
 across multiple sessions without losing progress.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Loop 5 prompt 01 (escalation system) is complete.
 
 Read all existing code first. Understand the dispatch package
 (`internal/dispatch/dispatch.go` — especially `Prime()` and `Done()`),
 the session manager (`internal/session/manager.go` — `Start()`,
-`Stop()`, `Capture()`), the hook package (`internal/hook/`), the
+`Stop()`, `Capture()`), the tether package (`internal/tether/`), the
 workflow package (`internal/workflow/`), and the protocol package
 (`internal/protocol/claudemd.go`).
 
@@ -39,7 +39,7 @@ import "time"
 type State struct {
     WorkItemID      string    `json:"work_item_id"`
     AgentName       string    `json:"agent_name"`
-    Rig             string    `json:"rig"`
+    World             string    `json:"world"`
     PreviousSession string    `json:"previous_session"`
     Summary         string    `json:"summary"`          // agent-provided or auto-generated
     RecentOutput    string    `json:"recent_output"`     // last N lines of tmux output
@@ -54,11 +54,11 @@ type State struct {
 
 ```go
 // HandoffPath returns the path to an agent's handoff state file.
-// $GT_HOME/{rig}/polecats/{agentName}/.handoff.json
-func HandoffPath(rig, agentName string) string
+// $SOL_HOME/{world}/outposts/{agentName}/.handoff.json
+func HandoffPath(world, agentName string) string
 
 // HasHandoff returns true if a handoff file exists for this agent.
-func HasHandoff(rig, agentName string) bool
+func HasHandoff(world, agentName string) bool
 ```
 
 ### State Capture
@@ -66,7 +66,7 @@ func HasHandoff(rig, agentName string) bool
 ```go
 // CaptureOpts configures what to capture during handoff.
 type CaptureOpts struct {
-    Rig         string
+    World         string
     AgentName   string
     Summary     string // agent-provided summary (optional)
     CaptureLines int   // lines of tmux output to capture (default: 100)
@@ -74,8 +74,8 @@ type CaptureOpts struct {
 }
 
 // Capture gathers the current state of an agent's session.
-// 1. Read hook file to get work item ID
-// 2. Determine session name: gt-{rig}-{agentName}
+// 1. Read tether file to get work item ID
+// 2. Determine session name: sol-{world}-{agentName}
 // 3. Capture tmux output (last CaptureLines lines via session manager)
 // 4. Capture recent git commits from the agent's worktree
 // 5. Read workflow state (if present): current step and progress
@@ -102,10 +102,10 @@ func Write(state *State) error
 
 // Read deserializes the handoff state from the agent's handoff file.
 // Returns nil, nil if no handoff file exists.
-func Read(rig, agentName string) (*State, error)
+func Read(world, agentName string) (*State, error)
 
 // Remove deletes the handoff file. No-op if it doesn't exist.
-func Remove(rig, agentName string) error
+func Remove(world, agentName string) error
 ```
 
 ### Git Log Helper
@@ -126,7 +126,7 @@ function.
 ```go
 // ExecOpts configures the handoff execution.
 type ExecOpts struct {
-    Rig       string
+    World       string
     AgentName string
     Summary   string // optional agent-provided summary
 }
@@ -134,22 +134,22 @@ type ExecOpts struct {
 // Exec performs the full handoff sequence:
 // 1. Capture current state (Capture)
 // 2. Write handoff file (Write)
-// 3. Send handoff mail to self via town store (for audit trail)
+// 3. Send handoff mail to self via sphere store (for audit trail)
 // 4. Stop the current tmux session
 // 5. Start a new tmux session with the same worktree and command
 //
-// The new session will fire the session-start hook (gt prime), which
+// The new session will fire the session-start tether (sol prime), which
 // detects the handoff file and injects the preserved context.
 //
 // sessionManager provides Stop/Start/Capture operations.
-// townStore provides SendMessage for the handoff mail.
+// sphereStore provides SendMessage for the handoff mail.
 // logger is optional (nil-safe) for event emission.
 //
 // Returns error if any critical step fails. The handoff file is written
-// before the session is stopped, so if the restart fails, the supervisor
+// before the session is stopped, so if the restart fails, the prefect
 // will eventually respawn the agent and the handoff context will still
 // be available.
-func Exec(opts ExecOpts, sessionMgr SessionManager, townStore TownStore,
+func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
     logger *events.Logger) error
 ```
 
@@ -160,11 +160,11 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, townStore TownStore,
 type SessionManager interface {
     Capture(name string, lines int) (string, error)
     Stop(name string, force bool) error
-    Start(name, workdir, cmd string, env map[string]string, role, rig string) error
+    Start(name, workdir, cmd string, env map[string]string, role, world string) error
 }
 
-// TownStore is the subset of store.Store used by handoff.
-type TownStore interface {
+// SphereStore is the subset of store.Store used by handoff.
+type SphereStore interface {
     SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error)
 }
 ```
@@ -172,7 +172,7 @@ type TownStore interface {
 ### Exec Implementation Details
 
 Step 3 — Handoff mail:
-- Sender: agent ID (`{rig}/{agentName}`)
+- Sender: agent ID (`{world}/{agentName}`)
 - Recipient: agent ID (sends to self for audit)
 - Subject: `"HANDOFF: {workItemID}"`
 - Body: summary + recent commits + workflow progress
@@ -180,19 +180,19 @@ Step 3 — Handoff mail:
 - Type: `"notification"`
 
 Step 4 — Stop session:
-- Session name: `gt-{rig}-{agentName}`
+- Session name: `sol-{world}-{agentName}`
 - Use `force: false` (graceful stop via Ctrl-C)
 
 Step 5 — Start new session:
 - Session name: same as before
-- Workdir: `$GT_HOME/{rig}/polecats/{agentName}/rig` (existing worktree)
+- Workdir: `$SOL_HOME/{world}/outposts/{agentName}/world` (existing worktree)
 - Command: `claude --dangerously-skip-permissions`
-- Env: `GT_HOME`, `GT_RIG={rig}`, `GT_AGENT={agentName}`
-- Role: existing role (read from agent record or use "polecat")
-- Rig: same rig
+- Env: `SOL_HOME`, `SOL_WORLD={world}`, `SOL_AGENT={agentName}`
+- Role: existing role (read from agent record or use "outpost")
+- World: same world
 
-The hook file is NOT cleared — the agent is still working on the same
-item. The new session picks up via `gt prime` which reads the hook and
+The tether file is NOT cleared — the agent is still working on the same
+item. The new session picks up via `sol prime` which reads the tether and
 handoff file.
 
 ---
@@ -204,22 +204,22 @@ handoff context.
 
 ### Prime Changes
 
-After reading the hook file and work item, check for a handoff file:
+After reading the tether file and work item, check for a handoff file:
 
 ```go
 // Check for handoff context (session continuity).
-handoffState, err := handoff.Read(rig, agentName)
+handoffState, err := handoff.Read(world, agentName)
 if err != nil {
     return nil, fmt.Errorf("failed to read handoff state: %w", err)
 }
 
 if handoffState != nil {
-    result, err := primeWithHandoff(rig, agentName, item, handoffState)
+    result, err := primeWithHandoff(world, agentName, item, handoffState)
     if err != nil {
         return nil, err
     }
     // Clean up handoff file after successful injection.
-    handoff.Remove(rig, agentName)
+    handoff.Remove(world, agentName)
     return result, nil
 }
 ```
@@ -230,11 +230,11 @@ because it contains the most recent context (including workflow state).
 ### Handoff Prime Output
 
 ```go
-func primeWithHandoff(rig, agentName string, item *store.WorkItem,
+func primeWithHandoff(world, agentName string, item *store.WorkItem,
     state *handoff.State) (*PrimeResult, error) {
 
     output := fmt.Sprintf(`=== HANDOFF CONTEXT ===
-Agent: %s (rig: %s)
+Agent: %s (world: %s)
 Work Item: %s
 Title: %s
 
@@ -248,20 +248,20 @@ handed off to preserve context.
 --- RECENT COMMITS ---
 %s
 --- END COMMITS ---
-`, agentName, rig, item.ID, item.Title, state.Summary, strings.Join(state.RecentCommits, "\n"))
+`, agentName, world, item.ID, item.Title, state.Summary, strings.Join(state.RecentCommits, "\n"))
 
     // Add workflow context if the agent has an active workflow.
     if state.WorkflowStep != "" {
         output += fmt.Sprintf(`
 Workflow progress: %s (current step: %s)
-Read your current step: gt workflow current --rig=%s --agent=%s
+Read your current step: sol workflow current --world=%s --agent=%s
 
-`, state.WorkflowProgress, state.WorkflowStep, rig, agentName)
+`, state.WorkflowProgress, state.WorkflowStep, world, agentName)
     }
 
     output += fmt.Sprintf(`Continue from where the previous session left off.
-When complete, run: gt done
-If you need to hand off again: gt handoff --summary="<what you've done>"
+When complete, run: sol resolve
+If you need to hand off again: sol handoff --summary="<what you've done>"
 === END HANDOFF ===`)
 
     return &PrimeResult{Output: output}, nil
@@ -278,8 +278,8 @@ workflow agents):
 
 ```markdown
 ## Session Management
-- `gt handoff` — Hand off to a fresh session (preserves context)
-- `gt handoff --summary="what I've done so far"` — Hand off with a summary
+- `sol handoff` — Hand off to a fresh session (preserves context)
+- `sol handoff --summary="what I've done so far"` — Hand off with a summary
 ```
 
 Add this to the `GenerateClaudeMD` function output. This is always
@@ -293,29 +293,29 @@ have a workflow.
 Create `cmd/handoff.go`:
 
 ```
-gt handoff [--summary="<summary>"] [--rig=<rig>] [--agent=<name>]
+sol handoff [--summary="<summary>"] [--world=<world>] [--agent=<name>]
 ```
 
 - `--summary` (optional): agent-provided summary of current state
-- `--rig` (required): rig name (also from `GT_RIG` env var)
-- `--agent` (required): agent name (also from `GT_AGENT` env var)
+- `--world` (required): world name (also from `SOL_WORLD` env var)
+- `--agent` (required): agent name (also from `SOL_AGENT` env var)
 
 **Behavior:**
-1. Resolve rig and agent from flags or environment variables
+1. Resolve world and agent from flags or environment variables
 2. Call `handoff.Exec()`
 3. If successful: print `Handoff complete. New session starting.`
 4. The current process is inside the tmux session being stopped, so
    this output may not be visible — that's OK.
 
-**Errors:** missing rig/agent, no hook file (not working) → print error,
+**Errors:** missing world/agent, no tether file (not working) → print error,
 exit 1.
 
 **Environment variables:**
-- `GT_RIG`: default rig (set by session start env)
-- `GT_AGENT`: default agent name (set by session start env)
+- `SOL_WORLD`: default world (set by session start env)
+- `SOL_AGENT`: default agent name (set by session start env)
 
-These are already set in the session environment by `Sling()`. The
-`gt handoff` command should prefer flag values but fall back to env vars.
+These are already set in the session environment by `Cast()`. The
+`sol handoff` command should prefer flag values but fall back to env vars.
 
 ---
 
@@ -349,7 +349,7 @@ Create `internal/handoff/handoff_test.go`:
 
 ```go
 func TestCapture(t *testing.T)
-    // Set up GT_HOME, hook file, workflow state
+    // Set up SOL_HOME, tether file, workflow state
     // Mock session capture → returns fake output
     // Mock git log → returns fake commits
     // Capture → State has correct fields
@@ -381,16 +381,16 @@ func TestGitLog(t *testing.T)
     // Empty repo → empty slice
 
 func TestExec(t *testing.T)
-    // Set up GT_HOME with hook file and stores
+    // Set up SOL_HOME with tether file and stores
     // Mock session manager (record Stop/Start calls)
-    // Mock town store (record SendMessage calls)
+    // Mock sphere store (record SendMessage calls)
     // Exec → handoff file written
     // Exec → session stopped then started
     // Exec → mail sent to self
     // Verify new session started with same worktree
 
 func TestExecNoHook(t *testing.T)
-    // Agent not working (no hook file) → error
+    // Agent not working (no tether file) → error
 ```
 
 ### Prime Handoff Tests
@@ -399,17 +399,17 @@ Add to existing dispatch tests or create new:
 
 ```go
 func TestPrimeWithHandoff(t *testing.T)
-    // Set up hook file and handoff file
+    // Set up tether file and handoff file
     // Prime() → output contains handoff context
     // Handoff file deleted after prime
 
 func TestPrimeHandoffTakesPriority(t *testing.T)
-    // Set up hook file, handoff file, AND workflow
+    // Set up tether file, handoff file, AND workflow
     // Prime() → output contains handoff context (not workflow)
     // Handoff file deleted
 
 func TestPrimeNoHandoff(t *testing.T)
-    // Set up hook file, no handoff
+    // Set up tether file, no handoff
     // Prime() → standard output (backwards compatible)
 ```
 
@@ -429,19 +429,19 @@ func TestCLIHandoffHelp(t *testing.T)
 2. `make build` — succeeds
 3. Manual smoke test:
    ```bash
-   export GT_HOME=/tmp/gt-test
-   mkdir -p /tmp/gt-test/myrig/polecats/Toast
+   export SOL_HOME=/tmp/sol-test
+   mkdir -p /tmp/sol-test/myworld/outposts/Toast
 
-   # Simulate an agent with work hooked
-   echo "gt-abc12345" > /tmp/gt-test/myrig/polecats/Toast/.hook
+   # Simulate an agent with work tethered
+   echo "sol-abc12345" > /tmp/sol-test/myworld/outposts/Toast/.tether
 
    # Write a fake handoff file
-   cat > /tmp/gt-test/myrig/polecats/Toast/.handoff.json << 'EOF'
+   cat > /tmp/sol-test/myworld/outposts/Toast/.handoff.json << 'EOF'
    {
-     "work_item_id": "gt-abc12345",
+     "work_item_id": "sol-abc12345",
      "agent_name": "Toast",
-     "rig": "myrig",
-     "previous_session": "gt-myrig-Toast",
+     "world": "myworld",
+     "previous_session": "sol-myworld-Toast",
      "summary": "Implemented login form. Tests passing. Starting on validation.",
      "recent_output": "All tests passed.\n$",
      "recent_commits": ["abc1234 feat: add login form", "def5678 test: add login tests"],
@@ -454,7 +454,7 @@ func TestCLIHandoffHelp(t *testing.T)
    # Test prime with handoff (requires store setup)
    # The handoff file should be consumed by prime
    ```
-4. Clean up `/tmp/gt-test` after verification.
+4. Clean up `/tmp/sol-test` after verification.
 
 ---
 
@@ -462,20 +462,20 @@ func TestCLIHandoffHelp(t *testing.T)
 
 - The handoff is a **voluntary restart** — the agent decides when to
   hand off. This is different from a crash (involuntary) which is
-  handled by the supervisor.
+  handled by the prefect.
 - The handoff file is the signal that distinguishes handoff from crash.
   Prime checks for it before workflow state. After injecting handoff
   context, the file is deleted so subsequent primes (if the new session
   crashes) use normal workflow injection.
-- The hook file is NOT cleared during handoff — the agent is still
-  working on the same item. The new session inherits the same hook,
+- The tether file is NOT cleared during handoff — the agent is still
+  working on the same item. The new session inherits the same tether,
   worktree, and workflow state.
 - The handoff mail is for audit trail only. It lets operators and the
-  deacon see that a handoff occurred. The actual context is in the
+  consul see that a handoff occurred. The actual context is in the
   `.handoff.json` file.
 - If `Exec` fails after writing the handoff file but before restarting,
-  the supervisor will eventually respawn the agent (it detects a dead
-  session with hooked work). The handoff context will be available to
+  the prefect will eventually respawn the agent (it detects a dead
+  session with tethered work). The handoff context will be available to
   the respawned session.
 - `GitLog` runs `git` as a subprocess. It should handle the case where
   the worktree directory doesn't exist or has no commits gracefully

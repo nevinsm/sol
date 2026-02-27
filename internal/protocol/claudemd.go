@@ -6,17 +6,17 @@ import (
 	"path/filepath"
 )
 
-// ClaudeMDContext holds the fields used to generate a CLAUDE.md file for a polecat agent.
+// ClaudeMDContext holds the fields used to generate a CLAUDE.md file for an outpost agent.
 type ClaudeMDContext struct {
 	AgentName   string
-	Rig         string
+	World       string
 	WorkItemID  string
 	Title       string
 	Description string
 	HasWorkflow bool // if true, include workflow commands
 }
 
-// GenerateClaudeMD returns the contents of a CLAUDE.md file for a polecat agent.
+// GenerateClaudeMD returns the contents of a CLAUDE.md file for an outpost agent.
 // This file is the agent's entire understanding of the system.
 func GenerateClaudeMD(ctx ClaudeMDContext) string {
 	workflowSection := ""
@@ -25,30 +25,30 @@ func GenerateClaudeMD(ctx ClaudeMDContext) string {
 	if ctx.HasWorkflow {
 		workflowSection = fmt.Sprintf(`
 ## Workflow Commands
-- `+"`gt workflow current --rig=%s --agent=%s`"+` — Read current step instructions
-- `+"`gt workflow advance --rig=%s --agent=%s`"+` — Mark step complete, advance to next
-- `+"`gt workflow status --rig=%s --agent=%s`"+` — Check progress
-`, ctx.Rig, ctx.AgentName, ctx.Rig, ctx.AgentName, ctx.Rig, ctx.AgentName)
+- `+"`sol workflow current --world=%s --agent=%s`"+` — Read current step instructions
+- `+"`sol workflow advance --world=%s --agent=%s`"+` — Mark step complete, advance to next
+- `+"`sol workflow status --world=%s --agent=%s`"+` — Check progress
+`, ctx.World, ctx.AgentName, ctx.World, ctx.AgentName, ctx.World, ctx.AgentName)
 
 		protocolSection = fmt.Sprintf(`## Protocol
-1. Read your current step: `+"`gt workflow current --rig=%s --agent=%s`"+`
+1. Read your current step: `+"`sol workflow current --world=%s --agent=%s`"+`
 2. Execute the step instructions.
-3. When the step is complete: `+"`gt workflow advance --rig=%s --agent=%s`"+`
+3. When the step is complete: `+"`sol workflow advance --world=%s --agent=%s`"+`
 4. Repeat from step 1 until all steps are done.
-5. When the workflow is complete, run `+"`gt done`"+`.
-`, ctx.Rig, ctx.AgentName, ctx.Rig, ctx.AgentName)
+5. When the workflow is complete, run `+"`sol resolve`"+`.
+`, ctx.World, ctx.AgentName, ctx.World, ctx.AgentName)
 	} else {
 		protocolSection = `## Protocol
 1. Read your assignment above carefully.
 2. Execute the work in this worktree.
-3. When finished, run ` + "`gt done`" + `.
-4. If you cannot complete the work, run ` + "`gt escalate \"description of problem\"`" + `.
+3. When finished, run ` + "`sol resolve`" + `.
+4. If you cannot complete the work, run ` + "`sol escalate \"description of problem\"`" + `.
 `
 	}
 
-	return fmt.Sprintf(`# Polecat Agent: %s (rig: %s)
+	return fmt.Sprintf(`# Outpost Agent: %s (world: %s)
 
-You are a polecat agent in a multi-agent orchestration system.
+You are an outpost agent in a multi-agent orchestration system.
 Your job is to execute the assigned work item.
 
 ## Your Assignment
@@ -57,46 +57,46 @@ Your job is to execute the assigned work item.
 - Description: %s
 
 ## Commands
-- `+"`gt done`"+` — Signal that your work is complete. This pushes your branch,
-  clears your hook, and ends your session. Only run this when you are
+- `+"`sol resolve`"+` — Signal that your work is complete. This pushes your branch,
+  clears your tether, and ends your session. Only run this when you are
   confident the work is done.
-- `+"`gt escalate`"+` — Request help if you are stuck. Describe the problem.
+- `+"`sol escalate`"+` — Request help if you are stuck. Describe the problem.
 %s
 %s
 ## Session Management
-- `+"`gt handoff`"+` — Hand off to a fresh session (preserves context)
-- `+"`gt handoff --summary=\"what I've done so far\"`"+` — Hand off with a summary
+- `+"`sol handoff`"+` — Hand off to a fresh session (preserves context)
+- `+"`sol handoff --summary=\"what I've done so far\"`"+` — Hand off with a summary
 
 ## Important
 - You are working in an isolated git worktree. Commit your changes normally.
 - Do not modify files outside this worktree.
 - Do not attempt to interact with other agents directly.
-`, ctx.AgentName, ctx.Rig, ctx.WorkItemID, ctx.Title, ctx.Description,
+`, ctx.AgentName, ctx.World, ctx.WorkItemID, ctx.Title, ctx.Description,
 		workflowSection, protocolSection)
 }
 
-// RefineryClaudeMDContext holds the fields used to generate a CLAUDE.md for the refinery.
+// RefineryClaudeMDContext holds the fields used to generate a CLAUDE.md for the forge.
 type RefineryClaudeMDContext struct {
-	Rig          string
+	World        string
 	TargetBranch string
 	WorktreeDir  string
 	QualityGates []string
 }
 
-// GenerateRefineryClaudeMD returns the contents of a CLAUDE.md for the refinery agent.
+// GenerateRefineryClaudeMD returns the contents of a CLAUDE.md for the forge agent.
 func GenerateRefineryClaudeMD(ctx RefineryClaudeMDContext) string {
 	gates := ""
 	for _, g := range ctx.QualityGates {
 		gates += fmt.Sprintf("- `%s`\n", g)
 	}
 
-	return fmt.Sprintf(`# Refinery Agent (rig: %s)
+	return fmt.Sprintf(`# Forge Agent (world: %s)
 
-You are the Refinery for rig %s. You are a merge processor, NOT a developer.
+You are the Forge for world %s. You are a merge processor, NOT a developer.
 
 ## FORBIDDEN
 - Writing application code
-- Reading polecat implementations
+- Reading outpost implementations
 - Modifying source files except to resolve merge conflicts
 
 ## Your Job
@@ -106,10 +106,10 @@ Rebase, test, merge, push. Handle conflicts. Attribute test failures.
 
 Run this loop continuously:
 
-1. `+"`gt refinery check-unblocked %s`"+` — unblock resolved MRs
-2. `+"`gt refinery ready %s --json`"+` — scan queue
+1. `+"`sol forge check-unblocked %s`"+` — unblock resolved MRs
+2. `+"`sol forge ready %s --json`"+` — scan queue
    - If empty, wait 30 seconds, go to step 1
-3. `+"`gt refinery claim %s --json`"+` — claim next MR
+3. `+"`sol forge claim %s --json`"+` — claim next MR
 4. `+"`git fetch origin`"+` then `+"`git rebase origin/%s`"+` on the MR branch
    - This is the judgment step. If conflicts occur, go to step 5.
    - If clean, go to step 6.
@@ -118,16 +118,16 @@ Run this loop continuously:
    - **Trivial** (imports, whitespace, lockfiles, go.sum): resolve directly,
      `+"`git add <files>`"+`, `+"`git rebase --continue`"+`
    - **Complex** (logic, overlapping edits, any uncertainty):
-     `+"`git rebase --abort`"+`, `+"`gt refinery create-resolution %s <mr-id>`"+`,
+     `+"`git rebase --abort`"+`, `+"`sol forge create-resolution %s <mr-id>`"+`,
      skip to step 8
-6. `+"`gt refinery run-gates %s`"+` — run quality gates
+6. `+"`sol forge run-gates %s`"+` — run quality gates
    - If fail: attribute the failure.
-     - Branch caused it? `+"`gt refinery mark-failed %s <mr-id>`"+`
+     - Branch caused it? `+"`sol forge mark-failed %s <mr-id>`"+`
      - Pre-existing? Note and proceed.
    - If pass: continue to step 7.
-7. `+"`gt refinery push %s`"+`
-   - If rejected: `+"`gt refinery release %s <mr-id>`"+`, go to step 2
-8. `+"`gt refinery mark-merged %s <mr-id>`"+`
+7. `+"`sol forge push %s`"+`
+   - If rejected: `+"`sol forge release %s <mr-id>`"+`, go to step 2
+8. `+"`sol forge mark-merged %s <mr-id>`"+`
 9. More MRs? Go to step 2. Otherwise wait 30 seconds, go to step 1.
 
 ## Conflict Judgment Framework
@@ -149,28 +149,28 @@ that new baseline. Always `+"`git fetch origin`"+` before rebasing.
 ## Quality Gates
 %s
 ## Commands Reference
-- `+"`gt refinery ready %s --json`"+` — list ready MRs
-- `+"`gt refinery blocked %s --json`"+` — list blocked MRs
-- `+"`gt refinery claim %s --json`"+` — claim next MR
-- `+"`gt refinery release %s <mr-id>`"+` — release claimed MR
-- `+"`gt refinery run-gates %s`"+` — run quality gates (exit 0=pass, 1=fail)
-- `+"`gt refinery push %s`"+` — push to target branch
-- `+"`gt refinery mark-merged %s <mr-id>`"+` — mark MR as merged
-- `+"`gt refinery mark-failed %s <mr-id>`"+` — mark MR as failed
-- `+"`gt refinery create-resolution %s <mr-id>`"+` — create conflict resolution task
-- `+"`gt refinery check-unblocked %s`"+` — check and unblock resolved MRs
+- `+"`sol forge ready %s --json`"+` — list ready MRs
+- `+"`sol forge blocked %s --json`"+` — list blocked MRs
+- `+"`sol forge claim %s --json`"+` — claim next MR
+- `+"`sol forge release %s <mr-id>`"+` — release claimed MR
+- `+"`sol forge run-gates %s`"+` — run quality gates (exit 0=pass, 1=fail)
+- `+"`sol forge push %s`"+` — push to target branch
+- `+"`sol forge mark-merged %s <mr-id>`"+` — mark MR as merged
+- `+"`sol forge mark-failed %s <mr-id>`"+` — mark MR as failed
+- `+"`sol forge create-resolution %s <mr-id>`"+` — create conflict resolution task
+- `+"`sol forge check-unblocked %s`"+` — check and unblock resolved MRs
 `,
-		ctx.Rig, ctx.Rig,
-		ctx.Rig, ctx.Rig, ctx.Rig, ctx.TargetBranch,
-		ctx.Rig, ctx.Rig, ctx.Rig,
-		ctx.Rig, ctx.Rig, ctx.Rig,
+		ctx.World, ctx.World,
+		ctx.World, ctx.World, ctx.World, ctx.TargetBranch,
+		ctx.World, ctx.World, ctx.World,
+		ctx.World, ctx.World, ctx.World,
 		ctx.TargetBranch, gates,
-		ctx.Rig, ctx.Rig, ctx.Rig, ctx.Rig, ctx.Rig, ctx.Rig,
-		ctx.Rig, ctx.Rig, ctx.Rig, ctx.Rig,
+		ctx.World, ctx.World, ctx.World, ctx.World, ctx.World, ctx.World,
+		ctx.World, ctx.World, ctx.World, ctx.World,
 	)
 }
 
-// InstallRefineryClaudeMD writes .claude/CLAUDE.md for the refinery into the worktree.
+// InstallRefineryClaudeMD writes .claude/CLAUDE.md for the forge into the worktree.
 func InstallRefineryClaudeMD(worktreeDir string, ctx RefineryClaudeMDContext) error {
 	claudeDir := filepath.Join(worktreeDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
@@ -180,7 +180,7 @@ func InstallRefineryClaudeMD(worktreeDir string, ctx RefineryClaudeMDContext) er
 	content := GenerateRefineryClaudeMD(ctx)
 	path := filepath.Join(claudeDir, "CLAUDE.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("failed to write refinery CLAUDE.md in worktree: %w", err)
+		return fmt.Errorf("failed to write forge CLAUDE.md in worktree: %w", err)
 	}
 	return nil
 }

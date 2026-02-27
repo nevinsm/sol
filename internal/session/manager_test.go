@@ -12,7 +12,7 @@ import (
 
 // setupTest creates an isolated tmux environment for a single test.
 // It sets TMUX_TMPDIR to a test-specific temp directory so the tmux socket
-// doesn't collide with any running tmux server. It also sets GT_HOME so
+// doesn't collide with any running tmux server. It also sets SOL_HOME so
 // session metadata is written to a test-specific directory.
 func setupTest(t *testing.T) *Manager {
 	t.Helper()
@@ -24,9 +24,9 @@ func setupTest(t *testing.T) *Manager {
 	// Unset TMUX to avoid "sessions should be nested" errors
 	t.Setenv("TMUX", "")
 
-	// Isolate GT_HOME for session metadata
+	// Isolate SOL_HOME for session metadata
 	gtHome := filepath.Join(tmpDir, "gt")
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
 	t.Cleanup(func() {
 		// Kill all sessions in this isolated tmux server
@@ -40,7 +40,7 @@ func setupTest(t *testing.T) *Manager {
 func TestStartStop(t *testing.T) {
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-ss", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	err := mgr.Start("test-ss", "/tmp", "sleep 300", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestList(t *testing.T) {
 
 	names := []string{"list-a", "list-b", "list-c"}
 	for _, name := range names {
-		err := mgr.Start(name, "/tmp", "sleep 300", nil, "polecat", "myrig")
+		err := mgr.Start(name, "/tmp", "sleep 300", nil, "agent", "myrig")
 		if err != nil {
 			t.Fatalf("Start %s failed: %v", name, err)
 		}
@@ -105,7 +105,7 @@ func TestList(t *testing.T) {
 func TestCapture(t *testing.T) {
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-cap", "/tmp", "echo 'hello world' && sleep 300", nil, "polecat", "myrig")
+	err := mgr.Start("test-cap", "/tmp", "echo 'hello world' && sleep 300", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestInject(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start a session running cat which echoes stdin back
-	err := mgr.Start("test-inj", "/tmp", "cat", nil, "polecat", "myrig")
+	err := mgr.Start("test-inj", "/tmp", "cat", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestHealthHealthy(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start a session that outputs text periodically
-	err := mgr.Start("test-hh", "/tmp", "while true; do echo tick; sleep 1; done", nil, "polecat", "myrig")
+	err := mgr.Start("test-hh", "/tmp", "while true; do echo tick; sleep 1; done", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestHealthHealthy(t *testing.T) {
 func TestHealthDead(t *testing.T) {
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-hd", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	err := mgr.Start("test-hd", "/tmp", "sleep 300", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestExists(t *testing.T) {
 		t.Fatal("Exists should return false for nonexistent session")
 	}
 
-	err := mgr.Start("test-ex", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	err := mgr.Start("test-ex", "/tmp", "sleep 300", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestExists(t *testing.T) {
 func TestMetadata(t *testing.T) {
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-meta", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	err := mgr.Start("test-meta", "/tmp", "sleep 300", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -249,11 +249,11 @@ func TestMetadata(t *testing.T) {
 	if meta.Name != "test-meta" {
 		t.Errorf("expected name 'test-meta', got %q", meta.Name)
 	}
-	if meta.Role != "polecat" {
-		t.Errorf("expected role 'polecat', got %q", meta.Role)
+	if meta.Role != "agent" {
+		t.Errorf("expected role 'agent', got %q", meta.Role)
 	}
-	if meta.Rig != "myrig" {
-		t.Errorf("expected rig 'myrig', got %q", meta.Rig)
+	if meta.World != "myrig" {
+		t.Errorf("expected world 'myrig', got %q", meta.World)
 	}
 	if meta.WorkDir != "/tmp" {
 		t.Errorf("expected workdir '/tmp', got %q", meta.WorkDir)
@@ -276,7 +276,7 @@ func TestMetadata(t *testing.T) {
 func TestDoubleStart(t *testing.T) {
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-ds", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	err := mgr.Start("test-ds", "/tmp", "sleep 300", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("first Start failed: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestDoubleStart(t *testing.T) {
 	// Let tmux stabilize
 	time.Sleep(300 * time.Millisecond)
 
-	err = mgr.Start("test-ds", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	err = mgr.Start("test-ds", "/tmp", "sleep 300", nil, "agent", "myrig")
 	if err == nil {
 		t.Fatal("second Start should fail for duplicate session name")
 	}
@@ -355,7 +355,7 @@ func TestEnvVars(t *testing.T) {
 		"OTHER":  "world",
 	}
 
-	err := mgr.Start("test-env", "/tmp", "sleep 300", env, "polecat", "myrig")
+	err := mgr.Start("test-env", "/tmp", "sleep 300", env, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start with env vars failed: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestEnvVars(t *testing.T) {
 func TestGracefulStop(t *testing.T) {
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-gs", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	err := mgr.Start("test-gs", "/tmp", "sleep 300", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestListEmpty(t *testing.T) {
 func TestListWithStoppedSession(t *testing.T) {
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-ls", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	err := mgr.Start("test-ls", "/tmp", "sleep 300", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -448,7 +448,7 @@ func TestHealthAgentDead(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start a session with a command that exits immediately
-	err := mgr.Start("test-ad", "/tmp", "echo done", nil, "polecat", "myrig")
+	err := mgr.Start("test-ad", "/tmp", "echo done", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -475,7 +475,7 @@ func TestMultipleStartStop(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start, stop, then start again with same name
-	err := mgr.Start("test-ms", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	err := mgr.Start("test-ms", "/tmp", "sleep 300", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("first Start failed: %v", err)
 	}
@@ -492,7 +492,7 @@ func TestMultipleStartStop(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Should be able to start again with same name
-	err = mgr.Start("test-ms", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	err = mgr.Start("test-ms", "/tmp", "sleep 300", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("second Start failed: %v", err)
 	}
@@ -510,8 +510,8 @@ func TestSessionInfoJSON(t *testing.T) {
 	info := SessionInfo{
 		Name:      "test",
 		PID:       12345,
-		Role:      "polecat",
-		Rig:       "myrig",
+		Role:      "agent",
+		World:     "myrig",
 		WorkDir:   "/tmp",
 		StartedAt: time.Date(2026, 2, 25, 10, 30, 0, 0, time.UTC),
 		Alive:     true,
@@ -536,7 +536,7 @@ func TestHealthHung(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start a session that just sleeps (no output changes)
-	err := mgr.Start("test-hung", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	err := mgr.Start("test-hung", "/tmp", "sleep 300", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -577,7 +577,7 @@ func TestStartCreatesSessionsDir(t *testing.T) {
 		t.Fatal("sessions dir should not exist before Start")
 	}
 
-	err := mgr.Start("test-dir", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	err := mgr.Start("test-dir", "/tmp", "sleep 300", nil, "agent", "myrig")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -621,7 +621,7 @@ func BenchmarkExists(b *testing.B) {
 	tmpDir := b.TempDir()
 	b.Setenv("TMUX_TMPDIR", tmpDir)
 	b.Setenv("TMUX", "")
-	b.Setenv("GT_HOME", filepath.Join(tmpDir, "gt"))
+	b.Setenv("SOL_HOME", filepath.Join(tmpDir, "gt"))
 
 	mgr := New()
 
@@ -630,7 +630,7 @@ func BenchmarkExists(b *testing.B) {
 		_ = kill.Run()
 	})
 
-	_ = mgr.Start("bench", "/tmp", "sleep 300", nil, "polecat", "myrig")
+	_ = mgr.Start("bench", "/tmp", "sleep 300", nil, "agent", "myrig")
 	time.Sleep(300 * time.Millisecond)
 
 	b.ResetTimer()

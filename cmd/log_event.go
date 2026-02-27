@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/nevinsm/gt/internal/config"
-	"github.com/nevinsm/gt/internal/events"
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/spf13/cobra"
 )
 

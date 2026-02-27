@@ -6,46 +6,46 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/nevinsm/gt/internal/session"
-	"github.com/nevinsm/gt/internal/status"
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/status"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
 
 var statusJSON bool
 
 var statusCmd = &cobra.Command{
-	Use:   "status <rig>",
-	Short: "Show rig status",
+	Use:   "status <world>",
+	Short: "Show world status",
 	Args:  cobra.ExactArgs(1),
 	// SilenceErrors and SilenceUsage so exit code reflects health, not cobra.
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		rig := args[0]
+		world := args[0]
 
-		townStore, err := store.OpenTown()
+		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
-		defer townStore.Close()
+		defer sphereStore.Close()
 
-		rigStore, err := store.OpenRig(rig)
+		worldStore, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
-		defer rigStore.Close()
+		defer worldStore.Close()
 
 		mgr := session.New()
 
-		// rigStore satisfies both RigStore and MergeQueueStore.
-		result, err := status.Gather(rig, townStore, rigStore, rigStore, mgr)
+		// worldStore satisfies both WorldStore and MergeQueueStore.
+		result, err := status.Gather(world, sphereStore, worldStore, worldStore, mgr)
 		if err != nil {
 			return err
 		}
 
-		// Gather convoy info (non-fatal if unavailable).
-		status.GatherConvoys(result, townStore, store.OpenRig)
+		// Gather caravan info (non-fatal if unavailable).
+		status.GatherCaravans(result, sphereStore, store.OpenWorld)
 
 		if statusJSON {
 			enc := json.NewEncoder(os.Stdout)
@@ -63,31 +63,31 @@ var statusCmd = &cobra.Command{
 	},
 }
 
-func printStatus(rs *status.RigStatus) {
-	fmt.Printf("Rig: %s\n", rs.Rig)
+func printStatus(rs *status.WorldStatus) {
+	fmt.Printf("World: %s\n", rs.World)
 
-	if rs.Supervisor.Running {
-		fmt.Printf("Supervisor: running (pid %d)\n", rs.Supervisor.PID)
+	if rs.Prefect.Running {
+		fmt.Printf("Prefect: running (pid %d)\n", rs.Prefect.PID)
 	} else {
-		fmt.Println("Supervisor: not running")
+		fmt.Println("Prefect: not running")
 	}
 
-	if rs.Refinery.Running {
-		fmt.Printf("Refinery: running (%s)\n", rs.Refinery.SessionName)
+	if rs.Forge.Running {
+		fmt.Printf("Forge: running (%s)\n", rs.Forge.SessionName)
 	} else {
-		fmt.Println("Refinery: not running")
+		fmt.Println("Forge: not running")
 	}
 
-	if rs.Curator.Running {
-		fmt.Printf("Curator: running (%s)\n", rs.Curator.SessionName)
+	if rs.Chronicle.Running {
+		fmt.Printf("Chronicle: running (%s)\n", rs.Chronicle.SessionName)
 	} else {
-		fmt.Println("Curator: not running")
+		fmt.Println("Chronicle: not running")
 	}
 
-	if rs.Witness.Running {
-		fmt.Printf("Witness: running (%s)\n", rs.Witness.SessionName)
+	if rs.Sentinel.Running {
+		fmt.Printf("Sentinel: running (%s)\n", rs.Sentinel.SessionName)
 	} else {
-		fmt.Println("Witness: not running")
+		fmt.Println("Sentinel: not running")
 	}
 
 	fmt.Println()
@@ -118,10 +118,10 @@ func printStatus(rs *status.RigStatus) {
 		fmt.Println()
 	}
 
-	// Convoys.
-	if len(rs.Convoys) > 0 {
-		fmt.Println("Convoys:")
-		for _, c := range rs.Convoys {
+	// Caravans.
+	if len(rs.Caravans) > 0 {
+		fmt.Println("Caravans:")
+		for _, c := range rs.Caravans {
 			blocked := c.TotalItems - c.DoneItems - c.ReadyItems
 			fmt.Printf("  %s  %s  %d items (%d done, %d ready, %d blocked)\n",
 				c.ID, c.Name, c.TotalItems, c.DoneItems, c.ReadyItems, blocked)

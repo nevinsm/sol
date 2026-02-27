@@ -1,62 +1,62 @@
-# gt — Multi-Agent Orchestration System
+# sol — Multi-Agent Orchestration System
 
 A production-ready system for coordinating concurrent AI coding agents.
 
 ## What It Does
 
-Software teams are deploying 10, 20, 30+ concurrent AI coding agents across repositories. `gt` is the infrastructure that makes this work: it assigns work to agents, isolates them in git worktrees so they never conflict, supervises their health, merges their output through quality gates, and recovers automatically when things break. The entire system is a single Go binary backed by SQLite — no servers, no containers, no dependencies beyond tmux.
+Software teams are deploying 10, 20, 30+ concurrent AI coding agents across repositories. `sol` is the infrastructure that makes this work: it assigns work to agents, isolates them in git worktrees so they never conflict, supervises their health, merges their output through quality gates, and recovers automatically when things break. The entire system is a single Go binary backed by SQLite — no servers, no containers, no dependencies beyond tmux.
 
 ## Key Concepts
 
 | Concept | What it is |
 |---------|-----------|
-| **Rig** | A project/repository under management. Each rig has its own database, agents, and worktrees. |
+| **World** | A project/repository under management. Each world has its own database, agents, and worktrees. |
 | **Agent** | A persistent identity (name, work history, state) backed by an ephemeral AI session. |
-| **Hook** | A file at `$GT_HOME/{rig}/polecats/{agent}/.hook` — the durability primitive. If work is on the hook, the agent runs it. Survives crashes. |
-| **Sling** | Dispatch a work item to an agent: create worktree, write hook, start session. |
-| **Prime** | Inject execution context (CLAUDE.md, hook content, workflow state) when a session starts. |
-| **Done** | Signal completion: push branch, update state, clear hook, stop session. |
-| **Polecat** | A worker agent. The base unit of execution. |
-| **Witness** | Per-rig health monitor. Detects stalls, zombies, and stuck agents. |
-| **Refinery** | Merge pipeline. Processes completed work through quality gates into the target branch. |
-| **Deacon** | Town-level patrol. Recovers stale hooks, feeds convoys, handles lifecycle requests. |
-| **Supervisor** | Top-level orchestrator. Manages witness, refinery, and deacon processes. |
-| **Convoy** | A batch of work items dispatched and tracked as a group. |
+| **Tether** | A file at `$SOL_HOME/{world}/outposts/{agent}/.tether` — the durability primitive. If work is on the tether, the agent runs it. Survives crashes. |
+| **Cast** | Dispatch a work item to an agent: create worktree, write tether, start session. |
+| **Prime** | Inject execution context (CLAUDE.md, tether content, workflow state) when a session starts. |
+| **Resolve** | Signal completion: push branch, update state, clear tether, stop session. |
+| **Outpost** | A worker agent. The base unit of execution. |
+| **Sentinel** | Per-world health monitor. Detects stalls, zombies, and stuck agents. |
+| **Forge** | Merge pipeline. Processes completed work through quality gates into the target branch. |
+| **Consul** | Sphere-level patrol. Recovers stale tethers, feeds caravans, handles lifecycle requests. |
+| **Prefect** | Top-level orchestrator. Manages sentinel, forge, and consul processes. |
+| **Caravan** | A batch of work items dispatched and tracked as a group. |
 | **Workflow** | A multi-step formula (directory of markdown instructions) executed by an agent. |
-| **GT_HOME** | Runtime root directory (env var, default `~/gt`). All state lives here. |
+| **SOL_HOME** | Runtime root directory (env var, default `~/sol`). All state lives here. |
 
 ## Quick Start
 
 ```bash
 # Build and install
 make build
-make install  # copies bin/gt to /usr/local/bin
+make install  # copies bin/sol to /usr/local/bin
 
-# Set up a rig and agents
-export GT_HOME=~/gt
-gt agent create Toast --rig=myrig
-gt agent create Rye --rig=myrig
-gt agent create Pumpernickel --rig=myrig
+# Set up a world and agents
+export SOL_HOME=~/sol
+sol agent create Toast --world=myworld
+sol agent create Rye --world=myworld
+sol agent create Pumpernickel --world=myworld
 
 # Create work items
-gt store create --db=myrig --title="Implement feature X" --description="..."
-gt store create --db=myrig --title="Fix bug Y" --description="..."
+sol store create --world=myworld --title="Implement feature X" --description="..."
+sol store create --world=myworld --title="Fix bug Y" --description="..."
 
 # Dispatch work
-gt sling <work-item-id> myrig                     # auto-selects idle agent
-gt sling <work-item-id> myrig --agent=Toast       # target a specific agent
+sol cast <work-item-id> myworld                     # auto-selects idle agent
+sol cast <work-item-id> myworld --agent=Toast       # target a specific agent
 
 # Watch an agent work
-gt session attach gt-myrig-Toast
+sol session attach sol-myworld-Toast
 
 # Check status
-gt status myrig
-gt store list --db=myrig
-gt session list
+sol status myworld
+sol store list --world=myworld
+sol session list
 
 # Run with full supervision
-gt supervisor run                    # manages all rigs
-gt supervisor run --deacon           # includes town-level patrol
+sol prefect run                    # manages all worlds
+sol prefect run --consul           # includes sphere-level patrol
 ```
 
 ## Architecture Overview
@@ -64,37 +64,37 @@ gt supervisor run --deacon           # includes town-level patrol
 ### Design Principles
 
 - **ZFC** (Zero Filesystem Cache) — Never cache state in memory. Always read from the source of truth. With 30 concurrent agents mutating state, any cache is a lie.
-- **GUPP** (Universal Propulsion Principle) — If you find work on your hook, you run it. No confirmation, no polling. The hook IS the instruction.
+- **GUPP** (Universal Propulsion Principle) — If you find work on your tether, you run it. No confirmation, no polling. The tether IS the instruction.
 - **CRASH** (Crash Recovery As Standard Handling) — Every component has a defined crash recovery path. Tested, not assumed.
 - **GLASS** (Inspectability) — The system must be inspectable with `sqlite3`, `cat`, `ls`, `jq`. No specialized tooling required.
-- **DEGRADE** (Graceful Degradation) — Subsystems down means reduced capacity, not halt. If supervision dies, agents still run their hooked work. If the merge queue is down, completed work waits safely.
+- **DEGRADE** (Graceful Degradation) — Subsystems down means reduced capacity, not halt. If supervision dies, agents still run their tethered work. If the merge queue is down, completed work waits safely.
 - **EVOLVE** (Schema Evolution) — All schemas versioned, migrations run on startup. The system evolves without breaking.
 
 ### Component Hierarchy
 
 ```
-Supervisor
-├── Witness (per-rig)     — health monitoring, stall detection, AI assessment
-├── Refinery (per-rig)    — merge queue, quality gates, conflict resolution
-├── Deacon (town-level)   — stale hook recovery, convoy feeding, lifecycle
-└── Polecats (per-rig)    — worker agents executing hooked work items
+Prefect
+├── Sentinel (per-world)     — health monitoring, stall detection, AI assessment
+├── Forge (per-world)    — merge queue, quality gates, conflict resolution
+├── Consul (sphere-level)   — stale tether recovery, caravan feeding, lifecycle
+└── Outposts (per-world)    — worker agents executing tethered work items
 ```
 
-The supervisor manages the lifecycle of all other components. Witness monitors polecat health within a rig. Refinery processes completed work into the target branch. Deacon patrols across all rigs for system-level recovery. Each component can fail independently without taking down the others.
+The prefect manages the lifecycle of all other components. Sentinel monitors outpost health within a world. Forge processes completed work into the target branch. Consul patrols across all worlds for system-level recovery. Each component can fail independently without taking down the others.
 
 ### Storage Model
 
 Two SQLite databases (WAL mode, `busy_timeout=5000`, `foreign_keys=ON`):
 
-- **Town DB** (`$GT_HOME/.store/town.db`) — Agents, messages, escalations, convoys. Shared across all rigs.
-- **Rig DB** (`$GT_HOME/.store/{rig}.db`) — Work items, labels, merge requests, dependencies. One per rig.
+- **Sphere DB** (`$SOL_HOME/.store/sphere.db`) — Agents, messages, escalations, caravans. Shared across all worlds.
+- **World DB** (`$SOL_HOME/.store/{world}.db`) — Work items, labels, merge requests, dependencies. One per world.
 
 State on the filesystem:
 
-- **Hooks** — `$GT_HOME/{rig}/polecats/{agent}/.hook`
-- **Workflows** — `$GT_HOME/{rig}/polecats/{agent}/.workflow/`
-- **Formulas** — `$GT_HOME/formulas/{name}/`
-- **Events** — `$GT_HOME/.feed/events.jsonl`
+- **Tethers** — `$SOL_HOME/{world}/outposts/{agent}/.tether`
+- **Workflows** — `$SOL_HOME/{world}/outposts/{agent}/.workflow/`
+- **Formulas** — `$SOL_HOME/formulas/{name}/`
+- **Events** — `$SOL_HOME/.feed/events.jsonl`
 
 ## CLI Reference
 
@@ -102,155 +102,155 @@ State on the filesystem:
 
 | Command | Description |
 |---------|-------------|
-| `gt sling <item-id> <rig>` | Assign work to an agent, create worktree, start session |
-| `gt prime --rig=R --agent=A` | Assemble and print execution context for an agent |
-| `gt done --rig=R --agent=A` | Signal completion: push branch, update state, clear hook |
+| `sol cast <item-id> <world>` | Assign work to an agent, create worktree, start session |
+| `sol prime --world=R --agent=A` | Assemble and print execution context for an agent |
+| `sol resolve --world=R --agent=A` | Signal completion: push branch, update state, clear tether |
 
-`sling` accepts `--agent` (auto-selects idle if omitted), `--formula`, and `--var` flags.
+`cast` accepts `--agent` (auto-selects idle if omitted), `--formula`, and `--var` flags.
 
 ### Agents
 
 | Command | Description |
 |---------|-------------|
-| `gt agent create <name> --rig=R` | Create an agent (default role: polecat) |
-| `gt agent list --rig=R` | List agents in a rig |
+| `sol agent create <name> --world=R` | Create an agent (default role: outpost) |
+| `sol agent list --world=R` | List agents in a world |
 
 ### Store (Work Items)
 
 | Command | Description |
 |---------|-------------|
-| `gt store create --db=R --title=T` | Create a work item |
-| `gt store get <id> --db=R` | Get a work item by ID |
-| `gt store list --db=R` | List work items (filter by `--status`, `--label`, `--assignee`) |
-| `gt store update <id> --db=R` | Update status, assignee, or priority |
-| `gt store close <id> --db=R` | Close a work item |
-| `gt store query --db=R --sql=Q` | Run a read-only SQL query |
+| `sol store create --world=R --title=T` | Create a work item |
+| `sol store get <id> --world=R` | Get a work item by ID |
+| `sol store list --world=R` | List work items (filter by `--status`, `--label`, `--assignee`) |
+| `sol store update <id> --world=R` | Update status, assignee, or priority |
+| `sol store close <id> --world=R` | Close a work item |
+| `sol store query --world=R --sql=Q` | Run a read-only SQL query |
 
 ### Dependencies
 
 | Command | Description |
 |---------|-------------|
-| `gt store dep add <from> <to> --db=R` | Add a dependency (from depends on to) |
-| `gt store dep remove <from> <to> --db=R` | Remove a dependency |
-| `gt store dep list <id> --db=R` | List dependencies for a work item |
+| `sol store dep add <from> <to> --world=R` | Add a dependency (from depends on to) |
+| `sol store dep remove <from> <to> --world=R` | Remove a dependency |
+| `sol store dep list <id> --world=R` | List dependencies for a work item |
 
 ### Sessions
 
 | Command | Description |
 |---------|-------------|
-| `gt session start <name>` | Start a tmux session |
-| `gt session stop <name>` | Stop a tmux session |
-| `gt session list` | List all sessions |
-| `gt session health <name>` | Check session health |
-| `gt session capture <name>` | Capture pane output |
-| `gt session attach <name>` | Attach to a session |
-| `gt session inject <name> --message=M` | Inject text into a session |
+| `sol session start <name>` | Start a tmux session |
+| `sol session stop <name>` | Stop a tmux session |
+| `sol session list` | List all sessions |
+| `sol session health <name>` | Check session health |
+| `sol session capture <name>` | Capture pane output |
+| `sol session attach <name>` | Attach to a session |
+| `sol session inject <name> --message=M` | Inject text into a session |
 
 ### Supervision
 
 | Command | Description |
 |---------|-------------|
-| `gt supervisor run` | Run the supervisor (foreground). `--deacon` enables town-level patrol. |
-| `gt supervisor stop` | Stop the running supervisor |
-| `gt status <rig>` | Show rig status |
+| `sol prefect run` | Run the prefect (foreground). `--consul` enables sphere-level patrol. |
+| `sol prefect stop` | Stop the running prefect |
+| `sol status <world>` | Show world status |
 
-### Witness (Per-Rig Health Monitor)
-
-| Command | Description |
-|---------|-------------|
-| `gt witness run <rig>` | Run the witness patrol loop (foreground) |
-| `gt witness start <rig>` | Start witness as background tmux session |
-| `gt witness stop <rig>` | Stop the witness |
-| `gt witness attach <rig>` | Attach to the witness session |
-
-### Refinery (Merge Pipeline)
+### Sentinel (Per-World Health Monitor)
 
 | Command | Description |
 |---------|-------------|
-| `gt refinery start <rig>` | Start the refinery as a Claude session |
-| `gt refinery stop <rig>` | Stop the refinery |
-| `gt refinery attach <rig>` | Attach to the refinery session |
-| `gt refinery queue <rig>` | Show the merge request queue |
+| `sol sentinel run <world>` | Run the sentinel patrol loop (foreground) |
+| `sol sentinel start <world>` | Start sentinel as background tmux session |
+| `sol sentinel stop <world>` | Stop the sentinel |
+| `sol sentinel attach <world>` | Attach to the sentinel session |
 
-Toolbox subcommands (used by the refinery Claude session):
+### Forge (Merge Pipeline)
 
 | Command | Description |
 |---------|-------------|
-| `gt refinery ready <rig>` | List ready merge requests |
-| `gt refinery blocked <rig>` | List blocked merge requests |
-| `gt refinery claim <rig>` | Claim the next ready MR |
-| `gt refinery release <rig> <mr-id>` | Release a claimed MR back to ready |
-| `gt refinery run-gates <rig>` | Run quality gates |
-| `gt refinery push <rig>` | Push to target branch |
-| `gt refinery mark-merged <rig> <mr-id>` | Mark MR as merged |
-| `gt refinery mark-failed <rig> <mr-id>` | Mark MR as failed |
-| `gt refinery create-resolution <rig> <mr-id>` | Create conflict resolution task |
-| `gt refinery check-unblocked <rig>` | Check for resolved blockers |
+| `sol forge start <world>` | Start the forge as a Claude session |
+| `sol forge stop <world>` | Stop the forge |
+| `sol forge attach <world>` | Attach to the forge session |
+| `sol forge queue <world>` | Show the merge request queue |
+
+Toolbox subcommands (used by the forge Claude session):
+
+| Command | Description |
+|---------|-------------|
+| `sol forge ready <world>` | List ready merge requests |
+| `sol forge blocked <world>` | List blocked merge requests |
+| `sol forge claim <world>` | Claim the next ready MR |
+| `sol forge release <world> <mr-id>` | Release a claimed MR back to ready |
+| `sol forge run-gates <world>` | Run quality gates |
+| `sol forge push <world>` | Push to target branch |
+| `sol forge mark-merged <world> <mr-id>` | Mark MR as merged |
+| `sol forge mark-failed <world> <mr-id>` | Mark MR as failed |
+| `sol forge create-resolution <world> <mr-id>` | Create conflict resolution task |
+| `sol forge check-unblocked <world>` | Check for resolved blockers |
 
 ### Messaging
 
 | Command | Description |
 |---------|-------------|
-| `gt mail send --to=R --subject=S` | Send a message |
-| `gt mail inbox` | List pending messages |
-| `gt mail read <msg-id>` | Read a message (marks as read) |
-| `gt mail ack <msg-id>` | Acknowledge a message |
-| `gt mail check` | Count unread messages |
+| `sol mail send --to=R --subject=S` | Send a message |
+| `sol mail inbox` | List pending messages |
+| `sol mail read <msg-id>` | Read a message (marks as read) |
+| `sol mail ack <msg-id>` | Acknowledge a message |
+| `sol mail check` | Count unread messages |
 
 ### Escalations
 
 | Command | Description |
 |---------|-------------|
-| `gt escalate <description>` | Create an escalation (`--severity`: low/medium/high/critical) |
-| `gt escalation list` | List escalations (`--status`: open/acknowledged/resolved) |
-| `gt escalation ack <id>` | Acknowledge an escalation |
-| `gt escalation resolve <id>` | Resolve an escalation |
+| `sol escalate <description>` | Create an escalation (`--severity`: low/medium/high/critical) |
+| `sol escalation list` | List escalations (`--status`: open/acknowledged/resolved) |
+| `sol escalation ack <id>` | Acknowledge an escalation |
+| `sol escalation resolve <id>` | Resolve an escalation |
 
 ### Observability
 
 | Command | Description |
 |---------|-------------|
-| `gt feed` | View event feed (`-f` follow, `-n` limit, `--since`, `--type`) |
-| `gt log-event --type=T --actor=A` | Log a custom event (plumbing) |
-| `gt curator run` | Run the event curator (foreground) |
-| `gt curator start` | Start curator as background session |
-| `gt curator stop` | Stop the curator |
+| `sol feed` | View event feed (`-f` follow, `-n` limit, `--since`, `--type`) |
+| `sol log-event --type=T --actor=A` | Log a custom event (plumbing) |
+| `sol chronicle run` | Run the event chronicle (foreground) |
+| `sol chronicle start` | Start chronicle as background session |
+| `sol chronicle stop` | Stop the chronicle |
 
 ### Workflows
 
 | Command | Description |
 |---------|-------------|
-| `gt workflow instantiate <formula>` | Instantiate a workflow from a formula |
-| `gt workflow current --rig=R --agent=A` | Print current step instructions |
-| `gt workflow advance --rig=R --agent=A` | Advance to next step |
-| `gt workflow status --rig=R --agent=A` | Show workflow progress |
+| `sol workflow instantiate <formula>` | Instantiate a workflow from a formula |
+| `sol workflow current --world=R --agent=A` | Print current step instructions |
+| `sol workflow advance --world=R --agent=A` | Advance to next step |
+| `sol workflow status --world=R --agent=A` | Show workflow progress |
 
-### Convoys
+### Caravans
 
 | Command | Description |
 |---------|-------------|
-| `gt convoy create <name> [items...]` | Create a convoy with optional items |
-| `gt convoy add <convoy-id> <items...>` | Add items to a convoy |
-| `gt convoy check <convoy-id>` | Check readiness of convoy items |
-| `gt convoy status [convoy-id]` | Show convoy status |
-| `gt convoy launch <convoy-id> --rig=R` | Dispatch ready items in a convoy |
+| `sol caravan create <name> [items...]` | Create a caravan with optional items |
+| `sol caravan add <caravan-id> <items...>` | Add items to a caravan |
+| `sol caravan check <caravan-id>` | Check readiness of caravan items |
+| `sol caravan status [caravan-id]` | Show caravan status |
+| `sol caravan launch <caravan-id> --world=R` | Dispatch ready items in a caravan |
 
 ### Handoff (Session Continuity)
 
 | Command | Description |
 |---------|-------------|
-| `gt handoff --rig=R --agent=A` | Hand off to a fresh session with context preservation |
+| `sol handoff --world=R --agent=A` | Hand off to a fresh session with context preservation |
 
 `--summary` provides a progress summary. Captures tmux output, git state, and workflow progress into `.handoff.json`, then restarts the session with that context.
 
-### Deacon (Town-Level Patrol)
+### Consul (Sphere-Level Patrol)
 
 | Command | Description |
 |---------|-------------|
-| `gt deacon run` | Run the deacon patrol loop (foreground) |
-| `gt deacon status` | Show deacon status from heartbeat |
+| `sol consul run` | Run the consul patrol loop (foreground) |
+| `sol consul status` | Show consul status from heartbeat |
 
-`deacon run` accepts `--interval` (default 5m), `--stale-timeout` (default 1h), and `--webhook` for escalation notifications.
+`consul run` accepts `--interval` (default 5m), `--stale-timeout` (default 1h), and `--webhook` for escalation notifications.
 
 ## Build Loops
 
@@ -258,54 +258,54 @@ The system was built in six incremental loops. Each loop produces a fully workin
 
 | Loop | What it added | Status |
 |------|--------------|--------|
-| **Loop 0** | Single agent dispatch — store, session, hook, sling, prime, done | Complete |
-| **Loop 1** | Multi-agent supervision — supervisor, agent respawn, health checks | Complete |
-| **Loop 2** | Merge pipeline — refinery, quality gates, conflict resolution | Complete |
-| **Loop 3** | Observability — witness, events, curator, mail system | Complete |
-| **Loop 4** | Workflows and convoys — formulas, step-based execution, batch dispatch | Complete |
-| **Loop 5** | Full orchestration — deacon, escalations, handoff, lifecycle management | Complete |
+| **Loop 0** | Single agent dispatch — store, session, tether, cast, prime, done | Complete |
+| **Loop 1** | Multi-agent supervision — prefect, agent respawn, health checks | Complete |
+| **Loop 2** | Merge pipeline — forge, quality gates, conflict resolution | Complete |
+| **Loop 3** | Observability — sentinel, events, chronicle, mail system | Complete |
+| **Loop 4** | Workflows and caravans — formulas, step-based execution, batch dispatch | Complete |
+| **Loop 5** | Full orchestration — consul, escalations, handoff, lifecycle management | Complete |
 
 ## Project Structure
 
 ```
-gt-src/
+sol-src/
 ├── main.go                        Entry point
 ├── Makefile                        build, test, test-e2e, install, clean
 ├── cmd/                            Cobra command definitions
 │   ├── root.go                     Root command, version
-│   ├── sling.go, prime.go, done.go Dispatch pipeline
+│   ├── cast.go, prime.go, done.go Dispatch pipeline
 │   ├── agent.go                    Agent management
 │   ├── store.go, store_dep.go      Work items and dependencies
 │   ├── session.go                  tmux session management
-│   ├── supervisor.go               Top-level orchestrator
-│   ├── refinery.go                 Merge pipeline + toolbox
-│   ├── status.go                   Rig status
-│   ├── witness.go                  Per-rig health monitor
+│   ├── prefect.go               Top-level orchestrator
+│   ├── forge.go                 Merge pipeline + toolbox
+│   ├── status.go                   World status
+│   ├── sentinel.go                  Per-world health monitor
 │   ├── feed.go, log_event.go       Event feed
-│   ├── curator.go                  Event curator
+│   ├── chronicle.go                  Event chronicle
 │   ├── mail.go                     Inter-agent messaging
 │   ├── workflow.go                 Workflow engine
-│   ├── convoy.go                   Batch dispatch
+│   ├── caravan.go                   Batch dispatch
 │   ├── escalate.go, escalation.go  Escalation management
 │   ├── handoff.go                  Session continuity
-│   └── deacon.go                   Town-level patrol
+│   └── consul.go                   Sphere-level patrol
 ├── internal/
-│   ├── config/                     GT_HOME resolution
+│   ├── config/                     SOL_HOME resolution
 │   ├── store/                      SQLite: work items, agents, messages, escalations
 │   ├── session/                    tmux: start, stop, health, capture, inject
-│   ├── hook/                       Hook file read/write/clear
-│   ├── protocol/                   CLAUDE.md + hook script generation
+│   ├── tether/                       Tether file read/write/clear
+│   ├── protocol/                   CLAUDE.md + tether script generation
 │   ├── namepool/                   Name generation
-│   ├── dispatch/                   Sling/prime/done core logic
-│   ├── supervisor/                 Agent respawn, health checks
-│   ├── refinery/                   Merge queue, quality gates
-│   ├── witness/                    Stall detection, AI assessment
-│   ├── status/                     Rig status gathering
-│   ├── events/                     JSONL event feed + curator
+│   ├── dispatch/                   Cast/prime/done core logic
+│   ├── prefect/                 Agent respawn, health checks
+│   ├── forge/                   Merge queue, quality gates
+│   ├── sentinel/                    Stall detection, AI assessment
+│   ├── status/                     World status gathering
+│   ├── events/                     JSONL event feed + chronicle
 │   ├── workflow/                   Directory-based state machine, formulas
 │   ├── escalation/                 Notifier interface, log/mail/webhook
 │   ├── handoff/                    Session continuity, capture/exec
-│   └── deacon/                     Town-level patrol, heartbeat
+│   └── consul/                     Sphere-level patrol, heartbeat
 ├── test/integration/               End-to-end tests
 └── docs/
     ├── manifesto.md                Design philosophy
@@ -317,7 +317,7 @@ gt-src/
 ## Development
 
 ```bash
-make build       # Build binary to bin/gt
+make build       # Build binary to bin/sol
 make test        # Run all unit tests
 make test-e2e    # Run end-to-end integration tests
 make install     # Install to /usr/local/bin
@@ -327,10 +327,10 @@ make clean       # Remove build artifacts
 ### Conventions
 
 - **Commits**: [Conventional Commits](https://www.conventionalcommits.org/) — `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`. Use scope when helpful: `feat(store): add label filtering`.
-- **Work item IDs**: `gt-` + 8 hex chars (e.g., `gt-a1b2c3d4`)
-- **Session names**: `gt-{rig}-{agentName}` (e.g., `gt-myrig-Toast`)
+- **Work item IDs**: `sol-` + 8 hex chars (e.g., `sol-a1b2c3d4`)
+- **Session names**: `sol-{world}-{agentName}` (e.g., `sol-myworld-Toast`)
 - **Timestamps**: RFC 3339 in UTC
-- **Error messages**: Include context — `"failed to open rig database %q: %w"`
+- **Error messages**: Include context — `"failed to open world database %q: %w"`
 - **SQLite connections**: Always set `journal_mode=WAL`, `busy_timeout=5000`, `foreign_keys=ON`
 
 ## Design Documents
@@ -338,9 +338,9 @@ make clean       # Remove build artifacts
 - [Manifesto](docs/manifesto.md) — Design philosophy: what we learned from the Gastown prototype, what we're building, why stability is the feature.
 - [Target Architecture](docs/target-architecture.md) — Full system specification: components, schemas, interfaces, failure modes, build loops.
 - [Architecture Decision Records](docs/decisions/) — Decisions that diverge from the target architecture:
-  - [ADR-0001](docs/decisions/0001-witness-as-go-process.md) — Witness as Go process with targeted AI call-outs
+  - [ADR-0001](docs/decisions/0001-sentinel-as-go-process.md) — Sentinel as Go process with targeted AI call-outs
   - [ADR-0003](docs/decisions/0003-ai-assessment-gated-by-output-hashing.md) — AI assessment gated by tmux output hashing
-  - [ADR-0004](docs/decisions/0004-curator-as-separate-component.md) — Curator as separate component
-  - [ADR-0005](docs/decisions/0005-refinery-claude-session.md) — Refinery as Claude session + Go toolbox (supersedes ADR-0002)
-  - [ADR-0006](docs/decisions/0006-supervisor-defers-to-witness.md) — Supervisor defers polecat management to witness
-  - [ADR-0007](docs/decisions/0007-deacon-as-go-process.md) — Deacon as Go process
+  - [ADR-0004](docs/decisions/0004-chronicle-as-separate-component.md) — Chronicle as separate component
+  - [ADR-0005](docs/decisions/0005-forge-claude-session.md) — Forge as Claude session + Go toolbox (supersedes ADR-0002)
+  - [ADR-0006](docs/decisions/0006-prefect-defers-to-sentinel.md) — Prefect defers outpost management to sentinel
+  - [ADR-0007](docs/decisions/0007-consul-as-go-process.md) — Consul as Go process

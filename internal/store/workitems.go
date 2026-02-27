@@ -40,13 +40,13 @@ type WorkItemUpdates struct {
 	Priority int    // 0 = no change
 }
 
-// generateID returns a new work item ID in the format "gt-" + 8 hex chars.
+// generateID returns a new work item ID in the format "sol-" + 8 hex chars.
 func generateID() (string, error) {
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("failed to generate work item ID: %w", err)
 	}
-	return "gt-" + hex.EncodeToString(b), nil
+	return "sol-" + hex.EncodeToString(b), nil
 }
 
 // CreateWorkItem creates a new work item and returns its generated ID.

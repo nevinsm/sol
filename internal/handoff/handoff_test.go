@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nevinsm/gt/internal/hook"
+	"github.com/nevinsm/sol/internal/tether"
 )
 
 func setupGTHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("GT_HOME", dir)
+	t.Setenv("SOL_HOME", dir)
 	return dir
 }
 
@@ -23,12 +23,12 @@ func TestCapture(t *testing.T) {
 	gtHome := setupGTHome(t)
 
 	// Set up hook file.
-	if err := hook.Write("testrig", "Toast", "gt-abc12345"); err != nil {
+	if err := tether.Write("testrig", "Toast", "gt-abc12345"); err != nil {
 		t.Fatalf("failed to write hook: %v", err)
 	}
 
 	// Set up workflow state.
-	wfDir := filepath.Join(gtHome, "testrig", "polecats", "Toast", ".workflow")
+	wfDir := filepath.Join(gtHome, "testrig", "outposts", "Toast", ".workflow")
 	if err := os.MkdirAll(wfDir, 0o755); err != nil {
 		t.Fatalf("failed to create workflow dir: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestCapture(t *testing.T) {
 		t.Fatalf("failed to write workflow state: %v", err)
 	}
 	// Minimal instance manifest for step counting.
-	instanceJSON := `{"formula":"polecat-work","work_item_id":"gt-abc12345","variables":{},"instantiated_at":"2026-02-27T10:00:00Z"}`
+	instanceJSON := `{"formula":"default-work","work_item_id":"gt-abc12345","variables":{},"instantiated_at":"2026-02-27T10:00:00Z"}`
 	if err := os.WriteFile(filepath.Join(wfDir, "manifest.json"), []byte(instanceJSON), 0o644); err != nil {
 		t.Fatalf("failed to write workflow instance: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestCapture(t *testing.T) {
 	}
 
 	state, err := Capture(CaptureOpts{
-		Rig:       "testrig",
+		World:       "testrig",
 		AgentName: "Toast",
 		Summary:   "Implemented login form. Tests passing.",
 	}, mockCapture, mockGitLog)
@@ -68,10 +68,10 @@ func TestCapture(t *testing.T) {
 	if state.AgentName != "Toast" {
 		t.Errorf("expected AgentName Toast, got %q", state.AgentName)
 	}
-	if state.Rig != "testrig" {
-		t.Errorf("expected Rig testrig, got %q", state.Rig)
+	if state.World != "testrig" {
+		t.Errorf("expected World testrig, got %q", state.World)
 	}
-	if state.PreviousSession != "gt-testrig-Toast" {
+	if state.PreviousSession != "sol-testrig-Toast" {
 		t.Errorf("expected PreviousSession gt-testrig-Toast, got %q", state.PreviousSession)
 	}
 	if state.Summary != "Implemented login form. Tests passing." {
@@ -92,12 +92,12 @@ func TestCaptureNoWorkflow(t *testing.T) {
 	setupGTHome(t)
 
 	// Set up hook file only, no workflow.
-	if err := hook.Write("testrig", "Toast", "gt-abc12345"); err != nil {
+	if err := tether.Write("testrig", "Toast", "gt-abc12345"); err != nil {
 		t.Fatalf("failed to write hook: %v", err)
 	}
 
 	state, err := Capture(CaptureOpts{
-		Rig:       "testrig",
+		World:       "testrig",
 		AgentName: "Toast",
 		Summary:   "Working on it.",
 	}, nil, nil)
@@ -117,7 +117,7 @@ func TestCaptureNoWorkflow(t *testing.T) {
 func TestCaptureNoSummary(t *testing.T) {
 	setupGTHome(t)
 
-	if err := hook.Write("testrig", "Toast", "gt-abc12345"); err != nil {
+	if err := tether.Write("testrig", "Toast", "gt-abc12345"); err != nil {
 		t.Fatalf("failed to write hook: %v", err)
 	}
 
@@ -126,7 +126,7 @@ func TestCaptureNoSummary(t *testing.T) {
 	}
 
 	state, err := Capture(CaptureOpts{
-		Rig:       "testrig",
+		World:       "testrig",
 		AgentName: "Toast",
 	}, nil, mockGitLog)
 
@@ -152,8 +152,8 @@ func TestWriteAndRead(t *testing.T) {
 	original := &State{
 		WorkItemID:       "gt-abc12345",
 		AgentName:        "Toast",
-		Rig:              "testrig",
-		PreviousSession:  "gt-testrig-Toast",
+		World:              "testrig",
+		PreviousSession:  "sol-testrig-Toast",
 		Summary:          "Implemented login form.",
 		RecentOutput:     "All tests passed.\n$",
 		RecentCommits:    []string{"abc1234 feat: add login form", "def5678 test: tests"},
@@ -221,7 +221,7 @@ func TestRemove(t *testing.T) {
 	state := &State{
 		WorkItemID: "gt-abc12345",
 		AgentName:  "Toast",
-		Rig:        "testrig",
+		World:        "testrig",
 		Summary:    "test",
 	}
 	if err := Write(state); err != nil {
@@ -259,7 +259,7 @@ func TestHasHandoff(t *testing.T) {
 	state := &State{
 		WorkItemID: "gt-abc12345",
 		AgentName:  "Toast",
-		Rig:        "testrig",
+		World:        "testrig",
 		Summary:    "test",
 	}
 	if err := Write(state); err != nil {
@@ -346,7 +346,7 @@ func (m *mockSessionMgr) Start(name, workdir, cmd string, env map[string]string,
 	return nil
 }
 
-type mockTownStore struct {
+type mockSphereStore struct {
 	messages []msgCall
 }
 
@@ -356,7 +356,7 @@ type msgCall struct {
 	MsgType                          string
 }
 
-func (m *mockTownStore) SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error) {
+func (m *mockSphereStore) SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error) {
 	m.messages = append(m.messages, msgCall{sender, recipient, subject, body, priority, msgType})
 	return "msg-00000001", nil
 }
@@ -365,21 +365,21 @@ func TestExec(t *testing.T) {
 	gtHome := setupGTHome(t)
 
 	// Set up hook file.
-	if err := hook.Write("testrig", "Toast", "gt-abc12345"); err != nil {
+	if err := tether.Write("testrig", "Toast", "gt-abc12345"); err != nil {
 		t.Fatalf("failed to write hook: %v", err)
 	}
 
 	// Create worktree directory.
-	worktreeDir := filepath.Join(gtHome, "testrig", "polecats", "Toast", "rig")
+	worktreeDir := filepath.Join(gtHome, "testrig", "outposts", "Toast", "worktree")
 	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 
 	mgr := &mockSessionMgr{captureResult: "$ make test\nAll tests passed."}
-	ts := &mockTownStore{}
+	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		Rig:       "testrig",
+		World:       "testrig",
 		AgentName: "Toast",
 		Summary:   "Implemented login form.",
 	}, mgr, ts, nil)
@@ -394,20 +394,23 @@ func TestExec(t *testing.T) {
 	}
 
 	// Verify session was stopped then started.
-	if len(mgr.stopped) != 1 || mgr.stopped[0] != "gt-testrig-Toast" {
+	if len(mgr.stopped) != 1 || mgr.stopped[0] != "sol-testrig-Toast" {
 		t.Errorf("expected session stopped once, got %v", mgr.stopped)
 	}
 	if len(mgr.started) != 1 {
 		t.Fatalf("expected 1 start call, got %d", len(mgr.started))
 	}
-	if mgr.started[0].Name != "gt-testrig-Toast" {
-		t.Errorf("expected session name gt-testrig-Toast, got %q", mgr.started[0].Name)
+	if mgr.started[0].Name != "sol-testrig-Toast" {
+		t.Errorf("expected session name sol-testrig-Toast, got %q", mgr.started[0].Name)
 	}
 	if mgr.started[0].Workdir != worktreeDir {
 		t.Errorf("expected workdir %q, got %q", worktreeDir, mgr.started[0].Workdir)
 	}
 	if mgr.started[0].Cmd != "claude --dangerously-skip-permissions" {
 		t.Errorf("expected claude command, got %q", mgr.started[0].Cmd)
+	}
+	if mgr.started[0].Role != "agent" {
+		t.Errorf("expected role agent, got %q", mgr.started[0].Role)
 	}
 
 	// Verify mail was sent to self.
@@ -436,17 +439,17 @@ func TestExecNoHook(t *testing.T) {
 	setupGTHome(t)
 
 	mgr := &mockSessionMgr{}
-	ts := &mockTownStore{}
+	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		Rig:       "testrig",
+		World:       "testrig",
 		AgentName: "Toast",
 	}, mgr, ts, nil)
 
 	if err == nil {
-		t.Fatal("expected error when no hook exists")
+		t.Fatal("expected error when no tether exists")
 	}
-	if !strings.Contains(err.Error(), "no work hooked") {
-		t.Errorf("expected 'no work hooked' error, got: %v", err)
+	if !strings.Contains(err.Error(), "no work tethered") {
+		t.Errorf("expected 'no work tethered' error, got: %v", err)
 	}
 }

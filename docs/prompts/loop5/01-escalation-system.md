@@ -1,11 +1,11 @@
 # Prompt 01: Loop 5 — Escalation System
 
-You are extending the `gt` orchestration system with a severity-based
-escalation system. Escalations allow agents, witnesses, and operators to
+You are extending the `sol` orchestration system with a severity-based
+escalation system. Escalations allow agents, sentinels, and operators to
 flag problems that need human attention. A pluggable notifier interface
 routes escalations to the appropriate channels based on severity.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Loop 4 is complete.
 
 Read all existing code first. Understand the store package
@@ -13,14 +13,14 @@ Read all existing code first. Understand the store package
 table, `messages.go` for mail, and `protocol.go`), the events package
 (`internal/events/`), and the config package (`internal/config/`).
 
-Read `docs/target-architecture.md` Section 3.7 (Deacon) for how
+Read `docs/target-architecture.md` Section 3.7 (Consul) for how
 escalations fit into the broader Loop 5 picture.
 
 ---
 
 ## Task 1: Escalation CRUD
 
-The `escalations` table already exists in town schema V2. Add Go
+The `escalations` table already exists in sphere schema V2. Add Go
 functions to operate on it.
 
 ### Types
@@ -99,7 +99,7 @@ package escalation
 import (
     "context"
 
-    "github.com/nevinsm/gt/internal/store"
+    "github.com/nevinsm/sol/internal/store"
 )
 
 // Notifier delivers escalation notifications to a channel.
@@ -140,12 +140,12 @@ If the logger is nil, `Notify` is a no-op (returns nil).
 ```go
 // internal/escalation/mail.go
 
-// MailNotifier sends an escalation as a protocol message via the town store.
+// MailNotifier sends an escalation as a protocol message via the sphere store.
 type MailNotifier struct {
     store *store.Store
 }
 
-func NewMailNotifier(townStore *store.Store) *MailNotifier
+func NewMailNotifier(sphereStore *store.Store) *MailNotifier
 
 // Notify sends a mail message to "operator" with the escalation details.
 // Subject: "[ESCALATION-{severity}] {description truncated to 80 chars}"
@@ -176,14 +176,14 @@ func NewWebhookNotifier(url string) *WebhookNotifier
 // {
 //   "id": "esc-a1b2c3d4",
 //   "severity": "high",
-//   "source": "myrig/witness",
+//   "source": "myworld/sentinel",
 //   "description": "Agent Toast stalled for 30 minutes",
 //   "status": "open",
 //   "created_at": "2026-02-27T10:30:00Z"
 // }
 //
 // Content-Type: application/json
-// User-Agent: gt-escalation/1.0
+// User-Agent: sol-escalation/1.0
 //
 // Returns error if response status is not 2xx.
 // Timeout defaults to 10 seconds.
@@ -222,19 +222,19 @@ func (r *Router) Route(ctx context.Context, esc store.Escalation) error
 //
 // If webhookURL is empty, high/critical omit the webhook notifier.
 // If logger is nil, log notifier is a no-op.
-func DefaultRouter(logger *events.Logger, townStore *store.Store, webhookURL string) *Router
+func DefaultRouter(logger *events.Logger, sphereStore *store.Store, webhookURL string) *Router
 ```
 
 ---
 
 ## Task 3: CLI Commands
 
-### gt escalate
+### sol escalate
 
 Create the escalation creation command in `cmd/escalate.go`:
 
 ```
-gt escalate [--severity=<level>] [--source=<source>] "<description>"
+sol escalate [--severity=<level>] [--source=<source>] "<description>"
 ```
 
 - `--severity` (optional, default `"medium"`): one of low, medium, high, critical
@@ -242,9 +242,9 @@ gt escalate [--severity=<level>] [--source=<source>] "<description>"
 - `<description>` (required): first positional argument
 
 **Behavior:**
-1. Open town store
-2. Create escalation via `townStore.CreateEscalation()`
-3. Build router: `escalation.DefaultRouter(logger, townStore, webhookURL)`
+1. Open sphere store
+2. Create escalation via `sphereStore.CreateEscalation()`
+3. Build router: `escalation.DefaultRouter(logger, sphereStore, webhookURL)`
    - `webhookURL` from `GT_ESCALATION_WEBHOOK` environment variable (empty = no webhook)
 4. Route the escalation
 5. Print: `Escalation created: <id> [<severity>]`
@@ -252,12 +252,12 @@ gt escalate [--severity=<level>] [--source=<source>] "<description>"
 
 **Errors:** invalid severity, missing description → print error, exit 1.
 
-### gt escalation list
+### sol escalation list
 
-Add `cmd/escalation.go` with the `gt escalation` command group:
+Add `cmd/escalation.go` with the `sol escalation` command group:
 
 ```
-gt escalation list [--status=<status>] [--json]
+sol escalation list [--status=<status>] [--json]
 ```
 
 - `--status` (optional): filter by status (open, acknowledged, resolved)
@@ -266,7 +266,7 @@ gt escalation list [--status=<status>] [--json]
 **Human output:**
 ```
 Open escalations:
-  esc-a1b2c3d4  [critical]  myrig/witness  Agent Toast stalled for 30m  (2m ago)
+  esc-a1b2c3d4  [critical]  myworld/sentinel  Agent Toast stalled for 30m  (2m ago)
   esc-e5f6a7b8  [medium]    operator       Tests flaky on staging       (1h ago)
 
 2 escalation(s)
@@ -274,27 +274,27 @@ Open escalations:
 
 **JSON output:**
 ```json
-[{"id":"esc-a1b2c3d4","severity":"critical","source":"myrig/witness","description":"Agent Toast stalled for 30m","status":"open","created_at":"..."}]
+[{"id":"esc-a1b2c3d4","severity":"critical","source":"myworld/sentinel","description":"Agent Toast stalled for 30m","status":"open","created_at":"..."}]
 ```
 
-### gt escalation ack
+### sol escalation ack
 
 ```
-gt escalation ack <id>
+sol escalation ack <id>
 ```
 
 **Behavior:**
-1. Call `townStore.AckEscalation(id)`
+1. Call `sphereStore.AckEscalation(id)`
 2. Print: `Acknowledged: <id>`
 
-### gt escalation resolve
+### sol escalation resolve
 
 ```
-gt escalation resolve <id>
+sol escalation resolve <id>
 ```
 
 **Behavior:**
-1. Call `townStore.ResolveEscalation(id)`
+1. Call `sphereStore.ResolveEscalation(id)`
 2. Print: `Resolved: <id>`
 
 ---
@@ -369,7 +369,7 @@ func TestLogNotifier(t *testing.T)
     // Nil logger → no error
 
 func TestMailNotifier(t *testing.T)
-    // Create town store
+    // Create sphere store
     // Notify → message sent to "operator"
     // Verify subject includes severity
     // Verify priority mapping (critical→1, low→3)
@@ -418,35 +418,35 @@ func TestCLIEscalationResolveHelp(t *testing.T)
 2. `make build` — succeeds
 3. Manual smoke test:
    ```bash
-   export GT_HOME=/tmp/gt-test
-   mkdir -p /tmp/gt-test/.store
+   export SOL_HOME=/tmp/sol-test
+   mkdir -p /tmp/sol-test/.store
 
    # Create an escalation
-   bin/gt escalate --severity=high --source=operator "Tests failing on myrig"
+   bin/sol escalate --severity=high --source=operator "Tests failing on myworld"
 
    # List escalations
-   bin/gt escalation list
-   bin/gt escalation list --json
+   bin/sol escalation list
+   bin/sol escalation list --json
 
    # Acknowledge
-   bin/gt escalation ack esc-<id>
-   bin/gt escalation list
+   bin/sol escalation ack esc-<id>
+   bin/sol escalation list
 
    # Resolve
-   bin/gt escalation resolve esc-<id>
-   bin/gt escalation list --status=resolved
+   bin/sol escalation resolve esc-<id>
+   bin/sol escalation list --status=resolved
 
    # Test webhook (optional — requires running server)
    export GT_ESCALATION_WEBHOOK=http://localhost:8080/webhook
-   bin/gt escalate --severity=critical "Production down"
+   bin/sol escalate --severity=critical "Production down"
    ```
-4. Clean up `/tmp/gt-test` after verification.
+4. Clean up `/tmp/sol-test` after verification.
 
 ---
 
 ## Guidelines
 
-- The escalations table already exists in the town schema (V2). Do NOT
+- The escalations table already exists in the sphere schema (V2). Do NOT
   create a new migration — just add Go functions to operate on the
   existing table.
 - The notifier interface is intentionally simple — `Notify()` + `Name()`.
@@ -455,10 +455,10 @@ func TestCLIEscalationResolveHelp(t *testing.T)
   still fire. The first error is returned but does not short-circuit.
 - WebhookNotifier respects context cancellation and has a configurable
   timeout (default 10s). Use `http.NewRequestWithContext`.
-- The `gt escalate` command is designed to be called by agents from
+- The `sol escalate` command is designed to be called by agents from
   within their sessions (e.g., when stuck). The `--source` flag defaults
   to `"operator"` for manual use, but agents will pass their ID.
-- The `gt escalation` command group is for operators managing
+- The `sol escalation` command group is for operators managing
   escalations. Agents should not need to list/ack/resolve escalations.
 - Event emission follows the nil-logger-safe pattern used throughout
   the codebase.

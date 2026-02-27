@@ -1,17 +1,17 @@
 # Prompt 01: Loop 4 — Workflow Engine
 
-You are extending the `gt` orchestration system with a directory-based
+You are extending the `sol` orchestration system with a directory-based
 workflow engine. Workflows provide multi-step structured execution for
 agents — a formula (template) is instantiated into a workflow instance
 that tracks step progress and survives session crashes.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Loop 3 is complete.
 
 Read all existing code first. Understand the dispatch package
-(`internal/dispatch/dispatch.go` — especially `Sling()`, `Prime()`, and
+(`internal/dispatch/dispatch.go` — especially `Cast()`, `Prime()`, and
 `Done()`), the protocol package (`internal/protocol/` — CLAUDE.md
-generation), the hook package (`internal/hook/`), and the store package
+generation), the tether package (`internal/tether/`), and the store package
 (`internal/store/`).
 
 Read `docs/target-architecture.md` Section 3.5 (Workflow Engine) for
@@ -25,10 +25,10 @@ Create `internal/workflow/` package with the core workflow engine.
 
 ### Formula (Template) Format
 
-Formulas live in `$GT_HOME/formulas/<name>/`. Each formula is a directory:
+Formulas live in `$SOL_HOME/formulas/<name>/`. Each formula is a directory:
 
 ```
-$GT_HOME/formulas/polecat-work/
+$SOL_HOME/formulas/default-work/
 ├── manifest.toml
 └── steps/
     ├── 01-load-context.md
@@ -39,9 +39,9 @@ $GT_HOME/formulas/polecat-work/
 ### Manifest Format (TOML)
 
 ```toml
-name = "polecat-work"
+name = "default-work"
 type = "workflow"
-description = "Standard polecat work execution"
+description = "Standard outpost work execution"
 
 [variables]
 issue = { required = true }
@@ -173,12 +173,12 @@ Read work item {{issue}} and understand the requirements.
 Checkout branch from {{base_branch}}.
 ```
 
-With variables `{"issue": "gt-abc12345", "base_branch": "main"}`, the
+With variables `{"issue": "sol-abc12345", "base_branch": "main"}`, the
 rendered output is:
 ```markdown
 # Load Context
 
-Read work item gt-abc12345 and understand the requirements.
+Read work item sol-abc12345 and understand the requirements.
 Checkout branch from main.
 ```
 
@@ -189,17 +189,17 @@ error.
 
 ```go
 // WorkflowDir returns the path to an agent's workflow instance.
-// $GT_HOME/{rig}/polecats/{agentName}/.workflow/
-func WorkflowDir(rig, agentName string) string
+// $SOL_HOME/{world}/outposts/{agentName}/.workflow/
+func WorkflowDir(world, agentName string) string
 
 // FormulaDir returns the path to a formula.
-// $GT_HOME/formulas/{formulaName}/
+// $SOL_HOME/formulas/{formulaName}/
 func FormulaDir(formulaName string) string
 
 // Instantiate creates a workflow instance for an agent's assignment.
 // 1. Loads and validates the manifest
 // 2. Resolves variables (merge provided with defaults, check required)
-// 3. Creates the .workflow/ directory in the agent's polecat dir
+// 3. Creates the .workflow/ directory in the agent's outpost dir
 // 4. Writes manifest.json (Instance struct)
 // 5. Renders each step's instructions with variable substitution
 // 6. Writes step files as JSON (Step structs)
@@ -208,14 +208,14 @@ func FormulaDir(formulaName string) string
 //    status="running"
 //
 // Returns the Instance and initial State, or error.
-func Instantiate(rig, agentName, formulaName string,
+func Instantiate(world, agentName, formulaName string,
     vars map[string]string) (*Instance, *State, error)
 ```
 
 The instance directory structure:
 
 ```
-$GT_HOME/{rig}/polecats/{agentName}/.workflow/
+$SOL_HOME/{world}/outposts/{agentName}/.workflow/
 ├── manifest.json          # Instance metadata
 ├── state.json             # Execution progress
 └── steps/
@@ -229,17 +229,17 @@ $GT_HOME/{rig}/polecats/{agentName}/.workflow/
 ```go
 // ReadState reads the current workflow state for an agent.
 // Returns nil, nil if no workflow exists (no .workflow/ directory).
-func ReadState(rig, agentName string) (*State, error)
+func ReadState(world, agentName string) (*State, error)
 
 // ReadCurrentStep reads the current step's full details.
 // Returns nil, nil if workflow is complete or doesn't exist.
-func ReadCurrentStep(rig, agentName string) (*Step, error)
+func ReadCurrentStep(world, agentName string) (*Step, error)
 
 // ReadInstance reads the workflow instance metadata.
-func ReadInstance(rig, agentName string) (*Instance, error)
+func ReadInstance(world, agentName string) (*Instance, error)
 
 // ListSteps reads all step files and returns them in manifest order.
-func ListSteps(rig, agentName string) ([]Step, error)
+func ListSteps(world, agentName string) ([]Step, error)
 ```
 
 ### Advancing
@@ -260,7 +260,7 @@ func ListSteps(rig, agentName string) ([]Step, error)
 // 9. Write state.json
 //
 // Returns the next step (nil if done), whether workflow is complete, and error.
-func Advance(rig, agentName string) (nextStep *Step, done bool, err error)
+func Advance(world, agentName string) (nextStep *Step, done bool, err error)
 ```
 
 ### Topological Sort
@@ -281,46 +281,46 @@ Return matching step IDs in the order they appear in the manifest.
 ```go
 // Remove deletes a workflow instance directory.
 // Used for ephemeral workflows and cleanup.
-func Remove(rig, agentName string) error
+func Remove(world, agentName string) error
 ```
 
 ---
 
 ## Task 2: CLI Commands
 
-Create `cmd/workflow.go` with the `gt workflow` command group.
+Create `cmd/workflow.go` with the `sol workflow` command group.
 
-### gt workflow instantiate
+### sol workflow instantiate
 
 ```
-gt workflow instantiate <formula> --item=<id> --rig=<rig> --agent=<name> [--var=key=val ...]
+sol workflow instantiate <formula> --item=<id> --world=<world> --agent=<name> [--var=key=val ...]
 ```
 
-- `<formula>`: formula name (looked up in `$GT_HOME/formulas/<formula>/`)
+- `<formula>`: formula name (looked up in `$SOL_HOME/formulas/<formula>/`)
 - `--item` (required): work item ID to associate
-- `--rig` (required): rig name
+- `--world` (required): world name
 - `--agent` (required): agent name
 - `--var`: variable assignment (repeatable)
 
 **Behavior:**
-1. Call `workflow.Instantiate(rig, agent, formula, vars)`
+1. Call `workflow.Instantiate(world, agent, formula, vars)`
 2. Print: `Workflow instantiated: <formula> for <item> (step: <current_step>)`
 3. Exit 0
 
 **Errors:** formula not found, required variable missing, DAG cycle →
 print error, exit 1.
 
-### gt workflow current
+### sol workflow current
 
 ```
-gt workflow current --rig=<rig> --agent=<name>
+sol workflow current --world=<world> --agent=<name>
 ```
 
-- `--rig` (required): rig name
+- `--world` (required): world name
 - `--agent` (required): agent name
 
 **Behavior:**
-1. Call `workflow.ReadCurrentStep(rig, agent)`
+1. Call `workflow.ReadCurrentStep(world, agent)`
 2. If no workflow or workflow complete:
    print `No active workflow step.` to stderr, exit 1
 3. Print the step's rendered instructions to stdout
@@ -329,34 +329,34 @@ gt workflow current --rig=<rig> --agent=<name>
 The output is the raw step markdown — this is what gets injected into
 the agent's context.
 
-### gt workflow advance
+### sol workflow advance
 
 ```
-gt workflow advance --rig=<rig> --agent=<name>
+sol workflow advance --world=<world> --agent=<name>
 ```
 
-- `--rig` (required): rig name
+- `--world` (required): world name
 - `--agent` (required): agent name
 
 **Behavior:**
-1. Call `workflow.Advance(rig, agent)`
+1. Call `workflow.Advance(world, agent)`
 2. If done: print `Workflow complete.`, exit 0
 3. If advanced: print `Advanced to step: <title>`, exit 0
 4. If error: print error, exit 1
 
-### gt workflow status
+### sol workflow status
 
 ```
-gt workflow status --rig=<rig> --agent=<name> [--json]
+sol workflow status --world=<world> --agent=<name> [--json]
 ```
 
-- `--rig` (required): rig name
+- `--world` (required): world name
 - `--agent` (required): agent name
 - `--json`: output as JSON
 
 **Human output:**
 ```
-Workflow: polecat-work (gt-abc12345)
+Workflow: default-work (sol-abc12345)
 Status: running
 Progress: 1/3 steps complete
 
@@ -366,7 +366,7 @@ Steps:
   [ ] verify — Verify the implementation
 ```
 
-**JSON output:** `{"formula":"polecat-work","work_item_id":"gt-abc12345",
+**JSON output:** `{"formula":"default-work","work_item_id":"sol-abc12345",
 "status":"running","current_step":"implement","completed":["load-context"],
 "total_steps":3,"completed_count":1}`
 
@@ -374,8 +374,8 @@ Steps:
 
 ## Task 3: Default Formula
 
-Create a default `polecat-work` formula that ships with gt. This is
-installed to `$GT_HOME/formulas/polecat-work/` on first use (if the
+Create a default `default-work` formula that ships with sol. This is
+installed to `$SOL_HOME/formulas/default-work/` on first use (if the
 directory doesn't exist, `Instantiate` creates it from embedded defaults).
 
 ### Embedded Defaults
@@ -388,27 +388,27 @@ package workflow
 
 import "embed"
 
-//go:embed defaults/polecat-work/manifest.toml
-//go:embed defaults/polecat-work/steps/01-load-context.md
-//go:embed defaults/polecat-work/steps/02-implement.md
-//go:embed defaults/polecat-work/steps/03-verify.md
+//go:embed defaults/default-work/manifest.toml
+//go:embed defaults/default-work/steps/01-load-context.md
+//go:embed defaults/default-work/steps/02-implement.md
+//go:embed defaults/default-work/steps/03-verify.md
 var defaultFormulas embed.FS
 ```
 
 Place the actual files at:
 ```
-internal/workflow/defaults/polecat-work/manifest.toml
-internal/workflow/defaults/polecat-work/steps/01-load-context.md
-internal/workflow/defaults/polecat-work/steps/02-implement.md
-internal/workflow/defaults/polecat-work/steps/03-verify.md
+internal/workflow/defaults/default-work/manifest.toml
+internal/workflow/defaults/default-work/steps/01-load-context.md
+internal/workflow/defaults/default-work/steps/02-implement.md
+internal/workflow/defaults/default-work/steps/03-verify.md
 ```
 
 ### manifest.toml
 
 ```toml
-name = "polecat-work"
+name = "default-work"
 type = "workflow"
-description = "Standard polecat work execution"
+description = "Standard outpost work execution"
 
 [variables]
 issue = { required = true }
@@ -445,7 +445,7 @@ Read work item {{issue}} and understand the requirements fully.
 4. Note any dependencies or related work
 
 When you have a clear understanding of what needs to be done, advance
-to the next step: `gt workflow advance --rig=$GT_RIG --agent=$GT_AGENT`
+to the next step: `sol workflow advance --world=$SOL_WORLD --agent=$SOL_AGENT`
 ```
 
 ### steps/02-implement.md
@@ -461,7 +461,7 @@ Implement the changes for {{issue}}.
 4. Commit your changes with a clear message
 
 When implementation is complete and tests pass, advance:
-`gt workflow advance --rig=$GT_RIG --agent=$GT_AGENT`
+`sol workflow advance --world=$SOL_WORLD --agent=$SOL_AGENT`
 ```
 
 ### steps/03-verify.md
@@ -476,7 +476,7 @@ Final verification for {{issue}}.
 3. Ensure no unintended side effects
 4. Verify the commit history is clean
 
-When satisfied, signal completion: `gt done`
+When satisfied, signal completion: `sol resolve`
 ```
 
 ### EnsureFormula
@@ -591,29 +591,29 @@ func TestCLIWorkflowStatusHelp(t *testing.T)
 2. `make build` — succeeds
 3. Manual smoke test:
    ```bash
-   export GT_HOME=/tmp/gt-test
-   mkdir -p /tmp/gt-test/myrig/polecats/Toast
+   export SOL_HOME=/tmp/sol-test
+   mkdir -p /tmp/sol-test/myworld/outposts/Toast
 
    # Instantiate the default formula
-   bin/gt workflow instantiate polecat-work \
-     --item=gt-abc12345 --rig=myrig --agent=Toast \
-     --var=issue=gt-abc12345
+   bin/sol workflow instantiate default-work \
+     --item=sol-abc12345 --world=myworld --agent=Toast \
+     --var=issue=sol-abc12345
 
    # Check status
-   bin/gt workflow status --rig=myrig --agent=Toast
+   bin/sol workflow status --world=myworld --agent=Toast
 
    # Read current step
-   bin/gt workflow current --rig=myrig --agent=Toast
+   bin/sol workflow current --world=myworld --agent=Toast
 
    # Advance through steps
-   bin/gt workflow advance --rig=myrig --agent=Toast
-   bin/gt workflow advance --rig=myrig --agent=Toast
-   bin/gt workflow advance --rig=myrig --agent=Toast
+   bin/sol workflow advance --world=myworld --agent=Toast
+   bin/sol workflow advance --world=myworld --agent=Toast
+   bin/sol workflow advance --world=myworld --agent=Toast
 
    # Verify done
-   bin/gt workflow status --rig=myrig --agent=Toast
+   bin/sol workflow status --world=myworld --agent=Toast
    ```
-4. Clean up `/tmp/gt-test` after verification.
+4. Clean up `/tmp/sol-test` after verification.
 
 ---
 
@@ -622,13 +622,13 @@ func TestCLIWorkflowStatusHelp(t *testing.T)
 - The workflow engine is a **directory-based state machine** — all state
   is on disk, inspectable with `ls`, `cat`, `jq` (GLASS principle).
 - Crash recovery is automatic: `state.json` is the source of truth. If
-  a session crashes, `gt prime` (extended in prompt 03) re-reads
+  a session crashes, `sol prime` (extended in prompt 03) re-reads
   `state.json` and injects the current step.
 - Step advancement is idempotent — re-running a completed step is safe.
 - Variable substitution is simple `{{variable}}` → value string
   replacement. No template logic.
 - Default formulas are embedded in the binary but extracted to
-  `$GT_HOME/formulas/` on first use. Operator can modify the extracted
+  `$SOL_HOME/formulas/` on first use. Operator can modify the extracted
   copy.
 - The `needs` field creates a DAG, not just a linear sequence. The
   engine must handle branching dependencies (multiple steps ready

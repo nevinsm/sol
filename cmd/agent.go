@@ -6,7 +6,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -15,11 +15,11 @@ var agentCmd = &cobra.Command{
 	Short: "Manage agents",
 }
 
-// --- gt agent create ---
+// --- sol agent create ---
 
 var (
-	agentCreateRig  string
-	agentCreateRole string
+	agentCreateWorld string
+	agentCreateRole  string
 )
 
 var agentCreateCmd = &cobra.Command{
@@ -28,17 +28,17 @@ var agentCreateCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if agentCreateRig == "" {
-			return fmt.Errorf("--rig is required")
+		if agentCreateWorld == "" {
+			return fmt.Errorf("--world is required")
 		}
 
-		townStore, err := store.OpenTown()
+		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
-		defer townStore.Close()
+		defer sphereStore.Close()
 
-		id, err := townStore.CreateAgent(name, agentCreateRig, agentCreateRole)
+		id, err := sphereStore.CreateAgent(name, agentCreateWorld, agentCreateRole)
 		if err != nil {
 			return err
 		}
@@ -47,28 +47,28 @@ var agentCreateCmd = &cobra.Command{
 	},
 }
 
-// --- gt agent list ---
+// --- sol agent list ---
 
 var (
-	agentListRig  string
-	agentListJSON bool
+	agentListWorld string
+	agentListJSON  bool
 )
 
 var agentListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List agents",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if agentListRig == "" {
-			return fmt.Errorf("--rig is required")
+		if agentListWorld == "" {
+			return fmt.Errorf("--world is required")
 		}
 
-		townStore, err := store.OpenTown()
+		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
-		defer townStore.Close()
+		defer sphereStore.Close()
 
-		agents, err := townStore.ListAgents(agentListRig, "")
+		agents, err := sphereStore.ListAgents(agentListWorld, "")
 		if err != nil {
 			return err
 		}
@@ -85,13 +85,13 @@ var agentListCmd = &cobra.Command{
 		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "ID\tNAME\tRIG\tROLE\tSTATE\tHOOK ITEM\n")
+		fmt.Fprintf(tw, "ID\tNAME\tWORLD\tROLE\tSTATE\tHOOK ITEM\n")
 		for _, a := range agents {
 			hookItem := a.HookItem
 			if hookItem == "" {
 				hookItem = "-"
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", a.ID, a.Name, a.Rig, a.Role, a.State, hookItem)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", a.ID, a.Name, a.World, a.Role, a.State, hookItem)
 		}
 		tw.Flush()
 		return nil
@@ -102,10 +102,10 @@ func init() {
 	rootCmd.AddCommand(agentCmd)
 
 	agentCmd.AddCommand(agentCreateCmd)
-	agentCreateCmd.Flags().StringVar(&agentCreateRig, "rig", "", "rig name")
-	agentCreateCmd.Flags().StringVar(&agentCreateRole, "role", "polecat", "agent role")
+	agentCreateCmd.Flags().StringVar(&agentCreateWorld, "world", "", "world name")
+	agentCreateCmd.Flags().StringVar(&agentCreateRole, "role", "agent", "agent role")
 
 	agentCmd.AddCommand(agentListCmd)
-	agentListCmd.Flags().StringVar(&agentListRig, "rig", "", "rig name")
+	agentListCmd.Flags().StringVar(&agentListWorld, "world", "", "world name")
 	agentListCmd.Flags().BoolVar(&agentListJSON, "json", false, "output as JSON")
 }

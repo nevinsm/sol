@@ -80,50 +80,50 @@ func TestCLIHandoffHelp(t *testing.T) {
 	}
 }
 
-func TestCLIDeaconRunHelp(t *testing.T) {
+func TestCLIConsulRunHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "deacon", "run", "--help")
+	out, err := runGT(t, gtHome, "consul", "run", "--help")
 	if err != nil {
-		t.Fatalf("gt deacon run --help failed: %v: %s", err, out)
+		t.Fatalf("gt consul run --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Run the deacon patrol loop") {
+	if !strings.Contains(out, "Run the consul patrol loop") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLIDeaconStatusHelp(t *testing.T) {
+func TestCLIConsulStatusHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "deacon", "status", "--help")
+	out, err := runGT(t, gtHome, "consul", "status", "--help")
 	if err != nil {
-		t.Fatalf("gt deacon status --help failed: %v: %s", err, out)
+		t.Fatalf("gt consul status --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Show deacon status") {
+	if !strings.Contains(out, "Show consul status") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLISupervisorRunDeaconFlag(t *testing.T) {
+func TestCLIPrefectRunConsulFlag(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "supervisor", "run", "--help")
+	out, err := runGT(t, gtHome, "prefect", "run", "--help")
 	if err != nil {
-		t.Fatalf("gt supervisor run --help failed: %v: %s", err, out)
+		t.Fatalf("gt prefect run --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "--deacon") {
-		t.Errorf("supervisor run help missing --deacon flag: %s", out)
+	if !strings.Contains(out, "--consul") {
+		t.Errorf("prefect run help missing --consul flag: %s", out)
 	}
 	if !strings.Contains(out, "--source-repo") {
-		t.Errorf("supervisor run help missing --source-repo flag: %s", out)
+		t.Errorf("prefect run help missing --source-repo flag: %s", out)
 	}
 }

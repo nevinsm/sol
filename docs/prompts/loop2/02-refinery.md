@@ -1,49 +1,49 @@
-# Prompt 02: Loop 2 — Refinery
+# Prompt 02: Loop 2 — Forge
 
-You are building the refinery for the `gt` orchestration system. The
-refinery is a per-rig Go process that polls the merge queue, claims merge
+You are building the forge for the `sol` orchestration system. The
+forge is a per-world Go process that polls the merge queue, claims merge
 requests, rebases onto the target branch, runs quality gates (tests), and
 merges completed work. It is the core new component of Loop 2.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Prompt 01 (merge request store + done extension) is complete.
 
 Read all existing code first. Understand the store merge request CRUD
 (`internal/store/merge_requests.go`), the dispatch flock pattern
 (`internal/dispatch/flock.go` — especially `MergeSlotLock`), the
-supervisor package (`internal/supervisor/` — you'll extend it), the
+prefect package (`internal/prefect/` — you'll extend it), the
 session manager (`internal/session/manager.go`), and the config package
 (`internal/config/config.go`).
 
-Read `docs/target-architecture.md` Section 3.9 (Refinery) and Section 5
+Read `docs/target-architecture.md` Section 3.9 (Forge) and Section 5
 (Loop 2 requirements) for design context. Note: the architecture describes
-the refinery sending mail messages (MERGED, MERGE_FAILED, REWORK_REQUEST)
+the forge sending mail messages (MERGED, MERGE_FAILED, REWORK_REQUEST)
 — mail is deferred to Loop 3. Loop 2 updates database state only.
 
 ---
 
-## Task 1: Refinery Package — Core Types and Config
+## Task 1: Forge Package — Core Types and Config
 
-Create `internal/refinery/` — the refinery manages the merge pipeline
-for a single rig.
+Create `internal/forge/` — the forge manages the merge pipeline
+for a single world.
 
 ### Core Struct
 
 ```go
-// internal/refinery/refinery.go
-package refinery
+// internal/forge/forge.go
+package forge
 
 import (
     "context"
     "log/slog"
     "time"
 
-    "github.com/nevinsm/gt/internal/dispatch"
-    "github.com/nevinsm/gt/internal/store"
+    "github.com/nevinsm/sol/internal/dispatch"
+    "github.com/nevinsm/sol/internal/store"
 )
 
-// RigStore abstracts rig store operations for testing.
-type RigStore interface {
+// WorldStore abstracts world store operations for testing.
+type WorldStore interface {
     ClaimMergeRequest(claimerID string) (*store.MergeRequest, error)
     UpdateMergeRequestPhase(id, phase string) error
     ReleaseStaleClaims(ttl time.Duration) (int, error)
@@ -52,15 +52,15 @@ type RigStore interface {
     Close() error
 }
 
-// TownStore abstracts town store operations for testing.
-type TownStore interface {
-    CreateAgent(name, rig, role string) (string, error)
+// SphereStore abstracts sphere store operations for testing.
+type SphereStore interface {
+    CreateAgent(name, world, role string) (string, error)
     GetAgent(id string) (*store.Agent, error)
-    UpdateAgentState(id, state, hookItem string) error
+    UpdateAgentState(id, state, tetherItem string) error
     Close() error
 }
 
-// Config holds refinery configuration.
+// Config holds forge configuration.
 type Config struct {
     PollInterval  time.Duration // how often to poll for ready MRs (default: 10s)
     ClaimTTL      time.Duration // TTL before stale claims are released (default: 30min)
@@ -80,30 +80,30 @@ func DefaultConfig() Config {
     }
 }
 
-// Refinery processes the merge queue for a single rig.
-type Refinery struct {
-    rig        string
-    agentID    string // "{rig}/refinery"
+// Forge processes the merge queue for a single world.
+type Forge struct {
+    world        string
+    agentID    string // "{world}/forge"
     sourceRepo string // path to the source git repo
-    worktree   string // path to the refinery's persistent worktree
-    rigStore   RigStore
-    townStore  TownStore
+    worktree   string // path to the forge's persistent worktree
+    worldStore   WorldStore
+    sphereStore  SphereStore
     logger     *slog.Logger
     cfg        Config
 }
 
-// New creates a new Refinery.
-func New(rig, sourceRepo string, rigStore RigStore, townStore TownStore,
-    cfg Config, logger *slog.Logger) *Refinery
+// New creates a new Forge.
+func New(world, sourceRepo string, worldStore WorldStore, sphereStore SphereStore,
+    cfg Config, logger *slog.Logger) *Forge
 
-// Run starts the refinery's merge loop. Blocks until ctx is cancelled.
-func (r *Refinery) Run(ctx context.Context) error
+// Run starts the forge's merge loop. Blocks until ctx is cancelled.
+func (r *Forge) Run(ctx context.Context) error
 ```
 
 ### Quality Gate Configuration
 
 Quality gate commands are loaded from a file at
-`$GT_HOME/{rig}/refinery/quality-gates.txt`. Each non-empty, non-comment
+`$SOL_HOME/{world}/forge/quality-gates.txt`. Each non-empty, non-comment
 line is a shell command to execute in the worktree.
 
 ```go
@@ -113,11 +113,11 @@ line is a shell command to execute in the worktree.
 func LoadQualityGates(path string, defaults []string) ([]string, error)
 ```
 
-The file path is `config.RigDir(rig) + "/refinery/quality-gates.txt"`.
+The file path is `config.RigDir(world) + "/forge/quality-gates.txt"`.
 Example file:
 
 ```
-# Quality gates for this rig
+# Quality gates for this world
 go test ./...
 go vet ./...
 ```
@@ -128,36 +128,36 @@ If the file doesn't exist, use the default: `["go test ./..."]`.
 
 ## Task 2: Persistent Worktree Setup
 
-The refinery uses a persistent git worktree for merge operations. This
+The forge uses a persistent git worktree for merge operations. This
 avoids creating and removing worktrees for every merge.
 
 ### Worktree Location
 
-`$GT_HOME/{rig}/refinery/rig/` — on a dedicated branch
-`refinery/{rig}`.
+`$SOL_HOME/{world}/forge/world/` — on a dedicated branch
+`forge/{world}`.
 
 ```go
-// RefineryWorktreePath returns the worktree directory for a rig's refinery.
-func RefineryWorktreePath(rig string) string {
-    return filepath.Join(config.Home(), rig, "refinery", "rig")
+// RefineryWorktreePath returns the worktree directory for a world's forge.
+func RefineryWorktreePath(world string) string {
+    return filepath.Join(config.Home(), world, "forge", "world")
 }
 
-// RefineryBranch returns the branch name for a rig's refinery worktree.
-func RefineryBranch(rig string) string {
-    return "refinery/" + rig
+// RefineryBranch returns the branch name for a world's forge worktree.
+func RefineryBranch(world string) string {
+    return "forge/" + world
 }
 ```
 
-Add these to either `internal/refinery/refinery.go` or
+Add these to either `internal/forge/forge.go` or
 `internal/dispatch/dispatch.go` (alongside the existing
 `WorktreePath` and `SessionName` helpers).
 
 ### Setup Logic
 
-The refinery's `Run()` method calls `ensureWorktree()` on startup:
+The forge's `Run()` method calls `ensureWorktree()` on startup:
 
 ```go
-func (r *Refinery) ensureWorktree() error
+func (r *Forge) ensureWorktree() error
 ```
 
 If the worktree directory already exists, verify it's a valid git
@@ -166,39 +166,39 @@ worktree and return. If it doesn't exist:
 1. Create parent directory: `os.MkdirAll(parentDir, 0o755)`
 2. Create worktree:
    ```bash
-   git -C <sourceRepo> worktree add -b refinery/<rig> <worktreeDir> HEAD
+   git -C <sourceRepo> worktree add -b forge/<world> <worktreeDir> HEAD
    ```
 3. If the branch already exists (worktree was removed but branch
-   persists): use `git worktree add <worktreeDir> refinery/<rig>`
+   persists): use `git worktree add <worktreeDir> forge/<world>`
    (no `-b` flag).
 
 **Error messages:**
-- `"failed to create refinery worktree for rig %q: %w"`
-- `"failed to verify refinery worktree for rig %q: %w"`
+- `"failed to create forge worktree for world %q: %w"`
+- `"failed to verify forge worktree for world %q: %w"`
 
 ---
 
 ## Task 3: Merge Loop
 
-The refinery's main loop polls for ready merge requests and processes
+The forge's main loop polls for ready merge requests and processes
 them one at a time.
 
 ### Run() Implementation
 
 ```go
-func (r *Refinery) Run(ctx context.Context) error {
+func (r *Forge) Run(ctx context.Context) error {
     // 1. Ensure worktree exists
     if err := r.ensureWorktree(); err != nil {
         return err
     }
 
-    // 2. Register refinery agent in town store
+    // 2. Register forge agent in sphere store
     if err := r.registerAgent(); err != nil {
         return err
     }
 
     // 3. Log startup
-    r.logger.Info("refinery started", "rig", r.rig, "worktree", r.worktree)
+    r.logger.Info("forge started", "world", r.world, "worktree", r.worktree)
 
     // 4. Main loop
     ticker := time.NewTicker(r.cfg.PollInterval)
@@ -220,32 +220,32 @@ func (r *Refinery) Run(ctx context.Context) error {
 ### Agent Registration
 
 ```go
-func (r *Refinery) registerAgent() error
+func (r *Forge) registerAgent() error
 ```
 
-Check if the refinery agent already exists in the town store
-(`townStore.GetAgent(r.agentID)`). If not, create it:
-`townStore.CreateAgent("refinery", r.rig, "refinery")`.
+Check if the forge agent already exists in the sphere store
+(`sphereStore.GetAgent(r.agentID)`). If not, create it:
+`sphereStore.CreateAgent("forge", r.world, "forge")`.
 
 Set agent state to "working":
-`townStore.UpdateAgentState(r.agentID, "working", "")`.
+`sphereStore.UpdateAgentState(r.agentID, "working", "")`.
 
-The agent ID is `"{rig}/refinery"` (e.g., `myrig/refinery`).
+The agent ID is `"{world}/forge"` (e.g., `myworld/forge`).
 
 ### Poll Cycle
 
 ```go
-func (r *Refinery) poll()
+func (r *Forge) poll()
 ```
 
 Each poll cycle:
 
 1. **Release stale claims:** Call
-   `r.rigStore.ReleaseStaleClaims(r.cfg.ClaimTTL)`. If any were
+   `r.worldStore.ReleaseStaleClaims(r.cfg.ClaimTTL)`. If any were
    released, log at WARN level.
 
 2. **Claim next MR:** Call
-   `r.rigStore.ClaimMergeRequest(r.agentID)`. If nil (no ready MRs),
+   `r.worldStore.ClaimMergeRequest(r.agentID)`. If nil (no ready MRs),
    return immediately.
 
 3. **Check max attempts:** If `mr.Attempts > r.cfg.MaxAttempts`, set
@@ -253,8 +253,8 @@ Each poll cycle:
    next tick).
 
 4. **Acquire merge slot:** Call
-   `dispatch.AcquireMergeSlotLock(r.rig)`. If busy (shouldn't happen
-   with a single refinery, but defensive), log warning and release
+   `dispatch.AcquireMergeSlotLock(r.world)`. If busy (shouldn't happen
+   with a single forge, but defensive), log warning and release
    the claim (set phase back to `"ready"`). Return.
 
 5. **Process the merge:** Call `r.processMerge(mr)`.
@@ -264,7 +264,7 @@ Each poll cycle:
 ### Process Merge
 
 ```go
-func (r *Refinery) processMerge(mr *store.MergeRequest) error
+func (r *Forge) processMerge(mr *store.MergeRequest) error
 ```
 
 This is the core merge pipeline:
@@ -276,7 +276,7 @@ This is the core merge pipeline:
    git -C <worktree> reset --hard origin/<targetBranch>
    ```
 
-2. **Merge polecat's branch:**
+2. **Merge outpost's branch:**
    ```bash
    git -C <worktree> merge --no-ff origin/<mr.Branch>
    ```
@@ -293,8 +293,8 @@ This is the core merge pipeline:
    cmd := exec.CommandContext(ctx, "sh", "-c", gate)
    cmd.Dir = r.worktree
    cmd.Env = append(os.Environ(),
-       "GT_HOME="+config.Home(),
-       "GT_RIG="+r.rig,
+       "SOL_HOME="+config.Home(),
+       "SOL_WORLD="+r.world,
    )
    output, err := cmd.CombinedOutput()
    ```
@@ -318,7 +318,7 @@ This is the core merge pipeline:
 5. **Success — update state:**
    - Set MR phase to `"merged"`
    - Update work item status to `"closed"`:
-     `r.rigStore.UpdateWorkItem(mr.WorkItemID, store.WorkItemUpdates{Status: "closed"})`
+     `r.worldStore.UpdateWorkItem(mr.WorkItemID, store.WorkItemUpdates{Status: "closed"})`
    - Log at INFO: `"merged"` with MR, work item, and branch details
    - Clean up remote branch (best-effort, don't fail on error):
      ```bash
@@ -328,24 +328,24 @@ This is the core merge pipeline:
 ### Shutdown
 
 ```go
-func (r *Refinery) shutdown() error
+func (r *Forge) shutdown() error
 ```
 
 On shutdown (context cancelled):
 1. Set agent state to `"idle"`:
-   `townStore.UpdateAgentState(r.agentID, "idle", "")`
-2. Log: `"refinery stopped"`
+   `sphereStore.UpdateAgentState(r.agentID, "idle", "")`
+2. Log: `"forge stopped"`
 3. Return nil
 
 ---
 
 ## Task 4: Structured Logging
 
-Reuse the supervisor's logging pattern:
+Reuse the prefect's logging pattern:
 
 ```go
-// internal/refinery/logging.go
-package refinery
+// internal/forge/logging.go
+package forge
 
 // NewLogger creates an slog.Logger writing JSON to path.
 // If path is empty, logs to stderr.
@@ -353,11 +353,11 @@ package refinery
 func NewLogger(path string) (*slog.Logger, *os.File, error)
 ```
 
-This is identical to `supervisor.NewLogger()`. If you want to avoid
+This is identical to `prefect.NewLogger()`. If you want to avoid
 duplication, extract a shared logging helper — but it's fine to copy
 the ~15 lines as well.
 
-Log file location: `$GT_HOME/.runtime/refinery-{rig}.log`
+Log file location: `$SOL_HOME/.runtime/forge-{world}.log`
 
 Use structured fields in all log calls:
 ```go
@@ -372,23 +372,23 @@ r.logger.Info("poll", "ready_mrs", 0)  // only log when there are items or perio
 
 ---
 
-## Task 5: Supervisor Extension
+## Task 5: Prefect Extension
 
-Modify `internal/supervisor/supervisor.go` so the supervisor can restart
-refinery agents when their sessions die. Currently, the supervisor
+Modify `internal/prefect/prefect.go` so the prefect can restart
+forge agents when their sessions die. Currently, the prefect
 respawns all crashed agents with `claude --dangerously-skip-permissions`.
-Refineries need a different command.
+Forges need a different command.
 
 ### Changes to Respawn Logic
 
-In the supervisor's respawn function, check the agent's role before
+In the prefect's respawn function, check the agent's role before
 deciding the startup command:
 
 ```go
-func (s *Supervisor) respawnCommand(agent store.Agent) string {
+func (s *Prefect) respawnCommand(agent store.Agent) string {
     switch agent.Role {
-    case "refinery":
-        return fmt.Sprintf("gt refinery run %s", agent.Rig)
+    case "forge":
+        return fmt.Sprintf("sol forge run %s", agent.World)
     default:
         return "claude --dangerously-skip-permissions"
     }
@@ -399,42 +399,42 @@ Use this in the `Start()` call instead of the hardcoded command string.
 
 ### Worktree Path by Role
 
-The supervisor computes the worktree path for respawns. Refineries have
+The prefect computes the worktree path for respawns. Forges have
 a different worktree location:
 
 ```go
 func worktreeForAgent(agent store.Agent) string {
     switch agent.Role {
-    case "refinery":
-        return refinery.RefineryWorktreePath(agent.Rig)
+    case "forge":
+        return forge.RefineryWorktreePath(agent.World)
     default:
-        return dispatch.WorktreePath(agent.Rig, agent.Name)
+        return dispatch.WorktreePath(agent.World, agent.Name)
     }
 }
 ```
 
-Import the refinery package for the path helper, or add the helper to
+Import the forge package for the path helper, or add the helper to
 the dispatch package alongside `WorktreePath` to avoid a circular
 dependency.
 
-**Important:** Keep the supervisor changes minimal. Only modify the
+**Important:** Keep the prefect changes minimal. Only modify the
 respawn path — don't change heartbeat, mass-death detection, or any
-other supervisor behavior.
+other prefect behavior.
 
-### TownStore Interface
+### SphereStore Interface
 
-The supervisor's `TownStore` interface currently only needs `ListAgents`
+The prefect's `SphereStore` interface currently only needs `ListAgents`
 and `UpdateAgentState`. Check that these are sufficient for handling
-refinery agents — they should be, since the refinery registers itself
-with `CreateAgent` during startup (not handled by the supervisor).
+forge agents — they should be, since the forge registers itself
+with `CreateAgent` during startup (not handled by the prefect).
 
 ---
 
 ## Task 6: Tests
 
-### Refinery Unit Tests
+### Forge Unit Tests
 
-Create `internal/refinery/refinery_test.go`:
+Create `internal/forge/refinery_test.go`:
 
 Mock interfaces:
 
@@ -476,17 +476,17 @@ func TestMaxAttemptsExceeded(t *testing.T)
     // Verify: MR phase set to "failed", not processed
 
 func TestRegisterAgent(t *testing.T)
-    // New refinery, no agent in town store
+    // New forge, no agent in sphere store
     // Run registerAgent
-    // Verify: agent created with role="refinery", state="working"
+    // Verify: agent created with role="forge", state="working"
 
 func TestRegisterAgentIdempotent(t *testing.T)
-    // Agent already exists in town store
+    // Agent already exists in sphere store
     // Run registerAgent
     // Verify: no error, agent state set to "working"
 
 func TestShutdown(t *testing.T)
-    // Start refinery, cancel context
+    // Start forge, cancel context
     // Verify: agent state set to "idle"
 
 func TestLoadQualityGates(t *testing.T)
@@ -523,7 +523,7 @@ func createBranchWithChanges(t *testing.T, repoDir, branch, filename, content st
 
 ```go
 func TestProcessMergeSuccess(t *testing.T)
-    // Setup: git repo, branch with changes, refinery worktree
+    // Setup: git repo, branch with changes, forge worktree
     // Create MR for the branch
     // Call processMerge
     // Verify: branch merged into main, MR phase=merged
@@ -546,20 +546,20 @@ func TestProcessMergePushRejected(t *testing.T)
     // Verify: push fails, MR phase=ready (will retry), worktree reset
 ```
 
-### Supervisor Extension Tests
+### Prefect Extension Tests
 
-Add to `internal/supervisor/supervisor_test.go`:
+Add to `internal/prefect/supervisor_test.go`:
 
 ```go
 func TestRespawnRefinery(t *testing.T)
-    // Create an agent with role="refinery" in state "working"
+    // Create an agent with role="forge" in state "working"
     // Kill the mock session
     // Run a heartbeat cycle
-    // Verify: session restarted with "gt refinery run <rig>" command
+    // Verify: session restarted with "sol forge run <world>" command
     //   (not "claude --dangerously-skip-permissions")
 
 func TestRespawnPolecatUnchanged(t *testing.T)
-    // Create an agent with role="polecat" in state "working"
+    // Create an agent with role="outpost" in state "working"
     // Kill the mock session
     // Run a heartbeat cycle
     // Verify: session restarted with "claude --dangerously-skip-permissions"
@@ -574,31 +574,31 @@ func TestRespawnPolecatUnchanged(t *testing.T)
 2. `make build` — succeeds
 3. Manual smoke test of the full pipeline:
    ```bash
-   export GT_HOME=/tmp/gt-test
+   export SOL_HOME=/tmp/sol-test
    # Create a source repo for testing
    cd /tmp && git init --bare test-repo.git
    git clone test-repo.git test-repo && cd test-repo
    echo "package main" > main.go && git add . && git commit -m "init"
-   git push origin main && cd ~/gt-src
+   git push origin main && cd ~/sol-src
 
    # Create work and dispatch
-   bin/gt store create --db=testrig --title="Add feature X"
-   bin/gt sling <id> testrig
+   bin/sol store create --world=testrig --title="Add feature X"
+   bin/sol cast <id> testrig
 
-   # Simulate polecat completing work
-   # (in the polecat's worktree, make changes, then:)
-   bin/gt done --rig=testrig --agent=<name>
+   # Simulate outpost completing work
+   # (in the outpost's worktree, make changes, then:)
+   bin/sol done --world=testrig --agent=<name>
    # Should show: Merge request: mr-XXXXXXXX (queued)
 
-   # Start the refinery
-   bin/gt refinery run testrig
-   # (The refinery should pick up the MR, merge it)
+   # Start the forge
+   bin/sol forge run testrig
+   # (The forge should pick up the MR, merge it)
 
    # Verify: MR is merged in the database
-   sqlite3 /tmp/gt-test/.store/testrig.db \
+   sqlite3 /tmp/sol-test/.store/testrig.db \
      "SELECT id, phase, merged_at FROM merge_requests"
    ```
-4. Clean up `/tmp/gt-test` after verification.
+4. Clean up `/tmp/sol-test` after verification.
 
 ---
 
@@ -607,36 +607,36 @@ func TestRespawnPolecatUnchanged(t *testing.T)
 The following architecture features are **intentionally deferred**:
 
 - **Mail messages** (MERGED, MERGE_FAILED, REWORK_REQUEST): The
-  architecture shows the refinery sending mail to witnesses. Mail is
+  architecture shows the forge sending mail to sentinels. Mail is
   a Loop 3 feature. Loop 2 updates database state only.
 - **Conflict resolution**: When a rebase conflict occurs, Loop 2 marks
   the MR as `"failed"`. Loop 4 adds the REWORK_REQUEST → re-dispatch
   pipeline for resolving conflicts.
-- **Convoy awareness**: The refinery may detect convoy-eligible MRs
+- **Caravan awareness**: The forge may detect car-eligible MRs
   in later loops. Loop 2 processes each MR individually.
-- **Heartbeat files**: The refinery could write heartbeat files for
+- **Heartbeat files**: The forge could write heartbeat files for
   liveness monitoring. Loop 2 relies on tmux session existence only
-  (same as supervisor for polecats in Loop 1).
+  (same as prefect for outposts in Loop 1).
 
 ---
 
 ## Guidelines
 
-- The refinery is a Go process, not an AI agent. The merge pipeline
+- The forge is a Go process, not an AI agent. The merge pipeline
   in Loop 2 is entirely mechanical (poll, rebase, test, merge). No
   Claude interaction needed. The "AI Agent" label in the architecture
   is for later loops where conflict resolution requires judgment.
-- One refinery per rig. The merge slot lock is defensive — it
-  prevents damage if two refineries accidentally run for the same rig.
+- One forge per world. The merge slot lock is defensive — it
+  prevents damage if two forges accidentally run for the same world.
 - Git operations shell out to the `git` CLI. Don't use a git library.
   Match the existing dispatch pattern (see `dispatch.Done()` git calls).
-- Quality gates run in the refinery's worktree. Each gate is executed
+- Quality gates run in the forge's worktree. Each gate is executed
   as `sh -c <command>`. Gates run sequentially — all must pass.
-- The refinery worktree is NOT cleaned up on shutdown. It persists
+- The forge worktree is NOT cleaned up on shutdown. It persists
   between runs. This is intentional — avoids re-creating it on restart.
-- The supervisor extension must not break existing polecat respawn
+- The prefect extension must not break existing outpost respawn
   behavior. The `role` field on agents is the discriminator.
-- Use `dispatch.SessionName(rig, "refinery")` for the refinery's
-  session name: `gt-{rig}-refinery`.
+- Use `dispatch.SessionName(world, "forge")` for the forge's
+  session name: `sol-{world}-forge`.
 - Commit after tests pass with message:
-  `feat(refinery): add merge queue processor with quality gates and supervisor integration`
+  `feat(forge): add merge queue processor with quality gates and prefect integration`

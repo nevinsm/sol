@@ -1,64 +1,64 @@
 .PHONY: build test test-e2e install clean
 
-GT_TEST_HOME  := /tmp/gt-test
-GT_TEST_RIG   := myrig
-GT_TEST_AGENT := Toast
+SOL_TEST_HOME  := /tmp/sol-test
+SOL_TEST_WORLD := myworld
+SOL_TEST_AGENT := Toast
 
 build:
-	go build -o bin/gt .
+	go build -o bin/sol .
 
 test:
 	go test ./...
 
-# Full end-to-end test: create agent, create work item, sling, verify, done, verify, clean up.
-# Cleans up all artifacts: GT_HOME dir, git worktrees, polecat branches, tmux sessions.
+# Full end-to-end test: create agent, create work item, cast, verify, resolve, verify, clean up.
+# Cleans up all artifacts: SOL_HOME dir, git worktrees, outpost branches, tmux sessions.
 test-e2e: build
-	@export GT_HOME=$(GT_TEST_HOME) RIG=$(GT_TEST_RIG) AGENT=$(GT_TEST_AGENT) && \
+	@export SOL_HOME=$(SOL_TEST_HOME) WORLD=$(SOL_TEST_WORLD) AGENT=$(SOL_TEST_AGENT) && \
 	cleanup() { \
 		echo "=== E2E: cleanup ==="; \
 		sleep 2; \
-		tmux kill-session -t gt-$$RIG-$$AGENT 2>/dev/null || true; \
-		rm -rf $(GT_TEST_HOME); \
+		tmux kill-session -t sol-$$WORLD-$$AGENT 2>/dev/null || true; \
+		rm -rf $(SOL_TEST_HOME); \
 		git worktree prune; \
-		git for-each-ref --format='%(refname:short)' 'refs/heads/polecat/$(GT_TEST_AGENT)/' | xargs -r git branch -D 2>/dev/null || true; \
-		git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/polecat/$(GT_TEST_AGENT)/' | sed 's|origin/||' | xargs -r -I{} git push origin --delete {} 2>/dev/null || true; \
+		git for-each-ref --format='%(refname:short)' 'refs/heads/outpost/$(SOL_TEST_AGENT)/' | xargs -r git branch -D 2>/dev/null || true; \
+		git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/outpost/$(SOL_TEST_AGENT)/' | sed 's|origin/||' | xargs -r -I{} git push origin --delete {} 2>/dev/null || true; \
 	} && \
 	trap cleanup EXIT && \
 	\
 	echo "=== E2E: setup ===" && \
-	rm -rf $(GT_TEST_HOME) && \
-	tmux kill-session -t gt-$$RIG-$$AGENT 2>/dev/null || true && \
+	rm -rf $(SOL_TEST_HOME) && \
+	tmux kill-session -t sol-$$WORLD-$$AGENT 2>/dev/null || true && \
 	git worktree prune && \
 	\
 	echo "=== E2E: create agent ===" && \
-	bin/gt agent create $$AGENT --rig=$$RIG && \
-	bin/gt agent list --rig=$$RIG && \
+	bin/sol agent create $$AGENT --world=$$WORLD && \
+	bin/sol agent list --world=$$WORLD && \
 	\
 	echo "=== E2E: create work item ===" && \
-	ITEM=$$(bin/gt store create --db=$$RIG --title="E2E test item" --description="Automated end-to-end test") && \
+	ITEM=$$(bin/sol store create --world=$$WORLD --title="E2E test item" --description="Automated end-to-end test") && \
 	echo "Created: $$ITEM" && \
 	\
-	echo "=== E2E: sling ===" && \
-	bin/gt sling $$ITEM $$RIG --agent=$$AGENT && \
+	echo "=== E2E: cast ===" && \
+	bin/sol cast $$ITEM $$WORLD --agent=$$AGENT && \
 	\
-	echo "=== E2E: verify sling ===" && \
-	bin/gt session list && \
-	bin/gt store get $$ITEM --db=$$RIG && \
-	bin/gt prime --rig=$$RIG --agent=$$AGENT && \
-	test -f $(GT_TEST_HOME)/$$RIG/polecats/$$AGENT/.hook && \
+	echo "=== E2E: verify cast ===" && \
+	bin/sol session list && \
+	bin/sol store get $$ITEM --world=$$WORLD && \
+	bin/sol prime --world=$$WORLD --agent=$$AGENT && \
+	test -f $(SOL_TEST_HOME)/$$WORLD/outposts/$$AGENT/.tether && \
 	\
-	echo "=== E2E: done ===" && \
-	GT_RIG=$$RIG GT_AGENT=$$AGENT bin/gt done && \
+	echo "=== E2E: resolve ===" && \
+	SOL_WORLD=$$WORLD SOL_AGENT=$$AGENT bin/sol resolve && \
 	\
-	echo "=== E2E: verify done ===" && \
-	bin/gt store get $$ITEM --db=$$RIG && \
-	bin/gt agent list --rig=$$RIG && \
-	test ! -f $(GT_TEST_HOME)/$$RIG/polecats/$$AGENT/.hook && \
+	echo "=== E2E: verify resolve ===" && \
+	bin/sol store get $$ITEM --world=$$WORLD && \
+	bin/sol agent list --world=$$WORLD && \
+	test ! -f $(SOL_TEST_HOME)/$$WORLD/outposts/$$AGENT/.tether && \
 	\
 	echo "=== E2E: PASSED ==="
 
 install: build
-	cp bin/gt /usr/local/bin/gt
+	cp bin/sol /usr/local/bin/sol
 
 clean:
 	rm -rf bin/

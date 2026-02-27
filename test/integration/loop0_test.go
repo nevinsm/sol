@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nevinsm/gt/internal/dispatch"
-	"github.com/nevinsm/gt/internal/hook"
-	"github.com/nevinsm/gt/internal/session"
+	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/tether"
+	"github.com/nevinsm/sol/internal/session"
 )
 
 // --- Test 1: Full Dispatch-Execute-Done Cycle ---
@@ -22,39 +22,39 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
 	// 1. Create agent.
-	_, err := townStore.CreateAgent("TestBot", "testrig", "polecat")
+	_, err := sphereStore.CreateAgent("TestBot", "testrig", "agent")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
 
 	// 2. Create work item.
-	itemID, err := rigStore.CreateWorkItem("Test task", "Integration test description", "operator", 2, nil)
+	itemID, err := worldStore.CreateWorkItem("Test task", "Integration test description", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create work item: %v", err)
 	}
 
 	// 3. Sling.
-	result, err := dispatch.Sling(dispatch.SlingOpts{
+	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling: %v", err)
 	}
 
 	// 4. Verify sling state.
-	sessName := "gt-testrig-TestBot"
+	sessName := "sol-testrig-TestBot"
 	if !mgr.Exists(sessName) {
 		t.Error("tmux session does not exist after sling")
 	}
 
-	item, err := rigStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWorkItem(itemID)
 	if err != nil {
 		t.Fatalf("get work item: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Errorf("work item assignee: got %q, want testrig/TestBot", item.Assignee)
 	}
 
-	agent, err := townStore.GetAgent("testrig/TestBot")
+	agent, err := sphereStore.GetAgent("testrig/TestBot")
 	if err != nil {
 		t.Fatalf("get agent: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Errorf("agent hook_item: got %q, want %q", agent.HookItem, itemID)
 	}
 
-	if !hook.IsHooked("testrig", "TestBot") {
+	if !tether.IsTethered("testrig", "TestBot") {
 		t.Error("hook file does not exist after sling")
 	}
 
@@ -96,10 +96,10 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	}
 
 	// 6. Call Done programmatically.
-	doneResult, err := dispatch.Done(dispatch.DoneOpts{
-		Rig:       "testrig",
+	doneResult, err := dispatch.Resolve(dispatch.ResolveOpts{
+		World:       "testrig",
 		AgentName: "TestBot",
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("done: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	}
 
 	// 8. Verify done state.
-	item, err = rigStore.GetWorkItem(itemID)
+	item, err = worldStore.GetWorkItem(itemID)
 	if err != nil {
 		t.Fatalf("get work item after done: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Errorf("work item status after done: got %q, want done", item.Status)
 	}
 
-	agent, err = townStore.GetAgent("testrig/TestBot")
+	agent, err = sphereStore.GetAgent("testrig/TestBot")
 	if err != nil {
 		t.Fatalf("get agent after done: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Errorf("agent hook_item after done: got %q, want empty", agent.HookItem)
 	}
 
-	if hook.IsHooked("testrig", "TestBot") {
+	if tether.IsTethered("testrig", "TestBot") {
 		t.Error("hook file still exists after done")
 	}
 
@@ -152,51 +152,51 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	}
 }
 
-// --- Test 2: Crash Recovery (Re-sling) ---
+// --- Test 2: Crash Recovery (Re-cast) ---
 
-func TestCrashRecoveryResling(t *testing.T) {
+func TestCrashRecoveryRecast(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
 	// Create agent + work item, sling.
-	townStore.CreateAgent("TestBot", "testrig", "polecat")
-	itemID, _ := rigStore.CreateWorkItem("Crash test", "Recovery test", "operator", 2, nil)
+	sphereStore.CreateAgent("TestBot", "testrig", "agent")
+	itemID, _ := worldStore.CreateWorkItem("Crash test", "Recovery test", "operator", 2, nil)
 
-	_, err := dispatch.Sling(dispatch.SlingOpts{
+	_, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("initial sling: %v", err)
 	}
 
 	// Kill tmux session directly (simulate crash).
-	sessName := "gt-testrig-TestBot"
+	sessName := "sol-testrig-TestBot"
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
 
 	// Verify durability: work item still hooked, hook file persists.
-	item, _ := rigStore.GetWorkItem(itemID)
+	item, _ := worldStore.GetWorkItem(itemID)
 	if item.Status != "hooked" {
 		t.Errorf("work item status after crash: got %q, want hooked", item.Status)
 	}
-	if !hook.IsHooked("testrig", "TestBot") {
+	if !tether.IsTethered("testrig", "TestBot") {
 		t.Error("hook file missing after crash")
 	}
 
 	// Re-sling the same work item to the same agent.
-	_, err = dispatch.Sling(dispatch.SlingOpts{
+	_, err = dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("re-sling failed: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestCrashRecoveryResling(t *testing.T) {
 		t.Error("tmux session not created after re-sling")
 	}
 
-	hookID, _ := hook.Read("testrig", "TestBot")
+	hookID, _ := tether.Read("testrig", "TestBot")
 	if hookID != itemID {
 		t.Errorf("hook after re-sling: got %q, want %q", hookID, itemID)
 	}
@@ -220,38 +220,38 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
 	// Create agent + first work item, sling.
-	townStore.CreateAgent("TestBot", "testrig", "polecat")
-	item1ID, _ := rigStore.CreateWorkItem("First task", "Task 1", "operator", 2, nil)
+	sphereStore.CreateAgent("TestBot", "testrig", "agent")
+	item1ID, _ := worldStore.CreateWorkItem("First task", "Task 1", "operator", 2, nil)
 
-	_, err := dispatch.Sling(dispatch.SlingOpts{
+	_, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item1ID,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("first sling: %v", err)
 	}
 
 	// Create second work item and try to sling to same agent.
-	item2ID, _ := rigStore.CreateWorkItem("Second task", "Task 2", "operator", 2, nil)
+	item2ID, _ := worldStore.CreateWorkItem("Second task", "Task 2", "operator", 2, nil)
 
-	_, err = dispatch.Sling(dispatch.SlingOpts{
+	_, err = dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item2ID,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err == nil {
 		t.Fatal("expected error for double dispatch, got nil")
 	}
 
 	// Verify second item remains open.
-	item2, _ := rigStore.GetWorkItem(item2ID)
+	item2, _ := worldStore.GetWorkItem(item2ID)
 	if item2.Status != "open" {
 		t.Errorf("second work item status: got %q, want open", item2.Status)
 	}
@@ -265,21 +265,21 @@ func TestPrimeOutput(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
-	townStore.CreateAgent("TestBot", "testrig", "polecat")
-	itemID, _ := rigStore.CreateWorkItem("Prime test task", "Check prime output", "operator", 2, nil)
+	sphereStore.CreateAgent("TestBot", "testrig", "agent")
+	itemID, _ := worldStore.CreateWorkItem("Prime test task", "Check prime output", "operator", 2, nil)
 
-	dispatch.Sling(dispatch.SlingOpts{
+	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 
 	// Run Prime.
-	result, err := dispatch.Prime("testrig", "TestBot", rigStore)
+	result, err := dispatch.Prime("testrig", "TestBot", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestPrimeOutput(t *testing.T) {
 		"work item ID": itemID,
 		"title":        "Prime test task",
 		"description":  "Check prime output",
-		"gt done":      "gt done",
+		"sol resolve":      "sol resolve",
 	}
 	for what, want := range checks {
 		if !strings.Contains(result.Output, want) {
@@ -305,15 +305,15 @@ func TestPrimeWithoutHook(t *testing.T) {
 	}
 
 	setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 
-	townStore.CreateAgent("TestBot", "testrig", "polecat")
+	sphereStore.CreateAgent("TestBot", "testrig", "agent")
 
-	result, err := dispatch.Prime("testrig", "TestBot", rigStore)
+	result, err := dispatch.Prime("testrig", "TestBot", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
-	if result.Output != "No work hooked" {
+	if result.Output != "No work tethered" {
 		t.Errorf("prime output: got %q, want 'No work hooked'", result.Output)
 	}
 }
@@ -326,24 +326,24 @@ func TestStoreInspection(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
 	// Create work items.
-	id1, _ := rigStore.CreateWorkItem("Task one", "First", "operator", 2, nil)
-	id2, _ := rigStore.CreateWorkItem("Task two", "Second", "operator", 2, nil)
+	id1, _ := worldStore.CreateWorkItem("Task one", "First", "operator", 2, nil)
+	id2, _ := worldStore.CreateWorkItem("Task two", "Second", "operator", 2, nil)
 
 	// Sling one.
-	townStore.CreateAgent("TestBot", "testrig", "polecat")
-	dispatch.Sling(dispatch.SlingOpts{
+	sphereStore.CreateAgent("TestBot", "testrig", "agent")
+	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: id1,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 
 	// Query the rig DB directly via database/sql.
-	db := rigStore.DB()
+	db := worldStore.DB()
 	rows, err := db.Query("SELECT id, title, status, assignee FROM work_items ORDER BY created_at")
 	if err != nil {
 		t.Fatalf("SQL query: %v", err)

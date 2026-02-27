@@ -1,4 +1,4 @@
-module github.com/nevinsm/gt
+module github.com/nevinsm/sol
 
 go 1.24.1
 

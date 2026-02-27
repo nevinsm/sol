@@ -11,8 +11,8 @@ import (
 func TestGenerateClaudeMD(t *testing.T) {
 	ctx := ClaudeMDContext{
 		AgentName:   "Toast",
-		Rig:         "myrig",
-		WorkItemID:  "gt-a1b2c3d4",
+		World:         "myworld",
+		WorkItemID:  "sol-a1b2c3d4",
 		Title:       "Add a README",
 		Description: "Create a README.md file with project info",
 	}
@@ -20,12 +20,12 @@ func TestGenerateClaudeMD(t *testing.T) {
 	content := GenerateClaudeMD(ctx)
 
 	checks := []string{
-		"Polecat Agent: Toast (rig: myrig)",
-		"gt-a1b2c3d4",
+		"Outpost Agent: Toast (world: myworld)",
+		"sol-a1b2c3d4",
 		"Add a README",
 		"Create a README.md file with project info",
-		"gt done",
-		"gt escalate",
+		"sol resolve",
+		"sol escalate",
 		"isolated git worktree",
 	}
 	for _, check := range checks {
@@ -39,8 +39,8 @@ func TestInstallClaudeMD(t *testing.T) {
 	dir := t.TempDir()
 	ctx := ClaudeMDContext{
 		AgentName:   "Toast",
-		Rig:         "myrig",
-		WorkItemID:  "gt-a1b2c3d4",
+		World:         "myworld",
+		WorkItemID:  "sol-a1b2c3d4",
 		Title:       "Add a README",
 		Description: "Create a README.md file",
 	}
@@ -59,34 +59,34 @@ func TestInstallClaudeMD(t *testing.T) {
 	if !strings.Contains(content, "Toast") {
 		t.Error("CLAUDE.md missing agent name")
 	}
-	if !strings.Contains(content, "gt-a1b2c3d4") {
+	if !strings.Contains(content, "sol-a1b2c3d4") {
 		t.Error("CLAUDE.md missing work item ID")
 	}
 }
 
 func TestGenerateRefineryClaudeMD(t *testing.T) {
 	ctx := RefineryClaudeMDContext{
-		Rig:          "myrig",
+		World:          "myworld",
 		TargetBranch: "main",
-		WorktreeDir:  "/home/user/gt/myrig/refinery/rig",
+		WorktreeDir:  "/home/user/sol/myworld/forge/worktree",
 		QualityGates: []string{"go test ./...", "go vet ./..."},
 	}
 
 	content := GenerateRefineryClaudeMD(ctx)
 
 	checks := []string{
-		"Refinery Agent (rig: myrig)",
+		"Forge Agent (world: myworld)",
 		"merge processor, NOT a developer",
 		"FORBIDDEN",
 		"Patrol Loop",
-		"gt refinery check-unblocked myrig",
-		"gt refinery ready myrig --json",
-		"gt refinery claim myrig --json",
-		"gt refinery run-gates myrig",
-		"gt refinery push myrig",
-		"gt refinery mark-merged myrig",
-		"gt refinery mark-failed myrig",
-		"gt refinery create-resolution myrig",
+		"sol forge check-unblocked myworld",
+		"sol forge ready myworld --json",
+		"sol forge claim myworld --json",
+		"sol forge run-gates myworld",
+		"sol forge push myworld",
+		"sol forge mark-merged myworld",
+		"sol forge mark-failed myworld",
+		"sol forge create-resolution myworld",
 		"git rebase origin/main",
 		"Conflict Judgment Framework",
 		"Sequential Rebase Rule",
@@ -103,7 +103,7 @@ func TestGenerateRefineryClaudeMD(t *testing.T) {
 func TestInstallRefineryClaudeMD(t *testing.T) {
 	dir := t.TempDir()
 	ctx := RefineryClaudeMDContext{
-		Rig:          "myrig",
+		World:          "myworld",
 		TargetBranch: "main",
 		WorktreeDir:  dir,
 		QualityGates: []string{"go test ./..."},
@@ -120,18 +120,18 @@ func TestInstallRefineryClaudeMD(t *testing.T) {
 	}
 
 	content := string(data)
-	if !strings.Contains(content, "Refinery Agent") {
-		t.Error("CLAUDE.md missing 'Refinery Agent'")
+	if !strings.Contains(content, "Forge Agent") {
+		t.Error("CLAUDE.md missing 'Forge Agent'")
 	}
-	if !strings.Contains(content, "myrig") {
-		t.Error("CLAUDE.md missing rig name")
+	if !strings.Contains(content, "myworld") {
+		t.Error("CLAUDE.md missing world name")
 	}
 }
 
 func TestInstallHooks(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := InstallHooks(dir, "myrig", "Toast"); err != nil {
+	if err := InstallHooks(dir, "myworld", "Toast"); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -142,14 +142,14 @@ func TestInstallHooks(t *testing.T) {
 		t.Fatalf("failed to read session-start.sh: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "gt prime") {
-		t.Error("session-start.sh missing 'gt prime' command")
+	if !strings.Contains(content, "sol prime") {
+		t.Error("session-start.sh missing 'sol prime' command")
 	}
-	if !strings.Contains(content, "$GT_RIG") {
-		t.Error("session-start.sh missing $GT_RIG reference")
+	if !strings.Contains(content, "$SOL_WORLD") {
+		t.Error("session-start.sh missing $SOL_WORLD reference")
 	}
-	if !strings.Contains(content, "$GT_AGENT") {
-		t.Error("session-start.sh missing $GT_AGENT reference")
+	if !strings.Contains(content, "$SOL_AGENT") {
+		t.Error("session-start.sh missing $SOL_AGENT reference")
 	}
 
 	// Verify script is executable.

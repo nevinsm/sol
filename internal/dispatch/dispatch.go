@@ -8,26 +8,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nevinsm/gt/internal/config"
-	"github.com/nevinsm/gt/internal/events"
-	"github.com/nevinsm/gt/internal/handoff"
-	"github.com/nevinsm/gt/internal/hook"
-	"github.com/nevinsm/gt/internal/namepool"
-	"github.com/nevinsm/gt/internal/protocol"
-	"github.com/nevinsm/gt/internal/session"
-	"github.com/nevinsm/gt/internal/store"
-	"github.com/nevinsm/gt/internal/workflow"
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/handoff"
+	"github.com/nevinsm/sol/internal/namepool"
+	"github.com/nevinsm/sol/internal/protocol"
+	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
+	"github.com/nevinsm/sol/internal/workflow"
 )
 
 // SessionManager defines the session operations used by the dispatch package.
 type SessionManager interface {
-	Start(name, workdir, cmd string, env map[string]string, role, rig string) error
+	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 	Stop(name string, force bool) error
 	Exists(name string) bool
 }
 
-// RigStore defines the rig store operations used by dispatch.
-type RigStore interface {
+// WorldStore defines the world store operations used by dispatch.
+type WorldStore interface {
 	GetWorkItem(id string) (*store.WorkItem, error)
 	UpdateWorkItem(id string, updates store.WorkItemUpdates) error
 	CreateMergeRequest(workItemID, branch string, priority int) (string, error)
@@ -38,28 +38,28 @@ type RigStore interface {
 	Close() error
 }
 
-// TownStore defines the town store operations used by dispatch.
-type TownStore interface {
+// SphereStore defines the sphere store operations used by dispatch.
+type SphereStore interface {
 	GetAgent(id string) (*store.Agent, error)
-	FindIdleAgent(rig string) (*store.Agent, error)
+	FindIdleAgent(world string) (*store.Agent, error)
 	UpdateAgentState(id, state, hookItem string) error
-	ListAgents(rig string, state string) ([]store.Agent, error)
-	CreateAgent(name, rig, role string) (string, error)
+	ListAgents(world string, state string) ([]store.Agent, error)
+	CreateAgent(name, world, role string) (string, error)
 	Close() error
 }
 
 // SessionName returns the tmux session name for an agent.
-func SessionName(rig, agentName string) string {
-	return fmt.Sprintf("gt-%s-%s", rig, agentName)
+func SessionName(world, agentName string) string {
+	return fmt.Sprintf("sol-%s-%s", world, agentName)
 }
 
 // WorktreePath returns the worktree directory for an agent.
-func WorktreePath(rig, agentName string) string {
-	return filepath.Join(config.Home(), rig, "polecats", agentName, "rig")
+func WorktreePath(world, agentName string) string {
+	return filepath.Join(config.Home(), world, "outposts", agentName, "worktree")
 }
 
-// SlingResult holds the output of a successful sling operation.
-type SlingResult struct {
+// CastResult holds the output of a successful cast operation.
+type CastResult struct {
 	WorkItemID  string
 	AgentName   string
 	SessionName string
@@ -67,21 +67,21 @@ type SlingResult struct {
 	Formula     string // empty if no workflow
 }
 
-// SlingOpts holds the inputs for a sling operation.
-type SlingOpts struct {
+// CastOpts holds the inputs for a cast operation.
+type CastOpts struct {
 	WorkItemID string
-	Rig        string
+	World      string
 	AgentName  string            // optional: if empty, find an idle agent
 	SourceRepo string            // path to the source git repo
 	Formula    string            // optional: formula name for workflow
 	Variables  map[string]string // optional: workflow variables
 }
 
-// Sling assigns a work item to a polecat agent and starts its session.
-// Supports re-sling (crash recovery): if the item is already hooked to the
-// same agent, Sling recreates the worktree and session without error.
+// Cast assigns a work item to an outpost agent and starts its session.
+// Supports re-cast (crash recovery): if the item is already tethered to the
+// same agent, Cast recreates the worktree and session without error.
 // The logger parameter is optional — if nil, no events are emitted.
-func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionManager, logger *events.Logger) (*SlingResult, error) {
+func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*CastResult, error) {
 	// 0. Acquire per-work-item advisory lock to prevent double dispatch.
 	lock, err := AcquireWorkItemLock(opts.WorkItemID)
 	if err != nil {
@@ -90,7 +90,7 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 	defer lock.Release()
 
 	// 1. Get work item.
-	item, err := rigStore.GetWorkItem(opts.WorkItemID)
+	item, err := worldStore.GetWorkItem(opts.WorkItemID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get work item %q: %w", opts.WorkItemID, err)
 	}
@@ -98,8 +98,8 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 	// 2. Find the agent.
 	var agent *store.Agent
 	if opts.AgentName != "" {
-		agentID := opts.Rig + "/" + opts.AgentName
-		agent, err = townStore.GetAgent(agentID)
+		agentID := opts.World + "/" + opts.AgentName
+		agent, err = sphereStore.GetAgent(agentID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
 		}
@@ -107,27 +107,27 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 		if item.Status != "open" {
 			return nil, fmt.Errorf("work item %q has status %q, expected \"open\"", opts.WorkItemID, item.Status)
 		}
-		agent, err = townStore.FindIdleAgent(opts.Rig)
+		agent, err = sphereStore.FindIdleAgent(opts.World)
 		if err != nil {
-			return nil, fmt.Errorf("failed to find idle agent for rig %q: %w", opts.Rig, err)
+			return nil, fmt.Errorf("failed to find idle agent for world %q: %w", opts.World, err)
 		}
 		if agent == nil {
 			// Auto-provision a new agent from the name pool.
-			agent, err = autoProvision(opts.Rig, townStore)
+			agent, err = autoProvision(opts.World, sphereStore)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	agentID := opts.Rig + "/" + agent.Name
+	agentID := opts.World + "/" + agent.Name
 
-	// 3. Determine if this is a re-sling (crash recovery).
-	reSling := item.Status == "hooked" && item.Assignee == agentID &&
+	// 3. Determine if this is a re-cast (crash recovery).
+	reCast := item.Status == "hooked" && item.Assignee == agentID &&
 		agent.State == "working" && agent.HookItem == opts.WorkItemID
 
 	// 4. Validate state.
-	if !reSling {
+	if !reCast {
 		if item.Status != "open" {
 			return nil, fmt.Errorf("work item %q has status %q, expected \"open\"", opts.WorkItemID, item.Status)
 		}
@@ -136,12 +136,12 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 		}
 	}
 
-	worktreeDir := WorktreePath(opts.Rig, agent.Name)
-	sessName := SessionName(opts.Rig, agent.Name)
-	branchName := fmt.Sprintf("polecat/%s/%s", agent.Name, opts.WorkItemID)
+	worktreeDir := WorktreePath(opts.World, agent.Name)
+	sessName := SessionName(opts.World, agent.Name)
+	branchName := fmt.Sprintf("outpost/%s/%s", agent.Name, opts.WorkItemID)
 
-	// For re-sling, stop existing session if it's still around.
-	if reSling && mgr.Exists(sessName) {
+	// For re-cast, stop existing session if it's still around.
+	if reCast && mgr.Exists(sessName) {
 		mgr.Stop(sessName, true)
 	}
 
@@ -156,7 +156,7 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 	pruneCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "prune")
 	pruneCmd.Run()
 
-	// Try creating worktree with new branch; fall back to existing branch (re-sling).
+	// Try creating worktree with new branch; fall back to existing branch (re-cast).
 	addCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "add", worktreeDir, "-b", branchName, "HEAD")
 	if out, err := addCmd.CombinedOutput(); err != nil {
 		addCmd2 := exec.Command("git", "-C", opts.SourceRepo, "worktree", "add", worktreeDir, branchName)
@@ -168,21 +168,21 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 
 	// From here on, rollback on failure.
 	rollback := func() {
-		hook.Clear(opts.Rig, agent.Name)
-		rigStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{Status: "open", Assignee: "-"})
-		townStore.UpdateAgentState(agent.ID, "idle", "")
+		tether.Clear(opts.World, agent.Name)
+		worldStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{Status: "open", Assignee: "-"})
+		sphereStore.UpdateAgentState(agent.ID, "idle", "")
 		rmCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
 		rmCmd.Run()
 	}
 
-	// 4. Write hook file.
-	if err := hook.Write(opts.Rig, agent.Name, opts.WorkItemID); err != nil {
+	// 4. Write tether file.
+	if err := tether.Write(opts.World, agent.Name, opts.WorkItemID); err != nil {
 		rollback()
-		return nil, fmt.Errorf("failed to write hook: %w", err)
+		return nil, fmt.Errorf("failed to write tether: %w", err)
 	}
 
 	// 5. Update work item: status → hooked, assignee → agent ID.
-	if err := rigStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{
+	if err := worldStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{
 		Status:   "hooked",
 		Assignee: agent.ID,
 	}); err != nil {
@@ -191,7 +191,7 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 	}
 
 	// 6. Update agent: state → working, hook_item → work item ID.
-	if err := townStore.UpdateAgentState(agent.ID, "working", opts.WorkItemID); err != nil {
+	if err := sphereStore.UpdateAgentState(agent.ID, "working", opts.WorkItemID); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
@@ -199,7 +199,7 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 	// 7. Install CLAUDE.md in the worktree.
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   agent.Name,
-		Rig:         opts.Rig,
+		World:       opts.World,
 		WorkItemID:  opts.WorkItemID,
 		Title:       item.Title,
 		Description: item.Description,
@@ -211,7 +211,7 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 	}
 
 	// 8. Install Claude Code hooks in the worktree.
-	if err := protocol.InstallHooks(worktreeDir, opts.Rig, agent.Name); err != nil {
+	if err := protocol.InstallHooks(worktreeDir, opts.World, agent.Name); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to install hooks: %w", err)
 	}
@@ -226,7 +226,7 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 		if _, ok := vars["issue"]; !ok {
 			vars["issue"] = opts.WorkItemID
 		}
-		if _, _, err := workflow.Instantiate(opts.Rig, agent.Name, opts.Formula, vars); err != nil {
+		if _, _, err := workflow.Instantiate(opts.World, agent.Name, opts.Formula, vars); err != nil {
 			rollback()
 			return nil, fmt.Errorf("failed to instantiate workflow %q: %w", opts.Formula, err)
 		}
@@ -234,35 +234,35 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 
 	// 9. Start tmux session.
 	env := map[string]string{
-		"GT_HOME":  config.Home(),
-		"GT_RIG":   opts.Rig,
-		"GT_AGENT": agent.Name,
+		"SOL_HOME":  config.Home(),
+		"SOL_WORLD": opts.World,
+		"SOL_AGENT": agent.Name,
 	}
-	if err := mgr.Start(sessName, worktreeDir, "claude --dangerously-skip-permissions", env, "polecat", opts.Rig); err != nil {
+	if err := mgr.Start(sessName, worktreeDir, "claude --dangerously-skip-permissions", env, "agent", opts.World); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to start session: %w", err)
 	}
 
-	slingPayload := map[string]string{
+	castPayload := map[string]string{
 		"work_item_id": opts.WorkItemID,
 		"agent":        agent.Name,
-		"rig":          opts.Rig,
+		"world":        opts.World,
 	}
 	if logger != nil {
-		logger.Emit(events.EventSling, "gt", "operator", "both", slingPayload)
+		logger.Emit(events.EventSling, "sol", "operator", "both", castPayload)
 	}
 
 	// Emit workflow instantiation event if formula was used.
 	if opts.Formula != "" && logger != nil {
-		logger.Emit(events.EventWorkflowInstantiate, "gt", "operator", "both", map[string]string{
+		logger.Emit(events.EventWorkflowInstantiate, "sol", "operator", "both", map[string]string{
 			"formula":      opts.Formula,
 			"work_item_id": opts.WorkItemID,
 			"agent":        agent.Name,
-			"rig":          opts.Rig,
+			"world":        opts.World,
 		})
 	}
 
-	return &SlingResult{
+	return &CastResult{
 		WorkItemID:  opts.WorkItemID,
 		AgentName:   agent.Name,
 		SessionName: sessName,
@@ -272,16 +272,16 @@ func Sling(opts SlingOpts, rigStore RigStore, townStore TownStore, mgr SessionMa
 }
 
 // autoProvision creates a new agent from the name pool.
-func autoProvision(rig string, townStore TownStore) (*store.Agent, error) {
-	overridePath := filepath.Join(config.Home(), rig, "names.txt")
+func autoProvision(world string, sphereStore SphereStore) (*store.Agent, error) {
+	overridePath := filepath.Join(config.Home(), world, "names.txt")
 	pool, err := namepool.Load(overridePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load name pool: %w", err)
 	}
 
-	agents, err := townStore.ListAgents(rig, "")
+	agents, err := sphereStore.ListAgents(world, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to list agents for rig %q: %w", rig, err)
+		return nil, fmt.Errorf("failed to list agents for world %q: %w", world, err)
 	}
 
 	usedNames := make([]string, len(agents))
@@ -294,7 +294,7 @@ func autoProvision(rig string, townStore TownStore) (*store.Agent, error) {
 		return nil, err
 	}
 
-	id, err := townStore.CreateAgent(name, rig, "polecat")
+	id, err := sphereStore.CreateAgent(name, world, "agent")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent %q: %w", name, err)
 	}
@@ -302,8 +302,8 @@ func autoProvision(rig string, townStore TownStore) (*store.Agent, error) {
 	return &store.Agent{
 		ID:    id,
 		Name:  name,
-		Rig:   rig,
-		Role:  "polecat",
+		World: world,
+		Role:  "agent",
 		State: "idle",
 	}, nil
 }
@@ -314,56 +314,56 @@ type PrimeResult struct {
 }
 
 // Prime assembles execution context from durable state and returns it.
-func Prime(rig, agentName string, rigStore RigStore) (*PrimeResult, error) {
+func Prime(world, agentName string, worldStore WorldStore) (*PrimeResult, error) {
 	// Refinery gets a special prime context.
 	if agentName == "refinery" {
-		return primeRefinery(rig)
+		return primeRefinery(world)
 	}
 
-	// Read the hook file.
-	workItemID, err := hook.Read(rig, agentName)
+	// Read the tether file.
+	workItemID, err := tether.Read(world, agentName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read hook: %w", err)
+		return nil, fmt.Errorf("failed to read tether: %w", err)
 	}
 	if workItemID == "" {
-		return &PrimeResult{Output: "No work hooked"}, nil
+		return &PrimeResult{Output: "No work tethered"}, nil
 	}
 
 	// Get the work item.
-	item, err := rigStore.GetWorkItem(workItemID)
+	item, err := worldStore.GetWorkItem(workItemID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get work item %q: %w", workItemID, err)
 	}
 
 	// Check for handoff context (session continuity).
-	handoffState, err := handoff.Read(rig, agentName)
+	handoffState, err := handoff.Read(world, agentName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read handoff state: %w", err)
 	}
 
 	if handoffState != nil {
-		result, err := primeWithHandoff(rig, agentName, item, handoffState)
+		result, err := primeWithHandoff(world, agentName, item, handoffState)
 		if err != nil {
 			return nil, err
 		}
 		// Clean up handoff file after successful injection.
-		handoff.Remove(rig, agentName)
+		handoff.Remove(world, agentName)
 		return result, nil
 	}
 
 	// Check for active workflow.
-	state, err := workflow.ReadState(rig, agentName)
+	state, err := workflow.ReadState(world, agentName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read workflow state: %w", err)
 	}
 
 	if state != nil && state.Status == "running" {
-		return primeWithWorkflow(rig, agentName, item, state)
+		return primeWithWorkflow(world, agentName, item, state)
 	}
 
 	// No workflow — standard prime (existing behavior).
 	output := fmt.Sprintf(`=== WORK CONTEXT ===
-Agent: %s (rig: %s)
+Agent: %s (world: %s)
 Work Item: %s
 Title: %s
 Status: %s
@@ -372,38 +372,38 @@ Description:
 %s
 
 Instructions:
-Execute this work item. When complete, run: gt done
-If stuck, run: gt escalate "description"
-=== END CONTEXT ===`, agentName, rig, item.ID, item.Title, item.Status, item.Description)
+Execute this work item. When complete, run: sol resolve
+If stuck, run: sol escalate "description"
+=== END CONTEXT ===`, agentName, world, item.ID, item.Title, item.Status, item.Description)
 
 	return &PrimeResult{Output: output}, nil
 }
 
 // primeWithWorkflow returns workflow-aware context for the prime command.
-func primeWithWorkflow(rig, agentName string, item *store.WorkItem,
+func primeWithWorkflow(world, agentName string, item *store.WorkItem,
 	state *workflow.State) (*PrimeResult, error) {
 
-	step, err := workflow.ReadCurrentStep(rig, agentName)
+	step, err := workflow.ReadCurrentStep(world, agentName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read current step: %w", err)
 	}
 	if step == nil {
 		// Workflow exists but no current step — treat as complete.
 		return &PrimeResult{
-			Output: fmt.Sprintf("Workflow complete for %s. Run: gt done", item.ID),
+			Output: fmt.Sprintf("Workflow complete for %s. Run: sol resolve", item.ID),
 		}, nil
 	}
 
 	// Count progress.
 	completed := len(state.Completed)
-	instance, _ := workflow.ReadInstance(rig, agentName)
+	instance, _ := workflow.ReadInstance(world, agentName)
 	formula := ""
 	if instance != nil {
 		formula = instance.Formula
 	}
 
 	output := fmt.Sprintf(`=== WORK CONTEXT ===
-Agent: %s (rig: %s)
+Agent: %s (world: %s)
 Work Item: %s
 Title: %s
 
@@ -415,24 +415,24 @@ Workflow: %s (step %d/%d+%d: %s)
 
 Propulsion loop:
 1. Execute the step above
-2. When done: gt workflow advance --rig=%s --agent=%s
-3. Check progress: gt workflow status --rig=%s --agent=%s
-4. After final step: gt done
+2. When done: sol workflow advance --world=%s --agent=%s
+3. Check progress: sol workflow status --world=%s --agent=%s
+4. After final step: sol resolve
 === END CONTEXT ===`,
-		agentName, rig, item.ID, item.Title,
+		agentName, world, item.ID, item.Title,
 		formula, completed+1, completed, 1, step.Title,
 		step.Instructions,
-		rig, agentName, rig, agentName)
+		world, agentName, world, agentName)
 
 	return &PrimeResult{Output: output}, nil
 }
 
 // primeWithHandoff returns handoff-aware context for the prime command.
-func primeWithHandoff(rig, agentName string, item *store.WorkItem,
+func primeWithHandoff(world, agentName string, item *store.WorkItem,
 	state *handoff.State) (*PrimeResult, error) {
 
 	output := fmt.Sprintf(`=== HANDOFF CONTEXT ===
-Agent: %s (rig: %s)
+Agent: %s (world: %s)
 Work Item: %s
 Title: %s
 
@@ -446,40 +446,40 @@ handed off to preserve context.
 --- RECENT COMMITS ---
 %s
 --- END COMMITS ---
-`, agentName, rig, item.ID, item.Title, state.Summary, strings.Join(state.RecentCommits, "\n"))
+`, agentName, world, item.ID, item.Title, state.Summary, strings.Join(state.RecentCommits, "\n"))
 
 	// Add workflow context if the agent has an active workflow.
 	if state.WorkflowStep != "" {
 		output += fmt.Sprintf(`
 Workflow progress: %s (current step: %s)
-Read your current step: gt workflow current --rig=%s --agent=%s
+Read your current step: sol workflow current --world=%s --agent=%s
 
-`, state.WorkflowProgress, state.WorkflowStep, rig, agentName)
+`, state.WorkflowProgress, state.WorkflowStep, world, agentName)
 	}
 
 	output += fmt.Sprintf(`Continue from where the previous session left off.
-When complete, run: gt done
-If you need to hand off again: gt handoff --summary="<what you've done>"
+When complete, run: sol resolve
+If you need to hand off again: sol handoff --summary="<what you've done>"
 === END HANDOFF ===`)
 
 	return &PrimeResult{Output: output}, nil
 }
 
 // primeRefinery returns refinery-specific context for the prime command.
-func primeRefinery(rig string) (*PrimeResult, error) {
+func primeRefinery(world string) (*PrimeResult, error) {
 	output := fmt.Sprintf(`=== REFINERY CONTEXT ===
-Rig: %s
+World: %s
 Role: refinery (merge queue processor)
 
-Begin your patrol loop. Run 'gt refinery check-unblocked %s' first,
-then scan the queue with 'gt refinery ready %s --json'.
-=== END CONTEXT ===`, rig, rig, rig)
+Begin your patrol loop. Run 'sol forge check-unblocked %s' first,
+then scan the queue with 'sol forge ready %s --json'.
+=== END CONTEXT ===`, world, world, world)
 
 	return &PrimeResult{Output: output}, nil
 }
 
-// DoneResult holds the output of a done operation.
-type DoneResult struct {
+// ResolveResult holds the output of a resolve operation.
+type ResolveResult struct {
 	WorkItemID     string
 	Title          string
 	AgentName      string
@@ -487,40 +487,40 @@ type DoneResult struct {
 	MergeRequestID string
 }
 
-// DoneOpts holds the inputs for a done operation.
-type DoneOpts struct {
-	Rig       string
+// ResolveOpts holds the inputs for a resolve operation.
+type ResolveOpts struct {
+	World     string
 	AgentName string
 }
 
-// Done signals work completion: git operations, state updates, hook clear.
+// Resolve signals work completion: git operations, state updates, tether clear.
 // The logger parameter is optional — if nil, no events are emitted.
-func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionManager, logger *events.Logger) (*DoneResult, error) {
-	agentID := opts.Rig + "/" + opts.AgentName
-	sessName := SessionName(opts.Rig, opts.AgentName)
-	worktreeDir := WorktreePath(opts.Rig, opts.AgentName)
+func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
+	agentID := opts.World + "/" + opts.AgentName
+	sessName := SessionName(opts.World, opts.AgentName)
+	worktreeDir := WorktreePath(opts.World, opts.AgentName)
 
-	// 1. Read hook — get work item ID.
-	workItemID, err := hook.Read(opts.Rig, opts.AgentName)
+	// 1. Read tether — get work item ID.
+	workItemID, err := tether.Read(opts.World, opts.AgentName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read hook: %w", err)
+		return nil, fmt.Errorf("failed to read tether: %w", err)
 	}
 	if workItemID == "" {
-		return nil, fmt.Errorf("no work hooked for agent %q in rig %q", opts.AgentName, opts.Rig)
+		return nil, fmt.Errorf("no work tethered for agent %q in world %q", opts.AgentName, opts.World)
 	}
 
-	branchName := fmt.Sprintf("polecat/%s/%s", opts.AgentName, workItemID)
+	branchName := fmt.Sprintf("outpost/%s/%s", opts.AgentName, workItemID)
 
 	// Get the work item for output and conflict-resolution detection.
-	item, err := rigStore.GetWorkItem(workItemID)
+	item, err := worldStore.GetWorkItem(workItemID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get work item %q: %w", workItemID, err)
 	}
 
 	// Detect conflict-resolution tasks and handle separately.
 	if item.HasLabel("conflict-resolution") {
-		return doneConflictResolution(opts, item, branchName, worktreeDir,
-			agentID, sessName, rigStore, townStore, mgr, logger)
+		return resolveConflictResolution(opts, item, branchName, worktreeDir,
+			agentID, sessName, worldStore, sphereStore, mgr, logger)
 	}
 
 	// 2. Git operations in the worktree.
@@ -531,7 +531,7 @@ func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionMana
 	}
 
 	// git commit (skip if nothing to commit)
-	commitMsg := fmt.Sprintf("gt done: %s", item.Title)
+	commitMsg := fmt.Sprintf("sol resolve: %s", item.Title)
 	commitCmd := exec.Command("git", "-C", worktreeDir, "commit", "-m", commitMsg)
 	commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
 
@@ -541,30 +541,30 @@ func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionMana
 		fmt.Fprintf(os.Stderr, "Warning: git push failed: %s\n", strings.TrimSpace(string(out)))
 	}
 
-	// 3. Create merge request for the refinery to process.
-	mrID, err := rigStore.CreateMergeRequest(workItemID, branchName, item.Priority)
+	// 3. Create merge request for the forge to process.
+	mrID, err := worldStore.CreateMergeRequest(workItemID, branchName, item.Priority)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create merge request for %q: %w", workItemID, err)
 	}
 
 	// 4. Update work item: status → done.
-	if err := rigStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{Status: "done"}); err != nil {
+	if err := worldStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{Status: "done"}); err != nil {
 		return nil, fmt.Errorf("failed to update work item status: %w", err)
 	}
 
 	// 5. Update agent: state → idle, hook_item → clear.
-	if err := townStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
 
-	// 6. Clear hook file.
-	if err := hook.Clear(opts.Rig, opts.AgentName); err != nil {
-		return nil, fmt.Errorf("failed to clear hook: %w", err)
+	// 6. Clear tether file.
+	if err := tether.Clear(opts.World, opts.AgentName); err != nil {
+		return nil, fmt.Errorf("failed to clear tether: %w", err)
 	}
 
 	// 6b. Clean up workflow if present.
-	if _, err := workflow.ReadState(opts.Rig, opts.AgentName); err == nil {
-		workflow.Remove(opts.Rig, opts.AgentName) // best-effort cleanup
+	if _, err := workflow.ReadState(opts.World, opts.AgentName); err == nil {
+		workflow.Remove(opts.World, opts.AgentName) // best-effort cleanup
 	}
 
 	// 7. Stop session — use a brief delay then stop in background.
@@ -574,7 +574,7 @@ func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionMana
 	}()
 
 	if logger != nil {
-		logger.Emit(events.EventDone, "gt", opts.AgentName, "both", map[string]string{
+		logger.Emit(events.EventDone, "sol", opts.AgentName, "both", map[string]string{
 			"work_item_id":  workItemID,
 			"agent":         opts.AgentName,
 			"branch":        branchName,
@@ -582,7 +582,7 @@ func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionMana
 		})
 	}
 
-	return &DoneResult{
+	return &ResolveResult{
 		WorkItemID:     workItemID,
 		Title:          item.Title,
 		AgentName:      opts.AgentName,
@@ -591,14 +591,14 @@ func Done(opts DoneOpts, rigStore RigStore, townStore TownStore, mgr SessionMana
 	}, nil
 }
 
-// doneConflictResolution handles the done flow for conflict-resolution tasks.
-// Differences from normal done:
+// resolveConflictResolution handles the resolve flow for conflict-resolution tasks.
+// Differences from normal resolve:
 // 1. Uses --force-with-lease for push (branch was rebased)
 // 2. Does NOT create a new merge request (original MR already exists)
 // 3. Unblocks the original MR
 // 4. Closes the resolution work item
-func doneConflictResolution(opts DoneOpts, item *store.WorkItem, branchName, worktreeDir,
-	agentID, sessName string, rigStore RigStore, townStore TownStore, mgr SessionManager, logger *events.Logger) (*DoneResult, error) {
+func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchName, worktreeDir,
+	agentID, sessName string, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
 
 	// 1. Git operations: add, commit, force-push (branch was rebased).
 	addCmd := exec.Command("git", "-C", worktreeDir, "add", "-A")
@@ -606,7 +606,7 @@ func doneConflictResolution(opts DoneOpts, item *store.WorkItem, branchName, wor
 		return nil, fmt.Errorf("git add failed: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
-	commitMsg := fmt.Sprintf("gt done: %s", item.Title)
+	commitMsg := fmt.Sprintf("sol resolve: %s", item.Title)
 	commitCmd := exec.Command("git", "-C", worktreeDir, "commit", "-m", commitMsg)
 	commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
 
@@ -618,29 +618,29 @@ func doneConflictResolution(opts DoneOpts, item *store.WorkItem, branchName, wor
 	}
 
 	// 2. Find and unblock the original MR.
-	blockedMR, err := rigStore.FindMergeRequestByBlocker(item.ID)
+	blockedMR, err := worldStore.FindMergeRequestByBlocker(item.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find blocked MR for %q: %w", item.ID, err)
 	}
 	if blockedMR != nil {
-		if err := rigStore.UnblockMergeRequest(blockedMR.ID); err != nil {
+		if err := worldStore.UnblockMergeRequest(blockedMR.ID); err != nil {
 			return nil, fmt.Errorf("failed to unblock MR %q: %w", blockedMR.ID, err)
 		}
 	}
 
 	// 3. Close the resolution work item.
-	if err := rigStore.CloseWorkItem(item.ID); err != nil {
+	if err := worldStore.CloseWorkItem(item.ID); err != nil {
 		return nil, fmt.Errorf("failed to close resolution work item: %w", err)
 	}
 
-	// 4. Update agent: state → idle, clear hook.
-	if err := townStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+	// 4. Update agent: state → idle, clear tether.
+	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
 
-	// 5. Clear hook file.
-	if err := hook.Clear(opts.Rig, opts.AgentName); err != nil {
-		return nil, fmt.Errorf("failed to clear hook: %w", err)
+	// 5. Clear tether file.
+	if err := tether.Clear(opts.World, opts.AgentName); err != nil {
+		return nil, fmt.Errorf("failed to clear tether: %w", err)
 	}
 
 	// 6. Stop session.
@@ -650,14 +650,14 @@ func doneConflictResolution(opts DoneOpts, item *store.WorkItem, branchName, wor
 	}()
 
 	if logger != nil {
-		logger.Emit(events.EventDone, "gt", opts.AgentName, "both", map[string]string{
+		logger.Emit(events.EventDone, "sol", opts.AgentName, "both", map[string]string{
 			"work_item_id": item.ID,
 			"agent":        opts.AgentName,
 			"branch":       branchName,
 		})
 	}
 
-	return &DoneResult{
+	return &ResolveResult{
 		WorkItemID:     item.ID,
 		Title:          item.Title,
 		AgentName:      opts.AgentName,
@@ -676,14 +676,14 @@ func DiscoverSourceRepo() (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// OpenRigStore opens a rig store for the given rig name. Convenience wrapper.
-func OpenRigStore(rig string) (*store.Store, error) {
-	return store.OpenRig(rig)
+// OpenWorldStore opens a world store for the given world name. Convenience wrapper.
+func OpenWorldStore(world string) (*store.Store, error) {
+	return store.OpenWorld(world)
 }
 
-// OpenTownStore opens the town store. Convenience wrapper.
-func OpenTownStore() (*store.Store, error) {
-	return store.OpenTown()
+// OpenSphereStore opens the sphere store. Convenience wrapper.
+func OpenSphereStore() (*store.Store, error) {
+	return store.OpenSphere()
 }
 
 // NewSessionManager creates a new session manager. Convenience wrapper.

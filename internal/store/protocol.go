@@ -7,31 +7,31 @@ import (
 
 // Protocol message subject prefixes.
 const (
-	ProtoPolecatDone    = "POLECAT_DONE"
-	ProtoMergeReady     = "MERGE_READY"
-	ProtoMerged         = "MERGED"
-	ProtoMergeFailed    = "MERGE_FAILED"
-	ProtoReworkRequest  = "REWORK_REQUEST"
+	ProtoAgentDone          = "AGENT_DONE"
+	ProtoMergeReady         = "MERGE_READY"
+	ProtoMerged             = "MERGED"
+	ProtoMergeFailed        = "MERGE_FAILED"
+	ProtoReworkRequest      = "REWORK_REQUEST"
 	ProtoRecoveryNeeded     = "RECOVERY_NEEDED"
-	ProtoConvoyNeedsFeeding = "CONVOY_NEEDS_FEEDING"
+	ProtoCaravanNeedsFeeding = "CARAVAN_NEEDS_FEEDING"
 )
 
-// PolecatDonePayload is sent when a polecat completes its work.
-type PolecatDonePayload struct {
+// AgentDonePayload is sent when an agent completes its work.
+type AgentDonePayload struct {
 	WorkItemID string `json:"work_item_id"`
 	AgentID    string `json:"agent_id"`
 	Branch     string `json:"branch"`
-	Rig        string `json:"rig"`
+	World      string `json:"world"`
 }
 
-// MergeReadyPayload is sent when a witness verifies polecat work.
+// MergeReadyPayload is sent when a sentinel verifies agent work.
 type MergeReadyPayload struct {
 	MergeRequestID string `json:"merge_request_id"`
 	WorkItemID     string `json:"work_item_id"`
 	Branch         string `json:"branch"`
 }
 
-// MergedPayload is sent when the refinery successfully merges work.
+// MergedPayload is sent when the forge successfully merges work.
 type MergedPayload struct {
 	MergeRequestID string `json:"merge_request_id"`
 	WorkItemID     string `json:"work_item_id"`
@@ -44,7 +44,7 @@ type MergeFailedPayload struct {
 	Reason         string `json:"reason"`
 }
 
-// RecoveryNeededPayload is sent when a witness detects a polecat issue.
+// RecoveryNeededPayload is sent when a sentinel detects an agent issue.
 type RecoveryNeededPayload struct {
 	AgentID    string `json:"agent_id"`
 	WorkItemID string `json:"work_item_id"`
@@ -52,16 +52,16 @@ type RecoveryNeededPayload struct {
 	Attempts   int    `json:"attempts"`
 }
 
-// ConvoyNeedsFeedingPayload is sent when a convoy has items ready
+// CaravanNeedsFeedingPayload is sent when a caravan has items ready
 // for dispatch (e.g., after a merge unblocks dependent work).
-type ConvoyNeedsFeedingPayload struct {
-	ConvoyID   string `json:"convoy_id"`
-	Rig        string `json:"rig"`
+type CaravanNeedsFeedingPayload struct {
+	CaravanID  string `json:"caravan_id"`
+	World      string `json:"world"`
 	ReadyCount int    `json:"ready_count"`
 }
 
 // SendProtocolMessage sends a typed protocol message with a JSON body.
-// The subject is the protocol type (e.g., "POLECAT_DONE").
+// The subject is the protocol type (e.g., "AGENT_DONE").
 // The body is JSON-encoded from the payload.
 // Protocol messages always use priority=1 (urgent).
 func (s *Store) SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error) {

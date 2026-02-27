@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nevinsm/gt/internal/dispatch"
-	"github.com/nevinsm/gt/internal/hook"
-	"github.com/nevinsm/gt/internal/session"
-	"github.com/nevinsm/gt/internal/status"
-	"github.com/nevinsm/gt/internal/supervisor"
+	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/tether"
+	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/status"
+	"github.com/nevinsm/sol/internal/prefect"
 )
 
 // --- Test 1: Multi-Agent Dispatch ---
@@ -26,34 +26,34 @@ func TestMultiAgentDispatch(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
 	// Create two work items.
-	item1ID, err := rigStore.CreateWorkItem("Task Alpha", "Alpha description", "operator", 2, nil)
+	item1ID, err := worldStore.CreateWorkItem("Task Alpha", "Alpha description", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create item 1: %v", err)
 	}
-	item2ID, err := rigStore.CreateWorkItem("Task Beta", "Beta description", "operator", 2, nil)
+	item2ID, err := worldStore.CreateWorkItem("Task Beta", "Beta description", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create item 2: %v", err)
 	}
 
 	// Sling both without specifying agents (auto-provision).
-	result1, err := dispatch.Sling(dispatch.SlingOpts{
+	result1, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item1ID,
-		Rig:        "testrig",
+		World:        "testrig",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling item 1: %v", err)
 	}
 
-	result2, err := dispatch.Sling(dispatch.SlingOpts{
+	result2, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item2ID,
-		Rig:        "testrig",
+		World:        "testrig",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling item 2: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 	}
 
 	// Both agents in "working" state.
-	agent1, err := townStore.GetAgent("testrig/" + result1.AgentName)
+	agent1, err := sphereStore.GetAgent("testrig/" + result1.AgentName)
 	if err != nil {
 		t.Fatalf("get agent 1: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 		t.Errorf("agent 1 state: got %q, want working", agent1.State)
 	}
 
-	agent2, err := townStore.GetAgent("testrig/" + result2.AgentName)
+	agent2, err := sphereStore.GetAgent("testrig/" + result2.AgentName)
 	if err != nil {
 		t.Fatalf("get agent 2: %v", err)
 	}
@@ -92,11 +92,11 @@ func TestMultiAgentDispatch(t *testing.T) {
 	}
 
 	// Each work item has a different assignee.
-	item1, err := rigStore.GetWorkItem(item1ID)
+	item1, err := worldStore.GetWorkItem(item1ID)
 	if err != nil {
 		t.Fatalf("get item 1: %v", err)
 	}
-	item2, err := rigStore.GetWorkItem(item2ID)
+	item2, err := worldStore.GetWorkItem(item2ID)
 	if err != nil {
 		t.Fatalf("get item 2: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 	}
 
 	// Both hook files exist with their respective work item IDs.
-	hookID1, err := hook.Read("testrig", result1.AgentName)
+	hookID1, err := tether.Read("testrig", result1.AgentName)
 	if err != nil {
 		t.Fatalf("read hook 1: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 		t.Errorf("hook 1: got %q, want %q", hookID1, item1ID)
 	}
 
-	hookID2, err := hook.Read("testrig", result2.AgentName)
+	hookID2, err := tether.Read("testrig", result2.AgentName)
 	if err != nil {
 		t.Fatalf("read hook 2: %v", err)
 	}
@@ -143,21 +143,21 @@ func TestFlockSerialization(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 
 	// Create one work item and two idle agents.
-	itemID, err := rigStore.CreateWorkItem("Contested task", "Flock test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWorkItem("Contested task", "Flock test", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create work item: %v", err)
 	}
-	townStore.CreateAgent("Alpha", "testrig", "polecat")
-	townStore.CreateAgent("Beta", "testrig", "polecat")
+	sphereStore.CreateAgent("Alpha", "testrig", "agent")
+	sphereStore.CreateAgent("Beta", "testrig", "agent")
 
-	// Build the gt binary for subprocess testing.
-	binary := filepath.Join(t.TempDir(), "gt")
-	buildCmd := exec.Command("go", "build", "-o", binary, "github.com/nevinsm/gt")
+	// Build the sol binary for subprocess testing.
+	binary := filepath.Join(t.TempDir(), "sol")
+	buildCmd := exec.Command("go", "build", "-o", binary, "github.com/nevinsm/sol")
 	if out, err := buildCmd.CombinedOutput(); err != nil {
-		t.Fatalf("build gt binary: %s: %v", out, err)
+		t.Fatalf("build sol binary: %s: %v", out, err)
 	}
 
 	// Launch two subprocesses concurrently, each trying to sling the same
@@ -172,8 +172,8 @@ func TestFlockSerialization(t *testing.T) {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			cmd := exec.Command(binary, "sling", itemID, "testrig", "--agent="+name)
-			cmd.Dir = sourceRepo // gt sling discovers source repo from cwd
+			cmd := exec.Command(binary, "cast", itemID, "testrig", "--agent="+name)
+			cmd.Dir = sourceRepo // gt cast discovers source repo from cwd
 			out, err := cmd.CombinedOutput()
 			mu.Lock()
 			defer mu.Unlock()
@@ -198,12 +198,12 @@ func TestFlockSerialization(t *testing.T) {
 	// The winning agent has the work item hooked.
 	if len(successes) == 1 {
 		winner := successes[0]
-		hookID, _ := hook.Read("testrig", winner)
+		hookID, _ := tether.Read("testrig", winner)
 		if hookID != itemID {
 			t.Errorf("winner %s hook: got %q, want %q", winner, hookID, itemID)
 		}
 
-		item, _ := rigStore.GetWorkItem(itemID)
+		item, _ := worldStore.GetWorkItem(itemID)
 		if item.Status != "hooked" {
 			t.Errorf("work item status: got %q, want hooked", item.Status)
 		}
@@ -213,28 +213,28 @@ func TestFlockSerialization(t *testing.T) {
 	}
 }
 
-// --- Test 3: Supervisor Session Restart ---
+// --- Test 3: Prefect Session Restart ---
 
-func TestSupervisorSessionRestart(t *testing.T) {
+func TestPrefectSessionRestart(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
 	// Create a work item and sling it (auto-provisions an agent).
-	itemID, err := rigStore.CreateWorkItem("Supervisor test", "Restart test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWorkItem("Prefect test", "Restart test", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create work item: %v", err)
 	}
 
-	result, err := dispatch.Sling(dispatch.SlingOpts{
+	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling: %v", err)
 	}
@@ -242,11 +242,11 @@ func TestSupervisorSessionRestart(t *testing.T) {
 	agentName := result.AgentName
 	sessName := result.SessionName
 
-	// Start the supervisor with a short heartbeat.
-	cfg := supervisor.DefaultConfig()
+	// Start the prefect with a short heartbeat.
+	cfg := prefect.DefaultConfig()
 	cfg.HeartbeatInterval = 2 * time.Second
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	sup := supervisor.New(cfg, townStore, mgr, logger)
+	sup := prefect.New(cfg, sphereStore, mgr, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -254,7 +254,7 @@ func TestSupervisorSessionRestart(t *testing.T) {
 	supDone := make(chan error, 1)
 	go func() { supDone <- sup.Run(ctx) }()
 
-	// Give supervisor time to start.
+	// Give prefect time to start.
 	time.Sleep(500 * time.Millisecond)
 
 	// Kill the agent's tmux session directly.
@@ -265,16 +265,16 @@ func TestSupervisorSessionRestart(t *testing.T) {
 		t.Fatal("session should be dead after kill")
 	}
 
-	// Wait for the supervisor to restart it.
+	// Wait for the prefect to restart it.
 	ok := pollUntil(15*time.Second, 500*time.Millisecond, func() bool {
 		return mgr.Exists(sessName)
 	})
 	if !ok {
-		t.Fatal("supervisor did not restart session within 15 seconds")
+		t.Fatal("prefect did not restart session within 15 seconds")
 	}
 
 	// Verify agent state is "working" (not "stalled").
-	agent, err := townStore.GetAgent("testrig/" + agentName)
+	agent, err := sphereStore.GetAgent("testrig/" + agentName)
 	if err != nil {
 		t.Fatalf("get agent: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestSupervisorSessionRestart(t *testing.T) {
 	}
 
 	// Hook file still contains the same work item ID.
-	hookID, err := hook.Read("testrig", agentName)
+	hookID, err := tether.Read("testrig", agentName)
 	if err != nil {
 		t.Fatalf("read hook: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestSupervisorSessionRestart(t *testing.T) {
 
 	// The restarted session has the same name.
 	if !mgr.Exists(sessName) {
-		t.Errorf("session %s does not exist after supervisor restart", sessName)
+		t.Errorf("session %s does not exist after prefect restart", sessName)
 	}
 
 	cancel()
@@ -308,37 +308,37 @@ func TestMassDeathDegradation(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
 	// Create and sling 5 work items (auto-provisions 5 agents).
 	var sessionNames []string
 	for i := 0; i < 5; i++ {
-		itemID, err := rigStore.CreateWorkItem("Mass death task", "Mass death test", "operator", 2, nil)
+		itemID, err := worldStore.CreateWorkItem("Mass death task", "Mass death test", "operator", 2, nil)
 		if err != nil {
 			t.Fatalf("create work item %d: %v", i, err)
 		}
-		result, err := dispatch.Sling(dispatch.SlingOpts{
+		result, err := dispatch.Cast(dispatch.CastOpts{
 			WorkItemID: itemID,
-			Rig:        "testrig",
+			World:        "testrig",
 			SourceRepo: sourceRepo,
-		}, rigStore, townStore, mgr, nil)
+		}, worldStore, sphereStore, mgr, nil)
 		if err != nil {
 			t.Fatalf("sling %d: %v", i, err)
 		}
 		sessionNames = append(sessionNames, result.SessionName)
 	}
 
-	// Start the supervisor with short heartbeat and mass-death window.
+	// Start the prefect with short heartbeat and mass-death window.
 	// Use a short MassDeathWindow so death timestamps expire quickly,
 	// allowing the degraded-recovery test to work without re-triggering.
-	cfg := supervisor.DefaultConfig()
+	cfg := prefect.DefaultConfig()
 	cfg.HeartbeatInterval = 1 * time.Second
 	cfg.MassDeathThreshold = 3
 	cfg.MassDeathWindow = 5 * time.Second
 	cfg.DegradedCooldown = 3 * time.Second
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	sup := supervisor.New(cfg, townStore, mgr, logger)
+	sup := prefect.New(cfg, sphereStore, mgr, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -346,7 +346,7 @@ func TestMassDeathDegradation(t *testing.T) {
 	supDone := make(chan error, 1)
 	go func() { supDone <- sup.Run(ctx) }()
 
-	// Give supervisor time to start and run its initial heartbeat.
+	// Give prefect time to start and run its initial heartbeat.
 	time.Sleep(500 * time.Millisecond)
 
 	// Kill all 5 tmux sessions at once.
@@ -354,21 +354,21 @@ func TestMassDeathDegradation(t *testing.T) {
 		exec.Command("tmux", "kill-session", "-t", name).Run()
 	}
 
-	// Wait for the supervisor to detect deaths and enter degraded mode.
+	// Wait for the prefect to detect deaths and enter degraded mode.
 	ok := pollUntil(10*time.Second, 500*time.Millisecond, func() bool {
 		return sup.IsDegraded()
 	})
 	if !ok {
-		t.Fatal("supervisor did not enter degraded mode within 10 seconds")
+		t.Fatal("prefect did not enter degraded mode within 10 seconds")
 	}
 
-	// Core assertion: supervisor IS degraded.
-	// Note: the supervisor processes agents sequentially. The first
+	// Core assertion: prefect IS degraded.
+	// Note: the prefect processes agents sequentially. The first
 	// (threshold-1) deaths may trigger respawns before degraded mode
 	// activates. The remaining agents are set to stalled. We verify
 	// that at least some agents were stalled (degraded prevented respawn).
 	stalledCount := 0
-	agents, err := townStore.ListAgents("testrig", "stalled")
+	agents, err := sphereStore.ListAgents("testrig", "stalled")
 	if err != nil {
 		t.Fatalf("list stalled agents: %v", err)
 	}
@@ -384,38 +384,38 @@ func TestMassDeathDegradation(t *testing.T) {
 		return !sup.IsDegraded()
 	})
 	if !ok {
-		t.Fatal("supervisor did not exit degraded mode within 20 seconds")
+		t.Fatal("prefect did not exit degraded mode within 20 seconds")
 	}
 
 	// Wait for death times to be fully pruned (past MassDeathWindow).
 	time.Sleep(2 * time.Second)
 
-	// After recovery, dispatch a new work item and verify supervisor
+	// After recovery, dispatch a new work item and verify prefect
 	// can respawn sessions again (not degraded anymore).
-	newItemID, err := rigStore.CreateWorkItem("Post-degraded task", "Recovery test", "operator", 2, nil)
+	newItemID, err := worldStore.CreateWorkItem("Post-degraded task", "Recovery test", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create new work item: %v", err)
 	}
 
-	newResult, err := dispatch.Sling(dispatch.SlingOpts{
+	newResult, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: newItemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling after degraded recovery: %v", err)
 	}
 
 	newSessName := newResult.SessionName
 
-	// Kill the new session and let supervisor respawn.
+	// Kill the new session and let prefect respawn.
 	exec.Command("tmux", "kill-session", "-t", newSessName).Run()
 
 	ok = pollUntil(15*time.Second, 500*time.Millisecond, func() bool {
 		return mgr.Exists(newSessName)
 	})
 	if !ok {
-		t.Fatal("supervisor did not respawn session after degraded recovery")
+		t.Fatal("prefect did not respawn session after degraded recovery")
 	}
 
 	cancel()
@@ -430,20 +430,20 @@ func TestGUPPRecovery(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
 	// Create a work item, sling it.
-	itemID, err := rigStore.CreateWorkItem("GUPP test task", "GUPP recovery test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWorkItem("GUPP test task", "GUPP recovery test", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create work item: %v", err)
 	}
 
-	result, err := dispatch.Sling(dispatch.SlingOpts{
+	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("sling: %v", err)
 	}
@@ -453,7 +453,7 @@ func TestGUPPRecovery(t *testing.T) {
 	worktreeDir := result.WorktreeDir
 
 	// Verify: hook file exists, CLAUDE.md in worktree has work item context.
-	if !hook.IsHooked("testrig", agentName) {
+	if !tether.IsTethered("testrig", agentName) {
 		t.Error("hook file does not exist after sling")
 	}
 
@@ -470,17 +470,17 @@ func TestGUPPRecovery(t *testing.T) {
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
 
 	// Verify: hook file still exists (durability).
-	if !hook.IsHooked("testrig", agentName) {
+	if !tether.IsTethered("testrig", agentName) {
 		t.Error("hook file missing after crash")
 	}
 
-	// Re-sling the same work item to the same agent (simulate supervisor restart).
-	_, err = dispatch.Sling(dispatch.SlingOpts{
+	// Re-sling the same work item to the same agent (simulate prefect restart).
+	_, err = dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  agentName,
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("re-sling: %v", err)
 	}
@@ -491,7 +491,7 @@ func TestGUPPRecovery(t *testing.T) {
 	}
 
 	// gt prime returns the work item context.
-	primeResult, err := dispatch.Prime("testrig", agentName, rigStore)
+	primeResult, err := dispatch.Prime("testrig", agentName, worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -503,7 +503,7 @@ func TestGUPPRecovery(t *testing.T) {
 	}
 
 	// Hook file still contains the same work item ID.
-	hookID, err := hook.Read("testrig", agentName)
+	hookID, err := tether.Read("testrig", agentName)
 	if err != nil {
 		t.Fatalf("read hook: %v", err)
 	}
@@ -520,22 +520,22 @@ func TestStatusAccuracy(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
 	// Create 3 work items, sling all 3 (auto-provisions 3 agents).
-	var results []*dispatch.SlingResult
+	var results []*dispatch.CastResult
 	titles := []string{"Status task A", "Status task B", "Status task C"}
 	for _, title := range titles {
-		itemID, err := rigStore.CreateWorkItem(title, "Status test", "operator", 2, nil)
+		itemID, err := worldStore.CreateWorkItem(title, "Status test", "operator", 2, nil)
 		if err != nil {
 			t.Fatalf("create work item %q: %v", title, err)
 		}
-		result, err := dispatch.Sling(dispatch.SlingOpts{
+		result, err := dispatch.Cast(dispatch.CastOpts{
 			WorkItemID: itemID,
-			Rig:        "testrig",
+			World:        "testrig",
 			SourceRepo: sourceRepo,
-		}, rigStore, townStore, mgr, nil)
+		}, worldStore, sphereStore, mgr, nil)
 		if err != nil {
 			t.Fatalf("sling %q: %v", title, err)
 		}
@@ -547,7 +547,7 @@ func TestStatusAccuracy(t *testing.T) {
 	exec.Command("tmux", "kill-session", "-t", deadAgent.SessionName).Run()
 
 	// Run status.Gather().
-	rs, err := status.Gather("testrig", townStore, rigStore, rigStore, mgr)
+	rs, err := status.Gather("testrig", sphereStore, worldStore, worldStore, mgr)
 	if err != nil {
 		t.Fatalf("status.Gather: %v", err)
 	}
@@ -563,9 +563,9 @@ func TestStatusAccuracy(t *testing.T) {
 		t.Errorf("summary.Dead: got %d, want 1", rs.Summary.Dead)
 	}
 
-	// Health = 1 (unhealthy — no supervisor running, but let's check Dead logic).
-	// Note: Without supervisor running, Health() returns 2 (degraded).
-	// The test spec says Health() == 1, but that requires a running supervisor.
+	// Health = 1 (unhealthy — no prefect running, but let's check Dead logic).
+	// Note: Without prefect running, Health() returns 2 (degraded).
+	// The test spec says Health() == 1, but that requires a running prefect.
 	// We check the Dead count is correct instead.
 
 	// Find the dead agent's status.
@@ -590,11 +590,11 @@ func TestStatusAccuracy(t *testing.T) {
 		}
 	}
 
-	// Start the supervisor, let it restart the dead session.
-	cfg := supervisor.DefaultConfig()
+	// Start the prefect, let it restart the dead session.
+	cfg := prefect.DefaultConfig()
 	cfg.HeartbeatInterval = 2 * time.Second
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	sup := supervisor.New(cfg, townStore, mgr, logger)
+	sup := prefect.New(cfg, sphereStore, mgr, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -602,27 +602,27 @@ func TestStatusAccuracy(t *testing.T) {
 	supDone := make(chan error, 1)
 	go func() { supDone <- sup.Run(ctx) }()
 
-	// Wait for supervisor to restart the dead session.
+	// Wait for prefect to restart the dead session.
 	ok := pollUntil(15*time.Second, 500*time.Millisecond, func() bool {
 		return mgr.Exists(deadAgent.SessionName)
 	})
 	if !ok {
-		t.Fatal("supervisor did not restart dead session within 15 seconds")
+		t.Fatal("prefect did not restart dead session within 15 seconds")
 	}
 
 	// Run status.Gather() again.
-	rs2, err := status.Gather("testrig", townStore, rigStore, rigStore, mgr)
+	rs2, err := status.Gather("testrig", sphereStore, worldStore, worldStore, mgr)
 	if err != nil {
-		t.Fatalf("status.Gather after supervisor: %v", err)
+		t.Fatalf("status.Gather after prefect: %v", err)
 	}
 
 	if rs2.Summary.Dead != 0 {
-		t.Errorf("summary.Dead after supervisor: got %d, want 0", rs2.Summary.Dead)
+		t.Errorf("summary.Dead after prefect: got %d, want 0", rs2.Summary.Dead)
 	}
 
-	// Now supervisor is running, Health should be 0 (healthy).
+	// Now prefect is running, Health should be 0 (healthy).
 	if rs2.Health() != 0 {
-		t.Errorf("health after supervisor: got %d, want 0", rs2.Health())
+		t.Errorf("health after prefect: got %d, want 0", rs2.Health())
 	}
 
 	cancel()
@@ -637,7 +637,7 @@ func TestNamePoolExhaustion(t *testing.T) {
 	}
 
 	gtHome, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
 	// Create a custom names file with only 2 names.
@@ -651,31 +651,31 @@ func TestNamePoolExhaustion(t *testing.T) {
 
 	// Create and sling 2 work items (exhausts the pool).
 	for i := 0; i < 2; i++ {
-		itemID, err := rigStore.CreateWorkItem("Pool test", "Exhaustion test", "operator", 2, nil)
+		itemID, err := worldStore.CreateWorkItem("Pool test", "Exhaustion test", "operator", 2, nil)
 		if err != nil {
 			t.Fatalf("create work item %d: %v", i, err)
 		}
-		_, err = dispatch.Sling(dispatch.SlingOpts{
+		_, err = dispatch.Cast(dispatch.CastOpts{
 			WorkItemID: itemID,
-			Rig:        "testrig",
+			World:        "testrig",
 			SourceRepo: sourceRepo,
-		}, rigStore, townStore, mgr, nil)
+		}, worldStore, sphereStore, mgr, nil)
 		if err != nil {
 			t.Fatalf("sling %d: %v", i, err)
 		}
 	}
 
 	// Create a third work item and attempt to sling it.
-	item3ID, err := rigStore.CreateWorkItem("Pool overflow", "Should fail", "operator", 2, nil)
+	item3ID, err := worldStore.CreateWorkItem("Pool overflow", "Should fail", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create work item 3: %v", err)
 	}
 
-	_, err = dispatch.Sling(dispatch.SlingOpts{
+	_, err = dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item3ID,
-		Rig:        "testrig",
+		World:        "testrig",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 	if err == nil {
 		t.Fatal("expected error for exhausted name pool, got nil")
 	}
@@ -684,7 +684,7 @@ func TestNamePoolExhaustion(t *testing.T) {
 	}
 
 	// The third work item remains in "open" status, unassigned.
-	item3, err := rigStore.GetWorkItem(item3ID)
+	item3, err := worldStore.GetWorkItem(item3ID)
 	if err != nil {
 		t.Fatalf("get work item 3: %v", err)
 	}

@@ -7,7 +7,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +29,7 @@ var mailSendCmd = &cobra.Command{
 			return fmt.Errorf("priority must be 1 (urgent), 2 (normal), or 3 (low)")
 		}
 
-		s, err := store.OpenTown()
+		s, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
@@ -52,7 +52,7 @@ var mailInboxCmd = &cobra.Command{
 		identity, _ := cmd.Flags().GetString("identity")
 		asJSON, _ := cmd.Flags().GetBool("json")
 
-		s, err := store.OpenTown()
+		s, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
@@ -89,7 +89,7 @@ var mailReadCmd = &cobra.Command{
 	Short: "Read a message (marks as read)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s, err := store.OpenTown()
+		s, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
@@ -116,7 +116,7 @@ var mailAckCmd = &cobra.Command{
 	Short: "Acknowledge a message",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s, err := store.OpenTown()
+		s, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
@@ -137,7 +137,7 @@ var mailCheckCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identity, _ := cmd.Flags().GetString("identity")
 
-		s, err := store.OpenTown()
+		s, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}

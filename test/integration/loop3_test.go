@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nevinsm/gt/internal/dispatch"
-	"github.com/nevinsm/gt/internal/events"
-	"github.com/nevinsm/gt/internal/hook"
-	"github.com/nevinsm/gt/internal/session"
-	"github.com/nevinsm/gt/internal/status"
-	"github.com/nevinsm/gt/internal/store"
-	"github.com/nevinsm/gt/internal/witness"
+	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/tether"
+	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/status"
+	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/sentinel"
 )
 
 // --- Test 1: Mail Send and Receive ---
@@ -25,25 +25,25 @@ func TestMailSendAndReceive(t *testing.T) {
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
 	// Send message from operator to testrig/Toast.
-	msgID, err := townStore.SendMessage("operator", "testrig/Toast",
+	msgID, err := sphereStore.SendMessage("operator", "testrig/Toast",
 		"Deploy config", "Please update deploy.yaml", 2, "notification")
 	if err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
 
 	// Verify inbox.
-	msgs, err := townStore.Inbox("testrig/Toast")
+	msgs, err := sphereStore.Inbox("testrig/Toast")
 	if err != nil {
 		t.Fatalf("Inbox: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestMailSendAndReceive(t *testing.T) {
 	}
 
 	// Verify unread count.
-	count, err := townStore.CountUnread("testrig/Toast")
+	count, err := sphereStore.CountUnread("testrig/Toast")
 	if err != nil {
 		t.Fatalf("CountUnread: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestMailSendAndReceive(t *testing.T) {
 	}
 
 	// Read the message.
-	msg, err := townStore.ReadMessage(msgID)
+	msg, err := sphereStore.ReadMessage(msgID)
 	if err != nil {
 		t.Fatalf("ReadMessage: %v", err)
 	}
@@ -79,12 +79,12 @@ func TestMailSendAndReceive(t *testing.T) {
 	}
 
 	// Ack the message.
-	if err := townStore.AckMessage(msgID); err != nil {
+	if err := sphereStore.AckMessage(msgID); err != nil {
 		t.Fatalf("AckMessage: %v", err)
 	}
 
 	// Verify inbox is empty.
-	msgs, err = townStore.Inbox("testrig/Toast")
+	msgs, err = sphereStore.Inbox("testrig/Toast")
 	if err != nil {
 		t.Fatalf("Inbox after ack: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestMailSendAndReceive(t *testing.T) {
 	}
 
 	// Verify unread count is 0.
-	count, err = townStore.CountUnread("testrig/Toast")
+	count, err = sphereStore.CountUnread("testrig/Toast")
 	if err != nil {
 		t.Fatalf("CountUnread after ack: %v", err)
 	}
@@ -110,25 +110,25 @@ func TestProtocolMessageFlow(t *testing.T) {
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
 	// Send POLECAT_DONE protocol message.
-	payload := store.PolecatDonePayload{
+	payload := store.AgentDonePayload{
 		WorkItemID: "gt-abc12345",
 		AgentID:    "testrig/Toast",
-		Branch:     "polecat/Toast/gt-abc12345",
-		Rig:        "testrig",
+		Branch:     "outpost/Toast/gt-abc12345",
+		World:        "testrig",
 	}
-	msgID, err := townStore.SendProtocolMessage("testrig/Toast", "testrig/witness",
-		store.ProtoPolecatDone, payload)
+	msgID, err := sphereStore.SendProtocolMessage("testrig/Toast", "testrig/witness",
+		store.ProtoAgentDone, payload)
 	if err != nil {
 		t.Fatalf("SendProtocolMessage: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestProtocolMessageFlow(t *testing.T) {
 	}
 
 	// Verify PendingProtocol returns it.
-	msgs, err := townStore.PendingProtocol("testrig/witness", store.ProtoPolecatDone)
+	msgs, err := sphereStore.PendingProtocol("testrig/witness", store.ProtoAgentDone)
 	if err != nil {
 		t.Fatalf("PendingProtocol: %v", err)
 	}
@@ -146,24 +146,24 @@ func TestProtocolMessageFlow(t *testing.T) {
 	}
 
 	// Parse body.
-	var parsed store.PolecatDonePayload
+	var parsed store.AgentDonePayload
 	if err := json.Unmarshal([]byte(msgs[0].Body), &parsed); err != nil {
 		t.Fatalf("parse protocol body: %v", err)
 	}
 	if parsed.WorkItemID != "gt-abc12345" {
 		t.Errorf("work_item_id: got %q, want %q", parsed.WorkItemID, "gt-abc12345")
 	}
-	if parsed.Branch != "polecat/Toast/gt-abc12345" {
-		t.Errorf("branch: got %q, want %q", parsed.Branch, "polecat/Toast/gt-abc12345")
+	if parsed.Branch != "outpost/Toast/gt-abc12345" {
+		t.Errorf("branch: got %q, want %q", parsed.Branch, "outpost/Toast/gt-abc12345")
 	}
 
 	// Ack the message.
-	if err := townStore.AckMessage(msgs[0].ID); err != nil {
+	if err := sphereStore.AckMessage(msgs[0].ID); err != nil {
 		t.Fatalf("AckMessage: %v", err)
 	}
 
 	// Verify empty after ack.
-	msgs, err = townStore.PendingProtocol("testrig/witness", store.ProtoPolecatDone)
+	msgs, err = sphereStore.PendingProtocol("testrig/witness", store.ProtoAgentDone)
 	if err != nil {
 		t.Fatalf("PendingProtocol after ack: %v", err)
 	}
@@ -180,14 +180,14 @@ func TestEventFeedEndToEnd(t *testing.T) {
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
 	logger := events.NewLogger(gtHome)
 
 	// Emit events of different types.
 	logger.Emit(events.EventSling, "gt", "operator", "both", map[string]string{"item": "1"})
 	logger.Emit(events.EventDone, "gt", "Toast", "both", map[string]string{"item": "1"})
-	logger.Emit(events.EventPatrol, "testrig/witness", "witness", "feed", map[string]string{"rig": "testrig"})
+	logger.Emit(events.EventPatrol, "testrig/sentinel", "sentinel", "feed", map[string]string{"rig": "testrig"})
 
 	// Read with no filter — all present.
 	reader := events.NewReader(gtHome, false)
@@ -241,17 +241,17 @@ func TestEventFeedEndToEnd(t *testing.T) {
 	}
 }
 
-// --- Test 4: Curator Dedup and Aggregation ---
+// --- Test 4: Chronicle Dedup and Aggregation ---
 
-func TestCuratorDedupAndAggregation(t *testing.T) {
+func TestChronicleDedupAndAggregation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
-	cfg := events.DefaultCuratorConfig(gtHome)
+	cfg := events.DefaultChronicleConfig(gtHome)
 	cfg.DedupWindow = 10 * time.Second
 	cfg.AggWindow = 1 * time.Millisecond // Very short for testing.
 
@@ -275,12 +275,12 @@ func TestCuratorDedupAndAggregation(t *testing.T) {
 	// Small delay so aggregation window passes.
 	time.Sleep(5 * time.Millisecond)
 
-	curator := events.NewCurator(cfg)
-	if err := curator.ProcessOnce(); err != nil {
+	chronicle := events.NewChronicle(cfg)
+	if err := chronicle.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce: %v", err)
 	}
 	// Force flush any remaining aggregation buffers.
-	if err := curator.FlushAllAggBuffers(); err != nil {
+	if err := chronicle.FlushAllAggBuffers(); err != nil {
 		t.Fatalf("FlushAllAggBuffers: %v", err)
 	}
 
@@ -317,17 +317,17 @@ func TestCuratorDedupAndAggregation(t *testing.T) {
 	}
 }
 
-// --- Test 5: Curator Feed Truncation ---
+// --- Test 5: Chronicle Feed Truncation ---
 
-func TestCuratorFeedTruncation(t *testing.T) {
+func TestChronicleFeedTruncation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 
-	cfg := events.DefaultCuratorConfig(gtHome)
+	cfg := events.DefaultChronicleConfig(gtHome)
 	cfg.MaxFeedSize = 1024 // 1KB
 	cfg.AggWindow = 1 * time.Millisecond
 
@@ -335,17 +335,17 @@ func TestCuratorFeedTruncation(t *testing.T) {
 
 	// Write enough events to exceed the 1KB limit.
 	for i := 0; i < 100; i++ {
-		logger.Emit(events.EventPatrol, "witness", "witness", "feed",
+		logger.Emit(events.EventPatrol, "sentinel", "sentinel", "feed",
 			map[string]string{"rig": "testrig", "iteration": "patrol-data-padding-to-make-this-longer"})
 	}
 
 	time.Sleep(5 * time.Millisecond)
 
-	curator := events.NewCurator(cfg)
-	if err := curator.ProcessOnce(); err != nil {
+	chronicle := events.NewChronicle(cfg)
+	if err := chronicle.ProcessOnce(); err != nil {
 		t.Fatalf("ProcessOnce: %v", err)
 	}
-	if err := curator.FlushAllAggBuffers(); err != nil {
+	if err := chronicle.FlushAllAggBuffers(); err != nil {
 		t.Fatalf("FlushAllAggBuffers: %v", err)
 	}
 
@@ -383,37 +383,37 @@ func TestCuratorFeedTruncation(t *testing.T) {
 	}
 }
 
-// --- Test 6: Witness Detects Stalled Agent ---
+// --- Test 6: Sentinel Detects Stalled Agent ---
 
-func TestWitnessDetectsStalledAgent(t *testing.T) {
+func TestSentinelDetectsStalledAgent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
 
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	logger := events.NewLogger(gtHome)
 	mock := newMockSessionChecker()
 
-	// Create polecat with state=working, hook_item set.
-	townStore.CreateAgent("Toast", "testrig", "polecat")
-	townStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	// Create agent with state=working, hook_item set.
+	sphereStore.CreateAgent("Toast", "testrig", "agent")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
 
 	// Create work item.
 	now := time.Now().UTC().Format(time.RFC3339)
-	rigStore.DB().Exec(
+	worldStore.DB().Exec(
 		`INSERT INTO work_items (id, title, description, status, priority, created_by, created_at, updated_at)
 		 VALUES (?, ?, '', 'hooked', 3, 'test', ?, ?)`,
 		"gt-abc12345", "Test task", now, now,
 	)
 
 	// Write hook file.
-	if err := hook.Write("testrig", "Toast", "gt-abc12345"); err != nil {
-		t.Fatalf("hook.Write: %v", err)
+	if err := tether.Write("testrig", "Toast", "gt-abc12345"); err != nil {
+		t.Fatalf("tether.Write: %v", err)
 	}
 
 	// Session is dead (not in mock.alive).
@@ -421,11 +421,11 @@ func TestWitnessDetectsStalledAgent(t *testing.T) {
 	worktreeDir := dispatch.WorktreePath("testrig", "Toast")
 	os.MkdirAll(worktreeDir, 0o755)
 
-	cfg := witness.DefaultConfig("testrig", "", gtHome)
+	cfg := sentinel.DefaultConfig("testrig", "", gtHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
 	cfg.MaxRespawns = 2
 
-	w := witness.New(cfg, townStore, rigStore, mock, logger)
+	w := sentinel.New(cfg, sphereStore, worldStore, mock, logger)
 
 	// Run one patrol.
 	if err := w.Patrol(); err != nil {
@@ -441,44 +441,44 @@ func TestWitnessDetectsStalledAgent(t *testing.T) {
 	assertEventEmitted(t, gtHome, events.EventRespawn)
 }
 
-// --- Test 7: Witness Max Respawns Returns Work to Open ---
+// --- Test 7: Sentinel Max Respawns Returns Work to Open ---
 
-func TestWitnessMaxRespawnsReturnsWork(t *testing.T) {
+func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
 
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	logger := events.NewLogger(gtHome)
 	mock := newMockSessionChecker()
 
-	townStore.CreateAgent("Toast", "testrig", "polecat")
-	townStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	sphereStore.CreateAgent("Toast", "testrig", "agent")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	rigStore.DB().Exec(
+	worldStore.DB().Exec(
 		`INSERT INTO work_items (id, title, description, status, priority, created_by, created_at, updated_at)
 		 VALUES (?, ?, '', 'hooked', 3, 'test', ?, ?)`,
 		"gt-abc12345", "Test task", now, now,
 	)
 
-	if err := hook.Write("testrig", "Toast", "gt-abc12345"); err != nil {
-		t.Fatalf("hook.Write: %v", err)
+	if err := tether.Write("testrig", "Toast", "gt-abc12345"); err != nil {
+		t.Fatalf("tether.Write: %v", err)
 	}
 
 	worktreeDir := dispatch.WorktreePath("testrig", "Toast")
 	os.MkdirAll(worktreeDir, 0o755)
 
-	cfg := witness.DefaultConfig("testrig", "", gtHome)
+	cfg := sentinel.DefaultConfig("testrig", "", gtHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
 	cfg.MaxRespawns = 2
 
-	w := witness.New(cfg, townStore, rigStore, mock, logger)
+	w := sentinel.New(cfg, sphereStore, worldStore, mock, logger)
 
 	// Patrol 1: stalled → respawn (attempt 1).
 	w.Patrol()
@@ -486,7 +486,7 @@ func TestWitnessMaxRespawnsReturnsWork(t *testing.T) {
 		t.Fatalf("patrol 1: expected 1 start, got %d", len(mock.started))
 	}
 	// Kill session.
-	delete(mock.alive, "gt-testrig-Toast")
+	delete(mock.alive, "sol-testrig-Toast")
 
 	// Patrol 2: still stalled → respawn (attempt 2).
 	w.Patrol()
@@ -494,7 +494,7 @@ func TestWitnessMaxRespawnsReturnsWork(t *testing.T) {
 		t.Fatalf("patrol 2: expected 2 starts, got %d", len(mock.started))
 	}
 	// Kill session again.
-	delete(mock.alive, "gt-testrig-Toast")
+	delete(mock.alive, "sol-testrig-Toast")
 
 	// Patrol 3: max reached → return to open.
 	w.Patrol()
@@ -503,7 +503,7 @@ func TestWitnessMaxRespawnsReturnsWork(t *testing.T) {
 	}
 
 	// Agent should be idle.
-	agent, err := townStore.GetAgent("testrig/Toast")
+	agent, err := sphereStore.GetAgent("testrig/Toast")
 	if err != nil {
 		t.Fatalf("GetAgent: %v", err)
 	}
@@ -512,7 +512,7 @@ func TestWitnessMaxRespawnsReturnsWork(t *testing.T) {
 	}
 
 	// Work item should be open.
-	item, err := rigStore.GetWorkItem("gt-abc12345")
+	item, err := worldStore.GetWorkItem("gt-abc12345")
 	if err != nil {
 		t.Fatalf("GetWorkItem: %v", err)
 	}
@@ -521,7 +521,7 @@ func TestWitnessMaxRespawnsReturnsWork(t *testing.T) {
 	}
 
 	// Hook file should be removed.
-	if hook.IsHooked("testrig", "Toast") {
+	if tether.IsTethered("testrig", "Toast") {
 		t.Error("hook file should be removed after max respawns")
 	}
 
@@ -529,31 +529,31 @@ func TestWitnessMaxRespawnsReturnsWork(t *testing.T) {
 	assertEventEmitted(t, gtHome, events.EventStalled)
 }
 
-// --- Test 8: Witness Cleans Up Zombie Sessions ---
+// --- Test 8: Sentinel Cleans Up Zombie Sessions ---
 
-func TestWitnessCleanupZombies(t *testing.T) {
+func TestSentinelCleanupZombies(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
 
-	_, townStore := openStores(t, "testrig")
+	_, sphereStore := openStores(t, "testrig")
 	logger := events.NewLogger(gtHome)
 	mock := newMockSessionChecker()
 
-	// Create idle polecat with no hook_item, no hook file.
-	townStore.CreateAgent("Toast", "testrig", "polecat")
+	// Create idle agent with no hook_item, no tether file.
+	sphereStore.CreateAgent("Toast", "testrig", "agent")
 	// Session is alive.
-	mock.alive["gt-testrig-Toast"] = true
+	mock.alive["sol-testrig-Toast"] = true
 
-	cfg := witness.DefaultConfig("testrig", "", gtHome)
+	cfg := sentinel.DefaultConfig("testrig", "", gtHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
 
-	w := witness.New(cfg, townStore, nil, mock, logger)
+	w := sentinel.New(cfg, sphereStore, nil, mock, logger)
 
 	if err := w.Patrol(); err != nil {
 		t.Fatalf("Patrol: %v", err)
@@ -563,41 +563,41 @@ func TestWitnessCleanupZombies(t *testing.T) {
 	if len(mock.stopped) != 1 {
 		t.Fatalf("expected 1 session stopped (zombie), got %d", len(mock.stopped))
 	}
-	if mock.stopped[0] != "gt-testrig-Toast" {
-		t.Errorf("stopped session: got %q, want %q", mock.stopped[0], "gt-testrig-Toast")
+	if mock.stopped[0] != "sol-testrig-Toast" {
+		t.Errorf("stopped session: got %q, want %q", mock.stopped[0], "sol-testrig-Toast")
 	}
 
 	// Patrol event should show zombie count.
 	assertEventEmitted(t, gtHome, events.EventPatrol)
 }
 
-// --- Test 9: Witness AI Assessment — Nudge ---
+// --- Test 9: Sentinel AI Assessment — Nudge ---
 
-func TestWitnessAIAssessmentNudge(t *testing.T) {
+func TestSentinelAIAssessmentNudge(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
 
-	_, townStore := openStores(t, "testrig")
+	_, sphereStore := openStores(t, "testrig")
 	logger := events.NewLogger(gtHome)
 	mock := newMockSessionChecker()
 
-	townStore.CreateAgent("Toast", "testrig", "polecat")
-	townStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
-	mock.alive["gt-testrig-Toast"] = true
-	mock.captures["gt-testrig-Toast"] = "same output both patrols"
+	sphereStore.CreateAgent("Toast", "testrig", "agent")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	mock.alive["sol-testrig-Toast"] = true
+	mock.captures["sol-testrig-Toast"] = "same output both patrols"
 
-	cfg := witness.DefaultConfig("testrig", "", gtHome)
+	cfg := sentinel.DefaultConfig("testrig", "", gtHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
 
-	w := witness.New(cfg, townStore, nil, mock, logger)
-	w.SetAssessFunc(func(agent store.Agent, sessionName, output string) (*witness.AssessmentResult, error) {
-		return &witness.AssessmentResult{
+	w := sentinel.New(cfg, sphereStore, nil, mock, logger)
+	w.SetAssessFunc(func(agent store.Agent, sessionName, output string) (*sentinel.AssessmentResult, error) {
+		return &sentinel.AssessmentResult{
 			Status:          "stuck",
 			Confidence:      "high",
 			SuggestedAction: "nudge",
@@ -623,32 +623,32 @@ func TestWitnessAIAssessmentNudge(t *testing.T) {
 	assertEventEmitted(t, gtHome, events.EventAssess)
 }
 
-// --- Test 10: Witness AI Assessment — Low Confidence Ignored ---
+// --- Test 10: Sentinel AI Assessment — Low Confidence Ignored ---
 
-func TestWitnessAIAssessmentLowConfidence(t *testing.T) {
+func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
 
-	_, townStore := openStores(t, "testrig")
+	_, sphereStore := openStores(t, "testrig")
 	mock := newMockSessionChecker()
 
-	townStore.CreateAgent("Toast", "testrig", "polecat")
-	townStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
-	mock.alive["gt-testrig-Toast"] = true
-	mock.captures["gt-testrig-Toast"] = "same output"
+	sphereStore.CreateAgent("Toast", "testrig", "agent")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	mock.alive["sol-testrig-Toast"] = true
+	mock.captures["sol-testrig-Toast"] = "same output"
 
-	cfg := witness.DefaultConfig("testrig", "", gtHome)
+	cfg := sentinel.DefaultConfig("testrig", "", gtHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
 
-	w := witness.New(cfg, townStore, nil, mock, nil)
-	w.SetAssessFunc(func(agent store.Agent, sessionName, output string) (*witness.AssessmentResult, error) {
-		return &witness.AssessmentResult{
+	w := sentinel.New(cfg, sphereStore, nil, mock, nil)
+	w.SetAssessFunc(func(agent store.Agent, sessionName, output string) (*sentinel.AssessmentResult, error) {
+		return &sentinel.AssessmentResult{
 			Status:          "stuck",
 			Confidence:      "low",
 			SuggestedAction: "nudge",
@@ -666,32 +666,32 @@ func TestWitnessAIAssessmentLowConfidence(t *testing.T) {
 	}
 }
 
-// --- Test 11: Witness AI Assessment Failure Non-Blocking ---
+// --- Test 11: Sentinel AI Assessment Failure Non-Blocking ---
 
-func TestWitnessAIAssessmentFailure(t *testing.T) {
+func TestSentinelAIAssessmentFailure(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
 
-	_, townStore := openStores(t, "testrig")
+	_, sphereStore := openStores(t, "testrig")
 	logger := events.NewLogger(gtHome)
 	mock := newMockSessionChecker()
 
-	townStore.CreateAgent("Toast", "testrig", "polecat")
-	townStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
-	mock.alive["gt-testrig-Toast"] = true
-	mock.captures["gt-testrig-Toast"] = "same output"
+	sphereStore.CreateAgent("Toast", "testrig", "agent")
+	sphereStore.UpdateAgentState("testrig/Toast", "working", "gt-abc12345")
+	mock.alive["sol-testrig-Toast"] = true
+	mock.captures["sol-testrig-Toast"] = "same output"
 
-	cfg := witness.DefaultConfig("testrig", "", gtHome)
+	cfg := sentinel.DefaultConfig("testrig", "", gtHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
 
-	w := witness.New(cfg, townStore, nil, mock, logger)
-	w.SetAssessFunc(func(agent store.Agent, sessionName, output string) (*witness.AssessmentResult, error) {
+	w := sentinel.New(cfg, sphereStore, nil, mock, logger)
+	w.SetAssessFunc(func(agent store.Agent, sessionName, output string) (*sentinel.AssessmentResult, error) {
 		return nil, os.ErrNotExist // simulate failure
 	})
 
@@ -722,22 +722,22 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 
 	gtHome, _ := setupTestEnv(t)
 	_, sourceClone := createSourceRepo(t, gtHome)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 	logger := events.NewLogger(gtHome)
 
 	// Create work item.
-	itemID, err := rigStore.CreateWorkItem("Dispatch events test", "Test events during dispatch", "operator", 2, nil)
+	itemID, err := worldStore.CreateWorkItem("Dispatch events test", "Test events during dispatch", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create work item: %v", err)
 	}
 
 	// Sling with logger.
-	result, err := dispatch.Sling(dispatch.SlingOpts{
+	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		SourceRepo: sourceClone,
-	}, rigStore, townStore, mgr, logger)
+	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
 		t.Fatalf("sling: %v", err)
 	}
@@ -750,10 +750,10 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 		[]byte("package main\n\nfunc dispatchTest() {}\n"), 0o644)
 
 	// Done with logger.
-	_, err = dispatch.Done(dispatch.DoneOpts{
-		Rig:       "testrig",
+	_, err = dispatch.Resolve(dispatch.ResolveOpts{
+		World:       "testrig",
 		AgentName: result.AgentName,
-	}, rigStore, townStore, mgr, logger)
+	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
 		t.Fatalf("done: %v", err)
 	}
@@ -762,43 +762,43 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 	assertEventEmitted(t, gtHome, events.EventDone)
 }
 
-// --- Test 13: Status Shows Witness State ---
+// --- Test 13: Status Shows Sentinel State ---
 
-func TestStatusShowsWitnessState(t *testing.T) {
+func TestStatusShowsSentinelState(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome, _ := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := session.New()
 
-	// Gather status — witness not running.
-	rs, err := status.Gather("testrig", townStore, rigStore, rigStore, mgr)
+	// Gather status — sentinel not running.
+	rs, err := status.Gather("testrig", sphereStore, worldStore, worldStore, mgr)
 	if err != nil {
 		t.Fatalf("Gather: %v", err)
 	}
-	if rs.Witness.Running {
-		t.Error("witness should not be running yet")
+	if rs.Sentinel.Running {
+		t.Error("sentinel should not be running yet")
 	}
 
-	// Start a mock witness session.
-	witnessSessName := dispatch.SessionName("testrig", "witness")
-	if err := mgr.Start(witnessSessName, gtHome, "sleep 60",
-		map[string]string{"GT_HOME": gtHome}, "witness", "testrig"); err != nil {
-		t.Fatalf("start witness session: %v", err)
+	// Start a mock sentinel session.
+	sentinelSessName := dispatch.SessionName("testrig", "sentinel")
+	if err := mgr.Start(sentinelSessName, gtHome, "sleep 60",
+		map[string]string{"SOL_HOME": gtHome}, "sentinel", "testrig"); err != nil {
+		t.Fatalf("start sentinel session: %v", err)
 	}
-	defer mgr.Stop(witnessSessName, true)
+	defer mgr.Stop(sentinelSessName, true)
 
-	// Gather status — witness running.
-	rs2, err := status.Gather("testrig", townStore, rigStore, rigStore, mgr)
+	// Gather status — sentinel running.
+	rs2, err := status.Gather("testrig", sphereStore, worldStore, worldStore, mgr)
 	if err != nil {
-		t.Fatalf("Gather with witness: %v", err)
+		t.Fatalf("Gather with sentinel: %v", err)
 	}
-	if !rs2.Witness.Running {
-		t.Error("witness should be running")
+	if !rs2.Sentinel.Running {
+		t.Error("sentinel should be running")
 	}
-	if rs2.Witness.SessionName != witnessSessName {
-		t.Errorf("witness session name: got %q, want %q", rs2.Witness.SessionName, witnessSessName)
+	if rs2.Sentinel.SessionName != sentinelSessName {
+		t.Errorf("sentinel session name: got %q, want %q", rs2.Sentinel.SessionName, sentinelSessName)
 	}
 }

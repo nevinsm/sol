@@ -14,16 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nevinsm/gt/internal/deacon"
-	"github.com/nevinsm/gt/internal/dispatch"
-	"github.com/nevinsm/gt/internal/escalation"
-	"github.com/nevinsm/gt/internal/events"
-	"github.com/nevinsm/gt/internal/handoff"
-	"github.com/nevinsm/gt/internal/hook"
-	"github.com/nevinsm/gt/internal/session"
-	"github.com/nevinsm/gt/internal/store"
-	"github.com/nevinsm/gt/internal/supervisor"
-	"github.com/nevinsm/gt/internal/workflow"
+	"github.com/nevinsm/sol/internal/consul"
+	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/escalation"
+	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/handoff"
+	"github.com/nevinsm/sol/internal/tether"
+	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/prefect"
+	"github.com/nevinsm/sol/internal/workflow"
 )
 
 // ========================================================================
@@ -36,14 +36,14 @@ func TestEscalationCreateAndRoute(t *testing.T) {
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
 	// Set up test webhook server.
 	var webhookMu sync.Mutex
@@ -59,15 +59,15 @@ func TestEscalationCreateAndRoute(t *testing.T) {
 	defer ts.Close()
 
 	logger := events.NewLogger(gtHome)
-	router := escalation.DefaultRouter(logger, townStore, ts.URL)
+	router := escalation.DefaultRouter(logger, sphereStore, ts.URL)
 
 	// Create high-severity escalation.
-	id, err := townStore.CreateEscalation("high", "myrig/Toast", "Agent stuck in merge loop")
+	id, err := sphereStore.CreateEscalation("high", "myrig/Toast", "Agent stuck in merge loop")
 	if err != nil {
 		t.Fatalf("CreateEscalation: %v", err)
 	}
 
-	esc, err := townStore.GetEscalation(id)
+	esc, err := sphereStore.GetEscalation(id)
 	if err != nil {
 		t.Fatalf("GetEscalation: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestEscalationCreateAndRoute(t *testing.T) {
 	}
 
 	// Verify escalation in DB.
-	dbEsc, err := townStore.GetEscalation(id)
+	dbEsc, err := sphereStore.GetEscalation(id)
 	if err != nil {
 		t.Fatalf("GetEscalation after route: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestEscalationCreateAndRoute(t *testing.T) {
 	}
 
 	// Verify mail sent to "operator".
-	msgs, err := townStore.Inbox("operator")
+	msgs, err := sphereStore.Inbox("operator")
 	if err != nil {
 		t.Fatalf("Inbox: %v", err)
 	}
@@ -119,23 +119,23 @@ func TestEscalationLifecycle(t *testing.T) {
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
 	// 1. Create escalation.
-	id, err := townStore.CreateEscalation("medium", "operator", "Test escalation lifecycle")
+	id, err := sphereStore.CreateEscalation("medium", "operator", "Test escalation lifecycle")
 	if err != nil {
 		t.Fatalf("CreateEscalation: %v", err)
 	}
 
 	// 2. List → appears as open.
-	escs, err := townStore.ListEscalations("open")
+	escs, err := sphereStore.ListEscalations("open")
 	if err != nil {
 		t.Fatalf("ListEscalations: %v", err)
 	}
@@ -151,12 +151,12 @@ func TestEscalationLifecycle(t *testing.T) {
 	}
 
 	// 3. Ack → acknowledged.
-	if err := townStore.AckEscalation(id); err != nil {
+	if err := sphereStore.AckEscalation(id); err != nil {
 		t.Fatalf("AckEscalation: %v", err)
 	}
 
 	// 4. List → appears as acknowledged.
-	escs, err = townStore.ListEscalations("acknowledged")
+	escs, err = sphereStore.ListEscalations("acknowledged")
 	if err != nil {
 		t.Fatalf("ListEscalations acknowledged: %v", err)
 	}
@@ -172,12 +172,12 @@ func TestEscalationLifecycle(t *testing.T) {
 	}
 
 	// 5. Resolve → resolved.
-	if err := townStore.ResolveEscalation(id); err != nil {
+	if err := sphereStore.ResolveEscalation(id); err != nil {
 		t.Fatalf("ResolveEscalation: %v", err)
 	}
 
 	// 6. CountOpen → 0.
-	count, err := townStore.CountOpen()
+	count, err := sphereStore.CountOpen()
 	if err != nil {
 		t.Fatalf("CountOpen: %v", err)
 	}
@@ -192,25 +192,25 @@ func TestEscalationFromAgent(t *testing.T) {
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
 	logger := events.NewLogger(gtHome)
-	router := escalation.DefaultRouter(logger, townStore, "")
+	router := escalation.DefaultRouter(logger, sphereStore, "")
 
 	// Create escalation from an agent.
-	id, err := townStore.CreateEscalation("medium", "myrig/Toast", "Cannot compile code")
+	id, err := sphereStore.CreateEscalation("medium", "myrig/Toast", "Cannot compile code")
 	if err != nil {
 		t.Fatalf("CreateEscalation: %v", err)
 	}
 
-	esc, err := townStore.GetEscalation(id)
+	esc, err := sphereStore.GetEscalation(id)
 	if err != nil {
 		t.Fatalf("GetEscalation: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestEscalationFromAgent(t *testing.T) {
 	}
 
 	// Verify mail sent.
-	msgs, err := townStore.Inbox("operator")
+	msgs, err := sphereStore.Inbox("operator")
 	if err != nil {
 		t.Fatalf("Inbox: %v", err)
 	}
@@ -245,24 +245,24 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	}
 
 	gtHome, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := newMockSessionChecker()
 
 	// Create agent and work item.
-	townStore.CreateAgent("HandBot", "testrig", "polecat")
-	itemID, _ := rigStore.CreateWorkItem("Handoff task", "Test handoff", "operator", 2, nil)
+	sphereStore.CreateAgent("HandBot", "testrig", "agent")
+	itemID, _ := worldStore.CreateWorkItem("Handoff task", "Test handoff", "operator", 2, nil)
 
 	// Sling the work item.
-	dispatch.Sling(dispatch.SlingOpts{
+	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  "HandBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 
 	// 1. Capture state.
 	state, err := handoff.Capture(handoff.CaptureOpts{
-		Rig:       "testrig",
+		World:       "testrig",
 		AgentName: "HandBot",
 	}, func(name string, lines int) (string, error) {
 		return "mock output line 1\nmock output line 2", nil
@@ -289,7 +289,7 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	}
 
 	// 4. Prime with handoff file → handoff context injected.
-	primeResult, err := dispatch.Prime("testrig", "HandBot", rigStore)
+	primeResult, err := dispatch.Prime("testrig", "HandBot", worldStore)
 	if err != nil {
 		t.Fatalf("Prime: %v", err)
 	}
@@ -314,26 +314,26 @@ func TestHandoffPreservesHook(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := newMockSessionChecker()
 
 	// Create agent and work item.
-	townStore.CreateAgent("HookBot", "testrig", "polecat")
-	itemID, _ := rigStore.CreateWorkItem("Hook task", "Test hook preservation", "operator", 2, nil)
+	sphereStore.CreateAgent("HookBot", "testrig", "agent")
+	itemID, _ := worldStore.CreateWorkItem("Hook task", "Test hook preservation", "operator", 2, nil)
 
 	// Sling the work item.
-	dispatch.Sling(dispatch.SlingOpts{
+	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  "HookBot",
 		SourceRepo: sourceRepo,
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 
 	// Write handoff file.
 	state := &handoff.State{
 		WorkItemID:  itemID,
 		AgentName:   "HookBot",
-		Rig:         "testrig",
+		World:         "testrig",
 		Summary:     "Test summary",
 		HandedOffAt: time.Now().UTC(),
 	}
@@ -342,16 +342,16 @@ func TestHandoffPreservesHook(t *testing.T) {
 	}
 
 	// Verify hook file still exists.
-	hookContent, err := hook.Read("testrig", "HookBot")
+	hookContent, err := tether.Read("testrig", "HookBot")
 	if err != nil {
-		t.Fatalf("hook.Read: %v", err)
+		t.Fatalf("tether.Read: %v", err)
 	}
 	if hookContent != itemID {
 		t.Errorf("hook content: got %q, want %q", hookContent, itemID)
 	}
 
 	// Verify work item status unchanged (still hooked).
-	item, err := rigStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWorkItem(itemID)
 	if err != nil {
 		t.Fatalf("GetWorkItem: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestHandoffWithWorkflow(t *testing.T) {
 	}
 
 	gtHome, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := newMockSessionChecker()
 
 	// Create formula.
@@ -375,7 +375,7 @@ func TestHandoffWithWorkflow(t *testing.T) {
 	os.MkdirAll(stepsDir, 0o755)
 
 	manifest := `name = "handoff-formula"
-type = "polecat"
+type = "agent"
 description = "Handoff test"
 
 [variables]
@@ -398,24 +398,24 @@ needs = ["step1"]
 	os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Step 2 instructions.\n"), 0o644)
 
 	// Create agent and work item.
-	townStore.CreateAgent("WFHandBot", "testrig", "polecat")
-	itemID, _ := rigStore.CreateWorkItem("WF Handoff task", "Workflow handoff test", "operator", 2, nil)
+	sphereStore.CreateAgent("WFHandBot", "testrig", "agent")
+	itemID, _ := worldStore.CreateWorkItem("WF Handoff task", "Workflow handoff test", "operator", 2, nil)
 
 	// Sling with formula.
-	dispatch.Sling(dispatch.SlingOpts{
+	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  "WFHandBot",
 		SourceRepo: sourceRepo,
 		Formula:    "handoff-formula",
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 
 	// Advance to step 2.
 	workflow.Advance("testrig", "WFHandBot")
 
 	// Capture → state includes workflow step and progress.
 	state, err := handoff.Capture(handoff.CaptureOpts{
-		Rig:       "testrig",
+		World:       "testrig",
 		AgentName: "WFHandBot",
 	}, nil, nil)
 	if err != nil {
@@ -435,7 +435,7 @@ needs = ["step1"]
 	}
 
 	// Prime with handoff → output references workflow step.
-	result, err := dispatch.Prime("testrig", "WFHandBot", rigStore)
+	result, err := dispatch.Prime("testrig", "WFHandBot", worldStore)
 	if err != nil {
 		t.Fatalf("Prime: %v", err)
 	}
@@ -447,7 +447,7 @@ needs = ["step1"]
 	}
 
 	// After handoff consumed: subsequent Prime → normal workflow prime.
-	result, err = dispatch.Prime("testrig", "WFHandBot", rigStore)
+	result, err = dispatch.Prime("testrig", "WFHandBot", worldStore)
 	if err != nil {
 		t.Fatalf("Prime after handoff: %v", err)
 	}
@@ -465,7 +465,7 @@ func TestHandoffPrimeOverridesWorkflow(t *testing.T) {
 	}
 
 	gtHome, sourceRepo := setupTestEnv(t)
-	rigStore, townStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "testrig")
 	mgr := newMockSessionChecker()
 
 	// Create formula.
@@ -474,7 +474,7 @@ func TestHandoffPrimeOverridesWorkflow(t *testing.T) {
 	os.MkdirAll(stepsDir, 0o755)
 
 	manifest := `name = "override-formula"
-type = "polecat"
+type = "agent"
 description = "Override test"
 
 [variables]
@@ -490,23 +490,23 @@ instructions = "steps/01.md"
 	os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Only step.\n"), 0o644)
 
 	// Create agent and work item.
-	townStore.CreateAgent("OverBot", "testrig", "polecat")
-	itemID, _ := rigStore.CreateWorkItem("Override task", "Override test", "operator", 2, nil)
+	sphereStore.CreateAgent("OverBot", "testrig", "agent")
+	itemID, _ := worldStore.CreateWorkItem("Override task", "Override test", "operator", 2, nil)
 
 	// Sling with formula.
-	dispatch.Sling(dispatch.SlingOpts{
+	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		Rig:        "testrig",
+		World:        "testrig",
 		AgentName:  "OverBot",
 		SourceRepo: sourceRepo,
 		Formula:    "override-formula",
-	}, rigStore, townStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil)
 
 	// Write handoff file manually (simulating a handoff while workflow is active).
 	state := &handoff.State{
 		WorkItemID:  itemID,
 		AgentName:   "OverBot",
-		Rig:         "testrig",
+		World:         "testrig",
 		Summary:     "Handed off mid-workflow",
 		HandedOffAt: time.Now().UTC(),
 	}
@@ -515,7 +515,7 @@ instructions = "steps/01.md"
 	}
 
 	// Prime → returns handoff context (not workflow).
-	result, err := dispatch.Prime("testrig", "OverBot", rigStore)
+	result, err := dispatch.Prime("testrig", "OverBot", worldStore)
 	if err != nil {
 		t.Fatalf("Prime: %v", err)
 	}
@@ -525,258 +525,258 @@ instructions = "steps/01.md"
 }
 
 // ========================================================================
-// Deacon Integration Tests
+// Consul Integration Tests
 // ========================================================================
 
-func TestDeaconStaleHookRecovery(t *testing.T) {
+func TestConsulStaleHookRecovery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
-	rigStore, err := store.OpenRig("myrig")
+	worldStore, err := store.OpenWorld("myrig")
 	if err != nil {
 		t.Fatalf("open rig store: %v", err)
 	}
-	defer rigStore.Close()
+	defer worldStore.Close()
 
 	// Create work item in "hooked" status.
-	itemID, _ := rigStore.CreateWorkItem("Stale task", "Stale hook test", "operator", 2, nil)
-	rigStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "hooked", Assignee: "myrig/StaleBot"})
+	itemID, _ := worldStore.CreateWorkItem("Stale task", "Stale hook test", "operator", 2, nil)
+	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "hooked", Assignee: "myrig/StaleBot"})
 
 	// Create agent in "working" state.
-	townStore.CreateAgent("StaleBot", "myrig", "polecat")
-	townStore.UpdateAgentState("myrig/StaleBot", "working", itemID)
+	sphereStore.CreateAgent("StaleBot", "myrig", "agent")
+	sphereStore.UpdateAgentState("myrig/StaleBot", "working", itemID)
 
 	// Set updated_at to 2 hours ago.
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	townStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "myrig/StaleBot")
+	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "myrig/StaleBot")
 
 	// Write hook file.
-	hook.Write("myrig", "StaleBot", itemID)
+	tether.Write("myrig", "StaleBot", itemID)
 
 	// Mock session checker — no session alive.
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(gtHome)
 
-	cfg := deacon.Config{
+	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
-		StaleHookTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 1 * time.Hour,
 		GTHome:           gtHome,
 	}
-	d := deacon.New(cfg, townStore, sessions, escalation.NewRouter(), logger)
-	d.SetRigOpener(func(rig string) (*store.Store, error) {
-		return store.OpenRig(rig)
+	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
+	d.SetWorldOpener(func(rig string) (*store.Store, error) {
+		return store.OpenWorld(rig)
 	})
 
 	// Run one patrol.
 	d.Patrol()
 
 	// Verify: work item status back to "open".
-	item, _ := rigStore.GetWorkItem(itemID)
+	item, _ := worldStore.GetWorkItem(itemID)
 	if item.Status != "open" {
 		t.Errorf("work item status: got %q, want open", item.Status)
 	}
 
 	// Verify: agent state is "idle".
-	agent, _ := townStore.GetAgent("myrig/StaleBot")
+	agent, _ := sphereStore.GetAgent("myrig/StaleBot")
 	if agent.State != "idle" {
 		t.Errorf("agent state: got %q, want idle", agent.State)
 	}
 
 	// Verify: hook file cleared.
-	hookContent, err := hook.Read("myrig", "StaleBot")
+	hookContent, err := tether.Read("myrig", "StaleBot")
 	if err != nil {
-		t.Fatalf("hook.Read: %v", err)
+		t.Fatalf("tether.Read: %v", err)
 	}
 	if hookContent != "" {
 		t.Errorf("hook should be cleared, got %q", hookContent)
 	}
 }
 
-func TestDeaconStaleHookIgnoresRecent(t *testing.T) {
+func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
-	rigStore, err := store.OpenRig("myrig")
+	worldStore, err := store.OpenWorld("myrig")
 	if err != nil {
 		t.Fatalf("open rig store: %v", err)
 	}
-	defer rigStore.Close()
+	defer worldStore.Close()
 
-	itemID, _ := rigStore.CreateWorkItem("Recent task", "Recent hook test", "operator", 2, nil)
-	rigStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "hooked", Assignee: "myrig/RecentBot"})
+	itemID, _ := worldStore.CreateWorkItem("Recent task", "Recent hook test", "operator", 2, nil)
+	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "hooked", Assignee: "myrig/RecentBot"})
 
-	townStore.CreateAgent("RecentBot", "myrig", "polecat")
-	townStore.UpdateAgentState("myrig/RecentBot", "working", itemID)
+	sphereStore.CreateAgent("RecentBot", "myrig", "agent")
+	sphereStore.UpdateAgentState("myrig/RecentBot", "working", itemID)
 
 	// updated_at is now (5 minutes ago is within timeout)
 	fiveMinAgo := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
-	townStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", fiveMinAgo, "myrig/RecentBot")
+	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", fiveMinAgo, "myrig/RecentBot")
 
-	hook.Write("myrig", "RecentBot", itemID)
+	tether.Write("myrig", "RecentBot", itemID)
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(gtHome)
 
-	cfg := deacon.Config{
+	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
-		StaleHookTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 1 * time.Hour,
 		GTHome:           gtHome,
 	}
-	d := deacon.New(cfg, townStore, sessions, escalation.NewRouter(), logger)
-	d.SetRigOpener(func(rig string) (*store.Store, error) {
-		return store.OpenRig(rig)
+	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
+	d.SetWorldOpener(func(rig string) (*store.Store, error) {
+		return store.OpenWorld(rig)
 	})
 
 	d.Patrol()
 
 	// Work item should still be hooked (not recovered — too recent).
-	item, _ := rigStore.GetWorkItem(itemID)
+	item, _ := worldStore.GetWorkItem(itemID)
 	if item.Status != "hooked" {
 		t.Errorf("work item status: got %q, want hooked (too recent)", item.Status)
 	}
 }
 
-func TestDeaconStaleHookIgnoresAlive(t *testing.T) {
+func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
-	rigStore, err := store.OpenRig("myrig")
+	worldStore, err := store.OpenWorld("myrig")
 	if err != nil {
 		t.Fatalf("open rig store: %v", err)
 	}
-	defer rigStore.Close()
+	defer worldStore.Close()
 
-	itemID, _ := rigStore.CreateWorkItem("Alive task", "Alive hook test", "operator", 2, nil)
-	rigStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "hooked", Assignee: "myrig/AliveBot"})
+	itemID, _ := worldStore.CreateWorkItem("Alive task", "Alive hook test", "operator", 2, nil)
+	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "hooked", Assignee: "myrig/AliveBot"})
 
-	townStore.CreateAgent("AliveBot", "myrig", "polecat")
-	townStore.UpdateAgentState("myrig/AliveBot", "working", itemID)
+	sphereStore.CreateAgent("AliveBot", "myrig", "agent")
+	sphereStore.UpdateAgentState("myrig/AliveBot", "working", itemID)
 
 	// Set updated_at to 2 hours ago.
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	townStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "myrig/AliveBot")
+	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "myrig/AliveBot")
 
-	hook.Write("myrig", "AliveBot", itemID)
+	tether.Write("myrig", "AliveBot", itemID)
 
 	// Session IS alive.
 	sessions := newMockSessionChecker()
-	sessions.alive["gt-myrig-AliveBot"] = true
+	sessions.alive["sol-myrig-AliveBot"] = true
 
 	logger := events.NewLogger(gtHome)
 
-	cfg := deacon.Config{
+	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
-		StaleHookTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 1 * time.Hour,
 		GTHome:           gtHome,
 	}
-	d := deacon.New(cfg, townStore, sessions, escalation.NewRouter(), logger)
-	d.SetRigOpener(func(rig string) (*store.Store, error) {
-		return store.OpenRig(rig)
+	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
+	d.SetWorldOpener(func(rig string) (*store.Store, error) {
+		return store.OpenWorld(rig)
 	})
 
 	d.Patrol()
 
 	// Work item should still be hooked (session is alive).
-	item, _ := rigStore.GetWorkItem(itemID)
+	item, _ := worldStore.GetWorkItem(itemID)
 	if item.Status != "hooked" {
 		t.Errorf("work item status: got %q, want hooked (session alive)", item.Status)
 	}
 }
 
-func TestDeaconConvoyFeeding(t *testing.T) {
+func TestConsulCaravanFeeding(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
-	rigStore, err := store.OpenRig("testrig")
+	worldStore, err := store.OpenWorld("testrig")
 	if err != nil {
 		t.Fatalf("open rig store: %v", err)
 	}
 
 	// Create work items: A (no deps), B→A.
-	idA, _ := rigStore.CreateWorkItem("Task A", "First task", "operator", 2, nil)
-	idB, _ := rigStore.CreateWorkItem("Task B", "Depends on A", "operator", 2, nil)
-	rigStore.AddDependency(idB, idA)
-	rigStore.Close()
+	idA, _ := worldStore.CreateWorkItem("Task A", "First task", "operator", 2, nil)
+	idB, _ := worldStore.CreateWorkItem("Task B", "Depends on A", "operator", 2, nil)
+	worldStore.AddDependency(idB, idA)
+	worldStore.Close()
 
-	// Create convoy with both items.
-	convoyID, _ := townStore.CreateConvoy("feed-convoy", "operator")
-	townStore.AddConvoyItem(convoyID, idA, "testrig")
-	townStore.AddConvoyItem(convoyID, idB, "testrig")
+	// Create caravan with both items.
+	convoyID, _ := sphereStore.CreateCaravan("feed-convoy", "operator")
+	sphereStore.AddCaravanItem(convoyID, idA, "testrig")
+	sphereStore.AddCaravanItem(convoyID, idB, "testrig")
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(gtHome)
 
-	cfg := deacon.Config{
+	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
-		StaleHookTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 1 * time.Hour,
 		GTHome:           gtHome,
 	}
-	d := deacon.New(cfg, townStore, sessions, escalation.NewRouter(), logger)
-	d.SetRigOpener(func(rig string) (*store.Store, error) {
-		return store.OpenRig(rig)
+	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
+	d.SetWorldOpener(func(rig string) (*store.Store, error) {
+		return store.OpenWorld(rig)
 	})
 
 	// Run patrol → should detect A is ready.
 	d.Patrol()
 
 	// Verify CONVOY_NEEDS_FEEDING message sent.
-	msgs, _ := townStore.PendingProtocol("operator", store.ProtoConvoyNeedsFeeding)
+	msgs, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
 	if len(msgs) == 0 {
 		t.Fatal("expected CONVOY_NEEDS_FEEDING message")
 	}
 	if !strings.Contains(msgs[0].Body, convoyID) {
-		t.Error("message body should contain convoy ID")
+		t.Error("message body should contain caravan ID")
 	}
 
 	// Ack the message.
-	townStore.AckMessage(msgs[0].ID)
+	sphereStore.AckMessage(msgs[0].ID)
 
 	// Mark A as done.
-	rs, _ := store.OpenRig("testrig")
+	rs, _ := store.OpenWorld("testrig")
 	rs.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"})
 	rs.Close()
 
@@ -784,98 +784,98 @@ func TestDeaconConvoyFeeding(t *testing.T) {
 	d.Patrol()
 
 	// Verify new CONVOY_NEEDS_FEEDING for B.
-	msgs, _ = townStore.PendingProtocol("operator", store.ProtoConvoyNeedsFeeding)
+	msgs, _ = sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
 	if len(msgs) == 0 {
 		t.Fatal("expected new CONVOY_NEEDS_FEEDING message after A done")
 	}
 }
 
-func TestDeaconConvoyFeedingNoDuplicates(t *testing.T) {
+func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
-	rigStore, err := store.OpenRig("testrig")
+	worldStore, err := store.OpenWorld("testrig")
 	if err != nil {
 		t.Fatalf("open rig store: %v", err)
 	}
-	idA, _ := rigStore.CreateWorkItem("Dup task", "No dup test", "operator", 2, nil)
-	rigStore.Close()
+	idA, _ := worldStore.CreateWorkItem("Dup task", "No dup test", "operator", 2, nil)
+	worldStore.Close()
 
-	convoyID, _ := townStore.CreateConvoy("nodup-convoy", "operator")
-	townStore.AddConvoyItem(convoyID, idA, "testrig")
+	convoyID, _ := sphereStore.CreateCaravan("nodup-convoy", "operator")
+	sphereStore.AddCaravanItem(convoyID, idA, "testrig")
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(gtHome)
 
-	cfg := deacon.Config{
+	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
-		StaleHookTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 1 * time.Hour,
 		GTHome:           gtHome,
 	}
-	d := deacon.New(cfg, townStore, sessions, escalation.NewRouter(), logger)
-	d.SetRigOpener(func(rig string) (*store.Store, error) {
-		return store.OpenRig(rig)
+	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
+	d.SetWorldOpener(func(rig string) (*store.Store, error) {
+		return store.OpenWorld(rig)
 	})
 
 	// Run patrol → message sent.
 	d.Patrol()
-	msgs1, _ := townStore.PendingProtocol("operator", store.ProtoConvoyNeedsFeeding)
+	msgs1, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
 	if len(msgs1) == 0 {
 		t.Fatal("expected CONVOY_NEEDS_FEEDING message")
 	}
 
 	// Run patrol again → no duplicate message.
 	d.Patrol()
-	msgs2, _ := townStore.PendingProtocol("operator", store.ProtoConvoyNeedsFeeding)
+	msgs2, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
 	if len(msgs2) != len(msgs1) {
 		t.Errorf("expected no duplicate messages: had %d, now have %d", len(msgs1), len(msgs2))
 	}
 }
 
-func TestDeaconHeartbeat(t *testing.T) {
+func TestConsulHeartbeat(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(gtHome)
 
-	cfg := deacon.Config{
+	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
-		StaleHookTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 1 * time.Hour,
 		GTHome:           gtHome,
 	}
-	d := deacon.New(cfg, townStore, sessions, escalation.NewRouter(), logger)
-	d.SetRigOpener(func(rig string) (*store.Store, error) {
-		return store.OpenRig(rig)
+	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
+	d.SetWorldOpener(func(rig string) (*store.Store, error) {
+		return store.OpenWorld(rig)
 	})
 
 	// Run one patrol.
 	d.Patrol()
 
 	// Read heartbeat file.
-	hb, err := deacon.ReadHeartbeat(gtHome)
+	hb, err := consul.ReadHeartbeat(gtHome)
 	if err != nil {
 		t.Fatalf("ReadHeartbeat: %v", err)
 	}
@@ -891,45 +891,45 @@ func TestDeaconHeartbeat(t *testing.T) {
 
 	// Run another patrol.
 	d.Patrol()
-	hb, _ = deacon.ReadHeartbeat(gtHome)
+	hb, _ = consul.ReadHeartbeat(gtHome)
 	if hb.PatrolCount != 2 {
 		t.Errorf("patrol count: got %d, want 2", hb.PatrolCount)
 	}
 }
 
-func TestDeaconLifecycleShutdown(t *testing.T) {
+func TestConsulLifecycleShutdown(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
-	// Register deacon.
-	townStore.CreateAgent("deacon", "town", "deacon")
-	townStore.UpdateAgentState("town/deacon", "working", "")
+	// Register consul.
+	sphereStore.CreateAgent("consul", "town", "consul")
+	sphereStore.UpdateAgentState("sphere/consul", "working", "")
 
-	// Send SHUTDOWN protocol message to "town/deacon".
-	townStore.SendProtocolMessage("operator", "town/deacon", "SHUTDOWN", nil)
+	// Send SHUTDOWN protocol message to "sphere/consul".
+	sphereStore.SendProtocolMessage("operator", "sphere/consul", "SHUTDOWN", nil)
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(gtHome)
 
-	cfg := deacon.Config{
+	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
-		StaleHookTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 1 * time.Hour,
 		GTHome:           gtHome,
 	}
-	d := deacon.New(cfg, townStore, sessions, escalation.NewRouter(), logger)
-	d.SetRigOpener(func(rig string) (*store.Store, error) {
-		return store.OpenRig(rig)
+	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
+	d.SetWorldOpener(func(rig string) (*store.Store, error) {
+		return store.OpenWorld(rig)
 	})
 
 	// Patrol should process shutdown.
@@ -939,7 +939,7 @@ func TestDeaconLifecycleShutdown(t *testing.T) {
 	}
 
 	// Message should be acknowledged.
-	pending, _ := townStore.PendingProtocol("town/deacon", "")
+	pending, _ := sphereStore.PendingProtocol("sphere/consul", "")
 	for _, msg := range pending {
 		if msg.Subject == "SHUTDOWN" {
 			t.Error("SHUTDOWN message should be acknowledged")
@@ -948,28 +948,28 @@ func TestDeaconLifecycleShutdown(t *testing.T) {
 }
 
 // ========================================================================
-// Supervisor + Deacon Integration Tests
+// Prefect + Consul Integration Tests
 // ========================================================================
 
-// mockSupervisorSessions implements supervisor.SessionManager for testing.
-type mockSupervisorSessions struct {
+// mockPrefectSessions implements prefect.SessionManager for testing.
+type mockPrefectSessions struct {
 	mu      sync.Mutex
 	alive   map[string]bool
 	started []string
 	stopped []string
 }
 
-func newMockSupervisorSessions() *mockSupervisorSessions {
-	return &mockSupervisorSessions{alive: make(map[string]bool)}
+func newMockPrefectSessions() *mockPrefectSessions {
+	return &mockPrefectSessions{alive: make(map[string]bool)}
 }
 
-func (m *mockSupervisorSessions) Exists(name string) bool {
+func (m *mockPrefectSessions) Exists(name string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.alive[name]
 }
 
-func (m *mockSupervisorSessions) Start(name, workdir, cmd string, env map[string]string, role, rig string) error {
+func (m *mockPrefectSessions) Start(name, workdir, cmd string, env map[string]string, role, rig string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.alive[name] = true
@@ -977,7 +977,7 @@ func (m *mockSupervisorSessions) Start(name, workdir, cmd string, env map[string
 	return nil
 }
 
-func (m *mockSupervisorSessions) Stop(name string, force bool) error {
+func (m *mockPrefectSessions) Stop(name string, force bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.alive, name)
@@ -985,7 +985,7 @@ func (m *mockSupervisorSessions) Stop(name string, force bool) error {
 	return nil
 }
 
-func (m *mockSupervisorSessions) List() ([]session.SessionInfo, error) {
+func (m *mockPrefectSessions) List() ([]session.SessionInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var infos []session.SessionInfo
@@ -995,7 +995,7 @@ func (m *mockSupervisorSessions) List() ([]session.SessionInfo, error) {
 	return infos, nil
 }
 
-func (m *mockSupervisorSessions) getStarted() []string {
+func (m *mockPrefectSessions) getStarted() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	result := make([]string, len(m.started))
@@ -1003,133 +1003,133 @@ func (m *mockSupervisorSessions) getStarted() []string {
 	return result
 }
 
-func TestSupervisorDeaconStartup(t *testing.T) {
+func TestPrefectConsulStartup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
-	mock := newMockSupervisorSessions()
+	mock := newMockPrefectSessions()
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	cfg := supervisor.DefaultConfig()
+	cfg := prefect.DefaultConfig()
 	cfg.HeartbeatInterval = 50 * time.Millisecond
-	cfg.DeaconEnabled = true
+	cfg.ConsulEnabled = true
 
-	sup := supervisor.New(cfg, townStore, mock, logger)
+	sup := prefect.New(cfg, sphereStore, mock, logger)
 
 	// Run with short-lived context (just enough for one heartbeat).
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	sup.Run(ctx)
 
-	// Verify: deacon session started.
+	// Verify: consul session started.
 	started := mock.getStarted()
 	found := false
 	for _, s := range started {
-		if s == "gt-town-deacon" {
+		if s == "sol-sphere-consul" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected deacon session started, got: %v", started)
+		t.Errorf("expected consul session started, got: %v", started)
 	}
 }
 
-func TestSupervisorDeaconRestart(t *testing.T) {
+func TestPrefectConsulRestart(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
 	// Write stale heartbeat (20 minutes old).
-	deacon.WriteHeartbeat(gtHome, &deacon.Heartbeat{
+	consul.WriteHeartbeat(gtHome, &consul.Heartbeat{
 		Timestamp:   time.Now().UTC().Add(-20 * time.Minute),
 		PatrolCount: 10,
 		Status:      "running",
 	})
 
-	mock := newMockSupervisorSessions()
+	mock := newMockPrefectSessions()
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	cfg := supervisor.DefaultConfig()
+	cfg := prefect.DefaultConfig()
 	cfg.HeartbeatInterval = 50 * time.Millisecond
-	cfg.DeaconEnabled = true
-	cfg.DeaconHeartbeatMax = 15 * time.Minute
+	cfg.ConsulEnabled = true
+	cfg.ConsulHeartbeatMax = 15 * time.Minute
 
-	sup := supervisor.New(cfg, townStore, mock, logger)
+	sup := prefect.New(cfg, sphereStore, mock, logger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	sup.Run(ctx)
 
-	// Verify: deacon session started (restarted).
+	// Verify: consul session started (restarted).
 	started := mock.getStarted()
 	found := false
 	for _, s := range started {
-		if s == "gt-town-deacon" {
+		if s == "sol-sphere-consul" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected deacon session restarted, got: %v", started)
+		t.Errorf("expected consul session restarted, got: %v", started)
 	}
 }
 
-func TestSupervisorDeaconHealthy(t *testing.T) {
+func TestPrefectConsulHealthy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
 	// Write fresh heartbeat (1 minute old).
-	deacon.WriteHeartbeat(gtHome, &deacon.Heartbeat{
+	consul.WriteHeartbeat(gtHome, &consul.Heartbeat{
 		Timestamp:   time.Now().UTC().Add(-1 * time.Minute),
 		PatrolCount: 5,
 		Status:      "running",
 	})
 
-	mock := newMockSupervisorSessions()
+	mock := newMockPrefectSessions()
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	cfg := supervisor.DefaultConfig()
+	cfg := prefect.DefaultConfig()
 	cfg.HeartbeatInterval = 50 * time.Millisecond
-	cfg.DeaconEnabled = true
-	cfg.DeaconHeartbeatMax = 15 * time.Minute
+	cfg.ConsulEnabled = true
+	cfg.ConsulHeartbeatMax = 15 * time.Minute
 
-	sup := supervisor.New(cfg, townStore, mock, logger)
+	sup := prefect.New(cfg, sphereStore, mock, logger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -1138,8 +1138,8 @@ func TestSupervisorDeaconHealthy(t *testing.T) {
 	// Verify: no restart attempted.
 	started := mock.getStarted()
 	for _, s := range started {
-		if s == "gt-town-deacon" {
-			t.Error("deacon should not be restarted when heartbeat is fresh")
+		if s == "sol-sphere-consul" {
+			t.Error("consul should not be restarted when heartbeat is fresh")
 		}
 	}
 }
@@ -1154,91 +1154,91 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 
 	gtHome := t.TempDir()
-	t.Setenv("GT_HOME", gtHome)
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
 
-	townStore, err := store.OpenTown()
+	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open town store: %v", err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
-	rigStore, err := store.OpenRig("testrig")
+	worldStore, err := store.OpenWorld("testrig")
 	if err != nil {
 		t.Fatalf("open rig store: %v", err)
 	}
 
 	// 1. Create rig with work items and dependencies.
-	idA, _ := rigStore.CreateWorkItem("Task A", "No deps", "operator", 2, nil)
-	idB, _ := rigStore.CreateWorkItem("Task B", "Depends on A", "operator", 2, nil)
-	rigStore.AddDependency(idB, idA)
-	rigStore.Close()
+	idA, _ := worldStore.CreateWorkItem("Task A", "No deps", "operator", 2, nil)
+	idB, _ := worldStore.CreateWorkItem("Task B", "Depends on A", "operator", 2, nil)
+	worldStore.AddDependency(idB, idA)
+	worldStore.Close()
 
-	// 2. Create convoy spanning the items.
-	convoyID, _ := townStore.CreateConvoy("e2e-convoy", "operator")
-	townStore.AddConvoyItem(convoyID, idA, "testrig")
-	townStore.AddConvoyItem(convoyID, idB, "testrig")
+	// 2. Create caravan spanning the items.
+	convoyID, _ := sphereStore.CreateCaravan("e2e-convoy", "operator")
+	sphereStore.AddCaravanItem(convoyID, idA, "testrig")
+	sphereStore.AddCaravanItem(convoyID, idB, "testrig")
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(gtHome)
 
-	cfg := deacon.Config{
+	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
-		StaleHookTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 1 * time.Hour,
 		GTHome:           gtHome,
 	}
-	d := deacon.New(cfg, townStore, sessions, escalation.NewRouter(), logger)
-	d.SetRigOpener(func(rig string) (*store.Store, error) {
-		return store.OpenRig(rig)
+	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
+	d.SetWorldOpener(func(rig string) (*store.Store, error) {
+		return store.OpenWorld(rig)
 	})
 
-	// 3. Run deacon patrol → detects stranded convoy.
+	// 3. Run consul patrol → detects stranded caravan.
 	d.Patrol()
 
 	// 4. Verify CONVOY_NEEDS_FEEDING message sent.
-	msgs, _ := townStore.PendingProtocol("operator", store.ProtoConvoyNeedsFeeding)
+	msgs, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
 	if len(msgs) == 0 {
 		t.Fatal("expected CONVOY_NEEDS_FEEDING message")
 	}
 	// Ack to clean up.
-	townStore.AckMessage(msgs[0].ID)
+	sphereStore.AckMessage(msgs[0].ID)
 
 	// 5. Create escalation (simulating stuck agent).
-	escID, err := townStore.CreateEscalation("high", "testrig/StuckBot", "Agent stuck in loop")
+	escID, err := sphereStore.CreateEscalation("high", "testrig/StuckBot", "Agent stuck in loop")
 	if err != nil {
 		t.Fatalf("CreateEscalation: %v", err)
 	}
-	esc, _ := townStore.GetEscalation(escID)
+	esc, _ := sphereStore.GetEscalation(escID)
 	escalation.NewRouter().Route(context.Background(), *esc)
 
 	// 6. Verify escalation stored correctly.
-	dbEsc, _ := townStore.GetEscalation(escID)
+	dbEsc, _ := sphereStore.GetEscalation(escID)
 	if dbEsc.Status != "open" {
 		t.Errorf("escalation status: got %q, want open", dbEsc.Status)
 	}
 
 	// 7. Simulate handoff: write handoff file, call Prime.
 	// First, set up an agent with a hook.
-	rigStore2, _ := store.OpenRig("testrig")
-	defer rigStore2.Close()
+	worldStore2, _ := store.OpenWorld("testrig")
+	defer worldStore2.Close()
 
-	townStore.CreateAgent("E2EBot", "testrig", "polecat")
-	townStore.UpdateAgentState("testrig/E2EBot", "working", idA)
-	rigStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "hooked", Assignee: "testrig/E2EBot"})
-	hook.Write("testrig", "E2EBot", idA)
+	sphereStore.CreateAgent("E2EBot", "testrig", "agent")
+	sphereStore.UpdateAgentState("testrig/E2EBot", "working", idA)
+	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "hooked", Assignee: "testrig/E2EBot"})
+	tether.Write("testrig", "E2EBot", idA)
 
 	handoffState := &handoff.State{
 		WorkItemID:  idA,
 		AgentName:   "E2EBot",
-		Rig:         "testrig",
+		World:         "testrig",
 		Summary:     "E2E handoff test",
 		HandedOffAt: time.Now().UTC(),
 	}
 	handoff.Write(handoffState)
 
 	// 8. Verify handoff context injected.
-	primeResult, err := dispatch.Prime("testrig", "E2EBot", rigStore2)
+	primeResult, err := dispatch.Prime("testrig", "E2EBot", worldStore2)
 	if err != nil {
 		t.Fatalf("Prime with handoff: %v", err)
 	}
@@ -1247,26 +1247,26 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 
 	// 9. Simulate stale hook: mark agent working but session is dead.
-	townStore.UpdateAgentState("testrig/E2EBot", "working", idA)
+	sphereStore.UpdateAgentState("testrig/E2EBot", "working", idA)
 	// Set updated_at to 2 hours ago.
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	townStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "testrig/E2EBot")
-	hook.Write("testrig", "E2EBot", idA)
-	rigStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "hooked", Assignee: "testrig/E2EBot"})
+	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "testrig/E2EBot")
+	tether.Write("testrig", "E2EBot", idA)
+	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "hooked", Assignee: "testrig/E2EBot"})
 
-	// 10. Run deacon patrol → recovers stale hook.
+	// 10. Run consul patrol → recovers stale hook.
 	d.Patrol()
 
 	// 11. Verify work item returned to open.
-	item, _ := rigStore2.GetWorkItem(idA)
+	item, _ := worldStore2.GetWorkItem(idA)
 	if item.Status != "open" {
 		t.Errorf("work item status after recovery: got %q, want open", item.Status)
 	}
 
 	// Verify events emitted.
 	assertEventEmitted(t, gtHome, events.EventDeaconPatrol)
-	assertEventEmitted(t, gtHome, events.EventDeaconConvoyFeed)
-	assertEventEmitted(t, gtHome, events.EventDeaconStaleHook)
+	assertEventEmitted(t, gtHome, events.EventDeaconCaravanFeed)
+	assertEventEmitted(t, gtHome, events.EventDeaconStaleTether)
 }
 
 // Ensure unused imports don't cause issues.

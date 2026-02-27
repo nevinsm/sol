@@ -3,8 +3,8 @@ package escalation
 import (
 	"context"
 
-	"github.com/nevinsm/gt/internal/events"
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // Router routes escalations to notifiers based on severity.

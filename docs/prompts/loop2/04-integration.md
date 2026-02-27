@@ -1,19 +1,19 @@
 # Prompt 04: Loop 2 — Integration Tests + Acceptance
 
 You are writing the integration tests and performing final acceptance
-verification for Loop 2 of the `gt` orchestration system. Loop 2 is
+verification for Loop 2 of the `sol` orchestration system. Loop 2 is
 "merge pipeline" — completed work flows through a merge queue, a
-refinery agent validates and merges it into the target branch with
+forge agent validates and merges it into the target branch with
 quality gates.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Prompts 01, 02, and 03 are complete.
 
 Read all existing code first. Understand the full Loop 2 pipeline:
 merge request store (`internal/store/merge_requests.go`), the Done
 extension (`internal/dispatch/dispatch.go` — `Done()` now creates MRs),
-the refinery package (`internal/refinery/`), the CLI commands
-(`cmd/refinery.go`), and the updated status package (`internal/status/`).
+the forge package (`internal/forge/`), the CLI commands
+(`cmd/forge.go`), and the updated status package (`internal/status/`).
 Also review the Loop 0 and Loop 1 integration tests
 (`test/integration/loop0_test.go`, `test/integration/loop1_test.go`) and
 CLI smoke tests (`test/integration/cli_test.go`) for patterns.
@@ -24,7 +24,7 @@ CLI smoke tests (`test/integration/cli_test.go`) for patterns.
 
 Run `make test`. If any tests fail, fix them before proceeding. The
 previous prompts may have left inconsistencies (especially around the
-updated `RigStore` interface in dispatch or the updated `Gather()`
+updated `WorldStore` interface in dispatch or the updated `Gather()`
 signature in status). Get to green first.
 
 ---
@@ -55,10 +55,10 @@ func createBranchWithFile(t *testing.T, repoDir, branch, filename, content strin
 }
 
 // waitForMergePhase polls the store until a MR reaches the expected phase.
-func waitForMergePhase(t *testing.T, rigStore *store.Store, mrID, expectedPhase string,
+func waitForMergePhase(t *testing.T, worldStore *store.Store, mrID, expectedPhase string,
     timeout time.Duration) {
     pollUntil(timeout, 500*time.Millisecond, func() bool {
-        mr, err := rigStore.GetMergeRequest(mrID)
+        mr, err := worldStore.GetMergeRequest(mrID)
         return err == nil && mr != nil && mr.Phase == expectedPhase
     })
 }
@@ -81,23 +81,23 @@ if testing.Short() {
 
 ### Test 1: Full Merge Pipeline (Happy Path)
 
-The complete flow: dispatch → done → MR queued → refinery merges.
+The complete flow: dispatch → resolve → MR queued → forge merges.
 
 ```go
 func TestMergePipelineHappyPath(t *testing.T)
 ```
 
 1. Set up test environment:
-   - Create temp `GT_HOME`
+   - Create temp `SOL_HOME`
    - Create source repo with initial commit on `main`
-   - Open rig and town stores
+   - Open world and sphere stores
 
 2. Dispatch work:
    - `store.CreateWorkItem("Add feature X", ...)`
-   - `dispatch.Sling(...)` — dispatches to auto-provisioned agent
+   - `dispatch.Cast(...)` — dispatches to auto-provisioned agent
 
-3. Simulate polecat completing work:
-   - In the polecat's worktree, create a file (e.g., `feature.go`)
+3. Simulate outpost completing work:
+   - In the outpost's worktree, create a file (e.g., `feature.go`)
    - `git add` + `git commit` in the worktree
    - Call `dispatch.Done(...)` — should create a merge request
 
@@ -105,12 +105,12 @@ func TestMergePipelineHappyPath(t *testing.T)
    - `store.ListMergeRequests("ready")` returns 1 MR
    - MR has correct `work_item_id` and `branch`
 
-5. Start refinery (use package API, not CLI, for test control):
+5. Start forge (use package API, not CLI, for test control):
    ```go
-   cfg := refinery.DefaultConfig()
+   cfg := forge.DefaultConfig()
    cfg.PollInterval = 1 * time.Second  // fast for testing
    cfg.QualityGates = []string{"true"} // always-pass gate
-   ref := refinery.New(rig, sourceRepo, rigStore, townStore, cfg, logger)
+   ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger)
    ctx, cancel := context.WithCancel(context.Background())
    defer cancel()
    go ref.Run(ctx)
@@ -118,31 +118,31 @@ func TestMergePipelineHappyPath(t *testing.T)
 
 6. Wait for merge:
    ```go
-   waitForMergePhase(t, rigStore, mrID, "merged", 30*time.Second)
+   waitForMergePhase(t, worldStore, mrID, "merged", 30*time.Second)
    ```
 
 7. Verify post-merge state:
    - MR phase is `"merged"`, `merged_at` is set
    - Work item status is `"closed"`
-   - The polecat's branch changes are on `main` in the source repo:
+   - The outpost's branch changes are on `main` in the source repo:
      ```bash
      git -C <sourceRepo> log --oneline main
      # Should show the merge commit
      git -C <sourceRepo> show main:feature.go
-     # Should contain the polecat's changes
+     # Should contain the outpost's changes
      ```
 
 ### Test 2: Quality Gate Failure and Retry
 
-The refinery retries when quality gates fail, then succeeds.
+The forge retries when quality gates fail, then succeeds.
 
 ```go
 func TestMergePipelineQualityGateRetry(t *testing.T)
 ```
 
-1. Set up: create source repo, work item, sling, done (creates MR)
+1. Set up: create source repo, work item, cast, done (creates MR)
 
-2. Start refinery with a failing quality gate:
+2. Start forge with a failing quality gate:
    ```go
    cfg.QualityGates = []string{"exit 1"}  // always fails
    cfg.MaxAttempts = 3
@@ -153,10 +153,10 @@ func TestMergePipelineQualityGateRetry(t *testing.T)
 
 4. Verify: MR phase is `"failed"` (max attempts exceeded)
 
-5. Stop the refinery, update the MR phase back to `"ready"` (manual
+5. Stop the forge, update the MR phase back to `"ready"` (manual
    reset), set attempts to 0
 
-6. Restart refinery with a passing gate:
+6. Restart forge with a passing gate:
    ```go
    cfg.QualityGates = []string{"true"}
    ```
@@ -175,7 +175,7 @@ func TestMergePipelineConflict(t *testing.T)
 
 1. Set up: create source repo with a file `shared.go`
 
-2. Dispatch work, polecat modifies `shared.go` in its worktree
+2. Dispatch work, outpost modifies `shared.go` in its worktree
 
 3. Meanwhile, push a conflicting change to `main` directly:
    ```go
@@ -186,15 +186,15 @@ func TestMergePipelineConflict(t *testing.T)
 
 4. Call `dispatch.Done()` — creates MR
 
-5. Start refinery with `cfg.QualityGates = []string{"true"}`
+5. Start forge with `cfg.QualityGates = []string{"true"}`
 
-6. Wait for refinery to process
+6. Wait for forge to process
 
 7. Verify: MR phase is `"failed"` (conflict detected)
 
 ### Test 4: Merge Slot Serialization
 
-Only one merge at a time per rig.
+Only one merge at a time per world.
 
 ```go
 func TestMergeSlotSerialization(t *testing.T)
@@ -202,26 +202,26 @@ func TestMergeSlotSerialization(t *testing.T)
 
 1. Acquire the merge slot lock manually:
    ```go
-   lock, err := dispatch.AcquireMergeSlotLock(rig)
+   lock, err := dispatch.AcquireMergeSlotLock(world)
    ```
 
-2. Start the refinery with a ready MR
+2. Start the forge with a ready MR
 
-3. Wait briefly (a few seconds) — the refinery should not be able
+3. Wait briefly (a few seconds) — the forge should not be able
    to acquire the slot
 
-4. Verify: MR is still `"ready"` (not processed — refinery released
+4. Verify: MR is still `"ready"` (not processed — forge released
    its claim because the slot was busy)
 
 5. Release the manual lock
 
-6. Wait for the refinery to process the MR on the next poll
+6. Wait for the forge to process the MR on the next poll
 
 7. Verify: MR is `"merged"`
 
 ### Test 5: Stale Claim TTL Recovery
 
-A crashed refinery's claim is released after TTL expires.
+A crashed forge's claim is released after TTL expires.
 
 ```go
 func TestStaleCaimTTLRecovery(t *testing.T)
@@ -229,14 +229,14 @@ func TestStaleCaimTTLRecovery(t *testing.T)
 
 1. Set up: create MR
 
-2. Claim the MR manually via store (simulate a crashed refinery):
+2. Claim the MR manually via store (simulate a crashed forge):
    ```go
-   rigStore.ClaimMergeRequest("crashed-refinery")
+   worldStore.ClaimMergeRequest("crashed-forge")
    ```
 
 3. Manually set `claimed_at` to 31 minutes ago (direct SQL update)
 
-4. Start a new refinery with a short `ClaimTTL` (1 second for testing):
+4. Start a new forge with a short `ClaimTTL` (1 second for testing):
    ```go
    cfg.ClaimTTL = 1 * time.Second
    cfg.QualityGates = []string{"true"}
@@ -245,7 +245,7 @@ func TestStaleCaimTTLRecovery(t *testing.T)
 5. Wait for the MR to be processed
 
 6. Verify: MR is `"merged"` — the stale claim was released and the
-   new refinery picked it up
+   new forge picked it up
 
 ### Test 6: Multiple MRs Priority Ordering
 
@@ -257,38 +257,38 @@ func TestMergeQueuePriorityOrdering(t *testing.T)
 
 1. Create 3 work items with priorities 3, 1, 2
 
-2. Sling and done each (creates 3 MRs)
+2. Cast and done each (creates 3 MRs)
 
-3. Start refinery with `cfg.QualityGates = []string{"true"}`
+3. Start forge with `cfg.QualityGates = []string{"true"}`
 
 4. Track the order in which MRs reach `"merged"` phase
 
 5. Verify: priority 1 merged first, then 2, then 3
 
-### Test 7: Status Shows Refinery and Queue
+### Test 7: Status Shows Forge and Queue
 
-The status command reflects refinery and merge queue state.
+The status command reflects forge and merge queue state.
 
 ```go
 func TestStatusWithMergeQueue(t *testing.T)
 ```
 
-1. Create work items, sling, done (creates MRs)
+1. Create work items, cast, done (creates MRs)
 
 2. Gather status:
    ```go
-   result, err := status.Gather(rig, townStore, rigStore, rigStore, mgr)
+   result, err := status.Gather(world, sphereStore, worldStore, worldStore, mgr)
    ```
 
 3. Verify:
-   - `result.Refinery.Running == false` (not started yet)
+   - `result.Forge.Running == false` (not started yet)
    - `result.MergeQueue.Ready > 0`
    - `result.MergeQueue.Total > 0`
 
-4. Start refinery in a tmux session
+4. Start forge in a tmux session
 
 5. Gather status again:
-   - `result.Refinery.Running == true`
+   - `result.Forge.Running == true`
 
 ---
 
@@ -299,28 +299,28 @@ Add to `test/integration/cli_test.go` (or create
 
 ```go
 func TestCLIRefineryQueueEmpty(t *testing.T)
-    // Create rig store
-    // bin/gt refinery queue testrig
+    // Create world store
+    // bin/sol forge queue testrig
     // Verify: output contains "empty"
 
 func TestCLIRefineryQueueWithMRs(t *testing.T)
-    // Create work item, sling, done
-    // bin/gt refinery queue testrig
+    // Create work item, cast, done
+    // bin/sol forge queue testrig
     // Verify: output contains the MR ID and "ready"
-    // bin/gt refinery queue testrig --json
+    // bin/sol forge queue testrig --json
     // Verify: valid JSON array with MR objects
 
 func TestCLIDoneShowsMergeRequest(t *testing.T)
-    // Create work item, sling
-    // bin/gt done --rig=testrig --agent=<name>
+    // Create work item, cast
+    // bin/sol done --world=testrig --agent=<name>
     // Verify: output contains "Merge request:" and "mr-"
 
 func TestCLIStatusShowsRefinery(t *testing.T)
-    // bin/gt status testrig --json
-    // Verify: JSON has "refinery" and "merge_queue" fields
+    // bin/sol status testrig --json
+    // Verify: JSON has "forge" and "merge_queue" fields
 ```
 
-Each test should use a unique `GT_HOME` temp directory.
+Each test should use a unique `SOL_HOME` temp directory.
 
 ---
 
@@ -332,29 +332,29 @@ Create `test/integration/LOOP2_ACCEPTANCE.md`:
 # Loop 2 Acceptance Criteria
 
 ## 1. Done creates merge request
-- [ ] `gt done` creates a merge request with `phase=ready` in the rig store
+- [ ] `sol resolve` creates a merge request with `phase=ready` in the world store
 - [ ] MR has correct `work_item_id` and `branch` fields
 - [ ] MR ID starts with `mr-` prefix
 - [ ] CLI output shows the merge request ID
 - [ ] Work item status is "done", agent is "idle" (existing behavior preserved)
 
-## 2. Refinery polls and claims
-- [ ] Refinery polls `merge_requests` table for `phase=ready` items
+## 2. Forge polls and claims
+- [ ] Forge polls `merge_requests` table for `phase=ready` items
 - [ ] Claims are atomic (UPDATE ... WHERE prevents races)
 - [ ] Higher priority MRs are processed first (lower number = higher priority)
 - [ ] Oldest MRs processed first within same priority (FIFO)
 
-## 3. Refinery rebases and tests
-- [ ] Refinery rebases polecat's branch onto latest target branch
-- [ ] Quality gates run in the refinery worktree
+## 3. Forge rebases and tests
+- [ ] Forge rebases outpost's branch onto latest target branch
+- [ ] Quality gates run in the forge worktree
 - [ ] Quality gates are configurable via `quality-gates.txt`
 - [ ] Default quality gate is `go test ./...`
 
 ## 4. Merge on success
-- [ ] Tests pass → refinery merges to target branch
+- [ ] Tests pass → forge merges to target branch
 - [ ] MR phase updated to "merged", `merged_at` timestamp set
 - [ ] Work item status updated to "closed"
-- [ ] Polecat's remote branch cleaned up (best-effort)
+- [ ] Outpost's remote branch cleaned up (best-effort)
 
 ## 5. Retry on failure
 - [ ] Quality gate failure → MR returned to "ready" for retry
@@ -362,29 +362,29 @@ Create `test/integration/LOOP2_ACCEPTANCE.md`:
 - [ ] Rebase conflict → MR immediately marked "failed"
 
 ## 6. Merge slot serialization
-- [ ] Only one merge in progress at a time per rig (advisory file lock)
-- [ ] Different rigs can merge concurrently
+- [ ] Only one merge in progress at a time per world (advisory file lock)
+- [ ] Different worlds can merge concurrently
 
 ## 7. TTL recovery
 - [ ] Stale claims (>30 min) automatically released to "ready"
 - [ ] Released MRs are picked up by the next poll cycle
 
-## 8. Refinery lifecycle
-- [ ] `gt refinery run <rig>` runs the merge loop in foreground
-- [ ] `gt refinery start <rig>` starts refinery in tmux session
-- [ ] `gt refinery stop <rig>` stops the refinery session
-- [ ] `gt refinery attach <rig>` attaches to the refinery session
+## 8. Forge lifecycle
+- [ ] `sol forge run <world>` runs the merge loop in foreground
+- [ ] `sol forge start <world>` starts forge in tmux session
+- [ ] `sol forge stop <world>` stops the forge session
+- [ ] `sol forge attach <world>` attaches to the forge session
 
 ## 9. Operator visibility
-- [ ] `gt refinery queue <rig>` shows pending, claimed, merged, and failed MRs
-- [ ] `gt refinery queue <rig> --json` outputs valid JSON
-- [ ] `gt status <rig>` shows refinery running/stopped state
-- [ ] `gt status <rig>` shows merge queue depth
+- [ ] `sol forge queue <world>` shows pending, claimed, merged, and failed MRs
+- [ ] `sol forge queue <world> --json` outputs valid JSON
+- [ ] `sol status <world>` shows forge running/stopped state
+- [ ] `sol status <world>` shows merge queue depth
 
-## 10. Supervisor integration
-- [ ] Supervisor restarts crashed refinery sessions
-- [ ] Refinery respawned with `gt refinery run <rig>` (not claude)
-- [ ] Polecat respawn behavior unchanged
+## 10. Prefect integration
+- [ ] Prefect restarts crashed forge sessions
+- [ ] Forge respawned with `sol forge run <world>` (not claude)
+- [ ] Outpost respawn behavior unchanged
 
 ## 11. All tests pass
 - [ ] `make test` exits 0
@@ -412,7 +412,7 @@ Ensure all Loop 0 and Loop 1 functionality still works:
 
 3. Run all unit tests: `make test`
 
-4. Verify that the updated `RigStore` interface (with
+4. Verify that the updated `WorldStore` interface (with
    `CreateMergeRequest`) doesn't break existing dispatch tests. All
    mocks should implement the new method.
 
@@ -440,7 +440,7 @@ Ensure all Loop 0 and Loop 1 functionality still works:
 ## Guidelines
 
 - Integration tests are slow. Guard with `t.Short()`.
-- Use the refinery package API directly (not the CLI) for fine test
+- Use the forge package API directly (not the CLI) for fine test
   control. Set `PollInterval` to 1 second and use always-pass quality
   gates (`"true"`) to keep tests fast.
 - For git-based tests, use the `createSourceRepo` helper to create
@@ -452,7 +452,7 @@ Ensure all Loop 0 and Loop 1 functionality still works:
 - Don't mock anything in integration tests — use real SQLite, real
   git, real processes. Mock-based tests belong in unit test files.
 - Use generous timeouts (30 seconds) for merge operations — the
-  refinery has poll intervals and quality gates can take time.
+  forge has poll intervals and quality gates can take time.
 - Be careful with git operations in tests: each test needs its own
   source repo to avoid interference. Use `t.TempDir()` or the
   `gtHome` from `setupTestEnv` as the root.

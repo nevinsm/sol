@@ -7,16 +7,16 @@ scratch. Arcs refine, rename, and operationalize it.
 
 ## Arc 0: Rename
 
-Full codebase rename from gt to sol. Mechanically large, conceptually simple.
+Full codebase rename from sol to sol. Mechanically large, conceptually simple.
 
-- Rename binary: `gt` → `sol`
-- Rename Go module: `github.com/nevinsm/gt` → TBD
-- Rename all internal references: GT_HOME → SOL_HOME, rig → world, etc.
-- Rename directories: `polecats/` → `outposts/`, etc.
+- Rename binary: `sol` → `sol`
+- Rename Go module: `github.com/nevinsm/sol` → TBD
+- Rename all internal references: SOL_HOME → SOL_HOME, world → world, etc.
+- Rename directories: `outposts/` → `outposts/`, etc.
 - Rename CLI commands, flags, help text, error messages
-- Rename database references: `town.db` → `sphere.db`
-- Update ID prefixes: `gt-` → `sol-`
-- Update session naming: `gt-{rig}-{agent}` → `sol-{world}-{agent}`
+- Rename database references: `sphere.db` → `sphere.db`
+- Update ID prefixes: `sol-` → `sol-`
+- Update session naming: `sol-{world}-{agent}` → `sol-{world}-{agent}`
 - Update all docs, prompts, CLAUDE.md, README
 - Update Makefile, go.mod
 - Full migration reference: `docs/naming.md`

@@ -3,7 +3,7 @@ package escalation
 import (
 	"context"
 
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // Notifier delivers escalation notifications to a channel.

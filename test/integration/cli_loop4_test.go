@@ -65,77 +65,77 @@ func TestCLIWorkflowStatusHelp(t *testing.T) {
 	}
 }
 
-// --- Convoy CLI smoke tests ---
+// --- Caravan CLI smoke tests ---
 
-func TestCLIConvoyCreateHelp(t *testing.T) {
+func TestCLICaravanCreateHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "convoy", "create", "--help")
+	out, err := runGT(t, gtHome, "caravan", "create", "--help")
 	if err != nil {
-		t.Fatalf("gt convoy create --help failed: %v: %s", err, out)
+		t.Fatalf("gt caravan create --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Create a convoy") {
+	if !strings.Contains(out, "Create a caravan") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLIConvoyAddHelp(t *testing.T) {
+func TestCLICaravanAddHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "convoy", "add", "--help")
+	out, err := runGT(t, gtHome, "caravan", "add", "--help")
 	if err != nil {
-		t.Fatalf("gt convoy add --help failed: %v: %s", err, out)
+		t.Fatalf("gt caravan add --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Add items") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLIConvoyCheckHelp(t *testing.T) {
+func TestCLICaravanCheckHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "convoy", "check", "--help")
+	out, err := runGT(t, gtHome, "caravan", "check", "--help")
 	if err != nil {
-		t.Fatalf("gt convoy check --help failed: %v: %s", err, out)
+		t.Fatalf("gt caravan check --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "readiness") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLIConvoyStatusHelp(t *testing.T) {
+func TestCLICaravanStatusHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "convoy", "status", "--help")
+	out, err := runGT(t, gtHome, "caravan", "status", "--help")
 	if err != nil {
-		t.Fatalf("gt convoy status --help failed: %v: %s", err, out)
+		t.Fatalf("gt caravan status --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "convoy status") {
+	if !strings.Contains(out, "caravan status") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLIConvoyLaunchHelp(t *testing.T) {
+func TestCLICaravanLaunchHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "convoy", "launch", "--help")
+	out, err := runGT(t, gtHome, "caravan", "launch", "--help")
 	if err != nil {
-		t.Fatalf("gt convoy launch --help failed: %v: %s", err, out)
+		t.Fatalf("gt caravan launch --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Dispatch ready items") {
 		t.Errorf("output missing expected text: %s", out)

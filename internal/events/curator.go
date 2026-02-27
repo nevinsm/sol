@@ -14,8 +14,8 @@ import (
 	"time"
 )
 
-// CuratorConfig holds curator configuration.
-type CuratorConfig struct {
+// ChronicleConfig holds chronicle configuration.
+type ChronicleConfig struct {
 	RawPath      string        // path to raw .events.jsonl
 	FeedPath     string        // path to curated .feed.jsonl
 	PollInterval time.Duration // how often to check for new events (default: 2s)
@@ -24,9 +24,9 @@ type CuratorConfig struct {
 	MaxFeedSize  int64         // max curated feed file size in bytes (default: 10MB)
 }
 
-// DefaultCuratorConfig returns defaults for the given GT_HOME.
-func DefaultCuratorConfig(gtHome string) CuratorConfig {
-	return CuratorConfig{
+// DefaultChronicleConfig returns defaults for the given SOL_HOME.
+func DefaultChronicleConfig(gtHome string) ChronicleConfig {
+	return ChronicleConfig{
 		RawPath:      filepath.Join(gtHome, ".events.jsonl"),
 		FeedPath:     filepath.Join(gtHome, ".feed.jsonl"),
 		PollInterval: 2 * time.Second,
@@ -36,9 +36,9 @@ func DefaultCuratorConfig(gtHome string) CuratorConfig {
 	}
 }
 
-// Curator processes raw events into a curated feed.
-type Curator struct {
-	config     CuratorConfig
+// Chronicle processes raw events into a curated feed.
+type Chronicle struct {
+	config     ChronicleConfig
 	logger     *Logger
 	offset     int64 // file offset — tracks position in raw feed
 	dedupCache []dedupEntry
@@ -63,9 +63,9 @@ var aggregatableTypes = map[string]bool{
 	EventRespawn: true,
 }
 
-// NewCurator creates a curator.
-func NewCurator(config CuratorConfig, opts ...CuratorOption) *Curator {
-	c := &Curator{
+// NewChronicle creates a chronicle.
+func NewChronicle(config ChronicleConfig, opts ...ChronicleOption) *Chronicle {
+	c := &Chronicle{
 		config:     config,
 		aggBuffers: make(map[string]*aggBuffer),
 	}
@@ -75,18 +75,18 @@ func NewCurator(config CuratorConfig, opts ...CuratorOption) *Curator {
 	return c
 }
 
-// CuratorOption configures optional Curator settings.
-type CuratorOption func(*Curator)
+// ChronicleOption configures optional Chronicle settings.
+type ChronicleOption func(*Chronicle)
 
-// WithLogger sets the event logger on the Curator.
-func WithLogger(logger *Logger) CuratorOption {
-	return func(c *Curator) {
+// WithLogger sets the event logger on the Chronicle.
+func WithLogger(logger *Logger) ChronicleOption {
+	return func(c *Chronicle) {
 		c.logger = logger
 	}
 }
 
-// Run starts the curator loop. Blocks until context is cancelled.
-func (c *Curator) Run(ctx context.Context) error {
+// Run starts the chronicle loop. Blocks until context is cancelled.
+func (c *Chronicle) Run(ctx context.Context) error {
 	// Load checkpoint if it exists.
 	c.loadCheckpoint()
 
@@ -110,9 +110,9 @@ func (c *Curator) Run(ctx context.Context) error {
 		case <-ticker.C:
 			if err := c.processCycle(); err != nil {
 				// Best-effort: log but continue.
-				fmt.Fprintf(os.Stderr, "curator cycle error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "chronicle cycle error: %v\n", err)
 				if c.logger != nil {
-					c.logger.Emit("curator_error", "curator", "curator", "audit",
+					c.logger.Emit("chronicle_error", "chronicle", "chronicle", "audit",
 						map[string]any{"error": err.Error()})
 				}
 			}
@@ -121,23 +121,23 @@ func (c *Curator) Run(ctx context.Context) error {
 }
 
 // ProcessOnce runs a single processing cycle. Exported for testing.
-func (c *Curator) ProcessOnce() error {
+func (c *Chronicle) ProcessOnce() error {
 	return c.processCycle()
 }
 
 // LoadCheckpoint loads the checkpoint. Exported for testing.
-func (c *Curator) LoadCheckpoint() {
+func (c *Chronicle) LoadCheckpoint() {
 	c.loadCheckpoint()
 }
 
 // Offset returns the current read offset. Exported for testing.
-func (c *Curator) Offset() int64 {
+func (c *Chronicle) Offset() int64 {
 	return c.offset
 }
 
 // processCycle reads new events from the raw feed, filters/dedup/aggregates,
 // and appends results to the curated feed.
-func (c *Curator) processCycle() error {
+func (c *Chronicle) processCycle() error {
 	// 1. Read new lines from raw feed starting at offset.
 	newEvents, newOffset, err := c.readNewEvents()
 	if err != nil {
@@ -204,7 +204,7 @@ func (c *Curator) processCycle() error {
 }
 
 // readNewEvents reads events from the raw feed starting at the current offset.
-func (c *Curator) readNewEvents() ([]Event, int64, error) {
+func (c *Chronicle) readNewEvents() ([]Event, int64, error) {
 	f, err := os.Open(c.config.RawPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -241,7 +241,7 @@ func (c *Curator) readNewEvents() ([]Event, int64, error) {
 }
 
 // isDuplicate checks if the event matches a recent entry within DedupWindow.
-func (c *Curator) isDuplicate(ev Event, now time.Time) bool {
+func (c *Chronicle) isDuplicate(ev Event, now time.Time) bool {
 	for _, entry := range c.dedupCache {
 		if now.Sub(entry.SeenAt) > c.config.DedupWindow {
 			continue
@@ -254,7 +254,7 @@ func (c *Curator) isDuplicate(ev Event, now time.Time) bool {
 }
 
 // addDedupEntry adds an event to the dedup cache.
-func (c *Curator) addDedupEntry(ev Event, now time.Time) {
+func (c *Chronicle) addDedupEntry(ev Event, now time.Time) {
 	c.dedupCache = append(c.dedupCache, dedupEntry{
 		Type:   ev.Type,
 		Source: ev.Source,
@@ -264,7 +264,7 @@ func (c *Curator) addDedupEntry(ev Event, now time.Time) {
 }
 
 // cleanDedupCache removes expired entries.
-func (c *Curator) cleanDedupCache(now time.Time) {
+func (c *Chronicle) cleanDedupCache(now time.Time) {
 	var kept []dedupEntry
 	for _, entry := range c.dedupCache {
 		if now.Sub(entry.SeenAt) <= c.config.DedupWindow {
@@ -275,7 +275,7 @@ func (c *Curator) cleanDedupCache(now time.Time) {
 }
 
 // flushAggBuffers emits aggregated or individual events for expired buffers.
-func (c *Curator) flushAggBuffers(now time.Time) []Event {
+func (c *Chronicle) flushAggBuffers(now time.Time) []Event {
 	var result []Event
 
 	for eventType, buf := range c.aggBuffers {
@@ -298,9 +298,9 @@ func (c *Curator) flushAggBuffers(now time.Time) []Event {
 			last := buf.events[len(buf.events)-1]
 			result = append(result, Event{
 				Timestamp:  last.Timestamp,
-				Source:     "curator",
+				Source:     "chronicle",
 				Type:       eventType + "_batch",
-				Actor:      "curator",
+				Actor:      "chronicle",
 				Visibility: "feed",
 				Payload: map[string]any{
 					"type":           eventType,
@@ -320,7 +320,7 @@ func (c *Curator) flushAggBuffers(now time.Time) []Event {
 
 // FlushAllAggBuffers forces all aggregation buffers to flush, regardless of window.
 // Exported for testing.
-func (c *Curator) FlushAllAggBuffers() error {
+func (c *Chronicle) FlushAllAggBuffers() error {
 	var output []Event
 	for eventType, buf := range c.aggBuffers {
 		if len(buf.events) == 0 {
@@ -333,9 +333,9 @@ func (c *Curator) FlushAllAggBuffers() error {
 			last := buf.events[len(buf.events)-1]
 			output = append(output, Event{
 				Timestamp:  last.Timestamp,
-				Source:     "curator",
+				Source:     "chronicle",
 				Type:       eventType + "_batch",
-				Actor:      "curator",
+				Actor:      "chronicle",
 				Visibility: "feed",
 				Payload: map[string]any{
 					"type":           eventType,
@@ -355,7 +355,7 @@ func (c *Curator) FlushAllAggBuffers() error {
 }
 
 // appendToFeed appends events to the curated feed file with flock.
-func (c *Curator) appendToFeed(events []Event) error {
+func (c *Chronicle) appendToFeed(events []Event) error {
 	f, err := os.OpenFile(c.config.FeedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open curated feed: %w", err)
@@ -382,7 +382,7 @@ func (c *Curator) appendToFeed(events []Event) error {
 
 // truncateIfNeeded checks feed size and truncates if it exceeds MaxFeedSize.
 // Repeats truncation until the file is within bounds.
-func (c *Curator) truncateIfNeeded() error {
+func (c *Chronicle) truncateIfNeeded() error {
 	for {
 		info, err := os.Stat(c.config.FeedPath)
 		if err != nil {
@@ -403,7 +403,7 @@ func (c *Curator) truncateIfNeeded() error {
 }
 
 // truncateOnce removes the first 25% of the curated feed.
-func (c *Curator) truncateOnce() error {
+func (c *Chronicle) truncateOnce() error {
 	// Read entire file.
 	data, err := os.ReadFile(c.config.FeedPath)
 	if err != nil {
@@ -466,14 +466,14 @@ func (c *Curator) truncateOnce() error {
 	return nil
 }
 
-// checkpointPath returns the path to the curator checkpoint file.
-func (c *Curator) checkpointPath() string {
+// checkpointPath returns the path to the chronicle checkpoint file.
+func (c *Chronicle) checkpointPath() string {
 	dir := filepath.Dir(c.config.RawPath)
-	return filepath.Join(dir, ".curator-checkpoint")
+	return filepath.Join(dir, ".chronicle-checkpoint")
 }
 
-// loadCheckpoint reads the curator's byte offset from the checkpoint file.
-func (c *Curator) loadCheckpoint() {
+// loadCheckpoint reads the chronicle's byte offset from the checkpoint file.
+func (c *Chronicle) loadCheckpoint() {
 	data, err := os.ReadFile(c.checkpointPath())
 	if err != nil {
 		return // no checkpoint, start fresh
@@ -485,10 +485,10 @@ func (c *Curator) loadCheckpoint() {
 	c.offset = offset
 }
 
-// saveCheckpoint writes the curator's current byte offset to the checkpoint file.
+// saveCheckpoint writes the chronicle's current byte offset to the checkpoint file.
 // Uses temp-file-then-rename for crash safety.
-func (c *Curator) saveCheckpoint() {
-	tmp, err := os.CreateTemp(filepath.Dir(c.checkpointPath()), ".curator-checkpoint-*.tmp")
+func (c *Chronicle) saveCheckpoint() {
+	tmp, err := os.CreateTemp(filepath.Dir(c.checkpointPath()), ".chronicle-checkpoint-*.tmp")
 	if err != nil {
 		return
 	}
@@ -504,6 +504,6 @@ func (c *Curator) saveCheckpoint() {
 	}
 	if err := os.Rename(tmpName, c.checkpointPath()); err != nil {
 		os.Remove(tmpName)
-		fmt.Fprintf(os.Stderr, "curator: failed to save checkpoint: %v\n", err)
+		fmt.Fprintf(os.Stderr, "chronicle: failed to save checkpoint: %v\n", err)
 	}
 }

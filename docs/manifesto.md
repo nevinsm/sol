@@ -24,7 +24,7 @@ A system called Gastown proved this is possible. It demonstrated that you can:
 
 - Give agents persistent identities that accumulate work history across assignments
 - Use git worktrees as isolated sandboxes so agents never conflict
-- Attach work to agents via a durability primitive (the "hook") that survives
+- Attach work to agents via a durability primitive (the "tether") that survives
   session crashes and context compaction
 - Build a supervision hierarchy where AI agents monitor other AI agents
 - Route completed work through a merge queue with quality gates
@@ -48,8 +48,8 @@ state, any cache is a lie waiting to happen. This is how Unix tools work — `ls
 reads the directory fresh every time — and it's the right model.
 
 **The Propulsion Principle (GUPP)**: When an agent starts and finds work on its
-hook, it executes immediately. No waiting for confirmation, no polling for
-instructions. The hook IS the instruction. Idle agents are wasted capacity, and
+tether, it executes immediately. No waiting for confirmation, no polling for
+instructions. The tether IS the instruction. Idle agents are wasted capacity, and
 in a system designed for autonomous operation, waiting is a bug.
 
 **Persistent Identity, Ephemeral Sessions**: An agent's identity (work history,
@@ -58,8 +58,8 @@ AI process) is disposable and cycles freely. This separation is essential — it
 means you can restart, hand off, and recover without losing the agent's
 accumulated knowledge.
 
-**Hook Durability**: Work attached to an agent must survive any failure of the
-agent's session. The hook is the contract between the system and the agent: "this
+**Tether Durability**: Work attached to an agent must survive any failure of the
+agent's session. The tether is the contract between the system and the agent: "this
 is your job, and it will still be your job when you come back."
 
 ### Complexity That Doesn't Earn Its Keep
@@ -70,8 +70,8 @@ that makes every subsystem depend on one storage layer. When that layer is
 unreliable, everything is unreliable.
 
 **Three-layer supervision**: A dumb daemon spawning an ephemeral AI triage agent
-(Boot) to monitor a persistent AI watchdog (Deacon) to monitor per-rig health
-agents (Witnesses) to monitor workers (Polecats). The concept is sound — a hung
+(Boot) to monitor a persistent AI watchdog (Consul) to monitor per-world health
+agents (Sentinels) to monitor workers (Outposts). The concept is sound — a hung
 process can't detect its own hang — but the implementation has produced real bugs
 at every layer boundary.
 
@@ -94,7 +94,7 @@ production-ready system informed by both.
 - **It's simple to operate.** Start it, stop it, add a project, dispatch work.
   No 20-step boot sequence. No database server to nurse.
 - **It degrades gracefully.** If the supervision layer is down, agents still
-  execute their hooked work. If the merge queue is down, completed work waits
+  execute their tethered work. If the merge queue is down, completed work waits
   safely. Nothing is lost.
 - **It evolves without breaking.** The system will change over time. Storage
   formats, communication mechanisms, workflow patterns — all must be replaceable
@@ -105,9 +105,9 @@ production-ready system informed by both.
 Not "everything must be a text stream piped through `awk`." The real Unix
 philosophy:
 
-- **Simple tools that do one thing well.** A hook attacher that attaches hooks.
+- **Simple tools that do one thing well.** A tether attacher that attaches tethers.
   A session manager that manages sessions. Not a 2000-line monolith that does
-  both plus formula instantiation plus convoy creation.
+  both plus formula instantiation plus caravan creation.
 - **Composition over monoliths.** The dispatch operation is a sequence of atomic
   steps. Each step should be independently understandable, testable, and
   replaceable.

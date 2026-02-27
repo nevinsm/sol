@@ -1,38 +1,38 @@
-# Prompt 02: Loop 1 — Supervisor
+# Prompt 02: Loop 1 — Prefect
 
-You are building the supervisor for the `gt` orchestration system. The
-supervisor is a town-level foreground Go process that monitors all agent
-sessions across all rigs, detects crashes, and restarts them with backoff.
+You are building the prefect for the `sol` orchestration system. The
+prefect is a sphere-level foreground Go process that monitors all agent
+sessions across all worlds, detects crashes, and restarts them with backoff.
 It is the core new component of Loop 1.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Prompt 01 (name pool + dispatch serialization) is complete.
 
 Read all existing code first. Understand the session manager
 (`internal/session/manager.go`), agent states in the store
-(`internal/store/agents.go`), hook read/write/clear
-(`internal/hook/hook.go`), dispatch sling/prime/done
+(`internal/store/agents.go`), tether read/write/clear
+(`internal/tether/tether.go`), dispatch cast/prime/done
 (`internal/dispatch/dispatch.go`), and the config package
 (`internal/config/config.go`).
 
-Read `docs/target-architecture.md` Section 3.6 (Supervisor) and Section
+Read `docs/target-architecture.md` Section 3.6 (Prefect) and Section
 5 (Loop 1 requirements) for design context. Note: the architecture doc
-shows `gt supervisor start` as a background process — we are implementing
-it as `gt supervisor run` (foreground, blocks until interrupted). Daemon
+shows `sol prefect start` as a background process — we are implementing
+it as `sol prefect run` (foreground, blocks until interrupted). Daemon
 mode is deferred to a later loop.
 
 ---
 
-## Task 1: Supervisor Package
+## Task 1: Prefect Package
 
-Create `internal/supervisor/` — the supervisor monitors agent session
-liveness across all rigs and restarts crashed sessions.
+Create `internal/prefect/` — the prefect monitors agent session
+liveness across all worlds and restarts crashed sessions.
 
 ### Core Struct and Interface
 
 ```go
-// internal/supervisor/supervisor.go
-package supervisor
+// internal/prefect/prefect.go
+package prefect
 
 import (
     "context"
@@ -40,22 +40,22 @@ import (
     "sync"
     "time"
 
-    "github.com/nevinsm/gt/internal/session"
-    "github.com/nevinsm/gt/internal/store"
+    "github.com/nevinsm/sol/internal/session"
+    "github.com/nevinsm/sol/internal/store"
 )
 
 // SessionManager abstracts tmux operations for testing.
 type SessionManager interface {
     Exists(name string) bool
-    Start(name, workdir, cmd string, env map[string]string, role, rig string) error
+    Start(name, workdir, cmd string, env map[string]string, role, world string) error
     Stop(name string, force bool) error
     List() ([]session.SessionInfo, error)
 }
 
-// Supervisor monitors agent sessions and restarts crashed ones.
-// It is town-level: one supervisor watches all rigs.
-type Supervisor struct {
-    townStore  *store.Store
+// Prefect monitors agent sessions and restarts crashed ones.
+// It is sphere-level: one prefect watches all worlds.
+type Prefect struct {
+    sphereStore  *store.Store
     sessions   SessionManager
     logger     *slog.Logger
     cfg        Config
@@ -67,7 +67,7 @@ type Supervisor struct {
     backoff        map[string]int // agent ID -> consecutive restart count
 }
 
-// Config holds supervisor configuration.
+// Config holds prefect configuration.
 type Config struct {
     HeartbeatInterval  time.Duration  // default: 3 minutes
     MassDeathThreshold int            // default: 3 deaths in 30 seconds
@@ -76,28 +76,28 @@ type Config struct {
 }
 
 func DefaultConfig() Config
-func New(cfg Config, townStore *store.Store, mgr SessionManager, logger *slog.Logger) *Supervisor
-func (s *Supervisor) Run(ctx context.Context) error  // Blocks until ctx cancelled
-func (s *Supervisor) IsDegraded() bool
+func New(cfg Config, sphereStore *store.Store, mgr SessionManager, logger *slog.Logger) *Prefect
+func (s *Prefect) Run(ctx context.Context) error  // Blocks until ctx cancelled
+func (s *Prefect) IsDegraded() bool
 ```
 
-The supervisor is town-level — it monitors agents across **all** rigs.
-Each agent record includes its rig, so the supervisor can derive session
+The prefect is sphere-level — it monitors agents across **all** worlds.
+Each agent record includes its world, so the prefect can derive session
 names and worktree paths per-agent.
 
-**Required store change:** The existing `store.ListAgents(rig, state)`
-always filters by rig (`WHERE rig = ?`). Modify it so that when `rig`
-is empty, it omits the rig filter and returns agents across all rigs.
-This lets the supervisor call `townStore.ListAgents("", "working")`.
+**Required store change:** The existing `store.ListAgents(world, state)`
+always filters by world (`WHERE world = ?`). Modify it so that when `world`
+is empty, it omits the world filter and returns agents across all worlds.
+This lets the prefect call `sphereStore.ListAgents("", "working")`.
 
 ### PID File Guard
 
-Only one supervisor may run. PID file at
-`config.RuntimeDir() + "/supervisor.pid"`.
+Only one prefect may run. PID file at
+`config.RuntimeDir() + "/prefect.pid"`.
 
 ```go
-// internal/supervisor/pidfile.go
-package supervisor
+// internal/prefect/pidfile.go
+package prefect
 
 func WritePID() error           // Error if already running (PID alive)
 func ReadPID() (int, error)     // Returns 0 if no file
@@ -106,7 +106,7 @@ func IsRunning(pid int) bool    // syscall.Kill(pid, 0)
 ```
 
 **WritePID guard:** read existing PID → if alive, error
-`"supervisor already running (pid %d)"` → if dead, overwrite
+`"prefect already running (pid %d)"` → if dead, overwrite
 (stale) → write `os.Getpid()`.
 
 ### Heartbeat Loop
@@ -116,9 +116,9 @@ heartbeat, then ticks every `HeartbeatInterval`. On context cancellation,
 calls `shutdown()`.
 
 Each heartbeat:
-1. List all agents with state `"working"` (all rigs):
-   `townStore.ListAgents("", "working")`
-2. For each, check `sessions.Exists(dispatch.SessionName(agent.Rig, agent.Name))`
+1. List all agents with state `"working"` (all worlds):
+   `sphereStore.ListAgents("", "working")`
+2. For each, check `sessions.Exists(dispatch.SessionName(agent.World, agent.Name))`
 3. If session dead: record death time, check mass death, respawn with
    backoff (or set `"stalled"` if deferred/degraded)
 4. Reset backoff for agents whose state changed to `"idle"` since last tick
@@ -127,26 +127,26 @@ Each heartbeat:
 ### Respawn Logic
 
 When respawning a crashed agent:
-1. Compute paths via `dispatch.SessionName(agent.Rig, agent.Name)` and
-   `dispatch.WorktreePath(agent.Rig, agent.Name)`
-2. If worktree missing → log warning, set agent `"idle"`, clear hook, return
+1. Compute paths via `dispatch.SessionName(agent.World, agent.Name)` and
+   `dispatch.WorktreePath(agent.World, agent.Name)`
+2. If worktree missing → log warning, set agent `"idle"`, clear tether, return
 3. Start tmux session in the existing worktree:
    ```go
    mgr.Start(sessionName, worktreePath,
        "claude --dangerously-skip-permissions",
        map[string]string{
-           "GT_HOME":  config.Home(),
-           "GT_RIG":   agent.Rig,
-           "GT_AGENT": agent.Name,
+           "SOL_HOME":  config.Home(),
+           "SOL_WORLD":   agent.World,
+           "SOL_AGENT": agent.Name,
        },
-       "polecat", agent.Rig)
+       "outpost", agent.World)
    ```
 4. Set agent state back to `"working"`, log with agent name + restart count
 
-The supervisor does NOT need a source repo — it only restarts sessions
-in worktrees that were already created by `gt sling`. The session-start
-hook (installed during the original sling) fires `gt prime`, re-injecting
-the work context. This is GUPP — hook persists, agent resumes.
+The prefect does NOT need a source repo — it only restarts sessions
+in worktrees that were already created by `sol cast`. The session-start
+tether (installed during the original cast) fires `sol prime`, re-injecting
+the work context. This is GUPP — tether persists, agent resumes.
 
 ### Backoff
 
@@ -162,7 +162,7 @@ the work context. This is GUPP — hook persists, agent resumes.
 func backoffDuration(consecutiveRestarts int) time.Duration
 ```
 
-The supervisor doesn't sleep during backoff — it checks on each tick
+The prefect doesn't sleep during backoff — it checks on each tick
 whether enough time has passed. Agent stays `"stalled"` until respawned.
 
 ### Mass-Death Detection
@@ -172,14 +172,14 @@ whether enough time has passed. Agent stays `"stalled"` until respawned.
 auto-exit degraded mode.
 
 ```go
-func (s *Supervisor) checkMassDeath() bool
-func (s *Supervisor) checkDegradedRecovery()
+func (s *Prefect) checkMassDeath() bool
+func (s *Prefect) checkDegradedRecovery()
 ```
 
 ### Shutdown
 
 On context cancellation: stop all live sessions for working agents
-across all rigs (`force=false`), set agents to `"stalled"` (hooks
+across all worlds (`force=false`), set agents to `"stalled"` (tethers
 persist for recovery), log summary.
 
 ---
@@ -187,8 +187,8 @@ persist for recovery), log summary.
 ## Task 2: Structured Logging
 
 ```go
-// internal/supervisor/logging.go
-package supervisor
+// internal/prefect/logging.go
+package prefect
 
 // NewLogger creates an slog.Logger writing JSON to path.
 // If path is empty, logs to stderr.
@@ -199,7 +199,7 @@ func NewLogger(path string) (*slog.Logger, *os.File, error)
 Use structured fields in all log calls:
 ```go
 s.logger.Info("heartbeat", "working_agents", N, "dead_sessions", N)
-s.logger.Info("respawned session", "agent", name, "rig", rig, "work_item", id, "restart", count)
+s.logger.Info("respawned session", "agent", name, "world", world, "work_item", id, "restart", count)
 s.logger.Error("mass death detected", "deaths", N, "window", duration)
 ```
 
@@ -207,41 +207,41 @@ s.logger.Error("mass death detected", "deaths", N, "window", duration)
 
 ## Task 3: CLI Commands
 
-### `gt supervisor run`
+### `sol prefect run`
 
 ```
-gt supervisor run
+sol prefect run
 ```
 
-Starts the supervisor in the foreground. Monitors all rigs. The process
+Starts the prefect in the foreground. Monitors all worlds. The process
 runs until interrupted (SIGTERM/SIGINT).
 
 ```go
-// cmd/supervisor.go
+// cmd/prefect.go
 var supervisorCmd = &cobra.Command{
-    Use:   "supervisor",
-    Short: "Manage the gt supervisor",
+    Use:   "prefect",
+    Short: "Manage the sol prefect",
 }
 
 var supervisorRunCmd = &cobra.Command{
     Use:   "run",
-    Short: "Run the supervisor (foreground)",
+    Short: "Run the prefect (foreground)",
     Args:  cobra.NoArgs,
     RunE: func(cmd *cobra.Command, args []string) error {
-        logPath := filepath.Join(config.RuntimeDir(), "supervisor.log")
-        logger, logFile, err := supervisor.NewLogger(logPath)
+        logPath := filepath.Join(config.RuntimeDir(), "prefect.log")
+        logger, logFile, err := prefect.NewLogger(logPath)
         if err != nil {
             return fmt.Errorf("failed to create logger: %w", err)
         }
         defer logFile.Close()
 
-        townStore, err := store.OpenTown()
+        sphereStore, err := store.OpenSphere()
         if err != nil { return err }
-        defer townStore.Close()
+        defer sphereStore.Close()
 
         mgr := session.New()
-        cfg := supervisor.DefaultConfig()
-        sup := supervisor.New(cfg, townStore, mgr, logger)
+        cfg := prefect.DefaultConfig()
+        sup := prefect.New(cfg, sphereStore, mgr, logger)
 
         // Signal handling
         ctx, cancel := context.WithCancel(cmd.Context())
@@ -250,29 +250,29 @@ var supervisorRunCmd = &cobra.Command{
         signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
         go func() { <-sigCh; cancel() }()
 
-        fmt.Fprintf(os.Stderr, "Supervisor started (pid %d)\n", os.Getpid())
+        fmt.Fprintf(os.Stderr, "Prefect started (pid %d)\n", os.Getpid())
         fmt.Fprintf(os.Stderr, "Log: %s\n", logPath)
         return sup.Run(ctx)
     },
 }
 ```
 
-### `gt supervisor stop`
+### `sol prefect stop`
 
 ```
-gt supervisor stop
+sol prefect stop
 ```
 
-Reads the PID file, sends SIGTERM to the supervisor process.
+Reads the PID file, sends SIGTERM to the prefect process.
 
 ```go
-// cmd/supervisor.go (continued)
+// cmd/prefect.go (continued)
 var supervisorStopCmd = &cobra.Command{
     Use:   "stop",
-    Short: "Stop the running supervisor",
+    Short: "Stop the running prefect",
     Args:  cobra.NoArgs,
     RunE: func(cmd *cobra.Command, args []string) error {
-        // ReadPID() -> if 0, "no supervisor running"
+        // ReadPID() -> if 0, "no prefect running"
         // if !IsRunning(pid), clear stale PID, report
         // else send syscall.SIGTERM, print confirmation
     },
@@ -289,7 +289,7 @@ func init() {
 
 ## Task 4: Tests
 
-### PID File Tests (`internal/supervisor/pidfile_test.go`)
+### PID File Tests (`internal/prefect/pidfile_test.go`)
 
 ```go
 func TestWriteAndReadPID(t *testing.T)     // Write, read, clear, read again
@@ -298,7 +298,7 @@ func TestWritePIDStalePID(t *testing.T)    // Dead PID 99999 -> overwrite succee
 func TestIsRunning(t *testing.T)           // os.Getpid() -> true, 99999 -> false
 ```
 
-### Supervisor Logic Tests (`internal/supervisor/supervisor_test.go`)
+### Prefect Logic Tests (`internal/prefect/supervisor_test.go`)
 
 Mock session manager:
 ```go
@@ -315,7 +315,7 @@ Test cases:
 ```go
 func TestHeartbeatDetectsDead(t *testing.T)     // Working agent, dead session -> respawn
 func TestHeartbeatIgnoresIdle(t *testing.T)     // Idle agent -> no action
-func TestHeartbeatMultipleRigs(t *testing.T)    // Agents in different rigs all monitored
+func TestHeartbeatMultipleWorlds(t *testing.T)    // Agents in different worlds all monitored
 func TestBackoffEscalation(t *testing.T)        // Verify backoff schedule
 func TestMassDeathDetection(t *testing.T)       // 3 deaths in 30s -> degraded
 func TestMassDeathRecovery(t *testing.T)        // 5min quiet -> exits degraded
@@ -342,15 +342,15 @@ slow tests.
 2. `make build` — succeeds
 3. Manual smoke test:
    ```bash
-   export GT_HOME=/tmp/gt-test
-   bin/gt store create --db=testrig --title="Supervised task"
-   bin/gt sling <id> testrig
-   bin/gt supervisor run          # in another terminal
-   cat /tmp/gt-test/.runtime/supervisor.pid
-   tmux kill-session -t gt-testrig-<agent>   # supervisor should restart it
-   bin/gt supervisor stop
+   export SOL_HOME=/tmp/sol-test
+   bin/sol store create --world=testrig --title="Supervised task"
+   bin/sol cast <id> testrig
+   bin/sol prefect run          # in another terminal
+   cat /tmp/sol-test/.runtime/prefect.pid
+   tmux kill-session -t sol-testrig-<agent>   # prefect should restart it
+   bin/sol prefect stop
    ```
-4. Clean up `/tmp/gt-test` after verification.
+4. Clean up `/tmp/sol-test` after verification.
 
 ---
 
@@ -358,15 +358,15 @@ slow tests.
 
 The following architecture features are **intentionally deferred**:
 
-- **Heartbeat files** (`$GT_HOME/.runtime/heartbeats/`): The architecture
-  describes agents writing heartbeat files and the supervisor checking
+- **Heartbeat files** (`$SOL_HOME/.runtime/heartbeats/`): The architecture
+  describes agents writing heartbeat files and the prefect checking
   freshness. Loop 1 uses tmux session existence only (crash detection).
   Stale/hung agent detection via heartbeat freshness is deferred.
-- **Deacon triage**: The architecture includes deacon monitoring in the
-  supervisor's heartbeat loop. The deacon itself is a Loop 5 feature, so
+- **Consul triage**: The architecture includes consul monitoring in the
+  prefect's heartbeat loop. The consul itself is a Loop 5 feature, so
   triage is deferred until then.
-- **`gt supervisor status`**: Covered by `gt status` (prompt 03).
-- **`gt supervisor logs`**: The operator can `tail -f` the log file
+- **`sol prefect status`**: Covered by `sol status` (prompt 03).
+- **`sol prefect logs`**: The operator can `tail -f` the log file
   directly.
 
 ---
@@ -374,16 +374,16 @@ The following architecture features are **intentionally deferred**:
 ## Guidelines
 
 - Foreground process only. No daemonization — deferred to a later loop.
-- The supervisor is town-level — one instance monitors all rigs. It does
-  NOT take a rig argument.
-- The supervisor does NOT manage dispatch decisions. It only monitors
+- The prefect is sphere-level — one instance monitors all worlds. It does
+  NOT take a world argument.
+- The prefect does NOT manage dispatch decisions. It only monitors
   and restarts sessions that die.
-- The supervisor does NOT need a source repo. It respawns into existing
-  worktrees created by `gt sling`.
+- The prefect does NOT need a source repo. It respawns into existing
+  worktrees created by `sol cast`.
 - Use `dispatch.SessionName()` and `dispatch.WorktreePath()` — don't
   duplicate path logic.
-- The supervisor must be safe to restart: read agent states from store,
+- The prefect must be safe to restart: read agent states from store,
   check sessions, respawn as needed. No in-memory state that can't be
   re-derived.
 - Commit after tests pass with message:
-  `feat(supervisor): add supervisor with heartbeat, backoff, and mass-death detection`
+  `feat(prefect): add prefect with heartbeat, backoff, and mass-death detection`

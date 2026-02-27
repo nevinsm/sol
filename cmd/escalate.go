@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/nevinsm/gt/internal/config"
-	"github.com/nevinsm/gt/internal/escalation"
-	"github.com/nevinsm/gt/internal/events"
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/escalation"
+	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -24,25 +24,25 @@ var escalateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		description := args[0]
 
-		townStore, err := store.OpenTown()
+		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
-		defer townStore.Close()
+		defer sphereStore.Close()
 
-		id, err := townStore.CreateEscalation(escalateSeverity, escalateSource, description)
+		id, err := sphereStore.CreateEscalation(escalateSeverity, escalateSource, description)
 		if err != nil {
 			return err
 		}
 
-		esc, err := townStore.GetEscalation(id)
+		esc, err := sphereStore.GetEscalation(id)
 		if err != nil {
 			return err
 		}
 
 		logger := events.NewLogger(config.Home())
 		webhookURL := os.Getenv("GT_ESCALATION_WEBHOOK")
-		router := escalation.DefaultRouter(logger, townStore, webhookURL)
+		router := escalation.DefaultRouter(logger, sphereStore, webhookURL)
 
 		if err := router.Route(context.Background(), *esc); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: notification error: %v\n", err)

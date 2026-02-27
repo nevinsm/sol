@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -16,19 +16,19 @@ var storeDepCmd = &cobra.Command{
 	Short: "Manage work item dependencies",
 }
 
-// --- gt store dep add ---
+// --- sol store dep add ---
 
 var storeDepAddCmd = &cobra.Command{
 	Use:   "add <from-id> <to-id>",
 	Short: "Add a dependency (from depends on to)",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db := cmd.Flag("db").Value.String()
-		if db == "" {
-			return fmt.Errorf("--db is required")
+		world := cmd.Flag("world").Value.String()
+		if world == "" {
+			return fmt.Errorf("--world is required")
 		}
 
-		s, err := store.OpenRig(db)
+		s, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
@@ -42,19 +42,19 @@ var storeDepAddCmd = &cobra.Command{
 	},
 }
 
-// --- gt store dep remove ---
+// --- sol store dep remove ---
 
 var storeDepRemoveCmd = &cobra.Command{
 	Use:   "remove <from-id> <to-id>",
 	Short: "Remove a dependency",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db := cmd.Flag("db").Value.String()
-		if db == "" {
-			return fmt.Errorf("--db is required")
+		world := cmd.Flag("world").Value.String()
+		if world == "" {
+			return fmt.Errorf("--world is required")
 		}
 
-		s, err := store.OpenRig(db)
+		s, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
@@ -68,19 +68,19 @@ var storeDepRemoveCmd = &cobra.Command{
 	},
 }
 
-// --- gt store dep list ---
+// --- sol store dep list ---
 
 var storeDepListCmd = &cobra.Command{
 	Use:   "list <item-id>",
 	Short: "List dependencies for a work item",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db := cmd.Flag("db").Value.String()
-		if db == "" {
-			return fmt.Errorf("--db is required")
+		world := cmd.Flag("world").Value.String()
+		if world == "" {
+			return fmt.Errorf("--world is required")
 		}
 
-		s, err := store.OpenRig(db)
+		s, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
@@ -166,9 +166,9 @@ func init() {
 	storeDepCmd.AddCommand(storeDepRemoveCmd)
 	storeDepCmd.AddCommand(storeDepListCmd)
 
-	// Shared --db flag for dep subcommands.
-	storeDepAddCmd.Flags().StringVar(&dbFlag, "db", "", "rig database name")
-	storeDepRemoveCmd.Flags().StringVar(&dbFlag, "db", "", "rig database name")
-	storeDepListCmd.Flags().StringVar(&dbFlag, "db", "", "rig database name")
+	// Shared --world flag for dep subcommands.
+	storeDepAddCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
+	storeDepRemoveCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
+	storeDepListCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
 	storeDepListCmd.Flags().BoolVar(&depJSON, "json", false, "output as JSON")
 }

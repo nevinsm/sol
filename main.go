@@ -1,6 +1,6 @@
 package main
 
-import "github.com/nevinsm/gt/cmd"
+import "github.com/nevinsm/sol/cmd"
 
 func main() {
 	cmd.Execute()

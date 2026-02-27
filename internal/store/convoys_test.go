@@ -7,22 +7,22 @@ import (
 	"testing"
 )
 
-func TestCreateConvoy(t *testing.T) {
+func TestCreateCaravan(t *testing.T) {
 	s := setupTown(t)
 
-	id, err := s.CreateConvoy("auth-feature", "operator")
+	id, err := s.CreateCaravan("auth-feature", "operator")
 	if err != nil {
-		t.Fatalf("CreateConvoy() error: %v", err)
+		t.Fatalf("CreateCaravan() error: %v", err)
 	}
 
 	// Verify ID format.
-	pattern := regexp.MustCompile(`^convoy-[0-9a-f]{8}$`)
+	pattern := regexp.MustCompile(`^car-[0-9a-f]{8}$`)
 	if !pattern.MatchString(id) {
-		t.Fatalf("convoy ID %q does not match pattern convoy-[0-9a-f]{8}", id)
+		t.Fatalf("convoy ID %q does not match pattern car-[0-9a-f]{8}", id)
 	}
 
 	// Verify with GetConvoy.
-	c, err := s.GetConvoy(id)
+	c, err := s.GetCaravan(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,23 +43,23 @@ func TestCreateConvoy(t *testing.T) {
 func TestGetConvoyNotFound(t *testing.T) {
 	s := setupTown(t)
 
-	_, err := s.GetConvoy("convoy-nonexist")
+	_, err := s.GetCaravan("convoy-nonexist")
 	if err == nil {
 		t.Fatal("expected error for nonexistent convoy")
 	}
 }
 
-func TestAddConvoyItem(t *testing.T) {
+func TestAddCaravanItem(t *testing.T) {
 	s := setupTown(t)
 
-	convoyID, _ := s.CreateConvoy("test-convoy", "operator")
+	convoyID, _ := s.CreateCaravan("test-convoy", "operator")
 
 	// Add 3 items.
-	s.AddConvoyItem(convoyID, "gt-11111111", "myrig")
-	s.AddConvoyItem(convoyID, "gt-22222222", "myrig")
-	s.AddConvoyItem(convoyID, "gt-33333333", "myrig")
+	s.AddCaravanItem(convoyID, "gt-11111111", "myrig")
+	s.AddCaravanItem(convoyID, "gt-22222222", "myrig")
+	s.AddCaravanItem(convoyID, "gt-33333333", "myrig")
 
-	items, err := s.ListConvoyItems(convoyID)
+	items, err := s.ListCaravanItems(convoyID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,19 +68,19 @@ func TestAddConvoyItem(t *testing.T) {
 	}
 }
 
-func TestRemoveConvoyItem(t *testing.T) {
+func TestRemoveCaravanItem(t *testing.T) {
 	s := setupTown(t)
 
-	convoyID, _ := s.CreateConvoy("test-convoy", "operator")
-	s.AddConvoyItem(convoyID, "gt-11111111", "myrig")
-	s.AddConvoyItem(convoyID, "gt-22222222", "myrig")
+	convoyID, _ := s.CreateCaravan("test-convoy", "operator")
+	s.AddCaravanItem(convoyID, "gt-11111111", "myrig")
+	s.AddCaravanItem(convoyID, "gt-22222222", "myrig")
 
 	// Remove one.
-	if err := s.RemoveConvoyItem(convoyID, "gt-11111111"); err != nil {
+	if err := s.RemoveCaravanItem(convoyID, "gt-11111111"); err != nil {
 		t.Fatal(err)
 	}
 
-	items, err := s.ListConvoyItems(convoyID)
+	items, err := s.ListCaravanItems(convoyID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,15 +92,15 @@ func TestRemoveConvoyItem(t *testing.T) {
 	}
 }
 
-func TestListConvoys(t *testing.T) {
+func TestListCaravans(t *testing.T) {
 	s := setupTown(t)
 
-	s.CreateConvoy("convoy-1", "operator")
-	s.CreateConvoy("convoy-2", "operator")
-	id3, _ := s.CreateConvoy("convoy-3", "operator")
+	s.CreateCaravan("convoy-1", "operator")
+	s.CreateCaravan("convoy-2", "operator")
+	id3, _ := s.CreateCaravan("convoy-3", "operator")
 
 	// List all → 3.
-	all, err := s.ListConvoys("")
+	all, err := s.ListCaravans("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestListConvoys(t *testing.T) {
 	}
 
 	// List by status=open → 3.
-	open, err := s.ListConvoys("open")
+	open, err := s.ListCaravans("open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,8 +118,8 @@ func TestListConvoys(t *testing.T) {
 	}
 
 	// Close one → list open → 2.
-	s.UpdateConvoyStatus(id3, "closed")
-	open, err = s.ListConvoys("open")
+	s.UpdateCaravanStatus(id3, "closed")
+	open, err = s.ListCaravans("open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,16 +128,16 @@ func TestListConvoys(t *testing.T) {
 	}
 }
 
-func TestUpdateConvoyStatus(t *testing.T) {
+func TestUpdateCaravanStatus(t *testing.T) {
 	s := setupTown(t)
 
-	id, _ := s.CreateConvoy("test-convoy", "operator")
+	id, _ := s.CreateCaravan("test-convoy", "operator")
 
 	// Update to "closed" → sets closed_at.
-	if err := s.UpdateConvoyStatus(id, "closed"); err != nil {
+	if err := s.UpdateCaravanStatus(id, "closed"); err != nil {
 		t.Fatal(err)
 	}
-	c, err := s.GetConvoy(id)
+	c, err := s.GetCaravan(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,41 +149,41 @@ func TestUpdateConvoyStatus(t *testing.T) {
 	}
 }
 
-func TestCheckConvoyReadiness(t *testing.T) {
-	// Set up GT_HOME for both town and rig stores.
+func TestCheckCaravanReadiness(t *testing.T) {
+	// Set up SOL_HOME for both town and rig stores.
 	dir := t.TempDir()
-	os.Setenv("GT_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	os.Setenv("SOL_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
-	townStore, err := OpenTown()
+	sphereStore, err := OpenSphere()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
 	// Create a rig store with work items.
-	rigStore, err := OpenRig("testrig")
+	worldStore, err := OpenWorld("testrig")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	idA, _ := rigStore.CreateWorkItem("Item A", "", "operator", 2, nil)
-	idB, _ := rigStore.CreateWorkItem("Item B", "", "operator", 2, nil)
-	idC, _ := rigStore.CreateWorkItem("Item C", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWorkItem("Item A", "", "operator", 2, nil)
+	idB, _ := worldStore.CreateWorkItem("Item B", "", "operator", 2, nil)
+	idC, _ := worldStore.CreateWorkItem("Item C", "", "operator", 2, nil)
 
 	// A depends on B; C has no deps.
-	rigStore.AddDependency(idA, idB)
-	rigStore.Close()
+	worldStore.AddDependency(idA, idB)
+	worldStore.Close()
 
 	// Create convoy with all 3 items.
-	convoyID, _ := townStore.CreateConvoy("test-convoy", "operator")
-	townStore.AddConvoyItem(convoyID, idA, "testrig")
-	townStore.AddConvoyItem(convoyID, idB, "testrig")
-	townStore.AddConvoyItem(convoyID, idC, "testrig")
+	convoyID, _ := sphereStore.CreateCaravan("test-convoy", "operator")
+	sphereStore.AddCaravanItem(convoyID, idA, "testrig")
+	sphereStore.AddCaravanItem(convoyID, idB, "testrig")
+	sphereStore.AddCaravanItem(convoyID, idC, "testrig")
 
 	// Check readiness: B and C should be ready, A should not.
-	statuses, err := townStore.CheckConvoyReadiness(convoyID, OpenRig)
+	statuses, err := sphereStore.CheckCaravanReadiness(convoyID, OpenWorld)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestCheckConvoyReadiness(t *testing.T) {
 		t.Fatalf("expected 3 statuses, got %d", len(statuses))
 	}
 
-	statusMap := map[string]ConvoyItemStatus{}
+	statusMap := map[string]CaravanItemStatus{}
 	for _, st := range statuses {
 		statusMap[st.WorkItemID] = st
 	}
@@ -212,18 +212,18 @@ func TestCheckConvoyReadiness(t *testing.T) {
 	}
 
 	// Mark B as done → A should now be ready.
-	rigStore2, err := OpenRig("testrig")
+	worldStore2, err := OpenWorld("testrig")
 	if err != nil {
 		t.Fatal(err)
 	}
-	rigStore2.UpdateWorkItem(idB, WorkItemUpdates{Status: "done"})
-	rigStore2.Close()
+	worldStore2.UpdateWorkItem(idB, WorkItemUpdates{Status: "done"})
+	worldStore2.Close()
 
-	statuses2, err := townStore.CheckConvoyReadiness(convoyID, OpenRig)
+	statuses2, err := sphereStore.CheckCaravanReadiness(convoyID, OpenWorld)
 	if err != nil {
 		t.Fatal(err)
 	}
-	statusMap2 := map[string]ConvoyItemStatus{}
+	statusMap2 := map[string]CaravanItemStatus{}
 	for _, st := range statuses2 {
 		statusMap2[st.WorkItemID] = st
 	}
@@ -232,33 +232,33 @@ func TestCheckConvoyReadiness(t *testing.T) {
 	}
 }
 
-func TestTryCloseConvoy(t *testing.T) {
+func TestTryCloseCaravan(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("GT_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	os.Setenv("SOL_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
-	townStore, err := OpenTown()
+	sphereStore, err := OpenSphere()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer townStore.Close()
+	defer sphereStore.Close()
 
 	// Create rig store with 2 items.
-	rigStore, err := OpenRig("testrig")
+	worldStore, err := OpenWorld("testrig")
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := rigStore.CreateWorkItem("Item A", "", "operator", 2, nil)
-	idB, _ := rigStore.CreateWorkItem("Item B", "", "operator", 2, nil)
-	rigStore.Close()
+	idA, _ := worldStore.CreateWorkItem("Item A", "", "operator", 2, nil)
+	idB, _ := worldStore.CreateWorkItem("Item B", "", "operator", 2, nil)
+	worldStore.Close()
 
-	convoyID, _ := townStore.CreateConvoy("test-convoy", "operator")
-	townStore.AddConvoyItem(convoyID, idA, "testrig")
-	townStore.AddConvoyItem(convoyID, idB, "testrig")
+	convoyID, _ := sphereStore.CreateCaravan("test-convoy", "operator")
+	sphereStore.AddCaravanItem(convoyID, idA, "testrig")
+	sphereStore.AddCaravanItem(convoyID, idB, "testrig")
 
 	// Some items open → convoy stays open.
-	closed, err := townStore.TryCloseConvoy(convoyID, OpenRig)
+	closed, err := sphereStore.TryCloseCaravan(convoyID, OpenWorld)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,16 +267,16 @@ func TestTryCloseConvoy(t *testing.T) {
 	}
 
 	// Mark all items done/closed.
-	rigStore2, err := OpenRig("testrig")
+	worldStore2, err := OpenWorld("testrig")
 	if err != nil {
 		t.Fatal(err)
 	}
-	rigStore2.UpdateWorkItem(idA, WorkItemUpdates{Status: "done"})
-	rigStore2.CloseWorkItem(idB)
-	rigStore2.Close()
+	worldStore2.UpdateWorkItem(idA, WorkItemUpdates{Status: "done"})
+	worldStore2.CloseWorkItem(idB)
+	worldStore2.Close()
 
 	// All done → convoy auto-closed.
-	closed, err = townStore.TryCloseConvoy(convoyID, OpenRig)
+	closed, err = sphereStore.TryCloseCaravan(convoyID, OpenWorld)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestTryCloseConvoy(t *testing.T) {
 	}
 
 	// Verify convoy status.
-	c, err := townStore.GetConvoy(convoyID)
+	c, err := sphereStore.GetCaravan(convoyID)
 	if err != nil {
 		t.Fatal(err)
 	}

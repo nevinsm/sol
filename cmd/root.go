@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/nevinsm/gt/internal/config"
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/spf13/cobra"
 )
 
 var version = "0.1.0"
 
 var rootCmd = &cobra.Command{
-	Use:     "gt",
+	Use:     "sol",
 	Short:   "Multi-agent orchestration system",
 	Version: version,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {

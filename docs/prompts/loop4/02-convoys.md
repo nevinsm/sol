@@ -1,11 +1,11 @@
-# Prompt 02: Loop 4 — Convoys and Dependencies
+# Prompt 02: Loop 4 — Caravans and Dependencies
 
-You are extending the `gt` orchestration system with convoy tracking and
-work item dependencies. Convoys group related work items into batches
+You are extending the `sol` orchestration system with caravan tracking and
+work item dependencies. Caravans group related work items into batches
 with dependency ordering. As items merge, the system tracks readiness
 so the next batch of work can be dispatched.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Loop 4 prompt 01 (workflow engine) is complete.
 
 Read all existing code first. Understand the store package
@@ -13,19 +13,19 @@ Read all existing code first. Understand the store package
 `merge_requests.go`), the dispatch package (`internal/dispatch/`), and
 the protocol package (`internal/store/protocol.go`).
 
-Read `docs/target-architecture.md` — the convoy schema (Section 3.1
-under town.db), Section 2.11 (Workflow Orchestration), and the Loop 4
+Read `docs/target-architecture.md` — the caravan schema (Section 3.1
+under sphere.db), Section 2.11 (Workflow Orchestration), and the Loop 4
 definition of done.
 
 ---
 
 ## Task 1: Schema Migration — Dependencies
 
-Add a `dependencies` table to the rig database.
+Add a `dependencies` table to the world database.
 
-### Rig Schema V4
+### World Schema V4
 
-Add `rigSchemaV4` to `internal/store/schema.go`:
+Add `worldSchemaV4` to `internal/store/schema.go`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS dependencies (
@@ -38,7 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_deps_to ON dependencies(to_id);
 ```
 
 Semantics: `from_id` depends on `to_id` — `to_id` must reach status
-`closed` or `done` before `from_id` is ready for dispatch.
+`closed` or `resolve` before `from_id` is ready for dispatch.
 
 Update `migrateRig()` to apply V4 and set version to 4.
 
@@ -102,16 +102,16 @@ func (s *Store) wouldCreateCycle(fromID, toID string) (bool, error) {
 
 ---
 
-## Task 2: Schema Migration — Convoys
+## Task 2: Schema Migration — Caravans
 
-Add convoy tables to the town database.
+Add caravan tables to the sphere database.
 
-### Town Schema V3
+### Sphere Schema V3
 
-Add `townSchemaV3` to `internal/store/schema.go`:
+Add `sphereSchemaV3` to `internal/store/schema.go`:
 
 ```sql
-CREATE TABLE IF NOT EXISTS convoys (
+CREATE TABLE IF NOT EXISTS caravans (
     id         TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
     status     TEXT NOT NULL DEFAULT 'open',
@@ -119,12 +119,12 @@ CREATE TABLE IF NOT EXISTS convoys (
     created_at TEXT NOT NULL,
     closed_at  TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_convoys_status ON convoys(status);
+CREATE INDEX IF NOT EXISTS idx_convoys_status ON caravans(status);
 
 CREATE TABLE IF NOT EXISTS convoy_items (
-    convoy_id    TEXT NOT NULL REFERENCES convoys(id),
+    convoy_id    TEXT NOT NULL REFERENCES caravans(id),
     work_item_id TEXT NOT NULL,
-    rig          TEXT NOT NULL,
+    world          TEXT NOT NULL,
     PRIMARY KEY (convoy_id, work_item_id)
 );
 CREATE INDEX IF NOT EXISTS idx_convoy_items_convoy ON convoy_items(convoy_id);
@@ -132,13 +132,13 @@ CREATE INDEX IF NOT EXISTS idx_convoy_items_convoy ON convoy_items(convoy_id);
 
 Update `migrateTown()` to apply V3 and set version to 3.
 
-### Convoy Types
+### Caravan Types
 
 ```go
-// internal/store/convoys.go
+// internal/store/caravans.go
 
-// Convoy represents a group of related work items tracked together.
-type Convoy struct {
+// Caravan represents a group of related work items tracked together.
+type Caravan struct {
     ID        string
     Name      string
     Status    string     // "open", "ready", "closed"
@@ -147,76 +147,76 @@ type Convoy struct {
     ClosedAt  *time.Time
 }
 
-// ConvoyItem is a work item associated with a convoy.
+// ConvoyItem is a work item associated with a caravan.
 type ConvoyItem struct {
-    ConvoyID   string
+    CaravanID   string
     WorkItemID string
-    Rig        string
+    World        string
 }
 ```
 
-### Convoy ID Format
+### Caravan ID Format
 
-Convoy IDs follow the same pattern as other IDs: `"convoy-"` + 8 hex
+Caravan IDs follow the same pattern as other IDs: `"caravan-"` + 8 hex
 chars from `crypto/rand`.
 
-### Convoy CRUD
+### Caravan CRUD
 
 ```go
-// CreateConvoy creates a convoy with the given name and owner.
-// Returns the convoy ID.
+// CreateConvoy creates a caravan with the given name and owner.
+// Returns the caravan ID.
 func (s *Store) CreateConvoy(name, owner string) (string, error)
 
-// GetConvoy returns a convoy by ID.
-func (s *Store) GetConvoy(id string) (*Convoy, error)
+// GetConvoy returns a caravan by ID.
+func (s *Store) GetConvoy(id string) (*Caravan, error)
 
-// ListConvoys returns convoys, optionally filtered by status.
-// If status is empty, returns all convoys.
+// ListConvoys returns caravans, optionally filtered by status.
+// If status is empty, returns all caravans.
 // Ordered by created_at DESC (newest first).
-func (s *Store) ListConvoys(status string) ([]Convoy, error)
+func (s *Store) ListConvoys(status string) ([]Caravan, error)
 
-// UpdateConvoyStatus sets the convoy's status. If status is "closed",
+// UpdateConvoyStatus sets the caravan's status. If status is "closed",
 // also sets closed_at.
 func (s *Store) UpdateConvoyStatus(id, status string) error
 
-// AddConvoyItem associates a work item with a convoy.
-func (s *Store) AddConvoyItem(convoyID, workItemID, rig string) error
+// AddConvoyItem associates a work item with a caravan.
+func (s *Store) AddConvoyItem(caravanID, workItemID, world string) error
 
-// RemoveConvoyItem removes a work item from a convoy.
-func (s *Store) RemoveConvoyItem(convoyID, workItemID string) error
+// RemoveConvoyItem removes a work item from a caravan.
+func (s *Store) RemoveConvoyItem(caravanID, workItemID string) error
 
-// ListConvoyItems returns all items in a convoy.
-func (s *Store) ListConvoyItems(convoyID string) ([]ConvoyItem, error)
+// ListConvoyItems returns all items in a caravan.
+func (s *Store) ListConvoyItems(caravanID string) ([]ConvoyItem, error)
 ```
 
-### Convoy Readiness
+### Caravan Readiness
 
-Convoy readiness depends on work item dependencies and merge status.
-Add a helper that checks readiness of convoy items across rigs:
+Caravan readiness depends on work item dependencies and merge status.
+Add a helper that checks readiness of caravan items across worlds:
 
 ```go
-// ConvoyItemStatus represents the status of a work item within a convoy.
+// ConvoyItemStatus represents the status of a work item within a caravan.
 type ConvoyItemStatus struct {
     ConvoyItem
-    WorkItemStatus string // status from the rig's work_items table
+    WorkItemStatus string // status from the world's work_items table
     Ready          bool   // true if all dependencies are satisfied
 }
 
-// CheckConvoyReadiness returns the status of all items in a convoy.
-// This requires opening each rig's database to check work item status
+// CheckConvoyReadiness returns the status of all items in a caravan.
+// This requires opening each world's database to check work item status
 // and dependency satisfaction.
 //
-// The rigOpener function opens a rig store by name — the caller provides
-// this so the convoy checker doesn't need to know about store paths.
-func (s *Store) CheckConvoyReadiness(convoyID string,
-    rigOpener func(rig string) (*Store, error)) ([]ConvoyItemStatus, error)
+// The rigOpener function opens a world store by name — the caller provides
+// this so the caravan checker doesn't need to know about store paths.
+func (s *Store) CheckConvoyReadiness(caravanID string,
+    rigOpener func(world string) (*Store, error)) ([]ConvoyItemStatus, error)
 ```
 
 The function:
-1. Lists all convoy items
-2. Groups items by rig
-3. For each rig, opens the rig store
-4. For each item in that rig: get work item status, check `IsReady()`
+1. Lists all caravan items
+2. Groups items by world
+3. For each world, opens the world store
+4. For each item in that world: get work item status, check `IsReady()`
 5. Returns the combined results
 
 An item is "ready for dispatch" when:
@@ -226,47 +226,47 @@ An item is "ready for dispatch" when:
 ### Auto-Close
 
 ```go
-// TryCloseConvoy checks if all items in a convoy are done/closed.
-// If so, sets the convoy status to "closed".
-// Returns true if the convoy was closed.
-func (s *Store) TryCloseConvoy(convoyID string,
-    rigOpener func(rig string) (*Store, error)) (bool, error)
+// TryCloseConvoy checks if all items in a caravan are done/closed.
+// If so, sets the caravan status to "closed".
+// Returns true if the caravan was closed.
+func (s *Store) TryCloseConvoy(caravanID string,
+    rigOpener func(world string) (*Store, error)) (bool, error)
 ```
 
 ---
 
 ## Task 3: CLI Commands
 
-### gt convoy create
+### sol caravan create
 
 ```
-gt convoy create <name> --rig=<rig> [--owner=<owner>] [<item-id> ...]
+sol caravan create <name> --world=<world> [--owner=<owner>] [<item-id> ...]
 ```
 
-- `<name>`: convoy name (e.g., "auth-feature")
-- `--rig`: rig for the listed items (all items in one `create` call
-  share a rig — use multiple `gt convoy add` for multi-rig)
+- `<name>`: caravan name (e.g., "auth-feature")
+- `--world`: world for the listed items (all items in one `create` call
+  share a world — use multiple `sol caravan add` for multi-world)
 - `--owner`: optional owner (default: "operator")
 - `<item-id>`: zero or more work item IDs to add immediately
 
 **Behavior:**
-1. Create convoy record in town.db
-2. Add each listed item to the convoy
-3. Print: `Created convoy <id>: "<name>" (N items)`
+1. Create caravan record in sphere.db
+2. Add each listed item to the caravan
+3. Print: `Created caravan <id>: "<name>" (N items)`
 
-### gt convoy add
+### sol caravan add
 
 ```
-gt convoy add <convoy-id> --rig=<rig> <item-id> [<item-id> ...]
+sol caravan add <caravan-id> --world=<world> <item-id> [<item-id> ...]
 ```
 
-Add items to an existing convoy. Used for multi-rig convoys or adding
+Add items to an existing caravan. Used for multi-world caravans or adding
 items after creation.
 
-### gt convoy check
+### sol caravan check
 
 ```
-gt convoy check <convoy-id> [--json]
+sol caravan check <caravan-id> [--json]
 ```
 
 **Behavior:**
@@ -275,58 +275,58 @@ gt convoy check <convoy-id> [--json]
 
 **Human output:**
 ```
-Convoy: auth-feature (convoy-a1b2c3d4)
+Caravan: auth-feature (car-a1b2c3d4)
 Status: open
 
 Ready for dispatch:
-  gt-11111111  Add login validation      (myrig)
-  gt-22222222  Add password reset        (myrig)
+  sol-11111111  Add login validation      (myworld)
+  sol-22222222  Add password reset        (myworld)
 
 Blocked:
-  gt-33333333  Add session management    (myrig)  ← waiting on gt-11111111
-  gt-44444444  Integration tests         (myrig)  ← waiting on gt-22222222, gt-33333333
+  sol-33333333  Add session management    (myworld)  ← waiting on sol-11111111
+  sol-44444444  Integration tests         (myworld)  ← waiting on sol-22222222, sol-33333333
 ```
 
 For blocked items, show which dependencies are not yet satisfied.
 
-### gt convoy status
+### sol caravan status
 
 ```
-gt convoy status [<convoy-id>] [--json]
+sol caravan status [<caravan-id>] [--json]
 ```
 
-If `<convoy-id>` provided, show detailed status for that convoy (same as
-`check` but includes completed items). If omitted, list all open convoys:
+If `<caravan-id>` provided, show detailed status for that caravan (same as
+`check` but includes completed items). If omitted, list all open caravans:
 
 ```
-Open convoys:
-  convoy-a1b2c3d4  auth-feature     4 items  (2 done, 1 ready, 1 blocked)
-  convoy-e5f6a7b8  api-refactor     6 items  (0 done, 3 ready, 3 blocked)
+Open caravans:
+  car-a1b2c3d4  auth-feature     4 items  (2 done, 1 ready, 1 blocked)
+  car-e5f6a7b8  api-refactor     6 items  (0 done, 3 ready, 3 blocked)
 ```
 
-### gt convoy launch
+### sol caravan launch
 
 ```
-gt convoy launch <convoy-id> --rig=<rig> [--formula=<name>] [--var=key=val ...]
+sol caravan launch <caravan-id> --world=<world> [--formula=<name>] [--var=key=val ...]
 ```
 
 **Behavior:**
 1. Call `CheckConvoyReadiness`
-2. For each ready item in the specified rig:
-   - Call `gt sling <item-id> <rig>` (or the dispatch function directly)
-   - If `--formula` provided, pass it to sling for workflow instantiation
+2. For each ready item in the specified world:
+   - Call `sol cast <item-id> <world>` (or the dispatch function directly)
+   - If `--formula` provided, pass it to cast for workflow instantiation
      (this wiring is done in prompt 03)
 3. Print dispatched items and remaining blocked items
 4. Call `TryCloseConvoy` to auto-close if all items done
 
-### gt store dep
+### sol store dep
 
-Add dependency management to the existing `gt store` command group:
+Add dependency management to the existing `sol store` command group:
 
 ```
-gt store dep add <from-id> <to-id> --db=<rig>
-gt store dep remove <from-id> <to-id> --db=<rig>
-gt store dep list <item-id> --db=<rig> [--json]
+sol store dep add <from-id> <to-id> --world=<world>
+sol store dep remove <from-id> <to-id> --world=<world>
+sol store dep list <item-id> --world=<world> [--json]
 ```
 
 - `add`: add dependency (from depends on to)
@@ -335,45 +335,45 @@ gt store dep list <item-id> --db=<rig> [--json]
 
 **List output:**
 ```
-Work item: gt-33333333
+Work item: sol-33333333
 
 Depends on:
-  gt-11111111  Add login validation  (done)
+  sol-11111111  Add login validation  (done)
 
 Depended on by:
-  gt-44444444  Integration tests     (open)
+  sol-44444444  Integration tests     (open)
 ```
 
 ---
 
 ## Task 4: Protocol Message
 
-Add a convoy-related protocol message type for future use (Loop 5
-deacon will consume it):
+Add a caravan-related protocol message type for future use (Loop 5
+consul will consume it):
 
 In `internal/store/protocol.go`, add:
 
 ```go
-const ProtoConvoyNeedsFeeding = "CONVOY_NEEDS_FEEDING"
+const ProtoConvoyNeedsFeeding = "CARAVAN_NEEDS_FEEDING"
 
-// ConvoyNeedsFeedingPayload is sent when a convoy has items ready
+// ConvoyNeedsFeedingPayload is sent when a caravan has items ready
 // for dispatch (e.g., after a merge unblocks dependent work).
 type ConvoyNeedsFeedingPayload struct {
-    ConvoyID string `json:"convoy_id"`
-    Rig      string `json:"rig"`
+    CaravanID string `json:"convoy_id"`
+    World      string `json:"world"`
     ReadyCount int  `json:"ready_count"`
 }
 ```
 
-This message type is defined now but not emitted yet — Loop 5's deacon
-will emit it when convoy readiness changes.
+This message type is defined now but not emitted yet — Loop 5's consul
+will emit it when caravan readiness changes.
 
 ---
 
 ## Task 5: Status Integration
 
-Extend `internal/status/status.go` to include convoy summary when
-displaying rig status.
+Extend `internal/status/status.go` to include caravan summary when
+displaying world status.
 
 In the `RigStatus` struct (or equivalent), add:
 
@@ -388,7 +388,7 @@ type ConvoyInfo struct {
 }
 ```
 
-When gathering status, query open convoys that have items in this rig
+When gathering status, query open caravans that have items in this world
 and include summary counts.
 
 ---
@@ -426,13 +426,13 @@ func TestIsReady(t *testing.T)
     // Item with mixed deps (one done, one open) → not ready
 ```
 
-### Convoy Tests
+### Caravan Tests
 
 Create `internal/store/convoys_test.go`:
 
 ```go
 func TestCreateConvoy(t *testing.T)
-    // Create → returns valid ID with "convoy-" prefix
+    // Create → returns valid ID with "caravan-" prefix
     // Verify with GetConvoy
 
 func TestAddConvoyItem(t *testing.T)
@@ -442,21 +442,21 @@ func TestRemoveConvoyItem(t *testing.T)
     // Add then remove → ListConvoyItems returns fewer
 
 func TestListConvoys(t *testing.T)
-    // Create 3 convoys → list all → 3
+    // Create 3 caravans → list all → 3
     // List by status="open" → filters correctly
 
 func TestUpdateConvoyStatus(t *testing.T)
     // Update to "closed" → sets closed_at
 
 func TestCheckConvoyReadiness(t *testing.T)
-    // Convoy with 3 items, no deps → all ready
-    // Convoy with deps: A→B, C (no deps)
+    // Caravan with 3 items, no deps → all ready
+    // Caravan with deps: A→B, C (no deps)
     //   B open → A not ready, C ready
-    //   B done → A ready, C ready
+    //   B resolve → A ready, C ready
 
 func TestTryCloseConvoy(t *testing.T)
-    // All items done/closed → convoy auto-closed
-    // Some items open → convoy stays open
+    // All items done/closed → caravan auto-closed
+    // Some items open → caravan stays open
 ```
 
 ### CLI Smoke Tests
@@ -481,47 +481,47 @@ func TestCLIStoreDepListHelp(t *testing.T)
 2. `make build` — succeeds
 3. Manual smoke test:
    ```bash
-   export GT_HOME=/tmp/gt-test
-   mkdir -p /tmp/gt-test/.store
+   export SOL_HOME=/tmp/sol-test
+   mkdir -p /tmp/sol-test/.store
 
-   # Create rig store with work items
-   bin/gt store create --title="Add login" --db=myrig
-   bin/gt store create --title="Add auth middleware" --db=myrig
-   bin/gt store create --title="Integration tests" --db=myrig
+   # Create world store with work items
+   bin/sol store create --title="Add login" --world=myworld
+   bin/sol store create --title="Add auth middleware" --world=myworld
+   bin/sol store create --title="Integration tests" --world=myworld
 
    # Add dependencies: integration tests depend on both others
-   bin/gt store dep add gt-<tests-id> gt-<login-id> --db=myrig
-   bin/gt store dep add gt-<tests-id> gt-<auth-id> --db=myrig
-   bin/gt store dep list gt-<tests-id> --db=myrig
+   bin/sol store dep add sol-<tests-id> sol-<login-id> --world=myworld
+   bin/sol store dep add sol-<tests-id> sol-<auth-id> --world=myworld
+   bin/sol store dep list sol-<tests-id> --world=myworld
 
-   # Create a convoy
-   bin/gt convoy create "auth-feature" --rig=myrig \
-     gt-<login-id> gt-<auth-id> gt-<tests-id>
+   # Create a caravan
+   bin/sol caravan create "auth-feature" --world=myworld \
+     sol-<login-id> sol-<auth-id> sol-<tests-id>
 
    # Check readiness
-   bin/gt convoy check <convoy-id>
+   bin/sol caravan check <caravan-id>
    # → login and auth ready, tests blocked
 
-   bin/gt convoy status
+   bin/sol caravan status
    ```
-4. Clean up `/tmp/gt-test` after verification.
+4. Clean up `/tmp/sol-test` after verification.
 
 ---
 
 ## Guidelines
 
-- Convoys span multiple rigs — the `rig` column on `convoy_items`
-  allows a single convoy to track items across different rigs. The
-  `CheckConvoyReadiness` function opens each rig's database as needed.
+- Caravans span multiple worlds — the `world` column on `convoy_items`
+  allows a single caravan to track items across different worlds. The
+  `CheckConvoyReadiness` function opens each world's database as needed.
 - Cycle detection is mandatory — `AddDependency` must reject cycles to
   prevent deadlocks in the dispatch graph.
-- Convoy IDs use the same format as other IDs: `"convoy-"` + 8 hex
+- Caravan IDs use the same format as other IDs: `"caravan-"` + 8 hex
   chars.
 - All timestamps are RFC3339 in UTC.
 - Error messages include context with `%w` wrapping.
-- The `CONVOY_NEEDS_FEEDING` protocol message is defined but not emitted
-  yet — the deacon (Loop 5) will be responsible for emitting it when it
-  detects a convoy with unstarted ready items.
+- The `CARAVAN_NEEDS_FEEDING` protocol message is defined but not emitted
+  yet — the consul (Loop 5) will be responsible for emitting it when it
+  detects a caravan with unstarted ready items.
 - All existing tests must continue to pass.
 - Commit after tests pass with message:
-  `feat(convoy): add convoy tracking with dependencies and readiness checking`
+  `feat(caravan): add caravan tracking with dependencies and readiness checking`

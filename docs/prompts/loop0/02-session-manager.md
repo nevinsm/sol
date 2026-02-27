@@ -1,11 +1,11 @@
 # Prompt 02: Loop 0 — Session Manager (tmux)
 
-You are adding the session manager to the `gt` orchestration system. This
+You are adding the session manager to the `sol` orchestration system. This
 package wraps tmux to provide process containers for AI agents — creating
 sessions, injecting text, capturing output, checking health, and enabling
 interactive attachment.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Prompt 01 (scaffold + store) has been completed.
 
 Read the existing code first to understand the project structure, config
@@ -29,8 +29,8 @@ func New() *Manager
 type SessionInfo struct {
     Name      string    `json:"name"`
     PID       int       `json:"pid"`       // tmux server PID for the session
-    Role      string    `json:"role"`      // polecat|witness|refinery|crew
-    Rig       string    `json:"rig"`
+    Role      string    `json:"role"`      // outpost|sentinel|forge|crew
+    World       string    `json:"world"`
     WorkDir   string    `json:"workdir"`
     StartedAt time.Time `json:"started_at"`
     Alive     bool      `json:"alive"`     // tmux session exists
@@ -49,10 +49,10 @@ func (h HealthStatus) String() string
 func (h HealthStatus) ExitCode() int
 
 // Start creates a tmux session with the given name and runs cmd inside it.
-// Writes session metadata to $GT_HOME/.runtime/sessions/{name}.json.
+// Writes session metadata to $SOL_HOME/.runtime/sessions/{name}.json.
 // Env vars are set in the tmux session environment.
 // Returns error if session already exists.
-func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, rig string) error
+func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, world string) error
 
 // Stop kills a tmux session. If force=false, sends C-c first and waits 5s
 // before killing. If force=true, kills immediately. Removes session metadata file.
@@ -118,14 +118,14 @@ exec tmux attach-session -t <name>
 
 ### Session Metadata
 
-On `Start`, write `$GT_HOME/.runtime/sessions/{name}.json`:
+On `Start`, write `$SOL_HOME/.runtime/sessions/{name}.json`:
 
 ```json
 {
   "name": "Toast",
-  "role": "polecat",
-  "rig": "myrig",
-  "workdir": "/home/user/gt/myrig/polecats/Toast/rig",
+  "role": "outpost",
+  "world": "myworld",
+  "workdir": "/home/user/sol/myworld/outposts/Toast/world",
   "started_at": "2026-02-25T10:30:00Z"
 }
 ```
@@ -141,7 +141,7 @@ The `Health` function uses a `.last-capture-hash` file to detect inactivity:
 
 1. Capture last 50 lines of pane content
 2. Hash the content (SHA-256)
-3. Read `$GT_HOME/.runtime/sessions/{name}.last-capture-hash`
+3. Read `$SOL_HOME/.runtime/sessions/{name}.last-capture-hash`
 4. If file doesn't exist: write hash + timestamp, return Healthy
 5. If hash differs: update file, return Healthy
 6. If hash matches: check timestamp in file. If age > maxInactivity, return Hung
@@ -154,60 +154,60 @@ The `Health` function uses a `.last-capture-hash` file to detect inactivity:
 
 Add `cmd/session.go` with these subcommands:
 
-### `gt session start <name>`
+### `sol session start <name>`
 
 ```
-gt session start <name> --workdir=<dir> --cmd=<command> [--env=KEY=VAL]... [--role=polecat] [--rig=<rig>]
+sol session start <name> --workdir=<dir> --cmd=<command> [--env=KEY=VAL]... [--role=outpost] [--world=<world>]
 ```
 
-Creates a tmux session. `--env` can be repeated. Default role: `polecat`.
+Creates a tmux session. `--env` can be repeated. Default role: `outpost`.
 Prints `"Session <name> started"` on success. Exit 1 if session already exists.
 
-### `gt session stop <name>`
+### `sol session stop <name>`
 
 ```
-gt session stop <name> [--force]
+sol session stop <name> [--force]
 ```
 
 Gracefully stops (or force-kills) a session. Prints confirmation. Exit 1 if
 session doesn't exist.
 
-### `gt session list`
+### `sol session list`
 
 ```
-gt session list [--json]
+sol session list [--json]
 ```
 
 Lists all registered sessions with status. Default: human-readable table.
 
-### `gt session health <name>`
+### `sol session health <name>`
 
 ```
-gt session health <name> [--max-inactivity=30m]
+sol session health <name> [--max-inactivity=30m]
 ```
 
 Prints health status. Exit code matches HealthStatus enum (0-3).
 
-### `gt session capture <name>`
+### `sol session capture <name>`
 
 ```
-gt session capture <name> [--lines=50]
+sol session capture <name> [--lines=50]
 ```
 
 Prints captured pane content to stdout.
 
-### `gt session attach <name>`
+### `sol session attach <name>`
 
 ```
-gt session attach <name>
+sol session attach <name>
 ```
 
 Attaches to the tmux session. Replaces the current process (exec).
 
-### `gt session inject <name>`
+### `sol session inject <name>`
 
 ```
-gt session inject <name> --message=<text>
+sol session inject <name> --message=<text>
 ```
 
 Sends text to the session's pane. Used for testing nudge delivery.
@@ -256,15 +256,15 @@ Run tests and fix any issues before completing.
 After implementation:
 
 1. `make test` passes all tests (store + session)
-2. `GT_HOME=/tmp/gt-test bin/gt session start test1 --workdir=/tmp --cmd="sleep 300" --rig=myrig`
-3. `GT_HOME=/tmp/gt-test bin/gt session list` shows test1
-4. `GT_HOME=/tmp/gt-test bin/gt session health test1` exits 0
-5. `GT_HOME=/tmp/gt-test bin/gt session capture test1` shows output
-6. `GT_HOME=/tmp/gt-test bin/gt session inject test1 --message="hello"`
-7. `GT_HOME=/tmp/gt-test bin/gt session stop test1`
-8. `GT_HOME=/tmp/gt-test bin/gt session list` shows no sessions
+2. `SOL_HOME=/tmp/sol-test bin/sol session start test1 --workdir=/tmp --cmd="sleep 300" --world=myworld`
+3. `SOL_HOME=/tmp/sol-test bin/sol session list` shows test1
+4. `SOL_HOME=/tmp/sol-test bin/sol session health test1` exits 0
+5. `SOL_HOME=/tmp/sol-test bin/sol session capture test1` shows output
+6. `SOL_HOME=/tmp/sol-test bin/sol session inject test1 --message="hello"`
+7. `SOL_HOME=/tmp/sol-test bin/sol session stop test1`
+8. `SOL_HOME=/tmp/sol-test bin/sol session list` shows no sessions
 
-Clean up `/tmp/gt-test` after verification.
+Clean up `/tmp/sol-test` after verification.
 
 ---
 

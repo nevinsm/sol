@@ -26,14 +26,14 @@ philosophy applied to state management — `ls` reads the directory fresh,
 
 #### GUPP — Universal Propulsion Principle: **KEEP AS-IS**
 
-> "If you find something on your hook, YOU RUN IT."
+> "If you find something on your tether, YOU RUN IT."
 
-When an agent starts a session and discovers work on its hook, it must begin
-execution immediately. No confirmation, no waiting. The hook IS the assignment.
+When an agent starts a session and discovers work on its tether, it must begin
+execution immediately. No confirmation, no waiting. The tether IS the assignment.
 
 This principle is essential for throughput. A system with 30 agents where each
-waits for a supervisor acknowledgment before starting work creates a
-bottleneck at the supervisor. GUPP eliminates that bottleneck. The hook
+waits for a prefect acknowledgment before starting work creates a
+bottleneck at the prefect. GUPP eliminates that bottleneck. The tether
 durability primitive (work survives session restarts) makes this safe.
 
 #### Beads-as-Bus — Universal State Substrate: **EVOLVE**
@@ -101,16 +101,16 @@ acceptance tests.
 | Component | State Survives | State Lost | Recovery Action | Recovery Time |
 |-----------|---------------|------------|-----------------|---------------|
 | Store (3.1) | DB file (WAL journal) | Open transactions | Reopen DB (WAL recovery) | <1s |
-| Session Mgr (3.2) | `.runtime/sessions/*.json` | tmux server memory | Supervisor restarts sessions | <3 min |
+| Session Mgr (3.2) | `.runtime/sessions/*.json` | tmux server memory | Prefect restarts sessions | <3 min |
 | Mail (3.3) | `messages` table | In-flight INSERT | Re-derive from DB | <1s |
 | Nudge Queue (3.4) | Pending nudge files | Claimed (in-delivery) nudges | Re-derive from pending messages | <1s |
 | Workflow Engine (3.5) | `state.json`, step files | In-memory step state | Re-read state.json on restart | <1s |
-| Supervisor (3.6) | PID file, session registry | Heartbeat loop state | Restart supervisor (systemd/launchd) | <10s |
-| Deacon (3.7) | Heartbeat file | Patrol cycle state | Supervisor restarts, re-patrols | <3 min |
-| Witness (3.8) | Patrol state file | Current patrol cycle | Supervisor restarts, re-patrols | <3 min |
-| Refinery (3.9) | `merge_requests` table, slot lock | In-progress merge | Supervisor restarts Claude session; TTL expiry releases claimed MR | <30 min |
-| Polecat (3.10) | Hook file, worktree, identity | Session memory | `gt prime` re-injects context (GUPP) | <30s |
-| Event Feed (3.11) | JSONL files | Curator buffer | Curator restarts, tails from last position | <10s |
+| Prefect (3.6) | PID file, session registry | Heartbeat loop state | Restart prefect (systemd/launchd) | <10s |
+| Consul (3.7) | Heartbeat file | Patrol cycle state | Prefect restarts, re-patrols | <3 min |
+| Sentinel (3.8) | Patrol state file | Current patrol cycle | Prefect restarts, re-patrols | <3 min |
+| Forge (3.9) | `merge_requests` table, slot lock | In-progress merge | Prefect restarts Claude session; TTL expiry releases claimed MR | <30 min |
+| Outpost (3.10) | Tether file, worktree, identity | Session memory | `sol prime` re-injects context (GUPP) | <30s |
+| Event Feed (3.11) | JSONL files | Chronicle buffer | Chronicle restarts, tails from last position | <10s |
 
 #### GLASS — Glass Box Operations
 
@@ -132,13 +132,13 @@ capacity rather than halting entirely.
 
 | Subsystem Down | System Behavior |
 |----------------|-----------------|
-| SQLite store | Agents with hooked work continue executing (hook is a local file). New dispatch fails. Pending messages unavailable. |
-| Supervisor | Running agents continue. No crash recovery or new spawns. |
-| Witness | Polecats work normally. Completed work waits in queue. |
-| Refinery | Work accumulates in merge queue. No merges land. Go fallback (`gt refinery run`) available without Claude API. |
-| Network/git remote | Agents work locally. `gt done` push phase retries. |
+| SQLite store | Agents with tethered work continue executing (tether is a local file). New dispatch fails. Pending messages unavailable. |
+| Prefect | Running agents continue. No crash recovery or new spawns. |
+| Sentinel | Outposts work normally. Completed work waits in queue. |
+| Forge | Work accumulates in merge queue. No merges land. Go fallback (`sol forge run`) available without Claude API. |
+| Network/git remote | Agents work locally. `sol resolve` push phase retries. |
 
-The key insight: **an agent with work on its hook and a local worktree needs
+The key insight: **an agent with work on its tether and a local worktree needs
 nothing else to execute**. The entire coordination layer can be down and
 in-flight work continues. Recovery happens when services return.
 
@@ -165,9 +165,9 @@ dependencies, and assignment.
 
 **Hard constraints:**
 - 30+ concurrent readers and writers
-- Transactional status transitions (hooked → working → done must not lose state)
+- Transactional status transitions (tethered → working → resolve must not lose state)
 - Label/priority-based queries for dispatch decisions
-- Dependency graph traversal for convoy readiness
+- Dependency graph traversal for caravan readiness
 
 **Existing tools that solve this well:** SQLite (concurrent reads via WAL,
 serialized writes, SQL queries, single-file deployment). The query patterns
@@ -211,7 +211,7 @@ skill tracking, cost accounting.
 **Hard constraints:**
 - Identity must survive session crashes, restarts, and handoffs
 - Work history is append-only (never rewritten)
-- Must support 50+ identities per rig (name pool)
+- Must support 50+ identities per world (name pool)
 - Queries: find idle agents, find agent by name, get agent history
 
 **Existing tools:** SQLite table for identity records. Agent directories on
@@ -220,14 +220,14 @@ the filesystem for local state.
 ### 2.5 Work Execution Context (Essential)
 
 **Problem:** When an agent starts (or restarts), it needs to know what to do —
-what's on its hook, what step it's on, what the instructions say.
+what's on its tether, what step it's on, what the instructions say.
 
 **Hard constraints:**
 - Must work after session crash (derive from durable state, not memory)
 - Must be fast (<2s to assemble context)
-- Must include: hooked work, workflow step, pending messages, checkpoint state
+- Must include: tethered work, workflow step, pending messages, checkpoint state
 
-**Existing tools:** A `prime` command that reads hook file, workflow state,
+**Existing tools:** A `prime` command that reads tether file, workflow state,
 and message inbox, then outputs structured context to stdout. This is the
 right pattern — a read-only operation that assembles context from durable
 state.
@@ -250,7 +250,7 @@ each lack at least one.
 ### 2.7 Inter-Agent Communication (Essential)
 
 **Problem:** Agents need to exchange messages — protocol messages (MERGE_READY,
-POLECAT_DONE), nudges, and freeform mail.
+OUTPOST_DONE), nudges, and freeform mail.
 
 **Hard constraints:**
 - Must be durable (messages survive sender/receiver crashes)
@@ -268,7 +268,7 @@ injection (ephemeral delivery notifications, not the messages themselves).
 codebase — rebasing, running tests, handling conflicts, merging.
 
 **Hard constraints:**
-- Serialized merges (one at a time per rig to prevent conflict explosion)
+- Serialized merges (one at a time per world to prevent conflict explosion)
 - Quality gates (tests, build, lint) must pass before merge
 - Conflict detection with recovery path
 - Must not merge broken code to main
@@ -287,7 +287,7 @@ agent that polls for ready work.
 - Must detect mass failures and enter degraded mode
 - Must distinguish: session dead, agent process dead, agent hung
 
-**Existing tools:** A supervisor process that checks PID/session liveness on
+**Existing tools:** A prefect process that checks PID/session liveness on
 a heartbeat. Tmux session existence for crash detection. Heartbeat files for
 hang detection. Mass-death throttle (3+ deaths in 30s → pause respawns).
 
@@ -302,7 +302,7 @@ logs, health dashboards.
 - Must handle high event volume (30+ agents generating events)
 
 **Existing tools:** Append-only JSONL files with cross-process flock.
-Curator process for dedup/aggregation. Standard Unix tools (`tail`, `jq`,
+Chronicle process for dedup/aggregation. Standard Unix tools (`tail`, `jq`,
 `grep`) for consumption.
 
 ### 2.11 Workflow Orchestration (Enhancing)
@@ -328,13 +328,13 @@ JSON state files for progress. Topological sort for dependency resolution.
 ```
                     ┌─────────────────────────────────────┐
                     │           Human Operator             │
-                    │   (gt CLI, tmux attach, sqlite3)     │
+                    │   (sol CLI, tmux attach, sqlite3)     │
                     └────────────┬────────────────────────┘
                                  │
                     ┌────────────┴────────────────────────┐
-                    │            gt CLI                     │
-                    │   (porcelain: sling, done, up,       │
-                    │    down, status, mail, convoy)        │
+                    │            sol CLI                     │
+                    │   (porcelain: cast, done, up,       │
+                    │    down, status, mail, caravan)        │
                     └────────────┬────────────────────────┘
                                  │
           ┌──────────┬───────────┼───────────┬──────────────┐
@@ -349,7 +349,7 @@ JSON state files for progress. Topological sort for dependency resolution.
                │            │
                ▼            ▼
     ┌──────────────┐  ┌──────────────┐
-    │  Supervisor   │  │   Deacon     │
+    │  Prefect   │  │   Consul     │
     │  (Go process) │  │  (AI agent)  │
     └──────┬───────┘  └──────┬───────┘
            │                 │
@@ -357,44 +357,44 @@ JSON state files for progress. Topological sort for dependency resolution.
      │     │     │     │    │    │
      ▼     ▼     ▼     ▼    ▼    ▼
    Wit.  Ref.  Wit.  Dogs  Stale  Stranded
-  (Go+AI)(Go) (Go+AI)      hooks  convoys
+  (Go+AI)(Go) (Go+AI)      tethers  caravans
   (rig1)(rig1)(rig2)
      │
-     ├── Polecat sessions (×M per rig)
-     └── Crew sessions (×K per rig, human-managed)
+     ├── Outpost sessions (×M per world)
+     └── Crew sessions (×K per world, human-managed)
 ```
 
 ### 3.1 Store (SQLite)
 
 **What it does:** Provides the single source of truth for all coordination
-state — work items, agent identities, merge requests, convoys, and
+state — work items, agent identities, merge requests, caravans, and
 escalations. Replaces Dolt/beads with SQLite in WAL mode.
 
 **Dependencies:** None (SQLite is a library, not a server).
 
 **What depends on it:** Everything that reads or writes coordination state —
-the CLI, supervisor, all agent types.
+the CLI, prefect, all agent types.
 
 **Failure mode:** If the database file is corrupted or locked, operations
-that require coordination state fail. Agents with hooked work continue
+that require coordination state fail. Agents with tethered work continue
 executing (DEGRADE principle). The store is a file, so corruption recovery
 is `cp backup.db store.db`.
 
-**State:** One SQLite database per rig, plus one town-level database.
-- Town DB: `~/gt/.store/town.db` — agent identities, mail, convoys, escalations
-- Rig DBs: `~/gt/.store/{rig}.db` — work items, merge requests
+**State:** One SQLite database per world, plus one sphere-level database.
+- Sphere DB: `~/sol/.store/sphere.db` — agent identities, mail, caravans, escalations
+- World DBs: `~/sol/.store/{world}.db` — work items, merge requests
 
 **Schema:**
 
 ```sql
--- town.db
+-- sphere.db
 CREATE TABLE agents (
-    id          TEXT PRIMARY KEY,    -- e.g., "myrig/Toast"
+    id          TEXT PRIMARY KEY,    -- e.g., "myworld/Toast"
     name        TEXT NOT NULL,       -- e.g., "Toast"
-    rig         TEXT NOT NULL,       -- e.g., "myrig"
-    role        TEXT NOT NULL,       -- polecat|witness|refinery|crew
+    world         TEXT NOT NULL,       -- e.g., "myworld"
+    role        TEXT NOT NULL,       -- outpost|sentinel|forge|crew
     state       TEXT NOT NULL DEFAULT 'idle',  -- idle|working|stalled|stuck|zombie
-    hook_item   TEXT,                -- currently hooked work item ID
+    hook_item   TEXT,                -- currently tethered work item ID
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -427,7 +427,7 @@ CREATE TABLE messages (
 CREATE INDEX idx_messages_recipient ON messages(recipient, delivery);
 CREATE INDEX idx_messages_thread ON messages(thread_id);
 
-CREATE TABLE convoys (
+CREATE TABLE caravans (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
     status      TEXT NOT NULL DEFAULT 'open',
@@ -437,9 +437,9 @@ CREATE TABLE convoys (
 );
 
 CREATE TABLE convoy_items (
-    convoy_id    TEXT NOT NULL REFERENCES convoys(id),
+    convoy_id    TEXT NOT NULL REFERENCES caravans(id),
     work_item_id TEXT NOT NULL,
-    rig          TEXT NOT NULL,
+    world          TEXT NOT NULL,
     PRIMARY KEY (convoy_id, work_item_id)
 );
 
@@ -456,9 +456,9 @@ CREATE TABLE escalations (
 
 CREATE TABLE schema_version (version INTEGER NOT NULL);
 
--- {rig}.db
+-- {world}.db
 CREATE TABLE work_items (
-    id          TEXT PRIMARY KEY,    -- e.g., "gt-abc"
+    id          TEXT PRIMARY KEY,    -- e.g., "sol-abc"
     title       TEXT NOT NULL,
     description TEXT,
     status      TEXT NOT NULL DEFAULT 'open',
@@ -504,15 +504,15 @@ CREATE INDEX idx_mr_phase ON merge_requests(phase);
 CREATE TABLE schema_version (version INTEGER NOT NULL);
 ```
 
-**Interface:** A `gt store` CLI (plumbing) wrapping SQLite operations:
+**Interface:** A `sol store` CLI (plumbing) wrapping SQLite operations:
 
 ```
-gt store create --db=<rig> --title="..." --priority=2 --label=gt:task
-gt store get <id>
-gt store list --db=<rig> --status=open --label=gt:task --assignee=<agent> --json
-gt store update <id> --status=hooked --assignee=<agent>
-gt store close <id>
-gt store query --db=<rig> --sql="SELECT ..." (escape hatch for complex queries)
+sol store create --world=<world> --title="..." --priority=2 --label=sol:task
+sol store get <id>
+sol store list --world=<world> --status=open --label=sol:task --assignee=<agent> --json
+sol store update <id> --status=tethered --assignee=<agent>
+sol store close <id>
+sol store query --world=<world> --sql="SELECT ..." (escape hatch for complex queries)
 ```
 
 **Concurrency handling:** SQLite WAL mode supports concurrent readers. Writers
@@ -531,7 +531,7 @@ The database is a single file copyable with `cp`.
 **Why not plain files:** 30 concurrent agents writing labeled, prioritized,
 dependency-linked work items is a database workload. Plain files with symlink
 indexes and advisory locks would be reinventing SQLite badly. Label
-intersection queries (`status=open AND label=gt:task AND priority < 2`) are
+intersection queries (`status=open AND label=sol:task AND priority < 2`) are
 one SQL statement but would require directory traversal and set intersection
 with files.
 
@@ -543,13 +543,13 @@ interactive attachment.
 
 **Dependencies:** tmux (>= 3.2).
 
-**What depends on it:** All agent types (polecats, witnesses, refineries,
-crew). The supervisor for liveness checks. The nudge system for message
+**What depends on it:** All agent types (outposts, sentinels, forges,
+crew). The prefect for liveness checks. The nudge system for message
 injection.
 
-**Failure mode:** If tmux server crashes, all sessions die. The supervisor
+**Failure mode:** If tmux server crashes, all sessions die. The prefect
 detects this (all PID checks fail simultaneously) and enters degraded mode.
-Recovery: supervisor restarts tmux server, then restarts agents. Hooked work
+Recovery: prefect restarts tmux server, then restarts agents. Tethered work
 is durable — agents recover via GUPP on restart.
 
 **State:** Tmux server state (in-memory, volatile). Session metadata stored
@@ -558,14 +558,14 @@ as tmux environment variables and in `.runtime/sessions/{name}.json` files.
 **Interface:**
 
 ```
-gt session start <name> --workdir=<dir> --cmd=<command> --env=KEY=VAL
-gt session stop <name> [--force]
-gt session list [--json]
-gt session health <name> [--max-inactivity=30m]
+sol session start <name> --workdir=<dir> --cmd=<command> --env=KEY=VAL
+sol session stop <name> [--force]
+sol session list [--json]
+sol session health <name> [--max-inactivity=30m]
     → exit 0: healthy, 1: dead, 2: agent-dead, 3: hung
-gt session capture <name> --lines=N
-gt session attach <name>
-gt session inject <name> --message=<text>  (low-level nudge)
+sol session capture <name> --lines=N
+sol session attach <name>
+sol session inject <name> --message=<text>  (low-level nudge)
 ```
 
 **Why tmux over alternatives:**
@@ -587,28 +587,28 @@ its context, and inject corrections. Only tmux provides this.
 **What it does:** Provides durable inter-agent messaging with routing,
 delivery tracking, and priority ordering.
 
-**Dependencies:** Store (SQLite `messages` table in `town.db`), nudge queue
+**Dependencies:** Store (SQLite `messages` table in `sphere.db`), nudge queue
 (for delivery notifications).
 
 **What depends on it:** All agent communication — protocol messages
-(MERGE_READY, POLECAT_DONE), nudges, escalations, human-agent messages.
+(MERGE_READY, OUTPOST_DONE), nudges, escalations, human-agent messages.
 
 **Failure mode:** Same as store — if SQLite is unavailable, message writes
-fail. Agents with hooked work continue executing (DEGRADE principle). Pending
+fail. Agents with tethered work continue executing (DEGRADE principle). Pending
 messages are also unavailable when the store is down.
 
-**State:** The `messages` table in `town.db` (schema in Section 3.1). This is
+**State:** The `messages` table in `sphere.db` (schema in Section 3.1). This is
 the same WAL-mode SQLite database used for all other coordination state. One
 source of truth, one consistency model, one backup strategy.
 
 **Interface:**
 
 ```
-gt mail send --to=<recipient> --subject=<text> --body=<text> [--priority=N]
-gt mail inbox [--identity=<addr>] [--json]
-gt mail read <message-id>
-gt mail ack <message-id>
-gt mail check [--identity=<addr>]   (count unread)
+sol mail send --to=<recipient> --subject=<text> --body=<text> [--priority=N]
+sol mail inbox [--identity=<addr>] [--json]
+sol mail read <message-id>
+sol mail ack <message-id>
+sol mail check [--identity=<addr>]   (count unread)
 ```
 
 **Delivery:** On send, a row is inserted into the `messages` table with
@@ -625,8 +625,8 @@ The nudge queue (Section 3.4) handles delivery notification separately
 as a filesystem operation, so nudge delivery is never blocked by a
 database write.
 
-**Protocol messages:** MERGE_READY, POLECAT_DONE, MERGED, MERGE_FAILED,
-REWORK_REQUEST, CONVOY_NEEDS_FEEDING, RECOVERED_BEAD, RECOVERY_NEEDED,
+**Protocol messages:** MERGE_READY, OUTPOST_DONE, MERGED, MERGE_FAILED,
+REWORK_REQUEST, CARAVAN_NEEDS_FEEDING, RECOVERED_BEAD, RECOVERY_NEEDED,
 HANDOFF, HELP. These use the same `messages` table with the `type` field
 set to `'protocol'` and structured JSON in the body. Receivers query by
 `type='protocol'` and parse the subject prefix.
@@ -639,7 +639,7 @@ agent reaches a natural pause point.
 
 **Dependencies:** Filesystem, tmux (for injection).
 
-**What depends on it:** Mail system (delivery notifications), supervisor
+**What depends on it:** Mail system (delivery notifications), prefect
 (health pings), human operator (direct nudges).
 
 **Failure mode:** If nudge delivery fails, the nudge file remains in the
@@ -650,7 +650,7 @@ discarded.
 is sound):
 
 ```
-~/gt/.runtime/nudge_queue/{session}/
+~/sol/.runtime/nudge_queue/{session}/
 ├── {nanosecond-timestamp}-{hex}.json     Pending nudge
 ├── {nanosecond-timestamp}-{hex}.claimed  Being delivered
 ```
@@ -658,14 +658,14 @@ is sound):
 **Interface:**
 
 ```
-gt nudge <target> [message]
-gt nudge --session=<name> --message=<text> [--priority=normal|urgent]
+sol nudge <target> [message]
+sol nudge --session=<name> --message=<text> [--priority=normal|urgent]
 ```
 
 **Delivery sequence:** Unchanged from Gastown — acquire per-session lock,
 find agent pane, send text in literal mode, wait 500ms, ESC, Enter with
 retry, SIGWINCH for detached sessions. The Claude Code `UserPromptSubmit`
-hook drains the queue at turn boundaries.
+tether drains the queue at turn boundaries.
 
 **Invariants:** Max queue depth 50 per session. FIFO within priority. TTL:
 normal=30min, urgent=2hr. Atomic claim via file rename.
@@ -678,29 +678,29 @@ instances (molecules), step tracking, and progress state.
 **Dependencies:** Filesystem, store (for linking workflows to work items).
 
 **What depends on it:** Work dispatch (instantiating workflows on assignment),
-agents (reading current step), `gt done` (advancing/completing workflows).
+agents (reading current step), `sol resolve` (advancing/completing workflows).
 
 **Failure mode:** If a workflow state file is corrupted, the agent loses its
-place. Recovery: the operator or supervisor re-reads the step directory to
+place. Recovery: the operator or prefect re-reads the step directory to
 reconstruct state. Each step's completion is idempotent — re-running a
 completed step is safe.
 
 **State:**
 
 ```
-~/gt/formulas/                          Templates (checked into repo)
-├── polecat-work/
+~/sol/formulas/                          Templates (checked into repo)
+├── default-work/
 │   ├── manifest.toml                   Metadata: name, type, variables
 │   └── steps/
 │       ├── 01-load-context.md          Step instructions
 │       ├── 02-implement.md
 │       └── 03-verify.md
-└── witness-patrol/
+└── sentinel-patrol/
     ├── manifest.toml
     └── steps/
         └── 01-patrol.md
 
-~/gt/{rig}/polecats/{name}/.workflow/   Active workflow instance
+~/sol/{world}/outposts/{name}/.workflow/   Active workflow instance
 ├── manifest.json                       {formula, work_item_id, vars}
 ├── state.json                          {current_step, completed: [], status}
 └── steps/
@@ -712,9 +712,9 @@ completed step is safe.
 **Manifest TOML format:**
 
 ```toml
-name = "polecat-work"
-type = "workflow"            # workflow|convoy|expansion
-description = "Standard polecat work execution"
+name = "default-work"
+type = "workflow"            # workflow|caravan|expansion
+description = "Standard outpost work execution"
 
 [variables]
 issue = { required = true }
@@ -741,34 +741,34 @@ needs = ["implement"]
 **Interface:**
 
 ```
-gt workflow instantiate <formula-dir> --item=<id> --var=key=val
+sol workflow instantiate <formula-dir> --item=<id> --var=key=val
     → creates .workflow/ directory with state.json and step files
-gt workflow current [--agent=<name>]
+sol workflow current [--agent=<name>]
     → outputs current step instructions to stdout
-gt workflow advance [--agent=<name>]
+sol workflow advance [--agent=<name>]
     → marks current step complete, finds next ready step, updates state.json
-gt workflow status [--agent=<name>]
+sol workflow status [--agent=<name>]
     → outputs progress summary
 ```
 
 **Propulsion loop (what agents execute):**
 ```
-1. gt workflow current     → read step instructions
+1. sol workflow current     → read step instructions
 2. Execute step
-3. gt workflow advance     → close step, advance to next
+3. sol workflow advance     → close step, advance to next
 4. If status != "done": GOTO 1
 ```
 
-**Ephemeral workflows:** For patrol loops (witness, deacon), the workflow
+**Ephemeral workflows:** For patrol loops (sentinel, consul), the workflow
 directory is created in a temporary location and deleted when the patrol
 cycle completes. State is not preserved across cycles (same as Gastown's
 wisps, but using filesystem semantics).
 
-### 3.6 Supervisor
+### 3.6 Prefect
 
 **What it does:** A Go process that monitors agent session liveness, restarts
 crashed sessions, and provides the heartbeat loop. Replaces the three-layer
-daemon → boot → deacon chain.
+daemon → boot → consul chain.
 
 **Dependencies:** Tmux (for session checks), filesystem (PID files, heartbeat
 files).
@@ -776,42 +776,42 @@ files).
 **What depends on it:** All agent sessions (for crash recovery). The operator
 (for system startup/shutdown).
 
-**Failure mode:** If the supervisor crashes, running agents continue
+**Failure mode:** If the prefect crashes, running agents continue
 unaffected. No new agents are spawned, and crashed agents are not recovered.
-The operator must restart the supervisor. A system-level supervisor (systemd
-or launchd) can restart the supervisor process itself.
+The operator must restart the prefect. A system-level prefect (systemd
+or launchd) can restart the prefect process itself.
 
 **State:**
 
 ```
-~/gt/.runtime/
-├── supervisor.pid              Supervisor process PID
-├── supervisor.log              Structured JSON log
+~/sol/.runtime/
+├── prefect.pid              Prefect process PID
+├── prefect.log              Structured JSON log
 ├── sessions/
-│   └── {session-name}.json     {pid, started_at, role, rig}
+│   └── {session-name}.json     {pid, started_at, role, world}
 └── heartbeats/
     └── {session-name}.json     {timestamp, cycle, status}
 ```
 
 **Design — why two layers instead of three:**
 
-Gastown's three-layer chain (daemon → boot → deacon) was designed to solve the
+Gastown's three-layer chain (daemon → boot → consul) was designed to solve the
 problem that a Go process can't reason about agent behavior and an AI agent
 can't detect its own hang. In practice, this produced session-confusion bugs
 and over-engineering.
 
 The new design uses two layers:
 
-1. **Supervisor (Go process):** Handles what code can handle — process
+1. **Prefect (Go process):** Handles what code can handle — process
    liveness, session existence, heartbeat freshness, mass-death detection,
    respawn with backoff. This replaces both daemon and boot.
 
-2. **Deacon (AI agent):** Handles what requires judgment — stale hook
-   recovery, stranded convoy feeding, quality assessment of stuck agents.
-   Monitored by the supervisor via heartbeat, just like any other agent.
+2. **Consul (AI agent):** Handles what requires judgment — stale tether
+   recovery, stranded caravan feeding, quality assessment of stuck agents.
+   Monitored by the prefect via heartbeat, just like any other agent.
 
-The boot agent is eliminated. Its triage logic ("is the deacon's heartbeat
-stale? should I nudge or wake?") becomes a simple function in the supervisor:
+The boot agent is eliminated. Its triage logic ("is the consul's heartbeat
+stale? should I nudge or wake?") becomes a simple function in the prefect:
 
 ```go
 func triageDeacon(heartbeat time.Time) action {
@@ -828,7 +828,7 @@ func triageDeacon(heartbeat time.Time) action {
 ```
 
 **Heartbeat loop (every 3 minutes):**
-1. Check supervisor PID file (single-instance guard)
+1. Check prefect PID file (single-instance guard)
 2. For each registered session:
    a. Check tmux session exists
    b. If missing: respawn (with backoff — 30s, 1m, 2m, 5m)
@@ -836,99 +836,99 @@ func triageDeacon(heartbeat time.Time) action {
    d. If stale (>15 min): restart session
 3. Mass-death detection: 3+ deaths in 30s → enter degraded mode (log only,
    no respawns, notify operator)
-4. Deacon triage (see above)
+4. Consul triage (see above)
 
 **Interface:**
 
-The supervisor is town-level — one instance monitors all rigs. It reads
-all agents from `town.db` and checks sessions across every rig.
+The prefect is sphere-level — one instance monitors all worlds. It reads
+all agents from `sphere.db` and checks sessions across every world.
 
 ```
-gt supervisor run       (foreground, writes PID file, blocks until interrupted)
-gt supervisor stop      (sends SIGTERM to running supervisor)
-gt status <rig>         (show agents, sessions, hooked work, supervisor health)
+sol prefect run       (foreground, writes PID file, blocks until interrupted)
+sol prefect stop      (sends SIGTERM to running prefect)
+sol status <world>         (show agents, sessions, tethered work, prefect health)
 ```
 
-Daemon mode (`gt supervisor start` as a background process) is deferred.
-`gt supervisor logs` is deferred — the operator can `tail -f` the log
+Daemon mode (`sol prefect start` as a background process) is deferred.
+`sol prefect logs` is deferred — the operator can `tail -f` the log
 file directly.
 
-### 3.7 Deacon (AI Agent)
+### 3.7 Consul (AI Agent)
 
-**What it does:** Town-level AI agent that handles tasks requiring judgment —
-stale hook recovery, stranded convoy feeding, cross-rig coordination. Narrower
-scope than Gastown's deacon because process liveness is handled by the
-supervisor.
+**What it does:** Sphere-level AI agent that handles tasks requiring judgment —
+stale tether recovery, stranded caravan feeding, cross-world coordination. Narrower
+scope than Gastown's consul because process liveness is handled by the
+prefect.
 
 **Dependencies:** Store, mail, session manager.
 
-**What depends on it:** Convoy dispatch, stale hook recovery, dog management.
+**What depends on it:** Caravan dispatch, stale tether recovery, dog management.
 
-**Failure mode:** If the deacon crashes, the supervisor restarts it. While
-down: stale hooks accumulate (resolved on restart), convoys with ready work
+**Failure mode:** If the consul crashes, the prefect restarts it. While
+down: stale tethers accumulate (resolved on restart), caravans with ready work
 wait (dispatched on restart). No data loss.
 
-**State:** Heartbeat file (`~/gt/deacon/heartbeat.json`), patrol state.
+**State:** Heartbeat file (`~/sol/consul/heartbeat.json`), patrol state.
 
 **Patrol cycle:**
 1. Write heartbeat
-2. Check for stale hooks (work items with `status=hooked` and no active session for the assignee). Unhook and return to open.
-3. Check for stranded convoys (convoys with closed items that have unstarted dependent work). Dispatch ready items.
+2. Check for stale tethers (work items with `status=tethered` and no active session for the assignee). Unhook and return to open.
+3. Check for stranded caravans (caravans with closed items that have unstarted dependent work). Dispatch ready items.
 4. Process lifecycle requests (cycle, restart, shutdown from operator mail).
-5. Run health checks on agents with low activity (complement supervisor's process-level checks with behavior-level assessment).
+5. Run health checks on agents with low activity (complement prefect's process-level checks with behavior-level assessment).
 
-### 3.8 Witness (Go Process with AI Call-outs, Per-Rig)
+### 3.8 Sentinel (Go Process with AI Call-outs, Per-World)
 
-**What it does:** Per-rig health monitor that patrols polecats, detects
+**What it does:** Per-world health monitor that patrols outposts, detects
 stalled and zombie sessions, triggers recovery, and uses targeted AI
-assessment to evaluate potentially stuck agents. The witness is primarily a
+assessment to evaluate potentially stuck agents. The sentinel is primarily a
 Go process for speed and determinism — the patrol loop, state detection,
 respawn logic, and zombie cleanup are all deterministic code. AI is used
-only for judgment calls: when the heuristic detects no progress, the witness
+only for judgment calls: when the heuristic detects no progress, the sentinel
 shells out to `claude -p` for a one-off assessment of the agent's session
 output.
 
 **Dependencies:** Store, mail, session manager, tmux, `claude` CLI (for
 AI-assisted assessment).
 
-**What depends on it:** Polecats (for crash recovery, stuck detection).
+**What depends on it:** Outposts (for crash recovery, stuck detection).
 
-**Failure mode:** If the witness crashes, the supervisor restarts it. While
-down: crashed polecats are not respawned at the work level (supervisor
-handles session restarts, but witness handles work-level recovery like
+**Failure mode:** If the sentinel crashes, the prefect restarts it. While
+down: crashed outposts are not respawned at the work level (prefect
+handles session restarts, but sentinel handles work-level recovery like
 returning work to the open pool after max respawns). In-memory state
 (respawn counts, output hashes) is lost on crash and re-derived on restart.
 No data loss.
 
 **State:** In-memory respawn counts and tmux output hashes (lost on crash,
-re-derived). Agent record in town.db (`{rig}/witness`).
+re-derived). Agent record in sphere.db (`{world}/sentinel`).
 
 **Patrol cycle:**
-1. List polecat agents in rig (filter by role=polecat)
-2. For each polecat:
+1. List outpost agents in world (filter by role=outpost)
+2. For each outpost:
    a. Check tmux session liveness
-   b. If session dead + work hooked → mark stalled, attempt respawn (max 2),
+   b. If session dead + work tethered → mark stalled, attempt respawn (max 2),
       then return work to open if max exceeded
    c. If session alive + working: capture tmux output, hash it, compare with
       previous patrol's hash. If unchanged → trigger AI assessment via
       `claude -p`. Assessment determines: progressing (no action), stuck
       (nudge with specific guidance), or stuck beyond help (escalate to
       operator). Low-confidence assessments are ignored.
-   d. If idle + session alive + no hook → zombie, clean up session
+   d. If idle + session alive + no tether → zombie, clean up session
 3. Emit patrol summary event (healthy/stalled/zombie/assessed/nudged counts)
 
-**AI assessment details:** The witness captures the last ~80 lines of tmux
+**AI assessment details:** The sentinel captures the last ~80 lines of tmux
 output and sends it to `claude -p` with a structured prompt requesting JSON
 assessment. The assessment command is configurable (`AssessCommand` in
-witness config) for operators who want to use a different model or tool.
+sentinel config) for operators who want to use a different model or tool.
 Assessment failure (timeout, parse error, AI unavailable) is non-blocking —
-the witness logs a warning and continues its patrol. This keeps AI costs low
+the sentinel logs a warning and continues its patrol. This keeps AI costs low
 (calls only when heuristic triggers) while catching stuck agents that a pure
 heuristic would miss.
 
-### 3.9 Refinery (Claude Session + Go Toolbox, Per-Rig)
+### 3.9 Forge (Claude Session + Go Toolbox, Per-World)
 
-> **See [ADR-0005](decisions/0005-refinery-claude-session.md)** — supersedes
+> **See [ADR-0005](decisions/0005-forge-claude-session.md)** — supersedes
 > the original pure Go design (ADR-0002).
 
 **What it does:** Merge queue processor that claims, validates, and merges
@@ -937,60 +937,60 @@ makes judgment calls (conflict resolution, test failure attribution). Go
 CLI subcommands provide the mechanical toolbox.
 
 **Dependencies:** Store, mail, git, session manager, Claude API (degraded
-fallback via `gt refinery run` without API).
+fallback via `sol forge run` without API).
 
 **What depends on it:** Nothing directly — it is a terminal consumer of
 the merge pipeline.
 
-**Failure mode:** If the refinery session crashes, the supervisor restarts
+**Failure mode:** If the forge session crashes, the prefect restarts
 it. Claimed merge requests with expired TTL (30 min) are automatically
 released for re-claim. No merges land while down; the queue accumulates.
 
-**State:** Merge queue in rig SQLite DB (`merge_requests` table, including
+**State:** Merge queue in world SQLite DB (`merge_requests` table, including
 `blocked_by` column for conflict-resolution tracking). Merge slot lock
-file (`~/gt/{rig}/refinery/.merge-slot.lock`).
+file (`~/sol/{world}/forge/.merge-slot.lock`).
 
 **Claude handles:**
 - The patrol loop (scan queue, claim, rebase, test, push, repeat)
 - Rebase execution (where conflicts surface)
 - Conflict judgment: trivial (resolve directly) vs complex (delegate to
-  polecat via `gt refinery create-resolution`)
+  outpost via `sol forge create-resolution`)
 - Test failure attribution (branch vs pre-existing)
 - Wait/retry decisions
 
 **Go CLI subcommands:**
-- `gt refinery ready/blocked/claim/release` — queue management
-- `gt refinery run-gates` — quality gate execution
-- `gt refinery push` — merge slot acquisition and push
-- `gt refinery mark-merged/mark-failed` — state updates
-- `gt refinery create-resolution` — conflict delegation
-- `gt refinery check-unblocked` — resolution tracking
+- `sol forge ready/blocked/claim/release` — queue management
+- `sol forge run-gates` — quality gate execution
+- `sol forge push` — merge slot acquisition and push
+- `sol forge mark-merged/mark-failed` — state updates
+- `sol forge create-resolution` — conflict delegation
+- `sol forge check-unblocked` — resolution tracking
 
 **Merge pipeline:**
 1. Poll for `phase=ready` merge requests, sorted by priority + age
 2. Claim (set `phase=claimed`, `claimed_by`, `claimed_at`)
 3. Rebase onto latest target branch
 4. If trivial conflict → resolve directly
-5. If complex conflict → delegate to polecat via `create-resolution`,
+5. If complex conflict → delegate to outpost via `create-resolution`,
    set `phase=blocked`
-6. Run quality gates (test, build, lint — configurable per rig)
+6. Run quality gates (test, build, lint — configurable per world)
 7. If gates fail → attribute failure; retry or mark failed
-8. Merge to target branch → send MERGED to witness
-9. If convoy-eligible → send CONVOY_NEEDS_FEEDING to deacon
+8. Merge to target branch → send MERGED to sentinel
+9. If car-eligible → send CARAVAN_NEEDS_FEEDING to consul
 
-### 3.10 Polecat (Worker Agent)
+### 3.10 Outpost (Worker Agent)
 
-**What it does:** Executes work items. Each polecat has persistent identity,
+**What it does:** Executes work items. Each outpost has persistent identity,
 a git worktree sandbox, and ephemeral tmux sessions.
 
 **Dependencies:** Store (for identity), git (for worktree), tmux (for
 session), workflow engine (for step tracking).
 
-**What depends on it:** Witnesses (monitor polecats). Refineries (receive
+**What depends on it:** Sentinels (monitor outposts). Forges (receive
 completed work).
 
-**Failure mode:** Session crash → work remains hooked, worktree preserved.
-On restart, `gt prime` reads hook, workflow state, and pending messages to
+**Failure mode:** Session crash → work remains tethered, worktree preserved.
+On restart, `sol prime` reads tether, workflow state, and pending messages to
 reconstruct context. Agent resumes from last durable state (GUPP + CRASH).
 
 **Three-layer architecture (kept from Gastown):**
@@ -998,12 +998,12 @@ reconstruct context. Agent resumes from last durable state (GUPP + CRASH).
 | Layer | What | Lifecycle | Storage |
 |-------|------|-----------|---------|
 | Identity | Agent record, work history | Permanent | SQLite `agents` + `agent_history` |
-| Sandbox | Git worktree, branch | Persistent across assignments | `~/gt/{rig}/polecats/{name}/rig/` |
+| Sandbox | Git worktree, branch | Persistent across assignments | `~/sol/{world}/outposts/{name}/world/` |
 | Session | Claude in tmux | Ephemeral per step/handoff | tmux server memory |
 
 **States:**
 
-| State | Description | Session | Sandbox | Hook |
+| State | Description | Session | Sandbox | Tether |
 |-------|-------------|---------|---------|------|
 | `idle` | Awaiting assignment | Dead | Preserved | Clear |
 | `working` | Executing work | Alive | Exists | Set |
@@ -1011,45 +1011,45 @@ reconstruct context. Agent resumes from last durable state (GUPP + CRASH).
 | `stuck` | Explicitly requested help | Alive | Exists | Set |
 | `zombie` | tmux exists but no worktree | Alive | Missing | — |
 
-**Hook:** A file at `~/gt/{rig}/polecats/{name}/.hook` containing the work
-item ID. Existence of this file means work is assigned. The hook is the
+**Tether:** A file at `~/sol/{world}/outposts/{name}/.tether` containing the work
+item ID. Existence of this file means work is assigned. The tether is the
 durability primitive — it survives everything except explicit detachment.
-On session start, `gt prime` reads `.hook`, looks up the work item in the
+On session start, `sol prime` reads `.tether`, looks up the work item in the
 store, loads workflow state, and injects execution context.
 
 ### 3.11 Event Feed
 
 **What it does:** Captures system activity as an append-only event log, with
-a curator that produces a filtered/aggregated feed for agent consumption.
+a chronicle that produces a filtered/aggregated feed for agent consumption.
 
 **Dependencies:** Filesystem (flock for concurrent writes).
 
-**What depends on it:** Operator monitoring (`gt feed`). Agents (for
+**What depends on it:** Operator monitoring (`sol feed`). Agents (for
 situational awareness, optional).
 
 **Failure mode:** Event logging is best-effort — failures are silently
-ignored. If the curator crashes, the raw log continues growing and the
-curated feed is stale. The supervisor restarts the curator. No primary
+ignored. If the chronicle crashes, the raw log continues growing and the
+curated feed is stale. The prefect restarts the chronicle. No primary
 operations are affected.
 
 **State:**
-- Raw events: `~/gt/.events.jsonl` (append-only, flock-serialized)
-- Curated feed: `~/gt/.feed.jsonl` (append-only, truncated at 10MB)
+- Raw events: `~/sol/.events.jsonl` (append-only, flock-serialized)
+- Curated feed: `~/sol/.feed.jsonl` (append-only, truncated at 10MB)
 
 **Event format (unchanged from Gastown):**
 ```json
-{"ts":"...","source":"gt","type":"sling","actor":"overseer","visibility":"both","payload":{...}}
+{"ts":"...","source":"sol","type":"cast","actor":"overseer","visibility":"both","payload":{...}}
 ```
 
-**Curator:** A standalone process (`gt curator`) that tails the raw event
+**Chronicle:** A standalone process (`sol chronicle`) that tails the raw event
 file, filters by visibility, deduplicates (10s window for done events),
-aggregates (30s window for sling bursts), and appends to the curated feed.
+aggregates (30s window for cast bursts), and appends to the curated feed.
 
 **Interface:**
 ```
-gt feed [--follow] [--limit=N] [--since=<time>] [--type=<type>]
-gt log-event --type=<type> --actor=<actor> [--visibility=feed|audit|both]
-gt curator start    (background process)
+sol feed [--follow] [--limit=N] [--since=<time>] [--type=<type>]
+sol log-event --type=<type> --actor=<actor> [--visibility=feed|audit|both]
+sol chronicle start    (background process)
 ```
 
 ### 3.12 Agent Protocol Integration
@@ -1059,68 +1059,68 @@ running inside tmux sessions. Defines how agents learn their commands,
 receive their work context, and recover after crashes.
 
 **Dependencies:** Store (for work item lookup), workflow engine (for step
-state), session manager (for hook installation).
+state), session manager (for tether installation).
 
 **What depends on it:** All agent types — every agent session needs protocol
 integration to function.
 
 #### CLAUDE.md Contract
 
-Every polecat worktree gets a `.claude/CLAUDE.md` file generated by `gt sling`
+Every outpost worktree gets a `.claude/CLAUDE.md` file generated by `sol cast`
 that teaches the agent what it is and what it can do. This file is the
 agent's entire understanding of the orchestration system.
 
 **Minimal example:**
 
 ```markdown
-# Polecat Agent: Toast (rig: myrig)
+# Outpost Agent: Toast (world: myworld)
 
-You are a polecat agent in a multi-agent orchestration system.
+You are a outpost agent in a multi-agent orchestration system.
 
 ## Your Assignment
-- Work item: gt-abc
+- Work item: sol-abc
 - Title: Add input validation to login form
 - Description: The login form accepts any input. Add email format
   validation and password length checks.
 
 ## Commands
-- `gt done` — Signal work complete (pushes branch, clears hook)
-- `gt workflow current` — Show current step instructions
-- `gt workflow advance` — Mark step complete, advance to next
-- `gt mail inbox` — Check for messages
-- `gt escalate` — Request help if stuck
+- `sol resolve` — Signal work complete (pushes branch, clears tether)
+- `sol workflow current` — Show current step instructions
+- `sol workflow advance` — Mark step complete, advance to next
+- `sol mail inbox` — Check for messages
+- `sol escalate` — Request help if stuck
 
 ## Protocol
-Execute your assignment. When finished, run `gt done`.
-If stuck, run `gt escalate` with a description of the problem.
+Execute your assignment. When finished, run `sol resolve`.
+If stuck, run `sol escalate` with a description of the problem.
 ```
 
-#### Claude Code Hooks
+#### Claude Code Tethers
 
-`gt sling` installs Claude Code hook scripts per-agent:
+`sol cast` installs Claude Code tether scripts per-agent:
 
-- **`SessionStart`** → runs `gt prime` to inject execution context. `gt prime`
-  reads the durable `.hook` file, looks up the work item in the store, loads
+- **`SessionStart`** → runs `sol prime` to inject execution context. `sol prime`
+  reads the durable `.tether` file, looks up the work item in the store, loads
   workflow state, and outputs structured context. This is how GUPP works —
-  the agent starts, the hook fires, context appears.
+  the agent starts, the tether fires, context appears.
 
 - **`UserPromptSubmit`** → drains the nudge queue (unchanged from Gastown).
   At each turn boundary, pending nudges are delivered to the agent's input.
 
-Hook scripts are shell scripts installed in the agent's worktree at
-`.claude/hooks/`. They call `gt` subcommands — no agent-specific logic
-lives in the hooks themselves.
+Tether scripts are shell scripts installed in the agent's worktree at
+`.claude/tethers/`. They call `sol` subcommands — no agent-specific logic
+lives in the tethers themselves.
 
 #### Context Recovery on Restart
 
-When a session crashes and the supervisor restarts it, the same hooks fire.
-`gt prime` reads the durable `.hook` file, looks up the work item, loads
+When a session crashes and the prefect restarts it, the same tethers fire.
+`sol prime` reads the durable `.tether` file, looks up the work item, loads
 workflow state, and re-injects context. The agent doesn't know it crashed —
 it just starts with instructions.
 
-This is why the hook file is the durability primitive: it survives everything
-except explicit detachment (`gt done` or operator `gt unhook`). As long as
-`.hook` exists, `gt prime` can reconstruct full execution context from
+This is why the tether file is the durability primitive: it survives everything
+except explicit detachment (`sol resolve` or operator `sol unhook`). As long as
+`.tether` exists, `sol prime` can reconstruct full execution context from
 durable state in SQLite and the filesystem.
 
 ---
@@ -1129,7 +1129,7 @@ durable state in SQLite and the filesystem.
 
 ### Wasteland Federation
 
-**Why not:** DoltHub-based cross-town sharing was experimental and tightly
+**Why not:** DoltHub-based cross-sphere sharing was experimental and tightly
 coupled to Dolt as the storage backend. With SQLite, there is no natural
 federation transport. Cross-instance work sharing is a fundamentally different
 product. If needed later, a REST API or git-based sync protocol would be
@@ -1139,7 +1139,7 @@ designed from scratch.
 
 **Why not:** The TUI added significant dependency weight (bubbletea, bubbles,
 lipgloss, glamour) for a feature that competes with the operator's primary
-interface: the terminal itself. `gt status --json | jq` and `tmux attach` are
+interface: the terminal itself. `sol status --json | jq` and `tmux attach` are
 more debuggable and more composable than a custom TUI. A TUI can be layered
 on top later without architectural changes.
 
@@ -1154,7 +1154,7 @@ someone wants to build one later.
 
 **Why not initially:** The abstraction layer for multiple AI runtimes adds
 complexity to every component that interacts with agent sessions. The target
-system is designed around Claude Code's specific capabilities (hooks,
+system is designed around Claude Code's specific capabilities (tethers,
 `--dangerously-skip-permissions`, tool use patterns). Multi-runtime support
 can be added later by abstracting the session start and prime interfaces.
 
@@ -1190,201 +1190,201 @@ agent executes it in an isolated worktree, and the operator can verify the
 result.
 
 **What it requires:**
-- `gt store` CLI for work item CRUD (SQLite)
-- `gt session` CLI for tmux session management
-- Hook mechanism (`.hook` file)
-- `gt sling` (minimal: create worktree, hook work, start session)
-- `gt prime` (minimal: read hook, output context)
-- `gt done` (minimal: push branch, clear hook, kill session)
+- `sol store` CLI for work item CRUD (SQLite)
+- `sol session` CLI for tmux session management
+- Tether mechanism (`.tether` file)
+- `sol cast` (minimal: create worktree, tether work, start session)
+- `sol prime` (minimal: read tether, output context)
+- `sol resolve` (minimal: push branch, clear tether, kill session)
 
-**What it defers:** Multi-agent, witnesses, refinery, mail, workflows,
-convoys, supervisor, deacon, events.
+**What it defers:** Multi-agent, sentinels, forge, mail, workflows,
+caravans, prefect, consul, events.
 
 **Definition of done:**
-1. `gt store create --title="Add tests for login" --db=myrig` creates a work item
-2. `gt sling <item-id> myrig` spawns a polecat in a fresh worktree with the work item context
-3. The polecat session starts with work instructions injected (GUPP)
-4. `gt done` (called by polecat) pushes the branch and returns the polecat to idle
+1. `sol store create --title="Add tests for login" --world=myworld` creates a work item
+2. `sol cast <item-id> myworld` spawns a outpost in a fresh worktree with the work item context
+3. The outpost session starts with work instructions injected (GUPP)
+4. `sol resolve` (called by outpost) pushes the branch and returns the outpost to idle
 5. Operator can `tmux attach` to observe the agent working
-6. Operator can `sqlite3 ~/gt/.store/myrig.db "SELECT * FROM work_items"` to inspect state
-7. Crash recovery: kill the tmux session, re-run `gt sling` → agent picks up hooked work
+6. Operator can `sqlite3 ~/sol/.store/myworld.db "SELECT * FROM work_items"` to inspect state
+7. Crash recovery: kill the tmux session, re-run `sol cast` → agent picks up tethered work
 
 **Key risks:**
 - SQLite concurrency model may need tuning (busy_timeout, journal_mode)
-- Claude Code hook integration (SessionStart → `gt prime`) may have race conditions
+- Claude Code tether integration (SessionStart → `sol prime`) may have race conditions
 - Worktree creation from bare repo may have git version-specific issues
 
 ### Loop 1: Multi-Agent with Supervision
 
-**What it adds:** Multiple concurrent polecats per rig. A supervisor process
+**What it adds:** Multiple concurrent outposts per world. A prefect process
 detects crashes and restarts sessions. Basic health monitoring.
 
 **What it requires:**
 - Themed name pool (a `go:embed` default list of 50+ names, with file
-  override at `$GT_HOME/{rig}/names.txt`). When scanning 30 tmux sessions,
+  override at `$SOL_HOME/{world}/names.txt`). When scanning 30 tmux sessions,
   "Toast" vs "Jasper" is immediately distinguishable; "agent-07" vs
   "agent-12" is not. This serves the GLASS principle. Allocation is
   scan-based: pick the first pool name not already in the agents table.
 - Per-work-item flock for dispatch serialization
-- Supervisor process (town-level, heartbeat loop, session liveness checks,
+- Prefect process (sphere-level, heartbeat loop, session liveness checks,
   respawn with backoff, mass-death detection)
-- `gt supervisor run` / `gt supervisor stop` (foreground supervisor lifecycle)
-- `gt status <rig>` (show running agents, hooked work, session health)
+- `sol prefect run` / `sol prefect stop` (foreground prefect lifecycle)
+- `sol status <world>` (show running agents, tethered work, session health)
 
-**What it defers:** Witness, refinery, mail, workflows, convoys, deacon,
+**What it defers:** Sentinel, forge, mail, workflows, caravans, consul,
 events, heartbeat files (stale/hung detection), daemon mode.
 
 **Definition of done:**
-1. `gt sling <item1> myrig && gt sling <item2> myrig` dispatches to two different polecats
-2. No two polecats get the same work item (flock serialization)
-3. Kill a polecat's tmux session → supervisor detects and restarts within 3 minutes
-4. Restarted polecat picks up hooked work (GUPP)
-5. `gt status myrig` shows all running polecats with their states and hooked work
-6. `gt supervisor run` starts supervisor; `gt supervisor stop` gracefully stops all sessions
-7. Kill 3+ polecats within 30 seconds → supervisor enters degraded mode (no respawns)
+1. `sol cast <item1> myworld && sol cast <item2> myworld` dispatches to two different outposts
+2. No two outposts get the same work item (flock serialization)
+3. Kill a outpost's tmux session → prefect detects and restarts within 3 minutes
+4. Restarted outpost picks up tethered work (GUPP)
+5. `sol status myworld` shows all running outposts with their states and tethered work
+6. `sol prefect run` starts prefect; `sol prefect stop` gracefully stops all sessions
+7. Kill 3+ outposts within 30 seconds → prefect enters degraded mode (no respawns)
 
 **Key risks:**
 - Concurrent worktree creation from shared bare repo may need locking
-- Supervisor restart logic may fight with agents that are legitimately stopping
+- Prefect restart logic may fight with agents that are legitimately stopping
 - Mass-death detection threshold may need empirical tuning
 
 ### Loop 2: Merge Pipeline
 
-**What it adds:** Completed work flows through a merge queue. A refinery
+**What it adds:** Completed work flows through a merge queue. A forge
 agent validates and merges work into the target branch. Quality gates (tests)
 run before merge.
 
 **What it requires:**
 - Merge request records in store (merge_requests table, including `blocked_by`)
-- Refinery as Claude session + Go CLI toolbox (see [ADR-0005](decisions/0005-refinery-claude-session.md))
+- Forge as Claude session + Go CLI toolbox (see [ADR-0005](decisions/0005-forge-claude-session.md))
 - Merge slot serialization (file lock)
 - Quality gate execution (configurable test/build commands)
-- `gt done` extended to submit merge request
+- `sol resolve` extended to submit merge request
 - Conflict-resolution delegation (create work items for complex conflicts)
 
-**What it defers:** Witness, mail system, nudge queue (introduced in Loop 3
-when witnesses need notification), convoys, workflows, deacon, events.
+**What it defers:** Sentinel, mail system, nudge queue (introduced in Loop 3
+when sentinels need notification), caravans, workflows, consul, events.
 
 **Definition of done:**
-1. Polecat calls `gt done` → merge request created in store with `phase=ready`
-2. Refinery Claude session patrols `merge_requests` table, claims the MR, rebases onto main, runs quality gates
-3. Trivial conflicts → refinery resolves directly during rebase
-4. Complex conflicts → refinery delegates to polecat via `create-resolution`, MR blocked until resolved
-5. Tests pass → refinery merges to main, updates MR and work item status in DB
-6. Tests fail → refinery attributes failure (branch vs pre-existing), retries or marks failed
-7. Operator can `gt refinery queue myrig` to see pending merges
-8. Only one merge in progress at a time per rig (slot lock)
-9. Operator can `gt refinery attach myrig` to watch the refinery work
+1. Outpost calls `sol resolve` → merge request created in store with `phase=ready`
+2. Forge Claude session patrols `merge_requests` table, claims the MR, rebases onto main, runs quality gates
+3. Trivial conflicts → forge resolves directly during rebase
+4. Complex conflicts → forge delegates to outpost via `create-resolution`, MR blocked until resolved
+5. Tests pass → forge merges to main, updates MR and work item status in DB
+6. Tests fail → forge attributes failure (branch vs pre-existing), retries or marks failed
+7. Operator can `sol forge queue myworld` to see pending merges
+8. Only one merge in progress at a time per world (slot lock)
+9. Operator can `sol forge attach myworld` to watch the forge work
 
 **Key risks:**
 - Non-deterministic conflict resolution (mitigated by "when in doubt, delegate" rule)
 - Flaky tests causing repeated merge failures
 - API cost proportional to queue activity (mitigated: Go fallback available)
 
-### Loop 3: Witness, Health Monitoring, and Observability
+### Loop 3: Sentinel, Health Monitoring, and Observability
 
-**What it adds:** Per-rig witness process that monitors polecats, detects
+**What it adds:** Per-world sentinel process that monitors outposts, detects
 stalled/zombie sessions, and uses AI-assisted assessment for stuck agent
-detection. Mail system for inter-agent communication. Event feed and curator
+detection. Mail system for inter-agent communication. Event feed and chronicle
 for observability. This is where inter-agent communication first becomes
-necessary — protocol messages (POLECAT_DONE, MERGE_READY, RECOVERY_NEEDED)
+necessary — protocol messages (OUTPOST_DONE, MERGE_READY, RECOVERY_NEEDED)
 flow through the mail system.
 
 **What it requires:**
-- Mail system (SQLite-backed `messages` table in town.db + protocol message
+- Mail system (SQLite-backed `messages` table in sphere.db + protocol message
   helpers) — new infrastructure, first loop with inter-agent communication
 - Event feed (append-only JSONL with cross-process flock)
-- Curator process (dedup, aggregation, feed truncation)
-- Witness process (Go process with AI call-outs, long-running, per-rig)
-- Polecat state detection (session liveness + hook state + tmux output hashing)
+- Chronicle process (dedup, aggregation, feed truncation)
+- Sentinel process (Go process with AI call-outs, long-running, per-world)
+- Outpost state detection (session liveness + tether state + tmux output hashing)
 - Stalled/zombie detection and recovery
 - AI-assisted assessment via `claude -p` when tmux output unchanged between
   patrols — targeted AI calls for judgment, not a full AI agent session
-- Event instrumentation of existing operations (sling, done, refinery,
-  supervisor)
-- `gt mail`, `gt feed`, `gt curator`, `gt witness` commands
+- Event instrumentation of existing operations (cast, done, forge,
+  prefect)
+- `sol mail`, `sol feed`, `sol chronicle`, `sol sentinel` commands
 
-**What it defers:** Convoys, workflows, deacon, nudge queue (real-time
+**What it defers:** Caravans, workflows, consul, nudge queue (real-time
 delivery to agents at turn boundaries), escalation CRUD, conflict resolution.
 
 **Definition of done:**
-1. Witness patrols polecats every 3 minutes
-2. Dead polecat with hooked work → witness triggers respawn (max 2 attempts)
+1. Sentinel patrols outposts every 3 minutes
+2. Dead outpost with tethered work → sentinel triggers respawn (max 2 attempts)
 3. After 2 failed respawns → work item returned to open status
-4. Working polecat with unchanged tmux output → AI assessment via `claude -p`
+4. Working outpost with unchanged tmux output → AI assessment via `claude -p`
 5. AI assessment returns "stuck" with high confidence → nudge injected into session
 6. AI assessment failure → patrol continues (non-blocking, best-effort)
-7. Zombie polecat (live session + idle + no hook) → session cleaned up
-8. `gt feed --follow` shows real-time activity stream
-9. `gt feed --type=patrol` shows witness patrol activity
-10. Curator deduplicates and aggregates events in curated feed
-11. `gt mail send/inbox/read/ack/check` work for inter-agent messaging
-12. Existing operations (sling, done, refinery, supervisor) emit events
+7. Zombie outpost (live session + idle + no tether) → session cleaned up
+8. `sol feed --follow` shows real-time activity stream
+9. `sol feed --type=patrol` shows sentinel patrol activity
+10. Chronicle deduplicates and aggregates events in curated feed
+11. `sol mail send/inbox/read/ack/check` work for inter-agent messaging
+12. Existing operations (cast, done, forge, prefect) emit events
 
 **Key risks:**
 - AI assessment cost at scale (mitigated: only fires when heuristic triggers)
 - AI assessment quality (mitigated: low confidence → no action)
-- Witness patrol timing may conflict with polecat work (nudging a working agent)
-- Event feed volume may be high with 30 agents (mitigated: curator aggregation)
+- Sentinel patrol timing may conflict with outpost work (nudging a working agent)
+- Event feed volume may be high with 30 agents (mitigated: chronicle aggregation)
 
-### Loop 4: Workflows and Convoys
+### Loop 4: Workflows and Caravans
 
-**What it adds:** Multi-step workflows for structured agent work. Convoy
+**What it adds:** Multi-step workflows for structured agent work. Caravan
 tracking for batches of related work items. Conflict resolution in merges.
 
 **What it requires:**
 - Workflow engine (formula directories, molecule instances, state tracking)
-- `gt workflow` commands (instantiate, current, advance, status)
-- Convoy tracking (convoy records in store, item dependencies)
-- `gt convoy` commands (create, check, status, launch)
-- Merge conflict resolution path (REWORK_REQUEST → re-assign polecat)
-- `gt sling` extended for batch dispatch and formula instantiation
-- `gt prime` extended for workflow context injection
+- `sol workflow` commands (instantiate, current, advance, status)
+- Caravan tracking (caravan records in store, item dependencies)
+- `sol caravan` commands (create, check, status, launch)
+- Merge conflict resolution path (REWORK_REQUEST → re-assign outpost)
+- `sol cast` extended for batch dispatch and formula instantiation
+- `sol prime` extended for workflow context injection
 
-**What it defers:** Deacon, escalation system, handoff continuity.
+**What it defers:** Consul, escalation system, handoff continuity.
 
 **Definition of done:**
-1. `gt sling polecat-work --on=<item> myrig` creates workflow instance with steps
-2. Polecat follows propulsion loop: current → execute → advance → repeat
+1. `sol cast default-work --on=<item> myworld` creates workflow instance with steps
+2. Outpost follows propulsion loop: current → execute → advance → repeat
 3. Workflow state survives session crash and restart
-4. `gt convoy create "auth-feature" item1 item2 item3` tracks batch
-5. As items merge, convoy auto-checks readiness
-6. Complex merge conflict → refinery delegates via `create-resolution` → polecat resolves → `done --force-with-lease` unblocks MR
-7. `gt workflow status` shows progress through multi-step work
+4. `sol caravan create "auth-feature" item1 item2 item3` tracks batch
+5. As items merge, caravan auto-checks readiness
+6. Complex merge conflict → forge delegates via `create-resolution` → outpost resolves → `done --force-with-lease` unblocks MR
+7. `sol workflow status` shows progress through multi-step work
 
 **Key risks:**
 - Workflow state consistency across crash/restart cycles
-- Convoy dependency resolution correctness (topological ordering)
+- Caravan dependency resolution correctness (topological ordering)
 - Conflict resolution loop may create infinite cycles (needs max retry)
 
-### Loop 5: Deacon and Full Orchestration
+### Loop 5: Consul and Full Orchestration
 
-**What it adds:** Town-level AI agent (deacon) for cross-rig coordination,
-stale hook recovery, stranded convoy feeding. Escalation system. Handoff
+**What it adds:** Sphere-level AI agent (consul) for cross-world coordination,
+stale tether recovery, stranded caravan feeding. Escalation system. Handoff
 continuity for long-running agents.
 
 **What it requires:**
-- Deacon agent with patrol cycle
-- Stale hook detection and recovery
-- Stranded convoy detection and dispatch
+- Consul agent with patrol cycle
+- Stale tether detection and recovery
+- Stranded caravan detection and dispatch
 - Escalation system (severity-based routing)
-- `gt handoff` for session continuity (save state, send handoff mail, respawn)
-- `gt escalate` for manual escalation
+- `sol handoff` for session continuity (save state, send handoff mail, respawn)
+- `sol escalate` for manual escalation
 
 **What it defers:** Nothing critical — this completes the core system.
 
 **Definition of done:**
-1. Deacon runs continuous patrol, writes heartbeat
-2. Supervisor monitors deacon via heartbeat, restarts if stale
-3. Stale hooks (hooked work with no active session for >1 hour) auto-recovered
-4. Stranded convoys (ready work not dispatched) auto-fed
-5. `gt escalate --severity=high "tests are failing on myrig"` creates escalation
+1. Consul runs continuous patrol, writes heartbeat
+2. Prefect monitors consul via heartbeat, restarts if stale
+3. Stale tethers (tethered work with no active session for >1 hour) auto-recovered
+4. Stranded caravans (ready work not dispatched) auto-fed
+5. `sol escalate --severity=high "tests are failing on myworld"` creates escalation
 6. High-severity escalation emails human operator
-7. Agents can `gt handoff` for clean session restart with context preservation
-8. Full `gt supervisor run` / `gt supervisor stop` lifecycle works across all agent types
+7. Agents can `sol handoff` for clean session restart with context preservation
+8. Full `sol prefect run` / `sol prefect stop` lifecycle works across all agent types
 
 **Key risks:**
-- Deacon patrol may create too much activity (needs rate limiting)
+- Consul patrol may create too much activity (needs rate limiting)
 - Escalation routing depends on external integrations (email, SMS) — may be flaky
 - Handoff context quality depends on agent's ability to summarize its state
 
@@ -1397,9 +1397,9 @@ continuity for long-running agents.
 **All components are written in Go.** Justification:
 
 - **Single-binary deployment:** Each component compiles to a static binary
-  with no runtime dependencies. `cp gt /usr/local/bin/` is the install.
-- **Concurrency model:** Goroutines and channels for the supervisor heartbeat
-  loop, concurrent session health checks, and the curator. Go's concurrency
+  with no runtime dependencies. `cp sol /usr/local/bin/` is the install.
+- **Concurrency model:** Goroutines and channels for the prefect heartbeat
+  loop, concurrent session health checks, and the chronicle. Go's concurrency
   is well-suited to "check 30 things every 3 minutes."
 - **SQLite bindings:** `modernc.org/sqlite` provides a pure-Go SQLite
   implementation (no CGo, no `libsqlite3` dependency). Alternatively,
@@ -1411,23 +1411,23 @@ continuity for long-running agents.
   and produces artifacts that are easy to deploy.
 
 **Why not Rust:** Rust would provide stronger correctness guarantees for the
-supervisor and session manager, but the compile-time cost slows iteration.
+prefect and session manager, but the compile-time cost slows iteration.
 The system's primary failure modes are operational (tmux quirks, SQLite
 locking, agent behavior), not memory safety. Go is the pragmatic choice for
 a system where the operator is the primary debugger.
 
-**Why not Shell:** Shell scripts are appropriate for glue (the supervisor
-lifecycle orchestration could be shell), but the supervisor, store, and
+**Why not Shell:** Shell scripts are appropriate for glue (the prefect
+lifecycle orchestration could be shell), but the prefect, store, and
 workflow engine need structured error handling, JSON parsing, and SQLite
 access that shell does poorly. Shell is used where it's natural: Claude Code
-hooks, simple wrappers.
+tethers, simple wrappers.
 
-**Binary structure:** Single binary with subcommands (`gt sling`, `gt store`,
-`gt session`). The `gt` binary includes all plumbing and porcelain commands.
-Long-running processes (supervisor, curator) are started as subprocesses
-(e.g., `gt supervisor run`). Internal package boundaries are clean enough to
+**Binary structure:** Single binary with subcommands (`sol cast`, `sol store`,
+`sol session`). The `sol` binary includes all plumbing and porcelain commands.
+Long-running processes (prefect, chronicle) are started as subprocesses
+(e.g., `sol prefect run`). Internal package boundaries are clean enough to
 allow splitting into separate binaries later if needed, but a single binary
-simplifies distribution (`cp gt /usr/local/bin/`), versioning (one version
+simplifies distribution (`cp sol /usr/local/bin/`), versioning (one version
 number), and deployment (no coordination between binaries).
 
 ### Dependencies
@@ -1467,8 +1467,8 @@ number), and deployment (no coordination between binaries).
 agents run in practice — cloud VMs and developer workstations.
 
 **macOS support: yes, with caveats.** Go cross-compiles trivially. SQLite
-and tmux work on macOS. The supervisor uses PID files and signals (POSIX),
-not systemd. macOS-specific: `launchd` plist generation for supervisor
+and tmux work on macOS. The prefect uses PID files and signals (POSIX),
+not systemd. macOS-specific: `launchd` plist generation for prefect
 auto-start (equivalent to `systemd enable`).
 
 **Container support: partial.** The system can run inside a container, but
@@ -1488,23 +1488,23 @@ message routing. Each package has its own `_test.go` files.
 
 **Integration tests:** Multi-process tests that exercise real components
 end-to-end. Key scenarios:
-- Dispatch → execute → done → merge (happy path)
-- Session crash mid-work → supervisor restart → agent recovery
+- Dispatch → execute → resolve → merge (happy path)
+- Session crash mid-work → prefect restart → agent recovery
 - Concurrent dispatch (verify no double-assignment via flock)
 - Merge conflict detection and rework flow (Loop 4+)
 
 **CRASH acceptance tests:** For each build loop, a specific crash test
 that exercises the recovery path:
-- Loop 0: Kill tmux session mid-work → re-sling → agent resumes from hook
-- Loop 1: Kill 3+ sessions within 30s → supervisor enters degraded mode
-- Loop 2: Kill refinery mid-merge → merge request released after TTL
-- Loop 3: Kill witness mid-patrol → supervisor restarts, no data loss
+- Loop 0: Kill tmux session mid-work → re-cast → agent resumes from tether
+- Loop 1: Kill 3+ sessions within 30s → prefect enters degraded mode
+- Loop 2: Kill forge mid-merge → merge request released after TTL
+- Loop 3: Kill sentinel mid-patrol → prefect restarts, no data loss
 
 **Approach:** Tests use real SQLite, real tmux, real git worktrees — no
 mocks for load-bearing infrastructure. Tests create isolated environments
 (temp directories, dedicated tmux server via `TMUX_TMPDIR`) so they don't
 interfere with live operation. The test harness provides helpers for
-creating disposable rigs, spawning agents, and waiting for state transitions.
+creating disposable worlds, spawning agents, and waiting for state transitions.
 
 ---
 

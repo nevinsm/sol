@@ -1,15 +1,15 @@
-# Prompt 01: Loop 3 — Mail System (Town Schema V2 + Messages + CLI)
+# Prompt 01: Loop 3 — Mail System (Sphere Schema V2 + Messages + CLI)
 
-You are extending the `gt` orchestration system with the mail system — the
+You are extending the `sol` orchestration system with the mail system — the
 first inter-agent communication infrastructure. This prompt adds the
-`messages` table to the town database, message CRUD operations, protocol
-message helpers, and `gt mail` CLI commands.
+`messages` table to the sphere database, message CRUD operations, protocol
+message helpers, and `sol mail` CLI commands.
 
-**Working directory:** `~/gt-src/`
+**Working directory:** `~/sol-src/`
 **Prerequisite:** Loop 2 is complete (prompts 01–04).
 
 Read all existing code first. Understand the store package
-(`internal/store/` — schema versioning, town schema V1, agents), the
+(`internal/store/` — schema versioning, sphere schema V1, agents), the
 dispatch package (`internal/dispatch/`), and the config package
 (`internal/config/config.go`). Study the Loop 2 prompt pattern in
 `docs/prompts/loop2/01-merge-request-store.md` for reference.
@@ -19,7 +19,7 @@ Read `docs/target-architecture.md` Section 3.3 (Mail System) and the
 
 ---
 
-## Task 1: Town Schema V2 — Messages Table
+## Task 1: Sphere Schema V2 — Messages Table
 
 Add a V2 migration to `internal/store/schema.go` that creates the
 `messages` and `escalations` tables. The V1 schema (agents) is unchanged.
@@ -60,8 +60,8 @@ CREATE TABLE IF NOT EXISTS escalations (
 
 **Fields (messages):**
 - `id`: `"msg-"` + 8 random hex chars (e.g., `msg-a1b2c3d4`)
-- `sender`: agent ID or `"operator"` (e.g., `myrig/Toast`, `operator`)
-- `recipient`: agent ID, `"operator"`, or `"{rig}/witness"` for routing
+- `sender`: agent ID or `"operator"` (e.g., `myworld/Toast`, `operator`)
+- `recipient`: agent ID, `"operator"`, or `"{world}/sentinel"` for routing
 - `subject`: short description or protocol message type prefix
 - `body`: message content — freeform text or JSON for protocol messages
 - `priority`: 1 (urgent) to 3 (low), default 2 (normal)
@@ -83,11 +83,11 @@ CREATE TABLE IF NOT EXISTS escalations (
 
 ### Migration Pattern
 
-Follow the existing town V1 migration pattern. Add a `townSchemaV2`
+Follow the existing sphere V1 migration pattern. Add a `sphereSchemaV2`
 constant and extend `migrateTown()`:
 
 ```go
-const townSchemaV2 = `
+const sphereSchemaV2 = `
 CREATE TABLE IF NOT EXISTS messages (...);
 CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient, delivery);
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id);
@@ -101,13 +101,13 @@ func (s *Store) migrateTown() error {
         return fmt.Errorf("failed to check schema version: %w", err)
     }
     if v < 1 {
-        if _, err := s.db.Exec(townSchemaV1); err != nil {
-            return fmt.Errorf("failed to create town schema v1: %w", err)
+        if _, err := s.db.Exec(sphereSchemaV1); err != nil {
+            return fmt.Errorf("failed to create sphere schema v1: %w", err)
         }
     }
     if v < 2 {
-        if _, err := s.db.Exec(townSchemaV2); err != nil {
-            return fmt.Errorf("failed to create town schema v2: %w", err)
+        if _, err := s.db.Exec(sphereSchemaV2); err != nil {
+            return fmt.Errorf("failed to create sphere schema v2: %w", err)
         }
     }
     if v < 2 {
@@ -137,7 +137,7 @@ package store
 
 import "time"
 
-// Message represents a message in the town database.
+// Message represents a message in the sphere database.
 type Message struct {
     ID        string
     Sender    string
@@ -239,7 +239,7 @@ data in the body as JSON.
 ```go
 // Protocol message subject prefixes
 const (
-    ProtoPolecatDone       = "POLECAT_DONE"
+    ProtoPolecatDone       = "OUTPOST_DONE"
     ProtoMergeReady        = "MERGE_READY"
     ProtoMerged            = "MERGED"
     ProtoMergeFailed       = "MERGE_FAILED"
@@ -252,7 +252,7 @@ const (
 
 ```go
 // SendProtocolMessage sends a typed protocol message with a JSON body.
-// The subject is the protocol type (e.g., "POLECAT_DONE").
+// The subject is the protocol type (e.g., "OUTPOST_DONE").
 // The body is JSON-encoded from the payload.
 func (s *Store) SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
 
@@ -266,22 +266,22 @@ func (s *Store) PendingProtocol(recipient, protoType string) ([]Message, error)
 Define payload structs for the protocol messages used in Loop 3:
 
 ```go
-// PolecatDonePayload is sent when a polecat completes its work.
+// PolecatDonePayload is sent when a outpost completes its work.
 type PolecatDonePayload struct {
     WorkItemID string `json:"work_item_id"`
     AgentID    string `json:"agent_id"`
     Branch     string `json:"branch"`
-    Rig        string `json:"rig"`
+    World        string `json:"world"`
 }
 
-// MergeReadyPayload is sent when a witness verifies polecat work.
+// MergeReadyPayload is sent when a sentinel verifies outpost work.
 type MergeReadyPayload struct {
     MergeRequestID string `json:"merge_request_id"`
     WorkItemID     string `json:"work_item_id"`
     Branch         string `json:"branch"`
 }
 
-// MergedPayload is sent when the refinery successfully merges work.
+// MergedPayload is sent when the forge successfully merges work.
 type MergedPayload struct {
     MergeRequestID string `json:"merge_request_id"`
     WorkItemID     string `json:"work_item_id"`
@@ -294,7 +294,7 @@ type MergeFailedPayload struct {
     Reason         string `json:"reason"`
 }
 
-// RecoveryNeededPayload is sent when a witness detects a polecat issue.
+// RecoveryNeededPayload is sent when a sentinel detects a outpost issue.
 type RecoveryNeededPayload struct {
     AgentID    string `json:"agent_id"`
     WorkItemID string `json:"work_item_id"`
@@ -312,13 +312,13 @@ urgent).
 
 ## Task 4: CLI Commands
 
-Create `cmd/mail.go` with the `gt mail` command group.
+Create `cmd/mail.go` with the `sol mail` command group.
 
 ### Commands
 
-**`gt mail send`** — Send a message:
+**`sol mail send`** — Send a message:
 ```
-gt mail send --to=<recipient> --subject=<text> [--body=<text>] [--priority=N]
+sol mail send --to=<recipient> --subject=<text> [--body=<text>] [--priority=N]
 ```
 - `--to` (required): recipient agent ID or "operator"
 - `--subject` (required): message subject
@@ -326,32 +326,32 @@ gt mail send --to=<recipient> --subject=<text> [--body=<text>] [--priority=N]
 - `--priority`: 1-3, default 2
 - Output: `Sent: msg-XXXXXXXX → <recipient>`
 
-**`gt mail inbox`** — List pending messages:
+**`sol mail inbox`** — List pending messages:
 ```
-gt mail inbox [--identity=<addr>] [--json]
+sol mail inbox [--identity=<addr>] [--json]
 ```
 - `--identity`: recipient to check (default: "operator")
 - `--json`: output as JSON array
 - Human output: tabwriter table with ID, FROM, PRIORITY, SUBJECT, AGE
 - If empty: `No pending messages.`
 
-**`gt mail read`** — Read a message (marks as read):
+**`sol mail read`** — Read a message (marks as read):
 ```
-gt mail read <message-id>
+sol mail read <message-id>
 ```
 - Output: full message content (From, To, Subject, Date, Body)
 - Marks the message as read
 
-**`gt mail ack`** — Acknowledge a message:
+**`sol mail ack`** — Acknowledge a message:
 ```
-gt mail ack <message-id>
+sol mail ack <message-id>
 ```
 - Output: `Acknowledged: msg-XXXXXXXX`
 - Marks delivery as acked
 
-**`gt mail check`** — Count unread messages:
+**`sol mail check`** — Count unread messages:
 ```
-gt mail check [--identity=<addr>]
+sol mail check [--identity=<addr>]
 ```
 - `--identity`: recipient to check (default: "operator")
 - Output: `3 unread messages` or `No unread messages.`
@@ -361,7 +361,7 @@ gt mail check [--identity=<addr>]
 
 Register the `mail` command group under the root command in
 `cmd/root.go`, following the same pattern as other command groups
-(refinery, supervisor, etc.).
+(forge, prefect, etc.).
 
 ---
 
@@ -373,13 +373,13 @@ Add to `internal/store/store_test.go` (or a new file):
 
 ```go
 func TestMigrateTownV2(t *testing.T)
-    // Open a fresh town store
+    // Open a fresh sphere store
     // Verify messages table exists
     // Verify escalations table exists
     // Verify schema_version is 2
 
 func TestMigrateTownV1ToV2(t *testing.T)
-    // Open a town store (creates V1)
+    // Open a sphere store (creates V1)
     // Close and reopen (should apply V2 migration)
     // Verify messages table exists
     // Verify existing agents are untouched
@@ -428,10 +428,10 @@ func TestListMessages(t *testing.T)
     // No filters -> all messages
 
 func TestSendProtocolMessage(t *testing.T)
-    // Send a POLECAT_DONE protocol message
-    // Verify: type='protocol', subject='POLECAT_DONE', body is valid JSON
+    // Send a OUTPOST_DONE protocol message
+    // Verify: type='protocol', subject='OUTPOST_DONE', body is valid JSON
     // Parse body back into PolecatDonePayload, verify fields
-    // PendingProtocol(recipient, "POLECAT_DONE") -> returns message
+    // PendingProtocol(recipient, "OUTPOST_DONE") -> returns message
     // PendingProtocol(recipient, "MERGE_READY") -> empty (wrong type)
 
 func TestMessageNotFound(t *testing.T)
@@ -447,27 +447,27 @@ func TestMessageNotFound(t *testing.T)
 2. `make build` — succeeds
 3. Manual smoke test:
    ```bash
-   export GT_HOME=/tmp/gt-test
-   bin/gt mail send --to=operator --subject="Test message" --body="Hello world"
-   bin/gt mail inbox
-   bin/gt mail check
-   bin/gt mail read <msg-id>
-   bin/gt mail ack <msg-id>
-   bin/gt mail inbox   # should be empty now
+   export SOL_HOME=/tmp/sol-test
+   bin/sol mail send --to=operator --subject="Test message" --body="Hello world"
+   bin/sol mail inbox
+   bin/sol mail check
+   bin/sol mail read <msg-id>
+   bin/sol mail ack <msg-id>
+   bin/sol mail inbox   # should be empty now
    # Verify in SQLite:
-   sqlite3 /tmp/gt-test/.store/town.db "SELECT id, sender, recipient, subject FROM messages"
+   sqlite3 /tmp/sol-test/.store/sphere.db "SELECT id, sender, recipient, subject FROM messages"
    ```
-4. Clean up `/tmp/gt-test` after verification.
+4. Clean up `/tmp/sol-test` after verification.
 
 ---
 
 ## Guidelines
 
-- The `messages` table is in the **town** database (not rig). Messages
-  are cross-rig by nature — a witness in rig A could theoretically
-  message an agent in rig B.
+- The `messages` table is in the **sphere** database (not world). Messages
+  are cross-world by nature — a sentinel in world A could theoretically
+  message an agent in world B.
 - Message IDs use the `msg-` prefix to distinguish from work items
-  (`gt-`), merge requests (`mr-`), and escalations (`esc-`).
+  (`sol-`), merge requests (`mr-`), and escalations (`esc-`).
 - Protocol messages use `priority=1` (urgent) so they sort first in inbox.
 - The `delivery` field tracks notification delivery, not whether the
   recipient has acted on the message. `acked` means "I've seen this and
@@ -475,19 +475,19 @@ func TestMessageNotFound(t *testing.T)
 - The `read` field is informational only — for human-readable inbox
   displays. Ack is the meaningful state transition.
 - The escalations table is created now but CRUD operations are deferred
-  to Loop 5 (Deacon). We create the table now to avoid another town
+  to Loop 5 (Consul). We create the table now to avoid another sphere
   schema migration later.
 - **Protocol message wiring is deferred.** The payload structs and
   `SendProtocolMessage` helper are defined now for schema stability,
-  but only `RECOVERY_NEEDED` has a sender (the witness, prompt 04)
+  but only `RECOVERY_NEEDED` has a sender (the sentinel, prompt 04)
   and consumer (the operator) in Loop 3. The following wiring is
-  deferred to future loops: `POLECAT_DONE` emission from `gt done`,
-  `MERGED`/`MERGE_FAILED` emission from refinery subcommands,
-  `MERGE_READY` emission from the witness.
+  deferred to future loops: `OUTPOST_DONE` emission from `sol resolve`,
+  `MERGED`/`MERGE_FAILED` emission from forge subcommands,
+  `MERGE_READY` emission from the sentinel.
 - **Nudge-based delivery is deferred.** Messages are written to the
   store and polled by recipients. No real-time push notification or
   nudge queue is implemented in this loop.
-- Don't modify the rig schema. Messages are town-level.
+- Don't modify the world schema. Messages are sphere-level.
 - Keep backward compatibility — all Loop 0, 1, and 2 tests must pass.
 - Commit after tests pass with message:
   `feat(store): add mail system with messages table, CRUD, and protocol helpers`

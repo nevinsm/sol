@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/nevinsm/gt/internal/config"
-	"github.com/nevinsm/gt/internal/events"
-	"github.com/nevinsm/gt/internal/workflow"
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
 var (
-	wfRig   string
+	wfWorld string
 	wfAgent string
 	wfItem  string
 	wfVars  []string
@@ -42,7 +42,7 @@ var workflowInstantiateCmd = &cobra.Command{
 			}
 		}
 
-		inst, state, err := workflow.Instantiate(wfRig, wfAgent, formula, vars)
+		inst, state, err := workflow.Instantiate(wfWorld, wfAgent, formula, vars)
 		if err != nil {
 			return err
 		}
@@ -58,7 +58,7 @@ var workflowCurrentCmd = &cobra.Command{
 	Short: "Print the current step's instructions",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		step, err := workflow.ReadCurrentStep(wfRig, wfAgent)
+		step, err := workflow.ReadCurrentStep(wfWorld, wfAgent)
 		if err != nil {
 			return err
 		}
@@ -78,34 +78,34 @@ var workflowAdvanceCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Read work item ID for event payload before advancing.
-		inst, _ := workflow.ReadInstance(wfRig, wfAgent)
+		inst, _ := workflow.ReadInstance(wfWorld, wfAgent)
 		workItemID := ""
 		if inst != nil {
 			workItemID = inst.WorkItemID
 		}
 
-		nextStep, done, err := workflow.Advance(wfRig, wfAgent)
+		nextStep, done, err := workflow.Advance(wfWorld, wfAgent)
 		if err != nil {
 			return err
 		}
 
 		logger := events.NewLogger(config.Home())
 		if done {
-			logger.Emit(events.EventWorkflowComplete, "gt", wfAgent, "both", map[string]string{
+			logger.Emit(events.EventWorkflowComplete, "sol", wfAgent, "both", map[string]string{
 				"work_item_id": workItemID,
 				"agent":        wfAgent,
-				"rig":          wfRig,
+				"world":        wfWorld,
 			})
 			fmt.Println("Workflow complete.")
 			return nil
 		}
 
-		logger.Emit(events.EventWorkflowAdvance, "gt", wfAgent, "both", map[string]string{
+		logger.Emit(events.EventWorkflowAdvance, "sol", wfAgent, "both", map[string]string{
 			"work_item_id": workItemID,
 			"step":         nextStep.Title,
 			"step_id":      nextStep.ID,
 			"agent":        wfAgent,
-			"rig":          wfRig,
+			"world":        wfWorld,
 		})
 		fmt.Printf("Advanced to step: %s\n", nextStep.Title)
 		return nil
@@ -117,20 +117,20 @@ var workflowStatusCmd = &cobra.Command{
 	Short: "Show workflow status",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		inst, err := workflow.ReadInstance(wfRig, wfAgent)
+		inst, err := workflow.ReadInstance(wfWorld, wfAgent)
 		if err != nil {
 			return err
 		}
 		if inst == nil {
-			return fmt.Errorf("no workflow found for agent %q in rig %q", wfAgent, wfRig)
+			return fmt.Errorf("no workflow found for agent %q in world %q", wfAgent, wfWorld)
 		}
 
-		state, err := workflow.ReadState(wfRig, wfAgent)
+		state, err := workflow.ReadState(wfWorld, wfAgent)
 		if err != nil {
 			return err
 		}
 
-		steps, err := workflow.ListSteps(wfRig, wfAgent)
+		steps, err := workflow.ListSteps(wfWorld, wfAgent)
 		if err != nil {
 			return err
 		}
@@ -194,29 +194,29 @@ func init() {
 
 	// instantiate flags
 	workflowInstantiateCmd.Flags().StringVar(&wfItem, "item", "", "work item ID")
-	workflowInstantiateCmd.Flags().StringVar(&wfRig, "rig", "", "rig name")
+	workflowInstantiateCmd.Flags().StringVar(&wfWorld, "world", "", "world name")
 	workflowInstantiateCmd.Flags().StringVar(&wfAgent, "agent", "", "agent name")
 	workflowInstantiateCmd.Flags().StringSliceVar(&wfVars, "var", nil, "variable assignment (key=val)")
 	workflowInstantiateCmd.MarkFlagRequired("item")
-	workflowInstantiateCmd.MarkFlagRequired("rig")
+	workflowInstantiateCmd.MarkFlagRequired("world")
 	workflowInstantiateCmd.MarkFlagRequired("agent")
 
 	// current flags
-	workflowCurrentCmd.Flags().StringVar(&wfRig, "rig", "", "rig name")
+	workflowCurrentCmd.Flags().StringVar(&wfWorld, "world", "", "world name")
 	workflowCurrentCmd.Flags().StringVar(&wfAgent, "agent", "", "agent name")
-	workflowCurrentCmd.MarkFlagRequired("rig")
+	workflowCurrentCmd.MarkFlagRequired("world")
 	workflowCurrentCmd.MarkFlagRequired("agent")
 
 	// advance flags
-	workflowAdvanceCmd.Flags().StringVar(&wfRig, "rig", "", "rig name")
+	workflowAdvanceCmd.Flags().StringVar(&wfWorld, "world", "", "world name")
 	workflowAdvanceCmd.Flags().StringVar(&wfAgent, "agent", "", "agent name")
-	workflowAdvanceCmd.MarkFlagRequired("rig")
+	workflowAdvanceCmd.MarkFlagRequired("world")
 	workflowAdvanceCmd.MarkFlagRequired("agent")
 
 	// status flags
-	workflowStatusCmd.Flags().StringVar(&wfRig, "rig", "", "rig name")
+	workflowStatusCmd.Flags().StringVar(&wfWorld, "world", "", "world name")
 	workflowStatusCmd.Flags().StringVar(&wfAgent, "agent", "", "agent name")
 	workflowStatusCmd.Flags().BoolVar(&wfJSON, "json", false, "output as JSON")
-	workflowStatusCmd.MarkFlagRequired("rig")
+	workflowStatusCmd.MarkFlagRequired("world")
 	workflowStatusCmd.MarkFlagRequired("agent")
 }

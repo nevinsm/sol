@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// Convoy represents a group of related work items tracked together.
-type Convoy struct {
+// Caravan represents a group of related work items tracked together.
+type Caravan struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
 	Status    string     `json:"status"` // "open", "ready", "closed"
@@ -18,33 +18,33 @@ type Convoy struct {
 	ClosedAt  *time.Time `json:"closed_at,omitempty"`
 }
 
-// ConvoyItem is a work item associated with a convoy.
-type ConvoyItem struct {
-	ConvoyID   string `json:"convoy_id"`
+// CaravanItem is a work item associated with a caravan.
+type CaravanItem struct {
+	CaravanID  string `json:"caravan_id"`
 	WorkItemID string `json:"work_item_id"`
-	Rig        string `json:"rig"`
+	World      string `json:"world"`
 }
 
-// ConvoyItemStatus represents the status of a work item within a convoy.
-type ConvoyItemStatus struct {
-	ConvoyItem
-	WorkItemStatus string `json:"work_item_status"` // status from the rig's work_items table
+// CaravanItemStatus represents the status of a work item within a caravan.
+type CaravanItemStatus struct {
+	CaravanItem
+	WorkItemStatus string `json:"work_item_status"` // status from the world's work_items table
 	Ready          bool   `json:"ready"`             // true if all dependencies are satisfied
 }
 
-// generateConvoyID returns a new convoy ID in the format "convoy-" + 8 hex chars.
-func generateConvoyID() (string, error) {
+// generateCaravanID returns a new caravan ID in the format "car-" + 8 hex chars.
+func generateCaravanID() (string, error) {
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate convoy ID: %w", err)
+		return "", fmt.Errorf("failed to generate caravan ID: %w", err)
 	}
-	return "convoy-" + hex.EncodeToString(b), nil
+	return "car-" + hex.EncodeToString(b), nil
 }
 
-// CreateConvoy creates a convoy with the given name and owner.
-// Returns the convoy ID.
-func (s *Store) CreateConvoy(name, owner string) (string, error) {
-	id, err := generateConvoyID()
+// CreateCaravan creates a caravan with the given name and owner.
+// Returns the caravan ID.
+func (s *Store) CreateCaravan(name, owner string) (string, error) {
+	id, err := generateCaravanID()
 	if err != nil {
 		return "", err
 	}
@@ -55,14 +55,14 @@ func (s *Store) CreateConvoy(name, owner string) (string, error) {
 		id, name, owner, now,
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to create convoy %q: %w", name, err)
+		return "", fmt.Errorf("failed to create caravan %q: %w", name, err)
 	}
 	return id, nil
 }
 
-// GetConvoy returns a convoy by ID.
-func (s *Store) GetConvoy(id string) (*Convoy, error) {
-	c := &Convoy{}
+// GetCaravan returns a caravan by ID.
+func (s *Store) GetCaravan(id string) (*Caravan, error) {
+	c := &Caravan{}
 	var owner sql.NullString
 	var closedAt sql.NullString
 	var createdAt string
@@ -71,10 +71,10 @@ func (s *Store) GetConvoy(id string) (*Convoy, error) {
 		`SELECT id, name, status, owner, created_at, closed_at FROM convoys WHERE id = ?`, id,
 	).Scan(&c.ID, &c.Name, &c.Status, &owner, &createdAt, &closedAt)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("convoy %q not found", id)
+		return nil, fmt.Errorf("caravan %q not found", id)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get convoy %q: %w", id, err)
+		return nil, fmt.Errorf("failed to get caravan %q: %w", id, err)
 	}
 
 	c.Owner = owner.String
@@ -86,10 +86,10 @@ func (s *Store) GetConvoy(id string) (*Convoy, error) {
 	return c, nil
 }
 
-// ListConvoys returns convoys, optionally filtered by status.
-// If status is empty, returns all convoys.
+// ListCaravans returns caravans, optionally filtered by status.
+// If status is empty, returns all caravans.
 // Ordered by created_at DESC (newest first).
-func (s *Store) ListConvoys(status string) ([]Convoy, error) {
+func (s *Store) ListCaravans(status string) ([]Caravan, error) {
 	query := `SELECT id, name, status, owner, created_at, closed_at FROM convoys`
 	var args []interface{}
 
@@ -101,19 +101,19 @@ func (s *Store) ListConvoys(status string) ([]Convoy, error) {
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list convoys: %w", err)
+		return nil, fmt.Errorf("failed to list caravans: %w", err)
 	}
 	defer rows.Close()
 
-	var convoys []Convoy
+	var caravans []Caravan
 	for rows.Next() {
-		var c Convoy
+		var c Caravan
 		var owner sql.NullString
 		var closedAt sql.NullString
 		var createdAt string
 
 		if err := rows.Scan(&c.ID, &c.Name, &c.Status, &owner, &createdAt, &closedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan convoy: %w", err)
+			return nil, fmt.Errorf("failed to scan caravan: %w", err)
 		}
 		c.Owner = owner.String
 		c.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
@@ -121,17 +121,17 @@ func (s *Store) ListConvoys(status string) ([]Convoy, error) {
 			t, _ := time.Parse(time.RFC3339, closedAt.String)
 			c.ClosedAt = &t
 		}
-		convoys = append(convoys, c)
+		caravans = append(caravans, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed iterating convoys: %w", err)
+		return nil, fmt.Errorf("failed iterating caravans: %w", err)
 	}
-	return convoys, nil
+	return caravans, nil
 }
 
-// UpdateConvoyStatus sets the convoy's status. If status is "closed",
+// UpdateCaravanStatus sets the caravan's status. If status is "closed",
 // also sets closed_at.
-func (s *Store) UpdateConvoyStatus(id, status string) error {
+func (s *Store) UpdateCaravanStatus(id, status string) error {
 	var result sql.Result
 	var err error
 
@@ -148,98 +148,98 @@ func (s *Store) UpdateConvoyStatus(id, status string) error {
 		)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to update convoy %q status: %w", id, err)
+		return fmt.Errorf("failed to update caravan %q status: %w", id, err)
 	}
 	n, _ := result.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("convoy %q not found", id)
+		return fmt.Errorf("caravan %q not found", id)
 	}
 	return nil
 }
 
-// AddConvoyItem associates a work item with a convoy.
-func (s *Store) AddConvoyItem(convoyID, workItemID, rig string) error {
+// AddCaravanItem associates a work item with a caravan.
+func (s *Store) AddCaravanItem(caravanID, workItemID, world string) error {
 	_, err := s.db.Exec(
 		`INSERT OR IGNORE INTO convoy_items (convoy_id, work_item_id, rig) VALUES (?, ?, ?)`,
-		convoyID, workItemID, rig,
+		caravanID, workItemID, world,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to add item %q to convoy %q: %w", workItemID, convoyID, err)
+		return fmt.Errorf("failed to add item %q to caravan %q: %w", workItemID, caravanID, err)
 	}
 	return nil
 }
 
-// RemoveConvoyItem removes a work item from a convoy.
-func (s *Store) RemoveConvoyItem(convoyID, workItemID string) error {
+// RemoveCaravanItem removes a work item from a caravan.
+func (s *Store) RemoveCaravanItem(caravanID, workItemID string) error {
 	_, err := s.db.Exec(
 		`DELETE FROM convoy_items WHERE convoy_id = ? AND work_item_id = ?`,
-		convoyID, workItemID,
+		caravanID, workItemID,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to remove item %q from convoy %q: %w", workItemID, convoyID, err)
+		return fmt.Errorf("failed to remove item %q from caravan %q: %w", workItemID, caravanID, err)
 	}
 	return nil
 }
 
-// ListConvoyItems returns all items in a convoy.
-func (s *Store) ListConvoyItems(convoyID string) ([]ConvoyItem, error) {
+// ListCaravanItems returns all items in a caravan.
+func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
 	rows, err := s.db.Query(
 		`SELECT convoy_id, work_item_id, rig FROM convoy_items WHERE convoy_id = ? ORDER BY work_item_id`,
-		convoyID,
+		caravanID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list convoy items for %q: %w", convoyID, err)
+		return nil, fmt.Errorf("failed to list caravan items for %q: %w", caravanID, err)
 	}
 	defer rows.Close()
 
-	var items []ConvoyItem
+	var items []CaravanItem
 	for rows.Next() {
-		var ci ConvoyItem
-		if err := rows.Scan(&ci.ConvoyID, &ci.WorkItemID, &ci.Rig); err != nil {
-			return nil, fmt.Errorf("failed to scan convoy item: %w", err)
+		var ci CaravanItem
+		if err := rows.Scan(&ci.CaravanID, &ci.WorkItemID, &ci.World); err != nil {
+			return nil, fmt.Errorf("failed to scan caravan item: %w", err)
 		}
 		items = append(items, ci)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed iterating convoy items for %q: %w", convoyID, err)
+		return nil, fmt.Errorf("failed iterating caravan items for %q: %w", caravanID, err)
 	}
 	return items, nil
 }
 
-// CheckConvoyReadiness returns the status of all items in a convoy.
-// This requires opening each rig's database to check work item status
+// CheckCaravanReadiness returns the status of all items in a caravan.
+// This requires opening each world's database to check work item status
 // and dependency satisfaction.
 //
-// The rigOpener function opens a rig store by name — the caller provides
-// this so the convoy checker doesn't need to know about store paths.
-func (s *Store) CheckConvoyReadiness(convoyID string,
-	rigOpener func(rig string) (*Store, error)) ([]ConvoyItemStatus, error) {
+// The worldOpener function opens a world store by name — the caller provides
+// this so the caravan checker doesn't need to know about store paths.
+func (s *Store) CheckCaravanReadiness(caravanID string,
+	worldOpener func(world string) (*Store, error)) ([]CaravanItemStatus, error) {
 
-	items, err := s.ListConvoyItems(convoyID)
+	items, err := s.ListCaravanItems(caravanID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Group items by rig.
-	byRig := map[string][]ConvoyItem{}
+	// Group items by world (rig column in DB).
+	byWorld := map[string][]CaravanItem{}
 	for _, item := range items {
-		byRig[item.Rig] = append(byRig[item.Rig], item)
+		byWorld[item.World] = append(byWorld[item.World], item)
 	}
 
-	var results []ConvoyItemStatus
+	var results []CaravanItemStatus
 
-	for rig, rigItems := range byRig {
-		rigStore, err := rigOpener(rig)
+	for world, worldItems := range byWorld {
+		worldStore, err := worldOpener(world)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open rig %q: %w", rig, err)
+			return nil, fmt.Errorf("failed to open world %q: %w", world, err)
 		}
 
-		for _, ci := range rigItems {
-			cis := ConvoyItemStatus{ConvoyItem: ci}
+		for _, ci := range worldItems {
+			cis := CaravanItemStatus{CaravanItem: ci}
 
-			item, err := rigStore.GetWorkItem(ci.WorkItemID)
+			item, err := worldStore.GetWorkItem(ci.WorkItemID)
 			if err != nil {
-				// Work item might not exist in rig yet.
+				// Work item might not exist in world yet.
 				cis.WorkItemStatus = "unknown"
 				results = append(results, cis)
 				continue
@@ -247,9 +247,9 @@ func (s *Store) CheckConvoyReadiness(convoyID string,
 
 			cis.WorkItemStatus = item.Status
 
-			ready, err := rigStore.IsReady(ci.WorkItemID)
+			ready, err := worldStore.IsReady(ci.WorkItemID)
 			if err != nil {
-				rigStore.Close()
+				worldStore.Close()
 				return nil, fmt.Errorf("failed to check readiness for %q: %w", ci.WorkItemID, err)
 			}
 			cis.Ready = ready
@@ -257,19 +257,19 @@ func (s *Store) CheckConvoyReadiness(convoyID string,
 			results = append(results, cis)
 		}
 
-		rigStore.Close()
+		worldStore.Close()
 	}
 
 	return results, nil
 }
 
-// TryCloseConvoy checks if all items in a convoy are done/closed.
-// If so, sets the convoy status to "closed".
-// Returns true if the convoy was closed.
-func (s *Store) TryCloseConvoy(convoyID string,
-	rigOpener func(rig string) (*Store, error)) (bool, error) {
+// TryCloseCaravan checks if all items in a caravan are done/closed.
+// If so, sets the caravan status to "closed".
+// Returns true if the caravan was closed.
+func (s *Store) TryCloseCaravan(caravanID string,
+	worldOpener func(world string) (*Store, error)) (bool, error) {
 
-	statuses, err := s.CheckConvoyReadiness(convoyID, rigOpener)
+	statuses, err := s.CheckCaravanReadiness(caravanID, worldOpener)
 	if err != nil {
 		return false, err
 	}
@@ -284,7 +284,7 @@ func (s *Store) TryCloseConvoy(convoyID string,
 		}
 	}
 
-	if err := s.UpdateConvoyStatus(convoyID, "closed"); err != nil {
+	if err := s.UpdateCaravanStatus(caravanID, "closed"); err != nil {
 		return false, err
 	}
 	return true, nil

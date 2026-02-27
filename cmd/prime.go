@@ -3,13 +3,13 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/nevinsm/gt/internal/dispatch"
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
 
 var (
-	primeRig   string
+	primeWorld string
 	primeAgent string
 )
 
@@ -17,20 +17,20 @@ var primeCmd = &cobra.Command{
 	Use:   "prime",
 	Short: "Assemble and print execution context for an agent",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if primeRig == "" {
-			return fmt.Errorf("--rig is required")
+		if primeWorld == "" {
+			return fmt.Errorf("--world is required")
 		}
 		if primeAgent == "" {
 			return fmt.Errorf("--agent is required")
 		}
 
-		rigStore, err := store.OpenRig(primeRig)
+		worldStore, err := store.OpenWorld(primeWorld)
 		if err != nil {
 			return err
 		}
-		defer rigStore.Close()
+		defer worldStore.Close()
 
-		result, err := dispatch.Prime(primeRig, primeAgent, rigStore)
+		result, err := dispatch.Prime(primeWorld, primeAgent, worldStore)
 		if err != nil {
 			return err
 		}
@@ -42,6 +42,6 @@ var primeCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(primeCmd)
-	primeCmd.Flags().StringVar(&primeRig, "rig", "", "rig name")
+	primeCmd.Flags().StringVar(&primeWorld, "world", "", "world name")
 	primeCmd.Flags().StringVar(&primeAgent, "agent", "", "agent name")
 }

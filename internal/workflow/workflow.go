@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/nevinsm/gt/internal/config"
+	"github.com/nevinsm/sol/internal/config"
 )
 
 // Manifest represents a formula's manifest.toml.
@@ -63,13 +63,13 @@ type Step struct {
 }
 
 // WorkflowDir returns the path to an agent's workflow instance.
-// $GT_HOME/{rig}/polecats/{agentName}/.workflow/
+// $SOL_HOME/{world}/outposts/{agentName}/.workflow/
 func WorkflowDir(rig, agentName string) string {
-	return filepath.Join(config.Home(), rig, "polecats", agentName, ".workflow")
+	return filepath.Join(config.Home(), rig, "outposts", agentName, ".workflow")
 }
 
 // FormulaDir returns the path to a formula.
-// $GT_HOME/formulas/{formulaName}/
+// $SOL_HOME/formulas/{formulaName}/
 func FormulaDir(formulaName string) string {
 	return filepath.Join(config.Home(), "formulas", formulaName)
 }

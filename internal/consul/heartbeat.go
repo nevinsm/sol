@@ -1,0 +1,73 @@
+package consul
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+// Heartbeat records the consul's liveness state.
+type Heartbeat struct {
+	Timestamp   time.Time `json:"timestamp"`
+	PatrolCount int       `json:"patrol_count"`
+	Status      string    `json:"status"` // "running", "stopping"
+	StaleTethers int       `json:"stale_tethers"` // recovered this patrol
+	CaravanFeeds int       `json:"caravan_feeds"` // dispatched this patrol
+	Escalations int       `json:"escalations"`  // open escalation count
+}
+
+// HeartbeatPath returns the path to the heartbeat file.
+// $SOL_HOME/consul/heartbeat.json
+func HeartbeatPath(gtHome string) string {
+	return filepath.Join(gtHome, "consul", "heartbeat.json")
+}
+
+// WriteHeartbeat writes the heartbeat file atomically.
+// Creates the consul directory if needed.
+func WriteHeartbeat(gtHome string, hb *Heartbeat) error {
+	dir := filepath.Join(gtHome, "consul")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create consul directory: %w", err)
+	}
+
+	data, err := json.MarshalIndent(hb, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal heartbeat: %w", err)
+	}
+
+	// Write to temp file, then rename for atomicity.
+	tmp := HeartbeatPath(gtHome) + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write heartbeat temp file: %w", err)
+	}
+	if err := os.Rename(tmp, HeartbeatPath(gtHome)); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to rename heartbeat file: %w", err)
+	}
+	return nil
+}
+
+// ReadHeartbeat reads the current heartbeat file.
+// Returns nil, nil if no heartbeat file exists.
+func ReadHeartbeat(gtHome string) (*Heartbeat, error) {
+	data, err := os.ReadFile(HeartbeatPath(gtHome))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read heartbeat: %w", err)
+	}
+
+	var hb Heartbeat
+	if err := json.Unmarshal(data, &hb); err != nil {
+		return nil, fmt.Errorf("failed to parse heartbeat: %w", err)
+	}
+	return &hb, nil
+}
+
+// IsStale returns true if the heartbeat is older than maxAge.
+func (hb *Heartbeat) IsStale(maxAge time.Duration) bool {
+	return time.Since(hb.Timestamp) > maxAge
+}

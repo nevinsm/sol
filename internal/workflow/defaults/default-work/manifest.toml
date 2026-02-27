@@ -1,0 +1,24 @@
+name = "default-work"
+type = "workflow"
+description = "Standard outpost work execution"
+
+[variables]
+issue = { required = true }
+base_branch = { default = "main" }
+
+[[steps]]
+id = "load-context"
+title = "Load work context"
+instructions = "steps/01-load-context.md"
+
+[[steps]]
+id = "implement"
+title = "Implement the change"
+instructions = "steps/02-implement.md"
+needs = ["load-context"]
+
+[[steps]]
+id = "verify"
+title = "Verify the implementation"
+instructions = "steps/03-verify.md"
+needs = ["implement"]

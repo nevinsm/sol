@@ -10,8 +10,8 @@ Read this entire prompt before starting. Fix all 10 issues below, then run
 
 **File:** `cmd/feed.go`, function `formatEventDescription` (~line 110)
 
-The switch statement handles most event types but is missing cases for witness
-events and curator batch events. They fall through to the default which dumps
+The switch statement handles most event types but is missing cases for sentinel
+events and chronicle batch events. They fall through to the default which dumps
 raw JSON.
 
 Add these cases before the `default`:
@@ -22,26 +22,26 @@ case events.EventAssess:
 case events.EventNudge:
     return fmt.Sprintf("Nudged %s: %s", get("agent"), get("message"))
 case "sling_batch":
-    return fmt.Sprintf("Sling burst: %s dispatches in %s", get("count"), get("rig"))
+    return fmt.Sprintf("Cast burst: %s dispatches in %s", get("count"), get("world"))
 case "respawn_batch":
-    return fmt.Sprintf("Respawn burst: %s respawns in %s", get("count"), get("rig"))
+    return fmt.Sprintf("Respawn burst: %s respawns in %s", get("count"), get("world"))
 ```
 
 ---
 
-## 2. Check `SendProtocolMessage` errors in witness
+## 2. Check `SendProtocolMessage` errors in sentinel
 
-**File:** `internal/witness/witness.go`
+**File:** `internal/sentinel/sentinel.go`
 
-There are 4 calls to `w.townStore.SendProtocolMessage(...)` (lines ~411, ~423,
-~494, ~549) that discard both return values. The witness should not block on
+There are 4 calls to `w.sphereStore.SendProtocolMessage(...)` (lines ~411, ~423,
+~494, ~549) that discard both return values. The sentinel should not block on
 these errors (DEGRADE principle), but it should log them for observability.
 
 For each of the 4 call sites, capture the error and emit an audit event if
 it fails. Pattern:
 
 ```go
-if _, err := w.townStore.SendProtocolMessage(
+if _, err := w.sphereStore.SendProtocolMessage(
     w.agentID(), "operator",
     store.ProtoRecoveryNeeded,
     store.RecoveryNeededPayload{...},
@@ -51,13 +51,13 @@ if _, err := w.townStore.SendProtocolMessage(
 }
 ```
 
-Do not change the control flow — the witness must continue regardless.
+Do not change the control flow — the sentinel must continue regardless.
 
 ---
 
-## 3. Check `os.Rename` error in curator `saveCheckpoint`
+## 3. Check `os.Rename` error in chronicle `saveCheckpoint`
 
-**File:** `internal/events/curator.go`, function `saveCheckpoint` (~line 486)
+**File:** `internal/events/chronicle.go`, function `saveCheckpoint` (~line 486)
 
 The line `os.Rename(tmpName, c.checkpointPath())` ignores the error. If the
 rename fails, clean up the temp file and log to stderr:
@@ -65,7 +65,7 @@ rename fails, clean up the temp file and log to stderr:
 ```go
 if err := os.Rename(tmpName, c.checkpointPath()); err != nil {
     os.Remove(tmpName)
-    fmt.Fprintf(os.Stderr, "curator: failed to save checkpoint: %v\n", err)
+    fmt.Fprintf(os.Stderr, "chronicle: failed to save checkpoint: %v\n", err)
 }
 ```
 
@@ -121,7 +121,7 @@ the check between the closing brace and the return statement.
 
 ---
 
-## 5. Validate priority range in `gt mail send`
+## 5. Validate priority range in `sol mail send`
 
 **File:** `cmd/mail.go`, in the `mailSendCmd` RunE function (~line 27)
 
@@ -136,9 +136,9 @@ if priority < 1 || priority > 3 {
 
 ---
 
-## 6. Emit audit event on AI assessment failure in witness
+## 6. Emit audit event on AI assessment failure in sentinel
 
-**File:** `internal/witness/witness.go`, in `assessAgent()` (~line 283)
+**File:** `internal/sentinel/sentinel.go`, in `assessAgent()` (~line 283)
 
 Currently when the assessment call fails, the error is silently swallowed:
 
@@ -164,28 +164,28 @@ if err != nil {
 
 ---
 
-## 7. Emit audit event on curator cycle error
+## 7. Emit audit event on chronicle cycle error
 
-**File:** `internal/events/curator.go`, in `Run()` (~line 96)
+**File:** `internal/events/chronicle.go`, in `Run()` (~line 96)
 
 Currently cycle errors go to stderr only. Also emit a structured event:
 
 ```go
 if err := c.processCycle(); err != nil {
     // Best-effort: log but continue.
-    fmt.Fprintf(os.Stderr, "curator cycle error: %v\n", err)
+    fmt.Fprintf(os.Stderr, "chronicle cycle error: %v\n", err)
     if c.logger != nil {
-        c.logger.Emit("curator_error", "curator", "curator", "audit",
+        c.logger.Emit("curator_error", "chronicle", "chronicle", "audit",
             map[string]any{"error": err.Error()})
     }
 }
 ```
 
-This requires the Curator to have access to the logger. If `c.logger` doesn't
-exist on the Curator struct, check whether the Curator already has access to
+This requires the Chronicle to have access to the logger. If `c.logger` doesn't
+exist on the Chronicle struct, check whether the Chronicle already has access to
 a `*events.Logger` (it likely does via `c.config` or directly). If not, add a
-`logger *events.Logger` field to the Curator struct and accept it in the
-constructor. Wire it in from `cmd/curator.go` the same way `cmd/witness.go`
+`logger *events.Logger` field to the Chronicle struct and accept it in the
+constructor. Wire it in from `cmd/chronicle.go` the same way `cmd/sentinel.go`
 creates one with `events.NewLogger(config.Home())`.
 
 ---
@@ -222,7 +222,7 @@ reality — but make it exact, not `< 1`.
 **File:** `test/integration/helpers_test.go` (~line 263)
 
 The `mockSessionChecker` struct has no mutex, unlike its unit test counterpart
-in `internal/witness/witness_test.go`. Add a `sync.Mutex` and protect all
+in `internal/sentinel/witness_test.go`. Add a `sync.Mutex` and protect all
 methods:
 
 ```go

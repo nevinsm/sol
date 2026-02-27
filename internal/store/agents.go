@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-// Agent represents an agent record in the town database.
+// Agent represents an agent record in the sphere database.
 type Agent struct {
 	ID        string
 	Name      string
-	Rig       string
+	World     string
 	Role      string
 	State     string
 	HookItem  string
@@ -18,14 +18,14 @@ type Agent struct {
 	UpdatedAt time.Time
 }
 
-// CreateAgent creates an agent record in the town DB. Returns the agent ID ("rig/name").
-func (s *Store) CreateAgent(name, rig, role string) (string, error) {
-	id := rig + "/" + name
+// CreateAgent creates an agent record in the sphere DB. Returns the agent ID ("world/name").
+func (s *Store) CreateAgent(name, world, role string) (string, error) {
+	id := world + "/" + name
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.Exec(
 		`INSERT INTO agents (id, name, rig, role, state, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, 'idle', ?, ?)`,
-		id, name, rig, role, now, now,
+		id, name, world, role, now, now,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to create agent %q: %w", id, err)
@@ -42,7 +42,7 @@ func (s *Store) GetAgent(id string) (*Agent, error) {
 	err := s.db.QueryRow(
 		`SELECT id, name, rig, role, state, hook_item, created_at, updated_at
 		 FROM agents WHERE id = ?`, id,
-	).Scan(&a.ID, &a.Name, &a.Rig, &a.Role, &a.State, &hookItem, &createdAt, &updatedAt)
+	).Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &hookItem, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("agent %q not found", id)
 	}
@@ -84,14 +84,14 @@ func (s *Store) UpdateAgentState(id, state, hookItem string) error {
 	return nil
 }
 
-// ListAgents returns agents, optionally filtered by rig and/or state.
-// When rig is empty, agents across all rigs are returned.
-func (s *Store) ListAgents(rig string, state string) ([]Agent, error) {
+// ListAgents returns agents, optionally filtered by world and/or state.
+// When world is empty, agents across all worlds are returned.
+func (s *Store) ListAgents(world string, state string) ([]Agent, error) {
 	query := `SELECT id, name, rig, role, state, hook_item, created_at, updated_at FROM agents WHERE 1=1`
 	var args []interface{}
-	if rig != "" {
+	if world != "" {
 		query += ` AND rig = ?`
-		args = append(args, rig)
+		args = append(args, world)
 	}
 	if state != "" {
 		query += ` AND state = ?`
@@ -101,7 +101,7 @@ func (s *Store) ListAgents(rig string, state string) ([]Agent, error) {
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list agents for rig %q: %w", rig, err)
+		return nil, fmt.Errorf("failed to list agents for world %q: %w", world, err)
 	}
 	defer rows.Close()
 
@@ -110,7 +110,7 @@ func (s *Store) ListAgents(rig string, state string) ([]Agent, error) {
 		var a Agent
 		var hookItem sql.NullString
 		var createdAt, updatedAt string
-		if err := rows.Scan(&a.ID, &a.Name, &a.Rig, &a.Role, &a.State, &hookItem, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &hookItem, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan agent: %w", err)
 		}
 		a.HookItem = hookItem.String
@@ -124,22 +124,22 @@ func (s *Store) ListAgents(rig string, state string) ([]Agent, error) {
 	return agents, nil
 }
 
-// FindIdleAgent returns the first idle polecat for a rig, or nil if none available.
-func (s *Store) FindIdleAgent(rig string) (*Agent, error) {
+// FindIdleAgent returns the first idle agent for a world, or nil if none available.
+func (s *Store) FindIdleAgent(world string) (*Agent, error) {
 	a := &Agent{}
 	var hookItem sql.NullString
 	var createdAt, updatedAt string
 
 	err := s.db.QueryRow(
 		`SELECT id, name, rig, role, state, hook_item, created_at, updated_at
-		 FROM agents WHERE rig = ? AND role = 'polecat' AND state = 'idle'
-		 ORDER BY name LIMIT 1`, rig,
-	).Scan(&a.ID, &a.Name, &a.Rig, &a.Role, &a.State, &hookItem, &createdAt, &updatedAt)
+		 FROM agents WHERE rig = ? AND role = 'agent' AND state = 'idle'
+		 ORDER BY name LIMIT 1`, world,
+	).Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &hookItem, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to find idle agent for rig %q: %w", rig, err)
+		return nil, fmt.Errorf("failed to find idle agent for world %q: %w", world, err)
 	}
 
 	a.HookItem = hookItem.String

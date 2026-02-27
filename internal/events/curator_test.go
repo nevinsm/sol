@@ -50,8 +50,8 @@ func readFeedEvents(t *testing.T, path string) []Event {
 	return events
 }
 
-func testCuratorConfig(dir string) CuratorConfig {
-	return CuratorConfig{
+func testChronicleConfig(dir string) ChronicleConfig {
+	return ChronicleConfig{
 		RawPath:      filepath.Join(dir, ".events.jsonl"),
 		FeedPath:     filepath.Join(dir, ".feed.jsonl"),
 		PollInterval: 100 * time.Millisecond,
@@ -61,10 +61,10 @@ func testCuratorConfig(dir string) CuratorConfig {
 	}
 }
 
-func TestCuratorProcessesNewEvents(t *testing.T) {
+func TestChronicleProcessesNewEvents(t *testing.T) {
 	dir := t.TempDir()
-	cfg := testCuratorConfig(dir)
-	curator := NewCurator(cfg)
+	cfg := testChronicleConfig(dir)
+	curator := NewChronicle(cfg)
 
 	// Write 5 events to raw feed.
 	for i := 0; i < 5; i++ {
@@ -90,10 +90,10 @@ func TestCuratorProcessesNewEvents(t *testing.T) {
 	}
 }
 
-func TestCuratorFiltersAuditOnly(t *testing.T) {
+func TestChronicleFiltersAuditOnly(t *testing.T) {
 	dir := t.TempDir()
-	cfg := testCuratorConfig(dir)
-	curator := NewCurator(cfg)
+	cfg := testChronicleConfig(dir)
+	curator := NewChronicle(cfg)
 
 	// Write events: 2 with visibility="both", 1 with visibility="audit".
 	writeRawEvent(t, cfg.RawPath, Event{
@@ -119,10 +119,10 @@ func TestCuratorFiltersAuditOnly(t *testing.T) {
 	}
 }
 
-func TestCuratorDeduplicates(t *testing.T) {
+func TestChronicleDeduplicates(t *testing.T) {
 	dir := t.TempDir()
-	cfg := testCuratorConfig(dir)
-	curator := NewCurator(cfg)
+	cfg := testChronicleConfig(dir)
+	curator := NewChronicle(cfg)
 
 	// Write 3 identical events (same type/source/actor) within 10s.
 	now := time.Now().UTC()
@@ -143,11 +143,11 @@ func TestCuratorDeduplicates(t *testing.T) {
 	}
 }
 
-func TestCuratorDeduplicateWindowExpiry(t *testing.T) {
+func TestChronicleDeduplicateWindowExpiry(t *testing.T) {
 	dir := t.TempDir()
-	cfg := testCuratorConfig(dir)
+	cfg := testChronicleConfig(dir)
 	cfg.DedupWindow = 100 * time.Millisecond // short window for testing
-	curator := NewCurator(cfg)
+	curator := NewChronicle(cfg)
 
 	// Write event A.
 	writeRawEvent(t, cfg.RawPath, Event{
@@ -179,11 +179,11 @@ func TestCuratorDeduplicateWindowExpiry(t *testing.T) {
 	}
 }
 
-func TestCuratorAggregatesSlingBurst(t *testing.T) {
+func TestChronicleAggregatesSlingBurst(t *testing.T) {
 	dir := t.TempDir()
-	cfg := testCuratorConfig(dir)
+	cfg := testChronicleConfig(dir)
 	cfg.AggWindow = 100 * time.Millisecond // short window for testing
-	curator := NewCurator(cfg)
+	curator := NewChronicle(cfg)
 
 	// Write 10 sling events within the window.
 	now := time.Now().UTC()
@@ -216,8 +216,8 @@ func TestCuratorAggregatesSlingBurst(t *testing.T) {
 	if events[0].Type != "sling_batch" {
 		t.Errorf("expected type sling_batch, got %q", events[0].Type)
 	}
-	if events[0].Source != "curator" {
-		t.Errorf("expected source curator, got %q", events[0].Source)
+	if events[0].Source != "chronicle" {
+		t.Errorf("expected source chronicle, got %q", events[0].Source)
 	}
 
 	payload, ok := events[0].Payload.(map[string]any)
@@ -233,11 +233,11 @@ func TestCuratorAggregatesSlingBurst(t *testing.T) {
 	}
 }
 
-func TestCuratorDoesNotAggregateNonBatchable(t *testing.T) {
+func TestChronicleDoesNotAggregateNonBatchable(t *testing.T) {
 	dir := t.TempDir()
-	cfg := testCuratorConfig(dir)
+	cfg := testChronicleConfig(dir)
 	cfg.AggWindow = 100 * time.Millisecond
-	curator := NewCurator(cfg)
+	curator := NewChronicle(cfg)
 
 	// Write 3 "done" events within 30s (different actors to avoid dedup).
 	now := time.Now().UTC()
@@ -265,11 +265,11 @@ func TestCuratorDoesNotAggregateNonBatchable(t *testing.T) {
 	}
 }
 
-func TestCuratorTruncatesFeed(t *testing.T) {
+func TestChronicleTruncatesFeed(t *testing.T) {
 	dir := t.TempDir()
-	cfg := testCuratorConfig(dir)
+	cfg := testChronicleConfig(dir)
 	cfg.MaxFeedSize = 1024 // 1KB for testing
-	curator := NewCurator(cfg)
+	curator := NewChronicle(cfg)
 
 	// Write enough events to exceed the limit.
 	for i := 0; i < 50; i++ {
@@ -318,10 +318,10 @@ func TestCuratorTruncatesFeed(t *testing.T) {
 	}
 }
 
-func TestCuratorCheckpoint(t *testing.T) {
+func TestChronicleCheckpoint(t *testing.T) {
 	dir := t.TempDir()
-	cfg := testCuratorConfig(dir)
-	curator := NewCurator(cfg)
+	cfg := testChronicleConfig(dir)
+	curator := NewChronicle(cfg)
 
 	// Write 5 events, run curator.
 	for i := 0; i < 5; i++ {
@@ -339,7 +339,7 @@ func TestCuratorCheckpoint(t *testing.T) {
 	}
 
 	// Stop curator, verify checkpoint file exists with offset.
-	checkpointPath := filepath.Join(dir, ".curator-checkpoint")
+	checkpointPath := filepath.Join(dir, ".chronicle-checkpoint")
 	if _, err := os.Stat(checkpointPath); os.IsNotExist(err) {
 		t.Fatal("checkpoint file should exist")
 	}
@@ -360,7 +360,7 @@ func TestCuratorCheckpoint(t *testing.T) {
 	}
 
 	// Start new curator (should resume from checkpoint).
-	curator2 := NewCurator(cfg)
+	curator2 := NewChronicle(cfg)
 	curator2.LoadCheckpoint()
 	if curator2.Offset() != savedOffset {
 		t.Fatalf("new curator offset %d != saved offset %d", curator2.Offset(), savedOffset)
@@ -377,11 +377,11 @@ func TestCuratorCheckpoint(t *testing.T) {
 	}
 }
 
-func TestCuratorRunLifecycle(t *testing.T) {
+func TestChronicleRunLifecycle(t *testing.T) {
 	dir := t.TempDir()
-	cfg := testCuratorConfig(dir)
+	cfg := testChronicleConfig(dir)
 	cfg.PollInterval = 50 * time.Millisecond // fast polling for test
-	curator := NewCurator(cfg)
+	curator := NewChronicle(cfg)
 
 	// Start curator with cancellable context.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -423,7 +423,7 @@ func TestCuratorRunLifecycle(t *testing.T) {
 	}
 
 	// Verify checkpoint was saved on shutdown.
-	checkpointPath := filepath.Join(dir, ".curator-checkpoint")
+	checkpointPath := filepath.Join(dir, ".chronicle-checkpoint")
 	if _, err := os.Stat(checkpointPath); os.IsNotExist(err) {
 		t.Error("checkpoint should be saved on shutdown")
 	}

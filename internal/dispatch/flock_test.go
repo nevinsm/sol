@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nevinsm/gt/internal/config"
+	"github.com/nevinsm/sol/internal/config"
 )
 
 func TestAcquireRelease(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("GT_HOME", dir)
+	t.Setenv("SOL_HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestAcquireRelease(t *testing.T) {
 
 func TestDoubleAcquire(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("GT_HOME", dir)
+	t.Setenv("SOL_HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestDoubleAcquire(t *testing.T) {
 
 func TestDifferentItems(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("GT_HOME", dir)
+	t.Setenv("SOL_HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestDifferentItems(t *testing.T) {
 
 func TestReleaseIdempotent(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("GT_HOME", dir)
+	t.Setenv("SOL_HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestReleaseIdempotent(t *testing.T) {
 
 func TestMergeSlotAcquireRelease(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("GT_HOME", dir)
+	t.Setenv("SOL_HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestMergeSlotAcquireRelease(t *testing.T) {
 
 func TestMergeSlotDoubleAcquire(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("GT_HOME", dir)
+	t.Setenv("SOL_HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestMergeSlotDoubleAcquire(t *testing.T) {
 
 func TestMergeSlotDifferentRigs(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("GT_HOME", dir)
+	t.Setenv("SOL_HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}

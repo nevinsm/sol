@@ -5,31 +5,31 @@ import (
 	"path/filepath"
 )
 
-// Home returns the GT_HOME directory. Defaults to ~/gt.
+// Home returns the SOL_HOME directory. Defaults to ~/sol.
 func Home() string {
-	if v := os.Getenv("GT_HOME"); v != "" {
+	if v := os.Getenv("SOL_HOME"); v != "" {
 		return v
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(os.TempDir(), "gt")
+		return filepath.Join(os.TempDir(), "sol")
 	}
-	return filepath.Join(home, "gt")
+	return filepath.Join(home, "sol")
 }
 
-// StoreDir returns the path to $GT_HOME/.store/.
+// StoreDir returns the path to $SOL_HOME/.store/.
 func StoreDir() string {
 	return filepath.Join(Home(), ".store")
 }
 
-// RuntimeDir returns the path to $GT_HOME/.runtime/.
+// RuntimeDir returns the path to $SOL_HOME/.runtime/.
 func RuntimeDir() string {
 	return filepath.Join(Home(), ".runtime")
 }
 
-// RigDir returns the path to $GT_HOME/{rig}/.
-func RigDir(rig string) string {
-	return filepath.Join(Home(), rig)
+// WorldDir returns the path to $SOL_HOME/{world}/.
+func WorldDir(world string) string {
+	return filepath.Join(Home(), world)
 }
 
 // EnsureDirs creates .store/ and .runtime/ if they don't exist.

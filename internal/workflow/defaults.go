@@ -8,15 +8,15 @@ import (
 	"path/filepath"
 )
 
-//go:embed defaults/polecat-work/manifest.toml
-//go:embed defaults/polecat-work/steps/01-load-context.md
-//go:embed defaults/polecat-work/steps/02-implement.md
-//go:embed defaults/polecat-work/steps/03-verify.md
+//go:embed defaults/default-work/manifest.toml
+//go:embed defaults/default-work/steps/01-load-context.md
+//go:embed defaults/default-work/steps/02-implement.md
+//go:embed defaults/default-work/steps/03-verify.md
 var defaultFormulas embed.FS
 
 // knownDefaults lists formula names that are embedded in the binary.
 var knownDefaults = map[string]bool{
-	"polecat-work": true,
+	"default-work": true,
 }
 
 // EnsureFormula checks if a formula exists on disk. If not and it's a

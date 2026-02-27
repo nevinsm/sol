@@ -1,0 +1,513 @@
+package cmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/store"
+	"github.com/spf13/cobra"
+)
+
+var (
+	caravanWorld   string
+	caravanOwner   string
+	caravanJSON    bool
+	caravanFormula string
+	caravanVars    []string
+)
+
+var caravanCmd = &cobra.Command{
+	Use:   "caravan",
+	Short: "Manage caravans (grouped work item batches)",
+}
+
+// --- sol caravan create ---
+
+var caravanCreateCmd = &cobra.Command{
+	Use:   "create <name> [<item-id> ...]",
+	Short: "Create a caravan with optional initial items",
+	Args:  cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		itemIDs := args[1:]
+
+		if caravanWorld == "" && len(itemIDs) > 0 {
+			return fmt.Errorf("--world is required when adding items")
+		}
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		owner := caravanOwner
+		if owner == "" {
+			owner = "operator"
+		}
+
+		caravanID, err := sphereStore.CreateCaravan(name, owner)
+		if err != nil {
+			return err
+		}
+
+		for _, itemID := range itemIDs {
+			if err := sphereStore.AddCaravanItem(caravanID, itemID, caravanWorld); err != nil {
+				return err
+			}
+		}
+
+		logger := events.NewLogger(config.Home())
+		logger.Emit(events.EventCaravanCreated, "sol", "operator", "both", map[string]string{
+			"convoy_id": caravanID,
+			"name":      name,
+			"count":     fmt.Sprintf("%d", len(itemIDs)),
+		})
+
+		fmt.Printf("Created caravan %s: %q (%d items)\n", caravanID, name, len(itemIDs))
+		return nil
+	},
+}
+
+// --- sol caravan add ---
+
+var caravanAddCmd = &cobra.Command{
+	Use:   "add <caravan-id> <item-id> [<item-id> ...]",
+	Short: "Add items to an existing caravan",
+	Args:  cobra.MinimumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		caravanID := args[0]
+		itemIDs := args[1:]
+
+		if caravanWorld == "" {
+			return fmt.Errorf("--world is required")
+		}
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		for _, itemID := range itemIDs {
+			if err := sphereStore.AddCaravanItem(caravanID, itemID, caravanWorld); err != nil {
+				return err
+			}
+		}
+
+		fmt.Printf("Added %d items to caravan %s\n", len(itemIDs), caravanID)
+		return nil
+	},
+}
+
+// --- sol caravan check ---
+
+var caravanCheckCmd = &cobra.Command{
+	Use:   "check <caravan-id>",
+	Short: "Check readiness of caravan items",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		caravanID := args[0]
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		caravan, err := sphereStore.GetCaravan(caravanID)
+		if err != nil {
+			return err
+		}
+
+		statuses, err := sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+		if err != nil {
+			return err
+		}
+
+		if caravanJSON {
+			out := struct {
+				ID     string                   `json:"id"`
+				Name   string                   `json:"name"`
+				Status string                   `json:"status"`
+				Items  []store.CaravanItemStatus `json:"items"`
+			}{
+				ID:     caravan.ID,
+				Name:   caravan.Name,
+				Status: caravan.Status,
+				Items:  statuses,
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(out)
+		}
+
+		fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
+		fmt.Printf("Status: %s\n", caravan.Status)
+		fmt.Println()
+
+		// Separate ready and blocked items.
+		var ready, blocked []store.CaravanItemStatus
+		for _, st := range statuses {
+			if st.WorkItemStatus == "open" && st.Ready {
+				ready = append(ready, st)
+			} else if st.WorkItemStatus == "done" || st.WorkItemStatus == "closed" {
+				// completed, skip for now
+			} else {
+				blocked = append(blocked, st)
+			}
+		}
+
+		if len(ready) > 0 {
+			fmt.Println("Ready for dispatch:")
+			for _, st := range ready {
+				title := itemTitle(st.WorkItemID, st.World)
+				fmt.Printf("  %s  %s  (%s)\n", st.WorkItemID, title, st.World)
+			}
+			fmt.Println()
+		}
+
+		if len(blocked) > 0 {
+			fmt.Println("Blocked:")
+			for _, st := range blocked {
+				title := itemTitle(st.WorkItemID, st.World)
+				waitingOn := blockedByList(st.WorkItemID, st.World)
+				if waitingOn != "" {
+					fmt.Printf("  %s  %s  (%s)  <- waiting on %s\n", st.WorkItemID, title, st.World, waitingOn)
+				} else {
+					fmt.Printf("  %s  %s  (%s)  [%s]\n", st.WorkItemID, title, st.World, st.WorkItemStatus)
+				}
+			}
+		}
+
+		return nil
+	},
+}
+
+// --- sol caravan status ---
+
+var caravanStatusCmd = &cobra.Command{
+	Use:   "status [<caravan-id>]",
+	Short: "Show caravan status",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		// Detailed status for a specific caravan.
+		if len(args) == 1 {
+			caravanID := args[0]
+			caravan, err := sphereStore.GetCaravan(caravanID)
+			if err != nil {
+				return err
+			}
+
+			statuses, err := sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+			if err != nil {
+				return err
+			}
+
+			if caravanJSON {
+				out := struct {
+					ID     string                   `json:"id"`
+					Name   string                   `json:"name"`
+					Status string                   `json:"status"`
+					Items  []store.CaravanItemStatus `json:"items"`
+				}{
+					ID:     caravan.ID,
+					Name:   caravan.Name,
+					Status: caravan.Status,
+					Items:  statuses,
+				}
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(out)
+			}
+
+			fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
+			fmt.Printf("Status: %s\n", caravan.Status)
+			fmt.Println()
+
+			for _, st := range statuses {
+				title := itemTitle(st.WorkItemID, st.World)
+				marker := "[ ]"
+				suffix := ""
+				switch {
+				case st.WorkItemStatus == "done" || st.WorkItemStatus == "closed":
+					marker = "[x]"
+				case st.WorkItemStatus == "open" && st.Ready:
+					marker = "[>]"
+					suffix = " (ready)"
+				default:
+					waitingOn := blockedByList(st.WorkItemID, st.World)
+					if waitingOn != "" {
+						suffix = " <- waiting on " + waitingOn
+					} else {
+						suffix = fmt.Sprintf(" [%s]", st.WorkItemStatus)
+					}
+				}
+				fmt.Printf("  %s %s  %s  (%s)%s\n", marker, st.WorkItemID, title, st.World, suffix)
+			}
+			return nil
+		}
+
+		// List all open caravans.
+		caravans, err := sphereStore.ListCaravans("open")
+		if err != nil {
+			return err
+		}
+
+		if caravanJSON {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(caravans)
+		}
+
+		if len(caravans) == 0 {
+			fmt.Println("No open caravans.")
+			return nil
+		}
+
+		fmt.Println("Open caravans:")
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		for _, c := range caravans {
+			items, err := sphereStore.ListCaravanItems(c.ID)
+			if err != nil {
+				return err
+			}
+
+			// Count statuses.
+			var done, readyCount, blockedCount int
+			statuses, err := sphereStore.CheckCaravanReadiness(c.ID, store.OpenWorld)
+			if err != nil {
+				// If we can't check readiness, just show item count.
+				fmt.Fprintf(tw, "  %s\t%s\t%d items\n", c.ID, c.Name, len(items))
+				continue
+			}
+			for _, st := range statuses {
+				switch {
+				case st.WorkItemStatus == "done" || st.WorkItemStatus == "closed":
+					done++
+				case st.WorkItemStatus == "open" && st.Ready:
+					readyCount++
+				default:
+					blockedCount++
+				}
+			}
+			fmt.Fprintf(tw, "  %s\t%s\t%d items\t(%d done, %d ready, %d blocked)\n",
+				c.ID, c.Name, len(items), done, readyCount, blockedCount)
+		}
+		tw.Flush()
+		return nil
+	},
+}
+
+// --- sol caravan launch ---
+
+var caravanLaunchCmd = &cobra.Command{
+	Use:   "launch <caravan-id>",
+	Short: "Dispatch ready items in a caravan",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		caravanID := args[0]
+
+		if caravanWorld == "" {
+			return fmt.Errorf("--world is required")
+		}
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		statuses, err := sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+		if err != nil {
+			return err
+		}
+
+		// Find ready items in the specified world.
+		var readyItems []store.CaravanItemStatus
+		var blockedItems []store.CaravanItemStatus
+		for _, st := range statuses {
+			if st.World != caravanWorld {
+				continue
+			}
+			if st.WorkItemStatus == "open" && st.Ready {
+				readyItems = append(readyItems, st)
+			} else if st.WorkItemStatus != "done" && st.WorkItemStatus != "closed" {
+				blockedItems = append(blockedItems, st)
+			}
+		}
+
+		if len(readyItems) == 0 {
+			fmt.Println("No ready items to dispatch in this world.")
+			if len(blockedItems) > 0 {
+				fmt.Printf("%d items still blocked.\n", len(blockedItems))
+			}
+			return nil
+		}
+
+		// Discover source repo.
+		sourceRepo, err := dispatch.DiscoverSourceRepo()
+		if err != nil {
+			return fmt.Errorf("must run sol caravan launch from within a git repository: %w", err)
+		}
+
+		worldStore, err := store.OpenWorld(caravanWorld)
+		if err != nil {
+			return err
+		}
+		defer worldStore.Close()
+
+		mgr := dispatch.NewSessionManager()
+		logger := events.NewLogger(config.Home())
+
+		// Parse --var flags into a map.
+		vars := parseCaravanVarFlags(caravanVars)
+
+		dispatched := 0
+		for _, st := range readyItems {
+			castOpts := dispatch.CastOpts{
+				WorkItemID: st.WorkItemID,
+				World:      caravanWorld,
+				SourceRepo: sourceRepo,
+			}
+			if caravanFormula != "" {
+				castOpts.Formula = caravanFormula
+				castOpts.Variables = vars
+			}
+			result, err := dispatch.Cast(castOpts, worldStore, sphereStore, mgr, logger)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to dispatch %s: %v\n", st.WorkItemID, err)
+				continue
+			}
+			fmt.Printf("Dispatched %s -> %s (%s)\n", result.WorkItemID, result.AgentName, result.SessionName)
+			dispatched++
+		}
+
+		logger.Emit(events.EventCaravanLaunched, "sol", "operator", "both", map[string]string{
+			"convoy_id":  caravanID,
+			"world":      caravanWorld,
+			"dispatched": fmt.Sprintf("%d", dispatched),
+		})
+
+		fmt.Printf("\nDispatched %d items.\n", dispatched)
+		if len(blockedItems) > 0 {
+			fmt.Printf("%d items still blocked.\n", len(blockedItems))
+		}
+
+		// Try to auto-close.
+		closed, err := sphereStore.TryCloseCaravan(caravanID, store.OpenWorld)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to check caravan closure: %v\n", err)
+		} else if closed {
+			caravan, _ := sphereStore.GetCaravan(caravanID)
+			carName := caravanID
+			if caravan != nil {
+				carName = caravan.Name
+			}
+			logger.Emit(events.EventCaravanClosed, "sol", "operator", "both", map[string]string{
+				"convoy_id": caravanID,
+				"name":      carName,
+			})
+			fmt.Println("Caravan auto-closed (all items complete).")
+		}
+
+		return nil
+	},
+}
+
+// helpers
+
+func itemTitle(workItemID, world string) string {
+	worldStore, err := store.OpenWorld(world)
+	if err != nil {
+		return "(unknown)"
+	}
+	defer worldStore.Close()
+	item, err := worldStore.GetWorkItem(workItemID)
+	if err != nil {
+		return "(unknown)"
+	}
+	return item.Title
+}
+
+// parseCaravanVarFlags splits "key=val" strings into a map.
+func parseCaravanVarFlags(vars []string) map[string]string {
+	if len(vars) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(vars))
+	for _, v := range vars {
+		parts := strings.SplitN(v, "=", 2)
+		if len(parts) == 2 {
+			m[parts[0]] = parts[1]
+		}
+	}
+	return m
+}
+
+func blockedByList(workItemID, world string) string {
+	worldStore, err := store.OpenWorld(world)
+	if err != nil {
+		return ""
+	}
+	defer worldStore.Close()
+	deps, err := worldStore.GetDependencies(workItemID)
+	if err != nil || len(deps) == 0 {
+		return ""
+	}
+
+	// Filter to unsatisfied deps.
+	var unsatisfied []string
+	for _, depID := range deps {
+		item, err := worldStore.GetWorkItem(depID)
+		if err != nil {
+			unsatisfied = append(unsatisfied, depID)
+			continue
+		}
+		if item.Status != "done" && item.Status != "closed" {
+			unsatisfied = append(unsatisfied, depID)
+		}
+	}
+	return strings.Join(unsatisfied, ", ")
+}
+
+func init() {
+	rootCmd.AddCommand(caravanCmd)
+	caravanCmd.AddCommand(caravanCreateCmd)
+	caravanCmd.AddCommand(caravanAddCmd)
+	caravanCmd.AddCommand(caravanCheckCmd)
+	caravanCmd.AddCommand(caravanStatusCmd)
+	caravanCmd.AddCommand(caravanLaunchCmd)
+
+	// create flags
+	caravanCreateCmd.Flags().StringVar(&caravanWorld, "world", "", "world for the listed items")
+	caravanCreateCmd.Flags().StringVar(&caravanOwner, "owner", "", "caravan owner (default: operator)")
+
+	// add flags
+	caravanAddCmd.Flags().StringVar(&caravanWorld, "world", "", "world for the items")
+	caravanAddCmd.MarkFlagRequired("world")
+
+	// check flags
+	caravanCheckCmd.Flags().BoolVar(&caravanJSON, "json", false, "output as JSON")
+
+	// status flags
+	caravanStatusCmd.Flags().BoolVar(&caravanJSON, "json", false, "output as JSON")
+
+	// launch flags
+	caravanLaunchCmd.Flags().StringVar(&caravanWorld, "world", "", "world to dispatch from")
+	caravanLaunchCmd.Flags().StringVar(&caravanFormula, "formula", "", "workflow formula for dispatched items")
+	caravanLaunchCmd.Flags().StringSliceVar(&caravanVars, "var", nil, "variable assignment (key=val)")
+	caravanLaunchCmd.MarkFlagRequired("world")
+}

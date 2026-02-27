@@ -18,15 +18,15 @@ structure; the action layer names the mechanisms.
 
 | Term | Definition | Replaces |
 |---|---|---|
-| **World** | A project or workspace. Contains agents, work items, and configuration. Each world has its own database and directory tree. | Rig |
-| **Outpost** | A worker agent's station within a world. Directory at `$SOL_HOME/{world}/outposts/{agent}/`. | Polecat |
-| **Sphere** | The global registry connecting all worlds. Stores agents, messages, escalations, convoys. Database: `sphere.db`. | Town |
+| **World** | A project or workspace. Contains agents, work items, and configuration. Each world has its own database and directory tree. | World |
+| **Outpost** | A worker agent's station within a world. Directory at `$SOL_HOME/{world}/outposts/{agent}/`. | Outpost |
+| **Sphere** | The global registry connecting all worlds. Stores agents, messages, escalations, caravans. Database: `sphere.db`. | Sphere |
 
 ## Actions
 
 | Term | Definition | Replaces |
 |---|---|---|
-| **Cast** | Dispatch work to an agent. Creates a worktree, tethers work, starts a session. From "farcaster" — instantaneous transit. | Sling |
+| **Cast** | Dispatch work to an agent. Creates a worktree, tethers work, starts a session. From "farcaster" — instantaneous transit. | Cast |
 | **Prime** | Inject execution context into a session on startup. Unchanged — already perfect. | Prime |
 | **Resolve** | Signal that work is complete. Push branch, clear tether, stop session. | Done |
 
@@ -34,24 +34,24 @@ structure; the action layer names the mechanisms.
 
 | Term | Definition | Replaces |
 |---|---|---|
-| **Tether** | The durability primitive. A file at `$SOL_HOME/{world}/outposts/{agent}/.tether` that binds an agent to a work item. If the tether exists, the work is assigned. | Hook |
+| **Tether** | The durability primitive. A file at `$SOL_HOME/{world}/outposts/{agent}/.tether` that binds an agent to a work item. If the tether exists, the work is assigned. | Tether |
 | **Charter** | *(Reserved for future use — per-world configuration file.)* | — |
 
 ## Processes
 
 | Term | Definition | Replaces |
 |---|---|---|
-| **Prefect** | Sphere-wide supervisor. Manages agent health across all worlds, respawns dead sessions, detects mass failures. | Supervisor |
-| **Forge** | Merge pipeline. Processes merge requests through quality gates, resolves conflicts, integrates output. | Refinery |
-| **Sentinel** | Per-world health monitor. Detects stalled/stuck/zombie agents, performs AI-assisted assessment, injects nudges. | Witness |
-| **Chronicle** | Event log maintenance. Deduplication, aggregation, feed truncation. | Curator |
-| **Consul** | System-level patrol. Stale tether recovery, stranded caravan feeding, lifecycle management, heartbeat monitoring. Operates across all worlds. | Deacon |
+| **Prefect** | Sphere-wide prefect. Manages agent health across all worlds, respawns dead sessions, detects mass failures. | Prefect |
+| **Forge** | Merge pipeline. Processes merge requests through quality gates, resolves conflicts, integrates output. | Forge |
+| **Sentinel** | Per-world health monitor. Detects stalled/stuck/zombie agents, performs AI-assisted assessment, injects nudges. | Sentinel |
+| **Chronicle** | Event log maintenance. Deduplication, aggregation, feed truncation. | Chronicle |
+| **Consul** | System-level patrol. Stale tether recovery, stranded caravan feeding, lifecycle management, heartbeat monitoring. Operates across all worlds. | Consul |
 
 ## Grouping
 
 | Term | Definition | Replaces |
 |---|---|---|
-| **Caravan** | A batch of related work items dispatched together. Tracks readiness and dependencies across worlds. | Convoy |
+| **Caravan** | A batch of related work items dispatched together. Tracks readiness and dependencies across worlds. | Caravan |
 
 ## Sessions
 
@@ -72,22 +72,22 @@ Example: `sol-myproject-Toast`
 
 ## Migration Reference
 
-For contributors familiar with the previous naming (gt/Gastown):
+For contributors familiar with the previous naming (sol/Gastown):
 
 | Old | New |
 |---|---|
-| gt | sol |
-| GT_HOME | SOL_HOME |
-| rig | world |
-| polecat | outpost |
-| town | sphere |
-| sling | cast |
+| sol | sol |
+| SOL_HOME | SOL_HOME |
+| world | world |
+| outpost | outpost |
+| sphere | sphere |
+| cast | cast |
 | done | resolve |
-| hook | tether |
-| refinery | forge |
-| witness | sentinel |
-| curator | chronicle |
-| deacon | consul |
-| convoy | caravan |
-| supervisor | prefect |
+| tether | tether |
+| forge | forge |
+| sentinel | sentinel |
+| chronicle | chronicle |
+| consul | consul |
+| caravan | caravan |
+| prefect | prefect |
 | prime | prime |

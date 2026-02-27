@@ -3,8 +3,8 @@ package escalation
 import (
 	"context"
 
-	"github.com/nevinsm/gt/internal/events"
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // LogNotifier writes escalation events to the event feed.

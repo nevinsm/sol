@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/nevinsm/gt/internal/config"
-	"github.com/nevinsm/gt/internal/events"
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -22,20 +22,20 @@ var escalationCmd = &cobra.Command{
 	Short: "Manage escalations",
 }
 
-// --- gt escalation list ---
+// --- sol escalation list ---
 
 var escalationListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List escalations",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		townStore, err := store.OpenTown()
+		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
-		defer townStore.Close()
+		defer sphereStore.Close()
 
-		escs, err := townStore.ListEscalations(escalationListStatus)
+		escs, err := sphereStore.ListEscalations(escalationListStatus)
 		if err != nil {
 			return err
 		}
@@ -86,7 +86,7 @@ var escalationListCmd = &cobra.Command{
 	},
 }
 
-// --- gt escalation ack ---
+// --- sol escalation ack ---
 
 var escalationAckCmd = &cobra.Command{
 	Use:   "ack <id>",
@@ -95,19 +95,19 @@ var escalationAckCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 
-		townStore, err := store.OpenTown()
+		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
-		defer townStore.Close()
+		defer sphereStore.Close()
 
-		if err := townStore.AckEscalation(id); err != nil {
+		if err := sphereStore.AckEscalation(id); err != nil {
 			return err
 		}
 
 		// Emit event (best-effort).
 		logger := events.NewLogger(config.Home())
-		logger.Emit(events.EventEscalationAcked, "gt", "operator", "both", map[string]string{
+		logger.Emit(events.EventEscalationAcked, "sol", "operator", "both", map[string]string{
 			"id": id,
 		})
 
@@ -116,7 +116,7 @@ var escalationAckCmd = &cobra.Command{
 	},
 }
 
-// --- gt escalation resolve ---
+// --- sol escalation resolve ---
 
 var escalationResolveCmd = &cobra.Command{
 	Use:   "resolve <id>",
@@ -125,19 +125,19 @@ var escalationResolveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 
-		townStore, err := store.OpenTown()
+		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
-		defer townStore.Close()
+		defer sphereStore.Close()
 
-		if err := townStore.ResolveEscalation(id); err != nil {
+		if err := sphereStore.ResolveEscalation(id); err != nil {
 			return err
 		}
 
 		// Emit event (best-effort).
 		logger := events.NewLogger(config.Home())
-		logger.Emit(events.EventEscalationResolved, "gt", "operator", "both", map[string]string{
+		logger.Emit(events.EventEscalationResolved, "sol", "operator", "both", map[string]string{
 			"id": id,
 		})
 

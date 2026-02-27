@@ -42,9 +42,9 @@ const (
 	EventWorkflowInstantiate = "workflow_instantiate" // workflow instantiated for agent
 	EventWorkflowAdvance     = "workflow_advance"     // workflow step advanced
 	EventWorkflowComplete    = "workflow_complete"    // workflow completed all steps
-	EventConvoyCreated       = "convoy_created"       // convoy created
-	EventConvoyLaunched      = "convoy_launched"      // convoy items dispatched
-	EventConvoyClosed        = "convoy_closed"        // convoy auto-closed
+	EventCaravanCreated       = "caravan_created"       // caravan created
+	EventCaravanLaunched      = "caravan_launched"      // caravan items dispatched
+	EventCaravanClosed        = "caravan_closed"        // caravan auto-closed
 
 	// Loop 5 events.
 	EventEscalationCreated  = "escalation_created"  // escalation created
@@ -52,8 +52,8 @@ const (
 	EventEscalationResolved = "escalation_resolved" // escalation resolved
 	EventHandoff            = "handoff"              // agent handed off session
 	EventDeaconPatrol       = "deacon_patrol"        // deacon patrol completed
-	EventDeaconStaleHook    = "deacon_stale_hook"    // stale hook recovered
-	EventDeaconConvoyFeed   = "deacon_convoy_feed"   // convoy needs feeding
+	EventDeaconStaleTether  = "deacon_stale_tether"  // stale tether recovered
+	EventDeaconCaravanFeed   = "deacon_caravan_feed"   // caravan needs feeding
 )
 
 // Logger handles event logging to the JSONL event feed.
@@ -62,7 +62,7 @@ type Logger struct {
 }
 
 // NewLogger creates an event logger.
-// The events file is at $GT_HOME/.events.jsonl.
+// The events file is at $SOL_HOME/.events.jsonl.
 // Creates the file if it doesn't exist.
 func NewLogger(gtHome string) *Logger {
 	return &Logger{

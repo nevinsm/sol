@@ -8,17 +8,17 @@ import (
 	"testing"
 )
 
-// setupRig creates a temporary rig store for testing.
+// setupRig creates a temporary world store for testing.
 func setupRig(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
-	os.Setenv("GT_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	os.Setenv("SOL_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
 
 	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s, err := OpenRig("testrig")
+	s, err := OpenWorld("testrig")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,17 +26,17 @@ func setupRig(t *testing.T) *Store {
 	return s
 }
 
-// setupTown creates a temporary town store for testing.
+// setupTown creates a temporary sphere store for testing.
 func setupTown(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
-	os.Setenv("GT_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	os.Setenv("SOL_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
 
 	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s, err := OpenTown()
+	s, err := OpenSphere()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,12 +156,12 @@ func TestMigrateTownV2(t *testing.T) {
 
 func TestMigrateTownV1ToV2(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("GT_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	os.Setenv("SOL_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
-	// Simulate a V1-only town database.
-	dbPath := filepath.Join(dir, ".store", "town.db")
+	// Simulate a V1-only sphere database.
+	dbPath := filepath.Join(dir, ".store", "sphere.db")
 	s, err := open(dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -181,8 +181,8 @@ func TestMigrateTownV1ToV2(t *testing.T) {
 	}
 	s.Close()
 
-	// Reopen through OpenTown — should migrate to V2.
-	s2, err := OpenTown()
+	// Reopen through OpenSphere — should migrate to V2.
+	s2, err := OpenSphere()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +386,7 @@ func TestLabels(t *testing.T) {
 func TestIDGeneration(t *testing.T) {
 	s := setupRig(t)
 
-	pattern := regexp.MustCompile(`^gt-[0-9a-f]{8}$`)
+	pattern := regexp.MustCompile(`^sol-[0-9a-f]{8}$`)
 	seen := make(map[string]bool)
 
 	for i := 0; i < 100; i++ {
@@ -395,7 +395,7 @@ func TestIDGeneration(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !pattern.MatchString(id) {
-			t.Fatalf("ID %q does not match pattern gt-[0-9a-f]{8}", id)
+			t.Fatalf("ID %q does not match pattern sol-[0-9a-f]{8}", id)
 		}
 		if seen[id] {
 			t.Fatalf("duplicate ID generated: %s", id)
@@ -406,21 +406,21 @@ func TestIDGeneration(t *testing.T) {
 
 func TestConcurrentAccess(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("GT_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	os.Setenv("SOL_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
 
 	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	// Open two connections to the same database.
-	s1, err := OpenRig("concurrent")
+	s1, err := OpenWorld("concurrent")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s1.Close()
 
-	s2, err := OpenRig("concurrent")
+	s2, err := OpenWorld("concurrent")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +481,7 @@ func TestAgentCRUD(t *testing.T) {
 	s := setupTown(t)
 
 	// Create.
-	id, err := s.CreateAgent("Toast", "myrig", "polecat")
+	id, err := s.CreateAgent("Toast", "myrig", "agent")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,11 +497,11 @@ func TestAgentCRUD(t *testing.T) {
 	if agent.Name != "Toast" {
 		t.Fatalf("expected name 'Toast', got %q", agent.Name)
 	}
-	if agent.Rig != "myrig" {
-		t.Fatalf("expected rig 'myrig', got %q", agent.Rig)
+	if agent.World != "myrig" {
+		t.Fatalf("expected world 'myrig', got %q", agent.World)
 	}
-	if agent.Role != "polecat" {
-		t.Fatalf("expected role 'polecat', got %q", agent.Role)
+	if agent.Role != "agent" {
+		t.Fatalf("expected role 'agent', got %q", agent.Role)
 	}
 	if agent.State != "idle" {
 		t.Fatalf("expected state 'idle', got %q", agent.State)
@@ -543,7 +543,7 @@ func TestAgentCRUD(t *testing.T) {
 	}
 
 	// List agents.
-	s.CreateAgent("Jasper", "myrig", "polecat")
+	s.CreateAgent("Jasper", "myrig", "agent")
 	s.CreateAgent("Wren", "myrig", "witness")
 
 	agents, err := s.ListAgents("myrig", "")
@@ -563,19 +563,19 @@ func TestAgentCRUD(t *testing.T) {
 		t.Fatalf("expected 3 idle agents, got %d", len(agents))
 	}
 
-	// Find idle polecat.
+	// Find idle agent.
 	idle, err := s.FindIdleAgent("myrig")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if idle == nil {
-		t.Fatal("expected an idle polecat")
+		t.Fatal("expected an idle agent")
 	}
-	if idle.Role != "polecat" {
-		t.Fatalf("expected role 'polecat', got %q", idle.Role)
+	if idle.Role != "agent" {
+		t.Fatalf("expected role 'agent', got %q", idle.Role)
 	}
 
-	// Set all polecats to working, FindIdleAgent should return nil.
+	// Set all agents to working, FindIdleAgent should return nil.
 	s.UpdateAgentState("myrig/Toast", "working", "gt-item1")
 	s.UpdateAgentState("myrig/Jasper", "working", "gt-item2")
 
@@ -584,7 +584,7 @@ func TestAgentCRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 	if idle != nil {
-		t.Fatalf("expected no idle polecat, got %v", idle)
+		t.Fatalf("expected no idle agent, got %v", idle)
 	}
 }
 
@@ -639,19 +639,19 @@ func TestListWorkItemsFilters(t *testing.T) {
 
 func TestMigrationIdempotent(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("GT_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	os.Setenv("SOL_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Open and close twice — migration should be idempotent.
-	s1, err := OpenRig("idempotent")
+	s1, err := OpenWorld("idempotent")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s1.CreateWorkItem("test", "", "operator", 2, nil)
 	s1.Close()
 
-	s2, err := OpenRig("idempotent")
+	s2, err := OpenWorld("idempotent")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -688,8 +688,8 @@ func TestMigrationIdempotent(t *testing.T) {
 
 func TestMigrateRigV1ToV2(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("GT_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	os.Setenv("SOL_HOME", dir)
+	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Simulate a V1-only database by manually creating it.
@@ -713,8 +713,8 @@ func TestMigrateRigV1ToV2(t *testing.T) {
 	}
 	s.Close()
 
-	// Reopen through OpenRig — should migrate to V2.
-	s2, err := OpenRig("v1test")
+	// Reopen through OpenWorld — should migrate to V2.
+	s2, err := OpenWorld("v1test")
 	if err != nil {
 		t.Fatal(err)
 	}

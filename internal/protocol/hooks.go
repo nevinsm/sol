@@ -8,8 +8,8 @@ import (
 )
 
 const sessionStartScript = `#!/bin/bash
-# SessionStart hook — inject execution context via gt prime
-exec gt prime --rig="$GT_RIG" --agent="$GT_AGENT"
+# SessionStart hook — inject execution context via sol prime
+exec sol prime --rig="$SOL_WORLD" --agent="$SOL_AGENT"
 `
 
 // hookConfig represents the Claude Code settings.local.json structure for hooks.
@@ -27,7 +27,7 @@ type hookEntry struct {
 //
 // Hooks installed:
 //
-//	SessionStart: runs "gt prime --rig={rig} --agent={name}" and outputs
+//	SessionStart: runs "sol prime --rig={rig} --agent={name}" and outputs
 //	              the result as initial context
 func InstallHooks(worktreeDir, rig, agentName string) error {
 	hooksDir := filepath.Join(worktreeDir, ".claude", "hooks")

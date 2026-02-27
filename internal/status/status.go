@@ -3,26 +3,26 @@ package status
 import (
 	"fmt"
 
-	"github.com/nevinsm/gt/internal/dispatch"
-	"github.com/nevinsm/gt/internal/store"
-	"github.com/nevinsm/gt/internal/supervisor"
+	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/prefect"
 )
 
-// RigStatus holds the complete runtime state for a rig.
-type RigStatus struct {
-	Rig        string         `json:"rig"`
-	Supervisor SupervisorInfo `json:"supervisor"`
-	Refinery   RefineryInfo   `json:"refinery"`
-	Curator    CuratorInfo    `json:"curator"`
-	Witness    WitnessInfo    `json:"witness"`
+// WorldStatus holds the complete runtime state for a world.
+type WorldStatus struct {
+	World      string         `json:"world"`
+	Prefect    PrefectInfo    `json:"prefect"`
+	Forge      ForgeInfo      `json:"forge"`
+	Chronicle  ChronicleInfo  `json:"chronicle"`
+	Sentinel   SentinelInfo   `json:"sentinel"`
 	Agents     []AgentStatus  `json:"agents"`
 	MergeQueue MergeQueueInfo `json:"merge_queue"`
-	Convoys    []ConvoyInfo   `json:"convoys,omitempty"`
+	Caravans   []CaravanInfo  `json:"caravans,omitempty"`
 	Summary    Summary        `json:"summary"`
 }
 
-// ConvoyInfo holds summary information about a convoy relevant to a rig.
-type ConvoyInfo struct {
+// CaravanInfo holds summary information about a caravan relevant to a world.
+type CaravanInfo struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	Status     string `json:"status"`
@@ -31,26 +31,26 @@ type ConvoyInfo struct {
 	DoneItems  int    `json:"done_items"`
 }
 
-// SupervisorInfo holds supervisor process state (town-level, not per-rig).
-type SupervisorInfo struct {
+// PrefectInfo holds prefect process state (sphere-level, not per-world).
+type PrefectInfo struct {
 	Running bool `json:"running"`
 	PID     int  `json:"pid,omitempty"`
 }
 
-// RefineryInfo holds refinery process state.
-type RefineryInfo struct {
+// ForgeInfo holds forge process state.
+type ForgeInfo struct {
 	Running     bool   `json:"running"`
 	SessionName string `json:"session_name,omitempty"`
 }
 
-// CuratorInfo holds curator process state (town-level).
-type CuratorInfo struct {
+// ChronicleInfo holds chronicle process state (sphere-level).
+type ChronicleInfo struct {
 	Running     bool   `json:"running"`
 	SessionName string `json:"session_name,omitempty"`
 }
 
-// WitnessInfo holds witness process state (per-rig).
-type WitnessInfo struct {
+// SentinelInfo holds sentinel process state (per-world).
+type SentinelInfo struct {
 	Running     bool   `json:"running"`
 	SessionName string `json:"session_name,omitempty"`
 }
@@ -85,11 +85,11 @@ type Summary struct {
 // Health returns the overall health level.
 // 0 = healthy (all sessions alive or idle)
 // 1 = unhealthy (at least one dead session)
-// 2 = degraded (supervisor not running)
-// Refinery state does not affect health — an absent refinery just means
+// 2 = degraded (prefect not running)
+// Forge state does not affect health — an absent forge just means
 // merges won't happen, the system is still operational.
-func (r *RigStatus) Health() int {
-	if !r.Supervisor.Running {
+func (r *WorldStatus) Health() int {
+	if !r.Prefect.Running {
 		return 2
 	}
 	if r.Summary.Dead > 0 {
@@ -99,7 +99,7 @@ func (r *RigStatus) Health() int {
 }
 
 // HealthString returns the health level as a string.
-func (r *RigStatus) HealthString() string {
+func (r *WorldStatus) HealthString() string {
 	switch r.Health() {
 	case 0:
 		return "healthy"
@@ -117,14 +117,14 @@ type SessionChecker interface {
 	Exists(name string) bool
 }
 
-// RigStore abstracts work item lookups for testing.
-type RigStore interface {
+// WorldStore abstracts work item lookups for testing.
+type WorldStore interface {
 	GetWorkItem(id string) (*store.WorkItem, error)
 }
 
-// TownStore abstracts agent queries for testing.
-type TownStore interface {
-	ListAgents(rig string, state string) ([]store.Agent, error)
+// SphereStore abstracts agent queries for testing.
+type SphereStore interface {
+	ListAgents(world string, state string) ([]store.Agent, error)
 }
 
 // MergeQueueStore abstracts merge request queries for testing.
@@ -132,47 +132,47 @@ type MergeQueueStore interface {
 	ListMergeRequests(phase string) ([]store.MergeRequest, error)
 }
 
-// ConvoyStore abstracts convoy queries for status gathering.
-type ConvoyStore interface {
-	ListConvoys(status string) ([]store.Convoy, error)
-	CheckConvoyReadiness(convoyID string, rigOpener func(rig string) (*store.Store, error)) ([]store.ConvoyItemStatus, error)
-	ListConvoyItems(convoyID string) ([]store.ConvoyItem, error)
+// CaravanStore abstracts caravan queries for status gathering.
+type CaravanStore interface {
+	ListCaravans(status string) ([]store.Caravan, error)
+	CheckCaravanReadiness(caravanID string, worldOpener func(world string) (*store.Store, error)) ([]store.CaravanItemStatus, error)
+	ListCaravanItems(caravanID string) ([]store.CaravanItem, error)
 }
 
-// Gather collects runtime state for a rig.
-func Gather(rig string, townStore TownStore, rigStore RigStore,
-	mqStore MergeQueueStore, checker SessionChecker) (*RigStatus, error) {
-	result := &RigStatus{Rig: rig}
+// Gather collects runtime state for a world.
+func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
+	mqStore MergeQueueStore, checker SessionChecker) (*WorldStatus, error) {
+	result := &WorldStatus{World: world}
 
-	// 1. Check supervisor (town-level).
-	pid, err := supervisor.ReadPID()
+	// 1. Check prefect (sphere-level).
+	pid, err := prefect.ReadPID()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read supervisor PID: %w", err)
+		return nil, fmt.Errorf("failed to read prefect PID: %w", err)
 	}
-	if pid != 0 && supervisor.IsRunning(pid) {
-		result.Supervisor = SupervisorInfo{Running: true, PID: pid}
-	}
-
-	// 2. Check refinery session.
-	refSessName := dispatch.SessionName(rig, "refinery")
-	if checker.Exists(refSessName) {
-		result.Refinery = RefineryInfo{Running: true, SessionName: refSessName}
+	if pid != 0 && prefect.IsRunning(pid) {
+		result.Prefect = PrefectInfo{Running: true, PID: pid}
 	}
 
-	// 2b. Check curator session (town-level).
-	const curatorSessionName = "gt-curator"
-	if checker.Exists(curatorSessionName) {
-		result.Curator = CuratorInfo{Running: true, SessionName: curatorSessionName}
+	// 2. Check forge session.
+	forgeSessName := dispatch.SessionName(world, "forge")
+	if checker.Exists(forgeSessName) {
+		result.Forge = ForgeInfo{Running: true, SessionName: forgeSessName}
 	}
 
-	// 2c. Check witness session.
-	witnessSessName := dispatch.SessionName(rig, "witness")
-	if checker.Exists(witnessSessName) {
-		result.Witness = WitnessInfo{Running: true, SessionName: witnessSessName}
+	// 2b. Check chronicle session (sphere-level).
+	const chronicleSessionName = "sol-chronicle"
+	if checker.Exists(chronicleSessionName) {
+		result.Chronicle = ChronicleInfo{Running: true, SessionName: chronicleSessionName}
 	}
 
-	// 3. List all agents for this rig.
-	agents, err := townStore.ListAgents(rig, "")
+	// 2c. Check sentinel session.
+	sentinelSessName := dispatch.SessionName(world, "sentinel")
+	if checker.Exists(sentinelSessName) {
+		result.Sentinel = SentinelInfo{Running: true, SessionName: sentinelSessName}
+	}
+
+	// 3. List all agents for this world.
+	agents, err := sphereStore.ListAgents(world, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
@@ -185,13 +185,13 @@ func Gather(rig string, townStore TownStore, rigStore RigStore,
 		}
 
 		// Check session liveness.
-		sessName := dispatch.SessionName(rig, agent.Name)
+		sessName := dispatch.SessionName(world, agent.Name)
 		as.SessionAlive = checker.Exists(sessName)
 
-		// Look up hooked work item title.
+		// Look up tethered work item title.
 		if agent.HookItem != "" {
 			as.HookItem = agent.HookItem
-			item, err := rigStore.GetWorkItem(agent.HookItem)
+			item, err := worldStore.GetWorkItem(agent.HookItem)
 			if err != nil {
 				as.WorkTitle = "(unknown)"
 			} else {
@@ -240,41 +240,41 @@ func Gather(rig string, townStore TownStore, rigStore RigStore,
 	return result, nil
 }
 
-// GatherConvoys adds convoy information to a RigStatus.
-// This is separate from Gather because it requires the ConvoyStore interface
+// GatherCaravans adds caravan information to a WorldStatus.
+// This is separate from Gather because it requires the CaravanStore interface
 // which not all callers may have available.
-func GatherConvoys(result *RigStatus, convoyStore ConvoyStore, rigOpener func(string) (*store.Store, error)) {
-	convoys, err := convoyStore.ListConvoys("open")
+func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener func(string) (*store.Store, error)) {
+	caravans, err := caravanStore.ListCaravans("open")
 	if err != nil {
 		return // non-fatal: degrade gracefully
 	}
 
-	for _, c := range convoys {
-		items, err := convoyStore.ListConvoyItems(c.ID)
+	for _, c := range caravans {
+		items, err := caravanStore.ListCaravanItems(c.ID)
 		if err != nil {
 			continue
 		}
 
-		// Check if this convoy has items in our rig.
-		hasRigItems := false
+		// Check if this caravan has items in our world.
+		hasWorldItems := false
 		for _, item := range items {
-			if item.Rig == result.Rig {
-				hasRigItems = true
+			if item.World == result.World {
+				hasWorldItems = true
 				break
 			}
 		}
-		if !hasRigItems {
+		if !hasWorldItems {
 			continue
 		}
 
-		info := ConvoyInfo{
+		info := CaravanInfo{
 			ID:         c.ID,
 			Name:       c.Name,
 			Status:     c.Status,
 			TotalItems: len(items),
 		}
 
-		statuses, err := convoyStore.CheckConvoyReadiness(c.ID, rigOpener)
+		statuses, err := caravanStore.CheckCaravanReadiness(c.ID, worldOpener)
 		if err == nil {
 			for _, st := range statuses {
 				switch {
@@ -286,6 +286,6 @@ func GatherConvoys(result *RigStatus, convoyStore ConvoyStore, rigOpener func(st
 			}
 		}
 
-		result.Convoys = append(result.Convoys, info)
+		result.Caravans = append(result.Caravans, info)
 	}
 }

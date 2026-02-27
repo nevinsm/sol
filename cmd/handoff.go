@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/nevinsm/gt/internal/config"
-	"github.com/nevinsm/gt/internal/events"
-	"github.com/nevinsm/gt/internal/handoff"
-	"github.com/nevinsm/gt/internal/session"
-	"github.com/nevinsm/gt/internal/store"
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/handoff"
+	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
 
 var (
-	handoffRig     string
+	handoffWorld   string
 	handoffAgent   string
 	handoffSummary string
 )
@@ -22,38 +22,38 @@ var handoffCmd = &cobra.Command{
 	Use:   "handoff",
 	Short: "Hand off to a fresh session with context preservation",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		rig := handoffRig
+		world := handoffWorld
 		agent := handoffAgent
 
 		// Infer from environment if not provided.
-		if rig == "" {
-			rig = os.Getenv("GT_RIG")
+		if world == "" {
+			world = os.Getenv("SOL_WORLD")
 		}
 		if agent == "" {
-			agent = os.Getenv("GT_AGENT")
+			agent = os.Getenv("SOL_AGENT")
 		}
 
-		if rig == "" {
-			return fmt.Errorf("--rig is required (or set GT_RIG env var)")
+		if world == "" {
+			return fmt.Errorf("--world is required (or set SOL_WORLD env var)")
 		}
 		if agent == "" {
-			return fmt.Errorf("--agent is required (or set GT_AGENT env var)")
+			return fmt.Errorf("--agent is required (or set SOL_AGENT env var)")
 		}
 
-		townStore, err := store.OpenTown()
+		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
-		defer townStore.Close()
+		defer sphereStore.Close()
 
 		mgr := session.New()
 		logger := events.NewLogger(config.Home())
 
 		if err := handoff.Exec(handoff.ExecOpts{
-			Rig:       rig,
+			World:     world,
 			AgentName: agent,
 			Summary:   handoffSummary,
-		}, mgr, townStore, logger); err != nil {
+		}, mgr, sphereStore, logger); err != nil {
 			return err
 		}
 
@@ -64,7 +64,7 @@ var handoffCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(handoffCmd)
-	handoffCmd.Flags().StringVar(&handoffRig, "rig", "", "rig name (defaults to GT_RIG env)")
-	handoffCmd.Flags().StringVar(&handoffAgent, "agent", "", "agent name (defaults to GT_AGENT env)")
+	handoffCmd.Flags().StringVar(&handoffWorld, "world", "", "world name (defaults to SOL_WORLD env)")
+	handoffCmd.Flags().StringVar(&handoffAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 	handoffCmd.Flags().StringVar(&handoffSummary, "summary", "", "summary of current progress")
 }
