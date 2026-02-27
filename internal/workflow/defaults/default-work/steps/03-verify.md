@@ -7,4 +7,4 @@ Final verification for {{issue}}.
 3. Ensure no unintended side effects
 4. Verify the commit history is clean
 
-When satisfied, signal completion: `gt done`
+When satisfied, signal completion: `sol resolve`

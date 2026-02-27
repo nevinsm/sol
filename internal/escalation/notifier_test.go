@@ -20,7 +20,7 @@ func testEscalation() store.Escalation {
 	return store.Escalation{
 		ID:          "esc-test0001",
 		Severity:    "high",
-		Source:      "myrig/sentinel",
+		Source:      "haven/sentinel",
 		Description: "Agent Toast stalled for 30 minutes",
 		Status:      "open",
 		CreatedAt:   time.Date(2026, 2, 27, 10, 30, 0, 0, time.UTC),
@@ -181,8 +181,8 @@ func TestWebhookNotifier(t *testing.T) {
 	if payload["severity"] != "high" {
 		t.Fatalf("expected severity 'high', got %q", payload["severity"])
 	}
-	if payload["source"] != "myrig/sentinel" {
-		t.Fatalf("expected source 'myrig/sentinel', got %q", payload["source"])
+	if payload["source"] != "haven/sentinel" {
+		t.Fatalf("expected source 'haven/sentinel', got %q", payload["source"])
 	}
 }
 

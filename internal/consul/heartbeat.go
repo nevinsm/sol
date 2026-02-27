@@ -20,14 +20,14 @@ type Heartbeat struct {
 
 // HeartbeatPath returns the path to the heartbeat file.
 // $SOL_HOME/consul/heartbeat.json
-func HeartbeatPath(gtHome string) string {
-	return filepath.Join(gtHome, "consul", "heartbeat.json")
+func HeartbeatPath(solHome string) string {
+	return filepath.Join(solHome, "consul", "heartbeat.json")
 }
 
 // WriteHeartbeat writes the heartbeat file atomically.
 // Creates the consul directory if needed.
-func WriteHeartbeat(gtHome string, hb *Heartbeat) error {
-	dir := filepath.Join(gtHome, "consul")
+func WriteHeartbeat(solHome string, hb *Heartbeat) error {
+	dir := filepath.Join(solHome, "consul")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create consul directory: %w", err)
 	}
@@ -38,11 +38,11 @@ func WriteHeartbeat(gtHome string, hb *Heartbeat) error {
 	}
 
 	// Write to temp file, then rename for atomicity.
-	tmp := HeartbeatPath(gtHome) + ".tmp"
+	tmp := HeartbeatPath(solHome) + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write heartbeat temp file: %w", err)
 	}
-	if err := os.Rename(tmp, HeartbeatPath(gtHome)); err != nil {
+	if err := os.Rename(tmp, HeartbeatPath(solHome)); err != nil {
 		os.Remove(tmp)
 		return fmt.Errorf("failed to rename heartbeat file: %w", err)
 	}
@@ -51,8 +51,8 @@ func WriteHeartbeat(gtHome string, hb *Heartbeat) error {
 
 // ReadHeartbeat reads the current heartbeat file.
 // Returns nil, nil if no heartbeat file exists.
-func ReadHeartbeat(gtHome string) (*Heartbeat, error) {
-	data, err := os.ReadFile(HeartbeatPath(gtHome))
+func ReadHeartbeat(solHome string) (*Heartbeat, error) {
+	data, err := os.ReadFile(HeartbeatPath(solHome))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil

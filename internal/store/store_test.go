@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// setupRig creates a temporary world store for testing.
-func setupRig(t *testing.T) *Store {
+// setupWorld creates a temporary world store for testing.
+func setupWorld(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
 	os.Setenv("SOL_HOME", dir)
@@ -18,7 +18,7 @@ func setupRig(t *testing.T) *Store {
 	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s, err := OpenWorld("testrig")
+	s, err := OpenWorld("ember")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,8 +26,8 @@ func setupRig(t *testing.T) *Store {
 	return s
 }
 
-// setupTown creates a temporary sphere store for testing.
-func setupTown(t *testing.T) *Store {
+// setupSphere creates a temporary sphere store for testing.
+func setupSphere(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
 	os.Setenv("SOL_HOME", dir)
@@ -45,7 +45,7 @@ func setupTown(t *testing.T) *Store {
 }
 
 func TestSchemaCreation(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	// Verify work_items table exists.
 	var count int
@@ -97,8 +97,8 @@ func TestSchemaCreation(t *testing.T) {
 	}
 }
 
-func TestTownSchemaCreation(t *testing.T) {
-	s := setupTown(t)
+func TestSphereSchemaCreation(t *testing.T) {
+	s := setupSphere(t)
 
 	var count int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agents'`).Scan(&count)
@@ -110,8 +110,8 @@ func TestTownSchemaCreation(t *testing.T) {
 	}
 }
 
-func TestMigrateTownV2(t *testing.T) {
-	s := setupTown(t)
+func TestMigrateSphereV4(t *testing.T) {
+	s := setupSphere(t)
 
 	// Verify messages table exists.
 	var count int
@@ -154,7 +154,7 @@ func TestMigrateTownV2(t *testing.T) {
 	}
 }
 
-func TestMigrateTownV1ToV2(t *testing.T) {
+func TestMigrateSphereV1ToV4(t *testing.T) {
 	dir := t.TempDir()
 	os.Setenv("SOL_HOME", dir)
 	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
@@ -175,7 +175,7 @@ func TestMigrateTownV1ToV2(t *testing.T) {
 	// Create an agent at V1.
 	_, err = s.db.Exec(
 		`INSERT INTO agents (id, name, rig, role, state, created_at, updated_at)
-		 VALUES ('myrig/Toast', 'Toast', 'myrig', 'agent', 'idle', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`)
+		 VALUES ('haven/Toast', 'Toast', 'haven', 'agent', 'idle', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestMigrateTownV1ToV2(t *testing.T) {
 	}
 
 	// Verify existing agents are untouched.
-	agent, err := s2.GetAgent("myrig/Toast")
+	agent, err := s2.GetAgent("haven/Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,10 +219,10 @@ func TestMigrateTownV1ToV2(t *testing.T) {
 }
 
 func TestWorkItemCRUD(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	// Create.
-	id, err := s.CreateWorkItem("Test item", "A test work item", "operator", 2, []string{"gt:task"})
+	id, err := s.CreateWorkItem("Test item", "A test work item", "operator", 2, []string{"sol:task"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,8 +250,8 @@ func TestWorkItemCRUD(t *testing.T) {
 	if item.CreatedBy != "operator" {
 		t.Fatalf("expected created_by 'operator', got %q", item.CreatedBy)
 	}
-	if len(item.Labels) != 1 || item.Labels[0] != "gt:task" {
-		t.Fatalf("expected labels [gt:task], got %v", item.Labels)
+	if len(item.Labels) != 1 || item.Labels[0] != "sol:task" {
+		t.Fatalf("expected labels [sol:task], got %v", item.Labels)
 	}
 
 	// List.
@@ -264,7 +264,7 @@ func TestWorkItemCRUD(t *testing.T) {
 	}
 
 	// Update.
-	err = s.UpdateWorkItem(id, WorkItemUpdates{Status: "working", Assignee: "myrig/Toast"})
+	err = s.UpdateWorkItem(id, WorkItemUpdates{Status: "working", Assignee: "haven/Toast"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,8 +275,8 @@ func TestWorkItemCRUD(t *testing.T) {
 	if item.Status != "working" {
 		t.Fatalf("expected status 'working', got %q", item.Status)
 	}
-	if item.Assignee != "myrig/Toast" {
-		t.Fatalf("expected assignee 'myrig/Toast', got %q", item.Assignee)
+	if item.Assignee != "haven/Toast" {
+		t.Fatalf("expected assignee 'haven/Toast', got %q", item.Assignee)
 	}
 
 	// Clear assignee.
@@ -310,7 +310,7 @@ func TestWorkItemCRUD(t *testing.T) {
 }
 
 func TestLabels(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	id, err := s.CreateWorkItem("Label test", "", "operator", 2, []string{"bug", "urgent"})
 	if err != nil {
@@ -384,7 +384,7 @@ func TestLabels(t *testing.T) {
 }
 
 func TestIDGeneration(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	pattern := regexp.MustCompile(`^sol-[0-9a-f]{8}$`)
 	seen := make(map[string]bool)
@@ -465,7 +465,7 @@ func TestConcurrentAccess(t *testing.T) {
 }
 
 func TestNotFound(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	_, err := s.GetWorkItem("sol-nonexist")
 	if err == nil {
@@ -478,27 +478,27 @@ func TestNotFound(t *testing.T) {
 }
 
 func TestAgentCRUD(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	// Create.
-	id, err := s.CreateAgent("Toast", "myrig", "agent")
+	id, err := s.CreateAgent("Toast", "haven", "agent")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id != "myrig/Toast" {
-		t.Fatalf("expected id 'myrig/Toast', got %q", id)
+	if id != "haven/Toast" {
+		t.Fatalf("expected id 'haven/Toast', got %q", id)
 	}
 
 	// Get.
-	agent, err := s.GetAgent("myrig/Toast")
+	agent, err := s.GetAgent("haven/Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if agent.Name != "Toast" {
 		t.Fatalf("expected name 'Toast', got %q", agent.Name)
 	}
-	if agent.World != "myrig" {
-		t.Fatalf("expected world 'myrig', got %q", agent.World)
+	if agent.World != "haven" {
+		t.Fatalf("expected world 'haven', got %q", agent.World)
 	}
 	if agent.Role != "agent" {
 		t.Fatalf("expected role 'agent', got %q", agent.Role)
@@ -511,11 +511,11 @@ func TestAgentCRUD(t *testing.T) {
 	}
 
 	// Update state with tether.
-	err = s.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
+	err = s.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent, err = s.GetAgent("myrig/Toast")
+	agent, err = s.GetAgent("haven/Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -527,11 +527,11 @@ func TestAgentCRUD(t *testing.T) {
 	}
 
 	// Clear tether (back to idle).
-	err = s.UpdateAgentState("myrig/Toast", "idle", "")
+	err = s.UpdateAgentState("haven/Toast", "idle", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent, err = s.GetAgent("myrig/Toast")
+	agent, err = s.GetAgent("haven/Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,10 +543,10 @@ func TestAgentCRUD(t *testing.T) {
 	}
 
 	// List agents.
-	s.CreateAgent("Jasper", "myrig", "agent")
-	s.CreateAgent("Wren", "myrig", "sentinel")
+	s.CreateAgent("Jasper", "haven", "agent")
+	s.CreateAgent("Wren", "haven", "sentinel")
 
-	agents, err := s.ListAgents("myrig", "")
+	agents, err := s.ListAgents("haven", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -555,7 +555,7 @@ func TestAgentCRUD(t *testing.T) {
 	}
 
 	// List filtered by state.
-	agents, err = s.ListAgents("myrig", "idle")
+	agents, err = s.ListAgents("haven", "idle")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -564,7 +564,7 @@ func TestAgentCRUD(t *testing.T) {
 	}
 
 	// Find idle agent.
-	idle, err := s.FindIdleAgent("myrig")
+	idle, err := s.FindIdleAgent("haven")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -576,10 +576,10 @@ func TestAgentCRUD(t *testing.T) {
 	}
 
 	// Set all agents to working, FindIdleAgent should return nil.
-	s.UpdateAgentState("myrig/Toast", "working", "sol-item1")
-	s.UpdateAgentState("myrig/Jasper", "working", "sol-item2")
+	s.UpdateAgentState("haven/Toast", "working", "sol-item1")
+	s.UpdateAgentState("haven/Jasper", "working", "sol-item2")
 
-	idle, err = s.FindIdleAgent("myrig")
+	idle, err = s.FindIdleAgent("haven")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -589,16 +589,16 @@ func TestAgentCRUD(t *testing.T) {
 }
 
 func TestAgentNotFound(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
-	_, err := s.GetAgent("norig/NoAgent")
+	_, err := s.GetAgent("noworld/NoAgent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent agent")
 	}
 }
 
 func TestListWorkItemsFilters(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	// Create items with different statuses and priorities.
 	id1, _ := s.CreateWorkItem("High priority", "", "operator", 1, []string{"feature"})
@@ -606,7 +606,7 @@ func TestListWorkItemsFilters(t *testing.T) {
 	s.CreateWorkItem("Low priority", "", "operator", 3, nil)
 
 	// Assign one.
-	s.UpdateWorkItem(id1, WorkItemUpdates{Assignee: "myrig/Toast"})
+	s.UpdateWorkItem(id1, WorkItemUpdates{Assignee: "haven/Toast"})
 	s.UpdateWorkItem(id2, WorkItemUpdates{Status: "working"})
 
 	// Filter by status.
@@ -619,7 +619,7 @@ func TestListWorkItemsFilters(t *testing.T) {
 	}
 
 	// Filter by assignee.
-	items, err = s.ListWorkItems(ListFilters{Assignee: "myrig/Toast"})
+	items, err = s.ListWorkItems(ListFilters{Assignee: "haven/Toast"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -686,7 +686,7 @@ func TestMigrationIdempotent(t *testing.T) {
 	}
 }
 
-func TestMigrateRigV1ToV2(t *testing.T) {
+func TestMigrateWorldV1ToV4(t *testing.T) {
 	dir := t.TempDir()
 	os.Setenv("SOL_HOME", dir)
 	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
@@ -751,12 +751,12 @@ func TestMigrateRigV1ToV2(t *testing.T) {
 }
 
 func TestCreateWorkItemWithOpts(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	id, err := s.CreateWorkItemWithOpts(CreateWorkItemOpts{
 		Title:       "Resolve conflicts",
 		Description: "Resolve merge conflicts for branch X",
-		CreatedBy:   "myrig/forge",
+		CreatedBy:   "haven/forge",
 		Priority:    1,
 		Labels:      []string{"conflict-resolution", "source-mr:mr-12345678"},
 		ParentID:    "sol-parent01",
@@ -778,8 +778,8 @@ func TestCreateWorkItemWithOpts(t *testing.T) {
 	if item.ParentID != "sol-parent01" {
 		t.Errorf("parent_id = %q, want %q", item.ParentID, "sol-parent01")
 	}
-	if item.CreatedBy != "myrig/forge" {
-		t.Errorf("created_by = %q, want %q", item.CreatedBy, "myrig/forge")
+	if item.CreatedBy != "haven/forge" {
+		t.Errorf("created_by = %q, want %q", item.CreatedBy, "haven/forge")
 	}
 	if len(item.Labels) != 2 {
 		t.Fatalf("expected 2 labels, got %d: %v", len(item.Labels), item.Labels)
@@ -787,7 +787,7 @@ func TestCreateWorkItemWithOpts(t *testing.T) {
 }
 
 func TestCreateWorkItemWithOptsNoParent(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	id, err := s.CreateWorkItemWithOpts(CreateWorkItemOpts{
 		Title:     "No parent",

@@ -21,7 +21,7 @@ type Config struct {
 	PatrolInterval    time.Duration // time between patrols (default: 5 minutes)
 	StaleTetherTimeout time.Duration // how long a tether can be stale (default: 1 hour)
 	HeartbeatDir      string        // path to heartbeat directory (default: $SOL_HOME/consul)
-	GTHome            string        // $SOL_HOME path
+	SolHome           string        // $SOL_HOME path
 	SourceRepo        string        // path to source git repo (for dispatch)
 	EscalationWebhook string        // webhook URL for escalation routing (optional)
 }
@@ -127,7 +127,7 @@ func (d *Consul) Run(ctx context.Context) error {
 	// shutdown writes the final heartbeat and sets agent state to idle.
 	shutdown := func() {
 		openEsc, _ := d.sphereStore.CountOpen()
-		_ = WriteHeartbeat(d.config.GTHome, &Heartbeat{
+		_ = WriteHeartbeat(d.config.SolHome, &Heartbeat{
 			Timestamp:   time.Now().UTC(),
 			PatrolCount: d.patrolCount,
 			Status:      "stopping",
@@ -206,7 +206,7 @@ func (d *Consul) Patrol() error {
 	if shutdown {
 		status = "stopping"
 	}
-	_ = WriteHeartbeat(d.config.GTHome, &Heartbeat{
+	_ = WriteHeartbeat(d.config.SolHome, &Heartbeat{
 		Timestamp:    time.Now().UTC(),
 		PatrolCount:  d.patrolCount,
 		Status:       status,

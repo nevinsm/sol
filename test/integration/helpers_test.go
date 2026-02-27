@@ -65,11 +65,11 @@ func gitRun(t *testing.T, dir string, args ...string) {
 	}
 }
 
-func openStores(t *testing.T, rig string) (*store.Store, *store.Store) {
+func openStores(t *testing.T, world string) (*store.Store, *store.Store) {
 	t.Helper()
-	worldStore, err := store.OpenWorld(rig)
+	worldStore, err := store.OpenWorld(world)
 	if err != nil {
-		t.Fatalf("open rig store: %v", err)
+		t.Fatalf("open world store: %v", err)
 	}
 	t.Cleanup(func() { worldStore.Close() })
 
@@ -298,7 +298,7 @@ func (m *mockSessionChecker) Capture(name string, lines int) (string, error) {
 	return "", nil
 }
 
-func (m *mockSessionChecker) Start(name, workdir, cmd string, env map[string]string, role, rig string) error {
+func (m *mockSessionChecker) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.alive[name] = true

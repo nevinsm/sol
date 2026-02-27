@@ -33,7 +33,7 @@ type State struct {
 type SessionManager interface {
 	Capture(name string, lines int) (string, error)
 	Stop(name string, force bool) error
-	Start(name, workdir, cmd string, env map[string]string, role, rig string) error
+	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 }
 
 // SphereStore is the subset of store.Store used by handoff.

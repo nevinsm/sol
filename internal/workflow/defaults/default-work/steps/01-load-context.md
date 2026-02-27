@@ -8,4 +8,4 @@ Read work item {{issue}} and understand the requirements fully.
 4. Note any dependencies or related work
 
 When you have a clear understanding of what needs to be done, advance
-to the next step: `gt workflow advance --rig=$GT_RIG --agent=$GT_AGENT`
+to the next step: `sol workflow advance --world=$SOL_WORLD --agent=$SOL_AGENT`

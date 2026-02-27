@@ -12,7 +12,7 @@ import (
 	"github.com/nevinsm/sol/internal/tether"
 )
 
-func setupGTHome(t *testing.T) string {
+func setupSolHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
@@ -20,15 +20,15 @@ func setupGTHome(t *testing.T) string {
 }
 
 func TestCapture(t *testing.T) {
-	gtHome := setupGTHome(t)
+	solHome := setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("testrig", "Toast", "sol-abc12345"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	// Set up workflow state.
-	wfDir := filepath.Join(gtHome, "testrig", "outposts", "Toast", ".workflow")
+	wfDir := filepath.Join(solHome, "ember", "outposts", "Toast", ".workflow")
 	if err := os.MkdirAll(wfDir, 0o755); err != nil {
 		t.Fatalf("failed to create workflow dir: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestCapture(t *testing.T) {
 	}
 
 	state, err := Capture(CaptureOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "Toast",
 		Summary:   "Implemented login form. Tests passing.",
 	}, mockCapture, mockGitLog)
@@ -68,11 +68,11 @@ func TestCapture(t *testing.T) {
 	if state.AgentName != "Toast" {
 		t.Errorf("expected AgentName Toast, got %q", state.AgentName)
 	}
-	if state.World != "testrig" {
-		t.Errorf("expected World testrig, got %q", state.World)
+	if state.World != "ember" {
+		t.Errorf("expected World ember, got %q", state.World)
 	}
-	if state.PreviousSession != "sol-testrig-Toast" {
-		t.Errorf("expected PreviousSession gt-testrig-Toast, got %q", state.PreviousSession)
+	if state.PreviousSession != "sol-ember-Toast" {
+		t.Errorf("expected PreviousSession sol-ember-Toast, got %q", state.PreviousSession)
 	}
 	if state.Summary != "Implemented login form. Tests passing." {
 		t.Errorf("expected summary to match, got %q", state.Summary)
@@ -89,15 +89,15 @@ func TestCapture(t *testing.T) {
 }
 
 func TestCaptureNoWorkflow(t *testing.T) {
-	setupGTHome(t)
+	setupSolHome(t)
 
 	// Set up tether file only, no workflow.
-	if err := tether.Write("testrig", "Toast", "sol-abc12345"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	state, err := Capture(CaptureOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "Toast",
 		Summary:   "Working on it.",
 	}, nil, nil)
@@ -115,9 +115,9 @@ func TestCaptureNoWorkflow(t *testing.T) {
 }
 
 func TestCaptureNoSummary(t *testing.T) {
-	setupGTHome(t)
+	setupSolHome(t)
 
-	if err := tether.Write("testrig", "Toast", "sol-abc12345"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -126,7 +126,7 @@ func TestCaptureNoSummary(t *testing.T) {
 	}
 
 	state, err := Capture(CaptureOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "Toast",
 	}, nil, mockGitLog)
 
@@ -147,13 +147,13 @@ func TestCaptureNoSummary(t *testing.T) {
 }
 
 func TestWriteAndRead(t *testing.T) {
-	setupGTHome(t)
+	setupSolHome(t)
 
 	original := &State{
 		WorkItemID:       "sol-abc12345",
 		AgentName:        "Toast",
-		World:              "testrig",
-		PreviousSession:  "sol-testrig-Toast",
+		World:              "ember",
+		PreviousSession:  "sol-ember-Toast",
 		Summary:          "Implemented login form.",
 		RecentOutput:     "All tests passed.\n$",
 		RecentCommits:    []string{"abc1234 feat: add login form", "def5678 test: tests"},
@@ -167,7 +167,7 @@ func TestWriteAndRead(t *testing.T) {
 	}
 
 	// Verify JSON on disk is valid.
-	data, err := os.ReadFile(HandoffPath("testrig", "Toast"))
+	data, err := os.ReadFile(HandoffPath("ember", "Toast"))
 	if err != nil {
 		t.Fatalf("failed to read handoff file: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestWriteAndRead(t *testing.T) {
 	}
 
 	// Read back.
-	read, err := Read("testrig", "Toast")
+	read, err := Read("ember", "Toast")
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -203,9 +203,9 @@ func TestWriteAndRead(t *testing.T) {
 }
 
 func TestReadNoFile(t *testing.T) {
-	setupGTHome(t)
+	setupSolHome(t)
 
-	state, err := Read("testrig", "Toast")
+	state, err := Read("ember", "Toast")
 	if err != nil {
 		t.Fatalf("Read returned error for missing file: %v", err)
 	}
@@ -215,25 +215,25 @@ func TestReadNoFile(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-	setupGTHome(t)
+	setupSolHome(t)
 
 	// Write then remove.
 	state := &State{
 		WorkItemID: "sol-abc12345",
 		AgentName:  "Toast",
-		World:        "testrig",
+		World:        "ember",
 		Summary:    "test",
 	}
 	if err := Write(state); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	if err := Remove("testrig", "Toast"); err != nil {
+	if err := Remove("ember", "Toast"); err != nil {
 		t.Fatalf("Remove failed: %v", err)
 	}
 
 	// Verify file is gone.
-	read, err := Read("testrig", "Toast")
+	read, err := Read("ember", "Toast")
 	if err != nil {
 		t.Fatalf("Read failed after remove: %v", err)
 	}
@@ -242,16 +242,16 @@ func TestRemove(t *testing.T) {
 	}
 
 	// Remove non-existent — no error.
-	if err := Remove("testrig", "Toast"); err != nil {
+	if err := Remove("ember", "Toast"); err != nil {
 		t.Fatalf("Remove non-existent returned error: %v", err)
 	}
 }
 
 func TestHasHandoff(t *testing.T) {
-	setupGTHome(t)
+	setupSolHome(t)
 
 	// No file.
-	if HasHandoff("testrig", "Toast") {
+	if HasHandoff("ember", "Toast") {
 		t.Error("expected HasHandoff to be false with no file")
 	}
 
@@ -259,14 +259,14 @@ func TestHasHandoff(t *testing.T) {
 	state := &State{
 		WorkItemID: "sol-abc12345",
 		AgentName:  "Toast",
-		World:        "testrig",
+		World:        "ember",
 		Summary:    "test",
 	}
 	if err := Write(state); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	if !HasHandoff("testrig", "Toast") {
+	if !HasHandoff("ember", "Toast") {
 		t.Error("expected HasHandoff to be true after write")
 	}
 }
@@ -329,7 +329,7 @@ type mockSessionMgr struct {
 type startCall struct {
 	Name, Workdir, Cmd string
 	Env                map[string]string
-	Role, Rig          string
+	Role, World        string
 }
 
 func (m *mockSessionMgr) Capture(name string, lines int) (string, error) {
@@ -341,8 +341,8 @@ func (m *mockSessionMgr) Stop(name string, force bool) error {
 	return nil
 }
 
-func (m *mockSessionMgr) Start(name, workdir, cmd string, env map[string]string, role, rig string) error {
-	m.started = append(m.started, startCall{name, workdir, cmd, env, role, rig})
+func (m *mockSessionMgr) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
+	m.started = append(m.started, startCall{name, workdir, cmd, env, role, world})
 	return nil
 }
 
@@ -362,15 +362,15 @@ func (m *mockSphereStore) SendMessage(sender, recipient, subject, body string, p
 }
 
 func TestExec(t *testing.T) {
-	gtHome := setupGTHome(t)
+	solHome := setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("testrig", "Toast", "sol-abc12345"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	// Create worktree directory.
-	worktreeDir := filepath.Join(gtHome, "testrig", "outposts", "Toast", "worktree")
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
 	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
@@ -379,7 +379,7 @@ func TestExec(t *testing.T) {
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "Toast",
 		Summary:   "Implemented login form.",
 	}, mgr, ts, nil)
@@ -389,19 +389,19 @@ func TestExec(t *testing.T) {
 	}
 
 	// Verify handoff file was written.
-	if !HasHandoff("testrig", "Toast") {
+	if !HasHandoff("ember", "Toast") {
 		t.Error("expected handoff file to exist after Exec")
 	}
 
 	// Verify session was stopped then started.
-	if len(mgr.stopped) != 1 || mgr.stopped[0] != "sol-testrig-Toast" {
+	if len(mgr.stopped) != 1 || mgr.stopped[0] != "sol-ember-Toast" {
 		t.Errorf("expected session stopped once, got %v", mgr.stopped)
 	}
 	if len(mgr.started) != 1 {
 		t.Fatalf("expected 1 start call, got %d", len(mgr.started))
 	}
-	if mgr.started[0].Name != "sol-testrig-Toast" {
-		t.Errorf("expected session name sol-testrig-Toast, got %q", mgr.started[0].Name)
+	if mgr.started[0].Name != "sol-ember-Toast" {
+		t.Errorf("expected session name sol-ember-Toast, got %q", mgr.started[0].Name)
 	}
 	if mgr.started[0].Workdir != worktreeDir {
 		t.Errorf("expected workdir %q, got %q", worktreeDir, mgr.started[0].Workdir)
@@ -418,11 +418,11 @@ func TestExec(t *testing.T) {
 		t.Fatalf("expected 1 message, got %d", len(ts.messages))
 	}
 	msg := ts.messages[0]
-	if msg.Sender != "testrig/Toast" {
-		t.Errorf("expected sender testrig/Toast, got %q", msg.Sender)
+	if msg.Sender != "ember/Toast" {
+		t.Errorf("expected sender ember/Toast, got %q", msg.Sender)
 	}
-	if msg.Recipient != "testrig/Toast" {
-		t.Errorf("expected recipient testrig/Toast, got %q", msg.Recipient)
+	if msg.Recipient != "ember/Toast" {
+		t.Errorf("expected recipient ember/Toast, got %q", msg.Recipient)
 	}
 	if msg.Subject != "HANDOFF: sol-abc12345" {
 		t.Errorf("expected subject 'HANDOFF: sol-abc12345', got %q", msg.Subject)
@@ -435,14 +435,14 @@ func TestExec(t *testing.T) {
 	}
 }
 
-func TestExecNoHook(t *testing.T) {
-	setupGTHome(t)
+func TestExecNoTether(t *testing.T) {
+	setupSolHome(t)
 
 	mgr := &mockSessionMgr{}
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "Toast",
 	}, mgr, ts, nil)
 

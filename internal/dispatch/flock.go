@@ -55,7 +55,7 @@ func (l *WorkItemLock) Release() error {
 	return nil
 }
 
-// MergeSlotLock holds an advisory flock on a rig's merge slot.
+// MergeSlotLock holds an advisory flock on a world's merge slot.
 type MergeSlotLock struct {
 	file *os.File
 	path string

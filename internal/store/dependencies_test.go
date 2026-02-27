@@ -3,7 +3,7 @@ package store
 import "testing"
 
 func TestAddDependency(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	id1, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
 	id2, _ := s.CreateWorkItem("Item B", "", "operator", 2, nil)
@@ -24,7 +24,7 @@ func TestAddDependency(t *testing.T) {
 }
 
 func TestAddDependencySelfRef(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	id1, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
 
@@ -35,23 +35,23 @@ func TestAddDependencySelfRef(t *testing.T) {
 }
 
 func TestAddDependencyNonexistentItem(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	id1, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
 
-	err := s.AddDependency(id1, "gt-nonexist")
+	err := s.AddDependency(id1, "sol-nonexist")
 	if err == nil {
 		t.Fatal("expected error for nonexistent work item")
 	}
 
-	err = s.AddDependency("gt-nonexist", id1)
+	err = s.AddDependency("sol-nonexist", id1)
 	if err == nil {
 		t.Fatal("expected error for nonexistent work item")
 	}
 }
 
 func TestAddDependencyCycleDetection(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	idA, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
 	idB, _ := s.CreateWorkItem("Item B", "", "operator", 2, nil)
@@ -81,7 +81,7 @@ func TestAddDependencyCycleDetection(t *testing.T) {
 }
 
 func TestRemoveDependency(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	id1, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
 	id2, _ := s.CreateWorkItem("Item B", "", "operator", 2, nil)
@@ -102,7 +102,7 @@ func TestRemoveDependency(t *testing.T) {
 }
 
 func TestGetDependencies(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	idA, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
 	idB, _ := s.CreateWorkItem("Item B", "", "operator", 2, nil)
@@ -133,7 +133,7 @@ func TestGetDependencies(t *testing.T) {
 }
 
 func TestGetDependents(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	idX, _ := s.CreateWorkItem("Item X", "", "operator", 2, nil)
 	idA, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
@@ -155,7 +155,7 @@ func TestGetDependents(t *testing.T) {
 }
 
 func TestIsReady(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	idA, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
 	idB, _ := s.CreateWorkItem("Item B", "", "operator", 2, nil)
@@ -212,7 +212,7 @@ func TestIsReady(t *testing.T) {
 }
 
 func TestV4Migration(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	// Verify the schema version is 4.
 	var v int

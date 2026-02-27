@@ -159,7 +159,7 @@ func (m *mockWorldStore) FindMergeRequestByBlocker(blockerID string) (*store.Mer
 func (m *mockWorldStore) CreateWorkItemWithOpts(opts store.CreateWorkItemOpts) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	id := fmt.Sprintf("gt-%08x", len(m.items))
+	id := fmt.Sprintf("sol-%08x", len(m.items))
 	m.items[id] = &store.WorkItem{
 		ID:        id,
 		Title:     opts.Title,
@@ -194,14 +194,14 @@ func newMockSphereStore() *mockSphereStore {
 	return &mockSphereStore{agents: make(map[string]*store.Agent)}
 }
 
-func (m *mockSphereStore) CreateAgent(name, rig, role string) (string, error) {
+func (m *mockSphereStore) CreateAgent(name, world, role string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	id := rig + "/" + name
+	id := world + "/" + name
 	m.agents[id] = &store.Agent{
 		ID:    id,
 		Name:  name,
-		World: rig,
+		World: world,
 		Role:  role,
 		State: "idle",
 	}
@@ -294,7 +294,7 @@ func TestLoadQualityGates(t *testing.T) {
 	defaults := []string{"go test ./..."}
 
 	// Write a file with commands, comments, and blanks.
-	content := `# Quality gates for this rig
+	content := `# Quality gates for this world
 go test ./...
 
 go vet ./...
@@ -338,10 +338,10 @@ func TestEnsureWorktreeCreatesNew(t *testing.T) {
 	t.Setenv("SOL_HOME", dir)
 
 	// Set worktree to a path inside SOL_HOME.
-	wtPath := filepath.Join(dir, "testrig", "forge", "rig")
+	wtPath := filepath.Join(dir, "ember", "forge", "world")
 
 	r := &Forge{
-		world:        "testrig",
+		world:        "ember",
 		sourceRepo: sourceRepo,
 		worktree:   wtPath,
 		logger:     testLogger(),

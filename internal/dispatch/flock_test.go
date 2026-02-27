@@ -115,13 +115,13 @@ func TestMergeSlotAcquireRelease(t *testing.T) {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
 
-	lock, err := AcquireMergeSlotLock("testrig")
+	lock, err := AcquireMergeSlotLock("ember")
 	if err != nil {
 		t.Fatalf("AcquireMergeSlotLock failed: %v", err)
 	}
 
 	// Verify lock file exists.
-	lockPath := filepath.Join(config.RuntimeDir(), "locks", "testrig-merge-slot.lock")
+	lockPath := filepath.Join(config.RuntimeDir(), "locks", "ember-merge-slot.lock")
 	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
 		t.Error("expected lock file to exist")
 	}
@@ -143,12 +143,12 @@ func TestMergeSlotDoubleAcquire(t *testing.T) {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
 
-	lock1, err := AcquireMergeSlotLock("testrig")
+	lock1, err := AcquireMergeSlotLock("ember")
 	if err != nil {
 		t.Fatalf("first acquire failed: %v", err)
 	}
 
-	_, err = AcquireMergeSlotLock("testrig")
+	_, err = AcquireMergeSlotLock("ember")
 	if err == nil {
 		t.Fatal("expected contention error on second acquire")
 	}
@@ -159,34 +159,34 @@ func TestMergeSlotDoubleAcquire(t *testing.T) {
 	// Release first, acquire again -> succeeds.
 	lock1.Release()
 
-	lock3, err := AcquireMergeSlotLock("testrig")
+	lock3, err := AcquireMergeSlotLock("ember")
 	if err != nil {
 		t.Fatalf("acquire after release failed: %v", err)
 	}
 	lock3.Release()
 }
 
-func TestMergeSlotDifferentRigs(t *testing.T) {
+func TestMergeSlotDifferentWorlds(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
 		t.Fatalf("failed to create runtime dir: %v", err)
 	}
 
-	lock1, err := AcquireMergeSlotLock("rig1")
+	lock1, err := AcquireMergeSlotLock("alpha")
 	if err != nil {
-		t.Fatalf("acquire rig1 failed: %v", err)
+		t.Fatalf("acquire alpha failed: %v", err)
 	}
 
-	lock2, err := AcquireMergeSlotLock("rig2")
+	lock2, err := AcquireMergeSlotLock("beta")
 	if err != nil {
-		t.Fatalf("acquire rig2 failed (different rigs should not conflict): %v", err)
+		t.Fatalf("acquire beta failed (different worlds should not conflict): %v", err)
 	}
 
 	if err := lock1.Release(); err != nil {
-		t.Errorf("release rig1 failed: %v", err)
+		t.Errorf("release alpha failed: %v", err)
 	}
 	if err := lock2.Release(); err != nil {
-		t.Errorf("release rig2 failed: %v", err)
+		t.Errorf("release beta failed: %v", err)
 	}
 }

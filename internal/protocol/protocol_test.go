@@ -64,15 +64,15 @@ func TestInstallClaudeMD(t *testing.T) {
 	}
 }
 
-func TestGenerateRefineryClaudeMD(t *testing.T) {
-	ctx := RefineryClaudeMDContext{
+func TestGenerateForgeClaudeMD(t *testing.T) {
+	ctx := ForgeClaudeMDContext{
 		World:          "myworld",
 		TargetBranch: "main",
 		WorktreeDir:  "/home/user/sol/myworld/forge/worktree",
 		QualityGates: []string{"go test ./...", "go vet ./..."},
 	}
 
-	content := GenerateRefineryClaudeMD(ctx)
+	content := GenerateForgeClaudeMD(ctx)
 
 	checks := []string{
 		"Forge Agent (world: myworld)",
@@ -95,22 +95,22 @@ func TestGenerateRefineryClaudeMD(t *testing.T) {
 	}
 	for _, check := range checks {
 		if !strings.Contains(content, check) {
-			t.Errorf("GenerateRefineryClaudeMD missing %q", check)
+			t.Errorf("GenerateForgeClaudeMD missing %q", check)
 		}
 	}
 }
 
-func TestInstallRefineryClaudeMD(t *testing.T) {
+func TestInstallForgeClaudeMD(t *testing.T) {
 	dir := t.TempDir()
-	ctx := RefineryClaudeMDContext{
+	ctx := ForgeClaudeMDContext{
 		World:          "myworld",
 		TargetBranch: "main",
 		WorktreeDir:  dir,
 		QualityGates: []string{"go test ./..."},
 	}
 
-	if err := InstallRefineryClaudeMD(dir, ctx); err != nil {
-		t.Fatalf("InstallRefineryClaudeMD failed: %v", err)
+	if err := InstallForgeClaudeMD(dir, ctx); err != nil {
+		t.Fatalf("InstallForgeClaudeMD failed: %v", err)
 	}
 
 	path := filepath.Join(dir, ".claude", "CLAUDE.md")

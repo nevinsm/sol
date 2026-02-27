@@ -24,13 +24,13 @@ type mockSphereStore struct {
 	err    error
 }
 
-func (m *mockSphereStore) ListAgents(rig, state string) ([]store.Agent, error) {
+func (m *mockSphereStore) ListAgents(world, state string) ([]store.Agent, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	var result []store.Agent
 	for _, a := range m.agents {
-		if rig != "" && a.World != rig {
+		if world != "" && a.World != world {
 			continue
 		}
 		if state != "" && a.State != state {
@@ -125,8 +125,8 @@ func TestGatherHealthy(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", TetherItem: "sol-a1b2c3d4"},
-			{ID: "myrig/Sage", Name: "Sage", World: "myrig", State: "working", TetherItem: "sol-11223344"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", TetherItem: "sol-a1b2c3d4"},
+			{ID: "haven/Sage", Name: "Sage", World: "haven", State: "working", TetherItem: "sol-11223344"},
 		},
 	}
 	world := &mockWorldStore{
@@ -137,12 +137,12 @@ func TestGatherHealthy(t *testing.T) {
 	}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"sol-myrig-Toast": true,
-			"sol-myrig-Sage":  true,
+			"sol-haven-Toast": true,
+			"sol-haven-Sage":  true,
 		},
 	}
 
-	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -167,8 +167,8 @@ func TestGatherUnhealthy(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", TetherItem: "sol-a1b2c3d4"},
-			{ID: "myrig/Jasper", Name: "Jasper", World: "myrig", State: "working", TetherItem: "sol-c5d6e7f8"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", TetherItem: "sol-a1b2c3d4"},
+			{ID: "haven/Jasper", Name: "Jasper", World: "haven", State: "working", TetherItem: "sol-c5d6e7f8"},
 		},
 	}
 	world := &mockWorldStore{
@@ -179,12 +179,12 @@ func TestGatherUnhealthy(t *testing.T) {
 	}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"sol-myrig-Toast":  true,
-			"sol-myrig-Jasper": false, // dead session
+			"sol-haven-Toast":  true,
+			"sol-haven-Jasper": false, // dead session
 		},
 	}
 
-	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestGatherDegraded(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", TetherItem: "sol-a1b2c3d4"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", TetherItem: "sol-a1b2c3d4"},
 		},
 	}
 	world := &mockWorldStore{
@@ -215,10 +215,10 @@ func TestGatherDegraded(t *testing.T) {
 		},
 	}
 	checker := &mockChecker{
-		alive: map[string]bool{"sol-myrig-Toast": true},
+		alive: map[string]bool{"sol-haven-Toast": true},
 	}
 
-	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestGatherNoAgents(t *testing.T) {
 	world := &mockWorldStore{items: nil}
 	checker := &mockChecker{alive: nil}
 
-	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestGatherNoAgentsDegraded(t *testing.T) {
 	world := &mockWorldStore{items: nil}
 	checker := &mockChecker{alive: nil}
 
-	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestGatherWithHookedWork(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", TetherItem: "sol-a1b2c3d4"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", TetherItem: "sol-a1b2c3d4"},
 		},
 	}
 	world := &mockWorldStore{
@@ -297,10 +297,10 @@ func TestGatherWithHookedWork(t *testing.T) {
 		},
 	}
 	checker := &mockChecker{
-		alive: map[string]bool{"sol-myrig-Toast": true},
+		alive: map[string]bool{"sol-haven-Toast": true},
 	}
 
-	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -326,15 +326,15 @@ func TestGatherMissingWorkItem(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", TetherItem: "sol-nonexist"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", TetherItem: "sol-nonexist"},
 		},
 	}
 	world := &mockWorldStore{items: map[string]*store.WorkItem{}} // item not found
 	checker := &mockChecker{
-		alive: map[string]bool{"sol-myrig-Toast": true},
+		alive: map[string]bool{"sol-haven-Toast": true},
 	}
 
-	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v (should not fail on missing work item)", err)
 	}
@@ -357,10 +357,10 @@ func TestGatherMixedStates(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "myrig/Toast", Name: "Toast", World: "myrig", State: "working", TetherItem: "sol-a1b2c3d4"},
-			{ID: "myrig/Jasper", Name: "Jasper", World: "myrig", State: "working", TetherItem: "sol-c5d6e7f8"},
-			{ID: "myrig/Sage", Name: "Sage", World: "myrig", State: "idle"},
-			{ID: "myrig/Copper", Name: "Copper", World: "myrig", State: "stalled", TetherItem: "sol-11223344"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", TetherItem: "sol-a1b2c3d4"},
+			{ID: "haven/Jasper", Name: "Jasper", World: "haven", State: "working", TetherItem: "sol-c5d6e7f8"},
+			{ID: "haven/Sage", Name: "Sage", World: "haven", State: "idle"},
+			{ID: "haven/Copper", Name: "Copper", World: "haven", State: "stalled", TetherItem: "sol-11223344"},
 		},
 	}
 	world := &mockWorldStore{
@@ -372,14 +372,14 @@ func TestGatherMixedStates(t *testing.T) {
 	}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"sol-myrig-Toast":  true,
-			"sol-myrig-Jasper": false, // dead session
-			"sol-myrig-Sage":   false, // idle — no session expected
-			"sol-myrig-Copper": false, // stalled, dead session
+			"sol-haven-Toast":  true,
+			"sol-haven-Jasper": false, // dead session
+			"sol-haven-Sage":   false, // idle — no session expected
+			"sol-haven-Copper": false, // stalled, dead session
 		},
 	}
 
-	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -465,11 +465,11 @@ func TestGatherWithForge(t *testing.T) {
 	world := &mockWorldStore{items: nil}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"sol-myrig-forge": true, // forge session alive
+			"sol-haven-forge": true, // forge session alive
 		},
 	}
 
-	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -477,8 +477,8 @@ func TestGatherWithForge(t *testing.T) {
 	if !result.Forge.Running {
 		t.Error("Forge.Running = false, want true")
 	}
-	if result.Forge.SessionName != "sol-myrig-forge" {
-		t.Errorf("Forge.SessionName = %q, want %q", result.Forge.SessionName, "sol-myrig-forge")
+	if result.Forge.SessionName != "sol-haven-forge" {
+		t.Errorf("Forge.SessionName = %q, want %q", result.Forge.SessionName, "sol-haven-forge")
 	}
 }
 
@@ -493,7 +493,7 @@ func TestGatherWithoutForge(t *testing.T) {
 	world := &mockWorldStore{items: nil}
 	checker := &mockChecker{alive: nil} // forge session not alive
 
-	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -525,7 +525,7 @@ func TestGatherMergeQueue(t *testing.T) {
 		},
 	}
 
-	result, err := Gather("myrig", sphere, world, mqStore, checker)
+	result, err := Gather("haven", sphere, world, mqStore, checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}
@@ -558,7 +558,7 @@ func TestGatherMergeQueueEmpty(t *testing.T) {
 	world := &mockWorldStore{items: nil}
 	checker := &mockChecker{alive: nil}
 
-	result, err := Gather("myrig", sphere, world, emptyMQStore(), checker)
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
 		t.Fatalf("Gather() error: %v", err)
 	}

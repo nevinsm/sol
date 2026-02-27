@@ -64,8 +64,8 @@ type Step struct {
 
 // WorkflowDir returns the path to an agent's workflow instance.
 // $SOL_HOME/{world}/outposts/{agentName}/.workflow/
-func WorkflowDir(rig, agentName string) string {
-	return filepath.Join(config.Home(), rig, "outposts", agentName, ".workflow")
+func WorkflowDir(world, agentName string) string {
+	return filepath.Join(config.Home(), world, "outposts", agentName, ".workflow")
 }
 
 // FormulaDir returns the path to a formula.
@@ -219,7 +219,7 @@ func NextReadySteps(steps []StepDef, completed []string) []string {
 }
 
 // Instantiate creates a workflow instance for an agent's assignment.
-func Instantiate(rig, agentName, formulaName string,
+func Instantiate(world, agentName, formulaName string,
 	vars map[string]string) (*Instance, *State, error) {
 
 	// Ensure formula exists (extract from embedded defaults if needed).
@@ -244,7 +244,7 @@ func Instantiate(rig, agentName, formulaName string,
 	}
 
 	// Create .workflow/ directory.
-	wfDir := WorkflowDir(rig, agentName)
+	wfDir := WorkflowDir(world, agentName)
 	stepsDir := filepath.Join(wfDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
 		return nil, nil, fmt.Errorf("failed to create workflow directory: %w", err)
@@ -329,8 +329,8 @@ func Instantiate(rig, agentName, formulaName string,
 
 // ReadState reads the current workflow state for an agent.
 // Returns nil, nil if no workflow exists (no .workflow/ directory).
-func ReadState(rig, agentName string) (*State, error) {
-	path := filepath.Join(WorkflowDir(rig, agentName), "state.json")
+func ReadState(world, agentName string) (*State, error) {
+	path := filepath.Join(WorkflowDir(world, agentName), "state.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -348,8 +348,8 @@ func ReadState(rig, agentName string) (*State, error) {
 
 // ReadCurrentStep reads the current step's full details.
 // Returns nil, nil if workflow is complete or doesn't exist.
-func ReadCurrentStep(rig, agentName string) (*Step, error) {
-	state, err := ReadState(rig, agentName)
+func ReadCurrentStep(world, agentName string) (*Step, error) {
+	state, err := ReadState(world, agentName)
 	if err != nil {
 		return nil, err
 	}
@@ -357,13 +357,13 @@ func ReadCurrentStep(rig, agentName string) (*Step, error) {
 		return nil, nil
 	}
 
-	stepPath := filepath.Join(WorkflowDir(rig, agentName), "steps", state.CurrentStep+".json")
+	stepPath := filepath.Join(WorkflowDir(world, agentName), "steps", state.CurrentStep+".json")
 	return readStepFile(stepPath)
 }
 
 // ReadInstance reads the workflow instance metadata.
-func ReadInstance(rig, agentName string) (*Instance, error) {
-	path := filepath.Join(WorkflowDir(rig, agentName), "manifest.json")
+func ReadInstance(world, agentName string) (*Instance, error) {
+	path := filepath.Join(WorkflowDir(world, agentName), "manifest.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -380,11 +380,11 @@ func ReadInstance(rig, agentName string) (*Instance, error) {
 }
 
 // ListSteps reads all step files and returns them in manifest order.
-func ListSteps(rig, agentName string) ([]Step, error) {
-	wfDir := WorkflowDir(rig, agentName)
+func ListSteps(world, agentName string) ([]Step, error) {
+	wfDir := WorkflowDir(world, agentName)
 
 	// Read the instance to get the formula and load the manifest for step order.
-	inst, err := ReadInstance(rig, agentName)
+	inst, err := ReadInstance(world, agentName)
 	if err != nil {
 		return nil, err
 	}
@@ -416,16 +416,16 @@ func ListSteps(rig, agentName string) ([]Step, error) {
 }
 
 // Advance marks the current step as complete and finds the next ready step.
-func Advance(rig, agentName string) (nextStep *Step, done bool, err error) {
-	wfDir := WorkflowDir(rig, agentName)
+func Advance(world, agentName string) (nextStep *Step, done bool, err error) {
+	wfDir := WorkflowDir(world, agentName)
 
 	// Read state.
-	state, err := ReadState(rig, agentName)
+	state, err := ReadState(world, agentName)
 	if err != nil {
 		return nil, false, err
 	}
 	if state == nil {
-		return nil, false, fmt.Errorf("no workflow found for agent %q in rig %q", agentName, rig)
+		return nil, false, fmt.Errorf("no workflow found for agent %q in world %q", agentName, world)
 	}
 	if state.Status != "running" {
 		return nil, false, fmt.Errorf("workflow status is %q, expected \"running\"", state.Status)
@@ -451,7 +451,7 @@ func Advance(rig, agentName string) (nextStep *Step, done bool, err error) {
 	state.Completed = append(state.Completed, state.CurrentStep)
 
 	// Load manifest to determine next ready steps.
-	inst, err := ReadInstance(rig, agentName)
+	inst, err := ReadInstance(world, agentName)
 	if err != nil {
 		return nil, false, err
 	}
@@ -503,8 +503,8 @@ func Advance(rig, agentName string) (nextStep *Step, done bool, err error) {
 }
 
 // Remove deletes a workflow instance directory.
-func Remove(rig, agentName string) error {
-	wfDir := WorkflowDir(rig, agentName)
+func Remove(world, agentName string) error {
+	wfDir := WorkflowDir(world, agentName)
 	if err := os.RemoveAll(wfDir); err != nil {
 		return fmt.Errorf("failed to remove workflow directory: %w", err)
 	}

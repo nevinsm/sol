@@ -79,13 +79,13 @@ var forgeStartCmd = &cobra.Command{
 		}
 
 		// 3. Install forge CLAUDE.md.
-		rctx := protocol.RefineryClaudeMDContext{
+		rctx := protocol.ForgeClaudeMDContext{
 			World:        world,
 			TargetBranch: cfg.TargetBranch,
 			WorktreeDir:  ref.WorktreeDir(),
 			QualityGates: cfg.QualityGates,
 		}
-		if err := protocol.InstallRefineryClaudeMD(ref.WorktreeDir(), rctx); err != nil {
+		if err := protocol.InstallForgeClaudeMD(ref.WorktreeDir(), rctx); err != nil {
 			return fmt.Errorf("failed to install forge CLAUDE.md: %w", err)
 		}
 

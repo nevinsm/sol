@@ -24,10 +24,10 @@ func TestMailSendAndReceive(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -35,15 +35,15 @@ func TestMailSendAndReceive(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	// Send message from operator to testrig/Toast.
-	msgID, err := sphereStore.SendMessage("operator", "testrig/Toast",
+	// Send message from operator to ember/Toast.
+	msgID, err := sphereStore.SendMessage("operator", "ember/Toast",
 		"Deploy config", "Please update deploy.yaml", 2, "notification")
 	if err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
 
 	// Verify inbox.
-	msgs, err := sphereStore.Inbox("testrig/Toast")
+	msgs, err := sphereStore.Inbox("ember/Toast")
 	if err != nil {
 		t.Fatalf("Inbox: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestMailSendAndReceive(t *testing.T) {
 	}
 
 	// Verify unread count.
-	count, err := sphereStore.CountUnread("testrig/Toast")
+	count, err := sphereStore.CountUnread("ember/Toast")
 	if err != nil {
 		t.Fatalf("CountUnread: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestMailSendAndReceive(t *testing.T) {
 	}
 
 	// Verify inbox is empty.
-	msgs, err = sphereStore.Inbox("testrig/Toast")
+	msgs, err = sphereStore.Inbox("ember/Toast")
 	if err != nil {
 		t.Fatalf("Inbox after ack: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestMailSendAndReceive(t *testing.T) {
 	}
 
 	// Verify unread count is 0.
-	count, err = sphereStore.CountUnread("testrig/Toast")
+	count, err = sphereStore.CountUnread("ember/Toast")
 	if err != nil {
 		t.Fatalf("CountUnread after ack: %v", err)
 	}
@@ -109,10 +109,10 @@ func TestProtocolMessageFlow(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -123,11 +123,11 @@ func TestProtocolMessageFlow(t *testing.T) {
 	// Send AGENT_DONE protocol message.
 	payload := store.AgentDonePayload{
 		WorkItemID: "sol-abc12345",
-		AgentID:    "testrig/Toast",
+		AgentID:    "ember/Toast",
 		Branch:     "outpost/Toast/sol-abc12345",
-		World:        "testrig",
+		World:        "ember",
 	}
-	msgID, err := sphereStore.SendProtocolMessage("testrig/Toast", "testrig/sentinel",
+	msgID, err := sphereStore.SendProtocolMessage("ember/Toast", "ember/sentinel",
 		store.ProtoAgentDone, payload)
 	if err != nil {
 		t.Fatalf("SendProtocolMessage: %v", err)
@@ -137,7 +137,7 @@ func TestProtocolMessageFlow(t *testing.T) {
 	}
 
 	// Verify PendingProtocol returns it.
-	msgs, err := sphereStore.PendingProtocol("testrig/sentinel", store.ProtoAgentDone)
+	msgs, err := sphereStore.PendingProtocol("ember/sentinel", store.ProtoAgentDone)
 	if err != nil {
 		t.Fatalf("PendingProtocol: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestProtocolMessageFlow(t *testing.T) {
 	}
 
 	// Verify empty after ack.
-	msgs, err = sphereStore.PendingProtocol("testrig/sentinel", store.ProtoAgentDone)
+	msgs, err = sphereStore.PendingProtocol("ember/sentinel", store.ProtoAgentDone)
 	if err != nil {
 		t.Fatalf("PendingProtocol after ack: %v", err)
 	}
@@ -179,18 +179,18 @@ func TestEventFeedEndToEnd(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
 
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	// Emit events of different types.
 	logger.Emit(events.EventCast, "sol", "operator", "both", map[string]string{"item": "1"})
 	logger.Emit(events.EventResolve, "sol", "Toast", "both", map[string]string{"item": "1"})
-	logger.Emit(events.EventPatrol, "testrig/sentinel", "sentinel", "feed", map[string]string{"rig": "testrig"})
+	logger.Emit(events.EventPatrol, "ember/sentinel", "sentinel", "feed", map[string]string{"world": "ember"})
 
 	// Read with no filter — all present.
-	reader := events.NewReader(gtHome, false)
+	reader := events.NewReader(solHome, false)
 	evts, err := reader.Read(events.ReadOpts{})
 	if err != nil {
 		t.Fatalf("Read: %v", err)
@@ -221,7 +221,7 @@ func TestEventFeedEndToEnd(t *testing.T) {
 	}
 
 	// Verify JSONL file lines are valid JSON.
-	f, err := os.Open(filepath.Join(gtHome, ".events.jsonl"))
+	f, err := os.Open(filepath.Join(solHome, ".events.jsonl"))
 	if err != nil {
 		t.Fatalf("open events file: %v", err)
 	}
@@ -248,14 +248,14 @@ func TestChronicleDedupAndAggregation(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
 
-	cfg := events.DefaultChronicleConfig(gtHome)
+	cfg := events.DefaultChronicleConfig(solHome)
 	cfg.DedupWindow = 10 * time.Second
 	cfg.AggWindow = 1 * time.Millisecond // Very short for testing.
 
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	// Write duplicate events (same type/source/actor within DedupWindow).
 	logger.Emit(events.EventResolve, "sol", "Toast", "both", map[string]string{"run": "1"})
@@ -285,7 +285,7 @@ func TestChronicleDedupAndAggregation(t *testing.T) {
 	}
 
 	// Read curated feed.
-	reader := events.NewReader(gtHome, true)
+	reader := events.NewReader(solHome, true)
 	curated, err := reader.Read(events.ReadOpts{})
 	if err != nil {
 		t.Fatalf("read curated: %v", err)
@@ -324,19 +324,19 @@ func TestChronicleFeedTruncation(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
 
-	cfg := events.DefaultChronicleConfig(gtHome)
+	cfg := events.DefaultChronicleConfig(solHome)
 	cfg.MaxFeedSize = 1024 // 1KB
 	cfg.AggWindow = 1 * time.Millisecond
 
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	// Write enough events to exceed the 1KB limit.
 	for i := 0; i < 100; i++ {
 		logger.Emit(events.EventPatrol, "sentinel", "sentinel", "feed",
-			map[string]string{"rig": "testrig", "iteration": "patrol-data-padding-to-make-this-longer"})
+			map[string]string{"world": "ember", "iteration": "patrol-data-padding-to-make-this-longer"})
 	}
 
 	time.Sleep(5 * time.Millisecond)
@@ -390,18 +390,18 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
 
-	worldStore, sphereStore := openStores(t, "testrig")
-	logger := events.NewLogger(gtHome)
+	worldStore, sphereStore := openStores(t, "ember")
+	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
 	// Create agent with state=working, tether_item set.
-	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 
 	// Create work item.
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -412,16 +412,16 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	)
 
 	// Write tether file.
-	if err := tether.Write("testrig", "Toast", "sol-abc12345"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
 	// Session is dead (not in mock.alive).
 	// Create worktree directory so respawn doesn't fail.
-	worktreeDir := dispatch.WorktreePath("testrig", "Toast")
+	worktreeDir := dispatch.WorktreePath("ember", "Toast")
 	os.MkdirAll(worktreeDir, 0o755)
 
-	cfg := sentinel.DefaultConfig("testrig", "", gtHome)
+	cfg := sentinel.DefaultConfig("ember", "", solHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
 	cfg.MaxRespawns = 2
 
@@ -438,7 +438,7 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	}
 
 	// Verify: respawn event emitted.
-	assertEventEmitted(t, gtHome, events.EventRespawn)
+	assertEventEmitted(t, solHome, events.EventRespawn)
 }
 
 // --- Test 7: Sentinel Max Respawns Returns Work to Open ---
@@ -448,17 +448,17 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
 
-	worldStore, sphereStore := openStores(t, "testrig")
-	logger := events.NewLogger(gtHome)
+	worldStore, sphereStore := openStores(t, "ember")
+	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
-	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	worldStore.DB().Exec(
@@ -467,14 +467,14 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 		"sol-abc12345", "Test task", now, now,
 	)
 
-	if err := tether.Write("testrig", "Toast", "sol-abc12345"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
-	worktreeDir := dispatch.WorktreePath("testrig", "Toast")
+	worktreeDir := dispatch.WorktreePath("ember", "Toast")
 	os.MkdirAll(worktreeDir, 0o755)
 
-	cfg := sentinel.DefaultConfig("testrig", "", gtHome)
+	cfg := sentinel.DefaultConfig("ember", "", solHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
 	cfg.MaxRespawns = 2
 
@@ -486,7 +486,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 		t.Fatalf("patrol 1: expected 1 start, got %d", len(mock.started))
 	}
 	// Kill session.
-	delete(mock.alive, "sol-testrig-Toast")
+	delete(mock.alive, "sol-ember-Toast")
 
 	// Patrol 2: still stalled → respawn (attempt 2).
 	w.Patrol()
@@ -494,7 +494,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 		t.Fatalf("patrol 2: expected 2 starts, got %d", len(mock.started))
 	}
 	// Kill session again.
-	delete(mock.alive, "sol-testrig-Toast")
+	delete(mock.alive, "sol-ember-Toast")
 
 	// Patrol 3: max reached → return to open.
 	w.Patrol()
@@ -503,7 +503,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	}
 
 	// Agent should be idle.
-	agent, err := sphereStore.GetAgent("testrig/Toast")
+	agent, err := sphereStore.GetAgent("ember/Toast")
 	if err != nil {
 		t.Fatalf("GetAgent: %v", err)
 	}
@@ -521,12 +521,12 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	}
 
 	// Tether file should be removed.
-	if tether.IsTethered("testrig", "Toast") {
+	if tether.IsTethered("ember", "Toast") {
 		t.Error("tether file should be removed after max respawns")
 	}
 
 	// Stalled event should be emitted.
-	assertEventEmitted(t, gtHome, events.EventStalled)
+	assertEventEmitted(t, solHome, events.EventStalled)
 }
 
 // --- Test 8: Sentinel Cleans Up Zombie Sessions ---
@@ -536,21 +536,21 @@ func TestSentinelCleanupZombies(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
 
-	_, sphereStore := openStores(t, "testrig")
-	logger := events.NewLogger(gtHome)
+	_, sphereStore := openStores(t, "ember")
+	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
 	// Create idle agent with no tether_item, no tether file.
-	sphereStore.CreateAgent("Toast", "testrig", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "agent")
 	// Session is alive.
-	mock.alive["sol-testrig-Toast"] = true
+	mock.alive["sol-ember-Toast"] = true
 
-	cfg := sentinel.DefaultConfig("testrig", "", gtHome)
+	cfg := sentinel.DefaultConfig("ember", "", solHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
 
 	w := sentinel.New(cfg, sphereStore, nil, mock, logger)
@@ -563,12 +563,12 @@ func TestSentinelCleanupZombies(t *testing.T) {
 	if len(mock.stopped) != 1 {
 		t.Fatalf("expected 1 session stopped (zombie), got %d", len(mock.stopped))
 	}
-	if mock.stopped[0] != "sol-testrig-Toast" {
-		t.Errorf("stopped session: got %q, want %q", mock.stopped[0], "sol-testrig-Toast")
+	if mock.stopped[0] != "sol-ember-Toast" {
+		t.Errorf("stopped session: got %q, want %q", mock.stopped[0], "sol-ember-Toast")
 	}
 
 	// Patrol event should show zombie count.
-	assertEventEmitted(t, gtHome, events.EventPatrol)
+	assertEventEmitted(t, solHome, events.EventPatrol)
 }
 
 // --- Test 9: Sentinel AI Assessment — Nudge ---
@@ -578,21 +578,21 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
 
-	_, sphereStore := openStores(t, "testrig")
-	logger := events.NewLogger(gtHome)
+	_, sphereStore := openStores(t, "ember")
+	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
-	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
-	mock.alive["sol-testrig-Toast"] = true
-	mock.captures["sol-testrig-Toast"] = "same output both patrols"
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "same output both patrols"
 
-	cfg := sentinel.DefaultConfig("testrig", "", gtHome)
+	cfg := sentinel.DefaultConfig("ember", "", solHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
 
 	w := sentinel.New(cfg, sphereStore, nil, mock, logger)
@@ -620,7 +620,7 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 	}
 
 	// Verify: assess event emitted.
-	assertEventEmitted(t, gtHome, events.EventAssess)
+	assertEventEmitted(t, solHome, events.EventAssess)
 }
 
 // --- Test 10: Sentinel AI Assessment — Low Confidence Ignored ---
@@ -630,20 +630,20 @@ func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
 
-	_, sphereStore := openStores(t, "testrig")
+	_, sphereStore := openStores(t, "ember")
 	mock := newMockSessionChecker()
 
-	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
-	mock.alive["sol-testrig-Toast"] = true
-	mock.captures["sol-testrig-Toast"] = "same output"
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "same output"
 
-	cfg := sentinel.DefaultConfig("testrig", "", gtHome)
+	cfg := sentinel.DefaultConfig("ember", "", solHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
 
 	w := sentinel.New(cfg, sphereStore, nil, mock, nil)
@@ -673,21 +673,21 @@ func TestSentinelAIAssessmentFailure(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
 
-	_, sphereStore := openStores(t, "testrig")
-	logger := events.NewLogger(gtHome)
+	_, sphereStore := openStores(t, "ember")
+	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
-	sphereStore.CreateAgent("Toast", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/Toast", "working", "sol-abc12345")
-	mock.alive["sol-testrig-Toast"] = true
-	mock.captures["sol-testrig-Toast"] = "same output"
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "same output"
 
-	cfg := sentinel.DefaultConfig("testrig", "", gtHome)
+	cfg := sentinel.DefaultConfig("ember", "", solHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
 
 	w := sentinel.New(cfg, sphereStore, nil, mock, logger)
@@ -710,7 +710,7 @@ func TestSentinelAIAssessmentFailure(t *testing.T) {
 	}
 
 	// Patrol event should still be emitted.
-	assertEventEmitted(t, gtHome, events.EventPatrol)
+	assertEventEmitted(t, solHome, events.EventPatrol)
 }
 
 // --- Test 12: Events Emitted During Dispatch ---
@@ -720,11 +720,11 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome, _ := setupTestEnv(t)
-	_, sourceClone := createSourceRepo(t, gtHome)
-	worldStore, sphereStore := openStores(t, "testrig")
+	solHome, _ := setupTestEnv(t)
+	_, sourceClone := createSourceRepo(t, solHome)
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	// Create work item.
 	itemID, err := worldStore.CreateWorkItem("Dispatch events test", "Test events during dispatch", "operator", 2, nil)
@@ -735,7 +735,7 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 	// Cast with logger.
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		SourceRepo: sourceClone,
 	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
@@ -743,7 +743,7 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 	}
 
 	// Verify EventCast in feed.
-	assertEventEmitted(t, gtHome, events.EventCast)
+	assertEventEmitted(t, solHome, events.EventCast)
 
 	// Simulate work.
 	os.WriteFile(filepath.Join(result.WorktreeDir, "dispatch_test.go"),
@@ -751,7 +751,7 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 
 	// Resolve with logger.
 	_, err = dispatch.Resolve(dispatch.ResolveOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: result.AgentName,
 	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
@@ -759,7 +759,7 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 	}
 
 	// Verify EventResolve in feed.
-	assertEventEmitted(t, gtHome, events.EventResolve)
+	assertEventEmitted(t, solHome, events.EventResolve)
 }
 
 // --- Test 13: Status Shows Sentinel State ---
@@ -769,12 +769,12 @@ func TestStatusShowsSentinelState(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome, _ := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	solHome, _ := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// Gather status — sentinel not running.
-	rs, err := status.Gather("testrig", sphereStore, worldStore, worldStore, mgr)
+	rs, err := status.Gather("ember", sphereStore, worldStore, worldStore, mgr)
 	if err != nil {
 		t.Fatalf("Gather: %v", err)
 	}
@@ -783,15 +783,15 @@ func TestStatusShowsSentinelState(t *testing.T) {
 	}
 
 	// Start a mock sentinel session.
-	sentinelSessName := dispatch.SessionName("testrig", "sentinel")
-	if err := mgr.Start(sentinelSessName, gtHome, "sleep 60",
-		map[string]string{"SOL_HOME": gtHome}, "sentinel", "testrig"); err != nil {
+	sentinelSessName := dispatch.SessionName("ember", "sentinel")
+	if err := mgr.Start(sentinelSessName, solHome, "sleep 60",
+		map[string]string{"SOL_HOME": solHome}, "sentinel", "ember"); err != nil {
 		t.Fatalf("start sentinel session: %v", err)
 	}
 	defer mgr.Stop(sentinelSessName, true)
 
 	// Gather status — sentinel running.
-	rs2, err := status.Gather("testrig", sphereStore, worldStore, worldStore, mgr)
+	rs2, err := status.Gather("ember", sphereStore, worldStore, worldStore, mgr)
 	if err != nil {
 		t.Fatalf("Gather with sentinel: %v", err)
 	}

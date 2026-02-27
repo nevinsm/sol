@@ -132,7 +132,7 @@ func formatEventDescription(ev events.Event) string {
 	case events.EventMergeFailed:
 		return fmt.Sprintf("Merge failed %s", get("merge_request_id"))
 	case events.EventRespawn:
-		return fmt.Sprintf("Respawned %s (%s)", get("agent"), get("rig"))
+		return fmt.Sprintf("Respawned %s (%s)", get("agent"), get("world"))
 	case events.EventMassDeath:
 		return fmt.Sprintf("Mass death: %s deaths in %s", get("deaths"), get("window"))
 	case events.EventDegraded:
@@ -140,7 +140,7 @@ func formatEventDescription(ev events.Event) string {
 	case events.EventRecovered:
 		return "Exited degraded mode"
 	case events.EventPatrol:
-		return fmt.Sprintf("Patrol complete (%s)", get("rig"))
+		return fmt.Sprintf("Patrol complete (%s)", get("world"))
 	case events.EventStalled:
 		return fmt.Sprintf("Agent stalled: %s", get("agent"))
 	case events.EventMailSent:
@@ -179,7 +179,7 @@ func formatEventDescription(ev events.Event) string {
 	case "cast_batch":
 		return fmt.Sprintf("Cast burst: %s dispatches in %s", get("count"), get("world"))
 	case "respawn_batch":
-		return fmt.Sprintf("Respawn burst: %s respawns in %s", get("count"), get("rig"))
+		return fmt.Sprintf("Respawn burst: %s respawns in %s", get("count"), get("world"))
 	default:
 		data, _ := json.Marshal(payload)
 		return string(data)

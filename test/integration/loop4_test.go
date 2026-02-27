@@ -20,11 +20,11 @@ func TestWorkflowInstantiateAndAdvance(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
 
 	// Create formula directory structure.
-	formulaDir := filepath.Join(gtHome, "formulas", "test-formula")
+	formulaDir := filepath.Join(solHome, "formulas", "test-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
 	os.MkdirAll(stepsDir, 0o755)
 
@@ -59,11 +59,11 @@ needs = ["step2"]
 	os.WriteFile(filepath.Join(stepsDir, "03.md"), []byte("# Step 3\nDo the third thing.\n"), 0o644)
 
 	// Create outpost dir.
-	rig := "testrig"
+	world := "ember"
 	agent := "TestBot"
 
 	// 1. Instantiate.
-	inst, state, err := workflow.Instantiate(rig, agent, "test-formula", map[string]string{"issue": "sol-12345678"})
+	inst, state, err := workflow.Instantiate(world, agent, "test-formula", map[string]string{"issue": "sol-12345678"})
 	if err != nil {
 		t.Fatalf("Instantiate: %v", err)
 	}
@@ -78,7 +78,7 @@ needs = ["step2"]
 	}
 
 	// 2. ReadCurrentStep → first step.
-	step, err := workflow.ReadCurrentStep(rig, agent)
+	step, err := workflow.ReadCurrentStep(world, agent)
 	if err != nil {
 		t.Fatalf("ReadCurrentStep: %v", err)
 	}
@@ -90,7 +90,7 @@ needs = ["step2"]
 	}
 
 	// 3. Advance → second step.
-	nextStep, done, err := workflow.Advance(rig, agent)
+	nextStep, done, err := workflow.Advance(world, agent)
 	if err != nil {
 		t.Fatalf("Advance to step2: %v", err)
 	}
@@ -102,7 +102,7 @@ needs = ["step2"]
 	}
 
 	// 4. Advance → third step.
-	nextStep, done, err = workflow.Advance(rig, agent)
+	nextStep, done, err = workflow.Advance(world, agent)
 	if err != nil {
 		t.Fatalf("Advance to step3: %v", err)
 	}
@@ -114,7 +114,7 @@ needs = ["step2"]
 	}
 
 	// 5. Advance → done.
-	_, done, err = workflow.Advance(rig, agent)
+	_, done, err = workflow.Advance(world, agent)
 	if err != nil {
 		t.Fatalf("Advance to done: %v", err)
 	}
@@ -123,7 +123,7 @@ needs = ["step2"]
 	}
 
 	// 6. ReadState → status="done".
-	state, err = workflow.ReadState(rig, agent)
+	state, err = workflow.ReadState(world, agent)
 	if err != nil {
 		t.Fatalf("ReadState: %v", err)
 	}
@@ -140,11 +140,11 @@ func TestWorkflowCrashRecovery(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
 
 	// Create formula.
-	formulaDir := filepath.Join(gtHome, "formulas", "crash-formula")
+	formulaDir := filepath.Join(solHome, "formulas", "crash-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
 	os.MkdirAll(stepsDir, 0o755)
 
@@ -178,15 +178,15 @@ needs = ["s2"]
 	os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Step 2 instructions.\n"), 0o644)
 	os.WriteFile(filepath.Join(stepsDir, "03.md"), []byte("Step 3 instructions.\n"), 0o644)
 
-	rig := "testrig"
+	world := "ember"
 	agent := "CrashBot"
 
 	// 1. Instantiate and advance to step 2.
-	workflow.Instantiate(rig, agent, "crash-formula", map[string]string{"issue": "sol-crash"})
-	workflow.Advance(rig, agent) // step1 → step2
+	workflow.Instantiate(world, agent, "crash-formula", map[string]string{"issue": "sol-crash"})
+	workflow.Advance(world, agent) // step1 → step2
 
 	// 2. Simulate crash: read state from disk (no in-memory state to clear).
-	state, err := workflow.ReadState(rig, agent)
+	state, err := workflow.ReadState(world, agent)
 	if err != nil {
 		t.Fatalf("ReadState after crash: %v", err)
 	}
@@ -195,7 +195,7 @@ needs = ["s2"]
 	}
 
 	// 3. ReadCurrentStep → step 2 instructions.
-	step, err := workflow.ReadCurrentStep(rig, agent)
+	step, err := workflow.ReadCurrentStep(world, agent)
 	if err != nil {
 		t.Fatalf("ReadCurrentStep after crash: %v", err)
 	}
@@ -207,7 +207,7 @@ needs = ["s2"]
 	}
 
 	// 4. Advance → step 3 (workflow resumed correctly).
-	nextStep, done, err := workflow.Advance(rig, agent)
+	nextStep, done, err := workflow.Advance(world, agent)
 	if err != nil {
 		t.Fatalf("Advance after crash: %v", err)
 	}
@@ -224,12 +224,12 @@ func TestCastWithWorkflow(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
 	// Create formula.
-	formulaDir := filepath.Join(gtHome, "formulas", "cast-formula")
+	formulaDir := filepath.Join(solHome, "formulas", "cast-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
 	os.MkdirAll(stepsDir, 0o755)
 
@@ -250,15 +250,15 @@ instructions = "steps/01.md"
 	os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Do the thing for {{issue}}.\n"), 0o644)
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("WorkflowBot", "testrig", "agent")
+	sphereStore.CreateAgent("WorkflowBot", "ember", "agent")
 	itemID, _ := worldStore.CreateWorkItem("WF task", "Workflow test", "operator", 2, nil)
 
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	// Cast with formula.
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "WorkflowBot",
 		SourceRepo: sourceRepo,
 		Formula:    "cast-formula",
@@ -272,13 +272,13 @@ instructions = "steps/01.md"
 	}
 
 	// Verify .workflow/ directory created in agent's outpost dir.
-	wfDir := filepath.Join(gtHome, "testrig", "outposts", "WorkflowBot", ".workflow")
+	wfDir := filepath.Join(solHome, "ember", "outposts", "WorkflowBot", ".workflow")
 	if _, err := os.Stat(wfDir); os.IsNotExist(err) {
 		t.Error(".workflow/ directory should exist after cast with formula")
 	}
 
 	// Verify state.json exists with current_step set.
-	state, err := workflow.ReadState("testrig", "WorkflowBot")
+	state, err := workflow.ReadState("ember", "WorkflowBot")
 	if err != nil {
 		t.Fatalf("ReadState: %v", err)
 	}
@@ -304,7 +304,7 @@ instructions = "steps/01.md"
 	}
 
 	// Verify workflow event was emitted.
-	assertEventEmitted(t, gtHome, events.EventWorkflowInstantiate)
+	assertEventEmitted(t, solHome, events.EventWorkflowInstantiate)
 }
 
 func TestPrimeWithWorkflow(t *testing.T) {
@@ -312,12 +312,12 @@ func TestPrimeWithWorkflow(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
 	// Create formula.
-	formulaDir := filepath.Join(gtHome, "formulas", "prime-formula")
+	formulaDir := filepath.Join(solHome, "formulas", "prime-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
 	os.MkdirAll(stepsDir, 0o755)
 
@@ -345,20 +345,20 @@ needs = ["step1"]
 	os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Execute step 2.\n"), 0o644)
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("PrimeBot", "testrig", "agent")
+	sphereStore.CreateAgent("PrimeBot", "ember", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Prime WF task", "Prime workflow test", "operator", 2, nil)
 
 	// Cast with formula.
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "PrimeBot",
 		SourceRepo: sourceRepo,
 		Formula:    "prime-formula",
 	}, worldStore, sphereStore, mgr, nil)
 
 	// Call Prime.
-	result, err := dispatch.Prime("testrig", "PrimeBot", worldStore)
+	result, err := dispatch.Prime("ember", "PrimeBot", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -391,22 +391,22 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
 	// Create agent and work item — cast without formula.
-	sphereStore.CreateAgent("PlainBot", "testrig", "agent")
+	sphereStore.CreateAgent("PlainBot", "ember", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Plain task", "No workflow test", "operator", 2, nil)
 
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "PlainBot",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 
 	// Call Prime.
-	result, err := dispatch.Prime("testrig", "PlainBot", worldStore)
+	result, err := dispatch.Prime("ember", "PlainBot", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -433,12 +433,12 @@ func TestDoneWithWorkflowCleanup(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
 	// Create formula.
-	formulaDir := filepath.Join(gtHome, "formulas", "done-formula")
+	formulaDir := filepath.Join(solHome, "formulas", "done-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
 	os.MkdirAll(stepsDir, 0o755)
 
@@ -459,13 +459,13 @@ instructions = "steps/01.md"
 	os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Do it.\n"), 0o644)
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("DoneBot", "testrig", "agent")
+	sphereStore.CreateAgent("DoneBot", "ember", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Done WF task", "Done workflow test", "operator", 2, nil)
 
 	// Cast with formula.
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "DoneBot",
 		SourceRepo: sourceRepo,
 		Formula:    "done-formula",
@@ -475,7 +475,7 @@ instructions = "steps/01.md"
 	}
 
 	// Verify .workflow/ exists.
-	wfDir := filepath.Join(gtHome, "testrig", "outposts", "DoneBot", ".workflow")
+	wfDir := filepath.Join(solHome, "ember", "outposts", "DoneBot", ".workflow")
 	if _, err := os.Stat(wfDir); os.IsNotExist(err) {
 		t.Fatal(".workflow/ should exist before done")
 	}
@@ -485,7 +485,7 @@ instructions = "steps/01.md"
 
 	// Call Resolve.
 	_, err = dispatch.Resolve(dispatch.ResolveOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "DoneBot",
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
@@ -505,9 +505,9 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -515,10 +515,10 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	// Create work items and deps in rig store, then close it.
-	worldStore, err := store.OpenWorld("testrig")
+	// Create work items and deps in world store, then close it.
+	worldStore, err := store.OpenWorld("ember")
 	if err != nil {
-		t.Fatalf("open rig store: %v", err)
+		t.Fatalf("open world store: %v", err)
 	}
 	idA, _ := worldStore.CreateWorkItem("Task A", "First task", "operator", 2, nil)
 	idB, _ := worldStore.CreateWorkItem("Task B", "Second task", "operator", 2, nil)
@@ -528,13 +528,13 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	worldStore.Close()
 
 	// Create caravan with all 3.
-	caravanID, err := sphereStore.CreateCaravan("test-convoy", "operator")
+	caravanID, err := sphereStore.CreateCaravan("test-caravan", "operator")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
-	sphereStore.AddCaravanItem(caravanID, idA, "testrig")
-	sphereStore.AddCaravanItem(caravanID, idB, "testrig")
-	sphereStore.AddCaravanItem(caravanID, idC, "testrig")
+	sphereStore.AddCaravanItem(caravanID, idA, "ember")
+	sphereStore.AddCaravanItem(caravanID, idB, "ember")
+	sphereStore.AddCaravanItem(caravanID, idC, "ember")
 
 	// Check readiness: A and B ready, C blocked.
 	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
@@ -559,7 +559,7 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	}
 
 	// Mark A as done.
-	rs, _ := store.OpenWorld("testrig")
+	rs, _ := store.OpenWorld("ember")
 	rs.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"})
 	rs.Close()
 
@@ -572,7 +572,7 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	}
 
 	// Mark B as done.
-	rs, _ = store.OpenWorld("testrig")
+	rs, _ = store.OpenWorld("ember")
 	rs.UpdateWorkItem(idB, store.WorkItemUpdates{Status: "done"})
 	rs.Close()
 
@@ -590,9 +590,9 @@ func TestCaravanAutoClose(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -601,7 +601,7 @@ func TestCaravanAutoClose(t *testing.T) {
 	defer sphereStore.Close()
 
 	// Create 2 items, no deps.
-	worldStore, _ := store.OpenWorld("testrig")
+	worldStore, _ := store.OpenWorld("ember")
 	id1, _ := worldStore.CreateWorkItem("Auto 1", "First", "operator", 2, nil)
 	id2, _ := worldStore.CreateWorkItem("Auto 2", "Second", "operator", 2, nil)
 
@@ -612,8 +612,8 @@ func TestCaravanAutoClose(t *testing.T) {
 
 	// Create caravan.
 	caravanID, _ := sphereStore.CreateCaravan("auto-close-test", "operator")
-	sphereStore.AddCaravanItem(caravanID, id1, "testrig")
-	sphereStore.AddCaravanItem(caravanID, id2, "testrig")
+	sphereStore.AddCaravanItem(caravanID, id1, "ember")
+	sphereStore.AddCaravanItem(caravanID, id2, "ember")
 
 	// TryCloseCaravan → should return true.
 	closed, err := sphereStore.TryCloseCaravan(caravanID, store.OpenWorld)
@@ -634,14 +634,14 @@ func TestCaravanAutoClose(t *testing.T) {
 	}
 }
 
-func TestCaravanMultiRig(t *testing.T) {
+func TestCaravanMultiWorld(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -649,27 +649,27 @@ func TestCaravanMultiRig(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	// Create work items in rig "alpha".
+	// Create work items in world "alpha".
 	alphaStore, err := store.OpenWorld("alpha")
 	if err != nil {
-		t.Fatalf("open alpha rig: %v", err)
+		t.Fatalf("open alpha world: %v", err)
 	}
-	idA, _ := alphaStore.CreateWorkItem("Alpha task", "Task in alpha rig", "operator", 2, nil)
+	idA, _ := alphaStore.CreateWorkItem("Alpha task", "Task in alpha world", "operator", 2, nil)
 	alphaStore.Close()
 
-	// Create work items in rig "beta".
+	// Create work items in world "beta".
 	betaStore, err := store.OpenWorld("beta")
 	if err != nil {
-		t.Fatalf("open beta rig: %v", err)
+		t.Fatalf("open beta world: %v", err)
 	}
 	idB, _ := betaStore.CreateWorkItem("Beta task 1", "First task in beta", "operator", 2, nil)
 	idC, _ := betaStore.CreateWorkItem("Beta task 2", "Second task in beta", "operator", 2, nil)
-	// C depends on B within beta rig.
+	// C depends on B within beta world.
 	betaStore.AddDependency(idC, idB)
 	betaStore.Close()
 
-	// Create caravan spanning both rigs.
-	caravanID, err := sphereStore.CreateCaravan("multi-rig-convoy", "operator")
+	// Create caravan spanning both worlds.
+	caravanID, err := sphereStore.CreateCaravan("multi-world-caravan", "operator")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
@@ -697,7 +697,7 @@ func TestCaravanMultiRig(t *testing.T) {
 		t.Error("missing status for alpha item")
 	} else {
 		if st.World != "alpha" {
-			t.Errorf("alpha item rig: got %q, want alpha", st.World)
+			t.Errorf("alpha item world: got %q, want alpha", st.World)
 		}
 		if !st.Ready {
 			t.Error("alpha item should be ready (no deps)")
@@ -744,7 +744,7 @@ func TestCaravanMultiRig(t *testing.T) {
 		t.Fatalf("TryCloseCaravan: %v", err)
 	}
 	if !closed {
-		t.Error("multi-rig caravan should auto-close when all items done")
+		t.Error("multi-world caravan should auto-close when all items done")
 	}
 }
 
@@ -755,12 +755,12 @@ func TestWorkflowPropulsionLoop(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
 	// Create formula with 3 steps.
-	formulaDir := filepath.Join(gtHome, "formulas", "propulsion-formula")
+	formulaDir := filepath.Join(solHome, "formulas", "propulsion-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
 	os.MkdirAll(stepsDir, 0o755)
 
@@ -795,15 +795,15 @@ needs = ["implement"]
 	os.WriteFile(filepath.Join(stepsDir, "03-verify.md"), []byte("Run tests and verify.\n"), 0o644)
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("PropBot", "testrig", "agent")
+	sphereStore.CreateAgent("PropBot", "ember", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Propulsion task", "E2E test", "operator", 2, nil)
 
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	// 1. Cast with formula (mock session).
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "PropBot",
 		SourceRepo: sourceRepo,
 		Formula:    "propulsion-formula",
@@ -813,7 +813,7 @@ needs = ["implement"]
 	}
 
 	// 2. Prime → get step 1 instructions.
-	primeResult, err := dispatch.Prime("testrig", "PropBot", worldStore)
+	primeResult, err := dispatch.Prime("ember", "PropBot", worldStore)
 	if err != nil {
 		t.Fatalf("prime 1: %v", err)
 	}
@@ -822,7 +822,7 @@ needs = ["implement"]
 	}
 
 	// 3. workflow advance → step 2.
-	nextStep, done, err := workflow.Advance("testrig", "PropBot")
+	nextStep, done, err := workflow.Advance("ember", "PropBot")
 	if err != nil {
 		t.Fatalf("advance 1: %v", err)
 	}
@@ -834,7 +834,7 @@ needs = ["implement"]
 	}
 
 	// 4. Prime again → get step 2 instructions (crash recovery sim).
-	primeResult, err = dispatch.Prime("testrig", "PropBot", worldStore)
+	primeResult, err = dispatch.Prime("ember", "PropBot", worldStore)
 	if err != nil {
 		t.Fatalf("prime 2: %v", err)
 	}
@@ -843,7 +843,7 @@ needs = ["implement"]
 	}
 
 	// 5. workflow advance → step 3.
-	nextStep, done, err = workflow.Advance("testrig", "PropBot")
+	nextStep, done, err = workflow.Advance("ember", "PropBot")
 	if err != nil {
 		t.Fatalf("advance 2: %v", err)
 	}
@@ -855,7 +855,7 @@ needs = ["implement"]
 	}
 
 	// 6. workflow advance → complete.
-	_, done, err = workflow.Advance("testrig", "PropBot")
+	_, done, err = workflow.Advance("ember", "PropBot")
 	if err != nil {
 		t.Fatalf("advance 3: %v", err)
 	}
@@ -868,7 +868,7 @@ needs = ["implement"]
 
 	// 8. Resolve → workflow cleaned up, work item marked done.
 	_, err = dispatch.Resolve(dispatch.ResolveOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "PropBot",
 	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
@@ -882,15 +882,15 @@ needs = ["implement"]
 	}
 
 	// Verify workflow cleaned up.
-	wfDir := filepath.Join(gtHome, "testrig", "outposts", "PropBot", ".workflow")
+	wfDir := filepath.Join(solHome, "ember", "outposts", "PropBot", ".workflow")
 	if _, err := os.Stat(wfDir); !os.IsNotExist(err) {
 		t.Error(".workflow/ should be removed after resolve")
 	}
 
 	// Verify events.
-	assertEventEmitted(t, gtHome, events.EventCast)
-	assertEventEmitted(t, gtHome, events.EventWorkflowInstantiate)
-	assertEventEmitted(t, gtHome, events.EventResolve)
+	assertEventEmitted(t, solHome, events.EventCast)
+	assertEventEmitted(t, solHome, events.EventWorkflowInstantiate)
+	assertEventEmitted(t, solHome, events.EventResolve)
 }
 
 // --- CLAUDE.md Tests ---
@@ -898,7 +898,7 @@ needs = ["implement"]
 func TestClaudeMDWithWorkflow(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
-		World:       "testrig",
+		World:       "ember",
 		WorkItemID:  "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
@@ -927,7 +927,7 @@ func TestClaudeMDWithWorkflow(t *testing.T) {
 func TestClaudeMDWithoutWorkflow(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
-		World:       "testrig",
+		World:       "ember",
 		WorkItemID:  "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
@@ -953,9 +953,9 @@ func TestCLICastFormulaHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "cast", "--help")
+	out, err := runGT(t, solHome, "cast", "--help")
 	if err != nil {
 		t.Fatalf("sol cast --help failed: %v: %s", err, out)
 	}

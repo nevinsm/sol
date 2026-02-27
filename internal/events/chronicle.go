@@ -25,10 +25,10 @@ type ChronicleConfig struct {
 }
 
 // DefaultChronicleConfig returns defaults for the given SOL_HOME.
-func DefaultChronicleConfig(gtHome string) ChronicleConfig {
+func DefaultChronicleConfig(solHome string) ChronicleConfig {
 	return ChronicleConfig{
-		RawPath:      filepath.Join(gtHome, ".events.jsonl"),
-		FeedPath:     filepath.Join(gtHome, ".feed.jsonl"),
+		RawPath:      filepath.Join(solHome, ".events.jsonl"),
+		FeedPath:     filepath.Join(solHome, ".feed.jsonl"),
 		PollInterval: 2 * time.Second,
 		DedupWindow:  10 * time.Second,
 		AggWindow:    30 * time.Second,

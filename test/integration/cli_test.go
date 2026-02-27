@@ -109,7 +109,7 @@ func TestCLIStoreCreate(t *testing.T) {
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "store", "create", "--world=testrig", "--title=test")
+	out, err := runGT(t, gtHome, "store", "create", "--world=ember", "--title=test")
 	if err != nil {
 		t.Fatalf("sol store create failed: %v: %s", err, out)
 	}
@@ -125,9 +125,9 @@ func TestCLIStoreListJSON(t *testing.T) {
 	gtHome := t.TempDir()
 
 	// Create an item first.
-	runGT(t, gtHome, "store", "create", "--world=testrig", "--title=json test")
+	runGT(t, gtHome, "store", "create", "--world=ember", "--title=json test")
 
-	out, err := runGT(t, gtHome, "store", "list", "--world=testrig", "--json")
+	out, err := runGT(t, gtHome, "store", "list", "--world=ember", "--json")
 	if err != nil {
 		t.Fatalf("sol store list --json failed: %v: %s", err, out)
 	}
@@ -142,7 +142,7 @@ func TestCLIAgentCreate(t *testing.T) {
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "agent", "create", "Smoke", "--world=testrig")
+	out, err := runGT(t, gtHome, "agent", "create", "Smoke", "--world=ember")
 	if err != nil {
 		t.Fatalf("sol agent create failed: %v: %s", err, out)
 	}
@@ -155,9 +155,9 @@ func TestCLIAgentList(t *testing.T) {
 	gtHome := t.TempDir()
 
 	// Create first.
-	runGT(t, gtHome, "agent", "create", "Smoke", "--world=testrig")
+	runGT(t, gtHome, "agent", "create", "Smoke", "--world=ember")
 
-	out, err := runGT(t, gtHome, "agent", "list", "--world=testrig")
+	out, err := runGT(t, gtHome, "agent", "list", "--world=ember")
 	if err != nil {
 		t.Fatalf("sol agent list failed: %v: %s", err, out)
 	}

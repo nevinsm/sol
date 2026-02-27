@@ -9,11 +9,11 @@ func TestCLIFeedHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "feed", "--help")
+	out, err := runGT(t, solHome, "feed", "--help")
 	if err != nil {
-		t.Fatalf("gt feed --help failed: %v: %s", err, out)
+		t.Fatalf("sol feed --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "event activity feed") {
 		t.Errorf("output missing expected text: %s", out)
@@ -24,11 +24,11 @@ func TestCLILogEventHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "log-event", "--help")
+	out, err := runGT(t, solHome, "log-event", "--help")
 	if err != nil {
-		t.Fatalf("gt log-event --help failed: %v: %s", err, out)
+		t.Fatalf("sol log-event --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Log a custom event") {
 		t.Errorf("output missing expected text: %s", out)
@@ -39,11 +39,11 @@ func TestCLIMailSendHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "mail", "send", "--help")
+	out, err := runGT(t, solHome, "mail", "send", "--help")
 	if err != nil {
-		t.Fatalf("gt mail send --help failed: %v: %s", err, out)
+		t.Fatalf("sol mail send --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Send a message") {
 		t.Errorf("output missing expected text: %s", out)
@@ -54,11 +54,11 @@ func TestCLIMailInboxHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "mail", "inbox", "--help")
+	out, err := runGT(t, solHome, "mail", "inbox", "--help")
 	if err != nil {
-		t.Fatalf("gt mail inbox --help failed: %v: %s", err, out)
+		t.Fatalf("sol mail inbox --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "pending messages") {
 		t.Errorf("output missing expected text: %s", out)
@@ -69,11 +69,11 @@ func TestCLIMailReadHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "mail", "read", "--help")
+	out, err := runGT(t, solHome, "mail", "read", "--help")
 	if err != nil {
-		t.Fatalf("gt mail read --help failed: %v: %s", err, out)
+		t.Fatalf("sol mail read --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Read a message") {
 		t.Errorf("output missing expected text: %s", out)
@@ -84,11 +84,11 @@ func TestCLIMailAckHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "mail", "ack", "--help")
+	out, err := runGT(t, solHome, "mail", "ack", "--help")
 	if err != nil {
-		t.Fatalf("gt mail ack --help failed: %v: %s", err, out)
+		t.Fatalf("sol mail ack --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Acknowledge") {
 		t.Errorf("output missing expected text: %s", out)
@@ -99,11 +99,11 @@ func TestCLIMailCheckHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "mail", "check", "--help")
+	out, err := runGT(t, solHome, "mail", "check", "--help")
 	if err != nil {
-		t.Fatalf("gt mail check --help failed: %v: %s", err, out)
+		t.Fatalf("sol mail check --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "unread") {
 		t.Errorf("output missing expected text: %s", out)
@@ -114,11 +114,11 @@ func TestCLIChronicleRunHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "chronicle", "run", "--help")
+	out, err := runGT(t, solHome, "chronicle", "run", "--help")
 	if err != nil {
-		t.Fatalf("gt chronicle run --help failed: %v: %s", err, out)
+		t.Fatalf("sol chronicle run --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Run the chronicle") {
 		t.Errorf("output missing expected text: %s", out)
@@ -129,11 +129,11 @@ func TestCLIChronicleStartHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "chronicle", "start", "--help")
+	out, err := runGT(t, solHome, "chronicle", "start", "--help")
 	if err != nil {
-		t.Fatalf("gt chronicle start --help failed: %v: %s", err, out)
+		t.Fatalf("sol chronicle start --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "background tmux session") {
 		t.Errorf("output missing expected text: %s", out)
@@ -144,11 +144,11 @@ func TestCLIChronicleStopHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "chronicle", "stop", "--help")
+	out, err := runGT(t, solHome, "chronicle", "stop", "--help")
 	if err != nil {
-		t.Fatalf("gt chronicle stop --help failed: %v: %s", err, out)
+		t.Fatalf("sol chronicle stop --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Stop the chronicle") {
 		t.Errorf("output missing expected text: %s", out)
@@ -159,11 +159,11 @@ func TestCLISentinelRunHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "sentinel", "run", "--help")
+	out, err := runGT(t, solHome, "sentinel", "run", "--help")
 	if err != nil {
-		t.Fatalf("gt sentinel run --help failed: %v: %s", err, out)
+		t.Fatalf("sol sentinel run --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "patrol loop") {
 		t.Errorf("output missing expected text: %s", out)
@@ -174,11 +174,11 @@ func TestCLISentinelStartHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "sentinel", "start", "--help")
+	out, err := runGT(t, solHome, "sentinel", "start", "--help")
 	if err != nil {
-		t.Fatalf("gt sentinel start --help failed: %v: %s", err, out)
+		t.Fatalf("sol sentinel start --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "background tmux session") {
 		t.Errorf("output missing expected text: %s", out)
@@ -189,11 +189,11 @@ func TestCLISentinelStopHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "sentinel", "stop", "--help")
+	out, err := runGT(t, solHome, "sentinel", "stop", "--help")
 	if err != nil {
-		t.Fatalf("gt sentinel stop --help failed: %v: %s", err, out)
+		t.Fatalf("sol sentinel stop --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Stop the sentinel") {
 		t.Errorf("output missing expected text: %s", out)
@@ -204,11 +204,11 @@ func TestCLISentinelAttachHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "sentinel", "attach", "--help")
+	out, err := runGT(t, solHome, "sentinel", "attach", "--help")
 	if err != nil {
-		t.Fatalf("gt sentinel attach --help failed: %v: %s", err, out)
+		t.Fatalf("sol sentinel attach --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Attach to the sentinel") {
 		t.Errorf("output missing expected text: %s", out)

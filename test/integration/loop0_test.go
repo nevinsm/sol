@@ -22,11 +22,11 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// 1. Create agent.
-	_, err := sphereStore.CreateAgent("TestBot", "testrig", "agent")
+	_, err := sphereStore.CreateAgent("TestBot", "ember", "agent")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	// 3. Cast.
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -49,7 +49,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	}
 
 	// 4. Verify cast state.
-	sessName := "sol-testrig-TestBot"
+	sessName := "sol-ember-TestBot"
 	if !mgr.Exists(sessName) {
 		t.Error("tmux session does not exist after cast")
 	}
@@ -61,11 +61,11 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	if item.Status != "tethered" {
 		t.Errorf("work item status: got %q, want tethered", item.Status)
 	}
-	if item.Assignee != "testrig/TestBot" {
-		t.Errorf("work item assignee: got %q, want testrig/TestBot", item.Assignee)
+	if item.Assignee != "ember/TestBot" {
+		t.Errorf("work item assignee: got %q, want ember/TestBot", item.Assignee)
 	}
 
-	agent, err := sphereStore.GetAgent("testrig/TestBot")
+	agent, err := sphereStore.GetAgent("ember/TestBot")
 	if err != nil {
 		t.Fatalf("get agent: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Errorf("agent tether_item: got %q, want %q", agent.TetherItem, itemID)
 	}
 
-	if !tether.IsTethered("testrig", "TestBot") {
+	if !tether.IsTethered("ember", "TestBot") {
 		t.Error("tether file does not exist after cast")
 	}
 
@@ -97,7 +97,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 
 	// 6. Call Resolve programmatically.
 	doneResult, err := dispatch.Resolve(dispatch.ResolveOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "TestBot",
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
@@ -121,7 +121,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Errorf("work item status after resolve: got %q, want done", item.Status)
 	}
 
-	agent, err = sphereStore.GetAgent("testrig/TestBot")
+	agent, err = sphereStore.GetAgent("ember/TestBot")
 	if err != nil {
 		t.Fatalf("get agent after resolve: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Errorf("agent tether_item after resolve: got %q, want empty", agent.TetherItem)
 	}
 
-	if tether.IsTethered("testrig", "TestBot") {
+	if tether.IsTethered("ember", "TestBot") {
 		t.Error("tether file still exists after resolve")
 	}
 
@@ -160,16 +160,16 @@ func TestCrashRecoveryRecast(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// Create agent + work item, cast.
-	sphereStore.CreateAgent("TestBot", "testrig", "agent")
+	sphereStore.CreateAgent("TestBot", "ember", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Crash test", "Recovery test", "operator", 2, nil)
 
 	_, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -178,7 +178,7 @@ func TestCrashRecoveryRecast(t *testing.T) {
 	}
 
 	// Kill tmux session directly (simulate crash).
-	sessName := "sol-testrig-TestBot"
+	sessName := "sol-ember-TestBot"
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
 
 	// Verify durability: work item still tethered, tether file persists.
@@ -186,14 +186,14 @@ func TestCrashRecoveryRecast(t *testing.T) {
 	if item.Status != "tethered" {
 		t.Errorf("work item status after crash: got %q, want tethered", item.Status)
 	}
-	if !tether.IsTethered("testrig", "TestBot") {
+	if !tether.IsTethered("ember", "TestBot") {
 		t.Error("tether file missing after crash")
 	}
 
 	// Re-cast the same work item to the same agent.
 	_, err = dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -206,9 +206,9 @@ func TestCrashRecoveryRecast(t *testing.T) {
 		t.Error("tmux session not created after re-cast")
 	}
 
-	hookID, _ := tether.Read("testrig", "TestBot")
-	if hookID != itemID {
-		t.Errorf("tether after re-cast: got %q, want %q", hookID, itemID)
+	tetherID, _ := tether.Read("ember", "TestBot")
+	if tetherID != itemID {
+		t.Errorf("tether after re-cast: got %q, want %q", tetherID, itemID)
 	}
 }
 
@@ -220,16 +220,16 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// Create agent + first work item, cast.
-	sphereStore.CreateAgent("TestBot", "testrig", "agent")
+	sphereStore.CreateAgent("TestBot", "ember", "agent")
 	item1ID, _ := worldStore.CreateWorkItem("First task", "Task 1", "operator", 2, nil)
 
 	_, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item1ID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -242,7 +242,7 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 
 	_, err = dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item2ID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -265,21 +265,21 @@ func TestPrimeOutput(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	sphereStore.CreateAgent("TestBot", "testrig", "agent")
+	sphereStore.CreateAgent("TestBot", "ember", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Prime test task", "Check prime output", "operator", 2, nil)
 
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 
 	// Run Prime.
-	result, err := dispatch.Prime("testrig", "TestBot", worldStore)
+	result, err := dispatch.Prime("ember", "TestBot", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -305,11 +305,11 @@ func TestPrimeWithoutHook(t *testing.T) {
 	}
 
 	setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 
-	sphereStore.CreateAgent("TestBot", "testrig", "agent")
+	sphereStore.CreateAgent("TestBot", "ember", "agent")
 
-	result, err := dispatch.Prime("testrig", "TestBot", worldStore)
+	result, err := dispatch.Prime("ember", "TestBot", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestStoreInspection(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// Create work items.
@@ -334,15 +334,15 @@ func TestStoreInspection(t *testing.T) {
 	id2, _ := worldStore.CreateWorkItem("Task two", "Second", "operator", 2, nil)
 
 	// Cast one.
-	sphereStore.CreateAgent("TestBot", "testrig", "agent")
+	sphereStore.CreateAgent("TestBot", "ember", "agent")
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: id1,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 
-	// Query the rig DB directly via database/sql.
+	// Query the world DB directly via database/sql.
 	db := worldStore.DB()
 	rows, err := db.Query("SELECT id, title, status, assignee FROM work_items ORDER BY created_at")
 	if err != nil {
@@ -371,8 +371,8 @@ func TestStoreInspection(t *testing.T) {
 	if results[0].id != id1 || results[0].status != "tethered" {
 		t.Errorf("item 1: got id=%s status=%s, want id=%s status=tethered", results[0].id, results[0].status, id1)
 	}
-	if !results[0].assignee.Valid || results[0].assignee.String != "testrig/TestBot" {
-		t.Errorf("item 1 assignee: got %v, want testrig/TestBot", results[0].assignee)
+	if !results[0].assignee.Valid || results[0].assignee.String != "ember/TestBot" {
+		t.Errorf("item 1 assignee: got %v, want ember/TestBot", results[0].assignee)
 	}
 
 	// Second item: open, no assignee.

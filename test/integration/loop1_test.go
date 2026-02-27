@@ -26,7 +26,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// Create two work items.
@@ -42,7 +42,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 	// Cast both without specifying agents (auto-provision).
 	result1, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item1ID,
-		World:        "testrig",
+		World:        "ember",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
@@ -51,7 +51,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 
 	result2, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item2ID,
-		World:        "testrig",
+		World:        "ember",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
@@ -64,7 +64,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 	}
 
 	// Both agents in "working" state.
-	agent1, err := sphereStore.GetAgent("testrig/" + result1.AgentName)
+	agent1, err := sphereStore.GetAgent("ember/" + result1.AgentName)
 	if err != nil {
 		t.Fatalf("get agent 1: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 		t.Errorf("agent 1 state: got %q, want working", agent1.State)
 	}
 
-	agent2, err := sphereStore.GetAgent("testrig/" + result2.AgentName)
+	agent2, err := sphereStore.GetAgent("ember/" + result2.AgentName)
 	if err != nil {
 		t.Fatalf("get agent 2: %v", err)
 	}
@@ -105,20 +105,20 @@ func TestMultiAgentDispatch(t *testing.T) {
 	}
 
 	// Both tether files exist with their respective work item IDs.
-	hookID1, err := tether.Read("testrig", result1.AgentName)
+	tetherID1, err := tether.Read("ember", result1.AgentName)
 	if err != nil {
 		t.Fatalf("read tether 1: %v", err)
 	}
-	if hookID1 != item1ID {
-		t.Errorf("tether 1: got %q, want %q", hookID1, item1ID)
+	if tetherID1 != item1ID {
+		t.Errorf("tether 1: got %q, want %q", tetherID1, item1ID)
 	}
 
-	hookID2, err := tether.Read("testrig", result2.AgentName)
+	tetherID2, err := tether.Read("ember", result2.AgentName)
 	if err != nil {
 		t.Fatalf("read tether 2: %v", err)
 	}
-	if hookID2 != item2ID {
-		t.Errorf("tether 2: got %q, want %q", hookID2, item2ID)
+	if tetherID2 != item2ID {
+		t.Errorf("tether 2: got %q, want %q", tetherID2, item2ID)
 	}
 
 	// Both worktrees exist at different paths.
@@ -143,15 +143,15 @@ func TestFlockSerialization(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 
 	// Create one work item and two idle agents.
 	itemID, err := worldStore.CreateWorkItem("Contested task", "Flock test", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create work item: %v", err)
 	}
-	sphereStore.CreateAgent("Alpha", "testrig", "agent")
-	sphereStore.CreateAgent("Beta", "testrig", "agent")
+	sphereStore.CreateAgent("Alpha", "ember", "agent")
+	sphereStore.CreateAgent("Beta", "ember", "agent")
 
 	// Build the sol binary for subprocess testing.
 	binary := filepath.Join(t.TempDir(), "sol")
@@ -172,7 +172,7 @@ func TestFlockSerialization(t *testing.T) {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			cmd := exec.Command(binary, "cast", itemID, "testrig", "--agent="+name)
+			cmd := exec.Command(binary, "cast", itemID, "ember", "--agent="+name)
 			cmd.Dir = sourceRepo // sol cast discovers source repo from cwd
 			out, err := cmd.CombinedOutput()
 			mu.Lock()
@@ -198,17 +198,17 @@ func TestFlockSerialization(t *testing.T) {
 	// The winning agent has the work item tethered.
 	if len(successes) == 1 {
 		winner := successes[0]
-		hookID, _ := tether.Read("testrig", winner)
-		if hookID != itemID {
-			t.Errorf("winner %s tether: got %q, want %q", winner, hookID, itemID)
+		tetherID, _ := tether.Read("ember", winner)
+		if tetherID != itemID {
+			t.Errorf("winner %s tether: got %q, want %q", winner, tetherID, itemID)
 		}
 
 		item, _ := worldStore.GetWorkItem(itemID)
 		if item.Status != "tethered" {
 			t.Errorf("work item status: got %q, want tethered", item.Status)
 		}
-		if item.Assignee != "testrig/"+winner {
-			t.Errorf("work item assignee: got %q, want testrig/%s", item.Assignee, winner)
+		if item.Assignee != "ember/"+winner {
+			t.Errorf("work item assignee: got %q, want ember/%s", item.Assignee, winner)
 		}
 	}
 }
@@ -221,7 +221,7 @@ func TestPrefectSessionRestart(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// Create a work item and cast it (auto-provisions an agent).
@@ -232,7 +232,7 @@ func TestPrefectSessionRestart(t *testing.T) {
 
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
@@ -274,7 +274,7 @@ func TestPrefectSessionRestart(t *testing.T) {
 	}
 
 	// Verify agent state is "working" (not "stalled").
-	agent, err := sphereStore.GetAgent("testrig/" + agentName)
+	agent, err := sphereStore.GetAgent("ember/" + agentName)
 	if err != nil {
 		t.Fatalf("get agent: %v", err)
 	}
@@ -283,12 +283,12 @@ func TestPrefectSessionRestart(t *testing.T) {
 	}
 
 	// Tether file still contains the same work item ID.
-	hookID, err := tether.Read("testrig", agentName)
+	tetherID, err := tether.Read("ember", agentName)
 	if err != nil {
 		t.Fatalf("read tether: %v", err)
 	}
-	if hookID != itemID {
-		t.Errorf("tether after restart: got %q, want %q", hookID, itemID)
+	if tetherID != itemID {
+		t.Errorf("tether after restart: got %q, want %q", tetherID, itemID)
 	}
 
 	// The restarted session has the same name.
@@ -308,7 +308,7 @@ func TestMassDeathDegradation(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// Create and cast 5 work items (auto-provisions 5 agents).
@@ -320,7 +320,7 @@ func TestMassDeathDegradation(t *testing.T) {
 		}
 		result, err := dispatch.Cast(dispatch.CastOpts{
 			WorkItemID: itemID,
-			World:        "testrig",
+			World:        "ember",
 			SourceRepo: sourceRepo,
 		}, worldStore, sphereStore, mgr, nil)
 		if err != nil {
@@ -368,7 +368,7 @@ func TestMassDeathDegradation(t *testing.T) {
 	// activates. The remaining agents are set to stalled. We verify
 	// that at least some agents were stalled (degraded prevented respawn).
 	stalledCount := 0
-	agents, err := sphereStore.ListAgents("testrig", "stalled")
+	agents, err := sphereStore.ListAgents("ember", "stalled")
 	if err != nil {
 		t.Fatalf("list stalled agents: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestMassDeathDegradation(t *testing.T) {
 
 	newResult, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: newItemID,
-		World:        "testrig",
+		World:        "ember",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
@@ -430,7 +430,7 @@ func TestGUPPRecovery(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// Create a work item, cast it.
@@ -441,7 +441,7 @@ func TestGUPPRecovery(t *testing.T) {
 
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
@@ -453,7 +453,7 @@ func TestGUPPRecovery(t *testing.T) {
 	worktreeDir := result.WorktreeDir
 
 	// Verify: tether file exists, CLAUDE.md in worktree has work item context.
-	if !tether.IsTethered("testrig", agentName) {
+	if !tether.IsTethered("ember", agentName) {
 		t.Error("tether file does not exist after cast")
 	}
 
@@ -470,14 +470,14 @@ func TestGUPPRecovery(t *testing.T) {
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
 
 	// Verify: tether file still exists (durability).
-	if !tether.IsTethered("testrig", agentName) {
+	if !tether.IsTethered("ember", agentName) {
 		t.Error("tether file missing after crash")
 	}
 
 	// Re-cast the same work item to the same agent (simulate prefect restart).
 	_, err = dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  agentName,
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -491,7 +491,7 @@ func TestGUPPRecovery(t *testing.T) {
 	}
 
 	// sol prime returns the work item context.
-	primeResult, err := dispatch.Prime("testrig", agentName, worldStore)
+	primeResult, err := dispatch.Prime("ember", agentName, worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -503,12 +503,12 @@ func TestGUPPRecovery(t *testing.T) {
 	}
 
 	// Tether file still contains the same work item ID.
-	hookID, err := tether.Read("testrig", agentName)
+	tetherID, err := tether.Read("ember", agentName)
 	if err != nil {
 		t.Fatalf("read tether: %v", err)
 	}
-	if hookID != itemID {
-		t.Errorf("tether after re-cast: got %q, want %q", hookID, itemID)
+	if tetherID != itemID {
+		t.Errorf("tether after re-cast: got %q, want %q", tetherID, itemID)
 	}
 }
 
@@ -520,7 +520,7 @@ func TestStatusAccuracy(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// Create 3 work items, cast all 3 (auto-provisions 3 agents).
@@ -533,7 +533,7 @@ func TestStatusAccuracy(t *testing.T) {
 		}
 		result, err := dispatch.Cast(dispatch.CastOpts{
 			WorkItemID: itemID,
-			World:        "testrig",
+			World:        "ember",
 			SourceRepo: sourceRepo,
 		}, worldStore, sphereStore, mgr, nil)
 		if err != nil {
@@ -547,7 +547,7 @@ func TestStatusAccuracy(t *testing.T) {
 	exec.Command("tmux", "kill-session", "-t", deadAgent.SessionName).Run()
 
 	// Run status.Gather().
-	rs, err := status.Gather("testrig", sphereStore, worldStore, worldStore, mgr)
+	rs, err := status.Gather("ember", sphereStore, worldStore, worldStore, mgr)
 	if err != nil {
 		t.Fatalf("status.Gather: %v", err)
 	}
@@ -611,7 +611,7 @@ func TestStatusAccuracy(t *testing.T) {
 	}
 
 	// Run status.Gather() again.
-	rs2, err := status.Gather("testrig", sphereStore, worldStore, worldStore, mgr)
+	rs2, err := status.Gather("ember", sphereStore, worldStore, worldStore, mgr)
 	if err != nil {
 		t.Fatalf("status.Gather after prefect: %v", err)
 	}
@@ -636,14 +636,14 @@ func TestNamePoolExhaustion(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// Create a custom names file with only 2 names.
-	namesDir := filepath.Join(gtHome, "testrig")
+	namesDir := filepath.Join(solHome, "ember")
 	if err := os.MkdirAll(namesDir, 0o755); err != nil {
-		t.Fatalf("create rig dir: %v", err)
+		t.Fatalf("create world dir: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(namesDir, "names.txt"), []byte("Alpha\nBeta\n"), 0o644); err != nil {
 		t.Fatalf("write names.txt: %v", err)
@@ -657,7 +657,7 @@ func TestNamePoolExhaustion(t *testing.T) {
 		}
 		_, err = dispatch.Cast(dispatch.CastOpts{
 			WorkItemID: itemID,
-			World:        "testrig",
+			World:        "ember",
 			SourceRepo: sourceRepo,
 		}, worldStore, sphereStore, mgr, nil)
 		if err != nil {
@@ -673,7 +673,7 @@ func TestNamePoolExhaustion(t *testing.T) {
 
 	_, err = dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item3ID,
-		World:        "testrig",
+		World:        "ember",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 	if err == nil {

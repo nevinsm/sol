@@ -35,9 +35,9 @@ func TestEscalationCreateAndRoute(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -58,11 +58,11 @@ func TestEscalationCreateAndRoute(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 	router := escalation.DefaultRouter(logger, sphereStore, ts.URL)
 
 	// Create high-severity escalation.
-	id, err := sphereStore.CreateEscalation("high", "myrig/Toast", "Agent stuck in merge loop")
+	id, err := sphereStore.CreateEscalation("high", "haven/Toast", "Agent stuck in merge loop")
 	if err != nil {
 		t.Fatalf("CreateEscalation: %v", err)
 	}
@@ -118,9 +118,9 @@ func TestEscalationLifecycle(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -191,9 +191,9 @@ func TestEscalationFromAgent(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -201,11 +201,11 @@ func TestEscalationFromAgent(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 	router := escalation.DefaultRouter(logger, sphereStore, "")
 
 	// Create escalation from an agent.
-	id, err := sphereStore.CreateEscalation("medium", "myrig/Toast", "Cannot compile code")
+	id, err := sphereStore.CreateEscalation("medium", "haven/Toast", "Cannot compile code")
 	if err != nil {
 		t.Fatalf("CreateEscalation: %v", err)
 	}
@@ -216,8 +216,8 @@ func TestEscalationFromAgent(t *testing.T) {
 	}
 
 	// Verify source.
-	if esc.Source != "myrig/Toast" {
-		t.Errorf("source: got %q, want myrig/Toast", esc.Source)
+	if esc.Source != "haven/Toast" {
+		t.Errorf("source: got %q, want haven/Toast", esc.Source)
 	}
 
 	// Route to trigger mail notification.
@@ -244,25 +244,25 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("HandBot", "testrig", "agent")
+	sphereStore.CreateAgent("HandBot", "ember", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Handoff task", "Test handoff", "operator", 2, nil)
 
 	// Cast the work item.
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "HandBot",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
 
 	// 1. Capture state.
 	state, err := handoff.Capture(handoff.CaptureOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "HandBot",
 	}, func(name string, lines int) (string, error) {
 		return "mock output line 1\nmock output line 2", nil
@@ -283,13 +283,13 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	}
 
 	// 3. Verify file on disk.
-	handoffPath := handoff.HandoffPath("testrig", "HandBot")
+	handoffPath := handoff.HandoffPath("ember", "HandBot")
 	if _, err := os.Stat(handoffPath); os.IsNotExist(err) {
 		t.Fatal("handoff file should exist on disk")
 	}
 
 	// 4. Prime with handoff file → handoff context injected.
-	primeResult, err := dispatch.Prime("testrig", "HandBot", worldStore)
+	primeResult, err := dispatch.Prime("ember", "HandBot", worldStore)
 	if err != nil {
 		t.Fatalf("Prime: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 		t.Error("handoff file should be deleted after prime")
 	}
 
-	_ = gtHome // suppress unused
+	_ = solHome // suppress unused
 }
 
 func TestHandoffPreservesHook(t *testing.T) {
@@ -314,17 +314,17 @@ func TestHandoffPreservesHook(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("HookBot", "testrig", "agent")
+	sphereStore.CreateAgent("HookBot", "ember", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Tether task", "Test tether preservation", "operator", 2, nil)
 
 	// Cast the work item.
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "HookBot",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -333,7 +333,7 @@ func TestHandoffPreservesHook(t *testing.T) {
 	state := &handoff.State{
 		WorkItemID:  itemID,
 		AgentName:   "HookBot",
-		World:         "testrig",
+		World:         "ember",
 		Summary:     "Test summary",
 		HandedOffAt: time.Now().UTC(),
 	}
@@ -342,7 +342,7 @@ func TestHandoffPreservesHook(t *testing.T) {
 	}
 
 	// Verify tether file still exists.
-	tetherContent, err := tether.Read("testrig", "HookBot")
+	tetherContent, err := tether.Read("ember", "HookBot")
 	if err != nil {
 		t.Fatalf("tether.Read: %v", err)
 	}
@@ -365,12 +365,12 @@ func TestHandoffWithWorkflow(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
 	// Create formula.
-	formulaDir := filepath.Join(gtHome, "formulas", "handoff-formula")
+	formulaDir := filepath.Join(solHome, "formulas", "handoff-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
 	os.MkdirAll(stepsDir, 0o755)
 
@@ -398,24 +398,24 @@ needs = ["step1"]
 	os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Step 2 instructions.\n"), 0o644)
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("WFHandBot", "testrig", "agent")
+	sphereStore.CreateAgent("WFHandBot", "ember", "agent")
 	itemID, _ := worldStore.CreateWorkItem("WF Handoff task", "Workflow handoff test", "operator", 2, nil)
 
 	// Cast with formula.
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "WFHandBot",
 		SourceRepo: sourceRepo,
 		Formula:    "handoff-formula",
 	}, worldStore, sphereStore, mgr, nil)
 
 	// Advance to step 2.
-	workflow.Advance("testrig", "WFHandBot")
+	workflow.Advance("ember", "WFHandBot")
 
 	// Capture → state includes workflow step and progress.
 	state, err := handoff.Capture(handoff.CaptureOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "WFHandBot",
 	}, nil, nil)
 	if err != nil {
@@ -435,7 +435,7 @@ needs = ["step1"]
 	}
 
 	// Prime with handoff → output references workflow step.
-	result, err := dispatch.Prime("testrig", "WFHandBot", worldStore)
+	result, err := dispatch.Prime("ember", "WFHandBot", worldStore)
 	if err != nil {
 		t.Fatalf("Prime: %v", err)
 	}
@@ -447,7 +447,7 @@ needs = ["step1"]
 	}
 
 	// After handoff consumed: subsequent Prime → normal workflow prime.
-	result, err = dispatch.Prime("testrig", "WFHandBot", worldStore)
+	result, err = dispatch.Prime("ember", "WFHandBot", worldStore)
 	if err != nil {
 		t.Fatalf("Prime after handoff: %v", err)
 	}
@@ -464,12 +464,12 @@ func TestHandoffPrimeOverridesWorkflow(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
 	// Create formula.
-	formulaDir := filepath.Join(gtHome, "formulas", "override-formula")
+	formulaDir := filepath.Join(solHome, "formulas", "override-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
 	os.MkdirAll(stepsDir, 0o755)
 
@@ -490,13 +490,13 @@ instructions = "steps/01.md"
 	os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Only step.\n"), 0o644)
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("OverBot", "testrig", "agent")
+	sphereStore.CreateAgent("OverBot", "ember", "agent")
 	itemID, _ := worldStore.CreateWorkItem("Override task", "Override test", "operator", 2, nil)
 
 	// Cast with formula.
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "OverBot",
 		SourceRepo: sourceRepo,
 		Formula:    "override-formula",
@@ -506,7 +506,7 @@ instructions = "steps/01.md"
 	state := &handoff.State{
 		WorkItemID:  itemID,
 		AgentName:   "OverBot",
-		World:         "testrig",
+		World:         "ember",
 		Summary:     "Handed off mid-workflow",
 		HandedOffAt: time.Now().UTC(),
 	}
@@ -515,7 +515,7 @@ instructions = "steps/01.md"
 	}
 
 	// Prime → returns handoff context (not workflow).
-	result, err := dispatch.Prime("testrig", "OverBot", worldStore)
+	result, err := dispatch.Prime("ember", "OverBot", worldStore)
 	if err != nil {
 		t.Fatalf("Prime: %v", err)
 	}
@@ -533,9 +533,9 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -543,39 +543,39 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	worldStore, err := store.OpenWorld("myrig")
+	worldStore, err := store.OpenWorld("haven")
 	if err != nil {
-		t.Fatalf("open rig store: %v", err)
+		t.Fatalf("open world store: %v", err)
 	}
 	defer worldStore.Close()
 
 	// Create work item in "tethered" status.
 	itemID, _ := worldStore.CreateWorkItem("Stale task", "Stale tether test", "operator", 2, nil)
-	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "myrig/StaleBot"})
+	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/StaleBot"})
 
 	// Create agent in "working" state.
-	sphereStore.CreateAgent("StaleBot", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/StaleBot", "working", itemID)
+	sphereStore.CreateAgent("StaleBot", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/StaleBot", "working", itemID)
 
 	// Set updated_at to 2 hours ago.
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "myrig/StaleBot")
+	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "haven/StaleBot")
 
 	// Write tether file.
-	tether.Write("myrig", "StaleBot", itemID)
+	tether.Write("haven", "StaleBot", itemID)
 
 	// Mock session checker — no session alive.
 	sessions := newMockSessionChecker()
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:           gtHome,
+		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(rig string) (*store.Store, error) {
-		return store.OpenWorld(rig)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
 	})
 
 	// Run one patrol.
@@ -588,13 +588,13 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	}
 
 	// Verify: agent state is "idle".
-	agent, _ := sphereStore.GetAgent("myrig/StaleBot")
+	agent, _ := sphereStore.GetAgent("haven/StaleBot")
 	if agent.State != "idle" {
 		t.Errorf("agent state: got %q, want idle", agent.State)
 	}
 
 	// Verify: tether file cleared.
-	tetherContent, err := tether.Read("myrig", "StaleBot")
+	tetherContent, err := tether.Read("haven", "StaleBot")
 	if err != nil {
 		t.Fatalf("tether.Read: %v", err)
 	}
@@ -608,9 +608,9 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -618,35 +618,35 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	worldStore, err := store.OpenWorld("myrig")
+	worldStore, err := store.OpenWorld("haven")
 	if err != nil {
-		t.Fatalf("open rig store: %v", err)
+		t.Fatalf("open world store: %v", err)
 	}
 	defer worldStore.Close()
 
 	itemID, _ := worldStore.CreateWorkItem("Recent task", "Recent tether test", "operator", 2, nil)
-	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "myrig/RecentBot"})
+	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/RecentBot"})
 
-	sphereStore.CreateAgent("RecentBot", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/RecentBot", "working", itemID)
+	sphereStore.CreateAgent("RecentBot", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/RecentBot", "working", itemID)
 
 	// updated_at is now (5 minutes ago is within timeout)
 	fiveMinAgo := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
-	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", fiveMinAgo, "myrig/RecentBot")
+	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", fiveMinAgo, "haven/RecentBot")
 
-	tether.Write("myrig", "RecentBot", itemID)
+	tether.Write("haven", "RecentBot", itemID)
 
 	sessions := newMockSessionChecker()
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:           gtHome,
+		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(rig string) (*store.Store, error) {
-		return store.OpenWorld(rig)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
 	})
 
 	d.Patrol()
@@ -663,9 +663,9 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -673,38 +673,38 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	worldStore, err := store.OpenWorld("myrig")
+	worldStore, err := store.OpenWorld("haven")
 	if err != nil {
-		t.Fatalf("open rig store: %v", err)
+		t.Fatalf("open world store: %v", err)
 	}
 	defer worldStore.Close()
 
 	itemID, _ := worldStore.CreateWorkItem("Alive task", "Alive tether test", "operator", 2, nil)
-	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "myrig/AliveBot"})
+	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/AliveBot"})
 
-	sphereStore.CreateAgent("AliveBot", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/AliveBot", "working", itemID)
+	sphereStore.CreateAgent("AliveBot", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/AliveBot", "working", itemID)
 
 	// Set updated_at to 2 hours ago.
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "myrig/AliveBot")
+	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "haven/AliveBot")
 
-	tether.Write("myrig", "AliveBot", itemID)
+	tether.Write("haven", "AliveBot", itemID)
 
 	// Session IS alive.
 	sessions := newMockSessionChecker()
-	sessions.alive["sol-myrig-AliveBot"] = true
+	sessions.alive["sol-haven-AliveBot"] = true
 
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:           gtHome,
+		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(rig string) (*store.Store, error) {
-		return store.OpenWorld(rig)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
 	})
 
 	d.Patrol()
@@ -721,9 +721,9 @@ func TestConsulCaravanFeeding(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -731,9 +731,9 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	worldStore, err := store.OpenWorld("testrig")
+	worldStore, err := store.OpenWorld("ember")
 	if err != nil {
-		t.Fatalf("open rig store: %v", err)
+		t.Fatalf("open world store: %v", err)
 	}
 
 	// Create work items: A (no deps), B→A.
@@ -743,21 +743,21 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	worldStore.Close()
 
 	// Create caravan with both items.
-	caravanID, _ := sphereStore.CreateCaravan("feed-convoy", "operator")
-	sphereStore.AddCaravanItem(caravanID, idA, "testrig")
-	sphereStore.AddCaravanItem(caravanID, idB, "testrig")
+	caravanID, _ := sphereStore.CreateCaravan("feed-caravan", "operator")
+	sphereStore.AddCaravanItem(caravanID, idA, "ember")
+	sphereStore.AddCaravanItem(caravanID, idB, "ember")
 
 	sessions := newMockSessionChecker()
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:           gtHome,
+		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(rig string) (*store.Store, error) {
-		return store.OpenWorld(rig)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
 	})
 
 	// Run patrol → should detect A is ready.
@@ -776,7 +776,7 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	sphereStore.AckMessage(msgs[0].ID)
 
 	// Mark A as done.
-	rs, _ := store.OpenWorld("testrig")
+	rs, _ := store.OpenWorld("ember")
 	rs.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"})
 	rs.Close()
 
@@ -795,9 +795,9 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -805,27 +805,27 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	worldStore, err := store.OpenWorld("testrig")
+	worldStore, err := store.OpenWorld("ember")
 	if err != nil {
-		t.Fatalf("open rig store: %v", err)
+		t.Fatalf("open world store: %v", err)
 	}
 	idA, _ := worldStore.CreateWorkItem("Dup task", "No dup test", "operator", 2, nil)
 	worldStore.Close()
 
-	caravanID, _ := sphereStore.CreateCaravan("nodup-convoy", "operator")
-	sphereStore.AddCaravanItem(caravanID, idA, "testrig")
+	caravanID, _ := sphereStore.CreateCaravan("nodup-caravan", "operator")
+	sphereStore.AddCaravanItem(caravanID, idA, "ember")
 
 	sessions := newMockSessionChecker()
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:           gtHome,
+		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(rig string) (*store.Store, error) {
-		return store.OpenWorld(rig)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
 	})
 
 	// Run patrol → message sent.
@@ -848,9 +848,9 @@ func TestConsulHeartbeat(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -859,23 +859,23 @@ func TestConsulHeartbeat(t *testing.T) {
 	defer sphereStore.Close()
 
 	sessions := newMockSessionChecker()
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:           gtHome,
+		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(rig string) (*store.Store, error) {
-		return store.OpenWorld(rig)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
 	})
 
 	// Run one patrol.
 	d.Patrol()
 
 	// Read heartbeat file.
-	hb, err := consul.ReadHeartbeat(gtHome)
+	hb, err := consul.ReadHeartbeat(solHome)
 	if err != nil {
 		t.Fatalf("ReadHeartbeat: %v", err)
 	}
@@ -891,7 +891,7 @@ func TestConsulHeartbeat(t *testing.T) {
 
 	// Run another patrol.
 	d.Patrol()
-	hb, _ = consul.ReadHeartbeat(gtHome)
+	hb, _ = consul.ReadHeartbeat(solHome)
 	if hb.PatrolCount != 2 {
 		t.Errorf("patrol count: got %d, want 2", hb.PatrolCount)
 	}
@@ -902,9 +902,9 @@ func TestConsulLifecycleShutdown(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -913,23 +913,23 @@ func TestConsulLifecycleShutdown(t *testing.T) {
 	defer sphereStore.Close()
 
 	// Register consul.
-	sphereStore.CreateAgent("consul", "town", "consul")
+	sphereStore.CreateAgent("consul", "cove", "consul")
 	sphereStore.UpdateAgentState("sphere/consul", "working", "")
 
 	// Send SHUTDOWN protocol message to "sphere/consul".
 	sphereStore.SendProtocolMessage("operator", "sphere/consul", "SHUTDOWN", nil)
 
 	sessions := newMockSessionChecker()
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:           gtHome,
+		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(rig string) (*store.Store, error) {
-		return store.OpenWorld(rig)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
 	})
 
 	// Patrol should process shutdown.
@@ -969,7 +969,7 @@ func (m *mockPrefectSessions) Exists(name string) bool {
 	return m.alive[name]
 }
 
-func (m *mockPrefectSessions) Start(name, workdir, cmd string, env map[string]string, role, rig string) error {
+func (m *mockPrefectSessions) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.alive[name] = true
@@ -1008,10 +1008,10 @@ func TestPrefectConsulStartup(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1052,10 +1052,10 @@ func TestPrefectConsulRestart(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1064,7 +1064,7 @@ func TestPrefectConsulRestart(t *testing.T) {
 	defer sphereStore.Close()
 
 	// Write stale heartbeat (20 minutes old).
-	consul.WriteHeartbeat(gtHome, &consul.Heartbeat{
+	consul.WriteHeartbeat(solHome, &consul.Heartbeat{
 		Timestamp:   time.Now().UTC().Add(-20 * time.Minute),
 		PatrolCount: 10,
 		Status:      "running",
@@ -1103,10 +1103,10 @@ func TestPrefectConsulHealthy(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1115,7 +1115,7 @@ func TestPrefectConsulHealthy(t *testing.T) {
 	defer sphereStore.Close()
 
 	// Write fresh heartbeat (1 minute old).
-	consul.WriteHeartbeat(gtHome, &consul.Heartbeat{
+	consul.WriteHeartbeat(solHome, &consul.Heartbeat{
 		Timestamp:   time.Now().UTC().Add(-1 * time.Minute),
 		PatrolCount: 5,
 		Status:      "running",
@@ -1153,10 +1153,10 @@ func TestFullOrchestrationCycle(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1164,33 +1164,33 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	worldStore, err := store.OpenWorld("testrig")
+	worldStore, err := store.OpenWorld("ember")
 	if err != nil {
-		t.Fatalf("open rig store: %v", err)
+		t.Fatalf("open world store: %v", err)
 	}
 
-	// 1. Create rig with work items and dependencies.
+	// 1. Create world with work items and dependencies.
 	idA, _ := worldStore.CreateWorkItem("Task A", "No deps", "operator", 2, nil)
 	idB, _ := worldStore.CreateWorkItem("Task B", "Depends on A", "operator", 2, nil)
 	worldStore.AddDependency(idB, idA)
 	worldStore.Close()
 
 	// 2. Create caravan spanning the items.
-	caravanID, _ := sphereStore.CreateCaravan("e2e-convoy", "operator")
-	sphereStore.AddCaravanItem(caravanID, idA, "testrig")
-	sphereStore.AddCaravanItem(caravanID, idB, "testrig")
+	caravanID, _ := sphereStore.CreateCaravan("e2e-caravan", "operator")
+	sphereStore.AddCaravanItem(caravanID, idA, "ember")
+	sphereStore.AddCaravanItem(caravanID, idB, "ember")
 
 	sessions := newMockSessionChecker()
-	logger := events.NewLogger(gtHome)
+	logger := events.NewLogger(solHome)
 
 	cfg := consul.Config{
 		PatrolInterval:   5 * time.Minute,
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:           gtHome,
+		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(rig string) (*store.Store, error) {
-		return store.OpenWorld(rig)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
 	})
 
 	// 3. Run consul patrol → detects stranded caravan.
@@ -1205,7 +1205,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	sphereStore.AckMessage(msgs[0].ID)
 
 	// 5. Create escalation (simulating stuck agent).
-	escID, err := sphereStore.CreateEscalation("high", "testrig/StuckBot", "Agent stuck in loop")
+	escID, err := sphereStore.CreateEscalation("high", "ember/StuckBot", "Agent stuck in loop")
 	if err != nil {
 		t.Fatalf("CreateEscalation: %v", err)
 	}
@@ -1220,25 +1220,25 @@ func TestFullOrchestrationCycle(t *testing.T) {
 
 	// 7. Simulate handoff: write handoff file, call Prime.
 	// First, set up an agent with a tether.
-	worldStore2, _ := store.OpenWorld("testrig")
+	worldStore2, _ := store.OpenWorld("ember")
 	defer worldStore2.Close()
 
-	sphereStore.CreateAgent("E2EBot", "testrig", "agent")
-	sphereStore.UpdateAgentState("testrig/E2EBot", "working", idA)
-	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "testrig/E2EBot"})
-	tether.Write("testrig", "E2EBot", idA)
+	sphereStore.CreateAgent("E2EBot", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/E2EBot", "working", idA)
+	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/E2EBot"})
+	tether.Write("ember", "E2EBot", idA)
 
 	handoffState := &handoff.State{
 		WorkItemID:  idA,
 		AgentName:   "E2EBot",
-		World:         "testrig",
+		World:         "ember",
 		Summary:     "E2E handoff test",
 		HandedOffAt: time.Now().UTC(),
 	}
 	handoff.Write(handoffState)
 
 	// 8. Verify handoff context injected.
-	primeResult, err := dispatch.Prime("testrig", "E2EBot", worldStore2)
+	primeResult, err := dispatch.Prime("ember", "E2EBot", worldStore2)
 	if err != nil {
 		t.Fatalf("Prime with handoff: %v", err)
 	}
@@ -1247,12 +1247,12 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 
 	// 9. Simulate stale tether: mark agent working but session is dead.
-	sphereStore.UpdateAgentState("testrig/E2EBot", "working", idA)
+	sphereStore.UpdateAgentState("ember/E2EBot", "working", idA)
 	// Set updated_at to 2 hours ago.
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "testrig/E2EBot")
-	tether.Write("testrig", "E2EBot", idA)
-	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "testrig/E2EBot"})
+	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "ember/E2EBot")
+	tether.Write("ember", "E2EBot", idA)
+	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/E2EBot"})
 
 	// 10. Run consul patrol → recovers stale tether.
 	d.Patrol()
@@ -1264,9 +1264,9 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 
 	// Verify events emitted.
-	assertEventEmitted(t, gtHome, events.EventConsulPatrol)
-	assertEventEmitted(t, gtHome, events.EventConsulCaravanFeed)
-	assertEventEmitted(t, gtHome, events.EventConsulStaleTether)
+	assertEventEmitted(t, solHome, events.EventConsulPatrol)
+	assertEventEmitted(t, solHome, events.EventConsulCaravanFeed)
+	assertEventEmitted(t, solHome, events.EventConsulStaleTether)
 }
 
 // Ensure unused imports don't cause issues.

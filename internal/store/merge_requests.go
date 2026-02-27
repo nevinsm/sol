@@ -8,13 +8,13 @@ import (
 	"time"
 )
 
-// MergeRequest represents a merge request in the rig database.
+// MergeRequest represents a merge request in the world database.
 type MergeRequest struct {
 	ID         string
 	WorkItemID string
 	Branch     string
 	Phase      string // ready, claimed, merged, failed
-	ClaimedBy  string // refinery agent ID (empty if unclaimed)
+	ClaimedBy  string // forge agent ID (empty if unclaimed)
 	ClaimedAt  *time.Time
 	Attempts   int
 	Priority   int

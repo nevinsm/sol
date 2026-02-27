@@ -16,11 +16,11 @@ func TestCLIForgeStartHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "forge", "start", "--help")
+	out, err := runGT(t, solHome, "forge", "start", "--help")
 	if err != nil {
-		t.Fatalf("gt forge start --help failed: %v: %s", err, out)
+		t.Fatalf("sol forge start --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Start the forge") {
 		t.Errorf("output missing expected text: %s", out)
@@ -31,11 +31,11 @@ func TestCLIForgeStopHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "forge", "stop", "--help")
+	out, err := runGT(t, solHome, "forge", "stop", "--help")
 	if err != nil {
-		t.Fatalf("gt forge stop --help failed: %v: %s", err, out)
+		t.Fatalf("sol forge stop --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Stop the forge") {
 		t.Errorf("output missing expected text: %s", out)
@@ -46,11 +46,11 @@ func TestCLIForgeQueueHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "forge", "queue", "--help")
+	out, err := runGT(t, solHome, "forge", "queue", "--help")
 	if err != nil {
-		t.Fatalf("gt forge queue --help failed: %v: %s", err, out)
+		t.Fatalf("sol forge queue --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "merge request queue") {
 		t.Errorf("output missing expected text: %s", out)
@@ -61,11 +61,11 @@ func TestCLIForgeAttachHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "forge", "attach", "--help")
+	out, err := runGT(t, solHome, "forge", "attach", "--help")
 	if err != nil {
-		t.Fatalf("gt forge attach --help failed: %v: %s", err, out)
+		t.Fatalf("sol forge attach --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "Attach to the forge") {
 		t.Errorf("output missing expected text: %s", out)
@@ -76,8 +76,8 @@ func TestCLIForgeQueue(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome, sourceRepo := setupTestEnv(t)
-	worldStore, _ := openStores(t, "testrig")
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, _ := openStores(t, "ember")
 
 	// Create a work item and a merge request.
 	itemID, err := worldStore.CreateWorkItem("Test merge item", "desc", "test", 1, nil)
@@ -92,9 +92,9 @@ func TestCLIForgeQueue(t *testing.T) {
 	_ = sourceRepo // needed by setupTestEnv but not directly used here
 
 	// Human-readable output.
-	out, err := runGT(t, gtHome, "forge", "queue", "testrig")
+	out, err := runGT(t, solHome, "forge", "queue", "ember")
 	if err != nil {
-		t.Fatalf("gt forge queue failed: %v: %s", err, out)
+		t.Fatalf("sol forge queue failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, mrID) {
 		t.Errorf("queue output missing MR ID %q: %s", mrID, out)
@@ -104,9 +104,9 @@ func TestCLIForgeQueue(t *testing.T) {
 	}
 
 	// JSON output.
-	out, err = runGT(t, gtHome, "forge", "queue", "testrig", "--json")
+	out, err = runGT(t, solHome, "forge", "queue", "ember", "--json")
 	if err != nil {
-		t.Fatalf("gt forge queue --json failed: %v: %s", err, out)
+		t.Fatalf("sol forge queue --json failed: %v: %s", err, out)
 	}
 	if !json.Valid([]byte(out)) {
 		t.Errorf("queue --json output is not valid JSON: %s", out)
@@ -120,12 +120,12 @@ func TestCLIResolveShowsMergeRequest(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome, sourceRepo := setupTestEnv(t)
-	worldStore, sphereStore := openStores(t, "testrig")
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// Create work item, agent, and cast via API.
-	sphereStore.CreateAgent("Smoke", "testrig", "agent")
+	sphereStore.CreateAgent("Smoke", "ember", "agent")
 	itemID, err := worldStore.CreateWorkItem("CLI resolve test", "Test resolve CLI output", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create work item: %v", err)
@@ -133,7 +133,7 @@ func TestCLIResolveShowsMergeRequest(t *testing.T) {
 
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "Smoke",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -149,14 +149,14 @@ func TestCLIResolveShowsMergeRequest(t *testing.T) {
 	worldStore.Close()
 	sphereStore.Close()
 
-	// Run gt resolve via CLI.
+	// Run sol resolve via CLI.
 	bin := gtBin(t)
-	cmd := exec.Command(bin, "resolve", "--world=testrig", "--agent=Smoke")
-	cmd.Env = append(os.Environ(), "SOL_HOME="+gtHome)
+	cmd := exec.Command(bin, "resolve", "--world=ember", "--agent=Smoke")
+	cmd.Env = append(os.Environ(), "SOL_HOME="+solHome)
 	out, err := cmd.CombinedOutput()
 	outStr := strings.TrimSpace(string(out))
 	if err != nil {
-		t.Fatalf("gt resolve failed: %v: %s", err, outStr)
+		t.Fatalf("sol resolve failed: %v: %s", err, outStr)
 	}
 
 	// Verify output contains "Merge request:" and "mr-".
@@ -172,12 +172,12 @@ func TestCLIForgeQueueEmpty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome, _ := setupTestEnv(t)
-	openStores(t, "testrig") // ensure rig DB exists
+	solHome, _ := setupTestEnv(t)
+	openStores(t, "ember") // ensure world DB exists
 
-	out, err := runGT(t, gtHome, "forge", "queue", "testrig")
+	out, err := runGT(t, solHome, "forge", "queue", "ember")
 	if err != nil {
-		t.Fatalf("gt forge queue failed: %v: %s", err, out)
+		t.Fatalf("sol forge queue failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "empty") {
 		t.Errorf("queue output should indicate empty: %s", out)
@@ -188,11 +188,11 @@ func TestCLIStatusWithForge(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	gtHome, _ := setupTestEnv(t)
-	openStores(t, "testrig") // ensure stores exist
+	solHome, _ := setupTestEnv(t)
+	openStores(t, "ember") // ensure stores exist
 
 	// Status without forge running.
-	out, _ := runGT(t, gtHome, "status", "testrig")
+	out, _ := runGT(t, solHome, "status", "ember")
 	if !strings.Contains(out, "Forge:") {
 		t.Errorf("status output missing 'Forge:' line: %s", out)
 	}
@@ -201,7 +201,7 @@ func TestCLIStatusWithForge(t *testing.T) {
 	}
 
 	// JSON output should contain forge and merge_queue fields.
-	out, _ = runGT(t, gtHome, "status", "testrig", "--json")
+	out, _ = runGT(t, solHome, "status", "ember", "--json")
 	if !json.Valid([]byte(out)) {
 		t.Errorf("status --json output is not valid JSON: %s", out)
 	}

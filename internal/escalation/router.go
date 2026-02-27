@@ -53,9 +53,9 @@ func (r *Router) Route(ctx context.Context, esc store.Escalation) error {
 //
 // If webhookURL is empty, high/critical omit the webhook notifier.
 // If logger is nil, log notifier is a no-op.
-func DefaultRouter(logger *events.Logger, townStore *store.Store, webhookURL string) *Router {
+func DefaultRouter(logger *events.Logger, sphereStore *store.Store, webhookURL string) *Router {
 	logN := NewLogNotifier(logger)
-	mailN := NewMailNotifier(townStore)
+	mailN := NewMailNotifier(sphereStore)
 
 	r := NewRouter()
 	r.AddRule("low", logN)

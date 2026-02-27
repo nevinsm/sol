@@ -8,4 +8,4 @@ Implement the changes for {{issue}}.
 4. Commit your changes with a clear message
 
 When implementation is complete and tests pass, advance:
-`gt workflow advance --rig=$GT_RIG --agent=$GT_AGENT`
+`sol workflow advance --world=$SOL_WORLD --agent=$SOL_AGENT`

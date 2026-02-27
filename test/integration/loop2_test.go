@@ -17,9 +17,9 @@ func TestStatusWithMergeQueue(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	gtHome, _ := setupTestEnv(t)
-	_, sourceClone := createSourceRepo(t, gtHome)
-	worldStore, sphereStore := openStores(t, "testrig")
+	solHome, _ := setupTestEnv(t)
+	_, sourceClone := createSourceRepo(t, solHome)
+	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
 	// Create work item, cast, simulate work, done.
@@ -30,7 +30,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 
 	result, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		SourceRepo: sourceClone,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
@@ -41,7 +41,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 		[]byte("package main\n\nfunc statusTest() {}\n"), 0o644)
 
 	_, err = dispatch.Resolve(dispatch.ResolveOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: result.AgentName,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
@@ -49,7 +49,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 	}
 
 	// Gather status (no forge running).
-	rs, err := status.Gather("testrig", sphereStore, worldStore, worldStore, mgr)
+	rs, err := status.Gather("ember", sphereStore, worldStore, worldStore, mgr)
 	if err != nil {
 		t.Fatalf("status.Gather: %v", err)
 	}
@@ -65,16 +65,16 @@ func TestStatusWithMergeQueue(t *testing.T) {
 	}
 
 	// Start forge in a tmux session.
-	forgeSessName := dispatch.SessionName("testrig", "forge")
+	forgeSessName := dispatch.SessionName("ember", "forge")
 	err = mgr.Start(forgeSessName, sourceClone, "sleep 60",
-		map[string]string{"SOL_HOME": gtHome}, "forge", "testrig")
+		map[string]string{"SOL_HOME": solHome}, "forge", "ember")
 	if err != nil {
 		t.Fatalf("start forge session: %v", err)
 	}
 	defer mgr.Stop(forgeSessName, true)
 
 	// Gather status again — forge should be running.
-	rs2, err := status.Gather("testrig", sphereStore, worldStore, worldStore, mgr)
+	rs2, err := status.Gather("ember", sphereStore, worldStore, worldStore, mgr)
 	if err != nil {
 		t.Fatalf("status.Gather with forge: %v", err)
 	}

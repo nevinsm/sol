@@ -45,13 +45,13 @@ var consulRunCmd = &cobra.Command{
 
 		webhook := consulWebhook
 		if webhook == "" {
-			webhook = os.Getenv("GT_ESCALATION_WEBHOOK")
+			webhook = os.Getenv("SOL_ESCALATION_WEBHOOK")
 		}
 
 		cfg := consul.Config{
 			PatrolInterval:     interval,
 			StaleTetherTimeout: staleTimeout,
-			GTHome:             config.Home(),
+			SolHome:            config.Home(),
 			EscalationWebhook:  webhook,
 		}
 

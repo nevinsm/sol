@@ -26,7 +26,7 @@ func newMockSessionManager() *mockSessionManager {
 	}
 }
 
-func (m *mockSessionManager) Start(name, workdir, cmd string, env map[string]string, role, rig string) error {
+func (m *mockSessionManager) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	m.started[name] = true
 	return nil
 }
@@ -51,7 +51,7 @@ func setupStores(t *testing.T) (*store.Store, *store.Store) {
 		t.Fatalf("failed to create store dir: %v", err)
 	}
 
-	worldStore, err := store.OpenWorld("testrig")
+	worldStore, err := store.OpenWorld("ember")
 	if err != nil {
 		t.Fatalf("failed to open world store: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestCastHappyPath(t *testing.T) {
 		t.Fatalf("failed to create work item: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "testrig", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -97,7 +97,7 @@ func TestCastHappyPath(t *testing.T) {
 
 	result, err := Cast(CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "Toast",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
@@ -112,17 +112,17 @@ func TestCastHappyPath(t *testing.T) {
 	if result.AgentName != "Toast" {
 		t.Errorf("expected agent name Toast, got %q", result.AgentName)
 	}
-	if result.SessionName != "sol-testrig-Toast" {
-		t.Errorf("expected session name sol-testrig-Toast, got %q", result.SessionName)
+	if result.SessionName != "sol-ember-Toast" {
+		t.Errorf("expected session name sol-ember-Toast, got %q", result.SessionName)
 	}
 
 	// Verify tether was written.
-	hookID, err := tether.Read("testrig", "Toast")
+	tetherID, err := tether.Read("ember", "Toast")
 	if err != nil {
 		t.Fatalf("failed to read tether: %v", err)
 	}
-	if hookID != itemID {
-		t.Errorf("tether has %q, expected %q", hookID, itemID)
+	if tetherID != itemID {
+		t.Errorf("tether has %q, expected %q", tetherID, itemID)
 	}
 
 	// Verify work item was updated.
@@ -133,12 +133,12 @@ func TestCastHappyPath(t *testing.T) {
 	if item.Status != "tethered" {
 		t.Errorf("expected work item status 'tethered', got %q", item.Status)
 	}
-	if item.Assignee != "testrig/Toast" {
-		t.Errorf("expected assignee 'testrig/Toast', got %q", item.Assignee)
+	if item.Assignee != "ember/Toast" {
+		t.Errorf("expected assignee 'ember/Toast', got %q", item.Assignee)
 	}
 
 	// Verify agent was updated.
-	agent, err := sphereStore.GetAgent("testrig/Toast")
+	agent, err := sphereStore.GetAgent("ember/Toast")
 	if err != nil {
 		t.Fatalf("failed to get agent: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestCastHappyPath(t *testing.T) {
 	}
 
 	// Verify session was started.
-	if !mgr.started["sol-testrig-Toast"] {
+	if !mgr.started["sol-ember-Toast"] {
 		t.Error("expected session to be started")
 	}
 
@@ -174,7 +174,7 @@ func TestCastAutoAgent(t *testing.T) {
 		t.Fatalf("failed to create work item: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Alpha", "testrig", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Alpha", "ember", "agent"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -184,7 +184,7 @@ func TestCastAutoAgent(t *testing.T) {
 
 	result, err := Cast(CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -212,7 +212,7 @@ func TestCastAutoProvision(t *testing.T) {
 
 	result, err := Cast(CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -226,7 +226,7 @@ func TestCastAutoProvision(t *testing.T) {
 	}
 
 	// Verify the agent was created in the store.
-	agent, err := sphereStore.GetAgent("testrig/Toast")
+	agent, err := sphereStore.GetAgent("ember/Toast")
 	if err != nil {
 		t.Fatalf("failed to get auto-provisioned agent: %v", err)
 	}
@@ -245,10 +245,10 @@ func TestCastAutoProvisionSkipsUsed(t *testing.T) {
 	// Create agents with the first 3 pool names and set them to "working".
 	poolNames := []string{"Toast", "Jasper", "Sage"}
 	for _, name := range poolNames {
-		if _, err := sphereStore.CreateAgent(name, "testrig", "agent"); err != nil {
+		if _, err := sphereStore.CreateAgent(name, "ember", "agent"); err != nil {
 			t.Fatalf("failed to create agent %q: %v", name, err)
 		}
-		if err := sphereStore.UpdateAgentState("testrig/"+name, "working", "sol-other"); err != nil {
+		if err := sphereStore.UpdateAgentState("ember/"+name, "working", "sol-other"); err != nil {
 			t.Fatalf("failed to update agent %q: %v", name, err)
 		}
 	}
@@ -264,7 +264,7 @@ func TestCastAutoProvisionSkipsUsed(t *testing.T) {
 
 	result, err := Cast(CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -301,7 +301,7 @@ func TestCastFlockPreventsDoubleDispatch(t *testing.T) {
 
 	_, err = Cast(CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		SourceRepo: "/tmp",
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -326,13 +326,13 @@ func TestCastItemNotOpen(t *testing.T) {
 		t.Fatalf("failed to update work item: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "testrig", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
 	_, err = Cast(CastOpts{
 		WorkItemID: itemID,
-		World:        "testrig",
+		World:        "ember",
 		AgentName:  "Toast",
 		SourceRepo: "/tmp",
 	}, worldStore, sphereStore, mgr, nil)
@@ -355,11 +355,11 @@ func TestPrimeWithTether(t *testing.T) {
 		t.Fatalf("failed to create work item: %v", err)
 	}
 
-	if err := tether.Write("testrig", "Toast", itemID); err != nil {
+	if err := tether.Write("ember", "Toast", itemID); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
-	result, err := Prime("testrig", "Toast", worldStore)
+	result, err := Prime("ember", "Toast", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
 	}
@@ -377,14 +377,14 @@ func TestPrimeWithTether(t *testing.T) {
 		t.Error("output missing title")
 	}
 	if !strings.Contains(result.Output, "sol resolve") {
-		t.Error("output missing gt done instruction")
+		t.Error("output missing sol resolve instruction")
 	}
 }
 
 func TestPrimeWithoutTether(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	result, err := Prime("testrig", "Toast", worldStore)
+	result, err := Prime("ember", "Toast", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
 	}
@@ -404,34 +404,34 @@ func TestResolveHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create work item: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "testrig/Toast"}); err != nil {
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
 		t.Fatalf("failed to update work item: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "testrig", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
-	if err := sphereStore.UpdateAgentState("testrig/Toast", "working", itemID); err != nil {
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("testrig", "Toast", itemID); err != nil {
+	if err := tether.Write("ember", "Toast", itemID); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	// Create a worktree directory with a git repo (simulating a worktree).
-	worktreeDir := WorktreePath("testrig", "Toast")
+	worktreeDir := WorktreePath("ember", "Toast")
 	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 
-	sessName := SessionName("testrig", "Toast")
+	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(ResolveOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -465,7 +465,7 @@ func TestResolveHappyPath(t *testing.T) {
 	}
 
 	// Verify agent is idle.
-	agent, err := sphereStore.GetAgent("testrig/Toast")
+	agent, err := sphereStore.GetAgent("ember/Toast")
 	if err != nil {
 		t.Fatalf("failed to get agent: %v", err)
 	}
@@ -474,21 +474,21 @@ func TestResolveHappyPath(t *testing.T) {
 	}
 
 	// Verify tether is cleared.
-	hookID, err := tether.Read("testrig", "Toast")
+	tetherID, err := tether.Read("ember", "Toast")
 	if err != nil {
 		t.Fatalf("failed to read tether: %v", err)
 	}
-	if hookID != "" {
-		t.Errorf("expected empty tether, got %q", hookID)
+	if tetherID != "" {
+		t.Errorf("expected empty tether, got %q", tetherID)
 	}
 }
 
-func TestResolveNoHook(t *testing.T) {
+func TestResolveNoTether(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
 	_, err := Resolve(ResolveOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -520,7 +520,7 @@ func TestResolveConflictResolution(t *testing.T) {
 	resolutionID, err := worldStore.CreateWorkItemWithOpts(store.CreateWorkItemOpts{
 		Title:       "Resolve merge conflicts: Add feature X",
 		Description: "Resolve merge conflicts",
-		CreatedBy:   "testrig/forge",
+		CreatedBy:   "ember/forge",
 		Priority:    1,
 		Labels:      []string{"conflict-resolution", "source-mr:" + mrID},
 		ParentID:    origItemID,
@@ -535,32 +535,32 @@ func TestResolveConflictResolution(t *testing.T) {
 	}
 
 	// Set up agent and tether the resolution task.
-	if err := worldStore.UpdateWorkItem(resolutionID, store.WorkItemUpdates{Status: "tethered", Assignee: "testrig/Toast"}); err != nil {
+	if err := worldStore.UpdateWorkItem(resolutionID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
 		t.Fatalf("failed to update work item: %v", err)
 	}
-	if _, err := sphereStore.CreateAgent("Toast", "testrig", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
-	if err := sphereStore.UpdateAgentState("testrig/Toast", "working", resolutionID); err != nil {
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", resolutionID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
-	if err := tether.Write("testrig", "Toast", resolutionID); err != nil {
+	if err := tether.Write("ember", "Toast", resolutionID); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	// Create worktree dir with git repo.
-	worktreeDir := WorktreePath("testrig", "Toast")
+	worktreeDir := WorktreePath("ember", "Toast")
 	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 
-	sessName := SessionName("testrig", "Toast")
+	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(ResolveOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
@@ -594,7 +594,7 @@ func TestResolveConflictResolution(t *testing.T) {
 	}
 
 	// Verify agent is idle.
-	agent, err := sphereStore.GetAgent("testrig/Toast")
+	agent, err := sphereStore.GetAgent("ember/Toast")
 	if err != nil {
 		t.Fatalf("failed to get agent: %v", err)
 	}
@@ -603,12 +603,12 @@ func TestResolveConflictResolution(t *testing.T) {
 	}
 
 	// Verify tether is cleared.
-	hookID, err := tether.Read("testrig", "Toast")
+	tetherID, err := tether.Read("ember", "Toast")
 	if err != nil {
 		t.Fatalf("failed to read tether: %v", err)
 	}
-	if hookID != "" {
-		t.Errorf("expected empty tether, got %q", hookID)
+	if tetherID != "" {
+		t.Errorf("expected empty tether, got %q", tetherID)
 	}
 }
 
@@ -620,33 +620,33 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create work item: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "testrig/Toast"}); err != nil {
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
 		t.Fatalf("failed to update work item: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "testrig", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
-	if err := sphereStore.UpdateAgentState("testrig/Toast", "working", itemID); err != nil {
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("testrig", "Toast", itemID); err != nil {
+	if err := tether.Write("ember", "Toast", itemID); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
-	worktreeDir := WorktreePath("testrig", "Toast")
+	worktreeDir := WorktreePath("ember", "Toast")
 	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 
-	sessName := SessionName("testrig", "Toast")
+	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(ResolveOpts{
-		World:       "testrig",
+		World:       "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -690,7 +690,7 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 		t.Errorf("expected work item status 'done', got %q", item.Status)
 	}
 
-	agent, err := sphereStore.GetAgent("testrig/Toast")
+	agent, err := sphereStore.GetAgent("ember/Toast")
 	if err != nil {
 		t.Fatalf("failed to get agent: %v", err)
 	}
@@ -710,7 +710,7 @@ func TestPrimeWithHandoff(t *testing.T) {
 	}
 
 	// Write tether file.
-	if err := tether.Write("testrig", "Toast", itemID); err != nil {
+	if err := tether.Write("ember", "Toast", itemID); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -718,8 +718,8 @@ func TestPrimeWithHandoff(t *testing.T) {
 	state := &handoff.State{
 		WorkItemID:      itemID,
 		AgentName:       "Toast",
-		World:             "testrig",
-		PreviousSession: "sol-testrig-Toast",
+		World:             "ember",
+		PreviousSession: "sol-ember-Toast",
 		Summary:         "Implemented login form. Tests passing.",
 		RecentCommits:   []string{"abc1234 feat: add login form"},
 	}
@@ -727,7 +727,7 @@ func TestPrimeWithHandoff(t *testing.T) {
 		t.Fatalf("failed to write handoff: %v", err)
 	}
 
-	result, err := Prime("testrig", "Toast", worldStore)
+	result, err := Prime("ember", "Toast", worldStore)
 	if err != nil {
 		t.Fatalf("Prime with handoff failed: %v", err)
 	}
@@ -752,14 +752,14 @@ func TestPrimeWithHandoff(t *testing.T) {
 	}
 
 	// Handoff file should be deleted after prime.
-	if handoff.HasHandoff("testrig", "Toast") {
+	if handoff.HasHandoff("ember", "Toast") {
 		t.Error("expected handoff file to be removed after prime")
 	}
 }
 
 func TestPrimeHandoffTakesPriority(t *testing.T) {
 	worldStore, _ := setupStores(t)
-	gtHome := os.Getenv("SOL_HOME")
+	solHome := os.Getenv("SOL_HOME")
 
 	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
@@ -767,7 +767,7 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 	}
 
 	// Write tether file.
-	if err := tether.Write("testrig", "Toast", itemID); err != nil {
+	if err := tether.Write("ember", "Toast", itemID); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -775,8 +775,8 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 	state := &handoff.State{
 		WorkItemID:       itemID,
 		AgentName:        "Toast",
-		World:              "testrig",
-		PreviousSession:  "sol-testrig-Toast",
+		World:              "ember",
+		PreviousSession:  "sol-ember-Toast",
 		Summary:          "Handoff summary here.",
 		RecentCommits:    []string{"abc1234 feat: work"},
 		WorkflowStep:     "implement",
@@ -787,14 +787,14 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 	}
 
 	// Also set up workflow state (should be ignored in favor of handoff).
-	wfDir := fmt.Sprintf("%s/testrig/outposts/Toast/.workflow", gtHome)
+	wfDir := fmt.Sprintf("%s/ember/outposts/Toast/.workflow", solHome)
 	if err := os.MkdirAll(wfDir, 0o755); err != nil {
 		t.Fatalf("failed to create workflow dir: %v", err)
 	}
 	stateJSON := `{"current_step":"implement","completed":["plan"],"status":"running","started_at":"2026-02-27T10:00:00Z"}`
 	os.WriteFile(wfDir+"/state.json", []byte(stateJSON), 0o644)
 
-	result, err := Prime("testrig", "Toast", worldStore)
+	result, err := Prime("ember", "Toast", worldStore)
 	if err != nil {
 		t.Fatalf("Prime with handoff+workflow failed: %v", err)
 	}
@@ -808,7 +808,7 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 	}
 
 	// Handoff file should be deleted.
-	if handoff.HasHandoff("testrig", "Toast") {
+	if handoff.HasHandoff("ember", "Toast") {
 		t.Error("expected handoff file to be removed after prime")
 	}
 }
@@ -821,12 +821,12 @@ func TestPrimeNoHandoff(t *testing.T) {
 		t.Fatalf("failed to create work item: %v", err)
 	}
 
-	if err := tether.Write("testrig", "Toast", itemID); err != nil {
+	if err := tether.Write("ember", "Toast", itemID); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	// No handoff file — should use standard prime.
-	result, err := Prime("testrig", "Toast", worldStore)
+	result, err := Prime("ember", "Toast", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
 	}

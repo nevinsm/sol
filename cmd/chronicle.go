@@ -54,7 +54,7 @@ var chronicleStartCmd = &cobra.Command{
 			return fmt.Errorf("chronicle already running (session %s)", chronicleSessionName)
 		}
 
-		gtBin, err := os.Executable()
+		solBin, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("failed to find sol binary: %w", err)
 		}
@@ -64,7 +64,7 @@ var chronicleStartCmd = &cobra.Command{
 		}
 
 		if err := mgr.Start(chronicleSessionName, config.Home(),
-			gtBin+" chronicle run", env, "chronicle", ""); err != nil {
+			solBin+" chronicle run", env, "chronicle", ""); err != nil {
 			return fmt.Errorf("failed to start chronicle session: %w", err)
 		}
 

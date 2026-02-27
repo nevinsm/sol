@@ -112,7 +112,7 @@ type captureHash struct {
 // Writes session metadata to $SOL_HOME/.runtime/sessions/{name}.json.
 // Env vars are set in the tmux session environment.
 // Returns error if session already exists.
-func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, rig string) error {
+func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	if m.Exists(name) {
 		return fmt.Errorf("session %q already exists", name)
 	}
@@ -141,7 +141,7 @@ func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, 
 	meta := sessionMeta{
 		Name:      name,
 		Role:      role,
-		World:     rig,
+		World:     world,
 		WorkDir:   workdir,
 		StartedAt: time.Now().UTC(),
 	}

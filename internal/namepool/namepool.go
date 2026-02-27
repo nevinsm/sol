@@ -44,7 +44,7 @@ func (p *Pool) Names() []string {
 }
 
 // AllocateName returns the first name in the pool that is not already
-// used by an agent in the given rig. usedNames is the set of names
+// used by an agent in the given world. usedNames is the set of names
 // already taken (typically from store.ListAgents). Returns an error if
 // all names are exhausted.
 func (p *Pool) AllocateName(usedNames []string) (string, error) {

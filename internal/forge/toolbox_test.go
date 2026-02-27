@@ -12,8 +12,8 @@ import (
 )
 
 func TestListReady(t *testing.T) {
-	rigStore := newMockWorldStore()
-	rigStore.mrs = []store.MergeRequest{
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
 		{ID: "mr-00000001", Phase: "ready", BlockedBy: ""},
 		{ID: "mr-00000002", Phase: "ready", BlockedBy: "sol-blocker1"},
 		{ID: "mr-00000003", Phase: "ready", BlockedBy: ""},
@@ -21,8 +21,8 @@ func TestListReady(t *testing.T) {
 	}
 
 	r := &Forge{
-		world:      "testrig",
-		worldStore: rigStore,
+		world:      "ember",
+		worldStore: worldStore,
 		logger:   testLogger(),
 	}
 
@@ -41,16 +41,16 @@ func TestListReady(t *testing.T) {
 }
 
 func TestListBlocked(t *testing.T) {
-	rigStore := newMockWorldStore()
-	rigStore.mrs = []store.MergeRequest{
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
 		{ID: "mr-00000001", Phase: "ready", BlockedBy: ""},
 		{ID: "mr-00000002", Phase: "ready", BlockedBy: "sol-blocker1"},
 		{ID: "mr-00000003", Phase: "ready", BlockedBy: "sol-blocker2"},
 	}
 
 	r := &Forge{
-		world:      "testrig",
-		worldStore: rigStore,
+		world:      "ember",
+		worldStore: worldStore,
 		logger:   testLogger(),
 	}
 
@@ -73,21 +73,21 @@ func TestCreateResolutionTask(t *testing.T) {
 	run(t, "git", "init", repoDir)
 	run(t, "git", "-C", repoDir, "commit", "--allow-empty", "-m", "init")
 
-	rigStore := newMockWorldStore()
-	rigStore.items["sol-original1"] = &store.WorkItem{
+	worldStore := newMockWorldStore()
+	worldStore.items["sol-original1"] = &store.WorkItem{
 		ID:       "sol-original1",
 		Title:    "Add feature X",
 		Priority: 2,
 	}
-	rigStore.mrs = []store.MergeRequest{
+	worldStore.mrs = []store.MergeRequest{
 		{ID: "mr-00000001", WorkItemID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: "claimed"},
 	}
 
 	r := &Forge{
-		world:      "testrig",
-		agentID:  "testrig/forge",
+		world:      "ember",
+		agentID:  "ember/forge",
 		worktree: repoDir,
-		worldStore: rigStore,
+		worldStore: worldStore,
 		logger:   testLogger(),
 		cfg:      DefaultConfig(),
 	}
@@ -108,7 +108,7 @@ func TestCreateResolutionTask(t *testing.T) {
 	}
 
 	// Verify the resolution task was created.
-	item := rigStore.items[taskID]
+	item := worldStore.items[taskID]
 	if item == nil {
 		t.Fatal("resolution task not found in store")
 	}
@@ -129,26 +129,26 @@ func TestCreateResolutionTask(t *testing.T) {
 	}
 
 	// Verify the MR is blocked.
-	rigStore.mu.Lock()
-	blockedMR := rigStore.mrs[0]
-	rigStore.mu.Unlock()
+	worldStore.mu.Lock()
+	blockedMR := worldStore.mrs[0]
+	worldStore.mu.Unlock()
 	if blockedMR.BlockedBy != taskID {
 		t.Errorf("MR blocked_by = %q, want %q", blockedMR.BlockedBy, taskID)
 	}
 }
 
 func TestCheckUnblocked(t *testing.T) {
-	rigStore := newMockWorldStore()
-	rigStore.mrs = []store.MergeRequest{
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
 		{ID: "mr-00000001", Phase: "ready", BlockedBy: "sol-resolved1"},
 		{ID: "mr-00000002", Phase: "ready", BlockedBy: "sol-pending1"},
 	}
-	rigStore.items["sol-resolved1"] = &store.WorkItem{ID: "sol-resolved1", Status: "closed"}
-	rigStore.items["sol-pending1"] = &store.WorkItem{ID: "sol-pending1", Status: "open"}
+	worldStore.items["sol-resolved1"] = &store.WorkItem{ID: "sol-resolved1", Status: "closed"}
+	worldStore.items["sol-pending1"] = &store.WorkItem{ID: "sol-pending1", Status: "open"}
 
 	r := &Forge{
-		world:      "testrig",
-		worldStore: rigStore,
+		world:      "ember",
+		worldStore: worldStore,
 		logger:   testLogger(),
 	}
 
@@ -164,17 +164,17 @@ func TestCheckUnblocked(t *testing.T) {
 	}
 
 	// Verify the unblocked MR has its BlockedBy cleared.
-	rigStore.mu.Lock()
-	mr := rigStore.mrs[0]
-	rigStore.mu.Unlock()
+	worldStore.mu.Lock()
+	mr := worldStore.mrs[0]
+	worldStore.mu.Unlock()
 	if mr.BlockedBy != "" {
 		t.Errorf("MR blocked_by after unblock = %q, want empty", mr.BlockedBy)
 	}
 
 	// Verify the still-blocked MR is unchanged.
-	rigStore.mu.Lock()
-	mr2 := rigStore.mrs[1]
-	rigStore.mu.Unlock()
+	worldStore.mu.Lock()
+	mr2 := worldStore.mrs[1]
+	worldStore.mu.Unlock()
 	if mr2.BlockedBy != "sol-pending1" {
 		t.Errorf("MR blocked_by = %q, want %q", mr2.BlockedBy, "sol-pending1")
 	}
@@ -188,7 +188,7 @@ func TestRunGates(t *testing.T) {
 	cfg.QualityGates = []string{"true", "echo hello"}
 
 	r := &Forge{
-		world:      "testrig",
+		world:      "ember",
 		worktree: dir,
 		logger:   testLogger(),
 		cfg:      cfg,
@@ -216,7 +216,7 @@ func TestRunGatesFailure(t *testing.T) {
 	cfg.QualityGates = []string{"true", "exit 1", "true"}
 
 	r := &Forge{
-		world:      "testrig",
+		world:      "ember",
 		worktree: dir,
 		logger:   testLogger(),
 		cfg:      cfg,
@@ -246,7 +246,7 @@ func TestPush(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, ".runtime", "locks"), 0o755)
 
 	// Create worktree.
-	branch := "forge/testrig"
+	branch := "forge/ember"
 	run(t, "git", "-C", sourceRepo, "worktree", "add", "-b", branch, worktreeDir, "HEAD")
 	run(t, "git", "-C", worktreeDir, "config", "user.email", "test@test.com")
 	run(t, "git", "-C", worktreeDir, "config", "user.name", "Test")
@@ -257,8 +257,8 @@ func TestPush(t *testing.T) {
 	run(t, "git", "-C", worktreeDir, "commit", "-m", "push test")
 
 	r := &Forge{
-		world:      "testrig",
-		agentID:  "testrig/forge",
+		world:      "ember",
+		agentID:  "ember/forge",
 		worktree: worktreeDir,
 		worldStore: newMockWorldStore(),
 		logger:   testLogger(),
@@ -277,21 +277,21 @@ func TestPush(t *testing.T) {
 }
 
 func TestMarkMergedClosesWorkItem(t *testing.T) {
-	rigStore := newMockWorldStore()
-	rigStore.mrs = []store.MergeRequest{
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
 		{ID: "mr-00000001", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
 	}
-	rigStore.items["sol-aaa11111"] = &store.WorkItem{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+	worldStore.items["sol-aaa11111"] = &store.WorkItem{ID: "sol-aaa11111", Title: "Test", Status: "done"}
 
 	// Create a temp dir for git operations.
 	dir := t.TempDir()
 	run(t, "git", "init", dir)
 
 	r := &Forge{
-		world:      "testrig",
-		agentID:  "testrig/forge",
+		world:      "ember",
+		agentID:  "ember/forge",
 		worktree: dir,
-		worldStore: rigStore,
+		worldStore: worldStore,
 		logger:   slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 		cfg:      DefaultConfig(),
 	}
@@ -300,17 +300,17 @@ func TestMarkMergedClosesWorkItem(t *testing.T) {
 		t.Fatalf("MarkMerged() error: %v", err)
 	}
 
-	rigStore.mu.Lock()
-	defer rigStore.mu.Unlock()
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
 
 	// Verify MR phase.
-	if phase, ok := rigStore.phaseUpdates["mr-00000001"]; !ok || phase != "merged" {
+	if phase, ok := worldStore.phaseUpdates["mr-00000001"]; !ok || phase != "merged" {
 		t.Errorf("MR phase = %q, want 'merged'", phase)
 	}
 
 	// Verify work item closed.
-	if rigStore.items["sol-aaa11111"].Status != "closed" {
-		t.Errorf("work item status = %q, want 'closed'", rigStore.items["sol-aaa11111"].Status)
+	if worldStore.items["sol-aaa11111"].Status != "closed" {
+		t.Errorf("work item status = %q, want 'closed'", worldStore.items["sol-aaa11111"].Status)
 	}
 }
 

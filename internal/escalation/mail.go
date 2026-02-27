@@ -7,14 +7,14 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
-// MailNotifier sends an escalation as a protocol message via the town store.
+// MailNotifier sends an escalation as a protocol message via the sphere store.
 type MailNotifier struct {
 	store *store.Store
 }
 
 // NewMailNotifier creates a MailNotifier.
-func NewMailNotifier(townStore *store.Store) *MailNotifier {
-	return &MailNotifier{store: townStore}
+func NewMailNotifier(sphereStore *store.Store) *MailNotifier {
+	return &MailNotifier{store: sphereStore}
 }
 
 // Notify sends a mail message to "operator" with the escalation details.

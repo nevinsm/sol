@@ -8,9 +8,9 @@ import (
 )
 
 func TestSendMessage(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
-	id, err := s.SendMessage("myrig/Toast", "operator", "Work done", "Finished task sol-abc12345", 2, "notification")
+	id, err := s.SendMessage("haven/Toast", "operator", "Work done", "Finished task sol-abc12345", 2, "notification")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,8 +26,8 @@ func TestSendMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msg.Sender != "myrig/Toast" {
-		t.Fatalf("expected sender 'myrig/Toast', got %q", msg.Sender)
+	if msg.Sender != "haven/Toast" {
+		t.Fatalf("expected sender 'haven/Toast', got %q", msg.Sender)
 	}
 	if msg.Recipient != "operator" {
 		t.Fatalf("expected recipient 'operator', got %q", msg.Recipient)
@@ -53,7 +53,7 @@ func TestSendMessage(t *testing.T) {
 }
 
 func TestInbox(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	// Send 3 messages to "operator" with different priorities.
 	s.SendMessage("agent1", "operator", "Low priority", "", 3, "notification")
@@ -100,7 +100,7 @@ func TestInbox(t *testing.T) {
 }
 
 func TestReadMessage(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	id, _ := s.SendMessage("agent1", "operator", "Test", "Body", 2, "notification")
 
@@ -127,7 +127,7 @@ func TestReadMessage(t *testing.T) {
 }
 
 func TestAckMessage(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	id, _ := s.SendMessage("agent1", "operator", "Test", "", 2, "notification")
 
@@ -158,7 +158,7 @@ func TestAckMessage(t *testing.T) {
 }
 
 func TestCountUnread(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	// No messages -> 0.
 	count, err := s.CountUnread("operator")
@@ -204,7 +204,7 @@ func TestCountUnread(t *testing.T) {
 }
 
 func TestListMessages(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	// Send messages of different types and to different recipients.
 	s.SendMessage("agent1", "operator", "Notif 1", "", 2, "notification")
@@ -251,7 +251,7 @@ func TestListMessages(t *testing.T) {
 }
 
 func TestListMessagesThreadFilter(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	// Send messages with thread_id. Thread ID is stored as empty string by default,
 	// so we need to insert manually with a thread_id to test filtering.
@@ -276,16 +276,16 @@ func TestListMessagesThreadFilter(t *testing.T) {
 }
 
 func TestSendProtocolMessage(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	payload := AgentDonePayload{
 		WorkItemID: "sol-abc12345",
-		AgentID:    "myrig/Toast",
+		AgentID:    "haven/Toast",
 		Branch:     "outpost/Toast/sol-abc12345",
-		World:      "myrig",
+		World:      "haven",
 	}
 
-	id, err := s.SendProtocolMessage("myrig/Toast", "myrig/sentinel", ProtoAgentDone, payload)
+	id, err := s.SendProtocolMessage("haven/Toast", "haven/sentinel", ProtoAgentDone, payload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,12 +313,12 @@ func TestSendProtocolMessage(t *testing.T) {
 	if parsed.WorkItemID != "sol-abc12345" {
 		t.Fatalf("expected work_item_id 'sol-abc12345', got %q", parsed.WorkItemID)
 	}
-	if parsed.AgentID != "myrig/Toast" {
-		t.Fatalf("expected agent_id 'myrig/Toast', got %q", parsed.AgentID)
+	if parsed.AgentID != "haven/Toast" {
+		t.Fatalf("expected agent_id 'haven/Toast', got %q", parsed.AgentID)
 	}
 
 	// PendingProtocol(recipient, "AGENT_DONE") -> returns message.
-	msgs, err := s.PendingProtocol("myrig/sentinel", ProtoAgentDone)
+	msgs, err := s.PendingProtocol("haven/sentinel", ProtoAgentDone)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestSendProtocolMessage(t *testing.T) {
 	}
 
 	// PendingProtocol(recipient, "MERGE_READY") -> empty (wrong type).
-	msgs, err = s.PendingProtocol("myrig/sentinel", ProtoMergeReady)
+	msgs, err = s.PendingProtocol("haven/sentinel", ProtoMergeReady)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestSendProtocolMessage(t *testing.T) {
 }
 
 func TestMessageNotFound(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	// ReadMessage with bogus ID -> error containing "not found".
 	_, err := s.ReadMessage("msg-nonexist")

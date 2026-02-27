@@ -31,7 +31,7 @@ func (m *mockSessions) Exists(name string) bool {
 	return m.alive[name]
 }
 
-func (m *mockSessions) Start(name, workdir, cmd string, env map[string]string, role, rig string) error {
+func (m *mockSessions) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.alive[name] = true
@@ -119,11 +119,11 @@ func TestHeartbeatDetectsDead(t *testing.T) {
 	cfg := testConfig()
 
 	// Create a working agent with a worktree.
-	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
+	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 
 	// Create the worktree directory so respawn doesn't bail.
-	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
 	// Session is dead (not in mock).
@@ -137,12 +137,12 @@ func TestHeartbeatDetectsDead(t *testing.T) {
 	if len(started) != 1 {
 		t.Fatalf("expected 1 session started, got %d", len(started))
 	}
-	if started[0] != "sol-myrig-Toast" {
-		t.Errorf("started session = %q, want %q", started[0], "sol-myrig-Toast")
+	if started[0] != "sol-haven-Toast" {
+		t.Errorf("started session = %q, want %q", started[0], "sol-haven-Toast")
 	}
 
 	// Agent should be back to working.
-	agent, err := sphereStore.GetAgent("myrig/Toast")
+	agent, err := sphereStore.GetAgent("haven/Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestHeartbeatIgnoresIdle(t *testing.T) {
 	cfg := testConfig()
 
 	// Create an idle agent.
-	sphereStore.CreateAgent("Jasper", "myrig", "agent")
+	sphereStore.CreateAgent("Jasper", "haven", "agent")
 
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.heartbeat()
@@ -177,15 +177,15 @@ func TestHeartbeatMultipleWorlds(t *testing.T) {
 	cfg := testConfig()
 
 	// Create working agents in different worlds.
-	sphereStore.CreateAgent("Toast", "rig1", "agent")
-	sphereStore.UpdateAgentState("rig1/Toast", "working", "sol-aaa11111")
-	sphereStore.CreateAgent("Jasper", "rig2", "agent")
-	sphereStore.UpdateAgentState("rig2/Jasper", "working", "sol-bbb22222")
+	sphereStore.CreateAgent("Toast", "alpha", "agent")
+	sphereStore.UpdateAgentState("alpha/Toast", "working", "sol-aaa11111")
+	sphereStore.CreateAgent("Jasper", "beta", "agent")
+	sphereStore.UpdateAgentState("beta/Jasper", "working", "sol-bbb22222")
 
 	// Create worktree directories.
 	for _, p := range []string{
-		filepath.Join(os.Getenv("SOL_HOME"), "rig1", "outposts", "Toast", "worktree"),
-		filepath.Join(os.Getenv("SOL_HOME"), "rig2", "outposts", "Jasper", "worktree"),
+		filepath.Join(os.Getenv("SOL_HOME"), "alpha", "outposts", "Toast", "worktree"),
+		filepath.Join(os.Getenv("SOL_HOME"), "beta", "outposts", "Jasper", "worktree"),
 	} {
 		os.MkdirAll(p, 0o755)
 	}
@@ -206,10 +206,10 @@ func TestBackoffEscalation(t *testing.T) {
 	logger := testLogger()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
+	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 
-	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
@@ -222,7 +222,7 @@ func TestBackoffEscalation(t *testing.T) {
 	}
 
 	// Kill the session again.
-	mock.Kill("sol-myrig-Toast")
+	mock.Kill("sol-haven-Toast")
 
 	// Second heartbeat: restart 2, delay 30s — should stall, not restart.
 	sup.heartbeat()
@@ -232,7 +232,7 @@ func TestBackoffEscalation(t *testing.T) {
 	}
 
 	// Verify agent is stalled.
-	agent, err := sphereStore.GetAgent("myrig/Toast")
+	agent, err := sphereStore.GetAgent("haven/Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,9 +251,9 @@ func TestMassDeathDetection(t *testing.T) {
 
 	// Create 3 working agents.
 	for _, name := range []string{"Toast", "Jasper", "Olive"} {
-		sphereStore.CreateAgent(name, "myrig", "agent")
-		sphereStore.UpdateAgentState("myrig/"+name, "working", "sol-"+name)
-		worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", name, "worktree")
+		sphereStore.CreateAgent(name, "haven", "agent")
+		sphereStore.UpdateAgentState("haven/"+name, "working", "sol-"+name)
+		worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", name, "worktree")
 		os.MkdirAll(worktreeDir, 0o755)
 	}
 
@@ -304,10 +304,10 @@ func TestDegradedModeSkipsRespawn(t *testing.T) {
 	logger := testLogger()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
+	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 
-	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
@@ -329,7 +329,7 @@ func TestDegradedModeSkipsRespawn(t *testing.T) {
 	}
 
 	// Agent should be stalled.
-	agent, err := sphereStore.GetAgent("myrig/Toast")
+	agent, err := sphereStore.GetAgent("haven/Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,9 +346,9 @@ func TestShutdownStopsSessions(t *testing.T) {
 
 	// Create working agents with live sessions.
 	for _, name := range []string{"Toast", "Jasper"} {
-		sphereStore.CreateAgent(name, "myrig", "agent")
-		sphereStore.UpdateAgentState("myrig/"+name, "working", "sol-"+name)
-		mock.Start("sol-myrig-"+name, "/tmp", "echo", nil, "agent", "myrig")
+		sphereStore.CreateAgent(name, "haven", "agent")
+		sphereStore.UpdateAgentState("haven/"+name, "working", "sol-"+name)
+		mock.Start("sol-haven-"+name, "/tmp", "echo", nil, "agent", "haven")
 	}
 
 	sup := New(cfg, sphereStore, mock, logger)
@@ -362,7 +362,7 @@ func TestShutdownStopsSessions(t *testing.T) {
 
 	// Agents should be stalled.
 	for _, name := range []string{"Toast", "Jasper"} {
-		agent, err := sphereStore.GetAgent("myrig/" + name)
+		agent, err := sphereStore.GetAgent("haven/" + name)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -378,26 +378,26 @@ func TestBackoffReset(t *testing.T) {
 	logger := testLogger()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
+	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 
-	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
 
 	// First heartbeat: respawn (backoff count = 1).
 	sup.heartbeat()
-	if sup.backoff["myrig/Toast"] != 1 {
-		t.Fatalf("backoff count = %d, want 1", sup.backoff["myrig/Toast"])
+	if sup.backoff["haven/Toast"] != 1 {
+		t.Fatalf("backoff count = %d, want 1", sup.backoff["haven/Toast"])
 	}
 
 	// Set agent to idle (simulating sol done).
-	sphereStore.UpdateAgentState("myrig/Toast", "idle", "")
+	sphereStore.UpdateAgentState("haven/Toast", "idle", "")
 
 	// Next heartbeat should reset backoff.
 	sup.heartbeat()
-	if count, ok := sup.backoff["myrig/Toast"]; ok {
+	if count, ok := sup.backoff["haven/Toast"]; ok {
 		t.Fatalf("backoff should be cleared for idle agent, got count %d", count)
 	}
 }
@@ -471,8 +471,8 @@ func TestRespawnMissingWorktree(t *testing.T) {
 	logger := testLogger()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Ghost", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Ghost", "working", "sol-ghost123")
+	sphereStore.CreateAgent("Ghost", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/Ghost", "working", "sol-ghost123")
 
 	// Do NOT create worktree directory.
 
@@ -486,7 +486,7 @@ func TestRespawnMissingWorktree(t *testing.T) {
 	}
 
 	// Agent should be idle.
-	agent, err := sphereStore.GetAgent("myrig/Ghost")
+	agent, err := sphereStore.GetAgent("haven/Ghost")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,11 +502,11 @@ func TestRespawnForge(t *testing.T) {
 	cfg := testConfig()
 
 	// Create a forge agent in working state.
-	sphereStore.CreateAgent("forge", "myrig", "forge")
-	sphereStore.UpdateAgentState("myrig/forge", "working", "")
+	sphereStore.CreateAgent("forge", "haven", "forge")
+	sphereStore.UpdateAgentState("haven/forge", "working", "")
 
 	// Create the forge worktree directory.
-	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "forge", "worktree")
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "forge", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
 	// Session is dead (not in mock).
@@ -518,12 +518,12 @@ func TestRespawnForge(t *testing.T) {
 	if len(started) != 1 {
 		t.Fatalf("expected 1 session started, got %d", len(started))
 	}
-	if started[0] != "sol-myrig-forge" {
-		t.Errorf("started session = %q, want %q", started[0], "sol-myrig-forge")
+	if started[0] != "sol-haven-forge" {
+		t.Errorf("started session = %q, want %q", started[0], "sol-haven-forge")
 	}
 
 	// Verify the session was started with the right command by checking agent is working.
-	agent, err := sphereStore.GetAgent("myrig/forge")
+	agent, err := sphereStore.GetAgent("haven/forge")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,11 +539,11 @@ func TestRespawnOutpostUnchanged(t *testing.T) {
 	cfg := testConfig()
 
 	// Create an agent in working state.
-	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
+	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 
 	// Create the agent worktree directory.
-	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
@@ -554,11 +554,11 @@ func TestRespawnOutpostUnchanged(t *testing.T) {
 	if len(started) != 1 {
 		t.Fatalf("expected 1 session started, got %d", len(started))
 	}
-	if started[0] != "sol-myrig-Toast" {
-		t.Errorf("started session = %q, want %q", started[0], "sol-myrig-Toast")
+	if started[0] != "sol-haven-Toast" {
+		t.Errorf("started session = %q, want %q", started[0], "sol-haven-Toast")
 	}
 
-	agent, err := sphereStore.GetAgent("myrig/Toast")
+	agent, err := sphereStore.GetAgent("haven/Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -568,9 +568,9 @@ func TestRespawnOutpostUnchanged(t *testing.T) {
 }
 
 func TestRespawnCommandByRole(t *testing.T) {
-	forgeAgent := store.Agent{Name: "forge", World: "myrig", Role: "forge"}
-	agentBot := store.Agent{Name: "Toast", World: "myrig", Role: "agent"}
-	sentinelAgent := store.Agent{Name: "sentinel", World: "myrig", Role: "sentinel"}
+	forgeAgent := store.Agent{Name: "forge", World: "haven", Role: "forge"}
+	agentBot := store.Agent{Name: "Toast", World: "haven", Role: "agent"}
+	sentinelAgent := store.Agent{Name: "sentinel", World: "haven", Role: "sentinel"}
 
 	// Forge and agents use Claude sessions.
 	forgeCmd := respawnCommand(forgeAgent)
@@ -585,7 +585,7 @@ func TestRespawnCommandByRole(t *testing.T) {
 
 	// Sentinel uses sol sentinel run.
 	sentCmd := respawnCommand(sentinelAgent)
-	want := "sol sentinel run myrig"
+	want := "sol sentinel run haven"
 	if sentCmd != want {
 		t.Errorf("sentinel command = %q, want %q", sentCmd, want)
 	}
@@ -595,18 +595,18 @@ func TestWorktreeForAgentByRole(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
-	forgeAgent := store.Agent{Name: "forge", World: "myrig", Role: "forge"}
-	agentBot := store.Agent{Name: "Toast", World: "myrig", Role: "agent"}
-	sentinelAgent := store.Agent{Name: "sentinel", World: "myrig", Role: "sentinel"}
+	forgeAgent := store.Agent{Name: "forge", World: "haven", Role: "forge"}
+	agentBot := store.Agent{Name: "Toast", World: "haven", Role: "agent"}
+	sentinelAgent := store.Agent{Name: "sentinel", World: "haven", Role: "sentinel"}
 
 	forgePath := worktreeForAgent(forgeAgent)
-	expected := filepath.Join(dir, "myrig", "forge", "worktree")
+	expected := filepath.Join(dir, "haven", "forge", "worktree")
 	if forgePath != expected {
 		t.Errorf("forge worktree = %q, want %q", forgePath, expected)
 	}
 
 	agentPath := worktreeForAgent(agentBot)
-	expected = filepath.Join(dir, "myrig", "outposts", "Toast", "worktree")
+	expected = filepath.Join(dir, "haven", "outposts", "Toast", "worktree")
 	if agentPath != expected {
 		t.Errorf("agent worktree = %q, want %q", agentPath, expected)
 	}
@@ -625,14 +625,14 @@ func TestHeartbeatDefersToSentinel(t *testing.T) {
 	cfg := testConfig()
 
 	// Create a sentinel agent in working state with a live session.
-	sphereStore.CreateAgent("sentinel", "myrig", "sentinel")
-	sphereStore.UpdateAgentState("myrig/sentinel", "working", "")
-	mock.Start("sol-myrig-sentinel", "/tmp", "sol sentinel run myrig", nil, "sentinel", "myrig")
+	sphereStore.CreateAgent("sentinel", "haven", "sentinel")
+	sphereStore.UpdateAgentState("haven/sentinel", "working", "")
+	mock.Start("sol-haven-sentinel", "/tmp", "sol sentinel run haven", nil, "sentinel", "haven")
 
 	// Create a working agent with a dead session.
-	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
-	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
+	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 	// Session is dead (not started in mock for this agent).
 
@@ -643,7 +643,7 @@ func TestHeartbeatDefersToSentinel(t *testing.T) {
 	// because the world is sentineled.
 	started := mock.GetStarted()
 	for _, s := range started {
-		if s == "sol-myrig-Toast" {
+		if s == "sol-haven-Toast" {
 			t.Error("prefect should not respawn agents in sentineled worlds")
 		}
 	}
@@ -656,13 +656,13 @@ func TestHeartbeatRespondsWithoutSentinel(t *testing.T) {
 	cfg := testConfig()
 
 	// Create a sentinel agent that is NOT active (state=idle).
-	sphereStore.CreateAgent("sentinel", "myrig", "sentinel")
+	sphereStore.CreateAgent("sentinel", "haven", "sentinel")
 	// State is idle (default).
 
 	// Create a working agent with a dead session.
-	sphereStore.CreateAgent("Toast", "myrig", "agent")
-	sphereStore.UpdateAgentState("myrig/Toast", "working", "sol-abc12345")
-	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "myrig", "outposts", "Toast", "worktree")
+	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
@@ -672,7 +672,7 @@ func TestHeartbeatRespondsWithoutSentinel(t *testing.T) {
 	started := mock.GetStarted()
 	found := false
 	for _, s := range started {
-		if s == "sol-myrig-Toast" {
+		if s == "sol-haven-Toast" {
 			found = true
 		}
 	}

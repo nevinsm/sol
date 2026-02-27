@@ -41,7 +41,7 @@ var escalateCmd = &cobra.Command{
 		}
 
 		logger := events.NewLogger(config.Home())
-		webhookURL := os.Getenv("GT_ESCALATION_WEBHOOK")
+		webhookURL := os.Getenv("SOL_ESCALATION_WEBHOOK")
 		router := escalation.DefaultRouter(logger, sphereStore, webhookURL)
 
 		if err := router.Route(context.Background(), *esc); err != nil {

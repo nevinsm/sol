@@ -32,7 +32,7 @@ type WorldStore interface {
 
 // SphereStore abstracts sphere store operations for testing.
 type SphereStore interface {
-	CreateAgent(name, rig, role string) (string, error)
+	CreateAgent(name, world, role string) (string, error)
 	GetAgent(id string) (*store.Agent, error)
 	UpdateAgentState(id, state, tetherItem string) error
 	Close() error

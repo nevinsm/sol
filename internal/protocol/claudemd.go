@@ -75,16 +75,16 @@ Your job is to execute the assigned work item.
 		workflowSection, protocolSection)
 }
 
-// RefineryClaudeMDContext holds the fields used to generate a CLAUDE.md for the forge.
-type RefineryClaudeMDContext struct {
+// ForgeClaudeMDContext holds the fields used to generate a CLAUDE.md for the forge.
+type ForgeClaudeMDContext struct {
 	World        string
 	TargetBranch string
 	WorktreeDir  string
 	QualityGates []string
 }
 
-// GenerateRefineryClaudeMD returns the contents of a CLAUDE.md for the forge agent.
-func GenerateRefineryClaudeMD(ctx RefineryClaudeMDContext) string {
+// GenerateForgeClaudeMD returns the contents of a CLAUDE.md for the forge agent.
+func GenerateForgeClaudeMD(ctx ForgeClaudeMDContext) string {
 	gates := ""
 	for _, g := range ctx.QualityGates {
 		gates += fmt.Sprintf("- `%s`\n", g)
@@ -170,14 +170,14 @@ that new baseline. Always `+"`git fetch origin`"+` before rebasing.
 	)
 }
 
-// InstallRefineryClaudeMD writes .claude/CLAUDE.md for the forge into the worktree.
-func InstallRefineryClaudeMD(worktreeDir string, ctx RefineryClaudeMDContext) error {
+// InstallForgeClaudeMD writes .claude/CLAUDE.md for the forge into the worktree.
+func InstallForgeClaudeMD(worktreeDir string, ctx ForgeClaudeMDContext) error {
 	claudeDir := filepath.Join(worktreeDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create .claude directory in worktree: %w", err)
 	}
 
-	content := GenerateRefineryClaudeMD(ctx)
+	content := GenerateForgeClaudeMD(ctx)
 	path := filepath.Join(claudeDir, "CLAUDE.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write forge CLAUDE.md in worktree: %w", err)

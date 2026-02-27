@@ -76,7 +76,7 @@ var sentinelStartCmd = &cobra.Command{
 			return fmt.Errorf("sentinel already running for world %q (session %s)", world, sessName)
 		}
 
-		gtBin, err := os.Executable()
+		solBin, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("failed to find sol binary: %w", err)
 		}
@@ -86,7 +86,7 @@ var sentinelStartCmd = &cobra.Command{
 		}
 
 		if err := mgr.Start(sessName, config.Home(),
-			fmt.Sprintf("%s sentinel run %s", gtBin, world), env, "sentinel", world); err != nil {
+			fmt.Sprintf("%s sentinel run %s", solBin, world), env, "sentinel", world); err != nil {
 			return fmt.Errorf("failed to start sentinel session: %w", err)
 		}
 

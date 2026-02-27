@@ -7,7 +7,7 @@ import (
 )
 
 func TestCreateMergeRequest(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	// Create a work item first (FK dependency).
 	itemID, err := s.CreateWorkItem("Test item", "A test work item", "operator", 2, nil)
@@ -62,7 +62,7 @@ func TestCreateMergeRequest(t *testing.T) {
 }
 
 func TestListMergeRequests(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	// Create work items (FK dependency).
 	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 1, nil)
@@ -109,7 +109,7 @@ func TestListMergeRequests(t *testing.T) {
 }
 
 func TestClaimMergeRequest(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 1, nil)
 	id2, _ := s.CreateWorkItem("Item 2", "", "operator", 3, nil)
@@ -119,7 +119,7 @@ func TestClaimMergeRequest(t *testing.T) {
 	s.CreateMergeRequest(id2, "branch2", 3)
 
 	// Claim -> should get priority 1 first.
-	mr, err := s.ClaimMergeRequest("refinery/Forge")
+	mr, err := s.ClaimMergeRequest("forge/Forge")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,8 +132,8 @@ func TestClaimMergeRequest(t *testing.T) {
 	if mr.Phase != "claimed" {
 		t.Fatalf("expected phase 'claimed', got %q", mr.Phase)
 	}
-	if mr.ClaimedBy != "refinery/Forge" {
-		t.Fatalf("expected claimed_by 'refinery/Forge', got %q", mr.ClaimedBy)
+	if mr.ClaimedBy != "forge/Forge" {
+		t.Fatalf("expected claimed_by 'forge/Forge', got %q", mr.ClaimedBy)
 	}
 	if mr.Attempts != 1 {
 		t.Fatalf("expected 1 attempt, got %d", mr.Attempts)
@@ -143,7 +143,7 @@ func TestClaimMergeRequest(t *testing.T) {
 	}
 
 	// Claim again -> should get priority 3.
-	mr2, err := s.ClaimMergeRequest("refinery/Forge")
+	mr2, err := s.ClaimMergeRequest("forge/Forge")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestClaimMergeRequest(t *testing.T) {
 	}
 
 	// Claim again -> nil (no more ready MRs).
-	mr3, err := s.ClaimMergeRequest("refinery/Forge")
+	mr3, err := s.ClaimMergeRequest("forge/Forge")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestClaimMergeRequest(t *testing.T) {
 }
 
 func TestClaimMergeRequestOrdering(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	// Create 3 work items.
 	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
@@ -180,7 +180,7 @@ func TestClaimMergeRequestOrdering(t *testing.T) {
 	s.CreateMergeRequest(id3, "branch3", 2)
 
 	// Claim -> should get oldest first.
-	mr, err := s.ClaimMergeRequest("refinery/Forge")
+	mr, err := s.ClaimMergeRequest("forge/Forge")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,12 +190,12 @@ func TestClaimMergeRequestOrdering(t *testing.T) {
 }
 
 func TestUpdateMergeRequestPhase(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	// Create and claim a MR, then update to "merged".
 	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
-	s.ClaimMergeRequest("refinery/Forge")
+	s.ClaimMergeRequest("forge/Forge")
 
 	err := s.UpdateMergeRequestPhase(mrID, "merged")
 	if err != nil {
@@ -215,7 +215,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 	// Create another, claim, update to "failed" -> verify merged_at is nil.
 	itemID2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
 	mrID2, _ := s.CreateMergeRequest(itemID2, "branch2", 2)
-	s.ClaimMergeRequest("refinery/Forge")
+	s.ClaimMergeRequest("forge/Forge")
 
 	err = s.UpdateMergeRequestPhase(mrID2, "failed")
 	if err != nil {
@@ -235,7 +235,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 	// Create another, claim, update to "ready" -> verify claimed_by cleared.
 	itemID3, _ := s.CreateWorkItem("Item 3", "", "operator", 2, nil)
 	mrID3, _ := s.CreateMergeRequest(itemID3, "branch3", 2)
-	s.ClaimMergeRequest("refinery/Forge")
+	s.ClaimMergeRequest("forge/Forge")
 
 	err = s.UpdateMergeRequestPhase(mrID3, "ready")
 	if err != nil {
@@ -263,11 +263,11 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 }
 
 func TestReleaseStaleClaims(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
-	s.ClaimMergeRequest("refinery/Forge")
+	s.ClaimMergeRequest("forge/Forge")
 
 	// ReleaseStaleClaims with 1-hour TTL -> 0 released (claim is fresh).
 	released, err := s.ReleaseStaleClaims(1 * time.Hour)
@@ -311,7 +311,7 @@ func TestReleaseStaleClaims(t *testing.T) {
 }
 
 func TestReleaseStaleLeavesRecentClaims(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	itemID1, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
 	itemID2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
@@ -319,8 +319,8 @@ func TestReleaseStaleLeavesRecentClaims(t *testing.T) {
 	s.CreateMergeRequest(itemID2, "branch2", 2)
 
 	// Claim both.
-	s.ClaimMergeRequest("refinery/Forge")
-	s.ClaimMergeRequest("refinery/Forge")
+	s.ClaimMergeRequest("forge/Forge")
+	s.ClaimMergeRequest("forge/Forge")
 
 	// Set one claimed_at to 31 minutes ago, leave other fresh.
 	staleTime := time.Now().UTC().Add(-31 * time.Minute).Format(time.RFC3339)
@@ -352,7 +352,7 @@ func TestReleaseStaleLeavesRecentClaims(t *testing.T) {
 }
 
 func TestGetMergeRequestNotFound(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	_, err := s.GetMergeRequest("mr-nonexist")
 	if err == nil {
@@ -365,7 +365,7 @@ func TestGetMergeRequestNotFound(t *testing.T) {
 }
 
 func TestBlockAndUnblockMergeRequest(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
@@ -406,7 +406,7 @@ func TestBlockAndUnblockMergeRequest(t *testing.T) {
 }
 
 func TestClaimSkipsBlockedMRs(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 1, nil)
 	id2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
@@ -417,7 +417,7 @@ func TestClaimSkipsBlockedMRs(t *testing.T) {
 	s.BlockMergeRequest(mr1ID, "sol-blocker1")
 
 	// Claim should skip the blocked MR and get the second one.
-	mr, err := s.ClaimMergeRequest("refinery/Forge")
+	mr, err := s.ClaimMergeRequest("forge/Forge")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +430,7 @@ func TestClaimSkipsBlockedMRs(t *testing.T) {
 }
 
 func TestFindMergeRequestByBlocker(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
@@ -464,7 +464,7 @@ func TestFindMergeRequestByBlocker(t *testing.T) {
 }
 
 func TestV3Migration(t *testing.T) {
-	s := setupRig(t)
+	s := setupWorld(t)
 
 	// Verify the schema version is 4 (V3 migration was applied as part of V4).
 	var v int

@@ -21,14 +21,14 @@ import (
 // SessionManager abstracts tmux operations for testing.
 type SessionManager interface {
 	Exists(name string) bool
-	Start(name, workdir, cmd string, env map[string]string, role, rig string) error
+	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 	Stop(name string, force bool) error
 	List() ([]session.SessionInfo, error)
 }
 
 // SphereStore abstracts sphere database operations for testing.
 type SphereStore interface {
-	ListAgents(rig string, state string) ([]store.Agent, error)
+	ListAgents(world string, state string) ([]store.Agent, error)
 	UpdateAgentState(id, state, tetherItem string) error
 }
 
@@ -162,7 +162,7 @@ func (s *Prefect) heartbeat() {
 
 			if s.degraded {
 				s.logger.Warn("session dead but degraded, setting stalled",
-					"agent", agent.Name, "rig", agent.World)
+					"agent", agent.Name, "world", agent.World)
 				if err := s.sphereStore.UpdateAgentState(agent.ID, "stalled", agent.TetherItem); err != nil {
 					s.logger.Error("failed to set agent stalled", "agent", agent.Name, "error", err)
 				}
@@ -232,7 +232,7 @@ func (s *Prefect) respawn(agent store.Agent) {
 			s.backoff[agentID] = restartCount
 			s.lastStalled[agentID] = time.Now()
 			s.logger.Info("session dead, deferring respawn",
-				"agent", agent.Name, "rig", agent.World,
+				"agent", agent.Name, "world", agent.World,
 				"restart", restartCount, "delay", delay)
 			if err := s.sphereStore.UpdateAgentState(agentID, "stalled", agent.TetherItem); err != nil {
 				s.logger.Error("failed to set agent stalled", "agent", agent.Name, "error", err)
@@ -248,7 +248,7 @@ func (s *Prefect) respawn(agent store.Agent) {
 	// Check worktree exists.
 	if !dirExists(worktreeDir) {
 		s.logger.Warn("worktree missing, setting agent idle",
-			"agent", agent.Name, "rig", agent.World, "worktree", worktreeDir)
+			"agent", agent.Name, "world", agent.World, "worktree", worktreeDir)
 		if err := s.sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 			s.logger.Error("failed to set agent idle", "agent", agent.Name, "error", err)
 		}
@@ -267,7 +267,7 @@ func (s *Prefect) respawn(agent store.Agent) {
 	if err := s.sessions.Start(sessName, worktreeDir,
 		respawnCommand(agent), env, agent.Role, agent.World); err != nil {
 		s.logger.Error("failed to respawn session",
-			"agent", agent.Name, "rig", agent.World, "error", err)
+			"agent", agent.Name, "world", agent.World, "error", err)
 		return
 	}
 
@@ -280,13 +280,13 @@ func (s *Prefect) respawn(agent store.Agent) {
 	}
 
 	s.logger.Info("respawned session",
-		"agent", agent.Name, "rig", agent.World,
+		"agent", agent.Name, "world", agent.World,
 		"work_item", agent.TetherItem, "restart", restartCount)
 
 	if s.eventLog != nil {
 		s.eventLog.Emit(events.EventRespawn, "prefect", agent.Name, "both", map[string]any{
 			"agent":     agent.Name,
-			"rig":       agent.World,
+			"world":     agent.World,
 			"work_item": agent.TetherItem,
 			"restart":   restartCount,
 		})
@@ -492,7 +492,7 @@ func (s *Prefect) shutdown() {
 		if s.sessions.Exists(sessName) {
 			if err := s.sessions.Stop(sessName, false); err != nil {
 				s.logger.Error("failed to stop session during shutdown",
-					"agent", agent.Name, "rig", agent.World, "error", err)
+					"agent", agent.Name, "world", agent.World, "error", err)
 			} else {
 				stopped++
 			}

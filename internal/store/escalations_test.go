@@ -7,9 +7,9 @@ import (
 )
 
 func TestCreateEscalation(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
-	id, err := s.CreateEscalation("high", "myrig/sentinel", "Agent Toast stalled for 30m")
+	id, err := s.CreateEscalation("high", "haven/sentinel", "Agent Toast stalled for 30m")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,8 +28,8 @@ func TestCreateEscalation(t *testing.T) {
 	if esc.Severity != "high" {
 		t.Fatalf("expected severity 'high', got %q", esc.Severity)
 	}
-	if esc.Source != "myrig/sentinel" {
-		t.Fatalf("expected source 'myrig/sentinel', got %q", esc.Source)
+	if esc.Source != "haven/sentinel" {
+		t.Fatalf("expected source 'haven/sentinel', got %q", esc.Source)
 	}
 	if esc.Description != "Agent Toast stalled for 30m" {
 		t.Fatalf("expected description 'Agent Toast stalled for 30m', got %q", esc.Description)
@@ -49,7 +49,7 @@ func TestCreateEscalation(t *testing.T) {
 }
 
 func TestCreateEscalationInvalidSeverity(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	_, err := s.CreateEscalation("invalid", "operator", "test")
 	if err == nil {
@@ -58,7 +58,7 @@ func TestCreateEscalationInvalidSeverity(t *testing.T) {
 }
 
 func TestListEscalations(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	// Create 3 escalations with distinct timestamps by inserting directly.
 	now := time.Now().UTC()
@@ -122,7 +122,7 @@ func TestListEscalations(t *testing.T) {
 }
 
 func TestAckEscalation(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	id, _ := s.CreateEscalation("medium", "operator", "Test ack")
 
@@ -144,7 +144,7 @@ func TestAckEscalation(t *testing.T) {
 }
 
 func TestResolveEscalation(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	id, _ := s.CreateEscalation("high", "operator", "Test resolve")
 
@@ -163,7 +163,7 @@ func TestResolveEscalation(t *testing.T) {
 }
 
 func TestCountOpen(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	// Create 3.
 	_, _ = s.CreateEscalation("low", "operator", "Issue 1")
@@ -190,7 +190,7 @@ func TestCountOpen(t *testing.T) {
 }
 
 func TestAckEscalationNotFound(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	err := s.AckEscalation("esc-nonexist")
 	if err == nil {
@@ -199,7 +199,7 @@ func TestAckEscalationNotFound(t *testing.T) {
 }
 
 func TestResolveEscalationNotFound(t *testing.T) {
-	s := setupTown(t)
+	s := setupSphere(t)
 
 	err := s.ResolveEscalation("esc-nonexist")
 	if err == nil {

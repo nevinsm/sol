@@ -9,7 +9,7 @@ import (
 )
 
 func TestWriteAndReadHeartbeat(t *testing.T) {
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
 	hb := &Heartbeat{
 		Timestamp:   time.Now().UTC().Truncate(time.Second),
@@ -20,12 +20,12 @@ func TestWriteAndReadHeartbeat(t *testing.T) {
 		Escalations: 2,
 	}
 
-	if err := WriteHeartbeat(gtHome, hb); err != nil {
+	if err := WriteHeartbeat(solHome, hb); err != nil {
 		t.Fatalf("WriteHeartbeat failed: %v", err)
 	}
 
 	// Verify file exists on disk.
-	data, err := os.ReadFile(HeartbeatPath(gtHome))
+	data, err := os.ReadFile(HeartbeatPath(solHome))
 	if err != nil {
 		t.Fatalf("heartbeat file not found: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestWriteAndReadHeartbeat(t *testing.T) {
 	}
 
 	// Read it back.
-	got, err := ReadHeartbeat(gtHome)
+	got, err := ReadHeartbeat(solHome)
 	if err != nil {
 		t.Fatalf("ReadHeartbeat failed: %v", err)
 	}
@@ -61,9 +61,9 @@ func TestWriteAndReadHeartbeat(t *testing.T) {
 }
 
 func TestReadHeartbeatMissing(t *testing.T) {
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
-	hb, err := ReadHeartbeat(gtHome)
+	hb, err := ReadHeartbeat(solHome)
 	if err != nil {
 		t.Fatalf("ReadHeartbeat should not error for missing file: %v", err)
 	}
@@ -89,10 +89,10 @@ func TestHeartbeatIsStale(t *testing.T) {
 }
 
 func TestWriteHeartbeatCreatesDir(t *testing.T) {
-	gtHome := t.TempDir()
+	solHome := t.TempDir()
 
 	// Ensure consul dir doesn't exist yet.
-	consulDir := filepath.Join(gtHome, "consul")
+	consulDir := filepath.Join(solHome, "consul")
 	if _, err := os.Stat(consulDir); err == nil {
 		t.Fatal("consul dir should not exist yet")
 	}
@@ -102,7 +102,7 @@ func TestWriteHeartbeatCreatesDir(t *testing.T) {
 		PatrolCount: 1,
 		Status:      "running",
 	}
-	if err := WriteHeartbeat(gtHome, hb); err != nil {
+	if err := WriteHeartbeat(solHome, hb); err != nil {
 		t.Fatalf("WriteHeartbeat failed: %v", err)
 	}
 

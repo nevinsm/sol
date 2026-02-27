@@ -19,7 +19,7 @@ func TestLogEvent(t *testing.T) {
 	logger.Emit(EventCast, "sol", "operator", "both", map[string]string{
 		"work_item_id": "sol-a1b2c3d4",
 		"agent":        "Toast",
-		"rig":          "myrig",
+		"world":        "haven",
 	})
 
 	// Read the JSONL file, verify one line of valid JSON.

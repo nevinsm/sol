@@ -24,11 +24,11 @@ type Config struct {
 	CaptureLines   int           // default: 80 (lines of tmux output to capture)
 	AssessCommand  string        // default: "claude -p" (AI assessment command)
 	SourceRepo     string        // path to source git repo
-	GTHome         string        // SOL_HOME path
+	SolHome        string        // SOL_HOME path
 }
 
 // DefaultConfig returns a Config with default values.
-func DefaultConfig(world, sourceRepo, gtHome string) Config {
+func DefaultConfig(world, sourceRepo, solHome string) Config {
 	return Config{
 		World:          world,
 		PatrolInterval: 3 * time.Minute,
@@ -36,16 +36,16 @@ func DefaultConfig(world, sourceRepo, gtHome string) Config {
 		CaptureLines:   80,
 		AssessCommand:  "claude -p",
 		SourceRepo:     sourceRepo,
-		GTHome:         gtHome,
+		SolHome:        solHome,
 	}
 }
 
 // SphereStore is the subset of sphere store operations the sentinel needs.
 type SphereStore interface {
 	GetAgent(id string) (*store.Agent, error)
-	ListAgents(rig string, state string) ([]store.Agent, error)
+	ListAgents(world string, state string) ([]store.Agent, error)
 	UpdateAgentState(id, state, tetherItem string) error
-	CreateAgent(name, rig, role string) (string, error)
+	CreateAgent(name, world, role string) (string, error)
 	SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
 }
 
@@ -59,7 +59,7 @@ type WorldStore interface {
 type SessionChecker interface {
 	Exists(name string) bool
 	Capture(name string, lines int) (string, error)
-	Start(name, workdir, cmd string, env map[string]string, role, rig string) error
+	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 	Stop(name string, force bool) error
 	Inject(name string, text string) error
 }
@@ -155,7 +155,7 @@ func (w *Sentinel) Run(ctx context.Context) error {
 			_ = w.sphereStore.UpdateAgentState(w.agentID(), "idle", "")
 			if w.logger != nil {
 				w.logger.Emit(events.EventSessionStop, w.agentID(), w.agentID(), "feed",
-					map[string]any{"rig": w.config.World, "component": "sentinel"})
+					map[string]any{"world": w.config.World, "component": "sentinel"})
 			}
 			return nil
 		case <-ticker.C:

@@ -32,14 +32,14 @@ func (m *mockSessionChecker) List() ([]session.SessionInfo, error) {
 // Returns the path and a cleanup function.
 func setupSolHome(t *testing.T) string {
 	t.Helper()
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
 	config.EnsureDirs()
-	return gtHome
+	return solHome
 }
 
 func TestRecoverStaleTethers(t *testing.T) {
-	gtHome := setupSolHome(t)
+	solHome := setupSolHome(t)
 
 	// Open real stores.
 	sphereStore, err := store.OpenSphere()
@@ -48,8 +48,8 @@ func TestRecoverStaleTethers(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	rigName := "testrig"
-	worldStore, err := store.OpenWorld(rigName)
+	worldName := "ember"
+	worldStore, err := store.OpenWorld(worldName)
 	if err != nil {
 		t.Fatalf("failed to open world store: %v", err)
 	}
@@ -57,33 +57,33 @@ func TestRecoverStaleTethers(t *testing.T) {
 
 	// Create agents.
 	// Agent A: working, session dead, old timestamp → should be recovered.
-	sphereStore.CreateAgent("AgentA", rigName, "agent")
+	sphereStore.CreateAgent("AgentA", worldName, "agent")
 	wiA, _ := worldStore.CreateWorkItem("task-a", "description a", "test", 1, nil)
-	sphereStore.UpdateAgentState(rigName+"/AgentA", "working", wiA)
-	worldStore.UpdateWorkItem(wiA, store.WorkItemUpdates{Status: "tethered", Assignee: rigName + "/AgentA"})
-	tether.Write(rigName, "AgentA", wiA)
+	sphereStore.UpdateAgentState(worldName+"/AgentA", "working", wiA)
+	worldStore.UpdateWorkItem(wiA, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/AgentA"})
+	tether.Write(worldName, "AgentA", wiA)
 
 	// Make Agent A's updated_at old (> 1 hour ago).
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
-		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), rigName+"/AgentA")
+		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/AgentA")
 
 	// Agent B: working, session alive → should NOT be recovered.
-	sphereStore.CreateAgent("AgentB", rigName, "agent")
+	sphereStore.CreateAgent("AgentB", worldName, "agent")
 	wiB, _ := worldStore.CreateWorkItem("task-b", "description b", "test", 1, nil)
-	sphereStore.UpdateAgentState(rigName+"/AgentB", "working", wiB)
-	worldStore.UpdateWorkItem(wiB, store.WorkItemUpdates{Status: "tethered", Assignee: rigName + "/AgentB"})
-	tether.Write(rigName, "AgentB", wiB)
+	sphereStore.UpdateAgentState(worldName+"/AgentB", "working", wiB)
+	worldStore.UpdateWorkItem(wiB, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/AgentB"})
+	tether.Write(worldName, "AgentB", wiB)
 
 	// Agent C: idle → should NOT be recovered.
-	sphereStore.CreateAgent("AgentC", rigName, "agent")
+	sphereStore.CreateAgent("AgentC", worldName, "agent")
 
 	// Set up mock sessions: only AgentB is alive.
 	sessions := newMockSessions()
-	sessions.alive["sol-"+rigName+"-AgentB"] = true
+	sessions.alive["sol-"+worldName+"-AgentB"] = true
 
 	cfg := Config{
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:             gtHome,
+		SolHome:             solHome,
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
@@ -100,7 +100,7 @@ func TestRecoverStaleTethers(t *testing.T) {
 	}
 
 	// Verify Agent A was recovered.
-	agentA, _ := sphereStore.GetAgent(rigName + "/AgentA")
+	agentA, _ := sphereStore.GetAgent(worldName + "/AgentA")
 	if agentA.State != "idle" {
 		t.Errorf("AgentA state = %q, want idle", agentA.State)
 	}
@@ -109,7 +109,7 @@ func TestRecoverStaleTethers(t *testing.T) {
 	}
 
 	// Verify work item A is back to open.
-	worldStore2, _ := store.OpenWorld(rigName)
+	worldStore2, _ := store.OpenWorld(worldName)
 	defer worldStore2.Close()
 	itemA, _ := worldStore2.GetWorkItem(wiA)
 	if itemA.Status != "open" {
@@ -120,25 +120,25 @@ func TestRecoverStaleTethers(t *testing.T) {
 	}
 
 	// Verify tether file was cleared.
-	if tether.IsTethered(rigName, "AgentA") {
+	if tether.IsTethered(worldName, "AgentA") {
 		t.Error("AgentA tether file should have been cleared")
 	}
 
 	// Verify Agent B is untouched.
-	agentB, _ := sphereStore.GetAgent(rigName + "/AgentB")
+	agentB, _ := sphereStore.GetAgent(worldName + "/AgentB")
 	if agentB.State != "working" {
 		t.Errorf("AgentB state = %q, want working", agentB.State)
 	}
 
 	// Verify Agent C is untouched.
-	agentC, _ := sphereStore.GetAgent(rigName + "/AgentC")
+	agentC, _ := sphereStore.GetAgent(worldName + "/AgentC")
 	if agentC.State != "idle" {
 		t.Errorf("AgentC state = %q, want idle", agentC.State)
 	}
 }
 
 func TestRecoverStaleTethersTooRecent(t *testing.T) {
-	gtHome := setupSolHome(t)
+	solHome := setupSolHome(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -146,29 +146,29 @@ func TestRecoverStaleTethersTooRecent(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	rigName := "testrig2"
-	worldStore, err := store.OpenWorld(rigName)
+	worldName := "ember2"
+	worldStore, err := store.OpenWorld(worldName)
 	if err != nil {
 		t.Fatalf("failed to open world store: %v", err)
 	}
 	defer worldStore.Close()
 
 	// Agent with dead session but updated_at is 5 minutes ago.
-	sphereStore.CreateAgent("RecentAgent", rigName, "agent")
+	sphereStore.CreateAgent("RecentAgent", worldName, "agent")
 	wiID, _ := worldStore.CreateWorkItem("task-recent", "desc", "test", 1, nil)
-	sphereStore.UpdateAgentState(rigName+"/RecentAgent", "working", wiID)
-	worldStore.UpdateWorkItem(wiID, store.WorkItemUpdates{Status: "tethered", Assignee: rigName + "/RecentAgent"})
-	tether.Write(rigName, "RecentAgent", wiID)
+	sphereStore.UpdateAgentState(worldName+"/RecentAgent", "working", wiID)
+	worldStore.UpdateWorkItem(wiID, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/RecentAgent"})
+	tether.Write(worldName, "RecentAgent", wiID)
 
 	// Set updated_at to 5 minutes ago.
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
-		time.Now().Add(-5*time.Minute).UTC().Format(time.RFC3339), rigName+"/RecentAgent")
+		time.Now().Add(-5*time.Minute).UTC().Format(time.RFC3339), worldName+"/RecentAgent")
 
 	sessions := newMockSessions() // no alive sessions
 
 	cfg := Config{
 		StaleTetherTimeout: 1 * time.Hour, // 1 hour timeout, 5 min is too recent
-		GTHome:             gtHome,
+		SolHome:             solHome,
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
@@ -185,14 +185,14 @@ func TestRecoverStaleTethersTooRecent(t *testing.T) {
 	}
 
 	// Verify agent is still working.
-	agent, _ := sphereStore.GetAgent(rigName + "/RecentAgent")
+	agent, _ := sphereStore.GetAgent(worldName + "/RecentAgent")
 	if agent.State != "working" {
 		t.Errorf("agent state = %q, want working", agent.State)
 	}
 }
 
 func TestRecoverStaleTethersPartialFailure(t *testing.T) {
-	gtHome := setupSolHome(t)
+	solHome := setupSolHome(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -200,19 +200,19 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	rigName := "testrig3"
-	worldStore, err := store.OpenWorld(rigName)
+	worldName := "ember3"
+	worldStore, err := store.OpenWorld(worldName)
 	if err != nil {
 		t.Fatalf("failed to open world store: %v", err)
 	}
 	defer worldStore.Close()
 
 	// Agent 1: stale, recoverable.
-	sphereStore.CreateAgent("Good", rigName, "agent")
+	sphereStore.CreateAgent("Good", worldName, "agent")
 	wi1, _ := worldStore.CreateWorkItem("task-good", "desc", "test", 1, nil)
-	sphereStore.UpdateAgentState(rigName+"/Good", "working", wi1)
-	worldStore.UpdateWorkItem(wi1, store.WorkItemUpdates{Status: "tethered", Assignee: rigName + "/Good"})
-	tether.Write(rigName, "Good", wi1)
+	sphereStore.UpdateAgentState(worldName+"/Good", "working", wi1)
+	worldStore.UpdateWorkItem(wi1, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/Good"})
+	tether.Write(worldName, "Good", wi1)
 
 	// Agent 2: stale, but on a world that can't be opened (bad world name).
 	sphereStore.CreateAgent("Bad", "nonexistent-world-xyz", "agent")
@@ -220,7 +220,7 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 
 	// Make both agents old.
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
-		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), rigName+"/Good")
+		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/Good")
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
 		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), "nonexistent-world-xyz/Bad")
 
@@ -228,7 +228,7 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 
 	cfg := Config{
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:             gtHome,
+		SolHome:             solHome,
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
@@ -257,7 +257,7 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 }
 
 func TestFeedStrandedCaravans(t *testing.T) {
-	gtHome := setupSolHome(t)
+	solHome := setupSolHome(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -265,8 +265,8 @@ func TestFeedStrandedCaravans(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	rigName := "caravanrig"
-	worldStore, err := store.OpenWorld(rigName)
+	worldName := "drift"
+	worldStore, err := store.OpenWorld(worldName)
 	if err != nil {
 		t.Fatalf("failed to open world store: %v", err)
 	}
@@ -279,17 +279,17 @@ func TestFeedStrandedCaravans(t *testing.T) {
 	wi2, _ := worldStore.CreateWorkItem("caravan-task-2", "desc2", "test", 1, nil)
 	wi3, _ := worldStore.CreateWorkItem("caravan-task-3", "desc3", "test", 1, nil)
 
-	sphereStore.AddCaravanItem(caravanID, wi1, rigName)
-	sphereStore.AddCaravanItem(caravanID, wi2, rigName)
-	sphereStore.AddCaravanItem(caravanID, wi3, rigName)
+	sphereStore.AddCaravanItem(caravanID, wi1, worldName)
+	sphereStore.AddCaravanItem(caravanID, wi2, worldName)
+	sphereStore.AddCaravanItem(caravanID, wi3, worldName)
 
 	// Make wi3 tethered (already dispatched).
-	worldStore.UpdateWorkItem(wi3, store.WorkItemUpdates{Status: "tethered", Assignee: rigName + "/SomeAgent"})
+	worldStore.UpdateWorkItem(wi3, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/SomeAgent"})
 
 	sessions := newMockSessions()
 	cfg := Config{
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:             gtHome,
+		SolHome:             solHome,
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
@@ -316,7 +316,7 @@ func TestFeedStrandedCaravans(t *testing.T) {
 }
 
 func TestFeedStrandedCaravansNoDuplicates(t *testing.T) {
-	gtHome := setupSolHome(t)
+	solHome := setupSolHome(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -324,8 +324,8 @@ func TestFeedStrandedCaravansNoDuplicates(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	rigName := "caravanrig2"
-	worldStore, err := store.OpenWorld(rigName)
+	worldName := "drift2"
+	worldStore, err := store.OpenWorld(worldName)
 	if err != nil {
 		t.Fatalf("failed to open world store: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestFeedStrandedCaravansNoDuplicates(t *testing.T) {
 
 	caravanID, _ := sphereStore.CreateCaravan("test-caravan-2", "operator")
 	wi1, _ := worldStore.CreateWorkItem("dup-task-1", "desc1", "test", 1, nil)
-	sphereStore.AddCaravanItem(caravanID, wi1, rigName)
+	sphereStore.AddCaravanItem(caravanID, wi1, worldName)
 
 	// Send a pre-existing CARAVAN_NEEDS_FEEDING message for this caravan.
 	sphereStore.SendProtocolMessage("sphere/consul", "operator", store.ProtoCaravanNeedsFeeding,
@@ -342,7 +342,7 @@ func TestFeedStrandedCaravansNoDuplicates(t *testing.T) {
 	sessions := newMockSessions()
 	cfg := Config{
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:             gtHome,
+		SolHome:             solHome,
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
@@ -366,7 +366,7 @@ func TestFeedStrandedCaravansNoDuplicates(t *testing.T) {
 }
 
 func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
-	gtHome := setupSolHome(t)
+	solHome := setupSolHome(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -374,8 +374,8 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	rigName := "caravanrig3"
-	worldStore, err := store.OpenWorld(rigName)
+	worldName := "drift3"
+	worldStore, err := store.OpenWorld(worldName)
 	if err != nil {
 		t.Fatalf("failed to open world store: %v", err)
 	}
@@ -383,13 +383,13 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 
 	caravanID, _ := sphereStore.CreateCaravan("test-caravan-3", "operator")
 	wi1, _ := worldStore.CreateWorkItem("all-tethered-1", "desc1", "test", 1, nil)
-	worldStore.UpdateWorkItem(wi1, store.WorkItemUpdates{Status: "tethered", Assignee: rigName + "/X"})
-	sphereStore.AddCaravanItem(caravanID, wi1, rigName)
+	worldStore.UpdateWorkItem(wi1, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/X"})
+	sphereStore.AddCaravanItem(caravanID, wi1, worldName)
 
 	sessions := newMockSessions()
 	cfg := Config{
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:             gtHome,
+		SolHome:             solHome,
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
@@ -407,8 +407,8 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 }
 
 func TestProcessLifecycleShutdown(t *testing.T) {
-	gtHome := setupSolHome(t)
-	_ = gtHome
+	solHome := setupSolHome(t)
+	_ = solHome
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -440,8 +440,8 @@ func TestProcessLifecycleShutdown(t *testing.T) {
 }
 
 func TestProcessLifecycleCycle(t *testing.T) {
-	gtHome := setupSolHome(t)
-	_ = gtHome
+	solHome := setupSolHome(t)
+	_ = solHome
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -472,8 +472,8 @@ func TestProcessLifecycleCycle(t *testing.T) {
 }
 
 func TestProcessLifecycleUnknown(t *testing.T) {
-	gtHome := setupSolHome(t)
-	_ = gtHome
+	solHome := setupSolHome(t)
+	_ = solHome
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -504,7 +504,7 @@ func TestProcessLifecycleUnknown(t *testing.T) {
 }
 
 func TestPatrolCycle(t *testing.T) {
-	gtHome := setupSolHome(t)
+	solHome := setupSolHome(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -512,40 +512,40 @@ func TestPatrolCycle(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	rigName := "patrolrig"
-	worldStore, err := store.OpenWorld(rigName)
+	worldName := "vigil"
+	worldStore, err := store.OpenWorld(worldName)
 	if err != nil {
 		t.Fatalf("failed to open world store: %v", err)
 	}
 	defer worldStore.Close()
 
 	// 1. Stale tethered agent (dead session, old timestamp).
-	sphereStore.CreateAgent("Stale", rigName, "agent")
+	sphereStore.CreateAgent("Stale", worldName, "agent")
 	wiStale, _ := worldStore.CreateWorkItem("stale-task", "desc", "test", 1, nil)
-	sphereStore.UpdateAgentState(rigName+"/Stale", "working", wiStale)
-	worldStore.UpdateWorkItem(wiStale, store.WorkItemUpdates{Status: "tethered", Assignee: rigName + "/Stale"})
-	tether.Write(rigName, "Stale", wiStale)
+	sphereStore.UpdateAgentState(worldName+"/Stale", "working", wiStale)
+	worldStore.UpdateWorkItem(wiStale, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/Stale"})
+	tether.Write(worldName, "Stale", wiStale)
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
-		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), rigName+"/Stale")
+		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/Stale")
 
 	// 2. Open caravan with ready items.
 	caravanID, _ := sphereStore.CreateCaravan("patrol-caravan", "operator")
 	wiCaravan, _ := worldStore.CreateWorkItem("caravan-ready", "desc", "test", 1, nil)
-	sphereStore.AddCaravanItem(caravanID, wiCaravan, rigName)
+	sphereStore.AddCaravanItem(caravanID, wiCaravan, worldName)
 
 	// 3. Healthy working agent (session alive).
-	sphereStore.CreateAgent("Healthy", rigName, "agent")
+	sphereStore.CreateAgent("Healthy", worldName, "agent")
 	wiHealthy, _ := worldStore.CreateWorkItem("healthy-task", "desc", "test", 1, nil)
-	sphereStore.UpdateAgentState(rigName+"/Healthy", "working", wiHealthy)
-	worldStore.UpdateWorkItem(wiHealthy, store.WorkItemUpdates{Status: "tethered", Assignee: rigName + "/Healthy"})
-	tether.Write(rigName, "Healthy", wiHealthy)
+	sphereStore.UpdateAgentState(worldName+"/Healthy", "working", wiHealthy)
+	worldStore.UpdateWorkItem(wiHealthy, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/Healthy"})
+	tether.Write(worldName, "Healthy", wiHealthy)
 
 	sessions := newMockSessions()
-	sessions.alive["sol-"+rigName+"-Healthy"] = true
+	sessions.alive["sol-"+worldName+"-Healthy"] = true
 
 	cfg := Config{
 		StaleTetherTimeout: 1 * time.Hour,
-		GTHome:             gtHome,
+		SolHome:             solHome,
 		PatrolInterval:     5 * time.Minute,
 	}
 
@@ -560,7 +560,7 @@ func TestPatrolCycle(t *testing.T) {
 	}
 
 	// Verify: stale tether recovered.
-	agentStale, _ := sphereStore.GetAgent(rigName + "/Stale")
+	agentStale, _ := sphereStore.GetAgent(worldName + "/Stale")
 	if agentStale.State != "idle" {
 		t.Errorf("Stale agent state = %q, want idle", agentStale.State)
 	}
@@ -572,7 +572,7 @@ func TestPatrolCycle(t *testing.T) {
 	}
 
 	// Verify: heartbeat written.
-	hb, err := ReadHeartbeat(gtHome)
+	hb, err := ReadHeartbeat(solHome)
 	if err != nil {
 		t.Fatalf("ReadHeartbeat failed: %v", err)
 	}
@@ -590,16 +590,16 @@ func TestPatrolCycle(t *testing.T) {
 	}
 
 	// Verify: healthy agent untouched.
-	agentHealthy, _ := sphereStore.GetAgent(rigName + "/Healthy")
+	agentHealthy, _ := sphereStore.GetAgent(worldName + "/Healthy")
 	if agentHealthy.State != "working" {
 		t.Errorf("Healthy agent state = %q, want working", agentHealthy.State)
 	}
 
 	// Verify: tether file still present for healthy agent.
-	if !tether.IsTethered(rigName, "Healthy") {
+	if !tether.IsTethered(worldName, "Healthy") {
 		t.Error("Healthy agent tether file should still exist")
 	}
 
 	// Clean up.
-	os.RemoveAll(gtHome)
+	os.RemoveAll(solHome)
 }
