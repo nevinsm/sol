@@ -3,9 +3,9 @@ package deacon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/nevinsm/gt/internal/dispatch"
@@ -99,11 +99,11 @@ func (d *Deacon) SetRigOpener(opener RigOpener) {
 // Register creates or updates the deacon's agent record.
 // Agent ID: "town/deacon", role: "deacon", state: "working".
 func (d *Deacon) Register() error {
-	_, err := d.townStore.GetAgent("town/deacon")
-	if err == nil {
+	agent, _ := d.townStore.GetAgent("town/deacon")
+	if agent != nil {
 		return nil // already registered
 	}
-	_, err = d.townStore.CreateAgent("deacon", "town", "deacon")
+	_, err := d.townStore.CreateAgent("deacon", "town", "deacon")
 	return err
 }
 
@@ -124,8 +124,23 @@ func (d *Deacon) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to set deacon working: %w", err)
 	}
 
+	// shutdown writes the final heartbeat and sets agent state to idle.
+	shutdown := func() {
+		openEsc, _ := d.townStore.CountOpen()
+		_ = WriteHeartbeat(d.config.GTHome, &Heartbeat{
+			Timestamp:   time.Now().UTC(),
+			PatrolCount: d.patrolCount,
+			Status:      "stopping",
+			Escalations: openEsc,
+		})
+		_ = d.townStore.UpdateAgentState("town/deacon", "idle", "")
+	}
+
 	// Patrol immediately.
-	d.Patrol()
+	if errors.Is(d.Patrol(), errShutdown) {
+		shutdown()
+		return nil
+	}
 
 	ticker := time.NewTicker(d.config.PatrolInterval)
 	defer ticker.Stop()
@@ -133,19 +148,14 @@ func (d *Deacon) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			// Write final heartbeat.
-			openEsc, _ := d.townStore.CountOpen()
-			_ = WriteHeartbeat(d.config.GTHome, &Heartbeat{
-				Timestamp:   time.Now().UTC(),
-				PatrolCount: d.patrolCount,
-				Status:      "stopping",
-				Escalations: openEsc,
-			})
-			_ = d.townStore.UpdateAgentState("town/deacon", "idle", "")
+			shutdown()
 			return nil
 
 		case <-ticker.C:
-			d.Patrol()
+			if errors.Is(d.Patrol(), errShutdown) {
+				shutdown()
+				return nil
+			}
 		}
 	}
 }
@@ -383,7 +393,7 @@ func (d *Deacon) feedStrandedConvoys() (int, error) {
 
 		alreadyPending := false
 		for _, msg := range pending {
-			if strings.Contains(msg.Body, convoy.ID) {
+			if convoyPayloadContainsID(msg.Body, convoy.ID) {
 				alreadyPending = true
 				break
 			}

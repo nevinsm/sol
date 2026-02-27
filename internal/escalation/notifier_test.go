@@ -31,8 +31,7 @@ func testEscalation() store.Escalation {
 func setupTownStore(t *testing.T) *store.Store {
 	t.Helper()
 	dir := t.TempDir()
-	os.Setenv("GT_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	t.Setenv("GT_HOME", dir)
 
 	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
 		t.Fatal(err)
@@ -223,8 +222,7 @@ func TestWebhookNotifierTimeout(t *testing.T) {
 
 func TestRouterDefaultRouting(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("GT_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	t.Setenv("GT_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	townStore, err := store.OpenTown()
@@ -297,8 +295,7 @@ func TestRouterDefaultRouting(t *testing.T) {
 
 func TestRouterNoWebhook(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("GT_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("GT_HOME") })
+	t.Setenv("GT_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	townStore, err := store.OpenTown()
