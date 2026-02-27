@@ -12,7 +12,8 @@ const (
 	ProtoMerged         = "MERGED"
 	ProtoMergeFailed    = "MERGE_FAILED"
 	ProtoReworkRequest  = "REWORK_REQUEST"
-	ProtoRecoveryNeeded = "RECOVERY_NEEDED"
+	ProtoRecoveryNeeded     = "RECOVERY_NEEDED"
+	ProtoConvoyNeedsFeeding = "CONVOY_NEEDS_FEEDING"
 )
 
 // PolecatDonePayload is sent when a polecat completes its work.
@@ -49,6 +50,14 @@ type RecoveryNeededPayload struct {
 	WorkItemID string `json:"work_item_id"`
 	Reason     string `json:"reason"`
 	Attempts   int    `json:"attempts"`
+}
+
+// ConvoyNeedsFeedingPayload is sent when a convoy has items ready
+// for dispatch (e.g., after a merge unblocks dependent work).
+type ConvoyNeedsFeedingPayload struct {
+	ConvoyID   string `json:"convoy_id"`
+	Rig        string `json:"rig"`
+	ReadyCount int    `json:"ready_count"`
 }
 
 // SendProtocolMessage sends a typed protocol message with a JSON body.

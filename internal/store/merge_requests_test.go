@@ -466,13 +466,13 @@ func TestFindMergeRequestByBlocker(t *testing.T) {
 func TestV3Migration(t *testing.T) {
 	s := setupRig(t)
 
-	// Verify the schema version is 3.
+	// Verify the schema version is 4 (V3 migration was applied as part of V4).
 	var v int
 	if err := s.DB().QueryRow("SELECT version FROM schema_version").Scan(&v); err != nil {
 		t.Fatalf("failed to get schema version: %v", err)
 	}
-	if v != 3 {
-		t.Errorf("schema version = %d, want 3", v)
+	if v != 4 {
+		t.Errorf("schema version = %d, want 4", v)
 	}
 
 	// Verify blocked_by column exists.

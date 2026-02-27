@@ -92,8 +92,8 @@ func TestSchemaCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 3 {
-		t.Fatalf("expected schema version 3, got %d", version)
+	if version != 4 {
+		t.Fatalf("expected schema version 4, got %d", version)
 	}
 }
 
@@ -132,14 +132,14 @@ func TestMigrateTownV2(t *testing.T) {
 		t.Fatalf("expected escalations table, got count=%d", count)
 	}
 
-	// Verify schema_version is 2.
+	// Verify schema_version is 3.
 	var version int
 	err = s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 {
-		t.Fatalf("expected schema version 2, got %d", version)
+	if version != 3 {
+		t.Fatalf("expected schema version 3, got %d", version)
 	}
 
 	// Verify indexes exist.
@@ -207,14 +207,14 @@ func TestMigrateTownV1ToV2(t *testing.T) {
 		t.Fatalf("expected agent name 'Toast', got %q", agent.Name)
 	}
 
-	// Verify schema_version is 2.
+	// Verify schema_version is 3 (V1→V2→V3 all applied).
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 {
-		t.Fatalf("expected schema version 2, got %d", version)
+	if version != 3 {
+		t.Fatalf("expected schema version 3, got %d", version)
 	}
 }
 
@@ -675,14 +675,14 @@ func TestMigrationIdempotent(t *testing.T) {
 		t.Fatalf("expected merge_requests table after reopen, got count=%d", count)
 	}
 
-	// Verify schema version is 3.
+	// Verify schema version is 4.
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 3 {
-		t.Fatalf("expected schema version 3 after reopen, got %d", version)
+	if version != 4 {
+		t.Fatalf("expected schema version 4 after reopen, got %d", version)
 	}
 }
 
@@ -739,14 +739,14 @@ func TestMigrateRigV1ToV2(t *testing.T) {
 		t.Fatalf("expected title 'V1 item', got %q", item.Title)
 	}
 
-	// Verify schema version is 3 (V1→V2→V3 all applied).
+	// Verify schema version is 4 (V1→V2→V3→V4 all applied).
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 3 {
-		t.Fatalf("expected schema version 3, got %d", version)
+	if version != 4 {
+		t.Fatalf("expected schema version 4, got %d", version)
 	}
 }
 

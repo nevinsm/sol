@@ -17,7 +17,18 @@ type RigStatus struct {
 	Witness    WitnessInfo    `json:"witness"`
 	Agents     []AgentStatus  `json:"agents"`
 	MergeQueue MergeQueueInfo `json:"merge_queue"`
+	Convoys    []ConvoyInfo   `json:"convoys,omitempty"`
 	Summary    Summary        `json:"summary"`
+}
+
+// ConvoyInfo holds summary information about a convoy relevant to a rig.
+type ConvoyInfo struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	TotalItems int    `json:"total_items"`
+	ReadyItems int    `json:"ready_items"`
+	DoneItems  int    `json:"done_items"`
 }
 
 // SupervisorInfo holds supervisor process state (town-level, not per-rig).
@@ -121,6 +132,13 @@ type MergeQueueStore interface {
 	ListMergeRequests(phase string) ([]store.MergeRequest, error)
 }
 
+// ConvoyStore abstracts convoy queries for status gathering.
+type ConvoyStore interface {
+	ListConvoys(status string) ([]store.Convoy, error)
+	CheckConvoyReadiness(convoyID string, rigOpener func(rig string) (*store.Store, error)) ([]store.ConvoyItemStatus, error)
+	ListConvoyItems(convoyID string) ([]store.ConvoyItem, error)
+}
+
 // Gather collects runtime state for a rig.
 func Gather(rig string, townStore TownStore, rigStore RigStore,
 	mqStore MergeQueueStore, checker SessionChecker) (*RigStatus, error) {
@@ -220,4 +238,54 @@ func Gather(rig string, townStore TownStore, rigStore RigStore,
 	}
 
 	return result, nil
+}
+
+// GatherConvoys adds convoy information to a RigStatus.
+// This is separate from Gather because it requires the ConvoyStore interface
+// which not all callers may have available.
+func GatherConvoys(result *RigStatus, convoyStore ConvoyStore, rigOpener func(string) (*store.Store, error)) {
+	convoys, err := convoyStore.ListConvoys("open")
+	if err != nil {
+		return // non-fatal: degrade gracefully
+	}
+
+	for _, c := range convoys {
+		items, err := convoyStore.ListConvoyItems(c.ID)
+		if err != nil {
+			continue
+		}
+
+		// Check if this convoy has items in our rig.
+		hasRigItems := false
+		for _, item := range items {
+			if item.Rig == result.Rig {
+				hasRigItems = true
+				break
+			}
+		}
+		if !hasRigItems {
+			continue
+		}
+
+		info := ConvoyInfo{
+			ID:         c.ID,
+			Name:       c.Name,
+			Status:     c.Status,
+			TotalItems: len(items),
+		}
+
+		statuses, err := convoyStore.CheckConvoyReadiness(c.ID, rigOpener)
+		if err == nil {
+			for _, st := range statuses {
+				switch {
+				case st.WorkItemStatus == "done" || st.WorkItemStatus == "closed":
+					info.DoneItems++
+				case st.WorkItemStatus == "open" && st.Ready:
+					info.ReadyItems++
+				}
+			}
+		}
+
+		result.Convoys = append(result.Convoys, info)
+	}
 }

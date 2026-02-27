@@ -44,6 +44,9 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
+		// Gather convoy info (non-fatal if unavailable).
+		status.GatherConvoys(result, townStore, store.OpenRig)
+
 		if statusJSON {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
@@ -112,6 +115,17 @@ func printStatus(rs *status.RigStatus) {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", a.Name, a.State, sess, work)
 		}
 		tw.Flush()
+		fmt.Println()
+	}
+
+	// Convoys.
+	if len(rs.Convoys) > 0 {
+		fmt.Println("Convoys:")
+		for _, c := range rs.Convoys {
+			blocked := c.TotalItems - c.DoneItems - c.ReadyItems
+			fmt.Printf("  %s  %s  %d items (%d done, %d ready, %d blocked)\n",
+				c.ID, c.Name, c.TotalItems, c.DoneItems, c.ReadyItems, blocked)
+		}
 		fmt.Println()
 	}
 
