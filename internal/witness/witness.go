@@ -110,6 +110,12 @@ func New(cfg Config, town TownStore, rig RigStore,
 	}
 }
 
+// SetAssessFunc sets a custom assessment function for testing.
+// When set, this function is called instead of the real AI assessment.
+func (w *Witness) SetAssessFunc(fn func(agent store.Agent, sessionName, output string) (*AssessmentResult, error)) {
+	w.assessFn = fn
+}
+
 func (w *Witness) agentID() string {
 	return w.config.Rig + "/witness"
 }
@@ -156,6 +162,11 @@ func (w *Witness) Run(ctx context.Context) error {
 			w.patrol()
 		}
 	}
+}
+
+// Patrol runs one patrol cycle across all polecats in the rig. Exported for testing.
+func (w *Witness) Patrol() error {
+	return w.patrol()
 }
 
 // patrol runs one patrol cycle across all polecats in the rig.

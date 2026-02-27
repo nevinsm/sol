@@ -1,6 +1,8 @@
 package integration
 
 import (
+	"bufio"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/gt/internal/events"
 	"github.com/nevinsm/gt/internal/store"
 )
 
@@ -166,4 +169,141 @@ func pollUntil(timeout, interval time.Duration, fn func() bool) bool {
 		time.Sleep(interval)
 	}
 	return false
+}
+
+// --- Loop 3 helpers ---
+
+// sendAndVerifyMessage sends a message and verifies it appears in the
+// recipient's inbox. Returns the message ID.
+func sendAndVerifyMessage(t *testing.T, townStore *store.Store,
+	sender, recipient, subject, body string) string {
+	t.Helper()
+	id, err := townStore.SendMessage(sender, recipient, subject, body, 2, "notification")
+	if err != nil {
+		t.Fatalf("SendMessage() error: %v", err)
+	}
+	msgs, err := townStore.Inbox(recipient)
+	if err != nil {
+		t.Fatalf("Inbox() error: %v", err)
+	}
+	found := false
+	for _, m := range msgs {
+		if m.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("message %s not found in inbox for %s", id, recipient)
+	}
+	return id
+}
+
+// waitForProtocolMessage polls for a specific protocol message type
+// addressed to a recipient. Returns the message when found or fails
+// after timeout.
+func waitForProtocolMessage(t *testing.T, townStore *store.Store,
+	recipient, protoType string, timeout time.Duration) *store.Message {
+	t.Helper()
+	var found *store.Message
+	ok := pollUntil(timeout, 100*time.Millisecond, func() bool {
+		msgs, err := townStore.PendingProtocol(recipient, protoType)
+		if err != nil || len(msgs) == 0 {
+			return false
+		}
+		found = &msgs[0]
+		return true
+	})
+	if !ok {
+		t.Fatalf("protocol message %s for %s not found within %v", protoType, recipient, timeout)
+	}
+	return found
+}
+
+// collectEvents reads all events from the event feed file and returns
+// them, optionally filtered by type.
+func collectEvents(t *testing.T, gtHome, eventType string) []events.Event {
+	t.Helper()
+	path := filepath.Join(gtHome, ".events.jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		t.Fatalf("open events file: %v", err)
+	}
+	defer f.Close()
+
+	var result []events.Event
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		var ev events.Event
+		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+			continue
+		}
+		if eventType != "" && ev.Type != eventType {
+			continue
+		}
+		result = append(result, ev)
+	}
+	return result
+}
+
+// assertEventEmitted verifies that at least one event of the given type
+// exists in the feed.
+func assertEventEmitted(t *testing.T, gtHome, eventType string) {
+	t.Helper()
+	evts := collectEvents(t, gtHome, eventType)
+	if len(evts) == 0 {
+		t.Errorf("expected at least one %q event in feed, found none", eventType)
+	}
+}
+
+// mockSessionChecker implements witness.SessionChecker for integration tests.
+type mockSessionChecker struct {
+	alive    map[string]bool
+	captures map[string]string
+	started  []string
+	stopped  []string
+	injected []mockInjectCall
+}
+
+type mockInjectCall struct {
+	Session string
+	Text    string
+}
+
+func newMockSessionChecker() *mockSessionChecker {
+	return &mockSessionChecker{
+		alive:    make(map[string]bool),
+		captures: make(map[string]string),
+	}
+}
+
+func (m *mockSessionChecker) Exists(name string) bool {
+	return m.alive[name]
+}
+
+func (m *mockSessionChecker) Capture(name string, lines int) (string, error) {
+	if output, ok := m.captures[name]; ok {
+		return output, nil
+	}
+	return "", nil
+}
+
+func (m *mockSessionChecker) Start(name, workdir, cmd string, env map[string]string, role, rig string) error {
+	m.alive[name] = true
+	m.started = append(m.started, name)
+	return nil
+}
+
+func (m *mockSessionChecker) Stop(name string, force bool) error {
+	delete(m.alive, name)
+	m.stopped = append(m.stopped, name)
+	return nil
+}
+
+func (m *mockSessionChecker) Inject(name string, text string) error {
+	m.injected = append(m.injected, mockInjectCall{Session: name, Text: text})
+	return nil
 }

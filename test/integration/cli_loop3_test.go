@@ -154,3 +154,63 @@ func TestCLICuratorStopHelp(t *testing.T) {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
+
+func TestCLIWitnessRunHelp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+
+	out, err := runGT(t, gtHome, "witness", "run", "--help")
+	if err != nil {
+		t.Fatalf("gt witness run --help failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "patrol loop") {
+		t.Errorf("output missing expected text: %s", out)
+	}
+}
+
+func TestCLIWitnessStartHelp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+
+	out, err := runGT(t, gtHome, "witness", "start", "--help")
+	if err != nil {
+		t.Fatalf("gt witness start --help failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "background tmux session") {
+		t.Errorf("output missing expected text: %s", out)
+	}
+}
+
+func TestCLIWitnessStopHelp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+
+	out, err := runGT(t, gtHome, "witness", "stop", "--help")
+	if err != nil {
+		t.Fatalf("gt witness stop --help failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "Stop the witness") {
+		t.Errorf("output missing expected text: %s", out)
+	}
+}
+
+func TestCLIWitnessAttachHelp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+
+	out, err := runGT(t, gtHome, "witness", "attach", "--help")
+	if err != nil {
+		t.Fatalf("gt witness attach --help failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "Attach to the witness") {
+		t.Errorf("output missing expected text: %s", out)
+	}
+}
