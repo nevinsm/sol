@@ -132,14 +132,14 @@ func TestMigrateSphereV4(t *testing.T) {
 		t.Fatalf("expected escalations table, got count=%d", count)
 	}
 
-	// Verify schema_version is 4.
+	// Verify schema_version is 5.
 	var version int
 	err = s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 4 {
-		t.Fatalf("expected schema version 4, got %d", version)
+	if version != 5 {
+		t.Fatalf("expected schema version 5, got %d", version)
 	}
 
 	// Verify indexes exist.
@@ -207,14 +207,14 @@ func TestMigrateSphereV1ToV4(t *testing.T) {
 		t.Fatalf("expected agent name 'Toast', got %q", agent.Name)
 	}
 
-	// Verify schema_version is 4 (V1→V2→V3→V4 all applied).
+	// Verify schema_version is 5 (V1→V2→V3→V4→V5 all applied).
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 4 {
-		t.Fatalf("expected schema version 4, got %d", version)
+	if version != 5 {
+		t.Fatalf("expected schema version 5, got %d", version)
 	}
 }
 

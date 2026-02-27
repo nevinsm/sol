@@ -190,6 +190,15 @@ ALTER TABLE caravan_items RENAME COLUMN convoy_id TO caravan_id;
 ALTER TABLE caravan_items RENAME COLUMN rig TO world;
 `
 
+const sphereSchemaV5 = `
+CREATE TABLE IF NOT EXISTS worlds (
+    name        TEXT PRIMARY KEY,
+    source_repo TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+`
+
 func (s *Store) migrateSphere() error {
 	v, err := s.schemaVersion()
 	if err != nil {
@@ -215,12 +224,17 @@ func (s *Store) migrateSphere() error {
 			return fmt.Errorf("failed to apply sphere schema v4: %w", err)
 		}
 	}
+	if v < 5 {
+		if _, err := s.db.Exec(sphereSchemaV5); err != nil {
+			return fmt.Errorf("failed to apply sphere schema v5: %w", err)
+		}
+	}
 	if v < 1 {
-		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (4)"); err != nil {
+		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (5)"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
-	} else if v < 4 {
-		if _, err := s.db.Exec("UPDATE schema_version SET version = 4"); err != nil {
+	} else if v < 5 {
+		if _, err := s.db.Exec("UPDATE schema_version SET version = 5"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	}

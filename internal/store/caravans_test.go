@@ -300,13 +300,13 @@ func TestTryCloseCaravan(t *testing.T) {
 func TestSphereSchemaV4(t *testing.T) {
 	s := setupSphere(t)
 
-	// Verify the schema version is 4.
+	// Verify the schema version is 5.
 	var v int
 	if err := s.DB().QueryRow("SELECT version FROM schema_version").Scan(&v); err != nil {
 		t.Fatalf("failed to get schema version: %v", err)
 	}
-	if v != 4 {
-		t.Errorf("schema version = %d, want 4", v)
+	if v != 5 {
+		t.Errorf("schema version = %d, want 5", v)
 	}
 
 	// Verify caravan tables exist.
