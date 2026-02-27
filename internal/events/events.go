@@ -45,6 +45,11 @@ const (
 	EventConvoyCreated       = "convoy_created"       // convoy created
 	EventConvoyLaunched      = "convoy_launched"      // convoy items dispatched
 	EventConvoyClosed        = "convoy_closed"        // convoy auto-closed
+
+	// Loop 5 events.
+	EventEscalationCreated  = "escalation_created"  // escalation created
+	EventEscalationAcked    = "escalation_acked"    // escalation acknowledged
+	EventEscalationResolved = "escalation_resolved" // escalation resolved
 )
 
 // Logger handles event logging to the JSONL event feed.
