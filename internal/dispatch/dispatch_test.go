@@ -220,13 +220,13 @@ func TestCastAutoProvision(t *testing.T) {
 		t.Fatalf("Cast failed: %v", err)
 	}
 
-	// First name in the default pool is "Toast".
-	if result.AgentName != "Toast" {
-		t.Errorf("expected auto-provisioned agent 'Toast', got %q", result.AgentName)
+	// First name in the default pool is "Nova".
+	if result.AgentName != "Nova" {
+		t.Errorf("expected auto-provisioned agent 'Nova', got %q", result.AgentName)
 	}
 
 	// Verify the agent was created in the store.
-	agent, err := sphereStore.GetAgent("ember/Toast")
+	agent, err := sphereStore.GetAgent("ember/Nova")
 	if err != nil {
 		t.Fatalf("failed to get auto-provisioned agent: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestCastAutoProvisionSkipsUsed(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create agents with the first 3 pool names and set them to "working".
-	poolNames := []string{"Toast", "Jasper", "Sage"}
+	poolNames := []string{"Nova", "Vega", "Lyra"}
 	for _, name := range poolNames {
 		if _, err := sphereStore.CreateAgent(name, "ember", "agent"); err != nil {
 			t.Fatalf("failed to create agent %q: %v", name, err)

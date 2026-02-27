@@ -143,8 +143,8 @@ func TestCLICastAutoProvision(t *testing.T) {
 		t.Fatalf("sol agent list failed: %v: %s", err, agentOut)
 	}
 
-	// The auto-provisioned name should be the first from the default pool (Toast).
-	if !strings.Contains(agentOut, "Toast") {
-		t.Errorf("agent list should contain auto-provisioned name 'Toast': %s", agentOut)
+	// The auto-provisioned name should be the first from the default pool (Nova).
+	if !strings.Contains(agentOut, "Nova") {
+		t.Errorf("agent list should contain auto-provisioned name 'Nova': %s", agentOut)
 	}
 }
