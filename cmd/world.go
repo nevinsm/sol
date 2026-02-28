@@ -62,6 +62,16 @@ var worldInitCmd = &cobra.Command{
 			}
 		}
 
+		if sourceRepo != "" {
+			info, err := os.Stat(sourceRepo)
+			if err != nil {
+				return fmt.Errorf("source repo path %q: %w", sourceRepo, err)
+			}
+			if !info.IsDir() {
+				return fmt.Errorf("source repo path %q is not a directory", sourceRepo)
+			}
+		}
+
 		// Create directory tree.
 		worldDir := config.WorldDir(name)
 		if err := os.MkdirAll(filepath.Join(worldDir, "outposts"), 0o755); err != nil {

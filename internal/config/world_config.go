@@ -81,7 +81,26 @@ func LoadWorldConfig(world string) (WorldConfig, error) {
 		return cfg, fmt.Errorf("failed to check %s: %w", worldPath, err)
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return cfg, fmt.Errorf("invalid world config for %q: %w", world, err)
+	}
 	return cfg, nil
+}
+
+// Validate checks that config values are within acceptable ranges.
+func (c WorldConfig) Validate() error {
+	if c.Agents.Capacity < 0 {
+		return fmt.Errorf("agents.capacity must be >= 0, got %d", c.Agents.Capacity)
+	}
+	if c.Agents.ModelTier != "" {
+		switch c.Agents.ModelTier {
+		case "sonnet", "opus", "haiku":
+			// valid
+		default:
+			return fmt.Errorf("agents.model_tier must be sonnet, opus, or haiku; got %q", c.Agents.ModelTier)
+		}
+	}
+	return nil
 }
 
 // WriteWorldConfig writes a world's configuration to world.toml.

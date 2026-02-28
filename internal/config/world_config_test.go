@@ -303,3 +303,102 @@ func TestRequireWorldPreArc1(t *testing.T) {
 		t.Fatalf("expected error containing 'before world lifecycle', got: %v", err)
 	}
 }
+
+func TestWorldConfigValidateModelTier(t *testing.T) {
+	valid := []string{"sonnet", "opus", "haiku", ""}
+	for _, tier := range valid {
+		cfg := WorldConfig{Agents: AgentsSection{ModelTier: tier}}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("expected tier %q to be valid, got: %v", tier, err)
+		}
+	}
+
+	invalid := []string{"gpt-4", "claude", "fast"}
+	for _, tier := range invalid {
+		cfg := WorldConfig{Agents: AgentsSection{ModelTier: tier}}
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("expected tier %q to be invalid, got nil error", tier)
+		}
+	}
+}
+
+func TestWorldConfigValidateCapacity(t *testing.T) {
+	valid := []int{0, 1, 100}
+	for _, cap := range valid {
+		cfg := DefaultWorldConfig()
+		cfg.Agents.Capacity = cap
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("expected capacity %d to be valid, got: %v", cap, err)
+		}
+	}
+
+	invalid := []int{-1, -100}
+	for _, cap := range invalid {
+		cfg := DefaultWorldConfig()
+		cfg.Agents.Capacity = cap
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("expected capacity %d to be invalid, got nil error", cap)
+		}
+	}
+}
+
+func TestValidateWorldNameReserved(t *testing.T) {
+	reserved := []string{"store", "runtime", "sol"}
+	for _, name := range reserved {
+		if err := ValidateWorldName(name); err == nil {
+			t.Errorf("expected reserved name %q to be rejected, got nil error", name)
+		} else if !strings.Contains(err.Error(), "reserved") {
+			t.Errorf("expected 'reserved' in error for %q, got: %v", name, err)
+		}
+	}
+
+	// Names that contain reserved words but aren't exact matches should pass.
+	allowed := []string{"mystore", "store1", "runtime2", "sol-project"}
+	for _, name := range allowed {
+		if err := ValidateWorldName(name); err != nil {
+			t.Errorf("expected name %q to be allowed, got: %v", name, err)
+		}
+	}
+}
+
+func TestLoadWorldConfigInvalidGlobalTOML(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Write invalid TOML to sol.toml.
+	globalPath := filepath.Join(dir, "sol.toml")
+	if err := os.WriteFile(globalPath, []byte("this is [not valid toml = {\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadWorldConfig("testworld")
+	if err == nil {
+		t.Fatal("expected error for invalid global TOML")
+	}
+	if !strings.Contains(err.Error(), "sol.toml") {
+		t.Fatalf("expected error to mention sol.toml path, got: %v", err)
+	}
+}
+
+func TestLoadWorldConfigValidationError(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Write world.toml with invalid model_tier.
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worldPath := filepath.Join(worldDir, "world.toml")
+	if err := os.WriteFile(worldPath, []byte("[agents]\nmodel_tier = \"gpt-4\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadWorldConfig("testworld")
+	if err == nil {
+		t.Fatal("expected error for invalid model_tier in world config")
+	}
+	if !strings.Contains(err.Error(), "model_tier") {
+		t.Fatalf("expected error to mention model_tier, got: %v", err)
+	}
+}

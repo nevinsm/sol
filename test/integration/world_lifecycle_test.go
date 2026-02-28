@@ -17,7 +17,7 @@ func TestWorldInitBasic(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp/fakerepo")
+	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
 	if err != nil {
 		t.Fatalf("world init failed: %v: %s", err, out)
 	}
@@ -54,7 +54,7 @@ func TestWorldInitWithSourceRepo(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp/fakerepo")
+	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
 	if err != nil {
 		t.Fatalf("world init failed: %v: %s", err, out)
 	}
@@ -65,7 +65,7 @@ func TestWorldInitWithSourceRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "/tmp/fakerepo") {
+	if !strings.Contains(string(data), "/tmp") {
 		t.Fatalf("world.toml does not contain source_repo: %s", data)
 	}
 }
@@ -78,7 +78,7 @@ func TestWorldInitAlreadyExists(t *testing.T) {
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
 	// Init once — success.
-	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp/fakerepo")
+	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
 	if err != nil {
 		t.Fatalf("first init failed: %v: %s", err, out)
 	}
@@ -142,8 +142,8 @@ func TestWorldList(t *testing.T) {
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
 	// Init two worlds.
-	runGT(t, gtHome, "world", "init", "alpha", "--source-repo=/tmp/a")
-	runGT(t, gtHome, "world", "init", "beta", "--source-repo=/tmp/b")
+	runGT(t, gtHome, "world", "init", "alpha", "--source-repo=/tmp")
+	runGT(t, gtHome, "world", "init", "beta", "--source-repo=/tmp")
 
 	out, err := runGT(t, gtHome, "world", "list")
 	if err != nil {
@@ -184,7 +184,7 @@ func TestWorldListJSON(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp/fakerepo")
+	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
 
 	out, err := runGT(t, gtHome, "world", "list", "--json")
 	if err != nil {
@@ -210,7 +210,7 @@ func TestWorldStatusBasic(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp/fakerepo")
+	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
 
 	out, err := runGT(t, gtHome, "world", "status", "myworld")
 	if err != nil {
@@ -247,7 +247,7 @@ func TestWorldDeleteBasic(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp/fakerepo")
+	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
 
 	out, err := runGT(t, gtHome, "world", "delete", "myworld", "--confirm")
 	if err != nil {
@@ -280,7 +280,7 @@ func TestWorldDeleteNoConfirm(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp/fakerepo")
+	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
 
 	out, err := runGT(t, gtHome, "world", "delete", "myworld")
 	if err != nil {
@@ -325,7 +325,7 @@ func TestWorldStatusJSON(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp/fakerepo")
+	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
 
 	out, err := runGT(t, gtHome, "world", "status", "myworld", "--json")
 	if err != nil {
@@ -346,8 +346,8 @@ func TestWorldStatusJSON(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected 'world' object in config, got: %v", cfg)
 	}
-	if world["source_repo"] != "/tmp/fakerepo" {
-		t.Fatalf("expected source_repo '/tmp/fakerepo', got: %v", world["source_repo"])
+	if world["source_repo"] != "/tmp" {
+		t.Fatalf("expected source_repo '/tmp', got: %v", world["source_repo"])
 	}
 }
 
@@ -501,5 +501,39 @@ func TestWorldListJSONEmpty(t *testing.T) {
 	}
 	if len(items) != 0 {
 		t.Fatalf("expected empty array, got %d items", len(items))
+	}
+}
+
+func TestWorldInitInvalidName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	cases := []struct {
+		name  string
+		match string
+	}{
+		{".hidden", "invalid world name"},
+		{"has spaces", "invalid world name"},
+		{"", "accepts 1 arg(s)"}, // cobra rejects missing arg before our validation
+		{"store", "reserved"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			args := []string{"world", "init", tc.name}
+			if tc.name == "" {
+				args = []string{"world", "init"} // cobra will reject missing arg
+			}
+			out, err := runGT(t, gtHome, args...)
+			if err == nil {
+				t.Fatalf("expected error for name %q, got success: %s", tc.name, out)
+			}
+			if !strings.Contains(out, tc.match) {
+				t.Fatalf("expected %q in error for name %q, got: %s", tc.match, tc.name, out)
+			}
+		})
 	}
 }

@@ -9,83 +9,60 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
-func TestHardGateStoreCreate(t *testing.T) {
+func TestHardGateAllCommands(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	out, err := runGT(t, gtHome, "store", "create", "--world=noworld", "--title=test")
-	if err == nil {
-		t.Fatalf("expected error, got success: %s", out)
+	cases := []struct {
+		name string
+		args []string
+	}{
+		// store commands
+		{"store create", []string{"store", "create", "--world=noworld", "--title=test"}},
+		{"store get", []string{"store", "get", "sol-00000000", "--world=noworld"}},
+		{"store list", []string{"store", "list", "--world=noworld"}},
+		{"store update", []string{"store", "update", "sol-00000000", "--world=noworld", "--status=closed"}},
+		{"store close", []string{"store", "close", "sol-00000000", "--world=noworld"}},
+		{"store query", []string{"store", "query", "--world=noworld", "--sql=SELECT 1"}},
+		// store dep commands
+		{"store dep add", []string{"store", "dep", "add", "sol-00000001", "sol-00000002", "--world=noworld"}},
+		{"store dep remove", []string{"store", "dep", "remove", "sol-00000001", "sol-00000002", "--world=noworld"}},
+		{"store dep list", []string{"store", "dep", "list", "sol-00000001", "--world=noworld"}},
+		// core commands
+		{"cast", []string{"cast", "sol-00000000", "noworld"}},
+		{"status", []string{"status", "noworld"}},
+		{"prime", []string{"prime", "--world=noworld", "--agent=test"}},
+		{"resolve", []string{"resolve", "--world=noworld", "--agent=test"}},
+		// agent commands
+		{"agent create", []string{"agent", "create", "test", "--world=noworld"}},
+		{"agent list", []string{"agent", "list", "--world=noworld"}},
+		// forge commands
+		{"forge queue", []string{"forge", "queue", "noworld"}},
+		{"forge ready", []string{"forge", "ready", "noworld"}},
+		{"forge blocked", []string{"forge", "blocked", "noworld"}},
+		// sentinel commands
+		{"sentinel run", []string{"sentinel", "run", "noworld"}},
+		// workflow commands
+		{"workflow current", []string{"workflow", "current", "--world=noworld", "--agent=test"}},
+		{"workflow status", []string{"workflow", "status", "--world=noworld", "--agent=test"}},
+		// world commands (that require existing world)
+		{"world status", []string{"world", "status", "noworld"}},
+		{"world delete", []string{"world", "delete", "noworld", "--confirm"}},
 	}
-	if !strings.Contains(out, "does not exist") {
-		t.Fatalf("expected 'does not exist' error, got: %s", out)
-	}
-}
 
-func TestHardGateStoreGet(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome := t.TempDir()
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-
-	out, err := runGT(t, gtHome, "store", "get", "sol-00000000", "--world=noworld")
-	if err == nil {
-		t.Fatalf("expected error, got success: %s", out)
-	}
-	if !strings.Contains(out, "does not exist") {
-		t.Fatalf("expected 'does not exist' error, got: %s", out)
-	}
-}
-
-func TestHardGateCast(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome := t.TempDir()
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-
-	out, err := runGT(t, gtHome, "cast", "sol-00000000", "noworld")
-	if err == nil {
-		t.Fatalf("expected error, got success: %s", out)
-	}
-	if !strings.Contains(out, "does not exist") {
-		t.Fatalf("expected 'does not exist' error, got: %s", out)
-	}
-}
-
-func TestHardGateForgeQueue(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome := t.TempDir()
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-
-	out, err := runGT(t, gtHome, "forge", "queue", "noworld")
-	if err == nil {
-		t.Fatalf("expected error, got success: %s", out)
-	}
-	if !strings.Contains(out, "does not exist") {
-		t.Fatalf("expected 'does not exist' error, got: %s", out)
-	}
-}
-
-func TestHardGateStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome := t.TempDir()
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-
-	out, err := runGT(t, gtHome, "status", "noworld")
-	if err == nil {
-		t.Fatalf("expected error, got success: %s", out)
-	}
-	if !strings.Contains(out, "does not exist") {
-		t.Fatalf("expected 'does not exist' error, got: %s", out)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := runGT(t, gtHome, tc.args...)
+			if err == nil {
+				t.Fatalf("expected error, got success: %s", out)
+			}
+			if !strings.Contains(out, "does not exist") {
+				t.Fatalf("expected 'does not exist' error, got: %s", out)
+			}
+		})
 	}
 }
 
@@ -121,7 +98,7 @@ func TestHardGatePassesAfterInit(t *testing.T) {
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
 	// Init the world.
-	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp/fakerepo")
+	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
 	if err != nil {
 		t.Fatalf("world init failed: %v: %s", err, out)
 	}

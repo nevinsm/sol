@@ -68,7 +68,7 @@ func gitRun(t *testing.T, dir string, args ...string) {
 // initWorld initializes a world via CLI so world-scoped commands pass the hard gate.
 func initWorld(t *testing.T, gtHome, world string) {
 	t.Helper()
-	out, err := runGT(t, gtHome, "world", "init", world, "--source-repo=/tmp/fakerepo")
+	out, err := runGT(t, gtHome, "world", "init", world, "--source-repo=/tmp")
 	if err != nil {
 		t.Fatalf("world init %s failed: %v: %s", world, err, out)
 	}
