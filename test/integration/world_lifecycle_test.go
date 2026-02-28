@@ -379,3 +379,127 @@ func TestWorldInitWithoutSourceRepo(t *testing.T) {
 		t.Fatalf("expected empty source_repo, but found a path in world.toml: %s", data)
 	}
 }
+
+func TestWorldDeleteCleansUpAgents(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	initWorld(t, gtHome, "myworld")
+
+	// Register an agent.
+	out, err := runGT(t, gtHome, "agent", "create", "Toast", "--world=myworld")
+	if err != nil {
+		t.Fatalf("agent create failed: %v: %s", err, out)
+	}
+
+	// Delete the world.
+	out, err = runGT(t, gtHome, "world", "delete", "myworld", "--confirm")
+	if err != nil {
+		t.Fatalf("world delete failed: %v: %s", err, out)
+	}
+
+	// Verify agent is gone from sphere.db.
+	t.Setenv("SOL_HOME", gtHome)
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	agents, err := sphereStore.ListAgents("myworld", "")
+	if err != nil {
+		t.Fatalf("list agents: %v", err)
+	}
+	if len(agents) != 0 {
+		t.Fatalf("expected 0 agents after delete, got %d", len(agents))
+	}
+}
+
+func TestWorldDeleteCleansUpCaravanItems(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	initWorld(t, gtHome, "myworld")
+
+	// Create a work item.
+	itemID, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=test item")
+	if err != nil {
+		t.Fatalf("store create failed: %v: %s", err, itemID)
+	}
+	itemID = strings.TrimSpace(itemID)
+
+	// Create a caravan with the work item.
+	caravanOut, err := runGT(t, gtHome, "caravan", "create", "test-caravan", itemID, "--world=myworld")
+	if err != nil {
+		t.Fatalf("caravan create failed: %v: %s", err, caravanOut)
+	}
+	// Extract caravan ID from output like: Created caravan car-a365ed87: "test-caravan" (1 items)
+	var caravanID string
+	for _, word := range strings.Fields(caravanOut) {
+		if strings.HasPrefix(word, "car-") {
+			caravanID = strings.TrimSuffix(word, ":")
+			break
+		}
+	}
+	if caravanID == "" {
+		t.Fatalf("could not extract caravan ID from output: %s", caravanOut)
+	}
+
+	// Delete the world.
+	out, err := runGT(t, gtHome, "world", "delete", "myworld", "--confirm")
+	if err != nil {
+		t.Fatalf("world delete failed: %v: %s", err, out)
+	}
+
+	// Verify caravan still exists but items are gone.
+	t.Setenv("SOL_HOME", gtHome)
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	caravan, err := sphereStore.GetCaravan(caravanID)
+	if err != nil {
+		t.Fatalf("get caravan: %v", err)
+	}
+	if caravan == nil {
+		t.Fatal("caravan should still exist after world delete")
+	}
+
+	items, err := sphereStore.ListCaravanItems(caravanID)
+	if err != nil {
+		t.Fatalf("list caravan items: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected 0 caravan items after world delete, got %d", len(items))
+	}
+}
+
+func TestWorldListJSONEmpty(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	out, err := runGT(t, gtHome, "world", "list", "--json")
+	if err != nil {
+		t.Fatalf("world list --json failed: %v: %s", err, out)
+	}
+
+	// Output should be valid JSON: []
+	var items []interface{}
+	if err := json.Unmarshal([]byte(out), &items); err != nil {
+		t.Fatalf("failed to parse JSON: %v: %s", err, out)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected empty array, got %d items", len(items))
+	}
+}

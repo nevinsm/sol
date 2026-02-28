@@ -120,14 +120,13 @@ var worldInitCmd = &cobra.Command{
 		}
 
 		// Print confirmation.
-		home := config.Home()
 		sourceDisplay := sourceRepo
 		if sourceDisplay == "" {
 			sourceDisplay = "none"
 		}
 		fmt.Printf("World %q initialized.\n", name)
-		fmt.Printf("  Config:   %s/%s/world.toml\n", home, name)
-		fmt.Printf("  Database: %s/.store/%s.db\n", home, name)
+		fmt.Printf("  Config:   %s\n", config.WorldConfigPath(name))
+		fmt.Printf("  Database: %s\n", filepath.Join(config.StoreDir(), name+".db"))
 		fmt.Printf("  Source:   %s\n", sourceDisplay)
 		fmt.Println()
 		fmt.Println("Next steps:")
@@ -268,79 +267,8 @@ var worldStatusCmd = &cobra.Command{
 		fmt.Printf("  Name pool:     %s\n", namePool)
 		fmt.Println()
 
-		// Print rest of status (prefect, forge, etc.).
-		if result.Prefect.Running {
-			fmt.Printf("Prefect: running (pid %d)\n", result.Prefect.PID)
-		} else {
-			fmt.Println("Prefect: not running")
-		}
-
-		if result.Forge.Running {
-			fmt.Printf("Forge: running (%s)\n", result.Forge.SessionName)
-		} else {
-			fmt.Println("Forge: not running")
-		}
-
-		if result.Chronicle.Running {
-			fmt.Printf("Chronicle: running (%s)\n", result.Chronicle.SessionName)
-		} else {
-			fmt.Println("Chronicle: not running")
-		}
-
-		if result.Sentinel.Running {
-			fmt.Printf("Sentinel: running (%s)\n", result.Sentinel.SessionName)
-		} else {
-			fmt.Println("Sentinel: not running")
-		}
-
-		fmt.Println()
-
-		if len(result.Agents) == 0 {
-			fmt.Println("No agents registered.")
-		} else {
-			tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintf(tw, "AGENT\tSTATE\tSESSION\tWORK\n")
-			for _, a := range result.Agents {
-				sess := "-"
-				if a.State == "working" || a.State == "stalled" {
-					if a.SessionAlive {
-						sess = "alive"
-					} else {
-						sess = "dead!"
-					}
-				}
-				work := "-"
-				if a.TetherItem != "" {
-					work = fmt.Sprintf("%s: %s", a.TetherItem, a.WorkTitle)
-				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", a.Name, a.State, sess, work)
-			}
-			tw.Flush()
-			fmt.Println()
-		}
-
-		// Merge queue line.
-		mq := result.MergeQueue
-		if mq.Total == 0 {
-			fmt.Println("Merge Queue: empty")
-		} else {
-			fmt.Printf("Merge Queue: %d ready, %d in progress, %d failed\n",
-				mq.Ready, mq.Claimed, mq.Failed)
-		}
-
-		// Summary line.
-		parts := fmt.Sprintf("%d working, %d idle", result.Summary.Working, result.Summary.Idle)
-		if result.Summary.Stalled > 0 {
-			parts += fmt.Sprintf(", %d stalled", result.Summary.Stalled)
-		}
-		if result.Summary.Dead > 0 {
-			parts += fmt.Sprintf(", %d dead session", result.Summary.Dead)
-			if result.Summary.Dead > 1 {
-				parts += "s"
-			}
-		}
-		fmt.Printf("Summary: %d agents (%s)\n", result.Summary.Total, parts)
-		fmt.Printf("Health: %s\n", result.HealthString())
+		// Print rest of status (shared with sol status).
+		printWorldStatus(result)
 
 		return nil
 	},
@@ -361,8 +289,8 @@ var worldDeleteCmd = &cobra.Command{
 
 		if !worldDeleteConfirm {
 			fmt.Printf("This will permanently delete world %q:\n", name)
-			fmt.Printf("  - World database: %s/.store/%s.db\n", home, name)
-			fmt.Printf("  - World directory: %s/%s/\n", home, name)
+			fmt.Printf("  - World database: %s\n", filepath.Join(home, ".store", name+".db"))
+			fmt.Printf("  - World directory: %s\n", filepath.Join(home, name))
 			fmt.Printf("  - Agent records for world %q\n", name)
 			fmt.Println()
 			fmt.Println("Run with --confirm to proceed.")
@@ -383,9 +311,12 @@ var worldDeleteCmd = &cobra.Command{
 			}
 		}
 		if len(activeSessions) > 0 {
-			return fmt.Errorf("cannot delete world %q: %d active session(s)\n"+
-				"Stop sessions first: sol session stop %s",
-				name, len(activeSessions), activeSessions[0])
+			fmt.Fprintf(os.Stderr, "Active sessions:\n")
+			for _, s := range activeSessions {
+				fmt.Fprintf(os.Stderr, "  %s\n", s)
+			}
+			fmt.Fprintf(os.Stderr, "\nStop sessions first, e.g.: sol session stop %s\n", activeSessions[0])
+			return fmt.Errorf("cannot delete world %q: %d active session(s)", name, len(activeSessions))
 		}
 
 		// Open sphere store.
@@ -394,14 +325,8 @@ var worldDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		// Remove agents for this world.
-		if err := sphereStore.DeleteAgentsForWorld(name); err != nil {
-			sphereStore.Close()
-			return err
-		}
-
-		// Remove world record.
-		if err := sphereStore.RemoveWorld(name); err != nil {
+		// Remove all sphere-level data for this world in a single transaction.
+		if err := sphereStore.DeleteWorldData(name); err != nil {
 			sphereStore.Close()
 			return err
 		}

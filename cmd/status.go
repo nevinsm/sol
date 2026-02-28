@@ -59,7 +59,8 @@ var statusCmd = &cobra.Command{
 				return err
 			}
 		} else {
-			printStatus(result)
+			fmt.Printf("World: %s\n", result.World)
+			printWorldStatus(result)
 		}
 
 		// Exit with health code.
@@ -68,9 +69,7 @@ var statusCmd = &cobra.Command{
 	},
 }
 
-func printStatus(rs *status.WorldStatus) {
-	fmt.Printf("World: %s\n", rs.World)
-
+func printWorldStatus(rs *status.WorldStatus) {
 	if rs.Prefect.Running {
 		fmt.Printf("Prefect: running (pid %d)\n", rs.Prefect.PID)
 	} else {

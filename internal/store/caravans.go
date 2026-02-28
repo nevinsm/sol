@@ -169,6 +169,15 @@ func (s *Store) AddCaravanItem(caravanID, workItemID, world string) error {
 	return nil
 }
 
+// DeleteCaravanItemsForWorld removes all caravan items for a given world.
+func (s *Store) DeleteCaravanItemsForWorld(world string) error {
+	_, err := s.db.Exec(`DELETE FROM caravan_items WHERE world = ?`, world)
+	if err != nil {
+		return fmt.Errorf("failed to delete caravan items for world %q: %w", world, err)
+	}
+	return nil
+}
+
 // RemoveCaravanItem removes a work item from a caravan.
 func (s *Store) RemoveCaravanItem(caravanID, workItemID string) error {
 	_, err := s.db.Exec(

@@ -114,6 +114,28 @@ func (s *Store) UpdateWorldRepo(name, sourceRepo string) error {
 	return nil
 }
 
+// DeleteWorldData removes all sphere-level data for a world in a single
+// transaction: caravan items, agents, and the world record.
+func (s *Store) DeleteWorldData(world string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM caravan_items WHERE world = ?`, world); err != nil {
+		return fmt.Errorf("failed to delete caravan items for world %q: %w", world, err)
+	}
+	if _, err := tx.Exec(`DELETE FROM agents WHERE world = ?`, world); err != nil {
+		return fmt.Errorf("failed to delete agents for world %q: %w", world, err)
+	}
+	if _, err := tx.Exec(`DELETE FROM worlds WHERE name = ?`, world); err != nil {
+		return fmt.Errorf("failed to remove world %q: %w", world, err)
+	}
+
+	return tx.Commit()
+}
+
 // RemoveWorld deletes a world record from the sphere DB.
 // Does NOT delete the world database file or directory — that's the
 // CLI's responsibility.
