@@ -368,10 +368,14 @@ var caravanLaunchCmd = &cobra.Command{
 			return nil
 		}
 
-		// Discover source repo.
-		sourceRepo, err := dispatch.DiscoverSourceRepo()
+		// Config-first source repo discovery.
+		worldCfg, err := config.LoadWorldConfig(caravanWorld)
 		if err != nil {
-			return fmt.Errorf("must run sol caravan launch from within a git repository: %w", err)
+			return err
+		}
+		sourceRepo, err := dispatch.ResolveSourceRepo(worldCfg)
+		if err != nil {
+			return err
 		}
 
 		worldStore, err := store.OpenWorld(caravanWorld)
@@ -389,9 +393,10 @@ var caravanLaunchCmd = &cobra.Command{
 		dispatched := 0
 		for _, st := range readyItems {
 			castOpts := dispatch.CastOpts{
-				WorkItemID: st.WorkItemID,
-				World:      caravanWorld,
-				SourceRepo: sourceRepo,
+				WorkItemID:  st.WorkItemID,
+				World:       caravanWorld,
+				SourceRepo:  sourceRepo,
+				WorldConfig: &worldCfg,
 			}
 			if caravanFormula != "" {
 				castOpts.Formula = caravanFormula

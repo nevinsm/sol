@@ -46,8 +46,15 @@ func (s *Store) GetWorld(name string) (*World, error) {
 		return nil, fmt.Errorf("failed to get world %q: %w", name, err)
 	}
 
-	w.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	w.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	var parseErr error
+	w.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+	if parseErr != nil {
+		return nil, fmt.Errorf("failed to parse created_at for world %q: %w", name, parseErr)
+	}
+	w.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+	if parseErr != nil {
+		return nil, fmt.Errorf("failed to parse updated_at for world %q: %w", name, parseErr)
+	}
 	return w, nil
 }
 
@@ -69,8 +76,15 @@ func (s *Store) ListWorlds() ([]World, error) {
 		if err := rows.Scan(&w.Name, &w.SourceRepo, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan world: %w", err)
 		}
-		w.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		w.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		var parseErr error
+		w.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse created_at for world %q: %w", w.Name, parseErr)
+		}
+		w.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse updated_at for world %q: %w", w.Name, parseErr)
+		}
 		worlds = append(worlds, w)
 	}
 	if err := rows.Err(); err != nil {

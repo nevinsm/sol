@@ -51,8 +51,15 @@ func (s *Store) GetAgent(id string) (*Agent, error) {
 	}
 
 	a.TetherItem = tetherItem.String
-	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	var parseErr error
+	a.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+	if parseErr != nil {
+		return nil, fmt.Errorf("failed to parse created_at for agent %q: %w", id, parseErr)
+	}
+	a.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+	if parseErr != nil {
+		return nil, fmt.Errorf("failed to parse updated_at for agent %q: %w", id, parseErr)
+	}
 	return a, nil
 }
 
@@ -114,8 +121,15 @@ func (s *Store) ListAgents(world string, state string) ([]Agent, error) {
 			return nil, fmt.Errorf("failed to scan agent: %w", err)
 		}
 		a.TetherItem = tetherItem.String
-		a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		var parseErr error
+		a.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse created_at for agent %q: %w", a.ID, parseErr)
+		}
+		a.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse updated_at for agent %q: %w", a.ID, parseErr)
+		}
 		agents = append(agents, a)
 	}
 	if err := rows.Err(); err != nil {
@@ -153,7 +167,14 @@ func (s *Store) FindIdleAgent(world string) (*Agent, error) {
 	}
 
 	a.TetherItem = tetherItem.String
-	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	var parseErr error
+	a.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+	if parseErr != nil {
+		return nil, fmt.Errorf("failed to parse created_at for agent %q: %w", a.ID, parseErr)
+	}
+	a.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+	if parseErr != nil {
+		return nil, fmt.Errorf("failed to parse updated_at for agent %q: %w", a.ID, parseErr)
+	}
 	return a, nil
 }

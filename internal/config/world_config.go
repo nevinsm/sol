@@ -67,6 +67,8 @@ func LoadWorldConfig(world string) (WorldConfig, error) {
 		if _, err := toml.DecodeFile(globalPath, &cfg); err != nil {
 			return cfg, fmt.Errorf("failed to parse %s: %w", globalPath, err)
 		}
+	} else if !os.IsNotExist(err) {
+		return cfg, fmt.Errorf("failed to check %s: %w", globalPath, err)
 	}
 
 	// Layer world config.
@@ -75,6 +77,8 @@ func LoadWorldConfig(world string) (WorldConfig, error) {
 		if _, err := toml.DecodeFile(worldPath, &cfg); err != nil {
 			return cfg, fmt.Errorf("failed to parse %s: %w", worldPath, err)
 		}
+	} else if !os.IsNotExist(err) {
+		return cfg, fmt.Errorf("failed to check %s: %w", worldPath, err)
 	}
 
 	return cfg, nil
@@ -85,7 +89,7 @@ func WriteWorldConfig(world string, cfg WorldConfig) error {
 	path := WorldConfigPath(world)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+		return fmt.Errorf("failed to create config directory %q: %w", dir, err)
 	}
 
 	f, err := os.Create(path)
@@ -98,5 +102,5 @@ func WriteWorldConfig(world string, cfg WorldConfig) error {
 	if err := enc.Encode(cfg); err != nil {
 		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
-	return nil
+	return f.Close()
 }

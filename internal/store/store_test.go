@@ -110,7 +110,7 @@ func TestSphereSchemaCreation(t *testing.T) {
 	}
 }
 
-func TestMigrateSphereV4(t *testing.T) {
+func TestMigrateSphereV5(t *testing.T) {
 	s := setupSphere(t)
 
 	// Verify messages table exists.
@@ -154,7 +154,7 @@ func TestMigrateSphereV4(t *testing.T) {
 	}
 }
 
-func TestMigrateSphereV1ToV4(t *testing.T) {
+func TestMigrateSphereV1ToV5(t *testing.T) {
 	dir := t.TempDir()
 	os.Setenv("SOL_HOME", dir)
 	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })

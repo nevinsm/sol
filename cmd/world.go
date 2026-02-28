@@ -153,12 +153,11 @@ var worldListCmd = &cobra.Command{
 			return err
 		}
 
-		if len(worlds) == 0 {
-			fmt.Println("No worlds initialized.")
-			return nil
-		}
-
 		if worldListJSON {
+			if len(worlds) == 0 {
+				fmt.Println("[]")
+				return nil
+			}
 			type worldJSON struct {
 				Name       string `json:"name"`
 				SourceRepo string `json:"source_repo"`
@@ -175,6 +174,11 @@ var worldListCmd = &cobra.Command{
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(items)
+		}
+
+		if len(worlds) == 0 {
+			fmt.Println("No worlds initialized.")
+			return nil
 		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
