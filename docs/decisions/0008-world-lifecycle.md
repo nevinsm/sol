@@ -42,8 +42,8 @@ world-scoped command calls `config.RequireWorld(world)` as its first
 check. This prevents accidental world creation and makes the world
 lifecycle explicit.
 
-The gate checks for `world.toml` existence — a file check, not a
-database query. This is GLASS-friendly (verifiable with `ls`), fast,
+The gate validates the world name format and checks for `world.toml`
+existence — a regex and file check, not a database query. This is GLASS-friendly (verifiable with `ls`), fast,
 and requires no database connection.
 
 Pre-Arc1 worlds (database exists but no `world.toml`) get a specific

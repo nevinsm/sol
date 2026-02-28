@@ -56,7 +56,7 @@ var worldInitCmd = &cobra.Command{
 		// Determine source repo.
 		sourceRepo := worldInitSourceRepo
 		if sourceRepo == "" {
-			repo, err := dispatch.DiscoverSourceRepo()
+			repo, err := dispatch.ResolveSourceRepo(config.WorldConfig{})
 			if err == nil {
 				sourceRepo = repo
 			}

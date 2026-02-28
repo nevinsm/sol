@@ -26,7 +26,7 @@ Binary is `bin/sol`. No remaining references to old naming in source.
 Explicit world management — the biggest operational gap.
 
 - `sol world init <name>` — create world database, directory structure, optional source repo association
-- `sol world list` — discover all worlds from `.store/` directory
+- `sol world list` — list all registered worlds from sphere database
 - `sol world status <name>` — aggregate view (agents, work items, active sessions, config)
 - `sol world delete <name>` — safe teardown with confirmation
 - Source repo association — persisted in world.toml, no longer relies on cwd for `cast`

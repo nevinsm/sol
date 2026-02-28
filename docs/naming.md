@@ -35,7 +35,7 @@ structure; the action layer names the mechanisms.
 | Term | Definition | Replaces |
 |---|---|---|
 | **Tether** | The durability primitive. A file at `$SOL_HOME/{world}/outposts/{agent}/.tether` that binds an agent to a work item. If the tether exists, the work is assigned. | Tether |
-| **Charter** | *(Reserved for future use — per-world configuration file.)* | — |
+| **Charter** | Per-world configuration file (`world.toml`). Defines source repo, agent capacity, model tier, and forge settings. Layered with global `sol.toml`. | `world.toml` |
 
 ## Processes
 
