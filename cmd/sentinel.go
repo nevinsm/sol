@@ -44,7 +44,12 @@ var sentinelRunCmd = &cobra.Command{
 		}
 		defer worldStore.Close()
 
-		sourceRepo, err := dispatch.DiscoverSourceRepo()
+		// Config-first source repo discovery.
+		worldCfg, err := config.LoadWorldConfig(world)
+		if err != nil {
+			return err
+		}
+		sourceRepo, err := dispatch.ResolveSourceRepo(worldCfg)
 		if err != nil {
 			return err
 		}

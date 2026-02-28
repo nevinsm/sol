@@ -28,8 +28,7 @@ func TestDefaultWorldConfig(t *testing.T) {
 
 func TestLoadWorldConfigNoFiles(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	cfg, err := LoadWorldConfig("testworld")
 	if err != nil {
@@ -46,8 +45,7 @@ func TestLoadWorldConfigNoFiles(t *testing.T) {
 
 func TestLoadWorldConfigGlobalOnly(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	// Write sol.toml with model_tier="opus".
 	globalPath := filepath.Join(dir, "sol.toml")
@@ -69,8 +67,7 @@ func TestLoadWorldConfigGlobalOnly(t *testing.T) {
 
 func TestLoadWorldConfigWorldOverridesGlobal(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	// Write sol.toml with model_tier="opus".
 	globalPath := filepath.Join(dir, "sol.toml")
@@ -99,8 +96,7 @@ func TestLoadWorldConfigWorldOverridesGlobal(t *testing.T) {
 
 func TestLoadWorldConfigPartialOverride(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	// Write world.toml with only [world] source_repo.
 	worldDir := filepath.Join(dir, "testworld")
@@ -133,8 +129,7 @@ func TestLoadWorldConfigPartialOverride(t *testing.T) {
 
 func TestLoadWorldConfigQualityGates(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	// Write world.toml with quality_gates.
 	worldDir := filepath.Join(dir, "testworld")
@@ -164,8 +159,7 @@ func TestLoadWorldConfigQualityGates(t *testing.T) {
 
 func TestWriteWorldConfigRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	original := WorldConfig{
 		World: WorldSection{
@@ -217,8 +211,7 @@ func TestWriteWorldConfigRoundTrip(t *testing.T) {
 
 func TestLoadWorldConfigInvalidTOML(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	// Write invalid TOML to world.toml.
 	worldDir := filepath.Join(dir, "testworld")
@@ -238,8 +231,7 @@ func TestLoadWorldConfigInvalidTOML(t *testing.T) {
 
 func TestWorldConfigPath(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	expected := filepath.Join(dir, "myworld", "world.toml")
 	got := WorldConfigPath("myworld")
@@ -250,8 +242,7 @@ func TestWorldConfigPath(t *testing.T) {
 
 func TestGlobalConfigPath(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	expected := filepath.Join(dir, "sol.toml")
 	got := GlobalConfigPath()
@@ -262,8 +253,7 @@ func TestGlobalConfigPath(t *testing.T) {
 
 func TestRequireWorldExists(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	// Create $SOL_HOME/{world}/world.toml.
 	worldDir := filepath.Join(dir, "testworld")
@@ -281,8 +271,7 @@ func TestRequireWorldExists(t *testing.T) {
 
 func TestRequireWorldNotExists(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	err := RequireWorld("nonexistent")
 	if err == nil {
@@ -295,8 +284,7 @@ func TestRequireWorldNotExists(t *testing.T) {
 
 func TestRequireWorldPreArc1(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	// Create $SOL_HOME/.store/{world}.db but NO world.toml.
 	storeDir := filepath.Join(dir, ".store")

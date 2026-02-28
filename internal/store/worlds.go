@@ -80,15 +80,22 @@ func (s *Store) ListWorlds() ([]World, error) {
 }
 
 // UpdateWorldRepo updates the source_repo for a world.
-// Also updates updated_at.
+// Also updates updated_at. Returns an error if the world does not exist.
 func (s *Store) UpdateWorldRepo(name, sourceRepo string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := s.db.Exec(
+	result, err := s.db.Exec(
 		`UPDATE worlds SET source_repo = ?, updated_at = ? WHERE name = ?`,
 		sourceRepo, now, name,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update world %q repo: %w", name, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check update result for world %q: %w", name, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("world %q not found", name)
 	}
 	return nil
 }

@@ -317,3 +317,65 @@ func TestWorldDeleteNotInitialized(t *testing.T) {
 		t.Fatalf("expected 'does not exist' error, got: %s", out)
 	}
 }
+
+func TestWorldStatusJSON(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp/fakerepo")
+
+	out, err := runGT(t, gtHome, "world", "status", "myworld", "--json")
+	if err != nil {
+		t.Fatalf("world status --json failed: %v: %s", err, out)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("failed to parse JSON: %v: %s", err, out)
+	}
+
+	// Verify config section is present with source_repo (snake_case JSON keys).
+	cfg, ok := result["config"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected 'config' object in JSON output, got: %s", out)
+	}
+	world, ok := cfg["world"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected 'world' object in config, got: %v", cfg)
+	}
+	if world["source_repo"] != "/tmp/fakerepo" {
+		t.Fatalf("expected source_repo '/tmp/fakerepo', got: %v", world["source_repo"])
+	}
+}
+
+func TestWorldInitWithoutSourceRepo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	// Run world init without --source-repo from a non-git directory.
+	cmd := runGTWithDir(t, gtHome, "/tmp", "world", "init", "myworld")
+	if cmd.err != nil {
+		t.Fatalf("world init without --source-repo failed: %v: %s", cmd.err, cmd.out)
+	}
+
+	// Verify world.toml exists.
+	tomlPath := filepath.Join(gtHome, "myworld", "world.toml")
+	if _, err := os.Stat(tomlPath); os.IsNotExist(err) {
+		t.Fatal("world.toml not created")
+	}
+
+	// Verify source_repo is empty in the TOML.
+	data, err := os.ReadFile(tomlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "source_repo = \"/") {
+		t.Fatalf("expected empty source_repo, but found a path in world.toml: %s", data)
+	}
+}

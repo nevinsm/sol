@@ -50,7 +50,7 @@ var statusCmd = &cobra.Command{
 		}
 
 		// Gather caravan info (non-fatal if unavailable).
-		status.GatherCaravans(result, sphereStore, store.OpenWorld)
+		status.GatherCaravans(result, sphereStore, gatedWorldOpener)
 
 		if statusJSON {
 			enc := json.NewEncoder(os.Stdout)

@@ -134,7 +134,7 @@ var caravanCheckCmd = &cobra.Command{
 			return err
 		}
 
-		statuses, err := sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+		statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
 		if err != nil {
 			return err
 		}
@@ -219,7 +219,7 @@ var caravanStatusCmd = &cobra.Command{
 				return err
 			}
 
-			statuses, err := sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+			statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
 			if err != nil {
 				return err
 			}
@@ -295,7 +295,7 @@ var caravanStatusCmd = &cobra.Command{
 
 			// Count statuses.
 			var done, readyCount, blockedCount int
-			statuses, err := sphereStore.CheckCaravanReadiness(c.ID, store.OpenWorld)
+			statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
 			if err != nil {
 				// If we can't check readiness, just show item count.
 				fmt.Fprintf(tw, "  %s\t%s\t%d items\n", c.ID, c.Name, len(items))
@@ -341,7 +341,7 @@ var caravanLaunchCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
-		statuses, err := sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+		statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
 		if err != nil {
 			return err
 		}
@@ -418,7 +418,7 @@ var caravanLaunchCmd = &cobra.Command{
 		}
 
 		// Try to auto-close.
-		closed, err := sphereStore.TryCloseCaravan(caravanID, store.OpenWorld)
+		closed, err := sphereStore.TryCloseCaravan(caravanID, gatedWorldOpener)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to check caravan closure: %v\n", err)
 		} else if closed {
@@ -440,8 +440,15 @@ var caravanLaunchCmd = &cobra.Command{
 
 // helpers
 
+func gatedWorldOpener(world string) (*store.Store, error) {
+	if err := config.RequireWorld(world); err != nil {
+		return nil, err
+	}
+	return store.OpenWorld(world)
+}
+
 func itemTitle(workItemID, world string) string {
-	worldStore, err := store.OpenWorld(world)
+	worldStore, err := gatedWorldOpener(world)
 	if err != nil {
 		return "(unknown)"
 	}
@@ -469,7 +476,7 @@ func parseCaravanVarFlags(vars []string) map[string]string {
 }
 
 func blockedByList(workItemID, world string) string {
-	worldStore, err := store.OpenWorld(world)
+	worldStore, err := gatedWorldOpener(world)
 	if err != nil {
 		return ""
 	}

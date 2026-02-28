@@ -69,12 +69,13 @@ type CastResult struct {
 
 // CastOpts holds the inputs for a cast operation.
 type CastOpts struct {
-	WorkItemID string
-	World      string
-	AgentName  string            // optional: if empty, find an idle agent
-	SourceRepo string            // path to the source git repo
-	Formula    string            // optional: formula name for workflow
-	Variables  map[string]string // optional: workflow variables
+	WorkItemID  string
+	World       string
+	AgentName   string              // optional: if empty, find an idle agent
+	SourceRepo  string              // path to the source git repo
+	Formula     string              // optional: formula name for workflow
+	Variables   map[string]string   // optional: workflow variables
+	WorldConfig *config.WorldConfig // optional: pre-loaded config (avoids double load)
 }
 
 // Cast assigns a work item to an outpost agent and starts its session.
@@ -83,7 +84,16 @@ type CastOpts struct {
 // The logger parameter is optional — if nil, no events are emitted.
 func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*CastResult, error) {
 	// 0. Load world config once for all consumers.
-	worldCfg, _ := config.LoadWorldConfig(opts.World)
+	var worldCfg config.WorldConfig
+	if opts.WorldConfig != nil {
+		worldCfg = *opts.WorldConfig
+	} else {
+		var err error
+		worldCfg, err = config.LoadWorldConfig(opts.World)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load world config for %q: %w", opts.World, err)
+		}
+	}
 
 	// 1. Acquire per-work-item advisory lock to prevent double dispatch.
 	lock, err := AcquireWorkItemLock(opts.WorkItemID)
@@ -686,6 +696,19 @@ func DiscoverSourceRepo() (string, error) {
 		return "", fmt.Errorf("not in a git repository: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// ResolveSourceRepo returns the source repo from config, falling back to
+// CWD-based git discovery if the config value is empty.
+func ResolveSourceRepo(cfg config.WorldConfig) (string, error) {
+	if cfg.World.SourceRepo != "" {
+		return cfg.World.SourceRepo, nil
+	}
+	repo, err := DiscoverSourceRepo()
+	if err != nil {
+		return "", fmt.Errorf("no source_repo in world.toml and not in a git repo: %w", err)
+	}
+	return repo, nil
 }
 
 // OpenWorldStore opens a world store for the given world name. Convenience wrapper.

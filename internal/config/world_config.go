@@ -10,27 +10,27 @@ import (
 
 // WorldConfig holds all configuration for a world.
 type WorldConfig struct {
-	World  WorldSection  `toml:"world"`
-	Agents AgentsSection `toml:"agents"`
-	Forge  ForgeSection  `toml:"forge"`
+	World  WorldSection  `toml:"world" json:"world"`
+	Agents AgentsSection `toml:"agents" json:"agents"`
+	Forge  ForgeSection  `toml:"forge" json:"forge"`
 }
 
 // WorldSection holds world-level settings.
 type WorldSection struct {
-	SourceRepo string `toml:"source_repo"`
+	SourceRepo string `toml:"source_repo" json:"source_repo"`
 }
 
 // AgentsSection holds agent-related settings.
 type AgentsSection struct {
-	Capacity     int    `toml:"capacity"`       // 0 = unlimited
-	NamePoolPath string `toml:"name_pool_path"` // empty = embedded default
-	ModelTier    string `toml:"model_tier"`      // "sonnet", "opus", "haiku"
+	Capacity     int    `toml:"capacity" json:"capacity"`               // 0 = unlimited
+	NamePoolPath string `toml:"name_pool_path" json:"name_pool_path"`   // empty = embedded default
+	ModelTier    string `toml:"model_tier" json:"model_tier"`           // "sonnet", "opus", "haiku"
 }
 
 // ForgeSection holds forge/merge pipeline settings.
 type ForgeSection struct {
-	TargetBranch string   `toml:"target_branch"`
-	QualityGates []string `toml:"quality_gates"`
+	TargetBranch string   `toml:"target_branch" json:"target_branch"`
+	QualityGates []string `toml:"quality_gates" json:"quality_gates"`
 }
 
 // DefaultWorldConfig returns a WorldConfig with built-in defaults.

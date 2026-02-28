@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -145,6 +146,18 @@ func TestUpdateWorldRepo(t *testing.T) {
 	}
 	if after.UpdatedAt.Year() == 2020 {
 		t.Fatalf("expected updated_at to change from old value, got %v", after.UpdatedAt)
+	}
+}
+
+func TestUpdateWorldRepoNonexistent(t *testing.T) {
+	s := setupSphere(t)
+
+	err := s.UpdateWorldRepo("nonexistent", "/some/path")
+	if err == nil {
+		t.Fatal("expected error updating nonexistent world")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected 'not found' error, got: %v", err)
 	}
 }
 

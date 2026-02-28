@@ -36,6 +36,10 @@ var worldInitCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
+		if err := config.ValidateWorldName(name); err != nil {
+			return err
+		}
+
 		// Check if world.toml already exists.
 		tomlPath := config.WorldConfigPath(name)
 		if _, err := os.Stat(tomlPath); err == nil {
@@ -219,7 +223,7 @@ var worldStatusCmd = &cobra.Command{
 			return err
 		}
 
-		status.GatherCaravans(result, sphereStore, store.OpenWorld)
+		status.GatherCaravans(result, sphereStore, gatedWorldOpener)
 
 		if worldStatusJSON {
 			type worldStatusOutput struct {
@@ -399,11 +403,13 @@ var worldDeleteCmd = &cobra.Command{
 		}
 		sphereStore.Close()
 
-		// Delete world database file.
+		// Delete world database file and SQLite sidecar files.
 		dbPath := filepath.Join(config.StoreDir(), name+".db")
 		if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove world database: %w", err)
 		}
+		os.Remove(dbPath + "-wal")
+		os.Remove(dbPath + "-shm")
 
 		// Delete world directory tree.
 		worldDir := config.WorldDir(name)

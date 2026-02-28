@@ -34,13 +34,9 @@ var castCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		sourceRepo := worldCfg.World.SourceRepo
-		if sourceRepo == "" {
-			// Fallback to cwd discovery for convenience.
-			sourceRepo, err = dispatch.DiscoverSourceRepo()
-			if err != nil {
-				return fmt.Errorf("no source_repo in world.toml and not in a git repo: %w", err)
-			}
+		sourceRepo, err := dispatch.ResolveSourceRepo(worldCfg)
+		if err != nil {
+			return err
 		}
 
 		worldStore, err := store.OpenWorld(world)
@@ -62,12 +58,13 @@ var castCmd = &cobra.Command{
 		vars := parseVarFlags(castVars)
 
 		result, err := dispatch.Cast(dispatch.CastOpts{
-			WorkItemID: workItemID,
-			World:      world,
-			AgentName:  castAgent,
-			SourceRepo: sourceRepo,
-			Formula:    castFormula,
-			Variables:  vars,
+			WorkItemID:  workItemID,
+			World:       world,
+			AgentName:   castAgent,
+			SourceRepo:  sourceRepo,
+			Formula:     castFormula,
+			Variables:   vars,
+			WorldConfig: &worldCfg,
 		}, worldStore, sphereStore, mgr, logger)
 		if err != nil {
 			return err

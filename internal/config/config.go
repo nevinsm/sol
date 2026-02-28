@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
 // Home returns the SOL_HOME directory. Defaults to ~/sol.
@@ -33,6 +34,19 @@ func WorldDir(world string) string {
 	return filepath.Join(Home(), world)
 }
 
+var validWorldName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+
+// ValidateWorldName checks that a world name contains only safe characters.
+func ValidateWorldName(name string) error {
+	if name == "" {
+		return fmt.Errorf("world name must not be empty")
+	}
+	if !validWorldName.MatchString(name) {
+		return fmt.Errorf("invalid world name %q: must match [a-zA-Z0-9][a-zA-Z0-9_-]*", name)
+	}
+	return nil
+}
+
 // RequireWorld checks that a world has been initialized.
 // Returns nil if world.toml exists at $SOL_HOME/{world}/world.toml.
 //
@@ -41,6 +55,9 @@ func WorldDir(world string) string {
 //   "sol world init <world>" to adopt the existing world.
 // - Nonexistent world: tells user to run "sol world init <world>".
 func RequireWorld(world string) error {
+	if err := ValidateWorldName(world); err != nil {
+		return err
+	}
 	path := WorldConfigPath(world)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		// Check if this is a pre-Arc1 world (DB exists but no config).

@@ -57,11 +57,22 @@ func TestForgeUsesConfigQualityGates(t *testing.T) {
 		"forge": "quality_gates = [\"echo gate-ok\"]",
 	})
 
-	// Verify the config was written correctly.
-	tomlPath := filepath.Join(gtHome, "myworld", "world.toml")
-	data, _ := os.ReadFile(tomlPath)
-	if !strings.Contains(string(data), "gate-ok") {
-		t.Fatalf("world.toml missing quality_gates: %s", data)
+	// Create forge worktree directory (RunGates uses cmd.Dir = worktree).
+	forgeWorktree := filepath.Join(gtHome, "myworld", "forge", "worktree")
+	if err := os.MkdirAll(forgeWorktree, 0o755); err != nil {
+		t.Fatalf("create forge worktree dir: %v", err)
+	}
+
+	// Run the gates and verify they execute.
+	cmd := runGTWithDir(t, gtHome, sourceRepo, "forge", "run-gates", "myworld")
+	if cmd.err != nil {
+		t.Fatalf("forge run-gates failed: %v: %s", cmd.err, cmd.out)
+	}
+	if !strings.Contains(cmd.out, "[PASS]") {
+		t.Errorf("expected [PASS] in output, got: %s", cmd.out)
+	}
+	if !strings.Contains(cmd.out, "echo gate-ok") {
+		t.Errorf("expected 'echo gate-ok' in output, got: %s", cmd.out)
 	}
 }
 
