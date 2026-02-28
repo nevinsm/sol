@@ -32,14 +32,20 @@ Explicit world management — the biggest operational gap.
 
 - `sol world init <name>` — create world database, directory structure, optional source repo association
 - `sol world list` — discover all worlds from `.store/` directory
-- `sol world status <name>` — aggregate view (agents, work items, active sessions)
+- `sol world status <name>` — aggregate view (agents, work items, active sessions, config)
 - `sol world delete <name>` — safe teardown with confirmation
-- Source repo association — persist per-world, don't rely on cwd for `cast`
+- Source repo association — persisted in world.toml, no longer relies on cwd for `cast`
 - Configuration files: `sol.toml` (global), `world.toml` (per-world)
 - Configuration surface: quality gates, agent capacity, model tier, name pool path
+- Hard gate: `sol world init` required before any world operation
 
 **Acceptance:** Operator can fully manage world lifecycle through CLI.
 Worlds are explicit, discoverable, and configurable.
+
+**Status:** Complete.
+- Schema V5: `worlds` table in sphere.db
+- Config: `world.toml` (per-world), `sol.toml` (global), three-layer resolution
+- ADR-0008: Dual-store design rationale
 
 ---
 

@@ -19,6 +19,8 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Cast**: Dispatch work to an agent (creates worktree, tethers work, starts session)
 - **Prime**: Inject execution context on session start
 - **Resolve**: Signal work complete (push branch, clear tether, stop session)
+- **World Config**: `world.toml` per-world, `sol.toml` global — layered TOML configuration
+- **World Lifecycle**: `sol world init` required before use — explicit world creation
 
 ## Commits
 Use [Conventional Commits](https://www.conventionalcommits.org/):
@@ -37,3 +39,5 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - Session names: sol-{world}-{agentName} (e.g., sol-myworld-Toast)
 - Error messages include context: "failed to open world database %q: %w"
 - SQLite connections always set: journal_mode=WAL, busy_timeout=5000, foreign_keys=ON
+- World config path: $SOL_HOME/{world}/world.toml
+- Global config path: $SOL_HOME/sol.toml
