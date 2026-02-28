@@ -16,42 +16,42 @@ structure; the action layer names the mechanisms.
 
 ## Structure
 
-| Term | Definition | Replaces |
+| Term | Definition | Replaces (Gastown) |
 |---|---|---|
-| **World** | A project or workspace. Contains agents, work items, and configuration. Each world has its own database and directory tree. | World |
-| **Outpost** | A worker agent's station within a world. Directory at `$SOL_HOME/{world}/outposts/{agent}/`. | Outpost |
-| **Sphere** | The global registry connecting all worlds. Stores agents, messages, escalations, caravans. Database: `sphere.db`. | Sphere |
+| **World** | A project or workspace. Contains agents, work items, and configuration. Each world has its own database and directory tree. | Rig |
+| **Outpost** | A worker agent's station within a world. Directory at `$SOL_HOME/{world}/outposts/{agent}/`. | Polecat |
+| **Sphere** | The global registry connecting all worlds. Stores agents, messages, escalations, caravans. Database: `sphere.db`. | Town |
 
 ## Actions
 
-| Term | Definition | Replaces |
+| Term | Definition | Replaces (Gastown) |
 |---|---|---|
-| **Cast** | Dispatch work to an agent. Creates a worktree, tethers work, starts a session. From "farcaster" — instantaneous transit. | Cast |
+| **Cast** | Dispatch work to an agent. Creates a worktree, tethers work, starts a session. From "farcaster" — instantaneous transit. | Sling |
 | **Prime** | Inject execution context into a session on startup. Unchanged — already perfect. | Prime |
 | **Resolve** | Signal that work is complete. Push branch, clear tether, stop session. | Done |
 
 ## Primitives
 
-| Term | Definition | Replaces |
+| Term | Definition | Replaces (Gastown) |
 |---|---|---|
-| **Tether** | The durability primitive. A file at `$SOL_HOME/{world}/outposts/{agent}/.tether` that binds an agent to a work item. If the tether exists, the work is assigned. | Tether |
-| **Charter** | Per-world configuration file (`world.toml`). Defines source repo, agent capacity, model tier, and forge settings. Layered with global `sol.toml`. | `world.toml` |
+| **Tether** | The durability primitive. A file at `$SOL_HOME/{world}/outposts/{agent}/.tether` that binds an agent to a work item. If the tether exists, the work is assigned. | Hook |
+| **Charter** | Per-world configuration file (`world.toml`). Defines source repo, agent capacity, model tier, and forge settings. Layered with global `sol.toml`. | *(new in Arc 1)* |
 
 ## Processes
 
-| Term | Definition | Replaces |
+| Term | Definition | Replaces (Gastown) |
 |---|---|---|
-| **Prefect** | Sphere-wide prefect. Manages agent health across all worlds, respawns dead sessions, detects mass failures. | Prefect |
-| **Forge** | Merge pipeline. Processes merge requests through quality gates, resolves conflicts, integrates output. | Forge |
-| **Sentinel** | Per-world health monitor. Detects stalled/stuck/zombie agents, performs AI-assisted assessment, injects nudges. | Sentinel |
-| **Chronicle** | Event log maintenance. Deduplication, aggregation, feed truncation. | Chronicle |
-| **Consul** | System-level patrol. Stale tether recovery, stranded caravan feeding, lifecycle management, heartbeat monitoring. Operates across all worlds. | Consul |
+| **Prefect** | Sphere-wide orchestrator. Manages agent health across all worlds, respawns dead sessions, detects mass failures. | Supervisor |
+| **Forge** | Merge pipeline. Processes merge requests through quality gates, resolves conflicts, integrates output. | Refinery |
+| **Sentinel** | Per-world health monitor. Detects stalled/stuck/zombie agents, performs AI-assisted assessment, injects nudges. | Witness |
+| **Chronicle** | Event log maintenance. Deduplication, aggregation, feed truncation. | Curator |
+| **Consul** | System-level patrol. Stale tether recovery, stranded caravan feeding, lifecycle management, heartbeat monitoring. Operates across all worlds. | Deacon |
 
 ## Grouping
 
-| Term | Definition | Replaces |
+| Term | Definition | Replaces (Gastown) |
 |---|---|---|
-| **Caravan** | A batch of related work items dispatched together. Tracks readiness and dependencies across worlds. | Caravan |
+| **Caravan** | A batch of related work items dispatched together. Tracks readiness and dependencies across worlds. | Convoy |
 
 ## Sessions
 
@@ -72,22 +72,22 @@ Example: `sol-myproject-Toast`
 
 ## Migration Reference
 
-For contributors familiar with the previous naming (sol/Gastown):
+For contributors familiar with the Gastown prototype naming:
 
-| Old | New |
+| Gastown (old) | Sol (current) |
 |---|---|
-| sol | sol |
-| SOL_HOME | SOL_HOME |
-| world | world |
-| outpost | outpost |
-| sphere | sphere |
-| cast | cast |
+| gt | sol |
+| GT_HOME | SOL_HOME |
+| rig | world |
+| polecat | outpost |
+| town | sphere |
+| sling | cast |
 | done | resolve |
-| tether | tether |
-| forge | forge |
-| sentinel | sentinel |
-| chronicle | chronicle |
-| consul | consul |
-| caravan | caravan |
-| prefect | prefect |
-| prime | prime |
+| hook | tether |
+| refinery | forge |
+| witness | sentinel |
+| curator | chronicle |
+| deacon | consul |
+| convoy | caravan |
+| supervisor | prefect |
+| prime | prime (unchanged) |

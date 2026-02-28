@@ -30,6 +30,9 @@ test-e2e: build
 	tmux kill-session -t sol-$$WORLD-$$AGENT 2>/dev/null || true && \
 	git worktree prune && \
 	\
+	echo "=== E2E: init world ===" && \
+	bin/sol world init $$WORLD --source-repo=$$(pwd) && \
+	\
 	echo "=== E2E: create agent ===" && \
 	bin/sol agent create $$AGENT --world=$$WORLD && \
 	bin/sol agent list --world=$$WORLD && \

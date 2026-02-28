@@ -55,7 +55,7 @@ the sentinel is back.
 - Mass death counting — all dead sessions still count toward the
   mass-death threshold, regardless of which component manages them
 
-**What the prefect handles in unwitnessed worlds:**
+**What the prefect handles in non-sentineled worlds:**
 - Everything, as before — full outpost supervision with backoff
 
 ### DEGRADE interaction
@@ -78,7 +78,7 @@ judgment-based coordination across all supervisory components.
 
 **Benefits:**
 - Clean ownership boundary: sentinel owns outposts in its world,
-  prefect owns infrastructure agents and unwitnessed worlds
+  prefect owns infrastructure agents and non-sentineled worlds
 - Automatic fallback: if the sentinel dies, the prefect detects the
   dead session, restarts the sentinel, and covers outposts in the
   interim (DEGRADE principle)

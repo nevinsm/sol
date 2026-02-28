@@ -5,6 +5,8 @@ Production-ready system for coordinating concurrent AI coding agents.
 ## Architecture
 - Read `docs/target-architecture.md` for the full system spec
 - Read `docs/manifesto.md` for design philosophy
+- Read `docs/naming.md` for the naming glossary
+- Read `docs/arc-roadmap.md` for the arc roadmap
 
 ## Build & Test
 - Build: `make build` (binary at `bin/sol`)

@@ -16,7 +16,7 @@ Software teams are deploying 10, 20, 30+ concurrent AI coding agents across repo
 | **Cast** | Dispatch a work item to an agent: create worktree, write tether, start session. |
 | **Prime** | Inject execution context (CLAUDE.md, tether content, workflow state) when a session starts. |
 | **Resolve** | Signal completion: push branch, update state, clear tether, stop session. |
-| **Outpost** | A worker agent. The base unit of execution. |
+| **Outpost** | A worker agent's station within a world. Directory at `$SOL_HOME/{world}/outposts/{agent}/`. |
 | **Sentinel** | Per-world health monitor. Detects stalls, zombies, and stuck agents. |
 | **Forge** | Merge pipeline. Processes completed work through quality gates into the target branch. |
 | **Consul** | Sphere-level patrol. Recovers stale tethers, feeds caravans, handles lifecycle requests. |
@@ -32,11 +32,13 @@ Software teams are deploying 10, 20, 30+ concurrent AI coding agents across repo
 make build
 make install  # copies bin/sol to /usr/local/bin
 
-# Set up a world and agents
+# Initialize a world
 export SOL_HOME=~/sol
+sol world init myworld --source-repo=/path/to/your/repo
+
+# Create agents (or let cast auto-provision them)
 sol agent create Toast --world=myworld
 sol agent create Rye --world=myworld
-sol agent create Pumpernickel --world=myworld
 
 # Create work items
 sol store create --world=myworld --title="Implement feature X" --description="..."
@@ -51,6 +53,7 @@ sol session attach sol-myworld-Toast
 
 # Check status
 sol status myworld
+sol world status myworld          # includes world config
 sol store list --world=myworld
 sol session list
 
@@ -75,9 +78,9 @@ sol prefect run --consul           # includes sphere-level patrol
 ```
 Prefect
 ├── Sentinel (per-world)     — health monitoring, stall detection, AI assessment
-├── Forge (per-world)    — merge queue, quality gates, conflict resolution
-├── Consul (sphere-level)   — stale tether recovery, caravan feeding, lifecycle
-└── Outposts (per-world)    — worker agents executing tethered work items
+├── Forge (per-world)        — merge queue, quality gates, conflict resolution
+├── Consul (sphere-level)    — stale tether recovery, caravan feeding, lifecycle
+└── Outposts (per-world)     — worker agents executing tethered work items
 ```
 
 The prefect manages the lifecycle of all other components. Sentinel monitors outpost health within a world. Forge processes completed work into the target branch. Consul patrols across all worlds for system-level recovery. Each component can fail independently without taking down the others.
@@ -86,7 +89,7 @@ The prefect manages the lifecycle of all other components. Sentinel monitors out
 
 Two SQLite databases (WAL mode, `busy_timeout=5000`, `foreign_keys=ON`):
 
-- **Sphere DB** (`$SOL_HOME/.store/sphere.db`) — Agents, messages, escalations, caravans. Shared across all worlds.
+- **Sphere DB** (`$SOL_HOME/.store/sphere.db`) — Agents, messages, escalations, caravans, world registry. Shared across all worlds.
 - **World DB** (`$SOL_HOME/.store/{world}.db`) — Work items, labels, merge requests, dependencies. One per world.
 
 State on the filesystem:
@@ -94,17 +97,28 @@ State on the filesystem:
 - **Tethers** — `$SOL_HOME/{world}/outposts/{agent}/.tether`
 - **Workflows** — `$SOL_HOME/{world}/outposts/{agent}/.workflow/`
 - **Formulas** — `$SOL_HOME/formulas/{name}/`
-- **Events** — `$SOL_HOME/.feed/events.jsonl`
+- **Events** — `$SOL_HOME/.events.jsonl` (raw), `$SOL_HOME/.feed.jsonl` (curated)
+- **World Config** — `$SOL_HOME/{world}/world.toml`
+- **Global Config** — `$SOL_HOME/sol.toml`
 
 ## CLI Reference
+
+### World Management
+
+| Command | Description |
+|---------|-------------|
+| `sol world init <name>` | Create a world (database, directory tree, config). `--source-repo` associates a git repository. |
+| `sol world list` | List all registered worlds. `--json` for machine-readable output. |
+| `sol world status <name>` | Show world status including config, agents, work items, and health. `--json` supported. |
+| `sol world delete <name>` | Delete a world and all associated data. Requires `--confirm`. Refuses if sessions are active. |
 
 ### Dispatch
 
 | Command | Description |
 |---------|-------------|
 | `sol cast <item-id> <world>` | Assign work to an agent, create worktree, start session |
-| `sol prime --world=R --agent=A` | Assemble and print execution context for an agent |
-| `sol resolve --world=R --agent=A` | Signal completion: push branch, update state, clear tether |
+| `sol prime --world=W --agent=A` | Assemble and print execution context for an agent |
+| `sol resolve --world=W --agent=A` | Signal completion: push branch, update state, clear tether |
 
 `cast` accepts `--agent` (auto-selects idle if omitted), `--formula`, and `--var` flags.
 
@@ -112,27 +126,27 @@ State on the filesystem:
 
 | Command | Description |
 |---------|-------------|
-| `sol agent create <name> --world=R` | Create an agent (default role: outpost) |
-| `sol agent list --world=R` | List agents in a world |
+| `sol agent create <name> --world=W` | Create an agent (default role: agent) |
+| `sol agent list --world=W` | List agents in a world |
 
 ### Store (Work Items)
 
 | Command | Description |
 |---------|-------------|
-| `sol store create --world=R --title=T` | Create a work item |
-| `sol store get <id> --world=R` | Get a work item by ID |
-| `sol store list --world=R` | List work items (filter by `--status`, `--label`, `--assignee`) |
-| `sol store update <id> --world=R` | Update status, assignee, or priority |
-| `sol store close <id> --world=R` | Close a work item |
-| `sol store query --world=R --sql=Q` | Run a read-only SQL query |
+| `sol store create --world=W --title=T` | Create a work item |
+| `sol store get <id> --world=W` | Get a work item by ID |
+| `sol store list --world=W` | List work items (filter by `--status`, `--label`, `--assignee`) |
+| `sol store update <id> --world=W` | Update status, assignee, or priority |
+| `sol store close <id> --world=W` | Close a work item |
+| `sol store query --world=W --sql=Q` | Run a read-only SQL query |
 
 ### Dependencies
 
 | Command | Description |
 |---------|-------------|
-| `sol store dep add <from> <to> --world=R` | Add a dependency (from depends on to) |
-| `sol store dep remove <from> <to> --world=R` | Remove a dependency |
-| `sol store dep list <id> --world=R` | List dependencies for a work item |
+| `sol store dep add <from> <to> --world=W` | Add a dependency (from depends on to) |
+| `sol store dep remove <from> <to> --world=W` | Remove a dependency |
+| `sol store dep list <id> --world=W` | List dependencies for a work item |
 
 ### Sessions
 
@@ -152,7 +166,7 @@ State on the filesystem:
 |---------|-------------|
 | `sol prefect run` | Run the prefect (foreground). `--consul` enables sphere-level patrol. |
 | `sol prefect stop` | Stop the running prefect |
-| `sol status <world>` | Show world status |
+| `sol status <world>` | Show world status (exit code reflects health) |
 
 ### Sentinel (Per-World Health Monitor)
 
@@ -195,7 +209,7 @@ Toolbox subcommands (used by the forge Claude session):
 | `sol mail inbox` | List pending messages |
 | `sol mail read <msg-id>` | Read a message (marks as read) |
 | `sol mail ack <msg-id>` | Acknowledge a message |
-| `sol mail check` | Count unread messages |
+| `sol mail check` | Count unread messages (exit 1 if unread) |
 
 ### Escalations
 
@@ -221,9 +235,9 @@ Toolbox subcommands (used by the forge Claude session):
 | Command | Description |
 |---------|-------------|
 | `sol workflow instantiate <formula>` | Instantiate a workflow from a formula |
-| `sol workflow current --world=R --agent=A` | Print current step instructions |
-| `sol workflow advance --world=R --agent=A` | Advance to next step |
-| `sol workflow status --world=R --agent=A` | Show workflow progress |
+| `sol workflow current --world=W --agent=A` | Print current step instructions |
+| `sol workflow advance --world=W --agent=A` | Advance to next step |
+| `sol workflow status --world=W --agent=A` | Show workflow progress |
 
 ### Caravans
 
@@ -233,13 +247,13 @@ Toolbox subcommands (used by the forge Claude session):
 | `sol caravan add <caravan-id> <items...>` | Add items to a caravan |
 | `sol caravan check <caravan-id>` | Check readiness of caravan items |
 | `sol caravan status [caravan-id]` | Show caravan status |
-| `sol caravan launch <caravan-id> --world=R` | Dispatch ready items in a caravan |
+| `sol caravan launch <caravan-id> --world=W` | Dispatch ready items in a caravan |
 
 ### Handoff (Session Continuity)
 
 | Command | Description |
 |---------|-------------|
-| `sol handoff --world=R --agent=A` | Hand off to a fresh session with context preservation |
+| `sol handoff --world=W --agent=A` | Hand off to a fresh session with context preservation |
 
 `--summary` provides a progress summary. Captures tmux output, git state, and workflow progress into `.handoff.json`, then restarts the session with that context.
 
@@ -258,60 +272,72 @@ The system was built in six incremental loops. Each loop produces a fully workin
 
 | Loop | What it added | Status |
 |------|--------------|--------|
-| **Loop 0** | Single agent dispatch — store, session, tether, cast, prime, done | Complete |
+| **Loop 0** | Single agent dispatch — store, session, tether, cast, prime, resolve | Complete |
 | **Loop 1** | Multi-agent supervision — prefect, agent respawn, health checks | Complete |
 | **Loop 2** | Merge pipeline — forge, quality gates, conflict resolution | Complete |
 | **Loop 3** | Observability — sentinel, events, chronicle, mail system | Complete |
 | **Loop 4** | Workflows and caravans — formulas, step-based execution, batch dispatch | Complete |
 | **Loop 5** | Full orchestration — consul, escalations, handoff, lifecycle management | Complete |
 
+Post-build arcs refine and operationalize:
+
+| Arc | What it does | Status |
+|-----|-------------|--------|
+| **Arc 0** | Rename (gt → sol) — full codebase rename from Gastown prototype | Complete |
+| **Arc 1** | World lifecycle — `sol world init/list/status/delete`, config files, hard gate | Complete |
+
 ## Project Structure
 
 ```
-sol-src/
+gt-src/
 ├── main.go                        Entry point
-├── Makefile                        build, test, test-e2e, install, clean
+├── Makefile                        build, test, install, clean
 ├── cmd/                            Cobra command definitions
 │   ├── root.go                     Root command, version
-│   ├── cast.go, prime.go, done.go Dispatch pipeline
+│   ├── world.go                    World lifecycle management
+│   ├── cast.go, prime.go, resolve.go  Dispatch pipeline
 │   ├── agent.go                    Agent management
 │   ├── store.go, store_dep.go      Work items and dependencies
 │   ├── session.go                  tmux session management
-│   ├── prefect.go               Top-level orchestrator
-│   ├── forge.go                 Merge pipeline + toolbox
+│   ├── prefect.go                  Top-level orchestrator
+│   ├── forge.go                    Merge pipeline + toolbox
 │   ├── status.go                   World status
-│   ├── sentinel.go                  Per-world health monitor
+│   ├── sentinel.go                 Per-world health monitor
 │   ├── feed.go, log_event.go       Event feed
-│   ├── chronicle.go                  Event chronicle
+│   ├── chronicle.go                Event chronicle
 │   ├── mail.go                     Inter-agent messaging
 │   ├── workflow.go                 Workflow engine
-│   ├── caravan.go                   Batch dispatch
+│   ├── caravan.go                  Batch dispatch
 │   ├── escalate.go, escalation.go  Escalation management
 │   ├── handoff.go                  Session continuity
 │   └── consul.go                   Sphere-level patrol
 ├── internal/
-│   ├── config/                     SOL_HOME resolution
+│   ├── config/                     SOL_HOME resolution, world config
 │   ├── store/                      SQLite: work items, agents, messages, escalations
 │   ├── session/                    tmux: start, stop, health, capture, inject
-│   ├── tether/                       Tether file read/write/clear
+│   ├── tether/                     Tether file read/write/clear
 │   ├── protocol/                   CLAUDE.md + tether script generation
 │   ├── namepool/                   Name generation
-│   ├── dispatch/                   Cast/prime/done core logic
-│   ├── prefect/                 Agent respawn, health checks
-│   ├── forge/                   Merge queue, quality gates
-│   ├── sentinel/                    Stall detection, AI assessment
+│   ├── dispatch/                   Cast/prime/resolve core logic
+│   ├── prefect/                    Agent respawn, health checks
+│   ├── forge/                      Merge queue, quality gates
+│   ├── sentinel/                   Stall detection, AI assessment
 │   ├── status/                     World status gathering
 │   ├── events/                     JSONL event feed + chronicle
 │   ├── workflow/                   Directory-based state machine, formulas
 │   ├── escalation/                 Notifier interface, log/mail/webhook
 │   ├── handoff/                    Session continuity, capture/exec
+│   ├── world/                      World config types (if separate from config)
 │   └── consul/                     Sphere-level patrol, heartbeat
 ├── test/integration/               End-to-end tests
 └── docs/
     ├── manifesto.md                Design philosophy
     ├── target-architecture.md      Full system specification
-    ├── decisions/                   Architecture Decision Records
-    └── prompts/                    Build loop prompts (loop0–loop5)
+    ├── naming.md                   Naming glossary and migration reference
+    ├── arc-roadmap.md              Post-build arc roadmap
+    ├── decisions/                  Architecture Decision Records
+    ├── reviews/                    Post-arc review reports
+    └── prompts/                    Build loop and arc prompts
 ```
 
 ## Development
@@ -319,7 +345,6 @@ sol-src/
 ```bash
 make build       # Build binary to bin/sol
 make test        # Run all unit tests
-make test-e2e    # Run end-to-end integration tests
 make install     # Install to /usr/local/bin
 make clean       # Remove build artifacts
 ```
@@ -332,11 +357,14 @@ make clean       # Remove build artifacts
 - **Timestamps**: RFC 3339 in UTC
 - **Error messages**: Include context — `"failed to open world database %q: %w"`
 - **SQLite connections**: Always set `journal_mode=WAL`, `busy_timeout=5000`, `foreign_keys=ON`
+- **World config**: `$SOL_HOME/{world}/world.toml` (per-world), `$SOL_HOME/sol.toml` (global)
 
 ## Design Documents
 
 - [Manifesto](docs/manifesto.md) — Design philosophy: what we learned from the Gastown prototype, what we're building, why stability is the feature.
 - [Target Architecture](docs/target-architecture.md) — Full system specification: components, schemas, interfaces, failure modes, build loops.
+- [Naming Glossary](docs/naming.md) — Sol naming conventions and migration reference from Gastown.
+- [Arc Roadmap](docs/arc-roadmap.md) — Post-build arc roadmap (Arc 0–4).
 - [Architecture Decision Records](docs/decisions/) — Decisions that diverge from the target architecture:
   - [ADR-0001](docs/decisions/0001-sentinel-as-go-process.md) — Sentinel as Go process with targeted AI call-outs
   - [ADR-0003](docs/decisions/0003-ai-assessment-gated-by-output-hashing.md) — AI assessment gated by tmux output hashing
@@ -344,3 +372,4 @@ make clean       # Remove build artifacts
   - [ADR-0005](docs/decisions/0005-forge-claude-session.md) — Forge as Claude session + Go toolbox (supersedes ADR-0002)
   - [ADR-0006](docs/decisions/0006-prefect-defers-to-sentinel.md) — Prefect defers outpost management to sentinel
   - [ADR-0007](docs/decisions/0007-consul-as-go-process.md) — Consul as Go process
+  - [ADR-0008](docs/decisions/0008-world-lifecycle.md) — World lifecycle with dual-store design
