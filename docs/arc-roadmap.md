@@ -58,7 +58,52 @@ clear guidance at every step. `sol doctor` catches all common setup issues.
 
 ---
 
-## Arc 3: Agent History & Cost Tracking
+## Arc 3: Envoy + Governor
+
+Persistent agents and per-world work coordination. See ADR-0009 (envoy) and
+ADR-0010 (governor).
+
+### Envoy — Context-Persistent Agents
+
+Human-directed, persistent agents for pair programming, research, and design
+collaboration. Maintain accumulated context (brief) across sessions.
+
+- Agent role `envoy` in agents table. Directory at `$SOL_HOME/{world}/envoys/{name}/`
+- Persistent worktree (like forge) — not torn down on resolve
+- Brief system: agent-maintained `.brief/memory.md` (GLASS-inspectable)
+- Claude Code hooks: `SessionStart` injects brief, `Stop` prompt hook ensures save before exit
+- `SessionStart` compact hook re-injects brief after context compaction
+- Voluntary tether: envoy can bind to existing work items or create its own
+- Resolve creates MR (through forge) but does not kill session or clear worktree
+- Sentinel and prefect skip `role=envoy` — human-supervised, not auto-respawned
+- CLI: `sol envoy create/start/stop/attach/list/brief/debrief`
+
+### Governor — Per-World Work Coordinator
+
+Singleton Claude session per world that handles natural language work dispatch.
+Architecturally similar to forge: Claude session + sol CLI toolbox (ADR-0005 pattern).
+
+- Agent role `governor` in agents table. Directory at `$SOL_HOME/{world}/governor/`
+- Read-only mirror of main at `governor/mirror/` — for codebase research, never edited
+- Mirror auto-refreshes on session start + periodic pulls
+- Uses brief system for accumulated world knowledge (patterns, agent capabilities, preferences)
+- NL work dispatch: parses operator intent → creates work items, caravans, dispatches via cast
+- Claude handles NL parsing and coordination logic; Go CLI handles mechanical operations
+- CLI: `sol governor start/stop/attach/brief/debrief` (singleton — no `create`)
+
+### Shared Infrastructure
+
+- Brief system (`.brief/memory.md` + hooks) shared between envoy and governor
+- Both use persistent Claude sessions with context that survives restarts
+- Shared namespace with outposts: agent IDs remain `{world}/{name}`
+
+**Acceptance:** Operator can create persistent envoys for collaborative work
+and start a governor for natural language work dispatch. Brief context survives
+session restarts and compaction.
+
+---
+
+## Arc 4: Agent History & Cost Tracking
 
 Audit trail and cost visibility — specified in target architecture, never built.
 
@@ -73,7 +118,7 @@ Operators can answer "what did agent X work on?" and "what did world Y cost?"
 
 ---
 
-## Arc 4: Operational Tooling
+## Arc 5: Operational Tooling
 
 Production operations at scale.
 
@@ -85,3 +130,12 @@ Production operations at scale.
 
 **Acceptance:** Operators can backup, restore, and manage multiple worlds
 without manual filesystem operations.
+
+---
+
+## Future: Consul AI Enhancement
+
+Proactive coordination at sphere level. Enhancement to consul (not a new
+component), following the sentinel pattern (ADR-0001/ADR-0003): Go patrol loop
+with targeted `claude -p` call-outs when judgment is needed. Rebalancing,
+intelligent escalation, cross-world coordination.

@@ -20,6 +20,8 @@ structure; the action layer names the mechanisms.
 |---|---|---|
 | **World** | A project or workspace. Contains agents, work items, and configuration. Each world has its own database and directory tree. | Rig |
 | **Outpost** | A worker agent's station within a world. Directory at `$SOL_HOME/{world}/outposts/{agent}/`. | Polecat |
+| **Envoy** | A persistent, human-directed agent. Maintains context across sessions via a brief. Directory at `$SOL_HOME/{world}/envoys/{name}/`. | Crew |
+| **Governor** | Per-world work coordinator. Singleton Claude session that handles natural language dispatch, caravan creation, and cast coordination. Directory at `$SOL_HOME/{world}/governor/`. | Mayor (partial) |
 | **Sphere** | The global registry connecting all worlds. Stores agents, messages, escalations, caravans. Database: `sphere.db`. | Town |
 
 ## Actions
@@ -29,6 +31,7 @@ structure; the action layer names the mechanisms.
 | **Cast** | Dispatch work to an agent. Creates a worktree, tethers work, starts a session. From "farcaster" — instantaneous transit. | Sling |
 | **Prime** | Inject execution context into a session on startup. Unchanged — already perfect. | Prime |
 | **Resolve** | Signal that work is complete. Push branch, clear tether, stop session. | Done |
+| **Debrief** | Clear an envoy's or governor's brief, giving a fresh start. CLI: `sol envoy debrief`. | *(new in Arc 3)* |
 
 ## Primitives
 
@@ -36,6 +39,7 @@ structure; the action layer names the mechanisms.
 |---|---|---|
 | **Tether** | The durability primitive. A file at `$SOL_HOME/{world}/outposts/{agent}/.tether` that binds an agent to a work item. If the tether exists, the work is assigned. | Hook |
 | **Charter** | Per-world configuration file (`world.toml`). Defines source repo, agent capacity, model tier, and forge settings. Layered with global `sol.toml`. | *(new in Arc 1)* |
+| **Brief** | An envoy's or governor's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start, persisted across sessions. GLASS-inspectable. | *(new in Arc 3)* |
 
 ## Processes
 
@@ -91,3 +95,5 @@ For contributors familiar with the Gastown prototype naming:
 | convoy | caravan |
 | supervisor | prefect |
 | prime | prime (unchanged) |
+| crew | envoy |
+| mayor | governor (dispatch) + consul (coordination) + sol init (onboarding) |
