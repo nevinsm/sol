@@ -54,9 +54,10 @@ var workflowInstantiateCmd = &cobra.Command{
 }
 
 var workflowCurrentCmd = &cobra.Command{
-	Use:   "current",
-	Short: "Print the current step's instructions",
-	Args:  cobra.NoArgs,
+	Use:          "current",
+	Short:        "Print the current step's instructions",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		agent, _ := cmd.Flags().GetString("agent")
@@ -70,7 +71,7 @@ var workflowCurrentCmd = &cobra.Command{
 		}
 		if step == nil {
 			fmt.Fprintln(os.Stderr, "No active workflow step.")
-			os.Exit(1)
+			return &exitError{code: 1}
 		}
 
 		fmt.Print(step.Instructions)

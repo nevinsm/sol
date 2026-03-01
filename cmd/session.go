@@ -149,9 +149,10 @@ func init() {
 var healthMaxInactivity time.Duration
 
 var sessionHealthCmd = &cobra.Command{
-	Use:   "health <name>",
-	Short: "Check session health",
-	Args:  cobra.ExactArgs(1),
+	Use:          "health <name>",
+	Short:        "Check session health",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
 		status, err := mgr.Health(args[0], healthMaxInactivity)
@@ -159,8 +160,8 @@ var sessionHealthCmd = &cobra.Command{
 			return err
 		}
 		fmt.Println(status)
-		if status.ExitCode() != 0 {
-			os.Exit(status.ExitCode())
+		if code := status.ExitCode(); code != 0 {
+			return &exitError{code: code}
 		}
 		return nil
 	},

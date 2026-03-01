@@ -64,7 +64,9 @@ var statusCmd = &cobra.Command{
 		}
 
 		// Exit with health code.
-		os.Exit(result.Health())
+		if code := result.Health(); code != 0 {
+			return &exitError{code: code}
+		}
 		return nil
 	},
 }

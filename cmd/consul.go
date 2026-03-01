@@ -81,8 +81,9 @@ var consulRunCmd = &cobra.Command{
 }
 
 var consulStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show consul status from heartbeat",
+	Use:          "status",
+	Short:        "Show consul status from heartbeat",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hb, err := consul.ReadHeartbeat(config.Home())
 		if err != nil {
@@ -90,7 +91,7 @@ var consulStatusCmd = &cobra.Command{
 		}
 		if hb == nil {
 			fmt.Println("Consul is not running.")
-			os.Exit(1)
+			return &exitError{code: 1}
 		}
 
 		if consulStatusJSON {

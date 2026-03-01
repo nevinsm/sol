@@ -427,9 +427,10 @@ var forgeReleaseCmd = &cobra.Command{
 }
 
 var forgeRunGatesCmd = &cobra.Command{
-	Use:   "run-gates <world>",
-	Short: "Run quality gates in the forge worktree",
-	Args:  cobra.ExactArgs(1),
+	Use:          "run-gates <world>",
+	Short:        "Run quality gates in the forge worktree",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
@@ -468,7 +469,7 @@ var forgeRunGatesCmd = &cobra.Command{
 		}
 
 		if !allPassed {
-			os.Exit(1)
+			return &exitError{code: 1}
 		}
 		return nil
 	},

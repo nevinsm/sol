@@ -131,9 +131,10 @@ var mailAckCmd = &cobra.Command{
 }
 
 var mailCheckCmd = &cobra.Command{
-	Use:   "check",
-	Short: "Count unread messages",
-	Args:  cobra.NoArgs,
+	Use:          "check",
+	Short:        "Count unread messages",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identity, _ := cmd.Flags().GetString("identity")
 
@@ -150,7 +151,7 @@ var mailCheckCmd = &cobra.Command{
 
 		if count == 0 {
 			fmt.Println("No unread messages.")
-			os.Exit(1)
+			return &exitError{code: 1}
 		}
 		fmt.Printf("%d unread messages\n", count)
 		return nil
