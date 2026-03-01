@@ -24,7 +24,7 @@ var storeDepAddCmd = &cobra.Command{
 	Short: "Add a dependency (from depends on to)",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := cmd.Flag("world").Value.String()
+		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
@@ -53,7 +53,7 @@ var storeDepRemoveCmd = &cobra.Command{
 	Short: "Remove a dependency",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := cmd.Flag("world").Value.String()
+		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
@@ -82,7 +82,7 @@ var storeDepListCmd = &cobra.Command{
 	Short: "List dependencies for a work item",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := cmd.Flag("world").Value.String()
+		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}

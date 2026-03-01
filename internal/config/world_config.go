@@ -104,6 +104,7 @@ func (c WorldConfig) Validate() error {
 }
 
 // WriteWorldConfig writes a world's configuration to world.toml.
+// The write is atomic: data is written to a temp file first, then renamed.
 func WriteWorldConfig(world string, cfg WorldConfig) error {
 	path := WorldConfigPath(world)
 	dir := filepath.Dir(path)
@@ -111,15 +112,27 @@ func WriteWorldConfig(world string, cfg WorldConfig) error {
 		return fmt.Errorf("failed to create config directory %q: %w", dir, err)
 	}
 
-	f, err := os.Create(path)
+	// Write to temp file first for atomic rename.
+	tmp, err := os.CreateTemp(dir, ".world.toml.*")
 	if err != nil {
-		return fmt.Errorf("failed to create %s: %w", path, err)
+		return fmt.Errorf("failed to create temp file for %s: %w", path, err)
 	}
-	defer f.Close()
+	tmpPath := tmp.Name()
 
-	enc := toml.NewEncoder(f)
+	enc := toml.NewEncoder(tmp)
 	if err := enc.Encode(cfg); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
 		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
-	return f.Close()
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to close temp file for %s: %w", path, err)
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to rename temp file to %s: %w", path, err)
+	}
+	return nil
 }

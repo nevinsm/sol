@@ -41,7 +41,7 @@ var storeCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a work item",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := cmd.Flag("world").Value.String()
+		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
@@ -83,7 +83,7 @@ var storeGetCmd = &cobra.Command{
 	Short: "Get a work item by ID",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := cmd.Flag("world").Value.String()
+		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
@@ -127,7 +127,7 @@ var storeListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List work items",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := cmd.Flag("world").Value.String()
+		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
@@ -196,7 +196,7 @@ var storeUpdateCmd = &cobra.Command{
 	Short: "Update a work item",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := cmd.Flag("world").Value.String()
+		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
@@ -236,7 +236,7 @@ var storeCloseCmd = &cobra.Command{
 	Short: "Close a work item",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := cmd.Flag("world").Value.String()
+		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
@@ -272,7 +272,7 @@ var storeQueryCmd = &cobra.Command{
 	Use:   "query",
 	Short: "Run a read-only SQL query",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := cmd.Flag("world").Value.String()
+		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
 			return fmt.Errorf("--world is required")
 		}

@@ -30,8 +30,9 @@ func setupTest(t *testing.T) *Manager {
 
 	t.Cleanup(func() {
 		// Kill all sessions in this isolated tmux server
-		kill := tmuxCmd("kill-server")
+		kill, killCancel := tmuxCmd("kill-server")
 		_ = kill.Run()
+		killCancel()
 	})
 
 	return New()
@@ -187,8 +188,9 @@ func TestHealthDead(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	// Kill the tmux session directly to simulate dead session
-	kill := tmuxCmd("kill-session", "-t", "test-hd")
+	kill, killCancel := tmuxCmd("kill-session", "-t", "test-hd")
 	_ = kill.Run()
+	killCancel()
 
 	// Let tmux process the kill
 	time.Sleep(200 * time.Millisecond)
@@ -424,8 +426,9 @@ func TestListWithStoppedSession(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	// Kill tmux session directly without going through Stop (simulates crash)
-	kill := tmuxCmd("kill-session", "-t", "test-ls")
+	kill, killCancel := tmuxCmd("kill-session", "-t", "test-ls")
 	_ = kill.Run()
+	killCancel()
 
 	// Let tmux process the kill
 	time.Sleep(200 * time.Millisecond)
@@ -626,8 +629,9 @@ func BenchmarkExists(b *testing.B) {
 	mgr := New()
 
 	b.Cleanup(func() {
-		kill := tmuxCmd("kill-server")
+		kill, killCancel := tmuxCmd("kill-server")
 		_ = kill.Run()
+		killCancel()
 	})
 
 	_ = mgr.Start("bench", "/tmp", "sleep 300", nil, "agent", "haven")

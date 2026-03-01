@@ -103,8 +103,8 @@ func (r *Forge) EnsureWorktree() error {
 	if info, err := os.Stat(r.worktree); err == nil && info.IsDir() {
 		cmd := exec.Command("git", "-C", r.worktree, "rev-parse", "--is-inside-work-tree")
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to verify forge worktree for world %q: %w",
-				r.world, fmt.Errorf("%s", strings.TrimSpace(string(out))))
+			return fmt.Errorf("failed to verify forge worktree for world %q: %s: %w",
+				r.world, strings.TrimSpace(string(out)), err)
 		}
 		return nil
 	}
@@ -123,8 +123,8 @@ func (r *Forge) EnsureWorktree() error {
 		cmd2 := exec.Command("git", "-C", r.sourceRepo, "worktree", "add",
 			r.worktree, branch)
 		if out, err2 := cmd2.CombinedOutput(); err2 != nil {
-			return fmt.Errorf("failed to create forge worktree for world %q: %w",
-				r.world, fmt.Errorf("%s", strings.TrimSpace(string(out))))
+			return fmt.Errorf("failed to create forge worktree for world %q: %s: %w",
+				r.world, strings.TrimSpace(string(out)), err2)
 		}
 	}
 
