@@ -100,24 +100,15 @@ func clearPrefectPID(t *testing.T) {
 	os.Remove(path)
 }
 
-// setupTestHome sets SOL_HOME to a temp dir and returns cleanup func.
-func setupTestHome(t *testing.T) func() {
+// setupTestHome sets SOL_HOME to a temp dir.
+func setupTestHome(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
-	old := os.Getenv("SOL_HOME")
-	os.Setenv("SOL_HOME", dir)
-	return func() {
-		if old == "" {
-			os.Unsetenv("SOL_HOME")
-		} else {
-			os.Setenv("SOL_HOME", old)
-		}
-	}
+	t.Setenv("SOL_HOME", dir)
 }
 
 func TestGatherHealthy(t *testing.T) {
-	cleanup := setupTestHome(t)
-	defer cleanup()
+	setupTestHome(t)
 
 	// Write a PID file with our own PID (we know we're running).
 	pidCleanup := writePrefectPID(t, os.Getpid())
@@ -159,8 +150,7 @@ func TestGatherHealthy(t *testing.T) {
 }
 
 func TestGatherUnhealthy(t *testing.T) {
-	cleanup := setupTestHome(t)
-	defer cleanup()
+	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
@@ -198,8 +188,7 @@ func TestGatherUnhealthy(t *testing.T) {
 }
 
 func TestGatherDegraded(t *testing.T) {
-	cleanup := setupTestHome(t)
-	defer cleanup()
+	setupTestHome(t)
 
 	// No PID file — prefect not running.
 	clearPrefectPID(t)
@@ -232,8 +221,7 @@ func TestGatherDegraded(t *testing.T) {
 }
 
 func TestGatherNoAgents(t *testing.T) {
-	cleanup := setupTestHome(t)
-	defer cleanup()
+	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
@@ -256,8 +244,7 @@ func TestGatherNoAgents(t *testing.T) {
 }
 
 func TestGatherNoAgentsDegraded(t *testing.T) {
-	cleanup := setupTestHome(t)
-	defer cleanup()
+	setupTestHome(t)
 
 	// No prefect running.
 	clearPrefectPID(t)
@@ -280,8 +267,7 @@ func TestGatherNoAgentsDegraded(t *testing.T) {
 }
 
 func TestGatherWithHookedWork(t *testing.T) {
-	cleanup := setupTestHome(t)
-	defer cleanup()
+	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
@@ -318,8 +304,7 @@ func TestGatherWithHookedWork(t *testing.T) {
 }
 
 func TestGatherMissingWorkItem(t *testing.T) {
-	cleanup := setupTestHome(t)
-	defer cleanup()
+	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
@@ -349,8 +334,7 @@ func TestGatherMissingWorkItem(t *testing.T) {
 }
 
 func TestGatherMixedStates(t *testing.T) {
-	cleanup := setupTestHome(t)
-	defer cleanup()
+	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
@@ -455,8 +439,7 @@ func TestHealthExitCodes(t *testing.T) {
 }
 
 func TestGatherWithForge(t *testing.T) {
-	cleanup := setupTestHome(t)
-	defer cleanup()
+	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
@@ -483,8 +466,7 @@ func TestGatherWithForge(t *testing.T) {
 }
 
 func TestGatherWithoutForge(t *testing.T) {
-	cleanup := setupTestHome(t)
-	defer cleanup()
+	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
@@ -507,8 +489,7 @@ func TestGatherWithoutForge(t *testing.T) {
 }
 
 func TestGatherMergeQueue(t *testing.T) {
-	cleanup := setupTestHome(t)
-	defer cleanup()
+	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
@@ -548,8 +529,7 @@ func TestGatherMergeQueue(t *testing.T) {
 }
 
 func TestGatherMergeQueueEmpty(t *testing.T) {
-	cleanup := setupTestHome(t)
-	defer cleanup()
+	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()

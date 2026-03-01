@@ -3,6 +3,7 @@ package integration
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -142,8 +143,12 @@ func TestWorldList(t *testing.T) {
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
 	// Init two worlds.
-	runGT(t, gtHome, "world", "init", "alpha", "--source-repo=/tmp")
-	runGT(t, gtHome, "world", "init", "beta", "--source-repo=/tmp")
+	if _, err := runGT(t, gtHome, "world", "init", "alpha", "--source-repo=/tmp"); err != nil {
+		t.Fatalf("setup: world init alpha failed: %v", err)
+	}
+	if _, err := runGT(t, gtHome, "world", "init", "beta", "--source-repo=/tmp"); err != nil {
+		t.Fatalf("setup: world init beta failed: %v", err)
+	}
 
 	out, err := runGT(t, gtHome, "world", "list")
 	if err != nil {
@@ -184,7 +189,9 @@ func TestWorldListJSON(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
+	if _, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp"); err != nil {
+		t.Fatalf("setup: world init failed: %v", err)
+	}
 
 	out, err := runGT(t, gtHome, "world", "list", "--json")
 	if err != nil {
@@ -210,7 +217,9 @@ func TestWorldStatusBasic(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
+	if _, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp"); err != nil {
+		t.Fatalf("setup: world init failed: %v", err)
+	}
 
 	out, err := runGT(t, gtHome, "world", "status", "myworld")
 	if err != nil {
@@ -247,7 +256,9 @@ func TestWorldDeleteBasic(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
+	if _, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp"); err != nil {
+		t.Fatalf("setup: world init failed: %v", err)
+	}
 
 	out, err := runGT(t, gtHome, "world", "delete", "myworld", "--confirm")
 	if err != nil {
@@ -280,7 +291,9 @@ func TestWorldDeleteNoConfirm(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
+	if _, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp"); err != nil {
+		t.Fatalf("setup: world init failed: %v", err)
+	}
 
 	out, err := runGT(t, gtHome, "world", "delete", "myworld")
 	if err != nil {
@@ -325,7 +338,9 @@ func TestWorldStatusJSON(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
+	if _, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp"); err != nil {
+		t.Fatalf("setup: world init failed: %v", err)
+	}
 
 	out, err := runGT(t, gtHome, "world", "status", "myworld", "--json")
 	if err != nil {
@@ -535,5 +550,49 @@ func TestWorldInitInvalidName(t *testing.T) {
 				t.Fatalf("expected %q in error for name %q, got: %s", tc.match, tc.name, out)
 			}
 		})
+	}
+}
+
+func TestWorldDeleteRefusesWithActiveSessions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	// Check that tmux is available.
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available, skipping")
+	}
+
+	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	// Create a world.
+	if _, err := runGT(t, gtHome, "world", "init", "deltest"); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Start a tmux session with the world's naming convention.
+	// Session name format: sol-{world}-{agent}
+	sessionName := "sol-deltest-TestAgent"
+	if err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, "sleep", "60").Run(); err != nil {
+		t.Fatalf("setup: failed to create tmux session: %v", err)
+	}
+	t.Cleanup(func() {
+		exec.Command("tmux", "kill-session", "-t", sessionName).Run()
+	})
+
+	// Write session metadata so mgr.List() discovers it.
+	sessDir := filepath.Join(gtHome, ".runtime", "sessions")
+	os.MkdirAll(sessDir, 0o755)
+	meta := `{"name":"` + sessionName + `","role":"agent","world":"deltest","workdir":"/tmp","started_at":"2026-01-01T00:00:00Z"}`
+	os.WriteFile(filepath.Join(sessDir, sessionName+".json"), []byte(meta), 0o644)
+
+	// Attempt to delete — should be refused.
+	out, err := runGT(t, gtHome, "world", "delete", "deltest", "--confirm")
+	if err == nil {
+		t.Fatalf("expected error with active session, got success: %s", out)
+	}
+	if !strings.Contains(out, "active session") {
+		t.Fatalf("expected 'active session' error, got: %s", out)
 	}
 }

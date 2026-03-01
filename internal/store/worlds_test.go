@@ -215,6 +215,182 @@ func TestDeleteWorldData(t *testing.T) {
 	}
 }
 
+func TestDeleteWorldDataDeletesAgents(t *testing.T) {
+	s := setupSphere(t)
+
+	err := s.RegisterWorld("haven", "/home/user/haven")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = s.CreateAgent("Toast", "haven", "agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.DeleteWorldData("haven")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	agents, err := s.ListAgents("haven", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 0 {
+		t.Fatalf("expected 0 agents after deletion, got %d", len(agents))
+	}
+
+	w, err := s.GetWorld("haven")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w != nil {
+		t.Fatalf("expected nil world after deletion, got %v", w)
+	}
+}
+
+func TestDeleteWorldDataDeletesCaravanItems(t *testing.T) {
+	s := setupSphere(t)
+
+	err := s.RegisterWorld("haven", "/home/user/haven")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	caravanID, err := s.CreateCaravan("test-caravan", "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddCaravanItem(caravanID, "sol-11111111", "haven"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddCaravanItem(caravanID, "sol-22222222", "haven"); err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.DeleteWorldData("haven")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Caravan itself should still exist (cross-world).
+	c, err := s.GetCaravan(caravanID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c == nil {
+		t.Fatal("expected caravan to survive world deletion")
+	}
+
+	// But items for the deleted world should be gone.
+	items, err := s.ListCaravanItems(caravanID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected 0 caravan items after deletion, got %d", len(items))
+	}
+}
+
+func TestDeleteWorldDataDeletesMessagesAndEscalations(t *testing.T) {
+	s := setupSphere(t)
+
+	err := s.RegisterWorld("haven", "/home/user/haven")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = s.CreateAgent("Toast", "haven", "agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = s.SendMessage("haven/Toast", "haven/Other", "test", "body", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.CreateEscalation("low", "haven/Toast", "test escalation")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.DeleteWorldData("haven")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected 0 messages after deletion, got %d", len(msgs))
+	}
+
+	escs, err := s.ListEscalations("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 0 {
+		t.Fatalf("expected 0 escalations after deletion, got %d", len(escs))
+	}
+}
+
+func TestDeleteWorldDataPreservesOtherWorlds(t *testing.T) {
+	s := setupSphere(t)
+
+	// Register two worlds with agents.
+	if err := s.RegisterWorld("alpha", "/path/alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RegisterWorld("beta", "/path/beta"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateAgent("Toast", "alpha", "agent"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateAgent("Sage", "beta", "agent"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SendMessage("beta/Sage", "beta/Other", "test", "body", 2, "notification"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Delete alpha.
+	if err := s.DeleteWorldData("alpha"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Beta's data should be untouched.
+	w, err := s.GetWorld("beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w == nil {
+		t.Fatal("expected beta world to survive alpha deletion")
+	}
+
+	agents, err := s.ListAgents("beta", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 1 {
+		t.Fatalf("expected 1 beta agent, got %d", len(agents))
+	}
+	if agents[0].Name != "Sage" {
+		t.Fatalf("expected agent 'Sage', got %q", agents[0].Name)
+	}
+
+	msgs, err := s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message (beta's), got %d", len(msgs))
+	}
+}
+
 func TestDeleteWorldDataNonexistent(t *testing.T) {
 	s := setupSphere(t)
 

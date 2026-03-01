@@ -12,8 +12,7 @@ import (
 func setupWorld(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
 		t.Fatal(err)
@@ -30,8 +29,7 @@ func setupWorld(t *testing.T) *Store {
 func setupSphere(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
 		t.Fatal(err)
@@ -156,8 +154,7 @@ func TestMigrateSphereV5(t *testing.T) {
 
 func TestMigrateSphereV1ToV5(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Simulate a V1-only sphere database.
@@ -406,8 +403,7 @@ func TestIDGeneration(t *testing.T) {
 
 func TestConcurrentAccess(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 
 	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
 		t.Fatal(err)
@@ -680,8 +676,7 @@ func TestListWorkItemsFilters(t *testing.T) {
 
 func TestMigrationIdempotent(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Open and close twice — migration should be idempotent.
@@ -729,8 +724,7 @@ func TestMigrationIdempotent(t *testing.T) {
 
 func TestMigrateWorldV1ToV4(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Simulate a V1-only database by manually creating it.

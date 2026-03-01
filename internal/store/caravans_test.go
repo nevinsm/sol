@@ -152,8 +152,7 @@ func TestUpdateCaravanStatus(t *testing.T) {
 func TestCheckCaravanReadiness(t *testing.T) {
 	// Set up SOL_HOME for both sphere and world stores.
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	sphereStore, err := OpenSphere()
@@ -234,8 +233,7 @@ func TestCheckCaravanReadiness(t *testing.T) {
 
 func TestTryCloseCaravan(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("SOL_HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("SOL_HOME") })
+	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	sphereStore, err := OpenSphere()

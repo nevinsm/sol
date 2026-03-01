@@ -378,6 +378,39 @@ func TestValidateWorldNameTooLong(t *testing.T) {
 	}
 }
 
+func TestWriteWorldConfigReadOnlyDir(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Make the SOL_HOME dir read-only so MkdirAll fails.
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+
+	err := WriteWorldConfig("readonly", DefaultWorldConfig())
+	if err == nil {
+		t.Fatal("expected error writing to read-only dir")
+	}
+}
+
+func TestWriteWorldConfigCreatesParentDirs(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// The world dir does not exist yet — WriteWorldConfig should create it.
+	err := WriteWorldConfig("newworld", DefaultWorldConfig())
+	if err != nil {
+		t.Fatalf("WriteWorldConfig() error: %v", err)
+	}
+
+	// Verify file was written.
+	path := filepath.Join(dir, "newworld", "world.toml")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Fatal("expected world.toml to be created with parent dirs")
+	}
+}
+
 func TestLoadWorldConfigInvalidGlobalTOML(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
