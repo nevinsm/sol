@@ -2,6 +2,7 @@ package store
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"time"
@@ -71,13 +72,22 @@ func (s *Store) GetEscalation(id string) (*Escalation, error) {
 		`SELECT id, severity, source, description, status, acknowledged, created_at, updated_at
 		 FROM escalations WHERE id = ?`, id,
 	).Scan(&esc.ID, &esc.Severity, &esc.Source, &esc.Description, &esc.Status, &acknowledged, &createdAt, &updatedAt)
-	if err != nil {
+	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("escalation %q not found", id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get escalation %q: %w", id, err)
 	}
 
 	esc.Acknowledged = acknowledged != 0
-	esc.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	esc.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	esc.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse created_at for escalation %q: %w", id, err)
+	}
+	esc.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse updated_at for escalation %q: %w", id, err)
+	}
 	return esc, nil
 }
 
@@ -110,8 +120,15 @@ func (s *Store) ListEscalations(status string) ([]Escalation, error) {
 			return nil, fmt.Errorf("failed to scan escalation: %w", err)
 		}
 		esc.Acknowledged = acknowledged != 0
-		esc.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		esc.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		var parseErr error
+		esc.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse created_at for escalation %q: %w", esc.ID, parseErr)
+		}
+		esc.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse updated_at for escalation %q: %w", esc.ID, parseErr)
+		}
 		escs = append(escs, esc)
 	}
 	if err := rows.Err(); err != nil {

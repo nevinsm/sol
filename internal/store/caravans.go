@@ -78,9 +78,15 @@ func (s *Store) GetCaravan(id string) (*Caravan, error) {
 	}
 
 	c.Owner = owner.String
-	c.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	c.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse created_at for caravan %q: %w", id, err)
+	}
 	if closedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, closedAt.String)
+		t, err := time.Parse(time.RFC3339, closedAt.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse closed_at for caravan %q: %w", id, err)
+		}
 		c.ClosedAt = &t
 	}
 	return c, nil
@@ -116,9 +122,16 @@ func (s *Store) ListCaravans(status string) ([]Caravan, error) {
 			return nil, fmt.Errorf("failed to scan caravan: %w", err)
 		}
 		c.Owner = owner.String
-		c.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		var parseErr error
+		c.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse created_at for caravan %q: %w", c.ID, parseErr)
+		}
 		if closedAt.Valid {
-			t, _ := time.Parse(time.RFC3339, closedAt.String)
+			t, parseErr := time.Parse(time.RFC3339, closedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("failed to parse closed_at for caravan %q: %w", c.ID, parseErr)
+			}
 			c.ClosedAt = &t
 		}
 		caravans = append(caravans, c)

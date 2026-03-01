@@ -75,14 +75,26 @@ func (s *Store) GetMergeRequest(id string) (*MergeRequest, error) {
 
 	mr.ClaimedBy = claimedBy.String
 	mr.BlockedBy = blockedBy.String
-	mr.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	mr.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	mr.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", id, err)
+	}
+	mr.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", id, err)
+	}
 	if claimedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, claimedAt.String)
+		t, err := time.Parse(time.RFC3339, claimedAt.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", id, err)
+		}
 		mr.ClaimedAt = &t
 	}
 	if mergedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, mergedAt.String)
+		t, err := time.Parse(time.RFC3339, mergedAt.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", id, err)
+		}
 		mr.MergedAt = &t
 	}
 	return mr, nil
@@ -121,14 +133,27 @@ func (s *Store) ListMergeRequests(phase string) ([]MergeRequest, error) {
 		}
 		mr.ClaimedBy = claimedBy.String
 		mr.BlockedBy = blockedBy.String
-		mr.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		mr.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		var parseErr error
+		mr.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", mr.ID, parseErr)
+		}
+		mr.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", mr.ID, parseErr)
+		}
 		if claimedAt.Valid {
-			t, _ := time.Parse(time.RFC3339, claimedAt.String)
+			t, parseErr := time.Parse(time.RFC3339, claimedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", mr.ID, parseErr)
+			}
 			mr.ClaimedAt = &t
 		}
 		if mergedAt.Valid {
-			t, _ := time.Parse(time.RFC3339, mergedAt.String)
+			t, parseErr := time.Parse(time.RFC3339, mergedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", mr.ID, parseErr)
+			}
 			mr.MergedAt = &t
 		}
 		mrs = append(mrs, mr)
@@ -176,14 +201,26 @@ func (s *Store) ClaimMergeRequest(claimerID string) (*MergeRequest, error) {
 
 	mr.ClaimedBy = claimedBy.String
 	mr.BlockedBy = blockedBy.String
-	mr.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	mr.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	mr.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", mr.ID, err)
+	}
+	mr.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", mr.ID, err)
+	}
 	if claimedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, claimedAt.String)
+		t, err := time.Parse(time.RFC3339, claimedAt.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", mr.ID, err)
+		}
 		mr.ClaimedAt = &t
 	}
 	if mergedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, mergedAt.String)
+		t, err := time.Parse(time.RFC3339, mergedAt.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", mr.ID, err)
+		}
 		mr.MergedAt = &t
 	}
 	return mr, nil
@@ -292,14 +329,26 @@ func (s *Store) FindMergeRequestByBlocker(blockerID string) (*MergeRequest, erro
 
 	mr.ClaimedBy = claimedBy.String
 	mr.BlockedBy = blockedBy.String
-	mr.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	mr.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	mr.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", mr.ID, err)
+	}
+	mr.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", mr.ID, err)
+	}
 	if claimedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, claimedAt.String)
+		t, err := time.Parse(time.RFC3339, claimedAt.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", mr.ID, err)
+		}
 		mr.ClaimedAt = &t
 	}
 	if mergedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, mergedAt.String)
+		t, err := time.Parse(time.RFC3339, mergedAt.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", mr.ID, err)
+		}
 		mr.MergedAt = &t
 	}
 	return mr, nil

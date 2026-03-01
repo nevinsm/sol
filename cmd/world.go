@@ -167,6 +167,8 @@ var worldListCmd = &cobra.Command{
 				fmt.Println("[]")
 				return nil
 			}
+			// Local struct intentionally omits updated_at and formats
+			// created_at as a fixed-layout string for stable CLI output.
 			type worldJSON struct {
 				Name       string `json:"name"`
 				SourceRepo string `json:"source_repo"`

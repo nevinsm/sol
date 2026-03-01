@@ -161,7 +161,7 @@ func TestUpdateWorldRepoNonexistent(t *testing.T) {
 	}
 }
 
-func TestRemoveWorld(t *testing.T) {
+func TestDeleteWorldData(t *testing.T) {
 	s := setupSphere(t)
 
 	err := s.RegisterWorld("haven", "/home/user/haven")
@@ -169,7 +169,21 @@ func TestRemoveWorld(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = s.RemoveWorld("haven")
+	// Create an agent, message, and escalation to verify cleanup.
+	_, err = s.CreateAgent("Toast", "haven", "agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.SendMessage("haven/Toast", "haven/Other", "test", "body", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.CreateEscalation("low", "haven/Toast", "test escalation")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.DeleteWorldData("haven")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,16 +193,35 @@ func TestRemoveWorld(t *testing.T) {
 		t.Fatal(err)
 	}
 	if w != nil {
-		t.Fatalf("expected nil after removal, got %v", w)
+		t.Fatalf("expected nil after deletion, got %v", w)
+	}
+
+	// Verify messages were cleaned up.
+	msgs, err := s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected 0 messages after deletion, got %d", len(msgs))
+	}
+
+	// Verify escalations were cleaned up.
+	escs, err := s.ListEscalations("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 0 {
+		t.Fatalf("expected 0 escalations after deletion, got %d", len(escs))
 	}
 }
 
-func TestRemoveWorldNonexistent(t *testing.T) {
+func TestDeleteWorldDataNonexistent(t *testing.T) {
 	s := setupSphere(t)
 
-	err := s.RemoveWorld("nonexistent")
+	// Deleting a nonexistent world should not error.
+	err := s.DeleteWorldData("nonexistent")
 	if err != nil {
-		t.Fatalf("expected no error removing nonexistent world, got %v", err)
+		t.Fatalf("expected no error deleting nonexistent world data, got %v", err)
 	}
 }
 

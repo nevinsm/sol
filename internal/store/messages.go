@@ -110,9 +110,15 @@ func (s *Store) ReadMessage(id string) (*Message, error) {
 	msg.Body = body.String
 	msg.ThreadID = threadID.String
 	msg.Read = read != 0
-	msg.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	msg.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse created_at for message %q: %w", id, err)
+	}
 	if ackedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, ackedAt.String)
+		t, err := time.Parse(time.RFC3339, ackedAt.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse acked_at for message %q: %w", id, err)
+		}
 		msg.AckedAt = &t
 	}
 	return msg, nil
@@ -201,9 +207,16 @@ func (s *Store) scanMessages(query string, args ...interface{}) ([]Message, erro
 		msg.Body = body.String
 		msg.ThreadID = threadID.String
 		msg.Read = read != 0
-		msg.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		var parseErr error
+		msg.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse created_at for message %q: %w", msg.ID, parseErr)
+		}
 		if ackedAt.Valid {
-			t, _ := time.Parse(time.RFC3339, ackedAt.String)
+			t, parseErr := time.Parse(time.RFC3339, ackedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("failed to parse acked_at for message %q: %w", msg.ID, parseErr)
+			}
 			msg.AckedAt = &t
 		}
 		msgs = append(msgs, msg)

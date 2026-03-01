@@ -8,10 +8,10 @@ import (
 
 // World represents a registered world in the sphere database.
 type World struct {
-	Name       string
-	SourceRepo string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	Name       string    `json:"name"`
+	SourceRepo string    `json:"source_repo"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // RegisterWorld creates a world record in the sphere DB.
@@ -115,13 +115,25 @@ func (s *Store) UpdateWorldRepo(name, sourceRepo string) error {
 }
 
 // DeleteWorldData removes all sphere-level data for a world in a single
-// transaction: caravan items, agents, and the world record.
+// transaction: messages, escalations, caravan items, agents, and the world record.
 func (s *Store) DeleteWorldData(world string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
+
+	// Clean up messages where sender or recipient is an agent in this world.
+	// Agent IDs are formatted as "{world}/{name}".
+	pattern := world + "/%"
+	if _, err := tx.Exec(`DELETE FROM messages WHERE sender LIKE ? OR recipient LIKE ?`, pattern, pattern); err != nil {
+		return fmt.Errorf("failed to delete messages for world %q: %w", world, err)
+	}
+
+	// Clean up escalations sourced from this world.
+	if _, err := tx.Exec(`DELETE FROM escalations WHERE source LIKE ?`, pattern); err != nil {
+		return fmt.Errorf("failed to delete escalations for world %q: %w", world, err)
+	}
 
 	if _, err := tx.Exec(`DELETE FROM caravan_items WHERE world = ?`, world); err != nil {
 		return fmt.Errorf("failed to delete caravan items for world %q: %w", world, err)
@@ -134,15 +146,4 @@ func (s *Store) DeleteWorldData(world string) error {
 	}
 
 	return tx.Commit()
-}
-
-// RemoveWorld deletes a world record from the sphere DB.
-// Does NOT delete the world database file or directory — that's the
-// CLI's responsibility.
-func (s *Store) RemoveWorld(name string) error {
-	_, err := s.db.Exec(`DELETE FROM worlds WHERE name = ?`, name)
-	if err != nil {
-		return fmt.Errorf("failed to remove world %q: %w", name, err)
-	}
-	return nil
 }

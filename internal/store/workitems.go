@@ -174,10 +174,19 @@ func (s *Store) GetWorkItem(id string) (*WorkItem, error) {
 	w.Description = desc.String
 	w.Assignee = assignee.String
 	w.ParentID = parentID.String
-	w.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	w.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	w.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse created_at for work item %q: %w", id, err)
+	}
+	w.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse updated_at for work item %q: %w", id, err)
+	}
 	if closedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, closedAt.String)
+		t, err := time.Parse(time.RFC3339, closedAt.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse closed_at for work item %q: %w", id, err)
+		}
 		w.ClosedAt = &t
 	}
 
@@ -249,10 +258,20 @@ func (s *Store) ListWorkItems(filters ListFilters) ([]WorkItem, error) {
 		w.Description = desc.String
 		w.Assignee = assignee.String
 		w.ParentID = parentID.String
-		w.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		w.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		var parseErr error
+		w.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse created_at for work item %q: %w", w.ID, parseErr)
+		}
+		w.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse updated_at for work item %q: %w", w.ID, parseErr)
+		}
 		if closedAt.Valid {
-			t, _ := time.Parse(time.RFC3339, closedAt.String)
+			t, parseErr := time.Parse(time.RFC3339, closedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("failed to parse closed_at for work item %q: %w", w.ID, parseErr)
+			}
 			w.ClosedAt = &t
 		}
 		items = append(items, w)
