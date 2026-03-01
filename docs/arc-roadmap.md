@@ -103,7 +103,41 @@ session restarts and compaction.
 
 ---
 
-## Arc 4: Agent History & Cost Tracking
+## Arc 4: Senate — Sphere-Scoped Planning
+
+Cross-world work planning and coordination. See ADR-0011 (senate).
+
+### Senate — Sphere-Scoped Work Planner
+
+Claude session for multi-world planning. Operator-started/stopped — not
+always running, not supervised. Sits above governors in the planning hierarchy.
+
+- Sphere-scoped singleton. Directory at `$SOL_HOME/senate/`
+- Claude session + sol CLI toolbox (ADR-0005 pattern)
+- Brief system for accumulated sphere-wide knowledge
+- Lazy world summary loading — persona boot says summaries exist, pulls on demand
+- Interactive governor queries via synchronous CLI (`sol world query`)
+- Creates cross-world work items, caravans, dependencies
+- Delegates per-world dispatch to governors
+- CLI: `sol senate start/stop/attach/brief/debrief`
+
+### Governor Enhancements
+
+- Governor maintains `world-summary.md` — separate file from brief, read by Senate
+- Governor handles query injection protocol — responds to Senate questions synchronously
+
+### Supporting CLI
+
+- `sol world summary {name}` — read governor-maintained world summary
+- `sol world query {name} "question"` — synchronous query to a world's governor
+
+**Acceptance:** Operator can start a Senate session, plan work across
+multiple worlds through conversation, and have items/caravans/dependencies
+created across worlds. Senate can query governors for world-specific context.
+
+---
+
+## Arc 5: Agent History & Cost Tracking
 
 Audit trail and cost visibility — specified in target architecture, never built.
 
@@ -118,7 +152,7 @@ Operators can answer "what did agent X work on?" and "what did world Y cost?"
 
 ---
 
-## Arc 5: Operational Tooling
+## Arc 6: Operational Tooling
 
 Production operations at scale.
 
@@ -138,4 +172,4 @@ without manual filesystem operations.
 Proactive coordination at sphere level. Enhancement to consul (not a new
 component), following the sentinel pattern (ADR-0001/ADR-0003): Go patrol loop
 with targeted `claude -p` call-outs when judgment is needed. Rebalancing,
-intelligent escalation, cross-world coordination.
+intelligent escalation, cross-world pattern detection.

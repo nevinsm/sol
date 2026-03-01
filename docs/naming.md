@@ -22,6 +22,7 @@ structure; the action layer names the mechanisms.
 | **Outpost** | A worker agent's station within a world. Directory at `$SOL_HOME/{world}/outposts/{agent}/`. | Polecat |
 | **Envoy** | A persistent, human-directed agent. Maintains context across sessions via a brief. Directory at `$SOL_HOME/{world}/envoys/{name}/`. | Crew |
 | **Governor** | Per-world work coordinator. Singleton Claude session that handles natural language dispatch, caravan creation, and cast coordination. Directory at `$SOL_HOME/{world}/governor/`. | Mayor (partial) |
+| **Senate** | Sphere-scoped work planner. Claude session for cross-world planning — creates work items, caravans, and dependencies across worlds. Queries governors for world context. Directory at `$SOL_HOME/senate/`. | *(new in Arc 4)* |
 | **Sphere** | The global registry connecting all worlds. Stores agents, messages, escalations, caravans. Database: `sphere.db`. | Town |
 
 ## Actions
@@ -96,4 +97,4 @@ For contributors familiar with the Gastown prototype naming:
 | supervisor | prefect |
 | prime | prime (unchanged) |
 | crew | envoy |
-| mayor | governor (dispatch) + consul (coordination) + sol init (onboarding) |
+| mayor | governor (dispatch) + senate (cross-world planning) + consul (coordination) + sol init (onboarding) |
