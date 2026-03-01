@@ -54,7 +54,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - New agent roles get their own section in per-world status display
 - New sphere-level processes appear in the sphere processes section
 - Architectural divergences from target-architecture.md get an ADR in `docs/decisions/`
-- ADR format: lightweight MADR — Context → Decision → Consequences
+- ADR format: lightweight MADR — Context → Options Considered (when warranted) → Decision → Consequences
 
 ## Conventions
 - Go module: github.com/nevinsm/sol

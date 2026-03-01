@@ -116,6 +116,40 @@ Two paths based on whether items are in a caravan:
 - Caravan phases (sphere.db V6) provide the cross-world sequencing that
   Senate needs — no new dependency mechanism required.
 
+**Cross-world dependency mechanism:**
+
+Senate needs to express "item A in world X must complete before item B in
+world Y starts." Three mechanisms were evaluated:
+
+- **Full DAG at caravan level** — new `caravan_dependencies` table with
+  per-item edges. More flexible but adds cycle detection, DAG traversal,
+  and complexity. Phases + within-world deps cover all practical cases.
+  Can be added later if phases prove insufficient (unlikely).
+- **Convention-based** — Senate writes blocking instructions in work item
+  descriptions, governors interpret them. No schema enforcement. Fragile —
+  depends on AI correctly interpreting free text every time.
+- **Caravan phases** (chosen) — `phase INTEGER` column on `caravan_items`
+  (sphere.db V6). Phase 0 dispatches first; phase N waits for all items
+  in phases < N to complete. Folds into existing `CheckCaravanReadiness` —
+  consul and governor just check `Ready` without phase-specific code.
+  Composes cleanly with within-world dependencies (which handle intra-world
+  ordering). Simple, enforceable, GLASS-inspectable via `sqlite3`.
+
+**Senate-governor query protocol:**
+
+Synchronous injection was chosen over alternatives:
+
+- **Mail-based async** — Senate sends mail, governor reads eventually.
+  Too slow for interactive planning sessions where Senate needs an answer
+  to continue the conversation.
+- **Shared database queries** — Senate reads world DBs directly. Bypasses
+  the governor's accumulated knowledge. Governor exists precisely to be
+  the informed authority on its world.
+- **Synchronous injection** (chosen) — inject question into governor's
+  tmux session, poll for response file with timeout. Matches the existing
+  session injection pattern (sentinel nudges). Governor responds using its
+  full context — mirror, brief, and session knowledge.
+
 **Tradeoffs:**
 
 - Introduces a new component (Senate) rather than extending an existing one.

@@ -26,6 +26,36 @@ an ongoing relationship with an agent across work items.
 The Gastown prototype defined "crew" agents for this purpose but never
 implemented them.
 
+## Options Considered
+
+### 1. Gastown crew model (direct push, no forge)
+
+Gastown crew agents pushed directly to main, bypassing the merge pipeline
+entirely. This created a trust asymmetry: crew code was unreviewed while
+outpost code went through forge quality gates. At scale, this is a
+reliability risk — a persistent agent accumulating context drift could push
+increasingly divergent code with no checkpoint.
+
+Rejected: all code should go through forge. No trust asymmetry between
+agent types.
+
+### 2. Outpost with session persistence
+
+Modify the existing outpost model to optionally preserve sessions across
+work items. This avoids introducing a new role but conflates two different
+interaction models: system-dispatched ephemeral work (outpost) and
+human-directed persistent collaboration (envoy). Sentinel, prefect, and
+dispatch logic would need role-aware branching throughout.
+
+Rejected: cleaner to separate the roles entirely. Outposts are
+system-managed workers; envoys are human-managed collaborators.
+
+### 3. New role with brief-based context persistence (chosen)
+
+Introduce `role=envoy` with its own lifecycle: persistent worktree,
+persistent session, human-supervised, forge-gated. Context persists via
+agent-maintained brief files injected through Claude Code hooks.
+
 ## Decision
 
 Introduce **envoy** as a new agent role (`role=envoy` in the agents table).
@@ -69,7 +99,10 @@ schema changes required.
 
 Envoys are human-supervised. Sentinel already filters to `role='agent'`, so
 envoys are invisible to health monitoring. Prefect also skips envoys — sessions
-are not auto-respawned. The human is the supervisor.
+are not auto-respawned. The human is the supervisor. Lighter-touch automated
+supervision was considered (e.g., sentinel awareness without respawn) but adds
+complexity for no benefit — the human who started the envoy is already
+supervising it interactively.
 
 **Git workflow:**
 
@@ -94,6 +127,17 @@ outpost code. No forge bypass, no trust asymmetry.
   (mitigated by Stop hook safety net)
 - Crash recovery is lossy: if session is killed (not exited cleanly),
   brief may be stale. Next session picks up from last written state.
+
+**Resolve behavior:**
+
+Envoy resolve runs the standard resolve flow (commit, push, create MR,
+update work item status, clear tether) but skips session stop and worktree
+cleanup. After resolve, the worktree is on a stale branch. Worktree reset
+is agent-managed — CLAUDE.md instructs `git checkout main && git pull`
+before new work. System-managed reset was considered but adds forge-to-envoy
+coupling and edge cases (what if the envoy has uncommitted work?). The agent
+is already human-supervised; trusting it to reset its own worktree is
+consistent with the supervision model.
 
 **Code changes:**
 - `dispatch.Resolve()`: skip session kill and worktree cleanup for `role=envoy`
