@@ -866,3 +866,41 @@ func TestHasLabel(t *testing.T) {
 		t.Error("expected HasLabel on empty labels = false")
 	}
 }
+
+func TestColumnExists(t *testing.T) {
+	s := setupWorld(t)
+	// work_items table has a "title" column.
+	exists, err := columnExists(s.db, "work_items", "title")
+	if err != nil {
+		t.Fatalf("columnExists error: %v", err)
+	}
+	if !exists {
+		t.Fatal("expected title column to exist")
+	}
+	// Nonexistent column.
+	exists, err = columnExists(s.db, "work_items", "nonexistent")
+	if err != nil {
+		t.Fatalf("columnExists error: %v", err)
+	}
+	if exists {
+		t.Fatal("expected nonexistent column to not exist")
+	}
+}
+
+func TestTableExists(t *testing.T) {
+	s := setupWorld(t)
+	exists, err := tableExists(s.db, "work_items")
+	if err != nil {
+		t.Fatalf("tableExists error: %v", err)
+	}
+	if !exists {
+		t.Fatal("expected work_items table to exist")
+	}
+	exists, err = tableExists(s.db, "nonexistent")
+	if err != nil {
+		t.Fatalf("tableExists error: %v", err)
+	}
+	if exists {
+		t.Fatal("expected nonexistent table to not exist")
+	}
+}

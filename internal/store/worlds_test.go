@@ -68,12 +68,12 @@ func TestRegisterWorldIdempotent(t *testing.T) {
 func TestGetWorldNotFound(t *testing.T) {
 	s := setupSphere(t)
 
-	w, err := s.GetWorld("nonexistent")
-	if err != nil {
-		t.Fatal(err)
+	_, err := s.GetWorld("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent world")
 	}
-	if w != nil {
-		t.Fatalf("expected nil for nonexistent world, got %v", w)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected 'not found' error, got: %v", err)
 	}
 }
 
@@ -188,12 +188,12 @@ func TestDeleteWorldData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w, err := s.GetWorld("haven")
-	if err != nil {
-		t.Fatal(err)
+	_, err = s.GetWorld("haven")
+	if err == nil {
+		t.Fatal("expected error for deleted world")
 	}
-	if w != nil {
-		t.Fatalf("expected nil after deletion, got %v", w)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected 'not found' error, got: %v", err)
 	}
 
 	// Verify messages were cleaned up.
@@ -241,12 +241,12 @@ func TestDeleteWorldDataDeletesAgents(t *testing.T) {
 		t.Fatalf("expected 0 agents after deletion, got %d", len(agents))
 	}
 
-	w, err := s.GetWorld("haven")
-	if err != nil {
-		t.Fatal(err)
+	_, err = s.GetWorld("haven")
+	if err == nil {
+		t.Fatal("expected error for deleted world")
 	}
-	if w != nil {
-		t.Fatalf("expected nil world after deletion, got %v", w)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected 'not found' error, got: %v", err)
 	}
 }
 

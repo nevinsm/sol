@@ -251,35 +251,40 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 	var results []CaravanItemStatus
 
 	for world, worldItems := range byWorld {
-		worldStore, err := worldOpener(world)
+		worldResults, err := func() ([]CaravanItemStatus, error) {
+			worldStore, err := worldOpener(world)
+			if err != nil {
+				return nil, fmt.Errorf("failed to open world %q: %w", world, err)
+			}
+			defer worldStore.Close()
+
+			var out []CaravanItemStatus
+			for _, ci := range worldItems {
+				cis := CaravanItemStatus{CaravanItem: ci}
+
+				item, err := worldStore.GetWorkItem(ci.WorkItemID)
+				if err != nil {
+					cis.WorkItemStatus = "unknown"
+					out = append(out, cis)
+					continue
+				}
+
+				cis.WorkItemStatus = item.Status
+
+				ready, err := worldStore.IsReady(ci.WorkItemID)
+				if err != nil {
+					return nil, fmt.Errorf("failed to check readiness for %q: %w", ci.WorkItemID, err)
+				}
+				cis.Ready = ready
+
+				out = append(out, cis)
+			}
+			return out, nil
+		}()
 		if err != nil {
-			return nil, fmt.Errorf("failed to open world %q: %w", world, err)
+			return nil, err
 		}
-
-		for _, ci := range worldItems {
-			cis := CaravanItemStatus{CaravanItem: ci}
-
-			item, err := worldStore.GetWorkItem(ci.WorkItemID)
-			if err != nil {
-				// Work item might not exist in world yet.
-				cis.WorkItemStatus = "unknown"
-				results = append(results, cis)
-				continue
-			}
-
-			cis.WorkItemStatus = item.Status
-
-			ready, err := worldStore.IsReady(ci.WorkItemID)
-			if err != nil {
-				worldStore.Close()
-				return nil, fmt.Errorf("failed to check readiness for %q: %w", ci.WorkItemID, err)
-			}
-			cis.Ready = ready
-
-			results = append(results, cis)
-		}
-
-		worldStore.Close()
+		results = append(results, worldResults...)
 	}
 
 	return results, nil

@@ -3,7 +3,6 @@ package store
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 )
 
 const worldSchemaV1 = `
@@ -146,8 +145,14 @@ func (s *Store) migrateWorld() error {
 		}
 	}
 	if v < 3 {
-		if err := execIgnoreDuplicate(s.db, worldSchemaV3); err != nil {
-			return fmt.Errorf("failed to apply world schema v3: %w", err)
+		exists, err := columnExists(s.db, "merge_requests", "blocked_by")
+		if err != nil {
+			return fmt.Errorf("failed to check merge_requests schema: %w", err)
+		}
+		if !exists {
+			if _, err := s.db.Exec(worldSchemaV3); err != nil {
+				return fmt.Errorf("failed to apply world schema v3: %w", err)
+			}
 		}
 	}
 	if v < 4 {
@@ -192,15 +197,6 @@ CREATE TABLE IF NOT EXISTS convoy_items (
 CREATE INDEX IF NOT EXISTS idx_convoy_items_convoy ON convoy_items(convoy_id);
 `
 
-const sphereSchemaV4 = `
-ALTER TABLE agents RENAME COLUMN hook_item TO tether_item;
-ALTER TABLE agents RENAME COLUMN rig TO world;
-ALTER TABLE convoys RENAME TO caravans;
-ALTER TABLE convoy_items RENAME TO caravan_items;
-ALTER TABLE caravan_items RENAME COLUMN convoy_id TO caravan_id;
-ALTER TABLE caravan_items RENAME COLUMN rig TO world;
-`
-
 const sphereSchemaV5 = `
 CREATE TABLE IF NOT EXISTS worlds (
     name        TEXT PRIMARY KEY,
@@ -216,27 +212,48 @@ CREATE INDEX IF NOT EXISTS idx_escalations_status ON escalations(status);
 CREATE INDEX IF NOT EXISTS idx_caravan_items_world ON caravan_items(world);
 `
 
-// execIgnoreDuplicate runs a SQL statement and ignores "duplicate column"
-// errors, making ALTER TABLE ADD COLUMN idempotent.
-func execIgnoreDuplicate(db interface{ Exec(string, ...interface{}) (sql.Result, error) }, query string) error {
-	_, err := db.Exec(query)
-	if err != nil && strings.Contains(err.Error(), "duplicate column name") {
-		return nil
-	}
-	return err
-}
-
-// execIgnoreRenameErrors runs a SQL statement and ignores errors from
-// columns/tables that were already renamed, making ALTER TABLE RENAME idempotent.
-func execIgnoreRenameErrors(db interface{ Exec(string, ...interface{}) (sql.Result, error) }, query string) error {
-	_, err := db.Exec(query)
+// columnExists checks whether a column exists on a table using PRAGMA table_info.
+func columnExists(db interface {
+	QueryRow(string, ...interface{}) *sql.Row
+}, table, column string) (bool, error) {
+	// PRAGMA table_info returns one row per column. We can't parameterize
+	// PRAGMA arguments, but table/column names come from our own schema
+	// constants, not user input.
+	rows, err := db.(interface {
+		Query(string, ...interface{}) (*sql.Rows, error)
+	}).Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
-		msg := err.Error()
-		if strings.Contains(msg, "no such column") || strings.Contains(msg, "no such table") {
-			return nil // Already renamed
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dfltValue, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
 		}
 	}
-	return err
+	return false, rows.Err()
+}
+
+// tableExists checks whether a table exists in the database.
+func tableExists(db interface {
+	QueryRow(string, ...interface{}) *sql.Row
+}, name string) (bool, error) {
+	var count int
+	err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, name,
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (s *Store) migrateSphere() error {
@@ -260,14 +277,40 @@ func (s *Store) migrateSphere() error {
 		}
 	}
 	if v < 4 {
-		// Each rename is executed individually for crash-safety.
-		for _, stmt := range strings.Split(sphereSchemaV4, "\n") {
-			stmt = strings.TrimSpace(stmt)
-			if stmt == "" {
-				continue
+		// Rename agents.hook_item → tether_item (if not already renamed).
+		if exists, _ := columnExists(s.db, "agents", "hook_item"); exists {
+			if _, err := s.db.Exec(`ALTER TABLE agents RENAME COLUMN hook_item TO tether_item`); err != nil {
+				return fmt.Errorf("failed to rename agents.hook_item: %w", err)
 			}
-			if err := execIgnoreRenameErrors(s.db, stmt); err != nil {
-				return fmt.Errorf("failed to apply sphere schema v4: %w", err)
+		}
+		// Rename agents.rig → world (if not already renamed).
+		if exists, _ := columnExists(s.db, "agents", "rig"); exists {
+			if _, err := s.db.Exec(`ALTER TABLE agents RENAME COLUMN rig TO world`); err != nil {
+				return fmt.Errorf("failed to rename agents.rig: %w", err)
+			}
+		}
+		// Rename convoys → caravans (if not already renamed).
+		if exists, _ := tableExists(s.db, "convoys"); exists {
+			if _, err := s.db.Exec(`ALTER TABLE convoys RENAME TO caravans`); err != nil {
+				return fmt.Errorf("failed to rename convoys: %w", err)
+			}
+		}
+		// Rename convoy_items → caravan_items (if not already renamed).
+		if exists, _ := tableExists(s.db, "convoy_items"); exists {
+			if _, err := s.db.Exec(`ALTER TABLE convoy_items RENAME TO caravan_items`); err != nil {
+				return fmt.Errorf("failed to rename convoy_items: %w", err)
+			}
+		}
+		// Rename caravan_items.convoy_id → caravan_id (if not already renamed).
+		if exists, _ := columnExists(s.db, "caravan_items", "convoy_id"); exists {
+			if _, err := s.db.Exec(`ALTER TABLE caravan_items RENAME COLUMN convoy_id TO caravan_id`); err != nil {
+				return fmt.Errorf("failed to rename caravan_items.convoy_id: %w", err)
+			}
+		}
+		// Rename caravan_items.rig → world (if not already renamed).
+		if exists, _ := columnExists(s.db, "caravan_items", "rig"); exists {
+			if _, err := s.db.Exec(`ALTER TABLE caravan_items RENAME COLUMN rig TO world`); err != nil {
+				return fmt.Errorf("failed to rename caravan_items.rig: %w", err)
 			}
 		}
 	}

@@ -30,7 +30,7 @@ func (s *Store) RegisterWorld(name, sourceRepo string) error {
 	return nil
 }
 
-// GetWorld returns a world by name. Returns nil, nil if not found.
+// GetWorld returns a world by name. Returns an error if not found.
 func (s *Store) GetWorld(name string) (*World, error) {
 	w := &World{}
 	var createdAt, updatedAt string
@@ -40,7 +40,7 @@ func (s *Store) GetWorld(name string) (*World, error) {
 		 FROM worlds WHERE name = ?`, name,
 	).Scan(&w.Name, &w.SourceRepo, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
-		return nil, nil
+		return nil, fmt.Errorf("world %q not found", name)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get world %q: %w", name, err)
@@ -104,10 +104,8 @@ func (s *Store) UpdateWorldRepo(name, sourceRepo string) error {
 	if err != nil {
 		return fmt.Errorf("failed to update world %q repo: %w", name, err)
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to check update result for world %q: %w", name, err)
-	}
+	// RowsAffected is always nil for modernc.org/sqlite.
+	n, _ := result.RowsAffected()
 	if n == 0 {
 		return fmt.Errorf("world %q not found", name)
 	}

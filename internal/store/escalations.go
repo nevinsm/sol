@@ -148,10 +148,8 @@ func (s *Store) AckEscalation(id string) error {
 	if err != nil {
 		return fmt.Errorf("failed to acknowledge escalation %q: %w", id, err)
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to check rows affected for escalation %q: %w", id, err)
-	}
+	// RowsAffected is always nil for modernc.org/sqlite.
+	n, _ := result.RowsAffected()
 	if n == 0 {
 		return fmt.Errorf("escalation %q not found", id)
 	}
@@ -169,10 +167,7 @@ func (s *Store) ResolveEscalation(id string) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve escalation %q: %w", id, err)
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to check rows affected for escalation %q: %w", id, err)
-	}
+	n, _ := result.RowsAffected()
 	if n == 0 {
 		return fmt.Errorf("escalation %q not found", id)
 	}
