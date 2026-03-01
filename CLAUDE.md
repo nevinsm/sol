@@ -7,6 +7,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - Read `docs/manifesto.md` for design philosophy
 - Read `docs/naming.md` for the naming glossary
 - Read `docs/arc-roadmap.md` for the arc roadmap
+- Read `docs/decisions/` for ADRs (architectural decision records)
 
 ## Build & Test
 - Build: `make build` (binary at `bin/sol`)
@@ -23,6 +24,20 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Resolve**: Signal work complete (push branch, clear tether, stop session)
 - **World Config**: `world.toml` per-world, `sol.toml` global — layered TOML configuration
 - **World Lifecycle**: `sol world init` required before use — explicit world creation
+- **Caravan**: Batch of related work items across worlds, with phase-based sequencing
+- **Brief**: Agent-maintained context file (`.brief/memory.md`) persisted across sessions
+
+## Components (built)
+- **Prefect**: Sphere-wide orchestrator — respawns sessions, health checks
+- **Forge**: Per-world merge pipeline — Claude session + sol CLI toolbox (ADR-0005)
+- **Sentinel**: Per-world health monitor — Go process + AI callouts (ADR-0001)
+- **Consul**: Sphere-level patrol — stale tethers, stranded caravans (ADR-0007)
+- **Chronicle**: Event log maintenance
+
+## Components (planned)
+- **Envoy**: Persistent human-directed agent with brief system (Arc 3, ADR-0009)
+- **Governor**: Per-world work coordinator — Claude session + sol CLI (Arc 3, ADR-0010)
+- **Senate**: Sphere-scoped cross-world planner (Arc 4, ADR-0011)
 
 ## Commits
 Use [Conventional Commits](https://www.conventionalcommits.org/):
@@ -38,6 +53,8 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - New components must have status representation in `sol status` (sphere overview and/or per-world detail)
 - New agent roles get their own section in per-world status display
 - New sphere-level processes appear in the sphere processes section
+- Architectural divergences from target-architecture.md get an ADR in `docs/decisions/`
+- ADR format: lightweight MADR — Context → Decision → Consequences
 
 ## Conventions
 - Go module: github.com/nevinsm/sol
