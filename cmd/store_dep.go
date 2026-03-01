@@ -177,8 +177,8 @@ func init() {
 	storeDepCmd.AddCommand(storeDepListCmd)
 
 	// Shared --world flag for dep subcommands.
-	storeDepAddCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
-	storeDepRemoveCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
-	storeDepListCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
+	storeDepAddCmd.Flags().String("world", "", "world name")
+	storeDepRemoveCmd.Flags().String("world", "", "world name")
+	storeDepListCmd.Flags().String("world", "", "world name")
 	storeDepListCmd.Flags().BoolVar(&depJSON, "json", false, "output as JSON")
 }

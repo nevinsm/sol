@@ -261,8 +261,6 @@ func openForge(world string) (*forge.Forge, *store.Store, *store.Store, error) {
 	return ref, worldStore, sphereStore, nil
 }
 
-var forgeToolboxJSON bool
-
 var forgeReadyCmd = &cobra.Command{
 	Use:   "ready <world>",
 	Short: "List ready (unblocked) merge requests",
@@ -286,7 +284,8 @@ var forgeReadyCmd = &cobra.Command{
 			return err
 		}
 
-		if forgeToolboxJSON {
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
 			return printJSON(mrs)
 		}
 
@@ -328,7 +327,8 @@ var forgeBlockedCmd = &cobra.Command{
 			return err
 		}
 
-		if forgeToolboxJSON {
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
 			return printJSON(mrs)
 		}
 
@@ -369,8 +369,9 @@ var forgeClaimCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		jsonOut, _ := cmd.Flags().GetBool("json")
 		if mr == nil {
-			if forgeToolboxJSON {
+			if jsonOut {
 				fmt.Println("null")
 			} else {
 				fmt.Println("No ready merge requests to claim")
@@ -385,7 +386,7 @@ var forgeClaimCmd = &cobra.Command{
 			"branch":           mr.Branch,
 		})
 
-		if forgeToolboxJSON {
+		if jsonOut {
 			return printJSON(mr)
 		}
 
@@ -448,7 +449,8 @@ var forgeRunGatesCmd = &cobra.Command{
 			return err
 		}
 
-		if forgeToolboxJSON {
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
 			return printJSON(results)
 		}
 
@@ -591,7 +593,8 @@ var forgeCreateResolutionCmd = &cobra.Command{
 			return err
 		}
 
-		if forgeToolboxJSON {
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
 			return printJSON(map[string]string{
 				"mr_id":   mrID,
 				"task_id": taskID,
@@ -627,7 +630,8 @@ var forgeCheckUnblockedCmd = &cobra.Command{
 			return err
 		}
 
-		if forgeToolboxJSON {
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
 			return printJSON(unblocked)
 		}
 
@@ -698,6 +702,6 @@ func init() {
 		forgeReadyCmd, forgeBlockedCmd, forgeClaimCmd,
 		forgeRunGatesCmd, forgeCreateResolutionCmd, forgeCheckUnblockedCmd,
 	} {
-		cmd.Flags().BoolVar(&forgeToolboxJSON, "json", false, "output as JSON")
+		cmd.Flags().Bool("json", false, "output as JSON")
 	}
 }

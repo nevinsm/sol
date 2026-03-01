@@ -7,6 +7,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -44,6 +45,13 @@ var sessionStartCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
+
+		if startWorld != "" {
+			if err := config.RequireWorld(startWorld); err != nil {
+				return err
+			}
+		}
+
 		env := make(map[string]string)
 		for _, e := range startEnv {
 			for i := 0; i < len(e); i++ {

@@ -15,9 +15,7 @@ import (
 )
 
 var (
-	caravanWorld   string
 	caravanOwner   string
-	caravanJSON    bool
 	caravanFormula string
 	caravanVars    []string
 )
@@ -37,11 +35,12 @@ var caravanCreateCmd = &cobra.Command{
 		name := args[0]
 		itemIDs := args[1:]
 
-		if caravanWorld == "" && len(itemIDs) > 0 {
+		world, _ := cmd.Flags().GetString("world")
+		if world == "" && len(itemIDs) > 0 {
 			return fmt.Errorf("--world is required when adding items")
 		}
-		if caravanWorld != "" {
-			if err := config.RequireWorld(caravanWorld); err != nil {
+		if world != "" {
+			if err := config.RequireWorld(world); err != nil {
 				return err
 			}
 		}
@@ -63,7 +62,7 @@ var caravanCreateCmd = &cobra.Command{
 		}
 
 		for _, itemID := range itemIDs {
-			if err := sphereStore.AddCaravanItem(caravanID, itemID, caravanWorld); err != nil {
+			if err := sphereStore.AddCaravanItem(caravanID, itemID, world); err != nil {
 				return err
 			}
 		}
@@ -90,10 +89,11 @@ var caravanAddCmd = &cobra.Command{
 		caravanID := args[0]
 		itemIDs := args[1:]
 
-		if caravanWorld == "" {
+		world, _ := cmd.Flags().GetString("world")
+		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
-		if err := config.RequireWorld(caravanWorld); err != nil {
+		if err := config.RequireWorld(world); err != nil {
 			return err
 		}
 
@@ -104,7 +104,7 @@ var caravanAddCmd = &cobra.Command{
 		defer sphereStore.Close()
 
 		for _, itemID := range itemIDs {
-			if err := sphereStore.AddCaravanItem(caravanID, itemID, caravanWorld); err != nil {
+			if err := sphereStore.AddCaravanItem(caravanID, itemID, world); err != nil {
 				return err
 			}
 		}
@@ -139,7 +139,8 @@ var caravanCheckCmd = &cobra.Command{
 			return err
 		}
 
-		if caravanJSON {
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
 			out := struct {
 				ID     string                   `json:"id"`
 				Name   string                   `json:"name"`
@@ -205,6 +206,8 @@ var caravanStatusCmd = &cobra.Command{
 	Short: "Show caravan status",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		jsonOut, _ := cmd.Flags().GetBool("json")
+
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
@@ -224,7 +227,7 @@ var caravanStatusCmd = &cobra.Command{
 				return err
 			}
 
-			if caravanJSON {
+			if jsonOut {
 				out := struct {
 					ID     string                   `json:"id"`
 					Name   string                   `json:"name"`
@@ -274,7 +277,7 @@ var caravanStatusCmd = &cobra.Command{
 			return err
 		}
 
-		if caravanJSON {
+		if jsonOut {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(caravans)
@@ -328,10 +331,11 @@ var caravanLaunchCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
 
-		if caravanWorld == "" {
+		world, _ := cmd.Flags().GetString("world")
+		if world == "" {
 			return fmt.Errorf("--world is required")
 		}
-		if err := config.RequireWorld(caravanWorld); err != nil {
+		if err := config.RequireWorld(world); err != nil {
 			return err
 		}
 
@@ -350,7 +354,7 @@ var caravanLaunchCmd = &cobra.Command{
 		var readyItems []store.CaravanItemStatus
 		var blockedItems []store.CaravanItemStatus
 		for _, st := range statuses {
-			if st.World != caravanWorld {
+			if st.World != world {
 				continue
 			}
 			if st.WorkItemStatus == "open" && st.Ready {
@@ -369,7 +373,7 @@ var caravanLaunchCmd = &cobra.Command{
 		}
 
 		// Config-first source repo discovery.
-		worldCfg, err := config.LoadWorldConfig(caravanWorld)
+		worldCfg, err := config.LoadWorldConfig(world)
 		if err != nil {
 			return err
 		}
@@ -378,7 +382,7 @@ var caravanLaunchCmd = &cobra.Command{
 			return err
 		}
 
-		worldStore, err := store.OpenWorld(caravanWorld)
+		worldStore, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
@@ -388,13 +392,16 @@ var caravanLaunchCmd = &cobra.Command{
 		logger := events.NewLogger(config.Home())
 
 		// Parse --var flags into a map.
-		vars := parseCaravanVarFlags(caravanVars)
+		vars, err := parseVarFlags(caravanVars)
+		if err != nil {
+			return err
+		}
 
 		dispatched := 0
 		for _, st := range readyItems {
 			castOpts := dispatch.CastOpts{
 				WorkItemID:  st.WorkItemID,
-				World:       caravanWorld,
+				World:       world,
 				SourceRepo:  sourceRepo,
 				WorldConfig: &worldCfg,
 			}
@@ -413,7 +420,7 @@ var caravanLaunchCmd = &cobra.Command{
 
 		logger.Emit(events.EventCaravanLaunched, "sol", "operator", "both", map[string]string{
 			"caravan_id":  caravanID,
-			"world":      caravanWorld,
+			"world":      world,
 			"dispatched": fmt.Sprintf("%d", dispatched),
 		})
 
@@ -465,21 +472,6 @@ func itemTitle(workItemID, world string) string {
 	return item.Title
 }
 
-// parseCaravanVarFlags splits "key=val" strings into a map.
-func parseCaravanVarFlags(vars []string) map[string]string {
-	if len(vars) == 0 {
-		return nil
-	}
-	m := make(map[string]string, len(vars))
-	for _, v := range vars {
-		parts := strings.SplitN(v, "=", 2)
-		if len(parts) == 2 {
-			m[parts[0]] = parts[1]
-		}
-	}
-	return m
-}
-
 func blockedByList(workItemID, world string) string {
 	worldStore, err := gatedWorldOpener(world)
 	if err != nil {
@@ -515,21 +507,21 @@ func init() {
 	caravanCmd.AddCommand(caravanLaunchCmd)
 
 	// create flags
-	caravanCreateCmd.Flags().StringVar(&caravanWorld, "world", "", "world for the listed items")
+	caravanCreateCmd.Flags().String("world", "", "world name")
 	caravanCreateCmd.Flags().StringVar(&caravanOwner, "owner", "", "caravan owner (default: operator)")
 
 	// add flags
-	caravanAddCmd.Flags().StringVar(&caravanWorld, "world", "", "world for the items")
+	caravanAddCmd.Flags().String("world", "", "world name")
 	caravanAddCmd.MarkFlagRequired("world")
 
 	// check flags
-	caravanCheckCmd.Flags().BoolVar(&caravanJSON, "json", false, "output as JSON")
+	caravanCheckCmd.Flags().Bool("json", false, "output as JSON")
 
 	// status flags
-	caravanStatusCmd.Flags().BoolVar(&caravanJSON, "json", false, "output as JSON")
+	caravanStatusCmd.Flags().Bool("json", false, "output as JSON")
 
 	// launch flags
-	caravanLaunchCmd.Flags().StringVar(&caravanWorld, "world", "", "world to dispatch from")
+	caravanLaunchCmd.Flags().String("world", "", "world name")
 	caravanLaunchCmd.Flags().StringVar(&caravanFormula, "formula", "", "workflow formula for dispatched items")
 	caravanLaunchCmd.Flags().StringSliceVar(&caravanVars, "var", nil, "variable assignment (key=val)")
 	caravanLaunchCmd.MarkFlagRequired("world")

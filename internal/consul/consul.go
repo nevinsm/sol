@@ -22,7 +22,6 @@ type Config struct {
 	StaleTetherTimeout time.Duration // how long a tether can be stale (default: 1 hour)
 	HeartbeatDir      string        // path to heartbeat directory (default: $SOL_HOME/consul)
 	SolHome           string        // $SOL_HOME path
-	SourceRepo        string        // path to source git repo (for dispatch)
 	EscalationWebhook string        // webhook URL for escalation routing (optional)
 }
 

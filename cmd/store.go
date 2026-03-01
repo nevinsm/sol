@@ -17,9 +17,6 @@ var storeCmd = &cobra.Command{
 	Short: "Work item store operations",
 }
 
-// Shared flags
-var worldFlag string
-
 func init() {
 	rootCmd.AddCommand(storeCmd)
 
@@ -70,7 +67,7 @@ var storeCreateCmd = &cobra.Command{
 }
 
 func init() {
-	storeCreateCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
+	storeCreateCmd.Flags().String("world", "", "world name")
 	storeCreateCmd.Flags().StringVar(&createTitle, "title", "", "work item title")
 	storeCreateCmd.Flags().StringVar(&createDescription, "description", "", "work item description")
 	storeCreateCmd.Flags().IntVar(&createPriority, "priority", 2, "priority (1=high, 2=normal, 3=low)")
@@ -113,7 +110,7 @@ var storeGetCmd = &cobra.Command{
 }
 
 func init() {
-	storeGetCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
+	storeGetCmd.Flags().String("world", "", "world name")
 	storeGetCmd.Flags().BoolVar(&getJSON, "json", false, "output as JSON")
 }
 
@@ -179,7 +176,7 @@ var storeListCmd = &cobra.Command{
 }
 
 func init() {
-	storeListCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
+	storeListCmd.Flags().String("world", "", "world name")
 	storeListCmd.Flags().StringVar(&listStatus, "status", "", "filter by status")
 	storeListCmd.Flags().StringVar(&listLabel, "label", "", "filter by label")
 	storeListCmd.Flags().StringVar(&listAssignee, "assignee", "", "filter by assignee")
@@ -226,7 +223,7 @@ var storeUpdateCmd = &cobra.Command{
 }
 
 func init() {
-	storeUpdateCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
+	storeUpdateCmd.Flags().String("world", "", "world name")
 	storeUpdateCmd.Flags().StringVar(&updateStatus, "status", "", "new status")
 	storeUpdateCmd.Flags().StringVar(&updateAssignee, "assignee", "", "new assignee (- to clear)")
 	storeUpdateCmd.Flags().IntVar(&updatePriority, "priority", 0, "new priority")
@@ -261,7 +258,7 @@ var storeCloseCmd = &cobra.Command{
 }
 
 func init() {
-	storeCloseCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
+	storeCloseCmd.Flags().String("world", "", "world name")
 }
 
 // --- sol store query ---
@@ -316,7 +313,7 @@ var storeQueryCmd = &cobra.Command{
 }
 
 func init() {
-	storeQueryCmd.Flags().StringVar(&worldFlag, "world", "", "world database name")
+	storeQueryCmd.Flags().String("world", "", "world name")
 	storeQueryCmd.Flags().StringVar(&querySQL, "sql", "", "SQL SELECT query")
 	storeQueryCmd.Flags().BoolVar(&queryJSON, "json", false, "output as JSON")
 }

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -55,7 +54,10 @@ var castCmd = &cobra.Command{
 		logger := events.NewLogger(config.Home())
 
 		// Parse --var flags into a map.
-		vars := parseVarFlags(castVars)
+		vars, err := parseVarFlags(castVars)
+		if err != nil {
+			return err
+		}
 
 		result, err := dispatch.Cast(dispatch.CastOpts{
 			WorkItemID:  workItemID,
@@ -79,21 +81,6 @@ var castCmd = &cobra.Command{
 		fmt.Printf("  Attach:   sol session attach %s\n", result.SessionName)
 		return nil
 	},
-}
-
-// parseVarFlags splits "key=val" strings into a map.
-func parseVarFlags(vars []string) map[string]string {
-	if len(vars) == 0 {
-		return nil
-	}
-	m := make(map[string]string, len(vars))
-	for _, v := range vars {
-		parts := strings.SplitN(v, "=", 2)
-		if len(parts) == 2 {
-			m[parts[0]] = parts[1]
-		}
-	}
-	return m
 }
 
 func init() {
