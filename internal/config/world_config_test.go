@@ -343,7 +343,7 @@ func TestWorldConfigValidateCapacity(t *testing.T) {
 }
 
 func TestValidateWorldNameReserved(t *testing.T) {
-	reserved := []string{"store", "runtime", "sol"}
+	reserved := []string{"store", "runtime", "sol", "formulas"}
 	for _, name := range reserved {
 		if err := ValidateWorldName(name); err == nil {
 			t.Errorf("expected reserved name %q to be rejected, got nil error", name)
@@ -358,6 +358,23 @@ func TestValidateWorldNameReserved(t *testing.T) {
 		if err := ValidateWorldName(name); err != nil {
 			t.Errorf("expected name %q to be allowed, got: %v", name, err)
 		}
+	}
+}
+
+func TestValidateWorldNameTooLong(t *testing.T) {
+	long := strings.Repeat("a", 65)
+	err := ValidateWorldName(long)
+	if err == nil {
+		t.Fatal("expected error for name exceeding max length")
+	}
+	if !strings.Contains(err.Error(), "too long") {
+		t.Fatalf("expected 'too long' in error, got: %v", err)
+	}
+
+	// Exactly 64 should be OK.
+	exact := strings.Repeat("a", 64)
+	if err := ValidateWorldName(exact); err != nil {
+		t.Fatalf("expected 64-char name to be valid, got: %v", err)
 	}
 }
 

@@ -37,15 +37,21 @@ func WorldDir(world string) string {
 var validWorldName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 var reservedWorldNames = map[string]bool{
-	"store":   true,
-	"runtime": true,
-	"sol":     true,
+	"store":    true,
+	"runtime":  true,
+	"sol":      true,
+	"formulas": true,
 }
+
+const maxWorldNameLen = 64
 
 // ValidateWorldName checks that a world name contains only safe characters.
 func ValidateWorldName(name string) error {
 	if name == "" {
 		return fmt.Errorf("world name must not be empty")
+	}
+	if len(name) > maxWorldNameLen {
+		return fmt.Errorf("world name %q is too long (%d chars, max %d)", name, len(name), maxWorldNameLen)
 	}
 	if !validWorldName.MatchString(name) {
 		return fmt.Errorf("invalid world name %q: must match [a-zA-Z0-9][a-zA-Z0-9_-]*", name)

@@ -238,13 +238,13 @@ func TestSchemaV5Migration(t *testing.T) {
 		t.Fatalf("expected worlds table, got count=%d", count)
 	}
 
-	// Verify schema_version is 5.
+	// Verify schema_version is 6.
 	var version int
 	err = s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 5 {
-		t.Fatalf("expected schema version 5, got %d", version)
+	if version != 6 {
+		t.Fatalf("expected schema version 6, got %d", version)
 	}
 }

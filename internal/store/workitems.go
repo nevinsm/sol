@@ -280,21 +280,40 @@ func (s *Store) ListWorkItems(filters ListFilters) ([]WorkItem, error) {
 		return nil, fmt.Errorf("failed iterating work items: %w", err)
 	}
 
-	// Fetch labels for each item.
-	for i := range items {
-		labelRows, err := s.db.Query(`SELECT label FROM labels WHERE work_item_id = ? ORDER BY label`, items[i].ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get labels: %w", err)
+	// Batch-fetch all labels for returned items.
+	if len(items) > 0 {
+		ids := make([]interface{}, len(items))
+		placeholders := make([]string, len(items))
+		for i, item := range items {
+			ids[i] = item.ID
+			placeholders[i] = "?"
 		}
+
+		labelQuery := fmt.Sprintf(
+			`SELECT work_item_id, label FROM labels WHERE work_item_id IN (%s) ORDER BY work_item_id, label`,
+			strings.Join(placeholders, ","),
+		)
+		labelRows, err := s.db.Query(labelQuery, ids...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query labels: %w", err)
+		}
+		defer labelRows.Close()
+
+		labelMap := make(map[string][]string)
 		for labelRows.Next() {
-			var label string
-			if err := labelRows.Scan(&label); err != nil {
-				labelRows.Close()
+			var itemID, label string
+			if err := labelRows.Scan(&itemID, &label); err != nil {
 				return nil, fmt.Errorf("failed to scan label: %w", err)
 			}
-			items[i].Labels = append(items[i].Labels, label)
+			labelMap[itemID] = append(labelMap[itemID], label)
 		}
-		labelRows.Close()
+		if err := labelRows.Err(); err != nil {
+			return nil, fmt.Errorf("failed to iterate labels: %w", err)
+		}
+
+		for i := range items {
+			items[i].Labels = labelMap[items[i].ID]
+		}
 	}
 	return items, nil
 }

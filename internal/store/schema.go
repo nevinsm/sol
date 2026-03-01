@@ -1,6 +1,10 @@
 package store
 
-import "fmt"
+import (
+	"database/sql"
+	"fmt"
+	"strings"
+)
 
 const worldSchemaV1 = `
 CREATE TABLE IF NOT EXISTS work_items (
@@ -61,6 +65,8 @@ CREATE TABLE IF NOT EXISTS dependencies (
 CREATE INDEX IF NOT EXISTS idx_deps_from ON dependencies(from_id);
 CREATE INDEX IF NOT EXISTS idx_deps_to ON dependencies(to_id);
 `
+
+var worldSchemaV5 = `CREATE INDEX IF NOT EXISTS idx_mr_blocked_by ON merge_requests(blocked_by);`
 
 const sphereSchemaV1 = `
 CREATE TABLE IF NOT EXISTS agents (
@@ -140,7 +146,7 @@ func (s *Store) migrateWorld() error {
 		}
 	}
 	if v < 3 {
-		if _, err := s.db.Exec(worldSchemaV3); err != nil {
+		if err := execIgnoreDuplicate(s.db, worldSchemaV3); err != nil {
 			return fmt.Errorf("failed to apply world schema v3: %w", err)
 		}
 	}
@@ -149,12 +155,17 @@ func (s *Store) migrateWorld() error {
 			return fmt.Errorf("failed to apply world schema v4: %w", err)
 		}
 	}
+	if v < 5 {
+		if _, err := s.db.Exec(worldSchemaV5); err != nil {
+			return fmt.Errorf("failed to apply world schema v5: %w", err)
+		}
+	}
 	if v < 1 {
-		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (4)"); err != nil {
+		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (5)"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
-	} else if v < 4 {
-		if _, err := s.db.Exec("UPDATE schema_version SET version = 4"); err != nil {
+	} else if v < 5 {
+		if _, err := s.db.Exec("UPDATE schema_version SET version = 5"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	}
@@ -199,6 +210,35 @@ CREATE TABLE IF NOT EXISTS worlds (
 );
 `
 
+var sphereSchemaV6 = `
+CREATE INDEX IF NOT EXISTS idx_agents_world_state ON agents(world, state);
+CREATE INDEX IF NOT EXISTS idx_escalations_status ON escalations(status);
+CREATE INDEX IF NOT EXISTS idx_caravan_items_world ON caravan_items(world);
+`
+
+// execIgnoreDuplicate runs a SQL statement and ignores "duplicate column"
+// errors, making ALTER TABLE ADD COLUMN idempotent.
+func execIgnoreDuplicate(db interface{ Exec(string, ...interface{}) (sql.Result, error) }, query string) error {
+	_, err := db.Exec(query)
+	if err != nil && strings.Contains(err.Error(), "duplicate column name") {
+		return nil
+	}
+	return err
+}
+
+// execIgnoreRenameErrors runs a SQL statement and ignores errors from
+// columns/tables that were already renamed, making ALTER TABLE RENAME idempotent.
+func execIgnoreRenameErrors(db interface{ Exec(string, ...interface{}) (sql.Result, error) }, query string) error {
+	_, err := db.Exec(query)
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "no such column") || strings.Contains(msg, "no such table") {
+			return nil // Already renamed
+		}
+	}
+	return err
+}
+
 func (s *Store) migrateSphere() error {
 	v, err := s.schemaVersion()
 	if err != nil {
@@ -220,8 +260,15 @@ func (s *Store) migrateSphere() error {
 		}
 	}
 	if v < 4 {
-		if _, err := s.db.Exec(sphereSchemaV4); err != nil {
-			return fmt.Errorf("failed to apply sphere schema v4: %w", err)
+		// Each rename is executed individually for crash-safety.
+		for _, stmt := range strings.Split(sphereSchemaV4, "\n") {
+			stmt = strings.TrimSpace(stmt)
+			if stmt == "" {
+				continue
+			}
+			if err := execIgnoreRenameErrors(s.db, stmt); err != nil {
+				return fmt.Errorf("failed to apply sphere schema v4: %w", err)
+			}
 		}
 	}
 	if v < 5 {
@@ -229,12 +276,17 @@ func (s *Store) migrateSphere() error {
 			return fmt.Errorf("failed to apply sphere schema v5: %w", err)
 		}
 	}
+	if v < 6 {
+		if _, err := s.db.Exec(sphereSchemaV6); err != nil {
+			return fmt.Errorf("failed to apply sphere schema v6: %w", err)
+		}
+	}
 	if v < 1 {
-		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (5)"); err != nil {
+		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (6)"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
-	} else if v < 5 {
-		if _, err := s.db.Exec("UPDATE schema_version SET version = 5"); err != nil {
+	} else if v < 6 {
+		if _, err := s.db.Exec("UPDATE schema_version SET version = 6"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	}

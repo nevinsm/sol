@@ -76,7 +76,7 @@ func TestSchemaCreation(t *testing.T) {
 	}
 
 	// Verify indexes exist.
-	for _, idx := range []string{"idx_work_status", "idx_work_assignee", "idx_work_priority", "idx_labels_label", "idx_mr_phase", "idx_mr_work_item"} {
+	for _, idx := range []string{"idx_work_status", "idx_work_assignee", "idx_work_priority", "idx_labels_label", "idx_mr_phase", "idx_mr_work_item", "idx_mr_blocked_by"} {
 		err = s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?`, idx).Scan(&count)
 		if err != nil {
 			t.Fatal(err)
@@ -92,8 +92,8 @@ func TestSchemaCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 4 {
-		t.Fatalf("expected schema version 4, got %d", version)
+	if version != 5 {
+		t.Fatalf("expected schema version 5, got %d", version)
 	}
 }
 
@@ -132,18 +132,18 @@ func TestMigrateSphereV5(t *testing.T) {
 		t.Fatalf("expected escalations table, got count=%d", count)
 	}
 
-	// Verify schema_version is 5.
+	// Verify schema_version is 6.
 	var version int
 	err = s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 5 {
-		t.Fatalf("expected schema version 5, got %d", version)
+	if version != 6 {
+		t.Fatalf("expected schema version 6, got %d", version)
 	}
 
 	// Verify indexes exist.
-	for _, idx := range []string{"idx_messages_recipient", "idx_messages_thread"} {
+	for _, idx := range []string{"idx_messages_recipient", "idx_messages_thread", "idx_agents_world_state", "idx_escalations_status", "idx_caravan_items_world"} {
 		err = s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?`, idx).Scan(&count)
 		if err != nil {
 			t.Fatal(err)
@@ -207,14 +207,14 @@ func TestMigrateSphereV1ToV5(t *testing.T) {
 		t.Fatalf("expected agent name 'Toast', got %q", agent.Name)
 	}
 
-	// Verify schema_version is 5 (V1→V2→V3→V4→V5 all applied).
+	// Verify schema_version is 6 (V1→V2→V3→V4→V5→V6 all applied).
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 5 {
-		t.Fatalf("expected schema version 5, got %d", version)
+	if version != 6 {
+		t.Fatalf("expected schema version 6, got %d", version)
 	}
 }
 
@@ -716,14 +716,14 @@ func TestMigrationIdempotent(t *testing.T) {
 		t.Fatalf("expected merge_requests table after reopen, got count=%d", count)
 	}
 
-	// Verify schema version is 4.
+	// Verify schema version is 5.
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 4 {
-		t.Fatalf("expected schema version 4 after reopen, got %d", version)
+	if version != 5 {
+		t.Fatalf("expected schema version 5 after reopen, got %d", version)
 	}
 }
 
@@ -780,14 +780,14 @@ func TestMigrateWorldV1ToV4(t *testing.T) {
 		t.Fatalf("expected title 'V1 item', got %q", item.Title)
 	}
 
-	// Verify schema version is 4 (V1→V2→V3→V4 all applied).
+	// Verify schema version is 5 (V1→V2→V3→V4→V5 all applied).
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 4 {
-		t.Fatalf("expected schema version 4, got %d", version)
+	if version != 5 {
+		t.Fatalf("expected schema version 5, got %d", version)
 	}
 }
 
