@@ -40,7 +40,8 @@ structure; the action layer names the mechanisms.
 |---|---|---|
 | **Tether** | The durability primitive. A file at `$SOL_HOME/{world}/outposts/{agent}/.tether` that binds an agent to a work item. If the tether exists, the work is assigned. | Hook |
 | **Charter** | Per-world configuration file (`world.toml`). Defines source repo, agent capacity, model tier, and forge settings. Layered with global `sol.toml`. | *(new in Arc 1)* |
-| **Brief** | An envoy's or governor's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start, persisted across sessions. GLASS-inspectable. | *(new in Arc 3)* |
+| **Brief** | An envoy's, governor's, or senate's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start and after compaction, save-checked on stop. GLASS-inspectable. | *(new in Arc 3)* |
+| **World Summary** | Governor-maintained external-facing summary of a world. Structured file at `.brief/world-summary.md` with prescribed sections (Project, Architecture, Priorities, Constraints). Read by Senate and operators via `sol world summary`. | *(new in Arc 3)* |
 
 ## Processes
 
@@ -56,7 +57,7 @@ structure; the action layer names the mechanisms.
 
 | Term | Definition | Replaces (Gastown) |
 |---|---|---|
-| **Caravan** | A batch of related work items dispatched together. Tracks readiness and dependencies across worlds. | Convoy |
+| **Caravan** | A batch of related work items dispatched together. Tracks readiness and dependencies across worlds. Items are assigned a **phase** for cross-world sequencing — phase 0 dispatches first, phase N waits for earlier phases to complete. | Convoy |
 
 ## Sessions
 

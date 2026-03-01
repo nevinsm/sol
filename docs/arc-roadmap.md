@@ -53,8 +53,26 @@ Make the system approachable for first-time operators.
 - Actionable error messages when prerequisites fail (not just "exec: tmux: not found")
 - Operator quick-start documentation
 
+### Status Overhaul
+
+Polished status output using Charmbracelet lipgloss. New sphere-level
+overview for system-wide visibility.
+
+- `sol status` (no args) — sphere overview: sphere processes (prefect,
+  consul, chronicle), worlds table with per-world summary, open caravans
+- `sol status <world>` — updated rendering with lipgloss styling
+- Charmbracelet lipgloss for section headers, tables, colored status
+  indicators. `--json` bypasses all styling.
+- Rendering separated from data gathering (`status/render.go`)
+- Consul status added to sphere process checks (missing today)
+- Sphere health: aggregate of all world health + sphere process health
+
+Role-aware sections (outposts/envoys/governor) land with Arc 3 when
+those roles exist.
+
 **Acceptance:** A new operator can go from zero to first successful `cast` with
 clear guidance at every step. `sol doctor` catches all common setup issues.
+`sol status` gives a system-wide overview at a glance.
 
 ---
 
@@ -74,7 +92,9 @@ collaboration. Maintain accumulated context (brief) across sessions.
 - Claude Code hooks: `SessionStart` injects brief, `Stop` prompt hook ensures save before exit
 - `SessionStart` compact hook re-injects brief after context compaction
 - Voluntary tether: envoy can bind to existing work items or create its own
-- Resolve creates MR (through forge) but does not kill session or clear worktree
+- Resolve creates MR (through forge) but does not kill session or clear worktree.
+  Worktree reset is agent-managed: CLAUDE.md tells envoy to checkout main
+  and pull before starting new work. No forge-to-envoy coupling.
 - Sentinel and prefect skip `role=envoy` — human-supervised, not auto-respawned
 - CLI: `sol envoy create/start/stop/attach/list/brief/debrief`
 
@@ -93,13 +113,97 @@ Architecturally similar to forge: Claude session + sol CLI toolbox (ADR-0005 pat
 
 ### Shared Infrastructure
 
-- Brief system (`.brief/memory.md` + hooks) shared between envoy and governor
-- Both use persistent Claude sessions with context that survives restarts
 - Shared namespace with outposts: agent IDs remain `{world}/{name}`
+- Both use persistent Claude sessions with context that survives restarts
+
+### Brief System
+
+Context persistence across Claude Code sessions. Agent-maintained markdown
+files injected on session start, re-injected after compaction, save-checked
+on stop. Shared by envoy, governor, and senate (Arc 4).
+
+**Files:**
+
+| File | Owner | Purpose |
+|------|-------|---------|
+| `.brief/memory.md` | envoy, governor, senate | Internal accumulated knowledge (freeform) |
+| `.brief/world-summary.md` | governor only | External-facing world summary (structured) |
+
+**CLI:**
+
+- `sol brief inject --path=<path> --max-lines=200` — reads brief, truncates
+  if over limit, outputs framed content to stdout. Also writes
+  `.brief/.session_start` timestamp for the stop hook.
+- `sol brief check-save <path>` — stop hook command. Checks brief mtime
+  against `.session_start`. Blocks stop if brief hasn't been updated.
+  Checks `stop_hook_active` to prevent infinite loops.
+
+**Hooks (installed by `sol envoy/governor/senate start`):**
+
+| Event | Matcher | Command | Purpose |
+|-------|---------|---------|---------|
+| `SessionStart` | `startup\|resume` | `sol brief inject` | Inject brief into session context |
+| `SessionStart` | `compact` | `sol brief inject` | Re-inject after context compaction |
+| `Stop` | — | `sol brief check-save` | Nudge agent to update brief before exit |
+
+**Size management (three layers):**
+
+1. CLAUDE.md guidance: "Keep your brief under 200 lines. Consolidate
+   older entries."
+2. AI self-management: agent prunes organically, especially at stop
+   consolidation points.
+3. Injection truncation: `sol brief inject` hard-caps at 200 lines.
+   Truncation notice tells agent to read full file and consolidate.
+
+**Brief format:**
+
+- `memory.md` — freeform with CLAUDE.md guidance. Agent organizes
+  naturally (same model as Claude Code's own MEMORY.md).
+- `world-summary.md` — prescribed sections for external consumers:
+
+```
+# World Summary: {world}
+## Project       — what this codebase is
+## Architecture  — key modules, patterns, tech stack
+## Priorities    — active work themes, what's in flight
+## Constraints   — known problem areas, things to avoid
+```
+
+**Crash recovery:** Brief files survive crashes. Next startup injects
+whatever was last saved (possibly stale). CLAUDE.md tells agent to review.
+
+### Caravan Phases — Cross-World Sequencing
+
+Schema V6: `phase INTEGER` column on `caravan_items` in sphere.db.
+Phase 0 items dispatch immediately. Phase N items wait until all items
+in phases < N are done/closed.
+
+- Composes with within-world dependencies: phases for cross-world
+  sequencing, `dependencies` table for within-world DAGs
+- Folds into `CheckCaravanReadiness` — consul and governor just check
+  `Ready`, no phase-specific code needed
+- Backward compatible: existing items default to phase 0
+- Governor checks caravan readiness (including phases) before dispatch
+- Senate (Arc 4) creates phased caravans for cross-world work planning
+
+### Status Display — Role-Aware Sections
+
+Update `sol status <world>` with role-separated sections (building on
+the lipgloss rendering from Arc 2):
+
+- **Processes:** forge, sentinel, governor (as a singleton like forge)
+  plus sphere-level (prefect, consul, chronicle)
+- **Outposts:** agents with role=agent (existing behavior, filtered)
+- **Envoys:** agents with role=envoy, with BRIEF column (mtime age)
+- Sections omitted when empty (no envoys → no Envoys section)
+- Governor and envoy session status do NOT affect health — they are
+  operator-managed, not system-critical
+- Caravan display gains phase progress breakdown
 
 **Acceptance:** Operator can create persistent envoys for collaborative work
 and start a governor for natural language work dispatch. Brief context survives
-session restarts and compaction.
+session restarts and compaction. Caravan phases enforce cross-world work
+ordering. `sol status` cleanly separates outposts, envoys, and governor.
 
 ---
 
@@ -119,6 +223,9 @@ always running, not supervised. Sits above governors in the planning hierarchy.
 - Interactive governor queries via synchronous CLI (`sol world query`)
 - Creates cross-world work items, caravans, dependencies
 - Delegates per-world dispatch to governors
+- Governor notification: caravan items need no notification (consul
+  handles stranded caravans). Standalone items — Senate sends mail
+  explicitly to `{world}/governor` with `WORK_ITEM_CREATED` subject.
 - CLI: `sol senate start/stop/attach/brief/debrief`
 
 ### Governor Enhancements

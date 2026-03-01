@@ -34,6 +34,11 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - `chore: update dependencies` — maintenance
 - Use scope when helpful: `feat(store): add label filtering`
 
+## Design Conventions
+- New components must have status representation in `sol status` (sphere overview and/or per-world detail)
+- New agent roles get their own section in per-world status display
+- New sphere-level processes appear in the sphere processes section
+
 ## Conventions
 - Go module: github.com/nevinsm/sol
 - All timestamps: RFC3339 in UTC
