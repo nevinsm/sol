@@ -130,6 +130,17 @@ func (s *Store) IsReady(itemID string) (bool, error) {
 
 // wouldCreateCycle checks if adding the edge from→to would create a cycle
 // by walking the dependency graph from toID to see if fromID is reachable.
+//
+// Implementation note: this does a BFS with one GetDependencies query per
+// node. For large dependency graphs (100+ nodes), consider replacing with
+// a recursive CTE:
+//
+//	WITH RECURSIVE chain(id) AS (
+//	    SELECT to_id FROM dependencies WHERE from_id = ?
+//	    UNION ALL
+//	    SELECT d.to_id FROM dependencies d JOIN chain c ON d.from_id = c.id
+//	)
+//	SELECT 1 FROM chain WHERE id = ? LIMIT 1
 func (s *Store) wouldCreateCycle(fromID, toID string) (bool, error) {
 	visited := map[string]bool{}
 	queue := []string{toID}

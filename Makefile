@@ -1,4 +1,4 @@
-.PHONY: build test test-e2e install clean
+.PHONY: build test test-short test-e2e install clean
 
 SOL_TEST_HOME  := /tmp/sol-test
 SOL_TEST_WORLD := myworld
@@ -8,7 +8,10 @@ build:
 	go build -o bin/sol .
 
 test:
-	go test ./...
+	go test -race ./...
+
+test-short:
+	go test -short -race ./...
 
 # Full end-to-end test: create agent, create work item, cast, verify, resolve, verify, clean up.
 # Cleans up all artifacts: SOL_HOME dir, git worktrees, outpost branches, tmux sessions.

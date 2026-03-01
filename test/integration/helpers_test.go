@@ -46,10 +46,16 @@ func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 
 	// 5. Cleanup tmux sessions on test end.
 	t.Cleanup(func() {
-		out, _ := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
+		out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
+		if err != nil {
+			// tmux server might not be running — not an error.
+			return
+		}
 		for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			if strings.HasPrefix(name, "sol-") {
-				exec.Command("tmux", "kill-session", "-t", name).Run()
+				if err := exec.Command("tmux", "kill-session", "-t", name).Run(); err != nil {
+					t.Logf("cleanup: failed to kill session %q: %v", name, err)
+				}
 			}
 		}
 	})

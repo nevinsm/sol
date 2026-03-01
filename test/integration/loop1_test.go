@@ -255,8 +255,9 @@ func TestPrefectSessionRestart(t *testing.T) {
 	supDone := make(chan error, 1)
 	go func() { supDone <- sup.Run(ctx) }()
 
-	// Give prefect time to start.
-	time.Sleep(500 * time.Millisecond)
+	// Brief startup delay — prefect's first heartbeat runs on a ticker,
+	// not an observable event we can poll for.
+	time.Sleep(200 * time.Millisecond)
 
 	// Kill the agent's tmux session directly.
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
@@ -347,8 +348,9 @@ func TestMassDeathDegradation(t *testing.T) {
 	supDone := make(chan error, 1)
 	go func() { supDone <- sup.Run(ctx) }()
 
-	// Give prefect time to start and run its initial heartbeat.
-	time.Sleep(500 * time.Millisecond)
+	// Brief startup delay — prefect's first heartbeat runs on a ticker,
+	// not an observable event we can poll for.
+	time.Sleep(200 * time.Millisecond)
 
 	// Kill all 5 tmux sessions at once.
 	for _, name := range sessionNames {
@@ -388,7 +390,9 @@ func TestMassDeathDegradation(t *testing.T) {
 		t.Fatal("prefect did not exit degraded mode within 20 seconds")
 	}
 
-	// Wait for death times to be fully pruned (past MassDeathWindow).
+	// Wait for death times to age past MassDeathWindow (5s) so they get
+	// pruned on the next heartbeat. By this point, ~3s (DegradedCooldown)
+	// have elapsed since deaths were recorded; sleep for the remainder + margin.
 	time.Sleep(2 * time.Second)
 
 	// After recovery, dispatch a new work item and verify prefect

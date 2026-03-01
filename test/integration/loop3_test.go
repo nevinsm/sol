@@ -272,8 +272,8 @@ func TestChronicleDedupAndAggregation(t *testing.T) {
 	logger.Emit(events.EventResolve, "sol", "Jasper", "both", map[string]string{"item": "x"})
 	logger.Emit(events.EventResolve, "sol", "Sage", "both", map[string]string{"item": "y"})
 
-	// Small delay so aggregation window passes.
-	time.Sleep(5 * time.Millisecond)
+	// Ensure aggregation window has passed before processing.
+	time.Sleep(50 * time.Millisecond)
 
 	chronicle := events.NewChronicle(cfg)
 	if err := chronicle.ProcessOnce(); err != nil {
