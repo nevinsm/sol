@@ -23,21 +23,27 @@ However, several operator use cases don't fit the ephemeral model:
 Outposts lose context on every cast/resolve cycle. There is no way to maintain
 an ongoing relationship with an agent across work items.
 
-The Gastown prototype defined "crew" agents for this purpose but never
-implemented them.
+The Gastown prototype implemented "crew" agents for this purpose — persistent
+named Claude Code sessions with mail, self-directed work, direct push to main,
+and context cycling (`gt crew refresh` sent handoff mail to self, then
+restarted the session). Crew were fully functional but pushed directly to main,
+bypassing the merge pipeline entirely.
 
 ## Options Considered
 
 ### 1. Gastown crew model (direct push, no forge)
 
-Gastown crew agents pushed directly to main, bypassing the merge pipeline
-entirely. This created a trust asymmetry: crew code was unreviewed while
-outpost code went through forge quality gates. At scale, this is a
-reliability risk — a persistent agent accumulating context drift could push
-increasingly divergent code with no checkpoint.
+Gastown crew were persistent named Claude Code sessions with mail, identity
+continuity, and context cycling via handoff mail. They pushed directly to
+main, bypassing the refinery (forge) merge pipeline entirely. This created a
+trust asymmetry: crew code was unreviewed while polecat (outpost) code went
+through quality gates. At scale, this is a reliability risk — a persistent
+agent accumulating context drift could push increasingly divergent code with
+no checkpoint.
 
 Rejected: all code should go through forge. No trust asymmetry between
-agent types.
+agent types. The envoy preserves crew's persistence model but routes all
+code through forge.
 
 ### 2. Outpost with session persistence
 
