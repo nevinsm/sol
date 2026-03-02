@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/nevinsm/sol/internal/handoff"
-	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
 )
 
 // --- Mock session manager ---
@@ -73,6 +74,15 @@ func runGit(t *testing.T, dir string, args ...string) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %s failed: %s: %v", strings.Join(args, " "), string(out), err)
 	}
+}
+
+// addBareRemote creates a bare git repo and adds it as "origin" to repoDir
+// so that git push succeeds in tests.
+func addBareRemote(t *testing.T, repoDir string) {
+	t.Helper()
+	bareDir := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, repoDir, "clone", "--bare", ".", bareDir)
+	runGit(t, repoDir, "remote", "add", "origin", bareDir)
 }
 
 // --- Cast tests ---
@@ -550,6 +560,7 @@ func TestResolveHappyPath(t *testing.T) {
 	}
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
 
 	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
@@ -679,6 +690,7 @@ func TestResolveConflictResolution(t *testing.T) {
 	}
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
 
 	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
@@ -765,6 +777,7 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 	}
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
 
 	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true

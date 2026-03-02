@@ -163,8 +163,13 @@ func Write(state *State) error {
 		return fmt.Errorf("failed to marshal handoff state: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write handoff file: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to commit handoff file: %w", err)
 	}
 	return nil
 }
@@ -269,14 +274,18 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 			body += "\n\nWorkflow: " + state.WorkflowProgress
 		}
 		subject := fmt.Sprintf("HANDOFF: %s", state.WorkItemID)
-		sphereStore.SendMessage(agentID, agentID, subject, body, 2, "notification")
+		if _, err := sphereStore.SendMessage(agentID, agentID, subject, body, 2, "notification"); err != nil {
+			fmt.Fprintf(os.Stderr, "handoff: failed to send self-notification: %v\n", err)
+		}
 	}
 
 	sessionName := fmt.Sprintf("sol-%s-%s", opts.World, opts.AgentName)
 	worktreeDir := filepath.Join(config.Home(), opts.World, "outposts", opts.AgentName, "worktree")
 
 	// 4. Stop the current session (graceful).
-	sessionMgr.Stop(sessionName, false)
+	if err := sessionMgr.Stop(sessionName, false); err != nil {
+		fmt.Fprintf(os.Stderr, "handoff: failed to stop session %s: %v\n", sessionName, err)
+	}
 
 	// 5. Start a new session with the same worktree.
 	env := map[string]string{

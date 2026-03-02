@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
 )
@@ -24,18 +25,24 @@ func Read(world, agentName string) (string, error) {
 		}
 		return "", fmt.Errorf("failed to read tether for agent %q in world %q: %w", agentName, world, err)
 	}
-	return string(data), nil
+	return strings.TrimSpace(string(data)), nil
 }
 
 // Write writes a work item ID to the tether file.
 // Creates parent directories if needed.
 func Write(world, agentName, workItemID string) error {
 	path := TetherPath(world, agentName)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create tether directory for agent %q in world %q: %w", agentName, world, err)
 	}
-	if err := os.WriteFile(path, []byte(workItemID), 0o644); err != nil {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(workItemID), 0o644); err != nil {
 		return fmt.Errorf("failed to write tether for agent %q in world %q: %w", agentName, world, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp) // best-effort cleanup
+		return fmt.Errorf("failed to commit tether for agent %q in world %q: %w", agentName, world, err)
 	}
 	return nil
 }

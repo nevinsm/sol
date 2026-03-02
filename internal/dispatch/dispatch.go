@@ -174,18 +174,26 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	if out, err := addCmd.CombinedOutput(); err != nil {
 		addCmd2 := exec.Command("git", "-C", opts.SourceRepo, "worktree", "add", worktreeDir, branchName)
 		if out2, err2 := addCmd2.CombinedOutput(); err2 != nil {
-			return nil, fmt.Errorf("failed to create worktree: %s: %w", strings.TrimSpace(string(out2)), err)
+			return nil, fmt.Errorf("failed to create worktree: %s: %w", strings.TrimSpace(string(out2)), err2)
 		}
 		_ = out // suppress unused
 	}
 
 	// From here on, rollback on failure.
 	rollback := func() {
-		tether.Clear(opts.World, agent.Name)
-		worldStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{Status: "open", Assignee: "-"})
-		sphereStore.UpdateAgentState(agent.ID, "idle", "")
+		if err := tether.Clear(opts.World, agent.Name); err != nil {
+			fmt.Fprintf(os.Stderr, "rollback: failed to clear tether: %v\n", err)
+		}
+		if err := worldStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{Status: "open", Assignee: "-"}); err != nil {
+			fmt.Fprintf(os.Stderr, "rollback: failed to reset work item: %v\n", err)
+		}
+		if err := sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
+			fmt.Fprintf(os.Stderr, "rollback: failed to reset agent state: %v\n", err)
+		}
 		rmCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
-		rmCmd.Run()
+		if out, err := rmCmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "rollback: failed to remove worktree: %s\n", strings.TrimSpace(string(out)))
+		}
 	}
 
 	// 4. Write tether file.
@@ -557,21 +565,26 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	commitCmd := exec.Command("git", "-C", worktreeDir, "commit", "-m", commitMsg)
 	commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
 
-	// git push origin HEAD (warn but don't fail)
+	// git push origin HEAD
 	pushCmd := exec.Command("git", "-C", worktreeDir, "push", "origin", "HEAD")
+	pushFailed := false
 	if out, err := pushCmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: git push failed: %s\n", strings.TrimSpace(string(out)))
+		pushFailed = true
 	}
 
-	// 3. Create merge request for the forge to process.
-	mrID, err := worldStore.CreateMergeRequest(workItemID, branchName, item.Priority)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create merge request for %q: %w", workItemID, err)
-	}
-
-	// 4. Update work item: status → done.
+	// 3. Update work item: status → done.
 	if err := worldStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{Status: "done"}); err != nil {
 		return nil, fmt.Errorf("failed to update work item status: %w", err)
+	}
+
+	// 4. Create merge request (only if push succeeded).
+	var mrID string
+	if !pushFailed {
+		mrID, err = worldStore.CreateMergeRequest(workItemID, branchName, item.Priority)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create merge request for %q: %w", workItemID, err)
+		}
 	}
 
 	// 5. Update agent: state → idle, tether_item → clear.
@@ -634,19 +647,23 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 
 	// Force push with lease — branch was rebased, needs force push.
 	pushCmd := exec.Command("git", "-C", worktreeDir, "push", "--force-with-lease", "origin", "HEAD")
+	pushFailed := false
 	if out, err := pushCmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: git push --force-with-lease failed: %s\n",
 			strings.TrimSpace(string(out)))
+		pushFailed = true
 	}
 
-	// 2. Find and unblock the original MR.
-	blockedMR, err := worldStore.FindMergeRequestByBlocker(item.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find blocked MR for %q: %w", item.ID, err)
-	}
-	if blockedMR != nil {
-		if err := worldStore.UnblockMergeRequest(blockedMR.ID); err != nil {
-			return nil, fmt.Errorf("failed to unblock MR %q: %w", blockedMR.ID, err)
+	// 2. Find and unblock the original MR (only if push succeeded).
+	if !pushFailed {
+		blockedMR, err := worldStore.FindMergeRequestByBlocker(item.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find blocked MR for %q: %w", item.ID, err)
+		}
+		if blockedMR != nil {
+			if err := worldStore.UnblockMergeRequest(blockedMR.ID); err != nil {
+				return nil, fmt.Errorf("failed to unblock MR %q: %w", blockedMR.ID, err)
+			}
 		}
 	}
 

@@ -434,17 +434,22 @@ func Advance(world, agentName string) (nextStep *Step, done bool, err error) {
 		return nil, false, fmt.Errorf("no current step to advance from")
 	}
 
-	// Mark current step as complete.
+	// Mark current step as complete (idempotent for crash recovery).
 	stepPath := filepath.Join(wfDir, "steps", state.CurrentStep+".json")
 	currentStep, err := readStepFile(stepPath)
 	if err != nil {
 		return nil, false, err
 	}
 	now := time.Now().UTC()
-	currentStep.Status = "complete"
-	currentStep.CompletedAt = &now
-	if err := writeJSON(stepPath, currentStep); err != nil {
-		return nil, false, fmt.Errorf("failed to update step %q: %w", state.CurrentStep, err)
+	// If the step is already complete (e.g., from a crash recovery), skip to finding the next step.
+	if currentStep.Status == "complete" {
+		// Fall through to the next-step logic below.
+	} else {
+		currentStep.Status = "complete"
+		currentStep.CompletedAt = &now
+		if err := writeJSON(stepPath, currentStep); err != nil {
+			return nil, false, fmt.Errorf("failed to write step %q: %w", state.CurrentStep, err)
+		}
 	}
 
 	// Update completed list.
@@ -511,13 +516,21 @@ func Remove(world, agentName string) error {
 	return nil
 }
 
-// writeJSON marshals v to JSON and writes it to path.
+// writeJSON marshals v to JSON and writes it to path atomically.
 func writeJSON(path string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write %s: %w", filepath.Base(path), err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to commit %s: %w", filepath.Base(path), err)
+	}
+	return nil
 }
 
 // readStepFile reads and parses a step JSON file.

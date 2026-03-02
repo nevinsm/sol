@@ -122,6 +122,10 @@ func TestCLIResolveShowsMergeRequest(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	solHome, sourceRepo := setupTestEnv(t)
+	// Add a bare remote so git push succeeds from the worktree.
+	bareDir := filepath.Join(t.TempDir(), "origin.git")
+	gitRun(t, sourceRepo, "clone", "--bare", ".", bareDir)
+	gitRun(t, sourceRepo, "remote", "add", "origin", bareDir)
 	initWorld(t, solHome, "ember")
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
