@@ -602,6 +602,82 @@ func TestEnsureFormula(t *testing.T) {
 	}
 }
 
+func TestAdvanceIdempotentOnCompletedStep(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	formulaDir := filepath.Join(solHome, "formulas", "test-wf")
+	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+	steps := linearSteps()
+	writeTOMLManifest(t, formulaDir, "test-wf", steps, map[string]VariableDecl{
+		"issue": {Required: true},
+	})
+	for _, s := range steps {
+		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
+	}
+	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
+
+	Instantiate("haven", "Toast", "test-wf", map[string]string{"issue": "sol-test"})
+
+	// Advance 1: load-context → implement (normal advance).
+	next, done, err := Advance("haven", "Toast")
+	if err != nil {
+		t.Fatalf("Advance() 1 error: %v", err)
+	}
+	if done || next == nil || next.ID != "implement" {
+		t.Fatalf("Advance() 1: expected implement, got done=%v step=%v", done, next)
+	}
+
+	// Verify step 1 appears exactly once in Completed.
+	state, err := ReadState("haven", "Toast")
+	if err != nil {
+		t.Fatalf("ReadState() error: %v", err)
+	}
+	if len(state.Completed) != 1 || state.Completed[0] != "load-context" {
+		t.Fatalf("completed after advance 1: got %v, want [load-context]", state.Completed)
+	}
+
+	// Simulate crash recovery: rewrite state.json to set CurrentStep back to
+	// "load-context" (the step file is already marked complete, but the state
+	// wasn't fully committed before the crash).
+	state.CurrentStep = "load-context"
+	stateData, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal state: %v", err)
+	}
+	statePath := filepath.Join(WorkflowDir("haven", "Toast"), "state.json")
+	if err := os.WriteFile(statePath, stateData, 0o644); err != nil {
+		t.Fatalf("write state.json: %v", err)
+	}
+
+	// Call Advance() again — should recover without duplicating "load-context".
+	next, done, err = Advance("haven", "Toast")
+	if err != nil {
+		t.Fatalf("Advance() recovery error: %v", err)
+	}
+	if done {
+		t.Fatal("Advance() recovery: unexpected done")
+	}
+	if next == nil || next.ID != "implement" {
+		t.Fatalf("Advance() recovery: expected implement, got %v", next)
+	}
+
+	// Verify "load-context" still appears exactly ONCE (not duplicated).
+	state, err = ReadState("haven", "Toast")
+	if err != nil {
+		t.Fatalf("ReadState() after recovery error: %v", err)
+	}
+	count := 0
+	for _, c := range state.Completed {
+		if c == "load-context" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("load-context appears %d times in Completed (want 1): %v", count, state.Completed)
+	}
+}
+
 // writeTOMLManifest writes a manifest.toml file for testing.
 func writeTOMLManifest(t *testing.T, dir, name string, steps []StepDef, vars map[string]VariableDecl) {
 	t.Helper()

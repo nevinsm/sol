@@ -450,10 +450,9 @@ func Advance(world, agentName string) (nextStep *Step, done bool, err error) {
 		if err := writeJSON(stepPath, currentStep); err != nil {
 			return nil, false, fmt.Errorf("failed to write step %q: %w", state.CurrentStep, err)
 		}
+		// Only append to Completed list when freshly completing.
+		state.Completed = append(state.Completed, state.CurrentStep)
 	}
-
-	// Update completed list.
-	state.Completed = append(state.Completed, state.CurrentStep)
 
 	// Load manifest to determine next ready steps.
 	inst, err := ReadInstance(world, agentName)

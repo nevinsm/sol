@@ -211,6 +211,8 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		if out, err := rmCmd.CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to remove worktree: %s\n", strings.TrimSpace(string(out)))
 		}
+		// Clean up workflow if it was instantiated.
+		workflow.Remove(opts.World, agent.Name) // best-effort
 	}
 
 	// 4. Write tether file.
@@ -394,7 +396,9 @@ func Prime(world, agentName string, worldStore WorldStore) (*PrimeResult, error)
 			return nil, err
 		}
 		// Clean up handoff file after successful injection.
-		handoff.Remove(world, agentName)
+		if removeErr := handoff.Remove(world, agentName); removeErr != nil {
+			fmt.Fprintf(os.Stderr, "prime: failed to remove handoff file: %v\n", removeErr)
+		}
 		return result, nil
 	}
 
@@ -648,7 +652,9 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 
 	// 6b. Clean up workflow if present.
 	if _, err := workflow.ReadState(opts.World, opts.AgentName); err == nil {
-		workflow.Remove(opts.World, opts.AgentName) // best-effort cleanup
+		if removeErr := workflow.Remove(opts.World, opts.AgentName); removeErr != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to clean up workflow: %v\n", removeErr)
+		}
 	}
 
 	// 7. Stop session — use a brief delay then stop in background.

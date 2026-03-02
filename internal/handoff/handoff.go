@@ -315,7 +315,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		_ = sessionMgr.Stop(sessionName, true)
 		if restartErr := sessionMgr.Start(sessionName, worktreeDir, "claude --dangerously-skip-permissions", env, "agent", opts.World); restartErr != nil {
 			fmt.Fprintf(os.Stderr, "handoff: recovery also failed: %v\n", restartErr)
-			return fmt.Errorf("failed to start new session (recovery also failed): %w", err)
+			return fmt.Errorf("failed to start new session (recovery also failed): %w", restartErr)
 		}
 		fmt.Fprintf(os.Stderr, "handoff: recovery succeeded\n")
 	}
