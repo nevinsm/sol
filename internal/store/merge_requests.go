@@ -261,7 +261,11 @@ func (s *Store) UpdateMergeRequestPhase(id, phase string) error {
 	if err != nil {
 		return fmt.Errorf("failed to update merge request %q: %w", id, err)
 	}
-	n, _ := result.RowsAffected()
+	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
 	if n == 0 {
 		return fmt.Errorf("merge request %q not found", id)
 	}
@@ -281,7 +285,11 @@ func (s *Store) BlockMergeRequest(mrID, blockerWorkItemID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to block merge request %q: %w", mrID, err)
 	}
-	n, _ := result.RowsAffected()
+	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
 	if n == 0 {
 		return fmt.Errorf("merge request %q not found", mrID)
 	}
@@ -299,7 +307,11 @@ func (s *Store) UnblockMergeRequest(mrID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to unblock merge request %q: %w", mrID, err)
 	}
-	n, _ := result.RowsAffected()
+	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
 	if n == 0 {
 		return fmt.Errorf("merge request %q not found", mrID)
 	}
@@ -370,6 +382,10 @@ func (s *Store) ReleaseStaleClaims(ttl time.Duration) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to release stale claims: %w", err)
 	}
-	n, _ := result.RowsAffected()
+	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return 0, fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
 	return int(n), nil
 }

@@ -13,6 +13,10 @@ var rootCmd = &cobra.Command{
 	Version:       version,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Don't create directories for help or version output.
+		if cmd.RunE == nil && cmd.Run == nil {
+			return nil
+		}
 		return config.EnsureDirs()
 	},
 }

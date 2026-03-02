@@ -157,11 +157,11 @@ func TestAckMessage(t *testing.T) {
 	}
 }
 
-func TestCountUnread(t *testing.T) {
+func TestCountPending(t *testing.T) {
 	s := setupSphere(t)
 
 	// No messages -> 0.
-	count, err := s.CountUnread("operator")
+	count, err := s.CountPending("operator")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestCountUnread(t *testing.T) {
 	s.SendMessage("agent2", "operator", "Msg 2", "", 2, "notification")
 	id3, _ := s.SendMessage("agent3", "operator", "Msg 3", "", 2, "notification")
 
-	count, err = s.CountUnread("operator")
+	count, err = s.CountPending("operator")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestCountUnread(t *testing.T) {
 
 	// Read one -> still 3 (read doesn't affect count, only ack does).
 	s.ReadMessage(id1)
-	count, err = s.CountUnread("operator")
+	count, err = s.CountPending("operator")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestCountUnread(t *testing.T) {
 
 	// Ack one -> 2.
 	s.AckMessage(id3)
-	count, err = s.CountUnread("operator")
+	count, err = s.CountPending("operator")
 	if err != nil {
 		t.Fatal(err)
 	}

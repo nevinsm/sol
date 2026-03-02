@@ -144,7 +144,7 @@ var mailCheckCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		count, err := s.CountUnread(identity)
+		count, err := s.CountPending(identity)
 		if err != nil {
 			return err
 		}

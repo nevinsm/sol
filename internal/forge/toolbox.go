@@ -100,7 +100,7 @@ func (r *Forge) Push() error {
 	pushCmd := exec.Command("git", "-C", r.worktree, "push", "origin",
 		"HEAD:"+r.cfg.TargetBranch)
 	if out, err := pushCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("push rejected: %s", strings.TrimSpace(string(out)))
+		return fmt.Errorf("push rejected: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }

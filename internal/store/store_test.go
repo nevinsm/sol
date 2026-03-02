@@ -306,6 +306,30 @@ func TestWorkItemCRUD(t *testing.T) {
 	}
 }
 
+func TestUpdateWorkItemInvalidStatus(t *testing.T) {
+	s := setupWorld(t)
+
+	id, err := s.CreateWorkItem("Status test", "", "operator", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.UpdateWorkItem(id, WorkItemUpdates{Status: "banana"})
+	if err == nil {
+		t.Fatal("expected error for invalid status")
+	}
+	if err.Error() != `invalid work item status "banana"` {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Valid statuses should work.
+	for _, status := range []string{"open", "tethered", "working", "resolve", "done", "closed"} {
+		if err := s.UpdateWorkItem(id, WorkItemUpdates{Status: status}); err != nil {
+			t.Fatalf("expected valid status %q to succeed, got: %v", status, err)
+		}
+	}
+}
+
 func TestLabels(t *testing.T) {
 	s := setupWorld(t)
 

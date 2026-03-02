@@ -318,12 +318,25 @@ func (s *Store) ListWorkItems(filters ListFilters) ([]WorkItem, error) {
 	return items, nil
 }
 
+// validWorkItemStatuses is the set of allowed work item status values.
+var validWorkItemStatuses = map[string]bool{
+	"open":     true,
+	"tethered": true,
+	"working":  true,
+	"resolve":  true,
+	"done":     true,
+	"closed":   true,
+}
+
 // UpdateWorkItem updates fields on a work item. Only non-zero fields are applied.
 func (s *Store) UpdateWorkItem(id string, updates WorkItemUpdates) error {
 	var sets []string
 	var args []interface{}
 
 	if updates.Status != "" {
+		if !validWorkItemStatuses[updates.Status] {
+			return fmt.Errorf("invalid work item status %q", updates.Status)
+		}
 		sets = append(sets, "status = ?")
 		args = append(args, updates.Status)
 	}
@@ -354,7 +367,11 @@ func (s *Store) UpdateWorkItem(id string, updates WorkItemUpdates) error {
 	if err != nil {
 		return fmt.Errorf("failed to update work item %q: %w", id, err)
 	}
-	n, _ := result.RowsAffected()
+	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
 	if n == 0 {
 		return fmt.Errorf("work item %q not found", id)
 	}
@@ -371,7 +388,11 @@ func (s *Store) CloseWorkItem(id string) error {
 	if err != nil {
 		return fmt.Errorf("failed to close work item %q: %w", id, err)
 	}
-	n, _ := result.RowsAffected()
+	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
 	if n == 0 {
 		return fmt.Errorf("work item %q not found", id)
 	}

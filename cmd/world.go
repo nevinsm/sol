@@ -44,6 +44,8 @@ var worldInitCmd = &cobra.Command{
 		tomlPath := config.WorldConfigPath(name)
 		if _, err := os.Stat(tomlPath); err == nil {
 			return fmt.Errorf("world %q is already initialized", name)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to check world config %q: %w", tomlPath, err)
 		}
 
 		// Detect pre-Arc1 world (DB exists but no world.toml).

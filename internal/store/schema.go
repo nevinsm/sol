@@ -278,37 +278,61 @@ func (s *Store) migrateSphere() error {
 	}
 	if v < 4 {
 		// Rename agents.hook_item → tether_item (if not already renamed).
-		if exists, _ := columnExists(s.db, "agents", "hook_item"); exists {
+		exists, err := columnExists(s.db, "agents", "hook_item")
+		if err != nil {
+			return fmt.Errorf("V4 migration: failed to check column agents.hook_item: %w", err)
+		}
+		if exists {
 			if _, err := s.db.Exec(`ALTER TABLE agents RENAME COLUMN hook_item TO tether_item`); err != nil {
 				return fmt.Errorf("failed to rename agents.hook_item: %w", err)
 			}
 		}
 		// Rename agents.rig → world (if not already renamed).
-		if exists, _ := columnExists(s.db, "agents", "rig"); exists {
+		exists, err = columnExists(s.db, "agents", "rig")
+		if err != nil {
+			return fmt.Errorf("V4 migration: failed to check column agents.rig: %w", err)
+		}
+		if exists {
 			if _, err := s.db.Exec(`ALTER TABLE agents RENAME COLUMN rig TO world`); err != nil {
 				return fmt.Errorf("failed to rename agents.rig: %w", err)
 			}
 		}
 		// Rename convoys → caravans (if not already renamed).
-		if exists, _ := tableExists(s.db, "convoys"); exists {
+		exists, err = tableExists(s.db, "convoys")
+		if err != nil {
+			return fmt.Errorf("V4 migration: failed to check table convoys: %w", err)
+		}
+		if exists {
 			if _, err := s.db.Exec(`ALTER TABLE convoys RENAME TO caravans`); err != nil {
 				return fmt.Errorf("failed to rename convoys: %w", err)
 			}
 		}
 		// Rename convoy_items → caravan_items (if not already renamed).
-		if exists, _ := tableExists(s.db, "convoy_items"); exists {
+		exists, err = tableExists(s.db, "convoy_items")
+		if err != nil {
+			return fmt.Errorf("V4 migration: failed to check table convoy_items: %w", err)
+		}
+		if exists {
 			if _, err := s.db.Exec(`ALTER TABLE convoy_items RENAME TO caravan_items`); err != nil {
 				return fmt.Errorf("failed to rename convoy_items: %w", err)
 			}
 		}
 		// Rename caravan_items.convoy_id → caravan_id (if not already renamed).
-		if exists, _ := columnExists(s.db, "caravan_items", "convoy_id"); exists {
+		exists, err = columnExists(s.db, "caravan_items", "convoy_id")
+		if err != nil {
+			return fmt.Errorf("V4 migration: failed to check column caravan_items.convoy_id: %w", err)
+		}
+		if exists {
 			if _, err := s.db.Exec(`ALTER TABLE caravan_items RENAME COLUMN convoy_id TO caravan_id`); err != nil {
 				return fmt.Errorf("failed to rename caravan_items.convoy_id: %w", err)
 			}
 		}
 		// Rename caravan_items.rig → world (if not already renamed).
-		if exists, _ := columnExists(s.db, "caravan_items", "rig"); exists {
+		exists, err = columnExists(s.db, "caravan_items", "rig")
+		if err != nil {
+			return fmt.Errorf("V4 migration: failed to check column caravan_items.rig: %w", err)
+		}
+		if exists {
 			if _, err := s.db.Exec(`ALTER TABLE caravan_items RENAME COLUMN rig TO world`); err != nil {
 				return fmt.Errorf("failed to rename caravan_items.rig: %w", err)
 			}

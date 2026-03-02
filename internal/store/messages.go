@@ -84,8 +84,11 @@ func (s *Store) ReadMessage(id string) (*Message, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read message %q: %w", id, err)
 	}
-	// RowsAffected is always nil for modernc.org/sqlite.
-	n, _ := result.RowsAffected()
+	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return nil, fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
 	if n == 0 {
 		return nil, fmt.Errorf("message %q not found", id)
 	}
@@ -132,22 +135,26 @@ func (s *Store) AckMessage(id string) error {
 	if err != nil {
 		return fmt.Errorf("failed to ack message %q: %w", id, err)
 	}
-	n, _ := result.RowsAffected()
+	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
 	if n == 0 {
 		return fmt.Errorf("message %q not found", id)
 	}
 	return nil
 }
 
-// CountUnread returns the number of pending, unread messages for a recipient.
-func (s *Store) CountUnread(recipient string) (int, error) {
+// CountPending returns the number of pending (unacknowledged) messages for a recipient.
+func (s *Store) CountPending(recipient string) (int, error) {
 	var count int
 	err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM messages WHERE recipient = ? AND delivery = 'pending'`,
 		recipient,
 	).Scan(&count)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count unread messages for %q: %w", recipient, err)
+		return 0, fmt.Errorf("failed to count pending messages for %q: %w", recipient, err)
 	}
 	return count, nil
 }

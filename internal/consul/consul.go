@@ -98,12 +98,14 @@ func (d *Consul) SetWorldOpener(opener WorldOpener) {
 // Register creates or updates the consul's agent record.
 // Agent ID: "sphere/consul", role: "consul", state: "working".
 func (d *Consul) Register() error {
-	agent, _ := d.sphereStore.GetAgent("sphere/consul")
-	if agent != nil {
+	agent, err := d.sphereStore.GetAgent("sphere/consul")
+	if err == nil && agent != nil {
 		return nil // already registered
 	}
-	_, err := d.sphereStore.CreateAgent("consul", "sphere", "consul")
-	return err
+	// If GetAgent failed (e.g., DB error), fall through to CreateAgent
+	// which will fail cleanly if the agent already exists (unique constraint).
+	_, createErr := d.sphereStore.CreateAgent("consul", "sphere", "consul")
+	return createErr
 }
 
 // Run starts the consul patrol loop. Blocks until ctx is cancelled.

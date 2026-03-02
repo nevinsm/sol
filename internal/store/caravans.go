@@ -163,7 +163,11 @@ func (s *Store) UpdateCaravanStatus(id, status string) error {
 	if err != nil {
 		return fmt.Errorf("failed to update caravan %q status: %w", id, err)
 	}
-	n, _ := result.RowsAffected()
+	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
 	if n == 0 {
 		return fmt.Errorf("caravan %q not found", id)
 	}

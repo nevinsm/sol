@@ -55,9 +55,9 @@ func TestMailSendAndReceive(t *testing.T) {
 	}
 
 	// Verify unread count.
-	count, err := sphereStore.CountUnread("ember/Toast")
+	count, err := sphereStore.CountPending("ember/Toast")
 	if err != nil {
-		t.Fatalf("CountUnread: %v", err)
+		t.Fatalf("CountPending: %v", err)
 	}
 	if count != 1 {
 		t.Errorf("unread count: got %d, want 1", count)
@@ -93,9 +93,9 @@ func TestMailSendAndReceive(t *testing.T) {
 	}
 
 	// Verify unread count is 0.
-	count, err = sphereStore.CountUnread("ember/Toast")
+	count, err = sphereStore.CountPending("ember/Toast")
 	if err != nil {
-		t.Fatalf("CountUnread after ack: %v", err)
+		t.Fatalf("CountPending after ack: %v", err)
 	}
 	if count != 0 {
 		t.Errorf("unread after ack: got %d, want 0", count)

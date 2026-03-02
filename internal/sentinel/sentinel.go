@@ -124,12 +124,14 @@ func (w *Sentinel) agentID() string {
 // Agent ID: "{world}/sentinel", role: "sentinel".
 // Creates if not exists, reuses if already registered.
 func (w *Sentinel) Register() error {
-	_, err := w.sphereStore.GetAgent(w.agentID())
-	if err == nil {
+	agent, err := w.sphereStore.GetAgent(w.agentID())
+	if err == nil && agent != nil {
 		return nil // already registered
 	}
-	_, err = w.sphereStore.CreateAgent("sentinel", w.config.World, "sentinel")
-	return err
+	// If GetAgent failed (e.g., DB error), fall through to CreateAgent
+	// which will fail cleanly if the agent already exists (unique constraint).
+	_, createErr := w.sphereStore.CreateAgent("sentinel", w.config.World, "sentinel")
+	return createErr
 }
 
 // Run starts the sentinel patrol loop. Blocks until context is cancelled.
@@ -197,25 +199,49 @@ func (w *Sentinel) patrol() error {
 		switch {
 		case agent.State == "working" && alive:
 			// Working agent with live session — check for progress.
-			_ = w.checkProgress(agent, sessionName)
+			if err := w.checkProgress(agent, sessionName); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+						"agent": agent.ID, "action": "check_progress", "error": err.Error(),
+					})
+				}
+			}
 			healthyCount++
 
 		case agent.State == "working" && !alive && agent.TetherItem != "":
 			// Session died while work was tethered — stalled.
 			stalledCount++
-			_ = w.handleStalled(agent)
+			if err := w.handleStalled(agent); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+						"agent": agent.ID, "action": "handle_stalled", "error": err.Error(),
+					})
+				}
+			}
 			actionsTaken = append(actionsTaken, "stalled:"+agent.Name)
 
 		case agent.State == "idle" && alive && !tether.IsTethered(w.config.World, agent.Name):
 			// Idle agent with live session and no tether — zombie.
 			zombieCount++
-			_ = w.handleZombie(agent)
+			if err := w.handleZombie(agent); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+						"agent": agent.ID, "action": "handle_zombie", "error": err.Error(),
+					})
+				}
+			}
 			actionsTaken = append(actionsTaken, "zombie:"+agent.Name)
 
 		case agent.State == "stalled":
 			// Already stalled — retry recovery.
 			stalledCount++
-			_ = w.handleStalled(agent)
+			if err := w.handleStalled(agent); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+						"agent": agent.ID, "action": "handle_stalled", "error": err.Error(),
+					})
+				}
+			}
 			actionsTaken = append(actionsTaken, "stalled:"+agent.Name)
 
 		default:
