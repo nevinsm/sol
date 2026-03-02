@@ -3,6 +3,9 @@ package cmd
 import (
 	"fmt"
 	"strings"
+
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // parseVarFlags parses key=value flag entries. Returns an error if any
@@ -17,4 +20,12 @@ func parseVarFlags(vars []string) (map[string]string, error) {
 		m[parts[0]] = parts[1]
 	}
 	return m, nil
+}
+
+// gatedWorldOpener opens a world store after verifying the world exists.
+func gatedWorldOpener(world string) (*store.Store, error) {
+	if err := config.RequireWorld(world); err != nil {
+		return nil, err
+	}
+	return store.OpenWorld(world)
 }

@@ -71,8 +71,8 @@ var caravanCreateCmd = &cobra.Command{
 		logger := events.NewLogger(config.Home())
 		logger.Emit(events.EventCaravanCreated, "sol", "operator", "both", map[string]string{
 			"caravan_id": caravanID,
-			"name":      name,
-			"count":     fmt.Sprintf("%d", len(itemIDs)),
+			"name":       name,
+			"count":      fmt.Sprintf("%d", len(itemIDs)),
 		})
 
 		fmt.Printf("Created caravan %s: %q (%d items)\n", caravanID, name, len(itemIDs))
@@ -145,9 +145,9 @@ var caravanCheckCmd = &cobra.Command{
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
 			out := struct {
-				ID     string                   `json:"id"`
-				Name   string                   `json:"name"`
-				Status string                   `json:"status"`
+				ID     string                    `json:"id"`
+				Name   string                    `json:"name"`
+				Status string                    `json:"status"`
 				Items  []store.CaravanItemStatus `json:"items"`
 			}{
 				ID:     caravan.ID,
@@ -233,9 +233,9 @@ var caravanStatusCmd = &cobra.Command{
 
 			if jsonOut {
 				out := struct {
-					ID     string                   `json:"id"`
-					Name   string                   `json:"name"`
-					Status string                   `json:"status"`
+					ID     string                    `json:"id"`
+					Name   string                    `json:"name"`
+					Status string                    `json:"status"`
 					Items  []store.CaravanItemStatus `json:"items"`
 				}{
 					ID:     caravan.ID,
@@ -424,7 +424,7 @@ var caravanLaunchCmd = &cobra.Command{
 		}
 
 		logger.Emit(events.EventCaravanLaunched, "sol", "operator", "both", map[string]string{
-			"caravan_id":  caravanID,
+			"caravan_id": caravanID,
 			"world":      world,
 			"dispatched": fmt.Sprintf("%d", dispatched),
 		})
@@ -446,7 +446,7 @@ var caravanLaunchCmd = &cobra.Command{
 			}
 			logger.Emit(events.EventCaravanClosed, "sol", "operator", "both", map[string]string{
 				"caravan_id": caravanID,
-				"name":      carName,
+				"name":       carName,
 			})
 			fmt.Println("Caravan auto-closed (all items complete).")
 		}
@@ -456,13 +456,6 @@ var caravanLaunchCmd = &cobra.Command{
 }
 
 // helpers
-
-func gatedWorldOpener(world string) (*store.Store, error) {
-	if err := config.RequireWorld(world); err != nil {
-		return nil, err
-	}
-	return store.OpenWorld(world)
-}
 
 func itemTitle(workItemID, world string) string {
 	worldStore, err := gatedWorldOpener(world)

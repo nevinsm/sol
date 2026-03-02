@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/nevinsm/sol/internal/dispatch"
-	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/prefect"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // WorldStatus holds the complete runtime state for a world.
@@ -69,7 +69,7 @@ type AgentStatus struct {
 	Name         string `json:"name"`
 	State        string `json:"state"`
 	SessionAlive bool   `json:"session_alive"`
-	TetherItem     string `json:"tether_item,omitempty"`
+	TetherItem   string `json:"tether_item,omitempty"`
 	WorkTitle    string `json:"work_title,omitempty"`
 }
 

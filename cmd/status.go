@@ -90,7 +90,13 @@ func runWorldStatus(world string) error {
 	if statusJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(result)
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+		if code := result.Health(); code != 0 {
+			return &exitError{code: code}
+		}
+		return nil
 	}
 
 	fmt.Print(status.RenderWorld(result))

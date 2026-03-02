@@ -96,6 +96,7 @@ func runInteractiveInit() error {
 		worldName  string
 		sourceRepo string
 		skipChecks bool
+		runChecks  bool
 	)
 
 	form := huh.NewForm(
@@ -125,17 +126,19 @@ func runInteractiveInit() error {
 				Value(&sourceRepo),
 
 			huh.NewConfirm().
-				Title("Skip prerequisite checks?").
-				Description("Run 'sol doctor' checks before setup").
-				Affirmative("Skip checks").
-				Negative("Run checks").
-				Value(&skipChecks),
+				Title("Run prerequisite checks?").
+				Description("Verify tmux, git, claude, and SQLite before setup").
+				Affirmative("Run checks").
+				Negative("Skip").
+				Value(&runChecks),
 		),
 	)
 
 	if err := form.Run(); err != nil {
 		return fmt.Errorf("setup cancelled: %w", err)
 	}
+
+	skipChecks = !runChecks
 
 	// Validate source repo path if provided.
 	if sourceRepo != "" {

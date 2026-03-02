@@ -19,7 +19,9 @@ var doctorCmd = &cobra.Command{
 Checks: tmux, git, claude CLI, SOL_HOME directory, SQLite WAL support.
 
 Exit code 0 if all checks pass, 1 if any check fails.`,
-	Args: cobra.NoArgs,
+	SilenceErrors: true,
+	SilenceUsage:  true,
+	Args:          cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		report := doctor.RunAll()
 
@@ -48,8 +50,7 @@ Exit code 0 if all checks pass, 1 if any check fails.`,
 		}
 
 		fmt.Printf("%d check(s) failed.\n", report.FailedCount())
-		os.Exit(1)
-		return nil
+		return &exitError{code: 1}
 	},
 }
 

@@ -14,7 +14,7 @@ import (
 
 // CheckResult represents the outcome of a single prerequisite check.
 type CheckResult struct {
-	Name    string `json:"name"`    // short identifier: "tmux", "git", "claude", etc.
+	Name    string `json:"name"` // short identifier: "tmux", "git", "claude", etc.
 	Passed  bool   `json:"passed"`
 	Message string `json:"message"` // human-readable status or error detail
 	Fix     string `json:"fix"`     // actionable fix suggestion (empty if passed)
@@ -253,6 +253,6 @@ func checkWritable(dir string) error {
 		return err
 	}
 	name := f.Name()
-	f.Close()
+	_ = f.Close()
 	return os.Remove(name)
 }

@@ -103,9 +103,9 @@ func TestGatherSphereProcessChecks(t *testing.T) {
 	sphere := &mockSphereStore{}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"sol-chronicle":    true,
-			"sol-alpha-forge":  true,
-			"sol-beta-forge":   false,
+			"sol-chronicle":      true,
+			"sol-alpha-forge":    true,
+			"sol-beta-forge":     false,
 			"sol-alpha-sentinel": true,
 			"sol-beta-sentinel":  false,
 		},

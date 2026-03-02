@@ -12,8 +12,8 @@ import (
 var (
 	// Section headers.
 	headerStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("12")) // bright blue
+			Bold(true).
+			Foreground(lipgloss.Color("12")) // bright blue
 
 	// Status indicators.
 	okStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("10")) // green
