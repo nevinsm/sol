@@ -328,6 +328,122 @@ func InstallForgeClaudeMD(worktreeDir string, ctx ForgeClaudeMDContext) error {
 	return nil
 }
 
+// GovernorClaudeMDContext holds the fields used to generate a CLAUDE.md for the governor.
+type GovernorClaudeMDContext struct {
+	World     string
+	SolBinary string // path to sol binary (for CLI references)
+	MirrorDir string // relative path to mirror for codebase research
+}
+
+// GenerateGovernorClaudeMD returns the contents of a CLAUDE.md for the governor agent.
+func GenerateGovernorClaudeMD(ctx GovernorClaudeMDContext) string {
+	sol := ctx.SolBinary
+	if sol == "" {
+		sol = "sol"
+	}
+
+	return fmt.Sprintf(`# Governor (world: %s)
+
+## Identity
+You are the governor of world %q — a work coordinator.
+You parse natural language requests into work items and dispatch them to agents.
+You maintain accumulated world knowledge in your brief.
+
+## Brief Maintenance
+- Your brief (`+"`"+`.brief/memory.md`+"`"+`) persists across sessions — keep it under 200 lines
+- Also maintain `+"`"+`.brief/world-summary.md`+"`"+` — a structured summary for external consumers
+- Update both before exiting
+- World summary format:
+
+`+"```"+`markdown
+# World Summary: %s
+## Project       — what this codebase is
+## Architecture  — key modules, patterns, tech stack
+## Priorities    — active work themes, what's in flight
+## Constraints   — known problem areas, things to avoid
+`+"```"+`
+
+## Codebase Research
+- Read-only mirror at `+"`"+`%s/`+"`"+` — use for understanding code, never edit
+- Pull latest before major research: `+"`"+`git -C %s pull --ff-only`+"`"+`
+- Use the mirror to write better work item descriptions
+
+## Work Dispatch Flow
+When the operator gives you a work request:
+1. Research the codebase (mirror) to understand scope
+2. Break the request into focused work items
+3. Create items: `+"`"+`%s store create-item --world=%s --title="..." --description="..."`+"`"+`
+4. Optionally group into a caravan:
+   `+"`"+`%s caravan create --name="..." --item=<id1> --item=<id2> --world=%s`+"`"+`
+5. Dispatch to available agents:
+   `+"`"+`%s cast --world=%s --work-item=<id>`+"`"+`
+6. Track progress: `+"`"+`%s status %s`+"`"+`
+
+## Available Commands
+Full sol CLI reference for governor operations:
+
+`+"```"+`
+# Work Items
+%s store create-item --world=%s --title="..." --description="..."
+%s store list-items --world=%s [--state=open]
+
+# Dispatch
+%s cast --world=%s --work-item=<id> [--agent=<name>]
+
+# Caravans
+%s caravan create --name="..." --item=<id> [--item=<id>] --world=%s
+%s caravan add-items <caravan-id> --item=<id> --world=%s
+%s caravan check <caravan-id>
+%s caravan status [--world=%s]
+%s caravan launch <caravan-id> --world=%s
+
+# Monitoring
+%s status %s
+%s agent list --world=%s
+
+# Communication
+%s escalate --world=%s --agent=governor --message="..."
+`+"```"+`
+
+## Guidelines
+- You coordinate — you don't write code
+- Create focused, well-scoped work items (one concern per item)
+- Include enough context in descriptions for an agent to work autonomously
+- Check agent availability before dispatching (`+"`"+`%s agent list`+"`"+`)
+- Use the mirror to verify your understanding of the codebase
+`,
+		ctx.World, ctx.World, // title, identity
+		ctx.World,             // world summary heading
+		ctx.MirrorDir, ctx.MirrorDir, // codebase research
+		sol, ctx.World, // dispatch: store create-item
+		sol, ctx.World, // dispatch: caravan create
+		sol, ctx.World, // dispatch: cast
+		sol, ctx.World, // dispatch: status
+		sol, ctx.World, // commands: store create-item
+		sol, ctx.World, // commands: store list-items
+		sol, ctx.World, // commands: cast
+		sol, ctx.World, // commands: caravan create
+		sol, ctx.World, // commands: caravan add-items
+		sol,            // commands: caravan check (no world arg)
+		sol, ctx.World, // commands: caravan status
+		sol, ctx.World, // commands: caravan launch
+		sol, ctx.World, // commands: status
+		sol, ctx.World, // commands: agent list
+		sol, ctx.World, // commands: escalate
+		sol, // guidelines: agent list
+	)
+}
+
+// InstallGovernorClaudeMD writes CLAUDE.md for the governor into the governor directory.
+func InstallGovernorClaudeMD(govDir string, ctx GovernorClaudeMDContext) error {
+	content := GenerateGovernorClaudeMD(ctx)
+	path := filepath.Join(govDir, "CLAUDE.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("failed to write governor CLAUDE.md: %w", err)
+	}
+	return nil
+}
+
 // InstallClaudeMD writes .claude/CLAUDE.md into the given worktree directory.
 // Creates .claude/ if it doesn't exist.
 func InstallClaudeMD(worktreeDir string, ctx ClaudeMDContext) error {

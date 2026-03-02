@@ -1,6 +1,8 @@
 package protocol_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,6 +72,109 @@ func TestGuidedInitClaudeMD(t *testing.T) {
 	// Verify --skip-checks is included in the command.
 	if !strings.Contains(content, "--skip-checks") {
 		t.Error("CLAUDE.md should contain '--skip-checks' in the setup command")
+	}
+}
+
+func TestGenerateGovernorClaudeMD(t *testing.T) {
+	ctx := protocol.GovernorClaudeMDContext{
+		World:     "myworld",
+		SolBinary: "sol",
+		MirrorDir: "mirror",
+	}
+
+	content := protocol.GenerateGovernorClaudeMD(ctx)
+
+	// Verify world name appears.
+	if !strings.Contains(content, "myworld") {
+		t.Error("CLAUDE.md should contain world name")
+	}
+
+	// Verify mirror reference.
+	if !strings.Contains(content, "mirror/") {
+		t.Error("CLAUDE.md should contain mirror directory reference")
+	}
+
+	// Verify sol CLI commands.
+	for _, cmd := range []string{
+		"sol store create-item",
+		"sol store list-items",
+		"sol cast",
+		"sol caravan create",
+		"sol caravan add-items",
+		"sol caravan check",
+		"sol caravan status",
+		"sol caravan launch",
+		"sol status myworld",
+		"sol agent list",
+		"sol escalate",
+	} {
+		if !strings.Contains(content, cmd) {
+			t.Errorf("CLAUDE.md should contain %q", cmd)
+		}
+	}
+
+	// Verify brief instructions.
+	if !strings.Contains(content, ".brief/memory.md") {
+		t.Error("CLAUDE.md should contain brief path reference")
+	}
+	if !strings.Contains(content, "200 lines") {
+		t.Error("CLAUDE.md should contain brief size guidance")
+	}
+
+	// Verify world summary format.
+	if !strings.Contains(content, ".brief/world-summary.md") {
+		t.Error("CLAUDE.md should contain world summary path")
+	}
+	if !strings.Contains(content, "## Project") {
+		t.Error("CLAUDE.md should contain world summary format sections")
+	}
+	if !strings.Contains(content, "## Architecture") {
+		t.Error("CLAUDE.md should contain world summary format sections")
+	}
+	if !strings.Contains(content, "## Priorities") {
+		t.Error("CLAUDE.md should contain world summary format sections")
+	}
+	if !strings.Contains(content, "## Constraints") {
+		t.Error("CLAUDE.md should contain world summary format sections")
+	}
+
+	// Verify identity section.
+	if !strings.Contains(content, "work coordinator") {
+		t.Error("CLAUDE.md should contain governor identity")
+	}
+
+	// Verify guidelines.
+	if !strings.Contains(content, "You coordinate") {
+		t.Error("CLAUDE.md should contain coordination guideline")
+	}
+}
+
+func TestInstallGovernorClaudeMD(t *testing.T) {
+	govDir := t.TempDir()
+
+	ctx := protocol.GovernorClaudeMDContext{
+		World:     "testworld",
+		SolBinary: "sol",
+		MirrorDir: "mirror",
+	}
+
+	if err := protocol.InstallGovernorClaudeMD(govDir, ctx); err != nil {
+		t.Fatalf("InstallGovernorClaudeMD failed: %v", err)
+	}
+
+	// Verify file written.
+	path := filepath.Join(govDir, "CLAUDE.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read CLAUDE.md: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "testworld") {
+		t.Error("installed CLAUDE.md should contain world name")
+	}
+	if !strings.Contains(content, "Governor") {
+		t.Error("installed CLAUDE.md should contain 'Governor'")
 	}
 }
 

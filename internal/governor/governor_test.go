@@ -345,12 +345,6 @@ func TestStart(t *testing.T) {
 		t.Errorf("expected 1 Stop hook, got %d", len(hooks))
 	}
 
-	// Verify CLAUDE.md placeholder written.
-	claudeMDPath := filepath.Join(govDir, "CLAUDE.md")
-	if _, err := os.Stat(claudeMDPath); os.IsNotExist(err) {
-		t.Error("CLAUDE.md not written")
-	}
-
 	// Verify mirror was cloned.
 	mirrorPath := MirrorPath("myworld")
 	if _, err := os.Stat(mirrorPath); os.IsNotExist(err) {

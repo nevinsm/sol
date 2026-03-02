@@ -167,23 +167,17 @@ func Start(opts StartOpts, sphereStore SphereStore, mgr SessionManager) error {
 		fmt.Fprintf(os.Stderr, "governor: mirror setup failed for world %q: %v\n", opts.World, err)
 	}
 
-	// 5. Install placeholder CLAUDE.md (prompt 06 replaces with protocol generator).
-	claudeMDPath := filepath.Join(govDir, "CLAUDE.md")
-	if err := os.WriteFile(claudeMDPath, []byte("# Governor\n\nPlaceholder — replaced by protocol generator.\n"), 0o644); err != nil {
-		return fmt.Errorf("failed to start governor for world %q: %w", opts.World, err)
-	}
-
-	// 6. Install hooks in GovernorDir.
+	// 5. Install hooks in GovernorDir.
 	if err := installHooks(govDir, opts.World); err != nil {
 		return fmt.Errorf("failed to start governor for world %q: %w", opts.World, err)
 	}
 
-	// 7. Start tmux session.
+	// 6. Start tmux session.
 	if err := mgr.Start(sessName, govDir, "claude --dangerously-skip-permissions", nil, "governor", opts.World); err != nil {
 		return fmt.Errorf("failed to start governor for world %q: %w", opts.World, err)
 	}
 
-	// 8. Update agent state to "idle".
+	// 7. Update agent state to "idle".
 	agentID := opts.World + "/governor"
 	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 		return fmt.Errorf("failed to start governor for world %q: %w", opts.World, err)
