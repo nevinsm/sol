@@ -29,7 +29,8 @@ func Read(world, agentName string) (string, error) {
 }
 
 // Write writes a work item ID to the tether file.
-// Creates parent directories if needed.
+// Creates parent directories if needed. Uses fsync before rename
+// to guarantee durability across power failures.
 func Write(world, agentName, workItemID string) error {
 	path := TetherPath(world, agentName)
 	dir := filepath.Dir(path)
@@ -37,8 +38,23 @@ func Write(world, agentName, workItemID string) error {
 		return fmt.Errorf("failed to create tether directory for agent %q in world %q: %w", agentName, world, err)
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(workItemID), 0o644); err != nil {
+	f, err := os.Create(tmp)
+	if err != nil {
 		return fmt.Errorf("failed to write tether for agent %q in world %q: %w", agentName, world, err)
+	}
+	if _, err := f.WriteString(workItemID); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("failed to write tether for agent %q in world %q: %w", agentName, world, err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("failed to sync tether for agent %q in world %q: %w", agentName, world, err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to close tether for agent %q in world %q: %w", agentName, world, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		os.Remove(tmp) // best-effort cleanup

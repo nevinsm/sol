@@ -51,12 +51,12 @@ type SphereStore interface {
 
 // SessionName returns the tmux session name for an agent.
 func SessionName(world, agentName string) string {
-	return fmt.Sprintf("sol-%s-%s", world, agentName)
+	return config.SessionName(world, agentName)
 }
 
 // WorktreePath returns the worktree directory for an agent.
 func WorktreePath(world, agentName string) string {
-	return filepath.Join(config.Home(), world, "outposts", agentName, "worktree")
+	return config.WorktreePath(world, agentName)
 }
 
 // CastResult holds the output of a successful cast operation.

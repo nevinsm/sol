@@ -643,6 +643,56 @@ func BenchmarkExists(b *testing.B) {
 	}
 }
 
+func TestStopCleansMetadataOnKillFailure(t *testing.T) {
+	mgr := setupTest(t)
+
+	err := mgr.Start("test-meta-clean", "/tmp", "sleep 300", nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Let tmux stabilize
+	time.Sleep(300 * time.Millisecond)
+
+	// Verify metadata file exists
+	metaFile := metadataPath("test-meta-clean")
+	if _, err := os.Stat(metaFile); err != nil {
+		t.Fatalf("metadata file should exist after Start: %v", err)
+	}
+
+	// Kill the session directly via raw tmux command, bypassing the manager.
+	// This means the subsequent mgr.Stop will find the session already dead.
+	kill, killCancel := tmuxCmd("kill-session", "-t", "test-meta-clean")
+	_ = kill.Run()
+	killCancel()
+
+	// Let tmux process the kill
+	time.Sleep(200 * time.Millisecond)
+
+	// Call Stop — the kill-session will fail (session already dead),
+	// but metadata should still be cleaned up.
+	err = mgr.Stop("test-meta-clean", true)
+	if err == nil {
+		t.Fatal("Stop should return error for already-dead session")
+	}
+
+	// Verify metadata file is removed despite kill failure.
+	if _, err := os.Stat(metaFile); !os.IsNotExist(err) {
+		t.Error("metadata file should be removed even when session is already dead")
+	}
+
+	// Verify List does not include the session.
+	sessions, err := mgr.List()
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	for _, s := range sessions {
+		if s.Name == "test-meta-clean" {
+			t.Error("session should not appear in List after Stop cleans metadata")
+		}
+	}
+}
+
 func TestUnknownHealthStatus(t *testing.T) {
 	s := HealthStatus(99)
 	expected := fmt.Sprintf("unknown(%d)", 99)

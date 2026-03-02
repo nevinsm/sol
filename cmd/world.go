@@ -90,18 +90,18 @@ var worldInitCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		worldStore.Close()
+		defer worldStore.Close()
 
 		// Register in sphere.db.
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
+		defer sphereStore.Close()
+
 		if err := sphereStore.RegisterWorld(name, sourceRepo); err != nil {
-			sphereStore.Close()
 			return err
 		}
-		sphereStore.Close()
 
 		// Build config from defaults.
 		cfg := config.DefaultWorldConfig()

@@ -7,6 +7,16 @@ import (
 	"regexp"
 )
 
+// SessionName returns the tmux session name for an agent.
+func SessionName(world, agentName string) string {
+	return fmt.Sprintf("sol-%s-%s", world, agentName)
+}
+
+// WorktreePath returns the worktree directory for an agent.
+func WorktreePath(world, agentName string) string {
+	return filepath.Join(Home(), world, "outposts", agentName, "worktree")
+}
+
 // Home returns the SOL_HOME directory. Defaults to ~/sol.
 func Home() string {
 	if v := os.Getenv("SOL_HOME"); v != "" {

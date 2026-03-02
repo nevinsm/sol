@@ -188,15 +188,18 @@ func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, 
 // before killing. If force=true, kills immediately. Removes session metadata file.
 func (m *Manager) Stop(name string, force bool) error {
 	if !m.Exists(name) {
+		// Session doesn't exist in tmux, but clean up any stale metadata.
+		_ = os.Remove(metadataPath(name))
+		_ = os.Remove(captureHashPath(name))
 		return fmt.Errorf("session %q not found", name)
 	}
 
 	if !force {
-		// Send C-c for graceful shutdown
+		// Send C-c for graceful shutdown.
 		interrupt, interruptCancel := tmuxCmd("send-keys", "-t", tmuxExactTarget(name), "C-c")
 		_ = interrupt.Run()
 		interruptCancel()
-		// Wait up to 5 seconds for the session to exit
+		// Wait up to 5 seconds for the session to exit.
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
 			if !m.Exists(name) {
@@ -206,21 +209,21 @@ func (m *Manager) Stop(name string, force bool) error {
 		}
 	}
 
-	// Kill the session if it still exists
+	// Kill the session if it still exists.
+	var killErr error
 	if m.Exists(name) {
 		kill, killCancel := tmuxCmd("kill-session", "-t", tmuxExactTarget(name))
 		defer killCancel()
 		if out, err := kill.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to kill session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
+			killErr = fmt.Errorf("failed to kill session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
 		}
 	}
 
-	// Remove metadata file
+	// Always remove metadata — even if kill failed (session may already be dead).
 	_ = os.Remove(metadataPath(name))
-	// Remove capture hash file
 	_ = os.Remove(captureHashPath(name))
 
-	return nil
+	return killErr
 }
 
 // List returns all sessions with metadata from .runtime/sessions/*.json,
@@ -243,11 +246,13 @@ func (m *Manager) List() ([]SessionInfo, error) {
 
 		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "session: skipping unreadable metadata %s: %v\n", entry.Name(), err)
 			continue
 		}
 
 		var meta sessionMeta
 		if err := json.Unmarshal(data, &meta); err != nil {
+			fmt.Fprintf(os.Stderr, "session: skipping corrupt metadata %s: %v\n", entry.Name(), err)
 			continue
 		}
 

@@ -83,7 +83,7 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 	}
 
 	// 2. Session name.
-	sessionName := fmt.Sprintf("sol-%s-%s", opts.World, opts.AgentName)
+	sessionName := config.SessionName(opts.World, opts.AgentName)
 
 	// 3. Capture tmux output.
 	recentOutput := ""
@@ -95,7 +95,7 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 	}
 
 	// 4. Capture recent git commits from worktree.
-	worktreeDir := filepath.Join(config.Home(), opts.World, "outposts", opts.AgentName, "worktree")
+	worktreeDir := config.WorktreePath(opts.World, opts.AgentName)
 	var recentCommits []string
 	if gitLog != nil {
 		commits, err := gitLog(worktreeDir, opts.CommitCount)
@@ -279,8 +279,8 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		}
 	}
 
-	sessionName := fmt.Sprintf("sol-%s-%s", opts.World, opts.AgentName)
-	worktreeDir := filepath.Join(config.Home(), opts.World, "outposts", opts.AgentName, "worktree")
+	sessionName := config.SessionName(opts.World, opts.AgentName)
+	worktreeDir := config.WorktreePath(opts.World, opts.AgentName)
 
 	// 4. Stop the current session (graceful).
 	if err := sessionMgr.Stop(sessionName, false); err != nil {
@@ -290,10 +290,15 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// 5. Start a new session with the same worktree.
 	env := map[string]string{
 		"SOL_HOME":  config.Home(),
-		"SOL_WORLD":   opts.World,
+		"SOL_WORLD": opts.World,
 		"SOL_AGENT": opts.AgentName,
 	}
 	if err := sessionMgr.Start(sessionName, worktreeDir, "claude --dangerously-skip-permissions", env, "agent", opts.World); err != nil {
+		// Attempt to restart the old session so the agent isn't left dead.
+		fmt.Fprintf(os.Stderr, "handoff: new session failed, attempting to restart previous session: %v\n", err)
+		if restartErr := sessionMgr.Start(sessionName, worktreeDir, "claude --dangerously-skip-permissions", env, "agent", opts.World); restartErr != nil {
+			fmt.Fprintf(os.Stderr, "handoff: restart also failed: %v\n", restartErr)
+		}
 		return fmt.Errorf("failed to start new session: %w", err)
 	}
 
