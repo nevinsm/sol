@@ -127,6 +127,39 @@ func TestLoadWorldConfigPartialOverride(t *testing.T) {
 	}
 }
 
+func TestLoadWorldConfigSameSectionPartialOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// sol.toml sets both capacity and model_tier in [agents].
+	globalPath := filepath.Join(dir, "sol.toml")
+	if err := os.WriteFile(globalPath, []byte("[agents]\ncapacity = 10\nmodel_tier = \"opus\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// world.toml overrides only model_tier in [agents] — capacity is not mentioned.
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worldPath := filepath.Join(worldDir, "world.toml")
+	if err := os.WriteFile(worldPath, []byte("[agents]\nmodel_tier = \"haiku\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agents.ModelTier != "haiku" {
+		t.Fatalf("expected model_tier 'haiku' (world override), got %q", cfg.Agents.ModelTier)
+	}
+	// capacity must be preserved from sol.toml, not zeroed.
+	if cfg.Agents.Capacity != 10 {
+		t.Fatalf("expected capacity 10 (preserved from sol.toml), got %d", cfg.Agents.Capacity)
+	}
+}
+
 func TestLoadWorldConfigQualityGates(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)

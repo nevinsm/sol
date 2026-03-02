@@ -161,11 +161,15 @@ func (c *Chronicle) processCycle() error {
 		filtered = append(filtered, ev)
 	}
 
-	// 3. Dedup.
+	// 3. Dedup (skip aggregatable types — they get batched, not deduped).
 	var deduped []Event
 	now := time.Now()
 	c.cleanDedupCache(now)
 	for _, ev := range filtered {
+		if aggregatableTypes[ev.Type] {
+			deduped = append(deduped, ev)
+			continue
+		}
 		if c.isDuplicate(ev, now) {
 			continue
 		}

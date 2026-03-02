@@ -233,6 +233,61 @@ func TestChronicleAggregatesCastBurst(t *testing.T) {
 	}
 }
 
+func TestChronicleAggregatesSameActorCastBurst(t *testing.T) {
+	dir := t.TempDir()
+	cfg := testChronicleConfig(dir)
+	cfg.AggWindow = 100 * time.Millisecond
+	chronicle := NewChronicle(cfg)
+
+	// Write 5 cast events from the SAME actor within the window.
+	// These must not be deduped — they should aggregate into a cast_batch.
+	now := time.Now().UTC()
+	for i := 0; i < 5; i++ {
+		writeRawEvent(t, cfg.RawPath, Event{
+			Timestamp:  now.Add(time.Duration(i) * time.Millisecond),
+			Source:     "sol",
+			Type:       EventCast,
+			Actor:      "operator",
+			Visibility: "feed",
+			Payload:    map[string]string{"item": "sol-" + string(rune('a'+i))},
+		})
+	}
+
+	// First cycle: events go into agg buffer.
+	if err := chronicle.ProcessOnce(); err != nil {
+		t.Fatalf("ProcessOnce 1: %v", err)
+	}
+
+	// Wait for agg window to expire.
+	time.Sleep(150 * time.Millisecond)
+
+	// Second cycle: flushes the agg buffer.
+	if err := chronicle.ProcessOnce(); err != nil {
+		t.Fatalf("ProcessOnce 2: %v", err)
+	}
+
+	events := readFeedEvents(t, cfg.FeedPath)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 aggregated event, got %d", len(events))
+	}
+
+	if events[0].Type != "cast_batch" {
+		t.Errorf("expected type cast_batch, got %q", events[0].Type)
+	}
+
+	payload, ok := events[0].Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("payload is not map[string]any: %T", events[0].Payload)
+	}
+	count, ok := payload["count"]
+	if !ok {
+		t.Fatal("payload missing 'count'")
+	}
+	if int(count.(float64)) != 5 {
+		t.Errorf("expected count=5, got %v", count)
+	}
+}
+
 func TestChronicleDoesNotAggregateNonBatchable(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)
