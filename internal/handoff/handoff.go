@@ -164,8 +164,23 @@ func Write(state *State) error {
 	}
 
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	f, err := os.Create(tmp)
+	if err != nil {
 		return fmt.Errorf("failed to write handoff file: %w", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("failed to write handoff file: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("failed to sync handoff file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to close handoff file: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		os.Remove(tmp)
@@ -211,6 +226,7 @@ func GitLog(worktreeDir string, count int) ([]string, error) {
 	cmd := exec.Command("git", "-C", worktreeDir, "log", "--oneline", fmt.Sprintf("-%d", count))
 	out, err := cmd.Output()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "handoff: git log failed in %s: %v\n", worktreeDir, err)
 		return []string{}, nil
 	}
 
@@ -294,12 +310,14 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		"SOL_AGENT": opts.AgentName,
 	}
 	if err := sessionMgr.Start(sessionName, worktreeDir, "claude --dangerously-skip-permissions", env, "agent", opts.World); err != nil {
-		// Attempt to restart the old session so the agent isn't left dead.
-		fmt.Fprintf(os.Stderr, "handoff: new session failed, attempting to restart previous session: %v\n", err)
+		// Start failed — force-kill any remnant session, then retry once.
+		fmt.Fprintf(os.Stderr, "handoff: new session failed, attempting recovery: %v\n", err)
+		_ = sessionMgr.Stop(sessionName, true)
 		if restartErr := sessionMgr.Start(sessionName, worktreeDir, "claude --dangerously-skip-permissions", env, "agent", opts.World); restartErr != nil {
-			fmt.Fprintf(os.Stderr, "handoff: restart also failed: %v\n", restartErr)
+			fmt.Fprintf(os.Stderr, "handoff: recovery also failed: %v\n", restartErr)
+			return fmt.Errorf("failed to start new session (recovery also failed): %w", err)
 		}
-		return fmt.Errorf("failed to start new session: %w", err)
+		fmt.Fprintf(os.Stderr, "handoff: recovery succeeded\n")
 	}
 
 	return nil

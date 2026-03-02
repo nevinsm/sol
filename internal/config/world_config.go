@@ -133,6 +133,11 @@ func WriteWorldConfig(world string, cfg WorldConfig) error {
 		os.Remove(tmpPath)
 		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to sync %s: %w", path, err)
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("failed to close temp file for %s: %w", path, err)
