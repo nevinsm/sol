@@ -22,9 +22,10 @@ var prefectCmd = &cobra.Command{
 }
 
 var prefectRunCmd = &cobra.Command{
-	Use:   "run",
-	Short: "Run the prefect (foreground)",
-	Args:  cobra.NoArgs,
+	Use:          "run",
+	Short:        "Run the prefect (foreground)",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logPath := filepath.Join(config.RuntimeDir(), "prefect.log")
 		logger, logFile, err := prefect.NewLogger(logPath)
@@ -70,9 +71,10 @@ var prefectRunCmd = &cobra.Command{
 }
 
 var prefectStopCmd = &cobra.Command{
-	Use:   "stop",
-	Short: "Stop the running prefect",
-	Args:  cobra.NoArgs,
+	Use:          "stop",
+	Short:        "Stop the running prefect",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pid, err := prefect.ReadPID()
 		if err != nil {

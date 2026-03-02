@@ -19,9 +19,10 @@ var workflowCmd = &cobra.Command{
 }
 
 var workflowInstantiateCmd = &cobra.Command{
-	Use:   "instantiate <formula>",
-	Short: "Instantiate a workflow from a formula",
-	Args:  cobra.ExactArgs(1),
+	Use:          "instantiate <formula>",
+	Short:        "Instantiate a workflow from a formula",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		agent, _ := cmd.Flags().GetString("agent")
@@ -80,9 +81,10 @@ var workflowCurrentCmd = &cobra.Command{
 }
 
 var workflowAdvanceCmd = &cobra.Command{
-	Use:   "advance",
-	Short: "Advance to the next workflow step",
-	Args:  cobra.NoArgs,
+	Use:          "advance",
+	Short:        "Advance to the next workflow step",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		agent, _ := cmd.Flags().GetString("agent")
@@ -126,9 +128,10 @@ var workflowAdvanceCmd = &cobra.Command{
 }
 
 var workflowStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show workflow status",
-	Args:  cobra.NoArgs,
+	Use:          "status",
+	Short:        "Show workflow status",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		agent, _ := cmd.Flags().GetString("agent")

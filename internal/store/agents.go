@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/nevinsm/sol/internal/config"
 )
 
 // Agent represents an agent record in the sphere database.
@@ -22,6 +24,9 @@ type Agent struct {
 
 // CreateAgent creates an agent record in the sphere DB. Returns the agent ID ("world/name").
 func (s *Store) CreateAgent(name, world, role string) (string, error) {
+	if err := config.ValidateAgentName(name); err != nil {
+		return "", fmt.Errorf("invalid agent: %w", err)
+	}
 	id := world + "/" + name
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.Exec(

@@ -40,9 +40,10 @@ var (
 )
 
 var sessionStartCmd = &cobra.Command{
-	Use:   "start <name>",
-	Short: "Start a tmux session",
-	Args:  cobra.ExactArgs(1),
+	Use:          "start <name>",
+	Short:        "Start a tmux session",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
@@ -79,9 +80,10 @@ func init() {
 var stopForce bool
 
 var sessionStopCmd = &cobra.Command{
-	Use:   "stop <name>",
-	Short: "Stop a tmux session",
-	Args:  cobra.ExactArgs(1),
+	Use:          "stop <name>",
+	Short:        "Stop a tmux session",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
 		if err := mgr.Stop(args[0], stopForce); err != nil {
@@ -101,8 +103,9 @@ func init() {
 var sessionListJSON bool
 
 var sessionListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all sessions",
+	Use:          "list",
+	Short:        "List all sessions",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
 		sessions, err := mgr.List()
@@ -171,9 +174,10 @@ func init() {
 var captureLines int
 
 var sessionCaptureCmd = &cobra.Command{
-	Use:   "capture <name>",
-	Short: "Capture pane output",
-	Args:  cobra.ExactArgs(1),
+	Use:          "capture <name>",
+	Short:        "Capture pane output",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
 		output, err := mgr.Capture(args[0], captureLines)
@@ -192,9 +196,10 @@ func init() {
 // --- sol session attach ---
 
 var sessionAttachCmd = &cobra.Command{
-	Use:   "attach <name>",
-	Short: "Attach to a tmux session",
-	Args:  cobra.ExactArgs(1),
+	Use:          "attach <name>",
+	Short:        "Attach to a tmux session",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
 		return mgr.Attach(args[0])
@@ -206,9 +211,10 @@ var sessionAttachCmd = &cobra.Command{
 var injectMessage string
 
 var sessionInjectCmd = &cobra.Command{
-	Use:   "inject <name>",
-	Short: "Inject text into a session",
-	Args:  cobra.ExactArgs(1),
+	Use:          "inject <name>",
+	Short:        "Inject text into a session",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if injectMessage == "" {
 			return fmt.Errorf("--message is required")

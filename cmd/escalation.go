@@ -93,9 +93,10 @@ var escalationListCmd = &cobra.Command{
 // --- sol escalation ack ---
 
 var escalationAckCmd = &cobra.Command{
-	Use:   "ack <id>",
-	Short: "Acknowledge an escalation",
-	Args:  cobra.ExactArgs(1),
+	Use:          "ack <id>",
+	Short:        "Acknowledge an escalation",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 
@@ -123,9 +124,10 @@ var escalationAckCmd = &cobra.Command{
 // --- sol escalation resolve ---
 
 var escalationResolveCmd = &cobra.Command{
-	Use:   "resolve <id>",
-	Short: "Resolve an escalation",
-	Args:  cobra.ExactArgs(1),
+	Use:          "resolve <id>",
+	Short:        "Resolve an escalation",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 

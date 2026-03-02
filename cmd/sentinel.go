@@ -22,9 +22,10 @@ var sentinelCmd = &cobra.Command{
 }
 
 var sentinelRunCmd = &cobra.Command{
-	Use:   "run <world>",
-	Short: "Run the sentinel patrol loop (foreground)",
-	Args:  cobra.ExactArgs(1),
+	Use:          "run <world>",
+	Short:        "Run the sentinel patrol loop (foreground)",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
@@ -73,9 +74,10 @@ var sentinelRunCmd = &cobra.Command{
 }
 
 var sentinelStartCmd = &cobra.Command{
-	Use:   "start <world>",
-	Short: "Start the sentinel as a background tmux session",
-	Args:  cobra.ExactArgs(1),
+	Use:          "start <world>",
+	Short:        "Start the sentinel as a background tmux session",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
@@ -110,9 +112,10 @@ var sentinelStartCmd = &cobra.Command{
 }
 
 var sentinelStopCmd = &cobra.Command{
-	Use:   "stop <world>",
-	Short: "Stop the sentinel",
-	Args:  cobra.ExactArgs(1),
+	Use:          "stop <world>",
+	Short:        "Stop the sentinel",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
@@ -137,9 +140,10 @@ var sentinelStopCmd = &cobra.Command{
 }
 
 var sentinelAttachCmd = &cobra.Command{
-	Use:   "attach <world>",
-	Short: "Attach to the sentinel tmux session",
-	Args:  cobra.ExactArgs(1),
+	Use:          "attach <world>",
+	Short:        "Attach to the sentinel tmux session",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 

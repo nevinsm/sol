@@ -83,9 +83,10 @@ var caravanCreateCmd = &cobra.Command{
 // --- sol caravan add ---
 
 var caravanAddCmd = &cobra.Command{
-	Use:   "add <caravan-id> <item-id> [<item-id> ...]",
-	Short: "Add items to an existing caravan",
-	Args:  cobra.MinimumNArgs(2),
+	Use:          "add <caravan-id> <item-id> [<item-id> ...]",
+	Short:        "Add items to an existing caravan",
+	Args:         cobra.MinimumNArgs(2),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
 		itemIDs := args[1:]
@@ -328,9 +329,10 @@ var caravanStatusCmd = &cobra.Command{
 // --- sol caravan launch ---
 
 var caravanLaunchCmd = &cobra.Command{
-	Use:   "launch <caravan-id>",
-	Short: "Dispatch ready items in a caravan",
-	Args:  cobra.ExactArgs(1),
+	Use:          "launch <caravan-id>",
+	Short:        "Dispatch ready items in a caravan",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
 

@@ -44,6 +44,25 @@ func WorldDir(world string) string {
 	return filepath.Join(Home(), world)
 }
 
+var validAgentName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]*$`)
+
+const maxAgentNameLen = 64
+
+// ValidateAgentName checks that an agent name contains only safe characters.
+// Names must start with a letter, contain only [a-zA-Z0-9._-], and be at most 64 chars.
+func ValidateAgentName(name string) error {
+	if name == "" {
+		return fmt.Errorf("agent name must not be empty")
+	}
+	if len(name) > maxAgentNameLen {
+		return fmt.Errorf("agent name %q is too long (%d chars, max %d)", name, len(name), maxAgentNameLen)
+	}
+	if !validAgentName.MatchString(name) {
+		return fmt.Errorf("invalid agent name %q: must start with a letter and contain only [a-zA-Z0-9._-]", name)
+	}
+	return nil
+}
+
 var validWorldName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 var reservedWorldNames = map[string]bool{

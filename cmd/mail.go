@@ -17,9 +17,10 @@ var mailCmd = &cobra.Command{
 }
 
 var mailSendCmd = &cobra.Command{
-	Use:   "send",
-	Short: "Send a message",
-	Args:  cobra.NoArgs,
+	Use:          "send",
+	Short:        "Send a message",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		to, _ := cmd.Flags().GetString("to")
 		subject, _ := cmd.Flags().GetString("subject")
@@ -45,9 +46,10 @@ var mailSendCmd = &cobra.Command{
 }
 
 var mailInboxCmd = &cobra.Command{
-	Use:   "inbox",
-	Short: "List pending messages",
-	Args:  cobra.NoArgs,
+	Use:          "inbox",
+	Short:        "List pending messages",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identity, _ := cmd.Flags().GetString("identity")
 		asJSON, _ := cmd.Flags().GetBool("json")
@@ -85,9 +87,10 @@ var mailInboxCmd = &cobra.Command{
 }
 
 var mailReadCmd = &cobra.Command{
-	Use:   "read <message-id>",
-	Short: "Read a message (marks as read)",
-	Args:  cobra.ExactArgs(1),
+	Use:          "read <message-id>",
+	Short:        "Read a message (marks as read)",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		s, err := store.OpenSphere()
 		if err != nil {
@@ -112,9 +115,10 @@ var mailReadCmd = &cobra.Command{
 }
 
 var mailAckCmd = &cobra.Command{
-	Use:   "ack <message-id>",
-	Short: "Acknowledge a message",
-	Args:  cobra.ExactArgs(1),
+	Use:          "ack <message-id>",
+	Short:        "Acknowledge a message",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		s, err := store.OpenSphere()
 		if err != nil {

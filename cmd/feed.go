@@ -25,8 +25,9 @@ var (
 )
 
 var feedCmd = &cobra.Command{
-	Use:   "feed",
-	Short: "View the event activity feed",
+	Use:          "feed",
+	Short:        "View the event activity feed",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Default: curated feed. --raw: raw event log.
 		// If curated feed doesn't exist, fall back to raw silently.

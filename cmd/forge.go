@@ -24,9 +24,10 @@ var forgeCmd = &cobra.Command{
 }
 
 var forgeStartCmd = &cobra.Command{
-	Use:   "start <world>",
-	Short: "Start the forge as a Claude session",
-	Args:  cobra.ExactArgs(1),
+	Use:          "start <world>",
+	Short:        "Start the forge as a Claude session",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
@@ -121,9 +122,10 @@ var forgeStartCmd = &cobra.Command{
 }
 
 var forgeStopCmd = &cobra.Command{
-	Use:   "stop <world>",
-	Short: "Stop the forge",
-	Args:  cobra.ExactArgs(1),
+	Use:          "stop <world>",
+	Short:        "Stop the forge",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
@@ -148,9 +150,10 @@ var forgeStopCmd = &cobra.Command{
 }
 
 var forgeAttachCmd = &cobra.Command{
-	Use:   "attach <world>",
-	Short: "Attach to the forge tmux session",
-	Args:  cobra.ExactArgs(1),
+	Use:          "attach <world>",
+	Short:        "Attach to the forge tmux session",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
@@ -172,9 +175,10 @@ var forgeAttachCmd = &cobra.Command{
 var forgeQueueJSON bool
 
 var forgeQueueCmd = &cobra.Command{
-	Use:   "queue <world>",
-	Short: "Show the merge request queue",
-	Args:  cobra.ExactArgs(1),
+	Use:          "queue <world>",
+	Short:        "Show the merge request queue",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
@@ -268,9 +272,10 @@ func openForge(world string) (*forge.Forge, *store.Store, *store.Store, error) {
 }
 
 var forgeReadyCmd = &cobra.Command{
-	Use:   "ready <world>",
-	Short: "List ready (unblocked) merge requests",
-	Args:  cobra.ExactArgs(1),
+	Use:          "ready <world>",
+	Short:        "List ready (unblocked) merge requests",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
@@ -311,9 +316,10 @@ var forgeReadyCmd = &cobra.Command{
 }
 
 var forgeBlockedCmd = &cobra.Command{
-	Use:   "blocked <world>",
-	Short: "List blocked merge requests",
-	Args:  cobra.ExactArgs(1),
+	Use:          "blocked <world>",
+	Short:        "List blocked merge requests",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
@@ -354,9 +360,10 @@ var forgeBlockedCmd = &cobra.Command{
 }
 
 var forgeClaimCmd = &cobra.Command{
-	Use:   "claim <world>",
-	Short: "Claim the next ready unblocked merge request",
-	Args:  cobra.ExactArgs(1),
+	Use:          "claim <world>",
+	Short:        "Claim the next ready unblocked merge request",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
@@ -406,9 +413,10 @@ var forgeClaimCmd = &cobra.Command{
 }
 
 var forgeReleaseCmd = &cobra.Command{
-	Use:   "release <world> <mr-id>",
-	Short: "Release a claimed merge request back to ready",
-	Args:  cobra.ExactArgs(2),
+	Use:          "release <world> <mr-id>",
+	Short:        "Release a claimed merge request back to ready",
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, mrID := args[0], args[1]
 
@@ -482,9 +490,10 @@ var forgeRunGatesCmd = &cobra.Command{
 }
 
 var forgePushCmd = &cobra.Command{
-	Use:   "push <world>",
-	Short: "Push HEAD to target branch (acquires merge slot)",
-	Args:  cobra.ExactArgs(1),
+	Use:          "push <world>",
+	Short:        "Push HEAD to target branch (acquires merge slot)",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 
@@ -509,9 +518,10 @@ var forgePushCmd = &cobra.Command{
 }
 
 var forgeMarkMergedCmd = &cobra.Command{
-	Use:   "mark-merged <world> <mr-id>",
-	Short: "Mark a merge request as merged",
-	Args:  cobra.ExactArgs(2),
+	Use:          "mark-merged <world> <mr-id>",
+	Short:        "Mark a merge request as merged",
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, mrID := args[0], args[1]
 
@@ -541,9 +551,10 @@ var forgeMarkMergedCmd = &cobra.Command{
 }
 
 var forgeMarkFailedCmd = &cobra.Command{
-	Use:   "mark-failed <world> <mr-id>",
-	Short: "Mark a merge request as failed",
-	Args:  cobra.ExactArgs(2),
+	Use:          "mark-failed <world> <mr-id>",
+	Short:        "Mark a merge request as failed",
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, mrID := args[0], args[1]
 
@@ -573,9 +584,10 @@ var forgeMarkFailedCmd = &cobra.Command{
 }
 
 var forgeCreateResolutionCmd = &cobra.Command{
-	Use:   "create-resolution <world> <mr-id>",
-	Short: "Create a conflict resolution task and block the MR",
-	Args:  cobra.ExactArgs(2),
+	Use:          "create-resolution <world> <mr-id>",
+	Short:        "Create a conflict resolution task and block the MR",
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, mrID := args[0], args[1]
 
@@ -615,9 +627,10 @@ var forgeCreateResolutionCmd = &cobra.Command{
 }
 
 var forgeCheckUnblockedCmd = &cobra.Command{
-	Use:   "check-unblocked <world>",
-	Short: "Check for resolved blockers and unblock MRs",
-	Args:  cobra.ExactArgs(1),
+	Use:          "check-unblocked <world>",
+	Short:        "Check for resolved blockers and unblock MRs",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := args[0]
 

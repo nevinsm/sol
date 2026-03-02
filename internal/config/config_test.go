@@ -84,6 +84,42 @@ func TestEnsureDirsAlreadyExist(t *testing.T) {
 	}
 }
 
+func TestValidateAgentNameEmpty(t *testing.T) {
+	err := ValidateAgentName("")
+	if err == nil {
+		t.Fatal("expected error for empty name")
+	}
+}
+
+func TestValidateAgentNameValid(t *testing.T) {
+	valid := []string{"Nova", "Vega", "agent-1", "Toast_v2", "R2.D2"}
+	for _, name := range valid {
+		t.Run(name, func(t *testing.T) {
+			if err := ValidateAgentName(name); err != nil {
+				t.Fatalf("expected name %q to be valid, got: %v", name, err)
+			}
+		})
+	}
+}
+
+func TestValidateAgentNameInvalid(t *testing.T) {
+	invalid := []string{"../evil", "foo/bar", "1starts-digit", ".hidden", " space", "semi;colon"}
+	for _, name := range invalid {
+		t.Run(name, func(t *testing.T) {
+			if err := ValidateAgentName(name); err == nil {
+				t.Fatalf("expected error for invalid name %q", name)
+			}
+		})
+	}
+}
+
+func TestValidateAgentNameTooLong(t *testing.T) {
+	long := strings.Repeat("a", 65)
+	if err := ValidateAgentName(long); err == nil {
+		t.Fatal("expected error for name exceeding max length")
+	}
+}
+
 func TestValidateWorldNameEmpty(t *testing.T) {
 	err := ValidateWorldName("")
 	if err == nil {

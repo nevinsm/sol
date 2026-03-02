@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 
@@ -45,7 +44,7 @@ var escalateCmd = &cobra.Command{
 		webhookURL := os.Getenv("SOL_ESCALATION_WEBHOOK")
 		router := escalation.DefaultRouter(logger, sphereStore, webhookURL)
 
-		if err := router.Route(context.Background(), *esc); err != nil {
+		if err := router.Route(cmd.Context(), *esc); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: notification error: %v\n", err)
 		}
 

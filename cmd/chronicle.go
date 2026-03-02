@@ -21,9 +21,10 @@ var chronicleCmd = &cobra.Command{
 }
 
 var chronicleRunCmd = &cobra.Command{
-	Use:   "run",
-	Short: "Run the chronicle (foreground)",
-	Args:  cobra.NoArgs,
+	Use:          "run",
+	Short:        "Run the chronicle (foreground)",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := events.DefaultChronicleConfig(config.Home())
 		logger := events.NewLogger(config.Home())
@@ -44,9 +45,10 @@ var chronicleRunCmd = &cobra.Command{
 }
 
 var chronicleStartCmd = &cobra.Command{
-	Use:   "start",
-	Short: "Start the chronicle as a background tmux session",
-	Args:  cobra.NoArgs,
+	Use:          "start",
+	Short:        "Start the chronicle as a background tmux session",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
 
@@ -74,9 +76,10 @@ var chronicleStartCmd = &cobra.Command{
 }
 
 var chronicleStopCmd = &cobra.Command{
-	Use:   "stop",
-	Short: "Stop the chronicle background session",
-	Args:  cobra.NoArgs,
+	Use:          "stop",
+	Short:        "Stop the chronicle background session",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
 

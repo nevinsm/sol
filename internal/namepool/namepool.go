@@ -4,8 +4,11 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 )
+
+var validAgentNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]*$`)
 
 //go:embed names.txt
 var defaultNames string
@@ -60,12 +63,16 @@ func (p *Pool) AllocateName(usedNames []string) (string, error) {
 	return "", fmt.Errorf("name pool exhausted: all %d names are in use", len(p.names))
 }
 
-// parseNames splits text into names, skipping blank lines and comments.
+// parseNames splits text into names, skipping blank lines, comments, and invalid names.
 func parseNames(text string) []string {
 	var names []string
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Silently skip invalid names from override files.
+		if !validAgentNameRe.MatchString(line) {
 			continue
 		}
 		names = append(names, line)
