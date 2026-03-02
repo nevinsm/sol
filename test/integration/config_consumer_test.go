@@ -205,6 +205,16 @@ func setupGitRepo(t *testing.T) string {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init failed: %s: %v", out, err)
 	}
+	// Configure git user — required in environments without global git config.
+	for _, args := range [][]string{
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test"},
+	} {
+		cmd = exec.Command("git", append([]string{"-C", dir}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %s failed: %s: %v", args[0], out, err)
+		}
+	}
 	cmd = exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "initial")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git commit failed: %s: %v", out, err)

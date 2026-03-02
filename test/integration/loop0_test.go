@@ -164,10 +164,15 @@ func TestCrashRecoveryRecast(t *testing.T) {
 	mgr := session.New()
 
 	// Create agent + work item, cast.
-	sphereStore.CreateAgent("TestBot", "ember", "agent")
-	itemID, _ := worldStore.CreateWorkItem("Crash test", "Recovery test", "operator", 2, nil)
+	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWorkItem("Crash test", "Recovery test", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
-	_, err := dispatch.Cast(dispatch.CastOpts{
+	_, err = dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "ember",
 		AgentName:  "TestBot",
@@ -224,10 +229,15 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 	mgr := session.New()
 
 	// Create agent + first work item, cast.
-	sphereStore.CreateAgent("TestBot", "ember", "agent")
-	item1ID, _ := worldStore.CreateWorkItem("First task", "Task 1", "operator", 2, nil)
+	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	item1ID, err := worldStore.CreateWorkItem("First task", "Task 1", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
-	_, err := dispatch.Cast(dispatch.CastOpts{
+	_, err = dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item1ID,
 		World:        "ember",
 		AgentName:  "TestBot",
@@ -238,7 +248,10 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 	}
 
 	// Create second work item and try to cast to same agent.
-	item2ID, _ := worldStore.CreateWorkItem("Second task", "Task 2", "operator", 2, nil)
+	item2ID, err := worldStore.CreateWorkItem("Second task", "Task 2", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
 	_, err = dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: item2ID,
@@ -268,8 +281,13 @@ func TestPrimeOutput(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	sphereStore.CreateAgent("TestBot", "ember", "agent")
-	itemID, _ := worldStore.CreateWorkItem("Prime test task", "Check prime output", "operator", 2, nil)
+	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWorkItem("Prime test task", "Check prime output", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
@@ -307,7 +325,9 @@ func TestPrimeWithoutHook(t *testing.T) {
 	setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
 
-	sphereStore.CreateAgent("TestBot", "ember", "agent")
+	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
 
 	result, err := dispatch.Prime("ember", "TestBot", worldStore)
 	if err != nil {
@@ -330,11 +350,19 @@ func TestStoreInspection(t *testing.T) {
 	mgr := session.New()
 
 	// Create work items.
-	id1, _ := worldStore.CreateWorkItem("Task one", "First", "operator", 2, nil)
-	id2, _ := worldStore.CreateWorkItem("Task two", "Second", "operator", 2, nil)
+	id1, err := worldStore.CreateWorkItem("Task one", "First", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+	id2, err := worldStore.CreateWorkItem("Task two", "Second", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
 	// Cast one.
-	sphereStore.CreateAgent("TestBot", "ember", "agent")
+	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
 	dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: id1,
 		World:        "ember",

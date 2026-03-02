@@ -2,25 +2,36 @@ package integration
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+)
+
+var (
+	buildOnce sync.Once
+	builtBin  string
+	buildErr  error
 )
 
 // gtBin returns the path to the built sol binary, building it if needed.
 func gtBin(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(projectRoot(t), "bin", "sol")
-	if _, err := os.Stat(bin); os.IsNotExist(err) {
-		cmd := exec.Command("go", "build", "-o", bin, ".")
+	buildOnce.Do(func() {
+		builtBin = filepath.Join(projectRoot(t), "bin", "sol")
+		cmd := exec.Command("go", "build", "-o", builtBin, ".")
 		cmd.Dir = projectRoot(t)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("build sol binary: %s: %v", out, err)
+			buildErr = fmt.Errorf("build sol binary: %s: %v", out, err)
 		}
+	})
+	if buildErr != nil {
+		t.Fatal(buildErr)
 	}
-	return bin
+	return builtBin
 }
 
 func projectRoot(t *testing.T) string {

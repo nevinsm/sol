@@ -248,8 +248,13 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	mgr := newMockSessionChecker()
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("HandBot", "ember", "agent")
-	itemID, _ := worldStore.CreateWorkItem("Handoff task", "Test handoff", "operator", 2, nil)
+	if _, err := sphereStore.CreateAgent("HandBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWorkItem("Handoff task", "Test handoff", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
 	// Cast the work item.
 	dispatch.Cast(dispatch.CastOpts{
@@ -317,8 +322,13 @@ func TestHandoffPreservesHook(t *testing.T) {
 	mgr := newMockSessionChecker()
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("HookBot", "ember", "agent")
-	itemID, _ := worldStore.CreateWorkItem("Tether task", "Test tether preservation", "operator", 2, nil)
+	if _, err := sphereStore.CreateAgent("HookBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWorkItem("Tether task", "Test tether preservation", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
 	// Cast the work item.
 	dispatch.Cast(dispatch.CastOpts{
@@ -397,8 +407,13 @@ needs = ["step1"]
 	os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Step 2 instructions.\n"), 0o644)
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("WFHandBot", "ember", "agent")
-	itemID, _ := worldStore.CreateWorkItem("WF Handoff task", "Workflow handoff test", "operator", 2, nil)
+	if _, err := sphereStore.CreateAgent("WFHandBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWorkItem("WF Handoff task", "Workflow handoff test", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
 	// Cast with formula.
 	dispatch.Cast(dispatch.CastOpts{
@@ -489,8 +504,13 @@ instructions = "steps/01.md"
 	os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Only step.\n"), 0o644)
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("OverBot", "ember", "agent")
-	itemID, _ := worldStore.CreateWorkItem("Override task", "Override test", "operator", 2, nil)
+	if _, err := sphereStore.CreateAgent("OverBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWorkItem("Override task", "Override test", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
 	// Cast with formula.
 	dispatch.Cast(dispatch.CastOpts{
@@ -549,16 +569,25 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	defer worldStore.Close()
 
 	// Create work item in "tethered" status.
-	itemID, _ := worldStore.CreateWorkItem("Stale task", "Stale tether test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWorkItem("Stale task", "Stale tether test", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/StaleBot"})
 
 	// Create agent in "working" state.
-	sphereStore.CreateAgent("StaleBot", "haven", "agent")
-	sphereStore.UpdateAgentState("haven/StaleBot", "working", itemID)
+	if _, err := sphereStore.CreateAgent("StaleBot", "haven", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("haven/StaleBot", "working", itemID); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
 
 	// Set updated_at to 2 hours ago.
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "haven/StaleBot")
+	if _, err := sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "haven/StaleBot"); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
 
 	// Write tether file.
 	tether.Write("haven", "StaleBot", itemID)
@@ -623,15 +652,24 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	itemID, _ := worldStore.CreateWorkItem("Recent task", "Recent tether test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWorkItem("Recent task", "Recent tether test", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/RecentBot"})
 
-	sphereStore.CreateAgent("RecentBot", "haven", "agent")
-	sphereStore.UpdateAgentState("haven/RecentBot", "working", itemID)
+	if _, err := sphereStore.CreateAgent("RecentBot", "haven", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("haven/RecentBot", "working", itemID); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
 
 	// updated_at is now (5 minutes ago is within timeout)
 	fiveMinAgo := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
-	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", fiveMinAgo, "haven/RecentBot")
+	if _, err := sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", fiveMinAgo, "haven/RecentBot"); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
 
 	tether.Write("haven", "RecentBot", itemID)
 
@@ -678,15 +716,24 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	itemID, _ := worldStore.CreateWorkItem("Alive task", "Alive tether test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWorkItem("Alive task", "Alive tether test", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/AliveBot"})
 
-	sphereStore.CreateAgent("AliveBot", "haven", "agent")
-	sphereStore.UpdateAgentState("haven/AliveBot", "working", itemID)
+	if _, err := sphereStore.CreateAgent("AliveBot", "haven", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("haven/AliveBot", "working", itemID); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
 
 	// Set updated_at to 2 hours ago.
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "haven/AliveBot")
+	if _, err := sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "haven/AliveBot"); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
 
 	tether.Write("haven", "AliveBot", itemID)
 
@@ -736,15 +783,30 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	}
 
 	// Create work items: A (no deps), B→A.
-	idA, _ := worldStore.CreateWorkItem("Task A", "First task", "operator", 2, nil)
-	idB, _ := worldStore.CreateWorkItem("Task B", "Depends on A", "operator", 2, nil)
-	worldStore.AddDependency(idB, idA)
+	idA, err := worldStore.CreateWorkItem("Task A", "First task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+	idB, err := worldStore.CreateWorkItem("Task B", "Depends on A", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+	if err := worldStore.AddDependency(idB, idA); err != nil {
+		t.Fatalf("AddDependency: %v", err)
+	}
 	worldStore.Close()
 
 	// Create caravan with both items.
-	caravanID, _ := sphereStore.CreateCaravan("feed-caravan", "operator")
-	sphereStore.AddCaravanItem(caravanID, idA, "ember")
-	sphereStore.AddCaravanItem(caravanID, idB, "ember")
+	caravanID, err := sphereStore.CreateCaravan("feed-caravan", "operator")
+	if err != nil {
+		t.Fatalf("CreateCaravan: %v", err)
+	}
+	if err := sphereStore.AddCaravanItem(caravanID, idA, "ember"); err != nil {
+		t.Fatalf("AddCaravanItem: %v", err)
+	}
+	if err := sphereStore.AddCaravanItem(caravanID, idB, "ember"); err != nil {
+		t.Fatalf("AddCaravanItem: %v", err)
+	}
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(solHome)
@@ -808,11 +870,19 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	idA, _ := worldStore.CreateWorkItem("Dup task", "No dup test", "operator", 2, nil)
+	idA, err := worldStore.CreateWorkItem("Dup task", "No dup test", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 	worldStore.Close()
 
-	caravanID, _ := sphereStore.CreateCaravan("nodup-caravan", "operator")
-	sphereStore.AddCaravanItem(caravanID, idA, "ember")
+	caravanID, err := sphereStore.CreateCaravan("nodup-caravan", "operator")
+	if err != nil {
+		t.Fatalf("CreateCaravan: %v", err)
+	}
+	if err := sphereStore.AddCaravanItem(caravanID, idA, "ember"); err != nil {
+		t.Fatalf("AddCaravanItem: %v", err)
+	}
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(solHome)
@@ -912,11 +982,17 @@ func TestConsulLifecycleShutdown(t *testing.T) {
 	defer sphereStore.Close()
 
 	// Register consul.
-	sphereStore.CreateAgent("consul", "cove", "consul")
-	sphereStore.UpdateAgentState("sphere/consul", "working", "")
+	if _, err := sphereStore.CreateAgent("consul", "sphere", "consul"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("sphere/consul", "working", ""); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
 
 	// Send SHUTDOWN protocol message to "sphere/consul".
-	sphereStore.SendProtocolMessage("operator", "sphere/consul", "SHUTDOWN", nil)
+	if _, err := sphereStore.SendProtocolMessage("operator", "sphere/consul", "SHUTDOWN", nil); err != nil {
+		t.Fatalf("SendProtocolMessage: %v", err)
+	}
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(solHome)
@@ -1169,15 +1245,30 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 
 	// 1. Create world with work items and dependencies.
-	idA, _ := worldStore.CreateWorkItem("Task A", "No deps", "operator", 2, nil)
-	idB, _ := worldStore.CreateWorkItem("Task B", "Depends on A", "operator", 2, nil)
-	worldStore.AddDependency(idB, idA)
+	idA, err := worldStore.CreateWorkItem("Task A", "No deps", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+	idB, err := worldStore.CreateWorkItem("Task B", "Depends on A", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+	if err := worldStore.AddDependency(idB, idA); err != nil {
+		t.Fatalf("AddDependency: %v", err)
+	}
 	worldStore.Close()
 
 	// 2. Create caravan spanning the items.
-	caravanID, _ := sphereStore.CreateCaravan("e2e-caravan", "operator")
-	sphereStore.AddCaravanItem(caravanID, idA, "ember")
-	sphereStore.AddCaravanItem(caravanID, idB, "ember")
+	caravanID, err := sphereStore.CreateCaravan("e2e-caravan", "operator")
+	if err != nil {
+		t.Fatalf("CreateCaravan: %v", err)
+	}
+	if err := sphereStore.AddCaravanItem(caravanID, idA, "ember"); err != nil {
+		t.Fatalf("AddCaravanItem: %v", err)
+	}
+	if err := sphereStore.AddCaravanItem(caravanID, idB, "ember"); err != nil {
+		t.Fatalf("AddCaravanItem: %v", err)
+	}
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(solHome)
@@ -1219,11 +1310,18 @@ func TestFullOrchestrationCycle(t *testing.T) {
 
 	// 7. Simulate handoff: write handoff file, call Prime.
 	// First, set up an agent with a tether.
-	worldStore2, _ := store.OpenWorld("ember")
+	worldStore2, err := store.OpenWorld("ember")
+	if err != nil {
+		t.Fatalf("OpenWorld: %v", err)
+	}
 	defer worldStore2.Close()
 
-	sphereStore.CreateAgent("E2EBot", "ember", "agent")
-	sphereStore.UpdateAgentState("ember/E2EBot", "working", idA)
+	if _, err := sphereStore.CreateAgent("E2EBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/E2EBot", "working", idA); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
 	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/E2EBot"})
 	tether.Write("ember", "E2EBot", idA)
 
@@ -1246,10 +1344,14 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 
 	// 9. Simulate stale tether: mark agent working but session is dead.
-	sphereStore.UpdateAgentState("ember/E2EBot", "working", idA)
+	if err := sphereStore.UpdateAgentState("ember/E2EBot", "working", idA); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
 	// Set updated_at to 2 hours ago.
 	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "ember/E2EBot")
+	if _, err := sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "ember/E2EBot"); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
 	tether.Write("ember", "E2EBot", idA)
 	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/E2EBot"})
 

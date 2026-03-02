@@ -401,16 +401,22 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	mock := newMockSessionChecker()
 
 	// Create agent with state=working, tether_item set.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
 
 	// Create work item.
 	now := time.Now().UTC().Format(time.RFC3339)
-	worldStore.DB().Exec(
+	if _, err := worldStore.DB().Exec(
 		`INSERT INTO work_items (id, title, description, status, priority, created_by, created_at, updated_at)
 		 VALUES (?, ?, '', 'tethered', 3, 'test', ?, ?)`,
 		"sol-abc12345", "Test task", now, now,
-	)
+	); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
 
 	// Write tether file.
 	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
@@ -458,15 +464,21 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	worldStore.DB().Exec(
+	if _, err := worldStore.DB().Exec(
 		`INSERT INTO work_items (id, title, description, status, priority, created_by, created_at, updated_at)
 		 VALUES (?, ?, '', 'tethered', 3, 'test', ?, ?)`,
 		"sol-abc12345", "Test task", now, now,
-	)
+	); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
 
 	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
@@ -547,7 +559,9 @@ func TestSentinelCleanupZombies(t *testing.T) {
 	mock := newMockSessionChecker()
 
 	// Create idle agent with no tether_item, no tether file.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
 	// Session is alive.
 	mock.alive["sol-ember-Toast"] = true
 
@@ -588,8 +602,12 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "same output both patrols"
 
@@ -639,8 +657,12 @@ func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
 	_, sphereStore := openStores(t, "ember")
 	mock := newMockSessionChecker()
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "same output"
 
@@ -683,8 +705,12 @@ func TestSentinelAIAssessmentFailure(t *testing.T) {
 	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "same output"
 
