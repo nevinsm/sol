@@ -509,6 +509,10 @@ func (s *Prefect) shutdown() {
 	stopped := 0
 
 	for _, agent := range allAgents {
+		// Skip human-supervised roles — envoys and governors are persistent.
+		if agent.Role == "envoy" || agent.Role == "governor" {
+			continue
+		}
 		sessName := dispatch.SessionName(agent.World, agent.Name)
 		if s.sessions.Exists(sessName) {
 			if err := s.sessions.Stop(sessName, false); err != nil {

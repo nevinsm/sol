@@ -272,7 +272,7 @@ func TestInstallHooks(t *testing.T) {
 		t.Fatalf("failed to read settings.local.json: %v", err)
 	}
 
-	var cfg hookConfig
+	var cfg HookConfig
 	if err := json.Unmarshal(settingsData, &cfg); err != nil {
 		t.Fatalf("failed to parse settings.local.json: %v", err)
 	}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -88,18 +89,6 @@ type StartOpts struct {
 	Name  string
 }
 
-// --- Hook config ---
-
-type hookConfig struct {
-	Hooks map[string][]hookEntry `json:"hooks"`
-}
-
-type hookEntry struct {
-	Type    string `json:"type"`
-	Matcher string `json:"matcher,omitempty"`
-	Command string `json:"command"`
-}
-
 // --- Create ---
 
 // Create provisions a new envoy: directory, brief, worktree, and agent record.
@@ -147,12 +136,15 @@ func ensureWorktree(sourceRepo, world, name, worktree string) error {
 	// Try creating worktree with new branch.
 	cmd := exec.Command("git", "-C", sourceRepo, "worktree", "add",
 		"-b", branch, worktree, "HEAD")
-	if _, err := cmd.CombinedOutput(); err != nil {
+	out1, err := cmd.CombinedOutput()
+	if err != nil {
 		// Branch may already exist — try without -b.
 		cmd2 := exec.Command("git", "-C", sourceRepo, "worktree", "add",
 			worktree, branch)
-		if out, err2 := cmd2.CombinedOutput(); err2 != nil {
-			return fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err2)
+		if out2, err2 := cmd2.CombinedOutput(); err2 != nil {
+			return fmt.Errorf("worktree add failed (attempt 1: %s) (attempt 2: %s): %w",
+				strings.TrimSpace(string(out1)),
+				strings.TrimSpace(string(out2)), err2)
 		}
 	}
 
@@ -208,8 +200,8 @@ func installHooks(worktreeDir string) error {
 		return fmt.Errorf("failed to create .claude directory: %w", err)
 	}
 
-	cfg := hookConfig{
-		Hooks: map[string][]hookEntry{
+	cfg := protocol.HookConfig{
+		Hooks: map[string][]protocol.HookEntry{
 			"SessionStart": {
 				{
 					Type:    "command",

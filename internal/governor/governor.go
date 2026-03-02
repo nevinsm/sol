@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/protocol"
 )
 
 // --- Directory helpers ---
@@ -67,27 +68,20 @@ type StopManager interface {
 
 // StartOpts holds inputs for starting a governor.
 type StartOpts struct {
-	World      string
-	SourceRepo string // from world config or flag
-}
-
-// --- Hook config ---
-
-type hookConfig struct {
-	Hooks map[string][]hookEntry `json:"hooks"`
-}
-
-type hookEntry struct {
-	Type    string `json:"type"`
-	Matcher string `json:"matcher,omitempty"`
-	Command string `json:"command"`
+	World        string
+	SourceRepo   string // from world config or flag
+	TargetBranch string // branch for mirror checkout (default: "main")
 }
 
 // --- Mirror ---
 
 // SetupMirror clones or updates the read-only mirror of the source repo.
 // If mirror doesn't exist, clones. If it exists, pulls latest.
-func SetupMirror(world, sourceRepo string) error {
+// If branch is empty, defaults to "main".
+func SetupMirror(world, sourceRepo, branch string) error {
+	if branch == "" {
+		branch = "main"
+	}
 	mirrorPath := MirrorPath(world)
 
 	if _, err := os.Stat(mirrorPath); os.IsNotExist(err) {
@@ -96,6 +90,14 @@ func SetupMirror(world, sourceRepo string) error {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("failed to setup governor mirror for world %q: %s: %w",
 				world, strings.TrimSpace(string(out)), err)
+		}
+		// Checkout target branch if not main (clone defaults to main).
+		if branch != "main" {
+			cmd = exec.Command("git", "-C", mirrorPath, "checkout", branch)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to checkout branch %q in mirror for world %q: %s: %w",
+					branch, world, strings.TrimSpace(string(out)), err)
+			}
 		}
 		return nil
 	}
@@ -112,15 +114,20 @@ func SetupMirror(world, sourceRepo string) error {
 }
 
 // RefreshMirror pulls latest changes in the mirror.
-func RefreshMirror(world string) error {
+// If branch is empty, defaults to "main".
+func RefreshMirror(world, branch string) error {
+	if branch == "" {
+		branch = "main"
+	}
+
 	mirrorPath := MirrorPath(world)
 
 	if _, err := os.Stat(mirrorPath); os.IsNotExist(err) {
 		return fmt.Errorf("mirror not found — run governor start first")
 	}
 
-	// Checkout main branch.
-	cmd := exec.Command("git", "-C", mirrorPath, "checkout", "main")
+	// Checkout target branch.
+	cmd := exec.Command("git", "-C", mirrorPath, "checkout", branch)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to refresh governor mirror for world %q: %s: %w",
 			world, strings.TrimSpace(string(out)), err)
@@ -163,7 +170,7 @@ func Start(opts StartOpts, sphereStore SphereStore, mgr SessionManager) error {
 	}
 
 	// 4. Setup mirror (warn on failure — governor still works without it).
-	if err := SetupMirror(opts.World, opts.SourceRepo); err != nil {
+	if err := SetupMirror(opts.World, opts.SourceRepo, opts.TargetBranch); err != nil {
 		fmt.Fprintf(os.Stderr, "governor: mirror setup failed for world %q: %v\n", opts.World, err)
 	}
 
@@ -193,8 +200,8 @@ func installHooks(govDir, world string) error {
 		return fmt.Errorf("failed to create .claude directory: %w", err)
 	}
 
-	cfg := hookConfig{
-		Hooks: map[string][]hookEntry{
+	cfg := protocol.HookConfig{
+		Hooks: map[string][]protocol.HookEntry{
 			"SessionStart": {
 				{
 					Type:    "command",

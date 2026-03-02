@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -309,7 +310,7 @@ func TestStart(t *testing.T) {
 		t.Fatalf("hooks file not found: %v", err)
 	}
 
-	var cfg hookConfig
+	var cfg protocol.HookConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatalf("failed to parse hooks JSON: %v", err)
 	}

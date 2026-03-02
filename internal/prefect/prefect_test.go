@@ -786,6 +786,46 @@ func TestWorktreeForGovernor(t *testing.T) {
 	}
 }
 
+func TestShutdownSkipsEnvoyGovernor(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create working agents: one regular, one envoy, one governor — all with live sessions.
+	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+	mock.Start("sol-haven-Toast", "/tmp", "echo", nil, "agent", "haven")
+
+	sphereStore.CreateAgent("Scout", "haven", "envoy")
+	sphereStore.UpdateAgentState("haven/Scout", "working", "sol-envoy123")
+	mock.Start("sol-haven-Scout", "/tmp", "echo", nil, "envoy", "haven")
+
+	sphereStore.CreateAgent("governor", "haven", "governor")
+	sphereStore.UpdateAgentState("haven/governor", "working", "")
+	mock.Start("sol-haven-governor", "/tmp", "echo", nil, "governor", "haven")
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.shutdown()
+
+	// Only the regular agent's session should be stopped.
+	stopped := mock.GetStopped()
+	if len(stopped) != 1 {
+		t.Fatalf("expected 1 session stopped, got %d: %v", len(stopped), stopped)
+	}
+	if stopped[0] != "sol-haven-Toast" {
+		t.Errorf("stopped session = %q, want %q", stopped[0], "sol-haven-Toast")
+	}
+
+	// Envoy and governor sessions should still be alive.
+	if !mock.Exists("sol-haven-Scout") {
+		t.Error("envoy session should not be stopped by shutdown")
+	}
+	if !mock.Exists("sol-haven-governor") {
+		t.Error("governor session should not be stopped by shutdown")
+	}
+}
+
 func TestRespawnCommandEnvoyGovernor(t *testing.T) {
 	envoyAgent := store.Agent{Name: "Scout", World: "haven", Role: "envoy"}
 	govAgent := store.Agent{Name: "governor", World: "haven", Role: "governor"}

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nevinsm/sol/internal/protocol"
 )
 
 // --- Mocks ---
@@ -133,7 +135,7 @@ func TestSetupMirrorClone(t *testing.T) {
 	sourceRepo := filepath.Join(tmp, "repo")
 	initGitRepo(t, sourceRepo)
 
-	err := SetupMirror("myworld", sourceRepo)
+	err := SetupMirror("myworld", sourceRepo, "")
 	if err != nil {
 		t.Fatalf("SetupMirror (clone) failed: %v", err)
 	}
@@ -170,7 +172,7 @@ func TestSetupMirrorRefresh(t *testing.T) {
 	initGitRepo(t, sourceRepo)
 
 	// First call — clones.
-	if err := SetupMirror("myworld", sourceRepo); err != nil {
+	if err := SetupMirror("myworld", sourceRepo, ""); err != nil {
 		t.Fatalf("SetupMirror (clone) failed: %v", err)
 	}
 
@@ -189,7 +191,7 @@ func TestSetupMirrorRefresh(t *testing.T) {
 	}
 
 	// Second call — pulls.
-	if err := SetupMirror("myworld", sourceRepo); err != nil {
+	if err := SetupMirror("myworld", sourceRepo, ""); err != nil {
 		t.Fatalf("SetupMirror (refresh) failed: %v", err)
 	}
 
@@ -213,7 +215,7 @@ func TestRefreshMirror(t *testing.T) {
 	initGitRepo(t, sourceRepo)
 
 	// Clone mirror first.
-	if err := SetupMirror("myworld", sourceRepo); err != nil {
+	if err := SetupMirror("myworld", sourceRepo, ""); err != nil {
 		t.Fatalf("SetupMirror failed: %v", err)
 	}
 
@@ -232,7 +234,7 @@ func TestRefreshMirror(t *testing.T) {
 	}
 
 	// RefreshMirror should pull the new commit.
-	if err := RefreshMirror("myworld"); err != nil {
+	if err := RefreshMirror("myworld", ""); err != nil {
 		t.Fatalf("RefreshMirror failed: %v", err)
 	}
 
@@ -251,12 +253,83 @@ func TestRefreshMirrorNoMirror(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("SOL_HOME", tmp)
 
-	err := RefreshMirror("myworld")
+	err := RefreshMirror("myworld", "")
 	if err == nil {
 		t.Fatal("expected error when mirror doesn't exist")
 	}
 	if !strings.Contains(err.Error(), "mirror not found") {
 		t.Errorf("error = %q, want contains \"mirror not found\"", err.Error())
+	}
+}
+
+func TestRefreshMirrorNonMainBranch(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	sourceRepo := filepath.Join(tmp, "repo")
+	initGitRepo(t, sourceRepo)
+
+	// Create a "develop" branch in the source repo.
+	cmd := exec.Command("git", "-C", sourceRepo, "checkout", "-b", "develop")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout -b develop failed: %s: %v", out, err)
+	}
+	devFile := filepath.Join(sourceRepo, "develop.txt")
+	if err := os.WriteFile(devFile, []byte("develop content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command("git", "-C", sourceRepo, "add", ".")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add failed: %s: %v", out, err)
+	}
+	cmd = exec.Command("git", "-C", sourceRepo, "commit", "-m", "develop commit")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit failed: %s: %v", out, err)
+	}
+
+	// Clone mirror with develop branch.
+	if err := SetupMirror("myworld", sourceRepo, "develop"); err != nil {
+		t.Fatalf("SetupMirror failed: %v", err)
+	}
+
+	// Verify mirror is on develop branch.
+	mirrorPath := MirrorPath("myworld")
+	cmd = exec.Command("git", "-C", mirrorPath, "rev-parse", "--abbrev-ref", "HEAD")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse failed: %s: %v", out, err)
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch != "develop" {
+		t.Errorf("mirror branch = %q, want \"develop\"", branch)
+	}
+
+	// Add a new commit on develop in source.
+	devFile2 := filepath.Join(sourceRepo, "develop2.txt")
+	if err := os.WriteFile(devFile2, []byte("more develop\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command("git", "-C", sourceRepo, "add", ".")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add failed: %s: %v", out, err)
+	}
+	cmd = exec.Command("git", "-C", sourceRepo, "commit", "-m", "develop commit 2")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit failed: %s: %v", out, err)
+	}
+
+	// RefreshMirror with develop should pull the new commit.
+	if err := RefreshMirror("myworld", "develop"); err != nil {
+		t.Fatalf("RefreshMirror failed: %v", err)
+	}
+
+	cmd = exec.Command("git", "-C", mirrorPath, "log", "--oneline")
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log failed: %s: %v", out, err)
+	}
+	if !strings.Contains(string(out), "develop commit 2") {
+		t.Errorf("mirror missing develop commit 2, got: %s", out)
 	}
 }
 
@@ -318,7 +391,7 @@ func TestStart(t *testing.T) {
 		t.Fatalf("hooks file not found: %v", err)
 	}
 
-	var cfg hookConfig
+	var cfg protocol.HookConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatalf("failed to parse hooks JSON: %v", err)
 	}

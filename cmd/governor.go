@@ -39,12 +39,13 @@ var governorStartCmd = &cobra.Command{
 			return err
 		}
 
+		worldCfg, err := config.LoadWorldConfig(governorStartWorld)
+		if err != nil {
+			return err
+		}
+
 		sourceRepo := governorStartSourceRepo
 		if sourceRepo == "" {
-			worldCfg, err := config.LoadWorldConfig(governorStartWorld)
-			if err != nil {
-				return err
-			}
 			sourceRepo = worldCfg.World.SourceRepo
 		}
 		if sourceRepo == "" {
@@ -73,8 +74,9 @@ var governorStartCmd = &cobra.Command{
 		}
 
 		if err := governor.Start(governor.StartOpts{
-			World:      governorStartWorld,
-			SourceRepo: sourceRepo,
+			World:        governorStartWorld,
+			SourceRepo:   sourceRepo,
+			TargetBranch: worldCfg.Forge.TargetBranch,
 		}, sphereStore, mgr); err != nil {
 			return err
 		}
@@ -232,7 +234,14 @@ var governorRefreshMirrorCmd = &cobra.Command{
 			return fmt.Errorf("--world is required")
 		}
 
-		if err := governor.RefreshMirror(governorRefreshMirrorWorld); err != nil {
+		// Load world config to get target branch.
+		var targetBranch string
+		worldCfg, err := config.LoadWorldConfig(governorRefreshMirrorWorld)
+		if err == nil {
+			targetBranch = worldCfg.Forge.TargetBranch
+		}
+
+		if err := governor.RefreshMirror(governorRefreshMirrorWorld, targetBranch); err != nil {
 			return err
 		}
 

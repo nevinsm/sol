@@ -371,8 +371,14 @@ func (s *Store) migrateSphere() error {
 		}
 	}
 	if v < 7 {
-		if _, err := tx.Exec(sphereSchemaV7); err != nil {
-			return fmt.Errorf("failed to apply sphere schema v7: %w", err)
+		exists, err := columnExists(tx, "caravan_items", "phase")
+		if err != nil {
+			return fmt.Errorf("failed to check caravan_items.phase column: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(sphereSchemaV7); err != nil {
+				return fmt.Errorf("failed to apply sphere schema v7: %w", err)
+			}
 		}
 	}
 	if v < 1 {

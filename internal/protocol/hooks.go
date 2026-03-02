@@ -12,13 +12,15 @@ const sessionStartScript = `#!/bin/bash
 exec sol prime --world="$SOL_WORLD" --agent="$SOL_AGENT"
 `
 
-// hookConfig represents the Claude Code settings.local.json structure for hooks.
-type hookConfig struct {
-	Hooks map[string][]hookEntry `json:"hooks"`
+// HookConfig represents the Claude Code settings.local.json structure for hooks.
+type HookConfig struct {
+	Hooks map[string][]HookEntry `json:"hooks"`
 }
 
-type hookEntry struct {
+// HookEntry represents a single hook entry in the Claude Code settings.
+type HookEntry struct {
 	Type    string `json:"type"`
+	Matcher string `json:"matcher,omitempty"`
 	Command string `json:"command"`
 }
 
@@ -42,8 +44,8 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 	}
 
 	// Write settings.local.json with hook configuration.
-	cfg := hookConfig{
-		Hooks: map[string][]hookEntry{
+	cfg := HookConfig{
+		Hooks: map[string][]HookEntry{
 			"SessionStart": {
 				{
 					Type:    "command",

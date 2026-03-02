@@ -154,7 +154,7 @@ func TestMigrateSphereV5(t *testing.T) {
 	}
 }
 
-func TestMigrateSphereV1ToV5(t *testing.T) {
+func TestMigrateSphereV1ToLatest(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
@@ -214,6 +214,15 @@ func TestMigrateSphereV1ToV5(t *testing.T) {
 	}
 	if version != 7 {
 		t.Fatalf("expected schema version 7, got %d", version)
+	}
+
+	// Verify phase column was added to caravan_items.
+	phaseExists, err := columnExists(s2.db, "caravan_items", "phase")
+	if err != nil {
+		t.Fatalf("failed to check phase column: %v", err)
+	}
+	if !phaseExists {
+		t.Fatal("expected phase column on caravan_items after V1→latest migration")
 	}
 }
 
