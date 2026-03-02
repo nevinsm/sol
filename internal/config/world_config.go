@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -100,6 +101,11 @@ func (c WorldConfig) Validate() error {
 			// valid
 		default:
 			return fmt.Errorf("agents.model_tier must be sonnet, opus, or haiku; got %q", c.Agents.ModelTier)
+		}
+	}
+	if c.Forge.GateTimeout != "" {
+		if _, err := time.ParseDuration(c.Forge.GateTimeout); err != nil {
+			return fmt.Errorf("forge.gate_timeout %q is not a valid duration: %w", c.Forge.GateTimeout, err)
 		}
 	}
 	return nil

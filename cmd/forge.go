@@ -220,7 +220,10 @@ func resolveForgeConfig(world string, worldCfg config.WorldConfig) (forge.Config
 		cfg.TargetBranch = worldCfg.Forge.TargetBranch
 	}
 	if worldCfg.Forge.GateTimeout != "" {
-		cfg.GateTimeout = worldCfg.Forge.GateTimeout
+		parsed, _ := time.ParseDuration(worldCfg.Forge.GateTimeout)
+		if parsed > 0 {
+			cfg.GateTimeout = parsed
+		}
 	}
 	return cfg, nil
 }

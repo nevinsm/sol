@@ -253,7 +253,7 @@ func TestPatrolHealthyAgents(t *testing.T) {
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 
-	if err := w.patrol(); err != nil {
+	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
@@ -283,7 +283,7 @@ func TestPatrolDetectsStalled(t *testing.T) {
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 
-	if err := w.patrol(); err != nil {
+	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
@@ -316,7 +316,7 @@ func TestPatrolMaxRespawns(t *testing.T) {
 	// Pre-set respawn count to max.
 	w.respawnCounts[respawnKey{AgentID: "ember/Toast", WorkItemID: "sol-abc12345"}] = 2
 
-	if err := w.patrol(); err != nil {
+	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
@@ -357,7 +357,7 @@ func TestPatrolDetectsZombie(t *testing.T) {
 
 	w := New(cfg, sphereStore, nil, mock, nil)
 
-	if err := w.patrol(); err != nil {
+	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
@@ -382,7 +382,7 @@ func TestPatrolIgnoresIdleClean(t *testing.T) {
 
 	w := New(cfg, sphereStore, nil, mock, nil)
 
-	if err := w.patrol(); err != nil {
+	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
@@ -406,7 +406,7 @@ func TestPatrolIgnoresNonOutposts(t *testing.T) {
 
 	w := New(cfg, sphereStore, nil, mock, nil)
 
-	if err := w.patrol(); err != nil {
+	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
@@ -437,11 +437,11 @@ func TestProgressDetectionOutputChanged(t *testing.T) {
 
 	// First patrol: establish baseline.
 	mock.captures["sol-ember-Toast"] = "output v1"
-	w.patrol()
+	w.patrol(context.Background())
 
 	// Second patrol: different output — should NOT trigger assessment.
 	mock.captures["sol-ember-Toast"] = "output v2"
-	w.patrol()
+	w.patrol(context.Background())
 
 	if assessCalled {
 		t.Error("assessment should not be triggered when output changes")
@@ -466,10 +466,10 @@ func TestProgressDetectionOutputUnchanged(t *testing.T) {
 	}
 
 	// First patrol: establish baseline.
-	w.patrol()
+	w.patrol(context.Background())
 
 	// Second patrol: same output — should trigger assessment.
-	w.patrol()
+	w.patrol(context.Background())
 
 	if !assessCalled {
 		t.Error("assessment should be triggered when output is unchanged")
@@ -497,9 +497,9 @@ func TestAssessmentNudge(t *testing.T) {
 	}
 
 	// First patrol: baseline.
-	w.patrol()
+	w.patrol(context.Background())
 	// Second patrol: same output → assessment → nudge.
-	w.patrol()
+	w.patrol(context.Background())
 
 	injected := mock.getInjected()
 	if len(injected) != 1 {
@@ -531,9 +531,9 @@ func TestAssessmentEscalate(t *testing.T) {
 	}
 
 	// First patrol: baseline.
-	w.patrol()
+	w.patrol(context.Background())
 	// Second patrol: same output → assessment → escalate.
-	w.patrol()
+	w.patrol(context.Background())
 
 	// No nudge should be injected.
 	injected := mock.getInjected()
@@ -572,9 +572,9 @@ func TestAssessmentNone(t *testing.T) {
 	}
 
 	// First patrol: baseline.
-	w.patrol()
+	w.patrol(context.Background())
 	// Second patrol: same output → assessment → none.
-	w.patrol()
+	w.patrol(context.Background())
 
 	// No nudge, no escalation.
 	injected := mock.getInjected()
@@ -604,9 +604,9 @@ func TestAssessmentLowConfidenceIgnored(t *testing.T) {
 	}
 
 	// First patrol: baseline.
-	w.patrol()
+	w.patrol(context.Background())
 	// Second patrol: same output → assessment → low confidence → no action.
-	w.patrol()
+	w.patrol(context.Background())
 
 	injected := mock.getInjected()
 	if len(injected) != 0 {
@@ -630,9 +630,9 @@ func TestAssessmentFailureNonBlocking(t *testing.T) {
 	}
 
 	// First patrol: baseline.
-	w.patrol()
+	w.patrol(context.Background())
 	// Second patrol: same output → assessment → failure → should not crash.
-	err := w.patrol()
+	err := w.patrol(context.Background())
 
 	if err != nil {
 		t.Errorf("patrol should succeed even when assessment fails, got error: %v", err)
@@ -661,7 +661,7 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 
 	// Patrol 1: stalled → respawn (attempt 1).
-	w.patrol()
+	w.patrol(context.Background())
 	started := mock.getStarted()
 	if len(started) != 1 {
 		t.Fatalf("patrol 1: expected 1 start, got %d", len(started))
@@ -673,7 +673,7 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 	mock.mu.Unlock()
 
 	// Patrol 2: still stalled → respawn (attempt 2).
-	w.patrol()
+	w.patrol(context.Background())
 	started = mock.getStarted()
 	if len(started) != 2 {
 		t.Fatalf("patrol 2: expected 2 starts, got %d", len(started))
@@ -685,7 +685,7 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 	mock.mu.Unlock()
 
 	// Patrol 3: still stalled → return to open (max reached).
-	w.patrol()
+	w.patrol(context.Background())
 	started = mock.getStarted()
 	if len(started) != 2 {
 		t.Fatalf("patrol 3: expected still 2 starts (max reached), got %d", len(started))

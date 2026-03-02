@@ -39,6 +39,7 @@ type SphereStore interface {
 	UpdateAgentState(id, state, tetherItem string) error
 	GetAgent(id string) (*store.Agent, error)
 	CreateAgent(name, world, role string) (string, error)
+	EnsureAgent(name, world, role string) error
 
 	// Caravans
 	ListCaravans(status string) ([]store.Caravan, error)
@@ -104,14 +105,7 @@ func (d *Consul) logInfo(eventType string, meta map[string]any) {
 // Register creates or updates the consul's agent record.
 // Agent ID: "sphere/consul", role: "consul", state: "working".
 func (d *Consul) Register() error {
-	agent, err := d.sphereStore.GetAgent("sphere/consul")
-	if err == nil && agent != nil {
-		return nil // already registered
-	}
-	// If GetAgent failed (e.g., DB error), fall through to CreateAgent
-	// which will fail cleanly if the agent already exists (unique constraint).
-	_, createErr := d.sphereStore.CreateAgent("consul", "sphere", "consul")
-	return createErr
+	return d.sphereStore.EnsureAgent("consul", "sphere", "consul")
 }
 
 // Run starts the consul patrol loop. Blocks until ctx is cancelled.
@@ -250,13 +244,6 @@ func (d *Consul) Patrol() error {
 }
 
 var errShutdown = fmt.Errorf("shutdown requested")
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
-}
 
 // recoverStaleTethers finds and recovers stale tethers across all worlds.
 // For each stale tether:

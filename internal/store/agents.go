@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -32,6 +33,26 @@ func (s *Store) CreateAgent(name, world, role string) (string, error) {
 		return "", fmt.Errorf("failed to create agent %q: %w", id, err)
 	}
 	return id, nil
+}
+
+// EnsureAgent creates an agent if it doesn't already exist.
+// Returns nil if the agent already exists or was successfully created.
+func (s *Store) EnsureAgent(name, world, role string) error {
+	id := world + "/" + name
+	agent, err := s.GetAgent(id)
+	if err == nil && agent != nil {
+		return nil // already registered
+	}
+	if err != nil {
+		// GetAgent failed — log context but try CreateAgent anyway.
+		// CreateAgent will fail cleanly on unique constraint if agent exists.
+		fmt.Fprintf(os.Stderr, "store: GetAgent %q failed, attempting create: %v\n", id, err)
+	}
+	_, createErr := s.CreateAgent(name, world, role)
+	if createErr != nil {
+		return fmt.Errorf("failed to ensure agent %q: %w", id, createErr)
+	}
+	return nil
 }
 
 // GetAgent returns an agent by ID ("world/name").

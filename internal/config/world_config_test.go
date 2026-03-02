@@ -342,6 +342,25 @@ func TestWorldConfigValidateCapacity(t *testing.T) {
 	}
 }
 
+func TestWorldConfigValidateGateTimeout(t *testing.T) {
+	// Valid durations should pass.
+	for _, d := range []string{"5m", "30s", "1h", ""} {
+		cfg := DefaultWorldConfig()
+		cfg.Forge.GateTimeout = d
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("expected gate_timeout %q to be valid, got: %v", d, err)
+		}
+	}
+	// Invalid durations should fail.
+	for _, d := range []string{"banana", "5x", "not-a-duration"} {
+		cfg := DefaultWorldConfig()
+		cfg.Forge.GateTimeout = d
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("expected gate_timeout %q to be invalid, got nil error", d)
+		}
+	}
+}
+
 func TestValidateWorldNameReserved(t *testing.T) {
 	reserved := []string{"store", "runtime", "sol", "formulas"}
 	for _, name := range reserved {

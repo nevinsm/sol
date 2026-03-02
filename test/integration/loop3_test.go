@@ -2,6 +2,7 @@ package integration
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -428,7 +429,7 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	w := sentinel.New(cfg, sphereStore, worldStore, mock, logger)
 
 	// Run one patrol.
-	if err := w.Patrol(); err != nil {
+	if err := w.Patrol(context.Background()); err != nil {
 		t.Fatalf("Patrol: %v", err)
 	}
 
@@ -481,7 +482,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	w := sentinel.New(cfg, sphereStore, worldStore, mock, logger)
 
 	// Patrol 1: stalled → respawn (attempt 1).
-	w.Patrol()
+	w.Patrol(context.Background())
 	if len(mock.started) != 1 {
 		t.Fatalf("patrol 1: expected 1 start, got %d", len(mock.started))
 	}
@@ -489,7 +490,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	delete(mock.alive, "sol-ember-Toast")
 
 	// Patrol 2: still stalled → respawn (attempt 2).
-	w.Patrol()
+	w.Patrol(context.Background())
 	if len(mock.started) != 2 {
 		t.Fatalf("patrol 2: expected 2 starts, got %d", len(mock.started))
 	}
@@ -497,7 +498,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	delete(mock.alive, "sol-ember-Toast")
 
 	// Patrol 3: max reached → return to open.
-	w.Patrol()
+	w.Patrol(context.Background())
 	if len(mock.started) != 2 {
 		t.Fatalf("patrol 3: expected still 2 starts (max reached), got %d", len(mock.started))
 	}
@@ -555,7 +556,7 @@ func TestSentinelCleanupZombies(t *testing.T) {
 
 	w := sentinel.New(cfg, sphereStore, nil, mock, logger)
 
-	if err := w.Patrol(); err != nil {
+	if err := w.Patrol(context.Background()); err != nil {
 		t.Fatalf("Patrol: %v", err)
 	}
 
@@ -606,10 +607,10 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 	})
 
 	// Patrol 1: establishes baseline hash.
-	w.Patrol()
+	w.Patrol(context.Background())
 
 	// Patrol 2: hash unchanged → triggers assessment → nudge.
-	w.Patrol()
+	w.Patrol(context.Background())
 
 	// Verify: nudge injected.
 	if len(mock.injected) != 1 {
@@ -657,8 +658,8 @@ func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
 	})
 
 	// Patrol twice.
-	w.Patrol()
-	w.Patrol()
+	w.Patrol(context.Background())
+	w.Patrol(context.Background())
 
 	// Verify: NO nudge injected.
 	if len(mock.injected) != 0 {
@@ -696,8 +697,8 @@ func TestSentinelAIAssessmentFailure(t *testing.T) {
 	})
 
 	// Patrol twice.
-	w.Patrol()
-	err := w.Patrol()
+	w.Patrol(context.Background())
+	err := w.Patrol(context.Background())
 
 	// Patrol should complete without error.
 	if err != nil {

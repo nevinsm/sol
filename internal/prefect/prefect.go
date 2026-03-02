@@ -343,9 +343,6 @@ func (s *Prefect) startConsul() error {
 		return fmt.Errorf("failed to start consul session: %w", err)
 	}
 
-	// Track backoff for the consul.
-	s.backoff[consulSessionName] = s.backoff[consulSessionName] + 1
-
 	s.logger.Info("consul session started", "session", consulSessionName)
 	return nil
 }

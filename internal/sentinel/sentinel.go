@@ -46,6 +46,7 @@ type SphereStore interface {
 	ListAgents(world string, state string) ([]store.Agent, error)
 	UpdateAgentState(id, state, tetherItem string) error
 	CreateAgent(name, world, role string) (string, error)
+	EnsureAgent(name, world, role string) error
 	SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
 }
 
@@ -124,14 +125,7 @@ func (w *Sentinel) agentID() string {
 // Agent ID: "{world}/sentinel", role: "sentinel".
 // Creates if not exists, reuses if already registered.
 func (w *Sentinel) Register() error {
-	agent, err := w.sphereStore.GetAgent(w.agentID())
-	if err == nil && agent != nil {
-		return nil // already registered
-	}
-	// If GetAgent failed (e.g., DB error), fall through to CreateAgent
-	// which will fail cleanly if the agent already exists (unique constraint).
-	_, createErr := w.sphereStore.CreateAgent("sentinel", w.config.World, "sentinel")
-	return createErr
+	return w.sphereStore.EnsureAgent("sentinel", w.config.World, "sentinel")
 }
 
 // Run starts the sentinel patrol loop. Blocks until context is cancelled.
@@ -146,7 +140,7 @@ func (w *Sentinel) Run(ctx context.Context) error {
 	}
 
 	// Patrol immediately.
-	w.patrol()
+	w.patrol(ctx)
 
 	ticker := time.NewTicker(w.config.PatrolInterval)
 	defer ticker.Stop()
@@ -161,18 +155,18 @@ func (w *Sentinel) Run(ctx context.Context) error {
 			}
 			return nil
 		case <-ticker.C:
-			w.patrol()
+			w.patrol(ctx)
 		}
 	}
 }
 
 // Patrol runs one patrol cycle across all agents in the world. Exported for testing.
-func (w *Sentinel) Patrol() error {
-	return w.patrol()
+func (w *Sentinel) Patrol(ctx context.Context) error {
+	return w.patrol(ctx)
 }
 
 // patrol runs one patrol cycle across all agents in the world.
-func (w *Sentinel) patrol() error {
+func (w *Sentinel) patrol(ctx context.Context) error {
 	agents, err := w.sphereStore.ListAgents(w.config.World, "")
 	if err != nil {
 		return fmt.Errorf("failed to list agents: %w", err)
@@ -199,7 +193,7 @@ func (w *Sentinel) patrol() error {
 		switch {
 		case agent.State == "working" && alive:
 			// Working agent with live session — check for progress.
-			if err := w.checkProgress(agent, sessionName); err != nil {
+			if err := w.checkProgress(ctx, agent, sessionName); err != nil {
 				if w.logger != nil {
 					w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
 						"agent": agent.ID, "action": "check_progress", "error": err.Error(),
@@ -269,7 +263,7 @@ func (w *Sentinel) patrol() error {
 
 // checkProgress checks whether a working agent with a live session is making progress.
 // If the tmux output hasn't changed since the last patrol, triggers AI assessment.
-func (w *Sentinel) checkProgress(agent store.Agent, sessionName string) error {
+func (w *Sentinel) checkProgress(ctx context.Context, agent store.Agent, sessionName string) error {
 	output, err := w.sessions.Capture(sessionName, w.config.CaptureLines)
 	if err != nil {
 		return nil // can't capture, skip assessment
@@ -287,7 +281,7 @@ func (w *Sentinel) checkProgress(agent store.Agent, sessionName string) error {
 	}
 
 	// No change since last patrol — assess with AI.
-	return w.assessAgent(agent, sessionName, output)
+	return w.assessAgent(ctx, agent, sessionName, output)
 }
 
 func sha256Hash(s string) string {
@@ -295,7 +289,7 @@ func sha256Hash(s string) string {
 }
 
 // assessAgent uses an AI model to evaluate a potentially stuck agent.
-func (w *Sentinel) assessAgent(agent store.Agent, sessionName, capturedOutput string) error {
+func (w *Sentinel) assessAgent(ctx context.Context, agent store.Agent, sessionName, capturedOutput string) error {
 	w.patrolAssessed++
 
 	var result *AssessmentResult
@@ -304,7 +298,7 @@ func (w *Sentinel) assessAgent(agent store.Agent, sessionName, capturedOutput st
 	if w.assessFn != nil {
 		result, err = w.assessFn(agent, sessionName, capturedOutput)
 	} else {
-		result, err = w.runAssessment(agent, capturedOutput)
+		result, err = w.runAssessment(ctx, agent, capturedOutput)
 	}
 	if err != nil {
 		// AI call failed — log and move on, don't block patrol.
@@ -329,10 +323,10 @@ func (w *Sentinel) assessAgent(agent store.Agent, sessionName, capturedOutput st
 	return w.actOnAssessment(agent, sessionName, *result)
 }
 
-func (w *Sentinel) runAssessment(agent store.Agent, capturedOutput string) (*AssessmentResult, error) {
-	prompt := buildAssessmentPrompt(agent, capturedOutput)
+func (w *Sentinel) runAssessment(ctx context.Context, agent store.Agent, capturedOutput string) (*AssessmentResult, error) {
+	prompt := buildAssessmentPrompt(agent, capturedOutput, w.config.CaptureLines)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", w.config.AssessCommand)
@@ -355,7 +349,7 @@ func (w *Sentinel) runAssessment(agent store.Agent, capturedOutput string) (*Ass
 	return &result, nil
 }
 
-func buildAssessmentPrompt(agent store.Agent, capturedOutput string) string {
+func buildAssessmentPrompt(agent store.Agent, capturedOutput string, captureLines int) string {
 	return fmt.Sprintf(`You are a sentinel agent monitoring AI coding agents in a multi-agent
 orchestration system. An agent's tmux session output has not changed
 since the last patrol cycle (3 minutes ago). Analyze the session output
@@ -363,7 +357,7 @@ below and determine the agent's status.
 
 Agent: %s (ID: %s)
 Work item: %s
-Session output (last 80 lines):
+Session output (last %d lines):
 ---
 %s
 ---
@@ -389,7 +383,7 @@ Status meanings:
   May be a zombie or may have completed work without calling sol resolve.
 
 Only suggest "escalate" if the situation requires human intervention
-(e.g., repeated failures, auth issues, infrastructure problems).`, agent.Name, agent.ID, agent.TetherItem, capturedOutput)
+(e.g., repeated failures, auth issues, infrastructure problems).`, agent.Name, agent.ID, agent.TetherItem, captureLines, capturedOutput)
 }
 
 func extractJSON(data []byte) (AssessmentResult, error) {

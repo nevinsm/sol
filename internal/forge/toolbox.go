@@ -63,12 +63,9 @@ func (r *Forge) Release(mrID string) error {
 
 // RunGates runs quality gates in the worktree and returns results.
 func (r *Forge) RunGates() ([]GateResult, error) {
-	timeout := 5 * time.Minute // default
-	if r.cfg.GateTimeout != "" {
-		parsed, err := time.ParseDuration(r.cfg.GateTimeout)
-		if err == nil {
-			timeout = parsed
-		}
+	timeout := r.cfg.GateTimeout
+	if timeout == 0 {
+		timeout = 5 * time.Minute
 	}
 
 	var results []GateResult
