@@ -3,9 +3,14 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 
 	"github.com/charmbracelet/huh"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/doctor"
+	"github.com/nevinsm/sol/internal/protocol"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/setup"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -15,6 +20,7 @@ var (
 	initName       string
 	initSourceRepo string
 	initSkipChecks bool
+	initGuided     bool
 )
 
 var initCmd = &cobra.Command{
@@ -43,8 +49,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return runFlagInit()
 	}
 
-	// Guided mode: --guided flag → Claude session (prompt 06).
-	// (placeholder — will be added in prompt 06)
+	// Guided mode: --guided flag → Claude session.
+	if initGuided {
+		return runGuidedInit()
+	}
 
 	// Interactive mode: stdin is a TTY → prompt for input.
 	if isTerminal() {
@@ -155,6 +163,96 @@ func runInteractiveInit() error {
 	return nil
 }
 
+func runGuidedInit() error {
+	// DEGRADE: check prerequisites for guided mode.
+	// Guided mode needs tmux (for the session) and claude (for the AI).
+	tmuxCheck := doctor.CheckTmux()
+	claudeCheck := doctor.CheckClaude()
+
+	if !tmuxCheck.Passed || !claudeCheck.Passed {
+		fmt.Println("Guided mode requires tmux and claude CLI.")
+		if !tmuxCheck.Passed {
+			fmt.Printf("  ✗ %s\n    → %s\n", tmuxCheck.Message, tmuxCheck.Fix)
+		}
+		if !claudeCheck.Passed {
+			fmt.Printf("  ✗ %s\n    → %s\n", claudeCheck.Message, claudeCheck.Fix)
+		}
+		fmt.Println("\nFalling back to interactive mode...")
+		fmt.Println()
+		return runInteractiveInit()
+	}
+
+	// Determine sol binary path.
+	solBin, err := os.Executable()
+	if err != nil {
+		solBin = "sol" // fallback
+	}
+
+	// Create a temporary directory for the guided session.
+	tmpDir, err := os.MkdirTemp("", "sol-guided-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Write CLAUDE.md into the temp directory.
+	claudeDir := filepath.Join(tmpDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create .claude directory: %w", err)
+	}
+
+	ctx := protocol.GuidedInitClaudeMDContext{
+		SOLHome:   config.Home(),
+		SolBinary: solBin,
+	}
+	content := protocol.GenerateGuidedInitClaudeMD(ctx)
+	claudeMDPath := filepath.Join(claudeDir, "CLAUDE.md")
+	if err := os.WriteFile(claudeMDPath, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("failed to write CLAUDE.md: %w", err)
+	}
+
+	// Start an ephemeral tmux session with Claude.
+	sessionName := "sol-guided-init"
+
+	// Kill any existing guided init session.
+	mgr := session.New()
+	if mgr.Exists(sessionName) {
+		mgr.Stop(sessionName, true)
+	}
+
+	// Start Claude in the temp directory.
+	claudeCmd := fmt.Sprintf("cd %s && claude", tmpDir)
+	if err := mgr.Start(sessionName, tmpDir, claudeCmd, nil, "guided-init", ""); err != nil {
+		return fmt.Errorf("failed to start guided session: %w", err)
+	}
+
+	fmt.Println("Starting guided setup with Claude...")
+	fmt.Printf("Session: %s\n", sessionName)
+	fmt.Println()
+	fmt.Println("The Claude session will guide you through setup.")
+	fmt.Println("When finished, the session will end automatically.")
+	fmt.Println()
+
+	// Attach to the session using exec.Command (not mgr.Attach which uses
+	// syscall.Exec and would prevent cleanup). This blocks until detach or exit.
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		return fmt.Errorf("tmux not found in PATH: %w", err)
+	}
+	attach := exec.Command(tmuxPath, "attach-session", "-t", sessionName)
+	attach.Stdin = os.Stdin
+	attach.Stdout = os.Stdout
+	attach.Stderr = os.Stderr
+	_ = attach.Run() // ignore error — user may have detached
+
+	// Clean up the session if it's still running.
+	if mgr.Exists(sessionName) {
+		mgr.Stop(sessionName, true)
+	}
+
+	return nil
+}
+
 func printInitSuccess(result *setup.Result) {
 	fmt.Printf("sol initialized successfully!\n\n")
 	fmt.Printf("  SOL_HOME:  %s\n", result.SOLHome)
@@ -178,4 +276,5 @@ func init() {
 	initCmd.Flags().StringVar(&initName, "name", "", "world name (required in flag mode)")
 	initCmd.Flags().StringVar(&initSourceRepo, "source-repo", "", "path to source git repository")
 	initCmd.Flags().BoolVar(&initSkipChecks, "skip-checks", false, "skip prerequisite checks")
+	initCmd.Flags().BoolVar(&initGuided, "guided", false, "Claude-powered guided setup")
 }

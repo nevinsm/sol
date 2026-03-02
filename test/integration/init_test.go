@@ -210,6 +210,21 @@ func TestInitSourceRepoValidationIntegration(t *testing.T) {
 	})
 }
 
+func TestGuidedFlagExists(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+
+	out, err := runGT(t, gtHome, "init", "--help")
+	if err != nil {
+		t.Fatalf("sol init --help failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "--guided") {
+		t.Errorf("sol init --help output missing '--guided': %s", out)
+	}
+}
+
 func TestInitRunsDoctorByDefault(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

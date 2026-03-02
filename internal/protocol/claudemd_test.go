@@ -33,6 +33,46 @@ func TestClaudeMDWithWorkflow(t *testing.T) {
 	}
 }
 
+func TestGuidedInitClaudeMD(t *testing.T) {
+	ctx := protocol.GuidedInitClaudeMDContext{
+		SOLHome:   "/tmp/sol-test",
+		SolBinary: "/usr/local/bin/sol",
+	}
+
+	content := protocol.GenerateGuidedInitClaudeMD(ctx)
+
+	// Verify it contains key sections.
+	if !strings.Contains(content, "World name") {
+		t.Error("CLAUDE.md should contain 'World name'")
+	}
+	if !strings.Contains(content, "Source repository") {
+		t.Error("CLAUDE.md should contain 'Source repository'")
+	}
+	if !strings.Contains(content, "Setup Command") {
+		t.Error("CLAUDE.md should contain 'Setup Command'")
+	}
+
+	// Verify it includes the SOL_HOME path.
+	if !strings.Contains(content, "/tmp/sol-test") {
+		t.Error("CLAUDE.md should contain the SOL_HOME path")
+	}
+
+	// Verify it includes the sol binary path.
+	if !strings.Contains(content, "/usr/local/bin/sol") {
+		t.Error("CLAUDE.md should contain the sol binary path")
+	}
+
+	// Verify it contains the init command template.
+	if !strings.Contains(content, "init --name=") {
+		t.Error("CLAUDE.md should contain 'init --name=' command template")
+	}
+
+	// Verify --skip-checks is included in the command.
+	if !strings.Contains(content, "--skip-checks") {
+		t.Error("CLAUDE.md should contain '--skip-checks' in the setup command")
+	}
+}
+
 func TestClaudeMDWithoutWorkflow(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
