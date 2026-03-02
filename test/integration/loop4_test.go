@@ -616,13 +616,13 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, idA, "ember"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem A: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, idB, "ember"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, idB, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem B: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, idC, "ember"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, idC, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem C: %v", err)
 	}
 
@@ -736,10 +736,10 @@ func TestCaravanAutoClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, id1, "ember"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, id1, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem 1: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, id2, "ember"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, id2, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem 2: %v", err)
 	}
 
@@ -817,13 +817,13 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, idA, "alpha"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, idA, "alpha", 0); err != nil {
 		t.Fatalf("AddCaravanItem alpha: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, idB, "beta"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, idB, "beta", 0); err != nil {
 		t.Fatalf("AddCaravanItem beta B: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, idC, "beta"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, idC, "beta", 0); err != nil {
 		t.Fatalf("AddCaravanItem beta C: %v", err)
 	}
 

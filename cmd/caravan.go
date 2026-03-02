@@ -63,7 +63,7 @@ var caravanCreateCmd = &cobra.Command{
 		}
 
 		for _, itemID := range itemIDs {
-			if err := sphereStore.AddCaravanItem(caravanID, itemID, world); err != nil {
+			if err := sphereStore.CreateCaravanItem(caravanID, itemID, world, 0); err != nil {
 				return err
 			}
 		}
@@ -106,7 +106,7 @@ var caravanAddCmd = &cobra.Command{
 		defer sphereStore.Close()
 
 		for _, itemID := range itemIDs {
-			if err := sphereStore.AddCaravanItem(caravanID, itemID, world); err != nil {
+			if err := sphereStore.CreateCaravanItem(caravanID, itemID, world, 0); err != nil {
 				return err
 			}
 		}

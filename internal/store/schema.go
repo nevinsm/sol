@@ -222,6 +222,8 @@ CREATE INDEX IF NOT EXISTS idx_escalations_status ON escalations(status);
 CREATE INDEX IF NOT EXISTS idx_caravan_items_world ON caravan_items(world);
 `
 
+const sphereSchemaV7 = `ALTER TABLE caravan_items ADD COLUMN phase INTEGER NOT NULL DEFAULT 0;`
+
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
 	QueryRow(string, ...interface{}) *sql.Row
@@ -271,7 +273,7 @@ func (s *Store) migrateSphere() error {
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
-	if v >= 6 {
+	if v >= 7 {
 		return nil
 	}
 
@@ -368,12 +370,17 @@ func (s *Store) migrateSphere() error {
 			return fmt.Errorf("failed to apply sphere schema v6: %w", err)
 		}
 	}
+	if v < 7 {
+		if _, err := tx.Exec(sphereSchemaV7); err != nil {
+			return fmt.Errorf("failed to apply sphere schema v7: %w", err)
+		}
+	}
 	if v < 1 {
-		if _, err := tx.Exec("INSERT INTO schema_version VALUES (6)"); err != nil {
+		if _, err := tx.Exec("INSERT INTO schema_version VALUES (7)"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	} else {
-		if _, err := tx.Exec("UPDATE schema_version SET version = 6"); err != nil {
+		if _, err := tx.Exec("UPDATE schema_version SET version = 7"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	}

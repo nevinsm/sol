@@ -869,10 +869,10 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, idA, "ember"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, idB, "ember"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, idB, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem: %v", err)
 	}
 
@@ -967,7 +967,7 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, idA, "ember"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem: %v", err)
 	}
 
@@ -1390,10 +1390,10 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, idA, "ember"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem: %v", err)
 	}
-	if err := sphereStore.AddCaravanItem(caravanID, idB, "ember"); err != nil {
+	if err := sphereStore.CreateCaravanItem(caravanID, idB, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem: %v", err)
 	}
 

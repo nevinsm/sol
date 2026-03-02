@@ -24,13 +24,16 @@ type CaravanItem struct {
 	CaravanID  string `json:"caravan_id"`
 	WorkItemID string `json:"work_item_id"`
 	World      string `json:"world"`
+	Phase      int    `json:"phase"`
 }
 
 // CaravanItemStatus represents the status of a work item within a caravan.
 type CaravanItemStatus struct {
-	CaravanItem
-	WorkItemStatus string `json:"work_item_status"` // status from the world's work_items table
-	Ready          bool   `json:"ready"`             // true if all dependencies are satisfied
+	WorkItemID     string `json:"work_item_id"`
+	World          string `json:"world"`
+	Phase          int    `json:"phase"`
+	WorkItemStatus string `json:"work_item_status"`
+	Ready          bool   `json:"ready"`
 }
 
 // generateCaravanID returns a new caravan ID in the format "car-" + 16 hex chars.
@@ -184,11 +187,11 @@ func (s *Store) UpdateCaravanStatus(id, status string) error {
 	return nil
 }
 
-// AddCaravanItem associates a work item with a caravan.
-func (s *Store) AddCaravanItem(caravanID, workItemID, world string) error {
+// CreateCaravanItem associates a work item with a caravan at the given phase.
+func (s *Store) CreateCaravanItem(caravanID, workItemID, world string, phase int) error {
 	_, err := s.db.Exec(
-		`INSERT OR IGNORE INTO caravan_items (caravan_id, work_item_id, world) VALUES (?, ?, ?)`,
-		caravanID, workItemID, world,
+		`INSERT OR IGNORE INTO caravan_items (caravan_id, work_item_id, world, phase) VALUES (?, ?, ?, ?)`,
+		caravanID, workItemID, world, phase,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to add item %q to caravan %q: %w", workItemID, caravanID, err)
@@ -220,7 +223,7 @@ func (s *Store) RemoveCaravanItem(caravanID, workItemID string) error {
 // ListCaravanItems returns all items in a caravan.
 func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
 	rows, err := s.db.Query(
-		`SELECT caravan_id, work_item_id, world FROM caravan_items WHERE caravan_id = ? ORDER BY work_item_id`,
+		`SELECT caravan_id, work_item_id, world, phase FROM caravan_items WHERE caravan_id = ? ORDER BY phase, work_item_id`,
 		caravanID,
 	)
 	if err != nil {
@@ -231,7 +234,7 @@ func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
 	var items []CaravanItem
 	for rows.Next() {
 		var ci CaravanItem
-		if err := rows.Scan(&ci.CaravanID, &ci.WorkItemID, &ci.World); err != nil {
+		if err := rows.Scan(&ci.CaravanID, &ci.WorkItemID, &ci.World, &ci.Phase); err != nil {
 			return nil, fmt.Errorf("failed to scan caravan item: %w", err)
 		}
 		items = append(items, ci)
@@ -245,6 +248,9 @@ func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
 // CheckCaravanReadiness returns the status of all items in a caravan.
 // This requires opening each world's database to check work item status
 // and dependency satisfaction.
+//
+// Phase ordering: items in phase N are only ready if all items in phases < N
+// are done or closed. Phase 0 items use only the within-world dependency check.
 //
 // The worldOpener function opens a world store by name — the caller provides
 // this so the caravan checker doesn't need to know about store paths.
@@ -274,7 +280,11 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 
 			var out []CaravanItemStatus
 			for _, ci := range worldItems {
-				cis := CaravanItemStatus{CaravanItem: ci}
+				cis := CaravanItemStatus{
+					WorkItemID: ci.WorkItemID,
+					World:      ci.World,
+					Phase:      ci.Phase,
+				}
 
 				item, err := worldStore.GetWorkItem(ci.WorkItemID)
 				if err != nil {
@@ -299,6 +309,26 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 			return nil, err
 		}
 		results = append(results, worldResults...)
+	}
+
+	// Apply phase gating: items in phase N are only ready if all items in
+	// phases < N are done or closed. This is per-caravan, not per-world.
+	for i := range results {
+		if results[i].Phase == 0 {
+			continue // Phase 0 uses only within-world dependency check.
+		}
+		if !results[i].Ready {
+			continue // Already not ready from dependency check.
+		}
+		// Check if all items in lower phases are done/closed.
+		for j := range results {
+			if results[j].Phase < results[i].Phase {
+				if results[j].WorkItemStatus != "done" && results[j].WorkItemStatus != "closed" {
+					results[i].Ready = false
+					break
+				}
+			}
+		}
 	}
 
 	return results, nil

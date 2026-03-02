@@ -49,15 +49,15 @@ func TestGetCaravanNotFound(t *testing.T) {
 	}
 }
 
-func TestAddCaravanItem(t *testing.T) {
+func TestCreateCaravanItem(t *testing.T) {
 	s := setupSphere(t)
 
 	caravanID, _ := s.CreateCaravan("test-caravan", "operator")
 
 	// Add 3 items.
-	s.AddCaravanItem(caravanID, "sol-11111111", "haven")
-	s.AddCaravanItem(caravanID, "sol-22222222", "haven")
-	s.AddCaravanItem(caravanID, "sol-33333333", "haven")
+	s.CreateCaravanItem(caravanID, "sol-11111111", "haven", 0)
+	s.CreateCaravanItem(caravanID, "sol-22222222", "haven", 0)
+	s.CreateCaravanItem(caravanID, "sol-33333333", "haven", 0)
 
 	items, err := s.ListCaravanItems(caravanID)
 	if err != nil {
@@ -72,8 +72,8 @@ func TestRemoveCaravanItem(t *testing.T) {
 	s := setupSphere(t)
 
 	caravanID, _ := s.CreateCaravan("test-caravan", "operator")
-	s.AddCaravanItem(caravanID, "sol-11111111", "haven")
-	s.AddCaravanItem(caravanID, "sol-22222222", "haven")
+	s.CreateCaravanItem(caravanID, "sol-11111111", "haven", 0)
+	s.CreateCaravanItem(caravanID, "sol-22222222", "haven", 0)
 
 	// Remove one.
 	if err := s.RemoveCaravanItem(caravanID, "sol-11111111"); err != nil {
@@ -177,9 +177,9 @@ func TestCheckCaravanReadiness(t *testing.T) {
 
 	// Create caravan with all 3 items.
 	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "operator")
-	sphereStore.AddCaravanItem(caravanID, idA, "ember")
-	sphereStore.AddCaravanItem(caravanID, idB, "ember")
-	sphereStore.AddCaravanItem(caravanID, idC, "ember")
+	sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0)
+	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 0)
+	sphereStore.CreateCaravanItem(caravanID, idC, "ember", 0)
 
 	// Check readiness: B and C should be ready, A should not.
 	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
@@ -252,8 +252,8 @@ func TestTryCloseCaravan(t *testing.T) {
 	worldStore.Close()
 
 	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "operator")
-	sphereStore.AddCaravanItem(caravanID, idA, "ember")
-	sphereStore.AddCaravanItem(caravanID, idB, "ember")
+	sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0)
+	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 0)
 
 	// Some items open → caravan stays open.
 	closed, err := sphereStore.TryCloseCaravan(caravanID, OpenWorld)
@@ -298,13 +298,13 @@ func TestTryCloseCaravan(t *testing.T) {
 func TestSphereSchemaV4(t *testing.T) {
 	s := setupSphere(t)
 
-	// Verify the schema version is 6.
+	// Verify the schema version is 7.
 	var v int
 	if err := s.DB().QueryRow("SELECT version FROM schema_version").Scan(&v); err != nil {
 		t.Fatalf("failed to get schema version: %v", err)
 	}
-	if v != 6 {
-		t.Errorf("schema version = %d, want 6", v)
+	if v != 7 {
+		t.Errorf("schema version = %d, want 7", v)
 	}
 
 	// Verify caravan tables exist.
@@ -317,5 +317,250 @@ func TestSphereSchemaV4(t *testing.T) {
 		if count != 1 {
 			t.Fatalf("expected table %s, got count=%d", table, count)
 		}
+	}
+}
+
+func TestCaravanPhaseDefault(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	s, err := OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	caravanID, _ := s.CreateCaravan("phase-test", "operator")
+	s.CreateCaravanItem(caravanID, "sol-11111111", "haven", 0)
+
+	items, err := s.ListCaravanItems(caravanID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Phase != 0 {
+		t.Fatalf("expected phase 0, got %d", items[0].Phase)
+	}
+}
+
+func TestCaravanPhaseReadiness(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	sphereStore, err := OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sphereStore.Close()
+
+	// Create work items in world.
+	worldStore, err := OpenWorld("ember")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idA, _ := worldStore.CreateWorkItem("Phase 0 item", "", "operator", 2, nil)
+	idB, _ := worldStore.CreateWorkItem("Phase 1 item", "", "operator", 2, nil)
+	worldStore.Close()
+
+	// Create caravan: A in phase 0, B in phase 1.
+	caravanID, _ := sphereStore.CreateCaravan("phase-readiness", "operator")
+	sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0)
+	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 1)
+
+	// Phase 0 item should be ready, phase 1 should NOT.
+	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusMap := map[string]CaravanItemStatus{}
+	for _, st := range statuses {
+		statusMap[st.WorkItemID] = st
+	}
+	if !statusMap[idA].Ready {
+		t.Fatal("expected phase 0 item A to be ready")
+	}
+	if statusMap[idB].Ready {
+		t.Fatal("expected phase 1 item B to NOT be ready (phase 0 not done)")
+	}
+
+	// Mark phase 0 item done → phase 1 should become ready.
+	worldStore2, err := OpenWorld("ember")
+	if err != nil {
+		t.Fatal(err)
+	}
+	worldStore2.UpdateWorkItem(idA, WorkItemUpdates{Status: "done"})
+	worldStore2.Close()
+
+	statuses2, err := sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusMap2 := map[string]CaravanItemStatus{}
+	for _, st := range statuses2 {
+		statusMap2[st.WorkItemID] = st
+	}
+	if !statusMap2[idB].Ready {
+		t.Fatal("expected phase 1 item B to be ready after phase 0 done")
+	}
+}
+
+func TestCaravanPhaseMultiple(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	sphereStore, err := OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sphereStore.Close()
+
+	worldStore, err := OpenWorld("ember")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idA, _ := worldStore.CreateWorkItem("Phase 0", "", "operator", 2, nil)
+	idB, _ := worldStore.CreateWorkItem("Phase 1", "", "operator", 2, nil)
+	idC, _ := worldStore.CreateWorkItem("Phase 2", "", "operator", 2, nil)
+	worldStore.Close()
+
+	caravanID, _ := sphereStore.CreateCaravan("multi-phase", "operator")
+	sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0)
+	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 1)
+	sphereStore.CreateCaravanItem(caravanID, idC, "ember", 2)
+
+	// Only phase 0 ready initially.
+	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sm := map[string]CaravanItemStatus{}
+	for _, st := range statuses {
+		sm[st.WorkItemID] = st
+	}
+	if !sm[idA].Ready {
+		t.Fatal("expected phase 0 item ready")
+	}
+	if sm[idB].Ready {
+		t.Fatal("expected phase 1 item NOT ready")
+	}
+	if sm[idC].Ready {
+		t.Fatal("expected phase 2 item NOT ready")
+	}
+
+	// Complete phase 0 → phase 1 becomes ready, phase 2 still not.
+	ws, _ := OpenWorld("ember")
+	ws.UpdateWorkItem(idA, WorkItemUpdates{Status: "done"})
+	ws.Close()
+
+	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
+	sm = map[string]CaravanItemStatus{}
+	for _, st := range statuses {
+		sm[st.WorkItemID] = st
+	}
+	if !sm[idB].Ready {
+		t.Fatal("expected phase 1 item ready after phase 0 done")
+	}
+	if sm[idC].Ready {
+		t.Fatal("expected phase 2 item NOT ready (phase 1 not done)")
+	}
+
+	// Complete phase 1 → phase 2 becomes ready.
+	ws, _ = OpenWorld("ember")
+	ws.UpdateWorkItem(idB, WorkItemUpdates{Status: "done"})
+	ws.Close()
+
+	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
+	sm = map[string]CaravanItemStatus{}
+	for _, st := range statuses {
+		sm[st.WorkItemID] = st
+	}
+	if !sm[idC].Ready {
+		t.Fatal("expected phase 2 item ready after phase 1 done")
+	}
+}
+
+func TestCaravanPhaseMixedWorlds(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	sphereStore, err := OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sphereStore.Close()
+
+	// Create items in two different worlds.
+	alphaStore, err := OpenWorld("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idA, _ := alphaStore.CreateWorkItem("Alpha item", "", "operator", 2, nil)
+	alphaStore.Close()
+
+	betaStore, err := OpenWorld("beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idB, _ := betaStore.CreateWorkItem("Beta item phase 0", "", "operator", 2, nil)
+	idC, _ := betaStore.CreateWorkItem("Beta item phase 1", "", "operator", 2, nil)
+	betaStore.Close()
+
+	// A (alpha, phase 0), B (beta, phase 0), C (beta, phase 1).
+	caravanID, _ := sphereStore.CreateCaravan("mixed-worlds", "operator")
+	sphereStore.CreateCaravanItem(caravanID, idA, "alpha", 0)
+	sphereStore.CreateCaravanItem(caravanID, idB, "beta", 0)
+	sphereStore.CreateCaravanItem(caravanID, idC, "beta", 1)
+
+	// Phase 0 items (A, B) ready; phase 1 item (C) not ready.
+	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sm := map[string]CaravanItemStatus{}
+	for _, st := range statuses {
+		sm[st.WorkItemID] = st
+	}
+	if !sm[idA].Ready {
+		t.Fatal("expected alpha phase 0 item ready")
+	}
+	if !sm[idB].Ready {
+		t.Fatal("expected beta phase 0 item ready")
+	}
+	if sm[idC].Ready {
+		t.Fatal("expected beta phase 1 item NOT ready")
+	}
+
+	// Complete only A (alpha phase 0). C still not ready because B (beta phase 0) is open.
+	as, _ := OpenWorld("alpha")
+	as.UpdateWorkItem(idA, WorkItemUpdates{Status: "done"})
+	as.Close()
+
+	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
+	sm = map[string]CaravanItemStatus{}
+	for _, st := range statuses {
+		sm[st.WorkItemID] = st
+	}
+	if sm[idC].Ready {
+		t.Fatal("expected phase 1 item NOT ready (B in phase 0 still open)")
+	}
+
+	// Complete B → C becomes ready (all phase 0 items done across worlds).
+	bs, _ := OpenWorld("beta")
+	bs.UpdateWorkItem(idB, WorkItemUpdates{Status: "done"})
+	bs.Close()
+
+	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
+	sm = map[string]CaravanItemStatus{}
+	for _, st := range statuses {
+		sm[st.WorkItemID] = st
+	}
+	if !sm[idC].Ready {
+		t.Fatal("expected phase 1 item ready after all phase 0 done")
 	}
 }

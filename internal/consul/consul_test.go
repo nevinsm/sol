@@ -280,9 +280,9 @@ func TestFeedStrandedCaravans(t *testing.T) {
 	wi2, _ := worldStore.CreateWorkItem("caravan-task-2", "desc2", "test", 1, nil)
 	wi3, _ := worldStore.CreateWorkItem("caravan-task-3", "desc3", "test", 1, nil)
 
-	sphereStore.AddCaravanItem(caravanID, wi1, worldName)
-	sphereStore.AddCaravanItem(caravanID, wi2, worldName)
-	sphereStore.AddCaravanItem(caravanID, wi3, worldName)
+	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
+	sphereStore.CreateCaravanItem(caravanID, wi2, worldName, 0)
+	sphereStore.CreateCaravanItem(caravanID, wi3, worldName, 0)
 
 	// Make wi3 tethered (already dispatched).
 	worldStore.UpdateWorkItem(wi3, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/SomeAgent"})
@@ -334,7 +334,7 @@ func TestFeedStrandedCaravansNoDuplicates(t *testing.T) {
 
 	caravanID, _ := sphereStore.CreateCaravan("test-caravan-2", "operator")
 	wi1, _ := worldStore.CreateWorkItem("dup-task-1", "desc1", "test", 1, nil)
-	sphereStore.AddCaravanItem(caravanID, wi1, worldName)
+	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
 
 	// Send a pre-existing CARAVAN_NEEDS_FEEDING message for this caravan.
 	sphereStore.SendProtocolMessage("sphere/consul", "operator", store.ProtoCaravanNeedsFeeding,
@@ -385,7 +385,7 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 	caravanID, _ := sphereStore.CreateCaravan("test-caravan-3", "operator")
 	wi1, _ := worldStore.CreateWorkItem("all-tethered-1", "desc1", "test", 1, nil)
 	worldStore.UpdateWorkItem(wi1, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/X"})
-	sphereStore.AddCaravanItem(caravanID, wi1, worldName)
+	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
 
 	sessions := newMockSessions()
 	cfg := Config{
@@ -532,7 +532,7 @@ func TestPatrolCycle(t *testing.T) {
 	// 2. Open caravan with ready items.
 	caravanID, _ := sphereStore.CreateCaravan("patrol-caravan", "operator")
 	wiCaravan, _ := worldStore.CreateWorkItem("caravan-ready", "desc", "test", 1, nil)
-	sphereStore.AddCaravanItem(caravanID, wiCaravan, worldName)
+	sphereStore.CreateCaravanItem(caravanID, wiCaravan, worldName, 0)
 
 	// 3. Healthy working agent (session alive).
 	sphereStore.CreateAgent("Healthy", worldName, "agent")

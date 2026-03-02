@@ -262,10 +262,10 @@ func TestDeleteWorldDataDeletesCaravanItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AddCaravanItem(caravanID, "sol-11111111", "haven"); err != nil {
+	if err := s.CreateCaravanItem(caravanID, "sol-11111111", "haven", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AddCaravanItem(caravanID, "sol-22222222", "haven"); err != nil {
+	if err := s.CreateCaravanItem(caravanID, "sol-22222222", "haven", 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -500,13 +500,13 @@ func TestSchemaV5Migration(t *testing.T) {
 		t.Fatalf("expected worlds table, got count=%d", count)
 	}
 
-	// Verify schema_version is 6.
+	// Verify schema_version is 7.
 	var version int
 	err = s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 6 {
-		t.Fatalf("expected schema version 6, got %d", version)
+	if version != 7 {
+		t.Fatalf("expected schema version 7, got %d", version)
 	}
 }
