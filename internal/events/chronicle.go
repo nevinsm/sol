@@ -102,6 +102,8 @@ func (c *Chronicle) Run(ctx context.Context) error {
 	ticker := time.NewTicker(c.config.PollInterval)
 	defer ticker.Stop()
 
+	var consecutiveErrs int
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -109,12 +111,17 @@ func (c *Chronicle) Run(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			if err := c.processCycle(); err != nil {
-				// Best-effort: log but continue.
-				fmt.Fprintf(os.Stderr, "chronicle cycle error: %v\n", err)
-				if c.logger != nil {
-					c.logger.Emit("chronicle_error", "chronicle", "chronicle", "audit",
-						map[string]any{"error": err.Error()})
+				consecutiveErrs++
+				// Log on first error, then every 32 cycles to avoid spam.
+				if consecutiveErrs == 1 || consecutiveErrs%32 == 0 {
+					fmt.Fprintf(os.Stderr, "chronicle cycle error (count=%d): %v\n", consecutiveErrs, err)
+					if c.logger != nil {
+						c.logger.Emit("chronicle_error", "chronicle", "chronicle", "audit",
+							map[string]any{"error": err.Error(), "consecutive_count": consecutiveErrs})
+					}
 				}
+			} else {
+				consecutiveErrs = 0
 			}
 		}
 	}

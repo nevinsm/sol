@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -109,6 +110,38 @@ func testConfig() Config {
 		MassDeathThreshold: 3,
 		MassDeathWindow:    30 * time.Second,
 		DegradedCooldown:   5 * time.Minute,
+	}
+}
+
+func TestRunRejectsZeroHeartbeatInterval(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+
+	// Zero interval should be rejected.
+	cfg := testConfig()
+	cfg.HeartbeatInterval = 0
+	sup := New(cfg, sphereStore, mock, logger)
+
+	ctx := context.Background()
+	err := sup.Run(ctx)
+	if err == nil {
+		t.Fatal("expected error for zero HeartbeatInterval, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid heartbeat interval") {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), "invalid heartbeat interval")
+	}
+
+	// Negative interval should also be rejected.
+	cfg.HeartbeatInterval = -1 * time.Second
+	sup = New(cfg, sphereStore, mock, logger)
+
+	err = sup.Run(ctx)
+	if err == nil {
+		t.Fatal("expected error for negative HeartbeatInterval, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid heartbeat interval") {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), "invalid heartbeat interval")
 	}
 }
 

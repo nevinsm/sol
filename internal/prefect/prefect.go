@@ -97,6 +97,10 @@ func New(cfg Config, sphereStore SphereStore, mgr SessionManager, logger *slog.L
 
 // Run starts the prefect heartbeat loop. Blocks until ctx is cancelled.
 func (s *Prefect) Run(ctx context.Context) error {
+	if s.cfg.HeartbeatInterval <= 0 {
+		return fmt.Errorf("invalid heartbeat interval: %v", s.cfg.HeartbeatInterval)
+	}
+
 	if err := WritePID(); err != nil {
 		return fmt.Errorf("failed to write PID file: %w", err)
 	}

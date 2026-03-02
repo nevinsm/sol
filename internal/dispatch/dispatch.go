@@ -657,8 +657,12 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		}
 	}
 
-	// 7. Stop session — use a brief delay then stop in background.
+	// 7. Stop session after a brief delay to allow final output.
+	// Session stop runs in background — CLI returns immediately.
+	// The goroutine is best-effort; consul will recover stale sessions.
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		time.Sleep(1 * time.Second)
 		if err := mgr.Stop(sessName, true); err != nil {
 			fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
@@ -739,8 +743,12 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 		return nil, fmt.Errorf("failed to clear tether: %w", err)
 	}
 
-	// 6. Stop session.
+	// 6. Stop session after a brief delay to allow final output.
+	// Session stop runs in background — CLI returns immediately.
+	// The goroutine is best-effort; consul will recover stale sessions.
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		time.Sleep(1 * time.Second)
 		if err := mgr.Stop(sessName, true); err != nil {
 			fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
