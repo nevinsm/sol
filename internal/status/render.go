@@ -6,6 +6,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nevinsm/sol/internal/config"
 )
 
 var (
@@ -328,4 +329,35 @@ func renderSummary(b *strings.Builder, s Summary) {
 	}
 	b.WriteString(dimStyle.Render(parts))
 	b.WriteString("\n")
+}
+
+// RenderWorldConfig renders the config section for sol world status.
+func RenderWorldConfig(world string, cfg config.WorldConfig) string {
+	var b strings.Builder
+
+	b.WriteString(headerStyle.Render("Config"))
+	b.WriteString("\n")
+
+	sourceDisplay := cfg.World.SourceRepo
+	if sourceDisplay == "" {
+		sourceDisplay = dimStyle.Render("(none)")
+	}
+	b.WriteString(fmt.Sprintf("  Source repo:    %s\n", sourceDisplay))
+
+	if cfg.Agents.Capacity == 0 {
+		b.WriteString(fmt.Sprintf("  Agent capacity: %s\n", dimStyle.Render("unlimited")))
+	} else {
+		b.WriteString(fmt.Sprintf("  Agent capacity: %d\n", cfg.Agents.Capacity))
+	}
+	b.WriteString(fmt.Sprintf("  Model tier:     %s\n", cfg.Agents.ModelTier))
+	b.WriteString(fmt.Sprintf("  Quality gates:  %d\n", len(cfg.Forge.QualityGates)))
+
+	namePool := dimStyle.Render("(default)")
+	if cfg.Agents.NamePoolPath != "" {
+		namePool = cfg.Agents.NamePoolPath
+	}
+	b.WriteString(fmt.Sprintf("  Name pool:      %s\n", namePool))
+	b.WriteString("\n")
+
+	return b.String()
 }

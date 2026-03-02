@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"text/tabwriter"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
@@ -16,147 +15,91 @@ import (
 var statusJSON bool
 
 var statusCmd = &cobra.Command{
-	Use:   "status <world>",
-	Short: "Show world status",
-	Args:  cobra.ExactArgs(1),
-	// SilenceErrors and SilenceUsage so exit code reflects health, not cobra.
+	Use:   "status [world]",
+	Short: "Show sphere or world status",
+	Long: `Show system status.
+
+Without arguments, shows a sphere-level overview of all worlds and processes.
+With a world name, shows detailed status for that specific world.
+
+Exit codes (world mode only):
+  0 = healthy
+  1 = unhealthy
+  2 = degraded`,
+	Args:          cobra.MaximumNArgs(1),
 	SilenceErrors: true,
 	SilenceUsage:  true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
-			return err
-		}
-
-		sphereStore, err := store.OpenSphere()
-		if err != nil {
-			return err
-		}
-		defer sphereStore.Close()
-
-		worldStore, err := store.OpenWorld(world)
-		if err != nil {
-			return err
-		}
-		defer worldStore.Close()
-
-		mgr := session.New()
-
-		// worldStore satisfies both WorldStore and MergeQueueStore.
-		result, err := status.Gather(world, sphereStore, worldStore, worldStore, mgr)
-		if err != nil {
-			return err
-		}
-
-		// Gather caravan info (non-fatal if unavailable).
-		status.GatherCaravans(result, sphereStore, gatedWorldOpener)
-
-		if statusJSON {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(result); err != nil {
-				return err
-			}
-		} else {
-			fmt.Printf("World: %s\n", result.World)
-			printWorldStatus(result)
-		}
-
-		// Exit with health code.
-		if code := result.Health(); code != 0 {
-			return &exitError{code: code}
-		}
-		return nil
-	},
+	RunE:          runStatus,
 }
 
-func printWorldStatus(rs *status.WorldStatus) {
-	if rs.Prefect.Running {
-		fmt.Printf("Prefect: running (pid %d)\n", rs.Prefect.PID)
-	} else {
-		fmt.Println("Prefect: not running")
+func runStatus(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return runSphereStatus()
+	}
+	return runWorldStatus(args[0])
+}
+
+func runSphereStatus() error {
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		return err
+	}
+	defer sphereStore.Close()
+
+	mgr := session.New()
+
+	result := status.GatherSphere(sphereStore, sphereStore, mgr,
+		gatedWorldOpener, sphereStore)
+
+	if statusJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
 	}
 
-	if rs.Forge.Running {
-		fmt.Printf("Forge: running (%s)\n", rs.Forge.SessionName)
-	} else {
-		fmt.Println("Forge: not running")
+	fmt.Print(status.RenderSphere(result))
+	return nil
+}
+
+func runWorldStatus(world string) error {
+	if err := config.RequireWorld(world); err != nil {
+		return err
 	}
 
-	if rs.Chronicle.Running {
-		fmt.Printf("Chronicle: running (%s)\n", rs.Chronicle.SessionName)
-	} else {
-		fmt.Println("Chronicle: not running")
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		return err
+	}
+	defer sphereStore.Close()
+
+	worldStore, err := store.OpenWorld(world)
+	if err != nil {
+		return err
+	}
+	defer worldStore.Close()
+
+	mgr := session.New()
+
+	result, err := status.Gather(world, sphereStore, worldStore, worldStore, mgr)
+	if err != nil {
+		return err
 	}
 
-	if rs.Sentinel.Running {
-		fmt.Printf("Sentinel: running (%s)\n", rs.Sentinel.SessionName)
-	} else {
-		fmt.Println("Sentinel: not running")
+	status.GatherCaravans(result, sphereStore, gatedWorldOpener)
+
+	if statusJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
 	}
 
-	fmt.Println()
+	fmt.Print(status.RenderWorld(result))
 
-	if len(rs.Agents) == 0 {
-		fmt.Println("No agents registered.")
-	} else {
-		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "AGENT\tSTATE\tSESSION\tWORK\n")
-		for _, a := range rs.Agents {
-			sess := "-"
-			if a.State == "working" || a.State == "stalled" {
-				if a.SessionAlive {
-					sess = "alive"
-				} else {
-					sess = "dead!"
-				}
-			}
-
-			work := "-"
-			if a.TetherItem != "" {
-				work = fmt.Sprintf("%s: %s", a.TetherItem, a.WorkTitle)
-			}
-
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", a.Name, a.State, sess, work)
-		}
-		tw.Flush()
-		fmt.Println()
+	// Exit with health code.
+	if code := result.Health(); code != 0 {
+		return &exitError{code: code}
 	}
-
-	// Caravans.
-	if len(rs.Caravans) > 0 {
-		fmt.Println("Caravans:")
-		for _, c := range rs.Caravans {
-			blocked := c.TotalItems - c.DoneItems - c.ReadyItems
-			fmt.Printf("  %s  %s  %d items (%d done, %d ready, %d blocked)\n",
-				c.ID, c.Name, c.TotalItems, c.DoneItems, c.ReadyItems, blocked)
-		}
-		fmt.Println()
-	}
-
-	// Merge queue line.
-	mq := rs.MergeQueue
-	if mq.Total == 0 {
-		fmt.Println("Merge Queue: empty")
-	} else {
-		fmt.Printf("Merge Queue: %d ready, %d in progress, %d failed\n",
-			mq.Ready, mq.Claimed, mq.Failed)
-	}
-
-	// Summary line.
-	parts := fmt.Sprintf("%d working, %d idle", rs.Summary.Working, rs.Summary.Idle)
-	if rs.Summary.Stalled > 0 {
-		parts += fmt.Sprintf(", %d stalled", rs.Summary.Stalled)
-	}
-	if rs.Summary.Dead > 0 {
-		parts += fmt.Sprintf(", %d dead session", rs.Summary.Dead)
-		if rs.Summary.Dead > 1 {
-			parts += "s"
-		}
-	}
-	fmt.Printf("Summary: %d agents (%s)\n", rs.Summary.Total, parts)
-	fmt.Printf("Health: %s\n", rs.HealthString())
+	return nil
 }
 
 func init() {

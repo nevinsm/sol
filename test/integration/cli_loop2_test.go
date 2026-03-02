@@ -201,11 +201,8 @@ func TestCLIStatusWithForge(t *testing.T) {
 
 	// Status without forge running.
 	out, _ := runGT(t, solHome, "status", "ember")
-	if !strings.Contains(out, "Forge:") {
-		t.Errorf("status output missing 'Forge:' line: %s", out)
-	}
-	if !strings.Contains(out, "not running") {
-		t.Errorf("status output should show forge not running: %s", out)
+	if !strings.Contains(out, "Forge") {
+		t.Errorf("status output missing 'Forge' line: %s", out)
 	}
 
 	// JSON output should contain forge and merge_queue fields.

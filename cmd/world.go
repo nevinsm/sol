@@ -259,33 +259,8 @@ var worldStatusCmd = &cobra.Command{
 			return enc.Encode(out)
 		}
 
-		// Print config section.
-		fmt.Printf("World: %s\n\n", name)
-		fmt.Println("Config:")
-
-		sourceDisplay := cfg.World.SourceRepo
-		if sourceDisplay == "" {
-			sourceDisplay = "(none)"
-		}
-		fmt.Printf("  Source repo:    %s\n", sourceDisplay)
-
-		if cfg.Agents.Capacity == 0 {
-			fmt.Printf("  Agent capacity: unlimited\n")
-		} else {
-			fmt.Printf("  Agent capacity: %d\n", cfg.Agents.Capacity)
-		}
-		fmt.Printf("  Model tier:    %s\n", cfg.Agents.ModelTier)
-		fmt.Printf("  Quality gates: %d\n", len(cfg.Forge.QualityGates))
-
-		namePool := "(default)"
-		if cfg.Agents.NamePoolPath != "" {
-			namePool = cfg.Agents.NamePoolPath
-		}
-		fmt.Printf("  Name pool:     %s\n", namePool)
-		fmt.Println()
-
-		// Print rest of status (shared with sol status).
-		printWorldStatus(result)
+		fmt.Print(status.RenderWorldConfig(name, cfg))
+		fmt.Print(status.RenderWorld(result))
 
 		return nil
 	},

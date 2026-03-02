@@ -148,8 +148,8 @@ func TestInitThenWorldOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("world status failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Config:") {
-		t.Errorf("world status output missing 'Config:': %s", out)
+	if !strings.Contains(out, "Config") {
+		t.Errorf("world status output missing 'Config': %s", out)
 	}
 }
 

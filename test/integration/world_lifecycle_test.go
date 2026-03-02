@@ -225,8 +225,8 @@ func TestWorldStatusBasic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("world status failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Config:") {
-		t.Errorf("output missing 'Config:' section: %s", out)
+	if !strings.Contains(out, "Config") {
+		t.Errorf("output missing 'Config' section: %s", out)
 	}
 	if !strings.Contains(out, "Source repo:") {
 		t.Errorf("output missing 'Source repo:': %s", out)
