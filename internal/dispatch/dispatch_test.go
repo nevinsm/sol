@@ -975,3 +975,212 @@ func TestPrimeNoHandoff(t *testing.T) {
 		t.Error("unexpected HANDOFF CONTEXT when no handoff file exists")
 	}
 }
+
+// --- Mock world store that wraps a real store but can inject errors ---
+
+type mockWorldStore struct {
+	*store.Store
+	createMRErr error // if set, CreateMergeRequest returns this error
+}
+
+func (m *mockWorldStore) CreateMergeRequest(workItemID, branch string, priority int) (string, error) {
+	if m.createMRErr != nil {
+		return "", m.createMRErr
+	}
+	return m.Store.CreateMergeRequest(workItemID, branch, priority)
+}
+
+// --- Resolve rollback/safety tests ---
+
+func TestResolveRollbackOnMRFailure(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWorkItem("Add feature", "Build the feature", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update work item: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create worktree with git repo and remote.
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	// Use mock world store that fails on CreateMergeRequest.
+	mock := &mockWorldStore{
+		Store:       worldStore,
+		createMRErr: fmt.Errorf("simulated MR creation failure"),
+	}
+
+	_, err = Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, mock, sphereStore, mgr, nil)
+
+	if err == nil {
+		t.Fatal("expected error from failed CreateMergeRequest")
+	}
+	if !strings.Contains(err.Error(), "simulated MR creation failure") {
+		t.Errorf("expected simulated error, got: %v", err)
+	}
+
+	// Verify: work item status is rolled back to "tethered" (not stuck at "done").
+	item, err := worldStore.GetWorkItem(itemID)
+	if err != nil {
+		t.Fatalf("failed to get work item: %v", err)
+	}
+	if item.Status != "tethered" {
+		t.Errorf("expected work item status rolled back to 'tethered', got %q", item.Status)
+	}
+}
+
+func TestResolvePushFailureCreatesMR(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWorkItem("Add feature", "Build the feature", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update work item: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create worktree with git repo but NO remote (so push fails).
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	// Intentionally NO addBareRemote — push will fail.
+
+	sessName := SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	result, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Verify: MR is created with phase "failed".
+	if result.MergeRequestID == "" {
+		t.Fatal("expected MergeRequestID to be set even with push failure")
+	}
+
+	mr, err := worldStore.GetMergeRequest(result.MergeRequestID)
+	if err != nil {
+		t.Fatalf("failed to get merge request: %v", err)
+	}
+	if mr.Phase != "failed" {
+		t.Errorf("expected MR phase 'failed', got %q", mr.Phase)
+	}
+
+	// Verify: work item is "done", agent is "idle".
+	item, err := worldStore.GetWorkItem(itemID)
+	if err != nil {
+		t.Fatalf("failed to get work item: %v", err)
+	}
+	if item.Status != "done" {
+		t.Errorf("expected work item status 'done', got %q", item.Status)
+	}
+
+	agent, err := sphereStore.GetAgent("ember/Toast")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("expected agent state 'idle', got %q", agent.State)
+	}
+}
+
+func TestReCastPartialFailureRecovery(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWorkItem("Add feature", "Build the feature", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	// Set up partial failure state: item tethered to agent, but agent still "idle".
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update work item: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	// Agent state is "idle" with no tether_item — simulates crash after work item
+	// update but before agent state update.
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	result, err := Cast(CastOpts{
+		WorkItemID: itemID,
+		World:      "ember",
+		AgentName:  "Toast",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err != nil {
+		t.Fatalf("Cast (partial failure recovery) failed: %v", err)
+	}
+
+	if result.WorkItemID != itemID {
+		t.Errorf("expected work item ID %q, got %q", itemID, result.WorkItemID)
+	}
+	if result.AgentName != "Toast" {
+		t.Errorf("expected agent name Toast, got %q", result.AgentName)
+	}
+
+	// Verify: agent state is now "working", session started.
+	agent, err := sphereStore.GetAgent("ember/Toast")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "working" {
+		t.Errorf("expected agent state 'working', got %q", agent.State)
+	}
+	if !mgr.started["sol-ember-Toast"] {
+		t.Error("expected session to be started")
+	}
+}

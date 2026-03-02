@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/nevinsm/sol/internal/config"
@@ -45,6 +46,53 @@ func AcquireWorkItemLock(itemID string) (*WorkItemLock, error) {
 
 // Release releases the advisory lock and removes the lock file.
 func (l *WorkItemLock) Release() error {
+	if l == nil || l.file == nil {
+		return nil
+	}
+	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	l.file.Close()
+	os.Remove(l.path)
+	l.file = nil
+	return nil
+}
+
+// AgentLock holds an advisory flock on an agent.
+type AgentLock struct {
+	file *os.File
+	path string
+}
+
+// AcquireAgentLock takes an exclusive advisory lock on the given agent.
+// Lock file: $SOL_HOME/.runtime/locks/agent-{sanitizedID}.lock.
+// Uses LOCK_EX | LOCK_NB (non-blocking exclusive lock).
+func AcquireAgentLock(agentID string) (*AgentLock, error) {
+	lockDir := filepath.Join(config.RuntimeDir(), "locks")
+	if err := os.MkdirAll(lockDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to acquire lock for agent %s: %w", agentID, err)
+	}
+
+	// Replace "/" in agent IDs (e.g., "ember/Toast") with "--" for safe filenames.
+	safe := strings.ReplaceAll(agentID, "/", "--")
+	lockPath := filepath.Join(lockDir, "agent-"+safe+".lock")
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to acquire lock for agent %s: %w", agentID, err)
+	}
+
+	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if err != nil {
+		f.Close()
+		if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+			return nil, fmt.Errorf("agent %s is being dispatched by another process", agentID)
+		}
+		return nil, fmt.Errorf("failed to acquire lock for agent %s: %w", agentID, err)
+	}
+
+	return &AgentLock{file: f, path: lockPath}, nil
+}
+
+// Release releases the agent lock.
+func (l *AgentLock) Release() error {
 	if l == nil || l.file == nil {
 		return nil
 	}

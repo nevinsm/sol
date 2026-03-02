@@ -31,6 +31,7 @@ type WorldStore interface {
 	GetWorkItem(id string) (*store.WorkItem, error)
 	UpdateWorkItem(id string, updates store.WorkItemUpdates) error
 	CreateMergeRequest(workItemID, branch string, priority int) (string, error)
+	UpdateMergeRequestPhase(id, phase string) error
 	CreateWorkItemWithOpts(opts store.CreateWorkItemOpts) (string, error)
 	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
 	UnblockMergeRequest(mrID string) error
@@ -135,9 +136,25 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 
 	agentID := opts.World + "/" + agent.Name
 
+	// Acquire per-agent lock to prevent concurrent dispatch to same agent.
+	agentLock, err := AcquireAgentLock(agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer agentLock.Release()
+
 	// 4. Determine if this is a re-cast (crash recovery).
-	reCast := item.Status == "tethered" && item.Assignee == agentID &&
-		agent.State == "working" && agent.TetherItem == opts.WorkItemID
+	// Full match: all four fields consistent (clean re-cast).
+	// Partial match: work item is tethered to this agent but agent state is stale.
+	// This handles crashes between work item update and agent state update.
+	reCast := false
+	if item.Status == "tethered" && item.Assignee == agentID {
+		if agent.State == "working" && agent.TetherItem == opts.WorkItemID {
+			reCast = true // clean re-cast
+		} else if agent.State == "idle" && (agent.TetherItem == "" || agent.TetherItem == opts.WorkItemID) {
+			reCast = true // partial failure recovery — agent wasn't updated
+		}
+	}
 
 	// 5. Validate state.
 	if !reCast {
@@ -539,6 +556,19 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		return nil, fmt.Errorf("no work tethered for agent %q in world %q", opts.AgentName, opts.World)
 	}
 
+	// Acquire locks: work item first, then agent (consistent ordering with Cast).
+	lock, err := AcquireWorkItemLock(workItemID)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Release()
+
+	agentLock, err := AcquireAgentLock(agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer agentLock.Release()
+
 	branchName := fmt.Sprintf("outpost/%s/%s", opts.AgentName, workItemID)
 
 	// Get the work item for output and conflict-resolution detection.
@@ -573,28 +603,47 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		pushFailed = true
 	}
 
-	// 3. Update work item: status → done.
-	if err := worldStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{Status: "done"}); err != nil {
-		return nil, fmt.Errorf("failed to update work item status: %w", err)
-	}
+	// Track what has been done so we can undo on failure.
+	var workItemUpdated bool
 
-	// 4. Create merge request (only if push succeeded).
-	var mrID string
-	if !pushFailed {
-		mrID, err = worldStore.CreateMergeRequest(workItemID, branchName, item.Priority)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create merge request for %q: %w", workItemID, err)
+	rollback := func() {
+		if workItemUpdated {
+			if err := worldStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{Status: "tethered"}); err != nil {
+				fmt.Fprintf(os.Stderr, "resolve rollback: failed to reset work item %s: %v\n", workItemID, err)
+			}
 		}
 	}
 
-	// 5. Update agent: state → idle, tether_item → clear.
+	// 3. Update work item: status -> done.
+	if err := worldStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{Status: "done"}); err != nil {
+		return nil, fmt.Errorf("failed to update work item status: %w", err)
+	}
+	workItemUpdated = true
+
+	// 4. Create merge request — always, even if push failed (so it's tracked).
+	mrID, err := worldStore.CreateMergeRequest(workItemID, branchName, item.Priority)
+	if err != nil {
+		rollback()
+		return nil, fmt.Errorf("failed to create merge request for %q: %w", workItemID, err)
+	}
+
+	// If push failed, immediately mark the MR as failed so forge doesn't try to merge it.
+	if pushFailed {
+		if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to mark MR as failed after push failure: %v\n", err)
+		}
+	}
+
+	// 5. Update agent: state -> idle, tether_item -> clear.
 	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+		rollback()
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
 
 	// 6. Clear tether file.
 	if err := tether.Clear(opts.World, opts.AgentName); err != nil {
-		return nil, fmt.Errorf("failed to clear tether: %w", err)
+		// Agent is idle but tether remains — consul will clean this up.
+		fmt.Fprintf(os.Stderr, "resolve: failed to clear tether (consul will recover): %v\n", err)
 	}
 
 	// 6b. Clean up workflow if present.
