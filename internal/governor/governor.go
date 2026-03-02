@@ -102,13 +102,18 @@ func SetupMirror(world, sourceRepo, branch string) error {
 		return nil
 	}
 
+	// Verify existing directory is a git repo before pulling.
+	verifyCmd := exec.Command("git", "-C", mirrorPath, "rev-parse", "--is-inside-work-tree")
+	if _, err := verifyCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("mirror directory exists but is not a git repository — remove %s and retry", mirrorPath)
+	}
+
 	// Pull latest (best-effort — warn on failure, don't error).
 	cmd := exec.Command("git", "-C", mirrorPath, "pull", "--ff-only")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "governor: mirror pull failed for world %q (best-effort): %s\n",
 			world, strings.TrimSpace(string(out)))
 	}
-	_ = cmd // silence vet if needed
 
 	return nil
 }

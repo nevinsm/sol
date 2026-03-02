@@ -244,11 +244,11 @@ var governorRefreshMirrorCmd = &cobra.Command{
 		}
 
 		// Load world config to get target branch.
-		var targetBranch string
 		worldCfg, err := config.LoadWorldConfig(governorRefreshMirrorWorld)
-		if err == nil {
-			targetBranch = worldCfg.Forge.TargetBranch
+		if err != nil {
+			return fmt.Errorf("failed to load world config for %q: %w", governorRefreshMirrorWorld, err)
 		}
+		targetBranch := worldCfg.Forge.TargetBranch
 
 		if err := governor.RefreshMirror(governorRefreshMirrorWorld, targetBranch); err != nil {
 			return err

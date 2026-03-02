@@ -436,8 +436,13 @@ Full sol CLI reference for governor operations:
 
 // InstallGovernorClaudeMD writes CLAUDE.md for the governor into the governor directory.
 func InstallGovernorClaudeMD(govDir string, ctx GovernorClaudeMDContext) error {
+	claudeDir := filepath.Join(govDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create .claude directory for governor: %w", err)
+	}
+
 	content := GenerateGovernorClaudeMD(ctx)
-	path := filepath.Join(govDir, "CLAUDE.md")
+	path := filepath.Join(claudeDir, "CLAUDE.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write governor CLAUDE.md: %w", err)
 	}

@@ -178,7 +178,7 @@ func TestInstallGovernorClaudeMD(t *testing.T) {
 	}
 
 	// Verify file written.
-	path := filepath.Join(govDir, "CLAUDE.md")
+	path := filepath.Join(govDir, ".claude", "CLAUDE.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read CLAUDE.md: %v", err)

@@ -1048,7 +1048,10 @@ func TestStatusWithEnvoys(t *testing.T) {
 
 	createEnvoy(t, gtHome, "myworld", "scout", sourceRepo)
 
-	out, _ := runGT(t, gtHome, "status", "myworld")
+	out, err := runGT(t, gtHome, "status", "myworld")
+	if err != nil && strings.TrimSpace(out) == "" {
+		t.Fatalf("status command failed: %v\noutput: %s", err, out)
+	}
 
 	if !strings.Contains(out, "Envoys") {
 		t.Errorf("status output missing 'Envoys' section: %s", out)
@@ -1076,7 +1079,10 @@ func TestStatusWithGovernor(t *testing.T) {
 		t.Fatalf("create governor agent: %v", err)
 	}
 
-	out, _ := runGT(t, gtHome, "status", "myworld")
+	out, err := runGT(t, gtHome, "status", "myworld")
+	if err != nil && strings.TrimSpace(out) == "" {
+		t.Fatalf("status command failed: %v\noutput: %s", err, out)
+	}
 
 	if !strings.Contains(out, "Governor") {
 		t.Errorf("status output missing 'Governor' in Processes: %s", out)
@@ -1110,7 +1116,10 @@ func TestStatusMixedRoles(t *testing.T) {
 		t.Fatalf("create governor agent: %v", err)
 	}
 
-	out, _ := runGT(t, gtHome, "status", "myworld")
+	out, err := runGT(t, gtHome, "status", "myworld")
+	if err != nil && strings.TrimSpace(out) == "" {
+		t.Fatalf("status command failed: %v\noutput: %s", err, out)
+	}
 
 	// Verify all three sections present.
 	if !strings.Contains(out, "Outposts") {
@@ -1131,7 +1140,10 @@ func TestStatusNoEnvoySection(t *testing.T) {
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "myworld")
 
-	out, _ := runGT(t, gtHome, "status", "myworld")
+	out, err := runGT(t, gtHome, "status", "myworld")
+	if err != nil && strings.TrimSpace(out) == "" {
+		t.Fatalf("status command failed: %v\noutput: %s", err, out)
+	}
 
 	if strings.Contains(out, "Envoys") {
 		t.Errorf("status should NOT show 'Envoys' section when no envoys exist: %s", out)
@@ -1158,7 +1170,10 @@ func TestStatusSphereWithNewColumns(t *testing.T) {
 		t.Fatalf("create governor agent: %v", err)
 	}
 
-	out, _ := runGT(t, gtHome, "status")
+	out, err := runGT(t, gtHome, "status")
+	if err != nil && strings.TrimSpace(out) == "" {
+		t.Fatalf("status command failed: %v\noutput: %s", err, out)
+	}
 
 	if !strings.Contains(out, "ENVOYS") {
 		t.Errorf("sphere overview missing 'ENVOYS' column: %s", out)
@@ -1188,7 +1203,10 @@ func TestStatusJSONBackwardCompat(t *testing.T) {
 		t.Fatalf("create governor agent: %v", err)
 	}
 
-	out, _ := runGT(t, gtHome, "status", "myworld", "--json")
+	out, err := runGT(t, gtHome, "status", "myworld", "--json")
+	if err != nil && strings.TrimSpace(out) == "" {
+		t.Fatalf("status command failed: %v\noutput: %s", err, out)
+	}
 
 	var result map[string]interface{}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
@@ -1326,20 +1344,18 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 		t.Fatalf("write tether: %v", err)
 	}
 
-	// Set up outpost worktree with a git repo (Resolve uses outpost path).
-	outpostWorktree := filepath.Join(gtHome, "myworld", "outposts", "scout", "worktree")
-	os.MkdirAll(outpostWorktree, 0o755)
-	gitRun(t, outpostWorktree, "init")
-	gitRun(t, outpostWorktree, "config", "user.email", "test@test.com")
-	gitRun(t, outpostWorktree, "config", "user.name", "Test")
-	if err := os.WriteFile(filepath.Join(outpostWorktree, "result.txt"), []byte("workflow result"), 0o644); err != nil {
+	// Set up envoy worktree for resolve (worktree already created by envoy create).
+	envoyWorktree := filepath.Join(gtHome, "myworld", "envoys", "scout", "worktree")
+	gitRun(t, envoyWorktree, "config", "user.email", "test@test.com")
+	gitRun(t, envoyWorktree, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(envoyWorktree, "result.txt"), []byte("workflow result"), 0o644); err != nil {
 		t.Fatalf("write result: %v", err)
 	}
-	gitRun(t, outpostWorktree, "add", ".")
-	gitRun(t, outpostWorktree, "commit", "-m", "initial")
+	gitRun(t, envoyWorktree, "add", ".")
+	gitRun(t, envoyWorktree, "commit", "-m", "initial")
 	bareRemote := t.TempDir()
 	gitRun(t, bareRemote, "init", "--bare")
-	gitRun(t, outpostWorktree, "remote", "add", "origin", bareRemote)
+	gitRun(t, envoyWorktree, "remote", "set-url", "origin", bareRemote)
 
 	// Resolve — session should stay.
 	out, err = runGT(t, gtHome, "resolve", "--world=myworld", "--agent=scout")

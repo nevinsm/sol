@@ -508,3 +508,22 @@ func TestStopNoSession(t *testing.T) {
 		t.Errorf("agent state = %q, want \"idle\"", ss.updated["myworld/governor"])
 	}
 }
+
+func TestSetupMirrorCorruptedDirectory(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	// Create a non-git directory at the mirror path.
+	mirrorPath := MirrorPath("testworld")
+	if err := os.MkdirAll(mirrorPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := SetupMirror("testworld", "/tmp/fake-repo", "main")
+	if err == nil {
+		t.Fatal("expected error for non-git mirror directory")
+	}
+	if !strings.Contains(err.Error(), "not a git repository") {
+		t.Errorf("expected 'not a git repository' error, got: %v", err)
+	}
+}

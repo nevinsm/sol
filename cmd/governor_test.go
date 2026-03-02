@@ -56,7 +56,7 @@ func TestGovernorStartCommand(t *testing.T) {
 	}
 
 	// Verify CLAUDE.md installed (by CLI, not placeholder).
-	claudeMDPath := filepath.Join(govDir, "CLAUDE.md")
+	claudeMDPath := filepath.Join(govDir, ".claude", "CLAUDE.md")
 	data, err := os.ReadFile(claudeMDPath)
 	if err != nil {
 		t.Fatalf("CLAUDE.md not written: %v", err)

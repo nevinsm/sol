@@ -11,6 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/namepool"
 	"github.com/nevinsm/sol/internal/protocol"
@@ -587,6 +588,9 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	case "envoy":
 		worktreeDir = envoy.WorktreePath(opts.World, opts.AgentName)
 		branchName = fmt.Sprintf("envoy/%s/%s", opts.World, opts.AgentName)
+	case "governor":
+		worktreeDir = governor.GovernorDir(opts.World)
+		branchName = fmt.Sprintf("governor/%s", opts.World)
 	default:
 		worktreeDir = WorktreePath(opts.World, opts.AgentName)
 		branchName = fmt.Sprintf("outpost/%s/%s", opts.AgentName, workItemID)
@@ -667,8 +671,8 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		fmt.Fprintf(os.Stderr, "resolve: failed to clear tether (consul will recover): %v\n", err)
 	}
 
-	// 6b. Clean up workflow if present (envoys don't use workflow system).
-	if agent.Role != "envoy" {
+	// 6b. Clean up workflow if present (envoys and governors don't use workflow system).
+	if agent.Role != "envoy" && agent.Role != "governor" {
 		if _, err := workflow.ReadState(opts.World, opts.AgentName); err == nil {
 			if removeErr := workflow.Remove(opts.World, opts.AgentName); removeErr != nil {
 				fmt.Fprintf(os.Stderr, "resolve: failed to clean up workflow: %v\n", removeErr)
@@ -677,9 +681,9 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	}
 
 	// 7. Stop session after a brief delay to allow final output.
-	// Envoys keep their session alive — they are human-supervised and persistent.
+	// Envoys and governors keep their session alive — they are human-supervised and persistent.
 	sessionKept := false
-	if agent.Role != "envoy" {
+	if agent.Role != "envoy" && agent.Role != "governor" {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
@@ -768,9 +772,9 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 	}
 
 	// 6. Stop session after a brief delay to allow final output.
-	// Envoys keep their session alive — they are human-supervised and persistent.
+	// Envoys and governors keep their session alive — they are human-supervised and persistent.
 	sessionKept := false
-	if role != "envoy" {
+	if role != "envoy" && role != "governor" {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
