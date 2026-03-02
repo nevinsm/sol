@@ -161,7 +161,9 @@ func ensureWorktree(sourceRepo, world, name, worktree string) error {
 
 // --- Start ---
 
-// Start launches an envoy's tmux session with hooks and placeholder CLAUDE.md.
+// Start launches an envoy's tmux session with brief hooks.
+// The caller is responsible for installing the CLAUDE.md protocol file
+// before calling Start (following the forge pattern).
 func Start(opts StartOpts, sphereStore StartStore, mgr SessionManager) error {
 	agentID := opts.World + "/" + opts.Name
 	sessName := SessionName(opts.World, opts.Name)
@@ -181,27 +183,17 @@ func Start(opts StartOpts, sphereStore StartStore, mgr SessionManager) error {
 		return fmt.Errorf("envoy session %q already running", sessName)
 	}
 
-	// 3. Install placeholder CLAUDE.md.
-	claudeDir := filepath.Join(worktree, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
-	}
-	claudeMD := "Envoy CLAUDE.md — to be replaced by protocol generator\n"
-	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte(claudeMD), 0o644); err != nil {
-		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
-	}
-
-	// 4. Install hooks — .claude/settings.local.json with brief hooks.
+	// 3. Install hooks — .claude/settings.local.json with brief hooks.
 	if err := installHooks(worktree); err != nil {
 		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 
-	// 5. Start tmux session.
+	// 4. Start tmux session.
 	if err := mgr.Start(sessName, worktree, "claude --dangerously-skip-permissions", nil, "envoy", opts.World); err != nil {
 		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 
-	// 6. Update agent state to "idle".
+	// 5. Update agent state to "idle".
 	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}

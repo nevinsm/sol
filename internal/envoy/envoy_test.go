@@ -325,15 +325,8 @@ func TestStart(t *testing.T) {
 		t.Errorf("expected 1 Stop hook, got %d", len(hooks))
 	}
 
-	// Verify CLAUDE.md written.
-	claudeMD := filepath.Join(worktree, ".claude", "CLAUDE.md")
-	content, err := os.ReadFile(claudeMD)
-	if err != nil {
-		t.Fatalf("CLAUDE.md not found: %v", err)
-	}
-	if !strings.Contains(string(content), "placeholder") && !strings.Contains(string(content), "to be replaced") {
-		t.Error("CLAUDE.md does not contain placeholder text")
-	}
+	// CLAUDE.md is now installed by the CLI layer (following forge pattern),
+	// so we don't check for it here.
 }
 
 func TestStartAlreadyRunning(t *testing.T) {

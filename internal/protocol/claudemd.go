@@ -225,6 +225,94 @@ Once you have the world name (and optionally source repo), run:
 `, ctx.SolBinary, ctx.SolBinary, ctx.SOLHome)
 }
 
+// EnvoyClaudeMDContext holds the fields used to generate a CLAUDE.md for an envoy agent.
+type EnvoyClaudeMDContext struct {
+	AgentName string
+	World     string
+	SolBinary string // path to sol binary (for CLI references)
+}
+
+// GenerateEnvoyClaudeMD returns the contents of a CLAUDE.md for an envoy agent.
+func GenerateEnvoyClaudeMD(ctx EnvoyClaudeMDContext) string {
+	sol := ctx.SolBinary
+	if sol == "" {
+		sol = "sol"
+	}
+
+	return fmt.Sprintf(`# Envoy: %s (world: %s)
+
+## Identity
+You are an envoy — a persistent, context-aware agent in world %q.
+Your name is %q.
+You maintain accumulated context in `+"`"+`.brief/memory.md`+"`"+`.
+
+## Brief Maintenance
+- Your brief (`+"`"+`.brief/memory.md`+"`"+`) is your persistent memory across sessions
+- Keep it under 200 lines — consolidate older entries, focus on current state
+- Update your brief before exiting with key decisions, current state, and next steps
+- On startup, review your brief — it may be stale if your last session crashed
+- Organize naturally: what matters now at the top, historical context below
+
+## Work Flow — Three Modes
+1. **Tethered work**: You may be assigned a work item. Check your tether:
+   `+"`"+`cat $SOL_HOME/%s/outposts/%s/.tether`+"`"+` (if exists)
+   When tethered, focus on that work item. Resolve when done.
+2. **Self-service**: Create your own work item with
+   `+"`"+`%s store create-item --world=%s --title="..." --description="..."`+"`"+`
+   Then tether yourself (the operator or governor will handle this).
+3. **Freeform**: No tether — exploration, research, design. No resolve needed.
+
+## Resolving Work
+When your tethered work is complete:
+1. Ensure all changes are committed and pushed to your branch
+2. Run `+"`"+`%s resolve --world=%s --agent=%s`+"`"+`
+3. This creates a merge request through forge — your session stays alive
+4. After resolve, reset your worktree for the next task:
+   `+"```"+`
+   git checkout main && git pull
+   `+"```"+`
+5. Update your brief with what you accomplished
+
+## Available Commands
+- `+"`"+`%s resolve --world=%s --agent=%s`+"`"+` — submit work for merge
+- `+"`"+`%s store create-item --world=%s --title="..." --description="..."`+"`"+` — create work item
+- `+"`"+`%s escalate --world=%s --agent=%s --message="..."`+"`"+` — escalate to operator
+- `+"`"+`%s status %s`+"`"+` — check world status
+- `+"`"+`%s handoff --world=%s --from=%s --to=<agent> --message="..."`+"`"+` — hand off work
+
+## Guidelines
+- You are human-supervised — ask when uncertain
+- All code goes through forge (merge pipeline) — never push to main directly
+- Your worktree persists across sessions — keep it clean
+`,
+		ctx.AgentName, ctx.World,
+		ctx.World, ctx.AgentName,
+		ctx.World, ctx.AgentName,
+		sol, ctx.World,
+		sol, ctx.World, ctx.AgentName,
+		sol, ctx.World, ctx.AgentName,
+		sol, ctx.World,
+		sol, ctx.World, ctx.AgentName,
+		sol, ctx.World,
+		sol, ctx.World, ctx.AgentName,
+	)
+}
+
+// InstallEnvoyClaudeMD writes .claude/CLAUDE.md for an envoy into the worktree.
+func InstallEnvoyClaudeMD(worktreeDir string, ctx EnvoyClaudeMDContext) error {
+	claudeDir := filepath.Join(worktreeDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create .claude directory in worktree: %w", err)
+	}
+
+	content := GenerateEnvoyClaudeMD(ctx)
+	path := filepath.Join(claudeDir, "CLAUDE.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("failed to write envoy CLAUDE.md in worktree: %w", err)
+	}
+	return nil
+}
+
 // InstallForgeClaudeMD writes .claude/CLAUDE.md for the forge into the worktree.
 func InstallForgeClaudeMD(worktreeDir string, ctx ForgeClaudeMDContext) error {
 	claudeDir := filepath.Join(worktreeDir, ".claude")

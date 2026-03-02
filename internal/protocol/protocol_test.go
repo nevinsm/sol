@@ -164,6 +164,74 @@ func TestGenerateClaudeMDWithoutModelTier(t *testing.T) {
 	}
 }
 
+func TestGenerateEnvoyClaudeMD(t *testing.T) {
+	ctx := EnvoyClaudeMDContext{
+		AgentName: "scout",
+		World:     "myworld",
+		SolBinary: "sol",
+	}
+
+	content := GenerateEnvoyClaudeMD(ctx)
+
+	checks := []string{
+		"Envoy: scout (world: myworld)",
+		"scout",
+		"myworld",
+		"sol resolve --world=myworld --agent=scout",
+		".brief/memory.md",
+		"Brief Maintenance",
+		"human-supervised",
+		"Three Modes",
+		"Resolving Work",
+	}
+	for _, check := range checks {
+		if !strings.Contains(content, check) {
+			t.Errorf("GenerateEnvoyClaudeMD missing %q", check)
+		}
+	}
+}
+
+func TestGenerateEnvoyClaudeMDDefaultBinary(t *testing.T) {
+	ctx := EnvoyClaudeMDContext{
+		AgentName: "scout",
+		World:     "myworld",
+		// SolBinary intentionally empty
+	}
+
+	content := GenerateEnvoyClaudeMD(ctx)
+
+	if !strings.Contains(content, "sol resolve") {
+		t.Error("GenerateEnvoyClaudeMD should default to 'sol' binary")
+	}
+}
+
+func TestInstallEnvoyClaudeMD(t *testing.T) {
+	dir := t.TempDir()
+	ctx := EnvoyClaudeMDContext{
+		AgentName: "scout",
+		World:     "myworld",
+		SolBinary: "sol",
+	}
+
+	if err := InstallEnvoyClaudeMD(dir, ctx); err != nil {
+		t.Fatalf("InstallEnvoyClaudeMD failed: %v", err)
+	}
+
+	path := filepath.Join(dir, ".claude", "CLAUDE.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read CLAUDE.md: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "scout") {
+		t.Error("CLAUDE.md missing agent name")
+	}
+	if !strings.Contains(content, "myworld") {
+		t.Error("CLAUDE.md missing world name")
+	}
+}
+
 func TestInstallHooks(t *testing.T) {
 	dir := t.TempDir()
 
