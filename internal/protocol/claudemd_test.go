@@ -147,6 +147,21 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 	if !strings.Contains(content, "You coordinate") {
 		t.Error("CLAUDE.md should contain coordination guideline")
 	}
+
+	// Verify no wrong cast syntax.
+	for _, bad := range []string{
+		"cast --world=",
+		"cast --work-item=",
+	} {
+		if strings.Contains(content, bad) {
+			t.Errorf("GenerateGovernorClaudeMD should not contain %q", bad)
+		}
+	}
+
+	// Verify correct cast positional syntax.
+	if !strings.Contains(content, "sol cast <item-id> myworld") {
+		t.Error("GenerateGovernorClaudeMD should contain correct cast positional syntax")
+	}
 }
 
 func TestInstallGovernorClaudeMD(t *testing.T) {

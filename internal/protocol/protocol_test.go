@@ -178,16 +178,42 @@ func TestGenerateEnvoyClaudeMD(t *testing.T) {
 		"scout",
 		"myworld",
 		"sol resolve --world=myworld --agent=scout",
+		"sol store create --world=myworld",
+		"sol escalate --world=myworld --agent=scout",
+		"sol status myworld",
+		"sol handoff --world=myworld --from=scout",
 		".brief/memory.md",
+		"200 lines",
 		"Brief Maintenance",
 		"human-supervised",
 		"Three Modes",
+		"Tethered work",
+		"Self-service",
+		"Freeform",
 		"Resolving Work",
+		"session stays alive",
+		"forge",
 	}
 	for _, check := range checks {
 		if !strings.Contains(content, check) {
 			t.Errorf("GenerateEnvoyClaudeMD missing %q", check)
 		}
+	}
+
+	// Verify no wrong command names.
+	for _, bad := range []string{
+		"store create-item",
+		"store list-items",
+		"caravan add-items",
+	} {
+		if strings.Contains(content, bad) {
+			t.Errorf("GenerateEnvoyClaudeMD should not contain %q", bad)
+		}
+	}
+
+	// Verify tether check uses status command, not outpost path.
+	if strings.Contains(content, "outposts") {
+		t.Error("GenerateEnvoyClaudeMD should not reference outposts directory")
 	}
 }
 

@@ -1,6 +1,7 @@
 package brief
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,6 +110,50 @@ func TestInjectExactLimit(t *testing.T) {
 	}
 	if !strings.HasPrefix(result, "<brief>\n") {
 		t.Fatal("expected <brief> frame")
+	}
+}
+
+func TestInjectTrailingNewline(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "memory.md")
+
+	// Write exactly maxLines lines WITH trailing newline.
+	var lines []string
+	for i := 0; i < 5; i++ {
+		lines = append(lines, fmt.Sprintf("line %d", i+1))
+	}
+	content := strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Inject(path, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(result, "TRUNCATED") {
+		t.Error("Inject should not truncate a file with exactly maxLines lines + trailing newline")
+	}
+}
+
+func TestInjectExceedsLimitWithTrailingNewline(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "brief.md")
+
+	// Create 10 lines with trailing newline, limit to 5.
+	var lines []string
+	for i := 0; i < 10; i++ {
+		lines = append(lines, "line content")
+	}
+	os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+
+	result, err := Inject(path, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "TRUNCATED") {
+		t.Fatal("expected truncation notice")
 	}
 }
 

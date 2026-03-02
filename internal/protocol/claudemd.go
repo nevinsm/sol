@@ -254,8 +254,8 @@ You maintain accumulated context in `+"`"+`.brief/memory.md`+"`"+`.
 - Organize naturally: what matters now at the top, historical context below
 
 ## Work Flow — Three Modes
-1. **Tethered work**: You may be assigned a work item. Check your tether:
-   `+"`"+`cat $SOL_HOME/%s/outposts/%s/.tether`+"`"+` (if exists)
+1. **Tethered work**: You may be assigned a work item. Check:
+   `+"`"+`%s status %s`+"`"+` (look for your name in the Envoys section)
    When tethered, focus on that work item. Resolve when done.
 2. **Self-service**: Create your own work item with
    `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+`
@@ -287,7 +287,7 @@ When your tethered work is complete:
 `,
 		ctx.AgentName, ctx.World,
 		ctx.World, ctx.AgentName,
-		ctx.World, ctx.AgentName,
+		sol, ctx.World,
 		sol, ctx.World,
 		sol, ctx.World, ctx.AgentName,
 		sol, ctx.World, ctx.AgentName,
@@ -376,7 +376,7 @@ When the operator gives you a work request:
 4. Optionally group into a caravan:
    `+"`"+`%s caravan create "name" <item-id> [<item-id>] --world=%s`+"`"+`
 5. Dispatch to available agents:
-   `+"`"+`%s cast --world=%s --work-item=<id>`+"`"+`
+   `+"`"+`%s cast <item-id> %s`+"`"+`
 6. Track progress: `+"`"+`%s status %s`+"`"+`
 
 ## Available Commands
@@ -388,7 +388,7 @@ Full sol CLI reference for governor operations:
 %s store list --world=%s [--status=open]
 
 # Dispatch
-%s cast --world=%s --work-item=<id> [--agent=<name>]
+%s cast <item-id> %s [--agent=<name>]
 
 # Caravans
 %s caravan create "name" <item-id> [<item-id>] --world=%s

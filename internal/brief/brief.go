@@ -26,7 +26,7 @@ func Inject(path string, maxLines int) (string, error) {
 		return "", nil
 	}
 
-	lines := strings.Split(content, "\n")
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
 	truncated := false
 	if len(lines) > maxLines {
 		lines = lines[:maxLines]

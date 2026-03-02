@@ -159,6 +159,9 @@ var governorBriefCmd = &cobra.Command{
 		if governorBriefWorld == "" {
 			return fmt.Errorf("--world is required")
 		}
+		if err := config.RequireWorld(governorBriefWorld); err != nil {
+			return err
+		}
 
 		briefPath := governor.BriefPath(governorBriefWorld)
 		data, err := os.ReadFile(briefPath)
@@ -186,6 +189,9 @@ var governorDebriefCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if governorDebriefWorld == "" {
 			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(governorDebriefWorld); err != nil {
+			return err
 		}
 
 		briefPath := governor.BriefPath(governorDebriefWorld)
@@ -233,6 +239,9 @@ var governorRefreshMirrorCmd = &cobra.Command{
 		if governorRefreshMirrorWorld == "" {
 			return fmt.Errorf("--world is required")
 		}
+		if err := config.RequireWorld(governorRefreshMirrorWorld); err != nil {
+			return err
+		}
 
 		// Load world config to get target branch.
 		var targetBranch string
@@ -261,6 +270,9 @@ var governorSummaryCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if governorSummaryWorld == "" {
 			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(governorSummaryWorld); err != nil {
+			return err
 		}
 
 		summaryPath := governor.WorldSummaryPath(governorSummaryWorld)

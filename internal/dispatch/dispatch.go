@@ -586,7 +586,7 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	switch agent.Role {
 	case "envoy":
 		worktreeDir = envoy.WorktreePath(opts.World, opts.AgentName)
-		branchName = fmt.Sprintf("envoy/%s/%s", opts.AgentName, workItemID)
+		branchName = fmt.Sprintf("envoy/%s/%s", opts.World, opts.AgentName)
 	default:
 		worktreeDir = WorktreePath(opts.World, opts.AgentName)
 		branchName = fmt.Sprintf("outpost/%s/%s", opts.AgentName, workItemID)
