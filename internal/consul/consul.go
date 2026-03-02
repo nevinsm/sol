@@ -138,7 +138,7 @@ func (d *Consul) Run(ctx context.Context) error {
 	}
 
 	// Patrol immediately.
-	if errors.Is(d.Patrol(), errShutdown) {
+	if errors.Is(d.Patrol(ctx), errShutdown) {
 		shutdown()
 		return nil
 	}
@@ -153,7 +153,7 @@ func (d *Consul) Run(ctx context.Context) error {
 			return nil
 
 		case <-ticker.C:
-			if errors.Is(d.Patrol(), errShutdown) {
+			if errors.Is(d.Patrol(ctx), errShutdown) {
 				shutdown()
 				return nil
 			}
@@ -170,28 +170,28 @@ func (d *Consul) Run(ctx context.Context) error {
 //
 // Errors in individual patrol steps are logged but do not stop the
 // patrol cycle. The consul continues to the next step (DEGRADE).
-func (d *Consul) Patrol() error {
+func (d *Consul) Patrol(ctx context.Context) error {
 	d.patrolCount++
 
 	var staleTethers, caravanFeeds int
 	var shutdown bool
 
 	// 1. Recover stale tethers.
-	recovered, err := d.recoverStaleTethers()
+	recovered, err := d.recoverStaleTethers(ctx)
 	if err != nil {
 		d.logInfo("consul_error", map[string]any{"action": "stale_tether_recovery", "error": err.Error()})
 	}
 	staleTethers = recovered
 
 	// 2. Feed stranded caravans.
-	fed, err := d.feedStrandedCaravans()
+	fed, err := d.feedStrandedCaravans(ctx)
 	if err != nil {
 		d.logInfo("consul_error", map[string]any{"action": "caravan_feeding", "error": err.Error()})
 	}
 	caravanFeeds = fed
 
 	// 3. Process lifecycle requests.
-	shutdown, err = d.processLifecycleRequests()
+	shutdown, err = d.processLifecycleRequests(ctx)
 	if err != nil {
 		d.logInfo("consul_error", map[string]any{"action": "lifecycle_requests", "error": err.Error()})
 	}
@@ -254,7 +254,7 @@ var errShutdown = fmt.Errorf("shutdown requested")
 // 5. Emit event
 //
 // Returns the number of tethers recovered.
-func (d *Consul) recoverStaleTethers() (int, error) {
+func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 	// List all agents with state "working".
 	agents, err := d.sphereStore.ListAgents("", "working")
 	if err != nil {
@@ -349,7 +349,7 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 // that the operator (or automation) can act on.
 //
 // Returns the number of caravans with ready items.
-func (d *Consul) feedStrandedCaravans() (int, error) {
+func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 	caravans, err := d.sphereStore.ListCaravans("open")
 	if err != nil {
 		return 0, fmt.Errorf("failed to list open caravans: %w", err)
@@ -432,7 +432,7 @@ func (d *Consul) feedStrandedCaravans() (int, error) {
 // Unrecognized messages are acknowledged but ignored.
 //
 // Returns true if a shutdown was requested.
-func (d *Consul) processLifecycleRequests() (shutdown bool, err error) {
+func (d *Consul) processLifecycleRequests(ctx context.Context) (shutdown bool, err error) {
 	msgs, err := d.sphereStore.PendingProtocol("sphere/consul", "")
 	if err != nil {
 		return false, fmt.Errorf("failed to read lifecycle messages: %w", err)

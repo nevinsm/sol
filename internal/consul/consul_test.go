@@ -1,6 +1,7 @@
 package consul
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -91,7 +92,7 @@ func TestRecoverStaleTethers(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 
-	recovered, err := d.recoverStaleTethers()
+	recovered, err := d.recoverStaleTethers(context.Background())
 	if err != nil {
 		t.Fatalf("recoverStaleTethers failed: %v", err)
 	}
@@ -176,7 +177,7 @@ func TestRecoverStaleTethersTooRecent(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 
-	recovered, err := d.recoverStaleTethers()
+	recovered, err := d.recoverStaleTethers(context.Background())
 	if err != nil {
 		t.Fatalf("recoverStaleTethers failed: %v", err)
 	}
@@ -245,7 +246,7 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 
-	recovered, err := d.recoverStaleTethers()
+	recovered, err := d.recoverStaleTethers(context.Background())
 	if err != nil {
 		t.Fatalf("recoverStaleTethers failed: %v", err)
 	}
@@ -297,7 +298,7 @@ func TestFeedStrandedCaravans(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 
-	fed, err := d.feedStrandedCaravans()
+	fed, err := d.feedStrandedCaravans(context.Background())
 	if err != nil {
 		t.Fatalf("feedStrandedCaravans failed: %v", err)
 	}
@@ -350,7 +351,7 @@ func TestFeedStrandedCaravansNoDuplicates(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 
-	fed, err := d.feedStrandedCaravans()
+	fed, err := d.feedStrandedCaravans(context.Background())
 	if err != nil {
 		t.Fatalf("feedStrandedCaravans failed: %v", err)
 	}
@@ -397,7 +398,7 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 
-	fed, err := d.feedStrandedCaravans()
+	fed, err := d.feedStrandedCaravans(context.Background())
 	if err != nil {
 		t.Fatalf("feedStrandedCaravans failed: %v", err)
 	}
@@ -424,7 +425,7 @@ func TestProcessLifecycleShutdown(t *testing.T) {
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
 
-	shutdown, err := d.processLifecycleRequests()
+	shutdown, err := d.processLifecycleRequests(context.Background())
 	if err != nil {
 		t.Fatalf("processLifecycleRequests failed: %v", err)
 	}
@@ -456,7 +457,7 @@ func TestProcessLifecycleCycle(t *testing.T) {
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
 
-	shutdown, err := d.processLifecycleRequests()
+	shutdown, err := d.processLifecycleRequests(context.Background())
 	if err != nil {
 		t.Fatalf("processLifecycleRequests failed: %v", err)
 	}
@@ -488,7 +489,7 @@ func TestProcessLifecycleUnknown(t *testing.T) {
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
 
-	shutdown, err := d.processLifecycleRequests()
+	shutdown, err := d.processLifecycleRequests(context.Background())
 	if err != nil {
 		t.Fatalf("processLifecycleRequests failed: %v", err)
 	}
@@ -554,7 +555,7 @@ func TestPatrolCycle(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 
-	err = d.Patrol()
+	err = d.Patrol(context.Background())
 	if err != nil {
 		t.Fatalf("Patrol failed: %v", err)
 	}

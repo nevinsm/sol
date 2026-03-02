@@ -459,7 +459,7 @@ var forgeRunGatesCmd = &cobra.Command{
 		defer worldStore.Close()
 		defer sphereStore.Close()
 
-		results, err := ref.RunGates()
+		results, err := ref.RunGates(cmd.Context())
 		if err != nil {
 			return err
 		}

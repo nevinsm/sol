@@ -1,11 +1,13 @@
 package forge
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -193,7 +195,7 @@ func TestRunGates(t *testing.T) {
 		cfg:      cfg,
 	}
 
-	results, err := r.RunGates()
+	results, err := r.RunGates(context.Background())
 	if err != nil {
 		t.Fatalf("RunGates() error: %v", err)
 	}
@@ -221,7 +223,7 @@ func TestRunGatesFailure(t *testing.T) {
 		cfg:      cfg,
 	}
 
-	results, err := r.RunGates()
+	results, err := r.RunGates(context.Background())
 	if err != nil {
 		t.Fatalf("RunGates() error: %v", err)
 	}
@@ -234,6 +236,42 @@ func TestRunGatesFailure(t *testing.T) {
 	}
 	if results[1].Passed {
 		t.Error("second gate should have failed")
+	}
+}
+
+func TestRunGatesCancelledContext(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	cfg := DefaultConfig()
+	cfg.QualityGates = []string{"sleep 60"}
+	cfg.GateTimeout = 60 * time.Second // ensure the per-gate timeout doesn't interfere
+
+	r := &Forge{
+		world:    "ember",
+		worktree: dir,
+		logger:   testLogger(),
+		cfg:      cfg,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	results, err := r.RunGates(ctx)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("RunGates() error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Passed {
+		t.Error("gate should have failed due to cancelled context")
+	}
+	if elapsed > 10*time.Second {
+		t.Errorf("RunGates took %v, expected well under 60s", elapsed)
 	}
 }
 

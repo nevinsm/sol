@@ -607,7 +607,7 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	})
 
 	// Run one patrol.
-	d.Patrol()
+	d.Patrol(context.Background())
 
 	// Verify: work item status back to "open".
 	item, _ := worldStore.GetWorkItem(itemID)
@@ -686,7 +686,7 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 
-	d.Patrol()
+	d.Patrol(context.Background())
 
 	// Work item should still be tethered (not recovered — too recent).
 	item, _ := worldStore.GetWorkItem(itemID)
@@ -753,7 +753,7 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 
-	d.Patrol()
+	d.Patrol(context.Background())
 
 	// Work item should still be tethered (session is alive).
 	item, _ := worldStore.GetWorkItem(itemID)
@@ -822,7 +822,7 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	})
 
 	// Run patrol → should detect A is ready.
-	d.Patrol()
+	d.Patrol(context.Background())
 
 	// Verify CARAVAN_NEEDS_FEEDING message sent.
 	msgs, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
@@ -842,7 +842,7 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	rs.Close()
 
 	// Run another patrol → B is now ready.
-	d.Patrol()
+	d.Patrol(context.Background())
 
 	// Verify new CARAVAN_NEEDS_FEEDING for B.
 	msgs, _ = sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
@@ -898,14 +898,14 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	})
 
 	// Run patrol → message sent.
-	d.Patrol()
+	d.Patrol(context.Background())
 	msgs1, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
 	if len(msgs1) == 0 {
 		t.Fatal("expected CARAVAN_NEEDS_FEEDING message")
 	}
 
 	// Run patrol again → no duplicate message.
-	d.Patrol()
+	d.Patrol(context.Background())
 	msgs2, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
 	if len(msgs2) != len(msgs1) {
 		t.Errorf("expected no duplicate messages: had %d, now have %d", len(msgs1), len(msgs2))
@@ -941,7 +941,7 @@ func TestConsulHeartbeat(t *testing.T) {
 	})
 
 	// Run one patrol.
-	d.Patrol()
+	d.Patrol(context.Background())
 
 	// Read heartbeat file.
 	hb, err := consul.ReadHeartbeat(solHome)
@@ -959,7 +959,7 @@ func TestConsulHeartbeat(t *testing.T) {
 	}
 
 	// Run another patrol.
-	d.Patrol()
+	d.Patrol(context.Background())
 	hb, _ = consul.ReadHeartbeat(solHome)
 	if hb.PatrolCount != 2 {
 		t.Errorf("patrol count: got %d, want 2", hb.PatrolCount)
@@ -1008,7 +1008,7 @@ func TestConsulLifecycleShutdown(t *testing.T) {
 	})
 
 	// Patrol should process shutdown.
-	err = d.Patrol()
+	err = d.Patrol(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "shutdown") {
 		t.Errorf("expected shutdown error, got: %v", err)
 	}
@@ -1284,7 +1284,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	})
 
 	// 3. Run consul patrol → detects stranded caravan.
-	d.Patrol()
+	d.Patrol(context.Background())
 
 	// 4. Verify CARAVAN_NEEDS_FEEDING message sent.
 	msgs, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
@@ -1356,7 +1356,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/E2EBot"})
 
 	// 10. Run consul patrol → recovers stale tether.
-	d.Patrol()
+	d.Patrol(context.Background())
 
 	// 11. Verify work item returned to open.
 	item, _ := worldStore2.GetWorkItem(idA)
