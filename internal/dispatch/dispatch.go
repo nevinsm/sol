@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/namepool"
@@ -550,7 +551,6 @@ type ResolveOpts struct {
 func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
 	agentID := opts.World + "/" + opts.AgentName
 	sessName := SessionName(opts.World, opts.AgentName)
-	worktreeDir := WorktreePath(opts.World, opts.AgentName)
 
 	// 1. Read tether — get work item ID.
 	workItemID, err := tether.Read(opts.World, opts.AgentName)
@@ -574,12 +574,22 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	}
 	defer agentLock.Release()
 
-	branchName := fmt.Sprintf("outpost/%s/%s", opts.AgentName, workItemID)
-
 	// Look up agent to determine role (needed for envoy resolve behavior).
 	agent, err := sphereStore.GetAgent(agentID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
+	}
+
+	// Compute worktree path and branch name based on role.
+	var worktreeDir string
+	var branchName string
+	switch agent.Role {
+	case "envoy":
+		worktreeDir = envoy.WorktreePath(opts.World, opts.AgentName)
+		branchName = fmt.Sprintf("envoy/%s/%s", opts.AgentName, workItemID)
+	default:
+		worktreeDir = WorktreePath(opts.World, opts.AgentName)
+		branchName = fmt.Sprintf("outpost/%s/%s", opts.AgentName, workItemID)
 	}
 
 	// Get the work item for output and conflict-resolution detection.
@@ -591,7 +601,7 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	// Detect conflict-resolution tasks and handle separately.
 	if item.HasLabel("conflict-resolution") {
 		return resolveConflictResolution(opts, item, branchName, worktreeDir,
-			agentID, sessName, worldStore, sphereStore, mgr, logger)
+			agentID, sessName, agent.Role, worldStore, sphereStore, mgr, logger)
 	}
 
 	// 2. Git operations in the worktree.
@@ -708,7 +718,7 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 // 3. Unblocks the original MR
 // 4. Closes the resolution work item
 func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchName, worktreeDir,
-	agentID, sessName string, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
+	agentID, sessName, role string, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
 
 	// 1. Git operations: add, commit, force-push (branch was rebased).
 	addCmd := exec.Command("git", "-C", worktreeDir, "add", "-A")
@@ -758,16 +768,20 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 	}
 
 	// 6. Stop session after a brief delay to allow final output.
-	// Session stop runs in background — CLI returns immediately.
-	// The goroutine is best-effort; consul will recover stale sessions.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		time.Sleep(1 * time.Second)
-		if err := mgr.Stop(sessName, true); err != nil {
-			fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
-		}
-	}()
+	// Envoys keep their session alive — they are human-supervised and persistent.
+	sessionKept := false
+	if role != "envoy" {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			time.Sleep(1 * time.Second)
+			if err := mgr.Stop(sessName, true); err != nil {
+				fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
+			}
+		}()
+	} else {
+		sessionKept = true
+	}
 
 	if logger != nil {
 		logger.Emit(events.EventResolve, "sol", opts.AgentName, "both", map[string]string{
@@ -783,6 +797,7 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 		AgentName:      opts.AgentName,
 		BranchName:     branchName,
 		MergeRequestID: "", // No new MR for conflict resolution.
+		SessionKept:    sessionKept,
 	}, nil
 }
 

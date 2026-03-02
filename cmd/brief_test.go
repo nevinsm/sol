@@ -253,3 +253,50 @@ func TestBriefCheckSaveStopHookActive(t *testing.T) {
 		t.Fatalf("expected exit 0 with SOL_STOP_HOOK_ACTIVE=true, got: %v", err)
 	}
 }
+
+func TestBriefInjectSkipSessionStart(t *testing.T) {
+	dir := t.TempDir()
+	briefDir := filepath.Join(dir, ".brief")
+	if err := os.MkdirAll(briefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	briefPath := filepath.Join(briefDir, "memory.md")
+	if err := os.WriteFile(briefPath, []byte("some context\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a known .session_start timestamp.
+	sessionStartPath := filepath.Join(briefDir, ".session_start")
+	original := "2026-01-01T00:00:00Z"
+	if err := os.WriteFile(sessionStartPath, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	solHome := filepath.Join(dir, "sol-home")
+	t.Setenv("SOL_HOME", solHome)
+
+	// Redirect stdout to discard.
+	oldStdout := os.Stdout
+	_, w, _ := os.Pipe()
+	os.Stdout = w
+
+	rootCmd.SetArgs([]string{"brief", "inject", "--path", briefPath, "--skip-session-start"})
+	err := rootCmd.Execute()
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify .session_start was NOT overwritten.
+	data, err := os.ReadFile(sessionStartPath)
+	if err != nil {
+		t.Fatalf("expected .session_start to still exist: %v", err)
+	}
+	if strings.TrimSpace(string(data)) != original {
+		t.Errorf("expected .session_start to be %q, got %q", original, strings.TrimSpace(string(data)))
+	}
+}

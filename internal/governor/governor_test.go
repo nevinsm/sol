@@ -338,6 +338,10 @@ func TestStart(t *testing.T) {
 		if hooks[1].Matcher != "compact" {
 			t.Errorf("compact hook matcher = %q, want \"compact\"", hooks[1].Matcher)
 		}
+		// Verify compact hook includes --skip-session-start.
+		if !strings.Contains(hooks[1].Command, "--skip-session-start") {
+			t.Errorf("compact hook missing --skip-session-start: %q", hooks[1].Command)
+		}
 	}
 	if hooks, ok := cfg.Hooks["Stop"]; !ok {
 		t.Error("no Stop hooks")

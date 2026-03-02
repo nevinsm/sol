@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -1211,8 +1212,8 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
-	// Create worktree dir with git repo.
-	worktreeDir := WorktreePath("ember", "Scout")
+	// Create worktree dir at envoy path with git repo.
+	worktreeDir := envoy.WorktreePath("ember", "Scout")
 	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
@@ -1240,6 +1241,12 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 	// SessionKept should be true.
 	if !result.SessionKept {
 		t.Error("expected SessionKept to be true for envoy resolve")
+	}
+
+	// Branch name should have envoy/ prefix.
+	expectedBranch := fmt.Sprintf("envoy/Scout/%s", itemID)
+	if result.BranchName != expectedBranch {
+		t.Errorf("expected branch %q, got %q", expectedBranch, result.BranchName)
 	}
 
 	// Work item should still be done.

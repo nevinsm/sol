@@ -258,7 +258,7 @@ You maintain accumulated context in `+"`"+`.brief/memory.md`+"`"+`.
    `+"`"+`cat $SOL_HOME/%s/outposts/%s/.tether`+"`"+` (if exists)
    When tethered, focus on that work item. Resolve when done.
 2. **Self-service**: Create your own work item with
-   `+"`"+`%s store create-item --world=%s --title="..." --description="..."`+"`"+`
+   `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+`
    Then tether yourself (the operator or governor will handle this).
 3. **Freeform**: No tether — exploration, research, design. No resolve needed.
 
@@ -275,7 +275,7 @@ When your tethered work is complete:
 
 ## Available Commands
 - `+"`"+`%s resolve --world=%s --agent=%s`+"`"+` — submit work for merge
-- `+"`"+`%s store create-item --world=%s --title="..." --description="..."`+"`"+` — create work item
+- `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+` — create work item
 - `+"`"+`%s escalate --world=%s --agent=%s --message="..."`+"`"+` — escalate to operator
 - `+"`"+`%s status %s`+"`"+` — check world status
 - `+"`"+`%s handoff --world=%s --from=%s --to=<agent> --message="..."`+"`"+` — hand off work
@@ -372,9 +372,9 @@ You maintain accumulated world knowledge in your brief.
 When the operator gives you a work request:
 1. Research the codebase (mirror) to understand scope
 2. Break the request into focused work items
-3. Create items: `+"`"+`%s store create-item --world=%s --title="..." --description="..."`+"`"+`
+3. Create items: `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+`
 4. Optionally group into a caravan:
-   `+"`"+`%s caravan create --name="..." --item=<id1> --item=<id2> --world=%s`+"`"+`
+   `+"`"+`%s caravan create "name" <item-id> [<item-id>] --world=%s`+"`"+`
 5. Dispatch to available agents:
    `+"`"+`%s cast --world=%s --work-item=<id>`+"`"+`
 6. Track progress: `+"`"+`%s status %s`+"`"+`
@@ -384,15 +384,15 @@ Full sol CLI reference for governor operations:
 
 `+"```"+`
 # Work Items
-%s store create-item --world=%s --title="..." --description="..."
-%s store list-items --world=%s [--state=open]
+%s store create --world=%s --title="..." --description="..."
+%s store list --world=%s [--status=open]
 
 # Dispatch
 %s cast --world=%s --work-item=<id> [--agent=<name>]
 
 # Caravans
-%s caravan create --name="..." --item=<id> [--item=<id>] --world=%s
-%s caravan add-items <caravan-id> --item=<id> --world=%s
+%s caravan create "name" <item-id> [<item-id>] --world=%s
+%s caravan add <caravan-id> <item-id> --world=%s
 %s caravan check <caravan-id>
 %s caravan status [--world=%s]
 %s caravan launch <caravan-id> --world=%s
@@ -415,15 +415,15 @@ Full sol CLI reference for governor operations:
 		ctx.World, ctx.World, // title, identity
 		ctx.World,             // world summary heading
 		ctx.MirrorDir, ctx.MirrorDir, // codebase research
-		sol, ctx.World, // dispatch: store create-item
+		sol, ctx.World, // dispatch: store create
 		sol, ctx.World, // dispatch: caravan create
 		sol, ctx.World, // dispatch: cast
 		sol, ctx.World, // dispatch: status
-		sol, ctx.World, // commands: store create-item
-		sol, ctx.World, // commands: store list-items
+		sol, ctx.World, // commands: store create
+		sol, ctx.World, // commands: store list
 		sol, ctx.World, // commands: cast
 		sol, ctx.World, // commands: caravan create
-		sol, ctx.World, // commands: caravan add-items
+		sol, ctx.World, // commands: caravan add
 		sol,            // commands: caravan check (no world arg)
 		sol, ctx.World, // commands: caravan status
 		sol, ctx.World, // commands: caravan launch

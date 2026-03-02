@@ -68,8 +68,14 @@ var resolveCmd = &cobra.Command{
 
 		fmt.Printf("Done: %s (%s)\n", result.WorkItemID, result.Title)
 		fmt.Printf("  Branch: %s\n", result.BranchName)
-		fmt.Printf("  Merge request: %s (queued)\n", result.MergeRequestID)
-		fmt.Printf("  Agent %s is now idle.\n", result.AgentName)
+		if result.MergeRequestID != "" {
+			fmt.Printf("  Merge request: %s (queued)\n", result.MergeRequestID)
+		}
+		if result.SessionKept {
+			fmt.Printf("  Agent %s resolved %q — session kept alive\n", result.AgentName, result.Title)
+		} else {
+			fmt.Printf("  Agent %s is now idle.\n", result.AgentName)
+		}
 		return nil
 	},
 }

@@ -318,6 +318,11 @@ func TestStart(t *testing.T) {
 		t.Error("no SessionStart hooks")
 	} else if len(hooks) != 2 {
 		t.Errorf("expected 2 SessionStart hooks, got %d", len(hooks))
+	} else {
+		// Verify compact hook includes --skip-session-start.
+		if !strings.Contains(hooks[1].Command, "--skip-session-start") {
+			t.Errorf("compact hook missing --skip-session-start: %q", hooks[1].Command)
+		}
 	}
 	if hooks, ok := cfg.Hooks["Stop"]; !ok {
 		t.Error("no Stop hooks")

@@ -204,7 +204,7 @@ func installHooks(govDir, world string) error {
 				{
 					Type:    "command",
 					Matcher: "compact",
-					Command: "sol brief inject --path=.brief/memory.md --max-lines=200",
+					Command: "sol brief inject --path=.brief/memory.md --max-lines=200 --skip-session-start",
 				},
 			},
 			"Stop": {

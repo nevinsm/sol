@@ -12,6 +12,7 @@ import (
 var (
 	briefInjectPath     string
 	briefInjectMaxLines int
+	briefSkipSession    bool
 )
 
 var briefCmd = &cobra.Command{
@@ -37,7 +38,10 @@ for the stop hook save check.`,
 		if content != "" {
 			fmt.Println(content)
 		}
-		return brief.WriteSessionStart(filepath.Dir(briefInjectPath))
+		if !briefSkipSession {
+			return brief.WriteSessionStart(filepath.Dir(briefInjectPath))
+		}
+		return nil
 	},
 }
 
@@ -84,4 +88,6 @@ func init() {
 	briefInjectCmd.Flags().StringVar(&briefInjectPath, "path", "", "path to brief file")
 	briefInjectCmd.MarkFlagRequired("path")
 	briefInjectCmd.Flags().IntVar(&briefInjectMaxLines, "max-lines", 200, "maximum lines before truncation")
+	briefInjectCmd.Flags().BoolVar(&briefSkipSession, "skip-session-start", false,
+		"skip writing session start timestamp (used for compact hooks)")
 }

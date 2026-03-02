@@ -251,6 +251,9 @@ var envoyBriefCmd = &cobra.Command{
 		if envoyBriefWorld == "" {
 			return fmt.Errorf("--world is required")
 		}
+		if err := config.RequireWorld(envoyBriefWorld); err != nil {
+			return err
+		}
 
 		briefPath := envoy.BriefPath(envoyBriefWorld, name)
 		data, err := os.ReadFile(briefPath)
@@ -280,6 +283,9 @@ var envoyDebriefCmd = &cobra.Command{
 		name := args[0]
 		if envoyDebriefWorld == "" {
 			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(envoyDebriefWorld); err != nil {
+			return err
 		}
 
 		briefPath := envoy.BriefPath(envoyDebriefWorld, name)

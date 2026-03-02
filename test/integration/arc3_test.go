@@ -560,6 +560,9 @@ func TestEnvoyHooksInstalled(t *testing.T) {
 	if !strings.Contains(settingsStr, "brief check-save") {
 		t.Errorf("settings.local.json missing brief check-save hook: %s", settingsStr)
 	}
+	if !strings.Contains(settingsStr, "--skip-session-start") {
+		t.Errorf("settings.local.json missing --skip-session-start in compact hook: %s", settingsStr)
+	}
 }
 
 // =============================================================================
@@ -748,6 +751,9 @@ func TestGovernorHooksInstalled(t *testing.T) {
 	if !strings.Contains(settingsStr, "refresh-mirror") {
 		t.Errorf("hooks missing refresh-mirror: %s", settingsStr)
 	}
+	if !strings.Contains(settingsStr, "--skip-session-start") {
+		t.Errorf("hooks missing --skip-session-start in compact hook: %s", settingsStr)
+	}
 }
 
 // =============================================================================
@@ -824,21 +830,21 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 		t.Fatalf("update work item: %v", err)
 	}
 
-	// Set up outpost worktree with a git repo (Resolve uses outpost path).
-	outpostWorktree := filepath.Join(gtHome, "myworld", "outposts", "scout", "worktree")
-	os.MkdirAll(outpostWorktree, 0o755)
-	gitRun(t, outpostWorktree, "init")
-	gitRun(t, outpostWorktree, "config", "user.email", "test@test.com")
-	gitRun(t, outpostWorktree, "config", "user.name", "Test")
-	if err := os.WriteFile(filepath.Join(outpostWorktree, "work.txt"), []byte("envoy work"), 0o644); err != nil {
+	// Set up envoy worktree with a git repo.
+	envoyWorktree := filepath.Join(gtHome, "myworld", "envoys", "scout", "worktree")
+	os.MkdirAll(envoyWorktree, 0o755)
+	gitRun(t, envoyWorktree, "init")
+	gitRun(t, envoyWorktree, "config", "user.email", "test@test.com")
+	gitRun(t, envoyWorktree, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(envoyWorktree, "work.txt"), []byte("envoy work"), 0o644); err != nil {
 		t.Fatalf("write work file: %v", err)
 	}
-	gitRun(t, outpostWorktree, "add", ".")
-	gitRun(t, outpostWorktree, "commit", "-m", "initial")
+	gitRun(t, envoyWorktree, "add", ".")
+	gitRun(t, envoyWorktree, "commit", "-m", "initial")
 	// Add a bare remote for push.
 	bareRemote := t.TempDir()
 	gitRun(t, bareRemote, "init", "--bare")
-	gitRun(t, outpostWorktree, "remote", "add", "origin", bareRemote)
+	gitRun(t, envoyWorktree, "remote", "add", "origin", bareRemote)
 
 	// Resolve.
 	out, err = runGT(t, gtHome, "resolve", "--world=myworld", "--agent=scout")

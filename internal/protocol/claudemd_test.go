@@ -96,11 +96,11 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 
 	// Verify sol CLI commands.
 	for _, cmd := range []string{
-		"sol store create-item",
-		"sol store list-items",
+		"sol store create",
+		"sol store list",
 		"sol cast",
 		"sol caravan create",
-		"sol caravan add-items",
+		"sol caravan add",
 		"sol caravan check",
 		"sol caravan status",
 		"sol caravan launch",
