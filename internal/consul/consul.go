@@ -207,14 +207,16 @@ func (d *Consul) Patrol(ctx context.Context) error {
 	if shutdown {
 		status = "stopping"
 	}
-	_ = WriteHeartbeat(d.config.SolHome, &Heartbeat{
+	if err := WriteHeartbeat(d.config.SolHome, &Heartbeat{
 		Timestamp:    time.Now().UTC(),
 		PatrolCount:  d.patrolCount,
 		Status:       status,
 		StaleTethers: staleTethers,
 		CaravanFeeds: caravanFeeds,
 		Escalations:  openEsc,
-	})
+	}); err != nil {
+		d.logInfo("consul_error", map[string]any{"action": "write_heartbeat", "error": err.Error()})
+	}
 
 	// 6. Emit patrol event.
 	if d.logger != nil {

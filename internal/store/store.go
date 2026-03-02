@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/nevinsm/sol/internal/config"
@@ -27,7 +28,9 @@ func OpenWorld(world string) (*Store, error) {
 		return nil, fmt.Errorf("failed to open world database %q: %w", world, err)
 	}
 	if err := s.migrateWorld(); err != nil {
-		s.Close()
+		if closeErr := s.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "store: close failed after migration error: %v\n", closeErr)
+		}
 		return nil, fmt.Errorf("failed to migrate world database %q: %w", world, err)
 	}
 	return s, nil
@@ -41,7 +44,9 @@ func OpenSphere() (*Store, error) {
 		return nil, fmt.Errorf("failed to open sphere database: %w", err)
 	}
 	if err := s.migrateSphere(); err != nil {
-		s.Close()
+		if closeErr := s.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "store: close failed after migration error: %v\n", closeErr)
+		}
 		return nil, fmt.Errorf("failed to migrate sphere database: %w", err)
 	}
 	return s, nil

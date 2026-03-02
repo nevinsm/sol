@@ -2,6 +2,7 @@ package events
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -91,7 +92,9 @@ func (l *Logger) Log(event Event) {
 	if err != nil {
 		return
 	}
-	f.Write(append(data, '\n'))
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		fmt.Fprintf(os.Stderr, "events: failed to write event: %v\n", err)
+	}
 }
 
 // Emit is a convenience method for logging common events.

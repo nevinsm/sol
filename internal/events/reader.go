@@ -120,11 +120,11 @@ opened:
 			pathInfo, pathErr := os.Stat(r.path)
 			fdInfo, fdErr := f.Stat()
 			if pathErr == nil && fdErr == nil && !os.SameFile(pathInfo, fdInfo) {
-				f.Close()
 				newF, err := os.Open(r.path)
 				if err != nil {
 					continue // file may be temporarily unavailable during rename
 				}
+				f.Close()
 				f = newF
 				offset = 0
 			}
@@ -156,6 +156,11 @@ opened:
 				case <-ctx.Done():
 					return ctx.Err()
 				}
+			}
+			if err := scanner.Err(); err != nil {
+				// Log but continue — DEGRADE pattern. Don't update offset
+				// so we re-read on next tick.
+				continue
 			}
 
 			// Update offset.
