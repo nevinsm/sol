@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -62,16 +63,26 @@ func (r *Forge) Release(mrID string) error {
 
 // RunGates runs quality gates in the worktree and returns results.
 func (r *Forge) RunGates() ([]GateResult, error) {
+	timeout := 5 * time.Minute // default
+	if r.cfg.GateTimeout != "" {
+		parsed, err := time.ParseDuration(r.cfg.GateTimeout)
+		if err == nil {
+			timeout = parsed
+		}
+	}
+
 	var results []GateResult
 	for _, gate := range r.cfg.QualityGates {
 		start := time.Now()
-		cmd := exec.Command("sh", "-c", gate)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		cmd := exec.CommandContext(ctx, "sh", "-c", gate)
 		cmd.Dir = r.worktree
 		cmd.Env = append(os.Environ(),
 			"SOL_HOME="+config.Home(),
 			"SOL_WORLD="+r.world,
 		)
 		output, err := cmd.CombinedOutput()
+		cancel()
 		elapsed := time.Since(start)
 
 		result := GateResult{

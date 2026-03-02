@@ -605,7 +605,9 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	// 7. Stop session — use a brief delay then stop in background.
 	go func() {
 		time.Sleep(1 * time.Second)
-		mgr.Stop(sessName, true)
+		if err := mgr.Stop(sessName, true); err != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
+		}
 	}()
 
 	if logger != nil {
@@ -685,7 +687,9 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 	// 6. Stop session.
 	go func() {
 		time.Sleep(1 * time.Second)
-		mgr.Stop(sessName, true)
+		if err := mgr.Stop(sessName, true); err != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
+		}
 	}()
 
 	if logger != nil {

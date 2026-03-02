@@ -3,7 +3,6 @@ package forge
 import (
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -314,7 +313,3 @@ func TestMarkMergedClosesWorkItem(t *testing.T) {
 	}
 }
 
-func TestPushGitOps(t *testing.T) {
-	// Test that Push actually pushes with exec, tested via setupGitTest helper.
-	_, _ = exec.Command("git", "--version").CombinedOutput()
-}

@@ -45,6 +45,7 @@ type Config struct {
 	MaxAttempts  int           // max merge attempts before marking failed (default: 3)
 	TargetBranch string        // branch to merge into (default: "main")
 	QualityGates []string      // commands to run as quality gates
+	GateTimeout  string        // duration string for gate timeout, e.g. "5m"
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -55,6 +56,7 @@ func DefaultConfig() Config {
 		MaxAttempts:  3,
 		TargetBranch: "main",
 		QualityGates: []string{"go test ./..."},
+		GateTimeout:  "5m",
 	}
 }
 

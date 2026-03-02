@@ -31,6 +31,7 @@ type AgentsSection struct {
 type ForgeSection struct {
 	TargetBranch string   `toml:"target_branch" json:"target_branch"`
 	QualityGates []string `toml:"quality_gates" json:"quality_gates"`
+	GateTimeout  string   `toml:"gate_timeout" json:"gate_timeout"` // duration string, e.g. "5m"
 }
 
 // DefaultWorldConfig returns a WorldConfig with built-in defaults.
@@ -41,6 +42,7 @@ func DefaultWorldConfig() WorldConfig {
 		},
 		Forge: ForgeSection{
 			TargetBranch: "main",
+			GateTimeout:  "5m",
 		},
 	}
 }

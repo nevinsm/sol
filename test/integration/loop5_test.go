@@ -3,7 +3,6 @@ package integration
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -1269,5 +1268,3 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	assertEventEmitted(t, solHome, events.EventConsulStaleTether)
 }
 
-// Ensure unused imports don't cause issues.
-var _ = fmt.Sprintf

@@ -154,12 +154,8 @@ func TestFlockSerialization(t *testing.T) {
 	sphereStore.CreateAgent("Alpha", "ember", "agent")
 	sphereStore.CreateAgent("Beta", "ember", "agent")
 
-	// Build the sol binary for subprocess testing.
-	binary := filepath.Join(t.TempDir(), "sol")
-	buildCmd := exec.Command("go", "build", "-o", binary, "github.com/nevinsm/sol")
-	if out, err := buildCmd.CombinedOutput(); err != nil {
-		t.Fatalf("build sol binary: %s: %v", out, err)
-	}
+	// Use the shared sol binary for subprocess testing.
+	binary := gtBin(t)
 
 	// Launch two subprocesses concurrently, each trying to cast the same
 	// work item with a different agent. Flock serialization means exactly

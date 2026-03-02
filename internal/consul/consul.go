@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -95,6 +94,13 @@ func (d *Consul) SetWorldOpener(opener WorldOpener) {
 	d.worldOpener = opener
 }
 
+// logInfo emits a structured event log if a logger is configured.
+func (d *Consul) logInfo(eventType string, meta map[string]any) {
+	if d.logger != nil {
+		d.logger.Emit(eventType, "sphere/consul", "sphere/consul", "feed", meta)
+	}
+}
+
 // Register creates or updates the consul's agent record.
 // Agent ID: "sphere/consul", role: "consul", state: "working".
 func (d *Consul) Register() error {
@@ -179,27 +185,27 @@ func (d *Consul) Patrol() error {
 	// 1. Recover stale tethers.
 	recovered, err := d.recoverStaleTethers()
 	if err != nil {
-		log.Printf("consul: stale tether recovery error: %v", err)
+		d.logInfo("consul_error", map[string]any{"action": "stale_tether_recovery", "error": err.Error()})
 	}
 	staleTethers = recovered
 
 	// 2. Feed stranded caravans.
 	fed, err := d.feedStrandedCaravans()
 	if err != nil {
-		log.Printf("consul: caravan feeding error: %v", err)
+		d.logInfo("consul_error", map[string]any{"action": "caravan_feeding", "error": err.Error()})
 	}
 	caravanFeeds = fed
 
 	// 3. Process lifecycle requests.
 	shutdown, err = d.processLifecycleRequests()
 	if err != nil {
-		log.Printf("consul: lifecycle request error: %v", err)
+		d.logInfo("consul_error", map[string]any{"action": "lifecycle_requests", "error": err.Error()})
 	}
 
 	// 4. Count open escalations.
 	openEsc, err := d.sphereStore.CountOpen()
 	if err != nil {
-		log.Printf("consul: count escalations error: %v", err)
+		d.logInfo("consul_error", map[string]any{"action": "count_escalations", "error": err.Error()})
 	}
 
 	// 5. Write heartbeat.
@@ -220,20 +226,20 @@ func (d *Consul) Patrol() error {
 	if d.logger != nil {
 		d.logger.Emit(events.EventConsulPatrol, "sphere/consul", "sphere/consul", "feed",
 			map[string]any{
-				"patrol_count":  fmt.Sprintf("%d", d.patrolCount),
-				"stale_tethers": fmt.Sprintf("%d", staleTethers),
-				"caravan_feeds": fmt.Sprintf("%d", caravanFeeds),
-				"escalations":   fmt.Sprintf("%d", openEsc),
+				"patrol_count":  d.patrolCount,
+				"stale_tethers": staleTethers,
+				"caravan_feeds": caravanFeeds,
+				"escalations":   openEsc,
 			})
 	}
 
 	// 7. Log patrol summary.
-	log.Printf("[%s] Patrol #%d: %d stale tether%s recovered, %d caravan feed%s, %d open escalation%s",
-		time.Now().UTC().Format(time.RFC3339),
-		d.patrolCount,
-		staleTethers, plural(staleTethers),
-		caravanFeeds, plural(caravanFeeds),
-		openEsc, plural(openEsc))
+	d.logInfo("consul_patrol", map[string]any{
+		"patrol_count":  d.patrolCount,
+		"stale_tethers": staleTethers,
+		"caravan_feeds": caravanFeeds,
+		"escalations":   openEsc,
+	})
 
 	// If shutdown was requested, return a sentinel error that Run will detect.
 	if shutdown {
@@ -293,7 +299,7 @@ func (d *Consul) recoverStaleTethers() (int, error) {
 
 		// This tether is stale — recover it.
 		if err := d.recoverOneTether(agent); err != nil {
-			log.Printf("consul: failed to recover stale tether for %s: %v", agent.ID, err)
+			d.logInfo("consul_error", map[string]any{"action": "recover_stale_tether", "agent_id": agent.ID, "error": err.Error()})
 			continue // DEGRADE: skip this agent, try the next
 		}
 		recovered++
@@ -304,7 +310,7 @@ func (d *Consul) recoverStaleTethers() (int, error) {
 
 // recoverOneTether recovers a single stale tether.
 func (d *Consul) recoverOneTether(agent store.Agent) error {
-	log.Printf("consul: recovering stale tether for %s (work item: %s)", agent.ID, agent.TetherItem)
+	d.logInfo("consul_recover_tether", map[string]any{"agent_id": agent.ID, "work_item_id": agent.TetherItem})
 
 	// 1. Open the world store to update the work item.
 	worldStore, err := d.worldOpener(agent.World)
@@ -368,7 +374,7 @@ func (d *Consul) feedStrandedCaravans() (int, error) {
 			return d.worldOpener(world)
 		})
 		if err != nil {
-			log.Printf("consul: failed to check caravan %s readiness: %v", caravan.ID, err)
+			d.logInfo("consul_error", map[string]any{"action": "check_caravan_readiness", "caravan_id": caravan.ID, "error": err.Error()})
 			continue // DEGRADE
 		}
 
@@ -388,7 +394,7 @@ func (d *Consul) feedStrandedCaravans() (int, error) {
 		// to prevent duplicates.
 		pending, err := d.sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
 		if err != nil {
-			log.Printf("consul: failed to check pending messages: %v", err)
+			d.logInfo("consul_error", map[string]any{"action": "check_pending_messages", "error": err.Error()})
 			continue
 		}
 
@@ -412,7 +418,7 @@ func (d *Consul) feedStrandedCaravans() (int, error) {
 				ReadyCount: readyCount,
 			},
 		); err != nil {
-			log.Printf("consul: failed to send caravan feed message for %s: %v", caravan.ID, err)
+			d.logInfo("consul_error", map[string]any{"action": "send_caravan_feed", "caravan_id": caravan.ID, "error": err.Error()})
 			continue
 		}
 
@@ -421,7 +427,7 @@ func (d *Consul) feedStrandedCaravans() (int, error) {
 			d.logger.Emit(events.EventConsulCaravanFeed, "sphere/consul", "sphere/consul", "both",
 				map[string]any{
 					"caravan_id":  caravan.ID,
-					"ready_count": fmt.Sprintf("%d", readyCount),
+					"ready_count": readyCount,
 				})
 		}
 
@@ -449,9 +455,9 @@ func (d *Consul) processLifecycleRequests() (shutdown bool, err error) {
 		switch msg.Subject {
 		case "SHUTDOWN":
 			shutdown = true
-			log.Printf("consul: shutdown requested via message %s", msg.ID)
+			d.logInfo("consul_lifecycle", map[string]any{"action": "shutdown_requested", "message_id": msg.ID})
 		case "CYCLE":
-			log.Printf("consul: cycle requested via message %s", msg.ID)
+			d.logInfo("consul_lifecycle", map[string]any{"action": "cycle_requested", "message_id": msg.ID})
 			// No action needed — the patrol just happened.
 		default:
 			// Unknown message — ack and ignore.
@@ -459,7 +465,7 @@ func (d *Consul) processLifecycleRequests() (shutdown bool, err error) {
 
 		// Acknowledge the message.
 		if err := d.sphereStore.AckMessage(msg.ID); err != nil {
-			log.Printf("consul: failed to ack message %s: %v", msg.ID, err)
+			d.logInfo("consul_error", map[string]any{"action": "ack_message", "message_id": msg.ID, "error": err.Error()})
 		}
 	}
 

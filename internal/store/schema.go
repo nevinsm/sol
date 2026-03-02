@@ -65,7 +65,7 @@ CREATE INDEX IF NOT EXISTS idx_deps_from ON dependencies(from_id);
 CREATE INDEX IF NOT EXISTS idx_deps_to ON dependencies(to_id);
 `
 
-var worldSchemaV5 = `CREATE INDEX IF NOT EXISTS idx_mr_blocked_by ON merge_requests(blocked_by);`
+const worldSchemaV5 = `CREATE INDEX IF NOT EXISTS idx_mr_blocked_by ON merge_requests(blocked_by);`
 
 const sphereSchemaV1 = `
 CREATE TABLE IF NOT EXISTS agents (
@@ -206,7 +206,7 @@ CREATE TABLE IF NOT EXISTS worlds (
 );
 `
 
-var sphereSchemaV6 = `
+const sphereSchemaV6 = `
 CREATE INDEX IF NOT EXISTS idx_agents_world_state ON agents(world, state);
 CREATE INDEX IF NOT EXISTS idx_escalations_status ON escalations(status);
 CREATE INDEX IF NOT EXISTS idx_caravan_items_world ON caravan_items(world);
