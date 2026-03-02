@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -39,8 +40,8 @@ func (s *Store) GetWorld(name string) (*World, error) {
 		`SELECT name, source_repo, created_at, updated_at
 		 FROM worlds WHERE name = ?`, name,
 	).Scan(&w.Name, &w.SourceRepo, &createdAt, &updatedAt)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("world %q not found", name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("world %q: %w", name, ErrNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get world %q: %w", name, err)
@@ -110,7 +111,7 @@ func (s *Store) UpdateWorldRepo(name, sourceRepo string) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("world %q not found", name)
+		return fmt.Errorf("world %q: %w", name, ErrNotFound)
 	}
 	return nil
 }

@@ -22,9 +22,9 @@ func TestCreateMergeRequest(t *testing.T) {
 	}
 
 	// Verify ID format.
-	pattern := regexp.MustCompile(`^mr-[0-9a-f]{8}$`)
+	pattern := regexp.MustCompile(`^mr-[0-9a-f]{16}$`)
 	if !pattern.MatchString(mrID) {
-		t.Fatalf("MR ID %q does not match pattern mr-[0-9a-f]{8}", mrID)
+		t.Fatalf("MR ID %q does not match pattern mr-[0-9a-f]{16}", mrID)
 	}
 
 	// Get it back and verify all fields.
@@ -358,7 +358,7 @@ func TestGetMergeRequestNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nonexistent merge request")
 	}
-	expected := `merge request "mr-nonexist" not found`
+	expected := `merge request "mr-nonexist": not found`
 	if err.Error() != expected {
 		t.Fatalf("expected error %q, got %q", expected, err.Error())
 	}

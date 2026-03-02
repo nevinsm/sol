@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -32,9 +33,9 @@ type CaravanItemStatus struct {
 	Ready          bool   `json:"ready"`             // true if all dependencies are satisfied
 }
 
-// generateCaravanID returns a new caravan ID in the format "car-" + 8 hex chars.
+// generateCaravanID returns a new caravan ID in the format "car-" + 16 hex chars.
 func generateCaravanID() (string, error) {
-	b := make([]byte, 4)
+	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("failed to generate caravan ID: %w", err)
 	}
@@ -70,8 +71,8 @@ func (s *Store) GetCaravan(id string) (*Caravan, error) {
 	err := s.db.QueryRow(
 		`SELECT id, name, status, owner, created_at, closed_at FROM caravans WHERE id = ?`, id,
 	).Scan(&c.ID, &c.Name, &c.Status, &owner, &createdAt, &closedAt)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("caravan %q not found", id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("caravan %q: %w", id, ErrNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get caravan %q: %w", id, err)
@@ -142,9 +143,18 @@ func (s *Store) ListCaravans(status string) ([]Caravan, error) {
 	return caravans, nil
 }
 
+var validCaravanStatuses = map[string]bool{
+	"open":   true,
+	"ready":  true,
+	"closed": true,
+}
+
 // UpdateCaravanStatus sets the caravan's status. If status is "closed",
 // also sets closed_at.
 func (s *Store) UpdateCaravanStatus(id, status string) error {
+	if !validCaravanStatuses[status] {
+		return fmt.Errorf("invalid caravan status %q", status)
+	}
 	var result sql.Result
 	var err error
 
@@ -169,7 +179,7 @@ func (s *Store) UpdateCaravanStatus(id, status string) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("caravan %q not found", id)
+		return fmt.Errorf("caravan %q: %w", id, ErrNotFound)
 	}
 	return nil
 }

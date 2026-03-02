@@ -134,47 +134,57 @@ func (s *Store) migrateWorld() error {
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
+	if v >= 5 {
+		return nil // already at latest version
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin migration transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	if v < 1 {
-		if _, err := s.db.Exec(worldSchemaV1); err != nil {
+		if _, err := tx.Exec(worldSchemaV1); err != nil {
 			return fmt.Errorf("failed to create world schema v1: %w", err)
 		}
 	}
 	if v < 2 {
-		if _, err := s.db.Exec(worldSchemaV2); err != nil {
+		if _, err := tx.Exec(worldSchemaV2); err != nil {
 			return fmt.Errorf("failed to create world schema v2: %w", err)
 		}
 	}
 	if v < 3 {
-		exists, err := columnExists(s.db, "merge_requests", "blocked_by")
+		exists, err := columnExists(tx, "merge_requests", "blocked_by")
 		if err != nil {
 			return fmt.Errorf("failed to check merge_requests schema: %w", err)
 		}
 		if !exists {
-			if _, err := s.db.Exec(worldSchemaV3); err != nil {
+			if _, err := tx.Exec(worldSchemaV3); err != nil {
 				return fmt.Errorf("failed to apply world schema v3: %w", err)
 			}
 		}
 	}
 	if v < 4 {
-		if _, err := s.db.Exec(worldSchemaV4); err != nil {
+		if _, err := tx.Exec(worldSchemaV4); err != nil {
 			return fmt.Errorf("failed to apply world schema v4: %w", err)
 		}
 	}
 	if v < 5 {
-		if _, err := s.db.Exec(worldSchemaV5); err != nil {
+		if _, err := tx.Exec(worldSchemaV5); err != nil {
 			return fmt.Errorf("failed to apply world schema v5: %w", err)
 		}
 	}
 	if v < 1 {
-		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (5)"); err != nil {
+		if _, err := tx.Exec("INSERT INTO schema_version VALUES (5)"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
-	} else if v < 5 {
-		if _, err := s.db.Exec("UPDATE schema_version SET version = 5"); err != nil {
+	} else {
+		if _, err := tx.Exec("UPDATE schema_version SET version = 5"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 const sphereSchemaV3 = `
@@ -261,101 +271,111 @@ func (s *Store) migrateSphere() error {
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
+	if v >= 6 {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin migration transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	if v < 1 {
-		if _, err := s.db.Exec(sphereSchemaV1); err != nil {
+		if _, err := tx.Exec(sphereSchemaV1); err != nil {
 			return fmt.Errorf("failed to create sphere schema v1: %w", err)
 		}
 	}
 	if v < 2 {
-		if _, err := s.db.Exec(sphereSchemaV2); err != nil {
+		if _, err := tx.Exec(sphereSchemaV2); err != nil {
 			return fmt.Errorf("failed to create sphere schema v2: %w", err)
 		}
 	}
 	if v < 3 {
-		if _, err := s.db.Exec(sphereSchemaV3); err != nil {
+		if _, err := tx.Exec(sphereSchemaV3); err != nil {
 			return fmt.Errorf("failed to create sphere schema v3: %w", err)
 		}
 	}
 	if v < 4 {
 		// Rename agents.hook_item → tether_item (if not already renamed).
-		exists, err := columnExists(s.db, "agents", "hook_item")
+		exists, err := columnExists(tx, "agents", "hook_item")
 		if err != nil {
 			return fmt.Errorf("V4 migration: failed to check column agents.hook_item: %w", err)
 		}
 		if exists {
-			if _, err := s.db.Exec(`ALTER TABLE agents RENAME COLUMN hook_item TO tether_item`); err != nil {
+			if _, err := tx.Exec(`ALTER TABLE agents RENAME COLUMN hook_item TO tether_item`); err != nil {
 				return fmt.Errorf("failed to rename agents.hook_item: %w", err)
 			}
 		}
 		// Rename agents.rig → world (if not already renamed).
-		exists, err = columnExists(s.db, "agents", "rig")
+		exists, err = columnExists(tx, "agents", "rig")
 		if err != nil {
 			return fmt.Errorf("V4 migration: failed to check column agents.rig: %w", err)
 		}
 		if exists {
-			if _, err := s.db.Exec(`ALTER TABLE agents RENAME COLUMN rig TO world`); err != nil {
+			if _, err := tx.Exec(`ALTER TABLE agents RENAME COLUMN rig TO world`); err != nil {
 				return fmt.Errorf("failed to rename agents.rig: %w", err)
 			}
 		}
 		// Rename convoys → caravans (if not already renamed).
-		exists, err = tableExists(s.db, "convoys")
+		exists, err = tableExists(tx, "convoys")
 		if err != nil {
 			return fmt.Errorf("V4 migration: failed to check table convoys: %w", err)
 		}
 		if exists {
-			if _, err := s.db.Exec(`ALTER TABLE convoys RENAME TO caravans`); err != nil {
+			if _, err := tx.Exec(`ALTER TABLE convoys RENAME TO caravans`); err != nil {
 				return fmt.Errorf("failed to rename convoys: %w", err)
 			}
 		}
 		// Rename convoy_items → caravan_items (if not already renamed).
-		exists, err = tableExists(s.db, "convoy_items")
+		exists, err = tableExists(tx, "convoy_items")
 		if err != nil {
 			return fmt.Errorf("V4 migration: failed to check table convoy_items: %w", err)
 		}
 		if exists {
-			if _, err := s.db.Exec(`ALTER TABLE convoy_items RENAME TO caravan_items`); err != nil {
+			if _, err := tx.Exec(`ALTER TABLE convoy_items RENAME TO caravan_items`); err != nil {
 				return fmt.Errorf("failed to rename convoy_items: %w", err)
 			}
 		}
 		// Rename caravan_items.convoy_id → caravan_id (if not already renamed).
-		exists, err = columnExists(s.db, "caravan_items", "convoy_id")
+		exists, err = columnExists(tx, "caravan_items", "convoy_id")
 		if err != nil {
 			return fmt.Errorf("V4 migration: failed to check column caravan_items.convoy_id: %w", err)
 		}
 		if exists {
-			if _, err := s.db.Exec(`ALTER TABLE caravan_items RENAME COLUMN convoy_id TO caravan_id`); err != nil {
+			if _, err := tx.Exec(`ALTER TABLE caravan_items RENAME COLUMN convoy_id TO caravan_id`); err != nil {
 				return fmt.Errorf("failed to rename caravan_items.convoy_id: %w", err)
 			}
 		}
 		// Rename caravan_items.rig → world (if not already renamed).
-		exists, err = columnExists(s.db, "caravan_items", "rig")
+		exists, err = columnExists(tx, "caravan_items", "rig")
 		if err != nil {
 			return fmt.Errorf("V4 migration: failed to check column caravan_items.rig: %w", err)
 		}
 		if exists {
-			if _, err := s.db.Exec(`ALTER TABLE caravan_items RENAME COLUMN rig TO world`); err != nil {
+			if _, err := tx.Exec(`ALTER TABLE caravan_items RENAME COLUMN rig TO world`); err != nil {
 				return fmt.Errorf("failed to rename caravan_items.rig: %w", err)
 			}
 		}
 	}
 	if v < 5 {
-		if _, err := s.db.Exec(sphereSchemaV5); err != nil {
+		if _, err := tx.Exec(sphereSchemaV5); err != nil {
 			return fmt.Errorf("failed to apply sphere schema v5: %w", err)
 		}
 	}
 	if v < 6 {
-		if _, err := s.db.Exec(sphereSchemaV6); err != nil {
+		if _, err := tx.Exec(sphereSchemaV6); err != nil {
 			return fmt.Errorf("failed to apply sphere schema v6: %w", err)
 		}
 	}
 	if v < 1 {
-		if _, err := s.db.Exec("INSERT INTO schema_version VALUES (6)"); err != nil {
+		if _, err := tx.Exec("INSERT INTO schema_version VALUES (6)"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
-	} else if v < 6 {
-		if _, err := s.db.Exec("UPDATE schema_version SET version = 6"); err != nil {
+	} else {
+		if _, err := tx.Exec("UPDATE schema_version SET version = 6"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	}
-	return nil
+	return tx.Commit()
 }

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -40,9 +41,9 @@ type WorkItemUpdates struct {
 	Priority int    // 0 = no change
 }
 
-// generateID returns a new work item ID in the format "sol-" + 8 hex chars.
+// generateID returns a new work item ID in the format "sol-" + 16 hex chars.
 func generateID() (string, error) {
-	b := make([]byte, 4)
+	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("failed to generate work item ID: %w", err)
 	}
@@ -164,8 +165,8 @@ func (s *Store) GetWorkItem(id string) (*WorkItem, error) {
 		`SELECT id, title, description, status, priority, assignee, parent_id, created_by, created_at, updated_at, closed_at
 		 FROM work_items WHERE id = ?`, id,
 	).Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.CreatedBy, &createdAt, &updatedAt, &closedAt)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("work item %q not found", id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("work item %q: %w", id, ErrNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get work item %q: %w", id, err)
@@ -373,7 +374,7 @@ func (s *Store) UpdateWorkItem(id string, updates WorkItemUpdates) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("work item %q not found", id)
+		return fmt.Errorf("work item %q: %w", id, ErrNotFound)
 	}
 	return nil
 }
@@ -394,7 +395,7 @@ func (s *Store) CloseWorkItem(id string) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("work item %q not found", id)
+		return fmt.Errorf("work item %q: %w", id, ErrNotFound)
 	}
 	return nil
 }

@@ -32,9 +32,9 @@ type MessageFilters struct {
 	ThreadID  string // filter by thread (empty = all)
 }
 
-// generateMessageID returns a new message ID in the format "msg-" + 8 hex chars.
+// generateMessageID returns a new message ID in the format "msg-" + 16 hex chars.
 func generateMessageID() (string, error) {
-	b := make([]byte, 4)
+	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("failed to generate message ID: %w", err)
 	}
@@ -90,7 +90,7 @@ func (s *Store) ReadMessage(id string) (*Message, error) {
 		return nil, fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return nil, fmt.Errorf("message %q not found", id)
+		return nil, fmt.Errorf("message %q: %w", id, ErrNotFound)
 	}
 
 	// Fetch the message.
@@ -141,7 +141,7 @@ func (s *Store) AckMessage(id string) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("message %q not found", id)
+		return fmt.Errorf("message %q: %w", id, ErrNotFound)
 	}
 	return nil
 }

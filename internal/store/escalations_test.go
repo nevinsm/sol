@@ -15,9 +15,9 @@ func TestCreateEscalation(t *testing.T) {
 	}
 
 	// Verify ID format.
-	pattern := regexp.MustCompile(`^esc-[0-9a-f]{8}$`)
+	pattern := regexp.MustCompile(`^esc-[0-9a-f]{16}$`)
 	if !pattern.MatchString(id) {
-		t.Fatalf("ID %q does not match pattern esc-[0-9a-f]{8}", id)
+		t.Fatalf("ID %q does not match pattern esc-[0-9a-f]{16}", id)
 	}
 
 	// Verify with GetEscalation.

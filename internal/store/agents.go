@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -43,8 +44,8 @@ func (s *Store) GetAgent(id string) (*Agent, error) {
 		`SELECT id, name, world, role, state, tether_item, created_at, updated_at
 		 FROM agents WHERE id = ?`, id,
 	).Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &tetherItem, &createdAt, &updatedAt)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("agent %q not found", id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("agent %q: %w", id, ErrNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get agent %q: %w", id, err)
@@ -63,9 +64,18 @@ func (s *Store) GetAgent(id string) (*Agent, error) {
 	return a, nil
 }
 
+var validAgentStates = map[string]bool{
+	"idle":    true,
+	"working": true,
+	"stalled": true,
+}
+
 // UpdateAgentState updates an agent's state and optionally its tether_item.
 // Pass empty tetherItem to clear it, or a work item ID to set it.
 func (s *Store) UpdateAgentState(id, state, tetherItem string) error {
+	if !validAgentStates[state] {
+		return fmt.Errorf("invalid agent state %q", state)
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	var result sql.Result
 	var err error
@@ -90,7 +100,7 @@ func (s *Store) UpdateAgentState(id, state, tetherItem string) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("agent %q not found", id)
+		return fmt.Errorf("agent %q: %w", id, ErrNotFound)
 	}
 	return nil
 }
@@ -163,7 +173,7 @@ func (s *Store) FindIdleAgent(world string) (*Agent, error) {
 		 FROM agents WHERE world = ? AND role = 'agent' AND state = 'idle'
 		 ORDER BY name LIMIT 1`, world,
 	).Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &tetherItem, &createdAt, &updatedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {

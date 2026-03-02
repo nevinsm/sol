@@ -2,12 +2,16 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 
 	"github.com/nevinsm/sol/internal/config"
 	_ "modernc.org/sqlite"
 )
+
+// ErrNotFound is returned when a requested entity does not exist.
+var ErrNotFound = errors.New("not found")
 
 // Store wraps a SQLite database connection.
 type Store struct {

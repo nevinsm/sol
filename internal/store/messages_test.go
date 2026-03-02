@@ -16,9 +16,9 @@ func TestSendMessage(t *testing.T) {
 	}
 
 	// Verify ID format.
-	pattern := regexp.MustCompile(`^msg-[0-9a-f]{8}$`)
+	pattern := regexp.MustCompile(`^msg-[0-9a-f]{16}$`)
 	if !pattern.MatchString(id) {
-		t.Fatalf("ID %q does not match pattern msg-[0-9a-f]{8}", id)
+		t.Fatalf("ID %q does not match pattern msg-[0-9a-f]{16}", id)
 	}
 
 	// Read it back and verify all fields.

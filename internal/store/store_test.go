@@ -1,9 +1,11 @@
 package store
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -407,7 +409,7 @@ func TestLabels(t *testing.T) {
 func TestIDGeneration(t *testing.T) {
 	s := setupWorld(t)
 
-	pattern := regexp.MustCompile(`^sol-[0-9a-f]{8}$`)
+	pattern := regexp.MustCompile(`^sol-[0-9a-f]{16}$`)
 	seen := make(map[string]bool)
 
 	for i := 0; i < 100; i++ {
@@ -416,7 +418,7 @@ func TestIDGeneration(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !pattern.MatchString(id) {
-			t.Fatalf("ID %q does not match pattern sol-[0-9a-f]{8}", id)
+			t.Fatalf("ID %q does not match pattern sol-[0-9a-f]{16}", id)
 		}
 		if seen[id] {
 			t.Fatalf("duplicate ID generated: %s", id)
@@ -491,7 +493,7 @@ func TestNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nonexistent work item")
 	}
-	expected := `work item "sol-nonexist" not found`
+	expected := `work item "sol-nonexist": not found`
 	if err.Error() != expected {
 		t.Fatalf("expected error %q, got %q", expected, err.Error())
 	}
@@ -926,5 +928,68 @@ func TestTableExists(t *testing.T) {
 	}
 	if exists {
 		t.Fatal("expected nonexistent table to not exist")
+	}
+}
+
+func TestErrNotFound(t *testing.T) {
+	worldStore := setupWorld(t)
+	sphereStore := setupSphere(t)
+
+	// GetAgent with nonexistent ID.
+	_, err := sphereStore.GetAgent("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent agent")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected errors.Is(err, ErrNotFound), got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "nonexistent") {
+		t.Fatalf("expected error to contain entity ID, got: %v", err)
+	}
+
+	// GetWorkItem with nonexistent ID.
+	_, err = worldStore.GetWorkItem("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent work item")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected errors.Is(err, ErrNotFound), got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "nonexistent") {
+		t.Fatalf("expected error to contain entity ID, got: %v", err)
+	}
+}
+
+func TestInvalidCaravanStatus(t *testing.T) {
+	s := setupSphere(t)
+
+	id, err := s.CreateCaravan("test-caravan", "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.UpdateCaravanStatus(id, "banana")
+	if err == nil {
+		t.Fatal("expected error for invalid caravan status")
+	}
+	if !strings.Contains(err.Error(), "invalid caravan status") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestInvalidAgentState(t *testing.T) {
+	s := setupSphere(t)
+
+	_, err := s.CreateAgent("TestAgent", "testworld", "agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.UpdateAgentState("testworld/TestAgent", "banana", "")
+	if err == nil {
+		t.Fatal("expected error for invalid agent state")
+	}
+	if !strings.Contains(err.Error(), "invalid agent state") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

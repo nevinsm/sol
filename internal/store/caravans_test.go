@@ -16,9 +16,9 @@ func TestCreateCaravan(t *testing.T) {
 	}
 
 	// Verify ID format.
-	pattern := regexp.MustCompile(`^car-[0-9a-f]{8}$`)
+	pattern := regexp.MustCompile(`^car-[0-9a-f]{16}$`)
 	if !pattern.MatchString(id) {
-		t.Fatalf("caravan ID %q does not match pattern car-[0-9a-f]{8}", id)
+		t.Fatalf("caravan ID %q does not match pattern car-[0-9a-f]{16}", id)
 	}
 
 	// Verify with GetCaravan.

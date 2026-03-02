@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -28,9 +29,9 @@ var validSeverities = map[string]bool{
 	"critical": true,
 }
 
-// generateEscalationID returns a new escalation ID in the format "esc-" + 8 hex chars.
+// generateEscalationID returns a new escalation ID in the format "esc-" + 16 hex chars.
 func generateEscalationID() (string, error) {
-	b := make([]byte, 4)
+	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("failed to generate escalation ID: %w", err)
 	}
@@ -72,8 +73,8 @@ func (s *Store) GetEscalation(id string) (*Escalation, error) {
 		`SELECT id, severity, source, description, status, acknowledged, created_at, updated_at
 		 FROM escalations WHERE id = ?`, id,
 	).Scan(&esc.ID, &esc.Severity, &esc.Source, &esc.Description, &esc.Status, &acknowledged, &createdAt, &updatedAt)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("escalation %q not found", id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("escalation %q: %w", id, ErrNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get escalation %q: %w", id, err)
@@ -154,7 +155,7 @@ func (s *Store) AckEscalation(id string) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("escalation %q not found", id)
+		return fmt.Errorf("escalation %q: %w", id, ErrNotFound)
 	}
 	return nil
 }
@@ -176,7 +177,7 @@ func (s *Store) ResolveEscalation(id string) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("escalation %q not found", id)
+		return fmt.Errorf("escalation %q: %w", id, ErrNotFound)
 	}
 	return nil
 }

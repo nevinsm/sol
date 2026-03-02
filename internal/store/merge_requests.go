@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -24,9 +25,9 @@ type MergeRequest struct {
 	MergedAt   *time.Time
 }
 
-// generateMRID returns a new merge request ID in the format "mr-" + 8 hex chars.
+// generateMRID returns a new merge request ID in the format "mr-" + 16 hex chars.
 func generateMRID() (string, error) {
-	b := make([]byte, 4)
+	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("failed to generate merge request ID: %w", err)
 	}
@@ -66,8 +67,8 @@ func (s *Store) GetMergeRequest(id string) (*MergeRequest, error) {
 		 FROM merge_requests WHERE id = ?`, id,
 	).Scan(&mr.ID, &mr.WorkItemID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
 		&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("merge request %q not found", id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("merge request %q: %w", id, ErrNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get merge request %q: %w", id, err)
@@ -192,7 +193,7 @@ func (s *Store) ClaimMergeRequest(claimerID string) (*MergeRequest, error) {
 		claimerID, now, now,
 	).Scan(&mr.ID, &mr.WorkItemID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
 		&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -267,7 +268,7 @@ func (s *Store) UpdateMergeRequestPhase(id, phase string) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("merge request %q not found", id)
+		return fmt.Errorf("merge request %q: %w", id, ErrNotFound)
 	}
 	return nil
 }
@@ -291,7 +292,7 @@ func (s *Store) BlockMergeRequest(mrID, blockerWorkItemID string) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("merge request %q not found", mrID)
+		return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
 	}
 	return nil
 }
@@ -313,7 +314,7 @@ func (s *Store) UnblockMergeRequest(mrID string) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("merge request %q not found", mrID)
+		return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
 	}
 	return nil
 }
@@ -332,7 +333,7 @@ func (s *Store) FindMergeRequestByBlocker(blockerID string) (*MergeRequest, erro
 		 FROM merge_requests WHERE blocked_by = ?`, blockerID,
 	).Scan(&mr.ID, &mr.WorkItemID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
 		&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
