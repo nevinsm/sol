@@ -134,7 +134,7 @@ func formatChronicleDetail(c ChronicleInfo) string {
 func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 	// Use tabwriter for alignment.
 	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "  WORLD\tAGENTS\tFORGE\tSENTINEL\tMR QUEUE\tHEALTH\n")
+	fmt.Fprintf(tw, "  WORLD\tAGENTS\tENVOYS\tGOV\tFORGE\tSENTINEL\tMR QUEUE\tHEALTH\n")
 
 	for _, w := range worlds {
 		agents := fmt.Sprintf("%d", w.Agents)
@@ -147,6 +147,13 @@ func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 				agents += fmt.Sprintf(", %d dead", w.Dead)
 			}
 			agents += ")"
+		}
+
+		envoys := fmt.Sprintf("%d", w.Envoys)
+
+		gov := dimStyle.Render("—")
+		if w.Governor {
+			gov = okStyle.Render("●")
 		}
 
 		forge := dimStyle.Render("—")
@@ -169,24 +176,39 @@ func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 
 		health := healthBadge(w.Health)
 
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n",
-			w.Name, agents, forge, sentinel, mrQueue, health)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			w.Name, agents, envoys, gov, forge, sentinel, mrQueue, health)
 	}
 	tw.Flush()
 }
 
 func renderCaravansTable(b *strings.Builder, caravans []CaravanInfo) {
 	for _, c := range caravans {
-		blocked := c.TotalItems - c.DoneItems - c.ReadyItems
-		progress := fmt.Sprintf("%d/%d done", c.DoneItems, c.TotalItems)
-		if c.ReadyItems > 0 {
-			progress += fmt.Sprintf(", %d ready", c.ReadyItems)
+		if len(c.Phases) > 0 {
+			// Phase-aware display.
+			var parts []string
+			for _, p := range c.Phases {
+				part := fmt.Sprintf("phase %d: %d/%d done", p.Phase, p.Done, p.Total)
+				if p.Ready > 0 {
+					part += fmt.Sprintf(", %d ready", p.Ready)
+				}
+				parts = append(parts, part)
+			}
+			progress := fmt.Sprintf("%d items  %s", c.TotalItems, strings.Join(parts, ", "))
+			b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
+				c.ID, c.Name, dimStyle.Render(progress)))
+		} else {
+			blocked := c.TotalItems - c.DoneItems - c.ReadyItems
+			progress := fmt.Sprintf("%d/%d done", c.DoneItems, c.TotalItems)
+			if c.ReadyItems > 0 {
+				progress += fmt.Sprintf(", %d ready", c.ReadyItems)
+			}
+			if blocked > 0 {
+				progress += fmt.Sprintf(", %d blocked", blocked)
+			}
+			b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
+				c.ID, c.Name, dimStyle.Render(progress)))
 		}
-		if blocked > 0 {
-			progress += fmt.Sprintf(", %d blocked", blocked)
-		}
-		b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
-			c.ID, c.Name, dimStyle.Render(progress)))
 	}
 }
 
@@ -211,16 +233,31 @@ func RenderWorld(ws *WorldStatus) string {
 		formatSentinelDetail(ws.Sentinel))
 	renderProcess(&b, "Chronicle", ws.Chronicle.Running,
 		formatChronicleDetail(ws.Chronicle))
+	if ws.Governor.Running {
+		renderProcess(&b, "Governor", true,
+			formatGovernorDetail(ws.Governor))
+	}
 	b.WriteString("\n")
 
-	// Agents.
-	if len(ws.Agents) == 0 {
+	// Outposts (role=agent only).
+	if len(ws.Agents) > 0 {
+		b.WriteString(headerStyle.Render(fmt.Sprintf("Outposts (%d)", len(ws.Agents))))
+		b.WriteString("\n")
+		renderAgentsTable(&b, ws.Agents)
+		b.WriteString("\n")
+	}
+
+	// Envoys.
+	if len(ws.Envoys) > 0 {
+		b.WriteString(headerStyle.Render(fmt.Sprintf("Envoys (%d)", len(ws.Envoys))))
+		b.WriteString("\n")
+		renderEnvoysTable(&b, ws.Envoys)
+		b.WriteString("\n")
+	}
+
+	// Show "no agents" if neither outposts nor envoys exist.
+	if len(ws.Agents) == 0 && len(ws.Envoys) == 0 {
 		b.WriteString(dimStyle.Render("No agents registered."))
-		b.WriteString("\n")
-	} else {
-		b.WriteString(headerStyle.Render("Agents"))
-		b.WriteString("\n")
-		renderAgentsTable(&b, ws)
 		b.WriteString("\n")
 	}
 
@@ -239,7 +276,7 @@ func RenderWorld(ws *WorldStatus) string {
 	b.WriteString("\n")
 
 	// Summary.
-	renderSummary(&b, ws.Summary)
+	renderWorldSummary(&b, ws)
 
 	return b.String()
 }
@@ -258,11 +295,19 @@ func formatSentinelDetail(s SentinelInfo) string {
 	return ""
 }
 
-func renderAgentsTable(b *strings.Builder, ws *WorldStatus) {
-	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "  AGENT\tSTATE\tSESSION\tWORK\n")
+func formatGovernorDetail(g GovernorInfo) string {
+	detail := ""
+	if g.BriefAge != "" {
+		detail = "brief: " + g.BriefAge + " ago"
+	}
+	return detail
+}
 
-	for _, a := range ws.Agents {
+func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
+	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
+	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\n")
+
+	for _, a := range agents {
 		state := a.State
 		switch a.State {
 		case "working":
@@ -296,6 +341,49 @@ func renderAgentsTable(b *strings.Builder, ws *WorldStatus) {
 	tw.Flush()
 }
 
+func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
+	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
+	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\tBRIEF\n")
+
+	for _, e := range envoys {
+		state := e.State
+		switch e.State {
+		case "working":
+			if e.SessionAlive {
+				state = okStyle.Render("working")
+			} else {
+				state = errorStyle.Render("working (dead!)")
+			}
+		case "idle":
+			state = dimStyle.Render("idle")
+		case "stalled":
+			state = warnStyle.Render("stalled")
+		}
+
+		sess := dimStyle.Render("—")
+		if e.State == "working" || e.State == "stalled" {
+			if e.SessionAlive {
+				sess = okStyle.Render("alive")
+			} else {
+				sess = errorStyle.Render("dead")
+			}
+		}
+
+		work := dimStyle.Render("—")
+		if e.TetherItem != "" {
+			work = e.WorkTitle
+		}
+
+		brief := dimStyle.Render("—")
+		if e.BriefAge != "" {
+			brief = e.BriefAge + " ago"
+		}
+
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", e.Name, state, sess, work, brief)
+	}
+	tw.Flush()
+}
+
 func renderMergeQueue(b *strings.Builder, mq MergeQueueInfo) {
 	if mq.Total == 0 {
 		b.WriteString(dimStyle.Render("  empty"))
@@ -318,14 +406,17 @@ func renderMergeQueue(b *strings.Builder, mq MergeQueueInfo) {
 	b.WriteString(fmt.Sprintf("  %s\n", strings.Join(parts, ", ")))
 }
 
-func renderSummary(b *strings.Builder, s Summary) {
-	parts := fmt.Sprintf("%d agents: %d working, %d idle",
-		s.Total, s.Working, s.Idle)
-	if s.Stalled > 0 {
-		parts += warnStyle.Render(fmt.Sprintf(", %d stalled", s.Stalled))
+func renderWorldSummary(b *strings.Builder, ws *WorldStatus) {
+	parts := fmt.Sprintf("%d agents", ws.Summary.Total)
+	if len(ws.Envoys) > 0 {
+		parts += fmt.Sprintf(", %d envoys", len(ws.Envoys))
 	}
-	if s.Dead > 0 {
-		parts += errorStyle.Render(fmt.Sprintf(", %d dead", s.Dead))
+	parts += fmt.Sprintf(" | %d working, %d idle", ws.Summary.Working, ws.Summary.Idle)
+	if ws.Summary.Stalled > 0 {
+		parts += warnStyle.Render(fmt.Sprintf(", %d stalled", ws.Summary.Stalled))
+	}
+	if ws.Summary.Dead > 0 {
+		parts += errorStyle.Render(fmt.Sprintf(", %d dead", ws.Summary.Dead))
 	}
 	b.WriteString(dimStyle.Render(parts))
 	b.WriteString("\n")

@@ -386,3 +386,57 @@ func TestGatherSpherePrefectRunning(t *testing.T) {
 		t.Errorf("Prefect.PID = %d, want %d", result.Prefect.PID, os.Getpid())
 	}
 }
+
+func TestGatherSphereWithEnvoysAndGovernor(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	lister := &mockWorldLister{
+		worlds: []store.World{
+			{Name: "haven"},
+		},
+	}
+	sphere := &mockSphereStore{
+		agents: []store.Agent{
+			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "agent", State: "working"},
+			{ID: "haven/Crisp", Name: "Crisp", World: "haven", Role: "agent", State: "idle"},
+			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "working"},
+			{ID: "haven/Ranger", Name: "Ranger", World: "haven", Role: "envoy", State: "idle"},
+			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: "idle"},
+			{ID: "haven/forge", Name: "forge", World: "haven", Role: "forge", State: "idle"},
+		},
+	}
+	checker := &mockChecker{
+		alive: map[string]bool{
+			"sol-haven-Toast":    true,
+			"sol-haven-governor": true,
+		},
+	}
+
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+
+	if len(result.Worlds) != 1 {
+		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
+	}
+	w := result.Worlds[0]
+
+	// Only outpost agents counted.
+	if w.Agents != 2 {
+		t.Errorf("Agents = %d, want 2", w.Agents)
+	}
+	if w.Envoys != 2 {
+		t.Errorf("Envoys = %d, want 2", w.Envoys)
+	}
+	if !w.Governor {
+		t.Error("Governor = false, want true")
+	}
+	// Only outpost agents in working/idle counts.
+	if w.Working != 1 {
+		t.Errorf("Working = %d, want 1", w.Working)
+	}
+	if w.Idle != 1 {
+		t.Errorf("Idle = %d, want 1", w.Idle)
+	}
+}

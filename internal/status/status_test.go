@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -557,5 +559,230 @@ func TestGatherMergeQueueEmpty(t *testing.T) {
 	}
 	if result.MergeQueue.Merged != 0 {
 		t.Errorf("MergeQueue.Merged = %d, want 0", result.MergeQueue.Merged)
+	}
+}
+
+func TestGatherWithGovernor(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	sphere := &mockSphereStore{
+		agents: []store.Agent{
+			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: "idle"},
+		},
+	}
+	world := &mockWorldStore{items: nil}
+	checker := &mockChecker{
+		alive: map[string]bool{
+			"sol-haven-governor": true,
+		},
+	}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if !result.Governor.Running {
+		t.Error("Governor.Running = false, want true")
+	}
+	if !result.Governor.SessionAlive {
+		t.Error("Governor.SessionAlive = false, want true")
+	}
+	// Governor should not count as an outpost agent.
+	if result.Summary.Total != 0 {
+		t.Errorf("Summary.Total = %d, want 0 (governor not counted)", result.Summary.Total)
+	}
+	if len(result.Agents) != 0 {
+		t.Errorf("len(Agents) = %d, want 0", len(result.Agents))
+	}
+}
+
+func TestGatherWithEnvoys(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	sphere := &mockSphereStore{
+		agents: []store.Agent{
+			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "working", TetherItem: "sol-a1b2c3d4"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "agent", State: "working", TetherItem: "sol-11223344"},
+		},
+	}
+	world := &mockWorldStore{
+		items: map[string]*store.WorkItem{
+			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Design review"},
+			"sol-11223344": {ID: "sol-11223344", Title: "Implement auth"},
+		},
+	}
+	checker := &mockChecker{
+		alive: map[string]bool{
+			"sol-haven-Scout": true,
+			"sol-haven-Toast": true,
+		},
+	}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	// Envoy separated from outpost agents.
+	if len(result.Envoys) != 1 {
+		t.Fatalf("len(Envoys) = %d, want 1", len(result.Envoys))
+	}
+	if result.Envoys[0].Name != "Scout" {
+		t.Errorf("Envoys[0].Name = %q, want %q", result.Envoys[0].Name, "Scout")
+	}
+	if result.Envoys[0].WorkTitle != "Design review" {
+		t.Errorf("Envoys[0].WorkTitle = %q, want %q", result.Envoys[0].WorkTitle, "Design review")
+	}
+
+	// Only outpost agent counted in Agents.
+	if len(result.Agents) != 1 {
+		t.Fatalf("len(Agents) = %d, want 1", len(result.Agents))
+	}
+	if result.Agents[0].Name != "Toast" {
+		t.Errorf("Agents[0].Name = %q, want %q", result.Agents[0].Name, "Toast")
+	}
+
+	// Summary only counts outpost agents.
+	if result.Summary.Total != 1 {
+		t.Errorf("Summary.Total = %d, want 1", result.Summary.Total)
+	}
+}
+
+func TestGatherMixedRoles(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	sphere := &mockSphereStore{
+		agents: []store.Agent{
+			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "agent", State: "working", TetherItem: "sol-a1b2c3d4"},
+			{ID: "haven/Crisp", Name: "Crisp", World: "haven", Role: "agent", State: "idle"},
+			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "working", TetherItem: "sol-11223344"},
+			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: "idle"},
+			{ID: "haven/forge", Name: "forge", World: "haven", Role: "forge", State: "idle"},
+		},
+	}
+	world := &mockWorldStore{
+		items: map[string]*store.WorkItem{
+			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Implement login"},
+			"sol-11223344": {ID: "sol-11223344", Title: "Design review"},
+		},
+	}
+	checker := &mockChecker{
+		alive: map[string]bool{
+			"sol-haven-Toast":    true,
+			"sol-haven-Scout":    true,
+			"sol-haven-governor": true,
+			"sol-haven-forge":    true,
+		},
+	}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if len(result.Agents) != 2 {
+		t.Errorf("len(Agents) = %d, want 2 (outpost agents only)", len(result.Agents))
+	}
+	if len(result.Envoys) != 1 {
+		t.Errorf("len(Envoys) = %d, want 1", len(result.Envoys))
+	}
+	if !result.Governor.Running {
+		t.Error("Governor.Running = false, want true")
+	}
+	// Summary counts only outpost agents.
+	if result.Summary.Total != 2 {
+		t.Errorf("Summary.Total = %d, want 2", result.Summary.Total)
+	}
+}
+
+func TestGatherEnvoyBriefAge(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// Create a brief file for the envoy.
+	briefPath := envoy.BriefPath("haven", "Scout")
+	if err := os.MkdirAll(filepath.Dir(briefPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(briefPath, []byte("# Scout's brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Set mtime to 2 hours ago.
+	twoHoursAgo := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(briefPath, twoHoursAgo, twoHoursAgo); err != nil {
+		t.Fatal(err)
+	}
+
+	sphere := &mockSphereStore{
+		agents: []store.Agent{
+			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "idle"},
+		},
+	}
+	world := &mockWorldStore{items: nil}
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if len(result.Envoys) != 1 {
+		t.Fatalf("len(Envoys) = %d, want 1", len(result.Envoys))
+	}
+	if result.Envoys[0].BriefAge != "2h" {
+		t.Errorf("Envoys[0].BriefAge = %q, want %q", result.Envoys[0].BriefAge, "2h")
+	}
+}
+
+func TestHealthIgnoresEnvoyGovernor(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	sphere := &mockSphereStore{
+		agents: []store.Agent{
+			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "agent", State: "working", TetherItem: "sol-a1b2c3d4"},
+			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "working", TetherItem: "sol-11223344"},
+			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: "idle"},
+		},
+	}
+	world := &mockWorldStore{
+		items: map[string]*store.WorkItem{
+			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Task 1"},
+			"sol-11223344": {ID: "sol-11223344", Title: "Task 2"},
+		},
+	}
+	checker := &mockChecker{
+		alive: map[string]bool{
+			"sol-haven-Toast":    true,
+			"sol-haven-Scout":    false, // envoy dead — should NOT affect health
+			"sol-haven-governor": false, // governor dead — should NOT affect health
+		},
+	}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	// Health should be 0 (healthy) — envoy/governor dead sessions ignored.
+	if result.Health() != 0 {
+		t.Errorf("Health() = %d, want 0 (envoy/governor dead should not affect health)", result.Health())
+	}
+	if result.Summary.Dead != 0 {
+		t.Errorf("Summary.Dead = %d, want 0 (only outpost agents counted)", result.Summary.Dead)
 	}
 }

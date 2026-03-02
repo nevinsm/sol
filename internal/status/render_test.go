@@ -100,7 +100,7 @@ func TestRenderWorldBasic(t *testing.T) {
 	checks := []string{
 		"testworld",
 		"Processes",
-		"Agents",
+		"Outposts",
 		"Merge Queue",
 		"Toast",
 		"Crisp",
@@ -191,5 +191,150 @@ func TestStatusIndicator(t *testing.T) {
 	stopped := statusIndicator(false)
 	if !strings.Contains(stopped, "✗") {
 		t.Errorf("statusIndicator(false) = %q, want it to contain '✗'", stopped)
+	}
+}
+
+func TestRenderWorldWithEnvoys(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "haven",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Agents: []AgentStatus{
+			{Name: "Toast", State: "working", SessionAlive: true, TetherItem: "sol-aaa", WorkTitle: "fix bug"},
+		},
+		Envoys: []EnvoyStatus{
+			{Name: "Scout", State: "working", SessionAlive: true, TetherItem: "sol-bbb", WorkTitle: "Design review", BriefAge: "45m"},
+		},
+		Summary: Summary{Total: 1, Working: 1},
+	}
+
+	output := RenderWorld(ws)
+
+	checks := []string{
+		"Outposts (1)",
+		"Envoys (1)",
+		"Scout",
+		"Toast",
+		"BRIEF",
+		"45m ago",
+		"Design review",
+	}
+
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("RenderWorld with envoys missing %q", check)
+		}
+	}
+}
+
+func TestRenderWorldWithGovernor(t *testing.T) {
+	ws := &WorldStatus{
+		World:    "haven",
+		Prefect:  PrefectInfo{Running: true, PID: 42},
+		Governor: GovernorInfo{Running: true, SessionAlive: true, BriefAge: "2h"},
+		Summary:  Summary{},
+	}
+
+	output := RenderWorld(ws)
+
+	checks := []string{
+		"Governor",
+		"brief: 2h ago",
+	}
+
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("RenderWorld with governor missing %q", check)
+		}
+	}
+}
+
+func TestRenderWorldNoEnvoys(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "haven",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Agents: []AgentStatus{
+			{Name: "Toast", State: "idle"},
+		},
+		Summary: Summary{Total: 1, Idle: 1},
+	}
+
+	output := RenderWorld(ws)
+
+	if strings.Contains(output, "Envoys") {
+		t.Error("RenderWorld with no envoys should not contain 'Envoys' section")
+	}
+	if !strings.Contains(output, "Outposts (1)") {
+		t.Error("RenderWorld should show Outposts section")
+	}
+}
+
+func TestRenderSphereNewColumns(t *testing.T) {
+	s := &SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: PrefectInfo{Running: true, PID: 1234},
+		Worlds: []WorldSummary{
+			{Name: "alpha", Agents: 3, Envoys: 1, Governor: true, Working: 2, Forge: true, Sentinel: true, Health: "healthy"},
+			{Name: "beta", Agents: 2, Envoys: 0, Governor: false, Working: 1, Health: "healthy"},
+		},
+	}
+
+	output := RenderSphere(s)
+
+	checks := []string{
+		"ENVOYS",
+		"GOV",
+		"alpha",
+		"beta",
+	}
+
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("RenderSphere new columns missing %q", check)
+		}
+	}
+
+	// Governor column should have ● for alpha.
+	if !strings.Contains(output, "●") {
+		t.Error("RenderSphere should show ● for active governor")
+	}
+}
+
+func TestRenderCaravanPhases(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "haven",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Caravans: []CaravanInfo{
+			{
+				ID:         "car-abc123",
+				Name:       "auth-overhaul",
+				Status:     "open",
+				TotalItems: 3,
+				DoneItems:  2,
+				ReadyItems: 0,
+				Phases: []PhaseProgress{
+					{Phase: 0, Total: 2, Done: 2},
+					{Phase: 1, Total: 1, Done: 0, Ready: 1},
+				},
+			},
+		},
+		Summary: Summary{},
+	}
+
+	output := RenderWorld(ws)
+
+	checks := []string{
+		"Caravans",
+		"car-abc123",
+		"auth-overhaul",
+		"phase 0",
+		"phase 1",
+		"3 items",
+	}
+
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("RenderCaravanPhases missing %q", check)
+		}
 	}
 }

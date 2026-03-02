@@ -2,8 +2,12 @@ package status
 
 import (
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/envoy"
+	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -15,20 +19,48 @@ type WorldStatus struct {
 	Forge      ForgeInfo      `json:"forge"`
 	Chronicle  ChronicleInfo  `json:"chronicle"`
 	Sentinel   SentinelInfo   `json:"sentinel"`
+	Governor   GovernorInfo   `json:"governor"`
 	Agents     []AgentStatus  `json:"agents"`
+	Envoys     []EnvoyStatus  `json:"envoys"`
 	MergeQueue MergeQueueInfo `json:"merge_queue"`
 	Caravans   []CaravanInfo  `json:"caravans,omitempty"`
 	Summary    Summary        `json:"summary"`
 }
 
+// GovernorInfo holds governor process state.
+type GovernorInfo struct {
+	Running      bool   `json:"running"`
+	SessionAlive bool   `json:"session_alive"`
+	BriefAge     string `json:"brief_age,omitempty"`
+}
+
+// EnvoyStatus holds the combined state of one envoy agent.
+type EnvoyStatus struct {
+	Name         string `json:"name"`
+	State        string `json:"state"`
+	SessionAlive bool   `json:"session_alive"`
+	TetherItem   string `json:"tether_item,omitempty"`
+	WorkTitle    string `json:"work_title,omitempty"`
+	BriefAge     string `json:"brief_age,omitempty"`
+}
+
+// PhaseProgress holds progress info for a single phase within a caravan.
+type PhaseProgress struct {
+	Phase int `json:"phase"`
+	Total int `json:"total"`
+	Done  int `json:"done"`
+	Ready int `json:"ready"`
+}
+
 // CaravanInfo holds summary information about a caravan relevant to a world.
 type CaravanInfo struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Status     string `json:"status"`
-	TotalItems int    `json:"total_items"`
-	ReadyItems int    `json:"ready_items"`
-	DoneItems  int    `json:"done_items"`
+	ID         string          `json:"id"`
+	Name       string          `json:"name"`
+	Status     string          `json:"status"`
+	TotalItems int             `json:"total_items"`
+	ReadyItems int             `json:"ready_items"`
+	DoneItems  int             `json:"done_items"`
+	Phases     []PhaseProgress `json:"phases,omitempty"`
 }
 
 // PrefectInfo holds prefect process state (sphere-level, not per-world).
@@ -168,6 +200,8 @@ type WorldSummary struct {
 	Name       string `json:"name"`
 	SourceRepo string `json:"source_repo,omitempty"`
 	Agents     int    `json:"agents"`
+	Envoys     int    `json:"envoys"`
+	Governor   bool   `json:"governor"`
 	Working    int    `json:"working"`
 	Idle       int    `json:"idle"`
 	Stalled    int    `json:"stalled"`
@@ -211,38 +245,72 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		result.Sentinel = SentinelInfo{Running: true, SessionName: sentinelSessName}
 	}
 
+	// 2d. Check governor.
+	govSessName := dispatch.SessionName(world, "governor")
+	govSessAlive := checker.Exists(govSessName)
+
 	// 3. List all agents for this world.
 	agents, err := sphereStore.ListAgents(world, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	// 4. Build agent statuses.
+	// 4. Build agent statuses, separated by role.
 	for _, agent := range agents {
-		as := AgentStatus{
-			Name:  agent.Name,
-			State: agent.State,
-		}
-
-		// Check session liveness.
 		sessName := dispatch.SessionName(world, agent.Name)
-		as.SessionAlive = checker.Exists(sessName)
+		sessAlive := checker.Exists(sessName)
 
-		// Look up tethered work item title.
-		if agent.TetherItem != "" {
-			as.TetherItem = agent.TetherItem
-			item, err := worldStore.GetWorkItem(agent.TetherItem)
-			if err != nil {
-				as.WorkTitle = "(unknown)"
-			} else {
-				as.WorkTitle = item.Title
+		switch agent.Role {
+		case "governor":
+			result.Governor = GovernorInfo{
+				Running:      true,
+				SessionAlive: govSessAlive,
+				BriefAge:     briefAge(governor.BriefPath(world)),
 			}
-		}
 
-		result.Agents = append(result.Agents, as)
+		case "envoy":
+			es := EnvoyStatus{
+				Name:         agent.Name,
+				State:        agent.State,
+				SessionAlive: sessAlive,
+				BriefAge:     briefAge(envoy.BriefPath(world, agent.Name)),
+			}
+			if agent.TetherItem != "" {
+				es.TetherItem = agent.TetherItem
+				item, err := worldStore.GetWorkItem(agent.TetherItem)
+				if err != nil {
+					es.WorkTitle = "(unknown)"
+				} else {
+					es.WorkTitle = item.Title
+				}
+			}
+			result.Envoys = append(result.Envoys, es)
+
+		default: // "agent", "forge", "sentinel", "consul"
+			// forge, sentinel, consul are handled separately above.
+			if agent.Role == "forge" || agent.Role == "sentinel" || agent.Role == "consul" {
+				continue
+			}
+			as := AgentStatus{
+				Name:         agent.Name,
+				State:        agent.State,
+				SessionAlive: sessAlive,
+			}
+			if agent.TetherItem != "" {
+				as.TetherItem = agent.TetherItem
+				item, err := worldStore.GetWorkItem(agent.TetherItem)
+				if err != nil {
+					as.WorkTitle = "(unknown)"
+				} else {
+					as.WorkTitle = item.Title
+				}
+			}
+			result.Agents = append(result.Agents, as)
+		}
 	}
 
-	// 5. Compute summary counts.
+	// 5. Compute summary counts (outpost agents only — envoys and governor
+	// are human-supervised and do not affect health).
 	for _, as := range result.Agents {
 		result.Summary.Total++
 		switch as.State {
@@ -278,6 +346,15 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 	}
 
 	return result, nil
+}
+
+// briefAge returns a human-readable age of a brief file, or empty if not found.
+func briefAge(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	return formatDuration(time.Since(info.ModTime()))
 }
 
 // GatherCaravans adds caravan information to a WorldStatus.
@@ -326,6 +403,69 @@ func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener 
 			}
 		}
 
+		// Compute phase breakdown if any items have phase > 0.
+		info.Phases = computePhaseProgress(items, statuses)
+
 		result.Caravans = append(result.Caravans, info)
 	}
+}
+
+// computePhaseProgress builds phase breakdown for a caravan.
+// Returns nil if all items are in phase 0 (no phase display needed).
+func computePhaseProgress(items []store.CaravanItem, statuses []store.CaravanItemStatus) []PhaseProgress {
+	// Check if any items have phase > 0.
+	hasPhases := false
+	for _, item := range items {
+		if item.Phase > 0 {
+			hasPhases = true
+			break
+		}
+	}
+	if !hasPhases {
+		return nil
+	}
+
+	// Build a status lookup by work item ID.
+	statusMap := make(map[string]store.CaravanItemStatus)
+	for _, st := range statuses {
+		statusMap[st.WorkItemID] = st
+	}
+
+	// Group by phase.
+	phaseMap := make(map[int]*PhaseProgress)
+	for _, item := range items {
+		pp, ok := phaseMap[item.Phase]
+		if !ok {
+			pp = &PhaseProgress{Phase: item.Phase}
+			phaseMap[item.Phase] = pp
+		}
+		pp.Total++
+		if st, ok := statusMap[item.WorkItemID]; ok {
+			switch {
+			case st.WorkItemStatus == "done" || st.WorkItemStatus == "closed":
+				pp.Done++
+			case st.WorkItemStatus == "open" && st.Ready:
+				pp.Ready++
+			}
+		}
+	}
+
+	// Sort by phase number.
+	var result []PhaseProgress
+	for p := 0; p <= maxPhase(phaseMap); p++ {
+		if pp, ok := phaseMap[p]; ok {
+			result = append(result, *pp)
+		}
+	}
+	return result
+}
+
+func maxPhase(m map[int]*PhaseProgress) int {
+	max := 0
+	for p := range m {
+		if p > max {
+			max = p
+		}
+	}
+	return max
 }

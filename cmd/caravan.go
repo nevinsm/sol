@@ -16,6 +16,7 @@ import (
 
 var (
 	caravanOwner   string
+	caravanPhase   int
 	caravanFormula string
 	caravanVars    []string
 )
@@ -62,8 +63,9 @@ var caravanCreateCmd = &cobra.Command{
 			return err
 		}
 
+		phase, _ := cmd.Flags().GetInt("phase")
 		for _, itemID := range itemIDs {
-			if err := sphereStore.CreateCaravanItem(caravanID, itemID, world, 0); err != nil {
+			if err := sphereStore.CreateCaravanItem(caravanID, itemID, world, phase); err != nil {
 				return err
 			}
 		}
@@ -105,8 +107,9 @@ var caravanAddCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
+		phase, _ := cmd.Flags().GetInt("phase")
 		for _, itemID := range itemIDs {
-			if err := sphereStore.CreateCaravanItem(caravanID, itemID, world, 0); err != nil {
+			if err := sphereStore.CreateCaravanItem(caravanID, itemID, world, phase); err != nil {
 				return err
 			}
 		}
@@ -252,6 +255,15 @@ var caravanStatusCmd = &cobra.Command{
 			fmt.Printf("Status: %s\n", caravan.Status)
 			fmt.Println()
 
+			// Check if phases are used.
+			hasPhases := false
+			for _, st := range statuses {
+				if st.Phase > 0 {
+					hasPhases = true
+					break
+				}
+			}
+
 			for _, st := range statuses {
 				title := itemTitle(st.WorkItemID, st.World)
 				marker := "[ ]"
@@ -270,7 +282,11 @@ var caravanStatusCmd = &cobra.Command{
 						suffix = fmt.Sprintf(" [%s]", st.WorkItemStatus)
 					}
 				}
-				fmt.Printf("  %s %s  %s  (%s)%s\n", marker, st.WorkItemID, title, st.World, suffix)
+				phasePrefix := ""
+				if hasPhases {
+					phasePrefix = fmt.Sprintf("[p%d] ", st.Phase)
+				}
+				fmt.Printf("  %s %s%s  %s  (%s)%s\n", marker, phasePrefix, st.WorkItemID, title, st.World, suffix)
 			}
 			return nil
 		}
@@ -507,9 +523,11 @@ func init() {
 	// create flags
 	caravanCreateCmd.Flags().String("world", "", "world name")
 	caravanCreateCmd.Flags().StringVar(&caravanOwner, "owner", "", "caravan owner (default: operator)")
+	caravanCreateCmd.Flags().Int("phase", 0, "phase for items (default 0)")
 
 	// add flags
 	caravanAddCmd.Flags().String("world", "", "world name")
+	caravanAddCmd.Flags().Int("phase", 0, "phase for items (default 0)")
 	caravanAddCmd.MarkFlagRequired("world")
 
 	// check flags

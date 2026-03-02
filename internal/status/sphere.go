@@ -75,6 +75,7 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 						}
 					}
 				}
+				info.Phases = computePhaseProgress(items, statuses)
 				result.Caravans = append(result.Caravans, info)
 			}
 		}
@@ -121,22 +122,35 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 	sentinelSess := dispatch.SessionName(w.Name, "sentinel")
 	summary.Sentinel = checker.Exists(sentinelSess)
 
-	// Agent counts from sphere store.
+	// Check governor.
+	govSess := dispatch.SessionName(w.Name, "governor")
+	govSessAlive := checker.Exists(govSess)
+
+	// Agent counts from sphere store, separated by role.
 	agents, err := sphereStore.ListAgents(w.Name, "")
 	if err == nil {
-		summary.Agents = len(agents)
 		for _, a := range agents {
-			switch a.State {
-			case "working":
-				summary.Working++
-				sessName := dispatch.SessionName(w.Name, a.Name)
-				if !checker.Exists(sessName) {
-					summary.Dead++
+			switch a.Role {
+			case "governor":
+				summary.Governor = govSessAlive
+			case "envoy":
+				summary.Envoys++
+			case "forge", "sentinel", "consul":
+				continue
+			default: // "agent"
+				summary.Agents++
+				switch a.State {
+				case "working":
+					summary.Working++
+					sessName := dispatch.SessionName(w.Name, a.Name)
+					if !checker.Exists(sessName) {
+						summary.Dead++
+					}
+				case "idle":
+					summary.Idle++
+				case "stalled":
+					summary.Stalled++
 				}
-			case "idle":
-				summary.Idle++
-			case "stalled":
-				summary.Stalled++
 			}
 		}
 	}
