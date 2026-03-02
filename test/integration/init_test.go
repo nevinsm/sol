@@ -2,6 +2,7 @@ package integration
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -150,6 +151,63 @@ func TestInitThenWorldOperations(t *testing.T) {
 	if !strings.Contains(out, "Config:") {
 		t.Errorf("world status output missing 'Config:': %s", out)
 	}
+}
+
+func TestInitInteractiveRequiresTTY(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	solHome := filepath.Join(t.TempDir(), "sol-init-test")
+
+	// Run: echo "" | sol init (piped stdin → not a TTY).
+	// Should error, not hang waiting for input.
+	bin := gtBin(t)
+	cmd := exec.Command("sh", "-c", "echo '' | "+bin+" init")
+	cmd.Env = append(os.Environ(), "SOL_HOME="+solHome)
+	outBytes, err := cmd.CombinedOutput()
+	outStr := strings.TrimSpace(string(outBytes))
+	if err == nil {
+		t.Fatalf("expected error, got success: %s", outStr)
+	}
+	if !strings.Contains(outStr, "--name flag is required when stdin is not a terminal") {
+		t.Errorf("expected non-TTY error message, got: %s", outStr)
+	}
+}
+
+func TestInitSourceRepoValidationIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	t.Run("nonexistent path", func(t *testing.T) {
+		solHome := filepath.Join(t.TempDir(), "sol-init-test")
+
+		out, err := runGT(t, solHome, "init", "--name=testworld", "--source-repo=/nonexistent/path", "--skip-checks")
+		if err == nil {
+			t.Fatalf("expected error for nonexistent source-repo, got success: %s", out)
+		}
+		if !strings.Contains(out, "source repo path") {
+			t.Errorf("unexpected error: %s", out)
+		}
+	})
+
+	t.Run("path is a file", func(t *testing.T) {
+		solHome := filepath.Join(t.TempDir(), "sol-init-test")
+
+		// Create a temp file (not a directory).
+		tmpFile := filepath.Join(t.TempDir(), "not-a-dir")
+		if err := os.WriteFile(tmpFile, []byte("x"), 0o644); err != nil {
+			t.Fatalf("failed to create temp file: %v", err)
+		}
+
+		out, err := runGT(t, solHome, "init", "--name=testworld", "--source-repo="+tmpFile, "--skip-checks")
+		if err == nil {
+			t.Fatalf("expected error for non-directory source-repo, got success: %s", out)
+		}
+		if !strings.Contains(out, "not a directory") {
+			t.Errorf("unexpected error: %s", out)
+		}
+	})
 }
 
 func TestInitRunsDoctorByDefault(t *testing.T) {
