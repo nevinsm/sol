@@ -134,6 +134,11 @@ func (s *Prefect) IsDegraded() bool {
 	return s.degraded
 }
 
+// Heartbeat runs one monitoring cycle. Exported for integration tests.
+func (s *Prefect) Heartbeat() {
+	s.heartbeat()
+}
+
 // heartbeat runs one monitoring cycle.
 func (s *Prefect) heartbeat() {
 	s.mu.Lock()
