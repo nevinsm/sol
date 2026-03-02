@@ -139,6 +139,46 @@ type CaravanStore interface {
 	ListCaravanItems(caravanID string) ([]store.CaravanItem, error)
 }
 
+// WorldLister abstracts world listing for sphere status.
+type WorldLister interface {
+	ListWorlds() ([]store.World, error)
+}
+
+// SphereStatus holds the complete runtime state for the sphere.
+type SphereStatus struct {
+	SOLHome   string         `json:"sol_home"`
+	Prefect   PrefectInfo    `json:"prefect"`
+	Consul    ConsulInfo     `json:"consul"`
+	Chronicle ChronicleInfo  `json:"chronicle"`
+	Worlds    []WorldSummary `json:"worlds"`
+	Caravans  []CaravanInfo  `json:"caravans,omitempty"`
+	Health    string         `json:"health"`
+}
+
+// ConsulInfo holds consul process state.
+type ConsulInfo struct {
+	Running      bool   `json:"running"`
+	HeartbeatAge string `json:"heartbeat_age,omitempty"`
+	PatrolCount  int    `json:"patrol_count,omitempty"`
+	Stale        bool   `json:"stale"`
+}
+
+// WorldSummary holds a condensed view of one world for the sphere overview.
+type WorldSummary struct {
+	Name       string `json:"name"`
+	SourceRepo string `json:"source_repo,omitempty"`
+	Agents     int    `json:"agents"`
+	Working    int    `json:"working"`
+	Idle       int    `json:"idle"`
+	Stalled    int    `json:"stalled"`
+	Dead       int    `json:"dead"`
+	Forge      bool   `json:"forge"`
+	Sentinel   bool   `json:"sentinel"`
+	MRReady    int    `json:"mr_ready"`
+	MRFailed   int    `json:"mr_failed"`
+	Health     string `json:"health"`
+}
+
 // Gather collects runtime state for a world.
 func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 	mqStore MergeQueueStore, checker SessionChecker) (*WorldStatus, error) {
