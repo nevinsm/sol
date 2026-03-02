@@ -536,6 +536,7 @@ type ResolveResult struct {
 	AgentName      string
 	BranchName     string
 	MergeRequestID string
+	SessionKept    bool // true if session was not killed (envoy resolve)
 }
 
 // ResolveOpts holds the inputs for a resolve operation.
@@ -574,6 +575,12 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	defer agentLock.Release()
 
 	branchName := fmt.Sprintf("outpost/%s/%s", opts.AgentName, workItemID)
+
+	// Look up agent to determine role (needed for envoy resolve behavior).
+	agent, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
+	}
 
 	// Get the work item for output and conflict-resolution detection.
 	item, err := worldStore.GetWorkItem(workItemID)
@@ -650,24 +657,30 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		fmt.Fprintf(os.Stderr, "resolve: failed to clear tether (consul will recover): %v\n", err)
 	}
 
-	// 6b. Clean up workflow if present.
-	if _, err := workflow.ReadState(opts.World, opts.AgentName); err == nil {
-		if removeErr := workflow.Remove(opts.World, opts.AgentName); removeErr != nil {
-			fmt.Fprintf(os.Stderr, "resolve: failed to clean up workflow: %v\n", removeErr)
+	// 6b. Clean up workflow if present (envoys don't use workflow system).
+	if agent.Role != "envoy" {
+		if _, err := workflow.ReadState(opts.World, opts.AgentName); err == nil {
+			if removeErr := workflow.Remove(opts.World, opts.AgentName); removeErr != nil {
+				fmt.Fprintf(os.Stderr, "resolve: failed to clean up workflow: %v\n", removeErr)
+			}
 		}
 	}
 
 	// 7. Stop session after a brief delay to allow final output.
-	// Session stop runs in background — CLI returns immediately.
-	// The goroutine is best-effort; consul will recover stale sessions.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		time.Sleep(1 * time.Second)
-		if err := mgr.Stop(sessName, true); err != nil {
-			fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
-		}
-	}()
+	// Envoys keep their session alive — they are human-supervised and persistent.
+	sessionKept := false
+	if agent.Role != "envoy" {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			time.Sleep(1 * time.Second)
+			if err := mgr.Stop(sessName, true); err != nil {
+				fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
+			}
+		}()
+	} else {
+		sessionKept = true
+	}
 
 	if logger != nil {
 		logger.Emit(events.EventResolve, "sol", opts.AgentName, "both", map[string]string{
@@ -684,6 +697,7 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		AgentName:      opts.AgentName,
 		BranchName:     branchName,
 		MergeRequestID: mrID,
+		SessionKept:    sessionKept,
 	}, nil
 }
 

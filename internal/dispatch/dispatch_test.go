@@ -1184,3 +1184,143 @@ func TestReCastPartialFailureRecovery(t *testing.T) {
 		t.Error("expected session to be started")
 	}
 }
+
+// --- Envoy resolve tests ---
+
+func TestResolveEnvoyKeepsSession(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWorkItem("Envoy task", "An envoy work item", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update work item: %v", err)
+	}
+
+	// Create an envoy agent.
+	if _, err := sphereStore.CreateAgent("Scout", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Scout", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Scout", itemID); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create worktree dir with git repo.
+	worktreeDir := WorktreePath("ember", "Scout")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := SessionName("ember", "Scout")
+	mgr.started[sessName] = true
+
+	result, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Scout",
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Session should NOT have been stopped.
+	if mgr.stopped[sessName] {
+		t.Error("expected session to NOT be stopped for envoy resolve")
+	}
+
+	// SessionKept should be true.
+	if !result.SessionKept {
+		t.Error("expected SessionKept to be true for envoy resolve")
+	}
+
+	// Work item should still be done.
+	item, err := worldStore.GetWorkItem(itemID)
+	if err != nil {
+		t.Fatalf("failed to get work item: %v", err)
+	}
+	if item.Status != "done" {
+		t.Errorf("expected work item status 'done', got %q", item.Status)
+	}
+
+	// Agent should be idle.
+	agent, err := sphereStore.GetAgent("ember/Scout")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("expected agent state 'idle', got %q", agent.State)
+	}
+
+	// Tether should be cleared.
+	tetherID, err := tether.Read("ember", "Scout")
+	if err != nil {
+		t.Fatalf("failed to read tether: %v", err)
+	}
+	if tetherID != "" {
+		t.Errorf("expected empty tether, got %q", tetherID)
+	}
+
+	// MR should be created.
+	if result.MergeRequestID == "" {
+		t.Error("expected MergeRequestID to be set")
+	}
+}
+
+func TestResolveAgentKillsSession(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWorkItem("Agent task", "A regular work item", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update work item: %v", err)
+	}
+
+	// Create a regular agent.
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	result, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// SessionKept should be false for regular agents.
+	if result.SessionKept {
+		t.Error("expected SessionKept to be false for regular agent resolve")
+	}
+}

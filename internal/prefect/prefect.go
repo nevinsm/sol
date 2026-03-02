@@ -11,11 +11,13 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/consul"
 	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
-	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/forge"
+	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
 )
 
 // SessionManager abstracts tmux operations for testing.
@@ -154,6 +156,11 @@ func (s *Prefect) heartbeat() {
 
 	deadCount := 0
 	for _, agent := range workingAgents {
+		// Skip human-supervised roles — envoys and governors are not auto-respawned.
+		if agent.Role == "envoy" || agent.Role == "governor" {
+			continue
+		}
+
 		sessName := dispatch.SessionName(agent.World, agent.Name)
 		if !s.sessions.Exists(sessName) {
 			deadCount++
@@ -199,6 +206,10 @@ func respawnCommand(agent store.Agent) string {
 	switch agent.Role {
 	case "sentinel":
 		return fmt.Sprintf("sol sentinel run %s", agent.World)
+	case "envoy", "governor":
+		// Should never reach here — skipped in heartbeat.
+		// But if it does, start a Claude session.
+		return "claude --dangerously-skip-permissions"
 	default:
 		// Agents and forge run Claude sessions — the CLAUDE.md and tethers
 		// installed in the worktree provide the execution context.
@@ -214,6 +225,10 @@ func worktreeForAgent(agent store.Agent) string {
 	case "sentinel":
 		// Sentinel is a Go process, not a worktree-based agent.
 		return config.Home()
+	case "envoy":
+		return envoy.WorktreePath(agent.World, agent.Name)
+	case "governor":
+		return governor.GovernorDir(agent.World)
 	default:
 		return dispatch.WorktreePath(agent.World, agent.Name)
 	}

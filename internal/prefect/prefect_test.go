@@ -713,3 +713,90 @@ func TestHeartbeatRespondsWithoutSentinel(t *testing.T) {
 		t.Error("prefect should respawn agents in unsentineled worlds")
 	}
 }
+
+func TestHeartbeatSkipsEnvoy(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create an envoy agent in working state with a dead session.
+	sphereStore.CreateAgent("Scout", "haven", "envoy")
+	sphereStore.UpdateAgentState("haven/Scout", "working", "sol-envoy123")
+
+	// Create worktree directory (should not matter — should be skipped).
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "envoys", "Scout", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.heartbeat()
+
+	// Should NOT have started any sessions.
+	started := mock.GetStarted()
+	if len(started) != 0 {
+		t.Fatalf("expected 0 sessions started for envoy, got %d: %v", len(started), started)
+	}
+}
+
+func TestHeartbeatSkipsGovernor(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create a governor agent in working state with a dead session.
+	sphereStore.CreateAgent("governor", "haven", "governor")
+	sphereStore.UpdateAgentState("haven/governor", "working", "")
+
+	// Create governor directory (should not matter — should be skipped).
+	govDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "governor")
+	os.MkdirAll(govDir, 0o755)
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.heartbeat()
+
+	// Should NOT have started any sessions.
+	started := mock.GetStarted()
+	if len(started) != 0 {
+		t.Fatalf("expected 0 sessions started for governor, got %d: %v", len(started), started)
+	}
+}
+
+func TestWorktreeForEnvoy(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	envoyAgent := store.Agent{Name: "Scout", World: "haven", Role: "envoy"}
+	path := worktreeForAgent(envoyAgent)
+	expected := filepath.Join(dir, "haven", "envoys", "Scout", "worktree")
+	if path != expected {
+		t.Errorf("envoy worktree = %q, want %q", path, expected)
+	}
+}
+
+func TestWorktreeForGovernor(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	govAgent := store.Agent{Name: "governor", World: "haven", Role: "governor"}
+	path := worktreeForAgent(govAgent)
+	expected := filepath.Join(dir, "haven", "governor")
+	if path != expected {
+		t.Errorf("governor worktree = %q, want %q", path, expected)
+	}
+}
+
+func TestRespawnCommandEnvoyGovernor(t *testing.T) {
+	envoyAgent := store.Agent{Name: "Scout", World: "haven", Role: "envoy"}
+	govAgent := store.Agent{Name: "governor", World: "haven", Role: "governor"}
+
+	envoyCmd := respawnCommand(envoyAgent)
+	if envoyCmd != "claude --dangerously-skip-permissions" {
+		t.Errorf("envoy command = %q, want %q", envoyCmd, "claude --dangerously-skip-permissions")
+	}
+
+	govCmd := respawnCommand(govAgent)
+	if govCmd != "claude --dangerously-skip-permissions" {
+		t.Errorf("governor command = %q, want %q", govCmd, "claude --dangerously-skip-permissions")
+	}
+}

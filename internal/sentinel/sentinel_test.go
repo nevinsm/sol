@@ -751,3 +751,53 @@ func TestExtractJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestSentinelIgnoresEnvoy(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create an envoy agent with a dead session.
+	sphereStore.CreateAgent("Scout", "ember", "envoy")
+	sphereStore.UpdateAgentState("ember/Scout", "working", "sol-envoy123")
+	// Session is NOT alive.
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// No sessions should have been started or stopped.
+	if started := mock.getStarted(); len(started) != 0 {
+		t.Errorf("expected 0 sessions started for envoy, got %d: %v", len(started), started)
+	}
+	if stopped := mock.getStopped(); len(stopped) != 0 {
+		t.Errorf("expected 0 sessions stopped for envoy, got %d: %v", len(stopped), stopped)
+	}
+}
+
+func TestSentinelIgnoresGovernor(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a governor agent with a dead session.
+	sphereStore.CreateAgent("governor", "ember", "governor")
+	sphereStore.UpdateAgentState("ember/governor", "working", "")
+	// Session is NOT alive.
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// No sessions should have been started or stopped.
+	if started := mock.getStarted(); len(started) != 0 {
+		t.Errorf("expected 0 sessions started for governor, got %d: %v", len(started), started)
+	}
+	if stopped := mock.getStopped(); len(stopped) != 0 {
+		t.Errorf("expected 0 sessions stopped for governor, got %d: %v", len(stopped), stopped)
+	}
+}

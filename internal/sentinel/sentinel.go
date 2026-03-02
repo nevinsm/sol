@@ -172,7 +172,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	// Filter to agents only.
+	// Only monitor outpost agents — envoys and governors are human-supervised.
 	var activeAgents []store.Agent
 	for _, a := range agents {
 		if a.Role == "agent" {
