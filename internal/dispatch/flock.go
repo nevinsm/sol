@@ -23,22 +23,22 @@ type WorkItemLock struct {
 func AcquireWorkItemLock(itemID string) (*WorkItemLock, error) {
 	lockDir := filepath.Join(config.RuntimeDir(), "locks")
 	if err := os.MkdirAll(lockDir, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to acquire lock for work item %s: %w", itemID, err)
+		return nil, fmt.Errorf("failed to acquire lock for work item %q: %w", itemID, err)
 	}
 
 	lockPath := filepath.Join(lockDir, itemID+".lock")
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to acquire lock for work item %s: %w", itemID, err)
+		return nil, fmt.Errorf("failed to acquire lock for work item %q: %w", itemID, err)
 	}
 
 	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if err != nil {
 		f.Close()
 		if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
-			return nil, fmt.Errorf("work item %s is being dispatched by another process", itemID)
+			return nil, fmt.Errorf("work item %q is being dispatched by another process", itemID)
 		}
-		return nil, fmt.Errorf("failed to acquire lock for work item %s: %w", itemID, err)
+		return nil, fmt.Errorf("failed to acquire lock for work item %q: %w", itemID, err)
 	}
 
 	return &WorkItemLock{file: f, path: lockPath}, nil
@@ -68,7 +68,7 @@ type AgentLock struct {
 func AcquireAgentLock(agentID string) (*AgentLock, error) {
 	lockDir := filepath.Join(config.RuntimeDir(), "locks")
 	if err := os.MkdirAll(lockDir, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to acquire lock for agent %s: %w", agentID, err)
+		return nil, fmt.Errorf("failed to acquire lock for agent %q: %w", agentID, err)
 	}
 
 	// Replace "/" in agent IDs (e.g., "ember/Toast") with "--" for safe filenames.
@@ -76,16 +76,16 @@ func AcquireAgentLock(agentID string) (*AgentLock, error) {
 	lockPath := filepath.Join(lockDir, "agent-"+safe+".lock")
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to acquire lock for agent %s: %w", agentID, err)
+		return nil, fmt.Errorf("failed to acquire lock for agent %q: %w", agentID, err)
 	}
 
 	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if err != nil {
 		f.Close()
 		if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
-			return nil, fmt.Errorf("agent %s is being dispatched by another process", agentID)
+			return nil, fmt.Errorf("agent %q is being dispatched by another process", agentID)
 		}
-		return nil, fmt.Errorf("failed to acquire lock for agent %s: %w", agentID, err)
+		return nil, fmt.Errorf("failed to acquire lock for agent %q: %w", agentID, err)
 	}
 
 	return &AgentLock{file: f, path: lockPath}, nil
@@ -116,13 +116,13 @@ type MergeSlotLock struct {
 func AcquireMergeSlotLock(world string) (*MergeSlotLock, error) {
 	lockDir := filepath.Join(config.RuntimeDir(), "locks")
 	if err := os.MkdirAll(lockDir, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to acquire merge slot for world %s: %w", world, err)
+		return nil, fmt.Errorf("failed to acquire merge slot for world %q: %w", world, err)
 	}
 
 	lockPath := filepath.Join(lockDir, world+"-merge-slot.lock")
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to acquire merge slot for world %s: %w", world, err)
+		return nil, fmt.Errorf("failed to acquire merge slot for world %q: %w", world, err)
 	}
 
 	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
@@ -131,7 +131,7 @@ func AcquireMergeSlotLock(world string) (*MergeSlotLock, error) {
 		if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
 			return nil, fmt.Errorf("merge slot busy for world %q", world)
 		}
-		return nil, fmt.Errorf("failed to acquire merge slot for world %s: %w", world, err)
+		return nil, fmt.Errorf("failed to acquire merge slot for world %q: %w", world, err)
 	}
 
 	return &MergeSlotLock{file: f, path: lockPath}, nil

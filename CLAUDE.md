@@ -59,7 +59,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 ## Conventions
 - Go module: github.com/nevinsm/sol
 - All timestamps: RFC3339 in UTC
-- Work item IDs: "sol-" + 8 hex chars (e.g., sol-a1b2c3d4)
+- Work item IDs: "sol-" + 16 hex chars (e.g., sol-a1b2c3d4e5f6a7b8)
 - Session names: sol-{world}-{agentName} (e.g., sol-myworld-Toast)
 - Error messages include context: "failed to open world database %q: %w"
 - SQLite connections always set: journal_mode=WAL, busy_timeout=5000, foreign_keys=ON

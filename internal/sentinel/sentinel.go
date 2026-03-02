@@ -244,6 +244,14 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 		}
 	}
 
+	// Prune stale entries for agents no longer in the active set.
+	activeIDs := make(map[string]bool, len(activeAgents))
+	for _, a := range activeAgents {
+		activeIDs[a.ID] = true
+	}
+	w.pruneCaptures(activeIDs)
+	w.pruneRespawnCounts(activeIDs)
+
 	if w.logger != nil {
 		w.logger.Emit(events.EventPatrol, w.agentID(), w.agentID(), "feed",
 			map[string]any{
@@ -259,6 +267,24 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// pruneCaptures removes hash entries for agents that are no longer working.
+func (w *Sentinel) pruneCaptures(workingAgentIDs map[string]bool) {
+	for key := range w.lastCaptures {
+		if !workingAgentIDs[key] {
+			delete(w.lastCaptures, key)
+		}
+	}
+}
+
+// pruneRespawnCounts removes respawn count entries for agents that are no longer active.
+func (w *Sentinel) pruneRespawnCounts(activeAgentIDs map[string]bool) {
+	for key := range w.respawnCounts {
+		if !activeAgentIDs[key.AgentID] {
+			delete(w.respawnCounts, key)
+		}
+	}
 }
 
 // checkProgress checks whether a working agent with a live session is making progress.
