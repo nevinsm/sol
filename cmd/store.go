@@ -287,6 +287,9 @@ var storeQueryCmd = &cobra.Command{
 		if !strings.HasPrefix(trimmed, "SELECT") {
 			return fmt.Errorf("only SELECT queries are allowed")
 		}
+		if strings.Contains(querySQL, ";") {
+			return fmt.Errorf("multi-statement queries are not allowed")
+		}
 
 		s, err := store.OpenWorld(world)
 		if err != nil {
@@ -351,7 +354,13 @@ func printWorkItem(w *store.WorkItem) {
 	}
 }
 
-func printQueryTable(rows interface{ Next() bool; Scan(dest ...interface{}) error }, cols []string) error {
+type scanRows interface {
+	Next() bool
+	Scan(dest ...interface{}) error
+	Err() error
+}
+
+func printQueryTable(rows scanRows, cols []string) error {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, strings.Join(cols, "\t"))
 
@@ -375,11 +384,14 @@ func printQueryTable(rows interface{ Next() bool; Scan(dest ...interface{}) erro
 		}
 		fmt.Fprintln(tw, strings.Join(strs, "\t"))
 	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating rows: %w", err)
+	}
 	tw.Flush()
 	return nil
 }
 
-func printQueryJSON(rows interface{ Next() bool; Scan(dest ...interface{}) error }, cols []string) error {
+func printQueryJSON(rows scanRows, cols []string) error {
 	var results []map[string]interface{}
 	values := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
@@ -401,6 +413,9 @@ func printQueryJSON(rows interface{ Next() bool; Scan(dest ...interface{}) error
 			}
 		}
 		results = append(results, row)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating rows: %w", err)
 	}
 	return printJSON(results)
 }

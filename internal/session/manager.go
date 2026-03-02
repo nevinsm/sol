@@ -81,6 +81,14 @@ func captureHashPath(name string) string {
 	return filepath.Join(sessionsDir(), name+".last-capture-hash")
 }
 
+// tmuxExactTarget returns a tmux target string that forces exact session matching.
+// Without the "=" prefix, tmux uses prefix matching which can target the wrong session.
+// The trailing ":" selects the session's current window/pane, which is required for
+// pane-targeting commands (send-keys, capture-pane) to resolve the "=" prefix correctly.
+func tmuxExactTarget(name string) string {
+	return "=" + name + ":"
+}
+
 // tmuxCmd creates a tmux command with a 10-second timeout.
 // The caller MUST call the returned cancel function after the command
 // completes to release the context resources.
@@ -145,7 +153,7 @@ func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, 
 
 	// Set environment variables
 	for k, v := range env {
-		setEnv, setEnvCancel := tmuxCmd("set-environment", "-t", name, k, v)
+		setEnv, setEnvCancel := tmuxCmd("set-environment", "-t", tmuxExactTarget(name), k, v)
 		if out, err := setEnv.CombinedOutput(); err != nil {
 			setEnvCancel()
 			// Best-effort cleanup on env failure
@@ -185,7 +193,7 @@ func (m *Manager) Stop(name string, force bool) error {
 
 	if !force {
 		// Send C-c for graceful shutdown
-		interrupt, interruptCancel := tmuxCmd("send-keys", "-t", name, "C-c", "")
+		interrupt, interruptCancel := tmuxCmd("send-keys", "-t", tmuxExactTarget(name), "C-c")
 		_ = interrupt.Run()
 		interruptCancel()
 		// Wait up to 5 seconds for the session to exit
@@ -200,7 +208,7 @@ func (m *Manager) Stop(name string, force bool) error {
 
 	// Kill the session if it still exists
 	if m.Exists(name) {
-		kill, killCancel := tmuxCmd("kill-session", "-t", name)
+		kill, killCancel := tmuxCmd("kill-session", "-t", tmuxExactTarget(name))
 		defer killCancel()
 		if out, err := kill.CombinedOutput(); err != nil {
 			return fmt.Errorf("failed to kill session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
@@ -254,7 +262,7 @@ func (m *Manager) List() ([]SessionInfo, error) {
 
 		// Get tmux server PID if session is alive
 		if info.Alive {
-			pid, pidCancel := tmuxCmd("display-message", "-t", meta.Name, "-p", "#{pid}")
+			pid, pidCancel := tmuxCmd("display-message", "-t", tmuxExactTarget(meta.Name), "-p", "#{pid}")
 			if out, err := pid.Output(); err == nil {
 				if p, err := strconv.Atoi(strings.TrimSpace(string(out))); err == nil {
 					info.PID = p
@@ -280,7 +288,7 @@ func (m *Manager) Health(name string, maxInactivity time.Duration) (HealthStatus
 	}
 
 	// Check if the pane process is dead
-	paneCmd, paneCmdCancel := tmuxCmd("list-panes", "-t", name, "-F", "#{pane_dead}")
+	paneCmd, paneCmdCancel := tmuxCmd("list-panes", "-t", tmuxExactTarget(name), "-F", "#{pane_dead}")
 	defer paneCmdCancel()
 	if out, err := paneCmd.Output(); err == nil {
 		if strings.TrimSpace(string(out)) == "1" {
@@ -331,7 +339,7 @@ func (m *Manager) Capture(name string, lines int) (string, error) {
 		return "", fmt.Errorf("session %q not found", name)
 	}
 
-	capCmd, capCancel := tmuxCmd("capture-pane", "-t", name, "-p", "-S", fmt.Sprintf("-%d", lines))
+	capCmd, capCancel := tmuxCmd("capture-pane", "-t", tmuxExactTarget(name), "-p", "-S", fmt.Sprintf("-%d", lines))
 	defer capCancel()
 	out, err := capCmd.Output()
 	if err != nil {
@@ -353,7 +361,7 @@ func (m *Manager) Attach(name string) error {
 		return fmt.Errorf("tmux not found in PATH: %w", err)
 	}
 
-	return syscall.Exec(tmuxPath, []string{"tmux", "attach-session", "-t", name}, os.Environ())
+	return syscall.Exec(tmuxPath, []string{"tmux", "attach-session", "-t", tmuxExactTarget(name)}, os.Environ())
 }
 
 // Inject sends text to the session's active pane using tmux send-keys in
@@ -363,7 +371,7 @@ func (m *Manager) Inject(name string, text string) error {
 		return fmt.Errorf("session %q not found", name)
 	}
 
-	sendCmd, sendCancel := tmuxCmd("send-keys", "-t", name, "-l", "--", text)
+	sendCmd, sendCancel := tmuxCmd("send-keys", "-t", tmuxExactTarget(name), "-l", "--", text)
 	defer sendCancel()
 	if out, err := sendCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to inject into session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
@@ -374,7 +382,7 @@ func (m *Manager) Inject(name string, text string) error {
 
 // Exists returns true if a tmux session with this name exists.
 func (m *Manager) Exists(name string) bool {
-	cmd, cancel := tmuxCmd("has-session", "-t", name)
+	cmd, cancel := tmuxCmd("has-session", "-t", tmuxExactTarget(name))
 	defer cancel()
 	return cmd.Run() == nil
 }

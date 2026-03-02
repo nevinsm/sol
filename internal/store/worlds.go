@@ -123,13 +123,24 @@ func (s *Store) DeleteWorldData(world string) error {
 
 	// Clean up messages where sender or recipient is an agent in this world.
 	// Agent IDs are formatted as "{world}/{name}".
-	pattern := world + "/%"
-	if _, err := tx.Exec(`DELETE FROM messages WHERE sender LIKE ? OR recipient LIKE ?`, pattern, pattern); err != nil {
+	// Use exact prefix matching (not LIKE) to avoid matching worlds with
+	// similar names (e.g. deleting "dev" must not affect "dev-staging").
+	worldPrefix := world + "/"
+	if _, err := tx.Exec(
+		`DELETE FROM messages WHERE
+			(length(sender) > ? AND substr(sender, 1, ?) = ?)
+			OR (length(recipient) > ? AND substr(recipient, 1, ?) = ?)`,
+		len(worldPrefix), len(worldPrefix), worldPrefix,
+		len(worldPrefix), len(worldPrefix), worldPrefix,
+	); err != nil {
 		return fmt.Errorf("failed to delete messages for world %q: %w", world, err)
 	}
 
 	// Clean up escalations sourced from this world.
-	if _, err := tx.Exec(`DELETE FROM escalations WHERE source LIKE ?`, pattern); err != nil {
+	if _, err := tx.Exec(
+		`DELETE FROM escalations WHERE length(source) > ? AND substr(source, 1, ?) = ?`,
+		len(worldPrefix), len(worldPrefix), worldPrefix,
+	); err != nil {
 		return fmt.Errorf("failed to delete escalations for world %q: %w", world, err)
 	}
 

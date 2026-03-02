@@ -391,6 +391,92 @@ func TestDeleteWorldDataPreservesOtherWorlds(t *testing.T) {
 	}
 }
 
+func TestDeleteWorldDataDoesNotAffectSimilarWorlds(t *testing.T) {
+	s := setupSphere(t)
+
+	// Register two worlds with similar names.
+	if err := s.RegisterWorld("dev", "/path/dev"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RegisterWorld("dev-staging", "/path/dev-staging"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create agents in both worlds.
+	if _, err := s.CreateAgent("Agent", "dev", "agent"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateAgent("Agent", "dev-staging", "agent"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Send messages in both worlds.
+	if _, err := s.SendMessage("dev/Agent", "dev/Other", "test", "body", 2, "notification"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SendMessage("dev-staging/Agent", "dev-staging/Other", "test", "body", 2, "notification"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create escalations sourced from both worlds.
+	if _, err := s.CreateEscalation("low", "dev/Agent", "dev escalation"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateEscalation("low", "dev-staging/Agent", "staging escalation"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Delete world "dev" — must not affect "dev-staging".
+	if err := s.DeleteWorldData("dev"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify "dev" data is gone.
+	if _, err := s.GetWorld("dev"); err == nil {
+		t.Fatal("expected error for deleted world 'dev'")
+	}
+	devAgents, err := s.ListAgents("dev", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devAgents) != 0 {
+		t.Fatalf("expected 0 dev agents, got %d", len(devAgents))
+	}
+
+	// Verify "dev-staging" data still exists.
+	w, err := s.GetWorld("dev-staging")
+	if err != nil {
+		t.Fatalf("dev-staging world should survive: %v", err)
+	}
+	if w.Name != "dev-staging" {
+		t.Fatalf("expected world 'dev-staging', got %q", w.Name)
+	}
+
+	stagingAgents, err := s.ListAgents("dev-staging", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stagingAgents) != 1 {
+		t.Fatalf("expected 1 dev-staging agent, got %d", len(stagingAgents))
+	}
+
+	msgs, err := s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message (dev-staging's), got %d", len(msgs))
+	}
+
+	escs, err := s.ListEscalations("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 1 {
+		t.Fatalf("expected 1 escalation (dev-staging's), got %d", len(escs))
+	}
+}
+
 func TestDeleteWorldDataNonexistent(t *testing.T) {
 	s := setupSphere(t)
 

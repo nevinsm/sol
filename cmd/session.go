@@ -52,14 +52,9 @@ var sessionStartCmd = &cobra.Command{
 			}
 		}
 
-		env := make(map[string]string)
-		for _, e := range startEnv {
-			for i := 0; i < len(e); i++ {
-				if e[i] == '=' {
-					env[e[:i]] = e[i+1:]
-					break
-				}
-			}
+		env, err := parseVarFlags(startEnv)
+		if err != nil {
+			return err
 		}
 
 		mgr := session.New()

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"unicode"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
@@ -71,7 +72,9 @@ var escalationListCmd = &cobra.Command{
 			statusLabel = escalationListStatus
 			// Capitalize first letter.
 			if len(statusLabel) > 0 {
-				statusLabel = string(statusLabel[0]-32) + statusLabel[1:]
+				r := []rune(statusLabel)
+				r[0] = unicode.ToUpper(r[0])
+				statusLabel = string(r)
 			}
 		}
 		fmt.Printf("%s escalations:\n", statusLabel)
