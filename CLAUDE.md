@@ -26,6 +26,8 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **World Lifecycle**: `sol world init` required before use — explicit world creation
 - **Caravan**: Batch of related work items across worlds, with phase-based sequencing
 - **Brief**: Agent-maintained context file (`.brief/memory.md`) persisted across sessions
+- **Doctor**: Prerequisite validator — checks tmux, git, claude, SOL_HOME, SQLite WAL
+- **Init**: First-time setup — creates SOL_HOME, first world (flag/interactive/guided modes)
 
 ## Components (built)
 - **Prefect**: Sphere-wide orchestrator — respawns sessions, health checks
@@ -33,6 +35,8 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Sentinel**: Per-world health monitor — Go process + AI callouts (ADR-0001)
 - **Consul**: Sphere-level patrol — stale tethers, stranded caravans (ADR-0007)
 - **Chronicle**: Event log maintenance
+- **Doctor**: Prerequisite check engine (`internal/doctor/`)
+- **Status**: Sphere overview + per-world detail, lipgloss-styled rendering
 
 ## Components (planned)
 - **Envoy**: Persistent human-directed agent with brief system (Arc 3, ADR-0009)
@@ -65,3 +69,4 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - SQLite connections always set: journal_mode=WAL, busy_timeout=5000, foreign_keys=ON
 - World config path: $SOL_HOME/{world}/world.toml
 - Global config path: $SOL_HOME/sol.toml
+- Dependencies: charmbracelet/lipgloss (terminal styling), charmbracelet/huh (interactive prompts)

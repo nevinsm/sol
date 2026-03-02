@@ -50,8 +50,11 @@ Make the system approachable for first-time operators.
 
 - `sol doctor` — validate prerequisites (tmux, git, claude, writable dirs, SQLite WAL)
 - `sol init` — guided first-time setup (create SOL_HOME, first world)
-- Actionable error messages when prerequisites fail (not just "exec: tmux: not found")
-- Operator quick-start documentation
+  - Flag mode: `sol init --name=<world> [--source-repo=<path>]`
+  - Interactive mode: huh prompts when stdin is a TTY
+  - Guided mode: `sol init --guided` — ephemeral Claude session
+- Actionable error messages when prerequisites fail
+- Init runs doctor by default (`--skip-checks` to bypass)
 
 ### Status Overhaul
 
@@ -64,7 +67,7 @@ overview for system-wide visibility.
 - Charmbracelet lipgloss for section headers, tables, colored status
   indicators. `--json` bypasses all styling.
 - Rendering separated from data gathering (`status/render.go`)
-- Consul status added to sphere process checks (missing today)
+- Consul status added to sphere process checks
 - Sphere health: aggregate of all world health + sphere process health
 
 Role-aware sections (outposts/envoys/governor) land with Arc 3 when
@@ -73,6 +76,13 @@ those roles exist.
 **Acceptance:** A new operator can go from zero to first successful `cast` with
 clear guidance at every step. `sol doctor` catches all common setup issues.
 `sol status` gives a system-wide overview at a glance.
+
+**Status:** Complete.
+- ADR-0012: Charmbracelet adoption (lipgloss + huh)
+- `internal/doctor/`: prerequisite check engine (5 checks)
+- `internal/setup/`: first-time setup engine
+- `internal/status/render.go`: lipgloss-styled rendering
+- `sol doctor`, `sol init`, `sol status` (sphere overview)
 
 ---
 
