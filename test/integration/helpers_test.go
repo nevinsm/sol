@@ -26,8 +26,12 @@ func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 	t.Setenv("SOL_HOME", gtHome)
 
 	// 2. Create .store and .runtime dirs.
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	// 3. Create a temp git repo with one commit.
 	sourceRepo = t.TempDir()

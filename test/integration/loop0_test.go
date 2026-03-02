@@ -187,7 +187,10 @@ func TestCrashRecoveryRecast(t *testing.T) {
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
 
 	// Verify durability: work item still tethered, tether file persists.
-	item, _ := worldStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWorkItem(itemID)
+	if err != nil {
+		t.Fatalf("get work item after crash: %v", err)
+	}
 	if item.Status != "tethered" {
 		t.Errorf("work item status after crash: got %q, want tethered", item.Status)
 	}
@@ -211,7 +214,10 @@ func TestCrashRecoveryRecast(t *testing.T) {
 		t.Error("tmux session not created after re-cast")
 	}
 
-	tetherID, _ := tether.Read("ember", "TestBot")
+	tetherID, err := tether.Read("ember", "TestBot")
+	if err != nil {
+		t.Fatalf("read tether after re-cast: %v", err)
+	}
 	if tetherID != itemID {
 		t.Errorf("tether after re-cast: got %q, want %q", tetherID, itemID)
 	}
@@ -264,7 +270,10 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 	}
 
 	// Verify second item remains open.
-	item2, _ := worldStore.GetWorkItem(item2ID)
+	item2, err := worldStore.GetWorkItem(item2ID)
+	if err != nil {
+		t.Fatalf("get work item 2: %v", err)
+	}
 	if item2.Status != "open" {
 		t.Errorf("second work item status: got %q, want open", item2.Status)
 	}
@@ -289,12 +298,14 @@ func TestPrimeOutput(t *testing.T) {
 		t.Fatalf("CreateWorkItem: %v", err)
 	}
 
-	dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, worldStore, sphereStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("cast: %v", err)
+	}
 
 	// Run Prime.
 	result, err := dispatch.Prime("ember", "TestBot", worldStore)
@@ -363,12 +374,14 @@ func TestStoreInspection(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: id1,
 		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
-	}, worldStore, sphereStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("cast: %v", err)
+	}
 
 	// Query the world DB directly via database/sql.
 	db := worldStore.DB()

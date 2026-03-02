@@ -27,8 +27,12 @@ func TestMailSendAndReceive(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -112,8 +116,12 @@ func TestProtocolMessageFlow(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -393,8 +401,12 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	worldStore, sphereStore := openStores(t, "ember")
 	logger := events.NewLogger(solHome)
@@ -426,7 +438,9 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	// Session is dead (not in mock.alive).
 	// Create worktree directory so respawn doesn't fail.
 	worktreeDir := dispatch.WorktreePath("ember", "Toast")
-	os.MkdirAll(worktreeDir, 0o755)
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("create worktree dir: %v", err)
+	}
 
 	cfg := sentinel.DefaultConfig("ember", "", solHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
@@ -457,8 +471,12 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	worldStore, sphereStore := openStores(t, "ember")
 	logger := events.NewLogger(solHome)
@@ -485,7 +503,9 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	}
 
 	worktreeDir := dispatch.WorktreePath("ember", "Toast")
-	os.MkdirAll(worktreeDir, 0o755)
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("create worktree dir: %v", err)
+	}
 
 	cfg := sentinel.DefaultConfig("ember", "", solHome)
 	cfg.PatrolInterval = 50 * time.Millisecond
@@ -494,7 +514,9 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	w := sentinel.New(cfg, sphereStore, worldStore, mock, logger)
 
 	// Patrol 1: stalled → respawn (attempt 1).
-	w.Patrol(context.Background())
+	if err := w.Patrol(context.Background()); err != nil {
+		t.Fatalf("patrol 1: %v", err)
+	}
 	if len(mock.started) != 1 {
 		t.Fatalf("patrol 1: expected 1 start, got %d", len(mock.started))
 	}
@@ -502,7 +524,9 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	delete(mock.alive, "sol-ember-Toast")
 
 	// Patrol 2: still stalled → respawn (attempt 2).
-	w.Patrol(context.Background())
+	if err := w.Patrol(context.Background()); err != nil {
+		t.Fatalf("patrol 2: %v", err)
+	}
 	if len(mock.started) != 2 {
 		t.Fatalf("patrol 2: expected 2 starts, got %d", len(mock.started))
 	}
@@ -510,7 +534,9 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	delete(mock.alive, "sol-ember-Toast")
 
 	// Patrol 3: max reached → return to open.
-	w.Patrol(context.Background())
+	if err := w.Patrol(context.Background()); err != nil {
+		t.Fatalf("patrol 3: %v", err)
+	}
 	if len(mock.started) != 2 {
 		t.Fatalf("patrol 3: expected still 2 starts (max reached), got %d", len(mock.started))
 	}
@@ -551,8 +577,12 @@ func TestSentinelCleanupZombies(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	_, sphereStore := openStores(t, "ember")
 	logger := events.NewLogger(solHome)
@@ -595,8 +625,12 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	_, sphereStore := openStores(t, "ember")
 	logger := events.NewLogger(solHome)
@@ -625,10 +659,14 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 	})
 
 	// Patrol 1: establishes baseline hash.
-	w.Patrol(context.Background())
+	if err := w.Patrol(context.Background()); err != nil {
+		t.Fatalf("patrol 1: %v", err)
+	}
 
 	// Patrol 2: hash unchanged → triggers assessment → nudge.
-	w.Patrol(context.Background())
+	if err := w.Patrol(context.Background()); err != nil {
+		t.Fatalf("patrol 2: %v", err)
+	}
 
 	// Verify: nudge injected.
 	if len(mock.injected) != 1 {
@@ -651,8 +689,12 @@ func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	_, sphereStore := openStores(t, "ember")
 	mock := newMockSessionChecker()
@@ -680,8 +722,12 @@ func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
 	})
 
 	// Patrol twice.
-	w.Patrol(context.Background())
-	w.Patrol(context.Background())
+	if err := w.Patrol(context.Background()); err != nil {
+		t.Fatalf("patrol 1: %v", err)
+	}
+	if err := w.Patrol(context.Background()); err != nil {
+		t.Fatalf("patrol 2: %v", err)
+	}
 
 	// Verify: NO nudge injected.
 	if len(mock.injected) != 0 {
@@ -698,8 +744,12 @@ func TestSentinelAIAssessmentFailure(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	_, sphereStore := openStores(t, "ember")
 	logger := events.NewLogger(solHome)
@@ -723,7 +773,9 @@ func TestSentinelAIAssessmentFailure(t *testing.T) {
 	})
 
 	// Patrol twice.
-	w.Patrol(context.Background())
+	if err := w.Patrol(context.Background()); err != nil {
+		t.Fatalf("patrol 1: %v", err)
+	}
 	err := w.Patrol(context.Background())
 
 	// Patrol should complete without error.
@@ -773,8 +825,10 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 	assertEventEmitted(t, solHome, events.EventCast)
 
 	// Simulate work.
-	os.WriteFile(filepath.Join(result.WorktreeDir, "dispatch_test.go"),
-		[]byte("package main\n\nfunc dispatchTest() {}\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(result.WorktreeDir, "dispatch_test.go"),
+		[]byte("package main\n\nfunc dispatchTest() {}\n"), 0o644); err != nil {
+		t.Fatalf("write dispatch_test.go: %v", err)
+	}
 
 	// Resolve with logger.
 	_, err = dispatch.Resolve(dispatch.ResolveOpts{

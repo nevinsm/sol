@@ -36,7 +36,9 @@ func TestEscalationCreateAndRoute(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -119,7 +121,9 @@ func TestEscalationLifecycle(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -192,7 +196,9 @@ func TestEscalationFromAgent(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -257,12 +263,14 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	}
 
 	// Cast the work item.
-	dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "ember",
 		AgentName:  "HandBot",
 		SourceRepo: sourceRepo,
-	}, worldStore, sphereStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("cast: %v", err)
+	}
 
 	// 1. Capture state.
 	state, err := handoff.Capture(handoff.CaptureOpts{
@@ -331,12 +339,14 @@ func TestHandoffPreservesHook(t *testing.T) {
 	}
 
 	// Cast the work item.
-	dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "ember",
 		AgentName:  "HookBot",
 		SourceRepo: sourceRepo,
-	}, worldStore, sphereStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("cast: %v", err)
+	}
 
 	// Write handoff file.
 	state := &handoff.State{
@@ -381,7 +391,9 @@ func TestHandoffWithWorkflow(t *testing.T) {
 	// Create formula.
 	formulaDir := filepath.Join(solHome, "formulas", "handoff-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
-	os.MkdirAll(stepsDir, 0o755)
+	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
+		t.Fatalf("create steps dir: %v", err)
+	}
 
 	manifest := `name = "handoff-formula"
 type = "agent"
@@ -402,9 +414,15 @@ title = "Second Step"
 instructions = "steps/02.md"
 needs = ["step1"]
 `
-	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Step 1 instructions.\n"), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Step 2 instructions.\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest.toml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Step 1 instructions.\n"), 0o644); err != nil {
+		t.Fatalf("write 01.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Step 2 instructions.\n"), 0o644); err != nil {
+		t.Fatalf("write 02.md: %v", err)
+	}
 
 	// Create agent and work item.
 	if _, err := sphereStore.CreateAgent("WFHandBot", "ember", "agent"); err != nil {
@@ -416,16 +434,20 @@ needs = ["step1"]
 	}
 
 	// Cast with formula.
-	dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "ember",
 		AgentName:  "WFHandBot",
 		SourceRepo: sourceRepo,
 		Formula:    "handoff-formula",
-	}, worldStore, sphereStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("cast: %v", err)
+	}
 
 	// Advance to step 2.
-	workflow.Advance("ember", "WFHandBot")
+	if _, _, err := workflow.Advance("ember", "WFHandBot"); err != nil {
+		t.Fatalf("Advance: %v", err)
+	}
 
 	// Capture → state includes workflow step and progress.
 	state, err := handoff.Capture(handoff.CaptureOpts{
@@ -485,7 +507,9 @@ func TestHandoffPrimeOverridesWorkflow(t *testing.T) {
 	// Create formula.
 	formulaDir := filepath.Join(solHome, "formulas", "override-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
-	os.MkdirAll(stepsDir, 0o755)
+	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
+		t.Fatalf("create steps dir: %v", err)
+	}
 
 	manifest := `name = "override-formula"
 type = "agent"
@@ -500,8 +524,12 @@ id = "only"
 title = "Only Step"
 instructions = "steps/01.md"
 `
-	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Only step.\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest.toml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Only step.\n"), 0o644); err != nil {
+		t.Fatalf("write 01.md: %v", err)
+	}
 
 	// Create agent and work item.
 	if _, err := sphereStore.CreateAgent("OverBot", "ember", "agent"); err != nil {
@@ -513,13 +541,15 @@ instructions = "steps/01.md"
 	}
 
 	// Cast with formula.
-	dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "ember",
 		AgentName:  "OverBot",
 		SourceRepo: sourceRepo,
 		Formula:    "override-formula",
-	}, worldStore, sphereStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("cast: %v", err)
+	}
 
 	// Write handoff file manually (simulating a handoff while workflow is active).
 	state := &handoff.State{
@@ -554,7 +584,9 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -573,7 +605,9 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateWorkItem: %v", err)
 	}
-	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/StaleBot"})
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/StaleBot"}); err != nil {
+		t.Fatalf("update work item: %v", err)
+	}
 
 	// Create agent in "working" state.
 	if _, err := sphereStore.CreateAgent("StaleBot", "haven", "agent"); err != nil {
@@ -590,7 +624,9 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	}
 
 	// Write tether file.
-	tether.Write("haven", "StaleBot", itemID)
+	if err := tether.Write("haven", "StaleBot", itemID); err != nil {
+		t.Fatalf("tether.Write: %v", err)
+	}
 
 	// Mock session checker — no session alive.
 	sessions := newMockSessionChecker()
@@ -607,16 +643,24 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	})
 
 	// Run one patrol.
-	d.Patrol(context.Background())
+	if err := d.Patrol(context.Background()); err != nil {
+		t.Fatalf("Patrol: %v", err)
+	}
 
 	// Verify: work item status back to "open".
-	item, _ := worldStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWorkItem(itemID)
+	if err != nil {
+		t.Fatalf("GetWorkItem: %v", err)
+	}
 	if item.Status != "open" {
 		t.Errorf("work item status: got %q, want open", item.Status)
 	}
 
 	// Verify: agent state is "idle".
-	agent, _ := sphereStore.GetAgent("haven/StaleBot")
+	agent, err := sphereStore.GetAgent("haven/StaleBot")
+	if err != nil {
+		t.Fatalf("GetAgent: %v", err)
+	}
 	if agent.State != "idle" {
 		t.Errorf("agent state: got %q, want idle", agent.State)
 	}
@@ -638,7 +682,9 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -656,7 +702,9 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateWorkItem: %v", err)
 	}
-	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/RecentBot"})
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/RecentBot"}); err != nil {
+		t.Fatalf("update work item: %v", err)
+	}
 
 	if _, err := sphereStore.CreateAgent("RecentBot", "haven", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
@@ -671,7 +719,9 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 		t.Fatalf("Exec: %v", err)
 	}
 
-	tether.Write("haven", "RecentBot", itemID)
+	if err := tether.Write("haven", "RecentBot", itemID); err != nil {
+		t.Fatalf("tether.Write: %v", err)
+	}
 
 	sessions := newMockSessionChecker()
 	logger := events.NewLogger(solHome)
@@ -686,10 +736,15 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 
-	d.Patrol(context.Background())
+	if err := d.Patrol(context.Background()); err != nil {
+		t.Fatalf("Patrol: %v", err)
+	}
 
 	// Work item should still be tethered (not recovered — too recent).
-	item, _ := worldStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWorkItem(itemID)
+	if err != nil {
+		t.Fatalf("GetWorkItem: %v", err)
+	}
 	if item.Status != "tethered" {
 		t.Errorf("work item status: got %q, want tethered (too recent)", item.Status)
 	}
@@ -702,7 +757,9 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -720,7 +777,9 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateWorkItem: %v", err)
 	}
-	worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/AliveBot"})
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/AliveBot"}); err != nil {
+		t.Fatalf("update work item: %v", err)
+	}
 
 	if _, err := sphereStore.CreateAgent("AliveBot", "haven", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
@@ -735,7 +794,9 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 		t.Fatalf("Exec: %v", err)
 	}
 
-	tether.Write("haven", "AliveBot", itemID)
+	if err := tether.Write("haven", "AliveBot", itemID); err != nil {
+		t.Fatalf("tether.Write: %v", err)
+	}
 
 	// Session IS alive.
 	sessions := newMockSessionChecker()
@@ -753,10 +814,15 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 
-	d.Patrol(context.Background())
+	if err := d.Patrol(context.Background()); err != nil {
+		t.Fatalf("Patrol: %v", err)
+	}
 
 	// Work item should still be tethered (session is alive).
-	item, _ := worldStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWorkItem(itemID)
+	if err != nil {
+		t.Fatalf("GetWorkItem: %v", err)
+	}
 	if item.Status != "tethered" {
 		t.Errorf("work item status: got %q, want tethered (session alive)", item.Status)
 	}
@@ -769,7 +835,9 @@ func TestConsulCaravanFeeding(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -822,10 +890,15 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	})
 
 	// Run patrol → should detect A is ready.
-	d.Patrol(context.Background())
+	if err := d.Patrol(context.Background()); err != nil {
+		t.Fatalf("Patrol: %v", err)
+	}
 
 	// Verify CARAVAN_NEEDS_FEEDING message sent.
-	msgs, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
+	msgs, err := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
+	if err != nil {
+		t.Fatalf("PendingProtocol: %v", err)
+	}
 	if len(msgs) == 0 {
 		t.Fatal("expected CARAVAN_NEEDS_FEEDING message")
 	}
@@ -834,18 +907,30 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	}
 
 	// Ack the message.
-	sphereStore.AckMessage(msgs[0].ID)
+	if err := sphereStore.AckMessage(msgs[0].ID); err != nil {
+		t.Fatalf("AckMessage: %v", err)
+	}
 
 	// Mark A as done.
-	rs, _ := store.OpenWorld("ember")
-	rs.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"})
+	rs, err := store.OpenWorld("ember")
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	if err := rs.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"}); err != nil {
+		t.Fatalf("update work item A: %v", err)
+	}
 	rs.Close()
 
 	// Run another patrol → B is now ready.
-	d.Patrol(context.Background())
+	if err := d.Patrol(context.Background()); err != nil {
+		t.Fatalf("Patrol 2: %v", err)
+	}
 
 	// Verify new CARAVAN_NEEDS_FEEDING for B.
-	msgs, _ = sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
+	msgs, err = sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
+	if err != nil {
+		t.Fatalf("PendingProtocol 2: %v", err)
+	}
 	if len(msgs) == 0 {
 		t.Fatal("expected new CARAVAN_NEEDS_FEEDING message after A done")
 	}
@@ -858,7 +943,9 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -898,15 +985,25 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	})
 
 	// Run patrol → message sent.
-	d.Patrol(context.Background())
-	msgs1, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
+	if err := d.Patrol(context.Background()); err != nil {
+		t.Fatalf("Patrol 1: %v", err)
+	}
+	msgs1, err := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
+	if err != nil {
+		t.Fatalf("PendingProtocol 1: %v", err)
+	}
 	if len(msgs1) == 0 {
 		t.Fatal("expected CARAVAN_NEEDS_FEEDING message")
 	}
 
 	// Run patrol again → no duplicate message.
-	d.Patrol(context.Background())
-	msgs2, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
+	if err := d.Patrol(context.Background()); err != nil {
+		t.Fatalf("Patrol 2: %v", err)
+	}
+	msgs2, err := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
+	if err != nil {
+		t.Fatalf("PendingProtocol 2: %v", err)
+	}
 	if len(msgs2) != len(msgs1) {
 		t.Errorf("expected no duplicate messages: had %d, now have %d", len(msgs1), len(msgs2))
 	}
@@ -919,7 +1016,9 @@ func TestConsulHeartbeat(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -941,7 +1040,9 @@ func TestConsulHeartbeat(t *testing.T) {
 	})
 
 	// Run one patrol.
-	d.Patrol(context.Background())
+	if err := d.Patrol(context.Background()); err != nil {
+		t.Fatalf("Patrol 1: %v", err)
+	}
 
 	// Read heartbeat file.
 	hb, err := consul.ReadHeartbeat(solHome)
@@ -959,8 +1060,13 @@ func TestConsulHeartbeat(t *testing.T) {
 	}
 
 	// Run another patrol.
-	d.Patrol(context.Background())
-	hb, _ = consul.ReadHeartbeat(solHome)
+	if err := d.Patrol(context.Background()); err != nil {
+		t.Fatalf("Patrol 2: %v", err)
+	}
+	hb, err = consul.ReadHeartbeat(solHome)
+	if err != nil {
+		t.Fatalf("ReadHeartbeat 2: %v", err)
+	}
 	if hb.PatrolCount != 2 {
 		t.Errorf("patrol count: got %d, want 2", hb.PatrolCount)
 	}
@@ -973,7 +1079,9 @@ func TestConsulLifecycleShutdown(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1014,7 +1122,10 @@ func TestConsulLifecycleShutdown(t *testing.T) {
 	}
 
 	// Message should be acknowledged.
-	pending, _ := sphereStore.PendingProtocol("sphere/consul", "")
+	pending, err := sphereStore.PendingProtocol("sphere/consul", "")
+	if err != nil {
+		t.Fatalf("PendingProtocol: %v", err)
+	}
 	for _, msg := range pending {
 		if msg.Subject == "SHUTDOWN" {
 			t.Error("SHUTDOWN message should be acknowledged")
@@ -1085,8 +1196,12 @@ func TestPrefectConsulStartup(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1129,8 +1244,12 @@ func TestPrefectConsulRestart(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1180,8 +1299,12 @@ func TestPrefectConsulHealthy(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1230,8 +1353,12 @@ func TestFullOrchestrationCycle(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
-	os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1284,26 +1411,41 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	})
 
 	// 3. Run consul patrol → detects stranded caravan.
-	d.Patrol(context.Background())
+	if err := d.Patrol(context.Background()); err != nil {
+		t.Fatalf("Patrol 1: %v", err)
+	}
 
 	// 4. Verify CARAVAN_NEEDS_FEEDING message sent.
-	msgs, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
+	msgs, err := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
+	if err != nil {
+		t.Fatalf("PendingProtocol: %v", err)
+	}
 	if len(msgs) == 0 {
 		t.Fatal("expected CARAVAN_NEEDS_FEEDING message")
 	}
 	// Ack to clean up.
-	sphereStore.AckMessage(msgs[0].ID)
+	if err := sphereStore.AckMessage(msgs[0].ID); err != nil {
+		t.Fatalf("AckMessage: %v", err)
+	}
 
 	// 5. Create escalation (simulating stuck agent).
 	escID, err := sphereStore.CreateEscalation("high", "ember/StuckBot", "Agent stuck in loop")
 	if err != nil {
 		t.Fatalf("CreateEscalation: %v", err)
 	}
-	esc, _ := sphereStore.GetEscalation(escID)
-	escalation.NewRouter().Route(context.Background(), *esc)
+	esc, err := sphereStore.GetEscalation(escID)
+	if err != nil {
+		t.Fatalf("GetEscalation: %v", err)
+	}
+	if err := escalation.NewRouter().Route(context.Background(), *esc); err != nil {
+		t.Fatalf("Route: %v", err)
+	}
 
 	// 6. Verify escalation stored correctly.
-	dbEsc, _ := sphereStore.GetEscalation(escID)
+	dbEsc, err := sphereStore.GetEscalation(escID)
+	if err != nil {
+		t.Fatalf("GetEscalation after route: %v", err)
+	}
 	if dbEsc.Status != "open" {
 		t.Errorf("escalation status: got %q, want open", dbEsc.Status)
 	}
@@ -1322,8 +1464,12 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	if err := sphereStore.UpdateAgentState("ember/E2EBot", "working", idA); err != nil {
 		t.Fatalf("UpdateAgentState: %v", err)
 	}
-	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/E2EBot"})
-	tether.Write("ember", "E2EBot", idA)
+	if err := worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/E2EBot"}); err != nil {
+		t.Fatalf("update work item: %v", err)
+	}
+	if err := tether.Write("ember", "E2EBot", idA); err != nil {
+		t.Fatalf("tether.Write: %v", err)
+	}
 
 	handoffState := &handoff.State{
 		WorkItemID:  idA,
@@ -1332,7 +1478,9 @@ func TestFullOrchestrationCycle(t *testing.T) {
 		Summary:     "E2E handoff test",
 		HandedOffAt: time.Now().UTC(),
 	}
-	handoff.Write(handoffState)
+	if err := handoff.Write(handoffState); err != nil {
+		t.Fatalf("handoff.Write: %v", err)
+	}
 
 	// 8. Verify handoff context injected.
 	primeResult, err := dispatch.Prime("ember", "E2EBot", worldStore2)
@@ -1352,14 +1500,23 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	if _, err := sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "ember/E2EBot"); err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
-	tether.Write("ember", "E2EBot", idA)
-	worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/E2EBot"})
+	if err := tether.Write("ember", "E2EBot", idA); err != nil {
+		t.Fatalf("tether.Write 2: %v", err)
+	}
+	if err := worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/E2EBot"}); err != nil {
+		t.Fatalf("update work item 2: %v", err)
+	}
 
 	// 10. Run consul patrol → recovers stale tether.
-	d.Patrol(context.Background())
+	if err := d.Patrol(context.Background()); err != nil {
+		t.Fatalf("Patrol 2: %v", err)
+	}
 
 	// 11. Verify work item returned to open.
-	item, _ := worldStore2.GetWorkItem(idA)
+	item, err := worldStore2.GetWorkItem(idA)
+	if err != nil {
+		t.Fatalf("GetWorkItem after recovery: %v", err)
+	}
 	if item.Status != "open" {
 		t.Errorf("work item status after recovery: got %q, want open", item.Status)
 	}

@@ -25,7 +25,9 @@ func TestWorkflowInstantiateAndAdvance(t *testing.T) {
 	// Create formula directory structure.
 	formulaDir := filepath.Join(solHome, "formulas", "test-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
-	os.MkdirAll(stepsDir, 0o755)
+	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
+		t.Fatalf("create steps dir: %v", err)
+	}
 
 	manifest := `name = "test-formula"
 type = "agent"
@@ -52,10 +54,18 @@ title = "Third Step"
 instructions = "steps/03.md"
 needs = ["step2"]
 `
-	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("# Step 1\nDo the first thing for {{issue}}.\n"), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("# Step 2\nDo the second thing.\n"), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "03.md"), []byte("# Step 3\nDo the third thing.\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest.toml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("# Step 1\nDo the first thing for {{issue}}.\n"), 0o644); err != nil {
+		t.Fatalf("write 01.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("# Step 2\nDo the second thing.\n"), 0o644); err != nil {
+		t.Fatalf("write 02.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "03.md"), []byte("# Step 3\nDo the third thing.\n"), 0o644); err != nil {
+		t.Fatalf("write 03.md: %v", err)
+	}
 
 	// Create outpost dir.
 	world := "ember"
@@ -145,7 +155,9 @@ func TestWorkflowCrashRecovery(t *testing.T) {
 	// Create formula.
 	formulaDir := filepath.Join(solHome, "formulas", "crash-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
-	os.MkdirAll(stepsDir, 0o755)
+	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
+		t.Fatalf("create steps dir: %v", err)
+	}
 
 	manifest := `name = "crash-formula"
 type = "agent"
@@ -172,17 +184,29 @@ title = "Step 3"
 instructions = "steps/03.md"
 needs = ["s2"]
 `
-	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Step 1 instructions.\n"), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Step 2 instructions.\n"), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "03.md"), []byte("Step 3 instructions.\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest.toml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Step 1 instructions.\n"), 0o644); err != nil {
+		t.Fatalf("write 01.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Step 2 instructions.\n"), 0o644); err != nil {
+		t.Fatalf("write 02.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "03.md"), []byte("Step 3 instructions.\n"), 0o644); err != nil {
+		t.Fatalf("write 03.md: %v", err)
+	}
 
 	world := "ember"
 	agent := "CrashBot"
 
 	// 1. Instantiate and advance to step 2.
-	workflow.Instantiate(world, agent, "crash-formula", map[string]string{"issue": "sol-crash"})
-	workflow.Advance(world, agent) // step1 → step2
+	if _, _, err := workflow.Instantiate(world, agent, "crash-formula", map[string]string{"issue": "sol-crash"}); err != nil {
+		t.Fatalf("Instantiate: %v", err)
+	}
+	if _, _, err := workflow.Advance(world, agent); err != nil {
+		t.Fatalf("Advance: %v", err)
+	}
 
 	// 2. Simulate crash: read state from disk (no in-memory state to clear).
 	state, err := workflow.ReadState(world, agent)
@@ -230,7 +254,9 @@ func TestCastWithWorkflow(t *testing.T) {
 	// Create formula.
 	formulaDir := filepath.Join(solHome, "formulas", "cast-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
-	os.MkdirAll(stepsDir, 0o755)
+	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
+		t.Fatalf("create steps dir: %v", err)
+	}
 
 	manifest := `name = "cast-formula"
 type = "agent"
@@ -245,12 +271,21 @@ id = "only-step"
 title = "Only Step"
 instructions = "steps/01.md"
 `
-	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Do the thing for {{issue}}.\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest.toml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Do the thing for {{issue}}.\n"), 0o644); err != nil {
+		t.Fatalf("write 01.md: %v", err)
+	}
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("WorkflowBot", "ember", "agent")
-	itemID, _ := worldStore.CreateWorkItem("WF task", "Workflow test", "operator", 2, nil)
+	if _, err := sphereStore.CreateAgent("WorkflowBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWorkItem("WF task", "Workflow test", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
 	logger := events.NewLogger(solHome)
 
@@ -318,7 +353,9 @@ func TestPrimeWithWorkflow(t *testing.T) {
 	// Create formula.
 	formulaDir := filepath.Join(solHome, "formulas", "prime-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
-	os.MkdirAll(stepsDir, 0o755)
+	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
+		t.Fatalf("create steps dir: %v", err)
+	}
 
 	manifest := `name = "prime-formula"
 type = "agent"
@@ -339,22 +376,35 @@ title = "Second Step"
 instructions = "steps/02.md"
 needs = ["step1"]
 `
-	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Execute step 1 for {{issue}}.\n"), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Execute step 2.\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest.toml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Execute step 1 for {{issue}}.\n"), 0o644); err != nil {
+		t.Fatalf("write 01.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Execute step 2.\n"), 0o644); err != nil {
+		t.Fatalf("write 02.md: %v", err)
+	}
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("PrimeBot", "ember", "agent")
-	itemID, _ := worldStore.CreateWorkItem("Prime WF task", "Prime workflow test", "operator", 2, nil)
+	if _, err := sphereStore.CreateAgent("PrimeBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWorkItem("Prime WF task", "Prime workflow test", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
 	// Cast with formula.
-	dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "ember",
 		AgentName:  "PrimeBot",
 		SourceRepo: sourceRepo,
 		Formula:    "prime-formula",
-	}, worldStore, sphereStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("cast: %v", err)
+	}
 
 	// Call Prime.
 	result, err := dispatch.Prime("ember", "PrimeBot", worldStore)
@@ -394,15 +444,22 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 	mgr := newMockSessionChecker()
 
 	// Create agent and work item — cast without formula.
-	sphereStore.CreateAgent("PlainBot", "ember", "agent")
-	itemID, _ := worldStore.CreateWorkItem("Plain task", "No workflow test", "operator", 2, nil)
+	if _, err := sphereStore.CreateAgent("PlainBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWorkItem("Plain task", "No workflow test", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
-	dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(dispatch.CastOpts{
 		WorkItemID: itemID,
 		World:        "ember",
 		AgentName:  "PlainBot",
 		SourceRepo: sourceRepo,
-	}, worldStore, sphereStore, mgr, nil)
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("cast: %v", err)
+	}
 
 	// Call Prime.
 	result, err := dispatch.Prime("ember", "PlainBot", worldStore)
@@ -439,7 +496,9 @@ func TestDoneWithWorkflowCleanup(t *testing.T) {
 	// Create formula.
 	formulaDir := filepath.Join(solHome, "formulas", "done-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
-	os.MkdirAll(stepsDir, 0o755)
+	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
+		t.Fatalf("create steps dir: %v", err)
+	}
 
 	manifest := `name = "done-formula"
 type = "agent"
@@ -454,12 +513,21 @@ id = "only"
 title = "Only Step"
 instructions = "steps/01.md"
 `
-	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Do it.\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest.toml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Do it.\n"), 0o644); err != nil {
+		t.Fatalf("write 01.md: %v", err)
+	}
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("DoneBot", "ember", "agent")
-	itemID, _ := worldStore.CreateWorkItem("Done WF task", "Done workflow test", "operator", 2, nil)
+	if _, err := sphereStore.CreateAgent("DoneBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWorkItem("Done WF task", "Done workflow test", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
 	// Cast with formula.
 	result, err := dispatch.Cast(dispatch.CastOpts{
@@ -480,7 +548,9 @@ instructions = "steps/01.md"
 	}
 
 	// Simulate agent work in worktree.
-	os.WriteFile(filepath.Join(result.WorktreeDir, "work.txt"), []byte("done\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(result.WorktreeDir, "work.txt"), []byte("done\n"), 0o644); err != nil {
+		t.Fatalf("write work.txt: %v", err)
+	}
 
 	// Call Resolve.
 	_, err = dispatch.Resolve(dispatch.ResolveOpts{
@@ -506,7 +576,9 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -519,11 +591,24 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	idA, _ := worldStore.CreateWorkItem("Task A", "First task", "operator", 2, nil)
-	idB, _ := worldStore.CreateWorkItem("Task B", "Second task", "operator", 2, nil)
-	idC, _ := worldStore.CreateWorkItem("Task C", "Depends on A and B", "operator", 2, nil)
-	worldStore.AddDependency(idC, idA)
-	worldStore.AddDependency(idC, idB)
+	idA, err := worldStore.CreateWorkItem("Task A", "First task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem A: %v", err)
+	}
+	idB, err := worldStore.CreateWorkItem("Task B", "Second task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem B: %v", err)
+	}
+	idC, err := worldStore.CreateWorkItem("Task C", "Depends on A and B", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem C: %v", err)
+	}
+	if err := worldStore.AddDependency(idC, idA); err != nil {
+		t.Fatalf("AddDependency C→A: %v", err)
+	}
+	if err := worldStore.AddDependency(idC, idB); err != nil {
+		t.Fatalf("AddDependency C→B: %v", err)
+	}
 	worldStore.Close()
 
 	// Create caravan with all 3.
@@ -531,9 +616,15 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
-	sphereStore.AddCaravanItem(caravanID, idA, "ember")
-	sphereStore.AddCaravanItem(caravanID, idB, "ember")
-	sphereStore.AddCaravanItem(caravanID, idC, "ember")
+	if err := sphereStore.AddCaravanItem(caravanID, idA, "ember"); err != nil {
+		t.Fatalf("AddCaravanItem A: %v", err)
+	}
+	if err := sphereStore.AddCaravanItem(caravanID, idB, "ember"); err != nil {
+		t.Fatalf("AddCaravanItem B: %v", err)
+	}
+	if err := sphereStore.AddCaravanItem(caravanID, idC, "ember"); err != nil {
+		t.Fatalf("AddCaravanItem C: %v", err)
+	}
 
 	// Check readiness: A and B ready, C blocked.
 	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
@@ -558,12 +649,20 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	}
 
 	// Mark A as done.
-	rs, _ := store.OpenWorld("ember")
-	rs.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"})
+	rs, err := store.OpenWorld("ember")
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	if err := rs.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"}); err != nil {
+		t.Fatalf("update work item A: %v", err)
+	}
 	rs.Close()
 
 	// Check again: B ready, C still blocked (B not done).
-	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+	statuses, err = sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+	if err != nil {
+		t.Fatalf("CheckCaravanReadiness after A done: %v", err)
+	}
 	for _, st := range statuses {
 		if st.WorkItemID == idC && st.Ready {
 			t.Error("C should still be blocked (B not done)")
@@ -571,12 +670,20 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	}
 
 	// Mark B as done.
-	rs, _ = store.OpenWorld("ember")
-	rs.UpdateWorkItem(idB, store.WorkItemUpdates{Status: "done"})
+	rs, err = store.OpenWorld("ember")
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	if err := rs.UpdateWorkItem(idB, store.WorkItemUpdates{Status: "done"}); err != nil {
+		t.Fatalf("update work item B: %v", err)
+	}
 	rs.Close()
 
 	// Check again: C now ready.
-	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+	statuses, err = sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+	if err != nil {
+		t.Fatalf("CheckCaravanReadiness after B done: %v", err)
+	}
 	for _, st := range statuses {
 		if st.WorkItemID == idC && !st.Ready {
 			t.Error("C should be ready now (A and B done)")
@@ -591,7 +698,9 @@ func TestCaravanAutoClose(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -600,19 +709,39 @@ func TestCaravanAutoClose(t *testing.T) {
 	defer sphereStore.Close()
 
 	// Create 2 items, no deps.
-	worldStore, _ := store.OpenWorld("ember")
-	id1, _ := worldStore.CreateWorkItem("Auto 1", "First", "operator", 2, nil)
-	id2, _ := worldStore.CreateWorkItem("Auto 2", "Second", "operator", 2, nil)
+	worldStore, err := store.OpenWorld("ember")
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	id1, err := worldStore.CreateWorkItem("Auto 1", "First", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem 1: %v", err)
+	}
+	id2, err := worldStore.CreateWorkItem("Auto 2", "Second", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem 2: %v", err)
+	}
 
 	// Mark both as closed.
-	worldStore.UpdateWorkItem(id1, store.WorkItemUpdates{Status: "closed"})
-	worldStore.UpdateWorkItem(id2, store.WorkItemUpdates{Status: "closed"})
+	if err := worldStore.UpdateWorkItem(id1, store.WorkItemUpdates{Status: "closed"}); err != nil {
+		t.Fatalf("update work item 1: %v", err)
+	}
+	if err := worldStore.UpdateWorkItem(id2, store.WorkItemUpdates{Status: "closed"}); err != nil {
+		t.Fatalf("update work item 2: %v", err)
+	}
 	worldStore.Close()
 
 	// Create caravan.
-	caravanID, _ := sphereStore.CreateCaravan("auto-close-test", "operator")
-	sphereStore.AddCaravanItem(caravanID, id1, "ember")
-	sphereStore.AddCaravanItem(caravanID, id2, "ember")
+	caravanID, err := sphereStore.CreateCaravan("auto-close-test", "operator")
+	if err != nil {
+		t.Fatalf("CreateCaravan: %v", err)
+	}
+	if err := sphereStore.AddCaravanItem(caravanID, id1, "ember"); err != nil {
+		t.Fatalf("AddCaravanItem 1: %v", err)
+	}
+	if err := sphereStore.AddCaravanItem(caravanID, id2, "ember"); err != nil {
+		t.Fatalf("AddCaravanItem 2: %v", err)
+	}
 
 	// TryCloseCaravan → should return true.
 	closed, err := sphereStore.TryCloseCaravan(caravanID, store.OpenWorld)
@@ -624,7 +753,10 @@ func TestCaravanAutoClose(t *testing.T) {
 	}
 
 	// Verify caravan status.
-	caravan, _ := sphereStore.GetCaravan(caravanID)
+	caravan, err := sphereStore.GetCaravan(caravanID)
+	if err != nil {
+		t.Fatalf("GetCaravan: %v", err)
+	}
 	if caravan.Status != "closed" {
 		t.Errorf("caravan status: got %q, want closed", caravan.Status)
 	}
@@ -640,7 +772,9 @@ func TestCaravanMultiWorld(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
-	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -653,7 +787,10 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open alpha world: %v", err)
 	}
-	idA, _ := alphaStore.CreateWorkItem("Alpha task", "Task in alpha world", "operator", 2, nil)
+	idA, err := alphaStore.CreateWorkItem("Alpha task", "Task in alpha world", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem alpha: %v", err)
+	}
 	alphaStore.Close()
 
 	// Create work items in world "beta".
@@ -661,10 +798,18 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open beta world: %v", err)
 	}
-	idB, _ := betaStore.CreateWorkItem("Beta task 1", "First task in beta", "operator", 2, nil)
-	idC, _ := betaStore.CreateWorkItem("Beta task 2", "Second task in beta", "operator", 2, nil)
+	idB, err := betaStore.CreateWorkItem("Beta task 1", "First task in beta", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem beta 1: %v", err)
+	}
+	idC, err := betaStore.CreateWorkItem("Beta task 2", "Second task in beta", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem beta 2: %v", err)
+	}
 	// C depends on B within beta world.
-	betaStore.AddDependency(idC, idB)
+	if err := betaStore.AddDependency(idC, idB); err != nil {
+		t.Fatalf("AddDependency C→B: %v", err)
+	}
 	betaStore.Close()
 
 	// Create caravan spanning both worlds.
@@ -672,9 +817,15 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
-	sphereStore.AddCaravanItem(caravanID, idA, "alpha")
-	sphereStore.AddCaravanItem(caravanID, idB, "beta")
-	sphereStore.AddCaravanItem(caravanID, idC, "beta")
+	if err := sphereStore.AddCaravanItem(caravanID, idA, "alpha"); err != nil {
+		t.Fatalf("AddCaravanItem alpha: %v", err)
+	}
+	if err := sphereStore.AddCaravanItem(caravanID, idB, "beta"); err != nil {
+		t.Fatalf("AddCaravanItem beta B: %v", err)
+	}
+	if err := sphereStore.AddCaravanItem(caravanID, idC, "beta"); err != nil {
+		t.Fatalf("AddCaravanItem beta C: %v", err)
+	}
 
 	// Check readiness: A ready (no deps), B ready (no deps), C blocked (depends on B).
 	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
@@ -718,11 +869,19 @@ func TestCaravanMultiWorld(t *testing.T) {
 	}
 
 	// Mark B as done → C should become ready.
-	bs, _ := store.OpenWorld("beta")
-	bs.UpdateWorkItem(idB, store.WorkItemUpdates{Status: "done"})
+	bs, err := store.OpenWorld("beta")
+	if err != nil {
+		t.Fatalf("open beta world: %v", err)
+	}
+	if err := bs.UpdateWorkItem(idB, store.WorkItemUpdates{Status: "done"}); err != nil {
+		t.Fatalf("update work item B: %v", err)
+	}
 	bs.Close()
 
-	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+	statuses, err = sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+	if err != nil {
+		t.Fatalf("CheckCaravanReadiness after B done: %v", err)
+	}
 	for _, st := range statuses {
 		if st.WorkItemID == idC && !st.Ready {
 			t.Error("beta item C should be ready after B is done")
@@ -730,12 +889,22 @@ func TestCaravanMultiWorld(t *testing.T) {
 	}
 
 	// Mark all items done → caravan should auto-close.
-	as, _ := store.OpenWorld("alpha")
-	as.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"})
+	as, err := store.OpenWorld("alpha")
+	if err != nil {
+		t.Fatalf("open alpha world: %v", err)
+	}
+	if err := as.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"}); err != nil {
+		t.Fatalf("update work item A: %v", err)
+	}
 	as.Close()
 
-	bs, _ = store.OpenWorld("beta")
-	bs.UpdateWorkItem(idC, store.WorkItemUpdates{Status: "done"})
+	bs, err = store.OpenWorld("beta")
+	if err != nil {
+		t.Fatalf("open beta world: %v", err)
+	}
+	if err := bs.UpdateWorkItem(idC, store.WorkItemUpdates{Status: "done"}); err != nil {
+		t.Fatalf("update work item C: %v", err)
+	}
 	bs.Close()
 
 	closed, err := sphereStore.TryCloseCaravan(caravanID, store.OpenWorld)
@@ -761,7 +930,9 @@ func TestWorkflowPropulsionLoop(t *testing.T) {
 	// Create formula with 3 steps.
 	formulaDir := filepath.Join(solHome, "formulas", "propulsion-formula")
 	stepsDir := filepath.Join(formulaDir, "steps")
-	os.MkdirAll(stepsDir, 0o755)
+	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
+		t.Fatalf("create steps dir: %v", err)
+	}
 
 	manifest := `name = "propulsion-formula"
 type = "agent"
@@ -788,14 +959,27 @@ title = "Verify"
 instructions = "steps/03-verify.md"
 needs = ["implement"]
 `
-	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "01-load.md"), []byte("Load context for {{issue}}.\n"), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "02-implement.md"), []byte("Implement the feature.\n"), 0o644)
-	os.WriteFile(filepath.Join(stepsDir, "03-verify.md"), []byte("Run tests and verify.\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest.toml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "01-load.md"), []byte("Load context for {{issue}}.\n"), 0o644); err != nil {
+		t.Fatalf("write 01-load.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "02-implement.md"), []byte("Implement the feature.\n"), 0o644); err != nil {
+		t.Fatalf("write 02-implement.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stepsDir, "03-verify.md"), []byte("Run tests and verify.\n"), 0o644); err != nil {
+		t.Fatalf("write 03-verify.md: %v", err)
+	}
 
 	// Create agent and work item.
-	sphereStore.CreateAgent("PropBot", "ember", "agent")
-	itemID, _ := worldStore.CreateWorkItem("Propulsion task", "E2E test", "operator", 2, nil)
+	if _, err := sphereStore.CreateAgent("PropBot", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWorkItem("Propulsion task", "E2E test", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
 
 	logger := events.NewLogger(solHome)
 
@@ -863,7 +1047,9 @@ needs = ["implement"]
 	}
 
 	// 7. Simulate work in worktree.
-	os.WriteFile(filepath.Join(result.WorktreeDir, "feature.go"), []byte("package main\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(result.WorktreeDir, "feature.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write feature.go: %v", err)
+	}
 
 	// 8. Resolve → workflow cleaned up, work item marked done.
 	_, err = dispatch.Resolve(dispatch.ResolveOpts{
@@ -875,7 +1061,10 @@ needs = ["implement"]
 	}
 
 	// Verify work item is done.
-	item, _ := worldStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWorkItem(itemID)
+	if err != nil {
+		t.Fatalf("GetWorkItem: %v", err)
+	}
 	if item.Status != "done" {
 		t.Errorf("work item status: got %q, want done", item.Status)
 	}

@@ -37,8 +37,10 @@ func TestStatusWithMergeQueue(t *testing.T) {
 		t.Fatalf("cast: %v", err)
 	}
 
-	os.WriteFile(filepath.Join(result.WorktreeDir, "status_test.go"),
-		[]byte("package main\n\nfunc statusTest() {}\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(result.WorktreeDir, "status_test.go"),
+		[]byte("package main\n\nfunc statusTest() {}\n"), 0o644); err != nil {
+		t.Fatalf("write status_test.go: %v", err)
+	}
 
 	_, err = dispatch.Resolve(dispatch.ResolveOpts{
 		World:       "ember",

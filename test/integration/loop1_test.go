@@ -151,8 +151,12 @@ func TestFlockSerialization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create work item: %v", err)
 	}
-	sphereStore.CreateAgent("Alpha", "ember", "agent")
-	sphereStore.CreateAgent("Beta", "ember", "agent")
+	if _, err := sphereStore.CreateAgent("Alpha", "ember", "agent"); err != nil {
+		t.Fatalf("create agent Alpha: %v", err)
+	}
+	if _, err := sphereStore.CreateAgent("Beta", "ember", "agent"); err != nil {
+		t.Fatalf("create agent Beta: %v", err)
+	}
 
 	// Use the shared sol binary for subprocess testing.
 	binary := gtBin(t)
@@ -195,12 +199,18 @@ func TestFlockSerialization(t *testing.T) {
 	// The winning agent has the work item tethered.
 	if len(successes) == 1 {
 		winner := successes[0]
-		tetherID, _ := tether.Read("ember", winner)
+		tetherID, err := tether.Read("ember", winner)
+		if err != nil {
+			t.Fatalf("read tether for winner %s: %v", winner, err)
+		}
 		if tetherID != itemID {
 			t.Errorf("winner %s tether: got %q, want %q", winner, tetherID, itemID)
 		}
 
-		item, _ := worldStore.GetWorkItem(itemID)
+		item, err := worldStore.GetWorkItem(itemID)
+		if err != nil {
+			t.Fatalf("get work item: %v", err)
+		}
 		if item.Status != "tethered" {
 			t.Errorf("work item status: got %q, want tethered", item.Status)
 		}
