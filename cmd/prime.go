@@ -15,8 +15,9 @@ var (
 )
 
 var primeCmd = &cobra.Command{
-	Use:   "prime",
-	Short: "Assemble and print execution context for an agent",
+	Use:          "prime",
+	Short:        "Assemble and print execution context for an agent",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if primeWorld == "" {
 			return fmt.Errorf("--world is required")

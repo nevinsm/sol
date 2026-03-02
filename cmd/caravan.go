@@ -28,9 +28,10 @@ var caravanCmd = &cobra.Command{
 // --- sol caravan create ---
 
 var caravanCreateCmd = &cobra.Command{
-	Use:   "create <name> [<item-id> ...]",
-	Short: "Create a caravan with optional initial items",
-	Args:  cobra.MinimumNArgs(1),
+	Use:          "create <name> [<item-id> ...]",
+	Short:        "Create a caravan with optional initial items",
+	Args:         cobra.MinimumNArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		itemIDs := args[1:]
@@ -117,9 +118,10 @@ var caravanAddCmd = &cobra.Command{
 // --- sol caravan check ---
 
 var caravanCheckCmd = &cobra.Command{
-	Use:   "check <caravan-id>",
-	Short: "Check readiness of caravan items",
-	Args:  cobra.ExactArgs(1),
+	Use:          "check <caravan-id>",
+	Short:        "Check readiness of caravan items",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
 
@@ -202,9 +204,10 @@ var caravanCheckCmd = &cobra.Command{
 // --- sol caravan status ---
 
 var caravanStatusCmd = &cobra.Command{
-	Use:   "status [<caravan-id>]",
-	Short: "Show caravan status",
-	Args:  cobra.MaximumNArgs(1),
+	Use:          "status [<caravan-id>]",
+	Short:        "Show caravan status",
+	Args:         cobra.MaximumNArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		jsonOut, _ := cmd.Flags().GetBool("json")
 

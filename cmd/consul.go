@@ -31,8 +31,10 @@ var consulCmd = &cobra.Command{
 }
 
 var consulRunCmd = &cobra.Command{
-	Use:   "run",
-	Short: "Run the consul patrol loop (foreground)",
+	Use:          "run",
+	Short:        "Run the consul patrol loop (foreground)",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		interval, err := time.ParseDuration(consulInterval)
 		if err != nil {

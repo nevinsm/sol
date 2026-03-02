@@ -30,9 +30,10 @@ var worldCmd = &cobra.Command{
 }
 
 var worldInitCmd = &cobra.Command{
-	Use:   "init <name>",
-	Short: "Initialize a new world",
-	Args:  cobra.ExactArgs(1),
+	Use:          "init <name>",
+	Short:        "Initialize a new world",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
@@ -149,9 +150,10 @@ var worldInitCmd = &cobra.Command{
 }
 
 var worldListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all worlds",
-	Args:  cobra.NoArgs,
+	Use:          "list",
+	Short:        "List all worlds",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -206,9 +208,10 @@ var worldListCmd = &cobra.Command{
 }
 
 var worldStatusCmd = &cobra.Command{
-	Use:   "status <name>",
-	Short: "Show world status with config",
-	Args:  cobra.ExactArgs(1),
+	Use:          "status <name>",
+	Short:        "Show world status with config",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
@@ -289,9 +292,10 @@ var worldStatusCmd = &cobra.Command{
 }
 
 var worldDeleteCmd = &cobra.Command{
-	Use:   "delete <name>",
-	Short: "Delete a world",
-	Args:  cobra.ExactArgs(1),
+	Use:          "delete <name>",
+	Short:        "Delete a world",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
@@ -306,7 +310,7 @@ var worldDeleteCmd = &cobra.Command{
 			fmt.Printf("  - Agent records for world %q\n", name)
 			fmt.Println()
 			fmt.Println("Run with --confirm to proceed.")
-			return nil
+			return &exitError{code: 1}
 		}
 
 		// Check for active sessions.

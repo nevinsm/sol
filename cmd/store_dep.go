@@ -20,9 +20,10 @@ var storeDepCmd = &cobra.Command{
 // --- sol store dep add ---
 
 var storeDepAddCmd = &cobra.Command{
-	Use:   "add <from-id> <to-id>",
-	Short: "Add a dependency (from depends on to)",
-	Args:  cobra.ExactArgs(2),
+	Use:          "add <from-id> <to-id>",
+	Short:        "Add a dependency (from depends on to)",
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
@@ -49,9 +50,10 @@ var storeDepAddCmd = &cobra.Command{
 // --- sol store dep remove ---
 
 var storeDepRemoveCmd = &cobra.Command{
-	Use:   "remove <from-id> <to-id>",
-	Short: "Remove a dependency",
-	Args:  cobra.ExactArgs(2),
+	Use:          "remove <from-id> <to-id>",
+	Short:        "Remove a dependency",
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
@@ -78,9 +80,10 @@ var storeDepRemoveCmd = &cobra.Command{
 // --- sol store dep list ---
 
 var storeDepListCmd = &cobra.Command{
-	Use:   "list <item-id>",
-	Short: "List dependencies for a work item",
-	Args:  cobra.ExactArgs(1),
+	Use:          "list <item-id>",
+	Short:        "List dependencies for a work item",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		if world == "" {

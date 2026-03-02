@@ -17,9 +17,10 @@ var (
 )
 
 var castCmd = &cobra.Command{
-	Use:   "cast <work-item-id> <world>",
-	Short: "Assign a work item to an agent and start its session",
-	Args:  cobra.ExactArgs(2),
+	Use:          "cast <work-item-id> <world>",
+	Short:        "Assign a work item to an agent and start its session",
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		workItemID := args[0]
 		world := args[1]

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -52,7 +53,7 @@ var feedCmd = &cobra.Command{
 		}
 
 		if feedFollow {
-			return followFeed(reader, opts)
+			return followFeed(cmd.Context(), reader, opts)
 		}
 
 		evts, err := reader.Read(opts)
@@ -67,8 +68,8 @@ var feedCmd = &cobra.Command{
 	},
 }
 
-func followFeed(reader *events.Reader, opts events.ReadOpts) error {
-	ctx, cancel := context.WithCancel(context.Background())
+func followFeed(ctx context.Context, reader *events.Reader, opts events.ReadOpts) error {
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
@@ -84,7 +85,7 @@ func followFeed(reader *events.Reader, opts events.ReadOpts) error {
 		case ev := <-ch:
 			printEvent(ev)
 		case err := <-errCh:
-			if err == context.Canceled {
+			if errors.Is(err, context.Canceled) {
 				return nil
 			}
 			return err

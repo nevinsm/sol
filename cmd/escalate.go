@@ -18,9 +18,10 @@ var (
 )
 
 var escalateCmd = &cobra.Command{
-	Use:   "escalate <description>",
-	Short: "Create an escalation",
-	Args:  cobra.ExactArgs(1),
+	Use:          "escalate <description>",
+	Short:        "Create an escalation",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		description := args[0]
 

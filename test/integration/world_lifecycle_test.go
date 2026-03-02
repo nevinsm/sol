@@ -296,8 +296,8 @@ func TestWorldDeleteNoConfirm(t *testing.T) {
 	}
 
 	out, err := runGT(t, gtHome, "world", "delete", "myworld")
-	if err != nil {
-		t.Fatalf("world delete (no --confirm) failed: %v: %s", err, out)
+	if err == nil {
+		t.Fatal("world delete (no --confirm) should exit non-zero")
 	}
 
 	// Output should show deletion plan.

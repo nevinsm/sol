@@ -26,9 +26,10 @@ var escalationCmd = &cobra.Command{
 // --- sol escalation list ---
 
 var escalationListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List escalations",
-	Args:  cobra.NoArgs,
+	Use:          "list",
+	Short:        "List escalations",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sphereStore, err := store.OpenSphere()
 		if err != nil {

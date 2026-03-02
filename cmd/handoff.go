@@ -19,8 +19,10 @@ var (
 )
 
 var handoffCmd = &cobra.Command{
-	Use:   "handoff",
-	Short: "Hand off to a fresh session with context preservation",
+	Use:          "handoff",
+	Short:        "Hand off to a fresh session with context preservation",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world := handoffWorld
 		agent := handoffAgent

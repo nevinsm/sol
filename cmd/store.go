@@ -38,8 +38,9 @@ var (
 )
 
 var storeCreateCmd = &cobra.Command{
-	Use:   "create",
-	Short: "Create a work item",
+	Use:          "create",
+	Short:        "Create a work item",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
@@ -79,9 +80,10 @@ func init() {
 var getJSON bool
 
 var storeGetCmd = &cobra.Command{
-	Use:   "get <id>",
-	Short: "Get a work item by ID",
-	Args:  cobra.ExactArgs(1),
+	Use:          "get <id>",
+	Short:        "Get a work item by ID",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
@@ -124,8 +126,9 @@ var (
 )
 
 var storeListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List work items",
+	Use:          "list",
+	Short:        "List work items",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
@@ -192,9 +195,10 @@ var (
 )
 
 var storeUpdateCmd = &cobra.Command{
-	Use:   "update <id>",
-	Short: "Update a work item",
-	Args:  cobra.ExactArgs(1),
+	Use:          "update <id>",
+	Short:        "Update a work item",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
@@ -232,9 +236,10 @@ func init() {
 // --- sol store close ---
 
 var storeCloseCmd = &cobra.Command{
-	Use:   "close <id>",
-	Short: "Close a work item",
-	Args:  cobra.ExactArgs(1),
+	Use:          "close <id>",
+	Short:        "Close a work item",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		if world == "" {
@@ -269,8 +274,9 @@ var (
 )
 
 var storeQueryCmd = &cobra.Command{
-	Use:   "query",
-	Short: "Run a read-only SQL query",
+	Use:          "query",
+	Short:        "Run a read-only SQL query",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, _ := cmd.Flags().GetString("world")
 		if world == "" {

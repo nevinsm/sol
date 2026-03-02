@@ -24,9 +24,10 @@ var (
 )
 
 var agentCreateCmd = &cobra.Command{
-	Use:   "create <name>",
-	Short: "Create an agent",
-	Args:  cobra.ExactArgs(1),
+	Use:          "create <name>",
+	Short:        "Create an agent",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		if agentCreateWorld == "" {
@@ -59,8 +60,9 @@ var (
 )
 
 var agentListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List agents",
+	Use:          "list",
+	Short:        "List agents",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if agentListWorld == "" {
 			return fmt.Errorf("--world is required")
