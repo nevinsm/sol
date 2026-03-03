@@ -198,6 +198,40 @@ func TestInstallGovernorClaudeMD(t *testing.T) {
 	}
 }
 
+func TestEnvoyClaudeMDAutoMemoryProhibition(t *testing.T) {
+	ctx := protocol.EnvoyClaudeMDContext{
+		AgentName: "Echo",
+		World:     "myworld",
+		SolBinary: "sol",
+	}
+
+	content := protocol.GenerateEnvoyClaudeMD(ctx)
+
+	if !strings.Contains(content, "DO NOT") || !strings.Contains(content, "auto-memory") {
+		t.Error("envoy CLAUDE.md should contain auto-memory prohibition")
+	}
+	if !strings.Contains(content, ".brief/memory.md") {
+		t.Error("envoy CLAUDE.md should reference .brief/memory.md")
+	}
+}
+
+func TestGovernorClaudeMDAutoMemoryProhibition(t *testing.T) {
+	ctx := protocol.GovernorClaudeMDContext{
+		World:     "myworld",
+		SolBinary: "sol",
+		MirrorDir: "../repo",
+	}
+
+	content := protocol.GenerateGovernorClaudeMD(ctx)
+
+	if !strings.Contains(content, "DO NOT") || !strings.Contains(content, "auto-memory") {
+		t.Error("governor CLAUDE.md should contain auto-memory prohibition")
+	}
+	if !strings.Contains(content, ".brief/memory.md") {
+		t.Error("governor CLAUDE.md should reference .brief/memory.md")
+	}
+}
+
 func TestClaudeMDWithoutWorkflow(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",

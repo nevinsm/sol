@@ -254,6 +254,7 @@ You maintain accumulated context in `+"`"+`.brief/memory.md`+"`"+`.
 - Update your brief before exiting with key decisions, current state, and next steps
 - On startup, review your brief — it may be stale if your last session crashed
 - Organize naturally: what matters now at the top, historical context below
+- **DO NOT** write to `+"`"+`~/.claude/projects/*/memory/`+"`"+` (Claude Code auto-memory) — use `+"`"+`.brief/memory.md`+"`"+` exclusively
 
 ## Work Flow — Three Modes
 1. **Tethered work**: You may be assigned a work item. Check:
@@ -368,6 +369,7 @@ You maintain accumulated world knowledge in your brief.
 - Your brief (`+"`"+`.brief/memory.md`+"`"+`) persists across sessions — keep it under 200 lines
 - Also maintain `+"`"+`.brief/world-summary.md`+"`"+` — a structured summary for external consumers
 - Update both before exiting
+- **DO NOT** write to `+"`"+`~/.claude/projects/*/memory/`+"`"+` (Claude Code auto-memory) — use `+"`"+`.brief/memory.md`+"`"+` exclusively
 - World summary format:
 
 `+"```"+`markdown

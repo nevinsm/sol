@@ -241,6 +241,17 @@ func installHooks(worktreeDir, world, name string) error {
 					},
 				},
 			},
+			"PreToolUse": {
+				{
+					Matcher: "Write|Edit",
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: `FILE=$(jq -r '.tool_input.file_path // empty'); if echo "$FILE" | grep -q '.claude/projects/.*/memory/'; then echo "BLOCKED: Use .brief/memory.md, not Claude Code auto-memory." >&2; exit 2; fi`,
+						},
+					},
+				},
+			},
 		},
 	}
 
