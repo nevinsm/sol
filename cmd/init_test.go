@@ -90,9 +90,6 @@ func TestInitSourceRepoValidation(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for nonexistent source-repo, got success")
 		}
-		if !strings.Contains(err.Error(), "source repo path") {
-			t.Errorf("unexpected error: %v", err)
-		}
 	})
 
 	t.Run("path is a file not directory", func(t *testing.T) {
@@ -118,9 +115,6 @@ func TestInitSourceRepoValidation(t *testing.T) {
 		err := rootCmd.Execute()
 		if err == nil {
 			t.Fatal("expected error for non-directory source-repo, got success")
-		}
-		if !strings.Contains(err.Error(), "not a directory") {
-			t.Errorf("unexpected error: %v", err)
 		}
 	})
 }

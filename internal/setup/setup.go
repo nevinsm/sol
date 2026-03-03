@@ -3,7 +3,9 @@ package setup
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/doctor"
@@ -32,6 +34,45 @@ type Result struct {
 	ConfigPath string
 	DBPath     string
 	SourceRepo string
+}
+
+// CloneRepo clones the given source (URL or local path) into the managed
+// repo directory at config.RepoPath(world). If the source is a local path
+// and has an upstream origin remote, the managed clone's origin is set to
+// that upstream URL so pushes go directly to the real remote.
+func CloneRepo(world, source string) error {
+	repoPath := config.RepoPath(world)
+
+	if _, err := os.Stat(repoPath); err == nil {
+		return fmt.Errorf("managed repo already exists for world %q", world)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(repoPath), 0o755); err != nil {
+		return fmt.Errorf("failed to create parent directory for world %q: %w", world, err)
+	}
+
+	cmd := exec.Command("git", "clone", source, repoPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to clone source repo for world %q: %s: %w",
+			world, strings.TrimSpace(string(out)), err)
+	}
+
+	// Adopt upstream origin for local paths.
+	if info, err := os.Stat(source); err == nil && info.IsDir() {
+		upstreamCmd := exec.Command("git", "-C", source, "remote", "get-url", "origin")
+		if upstreamOut, err := upstreamCmd.Output(); err == nil {
+			upstream := strings.TrimSpace(string(upstreamOut))
+			if upstream != "" && upstream != source {
+				setCmd := exec.Command("git", "-C", repoPath, "remote", "set-url", "origin", upstream)
+				if out, err := setCmd.CombinedOutput(); err != nil {
+					return fmt.Errorf("failed to set upstream origin for world %q: %s: %w",
+						world, strings.TrimSpace(string(out)), err)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // Run executes the full first-time setup sequence.
@@ -92,6 +133,13 @@ func Run(p Params) (*Result, error) {
 	worldDir := config.WorldDir(p.WorldName)
 	if err := os.MkdirAll(filepath.Join(worldDir, "outposts"), 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create world directory: %w", err)
+	}
+
+	// 4b. Clone source repo into managed repo directory.
+	if p.SourceRepo != "" {
+		if err := CloneRepo(p.WorldName, p.SourceRepo); err != nil {
+			return nil, fmt.Errorf("failed to clone source repo: %w", err)
+		}
 	}
 
 	// 5. Create world database.

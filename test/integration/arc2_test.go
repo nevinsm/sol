@@ -142,7 +142,13 @@ func TestInitWithSourceRepoEndToEnd(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	solHome := filepath.Join(t.TempDir(), "sol-init-test")
+
+	// Create a real git repo as source.
 	sourceRepo := t.TempDir()
+	gitRun(t, sourceRepo, "init")
+	gitRun(t, sourceRepo, "config", "user.email", "test@test.com")
+	gitRun(t, sourceRepo, "config", "user.name", "Test")
+	gitRun(t, sourceRepo, "commit", "--allow-empty", "-m", "init")
 
 	out, err := runGT(t, solHome, "init", "--name=myworld", "--source-repo="+sourceRepo, "--skip-checks")
 	if err != nil {
@@ -157,6 +163,12 @@ func TestInitWithSourceRepoEndToEnd(t *testing.T) {
 	}
 	if !strings.Contains(string(data), sourceRepo) {
 		t.Errorf("world.toml does not contain source_repo %q: %s", sourceRepo, data)
+	}
+
+	// Verify managed clone exists.
+	repoDir := filepath.Join(solHome, "myworld", "repo")
+	if _, err := os.Stat(repoDir); os.IsNotExist(err) {
+		t.Fatal("managed clone not created")
 	}
 }
 
@@ -313,7 +325,7 @@ func TestStatusSphereMultipleWorlds(t *testing.T) {
 	}
 
 	// Init second world via sol world init.
-	out, err = runGT(t, solHome, "world", "init", "beta", "--source-repo=/tmp")
+	out, err = runGT(t, solHome, "world", "init", "beta")
 	if err != nil {
 		t.Fatalf("world init beta failed: %v: %s", err, out)
 	}

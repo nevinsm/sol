@@ -106,7 +106,7 @@ func TestInitBypassesEnsureDirs(t *testing.T) {
 	parent := t.TempDir()
 	solHome := filepath.Join(parent, "sol-test-home")
 
-	out, err := runGT(t, solHome, "world", "init", "testworld", "--source-repo=/tmp")
+	out, err := runGT(t, solHome, "world", "init", "testworld")
 	if err != nil {
 		t.Fatalf("sol world init failed: %v: %s", err, out)
 	}

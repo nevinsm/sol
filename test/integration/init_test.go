@@ -55,8 +55,12 @@ func TestInitFlagModeWithSourceRepo(t *testing.T) {
 	}
 	solHome := filepath.Join(t.TempDir(), "sol-init-test")
 
-	// Create a temp dir as source repo.
+	// Create a real git repo as source.
 	sourceRepo := t.TempDir()
+	gitRun(t, sourceRepo, "init")
+	gitRun(t, sourceRepo, "config", "user.email", "test@test.com")
+	gitRun(t, sourceRepo, "config", "user.name", "Test")
+	gitRun(t, sourceRepo, "commit", "--allow-empty", "-m", "init")
 
 	out, err := runGT(t, solHome, "init", "--name=myworld", "--source-repo="+sourceRepo, "--skip-checks")
 	if err != nil {
@@ -182,12 +186,9 @@ func TestInitSourceRepoValidationIntegration(t *testing.T) {
 	t.Run("nonexistent path", func(t *testing.T) {
 		solHome := filepath.Join(t.TempDir(), "sol-init-test")
 
-		out, err := runGT(t, solHome, "init", "--name=testworld", "--source-repo=/nonexistent/path", "--skip-checks")
+		_, err := runGT(t, solHome, "init", "--name=testworld", "--source-repo=/nonexistent/path", "--skip-checks")
 		if err == nil {
-			t.Fatalf("expected error for nonexistent source-repo, got success: %s", out)
-		}
-		if !strings.Contains(out, "source repo path") {
-			t.Errorf("unexpected error: %s", out)
+			t.Fatal("expected error for nonexistent source-repo, got success")
 		}
 	})
 
@@ -200,12 +201,9 @@ func TestInitSourceRepoValidationIntegration(t *testing.T) {
 			t.Fatalf("failed to create temp file: %v", err)
 		}
 
-		out, err := runGT(t, solHome, "init", "--name=testworld", "--source-repo="+tmpFile, "--skip-checks")
+		_, err := runGT(t, solHome, "init", "--name=testworld", "--source-repo="+tmpFile, "--skip-checks")
 		if err == nil {
-			t.Fatalf("expected error for non-directory source-repo, got success: %s", out)
-		}
-		if !strings.Contains(out, "not a directory") {
-			t.Errorf("unexpected error: %s", out)
+			t.Fatal("expected error for non-directory source-repo, got success")
 		}
 	})
 }

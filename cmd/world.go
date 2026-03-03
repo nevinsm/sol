@@ -12,6 +12,7 @@ import (
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/setup"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -65,20 +66,17 @@ var worldInitCmd = &cobra.Command{
 			}
 		}
 
-		if sourceRepo != "" {
-			info, err := os.Stat(sourceRepo)
-			if err != nil {
-				return fmt.Errorf("source repo path %q: %w", sourceRepo, err)
-			}
-			if !info.IsDir() {
-				return fmt.Errorf("source repo path %q is not a directory", sourceRepo)
-			}
-		}
-
 		// Create directory tree.
 		worldDir := config.WorldDir(name)
 		if err := os.MkdirAll(filepath.Join(worldDir, "outposts"), 0o755); err != nil {
 			return fmt.Errorf("failed to create world directory: %w", err)
+		}
+
+		// Clone source repo into managed repo directory.
+		if sourceRepo != "" {
+			if err := setup.CloneRepo(name, sourceRepo); err != nil {
+				return err
+			}
 		}
 
 		// Ensure .store/ directory exists.
@@ -350,7 +348,7 @@ func init() {
 	worldCmd.AddCommand(worldDeleteCmd)
 
 	worldInitCmd.Flags().StringVar(&worldInitSourceRepo, "source-repo",
-		"", "path to source git repository")
+		"", "git URL or local path to source repository")
 	worldListCmd.Flags().BoolVar(&worldListJSON, "json", false,
 		"output as JSON")
 	worldStatusCmd.Flags().BoolVar(&worldStatusJSON, "json", false,

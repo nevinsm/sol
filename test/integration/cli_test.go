@@ -58,6 +58,7 @@ func runGT(t *testing.T, gtHome string, args ...string) (string, error) {
 	t.Helper()
 	bin := gtBin(t)
 	cmd := exec.Command(bin, args...)
+	cmd.Dir = os.TempDir()
 	cmd.Env = append(os.Environ(), "SOL_HOME="+gtHome)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err

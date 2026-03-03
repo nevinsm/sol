@@ -44,6 +44,11 @@ func WorldDir(world string) string {
 	return filepath.Join(Home(), world)
 }
 
+// RepoPath returns the path to the managed git clone for a world.
+func RepoPath(world string) string {
+	return filepath.Join(WorldDir(world), "repo")
+}
+
 var validAgentName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]*$`)
 
 const maxAgentNameLen = 64

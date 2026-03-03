@@ -98,7 +98,7 @@ func TestHardGatePassesAfterInit(t *testing.T) {
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
 	// Init the world.
-	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
+	out, err := runGT(t, gtHome, "world", "init", "myworld")
 	if err != nil {
 		t.Fatalf("world init failed: %v: %s", err, out)
 	}

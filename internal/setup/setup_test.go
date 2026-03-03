@@ -2,9 +2,12 @@ package setup
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nevinsm/sol/internal/config"
 )
 
 func TestRunBasic(t *testing.T) {
@@ -65,8 +68,10 @@ func TestRunWithSourceRepo(t *testing.T) {
 	solHome := filepath.Join(t.TempDir(), "sol-test")
 	t.Setenv("SOL_HOME", solHome)
 
-	// Create a temp directory as a fake source repo.
+	// Create a source git repo with a commit.
 	sourceRepo := t.TempDir()
+	runGit(t, sourceRepo, "init")
+	runGit(t, sourceRepo, "commit", "--allow-empty", "-m", "init")
 
 	result, err := Run(Params{
 		WorldName:  "myworld",
@@ -89,6 +94,12 @@ func TestRunWithSourceRepo(t *testing.T) {
 	}
 	if !strings.Contains(string(data), sourceRepo) {
 		t.Errorf("world.toml does not contain source_repo %q: %s", sourceRepo, data)
+	}
+
+	// Verify managed clone exists.
+	repoPath := config.RepoPath("myworld")
+	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+		t.Error("managed clone not created")
 	}
 }
 
@@ -195,5 +206,146 @@ func TestValidateParams(t *testing.T) {
 	p = Params{WorldName: "myworld"}
 	if err := p.Validate(); err != nil {
 		t.Errorf("unexpected error for valid name: %v", err)
+	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v failed: %s: %v", args, out, err)
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCloneRepoFromLocalPath(t *testing.T) {
+	// Create a source git repo with a commit.
+	sourceDir := t.TempDir()
+	runGit(t, sourceDir, "init")
+	runGit(t, sourceDir, "commit", "--allow-empty", "-m", "init")
+
+	// Set SOL_HOME to temp dir.
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	world := "testworld"
+	worldDir := filepath.Join(solHome, world)
+	os.MkdirAll(worldDir, 0o755)
+
+	err := CloneRepo(world, sourceDir)
+	if err != nil {
+		t.Fatalf("CloneRepo failed: %v", err)
+	}
+
+	// Verify clone exists and is a git repo.
+	repoPath := config.RepoPath(world)
+	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "--is-inside-work-tree")
+	if _, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("managed clone is not a git repo: %v", err)
+	}
+}
+
+func TestCloneRepoAdoptsUpstream(t *testing.T) {
+	// Create a "remote" repo.
+	remoteDir := t.TempDir()
+	runGit(t, remoteDir, "init", "--bare")
+
+	// Create a local repo cloned from the remote.
+	localDir := t.TempDir()
+	runGit(t, localDir, "clone", remoteDir, ".")
+
+	// Create initial commit in local and push.
+	writeFile(t, filepath.Join(localDir, "README.md"), "hello")
+	runGit(t, localDir, "add", ".")
+	runGit(t, localDir, "commit", "-m", "init")
+	runGit(t, localDir, "push", "origin", "main")
+
+	// Clone from local path.
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	world := "testworld"
+	os.MkdirAll(filepath.Join(solHome, world), 0o755)
+
+	err := CloneRepo(world, localDir)
+	if err != nil {
+		t.Fatalf("CloneRepo failed: %v", err)
+	}
+
+	// Verify managed clone's origin points to the remote, not the local path.
+	repoPath := config.RepoPath(world)
+	cmd := exec.Command("git", "-C", repoPath, "remote", "get-url", "origin")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("failed to get origin URL: %v", err)
+	}
+	origin := strings.TrimSpace(string(out))
+	if origin == localDir {
+		t.Errorf("managed clone origin should be upstream (%s), got local path (%s)", remoteDir, origin)
+	}
+	if origin != remoteDir {
+		t.Errorf("managed clone origin = %q, want %q", origin, remoteDir)
+	}
+}
+
+func TestCloneRepoFromURL(t *testing.T) {
+	// Create a bare repo (simulates a remote URL — git clone works with paths).
+	remoteDir := t.TempDir()
+	runGit(t, remoteDir, "init", "--bare")
+
+	// Push an initial commit via a temp clone.
+	tmpClone := t.TempDir()
+	runGit(t, tmpClone, "clone", remoteDir, ".")
+	writeFile(t, filepath.Join(tmpClone, "README.md"), "hello")
+	runGit(t, tmpClone, "add", ".")
+	runGit(t, tmpClone, "commit", "-m", "init")
+	runGit(t, tmpClone, "push", "origin", "main")
+
+	// Clone using the bare path (acts like a URL — os.Stat won't IsDir true for bare).
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	world := "testworld"
+	os.MkdirAll(filepath.Join(solHome, world), 0o755)
+
+	err := CloneRepo(world, remoteDir)
+	if err != nil {
+		t.Fatalf("CloneRepo failed: %v", err)
+	}
+
+	// Verify clone has the commit.
+	repoPath := config.RepoPath(world)
+	cmd := exec.Command("git", "-C", repoPath, "log", "--oneline")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git log failed: %v", err)
+	}
+	if !strings.Contains(string(out), "init") {
+		t.Error("managed clone missing initial commit")
+	}
+}
+
+func TestCloneRepoAlreadyExists(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	world := "testworld"
+	repoPath := config.RepoPath(world)
+	os.MkdirAll(repoPath, 0o755)
+
+	err := CloneRepo(world, "/tmp/fake")
+	if err == nil {
+		t.Fatal("expected error when repo already exists")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }

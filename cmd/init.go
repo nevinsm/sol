@@ -29,7 +29,7 @@ var initCmd = &cobra.Command{
 	Long: `Set up SOL_HOME directory structure and create your first world.
 
 Three modes:
-  Flag mode:        sol init --name=myworld [--source-repo=/path]
+  Flag mode:        sol init --name=myworld [--source-repo=<url-or-path>]
   Interactive mode: sol init (prompts for input when stdin is a TTY)
   Guided mode:      sol init --guided (Claude-powered setup conversation)
 
@@ -65,17 +65,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 }
 
 func runFlagInit() error {
-	// Validate source repo if provided.
-	if initSourceRepo != "" {
-		info, err := os.Stat(initSourceRepo)
-		if err != nil {
-			return fmt.Errorf("source repo path %q: %w", initSourceRepo, err)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("source repo path %q is not a directory", initSourceRepo)
-		}
-	}
-
 	params := setup.Params{
 		WorldName:  initName,
 		SourceRepo: initSourceRepo,
@@ -121,8 +110,8 @@ func runInteractiveInit() error {
 
 			huh.NewInput().
 				Title("Source repository").
-				Description("Path to your project's git repo (optional)").
-				Placeholder("/path/to/repo").
+				Description("Git URL or local path to your project's repo (optional)").
+				Placeholder("git@github.com:org/repo.git").
 				Value(&sourceRepo),
 
 			huh.NewConfirm().
@@ -139,17 +128,6 @@ func runInteractiveInit() error {
 	}
 
 	skipChecks = !runChecks
-
-	// Validate source repo path if provided.
-	if sourceRepo != "" {
-		info, err := os.Stat(sourceRepo)
-		if err != nil {
-			return fmt.Errorf("source repo path %q: %w", sourceRepo, err)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("source repo path %q is not a directory", sourceRepo)
-		}
-	}
 
 	params := setup.Params{
 		WorldName:  worldName,
@@ -277,7 +255,7 @@ func printInitSuccess(result *setup.Result) {
 func init() {
 	rootCmd.AddCommand(initCmd)
 	initCmd.Flags().StringVar(&initName, "name", "", "world name (required in flag mode)")
-	initCmd.Flags().StringVar(&initSourceRepo, "source-repo", "", "path to source git repository")
+	initCmd.Flags().StringVar(&initSourceRepo, "source-repo", "", "git URL or local path to source repository")
 	initCmd.Flags().BoolVar(&initSkipChecks, "skip-checks", false, "skip prerequisite checks")
 	initCmd.Flags().BoolVar(&initGuided, "guided", false, "Claude-powered guided setup")
 }

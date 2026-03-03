@@ -18,7 +18,7 @@ func TestWorldInitBasic(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
+	out, err := runGT(t, gtHome, "world", "init", "myworld")
 	if err != nil {
 		t.Fatalf("world init failed: %v: %s", err, out)
 	}
@@ -55,7 +55,14 @@ func TestWorldInitWithSourceRepo(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
+	// Create a real git repo as source.
+	sourceRepo := t.TempDir()
+	gitRun(t, sourceRepo, "init")
+	gitRun(t, sourceRepo, "config", "user.email", "test@test.com")
+	gitRun(t, sourceRepo, "config", "user.name", "Test")
+	gitRun(t, sourceRepo, "commit", "--allow-empty", "-m", "init")
+
+	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo="+sourceRepo)
 	if err != nil {
 		t.Fatalf("world init failed: %v: %s", err, out)
 	}
@@ -66,8 +73,14 @@ func TestWorldInitWithSourceRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "/tmp") {
+	if !strings.Contains(string(data), sourceRepo) {
 		t.Fatalf("world.toml does not contain source_repo: %s", data)
+	}
+
+	// Verify managed clone exists.
+	repoDir := filepath.Join(gtHome, "myworld", "repo")
+	if _, err := os.Stat(repoDir); os.IsNotExist(err) {
+		t.Fatal("managed clone not created")
 	}
 }
 
@@ -79,7 +92,7 @@ func TestWorldInitAlreadyExists(t *testing.T) {
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
 	// Init once — success.
-	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp")
+	out, err := runGT(t, gtHome, "world", "init", "myworld")
 	if err != nil {
 		t.Fatalf("first init failed: %v: %s", err, out)
 	}
@@ -143,10 +156,10 @@ func TestWorldList(t *testing.T) {
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
 	// Init two worlds.
-	if _, err := runGT(t, gtHome, "world", "init", "alpha", "--source-repo=/tmp"); err != nil {
+	if _, err := runGT(t, gtHome, "world", "init", "alpha"); err != nil {
 		t.Fatalf("setup: world init alpha failed: %v", err)
 	}
-	if _, err := runGT(t, gtHome, "world", "init", "beta", "--source-repo=/tmp"); err != nil {
+	if _, err := runGT(t, gtHome, "world", "init", "beta"); err != nil {
 		t.Fatalf("setup: world init beta failed: %v", err)
 	}
 
@@ -189,7 +202,7 @@ func TestWorldListJSON(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	if _, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp"); err != nil {
+	if _, err := runGT(t, gtHome, "world", "init", "myworld"); err != nil {
 		t.Fatalf("setup: world init failed: %v", err)
 	}
 
@@ -217,7 +230,7 @@ func TestWorldStatusBasic(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	if _, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp"); err != nil {
+	if _, err := runGT(t, gtHome, "world", "init", "myworld"); err != nil {
 		t.Fatalf("setup: world init failed: %v", err)
 	}
 
@@ -256,7 +269,7 @@ func TestWorldDeleteBasic(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	if _, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp"); err != nil {
+	if _, err := runGT(t, gtHome, "world", "init", "myworld"); err != nil {
 		t.Fatalf("setup: world init failed: %v", err)
 	}
 
@@ -291,7 +304,7 @@ func TestWorldDeleteNoConfirm(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	if _, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp"); err != nil {
+	if _, err := runGT(t, gtHome, "world", "init", "myworld"); err != nil {
 		t.Fatalf("setup: world init failed: %v", err)
 	}
 
@@ -338,7 +351,14 @@ func TestWorldStatusJSON(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	if _, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo=/tmp"); err != nil {
+	// Create a real git repo as source.
+	sourceRepo := t.TempDir()
+	gitRun(t, sourceRepo, "init")
+	gitRun(t, sourceRepo, "config", "user.email", "test@test.com")
+	gitRun(t, sourceRepo, "config", "user.name", "Test")
+	gitRun(t, sourceRepo, "commit", "--allow-empty", "-m", "init")
+
+	if _, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo="+sourceRepo); err != nil {
 		t.Fatalf("setup: world init failed: %v", err)
 	}
 
@@ -361,8 +381,8 @@ func TestWorldStatusJSON(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected 'world' object in config, got: %v", cfg)
 	}
-	if world["source_repo"] != "/tmp" {
-		t.Fatalf("expected source_repo '/tmp', got: %v", world["source_repo"])
+	if world["source_repo"] != sourceRepo {
+		t.Fatalf("expected source_repo %q, got: %v", sourceRepo, world["source_repo"])
 	}
 }
 
