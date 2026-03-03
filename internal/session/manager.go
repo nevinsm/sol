@@ -429,6 +429,74 @@ func (m *Manager) SendKeys(name string, keys string) error {
 	return nil
 }
 
+// Cycle atomically replaces the running process in a tmux session using
+// respawn-pane -k. The old process is killed and the new command starts in
+// its place without destroying the session. This is safe for self-handoff —
+// the calling process may be killed by respawn-pane, but the new session
+// starts reliably because tmux handles the transition server-side.
+//
+// All durable side-effects (env refresh, metadata update, hash clear) are
+// performed BEFORE the respawn call, since respawn-pane -k may kill the
+// calling process in self-handoff scenarios.
+func (m *Manager) Cycle(name, workdir, cmd string, env map[string]string, role, world string) error {
+	if !m.Exists(name) {
+		return fmt.Errorf("session %q not found", name)
+	}
+
+	// Ensure pane survives process death during the kill+respawn transition.
+	// Without this, tmux may destroy the pane before respawn-pane can start
+	// the new command.
+	remain, remainCancel := tmuxCmd("set-option", "-t", tmuxExactTarget(name), "remain-on-exit", "on")
+	if out, err := remain.CombinedOutput(); err != nil {
+		remainCancel()
+		return fmt.Errorf("failed to set remain-on-exit for %s: %s: %w", name, strings.TrimSpace(string(out)), err)
+	}
+	remainCancel()
+
+	// Refresh environment variables in the tmux session.
+	for k, v := range env {
+		setEnv, setEnvCancel := tmuxCmd("set-environment", "-t", tmuxExactTarget(name), k, v)
+		if out, err := setEnv.CombinedOutput(); err != nil {
+			setEnvCancel()
+			return fmt.Errorf("failed to set env %q in session %q: %s: %w", k, name, strings.TrimSpace(string(out)), err)
+		}
+		setEnvCancel()
+	}
+
+	// Clear capture hash — fresh process gets a fresh health baseline.
+	_ = os.Remove(captureHashPath(name))
+
+	// Update metadata before respawn (respawn may kill calling process).
+	if err := os.MkdirAll(sessionsDir(), 0o755); err != nil {
+		return fmt.Errorf("failed to create sessions directory: %w", err)
+	}
+	meta := sessionMeta{
+		Name:      name,
+		Role:      role,
+		World:     world,
+		WorkDir:   workdir,
+		StartedAt: time.Now().UTC(),
+	}
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal session metadata: %w", err)
+	}
+	if err := os.WriteFile(metadataPath(name), data, 0o644); err != nil {
+		return fmt.Errorf("failed to write session metadata for %q: %w", name, err)
+	}
+
+	// Atomically kill current process and start new command.
+	// NOTE: In self-handoff scenarios, this call kills the calling process.
+	// Everything below this line may not execute. All durable writes are above.
+	respawn, respawnCancel := tmuxCmd("respawn-pane", "-k", "-t", tmuxExactTarget(name), "-c", workdir, cmd)
+	defer respawnCancel()
+	if out, err := respawn.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to respawn pane in session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
+	}
+
+	return nil
+}
+
 // Exists returns true if a tmux session with this name exists.
 func (m *Manager) Exists(name string) bool {
 	cmd, cancel := tmuxCmd("has-session", "-t", tmuxExactTarget(name))

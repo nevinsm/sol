@@ -162,7 +162,7 @@ Toolbox subcommands (used by the forge Claude session):
 |---------|-------------|
 | `sol handoff --world=W --agent=A` | Hand off to a fresh session with context preservation |
 
-`--summary` provides a progress summary. Captures tmux output, git state, and workflow progress into `.handoff.json`, then restarts the session with that context.
+`--summary` provides a progress summary. Captures tmux output, git state, and workflow progress into `.handoff.json`, then cycles the session atomically using `tmux respawn-pane`. Safe for self-handoff (agent calling handoff on itself) and PreCompact auto-handoff — the old process is replaced without destroying the session.
 
 ## Envoy (Persistent Human-Directed Agents)
 

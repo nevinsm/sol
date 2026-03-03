@@ -693,6 +693,88 @@ func TestStopCleansMetadataOnKillFailure(t *testing.T) {
 	}
 }
 
+func TestCycle(t *testing.T) {
+	mgr := setupTest(t)
+
+	// Start a session running sleep.
+	err := mgr.Start("test-cycle", "/tmp", "sleep 300", nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Let tmux stabilize.
+	time.Sleep(300 * time.Millisecond)
+
+	if !mgr.Exists("test-cycle") {
+		t.Fatal("session should exist before Cycle")
+	}
+
+	// Cycle to a new command.
+	err = mgr.Cycle("test-cycle", "/tmp", "sleep 600", nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Cycle failed: %v", err)
+	}
+
+	// Let tmux process the respawn.
+	time.Sleep(300 * time.Millisecond)
+
+	// Session should still exist with the new process.
+	if !mgr.Exists("test-cycle") {
+		t.Fatal("session should still exist after Cycle")
+	}
+
+	// Verify metadata was updated.
+	data, err := os.ReadFile(metadataPath("test-cycle"))
+	if err != nil {
+		t.Fatalf("metadata should exist after Cycle: %v", err)
+	}
+	var meta sessionMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("failed to parse metadata: %v", err)
+	}
+	if meta.Name != "test-cycle" {
+		t.Errorf("expected name test-cycle, got %q", meta.Name)
+	}
+}
+
+func TestCycleNonexistent(t *testing.T) {
+	mgr := setupTest(t)
+
+	err := mgr.Cycle("nonexistent", "/tmp", "sleep 300", nil, "agent", "haven")
+	if err == nil {
+		t.Fatal("Cycle should fail for nonexistent session")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+func TestCycleWithEnv(t *testing.T) {
+	mgr := setupTest(t)
+
+	err := mgr.Start("test-cycle-env", "/tmp", "sleep 300", nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	env := map[string]string{
+		"SOL_HOME":  "/tmp/sol",
+		"SOL_WORLD": "haven",
+	}
+	err = mgr.Cycle("test-cycle-env", "/tmp", "sleep 600", env, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Cycle with env failed: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	if !mgr.Exists("test-cycle-env") {
+		t.Fatal("session should exist after Cycle with env")
+	}
+}
+
 func TestUnknownHealthStatus(t *testing.T) {
 	s := HealthStatus(99)
 	expected := fmt.Sprintf("unknown(%d)", 99)

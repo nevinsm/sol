@@ -34,6 +34,7 @@ type SessionManager interface {
 	Capture(name string, lines int) (string, error)
 	Stop(name string, force bool) error
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
+	Cycle(name, workdir, cmd string, env map[string]string, role, world string) error
 }
 
 // SphereStore is the subset of store.Store used by handoff.
@@ -250,8 +251,12 @@ type ExecOpts struct {
 // 1. Capture current state (if tethered work exists)
 // 2. Write handoff file (if tethered work exists)
 // 3. Send handoff mail to self (audit trail, if tethered)
-// 4. Stop the current tmux session
-// 5. Start a new tmux session with the same worktree
+// 4. Cycle the tmux session atomically (respawn-pane -k)
+//
+// Step 4 uses Cycle for atomic process replacement, which is safe for
+// self-handoff — the calling process is killed by respawn-pane -k, but the
+// new session starts reliably because tmux handles the transition server-side.
+// Falls back to Stop+Start if Cycle fails.
 //
 // For non-outpost agents (envoy, governor, forge) without tethered work,
 // steps 1-3 are skipped — the session is simply cycled, and the existing
@@ -328,12 +333,9 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		}
 	}
 
-	// Stop the current session (graceful).
-	if err := sessionMgr.Stop(sessionName, false); err != nil {
-		fmt.Fprintf(os.Stderr, "handoff: failed to stop session %s: %v\n", sessionName, err)
-	}
-
-	// Start a new session with the same worktree.
+	// Cycle the session atomically using respawn-pane. This is safe for
+	// self-handoff — respawn-pane -k kills the old process and starts the
+	// new one server-side, so the calling process being killed is expected.
 	env := map[string]string{
 		"SOL_HOME":  config.Home(),
 		"SOL_WORLD": opts.World,
@@ -344,15 +346,15 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		fmt.Sprintf("Agent %s, world %s (handoff). If no context appears, run: sol prime --world=%s --agent=%s",
 			opts.AgentName, opts.World, opts.World, opts.AgentName),
 	)
-	if err := sessionMgr.Start(sessionName, worktreeDir, sessionCmd, env, role, opts.World); err != nil {
-		// Start failed — force-kill any remnant session, then retry once.
-		fmt.Fprintf(os.Stderr, "handoff: new session failed, attempting recovery: %v\n", err)
-		_ = sessionMgr.Stop(sessionName, true)
-		if restartErr := sessionMgr.Start(sessionName, worktreeDir, sessionCmd, env, role, opts.World); restartErr != nil {
-			fmt.Fprintf(os.Stderr, "handoff: recovery also failed: %v\n", restartErr)
-			return fmt.Errorf("failed to start new session (recovery also failed): %w", restartErr)
+	if err := sessionMgr.Cycle(sessionName, worktreeDir, sessionCmd, env, role, opts.World); err != nil {
+		// Cycle failed — fall back to Stop+Start.
+		fmt.Fprintf(os.Stderr, "handoff: cycle failed, falling back to stop+start: %v\n", err)
+		if stopErr := sessionMgr.Stop(sessionName, true); stopErr != nil {
+			fmt.Fprintf(os.Stderr, "handoff: stop also failed: %v\n", stopErr)
 		}
-		fmt.Fprintf(os.Stderr, "handoff: recovery succeeded\n")
+		if startErr := sessionMgr.Start(sessionName, worktreeDir, sessionCmd, env, role, opts.World); startErr != nil {
+			return fmt.Errorf("handoff: fallback start also failed: %w", startErr)
+		}
 	}
 
 	return nil

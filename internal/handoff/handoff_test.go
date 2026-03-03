@@ -2,6 +2,7 @@ package handoff
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -324,6 +325,8 @@ type mockSessionMgr struct {
 	captureErr    error
 	stopped       []string
 	started       []startCall
+	cycled        []startCall
+	cycleErr      error
 }
 
 type startCall struct {
@@ -343,6 +346,14 @@ func (m *mockSessionMgr) Stop(name string, force bool) error {
 
 func (m *mockSessionMgr) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	m.started = append(m.started, startCall{name, workdir, cmd, env, role, world})
+	return nil
+}
+
+func (m *mockSessionMgr) Cycle(name, workdir, cmd string, env map[string]string, role, world string) error {
+	if m.cycleErr != nil {
+		return m.cycleErr
+	}
+	m.cycled = append(m.cycled, startCall{name, workdir, cmd, env, role, world})
 	return nil
 }
 
@@ -393,25 +404,28 @@ func TestExec(t *testing.T) {
 		t.Error("expected handoff file to exist after Exec")
 	}
 
-	// Verify session was stopped then started.
-	if len(mgr.stopped) != 1 || mgr.stopped[0] != "sol-ember-Toast" {
-		t.Errorf("expected session stopped once, got %v", mgr.stopped)
+	// Verify session was cycled (not stopped+started).
+	if len(mgr.stopped) != 0 {
+		t.Errorf("expected no Stop calls (Cycle used instead), got %v", mgr.stopped)
 	}
-	if len(mgr.started) != 1 {
-		t.Fatalf("expected 1 start call, got %d", len(mgr.started))
+	if len(mgr.started) != 0 {
+		t.Errorf("expected no Start calls (Cycle used instead), got %v", mgr.started)
 	}
-	if mgr.started[0].Name != "sol-ember-Toast" {
-		t.Errorf("expected session name sol-ember-Toast, got %q", mgr.started[0].Name)
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
 	}
-	if mgr.started[0].Workdir != worktreeDir {
-		t.Errorf("expected workdir %q, got %q", worktreeDir, mgr.started[0].Workdir)
+	if mgr.cycled[0].Name != "sol-ember-Toast" {
+		t.Errorf("expected session name sol-ember-Toast, got %q", mgr.cycled[0].Name)
+	}
+	if mgr.cycled[0].Workdir != worktreeDir {
+		t.Errorf("expected workdir %q, got %q", worktreeDir, mgr.cycled[0].Workdir)
 	}
 	// Session command should include --settings flag for reliable hook discovery.
-	if !strings.Contains(mgr.started[0].Cmd, "--settings") {
-		t.Errorf("expected session command to include --settings, got %q", mgr.started[0].Cmd)
+	if !strings.Contains(mgr.cycled[0].Cmd, "--settings") {
+		t.Errorf("expected session command to include --settings, got %q", mgr.cycled[0].Cmd)
 	}
-	if mgr.started[0].Role != "agent" {
-		t.Errorf("expected role agent, got %q", mgr.started[0].Role)
+	if mgr.cycled[0].Role != "agent" {
+		t.Errorf("expected role agent, got %q", mgr.cycled[0].Role)
 	}
 
 	// Verify mail was sent to self.
@@ -464,18 +478,21 @@ func TestExecNoTetherCyclesSession(t *testing.T) {
 		t.Error("expected no handoff file for governor without tether")
 	}
 
-	// Session should still be stopped and restarted.
-	if len(mgr.stopped) != 1 || mgr.stopped[0] != "sol-ember-governor" {
-		t.Errorf("expected session stopped once, got %v", mgr.stopped)
+	// Session should be cycled (not stopped+started).
+	if len(mgr.stopped) != 0 {
+		t.Errorf("expected no Stop calls, got %v", mgr.stopped)
 	}
-	if len(mgr.started) != 1 {
-		t.Fatalf("expected 1 start call, got %d", len(mgr.started))
+	if len(mgr.started) != 0 {
+		t.Errorf("expected no Start calls, got %v", mgr.started)
 	}
-	if mgr.started[0].Workdir != govDir {
-		t.Errorf("expected workdir %q, got %q", govDir, mgr.started[0].Workdir)
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
 	}
-	if mgr.started[0].Role != "governor" {
-		t.Errorf("expected role governor, got %q", mgr.started[0].Role)
+	if mgr.cycled[0].Workdir != govDir {
+		t.Errorf("expected workdir %q, got %q", govDir, mgr.cycled[0].Workdir)
+	}
+	if mgr.cycled[0].Role != "governor" {
+		t.Errorf("expected role governor, got %q", mgr.cycled[0].Role)
 	}
 	// No mail sent (no tether).
 	if len(ts.messages) != 0 {
@@ -519,14 +536,53 @@ func TestExecWithExplicitRole(t *testing.T) {
 		t.Error("expected handoff file for tethered envoy")
 	}
 
-	// Session should use envoy role.
+	// Session should be cycled with envoy role.
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+	if mgr.cycled[0].Role != "envoy" {
+		t.Errorf("expected role envoy, got %q", mgr.cycled[0].Role)
+	}
+	if mgr.cycled[0].Workdir != envoyDir {
+		t.Errorf("expected workdir %q, got %q", envoyDir, mgr.cycled[0].Workdir)
+	}
+}
+
+func TestExecCycleFallback(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	// Create governor directory (no tether).
+	govDir := filepath.Join(solHome, "ember", "governor")
+	if err := os.MkdirAll(govDir, 0o755); err != nil {
+		t.Fatalf("failed to create governor dir: %v", err)
+	}
+
+	mgr := &mockSessionMgr{cycleErr: fmt.Errorf("respawn-pane failed")}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:       "ember",
+		AgentName:   "governor",
+		Role:        "governor",
+		WorktreeDir: govDir,
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec should succeed with fallback: %v", err)
+	}
+
+	// Cycle was attempted but failed.
+	if len(mgr.cycled) != 0 {
+		t.Errorf("expected no successful Cycle calls, got %d", len(mgr.cycled))
+	}
+	// Fallback: Stop then Start.
+	if len(mgr.stopped) != 1 {
+		t.Errorf("expected 1 Stop call (fallback), got %d", len(mgr.stopped))
+	}
 	if len(mgr.started) != 1 {
-		t.Fatalf("expected 1 start call, got %d", len(mgr.started))
+		t.Fatalf("expected 1 Start call (fallback), got %d", len(mgr.started))
 	}
-	if mgr.started[0].Role != "envoy" {
-		t.Errorf("expected role envoy, got %q", mgr.started[0].Role)
-	}
-	if mgr.started[0].Workdir != envoyDir {
-		t.Errorf("expected workdir %q, got %q", envoyDir, mgr.started[0].Workdir)
+	if mgr.started[0].Role != "governor" {
+		t.Errorf("expected role governor, got %q", mgr.started[0].Role)
 	}
 }
