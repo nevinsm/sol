@@ -481,6 +481,38 @@ func TestCastItemNotOpen(t *testing.T) {
 	}
 }
 
+func TestCastRejectsNonAgentRoles(t *testing.T) {
+	for _, role := range []string{"envoy", "governor", "forge", "sentinel"} {
+		t.Run(role, func(t *testing.T) {
+			worldStore, sphereStore := setupStores(t)
+			mgr := newMockSessionManager()
+
+			itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+			if err != nil {
+				t.Fatalf("failed to create work item: %v", err)
+			}
+
+			if _, err := sphereStore.CreateAgent("Toast", "ember", role); err != nil {
+				t.Fatalf("failed to create agent: %v", err)
+			}
+
+			_, err = Cast(CastOpts{
+				WorkItemID: itemID,
+				World:      "ember",
+				AgentName:  "Toast",
+				SourceRepo: "/tmp",
+			}, worldStore, sphereStore, mgr, nil)
+
+			if err == nil {
+				t.Fatalf("expected error when dispatching to %s agent", role)
+			}
+			if !strings.Contains(err.Error(), "cannot dispatch to "+role) {
+				t.Errorf("expected role rejection error, got: %v", err)
+			}
+		})
+	}
+}
+
 // --- Prime tests ---
 
 func TestPrimeWithTether(t *testing.T) {

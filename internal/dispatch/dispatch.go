@@ -119,6 +119,9 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		if err != nil {
 			return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
 		}
+		if agent.Role != "agent" {
+			return nil, fmt.Errorf("cannot dispatch to %s agents — sol cast targets outpost agents only (got %s)", agent.Role, agent.Name)
+		}
 	} else {
 		if item.Status != "open" {
 			return nil, fmt.Errorf("work item %q has status %q, expected \"open\"", opts.WorkItemID, item.Status)
