@@ -265,8 +265,9 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 
 	var recovered int
 	for _, agent := range agents {
-		// Skip non-agent agents (don't recover sentinel/forge/consul).
-		if agent.Role != "agent" {
+		// Skip infrastructure roles (don't recover sentinel/forge/consul).
+		// Recover agents, envoys, and governors.
+		if agent.Role != "agent" && agent.Role != "envoy" && agent.Role != "governor" {
 			continue
 		}
 

@@ -138,6 +138,104 @@ func TestRecoverStaleTethers(t *testing.T) {
 	}
 }
 
+func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "ember-eg"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Envoy: working, session dead, old timestamp → should be recovered.
+	sphereStore.CreateAgent("MyEnvoy", worldName, "envoy")
+	wiEnvoy, _ := worldStore.CreateWorkItem("task-envoy", "envoy work", "test", 1, nil)
+	sphereStore.UpdateAgentState(worldName+"/MyEnvoy", "working", wiEnvoy)
+	worldStore.UpdateWorkItem(wiEnvoy, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/MyEnvoy"})
+	tether.Write(worldName, "MyEnvoy", wiEnvoy)
+
+	// Governor: working, session dead, old timestamp → should be recovered.
+	sphereStore.CreateAgent("MyGovernor", worldName, "governor")
+	wiGov, _ := worldStore.CreateWorkItem("task-governor", "governor work", "test", 1, nil)
+	sphereStore.UpdateAgentState(worldName+"/MyGovernor", "working", wiGov)
+	worldStore.UpdateWorkItem(wiGov, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/MyGovernor"})
+	tether.Write(worldName, "MyGovernor", wiGov)
+
+	// Sentinel: working, session dead, old timestamp → should NOT be recovered.
+	sphereStore.CreateAgent("sentinel", worldName, "sentinel")
+	sphereStore.UpdateAgentState(worldName+"/sentinel", "working", "fake-sentinel-item")
+
+	// Make all agents old.
+	for _, id := range []string{worldName + "/MyEnvoy", worldName + "/MyGovernor", worldName + "/sentinel"} {
+		sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
+			time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), id)
+	}
+
+	sessions := newMockSessions() // no alive sessions
+
+	cfg := Config{
+		StaleTetherTimeout: 1 * time.Hour,
+		SolHome:            solHome,
+	}
+
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
+	})
+
+	recovered, err := d.recoverStaleTethers(context.Background())
+	if err != nil {
+		t.Fatalf("recoverStaleTethers failed: %v", err)
+	}
+	if recovered != 2 {
+		t.Errorf("recovered = %d, want 2 (envoy + governor)", recovered)
+	}
+
+	// Verify envoy was recovered.
+	envoy, _ := sphereStore.GetAgent(worldName + "/MyEnvoy")
+	if envoy.State != "idle" {
+		t.Errorf("envoy state = %q, want idle", envoy.State)
+	}
+	if envoy.TetherItem != "" {
+		t.Errorf("envoy tether_item = %q, want empty", envoy.TetherItem)
+	}
+
+	// Verify governor was recovered.
+	gov, _ := sphereStore.GetAgent(worldName + "/MyGovernor")
+	if gov.State != "idle" {
+		t.Errorf("governor state = %q, want idle", gov.State)
+	}
+	if gov.TetherItem != "" {
+		t.Errorf("governor tether_item = %q, want empty", gov.TetherItem)
+	}
+
+	// Verify work items are back to open.
+	worldStore2, _ := store.OpenWorld(worldName)
+	defer worldStore2.Close()
+
+	itemEnvoy, _ := worldStore2.GetWorkItem(wiEnvoy)
+	if itemEnvoy.Status != "open" {
+		t.Errorf("envoy work item status = %q, want open", itemEnvoy.Status)
+	}
+	itemGov, _ := worldStore2.GetWorkItem(wiGov)
+	if itemGov.Status != "open" {
+		t.Errorf("governor work item status = %q, want open", itemGov.Status)
+	}
+
+	// Verify sentinel was NOT recovered.
+	sentinel, _ := sphereStore.GetAgent(worldName + "/sentinel")
+	if sentinel.State != "working" {
+		t.Errorf("sentinel state = %q, want working (should not be recovered)", sentinel.State)
+	}
+}
+
 func TestRecoverStaleTethersTooRecent(t *testing.T) {
 	solHome := setupSolHome(t)
 
