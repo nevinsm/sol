@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -607,13 +608,13 @@ func TestRespawnCommandByRole(t *testing.T) {
 
 	// Forge and agents use Claude sessions.
 	forgeCmd := respawnCommand(forgeAgent)
-	if forgeCmd != "claude --dangerously-skip-permissions" {
-		t.Errorf("forge command = %q, want %q", forgeCmd, "claude --dangerously-skip-permissions")
+	if forgeCmd != config.DefaultSessionCommand {
+		t.Errorf("forge command = %q, want %q", forgeCmd, config.DefaultSessionCommand)
 	}
 
 	agentCmd := respawnCommand(agentBot)
-	if agentCmd != "claude --dangerously-skip-permissions" {
-		t.Errorf("agent command = %q, want %q", agentCmd, "claude --dangerously-skip-permissions")
+	if agentCmd != config.DefaultSessionCommand {
+		t.Errorf("agent command = %q, want %q", agentCmd, config.DefaultSessionCommand)
 	}
 
 	// Sentinel uses sol sentinel run.
@@ -831,12 +832,12 @@ func TestRespawnCommandEnvoyGovernor(t *testing.T) {
 	govAgent := store.Agent{Name: "governor", World: "haven", Role: "governor"}
 
 	envoyCmd := respawnCommand(envoyAgent)
-	if envoyCmd != "claude --dangerously-skip-permissions" {
-		t.Errorf("envoy command = %q, want %q", envoyCmd, "claude --dangerously-skip-permissions")
+	if envoyCmd != config.DefaultSessionCommand {
+		t.Errorf("envoy command = %q, want %q", envoyCmd, config.DefaultSessionCommand)
 	}
 
 	govCmd := respawnCommand(govAgent)
-	if govCmd != "claude --dangerously-skip-permissions" {
-		t.Errorf("governor command = %q, want %q", govCmd, "claude --dangerously-skip-permissions")
+	if govCmd != config.DefaultSessionCommand {
+		t.Errorf("governor command = %q, want %q", govCmd, config.DefaultSessionCommand)
 	}
 }

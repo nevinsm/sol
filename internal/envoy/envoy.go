@@ -181,7 +181,7 @@ func Start(opts StartOpts, sphereStore StartStore, mgr SessionManager) error {
 	}
 
 	// 4. Start tmux session.
-	if err := mgr.Start(sessName, worktree, "claude --dangerously-skip-permissions", nil, "envoy", opts.World); err != nil {
+	if err := mgr.Start(sessName, worktree, config.SessionCommand(), nil, "envoy", opts.World); err != nil {
 		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 

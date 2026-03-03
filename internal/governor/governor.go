@@ -95,7 +95,7 @@ func Start(opts StartOpts, sphereStore SphereStore, mgr SessionManager) error {
 	}
 
 	// 5. Start tmux session.
-	if err := mgr.Start(sessName, govDir, "claude --dangerously-skip-permissions", nil, "governor", opts.World); err != nil {
+	if err := mgr.Start(sessName, govDir, config.SessionCommand(), nil, "governor", opts.World); err != nil {
 		return fmt.Errorf("failed to start governor for world %q: %w", opts.World, err)
 	}
 

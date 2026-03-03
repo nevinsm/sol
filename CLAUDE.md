@@ -63,6 +63,15 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - ADR format: lightweight MADR — Context → Options Considered (when warranted) → Decision → Consequences
 - CLI changes (new commands, changed flags, removed subcommands) must be reflected in `docs/cli.md`
 
+## Testing
+- Tests that create tmux sessions MUST use `setupTestEnv()` or `setupTestEnvWithRepo()` from `test/integration/helpers_test.go`
+- These helpers enforce three critical isolation rules:
+  1. **`TMUX_TMPDIR`** — isolates the tmux server socket so test sessions don't touch the real server
+  2. **`TMUX=""`** — unsets the inherited tmux variable; without this, tmux commands connect to the real server and test cleanup kills all live `sol-*` sessions
+  3. **`SOL_SESSION_COMMAND="sleep 300"`** — prevents tests from spawning real `claude` processes (resource exhaustion)
+- Never hardcode `"claude --dangerously-skip-permissions"` — use `config.SessionCommand()` which respects `SOL_SESSION_COMMAND`
+- The one exception is `TestWorldDeleteRefusesWithActiveSessions` which intentionally uses the real tmux server for its test, creates a single session by exact name, and cleans up only that session
+
 ## Conventions
 - Go module: github.com/nevinsm/sol
 - All timestamps: RFC3339 in UTC

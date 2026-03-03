@@ -530,7 +530,7 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 	}
 
 	if err := w.sessions.Start(sessionName, workdir,
-		"claude --dangerously-skip-permissions", env, agent.Role, w.config.World); err != nil {
+		config.SessionCommand(), env, agent.Role, w.config.World); err != nil {
 		return fmt.Errorf("failed to start session for %s: %w", agent.Name, err)
 	}
 

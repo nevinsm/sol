@@ -122,6 +122,18 @@ func RequireWorld(world string) error {
 	return nil
 }
 
+// DefaultSessionCommand is the default command used to start agent sessions.
+const DefaultSessionCommand = "claude --dangerously-skip-permissions"
+
+// SessionCommand returns the command used to start agent sessions.
+// Checks SOL_SESSION_COMMAND env var first; defaults to DefaultSessionCommand.
+func SessionCommand() string {
+	if cmd := os.Getenv("SOL_SESSION_COMMAND"); cmd != "" {
+		return cmd
+	}
+	return DefaultSessionCommand
+}
+
 // EnsureDirs creates .store/ and .runtime/ if they don't exist.
 func EnsureDirs() error {
 	for _, dir := range []string{StoreDir(), RuntimeDir()} {

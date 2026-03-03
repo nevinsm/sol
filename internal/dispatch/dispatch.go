@@ -281,7 +281,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		"SOL_WORLD": opts.World,
 		"SOL_AGENT": agent.Name,
 	}
-	if err := mgr.Start(sessName, worktreeDir, "claude --dangerously-skip-permissions", env, "agent", opts.World); err != nil {
+	if err := mgr.Start(sessName, worktreeDir, config.SessionCommand(), env, "agent", opts.World); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to start session: %w", err)
 	}

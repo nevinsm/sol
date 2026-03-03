@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/tether"
 )
 
@@ -406,7 +407,7 @@ func TestExec(t *testing.T) {
 	if mgr.started[0].Workdir != worktreeDir {
 		t.Errorf("expected workdir %q, got %q", worktreeDir, mgr.started[0].Workdir)
 	}
-	if mgr.started[0].Cmd != "claude --dangerously-skip-permissions" {
+	if mgr.started[0].Cmd != config.DefaultSessionCommand {
 		t.Errorf("expected claude command, got %q", mgr.started[0].Cmd)
 	}
 	if mgr.started[0].Role != "agent" {

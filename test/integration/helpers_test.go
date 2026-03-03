@@ -16,8 +16,39 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
+// isolateTmux sets up tmux isolation for tests that create tmux sessions.
+// Must be called before any tmux sessions are created. See setupTestEnv for
+// the full explanation of why all three env vars are required.
+func isolateTmux(t *testing.T) {
+	t.Helper()
+	tmuxDir := t.TempDir()
+	t.Setenv("TMUX_TMPDIR", tmuxDir)
+	t.Setenv("TMUX", "")
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	t.Cleanup(func() {
+		out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
+		if err != nil {
+			return
+		}
+		for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if strings.HasPrefix(name, "sol-") {
+				exec.Command("tmux", "kill-session", "-t", name).Run()
+			}
+		}
+	})
+}
+
 // setupTestEnv creates an isolated test environment with temp SOL_HOME,
 // a real git repo, and an isolated tmux server.
+//
+// IMPORTANT — tmux isolation:
+// All three of these env vars are required to prevent tests from interfering
+// with real sol sessions. If you skip any of them, test cleanup will connect
+// to the real tmux server and kill every live sol-* session:
+//
+//   TMUX_TMPDIR  → isolated socket directory (new tmux server)
+//   TMUX=""      → unset inherited tmux var (forces socket-based discovery)
+//   SOL_SESSION_COMMAND="sleep 300" → stub process instead of real claude
 func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 	t.Helper()
 
@@ -44,25 +75,8 @@ func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 	gitRun(t, sourceRepo, "add", ".")
 	gitRun(t, sourceRepo, "commit", "-m", "initial")
 
-	// 4. Isolated tmux server.
-	tmuxDir := t.TempDir()
-	t.Setenv("TMUX_TMPDIR", tmuxDir)
-
-	// 5. Cleanup tmux sessions on test end.
-	t.Cleanup(func() {
-		out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
-		if err != nil {
-			// tmux server might not be running — not an error.
-			return
-		}
-		for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if strings.HasPrefix(name, "sol-") {
-				if err := exec.Command("tmux", "kill-session", "-t", name).Run(); err != nil {
-					t.Logf("cleanup: failed to kill session %q: %v", name, err)
-				}
-			}
-		}
-	})
+	// 4. Isolated tmux server + stub session command + cleanup.
+	isolateTmux(t)
 
 	return gtHome, sourceRepo
 }
@@ -450,22 +464,8 @@ func setupTestEnvWithRepo(t *testing.T) (gtHome string, sourceRepo string) {
 	runGit(t, sourceRepo, "add", ".")
 	runGit(t, sourceRepo, "commit", "-m", "initial")
 
-	// Isolated tmux server.
-	tmuxDir := t.TempDir()
-	t.Setenv("TMUX_TMPDIR", tmuxDir)
-
-	// Cleanup tmux sessions on test end.
-	t.Cleanup(func() {
-		out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
-		if err != nil {
-			return
-		}
-		for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if strings.HasPrefix(name, "sol-") {
-				exec.Command("tmux", "kill-session", "-t", name).Run()
-			}
-		}
-	})
+	// Isolated tmux server + stub session command + cleanup.
+	isolateTmux(t)
 
 	return gtHome, sourceRepo
 }

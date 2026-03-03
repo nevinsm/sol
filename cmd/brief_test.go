@@ -201,10 +201,10 @@ func TestBriefCheckSaveNotUpdated(t *testing.T) {
 	solHome := filepath.Join(dir, "sol-home")
 	t.Setenv("SOL_HOME", solHome)
 
-	// Capture stdout to verify nudge message.
-	oldStdout := os.Stdout
+	// Capture stderr to verify nudge message.
+	oldStderr := os.Stderr
 	r, w, _ := os.Pipe()
-	os.Stdout = w
+	os.Stderr = w
 
 	rootCmd.SetArgs([]string{"brief", "check-save", briefPath})
 	err := rootCmd.Execute()
@@ -212,15 +212,15 @@ func TestBriefCheckSaveNotUpdated(t *testing.T) {
 	w.Close()
 	var captured bytes.Buffer
 	captured.ReadFrom(r)
-	os.Stdout = oldStdout
+	os.Stderr = oldStderr
 
-	if ExitCode(err) != 1 {
-		t.Fatalf("expected exit code 1, got error: %v", err)
+	if ExitCode(err) != 2 {
+		t.Fatalf("expected exit code 2, got error: %v", err)
 	}
 
 	output := captured.String()
 	if !strings.Contains(output, "brief has not been updated") {
-		t.Errorf("expected nudge message in output, got: %s", output)
+		t.Errorf("expected nudge message in stderr, got: %s", output)
 	}
 }
 
@@ -231,7 +231,7 @@ func TestBriefCheckSaveStopHookActive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Write .session_start in the future (would normally cause exit 1).
+	// Write .session_start in the future (would normally cause exit 2).
 	sessionStartPath := filepath.Join(briefDir, ".session_start")
 	future := time.Now().UTC().Add(1 * time.Hour).Format(time.RFC3339)
 	if err := os.WriteFile(sessionStartPath, []byte(future), 0o644); err != nil {

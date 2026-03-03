@@ -214,11 +214,11 @@ func respawnCommand(agent store.Agent) string {
 	case "envoy", "governor":
 		// Should never reach here — skipped in heartbeat.
 		// But if it does, start a Claude session.
-		return "claude --dangerously-skip-permissions"
+		return config.SessionCommand()
 	default:
 		// Agents and forge run Claude sessions — the CLAUDE.md and tethers
 		// installed in the worktree provide the execution context.
-		return "claude --dangerously-skip-permissions"
+		return config.SessionCommand()
 	}
 }
 

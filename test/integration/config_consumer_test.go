@@ -12,7 +12,9 @@ func TestCastUsesConfigSourceRepo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
+	isolateTmux(t)
 	gtHome := t.TempDir()
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
 	// Init world with source repo pointing to a real git repo.
@@ -80,7 +82,9 @@ func TestDispatchCapacityEnforced(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
+	isolateTmux(t)
 	gtHome := t.TempDir()
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
 	sourceRepo := setupGitRepo(t)
@@ -127,7 +131,9 @@ func TestDispatchCapacityZeroUnlimited(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
+	isolateTmux(t)
 	gtHome := t.TempDir()
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
 	sourceRepo := setupGitRepo(t)
@@ -155,7 +161,9 @@ func TestDispatchNamePoolFromConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
+	isolateTmux(t)
 	gtHome := t.TempDir()
+	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
 	sourceRepo := setupGitRepo(t)

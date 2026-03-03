@@ -309,11 +309,11 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		"SOL_WORLD": opts.World,
 		"SOL_AGENT": opts.AgentName,
 	}
-	if err := sessionMgr.Start(sessionName, worktreeDir, "claude --dangerously-skip-permissions", env, "agent", opts.World); err != nil {
+	if err := sessionMgr.Start(sessionName, worktreeDir, config.SessionCommand(), env, "agent", opts.World); err != nil {
 		// Start failed — force-kill any remnant session, then retry once.
 		fmt.Fprintf(os.Stderr, "handoff: new session failed, attempting recovery: %v\n", err)
 		_ = sessionMgr.Stop(sessionName, true)
-		if restartErr := sessionMgr.Start(sessionName, worktreeDir, "claude --dangerously-skip-permissions", env, "agent", opts.World); restartErr != nil {
+		if restartErr := sessionMgr.Start(sessionName, worktreeDir, config.SessionCommand(), env, "agent", opts.World); restartErr != nil {
 			fmt.Fprintf(os.Stderr, "handoff: recovery also failed: %v\n", restartErr)
 			return fmt.Errorf("failed to start new session (recovery also failed): %w", restartErr)
 		}

@@ -158,6 +158,19 @@ func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, 
 		return fmt.Errorf("failed to start session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
 	}
 
+	// For human-supervised roles (envoy, governor), keep the pane alive after
+	// the process exits so we can inspect the exit code and any error output.
+	// Without this, tmux destroys the session immediately and all crash
+	// evidence is lost. Not applied to regular agents because the prefect
+	// uses Exists() to detect dead sessions for auto-respawn.
+	if role == "envoy" || role == "governor" {
+		remain, remainCancel := tmuxCmd("set-option", "-t", tmuxExactTarget(name), "remain-on-exit", "on")
+		if out, err := remain.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "session: failed to set remain-on-exit for %s: %s\n", name, strings.TrimSpace(string(out)))
+		}
+		remainCancel()
+	}
+
 	// Set environment variables
 	for k, v := range env {
 		setEnv, setEnvCancel := tmuxCmd("set-environment", "-t", tmuxExactTarget(name), k, v)
