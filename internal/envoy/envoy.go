@@ -39,6 +39,12 @@ func BriefPath(world, name string) string {
 	return filepath.Join(config.Home(), world, "envoys", name, ".brief", "memory.md")
 }
 
+// PersonaPath returns the path to the envoy's optional persona file.
+// $SOL_HOME/{world}/envoys/{name}/persona.md
+func PersonaPath(world, name string) string {
+	return filepath.Join(config.Home(), world, "envoys", name, "persona.md")
+}
+
 // SessionName returns the tmux session name for an envoy.
 func SessionName(world, name string) string {
 	return config.SessionName(world, name)

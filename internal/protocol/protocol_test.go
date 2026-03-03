@@ -231,6 +231,41 @@ func TestGenerateEnvoyClaudeMDDefaultBinary(t *testing.T) {
 	}
 }
 
+func TestGenerateEnvoyClaudeMDWithPersona(t *testing.T) {
+	ctx := EnvoyClaudeMDContext{
+		AgentName:      "scout",
+		World:          "myworld",
+		SolBinary:      "sol",
+		PersonaContent: "You are thoughtful and concise.\nAlways explain your reasoning.",
+	}
+
+	content := GenerateEnvoyClaudeMD(ctx)
+
+	if !strings.Contains(content, "## Persona") {
+		t.Error("GenerateEnvoyClaudeMD missing Persona section")
+	}
+	if !strings.Contains(content, "You are thoughtful and concise.") {
+		t.Error("GenerateEnvoyClaudeMD missing persona content")
+	}
+	if !strings.Contains(content, "Always explain your reasoning.") {
+		t.Error("GenerateEnvoyClaudeMD missing second line of persona content")
+	}
+}
+
+func TestGenerateEnvoyClaudeMDWithoutPersona(t *testing.T) {
+	ctx := EnvoyClaudeMDContext{
+		AgentName: "scout",
+		World:     "myworld",
+		SolBinary: "sol",
+	}
+
+	content := GenerateEnvoyClaudeMD(ctx)
+
+	if strings.Contains(content, "## Persona") {
+		t.Error("GenerateEnvoyClaudeMD should not contain Persona section when PersonaContent is empty")
+	}
+}
+
 func TestInstallEnvoyClaudeMD(t *testing.T) {
 	dir := t.TempDir()
 	ctx := EnvoyClaudeMDContext{
@@ -255,6 +290,34 @@ func TestInstallEnvoyClaudeMD(t *testing.T) {
 	}
 	if !strings.Contains(content, "myworld") {
 		t.Error("CLAUDE.local.md missing world name")
+	}
+}
+
+func TestInstallEnvoyClaudeMDWithPersona(t *testing.T) {
+	dir := t.TempDir()
+	ctx := EnvoyClaudeMDContext{
+		AgentName:      "scout",
+		World:          "myworld",
+		SolBinary:      "sol",
+		PersonaContent: "Be direct and action-oriented.",
+	}
+
+	if err := InstallEnvoyClaudeMD(dir, ctx); err != nil {
+		t.Fatalf("InstallEnvoyClaudeMD failed: %v", err)
+	}
+
+	path := filepath.Join(dir, ".claude", "CLAUDE.local.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "## Persona") {
+		t.Error("CLAUDE.local.md missing Persona section")
+	}
+	if !strings.Contains(content, "Be direct and action-oriented.") {
+		t.Error("CLAUDE.local.md missing persona content")
 	}
 }
 

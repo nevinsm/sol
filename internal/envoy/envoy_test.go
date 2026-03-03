@@ -163,6 +163,7 @@ func TestEnvoyDir(t *testing.T) {
 		{"WorktreePath", WorktreePath, "/tmp/sol-test/myworld/envoys/Echo/worktree"},
 		{"BriefDir", BriefDir, "/tmp/sol-test/myworld/envoys/Echo/.brief"},
 		{"BriefPath", BriefPath, "/tmp/sol-test/myworld/envoys/Echo/.brief/memory.md"},
+		{"PersonaPath", PersonaPath, "/tmp/sol-test/myworld/envoys/Echo/persona.md"},
 	}
 
 	for _, tt := range tests {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ClaudeMDContext holds the fields used to generate a CLAUDE.md file for an outpost agent.
@@ -227,9 +228,10 @@ Once you have the world name (and optionally source repo), run:
 
 // EnvoyClaudeMDContext holds the fields used to generate a CLAUDE.md for an envoy agent.
 type EnvoyClaudeMDContext struct {
-	AgentName string
-	World     string
-	SolBinary string // path to sol binary (for CLI references)
+	AgentName      string
+	World          string
+	SolBinary      string // path to sol binary (for CLI references)
+	PersonaContent string // optional persona file content, appended as ## Persona section
 }
 
 // GenerateEnvoyClaudeMD returns the contents of a CLAUDE.md for an envoy agent.
@@ -239,7 +241,7 @@ func GenerateEnvoyClaudeMD(ctx EnvoyClaudeMDContext) string {
 		sol = "sol"
 	}
 
-	return fmt.Sprintf(`# Envoy: %s (world: %s)
+	content := fmt.Sprintf(`# Envoy: %s (world: %s)
 
 ## Identity
 You are an envoy — a persistent, context-aware agent in world %q.
@@ -296,6 +298,12 @@ When your tethered work is complete:
 		sol, ctx.World,
 		sol, ctx.World, ctx.AgentName,
 	)
+
+	if ctx.PersonaContent != "" {
+		content += fmt.Sprintf("\n## Persona\n%s\n", strings.TrimSpace(ctx.PersonaContent))
+	}
+
+	return content
 }
 
 // InstallEnvoyClaudeMD writes .claude/CLAUDE.local.md for an envoy into the worktree.

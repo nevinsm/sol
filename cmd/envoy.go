@@ -96,12 +96,22 @@ var envoyStartCmd = &cobra.Command{
 
 		mgr := session.New()
 
+		// Read optional persona file.
+		var personaContent string
+		personaPath := envoy.PersonaPath(envoyStartWorld, name)
+		if data, err := os.ReadFile(personaPath); err == nil {
+			personaContent = string(data)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to read persona file %q: %w", personaPath, err)
+		}
+
 		// Install envoy CLAUDE.md before starting session.
 		worktree := envoy.WorktreePath(envoyStartWorld, name)
 		if err := protocol.InstallEnvoyClaudeMD(worktree, protocol.EnvoyClaudeMDContext{
-			AgentName: name,
-			World:     envoyStartWorld,
-			SolBinary: "sol",
+			AgentName:      name,
+			World:          envoyStartWorld,
+			SolBinary:      "sol",
+			PersonaContent: personaContent,
 		}); err != nil {
 			return fmt.Errorf("failed to install envoy CLAUDE.md: %w", err)
 		}
