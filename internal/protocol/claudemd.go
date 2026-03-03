@@ -78,6 +78,7 @@ Your job is to execute the assigned work item.
 - You are working in an isolated git worktree. Commit your changes normally.
 - Do not modify files outside this worktree.
 - Do not attempt to interact with other agents directly.
+- Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
 `, ctx.AgentName, ctx.World, modelSection, ctx.WorkItemID, ctx.Title, ctx.Description,
 		workflowSection, protocolSection)
 }
@@ -105,6 +106,7 @@ You are the Forge for world %s. You are a merge processor, NOT a developer.
 - Writing application code
 - Reading outpost implementations
 - Modifying source files except to resolve merge conflicts
+- Using plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
 
 ## Your Job
 Rebase, test, merge, push. Handle conflicts. Attribute test failures.
@@ -292,6 +294,7 @@ When your work is ready to submit:
 - You are human-supervised — ask when uncertain
 - **Never push directly or bypass forge** — `+"`"+`sol resolve`+"`"+` is the only way to submit code
 - Your worktree persists across sessions — keep it clean
+- Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
 `,
 		ctx.AgentName, ctx.World,
 		ctx.World, ctx.AgentName,
@@ -427,6 +430,7 @@ Full sol CLI reference for governor operations:
 - Create focused, well-scoped work items (one concern per item)
 - Include enough context in descriptions for an agent to work autonomously
 - Check agent availability before dispatching (`+"`"+`%s agent list`+"`"+`)
+- Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
 - Use the codebase to verify your understanding before dispatching
 `,
 		ctx.World, ctx.World, // title, identity
