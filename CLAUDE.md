@@ -3,8 +3,8 @@
 Production-ready system for coordinating concurrent AI coding agents.
 
 ## Architecture
-- Read `docs/target-architecture.md` for the full system spec
 - Read `docs/manifesto.md` for design philosophy
+- Read `docs/failure-modes.md` for crash recovery and degradation behavior
 - Read `docs/naming.md` for the naming glossary
 - Read `docs/arc-roadmap.md` for the arc roadmap
 - Read `docs/decisions/` for ADRs (architectural decision records)
@@ -38,10 +38,11 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Chronicle**: Event log maintenance
 - **Doctor**: Prerequisite check engine (`internal/doctor/`)
 - **Status**: Sphere overview + per-world detail, lipgloss-styled rendering
-
-## Components (planned)
 - **Envoy**: Persistent human-directed agent with brief system (Arc 3, ADR-0009)
 - **Governor**: Per-world work coordinator — Claude session + sol CLI (Arc 3, ADR-0010)
+- **Brief**: Agent-maintained context files, hook-based injection (Arc 3, ADR-0013)
+
+## Components (planned)
 - **Senate**: Sphere-scoped cross-world planner (Arc 4, ADR-0011)
 
 ## Commits
@@ -58,8 +59,9 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - New components must have status representation in `sol status` (sphere overview and/or per-world detail)
 - New agent roles get their own section in per-world status display
 - New sphere-level processes appear in the sphere processes section
-- Architectural divergences from target-architecture.md get an ADR in `docs/decisions/`
+- Architectural decisions get an ADR in `docs/decisions/`
 - ADR format: lightweight MADR — Context → Options Considered (when warranted) → Decision → Consequences
+- CLI changes (new commands, changed flags, removed subcommands) must be reflected in `docs/cli.md`
 
 ## Conventions
 - Go module: github.com/nevinsm/sol
