@@ -801,3 +801,250 @@ func TestSentinelIgnoresGovernor(t *testing.T) {
 		t.Errorf("expected 0 sessions stopped for governor, got %d: %v", len(stopped), stopped)
 	}
 }
+
+func TestReapIdleAgent(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.IdleReapTimeout = 1 * time.Millisecond // Very short for tests.
+
+	// Create an idle agent with an old UpdatedAt.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	// Agent is idle by default. Make it old.
+	now := time.Now().UTC().Add(-1 * time.Hour)
+	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
+		now.Format(time.RFC3339), "ember/Toast")
+
+	// Create outpost directory with a tether to verify cleanup.
+	outpostDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "outposts", "Toast")
+	os.MkdirAll(outpostDir, 0o755)
+	os.WriteFile(filepath.Join(outpostDir, ".tether"), []byte("sol-old-item"), 0o644)
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Agent record should be deleted.
+	_, err := sphereStore.GetAgent("ember/Toast")
+	if err == nil {
+		t.Error("expected agent to be deleted after reap, but it still exists")
+	}
+
+	// Tether file should be cleaned up.
+	if _, err := os.Stat(filepath.Join(outpostDir, ".tether")); !os.IsNotExist(err) {
+		t.Error("expected tether file to be removed after reap")
+	}
+}
+
+func TestReapIdleAgentSkipsRecent(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.IdleReapTimeout = 1 * time.Hour // Long timeout.
+
+	// Create a recently-updated idle agent.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	// UpdatedAt is now (recent), so it should not be reaped.
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Agent should still exist.
+	agent, err := sphereStore.GetAgent("ember/Toast")
+	if err != nil {
+		t.Fatalf("GetAgent() error: %v — agent was incorrectly reaped", err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("agent state = %q, want %q", agent.State, "idle")
+	}
+}
+
+func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRespawns = 0 // Immediately return to open.
+
+	// Create a working agent with a dead session.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	createWorkItem(t, worldStore, "sol-abc12345", "Test task")
+
+	// Create outpost directory with worktree and tether.
+	solHome := os.Getenv("SOL_HOME")
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+	tetherPath := filepath.Join(solHome, "ember", "outposts", "Toast", ".tether")
+	os.WriteFile(tetherPath, []byte("sol-abc12345"), 0o644)
+
+	// Create session metadata.
+	sessDir := filepath.Join(solHome, ".runtime", "sessions")
+	os.MkdirAll(sessDir, 0o755)
+	os.WriteFile(filepath.Join(sessDir, "sol-ember-Toast.json"), []byte(`{"name":"sol-ember-Toast"}`), 0o644)
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Work item should be open.
+	item, err := worldStore.GetWorkItem("sol-abc12345")
+	if err != nil {
+		t.Fatalf("GetWorkItem() error: %v", err)
+	}
+	if item.Status != "open" {
+		t.Errorf("work item status = %q, want %q", item.Status, "open")
+	}
+
+	// Tether should be cleared.
+	if _, err := os.Stat(tetherPath); !os.IsNotExist(err) {
+		t.Error("expected tether file to be removed")
+	}
+
+	// Session metadata should be removed.
+	if _, err := os.Stat(filepath.Join(sessDir, "sol-ember-Toast.json")); !os.IsNotExist(err) {
+		t.Error("expected session metadata to be removed")
+	}
+}
+
+func TestCleanupOrphanedWorktree(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Do NOT create an agent record for "Ghost".
+	// But create an outpost directory with a worktree on disk.
+	solHome := os.Getenv("SOL_HOME")
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Ghost", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+	// Also create a tether file.
+	os.WriteFile(filepath.Join(solHome, "ember", "outposts", "Ghost", ".tether"),
+		[]byte("sol-orphaned"), 0o644)
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Tether should be cleaned up.
+	tetherPath := filepath.Join(solHome, "ember", "outposts", "Ghost", ".tether")
+	if _, err := os.Stat(tetherPath); !os.IsNotExist(err) {
+		t.Error("expected orphaned tether to be removed")
+	}
+}
+
+func TestCleanupOrphanedSessionMeta(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create session metadata for an agent that doesn't exist.
+	solHome := os.Getenv("SOL_HOME")
+	sessDir := filepath.Join(solHome, ".runtime", "sessions")
+	os.MkdirAll(sessDir, 0o755)
+	os.WriteFile(filepath.Join(sessDir, "sol-ember-Ghost.json"),
+		[]byte(`{"name":"sol-ember-Ghost","role":"agent","world":"ember"}`), 0o644)
+	os.WriteFile(filepath.Join(sessDir, "sol-ember-Ghost.last-capture-hash"),
+		[]byte(`{"hash":"abc"}`), 0o644)
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Session metadata should be removed.
+	if _, err := os.Stat(filepath.Join(sessDir, "sol-ember-Ghost.json")); !os.IsNotExist(err) {
+		t.Error("expected orphaned session metadata to be removed")
+	}
+	if _, err := os.Stat(filepath.Join(sessDir, "sol-ember-Ghost.last-capture-hash")); !os.IsNotExist(err) {
+		t.Error("expected orphaned capture hash to be removed")
+	}
+}
+
+func TestCleanupOrphanedTether(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create an idle agent WITH a tether file (stale tether from failed cleanup).
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	// Agent is idle by default.
+
+	solHome := os.Getenv("SOL_HOME")
+	outpostDir := filepath.Join(solHome, "ember", "outposts", "Toast")
+	os.MkdirAll(outpostDir, 0o755)
+	tetherPath := filepath.Join(outpostDir, ".tether")
+	os.WriteFile(tetherPath, []byte("sol-stale-item"), 0o644)
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Tether should be cleaned up (agent exists but is not working).
+	if _, err := os.Stat(tetherPath); !os.IsNotExist(err) {
+		t.Error("expected orphaned tether to be removed for idle agent")
+	}
+}
+
+func TestCleanupOrphanedTetherSkipsWorking(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a working agent with a live session and tether.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-active")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "working output"
+
+	solHome := os.Getenv("SOL_HOME")
+	outpostDir := filepath.Join(solHome, "ember", "outposts", "Toast")
+	os.MkdirAll(outpostDir, 0o755)
+	tetherPath := filepath.Join(outpostDir, ".tether")
+	os.WriteFile(tetherPath, []byte("sol-active"), 0o644)
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Tether should NOT be cleaned up (agent is working).
+	if _, err := os.Stat(tetherPath); os.IsNotExist(err) {
+		t.Error("tether for working agent should not be removed")
+	}
+}
+
+func TestCleanupDoesNotTouchOtherWorlds(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create session metadata for a DIFFERENT world.
+	solHome := os.Getenv("SOL_HOME")
+	sessDir := filepath.Join(solHome, ".runtime", "sessions")
+	os.MkdirAll(sessDir, 0o755)
+	otherMeta := filepath.Join(sessDir, "sol-other-Ghost.json")
+	os.WriteFile(otherMeta, []byte(`{"name":"sol-other-Ghost"}`), 0o644)
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Session metadata for other world should NOT be touched.
+	if _, err := os.Stat(otherMeta); os.IsNotExist(err) {
+		t.Error("session metadata for other world should not be removed")
+	}
+}

@@ -55,6 +55,10 @@ const (
 	EventConsulPatrol       = "consul_patrol"        // consul patrol completed
 	EventConsulStaleTether  = "consul_stale_tether"  // stale tether recovered
 	EventConsulCaravanFeed   = "consul_caravan_feed"   // caravan needs feeding
+
+	// Sentinel lifecycle events.
+	EventReap           = "reap"            // idle agent reaped
+	EventOrphanCleanup  = "orphan_cleanup"  // orphaned resource cleaned up
 )
 
 // Logger handles event logging to the JSONL event feed.
