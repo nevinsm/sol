@@ -25,6 +25,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **World Config**: `world.toml` per-world, `sol.toml` global — layered TOML configuration
 - **World Lifecycle**: `sol world init` required before use — explicit world creation
 - **Caravan**: Batch of related work items across worlds, with phase-based sequencing
+- **Managed Repo**: Clone at $SOL_HOME/{world}/repo/ — source for all worktrees
 - **Brief**: Agent-maintained context file (`.brief/memory.md`) persisted across sessions
 - **Doctor**: Prerequisite validator — checks tmux, git, claude, SOL_HOME, SQLite WAL
 - **Init**: First-time setup — creates SOL_HOME, first world (flag/interactive/guided modes)

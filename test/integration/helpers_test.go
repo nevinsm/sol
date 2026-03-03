@@ -359,3 +359,122 @@ func (m *mockSessionChecker) List() ([]session.SessionInfo, error) {
 	}
 	return infos, nil
 }
+
+// --- Arc 3.5 helpers ---
+
+// runGit runs a git command in the specified directory.
+// If dir is empty, the command runs in the default working directory.
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v failed in %s: %s: %v", args, dir, out, err)
+	}
+}
+
+// runGitOutput runs a git command and returns its output.
+func runGitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed in %s: %s: %v", args, dir, out, err)
+	}
+	return string(out)
+}
+
+// writeTestFile writes content to a file, creating parent directories as needed.
+func writeTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// createTestRepo creates a temporary git repo with one commit and returns its path.
+func createTestRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	runGit(t, dir, "commit", "--allow-empty", "-m", "init")
+	return dir
+}
+
+// extractWorkItemID extracts a sol-xxxx work item ID from command output.
+func extractWorkItemID(t *testing.T, output string) string {
+	t.Helper()
+	id := strings.TrimSpace(output)
+	if strings.HasPrefix(id, "sol-") {
+		return id
+	}
+	for _, word := range strings.Fields(output) {
+		if strings.HasPrefix(word, "sol-") {
+			return strings.TrimSuffix(word, ":")
+		}
+	}
+	t.Fatalf("could not extract work item ID from: %s", output)
+	return ""
+}
+
+// setupTestEnvWithRepo creates an isolated test environment with a temp SOL_HOME,
+// a real git repo, and an isolated tmux server. Similar to setupTestEnv but uses
+// the runGit helper with proper git env vars.
+func setupTestEnvWithRepo(t *testing.T) (gtHome string, sourceRepo string) {
+	t.Helper()
+
+	gtHome = t.TempDir()
+	t.Setenv("SOL_HOME", gtHome)
+
+	if err := os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
+
+	// Create a temp git repo with one commit.
+	sourceRepo = t.TempDir()
+	runGit(t, sourceRepo, "init")
+	writeTestFile(t, filepath.Join(sourceRepo, "README.md"), "hello")
+	runGit(t, sourceRepo, "add", ".")
+	runGit(t, sourceRepo, "commit", "-m", "initial")
+
+	// Isolated tmux server.
+	tmuxDir := t.TempDir()
+	t.Setenv("TMUX_TMPDIR", tmuxDir)
+
+	// Cleanup tmux sessions on test end.
+	t.Cleanup(func() {
+		out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
+		if err != nil {
+			return
+		}
+		for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if strings.HasPrefix(name, "sol-") {
+				exec.Command("tmux", "kill-session", "-t", name).Run()
+			}
+		}
+	})
+
+	return gtHome, sourceRepo
+}
+
+// setupWorld initializes a world with a source repo via CLI.
+func setupWorld(t *testing.T, gtHome, world, sourceRepo string) {
+	t.Helper()
+	out, err := runGT(t, gtHome, "world", "init", world, "--source-repo="+sourceRepo)
+	if err != nil {
+		t.Fatalf("world init %s failed: %v: %s", world, err, out)
+	}
+}

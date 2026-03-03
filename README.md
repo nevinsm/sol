@@ -34,7 +34,8 @@ make install  # copies bin/sol to /usr/local/bin
 
 # Initialize a world
 export SOL_HOME=~/sol
-sol world init myworld --source-repo=/path/to/your/repo
+sol world init myworld --source-repo=git@github.com:org/your-repo.git
+sol world init myworld --source-repo=/path/to/local/repo
 
 # Create agents (or let cast auto-provision them)
 sol agent create Toast --world=myworld
@@ -111,6 +112,7 @@ State on the filesystem:
 | `sol world list` | List all registered worlds. `--json` for machine-readable output. |
 | `sol world status <name>` | Show world status including config, agents, work items, and health. `--json` supported. |
 | `sol world delete <name>` | Delete a world and all associated data. Requires `--confirm`. Refuses if sessions are active. |
+| `sol world sync <name>` | Fetch and pull latest from the managed repo's origin. Clones if repo doesn't exist yet. |
 
 ### Dispatch
 
@@ -285,6 +287,9 @@ Post-build arcs refine and operationalize:
 |-----|-------------|--------|
 | **Arc 0** | Rename (gt → sol) — full codebase rename from Gastown prototype | Complete |
 | **Arc 1** | World lifecycle — `sol world init/list/status/delete`, config files, hard gate | Complete |
+| **Arc 2** | Operator onboarding — `sol doctor`, `sol init`, `sol status`, lipgloss styling | Complete |
+| **Arc 3** | Envoy + Governor — brief system, persistent agents, per-world coordination | Complete |
+| **Arc 3.5** | Managed world repository — URL init, managed clone, `sol world sync` | Complete |
 
 ## Project Structure
 

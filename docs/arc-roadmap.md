@@ -217,6 +217,19 @@ ordering. `sol status` cleanly separates outposts, envoys, and governor.
 
 ---
 
+## Arc 3.5 — Managed World Repository
+**Status:** Complete
+**ADR:** 0014 — Managed World Repository
+
+- Worlds accept remote URLs (HTTPS, SSH) as `source_repo`
+- `sol init --source-repo=git@github.com:org/repo.git` clones to `$SOL_HOME/{world}/repo/`
+- All worktree operations (cast, envoy, forge) use the managed clone
+- Governor mirror eliminated — reads from managed clone
+- `sol world sync <world>` fetches latest from origin
+- Local path sources adopt upstream remote for correct push semantics
+
+---
+
 ## Arc 4: Senate — Sphere-Scoped Planning
 
 Cross-world work planning and coordination. See ADR-0011 (senate).
