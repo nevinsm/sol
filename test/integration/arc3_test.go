@@ -238,59 +238,6 @@ func TestBriefInjectEndToEnd(t *testing.T) {
 	if !strings.Contains(out, "Test Brief") {
 		t.Errorf("output missing brief content: %s", out)
 	}
-
-	// Verify .session_start created.
-	sessionStartPath := filepath.Join(briefDir, ".session_start")
-	if _, err := os.Stat(sessionStartPath); os.IsNotExist(err) {
-		t.Error(".session_start not created")
-	}
-}
-
-func TestBriefCheckSaveEndToEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-
-	briefDir := filepath.Join(gtHome, "test-brief")
-	os.MkdirAll(briefDir, 0o755)
-	briefPath := filepath.Join(briefDir, "memory.md")
-
-	// Write session start.
-	sessionStartPath := filepath.Join(briefDir, ".session_start")
-	ts := time.Now().Add(-1 * time.Minute).UTC().Format(time.RFC3339)
-	if err := os.WriteFile(sessionStartPath, []byte(ts), 0o644); err != nil {
-		t.Fatalf("write session start: %v", err)
-	}
-
-	// Write brief AFTER session start.
-	time.Sleep(10 * time.Millisecond) // Ensure mtime is after session_start
-	if err := os.WriteFile(briefPath, []byte("# Updated Brief\n"), 0o644); err != nil {
-		t.Fatalf("write brief: %v", err)
-	}
-
-	// Check-save should exit 0 (brief was updated).
-	out, err := runGT(t, gtHome, "brief", "check-save", briefPath)
-	if err != nil {
-		t.Errorf("check-save should exit 0 when brief is updated: %v: %s", err, out)
-	}
-
-	// Now write session_start with a future timestamp (newer than brief mtime).
-	futureTS := time.Now().Add(1 * time.Minute).UTC().Format(time.RFC3339)
-	if err := os.WriteFile(sessionStartPath, []byte(futureTS), 0o644); err != nil {
-		t.Fatalf("write session start: %v", err)
-	}
-
-	// Check-save should exit 1 (brief NOT updated since new session start).
-	out, err = runGT(t, gtHome, "brief", "check-save", briefPath)
-	if err == nil {
-		t.Error("check-save should exit non-zero when brief is NOT updated")
-	}
-	if !strings.Contains(out, "brief has not been updated") {
-		t.Errorf("expected nudge message, got: %s", out)
-	}
 }
 
 func TestBriefInjectTruncation(t *testing.T) {
@@ -339,43 +286,6 @@ func TestBriefInjectMissingFile(t *testing.T) {
 	out, err := runGT(t, gtHome, "brief", "inject", "--path="+nonexistentPath)
 	if err != nil {
 		t.Errorf("brief inject on missing file should not error: %v: %s", err, out)
-	}
-}
-
-func TestBriefStopHookActiveBypass(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-
-	briefDir := filepath.Join(gtHome, "test-brief")
-	os.MkdirAll(briefDir, 0o755)
-	briefPath := filepath.Join(briefDir, "memory.md")
-
-	// Write session_start (recent).
-	sessionStartPath := filepath.Join(briefDir, ".session_start")
-	ts := time.Now().UTC().Format(time.RFC3339)
-	if err := os.WriteFile(sessionStartPath, []byte(ts), 0o644); err != nil {
-		t.Fatalf("write session start: %v", err)
-	}
-
-	// Write brief BEFORE session start (will be "not updated").
-	oldTs := time.Now().Add(-1 * time.Hour)
-	if err := os.WriteFile(briefPath, []byte("# Old Brief\n"), 0o644); err != nil {
-		t.Fatalf("write brief: %v", err)
-	}
-	os.Chtimes(briefPath, oldTs, oldTs)
-
-	// Run with SOL_STOP_HOOK_ACTIVE=true — should bypass and exit 0.
-	bin := gtBin(t)
-	cmd := exec.Command(bin, "brief", "check-save", briefPath)
-	cmd.Env = append(os.Environ(), "SOL_HOME="+gtHome, "SOL_STOP_HOOK_ACTIVE=true")
-	outBytes, err := cmd.CombinedOutput()
-	out := strings.TrimSpace(string(outBytes))
-	if err != nil {
-		t.Errorf("check-save with SOL_STOP_HOOK_ACTIVE=true should exit 0: %v: %s", err, out)
 	}
 }
 
@@ -557,11 +467,8 @@ func TestEnvoyHooksInstalled(t *testing.T) {
 	if !strings.Contains(settingsStr, "brief inject") {
 		t.Errorf("settings.local.json missing brief inject hook: %s", settingsStr)
 	}
-	if !strings.Contains(settingsStr, "brief check-save") {
-		t.Errorf("settings.local.json missing brief check-save hook: %s", settingsStr)
-	}
-	if !strings.Contains(settingsStr, "--skip-session-start") {
-		t.Errorf("settings.local.json missing --skip-session-start in compact hook: %s", settingsStr)
+	if strings.Contains(settingsStr, "brief check-save") {
+		t.Errorf("settings.local.json should not contain removed brief check-save hook: %s", settingsStr)
 	}
 }
 
@@ -776,8 +683,8 @@ func TestGovernorHooksInstalled(t *testing.T) {
 	if !strings.Contains(settingsStr, "sol world sync") {
 		t.Errorf("hooks missing world sync: %s", settingsStr)
 	}
-	if !strings.Contains(settingsStr, "--skip-session-start") {
-		t.Errorf("hooks missing --skip-session-start in compact hook: %s", settingsStr)
+	if strings.Contains(settingsStr, "brief check-save") {
+		t.Errorf("hooks should not contain removed brief check-save hook: %s", settingsStr)
 	}
 }
 

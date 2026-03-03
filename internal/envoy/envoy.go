@@ -217,22 +217,12 @@ func installHooks(worktreeDir string) error {
 					Hooks: []protocol.HookHandler{
 						{
 							Type:    "command",
-							Command: "sol brief inject --path=.brief/memory.md --max-lines=200 --skip-session-start",
+							Command: "sol brief inject --path=.brief/memory.md --max-lines=200",
 						},
 					},
 				},
 			},
-			"Stop": {
-				{
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: "sol brief check-save .brief/memory.md",
-						},
-					},
-				},
 			},
-		},
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")

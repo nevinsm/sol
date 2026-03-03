@@ -69,23 +69,16 @@ since senate and operators depend on predictable structure.
 **Injection via Claude Code hooks:**
 
 - `SessionStart` (startup/resume) — `sol brief inject` reads the brief,
-  truncates if needed, outputs framed content for injection. Also writes a
-  `.session_start` timestamp file for the stop hook.
+  truncates if needed, outputs framed content for injection.
 - `SessionStart` (compact) — same injection, re-injects after compaction.
-  Does NOT update the session start timestamp — we care about whether the
-  brief was updated since the session started, not since the last compaction.
-- `Stop` — `sol brief check-save` checks whether `.brief/memory.md` was
-  modified since session start (mtime comparison). If not, blocks the stop
-  and nudges the agent to update its brief.
 
-**Stop hook is best-effort, not enforcement:**
+**No Stop hook — CLAUDE.md instructions instead:**
 
-The stop hook checks `stop_hook_active` to prevent infinite loops. If the
-agent ignores the first nudge and tries to stop again, `stop_hook_active`
-is true on the second attempt and the stop is allowed. The brief may be
-stale, but the session doesn't hang. This is acceptable — the nudge catches
-the common case (agent forgetting), and enforcement would risk hanging
-sessions.
+The Stop hook was removed because Claude Code's "Stop" event fires on every
+turn completion, not just session exit. This caused noisy false positives
+(nudge messages mid-conversation). Brief update responsibility is instead
+conveyed through CLAUDE.md instructions which tell the agent to update its
+brief before ending a session.
 
 **Three-layer size management:**
 
@@ -116,16 +109,15 @@ accumulated knowledge.
 
 **Tradeoffs:**
 - Brief quality depends on agent cooperation (mitigated by CLAUDE.md
-  instructions and stop hook nudge)
+  instructions)
 - Crash recovery is lossy — brief reflects whatever was last written, which
   may be mid-session stale. CLAUDE.md warns the agent to review on startup.
 - No versioning or history — brief is overwritten in place. Previous versions
   are only recoverable from filesystem snapshots or backups.
 
 **Code changes:**
-- New `internal/brief/` package — injection (read, truncate, frame), save
-  check (mtime comparison), session timestamp management
-- New `cmd/brief.go` — `sol brief inject` and `sol brief check-save`
+- New `internal/brief/` package — injection (read, truncate, frame)
+- New `cmd/brief.go` — `sol brief inject`
 - `sol envoy start`, `sol governor start`, `sol senate start` — write
   `.claude/settings.json` with hook configuration
 - `protocol` — `EnvoyClaudeMD()`, `GovernorClaudeMD()`, `SenateCLaudeMD()`

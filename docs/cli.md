@@ -189,8 +189,7 @@ Toolbox subcommands (used by the forge Claude session):
 
 | Command | Description |
 |---------|-------------|
-| `sol brief inject --path=P` | Inject brief into session context. Used by Claude Code hooks. `--max-lines` (default 200), `--skip-session-start`. |
-| `sol brief check-save <path>` | Check if brief was updated since session start. Blocks session exit if not. |
+| `sol brief inject --path=P` | Inject brief into session context. Used by Claude Code hooks. `--max-lines` (default 200). |
 
 ## Consul (Sphere-Level Patrol)
 

@@ -142,11 +142,7 @@ on stop. Shared by envoy, governor, and senate (Arc 4).
 **CLI:**
 
 - `sol brief inject --path=<path> --max-lines=200` — reads brief, truncates
-  if over limit, outputs framed content to stdout. Also writes
-  `.brief/.session_start` timestamp for the stop hook.
-- `sol brief check-save <path>` — stop hook command. Checks brief mtime
-  against `.session_start`. Blocks stop if brief hasn't been updated.
-  Checks `stop_hook_active` to prevent infinite loops.
+  if over limit, outputs framed content to stdout.
 
 **Hooks (installed by `sol envoy/governor/senate start`):**
 
@@ -154,14 +150,13 @@ on stop. Shared by envoy, governor, and senate (Arc 4).
 |-------|---------|---------|---------|
 | `SessionStart` | `startup\|resume` | `sol brief inject` | Inject brief into session context |
 | `SessionStart` | `compact` | `sol brief inject` | Re-inject after context compaction |
-| `Stop` | — | `sol brief check-save` | Nudge agent to update brief before exit |
 
 **Size management (three layers):**
 
 1. CLAUDE.md guidance: "Keep your brief under 200 lines. Consolidate
    older entries."
-2. AI self-management: agent prunes organically, especially at stop
-   consolidation points.
+2. AI self-management: agent prunes organically, guided by CLAUDE.md
+   instructions to update before ending sessions.
 3. Injection truncation: `sol brief inject` hard-caps at 200 lines.
    Truncation notice tells agent to read full file and consolidate.
 

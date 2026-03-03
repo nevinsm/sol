@@ -170,15 +170,9 @@ func TestStart(t *testing.T) {
 		if groups[1].Matcher != "compact" {
 			t.Errorf("compact hook matcher = %q, want \"compact\"", groups[1].Matcher)
 		}
-		// Verify compact hook includes --skip-session-start.
-		if len(groups[1].Hooks) != 1 || !strings.Contains(groups[1].Hooks[0].Command, "--skip-session-start") {
-			t.Error("compact hook missing --skip-session-start")
-		}
 	}
-	if groups, ok := cfg.Hooks["Stop"]; !ok {
-		t.Error("no Stop hooks")
-	} else if len(groups) != 1 {
-		t.Errorf("expected 1 Stop matcher group, got %d", len(groups))
+	if _, ok := cfg.Hooks["Stop"]; ok {
+		t.Error("unexpected Stop hooks — removed in favor of CLAUDE.md instructions")
 	}
 
 	// Verify brief directory created.

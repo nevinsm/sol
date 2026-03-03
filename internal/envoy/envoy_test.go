@@ -319,16 +319,9 @@ func TestStart(t *testing.T) {
 		t.Error("no SessionStart hooks")
 	} else if len(groups) != 2 {
 		t.Errorf("expected 2 SessionStart matcher groups, got %d", len(groups))
-	} else {
-		// Verify compact hook includes --skip-session-start.
-		if len(groups[1].Hooks) != 1 || !strings.Contains(groups[1].Hooks[0].Command, "--skip-session-start") {
-			t.Errorf("compact hook missing --skip-session-start")
-		}
 	}
-	if groups, ok := cfg.Hooks["Stop"]; !ok {
-		t.Error("no Stop hooks")
-	} else if len(groups) != 1 {
-		t.Errorf("expected 1 Stop matcher group, got %d", len(groups))
+	if _, ok := cfg.Hooks["Stop"]; ok {
+		t.Error("unexpected Stop hooks — removed in favor of CLAUDE.md instructions")
 	}
 
 	// CLAUDE.md is now installed by the CLI layer (following forge pattern),

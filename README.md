@@ -137,7 +137,7 @@ sol/
 │   ├── sentinel.go                 Per-world health monitor
 │   ├── envoy.go                    Persistent human-directed agents
 │   ├── governor.go                 Per-world coordinator
-│   ├── brief.go                    Brief injection + check-save hooks
+│   ├── brief.go                    Brief injection hooks
 │   ├── feed.go, log_event.go       Event feed
 │   ├── chronicle.go                Event chronicle
 │   ├── mail.go                     Inter-agent messaging
