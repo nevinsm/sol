@@ -12,6 +12,7 @@ import (
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
 )
 
@@ -240,11 +241,43 @@ var governorSummaryCmd = &cobra.Command{
 	},
 }
 
+// --- sol governor sync ---
+
+var governorSyncWorld string
+
+var governorSyncCmd = &cobra.Command{
+	Use:          "sync",
+	Short:        "Sync managed repo the governor reads from",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if governorSyncWorld == "" {
+			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(governorSyncWorld); err != nil {
+			return err
+		}
+
+		// Sync managed repo.
+		if err := worldsync.SyncRepo(governorSyncWorld); err != nil {
+			return err
+		}
+
+		// Notify governor session if running.
+		mgr := session.New()
+		if err := worldsync.SyncGovernor(governorSyncWorld, mgr); err != nil {
+			return err
+		}
+
+		fmt.Printf("Synced for governor in world %q\n", governorSyncWorld)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(governorCmd)
 	governorCmd.AddCommand(governorStartCmd, governorStopCmd, governorAttachCmd,
 		governorBriefCmd, governorDebriefCmd,
-		governorSummaryCmd)
+		governorSummaryCmd, governorSyncCmd)
 
 	// governor start flags
 	governorStartCmd.Flags().StringVar(&governorStartWorld, "world", "", "world name")
@@ -263,4 +296,7 @@ func init() {
 
 	// governor summary flags
 	governorSummaryCmd.Flags().StringVar(&governorSummaryWorld, "world", "", "world name")
+
+	// governor sync flags
+	governorSyncCmd.Flags().StringVar(&governorSyncWorld, "world", "", "world name")
 }

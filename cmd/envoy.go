@@ -15,6 +15,7 @@ import (
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
 )
 
@@ -316,10 +317,44 @@ var envoyDebriefCmd = &cobra.Command{
 	},
 }
 
+// --- sol envoy sync ---
+
+var envoySyncWorld string
+
+var envoySyncCmd = &cobra.Command{
+	Use:          "sync <name>",
+	Short:        "Sync managed repo and notify a running envoy session",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		if envoySyncWorld == "" {
+			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(envoySyncWorld); err != nil {
+			return err
+		}
+
+		// Sync managed repo first.
+		if err := worldsync.SyncRepo(envoySyncWorld); err != nil {
+			return fmt.Errorf("failed to sync managed repo: %w", err)
+		}
+
+		// Notify envoy session if running.
+		mgr := session.New()
+		if err := worldsync.SyncEnvoy(envoySyncWorld, name, mgr); err != nil {
+			return err
+		}
+
+		fmt.Printf("Synced for envoy %q in world %q\n", name, envoySyncWorld)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(envoyCmd)
 	envoyCmd.AddCommand(envoyCreateCmd, envoyStartCmd, envoyStopCmd,
-		envoyAttachCmd, envoyListCmd, envoyBriefCmd, envoyDebriefCmd)
+		envoyAttachCmd, envoyListCmd, envoyBriefCmd, envoyDebriefCmd, envoySyncCmd)
 
 	// envoy create flags
 	envoyCreateCmd.Flags().StringVar(&envoyCreateWorld, "world", "", "world name")
@@ -342,4 +377,7 @@ func init() {
 
 	// envoy debrief flags
 	envoyDebriefCmd.Flags().StringVar(&envoyDebriefWorld, "world", "", "world name")
+
+	// envoy sync flags
+	envoySyncCmd.Flags().StringVar(&envoySyncWorld, "world", "", "world name")
 }

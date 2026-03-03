@@ -405,6 +405,23 @@ func (m *Manager) Inject(name string, text string) error {
 	return nil
 }
 
+// SendKeys sends keys to the session's active pane using tmux send-keys in
+// non-literal mode. This interprets special key names like "Enter", "C-c", etc.
+// Distinct from Inject which uses literal mode (-l).
+func (m *Manager) SendKeys(name string, keys string) error {
+	if !m.Exists(name) {
+		return fmt.Errorf("session %q not found", name)
+	}
+
+	sendCmd, sendCancel := tmuxCmd("send-keys", "-t", tmuxExactTarget(name), keys)
+	defer sendCancel()
+	if out, err := sendCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to send keys to session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
+	}
+
+	return nil
+}
+
 // Exists returns true if a tmux session with this name exists.
 func (m *Manager) Exists(name string) bool {
 	cmd, cancel := tmuxCmd("has-session", "-t", tmuxExactTarget(name))

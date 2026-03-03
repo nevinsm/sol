@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -16,6 +15,7 @@ import (
 	"github.com/nevinsm/sol/internal/setup"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +24,7 @@ var (
 	worldListJSON       bool
 	worldStatusJSON     bool
 	worldDeleteConfirm  bool
+	worldSyncAll        bool
 )
 
 var worldCmd = &cobra.Command{
@@ -346,7 +347,9 @@ var worldSyncCmd = &cobra.Command{
 	Short: "Sync the managed repo with its remote",
 	Long: `Fetch and pull latest changes from the source repo's origin.
 If the managed repo doesn't exist yet but source_repo is configured
-in world.toml, clones it first.`,
+in world.toml, clones it first.
+
+With --all, also syncs forge worktree and notifies running envoy/governor sessions.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -375,21 +378,42 @@ in world.toml, clones it first.`,
 			return nil
 		}
 
-		// Fetch from origin.
-		fetchCmd := exec.Command("git", "-C", repoPath, "fetch", "origin")
-		if out, err := fetchCmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to fetch for world %q: %s: %w",
-				name, strings.TrimSpace(string(out)), err)
+		// Sync managed repo.
+		if err := worldsync.SyncRepo(name); err != nil {
+			return err
 		}
-
-		// Pull with fast-forward only.
-		pullCmd := exec.Command("git", "-C", repoPath, "pull", "--ff-only")
-		if out, err := pullCmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to pull for world %q: %s: %w",
-				name, strings.TrimSpace(string(out)), err)
-		}
-
 		fmt.Printf("Synced managed repo for world %q\n", name)
+
+		// If --all, propagate to components.
+		if worldSyncAll {
+			worldCfg, err := config.LoadWorldConfig(name)
+			if err != nil {
+				return err
+			}
+
+			cfg, err := resolveForgeConfig(name, worldCfg)
+			if err != nil {
+				return err
+			}
+
+			sphereStore, err := store.OpenSphere()
+			if err != nil {
+				return err
+			}
+			defer sphereStore.Close()
+
+			mgr := session.New()
+			results := worldsync.SyncAllComponents(name, cfg.TargetBranch, sphereStore, mgr)
+
+			for _, r := range results {
+				if r.Err != nil {
+					fmt.Printf("[fail] %s: %v\n", r.Component, r.Err)
+				} else {
+					fmt.Printf("[ok] %s\n", r.Component)
+				}
+			}
+		}
+
 		return nil
 	},
 }
@@ -410,4 +434,6 @@ func init() {
 		"output as JSON")
 	worldDeleteCmd.Flags().BoolVar(&worldDeleteConfirm, "confirm", false,
 		"confirm deletion")
+	worldSyncCmd.Flags().BoolVar(&worldSyncAll, "all", false,
+		"also sync forge, envoys, and governor")
 }

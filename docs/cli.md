@@ -15,7 +15,7 @@
 | `sol world list` | List all registered worlds. `--json` for machine-readable output. |
 | `sol world status <name>` | Show world status including config, agents, work items, and health. `--json` supported. |
 | `sol world delete <name>` | Delete a world and all associated data. Requires `--confirm`. Refuses if sessions are active. |
-| `sol world sync <name>` | Fetch and pull latest from the managed repo's origin. Clones if repo doesn't exist yet. |
+| `sol world sync <name>` | Fetch and pull latest from the managed repo's origin. Clones if repo doesn't exist yet. `--all` also syncs forge, envoys, and governor. |
 
 ## Dispatch
 
@@ -88,6 +88,7 @@
 |---------|-------------|
 | `sol forge start <world>` | Start the forge as a Claude session |
 | `sol forge stop <world>` | Stop the forge |
+| `sol forge sync <world>` | Sync forge worktree: fetch origin, reset to target branch. Also syncs managed repo. |
 | `sol forge attach <world>` | Attach to the forge session |
 | `sol forge queue <world>` | Show the merge request queue |
 
@@ -173,6 +174,7 @@ Toolbox subcommands (used by the forge Claude session):
 | `sol envoy list` | List envoy agents. `--world` filters by world, `--json` for machine-readable output. |
 | `sol envoy brief <name> --world=W` | Display an envoy's brief |
 | `sol envoy debrief <name> --world=W` | Archive the envoy's brief and reset for fresh engagement |
+| `sol envoy sync <name> --world=W` | Sync managed repo and notify running envoy session. Does not rebase envoy branch. |
 
 ## Governor (Per-World Coordinator)
 
@@ -184,6 +186,7 @@ Toolbox subcommands (used by the forge Claude session):
 | `sol governor brief --world=W` | Display the governor's brief |
 | `sol governor debrief --world=W` | Archive the governor's brief and reset |
 | `sol governor summary --world=W` | Display the governor's world summary |
+| `sol governor sync --world=W` | Sync managed repo the governor reads from. Notifies running governor session. |
 
 ## Brief (Agent Context)
 

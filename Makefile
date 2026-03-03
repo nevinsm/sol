@@ -67,7 +67,8 @@ test-e2e: build
 	echo "=== E2E: PASSED ==="
 
 install: build
-	cp bin/sol /usr/local/bin/sol
+	mkdir -p ~/.local/bin
+	cp bin/sol ~/.local/bin/sol
 
 clean:
 	rm -rf bin/

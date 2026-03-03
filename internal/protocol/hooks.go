@@ -36,11 +36,6 @@ type HookHandler struct {
 //	SessionStart: runs "sol prime --world={world} --agent={name}" and outputs
 //	              the result as initial context
 func InstallHooks(worktreeDir, world, agentName string) error {
-	claudeDir := filepath.Join(worktreeDir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create .claude directory: %w", err)
-	}
-
 	cfg := HookConfig{
 		Hooks: map[string][]HookMatcherGroup{
 			"SessionStart": {
@@ -54,6 +49,36 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 				},
 			},
 		},
+	}
+	return writeHookSettings(worktreeDir, cfg)
+}
+
+// InstallForgeHooks writes forge-specific Claude Code hooks that sync before priming.
+// The SessionStart hook runs "sol forge sync {world}" to reset the forge worktree
+// to the latest target branch, then "sol prime" to inject execution context.
+func InstallForgeHooks(worktreeDir, world string) error {
+	cfg := HookConfig{
+		Hooks: map[string][]HookMatcherGroup{
+			"SessionStart": {
+				{
+					Hooks: []HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("sol forge sync %s && sol prime --world=%s --agent=forge", world, world),
+						},
+					},
+				},
+			},
+		},
+	}
+	return writeHookSettings(worktreeDir, cfg)
+}
+
+// writeHookSettings writes a HookConfig to .claude/settings.local.json.
+func writeHookSettings(worktreeDir string, cfg HookConfig) error {
+	claudeDir := filepath.Join(worktreeDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create .claude directory: %w", err)
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")

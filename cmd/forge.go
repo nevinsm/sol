@@ -15,6 +15,7 @@ import (
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
 )
 
@@ -97,8 +98,8 @@ var forgeStartCmd = &cobra.Command{
 			return fmt.Errorf("failed to install forge CLAUDE.md: %w", err)
 		}
 
-		// 4. Install Claude Code hooks.
-		if err := protocol.InstallHooks(ref.WorktreeDir(), world, "forge"); err != nil {
+		// 4. Install Claude Code hooks (with forge sync before prime).
+		if err := protocol.InstallForgeHooks(ref.WorktreeDir(), world); err != nil {
 			return fmt.Errorf("failed to install hooks: %w", err)
 		}
 
@@ -666,6 +667,43 @@ var forgeCheckUnblockedCmd = &cobra.Command{
 	},
 }
 
+var forgeSyncCmd = &cobra.Command{
+	Use:          "sync <world>",
+	Short:        "Sync forge worktree: fetch origin, reset to target branch",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
+		worldCfg, err := config.LoadWorldConfig(world)
+		if err != nil {
+			return err
+		}
+
+		cfg, err := resolveForgeConfig(world, worldCfg)
+		if err != nil {
+			return err
+		}
+
+		// Sync managed repo first.
+		if err := worldsync.SyncRepo(world); err != nil {
+			return fmt.Errorf("failed to sync managed repo: %w", err)
+		}
+
+		// Sync forge worktree.
+		if err := worldsync.SyncForge(world, cfg.TargetBranch); err != nil {
+			return err
+		}
+
+		fmt.Printf("Forge synced for world %q\n", world)
+		return nil
+	},
+}
+
 func printQueue(world string, mrs []store.MergeRequest) {
 	if len(mrs) == 0 {
 		fmt.Printf("Merge Queue: %s (empty)\n", world)
@@ -703,6 +741,7 @@ func init() {
 	rootCmd.AddCommand(forgeCmd)
 	forgeCmd.AddCommand(forgeStartCmd)
 	forgeCmd.AddCommand(forgeStopCmd)
+	forgeCmd.AddCommand(forgeSyncCmd)
 	forgeCmd.AddCommand(forgeQueueCmd)
 	forgeCmd.AddCommand(forgeAttachCmd)
 	forgeCmd.AddCommand(forgeReadyCmd)
