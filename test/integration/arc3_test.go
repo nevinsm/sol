@@ -115,7 +115,7 @@ func TestCaravanPhaseOrdering(t *testing.T) {
 		t.Fatalf("caravan add: %v: %s", err, out)
 	}
 
-	// Mark phase 0 item as done via store.
+	// Mark phase 0 item as closed (merged) via store.
 	_, sphereStore := openStores(t, "myworld")
 	_ = sphereStore
 	worldStore, err := store.OpenWorld("myworld")
@@ -124,8 +124,8 @@ func TestCaravanPhaseOrdering(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	if err := worldStore.UpdateWorkItem(id1, store.WorkItemUpdates{Status: "done"}); err != nil {
-		t.Fatalf("update work item: %v", err)
+	if err := worldStore.CloseWorkItem(id1); err != nil {
+		t.Fatalf("close work item: %v", err)
 	}
 
 	// Check readiness again.
@@ -149,7 +149,7 @@ func TestCaravanPhaseOrdering(t *testing.T) {
 	for _, item := range checkResult.Items {
 		if item.Phase == 1 {
 			if !item.Ready {
-				t.Error("phase 1 item should be ready now that phase 0 is done")
+				t.Error("phase 1 item should be ready now that phase 0 is closed")
 			}
 		}
 	}

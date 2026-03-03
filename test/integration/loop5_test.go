@@ -911,13 +911,13 @@ func TestConsulCaravanFeeding(t *testing.T) {
 		t.Fatalf("AckMessage: %v", err)
 	}
 
-	// Mark A as done.
+	// Close A (merged).
 	rs, err := store.OpenWorld("ember")
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	if err := rs.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"}); err != nil {
-		t.Fatalf("update work item A: %v", err)
+	if err := rs.CloseWorkItem(idA); err != nil {
+		t.Fatalf("close work item A: %v", err)
 	}
 	rs.Close()
 
@@ -932,7 +932,7 @@ func TestConsulCaravanFeeding(t *testing.T) {
 		t.Fatalf("PendingProtocol 2: %v", err)
 	}
 	if len(msgs) == 0 {
-		t.Fatal("expected new CARAVAN_NEEDS_FEEDING message after A done")
+		t.Fatal("expected new CARAVAN_NEEDS_FEEDING message after A closed")
 	}
 }
 

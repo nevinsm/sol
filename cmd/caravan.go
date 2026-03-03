@@ -167,13 +167,15 @@ var caravanCheckCmd = &cobra.Command{
 		fmt.Printf("Status: %s\n", caravan.Status)
 		fmt.Println()
 
-		// Separate ready and blocked items.
-		var ready, blocked []store.CaravanItemStatus
+		// Separate ready, awaiting merge, and blocked items.
+		var ready, awaitingMerge, blocked []store.CaravanItemStatus
 		for _, st := range statuses {
-			if st.WorkItemStatus == "open" && st.Ready {
+			if st.WorkItemStatus == "closed" {
+				// fully merged, skip for now
+			} else if st.WorkItemStatus == "done" {
+				awaitingMerge = append(awaitingMerge, st)
+			} else if st.WorkItemStatus == "open" && st.Ready {
 				ready = append(ready, st)
-			} else if st.WorkItemStatus == "done" || st.WorkItemStatus == "closed" {
-				// completed, skip for now
 			} else {
 				blocked = append(blocked, st)
 			}
@@ -182,6 +184,15 @@ var caravanCheckCmd = &cobra.Command{
 		if len(ready) > 0 {
 			fmt.Println("Ready for dispatch:")
 			for _, st := range ready {
+				title := itemTitle(st.WorkItemID, st.World)
+				fmt.Printf("  %s  %s  (%s)\n", st.WorkItemID, title, st.World)
+			}
+			fmt.Println()
+		}
+
+		if len(awaitingMerge) > 0 {
+			fmt.Println("Awaiting merge:")
+			for _, st := range awaitingMerge {
 				title := itemTitle(st.WorkItemID, st.World)
 				fmt.Printf("  %s  %s  (%s)\n", st.WorkItemID, title, st.World)
 			}
@@ -269,8 +280,11 @@ var caravanStatusCmd = &cobra.Command{
 				marker := "[ ]"
 				suffix := ""
 				switch {
-				case st.WorkItemStatus == "done" || st.WorkItemStatus == "closed":
+				case st.WorkItemStatus == "closed":
 					marker = "[x]"
+				case st.WorkItemStatus == "done":
+					marker = "[~]"
+					suffix = " (awaiting merge)"
 				case st.WorkItemStatus == "open" && st.Ready:
 					marker = "[>]"
 					suffix = " (ready)"
@@ -317,7 +331,7 @@ var caravanStatusCmd = &cobra.Command{
 			}
 
 			// Count statuses.
-			var done, readyCount, blockedCount int
+			var closedCount, mergingCount, readyCount, blockedCount int
 			statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
 			if err != nil {
 				// If we can't check readiness, just show item count.
@@ -326,16 +340,18 @@ var caravanStatusCmd = &cobra.Command{
 			}
 			for _, st := range statuses {
 				switch {
-				case st.WorkItemStatus == "done" || st.WorkItemStatus == "closed":
-					done++
+				case st.WorkItemStatus == "closed":
+					closedCount++
+				case st.WorkItemStatus == "done":
+					mergingCount++
 				case st.WorkItemStatus == "open" && st.Ready:
 					readyCount++
 				default:
 					blockedCount++
 				}
 			}
-			fmt.Fprintf(tw, "  %s\t%s\t%d items\t(%d done, %d ready, %d blocked)\n",
-				c.ID, c.Name, len(items), done, readyCount, blockedCount)
+			fmt.Fprintf(tw, "  %s\t%s\t%d items\t(%d closed, %d merging, %d ready, %d blocked)\n",
+				c.ID, c.Name, len(items), closedCount, mergingCount, readyCount, blockedCount)
 		}
 		tw.Flush()
 		return nil
@@ -497,7 +513,7 @@ func blockedByList(workItemID, world string) string {
 		return ""
 	}
 
-	// Filter to unsatisfied deps.
+	// Filter to unsatisfied deps — only "closed" (merged) satisfies.
 	var unsatisfied []string
 	for _, depID := range deps {
 		item, err := worldStore.GetWorkItem(depID)
@@ -505,7 +521,7 @@ func blockedByList(workItemID, world string) string {
 			unsatisfied = append(unsatisfied, depID)
 			continue
 		}
-		if item.Status != "done" && item.Status != "closed" {
+		if item.Status != "closed" {
 			unsatisfied = append(unsatisfied, depID)
 		}
 	}

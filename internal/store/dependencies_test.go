@@ -180,14 +180,24 @@ func TestIsReady(t *testing.T) {
 		t.Fatal("expected item with open dep to be not ready")
 	}
 
-	// B → done → A is ready.
+	// B → done → A still NOT ready (done != merged).
 	s.UpdateWorkItem(idB, WorkItemUpdates{Status: "done"})
 	ready, err = s.IsReady(idA)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if ready {
+		t.Fatal("expected item with done (not closed) dep to NOT be ready")
+	}
+
+	// B → closed (merged) → A is ready.
+	s.CloseWorkItem(idB)
+	ready, err = s.IsReady(idA)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ready {
-		t.Fatal("expected item with done dep to be ready")
+		t.Fatal("expected item with closed dep to be ready")
 	}
 
 	// Add dep on C (open) → A not ready again (mixed).
@@ -197,7 +207,7 @@ func TestIsReady(t *testing.T) {
 		t.Fatal(err)
 	}
 	if ready {
-		t.Fatal("expected item with mixed deps (one done, one open) to not be ready")
+		t.Fatal("expected item with mixed deps (one closed, one open) to not be ready")
 	}
 
 	// Close C → A is ready.
@@ -207,7 +217,7 @@ func TestIsReady(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !ready {
-		t.Fatal("expected item with all done/closed deps to be ready")
+		t.Fatal("expected item with all closed deps to be ready")
 	}
 }
 

@@ -234,8 +234,10 @@ Instructions:
 	return taskID, nil
 }
 
-// CheckUnblocked finds blocked MRs whose resolution tasks are done/closed,
+// CheckUnblocked finds blocked MRs whose resolution tasks are closed (merged),
 // unblocks them, and returns the list of unblocked MR IDs.
+// Note: "done" (code complete, awaiting merge) is NOT sufficient — the
+// blocker's code must be merged to the target branch first.
 func (r *Forge) CheckUnblocked() ([]string, error) {
 	blocked, err := r.ListBlocked()
 	if err != nil {
@@ -249,7 +251,7 @@ func (r *Forge) CheckUnblocked() ([]string, error) {
 			r.logger.Warn("failed to get blocker work item", "blocker", mr.BlockedBy, "error", err)
 			continue
 		}
-		if item.Status == "done" || item.Status == "closed" {
+		if item.Status == "closed" {
 			if err := r.worldStore.UnblockMergeRequest(mr.ID); err != nil {
 				r.logger.Error("failed to unblock MR", "mr", mr.ID, "error", err)
 				continue

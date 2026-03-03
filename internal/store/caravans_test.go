@@ -210,7 +210,7 @@ func TestCheckCaravanReadiness(t *testing.T) {
 		t.Fatalf("expected item C to be ready (no deps)")
 	}
 
-	// Mark B as done → A should now be ready.
+	// Mark B as done → A should still NOT be ready (done != merged).
 	worldStore2, err := OpenWorld("ember")
 	if err != nil {
 		t.Fatal(err)
@@ -226,8 +226,28 @@ func TestCheckCaravanReadiness(t *testing.T) {
 	for _, st := range statuses2 {
 		statusMap2[st.WorkItemID] = st
 	}
-	if !statusMap2[idA].Ready {
-		t.Fatalf("expected item A to be ready after B is done")
+	if statusMap2[idA].Ready {
+		t.Fatalf("expected item A to NOT be ready after B is done (not closed)")
+	}
+
+	// Close B (merged) → A should now be ready.
+	worldStore3, err := OpenWorld("ember")
+	if err != nil {
+		t.Fatal(err)
+	}
+	worldStore3.CloseWorkItem(idB)
+	worldStore3.Close()
+
+	statuses3, err := sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusMap3 := map[string]CaravanItemStatus{}
+	for _, st := range statuses3 {
+		statusMap3[st.WorkItemID] = st
+	}
+	if !statusMap3[idA].Ready {
+		t.Fatalf("expected item A to be ready after B is closed (merged)")
 	}
 }
 
@@ -447,7 +467,7 @@ func TestCaravanPhaseReadiness(t *testing.T) {
 		t.Fatal("expected phase 1 item B to NOT be ready (phase 0 not done)")
 	}
 
-	// Mark phase 0 item done → phase 1 should become ready.
+	// Mark phase 0 item done → phase 1 should still NOT be ready (done != merged).
 	worldStore2, err := OpenWorld("ember")
 	if err != nil {
 		t.Fatal(err)
@@ -463,8 +483,28 @@ func TestCaravanPhaseReadiness(t *testing.T) {
 	for _, st := range statuses2 {
 		statusMap2[st.WorkItemID] = st
 	}
-	if !statusMap2[idB].Ready {
-		t.Fatal("expected phase 1 item B to be ready after phase 0 done")
+	if statusMap2[idB].Ready {
+		t.Fatal("expected phase 1 item B to NOT be ready after phase 0 done (not closed)")
+	}
+
+	// Close phase 0 item (merged) → phase 1 should become ready.
+	worldStore3, err := OpenWorld("ember")
+	if err != nil {
+		t.Fatal(err)
+	}
+	worldStore3.CloseWorkItem(idA)
+	worldStore3.Close()
+
+	statuses3, err := sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusMap3 := map[string]CaravanItemStatus{}
+	for _, st := range statuses3 {
+		statusMap3[st.WorkItemID] = st
+	}
+	if !statusMap3[idB].Ready {
+		t.Fatal("expected phase 1 item B to be ready after phase 0 closed")
 	}
 }
 
@@ -512,9 +552,9 @@ func TestCaravanPhaseMultiple(t *testing.T) {
 		t.Fatal("expected phase 2 item NOT ready")
 	}
 
-	// Complete phase 0 → phase 1 becomes ready, phase 2 still not.
+	// Close phase 0 (merged) → phase 1 becomes ready, phase 2 still not.
 	ws, _ := OpenWorld("ember")
-	ws.UpdateWorkItem(idA, WorkItemUpdates{Status: "done"})
+	ws.CloseWorkItem(idA)
 	ws.Close()
 
 	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
@@ -523,15 +563,15 @@ func TestCaravanPhaseMultiple(t *testing.T) {
 		sm[st.WorkItemID] = st
 	}
 	if !sm[idB].Ready {
-		t.Fatal("expected phase 1 item ready after phase 0 done")
+		t.Fatal("expected phase 1 item ready after phase 0 closed")
 	}
 	if sm[idC].Ready {
-		t.Fatal("expected phase 2 item NOT ready (phase 1 not done)")
+		t.Fatal("expected phase 2 item NOT ready (phase 1 not closed)")
 	}
 
-	// Complete phase 1 → phase 2 becomes ready.
+	// Close phase 1 (merged) → phase 2 becomes ready.
 	ws, _ = OpenWorld("ember")
-	ws.UpdateWorkItem(idB, WorkItemUpdates{Status: "done"})
+	ws.CloseWorkItem(idB)
 	ws.Close()
 
 	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
@@ -540,7 +580,7 @@ func TestCaravanPhaseMultiple(t *testing.T) {
 		sm[st.WorkItemID] = st
 	}
 	if !sm[idC].Ready {
-		t.Fatal("expected phase 2 item ready after phase 1 done")
+		t.Fatal("expected phase 2 item ready after phase 1 closed")
 	}
 }
 
@@ -596,9 +636,9 @@ func TestCaravanPhaseMixedWorlds(t *testing.T) {
 		t.Fatal("expected beta phase 1 item NOT ready")
 	}
 
-	// Complete only A (alpha phase 0). C still not ready because B (beta phase 0) is open.
+	// Close only A (alpha phase 0). C still not ready because B (beta phase 0) is open.
 	as, _ := OpenWorld("alpha")
-	as.UpdateWorkItem(idA, WorkItemUpdates{Status: "done"})
+	as.CloseWorkItem(idA)
 	as.Close()
 
 	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
@@ -610,9 +650,9 @@ func TestCaravanPhaseMixedWorlds(t *testing.T) {
 		t.Fatal("expected phase 1 item NOT ready (B in phase 0 still open)")
 	}
 
-	// Complete B → C becomes ready (all phase 0 items done across worlds).
+	// Close B → C becomes ready (all phase 0 items closed across worlds).
 	bs, _ := OpenWorld("beta")
-	bs.UpdateWorkItem(idB, WorkItemUpdates{Status: "done"})
+	bs.CloseWorkItem(idB)
 	bs.Close()
 
 	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
@@ -621,6 +661,6 @@ func TestCaravanPhaseMixedWorlds(t *testing.T) {
 		sm[st.WorkItemID] = st
 	}
 	if !sm[idC].Ready {
-		t.Fatal("expected phase 1 item ready after all phase 0 done")
+		t.Fatal("expected phase 1 item ready after all phase 0 closed")
 	}
 }
