@@ -136,9 +136,38 @@ func (r *Forge) MarkMerged(mrID string) error {
 	return nil
 }
 
-// MarkFailed sets MR phase to failed.
+// MarkFailed sets MR phase to failed, reopens the work item for re-dispatch,
+// and creates an escalation so the governor knows work needs attention.
 func (r *Forge) MarkFailed(mrID string) error {
-	return r.worldStore.UpdateMergeRequestPhase(mrID, "failed")
+	mr, err := r.worldStore.GetMergeRequest(mrID)
+	if err != nil {
+		return err
+	}
+
+	if err := r.worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+		return fmt.Errorf("failed to mark MR as failed: %w", err)
+	}
+
+	// Reopen work item so it can be re-dispatched (best-effort).
+	if err := r.worldStore.UpdateWorkItem(mr.WorkItemID, store.WorkItemUpdates{
+		Status:   "open",
+		Assignee: "-",
+	}); err != nil {
+		r.logger.Error("failed to reopen work item after merge failure",
+			"work_item", mr.WorkItemID, "error", err)
+	}
+
+	// Create escalation so the governor knows about the failure (best-effort).
+	desc := fmt.Sprintf("Merge failed for MR %s (branch %s, work item %s). Work item reopened for re-dispatch.",
+		mrID, mr.Branch, mr.WorkItemID)
+	if _, err := r.sphereStore.CreateEscalation("high", r.agentID, desc); err != nil {
+		r.logger.Error("failed to create escalation for merge failure",
+			"mr", mrID, "error", err)
+	}
+
+	r.logger.Info("marked failed and reopened", "mr", mrID,
+		"work_item", mr.WorkItemID, "branch", mr.Branch)
+	return nil
 }
 
 // GetMergeRequest returns a merge request by ID (convenience accessor).

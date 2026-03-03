@@ -68,7 +68,9 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 				if err == nil {
 					for _, st := range statuses {
 						switch {
-						case st.WorkItemStatus == "done" || st.WorkItemStatus == "closed":
+						case st.WorkItemStatus == "closed":
+							info.ClosedItems++
+						case st.WorkItemStatus == "done":
 							info.DoneItems++
 						case st.WorkItemStatus == "open" && st.Ready:
 							info.ReadyItems++

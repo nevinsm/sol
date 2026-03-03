@@ -103,6 +103,9 @@ func (m *mockWorldStore) UpdateWorkItem(id string, updates store.WorkItemUpdates
 	if updates.Status != "" {
 		item.Status = updates.Status
 	}
+	if updates.Assignee == "-" {
+		item.Assignee = ""
+	}
 	return nil
 }
 
@@ -185,9 +188,16 @@ func (m *mockWorldStore) CloseWorkItem(id string) error {
 
 func (m *mockWorldStore) Close() error { return nil }
 
+type mockEscalation struct {
+	severity    string
+	source      string
+	description string
+}
+
 type mockSphereStore struct {
-	mu     sync.Mutex
-	agents map[string]*store.Agent
+	mu          sync.Mutex
+	agents      map[string]*store.Agent
+	escalations []mockEscalation
 }
 
 func newMockSphereStore() *mockSphereStore {
@@ -228,6 +238,13 @@ func (m *mockSphereStore) UpdateAgentState(id, state, tetherItem string) error {
 	agent.State = state
 	agent.TetherItem = tetherItem
 	return nil
+}
+
+func (m *mockSphereStore) CreateEscalation(severity, source, description string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.escalations = append(m.escalations, mockEscalation{severity, source, description})
+	return fmt.Sprintf("esc-%08x", len(m.escalations)), nil
 }
 
 func (m *mockSphereStore) Close() error { return nil }

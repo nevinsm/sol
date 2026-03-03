@@ -264,16 +264,16 @@ func TestTryCloseCaravan(t *testing.T) {
 		t.Fatal("expected caravan to not be closed (items still open)")
 	}
 
-	// Mark all items done/closed.
+	// Mark all items closed (merged).
 	worldStore2, err := OpenWorld("ember")
 	if err != nil {
 		t.Fatal(err)
 	}
-	worldStore2.UpdateWorkItem(idA, WorkItemUpdates{Status: "done"})
+	worldStore2.CloseWorkItem(idA)
 	worldStore2.CloseWorkItem(idB)
 	worldStore2.Close()
 
-	// All done → caravan auto-closed.
+	// All closed → caravan auto-closed.
 	closed, err = sphereStore.TryCloseCaravan(caravanID, OpenWorld)
 	if err != nil {
 		t.Fatal(err)
@@ -292,6 +292,66 @@ func TestTryCloseCaravan(t *testing.T) {
 	}
 	if c.ClosedAt == nil {
 		t.Fatal("expected closed_at to be set")
+	}
+}
+
+func TestTryCloseCaravanDoneNotSufficient(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	sphereStore, err := OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sphereStore.Close()
+
+	worldStore, err := OpenWorld("ember")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idA, _ := worldStore.CreateWorkItem("Item A", "", "operator", 2, nil)
+	idB, _ := worldStore.CreateWorkItem("Item B", "", "operator", 2, nil)
+	worldStore.Close()
+
+	caravanID, _ := sphereStore.CreateCaravan("test-done-not-closed", "operator")
+	sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0)
+	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 0)
+
+	// Set all items to done (code complete, awaiting merge).
+	ws, err := OpenWorld("ember")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws.UpdateWorkItem(idA, WorkItemUpdates{Status: "done"})
+	ws.UpdateWorkItem(idB, WorkItemUpdates{Status: "done"})
+	ws.Close()
+
+	// done is NOT sufficient to close caravan.
+	closed, err := sphereStore.TryCloseCaravan(caravanID, OpenWorld)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed {
+		t.Fatal("expected caravan to NOT close when items are done (not closed/merged)")
+	}
+
+	// Now close (merge) all items.
+	ws2, err := OpenWorld("ember")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws2.CloseWorkItem(idA)
+	ws2.CloseWorkItem(idB)
+	ws2.Close()
+
+	// Now caravan should close.
+	closed, err = sphereStore.TryCloseCaravan(caravanID, OpenWorld)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("expected caravan to close when all items are closed (merged)")
 	}
 }
 
