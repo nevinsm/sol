@@ -111,15 +111,16 @@ func (s *Store) GetDependents(itemID string) ([]string, error) {
 }
 
 // IsReady returns true if all dependencies of itemID are satisfied
-// (status is "done" or "closed"). An item with no dependencies is
-// always ready.
+// (status is "closed" / merged). An item with no dependencies is
+// always ready. Note: "done" (code complete, awaiting merge) is NOT
+// sufficient — the prerequisite code must be merged to the target branch.
 func (s *Store) IsReady(itemID string) (bool, error) {
-	// Count dependencies whose work item is NOT done/closed.
+	// Count dependencies whose work item is NOT closed (merged).
 	var unsatisfied int
 	err := s.db.QueryRow(`
 		SELECT COUNT(*) FROM dependencies d
 		JOIN work_items w ON d.to_id = w.id
-		WHERE d.from_id = ? AND w.status NOT IN ('done', 'closed')`,
+		WHERE d.from_id = ? AND w.status != 'closed'`,
 		itemID,
 	).Scan(&unsatisfied)
 	if err != nil {

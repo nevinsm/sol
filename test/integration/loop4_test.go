@@ -648,45 +648,45 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 		t.Errorf("blocked count: got %d, want 1", blockedCount)
 	}
 
-	// Mark A as done.
+	// Close A (merged).
 	rs, err := store.OpenWorld("ember")
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	if err := rs.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"}); err != nil {
-		t.Fatalf("update work item A: %v", err)
+	if err := rs.CloseWorkItem(idA); err != nil {
+		t.Fatalf("close work item A: %v", err)
 	}
 	rs.Close()
 
-	// Check again: B ready, C still blocked (B not done).
+	// Check again: B ready, C still blocked (B not closed).
 	statuses, err = sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
 	if err != nil {
-		t.Fatalf("CheckCaravanReadiness after A done: %v", err)
+		t.Fatalf("CheckCaravanReadiness after A closed: %v", err)
 	}
 	for _, st := range statuses {
 		if st.WorkItemID == idC && st.Ready {
-			t.Error("C should still be blocked (B not done)")
+			t.Error("C should still be blocked (B not closed)")
 		}
 	}
 
-	// Mark B as done.
+	// Close B (merged).
 	rs, err = store.OpenWorld("ember")
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	if err := rs.UpdateWorkItem(idB, store.WorkItemUpdates{Status: "done"}); err != nil {
-		t.Fatalf("update work item B: %v", err)
+	if err := rs.CloseWorkItem(idB); err != nil {
+		t.Fatalf("close work item B: %v", err)
 	}
 	rs.Close()
 
 	// Check again: C now ready.
 	statuses, err = sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
 	if err != nil {
-		t.Fatalf("CheckCaravanReadiness after B done: %v", err)
+		t.Fatalf("CheckCaravanReadiness after B closed: %v", err)
 	}
 	for _, st := range statuses {
 		if st.WorkItemID == idC && !st.Ready {
-			t.Error("C should be ready now (A and B done)")
+			t.Error("C should be ready now (A and B closed)")
 		}
 	}
 }
@@ -868,23 +868,23 @@ func TestCaravanMultiWorld(t *testing.T) {
 		t.Error("beta item C should be blocked (depends on B)")
 	}
 
-	// Mark B as done → C should become ready.
+	// Close B (merged) → C should become ready.
 	bs, err := store.OpenWorld("beta")
 	if err != nil {
 		t.Fatalf("open beta world: %v", err)
 	}
-	if err := bs.UpdateWorkItem(idB, store.WorkItemUpdates{Status: "done"}); err != nil {
-		t.Fatalf("update work item B: %v", err)
+	if err := bs.CloseWorkItem(idB); err != nil {
+		t.Fatalf("close work item B: %v", err)
 	}
 	bs.Close()
 
 	statuses, err = sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
 	if err != nil {
-		t.Fatalf("CheckCaravanReadiness after B done: %v", err)
+		t.Fatalf("CheckCaravanReadiness after B closed: %v", err)
 	}
 	for _, st := range statuses {
 		if st.WorkItemID == idC && !st.Ready {
-			t.Error("beta item C should be ready after B is done")
+			t.Error("beta item C should be ready after B is closed")
 		}
 	}
 

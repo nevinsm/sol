@@ -312,7 +312,9 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 	}
 
 	// Apply phase gating: items in phase N are only ready if all items in
-	// phases < N are done or closed. This is per-caravan, not per-world.
+	// phases < N are closed (merged). This is per-caravan, not per-world.
+	// Note: "done" (code complete, awaiting merge) is NOT sufficient —
+	// prerequisite code must be merged to the target branch.
 	for i := range results {
 		if results[i].Phase == 0 {
 			continue // Phase 0 uses only within-world dependency check.
@@ -320,10 +322,10 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 		if !results[i].Ready {
 			continue // Already not ready from dependency check.
 		}
-		// Check if all items in lower phases are done/closed.
+		// Check if all items in lower phases are closed (merged).
 		for j := range results {
 			if results[j].Phase < results[i].Phase {
-				if results[j].WorkItemStatus != "done" && results[j].WorkItemStatus != "closed" {
+				if results[j].WorkItemStatus != "closed" {
 					results[i].Ready = false
 					break
 				}
