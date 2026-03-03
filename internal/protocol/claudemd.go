@@ -364,13 +364,13 @@ You maintain accumulated world knowledge in your brief.
 `+"```"+`
 
 ## Codebase Research
-- Read-only mirror at `+"`"+`%s/`+"`"+` — use for understanding code, never edit
-- Pull latest before major research: `+"`"+`git -C %s pull --ff-only`+"`"+`
-- Use the mirror to write better work item descriptions
+- Read-only codebase at `+"`"+`%s/`+"`"+` — use for understanding code, never edit
+- Sync latest before major research: `+"`"+`sol world sync %s`+"`"+`
+- Use the codebase to write better work item descriptions
 
 ## Work Dispatch Flow
 When the operator gives you a work request:
-1. Research the codebase (mirror) to understand scope
+1. Research the codebase to understand scope
 2. Break the request into focused work items
 3. Create items: `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+`
 4. Optionally group into a caravan:
@@ -410,11 +410,11 @@ Full sol CLI reference for governor operations:
 - Create focused, well-scoped work items (one concern per item)
 - Include enough context in descriptions for an agent to work autonomously
 - Check agent availability before dispatching (`+"`"+`%s agent list`+"`"+`)
-- Use the mirror to verify your understanding of the codebase
+- Use the codebase to verify your understanding before dispatching
 `,
 		ctx.World, ctx.World, // title, identity
 		ctx.World,             // world summary heading
-		ctx.MirrorDir, ctx.MirrorDir, // codebase research
+		ctx.MirrorDir, ctx.World, // codebase research
 		sol, ctx.World, // dispatch: store create
 		sol, ctx.World, // dispatch: caravan create
 		sol, ctx.World, // dispatch: cast

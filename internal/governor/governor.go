@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/protocol"
@@ -18,12 +16,6 @@ import (
 // $SOL_HOME/{world}/governor/
 func GovernorDir(world string) string {
 	return filepath.Join(config.Home(), world, "governor")
-}
-
-// MirrorPath returns the read-only mirror path.
-// $SOL_HOME/{world}/governor/mirror/
-func MirrorPath(world string) string {
-	return filepath.Join(config.Home(), world, "governor", "mirror")
 }
 
 // BriefDir returns the brief directory for the governor.
@@ -68,84 +60,7 @@ type StopManager interface {
 
 // StartOpts holds inputs for starting a governor.
 type StartOpts struct {
-	World        string
-	SourceRepo   string // from world config or flag
-	TargetBranch string // branch for mirror checkout (default: "main")
-}
-
-// --- Mirror ---
-
-// SetupMirror clones or updates the read-only mirror of the source repo.
-// If mirror doesn't exist, clones. If it exists, pulls latest.
-// If branch is empty, defaults to "main".
-func SetupMirror(world, sourceRepo, branch string) error {
-	if branch == "" {
-		branch = "main"
-	}
-	mirrorPath := MirrorPath(world)
-
-	if _, err := os.Stat(mirrorPath); os.IsNotExist(err) {
-		// Clone the source repo.
-		cmd := exec.Command("git", "clone", sourceRepo, mirrorPath)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to setup governor mirror for world %q: %s: %w",
-				world, strings.TrimSpace(string(out)), err)
-		}
-		// Checkout target branch if not main (clone defaults to main).
-		if branch != "main" {
-			cmd = exec.Command("git", "-C", mirrorPath, "checkout", branch)
-			if out, err := cmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("failed to checkout branch %q in mirror for world %q: %s: %w",
-					branch, world, strings.TrimSpace(string(out)), err)
-			}
-		}
-		return nil
-	}
-
-	// Verify existing directory is a git repo before pulling.
-	verifyCmd := exec.Command("git", "-C", mirrorPath, "rev-parse", "--is-inside-work-tree")
-	if _, err := verifyCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("mirror directory exists but is not a git repository — remove %s and retry", mirrorPath)
-	}
-
-	// Pull latest (best-effort — warn on failure, don't error).
-	cmd := exec.Command("git", "-C", mirrorPath, "pull", "--ff-only")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "governor: mirror pull failed for world %q (best-effort): %s\n",
-			world, strings.TrimSpace(string(out)))
-	}
-
-	return nil
-}
-
-// RefreshMirror pulls latest changes in the mirror.
-// If branch is empty, defaults to "main".
-func RefreshMirror(world, branch string) error {
-	if branch == "" {
-		branch = "main"
-	}
-
-	mirrorPath := MirrorPath(world)
-
-	if _, err := os.Stat(mirrorPath); os.IsNotExist(err) {
-		return fmt.Errorf("mirror not found — run governor start first")
-	}
-
-	// Checkout target branch.
-	cmd := exec.Command("git", "-C", mirrorPath, "checkout", branch)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to refresh governor mirror for world %q: %s: %w",
-			world, strings.TrimSpace(string(out)), err)
-	}
-
-	// Pull latest.
-	cmd = exec.Command("git", "-C", mirrorPath, "pull", "--ff-only")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to refresh governor mirror for world %q: %s: %w",
-			world, strings.TrimSpace(string(out)), err)
-	}
-
-	return nil
+	World string
 }
 
 // --- Start ---
@@ -174,22 +89,17 @@ func Start(opts StartOpts, sphereStore SphereStore, mgr SessionManager) error {
 		return fmt.Errorf("governor session for world %q already running", opts.World)
 	}
 
-	// 4. Setup mirror (warn on failure — governor still works without it).
-	if err := SetupMirror(opts.World, opts.SourceRepo, opts.TargetBranch); err != nil {
-		fmt.Fprintf(os.Stderr, "governor: mirror setup failed for world %q: %v\n", opts.World, err)
-	}
-
-	// 5. Install hooks in GovernorDir.
+	// 4. Install hooks in GovernorDir.
 	if err := installHooks(govDir, opts.World); err != nil {
 		return fmt.Errorf("failed to start governor for world %q: %w", opts.World, err)
 	}
 
-	// 6. Start tmux session.
+	// 5. Start tmux session.
 	if err := mgr.Start(sessName, govDir, "claude --dangerously-skip-permissions", nil, "governor", opts.World); err != nil {
 		return fmt.Errorf("failed to start governor for world %q: %w", opts.World, err)
 	}
 
-	// 7. Update agent state to "idle".
+	// 6. Update agent state to "idle".
 	agentID := opts.World + "/governor"
 	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 		return fmt.Errorf("failed to start governor for world %q: %w", opts.World, err)
@@ -198,7 +108,7 @@ func Start(opts StartOpts, sphereStore SphereStore, mgr SessionManager) error {
 	return nil
 }
 
-// installHooks writes .claude/settings.local.json with brief and mirror hooks.
+// installHooks writes .claude/settings.local.json with brief and sync hooks.
 func installHooks(govDir, world string) error {
 	claudeDir := filepath.Join(govDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
@@ -211,7 +121,7 @@ func installHooks(govDir, world string) error {
 				{
 					Type:    "command",
 					Matcher: "startup|resume",
-					Command: fmt.Sprintf("sol brief inject --path=.brief/memory.md --max-lines=200 && sol governor refresh-mirror --world=%s", world),
+					Command: fmt.Sprintf("sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync %s", world),
 				},
 				{
 					Type:    "command",

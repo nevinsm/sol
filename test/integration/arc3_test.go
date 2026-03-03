@@ -597,17 +597,6 @@ func TestGovernorStartStop(t *testing.T) {
 		t.Error("governor session not started")
 	}
 
-	// Verify mirror directory exists with git repo.
-	mirrorPath := filepath.Join(gtHome, "myworld", "governor", "mirror")
-	if _, err := os.Stat(mirrorPath); os.IsNotExist(err) {
-		t.Error("mirror directory not created")
-	}
-	// Verify it's a git repo.
-	cmd := exec.Command("git", "-C", mirrorPath, "rev-parse", "--is-inside-work-tree")
-	if _, err := cmd.CombinedOutput(); err != nil {
-		t.Error("mirror is not a git repo")
-	}
-
 	// Stop governor.
 	out, err = runGT(t, gtHome, "governor", "stop", "--world=myworld")
 	if err != nil {
@@ -621,56 +610,91 @@ func TestGovernorStartStop(t *testing.T) {
 	if !ok {
 		t.Error("governor session not stopped")
 	}
-
-	// Mirror should persist after stop.
-	if _, err := os.Stat(mirrorPath); os.IsNotExist(err) {
-		t.Error("mirror should persist after governor stop")
-	}
 }
 
-func TestGovernorRefreshMirror(t *testing.T) {
+func TestWorldSync(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
-	}
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not available")
 	}
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
-	// Start governor.
-	out, err := runGT(t, gtHome, "governor", "start", "--world=myworld")
-	if err != nil {
-		t.Fatalf("governor start: %v: %s", err, out)
-	}
-	t.Cleanup(func() {
-		runGT(t, gtHome, "governor", "stop", "--world=myworld")
-	})
-
-	// Add a commit to the managed clone (which is the mirror's origin).
-	managedRepo := filepath.Join(gtHome, "myworld", "repo")
-	if err := os.WriteFile(filepath.Join(managedRepo, "newfile.txt"), []byte("new content"), 0o644); err != nil {
+	// Add a commit to the source repo.
+	if err := os.WriteFile(filepath.Join(sourceRepo, "newfile.txt"), []byte("new content"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	gitRun(t, managedRepo, "add", ".")
-	gitRun(t, managedRepo, "commit", "-m", "add newfile")
+	gitRun(t, sourceRepo, "add", ".")
+	gitRun(t, sourceRepo, "commit", "-m", "add newfile")
 
-	// Refresh mirror.
-	out, err = runGT(t, gtHome, "governor", "refresh-mirror", "--world=myworld")
+	// Sync the managed repo.
+	out, err := runGT(t, gtHome, "world", "sync", "myworld")
 	if err != nil {
-		t.Fatalf("governor refresh-mirror: %v: %s", err, out)
+		t.Fatalf("world sync: %v: %s", err, out)
 	}
 
-	// Verify new commit visible in mirror.
-	mirrorPath := filepath.Join(gtHome, "myworld", "governor", "mirror")
-	cmd := exec.Command("git", "-C", mirrorPath, "log", "--oneline", "-1")
+	if !strings.Contains(out, "Synced managed repo") {
+		t.Errorf("expected 'Synced managed repo' in output, got: %s", out)
+	}
+
+	// Verify new commit visible in the managed repo.
+	managedRepo := filepath.Join(gtHome, "myworld", "repo")
+	cmd := exec.Command("git", "-C", managedRepo, "log", "--oneline", "-1")
 	logOut, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("git log in mirror: %v: %s", err, logOut)
+		t.Fatalf("git log in managed repo: %v: %s", err, logOut)
 	}
 	if !strings.Contains(string(logOut), "add newfile") {
-		t.Errorf("mirror missing new commit: %s", logOut)
+		t.Errorf("managed repo missing new commit: %s", logOut)
+	}
+}
+
+func TestWorldSyncCreatesClone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	gtHome, sourceRepo := setupTestEnv(t)
+
+	// Initialize world without --source-repo.
+	initWorld(t, gtHome, "myworld")
+
+	// Manually set source_repo in world.toml.
+	worldToml := filepath.Join(gtHome, "myworld", "world.toml")
+	data, err := os.ReadFile(worldToml)
+	if err != nil {
+		t.Fatalf("read world.toml: %v", err)
+	}
+	updated := strings.Replace(string(data), `source_repo = ""`, fmt.Sprintf(`source_repo = %q`, sourceRepo), 1)
+	if err := os.WriteFile(worldToml, []byte(updated), 0o644); err != nil {
+		t.Fatalf("write world.toml: %v", err)
+	}
+
+	// Verify managed repo doesn't exist yet.
+	repoPath := filepath.Join(gtHome, "myworld", "repo")
+	if _, err := os.Stat(repoPath); !os.IsNotExist(err) {
+		t.Fatal("managed repo should not exist before sync")
+	}
+
+	// Run world sync — should clone.
+	out, err := runGT(t, gtHome, "world", "sync", "myworld")
+	if err != nil {
+		t.Fatalf("world sync: %v: %s", err, out)
+	}
+
+	if !strings.Contains(out, "Managed repo created") {
+		t.Errorf("expected 'Managed repo created' in output, got: %s", out)
+	}
+
+	// Verify managed clone was created.
+	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+		t.Error("managed repo should exist after sync")
+	}
+
+	// Verify it's a valid git repo.
+	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "--is-inside-work-tree")
+	if _, err := cmd.CombinedOutput(); err != nil {
+		t.Error("managed repo is not a git repo")
 	}
 }
 
@@ -749,8 +773,8 @@ func TestGovernorHooksInstalled(t *testing.T) {
 	if !strings.Contains(settingsStr, "brief inject") {
 		t.Errorf("hooks missing brief inject: %s", settingsStr)
 	}
-	if !strings.Contains(settingsStr, "refresh-mirror") {
-		t.Errorf("hooks missing refresh-mirror: %s", settingsStr)
+	if !strings.Contains(settingsStr, "sol world sync") {
+		t.Errorf("hooks missing world sync: %s", settingsStr)
 	}
 	if !strings.Contains(settingsStr, "--skip-session-start") {
 		t.Errorf("hooks missing --skip-session-start in compact hook: %s", settingsStr)

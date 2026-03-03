@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
@@ -37,16 +36,6 @@ var governorStartCmd = &cobra.Command{
 			return err
 		}
 
-		worldCfg, err := config.LoadWorldConfig(governorStartWorld)
-		if err != nil {
-			return err
-		}
-
-		sourceRepo, err := dispatch.ResolveSourceRepo(governorStartWorld, worldCfg)
-		if err != nil {
-			return err
-		}
-
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
@@ -63,15 +52,13 @@ var governorStartCmd = &cobra.Command{
 		if err := protocol.InstallGovernorClaudeMD(govDir, protocol.GovernorClaudeMDContext{
 			World:     governorStartWorld,
 			SolBinary: "sol",
-			MirrorDir: "mirror",
+			MirrorDir: "../repo",
 		}); err != nil {
 			return fmt.Errorf("failed to install governor CLAUDE.md: %w", err)
 		}
 
 		if err := governor.Start(governor.StartOpts{
-			World:        governorStartWorld,
-			SourceRepo:   sourceRepo,
-			TargetBranch: worldCfg.Forge.TargetBranch,
+			World: governorStartWorld,
 		}, sphereStore, mgr); err != nil {
 			return err
 		}
@@ -222,38 +209,6 @@ var governorDebriefCmd = &cobra.Command{
 	},
 }
 
-// --- sol governor refresh-mirror ---
-
-var governorRefreshMirrorWorld string
-
-var governorRefreshMirrorCmd = &cobra.Command{
-	Use:          "refresh-mirror",
-	Short:        "Pull latest changes into the governor's mirror",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if governorRefreshMirrorWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(governorRefreshMirrorWorld); err != nil {
-			return err
-		}
-
-		// Load world config to get target branch.
-		worldCfg, err := config.LoadWorldConfig(governorRefreshMirrorWorld)
-		if err != nil {
-			return fmt.Errorf("failed to load world config for %q: %w", governorRefreshMirrorWorld, err)
-		}
-		targetBranch := worldCfg.Forge.TargetBranch
-
-		if err := governor.RefreshMirror(governorRefreshMirrorWorld, targetBranch); err != nil {
-			return err
-		}
-
-		fmt.Printf("Refreshed mirror for world %q\n", governorRefreshMirrorWorld)
-		return nil
-	},
-}
-
 // --- sol governor summary ---
 
 var governorSummaryWorld string
@@ -288,7 +243,7 @@ var governorSummaryCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(governorCmd)
 	governorCmd.AddCommand(governorStartCmd, governorStopCmd, governorAttachCmd,
-		governorBriefCmd, governorDebriefCmd, governorRefreshMirrorCmd,
+		governorBriefCmd, governorDebriefCmd,
 		governorSummaryCmd)
 
 	// governor start flags
@@ -305,9 +260,6 @@ func init() {
 
 	// governor debrief flags
 	governorDebriefCmd.Flags().StringVar(&governorDebriefWorld, "world", "", "world name")
-
-	// governor refresh-mirror flags
-	governorRefreshMirrorCmd.Flags().StringVar(&governorRefreshMirrorWorld, "world", "", "world name")
 
 	// governor summary flags
 	governorSummaryCmd.Flags().StringVar(&governorSummaryWorld, "world", "", "world name")

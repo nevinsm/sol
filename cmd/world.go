@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -340,12 +341,66 @@ var worldDeleteCmd = &cobra.Command{
 	},
 }
 
+var worldSyncCmd = &cobra.Command{
+	Use:   "sync <name>",
+	Short: "Sync the managed repo with its remote",
+	Long: `Fetch and pull latest changes from the source repo's origin.
+If the managed repo doesn't exist yet but source_repo is configured
+in world.toml, clones it first.`,
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+
+		if err := config.RequireWorld(name); err != nil {
+			return err
+		}
+
+		repoPath := config.RepoPath(name)
+
+		// If managed repo doesn't exist, try to clone from config.
+		if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+			worldCfg, err := config.LoadWorldConfig(name)
+			if err != nil {
+				return err
+			}
+			if worldCfg.World.SourceRepo == "" {
+				return fmt.Errorf("no managed repo and no source_repo configured for world %q", name)
+			}
+			fmt.Printf("Cloning %s into managed repo...\n", worldCfg.World.SourceRepo)
+			if err := setup.CloneRepo(name, worldCfg.World.SourceRepo); err != nil {
+				return err
+			}
+			fmt.Printf("Managed repo created for world %q\n", name)
+			return nil
+		}
+
+		// Fetch from origin.
+		fetchCmd := exec.Command("git", "-C", repoPath, "fetch", "origin")
+		if out, err := fetchCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to fetch for world %q: %s: %w",
+				name, strings.TrimSpace(string(out)), err)
+		}
+
+		// Pull with fast-forward only.
+		pullCmd := exec.Command("git", "-C", repoPath, "pull", "--ff-only")
+		if out, err := pullCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to pull for world %q: %s: %w",
+				name, strings.TrimSpace(string(out)), err)
+		}
+
+		fmt.Printf("Synced managed repo for world %q\n", name)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(worldCmd)
 	worldCmd.AddCommand(worldInitCmd)
 	worldCmd.AddCommand(worldListCmd)
 	worldCmd.AddCommand(worldStatusCmd)
 	worldCmd.AddCommand(worldDeleteCmd)
+	worldCmd.AddCommand(worldSyncCmd)
 
 	worldInitCmd.Flags().StringVar(&worldInitSourceRepo, "source-repo",
 		"", "git URL or local path to source repository")

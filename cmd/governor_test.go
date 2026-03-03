@@ -74,12 +74,6 @@ func TestGovernorStartCommand(t *testing.T) {
 		t.Error("CLAUDE.md should contain governor identity from protocol generator")
 	}
 
-	// Verify mirror was cloned.
-	mirrorPath := governor.MirrorPath("myworld")
-	if _, err := os.Stat(mirrorPath); os.IsNotExist(err) {
-		t.Error("mirror not cloned")
-	}
-
 	// Verify agent record in sphere store.
 	ss, err := store.OpenSphere()
 	if err != nil {
@@ -355,76 +349,3 @@ func TestGovernorSummaryCommandNotFound(t *testing.T) {
 	}
 }
 
-func TestGovernorRefreshMirrorCommand(t *testing.T) {
-	solHome := filepath.Join(t.TempDir(), "sol-test")
-	t.Setenv("SOL_HOME", solHome)
-
-	// Create world directory and world.toml.
-	worldDir := filepath.Join(solHome, "myworld")
-	if err := os.MkdirAll(worldDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	worldToml := filepath.Join(worldDir, "world.toml")
-	if err := os.WriteFile(worldToml, []byte("[world]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create a source repo and clone it as a mirror.
-	sourceRepo := filepath.Join(t.TempDir(), "repo")
-	initGitRepo(t, sourceRepo)
-
-	mirrorPath := governor.MirrorPath("myworld")
-	cmd := exec.Command("git", "clone", sourceRepo, mirrorPath)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git clone failed: %s: %v", out, err)
-	}
-
-	// Add a new commit to the source repo.
-	newFile := filepath.Join(sourceRepo, "refresh-test.txt")
-	if err := os.WriteFile(newFile, []byte("refresh content\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cmd = exec.Command("git", "-C", sourceRepo, "add", ".")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git add failed: %s: %v", out, err)
-	}
-	cmd = exec.Command("git", "-C", sourceRepo, "commit", "-m", "refresh test commit")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit failed: %s: %v", out, err)
-	}
-
-	governorRefreshMirrorWorld = "myworld"
-	defer func() { governorRefreshMirrorWorld = "" }()
-
-	rootCmd.SetArgs([]string{"governor", "refresh-mirror", "--world=myworld"})
-
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := rootCmd.Execute()
-
-	w.Close()
-	var captured bytes.Buffer
-	captured.ReadFrom(r)
-	os.Stdout = oldStdout
-
-	if err != nil {
-		t.Fatalf("governor refresh-mirror failed: %v", err)
-	}
-
-	output := captured.String()
-	if !strings.Contains(output, "Refreshed mirror") {
-		t.Errorf("expected 'Refreshed mirror' in output, got: %s", output)
-	}
-
-	// Verify new commit is in the mirror.
-	cmd = exec.Command("git", "-C", mirrorPath, "log", "--oneline")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git log failed: %s: %v", out, err)
-	}
-	if !strings.Contains(string(out), "refresh test commit") {
-		t.Errorf("mirror should contain new commit, got: %s", out)
-	}
-}

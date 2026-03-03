@@ -79,7 +79,7 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 	ctx := protocol.GovernorClaudeMDContext{
 		World:     "myworld",
 		SolBinary: "sol",
-		MirrorDir: "mirror",
+		MirrorDir: "../repo",
 	}
 
 	content := protocol.GenerateGovernorClaudeMD(ctx)
@@ -89,9 +89,14 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 		t.Error("CLAUDE.md should contain world name")
 	}
 
-	// Verify mirror reference.
-	if !strings.Contains(content, "mirror/") {
-		t.Error("CLAUDE.md should contain mirror directory reference")
+	// Verify managed repo reference.
+	if !strings.Contains(content, "../repo/") {
+		t.Error("CLAUDE.md should contain managed repo directory reference")
+	}
+
+	// Verify sol world sync command.
+	if !strings.Contains(content, "sol world sync myworld") {
+		t.Error("CLAUDE.md should contain 'sol world sync myworld'")
 	}
 
 	// Verify sol CLI commands.
@@ -170,7 +175,7 @@ func TestInstallGovernorClaudeMD(t *testing.T) {
 	ctx := protocol.GovernorClaudeMDContext{
 		World:     "testworld",
 		SolBinary: "sol",
-		MirrorDir: "mirror",
+		MirrorDir: "../repo",
 	}
 
 	if err := protocol.InstallGovernorClaudeMD(govDir, ctx); err != nil {
