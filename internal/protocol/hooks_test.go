@@ -56,4 +56,61 @@ func TestInstallForgeHooks(t *testing.T) {
 	if !strings.Contains(hookCmd, "&&") {
 		t.Errorf("expected && between sync and prime: %q", hookCmd)
 	}
+
+	// Must have PreCompact hook with handoff command.
+	pcGroups, ok := cfg.Hooks["PreCompact"]
+	if !ok {
+		t.Fatal("settings.local.json missing PreCompact hook")
+	}
+	if len(pcGroups) != 1 {
+		t.Fatalf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
+	}
+	pcCmd := pcGroups[0].Hooks[0].Command
+	if pcCmd != "sol handoff --world=myworld --agent=forge" {
+		t.Errorf("expected PreCompact command 'sol handoff --world=myworld --agent=forge', got %q", pcCmd)
+	}
+}
+
+func TestInstallHooksPreCompact(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := InstallHooks(dir, "ember", "Toast"); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	settingsPath := filepath.Join(dir, ".claude", "settings.local.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("failed to read settings.local.json: %v", err)
+	}
+
+	var cfg HookConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("failed to parse settings.local.json: %v", err)
+	}
+
+	// Verify SessionStart hook.
+	groups, ok := cfg.Hooks["SessionStart"]
+	if !ok {
+		t.Fatal("settings.local.json missing SessionStart hook")
+	}
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 SessionStart matcher group, got %d", len(groups))
+	}
+	if groups[0].Hooks[0].Command != "sol prime --world=ember --agent=Toast" {
+		t.Errorf("unexpected SessionStart command: %q", groups[0].Hooks[0].Command)
+	}
+
+	// Verify PreCompact hook.
+	pcGroups, ok := cfg.Hooks["PreCompact"]
+	if !ok {
+		t.Fatal("settings.local.json missing PreCompact hook")
+	}
+	if len(pcGroups) != 1 {
+		t.Fatalf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
+	}
+	pcCmd := pcGroups[0].Hooks[0].Command
+	if pcCmd != "sol handoff --world=ember --agent=Toast" {
+		t.Errorf("expected PreCompact command 'sol handoff --world=ember --agent=Toast', got %q", pcCmd)
+	}
 }

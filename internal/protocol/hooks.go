@@ -35,6 +35,8 @@ type HookHandler struct {
 //
 //	SessionStart: runs "sol prime --world={world} --agent={name}" and outputs
 //	              the result as initial context
+//	PreCompact:   runs "sol handoff --world={world} --agent={name}" to hand off
+//	              to a fresh session instead of lossy context compaction
 func InstallHooks(worktreeDir, world, agentName string) error {
 	cfg := HookConfig{
 		Hooks: map[string][]HookMatcherGroup{
@@ -48,6 +50,16 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 					},
 				},
 			},
+			"PreCompact": {
+				{
+					Hooks: []HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("sol handoff --world=%s --agent=%s", world, agentName),
+						},
+					},
+				},
+			},
 		},
 	}
 	return writeHookSettings(worktreeDir, cfg)
@@ -56,6 +68,7 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 // InstallForgeHooks writes forge-specific Claude Code hooks that sync before priming.
 // The SessionStart hook runs "sol forge sync {world}" to reset the forge worktree
 // to the latest target branch, then "sol prime" to inject execution context.
+// The PreCompact hook hands off to a fresh session instead of lossy compaction.
 func InstallForgeHooks(worktreeDir, world string) error {
 	cfg := HookConfig{
 		Hooks: map[string][]HookMatcherGroup{
@@ -65,6 +78,16 @@ func InstallForgeHooks(worktreeDir, world string) error {
 						{
 							Type:    "command",
 							Command: fmt.Sprintf("sol forge sync %s && sol prime --world=%s --agent=forge", world, world),
+						},
+					},
+				},
+			},
+			"PreCompact": {
+				{
+					Hooks: []HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("sol handoff --world=%s --agent=forge", world),
 						},
 					},
 				},

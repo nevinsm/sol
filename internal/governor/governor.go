@@ -111,7 +111,7 @@ func Start(opts StartOpts, sphereStore SphereStore, mgr SessionManager) error {
 	return nil
 }
 
-// installHooks writes .claude/settings.local.json with brief and sync hooks.
+// installHooks writes .claude/settings.local.json with brief, sync, and PreCompact hooks.
 func installHooks(govDir, world string) error {
 	claudeDir := filepath.Join(govDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
@@ -140,7 +140,17 @@ func installHooks(govDir, world string) error {
 					},
 				},
 			},
+			"PreCompact": {
+				{
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("sol handoff --world=%s --agent=governor", world),
+						},
+					},
+				},
 			},
+		},
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")

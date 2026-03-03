@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/tether"
 )
 
@@ -380,7 +379,7 @@ func TestExec(t *testing.T) {
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:       "ember",
+		World:     "ember",
 		AgentName: "Toast",
 		Summary:   "Implemented login form.",
 	}, mgr, ts, nil)
@@ -407,8 +406,9 @@ func TestExec(t *testing.T) {
 	if mgr.started[0].Workdir != worktreeDir {
 		t.Errorf("expected workdir %q, got %q", worktreeDir, mgr.started[0].Workdir)
 	}
-	if mgr.started[0].Cmd != config.DefaultSessionCommand {
-		t.Errorf("expected claude command, got %q", mgr.started[0].Cmd)
+	// Session command should include --settings flag for reliable hook discovery.
+	if !strings.Contains(mgr.started[0].Cmd, "--settings") {
+		t.Errorf("expected session command to include --settings, got %q", mgr.started[0].Cmd)
 	}
 	if mgr.started[0].Role != "agent" {
 		t.Errorf("expected role agent, got %q", mgr.started[0].Role)
@@ -436,21 +436,97 @@ func TestExec(t *testing.T) {
 	}
 }
 
-func TestExecNoTether(t *testing.T) {
-	setupSolHome(t)
+func TestExecNoTetherCyclesSession(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	// Create governor directory (no tether for governor).
+	govDir := filepath.Join(solHome, "ember", "governor")
+	if err := os.MkdirAll(govDir, 0o755); err != nil {
+		t.Fatalf("failed to create governor dir: %v", err)
+	}
 
 	mgr := &mockSessionMgr{}
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
 		World:       "ember",
-		AgentName: "Toast",
+		AgentName:   "governor",
+		Role:        "governor",
+		WorktreeDir: govDir,
 	}, mgr, ts, nil)
 
-	if err == nil {
-		t.Fatal("expected error when no tether exists")
+	if err != nil {
+		t.Fatalf("Exec failed for no-tether governor: %v", err)
 	}
-	if !strings.Contains(err.Error(), "no work tethered") {
-		t.Errorf("expected 'no work tethered' error, got: %v", err)
+
+	// No handoff file should be written (no tether).
+	if HasHandoff("ember", "governor") {
+		t.Error("expected no handoff file for governor without tether")
+	}
+
+	// Session should still be stopped and restarted.
+	if len(mgr.stopped) != 1 || mgr.stopped[0] != "sol-ember-governor" {
+		t.Errorf("expected session stopped once, got %v", mgr.stopped)
+	}
+	if len(mgr.started) != 1 {
+		t.Fatalf("expected 1 start call, got %d", len(mgr.started))
+	}
+	if mgr.started[0].Workdir != govDir {
+		t.Errorf("expected workdir %q, got %q", govDir, mgr.started[0].Workdir)
+	}
+	if mgr.started[0].Role != "governor" {
+		t.Errorf("expected role governor, got %q", mgr.started[0].Role)
+	}
+	// No mail sent (no tether).
+	if len(ts.messages) != 0 {
+		t.Errorf("expected 0 messages for no-tether handoff, got %d", len(ts.messages))
+	}
+}
+
+func TestExecWithExplicitRole(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	// Set up tether file for an envoy with active work.
+	tetherDir := filepath.Join(solHome, "ember", "outposts", "Alice")
+	if err := os.MkdirAll(tetherDir, 0o755); err != nil {
+		t.Fatalf("failed to create tether dir: %v", err)
+	}
+	if err := tether.Write("ember", "Alice", "sol-envoy12345"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Alice", "worktree")
+	if err := os.MkdirAll(envoyDir, 0o755); err != nil {
+		t.Fatalf("failed to create envoy dir: %v", err)
+	}
+
+	mgr := &mockSessionMgr{}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:       "ember",
+		AgentName:   "Alice",
+		Role:        "envoy",
+		WorktreeDir: envoyDir,
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// Handoff file should be written (has tether).
+	if !HasHandoff("ember", "Alice") {
+		t.Error("expected handoff file for tethered envoy")
+	}
+
+	// Session should use envoy role.
+	if len(mgr.started) != 1 {
+		t.Fatalf("expected 1 start call, got %d", len(mgr.started))
+	}
+	if mgr.started[0].Role != "envoy" {
+		t.Errorf("expected role envoy, got %q", mgr.started[0].Role)
+	}
+	if mgr.started[0].Workdir != envoyDir {
+		t.Errorf("expected workdir %q, got %q", envoyDir, mgr.started[0].Workdir)
 	}
 }

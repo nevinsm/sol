@@ -239,81 +239,116 @@ func GitLog(worktreeDir string, count int) ([]string, error) {
 
 // ExecOpts configures the handoff execution.
 type ExecOpts struct {
-	World     string
-	AgentName string
-	Summary   string // optional agent-provided summary
+	World       string
+	AgentName   string
+	Summary     string // optional agent-provided summary
+	Role        string // agent role: "agent", "envoy", "governor", "forge" (default: "agent")
+	WorktreeDir string // explicit worktree path (required for non-outpost roles)
 }
 
 // Exec performs the full handoff sequence:
-// 1. Capture current state
-// 2. Write handoff file
-// 3. Send handoff mail to self (audit trail)
+// 1. Capture current state (if tethered work exists)
+// 2. Write handoff file (if tethered work exists)
+// 3. Send handoff mail to self (audit trail, if tethered)
 // 4. Stop the current tmux session
 // 5. Start a new tmux session with the same worktree
+//
+// For non-outpost agents (envoy, governor, forge) without tethered work,
+// steps 1-3 are skipped — the session is simply cycled, and the existing
+// SessionStart hook re-injects context from durable state.
 func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	logger *events.Logger) error {
 
-	// 1. Capture current state.
-	state, err := Capture(CaptureOpts{
-		World:       opts.World,
-		AgentName: opts.AgentName,
-		Summary:   opts.Summary,
-	}, func(name string, lines int) (string, error) {
-		return sessionMgr.Capture(name, lines)
-	}, GitLog)
-	if err != nil {
-		return fmt.Errorf("failed to capture handoff state: %w", err)
-	}
-
-	// 2. Write handoff file.
-	if err := Write(state); err != nil {
-		return fmt.Errorf("failed to write handoff file: %w", err)
-	}
-
-	// Emit event after writing handoff file (before stopping session).
-	if logger != nil {
-		logger.Emit(events.EventHandoff, "sol", opts.AgentName, "both", map[string]string{
-			"work_item_id": state.WorkItemID,
-			"agent":        opts.AgentName,
-			"world":        opts.World,
-		})
-	}
-
-	// 3. Send handoff mail to self for audit trail.
-	if sphereStore != nil {
-		agentID := fmt.Sprintf("%s/%s", opts.World, opts.AgentName)
-		body := state.Summary
-		if len(state.RecentCommits) > 0 {
-			body += "\n\nRecent commits:\n" + strings.Join(state.RecentCommits, "\n")
-		}
-		if state.WorkflowProgress != "" {
-			body += "\n\nWorkflow: " + state.WorkflowProgress
-		}
-		subject := fmt.Sprintf("HANDOFF: %s", state.WorkItemID)
-		if _, err := sphereStore.SendMessage(agentID, agentID, subject, body, 2, "notification"); err != nil {
-			fmt.Fprintf(os.Stderr, "handoff: failed to send self-notification: %v\n", err)
-		}
+	role := opts.Role
+	if role == "" {
+		role = "agent"
 	}
 
 	sessionName := config.SessionName(opts.World, opts.AgentName)
-	worktreeDir := config.WorktreePath(opts.World, opts.AgentName)
 
-	// 4. Stop the current session (graceful).
+	// Determine worktree directory.
+	worktreeDir := opts.WorktreeDir
+	if worktreeDir == "" {
+		worktreeDir = config.WorktreePath(opts.World, opts.AgentName)
+	}
+
+	// Try to capture state from tethered work (outposts and envoys with active work).
+	workItemID, _ := tether.Read(opts.World, opts.AgentName)
+	hasTether := workItemID != ""
+
+	if hasTether {
+		// Full capture + handoff file + notification for tethered agents.
+		state, err := Capture(CaptureOpts{
+			World:     opts.World,
+			AgentName: opts.AgentName,
+			Summary:   opts.Summary,
+		}, func(name string, lines int) (string, error) {
+			return sessionMgr.Capture(name, lines)
+		}, GitLog)
+		if err != nil {
+			return fmt.Errorf("failed to capture handoff state: %w", err)
+		}
+
+		if err := Write(state); err != nil {
+			return fmt.Errorf("failed to write handoff file: %w", err)
+		}
+
+		// Emit event after writing handoff file (before stopping session).
+		if logger != nil {
+			logger.Emit(events.EventHandoff, "sol", opts.AgentName, "both", map[string]string{
+				"work_item_id": state.WorkItemID,
+				"agent":        opts.AgentName,
+				"world":        opts.World,
+			})
+		}
+
+		// Send handoff mail to self for audit trail.
+		if sphereStore != nil {
+			agentID := fmt.Sprintf("%s/%s", opts.World, opts.AgentName)
+			body := state.Summary
+			if len(state.RecentCommits) > 0 {
+				body += "\n\nRecent commits:\n" + strings.Join(state.RecentCommits, "\n")
+			}
+			if state.WorkflowProgress != "" {
+				body += "\n\nWorkflow: " + state.WorkflowProgress
+			}
+			subject := fmt.Sprintf("HANDOFF: %s", state.WorkItemID)
+			if _, err := sphereStore.SendMessage(agentID, agentID, subject, body, 2, "notification"); err != nil {
+				fmt.Fprintf(os.Stderr, "handoff: failed to send self-notification: %v\n", err)
+			}
+		}
+	} else {
+		// No tether — emit event only.
+		if logger != nil {
+			logger.Emit(events.EventHandoff, "sol", opts.AgentName, "both", map[string]string{
+				"agent": opts.AgentName,
+				"world": opts.World,
+				"role":  role,
+			})
+		}
+	}
+
+	// Stop the current session (graceful).
 	if err := sessionMgr.Stop(sessionName, false); err != nil {
 		fmt.Fprintf(os.Stderr, "handoff: failed to stop session %s: %v\n", sessionName, err)
 	}
 
-	// 5. Start a new session with the same worktree.
+	// Start a new session with the same worktree.
 	env := map[string]string{
 		"SOL_HOME":  config.Home(),
 		"SOL_WORLD": opts.World,
 		"SOL_AGENT": opts.AgentName,
 	}
-	if err := sessionMgr.Start(sessionName, worktreeDir, config.SessionCommand(), env, "agent", opts.World); err != nil {
+	sessionCmd := config.BuildSessionCommand(
+		config.SettingsPath(worktreeDir),
+		fmt.Sprintf("Agent %s, world %s (handoff). If no context appears, run: sol prime --world=%s --agent=%s",
+			opts.AgentName, opts.World, opts.World, opts.AgentName),
+	)
+	if err := sessionMgr.Start(sessionName, worktreeDir, sessionCmd, env, role, opts.World); err != nil {
 		// Start failed — force-kill any remnant session, then retry once.
 		fmt.Fprintf(os.Stderr, "handoff: new session failed, attempting recovery: %v\n", err)
 		_ = sessionMgr.Stop(sessionName, true)
-		if restartErr := sessionMgr.Start(sessionName, worktreeDir, config.SessionCommand(), env, "agent", opts.World); restartErr != nil {
+		if restartErr := sessionMgr.Start(sessionName, worktreeDir, sessionCmd, env, role, opts.World); restartErr != nil {
 			fmt.Fprintf(os.Stderr, "handoff: recovery also failed: %v\n", restartErr)
 			return fmt.Errorf("failed to start new session (recovery also failed): %w", restartErr)
 		}

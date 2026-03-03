@@ -175,8 +175,8 @@ func Start(opts StartOpts, sphereStore StartStore, mgr SessionManager) error {
 		return fmt.Errorf("envoy session %q already running", sessName)
 	}
 
-	// 3. Install hooks — .claude/settings.local.json with brief hooks.
-	if err := installHooks(worktree); err != nil {
+	// 3. Install hooks — .claude/settings.local.json with brief and PreCompact hooks.
+	if err := installHooks(worktree, opts.World, opts.Name); err != nil {
 		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 
@@ -196,8 +196,8 @@ func Start(opts StartOpts, sphereStore StartStore, mgr SessionManager) error {
 	return nil
 }
 
-// installHooks writes .claude/settings.local.json with brief hooks.
-func installHooks(worktreeDir string) error {
+// installHooks writes .claude/settings.local.json with brief and PreCompact hooks.
+func installHooks(worktreeDir, world, name string) error {
 	claudeDir := filepath.Join(worktreeDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create .claude directory: %w", err)
@@ -225,7 +225,17 @@ func installHooks(worktreeDir string) error {
 					},
 				},
 			},
+			"PreCompact": {
+				{
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("sol handoff --world=%s --agent=%s", world, name),
+						},
+					},
+				},
 			},
+		},
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")

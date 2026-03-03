@@ -323,6 +323,13 @@ func TestStart(t *testing.T) {
 	if _, ok := cfg.Hooks["Stop"]; ok {
 		t.Error("unexpected Stop hooks — removed in favor of CLAUDE.md instructions")
 	}
+	if pcGroups, ok := cfg.Hooks["PreCompact"]; !ok {
+		t.Error("no PreCompact hooks")
+	} else if len(pcGroups) != 1 {
+		t.Errorf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
+	} else if pcGroups[0].Hooks[0].Command != "sol handoff --world=myworld --agent=Echo" {
+		t.Errorf("unexpected PreCompact command: %q", pcGroups[0].Hooks[0].Command)
+	}
 
 	// CLAUDE.md is now installed by the CLI layer (following forge pattern),
 	// so we don't check for it here.

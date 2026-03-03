@@ -5,7 +5,10 @@ import (
 	"os"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/forge"
+	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -51,13 +54,25 @@ var handoffCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
+		// Look up agent to determine role and worktree path.
+		agentID := world + "/" + agent
+		agentRecord, err := sphereStore.GetAgent(agentID)
+		if err != nil {
+			return fmt.Errorf("failed to get agent %q: %w", agentID, err)
+		}
+
+		role := agentRecord.Role
+		worktreeDir := worktreeDirForRole(world, agent, role)
+
 		mgr := session.New()
 		logger := events.NewLogger(config.Home())
 
 		if err := handoff.Exec(handoff.ExecOpts{
-			World:     world,
-			AgentName: agent,
-			Summary:   handoffSummary,
+			World:       world,
+			AgentName:   agent,
+			Summary:     handoffSummary,
+			Role:        role,
+			WorktreeDir: worktreeDir,
 		}, mgr, sphereStore, logger); err != nil {
 			return err
 		}
@@ -65,6 +80,20 @@ var handoffCmd = &cobra.Command{
 		fmt.Println("Handoff complete. New session starting.")
 		return nil
 	},
+}
+
+// worktreeDirForRole returns the worktree path for an agent based on its role.
+func worktreeDirForRole(world, agentName, role string) string {
+	switch role {
+	case "envoy":
+		return envoy.WorktreePath(world, agentName)
+	case "governor":
+		return governor.GovernorDir(world)
+	case "forge":
+		return forge.WorktreePath(world)
+	default:
+		return config.WorktreePath(world, agentName)
+	}
 }
 
 func init() {
