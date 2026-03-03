@@ -62,6 +62,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - Architectural decisions get an ADR in `docs/decisions/`
 - ADR format: lightweight MADR — Context → Options Considered (when warranted) → Decision → Consequences
 - CLI changes (new commands, changed flags, removed subcommands) must be reflected in `docs/cli.md`
+- **Worktree excludes**: Sol-specific dotfiles (`.claude/`, `.brief/`, `.workflow/`) are excluded from git via `.git/info/exclude` in the managed repo (`setup.InstallExcludes`). If you add a new sol-managed path that gets written inside worktrees, add it to the exclude list in `internal/setup/setup.go`.
 
 ## Testing
 - Tests that create tmux sessions MUST use `setupTestEnv()` or `setupTestEnvWithRepo()` from `test/integration/helpers_test.go`

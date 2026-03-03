@@ -9,6 +9,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/governor"
+	"github.com/nevinsm/sol/internal/setup"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -48,6 +49,11 @@ func SyncRepo(world string) error {
 	if out, err := pullCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to pull for world %q: %s: %w",
 			world, strings.TrimSpace(string(out)), err)
+	}
+
+	// Ensure sol-specific excludes are in place (idempotent).
+	if err := setup.InstallExcludes(repoPath); err != nil {
+		return fmt.Errorf("failed to install git excludes for world %q: %w", world, err)
 	}
 
 	return nil

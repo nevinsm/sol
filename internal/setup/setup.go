@@ -72,7 +72,41 @@ func CloneRepo(world, source string) error {
 		}
 	}
 
+	// Exclude sol-specific paths from git tracking via .git/info/exclude.
+	// This avoids modifying the project's .gitignore while ensuring .claude/
+	// and .brief/ directories (created by sol in worktrees) are never committed.
+	if err := InstallExcludes(repoPath); err != nil {
+		return fmt.Errorf("failed to install git excludes for world %q: %w", world, err)
+	}
+
 	return nil
+}
+
+// InstallExcludes appends sol-managed path patterns to .git/info/exclude in the
+// given repo. These patterns propagate to all worktrees created from the repo.
+// Idempotent — skips if the patterns are already present.
+//
+// If you add a new sol-managed dotdir that gets written inside worktrees,
+// add it here. Keep in sync with the "Worktree excludes" note in CLAUDE.md.
+func InstallExcludes(repoPath string) error {
+	excludePath := filepath.Join(repoPath, ".git", "info", "exclude")
+
+	existing, err := os.ReadFile(excludePath)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", excludePath, err)
+	}
+	if strings.Contains(string(existing), "# sol-managed paths") {
+		return nil
+	}
+
+	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to open %s: %w", excludePath, err)
+	}
+	defer f.Close()
+
+	_, err = f.WriteString("\n# sol-managed paths\n.claude/\n.brief/\n.workflow/\n")
+	return err
 }
 
 // Run executes the full first-time setup sequence.

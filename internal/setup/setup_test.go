@@ -334,6 +334,55 @@ func TestCloneRepoFromURL(t *testing.T) {
 	}
 }
 
+func TestCloneRepoInstallsExcludes(t *testing.T) {
+	sourceDir := t.TempDir()
+	runGit(t, sourceDir, "init")
+	runGit(t, sourceDir, "commit", "--allow-empty", "-m", "init")
+
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	world := "testworld"
+	os.MkdirAll(filepath.Join(solHome, world), 0o755)
+
+	if err := CloneRepo(world, sourceDir); err != nil {
+		t.Fatalf("CloneRepo failed: %v", err)
+	}
+
+	// Verify .git/info/exclude contains sol patterns.
+	repoPath := config.RepoPath(world)
+	data, err := os.ReadFile(filepath.Join(repoPath, ".git", "info", "exclude"))
+	if err != nil {
+		t.Fatalf("failed to read exclude file: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, ".claude/") {
+		t.Error("exclude file missing .claude/ pattern")
+	}
+	if !strings.Contains(content, ".brief/") {
+		t.Error("exclude file missing .brief/ pattern")
+	}
+	if !strings.Contains(content, ".workflow/") {
+		t.Error("exclude file missing .workflow/ pattern")
+	}
+
+	// Verify git actually ignores these paths.
+	os.MkdirAll(filepath.Join(repoPath, ".claude"), 0o755)
+	writeFile(t, filepath.Join(repoPath, ".claude", "CLAUDE.md"), "test")
+	os.MkdirAll(filepath.Join(repoPath, ".brief"), 0o755)
+	writeFile(t, filepath.Join(repoPath, ".brief", "memory.md"), "test")
+	os.MkdirAll(filepath.Join(repoPath, ".workflow"), 0o755)
+	writeFile(t, filepath.Join(repoPath, ".workflow", "manifest.json"), "test")
+
+	cmd := exec.Command("git", "-C", repoPath, "status", "--porcelain")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git status failed: %v", err)
+	}
+	if strings.Contains(string(out), ".claude") || strings.Contains(string(out), ".brief") || strings.Contains(string(out), ".workflow") {
+		t.Errorf("sol paths not ignored by git, status output: %s", out)
+	}
+}
+
 func TestCloneRepoAlreadyExists(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
