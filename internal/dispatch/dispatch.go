@@ -61,6 +61,30 @@ func WorktreePath(world, agentName string) string {
 	return config.WorktreePath(world, agentName)
 }
 
+// cleanupWorktree removes a git worktree and prunes stale references.
+// Best-effort: logs what was cleaned up but does not fail.
+func cleanupWorktree(world, worktreeDir string) {
+	repoPath := config.RepoPath(world)
+
+	rmCmd := exec.Command("git", "-C", repoPath, "worktree", "remove", "--force", worktreeDir)
+	if out, err := rmCmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "resolve: worktree remove failed: %s: %v\n",
+			strings.TrimSpace(string(out)), err)
+		// Fallback: remove directory directly (matches cast cleanup pattern).
+		if removeErr := os.RemoveAll(worktreeDir); removeErr != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to remove worktree dir %s: %v\n", worktreeDir, removeErr)
+			return
+		}
+	}
+	fmt.Fprintf(os.Stderr, "resolve: cleaned up worktree %s\n", worktreeDir)
+
+	pruneCmd := exec.Command("git", "-C", repoPath, "worktree", "prune")
+	if out, err := pruneCmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "resolve: worktree prune failed: %s: %v\n",
+			strings.TrimSpace(string(out)), err)
+	}
+}
+
 // CastResult holds the output of a successful cast operation.
 type CastResult struct {
 	WorkItemID  string
@@ -694,6 +718,10 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 			if err := mgr.Stop(sessName, true); err != nil {
 				fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
 			}
+			// 7b. Remove worktree for outpost agents (ephemeral worktrees only).
+			if agent.Role == "agent" {
+				cleanupWorktree(opts.World, worktreeDir)
+			}
 		}()
 	} else {
 		sessionKept = true
@@ -784,6 +812,10 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 			time.Sleep(1 * time.Second)
 			if err := mgr.Stop(sessName, true); err != nil {
 				fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
+			}
+			// 6b. Remove worktree for outpost agents (ephemeral worktrees only).
+			if role == "agent" {
+				cleanupWorktree(opts.World, worktreeDir)
 			}
 		}()
 	} else {

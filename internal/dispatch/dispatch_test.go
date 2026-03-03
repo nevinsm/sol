@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
@@ -1330,6 +1331,76 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	// SessionKept should be false for regular agents.
 	if result.SessionKept {
 		t.Error("expected SessionKept to be false for regular agent resolve")
+	}
+}
+
+func TestResolveRemovesWorktreeForOutpostAgent(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWorkItem("Cleanup test", "Test worktree cleanup", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update work item: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Set up a real managed repo and create a worktree from it.
+	repoPath := config.RepoPath("ember")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatalf("failed to create repo dir: %v", err)
+	}
+	runGit(t, repoPath, "init")
+	runGit(t, repoPath, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, repoPath)
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	branchName := fmt.Sprintf("outpost/Toast/%s", itemID)
+	runGit(t, repoPath, "worktree", "add", worktreeDir, "-b", branchName, "HEAD")
+
+	// Verify worktree exists before resolve.
+	if _, err := os.Stat(worktreeDir); err != nil {
+		t.Fatalf("worktree should exist before resolve: %v", err)
+	}
+
+	sessName := SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	result, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if result.SessionKept {
+		t.Error("expected SessionKept to be false for outpost agent")
+	}
+
+	// Wait for the async cleanup goroutine (1s delay + execution time).
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(worktreeDir); os.IsNotExist(err) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Verify worktree directory was removed.
+	if _, err := os.Stat(worktreeDir); !os.IsNotExist(err) {
+		t.Errorf("worktree directory should be removed after resolve, but still exists: %s", worktreeDir)
 	}
 }
 
