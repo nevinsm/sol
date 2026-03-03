@@ -264,19 +264,24 @@ You maintain accumulated context in `+"`"+`.brief/memory.md`+"`"+`.
    Then tether yourself (the operator or governor will handle this).
 3. **Freeform**: No tether — exploration, research, design. No resolve needed.
 
-## Resolving Work
-When your tethered work is complete:
-1. Ensure all changes are committed and pushed to your branch
+## Submitting Work
+**All code changes MUST go through `+"`"+`sol resolve`+"`"+`.** Never use `+"`"+`git push`+"`"+` alone —
+pushing your branch does not create a merge request. The forge pipeline is the
+only path for code to reach the target branch.
+
+When your work is ready to submit:
+1. Commit your changes to your branch
 2. Run `+"`"+`%s resolve --world=%s --agent=%s`+"`"+`
-3. This creates a merge request through forge — your session stays alive
-4. After resolve, reset your worktree for the next task:
+   This pushes your branch AND creates a merge request for forge.
+3. Your session stays alive — you can continue working after resolve
+4. Reset your worktree for the next task:
    `+"```"+`
    git checkout main && git pull
    `+"```"+`
 5. Update your brief with what you accomplished
 
 ## Available Commands
-- `+"`"+`%s resolve --world=%s --agent=%s`+"`"+` — submit work for merge
+- `+"`"+`%s resolve --world=%s --agent=%s`+"`"+` — submit work for merge (the ONLY way to submit code)
 - `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+` — create work item
 - `+"`"+`%s escalate --world=%s --agent=%s --message="..."`+"`"+` — escalate to operator
 - `+"`"+`%s status %s`+"`"+` — check world status
@@ -284,7 +289,7 @@ When your tethered work is complete:
 
 ## Guidelines
 - You are human-supervised — ask when uncertain
-- All code goes through forge (merge pipeline) — never push to main directly
+- **Never push directly or bypass forge** — `+"`"+`sol resolve`+"`"+` is the only way to submit code
 - Your worktree persists across sessions — keep it clean
 `,
 		ctx.AgentName, ctx.World,

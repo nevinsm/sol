@@ -190,9 +190,12 @@ func TestGenerateEnvoyClaudeMD(t *testing.T) {
 		"Tethered work",
 		"Self-service",
 		"Freeform",
-		"Resolving Work",
+		"Submitting Work",
+		"All code changes MUST go through",
+		"Never use `git push` alone",
+		"the ONLY way to submit code",
 		"session stays alive",
-		"forge",
+		"Never push directly or bypass forge",
 	}
 	for _, check := range checks {
 		if !strings.Contains(content, check) {
