@@ -313,6 +313,68 @@ func TestPush(t *testing.T) {
 	}
 }
 
+func TestMarkFailedReopensWorkItem(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.WorkItem{
+		ID:       "sol-aaa11111",
+		Title:    "Test feature",
+		Status:   "done",
+		Assignee: "Toast",
+	}
+
+	sphereStore := newMockSphereStore()
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         DefaultConfig(),
+	}
+
+	if err := r.MarkFailed("mr-00000001"); err != nil {
+		t.Fatalf("MarkFailed() error: %v", err)
+	}
+
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+
+	// Verify MR phase set to failed.
+	if phase, ok := worldStore.phaseUpdates["mr-00000001"]; !ok || phase != "failed" {
+		t.Errorf("MR phase = %q, want 'failed'", phase)
+	}
+
+	// Verify work item reopened.
+	item := worldStore.items["sol-aaa11111"]
+	if item.Status != "open" {
+		t.Errorf("work item status = %q, want 'open'", item.Status)
+	}
+	if item.Assignee != "" {
+		t.Errorf("work item assignee = %q, want empty (cleared)", item.Assignee)
+	}
+
+	// Verify escalation created.
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.escalations) != 1 {
+		t.Fatalf("expected 1 escalation, got %d", len(sphereStore.escalations))
+	}
+	esc := sphereStore.escalations[0]
+	if esc.severity != "high" {
+		t.Errorf("escalation severity = %q, want 'high'", esc.severity)
+	}
+	if esc.source != "ember/forge" {
+		t.Errorf("escalation source = %q, want 'ember/forge'", esc.source)
+	}
+	if !strings.Contains(esc.description, "sol-aaa11111") {
+		t.Errorf("escalation description should mention work item ID, got: %s", esc.description)
+	}
+}
+
 func TestMarkMergedClosesWorkItem(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{

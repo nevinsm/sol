@@ -334,9 +334,11 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 	return results, nil
 }
 
-// TryCloseCaravan checks if all items in a caravan are done/closed.
+// TryCloseCaravan checks if all items in a caravan are closed (merged).
 // If so, sets the caravan status to "closed".
 // Returns true if the caravan was closed.
+// Note: "done" (code complete, awaiting merge) is NOT sufficient — all items
+// must be "closed" (fully merged) for the caravan to close.
 func (s *Store) TryCloseCaravan(caravanID string,
 	worldOpener func(world string) (*Store, error)) (bool, error) {
 
@@ -350,7 +352,7 @@ func (s *Store) TryCloseCaravan(caravanID string,
 	}
 
 	for _, st := range statuses {
-		if st.WorkItemStatus != "done" && st.WorkItemStatus != "closed" {
+		if st.WorkItemStatus != "closed" {
 			return false, nil
 		}
 	}

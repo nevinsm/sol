@@ -749,7 +749,7 @@ func TestCaravanAutoClose(t *testing.T) {
 		t.Fatalf("TryCloseCaravan: %v", err)
 	}
 	if !closed {
-		t.Error("caravan should auto-close when all items are done/closed")
+		t.Error("caravan should auto-close when all items are closed (merged)")
 	}
 
 	// Verify caravan status.
@@ -888,13 +888,14 @@ func TestCaravanMultiWorld(t *testing.T) {
 		}
 	}
 
-	// Mark all items done → caravan should auto-close.
+	// Mark all items closed (merged) → caravan should auto-close.
+	// Note: "done" (code complete) is NOT sufficient — items must be "closed" (merged).
 	as, err := store.OpenWorld("alpha")
 	if err != nil {
 		t.Fatalf("open alpha world: %v", err)
 	}
-	if err := as.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "done"}); err != nil {
-		t.Fatalf("update work item A: %v", err)
+	if err := as.CloseWorkItem(idA); err != nil {
+		t.Fatalf("close work item A: %v", err)
 	}
 	as.Close()
 
@@ -902,8 +903,11 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open beta world: %v", err)
 	}
-	if err := bs.UpdateWorkItem(idC, store.WorkItemUpdates{Status: "done"}); err != nil {
-		t.Fatalf("update work item C: %v", err)
+	if err := bs.CloseWorkItem(idB); err != nil {
+		t.Fatalf("close work item B: %v", err)
+	}
+	if err := bs.CloseWorkItem(idC); err != nil {
+		t.Fatalf("close work item C: %v", err)
 	}
 	bs.Close()
 
@@ -912,7 +916,7 @@ func TestCaravanMultiWorld(t *testing.T) {
 		t.Fatalf("TryCloseCaravan: %v", err)
 	}
 	if !closed {
-		t.Error("multi-world caravan should auto-close when all items done")
+		t.Error("multi-world caravan should auto-close when all items closed (merged)")
 	}
 }
 

@@ -572,14 +572,23 @@ var forgeMarkFailedCmd = &cobra.Command{
 		defer worldStore.Close()
 		defer sphereStore.Close()
 
+		// Look up MR before MarkFailed to capture work_item_id for the event.
+		mr, mrErr := ref.GetMergeRequest(mrID)
+
 		if err := ref.MarkFailed(mrID); err != nil {
 			return err
 		}
 
-		eventLog := events.NewLogger(config.Home())
-		eventLog.Emit(events.EventMergeFailed, "forge", "forge", "both", map[string]string{
+		payload := map[string]string{
 			"merge_request_id": mrID,
-		})
+			"action":           "reopened",
+		}
+		if mrErr == nil {
+			payload["work_item_id"] = mr.WorkItemID
+		}
+
+		eventLog := events.NewLogger(config.Home())
+		eventLog.Emit(events.EventMergeFailed, "forge", "forge", "both", payload)
 
 		fmt.Printf("Failed: %s\n", mrID)
 		return nil

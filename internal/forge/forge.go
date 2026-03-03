@@ -35,6 +35,7 @@ type SphereStore interface {
 	CreateAgent(name, world, role string) (string, error)
 	GetAgent(id string) (*store.Agent, error)
 	UpdateAgentState(id, state, tetherItem string) error
+	CreateEscalation(severity, source, description string) (string, error)
 	Close() error
 }
 
