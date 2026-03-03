@@ -127,6 +127,73 @@ func TestDispatchCapacityEnforced(t *testing.T) {
 	}
 }
 
+func TestAgentCreateCapacityEnforced(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	t.Setenv("SOL_HOME", gtHome)
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	sourceRepo := setupGitRepo(t)
+	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo="+sourceRepo)
+	if err != nil {
+		t.Fatalf("world init failed: %v: %s", err, out)
+	}
+
+	// Set capacity = 1.
+	writeWorldTOML(t, gtHome, "myworld", sourceRepo, map[string]string{
+		"agents": "capacity = 1",
+	})
+
+	// First agent create → should succeed.
+	out, err = runGT(t, gtHome, "agent", "create", "Alpha", "--world=myworld")
+	if err != nil {
+		t.Fatalf("first agent create failed: %v: %s", err, out)
+	}
+
+	// Second agent create → should fail with capacity error.
+	out, err = runGT(t, gtHome, "agent", "create", "Bravo", "--world=myworld")
+	if err == nil {
+		t.Fatalf("second agent create should have failed with capacity error, got: %s", out)
+	}
+	if !strings.Contains(out, "reached agent capacity") {
+		t.Fatalf("expected 'reached agent capacity' error, got: %s", out)
+	}
+}
+
+func TestAgentCreateCapacitySkipsNonAgentRoles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	t.Setenv("SOL_HOME", gtHome)
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	sourceRepo := setupGitRepo(t)
+	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo="+sourceRepo)
+	if err != nil {
+		t.Fatalf("world init failed: %v: %s", err, out)
+	}
+
+	// Set capacity = 1.
+	writeWorldTOML(t, gtHome, "myworld", sourceRepo, map[string]string{
+		"agents": "capacity = 1",
+	})
+
+	// Create one outpost agent to fill capacity.
+	out, err = runGT(t, gtHome, "agent", "create", "Alpha", "--world=myworld")
+	if err != nil {
+		t.Fatalf("agent create failed: %v: %s", err, out)
+	}
+
+	// Creating an envoy should succeed despite capacity being full.
+	out, err = runGT(t, gtHome, "agent", "create", "Consul", "--world=myworld", "--role=envoy")
+	if err != nil {
+		t.Fatalf("envoy create should bypass capacity check, got: %v: %s", err, out)
+	}
+}
+
 func TestDispatchCapacityZeroUnlimited(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

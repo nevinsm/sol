@@ -43,6 +43,29 @@ var agentCreateCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
+		// Enforce capacity for outpost agents (role=agent).
+		if agentCreateRole == "agent" {
+			worldCfg, err := config.LoadWorldConfig(agentCreateWorld)
+			if err != nil {
+				return fmt.Errorf("failed to load world config for %q: %w", agentCreateWorld, err)
+			}
+			if worldCfg.Agents.Capacity > 0 {
+				agents, err := sphereStore.ListAgents(agentCreateWorld, "")
+				if err != nil {
+					return fmt.Errorf("failed to list agents for world %q: %w", agentCreateWorld, err)
+				}
+				count := 0
+				for _, a := range agents {
+					if a.Role == "agent" {
+						count++
+					}
+				}
+				if count >= worldCfg.Agents.Capacity {
+					return fmt.Errorf("world %s has reached agent capacity (%d)", agentCreateWorld, worldCfg.Agents.Capacity)
+				}
+			}
+		}
+
 		id, err := sphereStore.CreateAgent(name, agentCreateWorld, agentCreateRole)
 		if err != nil {
 			return err
