@@ -83,6 +83,12 @@
 | `sol sentinel stop <world>` | Stop the sentinel |
 | `sol sentinel attach <world>` | Attach to the sentinel session |
 
+## Merge Requests (Plumbing)
+
+| Command | Description |
+|---------|-------------|
+| `sol mr create --world=W --branch=B --work-item=ID` | Create a merge request manually. `--priority` (1-3, default from work item). `--json` supported. |
+
 ## Forge (Merge Pipeline)
 
 | Command | Description |
