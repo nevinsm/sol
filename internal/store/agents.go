@@ -178,6 +178,23 @@ func (s *Store) ListAgents(world string, state string) ([]Agent, error) {
 	return agents, nil
 }
 
+// DeleteAgent removes a single agent record by ID ("world/name").
+// Returns ErrNotFound if the agent does not exist.
+func (s *Store) DeleteAgent(id string) error {
+	result, err := s.db.Exec(`DELETE FROM agents WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete agent %q: %w", id, err)
+	}
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
+	if n == 0 {
+		return fmt.Errorf("agent %q: %w", id, ErrNotFound)
+	}
+	return nil
+}
+
 // DeleteAgentsForWorld removes all agent records for the given world.
 // Used during world deletion to clean up sphere state.
 func (s *Store) DeleteAgentsForWorld(world string) error {
