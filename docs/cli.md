@@ -33,6 +33,7 @@
 |---------|-------------|
 | `sol agent create <name> --world=W` | Create an agent (default role: agent) |
 | `sol agent list --world=W` | List agents in a world |
+| `sol agent reset <name> --world=W` | Reset a stuck agent to idle (clears tether, untethers work item) |
 
 ## Store (Work Items)
 
