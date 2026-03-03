@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -70,6 +71,16 @@ func initGitRepo(t *testing.T, dir string) {
 	}
 }
 
+// runGitCmd runs a git command with the given args and fails the test on error.
+func runGitCmd(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s failed: %s: %v", strings.Join(args, " "), out, err)
+	}
+}
+
 func TestEnvoyCreateCommand(t *testing.T) {
 	solHome := initTestWorld(t, "myworld")
 
@@ -77,15 +88,17 @@ func TestEnvoyCreateCommand(t *testing.T) {
 	sourceRepo := filepath.Join(t.TempDir(), "repo")
 	initGitRepo(t, sourceRepo)
 
+	// Create managed repo clone.
+	repoPath := config.RepoPath("myworld")
+	runGitCmd(t, sourceRepo, "clone", sourceRepo, repoPath)
+
 	// Reset flags.
 	envoyCreateWorld = "myworld"
-	envoyCreateSourceRepo = sourceRepo
 	defer func() {
 		envoyCreateWorld = ""
-		envoyCreateSourceRepo = ""
 	}()
 
-	rootCmd.SetArgs([]string{"envoy", "create", "scout", "--world=myworld", "--source-repo=" + sourceRepo})
+	rootCmd.SetArgs([]string{"envoy", "create", "scout", "--world=myworld"})
 
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
@@ -132,20 +145,6 @@ func TestEnvoyCreateCommand(t *testing.T) {
 	}
 	if agent.Role != "envoy" {
 		t.Errorf("agent role = %q, want \"envoy\"", agent.Role)
-	}
-
-	// Verify world.toml source_repo fallback works by testing the error case.
-	envoyCreateSourceRepo = ""
-	rootCmd.SetArgs([]string{"envoy", "create", "scout2", "--world=myworld"})
-	err = rootCmd.Execute()
-	if err == nil {
-		// If no source_repo in world.toml and no --source-repo, should error.
-		// But if there IS a source_repo in world.toml, it would succeed.
-		// Since we didn't write world.toml, it should fail.
-		t.Log("warning: envoy create without --source-repo succeeded (world.toml may have source_repo)")
-	} else if !strings.Contains(err.Error(), "source repo required") {
-		// If it errors, it should be the specific error.
-		t.Logf("envoy create without --source-repo error (expected): %v", err)
 	}
 
 	_ = solHome

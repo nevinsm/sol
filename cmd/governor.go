@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
@@ -22,10 +23,7 @@ var governorCmd = &cobra.Command{
 
 // --- sol governor start ---
 
-var (
-	governorStartWorld      string
-	governorStartSourceRepo string
-)
+var governorStartWorld string
 
 var governorStartCmd = &cobra.Command{
 	Use:          "start",
@@ -44,12 +42,9 @@ var governorStartCmd = &cobra.Command{
 			return err
 		}
 
-		sourceRepo := governorStartSourceRepo
-		if sourceRepo == "" {
-			sourceRepo = worldCfg.World.SourceRepo
-		}
-		if sourceRepo == "" {
-			return fmt.Errorf("source repo required: set in world.toml or pass --source-repo")
+		sourceRepo, err := dispatch.ResolveSourceRepo(governorStartWorld, worldCfg)
+		if err != nil {
+			return err
 		}
 
 		sphereStore, err := store.OpenSphere()
@@ -298,7 +293,6 @@ func init() {
 
 	// governor start flags
 	governorStartCmd.Flags().StringVar(&governorStartWorld, "world", "", "world name")
-	governorStartCmd.Flags().StringVar(&governorStartSourceRepo, "source-repo", "", "path to source git repository")
 
 	// governor stop flags
 	governorStopCmd.Flags().StringVar(&governorStopWorld, "world", "", "world name")

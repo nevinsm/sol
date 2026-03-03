@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
@@ -24,10 +25,7 @@ var envoyCmd = &cobra.Command{
 
 // --- sol envoy create ---
 
-var (
-	envoyCreateWorld      string
-	envoyCreateSourceRepo string
-)
+var envoyCreateWorld string
 
 var envoyCreateCmd = &cobra.Command{
 	Use:          "create <name>",
@@ -43,16 +41,13 @@ var envoyCreateCmd = &cobra.Command{
 			return err
 		}
 
-		sourceRepo := envoyCreateSourceRepo
-		if sourceRepo == "" {
-			worldCfg, err := config.LoadWorldConfig(envoyCreateWorld)
-			if err != nil {
-				return err
-			}
-			sourceRepo = worldCfg.World.SourceRepo
+		worldCfg, err := config.LoadWorldConfig(envoyCreateWorld)
+		if err != nil {
+			return err
 		}
-		if sourceRepo == "" {
-			return fmt.Errorf("source repo required: set in world.toml or pass --source-repo")
+		sourceRepo, err := dispatch.ResolveSourceRepo(envoyCreateWorld, worldCfg)
+		if err != nil {
+			return err
 		}
 
 		sphereStore, err := store.OpenSphere()
@@ -328,7 +323,6 @@ func init() {
 
 	// envoy create flags
 	envoyCreateCmd.Flags().StringVar(&envoyCreateWorld, "world", "", "world name")
-	envoyCreateCmd.Flags().StringVar(&envoyCreateSourceRepo, "source-repo", "", "path to source git repository")
 
 	// envoy start flags
 	envoyStartCmd.Flags().StringVar(&envoyStartWorld, "world", "", "world name")

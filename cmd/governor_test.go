@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -19,15 +20,20 @@ func TestGovernorStartCommand(t *testing.T) {
 	sourceRepo := filepath.Join(t.TempDir(), "repo")
 	initGitRepo(t, sourceRepo)
 
+	// Create managed repo clone.
+	repoPath := config.RepoPath("myworld")
+	cmd := exec.Command("git", "clone", sourceRepo, repoPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git clone failed: %s: %v", out, err)
+	}
+
 	// Reset flags.
 	governorStartWorld = "myworld"
-	governorStartSourceRepo = sourceRepo
 	defer func() {
 		governorStartWorld = ""
-		governorStartSourceRepo = ""
 	}()
 
-	rootCmd.SetArgs([]string{"governor", "start", "--world=myworld", "--source-repo=" + sourceRepo})
+	rootCmd.SetArgs([]string{"governor", "start", "--world=myworld"})
 
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()

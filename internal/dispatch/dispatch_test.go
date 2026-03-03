@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/store"
@@ -1329,5 +1330,66 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	// SessionKept should be false for regular agents.
 	if result.SessionKept {
 		t.Error("expected SessionKept to be false for regular agent resolve")
+	}
+}
+
+// --- ResolveSourceRepo tests ---
+
+func TestResolveSourceRepoManagedClone(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Create managed repo directory.
+	repoPath := config.RepoPath("testworld")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatalf("failed to create repo dir: %v", err)
+	}
+
+	result, err := ResolveSourceRepo("testworld", config.WorldConfig{})
+	if err != nil {
+		t.Fatalf("ResolveSourceRepo failed: %v", err)
+	}
+	if result != repoPath {
+		t.Errorf("expected %q, got %q", repoPath, result)
+	}
+}
+
+func TestResolveSourceRepoConfigFallback(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// No managed clone exists — should fall back to config value.
+	cfg := config.WorldConfig{}
+	cfg.World.SourceRepo = "/some/legacy/path"
+
+	result, err := ResolveSourceRepo("testworld", cfg)
+	if err != nil {
+		t.Fatalf("ResolveSourceRepo failed: %v", err)
+	}
+	if result != "/some/legacy/path" {
+		t.Errorf("expected /some/legacy/path, got %q", result)
+	}
+}
+
+func TestResolveSourceRepoManagedCloneTakesPriority(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Create managed repo directory.
+	repoPath := config.RepoPath("testworld")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatalf("failed to create repo dir: %v", err)
+	}
+
+	// Config also has a source_repo — managed clone should take priority.
+	cfg := config.WorldConfig{}
+	cfg.World.SourceRepo = "/some/other/path"
+
+	result, err := ResolveSourceRepo("testworld", cfg)
+	if err != nil {
+		t.Fatalf("ResolveSourceRepo failed: %v", err)
+	}
+	if result != repoPath {
+		t.Errorf("expected managed clone %q, got %q", repoPath, result)
 	}
 }

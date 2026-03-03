@@ -391,7 +391,7 @@ func TestEnvoyCreateAndList(t *testing.T) {
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
 	// Create envoy.
-	out, err := runGT(t, gtHome, "envoy", "create", "scout", "--world=myworld", "--source-repo="+sourceRepo)
+	out, err := runGT(t, gtHome, "envoy", "create", "scout", "--world=myworld")
 	if err != nil {
 		t.Fatalf("envoy create: %v: %s", err, out)
 	}
@@ -442,7 +442,7 @@ func TestEnvoyStartStop(t *testing.T) {
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
-	createEnvoy(t, gtHome, "myworld", "scout", sourceRepo)
+	createEnvoy(t, gtHome, "myworld", "scout")
 
 	// Start envoy.
 	out, err := runGT(t, gtHome, "envoy", "start", "scout", "--world=myworld")
@@ -480,7 +480,7 @@ func TestEnvoyBriefAndDebrief(t *testing.T) {
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
-	createEnvoy(t, gtHome, "myworld", "scout", sourceRepo)
+	createEnvoy(t, gtHome, "myworld", "scout")
 
 	// Write brief content.
 	briefDir := filepath.Join(gtHome, "myworld", "envoys", "scout", ".brief")
@@ -534,7 +534,7 @@ func TestEnvoyHooksInstalled(t *testing.T) {
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
-	createEnvoy(t, gtHome, "myworld", "scout", sourceRepo)
+	createEnvoy(t, gtHome, "myworld", "scout")
 
 	// Start envoy to trigger hook installation.
 	out, err := runGT(t, gtHome, "envoy", "start", "scout", "--world=myworld")
@@ -581,7 +581,7 @@ func TestGovernorStartStop(t *testing.T) {
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
 	// Start governor.
-	out, err := runGT(t, gtHome, "governor", "start", "--world=myworld", "--source-repo="+sourceRepo)
+	out, err := runGT(t, gtHome, "governor", "start", "--world=myworld")
 	if err != nil {
 		t.Fatalf("governor start: %v: %s", err, out)
 	}
@@ -640,7 +640,7 @@ func TestGovernorRefreshMirror(t *testing.T) {
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
 	// Start governor.
-	out, err := runGT(t, gtHome, "governor", "start", "--world=myworld", "--source-repo="+sourceRepo)
+	out, err := runGT(t, gtHome, "governor", "start", "--world=myworld")
 	if err != nil {
 		t.Fatalf("governor start: %v: %s", err, out)
 	}
@@ -648,12 +648,13 @@ func TestGovernorRefreshMirror(t *testing.T) {
 		runGT(t, gtHome, "governor", "stop", "--world=myworld")
 	})
 
-	// Add a commit to source repo.
-	if err := os.WriteFile(filepath.Join(sourceRepo, "newfile.txt"), []byte("new content"), 0o644); err != nil {
+	// Add a commit to the managed clone (which is the mirror's origin).
+	managedRepo := filepath.Join(gtHome, "myworld", "repo")
+	if err := os.WriteFile(filepath.Join(managedRepo, "newfile.txt"), []byte("new content"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	gitRun(t, sourceRepo, "add", ".")
-	gitRun(t, sourceRepo, "commit", "-m", "add newfile")
+	gitRun(t, managedRepo, "add", ".")
+	gitRun(t, managedRepo, "commit", "-m", "add newfile")
 
 	// Refresh mirror.
 	out, err = runGT(t, gtHome, "governor", "refresh-mirror", "--world=myworld")
@@ -728,7 +729,7 @@ func TestGovernorHooksInstalled(t *testing.T) {
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
 	// Start governor.
-	out, err := runGT(t, gtHome, "governor", "start", "--world=myworld", "--source-repo="+sourceRepo)
+	out, err := runGT(t, gtHome, "governor", "start", "--world=myworld")
 	if err != nil {
 		t.Fatalf("governor start: %v: %s", err, out)
 	}
@@ -772,7 +773,7 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
 	// Create envoy via CLI.
-	out, err := runGT(t, gtHome, "envoy", "create", "scout", "--world=myworld", "--source-repo="+sourceRepo)
+	out, err := runGT(t, gtHome, "envoy", "create", "scout", "--world=myworld")
 	if err != nil {
 		t.Fatalf("envoy create: %v: %s", err, out)
 	}
@@ -830,21 +831,19 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 		t.Fatalf("update work item: %v", err)
 	}
 
-	// Set up envoy worktree with a git repo.
+	// Use the envoy worktree created by envoy create.
 	envoyWorktree := filepath.Join(gtHome, "myworld", "envoys", "scout", "worktree")
-	os.MkdirAll(envoyWorktree, 0o755)
-	gitRun(t, envoyWorktree, "init")
 	gitRun(t, envoyWorktree, "config", "user.email", "test@test.com")
 	gitRun(t, envoyWorktree, "config", "user.name", "Test")
 	if err := os.WriteFile(filepath.Join(envoyWorktree, "work.txt"), []byte("envoy work"), 0o644); err != nil {
 		t.Fatalf("write work file: %v", err)
 	}
 	gitRun(t, envoyWorktree, "add", ".")
-	gitRun(t, envoyWorktree, "commit", "-m", "initial")
-	// Add a bare remote for push.
+	gitRun(t, envoyWorktree, "commit", "-m", "envoy work commit")
+	// Point origin to a bare remote for push.
 	bareRemote := t.TempDir()
 	gitRun(t, bareRemote, "init", "--bare")
-	gitRun(t, envoyWorktree, "remote", "add", "origin", bareRemote)
+	gitRun(t, envoyWorktree, "remote", "set-url", "origin", bareRemote)
 
 	// Resolve.
 	out, err = runGT(t, gtHome, "resolve", "--world=myworld", "--agent=scout")
@@ -1046,7 +1045,7 @@ func TestStatusWithEnvoys(t *testing.T) {
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
-	createEnvoy(t, gtHome, "myworld", "scout", sourceRepo)
+	createEnvoy(t, gtHome, "myworld", "scout")
 
 	out, err := runGT(t, gtHome, "status", "myworld")
 	if err != nil && strings.TrimSpace(out) == "" {
@@ -1103,7 +1102,7 @@ func TestStatusMixedRoles(t *testing.T) {
 	}
 
 	// Create envoy.
-	createEnvoy(t, gtHome, "myworld", "scout", sourceRepo)
+	createEnvoy(t, gtHome, "myworld", "scout")
 
 	// Register governor.
 	sphereStore, err := store.OpenSphere()
@@ -1158,7 +1157,7 @@ func TestStatusSphereWithNewColumns(t *testing.T) {
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
 	// Create envoy and governor.
-	createEnvoy(t, gtHome, "myworld", "scout", sourceRepo)
+	createEnvoy(t, gtHome, "myworld", "scout")
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1191,7 +1190,7 @@ func TestStatusJSONBackwardCompat(t *testing.T) {
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
 	// Create envoy and governor.
-	createEnvoy(t, gtHome, "myworld", "scout", sourceRepo)
+	createEnvoy(t, gtHome, "myworld", "scout")
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1285,11 +1284,11 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 	}
 
 	gtHome, _ := setupTestEnv(t)
-	bareRepo, workingClone := createSourceRepo(t, gtHome)
+	bareRepo, _ := createSourceRepo(t, gtHome)
 	initWorldWithRepo(t, gtHome, "myworld", bareRepo)
 
 	// Create envoy.
-	out, err := runGT(t, gtHome, "envoy", "create", "scout", "--world=myworld", "--source-repo="+workingClone)
+	out, err := runGT(t, gtHome, "envoy", "create", "scout", "--world=myworld")
 	if err != nil {
 		t.Fatalf("envoy create: %v: %s", err, out)
 	}
@@ -1414,7 +1413,7 @@ func TestGovernorDispatchFlow(t *testing.T) {
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
 	// Start governor.
-	out, err := runGT(t, gtHome, "governor", "start", "--world=myworld", "--source-repo="+sourceRepo)
+	out, err := runGT(t, gtHome, "governor", "start", "--world=myworld")
 	if err != nil {
 		t.Fatalf("governor start: %v: %s", err, out)
 	}
@@ -1446,9 +1445,9 @@ func TestGovernorDispatchFlow(t *testing.T) {
 // =============================================================================
 
 // createEnvoy creates an envoy via CLI.
-func createEnvoy(t *testing.T, solHome, world, name, sourceRepo string) {
+func createEnvoy(t *testing.T, solHome, world, name string) {
 	t.Helper()
-	out, err := runGT(t, solHome, "envoy", "create", name, "--world="+world, "--source-repo="+sourceRepo)
+	out, err := runGT(t, solHome, "envoy", "create", name, "--world="+world)
 	if err != nil {
 		t.Fatalf("create envoy %q: %v: %s", name, err, out)
 	}

@@ -50,7 +50,7 @@ var sentinelRunCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		sourceRepo, err := dispatch.ResolveSourceRepo(worldCfg)
+		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 		if err != nil {
 			return err
 		}

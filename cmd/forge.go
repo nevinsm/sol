@@ -48,7 +48,7 @@ var forgeStartCmd = &cobra.Command{
 			return fmt.Errorf("forge already running for world %q (session %s)", world, sessName)
 		}
 
-		sourceRepo, err := dispatch.ResolveSourceRepo(worldCfg)
+		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 		if err != nil {
 			return err
 		}
@@ -252,7 +252,7 @@ func openForge(world string) (*forge.Forge, *store.Store, *store.Store, error) {
 		return nil, nil, nil, err
 	}
 
-	sourceRepo, err := dispatch.ResolveSourceRepo(worldCfg)
+	sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 	if err != nil {
 		worldStore.Close()
 		sphereStore.Close()

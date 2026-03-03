@@ -815,15 +815,25 @@ func DiscoverSourceRepo() (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// ResolveSourceRepo returns the source repo from config, falling back to
-// CWD-based git discovery if the config value is empty.
-func ResolveSourceRepo(cfg config.WorldConfig) (string, error) {
+// ResolveSourceRepo returns the path to the managed git clone for a world.
+// Falls back to the world config source_repo and CWD git discovery for
+// worlds that predate the managed clone system.
+func ResolveSourceRepo(world string, cfg config.WorldConfig) (string, error) {
+	// Prefer managed clone.
+	repoPath := config.RepoPath(world)
+	if info, err := os.Stat(repoPath); err == nil && info.IsDir() {
+		return repoPath, nil
+	}
+
+	// Fallback: world config source_repo (legacy worlds without managed clone).
 	if cfg.World.SourceRepo != "" {
 		return cfg.World.SourceRepo, nil
 	}
+
+	// Fallback: discover from CWD (legacy convenience).
 	repo, err := DiscoverSourceRepo()
 	if err != nil {
-		return "", fmt.Errorf("no source_repo in world.toml and not in a git repo: %w", err)
+		return "", fmt.Errorf("no managed repo at %s, no source_repo in world.toml, and not in a git repo", repoPath)
 	}
 	return repo, nil
 }
