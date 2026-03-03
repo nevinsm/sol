@@ -121,15 +121,10 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Errorf("work item status after resolve: got %q, want done", item.Status)
 	}
 
-	agent, err = sphereStore.GetAgent("ember/TestBot")
-	if err != nil {
-		t.Fatalf("get agent after resolve: %v", err)
-	}
-	if agent.State != "idle" {
-		t.Errorf("agent state after resolve: got %q, want idle", agent.State)
-	}
-	if agent.TetherItem != "" {
-		t.Errorf("agent tether_item after resolve: got %q, want empty", agent.TetherItem)
+	// Outpost agent record should be deleted after resolve (name reclaimed).
+	_, err = sphereStore.GetAgent("ember/TestBot")
+	if err == nil {
+		t.Error("expected agent record to be deleted after resolve")
 	}
 
 	if tether.IsTethered("ember", "TestBot") {

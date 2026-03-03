@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -634,13 +635,12 @@ func TestResolveHappyPath(t *testing.T) {
 		t.Errorf("expected work item status 'done', got %q", item.Status)
 	}
 
-	// Verify agent is idle.
-	agent, err := sphereStore.GetAgent("ember/Toast")
-	if err != nil {
-		t.Fatalf("failed to get agent: %v", err)
-	}
-	if agent.State != "idle" {
-		t.Errorf("expected agent state 'idle', got %q", agent.State)
+	// Verify outpost agent record is deleted (name reclaimed).
+	_, err = sphereStore.GetAgent("ember/Toast")
+	if err == nil {
+		t.Error("expected agent record to be deleted after resolve")
+	} else if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for deleted agent, got: %v", err)
 	}
 
 	// Verify tether is cleared.
@@ -764,13 +764,12 @@ func TestResolveConflictResolution(t *testing.T) {
 		t.Errorf("expected MR phase 'ready' after unblock, got %q", mr.Phase)
 	}
 
-	// Verify agent is idle.
-	agent, err := sphereStore.GetAgent("ember/Toast")
-	if err != nil {
-		t.Fatalf("failed to get agent: %v", err)
-	}
-	if agent.State != "idle" {
-		t.Errorf("expected agent state 'idle', got %q", agent.State)
+	// Verify outpost agent record is deleted (name reclaimed).
+	_, err = sphereStore.GetAgent("ember/Toast")
+	if err == nil {
+		t.Error("expected agent record to be deleted after resolve")
+	} else if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for deleted agent, got: %v", err)
 	}
 
 	// Verify tether is cleared.
@@ -853,7 +852,7 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 		t.Errorf("expected MR priority 1, got %d", mr.Priority)
 	}
 
-	// Verify agent is idle and work item is done (existing behavior).
+	// Verify work item is done.
 	item, err := worldStore.GetWorkItem(itemID)
 	if err != nil {
 		t.Fatalf("failed to get work item: %v", err)
@@ -862,12 +861,12 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 		t.Errorf("expected work item status 'done', got %q", item.Status)
 	}
 
-	agent, err := sphereStore.GetAgent("ember/Toast")
-	if err != nil {
-		t.Fatalf("failed to get agent: %v", err)
-	}
-	if agent.State != "idle" {
-		t.Errorf("expected agent state 'idle', got %q", agent.State)
+	// Verify outpost agent record is deleted (name reclaimed).
+	_, err = sphereStore.GetAgent("ember/Toast")
+	if err == nil {
+		t.Error("expected agent record to be deleted after resolve")
+	} else if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for deleted agent, got: %v", err)
 	}
 }
 
@@ -1147,7 +1146,7 @@ func TestResolvePushFailureCreatesMR(t *testing.T) {
 		t.Errorf("expected MR phase 'failed', got %q", mr.Phase)
 	}
 
-	// Verify: work item is "done", agent is "idle".
+	// Verify: work item is "done", agent record is deleted.
 	item, err := worldStore.GetWorkItem(itemID)
 	if err != nil {
 		t.Fatalf("failed to get work item: %v", err)
@@ -1156,12 +1155,12 @@ func TestResolvePushFailureCreatesMR(t *testing.T) {
 		t.Errorf("expected work item status 'done', got %q", item.Status)
 	}
 
-	agent, err := sphereStore.GetAgent("ember/Toast")
-	if err != nil {
-		t.Fatalf("failed to get agent: %v", err)
-	}
-	if agent.State != "idle" {
-		t.Errorf("expected agent state 'idle', got %q", agent.State)
+	// Verify outpost agent record is deleted (name reclaimed).
+	_, err = sphereStore.GetAgent("ember/Toast")
+	if err == nil {
+		t.Error("expected agent record to be deleted after resolve")
+	} else if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for deleted agent, got: %v", err)
 	}
 }
 

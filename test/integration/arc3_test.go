@@ -866,13 +866,10 @@ func TestResolveAgentKillsSession(t *testing.T) {
 		t.Fatalf("resolve: %v: %s", err, out)
 	}
 
-	// Verify state changes: agent idle, work item done, MR created.
-	agent, err := sphereStore.GetAgent("myworld/Alpha")
-	if err != nil {
-		t.Fatalf("get agent: %v", err)
-	}
-	if agent.State != "idle" {
-		t.Errorf("expected agent state 'idle', got %q", agent.State)
+	// Verify state changes: outpost agent deleted (name reclaimed), work item done.
+	_, err = sphereStore.GetAgent("myworld/Alpha")
+	if err == nil {
+		t.Error("expected agent record to be deleted after resolve")
 	}
 	item, err := worldStore.GetWorkItem(itemID)
 	if err != nil {

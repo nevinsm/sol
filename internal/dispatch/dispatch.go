@@ -48,6 +48,7 @@ type SphereStore interface {
 	UpdateAgentState(id, state, tetherItem string) error
 	ListAgents(world string, state string) ([]store.Agent, error)
 	CreateAgent(name, world, role string) (string, error)
+	DeleteAgent(id string) error
 	Close() error
 }
 
@@ -689,10 +690,19 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		}
 	}
 
-	// 5. Update agent: state -> idle, tether_item -> clear.
-	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
-		rollback()
-		return nil, fmt.Errorf("failed to update agent state: %w", err)
+	// 5. Update agent state.
+	// Outpost agents are ephemeral — delete the record to reclaim the name.
+	// Persistent roles (envoy, governor) remain idle for reuse.
+	if agent.Role == "agent" {
+		if err := sphereStore.DeleteAgent(agentID); err != nil {
+			rollback()
+			return nil, fmt.Errorf("failed to delete agent %q: %w", agentID, err)
+		}
+	} else {
+		if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+			rollback()
+			return nil, fmt.Errorf("failed to update agent state: %w", err)
+		}
 	}
 
 	// 6. Clear tether file.
@@ -795,9 +805,16 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 		return nil, fmt.Errorf("failed to close resolution work item: %w", err)
 	}
 
-	// 4. Update agent: state → idle, clear tether.
-	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
-		return nil, fmt.Errorf("failed to update agent state: %w", err)
+	// 4. Update agent state.
+	// Outpost agents are ephemeral — delete the record to reclaim the name.
+	if role == "agent" {
+		if err := sphereStore.DeleteAgent(agentID); err != nil {
+			return nil, fmt.Errorf("failed to delete agent %q: %w", agentID, err)
+		}
+	} else {
+		if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+			return nil, fmt.Errorf("failed to update agent state: %w", err)
+		}
 	}
 
 	// 5. Clear tether file.
