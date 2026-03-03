@@ -155,30 +155,30 @@ func TestStart(t *testing.T) {
 		t.Fatalf("failed to parse hooks JSON: %v", err)
 	}
 
-	if hooks, ok := cfg.Hooks["SessionStart"]; !ok {
+	if groups, ok := cfg.Hooks["SessionStart"]; !ok {
 		t.Error("no SessionStart hooks")
-	} else if len(hooks) != 2 {
-		t.Errorf("expected 2 SessionStart hooks, got %d", len(hooks))
+	} else if len(groups) != 2 {
+		t.Errorf("expected 2 SessionStart matcher groups, got %d", len(groups))
 	} else {
 		// Verify the startup/resume hook includes sol world sync.
-		if !strings.Contains(hooks[0].Command, "sol world sync myworld") {
-			t.Errorf("startup hook missing world sync command: %q", hooks[0].Command)
+		if len(groups[0].Hooks) != 1 || !strings.Contains(groups[0].Hooks[0].Command, "sol world sync myworld") {
+			t.Error("startup hook missing world sync command")
 		}
-		if hooks[0].Matcher != "startup|resume" {
-			t.Errorf("startup hook matcher = %q, want \"startup|resume\"", hooks[0].Matcher)
+		if groups[0].Matcher != "startup|resume" {
+			t.Errorf("startup hook matcher = %q, want \"startup|resume\"", groups[0].Matcher)
 		}
-		if hooks[1].Matcher != "compact" {
-			t.Errorf("compact hook matcher = %q, want \"compact\"", hooks[1].Matcher)
+		if groups[1].Matcher != "compact" {
+			t.Errorf("compact hook matcher = %q, want \"compact\"", groups[1].Matcher)
 		}
 		// Verify compact hook includes --skip-session-start.
-		if !strings.Contains(hooks[1].Command, "--skip-session-start") {
-			t.Errorf("compact hook missing --skip-session-start: %q", hooks[1].Command)
+		if len(groups[1].Hooks) != 1 || !strings.Contains(groups[1].Hooks[0].Command, "--skip-session-start") {
+			t.Error("compact hook missing --skip-session-start")
 		}
 	}
-	if hooks, ok := cfg.Hooks["Stop"]; !ok {
+	if groups, ok := cfg.Hooks["Stop"]; !ok {
 		t.Error("no Stop hooks")
-	} else if len(hooks) != 1 {
-		t.Errorf("expected 1 Stop hook, got %d", len(hooks))
+	} else if len(groups) != 1 {
+		t.Errorf("expected 1 Stop matcher group, got %d", len(groups))
 	}
 
 	// Verify brief directory created.

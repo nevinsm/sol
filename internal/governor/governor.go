@@ -116,23 +116,35 @@ func installHooks(govDir, world string) error {
 	}
 
 	cfg := protocol.HookConfig{
-		Hooks: map[string][]protocol.HookEntry{
+		Hooks: map[string][]protocol.HookMatcherGroup{
 			"SessionStart": {
 				{
-					Type:    "command",
 					Matcher: "startup|resume",
-					Command: fmt.Sprintf("sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync %s", world),
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync %s", world),
+						},
+					},
 				},
 				{
-					Type:    "command",
 					Matcher: "compact",
-					Command: "sol brief inject --path=.brief/memory.md --max-lines=200 --skip-session-start",
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: "sol brief inject --path=.brief/memory.md --max-lines=200 --skip-session-start",
+						},
+					},
 				},
 			},
 			"Stop": {
 				{
-					Type:    "command",
-					Command: "sol brief check-save .brief/memory.md",
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: "sol brief check-save .brief/memory.md",
+						},
+					},
 				},
 			},
 		},

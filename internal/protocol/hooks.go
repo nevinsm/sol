@@ -7,49 +7,50 @@ import (
 	"path/filepath"
 )
 
-const sessionStartScript = `#!/bin/bash
-# SessionStart hook — inject execution context via sol prime
-exec sol prime --world="$SOL_WORLD" --agent="$SOL_AGENT"
-`
-
 // HookConfig represents the Claude Code settings.local.json structure for hooks.
 type HookConfig struct {
-	Hooks map[string][]HookEntry `json:"hooks"`
+	Hooks map[string][]HookMatcherGroup `json:"hooks"`
 }
 
-// HookEntry represents a single hook entry in the Claude Code settings.
-type HookEntry struct {
+// HookMatcherGroup is a matcher + its hook handlers. The Matcher field filters
+// when the hooks fire (regex matched against event-specific values). Omit or
+// use "" to match all occurrences.
+type HookMatcherGroup struct {
+	Matcher string        `json:"matcher,omitempty"`
+	Hooks   []HookHandler `json:"hooks"`
+}
+
+// HookHandler is a single hook handler within a matcher group.
+type HookHandler struct {
 	Type    string `json:"type"`
-	Matcher string `json:"matcher,omitempty"`
 	Command string `json:"command"`
 }
 
-// InstallHooks writes Claude Code hook scripts into the worktree.
-// Creates .claude/hooks/ directory and registers hooks in .claude/settings.local.json.
+// InstallHooks writes Claude Code hooks into .claude/settings.local.json.
+// Values are inlined into the command string so hooks don't depend on
+// environment variables (tmux set-environment runs after the session
+// process starts, so env vars aren't available to SessionStart hooks).
 //
 // Hooks installed:
 //
 //	SessionStart: runs "sol prime --world={world} --agent={name}" and outputs
 //	              the result as initial context
 func InstallHooks(worktreeDir, world, agentName string) error {
-	hooksDir := filepath.Join(worktreeDir, ".claude", "hooks")
-	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create .claude/hooks directory: %w", err)
+	claudeDir := filepath.Join(worktreeDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create .claude directory: %w", err)
 	}
 
-	// Write the session-start hook script.
-	scriptPath := filepath.Join(hooksDir, "session-start.sh")
-	if err := os.WriteFile(scriptPath, []byte(sessionStartScript), 0o755); err != nil {
-		return fmt.Errorf("failed to write session-start.sh: %w", err)
-	}
-
-	// Write settings.local.json with hook configuration.
 	cfg := HookConfig{
-		Hooks: map[string][]HookEntry{
+		Hooks: map[string][]HookMatcherGroup{
 			"SessionStart": {
 				{
-					Type:    "command",
-					Command: ".claude/hooks/session-start.sh",
+					Hooks: []HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("sol prime --world=%s --agent=%s", world, agentName),
+						},
+					},
 				},
 			},
 		},
@@ -60,7 +61,7 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 		return fmt.Errorf("failed to marshal hook settings: %w", err)
 	}
 
-	settingsPath := filepath.Join(worktreeDir, ".claude", "settings.local.json")
+	settingsPath := filepath.Join(claudeDir, "settings.local.json")
 	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write settings.local.json: %w", err)
 	}

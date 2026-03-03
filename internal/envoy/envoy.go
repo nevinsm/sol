@@ -201,23 +201,35 @@ func installHooks(worktreeDir string) error {
 	}
 
 	cfg := protocol.HookConfig{
-		Hooks: map[string][]protocol.HookEntry{
+		Hooks: map[string][]protocol.HookMatcherGroup{
 			"SessionStart": {
 				{
-					Type:    "command",
 					Matcher: "startup|resume",
-					Command: "sol brief inject --path=.brief/memory.md --max-lines=200",
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: "sol brief inject --path=.brief/memory.md --max-lines=200",
+						},
+					},
 				},
 				{
-					Type:    "command",
 					Matcher: "compact",
-					Command: "sol brief inject --path=.brief/memory.md --max-lines=200 --skip-session-start",
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: "sol brief inject --path=.brief/memory.md --max-lines=200 --skip-session-start",
+						},
+					},
 				},
 			},
 			"Stop": {
 				{
-					Type:    "command",
-					Command: "sol brief check-save .brief/memory.md",
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: "sol brief check-save .brief/memory.md",
+						},
+					},
 				},
 			},
 		},

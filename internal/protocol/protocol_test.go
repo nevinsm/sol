@@ -265,30 +265,10 @@ func TestInstallHooks(t *testing.T) {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
-	// Verify hook script exists and has correct content.
+	// Verify no script file — values are inlined in the hook command.
 	scriptPath := filepath.Join(dir, ".claude", "hooks", "session-start.sh")
-	data, err := os.ReadFile(scriptPath)
-	if err != nil {
-		t.Fatalf("failed to read session-start.sh: %v", err)
-	}
-	content := string(data)
-	if !strings.Contains(content, "sol prime") {
-		t.Error("session-start.sh missing 'sol prime' command")
-	}
-	if !strings.Contains(content, "$SOL_WORLD") {
-		t.Error("session-start.sh missing $SOL_WORLD reference")
-	}
-	if !strings.Contains(content, "$SOL_AGENT") {
-		t.Error("session-start.sh missing $SOL_AGENT reference")
-	}
-
-	// Verify script is executable.
-	info, err := os.Stat(scriptPath)
-	if err != nil {
-		t.Fatalf("failed to stat session-start.sh: %v", err)
-	}
-	if info.Mode()&0o111 == 0 {
-		t.Error("session-start.sh is not executable")
+	if _, err := os.Stat(scriptPath); !os.IsNotExist(err) {
+		t.Error("session-start.sh should not exist — values are inlined in hook command")
 	}
 
 	// Verify settings.local.json exists and has correct structure.
@@ -303,17 +283,22 @@ func TestInstallHooks(t *testing.T) {
 		t.Fatalf("failed to parse settings.local.json: %v", err)
 	}
 
-	hooks, ok := cfg.Hooks["SessionStart"]
+	groups, ok := cfg.Hooks["SessionStart"]
 	if !ok {
 		t.Fatal("settings.local.json missing SessionStart hook")
 	}
-	if len(hooks) != 1 {
-		t.Fatalf("expected 1 SessionStart hook, got %d", len(hooks))
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 SessionStart matcher group, got %d", len(groups))
 	}
-	if hooks[0].Type != "command" {
-		t.Errorf("expected hook type 'command', got %q", hooks[0].Type)
+	if len(groups[0].Hooks) != 1 {
+		t.Fatalf("expected 1 hook handler, got %d", len(groups[0].Hooks))
 	}
-	if hooks[0].Command != ".claude/hooks/session-start.sh" {
-		t.Errorf("expected hook command '.claude/hooks/session-start.sh', got %q", hooks[0].Command)
+	if groups[0].Hooks[0].Type != "command" {
+		t.Errorf("expected hook type 'command', got %q", groups[0].Hooks[0].Type)
+	}
+
+	wantCmd := "sol prime --world=myworld --agent=Toast"
+	if groups[0].Hooks[0].Command != wantCmd {
+		t.Errorf("hook command = %q, want %q", groups[0].Hooks[0].Command, wantCmd)
 	}
 }

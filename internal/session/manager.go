@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/protocol"
 )
 
 // Manager wraps tmux to provide process containers for AI agents.
@@ -142,6 +143,12 @@ func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, 
 
 	if err := os.MkdirAll(sessionsDir(), 0o755); err != nil {
 		return fmt.Errorf("failed to create sessions directory: %w", err)
+	}
+
+	// Pre-trust the working directory so Claude Code doesn't block on
+	// an interactive trust prompt in automated sessions.
+	if err := protocol.TrustDirectory(workdir); err != nil {
+		fmt.Fprintf(os.Stderr, "session: failed to pre-trust directory %s: %v\n", workdir, err)
 	}
 
 	// Create the tmux session
