@@ -79,12 +79,15 @@ var forgeStartCmd = &cobra.Command{
 			return fmt.Errorf("failed to ensure worktree: %w", err)
 		}
 
-		// 2. Register agent in sphere store.
+		// 2. Register agent in sphere store and set working.
 		_, err = sphereStore.GetAgent(world + "/forge")
 		if err != nil {
 			if _, err := sphereStore.CreateAgent("forge", world, "forge"); err != nil {
 				return fmt.Errorf("failed to register forge agent: %w", err)
 			}
+		}
+		if err := sphereStore.UpdateAgentState(world+"/forge", "working", ""); err != nil {
+			return fmt.Errorf("failed to set forge working: %w", err)
 		}
 
 		// 3. Install forge CLAUDE.local.md (persona).

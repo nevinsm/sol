@@ -178,10 +178,10 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	// Only monitor outpost agents — envoys and governors are human-supervised.
+	// Monitor outpost agents and forge — envoys and governors are human-supervised.
 	var activeAgents []store.Agent
 	for _, a := range agents {
-		if a.Role == "agent" {
+		if a.Role == "agent" || a.Role == "forge" {
 			activeAgents = append(activeAgents, a)
 		}
 	}
@@ -207,6 +207,18 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 				}
 			}
 			healthyCount++
+
+		case agent.State == "working" && !alive && agent.Role == "forge":
+			// Forge session died — respawn without tether semantics.
+			stalledCount++
+			if err := w.handleForgeStalled(agent); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+						"agent": agent.ID, "action": "handle_forge_stalled", "error": err.Error(),
+					})
+				}
+			}
+			actionsTaken = append(actionsTaken, "stalled:"+agent.Name)
 
 		case agent.State == "working" && !alive && agent.TetherItem != "":
 			// Session died while work was tethered — stalled.
@@ -530,6 +542,49 @@ func (w *Sentinel) handleStalled(agent store.Agent) error {
 
 	if attempts >= w.config.MaxRespawns {
 		return w.returnWorkToOpen(agent)
+	}
+
+	w.respawnCounts[key]++
+	return w.respawnAgent(agent)
+}
+
+// handleForgeStalled handles a forge agent whose session died.
+// Unlike regular agents, forge has no tethered work item. On max respawns,
+// it goes idle without resource cleanup (forge worktree is persistent).
+func (w *Sentinel) handleForgeStalled(agent store.Agent) error {
+	key := respawnKey{AgentID: agent.ID, WorkItemID: ""}
+	attempts := w.respawnCounts[key]
+
+	if attempts >= w.config.MaxRespawns {
+		// Set forge idle — operator must restart manually.
+		if err := w.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
+			return fmt.Errorf("failed to set forge idle: %w", err)
+		}
+		delete(w.respawnCounts, key)
+
+		if w.logger != nil {
+			w.logger.Emit(events.EventStalled, w.agentID(), agent.ID, "both",
+				map[string]any{
+					"agent":     agent.ID,
+					"recovered": false,
+					"role":      "forge",
+				})
+		}
+
+		if _, err := w.sphereStore.SendProtocolMessage(
+			w.agentID(), "operator",
+			store.ProtoRecoveryNeeded,
+			store.RecoveryNeededPayload{
+				AgentID:  agent.ID,
+				Reason:   fmt.Sprintf("forge: max respawns (%d) exceeded, set idle", w.config.MaxRespawns),
+				Attempts: w.config.MaxRespawns,
+			},
+		); err != nil && w.logger != nil {
+			w.logger.Emit("mail_error", w.agentID(), agent.ID, "audit",
+				map[string]any{"error": err.Error()})
+		}
+
+		return nil
 	}
 
 	w.respawnCounts[key]++

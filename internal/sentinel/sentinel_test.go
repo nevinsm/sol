@@ -395,13 +395,12 @@ func TestPatrolIgnoresIdleClean(t *testing.T) {
 	}
 }
 
-func TestPatrolIgnoresNonOutposts(t *testing.T) {
+func TestPatrolIgnoresNonMonitored(t *testing.T) {
 	sphereStore, _ := setupTestEnv(t)
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	// Create agents with non-agent roles.
-	sphereStore.CreateAgent("forge", "ember", "forge")
+	// Create agents with non-monitored roles (sentinel is excluded by filter).
 	sphereStore.CreateAgent("sentinel", "ember", "sentinel")
 
 	w := New(cfg, sphereStore, nil, mock, nil)
@@ -1022,6 +1021,109 @@ func TestCleanupOrphanedTetherSkipsWorking(t *testing.T) {
 	// Tether should NOT be cleaned up (agent is working).
 	if _, err := os.Stat(tetherPath); os.IsNotExist(err) {
 		t.Error("tether for working agent should not be removed")
+	}
+}
+
+func TestPatrolMonitorsForge(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a working forge agent with a live session.
+	sphereStore.CreateAgent("forge", "ember", "forge")
+	sphereStore.UpdateAgentState("ember/forge", "working", "")
+	mock.alive["sol-ember-forge"] = true
+	mock.captures["sol-ember-forge"] = "forge output"
+
+	assessCalled := false
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+		assessCalled = true
+		return &AssessmentResult{Status: "progressing", Confidence: "high", SuggestedAction: "none"}, nil
+	}
+
+	// First patrol: establish baseline.
+	w.patrol(context.Background())
+	// Second patrol: same output → should trigger assessment (forge is monitored).
+	w.patrol(context.Background())
+
+	if !assessCalled {
+		t.Error("expected forge to be monitored and assessed when output is unchanged")
+	}
+}
+
+func TestPatrolDetectsForgeStalled(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a working forge agent with a dead session.
+	sphereStore.CreateAgent("forge", "ember", "forge")
+	sphereStore.UpdateAgentState("ember/forge", "working", "")
+	// Session is NOT alive.
+
+	// Create worktree directory for respawn.
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "outposts", "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Should have started a session (respawn).
+	started := mock.getStarted()
+	if len(started) != 1 {
+		t.Fatalf("expected 1 session started (forge respawn), got %d: %v", len(started), started)
+	}
+	if started[0] != "sol-ember-forge" {
+		t.Errorf("started session = %q, want %q", started[0], "sol-ember-forge")
+	}
+}
+
+func TestPatrolForgeMaxRespawns(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRespawns = 2
+
+	// Create a working forge agent with a dead session.
+	sphereStore.CreateAgent("forge", "ember", "forge")
+	sphereStore.UpdateAgentState("ember/forge", "working", "")
+	// Session is NOT alive.
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	// Pre-set respawn count to max.
+	w.respawnCounts[respawnKey{AgentID: "ember/forge", WorkItemID: ""}] = 2
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// No respawn should happen.
+	started := mock.getStarted()
+	if len(started) != 0 {
+		t.Fatalf("expected 0 sessions started (forge max respawns), got %d", len(started))
+	}
+
+	// Forge should be idle.
+	agent, err := sphereStore.GetAgent("ember/forge")
+	if err != nil {
+		t.Fatalf("GetAgent() error: %v", err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("forge state = %q, want %q after max respawns", agent.State, "idle")
+	}
+
+	// Should have sent RECOVERY_NEEDED to operator.
+	msgs, err := sphereStore.PendingProtocol("operator", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Error("expected RECOVERY_NEEDED protocol message to operator after forge max respawns")
 	}
 }
 
