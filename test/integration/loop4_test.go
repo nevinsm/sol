@@ -323,11 +323,11 @@ instructions = "steps/01.md"
 		t.Errorf("current step: got %q, want only-step", state.CurrentStep)
 	}
 
-	// Verify CLAUDE.md includes workflow commands.
-	claudeMD := filepath.Join(result.WorktreeDir, ".claude", "CLAUDE.md")
+	// Verify CLAUDE.local.md includes workflow commands.
+	claudeMD := filepath.Join(result.WorktreeDir, ".claude", "CLAUDE.local.md")
 	data, err := os.ReadFile(claudeMD)
 	if err != nil {
-		t.Fatalf("read CLAUDE.md: %v", err)
+		t.Fatalf("read CLAUDE.local.md: %v", err)
 	}
 	content := string(data)
 	if !strings.Contains(content, "workflow current") {

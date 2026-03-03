@@ -207,18 +207,26 @@ func (s *Prefect) heartbeat() {
 }
 
 // respawnCommand returns the startup command for an agent based on its role.
-func respawnCommand(agent store.Agent) string {
+func respawnCommand(agent store.Agent, worktreeDir string) string {
 	switch agent.Role {
 	case "sentinel":
 		return fmt.Sprintf("sol sentinel run %s", agent.World)
-	case "envoy", "governor":
-		// Should never reach here — skipped in heartbeat.
-		// But if it does, start a Claude session.
-		return config.SessionCommand()
+	case "forge":
+		prompt := fmt.Sprintf("Forge for world %s (respawned). If no context appears, run: sol forge sync %s && sol prime --world=%s --agent=forge",
+			agent.World, agent.World, agent.World)
+		return config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
+	case "envoy":
+		prompt := fmt.Sprintf("Envoy %s, world %s (respawned). If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200",
+			agent.Name, agent.World)
+		return config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
+	case "governor":
+		prompt := fmt.Sprintf("Governor, world %s (respawned). If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync %s",
+			agent.World, agent.World)
+		return config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
 	default:
-		// Agents and forge run Claude sessions — the CLAUDE.md and tethers
-		// installed in the worktree provide the execution context.
-		return config.SessionCommand()
+		prompt := fmt.Sprintf("Agent %s, world %s (respawned). If no context appears, run: sol prime --world=%s --agent=%s",
+			agent.Name, agent.World, agent.World, agent.Name)
+		return config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
 	}
 }
 
@@ -289,7 +297,7 @@ func (s *Prefect) respawn(agent store.Agent) {
 		"SOL_AGENT": agent.Name,
 	}
 	if err := s.sessions.Start(sessName, worktreeDir,
-		respawnCommand(agent), env, agent.Role, agent.World); err != nil {
+		respawnCommand(agent, worktreeDir), env, agent.Role, agent.World); err != nil {
 		s.logger.Error("failed to respawn session",
 			"agent", agent.Name, "world", agent.World, "error", err)
 		return

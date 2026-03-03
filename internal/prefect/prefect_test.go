@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -602,23 +601,31 @@ func TestRespawnOutpostUnchanged(t *testing.T) {
 }
 
 func TestRespawnCommandByRole(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "")
+
 	forgeAgent := store.Agent{Name: "forge", World: "haven", Role: "forge"}
 	agentBot := store.Agent{Name: "Toast", World: "haven", Role: "agent"}
 	sentinelAgent := store.Agent{Name: "sentinel", World: "haven", Role: "sentinel"}
 
-	// Forge and agents use Claude sessions.
-	forgeCmd := respawnCommand(forgeAgent)
-	if forgeCmd != config.DefaultSessionCommand {
-		t.Errorf("forge command = %q, want %q", forgeCmd, config.DefaultSessionCommand)
+	// Forge and agents use Claude sessions with --settings and prompt.
+	forgeCmd := respawnCommand(forgeAgent, "/tmp/forge/worktree")
+	if !strings.Contains(forgeCmd, "--settings") {
+		t.Errorf("forge command missing --settings: %q", forgeCmd)
+	}
+	if !strings.Contains(forgeCmd, "Forge for world haven") {
+		t.Errorf("forge command missing prompt: %q", forgeCmd)
 	}
 
-	agentCmd := respawnCommand(agentBot)
-	if agentCmd != config.DefaultSessionCommand {
-		t.Errorf("agent command = %q, want %q", agentCmd, config.DefaultSessionCommand)
+	agentCmd := respawnCommand(agentBot, "/tmp/outposts/Toast/worktree")
+	if !strings.Contains(agentCmd, "--settings") {
+		t.Errorf("agent command missing --settings: %q", agentCmd)
+	}
+	if !strings.Contains(agentCmd, "Agent Toast, world haven") {
+		t.Errorf("agent command missing prompt: %q", agentCmd)
 	}
 
 	// Sentinel uses sol sentinel run.
-	sentCmd := respawnCommand(sentinelAgent)
+	sentCmd := respawnCommand(sentinelAgent, "/tmp/sol")
 	want := "sol sentinel run haven"
 	if sentCmd != want {
 		t.Errorf("sentinel command = %q, want %q", sentCmd, want)
@@ -828,16 +835,24 @@ func TestShutdownSkipsEnvoyGovernor(t *testing.T) {
 }
 
 func TestRespawnCommandEnvoyGovernor(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "")
+
 	envoyAgent := store.Agent{Name: "Scout", World: "haven", Role: "envoy"}
 	govAgent := store.Agent{Name: "governor", World: "haven", Role: "governor"}
 
-	envoyCmd := respawnCommand(envoyAgent)
-	if envoyCmd != config.DefaultSessionCommand {
-		t.Errorf("envoy command = %q, want %q", envoyCmd, config.DefaultSessionCommand)
+	envoyCmd := respawnCommand(envoyAgent, "/tmp/envoys/Scout/worktree")
+	if !strings.Contains(envoyCmd, "--settings") {
+		t.Errorf("envoy command missing --settings: %q", envoyCmd)
+	}
+	if !strings.Contains(envoyCmd, "Envoy Scout, world haven") {
+		t.Errorf("envoy command missing prompt: %q", envoyCmd)
 	}
 
-	govCmd := respawnCommand(govAgent)
-	if govCmd != config.DefaultSessionCommand {
-		t.Errorf("governor command = %q, want %q", govCmd, config.DefaultSessionCommand)
+	govCmd := respawnCommand(govAgent, "/tmp/governor")
+	if !strings.Contains(govCmd, "--settings") {
+		t.Errorf("governor command missing --settings: %q", govCmd)
+	}
+	if !strings.Contains(govCmd, "Governor, world haven") {
+		t.Errorf("governor command missing prompt: %q", govCmd)
 	}
 }

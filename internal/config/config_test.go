@@ -155,3 +155,58 @@ func TestValidateWorldNameValid(t *testing.T) {
 		})
 	}
 }
+
+func TestSettingsPath(t *testing.T) {
+	got := SettingsPath("/tmp/worktree")
+	want := "/tmp/worktree/.claude/settings.local.json"
+	if got != want {
+		t.Fatalf("SettingsPath() = %q, want %q", got, want)
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"simple", `"simple"`},
+		{`has "quotes"`, `"has \"quotes\""`},
+		{"has $var", `"has \$var"`},
+		{"has `backtick`", "\"has \\`backtick\\`\""},
+		{`has \backslash`, `"has \\backslash"`},
+		{"has !bang", `"has \!bang"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := ShellQuote(tt.input)
+			if got != tt.want {
+				t.Fatalf("ShellQuote(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildSessionCommandOverride(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	got := BuildSessionCommand("/some/path", "hello")
+	if got != "sleep 300" {
+		t.Fatalf("expected override, got %q", got)
+	}
+}
+
+func TestBuildSessionCommandDefault(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "")
+	got := BuildSessionCommand("/tmp/wt/.claude/settings.local.json", "Hello agent")
+	if !strings.Contains(got, "claude --dangerously-skip-permissions") {
+		t.Fatalf("expected claude command, got %q", got)
+	}
+	if !strings.Contains(got, "--settings") {
+		t.Fatalf("expected --settings flag, got %q", got)
+	}
+	if !strings.Contains(got, "settings.local.json") {
+		t.Fatalf("expected settings path, got %q", got)
+	}
+	if !strings.Contains(got, "Hello agent") {
+		t.Fatalf("expected prompt, got %q", got)
+	}
+}

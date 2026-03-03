@@ -166,14 +166,14 @@ func TestCastHappyPath(t *testing.T) {
 		t.Error("expected session to be started")
 	}
 
-	// Verify CLAUDE.md was installed.
-	claudeMD := result.WorktreeDir + "/.claude/CLAUDE.md"
+	// Verify CLAUDE.local.md was installed.
+	claudeMD := result.WorktreeDir + "/.claude/CLAUDE.local.md"
 	data, err := os.ReadFile(claudeMD)
 	if err != nil {
-		t.Fatalf("failed to read CLAUDE.md: %v", err)
+		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
 	}
 	if !strings.Contains(string(data), "Toast") {
-		t.Error("CLAUDE.md missing agent name")
+		t.Error("CLAUDE.local.md missing agent name")
 	}
 }
 

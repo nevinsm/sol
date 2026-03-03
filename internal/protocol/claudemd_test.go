@@ -183,18 +183,18 @@ func TestInstallGovernorClaudeMD(t *testing.T) {
 	}
 
 	// Verify file written.
-	path := filepath.Join(govDir, ".claude", "CLAUDE.md")
+	path := filepath.Join(govDir, ".claude", "CLAUDE.local.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("failed to read CLAUDE.md: %v", err)
+		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
 	}
 
 	content := string(data)
 	if !strings.Contains(content, "testworld") {
-		t.Error("installed CLAUDE.md should contain world name")
+		t.Error("installed CLAUDE.local.md should contain world name")
 	}
 	if !strings.Contains(content, "Governor") {
-		t.Error("installed CLAUDE.md should contain 'Governor'")
+		t.Error("installed CLAUDE.local.md should contain 'Governor'")
 	}
 }
 

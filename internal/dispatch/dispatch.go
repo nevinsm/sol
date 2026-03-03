@@ -238,7 +238,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
 
-	// 7. Install CLAUDE.md in the worktree.
+	// 7. Install CLAUDE.local.md in the worktree (agent persona).
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   agent.Name,
 		World:       opts.World,
@@ -250,7 +250,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	}
 	if err := protocol.InstallClaudeMD(worktreeDir, ctx); err != nil {
 		rollback()
-		return nil, fmt.Errorf("failed to install CLAUDE.md: %w", err)
+		return nil, fmt.Errorf("failed to install CLAUDE.local.md: %w", err)
 	}
 
 	// 8. Install Claude Code hooks in the worktree.
@@ -281,7 +281,10 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		"SOL_WORLD": opts.World,
 		"SOL_AGENT": agent.Name,
 	}
-	if err := mgr.Start(sessName, worktreeDir, config.SessionCommand(), env, "agent", opts.World); err != nil {
+	prompt := fmt.Sprintf("Agent %s, world %s. If no context appears, run: sol prime --world=%s --agent=%s",
+		agent.Name, opts.World, opts.World, agent.Name)
+	sessionCmd := config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
+	if err := mgr.Start(sessName, worktreeDir, sessionCmd, env, "agent", opts.World); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to start session: %w", err)
 	}

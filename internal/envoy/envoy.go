@@ -181,7 +181,10 @@ func Start(opts StartOpts, sphereStore StartStore, mgr SessionManager) error {
 	}
 
 	// 4. Start tmux session.
-	if err := mgr.Start(sessName, worktree, config.SessionCommand(), nil, "envoy", opts.World); err != nil {
+	prompt := fmt.Sprintf("Envoy %s, world %s. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200",
+		opts.Name, opts.World)
+	sessionCmd := config.BuildSessionCommand(config.SettingsPath(worktree), prompt)
+	if err := mgr.Start(sessName, worktree, sessionCmd, nil, "envoy", opts.World); err != nil {
 		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 

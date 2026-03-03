@@ -49,18 +49,18 @@ func TestInstallClaudeMD(t *testing.T) {
 		t.Fatalf("InstallClaudeMD failed: %v", err)
 	}
 
-	path := filepath.Join(dir, ".claude", "CLAUDE.md")
+	path := filepath.Join(dir, ".claude", "CLAUDE.local.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("failed to read CLAUDE.md: %v", err)
+		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
 	}
 
 	content := string(data)
 	if !strings.Contains(content, "Toast") {
-		t.Error("CLAUDE.md missing agent name")
+		t.Error("CLAUDE.local.md missing agent name")
 	}
 	if !strings.Contains(content, "sol-a1b2c3d4") {
-		t.Error("CLAUDE.md missing work item ID")
+		t.Error("CLAUDE.local.md missing work item ID")
 	}
 }
 
@@ -113,18 +113,18 @@ func TestInstallForgeClaudeMD(t *testing.T) {
 		t.Fatalf("InstallForgeClaudeMD failed: %v", err)
 	}
 
-	path := filepath.Join(dir, ".claude", "CLAUDE.md")
+	path := filepath.Join(dir, ".claude", "CLAUDE.local.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("failed to read CLAUDE.md: %v", err)
+		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
 	}
 
 	content := string(data)
 	if !strings.Contains(content, "Forge Agent") {
-		t.Error("CLAUDE.md missing 'Forge Agent'")
+		t.Error("CLAUDE.local.md missing 'Forge Agent'")
 	}
 	if !strings.Contains(content, "myworld") {
-		t.Error("CLAUDE.md missing world name")
+		t.Error("CLAUDE.local.md missing world name")
 	}
 }
 
@@ -243,18 +243,18 @@ func TestInstallEnvoyClaudeMD(t *testing.T) {
 		t.Fatalf("InstallEnvoyClaudeMD failed: %v", err)
 	}
 
-	path := filepath.Join(dir, ".claude", "CLAUDE.md")
+	path := filepath.Join(dir, ".claude", "CLAUDE.local.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("failed to read CLAUDE.md: %v", err)
+		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
 	}
 
 	content := string(data)
 	if !strings.Contains(content, "scout") {
-		t.Error("CLAUDE.md missing agent name")
+		t.Error("CLAUDE.local.md missing agent name")
 	}
 	if !strings.Contains(content, "myworld") {
-		t.Error("CLAUDE.md missing world name")
+		t.Error("CLAUDE.local.md missing world name")
 	}
 }
 

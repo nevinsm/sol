@@ -61,17 +61,17 @@ func TestGovernorStartCommand(t *testing.T) {
 		t.Error("governor directory not created")
 	}
 
-	// Verify CLAUDE.md installed (by CLI, not placeholder).
-	claudeMDPath := filepath.Join(govDir, ".claude", "CLAUDE.md")
+	// Verify CLAUDE.local.md installed (by CLI, not placeholder).
+	claudeMDPath := filepath.Join(govDir, ".claude", "CLAUDE.local.md")
 	data, err := os.ReadFile(claudeMDPath)
 	if err != nil {
-		t.Fatalf("CLAUDE.md not written: %v", err)
+		t.Fatalf("CLAUDE.local.md not written: %v", err)
 	}
 	if strings.Contains(string(data), "Placeholder") {
-		t.Error("CLAUDE.md should not be placeholder — protocol generator should have been used")
+		t.Error("CLAUDE.local.md should not be placeholder — protocol generator should have been used")
 	}
 	if !strings.Contains(string(data), "work coordinator") {
-		t.Error("CLAUDE.md should contain governor identity from protocol generator")
+		t.Error("CLAUDE.local.md should contain governor identity from protocol generator")
 	}
 
 	// Verify agent record in sphere store.

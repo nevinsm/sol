@@ -87,7 +87,7 @@ var forgeStartCmd = &cobra.Command{
 			}
 		}
 
-		// 3. Install forge CLAUDE.md.
+		// 3. Install forge CLAUDE.local.md (persona).
 		rctx := protocol.ForgeClaudeMDContext{
 			World:        world,
 			TargetBranch: cfg.TargetBranch,
@@ -95,7 +95,7 @@ var forgeStartCmd = &cobra.Command{
 			QualityGates: cfg.QualityGates,
 		}
 		if err := protocol.InstallForgeClaudeMD(ref.WorktreeDir(), rctx); err != nil {
-			return fmt.Errorf("failed to install forge CLAUDE.md: %w", err)
+			return fmt.Errorf("failed to install forge CLAUDE.local.md: %w", err)
 		}
 
 		// 4. Install Claude Code hooks (with forge sync before prime).
@@ -109,8 +109,10 @@ var forgeStartCmd = &cobra.Command{
 			"SOL_WORLD": world,
 			"SOL_AGENT": "forge",
 		}
-		if err := mgr.Start(sessName, ref.WorktreeDir(),
-			"claude --dangerously-skip-permissions", env, "forge", world); err != nil {
+		forgePrompt := fmt.Sprintf("Forge for world %s. If no context appears, run: sol forge sync %s && sol prime --world=%s --agent=forge",
+			world, world, world)
+		forgeCmd := config.BuildSessionCommand(config.SettingsPath(ref.WorktreeDir()), forgePrompt)
+		if err := mgr.Start(sessName, ref.WorktreeDir(), forgeCmd, env, "forge", world); err != nil {
 			return fmt.Errorf("failed to start forge session: %w", err)
 		}
 

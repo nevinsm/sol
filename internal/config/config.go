@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 // SessionName returns the tmux session name for an agent.
@@ -132,6 +133,35 @@ func SessionCommand() string {
 		return cmd
 	}
 	return DefaultSessionCommand
+}
+
+// SettingsPath returns the path to .claude/settings.local.json in a workdir.
+func SettingsPath(workdir string) string {
+	return filepath.Join(workdir, ".claude", "settings.local.json")
+}
+
+// ShellQuote wraps a string in double quotes with interior special characters
+// escaped for safe embedding in a shell command. Handles: \ " $ ` !
+func ShellQuote(s string) string {
+	r := strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		`$`, `\$`,
+		"`", "\\`",
+		`!`, `\!`,
+	)
+	return `"` + r.Replace(s) + `"`
+}
+
+// BuildSessionCommand constructs the full claude startup command with
+// --settings and an initial prompt. If SOL_SESSION_COMMAND is set (tests),
+// it returns the override verbatim.
+func BuildSessionCommand(settingsPath, prompt string) string {
+	if cmd := os.Getenv("SOL_SESSION_COMMAND"); cmd != "" {
+		return cmd
+	}
+	return fmt.Sprintf("claude --dangerously-skip-permissions --settings %s %s",
+		ShellQuote(settingsPath), ShellQuote(prompt))
 }
 
 // EnsureDirs creates .store/ and .runtime/ if they don't exist.

@@ -468,13 +468,13 @@ func TestGUPPRecovery(t *testing.T) {
 		t.Error("tether file does not exist after cast")
 	}
 
-	claudeMD := filepath.Join(worktreeDir, ".claude", "CLAUDE.md")
+	claudeMD := filepath.Join(worktreeDir, ".claude", "CLAUDE.local.md")
 	data, err := os.ReadFile(claudeMD)
 	if err != nil {
-		t.Fatalf("read CLAUDE.md: %v", err)
+		t.Fatalf("read CLAUDE.local.md: %v", err)
 	}
 	if !strings.Contains(string(data), itemID) {
-		t.Errorf("CLAUDE.md does not contain work item ID %s", itemID)
+		t.Errorf("CLAUDE.local.md does not contain work item ID %s", itemID)
 	}
 
 	// Kill the tmux session.

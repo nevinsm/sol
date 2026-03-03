@@ -355,8 +355,11 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 		t.Fatalf("failed to read exclude file: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, ".claude/") {
-		t.Error("exclude file missing .claude/ pattern")
+	if !strings.Contains(content, ".claude/settings.local.json") {
+		t.Error("exclude file missing .claude/settings.local.json pattern")
+	}
+	if !strings.Contains(content, ".claude/CLAUDE.local.md") {
+		t.Error("exclude file missing .claude/CLAUDE.local.md pattern")
 	}
 	if !strings.Contains(content, ".brief/") {
 		t.Error("exclude file missing .brief/ pattern")
@@ -365,21 +368,42 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 		t.Error("exclude file missing .workflow/ pattern")
 	}
 
-	// Verify git actually ignores these paths.
+	// Verify git ignores sol-managed local files but NOT shared .claude/ files.
 	os.MkdirAll(filepath.Join(repoPath, ".claude"), 0o755)
-	writeFile(t, filepath.Join(repoPath, ".claude", "CLAUDE.md"), "test")
+	writeFile(t, filepath.Join(repoPath, ".claude", "CLAUDE.local.md"), "test")
+	writeFile(t, filepath.Join(repoPath, ".claude", "settings.local.json"), "test")
+	writeFile(t, filepath.Join(repoPath, ".claude", "CLAUDE.md"), "shared project instructions")
+	writeFile(t, filepath.Join(repoPath, ".claude", "settings.json"), "shared settings")
 	os.MkdirAll(filepath.Join(repoPath, ".brief"), 0o755)
 	writeFile(t, filepath.Join(repoPath, ".brief", "memory.md"), "test")
 	os.MkdirAll(filepath.Join(repoPath, ".workflow"), 0o755)
 	writeFile(t, filepath.Join(repoPath, ".workflow", "manifest.json"), "test")
 
-	cmd := exec.Command("git", "-C", repoPath, "status", "--porcelain")
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git status failed: %v", err)
+	// Use git check-ignore to verify which paths are excluded.
+	// Sol-managed local files should be ignored.
+	shouldBeIgnored := []string{
+		".claude/settings.local.json",
+		".claude/CLAUDE.local.md",
+		".brief/memory.md",
+		".workflow/manifest.json",
 	}
-	if strings.Contains(string(out), ".claude") || strings.Contains(string(out), ".brief") || strings.Contains(string(out), ".workflow") {
-		t.Errorf("sol paths not ignored by git, status output: %s", out)
+	for _, p := range shouldBeIgnored {
+		cmd := exec.Command("git", "-C", repoPath, "check-ignore", "-q", p)
+		if err := cmd.Run(); err != nil {
+			t.Errorf("%s should be ignored by git but is not", p)
+		}
+	}
+
+	// Shared .claude/ files should NOT be ignored — they belong in version control.
+	shouldNotBeIgnored := []string{
+		".claude/CLAUDE.md",
+		".claude/settings.json",
+	}
+	for _, p := range shouldNotBeIgnored {
+		cmd := exec.Command("git", "-C", repoPath, "check-ignore", "-q", p)
+		if err := cmd.Run(); err == nil {
+			t.Errorf("%s should NOT be ignored by git but it is", p)
+		}
 	}
 }
 

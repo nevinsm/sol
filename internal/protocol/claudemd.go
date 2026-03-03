@@ -298,7 +298,8 @@ When your tethered work is complete:
 	)
 }
 
-// InstallEnvoyClaudeMD writes .claude/CLAUDE.md for an envoy into the worktree.
+// InstallEnvoyClaudeMD writes .claude/CLAUDE.local.md for an envoy into the worktree.
+// Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
 func InstallEnvoyClaudeMD(worktreeDir string, ctx EnvoyClaudeMDContext) error {
 	claudeDir := filepath.Join(worktreeDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
@@ -306,14 +307,15 @@ func InstallEnvoyClaudeMD(worktreeDir string, ctx EnvoyClaudeMDContext) error {
 	}
 
 	content := GenerateEnvoyClaudeMD(ctx)
-	path := filepath.Join(claudeDir, "CLAUDE.md")
+	path := filepath.Join(claudeDir, "CLAUDE.local.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("failed to write envoy CLAUDE.md in worktree: %w", err)
+		return fmt.Errorf("failed to write envoy CLAUDE.local.md in worktree: %w", err)
 	}
 	return nil
 }
 
-// InstallForgeClaudeMD writes .claude/CLAUDE.md for the forge into the worktree.
+// InstallForgeClaudeMD writes .claude/CLAUDE.local.md for the forge into the worktree.
+// Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
 func InstallForgeClaudeMD(worktreeDir string, ctx ForgeClaudeMDContext) error {
 	claudeDir := filepath.Join(worktreeDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
@@ -321,9 +323,9 @@ func InstallForgeClaudeMD(worktreeDir string, ctx ForgeClaudeMDContext) error {
 	}
 
 	content := GenerateForgeClaudeMD(ctx)
-	path := filepath.Join(claudeDir, "CLAUDE.md")
+	path := filepath.Join(claudeDir, "CLAUDE.local.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("failed to write forge CLAUDE.md in worktree: %w", err)
+		return fmt.Errorf("failed to write forge CLAUDE.local.md in worktree: %w", err)
 	}
 	return nil
 }
@@ -434,7 +436,8 @@ Full sol CLI reference for governor operations:
 	)
 }
 
-// InstallGovernorClaudeMD writes CLAUDE.md for the governor into the governor directory.
+// InstallGovernorClaudeMD writes CLAUDE.local.md for the governor into the governor directory.
+// Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
 func InstallGovernorClaudeMD(govDir string, ctx GovernorClaudeMDContext) error {
 	claudeDir := filepath.Join(govDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
@@ -442,14 +445,15 @@ func InstallGovernorClaudeMD(govDir string, ctx GovernorClaudeMDContext) error {
 	}
 
 	content := GenerateGovernorClaudeMD(ctx)
-	path := filepath.Join(claudeDir, "CLAUDE.md")
+	path := filepath.Join(claudeDir, "CLAUDE.local.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("failed to write governor CLAUDE.md: %w", err)
+		return fmt.Errorf("failed to write governor CLAUDE.local.md: %w", err)
 	}
 	return nil
 }
 
-// InstallClaudeMD writes .claude/CLAUDE.md into the given worktree directory.
+// InstallClaudeMD writes .claude/CLAUDE.local.md into the given worktree directory.
+// Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
 // Creates .claude/ if it doesn't exist.
 func InstallClaudeMD(worktreeDir string, ctx ClaudeMDContext) error {
 	claudeDir := filepath.Join(worktreeDir, ".claude")
@@ -458,9 +462,9 @@ func InstallClaudeMD(worktreeDir string, ctx ClaudeMDContext) error {
 	}
 
 	content := GenerateClaudeMD(ctx)
-	path := filepath.Join(claudeDir, "CLAUDE.md")
+	path := filepath.Join(claudeDir, "CLAUDE.local.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("failed to write CLAUDE.md in worktree: %w", err)
+		return fmt.Errorf("failed to write CLAUDE.local.md in worktree: %w", err)
 	}
 	return nil
 }
