@@ -9,11 +9,10 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
-// mockNotifyManager records Inject/SendKeys calls and tracks session existence.
+// mockNotifyManager records Inject calls and tracks session existence.
 type mockNotifyManager struct {
 	sessions map[string]bool
 	injected []mockCall
-	sentKeys []mockCall
 }
 
 type mockCall struct {
@@ -29,13 +28,8 @@ func (m *mockNotifyManager) Exists(name string) bool {
 	return m.sessions[name]
 }
 
-func (m *mockNotifyManager) Inject(name, text string) error {
+func (m *mockNotifyManager) Inject(name, text string, submit bool) error {
 	m.injected = append(m.injected, mockCall{Name: name, Text: text})
-	return nil
-}
-
-func (m *mockNotifyManager) SendKeys(name, keys string) error {
-	m.sentKeys = append(m.sentKeys, mockCall{Name: name, Text: keys})
 	return nil
 }
 
@@ -213,12 +207,6 @@ func TestSyncEnvoyNotifiesSession(t *testing.T) {
 		t.Errorf("Inject session = %q, want sol-testworld-Jimmy", mgr.injected[0].Name)
 	}
 
-	if len(mgr.sentKeys) != 1 {
-		t.Fatalf("expected 1 SendKeys call, got %d", len(mgr.sentKeys))
-	}
-	if mgr.sentKeys[0].Text != "Enter" {
-		t.Errorf("SendKeys keys = %q, want Enter", mgr.sentKeys[0].Text)
-	}
 }
 
 func TestSyncEnvoyNoSession(t *testing.T) {
@@ -234,9 +222,6 @@ func TestSyncEnvoyNoSession(t *testing.T) {
 
 	if len(mgr.injected) != 0 {
 		t.Errorf("expected no Inject calls, got %d", len(mgr.injected))
-	}
-	if len(mgr.sentKeys) != 0 {
-		t.Errorf("expected no SendKeys calls, got %d", len(mgr.sentKeys))
 	}
 }
 

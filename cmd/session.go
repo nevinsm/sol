@@ -209,6 +209,7 @@ var sessionAttachCmd = &cobra.Command{
 // --- sol session inject ---
 
 var injectMessage string
+var injectNoSubmit bool
 
 var sessionInjectCmd = &cobra.Command{
 	Use:          "inject <name>",
@@ -220,7 +221,7 @@ var sessionInjectCmd = &cobra.Command{
 			return fmt.Errorf("--message is required")
 		}
 		mgr := session.New()
-		if err := mgr.Inject(args[0], injectMessage); err != nil {
+		if err := mgr.Inject(args[0], injectMessage, !injectNoSubmit); err != nil {
 			return err
 		}
 		fmt.Printf("Injected message into session %s\n", args[0])
@@ -230,4 +231,5 @@ var sessionInjectCmd = &cobra.Command{
 
 func init() {
 	sessionInjectCmd.Flags().StringVar(&injectMessage, "message", "", "text to inject")
+	sessionInjectCmd.Flags().BoolVar(&injectNoSubmit, "no-submit", false, "stage text without pressing Enter")
 }

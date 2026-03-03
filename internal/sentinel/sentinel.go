@@ -62,7 +62,7 @@ type SessionChecker interface {
 	Capture(name string, lines int) (string, error)
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 	Stop(name string, force bool) error
-	Inject(name string, text string) error
+	Inject(name string, text string, submit bool) error
 }
 
 // AssessmentResult is the structured output from an AI assessment.
@@ -443,7 +443,7 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 
 	case "nudge":
 		// Inject nudge message into the agent's session.
-		if err := w.sessions.Inject(sessionName, result.NudgeMessage); err != nil {
+		if err := w.sessions.Inject(sessionName, result.NudgeMessage, true); err != nil {
 			return fmt.Errorf("failed to inject nudge into %s: %w", sessionName, err)
 		}
 		w.patrolNudged++

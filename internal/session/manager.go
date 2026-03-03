@@ -390,8 +390,9 @@ func (m *Manager) Attach(name string) error {
 }
 
 // Inject sends text to the session's active pane using tmux send-keys in
-// literal mode. Used for nudge delivery.
-func (m *Manager) Inject(name string, text string) error {
+// literal mode, then presses Enter to submit it. Used for nudge delivery.
+// If submit is false, the text is staged without pressing Enter.
+func (m *Manager) Inject(name string, text string, submit bool) error {
 	if !m.Exists(name) {
 		return fmt.Errorf("session %q not found", name)
 	}
@@ -400,6 +401,12 @@ func (m *Manager) Inject(name string, text string) error {
 	defer sendCancel()
 	if out, err := sendCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to inject into session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
+	}
+
+	if submit {
+		if err := m.SendKeys(name, "Enter"); err != nil {
+			return fmt.Errorf("failed to submit injected text in session %q: %w", name, err)
+		}
 	}
 
 	return nil

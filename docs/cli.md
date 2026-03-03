@@ -63,7 +63,7 @@
 | `sol session health <name>` | Check session health |
 | `sol session capture <name>` | Capture pane output |
 | `sol session attach <name>` | Attach to a session |
-| `sol session inject <name> --message=M` | Inject text into a session |
+| `sol session inject <name> --message=M` | Inject text and press Enter. `--no-submit` to stage only. |
 
 ## Supervision
 

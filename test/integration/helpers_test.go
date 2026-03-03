@@ -357,7 +357,7 @@ func (m *mockSessionChecker) Stop(name string, force bool) error {
 	return nil
 }
 
-func (m *mockSessionChecker) Inject(name string, text string) error {
+func (m *mockSessionChecker) Inject(name string, text string, submit bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.injected = append(m.injected, mockInjectCall{Session: name, Text: text})

@@ -136,7 +136,7 @@ func TestInject(t *testing.T) {
 	// Wait for cat to start
 	time.Sleep(300 * time.Millisecond)
 
-	err = mgr.Inject("test-inj", "test message")
+	err = mgr.Inject("test-inj", "test message", false)
 	if err != nil {
 		t.Fatalf("Inject failed: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestCaptureNonexistent(t *testing.T) {
 func TestInjectNonexistent(t *testing.T) {
 	mgr := setupTest(t)
 
-	err := mgr.Inject("nonexistent", "hello")
+	err := mgr.Inject("nonexistent", "hello", true)
 	if err == nil {
 		t.Fatal("Inject should fail for nonexistent session")
 	}
@@ -603,7 +603,7 @@ func TestSessionNameInErrors(t *testing.T) {
 		t.Errorf("error should mention session name, got: %v", err)
 	}
 
-	err = mgr.Inject("my-special-session", "hello")
+	err = mgr.Inject("my-special-session", "hello", true)
 	if err == nil {
 		t.Fatal("expected error")
 	}

@@ -16,8 +16,7 @@ import (
 // NotifyManager provides session notification primitives.
 type NotifyManager interface {
 	Exists(name string) bool
-	Inject(name, text string) error
-	SendKeys(name, keys string) error
+	Inject(name, text string, submit bool) error
 }
 
 // AgentLister lists agents from the sphere store.
@@ -105,11 +104,8 @@ func SyncEnvoy(world, name string, mgr NotifyManager) error {
 	}
 
 	msg := fmt.Sprintf("\n[sol] Managed repo synced. Review your branch for any upstream changes.\n")
-	if err := mgr.Inject(sessName, msg); err != nil {
+	if err := mgr.Inject(sessName, msg, true); err != nil {
 		return fmt.Errorf("failed to notify envoy %q: %w", name, err)
-	}
-	if err := mgr.SendKeys(sessName, "Enter"); err != nil {
-		return fmt.Errorf("failed to send Enter to envoy %q: %w", name, err)
 	}
 
 	return nil
@@ -124,11 +120,8 @@ func SyncGovernor(world string, mgr NotifyManager) error {
 	}
 
 	msg := fmt.Sprintf("\n[sol] Managed repo synced. Latest code available in ../repo.\n")
-	if err := mgr.Inject(sessName, msg); err != nil {
+	if err := mgr.Inject(sessName, msg, true); err != nil {
 		return fmt.Errorf("failed to notify governor: %w", err)
-	}
-	if err := mgr.SendKeys(sessName, "Enter"); err != nil {
-		return fmt.Errorf("failed to send Enter to governor: %w", err)
 	}
 
 	return nil
