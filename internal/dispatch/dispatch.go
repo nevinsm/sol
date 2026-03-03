@@ -622,6 +622,9 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	case "governor":
 		worktreeDir = governor.GovernorDir(opts.World)
 		branchName = fmt.Sprintf("governor/%s", opts.World)
+	case "forge":
+		worktreeDir = filepath.Join(config.Home(), opts.World, "forge", "worktree")
+		branchName = "forge/" + opts.World
 	default:
 		worktreeDir = WorktreePath(opts.World, opts.AgentName)
 		branchName = fmt.Sprintf("outpost/%s/%s", opts.AgentName, workItemID)
@@ -723,7 +726,7 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	// 7. Stop session after a brief delay to allow final output.
 	// Envoys and governors keep their session alive — they are human-supervised and persistent.
 	sessionKept := false
-	if agent.Role != "envoy" && agent.Role != "governor" {
+	if agent.Role != "envoy" && agent.Role != "governor" && agent.Role != "forge" {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
@@ -825,7 +828,7 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 	// 6. Stop session after a brief delay to allow final output.
 	// Envoys and governors keep their session alive — they are human-supervised and persistent.
 	sessionKept := false
-	if role != "envoy" && role != "governor" {
+	if role != "envoy" && role != "governor" && role != "forge" {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
