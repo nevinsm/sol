@@ -27,6 +27,7 @@ type SessionManager interface {
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 	Stop(name string, force bool) error
 	Exists(name string) bool
+	Inject(name string, text string, submit bool) error
 }
 
 // WorldStore defines the world store operations used by dispatch.
@@ -947,6 +948,27 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 			Priority: "normal",
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "resolve: failed to nudge governor: %v\n", err)
+		}
+	}
+
+	// 9. Nudge forge that an MR is ready (best-effort, silent skip if no forge session).
+	forgeSession := config.SessionName(opts.World, "forge")
+	forgeBody := fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
+		workItemID, mrID, branchName, item.Title)
+	if err := nudge.Enqueue(forgeSession, nudge.Message{
+		Sender:   opts.AgentName,
+		Type:     "MR_READY",
+		Subject:  fmt.Sprintf("MR ready: %s", item.Title),
+		Body:     forgeBody,
+		Priority: "normal",
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "resolve: failed to nudge forge: %v\n", err)
+	}
+
+	// Poke forge session to trigger a turn boundary so it drains queue immediately.
+	if mgr.Exists(forgeSession) {
+		if err := mgr.Inject(forgeSession, fmt.Sprintf("MR ready for %q — check nudge queue", item.Title), true); err != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to poke forge session: %v\n", err)
 		}
 	}
 
