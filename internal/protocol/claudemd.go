@@ -289,7 +289,7 @@ You maintain accumulated context in `+"`"+`.brief/memory.md`+"`"+`.
    When tethered, focus on that work item. Resolve when done.
 2. **Self-service**: Create your own work item with
    `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+`
-   Then tether yourself (the operator or governor will handle this).
+   Then tether yourself: `+"`"+`%s tether %s <item-id> --world=%s`+"`"+`
 3. **Freeform**: No tether — exploration, research, design. No resolve needed.
 
 ## Submitting Work
@@ -322,6 +322,7 @@ Full Sol CLI reference: `+"`"+`.claude/sol-cli-reference.md`+"`"+`
 		ctx.World, ctx.AgentName,
 		sol, ctx.World,
 		sol, ctx.World,
+		sol, ctx.AgentName, ctx.World,
 		sol, ctx.World, ctx.AgentName,
 		sol, ctx.World, ctx.AgentName,
 	)
