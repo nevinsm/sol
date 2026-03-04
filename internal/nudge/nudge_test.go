@@ -574,6 +574,15 @@ func TestListEmptyQueue(t *testing.T) {
 	}
 }
 
+func TestPokeNonexistentSessionReturnsNil(t *testing.T) {
+	setupTestDir(t)
+
+	// Poke on a session that doesn't exist should return nil (best-effort).
+	if err := Poke("nonexistent-session"); err != nil {
+		t.Fatalf("Poke on nonexistent session should return nil, got: %v", err)
+	}
+}
+
 func TestMultipleSessionsIndependent(t *testing.T) {
 	setupTestDir(t)
 

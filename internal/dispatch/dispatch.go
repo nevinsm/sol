@@ -950,6 +950,10 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		}
 	}
 
+	// 9. Poke forge to trigger turn boundary and drain any pending nudges.
+	forgeSession := config.SessionName(opts.World, "forge")
+	nudge.Poke(forgeSession)
+
 	return &ResolveResult{
 		WorkItemID:     workItemID,
 		Title:          item.Title,
