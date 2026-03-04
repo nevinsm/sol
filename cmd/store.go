@@ -21,7 +21,8 @@ func init() {
 	rootCmd.AddCommand(storeCmd)
 
 	storeCmd.AddCommand(storeCreateCmd)
-	storeCmd.AddCommand(storeGetCmd)
+	storeCmd.AddCommand(storeStatusCmd)
+	storeCmd.AddCommand(storeGetAliasCmd)
 	storeCmd.AddCommand(storeListCmd)
 	storeCmd.AddCommand(storeUpdateCmd)
 	storeCmd.AddCommand(storeCloseCmd)
@@ -73,43 +74,59 @@ func init() {
 	storeCreateCmd.Flags().StringArrayVar(&createLabels, "label", nil, "label (can be repeated)")
 }
 
-// --- sol store get ---
+// --- sol store status ---
 
-var getJSON bool
+var storeStatusJSON bool
 
-var storeGetCmd = &cobra.Command{
-	Use:          "get <id>",
-	Short:        "Get a work item by ID",
+var storeStatusRunE = func(cmd *cobra.Command, args []string) error {
+	world, _ := cmd.Flags().GetString("world")
+	if world == "" {
+		return fmt.Errorf("--world is required")
+	}
+	if err := config.RequireWorld(world); err != nil {
+		return err
+	}
+	s, err := store.OpenWorld(world)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	item, err := s.GetWorkItem(args[0])
+	if err != nil {
+		return err
+	}
+
+	if storeStatusJSON {
+		return printJSON(item)
+	}
+	printWorkItem(item)
+	return nil
+}
+
+var storeStatusCmd = &cobra.Command{
+	Use:          "status <id>",
+	Short:        "Show work item status",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
-		if err != nil {
-			return err
-		}
-		s, err := store.OpenWorld(world)
-		if err != nil {
-			return err
-		}
-		defer s.Close()
+	RunE:         storeStatusRunE,
+}
 
-		item, err := s.GetWorkItem(args[0])
-		if err != nil {
-			return err
-		}
-
-		if getJSON {
-			return printJSON(item)
-		}
-		printWorkItem(item)
-		return nil
-	},
+// Hidden alias for backwards compatibility.
+var storeGetAliasCmd = &cobra.Command{
+	Use:          "get <id>",
+	Short:        "Show work item status",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	Hidden:       true,
+	RunE:         storeStatusRunE,
 }
 
 func init() {
-	storeGetCmd.Flags().String("world", "", "world name")
-	storeGetCmd.Flags().BoolVar(&getJSON, "json", false, "output as JSON")
+	for _, cmd := range []*cobra.Command{storeStatusCmd, storeGetAliasCmd} {
+		cmd.Flags().String("world", "", "world name")
+		cmd.Flags().BoolVar(&storeStatusJSON, "json", false, "output as JSON")
+	}
 }
 
 // --- sol store list ---
@@ -183,9 +200,11 @@ func init() {
 // --- sol store update ---
 
 var (
-	updateStatus   string
-	updateAssignee string
-	updatePriority int
+	updateStatus      string
+	updateAssignee    string
+	updatePriority    int
+	updateTitle       string
+	updateDescription string
 )
 
 var storeUpdateCmd = &cobra.Command{
@@ -200,9 +219,11 @@ var storeUpdateCmd = &cobra.Command{
 			return err
 		}
 		updates := store.WorkItemUpdates{
-			Status:   updateStatus,
-			Assignee: updateAssignee,
-			Priority: updatePriority,
+			Status:      updateStatus,
+			Assignee:    updateAssignee,
+			Priority:    updatePriority,
+			Title:       updateTitle,
+			Description: updateDescription,
 		}
 		s, err := store.OpenWorld(world)
 		if err != nil {
@@ -223,6 +244,8 @@ func init() {
 	storeUpdateCmd.Flags().StringVar(&updateStatus, "status", "", "new status")
 	storeUpdateCmd.Flags().StringVar(&updateAssignee, "assignee", "", "new assignee (- to clear)")
 	storeUpdateCmd.Flags().IntVar(&updatePriority, "priority", 0, "new priority")
+	storeUpdateCmd.Flags().StringVar(&updateTitle, "title", "", "new title")
+	storeUpdateCmd.Flags().StringVar(&updateDescription, "description", "", "new description")
 }
 
 // --- sol store close ---

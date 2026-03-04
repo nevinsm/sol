@@ -165,13 +165,15 @@ var caravanCheckCmd = &cobra.Command{
 		fmt.Printf("Status: %s\n", caravan.Status)
 		fmt.Println()
 
-		// Separate ready, awaiting merge, and blocked items.
-		var ready, awaitingMerge, blocked []store.CaravanItemStatus
+		// Separate ready, in progress, awaiting merge, and blocked items.
+		var ready, inProgress, awaitingMerge, blocked []store.CaravanItemStatus
 		for _, st := range statuses {
 			if st.WorkItemStatus == "closed" {
 				// fully merged, skip for now
 			} else if st.WorkItemStatus == "done" {
 				awaitingMerge = append(awaitingMerge, st)
+			} else if st.IsDispatched() {
+				inProgress = append(inProgress, st)
 			} else if st.WorkItemStatus == "open" && st.Ready {
 				ready = append(ready, st)
 			} else {
@@ -184,6 +186,19 @@ var caravanCheckCmd = &cobra.Command{
 			for _, st := range ready {
 				title := itemTitle(st.WorkItemID, st.World)
 				fmt.Printf("  %s  %s  (%s)\n", st.WorkItemID, title, st.World)
+			}
+			fmt.Println()
+		}
+
+		if len(inProgress) > 0 {
+			fmt.Println("In progress:")
+			for _, st := range inProgress {
+				title := itemTitle(st.WorkItemID, st.World)
+				agent := ""
+				if st.Assignee != "" {
+					agent = fmt.Sprintf("  [%s]", agentShortName(st.Assignee))
+				}
+				fmt.Printf("  %s  %s  (%s)%s\n", st.WorkItemID, title, st.World, agent)
 			}
 			fmt.Println()
 		}
@@ -283,6 +298,12 @@ var caravanStatusCmd = &cobra.Command{
 				case st.WorkItemStatus == "done":
 					marker = "[~]"
 					suffix = " (awaiting merge)"
+				case st.IsDispatched():
+					marker = "[w]"
+					suffix = " (in progress)"
+					if st.Assignee != "" {
+						suffix = fmt.Sprintf(" (in progress: %s)", agentShortName(st.Assignee))
+					}
 				case st.WorkItemStatus == "open" && st.Ready:
 					marker = "[>]"
 					suffix = " (ready)"
@@ -329,7 +350,7 @@ var caravanStatusCmd = &cobra.Command{
 			}
 
 			// Count statuses.
-			var closedCount, mergingCount, readyCount, blockedCount int
+			var closedCount, mergingCount, readyCount, dispatchedCount, blockedCount int
 			statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
 			if err != nil {
 				// If we can't check readiness, just show item count.
@@ -342,14 +363,145 @@ var caravanStatusCmd = &cobra.Command{
 					closedCount++
 				case st.WorkItemStatus == "done":
 					mergingCount++
+				case st.IsDispatched():
+					dispatchedCount++
 				case st.WorkItemStatus == "open" && st.Ready:
 					readyCount++
 				default:
 					blockedCount++
 				}
 			}
-			fmt.Fprintf(tw, "  %s\t%s\t%d items\t(%d closed, %d merging, %d ready, %d blocked)\n",
-				c.ID, c.Name, len(items), closedCount, mergingCount, readyCount, blockedCount)
+			summary := fmt.Sprintf("%d closed", closedCount)
+			if mergingCount > 0 {
+				summary += fmt.Sprintf(", %d merging", mergingCount)
+			}
+			if dispatchedCount > 0 {
+				summary += fmt.Sprintf(", %d in progress", dispatchedCount)
+			}
+			if readyCount > 0 {
+				summary += fmt.Sprintf(", %d ready", readyCount)
+			}
+			if blockedCount > 0 {
+				summary += fmt.Sprintf(", %d blocked", blockedCount)
+			}
+			fmt.Fprintf(tw, "  %s\t%s\t%d items\t(%s)\n",
+				c.ID, c.Name, len(items), summary)
+		}
+		tw.Flush()
+		return nil
+	},
+}
+
+// --- sol caravan list ---
+
+var caravanListCmd = &cobra.Command{
+	Use:          "list",
+	Short:        "List caravans with optional status filtering",
+	Long:         "List all caravans. Shows open caravans by default. Use --all for all caravans or --status to filter.",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		showAll, _ := cmd.Flags().GetBool("all")
+		statusFilter, _ := cmd.Flags().GetString("status")
+
+		if showAll && statusFilter != "" {
+			return fmt.Errorf("--all and --status are mutually exclusive")
+		}
+
+		// Default: open only. --all: all. --status: specific.
+		filter := "open"
+		if showAll {
+			filter = ""
+		} else if statusFilter != "" {
+			filter = statusFilter
+		}
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		caravans, err := sphereStore.ListCaravans(filter)
+		if err != nil {
+			return err
+		}
+
+		if jsonOut {
+			type caravanListEntry struct {
+				ID        string     `json:"id"`
+				Name      string     `json:"name"`
+				Status    string     `json:"status"`
+				Owner     string     `json:"owner"`
+				Items     int        `json:"items"`
+				Merged    int        `json:"merged"`
+				CreatedAt string     `json:"created_at"`
+				ClosedAt  *string    `json:"closed_at,omitempty"`
+			}
+			var entries []caravanListEntry
+			for _, c := range caravans {
+				entry := caravanListEntry{
+					ID:        c.ID,
+					Name:      c.Name,
+					Status:    c.Status,
+					Owner:     c.Owner,
+					CreatedAt: c.CreatedAt.Format("2006-01-02"),
+				}
+				if c.ClosedAt != nil {
+					s := c.ClosedAt.Format("2006-01-02")
+					entry.ClosedAt = &s
+				}
+				items, _ := sphereStore.ListCaravanItems(c.ID)
+				entry.Items = len(items)
+				if c.Status == "closed" {
+					entry.Merged = len(items)
+				} else {
+					statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
+					if err == nil {
+						for _, st := range statuses {
+							if st.WorkItemStatus == "closed" {
+								entry.Merged++
+							}
+						}
+					}
+				}
+				entries = append(entries, entry)
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(entries)
+		}
+
+		if len(caravans) == 0 {
+			label := filter
+			if label == "" {
+				label = "any"
+			}
+			fmt.Printf("No caravans (status: %s).\n", label)
+			return nil
+		}
+
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintf(tw, "ID\tNAME\tSTATUS\tITEMS\tCREATED\n")
+		for _, c := range caravans {
+			items, _ := sphereStore.ListCaravanItems(c.ID)
+			total := len(items)
+			merged := 0
+			if c.Status == "closed" {
+				merged = total
+			} else {
+				statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
+				if err == nil {
+					for _, st := range statuses {
+						if st.WorkItemStatus == "closed" {
+							merged++
+						}
+					}
+				}
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%d/%d merged\t%s\n",
+				c.ID, c.Name, c.Status, merged, total, c.CreatedAt.Format("2006-01-02"))
 		}
 		tw.Flush()
 		return nil
@@ -483,7 +635,193 @@ var caravanLaunchCmd = &cobra.Command{
 	},
 }
 
+// --- sol caravan set-phase ---
+
+var caravanSetPhaseCmd = &cobra.Command{
+	Use:   "set-phase <caravan-id> [<item-id>] <phase>",
+	Short: "Update the phase of items in a caravan",
+	Long:  "Update the phase of a single item, or use --all to update all items in the caravan.",
+	Args: func(cmd *cobra.Command, args []string) error {
+		all, _ := cmd.Flags().GetBool("all")
+		if all {
+			if len(args) != 2 {
+				return fmt.Errorf("usage: sol caravan set-phase <caravan-id> --all <phase>")
+			}
+		} else {
+			if len(args) != 3 {
+				return fmt.Errorf("usage: sol caravan set-phase <caravan-id> <item-id> <phase>")
+			}
+		}
+		return nil
+	},
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		all, _ := cmd.Flags().GetBool("all")
+		caravanID := args[0]
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		// Validate caravan exists.
+		if _, err := sphereStore.GetCaravan(caravanID); err != nil {
+			return err
+		}
+
+		if all {
+			phase, err := parsePhaseArg(args[1])
+			if err != nil {
+				return err
+			}
+			n, err := sphereStore.UpdateAllCaravanItemPhases(caravanID, phase)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Updated %d items to phase %d in caravan %s\n", n, phase, caravanID)
+			return nil
+		}
+
+		itemID := args[1]
+		phase, err := parsePhaseArg(args[2])
+		if err != nil {
+			return err
+		}
+
+		if err := sphereStore.UpdateCaravanItemPhase(caravanID, itemID, phase); err != nil {
+			return err
+		}
+		fmt.Printf("Updated %s to phase %d in caravan %s\n", itemID, phase, caravanID)
+		return nil
+	},
+}
+
+func parsePhaseArg(s string) (int, error) {
+	var phase int
+	if _, err := fmt.Sscanf(s, "%d", &phase); err != nil {
+		return 0, fmt.Errorf("invalid phase %q: must be an integer", s)
+	}
+	if phase < 0 {
+		return 0, fmt.Errorf("invalid phase %d: must be non-negative", phase)
+	}
+	return phase, nil
+}
+
+// --- sol caravan close ---
+
+var caravanCloseCmd = &cobra.Command{
+	Use:          "close [<caravan-id>]",
+	Short:        "Close a completed caravan",
+	Long:         "Close a caravan by ID, or use --auto to close all caravans where every item is merged.",
+	Args:         cobra.MaximumNArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		autoClose, _ := cmd.Flags().GetBool("auto")
+		force, _ := cmd.Flags().GetBool("force")
+
+		if len(args) == 0 && !autoClose {
+			return fmt.Errorf("provide a <caravan-id> or use --auto")
+		}
+		if len(args) == 1 && autoClose {
+			return fmt.Errorf("--auto scans all caravans; do not pass a caravan ID")
+		}
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		logger := events.NewLogger(config.Home())
+
+		if autoClose {
+			caravans, err := sphereStore.ListCaravans("open")
+			if err != nil {
+				return err
+			}
+			closed := 0
+			for _, c := range caravans {
+				ok, err := sphereStore.TryCloseCaravan(c.ID, gatedWorldOpener)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to check caravan %s (%s): %v\n", c.ID, c.Name, err)
+					continue
+				}
+				if ok {
+					logger.Emit(events.EventCaravanClosed, "sol", "operator", "both", map[string]string{
+						"caravan_id": c.ID,
+						"name":       c.Name,
+					})
+					fmt.Printf("Closed caravan %s: %q\n", c.ID, c.Name)
+					closed++
+				}
+			}
+			if closed == 0 {
+				fmt.Println("No caravans ready to close (all items must be merged).")
+			} else {
+				fmt.Printf("\nClosed %d caravan(s).\n", closed)
+			}
+			return nil
+		}
+
+		// Close a specific caravan.
+		caravanID := args[0]
+
+		caravan, err := sphereStore.GetCaravan(caravanID)
+		if err != nil {
+			return err
+		}
+
+		if caravan.Status == "closed" {
+			fmt.Printf("Caravan %s (%q) is already closed.\n", caravanID, caravan.Name)
+			return nil
+		}
+
+		if !force {
+			closed, err := sphereStore.TryCloseCaravan(caravanID, gatedWorldOpener)
+			if err != nil {
+				return err
+			}
+			if !closed {
+				// Show which items are not yet merged.
+				statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
+				if err != nil {
+					return fmt.Errorf("not all items are merged (use --force to close anyway)")
+				}
+				var unmerged []string
+				for _, st := range statuses {
+					if st.WorkItemStatus != "closed" {
+						unmerged = append(unmerged, fmt.Sprintf("%s (%s: %s)", st.WorkItemID, st.World, st.WorkItemStatus))
+					}
+				}
+				return fmt.Errorf("not all items are merged; unmerged: %s (use --force to close anyway)",
+					strings.Join(unmerged, ", "))
+			}
+		} else {
+			if err := sphereStore.UpdateCaravanStatus(caravanID, "closed"); err != nil {
+				return err
+			}
+		}
+
+		logger.Emit(events.EventCaravanClosed, "sol", "operator", "both", map[string]string{
+			"caravan_id": caravanID,
+			"name":       caravan.Name,
+		})
+
+		fmt.Printf("Closed caravan %s: %q\n", caravanID, caravan.Name)
+		return nil
+	},
+}
+
 // helpers
+
+// agentShortName extracts the agent name from a "world/agent-name" assignee string.
+func agentShortName(assignee string) string {
+	if i := strings.LastIndex(assignee, "/"); i >= 0 {
+		return assignee[i+1:]
+	}
+	return assignee
+}
 
 func itemTitle(workItemID, world string) string {
 	worldStore, err := gatedWorldOpener(world)
@@ -529,8 +867,18 @@ func init() {
 	caravanCmd.AddCommand(caravanCreateCmd)
 	caravanCmd.AddCommand(caravanAddCmd)
 	caravanCmd.AddCommand(caravanCheckCmd)
+	caravanCmd.AddCommand(caravanListCmd)
 	caravanCmd.AddCommand(caravanStatusCmd)
 	caravanCmd.AddCommand(caravanLaunchCmd)
+	caravanCmd.AddCommand(caravanCloseCmd)
+	caravanCmd.AddCommand(caravanSetPhaseCmd)
+
+	// set-phase flags
+	caravanSetPhaseCmd.Flags().Bool("all", false, "update all items in the caravan")
+
+	// close flags
+	caravanCloseCmd.Flags().Bool("force", false, "close even if not all items are merged")
+	caravanCloseCmd.Flags().Bool("auto", false, "scan all open caravans and close any where all items are merged")
 
 	// create flags
 	caravanCreateCmd.Flags().String("world", "", "world name")
@@ -543,6 +891,11 @@ func init() {
 
 	// check flags
 	caravanCheckCmd.Flags().Bool("json", false, "output as JSON")
+
+	// list flags
+	caravanListCmd.Flags().Bool("json", false, "output as JSON")
+	caravanListCmd.Flags().Bool("all", false, "include closed caravans")
+	caravanListCmd.Flags().String("status", "", "filter by status (open, ready, closed)")
 
 	// status flags
 	caravanStatusCmd.Flags().Bool("json", false, "output as JSON")

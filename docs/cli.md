@@ -52,9 +52,9 @@ This means `--world` is optional when running from inside a world directory (e.g
 | Command | Description |
 |---------|-------------|
 | `sol store create --world=W --title=T` | Create a work item |
-| `sol store get <id> --world=W` | Get a work item by ID |
+| `sol store status <id> --world=W` | Show work item status |
 | `sol store list --world=W` | List work items (filter by `--status`, `--label`, `--assignee`) |
-| `sol store update <id> --world=W` | Update status, assignee, or priority |
+| `sol store update <id> --world=W` | Update status, assignee, priority, title, or description |
 | `sol store close <id> --world=W` | Close a work item |
 | `sol store query --world=W --sql=Q` | Run a read-only SQL query |
 
@@ -105,11 +105,12 @@ This means `--world` is optional when running from inside a world directory (e.g
 
 | Command | Description |
 |---------|-------------|
-| `sol forge start --world=W` | Start the forge as a Claude session |
-| `sol forge stop --world=W` | Stop the forge |
-| `sol forge sync --world=W` | Sync forge worktree: fetch origin, reset to target branch. Also syncs managed repo. |
-| `sol forge attach --world=W` | Attach to the forge session |
-| `sol forge queue --world=W` | Show the merge request queue |
+| `sol forge start <world>` | Start the forge as a Claude session |
+| `sol forge stop <world>` | Stop the forge |
+| `sol forge sync <world>` | Sync forge worktree: fetch origin, reset to target branch. Also syncs managed repo. |
+| `sol forge attach <world>` | Attach to the forge session |
+| `sol forge status <world>` | Show forge health summary: process state, queue depth, current claim, last merge/failure. `--json` supported. |
+| `sol forge queue <world>` | Show the full merge request queue |
 
 Toolbox subcommands (used by the forge Claude session):
 
@@ -180,9 +181,12 @@ Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` 
 |---------|-------------|
 | `sol caravan create <name> [items...]` | Create a caravan with optional items |
 | `sol caravan add <caravan-id> <items...>` | Add items to a caravan |
+| `sol caravan list` | List caravans (default: open only). `--all` includes closed. `--status=S` filters by status. `--json` supported. |
 | `sol caravan check <caravan-id>` | Check readiness of caravan items |
 | `sol caravan status [caravan-id]` | Show caravan status |
 | `sol caravan launch <caravan-id> --world=W` | Dispatch ready items in a caravan |
+| `sol caravan set-phase <caravan-id> <item-id> <phase>` | Update the phase of a single item. `--all` updates all items. |
+| `sol caravan close <caravan-id>` | Close a completed caravan. `--force` skips merged check. `--auto` (no ID) closes all fully-merged caravans. |
 
 ## Handoff (Session Continuity)
 
@@ -204,6 +208,7 @@ Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` 
 | `sol envoy brief <name> --world=W` | Display an envoy's brief |
 | `sol envoy debrief <name> --world=W` | Archive the envoy's brief and reset for fresh engagement |
 | `sol envoy sync <name> --world=W` | Sync managed repo and notify running envoy session. Does not rebase envoy branch. |
+| `sol envoy delete <name> --world=W` | Delete an envoy agent, worktree, branch, and store record. Refuses if session active or tethered unless `--force`. |
 
 ## Governor (Per-World Coordinator)
 

@@ -46,21 +46,25 @@ type EnvoyStatus struct {
 
 // PhaseProgress holds progress info for a single phase within a caravan.
 type PhaseProgress struct {
-	Phase int `json:"phase"`
-	Total int `json:"total"`
-	Done  int `json:"done"`
-	Ready int `json:"ready"`
+	Phase      int `json:"phase"`
+	Total      int `json:"total"`
+	Done       int `json:"done"`       // awaiting merge
+	Closed     int `json:"closed"`     // fully merged
+	Ready      int `json:"ready"`
+	Dispatched int `json:"dispatched"` // in progress (tethered/working)
 }
 
 // CaravanInfo holds summary information about a caravan relevant to a world.
 type CaravanInfo struct {
-	ID         string          `json:"id"`
-	Name       string          `json:"name"`
-	Status     string          `json:"status"`
-	TotalItems int             `json:"total_items"`
-	ReadyItems int             `json:"ready_items"`
-	DoneItems  int             `json:"done_items"`
-	Phases     []PhaseProgress `json:"phases,omitempty"`
+	ID              string          `json:"id"`
+	Name            string          `json:"name"`
+	Status          string          `json:"status"`
+	TotalItems      int             `json:"total_items"`
+	ReadyItems      int             `json:"ready_items"`
+	DoneItems       int             `json:"done_items"`       // awaiting merge
+	ClosedItems     int             `json:"closed_items"`     // fully merged
+	DispatchedItems int             `json:"dispatched_items"` // in progress (tethered/working)
+	Phases          []PhaseProgress `json:"phases,omitempty"`
 }
 
 // PrefectInfo holds prefect process state (sphere-level, not per-world).
@@ -397,6 +401,8 @@ func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener 
 				switch {
 				case st.WorkItemStatus == "done" || st.WorkItemStatus == "closed":
 					info.DoneItems++
+				case st.IsDispatched():
+					info.DispatchedItems++
 				case st.WorkItemStatus == "open" && st.Ready:
 					info.ReadyItems++
 				}
@@ -444,6 +450,8 @@ func computePhaseProgress(items []store.CaravanItem, statuses []store.CaravanIte
 			switch {
 			case st.WorkItemStatus == "done" || st.WorkItemStatus == "closed":
 				pp.Done++
+			case st.IsDispatched():
+				pp.Dispatched++
 			case st.WorkItemStatus == "open" && st.Ready:
 				pp.Ready++
 			}

@@ -27,6 +27,7 @@ type SessionManager interface {
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 	Stop(name string, force bool) error
 	Exists(name string) bool
+	Inject(name string, text string, submit bool) error
 }
 
 // WorldStore defines the world store operations used by dispatch.
@@ -968,6 +969,7 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 
 	// 10. Poke forge to trigger turn boundary and drain pending nudges.
 	nudge.Poke(forgeSession)
+
 
 	return &ResolveResult{
 		WorkItemID:     workItemID,

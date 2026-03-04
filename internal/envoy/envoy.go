@@ -11,6 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
 )
 
 // --- Directory helpers ---
@@ -80,6 +81,12 @@ type StopManager interface {
 	Stop(name string, force bool) error
 }
 
+// DeleteStore abstracts sphere store operations for Delete.
+type DeleteStore interface {
+	GetAgent(id string) (*store.Agent, error)
+	DeleteAgent(id string) error
+}
+
 // --- Options ---
 
 // CreateOpts holds inputs for creating an envoy.
@@ -93,6 +100,14 @@ type CreateOpts struct {
 type StartOpts struct {
 	World string
 	Name  string
+}
+
+// DeleteOpts holds inputs for deleting an envoy.
+type DeleteOpts struct {
+	World      string
+	Name       string
+	SourceRepo string // path to managed repo for git operations
+	Force      bool   // override active session / tether checks
 }
 
 // --- Create ---
@@ -317,4 +332,89 @@ func List(world string, sphereStore ListStore) ([]store.Agent, error) {
 	}
 
 	return envoys, nil
+}
+
+// --- Delete ---
+
+// Delete removes an envoy: stops session, removes worktree, deletes directory,
+// deletes git branch, and removes the agent record.
+func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
+	agentID := opts.World + "/" + opts.Name
+	sessName := SessionName(opts.World, opts.Name)
+
+	// 1. Verify agent exists and is an envoy.
+	agent, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		return fmt.Errorf("envoy %q not found in world %q: %w", opts.Name, opts.World, err)
+	}
+	if agent.Role != "envoy" {
+		return fmt.Errorf("agent %q has role %q, expected \"envoy\"", agentID, agent.Role)
+	}
+
+	// 2. Check for active session.
+	if mgr.Exists(sessName) {
+		if !opts.Force {
+			return fmt.Errorf("envoy %q has an active session — stop it first or use --force", opts.Name)
+		}
+		fmt.Fprintf(os.Stderr, "Stopping active session for envoy %q\n", opts.Name)
+		if err := mgr.Stop(sessName, true); err != nil {
+			return fmt.Errorf("failed to stop envoy session: %w", err)
+		}
+	}
+
+	// 3. Check for tether.
+	if tether.IsTethered(opts.World, opts.Name, "envoy") {
+		if !opts.Force {
+			workItem, _ := tether.Read(opts.World, opts.Name, "envoy")
+			return fmt.Errorf("envoy %q is tethered to %q — clear tether first or use --force", opts.Name, workItem)
+		}
+		fmt.Fprintf(os.Stderr, "Clearing tether for envoy %q\n", opts.Name)
+		if err := tether.Clear(opts.World, opts.Name, "envoy"); err != nil {
+			return fmt.Errorf("failed to clear tether: %w", err)
+		}
+	}
+
+	// 4. Warn about non-empty brief (informational only).
+	briefPath := BriefPath(opts.World, opts.Name)
+	if info, err := os.Stat(briefPath); err == nil && info.Size() > 0 {
+		fmt.Fprintf(os.Stderr, "Note: envoy %q has a brief — it will be deleted (use 'sol envoy debrief' first to archive)\n", opts.Name)
+	}
+
+	// 5. Remove git worktree.
+	worktreeDir := WorktreePath(opts.World, opts.Name)
+	if _, err := os.Stat(worktreeDir); err == nil {
+		rmCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
+		if out, err := rmCmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: worktree remove failed: %s\n", strings.TrimSpace(string(out)))
+			// Fallback: remove directory directly.
+			if removeErr := os.RemoveAll(worktreeDir); removeErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to remove worktree dir: %v\n", removeErr)
+			}
+		}
+		// Prune stale worktree references.
+		pruneCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "prune")
+		if out, err := pruneCmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: worktree prune failed: %s\n", strings.TrimSpace(string(out)))
+		}
+	}
+
+	// 6. Delete the envoy directory.
+	envoyDir := EnvoyDir(opts.World, opts.Name)
+	if err := os.RemoveAll(envoyDir); err != nil {
+		return fmt.Errorf("failed to remove envoy directory %q: %w", envoyDir, err)
+	}
+
+	// 7. Delete the git branch (best-effort).
+	branch := fmt.Sprintf("envoy/%s/%s", opts.World, opts.Name)
+	branchCmd := exec.Command("git", "-C", opts.SourceRepo, "branch", "-D", branch)
+	if out, err := branchCmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: branch delete failed: %s\n", strings.TrimSpace(string(out)))
+	}
+
+	// 8. Delete the agent record.
+	if err := sphereStore.DeleteAgent(agentID); err != nil {
+		return fmt.Errorf("failed to delete agent record: %w", err)
+	}
+
+	return nil
 }

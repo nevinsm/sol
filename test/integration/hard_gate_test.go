@@ -22,7 +22,7 @@ func TestHardGateAllCommands(t *testing.T) {
 	}{
 		// store commands
 		{"store create", []string{"store", "create", "--world=noworld", "--title=test"}},
-		{"store get", []string{"store", "get", "sol-00000000", "--world=noworld"}},
+		{"store status", []string{"store", "status", "sol-00000000", "--world=noworld"}},
 		{"store list", []string{"store", "list", "--world=noworld"}},
 		{"store update", []string{"store", "update", "sol-00000000", "--world=noworld", "--status=closed"}},
 		{"store close", []string{"store", "close", "sol-00000000", "--world=noworld"}},

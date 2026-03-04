@@ -664,3 +664,64 @@ func TestCaravanPhaseMixedWorlds(t *testing.T) {
 		t.Fatal("expected phase 1 item ready after all phase 0 closed")
 	}
 }
+
+func TestUpdateCaravanItemPhase(t *testing.T) {
+	s := setupSphere(t)
+
+	caravanID, _ := s.CreateCaravan("phase-test", "operator")
+	s.CreateCaravanItem(caravanID, "sol-0000000000000001", "testworld", 0)
+	s.CreateCaravanItem(caravanID, "sol-0000000000000002", "testworld", 0)
+
+	// Update single item phase.
+	err := s.UpdateCaravanItemPhase(caravanID, "sol-0000000000000001", 2)
+	if err != nil {
+		t.Fatalf("UpdateCaravanItemPhase() error: %v", err)
+	}
+
+	items, _ := s.ListCaravanItems(caravanID)
+	phaseMap := map[string]int{}
+	for _, item := range items {
+		phaseMap[item.WorkItemID] = item.Phase
+	}
+	if phaseMap["sol-0000000000000001"] != 2 {
+		t.Fatalf("expected phase 2, got %d", phaseMap["sol-0000000000000001"])
+	}
+	if phaseMap["sol-0000000000000002"] != 0 {
+		t.Fatalf("expected phase 0, got %d", phaseMap["sol-0000000000000002"])
+	}
+}
+
+func TestUpdateCaravanItemPhaseNotFound(t *testing.T) {
+	s := setupSphere(t)
+
+	caravanID, _ := s.CreateCaravan("phase-notfound", "operator")
+
+	err := s.UpdateCaravanItemPhase(caravanID, "sol-nonexistent", 1)
+	if err == nil {
+		t.Fatal("expected error for nonexistent item")
+	}
+}
+
+func TestUpdateAllCaravanItemPhases(t *testing.T) {
+	s := setupSphere(t)
+
+	caravanID, _ := s.CreateCaravan("bulk-phase", "operator")
+	s.CreateCaravanItem(caravanID, "sol-0000000000000001", "testworld", 0)
+	s.CreateCaravanItem(caravanID, "sol-0000000000000002", "testworld", 1)
+	s.CreateCaravanItem(caravanID, "sol-0000000000000003", "testworld", 2)
+
+	n, err := s.UpdateAllCaravanItemPhases(caravanID, 5)
+	if err != nil {
+		t.Fatalf("UpdateAllCaravanItemPhases() error: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("expected 3 rows affected, got %d", n)
+	}
+
+	items, _ := s.ListCaravanItems(caravanID)
+	for _, item := range items {
+		if item.Phase != 5 {
+			t.Fatalf("expected phase 5 for %s, got %d", item.WorkItemID, item.Phase)
+		}
+	}
+}

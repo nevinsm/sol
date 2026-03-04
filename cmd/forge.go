@@ -190,6 +190,182 @@ var forgeAttachCmd = &cobra.Command{
 	},
 }
 
+var forgeStatusCmd = &cobra.Command{
+	Use:          "status <world>",
+	Short:        "Show forge health summary",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
+		worldStore, err := store.OpenWorld(world)
+		if err != nil {
+			return err
+		}
+		defer worldStore.Close()
+
+		// Check forge session.
+		sessName := dispatch.SessionName(world, "forge")
+		mgr := session.New()
+		running := mgr.Exists(sessName)
+
+		// Load all MRs for summary.
+		mrs, err := worldStore.ListMergeRequests("")
+		if err != nil {
+			return err
+		}
+
+		// Build summary.
+		summary := forgeStatusSummary{
+			World:       world,
+			Running:     running,
+			SessionName: sessName,
+		}
+
+		for _, mr := range mrs {
+			summary.Total++
+			switch mr.Phase {
+			case "ready":
+				if mr.BlockedBy != "" {
+					summary.Blocked++
+				} else {
+					summary.Ready++
+				}
+			case "claimed":
+				summary.InProgress++
+				// Track claimed MR details.
+				summary.ClaimedMR = &forgeStatusMR{
+					ID:     mr.ID,
+					Branch: mr.Branch,
+				}
+				if mr.ClaimedAt != nil {
+					summary.ClaimedMR.Age = time.Since(*mr.ClaimedAt).Truncate(time.Second).String()
+				}
+				// Look up work item title.
+				if item, err := worldStore.GetWorkItem(mr.WorkItemID); err == nil {
+					summary.ClaimedMR.WorkItemID = item.ID
+					summary.ClaimedMR.Title = item.Title
+				} else {
+					summary.ClaimedMR.WorkItemID = mr.WorkItemID
+					summary.ClaimedMR.Title = "(unknown)"
+				}
+			case "failed":
+				summary.Failed++
+				// Track the most recent failure (by updated_at).
+				if summary.LastFailure == nil || mr.UpdatedAt.After(summary.LastFailure.Timestamp) {
+					summary.LastFailure = &forgeStatusEvent{
+						MRID:      mr.ID,
+						Branch:    mr.Branch,
+						Timestamp: mr.UpdatedAt,
+					}
+					if item, err := worldStore.GetWorkItem(mr.WorkItemID); err == nil {
+						summary.LastFailure.Title = item.Title
+					}
+				}
+			case "merged":
+				summary.Merged++
+				// Track the most recent merge (by merged_at).
+				if mr.MergedAt != nil {
+					if summary.LastMerge == nil || mr.MergedAt.After(summary.LastMerge.Timestamp) {
+						summary.LastMerge = &forgeStatusEvent{
+							MRID:      mr.ID,
+							Branch:    mr.Branch,
+							Timestamp: *mr.MergedAt,
+						}
+						if item, err := worldStore.GetWorkItem(mr.WorkItemID); err == nil {
+							summary.LastMerge.Title = item.Title
+						}
+					}
+				}
+			}
+		}
+
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return printJSON(summary)
+		}
+
+		printForgeStatus(summary)
+		return nil
+	},
+}
+
+type forgeStatusSummary struct {
+	World       string            `json:"world"`
+	Running     bool              `json:"running"`
+	SessionName string            `json:"session_name"`
+	Ready       int               `json:"ready"`
+	Blocked     int               `json:"blocked"`
+	InProgress  int               `json:"in_progress"`
+	Failed      int               `json:"failed"`
+	Merged      int               `json:"merged"`
+	Total       int               `json:"total"`
+	ClaimedMR   *forgeStatusMR    `json:"claimed_mr,omitempty"`
+	LastMerge   *forgeStatusEvent `json:"last_merge,omitempty"`
+	LastFailure *forgeStatusEvent `json:"last_failure,omitempty"`
+}
+
+type forgeStatusMR struct {
+	ID         string `json:"id"`
+	WorkItemID string `json:"work_item_id"`
+	Title      string `json:"title"`
+	Branch     string `json:"branch"`
+	Age        string `json:"age"`
+}
+
+type forgeStatusEvent struct {
+	MRID      string    `json:"mr_id"`
+	Title     string    `json:"title,omitempty"`
+	Branch    string    `json:"branch"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+func printForgeStatus(s forgeStatusSummary) {
+	fmt.Printf("Forge: %s\n\n", s.World)
+
+	// Process state.
+	if s.Running {
+		fmt.Printf("  Process:  running (%s)\n", s.SessionName)
+	} else {
+		fmt.Printf("  Process:  stopped\n")
+	}
+
+	// Queue summary.
+	fmt.Printf("  Queue:    %d ready, %d blocked, %d in-progress, %d failed, %d merged (%d total)\n",
+		s.Ready, s.Blocked, s.InProgress, s.Failed, s.Merged, s.Total)
+
+	// Currently claimed MR.
+	if s.ClaimedMR != nil {
+		fmt.Printf("\n  Claimed:  %s  %s\n", s.ClaimedMR.ID, s.ClaimedMR.Branch)
+		fmt.Printf("            %s: %s\n", s.ClaimedMR.WorkItemID, s.ClaimedMR.Title)
+		if s.ClaimedMR.Age != "" {
+			fmt.Printf("            age: %s\n", s.ClaimedMR.Age)
+		}
+	}
+
+	// Last merge.
+	if s.LastMerge != nil {
+		ago := time.Since(s.LastMerge.Timestamp).Truncate(time.Second)
+		fmt.Printf("\n  Last merge:   %s  %s (%s ago)\n", s.LastMerge.MRID, s.LastMerge.Branch, ago)
+		if s.LastMerge.Title != "" {
+			fmt.Printf("                %s\n", s.LastMerge.Title)
+		}
+	}
+
+	// Last failure.
+	if s.LastFailure != nil {
+		ago := time.Since(s.LastFailure.Timestamp).Truncate(time.Second)
+		fmt.Printf("\n  Last failure: %s  %s (%s ago)\n", s.LastFailure.MRID, s.LastFailure.Branch, ago)
+		if s.LastFailure.Title != "" {
+			fmt.Printf("                %s\n", s.LastFailure.Title)
+		}
+	}
+}
+
 var forgeQueueJSON bool
 
 var forgeQueueCmd = &cobra.Command{
@@ -756,6 +932,7 @@ func init() {
 	forgeCmd.AddCommand(forgeStartCmd)
 	forgeCmd.AddCommand(forgeStopCmd)
 	forgeCmd.AddCommand(forgeSyncCmd)
+	forgeCmd.AddCommand(forgeStatusCmd)
 	forgeCmd.AddCommand(forgeQueueCmd)
 	forgeCmd.AddCommand(forgeAttachCmd)
 	forgeCmd.AddCommand(forgeReadyCmd)
@@ -788,6 +965,7 @@ func init() {
 
 	// --json flag for commands that support it.
 	forgeQueueCmd.Flags().BoolVar(&forgeQueueJSON, "json", false, "output as JSON")
+	forgeStatusCmd.Flags().Bool("json", false, "output as JSON")
 	for _, cmd := range []*cobra.Command{
 		forgeReadyCmd, forgeBlockedCmd, forgeClaimCmd,
 		forgeRunGatesCmd, forgeCreateResolutionCmd, forgeCheckUnblockedCmd,

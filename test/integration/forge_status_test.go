@@ -1,0 +1,241 @@
+package integration
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/nevinsm/sol/internal/store"
+)
+
+func TestForgeStatusEmpty(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	gtHome, _ := setupTestEnv(t)
+	initWorld(t, gtHome, "statustest")
+
+	out, err := runGT(t, gtHome, "forge", "status", "statustest")
+	if err != nil {
+		t.Fatalf("forge status failed: %v: %s", err, out)
+	}
+
+	if !strings.Contains(out, "Forge: statustest") {
+		t.Errorf("expected header, got: %s", out)
+	}
+	if !strings.Contains(out, "stopped") {
+		t.Errorf("expected 'stopped' in output, got: %s", out)
+	}
+	if !strings.Contains(out, "0 ready") {
+		t.Errorf("expected '0 ready' in output, got: %s", out)
+	}
+}
+
+func TestForgeStatusWithMRs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	gtHome, _ := setupTestEnv(t)
+	initWorld(t, gtHome, "statusmrs")
+
+	worldStore, err := store.OpenWorld("statusmrs")
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create a work item.
+	itemID, err := worldStore.CreateWorkItem("Test feature", "A test feature", "test", 2, nil)
+	if err != nil {
+		t.Fatalf("create work item: %v", err)
+	}
+
+	// Create MRs in various states.
+	mrReady, err := worldStore.CreateMergeRequest(itemID, "feature/ready", 2)
+	if err != nil {
+		t.Fatalf("create MR: %v", err)
+	}
+	_ = mrReady
+
+	mrMerged, err := worldStore.CreateMergeRequest(itemID, "feature/merged", 2)
+	if err != nil {
+		t.Fatalf("create MR: %v", err)
+	}
+	if err := worldStore.UpdateMergeRequestPhase(mrMerged, "merged"); err != nil {
+		t.Fatalf("update MR phase: %v", err)
+	}
+
+	mrFailed, err := worldStore.CreateMergeRequest(itemID, "feature/failed", 2)
+	if err != nil {
+		t.Fatalf("create MR: %v", err)
+	}
+	if err := worldStore.UpdateMergeRequestPhase(mrFailed, "failed"); err != nil {
+		t.Fatalf("update MR phase: %v", err)
+	}
+
+	out, err := runGT(t, gtHome, "forge", "status", "statusmrs")
+	if err != nil {
+		t.Fatalf("forge status failed: %v: %s", err, out)
+	}
+
+	if !strings.Contains(out, "1 ready") {
+		t.Errorf("expected '1 ready', got: %s", out)
+	}
+	if !strings.Contains(out, "1 failed") {
+		t.Errorf("expected '1 failed', got: %s", out)
+	}
+	if !strings.Contains(out, "1 merged") {
+		t.Errorf("expected '1 merged', got: %s", out)
+	}
+	if !strings.Contains(out, "Last merge:") {
+		t.Errorf("expected 'Last merge:', got: %s", out)
+	}
+	if !strings.Contains(out, "Last failure:") {
+		t.Errorf("expected 'Last failure:', got: %s", out)
+	}
+}
+
+func TestForgeStatusJSON(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	gtHome, _ := setupTestEnv(t)
+	initWorld(t, gtHome, "statusjson")
+
+	worldStore, err := store.OpenWorld("statusjson")
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create a work item and a ready MR.
+	itemID, err := worldStore.CreateWorkItem("JSON test", "Test JSON output", "test", 2, nil)
+	if err != nil {
+		t.Fatalf("create work item: %v", err)
+	}
+	if _, err := worldStore.CreateMergeRequest(itemID, "feature/json", 2); err != nil {
+		t.Fatalf("create MR: %v", err)
+	}
+
+	out, err := runGT(t, gtHome, "forge", "status", "statusjson", "--json")
+	if err != nil {
+		t.Fatalf("forge status --json failed: %v: %s", err, out)
+	}
+
+	var result struct {
+		World       string `json:"world"`
+		Running     bool   `json:"running"`
+		SessionName string `json:"session_name"`
+		Ready       int    `json:"ready"`
+		Total       int    `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, out)
+	}
+
+	if result.World != "statusjson" {
+		t.Errorf("expected world=statusjson, got %q", result.World)
+	}
+	if result.Running {
+		t.Error("expected running=false")
+	}
+	if result.Ready != 1 {
+		t.Errorf("expected ready=1, got %d", result.Ready)
+	}
+	if result.Total != 1 {
+		t.Errorf("expected total=1, got %d", result.Total)
+	}
+}
+
+func TestForgeStatusClaimed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	gtHome, _ := setupTestEnv(t)
+	initWorld(t, gtHome, "statusclaim")
+
+	worldStore, err := store.OpenWorld("statusclaim")
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create a work item and a MR, then claim it.
+	itemID, err := worldStore.CreateWorkItem("Claimed task", "Testing claimed display", "test", 2, nil)
+	if err != nil {
+		t.Fatalf("create work item: %v", err)
+	}
+	if _, err := worldStore.CreateMergeRequest(itemID, "feature/claimed", 1); err != nil {
+		t.Fatalf("create MR: %v", err)
+	}
+
+	mr, err := worldStore.ClaimMergeRequest("test-forge")
+	if err != nil {
+		t.Fatalf("claim MR: %v", err)
+	}
+	if mr == nil {
+		t.Fatal("expected to claim a MR, got nil")
+	}
+
+	out, err := runGT(t, gtHome, "forge", "status", "statusclaim")
+	if err != nil {
+		t.Fatalf("forge status failed: %v: %s", err, out)
+	}
+
+	if !strings.Contains(out, "1 in-progress") {
+		t.Errorf("expected '1 in-progress', got: %s", out)
+	}
+	if !strings.Contains(out, "Claimed:") {
+		t.Errorf("expected 'Claimed:', got: %s", out)
+	}
+	if !strings.Contains(out, "feature/claimed") {
+		t.Errorf("expected branch name in output, got: %s", out)
+	}
+	if !strings.Contains(out, "Claimed task") {
+		t.Errorf("expected work item title in output, got: %s", out)
+	}
+
+	// Also verify the JSON output includes claimed_mr.
+	jsonOut, err := runGT(t, gtHome, "forge", "status", "statusclaim", "--json")
+	if err != nil {
+		t.Fatalf("forge status --json failed: %v: %s", err, jsonOut)
+	}
+
+	var result struct {
+		InProgress int `json:"in_progress"`
+		ClaimedMR  *struct {
+			Title  string `json:"title"`
+			Branch string `json:"branch"`
+		} `json:"claimed_mr"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &result); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+	if result.InProgress != 1 {
+		t.Errorf("expected in_progress=1, got %d", result.InProgress)
+	}
+	if result.ClaimedMR == nil {
+		t.Fatal("expected claimed_mr in JSON output")
+	}
+	if result.ClaimedMR.Title != "Claimed task" {
+		t.Errorf("expected title='Claimed task', got %q", result.ClaimedMR.Title)
+	}
+
+}
+
+func TestForgeStatusInvalidWorld(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	gtHome, _ := setupTestEnv(t)
+
+	_, err := runGT(t, gtHome, "forge", "status", "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent world")
+	}
+}

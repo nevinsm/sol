@@ -300,6 +300,38 @@ func TestWorkItemCRUD(t *testing.T) {
 		t.Fatalf("expected empty assignee, got %q", item.Assignee)
 	}
 
+	// Update title and description.
+	err = s.UpdateWorkItem(id, WorkItemUpdates{Title: "New title", Description: "New desc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err = s.GetWorkItem(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Title != "New title" {
+		t.Fatalf("expected title 'New title', got %q", item.Title)
+	}
+	if item.Description != "New desc" {
+		t.Fatalf("expected description 'New desc', got %q", item.Description)
+	}
+
+	// Update only title, description should remain unchanged.
+	err = s.UpdateWorkItem(id, WorkItemUpdates{Title: "Updated title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err = s.GetWorkItem(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Title != "Updated title" {
+		t.Fatalf("expected title 'Updated title', got %q", item.Title)
+	}
+	if item.Description != "New desc" {
+		t.Fatalf("expected description unchanged 'New desc', got %q", item.Description)
+	}
+
 	// Close.
 	err = s.CloseWorkItem(id)
 	if err != nil {

@@ -36,9 +36,11 @@ type ListFilters struct {
 
 // WorkItemUpdates specifies which fields to update on a work item.
 type WorkItemUpdates struct {
-	Status   string // empty = no change
-	Assignee string // empty = no change, "-" = clear
-	Priority int    // 0 = no change
+	Status      string // empty = no change
+	Assignee    string // empty = no change, "-" = clear
+	Priority    int    // 0 = no change
+	Title       string // empty = no change
+	Description string // empty = no change
 }
 
 // generateID returns a new work item ID in the format "sol-" + 16 hex chars.
@@ -350,6 +352,14 @@ func (s *Store) UpdateWorkItem(id string, updates WorkItemUpdates) error {
 	if updates.Priority != 0 {
 		sets = append(sets, "priority = ?")
 		args = append(args, updates.Priority)
+	}
+	if updates.Title != "" {
+		sets = append(sets, "title = ?")
+		args = append(args, updates.Title)
+	}
+	if updates.Description != "" {
+		sets = append(sets, "description = ?")
+		args = append(args, updates.Description)
 	}
 
 	if len(sets) == 0 {

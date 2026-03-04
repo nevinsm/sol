@@ -52,7 +52,7 @@ test-e2e: build
 	\
 	echo "=== E2E: verify cast ===" && \
 	bin/sol session list && \
-	bin/sol store get $$ITEM --world=$$WORLD && \
+	bin/sol store status $$ITEM --world=$$WORLD && \
 	bin/sol prime --world=$$WORLD --agent=$$AGENT && \
 	test -f $(SOL_TEST_HOME)/$$WORLD/outposts/$$AGENT/.tether && \
 	\
@@ -60,7 +60,7 @@ test-e2e: build
 	SOL_WORLD=$$WORLD SOL_AGENT=$$AGENT bin/sol resolve && \
 	\
 	echo "=== E2E: verify resolve ===" && \
-	bin/sol store get $$ITEM --world=$$WORLD && \
+	bin/sol store status $$ITEM --world=$$WORLD && \
 	bin/sol agent list --world=$$WORLD && \
 	test ! -f $(SOL_TEST_HOME)/$$WORLD/outposts/$$AGENT/.tether && \
 	\
