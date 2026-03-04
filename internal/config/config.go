@@ -115,6 +115,56 @@ func ValidateWorldName(name string) error {
 	return nil
 }
 
+// ResolveWorld determines the world name from available sources.
+// Precedence: explicit flag value > SOL_WORLD env var > detect from cwd.
+// After resolution, validates the world exists via RequireWorld.
+func ResolveWorld(flagValue string) (string, error) {
+	world := flagValue
+
+	if world == "" {
+		world = os.Getenv("SOL_WORLD")
+	}
+
+	if world == "" {
+		world = detectWorldFromCwd()
+	}
+
+	if world == "" {
+		return "", fmt.Errorf("--world is required (or set SOL_WORLD, or run from inside a world directory)")
+	}
+
+	if err := RequireWorld(world); err != nil {
+		return "", err
+	}
+
+	return world, nil
+}
+
+// detectWorldFromCwd attempts to infer the world name from the current
+// working directory. If cwd is under $SOL_HOME/{world}/, returns world.
+func detectWorldFromCwd() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	home := Home()
+	rel, err := filepath.Rel(home, cwd)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+	// rel is like "myworld/outposts/Toast/worktree" or "myworld"
+	parts := strings.SplitN(rel, string(filepath.Separator), 2)
+	if len(parts) == 0 {
+		return ""
+	}
+	candidate := parts[0]
+	// Skip internal directories.
+	if candidate == ".store" || candidate == ".runtime" {
+		return ""
+	}
+	return candidate
+}
+
 // RequireWorld checks that a world has been initialized.
 // Returns nil if world.toml exists at $SOL_HOME/{world}/world.toml.
 //

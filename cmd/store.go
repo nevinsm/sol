@@ -42,11 +42,9 @@ var storeCreateCmd = &cobra.Command{
 	Short:        "Create a work item",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 		if createTitle == "" {
@@ -85,11 +83,9 @@ var storeGetCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 		s, err := store.OpenWorld(world)
@@ -130,11 +126,9 @@ var storeListCmd = &cobra.Command{
 	Short:        "List work items",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 		s, err := store.OpenWorld(world)
@@ -200,11 +194,9 @@ var storeUpdateCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 		updates := store.WorkItemUpdates{
@@ -241,11 +233,9 @@ var storeCloseCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 		s, err := store.OpenWorld(world)
@@ -278,11 +268,9 @@ var storeQueryCmd = &cobra.Command{
 	Short:        "Run a read-only SQL query",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 		if querySQL == "" {

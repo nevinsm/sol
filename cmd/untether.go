@@ -19,12 +19,8 @@ var untetherCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		agentName := args[0]
-		world := untetherWorld
-
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(untetherWorld)
+		if err != nil {
 			return err
 		}
 

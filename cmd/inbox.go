@@ -125,20 +125,18 @@ var inboxDrainCmd = &cobra.Command{
 	},
 }
 
-// resolveInboxSession resolves the session name from flags or env vars.
+// resolveInboxSession resolves the session name from flags, env vars, or cwd.
 func resolveInboxSession(cmd *cobra.Command) (string, error) {
-	world, _ := cmd.Flags().GetString("world")
+	worldFlag, _ := cmd.Flags().GetString("world")
 	agent, _ := cmd.Flags().GetString("agent")
 
-	if world == "" {
-		world = os.Getenv("SOL_WORLD")
-	}
-	if agent == "" {
-		agent = os.Getenv("SOL_AGENT")
+	world, err := config.ResolveWorld(worldFlag)
+	if err != nil {
+		return "", err
 	}
 
-	if world == "" {
-		return "", fmt.Errorf("--world is required (or set SOL_WORLD env var)")
+	if agent == "" {
+		agent = os.Getenv("SOL_AGENT")
 	}
 	if agent == "" {
 		return "", fmt.Errorf("--agent is required (or set SOL_AGENT env var)")

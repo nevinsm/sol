@@ -24,10 +24,11 @@ var workflowInstantiateCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
+		worldFlag, _ := cmd.Flags().GetString("world")
 		agent, _ := cmd.Flags().GetString("agent")
 		item, _ := cmd.Flags().GetString("item")
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 
@@ -60,9 +61,10 @@ var workflowCurrentCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
+		worldFlag, _ := cmd.Flags().GetString("world")
 		agent, _ := cmd.Flags().GetString("agent")
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 
@@ -86,9 +88,10 @@ var workflowAdvanceCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
+		worldFlag, _ := cmd.Flags().GetString("world")
 		agent, _ := cmd.Flags().GetString("agent")
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 
@@ -133,9 +136,10 @@ var workflowStatusCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
+		worldFlag, _ := cmd.Flags().GetString("world")
 		agent, _ := cmd.Flags().GetString("agent")
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 
@@ -217,29 +221,25 @@ func init() {
 
 	// instantiate flags
 	workflowInstantiateCmd.Flags().String("item", "", "work item ID")
-	workflowInstantiateCmd.Flags().String("world", "", "world name")
+	workflowInstantiateCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
 	workflowInstantiateCmd.Flags().String("agent", "", "agent name")
 	workflowInstantiateCmd.Flags().StringSliceVar(&wfVars, "var", nil, "variable assignment (key=val)")
 	workflowInstantiateCmd.MarkFlagRequired("item")
-	workflowInstantiateCmd.MarkFlagRequired("world")
 	workflowInstantiateCmd.MarkFlagRequired("agent")
 
 	// current flags
-	workflowCurrentCmd.Flags().String("world", "", "world name")
+	workflowCurrentCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
 	workflowCurrentCmd.Flags().String("agent", "", "agent name")
-	workflowCurrentCmd.MarkFlagRequired("world")
 	workflowCurrentCmd.MarkFlagRequired("agent")
 
 	// advance flags
-	workflowAdvanceCmd.Flags().String("world", "", "world name")
+	workflowAdvanceCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
 	workflowAdvanceCmd.Flags().String("agent", "", "agent name")
-	workflowAdvanceCmd.MarkFlagRequired("world")
 	workflowAdvanceCmd.MarkFlagRequired("agent")
 
 	// status flags
-	workflowStatusCmd.Flags().String("world", "", "world name")
+	workflowStatusCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
 	workflowStatusCmd.Flags().String("agent", "", "agent name")
 	workflowStatusCmd.Flags().Bool("json", false, "output as JSON")
-	workflowStatusCmd.MarkFlagRequired("world")
 	workflowStatusCmd.MarkFlagRequired("agent")
 }

@@ -20,12 +20,8 @@ var tetherCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		agentName := args[0]
 		workItemID := args[1]
-		world := tetherWorld
-
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(tetherWorld)
+		if err != nil {
 			return err
 		}
 

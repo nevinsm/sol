@@ -32,10 +32,8 @@ var agentCreateCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if agentCreateWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(agentCreateWorld); err != nil {
+		world, err := config.ResolveWorld(agentCreateWorld)
+		if err != nil {
 			return err
 		}
 
@@ -47,14 +45,14 @@ var agentCreateCmd = &cobra.Command{
 
 		// Enforce capacity for outpost agents (role=agent).
 		if agentCreateRole == "agent" {
-			worldCfg, err := config.LoadWorldConfig(agentCreateWorld)
+			worldCfg, err := config.LoadWorldConfig(world)
 			if err != nil {
-				return fmt.Errorf("failed to load world config for %q: %w", agentCreateWorld, err)
+				return fmt.Errorf("failed to load world config for %q: %w", world, err)
 			}
 			if worldCfg.Agents.Capacity > 0 {
-				agents, err := sphereStore.ListAgents(agentCreateWorld, "")
+				agents, err := sphereStore.ListAgents(world, "")
 				if err != nil {
-					return fmt.Errorf("failed to list agents for world %q: %w", agentCreateWorld, err)
+					return fmt.Errorf("failed to list agents for world %q: %w", world, err)
 				}
 				count := 0
 				for _, a := range agents {
@@ -63,12 +61,12 @@ var agentCreateCmd = &cobra.Command{
 					}
 				}
 				if count >= worldCfg.Agents.Capacity {
-					return fmt.Errorf("world %s has reached agent capacity (%d)", agentCreateWorld, worldCfg.Agents.Capacity)
+					return fmt.Errorf("world %s has reached agent capacity (%d)", world, worldCfg.Agents.Capacity)
 				}
 			}
 		}
 
-		id, err := sphereStore.CreateAgent(name, agentCreateWorld, agentCreateRole)
+		id, err := sphereStore.CreateAgent(name, world, agentCreateRole)
 		if err != nil {
 			return err
 		}
@@ -89,10 +87,8 @@ var agentListCmd = &cobra.Command{
 	Short:        "List agents",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if agentListWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(agentListWorld); err != nil {
+		world, err := config.ResolveWorld(agentListWorld)
+		if err != nil {
 			return err
 		}
 
@@ -102,7 +98,7 @@ var agentListCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
-		agents, err := sphereStore.ListAgents(agentListWorld, "")
+		agents, err := sphereStore.ListAgents(world, "")
 		if err != nil {
 			return err
 		}
@@ -143,14 +139,12 @@ var agentResetCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if agentResetWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(agentResetWorld); err != nil {
+		world, err := config.ResolveWorld(agentResetWorld)
+		if err != nil {
 			return err
 		}
 
-		agentID := agentResetWorld + "/" + name
+		agentID := world + "/" + name
 
 		// Open sphere store and look up agent.
 		sphereStore, err := store.OpenSphere()
@@ -165,14 +159,14 @@ var agentResetCmd = &cobra.Command{
 		}
 
 		// Warn if the agent session is still alive.
-		sessionName := config.SessionName(agentResetWorld, name)
+		sessionName := config.SessionName(world, name)
 		mgr := session.New()
 		if mgr.Exists(sessionName) {
 			fmt.Fprintf(os.Stderr, "WARNING: session %q is still alive — consider stopping it first\n", sessionName)
 		}
 
 		// Nothing to reset if already idle with no tether.
-		if agent.State == "idle" && agent.TetherItem == "" && !tether.IsTethered(agentResetWorld, name, agent.Role) {
+		if agent.State == "idle" && agent.TetherItem == "" && !tether.IsTethered(world, name, agent.Role) {
 			fmt.Printf("Agent %s is already idle with no tether — nothing to reset.\n", agentID)
 			return nil
 		}
@@ -180,7 +174,7 @@ var agentResetCmd = &cobra.Command{
 		// Untether the work item if one is assigned.
 		tetherItemID := agent.TetherItem
 		if tetherItemID != "" {
-			worldStore, err := store.OpenWorld(agentResetWorld)
+			worldStore, err := store.OpenWorld(world)
 			if err != nil {
 				return fmt.Errorf("failed to open world store: %w", err)
 			}
@@ -197,8 +191,8 @@ var agentResetCmd = &cobra.Command{
 		}
 
 		// Clear the tether file.
-		if tether.IsTethered(agentResetWorld, name, agent.Role) {
-			if err := tether.Clear(agentResetWorld, name, agent.Role); err != nil {
+		if tether.IsTethered(world, name, agent.Role) {
+			if err := tether.Clear(world, name, agent.Role); err != nil {
 				fmt.Fprintf(os.Stderr, "WARNING: failed to clear tether file: %v\n", err)
 			} else {
 				fmt.Println("Cleared tether file")
