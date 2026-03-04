@@ -311,7 +311,7 @@ func formatGovernorDetail(g GovernorInfo) string {
 
 func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
 	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\n")
+	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tNUDGE\tWORK\n")
 
 	for _, a := range agents {
 		state := a.State
@@ -337,19 +337,24 @@ func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
 			}
 		}
 
+		nudge := dimStyle.Render("—")
+		if a.NudgeCount > 0 {
+			nudge = warnStyle.Render(fmt.Sprintf("%d pending", a.NudgeCount))
+		}
+
 		work := dimStyle.Render("—")
 		if a.TetherItem != "" {
 			work = fmt.Sprintf("%s: %s", a.TetherItem, a.WorkTitle)
 		}
 
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", a.Name, state, sess, work)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", a.Name, state, sess, nudge, work)
 	}
 	tw.Flush()
 }
 
 func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\tBRIEF\n")
+	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tNUDGE\tWORK\tBRIEF\n")
 
 	for _, e := range envoys {
 		state := e.State
@@ -375,6 +380,11 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 			}
 		}
 
+		nudge := dimStyle.Render("—")
+		if e.NudgeCount > 0 {
+			nudge = warnStyle.Render(fmt.Sprintf("%d pending", e.NudgeCount))
+		}
+
 		work := dimStyle.Render("—")
 		if e.TetherItem != "" {
 			work = e.WorkTitle
@@ -385,7 +395,7 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 			brief = e.BriefAge + " ago"
 		}
 
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", e.Name, state, sess, work, brief)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n", e.Name, state, sess, nudge, work, brief)
 	}
 	tw.Flush()
 }
