@@ -182,6 +182,12 @@ func BuildSessionCommand(settingsPath, prompt string) string {
 		ShellQuote(settingsPath), ShellQuote(prompt))
 }
 
+// NudgeQueueDir returns the nudge queue directory for a session.
+// Path: $SOL_HOME/.runtime/nudge_queue/{session}/
+func NudgeQueueDir(session string) string {
+	return filepath.Join(RuntimeDir(), "nudge_queue", session)
+}
+
 // EnsureDirs creates .store/ and .runtime/ if they don't exist.
 func EnsureDirs() error {
 	for _, dir := range []string{StoreDir(), RuntimeDir()} {
