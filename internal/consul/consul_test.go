@@ -159,14 +159,14 @@ func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
 	wiEnvoy, _ := worldStore.CreateWorkItem("task-envoy", "envoy work", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/MyEnvoy", "working", wiEnvoy)
 	worldStore.UpdateWorkItem(wiEnvoy, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/MyEnvoy"})
-	tether.Write(worldName, "MyEnvoy", wiEnvoy)
+	tether.Write(worldName, "MyEnvoy", wiEnvoy, "envoy")
 
 	// Governor: working, session dead, old timestamp → should be recovered.
 	sphereStore.CreateAgent("MyGovernor", worldName, "governor")
 	wiGov, _ := worldStore.CreateWorkItem("task-governor", "governor work", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/MyGovernor", "working", wiGov)
 	worldStore.UpdateWorkItem(wiGov, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/MyGovernor"})
-	tether.Write(worldName, "MyGovernor", wiGov)
+	tether.Write(worldName, "MyGovernor", wiGov, "governor")
 
 	// Sentinel: working, session dead, old timestamp → should NOT be recovered.
 	sphereStore.CreateAgent("sentinel", worldName, "sentinel")
