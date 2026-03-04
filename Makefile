@@ -1,10 +1,13 @@
-.PHONY: build test test-short test-integration test-e2e install clean
+.PHONY: build test test-short test-integration test-e2e install clean docs
 
 SOL_TEST_HOME  := /tmp/sol-test
 SOL_TEST_WORLD := myworld
 SOL_TEST_AGENT := Toast
 
-build:
+docs:
+	go run . docs generate > docs/cli.md
+
+build: docs
 	go build -o bin/sol .
 
 test:
