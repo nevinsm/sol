@@ -619,11 +619,16 @@ var forgeReleaseCmd = &cobra.Command{
 		defer worldStore.Close()
 		defer sphereStore.Close()
 
-		if err := ref.Release(mrID); err != nil {
+		failed, err := ref.Release(mrID)
+		if err != nil {
 			return err
 		}
 
-		fmt.Printf("Released: %s\n", mrID)
+		if failed {
+			fmt.Printf("Failed (max attempts exceeded): %s\n", mrID)
+		} else {
+			fmt.Printf("Released: %s\n", mrID)
+		}
 		return nil
 	},
 }
