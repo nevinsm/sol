@@ -920,6 +920,118 @@ func TestCaravanMultiWorld(t *testing.T) {
 	}
 }
 
+// --- Caravan Launch Integration Test ---
+
+func TestCaravanLaunchDispatch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
+	mgr := newMockSessionChecker()
+	logger := events.NewLogger(solHome)
+
+	// Create 3 work items: A and B are independent, C depends on A.
+	idA, err := worldStore.CreateWorkItem("Task A", "First task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem A: %v", err)
+	}
+	idB, err := worldStore.CreateWorkItem("Task B", "Second task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem B: %v", err)
+	}
+	idC, err := worldStore.CreateWorkItem("Task C", "Depends on A", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem C: %v", err)
+	}
+	if err := worldStore.AddDependency(idC, idA); err != nil {
+		t.Fatalf("AddDependency C→A: %v", err)
+	}
+
+	// Create a caravan with all 3 items.
+	caravanID, err := sphereStore.CreateCaravan("launch-test", "operator")
+	if err != nil {
+		t.Fatalf("CreateCaravan: %v", err)
+	}
+	for _, id := range []string{idA, idB, idC} {
+		if err := sphereStore.CreateCaravanItem(caravanID, id, "ember", 0); err != nil {
+			t.Fatalf("CreateCaravanItem %s: %v", id, err)
+		}
+	}
+
+	// Pre-create 2 agents. C is blocked, so only A and B should dispatch.
+	if _, err := sphereStore.CreateAgent("Alpha", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent Alpha: %v", err)
+	}
+	if _, err := sphereStore.CreateAgent("Beta", "ember", "agent"); err != nil {
+		t.Fatalf("CreateAgent Beta: %v", err)
+	}
+
+	// Check readiness: A and B ready, C blocked.
+	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, store.OpenWorld)
+	if err != nil {
+		t.Fatalf("CheckCaravanReadiness: %v", err)
+	}
+	readyCount := 0
+	for _, st := range statuses {
+		if st.WorkItemStatus == "open" && st.Ready {
+			readyCount++
+		}
+	}
+	if readyCount != 2 {
+		t.Fatalf("expected 2 ready items, got %d", readyCount)
+	}
+
+	// Dispatch ready items (simulates caravan launch logic).
+	dispatched := 0
+	for _, st := range statuses {
+		if st.WorkItemStatus != "open" || !st.Ready {
+			continue
+		}
+		result, err := dispatch.Cast(dispatch.CastOpts{
+			WorkItemID: st.WorkItemID,
+			World:      "ember",
+			SourceRepo: sourceRepo,
+		}, worldStore, sphereStore, mgr, logger)
+		if err != nil {
+			t.Fatalf("Cast %s: %v", st.WorkItemID, err)
+		}
+		if result.AgentName == "" {
+			t.Errorf("Cast %s: empty agent name", st.WorkItemID)
+		}
+		dispatched++
+	}
+	if dispatched != 2 {
+		t.Errorf("dispatched: got %d, want 2", dispatched)
+	}
+
+	// Verify: 2 sessions started.
+	mgr.mu.Lock()
+	startedCount := len(mgr.started)
+	mgr.mu.Unlock()
+	if startedCount != 2 {
+		t.Errorf("sessions started: got %d, want 2", startedCount)
+	}
+
+	// Verify: A and B are tethered, C is still open.
+	itemA, _ := worldStore.GetWorkItem(idA)
+	itemB, _ := worldStore.GetWorkItem(idB)
+	itemC, _ := worldStore.GetWorkItem(idC)
+	if itemA.Status != "tethered" {
+		t.Errorf("item A status: got %q, want tethered", itemA.Status)
+	}
+	if itemB.Status != "tethered" {
+		t.Errorf("item B status: got %q, want tethered", itemB.Status)
+	}
+	if itemC.Status != "open" {
+		t.Errorf("item C status: got %q, want open", itemC.Status)
+	}
+
+	// Verify cast events emitted.
+	assertEventEmitted(t, solHome, events.EventCast)
+}
+
 // --- End-to-End Workflow Test ---
 
 func TestWorkflowPropulsionLoop(t *testing.T) {
