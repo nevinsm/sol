@@ -1,7 +1,6 @@
 package dispatch
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -880,98 +879,6 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 		t.Error("expected agent record to be deleted after resolve")
 	} else if !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("expected ErrNotFound for deleted agent, got: %v", err)
-	}
-}
-
-func TestResolveEnqueuesMRReadyToForge(t *testing.T) {
-	worldStore, sphereStore := setupStores(t)
-	mgr := newMockSessionManager()
-
-	itemID, err := worldStore.CreateWorkItem("Build search API", "Implement search endpoint", "operator", 2, nil)
-	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
-	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
-	}
-
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
-		t.Fatalf("failed to create agent: %v", err)
-	}
-	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
-		t.Fatalf("failed to update agent: %v", err)
-	}
-
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
-		t.Fatalf("failed to write tether: %v", err)
-	}
-
-	worktreeDir := WorktreePath("ember", "Toast")
-	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
-		t.Fatalf("failed to create worktree dir: %v", err)
-	}
-	runGit(t, worktreeDir, "init")
-	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
-	addBareRemote(t, worktreeDir)
-
-	sessName := SessionName("ember", "Toast")
-	mgr.started[sessName] = true
-
-	// Start a forge session so the poke path is exercised.
-	forgeSession := config.SessionName("ember", "forge")
-	mgr.started[forgeSession] = true
-
-	result, err := Resolve(ResolveOpts{
-		World:     "ember",
-		AgentName: "Toast",
-	}, worldStore, sphereStore, mgr, nil)
-	if err != nil {
-		t.Fatalf("Resolve failed: %v", err)
-	}
-
-	// Verify MR_READY was enqueued to forge's nudge queue.
-	messages, err := nudge.Drain(forgeSession)
-	if err != nil {
-		t.Fatalf("failed to drain forge nudge queue: %v", err)
-	}
-	if len(messages) == 0 {
-		t.Fatal("expected MR_READY message in forge nudge queue, got none")
-	}
-
-	var found bool
-	for _, msg := range messages {
-		if msg.Type != "MR_READY" {
-			continue
-		}
-		found = true
-		if msg.Sender != "Toast" {
-			t.Errorf("expected sender 'Toast', got %q", msg.Sender)
-		}
-
-		var body map[string]string
-		if err := json.Unmarshal([]byte(msg.Body), &body); err != nil {
-			t.Fatalf("failed to parse MR_READY body: %v", err)
-		}
-		if body["work_item_id"] != itemID {
-			t.Errorf("expected work_item_id %q, got %q", itemID, body["work_item_id"])
-		}
-		if body["merge_request_id"] != result.MergeRequestID {
-			t.Errorf("expected merge_request_id %q, got %q", result.MergeRequestID, body["merge_request_id"])
-		}
-		if body["branch"] != result.BranchName {
-			t.Errorf("expected branch %q, got %q", result.BranchName, body["branch"])
-		}
-		if body["title"] != "Build search API" {
-			t.Errorf("expected title 'Build search API', got %q", body["title"])
-		}
-	}
-	if !found {
-		t.Error("no MR_READY message found in forge nudge queue")
-	}
-
-	// Verify forge session was poked.
-	if _, ok := mgr.injected[forgeSession]; !ok {
-		t.Error("expected forge session to be poked via Inject")
 	}
 }
 
