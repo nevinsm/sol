@@ -78,6 +78,13 @@ This means `--world` is optional when running from inside a world directory (e.g
 | `sol session attach <name>` | Attach to a session |
 | `sol session inject <name> --message=M` | Inject text and press Enter. `--no-submit` to stage only. |
 
+## Daemon Management
+
+| Command | Description |
+|---------|-------------|
+| `sol up` | Start sphere-level daemons (prefect, consul, chronicle). Idempotent — skips already-running daemons. Warns if systemd units are active. |
+| `sol down` | Stop sphere-level daemons. Handles both PID-based and tmux-session-based processes. |
+
 ## Supervision
 
 | Command | Description |
