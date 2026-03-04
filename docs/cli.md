@@ -126,6 +126,16 @@ Toolbox subcommands (used by the forge Claude session):
 | `sol mail ack <msg-id>` | Acknowledge a message |
 | `sol mail check` | Count unread messages (exit 1 if unread) |
 
+## Nudge Queue (Inbox)
+
+| Command | Description |
+|---------|-------------|
+| `sol inbox` | List pending nudge messages for an agent. `--world`, `--agent` (defaults to `SOL_WORLD`/`SOL_AGENT` env). `--json` supported. |
+| `sol inbox count` | Print count of pending messages (for scripting/status display) |
+| `sol inbox drain` | Drain and display all pending messages, marking them claimed. `--json` supported. |
+
+Nudge queue counts are also shown in the NUDGE column of `sol status <world>` agent and envoy tables.
+
 ## Escalations
 
 | Command | Description |

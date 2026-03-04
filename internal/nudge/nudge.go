@@ -183,6 +183,47 @@ func Peek(session string) (int, error) {
 	return count, nil
 }
 
+// List reads all pending messages without claiming them (non-destructive).
+// Messages are returned sorted by timestamp (FIFO). Expired messages are excluded.
+func List(session string) ([]Message, error) {
+	dir := config.NudgeQueueDir(session)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read nudge queue for %q: %w", session, err)
+	}
+
+	now := time.Now().UTC()
+	var messages []Message
+
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".tmp") || strings.HasSuffix(name, ".claimed") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		var msg Message
+		if err := json.Unmarshal(data, &msg); err != nil {
+			continue
+		}
+		if msg.isExpired(now) {
+			continue
+		}
+		messages = append(messages, msg)
+	}
+
+	sort.Slice(messages, func(i, j int) bool {
+		return messages[i].CreatedAt.Before(messages[j].CreatedAt)
+	})
+
+	return messages, nil
+}
+
 // Cleanup requeues orphaned .claimed files older than 5 minutes
 // and deletes expired pending messages.
 func Cleanup(session string) error {

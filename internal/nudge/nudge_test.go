@@ -483,6 +483,97 @@ func TestMessageJSON(t *testing.T) {
 	}
 }
 
+func TestListReturnsMessagesWithoutClaiming(t *testing.T) {
+	setupTestDir(t)
+
+	subjects := []string{"alpha", "beta", "gamma"}
+	base := time.Now().UTC().Add(-1 * time.Minute)
+
+	for i, subj := range subjects {
+		msg := Message{
+			Sender:    "test",
+			Type:      "info",
+			Subject:   subj,
+			CreatedAt: base.Add(time.Duration(i) * time.Second),
+		}
+		if err := Enqueue("sol-dev-Nova", msg); err != nil {
+			t.Fatalf("Enqueue %q failed: %v", subj, err)
+		}
+	}
+
+	// List should return all messages in FIFO order.
+	messages, err := List("sol-dev-Nova")
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(messages) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(messages))
+	}
+	for i, subj := range subjects {
+		if messages[i].Subject != subj {
+			t.Errorf("message %d: expected subject %q, got %q", i, subj, messages[i].Subject)
+		}
+	}
+
+	// List should NOT claim messages — count should remain 3.
+	count, err := Peek("sol-dev-Nova")
+	if err != nil {
+		t.Fatalf("Peek failed: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("expected 3 pending after List, got %d", count)
+	}
+}
+
+func TestListSkipsExpiredMessages(t *testing.T) {
+	setupTestDir(t)
+
+	// Enqueue an expired message (normal TTL = 30m).
+	expired := Message{
+		Sender:    "test",
+		Type:      "info",
+		Subject:   "old",
+		CreatedAt: time.Now().UTC().Add(-1 * time.Hour),
+	}
+	if err := Enqueue("sol-dev-Nova", expired); err != nil {
+		t.Fatalf("Enqueue expired failed: %v", err)
+	}
+
+	// Enqueue a fresh message.
+	fresh := Message{
+		Sender:    "test",
+		Type:      "info",
+		Subject:   "new",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := Enqueue("sol-dev-Nova", fresh); err != nil {
+		t.Fatalf("Enqueue fresh failed: %v", err)
+	}
+
+	messages, err := List("sol-dev-Nova")
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message (expired filtered), got %d", len(messages))
+	}
+	if messages[0].Subject != "new" {
+		t.Errorf("expected subject %q, got %q", "new", messages[0].Subject)
+	}
+}
+
+func TestListEmptyQueue(t *testing.T) {
+	setupTestDir(t)
+
+	messages, err := List("sol-dev-Nova")
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected 0 messages, got %d", len(messages))
+	}
+}
+
 func TestMultipleSessionsIndependent(t *testing.T) {
 	setupTestDir(t)
 
