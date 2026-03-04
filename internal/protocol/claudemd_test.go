@@ -99,25 +99,24 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 		t.Error("CLAUDE.md should contain 'sol world sync --world=myworld'")
 	}
 
-	// Verify sol CLI commands.
+	// Verify inline dispatch flow commands still present.
 	for _, cmd := range []string{
 		"sol store create",
-		"sol store list",
 		"sol cast",
 		"sol caravan create",
-		"sol caravan add",
-		"sol caravan check",
 		"sol caravan status",
-		"sol caravan launch",
 		"sol status --world=myworld",
 		"sol agent list",
 		"sol escalate",
-		"sol inbox --world=myworld --agent=governor",
-		"sol inbox count --world=myworld --agent=governor",
 	} {
 		if !strings.Contains(content, cmd) {
 			t.Errorf("CLAUDE.md should contain %q", cmd)
 		}
+	}
+
+	// Verify CLI reference line replaces hardcoded command block.
+	if !strings.Contains(content, ".claude/sol-cli-reference.md") {
+		t.Error("CLAUDE.md should contain CLI reference")
 	}
 
 	// Verify brief instructions.
@@ -268,5 +267,50 @@ func TestClaudeMDWithoutWorkflow(t *testing.T) {
 	}
 	if !strings.Contains(content, "sol resolve") {
 		t.Error("CLAUDE.md should contain 'sol resolve'")
+	}
+	if !strings.Contains(content, ".claude/sol-cli-reference.md") {
+		t.Error("CLAUDE.md should contain CLI reference")
+	}
+}
+
+func TestEnvoyClaudeMDCLIReference(t *testing.T) {
+	ctx := protocol.EnvoyClaudeMDContext{
+		AgentName: "Echo",
+		World:     "myworld",
+		SolBinary: "sol",
+	}
+
+	content := protocol.GenerateEnvoyClaudeMD(ctx)
+
+	if !strings.Contains(content, ".claude/sol-cli-reference.md") {
+		t.Error("envoy CLAUDE.md should contain CLI reference")
+	}
+	// Key workflow commands should still be inline.
+	for _, cmd := range []string{
+		"sol resolve",
+		"sol store create",
+		"sol escalate",
+	} {
+		if !strings.Contains(content, cmd) {
+			t.Errorf("envoy CLAUDE.md should contain inline command %q", cmd)
+		}
+	}
+}
+
+func TestForgeClaudeMDCLIReference(t *testing.T) {
+	ctx := protocol.ForgeClaudeMDContext{
+		World:        "myworld",
+		TargetBranch: "main",
+		QualityGates: []string{"make test"},
+	}
+
+	content := protocol.GenerateForgeClaudeMD(ctx)
+
+	if !strings.Contains(content, ".claude/sol-cli-reference.md") {
+		t.Error("forge CLAUDE.md should contain CLI reference")
+	}
+	// Patrol loop commands should still be inline.
+	if !strings.Contains(content, "sol forge ready") {
+		t.Error("forge CLAUDE.md should contain patrol loop commands inline")
 	}
 }

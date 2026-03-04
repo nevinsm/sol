@@ -74,6 +74,8 @@ Your job is to execute the assigned work item.
 - `+"`sol handoff`"+` — Hand off to a fresh session (preserves context)
 - `+"`sol handoff --summary=\"what I've done so far\"`"+` — Hand off with a summary
 
+Full Sol CLI reference: `+"`"+`.claude/sol-cli-reference.md`+"`"+`
+
 ## Important
 - You are working in an isolated git worktree. Commit your changes normally.
 - Do not modify files outside this worktree.
@@ -167,24 +169,13 @@ They appear as `+"`"+`[NOTIFICATION] TYPE: Subject — Body`+"`"+` in your conte
 - The MR should appear in the ready queue
 
 ## Commands Reference
-- `+"`sol forge ready --world=%s --json`"+` — list ready MRs
-- `+"`sol forge blocked --world=%s --json`"+` — list blocked MRs
-- `+"`sol forge claim --world=%s --json`"+` — claim next MR
-- `+"`sol forge release --world=%s <mr-id>`"+` — release claimed MR
-- `+"`sol forge run-gates --world=%s`"+` — run quality gates (exit 0=pass, 1=fail)
-- `+"`sol forge push --world=%s`"+` — push to target branch
-- `+"`sol forge mark-merged --world=%s <mr-id>`"+` — mark MR as merged
-- `+"`sol forge mark-failed --world=%s <mr-id>`"+` — mark MR as failed
-- `+"`sol forge create-resolution --world=%s <mr-id>`"+` — create conflict resolution task
-- `+"`sol forge check-unblocked --world=%s`"+` — check and unblock resolved MRs
+Full Sol CLI reference: `+"`"+`.claude/sol-cli-reference.md`+"`"+`
 `,
 		ctx.World, ctx.World,
 		ctx.World, ctx.World, ctx.World, ctx.TargetBranch,
 		ctx.World, ctx.World, ctx.World,
 		ctx.World, ctx.World, ctx.World,
 		ctx.TargetBranch, gates,
-		ctx.World, ctx.World, ctx.World, ctx.World, ctx.World, ctx.World,
-		ctx.World, ctx.World, ctx.World, ctx.World,
 	)
 }
 
@@ -293,14 +284,11 @@ When your work is ready to submit:
 5. Update your brief with what you accomplished
 
 ## Available Commands
-- `+"`"+`%s resolve --world=%s --agent=%s`+"`"+` — submit work for merge (the ONLY way to submit code)
-- `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+` — create work item
-- `+"`"+`%s escalate --world=%s --agent=%s --message="..."`+"`"+` — escalate to operator
-- `+"`"+`%s status --world=%s`+"`"+` — check world status
-- `+"`"+`%s handoff --world=%s --from=%s --to=<agent> --message="..."`+"`"+` — hand off work
+Full Sol CLI reference: `+"`"+`.claude/sol-cli-reference.md`+"`"+`
 
 ## Guidelines
 - You are human-supervised — ask when uncertain
+- If stuck, escalate: `+"`"+`%s escalate --world=%s --agent=%s --message="..."`+"`"+`
 - **Never push directly or bypass forge** — `+"`"+`sol resolve`+"`"+` is the only way to submit code
 - Your worktree persists across sessions — keep it clean
 - Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
@@ -310,10 +298,6 @@ When your work is ready to submit:
 		sol, ctx.World,
 		sol, ctx.World,
 		sol, ctx.World, ctx.AgentName,
-		sol, ctx.World, ctx.AgentName,
-		sol, ctx.World,
-		sol, ctx.World, ctx.AgentName,
-		sol, ctx.World,
 		sol, ctx.World, ctx.AgentName,
 	)
 
@@ -448,34 +432,7 @@ Respond based on the notification type:
 - Update brief with dead agent info
 
 ## Available Commands
-Full sol CLI reference for governor operations:
-
-`+"```"+`
-# Work Items
-%s store create --world=%s --title="..." --description="..."
-%s store list --world=%s [--status=open]
-
-# Dispatch
-%s cast <item-id> --world=%s [--agent=<name>]
-
-# Caravans
-%s caravan create "name" <item-id> [<item-id>] --world=%s
-%s caravan add <caravan-id> <item-id> --world=%s
-%s caravan check <caravan-id>
-%s caravan status [--world=%s]
-%s caravan launch <caravan-id> --world=%s
-
-# Monitoring
-%s status %s
-%s agent list --world=%s
-
-# Communication
-%s escalate --world=%s --agent=governor --message="..."
-
-# Inbox (check pending notifications)
-%s inbox --world=%s --agent=governor
-%s inbox count --world=%s --agent=governor
-`+"```"+`
+Full Sol CLI reference: `+"`"+`.claude/sol-cli-reference.md`+"`"+`
 
 ## Guidelines
 - You coordinate — you don't write code
@@ -496,19 +453,6 @@ Full sol CLI reference for governor operations:
 		sol, ctx.World, // dispatch: status
 		sol, ctx.World, // notification: caravan status (AGENT_DONE)
 		sol, ctx.World, // notification: escalate (MERGE_FAILED)
-		sol, ctx.World, // commands: store create
-		sol, ctx.World, // commands: store list
-		sol, ctx.World, // commands: cast
-		sol, ctx.World, // commands: caravan create
-		sol, ctx.World, // commands: caravan add
-		sol,            // commands: caravan check (no world arg)
-		sol, ctx.World, // commands: caravan status
-		sol, ctx.World, // commands: caravan launch
-		sol, ctx.World, // commands: status
-		sol, ctx.World, // commands: agent list
-		sol, ctx.World, // commands: escalate
-		sol, ctx.World, // commands: inbox
-		sol, ctx.World, // commands: inbox count
 		sol, // guidelines: agent list
 	)
 }

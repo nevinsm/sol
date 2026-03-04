@@ -181,7 +181,6 @@ func TestGenerateEnvoyClaudeMD(t *testing.T) {
 		"sol store create --world=myworld",
 		"sol escalate --world=myworld --agent=scout",
 		"sol status --world=myworld",
-		"sol handoff --world=myworld --from=scout",
 		".brief/memory.md",
 		"200 lines",
 		"Brief Maintenance",
@@ -193,9 +192,9 @@ func TestGenerateEnvoyClaudeMD(t *testing.T) {
 		"Submitting Work",
 		"All code changes MUST go through",
 		"Never use `git push` alone",
-		"the ONLY way to submit code",
 		"session stays alive",
 		"Never push directly or bypass forge",
+		".claude/sol-cli-reference.md",
 	}
 	for _, check := range checks {
 		if !strings.Contains(content, check) {
