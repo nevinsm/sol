@@ -173,6 +173,7 @@ Nudge queue counts are also shown in the NUDGE column of `sol status <world>` ag
 | `sol caravan check <caravan-id>` | Check readiness of caravan items |
 | `sol caravan status [caravan-id]` | Show caravan status |
 | `sol caravan launch <caravan-id> --world=W` | Dispatch ready items in a caravan |
+| `sol caravan set-phase <caravan-id> <item-id> <phase>` | Update the phase of a single item. `--all` updates all items. |
 | `sol caravan close <caravan-id>` | Close a completed caravan. `--force` skips merged check. `--auto` (no ID) closes all fully-merged caravans. |
 
 ## Handoff (Session Continuity)
