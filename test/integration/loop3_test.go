@@ -431,7 +431,7 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	}
 
 	// Write tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
@@ -498,7 +498,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 		t.Fatalf("Exec: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
@@ -560,7 +560,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	}
 
 	// Tether file should be removed.
-	if tether.IsTethered("ember", "Toast") {
+	if tether.IsTethered("ember", "Toast", "agent") {
 		t.Error("tether file should be removed after max respawns")
 	}
 

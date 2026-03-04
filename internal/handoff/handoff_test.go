@@ -24,7 +24,7 @@ func TestCapture(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -54,8 +54,9 @@ func TestCapture(t *testing.T) {
 	}
 
 	state, err := Capture(CaptureOpts{
-		World:       "ember",
+		World:     "ember",
 		AgentName: "Toast",
+		Role:      "agent",
 		Summary:   "Implemented login form. Tests passing.",
 	}, mockCapture, mockGitLog)
 
@@ -93,13 +94,14 @@ func TestCaptureNoWorkflow(t *testing.T) {
 	setupSolHome(t)
 
 	// Set up tether file only, no workflow.
-	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	state, err := Capture(CaptureOpts{
-		World:       "ember",
+		World:     "ember",
 		AgentName: "Toast",
+		Role:      "agent",
 		Summary:   "Working on it.",
 	}, nil, nil)
 
@@ -118,7 +120,7 @@ func TestCaptureNoWorkflow(t *testing.T) {
 func TestCaptureNoSummary(t *testing.T) {
 	setupSolHome(t)
 
-	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -127,8 +129,9 @@ func TestCaptureNoSummary(t *testing.T) {
 	}
 
 	state, err := Capture(CaptureOpts{
-		World:       "ember",
+		World:     "ember",
 		AgentName: "Toast",
+		Role:      "agent",
 	}, nil, mockGitLog)
 
 	if err != nil {
@@ -153,7 +156,8 @@ func TestWriteAndRead(t *testing.T) {
 	original := &State{
 		WorkItemID:       "sol-abc12345",
 		AgentName:        "Toast",
-		World:              "ember",
+		World:            "ember",
+		Role:             "agent",
 		PreviousSession:  "sol-ember-Toast",
 		Summary:          "Implemented login form.",
 		RecentOutput:     "All tests passed.\n$",
@@ -168,7 +172,7 @@ func TestWriteAndRead(t *testing.T) {
 	}
 
 	// Verify JSON on disk is valid.
-	data, err := os.ReadFile(HandoffPath("ember", "Toast"))
+	data, err := os.ReadFile(HandoffPath("ember", "Toast", "agent"))
 	if err != nil {
 		t.Fatalf("failed to read handoff file: %v", err)
 	}
@@ -178,7 +182,7 @@ func TestWriteAndRead(t *testing.T) {
 	}
 
 	// Read back.
-	read, err := Read("ember", "Toast")
+	read, err := Read("ember", "Toast", "agent")
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -206,7 +210,7 @@ func TestWriteAndRead(t *testing.T) {
 func TestReadNoFile(t *testing.T) {
 	setupSolHome(t)
 
-	state, err := Read("ember", "Toast")
+	state, err := Read("ember", "Toast", "agent")
 	if err != nil {
 		t.Fatalf("Read returned error for missing file: %v", err)
 	}
@@ -222,19 +226,20 @@ func TestRemove(t *testing.T) {
 	state := &State{
 		WorkItemID: "sol-abc12345",
 		AgentName:  "Toast",
-		World:        "ember",
+		World:      "ember",
+		Role:       "agent",
 		Summary:    "test",
 	}
 	if err := Write(state); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	if err := Remove("ember", "Toast"); err != nil {
+	if err := Remove("ember", "Toast", "agent"); err != nil {
 		t.Fatalf("Remove failed: %v", err)
 	}
 
 	// Verify file is gone.
-	read, err := Read("ember", "Toast")
+	read, err := Read("ember", "Toast", "agent")
 	if err != nil {
 		t.Fatalf("Read failed after remove: %v", err)
 	}
@@ -243,7 +248,7 @@ func TestRemove(t *testing.T) {
 	}
 
 	// Remove non-existent — no error.
-	if err := Remove("ember", "Toast"); err != nil {
+	if err := Remove("ember", "Toast", "agent"); err != nil {
 		t.Fatalf("Remove non-existent returned error: %v", err)
 	}
 }
@@ -252,7 +257,7 @@ func TestHasHandoff(t *testing.T) {
 	setupSolHome(t)
 
 	// No file.
-	if HasHandoff("ember", "Toast") {
+	if HasHandoff("ember", "Toast", "agent") {
 		t.Error("expected HasHandoff to be false with no file")
 	}
 
@@ -260,14 +265,15 @@ func TestHasHandoff(t *testing.T) {
 	state := &State{
 		WorkItemID: "sol-abc12345",
 		AgentName:  "Toast",
-		World:        "ember",
+		World:      "ember",
+		Role:       "agent",
 		Summary:    "test",
 	}
 	if err := Write(state); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	if !HasHandoff("ember", "Toast") {
+	if !HasHandoff("ember", "Toast", "agent") {
 		t.Error("expected HasHandoff to be true after write")
 	}
 }
@@ -376,7 +382,7 @@ func TestExec(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -400,7 +406,7 @@ func TestExec(t *testing.T) {
 	}
 
 	// Verify handoff file was written.
-	if !HasHandoff("ember", "Toast") {
+	if !HasHandoff("ember", "Toast", "agent") {
 		t.Error("expected handoff file to exist after Exec")
 	}
 
@@ -474,7 +480,7 @@ func TestExecNoTetherCyclesSession(t *testing.T) {
 	}
 
 	// No handoff file should be written (no tether).
-	if HasHandoff("ember", "governor") {
+	if HasHandoff("ember", "governor", "governor") {
 		t.Error("expected no handoff file for governor without tether")
 	}
 
@@ -504,11 +510,7 @@ func TestExecWithExplicitRole(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file for an envoy with active work.
-	tetherDir := filepath.Join(solHome, "ember", "outposts", "Alice")
-	if err := os.MkdirAll(tetherDir, 0o755); err != nil {
-		t.Fatalf("failed to create tether dir: %v", err)
-	}
-	if err := tether.Write("ember", "Alice", "sol-envoy12345"); err != nil {
+	if err := tether.Write("ember", "Alice", "sol-envoy12345", "envoy"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -532,7 +534,7 @@ func TestExecWithExplicitRole(t *testing.T) {
 	}
 
 	// Handoff file should be written (has tether).
-	if !HasHandoff("ember", "Alice") {
+	if !HasHandoff("ember", "Alice", "envoy") {
 		t.Error("expected handoff file for tethered envoy")
 	}
 

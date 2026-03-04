@@ -20,6 +20,7 @@ type State struct {
 	WorkItemID       string    `json:"work_item_id"`
 	AgentName        string    `json:"agent_name"`
 	World            string    `json:"world"`
+	Role             string    `json:"role,omitempty"`
 	PreviousSession  string    `json:"previous_session"`
 	Summary          string    `json:"summary"`
 	RecentOutput     string    `json:"recent_output"`
@@ -43,14 +44,14 @@ type SphereStore interface {
 }
 
 // HandoffPath returns the path to an agent's handoff state file.
-// $SOL_HOME/{world}/outposts/{agentName}/.handoff.json
-func HandoffPath(world, agentName string) string {
-	return filepath.Join(config.Home(), world, "outposts", agentName, ".handoff.json")
+// Uses role-aware directory: outposts/{name}/ for agents, envoys/{name}/ for envoys, etc.
+func HandoffPath(world, agentName, role string) string {
+	return filepath.Join(config.AgentDir(world, agentName, role), ".handoff.json")
 }
 
 // HasHandoff returns true if a handoff file exists for this agent.
-func HasHandoff(world, agentName string) bool {
-	_, err := os.Stat(HandoffPath(world, agentName))
+func HasHandoff(world, agentName, role string) bool {
+	_, err := os.Stat(HandoffPath(world, agentName, role))
 	return err == nil
 }
 
@@ -58,6 +59,7 @@ func HasHandoff(world, agentName string) bool {
 type CaptureOpts struct {
 	World        string
 	AgentName    string
+	Role         string // agent role (default: "agent")
 	Summary      string // agent-provided summary (optional)
 	CaptureLines int    // lines of tmux output to capture (default: 100)
 	CommitCount  int    // recent commits to include (default: 10)
@@ -74,8 +76,13 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		opts.CommitCount = 10
 	}
 
+	role := opts.Role
+	if role == "" {
+		role = "agent"
+	}
+
 	// 1. Read tether file to get work item ID.
-	workItemID, err := tether.Read(opts.World, opts.AgentName)
+	workItemID, err := tether.Read(opts.World, opts.AgentName, role)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tether: %w", err)
 	}
@@ -111,14 +118,14 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 	// 5. Read workflow state (if present).
 	workflowStep := ""
 	workflowProgress := ""
-	wfState, err := workflow.ReadState(opts.World, opts.AgentName)
+	wfState, err := workflow.ReadState(opts.World, opts.AgentName, role)
 	if err == nil && wfState != nil && wfState.Status == "running" {
 		workflowStep = wfState.CurrentStep
 		completed := len(wfState.Completed)
 		// Try to get total steps from instance.
-		instance, _ := workflow.ReadInstance(opts.World, opts.AgentName)
+		instance, _ := workflow.ReadInstance(opts.World, opts.AgentName, role)
 		if instance != nil {
-			steps, _ := workflow.ListSteps(opts.World, opts.AgentName)
+			steps, _ := workflow.ListSteps(opts.World, opts.AgentName, role)
 			if steps != nil {
 				workflowProgress = fmt.Sprintf("%d/%d complete", completed, len(steps))
 			}
@@ -140,7 +147,8 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 	return &State{
 		WorkItemID:       workItemID,
 		AgentName:        opts.AgentName,
-		World:              opts.World,
+		World:            opts.World,
+		Role:             role,
 		PreviousSession:  sessionName,
 		Summary:          summary,
 		RecentOutput:     recentOutput,
@@ -154,7 +162,11 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 // Write serializes the handoff state to the agent's handoff file.
 // Creates parent directories if needed.
 func Write(state *State) error {
-	path := HandoffPath(state.World, state.AgentName)
+	role := state.Role
+	if role == "" {
+		role = "agent"
+	}
+	path := HandoffPath(state.World, state.AgentName, role)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("failed to create handoff directory: %w", err)
 	}
@@ -192,8 +204,8 @@ func Write(state *State) error {
 
 // Read deserializes the handoff state from the agent's handoff file.
 // Returns nil, nil if no handoff file exists.
-func Read(world, agentName string) (*State, error) {
-	data, err := os.ReadFile(HandoffPath(world, agentName))
+func Read(world, agentName, role string) (*State, error) {
+	data, err := os.ReadFile(HandoffPath(world, agentName, role))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -209,8 +221,8 @@ func Read(world, agentName string) (*State, error) {
 }
 
 // Remove deletes the handoff file. No-op if it doesn't exist.
-func Remove(world, agentName string) error {
-	err := os.Remove(HandoffPath(world, agentName))
+func Remove(world, agentName, role string) error {
+	err := os.Remove(HandoffPath(world, agentName, role))
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove handoff file: %w", err)
 	}
@@ -278,7 +290,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	}
 
 	// Try to capture state from tethered work (outposts and envoys with active work).
-	workItemID, _ := tether.Read(opts.World, opts.AgentName)
+	workItemID, _ := tether.Read(opts.World, opts.AgentName, role)
 	hasTether := workItemID != ""
 
 	if hasTether {
@@ -286,6 +298,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		state, err := Capture(CaptureOpts{
 			World:     opts.World,
 			AgentName: opts.AgentName,
+			Role:      role,
 			Summary:   opts.Summary,
 		}, func(name string, lines int) (string, error) {
 			return sessionMgr.Capture(name, lines)

@@ -322,7 +322,7 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 	}
 
 	// 4. Clear the tether file.
-	if err := tether.Clear(agent.World, agent.Name); err != nil {
+	if err := tether.Clear(agent.World, agent.Name, agent.Role); err != nil {
 		return fmt.Errorf("failed to clear tether for %q: %w", agent.ID, err)
 	}
 

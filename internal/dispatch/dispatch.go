@@ -228,7 +228,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 
 	// From here on, rollback on failure.
 	rollback := func() {
-		if err := tether.Clear(opts.World, agent.Name); err != nil {
+		if err := tether.Clear(opts.World, agent.Name, "agent"); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to clear tether: %v\n", err)
 		}
 		if err := worldStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{Status: "open", Assignee: "-"}); err != nil {
@@ -242,11 +242,11 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 			fmt.Fprintf(os.Stderr, "rollback: failed to remove worktree: %s\n", strings.TrimSpace(string(out)))
 		}
 		// Clean up workflow if it was instantiated.
-		workflow.Remove(opts.World, agent.Name) // best-effort
+		workflow.Remove(opts.World, agent.Name, "agent") // best-effort
 	}
 
 	// 4. Write tether file.
-	if err := tether.Write(opts.World, agent.Name, opts.WorkItemID); err != nil {
+	if err := tether.Write(opts.World, agent.Name, opts.WorkItemID, "agent"); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to write tether: %w", err)
 	}
@@ -297,7 +297,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		if _, ok := vars["issue"]; !ok {
 			vars["issue"] = opts.WorkItemID
 		}
-		if _, _, err := workflow.Instantiate(opts.World, agent.Name, opts.Formula, vars); err != nil {
+		if _, _, err := workflow.Instantiate(opts.World, agent.Name, "agent", opts.Formula, vars); err != nil {
 			rollback()
 			return nil, fmt.Errorf("failed to instantiate workflow %q: %w", opts.Formula, err)
 		}
@@ -396,14 +396,18 @@ type PrimeResult struct {
 }
 
 // Prime assembles execution context from durable state and returns it.
-func Prime(world, agentName string, worldStore WorldStore) (*PrimeResult, error) {
+func Prime(world, agentName, role string, worldStore WorldStore) (*PrimeResult, error) {
+	if role == "" {
+		role = "agent"
+	}
+
 	// Forge gets a special prime context.
-	if agentName == "forge" {
+	if role == "forge" {
 		return primeForge(world)
 	}
 
 	// Read the tether file.
-	workItemID, err := tether.Read(world, agentName)
+	workItemID, err := tether.Read(world, agentName, role)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tether: %w", err)
 	}
@@ -418,7 +422,7 @@ func Prime(world, agentName string, worldStore WorldStore) (*PrimeResult, error)
 	}
 
 	// Check for handoff context (session continuity).
-	handoffState, err := handoff.Read(world, agentName)
+	handoffState, err := handoff.Read(world, agentName, role)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read handoff state: %w", err)
 	}
@@ -429,20 +433,20 @@ func Prime(world, agentName string, worldStore WorldStore) (*PrimeResult, error)
 			return nil, err
 		}
 		// Clean up handoff file after successful injection.
-		if removeErr := handoff.Remove(world, agentName); removeErr != nil {
+		if removeErr := handoff.Remove(world, agentName, role); removeErr != nil {
 			fmt.Fprintf(os.Stderr, "prime: failed to remove handoff file: %v\n", removeErr)
 		}
 		return result, nil
 	}
 
 	// Check for active workflow.
-	state, err := workflow.ReadState(world, agentName)
+	state, err := workflow.ReadState(world, agentName, role)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read workflow state: %w", err)
 	}
 
 	if state != nil && state.Status == "running" {
-		return primeWithWorkflow(world, agentName, item, state)
+		return primeWithWorkflow(world, agentName, role, item, state)
 	}
 
 	// No workflow — standard prime (existing behavior).
@@ -464,10 +468,10 @@ If stuck, run: sol escalate "description"
 }
 
 // primeWithWorkflow returns workflow-aware context for the prime command.
-func primeWithWorkflow(world, agentName string, item *store.WorkItem,
+func primeWithWorkflow(world, agentName, role string, item *store.WorkItem,
 	state *workflow.State) (*PrimeResult, error) {
 
-	step, err := workflow.ReadCurrentStep(world, agentName)
+	step, err := workflow.ReadCurrentStep(world, agentName, role)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read current step: %w", err)
 	}
@@ -480,7 +484,7 @@ func primeWithWorkflow(world, agentName string, item *store.WorkItem,
 
 	// Count progress.
 	completed := len(state.Completed)
-	instance, _ := workflow.ReadInstance(world, agentName)
+	instance, _ := workflow.ReadInstance(world, agentName, role)
 	formula := ""
 	if instance != nil {
 		formula = instance.Formula
@@ -584,8 +588,14 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	agentID := opts.World + "/" + opts.AgentName
 	sessName := SessionName(opts.World, opts.AgentName)
 
+	// Look up agent first to determine role (needed for role-aware tether path).
+	agent, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
+	}
+
 	// 1. Read tether — get work item ID.
-	workItemID, err := tether.Read(opts.World, opts.AgentName)
+	workItemID, err := tether.Read(opts.World, opts.AgentName, agent.Role)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tether: %w", err)
 	}
@@ -605,12 +615,6 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		return nil, err
 	}
 	defer agentLock.Release()
-
-	// Look up agent to determine role (needed for envoy resolve behavior).
-	agent, err := sphereStore.GetAgent(agentID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
-	}
 
 	// Compute worktree path and branch name based on role.
 	var worktreeDir string
@@ -706,15 +710,15 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	}
 
 	// 6. Clear tether file.
-	if err := tether.Clear(opts.World, opts.AgentName); err != nil {
+	if err := tether.Clear(opts.World, opts.AgentName, agent.Role); err != nil {
 		// Agent is idle but tether remains — consul will clean this up.
 		fmt.Fprintf(os.Stderr, "resolve: failed to clear tether (consul will recover): %v\n", err)
 	}
 
 	// 6b. Clean up workflow if present (envoys and governors don't use workflow system).
 	if agent.Role != "envoy" && agent.Role != "governor" {
-		if _, err := workflow.ReadState(opts.World, opts.AgentName); err == nil {
-			if removeErr := workflow.Remove(opts.World, opts.AgentName); removeErr != nil {
+		if _, err := workflow.ReadState(opts.World, opts.AgentName, agent.Role); err == nil {
+			if removeErr := workflow.Remove(opts.World, opts.AgentName, agent.Role); removeErr != nil {
 				fmt.Fprintf(os.Stderr, "resolve: failed to clean up workflow: %v\n", removeErr)
 			}
 		}
@@ -818,7 +822,7 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 	}
 
 	// 5. Clear tether file.
-	if err := tether.Clear(opts.World, opts.AgentName); err != nil {
+	if err := tether.Clear(opts.World, opts.AgentName, role); err != nil {
 		return nil, fmt.Errorf("failed to clear tether: %w", err)
 	}
 

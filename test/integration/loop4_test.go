@@ -72,7 +72,7 @@ needs = ["step2"]
 	agent := "TestBot"
 
 	// 1. Instantiate.
-	inst, state, err := workflow.Instantiate(world, agent, "test-formula", map[string]string{"issue": "sol-12345678"})
+	inst, state, err := workflow.Instantiate(world, agent, "agent", "test-formula", map[string]string{"issue": "sol-12345678"})
 	if err != nil {
 		t.Fatalf("Instantiate: %v", err)
 	}
@@ -87,7 +87,7 @@ needs = ["step2"]
 	}
 
 	// 2. ReadCurrentStep → first step.
-	step, err := workflow.ReadCurrentStep(world, agent)
+	step, err := workflow.ReadCurrentStep(world, agent, "agent")
 	if err != nil {
 		t.Fatalf("ReadCurrentStep: %v", err)
 	}
@@ -99,7 +99,7 @@ needs = ["step2"]
 	}
 
 	// 3. Advance → second step.
-	nextStep, done, err := workflow.Advance(world, agent)
+	nextStep, done, err := workflow.Advance(world, agent, "agent")
 	if err != nil {
 		t.Fatalf("Advance to step2: %v", err)
 	}
@@ -111,7 +111,7 @@ needs = ["step2"]
 	}
 
 	// 4. Advance → third step.
-	nextStep, done, err = workflow.Advance(world, agent)
+	nextStep, done, err = workflow.Advance(world, agent, "agent")
 	if err != nil {
 		t.Fatalf("Advance to step3: %v", err)
 	}
@@ -123,7 +123,7 @@ needs = ["step2"]
 	}
 
 	// 5. Advance → done.
-	_, done, err = workflow.Advance(world, agent)
+	_, done, err = workflow.Advance(world, agent, "agent")
 	if err != nil {
 		t.Fatalf("Advance to done: %v", err)
 	}
@@ -132,7 +132,7 @@ needs = ["step2"]
 	}
 
 	// 6. ReadState → status="done".
-	state, err = workflow.ReadState(world, agent)
+	state, err = workflow.ReadState(world, agent, "agent")
 	if err != nil {
 		t.Fatalf("ReadState: %v", err)
 	}
@@ -201,15 +201,15 @@ needs = ["s2"]
 	agent := "CrashBot"
 
 	// 1. Instantiate and advance to step 2.
-	if _, _, err := workflow.Instantiate(world, agent, "crash-formula", map[string]string{"issue": "sol-crash"}); err != nil {
+	if _, _, err := workflow.Instantiate(world, agent, "agent", "crash-formula", map[string]string{"issue": "sol-crash"}); err != nil {
 		t.Fatalf("Instantiate: %v", err)
 	}
-	if _, _, err := workflow.Advance(world, agent); err != nil {
+	if _, _, err := workflow.Advance(world, agent, "agent"); err != nil {
 		t.Fatalf("Advance: %v", err)
 	}
 
 	// 2. Simulate crash: read state from disk (no in-memory state to clear).
-	state, err := workflow.ReadState(world, agent)
+	state, err := workflow.ReadState(world, agent, "agent")
 	if err != nil {
 		t.Fatalf("ReadState after crash: %v", err)
 	}
@@ -218,7 +218,7 @@ needs = ["s2"]
 	}
 
 	// 3. ReadCurrentStep → step 2 instructions.
-	step, err := workflow.ReadCurrentStep(world, agent)
+	step, err := workflow.ReadCurrentStep(world, agent, "agent")
 	if err != nil {
 		t.Fatalf("ReadCurrentStep after crash: %v", err)
 	}
@@ -230,7 +230,7 @@ needs = ["s2"]
 	}
 
 	// 4. Advance → step 3 (workflow resumed correctly).
-	nextStep, done, err := workflow.Advance(world, agent)
+	nextStep, done, err := workflow.Advance(world, agent, "agent")
 	if err != nil {
 		t.Fatalf("Advance after crash: %v", err)
 	}
@@ -312,7 +312,7 @@ instructions = "steps/01.md"
 	}
 
 	// Verify state.json exists with current_step set.
-	state, err := workflow.ReadState("ember", "WorkflowBot")
+	state, err := workflow.ReadState("ember", "WorkflowBot", "agent")
 	if err != nil {
 		t.Fatalf("ReadState: %v", err)
 	}
@@ -407,7 +407,7 @@ needs = ["step1"]
 	}
 
 	// Call Prime.
-	result, err := dispatch.Prime("ember", "PrimeBot", worldStore)
+	result, err := dispatch.Prime("ember", "PrimeBot", "agent", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -462,7 +462,7 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 	}
 
 	// Call Prime.
-	result, err := dispatch.Prime("ember", "PlainBot", worldStore)
+	result, err := dispatch.Prime("ember", "PlainBot", "agent", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -1000,7 +1000,7 @@ needs = ["implement"]
 	}
 
 	// 2. Prime → get step 1 instructions.
-	primeResult, err := dispatch.Prime("ember", "PropBot", worldStore)
+	primeResult, err := dispatch.Prime("ember", "PropBot", "agent", worldStore)
 	if err != nil {
 		t.Fatalf("prime 1: %v", err)
 	}
@@ -1009,7 +1009,7 @@ needs = ["implement"]
 	}
 
 	// 3. workflow advance → step 2.
-	nextStep, done, err := workflow.Advance("ember", "PropBot")
+	nextStep, done, err := workflow.Advance("ember", "PropBot", "agent")
 	if err != nil {
 		t.Fatalf("advance 1: %v", err)
 	}
@@ -1021,7 +1021,7 @@ needs = ["implement"]
 	}
 
 	// 4. Prime again → get step 2 instructions (crash recovery sim).
-	primeResult, err = dispatch.Prime("ember", "PropBot", worldStore)
+	primeResult, err = dispatch.Prime("ember", "PropBot", "agent", worldStore)
 	if err != nil {
 		t.Fatalf("prime 2: %v", err)
 	}
@@ -1030,7 +1030,7 @@ needs = ["implement"]
 	}
 
 	// 5. workflow advance → step 3.
-	nextStep, done, err = workflow.Advance("ember", "PropBot")
+	nextStep, done, err = workflow.Advance("ember", "PropBot", "agent")
 	if err != nil {
 		t.Fatalf("advance 2: %v", err)
 	}
@@ -1042,7 +1042,7 @@ needs = ["implement"]
 	}
 
 	// 6. workflow advance → complete.
-	_, done, err = workflow.Advance("ember", "PropBot")
+	_, done, err = workflow.Advance("ember", "PropBot", "agent")
 	if err != nil {
 		t.Fatalf("advance 3: %v", err)
 	}

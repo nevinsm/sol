@@ -76,7 +76,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Errorf("agent tether_item: got %q, want %q", agent.TetherItem, itemID)
 	}
 
-	if !tether.IsTethered("ember", "TestBot") {
+	if !tether.IsTethered("ember", "TestBot", "agent") {
 		t.Error("tether file does not exist after cast")
 	}
 
@@ -127,7 +127,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Error("expected agent record to be deleted after resolve")
 	}
 
-	if tether.IsTethered("ember", "TestBot") {
+	if tether.IsTethered("ember", "TestBot", "agent") {
 		t.Error("tether file still exists after resolve")
 	}
 
@@ -189,7 +189,7 @@ func TestCrashRecoveryRecast(t *testing.T) {
 	if item.Status != "tethered" {
 		t.Errorf("work item status after crash: got %q, want tethered", item.Status)
 	}
-	if !tether.IsTethered("ember", "TestBot") {
+	if !tether.IsTethered("ember", "TestBot", "agent") {
 		t.Error("tether file missing after crash")
 	}
 
@@ -209,7 +209,7 @@ func TestCrashRecoveryRecast(t *testing.T) {
 		t.Error("tmux session not created after re-cast")
 	}
 
-	tetherID, err := tether.Read("ember", "TestBot")
+	tetherID, err := tether.Read("ember", "TestBot", "agent")
 	if err != nil {
 		t.Fatalf("read tether after re-cast: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestPrimeOutput(t *testing.T) {
 	}
 
 	// Run Prime.
-	result, err := dispatch.Prime("ember", "TestBot", worldStore)
+	result, err := dispatch.Prime("ember", "TestBot", "agent", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestPrimeWithoutHook(t *testing.T) {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 
-	result, err := dispatch.Prime("ember", "TestBot", worldStore)
+	result, err := dispatch.Prime("ember", "TestBot", "agent", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}

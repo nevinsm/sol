@@ -29,13 +29,26 @@ var primeCmd = &cobra.Command{
 			return err
 		}
 
+		// Look up agent to determine role.
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		agentID := primeWorld + "/" + primeAgent
+		agent, err := sphereStore.GetAgent(agentID)
+		if err != nil {
+			return fmt.Errorf("failed to get agent %q: %w", agentID, err)
+		}
+
 		worldStore, err := store.OpenWorld(primeWorld)
 		if err != nil {
 			return err
 		}
 		defer worldStore.Close()
 
-		result, err := dispatch.Prime(primeWorld, primeAgent, worldStore)
+		result, err := dispatch.Prime(primeWorld, primeAgent, agent.Role, worldStore)
 		if err != nil {
 			return err
 		}
