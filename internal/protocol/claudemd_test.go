@@ -112,6 +112,8 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 		"sol status myworld",
 		"sol agent list",
 		"sol escalate",
+		"sol inbox --world=myworld --agent=governor",
+		"sol inbox count --world=myworld --agent=governor",
 	} {
 		if !strings.Contains(content, cmd) {
 			t.Errorf("CLAUDE.md should contain %q", cmd)
@@ -146,6 +148,24 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 	// Verify identity section.
 	if !strings.Contains(content, "work coordinator") {
 		t.Error("CLAUDE.md should contain governor identity")
+	}
+
+	// Verify notification handling section.
+	for _, notifType := range []string{
+		"AGENT_DONE",
+		"MERGED",
+		"MERGE_FAILED",
+		"RECOVERY_NEEDED",
+	} {
+		if !strings.Contains(content, "**"+notifType+"**") {
+			t.Errorf("CLAUDE.md should contain notification type %q", notifType)
+		}
+	}
+	if !strings.Contains(content, "## Notification Handling") {
+		t.Error("CLAUDE.md should contain Notification Handling section")
+	}
+	if !strings.Contains(content, "[NOTIFICATION]") {
+		t.Error("CLAUDE.md should describe notification format")
 	}
 
 	// Verify guidelines.

@@ -399,6 +399,37 @@ When the operator gives you a work request:
    `+"`"+`%s cast <item-id> %s`+"`"+`
 6. Track progress: `+"`"+`%s status %s`+"`"+`
 
+## Notification Handling
+Notifications arrive automatically at each turn boundary (via UserPromptSubmit hook).
+They appear as `+"`"+`[NOTIFICATION] TYPE: Subject — Body`+"`"+` in your context.
+
+Respond based on the notification type:
+
+**AGENT_DONE** — An outpost resolved a work item.
+- Body JSON fields: `+"`"+`work_item_id`+"`"+`, `+"`"+`agent_name`+"`"+`, `+"`"+`branch`+"`"+`, `+"`"+`title`+"`"+`, `+"`"+`merge_request_id`+"`"+`
+- Check caravan status: `+"`"+`%s caravan status --world=%s`+"`"+`
+- Look for newly unblocked items to dispatch
+- If this was the last item in a caravan, note caravan completion
+- Dispatch next ready work if agents are available
+- Update your brief
+
+**MERGED** — Forge successfully merged a work item.
+- Body JSON fields: `+"`"+`work_item_id`+"`"+`, `+"`"+`merge_request_id`+"`"+`
+- Update brief (item merged)
+- Check if caravan is fully merged — note completion if so
+- Check if blocked items in other caravans are now unblocked
+
+**MERGE_FAILED** — Forge failed to merge.
+- Body JSON fields: `+"`"+`work_item_id`+"`"+`, `+"`"+`merge_request_id`+"`"+`, `+"`"+`reason`+"`"+`
+- Assess the failure reason
+- Consider re-dispatching to an outpost for conflict resolution
+- Escalate if repeated failures: `+"`"+`%s escalate --world=%s --agent=governor --message="..."`+"`"+`
+
+**RECOVERY_NEEDED** — Sentinel exhausted respawn attempts.
+- Body JSON fields: `+"`"+`agent_id`+"`"+`, `+"`"+`work_item_id`+"`"+`, `+"`"+`reason`+"`"+`, `+"`"+`attempts`+"`"+`
+- Assess whether to re-dispatch the work item or escalate
+- Update brief with dead agent info
+
 ## Available Commands
 Full sol CLI reference for governor operations:
 
@@ -423,6 +454,10 @@ Full sol CLI reference for governor operations:
 
 # Communication
 %s escalate --world=%s --agent=governor --message="..."
+
+# Inbox (check pending notifications)
+%s inbox --world=%s --agent=governor
+%s inbox count --world=%s --agent=governor
 `+"```"+`
 
 ## Guidelines
@@ -432,6 +467,8 @@ Full sol CLI reference for governor operations:
 - Check agent availability before dispatching (`+"`"+`%s agent list`+"`"+`)
 - Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
 - Use the codebase to verify your understanding before dispatching
+- When notifications arrive, handle them promptly — they represent state changes that may require action
+- After handling a notification, always update your brief to reflect the new state
 `,
 		ctx.World, ctx.World, // title, identity
 		ctx.World,             // world summary heading
@@ -440,6 +477,8 @@ Full sol CLI reference for governor operations:
 		sol, ctx.World, // dispatch: caravan create
 		sol, ctx.World, // dispatch: cast
 		sol, ctx.World, // dispatch: status
+		sol, ctx.World, // notification: caravan status (AGENT_DONE)
+		sol, ctx.World, // notification: escalate (MERGE_FAILED)
 		sol, ctx.World, // commands: store create
 		sol, ctx.World, // commands: store list
 		sol, ctx.World, // commands: cast
@@ -451,6 +490,8 @@ Full sol CLI reference for governor operations:
 		sol, ctx.World, // commands: status
 		sol, ctx.World, // commands: agent list
 		sol, ctx.World, // commands: escalate
+		sol, ctx.World, // commands: inbox
+		sol, ctx.World, // commands: inbox count
 		sol, // guidelines: agent list
 	)
 }
