@@ -189,9 +189,11 @@ func init() {
 // --- sol store update ---
 
 var (
-	updateStatus   string
-	updateAssignee string
-	updatePriority int
+	updateStatus      string
+	updateAssignee    string
+	updatePriority    int
+	updateTitle       string
+	updateDescription string
 )
 
 var storeUpdateCmd = &cobra.Command{
@@ -208,9 +210,11 @@ var storeUpdateCmd = &cobra.Command{
 			return err
 		}
 		updates := store.WorkItemUpdates{
-			Status:   updateStatus,
-			Assignee: updateAssignee,
-			Priority: updatePriority,
+			Status:      updateStatus,
+			Assignee:    updateAssignee,
+			Priority:    updatePriority,
+			Title:       updateTitle,
+			Description: updateDescription,
 		}
 		s, err := store.OpenWorld(world)
 		if err != nil {
@@ -231,6 +235,8 @@ func init() {
 	storeUpdateCmd.Flags().StringVar(&updateStatus, "status", "", "new status")
 	storeUpdateCmd.Flags().StringVar(&updateAssignee, "assignee", "", "new assignee (- to clear)")
 	storeUpdateCmd.Flags().IntVar(&updatePriority, "priority", 0, "new priority")
+	storeUpdateCmd.Flags().StringVar(&updateTitle, "title", "", "new title")
+	storeUpdateCmd.Flags().StringVar(&updateDescription, "description", "", "new description")
 }
 
 // --- sol store close ---

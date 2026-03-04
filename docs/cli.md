@@ -44,7 +44,7 @@
 | `sol store create --world=W --title=T` | Create a work item |
 | `sol store get <id> --world=W` | Get a work item by ID |
 | `sol store list --world=W` | List work items (filter by `--status`, `--label`, `--assignee`) |
-| `sol store update <id> --world=W` | Update status, assignee, or priority |
+| `sol store update <id> --world=W` | Update status, assignee, priority, title, or description |
 | `sol store close <id> --world=W` | Close a work item |
 | `sol store query --world=W --sql=Q` | Run a read-only SQL query |
 
