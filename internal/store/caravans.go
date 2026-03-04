@@ -34,6 +34,12 @@ type CaravanItemStatus struct {
 	Phase          int    `json:"phase"`
 	WorkItemStatus string `json:"work_item_status"`
 	Ready          bool   `json:"ready"`
+	Assignee       string `json:"assignee,omitempty"`
+}
+
+// IsDispatched returns true if the item is actively being worked on by an agent.
+func (s CaravanItemStatus) IsDispatched() bool {
+	return s.WorkItemStatus == "tethered" || s.WorkItemStatus == "working"
 }
 
 // generateCaravanID returns a new caravan ID in the format "car-" + 16 hex chars.
@@ -294,6 +300,7 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 				}
 
 				cis.WorkItemStatus = item.Status
+				cis.Assignee = item.Assignee
 
 				ready, err := worldStore.IsReady(ci.WorkItemID)
 				if err != nil {

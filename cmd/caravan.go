@@ -167,13 +167,15 @@ var caravanCheckCmd = &cobra.Command{
 		fmt.Printf("Status: %s\n", caravan.Status)
 		fmt.Println()
 
-		// Separate ready, awaiting merge, and blocked items.
-		var ready, awaitingMerge, blocked []store.CaravanItemStatus
+		// Separate ready, in progress, awaiting merge, and blocked items.
+		var ready, inProgress, awaitingMerge, blocked []store.CaravanItemStatus
 		for _, st := range statuses {
 			if st.WorkItemStatus == "closed" {
 				// fully merged, skip for now
 			} else if st.WorkItemStatus == "done" {
 				awaitingMerge = append(awaitingMerge, st)
+			} else if st.IsDispatched() {
+				inProgress = append(inProgress, st)
 			} else if st.WorkItemStatus == "open" && st.Ready {
 				ready = append(ready, st)
 			} else {
@@ -186,6 +188,19 @@ var caravanCheckCmd = &cobra.Command{
 			for _, st := range ready {
 				title := itemTitle(st.WorkItemID, st.World)
 				fmt.Printf("  %s  %s  (%s)\n", st.WorkItemID, title, st.World)
+			}
+			fmt.Println()
+		}
+
+		if len(inProgress) > 0 {
+			fmt.Println("In progress:")
+			for _, st := range inProgress {
+				title := itemTitle(st.WorkItemID, st.World)
+				agent := ""
+				if st.Assignee != "" {
+					agent = fmt.Sprintf("  [%s]", agentShortName(st.Assignee))
+				}
+				fmt.Printf("  %s  %s  (%s)%s\n", st.WorkItemID, title, st.World, agent)
 			}
 			fmt.Println()
 		}
@@ -285,6 +300,12 @@ var caravanStatusCmd = &cobra.Command{
 				case st.WorkItemStatus == "done":
 					marker = "[~]"
 					suffix = " (awaiting merge)"
+				case st.IsDispatched():
+					marker = "[w]"
+					suffix = " (in progress)"
+					if st.Assignee != "" {
+						suffix = fmt.Sprintf(" (in progress: %s)", agentShortName(st.Assignee))
+					}
 				case st.WorkItemStatus == "open" && st.Ready:
 					marker = "[>]"
 					suffix = " (ready)"
@@ -331,7 +352,7 @@ var caravanStatusCmd = &cobra.Command{
 			}
 
 			// Count statuses.
-			var closedCount, mergingCount, readyCount, blockedCount int
+			var closedCount, mergingCount, readyCount, dispatchedCount, blockedCount int
 			statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
 			if err != nil {
 				// If we can't check readiness, just show item count.
@@ -344,14 +365,29 @@ var caravanStatusCmd = &cobra.Command{
 					closedCount++
 				case st.WorkItemStatus == "done":
 					mergingCount++
+				case st.IsDispatched():
+					dispatchedCount++
 				case st.WorkItemStatus == "open" && st.Ready:
 					readyCount++
 				default:
 					blockedCount++
 				}
 			}
-			fmt.Fprintf(tw, "  %s\t%s\t%d items\t(%d closed, %d merging, %d ready, %d blocked)\n",
-				c.ID, c.Name, len(items), closedCount, mergingCount, readyCount, blockedCount)
+			summary := fmt.Sprintf("%d closed", closedCount)
+			if mergingCount > 0 {
+				summary += fmt.Sprintf(", %d merging", mergingCount)
+			}
+			if dispatchedCount > 0 {
+				summary += fmt.Sprintf(", %d in progress", dispatchedCount)
+			}
+			if readyCount > 0 {
+				summary += fmt.Sprintf(", %d ready", readyCount)
+			}
+			if blockedCount > 0 {
+				summary += fmt.Sprintf(", %d blocked", blockedCount)
+			}
+			fmt.Fprintf(tw, "  %s\t%s\t%d items\t(%s)\n",
+				c.ID, c.Name, len(items), summary)
 		}
 		tw.Flush()
 		return nil
@@ -593,6 +629,14 @@ var caravanCloseCmd = &cobra.Command{
 }
 
 // helpers
+
+// agentShortName extracts the agent name from a "world/agent-name" assignee string.
+func agentShortName(assignee string) string {
+	if i := strings.LastIndex(assignee, "/"); i >= 0 {
+		return assignee[i+1:]
+	}
+	return assignee
+}
 
 func itemTitle(workItemID, world string) string {
 	worldStore, err := gatedWorldOpener(world)
