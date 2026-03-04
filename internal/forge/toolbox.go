@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -133,6 +134,13 @@ func (r *Forge) MarkMerged(mrID string) error {
 	exec.Command("git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
 
 	r.logger.Info("merged", "mr", mrID, "work_item", mr.WorkItemID, "branch", mr.Branch)
+
+	// Nudge governor that MR was merged (best-effort).
+	r.nudgeGovernor("MERGED",
+		fmt.Sprintf("MR %s merged", mrID),
+		fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
+			mr.WorkItemID, mrID, mr.Branch, r.workItemTitle(mr.WorkItemID)))
+
 	return nil
 }
 
@@ -167,6 +175,13 @@ func (r *Forge) MarkFailed(mrID string) error {
 
 	r.logger.Info("marked failed and reopened", "mr", mrID,
 		"work_item", mr.WorkItemID, "branch", mr.Branch)
+
+	// Nudge governor that merge failed (best-effort).
+	r.nudgeGovernor("MERGE_FAILED",
+		fmt.Sprintf("MR %s merge failed", mrID),
+		fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"reason":"merge failed, work item reopened"}`,
+			mr.WorkItemID, mrID, mr.Branch))
+
 	return nil
 }
 
@@ -278,4 +293,32 @@ func (r *Forge) QualityGates() []string { return r.cfg.QualityGates }
 // GetWorkItem returns a work item by ID (convenience accessor).
 func (r *Forge) GetWorkItem(id string) (*store.WorkItem, error) {
 	return r.worldStore.GetWorkItem(id)
+}
+
+// nudgeGovernor enqueues a message to the governor's nudge queue.
+// Best-effort: logs and swallows errors, skips silently if no governor is configured.
+func (r *Forge) nudgeGovernor(msgType, subject, body string) {
+	govDir := config.AgentDir(r.world, "governor", "governor")
+	if _, err := os.Stat(govDir); err != nil {
+		return // no governor configured — skip silently
+	}
+	govSession := config.SessionName(r.world, "governor")
+	if err := nudge.Enqueue(govSession, nudge.Message{
+		Sender:   "forge",
+		Type:     msgType,
+		Subject:  subject,
+		Body:     body,
+		Priority: "normal",
+	}); err != nil {
+		r.logger.Warn("failed to nudge governor", "type", msgType, "error", err)
+	}
+}
+
+// workItemTitle fetches the title of a work item, returning "" on error.
+func (r *Forge) workItemTitle(workItemID string) string {
+	item, err := r.worldStore.GetWorkItem(workItemID)
+	if err != nil {
+		return ""
+	}
+	return item.Title
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/namepool"
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -931,6 +932,22 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 			"branch":        branchName,
 			"merge_request": mrID,
 		})
+	}
+
+	// 8. Nudge governor that work is done (best-effort, silent skip if no governor).
+	govSession := config.SessionName(opts.World, "governor")
+	if mgr.Exists(govSession) {
+		body := fmt.Sprintf(`{"work_item_id":%q,"agent_name":%q,"branch":%q,"title":%q,"merge_request_id":%q}`,
+			workItemID, opts.AgentName, branchName, item.Title, mrID)
+		if err := nudge.Enqueue(govSession, nudge.Message{
+			Sender:   opts.AgentName,
+			Type:     "AGENT_DONE",
+			Subject:  fmt.Sprintf("Agent %s resolved %s", opts.AgentName, workItemID),
+			Body:     body,
+			Priority: "normal",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to nudge governor: %v\n", err)
+		}
 	}
 
 	return &ResolveResult{
