@@ -950,7 +950,7 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		}
 	}
 
-	// 9. Nudge forge that an MR is ready (best-effort, silent skip if no forge).
+	// 9. Nudge forge that an MR is ready, then poke to wake it.
 	forgeSession := config.SessionName(opts.World, "forge")
 	if mgr.Exists(forgeSession) {
 		body := fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
@@ -965,6 +965,7 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 			fmt.Fprintf(os.Stderr, "resolve: failed to nudge forge: %v\n", err)
 		}
 	}
+	nudge.Poke(forgeSession)
 
 	return &ResolveResult{
 		WorkItemID:     workItemID,
