@@ -192,6 +192,9 @@ func renderCaravansTable(b *strings.Builder, caravans []CaravanInfo) {
 				if p.Done > 0 {
 					part += fmt.Sprintf(", %d awaiting merge", p.Done)
 				}
+				if p.Dispatched > 0 {
+					part += fmt.Sprintf(", %d in progress", p.Dispatched)
+				}
 				if p.Ready > 0 {
 					part += fmt.Sprintf(", %d ready", p.Ready)
 				}
@@ -201,10 +204,13 @@ func renderCaravansTable(b *strings.Builder, caravans []CaravanInfo) {
 			b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
 				c.ID, c.Name, dimStyle.Render(progress)))
 		} else {
-			blocked := c.TotalItems - c.ClosedItems - c.DoneItems - c.ReadyItems
+			blocked := c.TotalItems - c.ClosedItems - c.DoneItems - c.ReadyItems - c.DispatchedItems
 			progress := fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)
 			if c.DoneItems > 0 {
 				progress += fmt.Sprintf(", %d awaiting merge", c.DoneItems)
+			}
+			if c.DispatchedItems > 0 {
+				progress += fmt.Sprintf(", %d in progress", c.DispatchedItems)
 			}
 			if c.ReadyItems > 0 {
 				progress += fmt.Sprintf(", %d ready", c.ReadyItems)
