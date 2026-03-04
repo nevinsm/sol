@@ -195,6 +195,7 @@ Nudge queue counts are also shown in the NUDGE column of `sol status <world>` ag
 | `sol envoy brief <name> --world=W` | Display an envoy's brief |
 | `sol envoy debrief <name> --world=W` | Archive the envoy's brief and reset for fresh engagement |
 | `sol envoy sync <name> --world=W` | Sync managed repo and notify running envoy session. Does not rebase envoy branch. |
+| `sol envoy delete <name> --world=W` | Delete an envoy agent, worktree, branch, and store record. Refuses if session active or tethered unless `--force`. |
 
 ## Governor (Per-World Coordinator)
 
