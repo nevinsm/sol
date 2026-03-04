@@ -57,9 +57,32 @@ func (r *Forge) Claim() (*store.MergeRequest, error) {
 	return r.worldStore.ClaimMergeRequest(r.agentID)
 }
 
-// Release releases a claimed MR back to ready.
-func (r *Forge) Release(mrID string) error {
-	return r.worldStore.UpdateMergeRequestPhase(mrID, "ready")
+// Release releases a claimed MR back to ready, or marks it failed if
+// max attempts have been exceeded. Returns true if the MR was marked failed.
+func (r *Forge) Release(mrID string) (failed bool, err error) {
+	mr, err := r.worldStore.GetMergeRequest(mrID)
+	if err != nil {
+		return false, err
+	}
+
+	// If max attempts reached, mark failed instead of releasing.
+	if r.cfg.MaxAttempts > 0 && mr.Attempts >= r.cfg.MaxAttempts {
+		r.logger.Info("max attempts reached, marking failed",
+			"mr", mrID, "attempts", mr.Attempts, "max", r.cfg.MaxAttempts)
+		return true, r.MarkFailed(mrID)
+	}
+
+	if err := r.worldStore.UpdateMergeRequestPhase(mrID, "ready"); err != nil {
+		return false, err
+	}
+
+	// Nudge governor about push rejection (best-effort).
+	r.nudgeGovernor("PUSH_REJECTED",
+		fmt.Sprintf("MR %s push rejected (attempt %d/%d)", mrID, mr.Attempts, r.cfg.MaxAttempts),
+		fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"attempts":%d,"max_attempts":%d}`,
+			mr.WorkItemID, mrID, mr.Branch, mr.Attempts, r.cfg.MaxAttempts))
+
+	return false, nil
 }
 
 // RunGates runs quality gates in the worktree and returns results.
@@ -245,6 +268,12 @@ Instructions:
 
 	r.logger.Info("created resolution task", "mr", mr.ID, "task", taskID,
 		"branch", mr.Branch)
+
+	// Nudge governor that MR is blocked on conflict resolution (best-effort).
+	r.nudgeGovernor("CONFLICT_BLOCKED",
+		fmt.Sprintf("MR %s blocked on conflict resolution", mr.ID),
+		fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"resolution_task_id":%q}`,
+			mr.WorkItemID, mr.ID, mr.Branch, taskID))
 
 	return taskID, nil
 }

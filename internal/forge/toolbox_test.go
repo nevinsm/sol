@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -410,6 +411,208 @@ func TestMarkMergedClosesWorkItem(t *testing.T) {
 	// Verify work item closed.
 	if worldStore.items["sol-aaa11111"].Status != "closed" {
 		t.Errorf("work item status = %q, want 'closed'", worldStore.items["sol-aaa11111"].Status)
+	}
+}
+
+// --- Governor nudge notification tests ---
+
+// setupGovernorNudge sets SOL_HOME and creates the governor agent dir
+// so nudgeGovernor does not skip. Returns the governor session name.
+func setupGovernorNudge(t *testing.T, world string) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	govDir := filepath.Join(dir, world, "governor")
+	os.MkdirAll(govDir, 0o755)
+	os.MkdirAll(filepath.Join(dir, ".runtime", "locks"), 0o755)
+	return "sol-" + world + "-governor"
+}
+
+// drainNudges returns all nudge messages for the given session.
+func drainNudges(t *testing.T, session string) []nudge.Message {
+	t.Helper()
+	msgs, err := nudge.List(session)
+	if err != nil {
+		t.Fatalf("nudge.List(%q) error: %v", session, err)
+	}
+	return msgs
+}
+
+func TestMarkFailedNudgesGovernor(t *testing.T) {
+	govSession := setupGovernorNudge(t, "ember")
+
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.WorkItem{
+		ID: "sol-aaa11111", Title: "Test", Status: "done", Assignee: "Toast",
+	}
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worldStore:  worldStore,
+		sphereStore: newMockSphereStore(),
+		logger:      testLogger(),
+		cfg:         DefaultConfig(),
+	}
+
+	if err := r.MarkFailed("mr-00000001"); err != nil {
+		t.Fatalf("MarkFailed() error: %v", err)
+	}
+
+	msgs := drainNudges(t, govSession)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 nudge, got %d", len(msgs))
+	}
+	if msgs[0].Type != "MERGE_FAILED" {
+		t.Errorf("nudge type = %q, want MERGE_FAILED", msgs[0].Type)
+	}
+	if !strings.Contains(msgs[0].Body, "mr-00000001") {
+		t.Errorf("nudge body should contain MR ID, got: %s", msgs[0].Body)
+	}
+}
+
+func TestReleaseNudgesPushRejected(t *testing.T) {
+	govSession := setupGovernorNudge(t, "ember")
+
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed", Attempts: 1},
+	}
+	worldStore.items["sol-aaa11111"] = &store.WorkItem{
+		ID: "sol-aaa11111", Title: "Test", Status: "done",
+	}
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worldStore:  worldStore,
+		sphereStore: newMockSphereStore(),
+		logger:      testLogger(),
+		cfg:         DefaultConfig(), // MaxAttempts=3
+	}
+
+	failed, err := r.Release("mr-00000001")
+	if err != nil {
+		t.Fatalf("Release() error: %v", err)
+	}
+	if failed {
+		t.Error("Release() returned failed=true, want false (under max attempts)")
+	}
+
+	// Verify MR released back to ready.
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-00000001"]
+	worldStore.mu.Unlock()
+	if phase != "ready" {
+		t.Errorf("MR phase = %q, want 'ready'", phase)
+	}
+
+	// Verify PUSH_REJECTED nudge.
+	msgs := drainNudges(t, govSession)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 nudge, got %d", len(msgs))
+	}
+	if msgs[0].Type != "PUSH_REJECTED" {
+		t.Errorf("nudge type = %q, want PUSH_REJECTED", msgs[0].Type)
+	}
+}
+
+func TestReleaseMaxAttemptsMarksFailed(t *testing.T) {
+	govSession := setupGovernorNudge(t, "ember")
+
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed", Attempts: 3},
+	}
+	worldStore.items["sol-aaa11111"] = &store.WorkItem{
+		ID: "sol-aaa11111", Title: "Test", Status: "done", Assignee: "Toast",
+	}
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worldStore:  worldStore,
+		sphereStore: newMockSphereStore(),
+		logger:      testLogger(),
+		cfg:         DefaultConfig(), // MaxAttempts=3
+	}
+
+	failed, err := r.Release("mr-00000001")
+	if err != nil {
+		t.Fatalf("Release() error: %v", err)
+	}
+	if !failed {
+		t.Error("Release() returned failed=false, want true (at max attempts)")
+	}
+
+	// Verify MR marked as failed (not released).
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-00000001"]
+	worldStore.mu.Unlock()
+	if phase != "failed" {
+		t.Errorf("MR phase = %q, want 'failed'", phase)
+	}
+
+	// Verify MERGE_FAILED nudge (from MarkFailed).
+	msgs := drainNudges(t, govSession)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 nudge, got %d", len(msgs))
+	}
+	if msgs[0].Type != "MERGE_FAILED" {
+		t.Errorf("nudge type = %q, want MERGE_FAILED", msgs[0].Type)
+	}
+}
+
+func TestCreateResolutionTaskNudgesGovernor(t *testing.T) {
+	govSession := setupGovernorNudge(t, "ember")
+
+	// Set up a mock git repo to satisfy rev-parse.
+	repoDir := t.TempDir()
+	run(t, "git", "init", repoDir)
+	run(t, "git", "-C", repoDir, "commit", "--allow-empty", "-m", "init")
+
+	worldStore := newMockWorldStore()
+	worldStore.items["sol-original1"] = &store.WorkItem{
+		ID: "sol-original1", Title: "Add feature X", Priority: 2,
+	}
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WorkItemID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: "claimed"},
+	}
+
+	r := &Forge{
+		world:      "ember",
+		agentID:    "ember/forge",
+		worktree:   repoDir,
+		worldStore: worldStore,
+		logger:     testLogger(),
+		cfg:        DefaultConfig(),
+	}
+
+	mr := &store.MergeRequest{
+		ID:         "mr-00000001",
+		WorkItemID: "sol-original1",
+		Branch:     "outpost/Toast/sol-original1",
+		Phase:      "claimed",
+	}
+
+	_, err := r.CreateResolutionTask(mr)
+	if err != nil {
+		t.Fatalf("CreateResolutionTask() error: %v", err)
+	}
+
+	// Verify CONFLICT_BLOCKED nudge.
+	msgs := drainNudges(t, govSession)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 nudge, got %d", len(msgs))
+	}
+	if msgs[0].Type != "CONFLICT_BLOCKED" {
+		t.Errorf("nudge type = %q, want CONFLICT_BLOCKED", msgs[0].Type)
+	}
+	if !strings.Contains(msgs[0].Body, "mr-00000001") {
+		t.Errorf("nudge body should contain MR ID, got: %s", msgs[0].Body)
 	}
 }
 
