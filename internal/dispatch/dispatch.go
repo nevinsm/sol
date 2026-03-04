@@ -270,13 +270,14 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 
 	// 7. Install CLAUDE.local.md in the worktree (agent persona).
 	ctx := protocol.ClaudeMDContext{
-		AgentName:   agent.Name,
-		World:       opts.World,
-		WorkItemID:  opts.WorkItemID,
-		Title:       item.Title,
-		Description: item.Description,
-		HasWorkflow: opts.Formula != "",
-		ModelTier:   worldCfg.Agents.ModelTier,
+		AgentName:    agent.Name,
+		World:        opts.World,
+		WorkItemID:   opts.WorkItemID,
+		Title:        item.Title,
+		Description:  item.Description,
+		HasWorkflow:  opts.Formula != "",
+		ModelTier:    worldCfg.Agents.ModelTier,
+		QualityGates: worldCfg.Forge.QualityGates,
 	}
 	if err := protocol.InstallClaudeMD(worktreeDir, ctx); err != nil {
 		rollback()

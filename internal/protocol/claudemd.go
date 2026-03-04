@@ -9,13 +9,14 @@ import (
 
 // ClaudeMDContext holds the fields used to generate a CLAUDE.md file for an outpost agent.
 type ClaudeMDContext struct {
-	AgentName   string
-	World       string
-	WorkItemID  string
-	Title       string
-	Description string
-	HasWorkflow bool   // if true, include workflow commands
-	ModelTier   string // "sonnet", "opus", "haiku" — informational
+	AgentName    string
+	World        string
+	WorkItemID   string
+	Title        string
+	Description  string
+	HasWorkflow  bool     // if true, include workflow commands
+	ModelTier    string   // "sonnet", "opus", "haiku" — informational
+	QualityGates []string // commands to run before resolving (from world config)
 }
 
 // GenerateClaudeMD returns the contents of a CLAUDE.md file for an outpost agent.
@@ -53,15 +54,34 @@ func GenerateClaudeMD(ctx ClaudeMDContext) string {
 		modelSection = fmt.Sprintf("\n## Model\nConfigured model tier: %s\n", ctx.ModelTier)
 	}
 
+	// Build quality gate instructions for the completion checklist.
+	gateInstructions := "Run the project test suite before resolving."
+	if len(ctx.QualityGates) > 0 {
+		lines := ""
+		for _, g := range ctx.QualityGates {
+			lines += fmt.Sprintf("   - `%s`\n", g)
+		}
+		gateInstructions = fmt.Sprintf("Run quality gates (all must pass):\n%s", lines)
+	}
+
 	return fmt.Sprintf(`# Outpost Agent: %s (world: %s)
 
 You are an outpost agent in a multi-agent orchestration system.
 Your job is to execute the assigned work item.
+
+## Warning
+- If you do not run `+"`sol resolve`"+`, your tether is orphaned, forge never sees your MR, your worktree leaks until sentinel reaps it, and the work item stays stuck in tethered state. Always resolve.
+- If you are stuck and cannot complete the work, run `+"`sol escalate`"+` — do not silently exit.
 %s
 ## Your Assignment
 - Work item: %s
 - Title: %s
 - Description: %s
+
+## Approach
+- Read existing code in the area you are modifying before making changes.
+- Follow existing patterns and conventions in the codebase.
+- Make focused, minimal changes — do not refactor surrounding code.
 
 ## Commands
 - `+"`sol resolve`"+` — Signal that your work is complete. This pushes your branch,
@@ -69,6 +89,11 @@ Your job is to execute the assigned work item.
   confident the work is done.
 - `+"`sol escalate`"+` — Request help if you are stuck. Describe the problem.
 %s
+## Completion Checklist
+1. %s
+2. Stage and commit changes with clear commit messages.
+3. Run `+"`sol resolve`"+` — MANDATORY FINAL STEP.
+
 %s
 ## Session Management
 - `+"`sol handoff`"+` — Hand off to a fresh session (preserves context)
@@ -82,7 +107,7 @@ Full Sol CLI reference: `+"`"+`.claude/sol-cli-reference.md`+"`"+`
 - Do not attempt to interact with other agents directly.
 - Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
 `, ctx.AgentName, ctx.World, modelSection, ctx.WorkItemID, ctx.Title, ctx.Description,
-		workflowSection, protocolSection)
+		workflowSection, gateInstructions, protocolSection)
 }
 
 // ForgeClaudeMDContext holds the fields used to generate a CLAUDE.md for the forge.

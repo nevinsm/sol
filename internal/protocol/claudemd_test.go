@@ -314,3 +314,151 @@ func TestForgeClaudeMDCLIReference(t *testing.T) {
 		t.Error("forge CLAUDE.md should contain patrol loop commands inline")
 	}
 }
+
+func TestClaudeMDWarningSectionPresent(t *testing.T) {
+	ctx := protocol.ClaudeMDContext{
+		AgentName:   "TestBot",
+		World:       "ember",
+		WorkItemID:  "sol-12345678",
+		Title:       "Test task",
+		Description: "Test description",
+	}
+
+	content := protocol.GenerateClaudeMD(ctx)
+
+	if !strings.Contains(content, "## Warning") {
+		t.Error("CLAUDE.md should contain Warning section")
+	}
+	if !strings.Contains(content, "tether is orphaned") {
+		t.Error("Warning should explain orphaned tether consequence")
+	}
+	if !strings.Contains(content, "sol escalate") {
+		t.Error("Warning should mention sol escalate")
+	}
+	if !strings.Contains(content, "do not silently exit") {
+		t.Error("Warning should warn against silently exiting")
+	}
+}
+
+func TestClaudeMDApproachSectionPresent(t *testing.T) {
+	ctx := protocol.ClaudeMDContext{
+		AgentName:   "TestBot",
+		World:       "ember",
+		WorkItemID:  "sol-12345678",
+		Title:       "Test task",
+		Description: "Test description",
+	}
+
+	content := protocol.GenerateClaudeMD(ctx)
+
+	if !strings.Contains(content, "## Approach") {
+		t.Error("CLAUDE.md should contain Approach section")
+	}
+	if !strings.Contains(content, "Read existing code") {
+		t.Error("Approach should instruct reading existing code")
+	}
+	if !strings.Contains(content, "Follow existing patterns") {
+		t.Error("Approach should instruct following existing patterns")
+	}
+	if !strings.Contains(content, "focused, minimal changes") {
+		t.Error("Approach should instruct minimal changes")
+	}
+}
+
+func TestClaudeMDCompletionChecklistPresent(t *testing.T) {
+	ctx := protocol.ClaudeMDContext{
+		AgentName:   "TestBot",
+		World:       "ember",
+		WorkItemID:  "sol-12345678",
+		Title:       "Test task",
+		Description: "Test description",
+	}
+
+	content := protocol.GenerateClaudeMD(ctx)
+
+	if !strings.Contains(content, "## Completion Checklist") {
+		t.Error("CLAUDE.md should contain Completion Checklist section")
+	}
+	if !strings.Contains(content, "MANDATORY FINAL STEP") {
+		t.Error("Completion Checklist should mark sol resolve as mandatory")
+	}
+	if !strings.Contains(content, "Stage and commit") {
+		t.Error("Completion Checklist should include commit step")
+	}
+}
+
+func TestClaudeMDQualityGatesDefault(t *testing.T) {
+	ctx := protocol.ClaudeMDContext{
+		AgentName:   "TestBot",
+		World:       "ember",
+		WorkItemID:  "sol-12345678",
+		Title:       "Test task",
+		Description: "Test description",
+	}
+
+	content := protocol.GenerateClaudeMD(ctx)
+
+	if !strings.Contains(content, "Run the project test suite before resolving.") {
+		t.Error("CLAUDE.md should contain default quality gate instruction when none configured")
+	}
+}
+
+func TestClaudeMDQualityGatesConfigured(t *testing.T) {
+	ctx := protocol.ClaudeMDContext{
+		AgentName:    "TestBot",
+		World:        "ember",
+		WorkItemID:   "sol-12345678",
+		Title:        "Test task",
+		Description:  "Test description",
+		QualityGates: []string{"make test", "make vet"},
+	}
+
+	content := protocol.GenerateClaudeMD(ctx)
+
+	if !strings.Contains(content, "`make test`") {
+		t.Error("CLAUDE.md should contain configured quality gate 'make test'")
+	}
+	if !strings.Contains(content, "`make vet`") {
+		t.Error("CLAUDE.md should contain configured quality gate 'make vet'")
+	}
+	if strings.Contains(content, "Run the project test suite before resolving.") {
+		t.Error("CLAUDE.md should not contain default instruction when gates are configured")
+	}
+}
+
+func TestClaudeMDSectionOrder(t *testing.T) {
+	ctx := protocol.ClaudeMDContext{
+		AgentName:    "TestBot",
+		World:        "ember",
+		WorkItemID:   "sol-12345678",
+		Title:        "Test task",
+		Description:  "Test description",
+		QualityGates: []string{"make test"},
+	}
+
+	content := protocol.GenerateClaudeMD(ctx)
+
+	// Verify section ordering: Warning < Assignment < Approach < Commands < Checklist < Protocol
+	warningIdx := strings.Index(content, "## Warning")
+	assignmentIdx := strings.Index(content, "## Your Assignment")
+	approachIdx := strings.Index(content, "## Approach")
+	commandsIdx := strings.Index(content, "## Commands")
+	checklistIdx := strings.Index(content, "## Completion Checklist")
+	protocolIdx := strings.Index(content, "## Protocol")
+
+	if warningIdx >= assignmentIdx {
+		t.Error("Warning section should come before Assignment")
+	}
+	if assignmentIdx >= approachIdx {
+		t.Error("Assignment section should come before Approach")
+	}
+	if approachIdx >= commandsIdx {
+		t.Error("Approach section should come before Commands")
+	}
+	if commandsIdx >= checklistIdx {
+		t.Error("Commands section should come before Completion Checklist")
+	}
+	if checklistIdx >= protocolIdx {
+		t.Error("Completion Checklist section should come before Protocol")
+	}
+}
