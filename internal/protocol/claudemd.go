@@ -337,6 +337,10 @@ func InstallEnvoyClaudeMD(worktreeDir string, ctx EnvoyClaudeMDContext) error {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write envoy CLAUDE.local.md in worktree: %w", err)
 	}
+
+	if err := InstallCLIReference(worktreeDir); err != nil {
+		return fmt.Errorf("failed to install CLI reference for envoy: %w", err)
+	}
 	return nil
 }
 
@@ -352,6 +356,10 @@ func InstallForgeClaudeMD(worktreeDir string, ctx ForgeClaudeMDContext) error {
 	path := filepath.Join(claudeDir, "CLAUDE.local.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write forge CLAUDE.local.md in worktree: %w", err)
+	}
+
+	if err := InstallCLIReference(worktreeDir); err != nil {
+		return fmt.Errorf("failed to install CLI reference for forge: %w", err)
 	}
 	return nil
 }
@@ -518,6 +526,10 @@ func InstallGovernorClaudeMD(govDir string, ctx GovernorClaudeMDContext) error {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write governor CLAUDE.local.md: %w", err)
 	}
+
+	if err := InstallCLIReference(govDir); err != nil {
+		return fmt.Errorf("failed to install CLI reference for governor: %w", err)
+	}
 	return nil
 }
 
@@ -534,6 +546,10 @@ func InstallClaudeMD(worktreeDir string, ctx ClaudeMDContext) error {
 	path := filepath.Join(claudeDir, "CLAUDE.local.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write CLAUDE.local.md in worktree: %w", err)
+	}
+
+	if err := InstallCLIReference(worktreeDir); err != nil {
+		return fmt.Errorf("failed to install CLI reference: %w", err)
 	}
 	return nil
 }

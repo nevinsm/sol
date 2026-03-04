@@ -109,7 +109,7 @@ func InstallExcludes(repoPath string) error {
 	}
 	defer f.Close()
 
-	_, err = f.WriteString("\n# sol-managed paths\n.claude/settings.local.json\n.claude/CLAUDE.local.md\n.brief/\n.workflow/\n")
+	_, err = f.WriteString("\n# sol-managed paths\n.claude/settings.local.json\n.claude/CLAUDE.local.md\n.claude/sol-cli-reference.md\n.brief/\n.workflow/\n")
 	return err
 }
 
