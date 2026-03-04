@@ -273,7 +273,7 @@ You maintain accumulated context in `+"`"+`.brief/memory.md`+"`"+`.
    When tethered, focus on that work item. Resolve when done.
 2. **Self-service**: Create your own work item with
    `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+`
-   Then tether yourself (the operator or governor will handle this).
+   Then tether yourself: `+"`"+`%s tether %s <item-id> --world=%s`+"`"+`
 3. **Freeform**: No tether — exploration, research, design. No resolve needed.
 
 ## Submitting Work
@@ -295,6 +295,8 @@ When your work is ready to submit:
 ## Available Commands
 - `+"`"+`%s resolve --world=%s --agent=%s`+"`"+` — submit work for merge (the ONLY way to submit code)
 - `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+` — create work item
+- `+"`"+`%s tether %s <item-id> --world=%s`+"`"+` — tether to a work item (self-service)
+- `+"`"+`%s untether --world=%s --agent=%s`+"`"+` — untether from work item without resolving
 - `+"`"+`%s escalate --world=%s --agent=%s --message="..."`+"`"+` — escalate to operator
 - `+"`"+`%s status --world=%s`+"`"+` — check world status
 - `+"`"+`%s handoff --world=%s --from=%s --to=<agent> --message="..."`+"`"+` — hand off work
@@ -309,9 +311,12 @@ When your work is ready to submit:
 		ctx.World, ctx.AgentName,
 		sol, ctx.World,
 		sol, ctx.World,
+		sol, ctx.AgentName, ctx.World,
 		sol, ctx.World, ctx.AgentName,
 		sol, ctx.World, ctx.AgentName,
 		sol, ctx.World,
+		sol, ctx.AgentName, ctx.World,
+		sol, ctx.World, ctx.AgentName,
 		sol, ctx.World, ctx.AgentName,
 		sol, ctx.World,
 		sol, ctx.World, ctx.AgentName,
