@@ -603,6 +603,79 @@ var caravanLaunchCmd = &cobra.Command{
 	},
 }
 
+// --- sol caravan set-phase ---
+
+var caravanSetPhaseCmd = &cobra.Command{
+	Use:   "set-phase <caravan-id> [<item-id>] <phase>",
+	Short: "Update the phase of items in a caravan",
+	Long:  "Update the phase of a single item, or use --all to update all items in the caravan.",
+	Args: func(cmd *cobra.Command, args []string) error {
+		all, _ := cmd.Flags().GetBool("all")
+		if all {
+			if len(args) != 2 {
+				return fmt.Errorf("usage: sol caravan set-phase <caravan-id> --all <phase>")
+			}
+		} else {
+			if len(args) != 3 {
+				return fmt.Errorf("usage: sol caravan set-phase <caravan-id> <item-id> <phase>")
+			}
+		}
+		return nil
+	},
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		all, _ := cmd.Flags().GetBool("all")
+		caravanID := args[0]
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		// Validate caravan exists.
+		if _, err := sphereStore.GetCaravan(caravanID); err != nil {
+			return err
+		}
+
+		if all {
+			phase, err := parsePhaseArg(args[1])
+			if err != nil {
+				return err
+			}
+			n, err := sphereStore.UpdateAllCaravanItemPhases(caravanID, phase)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Updated %d items to phase %d in caravan %s\n", n, phase, caravanID)
+			return nil
+		}
+
+		itemID := args[1]
+		phase, err := parsePhaseArg(args[2])
+		if err != nil {
+			return err
+		}
+
+		if err := sphereStore.UpdateCaravanItemPhase(caravanID, itemID, phase); err != nil {
+			return err
+		}
+		fmt.Printf("Updated %s to phase %d in caravan %s\n", itemID, phase, caravanID)
+		return nil
+	},
+}
+
+func parsePhaseArg(s string) (int, error) {
+	var phase int
+	if _, err := fmt.Sscanf(s, "%d", &phase); err != nil {
+		return 0, fmt.Errorf("invalid phase %q: must be an integer", s)
+	}
+	if phase < 0 {
+		return 0, fmt.Errorf("invalid phase %d: must be non-negative", phase)
+	}
+	return phase, nil
+}
+
 // --- sol caravan close ---
 
 var caravanCloseCmd = &cobra.Command{
@@ -758,6 +831,10 @@ func init() {
 	caravanCmd.AddCommand(caravanStatusCmd)
 	caravanCmd.AddCommand(caravanLaunchCmd)
 	caravanCmd.AddCommand(caravanCloseCmd)
+	caravanCmd.AddCommand(caravanSetPhaseCmd)
+
+	// set-phase flags
+	caravanSetPhaseCmd.Flags().Bool("all", false, "update all items in the caravan")
 
 	// close flags
 	caravanCloseCmd.Flags().Bool("force", false, "close even if not all items are merged")

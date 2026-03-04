@@ -220,6 +220,41 @@ func (s *Store) RemoveCaravanItem(caravanID, workItemID string) error {
 	return nil
 }
 
+// UpdateCaravanItemPhase sets the phase of a single item in a caravan.
+func (s *Store) UpdateCaravanItemPhase(caravanID, workItemID string, phase int) error {
+	result, err := s.db.Exec(
+		`UPDATE caravan_items SET phase = ? WHERE caravan_id = ? AND work_item_id = ?`,
+		phase, caravanID, workItemID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update phase for item %q in caravan %q: %w", workItemID, caravanID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("item %q in caravan %q: %w", workItemID, caravanID, ErrNotFound)
+	}
+	return nil
+}
+
+// UpdateAllCaravanItemPhases sets the phase of all items in a caravan.
+func (s *Store) UpdateAllCaravanItemPhases(caravanID string, phase int) (int64, error) {
+	result, err := s.db.Exec(
+		`UPDATE caravan_items SET phase = ? WHERE caravan_id = ?`,
+		phase, caravanID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to update phases for caravan %q: %w", caravanID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	return n, nil
+}
+
 // ListCaravanItems returns all items in a caravan.
 func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
 	rows, err := s.db.Query(
