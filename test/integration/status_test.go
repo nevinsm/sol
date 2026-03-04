@@ -100,8 +100,11 @@ func TestStatusWorldDetail(t *testing.T) {
 		t.Fatalf("store create failed: %v", err)
 	}
 
-	// Note: exit code may be non-zero (degraded) since prefect is not running.
-	out, _ := runGT(t, gtHome, "status", "myworld")
+	// Text mode always exits 0 (health exit codes are --json only).
+	out, err := runGT(t, gtHome, "status", "myworld")
+	if err != nil {
+		t.Fatalf("sol status myworld failed: %v: %s", err, out)
+	}
 
 	if !strings.Contains(out, "myworld") {
 		t.Errorf("output missing world name: %s", out)
@@ -111,6 +114,11 @@ func TestStatusWorldDetail(t *testing.T) {
 	}
 	if !strings.Contains(out, "Merge Queue") {
 		t.Errorf("output missing 'Merge Queue' section: %s", out)
+	}
+
+	// Regression: output must not be duplicated.
+	if strings.Count(out, "Merge Queue") > 1 {
+		t.Errorf("status output is duplicated:\n%s", out)
 	}
 }
 

@@ -22,7 +22,7 @@ var statusCmd = &cobra.Command{
 Without arguments, shows a sphere-level overview of all worlds and processes.
 With a world name, shows detailed status for that specific world.
 
-Exit codes (world mode only):
+Exit codes (world --json only):
   0 = healthy
   1 = unhealthy
   2 = degraded`,
@@ -100,11 +100,6 @@ func runWorldStatus(world string) error {
 	}
 
 	fmt.Print(status.RenderWorld(result))
-
-	// Exit with health code.
-	if code := result.Health(); code != 0 {
-		return &exitError{code: code}
-	}
 	return nil
 }
 
