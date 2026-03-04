@@ -170,6 +170,7 @@ Nudge queue counts are also shown in the NUDGE column of `sol status <world>` ag
 |---------|-------------|
 | `sol caravan create <name> [items...]` | Create a caravan with optional items |
 | `sol caravan add <caravan-id> <items...>` | Add items to a caravan |
+| `sol caravan list` | List caravans (default: open only). `--all` includes closed. `--status=S` filters by status. `--json` supported. |
 | `sol caravan check <caravan-id>` | Check readiness of caravan items |
 | `sol caravan status [caravan-id]` | Show caravan status |
 | `sol caravan launch <caravan-id> --world=W` | Dispatch ready items in a caravan |
