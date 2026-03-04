@@ -327,6 +327,58 @@ var envoyDebriefCmd = &cobra.Command{
 	},
 }
 
+// --- sol envoy delete ---
+
+var (
+	envoyDeleteWorld string
+	envoyDeleteForce bool
+)
+
+var envoyDeleteCmd = &cobra.Command{
+	Use:          "delete <name>",
+	Short:        "Delete an envoy agent and all associated resources",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		if envoyDeleteWorld == "" {
+			return fmt.Errorf("--world is required")
+		}
+		if err := config.RequireWorld(envoyDeleteWorld); err != nil {
+			return err
+		}
+
+		worldCfg, err := config.LoadWorldConfig(envoyDeleteWorld)
+		if err != nil {
+			return err
+		}
+		sourceRepo, err := dispatch.ResolveSourceRepo(envoyDeleteWorld, worldCfg)
+		if err != nil {
+			return err
+		}
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		mgr := session.New()
+
+		if err := envoy.Delete(envoy.DeleteOpts{
+			World:      envoyDeleteWorld,
+			Name:       name,
+			SourceRepo: sourceRepo,
+			Force:      envoyDeleteForce,
+		}, sphereStore, mgr); err != nil {
+			return err
+		}
+
+		fmt.Printf("Deleted envoy %q from world %q\n", name, envoyDeleteWorld)
+		return nil
+	},
+}
+
 // --- sol envoy sync ---
 
 var envoySyncWorld string
@@ -364,7 +416,7 @@ var envoySyncCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(envoyCmd)
 	envoyCmd.AddCommand(envoyCreateCmd, envoyStartCmd, envoyStopCmd,
-		envoyAttachCmd, envoyListCmd, envoyBriefCmd, envoyDebriefCmd, envoySyncCmd)
+		envoyAttachCmd, envoyListCmd, envoyBriefCmd, envoyDebriefCmd, envoySyncCmd, envoyDeleteCmd)
 
 	// envoy create flags
 	envoyCreateCmd.Flags().StringVar(&envoyCreateWorld, "world", "", "world name")
@@ -387,6 +439,10 @@ func init() {
 
 	// envoy debrief flags
 	envoyDebriefCmd.Flags().StringVar(&envoyDebriefWorld, "world", "", "world name")
+
+	// envoy delete flags
+	envoyDeleteCmd.Flags().StringVar(&envoyDeleteWorld, "world", "", "world name")
+	envoyDeleteCmd.Flags().BoolVar(&envoyDeleteForce, "force", false, "force delete even if session is active or tethered")
 
 	// envoy sync flags
 	envoySyncCmd.Flags().StringVar(&envoySyncWorld, "world", "", "world name")
