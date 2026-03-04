@@ -252,6 +252,16 @@ func installHooks(worktreeDir, world, name string) error {
 					},
 				},
 			},
+			"UserPromptSubmit": {
+				{
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, name),
+						},
+					},
+				},
+			},
 		},
 	}
 

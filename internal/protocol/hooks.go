@@ -33,10 +33,12 @@ type HookHandler struct {
 //
 // Hooks installed:
 //
-//	SessionStart: runs "sol prime --world={world} --agent={name}" and outputs
-//	              the result as initial context
-//	PreCompact:   runs "sol handoff --world={world} --agent={name}" to hand off
-//	              to a fresh session instead of lossy context compaction
+//	SessionStart:      runs "sol prime --world={world} --agent={name}" and outputs
+//	                   the result as initial context
+//	PreCompact:        runs "sol handoff --world={world} --agent={name}" to hand off
+//	                   to a fresh session instead of lossy context compaction
+//	UserPromptSubmit:  runs "sol nudge drain --world={world} --agent={name}" to drain
+//	                   queued nudge messages at turn boundaries
 func InstallHooks(worktreeDir, world, agentName string) error {
 	cfg := HookConfig{
 		Hooks: map[string][]HookMatcherGroup{
@@ -60,6 +62,16 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 					},
 				},
 			},
+			"UserPromptSubmit": {
+				{
+					Hooks: []HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agentName),
+						},
+					},
+				},
+			},
 		},
 	}
 	return writeHookSettings(worktreeDir, cfg)
@@ -69,6 +81,7 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 // The SessionStart hook runs "sol forge sync {world}" to reset the forge worktree
 // to the latest target branch, then "sol prime" to inject execution context.
 // The PreCompact hook hands off to a fresh session instead of lossy compaction.
+// The UserPromptSubmit hook drains nudge messages at turn boundaries.
 func InstallForgeHooks(worktreeDir, world string) error {
 	cfg := HookConfig{
 		Hooks: map[string][]HookMatcherGroup{
@@ -88,6 +101,16 @@ func InstallForgeHooks(worktreeDir, world string) error {
 						{
 							Type:    "command",
 							Command: fmt.Sprintf("sol handoff --world=%s --agent=forge", world),
+						},
+					},
+				},
+			},
+			"UserPromptSubmit": {
+				{
+					Hooks: []HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("sol nudge drain --world=%s --agent=forge", world),
 						},
 					},
 				},

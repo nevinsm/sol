@@ -197,6 +197,12 @@ Toolbox subcommands (used by the forge Claude session):
 | `sol governor summary --world=W` | Display the governor's world summary |
 | `sol governor sync --world=W` | Sync managed repo the governor reads from. Notifies running governor session. |
 
+## Nudge (Inter-Agent Notifications)
+
+| Command | Description |
+|---------|-------------|
+| `sol nudge drain --world=W --agent=A` | Drain pending nudge messages for an agent session. Prints formatted notifications to stdout, runs cleanup. Silent no-op if queue is empty. Used by UserPromptSubmit hooks. |
+
 ## Brief (Agent Context)
 
 | Command | Description |
