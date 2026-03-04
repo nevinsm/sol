@@ -63,6 +63,7 @@ type CaptureOpts struct {
 	Summary      string // agent-provided summary (optional)
 	CaptureLines int    // lines of tmux output to capture (default: 100)
 	CommitCount  int    // recent commits to include (default: 10)
+	WorktreeDir  string // explicit worktree path (uses config.WorktreePath if empty)
 }
 
 // Capture gathers the current state of an agent's session.
@@ -103,7 +104,10 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 	}
 
 	// 4. Capture recent git commits from worktree.
-	worktreeDir := config.WorktreePath(opts.World, opts.AgentName)
+	worktreeDir := opts.WorktreeDir
+	if worktreeDir == "" {
+		worktreeDir = config.WorktreePath(opts.World, opts.AgentName)
+	}
 	var recentCommits []string
 	if gitLog != nil {
 		commits, err := gitLog(worktreeDir, opts.CommitCount)
@@ -296,10 +300,11 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	if hasTether {
 		// Full capture + handoff file + notification for tethered agents.
 		state, err := Capture(CaptureOpts{
-			World:     opts.World,
-			AgentName: opts.AgentName,
-			Role:      role,
-			Summary:   opts.Summary,
+			World:       opts.World,
+			AgentName:   opts.AgentName,
+			Role:        role,
+			Summary:     opts.Summary,
+			WorktreeDir: worktreeDir,
 		}, func(name string, lines int) (string, error) {
 			return sessionMgr.Capture(name, lines)
 		}, GitLog)

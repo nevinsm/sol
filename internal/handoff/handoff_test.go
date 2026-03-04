@@ -90,6 +90,39 @@ func TestCapture(t *testing.T) {
 	}
 }
 
+func TestCaptureUsesExplicitWorktreeDir(t *testing.T) {
+	setupSolHome(t)
+
+	// Set up tether for an envoy.
+	if err := tether.Write("ember", "Alice", "sol-envoy12345", "envoy"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	envoyWorktree := "/custom/envoys/Alice/worktree"
+
+	// Track which directory gitLog receives.
+	var capturedDir string
+	mockGitLog := func(dir string, count int) ([]string, error) {
+		capturedDir = dir
+		return []string{"abc1234 feat: envoy work"}, nil
+	}
+
+	_, err := Capture(CaptureOpts{
+		World:       "ember",
+		AgentName:   "Alice",
+		Role:        "envoy",
+		WorktreeDir: envoyWorktree,
+	}, nil, mockGitLog)
+
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	if capturedDir != envoyWorktree {
+		t.Errorf("expected gitLog dir %q, got %q", envoyWorktree, capturedDir)
+	}
+}
+
 func TestCaptureNoWorkflow(t *testing.T) {
 	setupSolHome(t)
 
