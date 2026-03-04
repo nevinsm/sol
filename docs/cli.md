@@ -22,6 +22,8 @@
 | Command | Description |
 |---------|-------------|
 | `sol cast <item-id> <world>` | Assign work to an agent, create worktree, start session |
+| `sol tether <agent> <item-id> --world=W` | Bind a work item to an agent (any role). Lightweight alternative to `cast` for persistent agents that already have worktrees. |
+| `sol untether <agent> --world=W` | Unbind a work item from an agent (any role). Resets agent to idle and work item to open. |
 | `sol prime --world=W --agent=A` | Assemble and print execution context for an agent |
 | `sol resolve --world=W --agent=A` | Signal completion: push branch, update state, clear tether |
 

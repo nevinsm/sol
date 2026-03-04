@@ -56,6 +56,10 @@ const (
 	EventConsulStaleTether  = "consul_stale_tether"  // stale tether recovered
 	EventConsulCaravanFeed   = "consul_caravan_feed"   // caravan needs feeding
 
+	// Tether events.
+	EventTether   = "tether"   // agent tethered to work item
+	EventUntether = "untether" // agent untethered from work item
+
 	// Sentinel lifecycle events.
 	EventReap           = "reap"            // idle agent reaped
 	EventOrphanCleanup  = "orphan_cleanup"  // orphaned resource cleaned up

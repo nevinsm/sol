@@ -345,6 +345,183 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	}, nil
 }
 
+// TetherResult holds the output of a successful tether operation.
+type TetherResult struct {
+	WorkItemID string
+	AgentName  string
+	AgentRole  string
+}
+
+// TetherOpts holds the inputs for a tether operation.
+type TetherOpts struct {
+	AgentName  string
+	WorkItemID string
+	World      string
+}
+
+// Tether binds a work item to an agent without creating worktrees or sessions.
+// Works with any agent role. For outpost agents that need worktrees, use Cast instead.
+// The logger parameter is optional — if nil, no events are emitted.
+func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, logger *events.Logger) (*TetherResult, error) {
+	agentID := opts.World + "/" + opts.AgentName
+
+	// 1. Acquire per-work-item advisory lock.
+	lock, err := AcquireWorkItemLock(opts.WorkItemID)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Release()
+
+	// 2. Get agent.
+	agent, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
+	}
+
+	// 3. Acquire per-agent lock.
+	agentLock, err := AcquireAgentLock(agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer agentLock.Release()
+
+	// 4. Get work item.
+	item, err := worldStore.GetWorkItem(opts.WorkItemID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get work item %q: %w", opts.WorkItemID, err)
+	}
+
+	// 5. Validate state.
+	if item.Status != "open" {
+		return nil, fmt.Errorf("work item %q has status %q, expected \"open\"", opts.WorkItemID, item.Status)
+	}
+	if agent.State != "idle" {
+		return nil, fmt.Errorf("agent %q has state %q, expected \"idle\"", agentID, agent.State)
+	}
+
+	// 6. Write tether file (role-aware path).
+	if err := tether.Write(opts.World, opts.AgentName, opts.WorkItemID, agent.Role); err != nil {
+		return nil, fmt.Errorf("failed to write tether: %w", err)
+	}
+
+	// 7. Update work item: status → tethered, assignee → agent ID.
+	if err := worldStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{
+		Status:   "tethered",
+		Assignee: agent.ID,
+	}); err != nil {
+		// Rollback tether.
+		tether.Clear(opts.World, opts.AgentName, agent.Role)
+		return nil, fmt.Errorf("failed to update work item: %w", err)
+	}
+
+	// 8. Update agent: state → working, tether_item → work item ID.
+	if err := sphereStore.UpdateAgentState(agentID, "working", opts.WorkItemID); err != nil {
+		// Rollback tether + work item.
+		tether.Clear(opts.World, opts.AgentName, agent.Role)
+		worldStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{Status: "open", Assignee: "-"})
+		return nil, fmt.Errorf("failed to update agent state: %w", err)
+	}
+
+	// 9. Emit event.
+	if logger != nil {
+		logger.Emit(events.EventTether, "sol", "operator", "both", map[string]string{
+			"work_item_id": opts.WorkItemID,
+			"agent":        opts.AgentName,
+			"world":        opts.World,
+			"role":         agent.Role,
+		})
+	}
+
+	return &TetherResult{
+		WorkItemID: opts.WorkItemID,
+		AgentName:  opts.AgentName,
+		AgentRole:  agent.Role,
+	}, nil
+}
+
+// UntetherResult holds the output of a successful untether operation.
+type UntetherResult struct {
+	WorkItemID string
+	AgentName  string
+	AgentRole  string
+}
+
+// UntetherOpts holds the inputs for an untether operation.
+type UntetherOpts struct {
+	AgentName string
+	World     string
+}
+
+// Untether unbinds a work item from an agent without stopping sessions or cleaning worktrees.
+// Reverses the state changes made by Tether: clears tether file, resets work item to open,
+// and resets agent to idle.
+// The logger parameter is optional — if nil, no events are emitted.
+func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore, logger *events.Logger) (*UntetherResult, error) {
+	agentID := opts.World + "/" + opts.AgentName
+
+	// 1. Get agent (needed for role-aware tether path).
+	agent, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
+	}
+
+	// 2. Read tether to get work item ID.
+	workItemID, err := tether.Read(opts.World, opts.AgentName, agent.Role)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read tether: %w", err)
+	}
+	if workItemID == "" {
+		return nil, fmt.Errorf("no work tethered for agent %q in world %q", opts.AgentName, opts.World)
+	}
+
+	// 3. Acquire locks: work item first, then agent (consistent ordering).
+	lock, err := AcquireWorkItemLock(workItemID)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Release()
+
+	agentLock, err := AcquireAgentLock(agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer agentLock.Release()
+
+	// 4. Clear tether file.
+	if err := tether.Clear(opts.World, opts.AgentName, agent.Role); err != nil {
+		return nil, fmt.Errorf("failed to clear tether: %w", err)
+	}
+
+	// 5. Update work item: status → open, assignee → clear.
+	if err := worldStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{
+		Status:   "open",
+		Assignee: "-",
+	}); err != nil {
+		return nil, fmt.Errorf("failed to update work item: %w", err)
+	}
+
+	// 6. Update agent: state → idle, tether_item → clear.
+	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+		return nil, fmt.Errorf("failed to update agent state: %w", err)
+	}
+
+	// 7. Emit event.
+	if logger != nil {
+		logger.Emit(events.EventUntether, "sol", "operator", "both", map[string]string{
+			"work_item_id": workItemID,
+			"agent":        opts.AgentName,
+			"world":        opts.World,
+			"role":         agent.Role,
+		})
+	}
+
+	return &UntetherResult{
+		WorkItemID: workItemID,
+		AgentName:  opts.AgentName,
+		AgentRole:  agent.Role,
+	}, nil
+}
+
 // autoProvision creates a new agent from the name pool.
 func autoProvision(world string, sphereStore SphereStore, namePoolPath string, capacity int) (*store.Agent, error) {
 	overridePath := namePoolPath
