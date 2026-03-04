@@ -950,6 +950,25 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		}
 	}
 
+	// 9. Nudge forge that a new MR is ready (best-effort).
+	forgeSession := config.SessionName(opts.World, "forge")
+	if mgr.Exists(forgeSession) {
+		forgeBody := fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
+			workItemID, mrID, branchName, item.Title)
+		if err := nudge.Enqueue(forgeSession, nudge.Message{
+			Sender:   opts.AgentName,
+			Type:     "MR_READY",
+			Subject:  fmt.Sprintf("MR %s ready for merge", mrID),
+			Body:     forgeBody,
+			Priority: "normal",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to nudge forge: %v\n", err)
+		}
+	}
+
+	// 10. Poke forge to trigger turn boundary and drain pending nudges.
+	nudge.Poke(forgeSession)
+
 	return &ResolveResult{
 		WorkItemID:     workItemID,
 		Title:          item.Title,

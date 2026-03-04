@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/session"
 )
 
 // Default TTLs for message priorities.
@@ -273,6 +274,17 @@ func Cleanup(session string) error {
 		}
 	}
 	return nil
+}
+
+// Poke injects a short message into the target session to trigger a turn boundary,
+// causing the UserPromptSubmit hook to fire and drain any pending nudge messages.
+// Best-effort: returns nil if session doesn't exist or inject fails.
+func Poke(sessionName string) error {
+	mgr := session.New()
+	if !mgr.Exists(sessionName) {
+		return nil
+	}
+	return mgr.Inject(sessionName, "check nudge queue", true)
 }
 
 func fileExists(path string) bool {
