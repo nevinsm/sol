@@ -200,13 +200,13 @@ func TestCLIStatusWithForge(t *testing.T) {
 	openStores(t, "ember") // ensure stores exist
 
 	// Status without forge running.
-	out, _ := runGT(t, solHome, "status", "--world=ember")
+	out, _ := runGT(t, solHome, "status", "ember")
 	if !strings.Contains(out, "Forge") {
 		t.Errorf("status output missing 'Forge' line: %s", out)
 	}
 
 	// JSON output should contain forge and merge_queue fields.
-	out, _ = runGT(t, solHome, "status", "--world=ember", "--json")
+	out, _ = runGT(t, solHome, "status", "ember", "--json")
 	if !json.Valid([]byte(out)) {
 		t.Errorf("status --json output is not valid JSON: %s", out)
 	}

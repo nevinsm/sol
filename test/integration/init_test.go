@@ -148,7 +148,7 @@ func TestInitThenWorldOperations(t *testing.T) {
 	}
 
 	// Run: sol world status myworld
-	out, err = runGT(t, solHome, "world", "status", "--world=myworld")
+	out, err = runGT(t, solHome, "world", "status", "myworld")
 	if err != nil {
 		t.Fatalf("world status failed: %v: %s", err, out)
 	}

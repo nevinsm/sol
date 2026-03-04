@@ -188,10 +188,7 @@ func renderCaravansTable(b *strings.Builder, caravans []CaravanInfo) {
 			// Phase-aware display.
 			var parts []string
 			for _, p := range c.Phases {
-				part := fmt.Sprintf("phase %d: %d/%d merged", p.Phase, p.Closed, p.Total)
-				if p.Done > 0 {
-					part += fmt.Sprintf(", %d awaiting merge", p.Done)
-				}
+				part := fmt.Sprintf("phase %d: %d/%d done", p.Phase, p.Done, p.Total)
 				if p.Ready > 0 {
 					part += fmt.Sprintf(", %d ready", p.Ready)
 				}
@@ -201,11 +198,8 @@ func renderCaravansTable(b *strings.Builder, caravans []CaravanInfo) {
 			b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
 				c.ID, c.Name, dimStyle.Render(progress)))
 		} else {
-			blocked := c.TotalItems - c.ClosedItems - c.DoneItems - c.ReadyItems
-			progress := fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)
-			if c.DoneItems > 0 {
-				progress += fmt.Sprintf(", %d awaiting merge", c.DoneItems)
-			}
+			blocked := c.TotalItems - c.DoneItems - c.ReadyItems
+			progress := fmt.Sprintf("%d/%d done", c.DoneItems, c.TotalItems)
 			if c.ReadyItems > 0 {
 				progress += fmt.Sprintf(", %d ready", c.ReadyItems)
 			}
@@ -311,7 +305,7 @@ func formatGovernorDetail(g GovernorInfo) string {
 
 func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
 	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tNUDGE\tWORK\n")
+	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\n")
 
 	for _, a := range agents {
 		state := a.State
@@ -337,24 +331,19 @@ func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
 			}
 		}
 
-		nudge := dimStyle.Render("—")
-		if a.NudgeCount > 0 {
-			nudge = warnStyle.Render(fmt.Sprintf("%d pending", a.NudgeCount))
-		}
-
 		work := dimStyle.Render("—")
 		if a.TetherItem != "" {
 			work = fmt.Sprintf("%s: %s", a.TetherItem, a.WorkTitle)
 		}
 
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", a.Name, state, sess, nudge, work)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", a.Name, state, sess, work)
 	}
 	tw.Flush()
 }
 
 func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tNUDGE\tWORK\tBRIEF\n")
+	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\tBRIEF\n")
 
 	for _, e := range envoys {
 		state := e.State
@@ -380,11 +369,6 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 			}
 		}
 
-		nudge := dimStyle.Render("—")
-		if e.NudgeCount > 0 {
-			nudge = warnStyle.Render(fmt.Sprintf("%d pending", e.NudgeCount))
-		}
-
 		work := dimStyle.Render("—")
 		if e.TetherItem != "" {
 			work = e.WorkTitle
@@ -395,7 +379,7 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 			brief = e.BriefAge + " ago"
 		}
 
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n", e.Name, state, sess, nudge, work, brief)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", e.Name, state, sess, work, brief)
 	}
 	tw.Flush()
 }

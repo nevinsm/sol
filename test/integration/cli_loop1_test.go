@@ -54,7 +54,7 @@ func TestCLIStatusWorld(t *testing.T) {
 
 	// sol status ember exits non-zero (no agents, but should not crash).
 	// Expect exit code 2 (degraded — no prefect running).
-	out, err := runGT(t, solHome, "status", "--world=ember")
+	out, err := runGT(t, solHome, "status", "ember")
 	if err == nil {
 		t.Log("sol status exited 0 (no agents, expected non-zero)")
 	}
@@ -91,7 +91,7 @@ func TestCLIStatusJSON(t *testing.T) {
 	sphereStore.Close()
 
 	// Run sol status ember --json.
-	out, _ := runGT(t, solHome, "status", "--world=ember", "--json")
+	out, _ := runGT(t, solHome, "status", "ember", "--json")
 
 	// Verify output is valid JSON.
 	if !json.Valid([]byte(out)) {

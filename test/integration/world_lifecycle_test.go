@@ -234,7 +234,7 @@ func TestWorldStatusBasic(t *testing.T) {
 		t.Fatalf("setup: world init failed: %v", err)
 	}
 
-	out, err := runGT(t, gtHome, "world", "status", "--world=myworld")
+	out, err := runGT(t, gtHome, "world", "status", "myworld")
 	if err != nil {
 		t.Fatalf("world status failed: %v: %s", err, out)
 	}
@@ -253,7 +253,7 @@ func TestWorldStatusNotInitialized(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	out, err := runGT(t, gtHome, "world", "status", "--world=nonexistent")
+	out, err := runGT(t, gtHome, "world", "status", "nonexistent")
 	if err == nil {
 		t.Fatalf("expected error, got success: %s", out)
 	}
@@ -362,7 +362,7 @@ func TestWorldStatusJSON(t *testing.T) {
 		t.Fatalf("setup: world init failed: %v", err)
 	}
 
-	out, err := runGT(t, gtHome, "world", "status", "--world=myworld", "--json")
+	out, err := runGT(t, gtHome, "world", "status", "myworld", "--json")
 	if err != nil {
 		t.Fatalf("world status --json failed: %v: %s", err, out)
 	}

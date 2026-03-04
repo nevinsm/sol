@@ -12,40 +12,31 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	statusJSON  bool
-	statusWorld string
-)
+var statusJSON bool
 
 var statusCmd = &cobra.Command{
-	Use:   "status",
+	Use:   "status [world]",
 	Short: "Show sphere or world status",
 	Long: `Show system status.
 
-Without --world, shows a sphere-level overview of all worlds and processes.
-With --world, shows detailed status for that specific world.
+Without arguments, shows a sphere-level overview of all worlds and processes.
+With a world name, shows detailed status for that specific world.
 
-Exit codes (world mode only):
+Exit codes (world --json only):
   0 = healthy
   1 = unhealthy
   2 = degraded`,
+	Args:          cobra.MaximumNArgs(1),
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	RunE:          runStatus,
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	world := statusWorld
-	if world == "" {
-		world = os.Getenv("SOL_WORLD")
-	}
-	if world == "" {
+	if len(args) == 0 {
 		return runSphereStatus()
 	}
-	if err := config.RequireWorld(world); err != nil {
-		return err
-	}
-	return runWorldStatus(world)
+	return runWorldStatus(args[0])
 }
 
 func runSphereStatus() error {
@@ -71,6 +62,10 @@ func runSphereStatus() error {
 }
 
 func runWorldStatus(world string) error {
+	if err := config.RequireWorld(world); err != nil {
+		return err
+	}
+
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		return err
@@ -105,16 +100,10 @@ func runWorldStatus(world string) error {
 	}
 
 	fmt.Print(status.RenderWorld(result))
-
-	// Exit with health code.
-	if code := result.Health(); code != 0 {
-		return &exitError{code: code}
-	}
 	return nil
 }
 
 func init() {
 	rootCmd.AddCommand(statusCmd)
 	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "output as JSON")
-	statusCmd.Flags().StringVar(&statusWorld, "world", "", "world name")
 }

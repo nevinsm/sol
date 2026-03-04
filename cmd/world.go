@@ -22,7 +22,6 @@ import (
 var (
 	worldInitSourceRepo  string
 	worldListJSON        bool
-	worldStatusWorld     string
 	worldStatusJSON      bool
 	worldDeleteWorld     string
 	worldDeleteConfirm   bool
@@ -211,12 +210,14 @@ var worldListCmd = &cobra.Command{
 }
 
 var worldStatusCmd = &cobra.Command{
-	Use:          "status",
+	Use:          "status <name>",
 	Short:        "Show world status with config",
+	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name, err := config.ResolveWorld(worldStatusWorld)
-		if err != nil {
+		name := args[0]
+
+		if err := config.RequireWorld(name); err != nil {
 			return err
 		}
 
@@ -427,7 +428,6 @@ func init() {
 		"", "git URL or local path to source repository")
 	worldListCmd.Flags().BoolVar(&worldListJSON, "json", false,
 		"output as JSON")
-	worldStatusCmd.Flags().StringVar(&worldStatusWorld, "world", "", "world name")
 	worldStatusCmd.Flags().BoolVar(&worldStatusJSON, "json", false,
 		"output as JSON")
 	worldDeleteCmd.Flags().StringVar(&worldDeleteWorld, "world", "", "world name")

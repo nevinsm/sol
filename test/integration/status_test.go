@@ -100,8 +100,11 @@ func TestStatusWorldDetail(t *testing.T) {
 		t.Fatalf("store create failed: %v", err)
 	}
 
-	// Note: exit code may be non-zero (degraded) since prefect is not running.
-	out, _ := runGT(t, gtHome, "status", "--world=myworld")
+	// Text mode always exits 0 (health exit codes are --json only).
+	out, err := runGT(t, gtHome, "status", "myworld")
+	if err != nil {
+		t.Fatalf("sol status myworld failed: %v: %s", err, out)
+	}
 
 	if !strings.Contains(out, "myworld") {
 		t.Errorf("output missing world name: %s", out)
@@ -111,6 +114,11 @@ func TestStatusWorldDetail(t *testing.T) {
 	}
 	if !strings.Contains(out, "Merge Queue") {
 		t.Errorf("output missing 'Merge Queue' section: %s", out)
+	}
+
+	// Regression: output must not be duplicated.
+	if strings.Count(out, "Merge Queue") > 1 {
+		t.Errorf("status output is duplicated:\n%s", out)
 	}
 }
 
@@ -124,7 +132,7 @@ func TestStatusWorldJSON(t *testing.T) {
 	initWorld(t, gtHome, "myworld")
 
 	// Note: exit code may be non-zero (degraded) since prefect is not running.
-	out, _ := runGT(t, gtHome, "status", "--world=myworld", "--json")
+	out, _ := runGT(t, gtHome, "status", "myworld", "--json")
 
 	var result map[string]interface{}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
@@ -143,7 +151,7 @@ func TestStatusWorldNotFound(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	out, err := runGT(t, gtHome, "status", "--world=nonexistent")
+	out, err := runGT(t, gtHome, "status", "nonexistent")
 	if err == nil {
 		t.Fatalf("expected error for nonexistent world, got success: %s", out)
 	}
@@ -161,7 +169,7 @@ func TestWorldStatusStillWorks(t *testing.T) {
 
 	initWorld(t, gtHome, "myworld")
 
-	out, err := runGT(t, gtHome, "world", "status", "--world=myworld")
+	out, err := runGT(t, gtHome, "world", "status", "myworld")
 	if err != nil {
 		t.Fatalf("sol world status myworld failed: %v: %s", err, out)
 	}

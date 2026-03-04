@@ -33,7 +33,7 @@ func TestHardGateAllCommands(t *testing.T) {
 		{"store dep list", []string{"store", "dep", "list", "sol-00000001", "--world=noworld"}},
 		// core commands
 		{"cast", []string{"cast", "sol-00000000", "--world=noworld"}},
-		{"status", []string{"status", "--world=noworld"}},
+		{"status", []string{"status", "noworld"}},
 		{"prime", []string{"prime", "--world=noworld", "--agent=test"}},
 		{"resolve", []string{"resolve", "--world=noworld", "--agent=test"}},
 		// agent commands
@@ -49,7 +49,7 @@ func TestHardGateAllCommands(t *testing.T) {
 		{"workflow current", []string{"workflow", "current", "--world=noworld", "--agent=test"}},
 		{"workflow status", []string{"workflow", "status", "--world=noworld", "--agent=test"}},
 		// world commands (that require existing world)
-		{"world status", []string{"world", "status", "--world=noworld"}},
+		{"world status", []string{"world", "status", "noworld"}},
 		{"world delete", []string{"world", "delete", "--world=noworld", "--confirm"}},
 	}
 

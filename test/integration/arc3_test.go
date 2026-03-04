@@ -971,7 +971,7 @@ func TestStatusWithEnvoys(t *testing.T) {
 
 	createEnvoy(t, gtHome, "myworld", "scout")
 
-	out, err := runGT(t, gtHome, "status", "--world=myworld")
+	out, err := runGT(t, gtHome, "status", "myworld")
 	if err != nil && strings.TrimSpace(out) == "" {
 		t.Fatalf("status command failed: %v\noutput: %s", err, out)
 	}
@@ -1002,7 +1002,7 @@ func TestStatusWithGovernor(t *testing.T) {
 		t.Fatalf("create governor agent: %v", err)
 	}
 
-	out, err := runGT(t, gtHome, "status", "--world=myworld")
+	out, err := runGT(t, gtHome, "status", "myworld")
 	if err != nil && strings.TrimSpace(out) == "" {
 		t.Fatalf("status command failed: %v\noutput: %s", err, out)
 	}
@@ -1039,7 +1039,7 @@ func TestStatusMixedRoles(t *testing.T) {
 		t.Fatalf("create governor agent: %v", err)
 	}
 
-	out, err := runGT(t, gtHome, "status", "--world=myworld")
+	out, err := runGT(t, gtHome, "status", "myworld")
 	if err != nil && strings.TrimSpace(out) == "" {
 		t.Fatalf("status command failed: %v\noutput: %s", err, out)
 	}
@@ -1063,7 +1063,7 @@ func TestStatusNoEnvoySection(t *testing.T) {
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "myworld")
 
-	out, err := runGT(t, gtHome, "status", "--world=myworld")
+	out, err := runGT(t, gtHome, "status", "myworld")
 	if err != nil && strings.TrimSpace(out) == "" {
 		t.Fatalf("status command failed: %v\noutput: %s", err, out)
 	}
@@ -1126,7 +1126,7 @@ func TestStatusJSONBackwardCompat(t *testing.T) {
 		t.Fatalf("create governor agent: %v", err)
 	}
 
-	out, err := runGT(t, gtHome, "status", "--world=myworld", "--json")
+	out, err := runGT(t, gtHome, "status", "myworld", "--json")
 	if err != nil && strings.TrimSpace(out) == "" {
 		t.Fatalf("status command failed: %v\noutput: %s", err, out)
 	}
@@ -1343,7 +1343,7 @@ func TestGovernorDispatchFlow(t *testing.T) {
 	})
 
 	// Verify operator can observe via status.
-	out, _ = runGT(t, gtHome, "status", "--world=myworld")
+	out, _ = runGT(t, gtHome, "status", "myworld")
 	if !strings.Contains(out, "Governor") {
 		t.Errorf("status missing governor: %s", out)
 	}
