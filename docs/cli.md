@@ -99,7 +99,8 @@
 | `sol forge stop <world>` | Stop the forge |
 | `sol forge sync <world>` | Sync forge worktree: fetch origin, reset to target branch. Also syncs managed repo. |
 | `sol forge attach <world>` | Attach to the forge session |
-| `sol forge queue <world>` | Show the merge request queue |
+| `sol forge status <world>` | Show forge health summary: process state, queue depth, current claim, last merge/failure. `--json` supported. |
+| `sol forge queue <world>` | Show the full merge request queue |
 
 Toolbox subcommands (used by the forge Claude session):
 
