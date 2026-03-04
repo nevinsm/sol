@@ -14,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/workflow"
@@ -232,7 +233,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 			}
 			actionsTaken = append(actionsTaken, "stalled:"+agent.Name)
 
-		case agent.State == "idle" && alive && !tether.IsTethered(w.config.World, agent.Name):
+		case agent.State == "idle" && alive && !tether.IsTethered(w.config.World, agent.Name, agent.Role):
 			// Idle agent with live session and no tether — zombie.
 			zombieCount++
 			if err := w.handleZombie(agent); err != nil {
@@ -764,15 +765,14 @@ func (w *Sentinel) cleanupAgentResources(agentName string) {
 	hashPath := filepath.Join(config.RuntimeDir(), "sessions", sessionName+".last-capture-hash")
 	os.Remove(hashPath) // best-effort
 
-	// Clear tether file.
-	tether.Clear(w.config.World, agentName) // best-effort
+	// Clear tether file (outpost agents only — this is called from cleanupOrphanedOutpostDirs).
+	tether.Clear(w.config.World, agentName, "agent") // best-effort
 
 	// Remove handoff file.
-	handoffPath := filepath.Join(config.Home(), w.config.World, "outposts", agentName, ".handoff.json")
-	os.Remove(handoffPath) // best-effort
+	handoff.Remove(w.config.World, agentName, "agent") // best-effort
 
 	// Remove workflow directory.
-	workflow.Remove(w.config.World, agentName) // best-effort
+	workflow.Remove(w.config.World, agentName, "agent") // best-effort
 
 	// Remove the outpost directory itself if empty.
 	outpostDir := filepath.Join(config.Home(), w.config.World, "outposts", agentName)
@@ -911,13 +911,13 @@ func (w *Sentinel) cleanupOrphanedTethers(agentNames, workingAgents map[string]b
 			continue
 		}
 
-		// Check if a tether file exists.
-		if !tether.IsTethered(w.config.World, name) {
+		// Check if a tether file exists (outpost agents only — scanning outposts/ dir).
+		if !tether.IsTethered(w.config.World, name, "agent") {
 			continue
 		}
 
 		// Tether exists but agent is not working — orphaned tether.
-		tether.Clear(w.config.World, name)
+		tether.Clear(w.config.World, name, "agent")
 		cleaned++
 
 		if w.logger != nil {

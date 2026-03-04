@@ -43,7 +43,7 @@ var workflowInstantiateCmd = &cobra.Command{
 			vars["issue"] = item
 		}
 
-		inst, state, err := workflow.Instantiate(world, agent, formula, vars)
+		inst, state, err := workflow.Instantiate(world, agent, "agent", formula, vars)
 		if err != nil {
 			return err
 		}
@@ -66,7 +66,7 @@ var workflowCurrentCmd = &cobra.Command{
 			return err
 		}
 
-		step, err := workflow.ReadCurrentStep(world, agent)
+		step, err := workflow.ReadCurrentStep(world, agent, "agent")
 		if err != nil {
 			return err
 		}
@@ -93,13 +93,13 @@ var workflowAdvanceCmd = &cobra.Command{
 		}
 
 		// Read work item ID for event payload before advancing.
-		inst, _ := workflow.ReadInstance(world, agent)
+		inst, _ := workflow.ReadInstance(world, agent, "agent")
 		workItemID := ""
 		if inst != nil {
 			workItemID = inst.WorkItemID
 		}
 
-		nextStep, done, err := workflow.Advance(world, agent)
+		nextStep, done, err := workflow.Advance(world, agent, "agent")
 		if err != nil {
 			return err
 		}
@@ -139,7 +139,7 @@ var workflowStatusCmd = &cobra.Command{
 			return err
 		}
 
-		inst, err := workflow.ReadInstance(world, agent)
+		inst, err := workflow.ReadInstance(world, agent, "agent")
 		if err != nil {
 			return err
 		}
@@ -147,12 +147,12 @@ var workflowStatusCmd = &cobra.Command{
 			return fmt.Errorf("no workflow found for agent %q in world %q", agent, world)
 		}
 
-		state, err := workflow.ReadState(world, agent)
+		state, err := workflow.ReadState(world, agent, "agent")
 		if err != nil {
 			return err
 		}
 
-		steps, err := workflow.ListSteps(world, agent)
+		steps, err := workflow.ListSteps(world, agent, "agent")
 		if err != nil {
 			return err
 		}

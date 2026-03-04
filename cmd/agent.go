@@ -172,7 +172,7 @@ var agentResetCmd = &cobra.Command{
 		}
 
 		// Nothing to reset if already idle with no tether.
-		if agent.State == "idle" && agent.TetherItem == "" && !tether.IsTethered(agentResetWorld, name) {
+		if agent.State == "idle" && agent.TetherItem == "" && !tether.IsTethered(agentResetWorld, name, agent.Role) {
 			fmt.Printf("Agent %s is already idle with no tether — nothing to reset.\n", agentID)
 			return nil
 		}
@@ -197,8 +197,8 @@ var agentResetCmd = &cobra.Command{
 		}
 
 		// Clear the tether file.
-		if tether.IsTethered(agentResetWorld, name) {
-			if err := tether.Clear(agentResetWorld, name); err != nil {
+		if tether.IsTethered(agentResetWorld, name, agent.Role) {
+			if err := tether.Clear(agentResetWorld, name, agent.Role); err != nil {
 				fmt.Fprintf(os.Stderr, "WARNING: failed to clear tether file: %v\n", err)
 			} else {
 				fmt.Println("Cleared tether file")

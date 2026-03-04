@@ -62,7 +62,7 @@ func TestRecoverStaleTethers(t *testing.T) {
 	wiA, _ := worldStore.CreateWorkItem("task-a", "description a", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/AgentA", "working", wiA)
 	worldStore.UpdateWorkItem(wiA, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/AgentA"})
-	tether.Write(worldName, "AgentA", wiA)
+	tether.Write(worldName, "AgentA", wiA, "agent")
 
 	// Make Agent A's updated_at old (> 1 hour ago).
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
@@ -73,7 +73,7 @@ func TestRecoverStaleTethers(t *testing.T) {
 	wiB, _ := worldStore.CreateWorkItem("task-b", "description b", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/AgentB", "working", wiB)
 	worldStore.UpdateWorkItem(wiB, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/AgentB"})
-	tether.Write(worldName, "AgentB", wiB)
+	tether.Write(worldName, "AgentB", wiB, "agent")
 
 	// Agent C: idle → should NOT be recovered.
 	sphereStore.CreateAgent("AgentC", worldName, "agent")
@@ -121,7 +121,7 @@ func TestRecoverStaleTethers(t *testing.T) {
 	}
 
 	// Verify tether file was cleared.
-	if tether.IsTethered(worldName, "AgentA") {
+	if tether.IsTethered(worldName, "AgentA", "agent") {
 		t.Error("AgentA tether file should have been cleared")
 	}
 
@@ -257,7 +257,7 @@ func TestRecoverStaleTethersTooRecent(t *testing.T) {
 	wiID, _ := worldStore.CreateWorkItem("task-recent", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/RecentAgent", "working", wiID)
 	worldStore.UpdateWorkItem(wiID, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/RecentAgent"})
-	tether.Write(worldName, "RecentAgent", wiID)
+	tether.Write(worldName, "RecentAgent", wiID, "agent")
 
 	// Set updated_at to 5 minutes ago.
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
@@ -311,7 +311,7 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 	wi1, _ := worldStore.CreateWorkItem("task-good", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/Good", "working", wi1)
 	worldStore.UpdateWorkItem(wi1, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/Good"})
-	tether.Write(worldName, "Good", wi1)
+	tether.Write(worldName, "Good", wi1, "agent")
 
 	// Agent 2: stale, but on a world that can't be opened (bad world name).
 	sphereStore.CreateAgent("Bad", "nonexistent-world-xyz", "agent")
@@ -623,7 +623,7 @@ func TestPatrolCycle(t *testing.T) {
 	wiStale, _ := worldStore.CreateWorkItem("stale-task", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/Stale", "working", wiStale)
 	worldStore.UpdateWorkItem(wiStale, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/Stale"})
-	tether.Write(worldName, "Stale", wiStale)
+	tether.Write(worldName, "Stale", wiStale, "agent")
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
 		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/Stale")
 
@@ -637,7 +637,7 @@ func TestPatrolCycle(t *testing.T) {
 	wiHealthy, _ := worldStore.CreateWorkItem("healthy-task", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/Healthy", "working", wiHealthy)
 	worldStore.UpdateWorkItem(wiHealthy, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/Healthy"})
-	tether.Write(worldName, "Healthy", wiHealthy)
+	tether.Write(worldName, "Healthy", wiHealthy, "agent")
 
 	sessions := newMockSessions()
 	sessions.alive["sol-"+worldName+"-Healthy"] = true
@@ -695,7 +695,7 @@ func TestPatrolCycle(t *testing.T) {
 	}
 
 	// Verify: tether file still present for healthy agent.
-	if !tether.IsTethered(worldName, "Healthy") {
+	if !tether.IsTethered(worldName, "Healthy", "agent") {
 		t.Error("Healthy agent tether file should still exist")
 	}
 

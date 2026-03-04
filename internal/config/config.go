@@ -13,6 +13,24 @@ func SessionName(world, agentName string) string {
 	return fmt.Sprintf("sol-%s-%s", world, agentName)
 }
 
+// AgentDir returns the base directory for an agent based on its role.
+// - "agent" (default) → $SOL_HOME/{world}/outposts/{agentName}
+// - "envoy"           → $SOL_HOME/{world}/envoys/{agentName}
+// - "governor"        → $SOL_HOME/{world}/governor
+// - "forge"           → $SOL_HOME/{world}/forge
+func AgentDir(world, agentName, role string) string {
+	switch role {
+	case "envoy":
+		return filepath.Join(Home(), world, "envoys", agentName)
+	case "governor":
+		return filepath.Join(Home(), world, "governor")
+	case "forge":
+		return filepath.Join(Home(), world, "forge")
+	default:
+		return filepath.Join(Home(), world, "outposts", agentName)
+	}
+}
+
 // WorktreePath returns the worktree directory for an agent.
 func WorktreePath(world, agentName string) string {
 	return filepath.Join(Home(), world, "outposts", agentName, "worktree")

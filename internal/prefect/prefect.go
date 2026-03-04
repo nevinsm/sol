@@ -284,7 +284,7 @@ func (s *Prefect) respawn(agent store.Agent) {
 		if err := s.sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 			s.logger.Error("failed to set agent idle", "agent", agent.Name, "error", err)
 		}
-		tether.Clear(agent.World, agent.Name)
+		tether.Clear(agent.World, agent.Name, agent.Role)
 		delete(s.backoff, agentID)
 		delete(s.lastStalled, agentID)
 		return

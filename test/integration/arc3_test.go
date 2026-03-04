@@ -13,6 +13,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
 )
 
 // =============================================================================
@@ -749,11 +750,8 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 		t.Fatalf("update agent state: %v", err)
 	}
 
-	// Write tether file.
-	tetherDir := filepath.Join(gtHome, "myworld", "outposts", "scout")
-	os.MkdirAll(tetherDir, 0o755)
-	tetherPath := filepath.Join(tetherDir, ".tether")
-	if err := os.WriteFile(tetherPath, []byte(itemID), 0o644); err != nil {
+	// Write tether file (envoy role — lives under envoys/, not outposts/).
+	if err := tether.Write("myworld", "scout", itemID, "envoy"); err != nil {
 		t.Fatalf("write tether: %v", err)
 	}
 
@@ -837,12 +835,10 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	}
 
 	// Write tether.
-	tetherDir := filepath.Join(gtHome, "myworld", "outposts", "Alpha")
-	os.MkdirAll(tetherDir, 0o755)
-	tetherPath := filepath.Join(tetherDir, ".tether")
-	if err := os.WriteFile(tetherPath, []byte(itemID), 0o644); err != nil {
+	if err := tether.Write("myworld", "Alpha", itemID, "agent"); err != nil {
 		t.Fatalf("write tether: %v", err)
 	}
+	tetherPath := tether.TetherPath("myworld", "Alpha", "agent")
 
 	// Create worktree with git repo.
 	worktree := filepath.Join(gtHome, "myworld", "outposts", "Alpha", "worktree")
@@ -1263,11 +1259,8 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 		t.Fatalf("update work item: %v", err)
 	}
 
-	// Write tether file.
-	tetherDir := filepath.Join(gtHome, "myworld", "outposts", "scout")
-	os.MkdirAll(tetherDir, 0o755)
-	tetherPath := filepath.Join(tetherDir, ".tether")
-	if err := os.WriteFile(tetherPath, []byte(itemID), 0o644); err != nil {
+	// Write tether file (envoy role — lives under envoys/, not outposts/).
+	if err := tether.Write("myworld", "scout", itemID, "envoy"); err != nil {
 		t.Fatalf("write tether: %v", err)
 	}
 

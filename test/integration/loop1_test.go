@@ -105,7 +105,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 	}
 
 	// Both tether files exist with their respective work item IDs.
-	tetherID1, err := tether.Read("ember", result1.AgentName)
+	tetherID1, err := tether.Read("ember", result1.AgentName, "agent")
 	if err != nil {
 		t.Fatalf("read tether 1: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 		t.Errorf("tether 1: got %q, want %q", tetherID1, item1ID)
 	}
 
-	tetherID2, err := tether.Read("ember", result2.AgentName)
+	tetherID2, err := tether.Read("ember", result2.AgentName, "agent")
 	if err != nil {
 		t.Fatalf("read tether 2: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestFlockSerialization(t *testing.T) {
 	// The winning agent has the work item tethered.
 	if len(successes) == 1 {
 		winner := successes[0]
-		tetherID, err := tether.Read("ember", winner)
+		tetherID, err := tether.Read("ember", winner, "agent")
 		if err != nil {
 			t.Fatalf("read tether for winner %s: %v", winner, err)
 		}
@@ -291,7 +291,7 @@ func TestPrefectSessionRestart(t *testing.T) {
 	}
 
 	// Tether file still contains the same work item ID.
-	tetherID, err := tether.Read("ember", agentName)
+	tetherID, err := tether.Read("ember", agentName, "agent")
 	if err != nil {
 		t.Fatalf("read tether: %v", err)
 	}
@@ -464,7 +464,7 @@ func TestGUPPRecovery(t *testing.T) {
 	worktreeDir := result.WorktreeDir
 
 	// Verify: tether file exists, CLAUDE.md in worktree has work item context.
-	if !tether.IsTethered("ember", agentName) {
+	if !tether.IsTethered("ember", agentName, "agent") {
 		t.Error("tether file does not exist after cast")
 	}
 
@@ -481,7 +481,7 @@ func TestGUPPRecovery(t *testing.T) {
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
 
 	// Verify: tether file still exists (durability).
-	if !tether.IsTethered("ember", agentName) {
+	if !tether.IsTethered("ember", agentName, "agent") {
 		t.Error("tether file missing after crash")
 	}
 
@@ -502,7 +502,7 @@ func TestGUPPRecovery(t *testing.T) {
 	}
 
 	// sol prime returns the work item context.
-	primeResult, err := dispatch.Prime("ember", agentName, worldStore)
+	primeResult, err := dispatch.Prime("ember", agentName, "agent", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -514,7 +514,7 @@ func TestGUPPRecovery(t *testing.T) {
 	}
 
 	// Tether file still contains the same work item ID.
-	tetherID, err := tether.Read("ember", agentName)
+	tetherID, err := tether.Read("ember", agentName, "agent")
 	if err != nil {
 		t.Fatalf("read tether: %v", err)
 	}
