@@ -262,9 +262,12 @@ created across worlds. Senate can query governors for world-specific context.
 
 ---
 
-## Arc 5: Agent History & Cost Tracking
+## Arc 5: Agent History, Performance & Cost Tracking
 
-Audit trail and cost visibility — specified in target architecture, never built.
+Audit trail, performance insights, and cost visibility — specified in target
+architecture, never built.
+
+### History & Cost
 
 - `agent_history` table: agent_id, work_item_id, action, started_at, ended_at, summary, cost_usd
 - Instrument cast/resolve to write history records
@@ -272,8 +275,28 @@ Audit trail and cost visibility — specified in target architecture, never buil
 - `sol agent history --world=<name>` — show all agent activity in a world
 - Cost aggregation views (per-agent, per-world, per-time-period)
 
+### Agent Performance Tracking
+
+Track per-agent performance metrics across casts to enable capability-based
+routing and quality feedback loops. Inspired by gastown's persistent polecat
+identity / CV system.
+
+- **Cycle time**: time from cast to resolve per work item
+- **First-pass success rate**: percentage of MRs that merge without rework
+  (no conflict resolution tasks, no mark-failed)
+- **Rework count**: how many times an agent's MR needed conflict resolution
+  or was re-dispatched after failure
+- **Escalation frequency**: how often an agent escalates vs resolves
+- Performance data keyed by agent name (outpost names recycle from pool,
+  so metrics accumulate across casts to the same name)
+- `sol agent stats <name> --world=W` — show performance summary
+- `sol agent stats --world=W` — leaderboard view across agents
+- Future: capability-based routing — dispatch Go work to agents with
+  strong Go track records, inform model tier selection
+
 **Acceptance:** Every cast/resolve cycle produces a history record.
-Operators can answer "what did agent X work on?" and "what did world Y cost?"
+Operators can answer "what did agent X work on?", "what did world Y cost?",
+and "which agents are most effective?"
 
 ---
 
@@ -289,6 +312,24 @@ Production operations at scale.
 
 **Acceptance:** Operators can backup, restore, and manage multiple worlds
 without manual filesystem operations.
+
+---
+
+## Future: Three-Tier Formula Resolution
+
+Workflow formulas currently exist only as embedded defaults in the binary.
+Enable project-level and user-level formula customization with a three-tier
+resolution hierarchy (inspired by gastown):
+
+1. **Project-level** (most specific): formulas in the world's source repo
+   (e.g. `.sol/formulas/`) — project-specific workflows
+2. **User-level**: formulas in `$SOL_HOME/formulas/` — operator customizations
+   that apply across worlds
+3. **Embedded** (fallback): formulas compiled into the binary — system defaults
+
+Resolution: project > user > embedded. First match wins. This lets each
+project define its own review, test, and deploy workflows without modifying
+the sol binary, while preserving sensible defaults.
 
 ---
 
