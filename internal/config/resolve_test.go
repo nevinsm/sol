@@ -177,7 +177,7 @@ func TestResolveWorld_CwdOutsideSolHome(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when cwd is outside SOL_HOME, got nil")
 	}
-	if got := err.Error(); got != "world required: specify with --world, set SOL_WORLD, or cd into a world directory" {
+	if got := err.Error(); got != "--world is required (or set SOL_WORLD, or run from inside a world directory)" {
 		t.Errorf("unexpected error message: %s", got)
 	}
 }
