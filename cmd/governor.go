@@ -30,10 +30,8 @@ var governorStartCmd = &cobra.Command{
 	Short:        "Start the governor for a world",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if governorStartWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(governorStartWorld); err != nil {
+		world, err := config.ResolveWorld(governorStartWorld)
+		if err != nil {
 			return err
 		}
 
@@ -46,12 +44,12 @@ var governorStartCmd = &cobra.Command{
 		mgr := session.New()
 
 		// Install governor CLAUDE.md before starting session.
-		govDir := governor.GovernorDir(governorStartWorld)
+		govDir := governor.GovernorDir(world)
 		if err := os.MkdirAll(govDir, 0o755); err != nil {
 			return fmt.Errorf("failed to create governor directory: %w", err)
 		}
 		if err := protocol.InstallGovernorClaudeMD(govDir, protocol.GovernorClaudeMDContext{
-			World:     governorStartWorld,
+			World:     world,
 			SolBinary: "sol",
 			MirrorDir: "../repo",
 		}); err != nil {
@@ -59,12 +57,12 @@ var governorStartCmd = &cobra.Command{
 		}
 
 		if err := governor.Start(governor.StartOpts{
-			World: governorStartWorld,
+			World: world,
 		}, sphereStore, mgr); err != nil {
 			return err
 		}
 
-		fmt.Printf("Started governor for world %q\n", governorStartWorld)
+		fmt.Printf("Started governor for world %q\n", world)
 		return nil
 	},
 }
@@ -78,10 +76,8 @@ var governorStopCmd = &cobra.Command{
 	Short:        "Stop the governor for a world",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if governorStopWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(governorStopWorld); err != nil {
+		world, err := config.ResolveWorld(governorStopWorld)
+		if err != nil {
 			return err
 		}
 
@@ -93,11 +89,11 @@ var governorStopCmd = &cobra.Command{
 
 		mgr := session.New()
 
-		if err := governor.Stop(governorStopWorld, sphereStore, mgr); err != nil {
+		if err := governor.Stop(world, sphereStore, mgr); err != nil {
 			return err
 		}
 
-		fmt.Printf("Stopped governor for world %q\n", governorStopWorld)
+		fmt.Printf("Stopped governor for world %q\n", world)
 		return nil
 	},
 }
@@ -111,19 +107,17 @@ var governorAttachCmd = &cobra.Command{
 	Short:        "Attach to the governor's tmux session",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if governorAttachWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(governorAttachWorld); err != nil {
+		world, err := config.ResolveWorld(governorAttachWorld)
+		if err != nil {
 			return err
 		}
 
-		sessName := config.SessionName(governorAttachWorld, "governor")
+		sessName := config.SessionName(world, "governor")
 		mgr := session.New()
 
 		if !mgr.Exists(sessName) {
 			return fmt.Errorf("no governor session for world %q (run 'sol governor start --world=%s' first)",
-				governorAttachWorld, governorAttachWorld)
+				world, world)
 		}
 
 		return mgr.Attach(sessName)
@@ -139,18 +133,16 @@ var governorBriefCmd = &cobra.Command{
 	Short:        "Display the governor's brief",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if governorBriefWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(governorBriefWorld); err != nil {
+		world, err := config.ResolveWorld(governorBriefWorld)
+		if err != nil {
 			return err
 		}
 
-		briefPath := governor.BriefPath(governorBriefWorld)
+		briefPath := governor.BriefPath(world)
 		data, err := os.ReadFile(briefPath)
 		if err != nil {
 			if os.IsNotExist(err) {
-				fmt.Printf("No brief found for governor in world %q\n", governorBriefWorld)
+				fmt.Printf("No brief found for governor in world %q\n", world)
 				return nil
 			}
 			return fmt.Errorf("failed to read brief: %w", err)
@@ -170,24 +162,22 @@ var governorDebriefCmd = &cobra.Command{
 	Short:        "Archive the governor's brief and reset",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if governorDebriefWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(governorDebriefWorld); err != nil {
+		world, err := config.ResolveWorld(governorDebriefWorld)
+		if err != nil {
 			return err
 		}
 
-		briefPath := governor.BriefPath(governorDebriefWorld)
+		briefPath := governor.BriefPath(world)
 		if _, err := os.Stat(briefPath); err != nil {
 			if os.IsNotExist(err) {
-				fmt.Printf("No brief found for governor in world %q\n", governorDebriefWorld)
+				fmt.Printf("No brief found for governor in world %q\n", world)
 				return nil
 			}
 			return fmt.Errorf("failed to check brief: %w", err)
 		}
 
 		// Create archive directory.
-		briefDir := governor.BriefDir(governorDebriefWorld)
+		briefDir := governor.BriefDir(world)
 		archiveDir := filepath.Join(briefDir, "archive")
 		if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 			return fmt.Errorf("failed to create archive directory: %w", err)
@@ -205,7 +195,7 @@ var governorDebriefCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Archived brief to .brief/archive/%s\n", archiveFile)
-		fmt.Printf("Governor in world %q ready for fresh engagement\n", governorDebriefWorld)
+		fmt.Printf("Governor in world %q ready for fresh engagement\n", world)
 		return nil
 	},
 }
@@ -219,18 +209,16 @@ var governorSummaryCmd = &cobra.Command{
 	Short:        "Display the governor's world summary",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if governorSummaryWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(governorSummaryWorld); err != nil {
+		world, err := config.ResolveWorld(governorSummaryWorld)
+		if err != nil {
 			return err
 		}
 
-		summaryPath := governor.WorldSummaryPath(governorSummaryWorld)
+		summaryPath := governor.WorldSummaryPath(world)
 		data, err := os.ReadFile(summaryPath)
 		if err != nil {
 			if os.IsNotExist(err) {
-				fmt.Printf("No world summary found for world %q\n", governorSummaryWorld)
+				fmt.Printf("No world summary found for world %q\n", world)
 				return nil
 			}
 			return fmt.Errorf("failed to read world summary: %w", err)
@@ -250,25 +238,23 @@ var governorSyncCmd = &cobra.Command{
 	Short:        "Sync managed repo the governor reads from",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if governorSyncWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(governorSyncWorld); err != nil {
+		world, err := config.ResolveWorld(governorSyncWorld)
+		if err != nil {
 			return err
 		}
 
 		// Sync managed repo.
-		if err := worldsync.SyncRepo(governorSyncWorld); err != nil {
+		if err := worldsync.SyncRepo(world); err != nil {
 			return err
 		}
 
 		// Notify governor session if running.
 		mgr := session.New()
-		if err := worldsync.SyncGovernor(governorSyncWorld, mgr); err != nil {
+		if err := worldsync.SyncGovernor(world, mgr); err != nil {
 			return err
 		}
 
-		fmt.Printf("Synced for governor in world %q\n", governorSyncWorld)
+		fmt.Printf("Synced for governor in world %q\n", world)
 		return nil
 	},
 }

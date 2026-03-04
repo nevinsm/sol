@@ -20,23 +20,20 @@ var mrCreateCmd = &cobra.Command{
 	Long:         "Plumbing command to manually queue a branch for forge review without going through sol resolve.",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
+		worldFlag, _ := cmd.Flags().GetString("world")
 		branch, _ := cmd.Flags().GetString("branch")
 		workItemID, _ := cmd.Flags().GetString("work-item")
 		priority, _ := cmd.Flags().GetInt("priority")
 
-		if world == "" {
-			return fmt.Errorf("--world is required")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
+			return err
 		}
 		if branch == "" {
 			return fmt.Errorf("--branch is required")
 		}
 		if workItemID == "" {
 			return fmt.Errorf("--work-item is required")
-		}
-
-		if err := config.RequireWorld(world); err != nil {
-			return err
 		}
 
 		worldStore, err := store.OpenWorld(world)

@@ -37,12 +37,12 @@ var caravanCreateCmd = &cobra.Command{
 		name := args[0]
 		itemIDs := args[1:]
 
-		world, _ := cmd.Flags().GetString("world")
-		if world == "" && len(itemIDs) > 0 {
-			return fmt.Errorf("--world is required when adding items")
-		}
-		if world != "" {
-			if err := config.RequireWorld(world); err != nil {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world := worldFlag
+		if world != "" || len(itemIDs) > 0 {
+			var err error
+			world, err = config.ResolveWorld(worldFlag)
+			if err != nil {
 				return err
 			}
 		}
@@ -93,11 +93,9 @@ var caravanAddCmd = &cobra.Command{
 		caravanID := args[0]
 		itemIDs := args[1:]
 
-		world, _ := cmd.Flags().GetString("world")
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 
@@ -368,11 +366,9 @@ var caravanLaunchCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
 
-		world, _ := cmd.Flags().GetString("world")
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 
@@ -542,9 +538,8 @@ func init() {
 	caravanCreateCmd.Flags().Int("phase", 0, "phase for items (default 0)")
 
 	// add flags
-	caravanAddCmd.Flags().String("world", "", "world name")
+	caravanAddCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
 	caravanAddCmd.Flags().Int("phase", 0, "phase for items (default 0)")
-	caravanAddCmd.MarkFlagRequired("world")
 
 	// check flags
 	caravanCheckCmd.Flags().Bool("json", false, "output as JSON")
@@ -553,8 +548,7 @@ func init() {
 	caravanStatusCmd.Flags().Bool("json", false, "output as JSON")
 
 	// launch flags
-	caravanLaunchCmd.Flags().String("world", "", "world name")
+	caravanLaunchCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
 	caravanLaunchCmd.Flags().StringVar(&caravanFormula, "formula", "", "workflow formula for dispatched items")
 	caravanLaunchCmd.Flags().StringSliceVar(&caravanVars, "var", nil, "variable assignment (key=val)")
-	caravanLaunchCmd.MarkFlagRequired("world")
 }

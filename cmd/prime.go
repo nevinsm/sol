@@ -19,14 +19,12 @@ var primeCmd = &cobra.Command{
 	Short:        "Assemble and print execution context for an agent",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if primeWorld == "" {
-			return fmt.Errorf("--world is required")
+		world, err := config.ResolveWorld(primeWorld)
+		if err != nil {
+			return err
 		}
 		if primeAgent == "" {
 			return fmt.Errorf("--agent is required")
-		}
-		if err := config.RequireWorld(primeWorld); err != nil {
-			return err
 		}
 
 		// Look up agent to determine role.
@@ -36,19 +34,19 @@ var primeCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
-		agentID := primeWorld + "/" + primeAgent
+		agentID := world + "/" + primeAgent
 		agent, err := sphereStore.GetAgent(agentID)
 		if err != nil {
 			return fmt.Errorf("failed to get agent %q: %w", agentID, err)
 		}
 
-		worldStore, err := store.OpenWorld(primeWorld)
+		worldStore, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
 		defer worldStore.Close()
 
-		result, err := dispatch.Prime(primeWorld, primeAgent, agent.Role, worldStore)
+		result, err := dispatch.Prime(world, primeAgent, agent.Role, worldStore)
 		if err != nil {
 			return err
 		}

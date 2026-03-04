@@ -35,18 +35,16 @@ var envoyCreateCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if envoyCreateWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(envoyCreateWorld); err != nil {
-			return err
-		}
-
-		worldCfg, err := config.LoadWorldConfig(envoyCreateWorld)
+		world, err := config.ResolveWorld(envoyCreateWorld)
 		if err != nil {
 			return err
 		}
-		sourceRepo, err := dispatch.ResolveSourceRepo(envoyCreateWorld, worldCfg)
+
+		worldCfg, err := config.LoadWorldConfig(world)
+		if err != nil {
+			return err
+		}
+		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 		if err != nil {
 			return err
 		}
@@ -58,14 +56,14 @@ var envoyCreateCmd = &cobra.Command{
 		defer sphereStore.Close()
 
 		if err := envoy.Create(envoy.CreateOpts{
-			World:      envoyCreateWorld,
+			World:      world,
 			Name:       name,
 			SourceRepo: sourceRepo,
 		}, sphereStore); err != nil {
 			return err
 		}
 
-		fmt.Printf("Created envoy %q in world %q\n", name, envoyCreateWorld)
+		fmt.Printf("Created envoy %q in world %q\n", name, world)
 		return nil
 	},
 }
@@ -81,10 +79,8 @@ var envoyStartCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if envoyStartWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(envoyStartWorld); err != nil {
+		world, err := config.ResolveWorld(envoyStartWorld)
+		if err != nil {
 			return err
 		}
 
@@ -98,7 +94,7 @@ var envoyStartCmd = &cobra.Command{
 
 		// Read optional persona file.
 		var personaContent string
-		personaPath := envoy.PersonaPath(envoyStartWorld, name)
+		personaPath := envoy.PersonaPath(world, name)
 		if data, err := os.ReadFile(personaPath); err == nil {
 			personaContent = string(data)
 		} else if !os.IsNotExist(err) {
@@ -106,10 +102,10 @@ var envoyStartCmd = &cobra.Command{
 		}
 
 		// Install envoy CLAUDE.md before starting session.
-		worktree := envoy.WorktreePath(envoyStartWorld, name)
+		worktree := envoy.WorktreePath(world, name)
 		if err := protocol.InstallEnvoyClaudeMD(worktree, protocol.EnvoyClaudeMDContext{
 			AgentName:      name,
-			World:          envoyStartWorld,
+			World:          world,
 			SolBinary:      "sol",
 			PersonaContent: personaContent,
 		}); err != nil {
@@ -117,13 +113,13 @@ var envoyStartCmd = &cobra.Command{
 		}
 
 		if err := envoy.Start(envoy.StartOpts{
-			World: envoyStartWorld,
+			World: world,
 			Name:  name,
 		}, sphereStore, mgr); err != nil {
 			return err
 		}
 
-		fmt.Printf("Started envoy %q in world %q\n", name, envoyStartWorld)
+		fmt.Printf("Started envoy %q in world %q\n", name, world)
 		return nil
 	},
 }
@@ -139,10 +135,8 @@ var envoyStopCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if envoyStopWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(envoyStopWorld); err != nil {
+		world, err := config.ResolveWorld(envoyStopWorld)
+		if err != nil {
 			return err
 		}
 
@@ -154,11 +148,11 @@ var envoyStopCmd = &cobra.Command{
 
 		mgr := session.New()
 
-		if err := envoy.Stop(envoyStopWorld, name, sphereStore, mgr); err != nil {
+		if err := envoy.Stop(world, name, sphereStore, mgr); err != nil {
 			return err
 		}
 
-		fmt.Printf("Stopped envoy %q in world %q\n", name, envoyStopWorld)
+		fmt.Printf("Stopped envoy %q in world %q\n", name, world)
 		return nil
 	},
 }
@@ -174,19 +168,17 @@ var envoyAttachCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if envoyAttachWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(envoyAttachWorld); err != nil {
+		world, err := config.ResolveWorld(envoyAttachWorld)
+		if err != nil {
 			return err
 		}
 
-		sessName := envoy.SessionName(envoyAttachWorld, name)
+		sessName := envoy.SessionName(world, name)
 		mgr := session.New()
 
 		if !mgr.Exists(sessName) {
 			return fmt.Errorf("no envoy session for %q in world %q (run 'sol envoy start %s --world=%s' first)",
-				name, envoyAttachWorld, name, envoyAttachWorld)
+				name, world, name, world)
 		}
 
 		return mgr.Attach(sessName)
@@ -254,14 +246,12 @@ var envoyBriefCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if envoyBriefWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(envoyBriefWorld); err != nil {
+		world, err := config.ResolveWorld(envoyBriefWorld)
+		if err != nil {
 			return err
 		}
 
-		briefPath := envoy.BriefPath(envoyBriefWorld, name)
+		briefPath := envoy.BriefPath(world, name)
 		data, err := os.ReadFile(briefPath)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -287,14 +277,12 @@ var envoyDebriefCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if envoyDebriefWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(envoyDebriefWorld); err != nil {
+		world, err := config.ResolveWorld(envoyDebriefWorld)
+		if err != nil {
 			return err
 		}
 
-		briefPath := envoy.BriefPath(envoyDebriefWorld, name)
+		briefPath := envoy.BriefPath(world, name)
 		if _, err := os.Stat(briefPath); err != nil {
 			if os.IsNotExist(err) {
 				fmt.Printf("No brief found for envoy %q\n", name)
@@ -304,7 +292,7 @@ var envoyDebriefCmd = &cobra.Command{
 		}
 
 		// Create archive directory.
-		briefDir := envoy.BriefDir(envoyDebriefWorld, name)
+		briefDir := envoy.BriefDir(world, name)
 		archiveDir := filepath.Join(briefDir, "archive")
 		if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 			return fmt.Errorf("failed to create archive directory: %w", err)
@@ -338,25 +326,23 @@ var envoySyncCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if envoySyncWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(envoySyncWorld); err != nil {
+		world, err := config.ResolveWorld(envoySyncWorld)
+		if err != nil {
 			return err
 		}
 
 		// Sync managed repo first.
-		if err := worldsync.SyncRepo(envoySyncWorld); err != nil {
+		if err := worldsync.SyncRepo(world); err != nil {
 			return fmt.Errorf("failed to sync managed repo: %w", err)
 		}
 
 		// Notify envoy session if running.
 		mgr := session.New()
-		if err := worldsync.SyncEnvoy(envoySyncWorld, name, mgr); err != nil {
+		if err := worldsync.SyncEnvoy(world, name, mgr); err != nil {
 			return err
 		}
 
-		fmt.Printf("Synced for envoy %q in world %q\n", name, envoySyncWorld)
+		fmt.Printf("Synced for envoy %q in world %q\n", name, world)
 		return nil
 	},
 }

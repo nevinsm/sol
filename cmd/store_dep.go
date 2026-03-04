@@ -25,11 +25,9 @@ var storeDepAddCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(2),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 
@@ -55,11 +53,9 @@ var storeDepRemoveCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(2),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 
@@ -85,11 +81,9 @@ var storeDepListCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, _ := cmd.Flags().GetString("world")
-		if world == "" {
-			return fmt.Errorf("--world is required")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
 			return err
 		}
 

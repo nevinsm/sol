@@ -1,5 +1,15 @@
 # CLI Reference
 
+## World Resolution
+
+Most commands accept a `--world` flag. When omitted, the world is resolved automatically:
+
+1. **`--world=W` flag** — explicit, always wins
+2. **`SOL_WORLD` env var** — set automatically in agent sessions
+3. **Current directory** — if cwd is under `$SOL_HOME/{world}/`, the world is inferred
+
+This means `--world` is optional when running from inside a world directory (e.g., an agent worktree) or when `SOL_WORLD` is set.
+
 ## Setup
 
 | Command | Description |
