@@ -24,8 +24,9 @@ var (
 )
 
 var sentinelCmd = &cobra.Command{
-	Use:   "sentinel",
-	Short: "Manage the per-world sentinel health monitor",
+	Use:     "sentinel",
+	Short:   "Manage the per-world sentinel health monitor",
+	GroupID: groupProcesses,
 }
 
 var sentinelRunCmd = &cobra.Command{

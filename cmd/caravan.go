@@ -22,8 +22,9 @@ var (
 )
 
 var caravanCmd = &cobra.Command{
-	Use:   "caravan",
-	Short: "Manage caravans (grouped work item batches)",
+	Use:     "caravan",
+	Short:   "Manage caravans (grouped work item batches)",
+	GroupID: groupWorkItems,
 }
 
 // --- sol caravan create ---

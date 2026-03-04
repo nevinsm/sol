@@ -13,8 +13,9 @@ var (
 )
 
 var briefCmd = &cobra.Command{
-	Use:   "brief",
-	Short: "Manage agent brief files",
+	Use:     "brief",
+	Short:   "Manage agent brief files",
+	GroupID: groupPlumbing,
 }
 
 var briefInjectCmd = &cobra.Command{

@@ -13,8 +13,9 @@ import (
 )
 
 var storeCmd = &cobra.Command{
-	Use:   "store",
-	Short: "Work item store operations",
+	Use:     "store",
+	Short:   "Work item store operations",
+	GroupID: groupWorkItems,
 }
 
 func init() {

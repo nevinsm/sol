@@ -17,8 +17,9 @@ import (
 )
 
 var governorCmd = &cobra.Command{
-	Use:   "governor",
-	Short: "Manage the per-world governor coordinator",
+	Use:     "governor",
+	Short:   "Manage the per-world governor coordinator",
+	GroupID: groupProcesses,
 }
 
 // --- sol governor start ---

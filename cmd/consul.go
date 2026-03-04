@@ -26,8 +26,9 @@ var (
 )
 
 var consulCmd = &cobra.Command{
-	Use:   "consul",
-	Short: "Manage the sphere-level consul patrol process",
+	Use:     "consul",
+	Short:   "Manage the sphere-level consul patrol process",
+	GroupID: groupProcesses,
 }
 
 var consulRunCmd = &cobra.Command{

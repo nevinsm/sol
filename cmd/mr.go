@@ -10,8 +10,9 @@ import (
 )
 
 var mrCmd = &cobra.Command{
-	Use:   "mr",
-	Short: "Merge request plumbing commands",
+	Use:     "mr",
+	Short:   "Merge request plumbing commands",
+	GroupID: groupPlumbing,
 }
 
 var mrCreateCmd = &cobra.Command{

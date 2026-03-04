@@ -36,6 +36,7 @@ var sphereDaemons = []sphereDaemon{
 var upCmd = &cobra.Command{
 	Use:          "up",
 	Short:        "Start sphere-level daemons (prefect, consul, chronicle)",
+	GroupID:      groupProcesses,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE:         runUp,
@@ -44,6 +45,7 @@ var upCmd = &cobra.Command{
 var downCmd = &cobra.Command{
 	Use:          "down",
 	Short:        "Stop sphere-level daemons (prefect, consul, chronicle)",
+	GroupID:      groupProcesses,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE:         runDown,

@@ -17,8 +17,9 @@ import (
 )
 
 var prefectCmd = &cobra.Command{
-	Use:   "prefect",
-	Short: "Manage the sol prefect",
+	Use:     "prefect",
+	Short:   "Manage the sol prefect",
+	GroupID: groupProcesses,
 }
 
 var prefectRunCmd = &cobra.Command{

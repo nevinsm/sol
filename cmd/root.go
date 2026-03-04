@@ -7,6 +7,29 @@ import (
 
 var version = "0.1.0"
 
+// Command group IDs for sol help output.
+const (
+	groupDispatch      = "dispatch"
+	groupWorkItems     = "work-items"
+	groupAgents        = "agents"
+	groupProcesses     = "processes"
+	groupCommunication = "communication"
+	groupSetup         = "setup"
+	groupPlumbing      = "plumbing"
+)
+
+func init() {
+	rootCmd.AddGroup(
+		&cobra.Group{ID: groupDispatch, Title: "Dispatch:"},
+		&cobra.Group{ID: groupWorkItems, Title: "Work Items:"},
+		&cobra.Group{ID: groupAgents, Title: "Agents & Sessions:"},
+		&cobra.Group{ID: groupProcesses, Title: "Processes:"},
+		&cobra.Group{ID: groupCommunication, Title: "Communication:"},
+		&cobra.Group{ID: groupSetup, Title: "Setup & Diagnostics:"},
+		&cobra.Group{ID: groupPlumbing, Title: "Plumbing:"},
+	)
+}
+
 var rootCmd = &cobra.Command{
 	Use:           "sol",
 	Short:         "Multi-agent orchestration system",

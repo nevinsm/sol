@@ -13,8 +13,9 @@ import (
 )
 
 var sessionCmd = &cobra.Command{
-	Use:   "session",
-	Short: "Manage tmux sessions for agents",
+	Use:     "session",
+	Short:   "Manage tmux sessions for agents",
+	GroupID: groupAgents,
 }
 
 func init() {

@@ -30,8 +30,9 @@ var (
 )
 
 var worldCmd = &cobra.Command{
-	Use:   "world",
-	Short: "Manage worlds",
+	Use:     "world",
+	Short:   "Manage worlds",
+	GroupID: groupSetup,
 }
 
 var worldInitCmd = &cobra.Command{

@@ -38,8 +38,9 @@ var (
 )
 
 var forgeCmd = &cobra.Command{
-	Use:   "forge",
-	Short: "Manage the merge pipeline forge",
+	Use:     "forge",
+	Short:   "Manage the merge pipeline forge",
+	GroupID: groupProcesses,
 }
 
 var forgeStartCmd = &cobra.Command{

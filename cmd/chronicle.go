@@ -16,8 +16,9 @@ import (
 const chronicleSessionName = "sol-chronicle"
 
 var chronicleCmd = &cobra.Command{
-	Use:   "chronicle",
-	Short: "Manage the event feed chronicle",
+	Use:     "chronicle",
+	Short:   "Manage the event feed chronicle",
+	GroupID: groupProcesses,
 }
 
 var chronicleRunCmd = &cobra.Command{

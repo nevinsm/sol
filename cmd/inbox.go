@@ -21,6 +21,7 @@ var (
 var inboxCmd = &cobra.Command{
 	Use:          "inbox",
 	Short:        "View pending nudge queue messages",
+	GroupID:      groupCommunication,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

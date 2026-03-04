@@ -14,8 +14,9 @@ var (
 )
 
 var nudgeCmd = &cobra.Command{
-	Use:   "nudge",
-	Short: "Nudge queue operations",
+	Use:     "nudge",
+	Short:   "Nudge queue operations",
+	GroupID: groupCommunication,
 }
 
 var nudgeDrainCmd = &cobra.Command{
