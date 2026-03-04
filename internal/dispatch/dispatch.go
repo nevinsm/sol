@@ -737,8 +737,8 @@ func primeForge(world string) (*PrimeResult, error) {
 World: %s
 Role: forge (merge queue processor)
 
-Begin your patrol loop. Run 'sol forge check-unblocked %s' first,
-then scan the queue with 'sol forge ready %s --json'.
+Begin your patrol loop. Run 'sol forge check-unblocked --world=%s' first,
+then scan the queue with 'sol forge ready --world=%s --json'.
 === END CONTEXT ===`, world, world, world)
 
 	return &PrimeResult{Output: output}, nil

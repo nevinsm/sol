@@ -32,7 +32,7 @@ func TestCastUsesConfigSourceRepo(t *testing.T) {
 	itemID = strings.TrimSpace(itemID)
 
 	// Run cast from /tmp (NOT the git repo) — should still work via config.
-	cmd := runGTWithDir(t, gtHome, "/tmp", "cast", itemID, "myworld")
+	cmd := runGTWithDir(t, gtHome, "/tmp", "cast", itemID, "--world=myworld")
 	if cmd.err != nil {
 		t.Fatalf("cast failed (should use config source_repo): %v: %s", cmd.err, cmd.out)
 	}
@@ -66,7 +66,7 @@ func TestForgeUsesConfigQualityGates(t *testing.T) {
 	}
 
 	// Run the gates and verify they execute.
-	cmd := runGTWithDir(t, gtHome, sourceRepo, "forge", "run-gates", "myworld")
+	cmd := runGTWithDir(t, gtHome, sourceRepo, "forge", "run-gates", "--world=myworld")
 	if cmd.err != nil {
 		t.Fatalf("forge run-gates failed: %v: %s", cmd.err, cmd.out)
 	}
@@ -112,13 +112,13 @@ func TestDispatchCapacityEnforced(t *testing.T) {
 	item2 = strings.TrimSpace(item2)
 
 	// Cast first item → should succeed.
-	cmd := runGTWithDir(t, gtHome, sourceRepo, "cast", item1, "myworld")
+	cmd := runGTWithDir(t, gtHome, sourceRepo, "cast", item1, "--world=myworld")
 	if cmd.err != nil {
 		t.Fatalf("first cast failed: %v: %s", cmd.err, cmd.out)
 	}
 
 	// Cast second item → should fail with capacity error.
-	cmd = runGTWithDir(t, gtHome, sourceRepo, "cast", item2, "myworld")
+	cmd = runGTWithDir(t, gtHome, sourceRepo, "cast", item2, "--world=myworld")
 	if cmd.err == nil {
 		t.Fatalf("second cast should have failed with capacity error, got: %s", cmd.out)
 	}
@@ -217,7 +217,7 @@ func TestDispatchCapacityZeroUnlimited(t *testing.T) {
 		}
 		itemID = strings.TrimSpace(itemID)
 
-		cmd := runGTWithDir(t, gtHome, sourceRepo, "cast", itemID, "myworld")
+		cmd := runGTWithDir(t, gtHome, sourceRepo, "cast", itemID, "--world=myworld")
 		if cmd.err != nil {
 			t.Fatalf("cast %d failed: %v: %s", i, cmd.err, cmd.out)
 		}
@@ -255,7 +255,7 @@ func TestDispatchNamePoolFromConfig(t *testing.T) {
 	}
 	itemID = strings.TrimSpace(itemID)
 
-	cmd := runGTWithDir(t, gtHome, sourceRepo, "cast", itemID, "myworld")
+	cmd := runGTWithDir(t, gtHome, sourceRepo, "cast", itemID, "--world=myworld")
 	if cmd.err != nil {
 		t.Fatalf("cast failed: %v: %s", cmd.err, cmd.out)
 	}

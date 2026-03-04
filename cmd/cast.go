@@ -11,21 +11,22 @@ import (
 )
 
 var (
+	castWorld   string
 	castAgent   string
 	castFormula string
 	castVars    []string
 )
 
 var castCmd = &cobra.Command{
-	Use:          "cast <work-item-id> <world>",
+	Use:          "cast <work-item-id>",
 	Short:        "Assign a work item to an agent and start its session",
-	Args:         cobra.ExactArgs(2),
+	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		workItemID := args[0]
-		world := args[1]
 
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(castWorld)
+		if err != nil {
 			return err
 		}
 
@@ -86,6 +87,7 @@ var castCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(castCmd)
+	castCmd.Flags().StringVar(&castWorld, "world", "", "world name")
 	castCmd.Flags().StringVar(&castAgent, "agent", "", "agent name (auto-selects idle agent if omitted)")
 	castCmd.Flags().StringVar(&castFormula, "formula", "", "workflow formula to instantiate")
 	castCmd.Flags().StringSliceVar(&castVars, "var", nil, "workflow variable (key=val, repeatable)")

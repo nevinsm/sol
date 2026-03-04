@@ -16,12 +16,12 @@ func TestForgeSyncCLI(t *testing.T) {
 	setupWorld(t, gtHome, "synctest", bareRepo)
 
 	// Start forge to create the worktree.
-	_, err := runGT(t, gtHome, "forge", "start", "synctest")
+	_, err := runGT(t, gtHome, "forge", "start", "--world=synctest")
 	if err != nil {
 		t.Fatalf("forge start failed: %v", err)
 	}
 	t.Cleanup(func() {
-		runGT(t, gtHome, "forge", "stop", "synctest")
+		runGT(t, gtHome, "forge", "stop", "--world=synctest")
 	})
 
 	// Push a new commit from the working clone.
@@ -31,7 +31,7 @@ func TestForgeSyncCLI(t *testing.T) {
 	runGit(t, workingClone, "push", "origin", "main")
 
 	// Run forge sync.
-	out, err := runGT(t, gtHome, "forge", "sync", "synctest")
+	out, err := runGT(t, gtHome, "forge", "sync", "--world=synctest")
 	if err != nil {
 		t.Fatalf("forge sync failed: %v: %s", err, out)
 	}
@@ -57,12 +57,12 @@ func TestWorldSyncAllCLI(t *testing.T) {
 	setupWorld(t, gtHome, "syncall", bareRepo)
 
 	// Start forge to create the worktree.
-	_, err := runGT(t, gtHome, "forge", "start", "syncall")
+	_, err := runGT(t, gtHome, "forge", "start", "--world=syncall")
 	if err != nil {
 		t.Fatalf("forge start failed: %v", err)
 	}
 	t.Cleanup(func() {
-		runGT(t, gtHome, "forge", "stop", "syncall")
+		runGT(t, gtHome, "forge", "stop", "--world=syncall")
 	})
 
 	// Push a new commit from the working clone.
@@ -72,7 +72,7 @@ func TestWorldSyncAllCLI(t *testing.T) {
 	runGit(t, workingClone, "push", "origin", "main")
 
 	// Run world sync --all.
-	out, err := runGT(t, gtHome, "world", "sync", "syncall", "--all")
+	out, err := runGT(t, gtHome, "world", "sync", "--world=syncall", "--all")
 	if err != nil {
 		t.Fatalf("world sync --all failed: %v: %s", err, out)
 	}

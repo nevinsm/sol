@@ -93,7 +93,7 @@ func TestCLIForgeQueue(t *testing.T) {
 	_ = sourceRepo // needed by setupTestEnv but not directly used here
 
 	// Human-readable output.
-	out, err := runGT(t, solHome, "forge", "queue", "ember")
+	out, err := runGT(t, solHome, "forge", "queue", "--world=ember")
 	if err != nil {
 		t.Fatalf("sol forge queue failed: %v: %s", err, out)
 	}
@@ -105,7 +105,7 @@ func TestCLIForgeQueue(t *testing.T) {
 	}
 
 	// JSON output.
-	out, err = runGT(t, solHome, "forge", "queue", "ember", "--json")
+	out, err = runGT(t, solHome, "forge", "queue", "--world=ember", "--json")
 	if err != nil {
 		t.Fatalf("sol forge queue --json failed: %v: %s", err, out)
 	}
@@ -182,7 +182,7 @@ func TestCLIForgeQueueEmpty(t *testing.T) {
 	initWorld(t, solHome, "ember")
 	openStores(t, "ember") // ensure world DB exists
 
-	out, err := runGT(t, solHome, "forge", "queue", "ember")
+	out, err := runGT(t, solHome, "forge", "queue", "--world=ember")
 	if err != nil {
 		t.Fatalf("sol forge queue failed: %v: %s", err, out)
 	}
@@ -200,13 +200,13 @@ func TestCLIStatusWithForge(t *testing.T) {
 	openStores(t, "ember") // ensure stores exist
 
 	// Status without forge running.
-	out, _ := runGT(t, solHome, "status", "ember")
+	out, _ := runGT(t, solHome, "status", "--world=ember")
 	if !strings.Contains(out, "Forge") {
 		t.Errorf("status output missing 'Forge' line: %s", out)
 	}
 
 	// JSON output should contain forge and merge_queue fields.
-	out, _ = runGT(t, solHome, "status", "ember", "--json")
+	out, _ = runGT(t, solHome, "status", "--world=ember", "--json")
 	if !json.Valid([]byte(out)) {
 		t.Errorf("status --json output is not valid JSON: %s", out)
 	}

@@ -95,8 +95,8 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 	}
 
 	// Verify sol world sync command.
-	if !strings.Contains(content, "sol world sync myworld") {
-		t.Error("CLAUDE.md should contain 'sol world sync myworld'")
+	if !strings.Contains(content, "sol world sync --world=myworld") {
+		t.Error("CLAUDE.md should contain 'sol world sync --world=myworld'")
 	}
 
 	// Verify sol CLI commands.
@@ -109,7 +109,7 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 		"sol caravan check",
 		"sol caravan status",
 		"sol caravan launch",
-		"sol status myworld",
+		"sol status --world=myworld",
 		"sol agent list",
 		"sol escalate",
 		"sol inbox --world=myworld --agent=governor",
@@ -175,7 +175,6 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 
 	// Verify no wrong cast syntax.
 	for _, bad := range []string{
-		"cast --world=",
 		"cast --work-item=",
 	} {
 		if strings.Contains(content, bad) {
@@ -183,9 +182,9 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 		}
 	}
 
-	// Verify correct cast positional syntax.
-	if !strings.Contains(content, "sol cast <item-id> myworld") {
-		t.Error("GenerateGovernorClaudeMD should contain correct cast positional syntax")
+	// Verify correct cast syntax.
+	if !strings.Contains(content, "sol cast <item-id> --world=myworld") {
+		t.Error("GenerateGovernorClaudeMD should contain correct cast syntax")
 	}
 }
 

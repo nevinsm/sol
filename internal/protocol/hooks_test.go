@@ -40,7 +40,7 @@ func TestInstallForgeHooks(t *testing.T) {
 	hookCmd := groups[0].Hooks[0].Command
 
 	// Must contain forge sync before prime.
-	if !strings.Contains(hookCmd, "sol forge sync myworld") {
+	if !strings.Contains(hookCmd, "sol forge sync --world=myworld") {
 		t.Errorf("hook command missing forge sync: %q", hookCmd)
 	}
 	if !strings.Contains(hookCmd, "sol prime --world=myworld --agent=forge") {

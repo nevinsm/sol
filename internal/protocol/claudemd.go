@@ -115,10 +115,10 @@ Rebase, test, merge, push. Handle conflicts. Attribute test failures.
 
 Run this loop continuously:
 
-1. `+"`sol forge check-unblocked %s`"+` — unblock resolved MRs
-2. `+"`sol forge ready %s --json`"+` — scan queue
+1. `+"`sol forge check-unblocked --world=%s`"+` — unblock resolved MRs
+2. `+"`sol forge ready --world=%s --json`"+` — scan queue
    - If empty, wait 30 seconds, go to step 1
-3. `+"`sol forge claim %s --json`"+` — claim next MR
+3. `+"`sol forge claim --world=%s --json`"+` — claim next MR
 4. `+"`git fetch origin`"+` then `+"`git rebase origin/%s`"+` on the MR branch
    - This is the judgment step. If conflicts occur, go to step 5.
    - If clean, go to step 6.
@@ -127,16 +127,16 @@ Run this loop continuously:
    - **Trivial** (imports, whitespace, lockfiles, go.sum): resolve directly,
      `+"`git add <files>`"+`, `+"`git rebase --continue`"+`
    - **Complex** (logic, overlapping edits, any uncertainty):
-     `+"`git rebase --abort`"+`, `+"`sol forge create-resolution %s <mr-id>`"+`,
+     `+"`git rebase --abort`"+`, `+"`sol forge create-resolution --world=%s <mr-id>`"+`,
      skip to step 8
-6. `+"`sol forge run-gates %s`"+` — run quality gates
+6. `+"`sol forge run-gates --world=%s`"+` — run quality gates
    - If fail: attribute the failure.
-     - Branch caused it? `+"`sol forge mark-failed %s <mr-id>`"+`
+     - Branch caused it? `+"`sol forge mark-failed --world=%s <mr-id>`"+`
      - Pre-existing? Note and proceed.
    - If pass: continue to step 7.
-7. `+"`sol forge push %s`"+`
-   - If rejected: `+"`sol forge release %s <mr-id>`"+`, go to step 2
-8. `+"`sol forge mark-merged %s <mr-id>`"+`
+7. `+"`sol forge push --world=%s`"+`
+   - If rejected: `+"`sol forge release --world=%s <mr-id>`"+`, go to step 2
+8. `+"`sol forge mark-merged --world=%s <mr-id>`"+`
 9. More MRs? Go to step 2. Otherwise wait 30 seconds, go to step 1.
 
 ## Conflict Judgment Framework
@@ -158,16 +158,16 @@ that new baseline. Always `+"`git fetch origin`"+` before rebasing.
 ## Quality Gates
 %s
 ## Commands Reference
-- `+"`sol forge ready %s --json`"+` — list ready MRs
-- `+"`sol forge blocked %s --json`"+` — list blocked MRs
-- `+"`sol forge claim %s --json`"+` — claim next MR
-- `+"`sol forge release %s <mr-id>`"+` — release claimed MR
-- `+"`sol forge run-gates %s`"+` — run quality gates (exit 0=pass, 1=fail)
-- `+"`sol forge push %s`"+` — push to target branch
-- `+"`sol forge mark-merged %s <mr-id>`"+` — mark MR as merged
-- `+"`sol forge mark-failed %s <mr-id>`"+` — mark MR as failed
-- `+"`sol forge create-resolution %s <mr-id>`"+` — create conflict resolution task
-- `+"`sol forge check-unblocked %s`"+` — check and unblock resolved MRs
+- `+"`sol forge ready --world=%s --json`"+` — list ready MRs
+- `+"`sol forge blocked --world=%s --json`"+` — list blocked MRs
+- `+"`sol forge claim --world=%s --json`"+` — claim next MR
+- `+"`sol forge release --world=%s <mr-id>`"+` — release claimed MR
+- `+"`sol forge run-gates --world=%s`"+` — run quality gates (exit 0=pass, 1=fail)
+- `+"`sol forge push --world=%s`"+` — push to target branch
+- `+"`sol forge mark-merged --world=%s <mr-id>`"+` — mark MR as merged
+- `+"`sol forge mark-failed --world=%s <mr-id>`"+` — mark MR as failed
+- `+"`sol forge create-resolution --world=%s <mr-id>`"+` — create conflict resolution task
+- `+"`sol forge check-unblocked --world=%s`"+` — check and unblock resolved MRs
 `,
 		ctx.World, ctx.World,
 		ctx.World, ctx.World, ctx.World, ctx.TargetBranch,
@@ -260,7 +260,7 @@ You maintain accumulated context in `+"`"+`.brief/memory.md`+"`"+`.
 
 ## Work Flow — Three Modes
 1. **Tethered work**: You may be assigned a work item. Check:
-   `+"`"+`%s status %s`+"`"+` (look for your name in the Envoys section)
+   `+"`"+`%s status --world=%s`+"`"+` (look for your name in the Envoys section)
    When tethered, focus on that work item. Resolve when done.
 2. **Self-service**: Create your own work item with
    `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+`
@@ -287,7 +287,7 @@ When your work is ready to submit:
 - `+"`"+`%s resolve --world=%s --agent=%s`+"`"+` — submit work for merge (the ONLY way to submit code)
 - `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+` — create work item
 - `+"`"+`%s escalate --world=%s --agent=%s --message="..."`+"`"+` — escalate to operator
-- `+"`"+`%s status %s`+"`"+` — check world status
+- `+"`"+`%s status --world=%s`+"`"+` — check world status
 - `+"`"+`%s handoff --world=%s --from=%s --to=<agent> --message="..."`+"`"+` — hand off work
 
 ## Guidelines
@@ -385,7 +385,7 @@ You maintain accumulated world knowledge in your brief.
 
 ## Codebase Research
 - Read-only codebase at `+"`"+`%s/`+"`"+` — use for understanding code, never edit
-- Sync latest before major research: `+"`"+`sol world sync %s`+"`"+`
+- Sync latest before major research: `+"`"+`sol world sync --world=%s`+"`"+`
 - Use the codebase to write better work item descriptions
 
 ## Work Dispatch Flow
@@ -396,8 +396,8 @@ When the operator gives you a work request:
 4. Optionally group into a caravan:
    `+"`"+`%s caravan create "name" <item-id> [<item-id>] --world=%s`+"`"+`
 5. Dispatch to available agents:
-   `+"`"+`%s cast <item-id> %s`+"`"+`
-6. Track progress: `+"`"+`%s status %s`+"`"+`
+   `+"`"+`%s cast <item-id> --world=%s`+"`"+`
+6. Track progress: `+"`"+`%s status --world=%s`+"`"+`
 
 ## Notification Handling
 Notifications arrive automatically at each turn boundary (via UserPromptSubmit hook).
@@ -439,7 +439,7 @@ Full sol CLI reference for governor operations:
 %s store list --world=%s [--status=open]
 
 # Dispatch
-%s cast <item-id> %s [--agent=<name>]
+%s cast <item-id> --world=%s [--agent=<name>]
 
 # Caravans
 %s caravan create "name" <item-id> [<item-id>] --world=%s

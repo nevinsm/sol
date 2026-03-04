@@ -115,6 +115,24 @@ func ValidateWorldName(name string) error {
 	return nil
 }
 
+// ResolveWorld resolves a world name from a flag value or the SOL_WORLD
+// environment variable, then validates that the world exists.
+// Returns the resolved world name or an error if neither source provides a value
+// or if the world does not exist.
+func ResolveWorld(flagValue string) (string, error) {
+	world := flagValue
+	if world == "" {
+		world = os.Getenv("SOL_WORLD")
+	}
+	if world == "" {
+		return "", fmt.Errorf("--world is required (or set SOL_WORLD env var)")
+	}
+	if err := RequireWorld(world); err != nil {
+		return "", err
+	}
+	return world, nil
+}
+
 // RequireWorld checks that a world has been initialized.
 // Returns nil if world.toml exists at $SOL_HOME/{world}/world.toml.
 //

@@ -95,7 +95,7 @@ func Start(opts StartOpts, sphereStore SphereStore, mgr SessionManager) error {
 	}
 
 	// 5. Start tmux session.
-	prompt := fmt.Sprintf("Governor, world %s. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync %s",
+	prompt := fmt.Sprintf("Governor, world %s. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync --world=%s",
 		opts.World, opts.World)
 	sessionCmd := config.BuildSessionCommand(config.SettingsPath(govDir), prompt)
 	if err := mgr.Start(sessName, govDir, sessionCmd, nil, "governor", opts.World); err != nil {
@@ -126,7 +126,7 @@ func installHooks(govDir, world string) error {
 					Hooks: []protocol.HookHandler{
 						{
 							Type:    "command",
-							Command: fmt.Sprintf("sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync %s", world),
+							Command: fmt.Sprintf("sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync --world=%s", world),
 						},
 					},
 				},
