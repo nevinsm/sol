@@ -125,7 +125,7 @@ func TestWorldSyncFetchesLatest(t *testing.T) {
 	runGit(t, tmpClone, "push", "origin", "main")
 
 	// Sync.
-	out, err = runGT(t, solHome, "world", "sync", "myworld")
+	out, err = runGT(t, solHome, "world", "sync", "--world=myworld")
 	if err != nil {
 		t.Fatalf("world sync failed: %v\n%s", err, out)
 	}
@@ -186,7 +186,7 @@ func TestWorldSyncLateClone(t *testing.T) {
 	}
 
 	// Sync — should clone.
-	out, err = runGT(t, solHome, "world", "sync", "myworld")
+	out, err = runGT(t, solHome, "world", "sync", "--world=myworld")
 	if err != nil {
 		t.Fatalf("world sync failed: %v\n%s", err, out)
 	}
@@ -224,7 +224,7 @@ func TestCastUsesManagedRepo(t *testing.T) {
 	workItemID := extractWorkItemID(t, out)
 
 	// Cast.
-	out, err = runGT(t, gtHome, "cast", workItemID, "myworld")
+	out, err = runGT(t, gtHome, "cast", workItemID, "--world=myworld")
 	if err != nil {
 		t.Fatalf("cast failed: %v\n%s", err, out)
 	}

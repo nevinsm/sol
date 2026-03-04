@@ -210,9 +210,9 @@ func (s *Prefect) heartbeat() {
 func respawnCommand(agent store.Agent, worktreeDir string) string {
 	switch agent.Role {
 	case "sentinel":
-		return fmt.Sprintf("sol sentinel run %s", agent.World)
+		return fmt.Sprintf("sol sentinel run --world=%s", agent.World)
 	case "forge":
-		prompt := fmt.Sprintf("Forge for world %s (respawned). If no context appears, run: sol forge sync %s && sol prime --world=%s --agent=forge",
+		prompt := fmt.Sprintf("Forge for world %s (respawned). If no context appears, run: sol forge sync --world=%s && sol prime --world=%s --agent=forge",
 			agent.World, agent.World, agent.World)
 		return config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
 	case "envoy":
@@ -220,7 +220,7 @@ func respawnCommand(agent store.Agent, worktreeDir string) string {
 			agent.Name, agent.World)
 		return config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
 	case "governor":
-		prompt := fmt.Sprintf("Governor, world %s (respawned). If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync %s",
+		prompt := fmt.Sprintf("Governor, world %s (respawned). If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync --world=%s",
 			agent.World, agent.World)
 		return config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
 	default:

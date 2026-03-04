@@ -23,21 +23,21 @@ This means `--world` is optional when running from inside a world directory (e.g
 |---------|-------------|
 | `sol world init <name>` | Create a world (database, directory tree, config). `--source-repo` associates a git repository. |
 | `sol world list` | List all registered worlds. `--json` for machine-readable output. |
-| `sol world status <name>` | Show world status including config, agents, work items, and health. `--json` supported. |
-| `sol world delete <name>` | Delete a world and all associated data. Requires `--confirm`. Refuses if sessions are active. |
-| `sol world sync <name>` | Fetch and pull latest from the managed repo's origin. Clones if repo doesn't exist yet. `--all` also syncs forge, envoys, and governor. |
+| `sol world status --world=W` | Show world status including config, agents, work items, and health. `--json` supported. |
+| `sol world delete --world=W` | Delete a world and all associated data. Requires `--confirm`. Refuses if sessions are active. |
+| `sol world sync --world=W` | Fetch and pull latest from the managed repo's origin. Clones if repo doesn't exist yet. `--all` also syncs forge, envoys, and governor. |
 
 ## Dispatch
 
 | Command | Description |
 |---------|-------------|
-| `sol cast <item-id> <world>` | Assign work to an agent, create worktree, start session |
+| `sol cast <item-id> --world=W` | Assign work to an agent, create worktree, start session |
 | `sol tether <agent> <item-id> --world=W` | Bind a work item to an agent (any role). Lightweight alternative to `cast` for persistent agents that already have worktrees. |
 | `sol untether <agent> --world=W` | Unbind a work item from an agent (any role). Resets agent to idle and work item to open. |
 | `sol prime --world=W --agent=A` | Assemble and print execution context for an agent |
 | `sol resolve --world=W --agent=A` | Signal completion: push branch, update state, clear tether |
 
-`cast` accepts `--agent` (auto-selects idle if omitted), `--formula`, and `--var` flags.
+`cast` accepts `--world` (or `SOL_WORLD` env), `--agent` (auto-selects idle if omitted), `--formula`, and `--var` flags.
 
 ## Agents
 
@@ -84,16 +84,16 @@ This means `--world` is optional when running from inside a world directory (e.g
 |---------|-------------|
 | `sol prefect run` | Run the prefect (foreground). `--consul` enables sphere-level patrol. |
 | `sol prefect stop` | Stop the running prefect |
-| `sol status <world>` | Show world status (exit code reflects health) |
+| `sol status --world=W` | Show world status (exit code reflects health) |
 
 ## Sentinel (Per-World Health Monitor)
 
 | Command | Description |
 |---------|-------------|
-| `sol sentinel run <world>` | Run the sentinel patrol loop (foreground) |
-| `sol sentinel start <world>` | Start sentinel as background tmux session |
-| `sol sentinel stop <world>` | Stop the sentinel |
-| `sol sentinel attach <world>` | Attach to the sentinel session |
+| `sol sentinel run --world=W` | Run the sentinel patrol loop (foreground) |
+| `sol sentinel start --world=W` | Start sentinel as background tmux session |
+| `sol sentinel stop --world=W` | Stop the sentinel |
+| `sol sentinel attach --world=W` | Attach to the sentinel session |
 
 ## Merge Requests (Plumbing)
 
@@ -105,26 +105,26 @@ This means `--world` is optional when running from inside a world directory (e.g
 
 | Command | Description |
 |---------|-------------|
-| `sol forge start <world>` | Start the forge as a Claude session |
-| `sol forge stop <world>` | Stop the forge |
-| `sol forge sync <world>` | Sync forge worktree: fetch origin, reset to target branch. Also syncs managed repo. |
-| `sol forge attach <world>` | Attach to the forge session |
-| `sol forge queue <world>` | Show the merge request queue |
+| `sol forge start --world=W` | Start the forge as a Claude session |
+| `sol forge stop --world=W` | Stop the forge |
+| `sol forge sync --world=W` | Sync forge worktree: fetch origin, reset to target branch. Also syncs managed repo. |
+| `sol forge attach --world=W` | Attach to the forge session |
+| `sol forge queue --world=W` | Show the merge request queue |
 
 Toolbox subcommands (used by the forge Claude session):
 
 | Command | Description |
 |---------|-------------|
-| `sol forge ready <world>` | List ready merge requests |
-| `sol forge blocked <world>` | List blocked merge requests |
-| `sol forge claim <world>` | Claim the next ready MR |
-| `sol forge release <world> <mr-id>` | Release a claimed MR back to ready |
-| `sol forge run-gates <world>` | Run quality gates |
-| `sol forge push <world>` | Push to target branch |
-| `sol forge mark-merged <world> <mr-id>` | Mark MR as merged |
-| `sol forge mark-failed <world> <mr-id>` | Mark MR as failed |
-| `sol forge create-resolution <world> <mr-id>` | Create conflict resolution task |
-| `sol forge check-unblocked <world>` | Check for resolved blockers |
+| `sol forge ready --world=W` | List ready merge requests |
+| `sol forge blocked --world=W` | List blocked merge requests |
+| `sol forge claim --world=W` | Claim the next ready MR |
+| `sol forge release --world=W <mr-id>` | Release a claimed MR back to ready |
+| `sol forge run-gates --world=W` | Run quality gates |
+| `sol forge push --world=W` | Push to target branch |
+| `sol forge mark-merged --world=W <mr-id>` | Mark MR as merged |
+| `sol forge mark-failed --world=W <mr-id>` | Mark MR as failed |
+| `sol forge create-resolution --world=W <mr-id>` | Create conflict resolution task |
+| `sol forge check-unblocked --world=W` | Check for resolved blockers |
 
 ## Messaging
 
@@ -144,7 +144,7 @@ Toolbox subcommands (used by the forge Claude session):
 | `sol inbox count` | Print count of pending messages (for scripting/status display) |
 | `sol inbox drain` | Drain and display all pending messages, marking them claimed. `--json` supported. |
 
-Nudge queue counts are also shown in the NUDGE column of `sol status <world>` agent and envoy tables.
+Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` agent and envoy tables.
 
 ## Escalations
 

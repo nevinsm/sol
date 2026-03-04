@@ -12,31 +12,40 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var statusJSON bool
+var (
+	statusJSON  bool
+	statusWorld string
+)
 
 var statusCmd = &cobra.Command{
-	Use:   "status [world]",
+	Use:   "status",
 	Short: "Show sphere or world status",
 	Long: `Show system status.
 
-Without arguments, shows a sphere-level overview of all worlds and processes.
-With a world name, shows detailed status for that specific world.
+Without --world, shows a sphere-level overview of all worlds and processes.
+With --world, shows detailed status for that specific world.
 
 Exit codes (world mode only):
   0 = healthy
   1 = unhealthy
   2 = degraded`,
-	Args:          cobra.MaximumNArgs(1),
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	RunE:          runStatus,
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	if len(args) == 0 {
+	world := statusWorld
+	if world == "" {
+		world = os.Getenv("SOL_WORLD")
+	}
+	if world == "" {
 		return runSphereStatus()
 	}
-	return runWorldStatus(args[0])
+	if err := config.RequireWorld(world); err != nil {
+		return err
+	}
+	return runWorldStatus(world)
 }
 
 func runSphereStatus() error {
@@ -62,10 +71,6 @@ func runSphereStatus() error {
 }
 
 func runWorldStatus(world string) error {
-	if err := config.RequireWorld(world); err != nil {
-		return err
-	}
-
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		return err
@@ -111,4 +116,5 @@ func runWorldStatus(world string) error {
 func init() {
 	rootCmd.AddCommand(statusCmd)
 	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "output as JSON")
+	statusCmd.Flags().StringVar(&statusWorld, "world", "", "world name")
 }

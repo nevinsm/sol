@@ -32,25 +32,25 @@ func TestHardGateAllCommands(t *testing.T) {
 		{"store dep remove", []string{"store", "dep", "remove", "sol-00000001", "sol-00000002", "--world=noworld"}},
 		{"store dep list", []string{"store", "dep", "list", "sol-00000001", "--world=noworld"}},
 		// core commands
-		{"cast", []string{"cast", "sol-00000000", "noworld"}},
-		{"status", []string{"status", "noworld"}},
+		{"cast", []string{"cast", "sol-00000000", "--world=noworld"}},
+		{"status", []string{"status", "--world=noworld"}},
 		{"prime", []string{"prime", "--world=noworld", "--agent=test"}},
 		{"resolve", []string{"resolve", "--world=noworld", "--agent=test"}},
 		// agent commands
 		{"agent create", []string{"agent", "create", "test", "--world=noworld"}},
 		{"agent list", []string{"agent", "list", "--world=noworld"}},
 		// forge commands
-		{"forge queue", []string{"forge", "queue", "noworld"}},
-		{"forge ready", []string{"forge", "ready", "noworld"}},
-		{"forge blocked", []string{"forge", "blocked", "noworld"}},
+		{"forge queue", []string{"forge", "queue", "--world=noworld"}},
+		{"forge ready", []string{"forge", "ready", "--world=noworld"}},
+		{"forge blocked", []string{"forge", "blocked", "--world=noworld"}},
 		// sentinel commands
-		{"sentinel run", []string{"sentinel", "run", "noworld"}},
+		{"sentinel run", []string{"sentinel", "run", "--world=noworld"}},
 		// workflow commands
 		{"workflow current", []string{"workflow", "current", "--world=noworld", "--agent=test"}},
 		{"workflow status", []string{"workflow", "status", "--world=noworld", "--agent=test"}},
 		// world commands (that require existing world)
-		{"world status", []string{"world", "status", "noworld"}},
-		{"world delete", []string{"world", "delete", "noworld", "--confirm"}},
+		{"world status", []string{"world", "status", "--world=noworld"}},
+		{"world delete", []string{"world", "delete", "--world=noworld", "--confirm"}},
 	}
 
 	for _, tc := range cases {

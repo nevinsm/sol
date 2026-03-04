@@ -16,20 +16,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	sentinelRunWorld    string
+	sentinelStartWorld  string
+	sentinelStopWorld   string
+	sentinelAttachWorld string
+)
+
 var sentinelCmd = &cobra.Command{
 	Use:   "sentinel",
 	Short: "Manage the per-world sentinel health monitor",
 }
 
 var sentinelRunCmd = &cobra.Command{
-	Use:          "run <world>",
+	Use:          "run",
 	Short:        "Run the sentinel patrol loop (foreground)",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(sentinelRunWorld)
+		if err != nil {
 			return err
 		}
 
@@ -74,14 +79,12 @@ var sentinelRunCmd = &cobra.Command{
 }
 
 var sentinelStartCmd = &cobra.Command{
-	Use:          "start <world>",
+	Use:          "start",
 	Short:        "Start the sentinel as a background tmux session",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(sentinelStartWorld)
+		if err != nil {
 			return err
 		}
 
@@ -102,7 +105,7 @@ var sentinelStartCmd = &cobra.Command{
 		}
 
 		if err := mgr.Start(sessName, config.Home(),
-			fmt.Sprintf("%s sentinel run %s", solBin, world), env, "sentinel", world); err != nil {
+			fmt.Sprintf("%s sentinel run --world=%s", solBin, world), env, "sentinel", world); err != nil {
 			return fmt.Errorf("failed to start sentinel session: %w", err)
 		}
 
@@ -112,14 +115,12 @@ var sentinelStartCmd = &cobra.Command{
 }
 
 var sentinelStopCmd = &cobra.Command{
-	Use:          "stop <world>",
+	Use:          "stop",
 	Short:        "Stop the sentinel",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(sentinelStopWorld)
+		if err != nil {
 			return err
 		}
 
@@ -140,14 +141,12 @@ var sentinelStopCmd = &cobra.Command{
 }
 
 var sentinelAttachCmd = &cobra.Command{
-	Use:          "attach <world>",
+	Use:          "attach",
 	Short:        "Attach to the sentinel tmux session",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(sentinelAttachWorld)
+		if err != nil {
 			return err
 		}
 
@@ -155,7 +154,7 @@ var sentinelAttachCmd = &cobra.Command{
 		mgr := session.New()
 
 		if !mgr.Exists(sessName) {
-			return fmt.Errorf("no sentinel session for world %q (run 'sol sentinel start %s' first)", world, world)
+			return fmt.Errorf("no sentinel session for world %q (run 'sol sentinel start --world=%s' first)", world, world)
 		}
 
 		return mgr.Attach(sessName)
@@ -168,4 +167,9 @@ func init() {
 	sentinelCmd.AddCommand(sentinelStartCmd)
 	sentinelCmd.AddCommand(sentinelStopCmd)
 	sentinelCmd.AddCommand(sentinelAttachCmd)
+
+	sentinelRunCmd.Flags().StringVar(&sentinelRunWorld, "world", "", "world name")
+	sentinelStartCmd.Flags().StringVar(&sentinelStartWorld, "world", "", "world name")
+	sentinelStopCmd.Flags().StringVar(&sentinelStopWorld, "world", "", "world name")
+	sentinelAttachCmd.Flags().StringVar(&sentinelAttachWorld, "world", "", "world name")
 }

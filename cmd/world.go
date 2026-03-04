@@ -20,11 +20,14 @@ import (
 )
 
 var (
-	worldInitSourceRepo string
-	worldListJSON       bool
-	worldStatusJSON     bool
-	worldDeleteConfirm  bool
-	worldSyncAll        bool
+	worldInitSourceRepo  string
+	worldListJSON        bool
+	worldStatusWorld     string
+	worldStatusJSON      bool
+	worldDeleteWorld     string
+	worldDeleteConfirm   bool
+	worldSyncWorld       string
+	worldSyncAll         bool
 )
 
 var worldCmd = &cobra.Command{
@@ -144,7 +147,7 @@ var worldInitCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Println("Next steps:")
 		fmt.Printf("  sol store create --world=%s --title=\"First task\"\n", name)
-		fmt.Printf("  sol cast <work-item-id> %s\n", name)
+		fmt.Printf("  sol cast <work-item-id> --world=%s\n", name)
 		return nil
 	},
 }
@@ -208,14 +211,12 @@ var worldListCmd = &cobra.Command{
 }
 
 var worldStatusCmd = &cobra.Command{
-	Use:          "status <name>",
+	Use:          "status",
 	Short:        "Show world status with config",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
-
-		if err := config.RequireWorld(name); err != nil {
+		name, err := config.ResolveWorld(worldStatusWorld)
+		if err != nil {
 			return err
 		}
 
@@ -267,14 +268,12 @@ var worldStatusCmd = &cobra.Command{
 }
 
 var worldDeleteCmd = &cobra.Command{
-	Use:          "delete <name>",
+	Use:          "delete",
 	Short:        "Delete a world",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
-
-		if err := config.RequireWorld(name); err != nil {
+		name, err := config.ResolveWorld(worldDeleteWorld)
+		if err != nil {
 			return err
 		}
 
@@ -343,19 +342,17 @@ var worldDeleteCmd = &cobra.Command{
 }
 
 var worldSyncCmd = &cobra.Command{
-	Use:   "sync <name>",
+	Use:   "sync",
 	Short: "Sync the managed repo with its remote",
 	Long: `Fetch and pull latest changes from the source repo's origin.
 If the managed repo doesn't exist yet but source_repo is configured
 in world.toml, clones it first.
 
 With --all, also syncs forge worktree and notifies running envoy/governor sessions.`,
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
-
-		if err := config.RequireWorld(name); err != nil {
+		name, err := config.ResolveWorld(worldSyncWorld)
+		if err != nil {
 			return err
 		}
 
@@ -430,10 +427,13 @@ func init() {
 		"", "git URL or local path to source repository")
 	worldListCmd.Flags().BoolVar(&worldListJSON, "json", false,
 		"output as JSON")
+	worldStatusCmd.Flags().StringVar(&worldStatusWorld, "world", "", "world name")
 	worldStatusCmd.Flags().BoolVar(&worldStatusJSON, "json", false,
 		"output as JSON")
+	worldDeleteCmd.Flags().StringVar(&worldDeleteWorld, "world", "", "world name")
 	worldDeleteCmd.Flags().BoolVar(&worldDeleteConfirm, "confirm", false,
 		"confirm deletion")
+	worldSyncCmd.Flags().StringVar(&worldSyncWorld, "world", "", "world name")
 	worldSyncCmd.Flags().BoolVar(&worldSyncAll, "all", false,
 		"also sync forge, envoys, and governor")
 }

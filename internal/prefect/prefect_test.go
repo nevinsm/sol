@@ -626,7 +626,7 @@ func TestRespawnCommandByRole(t *testing.T) {
 
 	// Sentinel uses sol sentinel run.
 	sentCmd := respawnCommand(sentinelAgent, "/tmp/sol")
-	want := "sol sentinel run haven"
+	want := "sol sentinel run --world=haven"
 	if sentCmd != want {
 		t.Errorf("sentinel command = %q, want %q", sentCmd, want)
 	}
@@ -668,7 +668,7 @@ func TestHeartbeatDefersToSentinel(t *testing.T) {
 	// Create a sentinel agent in working state with a live session.
 	sphereStore.CreateAgent("sentinel", "haven", "sentinel")
 	sphereStore.UpdateAgentState("haven/sentinel", "working", "")
-	mock.Start("sol-haven-sentinel", "/tmp", "sol sentinel run haven", nil, "sentinel", "haven")
+	mock.Start("sol-haven-sentinel", "/tmp", "sol sentinel run --world=haven", nil, "sentinel", "haven")
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "haven", "agent")

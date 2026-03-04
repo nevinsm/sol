@@ -161,7 +161,7 @@ func TestStart(t *testing.T) {
 		t.Errorf("expected 2 SessionStart matcher groups, got %d", len(groups))
 	} else {
 		// Verify the startup/resume hook includes sol world sync.
-		if len(groups[0].Hooks) != 1 || !strings.Contains(groups[0].Hooks[0].Command, "sol world sync myworld") {
+		if len(groups[0].Hooks) != 1 || !strings.Contains(groups[0].Hooks[0].Command, "sol world sync --world=myworld") {
 			t.Error("startup hook missing world sync command")
 		}
 		if groups[0].Matcher != "startup|resume" {

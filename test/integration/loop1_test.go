@@ -173,7 +173,7 @@ func TestFlockSerialization(t *testing.T) {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			cmd := exec.Command(binary, "cast", itemID, "ember", "--agent="+name)
+			cmd := exec.Command(binary, "cast", itemID, "--world=ember", "--agent="+name)
 			cmd.Dir = sourceRepo // sol cast discovers source repo from cwd
 			out, err := cmd.CombinedOutput()
 			mu.Lock()

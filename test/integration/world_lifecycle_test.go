@@ -234,7 +234,7 @@ func TestWorldStatusBasic(t *testing.T) {
 		t.Fatalf("setup: world init failed: %v", err)
 	}
 
-	out, err := runGT(t, gtHome, "world", "status", "myworld")
+	out, err := runGT(t, gtHome, "world", "status", "--world=myworld")
 	if err != nil {
 		t.Fatalf("world status failed: %v: %s", err, out)
 	}
@@ -253,7 +253,7 @@ func TestWorldStatusNotInitialized(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	out, err := runGT(t, gtHome, "world", "status", "nonexistent")
+	out, err := runGT(t, gtHome, "world", "status", "--world=nonexistent")
 	if err == nil {
 		t.Fatalf("expected error, got success: %s", out)
 	}
@@ -273,7 +273,7 @@ func TestWorldDeleteBasic(t *testing.T) {
 		t.Fatalf("setup: world init failed: %v", err)
 	}
 
-	out, err := runGT(t, gtHome, "world", "delete", "myworld", "--confirm")
+	out, err := runGT(t, gtHome, "world", "delete", "--world=myworld", "--confirm")
 	if err != nil {
 		t.Fatalf("world delete failed: %v: %s", err, out)
 	}
@@ -308,7 +308,7 @@ func TestWorldDeleteNoConfirm(t *testing.T) {
 		t.Fatalf("setup: world init failed: %v", err)
 	}
 
-	out, err := runGT(t, gtHome, "world", "delete", "myworld")
+	out, err := runGT(t, gtHome, "world", "delete", "--world=myworld")
 	if err == nil {
 		t.Fatal("world delete (no --confirm) should exit non-zero")
 	}
@@ -335,7 +335,7 @@ func TestWorldDeleteNotInitialized(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	out, err := runGT(t, gtHome, "world", "delete", "nonexistent", "--confirm")
+	out, err := runGT(t, gtHome, "world", "delete", "--world=nonexistent", "--confirm")
 	if err == nil {
 		t.Fatalf("expected error, got success: %s", out)
 	}
@@ -362,7 +362,7 @@ func TestWorldStatusJSON(t *testing.T) {
 		t.Fatalf("setup: world init failed: %v", err)
 	}
 
-	out, err := runGT(t, gtHome, "world", "status", "myworld", "--json")
+	out, err := runGT(t, gtHome, "world", "status", "--world=myworld", "--json")
 	if err != nil {
 		t.Fatalf("world status --json failed: %v: %s", err, out)
 	}
@@ -431,7 +431,7 @@ func TestWorldDeleteCleansUpAgents(t *testing.T) {
 	}
 
 	// Delete the world.
-	out, err = runGT(t, gtHome, "world", "delete", "myworld", "--confirm")
+	out, err = runGT(t, gtHome, "world", "delete", "--world=myworld", "--confirm")
 	if err != nil {
 		t.Fatalf("world delete failed: %v: %s", err, out)
 	}
@@ -487,7 +487,7 @@ func TestWorldDeleteCleansUpCaravanItems(t *testing.T) {
 	}
 
 	// Delete the world.
-	out, err := runGT(t, gtHome, "world", "delete", "myworld", "--confirm")
+	out, err := runGT(t, gtHome, "world", "delete", "--world=myworld", "--confirm")
 	if err != nil {
 		t.Fatalf("world delete failed: %v: %s", err, out)
 	}
@@ -608,7 +608,7 @@ func TestWorldDeleteRefusesWithActiveSessions(t *testing.T) {
 	os.WriteFile(filepath.Join(sessDir, sessionName+".json"), []byte(meta), 0o644)
 
 	// Attempt to delete — should be refused.
-	out, err := runGT(t, gtHome, "world", "delete", "deltest", "--confirm")
+	out, err := runGT(t, gtHome, "world", "delete", "--world=deltest", "--confirm")
 	if err == nil {
 		t.Fatalf("expected error with active session, got success: %s", out)
 	}

@@ -19,20 +19,36 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	forgeStartWorld           string
+	forgeStopWorld            string
+	forgeAttachWorld          string
+	forgeQueueWorld           string
+	forgeSyncWorld            string
+	forgeReadyWorld           string
+	forgeBlockedWorld         string
+	forgeClaimWorld           string
+	forgeReleaseWorld         string
+	forgeRunGatesWorld        string
+	forgePushWorld            string
+	forgeMarkMergedWorld      string
+	forgeMarkFailedWorld      string
+	forgeCreateResolutionWorld string
+	forgeCheckUnblockedWorld  string
+)
+
 var forgeCmd = &cobra.Command{
 	Use:   "forge",
 	Short: "Manage the merge pipeline forge",
 }
 
 var forgeStartCmd = &cobra.Command{
-	Use:          "start <world>",
+	Use:          "start",
 	Short:        "Start the forge as a Claude session",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeStartWorld)
+		if err != nil {
 			return err
 		}
 
@@ -112,7 +128,7 @@ var forgeStartCmd = &cobra.Command{
 			"SOL_WORLD": world,
 			"SOL_AGENT": "forge",
 		}
-		forgePrompt := fmt.Sprintf("Forge for world %s. If no context appears, run: sol forge sync %s && sol prime --world=%s --agent=forge",
+		forgePrompt := fmt.Sprintf("Forge for world %s. If no context appears, run: sol forge sync --world=%s && sol prime --world=%s --agent=forge",
 			world, world, world)
 		forgeCmd := config.BuildSessionCommand(config.SettingsPath(ref.WorktreeDir()), forgePrompt)
 		if err := mgr.Start(sessName, ref.WorktreeDir(), forgeCmd, env, "forge", world); err != nil {
@@ -122,20 +138,18 @@ var forgeStartCmd = &cobra.Command{
 		fmt.Printf("Forge started for world %q (Claude session)\n", world)
 		fmt.Printf("  Session:  %s\n", sessName)
 		fmt.Printf("  Worktree: %s\n", ref.WorktreeDir())
-		fmt.Printf("  Attach:   sol forge attach %s\n", world)
+		fmt.Printf("  Attach:   sol forge attach --world=%s\n", world)
 		return nil
 	},
 }
 
 var forgeStopCmd = &cobra.Command{
-	Use:          "stop <world>",
+	Use:          "stop",
 	Short:        "Stop the forge",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeStopWorld)
+		if err != nil {
 			return err
 		}
 
@@ -156,14 +170,12 @@ var forgeStopCmd = &cobra.Command{
 }
 
 var forgeAttachCmd = &cobra.Command{
-	Use:          "attach <world>",
+	Use:          "attach",
 	Short:        "Attach to the forge tmux session",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeAttachWorld)
+		if err != nil {
 			return err
 		}
 
@@ -171,7 +183,7 @@ var forgeAttachCmd = &cobra.Command{
 		mgr := session.New()
 
 		if !mgr.Exists(sessName) {
-			return fmt.Errorf("no forge session for world %q (run 'sol forge start %s' first)", world, world)
+			return fmt.Errorf("no forge session for world %q (run 'sol forge start --world=%s' first)", world, world)
 		}
 
 		return mgr.Attach(sessName)
@@ -181,14 +193,12 @@ var forgeAttachCmd = &cobra.Command{
 var forgeQueueJSON bool
 
 var forgeQueueCmd = &cobra.Command{
-	Use:          "queue <world>",
+	Use:          "queue",
 	Short:        "Show the merge request queue",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeQueueWorld)
+		if err != nil {
 			return err
 		}
 
@@ -278,14 +288,12 @@ func openForge(world string) (*forge.Forge, *store.Store, *store.Store, error) {
 }
 
 var forgeReadyCmd = &cobra.Command{
-	Use:          "ready <world>",
+	Use:          "ready",
 	Short:        "List ready (unblocked) merge requests",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeReadyWorld)
+		if err != nil {
 			return err
 		}
 
@@ -322,14 +330,12 @@ var forgeReadyCmd = &cobra.Command{
 }
 
 var forgeBlockedCmd = &cobra.Command{
-	Use:          "blocked <world>",
+	Use:          "blocked",
 	Short:        "List blocked merge requests",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeBlockedWorld)
+		if err != nil {
 			return err
 		}
 
@@ -366,14 +372,12 @@ var forgeBlockedCmd = &cobra.Command{
 }
 
 var forgeClaimCmd = &cobra.Command{
-	Use:          "claim <world>",
+	Use:          "claim",
 	Short:        "Claim the next ready unblocked merge request",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeClaimWorld)
+		if err != nil {
 			return err
 		}
 
@@ -419,14 +423,15 @@ var forgeClaimCmd = &cobra.Command{
 }
 
 var forgeReleaseCmd = &cobra.Command{
-	Use:          "release <world> <mr-id>",
+	Use:          "release <mr-id>",
 	Short:        "Release a claimed merge request back to ready",
-	Args:         cobra.ExactArgs(2),
+	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, mrID := args[0], args[1]
+		mrID := args[0]
 
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeReleaseWorld)
+		if err != nil {
 			return err
 		}
 
@@ -447,14 +452,12 @@ var forgeReleaseCmd = &cobra.Command{
 }
 
 var forgeRunGatesCmd = &cobra.Command{
-	Use:          "run-gates <world>",
+	Use:          "run-gates",
 	Short:        "Run quality gates in the forge worktree",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeRunGatesWorld)
+		if err != nil {
 			return err
 		}
 
@@ -496,14 +499,12 @@ var forgeRunGatesCmd = &cobra.Command{
 }
 
 var forgePushCmd = &cobra.Command{
-	Use:          "push <world>",
+	Use:          "push",
 	Short:        "Push HEAD to target branch (acquires merge slot)",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgePushWorld)
+		if err != nil {
 			return err
 		}
 
@@ -524,14 +525,15 @@ var forgePushCmd = &cobra.Command{
 }
 
 var forgeMarkMergedCmd = &cobra.Command{
-	Use:          "mark-merged <world> <mr-id>",
+	Use:          "mark-merged <mr-id>",
 	Short:        "Mark a merge request as merged",
-	Args:         cobra.ExactArgs(2),
+	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, mrID := args[0], args[1]
+		mrID := args[0]
 
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeMarkMergedWorld)
+		if err != nil {
 			return err
 		}
 
@@ -557,14 +559,15 @@ var forgeMarkMergedCmd = &cobra.Command{
 }
 
 var forgeMarkFailedCmd = &cobra.Command{
-	Use:          "mark-failed <world> <mr-id>",
+	Use:          "mark-failed <mr-id>",
 	Short:        "Mark a merge request as failed",
-	Args:         cobra.ExactArgs(2),
+	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, mrID := args[0], args[1]
+		mrID := args[0]
 
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeMarkFailedWorld)
+		if err != nil {
 			return err
 		}
 
@@ -599,14 +602,15 @@ var forgeMarkFailedCmd = &cobra.Command{
 }
 
 var forgeCreateResolutionCmd = &cobra.Command{
-	Use:          "create-resolution <world> <mr-id>",
+	Use:          "create-resolution <mr-id>",
 	Short:        "Create a conflict resolution task and block the MR",
-	Args:         cobra.ExactArgs(2),
+	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, mrID := args[0], args[1]
+		mrID := args[0]
 
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeCreateResolutionWorld)
+		if err != nil {
 			return err
 		}
 
@@ -642,14 +646,12 @@ var forgeCreateResolutionCmd = &cobra.Command{
 }
 
 var forgeCheckUnblockedCmd = &cobra.Command{
-	Use:          "check-unblocked <world>",
+	Use:          "check-unblocked",
 	Short:        "Check for resolved blockers and unblock MRs",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeCheckUnblockedWorld)
+		if err != nil {
 			return err
 		}
 
@@ -682,14 +684,12 @@ var forgeCheckUnblockedCmd = &cobra.Command{
 }
 
 var forgeSyncCmd = &cobra.Command{
-	Use:          "sync <world>",
+	Use:          "sync",
 	Short:        "Sync forge worktree: fetch origin, reset to target branch",
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeSyncWorld)
+		if err != nil {
 			return err
 		}
 
@@ -768,6 +768,23 @@ func init() {
 	forgeCmd.AddCommand(forgeMarkFailedCmd)
 	forgeCmd.AddCommand(forgeCreateResolutionCmd)
 	forgeCmd.AddCommand(forgeCheckUnblockedCmd)
+
+	// --world flag for all subcommands.
+	forgeStartCmd.Flags().StringVar(&forgeStartWorld, "world", "", "world name")
+	forgeStopCmd.Flags().StringVar(&forgeStopWorld, "world", "", "world name")
+	forgeAttachCmd.Flags().StringVar(&forgeAttachWorld, "world", "", "world name")
+	forgeQueueCmd.Flags().StringVar(&forgeQueueWorld, "world", "", "world name")
+	forgeSyncCmd.Flags().StringVar(&forgeSyncWorld, "world", "", "world name")
+	forgeReadyCmd.Flags().StringVar(&forgeReadyWorld, "world", "", "world name")
+	forgeBlockedCmd.Flags().StringVar(&forgeBlockedWorld, "world", "", "world name")
+	forgeClaimCmd.Flags().StringVar(&forgeClaimWorld, "world", "", "world name")
+	forgeReleaseCmd.Flags().StringVar(&forgeReleaseWorld, "world", "", "world name")
+	forgeRunGatesCmd.Flags().StringVar(&forgeRunGatesWorld, "world", "", "world name")
+	forgePushCmd.Flags().StringVar(&forgePushWorld, "world", "", "world name")
+	forgeMarkMergedCmd.Flags().StringVar(&forgeMarkMergedWorld, "world", "", "world name")
+	forgeMarkFailedCmd.Flags().StringVar(&forgeMarkFailedWorld, "world", "", "world name")
+	forgeCreateResolutionCmd.Flags().StringVar(&forgeCreateResolutionWorld, "world", "", "world name")
+	forgeCheckUnblockedCmd.Flags().StringVar(&forgeCheckUnblockedWorld, "world", "", "world name")
 
 	// --json flag for commands that support it.
 	forgeQueueCmd.Flags().BoolVar(&forgeQueueJSON, "json", false, "output as JSON")

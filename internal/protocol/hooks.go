@@ -90,7 +90,7 @@ func InstallForgeHooks(worktreeDir, world string) error {
 					Hooks: []HookHandler{
 						{
 							Type:    "command",
-							Command: fmt.Sprintf("sol forge sync %s && sol prime --world=%s --agent=forge", world, world),
+							Command: fmt.Sprintf("sol forge sync --world=%s && sol prime --world=%s --agent=forge", world, world),
 						},
 					},
 				},

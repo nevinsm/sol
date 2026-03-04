@@ -101,7 +101,7 @@ func TestStatusWorldDetail(t *testing.T) {
 	}
 
 	// Note: exit code may be non-zero (degraded) since prefect is not running.
-	out, _ := runGT(t, gtHome, "status", "myworld")
+	out, _ := runGT(t, gtHome, "status", "--world=myworld")
 
 	if !strings.Contains(out, "myworld") {
 		t.Errorf("output missing world name: %s", out)
@@ -124,7 +124,7 @@ func TestStatusWorldJSON(t *testing.T) {
 	initWorld(t, gtHome, "myworld")
 
 	// Note: exit code may be non-zero (degraded) since prefect is not running.
-	out, _ := runGT(t, gtHome, "status", "myworld", "--json")
+	out, _ := runGT(t, gtHome, "status", "--world=myworld", "--json")
 
 	var result map[string]interface{}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
@@ -143,7 +143,7 @@ func TestStatusWorldNotFound(t *testing.T) {
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
-	out, err := runGT(t, gtHome, "status", "nonexistent")
+	out, err := runGT(t, gtHome, "status", "--world=nonexistent")
 	if err == nil {
 		t.Fatalf("expected error for nonexistent world, got success: %s", out)
 	}
@@ -161,7 +161,7 @@ func TestWorldStatusStillWorks(t *testing.T) {
 
 	initWorld(t, gtHome, "myworld")
 
-	out, err := runGT(t, gtHome, "world", "status", "myworld")
+	out, err := runGT(t, gtHome, "world", "status", "--world=myworld")
 	if err != nil {
 		t.Fatalf("sol world status myworld failed: %v: %s", err, out)
 	}

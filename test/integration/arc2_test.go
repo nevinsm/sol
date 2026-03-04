@@ -222,7 +222,7 @@ func TestInitThenFullFlow(t *testing.T) {
 	}
 
 	// Status world.
-	out, _ = runGT(t, solHome, "status", "myworld")
+	out, _ = runGT(t, solHome, "status", "--world=myworld")
 	if !strings.Contains(out, "myworld") {
 		t.Errorf("status myworld missing world name: %s", out)
 	}
@@ -237,7 +237,7 @@ func TestInitThenFullFlow(t *testing.T) {
 	}
 
 	// World status (legacy command).
-	out, err = runGT(t, solHome, "world", "status", "myworld")
+	out, err = runGT(t, solHome, "world", "status", "--world=myworld")
 	if err != nil {
 		t.Fatalf("world status failed: %v: %s", err, out)
 	}
@@ -360,7 +360,7 @@ func TestStatusWorldWithLipgloss(t *testing.T) {
 	}
 
 	// Note: exit code may be non-zero (degraded) since prefect is not running.
-	out, _ = runGT(t, solHome, "status", "myworld")
+	out, _ = runGT(t, solHome, "status", "--world=myworld")
 
 	if !strings.Contains(out, "Processes") {
 		t.Errorf("output missing 'Processes': %s", out)
@@ -381,7 +381,7 @@ func TestStatusWorldJSONUnchanged(t *testing.T) {
 		t.Fatalf("init failed: %v: %s", err, out)
 	}
 
-	out, _ = runGT(t, solHome, "status", "myworld", "--json")
+	out, _ = runGT(t, solHome, "status", "--world=myworld", "--json")
 
 	var result map[string]interface{}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
