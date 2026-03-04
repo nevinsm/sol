@@ -13,7 +13,7 @@ func TestTrustDirectory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	dir := "/home/ubuntu/sol/myworld/outposts/Agent1/worktree"
+	dir := filepath.Join(t.TempDir(), "sol", "myworld", "outposts", "Agent1", "worktree")
 
 	if err := TrustDirectory(dir); err != nil {
 		t.Fatalf("TrustDirectory failed: %v", err)
