@@ -20,8 +20,9 @@ import (
 )
 
 var envoyCmd = &cobra.Command{
-	Use:   "envoy",
-	Short: "Manage persistent envoy agents",
+	Use:     "envoy",
+	Short:   "Manage persistent envoy agents",
+	GroupID: groupAgents,
 }
 
 // --- sol envoy create ---

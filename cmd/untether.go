@@ -15,6 +15,7 @@ var untetherWorld string
 var untetherCmd = &cobra.Command{
 	Use:          "untether <agent-name>",
 	Short:        "Unbind a work item from an agent (any role)",
+	GroupID:      groupAgents,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

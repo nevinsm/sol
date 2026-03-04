@@ -10,8 +10,9 @@ import (
 )
 
 var docsCmd = &cobra.Command{
-	Use:   "docs",
-	Short: "Documentation tools",
+	Use:     "docs",
+	Short:   "Documentation tools",
+	GroupID: groupPlumbing,
 	// Override root PersistentPreRunE — docs commands don't need SOL_HOME.
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		return nil

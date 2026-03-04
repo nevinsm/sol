@@ -15,8 +15,9 @@ import (
 var statusJSON bool
 
 var statusCmd = &cobra.Command{
-	Use:   "status [world]",
-	Short: "Show sphere or world status",
+	Use:     "status [world]",
+	Short:   "Show sphere or world status",
+	GroupID: groupDispatch,
 	Long: `Show system status.
 
 Without arguments, shows a sphere-level overview of all worlds and processes.

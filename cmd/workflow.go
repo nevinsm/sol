@@ -14,8 +14,9 @@ import (
 var wfVars []string
 
 var workflowCmd = &cobra.Command{
-	Use:   "workflow",
-	Short: "Manage workflow instances",
+	Use:     "workflow",
+	Short:   "Manage workflow instances",
+	GroupID: groupWorkItems,
 }
 
 var workflowInstantiateCmd = &cobra.Command{

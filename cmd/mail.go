@@ -12,8 +12,9 @@ import (
 )
 
 var mailCmd = &cobra.Command{
-	Use:   "mail",
-	Short: "Inter-agent messaging",
+	Use:     "mail",
+	Short:   "Inter-agent messaging",
+	GroupID: groupCommunication,
 }
 
 var mailSendCmd = &cobra.Command{

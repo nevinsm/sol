@@ -15,6 +15,7 @@ var tetherWorld string
 var tetherCmd = &cobra.Command{
 	Use:          "tether <agent-name> <work-item-id>",
 	Short:        "Bind a work item to an agent (any role)",
+	GroupID:      groupAgents,
 	Args:         cobra.ExactArgs(2),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

@@ -20,6 +20,7 @@ var (
 var logEventCmd = &cobra.Command{
 	Use:          "log-event",
 	Short:        "Log a custom event to the event feed (plumbing)",
+	GroupID:      groupPlumbing,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var payload any

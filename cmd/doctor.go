@@ -12,8 +12,9 @@ import (
 var doctorJSON bool
 
 var doctorCmd = &cobra.Command{
-	Use:   "doctor",
-	Short: "Check system prerequisites",
+	Use:     "doctor",
+	Short:   "Check system prerequisites",
+	GroupID: groupSetup,
 	Long: `Validate that all prerequisites for running sol are met.
 
 Checks: tmux, git, claude CLI, SOL_HOME directory, SQLite WAL support.

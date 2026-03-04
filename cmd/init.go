@@ -24,8 +24,9 @@ var (
 )
 
 var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize sol for first-time use",
+	Use:     "init",
+	Short:   "Initialize sol for first-time use",
+	GroupID: groupSetup,
 	Long: `Set up SOL_HOME directory structure and create your first world.
 
 Three modes:

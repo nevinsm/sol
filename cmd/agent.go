@@ -14,8 +14,9 @@ import (
 )
 
 var agentCmd = &cobra.Command{
-	Use:   "agent",
-	Short: "Manage agents",
+	Use:     "agent",
+	Short:   "Manage agents",
+	GroupID: groupAgents,
 }
 
 // --- sol agent create ---

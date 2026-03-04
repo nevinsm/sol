@@ -19,8 +19,9 @@ var (
 )
 
 var escalationCmd = &cobra.Command{
-	Use:   "escalation",
-	Short: "Manage escalations",
+	Use:     "escalation",
+	Short:   "Manage escalations",
+	GroupID: groupCommunication,
 }
 
 // --- sol escalation list ---
