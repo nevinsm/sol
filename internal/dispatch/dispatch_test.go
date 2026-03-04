@@ -13,6 +13,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/handoff"
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -1476,6 +1477,139 @@ func TestResolveSourceRepoConfigFallback(t *testing.T) {
 	}
 	if result != "/some/legacy/path" {
 		t.Errorf("expected /some/legacy/path, got %q", result)
+	}
+}
+
+func TestResolveNudgesForgeWithMRReady(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWorkItem("Add feature", "Implement a feature", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update work item: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create a worktree directory with a git repo.
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	// Start the agent session AND a forge session so the nudge fires.
+	sessName := SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+	forgeSession := config.SessionName("ember", "forge")
+	mgr.started[forgeSession] = true
+
+	result, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Verify forge received MR_READY nudge.
+	msgs, err := nudge.List(forgeSession)
+	if err != nil {
+		t.Fatalf("failed to list nudge queue: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Fatal("expected forge nudge queue to have MR_READY message, got none")
+	}
+
+	found := false
+	for _, msg := range msgs {
+		if msg.Type == "MR_READY" {
+			found = true
+			if msg.Sender != "Toast" {
+				t.Errorf("expected sender Toast, got %q", msg.Sender)
+			}
+			if !strings.Contains(msg.Subject, result.MergeRequestID) {
+				t.Errorf("expected subject to contain MR ID %q, got %q", result.MergeRequestID, msg.Subject)
+			}
+			if !strings.Contains(msg.Body, itemID) {
+				t.Errorf("expected body to contain work item ID %q, got %q", itemID, msg.Body)
+			}
+			if !strings.Contains(msg.Body, result.MergeRequestID) {
+				t.Errorf("expected body to contain MR ID %q, got %q", result.MergeRequestID, msg.Body)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("expected MR_READY message in forge nudge queue, not found")
+	}
+}
+
+func TestResolveSkipsForgeNudgeWhenNoForge(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWorkItem("Add feature", "Implement a feature", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update work item: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+	// No forge session started — nudge should be skipped.
+
+	_, err = Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Verify no forge nudge was enqueued.
+	forgeSession := config.SessionName("ember", "forge")
+	msgs, err := nudge.List(forgeSession)
+	if err != nil {
+		t.Fatalf("failed to list nudge queue: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("expected no forge nudge messages, got %d", len(msgs))
 	}
 }
 

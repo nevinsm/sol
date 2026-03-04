@@ -157,6 +157,15 @@ that new baseline. Always `+"`git fetch origin`"+` before rebasing.
 
 ## Quality Gates
 %s
+## Notification Handling
+Notifications arrive automatically at each turn boundary (via UserPromptSubmit hook).
+They appear as `+"`"+`[NOTIFICATION] TYPE: Subject — Body`+"`"+` in your context.
+
+**MR_READY** — An outpost resolved a work item and created a merge request.
+- Body JSON fields: `+"`"+`work_item_id`+"`"+`, `+"`"+`merge_request_id`+"`"+`, `+"`"+`branch`+"`"+`, `+"`"+`title`+"`"+`
+- When received, immediately process: skip the 30-second wait and go to step 2 (scan queue)
+- The MR should appear in the ready queue
+
 ## Commands Reference
 - `+"`sol forge ready %s --json`"+` — list ready MRs
 - `+"`sol forge blocked %s --json`"+` — list blocked MRs
