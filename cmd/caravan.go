@@ -358,6 +358,122 @@ var caravanStatusCmd = &cobra.Command{
 	},
 }
 
+// --- sol caravan list ---
+
+var caravanListCmd = &cobra.Command{
+	Use:          "list",
+	Short:        "List caravans with optional status filtering",
+	Long:         "List all caravans. Shows open caravans by default. Use --all for all caravans or --status to filter.",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		showAll, _ := cmd.Flags().GetBool("all")
+		statusFilter, _ := cmd.Flags().GetString("status")
+
+		if showAll && statusFilter != "" {
+			return fmt.Errorf("--all and --status are mutually exclusive")
+		}
+
+		// Default: open only. --all: all. --status: specific.
+		filter := "open"
+		if showAll {
+			filter = ""
+		} else if statusFilter != "" {
+			filter = statusFilter
+		}
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		caravans, err := sphereStore.ListCaravans(filter)
+		if err != nil {
+			return err
+		}
+
+		if jsonOut {
+			type caravanListEntry struct {
+				ID        string     `json:"id"`
+				Name      string     `json:"name"`
+				Status    string     `json:"status"`
+				Owner     string     `json:"owner"`
+				Items     int        `json:"items"`
+				Merged    int        `json:"merged"`
+				CreatedAt string     `json:"created_at"`
+				ClosedAt  *string    `json:"closed_at,omitempty"`
+			}
+			var entries []caravanListEntry
+			for _, c := range caravans {
+				entry := caravanListEntry{
+					ID:        c.ID,
+					Name:      c.Name,
+					Status:    c.Status,
+					Owner:     c.Owner,
+					CreatedAt: c.CreatedAt.Format("2006-01-02"),
+				}
+				if c.ClosedAt != nil {
+					s := c.ClosedAt.Format("2006-01-02")
+					entry.ClosedAt = &s
+				}
+				items, _ := sphereStore.ListCaravanItems(c.ID)
+				entry.Items = len(items)
+				if c.Status == "closed" {
+					entry.Merged = len(items)
+				} else {
+					statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
+					if err == nil {
+						for _, st := range statuses {
+							if st.WorkItemStatus == "closed" {
+								entry.Merged++
+							}
+						}
+					}
+				}
+				entries = append(entries, entry)
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(entries)
+		}
+
+		if len(caravans) == 0 {
+			label := filter
+			if label == "" {
+				label = "any"
+			}
+			fmt.Printf("No caravans (status: %s).\n", label)
+			return nil
+		}
+
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintf(tw, "ID\tNAME\tSTATUS\tITEMS\tCREATED\n")
+		for _, c := range caravans {
+			items, _ := sphereStore.ListCaravanItems(c.ID)
+			total := len(items)
+			merged := 0
+			if c.Status == "closed" {
+				merged = total
+			} else {
+				statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
+				if err == nil {
+					for _, st := range statuses {
+						if st.WorkItemStatus == "closed" {
+							merged++
+						}
+					}
+				}
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%d/%d merged\t%s\n",
+				c.ID, c.Name, c.Status, merged, total, c.CreatedAt.Format("2006-01-02"))
+		}
+		tw.Flush()
+		return nil
+	},
+}
+
 // --- sol caravan launch ---
 
 var caravanLaunchCmd = &cobra.Command{
@@ -638,6 +754,7 @@ func init() {
 	caravanCmd.AddCommand(caravanCreateCmd)
 	caravanCmd.AddCommand(caravanAddCmd)
 	caravanCmd.AddCommand(caravanCheckCmd)
+	caravanCmd.AddCommand(caravanListCmd)
 	caravanCmd.AddCommand(caravanStatusCmd)
 	caravanCmd.AddCommand(caravanLaunchCmd)
 	caravanCmd.AddCommand(caravanCloseCmd)
@@ -658,6 +775,11 @@ func init() {
 
 	// check flags
 	caravanCheckCmd.Flags().Bool("json", false, "output as JSON")
+
+	// list flags
+	caravanListCmd.Flags().Bool("json", false, "output as JSON")
+	caravanListCmd.Flags().Bool("all", false, "include closed caravans")
+	caravanListCmd.Flags().String("status", "", "filter by status (open, ready, closed)")
 
 	// status flags
 	caravanStatusCmd.Flags().Bool("json", false, "output as JSON")
