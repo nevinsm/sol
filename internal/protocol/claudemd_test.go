@@ -329,6 +329,235 @@ func TestForgeClaudeMDCLIReference(t *testing.T) {
 	}
 }
 
+func TestForgeClaudeMDTheoryOfOperation(t *testing.T) {
+	ctx := protocol.ForgeClaudeMDContext{
+		World:        "myworld",
+		TargetBranch: "main",
+		QualityGates: []string{"make test"},
+	}
+
+	content := protocol.GenerateForgeClaudeMD(ctx)
+
+	if !strings.Contains(content, "## Theory of Operation") {
+		t.Error("forge CLAUDE.md should contain Theory of Operation section")
+	}
+	if !strings.Contains(content, "merge processor for world myworld") {
+		t.Error("forge CLAUDE.md should describe mechanical role with world name")
+	}
+	if !strings.Contains(content, "claim → merge → handle result → loop") {
+		t.Error("forge CLAUDE.md should describe the mechanical loop")
+	}
+	if !strings.Contains(content, "You never touch git directly") {
+		t.Error("forge CLAUDE.md should state never touch git directly")
+	}
+	if !strings.Contains(content, "patrol loop is your ONLY activity") {
+		t.Error("forge CLAUDE.md should state patrol loop is only activity")
+	}
+}
+
+func TestForgeClaudeMDForbiddenExpanded(t *testing.T) {
+	ctx := protocol.ForgeClaudeMDContext{
+		World:        "myworld",
+		TargetBranch: "main",
+		QualityGates: []string{"make test"},
+	}
+
+	content := protocol.GenerateForgeClaudeMD(ctx)
+
+	if !strings.Contains(content, "## FORBIDDEN") {
+		t.Error("forge CLAUDE.md should contain FORBIDDEN section")
+	}
+	// Each FORBIDDEN item should have consequences.
+	for _, sub := range []string{
+		"FORBIDDEN: Running git commands directly",
+		"corrupt the forge worktree state",
+		"Enforced by PreToolUse hooks",
+		"FORBIDDEN: Running `go test`",
+		"FORBIDDEN: Reading outpost code",
+		"FORBIDDEN: Extended analysis of test output",
+		"FORBIDDEN: Writing or modifying application code",
+		"FORBIDDEN: Using plan mode",
+	} {
+		if !strings.Contains(content, sub) {
+			t.Errorf("forge CLAUDE.md FORBIDDEN section should contain %q", sub)
+		}
+	}
+}
+
+func TestForgeClaudeMDStepBanners(t *testing.T) {
+	ctx := protocol.ForgeClaudeMDContext{
+		World:        "myworld",
+		TargetBranch: "main",
+		QualityGates: []string{"make test"},
+	}
+
+	content := protocol.GenerateForgeClaudeMD(ctx)
+
+	for _, banner := range []string{
+		"STEP 1/6: UNBLOCK",
+		"STEP 2/6: SCAN QUEUE",
+		"STEP 3/6: CLAIM",
+		"STEP 4/6: MERGE",
+		"STEP 5/6: MARK MERGED",
+		"STEP 6/6: LOOP",
+	} {
+		if !strings.Contains(content, banner) {
+			t.Errorf("forge CLAUDE.md should contain step banner %q", banner)
+		}
+	}
+}
+
+func TestForgeClaudeMDVerificationGates(t *testing.T) {
+	ctx := protocol.ForgeClaudeMDContext{
+		World:        "myworld",
+		TargetBranch: "main",
+		QualityGates: []string{"make test"},
+	}
+
+	content := protocol.GenerateForgeClaudeMD(ctx)
+
+	gates := []string{
+		"You CANNOT proceed to Step 3",
+		"You CANNOT proceed to Step 4",
+		"You CANNOT proceed to Step 5",
+	}
+	for _, gate := range gates {
+		if !strings.Contains(content, gate) {
+			t.Errorf("forge CLAUDE.md should contain verification gate %q", gate)
+		}
+	}
+}
+
+func TestForgeClaudeMDErrorHandlingProtocol(t *testing.T) {
+	ctx := protocol.ForgeClaudeMDContext{
+		World:        "myworld",
+		TargetBranch: "main",
+		QualityGates: []string{"make test"},
+	}
+
+	content := protocol.GenerateForgeClaudeMD(ctx)
+
+	if !strings.Contains(content, "## Error Handling Protocol") {
+		t.Error("forge CLAUDE.md should contain Error Handling Protocol section")
+	}
+	if !strings.Contains(content, "Errors are reported, never investigated") {
+		t.Error("forge CLAUDE.md should state errors are never investigated")
+	}
+	// Table should contain world-specific commands.
+	if !strings.Contains(content, "sol forge mark-merged --world=myworld") {
+		t.Error("error handling table should contain world-specific mark-merged command")
+	}
+}
+
+func TestForgeClaudeMDWaitBehavior(t *testing.T) {
+	ctx := protocol.ForgeClaudeMDContext{
+		World:        "myworld",
+		TargetBranch: "main",
+		QualityGates: []string{"make test"},
+	}
+
+	content := protocol.GenerateForgeClaudeMD(ctx)
+
+	if !strings.Contains(content, "## Wait Behavior") {
+		t.Error("forge CLAUDE.md should contain Wait Behavior section")
+	}
+	for _, sub := range []string{
+		"wait exactly 30 seconds",
+		"Do NOT investigate why the queue is empty",
+		"Do NOT explore the codebase while waiting",
+		"Your ONLY activity during idle time is waiting",
+	} {
+		if !strings.Contains(content, sub) {
+			t.Errorf("forge CLAUDE.md Wait Behavior should contain %q", sub)
+		}
+	}
+}
+
+func TestForgeClaudeMDCommandQuickReference(t *testing.T) {
+	ctx := protocol.ForgeClaudeMDContext{
+		World:        "myworld",
+		TargetBranch: "main",
+		QualityGates: []string{"make test"},
+	}
+
+	content := protocol.GenerateForgeClaudeMD(ctx)
+
+	if !strings.Contains(content, "## Command Quick-Reference") {
+		t.Error("forge CLAUDE.md should contain Command Quick-Reference section")
+	}
+	// Table should have correct commands with world substitution.
+	for _, cmd := range []string{
+		"sol forge check-unblocked --world=myworld",
+		"sol forge ready --world=myworld --json",
+		"sol forge claim --world=myworld --json",
+		"sol forge merge --world=myworld",
+		"sol forge mark-merged --world=myworld",
+		"sol forge mark-failed --world=myworld",
+		"sol forge create-resolution --world=myworld",
+		"sol forge release --world=myworld",
+	} {
+		if !strings.Contains(content, cmd) {
+			t.Errorf("forge CLAUDE.md quick-reference should contain %q", cmd)
+		}
+	}
+	// Table should have "Common mistake" column with strikethrough git commands.
+	for _, bad := range []string{
+		"~~git fetch~~",
+		"~~git branch -r~~",
+		"~~git merge~~",
+		"~~git push origin main~~",
+	} {
+		if !strings.Contains(content, bad) {
+			t.Errorf("forge CLAUDE.md quick-reference should contain common mistake %q", bad)
+		}
+	}
+}
+
+func TestForgeClaudeMDWorldSubstitution(t *testing.T) {
+	ctx := protocol.ForgeClaudeMDContext{
+		World:        "testworld",
+		TargetBranch: "develop",
+		QualityGates: []string{"make vet", "make test"},
+	}
+
+	content := protocol.GenerateForgeClaudeMD(ctx)
+
+	// World name should appear throughout.
+	if !strings.Contains(content, "world: testworld") {
+		t.Error("forge CLAUDE.md should contain world name in title")
+	}
+	if !strings.Contains(content, "sol forge merge --world=testworld") {
+		t.Error("forge CLAUDE.md should use correct world in merge command")
+	}
+
+	// Target branch should appear.
+	if !strings.Contains(content, "develop") {
+		t.Error("forge CLAUDE.md should contain target branch")
+	}
+
+	// Quality gates should appear.
+	if !strings.Contains(content, "`make vet`") {
+		t.Error("forge CLAUDE.md should contain quality gate 'make vet'")
+	}
+	if !strings.Contains(content, "`make test`") {
+		t.Error("forge CLAUDE.md should contain quality gate 'make test'")
+	}
+
+	// Placeholder tokens should NOT remain.
+	if strings.Contains(content, "{WORLD}") {
+		t.Error("forge CLAUDE.md should not contain unreplaced {WORLD} placeholder")
+	}
+	if strings.Contains(content, "{TARGET_BRANCH}") {
+		t.Error("forge CLAUDE.md should not contain unreplaced {TARGET_BRANCH} placeholder")
+	}
+	if strings.Contains(content, "{QUALITY_GATES}") {
+		t.Error("forge CLAUDE.md should not contain unreplaced {QUALITY_GATES} placeholder")
+	}
+	if strings.Contains(content, "§") {
+		t.Error("forge CLAUDE.md should not contain unreplaced § backtick placeholder")
+	}
+}
+
 func TestClaudeMDWarningSectionPresent(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",

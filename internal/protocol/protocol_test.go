@@ -76,7 +76,7 @@ func TestGenerateForgeClaudeMD(t *testing.T) {
 
 	checks := []string{
 		"Forge Agent (world: myworld)",
-		"merge processor, NOT a developer",
+		"merge processor for world myworld",
 		"FORBIDDEN",
 		"Patrol Loop",
 		"sol forge check-unblocked --world=myworld",
