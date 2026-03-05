@@ -193,6 +193,68 @@ func TestMergeGateFailureResetsWorktree(t *testing.T) {
 	}
 }
 
+func TestMergePostPushVerificationFailure(t *testing.T) {
+	sourceRepo, wtPath := setupGitTest(t)
+	createBranchWithChanges(t, sourceRepo, "outpost/test/verify-fail", "verify.go", "package main\n")
+
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	setupForgeWorktree(t, sourceRepo, wtPath)
+
+	// Create merge slot directory.
+	mergeSlotDir := filepath.Join(dir, "test", "forge")
+	os.MkdirAll(mergeSlotDir, 0o755)
+
+	// Install a post-receive hook that resets main to the previous commit,
+	// simulating a push that "succeeded" but the ref was reverted by the remote.
+	originURL := run(t, "git", "-C", wtPath, "remote", "get-url", "origin")
+	hookDir := filepath.Join(originURL, "hooks")
+	os.MkdirAll(hookDir, 0o755)
+	hookScript := `#!/bin/sh
+# Revert main to its parent after receiving the push, simulating a silent failure.
+while read oldrev newrev refname; do
+  if [ "$refname" = "refs/heads/main" ]; then
+    git update-ref refs/heads/main "$oldrev"
+  fi
+done
+`
+	os.WriteFile(filepath.Join(hookDir, "post-receive"), []byte(hookScript), 0o755)
+
+	r := &Forge{
+		world:       "test",
+		agentID:     "test/forge",
+		sourceRepo:  sourceRepo,
+		worktree:    wtPath,
+		worldStore:  newMockWorldStore(),
+		sphereStore: newMockSphereStore(),
+		logger:      testLogger(),
+		cfg: Config{
+			TargetBranch: "main",
+			QualityGates: []string{"true"},
+			GateTimeout:  30 * time.Second,
+		},
+	}
+
+	mr := &store.MergeRequest{
+		ID:         "mr-005",
+		WorkItemID: "sol-005",
+		Branch:     "outpost/test/verify-fail",
+	}
+
+	result := r.Merge(context.Background(), mr)
+
+	if result.Success {
+		t.Error("expected failure due to post-push verification")
+	}
+	if !result.PushRejected {
+		t.Errorf("expected push_rejected=true, got: %+v", result)
+	}
+	if !strings.Contains(result.Error, "post-push verification failed") {
+		t.Errorf("expected post-push verification error, got: %s", result.Error)
+	}
+}
+
 func TestMergePushRejection(t *testing.T) {
 	sourceRepo, wtPath := setupGitTest(t)
 	createBranchWithChanges(t, sourceRepo, "outpost/test/push-reject", "pushed.go", "package main\n")

@@ -137,10 +137,18 @@ func (r *Forge) Merge(ctx context.Context, mr *store.MergeRequest) MergeResult {
 		return MergeResult{PushRejected: true, Error: fmt.Sprintf("push rejected: %v", err)}
 	}
 
-	// Get merge commit SHA.
-	sha, _ := g.Rev("HEAD")
-	r.logger.Info("merge: success", "mr", mr.ID, "commit", sha)
-	return MergeResult{Success: true, MergeCommit: sha}
+	// Step 10: Post-push verification — confirm remote received the commit.
+	localSHA, _ := g.Rev("HEAD")
+	remoteSHA, err := g.LsRemote("origin", r.cfg.TargetBranch)
+	if err != nil || remoteSHA != localSHA {
+		r.logger.Error("post-push verification failed",
+			"local", localSHA, "remote", remoteSHA, "error", err)
+		reset()
+		return MergeResult{PushRejected: true, Error: "post-push verification failed: remote SHA mismatch"}
+	}
+
+	r.logger.Info("merge: success", "mr", mr.ID, "commit", localSHA)
+	return MergeResult{Success: true, MergeCommit: localSHA}
 }
 
 // verifyMergedFiles logs a warning if files from the branch are missing in the

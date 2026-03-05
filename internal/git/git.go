@@ -344,6 +344,24 @@ func submoduleDefaultBranch(submodulePath, remote string) (string, error) {
 	return "", fmt.Errorf("could not determine default branch for remote %s", remote)
 }
 
+// LsRemote queries the remote for the SHA of a given ref.
+// Returns the full commit hash and nil on success.
+func (g *Git) LsRemote(remote, ref string) (string, error) {
+	out, err := g.run("ls-remote", remote, ref)
+	if err != nil {
+		return "", err
+	}
+	if out == "" {
+		return "", fmt.Errorf("ls-remote returned empty for %s %s", remote, ref)
+	}
+	// Output format: "<sha>\t<refname>"
+	fields := strings.Fields(out)
+	if len(fields) == 0 {
+		return "", fmt.Errorf("ls-remote returned unexpected output: %s", out)
+	}
+	return fields[0], nil
+}
+
 // isGitError checks if err is a *GitError and populates target.
 func isGitError(err error, target **GitError) bool {
 	if ge, ok := err.(*GitError); ok {
