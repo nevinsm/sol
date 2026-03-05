@@ -80,6 +80,7 @@ func SyncRepo(world string) error {
 }
 
 // SyncForge syncs the forge worktree by fetching origin and resetting to the target branch.
+// The forge worktree operates in detached HEAD mode — no branch checkout needed.
 // Returns nil if the forge worktree doesn't exist (nothing to sync).
 func SyncForge(world, targetBranch string) error {
 	wtPath := forge.WorktreePath(world)
@@ -98,15 +99,7 @@ func SyncForge(world, targetBranch string) error {
 	abortCmd := exec.Command("git", "-C", wtPath, "rebase", "--abort")
 	_ = abortCmd.Run()
 
-	// Checkout the forge branch.
-	forgeBranch := forge.ForgeBranch(world)
-	checkoutCmd := exec.Command("git", "-C", wtPath, "checkout", forgeBranch)
-	if out, err := checkoutCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to checkout %s in forge worktree: %s: %w",
-			forgeBranch, strings.TrimSpace(string(out)), err)
-	}
-
-	// Reset to origin's target branch.
+	// Reset to origin's target branch (works in detached HEAD).
 	resetCmd := exec.Command("git", "-C", wtPath, "reset", "--hard", "origin/"+targetBranch)
 	if out, err := resetCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to reset forge worktree to origin/%s: %s: %w",

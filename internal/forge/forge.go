@@ -70,11 +70,6 @@ func WorktreePath(world string) string {
 	return filepath.Join(config.Home(), world, "forge", "worktree")
 }
 
-// ForgeBranch returns the branch name for a world's forge worktree.
-func ForgeBranch(world string) string {
-	return "forge/" + world
-}
-
 // Forge processes the merge queue for a single world.
 type Forge struct {
 	world      string
@@ -103,8 +98,9 @@ func New(world, sourceRepo string, worldStore WorldStore, sphereStore SphereStor
 }
 
 // EnsureWorktree creates or verifies the forge's persistent worktree.
+// The worktree operates in detached HEAD mode, pointed at origin/{targetBranch}.
 func (r *Forge) EnsureWorktree() error {
-	branch := ForgeBranch(r.world)
+	targetRef := "origin/" + r.cfg.TargetBranch
 
 	// If the worktree directory already exists, verify it's valid.
 	if info, err := os.Stat(r.worktree); err == nil && info.IsDir() {
@@ -113,7 +109,26 @@ func (r *Forge) EnsureWorktree() error {
 			return fmt.Errorf("failed to verify forge worktree for world %q: %s: %w",
 				r.world, strings.TrimSpace(string(out)), err)
 		}
+
+		// Detach HEAD if currently on a branch (migration from branch-based worktree).
+		branchCmd := exec.Command("git", "-C", r.worktree, "symbolic-ref", "--quiet", "HEAD")
+		if branchCmd.Run() == nil {
+			// HEAD is symbolic (on a branch) — detach it.
+			r.logger.Info("detaching forge worktree HEAD (was on a branch)", "world", r.world)
+			detachCmd := exec.Command("git", "-C", r.worktree, "checkout", "--detach")
+			if out, err := detachCmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to detach forge worktree HEAD for world %q: %s: %w",
+					r.world, strings.TrimSpace(string(out)), err)
+			}
+		}
 		return nil
+	}
+
+	// Fetch first so origin/{targetBranch} is available.
+	fetchCmd := exec.Command("git", "-C", r.sourceRepo, "fetch", "origin")
+	if out, err := fetchCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to fetch origin for forge worktree: %s: %w",
+			strings.TrimSpace(string(out)), err)
 	}
 
 	// Create parent directory.
@@ -122,17 +137,12 @@ func (r *Forge) EnsureWorktree() error {
 		return fmt.Errorf("failed to create forge worktree for world %q: %w", r.world, err)
 	}
 
-	// Try creating worktree with new branch.
+	// Create worktree in detached HEAD mode at origin/{targetBranch}.
 	cmd := exec.Command("git", "-C", r.sourceRepo, "worktree", "add",
-		"-b", branch, r.worktree, "HEAD")
-	if _, err := cmd.CombinedOutput(); err != nil {
-		// Branch may already exist — try without -b.
-		cmd2 := exec.Command("git", "-C", r.sourceRepo, "worktree", "add",
-			r.worktree, branch)
-		if out, err2 := cmd2.CombinedOutput(); err2 != nil {
-			return fmt.Errorf("failed to create forge worktree for world %q: %s: %w",
-				r.world, strings.TrimSpace(string(out)), err2)
-		}
+		"--detach", r.worktree, targetRef)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create forge worktree for world %q: %s: %w",
+			r.world, strings.TrimSpace(string(out)), err)
 	}
 
 	return nil

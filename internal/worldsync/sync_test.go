@@ -228,20 +228,15 @@ func TestSyncRepoNoRepo(t *testing.T) {
 func TestSyncForge(t *testing.T) {
 	bare, workingClone := createBareAndClone(t)
 
-	// Create a forge worktree structure.
+	// Create a forge worktree structure (detached HEAD, like real forge).
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	world := "testworld"
 
-	// Clone bare into the forge worktree path.
+	// Clone bare into the forge worktree path and detach HEAD.
 	forgeWT := filepath.Join(solHome, world, "forge", "worktree")
 	run(t, "", "git", "clone", bare, forgeWT)
-	run(t, forgeWT, "git", "config", "user.email", "test@test.com")
-	run(t, forgeWT, "git", "config", "user.name", "Test")
-
-	// Create forge branch.
-	forgeBranch := "forge/" + world
-	run(t, forgeWT, "git", "checkout", "-b", forgeBranch)
+	run(t, forgeWT, "git", "checkout", "--detach")
 
 	// Push a new commit from working clone.
 	if err := os.WriteFile(filepath.Join(workingClone, "file.txt"), []byte("v2"), 0o644); err != nil {

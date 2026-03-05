@@ -412,10 +412,11 @@ func TestEnsureWorktreeCreatesNew(t *testing.T) {
 	wtPath := filepath.Join(dir, "ember", "forge", "world")
 
 	r := &Forge{
-		world:        "ember",
+		world:      "ember",
 		sourceRepo: sourceRepo,
 		worktree:   wtPath,
 		logger:     testLogger(),
+		cfg:        DefaultConfig(),
 	}
 
 	if err := r.EnsureWorktree(); err != nil {
