@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/forge"
+	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/setup"
 	"github.com/nevinsm/sol/internal/status"
@@ -27,6 +29,7 @@ var (
 	worldDeleteConfirm   bool
 	worldSyncWorld       string
 	worldSyncAll         bool
+	worldQueryTimeout int
 )
 
 var worldCmd = &cobra.Command{
@@ -417,6 +420,98 @@ With --all, also syncs forge worktree and notifies running envoy/governor sessio
 	},
 }
 
+var worldQueryCmd = &cobra.Command{
+	Use:          "query <name> <question>",
+	Short:        "Query a world's governor for information",
+	Long: `Inject a question into the governor's tmux session and wait for a response.
+
+The governor reads the question from .query/pending.md, writes its answer to
+.query/response.md, and the CLI returns the response. If the governor is not
+running, returns an error (callers should fall back to the static world summary).`,
+	Args:         cobra.MinimumNArgs(2),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world := args[0]
+		question := strings.Join(args[1:], " ")
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
+		// Check governor session is running.
+		mgr := session.New()
+		sessName := config.SessionName(world, "governor")
+		if !mgr.Exists(sessName) {
+			return fmt.Errorf("governor not running for world %q (start with 'sol governor start --world=%s')", world, world)
+		}
+
+		// Clear any stale query files.
+		governor.ClearQuery(world)
+
+		// Write question to pending.md.
+		if err := governor.WritePending(world, question); err != nil {
+			return err
+		}
+
+		// Inject notification into governor's tmux session.
+		notification := fmt.Sprintf("A query has been submitted. Read the question from %s, write your response to %s, then continue your work.",
+			governor.PendingPath(world), governor.ResponsePath(world))
+		if err := mgr.Inject(sessName, notification, true); err != nil {
+			governor.ClearQuery(world)
+			return fmt.Errorf("failed to inject query into governor session: %w", err)
+		}
+
+		// Poll for response with timeout.
+		timeout := time.Duration(worldQueryTimeout) * time.Second
+		deadline := time.Now().Add(timeout)
+		pollInterval := 2 * time.Second
+
+		for time.Now().Before(deadline) {
+			response, found, err := governor.ReadResponse(world)
+			if err != nil {
+				governor.ClearQuery(world)
+				return err
+			}
+			if found {
+				fmt.Print(response)
+				governor.ClearQuery(world)
+				return nil
+			}
+			time.Sleep(pollInterval)
+		}
+
+		governor.ClearQuery(world)
+		return fmt.Errorf("query timed out after %ds waiting for governor response in world %q", worldQueryTimeout, world)
+	},
+}
+
+var worldSummaryCmd = &cobra.Command{
+	Use:          "summary <name>",
+	Short:        "Show a world's governor-maintained summary",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world := args[0]
+
+		if err := config.RequireWorld(world); err != nil {
+			return err
+		}
+
+		summaryPath := governor.WorldSummaryPath(world)
+		data, err := os.ReadFile(summaryPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Printf("No world summary found for world %q\n", world)
+				return nil
+			}
+			return fmt.Errorf("failed to read world summary: %w", err)
+		}
+
+		fmt.Print(string(data))
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(worldCmd)
 	worldCmd.AddCommand(worldInitCmd)
@@ -424,6 +519,8 @@ func init() {
 	worldCmd.AddCommand(worldStatusCmd)
 	worldCmd.AddCommand(worldDeleteCmd)
 	worldCmd.AddCommand(worldSyncCmd)
+	worldCmd.AddCommand(worldQueryCmd)
+	worldCmd.AddCommand(worldSummaryCmd)
 
 	worldInitCmd.Flags().StringVar(&worldInitSourceRepo, "source-repo",
 		"", "git URL or local path to source repository")
@@ -437,4 +534,6 @@ func init() {
 	worldSyncCmd.Flags().StringVar(&worldSyncWorld, "world", "", "world name")
 	worldSyncCmd.Flags().BoolVar(&worldSyncAll, "all", false,
 		"also sync forge, envoys, and governor")
+	worldQueryCmd.Flags().IntVar(&worldQueryTimeout, "timeout", 60,
+		"seconds to wait for governor response")
 }

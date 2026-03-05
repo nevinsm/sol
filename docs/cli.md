@@ -26,6 +26,8 @@ This means `--world` is optional when running from inside a world directory (e.g
 | `sol world status <name>` | Show world status with config |
 | `sol world delete` | Delete a world |
 | `sol world sync` | Sync the managed repo with its remote |
+| `sol world query <name> <question>` | Query a world's governor for information |
+| `sol world summary <name>` | Show a world's governor-maintained summary |
 
 ## Dispatch
 
