@@ -75,9 +75,9 @@ func TestInstallForgeHooks(t *testing.T) {
 	if !ok {
 		t.Fatal("settings.local.json missing PreToolUse hook")
 	}
-	// Forge: 1 EnterPlanMode + 6 dangerous-command (exempt from workflow-bypass) = 7
-	if len(ptuGroups) != 7 {
-		t.Fatalf("expected 7 PreToolUse matcher groups (1 EnterPlanMode + 6 dangerous guards), got %d", len(ptuGroups))
+	// Forge: 1 EnterPlanMode + 6 dangerous-command + 7 forge-specific = 14
+	if len(ptuGroups) != 14 {
+		t.Fatalf("expected 14 PreToolUse matcher groups (1 EnterPlanMode + 6 dangerous + 7 forge-specific), got %d", len(ptuGroups))
 	}
 	if ptuGroups[0].Matcher != "EnterPlanMode" {
 		t.Errorf("PreToolUse matcher = %q, want \"EnterPlanMode\"", ptuGroups[0].Matcher)
@@ -88,13 +88,81 @@ func TestInstallForgeHooks(t *testing.T) {
 	if !strings.Contains(ptuGroups[0].Hooks[0].Command, "exit 2") {
 		t.Error("EnterPlanMode hook should exit 2 to block the tool call")
 	}
-	// Forge should have dangerous-command guards but NOT workflow-bypass guards.
-	for _, g := range ptuGroups[1:] {
+	// Groups 1-6: dangerous-command guards.
+	for _, g := range ptuGroups[1:7] {
 		if len(g.Hooks) > 0 {
 			if !strings.Contains(g.Hooks[0].Command, "sol guard dangerous-command") {
-				t.Errorf("forge guard hook should only be dangerous-command, got %q", g.Hooks[0].Command)
+				t.Errorf("forge guard hook should be dangerous-command, got %q", g.Hooks[0].Command)
 			}
 		}
+	}
+	// Groups 7-13: forge-specific manual-command blocks.
+	forgeBlockedMatchers := map[string]bool{
+		"Bash(git fetch*)":      false,
+		"Bash(git pull*)":       false,
+		"Bash(git merge*)":      false,
+		"Bash(git rebase*)":     false,
+		"Bash(git checkout*)":   false,
+		"Bash(git push origin*)": false,
+		"Bash(go test*)":        false,
+	}
+	for _, g := range ptuGroups[7:] {
+		if _, ok := forgeBlockedMatchers[g.Matcher]; !ok {
+			t.Errorf("unexpected forge-specific matcher: %q", g.Matcher)
+		}
+		forgeBlockedMatchers[g.Matcher] = true
+		if len(g.Hooks) == 0 {
+			t.Errorf("forge-specific matcher %q has no hooks", g.Matcher)
+			continue
+		}
+		if !strings.Contains(g.Hooks[0].Command, "BLOCKED") {
+			t.Errorf("forge-specific hook %q should contain BLOCKED message", g.Matcher)
+		}
+		if !strings.Contains(g.Hooks[0].Command, "exit 2") {
+			t.Errorf("forge-specific hook %q should exit 2", g.Matcher)
+		}
+	}
+	for matcher, found := range forgeBlockedMatchers {
+		if !found {
+			t.Errorf("missing forge-specific matcher: %s", matcher)
+		}
+	}
+	// Forge should NOT have workflow-bypass guards.
+	for _, g := range ptuGroups {
+		if len(g.Hooks) > 0 && strings.Contains(g.Hooks[0].Command, "sol guard workflow-bypass") {
+			t.Error("forge should not have workflow-bypass guards")
+		}
+	}
+}
+
+func TestGuardHooksOutpostNoForgeBlocks(t *testing.T) {
+	groups := GuardHooks("outpost")
+	// Outpost: 6 dangerous-command + 3 workflow-bypass = 9
+	if len(groups) != 9 {
+		t.Fatalf("expected 9 guard hook groups for outpost, got %d", len(groups))
+	}
+	for _, g := range groups {
+		if len(g.Hooks) > 0 && strings.Contains(g.Hooks[0].Command, "BLOCKED") {
+			t.Errorf("outpost should not have forge-specific BLOCKED hooks, got matcher %q", g.Matcher)
+		}
+	}
+}
+
+func TestGuardHooksForgeHasDangerousCommands(t *testing.T) {
+	groups := GuardHooks("forge")
+	// Forge: 6 dangerous-command + 7 forge-specific = 13
+	if len(groups) != 13 {
+		t.Fatalf("expected 13 guard hook groups for forge, got %d", len(groups))
+	}
+	// First 6 should be dangerous-command guards.
+	dangerousCount := 0
+	for _, g := range groups[:6] {
+		if len(g.Hooks) > 0 && strings.Contains(g.Hooks[0].Command, "sol guard dangerous-command") {
+			dangerousCount++
+		}
+	}
+	if dangerousCount != 6 {
+		t.Errorf("expected 6 dangerous-command guards, got %d", dangerousCount)
 	}
 }
 
