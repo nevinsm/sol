@@ -892,7 +892,19 @@ var forgeMergeCmd = &cobra.Command{
 		}
 
 		result := ref.Merge(cmd.Context(), mr)
-		return printJSON(result)
+		if err := printJSON(result); err != nil {
+			return err
+		}
+		if result.Success {
+			if err := ref.MarkMerged(mrID); err != nil {
+				return fmt.Errorf("merge succeeded but mark-merged failed: %w", err)
+			}
+			eventLog := events.NewLogger(config.Home())
+			eventLog.Emit(events.EventMerged, "forge", "forge", "both", map[string]string{
+				"merge_request_id": mrID,
+			})
+		}
+		return nil
 	},
 }
 
