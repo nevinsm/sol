@@ -175,37 +175,25 @@ func GuardHooks(role string) []HookMatcherGroup {
 		},
 	}
 
-	// Forge is exempt from workflow-bypass guards but gets its own
-	// manual-command guards that force it through sol forge merge.
+	// Forge is exempt from workflow-bypass guards but gets blanket blocks
+	// on git, test, and build commands — all handled by sol forge merge.
 	if role == "forge" {
 		groups = append(groups,
 			HookMatcherGroup{
-				Matcher: "Bash(git fetch*)",
-				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: Use sol forge merge — it handles fetch internally." >&2; exit 2`}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(git pull*)",
-				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: Use sol forge merge — it handles pull internally." >&2; exit 2`}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(git merge*)",
-				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: Use sol forge merge — it handles merge internally." >&2; exit 2`}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(git rebase*)",
-				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: Use sol forge merge — it handles rebase internally." >&2; exit 2`}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(git checkout*)",
-				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: Use sol forge merge — it handles checkout internally." >&2; exit 2`}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(git push origin*)",
-				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: Use sol forge merge — it handles push internally." >&2; exit 2`}},
+				Matcher: "Bash(git *)",
+				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: You have no git access. Use sol forge commands (merge, claim, ready, etc.)." >&2; exit 2`}},
 			},
 			HookMatcherGroup{
 				Matcher: "Bash(go test*)",
 				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: Quality gates run inside sol forge merge. Do not run tests directly." >&2; exit 2`}},
+			},
+			HookMatcherGroup{
+				Matcher: "Bash(make test*)",
+				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: Quality gates run inside sol forge merge. Do not run tests or builds directly." >&2; exit 2`}},
+			},
+			HookMatcherGroup{
+				Matcher: "Bash(make build*)",
+				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: Build runs inside sol forge merge. Do not build directly." >&2; exit 2`}},
 			},
 		)
 	} else {

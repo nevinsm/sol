@@ -75,9 +75,9 @@ func TestInstallForgeHooks(t *testing.T) {
 	if !ok {
 		t.Fatal("settings.local.json missing PreToolUse hook")
 	}
-	// Forge: 1 EnterPlanMode + 6 dangerous-command + 7 forge-specific = 14
-	if len(ptuGroups) != 14 {
-		t.Fatalf("expected 14 PreToolUse matcher groups (1 EnterPlanMode + 6 dangerous + 7 forge-specific), got %d", len(ptuGroups))
+	// Forge: 1 EnterPlanMode + 6 dangerous-command + 4 forge-specific = 11
+	if len(ptuGroups) != 11 {
+		t.Fatalf("expected 11 PreToolUse matcher groups (1 EnterPlanMode + 6 dangerous + 4 forge-specific), got %d", len(ptuGroups))
 	}
 	if ptuGroups[0].Matcher != "EnterPlanMode" {
 		t.Errorf("PreToolUse matcher = %q, want \"EnterPlanMode\"", ptuGroups[0].Matcher)
@@ -96,15 +96,12 @@ func TestInstallForgeHooks(t *testing.T) {
 			}
 		}
 	}
-	// Groups 7-13: forge-specific manual-command blocks.
+	// Groups 7-10: forge-specific blanket blocks (git, go test, make test, make build).
 	forgeBlockedMatchers := map[string]bool{
-		"Bash(git fetch*)":      false,
-		"Bash(git pull*)":       false,
-		"Bash(git merge*)":      false,
-		"Bash(git rebase*)":     false,
-		"Bash(git checkout*)":   false,
-		"Bash(git push origin*)": false,
-		"Bash(go test*)":        false,
+		"Bash(git *)":       false,
+		"Bash(go test*)":    false,
+		"Bash(make test*)":  false,
+		"Bash(make build*)": false,
 	}
 	for _, g := range ptuGroups[7:] {
 		if _, ok := forgeBlockedMatchers[g.Matcher]; !ok {
@@ -150,9 +147,9 @@ func TestGuardHooksOutpostNoForgeBlocks(t *testing.T) {
 
 func TestGuardHooksForgeHasDangerousCommands(t *testing.T) {
 	groups := GuardHooks("forge")
-	// Forge: 6 dangerous-command + 7 forge-specific = 13
-	if len(groups) != 13 {
-		t.Fatalf("expected 13 guard hook groups for forge, got %d", len(groups))
+	// Forge: 6 dangerous-command + 4 forge-specific = 10
+	if len(groups) != 10 {
+		t.Fatalf("expected 10 guard hook groups for forge, got %d", len(groups))
 	}
 	// First 6 should be dangerous-command guards.
 	dangerousCount := 0
