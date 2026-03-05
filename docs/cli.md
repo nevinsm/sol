@@ -87,8 +87,12 @@ This means `--world` is optional when running from inside a world directory (e.g
 
 | Command | Description |
 |---------|-------------|
-| `sol up` | Start sphere-level daemons (prefect, consul, chronicle) |
-| `sol down` | Stop sphere-level daemons (prefect, consul, chronicle) |
+| `sol up` | Start sphere daemons and world services |
+| `sol down` | Stop sphere daemons and world services |
+
+Without flags, `sol up` starts sphere daemons (prefect, consul, chronicle) and world services (sentinel, forge) for all non-sleeping worlds. `sol down` stops everything.
+
+`--world` — manage only world services, skip sphere daemons. `--world=W` targets a specific world.
 
 ## Supervision
 

@@ -14,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -33,9 +34,18 @@ var sphereDaemons = []sphereDaemon{
 	{name: "chronicle", session: chronicleSessionName},
 }
 
+// worldServices are the per-world services started/stopped by sol up/down.
+// Governor is not auto-started (human-managed session).
+var worldServices = []string{"sentinel", "forge"}
+
+var (
+	upWorldFlag   string
+	downWorldFlag string
+)
+
 var upCmd = &cobra.Command{
 	Use:          "up",
-	Short:        "Start sphere-level daemons (prefect, consul, chronicle)",
+	Short:        "Start sphere daemons and world services",
 	GroupID:      groupProcesses,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
@@ -44,7 +54,7 @@ var upCmd = &cobra.Command{
 
 var downCmd = &cobra.Command{
 	Use:          "down",
-	Short:        "Stop sphere-level daemons (prefect, consul, chronicle)",
+	Short:        "Stop sphere daemons and world services",
 	GroupID:      groupProcesses,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
@@ -54,6 +64,12 @@ var downCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(upCmd)
 	rootCmd.AddCommand(downCmd)
+
+	upCmd.Flags().StringVar(&upWorldFlag, "world", "", "start only world services (optionally for a specific world)")
+	upCmd.Flags().Lookup("world").NoOptDefVal = ""
+
+	downCmd.Flags().StringVar(&downWorldFlag, "world", "", "stop only world services (optionally for a specific world)")
+	downCmd.Flags().Lookup("world").NoOptDefVal = ""
 }
 
 // --- PID helpers ---
@@ -128,22 +144,121 @@ var (
 	upDim = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 )
 
+// --- World helpers ---
+
+// activeWorlds returns non-sleeping worlds. If specificWorld is non-empty,
+// validates and returns it alone (errors if sleeping).
+func activeWorlds(specificWorld string) ([]string, error) {
+	if specificWorld != "" {
+		if err := config.RequireWorld(specificWorld); err != nil {
+			return nil, err
+		}
+		if config.IsSleeping(specificWorld) {
+			return nil, fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", specificWorld, specificWorld)
+		}
+		return []string{specificWorld}, nil
+	}
+
+	return listNonSleepingWorlds()
+}
+
+// listNonSleepingWorlds returns all worlds that are not sleeping.
+func listNonSleepingWorlds() ([]string, error) {
+	worlds, err := listAllWorlds()
+	if err != nil {
+		return nil, err
+	}
+
+	var active []string
+	for _, name := range worlds {
+		if !config.IsSleeping(name) {
+			active = append(active, name)
+		}
+	}
+	return active, nil
+}
+
+// listAllWorlds returns all world names from the sphere store.
+// Returns nil (no error) if the store cannot be opened.
+func listAllWorlds() ([]string, error) {
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		return nil, nil
+	}
+	defer sphereStore.Close()
+
+	worlds, err := sphereStore.ListWorlds()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list worlds: %w", err)
+	}
+
+	var names []string
+	for _, w := range worlds {
+		names = append(names, w.Name)
+	}
+	return names, nil
+}
+
+// resolveWorldsForDown returns the worlds to stop services for.
+// Unlike activeWorlds, does not filter sleeping worlds (we stop everything).
+func resolveWorldsForDown(specificWorld string) ([]string, error) {
+	if specificWorld != "" {
+		if err := config.RequireWorld(specificWorld); err != nil {
+			return nil, err
+		}
+		return []string{specificWorld}, nil
+	}
+	return listAllWorlds()
+}
+
 // --- sol up ---
 
-func runUp(_ *cobra.Command, _ []string) error {
-	if managed := checkSystemdUnits(); len(managed) > 0 {
-		warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
-		fmt.Fprintf(os.Stderr, "%s %s managed by systemd — use systemctl instead\n",
-			warnStyle.Render("Warning:"), strings.Join(managed, ", "))
-	}
+func runUp(cmd *cobra.Command, _ []string) error {
+	worldOnly := cmd.Flags().Changed("world")
 
 	solBin, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to find sol binary: %w", err)
 	}
 
+	var hadFailure bool
+
+	// Sphere daemons (skipped with --world).
+	if !worldOnly {
+		if failed := startSphereDaemons(solBin); failed {
+			hadFailure = true
+		}
+	}
+
+	// World services.
+	worlds, err := activeWorlds(upWorldFlag)
+	if err != nil {
+		return err
+	}
+
+	if len(worlds) > 0 {
+		if failed := startWorldServicesBatch(solBin, worlds); failed {
+			hadFailure = true
+		}
+	}
+
+	if hadFailure {
+		return fmt.Errorf("some services failed to start")
+	}
+	return nil
+}
+
+// startSphereDaemons starts sphere-level daemons. Returns true if any failed.
+func startSphereDaemons(solBin string) bool {
+	if managed := checkSystemdUnits(); len(managed) > 0 {
+		warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+		fmt.Fprintf(os.Stderr, "%s %s managed by systemd — use systemctl instead\n",
+			warnStyle.Render("Warning:"), strings.Join(managed, ", "))
+	}
+
 	if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
-		return fmt.Errorf("failed to create runtime directory: %w", err)
+		fmt.Fprintf(os.Stderr, "failed to create runtime directory: %v\n", err)
+		return true
 	}
 
 	type result struct {
@@ -220,6 +335,7 @@ func runUp(_ *cobra.Command, _ []string) error {
 
 	// Print status table.
 	fmt.Println()
+	hadFailure := false
 	for _, r := range results {
 		var indicator, detail string
 		switch r.status {
@@ -241,22 +357,107 @@ func runUp(_ *cobra.Command, _ []string) error {
 			if r.err != nil {
 				detail += upDim.Render("  " + r.err.Error())
 			}
+			hadFailure = true
 		}
 		fmt.Printf("  %s %-12s %s\n", indicator, r.name, detail)
 	}
 	fmt.Println()
 
-	for _, r := range results {
-		if r.status == "failed" {
-			return fmt.Errorf("some daemons failed to start")
+	return hadFailure
+}
+
+// startWorldServicesBatch starts world services for the given worlds.
+// Returns true if any failed.
+func startWorldServicesBatch(solBin string, worlds []string) bool {
+	type result struct {
+		world, service, status string
+		err                    error
+	}
+
+	mgr := session.New()
+	var results []result
+
+	for _, world := range worlds {
+		for _, svc := range worldServices {
+			r := result{world: world, service: svc}
+
+			sessName := config.SessionName(world, svc)
+			if mgr.Exists(sessName) {
+				r.status = "running"
+				results = append(results, r)
+				continue
+			}
+
+			out, err := exec.Command(solBin, svc, "start", "--world="+world).CombinedOutput()
+			if err != nil {
+				r.status = "failed"
+				r.err = fmt.Errorf("%s", strings.TrimSpace(string(out)))
+			} else {
+				r.status = "started"
+			}
+			results = append(results, r)
 		}
 	}
-	return nil
+
+	// Print grouped by world.
+	hadFailure := false
+	currentWorld := ""
+	for _, r := range results {
+		if r.world != currentWorld {
+			currentWorld = r.world
+			fmt.Printf("  %s\n", upDim.Render(r.world))
+		}
+
+		var indicator, detail string
+		switch r.status {
+		case "started":
+			indicator = upOK.Render("✓")
+			detail = upOK.Render("started")
+		case "running":
+			indicator = upOK.Render("✓")
+			detail = upDim.Render("already running")
+		case "failed":
+			indicator = upErr.Render("✗")
+			detail = upErr.Render("failed")
+			if r.err != nil {
+				detail += upDim.Render("  " + r.err.Error())
+			}
+			hadFailure = true
+		}
+		fmt.Printf("    %s %-12s %s\n", indicator, r.service, detail)
+	}
+	if len(results) > 0 {
+		fmt.Println()
+	}
+
+	return hadFailure
 }
 
 // --- sol down ---
 
-func runDown(_ *cobra.Command, _ []string) error {
+func runDown(cmd *cobra.Command, _ []string) error {
+	worldOnly := cmd.Flags().Changed("world")
+
+	// Sphere daemons (skipped with --world).
+	if !worldOnly {
+		stopSphereDaemons()
+	}
+
+	// World services.
+	worlds, err := resolveWorldsForDown(downWorldFlag)
+	if err != nil {
+		return err
+	}
+
+	if len(worlds) > 0 {
+		stopWorldServicesBatch(worlds)
+	}
+
+	return nil
+}
+
+// stopSphereDaemons stops sphere-level daemons and prints results.
+func stopSphereDaemons() {
 	mgr := session.New()
 
 	type result struct {
@@ -329,6 +530,65 @@ func runDown(_ *cobra.Command, _ []string) error {
 		fmt.Printf("  %s %-12s %s\n", indicator, r.name, detail)
 	}
 	fmt.Println()
+}
 
-	return nil
+// stopWorldServicesBatch stops world services for the given worlds.
+func stopWorldServicesBatch(worlds []string) {
+	type result struct {
+		world, service, status string
+		err                    error
+	}
+
+	mgr := session.New()
+	var results []result
+
+	for _, world := range worlds {
+		for _, svc := range worldServices {
+			r := result{world: world, service: svc}
+
+			sessName := config.SessionName(world, svc)
+			if !mgr.Exists(sessName) {
+				r.status = "not running"
+				results = append(results, r)
+				continue
+			}
+
+			if err := mgr.Stop(sessName, false); err != nil {
+				r.status = "failed"
+				r.err = err
+			} else {
+				r.status = "stopped"
+			}
+			results = append(results, r)
+		}
+	}
+
+	// Print grouped by world.
+	currentWorld := ""
+	for _, r := range results {
+		if r.world != currentWorld {
+			currentWorld = r.world
+			fmt.Printf("  %s\n", upDim.Render(r.world))
+		}
+
+		var indicator, detail string
+		switch r.status {
+		case "stopped":
+			indicator = upOK.Render("✓")
+			detail = "stopped"
+		case "not running":
+			indicator = upDim.Render("—")
+			detail = upDim.Render("not running")
+		case "failed":
+			indicator = upErr.Render("✗")
+			detail = upErr.Render("error")
+			if r.err != nil {
+				detail += upDim.Render("  " + r.err.Error())
+			}
+		}
+		fmt.Printf("    %s %-12s %s\n", indicator, r.service, detail)
+	}
+	if len(results) > 0 {
+		fmt.Println()
+	}
 }

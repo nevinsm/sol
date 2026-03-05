@@ -86,6 +86,10 @@ var docSections = []docSection{
 	{
 		heading: "Daemon Management",
 		paths:   []string{"up", "down"},
+		notes: "Without flags, `sol up` starts sphere daemons (prefect, consul, chronicle) and world services " +
+			"(sentinel, forge) for all non-sleeping worlds. `sol down` stops everything.\n\n" +
+			"`--world` — manage only world services, skip sphere daemons. " +
+			"`--world=W` targets a specific world.",
 	},
 	{
 		heading: "Supervision",
