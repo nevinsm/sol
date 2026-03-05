@@ -343,7 +343,10 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		case "claimed":
 			result.MergeQueue.Claimed++
 		case "failed":
-			result.MergeQueue.Failed++
+			// Exclude failed MRs whose work items have been re-cast and closed.
+			if item, err := worldStore.GetWorkItem(mr.WorkItemID); err != nil || item.Status != "closed" {
+				result.MergeQueue.Failed++
+			}
 		case "merged":
 			result.MergeQueue.Merged++
 		}
@@ -399,7 +402,9 @@ func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener 
 		if err == nil {
 			for _, st := range statuses {
 				switch {
-				case st.WorkItemStatus == "done" || st.WorkItemStatus == "closed":
+				case st.WorkItemStatus == "closed":
+					info.ClosedItems++
+				case st.WorkItemStatus == "done":
 					info.DoneItems++
 				case st.IsDispatched():
 					info.DispatchedItems++
@@ -448,7 +453,9 @@ func computePhaseProgress(items []store.CaravanItem, statuses []store.CaravanIte
 		pp.Total++
 		if st, ok := statusMap[item.WorkItemID]; ok {
 			switch {
-			case st.WorkItemStatus == "done" || st.WorkItemStatus == "closed":
+			case st.WorkItemStatus == "closed":
+				pp.Closed++
+			case st.WorkItemStatus == "done":
 				pp.Done++
 			case st.IsDispatched():
 				pp.Dispatched++
