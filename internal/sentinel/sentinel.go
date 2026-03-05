@@ -31,6 +31,7 @@ type Config struct {
 	SourceRepo         string        // path to source git repo
 	SolHome            string        // SOL_HOME path
 	IdleReapTimeout    time.Duration // default: 10 minutes — reap idle agents older than this
+	ClaimTTL           time.Duration // default: 30 minutes — release MR claims older than this
 }
 
 // DefaultConfig returns a Config with default values.
@@ -45,6 +46,7 @@ func DefaultConfig(world, sourceRepo, solHome string) Config {
 		SourceRepo:        sourceRepo,
 		SolHome:           solHome,
 		IdleReapTimeout:   10 * time.Minute,
+		ClaimTTL:          30 * time.Minute,
 	}
 }
 
@@ -64,6 +66,7 @@ type WorldStore interface {
 	GetWorkItem(id string) (*store.WorkItem, error)
 	UpdateWorkItem(id string, updates store.WorkItemUpdates) error
 	ListMergeRequests(phase string) ([]store.MergeRequest, error)
+	ReleaseStaleClaims(ttl time.Duration) (int, error)
 }
 
 // SessionChecker abstracts session operations for testability.
@@ -213,6 +216,9 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	// Recast failed MRs before agent checks (so newly cast agents appear healthy).
 	recastCount := w.recastFailedMRs()
 
+	// Release stale MR claims (forge crash recovery).
+	releasedCount := w.releaseStaleClaims()
+
 	var healthyCount, stalledCount, zombieCount, reapedCount int
 	var actionsTaken []string
 
@@ -320,6 +326,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 				"zombies":         zombieCount,
 				"reaped":          reapedCount,
 				"recast":          recastCount,
+				"released_claims": releasedCount,
 				"orphans_cleaned": orphansCleaned,
 				"assessed":        w.patrolAssessed,
 				"nudged":          w.patrolNudged,
@@ -753,6 +760,27 @@ func (w *Sentinel) reapIdleAgent(agent store.Agent) error {
 	}
 
 	return nil
+}
+
+// releaseStaleClaims releases MR claims older than ClaimTTL (forge crash recovery).
+// Returns the number of released claims.
+func (w *Sentinel) releaseStaleClaims() int {
+	if w.worldStore == nil {
+		return 0
+	}
+	released, err := w.worldStore.ReleaseStaleClaims(w.config.ClaimTTL)
+	if err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+				map[string]any{"action": "release_stale_claims", "error": err.Error()})
+		}
+		return 0
+	}
+	if released > 0 && w.logger != nil {
+		w.logger.Emit("sentinel_action", w.agentID(), w.agentID(), "feed",
+			map[string]any{"action": "released_stale_claims", "count": released})
+	}
+	return released
 }
 
 // recastFailedMRs checks for merge requests in "failed" phase with open work

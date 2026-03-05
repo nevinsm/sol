@@ -1167,6 +1167,92 @@ func createFailedMR(t *testing.T, worldStore *store.Store, workItemID, title, br
 	return mrID
 }
 
+func TestReleaseStaleClaims(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.ClaimTTL = 30 * time.Minute
+
+	// Create a work item and MR, then claim it.
+	createWorkItem(t, worldStore, "sol-stale001", "Stale claim test")
+	mrID, err := worldStore.CreateMergeRequest("sol-stale001", "outpost/A/sol-stale001", 3)
+	if err != nil {
+		t.Fatalf("failed to create MR: %v", err)
+	}
+	claimed, err := worldStore.ClaimMergeRequest("forge-1")
+	if err != nil {
+		t.Fatalf("failed to claim MR: %v", err)
+	}
+	if claimed == nil || claimed.ID != mrID {
+		t.Fatal("expected to claim the MR")
+	}
+
+	// Backdate the claimed_at to make it stale (> 30 min ago).
+	staleTime := time.Now().UTC().Add(-45 * time.Minute).Format(time.RFC3339)
+	_, err = worldStore.DB().Exec(
+		`UPDATE merge_requests SET claimed_at = ? WHERE id = ?`, staleTime, mrID)
+	if err != nil {
+		t.Fatalf("failed to backdate claimed_at: %v", err)
+	}
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// The MR should be back to "ready" phase.
+	mr, err := worldStore.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatalf("failed to get MR: %v", err)
+	}
+	if mr.Phase != "ready" {
+		t.Errorf("MR phase = %q, want %q", mr.Phase, "ready")
+	}
+	if mr.ClaimedBy != "" {
+		t.Errorf("MR claimed_by = %q, want empty", mr.ClaimedBy)
+	}
+}
+
+func TestReleaseStaleClaims_SkipsFresh(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.ClaimTTL = 30 * time.Minute
+
+	// Create a work item and MR, then claim it (claimed_at = now, so fresh).
+	createWorkItem(t, worldStore, "sol-fresh001", "Fresh claim test")
+	mrID, err := worldStore.CreateMergeRequest("sol-fresh001", "outpost/A/sol-fresh001", 3)
+	if err != nil {
+		t.Fatalf("failed to create MR: %v", err)
+	}
+	claimed, err := worldStore.ClaimMergeRequest("forge-1")
+	if err != nil {
+		t.Fatalf("failed to claim MR: %v", err)
+	}
+	if claimed == nil || claimed.ID != mrID {
+		t.Fatal("expected to claim the MR")
+	}
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// The MR should still be claimed — it's fresh.
+	mr, err := worldStore.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatalf("failed to get MR: %v", err)
+	}
+	if mr.Phase != "claimed" {
+		t.Errorf("MR phase = %q, want %q (claim is fresh, should not be released)", mr.Phase, "claimed")
+	}
+	if mr.ClaimedBy != "forge-1" {
+		t.Errorf("MR claimed_by = %q, want %q", mr.ClaimedBy, "forge-1")
+	}
+}
+
 func TestRecastFailedMR(t *testing.T) {
 	sphereStore, worldStore := setupTestEnv(t)
 	mock := newMockSessions()
