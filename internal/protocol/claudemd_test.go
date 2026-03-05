@@ -313,6 +313,20 @@ func TestForgeClaudeMDCLIReference(t *testing.T) {
 	if !strings.Contains(content, "sol forge ready") {
 		t.Error("forge CLAUDE.md should contain patrol loop commands inline")
 	}
+	// Squash merge command should be present.
+	if !strings.Contains(content, "sol forge merge") {
+		t.Error("forge CLAUDE.md should contain sol forge merge command")
+	}
+	// Old rebase instructions should be gone.
+	if strings.Contains(content, "git rebase") {
+		t.Error("forge CLAUDE.md should not contain git rebase instructions")
+	}
+	if strings.Contains(content, "Conflict Judgment Framework") {
+		t.Error("forge CLAUDE.md should not contain Conflict Judgment Framework")
+	}
+	if strings.Contains(content, "Sequential Rebase Rule") {
+		t.Error("forge CLAUDE.md should not contain Sequential Rebase Rule")
+	}
 }
 
 func TestClaudeMDWarningSectionPresent(t *testing.T) {

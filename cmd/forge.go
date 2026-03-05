@@ -35,6 +35,7 @@ var (
 	forgeMarkFailedWorld      string
 	forgeCreateResolutionWorld string
 	forgeCheckUnblockedWorld  string
+	forgeMergeWorld          string
 )
 
 var forgeCmd = &cobra.Command{
@@ -865,6 +866,36 @@ var forgeCheckUnblockedCmd = &cobra.Command{
 	},
 }
 
+var forgeMergeCmd = &cobra.Command{
+	Use:          "merge <mr-id>",
+	Short:        "Run squash merge for a claimed merge request",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mrID := args[0]
+
+		world, err := config.ResolveWorld(forgeMergeWorld)
+		if err != nil {
+			return err
+		}
+
+		ref, worldStore, sphereStore, err := openForge(world)
+		if err != nil {
+			return err
+		}
+		defer worldStore.Close()
+		defer sphereStore.Close()
+
+		mr, err := ref.GetMergeRequest(mrID)
+		if err != nil {
+			return err
+		}
+
+		result := ref.Merge(cmd.Context(), mr)
+		return printJSON(result)
+	},
+}
+
 var forgeSyncCmd = &cobra.Command{
 	Use:          "sync",
 	Short:        "Sync forge worktree: fetch origin, reset to target branch",
@@ -951,6 +982,7 @@ func init() {
 	forgeCmd.AddCommand(forgeMarkFailedCmd)
 	forgeCmd.AddCommand(forgeCreateResolutionCmd)
 	forgeCmd.AddCommand(forgeCheckUnblockedCmd)
+	forgeCmd.AddCommand(forgeMergeCmd)
 
 	// --world flag for all subcommands.
 	forgeStartCmd.Flags().StringVar(&forgeStartWorld, "world", "", "world name")
@@ -968,6 +1000,7 @@ func init() {
 	forgeMarkFailedCmd.Flags().StringVar(&forgeMarkFailedWorld, "world", "", "world name")
 	forgeCreateResolutionCmd.Flags().StringVar(&forgeCreateResolutionWorld, "world", "", "world name")
 	forgeCheckUnblockedCmd.Flags().StringVar(&forgeCheckUnblockedWorld, "world", "", "world name")
+	forgeMergeCmd.Flags().StringVar(&forgeMergeWorld, "world", "", "world name")
 
 	// --json flag for commands that support it.
 	forgeQueueCmd.Flags().BoolVar(&forgeQueueJSON, "json", false, "output as JSON")

@@ -127,6 +127,7 @@ Toolbox subcommands (used by the forge Claude session):
 | `sol forge blocked` | List blocked merge requests |
 | `sol forge claim` | Claim the next ready unblocked merge request |
 | `sol forge release <mr-id>` | Release a claimed merge request back to ready |
+| `sol forge merge <mr-id>` | Run squash merge for a claimed merge request |
 | `sol forge run-gates` | Run quality gates in the forge worktree |
 | `sol forge push` | Push HEAD to target branch (acquires merge slot) |
 | `sol forge mark-merged <mr-id>` | Mark a merge request as merged |
