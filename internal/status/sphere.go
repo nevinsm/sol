@@ -102,7 +102,7 @@ func gatherConsulInfo() ConsulInfo {
 		info.PatrolCount = hb.PatrolCount
 
 		age := time.Since(hb.Timestamp)
-		info.HeartbeatAge = formatDuration(age)
+		info.HeartbeatAge = FormatDuration(age)
 		info.Stale = hb.IsStale(10 * time.Minute)
 	}
 
@@ -188,8 +188,8 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 	return summary
 }
 
-// formatDuration formats a duration as a compact human-readable string.
-func formatDuration(d time.Duration) string {
+// FormatDuration formats a duration as a compact human-readable string.
+func FormatDuration(d time.Duration) string {
 	if d < time.Minute {
 		return fmt.Sprintf("%ds", int(d.Seconds()))
 	}

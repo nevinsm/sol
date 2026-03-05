@@ -359,9 +359,9 @@ func TestFormatDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.want, func(t *testing.T) {
-			got := formatDuration(tt.d)
+			got := FormatDuration(tt.d)
 			if got != tt.want {
-				t.Errorf("formatDuration(%v) = %q, want %q", tt.d, got, tt.want)
+				t.Errorf("FormatDuration(%v) = %q, want %q", tt.d, got, tt.want)
 			}
 		})
 	}

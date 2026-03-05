@@ -361,7 +361,7 @@ func briefAge(path string) string {
 	if err != nil {
 		return ""
 	}
-	return formatDuration(time.Since(info.ModTime()))
+	return FormatDuration(time.Since(info.ModTime()))
 }
 
 // GatherCaravans adds caravan information to a WorldStatus.

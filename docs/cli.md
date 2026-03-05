@@ -48,6 +48,7 @@ This means `--world` is optional when running from inside a world directory (e.g
 | `sol agent create <name>` | Create an agent |
 | `sol agent list` | List agents |
 | `sol agent reset <name>` | Reset a stuck agent to idle state |
+| `sol agent postmortem <name>` | Show diagnostic information for a dead or stuck agent |
 
 ## Store (Work Items)
 

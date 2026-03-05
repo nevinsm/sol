@@ -497,6 +497,33 @@ func (m *Manager) Cycle(name, workdir, cmd string, env map[string]string, role, 
 	return nil
 }
 
+// GetMeta reads session metadata from the JSON file without checking tmux.
+// Returns the metadata if the file exists, even for dead sessions.
+// Returns nil, nil if no metadata file exists.
+func (m *Manager) GetMeta(name string) (*SessionInfo, error) {
+	data, err := os.ReadFile(metadataPath(name))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read session metadata for %q: %w", name, err)
+	}
+
+	var meta sessionMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil, fmt.Errorf("failed to parse session metadata for %q: %w", name, err)
+	}
+
+	return &SessionInfo{
+		Name:      meta.Name,
+		Role:      meta.Role,
+		World:     meta.World,
+		WorkDir:   meta.WorkDir,
+		StartedAt: meta.StartedAt,
+		Alive:     m.Exists(meta.Name),
+	}, nil
+}
+
 // Exists returns true if a tmux session with this name exists.
 func (m *Manager) Exists(name string) bool {
 	cmd, cancel := tmuxCmd("has-session", "-t", tmuxExactTarget(name))
