@@ -351,6 +351,15 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		}
 	}
 
+	// Check for resolve lock — if resolve is in progress, skip the handoff.
+	// Resolve is about to kill the session anyway; we just need the context
+	// to survive long enough to finish the resolve sequence.
+	resolveLock := filepath.Join(config.AgentDir(opts.World, opts.AgentName, role), ".resolve_in_progress")
+	if _, err := os.Stat(resolveLock); err == nil {
+		fmt.Fprintf(os.Stderr, "handoff: resolve in progress, deferring to compaction\n")
+		return nil
+	}
+
 	// Cycle the session atomically using respawn-pane. This is safe for
 	// self-handoff — respawn-pane -k kills the old process and starts the
 	// new one server-side, so the calling process being killed is expected.

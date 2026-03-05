@@ -35,6 +35,7 @@ type WorldStore interface {
 	GetWorkItem(id string) (*store.WorkItem, error)
 	UpdateWorkItem(id string, updates store.WorkItemUpdates) error
 	CreateMergeRequest(workItemID, branch string, priority int) (string, error)
+	ListMergeRequestsByWorkItem(workItemID, phase string) ([]store.MergeRequest, error)
 	UpdateMergeRequestPhase(id, phase string) error
 	CreateWorkItemWithOpts(opts store.CreateWorkItemOpts) (string, error)
 	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
@@ -587,6 +588,13 @@ func Prime(world, agentName, role string, worldStore WorldStore) (*PrimeResult, 
 		return primeForge(world)
 	}
 
+	// Check for stale resolve lock (previous session died mid-resolve).
+	if IsResolveInProgress(world, agentName, role) {
+		lockPath := ResolveLockPath(world, agentName, role)
+		os.Remove(lockPath) // clean up stale lock
+		fmt.Fprintf(os.Stderr, "prime: detected stale resolve lock — previous session interrupted during resolve\n")
+	}
+
 	// Read the tether file.
 	workItemID, err := tether.Read(world, agentName, role)
 	if err != nil {
@@ -763,6 +771,17 @@ type ResolveOpts struct {
 	AgentName string
 }
 
+// ResolveLockPath returns the path to the resolve-in-progress lock file.
+func ResolveLockPath(world, agentName, role string) string {
+	return filepath.Join(config.AgentDir(world, agentName, role), ".resolve_in_progress")
+}
+
+// IsResolveInProgress returns true if a resolve lock file exists for this agent.
+func IsResolveInProgress(world, agentName, role string) bool {
+	_, err := os.Stat(ResolveLockPath(world, agentName, role))
+	return err == nil
+}
+
 // Resolve signals work completion: git operations, state updates, tether clear.
 // The logger parameter is optional — if nil, no events are emitted.
 func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
@@ -775,6 +794,12 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
 	}
 
+	// Create resolve lock to prevent handoff from interrupting.
+	lockPath := ResolveLockPath(opts.World, opts.AgentName, agent.Role)
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create lock directory: %w", err)
+	}
+
 	// 1. Read tether — get work item ID.
 	workItemID, err := tether.Read(opts.World, opts.AgentName, agent.Role)
 	if err != nil {
@@ -783,6 +808,12 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	if workItemID == "" {
 		return nil, fmt.Errorf("no work tethered for agent %q in world %q", opts.AgentName, opts.World)
 	}
+
+	// Write resolve lock with work item ID (enables crash recovery detection).
+	if err := os.WriteFile(lockPath, []byte(workItemID), 0o644); err != nil {
+		return nil, fmt.Errorf("failed to write resolve lock: %w", err)
+	}
+	defer os.Remove(lockPath)
 
 	// Acquire locks: work item first, then agent (consistent ordering with Cast).
 	lock, err := AcquireWorkItemLock(workItemID)
@@ -858,38 +889,55 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		}
 	}
 
-	// 3. Update work item: status -> done.
-	if err := worldStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{Status: "done"}); err != nil {
-		return nil, fmt.Errorf("failed to update work item status: %w", err)
+	// 3. Update work item: status -> done (idempotent — skip if already done).
+	if item.Status != "done" {
+		if err := worldStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{Status: "done"}); err != nil {
+			return nil, fmt.Errorf("failed to update work item status: %w", err)
+		}
+		workItemUpdated = true
 	}
-	workItemUpdated = true
 
-	// 4. Create merge request — always, even if push failed (so it's tracked).
-	mrID, err := worldStore.CreateMergeRequest(workItemID, branchName, item.Priority)
+	// 4. Create merge request (idempotent — skip if one already exists for this work item).
+	var mrID string
+	existingMRs, err := worldStore.ListMergeRequestsByWorkItem(workItemID, "")
 	if err != nil {
 		rollback()
-		return nil, fmt.Errorf("failed to create merge request for %q: %w", workItemID, err)
+		return nil, fmt.Errorf("failed to check existing merge requests: %w", err)
 	}
+	if len(existingMRs) > 0 {
+		mrID = existingMRs[0].ID
+	} else {
+		mrID, err = worldStore.CreateMergeRequest(workItemID, branchName, item.Priority)
+		if err != nil {
+			rollback()
+			return nil, fmt.Errorf("failed to create merge request for %q: %w", workItemID, err)
+		}
 
-	// If push failed, immediately mark the MR as failed so forge doesn't try to merge it.
-	if pushFailed {
-		if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
-			fmt.Fprintf(os.Stderr, "resolve: failed to mark MR as failed after push failure: %v\n", err)
+		// If push failed, immediately mark the MR as failed so forge doesn't try to merge it.
+		if pushFailed {
+			if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+				fmt.Fprintf(os.Stderr, "resolve: failed to mark MR as failed after push failure: %v\n", err)
+			}
 		}
 	}
 
-	// 5. Update agent state.
+	// 5. Update agent state (idempotent — check current state first).
 	// Outpost agents are ephemeral — delete the record to reclaim the name.
 	// Persistent roles (envoy, governor) remain idle for reuse.
 	if agent.Role == "agent" {
-		if err := sphereStore.DeleteAgent(agentID); err != nil {
-			rollback()
-			return nil, fmt.Errorf("failed to delete agent %q: %w", agentID, err)
+		// Re-read agent to check if already deleted (idempotent re-run).
+		if _, getErr := sphereStore.GetAgent(agentID); getErr == nil {
+			if err := sphereStore.DeleteAgent(agentID); err != nil {
+				rollback()
+				return nil, fmt.Errorf("failed to delete agent %q: %w", agentID, err)
+			}
 		}
 	} else {
-		if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
-			rollback()
-			return nil, fmt.Errorf("failed to update agent state: %w", err)
+		if agent.State != "idle" {
+			if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+				rollback()
+				return nil, fmt.Errorf("failed to update agent state: %w", err)
+			}
 		}
 	}
 

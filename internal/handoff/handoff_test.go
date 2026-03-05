@@ -583,6 +583,57 @@ func TestExecWithExplicitRole(t *testing.T) {
 	}
 }
 
+func TestExecSkipsWhenResolveInProgress(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	// Set up tether file.
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create worktree directory.
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	// Create resolve lock (simulating resolve in progress).
+	agentDir := filepath.Join(solHome, "ember", "outposts", "Toast")
+	lockPath := filepath.Join(agentDir, ".resolve_in_progress")
+	if err := os.WriteFile(lockPath, []byte("sol-abc12345"), 0o644); err != nil {
+		t.Fatalf("failed to write resolve lock: %v", err)
+	}
+
+	mgr := &mockSessionMgr{captureResult: "$ make test\nAll tests passed."}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:     "ember",
+		AgentName: "Toast",
+		Summary:   "Trying to handoff during resolve.",
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec should succeed (skip handoff): %v", err)
+	}
+
+	// Session should NOT be cycled — handoff was skipped.
+	if len(mgr.cycled) != 0 {
+		t.Errorf("expected 0 Cycle calls (resolve lock), got %d", len(mgr.cycled))
+	}
+	if len(mgr.stopped) != 0 {
+		t.Errorf("expected 0 Stop calls (resolve lock), got %d", len(mgr.stopped))
+	}
+	if len(mgr.started) != 0 {
+		t.Errorf("expected 0 Start calls (resolve lock), got %d", len(mgr.started))
+	}
+
+	// Resolve lock should still exist (not removed by handoff).
+	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		t.Error("resolve lock should still exist after skipped handoff")
+	}
+}
+
 func TestExecCycleFallback(t *testing.T) {
 	solHome := setupSolHome(t)
 

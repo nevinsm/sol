@@ -1620,6 +1620,201 @@ func TestResolveSkipsForgeNudgeWhenNoForge(t *testing.T) {
 	}
 }
 
+// --- Resolve lock tests ---
+
+func TestResolveCreatesAndRemovesLock(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWorkItem("Lock test", "Test resolve lock", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update work item: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	// Verify lock does not exist before resolve.
+	if IsResolveInProgress("ember", "Toast", "agent") {
+		t.Fatal("resolve lock should not exist before resolve")
+	}
+
+	_, err = Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Verify lock is removed after resolve completes.
+	if IsResolveInProgress("ember", "Toast", "agent") {
+		t.Error("resolve lock should be removed after successful resolve")
+	}
+}
+
+func TestResolveIdempotent(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWorkItem("Idempotent test", "Test double resolve", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update work item: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	// First resolve — normal path.
+	result1, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("first Resolve failed: %v", err)
+	}
+
+	// Now simulate a partial resolve state for second call:
+	// Re-create agent, re-write tether, set work item back to tethered.
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to re-create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+	// Work item is already "done" from first resolve — simulates partial resolve.
+
+	// Re-create worktree for the second resolve (remove old one first).
+	os.RemoveAll(worktreeDir)
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to re-create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	mgr.started[sessName] = true
+	mgr.stopped[sessName] = false
+
+	// Second resolve — should complete without error (idempotent).
+	result2, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("second Resolve (idempotent) failed: %v", err)
+	}
+
+	// Both resolves should reference the same work item.
+	if result1.WorkItemID != result2.WorkItemID {
+		t.Errorf("expected same work item ID, got %q and %q", result1.WorkItemID, result2.WorkItemID)
+	}
+
+	// Second resolve should reuse the existing MR (not create a duplicate).
+	if result2.MergeRequestID != result1.MergeRequestID {
+		t.Errorf("expected same MR ID (idempotent), got %q and %q", result1.MergeRequestID, result2.MergeRequestID)
+	}
+
+	// Work item should be done.
+	item, err := worldStore.GetWorkItem(itemID)
+	if err != nil {
+		t.Fatalf("failed to get work item: %v", err)
+	}
+	if item.Status != "done" {
+		t.Errorf("expected work item status 'done', got %q", item.Status)
+	}
+}
+
+func TestPrimeDetectsStaleLock(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWorkItem("Stale lock test", "Test stale lock detection", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create a stale resolve lock (simulating a crash mid-resolve).
+	lockPath := ResolveLockPath("ember", "Toast", "agent")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatalf("failed to create lock dir: %v", err)
+	}
+	if err := os.WriteFile(lockPath, []byte(itemID), 0o644); err != nil {
+		t.Fatalf("failed to write stale lock: %v", err)
+	}
+
+	// Verify lock exists.
+	if !IsResolveInProgress("ember", "Toast", "agent") {
+		t.Fatal("expected resolve lock to exist")
+	}
+
+	// Prime should detect and remove the stale lock.
+	result, err := Prime("ember", "Toast", "agent", worldStore)
+	if err != nil {
+		t.Fatalf("Prime failed: %v", err)
+	}
+
+	// Lock should be cleaned up.
+	if IsResolveInProgress("ember", "Toast", "agent") {
+		t.Error("expected stale resolve lock to be removed after prime")
+	}
+
+	// Prime should still return context (not fail).
+	if !strings.Contains(result.Output, "WORK CONTEXT") {
+		t.Error("expected WORK CONTEXT output after stale lock cleanup")
+	}
+}
+
 func TestResolveSourceRepoManagedCloneTakesPriority(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
