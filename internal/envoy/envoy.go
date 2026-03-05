@@ -284,7 +284,7 @@ func installHooks(worktreeDir, world, name string) error {
 					},
 				},
 			},
-			"PreToolUse": {
+			"PreToolUse": append([]protocol.HookMatcherGroup{
 				{
 					Matcher: "Write|Edit",
 					Hooks: []protocol.HookHandler{
@@ -303,7 +303,7 @@ func installHooks(worktreeDir, world, name string) error {
 						},
 					},
 				},
-			},
+			}, protocol.GuardHooks("envoy")...),
 			"UserPromptSubmit": {
 				{
 					Hooks: []protocol.HookHandler{

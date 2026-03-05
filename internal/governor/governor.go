@@ -150,7 +150,7 @@ func installHooks(govDir, world string) error {
 					},
 				},
 			},
-			"PreToolUse": {
+			"PreToolUse": append([]protocol.HookMatcherGroup{
 				{
 					Matcher: "Write|Edit",
 					Hooks: []protocol.HookHandler{
@@ -169,7 +169,7 @@ func installHooks(govDir, world string) error {
 						},
 					},
 				},
-			},
+			}, protocol.GuardHooks("governor")...),
 			"UserPromptSubmit": {
 				{
 					Hooks: []protocol.HookHandler{

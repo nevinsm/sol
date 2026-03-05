@@ -448,8 +448,8 @@ func TestStart(t *testing.T) {
 	// Verify PreToolUse hooks block auto-memory writes and EnterPlanMode.
 	if ptuGroups, ok := cfg.Hooks["PreToolUse"]; !ok {
 		t.Error("no PreToolUse hooks")
-	} else if len(ptuGroups) != 2 {
-		t.Errorf("expected 2 PreToolUse matcher groups, got %d", len(ptuGroups))
+	} else if len(ptuGroups) != 11 {
+		t.Errorf("expected 11 PreToolUse matcher groups (2 base + 9 guards), got %d", len(ptuGroups))
 	} else {
 		if ptuGroups[0].Matcher != "Write|Edit" {
 			t.Errorf("PreToolUse matcher[0] = %q, want \"Write|Edit\"", ptuGroups[0].Matcher)

@@ -503,6 +503,7 @@ var worldSummaryCmd = &cobra.Command{
 		if err != nil {
 			if os.IsNotExist(err) {
 				fmt.Printf("No world summary found for world %q\n", world)
+				fmt.Printf("Start a governor first: sol governor start --world=%s\n", world)
 				return nil
 			}
 			return fmt.Errorf("failed to read world summary: %w", err)
@@ -638,8 +639,8 @@ func init() {
 	worldCmd.AddCommand(worldStatusCmd)
 	worldCmd.AddCommand(worldDeleteCmd)
 	worldCmd.AddCommand(worldSyncCmd)
-	worldCmd.AddCommand(worldQueryCmd)
 	worldCmd.AddCommand(worldSummaryCmd)
+	worldCmd.AddCommand(worldQueryCmd)
 	worldCmd.AddCommand(worldSleepCmd)
 	worldCmd.AddCommand(worldWakeCmd)
 
@@ -655,6 +656,6 @@ func init() {
 	worldSyncCmd.Flags().StringVar(&worldSyncWorld, "world", "", "world name")
 	worldSyncCmd.Flags().BoolVar(&worldSyncAll, "all", false,
 		"also sync forge, envoys, and governor")
-	worldQueryCmd.Flags().IntVar(&worldQueryTimeout, "timeout", 60,
+	worldQueryCmd.Flags().IntVar(&worldQueryTimeout, "timeout", 120,
 		"seconds to wait for governor response")
 }

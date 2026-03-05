@@ -28,8 +28,8 @@ This means `--world` is optional when running from inside a world directory (e.g
 | `sol world sync` | Sync the managed repo with its remote |
 | `sol world sleep <name>` | Mark a world as sleeping and stop its services |
 | `sol world wake <name>` | Mark a world as active and start its services |
-| `sol world query <name> <question>` | Query a world's governor for information |
 | `sol world summary <name>` | Show a world's governor-maintained summary |
+| `sol world query <name> <question>` | Query a world's governor for information |
 
 ## Dispatch
 
@@ -287,6 +287,15 @@ Senate is an operator-managed sphere-scoped planning session. It reads governor 
 | `sol service status` | Show status of sol sphere daemon units |
 
 Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle).
+
+## Guard (PreToolUse Hooks)
+
+| Command | Description |
+|---------|-------------|
+| `sol guard dangerous-command` | Block dangerous commands (rm -rf, force push, hard reset, etc.) |
+| `sol guard workflow-bypass` | Block commands that circumvent the forge merge pipeline |
+
+Guards are called by PreToolUse hooks in `.claude/settings.local.json`. They read tool input from stdin (Claude Code hook protocol) and exit 2 to block, 0 to allow. `workflow-bypass` respects `SOL_ROLE` — forge is exempt since it pushes to the target branch for merges.
 
 ## Documentation
 

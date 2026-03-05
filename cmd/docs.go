@@ -60,7 +60,7 @@ var docSections = []docSection{
 	},
 	{
 		heading: "World Management",
-		paths:   []string{"world init", "world list", "world status", "world delete", "world sync", "world sleep", "world wake", "world query", "world summary"},
+		paths:   []string{"world init", "world list", "world status", "world delete", "world sync", "world sleep", "world wake", "world summary", "world query"},
 	},
 	{
 		heading: "Dispatch",
@@ -174,6 +174,13 @@ var docSections = []docSection{
 		heading: "Service (Systemd Units)",
 		paths:   []string{"service install", "service uninstall", "service start", "service stop", "service restart", "service status"},
 		notes:   "Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle).",
+	},
+	{
+		heading: "Guard (PreToolUse Hooks)",
+		paths:   []string{"guard dangerous-command", "guard workflow-bypass"},
+		notes: "Guards are called by PreToolUse hooks in `.claude/settings.local.json`. They read tool input from stdin " +
+			"(Claude Code hook protocol) and exit 2 to block, 0 to allow. `workflow-bypass` respects `SOL_ROLE` — " +
+			"forge is exempt since it pushes to the target branch for merges.",
 	},
 	{
 		heading: "Documentation",

@@ -40,9 +40,9 @@ var rootCmd = &cobra.Command{
 		if cmd.RunE == nil && cmd.Run == nil {
 			return nil
 		}
-		// doctor and init must work before SOL_HOME exists.
+		// doctor, init, and guard subcommands must work before SOL_HOME exists.
 		switch cmd.Name() {
-		case "doctor", "init":
+		case "doctor", "init", "dangerous-command", "workflow-bypass":
 			return nil
 		}
 		return config.EnsureDirs()

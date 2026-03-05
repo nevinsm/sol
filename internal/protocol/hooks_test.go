@@ -75,8 +75,9 @@ func TestInstallForgeHooks(t *testing.T) {
 	if !ok {
 		t.Fatal("settings.local.json missing PreToolUse hook")
 	}
-	if len(ptuGroups) != 1 {
-		t.Fatalf("expected 1 PreToolUse matcher group, got %d", len(ptuGroups))
+	// Forge: 1 EnterPlanMode + 6 dangerous-command (exempt from workflow-bypass) = 7
+	if len(ptuGroups) != 7 {
+		t.Fatalf("expected 7 PreToolUse matcher groups (1 EnterPlanMode + 6 dangerous guards), got %d", len(ptuGroups))
 	}
 	if ptuGroups[0].Matcher != "EnterPlanMode" {
 		t.Errorf("PreToolUse matcher = %q, want \"EnterPlanMode\"", ptuGroups[0].Matcher)
@@ -86,6 +87,14 @@ func TestInstallForgeHooks(t *testing.T) {
 	}
 	if !strings.Contains(ptuGroups[0].Hooks[0].Command, "exit 2") {
 		t.Error("EnterPlanMode hook should exit 2 to block the tool call")
+	}
+	// Forge should have dangerous-command guards but NOT workflow-bypass guards.
+	for _, g := range ptuGroups[1:] {
+		if len(g.Hooks) > 0 {
+			if !strings.Contains(g.Hooks[0].Command, "sol guard dangerous-command") {
+				t.Errorf("forge guard hook should only be dangerous-command, got %q", g.Hooks[0].Command)
+			}
+		}
 	}
 }
 
@@ -132,13 +141,13 @@ func TestInstallHooksPreCompact(t *testing.T) {
 		t.Errorf("expected PreCompact command 'sol handoff --world=ember --agent=Toast', got %q", pcCmd)
 	}
 
-	// Verify PreToolUse hook blocking EnterPlanMode.
+	// Verify PreToolUse hooks: 1 EnterPlanMode + 9 guard hooks = 10
 	ptuGroups, ok := cfg.Hooks["PreToolUse"]
 	if !ok {
 		t.Fatal("settings.local.json missing PreToolUse hook")
 	}
-	if len(ptuGroups) != 1 {
-		t.Fatalf("expected 1 PreToolUse matcher group, got %d", len(ptuGroups))
+	if len(ptuGroups) != 10 {
+		t.Fatalf("expected 10 PreToolUse matcher groups, got %d", len(ptuGroups))
 	}
 	if ptuGroups[0].Matcher != "EnterPlanMode" {
 		t.Errorf("PreToolUse matcher = %q, want \"EnterPlanMode\"", ptuGroups[0].Matcher)

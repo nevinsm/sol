@@ -41,9 +41,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Envoy**: Persistent human-directed agent with brief system (Arc 3, ADR-0009)
 - **Governor**: Per-world work coordinator — Claude session + sol CLI (Arc 3, ADR-0010)
 - **Brief**: Agent-maintained context files, hook-based injection (Arc 3, ADR-0013)
-
-## Components (planned)
-- **Senate**: Sphere-scoped cross-world planner (Arc 4, ADR-0011)
+- **Senate**: Sphere-scoped cross-world planner — operator-managed planning session (Arc 4, ADR-0011)
 
 ## Commits
 Use [Conventional Commits](https://www.conventionalcommits.org/):

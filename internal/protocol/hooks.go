@@ -62,7 +62,7 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 					},
 				},
 			},
-			"PreToolUse": {
+			"PreToolUse": append([]HookMatcherGroup{
 				{
 					Matcher: "EnterPlanMode",
 					Hooks: []HookHandler{
@@ -72,7 +72,7 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 						},
 					},
 				},
-			},
+			}, GuardHooks("outpost")...),
 			"UserPromptSubmit": {
 				{
 					Hooks: []HookHandler{
@@ -116,7 +116,7 @@ func InstallForgeHooks(worktreeDir, world string) error {
 					},
 				},
 			},
-			"PreToolUse": {
+			"PreToolUse": append([]HookMatcherGroup{
 				{
 					Matcher: "EnterPlanMode",
 					Hooks: []HookHandler{
@@ -126,7 +126,7 @@ func InstallForgeHooks(worktreeDir, world string) error {
 						},
 					},
 				},
-			},
+			}, GuardHooks("forge")...),
 			"UserPromptSubmit": {
 				{
 					Hooks: []HookHandler{
@@ -140,6 +140,60 @@ func InstallForgeHooks(worktreeDir, world string) error {
 		},
 	}
 	return writeHookSettings(worktreeDir, cfg)
+}
+
+// GuardHooks returns PreToolUse matcher groups for sol guard commands.
+// These block dangerous commands (force push, hard reset, rm -rf, etc.) and
+// workflow-bypass commands (push to main, gh pr create, manual branching).
+// The role parameter controls exemptions: "forge" is exempt from workflow-bypass.
+func GuardHooks(role string) []HookMatcherGroup {
+	groups := []HookMatcherGroup{
+		// --- dangerous-command guards ---
+		{
+			Matcher: "Bash(git push --force*)|Bash(git push -f *)",
+			Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
+		},
+		{
+			Matcher: "Bash(git reset --hard*)",
+			Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
+		},
+		{
+			Matcher: "Bash(git clean -f*)",
+			Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
+		},
+		{
+			Matcher: "Bash(git checkout -- *)",
+			Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
+		},
+		{
+			Matcher: "Bash(git restore .*)",
+			Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
+		},
+		{
+			Matcher: "Bash(rm -rf /*)",
+			Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
+		},
+	}
+
+	// Forge is exempt from workflow-bypass guards.
+	if role != "forge" {
+		groups = append(groups,
+			HookMatcherGroup{
+				Matcher: "Bash(git push origin main*)|Bash(git push origin master*)",
+				Hooks:   []HookHandler{{Type: "command", Command: "sol guard workflow-bypass"}},
+			},
+			HookMatcherGroup{
+				Matcher: "Bash(gh pr create*)",
+				Hooks:   []HookHandler{{Type: "command", Command: "sol guard workflow-bypass"}},
+			},
+			HookMatcherGroup{
+				Matcher: "Bash(git checkout -b*)|Bash(git switch -c*)",
+				Hooks:   []HookHandler{{Type: "command", Command: "sol guard workflow-bypass"}},
+			},
+		)
+	}
+
+	return groups
 }
 
 // writeHookSettings writes a HookConfig to .claude/settings.local.json.

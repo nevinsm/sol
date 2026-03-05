@@ -91,7 +91,7 @@ func installHooks(senateDir string) error {
 
 	cfg := protocol.HookConfig{
 		Hooks: map[string][]protocol.HookMatcherGroup{
-			"PreToolUse": {
+			"PreToolUse": append([]protocol.HookMatcherGroup{
 				{
 					Matcher: "Write|Edit",
 					Hooks: []protocol.HookHandler{
@@ -110,7 +110,7 @@ func installHooks(senateDir string) error {
 						},
 					},
 				},
-			},
+			}, protocol.GuardHooks("senate")...),
 		},
 	}
 
