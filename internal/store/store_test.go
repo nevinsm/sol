@@ -92,8 +92,8 @@ func TestSchemaCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 5 {
-		t.Fatalf("expected schema version 5, got %d", version)
+	if version != 6 {
+		t.Fatalf("expected schema version 6, got %d", version)
 	}
 }
 
@@ -814,14 +814,14 @@ func TestMigrationIdempotent(t *testing.T) {
 		t.Fatalf("expected merge_requests table after reopen, got count=%d", count)
 	}
 
-	// Verify schema version is 5.
+	// Verify schema version is 6.
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 5 {
-		t.Fatalf("expected schema version 5 after reopen, got %d", version)
+	if version != 6 {
+		t.Fatalf("expected schema version 6 after reopen, got %d", version)
 	}
 }
 
@@ -877,14 +877,14 @@ func TestMigrateWorldV1ToV4(t *testing.T) {
 		t.Fatalf("expected title 'V1 item', got %q", item.Title)
 	}
 
-	// Verify schema version is 5 (V1→V2→V3→V4→V5 all applied).
+	// Verify schema version is 6 (V1→V2→V3→V4→V5→V6 all applied).
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 5 {
-		t.Fatalf("expected schema version 5, got %d", version)
+	if version != 6 {
+		t.Fatalf("expected schema version 6, got %d", version)
 	}
 }
 

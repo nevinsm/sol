@@ -229,8 +229,8 @@ func TestV4Migration(t *testing.T) {
 	if err := s.DB().QueryRow("SELECT version FROM schema_version").Scan(&v); err != nil {
 		t.Fatalf("failed to get schema version: %v", err)
 	}
-	if v != 5 {
-		t.Errorf("schema version = %d, want 5", v)
+	if v != 6 {
+		t.Errorf("schema version = %d, want 6", v)
 	}
 
 	// Verify dependencies table exists.

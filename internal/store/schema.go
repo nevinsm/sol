@@ -67,6 +67,31 @@ CREATE INDEX IF NOT EXISTS idx_deps_to ON dependencies(to_id);
 
 const worldSchemaV5 = `CREATE INDEX IF NOT EXISTS idx_mr_blocked_by ON merge_requests(blocked_by);`
 
+const worldSchemaV6 = `
+CREATE TABLE IF NOT EXISTS agent_history (
+    id            TEXT PRIMARY KEY,
+    agent_name    TEXT NOT NULL,
+    work_item_id  TEXT,
+    action        TEXT NOT NULL,
+    started_at    TEXT NOT NULL,
+    ended_at      TEXT,
+    summary       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_history_agent ON agent_history(agent_name);
+CREATE INDEX IF NOT EXISTS idx_history_work_item ON agent_history(work_item_id);
+
+CREATE TABLE IF NOT EXISTS token_usage (
+    id                    TEXT PRIMARY KEY,
+    history_id            TEXT NOT NULL REFERENCES agent_history(id),
+    model                 TEXT NOT NULL,
+    input_tokens          INTEGER NOT NULL DEFAULT 0,
+    output_tokens         INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_token_history ON token_usage(history_id);
+`
+
 const sphereSchemaV1 = `
 CREATE TABLE IF NOT EXISTS agents (
     id          TEXT PRIMARY KEY,
@@ -134,7 +159,7 @@ func (s *Store) migrateWorld() error {
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
-	if v >= 5 {
+	if v >= 6 {
 		return nil // already at latest version
 	}
 
@@ -175,12 +200,17 @@ func (s *Store) migrateWorld() error {
 			return fmt.Errorf("failed to apply world schema v5: %w", err)
 		}
 	}
+	if v < 6 {
+		if _, err := tx.Exec(worldSchemaV6); err != nil {
+			return fmt.Errorf("failed to apply world schema v6: %w", err)
+		}
+	}
 	if v < 1 {
-		if _, err := tx.Exec("INSERT INTO schema_version VALUES (5)"); err != nil {
+		if _, err := tx.Exec("INSERT INTO schema_version VALUES (6)"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	} else {
-		if _, err := tx.Exec("UPDATE schema_version SET version = 5"); err != nil {
+		if _, err := tx.Exec("UPDATE schema_version SET version = 6"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	}
