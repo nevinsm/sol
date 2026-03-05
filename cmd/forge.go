@@ -59,6 +59,10 @@ var forgeStartCmd = &cobra.Command{
 			return err
 		}
 
+		if worldCfg.World.Sleeping {
+			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
+		}
+
 		sessName := dispatch.SessionName(world, "forge")
 		mgr := session.New()
 

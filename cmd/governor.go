@@ -36,6 +36,10 @@ var governorStartCmd = &cobra.Command{
 			return err
 		}
 
+		if config.IsSleeping(world) {
+			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
+		}
+
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err

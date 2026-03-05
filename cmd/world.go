@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -512,6 +513,124 @@ var worldSummaryCmd = &cobra.Command{
 	},
 }
 
+var worldSleepCmd = &cobra.Command{
+	Use:          "sleep <name>",
+	Short:        "Mark a world as sleeping and stop its services",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+
+		if err := config.RequireWorld(name); err != nil {
+			return err
+		}
+
+		cfg, err := config.LoadWorldConfig(name)
+		if err != nil {
+			return err
+		}
+
+		if cfg.World.Sleeping {
+			fmt.Printf("World %q is already sleeping.\n", name)
+			return nil
+		}
+
+		// Mark sleeping in config.
+		cfg.World.Sleeping = true
+		if err := config.WriteWorldConfig(name, cfg); err != nil {
+			return fmt.Errorf("failed to write world config: %w", err)
+		}
+
+		// Stop world services.
+		mgr := session.New()
+		stopped := 0
+
+		for _, role := range []string{"forge", "sentinel", "governor"} {
+			sessName := dispatch.SessionName(name, role)
+			if mgr.Exists(sessName) {
+				if err := mgr.Stop(sessName, false); err != nil {
+					fmt.Fprintf(os.Stderr, "  warning: failed to stop %s: %v\n", role, err)
+				} else {
+					fmt.Printf("  stopped %s\n", role)
+					stopped++
+				}
+			}
+		}
+
+		if stopped == 0 {
+			fmt.Printf("World %q is now sleeping (no services were running).\n", name)
+		} else {
+			fmt.Printf("World %q is now sleeping (%d service(s) stopped).\n", name, stopped)
+		}
+		return nil
+	},
+}
+
+var worldWakeCmd = &cobra.Command{
+	Use:          "wake <name>",
+	Short:        "Mark a world as active and start its services",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+
+		if err := config.RequireWorld(name); err != nil {
+			return err
+		}
+
+		cfg, err := config.LoadWorldConfig(name)
+		if err != nil {
+			return err
+		}
+
+		if !cfg.World.Sleeping {
+			fmt.Printf("World %q is already active.\n", name)
+			return nil
+		}
+
+		// Mark active in config.
+		cfg.World.Sleeping = false
+		if err := config.WriteWorldConfig(name, cfg); err != nil {
+			return fmt.Errorf("failed to write world config: %w", err)
+		}
+
+		fmt.Printf("World %q is now active.\n", name)
+
+		// Start services via subcommands.
+		solBin, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: cannot find sol binary to start services: %v\n", err)
+			return nil
+		}
+
+		mgr := session.New()
+
+		// Start sentinel.
+		sentinelSess := dispatch.SessionName(name, "sentinel")
+		if !mgr.Exists(sentinelSess) {
+			out, err := exec.Command(solBin, "sentinel", "start", "--world="+name).CombinedOutput()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  warning: failed to start sentinel: %s\n", strings.TrimSpace(string(out)))
+			} else {
+				fmt.Printf("  started sentinel\n")
+			}
+		}
+
+		// Start forge.
+		forgeSess := dispatch.SessionName(name, "forge")
+		if !mgr.Exists(forgeSess) {
+			out, err := exec.Command(solBin, "forge", "start", "--world="+name).CombinedOutput()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  warning: failed to start forge: %s\n", strings.TrimSpace(string(out)))
+			} else {
+				fmt.Printf("  started forge\n")
+			}
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(worldCmd)
 	worldCmd.AddCommand(worldInitCmd)
@@ -521,6 +640,8 @@ func init() {
 	worldCmd.AddCommand(worldSyncCmd)
 	worldCmd.AddCommand(worldQueryCmd)
 	worldCmd.AddCommand(worldSummaryCmd)
+	worldCmd.AddCommand(worldSleepCmd)
+	worldCmd.AddCommand(worldWakeCmd)
 
 	worldInitCmd.Flags().StringVar(&worldInitSourceRepo, "source-repo",
 		"", "git URL or local path to source repository")

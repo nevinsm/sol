@@ -107,6 +107,10 @@ var sentinelStartCmd = &cobra.Command{
 			return err
 		}
 
+		if config.IsSleeping(world) {
+			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
+		}
+
 		sessName := dispatch.SessionName(world, "sentinel")
 		mgr := session.New()
 

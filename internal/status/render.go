@@ -25,6 +25,7 @@ var (
 	healthyBadge   = okStyle.Render("● healthy")
 	unhealthyBadge = errorStyle.Render("● unhealthy")
 	degradedBadge  = warnStyle.Render("● degraded")
+	sleepingBadge  = dimStyle.Render("○ sleeping")
 	unknownBadge   = dimStyle.Render("● unknown")
 )
 
@@ -36,6 +37,8 @@ func healthBadge(health string) string {
 		return unhealthyBadge
 	case "degraded":
 		return degradedBadge
+	case "sleeping":
+		return sleepingBadge
 	default:
 		return unknownBadge
 	}
@@ -137,6 +140,15 @@ func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 	fmt.Fprintf(tw, "  WORLD\tAGENTS\tENVOYS\tGOV\tFORGE\tSENTINEL\tMR QUEUE\tHEALTH\n")
 
 	for _, w := range worlds {
+		if w.Sleeping {
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				w.Name,
+				dimStyle.Render("—"), dimStyle.Render("—"), dimStyle.Render("—"),
+				dimStyle.Render("—"), dimStyle.Render("—"), dimStyle.Render("—"),
+				sleepingBadge)
+			continue
+		}
+
 		agents := fmt.Sprintf("%d", w.Agents)
 		if w.Working > 0 || w.Stalled > 0 || w.Dead > 0 {
 			agents = fmt.Sprintf("%d (%d work", w.Agents, w.Working)

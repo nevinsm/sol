@@ -19,6 +19,7 @@ type WorldConfig struct {
 // WorldSection holds world-level settings.
 type WorldSection struct {
 	SourceRepo string `toml:"source_repo" json:"source_repo"`
+	Sleeping   bool   `toml:"sleeping,omitempty" json:"sleeping,omitempty"`
 }
 
 // AgentsSection holds agent-related settings.
@@ -109,6 +110,16 @@ func (c WorldConfig) Validate() error {
 		}
 	}
 	return nil
+}
+
+// IsSleeping returns true if the world is marked as sleeping in its config.
+// Returns false if the config cannot be loaded (fail-open).
+func IsSleeping(world string) bool {
+	cfg, err := LoadWorldConfig(world)
+	if err != nil {
+		return false
+	}
+	return cfg.World.Sleeping
 }
 
 // WriteWorldConfig writes a world's configuration to world.toml.

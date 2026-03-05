@@ -117,6 +117,13 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 	summary := WorldSummary{
 		Name:       w.Name,
 		SourceRepo: w.SourceRepo,
+		Sleeping:   config.IsSleeping(w.Name),
+	}
+
+	// Sleeping worlds get a distinct health indicator and skip further checks.
+	if summary.Sleeping {
+		summary.Health = "sleeping"
+		return summary
 	}
 
 	// Check forge and sentinel sessions.
@@ -208,6 +215,9 @@ func computeSphereHealth(s *SphereStatus) string {
 		return "degraded"
 	}
 	for _, w := range s.Worlds {
+		if w.Sleeping {
+			continue
+		}
 		if w.Health == "unhealthy" || w.Dead > 0 {
 			return "unhealthy"
 		}

@@ -36,6 +36,11 @@ var castCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		if worldCfg.World.Sleeping {
+			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
+		}
+
 		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 		if err != nil {
 			return err

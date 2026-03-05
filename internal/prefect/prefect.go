@@ -159,10 +159,18 @@ func (s *Prefect) heartbeat() {
 	// Build set of sentineled worlds (ADR-0006).
 	sentineledWorlds := s.getSentineledWorlds()
 
+	// Build set of sleeping worlds.
+	sleepingWorlds := s.getSleepingWorlds(workingAgents)
+
 	deadCount := 0
 	for _, agent := range workingAgents {
 		// Skip human-supervised roles — envoys and governors are not auto-respawned.
 		if agent.Role == "envoy" || agent.Role == "governor" {
+			continue
+		}
+
+		// Skip sleeping worlds — their services should not be respawned.
+		if sleepingWorlds[agent.World] {
 			continue
 		}
 
@@ -494,6 +502,24 @@ func (s *Prefect) getSentineledWorlds() map[string]bool {
 		}
 	}
 	return worlds
+}
+
+// getSleepingWorlds returns the set of worlds marked as sleeping in their config.
+// Only checks worlds that have active agents, to avoid unnecessary config reads.
+func (s *Prefect) getSleepingWorlds(agents []store.Agent) map[string]bool {
+	// Collect distinct worlds.
+	worldSet := make(map[string]bool)
+	for _, a := range agents {
+		worldSet[a.World] = false
+	}
+
+	result := make(map[string]bool)
+	for world := range worldSet {
+		if config.IsSleeping(world) {
+			result[world] = true
+		}
+	}
+	return result
 }
 
 // shutdown gracefully stops all working agent sessions.

@@ -203,6 +203,7 @@ type ConsulInfo struct {
 type WorldSummary struct {
 	Name       string `json:"name"`
 	SourceRepo string `json:"source_repo,omitempty"`
+	Sleeping   bool   `json:"sleeping,omitempty"`
 	Agents     int    `json:"agents"`
 	Envoys     int    `json:"envoys"`
 	Governor   bool   `json:"governor"`
