@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1487,5 +1489,139 @@ func TestRecastCastFailureNonBlocking(t *testing.T) {
 	// Recast count should NOT be incremented on failure.
 	if w.recastCounts["sol-cfail888"] != 0 {
 		t.Errorf("recast count = %d, want 0 (cast failed)", w.recastCounts["sol-cfail888"])
+	}
+}
+
+func TestPruneOrphanedBranches(t *testing.T) {
+	// Create a bare "remote" repo and a local clone to simulate real git workflows.
+	tmpDir := t.TempDir()
+	remoteDir := filepath.Join(tmpDir, "remote.git")
+	repoDir := filepath.Join(tmpDir, "repo")
+
+	// Helper to run git commands.
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v in %s failed: %v\n%s", args, dir, err, out)
+		}
+	}
+
+	// Set up bare remote repo with an initial commit.
+	git(tmpDir, "init", "--bare", remoteDir)
+	git(tmpDir, "clone", remoteDir, repoDir)
+	os.WriteFile(filepath.Join(repoDir, "file.txt"), []byte("hello"), 0o644)
+	git(repoDir, "add", "file.txt")
+	git(repoDir, "commit", "-m", "init")
+	git(repoDir, "push", "origin", "main")
+
+	// Create a branch, push it, then delete it on remote (simulates merged & deleted).
+	git(repoDir, "checkout", "-b", "outpost/Toast/sol-aaa")
+	os.WriteFile(filepath.Join(repoDir, "a.txt"), []byte("a"), 0o644)
+	git(repoDir, "add", "a.txt")
+	git(repoDir, "commit", "-m", "branch a")
+	git(repoDir, "push", "-u", "origin", "outpost/Toast/sol-aaa")
+
+	// Create another branch, push and delete remote.
+	git(repoDir, "checkout", "-b", "outpost/Sage/sol-bbb")
+	os.WriteFile(filepath.Join(repoDir, "b.txt"), []byte("b"), 0o644)
+	git(repoDir, "add", "b.txt")
+	git(repoDir, "commit", "-m", "branch b")
+	git(repoDir, "push", "-u", "origin", "outpost/Sage/sol-bbb")
+
+	// Create a branch that still has its remote (should NOT be pruned).
+	git(repoDir, "checkout", "-b", "outpost/Ember/sol-ccc")
+	os.WriteFile(filepath.Join(repoDir, "c.txt"), []byte("c"), 0o644)
+	git(repoDir, "add", "c.txt")
+	git(repoDir, "commit", "-m", "branch c")
+	git(repoDir, "push", "-u", "origin", "outpost/Ember/sol-ccc")
+
+	// Create a worktree branch (should be protected even if remote is gone).
+	git(repoDir, "checkout", "-b", "outpost/Wren/sol-ddd")
+	os.WriteFile(filepath.Join(repoDir, "d.txt"), []byte("d"), 0o644)
+	git(repoDir, "add", "d.txt")
+	git(repoDir, "commit", "-m", "branch d")
+	git(repoDir, "push", "-u", "origin", "outpost/Wren/sol-ddd")
+
+	// Go back to main.
+	git(repoDir, "checkout", "main")
+
+	// Create a worktree for Wren's branch.
+	worktreeDir := filepath.Join(tmpDir, "worktree-wren")
+	git(repoDir, "worktree", "add", worktreeDir, "outpost/Wren/sol-ddd")
+
+	// Delete remotes for aaa, bbb, and ddd to simulate merged-and-cleaned.
+	git(remoteDir, "branch", "-D", "outpost/Toast/sol-aaa")
+	git(remoteDir, "branch", "-D", "outpost/Sage/sol-bbb")
+	git(remoteDir, "branch", "-D", "outpost/Wren/sol-ddd")
+
+	// Set up sentinel.
+	t.Setenv("SOL_HOME", tmpDir)
+	cfg := testConfig()
+	cfg.SourceRepo = repoDir
+
+	mock := newMockSessions()
+	w := &Sentinel{
+		config:        cfg,
+		sessions:      mock,
+		respawnCounts: make(map[respawnKey]int),
+		recastCounts:  make(map[string]int),
+		lastCaptures:  make(map[string]string),
+	}
+
+	pruned := w.pruneOrphanedBranches()
+
+	// Should prune aaa and bbb (remote gone, no worktree).
+	// Should NOT prune ccc (remote still exists).
+	// Should NOT prune ddd (has active worktree despite remote gone).
+	// Should NOT prune main.
+	if pruned != 2 {
+		t.Errorf("pruneOrphanedBranches() = %d, want 2", pruned)
+	}
+
+	// Verify which branches remain.
+	out, err := exec.Command("git", "-C", repoDir, "branch", "--list").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git branch --list failed: %v", err)
+	}
+	branches := string(out)
+
+	if strings.Contains(branches, "outpost/Toast/sol-aaa") {
+		t.Error("branch outpost/Toast/sol-aaa should have been pruned")
+	}
+	if strings.Contains(branches, "outpost/Sage/sol-bbb") {
+		t.Error("branch outpost/Sage/sol-bbb should have been pruned")
+	}
+	if !strings.Contains(branches, "outpost/Ember/sol-ccc") {
+		t.Error("branch outpost/Ember/sol-ccc should NOT have been pruned")
+	}
+	if !strings.Contains(branches, "outpost/Wren/sol-ddd") {
+		t.Error("branch outpost/Wren/sol-ddd should NOT have been pruned (active worktree)")
+	}
+	if !strings.Contains(branches, "main") {
+		t.Error("main branch should NOT have been pruned")
+	}
+}
+
+func TestPruneOrphanedBranchesNoSourceRepo(t *testing.T) {
+	cfg := testConfig()
+	cfg.SourceRepo = "" // no source repo configured
+
+	mock := newMockSessions()
+	w := &Sentinel{
+		config:        cfg,
+		sessions:      mock,
+		respawnCounts: make(map[respawnKey]int),
+		recastCounts:  make(map[string]int),
+		lastCaptures:  make(map[string]string),
+	}
+
+	pruned := w.pruneOrphanedBranches()
+	if pruned != 0 {
+		t.Errorf("pruneOrphanedBranches() = %d, want 0 (no source repo)", pruned)
 	}
 }

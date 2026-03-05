@@ -305,6 +305,9 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 		}
 	}
 
+	// Prune local branches whose remote tracking branch is gone.
+	branchesPruned := w.pruneOrphanedBranches()
+
 	// Clean up orphaned resources (worktrees, session metadata, tethers).
 	orphansCleaned := w.cleanupOrphanedResources(activeAgents)
 
@@ -327,6 +330,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 				"reaped":          reapedCount,
 				"recast":          recastCount,
 				"released_claims": releasedCount,
+				"branches_pruned": branchesPruned,
 				"orphans_cleaned": orphansCleaned,
 				"assessed":        w.patrolAssessed,
 				"nudged":          w.patrolNudged,
@@ -1095,4 +1099,89 @@ func (w *Sentinel) cleanupOrphanedTethers(agentNames, workingAgents map[string]b
 		}
 	}
 	return cleaned
+}
+
+// pruneOrphanedBranches deletes local branches whose remote tracking branch
+// has been deleted (i.e., marked as "gone" by git). Active worktree branches
+// are protected. Returns the number of branches pruned.
+func (w *Sentinel) pruneOrphanedBranches() int {
+	repoPath := w.config.SourceRepo
+	if repoPath == "" {
+		return 0
+	}
+
+	// Prune remote tracking refs for deleted remote branches.
+	exec.Command("git", "-C", repoPath, "fetch", "--prune").Run()
+
+	// List local branches with their upstream tracking status.
+	// Format: %(refname:short) %(upstream:track)
+	// Branches whose remote is gone show "[gone]" in the track field.
+	out, err := exec.Command("git", "-C", repoPath, "for-each-ref",
+		"--format=%(refname:short) %(upstream:track)",
+		"refs/heads/").CombinedOutput()
+	if err != nil {
+		return 0
+	}
+
+	// Build set of branches used by active worktrees.
+	worktreeBranches := w.listWorktreeBranches(repoPath)
+
+	var pruned int
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		if !strings.Contains(line, "[gone]") {
+			continue
+		}
+
+		branch := strings.Fields(line)[0]
+
+		// Never delete the main/master branch.
+		if branch == "main" || branch == "master" {
+			continue
+		}
+
+		// Protect branches that have an active worktree.
+		if worktreeBranches[branch] {
+			continue
+		}
+
+		// Delete the orphaned local branch.
+		if err := exec.Command("git", "-C", repoPath, "branch", "-D", branch).Run(); err != nil {
+			continue
+		}
+		pruned++
+
+		if w.logger != nil {
+			w.logger.Emit("sentinel_action", w.agentID(), w.agentID(), "audit",
+				map[string]any{
+					"action": "pruned_branch",
+					"branch": branch,
+					"world":  w.config.World,
+				})
+		}
+	}
+	return pruned
+}
+
+// listWorktreeBranches returns a set of branch names currently checked out
+// in git worktrees.
+func (w *Sentinel) listWorktreeBranches(repoPath string) map[string]bool {
+	out, err := exec.Command("git", "-C", repoPath, "worktree", "list",
+		"--porcelain").CombinedOutput()
+	if err != nil {
+		return nil
+	}
+
+	branches := make(map[string]bool)
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "branch ") {
+			ref := strings.TrimPrefix(line, "branch ")
+			// Convert refs/heads/foo to foo.
+			branch := strings.TrimPrefix(ref, "refs/heads/")
+			branches[branch] = true
+		}
+	}
+	return branches
 }

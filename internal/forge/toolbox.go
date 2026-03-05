@@ -192,6 +192,9 @@ func (r *Forge) MarkMerged(mrID string) error {
 	// Clean up remote branch (best-effort).
 	exec.Command("git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
 
+	// Clean up local branch (best-effort).
+	exec.Command("git", "-C", r.worktree, "branch", "-D", mr.Branch).Run()
+
 	// Supersede prior failed MRs for the same work item (best-effort).
 	r.supersedeFailed(mrID, mr.WorkItemID)
 
@@ -227,6 +230,9 @@ func (r *Forge) supersedeFailed(mergedMRID, workItemID string) {
 
 		// Delete remote branch (best-effort).
 		exec.Command("git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
+
+		// Delete local branch (best-effort).
+		exec.Command("git", "-C", r.worktree, "branch", "-D", mr.Branch).Run()
 
 		// Resolve escalations that reference this MR (best-effort).
 		r.resolveEscalationsForMR(mr.ID)
