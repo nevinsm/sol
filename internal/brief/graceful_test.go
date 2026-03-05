@@ -53,6 +53,43 @@ func (m *mockManager) Stop(name string, force bool) error {
 
 // --- Tests ---
 
+func TestGracefulStop_StubSessionFastPath(t *testing.T) {
+	tmp := t.TempDir()
+	briefDir := filepath.Join(tmp, ".brief")
+	if err := os.MkdirAll(briefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Captures: always return the same content (stub session, no real output).
+	mgr := &mockManager{
+		captureFn: func(name string, lines int) (string, error) {
+			return "$ sleep 300", nil
+		},
+	}
+
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+
+	start := time.Now()
+	err := GracefulStop("sol-test-stub", briefDir, mgr)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should complete in well under 5s (stub uses 100ms poll, 2 stable checks, 1s max).
+	if elapsed > 5*time.Second {
+		t.Errorf("stub fast-path too slow: %v (expected <1s)", elapsed)
+	}
+
+	// Should have injected the stop prompt and called stop.
+	if len(mgr.injectCalls) != 1 {
+		t.Fatalf("expected 1 inject call, got %d", len(mgr.injectCalls))
+	}
+	if len(mgr.stopCalls) != 1 {
+		t.Fatalf("expected 1 stop call, got %d", len(mgr.stopCalls))
+	}
+}
+
 func TestGracefulStop_NoBriefDir(t *testing.T) {
 	mgr := &mockManager{}
 	briefDir := filepath.Join(t.TempDir(), "nonexistent", ".brief")

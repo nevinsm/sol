@@ -28,7 +28,14 @@ type GracefulStopManager interface {
 // behavior). Polls pane content every 10s; after 4 consecutive unchanged
 // captures (40s stable), kills the session. Falls back to force-kill after
 // 90s max timeout.
+//
+// When SOL_SESSION_COMMAND is set (test stub sessions), uses aggressive
+// timeouts (100ms poll, 2 stable checks, 1s max) since the stub process
+// will never produce meaningful output.
 func GracefulStop(sessName, briefDir string, mgr GracefulStopManager) error {
+	if os.Getenv("SOL_SESSION_COMMAND") != "" {
+		return gracefulStop(sessName, briefDir, mgr, 100*time.Millisecond, 2, time.Second)
+	}
 	return gracefulStop(sessName, briefDir, mgr, 10*time.Second, 4, 90*time.Second)
 }
 
