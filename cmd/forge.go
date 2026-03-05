@@ -903,6 +903,9 @@ var forgeMergeCmd = &cobra.Command{
 			eventLog.Emit(events.EventMerged, "forge", "forge", "both", map[string]string{
 				"merge_request_id": mrID,
 			})
+			if err := worldsync.SyncRepo(world); err != nil {
+				slog.Warn("post-merge world sync failed", "world", world, "error", err)
+			}
 		}
 		return nil
 	},
