@@ -180,12 +180,19 @@ type WorldLister interface {
 	ListWorlds() ([]store.World, error)
 }
 
+// SenateInfo holds senate process state (sphere-level).
+type SenateInfo struct {
+	Running     bool   `json:"running"`
+	SessionName string `json:"session_name,omitempty"`
+}
+
 // SphereStatus holds the complete runtime state for the sphere.
 type SphereStatus struct {
 	SOLHome   string         `json:"sol_home"`
 	Prefect   PrefectInfo    `json:"prefect"`
 	Consul    ConsulInfo     `json:"consul"`
 	Chronicle ChronicleInfo  `json:"chronicle"`
+	Senate    SenateInfo     `json:"senate"`
 	Worlds    []WorldSummary `json:"worlds"`
 	Caravans  []CaravanInfo  `json:"caravans,omitempty"`
 	Health    string         `json:"health"`

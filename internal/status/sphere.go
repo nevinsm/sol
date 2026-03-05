@@ -32,12 +32,18 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 	}
 
 	// 2. Check consul.
-	result.Consul = gatherConsulInfo()
+	result.Consul = GatherConsulInfo()
 
 	// 3. Check chronicle.
 	const chronicleSessionName = "sol-chronicle"
 	if checker.Exists(chronicleSessionName) {
 		result.Chronicle = ChronicleInfo{Running: true, SessionName: chronicleSessionName}
+	}
+
+	// 3b. Check senate.
+	const senateSessionName = "sol-senate"
+	if checker.Exists(senateSessionName) {
+		result.Senate = SenateInfo{Running: true, SessionName: senateSessionName}
 	}
 
 	// 4. Gather per-world summaries.
@@ -91,9 +97,9 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 	return result
 }
 
-// gatherConsulInfo reads consul heartbeat state.
+// GatherConsulInfo reads consul heartbeat state.
 // Consul is a Go process (not a tmux session), so heartbeat is the canonical signal.
-func gatherConsulInfo() ConsulInfo {
+func GatherConsulInfo() ConsulInfo {
 	info := ConsulInfo{}
 
 	hb, err := consul.ReadHeartbeat(config.Home())

@@ -72,6 +72,8 @@ func RenderSphere(s *SphereStatus) string {
 		formatConsulDetail(s.Consul))
 	renderProcess(&b, "Chronicle", s.Chronicle.Running,
 		formatChronicleDetail(s.Chronicle))
+	renderProcess(&b, "Senate", s.Senate.Running,
+		formatSenateDetail(s.Senate))
 	b.WriteString("\n")
 
 	// Worlds table.
@@ -130,6 +132,13 @@ func formatConsulDetail(c ConsulInfo) string {
 func formatChronicleDetail(c ChronicleInfo) string {
 	if c.Running {
 		return c.SessionName
+	}
+	return ""
+}
+
+func formatSenateDetail(s SenateInfo) string {
+	if s.Running {
+		return s.SessionName
 	}
 	return ""
 }
@@ -444,6 +453,85 @@ func renderWorldSummary(b *strings.Builder, ws *WorldStatus) {
 	}
 	b.WriteString(dimStyle.Render(parts))
 	b.WriteString("\n")
+}
+
+// RenderCombined renders sphere processes and world detail as a single view.
+// Used when sol status auto-detects a world from the current directory.
+func RenderCombined(consul ConsulInfo, ws *WorldStatus) string {
+	var b strings.Builder
+
+	// Header — world-focused.
+	b.WriteString(headerStyle.Render(fmt.Sprintf("World: %s", ws.World)))
+	b.WriteString("  ")
+	b.WriteString(healthBadge(ws.HealthString()))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render(config.WorldDir(ws.World)))
+	b.WriteString("\n\n")
+
+	// Sphere-level processes.
+	b.WriteString(headerStyle.Render("Sphere Processes"))
+	b.WriteString("\n")
+	renderProcess(&b, "Prefect", ws.Prefect.Running,
+		formatPrefectDetail(ws.Prefect))
+	renderProcess(&b, "Consul", consul.Running,
+		formatConsulDetail(consul))
+	renderProcess(&b, "Chronicle", ws.Chronicle.Running,
+		formatChronicleDetail(ws.Chronicle))
+	b.WriteString("\n")
+
+	// World processes (Forge, Sentinel, Governor — not Prefect/Chronicle).
+	b.WriteString(headerStyle.Render("World Processes"))
+	b.WriteString("\n")
+	renderProcess(&b, "Forge", ws.Forge.Running,
+		formatForgeDetail(ws.Forge))
+	renderProcess(&b, "Sentinel", ws.Sentinel.Running,
+		formatSentinelDetail(ws.Sentinel))
+	if ws.Governor.Running {
+		renderProcess(&b, "Governor", true,
+			formatGovernorDetail(ws.Governor))
+	}
+	b.WriteString("\n")
+
+	// Outposts (role=agent only).
+	if len(ws.Agents) > 0 {
+		b.WriteString(headerStyle.Render(fmt.Sprintf("Outposts (%d)", len(ws.Agents))))
+		b.WriteString("\n")
+		renderAgentsTable(&b, ws.Agents)
+		b.WriteString("\n")
+	}
+
+	// Envoys.
+	if len(ws.Envoys) > 0 {
+		b.WriteString(headerStyle.Render(fmt.Sprintf("Envoys (%d)", len(ws.Envoys))))
+		b.WriteString("\n")
+		renderEnvoysTable(&b, ws.Envoys)
+		b.WriteString("\n")
+	}
+
+	// Show "no agents" if neither outposts nor envoys exist.
+	if len(ws.Agents) == 0 && len(ws.Envoys) == 0 {
+		b.WriteString(dimStyle.Render("No agents registered."))
+		b.WriteString("\n")
+	}
+
+	// Caravans.
+	if len(ws.Caravans) > 0 {
+		b.WriteString(headerStyle.Render("Caravans"))
+		b.WriteString("\n")
+		renderCaravansTable(&b, ws.Caravans)
+		b.WriteString("\n")
+	}
+
+	// Merge queue.
+	b.WriteString(headerStyle.Render("Merge Queue"))
+	b.WriteString("\n")
+	renderMergeQueue(&b, ws.MergeQueue)
+	b.WriteString("\n")
+
+	// Summary.
+	renderWorldSummary(&b, ws)
+
+	return b.String()
 }
 
 // RenderWorldConfig renders the config section for sol world status.

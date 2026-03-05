@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nevinsm/sol/internal/brief"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/store"
@@ -79,8 +80,7 @@ type SessionManager interface {
 
 // StopManager abstracts session operations for Stop.
 type StopManager interface {
-	Exists(name string) bool
-	Stop(name string, force bool) error
+	brief.GracefulStopManager
 }
 
 // DeleteStore abstracts sphere store operations for Delete.
@@ -332,14 +332,17 @@ func installHooks(worktreeDir, world, name string) error {
 
 // --- Stop ---
 
-// Stop terminates an envoy session. Does NOT remove the worktree or directory.
+// Stop terminates an envoy session. Injects a brief-update prompt and waits
+// for output stability before killing the session. Does NOT remove the
+// worktree or directory.
 func Stop(world, name string, sphereStore StartStore, mgr StopManager) error {
 	agentID := world + "/" + name
 	sessName := SessionName(world, name)
 
-	// 1. Check session exists. If so, stop it.
+	// 1. Graceful stop: inject brief update prompt, wait for stability, then kill.
+	//    Falls back to immediate kill if no .brief/ directory exists.
 	if mgr.Exists(sessName) {
-		if err := mgr.Stop(sessName, true); err != nil {
+		if err := brief.GracefulStop(sessName, BriefDir(world, name), mgr); err != nil {
 			return fmt.Errorf("failed to stop envoy %q in world %q: %w", name, world, err)
 		}
 	}

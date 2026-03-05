@@ -14,7 +14,7 @@ type MergeRequest struct {
 	ID         string
 	WorkItemID string
 	Branch     string
-	Phase      string // ready, claimed, merged, failed
+	Phase      string // ready, claimed, merged, failed, superseded
 	ClaimedBy  string // forge agent ID (empty if unclaimed)
 	ClaimedAt  *time.Time
 	Attempts   int
@@ -165,6 +165,69 @@ func (s *Store) ListMergeRequests(phase string) ([]MergeRequest, error) {
 	return mrs, nil
 }
 
+// ListMergeRequestsByWorkItem returns merge requests for a given work item,
+// optionally filtered by phase. If phase is empty, returns all phases.
+func (s *Store) ListMergeRequestsByWorkItem(workItemID, phase string) ([]MergeRequest, error) {
+	query := `SELECT id, work_item_id, branch, phase, claimed_by, claimed_at,
+	                 attempts, priority, blocked_by, created_at, updated_at, merged_at
+	          FROM merge_requests WHERE work_item_id = ?`
+	args := []interface{}{workItemID}
+	if phase != "" {
+		query += " AND phase = ?"
+		args = append(args, phase)
+	}
+	query += " ORDER BY created_at ASC"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list merge requests for work item %q: %w", workItemID, err)
+	}
+	defer rows.Close()
+
+	var mrs []MergeRequest
+	for rows.Next() {
+		var mr MergeRequest
+		var claimedBy, blockedBy sql.NullString
+		var claimedAt, mergedAt sql.NullString
+		var createdAt, updatedAt string
+
+		if err := rows.Scan(&mr.ID, &mr.WorkItemID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
+			&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan merge request: %w", err)
+		}
+		mr.ClaimedBy = claimedBy.String
+		mr.BlockedBy = blockedBy.String
+		var parseErr error
+		mr.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", mr.ID, parseErr)
+		}
+		mr.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", mr.ID, parseErr)
+		}
+		if claimedAt.Valid {
+			t, parseErr := time.Parse(time.RFC3339, claimedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", mr.ID, parseErr)
+			}
+			mr.ClaimedAt = &t
+		}
+		if mergedAt.Valid {
+			t, parseErr := time.Parse(time.RFC3339, mergedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", mr.ID, parseErr)
+			}
+			mr.MergedAt = &t
+		}
+		mrs = append(mrs, mr)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating merge requests: %w", err)
+	}
+	return mrs, nil
+}
+
 // ClaimMergeRequest atomically claims the next ready merge request.
 // Sets phase=claimed, claimed_by=claimerID, claimed_at=now, attempts++.
 // Returns the claimed MR, or nil if no ready MRs exist.
@@ -231,7 +294,7 @@ func (s *Store) ClaimMergeRequest(claimerID string) (*MergeRequest, error) {
 // Also sets updated_at=now. If phase=merged, also sets merged_at=now.
 // If phase=ready, clears claimed_by and claimed_at (release).
 func (s *Store) UpdateMergeRequestPhase(id, phase string) error {
-	validPhases := map[string]bool{"ready": true, "claimed": true, "merged": true, "failed": true}
+	validPhases := map[string]bool{"ready": true, "claimed": true, "merged": true, "failed": true, "superseded": true}
 	if !validPhases[phase] {
 		return fmt.Errorf("invalid merge request phase %q", phase)
 	}

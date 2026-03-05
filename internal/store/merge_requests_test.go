@@ -351,6 +351,84 @@ func TestReleaseStaleLeavesRecentClaims(t *testing.T) {
 	}
 }
 
+func TestListMergeRequestsByWorkItem(t *testing.T) {
+	s := setupWorld(t)
+
+	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	id2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
+
+	// Create MRs: 2 for id1, 1 for id2.
+	mr1ID, _ := s.CreateMergeRequest(id1, "branch1a", 2)
+	mr2ID, _ := s.CreateMergeRequest(id1, "branch1b", 2)
+	s.CreateMergeRequest(id2, "branch2", 2)
+
+	// Mark one as failed.
+	s.ClaimMergeRequest("forge/Forge")
+	s.UpdateMergeRequestPhase(mr1ID, "failed")
+
+	// List all for id1.
+	mrs, err := s.ListMergeRequestsByWorkItem(id1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mrs) != 2 {
+		t.Fatalf("expected 2 MRs for work item, got %d", len(mrs))
+	}
+
+	// List only failed for id1.
+	failed, err := s.ListMergeRequestsByWorkItem(id1, "failed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(failed) != 1 {
+		t.Fatalf("expected 1 failed MR, got %d", len(failed))
+	}
+	if failed[0].ID != mr1ID {
+		t.Errorf("failed MR ID = %q, want %q", failed[0].ID, mr1ID)
+	}
+
+	// List only ready for id1.
+	ready, err := s.ListMergeRequestsByWorkItem(id1, "ready")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ready) != 1 {
+		t.Fatalf("expected 1 ready MR, got %d", len(ready))
+	}
+	if ready[0].ID != mr2ID {
+		t.Errorf("ready MR ID = %q, want %q", ready[0].ID, mr2ID)
+	}
+
+	// List for id2 — should only get 1.
+	mrs2, err := s.ListMergeRequestsByWorkItem(id2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mrs2) != 1 {
+		t.Fatalf("expected 1 MR for work item 2, got %d", len(mrs2))
+	}
+}
+
+func TestSupersededPhase(t *testing.T) {
+	s := setupWorld(t)
+
+	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
+
+	// Transition to superseded.
+	if err := s.UpdateMergeRequestPhase(mrID, "superseded"); err != nil {
+		t.Fatalf("UpdateMergeRequestPhase(superseded) error: %v", err)
+	}
+
+	mr, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr.Phase != "superseded" {
+		t.Errorf("phase = %q, want 'superseded'", mr.Phase)
+	}
+}
+
 func TestGetMergeRequestNotFound(t *testing.T) {
 	s := setupWorld(t)
 

@@ -166,6 +166,11 @@ var docSections = []docSection{
 		notes:   "`consul run` accepts `--interval` (default 5m), `--stale-timeout` (default 1h), and `--webhook` for escalation notifications.",
 	},
 	{
+		heading: "Senate (Sphere-Scoped Planner)",
+		paths:   []string{"senate start", "senate stop", "senate attach", "senate brief", "senate debrief"},
+		notes:   "Senate is an operator-managed sphere-scoped planning session. It reads governor world summaries via `sol world summary` and queries governors via `sol world query`. Not supervised by prefect — start and stop manually.",
+	},
+	{
 		heading: "Service (Systemd Units)",
 		paths:   []string{"service install", "service uninstall", "service start", "service stop", "service restart", "service status"},
 		notes:   "Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle).",

@@ -22,6 +22,7 @@ type WorldStore interface {
 	GetWorkItem(id string) (*store.WorkItem, error)
 	UpdateWorkItem(id string, updates store.WorkItemUpdates) error
 	ListMergeRequests(phase string) ([]store.MergeRequest, error)
+	ListMergeRequestsByWorkItem(workItemID, phase string) ([]store.MergeRequest, error)
 	BlockMergeRequest(mrID, blockerID string) error
 	UnblockMergeRequest(mrID string) error
 	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
@@ -36,6 +37,8 @@ type SphereStore interface {
 	GetAgent(id string) (*store.Agent, error)
 	UpdateAgentState(id, state, tetherItem string) error
 	CreateEscalation(severity, source, description string) (string, error)
+	ListEscalations(status string) ([]store.Escalation, error)
+	ResolveEscalation(id string) error
 	IsWorkItemBlockedByCaravanDeps(workItemID string) (bool, []string, error)
 	Close() error
 }

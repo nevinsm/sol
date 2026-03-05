@@ -121,6 +121,22 @@ func (m *mockWorldStore) ListMergeRequests(phase string) ([]store.MergeRequest, 
 	return result, nil
 }
 
+func (m *mockWorldStore) ListMergeRequestsByWorkItem(workItemID, phase string) ([]store.MergeRequest, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []store.MergeRequest
+	for _, mr := range m.mrs {
+		if mr.WorkItemID != workItemID {
+			continue
+		}
+		if phase != "" && mr.Phase != phase {
+			continue
+		}
+		result = append(result, mr)
+	}
+	return result, nil
+}
+
 func (m *mockWorldStore) BlockMergeRequest(mrID, blockerID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -189,9 +205,11 @@ func (m *mockWorldStore) CloseWorkItem(id string) error {
 func (m *mockWorldStore) Close() error { return nil }
 
 type mockEscalation struct {
+	id          string
 	severity    string
 	source      string
 	description string
+	status      string
 }
 
 type mockSphereStore struct {
@@ -243,8 +261,40 @@ func (m *mockSphereStore) UpdateAgentState(id, state, tetherItem string) error {
 func (m *mockSphereStore) CreateEscalation(severity, source, description string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.escalations = append(m.escalations, mockEscalation{severity, source, description})
-	return fmt.Sprintf("esc-%08x", len(m.escalations)), nil
+	id := fmt.Sprintf("esc-%08x", len(m.escalations)+1)
+	m.escalations = append(m.escalations, mockEscalation{id: id, severity: severity, source: source, description: description, status: "open"})
+	return id, nil
+}
+
+func (m *mockSphereStore) ListEscalations(status string) ([]store.Escalation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []store.Escalation
+	for _, e := range m.escalations {
+		if status != "" && e.status != status {
+			continue
+		}
+		result = append(result, store.Escalation{
+			ID:          e.id,
+			Severity:    e.severity,
+			Source:      e.source,
+			Description: e.description,
+			Status:      e.status,
+		})
+	}
+	return result, nil
+}
+
+func (m *mockSphereStore) ResolveEscalation(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.escalations {
+		if m.escalations[i].id == id {
+			m.escalations[i].status = "resolved"
+			return nil
+		}
+	}
+	return fmt.Errorf("escalation %q not found", id)
 }
 
 func (m *mockSphereStore) IsWorkItemBlockedByCaravanDeps(workItemID string) (bool, []string, error) {

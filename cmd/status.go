@@ -20,7 +20,9 @@ var statusCmd = &cobra.Command{
 	GroupID: groupDispatch,
 	Long: `Show system status.
 
-Without arguments, shows a sphere-level overview of all worlds and processes.
+Without arguments, auto-detects world from cwd (or SOL_WORLD).
+If a world is detected, shows sphere processes plus world detail combined.
+Otherwise, shows a sphere-level overview of all worlds and processes.
 With a world name, shows detailed status for that specific world.
 
 Exit codes (world --json only):
@@ -35,9 +37,23 @@ Exit codes (world --json only):
 
 func runStatus(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
+		// Auto-detect world from SOL_WORLD or cwd.
+		if world := detectWorldForStatus(); world != "" {
+			return runCombinedStatus(world)
+		}
 		return runSphereStatus()
 	}
 	return runWorldStatus(args[0])
+}
+
+// detectWorldForStatus checks SOL_WORLD env and cwd for world context.
+// Returns empty string if no world detected (silent, no error).
+func detectWorldForStatus() string {
+	world, err := config.ResolveWorld("")
+	if err != nil {
+		return ""
+	}
+	return world
 }
 
 func runSphereStatus() error {
@@ -59,6 +75,53 @@ func runSphereStatus() error {
 	}
 
 	fmt.Print(status.RenderSphere(result))
+	return nil
+}
+
+func runCombinedStatus(world string) error {
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		return err
+	}
+	defer sphereStore.Close()
+
+	worldStore, err := store.OpenWorld(world)
+	if err != nil {
+		return err
+	}
+	defer worldStore.Close()
+
+	mgr := session.New()
+
+	result, err := status.Gather(world, sphereStore, worldStore, worldStore, mgr)
+	if err != nil {
+		return err
+	}
+
+	status.GatherCaravans(result, sphereStore, gatedWorldOpener)
+
+	consulInfo := status.GatherConsulInfo()
+
+	if statusJSON {
+		combined := struct {
+			Consul status.ConsulInfo `json:"consul"`
+			*status.WorldStatus
+		}{
+			Consul:      consulInfo,
+			WorldStatus: result,
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(combined); err != nil {
+			return err
+		}
+		if code := result.Health(); code != 0 {
+			return &exitError{code: code}
+		}
+		return nil
+	}
+
+	fmt.Print(status.RenderCombined(consulInfo, result))
 	return nil
 }
 

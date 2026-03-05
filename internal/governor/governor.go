@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/nevinsm/sol/internal/brief"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/protocol"
 )
@@ -52,8 +53,7 @@ type SessionManager interface {
 
 // StopManager abstracts session operations for Stop.
 type StopManager interface {
-	Exists(name string) bool
-	Stop(name string, force bool) error
+	brief.GracefulStopManager
 }
 
 // --- Options ---
@@ -198,15 +198,17 @@ func installHooks(govDir, world string) error {
 
 // --- Stop ---
 
-// Stop terminates a governor session. Does NOT remove the governor directory,
-// mirror, or brief.
+// Stop terminates a governor session. Injects a brief-update prompt and waits
+// for output stability before killing the session. Does NOT remove the
+// governor directory, mirror, or brief.
 func Stop(world string, sphereStore SphereStore, mgr StopManager) error {
 	sessName := config.SessionName(world, "governor")
 	agentID := world + "/governor"
 
-	// 1. Check session exists. If so, stop it.
+	// 1. Graceful stop: inject brief update prompt, wait for stability, then kill.
+	//    Falls back to immediate kill if no .brief/ directory exists.
 	if mgr.Exists(sessName) {
-		if err := mgr.Stop(sessName, true); err != nil {
+		if err := brief.GracefulStop(sessName, BriefDir(world), mgr); err != nil {
 			return fmt.Errorf("failed to stop governor for world %q: %w", world, err)
 		}
 	}

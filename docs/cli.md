@@ -263,6 +263,18 @@ Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` 
 
 `consul run` accepts `--interval` (default 5m), `--stale-timeout` (default 1h), and `--webhook` for escalation notifications.
 
+## Senate (Sphere-Scoped Planner)
+
+| Command | Description |
+|---------|-------------|
+| `sol senate start` | Start the senate planning session |
+| `sol senate stop` | Stop the senate session |
+| `sol senate attach` | Attach to the senate tmux session |
+| `sol senate brief` | Display the senate's brief |
+| `sol senate debrief` | Archive the senate's brief and reset |
+
+Senate is an operator-managed sphere-scoped planning session. It reads governor world summaries via `sol world summary` and queries governors via `sol world query`. Not supervised by prefect — start and stop manually.
+
 ## Service (Systemd Units)
 
 | Command | Description |

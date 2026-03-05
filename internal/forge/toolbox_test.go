@@ -415,6 +415,81 @@ func TestMarkMergedClosesWorkItem(t *testing.T) {
 	}
 }
 
+func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-failed1", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "failed"},
+		{ID: "mr-failed2", WorkItemID: "sol-aaa11111", Branch: "outpost/Blaze/sol-aaa11111", Phase: "failed"},
+		{ID: "mr-merged1", WorkItemID: "sol-aaa11111", Branch: "outpost/Nova/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-other1", WorkItemID: "sol-bbb22222", Branch: "outpost/Toast/sol-bbb22222", Phase: "failed"}, // different work item
+	}
+	worldStore.items["sol-aaa11111"] = &store.WorkItem{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+	worldStore.items["sol-bbb22222"] = &store.WorkItem{ID: "sol-bbb22222", Title: "Other", Status: "done"}
+
+	sphereStore := newMockSphereStore()
+	// Pre-create escalations for the failed MRs.
+	sphereStore.CreateEscalation("high", "ember/forge",
+		"Merge failed for MR mr-failed1 (branch outpost/Toast/sol-aaa11111, work item sol-aaa11111). Work item reopened for re-dispatch.")
+	sphereStore.CreateEscalation("high", "ember/forge",
+		"Merge failed for MR mr-failed2 (branch outpost/Blaze/sol-aaa11111, work item sol-aaa11111). Work item reopened for re-dispatch.")
+	// Escalation for different work item — should NOT be resolved.
+	sphereStore.CreateEscalation("high", "ember/forge",
+		"Merge failed for MR mr-other1 (branch outpost/Toast/sol-bbb22222, work item sol-bbb22222). Work item reopened for re-dispatch.")
+
+	dir := t.TempDir()
+	run(t, "git", "init", dir)
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worktree:    dir,
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
+		cfg:         DefaultConfig(),
+	}
+
+	if err := r.MarkMerged("mr-merged1"); err != nil {
+		t.Fatalf("MarkMerged() error: %v", err)
+	}
+
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+
+	// Verify merged MR is merged.
+	if phase := worldStore.phaseUpdates["mr-merged1"]; phase != "merged" {
+		t.Errorf("merged MR phase = %q, want 'merged'", phase)
+	}
+
+	// Verify failed sibling MRs are superseded.
+	if phase := worldStore.phaseUpdates["mr-failed1"]; phase != "superseded" {
+		t.Errorf("failed MR 1 phase = %q, want 'superseded'", phase)
+	}
+	if phase := worldStore.phaseUpdates["mr-failed2"]; phase != "superseded" {
+		t.Errorf("failed MR 2 phase = %q, want 'superseded'", phase)
+	}
+
+	// Verify MR from different work item is NOT superseded.
+	if _, ok := worldStore.phaseUpdates["mr-other1"]; ok {
+		t.Error("MR for different work item should not be touched")
+	}
+
+	// Verify escalations for failed MRs are resolved.
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	for _, esc := range sphereStore.escalations {
+		if strings.Contains(esc.description, "mr-failed1") && esc.status != "resolved" {
+			t.Errorf("escalation for mr-failed1 status = %q, want 'resolved'", esc.status)
+		}
+		if strings.Contains(esc.description, "mr-failed2") && esc.status != "resolved" {
+			t.Errorf("escalation for mr-failed2 status = %q, want 'resolved'", esc.status)
+		}
+		if strings.Contains(esc.description, "mr-other1") && esc.status == "resolved" {
+			t.Error("escalation for different work item should NOT be resolved")
+		}
+	}
+}
+
 // --- Governor nudge notification tests ---
 
 // setupGovernorNudge sets SOL_HOME and creates the governor agent dir

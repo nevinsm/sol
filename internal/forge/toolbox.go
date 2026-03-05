@@ -173,7 +173,8 @@ func (r *Forge) Push() error {
 	return nil
 }
 
-// MarkMerged sets MR phase to merged, closes work item, deletes remote branch.
+// MarkMerged sets MR phase to merged, closes work item, deletes remote branch,
+// and supersedes any prior failed MRs for the same work item.
 func (r *Forge) MarkMerged(mrID string) error {
 	mr, err := r.worldStore.GetMergeRequest(mrID)
 	if err != nil {
@@ -191,6 +192,9 @@ func (r *Forge) MarkMerged(mrID string) error {
 	// Clean up remote branch (best-effort).
 	exec.Command("git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
 
+	// Supersede prior failed MRs for the same work item (best-effort).
+	r.supersedeFailed(mrID, mr.WorkItemID)
+
 	r.logger.Info("merged", "mr", mrID, "work_item", mr.WorkItemID, "branch", mr.Branch)
 
 	// Nudge governor that MR was merged (best-effort).
@@ -200,6 +204,57 @@ func (r *Forge) MarkMerged(mrID string) error {
 			mr.WorkItemID, mrID, mr.Branch, r.workItemTitle(mr.WorkItemID)))
 
 	return nil
+}
+
+// supersedeFailed transitions failed MRs for the same work item to "superseded",
+// deletes their remote branches, and resolves their escalations.
+func (r *Forge) supersedeFailed(mergedMRID, workItemID string) {
+	failed, err := r.worldStore.ListMergeRequestsByWorkItem(workItemID, "failed")
+	if err != nil {
+		r.logger.Error("failed to list failed MRs for superseding", "work_item", workItemID, "error", err)
+		return
+	}
+
+	for _, mr := range failed {
+		if mr.ID == mergedMRID {
+			continue
+		}
+
+		if err := r.worldStore.UpdateMergeRequestPhase(mr.ID, "superseded"); err != nil {
+			r.logger.Error("failed to supersede MR", "mr", mr.ID, "error", err)
+			continue
+		}
+
+		// Delete remote branch (best-effort).
+		exec.Command("git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
+
+		// Resolve escalations that reference this MR (best-effort).
+		r.resolveEscalationsForMR(mr.ID)
+
+		r.logger.Info("superseded", "mr", mr.ID, "superseded_by", mergedMRID)
+	}
+}
+
+// resolveEscalationsForMR resolves open/acknowledged escalations whose
+// description contains the given MR ID.
+func (r *Forge) resolveEscalationsForMR(mrID string) {
+	escalations, err := r.sphereStore.ListEscalations("")
+	if err != nil {
+		r.logger.Error("failed to list escalations for resolution", "mr", mrID, "error", err)
+		return
+	}
+
+	for _, esc := range escalations {
+		if esc.Status == "resolved" {
+			continue
+		}
+		if !strings.Contains(esc.Description, mrID) {
+			continue
+		}
+		if err := r.sphereStore.ResolveEscalation(esc.ID); err != nil {
+			r.logger.Error("failed to resolve escalation", "escalation", esc.ID, "mr", mrID, "error", err)
+		}
+	}
 }
 
 // MarkFailed sets MR phase to failed, reopens the work item for re-dispatch,
