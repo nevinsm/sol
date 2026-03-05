@@ -12,11 +12,13 @@ import (
 //go:embed defaults/default-work/steps/01-load-context.md
 //go:embed defaults/default-work/steps/02-implement.md
 //go:embed defaults/default-work/steps/03-verify.md
+//go:embed defaults/rule-of-five/manifest.toml
 var defaultFormulas embed.FS
 
 // knownDefaults lists formula names that are embedded in the binary.
 var knownDefaults = map[string]bool{
-	"default-work": true,
+	"default-work":  true,
+	"rule-of-five":  true,
 }
 
 // EnsureFormula checks if a formula exists on disk. If not and it's a

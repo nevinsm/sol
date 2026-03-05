@@ -19,6 +19,7 @@ type Manifest struct {
 	Description string                  `toml:"description"`
 	Variables   map[string]VariableDecl `toml:"variables"`
 	Steps       []StepDef              `toml:"steps"`
+	Templates   []Template             `toml:"template"`
 }
 
 // VariableDecl declares a workflow variable.
@@ -33,6 +34,14 @@ type StepDef struct {
 	Title        string   `toml:"title"`
 	Instructions string   `toml:"instructions"` // relative path to .md file
 	Needs        []string `toml:"needs"`         // step IDs this depends on
+}
+
+// Template defines a child work item template in an expansion formula.
+type Template struct {
+	ID          string   `toml:"id"`
+	Title       string   `toml:"title"`
+	Description string   `toml:"description"`
+	Needs       []string `toml:"needs"`
 }
 
 // Instance holds metadata about an instantiated workflow.
@@ -86,44 +95,79 @@ func LoadManifest(formulaDir string) (*Manifest, error) {
 }
 
 // Validate checks that a manifest is well-formed:
-// - All step IDs are unique
-// - All "needs" references point to existing step IDs
+// - Type is "workflow" or "expansion"
+// - Workflow type has steps (not templates); expansion has templates (not steps)
+// - All IDs are unique
+// - All "needs" references point to existing IDs
 // - No dependency cycles (DAG validation)
 // Returns an error describing the first problem found.
 func Validate(m *Manifest) error {
-	ids := make(map[string]bool, len(m.Steps))
-	for _, s := range m.Steps {
-		if ids[s.ID] {
-			return fmt.Errorf("duplicate step ID %q", s.ID)
+	if m.Type == "expansion" {
+		if len(m.Steps) > 0 {
+			return fmt.Errorf("expansion formula must not contain [[steps]] entries")
 		}
-		ids[s.ID] = true
+		if len(m.Templates) == 0 {
+			return fmt.Errorf("expansion formula requires at least one [[template]] entry")
+		}
+		// Convert templates to dagNodes for validation.
+		nodes := make([]dagNode, len(m.Templates))
+		for i, t := range m.Templates {
+			nodes[i] = dagNode{ID: t.ID, Needs: t.Needs}
+		}
+		return validateDAG(nodes, "template")
 	}
 
-	for _, s := range m.Steps {
-		for _, need := range s.Needs {
+	// All other types (workflow, agent, etc.) validate steps.
+	if len(m.Templates) > 0 && m.Type != "" {
+		return fmt.Errorf("%s formula must not contain [[template]] entries", m.Type)
+	}
+	return validateDAG(m.Steps, "step")
+}
+
+// dagNode is a common interface for DAG validation across steps and templates.
+type dagNode struct {
+	ID    string
+	Needs []string
+}
+
+// validateDAG checks unique IDs, valid needs references, and no cycles.
+// label is used in error messages ("step" or "template").
+func validateDAG[T interface{ dagID() string; dagNeeds() []string }](items []T, label string) error {
+	ids := make(map[string]bool, len(items))
+	for _, item := range items {
+		id := item.dagID()
+		if ids[id] {
+			return fmt.Errorf("duplicate %s ID %q", label, id)
+		}
+		ids[id] = true
+	}
+
+	for _, item := range items {
+		for _, need := range item.dagNeeds() {
 			if !ids[need] {
-				return fmt.Errorf("step %q references unknown dependency %q", s.ID, need)
+				return fmt.Errorf("%s %q references unknown dependency %q", label, item.dagID(), need)
 			}
 		}
 	}
 
 	// Cycle detection via topological sort (Kahn's algorithm).
-	inDegree := make(map[string]int, len(m.Steps))
-	dependents := make(map[string][]string, len(m.Steps))
-	for _, s := range m.Steps {
-		if _, ok := inDegree[s.ID]; !ok {
-			inDegree[s.ID] = 0
+	inDegree := make(map[string]int, len(items))
+	dependents := make(map[string][]string, len(items))
+	for _, item := range items {
+		id := item.dagID()
+		if _, ok := inDegree[id]; !ok {
+			inDegree[id] = 0
 		}
-		for _, need := range s.Needs {
-			inDegree[s.ID]++
-			dependents[need] = append(dependents[need], s.ID)
+		for _, need := range item.dagNeeds() {
+			inDegree[id]++
+			dependents[need] = append(dependents[need], id)
 		}
 	}
 
-	queue := make([]string, 0, len(m.Steps))
-	for _, s := range m.Steps {
-		if inDegree[s.ID] == 0 {
-			queue = append(queue, s.ID)
+	queue := make([]string, 0, len(items))
+	for _, item := range items {
+		if inDegree[item.dagID()] == 0 {
+			queue = append(queue, item.dagID())
 		}
 	}
 
@@ -140,12 +184,17 @@ func Validate(m *Manifest) error {
 		}
 	}
 
-	if visited != len(m.Steps) {
-		return fmt.Errorf("dependency cycle detected in workflow steps")
+	if visited != len(items) {
+		return fmt.Errorf("dependency cycle detected in %ss", label)
 	}
 
 	return nil
 }
+
+func (s StepDef) dagID() string      { return s.ID }
+func (s StepDef) dagNeeds() []string { return s.Needs }
+func (t dagNode) dagID() string      { return t.ID }
+func (t dagNode) dagNeeds() []string { return t.Needs }
 
 // ResolveVariables merges provided variables with defaults, checks required.
 // Returns error if a required variable is not provided and has no default.

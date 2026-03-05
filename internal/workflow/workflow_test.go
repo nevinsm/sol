@@ -119,7 +119,7 @@ func TestValidateCycle(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() expected error for cycle")
 	}
-	if got := err.Error(); got != "dependency cycle detected in workflow steps" {
+	if got := err.Error(); got != "dependency cycle detected in steps" {
 		t.Errorf("error: got %q", got)
 	}
 }
@@ -675,6 +675,205 @@ func TestAdvanceIdempotentOnCompletedStep(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("load-context appears %d times in Completed (want 1): %v", count, state.Completed)
+	}
+}
+
+func TestLoadManifestExpansion(t *testing.T) {
+	dir := t.TempDir()
+	toml := `name = "test-expansion"
+type = "expansion"
+description = "Test expansion formula"
+
+[[template]]
+id = "{target}.draft"
+title = "Draft: {target.title}"
+description = "First pass."
+
+[[template]]
+id = "{target}.refine"
+title = "Refine: {target.title}"
+description = "Second pass."
+needs = ["{target}.draft"]
+`
+	os.WriteFile(filepath.Join(dir, "manifest.toml"), []byte(toml), 0o644)
+
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+
+	if m.Type != "expansion" {
+		t.Errorf("type: got %q, want %q", m.Type, "expansion")
+	}
+	if len(m.Templates) != 2 {
+		t.Fatalf("templates: got %d, want 2", len(m.Templates))
+	}
+	if m.Templates[0].ID != "{target}.draft" {
+		t.Errorf("template[0].ID: got %q, want %q", m.Templates[0].ID, "{target}.draft")
+	}
+	if m.Templates[1].Description != "Second pass." {
+		t.Errorf("template[1].Description: got %q", m.Templates[1].Description)
+	}
+	if len(m.Templates[1].Needs) != 1 || m.Templates[1].Needs[0] != "{target}.draft" {
+		t.Errorf("template[1].Needs: got %v, want [{target}.draft]", m.Templates[1].Needs)
+	}
+	if len(m.Steps) != 0 {
+		t.Errorf("steps should be empty for expansion, got %d", len(m.Steps))
+	}
+}
+
+func TestValidateExpansionValid(t *testing.T) {
+	m := &Manifest{
+		Type: "expansion",
+		Templates: []Template{
+			{ID: "draft", Title: "Draft"},
+			{ID: "refine", Title: "Refine", Needs: []string{"draft"}},
+		},
+	}
+	if err := Validate(m); err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+}
+
+func TestValidateExpansionDuplicateID(t *testing.T) {
+	m := &Manifest{
+		Type: "expansion",
+		Templates: []Template{
+			{ID: "draft", Title: "Draft"},
+			{ID: "draft", Title: "Draft again"},
+		},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for duplicate template ID")
+	}
+	if got := err.Error(); got != `duplicate template ID "draft"` {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateExpansionMissingNeed(t *testing.T) {
+	m := &Manifest{
+		Type: "expansion",
+		Templates: []Template{
+			{ID: "draft", Title: "Draft", Needs: []string{"nonexistent"}},
+		},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for missing need")
+	}
+}
+
+func TestValidateExpansionCycle(t *testing.T) {
+	m := &Manifest{
+		Type: "expansion",
+		Templates: []Template{
+			{ID: "a", Title: "A", Needs: []string{"b"}},
+			{ID: "b", Title: "B", Needs: []string{"a"}},
+		},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for cycle")
+	}
+	if got := err.Error(); got != "dependency cycle detected in templates" {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateExpansionEmpty(t *testing.T) {
+	m := &Manifest{
+		Type: "expansion",
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for empty expansion")
+	}
+	if got := err.Error(); got != "expansion formula requires at least one [[template]] entry" {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateExpansionWithSteps(t *testing.T) {
+	m := &Manifest{
+		Type: "expansion",
+		Steps: []StepDef{{ID: "s1", Title: "Step 1"}},
+		Templates: []Template{{ID: "t1", Title: "Template 1"}},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for expansion with steps")
+	}
+	if got := err.Error(); got != "expansion formula must not contain [[steps]] entries" {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateWorkflowWithTemplates(t *testing.T) {
+	m := &Manifest{
+		Type: "workflow",
+		Steps:     []StepDef{{ID: "s1", Title: "Step 1"}},
+		Templates: []Template{{ID: "t1", Title: "Template 1"}},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for workflow with templates")
+	}
+	if got := err.Error(); got != "workflow formula must not contain [[template]] entries" {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateOtherTypeWithTemplates(t *testing.T) {
+	m := &Manifest{
+		Type:      "agent",
+		Steps:     []StepDef{{ID: "s1", Title: "Step 1"}},
+		Templates: []Template{{ID: "t1", Title: "Template 1"}},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for non-expansion type with templates")
+	}
+	if got := err.Error(); got != "agent formula must not contain [[template]] entries" {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestEnsureFormulaRuleOfFive(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	dir, err := EnsureFormula("rule-of-five")
+	if err != nil {
+		t.Fatalf("EnsureFormula(rule-of-five) error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "manifest.toml")); err != nil {
+		t.Errorf("manifest.toml not found after extraction: %v", err)
+	}
+
+	// Load and validate the extracted formula.
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+	if m.Type != "expansion" {
+		t.Errorf("type: got %q, want %q", m.Type, "expansion")
+	}
+	if len(m.Templates) != 5 {
+		t.Fatalf("templates: got %d, want 5", len(m.Templates))
+	}
+	if err := Validate(m); err != nil {
+		t.Fatalf("Validate() error on rule-of-five: %v", err)
+	}
+
+	// Second call is no-op.
+	dir2, err := EnsureFormula("rule-of-five")
+	if err != nil {
+		t.Fatalf("EnsureFormula(rule-of-five) second call error: %v", err)
+	}
+	if dir != dir2 {
+		t.Errorf("paths differ: %q vs %q", dir, dir2)
 	}
 }
 
