@@ -251,6 +251,19 @@ Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` 
 
 `consul run` accepts `--interval` (default 5m), `--stale-timeout` (default 1h), and `--webhook` for escalation notifications.
 
+## Service (Systemd Units)
+
+| Command | Description |
+|---------|-------------|
+| `sol service install` | Generate and install systemd user units (enable but don't start) |
+| `sol service uninstall` | Stop, disable, and remove systemd user units |
+| `sol service start` | Start all sol sphere daemon units |
+| `sol service stop` | Stop all sol sphere daemon units |
+| `sol service restart` | Restart all sol sphere daemon units |
+| `sol service status` | Show status of sol sphere daemon units |
+
+Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle).
+
 ## Documentation
 
 | Command | Description |

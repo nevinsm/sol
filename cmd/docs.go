@@ -162,6 +162,11 @@ var docSections = []docSection{
 		notes:   "`consul run` accepts `--interval` (default 5m), `--stale-timeout` (default 1h), and `--webhook` for escalation notifications.",
 	},
 	{
+		heading: "Service (Systemd Units)",
+		paths:   []string{"service install", "service uninstall", "service start", "service stop", "service restart", "service status"},
+		notes:   "Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle).",
+	},
+	{
 		heading: "Documentation",
 		paths:   []string{"docs generate"},
 	},
