@@ -75,9 +75,9 @@ func TestInstallForgeHooks(t *testing.T) {
 	if !ok {
 		t.Fatal("settings.local.json missing PreToolUse hook")
 	}
-	// Forge: 1 EnterPlanMode + 6 dangerous-command + 4 forge-specific = 11
-	if len(ptuGroups) != 11 {
-		t.Fatalf("expected 11 PreToolUse matcher groups (1 EnterPlanMode + 6 dangerous + 4 forge-specific), got %d", len(ptuGroups))
+	// Forge: 1 EnterPlanMode + 6 dangerous-command = 7 (no forge-specific blocks)
+	if len(ptuGroups) != 7 {
+		t.Fatalf("expected 7 PreToolUse matcher groups (1 EnterPlanMode + 6 dangerous), got %d", len(ptuGroups))
 	}
 	if ptuGroups[0].Matcher != "EnterPlanMode" {
 		t.Errorf("PreToolUse matcher = %q, want \"EnterPlanMode\"", ptuGroups[0].Matcher)
@@ -94,34 +94,6 @@ func TestInstallForgeHooks(t *testing.T) {
 			if !strings.Contains(g.Hooks[0].Command, "sol guard dangerous-command") {
 				t.Errorf("forge guard hook should be dangerous-command, got %q", g.Hooks[0].Command)
 			}
-		}
-	}
-	// Groups 7-10: forge-specific blanket blocks (git, go test, make test, make build).
-	forgeBlockedMatchers := map[string]bool{
-		"Bash(git *)":       false,
-		"Bash(go test*)":    false,
-		"Bash(make test*)":  false,
-		"Bash(make build*)": false,
-	}
-	for _, g := range ptuGroups[7:] {
-		if _, ok := forgeBlockedMatchers[g.Matcher]; !ok {
-			t.Errorf("unexpected forge-specific matcher: %q", g.Matcher)
-		}
-		forgeBlockedMatchers[g.Matcher] = true
-		if len(g.Hooks) == 0 {
-			t.Errorf("forge-specific matcher %q has no hooks", g.Matcher)
-			continue
-		}
-		if !strings.Contains(g.Hooks[0].Command, "BLOCKED") {
-			t.Errorf("forge-specific hook %q should contain BLOCKED message", g.Matcher)
-		}
-		if !strings.Contains(g.Hooks[0].Command, "exit 2") {
-			t.Errorf("forge-specific hook %q should exit 2", g.Matcher)
-		}
-	}
-	for matcher, found := range forgeBlockedMatchers {
-		if !found {
-			t.Errorf("missing forge-specific matcher: %s", matcher)
 		}
 	}
 	// Forge should NOT have workflow-bypass guards.
@@ -147,9 +119,9 @@ func TestGuardHooksOutpostNoForgeBlocks(t *testing.T) {
 
 func TestGuardHooksForgeHasDangerousCommands(t *testing.T) {
 	groups := GuardHooks("forge")
-	// Forge: 6 dangerous-command + 4 forge-specific = 10
-	if len(groups) != 10 {
-		t.Fatalf("expected 10 guard hook groups for forge, got %d", len(groups))
+	// Forge: 6 dangerous-command only (no forge-specific blocks)
+	if len(groups) != 6 {
+		t.Fatalf("expected 6 guard hook groups for forge, got %d", len(groups))
 	}
 	// First 6 should be dangerous-command guards.
 	dangerousCount := 0

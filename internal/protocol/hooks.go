@@ -175,28 +175,10 @@ func GuardHooks(role string) []HookMatcherGroup {
 		},
 	}
 
-	// Forge is exempt from workflow-bypass guards but gets blanket blocks
-	// on git, test, and build commands — all handled by sol forge merge.
-	if role == "forge" {
-		groups = append(groups,
-			HookMatcherGroup{
-				Matcher: "Bash(git *)",
-				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: You have no git access. Use sol forge commands (merge, claim, ready, etc.)." >&2; exit 2`}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(go test*)",
-				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: Quality gates run inside sol forge merge. Do not run tests directly." >&2; exit 2`}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(make test*)",
-				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: Quality gates run inside sol forge merge. Do not run tests or builds directly." >&2; exit 2`}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(make build*)",
-				Hooks:   []HookHandler{{Type: "command", Command: `echo "BLOCKED: Build runs inside sol forge merge. Do not build directly." >&2; exit 2`}},
-			},
-		)
-	} else {
+	// Forge is exempt from workflow-bypass guards — it pushes to main by design.
+	// Git blocks removed: the forge needs git access to operate. Long-term fix
+	// is formula-based patrol (like gastown's refinery) not command blocking.
+	if role != "forge" {
 		groups = append(groups,
 			HookMatcherGroup{
 				Matcher: "Bash(git push origin main*)|Bash(git push origin master*)",
