@@ -1150,3 +1150,256 @@ func TestCleanupDoesNotTouchOtherWorlds(t *testing.T) {
 		t.Error("session metadata for other world should not be removed")
 	}
 }
+
+// --- Recast tests ---
+
+// createFailedMR creates a work item and a failed MR for it.
+func createFailedMR(t *testing.T, worldStore *store.Store, workItemID, title, branch string) string {
+	t.Helper()
+	createWorkItem(t, worldStore, workItemID, title)
+	mrID, err := worldStore.CreateMergeRequest(workItemID, branch, 3)
+	if err != nil {
+		t.Fatalf("failed to create MR: %v", err)
+	}
+	if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+		t.Fatalf("failed to set MR phase to failed: %v", err)
+	}
+	return mrID
+}
+
+func TestRecastFailedMR(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	// Create a failed MR with an open work item.
+	createFailedMR(t, worldStore, "sol-fail1111", "Failing task", "outpost/Toast/sol-fail1111")
+
+	castCalled := false
+	var castWorkItemID string
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+		castCalled = true
+		castWorkItemID = workItemID
+		return &CastResult{
+			WorkItemID:  workItemID,
+			AgentName:   "Sage",
+			SessionName: "sol-ember-Sage",
+		}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if !castCalled {
+		t.Fatal("expected castFn to be called for failed MR")
+	}
+	if castWorkItemID != "sol-fail1111" {
+		t.Errorf("castFn called with %q, want %q", castWorkItemID, "sol-fail1111")
+	}
+
+	// Recast count should be 1.
+	if w.recastCounts["sol-fail1111"] != 1 {
+		t.Errorf("recast count = %d, want 1", w.recastCounts["sol-fail1111"])
+	}
+}
+
+func TestRecastSkipsNonOpenWorkItem(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a failed MR but set the work item to "tethered" (already re-dispatched).
+	mrID := createFailedMR(t, worldStore, "sol-teth2222", "Already tethered", "outpost/X/sol-teth2222")
+	_ = mrID
+	worldStore.UpdateWorkItem("sol-teth2222", store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"})
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called when work item is not open")
+	}
+}
+
+func TestRecastMaxAttemptsEscalates(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 2
+
+	// Create a failed MR with an open work item.
+	createFailedMR(t, worldStore, "sol-maxr3333", "Max retries task", "outpost/Toast/sol-maxr3333")
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	// Pre-set recast count to max.
+	w.recastCounts["sol-maxr3333"] = 2
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called when max recast attempts reached")
+	}
+
+	// Should have sent RECOVERY_NEEDED to operator.
+	msgs, err := sphereStore.PendingProtocol("operator", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Error("expected RECOVERY_NEEDED protocol message after max recast attempts")
+	}
+
+	// Recast count should be incremented past max to prevent re-escalation.
+	if w.recastCounts["sol-maxr3333"] != 3 {
+		t.Errorf("recast count = %d, want %d (max+1)", w.recastCounts["sol-maxr3333"], 3)
+	}
+}
+
+func TestRecastMaxAttemptsEscalatesOnlyOnce(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 2
+
+	// Create a failed MR with an open work item.
+	createFailedMR(t, worldStore, "sol-once4444", "Escalate once", "outpost/Toast/sol-once4444")
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	// Pre-set recast count past max (already escalated).
+	w.recastCounts["sol-once4444"] = 3
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// No new RECOVERY_NEEDED message.
+	msgs, err := sphereStore.PendingProtocol("operator", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Error("should not send RECOVERY_NEEDED again after already escalated")
+	}
+}
+
+func TestRecastNoCastFuncSkips(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a failed MR.
+	createFailedMR(t, worldStore, "sol-nocast55", "No cast func", "outpost/X/sol-nocast55")
+
+	// No castFn set.
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Should complete without error and without panic.
+}
+
+func TestRecastDeduplicatesByWorkItem(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a work item with TWO failed MRs (e.g., two merge attempts).
+	createWorkItem(t, worldStore, "sol-dedup666", "Dedup task")
+	mr1, _ := worldStore.CreateMergeRequest("sol-dedup666", "outpost/A/sol-dedup666", 3)
+	worldStore.UpdateMergeRequestPhase(mr1, "failed")
+	mr2, _ := worldStore.CreateMergeRequest("sol-dedup666", "outpost/B/sol-dedup666", 3)
+	worldStore.UpdateMergeRequestPhase(mr2, "failed")
+
+	castCount := 0
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+		castCount++
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Cast should only be called once despite two failed MRs.
+	if castCount != 1 {
+		t.Errorf("castFn called %d times, want 1 (deduplication)", castCount)
+	}
+}
+
+func TestRecastPrunesCountOnHandledItem(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a failed MR with a "done" work item (already resolved).
+	createFailedMR(t, worldStore, "sol-prune777", "Already done", "outpost/X/sol-prune777")
+	worldStore.UpdateWorkItem("sol-prune777", store.WorkItemUpdates{Status: "done"})
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	// Pre-set a recast count.
+	w.recastCounts["sol-prune777"] = 2
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Recast count should be pruned since work item is no longer open.
+	if _, exists := w.recastCounts["sol-prune777"]; exists {
+		t.Error("expected recast count to be pruned for non-open work item")
+	}
+}
+
+func TestRecastCastFailureNonBlocking(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a failed MR.
+	createFailedMR(t, worldStore, "sol-cfail888", "Cast failure", "outpost/X/sol-cfail888")
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+		return nil, fmt.Errorf("no idle agents available")
+	})
+
+	// Should not error — cast failure is non-blocking.
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Recast count should NOT be incremented on failure.
+	if w.recastCounts["sol-cfail888"] != 0 {
+		t.Errorf("recast count = %d, want 0 (cast failed)", w.recastCounts["sol-cfail888"])
+	}
+}

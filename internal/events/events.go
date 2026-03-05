@@ -63,6 +63,7 @@ const (
 	// Sentinel lifecycle events.
 	EventReap           = "reap"            // idle agent reaped
 	EventOrphanCleanup  = "orphan_cleanup"  // orphaned resource cleaned up
+	EventRecast         = "recast"          // failed MR auto-recast by sentinel
 )
 
 // Logger handles event logging to the JSONL event feed.

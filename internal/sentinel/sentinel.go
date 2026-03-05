@@ -22,27 +22,29 @@ import (
 
 // Config holds sentinel configuration.
 type Config struct {
-	World            string
-	PatrolInterval   time.Duration // default: 3 minutes
-	MaxRespawns      int           // default: 2 (per work item)
-	CaptureLines     int           // default: 80 (lines of tmux output to capture)
-	AssessCommand    string        // default: "claude -p" (AI assessment command)
-	SourceRepo       string        // path to source git repo
-	SolHome          string        // SOL_HOME path
-	IdleReapTimeout  time.Duration // default: 10 minutes — reap idle agents older than this
+	World              string
+	PatrolInterval     time.Duration // default: 3 minutes
+	MaxRespawns        int           // default: 2 (per work item)
+	MaxRecastAttempts  int           // default: 3 (per failed MR work item)
+	CaptureLines       int           // default: 80 (lines of tmux output to capture)
+	AssessCommand      string        // default: "claude -p" (AI assessment command)
+	SourceRepo         string        // path to source git repo
+	SolHome            string        // SOL_HOME path
+	IdleReapTimeout    time.Duration // default: 10 minutes — reap idle agents older than this
 }
 
 // DefaultConfig returns a Config with default values.
 func DefaultConfig(world, sourceRepo, solHome string) Config {
 	return Config{
-		World:           world,
-		PatrolInterval:  3 * time.Minute,
-		MaxRespawns:     2,
-		CaptureLines:    80,
-		AssessCommand:   "claude -p",
-		SourceRepo:      sourceRepo,
-		SolHome:         solHome,
-		IdleReapTimeout: 10 * time.Minute,
+		World:             world,
+		PatrolInterval:    3 * time.Minute,
+		MaxRespawns:       2,
+		MaxRecastAttempts: 3,
+		CaptureLines:      80,
+		AssessCommand:     "claude -p",
+		SourceRepo:        sourceRepo,
+		SolHome:           solHome,
+		IdleReapTimeout:   10 * time.Minute,
 	}
 }
 
@@ -61,6 +63,7 @@ type SphereStore interface {
 type WorldStore interface {
 	GetWorkItem(id string) (*store.WorkItem, error)
 	UpdateWorkItem(id string, updates store.WorkItemUpdates) error
+	ListMergeRequests(phase string) ([]store.MergeRequest, error)
 }
 
 // SessionChecker abstracts session operations for testability.
@@ -83,6 +86,14 @@ type AssessmentResult struct {
 
 type assessFunc func(agent store.Agent, sessionName, output string) (*AssessmentResult, error)
 
+// CastResult holds the output of a successful cast operation (matches dispatch.CastResult).
+type CastResult struct {
+	WorkItemID  string
+	AgentName   string
+	SessionName string
+	WorktreeDir string
+}
+
 type respawnKey struct {
 	AgentID    string
 	WorkItemID string
@@ -96,8 +107,10 @@ type Sentinel struct {
 	sessions      SessionChecker
 	logger        *events.Logger
 	respawnCounts map[respawnKey]int
+	recastCounts  map[string]int    // work item ID → recast attempt count
 	lastCaptures  map[string]string // agent ID → hash of last captured output
 	assessFn      assessFunc        // nil = use real AI call
+	castFn        func(workItemID string) (*CastResult, error) // nil = skip recast
 
 	// Per-patrol counters, reset at start of each patrol.
 	patrolAssessed int
@@ -114,6 +127,7 @@ func New(cfg Config, sphere SphereStore, world WorldStore,
 		sessions:      sessions,
 		logger:        logger,
 		respawnCounts: make(map[respawnKey]int),
+		recastCounts:  make(map[string]int),
 		lastCaptures:  make(map[string]string),
 	}
 }
@@ -122,6 +136,12 @@ func New(cfg Config, sphere SphereStore, world WorldStore,
 // When set, this function is called instead of the real AI assessment.
 func (w *Sentinel) SetAssessFunc(fn func(agent store.Agent, sessionName, output string) (*AssessmentResult, error)) {
 	w.assessFn = fn
+}
+
+// SetCastFunc sets the function used to re-cast failed MR work items.
+// When nil, the sentinel skips the recast step during patrol.
+func (w *Sentinel) SetCastFunc(fn func(workItemID string) (*CastResult, error)) {
+	w.castFn = fn
 }
 
 func (w *Sentinel) agentID() string {
@@ -189,6 +209,9 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 
 	w.patrolAssessed = 0
 	w.patrolNudged = 0
+
+	// Recast failed MRs before agent checks (so newly cast agents appear healthy).
+	recastCount := w.recastFailedMRs()
 
 	var healthyCount, stalledCount, zombieCount, reapedCount int
 	var actionsTaken []string
@@ -296,6 +319,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 				"stalled":         stalledCount,
 				"zombies":         zombieCount,
 				"reaped":          reapedCount,
+				"recast":          recastCount,
 				"orphans_cleaned": orphansCleaned,
 				"assessed":        w.patrolAssessed,
 				"nudged":          w.patrolNudged,
@@ -729,6 +753,119 @@ func (w *Sentinel) reapIdleAgent(agent store.Agent) error {
 	}
 
 	return nil
+}
+
+// recastFailedMRs checks for merge requests in "failed" phase with open work
+// items and re-casts them. Returns the number of work items re-cast.
+// Caps retries at MaxRecastAttempts; after that, escalates to the operator.
+func (w *Sentinel) recastFailedMRs() int {
+	if w.castFn == nil {
+		return 0
+	}
+
+	failedMRs, err := w.worldStore.ListMergeRequests("failed")
+	if err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+				map[string]any{"action": "list_failed_mrs", "error": err.Error()})
+		}
+		return 0
+	}
+
+	maxAttempts := w.config.MaxRecastAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 3
+	}
+
+	var recastCount int
+	seen := make(map[string]bool) // deduplicate by work item
+
+	for _, mr := range failedMRs {
+		if seen[mr.WorkItemID] {
+			continue
+		}
+		seen[mr.WorkItemID] = true
+
+		item, err := w.worldStore.GetWorkItem(mr.WorkItemID)
+		if err != nil {
+			continue
+		}
+
+		// Only re-cast if the work item has been reopened by the forge.
+		if item.Status != "open" {
+			// Work item already re-dispatched or handled — prune tracking.
+			delete(w.recastCounts, mr.WorkItemID)
+			continue
+		}
+
+		attempts := w.recastCounts[mr.WorkItemID]
+
+		if attempts >= maxAttempts {
+			if attempts == maxAttempts {
+				// First time hitting max — escalate once.
+				w.escalateFailedRecast(mr, item, attempts)
+				w.recastCounts[mr.WorkItemID] = maxAttempts + 1
+			}
+			continue
+		}
+
+		result, err := w.castFn(mr.WorkItemID)
+		if err != nil {
+			if w.logger != nil {
+				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+					map[string]any{
+						"action":    "recast",
+						"mr":        mr.ID,
+						"work_item": mr.WorkItemID,
+						"error":     err.Error(),
+					})
+			}
+			continue
+		}
+
+		w.recastCounts[mr.WorkItemID] = attempts + 1
+		recastCount++
+
+		if w.logger != nil {
+			w.logger.Emit(events.EventRecast, w.agentID(), w.agentID(), "both",
+				map[string]any{
+					"mr":        mr.ID,
+					"work_item": mr.WorkItemID,
+					"agent":     result.AgentName,
+					"attempt":   attempts + 1,
+				})
+		}
+	}
+
+	return recastCount
+}
+
+// escalateFailedRecast sends a RECOVERY_NEEDED protocol message when a work
+// item has exceeded the maximum recast attempts.
+func (w *Sentinel) escalateFailedRecast(mr store.MergeRequest, item *store.WorkItem, attempts int) {
+	if _, err := w.sphereStore.SendProtocolMessage(
+		w.agentID(), "operator",
+		store.ProtoRecoveryNeeded,
+		store.RecoveryNeededPayload{
+			WorkItemID: mr.WorkItemID,
+			Reason:     fmt.Sprintf("merge failed %d times for %q, recast limit reached", attempts, item.Title),
+			Attempts:   attempts,
+		},
+	); err != nil && w.logger != nil {
+		w.logger.Emit("mail_error", w.agentID(), w.agentID(), "audit",
+			map[string]any{"error": err.Error()})
+	}
+
+	if w.logger != nil {
+		w.logger.Emit(events.EventStalled, w.agentID(), w.agentID(), "both",
+			map[string]any{
+				"work_item":  mr.WorkItemID,
+				"mr":         mr.ID,
+				"attempts":   attempts,
+				"escalated":  true,
+				"reason":     "max recast attempts exceeded",
+			})
+	}
 }
 
 // cleanupAgentResources removes all disk resources for an agent: worktree,
