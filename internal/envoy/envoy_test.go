@@ -18,6 +18,8 @@ import (
 type mockSphereStore struct {
 	agents    map[string]store.Agent
 	createErr error
+	deleteErr error
+	deleted   []string // tracks DeleteAgent calls
 }
 
 func (m *mockSphereStore) CreateAgent(name, world, role string) (string, error) {
@@ -33,6 +35,15 @@ func (m *mockSphereStore) CreateAgent(name, world, role string) (string, error) 
 		State: "idle",
 	}
 	return id, nil
+}
+
+func (m *mockSphereStore) DeleteAgent(id string) error {
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
+	m.deleted = append(m.deleted, id)
+	delete(m.agents, id)
+	return nil
 }
 
 type mockStartStore struct {
@@ -257,6 +268,100 @@ func TestCreateIdempotentWorktree(t *testing.T) {
 	ss2 := &mockSphereStore{agents: map[string]store.Agent{}}
 	if err := Create(opts, ss2); err != nil {
 		t.Fatalf("second Create (idempotent worktree) failed: %v", err)
+	}
+}
+
+func TestCreateRollbackOnWorktreeFailure(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	// Use a nonexistent source repo so worktree creation fails.
+	ss := &mockSphereStore{agents: map[string]store.Agent{}}
+
+	err := Create(CreateOpts{
+		World:      "myworld",
+		Name:       "Echo",
+		SourceRepo: filepath.Join(tmp, "no-such-repo"),
+	}, ss)
+	if err == nil {
+		t.Fatal("expected error from Create with invalid source repo")
+	}
+
+	// Verify rollback: agent record deleted.
+	if _, ok := ss.agents["myworld/Echo"]; ok {
+		t.Error("agent record should have been deleted by rollback")
+	}
+	if len(ss.deleted) != 1 || ss.deleted[0] != "myworld/Echo" {
+		t.Errorf("expected DeleteAgent called with \"myworld/Echo\", got %v", ss.deleted)
+	}
+
+	// Verify rollback: envoy directory removed.
+	if _, err := os.Stat(EnvoyDir("myworld", "Echo")); !os.IsNotExist(err) {
+		t.Error("envoy directory should have been removed by rollback")
+	}
+}
+
+func TestCreateRollbackOnAgentRecordFailure(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	sourceRepo := filepath.Join(tmp, "repo")
+	initGitRepo(t, sourceRepo)
+
+	// Agent creation fails (e.g., name conflict).
+	ss := &mockSphereStore{
+		agents:    map[string]store.Agent{},
+		createErr: fmt.Errorf("UNIQUE constraint failed"),
+	}
+
+	err := Create(CreateOpts{
+		World:      "myworld",
+		Name:       "Echo",
+		SourceRepo: sourceRepo,
+	}, ss)
+	if err == nil {
+		t.Fatal("expected error from Create")
+	}
+
+	// Verify no directory was created (agent record is step 1, fails before any dirs).
+	if _, err := os.Stat(EnvoyDir("myworld", "Echo")); !os.IsNotExist(err) {
+		t.Error("envoy directory should not exist when agent creation fails")
+	}
+}
+
+func TestStartRollbackOnStateUpdateFailure(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	worktree := WorktreePath("myworld", "Echo")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ss := &mockStartStore{
+		agents: map[string]*store.Agent{
+			"myworld/Echo": {
+				ID:    "myworld/Echo",
+				Name:  "Echo",
+				World: "myworld",
+				Role:  "envoy",
+				State: "idle",
+			},
+		},
+		updateErr: fmt.Errorf("database locked"),
+	}
+
+	mgr := &mockSessionManager{sessions: map[string]bool{}}
+
+	err := Start(StartOpts{World: "myworld", Name: "Echo"}, ss, mgr)
+	if err == nil {
+		t.Fatal("expected error from Start when state update fails")
+	}
+
+	// Verify rollback: session was stopped.
+	sessName := SessionName("myworld", "Echo")
+	if mgr.sessions[sessName] {
+		t.Error("session should have been stopped by rollback")
 	}
 }
 

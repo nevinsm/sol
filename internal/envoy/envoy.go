@@ -56,6 +56,7 @@ func SessionName(world, name string) string {
 // SphereStore abstracts sphere store operations for Create.
 type SphereStore interface {
 	CreateAgent(name, world, role string) (string, error)
+	DeleteAgent(id string) error
 }
 
 // StartStore abstracts sphere store operations for Start and Stop.
@@ -73,6 +74,7 @@ type ListStore interface {
 type SessionManager interface {
 	Exists(name string) bool
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
+	Stop(name string, force bool) error
 }
 
 // StopManager abstracts session operations for Stop.
@@ -112,29 +114,51 @@ type DeleteOpts struct {
 
 // --- Create ---
 
-// Create provisions a new envoy: directory, brief, worktree, and agent record.
+// Create provisions a new envoy: agent record, directory, worktree, and brief.
+// If any step fails after the first, all previous steps are rolled back.
 func Create(opts CreateOpts, sphereStore SphereStore) error {
 	envoyDir := EnvoyDir(opts.World, opts.Name)
 	briefDir := BriefDir(opts.World, opts.Name)
 	worktree := WorktreePath(opts.World, opts.Name)
 
-	// 1. Create envoy directory.
-	if err := os.MkdirAll(envoyDir, 0o755); err != nil {
+	// 1. Register agent (most likely to fail on name conflicts — fail fast).
+	agentID, err := sphereStore.CreateAgent(opts.Name, opts.World, "envoy")
+	if err != nil {
 		return fmt.Errorf("failed to create envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 
-	// 2. Create brief directory.
-	if err := os.MkdirAll(briefDir, 0o755); err != nil {
+	// From here on, roll back all completed steps on failure.
+	rollback := func() {
+		// Remove worktree from git tracking (best-effort).
+		if _, statErr := os.Stat(worktree); statErr == nil {
+			rmCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktree)
+			if out, err := rmCmd.CombinedOutput(); err != nil {
+				fmt.Fprintf(os.Stderr, "rollback: worktree remove: %s\n", strings.TrimSpace(string(out)))
+			}
+		}
+		// Remove entire envoy directory (covers worktree dir, brief dir).
+		os.RemoveAll(envoyDir)
+		// Delete agent record.
+		if err := sphereStore.DeleteAgent(agentID); err != nil {
+			fmt.Fprintf(os.Stderr, "rollback: failed to delete agent record: %v\n", err)
+		}
+	}
+
+	// 2. Create envoy directory.
+	if err := os.MkdirAll(envoyDir, 0o755); err != nil {
+		rollback()
 		return fmt.Errorf("failed to create envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 
 	// 3. Create persistent worktree (idempotent).
 	if err := ensureWorktree(opts.SourceRepo, opts.World, opts.Name, worktree); err != nil {
+		rollback()
 		return fmt.Errorf("failed to create envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 
-	// 4. Register agent.
-	if _, err := sphereStore.CreateAgent(opts.Name, opts.World, "envoy"); err != nil {
+	// 4. Create brief directory.
+	if err := os.MkdirAll(briefDir, 0o755); err != nil {
+		rollback()
 		return fmt.Errorf("failed to create envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 
@@ -211,6 +235,10 @@ func Start(opts StartOpts, sphereStore StartStore, mgr SessionManager) error {
 
 	// 5. Update agent state to "idle".
 	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+		// Rollback: stop session to avoid running without state tracking.
+		if stopErr := mgr.Stop(sessName, true); stopErr != nil {
+			fmt.Fprintf(os.Stderr, "rollback: failed to stop session: %v\n", stopErr)
+		}
 		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 
