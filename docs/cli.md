@@ -143,6 +143,7 @@ Toolbox subcommands (used by the forge Claude session):
 | `sol forge mark-failed <mr-id>` | Mark a merge request as failed |
 | `sol forge create-resolution <mr-id>` | Create a conflict resolution task and block the MR |
 | `sol forge check-unblocked` | Check for resolved blockers and unblock MRs |
+| `sol forge await` | Block until a nudge arrives or timeout expires |
 
 ## Messaging
 

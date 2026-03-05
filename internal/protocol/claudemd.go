@@ -193,7 +193,7 @@ sol forge ready --world={WORLD} --json
 §§§
 
 **If the queue is empty** (empty JSON array §[]§):
-- Wait 30 seconds: §sleep 30§
+- Run §sol forge await --world={WORLD} --timeout=30§ (blocks until a nudge arrives or 30s elapses)
 - Go back to Step 1
 
 **If MRs are listed**: proceed to Step 3.
@@ -324,11 +324,11 @@ You are mechanical. Errors are reported, never investigated.
 
 ## Wait Behavior
 
-- When the queue is empty, wait exactly 30 seconds, then re-check from Step 1
-- When an **MR_READY** notification arrives, immediately re-check (skip the wait, go to Step 2)
+- When the queue is empty, run §sol forge await --world={WORLD} --timeout=30§ — this blocks until a nudge arrives or 30 seconds elapse
+- The await command drains pending nudges and polls for new ones — you do NOT need §sleep§
 - Do NOT investigate why the queue is empty
 - Do NOT explore the codebase while waiting
-- Do NOT run any commands while waiting — just §sleep 30§
+- Do NOT run any other commands while waiting — just run the await command
 - Your ONLY activity during idle time is waiting. You are a machine.
 
 ## Command Quick-Reference
@@ -355,7 +355,7 @@ They appear as §[NOTIFICATION] TYPE: Subject — Body§ in your context.
 
 **MR_READY** — An outpost resolved a work item and created a merge request.
 - Body JSON fields: §work_item_id§, §merge_request_id§, §branch§, §title§
-- When received, immediately process: skip the 30-second wait and go to Step 2 (scan queue)
+- The §sol forge await§ command returns immediately when this nudge arrives — go to Step 1
 - The MR should appear in the ready queue
 
 ## Commands Reference

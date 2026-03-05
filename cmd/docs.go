@@ -110,7 +110,7 @@ var docSections = []docSection{
 	{
 		noHeading: true,
 		intro:     "Toolbox subcommands (used by the forge Claude session):",
-		paths:     []string{"forge ready", "forge blocked", "forge claim", "forge release", "forge merge", "forge run-gates", "forge push", "forge mark-merged", "forge mark-failed", "forge create-resolution", "forge check-unblocked"},
+		paths:     []string{"forge ready", "forge blocked", "forge claim", "forge release", "forge merge", "forge run-gates", "forge push", "forge mark-merged", "forge mark-failed", "forge create-resolution", "forge check-unblocked", "forge await"},
 	},
 	{
 		heading: "Messaging",

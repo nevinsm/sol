@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"text/tabwriter"
@@ -12,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/forge"
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -36,6 +39,8 @@ var (
 	forgeCreateResolutionWorld string
 	forgeCheckUnblockedWorld  string
 	forgeMergeWorld          string
+	forgeAwaitWorld          string
+	forgeAwaitTimeout        int
 )
 
 var forgeCmd = &cobra.Command{
@@ -983,6 +988,76 @@ func printQueue(world string, mrs []store.MergeRequest) {
 		counts["ready"]-blockedCount, blockedCount, counts["claimed"], counts["merged"])
 }
 
+// forgeAwaitResult is the JSON output of forge await.
+type forgeAwaitResult struct {
+	Woke          bool            `json:"woke"`
+	Messages      []nudge.Message `json:"messages"`
+	WaitedSeconds float64         `json:"waited_seconds"`
+}
+
+var forgeAwaitCmd = &cobra.Command{
+	Use:          "await",
+	Short:        "Block until a nudge arrives or timeout expires",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(forgeAwaitWorld)
+		if err != nil {
+			return err
+		}
+
+		sessName := dispatch.SessionName(world, "forge")
+		timeout := time.Duration(forgeAwaitTimeout) * time.Second
+		start := time.Now()
+
+		// Phase 1: drain any already-pending nudges.
+		messages, err := nudge.Drain(sessName)
+		if err != nil {
+			return err
+		}
+		if len(messages) > 0 {
+			waited := time.Since(start).Seconds()
+			data, _ := json.Marshal(forgeAwaitResult{
+				Woke:          true,
+				Messages:      messages,
+				WaitedSeconds: math.Round(waited*10) / 10,
+			})
+			fmt.Println(string(data))
+			return nil
+		}
+
+		// Phase 2: poll at 1s intervals until nudge arrives or timeout.
+		deadline := start.Add(timeout)
+		for time.Now().Before(deadline) {
+			time.Sleep(1 * time.Second)
+
+			messages, err = nudge.Drain(sessName)
+			if err != nil {
+				return err
+			}
+			if len(messages) > 0 {
+				waited := time.Since(start).Seconds()
+				data, _ := json.Marshal(forgeAwaitResult{
+					Woke:          true,
+					Messages:      messages,
+					WaitedSeconds: math.Round(waited*10) / 10,
+				})
+				fmt.Println(string(data))
+				return nil
+			}
+		}
+
+		// Timeout — no nudges arrived.
+		waited := time.Since(start).Seconds()
+		data, _ := json.Marshal(forgeAwaitResult{
+			Woke:          false,
+			Messages:      []nudge.Message{},
+			WaitedSeconds: math.Round(waited*10) / 10,
+		})
+		fmt.Println(string(data))
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(forgeCmd)
 	forgeCmd.AddCommand(forgeStartCmd)
@@ -1002,6 +1077,7 @@ func init() {
 	forgeCmd.AddCommand(forgeCreateResolutionCmd)
 	forgeCmd.AddCommand(forgeCheckUnblockedCmd)
 	forgeCmd.AddCommand(forgeMergeCmd)
+	forgeCmd.AddCommand(forgeAwaitCmd)
 
 	// --world flag for all subcommands.
 	forgeStartCmd.Flags().StringVar(&forgeStartWorld, "world", "", "world name")
@@ -1020,6 +1096,8 @@ func init() {
 	forgeCreateResolutionCmd.Flags().StringVar(&forgeCreateResolutionWorld, "world", "", "world name")
 	forgeCheckUnblockedCmd.Flags().StringVar(&forgeCheckUnblockedWorld, "world", "", "world name")
 	forgeMergeCmd.Flags().StringVar(&forgeMergeWorld, "world", "", "world name")
+	forgeAwaitCmd.Flags().StringVar(&forgeAwaitWorld, "world", "", "world name")
+	forgeAwaitCmd.Flags().IntVar(&forgeAwaitTimeout, "timeout", 30, "max seconds to wait")
 
 	// --json flag for commands that support it.
 	forgeQueueCmd.Flags().BoolVar(&forgeQueueJSON, "json", false, "output as JSON")
