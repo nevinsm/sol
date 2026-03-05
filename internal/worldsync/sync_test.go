@@ -128,6 +128,93 @@ func TestSyncRepo(t *testing.T) {
 	}
 }
 
+func TestSyncRepoDirtyWorkingTree(t *testing.T) {
+	bare, workingClone := createBareAndClone(t)
+
+	// Push v2 from working clone.
+	if err := os.WriteFile(filepath.Join(workingClone, "file.txt"), []byte("v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, workingClone, "git", "add", ".")
+	run(t, workingClone, "git", "commit", "-m", "update")
+	run(t, workingClone, "git", "push", "origin", "main")
+
+	// Create managed repo and dirty its working tree.
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	world := "testworld"
+	repoDir := filepath.Join(solHome, world, "repo")
+	run(t, "", "git", "clone", bare, repoDir)
+
+	// Dirty: modify tracked file and add untracked file.
+	if err := os.WriteFile(filepath.Join(repoDir, "file.txt"), []byte("dirty"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "untracked.txt"), []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SyncRepo(world); err != nil {
+		t.Fatalf("SyncRepo failed with dirty working tree: %v", err)
+	}
+
+	// Tracked file should have v2 content.
+	data, err := os.ReadFile(filepath.Join(repoDir, "file.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "v2" {
+		t.Errorf("expected file content 'v2', got %q", string(data))
+	}
+
+	// Untracked file should be removed by git clean.
+	if _, err := os.Stat(filepath.Join(repoDir, "untracked.txt")); !os.IsNotExist(err) {
+		t.Error("expected untracked.txt to be removed by git clean")
+	}
+}
+
+func TestSyncRepoDivergedBranch(t *testing.T) {
+	bare, workingClone := createBareAndClone(t)
+
+	// Create managed repo clone.
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	world := "testworld"
+	repoDir := filepath.Join(solHome, world, "repo")
+	run(t, "", "git", "clone", bare, repoDir)
+	run(t, repoDir, "git", "config", "user.email", "test@test.com")
+	run(t, repoDir, "git", "config", "user.name", "Test")
+
+	// Create a local-only commit in managed repo (diverge from origin).
+	if err := os.WriteFile(filepath.Join(repoDir, "file.txt"), []byte("local"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, repoDir, "git", "add", ".")
+	run(t, repoDir, "git", "commit", "-m", "local divergence")
+
+	// Push a different commit from working clone.
+	if err := os.WriteFile(filepath.Join(workingClone, "file.txt"), []byte("v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, workingClone, "git", "add", ".")
+	run(t, workingClone, "git", "commit", "-m", "update")
+	run(t, workingClone, "git", "push", "origin", "main")
+
+	// SyncRepo should succeed despite divergence.
+	if err := SyncRepo(world); err != nil {
+		t.Fatalf("SyncRepo failed with diverged branch: %v", err)
+	}
+
+	// File should have v2 content from origin.
+	data, err := os.ReadFile(filepath.Join(repoDir, "file.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "v2" {
+		t.Errorf("expected file content 'v2', got %q", string(data))
+	}
+}
+
 func TestSyncRepoNoRepo(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)

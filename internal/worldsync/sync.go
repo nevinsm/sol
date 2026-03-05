@@ -30,7 +30,10 @@ type SyncResult struct {
 	Err       error
 }
 
-// SyncRepo fetches and fast-forward pulls the managed repo at $SOL_HOME/{world}/repo/.
+// SyncRepo fetches origin and hard-resets the managed repo to origin/{branch}.
+// The managed repo is a read-only research copy — there is never local state
+// worth preserving, so reset --hard is safe and handles dirty trees or diverged
+// branches that would cause pull --ff-only to fail.
 func SyncRepo(world string) error {
 	repoPath := config.RepoPath(world)
 
@@ -44,15 +47,33 @@ func SyncRepo(world string) error {
 			world, strings.TrimSpace(string(out)), err)
 	}
 
-	pullCmd := exec.Command("git", "-C", repoPath, "pull", "--ff-only")
-	if out, err := pullCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to pull for world %q: %s: %w",
+	// Install excludes BEFORE reset so sol-managed files are excluded
+	// when git evaluates the working tree.
+	if err := setup.InstallExcludes(repoPath); err != nil {
+		return fmt.Errorf("failed to install git excludes for world %q: %w", world, err)
+	}
+
+	// Determine the current branch.
+	branchCmd := exec.Command("git", "-C", repoPath, "rev-parse", "--abbrev-ref", "HEAD")
+	branchOut, err := branchCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to determine branch for world %q: %s: %w",
+			world, strings.TrimSpace(string(branchOut)), err)
+	}
+	branch := strings.TrimSpace(string(branchOut))
+
+	// Hard reset to origin/{branch} — safe because managed repo is read-only.
+	resetCmd := exec.Command("git", "-C", repoPath, "reset", "--hard", "origin/"+branch)
+	if out, err := resetCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to reset for world %q: %s: %w",
 			world, strings.TrimSpace(string(out)), err)
 	}
 
-	// Ensure sol-specific excludes are in place (idempotent).
-	if err := setup.InstallExcludes(repoPath); err != nil {
-		return fmt.Errorf("failed to install git excludes for world %q: %w", world, err)
+	// Remove untracked files that might cause issues.
+	cleanCmd := exec.Command("git", "-C", repoPath, "clean", "-fd")
+	if out, err := cleanCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to clean for world %q: %s: %w",
+			world, strings.TrimSpace(string(out)), err)
 	}
 
 	return nil
