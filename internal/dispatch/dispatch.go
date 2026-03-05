@@ -202,8 +202,9 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	sessName := SessionName(opts.World, agent.Name)
 	branchName := fmt.Sprintf("outpost/%s/%s", agent.Name, opts.WorkItemID)
 
-	// For re-cast, stop existing session if it's still around.
-	if reCast && mgr.Exists(sessName) {
+	// Clean up any stale session (race between resolve teardown and next cast,
+	// crashed agents, interrupted stops, etc.).
+	if mgr.Exists(sessName) {
 		mgr.Stop(sessName, true)
 	}
 
