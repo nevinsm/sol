@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/nevinsm/sol/internal/store"
 )
 
 func setupTestFormula(t *testing.T, steps []StepDef, vars map[string]VariableDecl) string {
@@ -874,6 +877,567 @@ func TestEnsureFormulaRuleOfFive(t *testing.T) {
 	}
 	if dir != dir2 {
 		t.Errorf("paths differ: %q vs %q", dir, dir2)
+	}
+}
+
+// setupStores creates a temporary world and sphere store for testing.
+func setupStores(t *testing.T) (worldStore, sphereStore *store.Store) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := store.OpenWorld("test-world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ws.Close() })
+
+	ss, err := store.OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ss.Close() })
+
+	return ws, ss
+}
+
+func TestComputePhases(t *testing.T) {
+	// DAG: A (no deps), B needs A, C needs A, D needs B and C.
+	steps := []StepDef{
+		{ID: "a", Title: "A"},
+		{ID: "b", Title: "B", Needs: []string{"a"}},
+		{ID: "c", Title: "C", Needs: []string{"a"}},
+		{ID: "d", Title: "D", Needs: []string{"b", "c"}},
+	}
+
+	phases := ComputePhases(steps)
+
+	if phases["a"] != 0 {
+		t.Errorf("phase[a]: got %d, want 0", phases["a"])
+	}
+	if phases["b"] != 1 {
+		t.Errorf("phase[b]: got %d, want 1", phases["b"])
+	}
+	if phases["c"] != 1 {
+		t.Errorf("phase[c]: got %d, want 1", phases["c"])
+	}
+	if phases["d"] != 2 {
+		t.Errorf("phase[d]: got %d, want 2", phases["d"])
+	}
+}
+
+func TestComputePhasesLinear(t *testing.T) {
+	steps := linearSteps() // load-context → implement → verify
+
+	phases := ComputePhases(steps)
+
+	if phases["load-context"] != 0 {
+		t.Errorf("phase[load-context]: got %d, want 0", phases["load-context"])
+	}
+	if phases["implement"] != 1 {
+		t.Errorf("phase[implement]: got %d, want 1", phases["implement"])
+	}
+	if phases["verify"] != 2 {
+		t.Errorf("phase[verify]: got %d, want 2", phases["verify"])
+	}
+}
+
+func TestShouldManifest(t *testing.T) {
+	// Workflow without manifest flag.
+	m := &Manifest{Type: "workflow"}
+	if ShouldManifest(m) {
+		t.Error("ShouldManifest() = true for workflow without manifest flag")
+	}
+
+	// Workflow with manifest = true.
+	m = &Manifest{Type: "workflow", Manifest: true}
+	if !ShouldManifest(m) {
+		t.Error("ShouldManifest() = false for workflow with manifest = true")
+	}
+
+	// Expansion always manifests.
+	m = &Manifest{Type: "expansion"}
+	if !ShouldManifest(m) {
+		t.Error("ShouldManifest() = false for expansion type")
+	}
+}
+
+func TestManifestFormulaWorkflow(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Create a manifested workflow formula.
+	formulaDir := filepath.Join(solHome, "formulas", "manifest-wf")
+	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+
+	steps := linearSteps()
+	writeTOMLManifestWithFlag(t, formulaDir, "manifest-wf", steps, map[string]VariableDecl{
+		"issue": {Required: true},
+	}, true)
+	for _, s := range steps {
+		content := "# " + s.Title + "\n\nWork on {{issue}}.\n"
+		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte(content), 0o644)
+	}
+
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "manifest-wf",
+		World:       "test-world",
+		Variables:   map[string]string{"issue": "sol-test123"},
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	// Verify result structure.
+	if result.CaravanID == "" {
+		t.Error("CaravanID is empty")
+	}
+	if result.ParentID == "" {
+		t.Error("ParentID is empty")
+	}
+	if len(result.ChildIDs) != 3 {
+		t.Fatalf("ChildIDs: got %d, want 3", len(result.ChildIDs))
+	}
+
+	// Verify child work items were created with correct titles and parent.
+	for _, stepDef := range steps {
+		childID, ok := result.ChildIDs[stepDef.ID]
+		if !ok {
+			t.Fatalf("missing child for step %q", stepDef.ID)
+		}
+		item, err := ws.GetWorkItem(childID)
+		if err != nil {
+			t.Fatalf("GetWorkItem(%q) error: %v", childID, err)
+		}
+		if item.Title != stepDef.Title {
+			t.Errorf("step %q title: got %q, want %q", stepDef.ID, item.Title, stepDef.Title)
+		}
+		if item.ParentID != result.ParentID {
+			t.Errorf("step %q parent_id: got %q, want %q", stepDef.ID, item.ParentID, result.ParentID)
+		}
+		if item.Status != "open" {
+			t.Errorf("step %q status: got %q, want open", stepDef.ID, item.Status)
+		}
+	}
+
+	// Verify rendered instructions in description.
+	loadItem, _ := ws.GetWorkItem(result.ChildIDs["load-context"])
+	if loadItem.Description == "" {
+		t.Error("load-context description is empty")
+	}
+	if !strings.Contains(loadItem.Description, "sol-test123") {
+		t.Errorf("load-context description missing variable substitution: %q", loadItem.Description)
+	}
+
+	// Verify dependencies mirror the DAG.
+	// implement depends on load-context.
+	implDeps, err := ws.GetDependencies(result.ChildIDs["implement"])
+	if err != nil {
+		t.Fatalf("GetDependencies(implement) error: %v", err)
+	}
+	if len(implDeps) != 1 || implDeps[0] != result.ChildIDs["load-context"] {
+		t.Errorf("implement deps: got %v, want [%s]", implDeps, result.ChildIDs["load-context"])
+	}
+
+	// verify depends on implement.
+	verifyDeps, err := ws.GetDependencies(result.ChildIDs["verify"])
+	if err != nil {
+		t.Fatalf("GetDependencies(verify) error: %v", err)
+	}
+	if len(verifyDeps) != 1 || verifyDeps[0] != result.ChildIDs["implement"] {
+		t.Errorf("verify deps: got %v, want [%s]", verifyDeps, result.ChildIDs["implement"])
+	}
+
+	// load-context has no deps.
+	loadDeps, err := ws.GetDependencies(result.ChildIDs["load-context"])
+	if err != nil {
+		t.Fatalf("GetDependencies(load-context) error: %v", err)
+	}
+	if len(loadDeps) != 0 {
+		t.Errorf("load-context deps: got %v, want []", loadDeps)
+	}
+
+	// Verify phases.
+	if result.Phases["load-context"] != 0 {
+		t.Errorf("phase[load-context]: got %d, want 0", result.Phases["load-context"])
+	}
+	if result.Phases["implement"] != 1 {
+		t.Errorf("phase[implement]: got %d, want 1", result.Phases["implement"])
+	}
+	if result.Phases["verify"] != 2 {
+		t.Errorf("phase[verify]: got %d, want 2", result.Phases["verify"])
+	}
+
+	// Verify caravan was created and is ready.
+	caravan, err := ss.GetCaravan(result.CaravanID)
+	if err != nil {
+		t.Fatalf("GetCaravan() error: %v", err)
+	}
+	if caravan.Status != "ready" {
+		t.Errorf("caravan status: got %q, want ready", caravan.Status)
+	}
+
+	// Verify caravan items.
+	items, err := ss.ListCaravanItems(result.CaravanID)
+	if err != nil {
+		t.Fatalf("ListCaravanItems() error: %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("caravan items: got %d, want 3", len(items))
+	}
+
+	// Verify caravan item phases match.
+	itemPhases := make(map[string]int)
+	for _, ci := range items {
+		itemPhases[ci.WorkItemID] = ci.Phase
+	}
+	for stepID, workItemID := range result.ChildIDs {
+		expectedPhase := result.Phases[stepID]
+		gotPhase := itemPhases[workItemID]
+		if gotPhase != expectedPhase {
+			t.Errorf("caravan item phase for %q: got %d, want %d", stepID, gotPhase, expectedPhase)
+		}
+	}
+}
+
+func TestManifestFormulaExpansion(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Create expansion formula.
+	formulaDir := filepath.Join(solHome, "formulas", "test-expand")
+	os.MkdirAll(formulaDir, 0o755)
+
+	toml := `name = "test-expand"
+type = "expansion"
+description = "Test expansion formula"
+
+[[template]]
+id = "draft"
+title = "Draft: {target.title}"
+description = "Initial attempt at {target.title}."
+
+[[template]]
+id = "refine"
+title = "Refine: {target.title}"
+description = "Second pass on {target.id}."
+needs = ["draft"]
+`
+	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(toml), 0o644)
+
+	// Create a target work item.
+	targetID, err := ws.CreateWorkItem("Build auth system", "Implement OAuth2", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem() error: %v", err)
+	}
+
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "test-expand",
+		World:       "test-world",
+		ParentID:    targetID,
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	// Verify children.
+	if len(result.ChildIDs) != 2 {
+		t.Fatalf("ChildIDs: got %d, want 2", len(result.ChildIDs))
+	}
+
+	// Verify template variable substitution in titles.
+	draftItem, err := ws.GetWorkItem(result.ChildIDs["draft"])
+	if err != nil {
+		t.Fatalf("GetWorkItem(draft) error: %v", err)
+	}
+	if draftItem.Title != "Draft: Build auth system" {
+		t.Errorf("draft title: got %q, want %q", draftItem.Title, "Draft: Build auth system")
+	}
+	if draftItem.Description != "Initial attempt at Build auth system." {
+		t.Errorf("draft description: got %q", draftItem.Description)
+	}
+
+	refineItem, err := ws.GetWorkItem(result.ChildIDs["refine"])
+	if err != nil {
+		t.Fatalf("GetWorkItem(refine) error: %v", err)
+	}
+	if refineItem.Title != "Refine: Build auth system" {
+		t.Errorf("refine title: got %q, want %q", refineItem.Title, "Refine: Build auth system")
+	}
+	if !strings.Contains(refineItem.Description, targetID) {
+		t.Errorf("refine description missing target ID: got %q", refineItem.Description)
+	}
+
+	// Verify parent is the target.
+	if result.ParentID != targetID {
+		t.Errorf("ParentID: got %q, want %q", result.ParentID, targetID)
+	}
+	if draftItem.ParentID != targetID {
+		t.Errorf("draft parent_id: got %q, want %q", draftItem.ParentID, targetID)
+	}
+
+	// Verify dependencies: refine depends on draft.
+	refineDeps, err := ws.GetDependencies(result.ChildIDs["refine"])
+	if err != nil {
+		t.Fatalf("GetDependencies(refine) error: %v", err)
+	}
+	if len(refineDeps) != 1 || refineDeps[0] != result.ChildIDs["draft"] {
+		t.Errorf("refine deps: got %v, want [%s]", refineDeps, result.ChildIDs["draft"])
+	}
+
+	// Verify phases.
+	if result.Phases["draft"] != 0 {
+		t.Errorf("phase[draft]: got %d, want 0", result.Phases["draft"])
+	}
+	if result.Phases["refine"] != 1 {
+		t.Errorf("phase[refine]: got %d, want 1", result.Phases["refine"])
+	}
+}
+
+func TestManifestFormulaExpansionRequiresParent(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	formulaDir := filepath.Join(solHome, "formulas", "test-expand")
+	os.MkdirAll(formulaDir, 0o755)
+
+	toml := `name = "test-expand"
+type = "expansion"
+description = "Test expansion formula"
+
+[[template]]
+id = "draft"
+title = "Draft"
+description = "First pass."
+`
+	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(toml), 0o644)
+
+	_, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "test-expand",
+		World:       "test-world",
+		CreatedBy:   "operator",
+	})
+	if err == nil {
+		t.Fatal("ManifestFormula() expected error for expansion without parent")
+	}
+	if !strings.Contains(err.Error(), "requires a parent work item") {
+		t.Errorf("error: got %q", err.Error())
+	}
+}
+
+func TestManifestFormulaRejectsNonManifest(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	formulaDir := filepath.Join(solHome, "formulas", "plain-wf")
+	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+
+	steps := []StepDef{{ID: "s1", Title: "Step 1", Instructions: "steps/s1.md"}}
+	writeTOMLManifest(t, formulaDir, "plain-wf", steps, map[string]VariableDecl{
+		"issue": {Required: true},
+	})
+	os.WriteFile(filepath.Join(formulaDir, "steps", "s1.md"), []byte("test"), 0o644)
+
+	_, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "plain-wf",
+		World:       "test-world",
+		Variables:   map[string]string{"issue": "sol-test"},
+		CreatedBy:   "operator",
+	})
+	if err == nil {
+		t.Fatal("ManifestFormula() expected error for non-manifest formula")
+	}
+	if !strings.Contains(err.Error(), "not configured for manifestation") {
+		t.Errorf("error: got %q", err.Error())
+	}
+}
+
+func TestManifestFormulaDAGPhases(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// DAG: A (no deps), B needs A, C needs A, D needs B and C.
+	dagSteps := []StepDef{
+		{ID: "a", Title: "Step A", Instructions: "steps/a.md"},
+		{ID: "b", Title: "Step B", Instructions: "steps/b.md", Needs: []string{"a"}},
+		{ID: "c", Title: "Step C", Instructions: "steps/c.md", Needs: []string{"a"}},
+		{ID: "d", Title: "Step D", Instructions: "steps/d.md", Needs: []string{"b", "c"}},
+	}
+
+	formulaDir := filepath.Join(solHome, "formulas", "dag-manifest")
+	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+	writeTOMLManifestWithFlag(t, formulaDir, "dag-manifest", dagSteps, map[string]VariableDecl{
+		"issue": {Required: true},
+	}, true)
+	for _, s := range dagSteps {
+		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
+	}
+
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "dag-manifest",
+		World:       "test-world",
+		Variables:   map[string]string{"issue": "sol-dag-test"},
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	// Verify 4 children.
+	if len(result.ChildIDs) != 4 {
+		t.Fatalf("ChildIDs: got %d, want 4", len(result.ChildIDs))
+	}
+
+	// Verify phases: A=0, B=1, C=1, D=2.
+	expected := map[string]int{"a": 0, "b": 1, "c": 1, "d": 2}
+	for id, wantPhase := range expected {
+		if result.Phases[id] != wantPhase {
+			t.Errorf("phase[%s]: got %d, want %d", id, result.Phases[id], wantPhase)
+		}
+	}
+
+	// Verify D depends on both B and C.
+	dDeps, err := ws.GetDependencies(result.ChildIDs["d"])
+	if err != nil {
+		t.Fatalf("GetDependencies(d) error: %v", err)
+	}
+	if len(dDeps) != 2 {
+		t.Fatalf("d deps: got %d, want 2", len(dDeps))
+	}
+	depSet := map[string]bool{dDeps[0]: true, dDeps[1]: true}
+	if !depSet[result.ChildIDs["b"]] || !depSet[result.ChildIDs["c"]] {
+		t.Errorf("d deps: got %v, want [%s, %s]", dDeps, result.ChildIDs["b"], result.ChildIDs["c"])
+	}
+}
+
+func TestManifestFormulaWithExistingParent(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	formulaDir := filepath.Join(solHome, "formulas", "parent-wf")
+	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+
+	steps := []StepDef{
+		{ID: "only-step", Title: "The only step", Instructions: "steps/only.md"},
+	}
+	writeTOMLManifestWithFlag(t, formulaDir, "parent-wf", steps, map[string]VariableDecl{
+		"issue": {Required: true},
+	}, true)
+	os.WriteFile(filepath.Join(formulaDir, "steps", "only.md"), []byte("Do the thing."), 0o644)
+
+	// Create parent first.
+	parentID, err := ws.CreateWorkItem("Parent item", "Top-level work", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWorkItem() error: %v", err)
+	}
+
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "parent-wf",
+		World:       "test-world",
+		ParentID:    parentID,
+		Variables:   map[string]string{"issue": "sol-test"},
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	// Verify parent is the provided one.
+	if result.ParentID != parentID {
+		t.Errorf("ParentID: got %q, want %q", result.ParentID, parentID)
+	}
+
+	// Verify child's parent.
+	child, err := ws.GetWorkItem(result.ChildIDs["only-step"])
+	if err != nil {
+		t.Fatalf("GetWorkItem() error: %v", err)
+	}
+	if child.ParentID != parentID {
+		t.Errorf("child parent_id: got %q, want %q", child.ParentID, parentID)
+	}
+}
+
+func TestLoadManifestWithManifestFlag(t *testing.T) {
+	dir := t.TempDir()
+	toml := `name = "flagged-wf"
+type = "workflow"
+manifest = true
+description = "A manifested workflow"
+
+[[steps]]
+id = "s1"
+title = "Step 1"
+instructions = "steps/s1.md"
+`
+	os.WriteFile(filepath.Join(dir, "manifest.toml"), []byte(toml), 0o644)
+
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+	if !m.Manifest {
+		t.Error("Manifest field should be true")
+	}
+	if !ShouldManifest(m) {
+		t.Error("ShouldManifest() should return true")
+	}
+}
+
+// writeTOMLManifestWithFlag writes a manifest.toml with the manifest flag.
+func writeTOMLManifestWithFlag(t *testing.T, dir, name string, steps []StepDef, vars map[string]VariableDecl, manifest bool) {
+	t.Helper()
+	f, err := os.Create(filepath.Join(dir, "manifest.toml"))
+	if err != nil {
+		t.Fatalf("create manifest.toml: %v", err)
+	}
+	defer f.Close()
+
+	f.WriteString("name = \"" + name + "\"\n")
+	f.WriteString("type = \"workflow\"\n")
+	if manifest {
+		f.WriteString("manifest = true\n")
+	}
+	f.WriteString("description = \"Test formula\"\n\n")
+
+	if len(vars) > 0 {
+		f.WriteString("[variables]\n")
+		for k, v := range vars {
+			if v.Required {
+				f.WriteString(k + " = { required = true }\n")
+			} else if v.Default != "" {
+				f.WriteString(k + " = { default = \"" + v.Default + "\" }\n")
+			}
+		}
+		f.WriteString("\n")
+	}
+
+	for _, s := range steps {
+		f.WriteString("[[steps]]\n")
+		f.WriteString("id = \"" + s.ID + "\"\n")
+		f.WriteString("title = \"" + s.Title + "\"\n")
+		f.WriteString("instructions = \"" + s.Instructions + "\"\n")
+		if len(s.Needs) > 0 {
+			f.WriteString("needs = [")
+			for i, n := range s.Needs {
+				if i > 0 {
+					f.WriteString(", ")
+				}
+				f.WriteString("\"" + n + "\"")
+			}
+			f.WriteString("]\n")
+		}
+		f.WriteString("\n")
 	}
 }
 

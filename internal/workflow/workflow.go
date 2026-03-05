@@ -10,6 +10,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // Manifest represents a formula's manifest.toml.
@@ -17,6 +18,7 @@ type Manifest struct {
 	Name        string                  `toml:"name"`
 	Type        string                  `toml:"type"`
 	Description string                  `toml:"description"`
+	Manifest    bool                    `toml:"manifest"` // default false; when true, steps become child work items
 	Variables   map[string]VariableDecl `toml:"variables"`
 	Steps       []StepDef              `toml:"steps"`
 	Templates   []Template             `toml:"template"`
@@ -592,4 +594,250 @@ func readStepFile(path string) (*Step, error) {
 		return nil, fmt.Errorf("failed to parse step file %q: %w", path, err)
 	}
 	return &s, nil
+}
+
+// ManifestResult holds the output of manifesting a formula into work items.
+type ManifestResult struct {
+	CaravanID string            `json:"caravan_id"`
+	ParentID  string            `json:"parent_id"`
+	ChildIDs  map[string]string `json:"child_ids"` // step/template ID → work item ID
+	Phases    map[string]int    `json:"phases"`     // step/template ID → phase number
+}
+
+// ManifestOpts holds parameters for ManifestFormula.
+type ManifestOpts struct {
+	FormulaName string
+	World       string
+	ParentID    string // if empty, a parent work item is created
+	Variables   map[string]string
+	CreatedBy   string
+}
+
+// ShouldManifest returns true if the formula should be manifested.
+// Expansion formulas always manifest. Workflow formulas manifest when
+// the manifest flag is set.
+func ShouldManifest(m *Manifest) bool {
+	return m.Type == "expansion" || m.Manifest
+}
+
+// ComputePhases returns the phase (dependency depth) for each item in a DAG.
+// Items with no dependencies are phase 0. Items whose dependencies are all
+// phase N or lower are phase max(N)+1.
+func ComputePhases[T interface {
+	dagID() string
+	dagNeeds() []string
+}](items []T) map[string]int {
+	phases := make(map[string]int, len(items))
+
+	// Seed phase 0 for items with no dependencies.
+	for _, item := range items {
+		if len(item.dagNeeds()) == 0 {
+			phases[item.dagID()] = 0
+		}
+	}
+
+	// Iterate until all items have phases assigned.
+	for range len(items) {
+		for _, item := range items {
+			if _, ok := phases[item.dagID()]; ok {
+				continue
+			}
+			maxPhase := -1
+			allResolved := true
+			for _, need := range item.dagNeeds() {
+				p, ok := phases[need]
+				if !ok {
+					allResolved = false
+					break
+				}
+				if p > maxPhase {
+					maxPhase = p
+				}
+			}
+			if allResolved {
+				phases[item.dagID()] = maxPhase + 1
+			}
+		}
+	}
+
+	return phases
+}
+
+// phaseable adapts formula items for ComputePhases.
+type phaseable struct {
+	id    string
+	needs []string
+}
+
+func (p phaseable) dagID() string      { return p.id }
+func (p phaseable) dagNeeds() []string { return p.needs }
+
+// renderTemplateField substitutes {target.title}, {target.description},
+// and {target.id} in a template string.
+func renderTemplateField(s string, target *store.WorkItem) string {
+	s = strings.ReplaceAll(s, "{target.title}", target.Title)
+	s = strings.ReplaceAll(s, "{target.description}", target.Description)
+	s = strings.ReplaceAll(s, "{target.id}", target.ID)
+	return s
+}
+
+// ManifestFormula materializes a formula into child work items with a caravan.
+// Each step (workflow) or template (expansion) becomes a child work item.
+// Dependencies between children mirror the formula's DAG. Children are
+// grouped in a caravan with phases derived from dependency depth.
+func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*ManifestResult, error) {
+	// Load formula.
+	formulaPath, err := EnsureFormula(opts.FormulaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ensure formula %q: %w", opts.FormulaName, err)
+	}
+
+	m, err := LoadManifest(formulaPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := Validate(m); err != nil {
+		return nil, fmt.Errorf("invalid formula %q: %w", opts.FormulaName, err)
+	}
+
+	if !ShouldManifest(m) {
+		return nil, fmt.Errorf("formula %q is not configured for manifestation (set manifest = true or use expansion type)", opts.FormulaName)
+	}
+
+	// Resolve variables (for workflow type step rendering).
+	resolved, err := ResolveVariables(m, opts.Variables)
+	if err != nil {
+		return nil, err
+	}
+
+	parentID := opts.ParentID
+
+	// For expansion formulas, the parent must exist (it's the target).
+	// For workflow formulas, create a parent if not provided.
+	var target *store.WorkItem
+	if m.Type == "expansion" {
+		if parentID == "" {
+			return nil, fmt.Errorf("expansion formula requires a parent work item (target)")
+		}
+		target, err = worldStore.GetWorkItem(parentID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get target work item %q: %w", parentID, err)
+		}
+	} else if parentID == "" {
+		parentID, err = worldStore.CreateWorkItem(
+			m.Name+": "+resolved["issue"],
+			m.Description,
+			opts.CreatedBy,
+			0,
+			[]string{"manifest"},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create parent work item: %w", err)
+		}
+	}
+
+	// Build child items from steps or templates.
+	type childDef struct {
+		formulaID   string
+		title       string
+		description string
+		needs       []string
+	}
+
+	var children []childDef
+
+	if m.Type == "expansion" {
+		for _, tmpl := range m.Templates {
+			children = append(children, childDef{
+				formulaID:   tmpl.ID,
+				title:       renderTemplateField(tmpl.Title, target),
+				description: renderTemplateField(tmpl.Description, target),
+				needs:       tmpl.Needs,
+			})
+		}
+	} else {
+		// Workflow type — render step instructions as descriptions.
+		for _, step := range m.Steps {
+			rendered, err := RenderStepInstructions(formulaPath, step, resolved)
+			if err != nil {
+				return nil, fmt.Errorf("failed to render step %q instructions: %w", step.ID, err)
+			}
+			children = append(children, childDef{
+				formulaID:   step.ID,
+				title:       step.Title,
+				description: rendered,
+				needs:       step.Needs,
+			})
+		}
+	}
+
+	// Compute phases from the DAG.
+	phaseItems := make([]phaseable, len(children))
+	for i, c := range children {
+		phaseItems[i] = phaseable{id: c.formulaID, needs: c.needs}
+	}
+	phases := ComputePhases(phaseItems)
+
+	// Create child work items.
+	childIDs := make(map[string]string, len(children))
+	for _, c := range children {
+		id, err := worldStore.CreateWorkItemWithOpts(store.CreateWorkItemOpts{
+			Title:       c.title,
+			Description: c.description,
+			CreatedBy:   opts.CreatedBy,
+			ParentID:    parentID,
+			Labels:      []string{"manifest-child"},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create child work item for %q: %w", c.formulaID, err)
+		}
+		childIDs[c.formulaID] = id
+	}
+
+	// Add dependencies between children mirroring the DAG.
+	for _, c := range children {
+		childID := childIDs[c.formulaID]
+		for _, need := range c.needs {
+			depID, ok := childIDs[need]
+			if !ok {
+				return nil, fmt.Errorf("child %q references unknown dependency %q", c.formulaID, need)
+			}
+			if err := worldStore.AddDependency(childID, depID); err != nil {
+				return nil, fmt.Errorf("failed to add dependency %q → %q: %w", c.formulaID, need, err)
+			}
+		}
+	}
+
+	// Create caravan and add children.
+	caravanName := opts.FormulaName
+	if opts.ParentID != "" {
+		caravanName += ":" + opts.ParentID
+	} else {
+		caravanName += ":" + parentID
+	}
+	caravanID, err := sphereStore.CreateCaravan(caravanName, opts.CreatedBy)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create caravan: %w", err)
+	}
+
+	for formulaID, workItemID := range childIDs {
+		phase := phases[formulaID]
+		if err := sphereStore.CreateCaravanItem(caravanID, workItemID, opts.World, phase); err != nil {
+			return nil, fmt.Errorf("failed to add item %q to caravan: %w", formulaID, err)
+		}
+	}
+
+	// Mark caravan as ready for dispatch.
+	if err := sphereStore.UpdateCaravanStatus(caravanID, "ready"); err != nil {
+		return nil, fmt.Errorf("failed to update caravan status: %w", err)
+	}
+
+	result := &ManifestResult{
+		CaravanID: caravanID,
+		ParentID:  parentID,
+		ChildIDs:  childIDs,
+		Phases:    phases,
+	}
+
+	return result, nil
 }
