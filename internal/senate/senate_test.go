@@ -1,9 +1,13 @@
 package senate
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nevinsm/sol/internal/protocol"
 )
 
 // --- Mocks ---
@@ -103,6 +107,38 @@ func TestStart(t *testing.T) {
 	briefDir := BriefDir()
 	if _, err := os.Stat(briefDir); os.IsNotExist(err) {
 		t.Error("brief directory not created")
+	}
+
+	// Verify hooks file written with PreToolUse hooks.
+	hooksPath := filepath.Join(senateDir, ".claude", "settings.local.json")
+	data, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatalf("hooks file not found: %v", err)
+	}
+
+	var cfg protocol.HookConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("failed to parse hooks JSON: %v", err)
+	}
+
+	// Verify PreToolUse hooks block auto-memory writes and EnterPlanMode.
+	if ptuGroups, ok := cfg.Hooks["PreToolUse"]; !ok {
+		t.Error("no PreToolUse hooks")
+	} else if len(ptuGroups) != 2 {
+		t.Errorf("expected 2 PreToolUse matcher groups, got %d", len(ptuGroups))
+	} else {
+		if ptuGroups[0].Matcher != "Write|Edit" {
+			t.Errorf("PreToolUse matcher[0] = %q, want \"Write|Edit\"", ptuGroups[0].Matcher)
+		}
+		if ptuGroups[1].Matcher != "EnterPlanMode" {
+			t.Errorf("PreToolUse matcher[1] = %q, want \"EnterPlanMode\"", ptuGroups[1].Matcher)
+		}
+		if !strings.Contains(ptuGroups[1].Hooks[0].Command, "BLOCKED") {
+			t.Error("EnterPlanMode hook should contain BLOCKED message")
+		}
+		if !strings.Contains(ptuGroups[1].Hooks[0].Command, "exit 2") {
+			t.Error("EnterPlanMode hook should exit 2 to block the tool call")
+		}
 	}
 }
 

@@ -62,6 +62,17 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 					},
 				},
 			},
+			"PreToolUse": {
+				{
+					Matcher: "EnterPlanMode",
+					Hooks: []HookHandler{
+						{
+							Type:    "command",
+							Command: `echo "BLOCKED: Plan mode requires human approval — no one is watching. Outline your approach in conversation, then implement directly." >&2; exit 2`,
+						},
+					},
+				},
+			},
 			"UserPromptSubmit": {
 				{
 					Hooks: []HookHandler{
@@ -101,6 +112,17 @@ func InstallForgeHooks(worktreeDir, world string) error {
 						{
 							Type:    "command",
 							Command: fmt.Sprintf("sol handoff --world=%s --agent=forge", world),
+						},
+					},
+				},
+			},
+			"PreToolUse": {
+				{
+					Matcher: "EnterPlanMode",
+					Hooks: []HookHandler{
+						{
+							Type:    "command",
+							Command: `echo "BLOCKED: Plan mode requires human approval — no one is watching. Outline your approach in conversation, then implement directly." >&2; exit 2`,
 						},
 					},
 				},

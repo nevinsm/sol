@@ -160,6 +160,15 @@ func installHooks(govDir, world string) error {
 						},
 					},
 				},
+				{
+					Matcher: "EnterPlanMode",
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`,
+						},
+					},
+				},
 			},
 			"UserPromptSubmit": {
 				{

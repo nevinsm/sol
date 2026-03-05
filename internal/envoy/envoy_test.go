@@ -332,20 +332,29 @@ func TestStart(t *testing.T) {
 		t.Errorf("unexpected PreCompact command: %q", pcGroups[0].Hooks[0].Command)
 	}
 
-	// Verify PreToolUse hook blocks auto-memory writes.
+	// Verify PreToolUse hooks block auto-memory writes and EnterPlanMode.
 	if ptuGroups, ok := cfg.Hooks["PreToolUse"]; !ok {
 		t.Error("no PreToolUse hooks")
-	} else if len(ptuGroups) != 1 {
-		t.Errorf("expected 1 PreToolUse matcher group, got %d", len(ptuGroups))
+	} else if len(ptuGroups) != 2 {
+		t.Errorf("expected 2 PreToolUse matcher groups, got %d", len(ptuGroups))
 	} else {
 		if ptuGroups[0].Matcher != "Write|Edit" {
-			t.Errorf("PreToolUse matcher = %q, want \"Write|Edit\"", ptuGroups[0].Matcher)
+			t.Errorf("PreToolUse matcher[0] = %q, want \"Write|Edit\"", ptuGroups[0].Matcher)
 		}
 		if !strings.Contains(ptuGroups[0].Hooks[0].Command, ".claude/projects") {
 			t.Error("PreToolUse hook should block .claude/projects/*/memory/ paths")
 		}
 		if !strings.Contains(ptuGroups[0].Hooks[0].Command, "exit 2") {
 			t.Error("PreToolUse hook should exit 2 to block the tool call")
+		}
+		if ptuGroups[1].Matcher != "EnterPlanMode" {
+			t.Errorf("PreToolUse matcher[1] = %q, want \"EnterPlanMode\"", ptuGroups[1].Matcher)
+		}
+		if !strings.Contains(ptuGroups[1].Hooks[0].Command, "BLOCKED") {
+			t.Error("EnterPlanMode hook should contain BLOCKED message")
+		}
+		if !strings.Contains(ptuGroups[1].Hooks[0].Command, "exit 2") {
+			t.Error("EnterPlanMode hook should exit 2 to block the tool call")
 		}
 	}
 

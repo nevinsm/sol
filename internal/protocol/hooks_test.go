@@ -69,6 +69,24 @@ func TestInstallForgeHooks(t *testing.T) {
 	if pcCmd != "sol handoff --world=myworld --agent=forge" {
 		t.Errorf("expected PreCompact command 'sol handoff --world=myworld --agent=forge', got %q", pcCmd)
 	}
+
+	// Must have PreToolUse hook blocking EnterPlanMode.
+	ptuGroups, ok := cfg.Hooks["PreToolUse"]
+	if !ok {
+		t.Fatal("settings.local.json missing PreToolUse hook")
+	}
+	if len(ptuGroups) != 1 {
+		t.Fatalf("expected 1 PreToolUse matcher group, got %d", len(ptuGroups))
+	}
+	if ptuGroups[0].Matcher != "EnterPlanMode" {
+		t.Errorf("PreToolUse matcher = %q, want \"EnterPlanMode\"", ptuGroups[0].Matcher)
+	}
+	if !strings.Contains(ptuGroups[0].Hooks[0].Command, "BLOCKED") {
+		t.Error("EnterPlanMode hook should contain BLOCKED message")
+	}
+	if !strings.Contains(ptuGroups[0].Hooks[0].Command, "exit 2") {
+		t.Error("EnterPlanMode hook should exit 2 to block the tool call")
+	}
 }
 
 func TestInstallHooksPreCompact(t *testing.T) {
@@ -112,5 +130,23 @@ func TestInstallHooksPreCompact(t *testing.T) {
 	pcCmd := pcGroups[0].Hooks[0].Command
 	if pcCmd != "sol handoff --world=ember --agent=Toast" {
 		t.Errorf("expected PreCompact command 'sol handoff --world=ember --agent=Toast', got %q", pcCmd)
+	}
+
+	// Verify PreToolUse hook blocking EnterPlanMode.
+	ptuGroups, ok := cfg.Hooks["PreToolUse"]
+	if !ok {
+		t.Fatal("settings.local.json missing PreToolUse hook")
+	}
+	if len(ptuGroups) != 1 {
+		t.Fatalf("expected 1 PreToolUse matcher group, got %d", len(ptuGroups))
+	}
+	if ptuGroups[0].Matcher != "EnterPlanMode" {
+		t.Errorf("PreToolUse matcher = %q, want \"EnterPlanMode\"", ptuGroups[0].Matcher)
+	}
+	if !strings.Contains(ptuGroups[0].Hooks[0].Command, "BLOCKED") {
+		t.Error("EnterPlanMode hook should contain BLOCKED message")
+	}
+	if !strings.Contains(ptuGroups[0].Hooks[0].Command, "exit 2") {
+		t.Error("EnterPlanMode hook should exit 2 to block the tool call")
 	}
 }

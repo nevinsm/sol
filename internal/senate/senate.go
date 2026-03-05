@@ -1,11 +1,13 @@
 package senate
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/protocol"
 )
 
 // --- Directory helpers ---
@@ -60,16 +62,66 @@ func Start(mgr SessionManager) error {
 		return fmt.Errorf("failed to start senate: %w", err)
 	}
 
-	// 2. Check if session already exists.
+	// 2. Install hooks in senate directory.
+	if err := installHooks(senateDir); err != nil {
+		return fmt.Errorf("failed to start senate: %w", err)
+	}
+
+	// 3. Check if session already exists.
 	if mgr.Exists(SessionName) {
 		return fmt.Errorf("senate session already running")
 	}
 
-	// 3. Start tmux session.
+	// 4. Start tmux session.
 	prompt := "Senate session. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200"
 	sessionCmd := config.BuildSessionCommand(config.SettingsPath(senateDir), prompt)
 	if err := mgr.Start(SessionName, senateDir, sessionCmd, nil, "senate", ""); err != nil {
 		return fmt.Errorf("failed to start senate: %w", err)
+	}
+
+	return nil
+}
+
+// installHooks writes .claude/settings.local.json with PreToolUse hooks.
+func installHooks(senateDir string) error {
+	claudeDir := filepath.Join(senateDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create .claude directory: %w", err)
+	}
+
+	cfg := protocol.HookConfig{
+		Hooks: map[string][]protocol.HookMatcherGroup{
+			"PreToolUse": {
+				{
+					Matcher: "Write|Edit",
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: `FILE=$(jq -r '.tool_input.file_path // empty'); if echo "$FILE" | grep -q '.claude/projects/.*/memory/'; then echo "BLOCKED: Use .brief/memory.md, not Claude Code auto-memory." >&2; exit 2; fi`,
+						},
+					},
+				},
+				{
+					Matcher: "EnterPlanMode",
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal hook settings: %w", err)
+	}
+
+	settingsPath := filepath.Join(claudeDir, "settings.local.json")
+	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write settings.local.json: %w", err)
 	}
 
 	return nil
