@@ -312,9 +312,23 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 		t.Error("prime output should contain recent commits")
 	}
 
-	// 5. Verify handoff file deleted after prime.
-	if _, err := os.Stat(handoffPath); !os.IsNotExist(err) {
-		t.Error("handoff file should be deleted after prime")
+	// 5. Verify handoff file survives prime (durable) but is marked consumed.
+	if _, err := os.Stat(handoffPath); os.IsNotExist(err) {
+		t.Error("handoff file should survive prime (durable)")
+	}
+	readBack, err := handoff.Read("ember", "HandBot", "agent")
+	if err != nil {
+		t.Fatalf("Read after prime: %v", err)
+	}
+	if readBack == nil {
+		t.Fatal("handoff state should be non-nil after prime")
+	}
+	if !readBack.Consumed {
+		t.Error("handoff should be marked consumed after prime")
+	}
+	// HasHandoff should return false (consumed).
+	if handoff.HasHandoff("ember", "HandBot", "agent") {
+		t.Error("HasHandoff should return false for consumed handoff")
 	}
 
 	_ = solHome // suppress unused

@@ -595,6 +595,16 @@ func Prime(world, agentName, role string, worldStore WorldStore) (*PrimeResult, 
 		fmt.Fprintf(os.Stderr, "prime: detected stale resolve lock — previous session interrupted during resolve\n")
 	}
 
+	// Check for handoff marker (loop prevention).
+	// If present, the agent was just handed off — prepend a warning and remove the marker.
+	freshSession := false
+	markerTS, _, _ := handoff.ReadMarker(world, agentName, role)
+	if !markerTS.IsZero() {
+		freshSession = true
+		// Remove marker after reading — the message will be in Claude's context.
+		handoff.RemoveMarker(world, agentName, role)
+	}
+
 	// Read the tether file.
 	workItemID, err := tether.Read(world, agentName, role)
 	if err != nil {
@@ -616,30 +626,32 @@ func Prime(world, agentName, role string, worldStore WorldStore) (*PrimeResult, 
 		return nil, fmt.Errorf("failed to read handoff state: %w", err)
 	}
 
-	if handoffState != nil {
-		result, err := primeWithHandoff(world, agentName, item, handoffState)
+	var result *PrimeResult
+
+	if handoffState != nil && !handoffState.Consumed {
+		result, err = primeWithHandoff(world, agentName, item, handoffState)
 		if err != nil {
 			return nil, err
 		}
-		// Clean up handoff file after successful injection.
-		if removeErr := handoff.Remove(world, agentName, role); removeErr != nil {
-			fmt.Fprintf(os.Stderr, "prime: failed to remove handoff file: %v\n", removeErr)
+		// Mark handoff as consumed (durable — file remains for crash recovery).
+		if markErr := handoff.MarkConsumed(world, agentName, role); markErr != nil {
+			fmt.Fprintf(os.Stderr, "prime: failed to mark handoff consumed: %v\n", markErr)
 		}
-		return result, nil
-	}
+	} else {
+		// Check for active workflow.
+		state, wfErr := workflow.ReadState(world, agentName, role)
+		if wfErr != nil {
+			return nil, fmt.Errorf("failed to read workflow state: %w", wfErr)
+		}
 
-	// Check for active workflow.
-	state, err := workflow.ReadState(world, agentName, role)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read workflow state: %w", err)
-	}
-
-	if state != nil && state.Status == "running" {
-		return primeWithWorkflow(world, agentName, role, item, state)
-	}
-
-	// No workflow — standard prime (existing behavior).
-	output := fmt.Sprintf(`=== WORK CONTEXT ===
+		if state != nil && state.Status == "running" {
+			result, err = primeWithWorkflow(world, agentName, role, item, state)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// No workflow — standard prime (existing behavior).
+			output := fmt.Sprintf(`=== WORK CONTEXT ===
 Agent: %s (world: %s)
 Work Item: %s
 Title: %s
@@ -652,8 +664,16 @@ Instructions:
 Execute this work item. When complete, run: sol resolve
 If stuck, run: sol escalate "description"
 === END CONTEXT ===`, agentName, world, item.ID, item.Title, item.Status, item.Description)
+			result = &PrimeResult{Output: output}
+		}
+	}
 
-	return &PrimeResult{Output: output}, nil
+	// Prepend fresh-session warning if this is a handoff continuation.
+	if freshSession && result != nil {
+		result.Output = "NOTE: You are a fresh session (handoff from predecessor). Continue working — do NOT call sol handoff.\n\n" + result.Output
+	}
+
+	return result, nil
 }
 
 // primeWithWorkflow returns workflow-aware context for the prime command.
@@ -725,13 +745,27 @@ handed off to preserve context.
 --- END COMMITS ---
 `, agentName, world, item.ID, item.Title, state.Summary, strings.Join(state.RecentCommits, "\n"))
 
+	// Add git worktree state if captured.
+	if state.GitStatus != "" {
+		output += fmt.Sprintf("--- GIT STATUS ---\n%s\n--- END GIT STATUS ---\n\n", state.GitStatus)
+	}
+	if state.DiffStat != "" {
+		output += fmt.Sprintf("--- UNCOMMITTED CHANGES ---\n%s\n--- END UNCOMMITTED CHANGES ---\n\n", state.DiffStat)
+	}
+	if state.GitStash != "" {
+		output += fmt.Sprintf("--- STASHED WORK ---\n%s\n--- END STASHED WORK ---\n\n", state.GitStash)
+	}
+
 	// Add workflow context if the agent has an active workflow.
 	if state.WorkflowStep != "" {
-		output += fmt.Sprintf(`
-Workflow progress: %s (current step: %s)
+		stepInfo := state.WorkflowStep
+		if state.StepDescription != "" {
+			stepInfo = fmt.Sprintf("%s — %s", state.WorkflowStep, state.StepDescription)
+		}
+		output += fmt.Sprintf(`Workflow progress: %s (current step: %s)
 Read your current step: sol workflow current --world=%s --agent=%s
 
-`, state.WorkflowProgress, state.WorkflowStep, world, agentName)
+`, state.WorkflowProgress, stepInfo, world, agentName)
 	}
 
 	output += fmt.Sprintf(`Continue from where the previous session left off.

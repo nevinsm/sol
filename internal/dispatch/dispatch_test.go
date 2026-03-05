@@ -1024,6 +1024,158 @@ func TestPrimeNoHandoff(t *testing.T) {
 	}
 }
 
+func TestPrimeWithFreshSessionMarker(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Write handoff marker (simulates recent handoff).
+	if err := handoff.WriteMarker("ember", "Toast", "agent", "session handoff"); err != nil {
+		t.Fatalf("failed to write marker: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "agent", worldStore)
+	if err != nil {
+		t.Fatalf("Prime with marker failed: %v", err)
+	}
+
+	// Should contain the fresh-session warning.
+	if !strings.Contains(result.Output, "fresh session") {
+		t.Error("output missing fresh-session warning")
+	}
+	if !strings.Contains(result.Output, "do NOT call sol handoff") {
+		t.Error("output missing handoff prevention instruction")
+	}
+
+	// Marker should be removed after prime.
+	ts, _, _ := handoff.ReadMarker("ember", "Toast", "agent")
+	if !ts.IsZero() {
+		t.Error("expected marker to be removed after prime")
+	}
+}
+
+func TestPrimeHandoffWithGitState(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Write handoff file with git state.
+	state := &handoff.State{
+		WorkItemID:      itemID,
+		AgentName:       "Toast",
+		World:           "ember",
+		Role:            "agent",
+		PreviousSession: "sol-ember-Toast",
+		Summary:         "Working on login form.",
+		RecentCommits:   []string{"abc1234 feat: add login form"},
+		GitStatus:       " M hello.go\n?? new.go",
+		DiffStat:        " hello.go | 2 +-\n 1 file changed",
+		GitStash:        "stash@{0}: WIP on main",
+		StepDescription: "Implement the login form",
+		WorkflowStep:    "implement",
+		WorkflowProgress: "1/3 complete",
+	}
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("failed to write handoff: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "agent", worldStore)
+	if err != nil {
+		t.Fatalf("Prime failed: %v", err)
+	}
+
+	// Should contain git state in output.
+	if !strings.Contains(result.Output, "GIT STATUS") {
+		t.Error("output missing GIT STATUS section")
+	}
+	if !strings.Contains(result.Output, "hello.go") {
+		t.Error("output missing modified file in git status")
+	}
+	if !strings.Contains(result.Output, "UNCOMMITTED CHANGES") {
+		t.Error("output missing UNCOMMITTED CHANGES section")
+	}
+	if !strings.Contains(result.Output, "STASHED WORK") {
+		t.Error("output missing STASHED WORK section")
+	}
+	// Step description should be included.
+	if !strings.Contains(result.Output, "Implement the login form") {
+		t.Error("output missing step description")
+	}
+}
+
+func TestPrimeDurableHandoff(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	state := &handoff.State{
+		WorkItemID:      itemID,
+		AgentName:       "Toast",
+		World:           "ember",
+		Role:            "agent",
+		PreviousSession: "sol-ember-Toast",
+		Summary:         "Working on it.",
+		RecentCommits:   []string{"abc1234 feat: work"},
+	}
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("failed to write handoff: %v", err)
+	}
+
+	// First prime consumes the handoff.
+	result, err := Prime("ember", "Toast", "agent", worldStore)
+	if err != nil {
+		t.Fatalf("first Prime failed: %v", err)
+	}
+	if !strings.Contains(result.Output, "HANDOFF CONTEXT") {
+		t.Error("first prime should show handoff context")
+	}
+
+	// File should still exist but be consumed.
+	read, err := handoff.Read("ember", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+	if read == nil {
+		t.Fatal("expected handoff file to survive consumption (durable)")
+	}
+	if !read.Consumed {
+		t.Error("expected consumed flag to be true")
+	}
+
+	// Second prime should NOT show handoff context (consumed).
+	result2, err := Prime("ember", "Toast", "agent", worldStore)
+	if err != nil {
+		t.Fatalf("second Prime failed: %v", err)
+	}
+	if strings.Contains(result2.Output, "HANDOFF CONTEXT") {
+		t.Error("second prime should not show consumed handoff context")
+	}
+	if !strings.Contains(result2.Output, "WORK CONTEXT") {
+		t.Error("second prime should show standard work context")
+	}
+}
+
 // --- Mock world store that wraps a real store but can inject errors ---
 
 type mockWorldStore struct {

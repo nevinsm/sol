@@ -198,6 +198,10 @@ func TestWriteAndRead(t *testing.T) {
 		WorkflowStep:     "implement",
 		WorkflowProgress: "1/3 complete",
 		HandedOffAt:      time.Date(2026, 2, 27, 10, 30, 0, 0, time.UTC),
+		GitStatus:        " M hello.go\n?? new.go",
+		GitStash:         "stash@{0}: WIP on main: abc1234 feat",
+		DiffStat:         " hello.go | 2 +-\n 1 file changed",
+		StepDescription:  "Implement the login form",
 	}
 
 	if err := Write(original); err != nil {
@@ -237,6 +241,18 @@ func TestWriteAndRead(t *testing.T) {
 	}
 	if read.WorkflowProgress != original.WorkflowProgress {
 		t.Errorf("WorkflowProgress mismatch: got %q, want %q", read.WorkflowProgress, original.WorkflowProgress)
+	}
+	if read.GitStatus != original.GitStatus {
+		t.Errorf("GitStatus mismatch: got %q, want %q", read.GitStatus, original.GitStatus)
+	}
+	if read.GitStash != original.GitStash {
+		t.Errorf("GitStash mismatch: got %q, want %q", read.GitStash, original.GitStash)
+	}
+	if read.DiffStat != original.DiffStat {
+		t.Errorf("DiffStat mismatch: got %q, want %q", read.DiffStat, original.DiffStat)
+	}
+	if read.StepDescription != original.StepDescription {
+		t.Errorf("StepDescription mismatch: got %q, want %q", read.StepDescription, original.StepDescription)
 	}
 }
 
@@ -583,6 +599,209 @@ func TestExecWithExplicitRole(t *testing.T) {
 	}
 }
 
+func TestCaptureGitStatusStashDiff(t *testing.T) {
+	setupSolHome(t)
+
+	// Set up tether file.
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create a real git repo for worktree to capture git status/stash/diff.
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"init"},
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test"},
+	} {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Run()
+	}
+
+	// Create a file and commit it.
+	os.WriteFile(filepath.Join(dir, "hello.go"), []byte("package main"), 0o644)
+	exec.Command("git", "-C", dir, "add", "hello.go").Run()
+	exec.Command("git", "-C", dir, "commit", "-m", "initial").Run()
+
+	// Create uncommitted changes for git status and diff stat.
+	os.WriteFile(filepath.Join(dir, "hello.go"), []byte("package main\nfunc main() {}"), 0o644)
+	os.WriteFile(filepath.Join(dir, "new.go"), []byte("package main"), 0o644)
+
+	state, err := Capture(CaptureOpts{
+		World:       "ember",
+		AgentName:   "Toast",
+		Role:        "agent",
+		Summary:     "Working",
+		WorktreeDir: dir,
+	}, nil, GitLog)
+
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	// GitStatus should contain the modified file.
+	if !strings.Contains(state.GitStatus, "hello.go") {
+		t.Errorf("expected GitStatus to contain hello.go, got %q", state.GitStatus)
+	}
+
+	// DiffStat should contain the modified file.
+	if !strings.Contains(state.DiffStat, "hello.go") {
+		t.Errorf("expected DiffStat to contain hello.go, got %q", state.DiffStat)
+	}
+
+	// GitStash should be empty (nothing stashed).
+	if state.GitStash != "" {
+		t.Errorf("expected empty GitStash, got %q", state.GitStash)
+	}
+}
+
+func TestMarkConsumedAndHasHandoff(t *testing.T) {
+	setupSolHome(t)
+
+	state := &State{
+		WorkItemID: "sol-abc12345",
+		AgentName:  "Toast",
+		World:      "ember",
+		Role:       "agent",
+		Summary:    "test",
+	}
+	if err := Write(state); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	// HasHandoff should return true for unconsumed.
+	if !HasHandoff("ember", "Toast", "agent") {
+		t.Error("expected HasHandoff to be true before consume")
+	}
+
+	// Mark consumed.
+	if err := MarkConsumed("ember", "Toast", "agent"); err != nil {
+		t.Fatalf("MarkConsumed failed: %v", err)
+	}
+
+	// HasHandoff should return false after consume.
+	if HasHandoff("ember", "Toast", "agent") {
+		t.Error("expected HasHandoff to be false after consume")
+	}
+
+	// File should still exist on disk.
+	read, err := Read("ember", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("Read failed after consume: %v", err)
+	}
+	if read == nil {
+		t.Fatal("expected state to be non-nil after consume")
+	}
+	if !read.Consumed {
+		t.Error("expected Consumed to be true after MarkConsumed")
+	}
+
+	// Next Write() overwrites with fresh (unconsumed) state.
+	state.Summary = "fresh handoff"
+	if err := Write(state); err != nil {
+		t.Fatalf("overwrite Write failed: %v", err)
+	}
+	if !HasHandoff("ember", "Toast", "agent") {
+		t.Error("expected HasHandoff to be true after overwrite")
+	}
+	read, _ = Read("ember", "Toast", "agent")
+	if read.Consumed {
+		t.Error("expected Consumed to be false after fresh Write")
+	}
+}
+
+func TestMarkerWriteReadRemove(t *testing.T) {
+	setupSolHome(t)
+
+	// No marker initially.
+	ts, reason, err := ReadMarker("ember", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("ReadMarker returned error for missing marker: %v", err)
+	}
+	if !ts.IsZero() {
+		t.Errorf("expected zero timestamp for missing marker, got %v", ts)
+	}
+
+	// Write marker.
+	if err := WriteMarker("ember", "Toast", "agent", "session handoff"); err != nil {
+		t.Fatalf("WriteMarker failed: %v", err)
+	}
+
+	// Read marker.
+	ts, reason, err = ReadMarker("ember", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("ReadMarker failed: %v", err)
+	}
+	if ts.IsZero() {
+		t.Error("expected non-zero timestamp after WriteMarker")
+	}
+	if time.Since(ts) > 5*time.Second {
+		t.Errorf("marker timestamp too old: %v", ts)
+	}
+	if reason != "session handoff" {
+		t.Errorf("expected reason 'session handoff', got %q", reason)
+	}
+
+	// Remove marker.
+	if err := RemoveMarker("ember", "Toast", "agent"); err != nil {
+		t.Fatalf("RemoveMarker failed: %v", err)
+	}
+
+	// Should be gone.
+	ts, _, err = ReadMarker("ember", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("ReadMarker after remove returned error: %v", err)
+	}
+	if !ts.IsZero() {
+		t.Error("expected zero timestamp after RemoveMarker")
+	}
+
+	// Remove again — no-op.
+	if err := RemoveMarker("ember", "Toast", "agent"); err != nil {
+		t.Fatalf("RemoveMarker (second time) returned error: %v", err)
+	}
+}
+
+func TestExecWritesMarker(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	// Set up tether file.
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create worktree directory.
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	mgr := &mockSessionMgr{captureResult: "$ make test\nAll tests passed."}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:     "ember",
+		AgentName: "Toast",
+		Summary:   "Implemented login form.",
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// Verify marker was written.
+	markerTS, reason, err := ReadMarker("ember", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("ReadMarker failed: %v", err)
+	}
+	if markerTS.IsZero() {
+		t.Error("expected marker to be written after Exec")
+	}
+	if reason != "session handoff" {
+		t.Errorf("expected reason 'session handoff', got %q", reason)
+	}
+}
+
 func TestExecSkipsWhenResolveInProgress(t *testing.T) {
 	solHome := setupSolHome(t)
 
@@ -631,6 +850,47 @@ func TestExecSkipsWhenResolveInProgress(t *testing.T) {
 	// Resolve lock should still exist (not removed by handoff).
 	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
 		t.Error("resolve lock should still exist after skipped handoff")
+	}
+}
+
+func TestCooldownEnforced(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	// Create governor directory (no tether — exempt from cooldown).
+	govDir := filepath.Join(solHome, "ember", "governor")
+	if err := os.MkdirAll(govDir, 0o755); err != nil {
+		t.Fatalf("failed to create governor dir: %v", err)
+	}
+
+	// Write a fresh marker for an outpost agent.
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	// Write a very recent marker (simulates just-completed handoff).
+	if err := WriteMarker("ember", "Toast", "agent", "previous handoff"); err != nil {
+		t.Fatalf("WriteMarker failed: %v", err)
+	}
+
+	// Governor should NOT be affected by cooldown (exempt).
+	mgr := &mockSessionMgr{}
+	ts := &mockSphereStore{}
+	start := time.Now()
+	err := Exec(ExecOpts{
+		World:       "ember",
+		AgentName:   "governor",
+		Role:        "governor",
+		WorktreeDir: govDir,
+	}, mgr, ts, nil)
+	if err != nil {
+		t.Fatalf("governor Exec failed: %v", err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Error("governor handoff should be exempt from cooldown")
 	}
 }
 

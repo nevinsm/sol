@@ -28,6 +28,11 @@ type State struct {
 	WorkflowStep     string    `json:"workflow_step"`
 	WorkflowProgress string    `json:"workflow_progress"`
 	HandedOffAt      time.Time `json:"handed_off_at"`
+	Consumed         bool      `json:"consumed,omitempty"`
+	GitStatus        string    `json:"git_status,omitempty"`
+	GitStash         string    `json:"git_stash,omitempty"`
+	DiffStat         string    `json:"diff_stat,omitempty"`
+	StepDescription  string    `json:"step_description,omitempty"`
 }
 
 // SessionManager is the subset of session.Manager used by handoff.
@@ -49,10 +54,25 @@ func HandoffPath(world, agentName, role string) string {
 	return filepath.Join(config.AgentDir(world, agentName, role), ".handoff.json")
 }
 
-// HasHandoff returns true if a handoff file exists for this agent.
+// HasHandoff returns true if an unconsumed handoff file exists for this agent.
 func HasHandoff(world, agentName, role string) bool {
-	_, err := os.Stat(HandoffPath(world, agentName, role))
-	return err == nil
+	state, err := Read(world, agentName, role)
+	return err == nil && state != nil && !state.Consumed
+}
+
+// MarkConsumed sets the consumed flag on the handoff file without deleting it.
+// The file remains on disk so it can be re-read if the new session crashes.
+// The next Write() call will overwrite it with fresh state.
+func MarkConsumed(world, agentName, role string) error {
+	state, err := Read(world, agentName, role)
+	if err != nil {
+		return err
+	}
+	if state == nil {
+		return nil
+	}
+	state.Consumed = true
+	return Write(state)
 }
 
 // CaptureOpts configures what to capture during handoff.
@@ -119,9 +139,15 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		recentCommits = []string{}
 	}
 
-	// 5. Read workflow state (if present).
+	// 5. Capture git status, stash, and diff stat from worktree.
+	gitStatus := gitShort(worktreeDir, "status", "--short")
+	gitStash := gitShort(worktreeDir, "stash", "list")
+	diffStat := gitShort(worktreeDir, "diff", "--stat")
+
+	// 6. Read workflow state (if present).
 	workflowStep := ""
 	workflowProgress := ""
+	stepDescription := ""
 	wfState, err := workflow.ReadState(opts.World, opts.AgentName, role)
 	if err == nil && wfState != nil && wfState.Status == "running" {
 		workflowStep = wfState.CurrentStep
@@ -137,9 +163,14 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		if workflowProgress == "" {
 			workflowProgress = fmt.Sprintf("%d steps complete", completed)
 		}
+		// Capture step title/description for richer context.
+		currentStep, _ := workflow.ReadCurrentStep(opts.World, opts.AgentName, role)
+		if currentStep != nil {
+			stepDescription = currentStep.Title
+		}
 	}
 
-	// 6. Auto-generate summary if not provided.
+	// 7. Auto-generate summary if not provided.
 	summary := opts.Summary
 	if summary == "" {
 		summary = fmt.Sprintf("Session handoff for %s. Working on %s.", opts.AgentName, workItemID)
@@ -160,6 +191,10 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		WorkflowStep:     workflowStep,
 		WorkflowProgress: workflowProgress,
 		HandedOffAt:      time.Now().UTC(),
+		GitStatus:        gitStatus,
+		GitStash:         gitStash,
+		DiffStat:         diffStat,
+		StepDescription:  stepDescription,
 	}, nil
 }
 
@@ -252,6 +287,74 @@ func GitLog(worktreeDir string, count int) ([]string, error) {
 		return []string{}, nil
 	}
 	return lines, nil
+}
+
+// gitShort runs a git command in the worktree and returns trimmed output.
+// Returns empty string if the command fails or directory doesn't exist.
+func gitShort(worktreeDir string, args ...string) string {
+	if _, err := os.Stat(worktreeDir); os.IsNotExist(err) {
+		return ""
+	}
+	fullArgs := append([]string{"-C", worktreeDir}, args...)
+	cmd := exec.Command("git", fullArgs...)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// MinHandoffCooldown is the minimum time between handoff cycles.
+// Prevents restart storms from pathological cases (e.g., gate dumping 100k output).
+const MinHandoffCooldown = 2 * time.Minute
+
+// MarkerPath returns the path to the handoff marker file for an agent.
+func MarkerPath(world, agentName, role string) string {
+	return filepath.Join(config.AgentDir(world, agentName, role), ".handoff_marker")
+}
+
+// WriteMarker writes a handoff marker file with the current timestamp and reason.
+func WriteMarker(world, agentName, role, reason string) error {
+	path := MarkerPath(world, agentName, role)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("failed to create marker directory: %w", err)
+	}
+	content := fmt.Sprintf("%s\n%s\n", time.Now().UTC().Format(time.RFC3339), reason)
+	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// ReadMarker reads the handoff marker file. Returns the timestamp and reason.
+// Returns zero time and empty string if the marker doesn't exist.
+func ReadMarker(world, agentName, role string) (time.Time, string, error) {
+	data, err := os.ReadFile(MarkerPath(world, agentName, role))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return time.Time{}, "", nil
+		}
+		return time.Time{}, "", fmt.Errorf("failed to read marker: %w", err)
+	}
+	lines := strings.SplitN(strings.TrimSpace(string(data)), "\n", 2)
+	if len(lines) == 0 {
+		return time.Time{}, "", nil
+	}
+	ts, err := time.Parse(time.RFC3339, lines[0])
+	if err != nil {
+		return time.Time{}, "", nil
+	}
+	reason := ""
+	if len(lines) > 1 {
+		reason = lines[1]
+	}
+	return ts, reason, nil
+}
+
+// RemoveMarker deletes the handoff marker file. No-op if it doesn't exist.
+func RemoveMarker(world, agentName, role string) error {
+	err := os.Remove(MarkerPath(world, agentName, role))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove marker: %w", err)
+	}
+	return nil
 }
 
 // ExecOpts configures the handoff execution.
@@ -360,6 +463,20 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		return nil
 	}
 
+	// Cooldown: check marker timestamp to prevent restart storms.
+	// Forge and governor are exempt — they may need rapid cycling during active merge processing.
+	if role != "forge" && role != "governor" {
+		markerTS, _, _ := ReadMarker(opts.World, opts.AgentName, role)
+		if !markerTS.IsZero() {
+			elapsed := time.Since(markerTS)
+			if elapsed < MinHandoffCooldown {
+				remaining := MinHandoffCooldown - elapsed
+				fmt.Fprintf(os.Stderr, "handoff: cooldown active (%s remaining), waiting...\n", remaining.Round(time.Second))
+				time.Sleep(remaining)
+			}
+		}
+	}
+
 	// Cycle the session atomically using respawn-pane. This is safe for
 	// self-handoff — respawn-pane -k kills the old process and starts the
 	// new one server-side, so the calling process being killed is expected.
@@ -382,6 +499,12 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		if startErr := sessionMgr.Start(sessionName, worktreeDir, sessionCmd, env, role, opts.World); startErr != nil {
 			return fmt.Errorf("handoff: fallback start also failed: %w", startErr)
 		}
+	}
+
+	// Write marker for loop prevention. The new session's prime will detect
+	// this and warn the agent not to re-trigger handoff immediately.
+	if err := WriteMarker(opts.World, opts.AgentName, role, "session handoff"); err != nil {
+		fmt.Fprintf(os.Stderr, "handoff: failed to write marker: %v\n", err)
 	}
 
 	return nil
