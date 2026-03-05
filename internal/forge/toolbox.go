@@ -22,7 +22,8 @@ type GateResult struct {
 	Elapsed time.Duration `json:"elapsed"`
 }
 
-// ListReady returns MRs with phase=ready AND blocked_by IS NULL.
+// ListReady returns MRs with phase=ready AND blocked_by IS NULL AND not
+// blocked by caravan-level dependencies.
 func (r *Forge) ListReady() ([]store.MergeRequest, error) {
 	all, err := r.worldStore.ListMergeRequests("ready")
 	if err != nil {
@@ -30,11 +31,45 @@ func (r *Forge) ListReady() ([]store.MergeRequest, error) {
 	}
 	var ready []store.MergeRequest
 	for _, mr := range all {
-		if mr.BlockedBy == "" {
-			ready = append(ready, mr)
+		if mr.BlockedBy != "" {
+			continue
 		}
+		// Check caravan-level dependencies.
+		blocked, _, err := r.sphereStore.IsWorkItemBlockedByCaravanDeps(mr.WorkItemID)
+		if err != nil {
+			r.logger.Warn("failed to check caravan deps", "work_item", mr.WorkItemID, "error", err)
+			// On error, include the MR (fail open to avoid blocking the pipeline).
+			ready = append(ready, mr)
+			continue
+		}
+		if blocked {
+			continue
+		}
+		ready = append(ready, mr)
 	}
 	return ready, nil
+}
+
+// ListCaravanBlocked returns MRs that are blocked by caravan-level dependencies.
+func (r *Forge) ListCaravanBlocked() ([]store.MergeRequest, error) {
+	all, err := r.worldStore.ListMergeRequests("ready")
+	if err != nil {
+		return nil, err
+	}
+	var blocked []store.MergeRequest
+	for _, mr := range all {
+		if mr.BlockedBy != "" {
+			continue // already blocked by work item, shown in ListBlocked
+		}
+		isBlocked, _, err := r.sphereStore.IsWorkItemBlockedByCaravanDeps(mr.WorkItemID)
+		if err != nil {
+			continue
+		}
+		if isBlocked {
+			blocked = append(blocked, mr)
+		}
+	}
+	return blocked, nil
 }
 
 // ListBlocked returns MRs with blocked_by IS NOT NULL.

@@ -247,6 +247,10 @@ func (m *mockSphereStore) CreateEscalation(severity, source, description string)
 	return fmt.Sprintf("esc-%08x", len(m.escalations)), nil
 }
 
+func (m *mockSphereStore) IsWorkItemBlockedByCaravanDeps(workItemID string) (bool, []string, error) {
+	return false, nil, nil
+}
+
 func (m *mockSphereStore) Close() error { return nil }
 
 // --- Helpers ---

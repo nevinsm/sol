@@ -378,17 +378,17 @@ func TestTryCloseCaravanDoneNotSufficient(t *testing.T) {
 func TestSphereSchemaV4(t *testing.T) {
 	s := setupSphere(t)
 
-	// Verify the schema version is 7.
+	// Verify the schema version is 8.
 	var v int
 	if err := s.DB().QueryRow("SELECT version FROM schema_version").Scan(&v); err != nil {
 		t.Fatalf("failed to get schema version: %v", err)
 	}
-	if v != 7 {
-		t.Errorf("schema version = %d, want 7", v)
+	if v != 8 {
+		t.Errorf("schema version = %d, want 8", v)
 	}
 
-	// Verify caravan tables exist.
-	for _, table := range []string{"caravans", "caravan_items"} {
+	// Verify caravan tables exist (including caravan_dependencies).
+	for _, table := range []string{"caravans", "caravan_items", "caravan_dependencies"} {
 		var count int
 		err := s.DB().QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count)
 		if err != nil {

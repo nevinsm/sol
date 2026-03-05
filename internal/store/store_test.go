@@ -132,14 +132,14 @@ func TestMigrateSphereV5(t *testing.T) {
 		t.Fatalf("expected escalations table, got count=%d", count)
 	}
 
-	// Verify schema_version is 7.
+	// Verify schema_version is 8.
 	var version int
 	err = s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 7 {
-		t.Fatalf("expected schema version 7, got %d", version)
+	if version != 8 {
+		t.Fatalf("expected schema version 8, got %d", version)
 	}
 
 	// Verify indexes exist.
@@ -206,14 +206,14 @@ func TestMigrateSphereV1ToLatest(t *testing.T) {
 		t.Fatalf("expected agent name 'Toast', got %q", agent.Name)
 	}
 
-	// Verify schema_version is 7 (V1→V2→V3→V4→V5→V6→V7 all applied).
+	// Verify schema_version is 8 (V1→V2→V3→V4→V5→V6→V7→V8 all applied).
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 7 {
-		t.Fatalf("expected schema version 7, got %d", version)
+	if version != 8 {
+		t.Fatalf("expected schema version 8, got %d", version)
 	}
 
 	// Verify phase column was added to caravan_items.

@@ -23,9 +23,10 @@ func TestListReady(t *testing.T) {
 	}
 
 	r := &Forge{
-		world:      "ember",
-		worldStore: worldStore,
-		logger:   testLogger(),
+		world:       "ember",
+		worldStore:  worldStore,
+		sphereStore: newMockSphereStore(),
+		logger:      testLogger(),
 	}
 
 	ready, err := r.ListReady()

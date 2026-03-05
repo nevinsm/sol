@@ -506,7 +506,7 @@ func TestSchemaV5Migration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 7 {
-		t.Fatalf("expected schema version 7, got %d", version)
+	if version != 8 {
+		t.Fatalf("expected schema version 8, got %d", version)
 	}
 }

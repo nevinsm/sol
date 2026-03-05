@@ -290,6 +290,9 @@ func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
 // This requires opening each world's database to check work item status
 // and dependency satisfaction.
 //
+// Caravan-level dependencies: if this caravan depends on other caravans that
+// are not yet closed, ALL items are marked not ready.
+//
 // Phase ordering: items in phase N are only ready if all items in phases < N
 // are done or closed. Phase 0 items use only the within-world dependency check.
 //
@@ -301,6 +304,12 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 	items, err := s.ListCaravanItems(caravanID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Check caravan-level dependencies first.
+	caravanDepsOK, err := s.AreCaravanDependenciesSatisfied(caravanID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check caravan dependencies for %q: %w", caravanID, err)
 	}
 
 	// Group items by world.
@@ -351,6 +360,14 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 			return nil, err
 		}
 		results = append(results, worldResults...)
+	}
+
+	// If caravan-level dependencies are not satisfied, mark ALL items not ready.
+	if !caravanDepsOK {
+		for i := range results {
+			results[i].Ready = false
+		}
+		return results, nil
 	}
 
 	// Apply phase gating: items in phase N are only ready if all items in

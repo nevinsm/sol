@@ -198,6 +198,9 @@ Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` 
 | `sol caravan launch <caravan-id>` | Dispatch ready items in a caravan |
 | `sol caravan set-phase <caravan-id> [<item-id>] <phase>` | Update the phase of items in a caravan |
 | `sol caravan close [<caravan-id>]` | Close a completed caravan |
+| `sol caravan dep add <caravan-id> <depends-on-caravan-id>` | Declare that a caravan depends on another caravan being closed |
+| `sol caravan dep remove <caravan-id> <depends-on-caravan-id>` | Remove a caravan dependency |
+| `sol caravan dep list <caravan-id>` | Show caravan-level dependencies |
 
 ## Handoff (Session Continuity)
 

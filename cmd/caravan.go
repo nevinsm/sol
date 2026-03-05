@@ -144,18 +144,23 @@ var caravanCheckCmd = &cobra.Command{
 			return err
 		}
 
+		// Check caravan-level dependencies.
+		unsatisfiedCaravanDeps, _ := sphereStore.UnsatisfiedCaravanDependencies(caravanID)
+
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
 			out := struct {
-				ID     string                    `json:"id"`
-				Name   string                    `json:"name"`
-				Status string                    `json:"status"`
-				Items  []store.CaravanItemStatus `json:"items"`
+				ID        string                    `json:"id"`
+				Name      string                    `json:"name"`
+				Status    string                    `json:"status"`
+				BlockedBy []string                  `json:"blocked_by_caravans,omitempty"`
+				Items     []store.CaravanItemStatus `json:"items"`
 			}{
-				ID:     caravan.ID,
-				Name:   caravan.Name,
-				Status: caravan.Status,
-				Items:  statuses,
+				ID:        caravan.ID,
+				Name:      caravan.Name,
+				Status:    caravan.Status,
+				BlockedBy: unsatisfiedCaravanDeps,
+				Items:     statuses,
 			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
@@ -164,6 +169,9 @@ var caravanCheckCmd = &cobra.Command{
 
 		fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
 		fmt.Printf("Status: %s\n", caravan.Status)
+		if len(unsatisfiedCaravanDeps) > 0 {
+			fmt.Printf("Blocked by caravans: %s\n", caravanDepNames(sphereStore, unsatisfiedCaravanDeps))
+		}
 		fmt.Println()
 
 		// Separate ready, in progress, awaiting merge, and blocked items.
@@ -259,17 +267,22 @@ var caravanStatusCmd = &cobra.Command{
 				return err
 			}
 
+			// Check caravan-level dependencies.
+			unsatisfiedCaravanDeps, _ := sphereStore.UnsatisfiedCaravanDependencies(caravanID)
+
 			if jsonOut {
 				out := struct {
-					ID     string                    `json:"id"`
-					Name   string                    `json:"name"`
-					Status string                    `json:"status"`
-					Items  []store.CaravanItemStatus `json:"items"`
+					ID        string                    `json:"id"`
+					Name      string                    `json:"name"`
+					Status    string                    `json:"status"`
+					BlockedBy []string                  `json:"blocked_by_caravans,omitempty"`
+					Items     []store.CaravanItemStatus `json:"items"`
 				}{
-					ID:     caravan.ID,
-					Name:   caravan.Name,
-					Status: caravan.Status,
-					Items:  statuses,
+					ID:        caravan.ID,
+					Name:      caravan.Name,
+					Status:    caravan.Status,
+					BlockedBy: unsatisfiedCaravanDeps,
+					Items:     statuses,
 				}
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
@@ -278,6 +291,9 @@ var caravanStatusCmd = &cobra.Command{
 
 			fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
 			fmt.Printf("Status: %s\n", caravan.Status)
+			if len(unsatisfiedCaravanDeps) > 0 {
+				fmt.Printf("Blocked by caravans: %s\n", caravanDepNames(sphereStore, unsatisfiedCaravanDeps))
+			}
 			fmt.Println()
 
 			// Check if phases are used.
@@ -835,6 +851,19 @@ func itemTitle(workItemID, world string) string {
 		return "(unknown)"
 	}
 	return item.Title
+}
+
+func caravanDepNames(sphereStore *store.Store, ids []string) string {
+	var parts []string
+	for _, id := range ids {
+		c, err := sphereStore.GetCaravan(id)
+		if err != nil {
+			parts = append(parts, id)
+		} else {
+			parts = append(parts, fmt.Sprintf("%s (%s)", c.Name, id))
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 func blockedByList(workItemID, world string) string {

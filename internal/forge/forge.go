@@ -36,6 +36,7 @@ type SphereStore interface {
 	GetAgent(id string) (*store.Agent, error)
 	UpdateAgentState(id, state, tetherItem string) error
 	CreateEscalation(severity, source, description string) (string, error)
+	IsWorkItemBlockedByCaravanDeps(workItemID string) (bool, []string, error)
 	Close() error
 }
 
