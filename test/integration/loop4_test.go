@@ -417,15 +417,17 @@ needs = ["step1"]
 		t.Error("prime output should contain step 1 instructions")
 	}
 
-	// Verify output contains propulsion loop commands.
+	// Verify output contains propulsion commands.
 	if !strings.Contains(result.Output, "sol workflow advance") {
 		t.Error("prime output should contain 'sol workflow advance'")
 	}
-	if !strings.Contains(result.Output, "sol workflow status") {
-		t.Error("prime output should contain 'sol workflow status'")
-	}
 	if !strings.Contains(result.Output, "sol resolve") {
 		t.Error("prime output should contain 'sol resolve'")
+	}
+
+	// Verify checklist is present.
+	if !strings.Contains(result.Output, "[>]") {
+		t.Error("prime output should contain current step marker '[>]'")
 	}
 
 	// Verify workflow formula name appears.

@@ -680,23 +680,48 @@ If stuck, run: sol escalate "description"
 func primeWithWorkflow(world, agentName, role string, item *store.WorkItem,
 	state *workflow.State) (*PrimeResult, error) {
 
-	step, err := workflow.ReadCurrentStep(world, agentName, role)
+	// Read all steps to show full checklist.
+	allSteps, err := workflow.ListSteps(world, agentName, role)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read current step: %w", err)
+		return nil, fmt.Errorf("failed to list workflow steps: %w", err)
 	}
-	if step == nil {
-		// Workflow exists but no current step — treat as complete.
+	if len(allSteps) == 0 {
 		return &PrimeResult{
 			Output: fmt.Sprintf("Workflow complete for %s. Run: sol resolve", item.ID),
 		}, nil
 	}
 
-	// Count progress.
-	completed := len(state.Completed)
 	instance, _ := workflow.ReadInstance(world, agentName, role)
 	formula := ""
 	if instance != nil {
 		formula = instance.Formula
+	}
+
+	// Find the current step index and build checklist.
+	totalSteps := len(allSteps)
+	currentIdx := -1
+	var currentStep *workflow.Step
+	var checklist strings.Builder
+	for i, s := range allSteps {
+		var marker string
+		switch {
+		case s.ID == state.CurrentStep:
+			marker = "[>]"
+			currentIdx = i
+			currentStep = &allSteps[i]
+		case s.Status == "complete":
+			marker = "[x]"
+		default:
+			marker = "[ ]"
+		}
+		fmt.Fprintf(&checklist, "  %s %d. %s\n", marker, i+1, s.Title)
+	}
+
+	if currentStep == nil {
+		// All steps complete — no current step.
+		return &PrimeResult{
+			Output: fmt.Sprintf("Workflow complete for %s. Run: sol resolve", item.ID),
+		}, nil
 	}
 
 	output := fmt.Sprintf(`=== WORK CONTEXT ===
@@ -704,22 +729,22 @@ Agent: %s (world: %s)
 Work Item: %s
 Title: %s
 
-Workflow: %s (step %d/%d+%d: %s)
+Workflow: %s (step %d/%d: %s)
 
+Steps:
+%s
 --- CURRENT STEP ---
 %s
 --- END STEP ---
 
-Propulsion loop:
-1. Execute the step above
-2. When done: sol workflow advance --world=%s --agent=%s
-3. Check progress: sol workflow status --world=%s --agent=%s
-4. After final step: sol resolve
+When step is complete: sol workflow advance --world=%s --agent=%s
+After final step: sol resolve
 === END CONTEXT ===`,
 		agentName, world, item.ID, item.Title,
-		formula, completed+1, completed, 1, step.Title,
-		step.Instructions,
-		world, agentName, world, agentName)
+		formula, currentIdx+1, totalSteps, currentStep.Title,
+		strings.TrimRight(checklist.String(), "\n"),
+		currentStep.Instructions,
+		world, agentName)
 
 	return &PrimeResult{Output: output}, nil
 }
