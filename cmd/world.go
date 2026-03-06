@@ -23,14 +23,15 @@ import (
 )
 
 var (
-	worldInitSourceRepo  string
-	worldListJSON        bool
-	worldStatusJSON      bool
-	worldDeleteWorld     string
-	worldDeleteConfirm   bool
-	worldSyncWorld       string
-	worldSyncAll         bool
-	worldQueryTimeout int
+	worldInitSourceRepo    string
+	worldListJSON          bool
+	worldStatusJSON        bool
+	worldDeleteWorld       string
+	worldDeleteConfirm     bool
+	worldSyncWorld         string
+	worldSyncAll           bool
+	worldQueryTimeout      int
+	worldCloneIncludeHistory bool
 )
 
 var worldCmd = &cobra.Command{
@@ -514,6 +515,117 @@ var worldSummaryCmd = &cobra.Command{
 	},
 }
 
+var worldCloneCmd = &cobra.Command{
+	Use:          "clone <source> <target>",
+	Short:        "Clone a world",
+	Long: `Duplicate a world with copied configuration, database state (work items,
+dependencies), and directory structure. Credentials and tethers are NOT copied.
+The new world gets a fresh agent pool.
+
+Agent state (history, memories) is excluded by default. Use --include-history
+to copy it.`,
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		source := args[0]
+		target := args[1]
+
+		// Validate target name.
+		if err := config.ValidateWorldName(target); err != nil {
+			return err
+		}
+
+		// Require source exists.
+		if err := config.RequireWorld(source); err != nil {
+			return err
+		}
+
+		// Ensure target does not exist.
+		tomlPath := config.WorldConfigPath(target)
+		if _, err := os.Stat(tomlPath); err == nil {
+			return fmt.Errorf("world %q already exists", target)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to check target world config %q: %w", tomlPath, err)
+		}
+
+		// Load source config.
+		srcCfg, err := config.LoadWorldConfig(source)
+		if err != nil {
+			return fmt.Errorf("failed to load source world config: %w", err)
+		}
+
+		// Create target directory tree.
+		targetDir := config.WorldDir(target)
+		if err := os.MkdirAll(filepath.Join(targetDir, "outposts"), 0o755); err != nil {
+			return fmt.Errorf("failed to create target world directory: %w", err)
+		}
+
+		// Clone the managed repo from source's repo (not the source world's repo/ dir directly).
+		sourceRepo := srcCfg.World.SourceRepo
+		repoPath := config.RepoPath(source)
+		if _, err := os.Stat(repoPath); err == nil {
+			// Source has a managed repo — clone from it.
+			if err := setup.CloneRepo(target, repoPath); err != nil {
+				return fmt.Errorf("failed to clone managed repo: %w", err)
+			}
+		} else if sourceRepo != "" {
+			// No managed repo but source_repo configured — clone from origin.
+			if err := setup.CloneRepo(target, sourceRepo); err != nil {
+				return fmt.Errorf("failed to clone source repo: %w", err)
+			}
+		}
+
+		// Ensure .store/ directory exists.
+		if err := config.EnsureDirs(); err != nil {
+			return fmt.Errorf("failed to create store directory: %w", err)
+		}
+
+		// Create target world database (triggers schema migration).
+		worldStore, err := store.OpenWorld(target)
+		if err != nil {
+			return err
+		}
+		worldStore.Close()
+
+		// Copy database state from source.
+		if err := store.CloneWorldData(source, target, worldCloneIncludeHistory); err != nil {
+			return fmt.Errorf("failed to clone world data: %w", err)
+		}
+
+		// Register in sphere.db.
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		if err := sphereStore.RegisterWorld(target, sourceRepo); err != nil {
+			return err
+		}
+
+		// Build target config from source — clear transient/local state.
+		targetCfg := srcCfg
+		targetCfg.World.Sleeping = false
+		targetCfg.World.DefaultAccount = ""
+
+		if err := config.WriteWorldConfig(target, targetCfg); err != nil {
+			return err
+		}
+
+		// Print confirmation.
+		fmt.Printf("World %q cloned from %q.\n", target, source)
+		fmt.Printf("  Config:   %s\n", config.WorldConfigPath(target))
+		fmt.Printf("  Database: %s\n", filepath.Join(config.StoreDir(), target+".db"))
+		if sourceRepo != "" {
+			fmt.Printf("  Source:   %s\n", sourceRepo)
+		}
+		if worldCloneIncludeHistory {
+			fmt.Printf("  History:  included\n")
+		}
+		return nil
+	},
+}
+
 var worldSleepCmd = &cobra.Command{
 	Use:          "sleep <name>",
 	Short:        "Mark a world as sleeping and stop its services",
@@ -638,6 +750,7 @@ func init() {
 	worldCmd.AddCommand(worldListCmd)
 	worldCmd.AddCommand(worldStatusCmd)
 	worldCmd.AddCommand(worldDeleteCmd)
+	worldCmd.AddCommand(worldCloneCmd)
 	worldCmd.AddCommand(worldSyncCmd)
 	worldCmd.AddCommand(worldSummaryCmd)
 	worldCmd.AddCommand(worldQueryCmd)
@@ -653,6 +766,8 @@ func init() {
 	worldDeleteCmd.Flags().StringVar(&worldDeleteWorld, "world", "", "world name")
 	worldDeleteCmd.Flags().BoolVar(&worldDeleteConfirm, "confirm", false,
 		"confirm deletion")
+	worldCloneCmd.Flags().BoolVar(&worldCloneIncludeHistory, "include-history", false,
+		"include agent history and memories in clone")
 	worldSyncCmd.Flags().StringVar(&worldSyncWorld, "world", "", "world name")
 	worldSyncCmd.Flags().BoolVar(&worldSyncAll, "all", false,
 		"also sync forge, envoys, and governor")
