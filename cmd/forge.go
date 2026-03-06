@@ -133,10 +133,15 @@ var forgeStartCmd = &cobra.Command{
 		}
 
 		// 5. Start tmux session with claude.
+		claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(world), "forge", "forge")
+		if err != nil {
+			return err
+		}
 		env := map[string]string{
-			"SOL_HOME":  config.Home(),
-			"SOL_WORLD": world,
-			"SOL_AGENT": "forge",
+			"SOL_HOME":         config.Home(),
+			"SOL_WORLD":        world,
+			"SOL_AGENT":        "forge",
+			"CLAUDE_CONFIG_DIR": claudeConfigDir,
 		}
 		forgePrompt := fmt.Sprintf("Forge for world %s. If no context appears, run: sol forge sync --world=%s && sol prime --world=%s --agent=forge",
 			world, world, world)

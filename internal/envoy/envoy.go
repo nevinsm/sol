@@ -226,13 +226,18 @@ func Start(opts StartOpts, sphereStore StartStore, mgr SessionManager) error {
 	}
 
 	// 4. Start tmux session.
+	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), "envoy", opts.Name)
+	if err != nil {
+		return err
+	}
 	prompt := fmt.Sprintf("Envoy %s, world %s. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200",
 		opts.Name, opts.World)
 	sessionCmd := config.BuildSessionCommand(config.SettingsPath(worktree), prompt)
 	env := map[string]string{
-		"SOL_HOME":  config.Home(),
-		"SOL_WORLD": opts.World,
-		"SOL_AGENT": opts.Name,
+		"SOL_HOME":         config.Home(),
+		"SOL_WORLD":        opts.World,
+		"SOL_AGENT":        opts.Name,
+		"CLAUDE_CONFIG_DIR": claudeConfigDir,
 	}
 	if err := mgr.Start(sessName, worktree, sessionCmd, env, "envoy", opts.World); err != nil {
 		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
