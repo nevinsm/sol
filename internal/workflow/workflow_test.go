@@ -2002,6 +2002,58 @@ func TestConvoyLifecycle(t *testing.T) {
 	}
 }
 
+func TestEnsureFormulaPlanReview(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	dir, err := EnsureFormula("plan-review")
+	if err != nil {
+		t.Fatalf("EnsureFormula(plan-review) error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "manifest.toml")); err != nil {
+		t.Errorf("manifest.toml not found after extraction: %v", err)
+	}
+
+	// Load and validate the extracted formula.
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+	if m.Type != "convoy" {
+		t.Errorf("type: got %q, want %q", m.Type, "convoy")
+	}
+	if len(m.Legs) != 5 {
+		t.Fatalf("legs: got %d, want 5", len(m.Legs))
+	}
+	if m.Synth == nil {
+		t.Fatal("synthesis is nil")
+	}
+	if len(m.Synth.DependsOn) != 5 {
+		t.Errorf("synthesis depends_on: got %d, want 5", len(m.Synth.DependsOn))
+	}
+	if err := Validate(m); err != nil {
+		t.Fatalf("Validate() error on plan-review: %v", err)
+	}
+
+	// Verify leg IDs.
+	wantIDs := map[string]bool{
+		"completeness": true,
+		"sequencing":   true,
+		"risk":         true,
+		"scope-creep":  true,
+		"testability":  true,
+	}
+	for _, leg := range m.Legs {
+		if !wantIDs[leg.ID] {
+			t.Errorf("unexpected leg ID %q", leg.ID)
+		}
+		delete(wantIDs, leg.ID)
+	}
+	for id := range wantIDs {
+		t.Errorf("missing leg ID %q", id)
+	}
+}
+
 func TestEnsureFormulaCodeReview(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
