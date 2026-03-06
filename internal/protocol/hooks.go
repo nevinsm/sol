@@ -85,7 +85,7 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 			},
 		},
 	}
-	return writeHookSettings(worktreeDir, cfg)
+	return WriteHookSettings(worktreeDir, cfg)
 }
 
 // InstallForgeHooks writes forge-specific Claude Code hooks that sync before priming.
@@ -139,7 +139,7 @@ func InstallForgeHooks(worktreeDir, world string) error {
 			},
 		},
 	}
-	return writeHookSettings(worktreeDir, cfg)
+	return WriteHookSettings(worktreeDir, cfg)
 }
 
 // GuardHooks returns PreToolUse matcher groups for sol guard commands.
@@ -199,8 +199,8 @@ func GuardHooks(role string) []HookMatcherGroup {
 	return groups
 }
 
-// writeHookSettings writes a HookConfig to .claude/settings.local.json.
-func writeHookSettings(worktreeDir string, cfg HookConfig) error {
+// WriteHookSettings writes a HookConfig to .claude/settings.local.json.
+func WriteHookSettings(worktreeDir string, cfg HookConfig) error {
 	claudeDir := filepath.Join(worktreeDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create .claude directory: %w", err)
