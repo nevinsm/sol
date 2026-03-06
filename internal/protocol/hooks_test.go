@@ -66,8 +66,8 @@ func TestInstallForgeHooks(t *testing.T) {
 		t.Fatalf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
 	}
 	pcCmd := pcGroups[0].Hooks[0].Command
-	if pcCmd != "sol handoff --world=myworld --agent=forge" {
-		t.Errorf("expected PreCompact command 'sol handoff --world=myworld --agent=forge', got %q", pcCmd)
+	if pcCmd != "sol handoff --world=myworld --agent=forge --reason=compact" {
+		t.Errorf("expected PreCompact command 'sol handoff --world=myworld --agent=forge --reason=compact', got %q", pcCmd)
 	}
 
 	// Must have PreToolUse hook blocking EnterPlanMode.
@@ -173,8 +173,8 @@ func TestInstallHooksPreCompact(t *testing.T) {
 		t.Fatalf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
 	}
 	pcCmd := pcGroups[0].Hooks[0].Command
-	if pcCmd != "sol handoff --world=ember --agent=Toast" {
-		t.Errorf("expected PreCompact command 'sol handoff --world=ember --agent=Toast', got %q", pcCmd)
+	if pcCmd != "sol handoff --world=ember --agent=Toast --reason=compact" {
+		t.Errorf("expected PreCompact command 'sol handoff --world=ember --agent=Toast --reason=compact', got %q", pcCmd)
 	}
 
 	// Verify PreToolUse hooks: 1 EnterPlanMode + 9 guard hooks = 10

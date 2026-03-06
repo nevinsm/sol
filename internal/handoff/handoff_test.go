@@ -823,8 +823,8 @@ func TestExecWritesMarker(t *testing.T) {
 	if markerTS.IsZero() {
 		t.Error("expected marker to be written after Exec")
 	}
-	if reason != "session handoff" {
-		t.Errorf("expected reason 'session handoff', got %q", reason)
+	if reason != "unknown" {
+		t.Errorf("expected reason 'unknown', got %q", reason)
 	}
 }
 

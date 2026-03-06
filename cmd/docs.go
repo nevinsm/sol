@@ -69,7 +69,7 @@ var docSections = []docSection{
 	},
 	{
 		heading: "Agents",
-		paths:   []string{"agent create", "agent list", "agent reset", "agent postmortem"},
+		paths:   []string{"agent create", "agent list", "agent reset", "agent postmortem", "agent handoffs"},
 	},
 	{
 		heading: "Store (Work Items)",
@@ -140,9 +140,11 @@ var docSections = []docSection{
 	{
 		heading: "Handoff (Session Continuity)",
 		paths:   []string{"handoff"},
-		notes: "`--summary` provides a progress summary. Captures tmux output, git state, and workflow progress into `.handoff.json`, " +
+		notes: "`--summary` provides a progress summary. `--reason` tags the handoff with a reason (`compact`, `manual`, `health-check`; defaults to `unknown`). " +
+			"Captures tmux output, git state, and workflow progress into `.handoff.json`, " +
 			"then cycles the session atomically using `tmux respawn-pane`. Safe for self-handoff (agent calling handoff on itself) " +
-			"and PreCompact auto-handoff — the old process is replaced without destroying the session.",
+			"and PreCompact auto-handoff — the old process is replaced without destroying the session. " +
+			"Each handoff emits a chronicle event with reason, session age, and role for observability.",
 	},
 	{
 		heading: "Envoy (Persistent Human-Directed Agents)",

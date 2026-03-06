@@ -51,6 +51,7 @@ This means `--world` is optional when running from inside a world directory (e.g
 | `sol agent list` | List agents |
 | `sol agent reset <name>` | Reset a stuck agent to idle state |
 | `sol agent postmortem <name>` | Show diagnostic information for a dead or stuck agent |
+| `sol agent handoffs` | Show recent handoff events |
 
 ## Store (Work Items)
 
@@ -215,7 +216,7 @@ Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` 
 |---------|-------------|
 | `sol handoff` | Hand off to a fresh session with context preservation |
 
-`--summary` provides a progress summary. Captures tmux output, git state, and workflow progress into `.handoff.json`, then cycles the session atomically using `tmux respawn-pane`. Safe for self-handoff (agent calling handoff on itself) and PreCompact auto-handoff — the old process is replaced without destroying the session.
+`--summary` provides a progress summary. `--reason` tags the handoff with a reason (`compact`, `manual`, `health-check`; defaults to `unknown`). Captures tmux output, git state, and workflow progress into `.handoff.json`, then cycles the session atomically using `tmux respawn-pane`. Safe for self-handoff (agent calling handoff on itself) and PreCompact auto-handoff — the old process is replaced without destroying the session. Each handoff emits a chronicle event with reason, session age, and role for observability.
 
 ## Envoy (Persistent Human-Directed Agents)
 

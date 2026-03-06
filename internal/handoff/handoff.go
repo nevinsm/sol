@@ -427,6 +427,7 @@ type ExecOpts struct {
 	Summary     string // optional agent-provided summary
 	Role        string // agent role: "agent", "envoy", "governor", "forge" (default: "agent")
 	WorktreeDir string // explicit worktree path (required for non-outpost roles)
+	Reason      string // handoff reason: "compact", "manual", "health-check" (default: "unknown")
 }
 
 // Exec performs the full handoff sequence:
@@ -451,12 +452,24 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		role = "agent"
 	}
 
+	reason := opts.Reason
+	if reason == "" {
+		reason = "unknown"
+	}
+
 	sessionName := config.SessionName(opts.World, opts.AgentName)
 
 	// Determine worktree directory.
 	worktreeDir := opts.WorktreeDir
 	if worktreeDir == "" {
 		worktreeDir = config.WorktreePath(opts.World, opts.AgentName)
+	}
+
+	// Calculate session age from the last handoff marker (time since last handoff/start).
+	var sessionAge time.Duration
+	markerTS, _, _ := ReadMarker(opts.World, opts.AgentName, role)
+	if !markerTS.IsZero() {
+		sessionAge = time.Since(markerTS)
 	}
 
 	// Try to capture state from tethered work (outposts and envoys with active work).
@@ -488,6 +501,9 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 				"work_item_id": state.WorkItemID,
 				"agent":        opts.AgentName,
 				"world":        opts.World,
+				"role":         role,
+				"reason":       reason,
+				"session_age":  sessionAge.Round(time.Second).String(),
 			})
 		}
 
@@ -510,9 +526,11 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		// No tether — emit event only.
 		if logger != nil {
 			logger.Emit(events.EventHandoff, "sol", opts.AgentName, "both", map[string]string{
-				"agent": opts.AgentName,
-				"world": opts.World,
-				"role":  role,
+				"agent":       opts.AgentName,
+				"world":       opts.World,
+				"role":        role,
+				"reason":      reason,
+				"session_age": sessionAge.Round(time.Second).String(),
 			})
 		}
 	}
@@ -581,7 +599,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 
 	// Write marker for loop prevention. The new session's prime will detect
 	// this and warn the agent not to re-trigger handoff immediately.
-	if err := WriteMarker(opts.World, opts.AgentName, role, "session handoff"); err != nil {
+	if err := WriteMarker(opts.World, opts.AgentName, role, reason); err != nil {
 		fmt.Fprintf(os.Stderr, "handoff: failed to write marker: %v\n", err)
 	}
 

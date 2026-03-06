@@ -16,6 +16,7 @@ type ReadOpts struct {
 	Since  time.Time // only events after this time (zero = all)
 	Type   string    // filter by event type (empty = all)
 	Source string    // filter by source (empty = all)
+	Actor  string    // filter by actor (empty = all)
 }
 
 // Reader reads events from the JSONL event feed.
@@ -185,6 +186,9 @@ func matchEvent(ev Event, opts ReadOpts) bool {
 		return false
 	}
 	if opts.Source != "" && ev.Source != opts.Source {
+		return false
+	}
+	if opts.Actor != "" && ev.Actor != opts.Actor {
 		return false
 	}
 	return true

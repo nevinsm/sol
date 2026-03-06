@@ -57,7 +57,7 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 					Hooks: []HookHandler{
 						{
 							Type:    "command",
-							Command: fmt.Sprintf("sol handoff --world=%s --agent=%s", world, agentName),
+							Command: fmt.Sprintf("sol handoff --world=%s --agent=%s --reason=compact", world, agentName),
 						},
 					},
 				},
@@ -111,7 +111,7 @@ func InstallForgeHooks(worktreeDir, world string) error {
 					Hooks: []HookHandler{
 						{
 							Type:    "command",
-							Command: fmt.Sprintf("sol handoff --world=%s --agent=forge", world),
+							Command: fmt.Sprintf("sol handoff --world=%s --agent=forge --reason=compact", world),
 						},
 					},
 				},

@@ -102,6 +102,11 @@ type respawnKey struct {
 	WorkItemID string
 }
 
+// EventReader abstracts reading events for testability.
+type EventReader interface {
+	Read(opts events.ReadOpts) ([]events.Event, error)
+}
+
 // Sentinel monitors agents in a single world.
 type Sentinel struct {
 	config        Config
@@ -109,6 +114,7 @@ type Sentinel struct {
 	worldStore    WorldStore
 	sessions      SessionChecker
 	logger        *events.Logger
+	eventReader   EventReader       // reads raw events for frequency checks
 	respawnCounts map[respawnKey]int
 	recastCounts  map[string]int    // work item ID → recast attempt count
 	lastCaptures  map[string]string // agent ID → hash of last captured output
@@ -123,7 +129,7 @@ type Sentinel struct {
 // New creates a new Sentinel.
 func New(cfg Config, sphere SphereStore, world WorldStore,
 	sessions SessionChecker, logger *events.Logger) *Sentinel {
-	return &Sentinel{
+	s := &Sentinel{
 		config:        cfg,
 		sphereStore:   sphere,
 		worldStore:    world,
@@ -133,6 +139,11 @@ func New(cfg Config, sphere SphereStore, world WorldStore,
 		recastCounts:  make(map[string]int),
 		lastCaptures:  make(map[string]string),
 	}
+	// Create event reader for handoff frequency checks.
+	if cfg.SolHome != "" {
+		s.eventReader = events.NewReader(cfg.SolHome, false)
+	}
+	return s
 }
 
 // SetAssessFunc sets a custom assessment function for testing.
@@ -305,6 +316,9 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 		}
 	}
 
+	// Check for handoff frequency issues (possible handoff loops).
+	handoffLoops := w.checkHandoffFrequency(activeAgents)
+
 	// Prune local branches whose remote tracking branch is gone.
 	branchesPruned := w.pruneOrphanedBranches()
 
@@ -332,6 +346,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 				"released_claims": releasedCount,
 				"branches_pruned": branchesPruned,
 				"orphans_cleaned": orphansCleaned,
+				"handoff_loops":   handoffLoops,
 				"assessed":        w.patrolAssessed,
 				"nudged":          w.patrolNudged,
 				"actions":         actionsTaken,
@@ -764,6 +779,62 @@ func (w *Sentinel) reapIdleAgent(agent store.Agent) error {
 	}
 
 	return nil
+}
+
+// checkHandoffFrequency checks if any working agent has handed off too frequently.
+// 3+ handoffs in 30 minutes signals a possible handoff loop — burning tokens
+// without making meaningful progress.
+func (w *Sentinel) checkHandoffFrequency(agents []store.Agent) int {
+	if w.eventReader == nil {
+		return 0
+	}
+
+	window := 30 * time.Minute
+	threshold := 3
+	var escalated int
+
+	for _, agent := range agents {
+		if agent.State != "working" {
+			continue
+		}
+
+		handoffs, err := w.eventReader.Read(events.ReadOpts{
+			Type:  events.EventHandoff,
+			Actor: agent.Name,
+			Since: time.Now().Add(-window),
+		})
+		if err != nil {
+			continue
+		}
+
+		if len(handoffs) >= threshold {
+			escalated++
+
+			if w.logger != nil {
+				w.logger.Emit("handoff_loop", w.agentID(), agent.ID, "both",
+					map[string]any{
+						"agent":    agent.ID,
+						"handoffs": len(handoffs),
+						"window":   window.String(),
+					})
+			}
+
+			if _, err := w.sphereStore.SendProtocolMessage(
+				w.agentID(), "operator",
+				store.ProtoRecoveryNeeded,
+				store.RecoveryNeededPayload{
+					AgentID:    agent.ID,
+					WorkItemID: agent.TetherItem,
+					Reason:     fmt.Sprintf("handoff loop: %d handoffs in %s", len(handoffs), window),
+				},
+			); err != nil && w.logger != nil {
+				w.logger.Emit("mail_error", w.agentID(), agent.ID, "audit",
+					map[string]any{"error": err.Error()})
+			}
+		}
+	}
+
+	return escalated
 }
 
 // releaseStaleClaims releases MR claims older than ClaimTTL (forge crash recovery).
