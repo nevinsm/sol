@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
@@ -215,6 +216,217 @@ var workflowStatusCmd = &cobra.Command{
 	},
 }
 
+var workflowShowCmd = &cobra.Command{
+	Use:          "show <formula>",
+	Short:        "Display formula details and resolution source",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		formulaName := args[0]
+
+		// Resolve world for project-tier lookup (optional).
+		var repoPath string
+		worldFlag, _ := cmd.Flags().GetString("world")
+		if worldFlag != "" || os.Getenv("SOL_WORLD") != "" {
+			world, err := config.ResolveWorld(worldFlag)
+			if err != nil {
+				return err
+			}
+			repoPath = config.RepoPath(world)
+		}
+
+		res, err := workflow.EnsureFormula(formulaName, repoPath)
+		if err != nil {
+			return err
+		}
+
+		m, err := workflow.LoadManifest(res.Path)
+		if err != nil {
+			return err
+		}
+
+		validationErr := workflow.Validate(m)
+
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return printShowJSON(m, res, validationErr)
+		}
+
+		return printShowHuman(m, res, validationErr)
+	},
+}
+
+func printShowJSON(m *workflow.Manifest, res *workflow.FormulaResolution, validationErr error) error {
+	type varJSON struct {
+		Required bool   `json:"required"`
+		Default  string `json:"default,omitempty"`
+	}
+	type stepJSON struct {
+		ID           string   `json:"id"`
+		Title        string   `json:"title"`
+		Instructions string   `json:"instructions"`
+		Needs        []string `json:"needs,omitempty"`
+	}
+	type templateJSON struct {
+		ID          string   `json:"id"`
+		Title       string   `json:"title"`
+		Description string   `json:"description"`
+		Needs       []string `json:"needs,omitempty"`
+	}
+	type legJSON struct {
+		ID          string `json:"id"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Focus       string `json:"focus,omitempty"`
+	}
+	type synthesisJSON struct {
+		Title       string   `json:"title"`
+		Description string   `json:"description"`
+		DependsOn   []string `json:"depends_on"`
+	}
+	type output struct {
+		Name        string                `json:"name"`
+		Type        string                `json:"type"`
+		Description string                `json:"description,omitempty"`
+		Manifest    bool                  `json:"manifest"`
+		Tier        workflow.FormulaTier   `json:"tier"`
+		Path        string                `json:"path"`
+		Valid       bool                  `json:"valid"`
+		Error       string                `json:"error,omitempty"`
+		Variables   map[string]varJSON    `json:"variables,omitempty"`
+		Steps       []stepJSON            `json:"steps,omitempty"`
+		Templates   []templateJSON        `json:"templates,omitempty"`
+		Legs        []legJSON             `json:"legs,omitempty"`
+		Synthesis   *synthesisJSON        `json:"synthesis,omitempty"`
+	}
+
+	out := output{
+		Name:        m.Name,
+		Type:        m.Type,
+		Description: m.Description,
+		Manifest:    m.Manifest,
+		Tier:        res.Tier,
+		Path:        res.Path,
+		Valid:       validationErr == nil,
+	}
+	if validationErr != nil {
+		out.Error = validationErr.Error()
+	}
+	if len(m.Variables) > 0 {
+		out.Variables = make(map[string]varJSON, len(m.Variables))
+		for k, v := range m.Variables {
+			out.Variables[k] = varJSON{Required: v.Required, Default: v.Default}
+		}
+	}
+	for _, s := range m.Steps {
+		out.Steps = append(out.Steps, stepJSON{ID: s.ID, Title: s.Title, Instructions: s.Instructions, Needs: s.Needs})
+	}
+	for _, t := range m.Templates {
+		out.Templates = append(out.Templates, templateJSON{ID: t.ID, Title: t.Title, Description: t.Description, Needs: t.Needs})
+	}
+	for _, l := range m.Legs {
+		out.Legs = append(out.Legs, legJSON{ID: l.ID, Title: l.Title, Description: l.Description, Focus: l.Focus})
+	}
+	if m.Synth != nil {
+		out.Synthesis = &synthesisJSON{Title: m.Synth.Title, Description: m.Synth.Description, DependsOn: m.Synth.DependsOn}
+	}
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
+func printShowHuman(m *workflow.Manifest, res *workflow.FormulaResolution, validationErr error) error {
+	formulaType := m.Type
+	if formulaType == "" {
+		formulaType = "workflow"
+	}
+
+	fmt.Printf("Name:        %s\n", m.Name)
+	fmt.Printf("Type:        %s\n", formulaType)
+	fmt.Printf("Tier:        %s\n", res.Tier)
+	fmt.Printf("Path:        %s\n", res.Path)
+	if m.Description != "" {
+		fmt.Printf("Description: %s\n", m.Description)
+	}
+	if m.Manifest {
+		fmt.Printf("Manifest:    true\n")
+	}
+	if validationErr != nil {
+		fmt.Printf("Validation:  INVALID — %s\n", validationErr)
+	}
+
+	// Variables.
+	if len(m.Variables) > 0 {
+		fmt.Println()
+		fmt.Println("Variables:")
+		// Sort for stable output.
+		varNames := make([]string, 0, len(m.Variables))
+		for k := range m.Variables {
+			varNames = append(varNames, k)
+		}
+		sort.Strings(varNames)
+		for _, name := range varNames {
+			decl := m.Variables[name]
+			var attrs []string
+			if decl.Required {
+				attrs = append(attrs, "required")
+			}
+			if decl.Default != "" {
+				attrs = append(attrs, fmt.Sprintf("default=%q", decl.Default))
+			}
+			if len(attrs) > 0 {
+				fmt.Printf("  %s (%s)\n", name, strings.Join(attrs, ", "))
+			} else {
+				fmt.Printf("  %s\n", name)
+			}
+		}
+	}
+
+	// Steps (workflow type).
+	if len(m.Steps) > 0 {
+		fmt.Println()
+		fmt.Println("Steps:")
+		for i, s := range m.Steps {
+			line := fmt.Sprintf("  %d. %s — %s", i+1, s.ID, s.Title)
+			if len(s.Needs) > 0 {
+				line += fmt.Sprintf(" (needs: %s)", strings.Join(s.Needs, ", "))
+			}
+			fmt.Println(line)
+		}
+	}
+
+	// Templates (expansion type).
+	if len(m.Templates) > 0 {
+		fmt.Println()
+		fmt.Println("Templates:")
+		for i, t := range m.Templates {
+			line := fmt.Sprintf("  %d. %s — %s", i+1, t.ID, t.Title)
+			if len(t.Needs) > 0 {
+				line += fmt.Sprintf(" (needs: %s)", strings.Join(t.Needs, ", "))
+			}
+			fmt.Println(line)
+		}
+	}
+
+	// Legs (convoy type).
+	if len(m.Legs) > 0 {
+		fmt.Println()
+		fmt.Println("Legs:")
+		for i, l := range m.Legs {
+			fmt.Printf("  %d. %s — %s\n", i+1, l.ID, l.Title)
+		}
+		if m.Synth != nil {
+			fmt.Printf("\nSynthesis: %s\n", m.Synth.Title)
+			if len(m.Synth.DependsOn) > 0 {
+				fmt.Printf("  depends on: %s\n", strings.Join(m.Synth.DependsOn, ", "))
+			}
+		}
+	}
+
+	return nil
+}
+
 var workflowManifestCmd = &cobra.Command{
 	Use:          "manifest <formula>",
 	Short:        "Manifest a formula into work items and a caravan",
@@ -303,6 +515,11 @@ func init() {
 	workflowCmd.AddCommand(workflowAdvanceCmd)
 	workflowCmd.AddCommand(workflowStatusCmd)
 	workflowCmd.AddCommand(workflowManifestCmd)
+	workflowCmd.AddCommand(workflowShowCmd)
+
+	// show flags
+	workflowShowCmd.Flags().String("world", "", "world name (for project-tier resolution)")
+	workflowShowCmd.Flags().Bool("json", false, "output as JSON")
 
 	// instantiate flags
 	workflowInstantiateCmd.Flags().String("item", "", "work item ID")
