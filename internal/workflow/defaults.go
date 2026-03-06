@@ -6,6 +6,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+
+	"github.com/BurntSushi/toml"
+	"github.com/nevinsm/sol/internal/config"
 )
 
 //go:embed defaults/default-work/manifest.toml
@@ -72,6 +76,15 @@ type FormulaResolution struct {
 	Tier FormulaTier
 }
 
+// FormulaEntry describes a formula discovered during tier scanning.
+type FormulaEntry struct {
+	Name        string      `json:"name"`
+	Type        string      `json:"type"`
+	Tier        FormulaTier `json:"tier"`
+	Description string      `json:"description"`
+	Shadowed    bool        `json:"shadowed,omitempty"`
+}
+
 // EnsureFormula resolves a formula using three-tier lookup:
 //  1. Project-level: {repoPath}/.sol/workflows/{name}/ — project-specific workflows
 //  2. User-level: $SOL_HOME/formulas/{name}/ — operator customizations
@@ -132,4 +145,124 @@ func EnsureFormula(formulaName, repoPath string) (*FormulaResolution, error) {
 // {repoPath}/.sol/workflows/{formulaName}/
 func ProjectFormulaDir(repoPath, formulaName string) string {
 	return filepath.Join(repoPath, ".sol", "workflows", formulaName)
+}
+
+// ListFormulas discovers all available formulas across the three resolution
+// tiers: project > user > embedded. repoPath may be empty to skip the
+// project tier. Returns entries sorted by name, with shadowed entries
+// (overridden by a higher-priority tier) marked.
+func ListFormulas(repoPath string) ([]FormulaEntry, error) {
+	entries := []FormulaEntry{}
+	seen := make(map[string]bool)
+
+	// Tier 1: Project-level — scan {repoPath}/.sol/workflows/.
+	if repoPath != "" {
+		projectBase := filepath.Join(repoPath, ".sol", "workflows")
+		if dirEntries, err := os.ReadDir(projectBase); err == nil {
+			for _, de := range dirEntries {
+				if !de.IsDir() {
+					continue
+				}
+				name := de.Name()
+				dir := filepath.Join(projectBase, name)
+				m, err := LoadManifest(dir)
+				if err != nil {
+					continue
+				}
+				entries = append(entries, FormulaEntry{
+					Name:        name,
+					Type:        m.Type,
+					Tier:        TierProject,
+					Description: m.Description,
+				})
+				seen[name] = true
+			}
+		}
+	}
+
+	// Tier 2: User-level — scan $SOL_HOME/formulas/.
+	userBase := filepath.Join(config.Home(), "formulas")
+	if dirEntries, err := os.ReadDir(userBase); err == nil {
+		for _, de := range dirEntries {
+			if !de.IsDir() {
+				continue
+			}
+			name := de.Name()
+			dir := filepath.Join(userBase, name)
+			m, err := LoadManifest(dir)
+			if err != nil {
+				continue
+			}
+			entry := FormulaEntry{
+				Name:        name,
+				Type:        m.Type,
+				Tier:        TierUser,
+				Description: m.Description,
+			}
+			if seen[name] {
+				entry.Shadowed = true
+			} else {
+				seen[name] = true
+			}
+			entries = append(entries, entry)
+		}
+	}
+
+	// Tier 3: Embedded — list known defaults not already found.
+	for name := range knownDefaults {
+		m, err := loadEmbeddedManifest(name)
+		if err != nil {
+			continue
+		}
+		entry := FormulaEntry{
+			Name:        name,
+			Type:        m.Type,
+			Tier:        TierEmbedded,
+			Description: m.Description,
+		}
+		if seen[name] {
+			entry.Shadowed = true
+		} else {
+			seen[name] = true
+		}
+		entries = append(entries, entry)
+	}
+
+	// Sort by name, then by tier priority for stable output.
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Name != entries[j].Name {
+			return entries[i].Name < entries[j].Name
+		}
+		return tierPriority(entries[i].Tier) < tierPriority(entries[j].Tier)
+	})
+
+	return entries, nil
+}
+
+// loadEmbeddedManifest reads and parses a manifest from the embedded FS
+// without extracting it to disk.
+func loadEmbeddedManifest(name string) (*Manifest, error) {
+	data, err := defaultFormulas.ReadFile(filepath.Join("defaults", name, "manifest.toml"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read embedded manifest for %q: %w", name, err)
+	}
+	var m Manifest
+	if _, err := toml.Decode(string(data), &m); err != nil {
+		return nil, fmt.Errorf("failed to parse embedded manifest for %q: %w", name, err)
+	}
+	return &m, nil
+}
+
+// tierPriority returns the sort priority for a tier (lower = higher priority).
+func tierPriority(t FormulaTier) int {
+	switch t {
+	case TierProject:
+		return 0
+	case TierUser:
+		return 1
+	case TierEmbedded:
+		return 2
+	default:
+		return 3
+	}
 }

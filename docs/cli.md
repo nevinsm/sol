@@ -244,6 +244,7 @@ Sphere-scoped OTLP HTTP receiver on port 4318. Accepts `claude_code.api_request`
 
 | Command | Description |
 |---------|-------------|
+| `sol workflow list` | List available workflow formulas |
 | `sol workflow instantiate <formula>` | Instantiate a workflow from a formula |
 | `sol workflow manifest <formula>` | Manifest a formula into work items and a caravan |
 | `sol workflow show <formula>` | Display formula details and resolution source |

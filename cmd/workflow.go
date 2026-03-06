@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
@@ -508,6 +509,73 @@ var workflowManifestCmd = &cobra.Command{
 	},
 }
 
+var workflowListCmd = &cobra.Command{
+	Use:          "list",
+	Short:        "List available workflow formulas",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		showAll, _ := cmd.Flags().GetBool("all")
+		jsonOut, _ := cmd.Flags().GetBool("json")
+
+		var repoPath string
+		if worldFlag != "" {
+			// Explicit world requested — fail if invalid.
+			world, err := config.ResolveWorld(worldFlag)
+			if err != nil {
+				return err
+			}
+			repoPath = config.RepoPath(world)
+		} else {
+			// Try to infer world for project-tier scanning; skip if unavailable.
+			if world, err := config.ResolveWorld(""); err == nil {
+				repoPath = config.RepoPath(world)
+			}
+		}
+
+		entries, err := workflow.ListFormulas(repoPath)
+		if err != nil {
+			return err
+		}
+
+		// Filter shadowed entries unless --all.
+		if !showAll {
+			filtered := []workflow.FormulaEntry{}
+			for _, e := range entries {
+				if !e.Shadowed {
+					filtered = append(filtered, e)
+				}
+			}
+			entries = filtered
+		}
+
+		if jsonOut {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(entries)
+		}
+
+		if len(entries) == 0 {
+			fmt.Println("No formulas found.")
+			return nil
+		}
+
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintf(tw, "NAME\tTYPE\tTIER\tDESCRIPTION\n")
+		for _, e := range entries {
+			name := e.Name
+			if e.Shadowed {
+				name += " (shadowed)"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", name, e.Type, e.Tier, e.Description)
+		}
+		tw.Flush()
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(workflowCmd)
 	workflowCmd.AddCommand(workflowInstantiateCmd)
@@ -516,6 +584,7 @@ func init() {
 	workflowCmd.AddCommand(workflowStatusCmd)
 	workflowCmd.AddCommand(workflowManifestCmd)
 	workflowCmd.AddCommand(workflowShowCmd)
+	workflowCmd.AddCommand(workflowListCmd)
 
 	// show flags
 	workflowShowCmd.Flags().String("world", "", "world name (for project-tier resolution)")
@@ -550,4 +619,9 @@ func init() {
 	workflowManifestCmd.Flags().StringSliceVar(&wfVars, "var", nil, "variable assignment (key=val)")
 	workflowManifestCmd.Flags().String("target", "", "existing work item ID to manifest against (required for expansion formulas)")
 	workflowManifestCmd.Flags().Bool("json", false, "output as JSON")
+
+	// list flags
+	workflowListCmd.Flags().String("world", "", "world name (for project-tier discovery)")
+	workflowListCmd.Flags().Bool("all", false, "show all tiers including shadowed formulas")
+	workflowListCmd.Flags().Bool("json", false, "output as JSON")
 }

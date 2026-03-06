@@ -2277,3 +2277,201 @@ func TestEnsureFormulaThoroughWork(t *testing.T) {
 		t.Errorf("submit should need test, got %v", m.Steps[4].Needs)
 	}
 }
+
+func TestListFormulasEmbeddedOnly(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	entries, err := ListFormulas("")
+	if err != nil {
+		t.Fatalf("ListFormulas error: %v", err)
+	}
+
+	// Should find all 8 known defaults.
+	if len(entries) != len(knownDefaults) {
+		t.Errorf("got %d entries, want %d", len(entries), len(knownDefaults))
+	}
+
+	// All should be embedded tier.
+	for _, e := range entries {
+		if e.Tier != TierEmbedded {
+			t.Errorf("entry %q: tier = %q, want %q", e.Name, e.Tier, TierEmbedded)
+		}
+		if e.Shadowed {
+			t.Errorf("entry %q: should not be shadowed", e.Name)
+		}
+	}
+
+	// Should be sorted by name.
+	for i := 1; i < len(entries); i++ {
+		if entries[i].Name < entries[i-1].Name {
+			t.Errorf("entries not sorted: %q before %q", entries[i-1].Name, entries[i].Name)
+		}
+	}
+}
+
+func TestListFormulasUserTier(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Create a custom user formula.
+	userDir := filepath.Join(solHome, "formulas", "my-custom")
+	os.MkdirAll(userDir, 0o755)
+	os.WriteFile(filepath.Join(userDir, "manifest.toml"), []byte(
+		"name = \"my-custom\"\ntype = \"workflow\"\ndescription = \"Custom formula\"\n",
+	), 0o644)
+
+	entries, err := ListFormulas("")
+	if err != nil {
+		t.Fatalf("ListFormulas error: %v", err)
+	}
+
+	// Should have all embedded + 1 custom.
+	if len(entries) != len(knownDefaults)+1 {
+		t.Errorf("got %d entries, want %d", len(entries), len(knownDefaults)+1)
+	}
+
+	// Find the custom entry.
+	var found bool
+	for _, e := range entries {
+		if e.Name == "my-custom" {
+			found = true
+			if e.Tier != TierUser {
+				t.Errorf("my-custom tier: got %q, want %q", e.Tier, TierUser)
+			}
+			if e.Description != "Custom formula" {
+				t.Errorf("my-custom description: got %q, want %q", e.Description, "Custom formula")
+			}
+			if e.Type != "workflow" {
+				t.Errorf("my-custom type: got %q, want %q", e.Type, "workflow")
+			}
+		}
+	}
+	if !found {
+		t.Error("my-custom entry not found")
+	}
+}
+
+func TestListFormulasProjectTier(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	repoDir := t.TempDir()
+
+	// Create a project-level formula.
+	projectDir := filepath.Join(repoDir, ".sol", "workflows", "deploy")
+	os.MkdirAll(projectDir, 0o755)
+	os.WriteFile(filepath.Join(projectDir, "manifest.toml"), []byte(
+		"name = \"deploy\"\ntype = \"workflow\"\ndescription = \"Deploy workflow\"\n",
+	), 0o644)
+
+	entries, err := ListFormulas(repoDir)
+	if err != nil {
+		t.Fatalf("ListFormulas error: %v", err)
+	}
+
+	// Should have all embedded + 1 project.
+	if len(entries) != len(knownDefaults)+1 {
+		t.Errorf("got %d entries, want %d", len(entries), len(knownDefaults)+1)
+	}
+
+	var found bool
+	for _, e := range entries {
+		if e.Name == "deploy" {
+			found = true
+			if e.Tier != TierProject {
+				t.Errorf("deploy tier: got %q, want %q", e.Tier, TierProject)
+			}
+		}
+	}
+	if !found {
+		t.Error("deploy entry not found")
+	}
+}
+
+func TestListFormulasShadowing(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	repoDir := t.TempDir()
+
+	// Create a project-level formula that shadows an embedded one.
+	projectDir := filepath.Join(repoDir, ".sol", "workflows", "default-work")
+	os.MkdirAll(projectDir, 0o755)
+	os.WriteFile(filepath.Join(projectDir, "manifest.toml"), []byte(
+		"name = \"default-work\"\ntype = \"workflow\"\ndescription = \"Project override\"\n",
+	), 0o644)
+
+	entries, err := ListFormulas(repoDir)
+	if err != nil {
+		t.Fatalf("ListFormulas error: %v", err)
+	}
+
+	// Count default-work entries.
+	var projectEntry, embeddedEntry *FormulaEntry
+	for i := range entries {
+		if entries[i].Name == "default-work" {
+			if entries[i].Tier == TierProject {
+				projectEntry = &entries[i]
+			} else if entries[i].Tier == TierEmbedded {
+				embeddedEntry = &entries[i]
+			}
+		}
+	}
+
+	if projectEntry == nil {
+		t.Fatal("project tier default-work not found")
+	}
+	if projectEntry.Shadowed {
+		t.Error("project tier entry should not be shadowed")
+	}
+
+	if embeddedEntry == nil {
+		t.Fatal("embedded tier default-work not found")
+	}
+	if !embeddedEntry.Shadowed {
+		t.Error("embedded tier entry should be shadowed")
+	}
+}
+
+func TestListFormulasUserShadowsEmbedded(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Extract a default to user tier (simulates EnsureFormula extraction).
+	_, err := EnsureFormula("default-work", "")
+	if err != nil {
+		t.Fatalf("EnsureFormula error: %v", err)
+	}
+
+	entries, err := ListFormulas("")
+	if err != nil {
+		t.Fatalf("ListFormulas error: %v", err)
+	}
+
+	// default-work should appear twice: user (winning) and embedded (shadowed).
+	var userEntry, embeddedEntry *FormulaEntry
+	for i := range entries {
+		if entries[i].Name == "default-work" {
+			if entries[i].Tier == TierUser {
+				userEntry = &entries[i]
+			} else if entries[i].Tier == TierEmbedded {
+				embeddedEntry = &entries[i]
+			}
+		}
+	}
+
+	if userEntry == nil {
+		t.Fatal("user tier default-work not found")
+	}
+	if userEntry.Shadowed {
+		t.Error("user tier entry should not be shadowed (it wins)")
+	}
+
+	if embeddedEntry == nil {
+		t.Fatal("embedded tier default-work not found")
+	}
+	if !embeddedEntry.Shadowed {
+		t.Error("embedded tier entry should be shadowed by user tier")
+	}
+}
