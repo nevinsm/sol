@@ -13,6 +13,7 @@ import (
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/workflow"
 )
@@ -419,6 +420,41 @@ func briefSave(sessionName string, mgr SessionManager,
 // roleUsesBrief returns true if the role maintains a brief (.brief/memory.md).
 func roleUsesBrief(role string) bool {
 	return role == "envoy" || role == "governor"
+}
+
+// BuildResumeState extracts a startup.ResumeState from a captured handoff State.
+func (s *State) BuildResumeState(reason string) startup.ResumeState {
+	return startup.ResumeState{
+		CurrentStep:     s.WorkflowStep,
+		StepDescription: s.StepDescription,
+		ClaimedResource: s.WorkItemID,
+		Reason:          reason,
+	}
+}
+
+// CaptureResumeState reads durable state from disk and returns a ResumeState
+// suitable for startup.Resume(). Reads workflow state and tether to determine
+// the agent's current position.
+func CaptureResumeState(world, agent, role, reason string) startup.ResumeState {
+	state := startup.ResumeState{Reason: reason}
+
+	// Read workflow state.
+	wfState, _ := workflow.ReadState(world, agent, role)
+	if wfState != nil && wfState.Status == "running" {
+		state.CurrentStep = wfState.CurrentStep
+		step, _ := workflow.ReadCurrentStep(world, agent, role)
+		if step != nil {
+			state.StepDescription = step.Title
+		}
+	}
+
+	// Read claimed work from tether.
+	workItemID, _ := tether.Read(world, agent, role)
+	if workItemID != "" {
+		state.ClaimedResource = workItemID
+	}
+
+	return state
 }
 
 // ExecOpts configures the handoff execution.

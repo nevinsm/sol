@@ -3,6 +3,7 @@ package startup
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
@@ -210,6 +211,64 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 	}
 
 	return sessName, nil
+}
+
+// ResumeState captures workflow state for compact handoff recovery.
+type ResumeState struct {
+	CurrentStep     string // workflow step ID the agent was on
+	StepDescription string // human-readable step title
+	ClaimedResource string // MR ID or work-in-progress identifier
+	Reason          string // why handoff happened: "compact", "manual", "error"
+}
+
+// Resume does everything Launch does but uses --continue for conversation
+// continuity and injects workflow state into the prime context.
+//
+// The resume prime prepends state context ("You were on step N...") to the
+// role's normal prime, so the agent immediately knows where it left off.
+func Resume(cfg RoleConfig, world, agent string, state ResumeState, opts LaunchOpts) (string, error) {
+	opts.Continue = true
+
+	origPrime := cfg.PrimeBuilder
+	cfg.PrimeBuilder = func(w, a string) string {
+		base := ""
+		if origPrime != nil {
+			base = origPrime(w, a)
+		}
+		return buildResumePrime(base, state)
+	}
+
+	return Launch(cfg, world, agent, opts)
+}
+
+// buildResumePrime constructs a resume-aware prime prompt that includes
+// workflow state and claimed resource information.
+func buildResumePrime(base string, state ResumeState) string {
+	var b strings.Builder
+	b.WriteString("[RESUME] Session recovery")
+	if state.Reason != "" {
+		fmt.Fprintf(&b, " (reason: %s)", state.Reason)
+	}
+	b.WriteString(".\n")
+
+	if state.CurrentStep != "" {
+		if state.StepDescription != "" {
+			fmt.Fprintf(&b, "You were on step %s (%s). Resume from there.\n", state.CurrentStep, state.StepDescription)
+		} else {
+			fmt.Fprintf(&b, "You were on step %s. Resume from there.\n", state.CurrentStep)
+		}
+	}
+
+	if state.ClaimedResource != "" {
+		fmt.Fprintf(&b, "Claimed resource: %s is claimed and in-progress.\n", state.ClaimedResource)
+	}
+
+	if base != "" {
+		b.WriteString("\n")
+		b.WriteString(base)
+	}
+
+	return b.String()
 }
 
 // resolveSphereStore returns the sphere store and an optional cleanup function.

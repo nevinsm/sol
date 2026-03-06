@@ -293,6 +293,177 @@ func TestBuildCommandOverride(t *testing.T) {
 	}
 }
 
+func TestResumeSetsContinue(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	cfg := RoleConfig{
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+		PrimeBuilder: func(w, a string) string {
+			return "Execute your formula."
+		},
+	}
+
+	state := ResumeState{
+		CurrentStep:     "gates",
+		StepDescription: "Quality Gates",
+		ClaimedResource: "sol-abc123",
+		Reason:          "compact",
+	}
+
+	sessName, err := Resume(cfg, world, "forge", state, LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Resume() error: %v", err)
+	}
+
+	if sessName != "sol-haven-forge" {
+		t.Errorf("session name = %q, want %q", sessName, "sol-haven-forge")
+	}
+
+	// Resume always uses SOL_SESSION_COMMAND in tests, so we verify
+	// the session was started. The --continue flag is set on LaunchOpts.Continue
+	// which is verified by TestBuildCommandContinue.
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 session start, got %d", len(mock.started))
+	}
+}
+
+func TestResumeWithWorkflowStep(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "")
+
+	state := ResumeState{
+		CurrentStep:     "gates",
+		StepDescription: "Quality Gates",
+		Reason:          "compact",
+	}
+
+	prime := buildResumePrime("", state)
+	if !strings.Contains(prime, "[RESUME]") {
+		t.Errorf("resume prime missing [RESUME] tag: %q", prime)
+	}
+	if !strings.Contains(prime, "reason: compact") {
+		t.Errorf("resume prime missing reason: %q", prime)
+	}
+	if !strings.Contains(prime, "step gates (Quality Gates)") {
+		t.Errorf("resume prime missing step info: %q", prime)
+	}
+}
+
+func TestResumeWithClaimedResource(t *testing.T) {
+	state := ResumeState{
+		ClaimedResource: "sol-abc123def456",
+		Reason:          "compact",
+	}
+
+	prime := buildResumePrime("", state)
+	if !strings.Contains(prime, "sol-abc123def456") {
+		t.Errorf("resume prime missing claimed resource: %q", prime)
+	}
+	if !strings.Contains(prime, "claimed and in-progress") {
+		t.Errorf("resume prime missing in-progress indicator: %q", prime)
+	}
+}
+
+func TestResumePreservesBasePrime(t *testing.T) {
+	state := ResumeState{
+		CurrentStep: "scan",
+		Reason:      "compact",
+	}
+
+	base := "Execute your formula."
+	prime := buildResumePrime(base, state)
+	if !strings.Contains(prime, "[RESUME]") {
+		t.Errorf("resume prime missing [RESUME]: %q", prime)
+	}
+	if !strings.Contains(prime, "Execute your formula.") {
+		t.Errorf("resume prime missing base prime: %q", prime)
+	}
+}
+
+func TestResumeNilPrimeBuilder(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	cfg := RoleConfig{
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+		// PrimeBuilder intentionally nil.
+	}
+
+	state := ResumeState{
+		CurrentStep: "scan",
+		Reason:      "compact",
+	}
+
+	_, err = Resume(cfg, world, "forge", state, LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Resume() with nil PrimeBuilder error: %v", err)
+	}
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 session start, got %d", len(mock.started))
+	}
+}
+
+func TestBuildResumePrimeStepOnly(t *testing.T) {
+	state := ResumeState{
+		CurrentStep: "isolate",
+		Reason:      "manual",
+	}
+
+	prime := buildResumePrime("", state)
+	if !strings.Contains(prime, "step isolate. Resume from there.") {
+		t.Errorf("step-only prime missing step without description: %q", prime)
+	}
+	// Should not contain step description parentheses (reason parens are expected).
+	if strings.Contains(prime, "step isolate (") {
+		t.Errorf("step-only prime should not have step description parens: %q", prime)
+	}
+}
+
+func TestBuildResumePrimeEmpty(t *testing.T) {
+	state := ResumeState{Reason: "compact"}
+	prime := buildResumePrime("", state)
+	if !strings.Contains(prime, "[RESUME] Session recovery (reason: compact).") {
+		t.Errorf("empty resume prime = %q", prime)
+	}
+	// Should not contain step or resource lines.
+	if strings.Contains(prime, "step") {
+		t.Errorf("empty resume prime should not mention step: %q", prime)
+	}
+	if strings.Contains(prime, "Claimed") {
+		t.Errorf("empty resume prime should not mention claimed: %q", prime)
+	}
+}
+
 func TestLaunchSkipsWorkflowIfActive(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 
