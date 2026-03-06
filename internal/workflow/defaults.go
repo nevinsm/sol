@@ -46,23 +46,51 @@ var knownDefaults = map[string]bool{
 	"thorough-work":  true,
 }
 
-// EnsureFormula checks if a formula exists on disk. If not and it's a
-// known default formula, extract it from the embedded defaults.
-// Returns the absolute path to the formula directory.
-func EnsureFormula(formulaName string) (string, error) {
-	dir := FormulaDir(formulaName)
+// FormulaTier indicates which tier resolved a formula.
+type FormulaTier string
 
-	// If the formula directory exists, use it as-is.
-	if info, err := os.Stat(dir); err == nil && info.IsDir() {
-		return dir, nil
+const (
+	// TierProject is a project-level workflow from {repo}/.sol/workflows/{name}/.
+	TierProject FormulaTier = "project"
+	// TierUser is a user-level formula from $SOL_HOME/formulas/{name}/.
+	TierUser FormulaTier = "user"
+	// TierEmbedded is a built-in formula extracted from go:embed defaults.
+	TierEmbedded FormulaTier = "embedded"
+)
+
+// FormulaResolution is the result of resolving a formula name to a path.
+type FormulaResolution struct {
+	Path string
+	Tier FormulaTier
+}
+
+// EnsureFormula resolves a formula using three-tier lookup:
+//  1. Project-level: {repoPath}/.sol/workflows/{name}/ — project-specific workflows
+//  2. User-level: $SOL_HOME/formulas/{name}/ — operator customizations
+//  3. Embedded: go:embed defaults — built-in formulas (extracted on first use)
+//
+// Resolution is first-match-wins: project > user > embedded.
+// Pass an empty repoPath to skip the project tier.
+func EnsureFormula(formulaName, repoPath string) (*FormulaResolution, error) {
+	// Tier 1: Project-level — check {repoPath}/.sol/workflows/{name}/.
+	if repoPath != "" {
+		projectDir := ProjectFormulaDir(repoPath, formulaName)
+		if info, err := os.Stat(projectDir); err == nil && info.IsDir() {
+			return &FormulaResolution{Path: projectDir, Tier: TierProject}, nil
+		}
 	}
 
-	// Check if it's a known default.
+	// Tier 2: User-level — check $SOL_HOME/formulas/{name}/.
+	userDir := FormulaDir(formulaName)
+	if info, err := os.Stat(userDir); err == nil && info.IsDir() {
+		return &FormulaResolution{Path: userDir, Tier: TierUser}, nil
+	}
+
+	// Tier 3: Embedded — extract known default to user-level path.
 	if !knownDefaults[formulaName] {
-		return "", fmt.Errorf("formula %q not found and is not a known default", formulaName)
+		return nil, fmt.Errorf("formula %q not found and is not a known default", formulaName)
 	}
 
-	// Extract from embedded defaults.
 	root := filepath.Join("defaults", formulaName)
 	if err := fs.WalkDir(defaultFormulas, root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -74,7 +102,7 @@ func EnsureFormula(formulaName string) (string, error) {
 		if err != nil {
 			return err
 		}
-		dest := filepath.Join(dir, rel)
+		dest := filepath.Join(userDir, rel)
 
 		if d.IsDir() {
 			return os.MkdirAll(dest, 0o755)
@@ -86,8 +114,14 @@ func EnsureFormula(formulaName string) (string, error) {
 		}
 		return os.WriteFile(dest, data, 0o644)
 	}); err != nil {
-		return "", fmt.Errorf("failed to extract default formula %q: %w", formulaName, err)
+		return nil, fmt.Errorf("failed to extract default formula %q: %w", formulaName, err)
 	}
 
-	return dir, nil
+	return &FormulaResolution{Path: userDir, Tier: TierEmbedded}, nil
+}
+
+// ProjectFormulaDir returns the project-level workflow path.
+// {repoPath}/.sol/workflows/{formulaName}/
+func ProjectFormulaDir(repoPath, formulaName string) string {
+	return filepath.Join(repoPath, ".sol", "workflows", formulaName)
 }

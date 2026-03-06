@@ -323,13 +323,13 @@ func Instantiate(world, agentName, role, formulaName string,
 	vars map[string]string) (*Instance, *State, error) {
 
 	// Ensure formula exists (extract from embedded defaults if needed).
-	formulaPath, err := EnsureFormula(formulaName)
+	res, err := EnsureFormula(formulaName, config.RepoPath(world))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to ensure formula %q: %w", formulaName, err)
 	}
 
 	// Load and validate manifest.
-	m, err := LoadManifest(formulaPath)
+	m, err := LoadManifest(res.Path)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -371,7 +371,7 @@ func Instantiate(world, agentName, role, formulaName string,
 
 	// Render and write each step file.
 	for _, sd := range m.Steps {
-		rendered, err := RenderStepInstructions(formulaPath, sd, resolved)
+		rendered, err := RenderStepInstructions(res.Path, sd, resolved)
 		if err != nil {
 			rollback()
 			return nil, nil, err
@@ -492,12 +492,12 @@ func ListSteps(world, agentName, role string) ([]Step, error) {
 		return nil, nil
 	}
 
-	formulaPath, err := EnsureFormula(inst.Formula)
+	res, err := EnsureFormula(inst.Formula, config.RepoPath(world))
 	if err != nil {
 		return nil, err
 	}
 
-	m, err := LoadManifest(formulaPath)
+	m, err := LoadManifest(res.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -559,11 +559,11 @@ func Advance(world, agentName, role string) (nextStep *Step, done bool, err erro
 	if err != nil {
 		return nil, false, err
 	}
-	formulaPath, err := EnsureFormula(inst.Formula)
+	res, err := EnsureFormula(inst.Formula, config.RepoPath(world))
 	if err != nil {
 		return nil, false, err
 	}
-	m, err := LoadManifest(formulaPath)
+	m, err := LoadManifest(res.Path)
 	if err != nil {
 		return nil, false, err
 	}
@@ -736,12 +736,12 @@ func renderTemplateField(s string, target *store.WorkItem) string {
 // grouped in a caravan with phases derived from dependency depth.
 func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*ManifestResult, error) {
 	// Load formula.
-	formulaPath, err := EnsureFormula(opts.FormulaName)
+	res, err := EnsureFormula(opts.FormulaName, config.RepoPath(opts.World))
 	if err != nil {
 		return nil, fmt.Errorf("failed to ensure formula %q: %w", opts.FormulaName, err)
 	}
 
-	m, err := LoadManifest(formulaPath)
+	m, err := LoadManifest(res.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -830,7 +830,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 	} else {
 		// Workflow type — render step instructions as descriptions.
 		for _, step := range m.Steps {
-			rendered, err := RenderStepInstructions(formulaPath, step, resolved)
+			rendered, err := RenderStepInstructions(res.Path, step, resolved)
 			if err != nil {
 				return nil, fmt.Errorf("failed to render step %q instructions: %w", step.ID, err)
 			}
