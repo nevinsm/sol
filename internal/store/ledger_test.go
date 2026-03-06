@@ -128,6 +128,84 @@ func TestListHistory(t *testing.T) {
 	}
 }
 
+func TestEndHistory(t *testing.T) {
+	s := setupWorld(t)
+
+	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+
+	// Write a cast record with no ended_at.
+	id, err := s.WriteHistory("Toast", "sol-item01", "cast", "", start, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// EndHistory should find and close it.
+	closedID, err := s.EndHistory("sol-item01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closedID != id {
+		t.Fatalf("expected closed ID %q, got %q", id, closedID)
+	}
+
+	// Verify ended_at is now set.
+	h, err := s.GetHistory(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.EndedAt == nil {
+		t.Fatal("expected ended_at to be set after EndHistory")
+	}
+
+	// Calling EndHistory again should return empty (no open record).
+	closedID, err = s.EndHistory("sol-item01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closedID != "" {
+		t.Fatalf("expected empty ID on second EndHistory, got %q", closedID)
+	}
+}
+
+func TestEndHistoryNoRecord(t *testing.T) {
+	s := setupWorld(t)
+
+	// EndHistory with no matching record should return empty, no error.
+	id, err := s.EndHistory("sol-nonexistent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "" {
+		t.Fatalf("expected empty ID, got %q", id)
+	}
+}
+
+func TestEndHistoryClosesLatest(t *testing.T) {
+	s := setupWorld(t)
+
+	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	start2 := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
+
+	// Two cast records for the same work item (re-cast scenario).
+	id1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
+	id2, _ := s.WriteHistory("Jasper", "sol-item01", "cast", "", start2, nil)
+
+	// EndHistory should close the latest one (by started_at DESC).
+	closedID, err := s.EndHistory("sol-item01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closedID != id2 {
+		t.Fatalf("expected latest record %q closed, got %q", id2, closedID)
+	}
+
+	// First record should still be open.
+	h1, _ := s.GetHistory(id1)
+	if h1.EndedAt != nil {
+		t.Fatal("expected first record to still be open")
+	}
+}
+
 func TestWriteTokenUsage(t *testing.T) {
 	s := setupWorld(t)
 
