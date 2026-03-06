@@ -610,6 +610,15 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		}
 	}
 
+	// Write resume state for crash recovery. If the newly cycled session
+	// dies before completing, the prefect can use this to call
+	// startup.Resume() instead of a bare startup.Launch(), preserving
+	// workflow position and claimed resources.
+	resumeState := CaptureResumeState(opts.World, opts.AgentName, role, reason)
+	if err := startup.WriteResumeState(opts.World, opts.AgentName, role, resumeState); err != nil {
+		fmt.Fprintf(os.Stderr, "handoff: failed to write resume state: %v\n", err)
+	}
+
 	// Cycle the session atomically using respawn-pane. This is safe for
 	// self-handoff — respawn-pane -k kills the old process and starts the
 	// new one server-side, so the calling process being killed is expected.

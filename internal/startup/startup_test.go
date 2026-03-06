@@ -568,6 +568,88 @@ func TestLaunchSystemPromptFullReplace(t *testing.T) {
 	}
 }
 
+func TestWriteReadClearResumeState(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+
+	// Create agent dir for the forge role.
+	agentDir := filepath.Join(solHome, "haven", "forge")
+	os.MkdirAll(agentDir, 0o755)
+
+	state := ResumeState{
+		CurrentStep:     "gates",
+		StepDescription: "Quality Gates",
+		ClaimedResource: "sol-abc123",
+		Reason:          "compact",
+	}
+
+	// Write.
+	if err := WriteResumeState("haven", "forge", "forge", state); err != nil {
+		t.Fatalf("WriteResumeState() error: %v", err)
+	}
+
+	// Verify file exists.
+	p := resumeStatePath("haven", "forge", "forge")
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("resume state file not created: %v", err)
+	}
+
+	// Read.
+	got, err := ReadResumeState("haven", "forge", "forge")
+	if err != nil {
+		t.Fatalf("ReadResumeState() error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("ReadResumeState() returned nil")
+	}
+	if got.CurrentStep != "gates" {
+		t.Errorf("CurrentStep = %q, want %q", got.CurrentStep, "gates")
+	}
+	if got.StepDescription != "Quality Gates" {
+		t.Errorf("StepDescription = %q, want %q", got.StepDescription, "Quality Gates")
+	}
+	if got.ClaimedResource != "sol-abc123" {
+		t.Errorf("ClaimedResource = %q, want %q", got.ClaimedResource, "sol-abc123")
+	}
+	if got.Reason != "compact" {
+		t.Errorf("Reason = %q, want %q", got.Reason, "compact")
+	}
+
+	// Clear.
+	if err := ClearResumeState("haven", "forge", "forge"); err != nil {
+		t.Fatalf("ClearResumeState() error: %v", err)
+	}
+
+	// Read after clear should return nil.
+	got, err = ReadResumeState("haven", "forge", "forge")
+	if err != nil {
+		t.Fatalf("ReadResumeState() after clear error: %v", err)
+	}
+	if got != nil {
+		t.Error("ReadResumeState() after clear should return nil")
+	}
+}
+
+func TestReadResumeStateNotFound(t *testing.T) {
+	setupTestEnv(t, "haven")
+
+	got, err := ReadResumeState("haven", "forge", "forge")
+	if err != nil {
+		t.Fatalf("ReadResumeState() error: %v", err)
+	}
+	if got != nil {
+		t.Error("ReadResumeState() for missing file should return nil")
+	}
+}
+
+func TestClearResumeStateIdempotent(t *testing.T) {
+	setupTestEnv(t, "haven")
+
+	// Clearing a non-existent file should not error.
+	if err := ClearResumeState("haven", "forge", "forge"); err != nil {
+		t.Fatalf("ClearResumeState() for missing file error: %v", err)
+	}
+}
+
 func TestLaunchSkipsWorkflowIfActive(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 

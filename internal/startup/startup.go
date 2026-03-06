@@ -1,8 +1,10 @@
 package startup
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/nevinsm/sol/internal/account"
@@ -288,6 +290,53 @@ func buildResumePrime(base string, state ResumeState) string {
 	}
 
 	return b.String()
+}
+
+// resumeStateFile returns the path to the resume state file for an agent.
+const resumeStateFilename = ".resume_state.json"
+
+func resumeStatePath(world, agent, role string) string {
+	return filepath.Join(config.AgentDir(world, agent, role), resumeStateFilename)
+}
+
+// WriteResumeState persists a ResumeState to disk so a subsequent respawn
+// can recover workflow position via Resume() instead of a fresh Launch().
+func WriteResumeState(world, agent, role string, state ResumeState) error {
+	p := resumeStatePath(world, agent, role)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return fmt.Errorf("startup: failed to create dir for resume state: %w", err)
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("startup: failed to marshal resume state: %w", err)
+	}
+	return os.WriteFile(p, data, 0o644)
+}
+
+// ReadResumeState loads a previously written ResumeState from disk.
+// Returns nil, nil if no file exists.
+func ReadResumeState(world, agent, role string) (*ResumeState, error) {
+	data, err := os.ReadFile(resumeStatePath(world, agent, role))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("startup: failed to read resume state: %w", err)
+	}
+	var state ResumeState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("startup: failed to unmarshal resume state: %w", err)
+	}
+	return &state, nil
+}
+
+// ClearResumeState removes the resume state file after it has been consumed.
+func ClearResumeState(world, agent, role string) error {
+	err := os.Remove(resumeStatePath(world, agent, role))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("startup: failed to clear resume state: %w", err)
+	}
+	return nil
 }
 
 // resolveSphereStore returns the sphere store and an optional cleanup function.

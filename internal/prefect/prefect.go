@@ -298,15 +298,28 @@ func (s *Prefect) respawn(agent store.Agent) {
 		return
 	}
 
-	// Use startup.Launch for roles with registered configs.
+	// Use startup.Launch (or Resume if state file exists) for roles with registered configs.
 	if cfg := startup.ConfigFor(agent.Role); cfg != nil {
 		launchOpts := startup.LaunchOpts{
 			Respawn:  true,
 			Sessions: s.sessions,
 		}
-		_, err := startup.Launch(*cfg, agent.World, agent.Name, launchOpts)
+
+		// Check for resume state written by a prior handoff.
+		resumeState, _ := startup.ReadResumeState(agent.World, agent.Name, agent.Role)
+		var err error
+		if resumeState != nil {
+			s.logger.Info("found resume state, using startup.Resume",
+				"agent", agent.Name, "world", agent.World, "reason", resumeState.Reason)
+			_, err = startup.Resume(*cfg, agent.World, agent.Name, *resumeState, launchOpts)
+			// Clear the file whether Resume succeeded or not — stale state
+			// is worse than no state on the next attempt.
+			startup.ClearResumeState(agent.World, agent.Name, agent.Role)
+		} else {
+			_, err = startup.Launch(*cfg, agent.World, agent.Name, launchOpts)
+		}
 		if err != nil {
-			s.logger.Error("failed to respawn session via startup.Launch",
+			s.logger.Error("failed to respawn session via startup",
 				"agent", agent.Name, "world", agent.World, "error", err)
 			return
 		}
