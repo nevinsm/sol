@@ -1,17 +1,14 @@
 package envoy
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/brief"
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -61,22 +58,14 @@ type SphereStore interface {
 	DeleteAgent(id string) error
 }
 
-// StartStore abstracts sphere store operations for Start and Stop.
-type StartStore interface {
-	GetAgent(id string) (*store.Agent, error)
+// StopStore abstracts sphere store operations for Stop.
+type StopStore interface {
 	UpdateAgentState(id, state, tetherItem string) error
 }
 
 // ListStore abstracts sphere store operations for List.
 type ListStore interface {
 	ListAgents(world string, state string) ([]store.Agent, error)
-}
-
-// SessionManager abstracts session operations for Start.
-type SessionManager interface {
-	Exists(name string) bool
-	Start(name, workdir, cmd string, env map[string]string, role, world string) error
-	Stop(name string, force bool) error
 }
 
 // StopManager abstracts session operations for Stop.
@@ -97,12 +86,6 @@ type CreateOpts struct {
 	World      string
 	Name       string
 	SourceRepo string // path to git repo for worktree
-}
-
-// StartOpts holds inputs for starting an envoy session.
-type StartOpts struct {
-	World string
-	Name  string
 }
 
 // DeleteOpts holds inputs for deleting an envoy.
@@ -197,158 +180,12 @@ func ensureWorktree(sourceRepo, world, name, worktree string) error {
 	return nil
 }
 
-// --- Start ---
-
-// Start launches an envoy's tmux session with brief hooks.
-// The caller is responsible for installing the CLAUDE.md protocol file
-// before calling Start (following the forge pattern).
-func Start(opts StartOpts, sphereStore StartStore, mgr SessionManager) error {
-	agentID := opts.World + "/" + opts.Name
-	sessName := SessionName(opts.World, opts.Name)
-	worktree := WorktreePath(opts.World, opts.Name)
-
-	// 1. Get agent record, verify role is "envoy".
-	agent, err := sphereStore.GetAgent(agentID)
-	if err != nil {
-		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
-	}
-	if agent.Role != "envoy" {
-		return fmt.Errorf("agent %q has role %q, expected \"envoy\"", agentID, agent.Role)
-	}
-
-	// 2. Check if session already exists.
-	if mgr.Exists(sessName) {
-		return fmt.Errorf("envoy session %q already running", sessName)
-	}
-
-	// 3. Install hooks — .claude/settings.local.json with brief and PreCompact hooks.
-	if err := installHooks(worktree, opts.World, opts.Name); err != nil {
-		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
-	}
-
-	// 4. Resolve account and start tmux session.
-	worldCfg, _ := config.LoadWorldConfig(opts.World)
-	resolvedAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
-	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), "envoy", opts.Name, resolvedAccount)
-	if err != nil {
-		return err
-	}
-	prompt := fmt.Sprintf("Envoy %s, world %s. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200",
-		opts.Name, opts.World)
-	sessionCmd := config.BuildSessionCommand(config.SettingsPath(worktree), prompt)
-	env := map[string]string{
-		"SOL_HOME":         config.Home(),
-		"SOL_WORLD":        opts.World,
-		"SOL_AGENT":        opts.Name,
-		"CLAUDE_CONFIG_DIR": claudeConfigDir,
-	}
-	if err := mgr.Start(sessName, worktree, sessionCmd, env, "envoy", opts.World); err != nil {
-		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
-	}
-
-	// 5. Update agent state to "idle".
-	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
-		// Rollback: stop session to avoid running without state tracking.
-		if stopErr := mgr.Stop(sessName, true); stopErr != nil {
-			fmt.Fprintf(os.Stderr, "rollback: failed to stop session: %v\n", stopErr)
-		}
-		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
-	}
-
-	return nil
-}
-
-// installHooks writes .claude/settings.local.json with brief and PreCompact hooks.
-func installHooks(worktreeDir, world, name string) error {
-	claudeDir := filepath.Join(worktreeDir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create .claude directory: %w", err)
-	}
-
-	cfg := protocol.HookConfig{
-		Hooks: map[string][]protocol.HookMatcherGroup{
-			"SessionStart": {
-				{
-					Matcher: "startup|resume",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: "sol brief inject --path=.brief/memory.md --max-lines=200",
-						},
-					},
-				},
-				{
-					Matcher: "compact",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: "sol brief inject --path=.brief/memory.md --max-lines=200",
-						},
-					},
-				},
-			},
-			"PreCompact": {
-				{
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol handoff --world=%s --agent=%s --reason=compact", world, name),
-						},
-					},
-				},
-			},
-			"PreToolUse": append([]protocol.HookMatcherGroup{
-				{
-					Matcher: "Write|Edit",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: `FILE=$(jq -r '.tool_input.file_path // empty'); if echo "$FILE" | grep -q '.claude/projects/.*/memory/'; then echo "BLOCKED: Use .brief/memory.md, not Claude Code auto-memory." >&2; exit 2; fi`,
-						},
-					},
-				},
-				{
-					Matcher: "EnterPlanMode",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`,
-						},
-					},
-				},
-			}, protocol.GuardHooks("envoy")...),
-			"UserPromptSubmit": {
-				{
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, name),
-						},
-					},
-				},
-			},
-		},
-	}
-
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal hook settings: %w", err)
-	}
-
-	settingsPath := filepath.Join(claudeDir, "settings.local.json")
-	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write settings.local.json: %w", err)
-	}
-
-	return nil
-}
-
 // --- Stop ---
 
 // Stop terminates an envoy session. Injects a brief-update prompt and waits
 // for output stability before killing the session. Does NOT remove the
 // worktree or directory.
-func Stop(world, name string, sphereStore StartStore, mgr StopManager) error {
+func Stop(world, name string, sphereStore StopStore, mgr StopManager) error {
 	agentID := world + "/" + name
 	sessName := SessionName(world, name)
 

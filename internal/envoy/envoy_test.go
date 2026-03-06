@@ -1,7 +1,6 @@
 package envoy
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -46,73 +44,37 @@ func (m *mockSphereStore) DeleteAgent(id string) error {
 	return nil
 }
 
-type mockStartStore struct {
-	agents    map[string]*store.Agent
-	getErr    error
+type mockStopStore struct {
+	updated   map[string]string // id -> state
 	updateErr error
 }
 
-func (m *mockStartStore) GetAgent(id string) (*store.Agent, error) {
-	if m.getErr != nil {
-		return nil, m.getErr
-	}
-	a, ok := m.agents[id]
-	if !ok {
-		return nil, fmt.Errorf("agent %q not found", id)
-	}
-	return a, nil
-}
-
-func (m *mockStartStore) UpdateAgentState(id, state, tetherItem string) error {
+func (m *mockStopStore) UpdateAgentState(id, state, tetherItem string) error {
 	if m.updateErr != nil {
 		return m.updateErr
 	}
-	if a, ok := m.agents[id]; ok {
-		a.State = state
-		a.TetherItem = tetherItem
-	}
+	m.updated[id] = state
 	return nil
 }
 
-type mockSessionManager struct {
+type mockStopManager struct {
 	sessions map[string]bool
-	startErr error
-	lastStart struct {
-		name    string
-		workdir string
-		cmd     string
-		role    string
-		world   string
-	}
 }
 
-func (m *mockSessionManager) Exists(name string) bool {
+func (m *mockStopManager) Exists(name string) bool {
 	return m.sessions[name]
 }
 
-func (m *mockSessionManager) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
-	if m.startErr != nil {
-		return m.startErr
-	}
-	m.sessions[name] = true
-	m.lastStart.name = name
-	m.lastStart.workdir = workdir
-	m.lastStart.cmd = cmd
-	m.lastStart.role = role
-	m.lastStart.world = world
-	return nil
-}
-
-func (m *mockSessionManager) Stop(name string, force bool) error {
+func (m *mockStopManager) Stop(name string, force bool) error {
 	delete(m.sessions, name)
 	return nil
 }
 
-func (m *mockSessionManager) Inject(name string, text string, submit bool) error {
+func (m *mockStopManager) Inject(name string, text string, submit bool) error {
 	return nil
 }
 
-func (m *mockSessionManager) Capture(name string, lines int) (string, error) {
+func (m *mockStopManager) Capture(name string, lines int) (string, error) {
 	return "", nil
 }
 
@@ -337,190 +299,16 @@ func TestCreateRollbackOnAgentRecordFailure(t *testing.T) {
 	}
 }
 
-func TestStartRollbackOnStateUpdateFailure(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("SOL_HOME", tmp)
-
-	worktree := WorktreePath("myworld", "Echo")
-	if err := os.MkdirAll(worktree, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	ss := &mockStartStore{
-		agents: map[string]*store.Agent{
-			"myworld/Echo": {
-				ID:    "myworld/Echo",
-				Name:  "Echo",
-				World: "myworld",
-				Role:  "envoy",
-				State: "idle",
-			},
-		},
-		updateErr: fmt.Errorf("database locked"),
-	}
-
-	mgr := &mockSessionManager{sessions: map[string]bool{}}
-
-	err := Start(StartOpts{World: "myworld", Name: "Echo"}, ss, mgr)
-	if err == nil {
-		t.Fatal("expected error from Start when state update fails")
-	}
-
-	// Verify rollback: session was stopped.
-	sessName := SessionName("myworld", "Echo")
-	if mgr.sessions[sessName] {
-		t.Error("session should have been stopped by rollback")
-	}
-}
-
-func TestStart(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("SOL_HOME", tmp)
-
-	// Create worktree directory (simulating a prior Create).
-	worktree := WorktreePath("myworld", "Echo")
-	if err := os.MkdirAll(worktree, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	ss := &mockStartStore{
-		agents: map[string]*store.Agent{
-			"myworld/Echo": {
-				ID:    "myworld/Echo",
-				Name:  "Echo",
-				World: "myworld",
-				Role:  "envoy",
-				State: "idle",
-			},
-		},
-	}
-
-	mgr := &mockSessionManager{sessions: map[string]bool{}}
-
-	err := Start(StartOpts{World: "myworld", Name: "Echo"}, ss, mgr)
-	if err != nil {
-		t.Fatalf("Start failed: %v", err)
-	}
-
-	// Verify session started with correct name and workdir.
-	sessName := SessionName("myworld", "Echo")
-	if !mgr.sessions[sessName] {
-		t.Error("session not started")
-	}
-	if mgr.lastStart.name != sessName {
-		t.Errorf("session name = %q, want %q", mgr.lastStart.name, sessName)
-	}
-	if mgr.lastStart.workdir != worktree {
-		t.Errorf("workdir = %q, want %q", mgr.lastStart.workdir, worktree)
-	}
-	if mgr.lastStart.role != "envoy" {
-		t.Errorf("role = %q, want \"envoy\"", mgr.lastStart.role)
-	}
-
-	// Verify hooks file written.
-	hooksPath := filepath.Join(worktree, ".claude", "settings.local.json")
-	data, err := os.ReadFile(hooksPath)
-	if err != nil {
-		t.Fatalf("hooks file not found: %v", err)
-	}
-
-	var cfg protocol.HookConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		t.Fatalf("failed to parse hooks JSON: %v", err)
-	}
-
-	if groups, ok := cfg.Hooks["SessionStart"]; !ok {
-		t.Error("no SessionStart hooks")
-	} else if len(groups) != 2 {
-		t.Errorf("expected 2 SessionStart matcher groups, got %d", len(groups))
-	}
-	if _, ok := cfg.Hooks["Stop"]; ok {
-		t.Error("unexpected Stop hooks — removed in favor of CLAUDE.md instructions")
-	}
-	if pcGroups, ok := cfg.Hooks["PreCompact"]; !ok {
-		t.Error("no PreCompact hooks")
-	} else if len(pcGroups) != 1 {
-		t.Errorf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
-	} else if pcGroups[0].Hooks[0].Command != "sol handoff --world=myworld --agent=Echo --reason=compact" {
-		t.Errorf("unexpected PreCompact command: %q", pcGroups[0].Hooks[0].Command)
-	}
-
-	// Verify PreToolUse hooks block auto-memory writes and EnterPlanMode.
-	if ptuGroups, ok := cfg.Hooks["PreToolUse"]; !ok {
-		t.Error("no PreToolUse hooks")
-	} else if len(ptuGroups) != 11 {
-		t.Errorf("expected 11 PreToolUse matcher groups (2 base + 9 guards), got %d", len(ptuGroups))
-	} else {
-		if ptuGroups[0].Matcher != "Write|Edit" {
-			t.Errorf("PreToolUse matcher[0] = %q, want \"Write|Edit\"", ptuGroups[0].Matcher)
-		}
-		if !strings.Contains(ptuGroups[0].Hooks[0].Command, ".claude/projects") {
-			t.Error("PreToolUse hook should block .claude/projects/*/memory/ paths")
-		}
-		if !strings.Contains(ptuGroups[0].Hooks[0].Command, "exit 2") {
-			t.Error("PreToolUse hook should exit 2 to block the tool call")
-		}
-		if ptuGroups[1].Matcher != "EnterPlanMode" {
-			t.Errorf("PreToolUse matcher[1] = %q, want \"EnterPlanMode\"", ptuGroups[1].Matcher)
-		}
-		if !strings.Contains(ptuGroups[1].Hooks[0].Command, "BLOCKED") {
-			t.Error("EnterPlanMode hook should contain BLOCKED message")
-		}
-		if !strings.Contains(ptuGroups[1].Hooks[0].Command, "exit 2") {
-			t.Error("EnterPlanMode hook should exit 2 to block the tool call")
-		}
-	}
-
-	// CLAUDE.md is now installed by the CLI layer (following forge pattern),
-	// so we don't check for it here.
-}
-
-func TestStartAlreadyRunning(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("SOL_HOME", tmp)
-
-	ss := &mockStartStore{
-		agents: map[string]*store.Agent{
-			"myworld/Echo": {
-				ID:    "myworld/Echo",
-				Name:  "Echo",
-				World: "myworld",
-				Role:  "envoy",
-				State: "idle",
-			},
-		},
-	}
-
-	sessName := SessionName("myworld", "Echo")
-	mgr := &mockSessionManager{sessions: map[string]bool{sessName: true}}
-
-	err := Start(StartOpts{World: "myworld", Name: "Echo"}, ss, mgr)
-	if err == nil {
-		t.Fatal("expected error for already running session")
-	}
-	if !strings.Contains(err.Error(), "already running") {
-		t.Errorf("error = %q, want contains \"already running\"", err.Error())
-	}
-}
-
 func TestStop(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("SOL_HOME", tmp)
 
-	ss := &mockStartStore{
-		agents: map[string]*store.Agent{
-			"myworld/Echo": {
-				ID:    "myworld/Echo",
-				Name:  "Echo",
-				World: "myworld",
-				Role:  "envoy",
-				State: "working",
-			},
-		},
+	ss := &mockStopStore{
+		updated: map[string]string{},
 	}
 
 	sessName := SessionName("myworld", "Echo")
-	mgr := &mockSessionManager{sessions: map[string]bool{sessName: true}}
+	mgr := &mockStopManager{sessions: map[string]bool{sessName: true}}
 
 	err := Stop("myworld", "Echo", ss, mgr)
 	if err != nil {
@@ -533,9 +321,8 @@ func TestStop(t *testing.T) {
 	}
 
 	// Verify agent state updated.
-	agent := ss.agents["myworld/Echo"]
-	if agent.State != "idle" {
-		t.Errorf("agent state = %q, want \"idle\"", agent.State)
+	if ss.updated["myworld/Echo"] != "idle" {
+		t.Errorf("agent state = %q, want \"idle\"", ss.updated["myworld/Echo"])
 	}
 }
 
@@ -543,19 +330,11 @@ func TestStopNoSession(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("SOL_HOME", tmp)
 
-	ss := &mockStartStore{
-		agents: map[string]*store.Agent{
-			"myworld/Echo": {
-				ID:    "myworld/Echo",
-				Name:  "Echo",
-				World: "myworld",
-				Role:  "envoy",
-				State: "working",
-			},
-		},
+	ss := &mockStopStore{
+		updated: map[string]string{},
 	}
 
-	mgr := &mockSessionManager{sessions: map[string]bool{}}
+	mgr := &mockStopManager{sessions: map[string]bool{}}
 
 	err := Stop("myworld", "Echo", ss, mgr)
 	if err != nil {
@@ -563,9 +342,8 @@ func TestStopNoSession(t *testing.T) {
 	}
 
 	// Verify agent state still updated to idle.
-	agent := ss.agents["myworld/Echo"]
-	if agent.State != "idle" {
-		t.Errorf("agent state = %q, want \"idle\"", agent.State)
+	if ss.updated["myworld/Echo"] != "idle" {
+		t.Errorf("agent state = %q, want \"idle\"", ss.updated["myworld/Echo"])
 	}
 }
 
