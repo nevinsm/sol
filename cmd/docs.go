@@ -131,7 +131,7 @@ var docSections = []docSection{
 	},
 	{
 		heading: "Workflows",
-		paths:   []string{"workflow instantiate", "workflow current", "workflow advance", "workflow status"},
+		paths:   []string{"workflow instantiate", "workflow manifest", "workflow current", "workflow advance", "workflow status"},
 	},
 	{
 		heading: "Caravans",

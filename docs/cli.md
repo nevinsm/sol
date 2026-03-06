@@ -189,6 +189,7 @@ Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` 
 | Command | Description |
 |---------|-------------|
 | `sol workflow instantiate <formula>` | Instantiate a workflow from a formula |
+| `sol workflow manifest <formula>` | Manifest a formula into work items and a caravan |
 | `sol workflow current` | Print the current step's instructions |
 | `sol workflow advance` | Advance to the next workflow step |
 | `sol workflow status` | Show workflow status |

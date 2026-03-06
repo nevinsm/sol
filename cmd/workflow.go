@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/workflow"
 	"github.com/spf13/cobra"
 )
@@ -213,12 +215,94 @@ var workflowStatusCmd = &cobra.Command{
 	},
 }
 
+var workflowManifestCmd = &cobra.Command{
+	Use:          "manifest <formula>",
+	Short:        "Manifest a formula into work items and a caravan",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
+			return err
+		}
+
+		formula := args[0]
+
+		vars, err := parseVarFlags(wfVars)
+		if err != nil {
+			return err
+		}
+
+		target, _ := cmd.Flags().GetString("target")
+
+		worldStore, err := store.OpenWorld(world)
+		if err != nil {
+			return err
+		}
+		defer worldStore.Close()
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		result, err := workflow.ManifestFormula(worldStore, sphereStore, workflow.ManifestOpts{
+			FormulaName: formula,
+			World:       world,
+			ParentID:    target,
+			Variables:   vars,
+			CreatedBy:   "operator",
+		})
+		if err != nil {
+			return err
+		}
+
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(result)
+		}
+
+		fmt.Printf("Caravan: %s\n", result.CaravanID)
+		fmt.Printf("Parent:  %s\n", result.ParentID)
+		fmt.Printf("Items:   %d\n", len(result.ChildIDs))
+
+		// Sort by phase for readable output.
+		type entry struct {
+			stepID     string
+			workItemID string
+			phase      int
+		}
+		entries := make([]entry, 0, len(result.ChildIDs))
+		for stepID, itemID := range result.ChildIDs {
+			entries = append(entries, entry{stepID, itemID, result.Phases[stepID]})
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			if entries[i].phase != entries[j].phase {
+				return entries[i].phase < entries[j].phase
+			}
+			return entries[i].stepID < entries[j].stepID
+		})
+
+		fmt.Println()
+		for _, e := range entries {
+			fmt.Printf("  phase %d: %s → %s\n", e.phase, e.stepID, e.workItemID)
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(workflowCmd)
 	workflowCmd.AddCommand(workflowInstantiateCmd)
 	workflowCmd.AddCommand(workflowCurrentCmd)
 	workflowCmd.AddCommand(workflowAdvanceCmd)
 	workflowCmd.AddCommand(workflowStatusCmd)
+	workflowCmd.AddCommand(workflowManifestCmd)
 
 	// instantiate flags
 	workflowInstantiateCmd.Flags().String("item", "", "work item ID")
@@ -243,4 +327,10 @@ func init() {
 	workflowStatusCmd.Flags().String("agent", "", "agent name")
 	workflowStatusCmd.Flags().Bool("json", false, "output as JSON")
 	workflowStatusCmd.MarkFlagRequired("agent")
+
+	// manifest flags
+	workflowManifestCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	workflowManifestCmd.Flags().StringSliceVar(&wfVars, "var", nil, "variable assignment (key=val)")
+	workflowManifestCmd.Flags().String("target", "", "existing work item ID to manifest against (required for expansion formulas)")
+	workflowManifestCmd.Flags().Bool("json", false, "output as JSON")
 }
