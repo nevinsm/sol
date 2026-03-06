@@ -54,7 +54,8 @@ const (
 	EventHandoff            = "handoff"              // agent handed off session
 	EventConsulPatrol       = "consul_patrol"        // consul patrol completed
 	EventConsulStaleTether  = "consul_stale_tether"  // stale tether recovered
-	EventConsulCaravanFeed   = "consul_caravan_feed"   // caravan needs feeding
+	EventConsulCaravanFeed     = "consul_caravan_feed"     // consul auto-dispatched caravan items
+	EventConsulCaravanDispatch = "consul_caravan_dispatch" // individual item dispatched by consul
 
 	// Tether events.
 	EventTether   = "tether"   // agent tethered to work item

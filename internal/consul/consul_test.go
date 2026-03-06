@@ -7,26 +7,44 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
 
-// mockSessionChecker tracks which sessions are "alive".
-type mockSessionChecker struct {
-	alive map[string]bool
+// mockSessionManager tracks which sessions are "alive" and records starts.
+type mockSessionManager struct {
+	alive   map[string]bool
+	started []string // session names that were started
 }
 
-func newMockSessions() *mockSessionChecker {
-	return &mockSessionChecker{alive: make(map[string]bool)}
+func newMockSessions() *mockSessionManager {
+	return &mockSessionManager{alive: make(map[string]bool)}
 }
 
-func (m *mockSessionChecker) Exists(name string) bool {
+func (m *mockSessionManager) Exists(name string) bool {
 	return m.alive[name]
 }
 
-func (m *mockSessionChecker) List() ([]session.SessionInfo, error) {
+func (m *mockSessionManager) List() ([]session.SessionInfo, error) {
 	return nil, nil
+}
+
+func (m *mockSessionManager) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
+	m.started = append(m.started, name)
+	m.alive[name] = true
+	return nil
+}
+
+func (m *mockSessionManager) Stop(name string, force bool) error {
+	delete(m.alive, name)
+	return nil
+}
+
+func (m *mockSessionManager) Inject(name string, text string, submit bool) error {
+	return nil
 }
 
 // setupSolHome creates a temporary SOL_HOME and sets the env var.
@@ -37,6 +55,30 @@ func setupSolHome(t *testing.T) string {
 	t.Setenv("SOL_HOME", solHome)
 	config.EnsureDirs()
 	return solHome
+}
+
+// mockDispatchResult holds a recorded dispatch call.
+type mockDispatchResult struct {
+	WorkItemID string
+	World      string
+}
+
+// newMockDispatchFunc returns a DispatchFunc that records calls and returns success.
+func newMockDispatchFunc(results *[]mockDispatchResult) DispatchFunc {
+	agentCounter := 0
+	return func(opts dispatch.CastOpts, worldStore dispatch.WorldStore, sphereStore dispatch.SphereStore, mgr dispatch.SessionManager, logger *events.Logger) (*dispatch.CastResult, error) {
+		agentCounter++
+		*results = append(*results, mockDispatchResult{
+			WorkItemID: opts.WorkItemID,
+			World:      opts.World,
+		})
+		return &dispatch.CastResult{
+			WorkItemID:  opts.WorkItemID,
+			AgentName:   "MockAgent",
+			SessionName: "sol-mock-session",
+			WorktreeDir: "/tmp/mock-worktree",
+		}, nil
+	}
 }
 
 func TestRecoverStaleTethers(t *testing.T) {
@@ -355,8 +397,8 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 	}
 }
 
-func TestFeedStrandedCaravans(t *testing.T) {
-	solHome := setupSolHome(t)
+func TestFeedStrandedCaravansAutoDispatch(t *testing.T) {
+	setupSolHome(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -389,85 +431,51 @@ func TestFeedStrandedCaravans(t *testing.T) {
 	sessions := newMockSessions()
 	cfg := Config{
 		StaleTetherTimeout: 1 * time.Hour,
-		SolHome:             solHome,
+		SolHome:            config.Home(),
 	}
 
+	var dispatched []mockDispatchResult
 	d := New(cfg, sphereStore, sessions, nil, nil)
 	d.SetWorldOpener(func(world string) (*store.Store, error) {
 		return store.OpenWorld(world)
 	})
+	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
 
 	fed, err := d.feedStrandedCaravans(context.Background())
 	if err != nil {
 		t.Fatalf("feedStrandedCaravans failed: %v", err)
 	}
-	if fed != 1 {
-		t.Errorf("fed = %d, want 1", fed)
+	if fed != 2 {
+		t.Errorf("fed = %d, want 2 (2 ready items dispatched)", fed)
 	}
 
-	// Verify CARAVAN_NEEDS_FEEDING message was sent.
+	// Verify dispatch was called for the 2 ready items.
+	if len(dispatched) != 2 {
+		t.Fatalf("dispatched = %d, want 2", len(dispatched))
+	}
+	dispatchedIDs := map[string]bool{}
+	for _, d := range dispatched {
+		dispatchedIDs[d.WorkItemID] = true
+		if d.World != worldName {
+			t.Errorf("dispatched world = %q, want %q", d.World, worldName)
+		}
+	}
+	if !dispatchedIDs[wi1] {
+		t.Errorf("expected work item %s to be dispatched", wi1)
+	}
+	if !dispatchedIDs[wi2] {
+		t.Errorf("expected work item %s to be dispatched", wi2)
+	}
+
+	// Verify NO CARAVAN_NEEDS_FEEDING message was sent (auto-dispatch replaces it).
 	pending, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
-	if len(pending) != 1 {
-		t.Fatalf("pending messages = %d, want 1", len(pending))
-	}
-	if pending[0].Subject != store.ProtoCaravanNeedsFeeding {
-		t.Errorf("message subject = %q, want %q", pending[0].Subject, store.ProtoCaravanNeedsFeeding)
-	}
-}
-
-func TestFeedStrandedCaravansNoDuplicates(t *testing.T) {
-	solHome := setupSolHome(t)
-
-	sphereStore, err := store.OpenSphere()
-	if err != nil {
-		t.Fatalf("failed to open sphere store: %v", err)
-	}
-	defer sphereStore.Close()
-
-	worldName := "drift2"
-	worldStore, err := store.OpenWorld(worldName)
-	if err != nil {
-		t.Fatalf("failed to open world store: %v", err)
-	}
-	defer worldStore.Close()
-
-	caravanID, _ := sphereStore.CreateCaravan("test-caravan-2", "operator")
-	sphereStore.UpdateCaravanStatus(caravanID, "open")
-	wi1, _ := worldStore.CreateWorkItem("dup-task-1", "desc1", "test", 1, nil)
-	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
-
-	// Send a pre-existing CARAVAN_NEEDS_FEEDING message for this caravan.
-	sphereStore.SendProtocolMessage("sphere/consul", "operator", store.ProtoCaravanNeedsFeeding,
-		store.CaravanNeedsFeedingPayload{CaravanID: caravanID, ReadyCount: 1})
-
-	sessions := newMockSessions()
-	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
-		SolHome:             solHome,
-	}
-
-	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
-		return store.OpenWorld(world)
-	})
-
-	fed, err := d.feedStrandedCaravans(context.Background())
-	if err != nil {
-		t.Fatalf("feedStrandedCaravans failed: %v", err)
-	}
-	if fed != 0 {
-		t.Errorf("fed = %d, want 0 (already pending)", fed)
-	}
-
-	// Verify still only 1 message.
-	pending, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
-	if len(pending) != 1 {
-		t.Errorf("pending messages = %d, want 1 (no duplicate)", len(pending))
+	if len(pending) != 0 {
+		t.Errorf("pending CARAVAN_NEEDS_FEEDING = %d, want 0 (auto-dispatch replaces notification)", len(pending))
 	}
 }
 
 func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
-	solHome := setupSolHome(t)
+	setupSolHome(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -491,13 +499,15 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 	sessions := newMockSessions()
 	cfg := Config{
 		StaleTetherTimeout: 1 * time.Hour,
-		SolHome:             solHome,
+		SolHome:            config.Home(),
 	}
 
+	var dispatched []mockDispatchResult
 	d := New(cfg, sphereStore, sessions, nil, nil)
 	d.SetWorldOpener(func(world string) (*store.Store, error) {
 		return store.OpenWorld(world)
 	})
+	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
 
 	fed, err := d.feedStrandedCaravans(context.Background())
 	if err != nil {
@@ -505,6 +515,57 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 	}
 	if fed != 0 {
 		t.Errorf("fed = %d, want 0 (all dispatched)", fed)
+	}
+	if len(dispatched) != 0 {
+		t.Errorf("dispatch calls = %d, want 0", len(dispatched))
+	}
+}
+
+func TestFeedStrandedCaravansDrydockIgnored(t *testing.T) {
+	setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "drift-drydock"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create a drydock caravan — should NOT be dispatched.
+	caravanID, _ := sphereStore.CreateCaravan("drydock-caravan", "operator")
+	// Status remains "drydock" (default from CreateCaravan).
+
+	wi1, _ := worldStore.CreateWorkItem("drydock-task-1", "desc1", "test", 1, nil)
+	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
+
+	sessions := newMockSessions()
+	cfg := Config{
+		StaleTetherTimeout: 1 * time.Hour,
+		SolHome:            config.Home(),
+	}
+
+	var dispatched []mockDispatchResult
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
+	})
+	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
+
+	fed, err := d.feedStrandedCaravans(context.Background())
+	if err != nil {
+		t.Fatalf("feedStrandedCaravans failed: %v", err)
+	}
+	if fed != 0 {
+		t.Errorf("fed = %d, want 0 (drydock caravan ignored)", fed)
+	}
+	if len(dispatched) != 0 {
+		t.Errorf("dispatch calls = %d, want 0", len(dispatched))
 	}
 }
 
@@ -652,10 +713,12 @@ func TestPatrolCycle(t *testing.T) {
 		PatrolInterval:     5 * time.Minute,
 	}
 
+	var dispatched []mockDispatchResult
 	d := New(cfg, sphereStore, sessions, nil, nil)
 	d.SetWorldOpener(func(world string) (*store.Store, error) {
 		return store.OpenWorld(world)
 	})
+	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
 
 	err = d.Patrol(context.Background())
 	if err != nil {
@@ -668,10 +731,11 @@ func TestPatrolCycle(t *testing.T) {
 		t.Errorf("Stale agent state = %q, want idle", agentStale.State)
 	}
 
-	// Verify: caravan feed message sent.
-	pending, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
-	if len(pending) == 0 {
-		t.Error("expected CARAVAN_NEEDS_FEEDING message")
+	// Verify: caravan item was auto-dispatched (not just a message).
+	if len(dispatched) != 1 {
+		t.Errorf("dispatched = %d, want 1", len(dispatched))
+	} else if dispatched[0].WorkItemID != wiCaravan {
+		t.Errorf("dispatched work item = %q, want %q", dispatched[0].WorkItemID, wiCaravan)
 	}
 
 	// Verify: heartbeat written.

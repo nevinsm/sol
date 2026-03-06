@@ -13,6 +13,9 @@ const (
 	ProtoMergeFailed        = "MERGE_FAILED"
 	ProtoReworkRequest      = "REWORK_REQUEST"
 	ProtoRecoveryNeeded     = "RECOVERY_NEEDED"
+	// Deprecated: ProtoCaravanNeedsFeeding is no longer sent by the consul.
+	// The consul now auto-dispatches ready caravan items directly.
+	// Retained for backwards compatibility with pending messages in the queue.
 	ProtoCaravanNeedsFeeding = "CARAVAN_NEEDS_FEEDING"
 )
 
@@ -52,8 +55,9 @@ type RecoveryNeededPayload struct {
 	Attempts   int    `json:"attempts"`
 }
 
-// CaravanNeedsFeedingPayload is sent when a caravan has items ready
-// for dispatch (e.g., after a merge unblocks dependent work).
+// Deprecated: CaravanNeedsFeedingPayload was used when the consul sent
+// notification messages instead of auto-dispatching. Retained for
+// backwards compatibility with pending messages in the queue.
 type CaravanNeedsFeedingPayload struct {
 	CaravanID  string `json:"caravan_id"`
 	World      string `json:"world"`

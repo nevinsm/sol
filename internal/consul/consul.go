@@ -2,11 +2,11 @@ package consul
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/escalation"
 	"github.com/nevinsm/sol/internal/events"
@@ -38,12 +38,16 @@ type SphereStore interface {
 	ListAgents(world string, state string) ([]store.Agent, error)
 	UpdateAgentState(id, state, tetherItem string) error
 	GetAgent(id string) (*store.Agent, error)
+	FindIdleAgent(world string) (*store.Agent, error)
 	CreateAgent(name, world, role string) (string, error)
 	EnsureAgent(name, world, role string) error
+	DeleteAgent(id string) error
 
 	// Caravans
 	ListCaravans(status string) ([]store.Caravan, error)
+	GetCaravan(id string) (*store.Caravan, error)
 	CheckCaravanReadiness(caravanID string, worldOpener func(string) (*store.Store, error)) ([]store.CaravanItemStatus, error)
+	TryCloseCaravan(caravanID string, worldOpener func(string) (*store.Store, error)) (bool, error)
 
 	// Escalations
 	CreateEscalation(severity, source, description string) (string, error)
@@ -54,45 +58,63 @@ type SphereStore interface {
 	AckMessage(id string) error
 	SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error)
 	SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
+
+	// Close
+	Close() error
 }
 
-// SessionChecker is the subset of session.Manager used by the consul.
-type SessionChecker interface {
+// SessionManager is the session operations used by the consul.
+// Extends the original SessionChecker with Start for auto-dispatch.
+type SessionManager interface {
 	Exists(name string) bool
 	List() ([]session.SessionInfo, error)
+	Start(name, workdir, cmd string, env map[string]string, role, world string) error
+	Stop(name string, force bool) error
+	Inject(name string, text string, submit bool) error
 }
 
 // WorldOpener opens a world store by name.
 type WorldOpener func(world string) (*store.Store, error)
 
+// DispatchFunc dispatches a single work item. Returns agent name and session name.
+// Default implementation uses dispatch.Cast.
+type DispatchFunc func(opts dispatch.CastOpts, worldStore dispatch.WorldStore, sphereStore dispatch.SphereStore, mgr dispatch.SessionManager, logger *events.Logger) (*dispatch.CastResult, error)
+
 // Consul is the sphere-level patrol process.
 type Consul struct {
-	config      Config
-	sphereStore SphereStore
-	sessions    SessionChecker
-	logger      *events.Logger
-	router      *escalation.Router
-	worldOpener WorldOpener
+	config       Config
+	sphereStore  SphereStore
+	sessions     SessionManager
+	logger       *events.Logger
+	router       *escalation.Router
+	worldOpener  WorldOpener
+	dispatchFunc DispatchFunc
 
 	patrolCount int
 }
 
 // New creates a new Consul.
-func New(cfg Config, sphereStore SphereStore, sessions SessionChecker,
+func New(cfg Config, sphereStore SphereStore, sessions SessionManager,
 	router *escalation.Router, logger *events.Logger) *Consul {
 	return &Consul{
-		config:      cfg,
-		sphereStore: sphereStore,
-		sessions:    sessions,
-		logger:      logger,
-		router:      router,
-		worldOpener: store.OpenWorld,
+		config:       cfg,
+		sphereStore:  sphereStore,
+		sessions:     sessions,
+		logger:       logger,
+		router:       router,
+		worldOpener:  store.OpenWorld,
+		dispatchFunc: dispatch.Cast,
 	}
 }
 
 // SetWorldOpener sets a custom world opener for testing.
 func (d *Consul) SetWorldOpener(opener WorldOpener) {
 	d.worldOpener = opener
+}
+
+// SetDispatchFunc sets a custom dispatch function for testing.
+func (d *Consul) SetDispatchFunc(fn DispatchFunc) {
+	d.dispatchFunc = fn
 }
 
 // logInfo emits a structured event log if a logger is configured.
@@ -340,25 +362,24 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 	return nil
 }
 
-// feedStrandedCaravans checks all open caravans for ready, undispatched items.
-// For each stranded caravan:
+// feedStrandedCaravans checks all open caravans for ready, undispatched items
+// and dispatches them directly using dispatch.Cast.
+//
+// For each open caravan:
 // 1. Check readiness of all items
-// 2. For items that are ready and status="open":
-//   - Send CARAVAN_NEEDS_FEEDING protocol message to "operator"
+// 2. Group ready items by world
+// 3. Dispatch each ready item via dispatch.Cast
+// 4. Attempt auto-close after dispatch
+// 5. Emit events
 //
-// 3. Emit event
-//
-// The consul does NOT dispatch directly — it sends a protocol message
-// that the operator (or automation) can act on.
-//
-// Returns the number of caravans with ready items.
+// Returns the number of items dispatched.
 func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 	caravans, err := d.sphereStore.ListCaravans("open")
 	if err != nil {
 		return 0, fmt.Errorf("failed to list open caravans: %w", err)
 	}
 
-	var fed int
+	var totalDispatched int
 	for _, caravan := range caravans {
 		statuses, err := d.sphereStore.CheckCaravanReadiness(caravan.ID, func(world string) (*store.Store, error) {
 			return d.worldOpener(world)
@@ -368,63 +389,125 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 			continue // DEGRADE
 		}
 
-		// Count items that are ready and status="open" (not yet dispatched).
-		var readyCount int
+		// Group ready items by world.
+		readyByWorld := map[string][]store.CaravanItemStatus{}
 		for _, st := range statuses {
 			if st.Ready && st.WorkItemStatus == "open" {
-				readyCount++
+				readyByWorld[st.World] = append(readyByWorld[st.World], st)
 			}
 		}
 
-		if readyCount == 0 {
+		if len(readyByWorld) == 0 {
 			continue
 		}
 
-		// Check for existing pending CARAVAN_NEEDS_FEEDING message for this caravan
-		// to prevent duplicates.
-		pending, err := d.sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
+		// Dispatch ready items per world.
+		caravanDispatched := 0
+		for world, items := range readyByWorld {
+			dispatched, dispatchErr := d.dispatchWorldItems(caravan.ID, world, items)
+			caravanDispatched += dispatched
+			if dispatchErr != nil {
+				d.logInfo("consul_error", map[string]any{
+					"action":     "dispatch_world_items",
+					"caravan_id": caravan.ID,
+					"world":      world,
+					"error":      dispatchErr.Error(),
+				})
+				// DEGRADE: continue with other worlds
+			}
+		}
+
+		totalDispatched += caravanDispatched
+
+		if caravanDispatched > 0 {
+			// Emit caravan-level feed event.
+			if d.logger != nil {
+				d.logger.Emit(events.EventConsulCaravanFeed, "sphere/consul", "sphere/consul", "both",
+					map[string]any{
+						"caravan_id": caravan.ID,
+						"dispatched": caravanDispatched,
+					})
+			}
+
+			// Try to auto-close the caravan.
+			closed, closeErr := d.sphereStore.TryCloseCaravan(caravan.ID, func(world string) (*store.Store, error) {
+				return d.worldOpener(world)
+			})
+			if closeErr != nil {
+				d.logInfo("consul_error", map[string]any{
+					"action":     "try_close_caravan",
+					"caravan_id": caravan.ID,
+					"error":      closeErr.Error(),
+				})
+			} else if closed {
+				if d.logger != nil {
+					d.logger.Emit(events.EventCaravanClosed, "sphere/consul", "sphere/consul", "both",
+						map[string]any{
+							"caravan_id": caravan.ID,
+							"name":       caravan.Name,
+						})
+				}
+			}
+		}
+	}
+
+	return totalDispatched, nil
+}
+
+// dispatchWorldItems dispatches ready caravan items within a single world.
+// Returns the number of items dispatched and any error from setup (not per-item).
+func (d *Consul) dispatchWorldItems(caravanID, world string, items []store.CaravanItemStatus) (int, error) {
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err != nil {
+		return 0, fmt.Errorf("failed to load world config for %q: %w", world, err)
+	}
+
+	sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
+	if err != nil {
+		return 0, fmt.Errorf("failed to resolve source repo for %q: %w", world, err)
+	}
+
+	worldStore, err := d.worldOpener(world)
+	if err != nil {
+		return 0, fmt.Errorf("failed to open world store %q: %w", world, err)
+	}
+	defer worldStore.Close()
+
+	dispatched := 0
+	for _, st := range items {
+		castOpts := dispatch.CastOpts{
+			WorkItemID:  st.WorkItemID,
+			World:       world,
+			SourceRepo:  sourceRepo,
+			WorldConfig: &worldCfg,
+		}
+		result, err := d.dispatchFunc(castOpts, worldStore, d.sphereStore, d.sessions, d.logger)
 		if err != nil {
-			d.logInfo("consul_error", map[string]any{"action": "check_pending_messages", "error": err.Error()})
-			continue
+			d.logInfo("consul_error", map[string]any{
+				"action":       "dispatch_item",
+				"caravan_id":   caravanID,
+				"work_item_id": st.WorkItemID,
+				"world":        world,
+				"error":        err.Error(),
+			})
+			continue // DEGRADE: skip this item, try the next
 		}
 
-		alreadyPending := false
-		for _, msg := range pending {
-			if caravanPayloadContainsID(msg.Body, caravan.ID) {
-				alreadyPending = true
-				break
-			}
-		}
-		if alreadyPending {
-			continue
-		}
-
-		// Send CARAVAN_NEEDS_FEEDING protocol message.
-		if _, err := d.sphereStore.SendProtocolMessage(
-			"sphere/consul", "operator",
-			store.ProtoCaravanNeedsFeeding,
-			store.CaravanNeedsFeedingPayload{
-				CaravanID:  caravan.ID,
-				ReadyCount: readyCount,
-			},
-		); err != nil {
-			d.logInfo("consul_error", map[string]any{"action": "send_caravan_feed", "caravan_id": caravan.ID, "error": err.Error()})
-			continue
-		}
-
-		// Emit event.
 		if d.logger != nil {
-			d.logger.Emit(events.EventConsulCaravanFeed, "sphere/consul", "sphere/consul", "both",
+			d.logger.Emit(events.EventConsulCaravanDispatch, "sphere/consul", "sphere/consul", "both",
 				map[string]any{
-					"caravan_id":  caravan.ID,
-					"ready_count": readyCount,
+					"caravan_id":   caravanID,
+					"work_item_id": st.WorkItemID,
+					"agent":        result.AgentName,
+					"session":      result.SessionName,
+					"world":        world,
 				})
 		}
 
-		fed++
+		dispatched++
 	}
 
-	return fed, nil
+	return dispatched, nil
 }
 
 // processLifecycleRequests reads and processes operator messages.
@@ -462,11 +545,3 @@ func (d *Consul) processLifecycleRequests(ctx context.Context) (shutdown bool, e
 	return shutdown, nil
 }
 
-// caravanPayloadContainsID checks if a JSON body contains the caravan ID.
-func caravanPayloadContainsID(body, caravanID string) bool {
-	var payload store.CaravanNeedsFeedingPayload
-	if err := json.Unmarshal([]byte(body), &payload); err != nil {
-		return false
-	}
-	return payload.CaravanID == caravanID
-}
