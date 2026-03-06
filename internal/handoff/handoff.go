@@ -581,11 +581,19 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		"SOL_WORLD": opts.World,
 		"SOL_AGENT": opts.AgentName,
 	}
-	sessionCmd := config.BuildSessionCommand(
-		config.SettingsPath(worktreeDir),
-		fmt.Sprintf("Agent %s, world %s (handoff). If no context appears, run: sol prime --world=%s --agent=%s",
-			opts.AgentName, opts.World, opts.World, opts.AgentName),
-	)
+	prompt := fmt.Sprintf("Agent %s, world %s (handoff). If no context appears, run: sol prime --world=%s --agent=%s",
+		opts.AgentName, opts.World, opts.World, opts.AgentName)
+	settingsPath := config.SettingsPath(worktreeDir)
+
+	// Use --continue for compact-triggered handoffs to resume with compressed
+	// context from the predecessor session. See BuildSessionCommandContinue
+	// for detailed findings on --continue behavior.
+	var sessionCmd string
+	if opts.Reason == "compact" {
+		sessionCmd = config.BuildSessionCommandContinue(settingsPath, prompt)
+	} else {
+		sessionCmd = config.BuildSessionCommand(settingsPath, prompt)
+	}
 	if err := sessionMgr.Cycle(sessionName, worktreeDir, sessionCmd, env, role, opts.World); err != nil {
 		// Cycle failed — fall back to Stop+Start.
 		fmt.Fprintf(os.Stderr, "handoff: cycle failed, falling back to stop+start: %v\n", err)

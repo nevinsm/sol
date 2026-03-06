@@ -151,7 +151,8 @@ var docSections = []docSection{
 			"Captures tmux output, git state, and workflow progress into `.handoff.json`, " +
 			"then cycles the session atomically using `tmux respawn-pane`. Safe for self-handoff (agent calling handoff on itself) " +
 			"and PreCompact auto-handoff — the old process is replaced without destroying the session. " +
-			"Each handoff emits a chronicle event with reason, session age, and role for observability.",
+			"Each handoff emits a chronicle event with reason, session age, and role for observability. " +
+			"When reason is `compact`, the new session uses `--continue` and gets a lightweight prime that omits the full work item description.",
 	},
 	{
 		heading: "Envoy (Persistent Human-Directed Agents)",
