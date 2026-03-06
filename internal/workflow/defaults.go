@@ -44,6 +44,12 @@ import (
 //go:embed defaults/idea-to-plan/steps/04-review-plan.md
 //go:embed defaults/idea-to-plan/steps/05-create-work-items.md
 //go:embed defaults/idea-to-plan/steps/06-summarize.md
+//go:embed defaults/deep-scan/manifest.toml
+//go:embed defaults/deep-scan/steps/01-orient.md
+//go:embed defaults/deep-scan/steps/02-survey.md
+//go:embed defaults/deep-scan/steps/03-isolate.md
+//go:embed defaults/deep-scan/steps/04-document.md
+//go:embed defaults/deep-scan/steps/05-chart.md
 var defaultFormulas embed.FS
 
 // knownDefaults lists formula names that are embedded in the binary.
@@ -56,6 +62,7 @@ var knownDefaults = map[string]bool{
 	"forge-patrol":   true,
 	"thorough-work":  true,
 	"idea-to-plan":   true,
+	"deep-scan":      true,
 }
 
 // FormulaTier indicates which tier resolved a formula.

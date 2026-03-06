@@ -1,0 +1,36 @@
+name = "deep-scan"
+type = "workflow"
+description = "Investigation pipeline — deep scan a bug to root cause and chart a fix caravan"
+
+[variables]
+issue = { required = true }
+base_branch = { default = "main" }
+
+[[steps]]
+id = "orient"
+title = "Orient on the symptom"
+instructions = "steps/01-orient.md"
+
+[[steps]]
+id = "survey"
+title = "Survey the code area"
+instructions = "steps/02-survey.md"
+needs = ["orient"]
+
+[[steps]]
+id = "isolate"
+title = "Isolate root cause"
+instructions = "steps/03-isolate.md"
+needs = ["survey"]
+
+[[steps]]
+id = "document"
+title = "Document findings and design fixes"
+instructions = "steps/04-document.md"
+needs = ["isolate"]
+
+[[steps]]
+id = "chart"
+title = "Chart the fix caravan"
+instructions = "steps/05-chart.md"
+needs = ["document"]
