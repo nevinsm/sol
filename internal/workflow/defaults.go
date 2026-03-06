@@ -33,6 +33,13 @@ import (
 //go:embed defaults/thorough-work/steps/03-review.md
 //go:embed defaults/thorough-work/steps/04-test.md
 //go:embed defaults/thorough-work/steps/05-submit.md
+//go:embed defaults/idea-to-plan/manifest.toml
+//go:embed defaults/idea-to-plan/steps/01-understand-intent.md
+//go:embed defaults/idea-to-plan/steps/02-review-requirements.md
+//go:embed defaults/idea-to-plan/steps/03-explore-design.md
+//go:embed defaults/idea-to-plan/steps/04-review-plan.md
+//go:embed defaults/idea-to-plan/steps/05-create-work-items.md
+//go:embed defaults/idea-to-plan/steps/06-summarize.md
 var defaultFormulas embed.FS
 
 // knownDefaults lists formula names that are embedded in the binary.
@@ -44,6 +51,7 @@ var knownDefaults = map[string]bool{
 	"guided-design":  true,
 	"forge-patrol":   true,
 	"thorough-work":  true,
+	"idea-to-plan":   true,
 }
 
 // FormulaTier indicates which tier resolved a formula.
