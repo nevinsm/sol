@@ -5,6 +5,12 @@ import (
 	"fmt"
 )
 
+// Current schema versions — the latest migration target for each database type.
+const (
+	CurrentWorldSchema  = 7
+	CurrentSphereSchema = 8
+)
+
 const worldSchemaV1 = `
 CREATE TABLE IF NOT EXISTS work_items (
     id          TEXT PRIMARY KEY,
@@ -137,7 +143,9 @@ CREATE TABLE IF NOT EXISTS escalations (
 );
 `
 
-func (s *Store) schemaVersion() (int, error) {
+// SchemaVersion returns the current schema version stored in the database.
+// Returns 0 for a fresh (empty) database.
+func (s *Store) SchemaVersion() (int, error) {
 	var exists bool
 	err := s.db.QueryRow(`SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='schema_version'`).Scan(&exists)
 	if err != nil {
@@ -167,11 +175,11 @@ CREATE INDEX IF NOT EXISTS idx_agent_memories_agent ON agent_memories(agent_name
 `
 
 func (s *Store) migrateWorld() error {
-	v, err := s.schemaVersion()
+	v, err := s.SchemaVersion()
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
-	if v >= 7 {
+	if v >= CurrentWorldSchema {
 		return nil // already at latest version
 	}
 
@@ -223,11 +231,11 @@ func (s *Store) migrateWorld() error {
 		}
 	}
 	if v < 1 {
-		if _, err := tx.Exec("INSERT INTO schema_version VALUES (7)"); err != nil {
+		if _, err := tx.Exec(fmt.Sprintf("INSERT INTO schema_version VALUES (%d)", CurrentWorldSchema)); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	} else {
-		if _, err := tx.Exec("UPDATE schema_version SET version = 7"); err != nil {
+		if _, err := tx.Exec(fmt.Sprintf("UPDATE schema_version SET version = %d", CurrentWorldSchema)); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	}
@@ -326,11 +334,11 @@ func tableExists(db interface {
 }
 
 func (s *Store) migrateSphere() error {
-	v, err := s.schemaVersion()
+	v, err := s.SchemaVersion()
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
-	if v >= 8 {
+	if v >= CurrentSphereSchema {
 		return nil
 	}
 
@@ -444,11 +452,11 @@ func (s *Store) migrateSphere() error {
 		}
 	}
 	if v < 1 {
-		if _, err := tx.Exec("INSERT INTO schema_version VALUES (8)"); err != nil {
+		if _, err := tx.Exec(fmt.Sprintf("INSERT INTO schema_version VALUES (%d)", CurrentSphereSchema)); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	} else {
-		if _, err := tx.Exec("UPDATE schema_version SET version = 8"); err != nil {
+		if _, err := tx.Exec(fmt.Sprintf("UPDATE schema_version SET version = %d", CurrentSphereSchema)); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	}

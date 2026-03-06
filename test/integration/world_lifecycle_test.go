@@ -659,8 +659,8 @@ func buildTestArchive(t *testing.T, gtHome, worldName string) string {
 		ExportedAt: now,
 		SolVersion: "0.1.0",
 		SchemaVersions: worldexport.SchemaVersions{
-			World:  worldexport.CurrentWorldSchema,
-			Sphere: worldexport.CurrentSphereSchema,
+			World:  store.CurrentWorldSchema,
+			Sphere: store.CurrentSphereSchema,
 		},
 	}
 

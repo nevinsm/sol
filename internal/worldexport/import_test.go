@@ -224,8 +224,8 @@ func TestImportBasic(t *testing.T) {
 		ExportedAt: now,
 		SolVersion: "0.1.0",
 		SchemaVersions: SchemaVersions{
-			World:  CurrentWorldSchema,
-			Sphere: CurrentSphereSchema,
+			World:  store.CurrentWorldSchema,
+			Sphere: store.CurrentSphereSchema,
 		},
 	}
 
@@ -321,8 +321,8 @@ func TestImportConflict(t *testing.T) {
 		ExportedAt: now,
 		SolVersion: "0.1.0",
 		SchemaVersions: SchemaVersions{
-			World:  CurrentWorldSchema,
-			Sphere: CurrentSphereSchema,
+			World:  store.CurrentWorldSchema,
+			Sphere: store.CurrentSphereSchema,
 		},
 	}
 
@@ -353,8 +353,8 @@ func TestImportWithRename(t *testing.T) {
 		ExportedAt: now,
 		SolVersion: "0.1.0",
 		SchemaVersions: SchemaVersions{
-			World:  CurrentWorldSchema,
-			Sphere: CurrentSphereSchema,
+			World:  store.CurrentWorldSchema,
+			Sphere: store.CurrentSphereSchema,
 		},
 	}
 
@@ -446,7 +446,7 @@ func TestImportSchemaForwardCompat(t *testing.T) {
 		SolVersion: "99.0.0",
 		SchemaVersions: SchemaVersions{
 			World:  99,
-			Sphere: CurrentSphereSchema,
+			Sphere: store.CurrentSphereSchema,
 		},
 	}
 

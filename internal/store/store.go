@@ -52,6 +52,12 @@ func OpenSphere() (*Store, error) {
 	return s, nil
 }
 
+// OpenNoMigrate opens a database without running migrations. Useful for
+// reading the schema version of a database before deciding whether to migrate.
+func OpenNoMigrate(path string) (*Store, error) {
+	return open(path)
+}
+
 func open(path string) (*Store, error) {
 	// Embed pragmas in the DSN so they apply to every connection in the pool.
 	dsn := fmt.Sprintf("%s?_pragma=journal_mode%%3DWAL&_pragma=busy_timeout%%3D5000&_pragma=foreign_keys%%3DON", path)

@@ -59,6 +59,10 @@ var docSections = []docSection{
 		paths:   []string{"init", "doctor"},
 	},
 	{
+		heading: "Schema",
+		paths:   []string{"schema status", "schema migrate"},
+	},
+	{
 		heading: "Account Management",
 		paths:   []string{"account add", "account list", "account remove", "account default", "account login"},
 		notes:   "Accounts are stored under `$SOL_HOME/.accounts/`. Each account has its own config directory with OAuth credentials. Agents reference accounts via credential symlinks in their config dirs.",

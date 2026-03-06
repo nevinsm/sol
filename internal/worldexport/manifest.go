@@ -3,14 +3,12 @@ package worldexport
 import (
 	"fmt"
 	"time"
+
+	"github.com/nevinsm/sol/internal/store"
 )
 
-// Current schema versions — must match store migration constants.
-const (
-	CurrentWorldSchema  = 7
-	CurrentSphereSchema = 8
-	ManifestVersion     = 1
-)
+// ManifestVersion is the current manifest format version.
+const ManifestVersion = 1
 
 // Manifest describes the contents and provenance of an export archive.
 type Manifest struct {
@@ -43,13 +41,13 @@ func (m *Manifest) Validate() error {
 	if _, err := time.Parse(time.RFC3339, m.ExportedAt); err != nil {
 		return fmt.Errorf("invalid exported_at timestamp %q: %w", m.ExportedAt, err)
 	}
-	if m.SchemaVersions.World > CurrentWorldSchema {
+	if m.SchemaVersions.World > store.CurrentWorldSchema {
 		return fmt.Errorf("archive world schema v%d is newer than supported v%d; upgrade sol first",
-			m.SchemaVersions.World, CurrentWorldSchema)
+			m.SchemaVersions.World, store.CurrentWorldSchema)
 	}
-	if m.SchemaVersions.Sphere > CurrentSphereSchema {
+	if m.SchemaVersions.Sphere > store.CurrentSphereSchema {
 		return fmt.Errorf("archive sphere schema v%d is newer than supported v%d; upgrade sol first",
-			m.SchemaVersions.Sphere, CurrentSphereSchema)
+			m.SchemaVersions.Sphere, store.CurrentSphereSchema)
 	}
 	return nil
 }

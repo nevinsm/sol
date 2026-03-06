@@ -17,6 +17,13 @@ This means `--world` is optional when running from inside a world directory (e.g
 | `sol init` | Initialize sol for first-time use |
 | `sol doctor` | Check system prerequisites |
 
+## Schema
+
+| Command | Description |
+|---------|-------------|
+| `sol schema status` | Show schema version information for all databases |
+| `sol schema migrate` | Run schema migrations on all databases |
+
 ## Account Management
 
 | Command | Description |
