@@ -1441,6 +1441,47 @@ func writeTOMLManifestWithFlag(t *testing.T, dir, name string, steps []StepDef, 
 	}
 }
 
+// writeTOMLConvoyManifest writes a convoy manifest.toml file for testing.
+func writeTOMLConvoyManifest(t *testing.T, dir, name string, legs []Leg, synth *Synthesis) {
+	t.Helper()
+	f, err := os.Create(filepath.Join(dir, "manifest.toml"))
+	if err != nil {
+		t.Fatalf("create manifest.toml: %v", err)
+	}
+	defer f.Close()
+
+	f.WriteString("name = \"" + name + "\"\n")
+	f.WriteString("type = \"convoy\"\n")
+	f.WriteString("description = \"Test convoy formula\"\n\n")
+
+	for _, leg := range legs {
+		f.WriteString("[[legs]]\n")
+		f.WriteString("id = \"" + leg.ID + "\"\n")
+		f.WriteString("title = \"" + leg.Title + "\"\n")
+		f.WriteString("description = \"" + leg.Description + "\"\n")
+		if leg.Focus != "" {
+			f.WriteString("focus = \"" + leg.Focus + "\"\n")
+		}
+		f.WriteString("\n")
+	}
+
+	if synth != nil {
+		f.WriteString("[synthesis]\n")
+		f.WriteString("title = \"" + synth.Title + "\"\n")
+		f.WriteString("description = \"" + synth.Description + "\"\n")
+		if len(synth.DependsOn) > 0 {
+			f.WriteString("depends_on = [")
+			for i, dep := range synth.DependsOn {
+				if i > 0 {
+					f.WriteString(", ")
+				}
+				f.WriteString("\"" + dep + "\"")
+			}
+			f.WriteString("]\n")
+		}
+	}
+}
+
 // writeTOMLManifest writes a manifest.toml file for testing.
 func writeTOMLManifest(t *testing.T, dir, name string, steps []StepDef, vars map[string]VariableDecl) {
 	t.Helper()
@@ -1482,5 +1523,344 @@ func writeTOMLManifest(t *testing.T, dir, name string, steps []StepDef, vars map
 			f.WriteString("]\n")
 		}
 		f.WriteString("\n")
+	}
+}
+
+// --- Convoy tests ---
+
+func testLegs() []Leg {
+	return []Leg{
+		{ID: "requirements", Title: "Requirements Analysis", Description: "Assess requirements.", Focus: "Are success criteria defined?"},
+		{ID: "feasibility", Title: "Feasibility Assessment", Description: "Evaluate feasibility.", Focus: "Is this buildable?"},
+	}
+}
+
+func testSynthesis() *Synthesis {
+	return &Synthesis{
+		Title:       "Consolidate Findings",
+		Description: "Combine all analyses.",
+		DependsOn:   []string{"requirements", "feasibility"},
+	}
+}
+
+func TestLoadManifestConvoy(t *testing.T) {
+	dir := t.TempDir()
+	writeTOMLConvoyManifest(t, dir, "test-convoy", testLegs(), testSynthesis())
+
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+
+	if m.Type != "convoy" {
+		t.Errorf("type: got %q, want %q", m.Type, "convoy")
+	}
+	if len(m.Legs) != 2 {
+		t.Fatalf("legs: got %d, want 2", len(m.Legs))
+	}
+	if m.Legs[0].ID != "requirements" {
+		t.Errorf("leg[0].ID: got %q, want %q", m.Legs[0].ID, "requirements")
+	}
+	if m.Legs[1].Focus != "Is this buildable?" {
+		t.Errorf("leg[1].Focus: got %q", m.Legs[1].Focus)
+	}
+	if m.Synth == nil {
+		t.Fatal("synthesis is nil")
+	}
+	if m.Synth.Title != "Consolidate Findings" {
+		t.Errorf("synthesis.Title: got %q", m.Synth.Title)
+	}
+	if len(m.Synth.DependsOn) != 2 {
+		t.Fatalf("synthesis.DependsOn: got %v, want 2 entries", m.Synth.DependsOn)
+	}
+	if len(m.Steps) != 0 {
+		t.Errorf("steps should be empty for convoy, got %d", len(m.Steps))
+	}
+	if len(m.Templates) != 0 {
+		t.Errorf("templates should be empty for convoy, got %d", len(m.Templates))
+	}
+}
+
+func TestValidateConvoyValid(t *testing.T) {
+	m := &Manifest{
+		Type:  "convoy",
+		Legs:  testLegs(),
+		Synth: testSynthesis(),
+	}
+	if err := Validate(m); err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+}
+
+func TestValidateConvoyNoLegs(t *testing.T) {
+	m := &Manifest{
+		Type:  "convoy",
+		Synth: testSynthesis(),
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for convoy without legs")
+	}
+	if got := err.Error(); got != "convoy formula requires at least one [[legs]] entry" {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateConvoyNoSynthesis(t *testing.T) {
+	m := &Manifest{
+		Type: "convoy",
+		Legs: testLegs(),
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for convoy without synthesis")
+	}
+	if got := err.Error(); got != "convoy formula requires a [synthesis] section" {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateConvoyDuplicateLegID(t *testing.T) {
+	m := &Manifest{
+		Type: "convoy",
+		Legs: []Leg{
+			{ID: "dup", Title: "First"},
+			{ID: "dup", Title: "Second"},
+		},
+		Synth: &Synthesis{Title: "Synth", DependsOn: []string{"dup"}},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for duplicate leg ID")
+	}
+	if got := err.Error(); got != `duplicate leg ID "dup"` {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateConvoySynthesisBadDependsOn(t *testing.T) {
+	m := &Manifest{
+		Type: "convoy",
+		Legs: testLegs(),
+		Synth: &Synthesis{
+			Title:     "Synth",
+			DependsOn: []string{"requirements", "nonexistent"},
+		},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for bad depends_on")
+	}
+	if got := err.Error(); got != `synthesis depends_on references unknown leg "nonexistent"` {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateConvoyWithSteps(t *testing.T) {
+	m := &Manifest{
+		Type:  "convoy",
+		Legs:  testLegs(),
+		Synth: testSynthesis(),
+		Steps: []StepDef{{ID: "s1", Title: "Step 1"}},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for convoy with steps")
+	}
+	if got := err.Error(); got != "convoy formula must not contain [[steps]] entries" {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateConvoyWithTemplates(t *testing.T) {
+	m := &Manifest{
+		Type:      "convoy",
+		Legs:      testLegs(),
+		Synth:     testSynthesis(),
+		Templates: []Template{{ID: "t1", Title: "Template 1"}},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for convoy with templates")
+	}
+	if got := err.Error(); got != "convoy formula must not contain [[template]] entries" {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestShouldManifestConvoy(t *testing.T) {
+	m := &Manifest{Type: "convoy"}
+	if !ShouldManifest(m) {
+		t.Error("ShouldManifest() = false for convoy type")
+	}
+}
+
+func TestManifestFormulaConvoy(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Create convoy formula.
+	formulaDir := filepath.Join(solHome, "formulas", "test-convoy")
+	os.MkdirAll(formulaDir, 0o755)
+
+	writeTOMLConvoyManifest(t, formulaDir, "test-convoy", testLegs(), testSynthesis())
+
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "test-convoy",
+		World:       "test-world",
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	// Verify result structure.
+	if result.CaravanID == "" {
+		t.Error("CaravanID is empty")
+	}
+	if result.ParentID == "" {
+		t.Error("ParentID is empty")
+	}
+
+	// 2 legs + 1 synthesis = 3 children.
+	if len(result.ChildIDs) != 3 {
+		t.Fatalf("ChildIDs: got %d, want 3", len(result.ChildIDs))
+	}
+
+	// Verify leg work items.
+	for _, leg := range testLegs() {
+		childID, ok := result.ChildIDs[leg.ID]
+		if !ok {
+			t.Fatalf("missing child for leg %q", leg.ID)
+		}
+		item, err := ws.GetWorkItem(childID)
+		if err != nil {
+			t.Fatalf("GetWorkItem(%q) error: %v", childID, err)
+		}
+		if item.Title != leg.Title {
+			t.Errorf("leg %q title: got %q, want %q", leg.ID, item.Title, leg.Title)
+		}
+		if item.ParentID != result.ParentID {
+			t.Errorf("leg %q parent_id: got %q, want %q", leg.ID, item.ParentID, result.ParentID)
+		}
+		// Legs should include focus in description.
+		if !strings.Contains(item.Description, leg.Focus) {
+			t.Errorf("leg %q description missing focus: got %q", leg.ID, item.Description)
+		}
+	}
+
+	// Verify synthesis work item.
+	synthID, ok := result.ChildIDs["synthesis"]
+	if !ok {
+		t.Fatal("missing child for synthesis")
+	}
+	synthItem, err := ws.GetWorkItem(synthID)
+	if err != nil {
+		t.Fatalf("GetWorkItem(synthesis) error: %v", err)
+	}
+	if synthItem.Title != "Consolidate Findings" {
+		t.Errorf("synthesis title: got %q, want %q", synthItem.Title, "Consolidate Findings")
+	}
+	if synthItem.ParentID != result.ParentID {
+		t.Errorf("synthesis parent_id: got %q, want %q", synthItem.ParentID, result.ParentID)
+	}
+
+	// Verify legs have no dependencies.
+	for _, leg := range testLegs() {
+		deps, err := ws.GetDependencies(result.ChildIDs[leg.ID])
+		if err != nil {
+			t.Fatalf("GetDependencies(%q) error: %v", leg.ID, err)
+		}
+		if len(deps) != 0 {
+			t.Errorf("leg %q deps: got %v, want []", leg.ID, deps)
+		}
+	}
+
+	// Verify synthesis depends on both legs.
+	synthDeps, err := ws.GetDependencies(synthID)
+	if err != nil {
+		t.Fatalf("GetDependencies(synthesis) error: %v", err)
+	}
+	if len(synthDeps) != 2 {
+		t.Fatalf("synthesis deps: got %d, want 2", len(synthDeps))
+	}
+	depSet := map[string]bool{synthDeps[0]: true, synthDeps[1]: true}
+	if !depSet[result.ChildIDs["requirements"]] || !depSet[result.ChildIDs["feasibility"]] {
+		t.Errorf("synthesis deps: got %v, want [%s, %s]",
+			synthDeps, result.ChildIDs["requirements"], result.ChildIDs["feasibility"])
+	}
+
+	// Verify phases: legs = 0, synthesis = 1.
+	if result.Phases["requirements"] != 0 {
+		t.Errorf("phase[requirements]: got %d, want 0", result.Phases["requirements"])
+	}
+	if result.Phases["feasibility"] != 0 {
+		t.Errorf("phase[feasibility]: got %d, want 0", result.Phases["feasibility"])
+	}
+	if result.Phases["synthesis"] != 1 {
+		t.Errorf("phase[synthesis]: got %d, want 1", result.Phases["synthesis"])
+	}
+
+	// Verify caravan was created and is ready.
+	caravan, err := ss.GetCaravan(result.CaravanID)
+	if err != nil {
+		t.Fatalf("GetCaravan() error: %v", err)
+	}
+	if caravan.Status != "ready" {
+		t.Errorf("caravan status: got %q, want ready", caravan.Status)
+	}
+
+	// Verify caravan items.
+	items, err := ss.ListCaravanItems(result.CaravanID)
+	if err != nil {
+		t.Fatalf("ListCaravanItems() error: %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("caravan items: got %d, want 3", len(items))
+	}
+
+	// Verify caravan item phases match.
+	itemPhases := make(map[string]int)
+	for _, ci := range items {
+		itemPhases[ci.WorkItemID] = ci.Phase
+	}
+	for formulaID, workItemID := range result.ChildIDs {
+		expectedPhase := result.Phases[formulaID]
+		gotPhase := itemPhases[workItemID]
+		if gotPhase != expectedPhase {
+			t.Errorf("caravan item phase for %q: got %d, want %d", formulaID, gotPhase, expectedPhase)
+		}
+	}
+}
+
+func TestEnsureFormulaCodeReview(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	dir, err := EnsureFormula("code-review")
+	if err != nil {
+		t.Fatalf("EnsureFormula(code-review) error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "manifest.toml")); err != nil {
+		t.Errorf("manifest.toml not found after extraction: %v", err)
+	}
+
+	// Load and validate the extracted formula.
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+	if m.Type != "convoy" {
+		t.Errorf("type: got %q, want %q", m.Type, "convoy")
+	}
+	if len(m.Legs) != 2 {
+		t.Fatalf("legs: got %d, want 2", len(m.Legs))
+	}
+	if m.Synth == nil {
+		t.Fatal("synthesis is nil")
+	}
+	if err := Validate(m); err != nil {
+		t.Fatalf("Validate() error on code-review: %v", err)
 	}
 }

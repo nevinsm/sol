@@ -22,6 +22,8 @@ type Manifest struct {
 	Variables   map[string]VariableDecl `toml:"variables"`
 	Steps       []StepDef              `toml:"steps"`
 	Templates   []Template             `toml:"template"`
+	Legs        []Leg                  `toml:"legs"`
+	Synth       *Synthesis             `toml:"synthesis"`
 }
 
 // VariableDecl declares a workflow variable.
@@ -44,6 +46,22 @@ type Template struct {
 	Title       string   `toml:"title"`
 	Description string   `toml:"description"`
 	Needs       []string `toml:"needs"`
+}
+
+// Leg defines an independent work dimension in a convoy formula.
+type Leg struct {
+	ID          string `toml:"id"`
+	Title       string `toml:"title"`
+	Description string `toml:"description"`
+	Focus       string `toml:"focus"`
+}
+
+// Synthesis defines the follow-up step in a convoy formula that runs
+// after all specified legs have completed.
+type Synthesis struct {
+	Title       string   `toml:"title"`
+	Description string   `toml:"description"`
+	DependsOn   []string `toml:"depends_on"`
 }
 
 // Instance holds metadata about an instantiated workflow.
@@ -97,10 +115,11 @@ func LoadManifest(formulaDir string) (*Manifest, error) {
 }
 
 // Validate checks that a manifest is well-formed:
-// - Type is "workflow" or "expansion"
-// - Workflow type has steps (not templates); expansion has templates (not steps)
+// - Type is "workflow", "expansion", or "convoy"
+// - Workflow type has steps (not templates/legs); expansion has templates (not steps/legs)
+// - Convoy type has legs and synthesis (not steps/templates)
 // - All IDs are unique
-// - All "needs" references point to existing IDs
+// - All "needs"/"depends_on" references point to existing IDs
 // - No dependency cycles (DAG validation)
 // Returns an error describing the first problem found.
 func Validate(m *Manifest) error {
@@ -117,6 +136,36 @@ func Validate(m *Manifest) error {
 			nodes[i] = dagNode{ID: t.ID, Needs: t.Needs}
 		}
 		return validateDAG(nodes, "template")
+	}
+
+	if m.Type == "convoy" {
+		if len(m.Steps) > 0 {
+			return fmt.Errorf("convoy formula must not contain [[steps]] entries")
+		}
+		if len(m.Templates) > 0 {
+			return fmt.Errorf("convoy formula must not contain [[template]] entries")
+		}
+		if len(m.Legs) == 0 {
+			return fmt.Errorf("convoy formula requires at least one [[legs]] entry")
+		}
+		if m.Synth == nil {
+			return fmt.Errorf("convoy formula requires a [synthesis] section")
+		}
+		// Validate unique leg IDs.
+		legIDs := make(map[string]bool, len(m.Legs))
+		for _, leg := range m.Legs {
+			if legIDs[leg.ID] {
+				return fmt.Errorf("duplicate leg ID %q", leg.ID)
+			}
+			legIDs[leg.ID] = true
+		}
+		// Validate synthesis depends_on references valid legs.
+		for _, dep := range m.Synth.DependsOn {
+			if !legIDs[dep] {
+				return fmt.Errorf("synthesis depends_on references unknown leg %q", dep)
+			}
+		}
+		return nil
 	}
 
 	// All other types (workflow, agent, etc.) validate steps.
@@ -614,10 +663,10 @@ type ManifestOpts struct {
 }
 
 // ShouldManifest returns true if the formula should be manifested.
-// Expansion formulas always manifest. Workflow formulas manifest when
-// the manifest flag is set.
+// Expansion and convoy formulas always manifest. Workflow formulas
+// manifest when the manifest flag is set.
 func ShouldManifest(m *Manifest) bool {
-	return m.Type == "expansion" || m.Manifest
+	return m.Type == "expansion" || m.Type == "convoy" || m.Manifest
 }
 
 // ComputePhases returns the phase (dependency depth) for each item in a DAG.
@@ -713,7 +762,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 	parentID := opts.ParentID
 
 	// For expansion formulas, the parent must exist (it's the target).
-	// For workflow formulas, create a parent if not provided.
+	// For workflow and convoy formulas, create a parent if not provided.
 	var target *store.WorkItem
 	if m.Type == "expansion" {
 		if parentID == "" {
@@ -755,6 +804,25 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 				needs:       tmpl.Needs,
 			})
 		}
+	} else if m.Type == "convoy" {
+		// Convoy: legs are independent (phase 0), synthesis depends on legs (phase 1).
+		for _, leg := range m.Legs {
+			desc := leg.Description
+			if leg.Focus != "" {
+				desc += "\n\nFocus: " + leg.Focus
+			}
+			children = append(children, childDef{
+				formulaID:   leg.ID,
+				title:       leg.Title,
+				description: desc,
+			})
+		}
+		children = append(children, childDef{
+			formulaID:   "synthesis",
+			title:       m.Synth.Title,
+			description: m.Synth.Description,
+			needs:       m.Synth.DependsOn,
+		})
 	} else {
 		// Workflow type — render step instructions as descriptions.
 		for _, step := range m.Steps {

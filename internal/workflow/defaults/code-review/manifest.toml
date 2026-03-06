@@ -1,0 +1,20 @@
+name = "code-review"
+type = "convoy"
+description = "Multi-perspective code review with parallel analysis and synthesis."
+
+[[legs]]
+id = "requirements"
+title = "Requirements Analysis"
+description = "Assess completeness of requirements."
+focus = "Are success criteria defined?"
+
+[[legs]]
+id = "feasibility"
+title = "Feasibility Assessment"
+description = "Evaluate technical feasibility."
+focus = "Is this buildable with current architecture?"
+
+[synthesis]
+title = "Consolidate Findings"
+description = "Combine all analyses into prioritized action items."
+depends_on = ["requirements", "feasibility"]
