@@ -64,6 +64,11 @@ var docSections = []docSection{
 		notes:   "Accounts are stored under `$SOL_HOME/.accounts/`. Each account has its own config directory with OAuth credentials. Agents reference accounts via credential symlinks in their config dirs.",
 	},
 	{
+		heading: "Quota Management",
+		paths:   []string{"quota scan", "quota status"},
+		notes:   "Quota state is stored at `$SOL_HOME/.accounts/runtime/quota.json`. The scan command reads the bottom 20 lines of each agent's tmux pane and matches against known Claude rate limit error patterns.",
+	},
+	{
 		heading: "World Management",
 		paths:   []string{"world init", "world list", "world status", "world delete", "world sync", "world sleep", "world wake", "world summary", "world query"},
 	},

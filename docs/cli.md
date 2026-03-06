@@ -29,6 +29,15 @@ This means `--world` is optional when running from inside a world directory (e.g
 
 Accounts are stored under `$SOL_HOME/.accounts/`. Each account has its own config directory with OAuth credentials. Agents reference accounts via credential symlinks in their config dirs.
 
+## Quota Management
+
+| Command | Description |
+|---------|-------------|
+| `sol quota scan` | Scan agent sessions for rate limit errors |
+| `sol quota status` | Show per-account quota state |
+
+Quota state is stored at `$SOL_HOME/.accounts/runtime/quota.json`. The scan command reads the bottom 20 lines of each agent's tmux pane and matches against known Claude rate limit error patterns.
+
 ## World Management
 
 | Command | Description |
