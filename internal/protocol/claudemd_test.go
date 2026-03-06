@@ -313,19 +313,13 @@ func TestForgeClaudeMDCLIReference(t *testing.T) {
 	if !strings.Contains(content, "sol forge ready") {
 		t.Error("forge CLAUDE.md should contain patrol loop commands inline")
 	}
-	// Squash merge command should be present.
-	if !strings.Contains(content, "sol forge merge") {
-		t.Error("forge CLAUDE.md should contain sol forge merge command")
+	// Forge uses git directly now — git merge --squash should be present.
+	if !strings.Contains(content, "git merge --squash") {
+		t.Error("forge CLAUDE.md should contain git merge --squash command")
 	}
-	// Old rebase instructions should be gone.
-	if strings.Contains(content, "git rebase") {
-		t.Error("forge CLAUDE.md should not contain git rebase instructions")
-	}
-	if strings.Contains(content, "Conflict Judgment Framework") {
-		t.Error("forge CLAUDE.md should not contain Conflict Judgment Framework")
-	}
-	if strings.Contains(content, "Sequential Rebase Rule") {
-		t.Error("forge CLAUDE.md should not contain Sequential Rebase Rule")
+	// sol forge merge should NOT be present (removed).
+	if strings.Contains(content, "sol forge merge") {
+		t.Error("forge CLAUDE.md should not contain sol forge merge (removed)")
 	}
 }
 
@@ -344,11 +338,11 @@ func TestForgeClaudeMDTheoryOfOperation(t *testing.T) {
 	if !strings.Contains(content, "merge processor for world myworld") {
 		t.Error("forge CLAUDE.md should describe mechanical role with world name")
 	}
-	if !strings.Contains(content, "claim → merge → handle result → loop") {
+	if !strings.Contains(content, "claim → sync → fetch → merge → test → push → mark → loop") {
 		t.Error("forge CLAUDE.md should describe the mechanical loop")
 	}
-	if !strings.Contains(content, "You never touch git directly") {
-		t.Error("forge CLAUDE.md should state never touch git directly")
+	if !strings.Contains(content, "You use git directly") {
+		t.Error("forge CLAUDE.md should state using git directly")
 	}
 	if !strings.Contains(content, "patrol loop is your ONLY activity") {
 		t.Error("forge CLAUDE.md should state patrol loop is only activity")
@@ -367,12 +361,7 @@ func TestForgeClaudeMDForbiddenExpanded(t *testing.T) {
 	if !strings.Contains(content, "## FORBIDDEN") {
 		t.Error("forge CLAUDE.md should contain FORBIDDEN section")
 	}
-	// Each FORBIDDEN item should have consequences.
 	for _, sub := range []string{
-		"FORBIDDEN: Running git commands directly",
-		"corrupt the forge worktree state",
-		"Enforced by PreToolUse hooks",
-		"FORBIDDEN: Running `go test`",
 		"FORBIDDEN: Reading outpost code",
 		"FORBIDDEN: Extended analysis of test output",
 		"FORBIDDEN: Writing or modifying application code",
@@ -394,12 +383,14 @@ func TestForgeClaudeMDStepBanners(t *testing.T) {
 	content := protocol.GenerateForgeClaudeMD(ctx)
 
 	for _, banner := range []string{
-		"STEP 1/6: UNBLOCK",
-		"STEP 2/6: SCAN QUEUE",
-		"STEP 3/6: CLAIM",
-		"STEP 4/6: MERGE",
-		"STEP 5/6: MARK MERGED",
-		"STEP 6/6: LOOP",
+		"STEP 1/8: UNBLOCK",
+		"STEP 2/8: SCAN QUEUE",
+		"STEP 3/8: CLAIM",
+		"STEP 4/8: SYNC",
+		"STEP 5/8: MERGE",
+		"STEP 6/8: QUALITY GATES",
+		"STEP 7/8: PUSH",
+		"STEP 8/8: MARK MERGED",
 	} {
 		if !strings.Contains(content, banner) {
 			t.Errorf("forge CLAUDE.md should contain step banner %q", banner)
@@ -419,7 +410,6 @@ func TestForgeClaudeMDVerificationGates(t *testing.T) {
 	gates := []string{
 		"You CANNOT proceed to Step 3",
 		"You CANNOT proceed to Step 4",
-		"You CANNOT proceed to Step 5",
 	}
 	for _, gate := range gates {
 		if !strings.Contains(content, gate) {
@@ -446,6 +436,9 @@ func TestForgeClaudeMDErrorHandlingProtocol(t *testing.T) {
 	// Table should contain world-specific commands.
 	if !strings.Contains(content, "sol forge mark-merged --world=myworld") {
 		t.Error("error handling table should contain world-specific mark-merged command")
+	}
+	if !strings.Contains(content, "git reset --hard origin/main") {
+		t.Error("error handling table should contain git reset instructions")
 	}
 }
 
@@ -490,7 +483,9 @@ func TestForgeClaudeMDCommandQuickReference(t *testing.T) {
 		"sol forge check-unblocked --world=myworld",
 		"sol forge ready --world=myworld --json",
 		"sol forge claim --world=myworld --json",
-		"sol forge merge --world=myworld",
+		"sol forge sync --world=myworld",
+		"git merge --squash",
+		"git push origin HEAD:main",
 		"sol forge mark-merged --world=myworld",
 		"sol forge mark-failed --world=myworld",
 		"sol forge create-resolution --world=myworld",
@@ -498,17 +493,6 @@ func TestForgeClaudeMDCommandQuickReference(t *testing.T) {
 	} {
 		if !strings.Contains(content, cmd) {
 			t.Errorf("forge CLAUDE.md quick-reference should contain %q", cmd)
-		}
-	}
-	// Table should have "Common mistake" column with strikethrough git commands.
-	for _, bad := range []string{
-		"~~git fetch~~",
-		"~~git branch -r~~",
-		"~~git merge~~",
-		"~~git push origin main~~",
-	} {
-		if !strings.Contains(content, bad) {
-			t.Errorf("forge CLAUDE.md quick-reference should contain common mistake %q", bad)
 		}
 	}
 }
@@ -526,8 +510,8 @@ func TestForgeClaudeMDWorldSubstitution(t *testing.T) {
 	if !strings.Contains(content, "world: testworld") {
 		t.Error("forge CLAUDE.md should contain world name in title")
 	}
-	if !strings.Contains(content, "sol forge merge --world=testworld") {
-		t.Error("forge CLAUDE.md should use correct world in merge command")
+	if !strings.Contains(content, "sol forge mark-merged --world=testworld") {
+		t.Error("forge CLAUDE.md should use correct world in mark-merged command")
 	}
 
 	// Target branch should appear.

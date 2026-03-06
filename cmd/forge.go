@@ -32,13 +32,10 @@ var (
 	forgeBlockedWorld         string
 	forgeClaimWorld           string
 	forgeReleaseWorld         string
-	forgeRunGatesWorld        string
-	forgePushWorld            string
 	forgeMarkMergedWorld      string
 	forgeMarkFailedWorld      string
 	forgeCreateResolutionWorld string
 	forgeCheckUnblockedWorld  string
-	forgeMergeWorld          string
 	forgeAwaitWorld          string
 	forgeAwaitTimeout        int
 )
@@ -643,79 +640,6 @@ var forgeReleaseCmd = &cobra.Command{
 	},
 }
 
-var forgeRunGatesCmd = &cobra.Command{
-	Use:          "run-gates",
-	Short:        "Run quality gates in the forge worktree",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		world, err := config.ResolveWorld(forgeRunGatesWorld)
-		if err != nil {
-			return err
-		}
-
-		ref, worldStore, sphereStore, err := openForge(world)
-		if err != nil {
-			return err
-		}
-		defer worldStore.Close()
-		defer sphereStore.Close()
-
-		results, err := ref.RunGates(cmd.Context())
-		if err != nil {
-			return err
-		}
-
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
-			return printJSON(results)
-		}
-
-		allPassed := true
-		for _, r := range results {
-			status := "PASS"
-			if !r.Passed {
-				status = "FAIL"
-				allPassed = false
-			}
-			fmt.Printf("[%s] %s (%s)\n", status, r.Gate, r.Elapsed.Round(time.Millisecond))
-			if !r.Passed && r.Output != "" {
-				fmt.Printf("  Output: %s\n", r.Output)
-			}
-		}
-
-		if !allPassed {
-			return &exitError{code: 1}
-		}
-		return nil
-	},
-}
-
-var forgePushCmd = &cobra.Command{
-	Use:          "push",
-	Short:        "Push HEAD to target branch (acquires merge slot)",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		world, err := config.ResolveWorld(forgePushWorld)
-		if err != nil {
-			return err
-		}
-
-		ref, worldStore, sphereStore, err := openForge(world)
-		if err != nil {
-			return err
-		}
-		defer worldStore.Close()
-		defer sphereStore.Close()
-
-		if err := ref.Push(); err != nil {
-			return err
-		}
-
-		fmt.Printf("Pushed HEAD to %s\n", ref.TargetBranch())
-		return nil
-	},
-}
-
 var forgeMarkMergedCmd = &cobra.Command{
 	Use:          "mark-merged <mr-id>",
 	Short:        "Mark a merge request as merged",
@@ -875,51 +799,6 @@ var forgeCheckUnblockedCmd = &cobra.Command{
 	},
 }
 
-var forgeMergeCmd = &cobra.Command{
-	Use:          "merge <mr-id>",
-	Short:        "Run squash merge for a claimed merge request",
-	Args:         cobra.ExactArgs(1),
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		mrID := args[0]
-
-		world, err := config.ResolveWorld(forgeMergeWorld)
-		if err != nil {
-			return err
-		}
-
-		ref, worldStore, sphereStore, err := openForge(world)
-		if err != nil {
-			return err
-		}
-		defer worldStore.Close()
-		defer sphereStore.Close()
-
-		mr, err := ref.GetMergeRequest(mrID)
-		if err != nil {
-			return err
-		}
-
-		result := ref.Merge(cmd.Context(), mr)
-		if err := printJSON(result); err != nil {
-			return err
-		}
-		if result.Success {
-			if err := ref.MarkMerged(mrID); err != nil {
-				return fmt.Errorf("merge succeeded but mark-merged failed: %w", err)
-			}
-			eventLog := events.NewLogger(config.Home())
-			eventLog.Emit(events.EventMerged, "forge", "forge", "both", map[string]string{
-				"merge_request_id": mrID,
-			})
-			if err := worldsync.SyncRepo(world); err != nil {
-				slog.Warn("post-merge world sync failed", "world", world, "error", err)
-			}
-		}
-		return nil
-	},
-}
-
 var forgeSyncCmd = &cobra.Command{
 	Use:          "sync",
 	Short:        "Sync forge worktree: fetch origin, reset to target branch",
@@ -1070,13 +949,10 @@ func init() {
 	forgeCmd.AddCommand(forgeBlockedCmd)
 	forgeCmd.AddCommand(forgeClaimCmd)
 	forgeCmd.AddCommand(forgeReleaseCmd)
-	forgeCmd.AddCommand(forgeRunGatesCmd)
-	forgeCmd.AddCommand(forgePushCmd)
 	forgeCmd.AddCommand(forgeMarkMergedCmd)
 	forgeCmd.AddCommand(forgeMarkFailedCmd)
 	forgeCmd.AddCommand(forgeCreateResolutionCmd)
 	forgeCmd.AddCommand(forgeCheckUnblockedCmd)
-	forgeCmd.AddCommand(forgeMergeCmd)
 	forgeCmd.AddCommand(forgeAwaitCmd)
 
 	// --world flag for all subcommands.
@@ -1089,13 +965,10 @@ func init() {
 	forgeBlockedCmd.Flags().StringVar(&forgeBlockedWorld, "world", "", "world name")
 	forgeClaimCmd.Flags().StringVar(&forgeClaimWorld, "world", "", "world name")
 	forgeReleaseCmd.Flags().StringVar(&forgeReleaseWorld, "world", "", "world name")
-	forgeRunGatesCmd.Flags().StringVar(&forgeRunGatesWorld, "world", "", "world name")
-	forgePushCmd.Flags().StringVar(&forgePushWorld, "world", "", "world name")
 	forgeMarkMergedCmd.Flags().StringVar(&forgeMarkMergedWorld, "world", "", "world name")
 	forgeMarkFailedCmd.Flags().StringVar(&forgeMarkFailedWorld, "world", "", "world name")
 	forgeCreateResolutionCmd.Flags().StringVar(&forgeCreateResolutionWorld, "world", "", "world name")
 	forgeCheckUnblockedCmd.Flags().StringVar(&forgeCheckUnblockedWorld, "world", "", "world name")
-	forgeMergeCmd.Flags().StringVar(&forgeMergeWorld, "world", "", "world name")
 	forgeAwaitCmd.Flags().StringVar(&forgeAwaitWorld, "world", "", "world name")
 	forgeAwaitCmd.Flags().IntVar(&forgeAwaitTimeout, "timeout", 30, "max seconds to wait")
 
@@ -1104,7 +977,7 @@ func init() {
 	forgeStatusCmd.Flags().Bool("json", false, "output as JSON")
 	for _, cmd := range []*cobra.Command{
 		forgeReadyCmd, forgeBlockedCmd, forgeClaimCmd,
-		forgeRunGatesCmd, forgeCreateResolutionCmd, forgeCheckUnblockedCmd,
+		forgeCreateResolutionCmd, forgeCheckUnblockedCmd,
 	} {
 		cmd.Flags().Bool("json", false, "output as JSON")
 	}

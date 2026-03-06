@@ -1,26 +1,15 @@
 package forge
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
-
-// GateResult holds the outcome of running a single quality gate.
-type GateResult struct {
-	Gate    string        `json:"gate"`
-	Passed  bool          `json:"passed"`
-	Output  string        `json:"output"`
-	Elapsed time.Duration `json:"elapsed"`
-}
 
 // ListReady returns MRs with phase=ready AND blocked_by IS NULL AND not
 // blocked by caravan-level dependencies.
@@ -118,59 +107,6 @@ func (r *Forge) Release(mrID string) (failed bool, err error) {
 			mr.WorkItemID, mrID, mr.Branch, mr.Attempts, r.cfg.MaxAttempts))
 
 	return false, nil
-}
-
-// RunGates runs quality gates in the worktree and returns results.
-func (r *Forge) RunGates(ctx context.Context) ([]GateResult, error) {
-	timeout := r.cfg.GateTimeout
-	if timeout == 0 {
-		timeout = 5 * time.Minute
-	}
-
-	var results []GateResult
-	for _, gate := range r.cfg.QualityGates {
-		start := time.Now()
-		gateCtx, cancel := context.WithTimeout(ctx, timeout)
-		cmd := exec.CommandContext(gateCtx, "sh", "-c", gate)
-		cmd.WaitDelay = time.Second
-		cmd.Dir = r.worktree
-		cmd.Env = append(os.Environ(),
-			"SOL_HOME="+config.Home(),
-			"SOL_WORLD="+r.world,
-		)
-		output, err := cmd.CombinedOutput()
-		cancel()
-		elapsed := time.Since(start)
-
-		result := GateResult{
-			Gate:    gate,
-			Passed:  err == nil,
-			Output:  truncate(string(output), 2000),
-			Elapsed: elapsed,
-		}
-		results = append(results, result)
-
-		if err != nil {
-			return results, nil // Return results so far; caller sees which failed.
-		}
-	}
-	return results, nil
-}
-
-// Push acquires the merge slot, pushes HEAD to target branch, releases slot.
-func (r *Forge) Push() error {
-	lock, err := dispatch.AcquireMergeSlotLock(r.world)
-	if err != nil {
-		return fmt.Errorf("failed to acquire merge slot: %w", err)
-	}
-	defer lock.Release()
-
-	pushCmd := exec.Command("git", "-C", r.worktree, "push", "origin",
-		"HEAD:"+r.cfg.TargetBranch)
-	if out, err := pushCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("push rejected: %s: %w", strings.TrimSpace(string(out)), err)
-	}
-	return nil
 }
 
 // MarkMerged sets MR phase to merged, closes work item, deletes remote branch,

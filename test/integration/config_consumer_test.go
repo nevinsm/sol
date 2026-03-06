@@ -41,43 +41,6 @@ func TestCastUsesConfigSourceRepo(t *testing.T) {
 	}
 }
 
-func TestForgeUsesConfigQualityGates(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome := t.TempDir()
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-
-	sourceRepo := setupGitRepo(t)
-	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo="+sourceRepo)
-	if err != nil {
-		t.Fatalf("world init failed: %v: %s", err, out)
-	}
-
-	// Rewrite world.toml with quality gates in [forge] section.
-	writeWorldTOML(t, gtHome, "myworld", sourceRepo, map[string]string{
-		"forge": "quality_gates = [\"echo gate-ok\"]",
-	})
-
-	// Create forge worktree directory (RunGates uses cmd.Dir = worktree).
-	forgeWorktree := filepath.Join(gtHome, "myworld", "forge", "worktree")
-	if err := os.MkdirAll(forgeWorktree, 0o755); err != nil {
-		t.Fatalf("create forge worktree dir: %v", err)
-	}
-
-	// Run the gates and verify they execute.
-	cmd := runGTWithDir(t, gtHome, sourceRepo, "forge", "run-gates", "--world=myworld")
-	if cmd.err != nil {
-		t.Fatalf("forge run-gates failed: %v: %s", cmd.err, cmd.out)
-	}
-	if !strings.Contains(cmd.out, "[PASS]") {
-		t.Errorf("expected [PASS] in output, got: %s", cmd.out)
-	}
-	if !strings.Contains(cmd.out, "echo gate-ok") {
-		t.Errorf("expected 'echo gate-ok' in output, got: %s", cmd.out)
-	}
-}
-
 func TestDispatchCapacityEnforced(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

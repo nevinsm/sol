@@ -1,13 +1,11 @@
 package forge
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
@@ -180,138 +178,6 @@ func TestCheckUnblocked(t *testing.T) {
 	worldStore.mu.Unlock()
 	if mr2.BlockedBy != "sol-pending1" {
 		t.Errorf("MR blocked_by = %q, want %q", mr2.BlockedBy, "sol-pending1")
-	}
-}
-
-func TestRunGates(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-
-	cfg := DefaultConfig()
-	cfg.QualityGates = []string{"true", "echo hello"}
-
-	r := &Forge{
-		world:      "ember",
-		worktree: dir,
-		logger:   testLogger(),
-		cfg:      cfg,
-	}
-
-	results, err := r.RunGates(context.Background())
-	if err != nil {
-		t.Fatalf("RunGates() error: %v", err)
-	}
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(results))
-	}
-	for _, r := range results {
-		if !r.Passed {
-			t.Errorf("gate %q did not pass", r.Gate)
-		}
-	}
-}
-
-func TestRunGatesFailure(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-
-	cfg := DefaultConfig()
-	cfg.QualityGates = []string{"true", "exit 1", "true"}
-
-	r := &Forge{
-		world:      "ember",
-		worktree: dir,
-		logger:   testLogger(),
-		cfg:      cfg,
-	}
-
-	results, err := r.RunGates(context.Background())
-	if err != nil {
-		t.Fatalf("RunGates() error: %v", err)
-	}
-	// Should return after first failure (2 results: pass, fail).
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results (stops at first failure), got %d", len(results))
-	}
-	if !results[0].Passed {
-		t.Error("first gate should have passed")
-	}
-	if results[1].Passed {
-		t.Error("second gate should have failed")
-	}
-}
-
-func TestRunGatesCancelledContext(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-
-	cfg := DefaultConfig()
-	cfg.QualityGates = []string{"sleep 60"}
-	cfg.GateTimeout = 60 * time.Second // ensure the per-gate timeout doesn't interfere
-
-	r := &Forge{
-		world:    "ember",
-		worktree: dir,
-		logger:   testLogger(),
-		cfg:      cfg,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	start := time.Now()
-	results, err := r.RunGates(ctx)
-	elapsed := time.Since(start)
-
-	if err != nil {
-		t.Fatalf("RunGates() error: %v", err)
-	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].Passed {
-		t.Error("gate should have failed due to cancelled context")
-	}
-	if elapsed > 10*time.Second {
-		t.Errorf("RunGates took %v, expected well under 60s", elapsed)
-	}
-}
-
-func TestPush(t *testing.T) {
-	sourceRepo, worktreeDir := setupGitTest(t)
-
-	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	os.MkdirAll(filepath.Join(dir, ".runtime", "locks"), 0o755)
-
-	// Create worktree.
-	branch := "forge/ember"
-	run(t, "git", "-C", sourceRepo, "worktree", "add", "-b", branch, worktreeDir, "HEAD")
-	run(t, "git", "-C", worktreeDir, "config", "user.email", "test@test.com")
-	run(t, "git", "-C", worktreeDir, "config", "user.name", "Test")
-
-	// Make a change in the worktree.
-	os.WriteFile(filepath.Join(worktreeDir, "push-test.go"), []byte("package main\n"), 0o644)
-	run(t, "git", "-C", worktreeDir, "add", ".")
-	run(t, "git", "-C", worktreeDir, "commit", "-m", "push test")
-
-	r := &Forge{
-		world:      "ember",
-		agentID:  "ember/forge",
-		worktree: worktreeDir,
-		worldStore: newMockWorldStore(),
-		logger:   testLogger(),
-		cfg:      DefaultConfig(),
-	}
-
-	if err := r.Push(); err != nil {
-		t.Fatalf("Push() error: %v", err)
-	}
-
-	// Verify the commit is on main.
-	out := run(t, "git", "-C", sourceRepo, "log", "--oneline", "origin/main")
-	if !strings.Contains(out, "push test") {
-		t.Errorf("main should contain push commit, got:\n%s", out)
 	}
 }
 
