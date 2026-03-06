@@ -503,6 +503,8 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus) string {
 		formatChronicleDetail(ws.Chronicle))
 	renderProcess(&b, "Broker", ws.Broker.Running,
 		formatBrokerDetail(ws.Broker))
+	renderProcess(&b, "Senate", ws.Senate.Running,
+		formatSenateDetail(ws.Senate))
 	b.WriteString("\n")
 
 	// World processes (Forge, Sentinel, Governor — not Prefect/Chronicle).

@@ -23,6 +23,7 @@ type WorldStatus struct {
 	Forge      ForgeInfo      `json:"forge"`
 	Chronicle  ChronicleInfo  `json:"chronicle"`
 	Broker     BrokerInfo     `json:"broker"`
+	Senate     SenateInfo     `json:"senate"`
 	Sentinel   SentinelInfo   `json:"sentinel"`
 	Governor   GovernorInfo   `json:"governor"`
 	Agents     []AgentStatus  `json:"agents"`
@@ -272,6 +273,12 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 
 	// 2b2. Check broker (sphere-level).
 	result.Broker = GatherBrokerInfo()
+
+	// 2b3. Check senate (sphere-level).
+	const senateSessionName = "sol-senate"
+	if checker.Exists(senateSessionName) {
+		result.Senate = SenateInfo{Running: true, SessionName: senateSessionName}
+	}
 
 	// 2c. Check sentinel session.
 	sentinelSessName := dispatch.SessionName(world, "sentinel")
