@@ -11,3 +11,8 @@ var GovernorSystemPrompt string
 //
 //go:embed prompts/envoy.md
 var EnvoySystemPrompt string
+
+// ForgeSystemPrompt is the full-replacement system prompt for the forge role.
+//
+//go:embed prompts/forge.md
+var ForgeSystemPrompt string

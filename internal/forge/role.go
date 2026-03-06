@@ -14,13 +14,15 @@ import (
 // ForgeRoleConfig returns the startup.RoleConfig for the forge role.
 func ForgeRoleConfig() startup.RoleConfig {
 	return startup.RoleConfig{
-		Role:         "forge",
-		WorktreeDir:  func(world, _ string) string { return WorktreePath(world) },
-		Persona:      forgePersona,
-		Hooks:        forgeHooks,
-		Formula:      "forge-patrol",
-		NeedsItem:    false,
-		PrimeBuilder: forgePrime,
+		Role:                "forge",
+		WorktreeDir:         func(world, _ string) string { return WorktreePath(world) },
+		Persona:             forgePersona,
+		Hooks:               forgeHooks,
+		SystemPromptContent: protocol.ForgeSystemPrompt,
+		ReplacePrompt:       true,
+		Formula:             "forge-patrol",
+		NeedsItem:           false,
+		PrimeBuilder:        forgePrime,
 	}
 }
 
