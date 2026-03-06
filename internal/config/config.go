@@ -275,11 +275,28 @@ func ClaudeConfigDir(worldDir, role, name string) string {
 
 // EnsureClaudeConfigDir computes and creates the CLAUDE_CONFIG_DIR for an agent.
 // Returns the absolute path. Creates the directory (and parents) if needed.
+// Symlinks the shared credentials file from ~/.claude/ so all agents share
+// one OAuth token.
 func EnsureClaudeConfigDir(worldDir, role, name string) (string, error) {
 	dir := ClaudeConfigDir(worldDir, role, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create claude config dir %q: %w", dir, err)
 	}
+
+	// Symlink credentials from default config dir so agents can authenticate.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return dir, nil // non-fatal: agent may still work with API key env var
+	}
+	srcCreds := filepath.Join(home, ".claude", ".credentials.json")
+	dstCreds := filepath.Join(dir, ".credentials.json")
+	if _, err := os.Stat(srcCreds); err == nil {
+		// Only create symlink if it doesn't already exist
+		if _, err := os.Lstat(dstCreds); os.IsNotExist(err) {
+			_ = os.Symlink(srcCreds, dstCreds)
+		}
+	}
+
 	return dir, nil
 }
 
