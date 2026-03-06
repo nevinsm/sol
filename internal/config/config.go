@@ -48,6 +48,16 @@ func Home() string {
 	return filepath.Join(home, "sol")
 }
 
+// AccountsDir returns the path to $SOL_HOME/.accounts/.
+func AccountsDir() string {
+	return filepath.Join(Home(), ".accounts")
+}
+
+// AccountDir returns the path to $SOL_HOME/.accounts/{handle}/.
+func AccountDir(handle string) string {
+	return filepath.Join(AccountsDir(), handle)
+}
+
 // StoreDir returns the path to $SOL_HOME/.store/.
 func StoreDir() string {
 	return filepath.Join(Home(), ".store")
