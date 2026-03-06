@@ -11,10 +11,8 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/consul"
 	"github.com/nevinsm/sol/internal/dispatch"
-	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/forge"
-	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -227,22 +225,12 @@ func (s *Prefect) heartbeat() {
 }
 
 // respawnCommand returns the startup command for an agent based on its role.
+// Roles with registered startup configs (forge, governor, envoy) use startup.Launch
+// instead and never reach this function.
 func respawnCommand(agent store.Agent, worktreeDir string) string {
 	switch agent.Role {
 	case "sentinel":
 		return fmt.Sprintf("sol sentinel run --world=%s", agent.World)
-	case "forge":
-		prompt := fmt.Sprintf("Forge for world %s (respawned). If no context appears, run: sol forge sync --world=%s && sol prime --world=%s --agent=forge",
-			agent.World, agent.World, agent.World)
-		return config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
-	case "envoy":
-		prompt := fmt.Sprintf("Envoy %s, world %s (respawned). If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200",
-			agent.Name, agent.World)
-		return config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
-	case "governor":
-		prompt := fmt.Sprintf("Governor, world %s (respawned). If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync --world=%s",
-			agent.World, agent.World)
-		return config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
 	default:
 		prompt := fmt.Sprintf("Agent %s, world %s (respawned). If no context appears, run: sol prime --world=%s --agent=%s",
 			agent.Name, agent.World, agent.World, agent.Name)
@@ -251,17 +239,18 @@ func respawnCommand(agent store.Agent, worktreeDir string) string {
 }
 
 // worktreeForAgent returns the worktree path for an agent based on its role.
+// Roles with registered startup configs are resolved via their WorktreeDir function.
 func worktreeForAgent(agent store.Agent) string {
+	if cfg := startup.ConfigFor(agent.Role); cfg != nil {
+		return cfg.WorktreeDir(agent.World, agent.Name)
+	}
 	switch agent.Role {
 	case "forge":
+		// Fallback for tests where forge config is not registered.
 		return forge.WorktreePath(agent.World)
 	case "sentinel":
 		// Sentinel is a Go process, not a worktree-based agent.
 		return config.Home()
-	case "envoy":
-		return envoy.WorktreePath(agent.World, agent.Name)
-	case "governor":
-		return governor.GovernorDir(agent.World)
 	default:
 		return dispatch.WorktreePath(agent.World, agent.Name)
 	}

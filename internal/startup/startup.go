@@ -3,7 +3,6 @@ package startup
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
@@ -38,13 +37,13 @@ type RoleConfig struct {
 	WorktreeDir func(world, agent string) string
 
 	// Persona & Hooks
-	Persona func(world string) ([]byte, error) // CLAUDE.local.md content
+	Persona func(world, agent string) ([]byte, error) // CLAUDE.local.md content
 	Hooks   func(world, agent string) HookSet
 
 	// System prompt
-	SystemPromptFile string // relative path for the prompt file within the worktree
-	SystemPromptData string // embedded prompt content; written to SystemPromptFile on launch
-	ReplacePrompt    bool   // true = --system-prompt-file, false = --append-system-prompt-file
+	SystemPromptFile    string // path to prompt file (embedded or on disk)
+	SystemPromptContent string // if set, written to .claude/system-prompt.md and used as SystemPromptFile
+	ReplacePrompt       bool   // true = --system-prompt-file, false = --append-system-prompt-file
 
 	// Workflow
 	Formula   string // formula name to instantiate (empty = none)
@@ -59,10 +58,6 @@ type LaunchOpts struct {
 	Continue bool   // use --continue for handoff
 	Respawn  bool   // skip worktree creation if exists
 	Account  string // account override (empty = use world default)
-
-	// Env holds additional environment variables merged into the session env.
-	// Keys here override the defaults (SOL_HOME, SOL_WORLD, SOL_AGENT, CLAUDE_CONFIG_DIR).
-	Env map[string]string
 
 	// Optional dependency injection for testing. When nil, defaults are used.
 	Sessions   SessionStarter // default: session.New()
@@ -115,7 +110,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 
 	// 2. Install persona (CLAUDE.local.md).
 	if cfg.Persona != nil {
-		content, err := cfg.Persona(world)
+		content, err := cfg.Persona(world, agent)
 		if err != nil {
 			return "", fmt.Errorf("startup: failed to generate persona: %w", err)
 		}
@@ -124,15 +119,17 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		}
 	}
 
-	// 2b. Install system prompt file if embedded content provided.
-	if cfg.SystemPromptData != "" && cfg.SystemPromptFile != "" {
-		promptPath := filepath.Join(worktreeDir, cfg.SystemPromptFile)
-		if err := os.MkdirAll(filepath.Dir(promptPath), 0o755); err != nil {
-			return "", fmt.Errorf("startup: failed to create system prompt directory: %w", err)
+	// 2.5. Install system prompt content if provided.
+	if cfg.SystemPromptContent != "" {
+		promptDir := fmt.Sprintf("%s/.claude", worktreeDir)
+		if err := os.MkdirAll(promptDir, 0o755); err != nil {
+			return "", fmt.Errorf("startup: failed to create .claude for system prompt: %w", err)
 		}
-		if err := os.WriteFile(promptPath, []byte(cfg.SystemPromptData), 0o644); err != nil {
-			return "", fmt.Errorf("startup: failed to write system prompt file: %w", err)
+		promptPath := fmt.Sprintf("%s/system-prompt.md", promptDir)
+		if err := os.WriteFile(promptPath, []byte(cfg.SystemPromptContent), 0o644); err != nil {
+			return "", fmt.Errorf("startup: failed to write system prompt: %w", err)
 		}
+		cfg.SystemPromptFile = ".claude/system-prompt.md"
 	}
 
 	// 3. Install hooks (settings.local.json).
@@ -167,18 +164,12 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 	}
 
 	agentID := world + "/" + agent
-	existing, getErr := sphereStore.GetAgent(agentID)
-	if getErr != nil {
+	if _, err := sphereStore.GetAgent(agentID); err != nil {
 		if _, err := sphereStore.CreateAgent(agent, world, cfg.Role); err != nil {
 			return "", fmt.Errorf("startup: failed to register agent: %w", err)
 		}
 	}
-	// Preserve existing tether item (outpost agents have active tethers).
-	tetherItem := ""
-	if existing != nil {
-		tetherItem = existing.TetherItem
-	}
-	if err := sphereStore.UpdateAgentState(agentID, "working", tetherItem); err != nil {
+	if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
 		return "", fmt.Errorf("startup: failed to set agent working: %w", err)
 	}
 
@@ -211,9 +202,6 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		"SOL_WORLD":         world,
 		"SOL_AGENT":         agent,
 		"CLAUDE_CONFIG_DIR": claudeConfigDir,
-	}
-	for k, v := range opts.Env {
-		env[k] = v
 	}
 
 	mgr := resolveSessionStarter(opts)
@@ -261,15 +249,10 @@ func buildCommand(cfg RoleConfig, worktreeDir, prompt string, continueSession bo
 	args += " --settings " + config.ShellQuote(settingsPath)
 
 	if cfg.SystemPromptFile != "" {
-		promptPath := cfg.SystemPromptFile
-		// When content was embedded and written to worktree, resolve absolute path.
-		if cfg.SystemPromptData != "" {
-			promptPath = filepath.Join(worktreeDir, cfg.SystemPromptFile)
-		}
 		if cfg.ReplacePrompt {
-			args += " --system-prompt-file " + config.ShellQuote(promptPath)
+			args += " --system-prompt-file " + config.ShellQuote(cfg.SystemPromptFile)
 		} else {
-			args += " --append-system-prompt-file " + config.ShellQuote(promptPath)
+			args += " --append-system-prompt-file " + config.ShellQuote(cfg.SystemPromptFile)
 		}
 	}
 
