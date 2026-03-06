@@ -271,3 +271,36 @@ func (s *Store) AggregateTokens(agentName string) ([]TokenSummary, error) {
 	}
 	return summaries, nil
 }
+
+// AgentMergeRequestSummary holds aggregate merge stats for an agent's work items.
+type AgentMergeRequestSummary struct {
+	TotalMRs     int
+	MergedMRs    int
+	FailedMRs    int
+	FirstPassMRs int // merged with attempts == 1
+}
+
+// MergeStatsForAgent returns aggregate merge request statistics for all work
+// items the given agent has worked on (via cast history entries).
+func (s *Store) MergeStatsForAgent(agentName string) (AgentMergeRequestSummary, error) {
+	var summary AgentMergeRequestSummary
+	err := s.db.QueryRow(
+		`SELECT
+			COALESCE(COUNT(*), 0),
+			COALESCE(SUM(CASE WHEN mr.phase = 'merged' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN mr.phase = 'failed' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN mr.phase = 'merged' AND mr.attempts = 1 THEN 1 ELSE 0 END), 0)
+		 FROM merge_requests mr
+		 WHERE mr.work_item_id IN (
+			SELECT DISTINCT ah.work_item_id
+			FROM agent_history ah
+			WHERE ah.agent_name = ? AND ah.action = 'cast' AND ah.work_item_id IS NOT NULL
+		 )
+		 AND mr.phase IN ('merged', 'failed')`,
+		agentName,
+	).Scan(&summary.TotalMRs, &summary.MergedMRs, &summary.FailedMRs, &summary.FirstPassMRs)
+	if err != nil {
+		return summary, fmt.Errorf("failed to get merge stats for agent %q: %w", agentName, err)
+	}
+	return summary, nil
+}

@@ -340,3 +340,76 @@ func TestAggregateTokens(t *testing.T) {
 		t.Fatalf("expected 0 summaries for Nobody, got %d", len(summaries))
 	}
 }
+
+func TestMergeStatsForAgent(t *testing.T) {
+	s := setupWorld(t)
+
+	// Create work items (FK dependency for merge_requests).
+	item1, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	item2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
+	item3, _ := s.CreateWorkItem("Item 3", "", "operator", 2, nil)
+
+	// Write cast history linking agents to work items.
+	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	s.WriteHistory("Toast", item1, "cast", "", start, nil)
+	s.WriteHistory("Toast", item2, "cast", "", start, nil)
+	s.WriteHistory("Toast", item3, "cast", "", start, nil)
+	s.WriteHistory("Jasper", item3, "cast", "", start, nil) // Jasper also worked on item3.
+
+	// Create merge requests with various outcomes.
+	mr1, _ := s.CreateMergeRequest(item1, "branch1", 2)
+	mr2, _ := s.CreateMergeRequest(item2, "branch2", 2)
+	mr3, _ := s.CreateMergeRequest(item3, "branch3", 2)
+
+	// MR1: first-pass merge (claim once, merge).
+	s.ClaimMergeRequest("forge")
+	s.UpdateMergeRequestPhase(mr1, "merged")
+
+	// MR2: failed then re-merged (claim, fail, re-ready, claim again, merge).
+	// After first claim (mr1), claim again for mr2.
+	s.ClaimMergeRequest("forge")
+	s.UpdateMergeRequestPhase(mr2, "failed")
+
+	// MR3: first-pass merge.
+	s.ClaimMergeRequest("forge")
+	s.UpdateMergeRequestPhase(mr3, "merged")
+
+	// Check Toast's stats.
+	stats, err := s.MergeStatsForAgent("Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.TotalMRs != 3 {
+		t.Fatalf("expected 3 total MRs, got %d", stats.TotalMRs)
+	}
+	if stats.MergedMRs != 2 {
+		t.Fatalf("expected 2 merged MRs, got %d", stats.MergedMRs)
+	}
+	if stats.FailedMRs != 1 {
+		t.Fatalf("expected 1 failed MR, got %d", stats.FailedMRs)
+	}
+	if stats.FirstPassMRs != 2 {
+		t.Fatalf("expected 2 first-pass MRs, got %d", stats.FirstPassMRs)
+	}
+
+	// Check Jasper's stats (only worked on item3).
+	stats, err = s.MergeStatsForAgent("Jasper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.MergedMRs != 1 {
+		t.Fatalf("expected 1 merged MR for Jasper, got %d", stats.MergedMRs)
+	}
+	if stats.FirstPassMRs != 1 {
+		t.Fatalf("expected 1 first-pass MR for Jasper, got %d", stats.FirstPassMRs)
+	}
+
+	// Nonexistent agent returns zeros.
+	stats, err = s.MergeStatsForAgent("Nobody")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.TotalMRs != 0 {
+		t.Fatalf("expected 0 total MRs for Nobody, got %d", stats.TotalMRs)
+	}
+}

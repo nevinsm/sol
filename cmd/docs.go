@@ -85,7 +85,7 @@ var docSections = []docSection{
 	},
 	{
 		heading: "Agents",
-		paths:   []string{"agent create", "agent list", "agent reset", "agent postmortem", "agent history", "agent handoffs"},
+		paths:   []string{"agent create", "agent list", "agent reset", "agent postmortem", "agent history", "agent handoffs", "agent stats"},
 	},
 	{
 		heading: "Store (Work Items)",
