@@ -376,9 +376,16 @@ func briefAge(path string) string {
 // This is separate from Gather because it requires the CaravanStore interface
 // which not all callers may have available.
 func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener func(string) (*store.Store, error)) {
-	caravans, err := caravanStore.ListCaravans("open")
+	allCaravans, err := caravanStore.ListCaravans("")
 	if err != nil {
 		return // non-fatal: degrade gracefully
+	}
+	// Filter to active (non-closed) caravans.
+	var caravans []store.Caravan
+	for _, c := range allCaravans {
+		if c.Status != "closed" {
+			caravans = append(caravans, c)
+		}
 	}
 
 	for _, c := range caravans {

@@ -373,6 +373,7 @@ func TestFeedStrandedCaravans(t *testing.T) {
 
 	// Create a caravan with 3 work items: 2 open (ready), 1 tethered.
 	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "operator")
+	sphereStore.UpdateCaravanStatus(caravanID, "open")
 
 	wi1, _ := worldStore.CreateWorkItem("caravan-task-1", "desc1", "test", 1, nil)
 	wi2, _ := worldStore.CreateWorkItem("caravan-task-2", "desc2", "test", 1, nil)
@@ -431,6 +432,7 @@ func TestFeedStrandedCaravansNoDuplicates(t *testing.T) {
 	defer worldStore.Close()
 
 	caravanID, _ := sphereStore.CreateCaravan("test-caravan-2", "operator")
+	sphereStore.UpdateCaravanStatus(caravanID, "open")
 	wi1, _ := worldStore.CreateWorkItem("dup-task-1", "desc1", "test", 1, nil)
 	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
 
@@ -481,6 +483,7 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 	defer worldStore.Close()
 
 	caravanID, _ := sphereStore.CreateCaravan("test-caravan-3", "operator")
+	sphereStore.UpdateCaravanStatus(caravanID, "open")
 	wi1, _ := worldStore.CreateWorkItem("all-tethered-1", "desc1", "test", 1, nil)
 	worldStore.UpdateWorkItem(wi1, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/X"})
 	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
@@ -629,6 +632,7 @@ func TestPatrolCycle(t *testing.T) {
 
 	// 2. Open caravan with ready items.
 	caravanID, _ := sphereStore.CreateCaravan("patrol-caravan", "operator")
+	sphereStore.UpdateCaravanStatus(caravanID, "open")
 	wiCaravan, _ := worldStore.CreateWorkItem("caravan-ready", "desc", "test", 1, nil)
 	sphereStore.CreateCaravanItem(caravanID, wiCaravan, worldName, 0)
 

@@ -135,7 +135,7 @@ var docSections = []docSection{
 	},
 	{
 		heading: "Caravans",
-		paths:   []string{"caravan create", "caravan add", "caravan list", "caravan check", "caravan status", "caravan launch", "caravan set-phase", "caravan close", "caravan dep add", "caravan dep remove", "caravan dep list"},
+		paths:   []string{"caravan create", "caravan add", "caravan list", "caravan check", "caravan status", "caravan launch", "caravan commission", "caravan drydock", "caravan set-phase", "caravan close", "caravan dep add", "caravan dep remove", "caravan dep list"},
 	},
 	{
 		heading: "Agent Memories",

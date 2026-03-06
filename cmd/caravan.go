@@ -341,10 +341,16 @@ var caravanStatusCmd = &cobra.Command{
 			return nil
 		}
 
-		// List all open caravans.
-		caravans, err := sphereStore.ListCaravans("open")
+		// List all active caravans (drydock + open).
+		allCaravans, err := sphereStore.ListCaravans("")
 		if err != nil {
 			return err
+		}
+		var caravans []store.Caravan
+		for _, c := range allCaravans {
+			if c.Status == "drydock" || c.Status == "open" || c.Status == "ready" {
+				caravans = append(caravans, c)
+			}
 		}
 
 		if jsonOut {
@@ -354,16 +360,21 @@ var caravanStatusCmd = &cobra.Command{
 		}
 
 		if len(caravans) == 0 {
-			fmt.Println("No open caravans.")
+			fmt.Println("No active caravans.")
 			return nil
 		}
 
-		fmt.Println("Open caravans:")
+		fmt.Println("Active caravans:")
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 		for _, c := range caravans {
 			items, err := sphereStore.ListCaravanItems(c.ID)
 			if err != nil {
 				return err
+			}
+
+			if c.Status == "drydock" {
+				fmt.Fprintf(tw, "  %s\t%s\t%d items\t(drydock)\n", c.ID, c.Name, len(items))
+				continue
 			}
 
 			// Count statuses.
@@ -414,7 +425,7 @@ var caravanStatusCmd = &cobra.Command{
 var caravanListCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "List caravans with optional status filtering",
-	Long:         "List all caravans. Shows open caravans by default. Use --all for all caravans or --status to filter.",
+	Long:         "List all caravans. Shows active (non-closed) caravans by default. Use --all for all caravans or --status to filter.",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -426,12 +437,14 @@ var caravanListCmd = &cobra.Command{
 			return fmt.Errorf("--all and --status are mutually exclusive")
 		}
 
-		// Default: open only. --all: all. --status: specific.
-		filter := "open"
+		// Default: active (non-closed). --all: all. --status: specific.
+		filter := ""
+		excludeClosed := true
 		if showAll {
-			filter = ""
+			excludeClosed = false
 		} else if statusFilter != "" {
 			filter = statusFilter
+			excludeClosed = false
 		}
 
 		sphereStore, err := store.OpenSphere()
@@ -443,6 +456,16 @@ var caravanListCmd = &cobra.Command{
 		caravans, err := sphereStore.ListCaravans(filter)
 		if err != nil {
 			return err
+		}
+
+		if excludeClosed {
+			var active []store.Caravan
+			for _, c := range caravans {
+				if c.Status != "closed" {
+					active = append(active, c)
+				}
+			}
+			caravans = active
 		}
 
 		if jsonOut {
@@ -491,11 +514,13 @@ var caravanListCmd = &cobra.Command{
 		}
 
 		if len(caravans) == 0 {
-			label := filter
-			if label == "" {
-				label = "any"
+			if excludeClosed {
+				fmt.Println("No active caravans.")
+			} else if filter != "" {
+				fmt.Printf("No caravans (status: %s).\n", filter)
+			} else {
+				fmt.Println("No caravans.")
 			}
-			fmt.Printf("No caravans (status: %s).\n", label)
 			return nil
 		}
 
@@ -525,6 +550,74 @@ var caravanListCmd = &cobra.Command{
 	},
 }
 
+// --- sol caravan commission ---
+
+var caravanCommissionCmd = &cobra.Command{
+	Use:          "commission <caravan-id>",
+	Short:        "Commission a caravan (drydock → open)",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		caravanID := args[0]
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		caravan, err := sphereStore.GetCaravan(caravanID)
+		if err != nil {
+			return err
+		}
+
+		if caravan.Status != "drydock" {
+			return fmt.Errorf("caravan %s is %q, not drydock — only drydock caravans can be commissioned", caravanID, caravan.Status)
+		}
+
+		if err := sphereStore.UpdateCaravanStatus(caravanID, "open"); err != nil {
+			return err
+		}
+
+		fmt.Printf("Commissioned caravan %s: %q (drydock → open)\n", caravanID, caravan.Name)
+		return nil
+	},
+}
+
+// --- sol caravan drydock ---
+
+var caravanDrydockCmd = &cobra.Command{
+	Use:          "drydock <caravan-id>",
+	Short:        "Return a caravan to drydock (open → drydock)",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		caravanID := args[0]
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		caravan, err := sphereStore.GetCaravan(caravanID)
+		if err != nil {
+			return err
+		}
+
+		if caravan.Status != "open" {
+			return fmt.Errorf("caravan %s is %q, not open — only open caravans can be returned to drydock", caravanID, caravan.Status)
+		}
+
+		if err := sphereStore.UpdateCaravanStatus(caravanID, "drydock"); err != nil {
+			return err
+		}
+
+		fmt.Printf("Returned caravan %s: %q to drydock (open → drydock)\n", caravanID, caravan.Name)
+		return nil
+	},
+}
+
 // --- sol caravan launch ---
 
 var caravanLaunchCmd = &cobra.Command{
@@ -546,6 +639,15 @@ var caravanLaunchCmd = &cobra.Command{
 			return err
 		}
 		defer sphereStore.Close()
+
+		// Reject launch for drydock caravans.
+		caravan, err := sphereStore.GetCaravan(caravanID)
+		if err != nil {
+			return err
+		}
+		if caravan.Status == "drydock" {
+			return fmt.Errorf("caravan %s (%q) is in drydock — commission it first with: sol caravan commission %s", caravanID, caravan.Name, caravanID)
+		}
 
 		statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
 		if err != nil {
@@ -902,6 +1004,8 @@ func init() {
 	caravanCmd.AddCommand(caravanLaunchCmd)
 	caravanCmd.AddCommand(caravanCloseCmd)
 	caravanCmd.AddCommand(caravanSetPhaseCmd)
+	caravanCmd.AddCommand(caravanCommissionCmd)
+	caravanCmd.AddCommand(caravanDrydockCmd)
 
 	// set-phase flags
 	caravanSetPhaseCmd.Flags().Bool("all", false, "update all items in the caravan")

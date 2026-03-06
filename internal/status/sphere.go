@@ -55,10 +55,17 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 		}
 	}
 
-	// 5. Gather open caravans (sphere-wide).
+	// 5. Gather active caravans (sphere-wide, non-closed).
 	if caravanStore != nil {
-		caravans, err := caravanStore.ListCaravans("open")
+		allCaravans, err := caravanStore.ListCaravans("")
 		if err == nil {
+			// Filter to active (non-closed) caravans.
+			var caravans []store.Caravan
+			for _, ac := range allCaravans {
+				if ac.Status != "closed" {
+					caravans = append(caravans, ac)
+				}
+			}
 			for _, c := range caravans {
 				items, err := caravanStore.ListCaravanItems(c.ID)
 				if err != nil {

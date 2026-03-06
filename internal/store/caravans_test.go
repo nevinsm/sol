@@ -29,8 +29,8 @@ func TestCreateCaravan(t *testing.T) {
 	if c.Name != "auth-feature" {
 		t.Fatalf("expected name %q, got %q", "auth-feature", c.Name)
 	}
-	if c.Status != "open" {
-		t.Fatalf("expected status %q, got %q", "open", c.Status)
+	if c.Status != "drydock" {
+		t.Fatalf("expected status %q, got %q", "drydock", c.Status)
 	}
 	if c.Owner != "operator" {
 		t.Fatalf("expected owner %q, got %q", "operator", c.Owner)
@@ -108,23 +108,23 @@ func TestListCaravans(t *testing.T) {
 		t.Fatalf("expected 3 caravans, got %d", len(all))
 	}
 
-	// List by status=open → 3.
-	open, err := s.ListCaravans("open")
+	// List by status=drydock → 3 (default status).
+	drydock, err := s.ListCaravans("drydock")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(open) != 3 {
-		t.Fatalf("expected 3 open caravans, got %d", len(open))
+	if len(drydock) != 3 {
+		t.Fatalf("expected 3 drydock caravans, got %d", len(drydock))
 	}
 
-	// Close one → list open → 2.
-	s.UpdateCaravanStatus(id3, "closed")
-	open, err = s.ListCaravans("open")
+	// Commission one → list drydock → 2.
+	s.UpdateCaravanStatus(id3, "open")
+	drydock, err = s.ListCaravans("drydock")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(open) != 2 {
-		t.Fatalf("expected 2 open caravans, got %d", len(open))
+	if len(drydock) != 2 {
+		t.Fatalf("expected 2 drydock caravans, got %d", len(drydock))
 	}
 }
 

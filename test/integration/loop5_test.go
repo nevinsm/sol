@@ -880,10 +880,13 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	}
 	worldStore.Close()
 
-	// Create caravan with both items.
+	// Create caravan with both items and commission it.
 	caravanID, err := sphereStore.CreateCaravan("feed-caravan", "operator")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
+	}
+	if err := sphereStore.UpdateCaravanStatus(caravanID, "open"); err != nil {
+		t.Fatalf("UpdateCaravanStatus: %v", err)
 	}
 	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem: %v", err)
@@ -982,6 +985,9 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	caravanID, err := sphereStore.CreateCaravan("nodup-caravan", "operator")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
+	}
+	if err := sphereStore.UpdateCaravanStatus(caravanID, "open"); err != nil {
+		t.Fatalf("UpdateCaravanStatus: %v", err)
 	}
 	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem: %v", err)
@@ -1401,10 +1407,13 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 	worldStore.Close()
 
-	// 2. Create caravan spanning the items.
+	// 2. Create caravan spanning the items and commission it.
 	caravanID, err := sphereStore.CreateCaravan("e2e-caravan", "operator")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
+	}
+	if err := sphereStore.UpdateCaravanStatus(caravanID, "open"); err != nil {
+		t.Fatalf("UpdateCaravanStatus: %v", err)
 	}
 	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
 		t.Fatalf("AddCaravanItem: %v", err)

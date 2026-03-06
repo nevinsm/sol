@@ -13,7 +13,7 @@ import (
 type Caravan struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
-	Status    string     `json:"status"` // "open", "ready", "closed"
+	Status    string     `json:"status"` // "drydock", "open", "ready", "closed"
 	Owner     string     `json:"owner"`
 	CreatedAt time.Time  `json:"created_at"`
 	ClosedAt  *time.Time `json:"closed_at,omitempty"`
@@ -61,7 +61,7 @@ func (s *Store) CreateCaravan(name, owner string) (string, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	_, err = s.db.Exec(
-		`INSERT INTO caravans (id, name, status, owner, created_at) VALUES (?, ?, 'open', ?, ?)`,
+		`INSERT INTO caravans (id, name, status, owner, created_at) VALUES (?, ?, 'drydock', ?, ?)`,
 		id, name, owner, now,
 	)
 	if err != nil {
@@ -153,9 +153,10 @@ func (s *Store) ListCaravans(status string) ([]Caravan, error) {
 }
 
 var validCaravanStatuses = map[string]bool{
-	"open":   true,
-	"ready":  true,
-	"closed": true,
+	"drydock": true,
+	"open":    true,
+	"ready":   true,
+	"closed":  true,
 }
 
 // UpdateCaravanStatus sets the caravan's status. If status is "closed",
