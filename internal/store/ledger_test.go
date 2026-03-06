@@ -224,6 +224,46 @@ func TestWriteTokenUsage(t *testing.T) {
 	}
 }
 
+func TestTokensForHistory(t *testing.T) {
+	s := setupWorld(t)
+
+	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	histID, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start, nil)
+
+	// No tokens yet — should return nil.
+	ts, err := s.TokensForHistory(histID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ts != nil {
+		t.Fatal("expected nil for history with no tokens")
+	}
+
+	// Add some token usage.
+	s.WriteTokenUsage(histID, "claude-sonnet-4-6", 1000, 500, 200, 100)
+	s.WriteTokenUsage(histID, "claude-opus-4-6", 2000, 800, 300, 50)
+
+	ts, err = s.TokensForHistory(histID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ts == nil {
+		t.Fatal("expected non-nil token summary")
+	}
+	if ts.InputTokens != 3000 {
+		t.Fatalf("expected input 3000, got %d", ts.InputTokens)
+	}
+	if ts.OutputTokens != 1300 {
+		t.Fatalf("expected output 1300, got %d", ts.OutputTokens)
+	}
+	if ts.CacheReadTokens != 500 {
+		t.Fatalf("expected cache_read 500, got %d", ts.CacheReadTokens)
+	}
+	if ts.CacheCreationTokens != 150 {
+		t.Fatalf("expected cache_creation 150, got %d", ts.CacheCreationTokens)
+	}
+}
+
 func TestAggregateTokens(t *testing.T) {
 	s := setupWorld(t)
 

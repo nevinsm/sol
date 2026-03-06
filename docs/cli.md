@@ -84,6 +84,7 @@ When an agent session starts, credentials are symlinked from the resolved accoun
 | `sol agent list` | List agents |
 | `sol agent reset <name>` | Reset a stuck agent to idle state |
 | `sol agent postmortem <name>` | Show diagnostic information for a dead or stuck agent |
+| `sol agent history [name]` | Show agent work trail |
 | `sol agent handoffs` | Show recent handoff events |
 
 ## Store (Work Items)

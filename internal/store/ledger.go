@@ -217,6 +217,26 @@ func (s *Store) WriteTokenUsage(historyID, model string, input, output, cacheRea
 	return id, nil
 }
 
+// TokensForHistory returns aggregated token totals for a single history entry.
+func (s *Store) TokensForHistory(historyID string) (*TokenSummary, error) {
+	var ts TokenSummary
+	err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(input_tokens),0),
+		        COALESCE(SUM(output_tokens),0),
+		        COALESCE(SUM(cache_read_tokens),0),
+		        COALESCE(SUM(cache_creation_tokens),0)
+		 FROM token_usage WHERE history_id = ?`, historyID,
+	).Scan(&ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tokens for history %q: %w", historyID, err)
+	}
+	total := ts.InputTokens + ts.OutputTokens + ts.CacheReadTokens + ts.CacheCreationTokens
+	if total == 0 {
+		return nil, nil
+	}
+	return &ts, nil
+}
+
 // AggregateTokens sums token usage across all history entries for an agent,
 // grouped by model. Returns per-model totals.
 func (s *Store) AggregateTokens(agentName string) ([]TokenSummary, error) {
