@@ -41,6 +41,7 @@ var worldServices = []string{"sentinel", "forge"}
 
 var (
 	upWorldFlag   string
+	upWorldsFlag  []string
 	downWorldFlag string
 )
 
@@ -68,6 +69,7 @@ func init() {
 
 	upCmd.Flags().StringVar(&upWorldFlag, "world", "", "start only world services (optionally for a specific world)")
 	upCmd.Flags().Lookup("world").NoOptDefVal = ""
+	upCmd.Flags().StringSliceVar(&upWorldsFlag, "worlds", nil, "comma-separated list of worlds to supervise and start services for")
 
 	downCmd.Flags().StringVar(&downWorldFlag, "world", "", "stop only world services (optionally for a specific world)")
 	downCmd.Flags().Lookup("world").NoOptDefVal = ""
@@ -163,6 +165,21 @@ func activeWorlds(specificWorld string) ([]string, error) {
 	return listNonSleepingWorlds()
 }
 
+// activeWorldsList returns the non-sleeping worlds from a given list.
+// Sleeping worlds are silently skipped.
+func activeWorldsList(names []string) ([]string, error) {
+	var active []string
+	for _, name := range names {
+		if err := config.RequireWorld(name); err != nil {
+			return nil, err
+		}
+		if !config.IsSleeping(name) {
+			active = append(active, name)
+		}
+	}
+	return active, nil
+}
+
 // listNonSleepingWorlds returns all worlds that are not sleeping.
 func listNonSleepingWorlds() ([]string, error) {
 	worlds, err := listAllWorlds()
@@ -226,13 +243,18 @@ func runUp(cmd *cobra.Command, _ []string) error {
 
 	// Sphere daemons (skipped with --world).
 	if !worldOnly {
-		if failed := startSphereDaemons(solBin); failed {
+		if failed := startSphereDaemons(solBin, upWorldsFlag); failed {
 			hadFailure = true
 		}
 	}
 
-	// World services.
-	worlds, err := activeWorlds(upWorldFlag)
+	// World services — --worlds takes precedence over --world for service scope.
+	var worlds []string
+	if len(upWorldsFlag) > 0 {
+		worlds, err = activeWorldsList(upWorldsFlag)
+	} else {
+		worlds, err = activeWorlds(upWorldFlag)
+	}
 	if err != nil {
 		return err
 	}
@@ -250,7 +272,8 @@ func runUp(cmd *cobra.Command, _ []string) error {
 }
 
 // startSphereDaemons starts sphere-level daemons. Returns true if any failed.
-func startSphereDaemons(solBin string) bool {
+// If worlds is non-empty, the --worlds flag is passed to the prefect.
+func startSphereDaemons(solBin string, worlds []string) bool {
 	if managed := checkSystemdUnits(); len(managed) > 0 {
 		warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
 		fmt.Fprintf(os.Stderr, "%s %s managed by systemd — use systemctl instead\n",
@@ -294,7 +317,11 @@ func startSphereDaemons(solBin string) bool {
 		}
 
 		// Start: sol {component} run
-		proc := exec.Command(solBin, d.name, "run")
+		args := []string{d.name, "run"}
+		if d.name == "prefect" && len(worlds) > 0 {
+			args = append(args, "--worlds="+strings.Join(worlds, ","))
+		}
+		proc := exec.Command(solBin, args...)
 		proc.Stdout = logFile
 		proc.Stderr = logFile
 		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())

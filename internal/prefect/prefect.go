@@ -41,6 +41,8 @@ type Config struct {
 	MassDeathWindow    time.Duration // default: 30 seconds
 	DegradedCooldown   time.Duration // default: 5 minutes
 
+	Worlds []string // if non-empty, only supervise these worlds (sleeping ones still skipped)
+
 	ConsulEnabled      bool          // whether to monitor the consul (default: false)
 	ConsulHeartbeatMax time.Duration // max heartbeat age before restart (default: 15 minutes)
 	ConsulCommand      string        // command to start consul (default: "sol consul run")
@@ -108,7 +110,11 @@ func (s *Prefect) Run(ctx context.Context) error {
 	}
 	defer ClearPID()
 
-	s.logger.Info("prefect started", "pid", pidSelf(), "heartbeat_interval", s.cfg.HeartbeatInterval)
+	if len(s.cfg.Worlds) > 0 {
+		s.logger.Info("prefect started", "pid", pidSelf(), "heartbeat_interval", s.cfg.HeartbeatInterval, "worlds", s.cfg.Worlds)
+	} else {
+		s.logger.Info("prefect started", "pid", pidSelf(), "heartbeat_interval", s.cfg.HeartbeatInterval)
+	}
 
 	// Run one immediate heartbeat.
 	s.heartbeat()
@@ -171,6 +177,11 @@ func (s *Prefect) heartbeat() {
 
 		// Skip sleeping worlds — their services should not be respawned.
 		if sleepingWorlds[agent.World] {
+			continue
+		}
+
+		// Skip worlds outside the configured scope.
+		if !s.worldAllowed(agent.World) {
 			continue
 		}
 
@@ -547,6 +558,11 @@ func (s *Prefect) shutdown() {
 		if agent.Role == "envoy" || agent.Role == "governor" {
 			continue
 		}
+
+		// Skip worlds outside the configured scope.
+		if !s.worldAllowed(agent.World) {
+			continue
+		}
 		sessName := dispatch.SessionName(agent.World, agent.Name)
 		if s.sessions.Exists(sessName) {
 			if err := s.sessions.Stop(sessName, false); err != nil {
@@ -590,6 +606,20 @@ func backoffDuration(consecutiveRestarts int) time.Duration {
 	default:
 		return 5 * time.Minute
 	}
+}
+
+// worldAllowed returns true if the given world is in the configured Worlds
+// list, or if no world filter is configured (empty list = all worlds).
+func (s *Prefect) worldAllowed(world string) bool {
+	if len(s.cfg.Worlds) == 0 {
+		return true
+	}
+	for _, w := range s.cfg.Worlds {
+		if w == world {
+			return true
+		}
+	}
+	return false
 }
 
 // dirExists checks if a directory exists.

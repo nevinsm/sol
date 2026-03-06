@@ -105,11 +105,14 @@ var docSections = []docSection{
 		notes: "Without flags, `sol up` starts sphere daemons (prefect, consul, chronicle, ledger) and world services " +
 			"(sentinel, forge) for all non-sleeping worlds. `sol down` stops everything.\n\n" +
 			"`--world` — manage only world services, skip sphere daemons. " +
-			"`--world=W` targets a specific world.",
+			"`--world=W` targets a specific world.\n\n" +
+			"`--worlds=a,b` — start sphere daemons and world services scoped to the listed worlds. " +
+			"The prefect receives `--worlds` so it only supervises those worlds. Sleeping worlds in the list are still skipped.",
 	},
 	{
 		heading: "Supervision",
 		paths:   []string{"prefect run", "prefect stop", "status"},
+		notes:   "`sol prefect run --worlds=a,b` — supervise only the listed worlds. Sleeping worlds in the list are still skipped.",
 	},
 	{
 		heading: "Sentinel (Per-World Health Monitor)",

@@ -834,6 +834,74 @@ func TestShutdownSkipsEnvoyGovernor(t *testing.T) {
 	}
 }
 
+func TestHeartbeatWorldsFilter(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.Worlds = []string{"alpha"}
+
+	// Create working agents in two worlds.
+	sphereStore.CreateAgent("Toast", "alpha", "agent")
+	sphereStore.UpdateAgentState("alpha/Toast", "working", "sol-aaa11111")
+	sphereStore.CreateAgent("Jasper", "beta", "agent")
+	sphereStore.UpdateAgentState("beta/Jasper", "working", "sol-bbb22222")
+
+	// Create worktree directories.
+	for _, p := range []string{
+		filepath.Join(os.Getenv("SOL_HOME"), "alpha", "outposts", "Toast", "worktree"),
+		filepath.Join(os.Getenv("SOL_HOME"), "beta", "outposts", "Jasper", "worktree"),
+	} {
+		os.MkdirAll(p, 0o755)
+	}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.heartbeat()
+
+	// Only alpha agent should be restarted.
+	started := mock.GetStarted()
+	if len(started) != 1 {
+		t.Fatalf("expected 1 session started with worlds filter, got %d: %v", len(started), started)
+	}
+	if started[0] != "sol-alpha-Toast" {
+		t.Errorf("started session = %q, want %q", started[0], "sol-alpha-Toast")
+	}
+}
+
+func TestShutdownWorldsFilter(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.Worlds = []string{"alpha"}
+
+	// Create working agents with live sessions in two worlds.
+	sphereStore.CreateAgent("Toast", "alpha", "agent")
+	sphereStore.UpdateAgentState("alpha/Toast", "working", "sol-aaa11111")
+	mock.Start("sol-alpha-Toast", "/tmp", "echo", nil, "agent", "alpha")
+
+	sphereStore.CreateAgent("Jasper", "beta", "agent")
+	sphereStore.UpdateAgentState("beta/Jasper", "working", "sol-bbb22222")
+	mock.Start("sol-beta-Jasper", "/tmp", "echo", nil, "agent", "beta")
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.shutdown()
+
+	// Only alpha agent's session should be stopped.
+	stopped := mock.GetStopped()
+	if len(stopped) != 1 {
+		t.Fatalf("expected 1 session stopped with worlds filter, got %d: %v", len(stopped), stopped)
+	}
+	if stopped[0] != "sol-alpha-Toast" {
+		t.Errorf("stopped session = %q, want %q", stopped[0], "sol-alpha-Toast")
+	}
+
+	// Beta session should still be alive.
+	if !mock.Exists("sol-beta-Jasper") {
+		t.Error("beta session should not be stopped when outside worlds filter")
+	}
+}
+
 func TestRespawnCommandEnvoyGovernor(t *testing.T) {
 	t.Setenv("SOL_SESSION_COMMAND", "")
 

@@ -48,11 +48,15 @@ var prefectRunCmd = &cobra.Command{
 
 		consulEnabled, _ := cmd.Flags().GetBool("consul")
 		sourceRepo, _ := cmd.Flags().GetString("source-repo")
+		worlds, _ := cmd.Flags().GetStringSlice("worlds")
 		if consulEnabled {
 			cfg.ConsulEnabled = true
 		}
 		if sourceRepo != "" {
 			cfg.ConsulSourceRepo = sourceRepo
+		}
+		if len(worlds) > 0 {
+			cfg.Worlds = worlds
 		}
 
 		eventLog := events.NewLogger(config.Home())
@@ -103,4 +107,5 @@ func init() {
 
 	prefectRunCmd.Flags().Bool("consul", false, "Enable consul monitoring and auto-start")
 	prefectRunCmd.Flags().String("source-repo", "", "Source repository path (for consul dispatch)")
+	prefectRunCmd.Flags().StringSlice("worlds", nil, "Comma-separated list of worlds to supervise (default: all)")
 }

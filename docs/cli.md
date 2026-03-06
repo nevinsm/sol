@@ -130,6 +130,8 @@ Without flags, `sol up` starts sphere daemons (prefect, consul, chronicle, ledge
 
 `--world` — manage only world services, skip sphere daemons. `--world=W` targets a specific world.
 
+`--worlds=a,b` — start sphere daemons and world services scoped to the listed worlds. The prefect receives `--worlds` so it only supervises those worlds. Sleeping worlds in the list are still skipped.
+
 ## Supervision
 
 | Command | Description |
@@ -137,6 +139,8 @@ Without flags, `sol up` starts sphere daemons (prefect, consul, chronicle, ledge
 | `sol prefect run` | Run the prefect (foreground) |
 | `sol prefect stop` | Stop the running prefect |
 | `sol status [world]` | Show sphere or world status |
+
+`sol prefect run --worlds=a,b` — supervise only the listed worlds. Sleeping worlds in the list are still skipped.
 
 ## Sentinel (Per-World Health Monitor)
 
