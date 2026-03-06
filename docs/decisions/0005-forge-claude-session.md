@@ -1,6 +1,6 @@
 # ADR-0005: Forge as Claude Session + Go Toolbox
 
-Status: accepted (supersedes ADR-0002)
+Status: accepted (supersedes ADR-0002, revised by ADR-0017)
 Date: 2026-02-26
 Loop: 2 (revision)
 
