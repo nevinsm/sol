@@ -18,20 +18,22 @@ import (
 	"github.com/nevinsm/sol/internal/setup"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/worldexport"
 	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
 )
 
 var (
-	worldInitSourceRepo    string
-	worldListJSON          bool
-	worldStatusJSON        bool
-	worldDeleteWorld       string
-	worldDeleteConfirm     bool
-	worldSyncWorld         string
-	worldSyncAll           bool
-	worldQueryTimeout      int
+	worldInitSourceRepo      string
+	worldListJSON            bool
+	worldStatusJSON          bool
+	worldDeleteWorld         string
+	worldDeleteConfirm       bool
+	worldSyncWorld           string
+	worldSyncAll             bool
+	worldQueryTimeout        int
 	worldCloneIncludeHistory bool
+	worldImportName          string
 )
 
 var worldCmd = &cobra.Command{
@@ -744,6 +746,45 @@ var worldWakeCmd = &cobra.Command{
 	},
 }
 
+var worldImportCmd = &cobra.Command{
+	Use:   "import <archive>",
+	Short: "Import a world from an export archive",
+	Long: `Restore a world from a .tar.gz archive produced by sol world export.
+
+Validates the archive manifest and schema compatibility before restoring.
+Refuses to import if the world name already exists — delete it first or
+use --name to import under a different name.
+
+Agent states are reset to idle on import (no active sessions exist for
+imported agents). Ephemeral state (repo, worktrees, sessions) is not
+restored — run sol world sync after import to clone the managed repo.`,
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		archivePath := args[0]
+
+		result, err := worldexport.Import(worldexport.ImportOptions{
+			ArchivePath: archivePath,
+			Name:        worldImportName,
+		})
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("World %q imported.\n", result.World)
+		fmt.Printf("  Config:   %s\n", config.WorldConfigPath(result.World))
+		fmt.Printf("  Database: %s\n", filepath.Join(config.StoreDir(), result.World+".db"))
+		fmt.Println()
+
+		if result.SourceRepo != "" {
+			fmt.Println("Next steps:")
+			fmt.Printf("  sol world sync --world=%s   # clone the managed repo\n", result.World)
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(worldCmd)
 	worldCmd.AddCommand(worldInitCmd)
@@ -756,6 +797,7 @@ func init() {
 	worldCmd.AddCommand(worldQueryCmd)
 	worldCmd.AddCommand(worldSleepCmd)
 	worldCmd.AddCommand(worldWakeCmd)
+	worldCmd.AddCommand(worldImportCmd)
 
 	worldInitCmd.Flags().StringVar(&worldInitSourceRepo, "source-repo",
 		"", "git URL or local path to source repository")
@@ -773,4 +815,6 @@ func init() {
 		"also sync forge, envoys, and governor")
 	worldQueryCmd.Flags().IntVar(&worldQueryTimeout, "timeout", 120,
 		"seconds to wait for governor response")
+	worldImportCmd.Flags().StringVar(&worldImportName, "name", "",
+		"import under a different name (rewrites agent IDs and references)")
 }
