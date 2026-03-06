@@ -17,6 +17,18 @@ This means `--world` is optional when running from inside a world directory (e.g
 | `sol init` | Initialize sol for first-time use |
 | `sol doctor` | Check system prerequisites |
 
+## Account Management
+
+| Command | Description |
+|---------|-------------|
+| `sol account add <handle>` | Register a new account |
+| `sol account list` | List registered accounts |
+| `sol account remove <handle>` | Remove a registered account |
+| `sol account default [<handle>]` | Show or set the default account |
+| `sol account login <handle>` | Open a Claude session to complete OAuth login |
+
+Accounts are stored under `$SOL_HOME/.accounts/`. Each account has its own config directory with OAuth credentials. Agents reference accounts via credential symlinks in their config dirs.
+
 ## World Management
 
 | Command | Description |

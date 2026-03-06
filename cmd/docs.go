@@ -59,6 +59,11 @@ var docSections = []docSection{
 		paths:   []string{"init", "doctor"},
 	},
 	{
+		heading: "Account Management",
+		paths:   []string{"account add", "account list", "account remove", "account default", "account login"},
+		notes:   "Accounts are stored under `$SOL_HOME/.accounts/`. Each account has its own config directory with OAuth credentials. Agents reference accounts via credential symlinks in their config dirs.",
+	},
+	{
 		heading: "World Management",
 		paths:   []string{"world init", "world list", "world status", "world delete", "world sync", "world sleep", "world wake", "world summary", "world query"},
 	},
