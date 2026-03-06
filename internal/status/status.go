@@ -125,8 +125,8 @@ type Summary struct {
 }
 
 // Health returns the overall health level.
-// 0 = healthy (all sessions alive or idle)
-// 1 = unhealthy (at least one dead session)
+// 0 = healthy (all sessions alive or idle, no failed merge requests)
+// 1 = unhealthy (at least one dead session or failed merge request)
 // 2 = degraded (prefect not running)
 // Forge state does not affect health — an absent forge just means
 // merges won't happen, the system is still operational.
@@ -134,7 +134,7 @@ func (r *WorldStatus) Health() int {
 	if !r.Prefect.Running {
 		return 2
 	}
-	if r.Summary.Dead > 0 {
+	if r.Summary.Dead > 0 || r.MergeQueue.Failed > 0 {
 		return 1
 	}
 	return 0

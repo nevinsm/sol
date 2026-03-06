@@ -403,10 +403,11 @@ func TestGatherMixedStates(t *testing.T) {
 
 func TestHealthExitCodes(t *testing.T) {
 	tests := []struct {
-		name    string
-		prefect PrefectInfo
-		summary Summary
-		want    int
+		name       string
+		prefect    PrefectInfo
+		summary    Summary
+		mergeQueue MergeQueueInfo
+		want       int
 	}{
 		{
 			name:    "prefect running, all healthy",
@@ -438,14 +439,36 @@ func TestHealthExitCodes(t *testing.T) {
 			summary: Summary{},
 			want:    0,
 		},
+		{
+			name:       "failed merge requests make world unhealthy",
+			prefect:    PrefectInfo{Running: true, PID: 123},
+			summary:    Summary{Total: 3, Working: 2, Idle: 1},
+			mergeQueue: MergeQueueInfo{Failed: 1, Total: 1},
+			want:       1,
+		},
+		{
+			name:       "prefect not running trumps failed merge requests",
+			prefect:    PrefectInfo{Running: false},
+			summary:    Summary{Total: 3, Working: 2, Idle: 1},
+			mergeQueue: MergeQueueInfo{Failed: 2, Total: 2},
+			want:       2,
+		},
+		{
+			name:       "non-failed merge requests do not affect health",
+			prefect:    PrefectInfo{Running: true, PID: 123},
+			summary:    Summary{Total: 3, Working: 2, Idle: 1},
+			mergeQueue: MergeQueueInfo{Ready: 3, Merged: 5, Total: 8},
+			want:       0,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rs := &WorldStatus{
-				World:   "test",
-				Prefect: tt.prefect,
-				Summary: tt.summary,
+				World:      "test",
+				Prefect:    tt.prefect,
+				Summary:    tt.summary,
+				MergeQueue: tt.mergeQueue,
 			}
 			if got := rs.Health(); got != tt.want {
 				t.Errorf("Health() = %d, want %d", got, tt.want)
