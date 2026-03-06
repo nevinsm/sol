@@ -311,10 +311,16 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	}
 
 	// 9. Start tmux session.
+	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), "agent", agent.Name)
+	if err != nil {
+		rollback()
+		return nil, err
+	}
 	env := map[string]string{
-		"SOL_HOME":  config.Home(),
-		"SOL_WORLD": opts.World,
-		"SOL_AGENT": agent.Name,
+		"SOL_HOME":         config.Home(),
+		"SOL_WORLD":        opts.World,
+		"SOL_AGENT":        agent.Name,
+		"CLAUDE_CONFIG_DIR": claudeConfigDir,
 	}
 	prompt := fmt.Sprintf("Agent %s, world %s. If no context appears, run: sol prime --world=%s --agent=%s",
 		agent.Name, opts.World, opts.World, agent.Name)

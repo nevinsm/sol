@@ -653,10 +653,15 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 
 	sessionName := dispatch.SessionName(w.config.World, agent.Name)
 	workdir := dispatch.WorktreePath(w.config.World, agent.Name)
+	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(w.config.World), agent.Role, agent.Name)
+	if err != nil {
+		return fmt.Errorf("failed to ensure claude config dir for %s: %w", agent.Name, err)
+	}
 	env := map[string]string{
-		"SOL_HOME":  config.Home(),
-		"SOL_WORLD":   w.config.World,
-		"SOL_AGENT": agent.Name,
+		"SOL_HOME":         config.Home(),
+		"SOL_WORLD":        w.config.World,
+		"SOL_AGENT":        agent.Name,
+		"CLAUDE_CONFIG_DIR": claudeConfigDir,
 	}
 
 	if err := w.sessions.Start(sessionName, workdir,

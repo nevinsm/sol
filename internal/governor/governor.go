@@ -95,13 +95,18 @@ func Start(opts StartOpts, sphereStore SphereStore, mgr SessionManager) error {
 	}
 
 	// 5. Start tmux session.
+	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), "governor", "governor")
+	if err != nil {
+		return err
+	}
 	prompt := fmt.Sprintf("Governor, world %s. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync --world=%s",
 		opts.World, opts.World)
 	sessionCmd := config.BuildSessionCommand(config.SettingsPath(govDir), prompt)
 	env := map[string]string{
-		"SOL_HOME":  config.Home(),
-		"SOL_WORLD": opts.World,
-		"SOL_AGENT": "governor",
+		"SOL_HOME":         config.Home(),
+		"SOL_WORLD":        opts.World,
+		"SOL_AGENT":        "governor",
+		"CLAUDE_CONFIG_DIR": claudeConfigDir,
 	}
 	if err := mgr.Start(sessName, govDir, sessionCmd, env, "governor", opts.World); err != nil {
 		return fmt.Errorf("failed to start governor for world %q: %w", opts.World, err)

@@ -257,6 +257,32 @@ func BuildSessionCommandContinue(settingsPath, prompt string) string {
 		ShellQuote(settingsPath), ShellQuote(prompt))
 }
 
+// ClaudeConfigDir returns the CLAUDE_CONFIG_DIR path for an agent.
+// World-scoped agents: <worldDir>/.claude-config/<roleDir>/<name>/
+// Sphere-scoped agents (senate): <solHome>/.claude-config/senate/senate/
+func ClaudeConfigDir(worldDir, role, name string) string {
+	var roleDir string
+	switch role {
+	case "envoy":
+		roleDir = "envoys"
+	case "agent":
+		roleDir = "outposts"
+	default:
+		roleDir = role // forge, governor, senate
+	}
+	return filepath.Join(worldDir, ".claude-config", roleDir, name)
+}
+
+// EnsureClaudeConfigDir computes and creates the CLAUDE_CONFIG_DIR for an agent.
+// Returns the absolute path. Creates the directory (and parents) if needed.
+func EnsureClaudeConfigDir(worldDir, role, name string) (string, error) {
+	dir := ClaudeConfigDir(worldDir, role, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create claude config dir %q: %w", dir, err)
+	}
+	return dir, nil
+}
+
 // NudgeQueueDir returns the nudge queue directory for a session.
 // Path: $SOL_HOME/.runtime/nudge_queue/{session}/
 func NudgeQueueDir(session string) string {

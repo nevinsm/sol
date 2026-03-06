@@ -576,10 +576,15 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// Cycle the session atomically using respawn-pane. This is safe for
 	// self-handoff — respawn-pane -k kills the old process and starts the
 	// new one server-side, so the calling process being killed is expected.
+	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), role, opts.AgentName)
+	if err != nil {
+		return err
+	}
 	env := map[string]string{
-		"SOL_HOME":  config.Home(),
-		"SOL_WORLD": opts.World,
-		"SOL_AGENT": opts.AgentName,
+		"SOL_HOME":         config.Home(),
+		"SOL_WORLD":        opts.World,
+		"SOL_AGENT":        opts.AgentName,
+		"CLAUDE_CONFIG_DIR": claudeConfigDir,
 	}
 	prompt := fmt.Sprintf("Agent %s, world %s (handoff). If no context appears, run: sol prime --world=%s --agent=%s",
 		opts.AgentName, opts.World, opts.World, opts.AgentName)
