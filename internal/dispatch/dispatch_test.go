@@ -23,21 +23,24 @@ import (
 // --- Mock session manager ---
 
 type mockSessionManager struct {
-	started  map[string]bool
-	stopped  map[string]bool
-	injected map[string]string // session → last injected text
+	started    map[string]bool
+	stopped    map[string]bool
+	injected   map[string]string            // session → last injected text
+	startedEnv map[string]map[string]string // session → env vars
 }
 
 func newMockSessionManager() *mockSessionManager {
 	return &mockSessionManager{
-		started:  make(map[string]bool),
-		stopped:  make(map[string]bool),
-		injected: make(map[string]string),
+		started:    make(map[string]bool),
+		stopped:    make(map[string]bool),
+		injected:   make(map[string]string),
+		startedEnv: make(map[string]map[string]string),
 	}
 }
 
 func (m *mockSessionManager) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	m.started[name] = true
+	m.startedEnv[name] = env
 	return nil
 }
 
@@ -186,6 +189,116 @@ func TestCastHappyPath(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "Toast") {
 		t.Error("CLAUDE.local.md missing agent name")
+	}
+}
+
+func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Configure ledger port in world config.
+	solHome := os.Getenv("SOL_HOME")
+	worldDir := filepath.Join(solHome, "ember")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatalf("failed to create world dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte("[ledger]\nport = 9999\n"), 0o644); err != nil {
+		t.Fatalf("failed to write world.toml: %v", err)
+	}
+
+	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	_, err = Cast(CastOpts{
+		WorkItemID: itemID,
+		World:      "ember",
+		AgentName:  "Toast",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Cast failed: %v", err)
+	}
+
+	env := mgr.startedEnv["sol-ember-Toast"]
+	if env == nil {
+		t.Fatal("no env captured for session")
+	}
+
+	checks := map[string]string{
+		"CLAUDE_CODE_ENABLE_TELEMETRY":    "1",
+		"OTEL_LOGS_EXPORTER":              "otlp",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://localhost:9999",
+		"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "http/json",
+	}
+	for k, want := range checks {
+		if got := env[k]; got != want {
+			t.Errorf("env[%s] = %q, want %q", k, got, want)
+		}
+	}
+
+	attrs := env["OTEL_RESOURCE_ATTRIBUTES"]
+	if !strings.Contains(attrs, "agent.name=Toast") {
+		t.Errorf("OTEL_RESOURCE_ATTRIBUTES missing agent.name: %s", attrs)
+	}
+	if !strings.Contains(attrs, "world=ember") {
+		t.Errorf("OTEL_RESOURCE_ATTRIBUTES missing world: %s", attrs)
+	}
+	if !strings.Contains(attrs, "work_item_id="+itemID) {
+		t.Errorf("OTEL_RESOURCE_ATTRIBUTES missing work_item_id: %s", attrs)
+	}
+}
+
+func TestCastNoTelemetryWhenLedgerNotConfigured(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	_, err = Cast(CastOpts{
+		WorkItemID: itemID,
+		World:      "ember",
+		AgentName:  "Toast",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Cast failed: %v", err)
+	}
+
+	env := mgr.startedEnv["sol-ember-Toast"]
+	if env == nil {
+		t.Fatal("no env captured for session")
+	}
+
+	otelKeys := []string{
+		"CLAUDE_CODE_ENABLE_TELEMETRY",
+		"OTEL_LOGS_EXPORTER",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL",
+		"OTEL_RESOURCE_ATTRIBUTES",
+	}
+	for _, k := range otelKeys {
+		if v, ok := env[k]; ok {
+			t.Errorf("env[%s] = %q, expected absent when ledger not configured", k, v)
+		}
 	}
 }
 

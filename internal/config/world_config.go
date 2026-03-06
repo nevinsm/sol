@@ -14,6 +14,7 @@ type WorldConfig struct {
 	World  WorldSection  `toml:"world" json:"world"`
 	Agents AgentsSection `toml:"agents" json:"agents"`
 	Forge  ForgeSection  `toml:"forge" json:"forge"`
+	Ledger LedgerSection `toml:"ledger" json:"ledger"`
 }
 
 // WorldSection holds world-level settings.
@@ -35,6 +36,11 @@ type ForgeSection struct {
 	TargetBranch string   `toml:"target_branch" json:"target_branch"`
 	QualityGates []string `toml:"quality_gates" json:"quality_gates"`
 	GateTimeout  string   `toml:"gate_timeout" json:"gate_timeout"` // duration string, e.g. "5m"
+}
+
+// LedgerSection holds ledger/telemetry settings.
+type LedgerSection struct {
+	Port int `toml:"port" json:"port"` // OTLP receiver port; 0 = disabled
 }
 
 // DefaultWorldConfig returns a WorldConfig with built-in defaults.
