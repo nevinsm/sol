@@ -165,12 +165,18 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 	}
 
 	agentID := world + "/" + agent
-	if _, err := sphereStore.GetAgent(agentID); err != nil {
+	existing, getErr := sphereStore.GetAgent(agentID)
+	if getErr != nil {
 		if _, err := sphereStore.CreateAgent(agent, world, cfg.Role); err != nil {
 			return "", fmt.Errorf("startup: failed to register agent: %w", err)
 		}
 	}
-	if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
+	// Preserve existing tether item (outpost agents have tethered work items).
+	tetherItem := ""
+	if existing != nil {
+		tetherItem = existing.TetherItem
+	}
+	if err := sphereStore.UpdateAgentState(agentID, "working", tetherItem); err != nil {
 		return "", fmt.Errorf("startup: failed to set agent working: %w", err)
 	}
 
@@ -203,6 +209,19 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		"SOL_WORLD":         world,
 		"SOL_AGENT":         agent,
 		"CLAUDE_CONFIG_DIR": claudeConfigDir,
+	}
+
+	// Enable ledger telemetry if configured.
+	if worldCfg.Ledger.Port > 0 {
+		env["CLAUDE_CODE_ENABLE_TELEMETRY"] = "1"
+		env["OTEL_LOGS_EXPORTER"] = "otlp"
+		env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] = fmt.Sprintf("http://localhost:%d", worldCfg.Ledger.Port)
+		env["OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"] = "http/json"
+		attrs := fmt.Sprintf("agent.name=%s,world=%s", agent, world)
+		if tetherItem != "" {
+			attrs += ",work_item_id=" + tetherItem
+		}
+		env["OTEL_RESOURCE_ATTRIBUTES"] = attrs
 	}
 
 	mgr := resolveSessionStarter(opts)

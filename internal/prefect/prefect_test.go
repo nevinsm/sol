@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -20,6 +22,7 @@ type mockSessions struct {
 	alive   map[string]bool
 	started []string
 	stopped []string
+	lastEnv map[string]string // env from the most recent Start call
 }
 
 func newMockSessions() *mockSessions {
@@ -37,6 +40,7 @@ func (m *mockSessions) Start(name, workdir, cmd string, env map[string]string, r
 	defer m.mu.Unlock()
 	m.alive[name] = true
 	m.started = append(m.started, name)
+	m.lastEnv = env
 	return nil
 }
 
@@ -867,6 +871,85 @@ func TestShutdownWorldsFilter(t *testing.T) {
 	// Beta session should still be alive.
 	if !mock.Exists("sol-beta-Jasper") {
 		t.Error("beta session should not be stopped when outside worlds filter")
+	}
+}
+
+func TestRespawnOutpostUsesStartupLaunch(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Register the outpost role config so prefect uses startup.Launch.
+	// Use a simplified config that avoids needing tether/world store for persona.
+	startup.Register("agent", startup.RoleConfig{
+		Role:        "agent",
+		WorktreeDir: func(w, a string) string { return dispatch.WorktreePath(w, a) },
+		Persona:     func(w, a string) ([]byte, error) { return []byte("# Test Agent"), nil },
+		PrimeBuilder: func(w, a string) string {
+			return "Agent " + a + ", world " + w
+		},
+	})
+	t.Cleanup(func() {
+		// Unregister to avoid polluting other tests.
+		startup.Register("agent", startup.RoleConfig{})
+	})
+
+	// Create world config (required by startup.Launch for CLAUDE_CONFIG_DIR).
+	worldDir := filepath.Join(os.Getenv("SOL_HOME"), "haven")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/fakerepo"
+`), 0o644)
+
+	// Create a working agent with a worktree.
+	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.heartbeat()
+
+	// Should have started a session via startup.Launch.
+	started := mock.GetStarted()
+	if len(started) != 1 {
+		t.Fatalf("expected 1 session started, got %d", len(started))
+	}
+	if started[0] != "sol-haven-Toast" {
+		t.Errorf("started session = %q, want %q", started[0], "sol-haven-Toast")
+	}
+
+	// Verify CLAUDE_CONFIG_DIR is set (proves startup.Launch was used,
+	// not the legacy respawnCommand path which doesn't set it).
+	mock.mu.Lock()
+	env := mock.lastEnv
+	mock.mu.Unlock()
+
+	if env["CLAUDE_CONFIG_DIR"] == "" {
+		t.Error("CLAUDE_CONFIG_DIR not set — respawn did not use startup.Launch")
+	}
+	if env["SOL_HOME"] == "" {
+		t.Error("SOL_HOME not set in env")
+	}
+	if env["SOL_WORLD"] != "haven" {
+		t.Errorf("SOL_WORLD = %q, want %q", env["SOL_WORLD"], "haven")
+	}
+	if env["SOL_AGENT"] != "Toast" {
+		t.Errorf("SOL_AGENT = %q, want %q", env["SOL_AGENT"], "Toast")
+	}
+
+	// Verify tether item is preserved in agent state.
+	agent, err := sphereStore.GetAgent("haven/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.State != "working" {
+		t.Errorf("agent state = %q, want %q", agent.State, "working")
+	}
+	if agent.TetherItem != "sol-abc12345" {
+		t.Errorf("agent tether_item = %q, want %q (tether item not preserved)", agent.TetherItem, "sol-abc12345")
 	}
 }
 

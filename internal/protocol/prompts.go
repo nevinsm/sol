@@ -16,3 +16,8 @@ var EnvoySystemPrompt string
 //
 //go:embed prompts/forge.md
 var ForgeSystemPrompt string
+
+// OutpostSystemPrompt is the full-replace system prompt for the outpost agent role.
+//
+//go:embed prompts/outpost.md
+var OutpostSystemPrompt string

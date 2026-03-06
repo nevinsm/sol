@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
@@ -16,8 +15,8 @@ import (
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/namepool"
 	"github.com/nevinsm/sol/internal/nudge"
-	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/workflow"
@@ -276,29 +275,8 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
 
-	// 7. Install CLAUDE.local.md in the worktree (agent persona).
-	ctx := protocol.ClaudeMDContext{
-		AgentName:    agent.Name,
-		World:        opts.World,
-		WorkItemID:   opts.WorkItemID,
-		Title:        item.Title,
-		Description:  item.Description,
-		HasWorkflow:  opts.Formula != "",
-		ModelTier:    worldCfg.Agents.ModelTier,
-		QualityGates: worldCfg.Forge.QualityGates,
-	}
-	if err := protocol.InstallClaudeMD(worktreeDir, ctx); err != nil {
-		rollback()
-		return nil, fmt.Errorf("failed to install CLAUDE.local.md: %w", err)
-	}
-
-	// 8. Install Claude Code hooks in the worktree.
-	if err := protocol.InstallHooks(worktreeDir, opts.World, agent.Name); err != nil {
-		rollback()
-		return nil, fmt.Errorf("failed to install hooks: %w", err)
-	}
-
-	// 8b. Instantiate workflow if formula provided.
+	// 7. Instantiate workflow if formula provided (before Launch so persona
+	// can detect the active workflow).
 	if opts.Formula != "" {
 		vars := opts.Variables
 		if vars == nil {
@@ -314,33 +292,17 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		}
 	}
 
-	// 9. Start tmux session.
-	resolvedAccount := account.ResolveAccount(opts.Account, worldCfg.World.DefaultAccount)
-	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), "agent", agent.Name, resolvedAccount)
-	if err != nil {
+	// 8. Launch the session via startup.Launch (persona, hooks, config dir,
+	// system prompt, prime, command building, session start).
+	launchCfg := OutpostRoleConfig()
+	launchOpts := startup.LaunchOpts{
+		Account:  opts.Account,
+		Sessions: mgr,
+		Sphere:   sphereStore,
+	}
+	if _, err := startup.Launch(launchCfg, opts.World, agent.Name, launchOpts); err != nil {
 		rollback()
-		return nil, err
-	}
-	env := map[string]string{
-		"SOL_HOME":          config.Home(),
-		"SOL_WORLD":         opts.World,
-		"SOL_AGENT":         agent.Name,
-		"CLAUDE_CONFIG_DIR": claudeConfigDir,
-	}
-	if worldCfg.Ledger.Port > 0 {
-		env["CLAUDE_CODE_ENABLE_TELEMETRY"] = "1"
-		env["OTEL_LOGS_EXPORTER"] = "otlp"
-		env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] = fmt.Sprintf("http://localhost:%d", worldCfg.Ledger.Port)
-		env["OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"] = "http/json"
-		env["OTEL_RESOURCE_ATTRIBUTES"] = fmt.Sprintf("agent.name=%s,world=%s,work_item_id=%s",
-			agent.Name, opts.World, opts.WorkItemID)
-	}
-	prompt := fmt.Sprintf("Agent %s, world %s. If no context appears, run: sol prime --world=%s --agent=%s",
-		agent.Name, opts.World, opts.World, agent.Name)
-	sessionCmd := config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
-	if err := mgr.Start(sessName, worktreeDir, sessionCmd, env, "agent", opts.World); err != nil {
-		rollback()
-		return nil, fmt.Errorf("failed to start session: %w", err)
+		return nil, fmt.Errorf("failed to launch session: %w", err)
 	}
 
 	castPayload := map[string]string{

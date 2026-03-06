@@ -464,6 +464,110 @@ func TestBuildResumePrimeEmpty(t *testing.T) {
 	}
 }
 
+func TestLaunchPreservesTetherItem(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	// Create worktree directory.
+	worktreeDir := filepath.Join(solHome, world, "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Open sphere store and pre-create agent with tether item.
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+
+	mock := &mockSessionStarter{}
+
+	cfg := RoleConfig{
+		Role:        "agent",
+		WorktreeDir: func(w, a string) string { return filepath.Join(solHome, w, "outposts", a, "worktree") },
+		Persona:     func(w, a string) ([]byte, error) { return []byte("# Test Agent"), nil },
+		PrimeBuilder: func(w, a string) string { return "Agent " + a },
+	}
+
+	_, err = Launch(cfg, world, "Toast", LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+
+	// Verify tether item was preserved.
+	agent, err := sphereStore.GetAgent("haven/Toast")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.TetherItem != "sol-abc12345" {
+		t.Errorf("tether_item = %q, want %q (not preserved)", agent.TetherItem, "sol-abc12345")
+	}
+	if agent.State != "working" {
+		t.Errorf("state = %q, want %q", agent.State, "working")
+	}
+}
+
+func TestLaunchSystemPromptFullReplace(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	t.Setenv("SOL_SESSION_COMMAND", "") // override setupTestEnv's sleep 300
+	world := "haven"
+
+	worktreeDir := filepath.Join(solHome, world, "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	cfg := RoleConfig{
+		Role:                "agent",
+		WorktreeDir:         func(w, a string) string { return filepath.Join(solHome, w, "outposts", a, "worktree") },
+		Persona:             func(w, a string) ([]byte, error) { return []byte("# Test Agent"), nil },
+		SystemPromptContent: "# Outpost System Prompt\nYou are an outpost agent.",
+		ReplacePrompt:       true,
+		PrimeBuilder:        func(w, a string) string { return "Agent " + a },
+	}
+
+	_, err = Launch(cfg, world, "Toast", LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+
+	// Verify system prompt file was written.
+	promptPath := filepath.Join(worktreeDir, ".claude", "system-prompt.md")
+	data, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("system prompt not written: %v", err)
+	}
+	if !strings.Contains(string(data), "Outpost System Prompt") {
+		t.Errorf("system prompt content = %q, missing expected content", string(data))
+	}
+
+	// Verify command uses --system-prompt-file (not --append-system-prompt-file).
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 start, got %d", len(mock.started))
+	}
+	cmd := mock.started[0].Cmd
+	if !strings.Contains(cmd, "--system-prompt-file") {
+		t.Errorf("command missing --system-prompt-file: %q", cmd)
+	}
+	if strings.Contains(cmd, "--append-system-prompt-file") {
+		t.Errorf("command should use --system-prompt-file not --append: %q", cmd)
+	}
+}
+
 func TestLaunchSkipsWorkflowIfActive(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 
