@@ -2032,3 +2032,62 @@ func TestEnsureFormulaCodeReview(t *testing.T) {
 		t.Fatalf("Validate() error on code-review: %v", err)
 	}
 }
+
+func TestEnsureFormulaThoroughWork(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	dir, err := EnsureFormula("thorough-work")
+	if err != nil {
+		t.Fatalf("EnsureFormula(thorough-work) error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "manifest.toml")); err != nil {
+		t.Errorf("manifest.toml not found: %v", err)
+	}
+
+	// All 5 step files must be present.
+	stepFiles := []string{
+		"01-design.md",
+		"02-implement.md",
+		"03-review.md",
+		"04-test.md",
+		"05-submit.md",
+	}
+	for _, f := range stepFiles {
+		if _, err := os.Stat(filepath.Join(dir, "steps", f)); err != nil {
+			t.Errorf("step file %q not found: %v", f, err)
+		}
+	}
+
+	// Load and validate the manifest.
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest(thorough-work) error: %v", err)
+	}
+	if m.Name != "thorough-work" {
+		t.Errorf("name: got %q, want %q", m.Name, "thorough-work")
+	}
+	if len(m.Steps) != 5 {
+		t.Fatalf("steps: got %d, want 5", len(m.Steps))
+	}
+	if err := Validate(m); err != nil {
+		t.Fatalf("Validate() error on thorough-work: %v", err)
+	}
+
+	// Verify the DAG: design → implement → review → test → submit.
+	expectedIDs := []string{"design", "implement", "review", "test", "submit"}
+	for i, s := range m.Steps {
+		if s.ID != expectedIDs[i] {
+			t.Errorf("step %d: got ID %q, want %q", i, s.ID, expectedIDs[i])
+		}
+	}
+	if len(m.Steps[0].Needs) != 0 {
+		t.Errorf("design should have no dependencies, got %v", m.Steps[0].Needs)
+	}
+	if m.Steps[1].Needs[0] != "design" {
+		t.Errorf("implement should need design, got %v", m.Steps[1].Needs)
+	}
+	if m.Steps[4].Needs[0] != "test" {
+		t.Errorf("submit should need test, got %v", m.Steps[4].Needs)
+	}
+}

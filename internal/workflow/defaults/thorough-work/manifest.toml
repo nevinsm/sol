@@ -1,0 +1,36 @@
+name = "thorough-work"
+type = "workflow"
+description = "Quality-focused work execution with design and review gates"
+
+[variables]
+issue = { required = true }
+base_branch = { default = "main" }
+
+[[steps]]
+id = "design"
+title = "Design the approach"
+instructions = "steps/01-design.md"
+
+[[steps]]
+id = "implement"
+title = "Implement the change"
+instructions = "steps/02-implement.md"
+needs = ["design"]
+
+[[steps]]
+id = "review"
+title = "Review the implementation"
+instructions = "steps/03-review.md"
+needs = ["implement"]
+
+[[steps]]
+id = "test"
+title = "Test thoroughly"
+instructions = "steps/04-test.md"
+needs = ["review"]
+
+[[steps]]
+id = "submit"
+title = "Submit the work"
+instructions = "steps/05-submit.md"
+needs = ["test"]
