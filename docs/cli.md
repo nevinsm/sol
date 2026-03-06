@@ -127,6 +127,8 @@ Without flags, `sol up` starts sphere daemons (prefect, consul, chronicle) and w
 | `sol forge attach` | Attach to the forge tmux session |
 | `sol forge status <world>` | Show forge health summary |
 | `sol forge queue` | Show the merge request queue |
+| `sol forge pause` | Pause the forge — stop claiming new MRs |
+| `sol forge resume` | Resume the forge — start claiming MRs again |
 
 Toolbox subcommands (used by the forge Claude session):
 

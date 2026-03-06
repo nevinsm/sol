@@ -38,6 +38,8 @@ var (
 	forgeCheckUnblockedWorld  string
 	forgeAwaitWorld          string
 	forgeAwaitTimeout        int
+	forgePauseWorld          string
+	forgeResumeWorld         string
 )
 
 var forgeCmd = &cobra.Command{
@@ -227,10 +229,14 @@ var forgeStatusCmd = &cobra.Command{
 			return err
 		}
 
+		// Check pause state.
+		paused := forge.IsForgePaused(world)
+
 		// Build summary.
 		summary := forgeStatusSummary{
 			World:       world,
 			Running:     running,
+			Paused:      paused,
 			SessionName: sessName,
 		}
 
@@ -305,6 +311,7 @@ var forgeStatusCmd = &cobra.Command{
 type forgeStatusSummary struct {
 	World       string            `json:"world"`
 	Running     bool              `json:"running"`
+	Paused      bool              `json:"paused"`
 	SessionName string            `json:"session_name"`
 	Ready       int               `json:"ready"`
 	Blocked     int               `json:"blocked"`
@@ -337,7 +344,11 @@ func printForgeStatus(s forgeStatusSummary) {
 
 	// Process state.
 	if s.Running {
-		fmt.Printf("  Process:  running (%s)\n", s.SessionName)
+		if s.Paused {
+			fmt.Printf("  Process:  paused (%s)\n", s.SessionName)
+		} else {
+			fmt.Printf("  Process:  running (%s)\n", s.SessionName)
+		}
 	} else {
 		fmt.Printf("  Process:  stopped\n")
 	}
@@ -563,6 +574,10 @@ var forgeClaimCmd = &cobra.Command{
 		world, err := config.ResolveWorld(forgeClaimWorld)
 		if err != nil {
 			return err
+		}
+
+		if forge.IsForgePaused(world) {
+			return fmt.Errorf("forge is paused for world %q (run 'sol forge resume --world=%s' to unpause)", world, world)
 		}
 
 		ref, worldStore, sphereStore, err := openForge(world)
@@ -937,6 +952,87 @@ var forgeAwaitCmd = &cobra.Command{
 	},
 }
 
+var forgePauseCmd = &cobra.Command{
+	Use:          "pause",
+	Short:        "Pause the forge — stop claiming new MRs",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(forgePauseWorld)
+		if err != nil {
+			return err
+		}
+
+		if forge.IsForgePaused(world) {
+			fmt.Printf("Forge already paused for world %q\n", world)
+			return nil
+		}
+
+		if err := forge.SetForgePaused(world); err != nil {
+			return fmt.Errorf("failed to pause forge: %w", err)
+		}
+
+		// Nudge the forge session so it notices the pause promptly.
+		sessName := dispatch.SessionName(world, "forge")
+		mgr := session.New()
+		if mgr.Exists(sessName) {
+			if err := nudge.Enqueue(sessName, nudge.Message{
+				Sender:   "operator",
+				Type:     "FORGE_PAUSED",
+				Subject:  "Forge paused by operator",
+				Body:     fmt.Sprintf(`{"world":%q}`, world),
+				Priority: "urgent",
+			}); err != nil {
+				// Best-effort — log but don't fail.
+				fmt.Fprintf(os.Stderr, "warning: failed to nudge forge session: %v\n", err)
+			}
+			nudge.Poke(sessName)
+		}
+
+		fmt.Printf("Forge paused for world %q\n", world)
+		return nil
+	},
+}
+
+var forgeResumeCmd = &cobra.Command{
+	Use:          "resume",
+	Short:        "Resume the forge — start claiming MRs again",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(forgeResumeWorld)
+		if err != nil {
+			return err
+		}
+
+		if !forge.IsForgePaused(world) {
+			fmt.Printf("Forge not paused for world %q\n", world)
+			return nil
+		}
+
+		if err := forge.ClearForgePaused(world); err != nil {
+			return fmt.Errorf("failed to resume forge: %w", err)
+		}
+
+		// Nudge the forge session so it resumes promptly.
+		sessName := dispatch.SessionName(world, "forge")
+		mgr := session.New()
+		if mgr.Exists(sessName) {
+			if err := nudge.Enqueue(sessName, nudge.Message{
+				Sender:   "operator",
+				Type:     "FORGE_RESUMED",
+				Subject:  "Forge resumed by operator",
+				Body:     fmt.Sprintf(`{"world":%q}`, world),
+				Priority: "urgent",
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to nudge forge session: %v\n", err)
+			}
+			nudge.Poke(sessName)
+		}
+
+		fmt.Printf("Forge resumed for world %q\n", world)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(forgeCmd)
 	forgeCmd.AddCommand(forgeStartCmd)
@@ -954,6 +1050,8 @@ func init() {
 	forgeCmd.AddCommand(forgeCreateResolutionCmd)
 	forgeCmd.AddCommand(forgeCheckUnblockedCmd)
 	forgeCmd.AddCommand(forgeAwaitCmd)
+	forgeCmd.AddCommand(forgePauseCmd)
+	forgeCmd.AddCommand(forgeResumeCmd)
 
 	// --world flag for all subcommands.
 	forgeStartCmd.Flags().StringVar(&forgeStartWorld, "world", "", "world name")
@@ -971,6 +1069,8 @@ func init() {
 	forgeCheckUnblockedCmd.Flags().StringVar(&forgeCheckUnblockedWorld, "world", "", "world name")
 	forgeAwaitCmd.Flags().StringVar(&forgeAwaitWorld, "world", "", "world name")
 	forgeAwaitCmd.Flags().IntVar(&forgeAwaitTimeout, "timeout", 30, "max seconds to wait")
+	forgePauseCmd.Flags().StringVar(&forgePauseWorld, "world", "", "world name")
+	forgeResumeCmd.Flags().StringVar(&forgeResumeWorld, "world", "", "world name")
 
 	// --json flag for commands that support it.
 	forgeQueueCmd.Flags().BoolVar(&forgeQueueJSON, "json", false, "output as JSON")

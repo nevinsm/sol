@@ -4,12 +4,41 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// pauseFlagPath returns the path to the forge pause flag file for a world.
+func pauseFlagPath(world string) string {
+	return filepath.Join(config.RuntimeDir(), world+"-forge-paused")
+}
+
+// IsForgePaused returns true if the forge is paused for the given world.
+func IsForgePaused(world string) bool {
+	_, err := os.Stat(pauseFlagPath(world))
+	return err == nil
+}
+
+// SetForgePaused creates the pause flag file, pausing the forge.
+func SetForgePaused(world string) error {
+	if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
+		return fmt.Errorf("failed to create runtime dir: %w", err)
+	}
+	return os.WriteFile(pauseFlagPath(world), []byte("paused\n"), 0o644)
+}
+
+// ClearForgePaused removes the pause flag file, resuming the forge.
+func ClearForgePaused(world string) error {
+	err := os.Remove(pauseFlagPath(world))
+	if os.IsNotExist(err) {
+		return nil // already unpaused
+	}
+	return err
+}
 
 // ListReady returns MRs with phase=ready AND blocked_by IS NULL AND not
 // blocked by caravan-level dependencies.

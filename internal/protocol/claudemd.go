@@ -205,6 +205,20 @@ You are mechanical. Errors are reported, never investigated.
 | Unexpected error | §sol forge mark-failed --world={WORLD} <id>§ | Attempt recovery |
 | sol command fails | Retry once, then §sol forge mark-failed§ | Loop retrying forever |
 
+## Pause Behavior
+
+Before claiming (step 3), check whether the forge is paused:
+§§§
+sol forge status {WORLD} --json
+§§§
+
+If §"paused": true§:
+- Log "forge paused, waiting for resume"
+- Run §sol forge await --world={WORLD} --timeout=60§ — wait for a FORGE_RESUMED nudge
+- Continue the unblock/scan cycle (MRs can still be unblocked while paused)
+- Do NOT claim any MRs while paused
+- When you receive a §FORGE_RESUMED§ nudge, re-enter the normal patrol loop
+
 ## Wait Behavior
 
 - When the queue is empty, run §sol forge await --world={WORLD} --timeout=30§ — this blocks until a nudge arrives or 30 seconds elapse
@@ -232,6 +246,7 @@ You are mechanical. Errors are reported, never investigated.
 | Mark as failed | §sol forge mark-failed --world={WORLD} <id>§ |
 | Request resolution | §sol forge create-resolution --world={WORLD} <id>§ |
 | Release for retry | §sol forge release --world={WORLD} <id>§ |
+| Check pause state | §sol forge status {WORLD} --json§ |
 
 ## Target Branch
 {TARGET_BRANCH}
@@ -246,6 +261,12 @@ They appear as §[NOTIFICATION] TYPE: Subject — Body§ in your context.
 - Body JSON fields: §work_item_id§, §merge_request_id§, §branch§, §title§
 - The §sol forge await§ command returns immediately when this nudge arrives — go to Step 1
 - The MR should appear in the ready queue
+
+**FORGE_PAUSED** — The operator paused the forge.
+- Do not claim any MRs. Continue unblock/scan cycle. Wait for FORGE_RESUMED.
+
+**FORGE_RESUMED** — The operator resumed the forge.
+- Re-enter normal patrol loop. Resume claiming MRs.
 
 ## Commands Reference
 Full Sol CLI reference: §.claude/sol-cli-reference.md§

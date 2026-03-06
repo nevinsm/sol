@@ -105,7 +105,7 @@ var docSections = []docSection{
 	},
 	{
 		heading: "Forge (Merge Pipeline)",
-		paths:   []string{"forge start", "forge stop", "forge sync", "forge attach", "forge status", "forge queue"},
+		paths:   []string{"forge start", "forge stop", "forge sync", "forge attach", "forge status", "forge queue", "forge pause", "forge resume"},
 	},
 	{
 		noHeading: true,
