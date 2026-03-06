@@ -12,8 +12,8 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/envoy"
-	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
@@ -85,42 +85,14 @@ var envoyStartCmd = &cobra.Command{
 			return err
 		}
 
-		sphereStore, err := store.OpenSphere()
+		sessName, err := startup.Launch(envoy.RoleConfig(), world, name, startup.LaunchOpts{})
 		if err != nil {
-			return err
-		}
-		defer sphereStore.Close()
-
-		mgr := session.New()
-
-		// Read optional persona file.
-		var personaContent string
-		personaPath := envoy.PersonaPath(world, name)
-		if data, err := os.ReadFile(personaPath); err == nil {
-			personaContent = string(data)
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("failed to read persona file %q: %w", personaPath, err)
-		}
-
-		// Install envoy CLAUDE.md before starting session.
-		worktree := envoy.WorktreePath(world, name)
-		if err := protocol.InstallEnvoyClaudeMD(worktree, protocol.EnvoyClaudeMDContext{
-			AgentName:      name,
-			World:          world,
-			SolBinary:      "sol",
-			PersonaContent: personaContent,
-		}); err != nil {
-			return fmt.Errorf("failed to install envoy CLAUDE.md: %w", err)
-		}
-
-		if err := envoy.Start(envoy.StartOpts{
-			World: world,
-			Name:  name,
-		}, sphereStore, mgr); err != nil {
 			return err
 		}
 
 		fmt.Printf("Started envoy %q in world %q\n", name, world)
+		fmt.Printf("  Session: %s\n", sessName)
+		fmt.Printf("  Attach:  sol envoy attach %s --world=%s\n", name, world)
 		return nil
 	},
 }
@@ -401,6 +373,9 @@ var envoySyncCmd = &cobra.Command{
 }
 
 func init() {
+	// Register envoy role config for startup.Launch and prefect respawn.
+	startup.Register("envoy", envoy.RoleConfig())
+
 	rootCmd.AddCommand(envoyCmd)
 	envoyCmd.AddCommand(envoyCreateCmd, envoyStartCmd, envoyStopCmd,
 		envoyAttachCmd, envoyListCmd, envoyBriefCmd, envoyDebriefCmd, envoySyncCmd, envoyDeleteCmd)

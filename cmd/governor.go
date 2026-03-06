@@ -9,8 +9,8 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/governor"
-	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
@@ -40,34 +40,23 @@ var governorStartCmd = &cobra.Command{
 			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
 		}
 
-		sphereStore, err := store.OpenSphere()
-		if err != nil {
-			return err
-		}
-		defer sphereStore.Close()
-
-		mgr := session.New()
-
-		// Install governor CLAUDE.md before starting session.
+		// Ensure governor and brief directories exist.
 		govDir := governor.GovernorDir(world)
 		if err := os.MkdirAll(govDir, 0o755); err != nil {
 			return fmt.Errorf("failed to create governor directory: %w", err)
 		}
-		if err := protocol.InstallGovernorClaudeMD(govDir, protocol.GovernorClaudeMDContext{
-			World:     world,
-			SolBinary: "sol",
-			MirrorDir: "../repo",
-		}); err != nil {
-			return fmt.Errorf("failed to install governor CLAUDE.md: %w", err)
+		if err := os.MkdirAll(governor.BriefDir(world), 0o755); err != nil {
+			return fmt.Errorf("failed to create governor brief directory: %w", err)
 		}
 
-		if err := governor.Start(governor.StartOpts{
-			World: world,
-		}, sphereStore, mgr); err != nil {
+		sessName, err := startup.Launch(governor.RoleConfig(), world, "governor", startup.LaunchOpts{})
+		if err != nil {
 			return err
 		}
 
 		fmt.Printf("Started governor for world %q\n", world)
+		fmt.Printf("  Session: %s\n", sessName)
+		fmt.Printf("  Attach:  sol governor attach --world=%s\n", world)
 		return nil
 	},
 }
@@ -265,6 +254,9 @@ var governorSyncCmd = &cobra.Command{
 }
 
 func init() {
+	// Register governor role config for startup.Launch and prefect respawn.
+	startup.Register("governor", governor.RoleConfig())
+
 	rootCmd.AddCommand(governorCmd)
 	governorCmd.AddCommand(governorStartCmd, governorStopCmd, governorAttachCmd,
 		governorBriefCmd, governorDebriefCmd,

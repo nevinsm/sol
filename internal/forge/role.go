@@ -24,7 +24,7 @@ func ForgeRoleConfig() startup.RoleConfig {
 }
 
 // forgePersona generates the forge CLAUDE.local.md content.
-func forgePersona(world string) ([]byte, error) {
+func forgePersona(world, _ string) ([]byte, error) {
 	cfg, err := resolveForgeConfigForRole(world)
 	if err != nil {
 		return nil, err

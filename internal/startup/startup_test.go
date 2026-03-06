@@ -100,7 +100,7 @@ func TestLaunchBasic(t *testing.T) {
 	cfg := RoleConfig{
 		Role:        "forge",
 		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
-		Persona: func(w string) ([]byte, error) {
+		Persona: func(w, _ string) ([]byte, error) {
 			return []byte("# Test Forge Persona"), nil
 		},
 		Hooks: func(w, a string) HookSet {

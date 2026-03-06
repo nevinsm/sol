@@ -6,7 +6,6 @@ import (
 
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -38,12 +37,13 @@ type RoleConfig struct {
 	WorktreeDir func(world, agent string) string
 
 	// Persona & Hooks
-	Persona func(world string) ([]byte, error) // CLAUDE.local.md content
+	Persona func(world, agent string) ([]byte, error) // CLAUDE.local.md content
 	Hooks   func(world, agent string) HookSet
 
 	// System prompt
-	SystemPromptFile string // path to prompt file (embedded or on disk)
-	ReplacePrompt    bool   // true = --system-prompt-file, false = --append-system-prompt-file
+	SystemPromptFile    string // path to prompt file (embedded or on disk)
+	SystemPromptContent string // if set, written to .claude/system-prompt.md and used as SystemPromptFile
+	ReplacePrompt       bool   // true = --system-prompt-file, false = --append-system-prompt-file
 
 	// Workflow
 	Formula   string // formula name to instantiate (empty = none)
@@ -92,7 +92,7 @@ func ConfigFor(role string) *RoleConfig {
 //  8. Build claude command (--system-prompt-file or --append-system-prompt-file)
 //  9. Start tmux session with env
 func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error) {
-	sessName := dispatch.SessionName(world, agent)
+	sessName := config.SessionName(world, agent)
 
 	// 1. Get worktree directory.
 	worktreeDir := ""
@@ -110,13 +110,26 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 
 	// 2. Install persona (CLAUDE.local.md).
 	if cfg.Persona != nil {
-		content, err := cfg.Persona(world)
+		content, err := cfg.Persona(world, agent)
 		if err != nil {
 			return "", fmt.Errorf("startup: failed to generate persona: %w", err)
 		}
 		if err := installPersona(worktreeDir, content); err != nil {
 			return "", fmt.Errorf("startup: failed to install persona: %w", err)
 		}
+	}
+
+	// 2.5. Install system prompt content if provided.
+	if cfg.SystemPromptContent != "" {
+		promptDir := fmt.Sprintf("%s/.claude", worktreeDir)
+		if err := os.MkdirAll(promptDir, 0o755); err != nil {
+			return "", fmt.Errorf("startup: failed to create .claude for system prompt: %w", err)
+		}
+		promptPath := fmt.Sprintf("%s/system-prompt.md", promptDir)
+		if err := os.WriteFile(promptPath, []byte(cfg.SystemPromptContent), 0o644); err != nil {
+			return "", fmt.Errorf("startup: failed to write system prompt: %w", err)
+		}
+		cfg.SystemPromptFile = ".claude/system-prompt.md"
 	}
 
 	// 3. Install hooks (settings.local.json).
