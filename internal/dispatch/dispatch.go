@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
@@ -109,6 +110,7 @@ type CastOpts struct {
 	Formula     string              // optional: formula name for workflow
 	Variables   map[string]string   // optional: workflow variables
 	WorldConfig *config.WorldConfig // optional: pre-loaded config (avoids double load)
+	Account     string              // optional: explicit account override for credential provisioning
 }
 
 // Cast assigns a work item to an outpost agent and starts its session.
@@ -311,7 +313,8 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	}
 
 	// 9. Start tmux session.
-	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), "agent", agent.Name)
+	resolvedAccount := account.ResolveAccount(opts.Account, worldCfg.World.DefaultAccount)
+	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), "agent", agent.Name, resolvedAccount)
 	if err != nil {
 		rollback()
 		return nil, err

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
@@ -653,7 +654,9 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 
 	sessionName := dispatch.SessionName(w.config.World, agent.Name)
 	workdir := dispatch.WorktreePath(w.config.World, agent.Name)
-	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(w.config.World), agent.Role, agent.Name)
+	worldCfg, _ := config.LoadWorldConfig(w.config.World)
+	resolvedAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
+	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(w.config.World), agent.Role, agent.Name, resolvedAccount)
 	if err != nil {
 		return fmt.Errorf("failed to ensure claude config dir for %s: %w", agent.Name, err)
 	}

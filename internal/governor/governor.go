@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/brief"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/protocol"
@@ -94,8 +95,10 @@ func Start(opts StartOpts, sphereStore SphereStore, mgr SessionManager) error {
 		return fmt.Errorf("failed to start governor for world %q: %w", opts.World, err)
 	}
 
-	// 5. Start tmux session.
-	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), "governor", "governor")
+	// 5. Resolve account and start tmux session.
+	worldCfg, _ := config.LoadWorldConfig(opts.World)
+	resolvedAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
+	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), "governor", "governor", resolvedAccount)
 	if err != nil {
 		return err
 	}

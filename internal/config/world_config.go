@@ -18,8 +18,9 @@ type WorldConfig struct {
 
 // WorldSection holds world-level settings.
 type WorldSection struct {
-	SourceRepo string `toml:"source_repo" json:"source_repo"`
-	Sleeping   bool   `toml:"sleeping,omitempty" json:"sleeping,omitempty"`
+	SourceRepo     string `toml:"source_repo" json:"source_repo"`
+	Sleeping       bool   `toml:"sleeping,omitempty" json:"sleeping,omitempty"`
+	DefaultAccount string `toml:"default_account,omitempty" json:"default_account,omitempty"`
 }
 
 // AgentsSection holds agent-related settings.

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/brief"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/protocol"
@@ -225,8 +226,10 @@ func Start(opts StartOpts, sphereStore StartStore, mgr SessionManager) error {
 		return fmt.Errorf("failed to start envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 
-	// 4. Start tmux session.
-	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), "envoy", opts.Name)
+	// 4. Resolve account and start tmux session.
+	worldCfg, _ := config.LoadWorldConfig(opts.World)
+	resolvedAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
+	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), "envoy", opts.Name, resolvedAccount)
 	if err != nil {
 		return err
 	}
