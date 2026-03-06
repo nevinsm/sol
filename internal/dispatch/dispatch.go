@@ -43,6 +43,8 @@ type WorldStore interface {
 	CloseWorkItem(id string) error
 	ListChildWorkItems(parentID string) ([]store.WorkItem, error)
 	ListAgentMemories(agentName string) ([]store.AgentMemory, error)
+	WriteHistory(agentName, workItemID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error)
+	EndHistory(workItemID string) (string, error)
 	Close() error
 }
 
@@ -347,6 +349,11 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 			"agent":        agent.Name,
 			"world":        opts.World,
 		})
+	}
+
+	// Write history record for cycle-time tracking.
+	if _, err := worldStore.WriteHistory(agent.Name, opts.WorkItemID, "cast", "", time.Now(), nil); err != nil {
+		fmt.Fprintf(os.Stderr, "cast: failed to write history: %v\n", err)
 	}
 
 	return &CastResult{
@@ -1229,6 +1236,10 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	// 10. Poke forge to trigger turn boundary and drain pending nudges.
 	nudge.Poke(forgeSession)
 
+	// 11. Close history record for cycle-time tracking.
+	if _, err := worldStore.EndHistory(workItemID); err != nil {
+		fmt.Fprintf(os.Stderr, "resolve: failed to end history: %v\n", err)
+	}
 
 	return &ResolveResult{
 		WorkItemID:     workItemID,

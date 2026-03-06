@@ -174,6 +174,31 @@ func (s *Store) ListHistory(agentName string) ([]HistoryEntry, error) {
 	return entries, nil
 }
 
+// EndHistory updates the ended_at timestamp on the most recent open cast record
+// for the given work item. Returns the history ID that was updated, or empty
+// string if no open record was found (best-effort — no error for missing records).
+func (s *Store) EndHistory(workItemID string) (string, error) {
+	var id string
+	err := s.db.QueryRow(
+		`SELECT id FROM agent_history
+		 WHERE work_item_id = ? AND action = 'cast' AND ended_at IS NULL
+		 ORDER BY started_at DESC LIMIT 1`, workItemID,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to find open history for work item %q: %w", workItemID, err)
+	}
+
+	endStr := time.Now().UTC().Format(time.RFC3339)
+	_, err = s.db.Exec(`UPDATE agent_history SET ended_at = ? WHERE id = ?`, endStr, id)
+	if err != nil {
+		return "", fmt.Errorf("failed to update ended_at for history %q: %w", id, err)
+	}
+	return id, nil
+}
+
 // WriteTokenUsage inserts a token_usage record and returns its generated ID.
 func (s *Store) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64) (string, error) {
 	id, err := generateTokenUsageID()
