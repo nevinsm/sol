@@ -65,7 +65,7 @@ var docSections = []docSection{
 	},
 	{
 		heading: "World Management",
-		paths:   []string{"world init", "world list", "world status", "world delete", "world sync", "world sleep", "world wake", "world summary", "world query"},
+		paths:   []string{"world init", "world list", "world status", "world delete", "world sync", "world import", "world sleep", "world wake", "world summary", "world query"},
 	},
 	{
 		heading: "Dispatch",

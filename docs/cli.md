@@ -38,6 +38,7 @@ Accounts are stored under `$SOL_HOME/.accounts/`. Each account has its own confi
 | `sol world status <name>` | Show world status with config |
 | `sol world delete` | Delete a world |
 | `sol world sync` | Sync the managed repo with its remote |
+| `sol world import <archive>` | Import a world from an export archive |
 | `sol world sleep <name>` | Mark a world as sleeping and stop its services |
 | `sol world wake <name>` | Mark a world as active and start its services |
 | `sol world summary <name>` | Show a world's governor-maintained summary |

@@ -1,14 +1,18 @@
 package integration
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/worldexport"
 )
 
 func TestWorldInitBasic(t *testing.T) {
@@ -614,5 +618,274 @@ func TestWorldDeleteRefusesWithActiveSessions(t *testing.T) {
 	}
 	if !strings.Contains(out, "active session") {
 		t.Fatalf("expected 'active session' error, got: %s", out)
+	}
+}
+
+// --- World Import Tests ---
+
+// buildTestArchive creates a .tar.gz export archive for testing world import.
+func buildTestArchive(t *testing.T, gtHome, worldName string) string {
+	t.Helper()
+
+	// Create a valid world DB by initializing a temporary world.
+	tmpHome := t.TempDir()
+	os.MkdirAll(filepath.Join(tmpHome, ".store"), 0o755)
+	t.Setenv("SOL_HOME", tmpHome)
+
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("create temp world db: %v", err)
+	}
+	// Add a work item so we can verify it survives import.
+	_, err = worldStore.CreateWorkItem("Test task", "A test work item", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("create work item: %v", err)
+	}
+	worldStore.Close()
+
+	worldDBData, err := os.ReadFile(filepath.Join(tmpHome, ".store", worldName+".db"))
+	if err != nil {
+		t.Fatalf("read world db: %v", err)
+	}
+
+	// Reset SOL_HOME for the real test.
+	t.Setenv("SOL_HOME", gtHome)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	manifest := worldexport.Manifest{
+		Version:    1,
+		World:      worldName,
+		ExportedAt: now,
+		SolVersion: "0.1.0",
+		SchemaVersions: worldexport.SchemaVersions{
+			World:  worldexport.CurrentWorldSchema,
+			Sphere: worldexport.CurrentSphereSchema,
+		},
+	}
+
+	worldToml := `[world]
+source_repo = ""
+
+[agents]
+model_tier = "sonnet"
+
+[forge]
+target_branch = "main"
+gate_timeout = "5m"
+`
+
+	agents := []worldexport.ExportAgent{
+		{
+			ID: worldName + "/TestAgent", Name: "TestAgent", World: worldName,
+			Role: "agent", State: "working", CreatedAt: now, UpdatedAt: now,
+		},
+	}
+
+	archiveDir := t.TempDir()
+	archivePath := filepath.Join(archiveDir, "export.tar.gz")
+
+	f, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatalf("create archive: %v", err)
+	}
+	defer f.Close()
+
+	gw := gzip.NewWriter(f)
+	defer gw.Close()
+
+	tw := tar.NewWriter(gw)
+	defer tw.Close()
+
+	prefix := "sol-export-" + worldName + "-test/"
+
+	tw.WriteHeader(&tar.Header{Name: prefix, Typeflag: tar.TypeDir, Mode: 0o755})
+
+	manifestJSON, _ := json.MarshalIndent(manifest, "", "  ")
+	writeTarFile(t, tw, prefix+"manifest.json", manifestJSON)
+	writeTarFile(t, tw, prefix+"world.toml", []byte(worldToml))
+	writeTarFile(t, tw, prefix+"world.db", worldDBData)
+
+	tw.WriteHeader(&tar.Header{Name: prefix + "sphere-data/", Typeflag: tar.TypeDir, Mode: 0o755})
+
+	agentsJSON, _ := json.MarshalIndent(agents, "", "  ")
+	writeTarFile(t, tw, prefix+"sphere-data/agents.json", agentsJSON)
+	writeTarFile(t, tw, prefix+"sphere-data/messages.json", []byte("[]"))
+	writeTarFile(t, tw, prefix+"sphere-data/escalations.json", []byte("[]"))
+	writeTarFile(t, tw, prefix+"sphere-data/caravans.json", []byte("[]"))
+	writeTarFile(t, tw, prefix+"sphere-data/caravan_items.json", []byte("[]"))
+
+	return archivePath
+}
+
+func writeTarFile(t *testing.T, tw *tar.Writer, name string, data []byte) {
+	t.Helper()
+	tw.WriteHeader(&tar.Header{
+		Name: name, Size: int64(len(data)), Mode: 0o644, Typeflag: tar.TypeReg,
+	})
+	tw.Write(data)
+}
+
+func TestWorldImportBasic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	archivePath := buildTestArchive(t, gtHome, "imported")
+
+	out, err := runGT(t, gtHome, "world", "import", archivePath)
+	if err != nil {
+		t.Fatalf("world import failed: %v: %s", err, out)
+	}
+
+	if !strings.Contains(out, `"imported" imported`) {
+		t.Errorf("expected import confirmation, got: %s", out)
+	}
+
+	// Verify world.toml exists.
+	tomlPath := filepath.Join(gtHome, "imported", "world.toml")
+	if _, err := os.Stat(tomlPath); os.IsNotExist(err) {
+		t.Fatal("world.toml not created after import")
+	}
+
+	// Verify world.db exists.
+	dbPath := filepath.Join(gtHome, ".store", "imported.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		t.Fatal("world.db not created after import")
+	}
+
+	// Verify world registered in sphere.db.
+	t.Setenv("SOL_HOME", gtHome)
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("open sphere: %v", err)
+	}
+	defer sphereStore.Close()
+
+	world, err := sphereStore.GetWorld("imported")
+	if err != nil {
+		t.Fatalf("get world: %v", err)
+	}
+	if world.Name != "imported" {
+		t.Fatalf("expected world name 'imported', got %q", world.Name)
+	}
+
+	// Verify agent imported with state=idle.
+	agent, err := sphereStore.GetAgent("imported/TestAgent")
+	if err != nil {
+		t.Fatalf("get agent: %v", err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("expected agent state 'idle', got %q", agent.State)
+	}
+
+	// Verify work item survives in world.db.
+	worldStore, err := store.OpenWorld("imported")
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	items, err := worldStore.ListWorkItems(store.ListFilters{})
+	if err != nil {
+		t.Fatalf("list work items: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 work item, got %d", len(items))
+	}
+	if items[0].Title != "Test task" {
+		t.Errorf("expected work item title 'Test task', got %q", items[0].Title)
+	}
+}
+
+func TestWorldImportNameConflict(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	// Create existing world.
+	initWorld(t, gtHome, "imported")
+
+	archivePath := buildTestArchive(t, gtHome, "imported")
+
+	out, err := runGT(t, gtHome, "world", "import", archivePath)
+	if err == nil {
+		t.Fatalf("expected error on name conflict, got success: %s", out)
+	}
+	if !strings.Contains(out, "already exists") {
+		t.Fatalf("expected 'already exists' error, got: %s", out)
+	}
+}
+
+func TestWorldImportWithRename(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	archivePath := buildTestArchive(t, gtHome, "original")
+
+	out, err := runGT(t, gtHome, "world", "import", archivePath, "--name=renamed")
+	if err != nil {
+		t.Fatalf("world import --name failed: %v: %s", err, out)
+	}
+
+	if !strings.Contains(out, `"renamed" imported`) {
+		t.Errorf("expected import confirmation for 'renamed', got: %s", out)
+	}
+
+	// Verify files at the renamed path.
+	tomlPath := filepath.Join(gtHome, "renamed", "world.toml")
+	if _, err := os.Stat(tomlPath); os.IsNotExist(err) {
+		t.Fatal("world.toml not created at renamed path")
+	}
+
+	// Verify agent was renamed.
+	t.Setenv("SOL_HOME", gtHome)
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("open sphere: %v", err)
+	}
+	defer sphereStore.Close()
+
+	agent, err := sphereStore.GetAgent("renamed/TestAgent")
+	if err != nil {
+		t.Fatalf("get renamed agent: %v", err)
+	}
+	if agent.World != "renamed" {
+		t.Errorf("expected agent world 'renamed', got %q", agent.World)
+	}
+
+	// Original name should not exist.
+	_, err = sphereStore.GetAgent("original/TestAgent")
+	if err == nil {
+		t.Error("original agent ID should not exist after rename")
+	}
+}
+
+func TestWorldImportThenList(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	archivePath := buildTestArchive(t, gtHome, "listme")
+
+	if _, err := runGT(t, gtHome, "world", "import", archivePath); err != nil {
+		t.Fatalf("world import failed: %v", err)
+	}
+
+	out, err := runGT(t, gtHome, "world", "list")
+	if err != nil {
+		t.Fatalf("world list failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "listme") {
+		t.Errorf("imported world not in list output: %s", out)
 	}
 }
