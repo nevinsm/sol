@@ -3,10 +3,10 @@ package startup
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -42,7 +42,8 @@ type RoleConfig struct {
 	Hooks   func(world, agent string) HookSet
 
 	// System prompt
-	SystemPromptFile string // path to prompt file (embedded or on disk)
+	SystemPromptFile string // relative path for the prompt file within the worktree
+	SystemPromptData string // embedded prompt content; written to SystemPromptFile on launch
 	ReplacePrompt    bool   // true = --system-prompt-file, false = --append-system-prompt-file
 
 	// Workflow
@@ -58,6 +59,10 @@ type LaunchOpts struct {
 	Continue bool   // use --continue for handoff
 	Respawn  bool   // skip worktree creation if exists
 	Account  string // account override (empty = use world default)
+
+	// Env holds additional environment variables merged into the session env.
+	// Keys here override the defaults (SOL_HOME, SOL_WORLD, SOL_AGENT, CLAUDE_CONFIG_DIR).
+	Env map[string]string
 
 	// Optional dependency injection for testing. When nil, defaults are used.
 	Sessions   SessionStarter // default: session.New()
@@ -92,7 +97,7 @@ func ConfigFor(role string) *RoleConfig {
 //  8. Build claude command (--system-prompt-file or --append-system-prompt-file)
 //  9. Start tmux session with env
 func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error) {
-	sessName := dispatch.SessionName(world, agent)
+	sessName := config.SessionName(world, agent)
 
 	// 1. Get worktree directory.
 	worktreeDir := ""
@@ -116,6 +121,17 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		}
 		if err := installPersona(worktreeDir, content); err != nil {
 			return "", fmt.Errorf("startup: failed to install persona: %w", err)
+		}
+	}
+
+	// 2b. Install system prompt file if embedded content provided.
+	if cfg.SystemPromptData != "" && cfg.SystemPromptFile != "" {
+		promptPath := filepath.Join(worktreeDir, cfg.SystemPromptFile)
+		if err := os.MkdirAll(filepath.Dir(promptPath), 0o755); err != nil {
+			return "", fmt.Errorf("startup: failed to create system prompt directory: %w", err)
+		}
+		if err := os.WriteFile(promptPath, []byte(cfg.SystemPromptData), 0o644); err != nil {
+			return "", fmt.Errorf("startup: failed to write system prompt file: %w", err)
 		}
 	}
 
@@ -151,12 +167,18 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 	}
 
 	agentID := world + "/" + agent
-	if _, err := sphereStore.GetAgent(agentID); err != nil {
+	existing, getErr := sphereStore.GetAgent(agentID)
+	if getErr != nil {
 		if _, err := sphereStore.CreateAgent(agent, world, cfg.Role); err != nil {
 			return "", fmt.Errorf("startup: failed to register agent: %w", err)
 		}
 	}
-	if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
+	// Preserve existing tether item (outpost agents have active tethers).
+	tetherItem := ""
+	if existing != nil {
+		tetherItem = existing.TetherItem
+	}
+	if err := sphereStore.UpdateAgentState(agentID, "working", tetherItem); err != nil {
 		return "", fmt.Errorf("startup: failed to set agent working: %w", err)
 	}
 
@@ -189,6 +211,9 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		"SOL_WORLD":         world,
 		"SOL_AGENT":         agent,
 		"CLAUDE_CONFIG_DIR": claudeConfigDir,
+	}
+	for k, v := range opts.Env {
+		env[k] = v
 	}
 
 	mgr := resolveSessionStarter(opts)
@@ -236,10 +261,15 @@ func buildCommand(cfg RoleConfig, worktreeDir, prompt string, continueSession bo
 	args += " --settings " + config.ShellQuote(settingsPath)
 
 	if cfg.SystemPromptFile != "" {
+		promptPath := cfg.SystemPromptFile
+		// When content was embedded and written to worktree, resolve absolute path.
+		if cfg.SystemPromptData != "" {
+			promptPath = filepath.Join(worktreeDir, cfg.SystemPromptFile)
+		}
 		if cfg.ReplacePrompt {
-			args += " --system-prompt-file " + config.ShellQuote(cfg.SystemPromptFile)
+			args += " --system-prompt-file " + config.ShellQuote(promptPath)
 		} else {
-			args += " --append-system-prompt-file " + config.ShellQuote(cfg.SystemPromptFile)
+			args += " --append-system-prompt-file " + config.ShellQuote(promptPath)
 		}
 	}
 

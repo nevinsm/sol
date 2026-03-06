@@ -6,6 +6,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -94,6 +95,9 @@ var castCmd = &cobra.Command{
 }
 
 func init() {
+	// Register outpost role config for startup.Launch and prefect respawn.
+	startup.Register("agent", dispatch.OutpostRoleConfig())
+
 	rootCmd.AddCommand(castCmd)
 	castCmd.Flags().StringVar(&castWorld, "world", "", "world name")
 	castCmd.Flags().StringVar(&castAgent, "agent", "", "agent name (auto-selects idle agent if omitted)")
