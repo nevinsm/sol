@@ -184,9 +184,11 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 
 	// 6. Instantiate workflow if formula is set.
 	if cfg.Formula != "" {
-		// Only instantiate if no workflow is already active.
+		// Instantiate if no workflow exists or previous one completed.
+		// A done workflow has no useful state to preserve — re-instantiate
+		// so looping formulas (e.g. forge-patrol) restart from step 1.
 		existingState, _ := workflow.ReadState(world, agent, cfg.Role)
-		if existingState == nil {
+		if existingState == nil || existingState.Status == "done" {
 			vars := map[string]string{
 				"world": world,
 			}

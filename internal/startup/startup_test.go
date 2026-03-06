@@ -8,6 +8,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/workflow"
 )
 
 // mockSessionStarter records Start calls.
@@ -647,6 +648,56 @@ func TestClearResumeStateIdempotent(t *testing.T) {
 	// Clearing a non-existent file should not error.
 	if err := ClearResumeState("haven", "forge", "forge"); err != nil {
 		t.Fatalf("ClearResumeState() for missing file error: %v", err)
+	}
+}
+
+func TestLaunchReinstantiatesDoneWorkflow(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+
+	// Create worktree.
+	worktreeDir := filepath.Join(solHome, "haven", "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Create an existing workflow with status "done" (simulate completed patrol).
+	wfDir := filepath.Join(solHome, "haven", "forge", ".workflow")
+	os.MkdirAll(wfDir, 0o755)
+	os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(`{"current_step":"","completed":["scan","claim"],"status":"done","started_at":"2025-01-01T00:00:00Z"}`), 0o644)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	cfg := RoleConfig{
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+		Formula:     "forge-patrol", // Real embedded formula; requires only "world" var.
+	}
+
+	_, err = Launch(cfg, "haven", "forge", LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+
+	// Verify workflow was re-instantiated (state.json should have status "running").
+	state, err := workflow.ReadState("haven", "forge", "forge")
+	if err != nil {
+		t.Fatalf("ReadState() error: %v", err)
+	}
+	if state == nil {
+		t.Fatal("workflow state should exist after re-instantiation")
+	}
+	if state.Status != "running" {
+		t.Errorf("workflow status = %q, want %q", state.Status, "running")
+	}
+	if state.CurrentStep == "" {
+		t.Error("workflow should have a current step after re-instantiation")
 	}
 }
 
