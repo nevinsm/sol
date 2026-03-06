@@ -38,10 +38,12 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 	// 2b. Check broker.
 	result.Broker = GatherBrokerInfo()
 
-	// 3. Check chronicle.
+	// 3. Check chronicle: tmux session first, PID-file fallback.
 	const chronicleSessionName = "sol-chronicle"
 	if checker.Exists(chronicleSessionName) {
 		result.Chronicle = ChronicleInfo{Running: true, SessionName: chronicleSessionName}
+	} else if pid := readChroniclePID(); pid > 0 && prefect.IsRunning(pid) {
+		result.Chronicle = ChronicleInfo{Running: true, PID: pid}
 	}
 
 	// 3b. Check senate.
