@@ -1,6 +1,7 @@
 package handoff
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -37,6 +38,8 @@ type State struct {
 
 // SessionManager is the subset of session.Manager used by handoff.
 type SessionManager interface {
+	Exists(name string) bool
+	Inject(name string, text string, submit bool) error
 	Capture(name string, lines int) (string, error)
 	Stop(name string, force bool) error
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
@@ -357,6 +360,66 @@ func RemoveMarker(world, agentName, role string) error {
 	return nil
 }
 
+// BriefSavePrompt is the message injected into a session before handoff cycling
+// for roles that use briefs (envoy, governor).
+const BriefSavePrompt = "[sol] Session cycling due to context pressure. " +
+	"Update .brief/memory.md NOW with current state, decisions, and next steps."
+
+const briefSaveCaptureLines = 50
+
+// briefSave injects a brief-save prompt and waits for the agent to respond.
+// Uses shorter timeouts than GracefulStop since we only need the brief update.
+// Returns nil even on timeout — a stale brief is better than a stuck handoff.
+func briefSave(sessionName string, mgr SessionManager,
+	pollInterval time.Duration, stableThreshold int, maxTimeout time.Duration) {
+
+	// Inject the brief save prompt.
+	fmt.Fprintf(os.Stderr, "handoff: requesting brief save before cycling...\n")
+	if err := mgr.Inject(sessionName, BriefSavePrompt, true); err != nil {
+		fmt.Fprintf(os.Stderr, "handoff: failed to inject brief save prompt: %v\n", err)
+		return
+	}
+
+	// Poll for output stability.
+	deadline := time.Now().Add(maxTimeout)
+	var lastHash string
+	unchangedCount := 0
+
+	for time.Now().Before(deadline) {
+		time.Sleep(pollInterval)
+
+		if !mgr.Exists(sessionName) {
+			return // Session exited on its own.
+		}
+
+		content, err := mgr.Capture(sessionName, briefSaveCaptureLines)
+		if err != nil {
+			continue
+		}
+
+		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+
+		if lastHash != "" && hash == lastHash {
+			unchangedCount++
+		} else {
+			unchangedCount = 0
+		}
+		lastHash = hash
+
+		if unchangedCount >= stableThreshold {
+			fmt.Fprintf(os.Stderr, "handoff: brief save complete (output stable)\n")
+			return
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "handoff: brief save timed out after %s, proceeding with handoff\n", maxTimeout)
+}
+
+// roleUsesBrief returns true if the role maintains a brief (.brief/memory.md).
+func roleUsesBrief(role string) bool {
+	return role == "envoy" || role == "governor"
+}
+
 // ExecOpts configures the handoff execution.
 type ExecOpts struct {
 	World       string
@@ -473,6 +536,21 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 				remaining := MinHandoffCooldown - elapsed
 				fmt.Fprintf(os.Stderr, "handoff: cooldown active (%s remaining), waiting...\n", remaining.Round(time.Second))
 				time.Sleep(remaining)
+			}
+		}
+	}
+
+	// For roles that use briefs, prompt the agent to save its brief before cycling.
+	// This ensures the successor session gets fresh context. Uses shorter timeouts
+	// than GracefulStop since we only need the brief update, not a full wrap-up.
+	if roleUsesBrief(role) {
+		briefDir := filepath.Join(config.AgentDir(opts.World, opts.AgentName, role), ".brief")
+		if _, err := os.Stat(briefDir); err == nil {
+			if os.Getenv("SOL_SESSION_COMMAND") != "" {
+				// Test stub sessions: aggressive timeouts.
+				briefSave(sessionName, sessionMgr, 50*time.Millisecond, 2, 200*time.Millisecond)
+			} else {
+				briefSave(sessionName, sessionMgr, 5*time.Second, 3, 30*time.Second)
 			}
 		}
 	}

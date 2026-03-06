@@ -376,12 +376,17 @@ func TestGitLog(t *testing.T) {
 // --- Mock types for Exec test ---
 
 type mockSessionMgr struct {
-	captureResult string
-	captureErr    error
-	stopped       []string
-	started       []startCall
-	cycled        []startCall
-	cycleErr      error
+	captureResult  string
+	captureErr     error
+	stopped        []string
+	started        []startCall
+	cycled         []startCall
+	cycleErr       error
+	exists         bool
+	injected       []injectCall
+	injectErr      error
+	captureResults []string // sequential capture results (cycles through them)
+	captureIndex   int
 }
 
 type startCall struct {
@@ -390,7 +395,28 @@ type startCall struct {
 	Role, World        string
 }
 
+type injectCall struct {
+	Name, Text string
+	Submit     bool
+}
+
+func (m *mockSessionMgr) Exists(name string) bool {
+	return m.exists
+}
+
+func (m *mockSessionMgr) Inject(name string, text string, submit bool) error {
+	m.injected = append(m.injected, injectCall{name, text, submit})
+	return m.injectErr
+}
+
 func (m *mockSessionMgr) Capture(name string, lines int) (string, error) {
+	if len(m.captureResults) > 0 {
+		result := m.captureResults[m.captureIndex]
+		if m.captureIndex < len(m.captureResults)-1 {
+			m.captureIndex++
+		}
+		return result, m.captureErr
+	}
 	return m.captureResult, m.captureErr
 }
 
@@ -930,5 +956,254 @@ func TestExecCycleFallback(t *testing.T) {
 	}
 	if mgr.started[0].Role != "governor" {
 		t.Errorf("expected role governor, got %q", mgr.started[0].Role)
+	}
+}
+
+func TestExecEnvoyBriefSave(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	solHome := setupSolHome(t)
+
+	// Set up envoy with brief directory.
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Alice")
+	briefDir := filepath.Join(envoyDir, ".brief")
+	if err := os.MkdirAll(briefDir, 0o755); err != nil {
+		t.Fatalf("failed to create brief dir: %v", err)
+	}
+	// Worktree for the envoy (used by Cycle).
+	worktreeDir := filepath.Join(envoyDir, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	mgr := &mockSessionMgr{
+		exists: true,
+		// Simulate: changing output, then stable (agent done saving brief).
+		captureResults: []string{"working...", "saving brief...", "done", "done", "done"},
+	}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:       "ember",
+		AgentName:   "Alice",
+		Role:        "envoy",
+		WorktreeDir: worktreeDir,
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// Brief save prompt should have been injected.
+	if len(mgr.injected) != 1 {
+		t.Fatalf("expected 1 Inject call, got %d", len(mgr.injected))
+	}
+	if mgr.injected[0].Text != BriefSavePrompt {
+		t.Errorf("expected BriefSavePrompt, got %q", mgr.injected[0].Text)
+	}
+	if !mgr.injected[0].Submit {
+		t.Error("expected Inject submit=true")
+	}
+
+	// Session should still be cycled after brief save.
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+	if mgr.cycled[0].Role != "envoy" {
+		t.Errorf("expected role envoy, got %q", mgr.cycled[0].Role)
+	}
+}
+
+func TestExecGovernorBriefSave(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	solHome := setupSolHome(t)
+
+	// Set up governor with brief directory.
+	govDir := filepath.Join(solHome, "ember", "governor")
+	briefDir := filepath.Join(govDir, ".brief")
+	if err := os.MkdirAll(briefDir, 0o755); err != nil {
+		t.Fatalf("failed to create brief dir: %v", err)
+	}
+
+	mgr := &mockSessionMgr{
+		exists:         true,
+		captureResults: []string{"stable", "stable", "stable"},
+	}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:       "ember",
+		AgentName:   "governor",
+		Role:        "governor",
+		WorktreeDir: govDir,
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// Brief save prompt should have been injected.
+	if len(mgr.injected) != 1 {
+		t.Fatalf("expected 1 Inject call for governor, got %d", len(mgr.injected))
+	}
+	if mgr.injected[0].Text != BriefSavePrompt {
+		t.Errorf("expected BriefSavePrompt, got %q", mgr.injected[0].Text)
+	}
+
+	// Session should be cycled.
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+}
+
+func TestExecBriefSaveTimeout(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	solHome := setupSolHome(t)
+
+	// Set up envoy with brief directory.
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Bob")
+	briefDir := filepath.Join(envoyDir, ".brief")
+	if err := os.MkdirAll(briefDir, 0o755); err != nil {
+		t.Fatalf("failed to create brief dir: %v", err)
+	}
+	worktreeDir := filepath.Join(envoyDir, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	mgr := &mockSessionMgr{
+		exists: true,
+		// Output keeps changing — never stabilizes (simulates unresponsive agent).
+		captureResults: []string{"a", "b", "c", "d", "e", "f", "g", "h"},
+	}
+	ts := &mockSphereStore{}
+
+	start := time.Now()
+	err := Exec(ExecOpts{
+		World:       "ember",
+		AgentName:   "Bob",
+		Role:        "envoy",
+		WorktreeDir: worktreeDir,
+	}, mgr, ts, nil)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("Exec should succeed even on brief save timeout: %v", err)
+	}
+
+	// Should complete quickly (stub timeouts are ~200ms max).
+	if elapsed > 5*time.Second {
+		t.Errorf("expected quick completion with stub timeouts, took %v", elapsed)
+	}
+
+	// Brief save was attempted.
+	if len(mgr.injected) != 1 {
+		t.Fatalf("expected 1 Inject call, got %d", len(mgr.injected))
+	}
+
+	// Session should still be cycled despite timeout.
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call after timeout, got %d", len(mgr.cycled))
+	}
+}
+
+func TestExecNoBriefSaveForOutpost(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	solHome := setupSolHome(t)
+
+	// Set up outpost agent (no brief directory needed — they don't use briefs).
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	mgr := &mockSessionMgr{captureResult: "test output"}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// No brief save for outpost role.
+	if len(mgr.injected) != 0 {
+		t.Errorf("expected 0 Inject calls for outpost, got %d", len(mgr.injected))
+	}
+
+	// Session should be cycled normally.
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+}
+
+func TestExecNoBriefSaveForForge(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	solHome := setupSolHome(t)
+
+	// Set up forge directory.
+	forgeDir := filepath.Join(solHome, "ember", "forge")
+	if err := os.MkdirAll(forgeDir, 0o755); err != nil {
+		t.Fatalf("failed to create forge dir: %v", err)
+	}
+
+	mgr := &mockSessionMgr{}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:       "ember",
+		AgentName:   "forge",
+		Role:        "forge",
+		WorktreeDir: forgeDir,
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// No brief save for forge role.
+	if len(mgr.injected) != 0 {
+		t.Errorf("expected 0 Inject calls for forge, got %d", len(mgr.injected))
+	}
+}
+
+func TestExecNoBriefSaveWithoutBriefDir(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	solHome := setupSolHome(t)
+
+	// Set up envoy WITHOUT brief directory (hasn't been initialized yet).
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Carol")
+	worktreeDir := filepath.Join(envoyDir, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	mgr := &mockSessionMgr{}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:       "ember",
+		AgentName:   "Carol",
+		Role:        "envoy",
+		WorktreeDir: worktreeDir,
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// No brief save when .brief/ doesn't exist.
+	if len(mgr.injected) != 0 {
+		t.Errorf("expected 0 Inject calls without brief dir, got %d", len(mgr.injected))
+	}
+
+	// Session should still be cycled.
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
 	}
 }
