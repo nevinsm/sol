@@ -67,6 +67,7 @@ const (
 	EventRecast         = "recast"          // failed MR auto-recast by sentinel
 
 	// Quota events.
+	EventQuotaScan   = "quota_scan"   // sentinel scanned sessions for rate limits
 	EventQuotaRotate = "quota_rotate" // credential rotated to a different account
 	EventQuotaPause  = "quota_pause"  // agent paused due to no available accounts
 )

@@ -85,7 +85,7 @@ func Rotate(opts RotateOpts, sphereStore *store.Store, mgr *session.Manager, log
 			continue
 		}
 		// Resolve which account this agent is currently using.
-		acctHandle := resolveCurrentAccount(opts.World, a.Name, a.Role)
+		acctHandle := ResolveCurrentAccount(opts.World, a.Name, a.Role)
 		if limitedSet[acctHandle] {
 			affectedAgents = append(affectedAgents, a)
 		}
@@ -103,7 +103,7 @@ func Rotate(opts RotateOpts, sphereStore *store.Store, mgr *session.Manager, log
 	availIdx := 0
 
 	for _, agent := range affectedAgents {
-		fromAccount := resolveCurrentAccount(opts.World, agent.Name, agent.Role)
+		fromAccount := ResolveCurrentAccount(opts.World, agent.Name, agent.Role)
 
 		if availIdx >= len(availableAccounts) {
 			// No more available accounts — pause the agent.
@@ -158,10 +158,10 @@ func Rotate(opts RotateOpts, sphereStore *store.Store, mgr *session.Manager, log
 	return result, nil
 }
 
-// resolveCurrentAccount reads the .credentials.json symlink in an agent's
+// ResolveCurrentAccount reads the .credentials.json symlink in an agent's
 // CLAUDE_CONFIG_DIR to determine which account it's currently using.
 // Returns the account handle, or "" if it can't be resolved.
-func resolveCurrentAccount(world, agentName, role string) string {
+func ResolveCurrentAccount(world, agentName, role string) string {
 	worldDir := config.WorldDir(world)
 	configDir := config.ClaudeConfigDir(worldDir, role, agentName)
 	credLink := filepath.Join(configDir, ".credentials.json")
@@ -240,7 +240,7 @@ func swapAndRespawn(state *State, agent store.Agent, toAccount string, opts Rota
 		logger.Emit(events.EventQuotaRotate, "quota", agent.ID, "both",
 			map[string]any{
 				"agent":        agent.ID,
-				"from_account": resolveCurrentAccount(opts.World, agent.Name, agent.Role),
+				"from_account": ResolveCurrentAccount(opts.World, agent.Name, agent.Role),
 				"to_account":   toAccount,
 				"world":        opts.World,
 			})

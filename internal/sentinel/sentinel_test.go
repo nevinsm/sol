@@ -2,6 +2,7 @@ package sentinel
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,6 +23,7 @@ type mockSessions struct {
 	captures map[string]string // session name → captured output
 	started  []string
 	stopped  []string
+	cycled   []string
 	injected []injectCall
 }
 
@@ -68,6 +70,13 @@ func (m *mockSessions) Stop(name string, force bool) error {
 	return nil
 }
 
+func (m *mockSessions) Cycle(name, workdir, cmd string, env map[string]string, role, world string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cycled = append(m.cycled, name)
+	return nil
+}
+
 func (m *mockSessions) Inject(name string, text string, submit bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -88,6 +97,14 @@ func (m *mockSessions) getStopped() []string {
 	defer m.mu.Unlock()
 	result := make([]string, len(m.stopped))
 	copy(result, m.stopped)
+	return result
+}
+
+func (m *mockSessions) getCycled() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]string, len(m.cycled))
+	copy(result, m.cycled)
 	return result
 }
 
@@ -1623,5 +1640,260 @@ func TestPruneOrphanedBranchesNoSourceRepo(t *testing.T) {
 	pruned := w.pruneOrphanedBranches()
 	if pruned != 0 {
 		t.Errorf("pruneOrphanedBranches() = %d, want 0 (no source repo)", pruned)
+	}
+}
+
+// --- Quota patrol tests ---
+
+// setupQuotaAccount creates an account directory with a .credentials.json file
+// and registers the account in the account registry.
+func setupQuotaAccount(t *testing.T, handle string) {
+	t.Helper()
+	solHome := os.Getenv("SOL_HOME")
+	dir := filepath.Join(solHome, ".accounts", handle)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".credentials.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add to account registry so quota patrol can discover it.
+	regPath := filepath.Join(solHome, ".accounts", "accounts.json")
+	var reg struct {
+		Accounts map[string]any `json:"accounts"`
+		Default  string         `json:"default"`
+	}
+	if data, err := os.ReadFile(regPath); err == nil {
+		_ = json.Unmarshal(data, &reg)
+	}
+	if reg.Accounts == nil {
+		reg.Accounts = make(map[string]any)
+	}
+	reg.Accounts[handle] = map[string]string{"config_dir": dir}
+	data, _ := json.Marshal(reg)
+	os.WriteFile(regPath, data, 0o644)
+}
+
+// setupAgentCredentials creates a CLAUDE_CONFIG_DIR with a symlinked .credentials.json.
+func setupAgentCredentials(t *testing.T, world, role, name, accountHandle string) {
+	t.Helper()
+	solHome := os.Getenv("SOL_HOME")
+	worldDir := filepath.Join(solHome, world)
+
+	// Build configDir the same way config.ClaudeConfigDir does.
+	var configDir string
+	switch role {
+	case "envoy":
+		configDir = filepath.Join(worldDir, ".claude-config", "envoys", name)
+	case "governor":
+		configDir = filepath.Join(worldDir, ".claude-config", "governor", name)
+	case "forge":
+		configDir = filepath.Join(worldDir, ".claude-config", "forge", name)
+	default:
+		configDir = filepath.Join(worldDir, ".claude-config", "outposts", name)
+	}
+
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	target := filepath.Join(solHome, ".accounts", accountHandle, ".credentials.json")
+	link := filepath.Join(configDir, ".credentials.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestQuotaPatrolNoRateLimits(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create agent and session.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "Working on task..."
+
+	setupQuotaAccount(t, "alice")
+	setupAgentCredentials(t, "ember", "agent", "Toast", "alice")
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	agents, _ := sphereStore.ListAgents("ember", "")
+	scanned, rotated, paused := w.quotaPatrol(agents)
+
+	if scanned != 1 {
+		t.Errorf("scanned = %d, want 1", scanned)
+	}
+	if rotated != 0 {
+		t.Errorf("rotated = %d, want 0", rotated)
+	}
+	if paused != 0 {
+		t.Errorf("paused = %d, want 0", paused)
+	}
+}
+
+func TestQuotaPatrolRotatesEntireWorld(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create two accounts: alice (will be rate-limited), bob (available).
+	setupQuotaAccount(t, "alice")
+	setupQuotaAccount(t, "bob")
+
+	// Create agents across roles.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
+	setupAgentCredentials(t, "ember", "agent", "Toast", "alice")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "You've hit your usage limit · resets 3:45pm"
+
+	sphereStore.CreateAgent("forge", "ember", "forge")
+	sphereStore.UpdateAgentState("ember/forge", "working", "")
+	setupAgentCredentials(t, "ember", "forge", "forge", "alice")
+	mock.alive["sol-ember-forge"] = true
+	mock.captures["sol-ember-forge"] = "Processing merge requests..."
+
+	sphereStore.CreateAgent("governor", "ember", "governor")
+	sphereStore.UpdateAgentState("ember/governor", "working", "")
+	setupAgentCredentials(t, "ember", "governor", "governor", "alice")
+	mock.alive["sol-ember-governor"] = true
+	mock.captures["sol-ember-governor"] = "Idle, waiting for work..."
+
+	// Also set up workdir so that Cycle can build command.
+	solHome := os.Getenv("SOL_HOME")
+	for _, dir := range []string{
+		filepath.Join(solHome, "ember", "outposts", "Toast", "worktree"),
+		filepath.Join(solHome, "ember", "forge", "worktree"),
+		filepath.Join(solHome, "ember", "governor"),
+	} {
+		os.MkdirAll(dir, 0o755)
+	}
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	agents, _ := sphereStore.ListAgents("ember", "")
+	scanned, rotated, paused := w.quotaPatrol(agents)
+
+	if scanned != 3 {
+		t.Errorf("scanned = %d, want 3", scanned)
+	}
+	// Toast is rate-limited; forge and governor are on alice too.
+	// All 3 should be cycled to bob.
+	if rotated != 3 {
+		t.Errorf("rotated = %d, want 3", rotated)
+	}
+	if paused != 0 {
+		t.Errorf("paused = %d, want 0", paused)
+	}
+
+	// All three sessions should have been cycled.
+	cycled := mock.getCycled()
+	if len(cycled) != 3 {
+		t.Errorf("cycled sessions = %d, want 3", len(cycled))
+	}
+}
+
+func TestQuotaPatrolPausesWhenNoAccountsAvailable(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create only one account: alice (will be rate-limited, no alternative).
+	setupQuotaAccount(t, "alice")
+
+	// Create agents.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
+	setupAgentCredentials(t, "ember", "agent", "Toast", "alice")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "You've hit your usage limit"
+
+	sphereStore.CreateAgent("governor", "ember", "governor")
+	sphereStore.UpdateAgentState("ember/governor", "working", "")
+	setupAgentCredentials(t, "ember", "governor", "governor", "alice")
+	mock.alive["sol-ember-governor"] = true
+	mock.captures["sol-ember-governor"] = "Idle..."
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	agents, _ := sphereStore.ListAgents("ember", "")
+	scanned, rotated, paused := w.quotaPatrol(agents)
+
+	if scanned != 2 {
+		t.Errorf("scanned = %d, want 2", scanned)
+	}
+	if rotated != 0 {
+		t.Errorf("rotated = %d, want 0", rotated)
+	}
+	// Only Toast should be paused — governor is exempt.
+	if paused != 1 {
+		t.Errorf("paused = %d, want 1", paused)
+	}
+
+	stopped := mock.getStopped()
+	if len(stopped) != 1 || stopped[0] != "sol-ember-Toast" {
+		t.Errorf("stopped = %v, want [sol-ember-Toast]", stopped)
+	}
+}
+
+func TestQuotaPatrolGovernorNeverPaused(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Only one account — will be limited.
+	setupQuotaAccount(t, "alice")
+
+	// Only governor is running (on the limited account).
+	sphereStore.CreateAgent("governor", "ember", "governor")
+	sphereStore.UpdateAgentState("ember/governor", "working", "")
+	setupAgentCredentials(t, "ember", "governor", "governor", "alice")
+	mock.alive["sol-ember-governor"] = true
+	mock.captures["sol-ember-governor"] = "You've hit your usage limit"
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	agents, _ := sphereStore.ListAgents("ember", "")
+	_, _, paused := w.quotaPatrol(agents)
+
+	if paused != 0 {
+		t.Errorf("paused = %d, want 0 (governor never paused)", paused)
+	}
+
+	stopped := mock.getStopped()
+	if len(stopped) != 0 {
+		t.Errorf("stopped = %v, want empty (governor never stopped)", stopped)
+	}
+}
+
+func TestQuotaPatrolSkipsAgentsWithoutSession(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	setupQuotaAccount(t, "alice")
+
+	// Agent exists but has no live session.
+	sphereStore.CreateAgent("Ghost", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Ghost", "idle", "")
+	// No mock.alive entry — session doesn't exist.
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	agents, _ := sphereStore.ListAgents("ember", "")
+	scanned, rotated, paused := w.quotaPatrol(agents)
+
+	if scanned != 0 {
+		t.Errorf("scanned = %d, want 0", scanned)
+	}
+	if rotated != 0 {
+		t.Errorf("rotated = %d, want 0", rotated)
+	}
+	if paused != 0 {
+		t.Errorf("paused = %d, want 0", paused)
 	}
 }

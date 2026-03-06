@@ -78,6 +78,7 @@ type SessionChecker interface {
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 	Stop(name string, force bool) error
 	Inject(name string, text string, submit bool) error
+	Cycle(name, workdir, cmd string, env map[string]string, role, world string) error
 }
 
 // AssessmentResult is the structured output from an AI assessment.
@@ -321,6 +322,9 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	// Check for handoff frequency issues (possible handoff loops).
 	handoffLoops := w.checkHandoffFrequency(activeAgents)
 
+	// Scan sessions for rate limits and rotate/pause as needed.
+	quotaScanned, quotaRotated, quotaPaused := w.quotaPatrol(agents)
+
 	// Check if any quota-paused agents can be restarted.
 	quotaRestarted := w.checkQuotaPaused()
 
@@ -352,6 +356,9 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 				"branches_pruned": branchesPruned,
 				"orphans_cleaned": orphansCleaned,
 				"handoff_loops":   handoffLoops,
+				"quota_scanned":   quotaScanned,
+				"quota_rotated":   quotaRotated,
+				"quota_paused":    quotaPaused,
 				"quota_restarted": quotaRestarted,
 				"assessed":        w.patrolAssessed,
 				"nudged":          w.patrolNudged,
@@ -848,6 +855,209 @@ func (w *Sentinel) checkHandoffFrequency(agents []store.Agent) int {
 	}
 
 	return escalated
+}
+
+// quotaPatrol scans all live agent sessions for rate limits. If any are
+// detected, rotates the entire world to a fresh account (all agents get new
+// credentials). If no accounts are available, pauses autonomous agents
+// (outpost, forge, envoy) but leaves governor running.
+// Returns (scanned, rotated, paused).
+func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
+	// Build list of live agents with sessions (skip sentinel itself).
+	type liveAgent struct {
+		agent   store.Agent
+		session string
+		account string
+	}
+	var live []liveAgent
+	for _, a := range agents {
+		if a.Role == "sentinel" {
+			continue
+		}
+		sessionName := dispatch.SessionName(w.config.World, a.Name)
+		if !w.sessions.Exists(sessionName) {
+			continue
+		}
+		acct := quota.ResolveCurrentAccount(w.config.World, a.Name, a.Role)
+		live = append(live, liveAgent{agent: a, session: sessionName, account: acct})
+	}
+
+	if len(live) == 0 {
+		return 0, 0, 0
+	}
+
+	// Acquire quota lock for the entire scan+rotate.
+	lock, state, err := quota.AcquireLock()
+	if err != nil {
+		return 0, 0, 0
+	}
+	defer lock.Release()
+
+	state.ExpireLimits()
+
+	// Seed quota state with all registered accounts so fresh accounts
+	// (never used, not yet in state) are discoverable for rotation.
+	if reg, err := account.LoadRegistry(); err == nil {
+		for handle := range reg.Accounts {
+			if state.Accounts[handle] == nil {
+				state.MarkAvailable(handle)
+			}
+		}
+	}
+
+	// Scan each live session for rate limit patterns.
+	var scanned int
+	limitedAccounts := make(map[string]bool)
+
+	for _, la := range live {
+		output, err := w.sessions.Capture(la.session, 20)
+		if err != nil {
+			continue
+		}
+		scanned++
+
+		limited, resetsAt := quota.DetectRateLimit(output)
+		if limited && la.account != "" {
+			state.MarkLimited(la.account, resetsAt)
+			limitedAccounts[la.account] = true
+		}
+	}
+
+	if w.logger != nil && scanned > 0 {
+		w.logger.Emit(events.EventQuotaScan, w.agentID(), w.agentID(), "audit",
+			map[string]any{
+				"world":   w.config.World,
+				"scanned": scanned,
+				"limited": len(limitedAccounts),
+			})
+	}
+
+	if len(limitedAccounts) == 0 {
+		_ = quota.Save(state)
+		return scanned, 0, 0
+	}
+
+	// Rate limit detected — decide: rotate or pause.
+	available := state.AvailableAccountsLRU()
+
+	if len(available) == 0 {
+		// No accounts available — pause autonomous agents on limited accounts.
+		var paused int
+		for _, la := range live {
+			// Governor is never paused — operator may need it.
+			if la.agent.Role == "governor" {
+				continue
+			}
+			if !limitedAccounts[la.account] {
+				continue
+			}
+
+			if err := w.sessions.Stop(la.session, false); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), la.agent.ID, "audit",
+						map[string]any{"action": "quota_pause", "error": err.Error()})
+				}
+				continue
+			}
+
+			state.PausedSessions[la.agent.ID] = quota.PausedSession{
+				PausedAt:        time.Now().UTC(),
+				PreviousAccount: la.account,
+				WorkItem:        la.agent.TetherItem,
+				World:           w.config.World,
+				AgentName:       la.agent.Name,
+				Role:            la.agent.Role,
+			}
+			paused++
+
+			if w.logger != nil {
+				w.logger.Emit(events.EventQuotaPause, w.agentID(), la.agent.ID, "both",
+					map[string]any{
+						"agent":     la.agent.ID,
+						"world":     w.config.World,
+						"work_item": la.agent.TetherItem,
+						"reason":    "no available accounts for rotation",
+					})
+			}
+		}
+
+		_ = quota.Save(state)
+		return scanned, 0, paused
+	}
+
+	// Available accounts exist — rotate the ENTIRE world to one account.
+	toAccount := available[0]
+	var rotated int
+
+	for _, la := range live {
+		if la.account == toAccount {
+			continue // already on the target account
+		}
+
+		// Swap credential symlink.
+		worldDir := config.WorldDir(w.config.World)
+		configDir := config.ClaudeConfigDir(worldDir, la.agent.Role, la.agent.Name)
+		credLink := filepath.Join(configDir, ".credentials.json")
+		newTarget := filepath.Join(config.AccountDir(toAccount), ".credentials.json")
+
+		if _, err := os.Stat(newTarget); err != nil {
+			continue
+		}
+
+		_ = os.Remove(credLink)
+		if err := os.Symlink(newTarget, credLink); err != nil {
+			continue
+		}
+
+		// Cycle the session with --continue.
+		workdir := agentWorkdir(w.config.World, la.agent)
+		settingsPath := config.SettingsPath(workdir)
+		cmd := config.BuildSessionCommandContinue(settingsPath,
+			"Your credentials have been rotated due to rate limiting. Continue working on your current task.")
+
+		env := map[string]string{
+			"SOL_HOME":          config.Home(),
+			"SOL_WORLD":         w.config.World,
+			"SOL_AGENT":         la.agent.Name,
+			"CLAUDE_CONFIG_DIR": configDir,
+		}
+
+		if err := w.sessions.Cycle(la.session, workdir, cmd, env, la.agent.Role, w.config.World); err != nil {
+			if w.logger != nil {
+				w.logger.Emit("sentinel_error", w.agentID(), la.agent.ID, "audit",
+					map[string]any{"action": "quota_rotate", "error": err.Error()})
+			}
+			continue
+		}
+
+		rotated++
+
+		if w.logger != nil {
+			w.logger.Emit(events.EventQuotaRotate, w.agentID(), la.agent.ID, "both",
+				map[string]any{
+					"agent":        la.agent.ID,
+					"from_account": la.account,
+					"to_account":   toAccount,
+					"world":        w.config.World,
+				})
+		}
+	}
+
+	state.MarkLastUsed(toAccount)
+	_ = quota.Save(state)
+
+	return scanned, rotated, 0
+}
+
+// agentWorkdir returns the working directory for an agent based on its role.
+func agentWorkdir(world string, agent store.Agent) string {
+	base := config.AgentDir(world, agent.Name, agent.Role)
+	switch agent.Role {
+	case "governor":
+		return base
+	default:
+		return filepath.Join(base, "worktree")
+	}
 }
 
 // checkQuotaPaused checks if any quota-paused agents for this world can be

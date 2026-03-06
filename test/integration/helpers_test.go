@@ -357,6 +357,12 @@ func (m *mockSessionChecker) Stop(name string, force bool) error {
 	return nil
 }
 
+func (m *mockSessionChecker) Cycle(name, workdir, cmd string, env map[string]string, role, world string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return nil
+}
+
 func (m *mockSessionChecker) Inject(name string, text string, submit bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
