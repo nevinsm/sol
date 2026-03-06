@@ -36,6 +36,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Sentinel**: Per-world health monitor — Go process + AI callouts (ADR-0001)
 - **Consul**: Sphere-level patrol — stale tethers, stranded caravans (ADR-0007)
 - **Chronicle**: Event log maintenance
+- **Ledger**: Sphere-scoped OTel OTLP receiver for agent token tracking (ADR-0016)
 - **Doctor**: Prerequisite check engine (`internal/doctor/`)
 - **Status**: Sphere overview + per-world detail, lipgloss-styled rendering
 - **Envoy**: Persistent human-directed agent with brief system (Arc 3, ADR-0009)

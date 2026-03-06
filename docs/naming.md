@@ -51,6 +51,7 @@ structure; the action layer names the mechanisms.
 | **Forge** | Merge pipeline. Processes merge requests through quality gates, resolves conflicts, integrates output. | Refinery |
 | **Sentinel** | Per-world health monitor. Detects stalled/stuck/zombie agents, performs AI-assisted assessment, injects nudges. | Witness |
 | **Chronicle** | Event log maintenance. Deduplication, aggregation, feed truncation. | Curator |
+| **Ledger** | Sphere-scoped OTel OTLP receiver for agent token tracking. Accepts token usage events from Claude Code agent sessions, writes per-model token_usage records to world databases linked to agent_history entries. | *(new)* |
 | **Consul** | System-level patrol. Stale tether recovery, stranded caravan feeding, lifecycle management, heartbeat monitoring. Operates across all worlds. | Deacon |
 
 ## Grouping
