@@ -315,21 +315,21 @@ without manual filesystem operations.
 
 ---
 
-## Future: Three-Tier Formula Resolution
+## Future: Three-Tier Formula Resolution (ADR-0021)
 
 Workflow formulas currently exist only as embedded defaults in the binary.
 Enable project-level and user-level formula customization with a three-tier
 resolution hierarchy (inspired by gastown):
 
 1. **Project-level** (most specific): formulas in the world's source repo
-   (e.g. `.sol/formulas/`) — project-specific workflows
+   (`.sol/formulas/`) — project-specific workflows
 2. **User-level**: formulas in `$SOL_HOME/formulas/` — operator customizations
    that apply across worlds
 3. **Embedded** (fallback): formulas compiled into the binary — system defaults
 
-Resolution: project > user > embedded. First match wins. This lets each
-project define its own review, test, and deploy workflows without modifying
-the sol binary, while preserving sensible defaults.
+Resolution: project > user > embedded. First match wins (whole formula, not
+per-step merge). See ADR-0021 for full design including `ResolveFormula()`
+signature, resolution reporting, `sol workflow list`, and git conventions.
 
 ---
 
