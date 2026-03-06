@@ -577,31 +577,111 @@ func TestEnsureFormula(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	// Known formula not on disk → extracted.
-	dir, err := EnsureFormula("default-work")
+	// Known formula not on disk → extracted (embedded tier).
+	res, err := EnsureFormula("default-work", "")
 	if err != nil {
 		t.Fatalf("EnsureFormula(default-work) error: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "manifest.toml")); err != nil {
+	if res.Tier != TierEmbedded {
+		t.Errorf("tier: got %q, want %q", res.Tier, TierEmbedded)
+	}
+	if _, err := os.Stat(filepath.Join(res.Path, "manifest.toml")); err != nil {
 		t.Errorf("manifest.toml not found after extraction: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "steps", "01-load-context.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(res.Path, "steps", "01-load-context.md")); err != nil {
 		t.Errorf("step file not found after extraction: %v", err)
 	}
 
-	// Already exists → no-op.
-	dir2, err := EnsureFormula("default-work")
+	// Already exists → user tier (extracted to $SOL_HOME/formulas/).
+	res2, err := EnsureFormula("default-work", "")
 	if err != nil {
 		t.Fatalf("EnsureFormula(default-work) second call error: %v", err)
 	}
-	if dir != dir2 {
-		t.Errorf("paths differ: %q vs %q", dir, dir2)
+	if res.Path != res2.Path {
+		t.Errorf("paths differ: %q vs %q", res.Path, res2.Path)
+	}
+	if res2.Tier != TierUser {
+		t.Errorf("second call tier: got %q, want %q", res2.Tier, TierUser)
 	}
 
 	// Unknown formula → error.
-	_, err = EnsureFormula("nonexistent-formula")
+	_, err = EnsureFormula("nonexistent-formula", "")
 	if err == nil {
 		t.Fatal("EnsureFormula(nonexistent) expected error")
+	}
+}
+
+func TestEnsureFormulaProjectTier(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	repoDir := t.TempDir()
+
+	// Create a project-level workflow.
+	projectWF := filepath.Join(repoDir, ".sol", "workflows", "custom-deploy")
+	if err := os.MkdirAll(projectWF, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte("[workflow]\nname = \"custom-deploy\"\ntype = \"workflow\"\n")
+	if err := os.WriteFile(filepath.Join(projectWF, "manifest.toml"), manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Project tier resolves first.
+	res, err := EnsureFormula("custom-deploy", repoDir)
+	if err != nil {
+		t.Fatalf("EnsureFormula(custom-deploy) error: %v", err)
+	}
+	if res.Tier != TierProject {
+		t.Errorf("tier: got %q, want %q", res.Tier, TierProject)
+	}
+	if res.Path != projectWF {
+		t.Errorf("path: got %q, want %q", res.Path, projectWF)
+	}
+}
+
+func TestEnsureFormulaProjectOverridesUser(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	repoDir := t.TempDir()
+
+	// Create both project-level and user-level formulas with the same name.
+	projectDir := filepath.Join(repoDir, ".sol", "workflows", "default-work")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "manifest.toml"), []byte("# project"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	userDir := FormulaDir("default-work")
+	if err := os.MkdirAll(userDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(userDir, "manifest.toml"), []byte("# user"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Project tier wins over user tier.
+	res, err := EnsureFormula("default-work", repoDir)
+	if err != nil {
+		t.Fatalf("EnsureFormula error: %v", err)
+	}
+	if res.Tier != TierProject {
+		t.Errorf("tier: got %q, want %q", res.Tier, TierProject)
+	}
+	if res.Path != projectDir {
+		t.Errorf("path: got %q, want %q", res.Path, projectDir)
+	}
+
+	// Without repoPath, user tier wins.
+	res2, err := EnsureFormula("default-work", "")
+	if err != nil {
+		t.Fatalf("EnsureFormula error: %v", err)
+	}
+	if res2.Tier != TierUser {
+		t.Errorf("tier without repo: got %q, want %q", res2.Tier, TierUser)
 	}
 }
 
@@ -847,16 +927,16 @@ func TestEnsureFormulaRuleOfFive(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	dir, err := EnsureFormula("rule-of-five")
+	res, err := EnsureFormula("rule-of-five", "")
 	if err != nil {
 		t.Fatalf("EnsureFormula(rule-of-five) error: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "manifest.toml")); err != nil {
+	if _, err := os.Stat(filepath.Join(res.Path, "manifest.toml")); err != nil {
 		t.Errorf("manifest.toml not found after extraction: %v", err)
 	}
 
 	// Load and validate the extracted formula.
-	m, err := LoadManifest(dir)
+	m, err := LoadManifest(res.Path)
 	if err != nil {
 		t.Fatalf("LoadManifest() error: %v", err)
 	}
@@ -871,12 +951,12 @@ func TestEnsureFormulaRuleOfFive(t *testing.T) {
 	}
 
 	// Second call is no-op.
-	dir2, err := EnsureFormula("rule-of-five")
+	res2, err := EnsureFormula("rule-of-five", "")
 	if err != nil {
 		t.Fatalf("EnsureFormula(rule-of-five) second call error: %v", err)
 	}
-	if dir != dir2 {
-		t.Errorf("paths differ: %q vs %q", dir, dir2)
+	if res.Path != res2.Path {
+		t.Errorf("paths differ: %q vs %q", res.Path, res2.Path)
 	}
 }
 
@@ -2006,16 +2086,16 @@ func TestEnsureFormulaCodeReview(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	dir, err := EnsureFormula("code-review")
+	res, err := EnsureFormula("code-review", "")
 	if err != nil {
 		t.Fatalf("EnsureFormula(code-review) error: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "manifest.toml")); err != nil {
+	if _, err := os.Stat(filepath.Join(res.Path, "manifest.toml")); err != nil {
 		t.Errorf("manifest.toml not found after extraction: %v", err)
 	}
 
 	// Load and validate the extracted formula.
-	m, err := LoadManifest(dir)
+	m, err := LoadManifest(res.Path)
 	if err != nil {
 		t.Fatalf("LoadManifest() error: %v", err)
 	}
