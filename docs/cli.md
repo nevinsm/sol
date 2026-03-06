@@ -53,7 +53,16 @@ Accounts are stored under `$SOL_HOME/.accounts/`. Each account has its own confi
 | `sol prime` | Assemble and print execution context for an agent |
 | `sol resolve` | Signal work completion — push branch, update state, clear tether |
 
-`cast` accepts `--world` (or `SOL_WORLD` env), `--agent` (auto-selects idle if omitted), `--formula`, and `--var` flags.
+`cast` accepts `--world` (or `SOL_WORLD` env), `--agent` (auto-selects idle if omitted), `--formula`, `--var`, and `--account` flags.
+
+### Account resolution for credentials
+
+When an agent session starts, credentials are symlinked from the resolved account's directory. Resolution priority:
+
+1. `--account` flag on `sol cast` (per-dispatch override)
+2. `default_account` in `world.toml` (per-world default)
+3. `sol account default` (sphere-level default from registry)
+4. `~/.claude/.credentials.json` (fallback when no accounts are configured)
 
 ## Agents
 

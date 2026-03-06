@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/tether"
@@ -576,7 +577,9 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// Cycle the session atomically using respawn-pane. This is safe for
 	// self-handoff — respawn-pane -k kills the old process and starts the
 	// new one server-side, so the calling process being killed is expected.
-	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), role, opts.AgentName)
+	worldCfg, _ := config.LoadWorldConfig(opts.World)
+	resolvedAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
+	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), role, opts.AgentName, resolvedAccount)
 	if err != nil {
 		return err
 	}

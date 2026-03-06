@@ -15,6 +15,7 @@ var (
 	castAgent   string
 	castFormula string
 	castVars    []string
+	castAccount string
 )
 
 var castCmd = &cobra.Command{
@@ -75,6 +76,7 @@ var castCmd = &cobra.Command{
 			Formula:     castFormula,
 			Variables:   vars,
 			WorldConfig: &worldCfg,
+			Account:     castAccount,
 		}, worldStore, sphereStore, mgr, logger)
 		if err != nil {
 			return err
@@ -97,4 +99,5 @@ func init() {
 	castCmd.Flags().StringVar(&castAgent, "agent", "", "agent name (auto-selects idle agent if omitted)")
 	castCmd.Flags().StringVar(&castFormula, "formula", "", "workflow formula to instantiate")
 	castCmd.Flags().StringSliceVar(&castVars, "var", nil, "workflow variable (key=val, repeatable)")
+	castCmd.Flags().StringVar(&castAccount, "account", "", "account to use for credentials (overrides world.toml default_account)")
 }

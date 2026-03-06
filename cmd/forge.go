@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
@@ -133,7 +134,8 @@ var forgeStartCmd = &cobra.Command{
 		}
 
 		// 5. Start tmux session with claude.
-		claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(world), "forge", "forge")
+		resolvedAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
+		claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(world), "forge", "forge", resolvedAccount)
 		if err != nil {
 			return err
 		}

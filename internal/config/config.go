@@ -285,23 +285,38 @@ func ClaudeConfigDir(worldDir, role, name string) string {
 
 // EnsureClaudeConfigDir computes and creates the CLAUDE_CONFIG_DIR for an agent.
 // Returns the absolute path. Creates the directory (and parents) if needed.
-// Symlinks the shared credentials file from ~/.claude/ so all agents share
-// one OAuth token.
-func EnsureClaudeConfigDir(worldDir, role, name string) (string, error) {
+//
+// Credential symlink resolution (account parameter):
+//   - Non-empty account: symlinks from $SOL_HOME/.accounts/{account}/.credentials.json
+//   - Empty account: falls back to ~/.claude/.credentials.json (backwards compat)
+//
+// If the destination symlink already exists, it is replaced to ensure it points
+// to the correct account's credentials (account assignments can change).
+func EnsureClaudeConfigDir(worldDir, role, name, account string) (string, error) {
 	dir := ClaudeConfigDir(worldDir, role, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create claude config dir %q: %w", dir, err)
 	}
 
-	// Symlink credentials from default config dir so agents can authenticate.
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return dir, nil // non-fatal: agent may still work with API key env var
+	// Determine credentials source.
+	var srcCreds string
+	if account != "" {
+		srcCreds = filepath.Join(AccountDir(account), ".credentials.json")
+	} else {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return dir, nil // non-fatal: agent may still work with API key env var
+		}
+		srcCreds = filepath.Join(home, ".claude", ".credentials.json")
 	}
-	srcCreds := filepath.Join(home, ".claude", ".credentials.json")
+
+	// Symlink credentials so the agent can authenticate.
 	dstCreds := filepath.Join(dir, ".credentials.json")
 	if _, err := os.Stat(srcCreds); err == nil {
-		// Only create symlink if it doesn't already exist
+		// Remove existing symlink if it points elsewhere (account may have changed).
+		if target, err := os.Readlink(dstCreds); err == nil && target != srcCreds {
+			_ = os.Remove(dstCreds)
+		}
 		if _, err := os.Lstat(dstCreds); os.IsNotExist(err) {
 			_ = os.Symlink(srcCreds, dstCreds)
 		}

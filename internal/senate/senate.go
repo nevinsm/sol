@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/protocol"
 )
@@ -72,8 +73,9 @@ func Start(mgr SessionManager) error {
 		return fmt.Errorf("senate session already running")
 	}
 
-	// 4. Start tmux session.
-	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.Home(), "senate", "senate")
+	// 4. Resolve account and start tmux session.
+	resolvedAccount := account.ResolveAccount("", "")
+	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.Home(), "senate", "senate", resolvedAccount)
 	if err != nil {
 		return err
 	}

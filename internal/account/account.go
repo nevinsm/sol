@@ -152,3 +152,23 @@ func (r *Registry) SetDefault(handle string) error {
 	r.Default = handle
 	return nil
 }
+
+// ResolveAccount determines the account to use for credential provisioning.
+// Resolution priority:
+//  1. flagValue — explicit per-dispatch override (e.g., sol cast --account=personal)
+//  2. worldDefault — world.toml default_account setting
+//  3. Registry default — sphere-level default from sol account default
+//  4. "" — no account configured, caller falls back to ~/.claude/.credentials.json
+func ResolveAccount(flagValue, worldDefault string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if worldDefault != "" {
+		return worldDefault
+	}
+	reg, err := LoadRegistry()
+	if err != nil || reg.Default == "" {
+		return ""
+	}
+	return reg.Default
+}

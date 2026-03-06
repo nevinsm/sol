@@ -70,7 +70,13 @@ var docSections = []docSection{
 	{
 		heading: "Dispatch",
 		paths:   []string{"cast", "tether", "untether", "prime", "resolve"},
-		notes:   "`cast` accepts `--world` (or `SOL_WORLD` env), `--agent` (auto-selects idle if omitted), `--formula`, and `--var` flags.",
+		notes: "`cast` accepts `--world` (or `SOL_WORLD` env), `--agent` (auto-selects idle if omitted), `--formula`, `--var`, and `--account` flags.\n\n" +
+			"### Account resolution for credentials\n\n" +
+			"When an agent session starts, credentials are symlinked from the resolved account's directory. Resolution priority:\n\n" +
+			"1. `--account` flag on `sol cast` (per-dispatch override)\n" +
+			"2. `default_account` in `world.toml` (per-world default)\n" +
+			"3. `sol account default` (sphere-level default from registry)\n" +
+			"4. `~/.claude/.credentials.json` (fallback when no accounts are configured)",
 	},
 	{
 		heading: "Agents",
