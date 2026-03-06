@@ -42,6 +42,7 @@ Accounts are stored under `$SOL_HOME/.accounts/`. Each account has its own confi
 | `sol world wake <name>` | Mark a world as active and start its services |
 | `sol world summary <name>` | Show a world's governor-maintained summary |
 | `sol world query <name> <question>` | Query a world's governor for information |
+| `sol world export <name>` | Export a world to a tar.gz archive |
 
 ## Dispatch
 
