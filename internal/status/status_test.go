@@ -81,6 +81,20 @@ func emptyMQStore() *mockMergeQueueStore {
 	return &mockMergeQueueStore{}
 }
 
+// writeChroniclePID writes a chronicle PID file for testing. Returns cleanup func.
+func writeChroniclePID(t *testing.T, pid int) func() {
+	t.Helper()
+	dir := config.RuntimeDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "chronicle.pid")
+	if err := os.WriteFile(path, []byte(strconv.Itoa(pid)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return func() { os.Remove(path) }
+}
+
 // writePrefectPID writes a PID file for testing. Returns cleanup func.
 func writePrefectPID(t *testing.T, pid int) func() {
 	t.Helper()
@@ -784,5 +798,90 @@ func TestHealthIgnoresEnvoyGovernor(t *testing.T) {
 	}
 	if result.Summary.Dead != 0 {
 		t.Errorf("Summary.Dead = %d, want 0 (only outpost agents counted)", result.Summary.Dead)
+	}
+}
+
+func TestGatherChroniclePIDFallback(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// Write chronicle PID file with our own PID (known-alive).
+	chronicleCleanup := writeChroniclePID(t, os.Getpid())
+	defer chronicleCleanup()
+
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
+	// No tmux session for chronicle — PID fallback should activate.
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if !result.Chronicle.Running {
+		t.Error("Chronicle.Running = false, want true (PID fallback)")
+	}
+	if result.Chronicle.PID != os.Getpid() {
+		t.Errorf("Chronicle.PID = %d, want %d", result.Chronicle.PID, os.Getpid())
+	}
+	if result.Chronicle.SessionName != "" {
+		t.Errorf("Chronicle.SessionName = %q, want empty (PID-based detection)", result.Chronicle.SessionName)
+	}
+}
+
+func TestGatherChronicleSessionPreferred(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// Both session and PID file exist — session should be preferred.
+	chronicleCleanup := writeChroniclePID(t, os.Getpid())
+	defer chronicleCleanup()
+
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
+	checker := &mockChecker{alive: map[string]bool{
+		"sol-chronicle": true,
+	}}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if !result.Chronicle.Running {
+		t.Error("Chronicle.Running = false, want true")
+	}
+	if result.Chronicle.SessionName != "sol-chronicle" {
+		t.Errorf("Chronicle.SessionName = %q, want %q", result.Chronicle.SessionName, "sol-chronicle")
+	}
+	// PID should not be set when session is detected.
+	if result.Chronicle.PID != 0 {
+		t.Errorf("Chronicle.PID = %d, want 0 (session takes precedence)", result.Chronicle.PID)
+	}
+}
+
+func TestGatherChronicleNeitherRunning(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// No session, no PID file.
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if result.Chronicle.Running {
+		t.Error("Chronicle.Running = true, want false (nothing running)")
 	}
 }

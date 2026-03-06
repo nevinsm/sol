@@ -146,8 +146,14 @@ func formatBrokerDetail(b BrokerInfo) string {
 }
 
 func formatChronicleDetail(c ChronicleInfo) string {
-	if c.Running {
+	if !c.Running {
+		return ""
+	}
+	if c.SessionName != "" {
 		return c.SessionName
+	}
+	if c.PID > 0 {
+		return fmt.Sprintf("pid %d", c.PID)
 	}
 	return ""
 }

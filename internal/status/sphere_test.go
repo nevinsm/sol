@@ -501,3 +501,31 @@ func TestGatherSphereWithEnvoysAndGovernor(t *testing.T) {
 		t.Errorf("Idle = %d, want 1", w.Idle)
 	}
 }
+
+func TestGatherSphereChroniclePIDFallback(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// Write chronicle PID file with our own PID (known-alive).
+	chronicleCleanup := writeChroniclePID(t, os.Getpid())
+	defer chronicleCleanup()
+
+	lister := &mockWorldLister{}
+	sphere := &mockSphereStore{}
+	// No tmux session for chronicle.
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+
+	if !result.Chronicle.Running {
+		t.Error("Chronicle.Running = false, want true (PID fallback)")
+	}
+	if result.Chronicle.PID != os.Getpid() {
+		t.Errorf("Chronicle.PID = %d, want %d", result.Chronicle.PID, os.Getpid())
+	}
+	if result.Chronicle.SessionName != "" {
+		t.Errorf("Chronicle.SessionName = %q, want empty (PID-based detection)", result.Chronicle.SessionName)
+	}
+}

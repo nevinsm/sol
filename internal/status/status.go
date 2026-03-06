@@ -3,8 +3,12 @@ package status
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/governor"
@@ -84,6 +88,7 @@ type ForgeInfo struct {
 type ChronicleInfo struct {
 	Running     bool   `json:"running"`
 	SessionName string `json:"session_name,omitempty"`
+	PID         int    `json:"pid,omitempty"`
 }
 
 // SentinelInfo holds sentinel process state (per-world).
@@ -257,10 +262,12 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		result.Forge = ForgeInfo{Running: true, SessionName: forgeSessName}
 	}
 
-	// 2b. Check chronicle session (sphere-level).
+	// 2b. Check chronicle (sphere-level): tmux session first, PID-file fallback.
 	const chronicleSessionName = "sol-chronicle"
 	if checker.Exists(chronicleSessionName) {
 		result.Chronicle = ChronicleInfo{Running: true, SessionName: chronicleSessionName}
+	} else if pid := readChroniclePID(); pid > 0 && prefect.IsRunning(pid) {
+		result.Chronicle = ChronicleInfo{Running: true, PID: pid}
 	}
 
 	// 2b2. Check broker (sphere-level).
@@ -513,4 +520,17 @@ func maxPhase(m map[int]*PhaseProgress) int {
 		}
 	}
 	return max
+}
+
+// readChroniclePID reads the chronicle PID from its PID file. Returns 0 if not found.
+func readChroniclePID() int {
+	data, err := os.ReadFile(filepath.Join(config.RuntimeDir(), "chronicle.pid"))
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0
+	}
+	return pid
 }
