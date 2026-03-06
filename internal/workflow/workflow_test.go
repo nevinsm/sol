@@ -1834,6 +1834,174 @@ func TestManifestFormulaConvoy(t *testing.T) {
 	}
 }
 
+// TestConvoyLifecycle tests the full convoy lifecycle:
+// manifest → verify structure → simulate leg merges → verify synthesis becomes ready.
+func TestConvoyLifecycle(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Create convoy formula.
+	formulaDir := filepath.Join(solHome, "formulas", "lifecycle-convoy")
+	os.MkdirAll(formulaDir, 0o755)
+
+	legs := []Leg{
+		{ID: "api", Title: "API Design", Description: "Design the API surface.", Focus: "REST endpoints"},
+		{ID: "data", Title: "Data Model", Description: "Design the data model.", Focus: "Schema design"},
+		{ID: "ux", Title: "UX Research", Description: "Research UX patterns.", Focus: "User workflows"},
+	}
+	synth := &Synthesis{
+		Title:       "Integration Plan",
+		Description: "Combine all design dimensions into a unified plan.",
+		DependsOn:   []string{"api", "data", "ux"},
+	}
+	writeTOMLConvoyManifest(t, formulaDir, "lifecycle-convoy", legs, synth)
+
+	// --- Phase 1: Manifest the convoy ---
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "lifecycle-convoy",
+		World:       "test-world",
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	// Verify 3 legs + 1 synthesis = 4 children.
+	if len(result.ChildIDs) != 4 {
+		t.Fatalf("ChildIDs: got %d, want 4", len(result.ChildIDs))
+	}
+
+	// Verify convoy-leg labels on leg items.
+	for _, leg := range legs {
+		childID := result.ChildIDs[leg.ID]
+		item, err := ws.GetWorkItem(childID)
+		if err != nil {
+			t.Fatalf("GetWorkItem(%q) error: %v", childID, err)
+		}
+		if !item.HasLabel("convoy-leg") {
+			t.Errorf("leg %q missing convoy-leg label", leg.ID)
+		}
+		if !item.HasLabel("manifest-child") {
+			t.Errorf("leg %q missing manifest-child label", leg.ID)
+		}
+	}
+
+	// Verify convoy-synthesis label and enriched description on synthesis item.
+	synthID := result.ChildIDs["synthesis"]
+	synthItem, err := ws.GetWorkItem(synthID)
+	if err != nil {
+		t.Fatalf("GetWorkItem(synthesis) error: %v", err)
+	}
+	if !synthItem.HasLabel("convoy-synthesis") {
+		t.Error("synthesis missing convoy-synthesis label")
+	}
+	// Synthesis description should reference all leg work items.
+	for _, leg := range legs {
+		legItemID := result.ChildIDs[leg.ID]
+		if !strings.Contains(synthItem.Description, legItemID) {
+			t.Errorf("synthesis description missing leg reference for %q (%s)", leg.ID, legItemID)
+		}
+		if !strings.Contains(synthItem.Description, leg.Title) {
+			t.Errorf("synthesis description missing leg title %q", leg.Title)
+		}
+	}
+
+	// Verify phases: legs = 0, synthesis = 1.
+	for _, leg := range legs {
+		if result.Phases[leg.ID] != 0 {
+			t.Errorf("phase[%s]: got %d, want 0", leg.ID, result.Phases[leg.ID])
+		}
+	}
+	if result.Phases["synthesis"] != 1 {
+		t.Errorf("phase[synthesis]: got %d, want 1", result.Phases["synthesis"])
+	}
+
+	// Close the initial world store — CheckCaravanReadiness opens its own.
+	ws.Close()
+
+	// --- Phase 2: Check initial caravan readiness ---
+	statuses, err := ss.CheckCaravanReadiness(result.CaravanID, store.OpenWorld)
+	if err != nil {
+		t.Fatalf("CheckCaravanReadiness() error: %v", err)
+	}
+
+	// All legs should be ready (phase 0, no dependencies).
+	// Synthesis should NOT be ready (phase 1, legs not yet closed).
+	for _, s := range statuses {
+		if s.WorkItemID == synthID {
+			if s.Ready {
+				t.Error("synthesis should not be ready before legs are merged")
+			}
+		} else {
+			if !s.Ready {
+				t.Errorf("leg %s should be ready", s.WorkItemID)
+			}
+		}
+	}
+
+	// --- Phase 3: Simulate leg merges (close leg work items) ---
+	// Close legs one at a time and verify synthesis stays blocked until all are done.
+	for i, leg := range legs {
+		legItemID := result.ChildIDs[leg.ID]
+		ws2, err := store.OpenWorld("test-world")
+		if err != nil {
+			t.Fatalf("OpenWorld() error: %v", err)
+		}
+		if err := ws2.CloseWorkItem(legItemID); err != nil {
+			t.Fatalf("CloseWorkItem(%q) error: %v", legItemID, err)
+		}
+		ws2.Close()
+
+		statuses, err = ss.CheckCaravanReadiness(result.CaravanID, store.OpenWorld)
+		if err != nil {
+			t.Fatalf("CheckCaravanReadiness() after closing leg %d error: %v", i, err)
+		}
+
+		for _, s := range statuses {
+			if s.WorkItemID == synthID {
+				if i < len(legs)-1 {
+					// Not all legs closed yet — synthesis should still be blocked.
+					if s.Ready {
+						t.Errorf("synthesis became ready after only %d/%d legs closed", i+1, len(legs))
+					}
+				} else {
+					// All legs closed — synthesis should now be ready.
+					if !s.Ready {
+						t.Error("synthesis should be ready after all legs are closed")
+					}
+				}
+			}
+		}
+	}
+
+	// --- Phase 4: Close synthesis → caravan should close ---
+	ws3, err := store.OpenWorld("test-world")
+	if err != nil {
+		t.Fatalf("OpenWorld() error: %v", err)
+	}
+	if err := ws3.CloseWorkItem(synthID); err != nil {
+		t.Fatalf("CloseWorkItem(synthesis) error: %v", err)
+	}
+	ws3.Close()
+
+	closed, err := ss.TryCloseCaravan(result.CaravanID, store.OpenWorld)
+	if err != nil {
+		t.Fatalf("TryCloseCaravan() error: %v", err)
+	}
+	if !closed {
+		t.Error("caravan should close after all items (legs + synthesis) are closed")
+	}
+
+	caravan, err := ss.GetCaravan(result.CaravanID)
+	if err != nil {
+		t.Fatalf("GetCaravan() error: %v", err)
+	}
+	if caravan.Status != "closed" {
+		t.Errorf("caravan status: got %q, want closed", caravan.Status)
+	}
+}
+
 func TestEnsureFormulaCodeReview(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)

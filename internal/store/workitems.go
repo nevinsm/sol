@@ -32,6 +32,7 @@ type ListFilters struct {
 	Assignee string // empty = all
 	Label    string // empty = all
 	Priority int    // 0 = all
+	ParentID string // empty = all
 }
 
 // WorkItemUpdates specifies which fields to update on a work item.
@@ -236,6 +237,10 @@ func (s *Store) ListWorkItems(filters ListFilters) ([]WorkItem, error) {
 		conditions = append(conditions, "w.priority = ?")
 		args = append(args, filters.Priority)
 	}
+	if filters.ParentID != "" {
+		conditions = append(conditions, "w.parent_id = ?")
+		args = append(args, filters.ParentID)
+	}
 
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
@@ -319,6 +324,11 @@ func (s *Store) ListWorkItems(filters ListFilters) ([]WorkItem, error) {
 		}
 	}
 	return items, nil
+}
+
+// ListChildWorkItems returns all work items with the given parent_id.
+func (s *Store) ListChildWorkItems(parentID string) ([]WorkItem, error) {
+	return s.ListWorkItems(ListFilters{ParentID: parentID})
 }
 
 // validWorkItemStatuses is the set of allowed work item status values.

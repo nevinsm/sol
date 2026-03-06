@@ -791,6 +791,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 		title       string
 		description string
 		needs       []string
+		labels      []string // additional labels beyond "manifest-child"
 	}
 
 	var children []childDef
@@ -815,13 +816,16 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 				formulaID:   leg.ID,
 				title:       leg.Title,
 				description: desc,
+				labels:      []string{"convoy-leg"},
 			})
 		}
+		// Synthesis description is enriched with leg references after leg items are created.
 		children = append(children, childDef{
 			formulaID:   "synthesis",
 			title:       m.Synth.Title,
 			description: m.Synth.Description,
 			needs:       m.Synth.DependsOn,
+			labels:      []string{"convoy-synthesis"},
 		})
 	} else {
 		// Workflow type — render step instructions as descriptions.
@@ -848,13 +852,31 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 
 	// Create child work items.
 	childIDs := make(map[string]string, len(children))
-	for _, c := range children {
+	for i, c := range children {
+		labels := append([]string{"manifest-child"}, c.labels...)
+
+		desc := c.description
+
+		// For convoy synthesis: enrich description with leg references
+		// (legs were created before synthesis in the children slice).
+		if m.Type == "convoy" && c.formulaID == "synthesis" {
+			var legRefs strings.Builder
+			legRefs.WriteString("\n\n## Leg Work Items\n")
+			for _, leg := range m.Legs {
+				legItemID := childIDs[leg.ID]
+				legRefs.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", leg.Title, legItemID, leg.Description))
+			}
+			legRefs.WriteString("\nAll leg branches have been merged to the target branch. Their changes are available in your worktree.")
+			desc += legRefs.String()
+			children[i].description = desc
+		}
+
 		id, err := worldStore.CreateWorkItemWithOpts(store.CreateWorkItemOpts{
 			Title:       c.title,
-			Description: c.description,
+			Description: desc,
 			CreatedBy:   opts.CreatedBy,
 			ParentID:    parentID,
-			Labels:      []string{"manifest-child"},
+			Labels:      labels,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create child work item for %q: %w", c.formulaID, err)
