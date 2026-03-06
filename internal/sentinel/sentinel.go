@@ -16,6 +16,7 @@ import (
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/handoff"
+	"github.com/nevinsm/sol/internal/quota"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/workflow"
@@ -320,6 +321,9 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	// Check for handoff frequency issues (possible handoff loops).
 	handoffLoops := w.checkHandoffFrequency(activeAgents)
 
+	// Check if any quota-paused agents can be restarted.
+	quotaRestarted := w.checkQuotaPaused()
+
 	// Prune local branches whose remote tracking branch is gone.
 	branchesPruned := w.pruneOrphanedBranches()
 
@@ -348,6 +352,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 				"branches_pruned": branchesPruned,
 				"orphans_cleaned": orphansCleaned,
 				"handoff_loops":   handoffLoops,
+				"quota_restarted": quotaRestarted,
 				"assessed":        w.patrolAssessed,
 				"nudged":          w.patrolNudged,
 				"actions":         actionsTaken,
@@ -843,6 +848,115 @@ func (w *Sentinel) checkHandoffFrequency(agents []store.Agent) int {
 	}
 
 	return escalated
+}
+
+// checkQuotaPaused checks if any quota-paused agents for this world can be
+// restarted. Loads quota state, expires stale limits, and restarts paused
+// sessions when available accounts exist. Returns the number restarted.
+func (w *Sentinel) checkQuotaPaused() int {
+	lock, state, err := quota.AcquireLock()
+	if err != nil {
+		return 0
+	}
+	defer lock.Release()
+
+	// Expire any limits whose resets_at has passed.
+	expired := state.ExpireLimits()
+
+	// Check if there are paused sessions for this world.
+	hasPaused := false
+	for _, paused := range state.PausedSessions {
+		if paused.World == w.config.World {
+			hasPaused = true
+			break
+		}
+	}
+
+	if !hasPaused {
+		if len(expired) > 0 {
+			_ = quota.Save(state)
+		}
+		return 0
+	}
+
+	available := state.AvailableAccountsLRU()
+	if len(available) == 0 {
+		if len(expired) > 0 {
+			_ = quota.Save(state)
+		}
+		return 0
+	}
+
+	availIdx := 0
+	var restarted int
+
+	for agentID, paused := range state.PausedSessions {
+		if paused.World != w.config.World {
+			continue
+		}
+		if availIdx >= len(available) {
+			break
+		}
+
+		toAccount := available[availIdx]
+
+		worldDir := config.WorldDir(w.config.World)
+		configDir := config.ClaudeConfigDir(worldDir, paused.Role, paused.AgentName)
+		credLink := filepath.Join(configDir, ".credentials.json")
+		newTarget := filepath.Join(config.AccountDir(toAccount), ".credentials.json")
+
+		if _, err := os.Stat(newTarget); err != nil {
+			continue
+		}
+
+		_ = os.Remove(credLink)
+		if err := os.Symlink(newTarget, credLink); err != nil {
+			continue
+		}
+
+		sessionName := dispatch.SessionName(w.config.World, paused.AgentName)
+		workdir := dispatch.WorktreePath(w.config.World, paused.AgentName)
+		settingsPath := config.SettingsPath(workdir)
+
+		cmd := config.BuildSessionCommandContinue(settingsPath,
+			"Your session was paused due to rate limiting. An account is now available. Continue working on your current task.")
+
+		env := map[string]string{
+			"SOL_HOME":          config.Home(),
+			"SOL_WORLD":         w.config.World,
+			"SOL_AGENT":         paused.AgentName,
+			"CLAUDE_CONFIG_DIR": configDir,
+		}
+
+		if err := w.sessions.Start(sessionName, workdir, cmd, env, paused.Role, w.config.World); err != nil {
+			if w.logger != nil {
+				w.logger.Emit("sentinel_error", w.agentID(), agentID, "audit",
+					map[string]any{"action": "quota_restart", "error": err.Error()})
+			}
+			continue
+		}
+
+		state.MarkLastUsed(toAccount)
+		delete(state.PausedSessions, agentID)
+		restarted++
+		availIdx++
+
+		if w.logger != nil {
+			w.logger.Emit(events.EventQuotaRotate, w.agentID(), agentID, "both",
+				map[string]any{
+					"agent":      agentID,
+					"to_account": toAccount,
+					"world":      w.config.World,
+					"resumed":    true,
+				})
+		}
+	}
+
+	if restarted > 0 || len(expired) > 0 {
+		_ = quota.Save(state)
+	}
+
+	return restarted
 }
 
 // releaseStaleClaims releases MR claims older than ClaimTTL (forge crash recovery).

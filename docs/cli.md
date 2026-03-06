@@ -345,6 +345,14 @@ Senate is an operator-managed sphere-scoped planning session. It reads governor 
 
 Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle, ledger).
 
+## Quota (Rate Limit Rotation)
+
+| Command | Description |
+|---------|-------------|
+| `sol quota rotate` | Rotate rate-limited agents to available accounts |
+
+Reads quota state from `$SOL_HOME/.runtime/quota.json` to find rate-limited accounts, selects available accounts via LRU, swaps credential symlinks, and respawns agent sessions with `--continue` for context preservation. When no accounts are available, agents are paused and automatically restarted by the sentinel when accounts become available.
+
 ## Guard (PreToolUse Hooks)
 
 | Command | Description |

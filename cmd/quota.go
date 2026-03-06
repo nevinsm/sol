@@ -7,8 +7,16 @@ import (
 	"text/tabwriter"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/quota"
+	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
+)
+
+var (
+	quotaRotateWorld  string
+	quotaRotateDryRun bool
 )
 
 var quotaCmd = &cobra.Command{
@@ -116,6 +124,74 @@ var quotaStatusCmd = &cobra.Command{
 	},
 }
 
+// --- sol quota rotate ---
+
+var quotaRotateCmd = &cobra.Command{
+	Use:          "rotate",
+	Short:        "Rotate rate-limited agents to available accounts",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(quotaRotateWorld)
+		if err != nil {
+			return err
+		}
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		mgr := session.New()
+		logger := events.NewLogger(config.Home())
+
+		result, err := quota.Rotate(quota.RotateOpts{
+			World:  world,
+			DryRun: quotaRotateDryRun,
+		}, sphereStore, mgr, logger)
+		if err != nil {
+			return err
+		}
+
+		// Print expired limits.
+		for _, handle := range result.Expired {
+			fmt.Printf("  expired: %s (limit reset, now available)\n", handle)
+		}
+
+		// Print actions.
+		if len(result.Actions) == 0 {
+			fmt.Println("No rotation needed.")
+			return nil
+		}
+
+		prefix := ""
+		if quotaRotateDryRun {
+			prefix = "[dry-run] "
+		}
+
+		for _, action := range result.Actions {
+			if action.Paused {
+				fmt.Printf("%s  paused: %s (no available accounts)\n", prefix, action.AgentName)
+			} else {
+				fmt.Printf("%s  rotated: %s  %s → %s\n", prefix, action.AgentName, action.FromAccount, action.ToAccount)
+			}
+		}
+
+		rotated := 0
+		paused := 0
+		for _, a := range result.Actions {
+			if a.Paused {
+				paused++
+			} else {
+				rotated++
+			}
+		}
+
+		fmt.Printf("%s%d rotated, %d paused\n", prefix, rotated, paused)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(quotaCmd)
 
@@ -125,4 +201,8 @@ func init() {
 
 	quotaCmd.AddCommand(quotaStatusCmd)
 	quotaStatusCmd.Flags().BoolVar(&quotaStatusJSON, "json", false, "output as JSON")
+
+	quotaCmd.AddCommand(quotaRotateCmd)
+	quotaRotateCmd.Flags().StringVar(&quotaRotateWorld, "world", "", "world name")
+	quotaRotateCmd.Flags().BoolVar(&quotaRotateDryRun, "dry-run", false, "show planned rotations without executing")
 }

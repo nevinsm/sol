@@ -133,7 +133,7 @@ func TestStateSaveLoad(t *testing.T) {
 	}
 
 	// Verify file exists.
-	path := filepath.Join(tmpDir, ".accounts", "runtime", "quota.json")
+	path := filepath.Join(tmpDir, ".runtime", "quota.json")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("quota.json not created: %v", err)
 	}

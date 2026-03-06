@@ -30,9 +30,20 @@ type AccountState struct {
 	LastUsed  *time.Time `json:"last_used,omitempty"`
 }
 
+// PausedSession records an agent session paused due to no available accounts.
+type PausedSession struct {
+	PausedAt        time.Time `json:"paused_at"`
+	PreviousAccount string    `json:"previous_account"`
+	WorkItem        string    `json:"work_item,omitempty"`
+	World           string    `json:"world"`
+	AgentName       string    `json:"agent_name"`
+	Role            string    `json:"role"`
+}
+
 // State holds quota state for all accounts.
 type State struct {
-	Accounts map[string]*AccountState `json:"accounts"`
+	Accounts       map[string]*AccountState `json:"accounts"`
+	PausedSessions map[string]PausedSession  `json:"paused_sessions,omitempty"` // keyed by agent ID ("world/name")
 }
 
 // rateLimitPatterns match Claude rate limit error messages in pane output.
@@ -104,19 +115,14 @@ func parseResetTime(s string) (time.Time, error) {
 	return reset.UTC(), nil
 }
 
-// runtimeDir returns the path to $SOL_HOME/.accounts/runtime/.
-func runtimeDir() string {
-	return filepath.Join(config.AccountsDir(), "runtime")
-}
-
 // statePath returns the path to the quota state file.
 func statePath() string {
-	return filepath.Join(runtimeDir(), "quota.json")
+	return filepath.Join(config.RuntimeDir(), "quota.json")
 }
 
 // lockPath returns the path to the quota lock file.
 func lockPath() string {
-	return filepath.Join(runtimeDir(), "quota.lock")
+	return filepath.Join(config.RuntimeDir(), "quota.lock")
 }
 
 // Load reads the quota state from disk.
@@ -124,7 +130,10 @@ func lockPath() string {
 func Load() (*State, error) {
 	data, err := os.ReadFile(statePath())
 	if os.IsNotExist(err) {
-		return &State{Accounts: make(map[string]*AccountState)}, nil
+		return &State{
+			Accounts:       make(map[string]*AccountState),
+			PausedSessions: make(map[string]PausedSession),
+		}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read quota state: %w", err)
@@ -137,12 +146,15 @@ func Load() (*State, error) {
 	if state.Accounts == nil {
 		state.Accounts = make(map[string]*AccountState)
 	}
+	if state.PausedSessions == nil {
+		state.PausedSessions = make(map[string]PausedSession)
+	}
 	return &state, nil
 }
 
 // Save writes the quota state to disk with flock protection.
 func Save(state *State) error {
-	dir := runtimeDir()
+	dir := config.RuntimeDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create quota runtime directory: %w", err)
 	}

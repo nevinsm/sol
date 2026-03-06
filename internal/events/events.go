@@ -65,6 +65,10 @@ const (
 	EventReap           = "reap"            // idle agent reaped
 	EventOrphanCleanup  = "orphan_cleanup"  // orphaned resource cleaned up
 	EventRecast         = "recast"          // failed MR auto-recast by sentinel
+
+	// Quota events.
+	EventQuotaRotate = "quota_rotate" // credential rotated to a different account
+	EventQuotaPause  = "quota_pause"  // agent paused due to no available accounts
 )
 
 // Logger handles event logging to the JSONL event feed.

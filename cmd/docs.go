@@ -210,6 +210,14 @@ var docSections = []docSection{
 		notes:   "Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle, ledger).",
 	},
 	{
+		heading: "Quota (Rate Limit Rotation)",
+		paths:   []string{"quota rotate"},
+		notes: "Reads quota state from `$SOL_HOME/.runtime/quota.json` to find rate-limited accounts, " +
+			"selects available accounts via LRU, swaps credential symlinks, and respawns agent sessions " +
+			"with `--continue` for context preservation. When no accounts are available, agents are paused " +
+			"and automatically restarted by the sentinel when accounts become available.",
+	},
+	{
 		heading: "Guard (PreToolUse Hooks)",
 		paths:   []string{"guard dangerous-command", "guard workflow-bypass"},
 		notes: "Guards are called by PreToolUse hooks in `.claude/settings.local.json`. They read tool input from stdin " +
