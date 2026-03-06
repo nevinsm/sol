@@ -71,3 +71,18 @@ func (s *Store) Close() error {
 func (s *Store) DB() *sql.DB {
 	return s.db
 }
+
+// Path returns the filesystem path to the database file.
+func (s *Store) Path() string {
+	return s.path
+}
+
+// Checkpoint forces a WAL checkpoint, flushing all WAL data into the main
+// database file. Uses TRUNCATE mode to also remove the WAL file afterward.
+func (s *Store) Checkpoint() error {
+	_, err := s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	if err != nil {
+		return fmt.Errorf("failed to checkpoint database %q: %w", s.path, err)
+	}
+	return nil
+}
