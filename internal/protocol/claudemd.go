@@ -112,6 +112,13 @@ Protect your work:
 
 Full Sol CLI reference: `+"`"+`.claude/sol-cli-reference.md`+"`"+`
 
+## Memories
+Use `+"`"+`sol remember`+"`"+` to persist insights that would help a successor session:
+  `+"`"+`sol remember "key" "insight"`+"`"+` — save with explicit key
+  `+"`"+`sol remember "insight"`+"`"+` — save with auto-generated key
+Use `+"`"+`sol memories`+"`"+` to review what previous sessions recorded.
+Use `+"`"+`sol forget "key"`+"`"+` to remove outdated memories.
+
 ## Important
 - You are working in an isolated git worktree. Commit your changes normally.
 - Do not modify files outside this worktree.
@@ -387,6 +394,13 @@ When your work is ready to submit:
 ## Available Commands
 Full Sol CLI reference: `+"`"+`.claude/sol-cli-reference.md`+"`"+`
 
+## Memories
+Use `+"`"+`sol remember`+"`"+` to persist insights that would help a successor session:
+  `+"`"+`sol remember "key" "insight"`+"`"+` — save with explicit key
+  `+"`"+`sol remember "insight"`+"`"+` — save with auto-generated key
+Use `+"`"+`sol memories`+"`"+` to review what previous sessions recorded.
+Use `+"`"+`sol forget "key"`+"`"+` to remove outdated memories.
+
 ## Guidelines
 - You are human-supervised — ask when uncertain
 - If stuck, escalate: `+"`"+`%s escalate --world=%s --agent=%s --message="..."`+"`"+`
@@ -535,6 +549,13 @@ Respond based on the notification type:
 
 ## Available Commands
 Full Sol CLI reference: `+"`"+`.claude/sol-cli-reference.md`+"`"+`
+
+## Memories
+Use `+"`"+`sol remember`+"`"+` to persist insights that would help a successor session:
+  `+"`"+`sol remember "key" "insight"`+"`"+` — save with explicit key
+  `+"`"+`sol remember "insight"`+"`"+` — save with auto-generated key
+Use `+"`"+`sol memories`+"`"+` to review what previous sessions recorded.
+Use `+"`"+`sol forget "key"`+"`"+` to remove outdated memories.
 
 ## Guidelines
 - You coordinate — you don't write code

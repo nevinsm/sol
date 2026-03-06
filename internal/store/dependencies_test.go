@@ -224,13 +224,13 @@ func TestIsReady(t *testing.T) {
 func TestV4Migration(t *testing.T) {
 	s := setupWorld(t)
 
-	// Verify the schema version is 5.
+	// Verify the schema version.
 	var v int
 	if err := s.DB().QueryRow("SELECT version FROM schema_version").Scan(&v); err != nil {
 		t.Fatalf("failed to get schema version: %v", err)
 	}
-	if v != 6 {
-		t.Errorf("schema version = %d, want 6", v)
+	if v != 7 {
+		t.Errorf("schema version = %d, want 7", v)
 	}
 
 	// Verify dependencies table exists.

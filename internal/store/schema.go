@@ -154,12 +154,24 @@ func (s *Store) schemaVersion() (int, error) {
 	return v, nil
 }
 
+const worldSchemaV7 = `
+CREATE TABLE IF NOT EXISTS agent_memories (
+    id         TEXT PRIMARY KEY,
+    agent_name TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(agent_name, key)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_memories_agent ON agent_memories(agent_name);
+`
+
 func (s *Store) migrateWorld() error {
 	v, err := s.schemaVersion()
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
-	if v >= 6 {
+	if v >= 7 {
 		return nil // already at latest version
 	}
 
@@ -205,12 +217,17 @@ func (s *Store) migrateWorld() error {
 			return fmt.Errorf("failed to apply world schema v6: %w", err)
 		}
 	}
+	if v < 7 {
+		if _, err := tx.Exec(worldSchemaV7); err != nil {
+			return fmt.Errorf("failed to apply world schema v7: %w", err)
+		}
+	}
 	if v < 1 {
-		if _, err := tx.Exec("INSERT INTO schema_version VALUES (6)"); err != nil {
+		if _, err := tx.Exec("INSERT INTO schema_version VALUES (7)"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	} else {
-		if _, err := tx.Exec("UPDATE schema_version SET version = 6"); err != nil {
+		if _, err := tx.Exec("UPDATE schema_version SET version = 7"); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
 		}
 	}

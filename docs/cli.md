@@ -210,6 +210,16 @@ Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` 
 | `sol caravan dep remove <caravan-id> <depends-on-caravan-id>` | Remove a caravan dependency |
 | `sol caravan dep list <caravan-id>` | Show caravan-level dependencies |
 
+## Agent Memories
+
+| Command | Description |
+|---------|-------------|
+| `sol remember [key] <value>` | Persist a memory for the current agent |
+| `sol memories` | List all memories for the current agent |
+| `sol forget [key]` | Delete a memory for the current agent |
+
+Memories are key-value pairs stored in the world database, scoped to each agent name. They survive across sessions and handoffs. With a single argument, `sol remember` auto-generates a key from a hash of the value. Memories are injected during prime so successor sessions see them automatically.
+
 ## Handoff (Session Continuity)
 
 | Command | Description |

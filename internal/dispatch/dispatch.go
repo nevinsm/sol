@@ -42,6 +42,7 @@ type WorldStore interface {
 	UnblockMergeRequest(mrID string) error
 	CloseWorkItem(id string) error
 	ListChildWorkItems(parentID string) ([]store.WorkItem, error)
+	ListAgentMemories(agentName string) ([]store.AgentMemory, error)
 	Close() error
 }
 
@@ -672,6 +673,21 @@ Execute this work item. When complete, run: sol resolve
 If stuck, run: sol escalate "description"
 === END CONTEXT ===`, agentName, world, item.ID, item.Title, item.Status, item.Description)
 			result = &PrimeResult{Output: output}
+		}
+	}
+
+	// Append agent memories if any exist.
+	if result != nil {
+		memories, memErr := worldStore.ListAgentMemories(agentName)
+		if memErr != nil {
+			fmt.Fprintf(os.Stderr, "prime: failed to read agent memories: %v\n", memErr)
+		} else if len(memories) > 0 {
+			var mb strings.Builder
+			mb.WriteString("\n\n## Agent Memories\n")
+			for _, m := range memories {
+				fmt.Fprintf(&mb, "- %s: %q\n", m.Key, m.Value)
+			}
+			result.Output += mb.String()
 		}
 	}
 

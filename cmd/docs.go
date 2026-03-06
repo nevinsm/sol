@@ -138,6 +138,13 @@ var docSections = []docSection{
 		paths:   []string{"caravan create", "caravan add", "caravan list", "caravan check", "caravan status", "caravan launch", "caravan set-phase", "caravan close", "caravan dep add", "caravan dep remove", "caravan dep list"},
 	},
 	{
+		heading: "Agent Memories",
+		paths:   []string{"remember", "memories", "forget"},
+		notes: "Memories are key-value pairs stored in the world database, scoped to each agent name. " +
+			"They survive across sessions and handoffs. With a single argument, `sol remember` auto-generates " +
+			"a key from a hash of the value. Memories are injected during prime so successor sessions see them automatically.",
+	},
+	{
 		heading: "Handoff (Session Continuity)",
 		paths:   []string{"handoff"},
 		notes: "`--summary` provides a progress summary. `--reason` tags the handoff with a reason (`compact`, `manual`, `health-check`; defaults to `unknown`). " +

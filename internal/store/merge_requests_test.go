@@ -549,8 +549,8 @@ func TestV3Migration(t *testing.T) {
 	if err := s.DB().QueryRow("SELECT version FROM schema_version").Scan(&v); err != nil {
 		t.Fatalf("failed to get schema version: %v", err)
 	}
-	if v != 6 {
-		t.Errorf("schema version = %d, want 6", v)
+	if v != 7 {
+		t.Errorf("schema version = %d, want 7", v)
 	}
 
 	// Verify blocked_by column exists.
