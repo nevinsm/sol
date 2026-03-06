@@ -14,6 +14,7 @@ import (
 //go:embed defaults/default-work/steps/03-verify.md
 //go:embed defaults/rule-of-five/manifest.toml
 //go:embed defaults/code-review/manifest.toml
+//go:embed defaults/plan-review/manifest.toml
 //go:embed defaults/forge-patrol/manifest.toml
 //go:embed defaults/forge-patrol/steps/01-unblock.md
 //go:embed defaults/forge-patrol/steps/02-scan.md
@@ -32,6 +33,7 @@ var knownDefaults = map[string]bool{
 	"default-work":  true,
 	"rule-of-five":  true,
 	"code-review":   true,
+	"plan-review":   true,
 	"forge-patrol":  true,
 }
 
