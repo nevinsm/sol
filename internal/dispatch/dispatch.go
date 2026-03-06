@@ -322,14 +322,18 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		return nil, err
 	}
 	env := map[string]string{
-		"SOL_HOME":                    config.Home(),
-		"SOL_WORLD":                   opts.World,
-		"SOL_AGENT":                   agent.Name,
-		"CLAUDE_CONFIG_DIR":           claudeConfigDir,
-		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
-		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
-		"OTEL_RESOURCE_ATTRIBUTES": fmt.Sprintf("agent.name=%s,world=%s,work_item_id=%s",
-			agent.Name, opts.World, opts.WorkItemID),
+		"SOL_HOME":          config.Home(),
+		"SOL_WORLD":         opts.World,
+		"SOL_AGENT":         agent.Name,
+		"CLAUDE_CONFIG_DIR": claudeConfigDir,
+	}
+	if worldCfg.Ledger.Port > 0 {
+		env["CLAUDE_CODE_ENABLE_TELEMETRY"] = "1"
+		env["OTEL_LOGS_EXPORTER"] = "otlp"
+		env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] = fmt.Sprintf("http://localhost:%d", worldCfg.Ledger.Port)
+		env["OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"] = "http/json"
+		env["OTEL_RESOURCE_ATTRIBUTES"] = fmt.Sprintf("agent.name=%s,world=%s,work_item_id=%s",
+			agent.Name, opts.World, opts.WorkItemID)
 	}
 	prompt := fmt.Sprintf("Agent %s, world %s. If no context appears, run: sol prime --world=%s --agent=%s",
 		agent.Name, opts.World, opts.World, agent.Name)
