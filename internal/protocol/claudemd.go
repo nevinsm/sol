@@ -95,6 +95,17 @@ Your job is to execute the assigned work item.
 3. Run `+"`sol resolve`"+` — MANDATORY FINAL STEP.
 
 %s
+## Session Resilience
+Your session can die at any time — context exhaustion, crash, infrastructure failure.
+Code you commit to git survives. Everything else is lost.
+
+Protect your work:
+- Commit early and often with meaningful messages (not just "wip")
+- After significant investigation or decisions, commit a progress note:
+  `+"`"+`git commit --allow-empty -m "progress: decided to use X approach because Y"`+"`"+`
+- Before complex multi-step changes, commit what you have so far
+- Your commit messages are your successor's primary context if you die mid-task
+
 ## Session Management
 - `+"`sol handoff`"+` — Hand off to a fresh session (preserves context)
 - `+"`sol handoff --summary=\"what I've done so far\"`"+` — Hand off with a summary
@@ -322,7 +333,7 @@ You maintain accumulated context in `+"`"+`.brief/memory.md`+"`"+`.
 ## Brief Maintenance
 - Your brief (`+"`"+`.brief/memory.md`+"`"+`) is your persistent memory across sessions
 - Keep it under 200 lines — consolidate older entries, focus on current state
-- Update your brief before exiting with key decisions, current state, and next steps
+- Update after significant decisions or discoveries, not just at session end — if your session crashes, a stale brief is all your successor gets
 - On startup, review your brief — it may be stale if your last session crashed
 - Organize naturally: what matters now at the top, historical context below
 - **DO NOT** write to `+"`"+`~/.claude/projects/*/memory/`+"`"+` (Claude Code auto-memory) — use `+"`"+`.brief/memory.md`+"`"+` exclusively
@@ -442,7 +453,7 @@ You maintain accumulated world knowledge in your brief.
 ## Brief Maintenance
 - Your brief (`+"`"+`.brief/memory.md`+"`"+`) persists across sessions — keep it under 200 lines
 - Also maintain `+"`"+`.brief/world-summary.md`+"`"+` — a structured summary for external consumers
-- Update both before exiting
+- Update after significant decisions or discoveries, not just at session end — if your session crashes, a stale brief is all your successor gets
 - **DO NOT** write to `+"`"+`~/.claude/projects/*/memory/`+"`"+` (Claude Code auto-memory) — use `+"`"+`.brief/memory.md`+"`"+` exclusively
 - World summary format:
 
