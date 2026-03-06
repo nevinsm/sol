@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/quota"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -25,6 +27,7 @@ type mockSessions struct {
 	stopped  []string
 	cycled   []string
 	injected []injectCall
+	lastCmds map[string]string // session name → last command used in Start/Cycle
 }
 
 type injectCall struct {
@@ -36,6 +39,7 @@ func newMockSessions() *mockSessions {
 	return &mockSessions{
 		alive:    make(map[string]bool),
 		captures: make(map[string]string),
+		lastCmds: make(map[string]string),
 	}
 }
 
@@ -59,6 +63,7 @@ func (m *mockSessions) Start(name, workdir, cmd string, env map[string]string, r
 	defer m.mu.Unlock()
 	m.alive[name] = true
 	m.started = append(m.started, name)
+	m.lastCmds[name] = cmd
 	return nil
 }
 
@@ -74,6 +79,7 @@ func (m *mockSessions) Cycle(name, workdir, cmd string, env map[string]string, r
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cycled = append(m.cycled, name)
+	m.lastCmds[name] = cmd
 	return nil
 }
 
@@ -114,6 +120,12 @@ func (m *mockSessions) getInjected() []injectCall {
 	result := make([]injectCall, len(m.injected))
 	copy(result, m.injected)
 	return result
+}
+
+func (m *mockSessions) getLastCmd(name string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastCmds[name]
 }
 
 // --- Test helpers ---
@@ -1908,5 +1920,150 @@ func TestQuotaPatrolSkipsAgentsWithoutSession(t *testing.T) {
 	}
 	if paused != 0 {
 		t.Errorf("paused = %d, want 0", paused)
+	}
+}
+
+func TestQuotaPatrolUsesStartupPathForRegisteredRole(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Create two accounts: alice (will be rate-limited), bob (available).
+	setupQuotaAccount(t, "alice")
+	setupQuotaAccount(t, "bob")
+
+	// Create outpost agent on alice.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
+	setupAgentCredentials(t, "ember", "agent", "Toast", "alice")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "You've hit your usage limit · resets 3:45pm"
+
+	// Create worktree directory (startup needs it).
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Register the "agent" role with a system prompt so we can verify
+	// the startup path adds --append-system-prompt-file.
+	roleName := "agent"
+	startup.Register(roleName, startup.RoleConfig{
+		WorktreeDir: func(w, a string) string {
+			return filepath.Join(os.Getenv("SOL_HOME"), w, "outposts", a, "worktree")
+		},
+		SystemPromptContent: "You are a test agent.",
+	})
+	t.Cleanup(func() {
+		// Deregister to avoid polluting other tests.
+		startup.Register(roleName, startup.RoleConfig{})
+	})
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	agents, _ := sphereStore.ListAgents("ember", "")
+	scanned, rotated, paused := w.quotaPatrol(agents)
+
+	if scanned != 1 {
+		t.Errorf("scanned = %d, want 1", scanned)
+	}
+	if rotated != 1 {
+		t.Errorf("rotated = %d, want 1", rotated)
+	}
+	if paused != 0 {
+		t.Errorf("paused = %d, want 0", paused)
+	}
+
+	// Verify the session was cycled (startup uses SessionOp which calls Cycle).
+	cycled := mock.getCycled()
+	if len(cycled) != 1 {
+		t.Fatalf("cycled sessions = %d, want 1", len(cycled))
+	}
+
+	// The command should include --continue (quota rotation preserves conversation).
+	cmd := mock.getLastCmd("sol-ember-Toast")
+	if !strings.Contains(cmd, "--continue") {
+		t.Errorf("expected --continue in command, got %q", cmd)
+	}
+
+	// The command should include system prompt flag from the registered role.
+	if !strings.Contains(cmd, "--append-system-prompt-file") {
+		t.Errorf("expected --append-system-prompt-file in command, got %q", cmd)
+	}
+}
+
+func TestCheckQuotaPausedUsesStartupPathForRegisteredRole(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Set up two accounts: alice (was limited, now expired), bob (available).
+	setupQuotaAccount(t, "alice")
+	setupQuotaAccount(t, "bob")
+
+	// Create worktree directory.
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Register the role.
+	roleName := "agent"
+	startup.Register(roleName, startup.RoleConfig{
+		WorktreeDir: func(w, a string) string {
+			return filepath.Join(os.Getenv("SOL_HOME"), w, "outposts", a, "worktree")
+		},
+		SystemPromptContent: "You are a test agent.",
+	})
+	t.Cleanup(func() {
+		startup.Register(roleName, startup.RoleConfig{})
+	})
+
+	// Set up a paused session in quota state.
+	lock, state, err := quota.AcquireLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.PausedSessions["ember/Toast"] = quota.PausedSession{
+		PausedAt:        time.Now().Add(-5 * time.Minute).UTC(),
+		PreviousAccount: "alice",
+		WorkItem:        "sol-work-1",
+		World:           "ember",
+		AgentName:       "Toast",
+		Role:            "agent",
+	}
+	// bob is available.
+	state.MarkAvailable("bob")
+	if err := quota.Save(state); err != nil {
+		t.Fatal(err)
+	}
+	lock.Release()
+
+	// Create agent record.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
+	setupAgentCredentials(t, "ember", "agent", "Toast", "alice")
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	restarted := w.checkQuotaPaused()
+
+	if restarted != 1 {
+		t.Errorf("restarted = %d, want 1", restarted)
+	}
+
+	// Verify session was started (not cycled — paused sessions use Start).
+	started := mock.getStarted()
+	if len(started) != 1 {
+		t.Fatalf("started sessions = %d, want 1", len(started))
+	}
+
+	// The command should include --continue and system prompt flag.
+	cmd := mock.getLastCmd("sol-ember-Toast")
+	if !strings.Contains(cmd, "--continue") {
+		t.Errorf("expected --continue in command, got %q", cmd)
+	}
+	if !strings.Contains(cmd, "--append-system-prompt-file") {
+		t.Errorf("expected --append-system-prompt-file in command, got %q", cmd)
 	}
 }

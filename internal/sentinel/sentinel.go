@@ -17,6 +17,7 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/quota"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/workflow"
@@ -994,33 +995,67 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 			continue // already on the target account
 		}
 
-		// Write access-token-only credentials for the new account.
-		worldDir := config.WorldDir(w.config.World)
-		configDir := config.ClaudeConfigDir(worldDir, la.agent.Role, la.agent.Name)
-
-		if err := writeAgentCreds(configDir, toAccount); err != nil {
-			continue
-		}
-
-		// Cycle the session with --continue.
-		workdir := agentWorkdir(w.config.World, la.agent)
-		settingsPath := config.SettingsPath(workdir)
-		cmd := config.BuildSessionCommandContinue(settingsPath,
-			"Your credentials have been rotated due to rate limiting. Continue working on your current task.")
-
-		env := map[string]string{
-			"SOL_HOME":          config.Home(),
-			"SOL_WORLD":         w.config.World,
-			"SOL_AGENT":         la.agent.Name,
-			"CLAUDE_CONFIG_DIR": configDir,
-		}
-
-		if err := w.sessions.Cycle(la.session, workdir, cmd, env, la.agent.Role, w.config.World); err != nil {
-			if w.logger != nil {
-				w.logger.Emit("sentinel_error", w.agentID(), la.agent.ID, "audit",
-					map[string]any{"action": "quota_rotate", "error": err.Error()})
+		// Use startup.Resume for registered roles to get system prompt
+		// flags, persona, hooks, and workflow re-instantiation.
+		cfg := startup.ConfigFor(la.agent.Role)
+		if cfg != nil {
+			cycleOp := func(name, workdir, cmd string, env map[string]string, role, world string) error {
+				if err := w.sessions.Cycle(name, workdir, cmd, env, role, world); err != nil {
+					fmt.Fprintf(os.Stderr, "sentinel: quota cycle failed, falling back to stop+start: %v\n", err)
+					if stopErr := w.sessions.Stop(name, true); stopErr != nil {
+						fmt.Fprintf(os.Stderr, "sentinel: stop also failed: %v\n", stopErr)
+					}
+					return w.sessions.Start(name, workdir, cmd, env, role, world)
+				}
+				return nil
 			}
-			continue
+
+			resumeState := startup.ResumeState{
+				Reason:          "quota_rotate",
+				ClaimedResource: la.agent.TetherItem,
+			}
+
+			launchOpts := startup.LaunchOpts{
+				Account:   toAccount,
+				SessionOp: cycleOp,
+				Sessions:  w.sessions,
+			}
+
+			if _, err := startup.Resume(*cfg, w.config.World, la.agent.Name, resumeState, launchOpts); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), la.agent.ID, "audit",
+						map[string]any{"action": "quota_rotate", "error": err.Error()})
+				}
+				continue
+			}
+		} else {
+			// Legacy path for unregistered roles.
+			worldDir := config.WorldDir(w.config.World)
+			configDir := config.ClaudeConfigDir(worldDir, la.agent.Role, la.agent.Name)
+
+			if err := writeAgentCreds(configDir, toAccount); err != nil {
+				continue
+			}
+
+			workdir := agentWorkdir(w.config.World, la.agent)
+			settingsPath := config.SettingsPath(workdir)
+			cmd := config.BuildSessionCommandContinue(settingsPath,
+				"Your credentials have been rotated due to rate limiting. Continue working on your current task.")
+
+			env := map[string]string{
+				"SOL_HOME":          config.Home(),
+				"SOL_WORLD":         w.config.World,
+				"SOL_AGENT":         la.agent.Name,
+				"CLAUDE_CONFIG_DIR": configDir,
+			}
+
+			if err := w.sessions.Cycle(la.session, workdir, cmd, env, la.agent.Role, w.config.World); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), la.agent.ID, "audit",
+						map[string]any{"action": "quota_rotate", "error": err.Error()})
+				}
+				continue
+			}
 		}
 
 		rotated++
@@ -1103,33 +1138,57 @@ func (w *Sentinel) checkQuotaPaused() int {
 
 		toAccount := available[availIdx]
 
-		worldDir := config.WorldDir(w.config.World)
-		configDir := config.ClaudeConfigDir(worldDir, paused.Role, paused.AgentName)
-
-		if err := writeAgentCreds(configDir, toAccount); err != nil {
-			continue
-		}
-
-		sessionName := dispatch.SessionName(w.config.World, paused.AgentName)
-		workdir := dispatch.WorktreePath(w.config.World, paused.AgentName)
-		settingsPath := config.SettingsPath(workdir)
-
-		cmd := config.BuildSessionCommandContinue(settingsPath,
-			"Your session was paused due to rate limiting. An account is now available. Continue working on your current task.")
-
-		env := map[string]string{
-			"SOL_HOME":          config.Home(),
-			"SOL_WORLD":         w.config.World,
-			"SOL_AGENT":         paused.AgentName,
-			"CLAUDE_CONFIG_DIR": configDir,
-		}
-
-		if err := w.sessions.Start(sessionName, workdir, cmd, env, paused.Role, w.config.World); err != nil {
-			if w.logger != nil {
-				w.logger.Emit("sentinel_error", w.agentID(), agentID, "audit",
-					map[string]any{"action": "quota_restart", "error": err.Error()})
+		// Use startup.Resume for registered roles to get system prompt
+		// flags, persona, hooks, and workflow re-instantiation.
+		cfg := startup.ConfigFor(paused.Role)
+		if cfg != nil {
+			resumeState := startup.ResumeState{
+				Reason:          "quota_rotate",
+				ClaimedResource: paused.WorkItem,
 			}
-			continue
+
+			launchOpts := startup.LaunchOpts{
+				Account:  toAccount,
+				Sessions: w.sessions,
+			}
+
+			if _, err := startup.Resume(*cfg, w.config.World, paused.AgentName, resumeState, launchOpts); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), agentID, "audit",
+						map[string]any{"action": "quota_restart", "error": err.Error()})
+				}
+				continue
+			}
+		} else {
+			// Legacy path for unregistered roles.
+			worldDir := config.WorldDir(w.config.World)
+			configDir := config.ClaudeConfigDir(worldDir, paused.Role, paused.AgentName)
+
+			if err := writeAgentCreds(configDir, toAccount); err != nil {
+				continue
+			}
+
+			sessionName := dispatch.SessionName(w.config.World, paused.AgentName)
+			workdir := dispatch.WorktreePath(w.config.World, paused.AgentName)
+			settingsPath := config.SettingsPath(workdir)
+
+			cmd := config.BuildSessionCommandContinue(settingsPath,
+				"Your session was paused due to rate limiting. An account is now available. Continue working on your current task.")
+
+			env := map[string]string{
+				"SOL_HOME":          config.Home(),
+				"SOL_WORLD":         w.config.World,
+				"SOL_AGENT":         paused.AgentName,
+				"CLAUDE_CONFIG_DIR": configDir,
+			}
+
+			if err := w.sessions.Start(sessionName, workdir, cmd, env, paused.Role, w.config.World); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), agentID, "audit",
+						map[string]any{"action": "quota_restart", "error": err.Error()})
+				}
+				continue
+			}
 		}
 
 		state.MarkLastUsed(toAccount)
