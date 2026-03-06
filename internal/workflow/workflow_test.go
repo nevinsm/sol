@@ -2084,3 +2084,57 @@ func TestEnsureFormulaCodeReview(t *testing.T) {
 		t.Fatalf("Validate() error on code-review: %v", err)
 	}
 }
+
+func TestEnsureFormulaGuidedDesign(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	dir, err := EnsureFormula("guided-design")
+	if err != nil {
+		t.Fatalf("EnsureFormula(guided-design) error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "manifest.toml")); err != nil {
+		t.Errorf("manifest.toml not found after extraction: %v", err)
+	}
+
+	// Load and validate the extracted formula.
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+	if m.Type != "convoy" {
+		t.Errorf("type: got %q, want %q", m.Type, "convoy")
+	}
+	if len(m.Legs) != 6 {
+		t.Fatalf("legs: got %d, want 6", len(m.Legs))
+	}
+
+	// Verify all expected leg IDs.
+	expectedLegs := map[string]bool{
+		"api-design":     true,
+		"data-model":     true,
+		"ux-interaction": true,
+		"scalability":    true,
+		"security":       true,
+		"integration":    true,
+	}
+	for _, leg := range m.Legs {
+		if !expectedLegs[leg.ID] {
+			t.Errorf("unexpected leg ID: %q", leg.ID)
+		}
+		delete(expectedLegs, leg.ID)
+	}
+	for id := range expectedLegs {
+		t.Errorf("missing leg ID: %q", id)
+	}
+
+	if m.Synth == nil {
+		t.Fatal("synthesis is nil")
+	}
+	if len(m.Synth.DependsOn) != 6 {
+		t.Errorf("synthesis depends_on: got %d, want 6", len(m.Synth.DependsOn))
+	}
+	if err := Validate(m); err != nil {
+		t.Fatalf("Validate() error on guided-design: %v", err)
+	}
+}
