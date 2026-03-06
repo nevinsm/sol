@@ -1420,6 +1420,226 @@ func TestPrimeDurableHandoff(t *testing.T) {
 	}
 }
 
+func TestPrimeCompactRecoveryLightweight(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file with detailed instructions", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Write handoff file.
+	state := &handoff.State{
+		WorkItemID:      itemID,
+		AgentName:       "Toast",
+		World:           "ember",
+		Role:            "agent",
+		PreviousSession: "sol-ember-Toast",
+		Summary:         "Implemented login form. Tests passing.",
+		RecentCommits:   []string{"abc1234 feat: add login form"},
+		GitStatus:       " M hello.go",
+		DiffStat:        " hello.go | 2 +-",
+	}
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("failed to write handoff: %v", err)
+	}
+
+	// Write compact marker (simulates PreCompact-triggered handoff).
+	if err := handoff.WriteMarker("ember", "Toast", "agent", "compact"); err != nil {
+		t.Fatalf("failed to write marker: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "agent", worldStore)
+	if err != nil {
+		t.Fatalf("Prime with compact recovery failed: %v", err)
+	}
+
+	// Should use SESSION RECOVERY header, not HANDOFF CONTEXT.
+	if !strings.Contains(result.Output, "SESSION RECOVERY") {
+		t.Error("output missing SESSION RECOVERY header")
+	}
+	if strings.Contains(result.Output, "HANDOFF CONTEXT") {
+		t.Error("compact recovery should use SESSION RECOVERY, not HANDOFF CONTEXT")
+	}
+
+	// Should include handoff state.
+	if !strings.Contains(result.Output, "Implemented login form") {
+		t.Error("output missing summary from handoff state")
+	}
+	if !strings.Contains(result.Output, "abc1234 feat: add login form") {
+		t.Error("output missing recent commits")
+	}
+	if !strings.Contains(result.Output, "hello.go") {
+		t.Error("output missing git status")
+	}
+
+	// Should NOT include full work item description (lightweight).
+	if strings.Contains(result.Output, "detailed instructions") {
+		t.Error("compact recovery should not include full work item description")
+	}
+
+	// Should include continuation instructions.
+	if !strings.Contains(result.Output, "Continue from where you left off") {
+		t.Error("output missing continuation instructions")
+	}
+	if !strings.Contains(result.Output, "Do NOT re-read the work item description") {
+		t.Error("output missing instruction to avoid re-reading description")
+	}
+
+	// Should NOT have the generic fresh-session warning (compact has its own framing).
+	if strings.Contains(result.Output, "fresh session") {
+		t.Error("compact recovery should not have generic fresh-session warning")
+	}
+
+	// Handoff file should be consumed.
+	if handoff.HasHandoff("ember", "Toast", "agent") {
+		t.Error("expected handoff to be consumed after compact recovery prime")
+	}
+
+	// Marker should be removed.
+	ts, _, _ := handoff.ReadMarker("ember", "Toast", "agent")
+	if !ts.IsZero() {
+		t.Error("expected marker to be removed after prime")
+	}
+}
+
+func TestPrimeCompactRecoveryWithWorkflow(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Write handoff file with workflow state.
+	state := &handoff.State{
+		WorkItemID:       itemID,
+		AgentName:        "Toast",
+		World:            "ember",
+		Role:             "agent",
+		PreviousSession:  "sol-ember-Toast",
+		Summary:          "Working on step 2.",
+		RecentCommits:    []string{"abc1234 feat: step 1 done"},
+		WorkflowStep:     "implement",
+		WorkflowProgress: "1/3 complete",
+		StepDescription:  "Implement the feature",
+	}
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("failed to write handoff: %v", err)
+	}
+
+	// Compact marker.
+	if err := handoff.WriteMarker("ember", "Toast", "agent", "compact"); err != nil {
+		t.Fatalf("failed to write marker: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "agent", worldStore)
+	if err != nil {
+		t.Fatalf("Prime with compact+workflow failed: %v", err)
+	}
+
+	if !strings.Contains(result.Output, "SESSION RECOVERY") {
+		t.Error("output missing SESSION RECOVERY header")
+	}
+	if !strings.Contains(result.Output, "CURRENT WORKFLOW STATE") {
+		t.Error("output missing workflow state section")
+	}
+	if !strings.Contains(result.Output, "1/3 complete") {
+		t.Error("output missing workflow progress")
+	}
+	if !strings.Contains(result.Output, "Implement the feature") {
+		t.Error("output missing step description")
+	}
+}
+
+func TestPrimeNonCompactHandoffUsesFullPrime(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	state := &handoff.State{
+		WorkItemID:      itemID,
+		AgentName:       "Toast",
+		World:           "ember",
+		Role:            "agent",
+		PreviousSession: "sol-ember-Toast",
+		Summary:         "Working on it.",
+		RecentCommits:   []string{"abc1234 feat: work"},
+	}
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("failed to write handoff: %v", err)
+	}
+
+	// Non-compact marker (e.g., manual handoff or old-style).
+	if err := handoff.WriteMarker("ember", "Toast", "agent", "session handoff"); err != nil {
+		t.Fatalf("failed to write marker: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "agent", worldStore)
+	if err != nil {
+		t.Fatalf("Prime with non-compact handoff failed: %v", err)
+	}
+
+	// Should use full HANDOFF CONTEXT, not SESSION RECOVERY.
+	if !strings.Contains(result.Output, "HANDOFF CONTEXT") {
+		t.Error("non-compact handoff should use full HANDOFF CONTEXT")
+	}
+	if strings.Contains(result.Output, "SESSION RECOVERY") {
+		t.Error("non-compact handoff should not use SESSION RECOVERY")
+	}
+
+	// Should have the fresh-session warning.
+	if !strings.Contains(result.Output, "fresh session") {
+		t.Error("non-compact handoff should have fresh-session warning")
+	}
+}
+
+func TestPrimeCompactWithoutHandoffFallsThrough(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create work item: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Compact marker but NO handoff file — should fall through to standard prime.
+	if err := handoff.WriteMarker("ember", "Toast", "agent", "compact"); err != nil {
+		t.Fatalf("failed to write marker: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "agent", worldStore)
+	if err != nil {
+		t.Fatalf("Prime with compact but no handoff failed: %v", err)
+	}
+
+	// Should use standard WORK CONTEXT since there's no handoff state.
+	if !strings.Contains(result.Output, "WORK CONTEXT") {
+		t.Error("compact without handoff should fall through to standard WORK CONTEXT")
+	}
+	if strings.Contains(result.Output, "SESSION RECOVERY") {
+		t.Error("compact without handoff should not use SESSION RECOVERY")
+	}
+}
+
 // --- Mock world store that wraps a real store but can inject errors ---
 
 type mockWorldStore struct {

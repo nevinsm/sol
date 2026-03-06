@@ -145,7 +145,7 @@ func installHooks(govDir, world string) error {
 					Hooks: []protocol.HookHandler{
 						{
 							Type:    "command",
-							Command: fmt.Sprintf("sol handoff --world=%s --agent=governor", world),
+							Command: fmt.Sprintf("sol handoff --world=%s --agent=governor --reason=compact", world),
 						},
 					},
 				},

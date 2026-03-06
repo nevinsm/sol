@@ -213,7 +213,7 @@ Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` 
 |---------|-------------|
 | `sol handoff` | Hand off to a fresh session with context preservation |
 
-`--summary` provides a progress summary. Captures tmux output, git state, and workflow progress into `.handoff.json`, then cycles the session atomically using `tmux respawn-pane`. Safe for self-handoff (agent calling handoff on itself) and PreCompact auto-handoff — the old process is replaced without destroying the session.
+`--summary` provides a progress summary. `--reason` records why the handoff was triggered (e.g., `compact` for PreCompact). Captures tmux output, git state, and workflow progress into `.handoff.json`, then cycles the session atomically using `tmux respawn-pane`. Safe for self-handoff (agent calling handoff on itself) and PreCompact auto-handoff — the old process is replaced without destroying the session. When reason is `compact`, the new session uses `--continue` and gets a lightweight prime that omits the full work item description.
 
 ## Envoy (Persistent Human-Directed Agents)
 

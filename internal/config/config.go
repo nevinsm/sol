@@ -232,6 +232,31 @@ func BuildSessionCommand(settingsPath, prompt string) string {
 		ShellQuote(settingsPath), ShellQuote(prompt))
 }
 
+// BuildSessionCommandContinue constructs a claude startup command with the
+// --continue flag, which resumes the previous conversation with compressed
+// context. Used for compact-triggered session cycles where the predecessor
+// session's history provides valuable continuity.
+//
+// Findings on --continue behavior:
+// - Claude Code saves conversation turns to ~/.claude/projects/. The --continue
+//   flag loads the most recent conversation and appends the new prompt as the
+//   next user message. This gives the agent compressed context from its
+//   predecessor session in addition to our injected prime.
+// - Quality is sufficient for continuity — the agent retains awareness of what
+//   it was working on, recent decisions, and partial progress.
+// - Does NOT conflict with our prime injection: the prime appears as a
+//   system-reminder in the resumed conversation, providing fresh durable state
+//   while --continue provides compressed conversational context.
+// - Only used for compact recovery, not fresh starts — fresh casts should
+//   start with a clean conversation to avoid stale context from unrelated work.
+func BuildSessionCommandContinue(settingsPath, prompt string) string {
+	if cmd := os.Getenv("SOL_SESSION_COMMAND"); cmd != "" {
+		return cmd
+	}
+	return fmt.Sprintf("claude --dangerously-skip-permissions --continue --settings %s %s",
+		ShellQuote(settingsPath), ShellQuote(prompt))
+}
+
 // NudgeQueueDir returns the nudge queue directory for a session.
 // Path: $SOL_HOME/.runtime/nudge_queue/{session}/
 func NudgeQueueDir(session string) string {

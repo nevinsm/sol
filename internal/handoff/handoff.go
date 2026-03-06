@@ -364,6 +364,7 @@ type ExecOpts struct {
 	Summary     string // optional agent-provided summary
 	Role        string // agent role: "agent", "envoy", "governor", "forge" (default: "agent")
 	WorktreeDir string // explicit worktree path (required for non-outpost roles)
+	Reason      string // why handoff was triggered: "compact" (PreCompact), "" defaults to "session handoff"
 }
 
 // Exec performs the full handoff sequence:
@@ -485,11 +486,19 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		"SOL_WORLD": opts.World,
 		"SOL_AGENT": opts.AgentName,
 	}
-	sessionCmd := config.BuildSessionCommand(
-		config.SettingsPath(worktreeDir),
-		fmt.Sprintf("Agent %s, world %s (handoff). If no context appears, run: sol prime --world=%s --agent=%s",
-			opts.AgentName, opts.World, opts.World, opts.AgentName),
-	)
+	prompt := fmt.Sprintf("Agent %s, world %s (handoff). If no context appears, run: sol prime --world=%s --agent=%s",
+		opts.AgentName, opts.World, opts.World, opts.AgentName)
+	settingsPath := config.SettingsPath(worktreeDir)
+
+	// Use --continue for compact-triggered handoffs to resume with compressed
+	// context from the predecessor session. See BuildSessionCommandContinue
+	// for detailed findings on --continue behavior.
+	var sessionCmd string
+	if opts.Reason == "compact" {
+		sessionCmd = config.BuildSessionCommandContinue(settingsPath, prompt)
+	} else {
+		sessionCmd = config.BuildSessionCommand(settingsPath, prompt)
+	}
 	if err := sessionMgr.Cycle(sessionName, worktreeDir, sessionCmd, env, role, opts.World); err != nil {
 		// Cycle failed — fall back to Stop+Start.
 		fmt.Fprintf(os.Stderr, "handoff: cycle failed, falling back to stop+start: %v\n", err)
@@ -503,7 +512,12 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 
 	// Write marker for loop prevention. The new session's prime will detect
 	// this and warn the agent not to re-trigger handoff immediately.
-	if err := WriteMarker(opts.World, opts.AgentName, role, "session handoff"); err != nil {
+	// Reason is preserved so prime can distinguish compact recovery from other handoffs.
+	reason := opts.Reason
+	if reason == "" {
+		reason = "session handoff"
+	}
+	if err := WriteMarker(opts.World, opts.AgentName, role, reason); err != nil {
 		fmt.Fprintf(os.Stderr, "handoff: failed to write marker: %v\n", err)
 	}
 

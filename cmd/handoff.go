@@ -19,6 +19,7 @@ var (
 	handoffWorld   string
 	handoffAgent   string
 	handoffSummary string
+	handoffReason  string
 )
 
 var handoffCmd = &cobra.Command{
@@ -74,6 +75,7 @@ var handoffCmd = &cobra.Command{
 			Summary:     handoffSummary,
 			Role:        role,
 			WorktreeDir: worktreeDir,
+			Reason:      handoffReason,
 		}, mgr, sphereStore, logger); err != nil {
 			return err
 		}
@@ -102,4 +104,5 @@ func init() {
 	handoffCmd.Flags().StringVar(&handoffWorld, "world", "", "world name (defaults to SOL_WORLD env)")
 	handoffCmd.Flags().StringVar(&handoffAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 	handoffCmd.Flags().StringVar(&handoffSummary, "summary", "", "summary of current progress")
+	handoffCmd.Flags().StringVar(&handoffReason, "reason", "", "why handoff was triggered (e.g., compact)")
 }

@@ -210,3 +210,25 @@ func TestBuildSessionCommandDefault(t *testing.T) {
 		t.Fatalf("expected prompt, got %q", got)
 	}
 }
+
+func TestBuildSessionCommandContinueDefault(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "")
+	got := BuildSessionCommandContinue("/tmp/wt/.claude/settings.local.json", "Hello agent")
+	if !strings.Contains(got, "--continue") {
+		t.Fatalf("expected --continue flag, got %q", got)
+	}
+	if !strings.Contains(got, "--dangerously-skip-permissions") {
+		t.Fatalf("expected --dangerously-skip-permissions, got %q", got)
+	}
+	if !strings.Contains(got, "--settings") {
+		t.Fatalf("expected --settings flag, got %q", got)
+	}
+}
+
+func TestBuildSessionCommandContinueOverride(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	got := BuildSessionCommandContinue("/some/path", "hello")
+	if got != "sleep 300" {
+		t.Fatalf("override should ignore --continue, got %q", got)
+	}
+}

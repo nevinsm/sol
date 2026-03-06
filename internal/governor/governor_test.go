@@ -186,7 +186,7 @@ func TestStart(t *testing.T) {
 		t.Error("no PreCompact hooks")
 	} else if len(pcGroups) != 1 {
 		t.Errorf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
-	} else if pcGroups[0].Hooks[0].Command != "sol handoff --world=myworld --agent=governor" {
+	} else if pcGroups[0].Hooks[0].Command != "sol handoff --world=myworld --agent=governor --reason=compact" {
 		t.Errorf("unexpected PreCompact command: %q", pcGroups[0].Hooks[0].Command)
 	}
 

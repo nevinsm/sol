@@ -279,7 +279,7 @@ func installHooks(worktreeDir, world, name string) error {
 					Hooks: []protocol.HookHandler{
 						{
 							Type:    "command",
-							Command: fmt.Sprintf("sol handoff --world=%s --agent=%s", world, name),
+							Command: fmt.Sprintf("sol handoff --world=%s --agent=%s --reason=compact", world, name),
 						},
 					},
 				},

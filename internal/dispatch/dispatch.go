@@ -598,10 +598,13 @@ func Prime(world, agentName, role string, worldStore WorldStore) (*PrimeResult, 
 
 	// Check for handoff marker (loop prevention).
 	// If present, the agent was just handed off — prepend a warning and remove the marker.
+	// The reason distinguishes compact recovery ("compact") from other handoffs.
 	freshSession := false
-	markerTS, _, _ := handoff.ReadMarker(world, agentName, role)
+	compactRecovery := false
+	markerTS, markerReason, _ := handoff.ReadMarker(world, agentName, role)
 	if !markerTS.IsZero() {
 		freshSession = true
+		compactRecovery = markerReason == "compact"
 		// Remove marker after reading — the message will be in Claude's context.
 		handoff.RemoveMarker(world, agentName, role)
 	}
@@ -630,7 +633,14 @@ func Prime(world, agentName, role string, worldStore WorldStore) (*PrimeResult, 
 	var result *PrimeResult
 
 	if handoffState != nil && !handoffState.Consumed {
-		result, err = primeWithHandoff(world, agentName, item, handoffState)
+		if compactRecovery {
+			// Compact recovery: lightweight prime that trusts compressed context
+			// from the predecessor session (via --continue). Omits the full work
+			// item description to save tokens.
+			result, err = primeCompactRecovery(world, agentName, item, handoffState)
+		} else {
+			result, err = primeWithHandoff(world, agentName, item, handoffState)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -675,8 +685,9 @@ If stuck, run: sol escalate "description"
 		}
 	}
 
-	// Prepend fresh-session warning if this is a handoff continuation.
-	if freshSession && result != nil {
+	// Prepend fresh-session warning if this is a non-compact handoff continuation.
+	// Compact recovery has its own framing — no need for the generic warning.
+	if freshSession && !compactRecovery && result != nil {
 		result.Output = "NOTE: You are a fresh session (handoff from predecessor). Continue working — do NOT call sol handoff.\n\n" + result.Output
 	}
 
@@ -806,6 +817,61 @@ If you need to hand off again: sol handoff --summary="<what you've done>"
 === END HANDOFF ===`)
 
 	return &PrimeResult{Output: output}, nil
+}
+
+// primeCompactRecovery returns a lightweight prime for sessions recovering from
+// context compaction. Unlike primeWithHandoff, it omits the full work item
+// description because the agent has compressed context from its predecessor
+// session (via --continue). This saves tokens and avoids confusing the agent
+// about whether it's starting fresh or continuing.
+func primeCompactRecovery(world, agentName string, item *store.WorkItem,
+	state *handoff.State) (*PrimeResult, error) {
+
+	var b strings.Builder
+	fmt.Fprintf(&b, `=== SESSION RECOVERY ===
+Agent: %s (world: %s)
+Work Item: %s — %s
+Reason: Context compaction recovery
+
+You are continuing a previous session. Your prior conversation has been compressed.
+
+`, agentName, world, item.ID, item.Title)
+
+	// Previous session state from handoff.
+	fmt.Fprintf(&b, "PREVIOUS SESSION STATE:\n")
+	fmt.Fprintf(&b, "Summary: %s\n", state.Summary)
+	if len(state.RecentCommits) > 0 {
+		fmt.Fprintf(&b, "Recent commits:\n%s\n", strings.Join(state.RecentCommits, "\n"))
+	}
+	if state.GitStatus != "" {
+		fmt.Fprintf(&b, "Git status:\n%s\n", state.GitStatus)
+	}
+	if state.DiffStat != "" {
+		fmt.Fprintf(&b, "Uncommitted changes:\n%s\n", state.DiffStat)
+	}
+	if state.GitStash != "" {
+		fmt.Fprintf(&b, "Stashed work:\n%s\n", state.GitStash)
+	}
+
+	// Workflow state if active.
+	if state.WorkflowStep != "" {
+		stepInfo := state.WorkflowStep
+		if state.StepDescription != "" {
+			stepInfo = fmt.Sprintf("%s — %s", state.WorkflowStep, state.StepDescription)
+		}
+		fmt.Fprintf(&b, "\nCURRENT WORKFLOW STATE:\n")
+		fmt.Fprintf(&b, "Progress: %s (current step: %s)\n", state.WorkflowProgress, stepInfo)
+		fmt.Fprintf(&b, "Read your current step: sol workflow current --world=%s --agent=%s\n", world, agentName)
+	}
+
+	fmt.Fprintf(&b, `
+Continue from where you left off. Do NOT re-read the work item description
+or restart from scratch — pick up where the previous session stopped.
+
+When complete: sol resolve
+=== END RECOVERY ===`)
+
+	return &PrimeResult{Output: b.String()}, nil
 }
 
 // primeForge returns forge-specific context for the prime command.

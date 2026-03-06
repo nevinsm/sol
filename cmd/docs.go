@@ -140,9 +140,11 @@ var docSections = []docSection{
 	{
 		heading: "Handoff (Session Continuity)",
 		paths:   []string{"handoff"},
-		notes: "`--summary` provides a progress summary. Captures tmux output, git state, and workflow progress into `.handoff.json`, " +
+		notes: "`--summary` provides a progress summary. `--reason` records why the handoff was triggered (e.g., `compact` for PreCompact). " +
+			"Captures tmux output, git state, and workflow progress into `.handoff.json`, " +
 			"then cycles the session atomically using `tmux respawn-pane`. Safe for self-handoff (agent calling handoff on itself) " +
-			"and PreCompact auto-handoff — the old process is replaced without destroying the session.",
+			"and PreCompact auto-handoff — the old process is replaced without destroying the session. " +
+			"When reason is `compact`, the new session uses `--continue` and gets a lightweight prime that omits the full work item description.",
 	},
 	{
 		heading: "Envoy (Persistent Human-Directed Agents)",
