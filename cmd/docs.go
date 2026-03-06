@@ -91,7 +91,7 @@ var docSections = []docSection{
 	{
 		heading: "Daemon Management",
 		paths:   []string{"up", "down"},
-		notes: "Without flags, `sol up` starts sphere daemons (prefect, consul, chronicle) and world services " +
+		notes: "Without flags, `sol up` starts sphere daemons (prefect, consul, chronicle, ledger) and world services " +
 			"(sentinel, forge) for all non-sleeping worlds. `sol down` stops everything.\n\n" +
 			"`--world` — manage only world services, skip sphere daemons. " +
 			"`--world=W` targets a specific world.",
@@ -133,6 +133,14 @@ var docSections = []docSection{
 	{
 		heading: "Observability",
 		paths:   []string{"feed", "log-event", "chronicle run", "chronicle start", "chronicle stop"},
+	},
+	{
+		heading: "Ledger (Token Tracking)",
+		paths:   []string{"ledger run", "ledger start", "ledger stop"},
+		notes: "Sphere-scoped OTLP HTTP receiver on port 4318. Accepts `claude_code.api_request` log events from " +
+			"Claude Code agent sessions, extracts token counts (input, output, cache_read, cache_creation) and model, " +
+			"and writes `token_usage` records to the appropriate world database. Source agent identification via " +
+			"`OTEL_RESOURCE_ATTRIBUTES` (agent.name, world, work_item_id) injected at cast time.",
 	},
 	{
 		heading: "Workflows",
@@ -188,7 +196,7 @@ var docSections = []docSection{
 	{
 		heading: "Service (Systemd Units)",
 		paths:   []string{"service install", "service uninstall", "service start", "service stop", "service restart", "service status"},
-		notes:   "Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle).",
+		notes:   "Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle, ledger).",
 	},
 	{
 		heading: "Guard (PreToolUse Hooks)",

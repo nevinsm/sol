@@ -12,7 +12,7 @@ import (
 )
 
 // Components lists the sphere daemons managed as systemd user units.
-var Components = []string{"prefect", "consul", "chronicle"}
+var Components = []string{"prefect", "consul", "chronicle", "ledger"}
 
 // UnitName returns the systemd unit name for a component.
 func UnitName(component string) string {

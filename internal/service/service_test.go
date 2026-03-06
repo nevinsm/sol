@@ -45,10 +45,10 @@ func TestUnitName(t *testing.T) {
 }
 
 func TestComponents(t *testing.T) {
-	if len(Components) != 3 {
-		t.Fatalf("expected 3 components, got %d", len(Components))
+	if len(Components) != 4 {
+		t.Fatalf("expected 4 components, got %d", len(Components))
 	}
-	expected := map[string]bool{"prefect": true, "consul": true, "chronicle": true}
+	expected := map[string]bool{"prefect": true, "consul": true, "chronicle": true, "ledger": true}
 	for _, c := range Components {
 		if !expected[c] {
 			t.Errorf("unexpected component %q", c)

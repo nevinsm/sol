@@ -103,7 +103,7 @@ Accounts are stored under `$SOL_HOME/.accounts/`. Each account has its own confi
 | `sol up` | Start sphere daemons and world services |
 | `sol down` | Stop sphere daemons and world services |
 
-Without flags, `sol up` starts sphere daemons (prefect, consul, chronicle) and world services (sentinel, forge) for all non-sleeping worlds. `sol down` stops everything.
+Without flags, `sol up` starts sphere daemons (prefect, consul, chronicle, ledger) and world services (sentinel, forge) for all non-sleeping worlds. `sol down` stops everything.
 
 `--world` — manage only world services, skip sphere daemons. `--world=W` targets a specific world.
 
@@ -195,6 +195,16 @@ Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` 
 | `sol chronicle run` | Run the chronicle (foreground) |
 | `sol chronicle start` | Start the chronicle as a background tmux session |
 | `sol chronicle stop` | Stop the chronicle background session |
+
+## Ledger (Token Tracking)
+
+| Command | Description |
+|---------|-------------|
+| `sol ledger run` | Run the ledger OTLP receiver (foreground) |
+| `sol ledger start` | Start the ledger as a background tmux session |
+| `sol ledger stop` | Stop the ledger background session |
+
+Sphere-scoped OTLP HTTP receiver on port 4318. Accepts `claude_code.api_request` log events from Claude Code agent sessions, extracts token counts (input, output, cache_read, cache_creation) and model, and writes `token_usage` records to the appropriate world database. Source agent identification via `OTEL_RESOURCE_ATTRIBUTES` (agent.name, world, work_item_id) injected at cast time.
 
 ## Workflows
 
@@ -312,7 +322,7 @@ Senate is an operator-managed sphere-scoped planning session. It reads governor 
 | `sol service restart` | Restart all sol sphere daemon units |
 | `sol service status` | Show status of sol sphere daemon units |
 
-Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle).
+Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle, ledger).
 
 ## Guard (PreToolUse Hooks)
 
