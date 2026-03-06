@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/startup"
 )
@@ -94,6 +95,14 @@ func forgePrime(world, _ string) string {
 	return fmt.Sprintf(
 		"Execute your current formula step. Run sol workflow current --world=%s --agent=forge.",
 		world)
+}
+
+// ForgeResumeState builds a startup.ResumeState for forge compact recovery.
+// If an MR is claimed (tether has work item), the agent resumes from the
+// current workflow step (typically gates, not scan). If no MR is claimed,
+// the workflow step reflects the scan phase.
+func ForgeResumeState(world string) startup.ResumeState {
+	return handoff.CaptureResumeState(world, "forge", "forge", "compact")
 }
 
 // resolveForgeConfigForRole loads world config and builds a forge.Config.
