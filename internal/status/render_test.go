@@ -25,6 +25,7 @@ func TestRenderSphereBasic(t *testing.T) {
 		"Prefect",
 		"Consul",
 		"Chronicle",
+		"Ledger",
 		"Broker",
 		"alpha",
 		"beta",
@@ -337,6 +338,44 @@ func TestRenderCaravanPhases(t *testing.T) {
 		if !strings.Contains(output, check) {
 			t.Errorf("RenderCaravanPhases missing %q", check)
 		}
+	}
+}
+
+func TestFormatLedgerDetail(t *testing.T) {
+	tests := []struct {
+		name string
+		info LedgerInfo
+		want string
+	}{
+		{
+			name: "not running",
+			info: LedgerInfo{Running: false},
+			want: "",
+		},
+		{
+			name: "session-based",
+			info: LedgerInfo{Running: true, SessionName: "sol-ledger"},
+			want: "sol-ledger",
+		},
+		{
+			name: "pid-based",
+			info: LedgerInfo{Running: true, PID: 12345},
+			want: "pid 12345",
+		},
+		{
+			name: "session preferred over pid",
+			info: LedgerInfo{Running: true, SessionName: "sol-ledger", PID: 12345},
+			want: "sol-ledger",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatLedgerDetail(tt.info)
+			if got != tt.want {
+				t.Errorf("formatLedgerDetail() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

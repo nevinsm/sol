@@ -22,6 +22,7 @@ type WorldStatus struct {
 	Prefect    PrefectInfo    `json:"prefect"`
 	Forge      ForgeInfo      `json:"forge"`
 	Chronicle  ChronicleInfo  `json:"chronicle"`
+	Ledger     LedgerInfo     `json:"ledger"`
 	Broker     BrokerInfo     `json:"broker"`
 	Senate     SenateInfo     `json:"senate"`
 	Sentinel   SentinelInfo   `json:"sentinel"`
@@ -87,6 +88,13 @@ type ForgeInfo struct {
 
 // ChronicleInfo holds chronicle process state (sphere-level).
 type ChronicleInfo struct {
+	Running     bool   `json:"running"`
+	SessionName string `json:"session_name,omitempty"`
+	PID         int    `json:"pid,omitempty"`
+}
+
+// LedgerInfo holds ledger process state (sphere-level OTLP receiver).
+type LedgerInfo struct {
 	Running     bool   `json:"running"`
 	SessionName string `json:"session_name,omitempty"`
 	PID         int    `json:"pid,omitempty"`
@@ -199,6 +207,7 @@ type SphereStatus struct {
 	Prefect   PrefectInfo    `json:"prefect"`
 	Consul    ConsulInfo     `json:"consul"`
 	Chronicle ChronicleInfo  `json:"chronicle"`
+	Ledger    LedgerInfo     `json:"ledger"`
 	Broker    BrokerInfo     `json:"broker"`
 	Senate    SenateInfo     `json:"senate"`
 	Worlds    []WorldSummary `json:"worlds"`
@@ -269,6 +278,14 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		result.Chronicle = ChronicleInfo{Running: true, SessionName: chronicleSessionName}
 	} else if pid := readChroniclePID(); pid > 0 && prefect.IsRunning(pid) {
 		result.Chronicle = ChronicleInfo{Running: true, PID: pid}
+	}
+
+	// 2b1. Check ledger (sphere-level): tmux session first, PID-file fallback.
+	const ledgerSessionName = "sol-ledger"
+	if checker.Exists(ledgerSessionName) {
+		result.Ledger = LedgerInfo{Running: true, SessionName: ledgerSessionName}
+	} else if pid := readLedgerPID(); pid > 0 && prefect.IsRunning(pid) {
+		result.Ledger = LedgerInfo{Running: true, PID: pid}
 	}
 
 	// 2b2. Check broker (sphere-level).
@@ -532,6 +549,19 @@ func maxPhase(m map[int]*PhaseProgress) int {
 // readChroniclePID reads the chronicle PID from its PID file. Returns 0 if not found.
 func readChroniclePID() int {
 	data, err := os.ReadFile(filepath.Join(config.RuntimeDir(), "chronicle.pid"))
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0
+	}
+	return pid
+}
+
+// readLedgerPID reads the ledger PID from its PID file. Returns 0 if not found.
+func readLedgerPID() int {
+	data, err := os.ReadFile(filepath.Join(config.RuntimeDir(), "ledger.pid"))
 	if err != nil {
 		return 0
 	}

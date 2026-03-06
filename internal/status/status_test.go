@@ -81,6 +81,20 @@ func emptyMQStore() *mockMergeQueueStore {
 	return &mockMergeQueueStore{}
 }
 
+// writeLedgerPID writes a ledger PID file for testing. Returns cleanup func.
+func writeLedgerPID(t *testing.T, pid int) func() {
+	t.Helper()
+	dir := config.RuntimeDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "ledger.pid")
+	if err := os.WriteFile(path, []byte(strconv.Itoa(pid)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return func() { os.Remove(path) }
+}
+
 // writeChroniclePID writes a chronicle PID file for testing. Returns cleanup func.
 func writeChroniclePID(t *testing.T, pid int) func() {
 	t.Helper()
@@ -885,6 +899,83 @@ func TestGatherChronicleSessionPreferred(t *testing.T) {
 	// PID should not be set when session is detected.
 	if result.Chronicle.PID != 0 {
 		t.Errorf("Chronicle.PID = %d, want 0 (session takes precedence)", result.Chronicle.PID)
+	}
+}
+
+func TestGatherLedgerSession(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
+	checker := &mockChecker{alive: map[string]bool{
+		"sol-ledger": true,
+	}}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if !result.Ledger.Running {
+		t.Error("Ledger.Running = false, want true")
+	}
+	if result.Ledger.SessionName != "sol-ledger" {
+		t.Errorf("Ledger.SessionName = %q, want %q", result.Ledger.SessionName, "sol-ledger")
+	}
+}
+
+func TestGatherLedgerPIDFallback(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// Write ledger PID file with our own PID (known-alive).
+	ledgerCleanup := writeLedgerPID(t, os.Getpid())
+	defer ledgerCleanup()
+
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
+	// No tmux session for ledger — PID fallback should activate.
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if !result.Ledger.Running {
+		t.Error("Ledger.Running = false, want true (PID fallback)")
+	}
+	if result.Ledger.PID != os.Getpid() {
+		t.Errorf("Ledger.PID = %d, want %d", result.Ledger.PID, os.Getpid())
+	}
+	if result.Ledger.SessionName != "" {
+		t.Errorf("Ledger.SessionName = %q, want empty (PID-based detection)", result.Ledger.SessionName)
+	}
+}
+
+func TestGatherLedgerNeitherRunning(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// No session, no PID file.
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if result.Ledger.Running {
+		t.Error("Ledger.Running = true, want false (nothing running)")
 	}
 }
 

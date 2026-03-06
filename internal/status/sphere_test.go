@@ -502,6 +502,56 @@ func TestGatherSphereWithEnvoysAndGovernor(t *testing.T) {
 	}
 }
 
+func TestGatherSphereLedgerSession(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	lister := &mockWorldLister{}
+	sphere := &mockSphereStore{}
+	checker := &mockChecker{alive: map[string]bool{
+		"sol-ledger": true,
+	}}
+
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+
+	if !result.Ledger.Running {
+		t.Error("Ledger.Running = false, want true")
+	}
+	if result.Ledger.SessionName != "sol-ledger" {
+		t.Errorf("Ledger.SessionName = %q, want %q", result.Ledger.SessionName, "sol-ledger")
+	}
+}
+
+func TestGatherSphereLedgerPIDFallback(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// Write ledger PID file with our own PID (known-alive).
+	ledgerCleanup := writeLedgerPID(t, os.Getpid())
+	defer ledgerCleanup()
+
+	lister := &mockWorldLister{}
+	sphere := &mockSphereStore{}
+	// No tmux session for ledger.
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+
+	if !result.Ledger.Running {
+		t.Error("Ledger.Running = false, want true (PID fallback)")
+	}
+	if result.Ledger.PID != os.Getpid() {
+		t.Errorf("Ledger.PID = %d, want %d", result.Ledger.PID, os.Getpid())
+	}
+	if result.Ledger.SessionName != "" {
+		t.Errorf("Ledger.SessionName = %q, want empty (PID-based detection)", result.Ledger.SessionName)
+	}
+}
+
 func TestGatherSphereChroniclePIDFallback(t *testing.T) {
 	setupTestHome(t)
 

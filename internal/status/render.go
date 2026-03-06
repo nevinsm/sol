@@ -72,6 +72,8 @@ func RenderSphere(s *SphereStatus) string {
 		formatConsulDetail(s.Consul))
 	renderProcess(&b, "Chronicle", s.Chronicle.Running,
 		formatChronicleDetail(s.Chronicle))
+	renderProcess(&b, "Ledger", s.Ledger.Running,
+		formatLedgerDetail(s.Ledger))
 	renderProcess(&b, "Broker", s.Broker.Running,
 		formatBrokerDetail(s.Broker))
 	renderProcess(&b, "Senate", s.Senate.Running,
@@ -154,6 +156,19 @@ func formatChronicleDetail(c ChronicleInfo) string {
 	}
 	if c.PID > 0 {
 		return fmt.Sprintf("pid %d", c.PID)
+	}
+	return ""
+}
+
+func formatLedgerDetail(l LedgerInfo) string {
+	if !l.Running {
+		return ""
+	}
+	if l.SessionName != "" {
+		return l.SessionName
+	}
+	if l.PID > 0 {
+		return fmt.Sprintf("pid %d", l.PID)
 	}
 	return ""
 }
@@ -288,6 +303,8 @@ func RenderWorld(ws *WorldStatus) string {
 		formatSentinelDetail(ws.Sentinel))
 	renderProcess(&b, "Chronicle", ws.Chronicle.Running,
 		formatChronicleDetail(ws.Chronicle))
+	renderProcess(&b, "Ledger", ws.Ledger.Running,
+		formatLedgerDetail(ws.Ledger))
 	renderProcess(&b, "Broker", ws.Broker.Running,
 		formatBrokerDetail(ws.Broker))
 	if ws.Governor.Running {
@@ -501,6 +518,8 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus) string {
 		formatConsulDetail(consul))
 	renderProcess(&b, "Chronicle", ws.Chronicle.Running,
 		formatChronicleDetail(ws.Chronicle))
+	renderProcess(&b, "Ledger", ws.Ledger.Running,
+		formatLedgerDetail(ws.Ledger))
 	renderProcess(&b, "Broker", ws.Broker.Running,
 		formatBrokerDetail(ws.Broker))
 	renderProcess(&b, "Senate", ws.Senate.Running,
