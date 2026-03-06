@@ -14,6 +14,7 @@ import (
 //go:embed defaults/default-work/steps/03-verify.md
 //go:embed defaults/rule-of-five/manifest.toml
 //go:embed defaults/code-review/manifest.toml
+//go:embed defaults/guided-design/manifest.toml
 //go:embed defaults/forge-patrol/manifest.toml
 //go:embed defaults/forge-patrol/steps/01-unblock.md
 //go:embed defaults/forge-patrol/steps/02-scan.md
@@ -29,10 +30,11 @@ var defaultFormulas embed.FS
 
 // knownDefaults lists formula names that are embedded in the binary.
 var knownDefaults = map[string]bool{
-	"default-work":  true,
-	"rule-of-five":  true,
-	"code-review":   true,
-	"forge-patrol":  true,
+	"default-work":   true,
+	"rule-of-five":   true,
+	"code-review":    true,
+	"guided-design":  true,
+	"forge-patrol":   true,
 }
 
 // EnsureFormula checks if a formula exists on disk. If not and it's a
