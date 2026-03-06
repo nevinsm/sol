@@ -465,6 +465,10 @@ type ExecOpts struct {
 	Role        string // agent role: "agent", "envoy", "governor", "forge" (default: "agent")
 	WorktreeDir string // explicit worktree path (required for non-outpost roles)
 	Reason      string // handoff reason: "compact", "manual", "health-check" (default: "unknown")
+
+	// StartupSphere is an optional sphere store for the startup.Resume/Launch
+	// path. When nil, startup opens its own. Exposed for testing.
+	StartupSphere startup.SphereStore
 }
 
 // Exec performs the full handoff sequence:
@@ -619,42 +623,68 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		fmt.Fprintf(os.Stderr, "handoff: failed to write resume state: %v\n", err)
 	}
 
-	// Cycle the session atomically using respawn-pane. This is safe for
+	// Build a session operation that uses Cycle (respawn-pane -k) for atomic
+	// process replacement, with Stop+Start as fallback. This is safe for
 	// self-handoff — respawn-pane -k kills the old process and starts the
 	// new one server-side, so the calling process being killed is expected.
-	worldCfg, _ := config.LoadWorldConfig(opts.World)
-	resolvedAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
-	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), role, opts.AgentName, resolvedAccount)
-	if err != nil {
-		return err
-	}
-	env := map[string]string{
-		"SOL_HOME":         config.Home(),
-		"SOL_WORLD":        opts.World,
-		"SOL_AGENT":        opts.AgentName,
-		"CLAUDE_CONFIG_DIR": claudeConfigDir,
-	}
-	prompt := fmt.Sprintf("Agent %s, world %s (handoff). If no context appears, run: sol prime --world=%s --agent=%s",
-		opts.AgentName, opts.World, opts.World, opts.AgentName)
-	settingsPath := config.SettingsPath(worktreeDir)
-
-	// Use --continue for compact-triggered handoffs to resume with compressed
-	// context from the predecessor session. See BuildSessionCommandContinue
-	// for detailed findings on --continue behavior.
-	var sessionCmd string
-	if opts.Reason == "compact" {
-		sessionCmd = config.BuildSessionCommandContinue(settingsPath, prompt)
-	} else {
-		sessionCmd = config.BuildSessionCommand(settingsPath, prompt)
-	}
-	if err := sessionMgr.Cycle(sessionName, worktreeDir, sessionCmd, env, role, opts.World); err != nil {
-		// Cycle failed — fall back to Stop+Start.
-		fmt.Fprintf(os.Stderr, "handoff: cycle failed, falling back to stop+start: %v\n", err)
-		if stopErr := sessionMgr.Stop(sessionName, true); stopErr != nil {
-			fmt.Fprintf(os.Stderr, "handoff: stop also failed: %v\n", stopErr)
+	cycleOp := func(name, workdir, cmd string, env map[string]string, role, world string) error {
+		if err := sessionMgr.Cycle(name, workdir, cmd, env, role, world); err != nil {
+			fmt.Fprintf(os.Stderr, "handoff: cycle failed, falling back to stop+start: %v\n", err)
+			if stopErr := sessionMgr.Stop(name, true); stopErr != nil {
+				fmt.Fprintf(os.Stderr, "handoff: stop also failed: %v\n", stopErr)
+			}
+			return sessionMgr.Start(name, workdir, cmd, env, role, world)
 		}
-		if startErr := sessionMgr.Start(sessionName, worktreeDir, sessionCmd, env, role, opts.World); startErr != nil {
-			return fmt.Errorf("handoff: fallback start also failed: %w", startErr)
+		return nil
+	}
+
+	// Use startup.Resume/Launch for registered roles. This ensures the new
+	// session gets system prompt flags, persona, hooks, workflow
+	// re-instantiation, and role-specific prime context.
+	cfg := startup.ConfigFor(role)
+	if cfg != nil {
+		launchOpts := startup.LaunchOpts{
+			SessionOp: cycleOp,
+			Sphere:    opts.StartupSphere,
+		}
+		var startupErr error
+		if reason == "compact" {
+			// Compact handoff: use Resume for --continue and resume-aware prime.
+			_, startupErr = startup.Resume(*cfg, opts.World, opts.AgentName, resumeState, launchOpts)
+		} else {
+			// Non-compact handoff: use Launch for fresh conversation with
+			// role-specific setup (persona, hooks, system prompt, workflow).
+			_, startupErr = startup.Launch(*cfg, opts.World, opts.AgentName, launchOpts)
+		}
+		if startupErr != nil {
+			return fmt.Errorf("handoff: startup failed: %w", startupErr)
+		}
+	} else {
+		// Legacy path for unregistered roles: build command inline.
+		worldCfg, _ := config.LoadWorldConfig(opts.World)
+		resolvedAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
+		claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), role, opts.AgentName, resolvedAccount)
+		if err != nil {
+			return err
+		}
+		env := map[string]string{
+			"SOL_HOME":          config.Home(),
+			"SOL_WORLD":         opts.World,
+			"SOL_AGENT":         opts.AgentName,
+			"CLAUDE_CONFIG_DIR": claudeConfigDir,
+		}
+		prompt := fmt.Sprintf("Agent %s, world %s (handoff). If no context appears, run: sol prime --world=%s --agent=%s",
+			opts.AgentName, opts.World, opts.World, opts.AgentName)
+		settingsPath := config.SettingsPath(worktreeDir)
+
+		var sessionCmd string
+		if opts.Reason == "compact" {
+			sessionCmd = config.BuildSessionCommandContinue(settingsPath, prompt)
+		} else {
+			sessionCmd = config.BuildSessionCommand(settingsPath, prompt)
+		}
+		if err := cycleOp(sessionName, worktreeDir, sessionCmd, env, role, opts.World); err != nil {
+			return fmt.Errorf("handoff: fallback start also failed: %w", err)
 		}
 	}
 

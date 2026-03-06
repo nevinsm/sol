@@ -66,6 +66,11 @@ type LaunchOpts struct {
 	Sessions   SessionStarter // default: session.New()
 	Sphere     SphereStore    // default: store.OpenSphere()
 	OwnsSphere bool           // if true, Launch closes the sphere store on exit
+
+	// SessionOp, when set, replaces the default Sessions.Start() call in step 9
+	// of Launch. Used by handoff for atomic session cycling via respawn-pane.
+	// Signature matches SessionStarter.Start.
+	SessionOp func(name, workdir, cmd string, env map[string]string, role, world string) error
 }
 
 // registry maps role names to their RoleConfig.
@@ -228,9 +233,16 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		env["OTEL_RESOURCE_ATTRIBUTES"] = attrs
 	}
 
-	mgr := resolveSessionStarter(opts)
-	if err := mgr.Start(sessName, worktreeDir, sessionCmd, env, cfg.Role, world); err != nil {
-		return "", fmt.Errorf("startup: failed to start session: %w", err)
+	// 9. Start (or cycle) the tmux session.
+	if opts.SessionOp != nil {
+		if err := opts.SessionOp(sessName, worktreeDir, sessionCmd, env, cfg.Role, world); err != nil {
+			return "", fmt.Errorf("startup: session operation failed: %w", err)
+		}
+	} else {
+		mgr := resolveSessionStarter(opts)
+		if err := mgr.Start(sessName, worktreeDir, sessionCmd, env, cfg.Role, world); err != nil {
+			return "", fmt.Errorf("startup: failed to start session: %w", err)
+		}
 	}
 
 	return sessName, nil

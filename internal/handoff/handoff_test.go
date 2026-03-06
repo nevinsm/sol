@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/startup"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
 
@@ -1205,5 +1207,275 @@ func TestExecNoBriefSaveWithoutBriefDir(t *testing.T) {
 	// Session should still be cycled.
 	if len(mgr.cycled) != 1 {
 		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+}
+
+// --- Mock startup sphere store ---
+
+type mockStartupSphere struct{}
+
+func (m *mockStartupSphere) GetAgent(id string) (*store.Agent, error) {
+	return &store.Agent{ID: id}, nil
+}
+func (m *mockStartupSphere) CreateAgent(name, world, role string) (string, error) {
+	return world + "/" + name, nil
+}
+func (m *mockStartupSphere) UpdateAgentState(id, state, tetherItem string) error {
+	return nil
+}
+func (m *mockStartupSphere) Close() error {
+	return nil
+}
+
+// --- Startup path tests ---
+
+func TestExecStartupPathForRegisteredRole(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	world := "ember"
+	agentName := "StartupBot"
+	roleName := "testrole-startup"
+
+	// Create worktree directory.
+	worktreeDir := filepath.Join(solHome, world, "outposts", agentName, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	// Register role with persona, system prompt, and prime builder.
+	startup.Register(roleName, startup.RoleConfig{
+		WorktreeDir: func(w, a string) string { return worktreeDir },
+		Persona: func(w, a string) ([]byte, error) {
+			return []byte("# Test Persona\nYou are a test agent."), nil
+		},
+		SystemPromptContent: "You are the test system prompt.",
+		ReplacePrompt:       true,
+		PrimeBuilder: func(w, a string) string {
+			return fmt.Sprintf("Test prime for %s in %s", a, w)
+		},
+	})
+
+	mgr := &mockSessionMgr{}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         world,
+		AgentName:     agentName,
+		Role:          roleName,
+		WorktreeDir:   worktreeDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// Verify session was cycled.
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+	cmd := mgr.cycled[0].Cmd
+
+	// Command should contain system prompt flag.
+	if !strings.Contains(cmd, "--system-prompt-file") {
+		t.Errorf("expected --system-prompt-file in command, got %q", cmd)
+	}
+
+	// Command should contain role-specific prime.
+	if !strings.Contains(cmd, "Test prime for StartupBot in ember") {
+		t.Errorf("expected role-specific prime in command, got %q", cmd)
+	}
+
+	// Command should NOT contain --continue (non-compact handoff).
+	if strings.Contains(cmd, "--continue") {
+		t.Errorf("expected no --continue for non-compact handoff, got %q", cmd)
+	}
+
+	// Persona should be installed (CLAUDE.local.md).
+	personaPath := filepath.Join(worktreeDir, ".claude", "CLAUDE.local.md")
+	data, err := os.ReadFile(personaPath)
+	if err != nil {
+		t.Fatalf("persona file not installed: %v", err)
+	}
+	if !strings.Contains(string(data), "Test Persona") {
+		t.Errorf("persona content mismatch: %q", string(data))
+	}
+
+	// System prompt should be written.
+	spPath := filepath.Join(worktreeDir, ".claude", "system-prompt.md")
+	data, err = os.ReadFile(spPath)
+	if err != nil {
+		t.Fatalf("system prompt file not written: %v", err)
+	}
+	if !strings.Contains(string(data), "test system prompt") {
+		t.Errorf("system prompt content mismatch: %q", string(data))
+	}
+
+	// Env should contain CLAUDE_CONFIG_DIR.
+	if mgr.cycled[0].Env["CLAUDE_CONFIG_DIR"] == "" {
+		t.Error("expected CLAUDE_CONFIG_DIR in env")
+	}
+}
+
+func TestExecStartupCompactUsesResume(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	world := "ember"
+	agentName := "CompactBot"
+	roleName := "testrole-compact"
+
+	worktreeDir := filepath.Join(solHome, world, "outposts", agentName, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	startup.Register(roleName, startup.RoleConfig{
+		WorktreeDir: func(w, a string) string { return worktreeDir },
+		PrimeBuilder: func(w, a string) string {
+			return "Role-specific prime"
+		},
+	})
+
+	// Set up tether so resume state captures the work item.
+	if err := tether.Write(world, agentName, "sol-compact12345", roleName); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	mgr := &mockSessionMgr{}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         world,
+		AgentName:     agentName,
+		Role:          roleName,
+		WorktreeDir:   worktreeDir,
+		Reason:        "compact",
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+	cmd := mgr.cycled[0].Cmd
+
+	// Compact should use --continue.
+	if !strings.Contains(cmd, "--continue") {
+		t.Errorf("expected --continue for compact handoff, got %q", cmd)
+	}
+
+	// Resume should prepend [RESUME] to prime.
+	if !strings.Contains(cmd, "[RESUME]") {
+		t.Errorf("expected [RESUME] prefix in prime for compact handoff, got %q", cmd)
+	}
+
+	// Should also contain the role-specific prime.
+	if !strings.Contains(cmd, "Role-specific prime") {
+		t.Errorf("expected role-specific prime in command, got %q", cmd)
+	}
+}
+
+func TestExecLegacyPathForUnregisteredRole(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	world := "ember"
+	agentName := "LegacyBot"
+	roleName := "unregistered-role-xyz"
+
+	worktreeDir := filepath.Join(solHome, world, "outposts", agentName, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	mgr := &mockSessionMgr{}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:       world,
+		AgentName:   agentName,
+		Role:        roleName,
+		WorktreeDir: worktreeDir,
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+	cmd := mgr.cycled[0].Cmd
+
+	// Legacy path should have generic handoff prompt.
+	if !strings.Contains(cmd, "handoff") {
+		t.Errorf("expected generic handoff prompt in command, got %q", cmd)
+	}
+
+	// Should NOT have system prompt flags (not registered).
+	if strings.Contains(cmd, "--system-prompt-file") {
+		t.Errorf("expected no --system-prompt-file for unregistered role, got %q", cmd)
+	}
+
+	// No persona should be installed.
+	personaPath := filepath.Join(worktreeDir, ".claude", "CLAUDE.local.md")
+	if _, err := os.Stat(personaPath); err == nil {
+		t.Error("expected no persona file for unregistered role")
+	}
+}
+
+func TestExecStartupCycleFallback(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	world := "ember"
+	agentName := "FallbackBot"
+	roleName := "testrole-fallback"
+
+	worktreeDir := filepath.Join(solHome, world, "outposts", agentName, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	startup.Register(roleName, startup.RoleConfig{
+		WorktreeDir: func(w, a string) string { return worktreeDir },
+		PrimeBuilder: func(w, a string) string {
+			return "Fallback prime"
+		},
+	})
+
+	// Cycle will fail, triggering Stop+Start fallback.
+	mgr := &mockSessionMgr{cycleErr: fmt.Errorf("respawn-pane failed")}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         world,
+		AgentName:     agentName,
+		Role:          roleName,
+		WorktreeDir:   worktreeDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec should succeed with fallback: %v", err)
+	}
+
+	// Cycle was attempted but failed — no successful cycles.
+	if len(mgr.cycled) != 0 {
+		t.Errorf("expected no successful Cycle calls, got %d", len(mgr.cycled))
+	}
+	// Fallback: Stop then Start.
+	if len(mgr.stopped) != 1 {
+		t.Errorf("expected 1 Stop call (fallback), got %d", len(mgr.stopped))
+	}
+	if len(mgr.started) != 1 {
+		t.Fatalf("expected 1 Start call (fallback), got %d", len(mgr.started))
+	}
+
+	// Even with fallback, startup path should produce role-specific command.
+	cmd := mgr.started[0].Cmd
+	if !strings.Contains(cmd, "Fallback prime") {
+		t.Errorf("expected role-specific prime in fallback command, got %q", cmd)
 	}
 }
