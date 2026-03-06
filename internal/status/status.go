@@ -18,6 +18,7 @@ type WorldStatus struct {
 	Prefect    PrefectInfo    `json:"prefect"`
 	Forge      ForgeInfo      `json:"forge"`
 	Chronicle  ChronicleInfo  `json:"chronicle"`
+	Broker     BrokerInfo     `json:"broker"`
 	Sentinel   SentinelInfo   `json:"sentinel"`
 	Governor   GovernorInfo   `json:"governor"`
 	Agents     []AgentStatus  `json:"agents"`
@@ -192,6 +193,7 @@ type SphereStatus struct {
 	Prefect   PrefectInfo    `json:"prefect"`
 	Consul    ConsulInfo     `json:"consul"`
 	Chronicle ChronicleInfo  `json:"chronicle"`
+	Broker    BrokerInfo     `json:"broker"`
 	Senate    SenateInfo     `json:"senate"`
 	Worlds    []WorldSummary `json:"worlds"`
 	Caravans  []CaravanInfo  `json:"caravans,omitempty"`
@@ -203,6 +205,16 @@ type ConsulInfo struct {
 	Running      bool   `json:"running"`
 	HeartbeatAge string `json:"heartbeat_age,omitempty"`
 	PatrolCount  int    `json:"patrol_count,omitempty"`
+	Stale        bool   `json:"stale"`
+}
+
+// BrokerInfo holds token broker process state.
+type BrokerInfo struct {
+	Running      bool   `json:"running"`
+	HeartbeatAge string `json:"heartbeat_age,omitempty"`
+	PatrolCount  int    `json:"patrol_count,omitempty"`
+	Accounts     int    `json:"accounts,omitempty"`
+	AgentDirs    int    `json:"agent_dirs,omitempty"`
 	Stale        bool   `json:"stale"`
 }
 
@@ -250,6 +262,9 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 	if checker.Exists(chronicleSessionName) {
 		result.Chronicle = ChronicleInfo{Running: true, SessionName: chronicleSessionName}
 	}
+
+	// 2b2. Check broker (sphere-level).
+	result.Broker = GatherBrokerInfo()
 
 	// 2c. Check sentinel session.
 	sentinelSessName := dispatch.SessionName(world, "sentinel")

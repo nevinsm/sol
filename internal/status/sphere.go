@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/consul"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -33,6 +34,9 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 
 	// 2. Check consul.
 	result.Consul = GatherConsulInfo()
+
+	// 2b. Check broker.
+	result.Broker = GatherBrokerInfo()
 
 	// 3. Check chronicle.
 	const chronicleSessionName = "sol-chronicle"
@@ -113,6 +117,26 @@ func GatherConsulInfo() ConsulInfo {
 	if err == nil && hb != nil {
 		info.Running = true
 		info.PatrolCount = hb.PatrolCount
+
+		age := time.Since(hb.Timestamp)
+		info.HeartbeatAge = FormatDuration(age)
+		info.Stale = hb.IsStale(10 * time.Minute)
+	}
+
+	return info
+}
+
+// GatherBrokerInfo reads token broker heartbeat state.
+// The broker is a Go process (not a tmux session), so heartbeat is the canonical signal.
+func GatherBrokerInfo() BrokerInfo {
+	info := BrokerInfo{}
+
+	hb, err := broker.ReadHeartbeat()
+	if err == nil && hb != nil {
+		info.Running = true
+		info.PatrolCount = hb.PatrolCount
+		info.Accounts = hb.Accounts
+		info.AgentDirs = hb.AgentDirs
 
 		age := time.Since(hb.Timestamp)
 		info.HeartbeatAge = FormatDuration(age)

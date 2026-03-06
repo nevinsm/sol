@@ -72,6 +72,8 @@ func RenderSphere(s *SphereStatus) string {
 		formatConsulDetail(s.Consul))
 	renderProcess(&b, "Chronicle", s.Chronicle.Running,
 		formatChronicleDetail(s.Chronicle))
+	renderProcess(&b, "Broker", s.Broker.Running,
+		formatBrokerDetail(s.Broker))
 	renderProcess(&b, "Senate", s.Senate.Running,
 		formatSenateDetail(s.Senate))
 	b.WriteString("\n")
@@ -124,6 +126,20 @@ func formatConsulDetail(c ConsulInfo) string {
 		parts += fmt.Sprintf(", last %s ago", c.HeartbeatAge)
 	}
 	if c.Stale {
+		parts += warnStyle.Render(" (stale)")
+	}
+	return parts
+}
+
+func formatBrokerDetail(b BrokerInfo) string {
+	if !b.Running {
+		return ""
+	}
+	parts := fmt.Sprintf("%d accounts, %d dirs, %d patrols", b.Accounts, b.AgentDirs, b.PatrolCount)
+	if b.HeartbeatAge != "" {
+		parts += fmt.Sprintf(", last %s ago", b.HeartbeatAge)
+	}
+	if b.Stale {
 		parts += warnStyle.Render(" (stale)")
 	}
 	return parts
@@ -266,6 +282,8 @@ func RenderWorld(ws *WorldStatus) string {
 		formatSentinelDetail(ws.Sentinel))
 	renderProcess(&b, "Chronicle", ws.Chronicle.Running,
 		formatChronicleDetail(ws.Chronicle))
+	renderProcess(&b, "Broker", ws.Broker.Running,
+		formatBrokerDetail(ws.Broker))
 	if ws.Governor.Running {
 		renderProcess(&b, "Governor", true,
 			formatGovernorDetail(ws.Governor))
@@ -477,6 +495,8 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus) string {
 		formatConsulDetail(consul))
 	renderProcess(&b, "Chronicle", ws.Chronicle.Running,
 		formatChronicleDetail(ws.Chronicle))
+	renderProcess(&b, "Broker", ws.Broker.Running,
+		formatBrokerDetail(ws.Broker))
 	b.WriteString("\n")
 
 	// World processes (Forge, Sentinel, Governor — not Prefect/Chronicle).

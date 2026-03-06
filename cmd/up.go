@@ -33,6 +33,7 @@ var sphereDaemons = []sphereDaemon{
 	{name: "consul", session: consulTmuxSession},
 	{name: "chronicle", session: chronicleSessionName},
 	{name: "ledger", session: ledgerSessionName},
+	{name: "token-broker"},
 }
 
 // worldServices are the per-world services started/stopped by sol up/down.

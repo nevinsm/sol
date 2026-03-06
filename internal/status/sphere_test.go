@@ -1,11 +1,14 @@
 package status
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/consul"
 	"github.com/nevinsm/sol/internal/store"
@@ -344,6 +347,48 @@ func TestGatherSphereConsulStale(t *testing.T) {
 	}
 }
 
+func TestGatherSphereBrokerInfo(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// Write a fresh broker heartbeat.
+	hb := &broker.Heartbeat{
+		Timestamp:   time.Now().UTC(),
+		PatrolCount: 7,
+		Status:      "running",
+		Accounts:    2,
+		AgentDirs:   5,
+	}
+	writeBrokerHeartbeat(t, hb)
+
+	lister := &mockWorldLister{}
+	sphere := &mockSphereStore{}
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+
+	if !result.Broker.Running {
+		t.Error("Broker.Running = false, want true")
+	}
+	if result.Broker.PatrolCount != 7 {
+		t.Errorf("Broker.PatrolCount = %d, want 7", result.Broker.PatrolCount)
+	}
+	if result.Broker.Accounts != 2 {
+		t.Errorf("Broker.Accounts = %d, want 2", result.Broker.Accounts)
+	}
+	if result.Broker.AgentDirs != 5 {
+		t.Errorf("Broker.AgentDirs = %d, want 5", result.Broker.AgentDirs)
+	}
+	if result.Broker.Stale {
+		t.Error("Broker.Stale = true, want false (fresh heartbeat)")
+	}
+	if result.Broker.HeartbeatAge == "" {
+		t.Error("Broker.HeartbeatAge is empty, want non-empty")
+	}
+}
+
 func TestFormatDuration(t *testing.T) {
 	tests := []struct {
 		d    time.Duration
@@ -384,6 +429,22 @@ func TestGatherSpherePrefectRunning(t *testing.T) {
 	}
 	if result.Prefect.PID != os.Getpid() {
 		t.Errorf("Prefect.PID = %d, want %d", result.Prefect.PID, os.Getpid())
+	}
+}
+
+// writeBrokerHeartbeat writes a broker heartbeat file for testing.
+func writeBrokerHeartbeat(t *testing.T, hb *broker.Heartbeat) {
+	t.Helper()
+	dir := filepath.Join(config.Home(), ".runtime")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(hb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "broker-heartbeat.json"), data, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

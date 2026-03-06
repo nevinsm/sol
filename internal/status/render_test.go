@@ -25,6 +25,7 @@ func TestRenderSphereBasic(t *testing.T) {
 		"Prefect",
 		"Consul",
 		"Chronicle",
+		"Broker",
 		"alpha",
 		"beta",
 		"Worlds",
