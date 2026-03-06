@@ -309,13 +309,12 @@ func TestForgeClaudeMDCLIReference(t *testing.T) {
 	if !strings.Contains(content, ".claude/sol-cli-reference.md") {
 		t.Error("forge CLAUDE.md should contain CLI reference")
 	}
-	// Patrol loop commands should still be inline.
+	// Command quick-reference should still have key commands.
 	if !strings.Contains(content, "sol forge ready") {
-		t.Error("forge CLAUDE.md should contain patrol loop commands inline")
+		t.Error("forge CLAUDE.md should contain sol forge ready in quick-reference")
 	}
-	// Forge uses git directly now — git merge --squash should be present.
 	if !strings.Contains(content, "git merge --squash") {
-		t.Error("forge CLAUDE.md should contain git merge --squash command")
+		t.Error("forge CLAUDE.md should contain git merge --squash in quick-reference")
 	}
 	// sol forge merge should NOT be present (removed).
 	if strings.Contains(content, "sol forge merge") {
@@ -338,8 +337,8 @@ func TestForgeClaudeMDTheoryOfOperation(t *testing.T) {
 	if !strings.Contains(content, "merge processor for world myworld") {
 		t.Error("forge CLAUDE.md should describe mechanical role with world name")
 	}
-	if !strings.Contains(content, "claim → sync → fetch → merge → test → push → mark → loop") {
-		t.Error("forge CLAUDE.md should describe the mechanical loop")
+	if !strings.Contains(content, "sol-forge-patrol") {
+		t.Error("forge CLAUDE.md should reference the sol-forge-patrol formula")
 	}
 	if !strings.Contains(content, "You use git directly") {
 		t.Error("forge CLAUDE.md should state using git directly")
@@ -362,10 +361,12 @@ func TestForgeClaudeMDForbiddenExpanded(t *testing.T) {
 		t.Error("forge CLAUDE.md should contain FORBIDDEN section")
 	}
 	for _, sub := range []string{
-		"FORBIDDEN: Reading outpost code",
-		"FORBIDDEN: Extended analysis of test output",
+		"FORBIDDEN: `git push --force`",
+		"FORBIDDEN: `git checkout -b`",
 		"FORBIDDEN: Writing or modifying application code",
 		"FORBIDDEN: Using plan mode",
+		"FORBIDDEN: Reading outpost code",
+		"FORBIDDEN: Extended analysis of test output",
 	} {
 		if !strings.Contains(content, sub) {
 			t.Errorf("forge CLAUDE.md FORBIDDEN section should contain %q", sub)
@@ -373,7 +374,7 @@ func TestForgeClaudeMDForbiddenExpanded(t *testing.T) {
 	}
 }
 
-func TestForgeClaudeMDStepBanners(t *testing.T) {
+func TestForgeClaudeMDFormulaWorkflow(t *testing.T) {
 	ctx := protocol.ForgeClaudeMDContext{
 		World:        "myworld",
 		TargetBranch: "main",
@@ -382,23 +383,33 @@ func TestForgeClaudeMDStepBanners(t *testing.T) {
 
 	content := protocol.GenerateForgeClaudeMD(ctx)
 
-	for _, banner := range []string{
-		"STEP 1/8: UNBLOCK",
-		"STEP 2/8: SCAN QUEUE",
-		"STEP 3/8: CLAIM",
-		"STEP 4/8: SYNC",
-		"STEP 5/8: MERGE",
-		"STEP 6/8: QUALITY GATES",
-		"STEP 7/8: PUSH",
-		"STEP 8/8: MARK MERGED",
+	// Patrol protocol should reference formula workflow commands.
+	if !strings.Contains(content, "## Patrol Protocol") {
+		t.Error("forge CLAUDE.md should contain Patrol Protocol section")
+	}
+	for _, cmd := range []string{
+		"sol workflow current --world=myworld --agent=forge",
+		"sol workflow advance --world=myworld --agent=forge",
+		"sol workflow status --world=myworld --agent=forge",
 	} {
-		if !strings.Contains(content, banner) {
-			t.Errorf("forge CLAUDE.md should contain step banner %q", banner)
+		if !strings.Contains(content, cmd) {
+			t.Errorf("forge CLAUDE.md should contain workflow command %q", cmd)
+		}
+	}
+
+	// Should NOT contain hardcoded step banners (formula handles steps now).
+	for _, banner := range []string{
+		"STEP 1/8",
+		"STEP 2/8",
+		"STEP 3/8",
+	} {
+		if strings.Contains(content, banner) {
+			t.Errorf("forge CLAUDE.md should NOT contain hardcoded step banner %q", banner)
 		}
 	}
 }
 
-func TestForgeClaudeMDVerificationGates(t *testing.T) {
+func TestForgeClaudeMDWorkflowCommandsInQuickRef(t *testing.T) {
 	ctx := protocol.ForgeClaudeMDContext{
 		World:        "myworld",
 		TargetBranch: "main",
@@ -407,13 +418,14 @@ func TestForgeClaudeMDVerificationGates(t *testing.T) {
 
 	content := protocol.GenerateForgeClaudeMD(ctx)
 
-	gates := []string{
-		"You CANNOT proceed to Step 3",
-		"You CANNOT proceed to Step 4",
-	}
-	for _, gate := range gates {
-		if !strings.Contains(content, gate) {
-			t.Errorf("forge CLAUDE.md should contain verification gate %q", gate)
+	// Quick-reference table should include workflow commands.
+	for _, cmd := range []string{
+		"Read current step",
+		"Advance to next step",
+		"Check progress",
+	} {
+		if !strings.Contains(content, cmd) {
+			t.Errorf("forge CLAUDE.md quick-reference should contain %q", cmd)
 		}
 	}
 }

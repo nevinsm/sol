@@ -75,9 +75,9 @@ func TestInstallForgeHooks(t *testing.T) {
 	if !ok {
 		t.Fatal("settings.local.json missing PreToolUse hook")
 	}
-	// Forge: 1 EnterPlanMode + 6 dangerous-command = 7 (no forge-specific blocks)
-	if len(ptuGroups) != 7 {
-		t.Fatalf("expected 7 PreToolUse matcher groups (1 EnterPlanMode + 6 dangerous), got %d", len(ptuGroups))
+	// Forge: 1 EnterPlanMode + 3 dangerous-command = 4
+	if len(ptuGroups) != 4 {
+		t.Fatalf("expected 4 PreToolUse matcher groups (1 EnterPlanMode + 3 dangerous), got %d", len(ptuGroups))
 	}
 	if ptuGroups[0].Matcher != "EnterPlanMode" {
 		t.Errorf("PreToolUse matcher = %q, want \"EnterPlanMode\"", ptuGroups[0].Matcher)
@@ -88,8 +88,8 @@ func TestInstallForgeHooks(t *testing.T) {
 	if !strings.Contains(ptuGroups[0].Hooks[0].Command, "exit 2") {
 		t.Error("EnterPlanMode hook should exit 2 to block the tool call")
 	}
-	// Groups 1-6: dangerous-command guards.
-	for _, g := range ptuGroups[1:7] {
+	// Groups 1-3: dangerous-command guards (force push, checkout -b, rm -rf).
+	for _, g := range ptuGroups[1:4] {
 		if len(g.Hooks) > 0 {
 			if !strings.Contains(g.Hooks[0].Command, "sol guard dangerous-command") {
 				t.Errorf("forge guard hook should be dangerous-command, got %q", g.Hooks[0].Command)
@@ -106,7 +106,7 @@ func TestInstallForgeHooks(t *testing.T) {
 
 func TestGuardHooksOutpostNoForgeBlocks(t *testing.T) {
 	groups := GuardHooks("outpost")
-	// Outpost: 6 dangerous-command + 3 workflow-bypass = 9
+	// Outpost: 3 common + 4 dangerous-command + 2 workflow-bypass = 9
 	if len(groups) != 9 {
 		t.Fatalf("expected 9 guard hook groups for outpost, got %d", len(groups))
 	}
@@ -119,19 +119,18 @@ func TestGuardHooksOutpostNoForgeBlocks(t *testing.T) {
 
 func TestGuardHooksForgeHasDangerousCommands(t *testing.T) {
 	groups := GuardHooks("forge")
-	// Forge: 6 dangerous-command only (no forge-specific blocks)
-	if len(groups) != 6 {
-		t.Fatalf("expected 6 guard hook groups for forge, got %d", len(groups))
+	// Forge: 3 dangerous-command only (force push, checkout -b, rm -rf)
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 guard hook groups for forge, got %d", len(groups))
 	}
-	// First 6 should be dangerous-command guards.
 	dangerousCount := 0
-	for _, g := range groups[:6] {
+	for _, g := range groups {
 		if len(g.Hooks) > 0 && strings.Contains(g.Hooks[0].Command, "sol guard dangerous-command") {
 			dangerousCount++
 		}
 	}
-	if dangerousCount != 6 {
-		t.Errorf("expected 6 dangerous-command guards, got %d", dangerousCount)
+	if dangerousCount != 3 {
+		t.Errorf("expected 3 dangerous-command guards, got %d", dangerousCount)
 	}
 }
 
