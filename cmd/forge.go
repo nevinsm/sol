@@ -10,14 +10,13 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/nudge"
-	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
@@ -101,55 +100,15 @@ var forgeStartCmd = &cobra.Command{
 		logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 		ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger)
 
-		// 1. Ensure worktree exists.
+		// Ensure worktree exists (must happen before Launch).
 		if err := ref.EnsureWorktree(); err != nil {
 			return fmt.Errorf("failed to ensure worktree: %w", err)
 		}
 
-		// 2. Register agent in sphere store and set working.
-		_, err = sphereStore.GetAgent(world + "/forge")
-		if err != nil {
-			if _, err := sphereStore.CreateAgent("forge", world, "forge"); err != nil {
-				return fmt.Errorf("failed to register forge agent: %w", err)
-			}
-		}
-		if err := sphereStore.UpdateAgentState(world+"/forge", "working", ""); err != nil {
-			return fmt.Errorf("failed to set forge working: %w", err)
-		}
-
-		// 3. Install forge CLAUDE.local.md (persona).
-		rctx := protocol.ForgeClaudeMDContext{
-			World:        world,
-			TargetBranch: cfg.TargetBranch,
-			WorktreeDir:  ref.WorktreeDir(),
-			QualityGates: cfg.QualityGates,
-		}
-		if err := protocol.InstallForgeClaudeMD(ref.WorktreeDir(), rctx); err != nil {
-			return fmt.Errorf("failed to install forge CLAUDE.local.md: %w", err)
-		}
-
-		// 4. Install Claude Code hooks (with forge sync before prime).
-		if err := protocol.InstallForgeHooks(ref.WorktreeDir(), world); err != nil {
-			return fmt.Errorf("failed to install hooks: %w", err)
-		}
-
-		// 5. Start tmux session with claude.
-		resolvedAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
-		claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(world), "forge", "forge", resolvedAccount)
+		// Launch via startup package.
+		sessName, err = startup.Launch(forge.ForgeRoleConfig(), world, "forge", startup.LaunchOpts{})
 		if err != nil {
 			return err
-		}
-		env := map[string]string{
-			"SOL_HOME":         config.Home(),
-			"SOL_WORLD":        world,
-			"SOL_AGENT":        "forge",
-			"CLAUDE_CONFIG_DIR": claudeConfigDir,
-		}
-		forgePrompt := fmt.Sprintf("Forge for world %s. If no context appears, run: sol forge sync --world=%s && sol prime --world=%s --agent=forge",
-			world, world, world)
-		forgeCmd := config.BuildSessionCommand(config.SettingsPath(ref.WorktreeDir()), forgePrompt)
-		if err := mgr.Start(sessName, ref.WorktreeDir(), forgeCmd, env, "forge", world); err != nil {
-			return fmt.Errorf("failed to start forge session: %w", err)
 		}
 
 		fmt.Printf("Forge started for world %q (Claude session)\n", world)
@@ -1041,6 +1000,9 @@ var forgeResumeCmd = &cobra.Command{
 }
 
 func init() {
+	// Register forge role config for startup.Launch and prefect respawn.
+	startup.Register("forge", forge.ForgeRoleConfig())
+
 	rootCmd.AddCommand(forgeCmd)
 	forgeCmd.AddCommand(forgeStartCmd)
 	forgeCmd.AddCommand(forgeStopCmd)

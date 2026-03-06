@@ -16,6 +16,7 @@ import (
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -269,7 +270,6 @@ func worktreeForAgent(agent store.Agent) string {
 // respawn restarts a crashed agent session with backoff.
 func (s *Prefect) respawn(agent store.Agent) {
 	agentID := agent.ID
-	sessName := dispatch.SessionName(agent.World, agent.Name)
 	worktreeDir := worktreeForAgent(agent)
 
 	restartCount := s.backoff[agentID] + 1
@@ -309,26 +309,41 @@ func (s *Prefect) respawn(agent store.Agent) {
 		return
 	}
 
-	// Start the session.
-	env := map[string]string{
-		"SOL_HOME":  config.Home(),
-		"SOL_WORLD":   agent.World,
-		"SOL_AGENT": agent.Name,
-	}
-	if err := s.sessions.Start(sessName, worktreeDir,
-		respawnCommand(agent, worktreeDir), env, agent.Role, agent.World); err != nil {
-		s.logger.Error("failed to respawn session",
-			"agent", agent.Name, "world", agent.World, "error", err)
-		return
+	// Use startup.Launch for roles with registered configs.
+	if cfg := startup.ConfigFor(agent.Role); cfg != nil {
+		launchOpts := startup.LaunchOpts{
+			Respawn:  true,
+			Sessions: s.sessions,
+		}
+		_, err := startup.Launch(*cfg, agent.World, agent.Name, launchOpts)
+		if err != nil {
+			s.logger.Error("failed to respawn session via startup.Launch",
+				"agent", agent.Name, "world", agent.World, "error", err)
+			return
+		}
+	} else {
+		// Fallback for roles without registered configs.
+		sessName := dispatch.SessionName(agent.World, agent.Name)
+		env := map[string]string{
+			"SOL_HOME":  config.Home(),
+			"SOL_WORLD": agent.World,
+			"SOL_AGENT": agent.Name,
+		}
+		if err := s.sessions.Start(sessName, worktreeDir,
+			respawnCommand(agent, worktreeDir), env, agent.Role, agent.World); err != nil {
+			s.logger.Error("failed to respawn session",
+				"agent", agent.Name, "world", agent.World, "error", err)
+			return
+		}
+
+		// Set agent back to working.
+		if err := s.sphereStore.UpdateAgentState(agentID, "working", agent.TetherItem); err != nil {
+			s.logger.Error("failed to set agent working after respawn", "agent", agent.Name, "error", err)
+		}
 	}
 
 	s.backoff[agentID] = restartCount
 	delete(s.lastStalled, agentID)
-
-	// Set agent back to working.
-	if err := s.sphereStore.UpdateAgentState(agentID, "working", agent.TetherItem); err != nil {
-		s.logger.Error("failed to set agent working after respawn", "agent", agent.Name, "error", err)
-	}
 
 	s.logger.Info("respawned session",
 		"agent", agent.Name, "world", agent.World,
