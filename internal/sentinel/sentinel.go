@@ -994,18 +994,11 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 			continue // already on the target account
 		}
 
-		// Swap credential symlink.
+		// Write access-token-only credentials for the new account.
 		worldDir := config.WorldDir(w.config.World)
 		configDir := config.ClaudeConfigDir(worldDir, la.agent.Role, la.agent.Name)
-		credLink := filepath.Join(configDir, ".credentials.json")
-		newTarget := filepath.Join(config.AccountDir(toAccount), ".credentials.json")
 
-		if _, err := os.Stat(newTarget); err != nil {
-			continue
-		}
-
-		_ = os.Remove(credLink)
-		if err := os.Symlink(newTarget, credLink); err != nil {
+		if err := writeAgentCreds(configDir, toAccount); err != nil {
 			continue
 		}
 
@@ -1112,15 +1105,8 @@ func (w *Sentinel) checkQuotaPaused() int {
 
 		worldDir := config.WorldDir(w.config.World)
 		configDir := config.ClaudeConfigDir(worldDir, paused.Role, paused.AgentName)
-		credLink := filepath.Join(configDir, ".credentials.json")
-		newTarget := filepath.Join(config.AccountDir(toAccount), ".credentials.json")
 
-		if _, err := os.Stat(newTarget); err != nil {
-			continue
-		}
-
-		_ = os.Remove(credLink)
-		if err := os.Symlink(newTarget, credLink); err != nil {
+		if err := writeAgentCreds(configDir, toAccount); err != nil {
 			continue
 		}
 
@@ -1587,4 +1573,45 @@ func (w *Sentinel) listWorktreeBranches(repoPath string) map[string]bool {
 		}
 	}
 	return branches
+}
+
+// writeAgentCreds writes access-token-only credentials from the given account
+// to the agent's config directory. Also writes the .account metadata file.
+func writeAgentCreds(configDir, accountHandle string) error {
+	srcPath := filepath.Join(config.AccountDir(accountHandle), ".credentials.json")
+
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		return fmt.Errorf("account %q credentials not found: %w", accountHandle, err)
+	}
+
+	var creds map[string]any
+	if err := json.Unmarshal(data, &creds); err != nil {
+		return fmt.Errorf("failed to parse account %q credentials: %w", accountHandle, err)
+	}
+	if oauth, ok := creds["claudeAiOauth"].(map[string]any); ok {
+		delete(oauth, "refreshToken")
+	}
+
+	out, err := json.MarshalIndent(creds, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal credentials: %w", err)
+	}
+
+	destPath := filepath.Join(configDir, ".credentials.json")
+	_ = os.Remove(destPath)
+
+	tmp := destPath + ".tmp"
+	if err := os.WriteFile(tmp, append(out, '\n'), 0o600); err != nil {
+		return fmt.Errorf("failed to write credentials: %w", err)
+	}
+	if err := os.Rename(tmp, destPath); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to commit credentials: %w", err)
+	}
+
+	accountFile := filepath.Join(configDir, ".account")
+	_ = os.WriteFile(accountFile, []byte(accountHandle+"\n"), 0o644)
+
+	return nil
 }

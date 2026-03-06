@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -286,43 +287,96 @@ func ClaudeConfigDir(worldDir, role, name string) string {
 // EnsureClaudeConfigDir computes and creates the CLAUDE_CONFIG_DIR for an agent.
 // Returns the absolute path. Creates the directory (and parents) if needed.
 //
-// Credential symlink resolution (account parameter):
-//   - Non-empty account: symlinks from $SOL_HOME/.accounts/{account}/.credentials.json
-//   - Empty account: falls back to ~/.claude/.credentials.json (backwards compat)
+// Credential handling (account parameter):
+//   - Non-empty account: writes access-token-only credentials (no refreshToken)
+//     copied from $SOL_HOME/.accounts/{account}/.credentials.json, and writes
+//     a .account metadata file with the account handle for the token broker.
+//   - Empty account: falls back to ~/.claude/.credentials.json (backwards compat,
+//     uses symlink for legacy single-account setups).
 //
-// If the destination symlink already exists, it is replaced to ensure it points
-// to the correct account's credentials (account assignments can change).
+// When using named accounts, the token broker is the sole consumer of refresh
+// tokens. Agents receive only access tokens and never attempt to refresh.
 func EnsureClaudeConfigDir(worldDir, role, name, account string) (string, error) {
 	dir := ClaudeConfigDir(worldDir, role, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create claude config dir %q: %w", dir, err)
 	}
 
-	// Determine credentials source.
-	var srcCreds string
 	if account != "" {
-		srcCreds = filepath.Join(AccountDir(account), ".credentials.json")
+		// Named account: write access-token-only credentials.
+		srcCreds := filepath.Join(AccountDir(account), ".credentials.json")
+		if err := writeAccessTokenOnlyCreds(srcCreds, dir); err != nil {
+			fmt.Fprintf(os.Stderr, "config: failed to write access-token-only credentials for %s: %v\n", name, err)
+		}
+
+		// Write .account metadata file for broker discovery and account resolution.
+		accountFile := filepath.Join(dir, ".account")
+		_ = os.WriteFile(accountFile, []byte(account+"\n"), 0o644)
+
+		// Clean up any legacy symlink.
+		dstCreds := filepath.Join(dir, ".credentials.json")
+		if target, err := os.Readlink(dstCreds); err == nil && target != "" {
+			// It's a symlink — remove it so we can write a regular file.
+			// The writeAccessTokenOnlyCreds above may have failed because
+			// the symlink existed. Remove and retry.
+			_ = os.Remove(dstCreds)
+			_ = writeAccessTokenOnlyCreds(srcCreds, dir)
+		}
 	} else {
+		// Legacy fallback: symlink to ~/.claude/.credentials.json.
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return dir, nil // non-fatal: agent may still work with API key env var
+			return dir, nil
 		}
-		srcCreds = filepath.Join(home, ".claude", ".credentials.json")
-	}
-
-	// Symlink credentials so the agent can authenticate.
-	dstCreds := filepath.Join(dir, ".credentials.json")
-	if _, err := os.Stat(srcCreds); err == nil {
-		// Remove existing symlink if it points elsewhere (account may have changed).
-		if target, err := os.Readlink(dstCreds); err == nil && target != srcCreds {
-			_ = os.Remove(dstCreds)
-		}
-		if _, err := os.Lstat(dstCreds); os.IsNotExist(err) {
-			_ = os.Symlink(srcCreds, dstCreds)
+		srcCreds := filepath.Join(home, ".claude", ".credentials.json")
+		dstCreds := filepath.Join(dir, ".credentials.json")
+		if _, err := os.Stat(srcCreds); err == nil {
+			if target, err := os.Readlink(dstCreds); err == nil && target != srcCreds {
+				_ = os.Remove(dstCreds)
+			}
+			if _, err := os.Lstat(dstCreds); os.IsNotExist(err) {
+				_ = os.Symlink(srcCreds, dstCreds)
+			}
 		}
 	}
 
 	return dir, nil
+}
+
+// writeAccessTokenOnlyCreds reads source credentials, strips the refresh token,
+// and writes the access-token-only copy to the destination directory.
+func writeAccessTokenOnlyCreds(srcPath, destDir string) error {
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		return err
+	}
+
+	// Parse credentials as a generic map to preserve unknown fields.
+	var creds map[string]any
+	if err := json.Unmarshal(data, &creds); err != nil {
+		return err
+	}
+
+	// Remove refreshToken from the claudeAiOauth object.
+	if oauth, ok := creds["claudeAiOauth"].(map[string]any); ok {
+		delete(oauth, "refreshToken")
+	}
+
+	out, err := json.MarshalIndent(creds, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	destPath := filepath.Join(destDir, ".credentials.json")
+	tmp := destPath + ".tmp"
+	if err := os.WriteFile(tmp, append(out, '\n'), 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, destPath); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // NudgeQueueDir returns the nudge queue directory for a session.

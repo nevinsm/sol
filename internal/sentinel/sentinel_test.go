@@ -1675,7 +1675,8 @@ func setupQuotaAccount(t *testing.T, handle string) {
 	os.WriteFile(regPath, data, 0o644)
 }
 
-// setupAgentCredentials creates a CLAUDE_CONFIG_DIR with a symlinked .credentials.json.
+// setupAgentCredentials creates a CLAUDE_CONFIG_DIR with an access-token-only
+// .credentials.json and a .account metadata file.
 func setupAgentCredentials(t *testing.T, world, role, name, accountHandle string) {
 	t.Helper()
 	solHome := os.Getenv("SOL_HOME")
@@ -1698,9 +1699,21 @@ func setupAgentCredentials(t *testing.T, world, role, name, accountHandle string
 		t.Fatal(err)
 	}
 
-	target := filepath.Join(solHome, ".accounts", accountHandle, ".credentials.json")
-	link := filepath.Join(configDir, ".credentials.json")
-	if err := os.Symlink(target, link); err != nil {
+	// Write .account metadata file.
+	accountFile := filepath.Join(configDir, ".account")
+	if err := os.WriteFile(accountFile, []byte(accountHandle+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write access-token-only credentials (copy from account, no refreshToken).
+	srcCreds := filepath.Join(solHome, ".accounts", accountHandle, ".credentials.json")
+	data, err := os.ReadFile(srcCreds)
+	if err != nil {
+		// If source doesn't exist yet, write minimal creds.
+		data = []byte(`{}`)
+	}
+	destCreds := filepath.Join(configDir, ".credentials.json")
+	if err := os.WriteFile(destCreds, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -86,8 +86,9 @@ func ScanWorld(world string) ([]ScanResult, error) {
 	return results, nil
 }
 
-// resolveSessionAccount determines which account a session is using by
-// reading the credential symlink in the agent's CLAUDE_CONFIG_DIR.
+// resolveSessionAccount determines which account a session is using.
+// First checks the .account metadata file (broker-managed), then falls
+// back to reading the .credentials.json symlink (legacy).
 func resolveSessionAccount(world string, sess session.SessionInfo) string {
 	worldDir := config.WorldDir(world)
 
@@ -103,9 +104,14 @@ func resolveSessionAccount(world string, sess session.SessionInfo) string {
 	}
 
 	configDir := config.ClaudeConfigDir(worldDir, role, agentName)
-	credsPath := filepath.Join(configDir, ".credentials.json")
 
-	// Read the symlink target.
+	// Prefer .account file (broker-managed).
+	if handle := readAccountFile(configDir); handle != "" {
+		return handle
+	}
+
+	// Fallback: read symlink target (legacy).
+	credsPath := filepath.Join(configDir, ".credentials.json")
 	target, err := os.Readlink(credsPath)
 	if err != nil {
 		return ""
@@ -132,6 +138,7 @@ func resolveSessionAccount(world string, sess session.SessionInfo) string {
 
 	return handle
 }
+
 
 // extractAgentName extracts the agent name from a session name.
 // Session names follow the format: sol-{world}-{agentName}.

@@ -217,12 +217,20 @@ var docSections = []docSection{
 		notes:   "Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle, ledger).",
 	},
 	{
+		heading: "Token Broker (Centralized OAuth Refresh)",
+		paths:   []string{"token-broker run", "token-broker status"},
+		notes: "Centralized OAuth token refresh. The broker is the sole consumer of refresh tokens — agents " +
+			"receive access-token-only credentials (no refreshToken field). Proactively refreshes before " +
+			"token expiry (default: 30 minutes before expiresAt). Writes access-token-only copies to all " +
+			"agent config dirs that use each account. Discovers agents via `.account` metadata files.",
+	},
+	{
 		heading: "Quota (Rate Limit Rotation)",
 		paths:   []string{"quota rotate"},
 		notes: "Reads quota state from `$SOL_HOME/.runtime/quota.json` to find rate-limited accounts, " +
-			"selects available accounts via LRU, swaps credential symlinks, and respawns agent sessions " +
-			"with `--continue` for context preservation. When no accounts are available, agents are paused " +
-			"and automatically restarted by the sentinel when accounts become available.",
+			"selects available accounts via LRU, writes access-token-only credentials to agent config dirs, " +
+			"and respawns agent sessions with `--continue` for context preservation. When no accounts are " +
+			"available, agents are paused and automatically restarted by the sentinel when accounts become available.",
 	},
 	{
 		heading: "Guard (PreToolUse Hooks)",

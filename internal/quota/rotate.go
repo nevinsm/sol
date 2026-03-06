@@ -1,6 +1,7 @@
 package quota
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,8 +35,8 @@ type RotateResult struct {
 	Expired []string // accounts whose limits expired during this run
 }
 
-// Rotate performs quota rotation: finds agents on limited accounts, swaps
-// their credential symlinks to available accounts, and respawns their
+// Rotate performs quota rotation: finds agents on limited accounts, writes
+// new account credentials to their config dirs, and respawns their
 // sessions with --continue for context preservation.
 //
 // The entire operation is protected by a flock on quota.json.
@@ -158,14 +159,21 @@ func Rotate(opts RotateOpts, sphereStore *store.Store, mgr *session.Manager, log
 	return result, nil
 }
 
-// ResolveCurrentAccount reads the .credentials.json symlink in an agent's
-// CLAUDE_CONFIG_DIR to determine which account it's currently using.
+// ResolveCurrentAccount determines which account an agent is currently using.
+// First checks the .account metadata file (broker-managed), then falls back
+// to reading the .credentials.json symlink (legacy).
 // Returns the account handle, or "" if it can't be resolved.
 func ResolveCurrentAccount(world, agentName, role string) string {
 	worldDir := config.WorldDir(world)
 	configDir := config.ClaudeConfigDir(worldDir, role, agentName)
-	credLink := filepath.Join(configDir, ".credentials.json")
 
+	// Prefer .account file (broker-managed).
+	if handle := readAccountFile(configDir); handle != "" {
+		return handle
+	}
+
+	// Fallback: read symlink target (legacy).
+	credLink := filepath.Join(configDir, ".credentials.json")
 	target, err := os.Readlink(credLink)
 	if err != nil {
 		return ""
@@ -187,26 +195,23 @@ func ResolveCurrentAccount(world, agentName, role string) string {
 	return parts[0]
 }
 
-// swapAndRespawn replaces the credential symlink and respawns the session.
+// readAccountFile reads the .account metadata file from an agent config dir.
+func readAccountFile(configDir string) string {
+	data, err := os.ReadFile(filepath.Join(configDir, ".account"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// swapAndRespawn writes new account credentials and respawns the session.
 func swapAndRespawn(state *State, agent store.Agent, toAccount string, opts RotateOpts, mgr *session.Manager, logger *events.Logger) error {
 	worldDir := config.WorldDir(opts.World)
 
-	// Swap the credential symlink.
+	// Write access-token-only credentials for the new account.
 	configDir := config.ClaudeConfigDir(worldDir, agent.Role, agent.Name)
-	credLink := filepath.Join(configDir, ".credentials.json")
-	newTarget := filepath.Join(config.AccountDir(toAccount), ".credentials.json")
-
-	// Verify the new target exists.
-	if _, err := os.Stat(newTarget); err != nil {
-		return fmt.Errorf("account %q credentials not found at %s: %w", toAccount, newTarget, err)
-	}
-
-	// Remove old symlink and create new one.
-	if err := os.Remove(credLink); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove old credential symlink: %w", err)
-	}
-	if err := os.Symlink(newTarget, credLink); err != nil {
-		return fmt.Errorf("failed to create credential symlink: %w", err)
+	if err := writeAgentCredentials(configDir, toAccount); err != nil {
+		return err
 	}
 
 	// Update quota state: mark new account's last_used.
@@ -305,23 +310,12 @@ func restartPausedSessions(state *State, opts RotateOpts, sphereStore *store.Sto
 		toAccount := available[availIdx]
 
 		if !opts.DryRun {
-			// Swap credentials and start session.
+			// Write access-token-only credentials for the new account.
 			worldDir := config.WorldDir(opts.World)
 			configDir := config.ClaudeConfigDir(worldDir, paused.Role, paused.AgentName)
-			credLink := filepath.Join(configDir, ".credentials.json")
-			newTarget := filepath.Join(config.AccountDir(toAccount), ".credentials.json")
 
-			if _, err := os.Stat(newTarget); err != nil {
-				fmt.Fprintf(os.Stderr, "quota: account %q credentials not found, skipping restart of %s\n", toAccount, agentID)
-				continue
-			}
-
-			if err := os.Remove(credLink); err != nil && !os.IsNotExist(err) {
-				fmt.Fprintf(os.Stderr, "quota: failed to remove old symlink for %s: %v\n", agentID, err)
-				continue
-			}
-			if err := os.Symlink(newTarget, credLink); err != nil {
-				fmt.Fprintf(os.Stderr, "quota: failed to create symlink for %s: %v\n", agentID, err)
+			if err := writeAgentCredentials(configDir, toAccount); err != nil {
+				fmt.Fprintf(os.Stderr, "quota: failed to write credentials for %s: %v\n", agentID, err)
 				continue
 			}
 
@@ -368,6 +362,52 @@ func restartPausedSessions(state *State, opts RotateOpts, sphereStore *store.Sto
 
 		availIdx++
 	}
+
+	return nil
+}
+
+// writeAgentCredentials writes access-token-only credentials from the given
+// account to the agent's config directory. Also writes/updates the .account
+// metadata file.
+func writeAgentCredentials(configDir, accountHandle string) error {
+	srcPath := filepath.Join(config.AccountDir(accountHandle), ".credentials.json")
+
+	// Verify source exists.
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		return fmt.Errorf("account %q credentials not found: %w", accountHandle, err)
+	}
+
+	// Parse and strip refreshToken.
+	var creds map[string]any
+	if err := json.Unmarshal(data, &creds); err != nil {
+		return fmt.Errorf("failed to parse account %q credentials: %w", accountHandle, err)
+	}
+	if oauth, ok := creds["claudeAiOauth"].(map[string]any); ok {
+		delete(oauth, "refreshToken")
+	}
+
+	out, err := json.MarshalIndent(creds, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal credentials: %w", err)
+	}
+
+	// Remove any existing file (symlink or regular) before writing.
+	destPath := filepath.Join(configDir, ".credentials.json")
+	_ = os.Remove(destPath)
+
+	tmp := destPath + ".tmp"
+	if err := os.WriteFile(tmp, append(out, '\n'), 0o600); err != nil {
+		return fmt.Errorf("failed to write credentials: %w", err)
+	}
+	if err := os.Rename(tmp, destPath); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to commit credentials: %w", err)
+	}
+
+	// Write .account metadata file.
+	accountFile := filepath.Join(configDir, ".account")
+	_ = os.WriteFile(accountFile, []byte(accountHandle+"\n"), 0o644)
 
 	return nil
 }

@@ -70,6 +70,10 @@ const (
 	EventQuotaScan   = "quota_scan"   // sentinel scanned sessions for rate limits
 	EventQuotaRotate = "quota_rotate" // credential rotated to a different account
 	EventQuotaPause  = "quota_pause"  // agent paused due to no available accounts
+
+	// Token broker events.
+	EventBrokerRefresh = "broker_refresh" // token broker refreshed an account's OAuth token
+	EventBrokerPatrol  = "broker_patrol"  // token broker patrol completed
 )
 
 // Logger handles event logging to the JSONL event feed.

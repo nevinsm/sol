@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -230,5 +231,82 @@ func TestBuildSessionCommandContinueOverride(t *testing.T) {
 	got := BuildSessionCommandContinue("/some/path", "hello")
 	if got != "sleep 300" {
 		t.Fatalf("override should ignore --continue, got %q", got)
+	}
+}
+
+func TestEnsureClaudeConfigDirNamedAccount(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Create account credentials.
+	accountDir := filepath.Join(solHome, ".accounts", "alice")
+	os.MkdirAll(accountDir, 0o755)
+	creds := map[string]any{
+		"claudeAiOauth": map[string]any{
+			"accessToken":      "sk-ant-oat01-test",
+			"refreshToken":     "sk-ant-ort01-test",
+			"expiresAt":        1900000000000,
+			"scopes":           []string{"user:inference"},
+			"subscriptionType": "max",
+		},
+	}
+	data, _ := json.MarshalIndent(creds, "", "  ")
+	os.WriteFile(filepath.Join(accountDir, ".credentials.json"), data, 0o600)
+
+	worldDir := filepath.Join(solHome, "testworld")
+
+	dir, err := EnsureClaudeConfigDir(worldDir, "agent", "Toast", "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify .account file.
+	acctData, err := os.ReadFile(filepath.Join(dir, ".account"))
+	if err != nil {
+		t.Fatalf("expected .account file: %v", err)
+	}
+	if strings.TrimSpace(string(acctData)) != "alice" {
+		t.Errorf("expected .account to contain 'alice', got %q", string(acctData))
+	}
+
+	// Verify .credentials.json is a regular file (not symlink).
+	credsPath := filepath.Join(dir, ".credentials.json")
+	info, err := os.Lstat(credsPath)
+	if err != nil {
+		t.Fatalf("expected .credentials.json: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Error("credentials should be a regular file, not a symlink")
+	}
+
+	// Verify no refreshToken in agent credentials.
+	agentData, _ := os.ReadFile(credsPath)
+	var agentCreds map[string]any
+	json.Unmarshal(agentData, &agentCreds)
+	oauth := agentCreds["claudeAiOauth"].(map[string]any)
+	if _, hasRefresh := oauth["refreshToken"]; hasRefresh {
+		t.Error("agent credentials should NOT contain refreshToken")
+	}
+	if oauth["accessToken"] != "sk-ant-oat01-test" {
+		t.Errorf("expected accessToken preserved, got %v", oauth["accessToken"])
+	}
+}
+
+func TestEnsureClaudeConfigDirLegacyFallback(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	t.Setenv("HOME", t.TempDir())
+
+	worldDir := filepath.Join(solHome, "testworld")
+
+	// Empty account = legacy fallback (no .account file, symlink if source exists).
+	dir, err := EnsureClaudeConfigDir(worldDir, "agent", "Toast", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// No .account file should exist.
+	if _, err := os.Stat(filepath.Join(dir, ".account")); !os.IsNotExist(err) {
+		t.Error("legacy mode should not create .account file")
 	}
 }

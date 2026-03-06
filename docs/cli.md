@@ -245,9 +245,9 @@ Sphere-scoped OTLP HTTP receiver on port 4318. Accepts `claude_code.api_request`
 | Command | Description |
 |---------|-------------|
 | `sol workflow list` | List available workflow formulas |
+| `sol workflow show <formula>` | Display formula details and resolution source |
 | `sol workflow instantiate <formula>` | Instantiate a workflow from a formula |
 | `sol workflow manifest <formula>` | Manifest a formula into work items and a caravan |
-| `sol workflow show <formula>` | Display formula details and resolution source |
 | `sol workflow current` | Print the current step's instructions |
 | `sol workflow advance` | Advance to the next workflow step |
 | `sol workflow status` | Show workflow status |
@@ -360,13 +360,22 @@ Senate is an operator-managed sphere-scoped planning session. It reads governor 
 
 Linux-only. Manages systemd user units for sol sphere daemons (prefect, consul, chronicle, ledger).
 
+## Token Broker (Centralized OAuth Refresh)
+
+| Command | Description |
+|---------|-------------|
+| `sol token-broker run` | Run the token broker loop (foreground) |
+| `sol token-broker status` | Show token broker status from heartbeat |
+
+Centralized OAuth token refresh. The broker is the sole consumer of refresh tokens — agents receive access-token-only credentials (no refreshToken field). Proactively refreshes before token expiry (default: 30 minutes before expiresAt). Writes access-token-only copies to all agent config dirs that use each account. Discovers agents via `.account` metadata files.
+
 ## Quota (Rate Limit Rotation)
 
 | Command | Description |
 |---------|-------------|
 | `sol quota rotate` | Rotate rate-limited agents to available accounts |
 
-Reads quota state from `$SOL_HOME/.runtime/quota.json` to find rate-limited accounts, selects available accounts via LRU, swaps credential symlinks, and respawns agent sessions with `--continue` for context preservation. When no accounts are available, agents are paused and automatically restarted by the sentinel when accounts become available.
+Reads quota state from `$SOL_HOME/.runtime/quota.json` to find rate-limited accounts, selects available accounts via LRU, writes access-token-only credentials to agent config dirs, and respawns agent sessions with `--continue` for context preservation. When no accounts are available, agents are paused and automatically restarted by the sentinel when accounts become available.
 
 ## Guard (PreToolUse Hooks)
 
