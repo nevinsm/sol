@@ -75,7 +75,11 @@ func Start(mgr SessionManager) error {
 	// 4. Start tmux session.
 	prompt := "Senate session. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200"
 	sessionCmd := config.BuildSessionCommand(config.SettingsPath(senateDir), prompt)
-	if err := mgr.Start(SessionName, senateDir, sessionCmd, nil, "senate", ""); err != nil {
+	env := map[string]string{
+		"SOL_HOME":  config.Home(),
+		"SOL_AGENT": "senate",
+	}
+	if err := mgr.Start(SessionName, senateDir, sessionCmd, env, "senate", ""); err != nil {
 		return fmt.Errorf("failed to start senate: %w", err)
 	}
 

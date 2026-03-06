@@ -98,7 +98,12 @@ func Start(opts StartOpts, sphereStore SphereStore, mgr SessionManager) error {
 	prompt := fmt.Sprintf("Governor, world %s. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync --world=%s",
 		opts.World, opts.World)
 	sessionCmd := config.BuildSessionCommand(config.SettingsPath(govDir), prompt)
-	if err := mgr.Start(sessName, govDir, sessionCmd, nil, "governor", opts.World); err != nil {
+	env := map[string]string{
+		"SOL_HOME":  config.Home(),
+		"SOL_WORLD": opts.World,
+		"SOL_AGENT": "governor",
+	}
+	if err := mgr.Start(sessName, govDir, sessionCmd, env, "governor", opts.World); err != nil {
 		return fmt.Errorf("failed to start governor for world %q: %w", opts.World, err)
 	}
 
