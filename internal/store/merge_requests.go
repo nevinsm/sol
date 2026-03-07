@@ -453,3 +453,28 @@ func (s *Store) ReleaseStaleClaims(ttl time.Duration) (int, error) {
 	}
 	return int(n), nil
 }
+
+// ResetMergeRequestForRetry resets a merge request for retry after conflict
+// resolution: sets phase to ready, resets attempts to 0, and clears
+// blocked_by, claimed_by, and claimed_at.
+func (s *Store) ResetMergeRequestForRetry(mrID string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := s.db.Exec(
+		`UPDATE merge_requests
+		 SET phase = 'ready', attempts = 0, blocked_by = NULL,
+		     claimed_by = NULL, claimed_at = NULL, updated_at = ?
+		 WHERE id = ?`,
+		now, mrID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to reset merge request %q for retry: %w", mrID, err)
+	}
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
+	if n == 0 {
+		return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
+	}
+	return nil
+}

@@ -40,6 +40,7 @@ type WorldStore interface {
 	CreateWritWithOpts(opts store.CreateWritOpts) (string, error)
 	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
 	UnblockMergeRequest(mrID string) error
+	ResetMergeRequestForRetry(mrID string) error
 	CloseWrit(id string) error
 	ListChildWrits(parentID string) ([]store.Writ, error)
 	ListAgentMemories(agentName string) ([]store.AgentMemory, error)
@@ -1252,15 +1253,40 @@ func resolveConflictResolution(opts ResolveOpts, item *store.Writ, branchName, w
 		pushFailed = true
 	}
 
-	// 2. Find and unblock the original MR (only if push succeeded).
+	// 2. Reset the parent's MR for retry (only if push succeeded).
+	// Two complementary strategies:
+	//   a) Find MR blocked by this resolution task and reset it.
+	//   b) Look up parent writ's MR by parent_id — covers the case where
+	//      the MR ended up in 'failed' phase independently.
 	if !pushFailed {
+		resetMRs := map[string]bool{} // track already-reset MR IDs
+
+		// 2a. Find MR blocked by this resolution task.
 		blockedMR, err := worldStore.FindMergeRequestByBlocker(item.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to find blocked MR for %q: %w", item.ID, err)
 		}
 		if blockedMR != nil {
-			if err := worldStore.UnblockMergeRequest(blockedMR.ID); err != nil {
-				return nil, fmt.Errorf("failed to unblock MR %q: %w", blockedMR.ID, err)
+			if err := worldStore.ResetMergeRequestForRetry(blockedMR.ID); err != nil {
+				return nil, fmt.Errorf("failed to reset MR %q for retry: %w", blockedMR.ID, err)
+			}
+			resetMRs[blockedMR.ID] = true
+		}
+
+		// 2b. Check parent writ's MRs for any stuck in 'failed' phase.
+		if item.ParentID != "" {
+			parentMRs, err := worldStore.ListMergeRequestsByWrit(item.ParentID, "failed")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "resolve: failed to list parent MRs: %v\n", err)
+			} else {
+				for _, mr := range parentMRs {
+					if resetMRs[mr.ID] {
+						continue
+					}
+					if err := worldStore.ResetMergeRequestForRetry(mr.ID); err != nil {
+						fmt.Fprintf(os.Stderr, "resolve: failed to reset parent MR %s: %v\n", mr.ID, err)
+					}
+				}
 			}
 		}
 	}

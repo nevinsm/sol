@@ -565,3 +565,70 @@ func TestV3Migration(t *testing.T) {
 		t.Fatalf("UnblockMergeRequest failed: %v", err)
 	}
 }
+
+func TestResetMergeRequestForRetry(t *testing.T) {
+	s := setupWorld(t)
+
+	itemID, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
+	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
+
+	// Claim the MR to bump attempts and set claimed_by/claimed_at.
+	s.ClaimMergeRequest("forge/Forge")
+
+	// Mark it as failed (simulates forge giving up after max attempts).
+	if err := s.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Block it (simulates conflict-resolution blocker being set before failure).
+	// Use raw SQL since BlockMergeRequest also resets phase.
+	s.db.Exec(`UPDATE merge_requests SET blocked_by = 'sol-blocker1' WHERE id = ?`, mrID)
+
+	// Verify pre-conditions.
+	mr, _ := s.GetMergeRequest(mrID)
+	if mr.Phase != "failed" {
+		t.Fatalf("expected phase 'failed', got %q", mr.Phase)
+	}
+	if mr.Attempts != 1 {
+		t.Fatalf("expected 1 attempt, got %d", mr.Attempts)
+	}
+
+	// Reset for retry.
+	if err := s.ResetMergeRequestForRetry(mrID); err != nil {
+		t.Fatalf("ResetMergeRequestForRetry() error: %v", err)
+	}
+
+	// Verify all fields are reset.
+	mr, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr.Phase != "ready" {
+		t.Errorf("phase = %q, want 'ready'", mr.Phase)
+	}
+	if mr.Attempts != 0 {
+		t.Errorf("attempts = %d, want 0", mr.Attempts)
+	}
+	if mr.BlockedBy != "" {
+		t.Errorf("blocked_by = %q, want empty", mr.BlockedBy)
+	}
+	if mr.ClaimedBy != "" {
+		t.Errorf("claimed_by = %q, want empty", mr.ClaimedBy)
+	}
+	if mr.ClaimedAt != nil {
+		t.Errorf("claimed_at = %v, want nil", mr.ClaimedAt)
+	}
+}
+
+func TestResetMergeRequestForRetryNotFound(t *testing.T) {
+	s := setupWorld(t)
+
+	err := s.ResetMergeRequestForRetry("mr-nonexist")
+	if err == nil {
+		t.Fatal("expected error for nonexistent MR")
+	}
+	expected := `merge request "mr-nonexist": not found`
+	if err.Error() != expected {
+		t.Fatalf("error = %q, want %q", err.Error(), expected)
+	}
+}

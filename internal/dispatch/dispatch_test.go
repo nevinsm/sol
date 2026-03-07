@@ -1151,6 +1151,216 @@ func TestResolveConflictResolution(t *testing.T) {
 	}
 }
 
+func TestResolveConflictResolutionResetsParentMR(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create the original writ with a MR.
+	origItemID, err := worldStore.CreateWrit("Add feature Y", "Implement feature Y", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	mrID, err := worldStore.CreateMergeRequest(origItemID, "outpost/Alpha/"+origItemID, 2)
+	if err != nil {
+		t.Fatalf("failed to create merge request: %v", err)
+	}
+
+	// Simulate the MR being claimed and then failing (max attempts exceeded).
+	worldStore.ClaimMergeRequest("forge/Forge")
+	if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+		t.Fatalf("failed to mark MR as failed: %v", err)
+	}
+
+	// Verify MR is in failed state with attempts > 0.
+	mr, _ := worldStore.GetMergeRequest(mrID)
+	if mr.Phase != "failed" || mr.Attempts != 1 {
+		t.Fatalf("expected failed MR with attempts=1, got phase=%q attempts=%d", mr.Phase, mr.Attempts)
+	}
+
+	// Create conflict-resolution child writ (parent_id points to original).
+	resolutionID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Resolve merge conflicts: Add feature Y",
+		Description: "Resolve merge conflicts",
+		CreatedBy:   "ember/forge",
+		Priority:    1,
+		Labels:      []string{"conflict-resolution", "source-mr:" + mrID},
+		ParentID:    origItemID,
+	})
+	if err != nil {
+		t.Fatalf("failed to create resolution task: %v", err)
+	}
+
+	// Set up agent and tether the resolution task.
+	if err := worldStore.UpdateWrit(resolutionID, store.WritUpdates{Status: "tethered", Assignee: "ember/Bravo"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+	if _, err := sphereStore.CreateAgent("Bravo", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Bravo", "working", resolutionID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+	if err := tether.Write("ember", "Bravo", resolutionID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create worktree dir with git repo.
+	worktreeDir := WorktreePath("ember", "Bravo")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := SessionName("ember", "Bravo")
+	mgr.started[sessName] = true
+
+	result, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Bravo",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve (conflict-resolution) failed: %v", err)
+	}
+
+	// Verify NO new merge request was created.
+	if result.MergeRequestID != "" {
+		t.Errorf("expected empty MergeRequestID for conflict-resolution, got %q", result.MergeRequestID)
+	}
+
+	// Verify the parent MR is now ready with attempts reset to 0.
+	mr, err = worldStore.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatalf("failed to get MR: %v", err)
+	}
+	if mr.Phase != "ready" {
+		t.Errorf("expected parent MR phase 'ready', got %q", mr.Phase)
+	}
+	if mr.Attempts != 0 {
+		t.Errorf("expected parent MR attempts=0, got %d", mr.Attempts)
+	}
+	if mr.ClaimedBy != "" {
+		t.Errorf("expected parent MR claimed_by empty, got %q", mr.ClaimedBy)
+	}
+
+	// Verify the resolution writ is closed.
+	resItem, err := worldStore.GetWrit(resolutionID)
+	if err != nil {
+		t.Fatalf("failed to get resolution item: %v", err)
+	}
+	if resItem.Status != "closed" {
+		t.Errorf("expected resolution item status 'closed', got %q", resItem.Status)
+	}
+}
+
+func TestResolveConflictResolutionResetsBlockedAndFailedMRs(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create original writ with TWO MRs — one blocked, one failed.
+	origItemID, err := worldStore.CreateWrit("Add feature Z", "Implement feature Z", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	// MR1: will be blocked by the resolution task.
+	mr1ID, err := worldStore.CreateMergeRequest(origItemID, "outpost/Alpha/"+origItemID, 2)
+	if err != nil {
+		t.Fatalf("failed to create MR1: %v", err)
+	}
+
+	// MR2: already failed independently.
+	mr2ID, err := worldStore.CreateMergeRequest(origItemID, "outpost/Beta/"+origItemID, 2)
+	if err != nil {
+		t.Fatalf("failed to create MR2: %v", err)
+	}
+	worldStore.ClaimMergeRequest("forge/Forge")
+	worldStore.ClaimMergeRequest("forge/Forge")
+	if err := worldStore.UpdateMergeRequestPhase(mr2ID, "failed"); err != nil {
+		t.Fatalf("failed to mark MR2 as failed: %v", err)
+	}
+
+	// Create conflict-resolution child writ.
+	resolutionID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Resolve merge conflicts: Add feature Z",
+		Description: "Resolve merge conflicts",
+		CreatedBy:   "ember/forge",
+		Priority:    1,
+		Labels:      []string{"conflict-resolution", "source-mr:" + mr1ID},
+		ParentID:    origItemID,
+	})
+	if err != nil {
+		t.Fatalf("failed to create resolution task: %v", err)
+	}
+
+	// Block MR1 with the resolution task.
+	if err := worldStore.BlockMergeRequest(mr1ID, resolutionID); err != nil {
+		t.Fatalf("failed to block MR1: %v", err)
+	}
+
+	// Set up agent and tether.
+	if err := worldStore.UpdateWrit(resolutionID, store.WritUpdates{Status: "tethered", Assignee: "ember/Charlie"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+	if _, err := sphereStore.CreateAgent("Charlie", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Charlie", "working", resolutionID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+	if err := tether.Write("ember", "Charlie", resolutionID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Charlie")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := SessionName("ember", "Charlie")
+	mgr.started[sessName] = true
+
+	_, err = Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Charlie",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Verify MR1 (was blocked) is now ready with attempts=0.
+	mr1, err := worldStore.GetMergeRequest(mr1ID)
+	if err != nil {
+		t.Fatalf("failed to get MR1: %v", err)
+	}
+	if mr1.Phase != "ready" {
+		t.Errorf("MR1 phase = %q, want 'ready'", mr1.Phase)
+	}
+	if mr1.Attempts != 0 {
+		t.Errorf("MR1 attempts = %d, want 0", mr1.Attempts)
+	}
+	if mr1.BlockedBy != "" {
+		t.Errorf("MR1 blocked_by = %q, want empty", mr1.BlockedBy)
+	}
+
+	// Verify MR2 (was failed) is now ready with attempts=0.
+	mr2, err := worldStore.GetMergeRequest(mr2ID)
+	if err != nil {
+		t.Fatalf("failed to get MR2: %v", err)
+	}
+	if mr2.Phase != "ready" {
+		t.Errorf("MR2 phase = %q, want 'ready'", mr2.Phase)
+	}
+	if mr2.Attempts != 0 {
+		t.Errorf("MR2 attempts = %d, want 0", mr2.Attempts)
+	}
+}
+
 func TestResolveCreatesMergeRequest(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
