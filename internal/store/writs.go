@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -19,11 +20,14 @@ type Writ struct {
 	Priority    int
 	Assignee    string
 	ParentID    string
+	Kind        string
 	CreatedBy   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	ClosedAt    *time.Time
+	CloseReason string
 	Labels      []string
+	Metadata    map[string]any
 }
 
 // ListFilters controls which writs are returned by ListWrits.
@@ -97,10 +101,12 @@ type CreateWritOpts struct {
 	Title, Description, CreatedBy string
 	Priority                      int
 	Labels                        []string
-	ParentID                      string // optional
+	ParentID                      string         // optional
+	Kind                          string         // optional, defaults to "code"
+	Metadata                      map[string]any // optional
 }
 
-// CreateWritWithOpts creates a new writ with full options including parent_id.
+// CreateWritWithOpts creates a new writ with full options including parent_id, kind, and metadata.
 func (s *Store) CreateWritWithOpts(opts CreateWritOpts) (string, error) {
 	id, err := generateID()
 	if err != nil {
@@ -109,6 +115,21 @@ func (s *Store) CreateWritWithOpts(opts CreateWritOpts) (string, error) {
 	if opts.Priority == 0 {
 		opts.Priority = 2
 	}
+	kind := opts.Kind
+	if kind == "" {
+		kind = "code"
+	}
+
+	// Validate and serialize metadata if provided.
+	var metadataJSON sql.NullString
+	if opts.Metadata != nil {
+		b, err := json.Marshal(opts.Metadata)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+		metadataJSON = sql.NullString{String: string(b), Valid: true}
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	tx, err := s.db.Begin()
@@ -117,19 +138,15 @@ func (s *Store) CreateWritWithOpts(opts CreateWritOpts) (string, error) {
 	}
 	defer tx.Rollback()
 
+	var parentID sql.NullString
 	if opts.ParentID != "" {
-		_, err = tx.Exec(
-			`INSERT INTO writs (id, title, description, status, priority, parent_id, created_by, created_at, updated_at)
-			 VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?)`,
-			id, opts.Title, opts.Description, opts.Priority, opts.ParentID, opts.CreatedBy, now, now,
-		)
-	} else {
-		_, err = tx.Exec(
-			`INSERT INTO writs (id, title, description, status, priority, created_by, created_at, updated_at)
-			 VALUES (?, ?, ?, 'open', ?, ?, ?, ?)`,
-			id, opts.Title, opts.Description, opts.Priority, opts.CreatedBy, now, now,
-		)
+		parentID = sql.NullString{String: opts.ParentID, Valid: true}
 	}
+	_, err = tx.Exec(
+		`INSERT INTO writs (id, title, description, status, priority, parent_id, kind, metadata, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)`,
+		id, opts.Title, opts.Description, opts.Priority, parentID, kind, metadataJSON, opts.CreatedBy, now, now,
+	)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert writ: %w", err)
 	}
@@ -160,14 +177,14 @@ func (w *Writ) HasLabel(label string) bool {
 // GetWrit returns a writ by ID, including its labels.
 func (s *Store) GetWrit(id string) (*Writ, error) {
 	w := &Writ{}
-	var desc, assignee, parentID sql.NullString
+	var desc, assignee, parentID, closeReason, metadataRaw sql.NullString
 	var closedAt sql.NullString
 	var createdAt, updatedAt string
 
 	err := s.db.QueryRow(
-		`SELECT id, title, description, status, priority, assignee, parent_id, created_by, created_at, updated_at, closed_at
+		`SELECT id, title, description, status, priority, assignee, parent_id, kind, metadata, created_by, created_at, updated_at, closed_at, close_reason
 		 FROM writs WHERE id = ?`, id,
-	).Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.CreatedBy, &createdAt, &updatedAt, &closedAt)
+	).Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.Kind, &metadataRaw, &w.CreatedBy, &createdAt, &updatedAt, &closedAt, &closeReason)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("writ %q: %w", id, ErrNotFound)
 	}
@@ -178,6 +195,12 @@ func (s *Store) GetWrit(id string) (*Writ, error) {
 	w.Description = desc.String
 	w.Assignee = assignee.String
 	w.ParentID = parentID.String
+	w.CloseReason = closeReason.String
+	if metadataRaw.Valid {
+		if err := json.Unmarshal([]byte(metadataRaw.String), &w.Metadata); err != nil {
+			return nil, fmt.Errorf("failed to parse metadata for writ %q: %w", id, err)
+		}
+	}
 	w.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse created_at for writ %q: %w", id, err)
@@ -215,7 +238,7 @@ func (s *Store) GetWrit(id string) (*Writ, error) {
 
 // ListWrits returns writs matching the filters.
 func (s *Store) ListWrits(filters ListFilters) ([]Writ, error) {
-	query := `SELECT DISTINCT w.id, w.title, w.description, w.status, w.priority, w.assignee, w.parent_id, w.created_by, w.created_at, w.updated_at, w.closed_at
+	query := `SELECT DISTINCT w.id, w.title, w.description, w.status, w.priority, w.assignee, w.parent_id, w.kind, w.metadata, w.created_by, w.created_at, w.updated_at, w.closed_at, w.close_reason
 	           FROM writs w`
 	var conditions []string
 	var args []interface{}
@@ -256,16 +279,22 @@ func (s *Store) ListWrits(filters ListFilters) ([]Writ, error) {
 	var items []Writ
 	for rows.Next() {
 		var w Writ
-		var desc, assignee, parentID sql.NullString
+		var desc, assignee, parentID, closeReason, metadataRaw sql.NullString
 		var closedAt sql.NullString
 		var createdAt, updatedAt string
 
-		if err := rows.Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.CreatedBy, &createdAt, &updatedAt, &closedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.Kind, &metadataRaw, &w.CreatedBy, &createdAt, &updatedAt, &closedAt, &closeReason); err != nil {
 			return nil, fmt.Errorf("failed to scan writ: %w", err)
 		}
 		w.Description = desc.String
 		w.Assignee = assignee.String
 		w.ParentID = parentID.String
+		w.CloseReason = closeReason.String
+		if metadataRaw.Valid {
+			if err := json.Unmarshal([]byte(metadataRaw.String), &w.Metadata); err != nil {
+				return nil, fmt.Errorf("failed to parse metadata for writ %q: %w", w.ID, err)
+			}
+		}
 		var parseErr error
 		w.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
 		if parseErr != nil {
@@ -400,16 +429,100 @@ func (s *Store) UpdateWrit(id string, updates WritUpdates) error {
 }
 
 // CloseWrit sets status to "closed" and records closed_at.
-func (s *Store) CloseWrit(id string) error {
+// An optional close reason can be provided as the second argument.
+func (s *Store) CloseWrit(id string, closeReason ...string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := s.db.Exec(
-		`UPDATE writs SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
-		now, now, id,
-	)
+	var result sql.Result
+	var err error
+	if len(closeReason) > 0 && closeReason[0] != "" {
+		result, err = s.db.Exec(
+			`UPDATE writs SET status = 'closed', closed_at = ?, close_reason = ?, updated_at = ? WHERE id = ?`,
+			now, closeReason[0], now, id,
+		)
+	} else {
+		result, err = s.db.Exec(
+			`UPDATE writs SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
+			now, now, id,
+		)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to close writ %q: %w", id, err)
 	}
 	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
+	if n == 0 {
+		return fmt.Errorf("writ %q: %w", id, ErrNotFound)
+	}
+	return nil
+}
+
+// GetWritMetadata returns the metadata for a writ.
+func (s *Store) GetWritMetadata(id string) (map[string]any, error) {
+	var raw sql.NullString
+	err := s.db.QueryRow(`SELECT metadata FROM writs WHERE id = ?`, id).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("writ %q: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metadata for writ %q: %w", id, err)
+	}
+	if !raw.Valid || raw.String == "" {
+		return nil, nil
+	}
+	var meta map[string]any
+	if err := json.Unmarshal([]byte(raw.String), &meta); err != nil {
+		return nil, fmt.Errorf("failed to parse metadata for writ %q: %w", id, err)
+	}
+	return meta, nil
+}
+
+// SetWritMetadata merges the given metadata into the writ's existing metadata.
+// Keys set to nil are deleted from the metadata.
+func (s *Store) SetWritMetadata(id string, metadata map[string]any) error {
+	// Validate the provided metadata is well-formed by marshaling it.
+	if _, err := json.Marshal(metadata); err != nil {
+		return fmt.Errorf("invalid metadata: %w", err)
+	}
+
+	// Read existing metadata.
+	existing, err := s.GetWritMetadata(id)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		existing = make(map[string]any)
+	}
+
+	// Merge: set keys, delete keys with nil values.
+	for k, v := range metadata {
+		if v == nil {
+			delete(existing, k)
+		} else {
+			existing[k] = v
+		}
+	}
+
+	// Serialize merged metadata.
+	var metadataJSON sql.NullString
+	if len(existing) > 0 {
+		b, err := json.Marshal(existing)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+		metadataJSON = sql.NullString{String: string(b), Valid: true}
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := s.db.Exec(
+		`UPDATE writs SET metadata = ?, updated_at = ? WHERE id = ?`,
+		metadataJSON, now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set metadata for writ %q: %w", id, err)
+	}
 	n, raErr := result.RowsAffected()
 	if raErr != nil {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)

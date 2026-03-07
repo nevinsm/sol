@@ -192,7 +192,7 @@ func (m *mockWorldStore) CreateWritWithOpts(opts store.CreateWritOpts) (string, 
 	return id, nil
 }
 
-func (m *mockWorldStore) CloseWrit(id string) error {
+func (m *mockWorldStore) CloseWrit(id string, closeReason ...string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	item, ok := m.items[id]
@@ -200,6 +200,9 @@ func (m *mockWorldStore) CloseWrit(id string) error {
 		return fmt.Errorf("writ %q not found", id)
 	}
 	item.Status = "closed"
+	if len(closeReason) > 0 {
+		item.CloseReason = closeReason[0]
+	}
 	return nil
 }
 

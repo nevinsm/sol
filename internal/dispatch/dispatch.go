@@ -41,7 +41,7 @@ type WorldStore interface {
 	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
 	UnblockMergeRequest(mrID string) error
 	ResetMergeRequestForRetry(mrID string) error
-	CloseWrit(id string) error
+	CloseWrit(id string, closeReason ...string) error
 	ListChildWrits(parentID string) ([]store.Writ, error)
 	ListAgentMemories(agentName string) ([]store.AgentMemory, error)
 	WriteHistory(agentName, writID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error)

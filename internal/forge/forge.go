@@ -27,7 +27,7 @@ type WorldStore interface {
 	UnblockMergeRequest(mrID string) error
 	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
 	CreateWritWithOpts(opts store.CreateWritOpts) (string, error)
-	CloseWrit(id string) error
+	CloseWrit(id string, closeReason ...string) error
 	Close() error
 }
 

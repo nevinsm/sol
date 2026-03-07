@@ -7,7 +7,7 @@ import (
 
 // Current schema versions — the latest migration target for each database type.
 const (
-	CurrentWorldSchema  = 8
+	CurrentWorldSchema  = 9
 	CurrentSphereSchema = 9
 )
 
@@ -178,6 +178,9 @@ CREATE INDEX IF NOT EXISTS idx_agent_memories_agent ON agent_memories(agent_name
 // across all tables that reference the old naming.
 const worldSchemaV8 = "" // migration handled procedurally below
 
+// worldSchemaV9 adds kind, metadata, and close_reason columns to writs.
+const worldSchemaV9 = "" // migration handled procedurally below
+
 func (s *Store) migrateWorld() error {
 	v, err := s.SchemaVersion()
 	if err != nil {
@@ -273,6 +276,38 @@ func (s *Store) migrateWorld() error {
 		if oldCol {
 			if _, err := tx.Exec(`ALTER TABLE agent_history RENAME COLUMN work_item_id TO writ_id`); err != nil {
 				return fmt.Errorf("failed to rename agent_history.work_item_id: %w", err)
+			}
+		}
+	}
+	if v < 9 {
+		// Add kind column (NOT NULL DEFAULT 'code') — determines resolve path.
+		exists, err := columnExists(tx, "writs", "kind")
+		if err != nil {
+			return fmt.Errorf("V9 migration: failed to check column writs.kind: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(`ALTER TABLE writs ADD COLUMN kind TEXT NOT NULL DEFAULT 'code'`); err != nil {
+				return fmt.Errorf("failed to add writs.kind column: %w", err)
+			}
+		}
+		// Add metadata column (nullable JSON).
+		exists, err = columnExists(tx, "writs", "metadata")
+		if err != nil {
+			return fmt.Errorf("V9 migration: failed to check column writs.metadata: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(`ALTER TABLE writs ADD COLUMN metadata JSON`); err != nil {
+				return fmt.Errorf("failed to add writs.metadata column: %w", err)
+			}
+		}
+		// Add close_reason column (nullable).
+		exists, err = columnExists(tx, "writs", "close_reason")
+		if err != nil {
+			return fmt.Errorf("V9 migration: failed to check column writs.close_reason: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(`ALTER TABLE writs ADD COLUMN close_reason TEXT`); err != nil {
+				return fmt.Errorf("failed to add writs.close_reason column: %w", err)
 			}
 		}
 	}

@@ -166,10 +166,128 @@ func TestBackupDatabaseNonexistent(t *testing.T) {
 
 func TestCurrentSchemaConstants(t *testing.T) {
 	// Verify constants are positive and match the expected values.
-	if CurrentWorldSchema != 8 {
-		t.Fatalf("CurrentWorldSchema = %d, expected 8", CurrentWorldSchema)
+	if CurrentWorldSchema != 9 {
+		t.Fatalf("CurrentWorldSchema = %d, expected 9", CurrentWorldSchema)
 	}
 	if CurrentSphereSchema != 9 {
 		t.Fatalf("CurrentSphereSchema = %d, expected 9", CurrentSphereSchema)
+	}
+}
+
+func TestWorldSchemaV9Migration(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	// Create a V8 database by hand: apply V1 schema and insert some data.
+	dbPath := filepath.Join(dir, ".store", "v9test.db")
+	s, err := open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Create the V1 schema (writs table).
+	if _, err := s.db.Exec(worldSchemaV1); err != nil {
+		t.Fatalf("create V1 schema: %v", err)
+	}
+	// Apply V2-V7 schemas.
+	if _, err := s.db.Exec(worldSchemaV2); err != nil {
+		t.Fatalf("create V2 schema: %v", err)
+	}
+	if _, err := s.db.Exec(worldSchemaV4); err != nil {
+		t.Fatalf("create V4 schema: %v", err)
+	}
+	if _, err := s.db.Exec(worldSchemaV6); err != nil {
+		t.Fatalf("create V6 schema: %v", err)
+	}
+	if _, err := s.db.Exec(worldSchemaV7); err != nil {
+		t.Fatalf("create V7 schema: %v", err)
+	}
+	// Set version to 8.
+	if _, err := s.db.Exec("INSERT INTO schema_version VALUES (8)"); err != nil {
+		t.Fatalf("set schema version: %v", err)
+	}
+	// Seed data: writs, labels, deps, history.
+	now := "2025-01-15T10:00:00Z"
+	if _, err := s.db.Exec(
+		`INSERT INTO writs (id, title, description, status, priority, created_by, created_at, updated_at)
+		 VALUES ('sol-aaaa0001', 'Test writ 1', 'desc one', 'open', 2, 'operator', ?, ?)`,
+		now, now,
+	); err != nil {
+		t.Fatalf("insert writ 1: %v", err)
+	}
+	if _, err := s.db.Exec(
+		`INSERT INTO writs (id, title, description, status, priority, assignee, created_by, created_at, updated_at, closed_at)
+		 VALUES ('sol-aaaa0002', 'Test writ 2', 'desc two', 'closed', 1, 'Nova', 'operator', ?, ?, ?)`,
+		now, now, now,
+	); err != nil {
+		t.Fatalf("insert writ 2: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO labels (writ_id, label) VALUES ('sol-aaaa0001', 'bug')`); err != nil {
+		t.Fatalf("insert label: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO dependencies (from_id, to_id) VALUES ('sol-aaaa0001', 'sol-aaaa0002')`); err != nil {
+		t.Fatalf("insert dependency: %v", err)
+	}
+	s.Close()
+
+	// Re-open with migration — should migrate to V9.
+	s2, err := OpenWorld("v9test")
+	if err != nil {
+		t.Fatalf("OpenWorld after migration: %v", err)
+	}
+	defer s2.Close()
+
+	// Check schema version.
+	v, err := s2.SchemaVersion()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != 9 {
+		t.Fatalf("expected schema version 9, got %d", v)
+	}
+
+	// Verify existing writs got default values for new columns.
+	w1, err := s2.GetWrit("sol-aaaa0001")
+	if err != nil {
+		t.Fatalf("GetWrit(sol-aaaa0001): %v", err)
+	}
+	if w1.Kind != "code" {
+		t.Errorf("writ 1 kind = %q, want %q", w1.Kind, "code")
+	}
+	if w1.Metadata != nil {
+		t.Errorf("writ 1 metadata = %v, want nil", w1.Metadata)
+	}
+	if w1.CloseReason != "" {
+		t.Errorf("writ 1 close_reason = %q, want empty", w1.CloseReason)
+	}
+	if len(w1.Labels) != 1 || w1.Labels[0] != "bug" {
+		t.Errorf("writ 1 labels = %v, want [bug]", w1.Labels)
+	}
+
+	w2, err := s2.GetWrit("sol-aaaa0002")
+	if err != nil {
+		t.Fatalf("GetWrit(sol-aaaa0002): %v", err)
+	}
+	if w2.Kind != "code" {
+		t.Errorf("writ 2 kind = %q, want %q", w2.Kind, "code")
+	}
+	if w2.Metadata != nil {
+		t.Errorf("writ 2 metadata = %v, want nil", w2.Metadata)
+	}
+	if w2.CloseReason != "" {
+		t.Errorf("writ 2 close_reason = %q, want empty", w2.CloseReason)
+	}
+	if w2.Status != "closed" {
+		t.Errorf("writ 2 status = %q, want %q", w2.Status, "closed")
+	}
+
+	// Verify dependencies survived migration.
+	// Writ 1 depends on writ 2 which is closed → writ 1 should be ready.
+	ready, err := s2.IsReady("sol-aaaa0001")
+	if err != nil {
+		t.Fatalf("IsReady: %v", err)
+	}
+	if !ready {
+		t.Error("writ 1 should be ready (depends on closed writ 2)")
 	}
 }

@@ -1070,3 +1070,223 @@ func TestInvalidAgentState(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestCreateWritWithOptsKindAndMetadata(t *testing.T) {
+	s := setupWorld(t)
+
+	meta := map[string]any{"key1": "val1", "key2": float64(42)}
+	id, err := s.CreateWritWithOpts(CreateWritOpts{
+		Title:     "Analysis task",
+		CreatedBy: "operator",
+		Kind:      "analysis",
+		Metadata:  meta,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item, err := s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Kind != "analysis" {
+		t.Errorf("kind = %q, want %q", item.Kind, "analysis")
+	}
+	if item.Metadata == nil {
+		t.Fatal("metadata is nil, want non-nil")
+	}
+	if item.Metadata["key1"] != "val1" {
+		t.Errorf("metadata[key1] = %v, want %q", item.Metadata["key1"], "val1")
+	}
+	if item.Metadata["key2"] != float64(42) {
+		t.Errorf("metadata[key2] = %v, want 42", item.Metadata["key2"])
+	}
+}
+
+func TestCreateWritWithOptsDefaultKind(t *testing.T) {
+	s := setupWorld(t)
+
+	id, err := s.CreateWritWithOpts(CreateWritOpts{
+		Title:     "Default kind",
+		CreatedBy: "operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item, err := s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Kind != "code" {
+		t.Errorf("kind = %q, want %q (default)", item.Kind, "code")
+	}
+	if item.Metadata != nil {
+		t.Errorf("metadata = %v, want nil", item.Metadata)
+	}
+}
+
+func TestCloseWritWithReason(t *testing.T) {
+	s := setupWorld(t)
+
+	id, err := s.CreateWrit("Close test", "", "operator", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close with reason.
+	if err := s.CloseWrit(id, "completed"); err != nil {
+		t.Fatal(err)
+	}
+	item, err := s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Status != "closed" {
+		t.Errorf("status = %q, want %q", item.Status, "closed")
+	}
+	if item.CloseReason != "completed" {
+		t.Errorf("close_reason = %q, want %q", item.CloseReason, "completed")
+	}
+	if item.ClosedAt == nil {
+		t.Error("expected closed_at to be set")
+	}
+}
+
+func TestCloseWritWithoutReason(t *testing.T) {
+	s := setupWorld(t)
+
+	id, err := s.CreateWrit("Close no reason", "", "operator", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.CloseWrit(id); err != nil {
+		t.Fatal(err)
+	}
+	item, err := s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.CloseReason != "" {
+		t.Errorf("close_reason = %q, want empty", item.CloseReason)
+	}
+}
+
+func TestSetWritMetadata(t *testing.T) {
+	s := setupWorld(t)
+
+	id, err := s.CreateWritWithOpts(CreateWritOpts{
+		Title:     "Metadata test",
+		CreatedBy: "operator",
+		Metadata:  map[string]any{"a": "1", "b": "2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Merge: add new key, update existing.
+	if err := s.SetWritMetadata(id, map[string]any{"b": "updated", "c": "3"}); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := s.GetWritMetadata(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta["a"] != "1" {
+		t.Errorf("a = %v, want %q", meta["a"], "1")
+	}
+	if meta["b"] != "updated" {
+		t.Errorf("b = %v, want %q", meta["b"], "updated")
+	}
+	if meta["c"] != "3" {
+		t.Errorf("c = %v, want %q", meta["c"], "3")
+	}
+
+	// Delete key by setting to nil.
+	if err := s.SetWritMetadata(id, map[string]any{"a": nil}); err != nil {
+		t.Fatal(err)
+	}
+	meta, err = s.GetWritMetadata(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := meta["a"]; ok {
+		t.Error("expected key 'a' to be deleted")
+	}
+	if meta["b"] != "updated" {
+		t.Errorf("b = %v, want %q (unchanged)", meta["b"], "updated")
+	}
+}
+
+func TestGetWritMetadataEmpty(t *testing.T) {
+	s := setupWorld(t)
+
+	id, err := s.CreateWrit("No metadata", "", "operator", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta, err := s.GetWritMetadata(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta != nil {
+		t.Errorf("expected nil metadata, got %v", meta)
+	}
+}
+
+func TestSetWritMetadataOnEmptyWrit(t *testing.T) {
+	s := setupWorld(t)
+
+	id, err := s.CreateWrit("Empty meta writ", "", "operator", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set metadata on a writ that had no metadata.
+	if err := s.SetWritMetadata(id, map[string]any{"x": "y"}); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := s.GetWritMetadata(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta["x"] != "y" {
+		t.Errorf("x = %v, want %q", meta["x"], "y")
+	}
+}
+
+func TestListWritsIncludesKindAndMetadata(t *testing.T) {
+	s := setupWorld(t)
+
+	_, err := s.CreateWritWithOpts(CreateWritOpts{
+		Title:     "Listed writ",
+		CreatedBy: "operator",
+		Kind:      "analysis",
+		Metadata:  map[string]any{"foo": "bar"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := s.ListWrits(ListFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) == 0 {
+		t.Fatal("expected at least one writ")
+	}
+	found := false
+	for _, w := range items {
+		if w.Kind == "analysis" {
+			found = true
+			if w.Metadata == nil || w.Metadata["foo"] != "bar" {
+				t.Errorf("metadata = %v, want {foo: bar}", w.Metadata)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected to find writ with kind=analysis")
+	}
+}

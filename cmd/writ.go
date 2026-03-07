@@ -37,6 +37,8 @@ var (
 	createDescription string
 	createPriority    int
 	createLabels      []string
+	createKind        string
+	createMetadata    string
 )
 
 var writCreateCmd = &cobra.Command{
@@ -52,13 +54,31 @@ var writCreateCmd = &cobra.Command{
 		if createTitle == "" {
 			return fmt.Errorf("--title is required")
 		}
+
+		opts := store.CreateWritOpts{
+			Title:       createTitle,
+			Description: createDescription,
+			CreatedBy:   "operator",
+			Priority:    createPriority,
+			Labels:      createLabels,
+			Kind:        createKind,
+		}
+
+		if createMetadata != "" {
+			var meta map[string]any
+			if err := json.Unmarshal([]byte(createMetadata), &meta); err != nil {
+				return fmt.Errorf("invalid --metadata JSON: %w", err)
+			}
+			opts.Metadata = meta
+		}
+
 		s, err := store.OpenWorld(world)
 		if err != nil {
 			return err
 		}
 		defer s.Close()
 
-		id, err := s.CreateWrit(createTitle, createDescription, "operator", createPriority, createLabels)
+		id, err := s.CreateWritWithOpts(opts)
 		if err != nil {
 			return err
 		}
@@ -73,6 +93,8 @@ func init() {
 	writCreateCmd.Flags().StringVar(&createDescription, "description", "", "writ description")
 	writCreateCmd.Flags().IntVar(&createPriority, "priority", 2, "priority (1=high, 2=normal, 3=low)")
 	writCreateCmd.Flags().StringArrayVar(&createLabels, "label", nil, "label (can be repeated)")
+	writCreateCmd.Flags().StringVar(&createKind, "kind", "", "writ kind (default: code)")
+	writCreateCmd.Flags().StringVar(&createMetadata, "metadata", "", "metadata as JSON object")
 }
 
 // --- sol writ status ---
@@ -251,6 +273,8 @@ func init() {
 
 // --- sol writ close ---
 
+var closeReason string
+
 var writCloseCmd = &cobra.Command{
 	Use:          "close <id>",
 	Short:        "Close a writ",
@@ -268,7 +292,7 @@ var writCloseCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		if err := s.CloseWrit(args[0]); err != nil {
+		if err := s.CloseWrit(args[0], closeReason); err != nil {
 			return err
 		}
 		fmt.Printf("Closed %s\n", args[0])
@@ -278,6 +302,7 @@ var writCloseCmd = &cobra.Command{
 
 func init() {
 	writCloseCmd.Flags().String("world", "", "world name")
+	writCloseCmd.Flags().StringVar(&closeReason, "reason", "", "close reason (e.g. completed, superseded, cancelled)")
 }
 
 // --- sol writ query ---
@@ -354,6 +379,7 @@ func printWrit(w *store.Writ) {
 		fmt.Printf("Description: %s\n", w.Description)
 	}
 	fmt.Printf("Status:      %s\n", w.Status)
+	fmt.Printf("Kind:        %s\n", w.Kind)
 	fmt.Printf("Priority:    %d\n", w.Priority)
 	if w.Assignee != "" {
 		fmt.Printf("Assignee:    %s\n", w.Assignee)
@@ -367,8 +393,17 @@ func printWrit(w *store.Writ) {
 	if w.ClosedAt != nil {
 		fmt.Printf("Closed at:   %s\n", w.ClosedAt.Format("2006-01-02 15:04:05"))
 	}
+	if w.CloseReason != "" {
+		fmt.Printf("Close reason: %s\n", w.CloseReason)
+	}
 	if len(w.Labels) > 0 {
 		fmt.Printf("Labels:      %s\n", strings.Join(w.Labels, ", "))
+	}
+	if w.Metadata != nil {
+		b, err := json.MarshalIndent(w.Metadata, "             ", "  ")
+		if err == nil {
+			fmt.Printf("Metadata:    %s\n", string(b))
+		}
 	}
 }
 
