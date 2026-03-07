@@ -1037,7 +1037,7 @@ func init() {
 	forgeCreateResolutionCmd.Flags().StringVar(&forgeCreateResolutionWorld, "world", "", "world name")
 	forgeCheckUnblockedCmd.Flags().StringVar(&forgeCheckUnblockedWorld, "world", "", "world name")
 	forgeAwaitCmd.Flags().StringVar(&forgeAwaitWorld, "world", "", "world name")
-	forgeAwaitCmd.Flags().IntVar(&forgeAwaitTimeout, "timeout", 30, "max seconds to wait")
+	forgeAwaitCmd.Flags().IntVar(&forgeAwaitTimeout, "timeout", 120, "max seconds to wait")
 	forgePauseCmd.Flags().StringVar(&forgePauseWorld, "world", "", "world name")
 	forgeResumeCmd.Flags().StringVar(&forgeResumeWorld, "world", "", "world name")
 

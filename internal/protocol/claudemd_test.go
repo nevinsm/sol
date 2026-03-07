@@ -467,7 +467,7 @@ func TestForgeClaudeMDWaitBehavior(t *testing.T) {
 		t.Error("forge CLAUDE.md should contain Wait Behavior section")
 	}
 	for _, sub := range []string{
-		"sol forge await --world=myworld --timeout=30",
+		"sol forge await --world=myworld --timeout=120",
 		"Do NOT investigate why the queue is empty",
 		"Do NOT explore the codebase while waiting",
 		"Your ONLY activity during idle time is waiting",

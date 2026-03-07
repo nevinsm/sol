@@ -228,7 +228,7 @@ If §"paused": true§:
 
 ## Wait Behavior
 
-- When the queue is empty, run §sol forge await --world={WORLD} --timeout=30§ — this blocks until a nudge arrives or 30 seconds elapse
+- When the queue is empty, run §sol forge await --world={WORLD} --timeout=120§ — this blocks until a nudge arrives or 120 seconds elapse
 - The await command drains pending nudges and polls for new ones — you do NOT need §sleep§
 - Do NOT investigate why the queue is empty
 - Do NOT explore the codebase while waiting
