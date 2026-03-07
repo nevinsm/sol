@@ -357,7 +357,7 @@ func TestPatrolMaxRespawns(t *testing.T) {
 		t.Fatalf("expected 0 sessions started (max respawns), got %d", len(started))
 	}
 
-	// Work item should be open.
+	// Writ should be open.
 	item, err := worldStore.GetWrit("sol-abc12345")
 	if err != nil {
 		t.Fatalf("GetWrit() error: %v", err)
@@ -923,7 +923,7 @@ func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
-	// Work item should be open.
+	// Writ should be open.
 	item, err := worldStore.GetWrit("sol-abc12345")
 	if err != nil {
 		t.Fatalf("GetWrit() error: %v", err)

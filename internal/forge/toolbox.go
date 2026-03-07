@@ -250,7 +250,7 @@ func (r *Forge) MarkFailed(mrID string) error {
 	}
 
 	// Create escalation so the governor knows about the failure (best-effort).
-	desc := fmt.Sprintf("Merge failed for MR %s (branch %s, writ %s). Work item reopened for re-dispatch.",
+	desc := fmt.Sprintf("Merge failed for MR %s (branch %s, writ %s). Writ reopened for re-dispatch.",
 		mrID, mr.Branch, mr.WritID)
 	if _, err := r.sphereStore.CreateEscalation("high", r.agentID, desc); err != nil {
 		r.logger.Error("failed to create escalation for merge failure",

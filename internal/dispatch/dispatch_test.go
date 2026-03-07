@@ -2025,7 +2025,7 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 		t.Errorf("expected branch %q, got %q", expectedBranch, result.BranchName)
 	}
 
-	// Work item should still be done.
+	// Writ should still be done.
 	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
 		t.Fatalf("failed to get writ: %v", err)
@@ -2458,7 +2458,7 @@ func TestResolveIdempotent(t *testing.T) {
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
-	// Work item is already "done" from first resolve — simulates partial resolve.
+	// Writ is already "done" from first resolve — simulates partial resolve.
 
 	// Re-create worktree for the second resolve (remove old one first).
 	os.RemoveAll(worktreeDir)
@@ -2491,7 +2491,7 @@ func TestResolveIdempotent(t *testing.T) {
 		t.Errorf("expected same MR ID (idempotent), got %q and %q", result1.MergeRequestID, result2.MergeRequestID)
 	}
 
-	// Work item should be done.
+	// Writ should be done.
 	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
 		t.Fatalf("failed to get writ: %v", err)

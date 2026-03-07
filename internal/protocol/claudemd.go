@@ -74,7 +74,7 @@ Your job is to execute the assigned writ.
 - If you are stuck and cannot complete the work, run `+"`sol escalate`"+` — do not silently exit.
 %s
 ## Your Assignment
-- Work item: %s
+- Writ: %s
 - Title: %s
 - Description: %s
 

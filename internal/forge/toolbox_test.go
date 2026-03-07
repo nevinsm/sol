@@ -295,12 +295,12 @@ func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 	sphereStore := newMockSphereStore()
 	// Pre-create escalations for the failed MRs.
 	sphereStore.CreateEscalation("high", "ember/forge",
-		"Merge failed for MR mr-failed1 (branch outpost/Toast/sol-aaa11111, writ sol-aaa11111). Work item reopened for re-dispatch.")
+		"Merge failed for MR mr-failed1 (branch outpost/Toast/sol-aaa11111, writ sol-aaa11111). Writ reopened for re-dispatch.")
 	sphereStore.CreateEscalation("high", "ember/forge",
-		"Merge failed for MR mr-failed2 (branch outpost/Blaze/sol-aaa11111, writ sol-aaa11111). Work item reopened for re-dispatch.")
+		"Merge failed for MR mr-failed2 (branch outpost/Blaze/sol-aaa11111, writ sol-aaa11111). Writ reopened for re-dispatch.")
 	// Escalation for different writ — should NOT be resolved.
 	sphereStore.CreateEscalation("high", "ember/forge",
-		"Merge failed for MR mr-other1 (branch outpost/Toast/sol-bbb22222, writ sol-bbb22222). Work item reopened for re-dispatch.")
+		"Merge failed for MR mr-other1 (branch outpost/Toast/sol-bbb22222, writ sol-bbb22222). Writ reopened for re-dispatch.")
 
 	dir := t.TempDir()
 	run(t, "git", "init", dir)

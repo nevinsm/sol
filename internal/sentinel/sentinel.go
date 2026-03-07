@@ -483,7 +483,7 @@ since the last patrol cycle (3 minutes ago). Analyze the session output
 below and determine the agent's status.
 
 Agent: %s (ID: %s)
-Work item: %s
+Writ: %s
 Session output (last %d lines):
 ---
 %s
@@ -1273,7 +1273,7 @@ func (w *Sentinel) recastFailedMRs() int {
 
 		// Only re-cast if the writ has been reopened by the forge.
 		if item.Status != "open" {
-			// Work item already re-dispatched or handled — prune tracking.
+			// Writ already re-dispatched or handled — prune tracking.
 			delete(w.recastCounts, mr.WritID)
 			continue
 		}
