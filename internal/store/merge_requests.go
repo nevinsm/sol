@@ -430,6 +430,64 @@ func (s *Store) FindMergeRequestByBlocker(blockerID string) (*MergeRequest, erro
 	return mr, nil
 }
 
+// ListBlockedMergeRequests returns all merge requests that have a non-empty
+// blocked_by field, ordered by creation time.
+func (s *Store) ListBlockedMergeRequests() ([]MergeRequest, error) {
+	rows, err := s.db.Query(
+		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
+		        attempts, priority, blocked_by, created_at, updated_at, merged_at
+		 FROM merge_requests
+		 WHERE blocked_by IS NOT NULL AND blocked_by != ''
+		 ORDER BY created_at`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list blocked merge requests: %w", err)
+	}
+	defer rows.Close()
+
+	var mrs []MergeRequest
+	for rows.Next() {
+		var mr MergeRequest
+		var claimedBy, blockedBy sql.NullString
+		var claimedAt, mergedAt sql.NullString
+		var createdAt, updatedAt string
+
+		if err := rows.Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
+			&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan blocked merge request: %w", err)
+		}
+		mr.ClaimedBy = claimedBy.String
+		mr.BlockedBy = blockedBy.String
+		var parseErr error
+		mr.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", mr.ID, parseErr)
+		}
+		mr.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", mr.ID, parseErr)
+		}
+		if claimedAt.Valid {
+			t, parseErr := time.Parse(time.RFC3339, claimedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", mr.ID, parseErr)
+			}
+			mr.ClaimedAt = &t
+		}
+		if mergedAt.Valid {
+			t, parseErr := time.Parse(time.RFC3339, mergedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", mr.ID, parseErr)
+			}
+			mr.MergedAt = &t
+		}
+		mrs = append(mrs, mr)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating blocked merge requests: %w", err)
+	}
+	return mrs, nil
+}
+
 // ReleaseStaleClaims releases merge requests that have been claimed for
 // longer than the given TTL. Sets them back to phase=ready, clears
 // claimed_by and claimed_at. Returns the number of released MRs.

@@ -620,6 +620,77 @@ func TestResetMergeRequestForRetry(t *testing.T) {
 	}
 }
 
+func TestListBlockedMergeRequests(t *testing.T) {
+	s := setupWorld(t)
+
+	// Create writs for our MRs.
+	blockerID, err := s.CreateWrit("Resolve conflict", "Fix the conflict", "forge", 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writ1ID, err := s.CreateWrit("Feature A", "Implement A", "operator", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writ2ID, err := s.CreateWrit("Feature B", "Implement B", "operator", 3, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create MRs — one blocked, two not.
+	mr1ID, err := s.CreateMergeRequest(writ1ID, "outpost/Toast/"+writ1ID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BlockMergeRequest(mr1ID, blockerID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unblocked MR.
+	_, err = s.CreateMergeRequest(writ2ID, "outpost/Sage/"+writ2ID, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// List blocked — should only return the blocked one.
+	blocked, err := s.ListBlockedMergeRequests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocked) != 1 {
+		t.Fatalf("expected 1 blocked MR, got %d", len(blocked))
+	}
+	if blocked[0].ID != mr1ID {
+		t.Errorf("blocked MR ID = %q, want %q", blocked[0].ID, mr1ID)
+	}
+	if blocked[0].BlockedBy != blockerID {
+		t.Errorf("blocked_by = %q, want %q", blocked[0].BlockedBy, blockerID)
+	}
+}
+
+func TestListBlockedMergeRequests_Empty(t *testing.T) {
+	s := setupWorld(t)
+
+	// Create an unblocked MR.
+	writID, err := s.CreateWrit("Feature", "Do something", "operator", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.CreateMergeRequest(writID, "outpost/Toast/"+writID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// List blocked — should be empty.
+	blocked, err := s.ListBlockedMergeRequests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocked) != 0 {
+		t.Fatalf("expected 0 blocked MRs, got %d", len(blocked))
+	}
+}
+
 func TestResetMergeRequestForRetryNotFound(t *testing.T) {
 	s := setupWorld(t)
 

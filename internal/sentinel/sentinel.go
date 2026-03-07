@@ -69,6 +69,7 @@ type WorldStore interface {
 	GetWrit(id string) (*store.Writ, error)
 	UpdateWrit(id string, updates store.WritUpdates) error
 	ListMergeRequests(phase string) ([]store.MergeRequest, error)
+	ListBlockedMergeRequests() ([]store.MergeRequest, error)
 	ReleaseStaleClaims(ttl time.Duration) (int, error)
 }
 
@@ -119,11 +120,12 @@ type Sentinel struct {
 	sessions      SessionChecker
 	logger        *events.Logger
 	eventReader   EventReader       // reads raw events for frequency checks
-	respawnCounts map[respawnKey]int
-	recastCounts  map[string]int    // writ ID → recast attempt count
-	lastCaptures  map[string]string // agent ID → hash of last captured output
-	assessFn      assessFunc        // nil = use real AI call
-	castFn        func(writID string) (*CastResult, error) // nil = skip recast
+	respawnCounts            map[respawnKey]int
+	recastCounts             map[string]int    // writ ID → recast attempt count
+	resolutionDispatchCounts map[string]int    // blocker writ ID → dispatch attempt count
+	lastCaptures             map[string]string // agent ID → hash of last captured output
+	assessFn                 assessFunc        // nil = use real AI call
+	castFn                   func(writID string) (*CastResult, error) // nil = skip recast
 
 	// Per-patrol counters, reset at start of each patrol.
 	patrolAssessed int
@@ -139,9 +141,10 @@ func New(cfg Config, sphere SphereStore, world WorldStore,
 		worldStore:    world,
 		sessions:      sessions,
 		logger:        logger,
-		respawnCounts: make(map[respawnKey]int),
-		recastCounts:  make(map[string]int),
-		lastCaptures:  make(map[string]string),
+		respawnCounts:            make(map[respawnKey]int),
+		recastCounts:             make(map[string]int),
+		resolutionDispatchCounts: make(map[string]int),
+		lastCaptures:             make(map[string]string),
 	}
 	// Create event reader for handoff frequency checks.
 	if cfg.SolHome != "" {
@@ -230,6 +233,9 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 
 	// Recast failed MRs before agent checks (so newly cast agents appear healthy).
 	recastCount := w.recastFailedMRs()
+
+	// Dispatch orphaned conflict-resolution writs blocking MRs.
+	resolutionDispatched := w.dispatchOrphanedResolutions()
 
 	// Release stale MR claims (forge crash recovery).
 	releasedCount := w.releaseStaleClaims()
@@ -352,8 +358,9 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 				"stalled":         stalledCount,
 				"zombies":         zombieCount,
 				"reaped":          reapedCount,
-				"recast":          recastCount,
-				"released_claims": releasedCount,
+				"recast":                  recastCount,
+				"resolution_dispatched":    resolutionDispatched,
+				"released_claims":          releasedCount,
 				"branches_pruned": branchesPruned,
 				"orphans_cleaned": orphansCleaned,
 				"handoff_loops":   handoffLoops,
@@ -1344,6 +1351,128 @@ func (w *Sentinel) escalateFailedRecast(mr store.MergeRequest, item *store.Writ,
 				"attempts":   attempts,
 				"escalated":  true,
 				"reason":     "max recast attempts exceeded",
+			})
+	}
+}
+
+// dispatchOrphanedResolutions finds blocked MRs whose resolution writs are
+// open, unassigned, and older than 5 minutes, then dispatches them via castFn.
+// This catches conflict-resolution writs that the governor missed.
+// Returns the number of writs dispatched.
+func (w *Sentinel) dispatchOrphanedResolutions() int {
+	if w.castFn == nil {
+		return 0
+	}
+
+	blockedMRs, err := w.worldStore.ListBlockedMergeRequests()
+	if err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+				map[string]any{"action": "list_blocked_mrs", "error": err.Error()})
+		}
+		return 0
+	}
+
+	maxAttempts := w.config.MaxRecastAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 3
+	}
+
+	const gracePeriod = 5 * time.Minute
+	var dispatched int
+
+	for _, mr := range blockedMRs {
+		blockerID := mr.BlockedBy
+
+		writ, err := w.worldStore.GetWrit(blockerID)
+		if err != nil {
+			// Writ not found or error — skip.
+			continue
+		}
+
+		// Only dispatch if writ is open (not already handled or closed).
+		if writ.Status != "open" {
+			delete(w.resolutionDispatchCounts, blockerID)
+			continue
+		}
+
+		// Skip if already assigned (agent is working on it).
+		if writ.Assignee != "" {
+			continue
+		}
+
+		// Grace period: let governor handle the nudge first.
+		if time.Since(writ.CreatedAt) < gracePeriod {
+			continue
+		}
+
+		attempts := w.resolutionDispatchCounts[blockerID]
+
+		if attempts >= maxAttempts {
+			if attempts == maxAttempts {
+				// First time hitting max — escalate once.
+				w.escalateOrphanedResolution(mr, writ, attempts)
+				w.resolutionDispatchCounts[blockerID] = maxAttempts + 1
+			}
+			continue
+		}
+
+		result, err := w.castFn(blockerID)
+		if err != nil {
+			if w.logger != nil {
+				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+					map[string]any{
+						"action": "dispatch_resolution",
+						"mr":     mr.ID,
+						"writ":   blockerID,
+						"error":  err.Error(),
+					})
+			}
+			continue
+		}
+
+		w.resolutionDispatchCounts[blockerID] = attempts + 1
+		dispatched++
+
+		if w.logger != nil {
+			w.logger.Emit("sentinel_dispatch_resolution", w.agentID(), w.agentID(), "both",
+				map[string]any{
+					"mr":      mr.ID,
+					"writ":    blockerID,
+					"agent":   result.AgentName,
+					"attempt": attempts + 1,
+					"message": fmt.Sprintf("auto-dispatching orphaned conflict-resolution writ %s blocking MR %s", blockerID, mr.ID),
+				})
+		}
+	}
+
+	return dispatched
+}
+
+// escalateOrphanedResolution sends a RECOVERY_NEEDED protocol message when a
+// conflict-resolution writ has exceeded the maximum dispatch attempts.
+func (w *Sentinel) escalateOrphanedResolution(mr store.MergeRequest, writ *store.Writ, attempts int) {
+	if _, err := w.sphereStore.SendProtocolMessage(
+		w.agentID(), "operator",
+		store.ProtoRecoveryNeeded,
+		store.RecoveryNeededPayload{
+			WritID: writ.ID,
+			Reason:     fmt.Sprintf("orphaned conflict-resolution writ %q blocking MR %s, dispatch limit reached after %d attempts", writ.Title, mr.ID, attempts),
+			Attempts:   attempts,
+		},
+	); err != nil && w.logger != nil {
+		w.logger.Emit("mail_error", w.agentID(), w.agentID(), "audit",
+			map[string]any{"error": err.Error()})
+	}
+
+	if w.logger != nil {
+		w.logger.Emit(events.EventStalled, w.agentID(), w.agentID(), "both",
+			map[string]any{
+				"writ":     writ.ID,
+				"mr":       mr.ID,
+				"attempts": attempts,
+				"escalated": true,
+				"reason":   "max resolution dispatch attempts exceeded",
 			})
 	}
 }

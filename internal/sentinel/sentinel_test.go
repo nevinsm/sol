@@ -1521,6 +1521,198 @@ func TestRecastCastFailureNonBlocking(t *testing.T) {
 	}
 }
 
+// --- Orphaned resolution dispatch tests ---
+
+// createBlockedMR creates an original writ with MR, a blocker (resolution) writ,
+// and blocks the MR with the blocker writ. Returns the MR ID.
+// The blocker writ is created with the given age (time before now).
+func createBlockedMR(t *testing.T, worldStore *store.Store, writID, blockerWritID, title, branch string, blockerAge time.Duration) string {
+	t.Helper()
+	createWrit(t, worldStore, writID, title)
+	mrID, err := worldStore.CreateMergeRequest(writID, branch, 3)
+	if err != nil {
+		t.Fatalf("failed to create MR: %v", err)
+	}
+
+	// Create blocker (resolution) writ with a backdated created_at.
+	createdAt := time.Now().UTC().Add(-blockerAge).Format(time.RFC3339)
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err = worldStore.DB().Exec(
+		`INSERT INTO writs (id, title, description, status, priority, created_by, created_at, updated_at)
+		 VALUES (?, ?, '', 'open', 1, 'forge', ?, ?)`,
+		blockerWritID, "Resolve conflict for "+title, createdAt, now,
+	)
+	if err != nil {
+		t.Fatalf("failed to create blocker writ %q: %v", blockerWritID, err)
+	}
+
+	if err := worldStore.BlockMergeRequest(mrID, blockerWritID); err != nil {
+		t.Fatalf("failed to block MR: %v", err)
+	}
+	return mrID
+}
+
+func TestDispatchOrphanedResolution_HappyPath(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	// Blocked MR with open+unassigned resolution writ older than 5 min.
+	mrID := createBlockedMR(t, worldStore, "sol-orig1111", "sol-res-1111", "Feature A", "outpost/Toast/sol-orig1111", 10*time.Minute)
+	_ = mrID
+
+	castCalled := false
+	var castWritID string
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		castWritID = writID
+		return &CastResult{
+			WritID:      writID,
+			AgentName:   "Sage",
+			SessionName: "sol-ember-Sage",
+		}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if !castCalled {
+		t.Fatal("expected castFn to be called for orphaned resolution writ")
+	}
+	if castWritID != "sol-res-1111" {
+		t.Errorf("castFn called with %q, want %q", castWritID, "sol-res-1111")
+	}
+
+	// Dispatch count should be 1.
+	if w.resolutionDispatchCounts["sol-res-1111"] != 1 {
+		t.Errorf("resolution dispatch count = %d, want 1", w.resolutionDispatchCounts["sol-res-1111"])
+	}
+}
+
+func TestDispatchOrphanedResolution_SkipAssigned(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create blocked MR with old resolution writ.
+	createBlockedMR(t, worldStore, "sol-orig2222", "sol-res-2222", "Feature B", "outpost/Toast/sol-orig2222", 10*time.Minute)
+
+	// Assign the resolution writ (governor already dispatched it).
+	worldStore.UpdateWrit("sol-res-2222", store.WritUpdates{Assignee: "ember/Toast"})
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called when blocker writ has assignee")
+	}
+}
+
+func TestDispatchOrphanedResolution_SkipClosed(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create blocked MR with old resolution writ.
+	createBlockedMR(t, worldStore, "sol-orig3333", "sol-res-3333", "Feature C", "outpost/Toast/sol-orig3333", 10*time.Minute)
+
+	// Close the resolution writ (already handled).
+	worldStore.UpdateWrit("sol-res-3333", store.WritUpdates{Status: "done"})
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called when blocker writ is closed")
+	}
+}
+
+func TestDispatchOrphanedResolution_SkipYoung(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create blocked MR with resolution writ only 2 min old (within grace period).
+	createBlockedMR(t, worldStore, "sol-orig4444", "sol-res-4444", "Feature D", "outpost/Toast/sol-orig4444", 2*time.Minute)
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called when blocker writ is younger than grace period")
+	}
+}
+
+func TestDispatchOrphanedResolution_AttemptCapEscalates(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 2
+
+	// Create blocked MR with old resolution writ.
+	createBlockedMR(t, worldStore, "sol-orig5555", "sol-res-5555", "Feature E", "outpost/Toast/sol-orig5555", 10*time.Minute)
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	// Pre-set dispatch count to max.
+	w.resolutionDispatchCounts["sol-res-5555"] = 2
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called when max dispatch attempts reached")
+	}
+
+	// Should have sent RECOVERY_NEEDED to operator.
+	msgs, err := sphereStore.PendingProtocol("operator", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Error("expected RECOVERY_NEEDED protocol message after max dispatch attempts")
+	}
+
+	// Dispatch count should be incremented past max to prevent re-escalation.
+	if w.resolutionDispatchCounts["sol-res-5555"] != 3 {
+		t.Errorf("resolution dispatch count = %d, want %d (max+1)", w.resolutionDispatchCounts["sol-res-5555"], 3)
+	}
+}
+
 func TestPruneOrphanedBranches(t *testing.T) {
 	// Create a bare "remote" repo and a local clone to simulate real git workflows.
 	tmpDir := t.TempDir()
