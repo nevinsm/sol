@@ -353,6 +353,23 @@ func ClearResumeState(world, agent, role string) error {
 	return nil
 }
 
+// Respawn restarts a session for a registered role. It checks for resume
+// state and delegates to Resume() or Launch() accordingly. Returns an error
+// if the role has no registered startup config.
+func Respawn(role, world, agent string, opts LaunchOpts) (string, error) {
+	cfg := ConfigFor(role)
+	if cfg == nil {
+		return "", fmt.Errorf("no startup config registered for role %q", role)
+	}
+	opts.Respawn = true
+	resumeState, _ := ReadResumeState(world, agent, role)
+	if resumeState != nil {
+		defer ClearResumeState(world, agent, role)
+		return Resume(*cfg, world, agent, *resumeState, opts)
+	}
+	return Launch(*cfg, world, agent, opts)
+}
+
 // resolveSphereStore returns the sphere store and an optional cleanup function.
 func resolveSphereStore(opts LaunchOpts) (SphereStore, func(), error) {
 	if opts.Sphere != nil {

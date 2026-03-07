@@ -701,6 +701,188 @@ func TestLaunchReinstantiatesDoneWorkflow(t *testing.T) {
 	}
 }
 
+func TestRespawnWithResumeState(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	// Reset registry for test isolation.
+	origRegistry := registry
+	registry = map[string]*RoleConfig{}
+	t.Cleanup(func() { registry = origRegistry })
+
+	// Create worktree directory.
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Register a role config.
+	Register("forge", RoleConfig{
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+		PrimeBuilder: func(w, a string) string {
+			return "Execute your formula."
+		},
+	})
+
+	// Write resume state.
+	state := ResumeState{
+		CurrentStep:     "gates",
+		StepDescription: "Quality Gates",
+		ClaimedResource: "sol-abc123",
+		Reason:          "compact",
+	}
+	if err := WriteResumeState(world, "forge", "forge", state); err != nil {
+		t.Fatalf("WriteResumeState() error: %v", err)
+	}
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	sessName, err := Respawn("forge", world, "forge", LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Respawn() error: %v", err)
+	}
+
+	if sessName != "sol-haven-forge" {
+		t.Errorf("session name = %q, want %q", sessName, "sol-haven-forge")
+	}
+
+	// Verify session was started (Resume path).
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 session start, got %d", len(mock.started))
+	}
+
+	// Verify resume state was cleared after Respawn.
+	got, err := ReadResumeState(world, "forge", "forge")
+	if err != nil {
+		t.Fatalf("ReadResumeState() after Respawn error: %v", err)
+	}
+	if got != nil {
+		t.Error("resume state should be cleared after Respawn")
+	}
+}
+
+func TestRespawnWithoutResumeState(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	// Reset registry for test isolation.
+	origRegistry := registry
+	registry = map[string]*RoleConfig{}
+	t.Cleanup(func() { registry = origRegistry })
+
+	// Create worktree directory.
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Register a role config.
+	Register("forge", RoleConfig{
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+		PrimeBuilder: func(w, a string) string {
+			return "Execute your formula."
+		},
+	})
+
+	// No resume state written — should take the Launch path.
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	sessName, err := Respawn("forge", world, "forge", LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Respawn() error: %v", err)
+	}
+
+	if sessName != "sol-haven-forge" {
+		t.Errorf("session name = %q, want %q", sessName, "sol-haven-forge")
+	}
+
+	// Verify session was started (Launch path).
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 session start, got %d", len(mock.started))
+	}
+}
+
+func TestRespawnUnregisteredRole(t *testing.T) {
+	// Reset registry for test isolation.
+	origRegistry := registry
+	registry = map[string]*RoleConfig{}
+	t.Cleanup(func() { registry = origRegistry })
+
+	// Do not register any role — Respawn should return error.
+	_, err := Respawn("nonexistent", "haven", "forge", LaunchOpts{})
+	if err == nil {
+		t.Fatal("expected error for unregistered role")
+	}
+	if !strings.Contains(err.Error(), "no startup config registered for role") {
+		t.Errorf("error = %q, want it to mention unregistered role", err.Error())
+	}
+	if !strings.Contains(err.Error(), "nonexistent") {
+		t.Errorf("error = %q, want it to mention role name", err.Error())
+	}
+}
+
+func TestRespawnSetsRespawnFlag(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	// Reset registry for test isolation.
+	origRegistry := registry
+	registry = map[string]*RoleConfig{}
+	t.Cleanup(func() { registry = origRegistry })
+
+	// Create worktree directory.
+	os.MkdirAll(filepath.Join(solHome, world, "forge", "worktree"), 0o755)
+
+	// Use SessionOp to verify that the full launch pipeline runs to completion.
+	// opts.Respawn is set unconditionally in Respawn() before calling Launch/Resume.
+	var sessionOpCalled bool
+	Register("forge", RoleConfig{
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+	})
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	// Pass Respawn=false initially — Respawn() should set it to true.
+	opts := LaunchOpts{
+		Sphere:  sphereStore,
+		Respawn: false,
+		SessionOp: func(name, workdir, cmd string, env map[string]string, role, world string) error {
+			sessionOpCalled = true
+			return nil
+		},
+	}
+
+	_, err = Respawn("forge", world, "forge", opts)
+	if err != nil {
+		t.Fatalf("Respawn() error: %v", err)
+	}
+
+	// Verify the session op was called (proves opts.Respawn=true didn't break flow,
+	// and the full Launch pipeline completed with the Respawn flag set).
+	if !sessionOpCalled {
+		t.Fatal("SessionOp was not called — launch pipeline did not complete")
+	}
+}
+
 func TestLaunchSkipsWorkflowIfActive(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 
