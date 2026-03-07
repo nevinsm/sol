@@ -33,7 +33,7 @@ sol store create --world=myworld --title="Implement feature X" --description="..
 sol store create --world=myworld --title="Fix bug Y" --description="..."
 
 # Dispatch work — sol creates an agent, sets up a worktree, and starts a session
-sol cast <work-item-id> myworld
+sol cast <writ-id> myworld
 
 # Watch an agent work
 sol session attach sol-myworld-Toast

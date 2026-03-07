@@ -250,7 +250,7 @@ func printInitSuccess(result *setup.Result) {
 
 	fmt.Printf("\nNext steps:\n")
 	fmt.Printf("  sol store create --world=%s --title=\"First task\"\n", result.WorldName)
-	fmt.Printf("  sol cast <work-item-id> --world=%s\n", result.WorldName)
+	fmt.Printf("  sol cast <writ-id> --world=%s\n", result.WorldName)
 }
 
 func init() {

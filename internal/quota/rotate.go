@@ -299,7 +299,7 @@ func pauseAgent(state *State, agent store.Agent, previousAccount string, opts Ro
 	state.PausedSessions[agent.ID] = PausedSession{
 		PausedAt:        time.Now().UTC(),
 		PreviousAccount: previousAccount,
-		WorkItem:        agent.TetherItem,
+		Writ:        agent.TetherItem,
 		World:           opts.World,
 		AgentName:       agent.Name,
 		Role:            agent.Role,
@@ -310,7 +310,7 @@ func pauseAgent(state *State, agent store.Agent, previousAccount string, opts Ro
 			map[string]any{
 				"agent":     agent.ID,
 				"world":     opts.World,
-				"work_item": agent.TetherItem,
+				"writ": agent.TetherItem,
 				"reason":    "no available accounts for rotation",
 			})
 	}
@@ -346,7 +346,7 @@ func restartPausedSessions(state *State, opts RotateOpts, sphereStore *store.Sto
 			if cfg != nil {
 				resumeState := startup.ResumeState{
 					Reason:          "quota_rotate",
-					ClaimedResource: paused.WorkItem,
+					ClaimedResource: paused.Writ,
 				}
 
 				launchOpts := startup.LaunchOpts{

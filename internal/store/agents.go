@@ -97,7 +97,7 @@ var validAgentStates = map[string]bool{
 }
 
 // UpdateAgentState updates an agent's state and optionally its tether_item.
-// Pass empty tetherItem to clear it, or a work item ID to set it.
+// Pass empty tetherItem to clear it, or a writ ID to set it.
 func (s *Store) UpdateAgentState(id, state, tetherItem string) error {
 	if !validAgentStates[state] {
 		return fmt.Errorf("invalid agent state %q", state)

@@ -66,9 +66,9 @@ Quota state is stored at `$SOL_HOME/.accounts/runtime/quota.json`. The scan comm
 
 | Command | Description |
 |---------|-------------|
-| `sol cast <work-item-id>` | Assign a work item to an agent and start its session |
-| `sol tether <agent-name> <work-item-id>` | Bind a work item to an agent (any role) |
-| `sol untether <agent-name>` | Unbind a work item from an agent (any role) |
+| `sol cast <writ-id>` | Assign a writ to an agent and start its session |
+| `sol tether <agent-name> <writ-id>` | Bind a writ to an agent (any role) |
+| `sol untether <agent-name>` | Unbind a writ from an agent (any role) |
 | `sol prime` | Assemble and print execution context for an agent |
 | `sol resolve` | Signal work completion — push branch, update state, clear tether |
 
@@ -95,15 +95,15 @@ When an agent session starts, credentials are symlinked from the resolved accoun
 | `sol agent handoffs` | Show recent handoff events |
 | `sol agent stats [name]` | Show agent performance metrics |
 
-## Store (Work Items)
+## Store (Writs)
 
 | Command | Description |
 |---------|-------------|
-| `sol store create` | Create a work item |
-| `sol store status <id>` | Show work item status |
-| `sol store list` | List work items |
-| `sol store update <id>` | Update a work item |
-| `sol store close <id>` | Close a work item |
+| `sol store create` | Create a writ |
+| `sol store status <id>` | Show writ status |
+| `sol store list` | List writs |
+| `sol store update <id>` | Update a writ |
+| `sol store close <id>` | Close a writ |
 | `sol store query` | Run a read-only SQL query |
 
 ## Dependencies
@@ -112,7 +112,7 @@ When an agent session starts, credentials are symlinked from the resolved accoun
 |---------|-------------|
 | `sol store dep add <from-id> <to-id>` | Add a dependency (from depends on to) |
 | `sol store dep remove <from-id> <to-id>` | Remove a dependency |
-| `sol store dep list <item-id>` | List dependencies for a work item |
+| `sol store dep list <item-id>` | List dependencies for a writ |
 
 ## Sessions
 
@@ -162,7 +162,7 @@ Without flags, `sol up` starts sphere daemons (prefect, consul, chronicle, ledge
 
 | Command | Description |
 |---------|-------------|
-| `sol mr create --world=W --branch=B --work-item=ID` | Create a merge request for an existing work item |
+| `sol mr create --world=W --branch=B --writ=ID` | Create a merge request for an existing writ |
 
 ## Forge (Merge Pipeline)
 
@@ -238,7 +238,7 @@ Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` 
 | `sol ledger start` | Start the ledger as a background tmux session |
 | `sol ledger stop` | Stop the ledger background session |
 
-Sphere-scoped OTLP HTTP receiver on port 4318. Accepts `claude_code.api_request` log events from Claude Code agent sessions, extracts token counts (input, output, cache_read, cache_creation) and model, and writes `token_usage` records to the appropriate world database. Source agent identification via `OTEL_RESOURCE_ATTRIBUTES` (agent.name, world, work_item_id) injected at cast time.
+Sphere-scoped OTLP HTTP receiver on port 4318. Accepts `claude_code.api_request` log events from Claude Code agent sessions, extracts token counts (input, output, cache_read, cache_creation) and model, and writes `token_usage` records to the appropriate world database. Source agent identification via `OTEL_RESOURCE_ATTRIBUTES` (agent.name, world, writ_id) injected at cast time.
 
 ## Workflows
 
@@ -247,7 +247,7 @@ Sphere-scoped OTLP HTTP receiver on port 4318. Accepts `claude_code.api_request`
 | `sol workflow list` | List available workflow formulas |
 | `sol workflow show <formula>` | Display formula details and resolution source |
 | `sol workflow instantiate <formula>` | Instantiate a workflow from a formula |
-| `sol workflow manifest <formula>` | Manifest a formula into work items and a caravan |
+| `sol workflow manifest <formula>` | Manifest a formula into writs and a caravan |
 | `sol workflow current` | Print the current step's instructions |
 | `sol workflow advance` | Advance to the next workflow step |
 | `sol workflow status` | Show workflow status |
@@ -286,7 +286,7 @@ Memories are key-value pairs stored in the world database, scoped to each agent 
 |---------|-------------|
 | `sol handoff` | Hand off to a fresh session with context preservation |
 
-`--summary` provides a progress summary. `--reason` tags the handoff with a reason (`compact`, `manual`, `health-check`; defaults to `unknown`). Captures tmux output, git state, and workflow progress into `.handoff.json`, then cycles the session atomically using `tmux respawn-pane`. Safe for self-handoff (agent calling handoff on itself) and PreCompact auto-handoff — the old process is replaced without destroying the session. Each handoff emits a chronicle event with reason, session age, and role for observability. When reason is `compact`, the new session uses `--continue` and gets a lightweight prime that omits the full work item description.
+`--summary` provides a progress summary. `--reason` tags the handoff with a reason (`compact`, `manual`, `health-check`; defaults to `unknown`). Captures tmux output, git state, and workflow progress into `.handoff.json`, then cycles the session atomically using `tmux respawn-pane`. Safe for self-handoff (agent calling handoff on itself) and PreCompact auto-handoff — the old process is replaced without destroying the session. Each handoff emits a chronicle event with reason, session age, and role for observability. When reason is `compact`, the new session uses `--continue` and gets a lightweight prime that omits the full writ description.
 
 ## Envoy (Persistent Human-Directed Agents)
 

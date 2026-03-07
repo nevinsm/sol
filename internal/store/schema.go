@@ -7,12 +7,12 @@ import (
 
 // Current schema versions — the latest migration target for each database type.
 const (
-	CurrentWorldSchema  = 7
-	CurrentSphereSchema = 8
+	CurrentWorldSchema  = 8
+	CurrentSphereSchema = 9
 )
 
 const worldSchemaV1 = `
-CREATE TABLE IF NOT EXISTS work_items (
+CREATE TABLE IF NOT EXISTS writs (
     id          TEXT PRIMARY KEY,
     title       TEXT NOT NULL,
     description TEXT,
@@ -25,14 +25,14 @@ CREATE TABLE IF NOT EXISTS work_items (
     updated_at  TEXT NOT NULL,
     closed_at   TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_work_status ON work_items(status);
-CREATE INDEX IF NOT EXISTS idx_work_assignee ON work_items(assignee);
-CREATE INDEX IF NOT EXISTS idx_work_priority ON work_items(priority);
+CREATE INDEX IF NOT EXISTS idx_writ_status ON writs(status);
+CREATE INDEX IF NOT EXISTS idx_writ_assignee ON writs(assignee);
+CREATE INDEX IF NOT EXISTS idx_writ_priority ON writs(priority);
 
 CREATE TABLE IF NOT EXISTS labels (
-    work_item_id TEXT NOT NULL REFERENCES work_items(id),
-    label        TEXT NOT NULL,
-    PRIMARY KEY (work_item_id, label)
+    writ_id TEXT NOT NULL REFERENCES writs(id),
+    label   TEXT NOT NULL,
+    PRIMARY KEY (writ_id, label)
 );
 CREATE INDEX IF NOT EXISTS idx_labels_label ON labels(label);
 
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
 const worldSchemaV2 = `
 CREATE TABLE IF NOT EXISTS merge_requests (
     id           TEXT PRIMARY KEY,
-    work_item_id TEXT NOT NULL REFERENCES work_items(id),
+    writ_id      TEXT NOT NULL REFERENCES writs(id),
     branch       TEXT NOT NULL,
     phase        TEXT NOT NULL DEFAULT 'ready',
     claimed_by   TEXT,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS merge_requests (
     merged_at    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_mr_phase ON merge_requests(phase);
-CREATE INDEX IF NOT EXISTS idx_mr_work_item ON merge_requests(work_item_id);
+CREATE INDEX IF NOT EXISTS idx_mr_writ ON merge_requests(writ_id);
 `
 
 const worldSchemaV3 = `
@@ -63,8 +63,8 @@ ALTER TABLE merge_requests ADD COLUMN blocked_by TEXT;
 
 const worldSchemaV4 = `
 CREATE TABLE IF NOT EXISTS dependencies (
-    from_id TEXT NOT NULL REFERENCES work_items(id),
-    to_id   TEXT NOT NULL REFERENCES work_items(id),
+    from_id TEXT NOT NULL REFERENCES writs(id),
+    to_id   TEXT NOT NULL REFERENCES writs(id),
     PRIMARY KEY (from_id, to_id)
 );
 CREATE INDEX IF NOT EXISTS idx_deps_from ON dependencies(from_id);
@@ -77,14 +77,14 @@ const worldSchemaV6 = `
 CREATE TABLE IF NOT EXISTS agent_history (
     id            TEXT PRIMARY KEY,
     agent_name    TEXT NOT NULL,
-    work_item_id  TEXT,
+    writ_id       TEXT,
     action        TEXT NOT NULL,
     started_at    TEXT NOT NULL,
     ended_at      TEXT,
     summary       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_history_agent ON agent_history(agent_name);
-CREATE INDEX IF NOT EXISTS idx_history_work_item ON agent_history(work_item_id);
+CREATE INDEX IF NOT EXISTS idx_history_writ ON agent_history(writ_id);
 
 CREATE TABLE IF NOT EXISTS token_usage (
     id                    TEXT PRIMARY KEY,
@@ -174,6 +174,10 @@ CREATE TABLE IF NOT EXISTS agent_memories (
 CREATE INDEX IF NOT EXISTS idx_agent_memories_agent ON agent_memories(agent_name);
 `
 
+// worldSchemaV8 renames work_items → writs and work_item_id → writ_id
+// across all tables that reference the old naming.
+const worldSchemaV8 = "" // migration handled procedurally below
+
 func (s *Store) migrateWorld() error {
 	v, err := s.SchemaVersion()
 	if err != nil {
@@ -230,6 +234,48 @@ func (s *Store) migrateWorld() error {
 			return fmt.Errorf("failed to apply world schema v7: %w", err)
 		}
 	}
+	if v < 8 {
+		// Rename work_items → writs (only if old table still exists).
+		oldExists, err := tableExists(tx, "work_items")
+		if err != nil {
+			return fmt.Errorf("V8 migration: failed to check table work_items: %w", err)
+		}
+		if oldExists {
+			if _, err := tx.Exec(`ALTER TABLE work_items RENAME TO writs`); err != nil {
+				return fmt.Errorf("failed to rename work_items to writs: %w", err)
+			}
+		}
+		// Rename labels.work_item_id → writ_id.
+		oldCol, err := columnExists(tx, "labels", "work_item_id")
+		if err != nil {
+			return fmt.Errorf("V8 migration: failed to check column labels.work_item_id: %w", err)
+		}
+		if oldCol {
+			if _, err := tx.Exec(`ALTER TABLE labels RENAME COLUMN work_item_id TO writ_id`); err != nil {
+				return fmt.Errorf("failed to rename labels.work_item_id: %w", err)
+			}
+		}
+		// Rename merge_requests.work_item_id → writ_id.
+		oldCol, err = columnExists(tx, "merge_requests", "work_item_id")
+		if err != nil {
+			return fmt.Errorf("V8 migration: failed to check column merge_requests.work_item_id: %w", err)
+		}
+		if oldCol {
+			if _, err := tx.Exec(`ALTER TABLE merge_requests RENAME COLUMN work_item_id TO writ_id`); err != nil {
+				return fmt.Errorf("failed to rename merge_requests.work_item_id: %w", err)
+			}
+		}
+		// Rename agent_history.work_item_id → writ_id.
+		oldCol, err = columnExists(tx, "agent_history", "work_item_id")
+		if err != nil {
+			return fmt.Errorf("V8 migration: failed to check column agent_history.work_item_id: %w", err)
+		}
+		if oldCol {
+			if _, err := tx.Exec(`ALTER TABLE agent_history RENAME COLUMN work_item_id TO writ_id`); err != nil {
+				return fmt.Errorf("failed to rename agent_history.work_item_id: %w", err)
+			}
+		}
+	}
 	if v < 1 {
 		if _, err := tx.Exec(fmt.Sprintf("INSERT INTO schema_version VALUES (%d)", CurrentWorldSchema)); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
@@ -255,9 +301,9 @@ CREATE INDEX IF NOT EXISTS idx_convoys_status ON convoys(status);
 
 CREATE TABLE IF NOT EXISTS convoy_items (
     convoy_id    TEXT NOT NULL REFERENCES convoys(id),
-    work_item_id TEXT NOT NULL,
+    writ_id      TEXT NOT NULL,
     rig          TEXT NOT NULL,
-    PRIMARY KEY (convoy_id, work_item_id)
+    PRIMARY KEY (convoy_id, writ_id)
 );
 CREATE INDEX IF NOT EXISTS idx_convoy_items_convoy ON convoy_items(convoy_id);
 `
@@ -288,6 +334,8 @@ CREATE TABLE IF NOT EXISTS caravan_dependencies (
 CREATE INDEX IF NOT EXISTS idx_caravan_deps_from ON caravan_dependencies(from_id);
 CREATE INDEX IF NOT EXISTS idx_caravan_deps_to ON caravan_dependencies(to_id);
 `
+
+const sphereSchemaV9 = "" // migration handled procedurally below — renames caravan_items.work_item_id → writ_id
 
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
@@ -449,6 +497,18 @@ func (s *Store) migrateSphere() error {
 	if v < 8 {
 		if _, err := tx.Exec(sphereSchemaV8); err != nil {
 			return fmt.Errorf("failed to apply sphere schema v8: %w", err)
+		}
+	}
+	if v < 9 {
+		// Rename caravan_items.work_item_id → writ_id.
+		oldCol, err := columnExists(tx, "caravan_items", "work_item_id")
+		if err != nil {
+			return fmt.Errorf("V9 migration: failed to check column caravan_items.work_item_id: %w", err)
+		}
+		if oldCol {
+			if _, err := tx.Exec(`ALTER TABLE caravan_items RENAME COLUMN work_item_id TO writ_id`); err != nil {
+				return fmt.Errorf("failed to rename caravan_items.work_item_id: %w", err)
+			}
 		}
 	}
 	if v < 1 {

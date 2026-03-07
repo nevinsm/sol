@@ -1084,15 +1084,15 @@ func TestManifestFormulaWorkflow(t *testing.T) {
 		t.Fatalf("ChildIDs: got %d, want 3", len(result.ChildIDs))
 	}
 
-	// Verify child work items were created with correct titles and parent.
+	// Verify child writs were created with correct titles and parent.
 	for _, stepDef := range steps {
 		childID, ok := result.ChildIDs[stepDef.ID]
 		if !ok {
 			t.Fatalf("missing child for step %q", stepDef.ID)
 		}
-		item, err := ws.GetWorkItem(childID)
+		item, err := ws.GetWrit(childID)
 		if err != nil {
-			t.Fatalf("GetWorkItem(%q) error: %v", childID, err)
+			t.Fatalf("GetWrit(%q) error: %v", childID, err)
 		}
 		if item.Title != stepDef.Title {
 			t.Errorf("step %q title: got %q, want %q", stepDef.ID, item.Title, stepDef.Title)
@@ -1106,7 +1106,7 @@ func TestManifestFormulaWorkflow(t *testing.T) {
 	}
 
 	// Verify rendered instructions in description.
-	loadItem, _ := ws.GetWorkItem(result.ChildIDs["load-context"])
+	loadItem, _ := ws.GetWrit(result.ChildIDs["load-context"])
 	if loadItem.Description == "" {
 		t.Error("load-context description is empty")
 	}
@@ -1174,11 +1174,11 @@ func TestManifestFormulaWorkflow(t *testing.T) {
 	// Verify caravan item phases match.
 	itemPhases := make(map[string]int)
 	for _, ci := range items {
-		itemPhases[ci.WorkItemID] = ci.Phase
+		itemPhases[ci.WritID] = ci.Phase
 	}
-	for stepID, workItemID := range result.ChildIDs {
+	for stepID, writID := range result.ChildIDs {
 		expectedPhase := result.Phases[stepID]
-		gotPhase := itemPhases[workItemID]
+		gotPhase := itemPhases[writID]
 		if gotPhase != expectedPhase {
 			t.Errorf("caravan item phase for %q: got %d, want %d", stepID, gotPhase, expectedPhase)
 		}
@@ -1211,10 +1211,10 @@ needs = ["draft"]
 `
 	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(toml), 0o644)
 
-	// Create a target work item.
-	targetID, err := ws.CreateWorkItem("Build auth system", "Implement OAuth2", "operator", 2, nil)
+	// Create a target writ.
+	targetID, err := ws.CreateWrit("Build auth system", "Implement OAuth2", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem() error: %v", err)
+		t.Fatalf("CreateWrit() error: %v", err)
 	}
 
 	result, err := ManifestFormula(ws, ss, ManifestOpts{
@@ -1233,9 +1233,9 @@ needs = ["draft"]
 	}
 
 	// Verify template variable substitution in titles.
-	draftItem, err := ws.GetWorkItem(result.ChildIDs["draft"])
+	draftItem, err := ws.GetWrit(result.ChildIDs["draft"])
 	if err != nil {
-		t.Fatalf("GetWorkItem(draft) error: %v", err)
+		t.Fatalf("GetWrit(draft) error: %v", err)
 	}
 	if draftItem.Title != "Draft: Build auth system" {
 		t.Errorf("draft title: got %q, want %q", draftItem.Title, "Draft: Build auth system")
@@ -1244,9 +1244,9 @@ needs = ["draft"]
 		t.Errorf("draft description: got %q", draftItem.Description)
 	}
 
-	refineItem, err := ws.GetWorkItem(result.ChildIDs["refine"])
+	refineItem, err := ws.GetWrit(result.ChildIDs["refine"])
 	if err != nil {
-		t.Fatalf("GetWorkItem(refine) error: %v", err)
+		t.Fatalf("GetWrit(refine) error: %v", err)
 	}
 	if refineItem.Title != "Refine: Build auth system" {
 		t.Errorf("refine title: got %q, want %q", refineItem.Title, "Refine: Build auth system")
@@ -1308,7 +1308,7 @@ description = "First pass."
 	if err == nil {
 		t.Fatal("ManifestFormula() expected error for expansion without parent")
 	}
-	if !strings.Contains(err.Error(), "requires a parent work item") {
+	if !strings.Contains(err.Error(), "requires a parent writ") {
 		t.Errorf("error: got %q", err.Error())
 	}
 }
@@ -1417,9 +1417,9 @@ func TestManifestFormulaWithExistingParent(t *testing.T) {
 	os.WriteFile(filepath.Join(formulaDir, "steps", "only.md"), []byte("Do the thing."), 0o644)
 
 	// Create parent first.
-	parentID, err := ws.CreateWorkItem("Parent item", "Top-level work", "operator", 2, nil)
+	parentID, err := ws.CreateWrit("Parent item", "Top-level work", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem() error: %v", err)
+		t.Fatalf("CreateWrit() error: %v", err)
 	}
 
 	result, err := ManifestFormula(ws, ss, ManifestOpts{
@@ -1439,9 +1439,9 @@ func TestManifestFormulaWithExistingParent(t *testing.T) {
 	}
 
 	// Verify child's parent.
-	child, err := ws.GetWorkItem(result.ChildIDs["only-step"])
+	child, err := ws.GetWrit(result.ChildIDs["only-step"])
 	if err != nil {
-		t.Fatalf("GetWorkItem() error: %v", err)
+		t.Fatalf("GetWrit() error: %v", err)
 	}
 	if child.ParentID != parentID {
 		t.Errorf("child parent_id: got %q, want %q", child.ParentID, parentID)
@@ -1808,15 +1808,15 @@ func TestManifestFormulaConvoy(t *testing.T) {
 		t.Fatalf("ChildIDs: got %d, want 3", len(result.ChildIDs))
 	}
 
-	// Verify leg work items.
+	// Verify leg writs.
 	for _, leg := range testLegs() {
 		childID, ok := result.ChildIDs[leg.ID]
 		if !ok {
 			t.Fatalf("missing child for leg %q", leg.ID)
 		}
-		item, err := ws.GetWorkItem(childID)
+		item, err := ws.GetWrit(childID)
 		if err != nil {
-			t.Fatalf("GetWorkItem(%q) error: %v", childID, err)
+			t.Fatalf("GetWrit(%q) error: %v", childID, err)
 		}
 		if item.Title != leg.Title {
 			t.Errorf("leg %q title: got %q, want %q", leg.ID, item.Title, leg.Title)
@@ -1830,14 +1830,14 @@ func TestManifestFormulaConvoy(t *testing.T) {
 		}
 	}
 
-	// Verify synthesis work item.
+	// Verify synthesis writ.
 	synthID, ok := result.ChildIDs["synthesis"]
 	if !ok {
 		t.Fatal("missing child for synthesis")
 	}
-	synthItem, err := ws.GetWorkItem(synthID)
+	synthItem, err := ws.GetWrit(synthID)
 	if err != nil {
-		t.Fatalf("GetWorkItem(synthesis) error: %v", err)
+		t.Fatalf("GetWrit(synthesis) error: %v", err)
 	}
 	if synthItem.Title != "Consolidate Findings" {
 		t.Errorf("synthesis title: got %q, want %q", synthItem.Title, "Consolidate Findings")
@@ -1903,11 +1903,11 @@ func TestManifestFormulaConvoy(t *testing.T) {
 	// Verify caravan item phases match.
 	itemPhases := make(map[string]int)
 	for _, ci := range items {
-		itemPhases[ci.WorkItemID] = ci.Phase
+		itemPhases[ci.WritID] = ci.Phase
 	}
-	for formulaID, workItemID := range result.ChildIDs {
+	for formulaID, writID := range result.ChildIDs {
 		expectedPhase := result.Phases[formulaID]
-		gotPhase := itemPhases[workItemID]
+		gotPhase := itemPhases[writID]
 		if gotPhase != expectedPhase {
 			t.Errorf("caravan item phase for %q: got %d, want %d", formulaID, gotPhase, expectedPhase)
 		}
@@ -1955,9 +1955,9 @@ func TestConvoyLifecycle(t *testing.T) {
 	// Verify convoy-leg labels on leg items.
 	for _, leg := range legs {
 		childID := result.ChildIDs[leg.ID]
-		item, err := ws.GetWorkItem(childID)
+		item, err := ws.GetWrit(childID)
 		if err != nil {
-			t.Fatalf("GetWorkItem(%q) error: %v", childID, err)
+			t.Fatalf("GetWrit(%q) error: %v", childID, err)
 		}
 		if !item.HasLabel("convoy-leg") {
 			t.Errorf("leg %q missing convoy-leg label", leg.ID)
@@ -1969,14 +1969,14 @@ func TestConvoyLifecycle(t *testing.T) {
 
 	// Verify convoy-synthesis label and enriched description on synthesis item.
 	synthID := result.ChildIDs["synthesis"]
-	synthItem, err := ws.GetWorkItem(synthID)
+	synthItem, err := ws.GetWrit(synthID)
 	if err != nil {
-		t.Fatalf("GetWorkItem(synthesis) error: %v", err)
+		t.Fatalf("GetWrit(synthesis) error: %v", err)
 	}
 	if !synthItem.HasLabel("convoy-synthesis") {
 		t.Error("synthesis missing convoy-synthesis label")
 	}
-	// Synthesis description should reference all leg work items.
+	// Synthesis description should reference all leg writs.
 	for _, leg := range legs {
 		legItemID := result.ChildIDs[leg.ID]
 		if !strings.Contains(synthItem.Description, legItemID) {
@@ -2009,18 +2009,18 @@ func TestConvoyLifecycle(t *testing.T) {
 	// All legs should be ready (phase 0, no dependencies).
 	// Synthesis should NOT be ready (phase 1, legs not yet closed).
 	for _, s := range statuses {
-		if s.WorkItemID == synthID {
+		if s.WritID == synthID {
 			if s.Ready {
 				t.Error("synthesis should not be ready before legs are merged")
 			}
 		} else {
 			if !s.Ready {
-				t.Errorf("leg %s should be ready", s.WorkItemID)
+				t.Errorf("leg %s should be ready", s.WritID)
 			}
 		}
 	}
 
-	// --- Phase 3: Simulate leg merges (close leg work items) ---
+	// --- Phase 3: Simulate leg merges (close leg writs) ---
 	// Close legs one at a time and verify synthesis stays blocked until all are done.
 	for i, leg := range legs {
 		legItemID := result.ChildIDs[leg.ID]
@@ -2028,8 +2028,8 @@ func TestConvoyLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatalf("OpenWorld() error: %v", err)
 		}
-		if err := ws2.CloseWorkItem(legItemID); err != nil {
-			t.Fatalf("CloseWorkItem(%q) error: %v", legItemID, err)
+		if err := ws2.CloseWrit(legItemID); err != nil {
+			t.Fatalf("CloseWrit(%q) error: %v", legItemID, err)
 		}
 		ws2.Close()
 
@@ -2039,7 +2039,7 @@ func TestConvoyLifecycle(t *testing.T) {
 		}
 
 		for _, s := range statuses {
-			if s.WorkItemID == synthID {
+			if s.WritID == synthID {
 				if i < len(legs)-1 {
 					// Not all legs closed yet — synthesis should still be blocked.
 					if s.Ready {
@@ -2060,8 +2060,8 @@ func TestConvoyLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenWorld() error: %v", err)
 	}
-	if err := ws3.CloseWorkItem(synthID); err != nil {
-		t.Fatalf("CloseWorkItem(synthesis) error: %v", err)
+	if err := ws3.CloseWrit(synthID); err != nil {
+		t.Fatalf("CloseWrit(synthesis) error: %v", err)
 	}
 	ws3.Close()
 

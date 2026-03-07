@@ -9,8 +9,8 @@ import (
 func TestCreateMergeRequest(t *testing.T) {
 	s := setupWorld(t)
 
-	// Create a work item first (FK dependency).
-	itemID, err := s.CreateWorkItem("Test item", "A test work item", "operator", 2, nil)
+	// Create a writ first (FK dependency).
+	itemID, err := s.CreateWrit("Test item", "A test writ", "operator", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,8 +35,8 @@ func TestCreateMergeRequest(t *testing.T) {
 	if mr.ID != mrID {
 		t.Fatalf("expected ID %q, got %q", mrID, mr.ID)
 	}
-	if mr.WorkItemID != itemID {
-		t.Fatalf("expected work_item_id %q, got %q", itemID, mr.WorkItemID)
+	if mr.WritID != itemID {
+		t.Fatalf("expected writ_id %q, got %q", itemID, mr.WritID)
 	}
 	if mr.Branch != "outpost/Toast/"+itemID {
 		t.Fatalf("expected branch 'outpost/Toast/%s', got %q", itemID, mr.Branch)
@@ -64,10 +64,10 @@ func TestCreateMergeRequest(t *testing.T) {
 func TestListMergeRequests(t *testing.T) {
 	s := setupWorld(t)
 
-	// Create work items (FK dependency).
-	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 1, nil)
-	id2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
-	id3, _ := s.CreateWorkItem("Item 3", "", "operator", 3, nil)
+	// Create writs (FK dependency).
+	id1, _ := s.CreateWrit("Item 1", "", "operator", 1, nil)
+	id2, _ := s.CreateWrit("Item 2", "", "operator", 2, nil)
+	id3, _ := s.CreateWrit("Item 3", "", "operator", 3, nil)
 
 	// Create 3 MRs with different priorities.
 	s.CreateMergeRequest(id1, "branch1", 1)
@@ -111,8 +111,8 @@ func TestListMergeRequests(t *testing.T) {
 func TestClaimMergeRequest(t *testing.T) {
 	s := setupWorld(t)
 
-	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 1, nil)
-	id2, _ := s.CreateWorkItem("Item 2", "", "operator", 3, nil)
+	id1, _ := s.CreateWrit("Item 1", "", "operator", 1, nil)
+	id2, _ := s.CreateWrit("Item 2", "", "operator", 3, nil)
 
 	// Create 2 MRs: priority 1 and priority 3.
 	s.CreateMergeRequest(id1, "branch1", 1)
@@ -167,10 +167,10 @@ func TestClaimMergeRequest(t *testing.T) {
 func TestClaimMergeRequestOrdering(t *testing.T) {
 	s := setupWorld(t)
 
-	// Create 3 work items.
-	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
-	id2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
-	id3, _ := s.CreateWorkItem("Item 3", "", "operator", 2, nil)
+	// Create 3 writs.
+	id1, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
+	id2, _ := s.CreateWrit("Item 2", "", "operator", 2, nil)
+	id3, _ := s.CreateWrit("Item 3", "", "operator", 2, nil)
 
 	// Create 3 MRs with same priority — claim order should be FIFO.
 	mr1ID, _ := s.CreateMergeRequest(id1, "branch1", 2)
@@ -193,7 +193,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 	s := setupWorld(t)
 
 	// Create and claim a MR, then update to "merged".
-	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	itemID, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
 	s.ClaimMergeRequest("forge/Forge")
 
@@ -213,7 +213,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 	}
 
 	// Create another, claim, update to "failed" -> verify merged_at is nil.
-	itemID2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
+	itemID2, _ := s.CreateWrit("Item 2", "", "operator", 2, nil)
 	mrID2, _ := s.CreateMergeRequest(itemID2, "branch2", 2)
 	s.ClaimMergeRequest("forge/Forge")
 
@@ -233,7 +233,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 	}
 
 	// Create another, claim, update to "ready" -> verify claimed_by cleared.
-	itemID3, _ := s.CreateWorkItem("Item 3", "", "operator", 2, nil)
+	itemID3, _ := s.CreateWrit("Item 3", "", "operator", 2, nil)
 	mrID3, _ := s.CreateMergeRequest(itemID3, "branch3", 2)
 	s.ClaimMergeRequest("forge/Forge")
 
@@ -265,7 +265,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 func TestReleaseStaleClaims(t *testing.T) {
 	s := setupWorld(t)
 
-	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	itemID, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
 	s.ClaimMergeRequest("forge/Forge")
 
@@ -313,8 +313,8 @@ func TestReleaseStaleClaims(t *testing.T) {
 func TestReleaseStaleLeavesRecentClaims(t *testing.T) {
 	s := setupWorld(t)
 
-	itemID1, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
-	itemID2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
+	itemID1, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
+	itemID2, _ := s.CreateWrit("Item 2", "", "operator", 2, nil)
 	mrID1, _ := s.CreateMergeRequest(itemID1, "branch1", 2)
 	s.CreateMergeRequest(itemID2, "branch2", 2)
 
@@ -351,11 +351,11 @@ func TestReleaseStaleLeavesRecentClaims(t *testing.T) {
 	}
 }
 
-func TestListMergeRequestsByWorkItem(t *testing.T) {
+func TestListMergeRequestsByWrit(t *testing.T) {
 	s := setupWorld(t)
 
-	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
-	id2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
+	id1, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
+	id2, _ := s.CreateWrit("Item 2", "", "operator", 2, nil)
 
 	// Create MRs: 2 for id1, 1 for id2.
 	mr1ID, _ := s.CreateMergeRequest(id1, "branch1a", 2)
@@ -367,16 +367,16 @@ func TestListMergeRequestsByWorkItem(t *testing.T) {
 	s.UpdateMergeRequestPhase(mr1ID, "failed")
 
 	// List all for id1.
-	mrs, err := s.ListMergeRequestsByWorkItem(id1, "")
+	mrs, err := s.ListMergeRequestsByWrit(id1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(mrs) != 2 {
-		t.Fatalf("expected 2 MRs for work item, got %d", len(mrs))
+		t.Fatalf("expected 2 MRs for writ, got %d", len(mrs))
 	}
 
 	// List only failed for id1.
-	failed, err := s.ListMergeRequestsByWorkItem(id1, "failed")
+	failed, err := s.ListMergeRequestsByWrit(id1, "failed")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,7 +388,7 @@ func TestListMergeRequestsByWorkItem(t *testing.T) {
 	}
 
 	// List only ready for id1.
-	ready, err := s.ListMergeRequestsByWorkItem(id1, "ready")
+	ready, err := s.ListMergeRequestsByWrit(id1, "ready")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,19 +400,19 @@ func TestListMergeRequestsByWorkItem(t *testing.T) {
 	}
 
 	// List for id2 — should only get 1.
-	mrs2, err := s.ListMergeRequestsByWorkItem(id2, "")
+	mrs2, err := s.ListMergeRequestsByWrit(id2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(mrs2) != 1 {
-		t.Fatalf("expected 1 MR for work item 2, got %d", len(mrs2))
+		t.Fatalf("expected 1 MR for writ 2, got %d", len(mrs2))
 	}
 }
 
 func TestSupersededPhase(t *testing.T) {
 	s := setupWorld(t)
 
-	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	itemID, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
 
 	// Transition to superseded.
@@ -445,7 +445,7 @@ func TestGetMergeRequestNotFound(t *testing.T) {
 func TestBlockAndUnblockMergeRequest(t *testing.T) {
 	s := setupWorld(t)
 
-	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	itemID, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
 
 	// Block the MR.
@@ -486,8 +486,8 @@ func TestBlockAndUnblockMergeRequest(t *testing.T) {
 func TestClaimSkipsBlockedMRs(t *testing.T) {
 	s := setupWorld(t)
 
-	id1, _ := s.CreateWorkItem("Item 1", "", "operator", 1, nil)
-	id2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
+	id1, _ := s.CreateWrit("Item 1", "", "operator", 1, nil)
+	id2, _ := s.CreateWrit("Item 2", "", "operator", 2, nil)
 	mr1ID, _ := s.CreateMergeRequest(id1, "branch1", 1) // Higher priority.
 	mr2ID, _ := s.CreateMergeRequest(id2, "branch2", 2)
 
@@ -510,7 +510,7 @@ func TestClaimSkipsBlockedMRs(t *testing.T) {
 func TestFindMergeRequestByBlocker(t *testing.T) {
 	s := setupWorld(t)
 
-	itemID, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
+	itemID, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
 
 	// No blocker yet.
@@ -549,12 +549,12 @@ func TestV3Migration(t *testing.T) {
 	if err := s.DB().QueryRow("SELECT version FROM schema_version").Scan(&v); err != nil {
 		t.Fatalf("failed to get schema version: %v", err)
 	}
-	if v != 7 {
-		t.Errorf("schema version = %d, want 7", v)
+	if v != CurrentWorldSchema {
+		t.Errorf("schema version = %d, want %d", v, CurrentWorldSchema)
 	}
 
 	// Verify blocked_by column exists.
-	itemID, _ := s.CreateWorkItem("Test", "", "operator", 2, nil)
+	itemID, _ := s.CreateWrit("Test", "", "operator", 2, nil)
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
 
 	// Should be able to block/unblock without error.

@@ -79,14 +79,14 @@ func (s *Store) ImportCaravan(id, name, status, owner, createdAt, closedAt strin
 }
 
 // ImportCaravanItem inserts a caravan item record.
-func (s *Store) ImportCaravanItem(caravanID, workItemID, world string, phase int) error {
+func (s *Store) ImportCaravanItem(caravanID, writID, world string, phase int) error {
 	_, err := s.db.Exec(
-		`INSERT OR IGNORE INTO caravan_items (caravan_id, work_item_id, world, phase)
+		`INSERT OR IGNORE INTO caravan_items (caravan_id, writ_id, world, phase)
 		 VALUES (?, ?, ?, ?)`,
-		caravanID, workItemID, world, phase,
+		caravanID, writID, world, phase,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to import caravan item %q in caravan %q: %w", workItemID, caravanID, err)
+		return fmt.Errorf("failed to import caravan item %q in caravan %q: %w", writID, caravanID, err)
 	}
 	return nil
 }

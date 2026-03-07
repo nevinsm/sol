@@ -87,8 +87,8 @@ func TestRemoveCaravanItem(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item after remove, got %d", len(items))
 	}
-	if items[0].WorkItemID != "sol-22222222" {
-		t.Fatalf("expected remaining item sol-22222222, got %s", items[0].WorkItemID)
+	if items[0].WritID != "sol-22222222" {
+		t.Fatalf("expected remaining item sol-22222222, got %s", items[0].WritID)
 	}
 }
 
@@ -161,15 +161,15 @@ func TestCheckCaravanReadiness(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	// Create a world store with work items.
+	// Create a world store with writs.
 	worldStore, err := OpenWorld("ember")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	idA, _ := worldStore.CreateWorkItem("Item A", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWorkItem("Item B", "", "operator", 2, nil)
-	idC, _ := worldStore.CreateWorkItem("Item C", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Item A", "", "operator", 2, nil)
+	idB, _ := worldStore.CreateWrit("Item B", "", "operator", 2, nil)
+	idC, _ := worldStore.CreateWrit("Item C", "", "operator", 2, nil)
 
 	// A depends on B; C has no deps.
 	worldStore.AddDependency(idA, idB)
@@ -192,7 +192,7 @@ func TestCheckCaravanReadiness(t *testing.T) {
 
 	statusMap := map[string]CaravanItemStatus{}
 	for _, st := range statuses {
-		statusMap[st.WorkItemID] = st
+		statusMap[st.WritID] = st
 	}
 
 	// A depends on B (open) → not ready.
@@ -215,7 +215,7 @@ func TestCheckCaravanReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worldStore2.UpdateWorkItem(idB, WorkItemUpdates{Status: "done"})
+	worldStore2.UpdateWrit(idB, WritUpdates{Status: "done"})
 	worldStore2.Close()
 
 	statuses2, err := sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
@@ -224,7 +224,7 @@ func TestCheckCaravanReadiness(t *testing.T) {
 	}
 	statusMap2 := map[string]CaravanItemStatus{}
 	for _, st := range statuses2 {
-		statusMap2[st.WorkItemID] = st
+		statusMap2[st.WritID] = st
 	}
 	if statusMap2[idA].Ready {
 		t.Fatalf("expected item A to NOT be ready after B is done (not closed)")
@@ -235,7 +235,7 @@ func TestCheckCaravanReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worldStore3.CloseWorkItem(idB)
+	worldStore3.CloseWrit(idB)
 	worldStore3.Close()
 
 	statuses3, err := sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
@@ -244,7 +244,7 @@ func TestCheckCaravanReadiness(t *testing.T) {
 	}
 	statusMap3 := map[string]CaravanItemStatus{}
 	for _, st := range statuses3 {
-		statusMap3[st.WorkItemID] = st
+		statusMap3[st.WritID] = st
 	}
 	if !statusMap3[idA].Ready {
 		t.Fatalf("expected item A to be ready after B is closed (merged)")
@@ -267,8 +267,8 @@ func TestTryCloseCaravan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWorkItem("Item A", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWorkItem("Item B", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Item A", "", "operator", 2, nil)
+	idB, _ := worldStore.CreateWrit("Item B", "", "operator", 2, nil)
 	worldStore.Close()
 
 	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "operator")
@@ -289,8 +289,8 @@ func TestTryCloseCaravan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worldStore2.CloseWorkItem(idA)
-	worldStore2.CloseWorkItem(idB)
+	worldStore2.CloseWrit(idA)
+	worldStore2.CloseWrit(idB)
 	worldStore2.Close()
 
 	// All closed → caravan auto-closed.
@@ -330,8 +330,8 @@ func TestTryCloseCaravanDoneNotSufficient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWorkItem("Item A", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWorkItem("Item B", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Item A", "", "operator", 2, nil)
+	idB, _ := worldStore.CreateWrit("Item B", "", "operator", 2, nil)
 	worldStore.Close()
 
 	caravanID, _ := sphereStore.CreateCaravan("test-done-not-closed", "operator")
@@ -343,8 +343,8 @@ func TestTryCloseCaravanDoneNotSufficient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws.UpdateWorkItem(idA, WorkItemUpdates{Status: "done"})
-	ws.UpdateWorkItem(idB, WorkItemUpdates{Status: "done"})
+	ws.UpdateWrit(idA, WritUpdates{Status: "done"})
+	ws.UpdateWrit(idB, WritUpdates{Status: "done"})
 	ws.Close()
 
 	// done is NOT sufficient to close caravan.
@@ -361,8 +361,8 @@ func TestTryCloseCaravanDoneNotSufficient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws2.CloseWorkItem(idA)
-	ws2.CloseWorkItem(idB)
+	ws2.CloseWrit(idA)
+	ws2.CloseWrit(idB)
 	ws2.Close()
 
 	// Now caravan should close.
@@ -378,13 +378,13 @@ func TestTryCloseCaravanDoneNotSufficient(t *testing.T) {
 func TestSphereSchemaV4(t *testing.T) {
 	s := setupSphere(t)
 
-	// Verify the schema version is 8.
+	// Verify the schema version is latest.
 	var v int
 	if err := s.DB().QueryRow("SELECT version FROM schema_version").Scan(&v); err != nil {
 		t.Fatalf("failed to get schema version: %v", err)
 	}
-	if v != 8 {
-		t.Errorf("schema version = %d, want 8", v)
+	if v != CurrentSphereSchema {
+		t.Errorf("schema version = %d, want %d", v, CurrentSphereSchema)
 	}
 
 	// Verify caravan tables exist (including caravan_dependencies).
@@ -437,13 +437,13 @@ func TestCaravanPhaseReadiness(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	// Create work items in world.
+	// Create writs in world.
 	worldStore, err := OpenWorld("ember")
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWorkItem("Phase 0 item", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWorkItem("Phase 1 item", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Phase 0 item", "", "operator", 2, nil)
+	idB, _ := worldStore.CreateWrit("Phase 1 item", "", "operator", 2, nil)
 	worldStore.Close()
 
 	// Create caravan: A in phase 0, B in phase 1.
@@ -458,7 +458,7 @@ func TestCaravanPhaseReadiness(t *testing.T) {
 	}
 	statusMap := map[string]CaravanItemStatus{}
 	for _, st := range statuses {
-		statusMap[st.WorkItemID] = st
+		statusMap[st.WritID] = st
 	}
 	if !statusMap[idA].Ready {
 		t.Fatal("expected phase 0 item A to be ready")
@@ -472,7 +472,7 @@ func TestCaravanPhaseReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worldStore2.UpdateWorkItem(idA, WorkItemUpdates{Status: "done"})
+	worldStore2.UpdateWrit(idA, WritUpdates{Status: "done"})
 	worldStore2.Close()
 
 	statuses2, err := sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
@@ -481,7 +481,7 @@ func TestCaravanPhaseReadiness(t *testing.T) {
 	}
 	statusMap2 := map[string]CaravanItemStatus{}
 	for _, st := range statuses2 {
-		statusMap2[st.WorkItemID] = st
+		statusMap2[st.WritID] = st
 	}
 	if statusMap2[idB].Ready {
 		t.Fatal("expected phase 1 item B to NOT be ready after phase 0 done (not closed)")
@@ -492,7 +492,7 @@ func TestCaravanPhaseReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worldStore3.CloseWorkItem(idA)
+	worldStore3.CloseWrit(idA)
 	worldStore3.Close()
 
 	statuses3, err := sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
@@ -501,7 +501,7 @@ func TestCaravanPhaseReadiness(t *testing.T) {
 	}
 	statusMap3 := map[string]CaravanItemStatus{}
 	for _, st := range statuses3 {
-		statusMap3[st.WorkItemID] = st
+		statusMap3[st.WritID] = st
 	}
 	if !statusMap3[idB].Ready {
 		t.Fatal("expected phase 1 item B to be ready after phase 0 closed")
@@ -523,9 +523,9 @@ func TestCaravanPhaseMultiple(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWorkItem("Phase 0", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWorkItem("Phase 1", "", "operator", 2, nil)
-	idC, _ := worldStore.CreateWorkItem("Phase 2", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Phase 0", "", "operator", 2, nil)
+	idB, _ := worldStore.CreateWrit("Phase 1", "", "operator", 2, nil)
+	idC, _ := worldStore.CreateWrit("Phase 2", "", "operator", 2, nil)
 	worldStore.Close()
 
 	caravanID, _ := sphereStore.CreateCaravan("multi-phase", "operator")
@@ -540,7 +540,7 @@ func TestCaravanPhaseMultiple(t *testing.T) {
 	}
 	sm := map[string]CaravanItemStatus{}
 	for _, st := range statuses {
-		sm[st.WorkItemID] = st
+		sm[st.WritID] = st
 	}
 	if !sm[idA].Ready {
 		t.Fatal("expected phase 0 item ready")
@@ -554,13 +554,13 @@ func TestCaravanPhaseMultiple(t *testing.T) {
 
 	// Close phase 0 (merged) → phase 1 becomes ready, phase 2 still not.
 	ws, _ := OpenWorld("ember")
-	ws.CloseWorkItem(idA)
+	ws.CloseWrit(idA)
 	ws.Close()
 
 	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
 	sm = map[string]CaravanItemStatus{}
 	for _, st := range statuses {
-		sm[st.WorkItemID] = st
+		sm[st.WritID] = st
 	}
 	if !sm[idB].Ready {
 		t.Fatal("expected phase 1 item ready after phase 0 closed")
@@ -571,13 +571,13 @@ func TestCaravanPhaseMultiple(t *testing.T) {
 
 	// Close phase 1 (merged) → phase 2 becomes ready.
 	ws, _ = OpenWorld("ember")
-	ws.CloseWorkItem(idB)
+	ws.CloseWrit(idB)
 	ws.Close()
 
 	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
 	sm = map[string]CaravanItemStatus{}
 	for _, st := range statuses {
-		sm[st.WorkItemID] = st
+		sm[st.WritID] = st
 	}
 	if !sm[idC].Ready {
 		t.Fatal("expected phase 2 item ready after phase 1 closed")
@@ -600,15 +600,15 @@ func TestCaravanPhaseMixedWorlds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := alphaStore.CreateWorkItem("Alpha item", "", "operator", 2, nil)
+	idA, _ := alphaStore.CreateWrit("Alpha item", "", "operator", 2, nil)
 	alphaStore.Close()
 
 	betaStore, err := OpenWorld("beta")
 	if err != nil {
 		t.Fatal(err)
 	}
-	idB, _ := betaStore.CreateWorkItem("Beta item phase 0", "", "operator", 2, nil)
-	idC, _ := betaStore.CreateWorkItem("Beta item phase 1", "", "operator", 2, nil)
+	idB, _ := betaStore.CreateWrit("Beta item phase 0", "", "operator", 2, nil)
+	idC, _ := betaStore.CreateWrit("Beta item phase 1", "", "operator", 2, nil)
 	betaStore.Close()
 
 	// A (alpha, phase 0), B (beta, phase 0), C (beta, phase 1).
@@ -624,7 +624,7 @@ func TestCaravanPhaseMixedWorlds(t *testing.T) {
 	}
 	sm := map[string]CaravanItemStatus{}
 	for _, st := range statuses {
-		sm[st.WorkItemID] = st
+		sm[st.WritID] = st
 	}
 	if !sm[idA].Ready {
 		t.Fatal("expected alpha phase 0 item ready")
@@ -638,13 +638,13 @@ func TestCaravanPhaseMixedWorlds(t *testing.T) {
 
 	// Close only A (alpha phase 0). C still not ready because B (beta phase 0) is open.
 	as, _ := OpenWorld("alpha")
-	as.CloseWorkItem(idA)
+	as.CloseWrit(idA)
 	as.Close()
 
 	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
 	sm = map[string]CaravanItemStatus{}
 	for _, st := range statuses {
-		sm[st.WorkItemID] = st
+		sm[st.WritID] = st
 	}
 	if sm[idC].Ready {
 		t.Fatal("expected phase 1 item NOT ready (B in phase 0 still open)")
@@ -652,13 +652,13 @@ func TestCaravanPhaseMixedWorlds(t *testing.T) {
 
 	// Close B → C becomes ready (all phase 0 items closed across worlds).
 	bs, _ := OpenWorld("beta")
-	bs.CloseWorkItem(idB)
+	bs.CloseWrit(idB)
 	bs.Close()
 
 	statuses, _ = sphereStore.CheckCaravanReadiness(caravanID, OpenWorld)
 	sm = map[string]CaravanItemStatus{}
 	for _, st := range statuses {
-		sm[st.WorkItemID] = st
+		sm[st.WritID] = st
 	}
 	if !sm[idC].Ready {
 		t.Fatal("expected phase 1 item ready after all phase 0 closed")
@@ -681,7 +681,7 @@ func TestUpdateCaravanItemPhase(t *testing.T) {
 	items, _ := s.ListCaravanItems(caravanID)
 	phaseMap := map[string]int{}
 	for _, item := range items {
-		phaseMap[item.WorkItemID] = item.Phase
+		phaseMap[item.WritID] = item.Phase
 	}
 	if phaseMap["sol-0000000000000001"] != 2 {
 		t.Fatalf("expected phase 2, got %d", phaseMap["sol-0000000000000001"])
@@ -721,7 +721,7 @@ func TestUpdateAllCaravanItemPhases(t *testing.T) {
 	items, _ := s.ListCaravanItems(caravanID)
 	for _, item := range items {
 		if item.Phase != 5 {
-			t.Fatalf("expected phase 5 for %s, got %d", item.WorkItemID, item.Phase)
+			t.Fatalf("expected phase 5 for %s, got %d", item.WritID, item.Phase)
 		}
 	}
 }

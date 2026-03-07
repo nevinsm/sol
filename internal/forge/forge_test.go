@@ -19,7 +19,7 @@ import (
 type mockWorldStore struct {
 	mu            sync.Mutex
 	mrs           []store.MergeRequest
-	items         map[string]*store.WorkItem
+	items         map[string]*store.Writ
 	claims        []string // IDs of claimed MRs
 	phaseUpdates  map[string]string
 	staleReleased int
@@ -27,7 +27,7 @@ type mockWorldStore struct {
 
 func newMockWorldStore() *mockWorldStore {
 	return &mockWorldStore{
-		items:        make(map[string]*store.WorkItem),
+		items:        make(map[string]*store.Writ),
 		phaseUpdates: make(map[string]string),
 	}
 }
@@ -83,22 +83,22 @@ func (m *mockWorldStore) ReleaseStaleClaims(ttl time.Duration) (int, error) {
 	return count, nil
 }
 
-func (m *mockWorldStore) GetWorkItem(id string) (*store.WorkItem, error) {
+func (m *mockWorldStore) GetWrit(id string) (*store.Writ, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	item, ok := m.items[id]
 	if !ok {
-		return nil, fmt.Errorf("work item %q not found", id)
+		return nil, fmt.Errorf("writ %q not found", id)
 	}
 	return item, nil
 }
 
-func (m *mockWorldStore) UpdateWorkItem(id string, updates store.WorkItemUpdates) error {
+func (m *mockWorldStore) UpdateWrit(id string, updates store.WritUpdates) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	item, ok := m.items[id]
 	if !ok {
-		return fmt.Errorf("work item %q not found", id)
+		return fmt.Errorf("writ %q not found", id)
 	}
 	if updates.Status != "" {
 		item.Status = updates.Status
@@ -121,12 +121,12 @@ func (m *mockWorldStore) ListMergeRequests(phase string) ([]store.MergeRequest, 
 	return result, nil
 }
 
-func (m *mockWorldStore) ListMergeRequestsByWorkItem(workItemID, phase string) ([]store.MergeRequest, error) {
+func (m *mockWorldStore) ListMergeRequestsByWrit(writID, phase string) ([]store.MergeRequest, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []store.MergeRequest
 	for _, mr := range m.mrs {
-		if mr.WorkItemID != workItemID {
+		if mr.WritID != writID {
 			continue
 		}
 		if phase != "" && mr.Phase != phase {
@@ -175,11 +175,11 @@ func (m *mockWorldStore) FindMergeRequestByBlocker(blockerID string) (*store.Mer
 	return nil, nil
 }
 
-func (m *mockWorldStore) CreateWorkItemWithOpts(opts store.CreateWorkItemOpts) (string, error) {
+func (m *mockWorldStore) CreateWritWithOpts(opts store.CreateWritOpts) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	id := fmt.Sprintf("sol-%08x", len(m.items))
-	m.items[id] = &store.WorkItem{
+	m.items[id] = &store.Writ{
 		ID:        id,
 		Title:     opts.Title,
 		Status:    "open",
@@ -191,12 +191,12 @@ func (m *mockWorldStore) CreateWorkItemWithOpts(opts store.CreateWorkItemOpts) (
 	return id, nil
 }
 
-func (m *mockWorldStore) CloseWorkItem(id string) error {
+func (m *mockWorldStore) CloseWrit(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	item, ok := m.items[id]
 	if !ok {
-		return fmt.Errorf("work item %q not found", id)
+		return fmt.Errorf("writ %q not found", id)
 	}
 	item.Status = "closed"
 	return nil
@@ -297,7 +297,7 @@ func (m *mockSphereStore) ResolveEscalation(id string) error {
 	return fmt.Errorf("escalation %q not found", id)
 }
 
-func (m *mockSphereStore) IsWorkItemBlockedByCaravanDeps(workItemID string) (bool, []string, error) {
+func (m *mockSphereStore) IsWritBlockedByCaravanDeps(writID string) (bool, []string, error) {
 	return false, nil, nil
 }
 

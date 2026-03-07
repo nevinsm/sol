@@ -42,7 +42,7 @@ import (
 //go:embed defaults/idea-to-plan/steps/02-review-requirements.md
 //go:embed defaults/idea-to-plan/steps/03-explore-design.md
 //go:embed defaults/idea-to-plan/steps/04-review-plan.md
-//go:embed defaults/idea-to-plan/steps/05-create-work-items.md
+//go:embed defaults/idea-to-plan/steps/05-create-writs.md
 //go:embed defaults/idea-to-plan/steps/06-summarize.md
 //go:embed defaults/deep-scan/manifest.toml
 //go:embed defaults/deep-scan/steps/01-orient.md

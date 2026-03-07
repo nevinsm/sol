@@ -10,7 +10,7 @@ var version = "0.1.0"
 // Command group IDs for sol help output.
 const (
 	groupDispatch      = "dispatch"
-	groupWorkItems     = "work-items"
+	groupWrits     = "writs"
 	groupAgents        = "agents"
 	groupProcesses     = "processes"
 	groupCommunication = "communication"
@@ -21,7 +21,7 @@ const (
 func init() {
 	rootCmd.AddGroup(
 		&cobra.Group{ID: groupDispatch, Title: "Dispatch:"},
-		&cobra.Group{ID: groupWorkItems, Title: "Work Items:"},
+		&cobra.Group{ID: groupWrits, Title: "Writs:"},
 		&cobra.Group{ID: groupAgents, Title: "Agents & Sessions:"},
 		&cobra.Group{ID: groupProcesses, Title: "Processes:"},
 		&cobra.Group{ID: groupCommunication, Title: "Communication:"},

@@ -24,7 +24,7 @@ func TestCastUsesConfigSourceRepo(t *testing.T) {
 		t.Fatalf("world init failed: %v: %s", err, out)
 	}
 
-	// Create a work item.
+	// Create a writ.
 	itemID, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=test cast config")
 	if err != nil {
 		t.Fatalf("store create failed: %v: %s", err, itemID)
@@ -61,7 +61,7 @@ func TestDispatchCapacityEnforced(t *testing.T) {
 		"agents": "capacity = 1",
 	})
 
-	// Create 2 work items.
+	// Create 2 writs.
 	item1, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=item 1")
 	if err != nil {
 		t.Fatalf("store create 1 failed: %v: %s", err, item1)

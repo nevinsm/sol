@@ -92,7 +92,7 @@ var docSections = []docSection{
 		paths:   []string{"agent create", "agent list", "agent reset", "agent postmortem", "agent history", "agent handoffs", "agent stats"},
 	},
 	{
-		heading: "Store (Work Items)",
+		heading: "Store (Writs)",
 		paths:   []string{"store create", "store status", "store list", "store update", "store close", "store query"},
 	},
 	{
@@ -158,7 +158,7 @@ var docSections = []docSection{
 		notes: "Sphere-scoped OTLP HTTP receiver on port 4318. Accepts `claude_code.api_request` log events from " +
 			"Claude Code agent sessions, extracts token counts (input, output, cache_read, cache_creation) and model, " +
 			"and writes `token_usage` records to the appropriate world database. Source agent identification via " +
-			"`OTEL_RESOURCE_ATTRIBUTES` (agent.name, world, work_item_id) injected at cast time.",
+			"`OTEL_RESOURCE_ATTRIBUTES` (agent.name, world, writ_id) injected at cast time.",
 	},
 	{
 		heading: "Workflows",
@@ -183,7 +183,7 @@ var docSections = []docSection{
 			"then cycles the session atomically using `tmux respawn-pane`. Safe for self-handoff (agent calling handoff on itself) " +
 			"and PreCompact auto-handoff — the old process is replaced without destroying the session. " +
 			"Each handoff emits a chronicle event with reason, session age, and role for observability. " +
-			"When reason is `compact`, the new session uses `--continue` and gets a lightweight prime that omits the full work item description.",
+			"When reason is `compact`, the new session uses `--continue` and gets a lightweight prime that omits the full writ description.",
 	},
 	{
 		heading: "Envoy (Persistent Human-Directed Agents)",

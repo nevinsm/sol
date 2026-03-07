@@ -28,7 +28,7 @@ func TestWorldCloneBasic(t *testing.T) {
 		t.Fatalf("world init failed: %v", err)
 	}
 
-	// Create work items in source.
+	// Create writs in source.
 	itemID, err := runGT(t, gtHome, "store", "create", "--world=source", "--title=Task One")
 	if err != nil {
 		t.Fatalf("store create failed: %v: %s", err, itemID)
@@ -68,16 +68,16 @@ func TestWorldCloneBasic(t *testing.T) {
 		t.Fatal("target.db not created")
 	}
 
-	// Verify work items were copied.
+	// Verify writs were copied.
 	targetStore, err := store.OpenWorld("target")
 	if err != nil {
 		t.Fatalf("open target store: %v", err)
 	}
 	defer targetStore.Close()
 
-	item, err := targetStore.GetWorkItem(itemID)
+	item, err := targetStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("get work item in target: %v", err)
+		t.Fatalf("get writ in target: %v", err)
 	}
 	if item.Title != "Task One" {
 		t.Errorf("expected title 'Task One', got %q", item.Title)

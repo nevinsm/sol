@@ -75,13 +75,13 @@ func TestCreateResolutionTask(t *testing.T) {
 	run(t, "git", "-C", repoDir, "commit", "--allow-empty", "-m", "init")
 
 	worldStore := newMockWorldStore()
-	worldStore.items["sol-original1"] = &store.WorkItem{
+	worldStore.items["sol-original1"] = &store.Writ{
 		ID:       "sol-original1",
 		Title:    "Add feature X",
 		Priority: 2,
 	}
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WorkItemID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: "claimed"},
 	}
 
 	r := &Forge{
@@ -95,7 +95,7 @@ func TestCreateResolutionTask(t *testing.T) {
 
 	mr := &store.MergeRequest{
 		ID:         "mr-00000001",
-		WorkItemID: "sol-original1",
+		WritID: "sol-original1",
 		Branch:     "outpost/Toast/sol-original1",
 		Phase:      "claimed",
 	}
@@ -144,8 +144,8 @@ func TestCheckUnblocked(t *testing.T) {
 		{ID: "mr-00000001", Phase: "ready", BlockedBy: "sol-resolved1"},
 		{ID: "mr-00000002", Phase: "ready", BlockedBy: "sol-pending1"},
 	}
-	worldStore.items["sol-resolved1"] = &store.WorkItem{ID: "sol-resolved1", Status: "closed"}
-	worldStore.items["sol-pending1"] = &store.WorkItem{ID: "sol-pending1", Status: "open"}
+	worldStore.items["sol-resolved1"] = &store.Writ{ID: "sol-resolved1", Status: "closed"}
+	worldStore.items["sol-pending1"] = &store.Writ{ID: "sol-pending1", Status: "open"}
 
 	r := &Forge{
 		world:      "ember",
@@ -181,12 +181,12 @@ func TestCheckUnblocked(t *testing.T) {
 	}
 }
 
-func TestMarkFailedReopensWorkItem(t *testing.T) {
+func TestMarkFailedReopensWrit(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
 	}
-	worldStore.items["sol-aaa11111"] = &store.WorkItem{
+	worldStore.items["sol-aaa11111"] = &store.Writ{
 		ID:       "sol-aaa11111",
 		Title:    "Test feature",
 		Status:   "done",
@@ -216,13 +216,13 @@ func TestMarkFailedReopensWorkItem(t *testing.T) {
 		t.Errorf("MR phase = %q, want 'failed'", phase)
 	}
 
-	// Verify work item reopened.
+	// Verify writ reopened.
 	item := worldStore.items["sol-aaa11111"]
 	if item.Status != "open" {
-		t.Errorf("work item status = %q, want 'open'", item.Status)
+		t.Errorf("writ status = %q, want 'open'", item.Status)
 	}
 	if item.Assignee != "" {
-		t.Errorf("work item assignee = %q, want empty (cleared)", item.Assignee)
+		t.Errorf("writ assignee = %q, want empty (cleared)", item.Assignee)
 	}
 
 	// Verify escalation created.
@@ -239,16 +239,16 @@ func TestMarkFailedReopensWorkItem(t *testing.T) {
 		t.Errorf("escalation source = %q, want 'ember/forge'", esc.source)
 	}
 	if !strings.Contains(esc.description, "sol-aaa11111") {
-		t.Errorf("escalation description should mention work item ID, got: %s", esc.description)
+		t.Errorf("escalation description should mention writ ID, got: %s", esc.description)
 	}
 }
 
-func TestMarkMergedClosesWorkItem(t *testing.T) {
+func TestMarkMergedClosesWrit(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
 	}
-	worldStore.items["sol-aaa11111"] = &store.WorkItem{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: "done"}
 
 	// Create a temp dir for git operations.
 	dir := t.TempDir()
@@ -275,32 +275,32 @@ func TestMarkMergedClosesWorkItem(t *testing.T) {
 		t.Errorf("MR phase = %q, want 'merged'", phase)
 	}
 
-	// Verify work item closed.
+	// Verify writ closed.
 	if worldStore.items["sol-aaa11111"].Status != "closed" {
-		t.Errorf("work item status = %q, want 'closed'", worldStore.items["sol-aaa11111"].Status)
+		t.Errorf("writ status = %q, want 'closed'", worldStore.items["sol-aaa11111"].Status)
 	}
 }
 
 func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-failed1", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "failed"},
-		{ID: "mr-failed2", WorkItemID: "sol-aaa11111", Branch: "outpost/Blaze/sol-aaa11111", Phase: "failed"},
-		{ID: "mr-merged1", WorkItemID: "sol-aaa11111", Branch: "outpost/Nova/sol-aaa11111", Phase: "claimed"},
-		{ID: "mr-other1", WorkItemID: "sol-bbb22222", Branch: "outpost/Toast/sol-bbb22222", Phase: "failed"}, // different work item
+		{ID: "mr-failed1", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "failed"},
+		{ID: "mr-failed2", WritID: "sol-aaa11111", Branch: "outpost/Blaze/sol-aaa11111", Phase: "failed"},
+		{ID: "mr-merged1", WritID: "sol-aaa11111", Branch: "outpost/Nova/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-other1", WritID: "sol-bbb22222", Branch: "outpost/Toast/sol-bbb22222", Phase: "failed"}, // different writ
 	}
-	worldStore.items["sol-aaa11111"] = &store.WorkItem{ID: "sol-aaa11111", Title: "Test", Status: "done"}
-	worldStore.items["sol-bbb22222"] = &store.WorkItem{ID: "sol-bbb22222", Title: "Other", Status: "done"}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+	worldStore.items["sol-bbb22222"] = &store.Writ{ID: "sol-bbb22222", Title: "Other", Status: "done"}
 
 	sphereStore := newMockSphereStore()
 	// Pre-create escalations for the failed MRs.
 	sphereStore.CreateEscalation("high", "ember/forge",
-		"Merge failed for MR mr-failed1 (branch outpost/Toast/sol-aaa11111, work item sol-aaa11111). Work item reopened for re-dispatch.")
+		"Merge failed for MR mr-failed1 (branch outpost/Toast/sol-aaa11111, writ sol-aaa11111). Work item reopened for re-dispatch.")
 	sphereStore.CreateEscalation("high", "ember/forge",
-		"Merge failed for MR mr-failed2 (branch outpost/Blaze/sol-aaa11111, work item sol-aaa11111). Work item reopened for re-dispatch.")
-	// Escalation for different work item — should NOT be resolved.
+		"Merge failed for MR mr-failed2 (branch outpost/Blaze/sol-aaa11111, writ sol-aaa11111). Work item reopened for re-dispatch.")
+	// Escalation for different writ — should NOT be resolved.
 	sphereStore.CreateEscalation("high", "ember/forge",
-		"Merge failed for MR mr-other1 (branch outpost/Toast/sol-bbb22222, work item sol-bbb22222). Work item reopened for re-dispatch.")
+		"Merge failed for MR mr-other1 (branch outpost/Toast/sol-bbb22222, writ sol-bbb22222). Work item reopened for re-dispatch.")
 
 	dir := t.TempDir()
 	run(t, "git", "init", dir)
@@ -335,9 +335,9 @@ func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 		t.Errorf("failed MR 2 phase = %q, want 'superseded'", phase)
 	}
 
-	// Verify MR from different work item is NOT superseded.
+	// Verify MR from different writ is NOT superseded.
 	if _, ok := worldStore.phaseUpdates["mr-other1"]; ok {
-		t.Error("MR for different work item should not be touched")
+		t.Error("MR for different writ should not be touched")
 	}
 
 	// Verify escalations for failed MRs are resolved.
@@ -351,7 +351,7 @@ func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 			t.Errorf("escalation for mr-failed2 status = %q, want 'resolved'", esc.status)
 		}
 		if strings.Contains(esc.description, "mr-other1") && esc.status == "resolved" {
-			t.Error("escalation for different work item should NOT be resolved")
+			t.Error("escalation for different writ should NOT be resolved")
 		}
 	}
 }
@@ -385,9 +385,9 @@ func TestMarkFailedNudgesGovernor(t *testing.T) {
 
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
 	}
-	worldStore.items["sol-aaa11111"] = &store.WorkItem{
+	worldStore.items["sol-aaa11111"] = &store.Writ{
 		ID: "sol-aaa11111", Title: "Test", Status: "done", Assignee: "Toast",
 	}
 
@@ -421,9 +421,9 @@ func TestReleaseNudgesPushRejected(t *testing.T) {
 
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed", Attempts: 1},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed", Attempts: 1},
 	}
-	worldStore.items["sol-aaa11111"] = &store.WorkItem{
+	worldStore.items["sol-aaa11111"] = &store.Writ{
 		ID: "sol-aaa11111", Title: "Test", Status: "done",
 	}
 
@@ -467,9 +467,9 @@ func TestReleaseMaxAttemptsMarksFailed(t *testing.T) {
 
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WorkItemID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed", Attempts: 3},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed", Attempts: 3},
 	}
-	worldStore.items["sol-aaa11111"] = &store.WorkItem{
+	worldStore.items["sol-aaa11111"] = &store.Writ{
 		ID: "sol-aaa11111", Title: "Test", Status: "done", Assignee: "Toast",
 	}
 
@@ -517,11 +517,11 @@ func TestCreateResolutionTaskNudgesGovernor(t *testing.T) {
 	run(t, "git", "-C", repoDir, "commit", "--allow-empty", "-m", "init")
 
 	worldStore := newMockWorldStore()
-	worldStore.items["sol-original1"] = &store.WorkItem{
+	worldStore.items["sol-original1"] = &store.Writ{
 		ID: "sol-original1", Title: "Add feature X", Priority: 2,
 	}
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WorkItemID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: "claimed"},
 	}
 
 	r := &Forge{
@@ -535,7 +535,7 @@ func TestCreateResolutionTaskNudgesGovernor(t *testing.T) {
 
 	mr := &store.MergeRequest{
 		ID:         "mr-00000001",
-		WorkItemID: "sol-original1",
+		WritID: "sol-original1",
 		Branch:     "outpost/Toast/sol-original1",
 		Phase:      "claimed",
 	}

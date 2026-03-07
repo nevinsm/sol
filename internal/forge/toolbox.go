@@ -53,9 +53,9 @@ func (r *Forge) ListReady() ([]store.MergeRequest, error) {
 			continue
 		}
 		// Check caravan-level dependencies.
-		blocked, _, err := r.sphereStore.IsWorkItemBlockedByCaravanDeps(mr.WorkItemID)
+		blocked, _, err := r.sphereStore.IsWritBlockedByCaravanDeps(mr.WritID)
 		if err != nil {
-			r.logger.Warn("failed to check caravan deps", "work_item", mr.WorkItemID, "error", err)
+			r.logger.Warn("failed to check caravan deps", "writ", mr.WritID, "error", err)
 			// On error, include the MR (fail open to avoid blocking the pipeline).
 			ready = append(ready, mr)
 			continue
@@ -77,9 +77,9 @@ func (r *Forge) ListCaravanBlocked() ([]store.MergeRequest, error) {
 	var blocked []store.MergeRequest
 	for _, mr := range all {
 		if mr.BlockedBy != "" {
-			continue // already blocked by work item, shown in ListBlocked
+			continue // already blocked by writ, shown in ListBlocked
 		}
-		isBlocked, _, err := r.sphereStore.IsWorkItemBlockedByCaravanDeps(mr.WorkItemID)
+		isBlocked, _, err := r.sphereStore.IsWritBlockedByCaravanDeps(mr.WritID)
 		if err != nil {
 			continue
 		}
@@ -132,14 +132,14 @@ func (r *Forge) Release(mrID string) (failed bool, err error) {
 	// Nudge governor about push rejection (best-effort).
 	r.nudgeGovernor("PUSH_REJECTED",
 		fmt.Sprintf("MR %s push rejected (attempt %d/%d)", mrID, mr.Attempts, r.cfg.MaxAttempts),
-		fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"attempts":%d,"max_attempts":%d}`,
-			mr.WorkItemID, mrID, mr.Branch, mr.Attempts, r.cfg.MaxAttempts))
+		fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"attempts":%d,"max_attempts":%d}`,
+			mr.WritID, mrID, mr.Branch, mr.Attempts, r.cfg.MaxAttempts))
 
 	return false, nil
 }
 
-// MarkMerged sets MR phase to merged, closes work item, deletes remote branch,
-// and supersedes any prior failed MRs for the same work item.
+// MarkMerged sets MR phase to merged, closes writ, deletes remote branch,
+// and supersedes any prior failed MRs for the same writ.
 func (r *Forge) MarkMerged(mrID string) error {
 	mr, err := r.worldStore.GetMergeRequest(mrID)
 	if err != nil {
@@ -150,8 +150,8 @@ func (r *Forge) MarkMerged(mrID string) error {
 		return fmt.Errorf("failed to mark MR as merged: %w", err)
 	}
 
-	if err := r.worldStore.CloseWorkItem(mr.WorkItemID); err != nil {
-		r.logger.Error("failed to close work item", "work_item", mr.WorkItemID, "error", err)
+	if err := r.worldStore.CloseWrit(mr.WritID); err != nil {
+		r.logger.Error("failed to close writ", "writ", mr.WritID, "error", err)
 	}
 
 	// Clean up remote branch (best-effort).
@@ -160,26 +160,26 @@ func (r *Forge) MarkMerged(mrID string) error {
 	// Clean up local branch (best-effort).
 	exec.Command("git", "-C", r.worktree, "branch", "-D", mr.Branch).Run()
 
-	// Supersede prior failed MRs for the same work item (best-effort).
-	r.supersedeFailed(mrID, mr.WorkItemID)
+	// Supersede prior failed MRs for the same writ (best-effort).
+	r.supersedeFailed(mrID, mr.WritID)
 
-	r.logger.Info("merged", "mr", mrID, "work_item", mr.WorkItemID, "branch", mr.Branch)
+	r.logger.Info("merged", "mr", mrID, "writ", mr.WritID, "branch", mr.Branch)
 
 	// Nudge governor that MR was merged (best-effort).
 	r.nudgeGovernor("MERGED",
 		fmt.Sprintf("MR %s merged", mrID),
-		fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
-			mr.WorkItemID, mrID, mr.Branch, r.workItemTitle(mr.WorkItemID)))
+		fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
+			mr.WritID, mrID, mr.Branch, r.writTitle(mr.WritID)))
 
 	return nil
 }
 
-// supersedeFailed transitions failed MRs for the same work item to "superseded",
+// supersedeFailed transitions failed MRs for the same writ to "superseded",
 // deletes their remote branches, and resolves their escalations.
-func (r *Forge) supersedeFailed(mergedMRID, workItemID string) {
-	failed, err := r.worldStore.ListMergeRequestsByWorkItem(workItemID, "failed")
+func (r *Forge) supersedeFailed(mergedMRID, writID string) {
+	failed, err := r.worldStore.ListMergeRequestsByWrit(writID, "failed")
 	if err != nil {
-		r.logger.Error("failed to list failed MRs for superseding", "work_item", workItemID, "error", err)
+		r.logger.Error("failed to list failed MRs for superseding", "writ", writID, "error", err)
 		return
 	}
 
@@ -228,7 +228,7 @@ func (r *Forge) resolveEscalationsForMR(mrID string) {
 	}
 }
 
-// MarkFailed sets MR phase to failed, reopens the work item for re-dispatch,
+// MarkFailed sets MR phase to failed, reopens the writ for re-dispatch,
 // and creates an escalation so the governor knows work needs attention.
 func (r *Forge) MarkFailed(mrID string) error {
 	mr, err := r.worldStore.GetMergeRequest(mrID)
@@ -240,31 +240,31 @@ func (r *Forge) MarkFailed(mrID string) error {
 		return fmt.Errorf("failed to mark MR as failed: %w", err)
 	}
 
-	// Reopen work item so it can be re-dispatched (best-effort).
-	if err := r.worldStore.UpdateWorkItem(mr.WorkItemID, store.WorkItemUpdates{
+	// Reopen writ so it can be re-dispatched (best-effort).
+	if err := r.worldStore.UpdateWrit(mr.WritID, store.WritUpdates{
 		Status:   "open",
 		Assignee: "-",
 	}); err != nil {
-		r.logger.Error("failed to reopen work item after merge failure",
-			"work_item", mr.WorkItemID, "error", err)
+		r.logger.Error("failed to reopen writ after merge failure",
+			"writ", mr.WritID, "error", err)
 	}
 
 	// Create escalation so the governor knows about the failure (best-effort).
-	desc := fmt.Sprintf("Merge failed for MR %s (branch %s, work item %s). Work item reopened for re-dispatch.",
-		mrID, mr.Branch, mr.WorkItemID)
+	desc := fmt.Sprintf("Merge failed for MR %s (branch %s, writ %s). Work item reopened for re-dispatch.",
+		mrID, mr.Branch, mr.WritID)
 	if _, err := r.sphereStore.CreateEscalation("high", r.agentID, desc); err != nil {
 		r.logger.Error("failed to create escalation for merge failure",
 			"mr", mrID, "error", err)
 	}
 
 	r.logger.Info("marked failed and reopened", "mr", mrID,
-		"work_item", mr.WorkItemID, "branch", mr.Branch)
+		"writ", mr.WritID, "branch", mr.Branch)
 
 	// Nudge governor that merge failed (best-effort).
 	r.nudgeGovernor("MERGE_FAILED",
 		fmt.Sprintf("MR %s merge failed", mrID),
-		fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"reason":"merge failed, work item reopened"}`,
-			mr.WorkItemID, mrID, mr.Branch))
+		fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"reason":"merge failed, writ reopened"}`,
+			mr.WritID, mrID, mr.Branch))
 
 	return nil
 }
@@ -274,13 +274,13 @@ func (r *Forge) GetMergeRequest(mrID string) (*store.MergeRequest, error) {
 	return r.worldStore.GetMergeRequest(mrID)
 }
 
-// CreateResolutionTask creates a conflict resolution work item, blocks the MR,
+// CreateResolutionTask creates a conflict resolution writ, blocks the MR,
 // and returns the new task ID.
 func (r *Forge) CreateResolutionTask(mr *store.MergeRequest) (string, error) {
-	// Get original work item for title.
-	item, err := r.worldStore.GetWorkItem(mr.WorkItemID)
+	// Get original writ for title.
+	item, err := r.worldStore.GetWrit(mr.WritID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get work item %q: %w", mr.WorkItemID, err)
+		return "", fmt.Errorf("failed to get writ %q: %w", mr.WritID, err)
 	}
 
 	// Get current target branch SHA.
@@ -301,7 +301,7 @@ func (r *Forge) CreateResolutionTask(mr *store.MergeRequest) (string, error) {
 
 Target branch: %s (SHA: %s)
 Original MR: %s
-Original work item: %s — %s
+Original writ: %s — %s
 
 Instructions:
 1. Rebase branch %s onto origin/%s
@@ -311,7 +311,7 @@ Instructions:
 		item.ID, item.Title,
 		mr.Branch, r.cfg.TargetBranch)
 
-	taskID, err := r.worldStore.CreateWorkItemWithOpts(store.CreateWorkItemOpts{
+	taskID, err := r.worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       fmt.Sprintf("Resolve merge conflicts: %s", item.Title),
 		Description: description,
 		CreatedBy:   r.world + "/forge",
@@ -333,8 +333,8 @@ Instructions:
 	// Nudge governor that MR is blocked on conflict resolution (best-effort).
 	r.nudgeGovernor("CONFLICT_BLOCKED",
 		fmt.Sprintf("MR %s blocked on conflict resolution", mr.ID),
-		fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"resolution_task_id":%q}`,
-			mr.WorkItemID, mr.ID, mr.Branch, taskID))
+		fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"resolution_task_id":%q}`,
+			mr.WritID, mr.ID, mr.Branch, taskID))
 
 	return taskID, nil
 }
@@ -351,9 +351,9 @@ func (r *Forge) CheckUnblocked() ([]string, error) {
 
 	var unblocked []string
 	for _, mr := range blocked {
-		item, err := r.worldStore.GetWorkItem(mr.BlockedBy)
+		item, err := r.worldStore.GetWrit(mr.BlockedBy)
 		if err != nil {
-			r.logger.Warn("failed to get blocker work item", "blocker", mr.BlockedBy, "error", err)
+			r.logger.Warn("failed to get blocker writ", "blocker", mr.BlockedBy, "error", err)
 			continue
 		}
 		if item.Status == "closed" {
@@ -380,9 +380,9 @@ func (r *Forge) TargetBranch() string { return r.cfg.TargetBranch }
 // QualityGates returns the configured quality gate commands.
 func (r *Forge) QualityGates() []string { return r.cfg.QualityGates }
 
-// GetWorkItem returns a work item by ID (convenience accessor).
-func (r *Forge) GetWorkItem(id string) (*store.WorkItem, error) {
-	return r.worldStore.GetWorkItem(id)
+// GetWrit returns a writ by ID (convenience accessor).
+func (r *Forge) GetWrit(id string) (*store.Writ, error) {
+	return r.worldStore.GetWrit(id)
 }
 
 // nudgeGovernor enqueues a message to the governor's nudge queue.
@@ -404,9 +404,9 @@ func (r *Forge) nudgeGovernor(msgType, subject, body string) {
 	}
 }
 
-// workItemTitle fetches the title of a work item, returning "" on error.
-func (r *Forge) workItemTitle(workItemID string) string {
-	item, err := r.worldStore.GetWorkItem(workItemID)
+// writTitle fetches the title of a writ, returning "" on error.
+func (r *Forge) writTitle(writID string) string {
+	item, err := r.worldStore.GetWrit(writID)
 	if err != nil {
 		return ""
 	}

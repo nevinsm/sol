@@ -59,7 +59,7 @@ func setupSolHome(t *testing.T) string {
 
 // mockDispatchResult holds a recorded dispatch call.
 type mockDispatchResult struct {
-	WorkItemID string
+	WritID string
 	World      string
 }
 
@@ -69,11 +69,11 @@ func newMockDispatchFunc(results *[]mockDispatchResult) DispatchFunc {
 	return func(opts dispatch.CastOpts, worldStore dispatch.WorldStore, sphereStore dispatch.SphereStore, mgr dispatch.SessionManager, logger *events.Logger) (*dispatch.CastResult, error) {
 		agentCounter++
 		*results = append(*results, mockDispatchResult{
-			WorkItemID: opts.WorkItemID,
+			WritID: opts.WritID,
 			World:      opts.World,
 		})
 		return &dispatch.CastResult{
-			WorkItemID:  opts.WorkItemID,
+			WritID:  opts.WritID,
 			AgentName:   "MockAgent",
 			SessionName: "sol-mock-session",
 			WorktreeDir: "/tmp/mock-worktree",
@@ -101,9 +101,9 @@ func TestRecoverStaleTethers(t *testing.T) {
 	// Create agents.
 	// Agent A: working, session dead, old timestamp → should be recovered.
 	sphereStore.CreateAgent("AgentA", worldName, "agent")
-	wiA, _ := worldStore.CreateWorkItem("task-a", "description a", "test", 1, nil)
+	wiA, _ := worldStore.CreateWrit("task-a", "description a", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/AgentA", "working", wiA)
-	worldStore.UpdateWorkItem(wiA, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/AgentA"})
+	worldStore.UpdateWrit(wiA, store.WritUpdates{Status: "tethered", Assignee: worldName + "/AgentA"})
 	tether.Write(worldName, "AgentA", wiA, "agent")
 
 	// Make Agent A's updated_at old (> 1 hour ago).
@@ -112,9 +112,9 @@ func TestRecoverStaleTethers(t *testing.T) {
 
 	// Agent B: working, session alive → should NOT be recovered.
 	sphereStore.CreateAgent("AgentB", worldName, "agent")
-	wiB, _ := worldStore.CreateWorkItem("task-b", "description b", "test", 1, nil)
+	wiB, _ := worldStore.CreateWrit("task-b", "description b", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/AgentB", "working", wiB)
-	worldStore.UpdateWorkItem(wiB, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/AgentB"})
+	worldStore.UpdateWrit(wiB, store.WritUpdates{Status: "tethered", Assignee: worldName + "/AgentB"})
 	tether.Write(worldName, "AgentB", wiB, "agent")
 
 	// Agent C: idle → should NOT be recovered.
@@ -151,15 +151,15 @@ func TestRecoverStaleTethers(t *testing.T) {
 		t.Errorf("AgentA tether_item = %q, want empty", agentA.TetherItem)
 	}
 
-	// Verify work item A is back to open.
+	// Verify writ A is back to open.
 	worldStore2, _ := store.OpenWorld(worldName)
 	defer worldStore2.Close()
-	itemA, _ := worldStore2.GetWorkItem(wiA)
+	itemA, _ := worldStore2.GetWrit(wiA)
 	if itemA.Status != "open" {
-		t.Errorf("work item A status = %q, want open", itemA.Status)
+		t.Errorf("writ A status = %q, want open", itemA.Status)
 	}
 	if itemA.Assignee != "" {
-		t.Errorf("work item A assignee = %q, want empty", itemA.Assignee)
+		t.Errorf("writ A assignee = %q, want empty", itemA.Assignee)
 	}
 
 	// Verify tether file was cleared.
@@ -198,16 +198,16 @@ func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
 
 	// Envoy: working, session dead, old timestamp → should be recovered.
 	sphereStore.CreateAgent("MyEnvoy", worldName, "envoy")
-	wiEnvoy, _ := worldStore.CreateWorkItem("task-envoy", "envoy work", "test", 1, nil)
+	wiEnvoy, _ := worldStore.CreateWrit("task-envoy", "envoy work", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/MyEnvoy", "working", wiEnvoy)
-	worldStore.UpdateWorkItem(wiEnvoy, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/MyEnvoy"})
+	worldStore.UpdateWrit(wiEnvoy, store.WritUpdates{Status: "tethered", Assignee: worldName + "/MyEnvoy"})
 	tether.Write(worldName, "MyEnvoy", wiEnvoy, "envoy")
 
 	// Governor: working, session dead, old timestamp → should be recovered.
 	sphereStore.CreateAgent("MyGovernor", worldName, "governor")
-	wiGov, _ := worldStore.CreateWorkItem("task-governor", "governor work", "test", 1, nil)
+	wiGov, _ := worldStore.CreateWrit("task-governor", "governor work", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/MyGovernor", "working", wiGov)
-	worldStore.UpdateWorkItem(wiGov, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/MyGovernor"})
+	worldStore.UpdateWrit(wiGov, store.WritUpdates{Status: "tethered", Assignee: worldName + "/MyGovernor"})
 	tether.Write(worldName, "MyGovernor", wiGov, "governor")
 
 	// Sentinel: working, session dead, old timestamp → should NOT be recovered.
@@ -258,17 +258,17 @@ func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
 		t.Errorf("governor tether_item = %q, want empty", gov.TetherItem)
 	}
 
-	// Verify work items are back to open.
+	// Verify writs are back to open.
 	worldStore2, _ := store.OpenWorld(worldName)
 	defer worldStore2.Close()
 
-	itemEnvoy, _ := worldStore2.GetWorkItem(wiEnvoy)
+	itemEnvoy, _ := worldStore2.GetWrit(wiEnvoy)
 	if itemEnvoy.Status != "open" {
-		t.Errorf("envoy work item status = %q, want open", itemEnvoy.Status)
+		t.Errorf("envoy writ status = %q, want open", itemEnvoy.Status)
 	}
-	itemGov, _ := worldStore2.GetWorkItem(wiGov)
+	itemGov, _ := worldStore2.GetWrit(wiGov)
 	if itemGov.Status != "open" {
-		t.Errorf("governor work item status = %q, want open", itemGov.Status)
+		t.Errorf("governor writ status = %q, want open", itemGov.Status)
 	}
 
 	// Verify sentinel was NOT recovered.
@@ -296,9 +296,9 @@ func TestRecoverStaleTethersTooRecent(t *testing.T) {
 
 	// Agent with dead session but updated_at is 5 minutes ago.
 	sphereStore.CreateAgent("RecentAgent", worldName, "agent")
-	wiID, _ := worldStore.CreateWorkItem("task-recent", "desc", "test", 1, nil)
+	wiID, _ := worldStore.CreateWrit("task-recent", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/RecentAgent", "working", wiID)
-	worldStore.UpdateWorkItem(wiID, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/RecentAgent"})
+	worldStore.UpdateWrit(wiID, store.WritUpdates{Status: "tethered", Assignee: worldName + "/RecentAgent"})
 	tether.Write(worldName, "RecentAgent", wiID, "agent")
 
 	// Set updated_at to 5 minutes ago.
@@ -350,9 +350,9 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 
 	// Agent 1: stale, recoverable.
 	sphereStore.CreateAgent("Good", worldName, "agent")
-	wi1, _ := worldStore.CreateWorkItem("task-good", "desc", "test", 1, nil)
+	wi1, _ := worldStore.CreateWrit("task-good", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/Good", "working", wi1)
-	worldStore.UpdateWorkItem(wi1, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/Good"})
+	worldStore.UpdateWrit(wi1, store.WritUpdates{Status: "tethered", Assignee: worldName + "/Good"})
 	tether.Write(worldName, "Good", wi1, "agent")
 
 	// Agent 2: stale, but on a world that can't be opened (bad world name).
@@ -376,7 +376,7 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 	d.SetWorldOpener(func(world string) (*store.Store, error) {
 		if world == "nonexistent-world-xyz" {
 			// Simulate opening a world store — create it to open, but
-			// the work item won't exist, causing a controlled failure.
+			// the writ won't exist, causing a controlled failure.
 			s, err := store.OpenWorld(world)
 			if err != nil {
 				return nil, err
@@ -391,7 +391,7 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 		t.Fatalf("recoverStaleTethers failed: %v", err)
 	}
 
-	// Good should be recovered. Bad should be skipped due to work item not found.
+	// Good should be recovered. Bad should be skipped due to writ not found.
 	if recovered != 1 {
 		t.Errorf("recovered = %d, want 1 (partial failure)", recovered)
 	}
@@ -413,20 +413,20 @@ func TestFeedStrandedCaravansAutoDispatch(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	// Create a caravan with 3 work items: 2 open (ready), 1 tethered.
+	// Create a caravan with 3 writs: 2 open (ready), 1 tethered.
 	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "operator")
 	sphereStore.UpdateCaravanStatus(caravanID, "open")
 
-	wi1, _ := worldStore.CreateWorkItem("caravan-task-1", "desc1", "test", 1, nil)
-	wi2, _ := worldStore.CreateWorkItem("caravan-task-2", "desc2", "test", 1, nil)
-	wi3, _ := worldStore.CreateWorkItem("caravan-task-3", "desc3", "test", 1, nil)
+	wi1, _ := worldStore.CreateWrit("caravan-task-1", "desc1", "test", 1, nil)
+	wi2, _ := worldStore.CreateWrit("caravan-task-2", "desc2", "test", 1, nil)
+	wi3, _ := worldStore.CreateWrit("caravan-task-3", "desc3", "test", 1, nil)
 
 	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
 	sphereStore.CreateCaravanItem(caravanID, wi2, worldName, 0)
 	sphereStore.CreateCaravanItem(caravanID, wi3, worldName, 0)
 
 	// Make wi3 tethered (already dispatched).
-	worldStore.UpdateWorkItem(wi3, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/SomeAgent"})
+	worldStore.UpdateWrit(wi3, store.WritUpdates{Status: "tethered", Assignee: worldName + "/SomeAgent"})
 
 	sessions := newMockSessions()
 	cfg := Config{
@@ -455,16 +455,16 @@ func TestFeedStrandedCaravansAutoDispatch(t *testing.T) {
 	}
 	dispatchedIDs := map[string]bool{}
 	for _, d := range dispatched {
-		dispatchedIDs[d.WorkItemID] = true
+		dispatchedIDs[d.WritID] = true
 		if d.World != worldName {
 			t.Errorf("dispatched world = %q, want %q", d.World, worldName)
 		}
 	}
 	if !dispatchedIDs[wi1] {
-		t.Errorf("expected work item %s to be dispatched", wi1)
+		t.Errorf("expected writ %s to be dispatched", wi1)
 	}
 	if !dispatchedIDs[wi2] {
-		t.Errorf("expected work item %s to be dispatched", wi2)
+		t.Errorf("expected writ %s to be dispatched", wi2)
 	}
 
 	// Verify NO CARAVAN_NEEDS_FEEDING message was sent (auto-dispatch replaces it).
@@ -492,8 +492,8 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 
 	caravanID, _ := sphereStore.CreateCaravan("test-caravan-3", "operator")
 	sphereStore.UpdateCaravanStatus(caravanID, "open")
-	wi1, _ := worldStore.CreateWorkItem("all-tethered-1", "desc1", "test", 1, nil)
-	worldStore.UpdateWorkItem(wi1, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/X"})
+	wi1, _ := worldStore.CreateWrit("all-tethered-1", "desc1", "test", 1, nil)
+	worldStore.UpdateWrit(wi1, store.WritUpdates{Status: "tethered", Assignee: worldName + "/X"})
 	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
 
 	sessions := newMockSessions()
@@ -541,7 +541,7 @@ func TestFeedStrandedCaravansDrydockIgnored(t *testing.T) {
 	caravanID, _ := sphereStore.CreateCaravan("drydock-caravan", "operator")
 	// Status remains "drydock" (default from CreateCaravan).
 
-	wi1, _ := worldStore.CreateWorkItem("drydock-task-1", "desc1", "test", 1, nil)
+	wi1, _ := worldStore.CreateWrit("drydock-task-1", "desc1", "test", 1, nil)
 	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
 
 	sessions := newMockSessions()
@@ -684,9 +684,9 @@ func TestPatrolCycle(t *testing.T) {
 
 	// 1. Stale tethered agent (dead session, old timestamp).
 	sphereStore.CreateAgent("Stale", worldName, "agent")
-	wiStale, _ := worldStore.CreateWorkItem("stale-task", "desc", "test", 1, nil)
+	wiStale, _ := worldStore.CreateWrit("stale-task", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/Stale", "working", wiStale)
-	worldStore.UpdateWorkItem(wiStale, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/Stale"})
+	worldStore.UpdateWrit(wiStale, store.WritUpdates{Status: "tethered", Assignee: worldName + "/Stale"})
 	tether.Write(worldName, "Stale", wiStale, "agent")
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
 		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/Stale")
@@ -694,14 +694,14 @@ func TestPatrolCycle(t *testing.T) {
 	// 2. Open caravan with ready items.
 	caravanID, _ := sphereStore.CreateCaravan("patrol-caravan", "operator")
 	sphereStore.UpdateCaravanStatus(caravanID, "open")
-	wiCaravan, _ := worldStore.CreateWorkItem("caravan-ready", "desc", "test", 1, nil)
+	wiCaravan, _ := worldStore.CreateWrit("caravan-ready", "desc", "test", 1, nil)
 	sphereStore.CreateCaravanItem(caravanID, wiCaravan, worldName, 0)
 
 	// 3. Healthy working agent (session alive).
 	sphereStore.CreateAgent("Healthy", worldName, "agent")
-	wiHealthy, _ := worldStore.CreateWorkItem("healthy-task", "desc", "test", 1, nil)
+	wiHealthy, _ := worldStore.CreateWrit("healthy-task", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/Healthy", "working", wiHealthy)
-	worldStore.UpdateWorkItem(wiHealthy, store.WorkItemUpdates{Status: "tethered", Assignee: worldName + "/Healthy"})
+	worldStore.UpdateWrit(wiHealthy, store.WritUpdates{Status: "tethered", Assignee: worldName + "/Healthy"})
 	tether.Write(worldName, "Healthy", wiHealthy, "agent")
 
 	sessions := newMockSessions()
@@ -734,8 +734,8 @@ func TestPatrolCycle(t *testing.T) {
 	// Verify: caravan item was auto-dispatched (not just a message).
 	if len(dispatched) != 1 {
 		t.Errorf("dispatched = %d, want 1", len(dispatched))
-	} else if dispatched[0].WorkItemID != wiCaravan {
-		t.Errorf("dispatched work item = %q, want %q", dispatched[0].WorkItemID, wiCaravan)
+	} else if dispatched[0].WritID != wiCaravan {
+		t.Errorf("dispatched writ = %q, want %q", dispatched[0].WritID, wiCaravan)
 	}
 
 	// Verify: heartbeat written.

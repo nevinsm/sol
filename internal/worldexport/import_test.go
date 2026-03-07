@@ -366,8 +366,8 @@ func TestImportWithRename(t *testing.T) {
 	}
 
 	caravanItems := []ExportCaravanItem{
-		{CaravanID: "car-test123", WorkItemID: "sol-item1", World: "oldworld", Phase: 0},
-		{CaravanID: "car-test123", WorkItemID: "sol-item2", World: "otherworld", Phase: 0},
+		{CaravanID: "car-test123", WritID: "sol-item1", World: "oldworld", Phase: 0},
+		{CaravanID: "car-test123", WritID: "sol-item2", World: "otherworld", Phase: 0},
 	}
 
 	caravans := []ExportCaravan{
@@ -420,7 +420,7 @@ func TestImportWithRename(t *testing.T) {
 
 	worldMap := map[string]string{}
 	for _, item := range items {
-		worldMap[item.WorkItemID] = item.World
+		worldMap[item.WritID] = item.World
 	}
 	if worldMap["sol-item1"] != "newworld" {
 		t.Errorf("expected caravan item sol-item1 world 'newworld', got %q", worldMap["sol-item1"])

@@ -19,14 +19,14 @@ var mrCmd = &cobra.Command{
 }
 
 var mrCreateCmd = &cobra.Command{
-	Use:          "create --world=W --branch=B --work-item=ID",
-	Short:        "Create a merge request for an existing work item",
+	Use:          "create --world=W --branch=B --writ=ID",
+	Short:        "Create a merge request for an existing writ",
 	Long:         "Plumbing command to manually queue a branch for forge review without going through sol resolve.",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worldFlag, _ := cmd.Flags().GetString("world")
 		branch, _ := cmd.Flags().GetString("branch")
-		workItemID, _ := cmd.Flags().GetString("work-item")
+		writID, _ := cmd.Flags().GetString("writ")
 		priority, _ := cmd.Flags().GetInt("priority")
 
 		world, err := config.ResolveWorld(worldFlag)
@@ -36,8 +36,8 @@ var mrCreateCmd = &cobra.Command{
 		if branch == "" {
 			return fmt.Errorf("--branch is required")
 		}
-		if workItemID == "" {
-			return fmt.Errorf("--work-item is required")
+		if writID == "" {
+			return fmt.Errorf("--writ is required")
 		}
 
 		worldStore, err := store.OpenWorld(world)
@@ -46,18 +46,18 @@ var mrCreateCmd = &cobra.Command{
 		}
 		defer worldStore.Close()
 
-		// Validate work item exists.
-		item, err := worldStore.GetWorkItem(workItemID)
+		// Validate writ exists.
+		item, err := worldStore.GetWrit(writID)
 		if err != nil {
-			return fmt.Errorf("work item %q not found: %w", workItemID, err)
+			return fmt.Errorf("writ %q not found: %w", writID, err)
 		}
 
-		// Use work item priority if not explicitly set.
+		// Use writ priority if not explicitly set.
 		if !cmd.Flags().Changed("priority") {
 			priority = item.Priority
 		}
 
-		mrID, err := worldStore.CreateMergeRequest(workItemID, branch, priority)
+		mrID, err := worldStore.CreateMergeRequest(writID, branch, priority)
 		if err != nil {
 			return fmt.Errorf("failed to create merge request: %w", err)
 		}
@@ -65,7 +65,7 @@ var mrCreateCmd = &cobra.Command{
 		eventLog := events.NewLogger(config.Home())
 		eventLog.Emit(events.EventMergeQueued, "operator", "operator", world, map[string]string{
 			"merge_request_id": mrID,
-			"work_item_id":     workItemID,
+			"writ_id":     writID,
 			"branch":           branch,
 		})
 
@@ -73,8 +73,8 @@ var mrCreateCmd = &cobra.Command{
 		mgr := session.New()
 		forgeSession := config.SessionName(world, "forge")
 		if mgr.Exists(forgeSession) {
-			forgeBody := fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
-				workItemID, mrID, branch, item.Title)
+			forgeBody := fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
+				writID, mrID, branch, item.Title)
 			if err := nudge.Enqueue(forgeSession, nudge.Message{
 				Sender:   "operator",
 				Type:     "MR_READY",
@@ -91,7 +91,7 @@ var mrCreateCmd = &cobra.Command{
 		if jsonOut {
 			return printJSON(map[string]string{
 				"id":           mrID,
-				"work_item_id": workItemID,
+				"writ_id": writID,
 				"branch":       branch,
 				"phase":        "ready",
 			})
@@ -112,7 +112,7 @@ func init() {
 
 	mrCreateCmd.Flags().String("world", "", "world name (required)")
 	mrCreateCmd.Flags().String("branch", "", "branch to merge (required)")
-	mrCreateCmd.Flags().String("work-item", "", "work item ID (required)")
+	mrCreateCmd.Flags().String("writ", "", "writ ID (required)")
 	mrCreateCmd.Flags().Int("priority", 2, "priority (1=high, 2=normal, 3=low)")
 	mrCreateCmd.Flags().Bool("json", false, "output as JSON")
 }

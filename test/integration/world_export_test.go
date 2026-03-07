@@ -62,15 +62,15 @@ func TestWorldExportWithData(t *testing.T) {
 
 	initWorld(t, gtHome, "myworld")
 
-	// Create a work item so the DB has data.
+	// Create a writ so the DB has data.
 	t.Setenv("SOL_HOME", gtHome)
 	worldStore, err := store.OpenWorld("myworld")
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	_, err = worldStore.CreateWorkItem("Test item", "Test description", "operator", 2, nil)
+	_, err = worldStore.CreateWrit("Test item", "Test description", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 	worldStore.Close()
 

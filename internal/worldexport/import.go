@@ -297,7 +297,7 @@ func importCaravanItems(s *store.Store, sphereDir, oldWorld, newWorld string, re
 		if renaming && ci.World == oldWorld {
 			world = newWorld
 		}
-		if err := s.ImportCaravanItem(ci.CaravanID, ci.WorkItemID, world, ci.Phase); err != nil {
+		if err := s.ImportCaravanItem(ci.CaravanID, ci.WritID, world, ci.Phase); err != nil {
 			return err
 		}
 	}

@@ -168,9 +168,9 @@ type SessionChecker interface {
 	Exists(name string) bool
 }
 
-// WorldStore abstracts work item lookups for testing.
+// WorldStore abstracts writ lookups for testing.
 type WorldStore interface {
-	GetWorkItem(id string) (*store.WorkItem, error)
+	GetWrit(id string) (*store.Writ, error)
 }
 
 // SphereStore abstracts agent queries for testing.
@@ -335,7 +335,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			}
 			if agent.TetherItem != "" {
 				es.TetherItem = agent.TetherItem
-				item, err := worldStore.GetWorkItem(agent.TetherItem)
+				item, err := worldStore.GetWrit(agent.TetherItem)
 				if err != nil {
 					es.WorkTitle = "(unknown)"
 				} else {
@@ -356,7 +356,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			}
 			if agent.TetherItem != "" {
 				as.TetherItem = agent.TetherItem
-				item, err := worldStore.GetWorkItem(agent.TetherItem)
+				item, err := worldStore.GetWrit(agent.TetherItem)
 				if err != nil {
 					as.WorkTitle = "(unknown)"
 				} else {
@@ -397,8 +397,8 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		case "claimed":
 			result.MergeQueue.Claimed++
 		case "failed":
-			// Exclude failed MRs whose work items have been re-cast and closed.
-			if item, err := worldStore.GetWorkItem(mr.WorkItemID); err != nil || item.Status != "closed" {
+			// Exclude failed MRs whose writs have been re-cast and closed.
+			if item, err := worldStore.GetWrit(mr.WritID); err != nil || item.Status != "closed" {
 				result.MergeQueue.Failed++
 			}
 		case "merged":
@@ -463,13 +463,13 @@ func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener 
 		if err == nil {
 			for _, st := range statuses {
 				switch {
-				case st.WorkItemStatus == "closed":
+				case st.WritStatus == "closed":
 					info.ClosedItems++
-				case st.WorkItemStatus == "done":
+				case st.WritStatus == "done":
 					info.DoneItems++
 				case st.IsDispatched():
 					info.DispatchedItems++
-				case st.WorkItemStatus == "open" && st.Ready:
+				case st.WritStatus == "open" && st.Ready:
 					info.ReadyItems++
 				}
 			}
@@ -497,10 +497,10 @@ func computePhaseProgress(items []store.CaravanItem, statuses []store.CaravanIte
 		return nil
 	}
 
-	// Build a status lookup by work item ID.
+	// Build a status lookup by writ ID.
 	statusMap := make(map[string]store.CaravanItemStatus)
 	for _, st := range statuses {
-		statusMap[st.WorkItemID] = st
+		statusMap[st.WritID] = st
 	}
 
 	// Group by phase.
@@ -512,15 +512,15 @@ func computePhaseProgress(items []store.CaravanItem, statuses []store.CaravanIte
 			phaseMap[item.Phase] = pp
 		}
 		pp.Total++
-		if st, ok := statusMap[item.WorkItemID]; ok {
+		if st, ok := statusMap[item.WritID]; ok {
 			switch {
-			case st.WorkItemStatus == "closed":
+			case st.WritStatus == "closed":
 				pp.Closed++
-			case st.WorkItemStatus == "done":
+			case st.WritStatus == "done":
 				pp.Done++
 			case st.IsDispatched():
 				pp.Dispatched++
-			case st.WorkItemStatus == "open" && st.Ready:
+			case st.WritStatus == "open" && st.Ready:
 				pp.Ready++
 			}
 		}

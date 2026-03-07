@@ -80,10 +80,10 @@ func TestCLIForgeQueue(t *testing.T) {
 	initWorld(t, solHome, "ember")
 	worldStore, _ := openStores(t, "ember")
 
-	// Create a work item and a merge request.
-	itemID, err := worldStore.CreateWorkItem("Test merge item", "desc", "test", 1, nil)
+	// Create a writ and a merge request.
+	itemID, err := worldStore.CreateWrit("Test merge item", "desc", "test", 1, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 	branch := "outpost/Toast/" + itemID
 	mrID, err := worldStore.CreateMergeRequest(itemID, branch, 1)
@@ -101,7 +101,7 @@ func TestCLIForgeQueue(t *testing.T) {
 		t.Errorf("queue output missing MR ID %q: %s", mrID, out)
 	}
 	if !strings.Contains(out, itemID) {
-		t.Errorf("queue output missing work item ID %q: %s", itemID, out)
+		t.Errorf("queue output missing writ ID %q: %s", itemID, out)
 	}
 
 	// JSON output.
@@ -130,15 +130,15 @@ func TestCLIResolveShowsMergeRequest(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	// Create work item, agent, and cast via API.
+	// Create writ, agent, and cast via API.
 	sphereStore.CreateAgent("Smoke", "ember", "agent")
-	itemID, err := worldStore.CreateWorkItem("CLI resolve test", "Test resolve CLI output", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("CLI resolve test", "Test resolve CLI output", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 
 	result, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "Smoke",
 		SourceRepo: sourceRepo,

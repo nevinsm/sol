@@ -40,7 +40,7 @@ func TestCapture(t *testing.T) {
 		t.Fatalf("failed to write workflow state: %v", err)
 	}
 	// Minimal instance manifest for step counting.
-	instanceJSON := `{"formula":"default-work","work_item_id":"sol-abc12345","variables":{},"instantiated_at":"2026-02-27T10:00:00Z"}`
+	instanceJSON := `{"formula":"default-work","writ_id":"sol-abc12345","variables":{},"instantiated_at":"2026-02-27T10:00:00Z"}`
 	if err := os.WriteFile(filepath.Join(wfDir, "manifest.json"), []byte(instanceJSON), 0o644); err != nil {
 		t.Fatalf("failed to write workflow instance: %v", err)
 	}
@@ -66,8 +66,8 @@ func TestCapture(t *testing.T) {
 		t.Fatalf("Capture failed: %v", err)
 	}
 
-	if state.WorkItemID != "sol-abc12345" {
-		t.Errorf("expected WorkItemID sol-abc12345, got %q", state.WorkItemID)
+	if state.WritID != "sol-abc12345" {
+		t.Errorf("expected WritID sol-abc12345, got %q", state.WritID)
 	}
 	if state.AgentName != "Toast" {
 		t.Errorf("expected AgentName Toast, got %q", state.AgentName)
@@ -173,12 +173,12 @@ func TestCaptureNoSummary(t *testing.T) {
 		t.Fatalf("Capture failed: %v", err)
 	}
 
-	// Auto-generated summary should contain agent name and work item.
+	// Auto-generated summary should contain agent name and writ.
 	if !strings.Contains(state.Summary, "Toast") {
 		t.Errorf("auto-generated summary missing agent name: %q", state.Summary)
 	}
 	if !strings.Contains(state.Summary, "sol-abc12345") {
-		t.Errorf("auto-generated summary missing work item ID: %q", state.Summary)
+		t.Errorf("auto-generated summary missing writ ID: %q", state.Summary)
 	}
 	if !strings.Contains(state.Summary, "abc1234") {
 		t.Errorf("auto-generated summary missing last commit: %q", state.Summary)
@@ -189,7 +189,7 @@ func TestWriteAndRead(t *testing.T) {
 	setupSolHome(t)
 
 	original := &State{
-		WorkItemID:       "sol-abc12345",
+		WritID:       "sol-abc12345",
 		AgentName:        "Toast",
 		World:            "ember",
 		Role:             "agent",
@@ -226,8 +226,8 @@ func TestWriteAndRead(t *testing.T) {
 		t.Fatalf("Read failed: %v", err)
 	}
 
-	if read.WorkItemID != original.WorkItemID {
-		t.Errorf("WorkItemID mismatch: got %q, want %q", read.WorkItemID, original.WorkItemID)
+	if read.WritID != original.WritID {
+		t.Errorf("WritID mismatch: got %q, want %q", read.WritID, original.WritID)
 	}
 	if read.AgentName != original.AgentName {
 		t.Errorf("AgentName mismatch: got %q, want %q", read.AgentName, original.AgentName)
@@ -275,7 +275,7 @@ func TestRemove(t *testing.T) {
 
 	// Write then remove.
 	state := &State{
-		WorkItemID: "sol-abc12345",
+		WritID: "sol-abc12345",
 		AgentName:  "Toast",
 		World:      "ember",
 		Role:       "agent",
@@ -314,7 +314,7 @@ func TestHasHandoff(t *testing.T) {
 
 	// Write handoff.
 	state := &State{
-		WorkItemID: "sol-abc12345",
+		WritID: "sol-abc12345",
 		AgentName:  "Toast",
 		World:      "ember",
 		Role:       "agent",
@@ -687,7 +687,7 @@ func TestMarkConsumedAndHasHandoff(t *testing.T) {
 	setupSolHome(t)
 
 	state := &State{
-		WorkItemID: "sol-abc12345",
+		WritID: "sol-abc12345",
 		AgentName:  "Toast",
 		World:      "ember",
 		Role:       "agent",
@@ -1336,7 +1336,7 @@ func TestExecStartupCompactUsesResume(t *testing.T) {
 		},
 	})
 
-	// Set up tether so resume state captures the work item.
+	// Set up tether so resume state captures the writ.
 	if err := tether.Write(world, agentName, "sol-compact12345", roleName); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}

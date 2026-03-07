@@ -14,7 +14,7 @@ var untetherWorld string
 
 var untetherCmd = &cobra.Command{
 	Use:          "untether <agent-name>",
-	Short:        "Unbind a work item from an agent (any role)",
+	Short:        "Unbind a writ from an agent (any role)",
 	GroupID:      groupAgents,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
@@ -47,7 +47,7 @@ var untetherCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Untethered %s (%s) from %s\n", result.AgentName, result.AgentRole, result.WorkItemID)
+		fmt.Printf("Untethered %s (%s) from %s\n", result.AgentName, result.AgentRole, result.WritID)
 		return nil
 	},
 }

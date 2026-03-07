@@ -124,9 +124,9 @@ func TestWorldInitPreArc1World(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	_, err = s.CreateWorkItem("Old item", "", "operator", 2, nil)
+	_, err = s.CreateWrit("Old item", "", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 	s.Close()
 
@@ -466,14 +466,14 @@ func TestWorldDeleteCleansUpCaravanItems(t *testing.T) {
 
 	initWorld(t, gtHome, "myworld")
 
-	// Create a work item.
+	// Create a writ.
 	itemID, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=test item")
 	if err != nil {
 		t.Fatalf("store create failed: %v: %s", err, itemID)
 	}
 	itemID = strings.TrimSpace(itemID)
 
-	// Create a caravan with the work item.
+	// Create a caravan with the writ.
 	caravanOut, err := runGT(t, gtHome, "caravan", "create", "test-caravan", itemID, "--world=myworld")
 	if err != nil {
 		t.Fatalf("caravan create failed: %v: %s", err, caravanOut)
@@ -636,10 +636,10 @@ func buildTestArchive(t *testing.T, gtHome, worldName string) string {
 	if err != nil {
 		t.Fatalf("create temp world db: %v", err)
 	}
-	// Add a work item so we can verify it survives import.
-	_, err = worldStore.CreateWorkItem("Test task", "A test work item", "operator", 2, nil)
+	// Add a writ so we can verify it survives import.
+	_, err = worldStore.CreateWrit("Test task", "A test writ", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 	worldStore.Close()
 
@@ -781,22 +781,22 @@ func TestWorldImportBasic(t *testing.T) {
 		t.Errorf("expected agent state 'idle', got %q", agent.State)
 	}
 
-	// Verify work item survives in world.db.
+	// Verify writ survives in world.db.
 	worldStore, err := store.OpenWorld("imported")
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
 	defer worldStore.Close()
 
-	items, err := worldStore.ListWorkItems(store.ListFilters{})
+	items, err := worldStore.ListWrits(store.ListFilters{})
 	if err != nil {
-		t.Fatalf("list work items: %v", err)
+		t.Fatalf("list writs: %v", err)
 	}
 	if len(items) != 1 {
-		t.Fatalf("expected 1 work item, got %d", len(items))
+		t.Fatalf("expected 1 writ, got %d", len(items))
 	}
 	if items[0].Title != "Test task" {
-		t.Errorf("expected work item title 'Test task', got %q", items[0].Title)
+		t.Errorf("expected writ title 'Test task', got %q", items[0].Title)
 	}
 }
 

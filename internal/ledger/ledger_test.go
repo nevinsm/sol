@@ -36,14 +36,14 @@ func setupTestLedger(t *testing.T, worldName string) (*Ledger, *store.Store) {
 }
 
 // makeOTLPBody builds an OTLP JSON body for testing.
-func makeOTLPBody(agentName, world, workItemID, eventName, model string, input, output, cacheRead, cacheCreation int64) []byte {
+func makeOTLPBody(agentName, world, writID, eventName, model string, input, output, cacheRead, cacheCreation int64) []byte {
 	req := ExportLogsServiceRequest{
 		ResourceLogs: []ResourceLogs{{
 			Resource: Resource{
 				Attributes: []KeyValue{
 					{Key: "agent.name", Value: AnyValue{StringValue: agentName}},
 					{Key: "world", Value: AnyValue{StringValue: world}},
-					{Key: "work_item_id", Value: AnyValue{StringValue: workItemID}},
+					{Key: "writ_id", Value: AnyValue{StringValue: writID}},
 				},
 			},
 			ScopeLogs: []ScopeLogs{{

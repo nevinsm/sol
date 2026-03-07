@@ -2,7 +2,7 @@
 
 ## 1. Done creates merge request
 - [x] `sol resolve` creates a merge request with `phase=ready` in the world store
-- [x] MR has correct `work_item_id` and `branch` fields
+- [x] MR has correct `writ_id` and `branch` fields
 - [x] MR ID starts with `mr-` prefix
 - [x] CLI output shows the merge request ID
 - [x] Work item status is "done", agent is "idle" (existing behavior preserved)

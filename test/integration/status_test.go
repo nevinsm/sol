@@ -94,7 +94,7 @@ func TestStatusWorldDetail(t *testing.T) {
 
 	initWorld(t, gtHome, "myworld")
 
-	// Create a work item.
+	// Create a writ.
 	_, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=Test item")
 	if err != nil {
 		t.Fatalf("store create failed: %v", err)

@@ -142,17 +142,17 @@ func (s *Store) UnsatisfiedCaravanDependencies(caravanID string) ([]string, erro
 	return ids, rows.Err()
 }
 
-// IsWorkItemBlockedByCaravanDeps checks whether a work item belongs to any
+// IsWritBlockedByCaravanDeps checks whether a writ belongs to any
 // caravan that has unsatisfied caravan-level dependencies. Returns true if
 // blocked, along with the blocking caravan IDs.
-func (s *Store) IsWorkItemBlockedByCaravanDeps(workItemID string) (bool, []string, error) {
-	// Find all caravans containing this work item.
+func (s *Store) IsWritBlockedByCaravanDeps(writID string) (bool, []string, error) {
+	// Find all caravans containing this writ.
 	rows, err := s.db.Query(
-		`SELECT DISTINCT caravan_id FROM caravan_items WHERE work_item_id = ?`,
-		workItemID,
+		`SELECT DISTINCT caravan_id FROM caravan_items WHERE writ_id = ?`,
+		writID,
 	)
 	if err != nil {
-		return false, nil, fmt.Errorf("failed to find caravans for work item %q: %w", workItemID, err)
+		return false, nil, fmt.Errorf("failed to find caravans for writ %q: %w", writID, err)
 	}
 	defer rows.Close()
 

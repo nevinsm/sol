@@ -17,7 +17,7 @@ func TestLogEvent(t *testing.T) {
 	logger := NewLogger(dir)
 
 	logger.Emit(EventCast, "sol", "operator", "both", map[string]string{
-		"work_item_id": "sol-a1b2c3d4",
+		"writ_id": "sol-a1b2c3d4",
 		"agent":        "Toast",
 		"world":        "haven",
 	})

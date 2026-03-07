@@ -12,14 +12,14 @@ import (
 // MergeRequest represents a merge request in the world database.
 type MergeRequest struct {
 	ID         string
-	WorkItemID string
+	WritID string
 	Branch     string
 	Phase      string // ready, claimed, merged, failed, superseded
 	ClaimedBy  string // forge agent ID (empty if unclaimed)
 	ClaimedAt  *time.Time
 	Attempts   int
 	Priority   int
-	BlockedBy  string // work item ID blocking this MR (empty = not blocked)
+	BlockedBy  string // writ ID blocking this MR (empty = not blocked)
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	MergedAt   *time.Time
@@ -36,7 +36,7 @@ func generateMRID() (string, error) {
 
 // CreateMergeRequest creates a new merge request with phase=ready.
 // Returns the generated MR ID (mr-XXXXXXXX).
-func (s *Store) CreateMergeRequest(workItemID, branch string, priority int) (string, error) {
+func (s *Store) CreateMergeRequest(writID, branch string, priority int) (string, error) {
 	id, err := generateMRID()
 	if err != nil {
 		return "", err
@@ -44,9 +44,9 @@ func (s *Store) CreateMergeRequest(workItemID, branch string, priority int) (str
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	_, err = s.db.Exec(
-		`INSERT INTO merge_requests (id, work_item_id, branch, phase, priority, created_at, updated_at)
+		`INSERT INTO merge_requests (id, writ_id, branch, phase, priority, created_at, updated_at)
 		 VALUES (?, ?, ?, 'ready', ?, ?, ?)`,
-		id, workItemID, branch, priority, now, now,
+		id, writID, branch, priority, now, now,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to create merge request: %w", err)
@@ -62,10 +62,10 @@ func (s *Store) GetMergeRequest(id string) (*MergeRequest, error) {
 	var createdAt, updatedAt string
 
 	err := s.db.QueryRow(
-		`SELECT id, work_item_id, branch, phase, claimed_by, claimed_at,
+		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 		        attempts, priority, blocked_by, created_at, updated_at, merged_at
 		 FROM merge_requests WHERE id = ?`, id,
-	).Scan(&mr.ID, &mr.WorkItemID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
+	).Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
 		&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("merge request %q: %w", id, ErrNotFound)
@@ -105,7 +105,7 @@ func (s *Store) GetMergeRequest(id string) (*MergeRequest, error) {
 // If phase is empty, returns all. Ordered by priority ASC, created_at ASC
 // (highest priority first, oldest first within same priority).
 func (s *Store) ListMergeRequests(phase string) ([]MergeRequest, error) {
-	query := `SELECT id, work_item_id, branch, phase, claimed_by, claimed_at,
+	query := `SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 	                 attempts, priority, blocked_by, created_at, updated_at, merged_at
 	          FROM merge_requests`
 	var args []interface{}
@@ -128,7 +128,7 @@ func (s *Store) ListMergeRequests(phase string) ([]MergeRequest, error) {
 		var claimedAt, mergedAt sql.NullString
 		var createdAt, updatedAt string
 
-		if err := rows.Scan(&mr.ID, &mr.WorkItemID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
+		if err := rows.Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
 			&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan merge request: %w", err)
 		}
@@ -165,13 +165,13 @@ func (s *Store) ListMergeRequests(phase string) ([]MergeRequest, error) {
 	return mrs, nil
 }
 
-// ListMergeRequestsByWorkItem returns merge requests for a given work item,
+// ListMergeRequestsByWrit returns merge requests for a given writ,
 // optionally filtered by phase. If phase is empty, returns all phases.
-func (s *Store) ListMergeRequestsByWorkItem(workItemID, phase string) ([]MergeRequest, error) {
-	query := `SELECT id, work_item_id, branch, phase, claimed_by, claimed_at,
+func (s *Store) ListMergeRequestsByWrit(writID, phase string) ([]MergeRequest, error) {
+	query := `SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 	                 attempts, priority, blocked_by, created_at, updated_at, merged_at
-	          FROM merge_requests WHERE work_item_id = ?`
-	args := []interface{}{workItemID}
+	          FROM merge_requests WHERE writ_id = ?`
+	args := []interface{}{writID}
 	if phase != "" {
 		query += " AND phase = ?"
 		args = append(args, phase)
@@ -180,7 +180,7 @@ func (s *Store) ListMergeRequestsByWorkItem(workItemID, phase string) ([]MergeRe
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list merge requests for work item %q: %w", workItemID, err)
+		return nil, fmt.Errorf("failed to list merge requests for writ %q: %w", writID, err)
 	}
 	defer rows.Close()
 
@@ -191,7 +191,7 @@ func (s *Store) ListMergeRequestsByWorkItem(workItemID, phase string) ([]MergeRe
 		var claimedAt, mergedAt sql.NullString
 		var createdAt, updatedAt string
 
-		if err := rows.Scan(&mr.ID, &mr.WorkItemID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
+		if err := rows.Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
 			&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan merge request: %w", err)
 		}
@@ -251,10 +251,10 @@ func (s *Store) ClaimMergeRequest(claimerID string) (*MergeRequest, error) {
 		     ORDER BY priority ASC, created_at ASC
 		     LIMIT 1
 		 )
-		 RETURNING id, work_item_id, branch, phase, claimed_by, claimed_at,
+		 RETURNING id, writ_id, branch, phase, claimed_by, claimed_at,
 		           attempts, priority, blocked_by, created_at, updated_at, merged_at`,
 		claimerID, now, now,
-	).Scan(&mr.ID, &mr.WorkItemID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
+	).Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
 		&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -338,13 +338,13 @@ func (s *Store) UpdateMergeRequestPhase(id, phase string) error {
 
 // BlockMergeRequest sets blocked_by on a merge request and ensures phase=ready.
 // A blocked MR is skipped during claiming.
-func (s *Store) BlockMergeRequest(mrID, blockerWorkItemID string) error {
+func (s *Store) BlockMergeRequest(mrID, blockerWritID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := s.db.Exec(
 		`UPDATE merge_requests SET blocked_by = ?, phase = 'ready',
 		        claimed_by = NULL, claimed_at = NULL, updated_at = ?
 		 WHERE id = ?`,
-		blockerWorkItemID, now, mrID,
+		blockerWritID, now, mrID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to block merge request %q: %w", mrID, err)
@@ -382,8 +382,8 @@ func (s *Store) UnblockMergeRequest(mrID string) error {
 	return nil
 }
 
-// FindMergeRequestByBlocker finds the MR blocked by a given work item ID.
-// Returns nil if no MR is blocked by the given work item.
+// FindMergeRequestByBlocker finds the MR blocked by a given writ ID.
+// Returns nil if no MR is blocked by the given writ.
 func (s *Store) FindMergeRequestByBlocker(blockerID string) (*MergeRequest, error) {
 	mr := &MergeRequest{}
 	var claimedBy, blockedBy sql.NullString
@@ -391,10 +391,10 @@ func (s *Store) FindMergeRequestByBlocker(blockerID string) (*MergeRequest, erro
 	var createdAt, updatedAt string
 
 	err := s.db.QueryRow(
-		`SELECT id, work_item_id, branch, phase, claimed_by, claimed_at,
+		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 		        attempts, priority, blocked_by, created_at, updated_at, merged_at
 		 FROM merge_requests WHERE blocked_by = ?`, blockerID,
-	).Scan(&mr.ID, &mr.WorkItemID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
+	).Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
 		&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

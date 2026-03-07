@@ -213,18 +213,18 @@ func TestCastUsesManagedRepo(t *testing.T) {
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
 	setupWorld(t, gtHome, "myworld", sourceRepo)
 
-	// Create a work item.
+	// Create a writ.
 	out, err := runGT(t, gtHome, "store", "create",
 		"--world=myworld", "--title=test task", "--description=test")
 	if err != nil {
 		t.Fatalf("store create failed: %v\n%s", err, out)
 	}
 
-	// Extract work item ID.
-	workItemID := extractWorkItemID(t, out)
+	// Extract writ ID.
+	writID := extractWritID(t, out)
 
 	// Cast.
-	out, err = runGT(t, gtHome, "cast", workItemID, "--world=myworld")
+	out, err = runGT(t, gtHome, "cast", writID, "--world=myworld")
 	if err != nil {
 		t.Fatalf("cast failed: %v\n%s", err, out)
 	}

@@ -11,7 +11,7 @@ import (
 type ClaudeMDContext struct {
 	AgentName    string
 	World        string
-	WorkItemID   string
+	WritID   string
 	Title        string
 	Description  string
 	HasWorkflow  bool     // if true, include workflow commands
@@ -67,10 +67,10 @@ func GenerateClaudeMD(ctx ClaudeMDContext) string {
 	return fmt.Sprintf(`# Outpost Agent: %s (world: %s)
 
 You are an outpost agent in a multi-agent orchestration system.
-Your job is to execute the assigned work item.
+Your job is to execute the assigned writ.
 
 ## Warning
-- If you do not run `+"`sol resolve`"+`, your tether is orphaned, forge never sees your MR, your worktree leaks until sentinel reaps it, and the work item stays stuck in tethered state. Always resolve.
+- If you do not run `+"`sol resolve`"+`, your tether is orphaned, forge never sees your MR, your worktree leaks until sentinel reaps it, and the writ stays stuck in tethered state. Always resolve.
 - If you are stuck and cannot complete the work, run `+"`sol escalate`"+` — do not silently exit.
 %s
 ## Your Assignment
@@ -124,7 +124,7 @@ Use `+"`"+`sol forget "key"`+"`"+` to remove outdated memories.
 - Do not modify files outside this worktree.
 - Do not attempt to interact with other agents directly.
 - Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
-`, ctx.AgentName, ctx.World, modelSection, ctx.WorkItemID, ctx.Title, ctx.Description,
+`, ctx.AgentName, ctx.World, modelSection, ctx.WritID, ctx.Title, ctx.Description,
 		workflowSection, gateInstructions, protocolSection)
 }
 
@@ -264,8 +264,8 @@ If §"paused": true§:
 Notifications arrive automatically at each turn boundary (via UserPromptSubmit hook).
 They appear as §[NOTIFICATION] TYPE: Subject — Body§ in your context.
 
-**MR_READY** — An outpost resolved a work item and created a merge request.
-- Body JSON fields: §work_item_id§, §merge_request_id§, §branch§, §title§
+**MR_READY** — An outpost resolved a writ and created a merge request.
+- Body JSON fields: §writ_id§, §merge_request_id§, §branch§, §title§
 - The §sol forge await§ command returns immediately when this nudge arrives — go to Step 1
 - The MR should appear in the ready queue
 
@@ -367,10 +367,10 @@ You maintain accumulated context in `+"`"+`.brief/memory.md`+"`"+`.
 - **DO NOT** write to `+"`"+`~/.claude/projects/*/memory/`+"`"+` (Claude Code auto-memory) — use `+"`"+`.brief/memory.md`+"`"+` exclusively
 
 ## Work Flow — Three Modes
-1. **Tethered work**: You may be assigned a work item. Check:
+1. **Tethered work**: You may be assigned a writ. Check:
    `+"`"+`%s status --world=%s`+"`"+` (look for your name in the Envoys section)
-   When tethered, focus on that work item. Resolve when done.
-2. **Self-service**: Create your own work item with
+   When tethered, focus on that writ. Resolve when done.
+2. **Self-service**: Create your own writ with
    `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+`
    Then tether yourself: `+"`"+`%s tether %s <item-id> --world=%s`+"`"+`
 3. **Freeform**: No tether — exploration, research, design. No resolve needed.
@@ -482,7 +482,7 @@ func GenerateGovernorClaudeMD(ctx GovernorClaudeMDContext) string {
 
 ## Identity
 You are the governor of world %q — a work coordinator.
-You parse natural language requests into work items and dispatch them to agents.
+You parse natural language requests into writs and dispatch them to agents.
 You maintain accumulated world knowledge in your brief.
 
 ## Brief Maintenance
@@ -503,12 +503,12 @@ You maintain accumulated world knowledge in your brief.
 ## Codebase Research
 - Read-only codebase at `+"`"+`%s/`+"`"+` — use for understanding code, never edit
 - Sync latest before major research: `+"`"+`sol world sync --world=%s`+"`"+`
-- Use the codebase to write better work item descriptions
+- Use the codebase to write better writ descriptions
 
 ## Work Dispatch Flow
 When the operator gives you a work request:
 1. Research the codebase to understand scope
-2. Break the request into focused work items
+2. Break the request into focused writs
 3. Create items: `+"`"+`%s store create --world=%s --title="..." --description="..."`+"`"+`
 4. Optionally group into a caravan:
    `+"`"+`%s caravan create "name" <item-id> [<item-id>] --world=%s`+"`"+`
@@ -522,29 +522,29 @@ They appear as `+"`"+`[NOTIFICATION] TYPE: Subject — Body`+"`"+` in your conte
 
 Respond based on the notification type:
 
-**AGENT_DONE** — An outpost resolved a work item.
-- Body JSON fields: `+"`"+`work_item_id`+"`"+`, `+"`"+`agent_name`+"`"+`, `+"`"+`branch`+"`"+`, `+"`"+`title`+"`"+`, `+"`"+`merge_request_id`+"`"+`
+**AGENT_DONE** — An outpost resolved a writ.
+- Body JSON fields: `+"`"+`writ_id`+"`"+`, `+"`"+`agent_name`+"`"+`, `+"`"+`branch`+"`"+`, `+"`"+`title`+"`"+`, `+"`"+`merge_request_id`+"`"+`
 - Check caravan status: `+"`"+`%s caravan status --world=%s`+"`"+`
 - Look for newly unblocked items to dispatch
 - If this was the last item in a caravan, note caravan completion
 - Dispatch next ready work if agents are available
 - Update your brief
 
-**MERGED** — Forge successfully merged a work item.
-- Body JSON fields: `+"`"+`work_item_id`+"`"+`, `+"`"+`merge_request_id`+"`"+`
+**MERGED** — Forge successfully merged a writ.
+- Body JSON fields: `+"`"+`writ_id`+"`"+`, `+"`"+`merge_request_id`+"`"+`
 - Update brief (item merged)
 - Check if caravan is fully merged — note completion if so
 - Check if blocked items in other caravans are now unblocked
 
 **MERGE_FAILED** — Forge failed to merge.
-- Body JSON fields: `+"`"+`work_item_id`+"`"+`, `+"`"+`merge_request_id`+"`"+`, `+"`"+`reason`+"`"+`
+- Body JSON fields: `+"`"+`writ_id`+"`"+`, `+"`"+`merge_request_id`+"`"+`, `+"`"+`reason`+"`"+`
 - Assess the failure reason
 - Consider re-dispatching to an outpost for conflict resolution
 - Escalate if repeated failures: `+"`"+`%s escalate --world=%s --agent=governor --message="..."`+"`"+`
 
 **RECOVERY_NEEDED** — Sentinel exhausted respawn attempts.
-- Body JSON fields: `+"`"+`agent_id`+"`"+`, `+"`"+`work_item_id`+"`"+`, `+"`"+`reason`+"`"+`, `+"`"+`attempts`+"`"+`
-- Assess whether to re-dispatch the work item or escalate
+- Body JSON fields: `+"`"+`agent_id`+"`"+`, `+"`"+`writ_id`+"`"+`, `+"`"+`reason`+"`"+`, `+"`"+`attempts`+"`"+`
+- Assess whether to re-dispatch the writ or escalate
 - Update brief with dead agent info
 
 ## Available Commands
@@ -559,7 +559,7 @@ Use `+"`"+`sol forget "key"`+"`"+` to remove outdated memories.
 
 ## Guidelines
 - You coordinate — you don't write code
-- Create focused, well-scoped work items (one concern per item)
+- Create focused, well-scoped writs (one concern per item)
 - Include enough context in descriptions for an agent to work autonomously
 - Check agent availability before dispatching (`+"`"+`%s agent list`+"`"+`)
 - Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.

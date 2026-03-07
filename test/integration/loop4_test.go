@@ -278,20 +278,20 @@ instructions = "steps/01.md"
 		t.Fatalf("write 01.md: %v", err)
 	}
 
-	// Create agent and work item.
+	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("WorkflowBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWorkItem("WF task", "Workflow test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("WF task", "Workflow test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	logger := events.NewLogger(solHome)
 
 	// Cast with formula.
 	result, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "WorkflowBot",
 		SourceRepo: sourceRepo,
@@ -386,18 +386,18 @@ needs = ["step1"]
 		t.Fatalf("write 02.md: %v", err)
 	}
 
-	// Create agent and work item.
+	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("PrimeBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWorkItem("Prime WF task", "Prime workflow test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Prime WF task", "Prime workflow test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	// Cast with formula.
 	if _, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "PrimeBot",
 		SourceRepo: sourceRepo,
@@ -445,17 +445,17 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create agent and work item — cast without formula.
+	// Create agent and writ — cast without formula.
 	if _, err := sphereStore.CreateAgent("PlainBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWorkItem("Plain task", "No workflow test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Plain task", "No workflow test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	if _, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "PlainBot",
 		SourceRepo: sourceRepo,
@@ -482,7 +482,7 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 		t.Error("prime output should contain 'sol resolve'")
 	}
 	if !strings.Contains(result.Output, itemID) {
-		t.Error("prime output should contain work item ID")
+		t.Error("prime output should contain writ ID")
 	}
 }
 
@@ -522,18 +522,18 @@ instructions = "steps/01.md"
 		t.Fatalf("write 01.md: %v", err)
 	}
 
-	// Create agent and work item.
+	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("DoneBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWorkItem("Done WF task", "Done workflow test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Done WF task", "Done workflow test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	// Cast with formula.
 	result, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "DoneBot",
 		SourceRepo: sourceRepo,
@@ -588,22 +588,22 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	// Create work items and deps in world store, then close it.
+	// Create writs and deps in world store, then close it.
 	worldStore, err := store.OpenWorld("ember")
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	idA, err := worldStore.CreateWorkItem("Task A", "First task", "operator", 2, nil)
+	idA, err := worldStore.CreateWrit("Task A", "First task", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem A: %v", err)
+		t.Fatalf("CreateWrit A: %v", err)
 	}
-	idB, err := worldStore.CreateWorkItem("Task B", "Second task", "operator", 2, nil)
+	idB, err := worldStore.CreateWrit("Task B", "Second task", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem B: %v", err)
+		t.Fatalf("CreateWrit B: %v", err)
 	}
-	idC, err := worldStore.CreateWorkItem("Task C", "Depends on A and B", "operator", 2, nil)
+	idC, err := worldStore.CreateWrit("Task C", "Depends on A and B", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem C: %v", err)
+		t.Fatalf("CreateWrit C: %v", err)
 	}
 	if err := worldStore.AddDependency(idC, idA); err != nil {
 		t.Fatalf("AddDependency C→A: %v", err)
@@ -655,8 +655,8 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	if err := rs.CloseWorkItem(idA); err != nil {
-		t.Fatalf("close work item A: %v", err)
+	if err := rs.CloseWrit(idA); err != nil {
+		t.Fatalf("close writ A: %v", err)
 	}
 	rs.Close()
 
@@ -666,7 +666,7 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 		t.Fatalf("CheckCaravanReadiness after A closed: %v", err)
 	}
 	for _, st := range statuses {
-		if st.WorkItemID == idC && st.Ready {
+		if st.WritID == idC && st.Ready {
 			t.Error("C should still be blocked (B not closed)")
 		}
 	}
@@ -676,8 +676,8 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	if err := rs.CloseWorkItem(idB); err != nil {
-		t.Fatalf("close work item B: %v", err)
+	if err := rs.CloseWrit(idB); err != nil {
+		t.Fatalf("close writ B: %v", err)
 	}
 	rs.Close()
 
@@ -687,7 +687,7 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 		t.Fatalf("CheckCaravanReadiness after B closed: %v", err)
 	}
 	for _, st := range statuses {
-		if st.WorkItemID == idC && !st.Ready {
+		if st.WritID == idC && !st.Ready {
 			t.Error("C should be ready now (A and B closed)")
 		}
 	}
@@ -715,21 +715,21 @@ func TestCaravanAutoClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	id1, err := worldStore.CreateWorkItem("Auto 1", "First", "operator", 2, nil)
+	id1, err := worldStore.CreateWrit("Auto 1", "First", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem 1: %v", err)
+		t.Fatalf("CreateWrit 1: %v", err)
 	}
-	id2, err := worldStore.CreateWorkItem("Auto 2", "Second", "operator", 2, nil)
+	id2, err := worldStore.CreateWrit("Auto 2", "Second", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem 2: %v", err)
+		t.Fatalf("CreateWrit 2: %v", err)
 	}
 
 	// Mark both as closed.
-	if err := worldStore.UpdateWorkItem(id1, store.WorkItemUpdates{Status: "closed"}); err != nil {
-		t.Fatalf("update work item 1: %v", err)
+	if err := worldStore.UpdateWrit(id1, store.WritUpdates{Status: "closed"}); err != nil {
+		t.Fatalf("update writ 1: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(id2, store.WorkItemUpdates{Status: "closed"}); err != nil {
-		t.Fatalf("update work item 2: %v", err)
+	if err := worldStore.UpdateWrit(id2, store.WritUpdates{Status: "closed"}); err != nil {
+		t.Fatalf("update writ 2: %v", err)
 	}
 	worldStore.Close()
 
@@ -784,29 +784,29 @@ func TestCaravanMultiWorld(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	// Create work items in world "alpha".
+	// Create writs in world "alpha".
 	alphaStore, err := store.OpenWorld("alpha")
 	if err != nil {
 		t.Fatalf("open alpha world: %v", err)
 	}
-	idA, err := alphaStore.CreateWorkItem("Alpha task", "Task in alpha world", "operator", 2, nil)
+	idA, err := alphaStore.CreateWrit("Alpha task", "Task in alpha world", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem alpha: %v", err)
+		t.Fatalf("CreateWrit alpha: %v", err)
 	}
 	alphaStore.Close()
 
-	// Create work items in world "beta".
+	// Create writs in world "beta".
 	betaStore, err := store.OpenWorld("beta")
 	if err != nil {
 		t.Fatalf("open beta world: %v", err)
 	}
-	idB, err := betaStore.CreateWorkItem("Beta task 1", "First task in beta", "operator", 2, nil)
+	idB, err := betaStore.CreateWrit("Beta task 1", "First task in beta", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem beta 1: %v", err)
+		t.Fatalf("CreateWrit beta 1: %v", err)
 	}
-	idC, err := betaStore.CreateWorkItem("Beta task 2", "Second task in beta", "operator", 2, nil)
+	idC, err := betaStore.CreateWrit("Beta task 2", "Second task in beta", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem beta 2: %v", err)
+		t.Fatalf("CreateWrit beta 2: %v", err)
 	}
 	// C depends on B within beta world.
 	if err := betaStore.AddDependency(idC, idB); err != nil {
@@ -841,7 +841,7 @@ func TestCaravanMultiWorld(t *testing.T) {
 
 	statusMap := map[string]store.CaravanItemStatus{}
 	for _, st := range statuses {
-		statusMap[st.WorkItemID] = st
+		statusMap[st.WritID] = st
 	}
 
 	// A (alpha) should be ready.
@@ -875,8 +875,8 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open beta world: %v", err)
 	}
-	if err := bs.CloseWorkItem(idB); err != nil {
-		t.Fatalf("close work item B: %v", err)
+	if err := bs.CloseWrit(idB); err != nil {
+		t.Fatalf("close writ B: %v", err)
 	}
 	bs.Close()
 
@@ -885,7 +885,7 @@ func TestCaravanMultiWorld(t *testing.T) {
 		t.Fatalf("CheckCaravanReadiness after B closed: %v", err)
 	}
 	for _, st := range statuses {
-		if st.WorkItemID == idC && !st.Ready {
+		if st.WritID == idC && !st.Ready {
 			t.Error("beta item C should be ready after B is closed")
 		}
 	}
@@ -896,8 +896,8 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open alpha world: %v", err)
 	}
-	if err := as.CloseWorkItem(idA); err != nil {
-		t.Fatalf("close work item A: %v", err)
+	if err := as.CloseWrit(idA); err != nil {
+		t.Fatalf("close writ A: %v", err)
 	}
 	as.Close()
 
@@ -905,11 +905,11 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open beta world: %v", err)
 	}
-	if err := bs.CloseWorkItem(idB); err != nil {
-		t.Fatalf("close work item B: %v", err)
+	if err := bs.CloseWrit(idB); err != nil {
+		t.Fatalf("close writ B: %v", err)
 	}
-	if err := bs.CloseWorkItem(idC); err != nil {
-		t.Fatalf("close work item C: %v", err)
+	if err := bs.CloseWrit(idC); err != nil {
+		t.Fatalf("close writ C: %v", err)
 	}
 	bs.Close()
 
@@ -934,18 +934,18 @@ func TestCaravanLaunchDispatch(t *testing.T) {
 	mgr := newMockSessionChecker()
 	logger := events.NewLogger(solHome)
 
-	// Create 3 work items: A and B are independent, C depends on A.
-	idA, err := worldStore.CreateWorkItem("Task A", "First task", "operator", 2, nil)
+	// Create 3 writs: A and B are independent, C depends on A.
+	idA, err := worldStore.CreateWrit("Task A", "First task", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem A: %v", err)
+		t.Fatalf("CreateWrit A: %v", err)
 	}
-	idB, err := worldStore.CreateWorkItem("Task B", "Second task", "operator", 2, nil)
+	idB, err := worldStore.CreateWrit("Task B", "Second task", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem B: %v", err)
+		t.Fatalf("CreateWrit B: %v", err)
 	}
-	idC, err := worldStore.CreateWorkItem("Task C", "Depends on A", "operator", 2, nil)
+	idC, err := worldStore.CreateWrit("Task C", "Depends on A", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem C: %v", err)
+		t.Fatalf("CreateWrit C: %v", err)
 	}
 	if err := worldStore.AddDependency(idC, idA); err != nil {
 		t.Fatalf("AddDependency C→A: %v", err)
@@ -977,7 +977,7 @@ func TestCaravanLaunchDispatch(t *testing.T) {
 	}
 	readyCount := 0
 	for _, st := range statuses {
-		if st.WorkItemStatus == "open" && st.Ready {
+		if st.WritStatus == "open" && st.Ready {
 			readyCount++
 		}
 	}
@@ -988,19 +988,19 @@ func TestCaravanLaunchDispatch(t *testing.T) {
 	// Dispatch ready items (simulates caravan launch logic).
 	dispatched := 0
 	for _, st := range statuses {
-		if st.WorkItemStatus != "open" || !st.Ready {
+		if st.WritStatus != "open" || !st.Ready {
 			continue
 		}
 		result, err := dispatch.Cast(dispatch.CastOpts{
-			WorkItemID: st.WorkItemID,
+			WritID: st.WritID,
 			World:      "ember",
 			SourceRepo: sourceRepo,
 		}, worldStore, sphereStore, mgr, logger)
 		if err != nil {
-			t.Fatalf("Cast %s: %v", st.WorkItemID, err)
+			t.Fatalf("Cast %s: %v", st.WritID, err)
 		}
 		if result.AgentName == "" {
-			t.Errorf("Cast %s: empty agent name", st.WorkItemID)
+			t.Errorf("Cast %s: empty agent name", st.WritID)
 		}
 		dispatched++
 	}
@@ -1017,9 +1017,9 @@ func TestCaravanLaunchDispatch(t *testing.T) {
 	}
 
 	// Verify: A and B are tethered, C is still open.
-	itemA, _ := worldStore.GetWorkItem(idA)
-	itemB, _ := worldStore.GetWorkItem(idB)
-	itemC, _ := worldStore.GetWorkItem(idC)
+	itemA, _ := worldStore.GetWrit(idA)
+	itemB, _ := worldStore.GetWrit(idB)
+	itemC, _ := worldStore.GetWrit(idC)
 	if itemA.Status != "tethered" {
 		t.Errorf("item A status: got %q, want tethered", itemA.Status)
 	}
@@ -1090,20 +1090,20 @@ needs = ["implement"]
 		t.Fatalf("write 03-verify.md: %v", err)
 	}
 
-	// Create agent and work item.
+	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("PropBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWorkItem("Propulsion task", "E2E test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Propulsion task", "E2E test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	logger := events.NewLogger(solHome)
 
 	// 1. Cast with formula (mock session).
 	result, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "PropBot",
 		SourceRepo: sourceRepo,
@@ -1169,7 +1169,7 @@ needs = ["implement"]
 		t.Fatalf("write feature.go: %v", err)
 	}
 
-	// 8. Resolve → workflow cleaned up, work item marked done.
+	// 8. Resolve → workflow cleaned up, writ marked done.
 	_, err = dispatch.Resolve(dispatch.ResolveOpts{
 		World:       "ember",
 		AgentName: "PropBot",
@@ -1178,13 +1178,13 @@ needs = ["implement"]
 		t.Fatalf("resolve: %v", err)
 	}
 
-	// Verify work item is done.
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify writ is done.
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("GetWorkItem: %v", err)
+		t.Fatalf("GetWrit: %v", err)
 	}
 	if item.Status != "done" {
-		t.Errorf("work item status: got %q, want done", item.Status)
+		t.Errorf("writ status: got %q, want done", item.Status)
 	}
 
 	// Verify workflow cleaned up.

@@ -31,15 +31,15 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Fatalf("create agent: %v", err)
 	}
 
-	// 2. Create work item.
-	itemID, err := worldStore.CreateWorkItem("Test task", "Integration test description", "operator", 2, nil)
+	// 2. Create writ.
+	itemID, err := worldStore.CreateWrit("Test task", "Integration test description", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 
 	// 3. Cast.
 	result, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
@@ -54,15 +54,15 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Error("tmux session does not exist after cast")
 	}
 
-	item, err := worldStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("get work item: %v", err)
+		t.Fatalf("get writ: %v", err)
 	}
 	if item.Status != "tethered" {
-		t.Errorf("work item status: got %q, want tethered", item.Status)
+		t.Errorf("writ status: got %q, want tethered", item.Status)
 	}
 	if item.Assignee != "ember/TestBot" {
-		t.Errorf("work item assignee: got %q, want ember/TestBot", item.Assignee)
+		t.Errorf("writ assignee: got %q, want ember/TestBot", item.Assignee)
 	}
 
 	agent, err := sphereStore.GetAgent("ember/TestBot")
@@ -113,12 +113,12 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	}
 
 	// 8. Verify resolve state.
-	item, err = worldStore.GetWorkItem(itemID)
+	item, err = worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("get work item after resolve: %v", err)
+		t.Fatalf("get writ after resolve: %v", err)
 	}
 	if item.Status != "done" {
-		t.Errorf("work item status after resolve: got %q, want done", item.Status)
+		t.Errorf("writ status after resolve: got %q, want done", item.Status)
 	}
 
 	// Outpost agent record should be deleted after resolve (name reclaimed).
@@ -158,17 +158,17 @@ func TestCrashRecoveryRecast(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	// Create agent + work item, cast.
+	// Create agent + writ, cast.
 	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWorkItem("Crash test", "Recovery test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Crash test", "Recovery test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	_, err = dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
@@ -181,21 +181,21 @@ func TestCrashRecoveryRecast(t *testing.T) {
 	sessName := "sol-ember-TestBot"
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
 
-	// Verify durability: work item still tethered, tether file persists.
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify durability: writ still tethered, tether file persists.
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("get work item after crash: %v", err)
+		t.Fatalf("get writ after crash: %v", err)
 	}
 	if item.Status != "tethered" {
-		t.Errorf("work item status after crash: got %q, want tethered", item.Status)
+		t.Errorf("writ status after crash: got %q, want tethered", item.Status)
 	}
 	if !tether.IsTethered("ember", "TestBot", "agent") {
 		t.Error("tether file missing after crash")
 	}
 
-	// Re-cast the same work item to the same agent.
+	// Re-cast the same writ to the same agent.
 	_, err = dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
@@ -229,17 +229,17 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	// Create agent + first work item, cast.
+	// Create agent + first writ, cast.
 	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	item1ID, err := worldStore.CreateWorkItem("First task", "Task 1", "operator", 2, nil)
+	item1ID, err := worldStore.CreateWrit("First task", "Task 1", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	_, err = dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: item1ID,
+		WritID: item1ID,
 		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
@@ -248,14 +248,14 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 		t.Fatalf("first cast: %v", err)
 	}
 
-	// Create second work item and try to cast to same agent.
-	item2ID, err := worldStore.CreateWorkItem("Second task", "Task 2", "operator", 2, nil)
+	// Create second writ and try to cast to same agent.
+	item2ID, err := worldStore.CreateWrit("Second task", "Task 2", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	_, err = dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: item2ID,
+		WritID: item2ID,
 		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
@@ -265,12 +265,12 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 	}
 
 	// Verify second item remains open.
-	item2, err := worldStore.GetWorkItem(item2ID)
+	item2, err := worldStore.GetWrit(item2ID)
 	if err != nil {
-		t.Fatalf("get work item 2: %v", err)
+		t.Fatalf("get writ 2: %v", err)
 	}
 	if item2.Status != "open" {
-		t.Errorf("second work item status: got %q, want open", item2.Status)
+		t.Errorf("second writ status: got %q, want open", item2.Status)
 	}
 }
 
@@ -288,13 +288,13 @@ func TestPrimeOutput(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWorkItem("Prime test task", "Check prime output", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Prime test task", "Check prime output", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	if _, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
@@ -309,7 +309,7 @@ func TestPrimeOutput(t *testing.T) {
 	}
 
 	checks := map[string]string{
-		"work item ID": itemID,
+		"writ ID": itemID,
 		"title":        "Prime test task",
 		"description":  "Check prime output",
 		"sol resolve":      "sol resolve",
@@ -355,14 +355,14 @@ func TestStoreInspection(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	// Create work items.
-	id1, err := worldStore.CreateWorkItem("Task one", "First", "operator", 2, nil)
+	// Create writs.
+	id1, err := worldStore.CreateWrit("Task one", "First", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
-	id2, err := worldStore.CreateWorkItem("Task two", "Second", "operator", 2, nil)
+	id2, err := worldStore.CreateWrit("Task two", "Second", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	// Cast one.
@@ -370,7 +370,7 @@ func TestStoreInspection(t *testing.T) {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	if _, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: id1,
+		WritID: id1,
 		World:        "ember",
 		AgentName:  "TestBot",
 		SourceRepo: sourceRepo,
@@ -380,7 +380,7 @@ func TestStoreInspection(t *testing.T) {
 
 	// Query the world DB directly via database/sql.
 	db := worldStore.DB()
-	rows, err := db.Query("SELECT id, title, status, assignee FROM work_items ORDER BY created_at")
+	rows, err := db.Query("SELECT id, title, status, assignee FROM writs ORDER BY created_at")
 	if err != nil {
 		t.Fatalf("SQL query: %v", err)
 	}

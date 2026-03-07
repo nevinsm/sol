@@ -125,9 +125,9 @@ func formatEventDescription(ev events.Event) string {
 
 	switch ev.Type {
 	case events.EventCast:
-		return fmt.Sprintf("Dispatched %s → %s (%s)", get("work_item_id"), get("agent"), get("world"))
+		return fmt.Sprintf("Dispatched %s → %s (%s)", get("writ_id"), get("agent"), get("world"))
 	case events.EventResolve:
-		return fmt.Sprintf("Completed %s", get("work_item_id"))
+		return fmt.Sprintf("Completed %s", get("writ_id"))
 	case events.EventMergeClaimed:
 		return fmt.Sprintf("Claimed %s for merge", get("merge_request_id"))
 	case events.EventMerged:
@@ -153,11 +153,11 @@ func formatEventDescription(ev events.Event) string {
 	case events.EventNudge:
 		return fmt.Sprintf("Nudged %s: %s", get("agent"), get("message"))
 	case events.EventWorkflowInstantiate:
-		return fmt.Sprintf("Workflow %s instantiated for %s", get("formula"), get("work_item_id"))
+		return fmt.Sprintf("Workflow %s instantiated for %s", get("formula"), get("writ_id"))
 	case events.EventWorkflowAdvance:
-		return fmt.Sprintf("Advanced to step: %s (%s)", get("step"), get("work_item_id"))
+		return fmt.Sprintf("Advanced to step: %s (%s)", get("step"), get("writ_id"))
 	case events.EventWorkflowComplete:
-		return fmt.Sprintf("Workflow complete: %s", get("work_item_id"))
+		return fmt.Sprintf("Workflow complete: %s", get("writ_id"))
 	case events.EventCaravanCreated:
 		return fmt.Sprintf("Caravan created: %s (%s items)", get("name"), get("count"))
 	case events.EventCaravanLaunched:
@@ -171,12 +171,12 @@ func formatEventDescription(ev events.Event) string {
 	case events.EventEscalationResolved:
 		return fmt.Sprintf("Escalation resolved: %s", get("id"))
 	case events.EventHandoff:
-		return fmt.Sprintf("Agent %s handed off: %s", get("agent"), get("work_item_id"))
+		return fmt.Sprintf("Agent %s handed off: %s", get("agent"), get("writ_id"))
 	case events.EventConsulPatrol:
 		return fmt.Sprintf("Consul patrol #%s: %s stale tethers, %s caravan feeds",
 			get("patrol_count"), get("stale_tethers"), get("caravan_feeds"))
 	case events.EventConsulStaleTether:
-		return fmt.Sprintf("Stale tether recovered: %s (%s)", get("agent_id"), get("work_item_id"))
+		return fmt.Sprintf("Stale tether recovered: %s (%s)", get("agent_id"), get("writ_id"))
 	case events.EventConsulCaravanFeed:
 		return fmt.Sprintf("Caravan needs feeding: %s (%s ready items)", get("caravan_id"), get("ready_count"))
 	case "cast_batch":

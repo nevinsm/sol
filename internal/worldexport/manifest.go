@@ -105,7 +105,7 @@ type ExportCaravan struct {
 // ExportCaravanItem is the JSON-serializable representation of a caravan item.
 type ExportCaravanItem struct {
 	CaravanID  string `json:"caravan_id"`
-	WorkItemID string `json:"work_item_id"`
+	WritID string `json:"writ_id"`
 	World      string `json:"world"`
 	Phase      int    `json:"phase"`
 }

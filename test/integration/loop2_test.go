@@ -22,14 +22,14 @@ func TestStatusWithMergeQueue(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	// Create work item, cast, simulate work, done.
-	itemID, err := worldStore.CreateWorkItem("Status test", "Status with merge queue", "operator", 2, nil)
+	// Create writ, cast, simulate work, done.
+	itemID, err := worldStore.CreateWrit("Status test", "Status with merge queue", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 
 	result, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		SourceRepo: sourceClone,
 	}, worldStore, sphereStore, mgr, nil)

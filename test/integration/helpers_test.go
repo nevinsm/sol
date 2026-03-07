@@ -431,8 +431,8 @@ func createTestRepo(t *testing.T) string {
 	return dir
 }
 
-// extractWorkItemID extracts a sol-xxxx work item ID from command output.
-func extractWorkItemID(t *testing.T, output string) string {
+// extractWritID extracts a sol-xxxx writ ID from command output.
+func extractWritID(t *testing.T, output string) string {
 	t.Helper()
 	id := strings.TrimSpace(output)
 	if strings.HasPrefix(id, "sol-") {
@@ -443,7 +443,7 @@ func extractWorkItemID(t *testing.T, output string) string {
 			return strings.TrimSuffix(word, ":")
 		}
 	}
-	t.Fatalf("could not extract work item ID from: %s", output)
+	t.Fatalf("could not extract writ ID from: %s", output)
 	return ""
 }
 

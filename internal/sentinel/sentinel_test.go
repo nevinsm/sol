@@ -167,16 +167,16 @@ func testConfig() Config {
 	}
 }
 
-func createWorkItem(t *testing.T, worldStore *store.Store, id, title string) {
+func createWrit(t *testing.T, worldStore *store.Store, id, title string) {
 	t.Helper()
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := worldStore.DB().Exec(
-		`INSERT INTO work_items (id, title, description, status, priority, created_by, created_at, updated_at)
+		`INSERT INTO writs (id, title, description, status, priority, created_by, created_at, updated_at)
 		 VALUES (?, ?, '', 'open', 3, 'test', ?, ?)`,
 		id, title, now, now,
 	)
 	if err != nil {
-		t.Fatalf("failed to create work item %q: %v", id, err)
+		t.Fatalf("failed to create writ %q: %v", id, err)
 	}
 }
 
@@ -305,7 +305,7 @@ func TestPatrolDetectsStalled(t *testing.T) {
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "ember", "agent")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
-	createWorkItem(t, worldStore, "sol-abc12345", "Test task")
+	createWrit(t, worldStore, "sol-abc12345", "Test task")
 	// Session is NOT alive (not in mock.alive).
 
 	// Create worktree directory so respawn doesn't fail on missing dir.
@@ -337,7 +337,7 @@ func TestPatrolMaxRespawns(t *testing.T) {
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "ember", "agent")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
-	createWorkItem(t, worldStore, "sol-abc12345", "Test task")
+	createWrit(t, worldStore, "sol-abc12345", "Test task")
 
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
@@ -345,7 +345,7 @@ func TestPatrolMaxRespawns(t *testing.T) {
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 
 	// Pre-set respawn count to max.
-	w.respawnCounts[respawnKey{AgentID: "ember/Toast", WorkItemID: "sol-abc12345"}] = 2
+	w.respawnCounts[respawnKey{AgentID: "ember/Toast", WritID: "sol-abc12345"}] = 2
 
 	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
@@ -358,12 +358,12 @@ func TestPatrolMaxRespawns(t *testing.T) {
 	}
 
 	// Work item should be open.
-	item, err := worldStore.GetWorkItem("sol-abc12345")
+	item, err := worldStore.GetWrit("sol-abc12345")
 	if err != nil {
-		t.Fatalf("GetWorkItem() error: %v", err)
+		t.Fatalf("GetWrit() error: %v", err)
 	}
 	if item.Status != "open" {
-		t.Errorf("work item status = %q, want %q", item.Status, "open")
+		t.Errorf("writ status = %q, want %q", item.Status, "open")
 	}
 
 	// Agent should be idle.
@@ -683,7 +683,7 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 
 	sphereStore.CreateAgent("Toast", "ember", "agent")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
-	createWorkItem(t, worldStore, "sol-abc12345", "Test task")
+	createWrit(t, worldStore, "sol-abc12345", "Test task")
 
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
@@ -721,7 +721,7 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 		t.Fatalf("patrol 3: expected still 2 starts (max reached), got %d", len(started))
 	}
 
-	// Agent should be idle, work item open.
+	// Agent should be idle, writ open.
 	agent, err := sphereStore.GetAgent("ember/Toast")
 	if err != nil {
 		t.Fatal(err)
@@ -730,12 +730,12 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 		t.Errorf("agent state = %q, want %q after max respawns", agent.State, "idle")
 	}
 
-	item, err := worldStore.GetWorkItem("sol-abc12345")
+	item, err := worldStore.GetWrit("sol-abc12345")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if item.Status != "open" {
-		t.Errorf("work item status = %q, want %q after max respawns", item.Status, "open")
+		t.Errorf("writ status = %q, want %q after max respawns", item.Status, "open")
 	}
 }
 
@@ -903,7 +903,7 @@ func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "ember", "agent")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
-	createWorkItem(t, worldStore, "sol-abc12345", "Test task")
+	createWrit(t, worldStore, "sol-abc12345", "Test task")
 
 	// Create outpost directory with worktree and tether.
 	solHome := os.Getenv("SOL_HOME")
@@ -924,12 +924,12 @@ func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
 	}
 
 	// Work item should be open.
-	item, err := worldStore.GetWorkItem("sol-abc12345")
+	item, err := worldStore.GetWrit("sol-abc12345")
 	if err != nil {
-		t.Fatalf("GetWorkItem() error: %v", err)
+		t.Fatalf("GetWrit() error: %v", err)
 	}
 	if item.Status != "open" {
-		t.Errorf("work item status = %q, want %q", item.Status, "open")
+		t.Errorf("writ status = %q, want %q", item.Status, "open")
 	}
 
 	// Tether should be cleared.
@@ -1127,7 +1127,7 @@ func TestPatrolForgeMaxRespawns(t *testing.T) {
 	w := New(cfg, sphereStore, nil, mock, nil)
 
 	// Pre-set respawn count to max.
-	w.respawnCounts[respawnKey{AgentID: "ember/forge", WorkItemID: ""}] = 2
+	w.respawnCounts[respawnKey{AgentID: "ember/forge", WritID: ""}] = 2
 
 	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
@@ -1184,11 +1184,11 @@ func TestCleanupDoesNotTouchOtherWorlds(t *testing.T) {
 
 // --- Recast tests ---
 
-// createFailedMR creates a work item and a failed MR for it.
-func createFailedMR(t *testing.T, worldStore *store.Store, workItemID, title, branch string) string {
+// createFailedMR creates a writ and a failed MR for it.
+func createFailedMR(t *testing.T, worldStore *store.Store, writID, title, branch string) string {
 	t.Helper()
-	createWorkItem(t, worldStore, workItemID, title)
-	mrID, err := worldStore.CreateMergeRequest(workItemID, branch, 3)
+	createWrit(t, worldStore, writID, title)
+	mrID, err := worldStore.CreateMergeRequest(writID, branch, 3)
 	if err != nil {
 		t.Fatalf("failed to create MR: %v", err)
 	}
@@ -1204,8 +1204,8 @@ func TestReleaseStaleClaims(t *testing.T) {
 	cfg := testConfig()
 	cfg.ClaimTTL = 30 * time.Minute
 
-	// Create a work item and MR, then claim it.
-	createWorkItem(t, worldStore, "sol-stale001", "Stale claim test")
+	// Create a writ and MR, then claim it.
+	createWrit(t, worldStore, "sol-stale001", "Stale claim test")
 	mrID, err := worldStore.CreateMergeRequest("sol-stale001", "outpost/A/sol-stale001", 3)
 	if err != nil {
 		t.Fatalf("failed to create MR: %v", err)
@@ -1251,8 +1251,8 @@ func TestReleaseStaleClaims_SkipsFresh(t *testing.T) {
 	cfg := testConfig()
 	cfg.ClaimTTL = 30 * time.Minute
 
-	// Create a work item and MR, then claim it (claimed_at = now, so fresh).
-	createWorkItem(t, worldStore, "sol-fresh001", "Fresh claim test")
+	// Create a writ and MR, then claim it (claimed_at = now, so fresh).
+	createWrit(t, worldStore, "sol-fresh001", "Fresh claim test")
 	mrID, err := worldStore.CreateMergeRequest("sol-fresh001", "outpost/A/sol-fresh001", 3)
 	if err != nil {
 		t.Fatalf("failed to create MR: %v", err)
@@ -1290,18 +1290,18 @@ func TestRecastFailedMR(t *testing.T) {
 	cfg := testConfig()
 	cfg.MaxRecastAttempts = 3
 
-	// Create a failed MR with an open work item.
+	// Create a failed MR with an open writ.
 	createFailedMR(t, worldStore, "sol-fail1111", "Failing task", "outpost/Toast/sol-fail1111")
 
 	castCalled := false
-	var castWorkItemID string
+	var castWritID string
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
-	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		castCalled = true
-		castWorkItemID = workItemID
+		castWritID = writID
 		return &CastResult{
-			WorkItemID:  workItemID,
+			WritID:  writID,
 			AgentName:   "Sage",
 			SessionName: "sol-ember-Sage",
 		}, nil
@@ -1314,8 +1314,8 @@ func TestRecastFailedMR(t *testing.T) {
 	if !castCalled {
 		t.Fatal("expected castFn to be called for failed MR")
 	}
-	if castWorkItemID != "sol-fail1111" {
-		t.Errorf("castFn called with %q, want %q", castWorkItemID, "sol-fail1111")
+	if castWritID != "sol-fail1111" {
+		t.Errorf("castFn called with %q, want %q", castWritID, "sol-fail1111")
 	}
 
 	// Recast count should be 1.
@@ -1324,19 +1324,19 @@ func TestRecastFailedMR(t *testing.T) {
 	}
 }
 
-func TestRecastSkipsNonOpenWorkItem(t *testing.T) {
+func TestRecastSkipsNonOpenWrit(t *testing.T) {
 	sphereStore, worldStore := setupTestEnv(t)
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	// Create a failed MR but set the work item to "tethered" (already re-dispatched).
+	// Create a failed MR but set the writ to "tethered" (already re-dispatched).
 	mrID := createFailedMR(t, worldStore, "sol-teth2222", "Already tethered", "outpost/X/sol-teth2222")
 	_ = mrID
-	worldStore.UpdateWorkItem("sol-teth2222", store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"})
+	worldStore.UpdateWrit("sol-teth2222", store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"})
 
 	castCalled := false
 	w := New(cfg, sphereStore, worldStore, mock, nil)
-	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		castCalled = true
 		return &CastResult{AgentName: "Sage"}, nil
 	})
@@ -1346,7 +1346,7 @@ func TestRecastSkipsNonOpenWorkItem(t *testing.T) {
 	}
 
 	if castCalled {
-		t.Error("castFn should NOT be called when work item is not open")
+		t.Error("castFn should NOT be called when writ is not open")
 	}
 }
 
@@ -1356,12 +1356,12 @@ func TestRecastMaxAttemptsEscalates(t *testing.T) {
 	cfg := testConfig()
 	cfg.MaxRecastAttempts = 2
 
-	// Create a failed MR with an open work item.
+	// Create a failed MR with an open writ.
 	createFailedMR(t, worldStore, "sol-maxr3333", "Max retries task", "outpost/Toast/sol-maxr3333")
 
 	castCalled := false
 	w := New(cfg, sphereStore, worldStore, mock, nil)
-	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		castCalled = true
 		return &CastResult{AgentName: "Sage"}, nil
 	})
@@ -1398,11 +1398,11 @@ func TestRecastMaxAttemptsEscalatesOnlyOnce(t *testing.T) {
 	cfg := testConfig()
 	cfg.MaxRecastAttempts = 2
 
-	// Create a failed MR with an open work item.
+	// Create a failed MR with an open writ.
 	createFailedMR(t, worldStore, "sol-once4444", "Escalate once", "outpost/Toast/sol-once4444")
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
-	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		return &CastResult{AgentName: "Sage"}, nil
 	})
 
@@ -1441,13 +1441,13 @@ func TestRecastNoCastFuncSkips(t *testing.T) {
 	// Should complete without error and without panic.
 }
 
-func TestRecastDeduplicatesByWorkItem(t *testing.T) {
+func TestRecastDeduplicatesByWrit(t *testing.T) {
 	sphereStore, worldStore := setupTestEnv(t)
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	// Create a work item with TWO failed MRs (e.g., two merge attempts).
-	createWorkItem(t, worldStore, "sol-dedup666", "Dedup task")
+	// Create a writ with TWO failed MRs (e.g., two merge attempts).
+	createWrit(t, worldStore, "sol-dedup666", "Dedup task")
 	mr1, _ := worldStore.CreateMergeRequest("sol-dedup666", "outpost/A/sol-dedup666", 3)
 	worldStore.UpdateMergeRequestPhase(mr1, "failed")
 	mr2, _ := worldStore.CreateMergeRequest("sol-dedup666", "outpost/B/sol-dedup666", 3)
@@ -1455,7 +1455,7 @@ func TestRecastDeduplicatesByWorkItem(t *testing.T) {
 
 	castCount := 0
 	w := New(cfg, sphereStore, worldStore, mock, nil)
-	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		castCount++
 		return &CastResult{AgentName: "Sage"}, nil
 	})
@@ -1475,12 +1475,12 @@ func TestRecastPrunesCountOnHandledItem(t *testing.T) {
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	// Create a failed MR with a "done" work item (already resolved).
+	// Create a failed MR with a "done" writ (already resolved).
 	createFailedMR(t, worldStore, "sol-prune777", "Already done", "outpost/X/sol-prune777")
-	worldStore.UpdateWorkItem("sol-prune777", store.WorkItemUpdates{Status: "done"})
+	worldStore.UpdateWrit("sol-prune777", store.WritUpdates{Status: "done"})
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
-	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		return &CastResult{AgentName: "Sage"}, nil
 	})
 
@@ -1491,9 +1491,9 @@ func TestRecastPrunesCountOnHandledItem(t *testing.T) {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
-	// Recast count should be pruned since work item is no longer open.
+	// Recast count should be pruned since writ is no longer open.
 	if _, exists := w.recastCounts["sol-prune777"]; exists {
-		t.Error("expected recast count to be pruned for non-open work item")
+		t.Error("expected recast count to be pruned for non-open writ")
 	}
 }
 
@@ -1506,7 +1506,7 @@ func TestRecastCastFailureNonBlocking(t *testing.T) {
 	createFailedMR(t, worldStore, "sol-cfail888", "Cast failure", "outpost/X/sol-cfail888")
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
-	w.SetCastFunc(func(workItemID string) (*CastResult, error) {
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		return nil, fmt.Errorf("no idle agents available")
 	})
 
@@ -2027,7 +2027,7 @@ func TestCheckQuotaPausedUsesStartupPathForRegisteredRole(t *testing.T) {
 	state.PausedSessions["ember/Toast"] = quota.PausedSession{
 		PausedAt:        time.Now().Add(-5 * time.Minute).UTC(),
 		PreviousAccount: "alice",
-		WorkItem:        "sol-work-1",
+		Writ:        "sol-work-1",
 		World:           "ember",
 		AgentName:       "Toast",
 		Role:            "agent",

@@ -5,8 +5,8 @@ import "testing"
 func TestAddDependency(t *testing.T) {
 	s := setupWorld(t)
 
-	id1, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
-	id2, _ := s.CreateWorkItem("Item B", "", "operator", 2, nil)
+	id1, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
+	id2, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
 
 	// Add dependency: A depends on B.
 	if err := s.AddDependency(id1, id2); err != nil {
@@ -26,7 +26,7 @@ func TestAddDependency(t *testing.T) {
 func TestAddDependencySelfRef(t *testing.T) {
 	s := setupWorld(t)
 
-	id1, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
+	id1, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
 
 	err := s.AddDependency(id1, id1)
 	if err == nil {
@@ -37,25 +37,25 @@ func TestAddDependencySelfRef(t *testing.T) {
 func TestAddDependencyNonexistentItem(t *testing.T) {
 	s := setupWorld(t)
 
-	id1, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
+	id1, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
 
 	err := s.AddDependency(id1, "sol-nonexist")
 	if err == nil {
-		t.Fatal("expected error for nonexistent work item")
+		t.Fatal("expected error for nonexistent writ")
 	}
 
 	err = s.AddDependency("sol-nonexist", id1)
 	if err == nil {
-		t.Fatal("expected error for nonexistent work item")
+		t.Fatal("expected error for nonexistent writ")
 	}
 }
 
 func TestAddDependencyCycleDetection(t *testing.T) {
 	s := setupWorld(t)
 
-	idA, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWorkItem("Item B", "", "operator", 2, nil)
-	idC, _ := s.CreateWorkItem("Item C", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
+	idC, _ := s.CreateWrit("Item C", "", "operator", 2, nil)
 
 	// A depends on B.
 	if err := s.AddDependency(idA, idB); err != nil {
@@ -83,8 +83,8 @@ func TestAddDependencyCycleDetection(t *testing.T) {
 func TestRemoveDependency(t *testing.T) {
 	s := setupWorld(t)
 
-	id1, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
-	id2, _ := s.CreateWorkItem("Item B", "", "operator", 2, nil)
+	id1, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
+	id2, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
 
 	// Add then remove.
 	s.AddDependency(id1, id2)
@@ -104,10 +104,10 @@ func TestRemoveDependency(t *testing.T) {
 func TestGetDependencies(t *testing.T) {
 	s := setupWorld(t)
 
-	idA, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWorkItem("Item B", "", "operator", 2, nil)
-	idC, _ := s.CreateWorkItem("Item C", "", "operator", 2, nil)
-	idD, _ := s.CreateWorkItem("Item D", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
+	idC, _ := s.CreateWrit("Item C", "", "operator", 2, nil)
+	idD, _ := s.CreateWrit("Item D", "", "operator", 2, nil)
 
 	// A depends on B, C, D.
 	s.AddDependency(idA, idB)
@@ -135,10 +135,10 @@ func TestGetDependencies(t *testing.T) {
 func TestGetDependents(t *testing.T) {
 	s := setupWorld(t)
 
-	idX, _ := s.CreateWorkItem("Item X", "", "operator", 2, nil)
-	idA, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWorkItem("Item B", "", "operator", 2, nil)
-	idC, _ := s.CreateWorkItem("Item C", "", "operator", 2, nil)
+	idX, _ := s.CreateWrit("Item X", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
+	idC, _ := s.CreateWrit("Item C", "", "operator", 2, nil)
 
 	// A, B, C all depend on X.
 	s.AddDependency(idA, idX)
@@ -157,9 +157,9 @@ func TestGetDependents(t *testing.T) {
 func TestIsReady(t *testing.T) {
 	s := setupWorld(t)
 
-	idA, _ := s.CreateWorkItem("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWorkItem("Item B", "", "operator", 2, nil)
-	idC, _ := s.CreateWorkItem("Item C", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
+	idC, _ := s.CreateWrit("Item C", "", "operator", 2, nil)
 
 	// Item with no deps → ready.
 	ready, err := s.IsReady(idA)
@@ -181,7 +181,7 @@ func TestIsReady(t *testing.T) {
 	}
 
 	// B → done → A still NOT ready (done != merged).
-	s.UpdateWorkItem(idB, WorkItemUpdates{Status: "done"})
+	s.UpdateWrit(idB, WritUpdates{Status: "done"})
 	ready, err = s.IsReady(idA)
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +191,7 @@ func TestIsReady(t *testing.T) {
 	}
 
 	// B → closed (merged) → A is ready.
-	s.CloseWorkItem(idB)
+	s.CloseWrit(idB)
 	ready, err = s.IsReady(idA)
 	if err != nil {
 		t.Fatal(err)
@@ -211,7 +211,7 @@ func TestIsReady(t *testing.T) {
 	}
 
 	// Close C → A is ready.
-	s.CloseWorkItem(idC)
+	s.CloseWrit(idC)
 	ready, err = s.IsReady(idA)
 	if err != nil {
 		t.Fatal(err)
@@ -229,8 +229,8 @@ func TestV4Migration(t *testing.T) {
 	if err := s.DB().QueryRow("SELECT version FROM schema_version").Scan(&v); err != nil {
 		t.Fatalf("failed to get schema version: %v", err)
 	}
-	if v != 7 {
-		t.Errorf("schema version = %d, want 7", v)
+	if v != CurrentWorldSchema {
+		t.Errorf("schema version = %d, want %d", v, CurrentWorldSchema)
 	}
 
 	// Verify dependencies table exists.

@@ -118,7 +118,7 @@ func TestBackupDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.CreateWorkItem("backup item", "test", "operator", 2, nil)
+	_, err = s.CreateWrit("backup item", "test", "operator", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,10 +166,10 @@ func TestBackupDatabaseNonexistent(t *testing.T) {
 
 func TestCurrentSchemaConstants(t *testing.T) {
 	// Verify constants are positive and match the expected values.
-	if CurrentWorldSchema != 7 {
-		t.Fatalf("CurrentWorldSchema = %d, expected 7", CurrentWorldSchema)
+	if CurrentWorldSchema != 8 {
+		t.Fatalf("CurrentWorldSchema = %d, expected 8", CurrentWorldSchema)
 	}
-	if CurrentSphereSchema != 8 {
-		t.Fatalf("CurrentSphereSchema = %d, expected 8", CurrentSphereSchema)
+	if CurrentSphereSchema != 9 {
+		t.Fatalf("CurrentSphereSchema = %d, expected 9", CurrentSphereSchema)
 	}
 }

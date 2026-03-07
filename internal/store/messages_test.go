@@ -279,7 +279,7 @@ func TestSendProtocolMessage(t *testing.T) {
 	s := setupSphere(t)
 
 	payload := AgentDonePayload{
-		WorkItemID: "sol-abc12345",
+		WritID: "sol-abc12345",
 		AgentID:    "haven/Toast",
 		Branch:     "outpost/Toast/sol-abc12345",
 		World:      "haven",
@@ -310,8 +310,8 @@ func TestSendProtocolMessage(t *testing.T) {
 	if err := json.Unmarshal([]byte(msg.Body), &parsed); err != nil {
 		t.Fatalf("failed to unmarshal body: %v", err)
 	}
-	if parsed.WorkItemID != "sol-abc12345" {
-		t.Fatalf("expected work_item_id 'sol-abc12345', got %q", parsed.WorkItemID)
+	if parsed.WritID != "sol-abc12345" {
+		t.Fatalf("expected writ_id 'sol-abc12345', got %q", parsed.WritID)
 	}
 	if parsed.AgentID != "haven/Toast" {
 		t.Fatalf("expected agent_id 'haven/Toast', got %q", parsed.AgentID)

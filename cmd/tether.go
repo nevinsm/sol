@@ -13,14 +13,14 @@ import (
 var tetherWorld string
 
 var tetherCmd = &cobra.Command{
-	Use:          "tether <agent-name> <work-item-id>",
-	Short:        "Bind a work item to an agent (any role)",
+	Use:          "tether <agent-name> <writ-id>",
+	Short:        "Bind a writ to an agent (any role)",
 	GroupID:      groupAgents,
 	Args:         cobra.ExactArgs(2),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		agentName := args[0]
-		workItemID := args[1]
+		writID := args[1]
 		world, err := config.ResolveWorld(tetherWorld)
 		if err != nil {
 			return err
@@ -42,14 +42,14 @@ var tetherCmd = &cobra.Command{
 
 		result, err := dispatch.Tether(dispatch.TetherOpts{
 			AgentName:  agentName,
-			WorkItemID: workItemID,
+			WritID: writID,
 			World:      world,
 		}, worldStore, sphereStore, logger)
 		if err != nil {
 			return err
 		}
 
-		fmt.Printf("Tethered %s (%s) -> %s\n", result.AgentName, result.AgentRole, result.WorkItemID)
+		fmt.Printf("Tethered %s (%s) -> %s\n", result.AgentName, result.AgentRole, result.WritID)
 		return nil
 	},
 }

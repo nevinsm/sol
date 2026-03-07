@@ -44,13 +44,13 @@ func (m *mockSphereStore) ListAgents(world, state string) ([]store.Agent, error)
 }
 
 type mockWorldStore struct {
-	items map[string]*store.WorkItem
+	items map[string]*store.Writ
 }
 
-func (m *mockWorldStore) GetWorkItem(id string) (*store.WorkItem, error) {
+func (m *mockWorldStore) GetWrit(id string) (*store.Writ, error) {
 	item, ok := m.items[id]
 	if !ok {
-		return nil, fmt.Errorf("work item %q not found", id)
+		return nil, fmt.Errorf("writ %q not found", id)
 	}
 	return item, nil
 }
@@ -151,7 +151,7 @@ func TestGatherHealthy(t *testing.T) {
 		},
 	}
 	world := &mockWorldStore{
-		items: map[string]*store.WorkItem{
+		items: map[string]*store.Writ{
 			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Implement login page"},
 			"sol-11223344": {ID: "sol-11223344", Title: "Add unit tests"},
 		},
@@ -192,7 +192,7 @@ func TestGatherUnhealthy(t *testing.T) {
 		},
 	}
 	world := &mockWorldStore{
-		items: map[string]*store.WorkItem{
+		items: map[string]*store.Writ{
 			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Implement login page"},
 			"sol-c5d6e7f8": {ID: "sol-c5d6e7f8", Title: "Fix CSS regression"},
 		},
@@ -229,7 +229,7 @@ func TestGatherDegraded(t *testing.T) {
 		},
 	}
 	world := &mockWorldStore{
-		items: map[string]*store.WorkItem{
+		items: map[string]*store.Writ{
 			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Test task"},
 		},
 	}
@@ -308,7 +308,7 @@ func TestGatherWithHookedWork(t *testing.T) {
 		},
 	}
 	world := &mockWorldStore{
-		items: map[string]*store.WorkItem{
+		items: map[string]*store.Writ{
 			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Implement login page"},
 		},
 	}
@@ -333,7 +333,7 @@ func TestGatherWithHookedWork(t *testing.T) {
 	}
 }
 
-func TestGatherMissingWorkItem(t *testing.T) {
+func TestGatherMissingWrit(t *testing.T) {
 	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
@@ -344,14 +344,14 @@ func TestGatherMissingWorkItem(t *testing.T) {
 			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", TetherItem: "sol-nonexist"},
 		},
 	}
-	world := &mockWorldStore{items: map[string]*store.WorkItem{}} // item not found
+	world := &mockWorldStore{items: map[string]*store.Writ{}} // item not found
 	checker := &mockChecker{
 		alive: map[string]bool{"sol-haven-Toast": true},
 	}
 
 	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
-		t.Fatalf("Gather() error: %v (should not fail on missing work item)", err)
+		t.Fatalf("Gather() error: %v (should not fail on missing writ)", err)
 	}
 
 	if len(result.Agents) != 1 {
@@ -378,7 +378,7 @@ func TestGatherMixedStates(t *testing.T) {
 		},
 	}
 	world := &mockWorldStore{
-		items: map[string]*store.WorkItem{
+		items: map[string]*store.Writ{
 			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Implement login page"},
 			"sol-c5d6e7f8": {ID: "sol-c5d6e7f8", Title: "Fix CSS regression"},
 			"sol-11223344": {ID: "sol-11223344", Title: "Add unit tests"},
@@ -664,7 +664,7 @@ func TestGatherWithEnvoys(t *testing.T) {
 		},
 	}
 	world := &mockWorldStore{
-		items: map[string]*store.WorkItem{
+		items: map[string]*store.Writ{
 			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Design review"},
 			"sol-11223344": {ID: "sol-11223344", Title: "Implement auth"},
 		},
@@ -722,7 +722,7 @@ func TestGatherMixedRoles(t *testing.T) {
 		},
 	}
 	world := &mockWorldStore{
-		items: map[string]*store.WorkItem{
+		items: map[string]*store.Writ{
 			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Implement login"},
 			"sol-11223344": {ID: "sol-11223344", Title: "Design review"},
 		},
@@ -811,7 +811,7 @@ func TestHealthIgnoresEnvoyGovernor(t *testing.T) {
 		},
 	}
 	world := &mockWorldStore{
-		items: map[string]*store.WorkItem{
+		items: map[string]*store.Writ{
 			"sol-a1b2c3d4": {ID: "sol-a1b2c3d4", Title: "Task 1"},
 			"sol-11223344": {ID: "sol-11223344", Title: "Task 2"},
 		},

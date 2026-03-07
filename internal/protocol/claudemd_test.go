@@ -13,7 +13,7 @@ func TestClaudeMDWithWorkflow(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
-		WorkItemID:  "sol-12345678",
+		WritID:  "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 		HasWorkflow: true,
@@ -174,7 +174,7 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 
 	// Verify no wrong cast syntax.
 	for _, bad := range []string{
-		"cast --work-item=",
+		"cast --writ=",
 	} {
 		if strings.Contains(content, bad) {
 			t.Errorf("GenerateGovernorClaudeMD should not contain %q", bad)
@@ -254,7 +254,7 @@ func TestClaudeMDWithoutWorkflow(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
-		WorkItemID:  "sol-12345678",
+		WritID:  "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 		HasWorkflow: false,
@@ -558,7 +558,7 @@ func TestClaudeMDWarningSectionPresent(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
-		WorkItemID:  "sol-12345678",
+		WritID:  "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 	}
@@ -583,7 +583,7 @@ func TestClaudeMDApproachSectionPresent(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
-		WorkItemID:  "sol-12345678",
+		WritID:  "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 	}
@@ -608,7 +608,7 @@ func TestClaudeMDCompletionChecklistPresent(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
-		WorkItemID:  "sol-12345678",
+		WritID:  "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 	}
@@ -630,7 +630,7 @@ func TestClaudeMDQualityGatesDefault(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
-		WorkItemID:  "sol-12345678",
+		WritID:  "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 	}
@@ -646,7 +646,7 @@ func TestClaudeMDQualityGatesConfigured(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:    "TestBot",
 		World:        "ember",
-		WorkItemID:   "sol-12345678",
+		WritID:   "sol-12345678",
 		Title:        "Test task",
 		Description:  "Test description",
 		QualityGates: []string{"make test", "make vet"},
@@ -669,7 +669,7 @@ func TestClaudeMDSectionOrder(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:    "TestBot",
 		World:        "ember",
-		WorkItemID:   "sol-12345678",
+		WritID:   "sol-12345678",
 		Title:        "Test task",
 		Description:  "Test description",
 		QualityGates: []string{"make test"},

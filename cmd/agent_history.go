@@ -23,7 +23,7 @@ var (
 type historyRow struct {
 	ID         string          `json:"id"`
 	AgentName  string          `json:"agent_name"`
-	WorkItemID string          `json:"work_item_id,omitempty"`
+	WritID string          `json:"writ_id,omitempty"`
 	Action     string          `json:"action"`
 	StartedAt  time.Time       `json:"started_at"`
 	EndedAt    *time.Time      `json:"ended_at,omitempty"`
@@ -43,7 +43,7 @@ type tokenTotals struct {
 var agentHistoryCmd = &cobra.Command{
 	Use:   "history [name]",
 	Short: "Show agent work trail",
-	Long: `Show the work trail for an agent — work items, cast/resolve times, cycle duration, and token usage.
+	Long: `Show the work trail for an agent — writs, cast/resolve times, cycle duration, and token usage.
 
 Without a name argument, shows all agent activity in the world.`,
 	Args:         cobra.MaximumNArgs(1),
@@ -85,7 +85,7 @@ Without a name argument, shows all agent activity in the world.`,
 			row := historyRow{
 				ID:         e.ID,
 				AgentName:  e.AgentName,
-				WorkItemID: e.WorkItemID,
+				WritID: e.WritID,
 				Action:     e.Action,
 				StartedAt:  e.StartedAt,
 				EndedAt:    e.EndedAt,
@@ -174,13 +174,13 @@ func renderHistory(rows []historyRow, agentName, world string) {
 		b.WriteString(strings.Repeat(" ", maxInt(10-len(row.Action), 1)))
 
 		// Work item.
-		workItem := row.WorkItemID
-		if workItem == "" {
-			workItem = "-"
-		} else if len(workItem) > 20 {
-			workItem = workItem[:20]
+		writ := row.WritID
+		if writ == "" {
+			writ = "-"
+		} else if len(writ) > 20 {
+			writ = writ[:20]
 		}
-		b.WriteString(fmt.Sprintf("%-22s", workItem))
+		b.WriteString(fmt.Sprintf("%-22s", writ))
 
 		// Started at.
 		b.WriteString(fmt.Sprintf("%-22s", row.StartedAt.Format("2006-01-02 15:04:05")))

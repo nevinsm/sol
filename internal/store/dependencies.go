@@ -3,28 +3,28 @@ package store
 import "fmt"
 
 // AddDependency records that fromID depends on toID.
-// Both work items must exist. Returns error on cycle detection.
+// Both writs must exist. Returns error on cycle detection.
 func (s *Store) AddDependency(fromID, toID string) error {
 	if fromID == toID {
-		return fmt.Errorf("work item %q cannot depend on itself", fromID)
+		return fmt.Errorf("writ %q cannot depend on itself", fromID)
 	}
 
-	// Verify both work items exist.
+	// Verify both writs exist.
 	var exists int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM work_items WHERE id = ?`, fromID).Scan(&exists)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM writs WHERE id = ?`, fromID).Scan(&exists)
 	if err != nil {
-		return fmt.Errorf("failed to check work item %q: %w", fromID, err)
+		return fmt.Errorf("failed to check writ %q: %w", fromID, err)
 	}
 	if exists == 0 {
-		return fmt.Errorf("work item %q not found", fromID)
+		return fmt.Errorf("writ %q not found", fromID)
 	}
 
-	err = s.db.QueryRow(`SELECT COUNT(*) FROM work_items WHERE id = ?`, toID).Scan(&exists)
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM writs WHERE id = ?`, toID).Scan(&exists)
 	if err != nil {
-		return fmt.Errorf("failed to check work item %q: %w", toID, err)
+		return fmt.Errorf("failed to check writ %q: %w", toID, err)
 	}
 	if exists == 0 {
-		return fmt.Errorf("work item %q not found", toID)
+		return fmt.Errorf("writ %q not found", toID)
 	}
 
 	// Check for cycles.
@@ -58,7 +58,7 @@ func (s *Store) RemoveDependency(fromID, toID string) error {
 	return nil
 }
 
-// GetDependencies returns the IDs of work items that itemID depends on.
+// GetDependencies returns the IDs of writs that itemID depends on.
 // (What must complete before this item can start.)
 func (s *Store) GetDependencies(itemID string) ([]string, error) {
 	rows, err := s.db.Query(
@@ -84,7 +84,7 @@ func (s *Store) GetDependencies(itemID string) ([]string, error) {
 	return deps, nil
 }
 
-// GetDependents returns the IDs of work items that depend on itemID.
+// GetDependents returns the IDs of writs that depend on itemID.
 // (What is waiting for this item to complete.)
 func (s *Store) GetDependents(itemID string) ([]string, error) {
 	rows, err := s.db.Query(
@@ -115,11 +115,11 @@ func (s *Store) GetDependents(itemID string) ([]string, error) {
 // always ready. Note: "done" (code complete, awaiting merge) is NOT
 // sufficient — the prerequisite code must be merged to the target branch.
 func (s *Store) IsReady(itemID string) (bool, error) {
-	// Count dependencies whose work item is NOT closed (merged).
+	// Count dependencies whose writ is NOT closed (merged).
 	var unsatisfied int
 	err := s.db.QueryRow(`
 		SELECT COUNT(*) FROM dependencies d
-		JOIN work_items w ON d.to_id = w.id
+		JOIN writs w ON d.to_id = w.id
 		WHERE d.from_id = ? AND w.status != 'closed'`,
 		itemID,
 	).Scan(&unsatisfied)

@@ -29,7 +29,7 @@ func TestForgeAwaitImmediateNudge(t *testing.T) {
 		Sender:   "TestAgent",
 		Type:     "MR_READY",
 		Subject:  "MR ready",
-		Body:     `{"work_item_id":"sol-abc123","merge_request_id":"mr-1"}`,
+		Body:     `{"writ_id":"sol-abc123","merge_request_id":"mr-1"}`,
 		Priority: "normal",
 	})
 	if err != nil {

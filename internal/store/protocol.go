@@ -21,7 +21,7 @@ const (
 
 // AgentDonePayload is sent when an agent completes its work.
 type AgentDonePayload struct {
-	WorkItemID string `json:"work_item_id"`
+	WritID string `json:"writ_id"`
 	AgentID    string `json:"agent_id"`
 	Branch     string `json:"branch"`
 	World      string `json:"world"`
@@ -30,27 +30,27 @@ type AgentDonePayload struct {
 // MergeReadyPayload is sent when a sentinel verifies agent work.
 type MergeReadyPayload struct {
 	MergeRequestID string `json:"merge_request_id"`
-	WorkItemID     string `json:"work_item_id"`
+	WritID     string `json:"writ_id"`
 	Branch         string `json:"branch"`
 }
 
 // MergedPayload is sent when the forge successfully merges work.
 type MergedPayload struct {
 	MergeRequestID string `json:"merge_request_id"`
-	WorkItemID     string `json:"work_item_id"`
+	WritID     string `json:"writ_id"`
 }
 
 // MergeFailedPayload is sent when a merge fails (conflict or gate failure).
 type MergeFailedPayload struct {
 	MergeRequestID string `json:"merge_request_id"`
-	WorkItemID     string `json:"work_item_id"`
+	WritID     string `json:"writ_id"`
 	Reason         string `json:"reason"`
 }
 
 // RecoveryNeededPayload is sent when a sentinel detects an agent issue.
 type RecoveryNeededPayload struct {
 	AgentID    string `json:"agent_id"`
-	WorkItemID string `json:"work_item_id"`
+	WritID string `json:"writ_id"`
 	Reason     string `json:"reason"`
 	Attempts   int    `json:"attempts"`
 }

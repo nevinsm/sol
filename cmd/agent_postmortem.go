@@ -28,7 +28,7 @@ var (
 type PostmortemReport struct {
 	Agent       PostmortemAgent       `json:"agent"`
 	Session     PostmortemSession     `json:"session"`
-	WorkItem    *PostmortemWorkItem   `json:"work_item,omitempty"`
+	Writ    *PostmortemWrit   `json:"writ,omitempty"`
 	Commits     []string              `json:"commits"`
 	LastOutput  string                `json:"last_output,omitempty"`
 	Handoff     *PostmortemHandoff    `json:"handoff,omitempty"`
@@ -51,7 +51,7 @@ type PostmortemSession struct {
 	Lifetime  string        `json:"lifetime,omitempty"`
 }
 
-type PostmortemWorkItem struct {
+type PostmortemWrit struct {
 	ID     string `json:"id"`
 	Title  string `json:"title"`
 	Status string `json:"status"`
@@ -66,7 +66,7 @@ type PostmortemHandoff struct {
 var agentPostmortemCmd = &cobra.Command{
 	Use:          "postmortem <name>",
 	Short:        "Show diagnostic information for a dead or stuck agent",
-	Long:         "Gathers session metadata, commit history, work item state, and last output for an agent — particularly useful for understanding what happened when an outpost dies mid-work.",
+	Long:         "Gathers session metadata, commit history, writ state, and last output for an agent — particularly useful for understanding what happened when an outpost dies mid-work.",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -128,17 +128,17 @@ var agentPostmortemCmd = &cobra.Command{
 		}
 
 		// 4. Work item details.
-		workItemID := agent.TetherItem
-		if workItemID == "" {
-			workItemID, _ = tether.Read(world, name, agent.Role)
+		writID := agent.TetherItem
+		if writID == "" {
+			writID, _ = tether.Read(world, name, agent.Role)
 		}
-		if workItemID != "" {
+		if writID != "" {
 			worldStore, err := store.OpenWorld(world)
 			if err == nil {
 				defer worldStore.Close()
-				item, err := worldStore.GetWorkItem(workItemID)
+				item, err := worldStore.GetWrit(writID)
 				if err == nil {
-					report.WorkItem = &PostmortemWorkItem{
+					report.Writ = &PostmortemWrit{
 						ID:     item.ID,
 						Title:  item.Title,
 						Status: item.Status,
@@ -217,9 +217,9 @@ func renderPostmortem(r PostmortemReport) {
 	b.WriteString(fmt.Sprintf("  %-18s %s\n", "Role:", r.Agent.Role))
 
 	// Work item.
-	if r.WorkItem != nil {
-		b.WriteString(fmt.Sprintf("  %-18s %s — %s\n", "Work Item:", r.WorkItem.ID, r.WorkItem.Title))
-		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Work Status:", r.WorkItem.Status))
+	if r.Writ != nil {
+		b.WriteString(fmt.Sprintf("  %-18s %s — %s\n", "Writ:", r.Writ.ID, r.Writ.Title))
+		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Work Status:", r.Writ.Status))
 	} else if r.Agent.TetherItem != "" {
 		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Tether Item:", r.Agent.TetherItem))
 	}

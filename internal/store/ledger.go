@@ -13,7 +13,7 @@ import (
 type HistoryEntry struct {
 	ID          string
 	AgentName   string
-	WorkItemID  string
+	WritID  string
 	Action      string
 	StartedAt   time.Time
 	EndedAt     *time.Time
@@ -57,7 +57,7 @@ func generateTokenUsageID() (string, error) {
 }
 
 // WriteHistory inserts an agent_history record and returns its generated ID.
-func (s *Store) WriteHistory(agentName, workItemID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error) {
+func (s *Store) WriteHistory(agentName, writID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error) {
 	id, err := generateHistoryID()
 	if err != nil {
 		return "", err
@@ -69,9 +69,9 @@ func (s *Store) WriteHistory(agentName, workItemID, action, summary string, star
 		endStr = sql.NullString{String: endedAt.UTC().Format(time.RFC3339), Valid: true}
 	}
 
-	var workItem sql.NullString
-	if workItemID != "" {
-		workItem = sql.NullString{String: workItemID, Valid: true}
+	var writ sql.NullString
+	if writID != "" {
+		writ = sql.NullString{String: writID, Valid: true}
 	}
 
 	var sum sql.NullString
@@ -80,9 +80,9 @@ func (s *Store) WriteHistory(agentName, workItemID, action, summary string, star
 	}
 
 	_, err = s.db.Exec(
-		`INSERT INTO agent_history (id, agent_name, work_item_id, action, started_at, ended_at, summary)
+		`INSERT INTO agent_history (id, agent_name, writ_id, action, started_at, ended_at, summary)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, agentName, workItem, action, startStr, endStr, sum,
+		id, agentName, writ, action, startStr, endStr, sum,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert agent history: %w", err)
@@ -93,13 +93,13 @@ func (s *Store) WriteHistory(agentName, workItemID, action, summary string, star
 // GetHistory returns a single agent_history entry by ID.
 func (s *Store) GetHistory(id string) (*HistoryEntry, error) {
 	h := &HistoryEntry{}
-	var workItemID, summary, endedAt sql.NullString
+	var writID, summary, endedAt sql.NullString
 	var startedAt string
 
 	err := s.db.QueryRow(
-		`SELECT id, agent_name, work_item_id, action, started_at, ended_at, summary
+		`SELECT id, agent_name, writ_id, action, started_at, ended_at, summary
 		 FROM agent_history WHERE id = ?`, id,
-	).Scan(&h.ID, &h.AgentName, &workItemID, &h.Action, &startedAt, &endedAt, &summary)
+	).Scan(&h.ID, &h.AgentName, &writID, &h.Action, &startedAt, &endedAt, &summary)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("agent history %q: %w", id, ErrNotFound)
 	}
@@ -107,7 +107,7 @@ func (s *Store) GetHistory(id string) (*HistoryEntry, error) {
 		return nil, fmt.Errorf("failed to get agent history %q: %w", id, err)
 	}
 
-	h.WorkItemID = workItemID.String
+	h.WritID = writID.String
 	h.Summary = summary.String
 
 	h.StartedAt, err = time.Parse(time.RFC3339, startedAt)
@@ -127,7 +127,7 @@ func (s *Store) GetHistory(id string) (*HistoryEntry, error) {
 // ListHistory returns agent_history entries filtered by agent name.
 // If agentName is empty, all entries are returned.
 func (s *Store) ListHistory(agentName string) ([]HistoryEntry, error) {
-	query := `SELECT id, agent_name, work_item_id, action, started_at, ended_at, summary
+	query := `SELECT id, agent_name, writ_id, action, started_at, ended_at, summary
 	           FROM agent_history`
 	var args []interface{}
 	if agentName != "" {
@@ -145,14 +145,14 @@ func (s *Store) ListHistory(agentName string) ([]HistoryEntry, error) {
 	var entries []HistoryEntry
 	for rows.Next() {
 		var h HistoryEntry
-		var workItemID, summary, endedAt sql.NullString
+		var writID, summary, endedAt sql.NullString
 		var startedAt string
 
-		if err := rows.Scan(&h.ID, &h.AgentName, &workItemID, &h.Action, &startedAt, &endedAt, &summary); err != nil {
+		if err := rows.Scan(&h.ID, &h.AgentName, &writID, &h.Action, &startedAt, &endedAt, &summary); err != nil {
 			return nil, fmt.Errorf("failed to scan agent history: %w", err)
 		}
 
-		h.WorkItemID = workItemID.String
+		h.WritID = writID.String
 		h.Summary = summary.String
 
 		h.StartedAt, err = time.Parse(time.RFC3339, startedAt)
@@ -175,20 +175,20 @@ func (s *Store) ListHistory(agentName string) ([]HistoryEntry, error) {
 }
 
 // EndHistory updates the ended_at timestamp on the most recent open cast record
-// for the given work item. Returns the history ID that was updated, or empty
+// for the given writ. Returns the history ID that was updated, or empty
 // string if no open record was found (best-effort — no error for missing records).
-func (s *Store) EndHistory(workItemID string) (string, error) {
+func (s *Store) EndHistory(writID string) (string, error) {
 	var id string
 	err := s.db.QueryRow(
 		`SELECT id FROM agent_history
-		 WHERE work_item_id = ? AND action = 'cast' AND ended_at IS NULL
-		 ORDER BY started_at DESC LIMIT 1`, workItemID,
+		 WHERE writ_id = ? AND action = 'cast' AND ended_at IS NULL
+		 ORDER BY started_at DESC LIMIT 1`, writID,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("failed to find open history for work item %q: %w", workItemID, err)
+		return "", fmt.Errorf("failed to find open history for writ %q: %w", writID, err)
 	}
 
 	endStr := time.Now().UTC().Format(time.RFC3339)
@@ -272,7 +272,7 @@ func (s *Store) AggregateTokens(agentName string) ([]TokenSummary, error) {
 	return summaries, nil
 }
 
-// AgentMergeRequestSummary holds aggregate merge stats for an agent's work items.
+// AgentMergeRequestSummary holds aggregate merge stats for an agent's writs.
 type AgentMergeRequestSummary struct {
 	TotalMRs     int
 	MergedMRs    int
@@ -291,10 +291,10 @@ func (s *Store) MergeStatsForAgent(agentName string) (AgentMergeRequestSummary, 
 			COALESCE(SUM(CASE WHEN mr.phase = 'failed' THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN mr.phase = 'merged' AND mr.attempts = 1 THEN 1 ELSE 0 END), 0)
 		 FROM merge_requests mr
-		 WHERE mr.work_item_id IN (
-			SELECT DISTINCT ah.work_item_id
+		 WHERE mr.writ_id IN (
+			SELECT DISTINCT ah.writ_id
 			FROM agent_history ah
-			WHERE ah.agent_name = ? AND ah.action = 'cast' AND ah.work_item_id IS NOT NULL
+			WHERE ah.agent_name = ? AND ah.action = 'cast' AND ah.writ_id IS NOT NULL
 		 )
 		 AND mr.phase IN ('merged', 'failed')`,
 		agentName,

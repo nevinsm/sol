@@ -20,13 +20,13 @@ var (
 )
 
 var castCmd = &cobra.Command{
-	Use:          "cast <work-item-id>",
-	Short:        "Assign a work item to an agent and start its session",
+	Use:          "cast <writ-id>",
+	Short:        "Assign a writ to an agent and start its session",
 	GroupID:      groupDispatch,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		workItemID := args[0]
+		writID := args[0]
 
 		world, err := config.ResolveWorld(castWorld)
 		if err != nil {
@@ -70,7 +70,7 @@ var castCmd = &cobra.Command{
 		}
 
 		result, err := dispatch.Cast(dispatch.CastOpts{
-			WorkItemID:  workItemID,
+			WritID:  writID,
 			World:       world,
 			AgentName:   castAgent,
 			SourceRepo:  sourceRepo,
@@ -83,7 +83,7 @@ var castCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Cast %s -> %s (%s)\n", result.WorkItemID, result.AgentName, result.SessionName)
+		fmt.Printf("Cast %s -> %s (%s)\n", result.WritID, result.AgentName, result.SessionName)
 		fmt.Printf("  Worktree: %s\n", result.WorktreeDir)
 		fmt.Printf("  Session:  %s\n", result.SessionName)
 		if result.Formula != "" {

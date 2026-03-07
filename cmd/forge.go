@@ -225,12 +225,12 @@ var forgeStatusCmd = &cobra.Command{
 				if mr.ClaimedAt != nil {
 					summary.ClaimedMR.Age = time.Since(*mr.ClaimedAt).Truncate(time.Second).String()
 				}
-				// Look up work item title.
-				if item, err := worldStore.GetWorkItem(mr.WorkItemID); err == nil {
-					summary.ClaimedMR.WorkItemID = item.ID
+				// Look up writ title.
+				if item, err := worldStore.GetWrit(mr.WritID); err == nil {
+					summary.ClaimedMR.WritID = item.ID
 					summary.ClaimedMR.Title = item.Title
 				} else {
-					summary.ClaimedMR.WorkItemID = mr.WorkItemID
+					summary.ClaimedMR.WritID = mr.WritID
 					summary.ClaimedMR.Title = "(unknown)"
 				}
 			case "failed":
@@ -242,7 +242,7 @@ var forgeStatusCmd = &cobra.Command{
 						Branch:    mr.Branch,
 						Timestamp: mr.UpdatedAt,
 					}
-					if item, err := worldStore.GetWorkItem(mr.WorkItemID); err == nil {
+					if item, err := worldStore.GetWrit(mr.WritID); err == nil {
 						summary.LastFailure.Title = item.Title
 					}
 				}
@@ -256,7 +256,7 @@ var forgeStatusCmd = &cobra.Command{
 							Branch:    mr.Branch,
 							Timestamp: *mr.MergedAt,
 						}
-						if item, err := worldStore.GetWorkItem(mr.WorkItemID); err == nil {
+						if item, err := worldStore.GetWrit(mr.WritID); err == nil {
 							summary.LastMerge.Title = item.Title
 						}
 					}
@@ -292,7 +292,7 @@ type forgeStatusSummary struct {
 
 type forgeStatusMR struct {
 	ID         string `json:"id"`
-	WorkItemID string `json:"work_item_id"`
+	WritID string `json:"writ_id"`
 	Title      string `json:"title"`
 	Branch     string `json:"branch"`
 	Age        string `json:"age"`
@@ -326,7 +326,7 @@ func printForgeStatus(s forgeStatusSummary) {
 	// Currently claimed MR.
 	if s.ClaimedMR != nil {
 		fmt.Printf("\n  Claimed:  %s  %s\n", s.ClaimedMR.ID, s.ClaimedMR.Branch)
-		fmt.Printf("            %s: %s\n", s.ClaimedMR.WorkItemID, s.ClaimedMR.Title)
+		fmt.Printf("            %s: %s\n", s.ClaimedMR.WritID, s.ClaimedMR.Title)
 		if s.ClaimedMR.Age != "" {
 			fmt.Printf("            age: %s\n", s.ClaimedMR.Age)
 		}
@@ -483,7 +483,7 @@ var forgeReadyCmd = &cobra.Command{
 		fmt.Fprintf(tw, "ID\tWORK ITEM\tBRANCH\tPRIORITY\tATTEMPTS\n")
 		for _, mr := range mrs {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\n",
-				mr.ID, mr.WorkItemID, mr.Branch, mr.Priority, mr.Attempts)
+				mr.ID, mr.WritID, mr.Branch, mr.Priority, mr.Attempts)
 		}
 		tw.Flush()
 		return nil
@@ -525,7 +525,7 @@ var forgeBlockedCmd = &cobra.Command{
 		fmt.Fprintf(tw, "ID\tWORK ITEM\tBRANCH\tBLOCKED BY\n")
 		for _, mr := range mrs {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-				mr.ID, mr.WorkItemID, mr.Branch, mr.BlockedBy)
+				mr.ID, mr.WritID, mr.Branch, mr.BlockedBy)
 		}
 		tw.Flush()
 		return nil
@@ -570,7 +570,7 @@ var forgeClaimCmd = &cobra.Command{
 		eventLog := events.NewLogger(config.Home())
 		eventLog.Emit(events.EventMergeClaimed, "forge", "forge", "both", map[string]string{
 			"merge_request_id": mr.ID,
-			"work_item_id":     mr.WorkItemID,
+			"writ_id":     mr.WritID,
 			"branch":           mr.Branch,
 		})
 
@@ -579,7 +579,7 @@ var forgeClaimCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Claimed: %s\n", mr.ID)
-		fmt.Printf("  Work item: %s\n", mr.WorkItemID)
+		fmt.Printf("  Work item: %s\n", mr.WritID)
 		fmt.Printf("  Branch:    %s\n", mr.Branch)
 		fmt.Printf("  Priority:  %d\n", mr.Priority)
 		fmt.Printf("  Attempts:  %d\n", mr.Attempts)
@@ -675,7 +675,7 @@ var forgeMarkFailedCmd = &cobra.Command{
 		defer worldStore.Close()
 		defer sphereStore.Close()
 
-		// Look up MR before MarkFailed to capture work_item_id for the event.
+		// Look up MR before MarkFailed to capture writ_id for the event.
 		mr, mrErr := ref.GetMergeRequest(mrID)
 
 		if err := ref.MarkFailed(mrID); err != nil {
@@ -687,7 +687,7 @@ var forgeMarkFailedCmd = &cobra.Command{
 			"action":           "reopened",
 		}
 		if mrErr == nil {
-			payload["work_item_id"] = mr.WorkItemID
+			payload["writ_id"] = mr.WritID
 		}
 
 		eventLog := events.NewLogger(config.Home())
@@ -831,7 +831,7 @@ func printQueue(world string, mrs []store.MergeRequest) {
 			blocked = mr.BlockedBy
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\n",
-			mr.ID, mr.WorkItemID, mr.Branch, mr.Phase, blocked, mr.Attempts)
+			mr.ID, mr.WritID, mr.Branch, mr.Phase, blocked, mr.Attempts)
 	}
 	tw.Flush()
 

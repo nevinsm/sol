@@ -29,19 +29,19 @@ func TestMultiAgentDispatch(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	// Create two work items.
-	item1ID, err := worldStore.CreateWorkItem("Task Alpha", "Alpha description", "operator", 2, nil)
+	// Create two writs.
+	item1ID, err := worldStore.CreateWrit("Task Alpha", "Alpha description", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create item 1: %v", err)
 	}
-	item2ID, err := worldStore.CreateWorkItem("Task Beta", "Beta description", "operator", 2, nil)
+	item2ID, err := worldStore.CreateWrit("Task Beta", "Beta description", "operator", 2, nil)
 	if err != nil {
 		t.Fatalf("create item 2: %v", err)
 	}
 
 	// Cast both without specifying agents (auto-provision).
 	result1, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: item1ID,
+		WritID: item1ID,
 		World:        "ember",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -50,7 +50,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 	}
 
 	result2, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: item2ID,
+		WritID: item2ID,
 		World:        "ember",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -91,12 +91,12 @@ func TestMultiAgentDispatch(t *testing.T) {
 		t.Errorf("session %s does not exist", result2.SessionName)
 	}
 
-	// Each work item has a different assignee.
-	item1, err := worldStore.GetWorkItem(item1ID)
+	// Each writ has a different assignee.
+	item1, err := worldStore.GetWrit(item1ID)
 	if err != nil {
 		t.Fatalf("get item 1: %v", err)
 	}
-	item2, err := worldStore.GetWorkItem(item2ID)
+	item2, err := worldStore.GetWrit(item2ID)
 	if err != nil {
 		t.Fatalf("get item 2: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 		t.Errorf("both items have same assignee: %s", item1.Assignee)
 	}
 
-	// Both tether files exist with their respective work item IDs.
+	// Both tether files exist with their respective writ IDs.
 	tetherID1, err := tether.Read("ember", result1.AgentName, "agent")
 	if err != nil {
 		t.Fatalf("read tether 1: %v", err)
@@ -146,10 +146,10 @@ func TestFlockSerialization(t *testing.T) {
 	initWorldWithRepo(t, solHome, "ember", sourceRepo)
 	worldStore, sphereStore := openStores(t, "ember")
 
-	// Create one work item and two idle agents.
-	itemID, err := worldStore.CreateWorkItem("Contested task", "Flock test", "operator", 2, nil)
+	// Create one writ and two idle agents.
+	itemID, err := worldStore.CreateWrit("Contested task", "Flock test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 	if _, err := sphereStore.CreateAgent("Alpha", "ember", "agent"); err != nil {
 		t.Fatalf("create agent Alpha: %v", err)
@@ -162,7 +162,7 @@ func TestFlockSerialization(t *testing.T) {
 	binary := gtBin(t)
 
 	// Launch two subprocesses concurrently, each trying to cast the same
-	// work item with a different agent. Flock serialization means exactly
+	// writ with a different agent. Flock serialization means exactly
 	// one process acquires the lock; the other gets EAGAIN immediately.
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -196,7 +196,7 @@ func TestFlockSerialization(t *testing.T) {
 		t.Errorf("expected 1 failure, got %d (failures: %v)", len(failures), failures)
 	}
 
-	// The winning agent has the work item tethered.
+	// The winning agent has the writ tethered.
 	if len(successes) == 1 {
 		winner := successes[0]
 		tetherID, err := tether.Read("ember", winner, "agent")
@@ -207,15 +207,15 @@ func TestFlockSerialization(t *testing.T) {
 			t.Errorf("winner %s tether: got %q, want %q", winner, tetherID, itemID)
 		}
 
-		item, err := worldStore.GetWorkItem(itemID)
+		item, err := worldStore.GetWrit(itemID)
 		if err != nil {
-			t.Fatalf("get work item: %v", err)
+			t.Fatalf("get writ: %v", err)
 		}
 		if item.Status != "tethered" {
-			t.Errorf("work item status: got %q, want tethered", item.Status)
+			t.Errorf("writ status: got %q, want tethered", item.Status)
 		}
 		if item.Assignee != "ember/"+winner {
-			t.Errorf("work item assignee: got %q, want ember/%s", item.Assignee, winner)
+			t.Errorf("writ assignee: got %q, want ember/%s", item.Assignee, winner)
 		}
 	}
 }
@@ -231,14 +231,14 @@ func TestPrefectSessionRestart(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	// Create a work item and cast it (auto-provisions an agent).
-	itemID, err := worldStore.CreateWorkItem("Prefect test", "Restart test", "operator", 2, nil)
+	// Create a writ and cast it (auto-provisions an agent).
+	itemID, err := worldStore.CreateWrit("Prefect test", "Restart test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 
 	result, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -290,7 +290,7 @@ func TestPrefectSessionRestart(t *testing.T) {
 		t.Errorf("agent state after restart: got %q, want working", agent.State)
 	}
 
-	// Tether file still contains the same work item ID.
+	// Tether file still contains the same writ ID.
 	tetherID, err := tether.Read("ember", agentName, "agent")
 	if err != nil {
 		t.Fatalf("read tether: %v", err)
@@ -319,15 +319,15 @@ func TestMassDeathDegradation(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	// Create and cast 5 work items (auto-provisions 5 agents).
+	// Create and cast 5 writs (auto-provisions 5 agents).
 	var sessionNames []string
 	for i := 0; i < 5; i++ {
-		itemID, err := worldStore.CreateWorkItem("Mass death task", "Mass death test", "operator", 2, nil)
+		itemID, err := worldStore.CreateWrit("Mass death task", "Mass death test", "operator", 2, nil)
 		if err != nil {
-			t.Fatalf("create work item %d: %v", i, err)
+			t.Fatalf("create writ %d: %v", i, err)
 		}
 		result, err := dispatch.Cast(dispatch.CastOpts{
-			WorkItemID: itemID,
+			WritID: itemID,
 			World:        "ember",
 			SourceRepo: sourceRepo,
 		}, worldStore, sphereStore, mgr, nil)
@@ -401,15 +401,15 @@ func TestMassDeathDegradation(t *testing.T) {
 	// have elapsed since deaths were recorded; sleep for the remainder + margin.
 	time.Sleep(2 * time.Second)
 
-	// After recovery, dispatch a new work item and verify prefect
+	// After recovery, dispatch a new writ and verify prefect
 	// can respawn sessions again (not degraded anymore).
-	newItemID, err := worldStore.CreateWorkItem("Post-degraded task", "Recovery test", "operator", 2, nil)
+	newItemID, err := worldStore.CreateWrit("Post-degraded task", "Recovery test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create new work item: %v", err)
+		t.Fatalf("create new writ: %v", err)
 	}
 
 	newResult, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: newItemID,
+		WritID: newItemID,
 		World:        "ember",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -444,14 +444,14 @@ func TestGUPPRecovery(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	// Create a work item, cast it.
-	itemID, err := worldStore.CreateWorkItem("GUPP test task", "GUPP recovery test", "operator", 2, nil)
+	// Create a writ, cast it.
+	itemID, err := worldStore.CreateWrit("GUPP test task", "GUPP recovery test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 
 	result, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -463,7 +463,7 @@ func TestGUPPRecovery(t *testing.T) {
 	sessName := result.SessionName
 	worktreeDir := result.WorktreeDir
 
-	// Verify: tether file exists, CLAUDE.md in worktree has work item context.
+	// Verify: tether file exists, CLAUDE.md in worktree has writ context.
 	if !tether.IsTethered("ember", agentName, "agent") {
 		t.Error("tether file does not exist after cast")
 	}
@@ -474,7 +474,7 @@ func TestGUPPRecovery(t *testing.T) {
 		t.Fatalf("read CLAUDE.local.md: %v", err)
 	}
 	if !strings.Contains(string(data), itemID) {
-		t.Errorf("CLAUDE.local.md does not contain work item ID %s", itemID)
+		t.Errorf("CLAUDE.local.md does not contain writ ID %s", itemID)
 	}
 
 	// Kill the tmux session.
@@ -485,9 +485,9 @@ func TestGUPPRecovery(t *testing.T) {
 		t.Error("tether file missing after crash")
 	}
 
-	// Re-cast the same work item to the same agent (simulate prefect restart).
+	// Re-cast the same writ to the same agent (simulate prefect restart).
 	_, err = dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  agentName,
 		SourceRepo: sourceRepo,
@@ -501,19 +501,19 @@ func TestGUPPRecovery(t *testing.T) {
 		t.Errorf("session %s not running after re-cast", sessName)
 	}
 
-	// sol prime returns the work item context.
+	// sol prime returns the writ context.
 	primeResult, err := dispatch.Prime("ember", agentName, "agent", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
 	if !strings.Contains(primeResult.Output, itemID) {
-		t.Errorf("prime output missing work item ID %s", itemID)
+		t.Errorf("prime output missing writ ID %s", itemID)
 	}
 	if !strings.Contains(primeResult.Output, "GUPP test task") {
-		t.Errorf("prime output missing work item title")
+		t.Errorf("prime output missing writ title")
 	}
 
-	// Tether file still contains the same work item ID.
+	// Tether file still contains the same writ ID.
 	tetherID, err := tether.Read("ember", agentName, "agent")
 	if err != nil {
 		t.Fatalf("read tether: %v", err)
@@ -534,16 +534,16 @@ func TestStatusAccuracy(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	// Create 3 work items, cast all 3 (auto-provisions 3 agents).
+	// Create 3 writs, cast all 3 (auto-provisions 3 agents).
 	var results []*dispatch.CastResult
 	titles := []string{"Status task A", "Status task B", "Status task C"}
 	for _, title := range titles {
-		itemID, err := worldStore.CreateWorkItem(title, "Status test", "operator", 2, nil)
+		itemID, err := worldStore.CreateWrit(title, "Status test", "operator", 2, nil)
 		if err != nil {
-			t.Fatalf("create work item %q: %v", title, err)
+			t.Fatalf("create writ %q: %v", title, err)
 		}
 		result, err := dispatch.Cast(dispatch.CastOpts{
-			WorkItemID: itemID,
+			WritID: itemID,
 			World:        "ember",
 			SourceRepo: sourceRepo,
 		}, worldStore, sphereStore, mgr, nil)
@@ -594,7 +594,7 @@ func TestStatusAccuracy(t *testing.T) {
 		t.Error("dead agent should have SessionAlive=false")
 	}
 
-	// Each agent's WorkTitle matches their work item title.
+	// Each agent's WorkTitle matches their writ title.
 	for _, a := range rs.Agents {
 		if a.WorkTitle == "" {
 			t.Errorf("agent %s has empty WorkTitle", a.Name)
@@ -660,14 +660,14 @@ func TestNamePoolExhaustion(t *testing.T) {
 		t.Fatalf("write names.txt: %v", err)
 	}
 
-	// Create and cast 2 work items (exhausts the pool).
+	// Create and cast 2 writs (exhausts the pool).
 	for i := 0; i < 2; i++ {
-		itemID, err := worldStore.CreateWorkItem("Pool test", "Exhaustion test", "operator", 2, nil)
+		itemID, err := worldStore.CreateWrit("Pool test", "Exhaustion test", "operator", 2, nil)
 		if err != nil {
-			t.Fatalf("create work item %d: %v", i, err)
+			t.Fatalf("create writ %d: %v", i, err)
 		}
 		_, err = dispatch.Cast(dispatch.CastOpts{
-			WorkItemID: itemID,
+			WritID: itemID,
 			World:        "ember",
 			SourceRepo: sourceRepo,
 		}, worldStore, sphereStore, mgr, nil)
@@ -676,14 +676,14 @@ func TestNamePoolExhaustion(t *testing.T) {
 		}
 	}
 
-	// Create a third work item and attempt to cast it.
-	item3ID, err := worldStore.CreateWorkItem("Pool overflow", "Should fail", "operator", 2, nil)
+	// Create a third writ and attempt to cast it.
+	item3ID, err := worldStore.CreateWrit("Pool overflow", "Should fail", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item 3: %v", err)
+		t.Fatalf("create writ 3: %v", err)
 	}
 
 	_, err = dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: item3ID,
+		WritID: item3ID,
 		World:        "ember",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil)
@@ -694,10 +694,10 @@ func TestNamePoolExhaustion(t *testing.T) {
 		t.Errorf("error should contain 'exhausted': got %q", err.Error())
 	}
 
-	// The third work item remains in "open" status, unassigned.
-	item3, err := worldStore.GetWorkItem(item3ID)
+	// The third writ remains in "open" status, unassigned.
+	item3, err := worldStore.GetWrit(item3ID)
 	if err != nil {
-		t.Fatalf("get work item 3: %v", err)
+		t.Fatalf("get writ 3: %v", err)
 	}
 	if item3.Status != "open" {
 		t.Errorf("item 3 status: got %q, want open", item3.Status)

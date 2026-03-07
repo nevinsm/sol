@@ -19,15 +19,15 @@ type WorldStore interface {
 	ClaimMergeRequest(claimerID string) (*store.MergeRequest, error)
 	UpdateMergeRequestPhase(id, phase string) error
 	ReleaseStaleClaims(ttl time.Duration) (int, error)
-	GetWorkItem(id string) (*store.WorkItem, error)
-	UpdateWorkItem(id string, updates store.WorkItemUpdates) error
+	GetWrit(id string) (*store.Writ, error)
+	UpdateWrit(id string, updates store.WritUpdates) error
 	ListMergeRequests(phase string) ([]store.MergeRequest, error)
-	ListMergeRequestsByWorkItem(workItemID, phase string) ([]store.MergeRequest, error)
+	ListMergeRequestsByWrit(writID, phase string) ([]store.MergeRequest, error)
 	BlockMergeRequest(mrID, blockerID string) error
 	UnblockMergeRequest(mrID string) error
 	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
-	CreateWorkItemWithOpts(opts store.CreateWorkItemOpts) (string, error)
-	CloseWorkItem(id string) error
+	CreateWritWithOpts(opts store.CreateWritOpts) (string, error)
+	CloseWrit(id string) error
 	Close() error
 }
 
@@ -39,7 +39,7 @@ type SphereStore interface {
 	CreateEscalation(severity, source, description string) (string, error)
 	ListEscalations(status string) ([]store.Escalation, error)
 	ResolveEscalation(id string) error
-	IsWorkItemBlockedByCaravanDeps(workItemID string) (bool, []string, error)
+	IsWritBlockedByCaravanDeps(writID string) (bool, []string, error)
 	Close() error
 }
 

@@ -14,7 +14,7 @@ var depJSON bool
 
 var storeDepCmd = &cobra.Command{
 	Use:   "dep",
-	Short: "Manage work item dependencies",
+	Short: "Manage writ dependencies",
 }
 
 // --- sol store dep add ---
@@ -77,7 +77,7 @@ var storeDepRemoveCmd = &cobra.Command{
 
 var storeDepListCmd = &cobra.Command{
 	Use:          "list <item-id>",
-	Short:        "List dependencies for a work item",
+	Short:        "List dependencies for a writ",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -107,11 +107,11 @@ var storeDepListCmd = &cobra.Command{
 
 		if depJSON {
 			out := struct {
-				WorkItemID string   `json:"work_item_id"`
+				WritID string   `json:"writ_id"`
 				DependsOn  []string `json:"depends_on"`
 				DependedBy []string `json:"depended_by"`
 			}{
-				WorkItemID: itemID,
+				WritID: itemID,
 				DependsOn:  deps,
 				DependedBy: dependents,
 			}
@@ -136,7 +136,7 @@ var storeDepListCmd = &cobra.Command{
 			for _, depID := range deps {
 				title := "(unknown)"
 				status := ""
-				item, err := s.GetWorkItem(depID)
+				item, err := s.GetWrit(depID)
 				if err == nil {
 					title = item.Title
 					status = fmt.Sprintf("(%s)", item.Status)
@@ -154,7 +154,7 @@ var storeDepListCmd = &cobra.Command{
 			for _, depID := range dependents {
 				title := "(unknown)"
 				status := ""
-				item, err := s.GetWorkItem(depID)
+				item, err := s.GetWrit(depID)
 				if err == nil {
 					title = item.Title
 					status = fmt.Sprintf("(%s)", item.Status)

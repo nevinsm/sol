@@ -32,19 +32,19 @@ type SessionManager interface {
 
 // WorldStore defines the world store operations used by dispatch.
 type WorldStore interface {
-	GetWorkItem(id string) (*store.WorkItem, error)
-	UpdateWorkItem(id string, updates store.WorkItemUpdates) error
-	CreateMergeRequest(workItemID, branch string, priority int) (string, error)
-	ListMergeRequestsByWorkItem(workItemID, phase string) ([]store.MergeRequest, error)
+	GetWrit(id string) (*store.Writ, error)
+	UpdateWrit(id string, updates store.WritUpdates) error
+	CreateMergeRequest(writID, branch string, priority int) (string, error)
+	ListMergeRequestsByWrit(writID, phase string) ([]store.MergeRequest, error)
 	UpdateMergeRequestPhase(id, phase string) error
-	CreateWorkItemWithOpts(opts store.CreateWorkItemOpts) (string, error)
+	CreateWritWithOpts(opts store.CreateWritOpts) (string, error)
 	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
 	UnblockMergeRequest(mrID string) error
-	CloseWorkItem(id string) error
-	ListChildWorkItems(parentID string) ([]store.WorkItem, error)
+	CloseWrit(id string) error
+	ListChildWrits(parentID string) ([]store.Writ, error)
 	ListAgentMemories(agentName string) ([]store.AgentMemory, error)
-	WriteHistory(agentName, workItemID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error)
-	EndHistory(workItemID string) (string, error)
+	WriteHistory(agentName, writID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error)
+	EndHistory(writID string) (string, error)
 	Close() error
 }
 
@@ -95,7 +95,7 @@ func cleanupWorktree(world, worktreeDir string) {
 
 // CastResult holds the output of a successful cast operation.
 type CastResult struct {
-	WorkItemID  string
+	WritID  string
 	AgentName   string
 	SessionName string
 	WorktreeDir string
@@ -104,7 +104,7 @@ type CastResult struct {
 
 // CastOpts holds the inputs for a cast operation.
 type CastOpts struct {
-	WorkItemID  string
+	WritID  string
 	World       string
 	AgentName   string              // optional: if empty, find an idle agent
 	SourceRepo  string              // path to the source git repo
@@ -114,7 +114,7 @@ type CastOpts struct {
 	Account     string              // optional: explicit account override for credential provisioning
 }
 
-// Cast assigns a work item to an outpost agent and starts its session.
+// Cast assigns a writ to an outpost agent and starts its session.
 // Supports re-cast (crash recovery): if the item is already tethered to the
 // same agent, Cast recreates the worktree and session without error.
 // The logger parameter is optional — if nil, no events are emitted.
@@ -131,17 +131,17 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		}
 	}
 
-	// 1. Acquire per-work-item advisory lock to prevent double dispatch.
-	lock, err := AcquireWorkItemLock(opts.WorkItemID)
+	// 1. Acquire per-writ advisory lock to prevent double dispatch.
+	lock, err := AcquireWritLock(opts.WritID)
 	if err != nil {
 		return nil, err
 	}
 	defer lock.Release()
 
-	// 2. Get work item.
-	item, err := worldStore.GetWorkItem(opts.WorkItemID)
+	// 2. Get writ.
+	item, err := worldStore.GetWrit(opts.WritID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get work item %q: %w", opts.WorkItemID, err)
+		return nil, fmt.Errorf("failed to get writ %q: %w", opts.WritID, err)
 	}
 
 	// 3. Find the agent.
@@ -157,7 +157,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		}
 	} else {
 		if item.Status != "open" {
-			return nil, fmt.Errorf("work item %q has status %q, expected \"open\"", opts.WorkItemID, item.Status)
+			return nil, fmt.Errorf("writ %q has status %q, expected \"open\"", opts.WritID, item.Status)
 		}
 		agent, err = sphereStore.FindIdleAgent(opts.World)
 		if err != nil {
@@ -183,13 +183,13 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 
 	// 4. Determine if this is a re-cast (crash recovery).
 	// Full match: all four fields consistent (clean re-cast).
-	// Partial match: work item is tethered to this agent but agent state is stale.
-	// This handles crashes between work item update and agent state update.
+	// Partial match: writ is tethered to this agent but agent state is stale.
+	// This handles crashes between writ update and agent state update.
 	reCast := false
 	if item.Status == "tethered" && item.Assignee == agentID {
-		if agent.State == "working" && agent.TetherItem == opts.WorkItemID {
+		if agent.State == "working" && agent.TetherItem == opts.WritID {
 			reCast = true // clean re-cast
-		} else if agent.State == "idle" && (agent.TetherItem == "" || agent.TetherItem == opts.WorkItemID) {
+		} else if agent.State == "idle" && (agent.TetherItem == "" || agent.TetherItem == opts.WritID) {
 			reCast = true // partial failure recovery — agent wasn't updated
 		}
 	}
@@ -197,7 +197,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	// 5. Validate state.
 	if !reCast {
 		if item.Status != "open" {
-			return nil, fmt.Errorf("work item %q has status %q, expected \"open\"", opts.WorkItemID, item.Status)
+			return nil, fmt.Errorf("writ %q has status %q, expected \"open\"", opts.WritID, item.Status)
 		}
 		if agent.State != "idle" {
 			return nil, fmt.Errorf("agent %q has state %q, expected \"idle\"", agentID, agent.State)
@@ -206,7 +206,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 
 	worktreeDir := WorktreePath(opts.World, agent.Name)
 	sessName := SessionName(opts.World, agent.Name)
-	branchName := fmt.Sprintf("outpost/%s/%s", agent.Name, opts.WorkItemID)
+	branchName := fmt.Sprintf("outpost/%s/%s", agent.Name, opts.WritID)
 
 	// Clean up any stale session (race between resolve teardown and next cast,
 	// crashed agents, interrupted stops, etc.).
@@ -240,8 +240,8 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		if err := tether.Clear(opts.World, agent.Name, "agent"); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to clear tether: %v\n", err)
 		}
-		if err := worldStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{Status: "open", Assignee: "-"}); err != nil {
-			fmt.Fprintf(os.Stderr, "rollback: failed to reset work item: %v\n", err)
+		if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"}); err != nil {
+			fmt.Fprintf(os.Stderr, "rollback: failed to reset writ: %v\n", err)
 		}
 		if err := sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to reset agent state: %v\n", err)
@@ -255,22 +255,22 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	}
 
 	// 4. Write tether file.
-	if err := tether.Write(opts.World, agent.Name, opts.WorkItemID, "agent"); err != nil {
+	if err := tether.Write(opts.World, agent.Name, opts.WritID, "agent"); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to write tether: %w", err)
 	}
 
-	// 5. Update work item: status → tethered, assignee → agent ID.
-	if err := worldStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{
+	// 5. Update writ: status → tethered, assignee → agent ID.
+	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
 		Status:   "tethered",
 		Assignee: agent.ID,
 	}); err != nil {
 		rollback()
-		return nil, fmt.Errorf("failed to update work item: %w", err)
+		return nil, fmt.Errorf("failed to update writ: %w", err)
 	}
 
-	// 6. Update agent: state → working, tether_item → work item ID.
-	if err := sphereStore.UpdateAgentState(agent.ID, "working", opts.WorkItemID); err != nil {
+	// 6. Update agent: state → working, tether_item → writ ID.
+	if err := sphereStore.UpdateAgentState(agent.ID, "working", opts.WritID); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
@@ -282,9 +282,9 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		if vars == nil {
 			vars = map[string]string{}
 		}
-		// Always set "issue" variable to the work item ID.
+		// Always set "issue" variable to the writ ID.
 		if _, ok := vars["issue"]; !ok {
-			vars["issue"] = opts.WorkItemID
+			vars["issue"] = opts.WritID
 		}
 		if _, _, err := workflow.Instantiate(opts.World, agent.Name, "agent", opts.Formula, vars); err != nil {
 			rollback()
@@ -306,7 +306,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	}
 
 	castPayload := map[string]string{
-		"work_item_id": opts.WorkItemID,
+		"writ_id": opts.WritID,
 		"agent":        agent.Name,
 		"world":        opts.World,
 	}
@@ -318,19 +318,19 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	if opts.Formula != "" && logger != nil {
 		logger.Emit(events.EventWorkflowInstantiate, "sol", "operator", "both", map[string]string{
 			"formula":      opts.Formula,
-			"work_item_id": opts.WorkItemID,
+			"writ_id": opts.WritID,
 			"agent":        agent.Name,
 			"world":        opts.World,
 		})
 	}
 
 	// Write history record for cycle-time tracking.
-	if _, err := worldStore.WriteHistory(agent.Name, opts.WorkItemID, "cast", "", time.Now(), nil); err != nil {
+	if _, err := worldStore.WriteHistory(agent.Name, opts.WritID, "cast", "", time.Now(), nil); err != nil {
 		fmt.Fprintf(os.Stderr, "cast: failed to write history: %v\n", err)
 	}
 
 	return &CastResult{
-		WorkItemID:  opts.WorkItemID,
+		WritID:  opts.WritID,
 		AgentName:   agent.Name,
 		SessionName: sessName,
 		WorktreeDir: worktreeDir,
@@ -340,7 +340,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 
 // TetherResult holds the output of a successful tether operation.
 type TetherResult struct {
-	WorkItemID string
+	WritID string
 	AgentName  string
 	AgentRole  string
 }
@@ -348,18 +348,18 @@ type TetherResult struct {
 // TetherOpts holds the inputs for a tether operation.
 type TetherOpts struct {
 	AgentName  string
-	WorkItemID string
+	WritID string
 	World      string
 }
 
-// Tether binds a work item to an agent without creating worktrees or sessions.
+// Tether binds a writ to an agent without creating worktrees or sessions.
 // Works with any agent role. For outpost agents that need worktrees, use Cast instead.
 // The logger parameter is optional — if nil, no events are emitted.
 func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, logger *events.Logger) (*TetherResult, error) {
 	agentID := opts.World + "/" + opts.AgentName
 
-	// 1. Acquire per-work-item advisory lock.
-	lock, err := AcquireWorkItemLock(opts.WorkItemID)
+	// 1. Acquire per-writ advisory lock.
+	lock, err := AcquireWritLock(opts.WritID)
 	if err != nil {
 		return nil, err
 	}
@@ -378,47 +378,47 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 	}
 	defer agentLock.Release()
 
-	// 4. Get work item.
-	item, err := worldStore.GetWorkItem(opts.WorkItemID)
+	// 4. Get writ.
+	item, err := worldStore.GetWrit(opts.WritID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get work item %q: %w", opts.WorkItemID, err)
+		return nil, fmt.Errorf("failed to get writ %q: %w", opts.WritID, err)
 	}
 
 	// 5. Validate state.
 	if item.Status != "open" {
-		return nil, fmt.Errorf("work item %q has status %q, expected \"open\"", opts.WorkItemID, item.Status)
+		return nil, fmt.Errorf("writ %q has status %q, expected \"open\"", opts.WritID, item.Status)
 	}
 	if agent.State != "idle" {
 		return nil, fmt.Errorf("agent %q has state %q, expected \"idle\"", agentID, agent.State)
 	}
 
 	// 6. Write tether file (role-aware path).
-	if err := tether.Write(opts.World, opts.AgentName, opts.WorkItemID, agent.Role); err != nil {
+	if err := tether.Write(opts.World, opts.AgentName, opts.WritID, agent.Role); err != nil {
 		return nil, fmt.Errorf("failed to write tether: %w", err)
 	}
 
-	// 7. Update work item: status → tethered, assignee → agent ID.
-	if err := worldStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{
+	// 7. Update writ: status → tethered, assignee → agent ID.
+	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
 		Status:   "tethered",
 		Assignee: agent.ID,
 	}); err != nil {
 		// Rollback tether.
 		tether.Clear(opts.World, opts.AgentName, agent.Role)
-		return nil, fmt.Errorf("failed to update work item: %w", err)
+		return nil, fmt.Errorf("failed to update writ: %w", err)
 	}
 
-	// 8. Update agent: state → working, tether_item → work item ID.
-	if err := sphereStore.UpdateAgentState(agentID, "working", opts.WorkItemID); err != nil {
-		// Rollback tether + work item.
+	// 8. Update agent: state → working, tether_item → writ ID.
+	if err := sphereStore.UpdateAgentState(agentID, "working", opts.WritID); err != nil {
+		// Rollback tether + writ.
 		tether.Clear(opts.World, opts.AgentName, agent.Role)
-		worldStore.UpdateWorkItem(opts.WorkItemID, store.WorkItemUpdates{Status: "open", Assignee: "-"})
+		worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"})
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
 
 	// 9. Emit event.
 	if logger != nil {
 		logger.Emit(events.EventTether, "sol", "operator", "both", map[string]string{
-			"work_item_id": opts.WorkItemID,
+			"writ_id": opts.WritID,
 			"agent":        opts.AgentName,
 			"world":        opts.World,
 			"role":         agent.Role,
@@ -426,7 +426,7 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 	}
 
 	return &TetherResult{
-		WorkItemID: opts.WorkItemID,
+		WritID: opts.WritID,
 		AgentName:  opts.AgentName,
 		AgentRole:  agent.Role,
 	}, nil
@@ -434,7 +434,7 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 
 // UntetherResult holds the output of a successful untether operation.
 type UntetherResult struct {
-	WorkItemID string
+	WritID string
 	AgentName  string
 	AgentRole  string
 }
@@ -445,8 +445,8 @@ type UntetherOpts struct {
 	World     string
 }
 
-// Untether unbinds a work item from an agent without stopping sessions or cleaning worktrees.
-// Reverses the state changes made by Tether: clears tether file, resets work item to open,
+// Untether unbinds a writ from an agent without stopping sessions or cleaning worktrees.
+// Reverses the state changes made by Tether: clears tether file, resets writ to open,
 // and resets agent to idle.
 // The logger parameter is optional — if nil, no events are emitted.
 func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore, logger *events.Logger) (*UntetherResult, error) {
@@ -458,17 +458,17 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
 	}
 
-	// 2. Read tether to get work item ID.
-	workItemID, err := tether.Read(opts.World, opts.AgentName, agent.Role)
+	// 2. Read tether to get writ ID.
+	writID, err := tether.Read(opts.World, opts.AgentName, agent.Role)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tether: %w", err)
 	}
-	if workItemID == "" {
+	if writID == "" {
 		return nil, fmt.Errorf("no work tethered for agent %q in world %q", opts.AgentName, opts.World)
 	}
 
-	// 3. Acquire locks: work item first, then agent (consistent ordering).
-	lock, err := AcquireWorkItemLock(workItemID)
+	// 3. Acquire locks: writ first, then agent (consistent ordering).
+	lock, err := AcquireWritLock(writID)
 	if err != nil {
 		return nil, err
 	}
@@ -485,12 +485,12 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 		return nil, fmt.Errorf("failed to clear tether: %w", err)
 	}
 
-	// 5. Update work item: status → open, assignee → clear.
-	if err := worldStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{
+	// 5. Update writ: status → open, assignee → clear.
+	if err := worldStore.UpdateWrit(writID, store.WritUpdates{
 		Status:   "open",
 		Assignee: "-",
 	}); err != nil {
-		return nil, fmt.Errorf("failed to update work item: %w", err)
+		return nil, fmt.Errorf("failed to update writ: %w", err)
 	}
 
 	// 6. Update agent: state → idle, tether_item → clear.
@@ -501,7 +501,7 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 	// 7. Emit event.
 	if logger != nil {
 		logger.Emit(events.EventUntether, "sol", "operator", "both", map[string]string{
-			"work_item_id": workItemID,
+			"writ_id": writID,
 			"agent":        opts.AgentName,
 			"world":        opts.World,
 			"role":         agent.Role,
@@ -509,7 +509,7 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 	}
 
 	return &UntetherResult{
-		WorkItemID: workItemID,
+		WritID: writID,
 		AgentName:  opts.AgentName,
 		AgentRole:  agent.Role,
 	}, nil
@@ -597,18 +597,18 @@ func Prime(world, agentName, role string, worldStore WorldStore) (*PrimeResult, 
 	}
 
 	// Read the tether file.
-	workItemID, err := tether.Read(world, agentName, role)
+	writID, err := tether.Read(world, agentName, role)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tether: %w", err)
 	}
-	if workItemID == "" {
+	if writID == "" {
 		return &PrimeResult{Output: "No work tethered"}, nil
 	}
 
-	// Get the work item.
-	item, err := worldStore.GetWorkItem(workItemID)
+	// Get the writ.
+	item, err := worldStore.GetWrit(writID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get work item %q: %w", workItemID, err)
+		return nil, fmt.Errorf("failed to get writ %q: %w", writID, err)
 	}
 
 	// Check for handoff context (session continuity).
@@ -657,7 +657,7 @@ func Prime(world, agentName, role string, worldStore WorldStore) (*PrimeResult, 
 			// No workflow — standard prime (existing behavior).
 			output := fmt.Sprintf(`=== WORK CONTEXT ===
 Agent: %s (world: %s)
-Work Item: %s
+Writ: %s
 Title: %s
 Status: %s
 
@@ -665,7 +665,7 @@ Description:
 %s
 
 Instructions:
-Execute this work item. When complete, run: sol resolve
+Execute this writ. When complete, run: sol resolve
 If stuck, run: sol escalate "description"
 === END CONTEXT ===`, agentName, world, item.ID, item.Title, item.Status, item.Description)
 			result = &PrimeResult{Output: output}
@@ -697,7 +697,7 @@ If stuck, run: sol escalate "description"
 }
 
 // primeWithWorkflow returns workflow-aware context for the prime command.
-func primeWithWorkflow(world, agentName, role string, item *store.WorkItem,
+func primeWithWorkflow(world, agentName, role string, item *store.Writ,
 	state *workflow.State) (*PrimeResult, error) {
 
 	// Read all steps to show full checklist.
@@ -746,7 +746,7 @@ func primeWithWorkflow(world, agentName, role string, item *store.WorkItem,
 
 	output := fmt.Sprintf(`=== WORK CONTEXT ===
 Agent: %s (world: %s)
-Work Item: %s
+Writ: %s
 Title: %s
 
 Workflow: %s (step %d/%d: %s)
@@ -770,12 +770,12 @@ After final step: sol resolve
 }
 
 // primeWithHandoff returns handoff-aware context for the prime command.
-func primeWithHandoff(world, agentName string, item *store.WorkItem,
+func primeWithHandoff(world, agentName string, item *store.Writ,
 	state *handoff.State) (*PrimeResult, error) {
 
 	output := fmt.Sprintf(`=== HANDOFF CONTEXT ===
 Agent: %s (world: %s)
-Work Item: %s
+Writ: %s
 Title: %s
 
 This is a continuation of a previous session. The previous session
@@ -822,17 +822,17 @@ If you need to hand off again: sol handoff --summary="<what you've done>"
 }
 
 // primeCompactRecovery returns a lightweight prime for sessions recovering from
-// context compaction. Unlike primeWithHandoff, it omits the full work item
+// context compaction. Unlike primeWithHandoff, it omits the full writ
 // description because the agent has compressed context from its predecessor
 // session (via --continue). This saves tokens and avoids confusing the agent
 // about whether it's starting fresh or continuing.
-func primeCompactRecovery(world, agentName string, item *store.WorkItem,
+func primeCompactRecovery(world, agentName string, item *store.Writ,
 	state *handoff.State) (*PrimeResult, error) {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, `=== SESSION RECOVERY ===
 Agent: %s (world: %s)
-Work Item: %s — %s
+Writ: %s — %s
 Reason: Context compaction recovery
 
 You are continuing a previous session. Your prior conversation has been compressed.
@@ -867,7 +867,7 @@ You are continuing a previous session. Your prior conversation has been compress
 	}
 
 	fmt.Fprintf(&b, `
-Continue from where you left off. Do NOT re-read the work item description
+Continue from where you left off. Do NOT re-read the writ description
 or restart from scratch — pick up where the previous session stopped.
 
 When complete: sol resolve
@@ -889,19 +889,19 @@ then scan the queue with 'sol forge ready --world=%s --json'.
 	return &PrimeResult{Output: output}, nil
 }
 
-// primeConvoySynthesis returns enriched context for a convoy synthesis work item.
-// It lists all sibling leg work items, their titles, and their merge request branches.
-func primeConvoySynthesis(world, agentName string, item *store.WorkItem,
+// primeConvoySynthesis returns enriched context for a convoy synthesis writ.
+// It lists all sibling leg writs, their titles, and their merge request branches.
+func primeConvoySynthesis(world, agentName string, item *store.Writ,
 	worldStore WorldStore) (*PrimeResult, error) {
 
 	var legSection strings.Builder
 	legSection.WriteString("## Convoy Legs\n")
-	legSection.WriteString("The following leg work items have been merged. Their changes are in your worktree.\n\n")
+	legSection.WriteString("The following leg writs have been merged. Their changes are in your worktree.\n\n")
 
 	if item.ParentID != "" {
-		siblings, err := worldStore.ListChildWorkItems(item.ParentID)
+		siblings, err := worldStore.ListChildWrits(item.ParentID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list sibling work items: %w", err)
+			return nil, fmt.Errorf("failed to list sibling writs: %w", err)
 		}
 
 		for _, sib := range siblings {
@@ -913,7 +913,7 @@ func primeConvoySynthesis(world, agentName string, item *store.WorkItem,
 			}
 			// Look up the merge request to find the branch name.
 			branch := "(unknown)"
-			mrs, err := worldStore.ListMergeRequestsByWorkItem(sib.ID, "")
+			mrs, err := worldStore.ListMergeRequestsByWrit(sib.ID, "")
 			if err == nil && len(mrs) > 0 {
 				branch = mrs[0].Branch
 			}
@@ -923,7 +923,7 @@ func primeConvoySynthesis(world, agentName string, item *store.WorkItem,
 
 	output := fmt.Sprintf(`=== WORK CONTEXT ===
 Agent: %s (world: %s)
-Work Item: %s
+Writ: %s
 Title: %s
 Status: %s
 
@@ -946,7 +946,7 @@ If stuck, run: sol escalate "description"
 
 // ResolveResult holds the output of a resolve operation.
 type ResolveResult struct {
-	WorkItemID     string
+	WritID     string
 	Title          string
 	AgentName      string
 	BranchName     string
@@ -989,23 +989,23 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		return nil, fmt.Errorf("failed to create lock directory: %w", err)
 	}
 
-	// 1. Read tether — get work item ID.
-	workItemID, err := tether.Read(opts.World, opts.AgentName, agent.Role)
+	// 1. Read tether — get writ ID.
+	writID, err := tether.Read(opts.World, opts.AgentName, agent.Role)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tether: %w", err)
 	}
-	if workItemID == "" {
+	if writID == "" {
 		return nil, fmt.Errorf("no work tethered for agent %q in world %q", opts.AgentName, opts.World)
 	}
 
-	// Write resolve lock with work item ID (enables crash recovery detection).
-	if err := os.WriteFile(lockPath, []byte(workItemID), 0o644); err != nil {
+	// Write resolve lock with writ ID (enables crash recovery detection).
+	if err := os.WriteFile(lockPath, []byte(writID), 0o644); err != nil {
 		return nil, fmt.Errorf("failed to write resolve lock: %w", err)
 	}
 	defer os.Remove(lockPath)
 
-	// Acquire locks: work item first, then agent (consistent ordering with Cast).
-	lock, err := AcquireWorkItemLock(workItemID)
+	// Acquire locks: writ first, then agent (consistent ordering with Cast).
+	lock, err := AcquireWritLock(writID)
 	if err != nil {
 		return nil, err
 	}
@@ -1032,13 +1032,13 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		branchName = "forge/" + opts.World
 	default:
 		worktreeDir = WorktreePath(opts.World, opts.AgentName)
-		branchName = fmt.Sprintf("outpost/%s/%s", opts.AgentName, workItemID)
+		branchName = fmt.Sprintf("outpost/%s/%s", opts.AgentName, writID)
 	}
 
-	// Get the work item for output and conflict-resolution detection.
-	item, err := worldStore.GetWorkItem(workItemID)
+	// Get the writ for output and conflict-resolution detection.
+	item, err := worldStore.GetWrit(writID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get work item %q: %w", workItemID, err)
+		return nil, fmt.Errorf("failed to get writ %q: %w", writID, err)
 	}
 
 	// Detect conflict-resolution tasks and handle separately.
@@ -1068,27 +1068,27 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	}
 
 	// Track what has been done so we can undo on failure.
-	var workItemUpdated bool
+	var writUpdated bool
 
 	rollback := func() {
-		if workItemUpdated {
-			if err := worldStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{Status: "tethered"}); err != nil {
-				fmt.Fprintf(os.Stderr, "resolve rollback: failed to reset work item %s: %v\n", workItemID, err)
+		if writUpdated {
+			if err := worldStore.UpdateWrit(writID, store.WritUpdates{Status: "tethered"}); err != nil {
+				fmt.Fprintf(os.Stderr, "resolve rollback: failed to reset writ %s: %v\n", writID, err)
 			}
 		}
 	}
 
-	// 3. Update work item: status -> done (idempotent — skip if already done).
+	// 3. Update writ: status -> done (idempotent — skip if already done).
 	if item.Status != "done" {
-		if err := worldStore.UpdateWorkItem(workItemID, store.WorkItemUpdates{Status: "done"}); err != nil {
-			return nil, fmt.Errorf("failed to update work item status: %w", err)
+		if err := worldStore.UpdateWrit(writID, store.WritUpdates{Status: "done"}); err != nil {
+			return nil, fmt.Errorf("failed to update writ status: %w", err)
 		}
-		workItemUpdated = true
+		writUpdated = true
 	}
 
-	// 4. Create merge request (idempotent — skip if one already exists for this work item).
+	// 4. Create merge request (idempotent — skip if one already exists for this writ).
 	var mrID string
-	existingMRs, err := worldStore.ListMergeRequestsByWorkItem(workItemID, "")
+	existingMRs, err := worldStore.ListMergeRequestsByWrit(writID, "")
 	if err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to check existing merge requests: %w", err)
@@ -1096,10 +1096,10 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	if len(existingMRs) > 0 {
 		mrID = existingMRs[0].ID
 	} else {
-		mrID, err = worldStore.CreateMergeRequest(workItemID, branchName, item.Priority)
+		mrID, err = worldStore.CreateMergeRequest(writID, branchName, item.Priority)
 		if err != nil {
 			rollback()
-			return nil, fmt.Errorf("failed to create merge request for %q: %w", workItemID, err)
+			return nil, fmt.Errorf("failed to create merge request for %q: %w", writID, err)
 		}
 
 		// If push failed, immediately mark the MR as failed so forge doesn't try to merge it.
@@ -1167,7 +1167,7 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 
 	if logger != nil {
 		logger.Emit(events.EventResolve, "sol", opts.AgentName, "both", map[string]string{
-			"work_item_id":  workItemID,
+			"writ_id":  writID,
 			"agent":         opts.AgentName,
 			"branch":        branchName,
 			"merge_request": mrID,
@@ -1177,12 +1177,12 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	// 8. Nudge governor that work is done (best-effort, silent skip if no governor).
 	govSession := config.SessionName(opts.World, "governor")
 	if mgr.Exists(govSession) {
-		body := fmt.Sprintf(`{"work_item_id":%q,"agent_name":%q,"branch":%q,"title":%q,"merge_request_id":%q}`,
-			workItemID, opts.AgentName, branchName, item.Title, mrID)
+		body := fmt.Sprintf(`{"writ_id":%q,"agent_name":%q,"branch":%q,"title":%q,"merge_request_id":%q}`,
+			writID, opts.AgentName, branchName, item.Title, mrID)
 		if err := nudge.Enqueue(govSession, nudge.Message{
 			Sender:   opts.AgentName,
 			Type:     "AGENT_DONE",
-			Subject:  fmt.Sprintf("Agent %s resolved %s", opts.AgentName, workItemID),
+			Subject:  fmt.Sprintf("Agent %s resolved %s", opts.AgentName, writID),
 			Body:     body,
 			Priority: "normal",
 		}); err != nil {
@@ -1193,8 +1193,8 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	// 9. Nudge forge that a new MR is ready (best-effort).
 	forgeSession := config.SessionName(opts.World, "forge")
 	if mgr.Exists(forgeSession) {
-		forgeBody := fmt.Sprintf(`{"work_item_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
-			workItemID, mrID, branchName, item.Title)
+		forgeBody := fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
+			writID, mrID, branchName, item.Title)
 		if err := nudge.Enqueue(forgeSession, nudge.Message{
 			Sender:   opts.AgentName,
 			Type:     "MR_READY",
@@ -1210,12 +1210,12 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	nudge.Poke(forgeSession)
 
 	// 11. Close history record for cycle-time tracking.
-	if _, err := worldStore.EndHistory(workItemID); err != nil {
+	if _, err := worldStore.EndHistory(writID); err != nil {
 		fmt.Fprintf(os.Stderr, "resolve: failed to end history: %v\n", err)
 	}
 
 	return &ResolveResult{
-		WorkItemID:     workItemID,
+		WritID:     writID,
 		Title:          item.Title,
 		AgentName:      opts.AgentName,
 		BranchName:     branchName,
@@ -1229,8 +1229,8 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 // 1. Uses --force-with-lease for push (branch was rebased)
 // 2. Does NOT create a new merge request (original MR already exists)
 // 3. Unblocks the original MR
-// 4. Closes the resolution work item
-func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchName, worktreeDir,
+// 4. Closes the resolution writ
+func resolveConflictResolution(opts ResolveOpts, item *store.Writ, branchName, worktreeDir,
 	agentID, sessName, role string, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
 
 	// 1. Git operations: add, commit, force-push (branch was rebased).
@@ -1265,9 +1265,9 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 		}
 	}
 
-	// 3. Close the resolution work item.
-	if err := worldStore.CloseWorkItem(item.ID); err != nil {
-		return nil, fmt.Errorf("failed to close resolution work item: %w", err)
+	// 3. Close the resolution writ.
+	if err := worldStore.CloseWrit(item.ID); err != nil {
+		return nil, fmt.Errorf("failed to close resolution writ: %w", err)
 	}
 
 	// 4. Update agent state.
@@ -1309,14 +1309,14 @@ func resolveConflictResolution(opts ResolveOpts, item *store.WorkItem, branchNam
 
 	if logger != nil {
 		logger.Emit(events.EventResolve, "sol", opts.AgentName, "both", map[string]string{
-			"work_item_id": item.ID,
+			"writ_id": item.ID,
 			"agent":        opts.AgentName,
 			"branch":       branchName,
 		})
 	}
 
 	return &ResolveResult{
-		WorkItemID:     item.ID,
+		WritID:     item.ID,
 		Title:          item.Title,
 		AgentName:      opts.AgentName,
 		BranchName:     branchName,

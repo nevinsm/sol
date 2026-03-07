@@ -67,7 +67,7 @@ var resolveCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Done: %s (%s)\n", result.WorkItemID, result.Title)
+		fmt.Printf("Done: %s (%s)\n", result.WritID, result.Title)
 		fmt.Printf("  Branch: %s\n", result.BranchName)
 		if result.MergeRequestID != "" {
 			fmt.Printf("  Merge request: %s (queued)\n", result.MergeRequestID)

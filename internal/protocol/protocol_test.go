@@ -12,7 +12,7 @@ func TestGenerateClaudeMD(t *testing.T) {
 	ctx := ClaudeMDContext{
 		AgentName:   "Toast",
 		World:         "myworld",
-		WorkItemID:  "sol-a1b2c3d4",
+		WritID:  "sol-a1b2c3d4",
 		Title:       "Add a README",
 		Description: "Create a README.md file with project info",
 	}
@@ -40,7 +40,7 @@ func TestInstallClaudeMD(t *testing.T) {
 	ctx := ClaudeMDContext{
 		AgentName:   "Toast",
 		World:         "myworld",
-		WorkItemID:  "sol-a1b2c3d4",
+		WritID:  "sol-a1b2c3d4",
 		Title:       "Add a README",
 		Description: "Create a README.md file",
 	}
@@ -60,7 +60,7 @@ func TestInstallClaudeMD(t *testing.T) {
 		t.Error("CLAUDE.local.md missing agent name")
 	}
 	if !strings.Contains(content, "sol-a1b2c3d4") {
-		t.Error("CLAUDE.local.md missing work item ID")
+		t.Error("CLAUDE.local.md missing writ ID")
 	}
 }
 
@@ -133,7 +133,7 @@ func TestGenerateClaudeMDWithModelTier(t *testing.T) {
 	ctx := ClaudeMDContext{
 		AgentName:   "Toast",
 		World:       "myworld",
-		WorkItemID:  "sol-a1b2c3d4",
+		WritID:  "sol-a1b2c3d4",
 		Title:       "Test task",
 		Description: "Testing model tier",
 		ModelTier:   "opus",
@@ -153,7 +153,7 @@ func TestGenerateClaudeMDWithoutModelTier(t *testing.T) {
 	ctx := ClaudeMDContext{
 		AgentName:   "Toast",
 		World:       "myworld",
-		WorkItemID:  "sol-a1b2c3d4",
+		WritID:  "sol-a1b2c3d4",
 		Title:       "Test task",
 		Description: "Testing no model tier",
 	}

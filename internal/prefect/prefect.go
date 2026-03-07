@@ -349,13 +349,13 @@ func (s *Prefect) respawn(agent store.Agent) {
 
 	s.logger.Info("respawned session",
 		"agent", agent.Name, "world", agent.World,
-		"work_item", agent.TetherItem, "restart", restartCount)
+		"writ", agent.TetherItem, "restart", restartCount)
 
 	if s.eventLog != nil {
 		s.eventLog.Emit(events.EventRespawn, "prefect", agent.Name, "both", map[string]any{
 			"agent":     agent.Name,
 			"world":     agent.World,
-			"work_item": agent.TetherItem,
+			"writ": agent.TetherItem,
 			"restart":   restartCount,
 		})
 	}

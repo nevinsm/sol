@@ -12,9 +12,9 @@ import (
 func TestTetherHappyPath(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Fix bug", "Fix the bug", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
@@ -23,15 +23,15 @@ func TestTetherHappyPath(t *testing.T) {
 
 	result, err := Tether(TetherOpts{
 		AgentName:  "Meridian",
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {
 		t.Fatalf("Tether failed: %v", err)
 	}
 
-	if result.WorkItemID != itemID {
-		t.Errorf("expected work item ID %q, got %q", itemID, result.WorkItemID)
+	if result.WritID != itemID {
+		t.Errorf("expected writ ID %q, got %q", itemID, result.WritID)
 	}
 	if result.AgentName != "Meridian" {
 		t.Errorf("expected agent name Meridian, got %q", result.AgentName)
@@ -49,13 +49,13 @@ func TestTetherHappyPath(t *testing.T) {
 		t.Errorf("tether has %q, expected %q", tetherID, itemID)
 	}
 
-	// Verify work item was updated.
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify writ was updated.
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("failed to get work item: %v", err)
+		t.Fatalf("failed to get writ: %v", err)
 	}
 	if item.Status != "tethered" {
-		t.Errorf("expected work item status 'tethered', got %q", item.Status)
+		t.Errorf("expected writ status 'tethered', got %q", item.Status)
 	}
 	if item.Assignee != "ember/Meridian" {
 		t.Errorf("expected assignee 'ember/Meridian', got %q", item.Assignee)
@@ -77,9 +77,9 @@ func TestTetherHappyPath(t *testing.T) {
 func TestTetherGovernor(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Plan sprint", "Plan the sprint", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Plan sprint", "Plan the sprint", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("governor", "ember", "governor"); err != nil {
@@ -88,7 +88,7 @@ func TestTetherGovernor(t *testing.T) {
 
 	result, err := Tether(TetherOpts{
 		AgentName:  "governor",
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {
@@ -112,9 +112,9 @@ func TestTetherGovernor(t *testing.T) {
 func TestTetherOutpostAgent(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Add feature", "Add the feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Add the feature", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
@@ -124,7 +124,7 @@ func TestTetherOutpostAgent(t *testing.T) {
 	// Tether should work even for outpost agents (no restriction like cast).
 	result, err := Tether(TetherOpts{
 		AgentName:  "Toast",
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {
@@ -139,12 +139,12 @@ func TestTetherOutpostAgent(t *testing.T) {
 func TestTetherRejectsNonOpenItem(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Done task", "Already done", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Done task", "Already done", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
@@ -153,13 +153,13 @@ func TestTetherRejectsNonOpenItem(t *testing.T) {
 
 	_, err = Tether(TetherOpts{
 		AgentName:  "Meridian",
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 	}, worldStore, sphereStore, nil)
 	if err == nil {
-		t.Fatal("expected error for non-open work item")
+		t.Fatal("expected error for non-open writ")
 	}
-	if want := `work item "` + itemID + `" has status "tethered", expected "open"`; err.Error() != want {
+	if want := `writ "` + itemID + `" has status "tethered", expected "open"`; err.Error() != want {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -167,9 +167,9 @@ func TestTetherRejectsNonOpenItem(t *testing.T) {
 func TestTetherRejectsNonIdleAgent(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("New task", "Something new", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("New task", "Something new", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
@@ -181,7 +181,7 @@ func TestTetherRejectsNonIdleAgent(t *testing.T) {
 
 	_, err = Tether(TetherOpts{
 		AgentName:  "Meridian",
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 	}, worldStore, sphereStore, nil)
 	if err == nil {
@@ -195,14 +195,14 @@ func TestTetherRejectsNonIdleAgent(t *testing.T) {
 func TestTetherRejectsUnknownAgent(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Task", "Do it", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Task", "Do it", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	_, err = Tether(TetherOpts{
 		AgentName:  "Ghost",
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 	}, worldStore, sphereStore, nil)
 	if err == nil {
@@ -215,9 +215,9 @@ func TestTetherRejectsUnknownAgent(t *testing.T) {
 func TestUntetherHappyPath(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Fix bug", "Fix the bug", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
@@ -227,7 +227,7 @@ func TestUntetherHappyPath(t *testing.T) {
 	// First tether.
 	_, err = Tether(TetherOpts{
 		AgentName:  "Meridian",
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {
@@ -243,8 +243,8 @@ func TestUntetherHappyPath(t *testing.T) {
 		t.Fatalf("Untether failed: %v", err)
 	}
 
-	if result.WorkItemID != itemID {
-		t.Errorf("expected work item ID %q, got %q", itemID, result.WorkItemID)
+	if result.WritID != itemID {
+		t.Errorf("expected writ ID %q, got %q", itemID, result.WritID)
 	}
 	if result.AgentName != "Meridian" {
 		t.Errorf("expected agent name Meridian, got %q", result.AgentName)
@@ -262,13 +262,13 @@ func TestUntetherHappyPath(t *testing.T) {
 		t.Errorf("expected empty tether, got %q", tetherID)
 	}
 
-	// Verify work item was reset.
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify writ was reset.
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("failed to get work item: %v", err)
+		t.Fatalf("failed to get writ: %v", err)
 	}
 	if item.Status != "open" {
-		t.Errorf("expected work item status 'open', got %q", item.Status)
+		t.Errorf("expected writ status 'open', got %q", item.Status)
 	}
 	if item.Assignee != "" {
 		t.Errorf("expected empty assignee, got %q", item.Assignee)
@@ -315,9 +315,9 @@ func TestUntetherRejectsUntetheredAgent(t *testing.T) {
 func TestTetherThenUntetherRoundTrip(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Round trip", "Test full cycle", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Round trip", "Test full cycle", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("governor", "ember", "governor"); err != nil {
@@ -327,7 +327,7 @@ func TestTetherThenUntetherRoundTrip(t *testing.T) {
 	// Tether.
 	_, err = Tether(TetherOpts{
 		AgentName:  "governor",
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {
@@ -346,7 +346,7 @@ func TestTetherThenUntetherRoundTrip(t *testing.T) {
 	// Agent should be idle and retetherable.
 	_, err = Tether(TetherOpts{
 		AgentName:  "governor",
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {

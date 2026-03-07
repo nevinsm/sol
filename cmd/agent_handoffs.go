@@ -69,10 +69,10 @@ var agentHandoffsCmd = &cobra.Command{
 			agent := stringVal(payload, "agent", ev.Actor)
 			reason := stringVal(payload, "reason", "-")
 			sessionAge := stringVal(payload, "session_age", "-")
-			workItem := stringVal(payload, "work_item_id", "-")
+			writ := stringVal(payload, "writ_id", "-")
 			timeAgo := formatTimeAgo(ev.Timestamp)
 
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", agent, reason, sessionAge, workItem, timeAgo)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", agent, reason, sessionAge, writ, timeAgo)
 		}
 		tw.Flush()
 		return nil

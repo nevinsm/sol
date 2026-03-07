@@ -253,18 +253,18 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create agent and work item.
+	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("HandBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWorkItem("Handoff task", "Test handoff", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Handoff task", "Test handoff", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	// Cast the work item.
+	// Cast the writ.
 	if _, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "HandBot",
 		SourceRepo: sourceRepo,
@@ -285,8 +285,8 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 		t.Fatalf("Capture: %v", err)
 	}
 
-	if state.WorkItemID != itemID {
-		t.Errorf("work item ID: got %q, want %q", state.WorkItemID, itemID)
+	if state.WritID != itemID {
+		t.Errorf("writ ID: got %q, want %q", state.WritID, itemID)
 	}
 
 	// 2. Write handoff file.
@@ -343,18 +343,18 @@ func TestHandoffPreservesHook(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create agent and work item.
+	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("HookBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWorkItem("Tether task", "Test tether preservation", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Tether task", "Test tether preservation", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	// Cast the work item.
+	// Cast the writ.
 	if _, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "HookBot",
 		SourceRepo: sourceRepo,
@@ -364,7 +364,7 @@ func TestHandoffPreservesHook(t *testing.T) {
 
 	// Write handoff file.
 	state := &handoff.State{
-		WorkItemID:  itemID,
+		WritID:  itemID,
 		AgentName:   "HookBot",
 		World:         "ember",
 		Role:        "agent",
@@ -384,13 +384,13 @@ func TestHandoffPreservesHook(t *testing.T) {
 		t.Errorf("tether content: got %q, want %q", tetherContent, itemID)
 	}
 
-	// Verify work item status unchanged (still tethered).
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify writ status unchanged (still tethered).
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("GetWorkItem: %v", err)
+		t.Fatalf("GetWrit: %v", err)
 	}
 	if item.Status != "tethered" {
-		t.Errorf("work item status: got %q, want tethered", item.Status)
+		t.Errorf("writ status: got %q, want tethered", item.Status)
 	}
 }
 
@@ -439,18 +439,18 @@ needs = ["step1"]
 		t.Fatalf("write 02.md: %v", err)
 	}
 
-	// Create agent and work item.
+	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("WFHandBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWorkItem("WF Handoff task", "Workflow handoff test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("WF Handoff task", "Workflow handoff test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	// Cast with formula.
 	if _, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "WFHandBot",
 		SourceRepo: sourceRepo,
@@ -546,18 +546,18 @@ instructions = "steps/01.md"
 		t.Fatalf("write 01.md: %v", err)
 	}
 
-	// Create agent and work item.
+	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("OverBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWorkItem("Override task", "Override test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Override task", "Override test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	// Cast with formula.
 	if _, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "OverBot",
 		SourceRepo: sourceRepo,
@@ -568,7 +568,7 @@ instructions = "steps/01.md"
 
 	// Write handoff file manually (simulating a handoff while workflow is active).
 	state := &handoff.State{
-		WorkItemID:  itemID,
+		WritID:  itemID,
 		AgentName:   "OverBot",
 		World:         "ember",
 		Role:        "agent",
@@ -616,13 +616,13 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	// Create work item in "tethered" status.
-	itemID, err := worldStore.CreateWorkItem("Stale task", "Stale tether test", "operator", 2, nil)
+	// Create writ in "tethered" status.
+	itemID, err := worldStore.CreateWrit("Stale task", "Stale tether test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/StaleBot"}); err != nil {
-		t.Fatalf("update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "haven/StaleBot"}); err != nil {
+		t.Fatalf("update writ: %v", err)
 	}
 
 	// Create agent in "working" state.
@@ -663,13 +663,13 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 		t.Fatalf("Patrol: %v", err)
 	}
 
-	// Verify: work item status back to "open".
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify: writ status back to "open".
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("GetWorkItem: %v", err)
+		t.Fatalf("GetWrit: %v", err)
 	}
 	if item.Status != "open" {
-		t.Errorf("work item status: got %q, want open", item.Status)
+		t.Errorf("writ status: got %q, want open", item.Status)
 	}
 
 	// Verify: agent state is "idle".
@@ -714,12 +714,12 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	itemID, err := worldStore.CreateWorkItem("Recent task", "Recent tether test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Recent task", "Recent tether test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/RecentBot"}); err != nil {
-		t.Fatalf("update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "haven/RecentBot"}); err != nil {
+		t.Fatalf("update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("RecentBot", "haven", "agent"); err != nil {
@@ -757,12 +757,12 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 	}
 
 	// Work item should still be tethered (not recovered — too recent).
-	item, err := worldStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("GetWorkItem: %v", err)
+		t.Fatalf("GetWrit: %v", err)
 	}
 	if item.Status != "tethered" {
-		t.Errorf("work item status: got %q, want tethered (too recent)", item.Status)
+		t.Errorf("writ status: got %q, want tethered (too recent)", item.Status)
 	}
 }
 
@@ -789,12 +789,12 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	itemID, err := worldStore.CreateWorkItem("Alive task", "Alive tether test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Alive task", "Alive tether test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "haven/AliveBot"}); err != nil {
-		t.Fatalf("update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "haven/AliveBot"}); err != nil {
+		t.Fatalf("update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("AliveBot", "haven", "agent"); err != nil {
@@ -835,12 +835,12 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 	}
 
 	// Work item should still be tethered (session is alive).
-	item, err := worldStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("GetWorkItem: %v", err)
+		t.Fatalf("GetWrit: %v", err)
 	}
 	if item.Status != "tethered" {
-		t.Errorf("work item status: got %q, want tethered (session alive)", item.Status)
+		t.Errorf("writ status: got %q, want tethered (session alive)", item.Status)
 	}
 }
 
@@ -866,14 +866,14 @@ func TestConsulCaravanFeeding(t *testing.T) {
 		t.Fatalf("open world store: %v", err)
 	}
 
-	// Create work items: A (no deps), B→A.
-	idA, err := worldStore.CreateWorkItem("Task A", "First task", "operator", 2, nil)
+	// Create writs: A (no deps), B→A.
+	idA, err := worldStore.CreateWrit("Task A", "First task", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
-	idB, err := worldStore.CreateWorkItem("Task B", "Depends on A", "operator", 2, nil)
+	idB, err := worldStore.CreateWrit("Task B", "Depends on A", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 	if err := worldStore.AddDependency(idB, idA); err != nil {
 		t.Fatalf("AddDependency: %v", err)
@@ -910,9 +910,9 @@ func TestConsulCaravanFeeding(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(func(opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {
-		dispatchedItems = append(dispatchedItems, opts.WorkItemID)
+		dispatchedItems = append(dispatchedItems, opts.WritID)
 		return &dispatch.CastResult{
-			WorkItemID:  opts.WorkItemID,
+			WritID:  opts.WritID,
 			AgentName:   "MockAgent",
 			SessionName: "sol-mock-session",
 		}, nil
@@ -936,8 +936,8 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	if err := rs.CloseWorkItem(idA); err != nil {
-		t.Fatalf("close work item A: %v", err)
+	if err := rs.CloseWrit(idA); err != nil {
+		t.Fatalf("close writ A: %v", err)
 	}
 	rs.Close()
 
@@ -978,9 +978,9 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	idA, err := worldStore.CreateWorkItem("Dup task", "No dup test", "operator", 2, nil)
+	idA, err := worldStore.CreateWrit("Dup task", "No dup test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 	worldStore.Close()
 
@@ -1012,7 +1012,7 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	d.SetDispatchFunc(func(opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {
 		dispatchCount++
 		return &dispatch.CastResult{
-			WorkItemID:  opts.WorkItemID,
+			WritID:  opts.WritID,
 			AgentName:   "MockAgent",
 			SessionName: "sol-mock-session",
 		}, nil
@@ -1027,7 +1027,7 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	}
 
 	// Run patrol again → item already dispatched (status changed), no duplicate dispatch.
-	// Note: since mock dispatch doesn't change work item status, consul will try again.
+	// Note: since mock dispatch doesn't change writ status, consul will try again.
 	// In production, dispatch.Cast changes status to "tethered", preventing re-dispatch.
 	// For this test, verify the first patrol dispatched correctly.
 }
@@ -1394,14 +1394,14 @@ func TestFullOrchestrationCycle(t *testing.T) {
 		t.Fatalf("open world store: %v", err)
 	}
 
-	// 1. Create world with work items and dependencies.
-	idA, err := worldStore.CreateWorkItem("Task A", "No deps", "operator", 2, nil)
+	// 1. Create world with writs and dependencies.
+	idA, err := worldStore.CreateWrit("Task A", "No deps", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
-	idB, err := worldStore.CreateWorkItem("Task B", "Depends on A", "operator", 2, nil)
+	idB, err := worldStore.CreateWrit("Task B", "Depends on A", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 	if err := worldStore.AddDependency(idB, idA); err != nil {
 		t.Fatalf("AddDependency: %v", err)
@@ -1437,9 +1437,9 @@ func TestFullOrchestrationCycle(t *testing.T) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(func(opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {
-		dispatchedItems = append(dispatchedItems, opts.WorkItemID)
+		dispatchedItems = append(dispatchedItems, opts.WritID)
 		return &dispatch.CastResult{
-			WorkItemID:  opts.WorkItemID,
+			WritID:  opts.WritID,
 			AgentName:   "MockAgent",
 			SessionName: "sol-mock-session",
 		}, nil
@@ -1491,15 +1491,15 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	if err := sphereStore.UpdateAgentState("ember/E2EBot", "working", idA); err != nil {
 		t.Fatalf("UpdateAgentState: %v", err)
 	}
-	if err := worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/E2EBot"}); err != nil {
-		t.Fatalf("update work item: %v", err)
+	if err := worldStore2.UpdateWrit(idA, store.WritUpdates{Status: "tethered", Assignee: "ember/E2EBot"}); err != nil {
+		t.Fatalf("update writ: %v", err)
 	}
 	if err := tether.Write("ember", "E2EBot", idA, "agent"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
 	handoffState := &handoff.State{
-		WorkItemID:  idA,
+		WritID:  idA,
 		AgentName:   "E2EBot",
 		World:         "ember",
 		Role:        "agent",
@@ -1531,8 +1531,8 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	if err := tether.Write("ember", "E2EBot", idA, "agent"); err != nil {
 		t.Fatalf("tether.Write 2: %v", err)
 	}
-	if err := worldStore2.UpdateWorkItem(idA, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/E2EBot"}); err != nil {
-		t.Fatalf("update work item 2: %v", err)
+	if err := worldStore2.UpdateWrit(idA, store.WritUpdates{Status: "tethered", Assignee: "ember/E2EBot"}); err != nil {
+		t.Fatalf("update writ 2: %v", err)
 	}
 
 	// 10. Run consul patrol → recovers stale tether.
@@ -1540,13 +1540,13 @@ func TestFullOrchestrationCycle(t *testing.T) {
 		t.Fatalf("Patrol 2: %v", err)
 	}
 
-	// 11. Verify work item returned to open.
-	item, err := worldStore2.GetWorkItem(idA)
+	// 11. Verify writ returned to open.
+	item, err := worldStore2.GetWrit(idA)
 	if err != nil {
-		t.Fatalf("GetWorkItem after recovery: %v", err)
+		t.Fatalf("GetWrit after recovery: %v", err)
 	}
 	if item.Status != "open" {
-		t.Errorf("work item status after recovery: got %q, want open", item.Status)
+		t.Errorf("writ status after recovery: got %q, want open", item.Status)
 	}
 
 	// Verify events emitted.

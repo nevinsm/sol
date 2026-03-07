@@ -15,7 +15,7 @@ import (
 var storeCmd = &cobra.Command{
 	Use:     "store",
 	Short:   "Work item store operations",
-	GroupID: groupWorkItems,
+	GroupID: groupWrits,
 }
 
 func init() {
@@ -41,7 +41,7 @@ var (
 
 var storeCreateCmd = &cobra.Command{
 	Use:          "create",
-	Short:        "Create a work item",
+	Short:        "Create a writ",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worldFlag, _ := cmd.Flags().GetString("world")
@@ -58,7 +58,7 @@ var storeCreateCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		id, err := s.CreateWorkItem(createTitle, createDescription, "operator", createPriority, createLabels)
+		id, err := s.CreateWrit(createTitle, createDescription, "operator", createPriority, createLabels)
 		if err != nil {
 			return err
 		}
@@ -69,8 +69,8 @@ var storeCreateCmd = &cobra.Command{
 
 func init() {
 	storeCreateCmd.Flags().String("world", "", "world name")
-	storeCreateCmd.Flags().StringVar(&createTitle, "title", "", "work item title")
-	storeCreateCmd.Flags().StringVar(&createDescription, "description", "", "work item description")
+	storeCreateCmd.Flags().StringVar(&createTitle, "title", "", "writ title")
+	storeCreateCmd.Flags().StringVar(&createDescription, "description", "", "writ description")
 	storeCreateCmd.Flags().IntVar(&createPriority, "priority", 2, "priority (1=high, 2=normal, 3=low)")
 	storeCreateCmd.Flags().StringArrayVar(&createLabels, "label", nil, "label (can be repeated)")
 }
@@ -93,7 +93,7 @@ var storeStatusRunE = func(cmd *cobra.Command, args []string) error {
 	}
 	defer s.Close()
 
-	item, err := s.GetWorkItem(args[0])
+	item, err := s.GetWrit(args[0])
 	if err != nil {
 		return err
 	}
@@ -101,13 +101,13 @@ var storeStatusRunE = func(cmd *cobra.Command, args []string) error {
 	if storeStatusJSON {
 		return printJSON(item)
 	}
-	printWorkItem(item)
+	printWrit(item)
 	return nil
 }
 
 var storeStatusCmd = &cobra.Command{
 	Use:          "status <id>",
-	Short:        "Show work item status",
+	Short:        "Show writ status",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE:         storeStatusRunE,
@@ -116,7 +116,7 @@ var storeStatusCmd = &cobra.Command{
 // Hidden alias for backwards compatibility.
 var storeGetAliasCmd = &cobra.Command{
 	Use:          "get <id>",
-	Short:        "Show work item status",
+	Short:        "Show writ status",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	Hidden:       true,
@@ -141,7 +141,7 @@ var (
 
 var storeListCmd = &cobra.Command{
 	Use:          "list",
-	Short:        "List work items",
+	Short:        "List writs",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worldFlag, _ := cmd.Flags().GetString("world")
@@ -160,7 +160,7 @@ var storeListCmd = &cobra.Command{
 			Assignee: listAssignee,
 			Label:    listLabel,
 		}
-		items, err := s.ListWorkItems(filters)
+		items, err := s.ListWrits(filters)
 		if err != nil {
 			return err
 		}
@@ -169,7 +169,7 @@ var storeListCmd = &cobra.Command{
 			return printJSON(items)
 		}
 		if len(items) == 0 {
-			fmt.Println("No work items found.")
+			fmt.Println("No writs found.")
 			return nil
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
@@ -210,7 +210,7 @@ var (
 
 var storeUpdateCmd = &cobra.Command{
 	Use:          "update <id>",
-	Short:        "Update a work item",
+	Short:        "Update a writ",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -219,7 +219,7 @@ var storeUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		updates := store.WorkItemUpdates{
+		updates := store.WritUpdates{
 			Status:      updateStatus,
 			Assignee:    updateAssignee,
 			Priority:    updatePriority,
@@ -232,7 +232,7 @@ var storeUpdateCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		if err := s.UpdateWorkItem(args[0], updates); err != nil {
+		if err := s.UpdateWrit(args[0], updates); err != nil {
 			return err
 		}
 		fmt.Printf("Updated %s\n", args[0])
@@ -253,7 +253,7 @@ func init() {
 
 var storeCloseCmd = &cobra.Command{
 	Use:          "close <id>",
-	Short:        "Close a work item",
+	Short:        "Close a writ",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -268,7 +268,7 @@ var storeCloseCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		if err := s.CloseWorkItem(args[0]); err != nil {
+		if err := s.CloseWrit(args[0]); err != nil {
 			return err
 		}
 		fmt.Printf("Closed %s\n", args[0])
@@ -347,7 +347,7 @@ func printJSON(v interface{}) error {
 	return enc.Encode(v)
 }
 
-func printWorkItem(w *store.WorkItem) {
+func printWrit(w *store.Writ) {
 	fmt.Printf("ID:          %s\n", w.ID)
 	fmt.Printf("Title:       %s\n", w.Title)
 	if w.Description != "" {

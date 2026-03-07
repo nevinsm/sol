@@ -76,7 +76,7 @@ type SessionManager interface {
 // WorldOpener opens a world store by name.
 type WorldOpener func(world string) (*store.Store, error)
 
-// DispatchFunc dispatches a single work item. Returns agent name and session name.
+// DispatchFunc dispatches a single writ. Returns agent name and session name.
 // Default implementation uses dispatch.Cast.
 type DispatchFunc func(opts dispatch.CastOpts, worldStore dispatch.WorldStore, sphereStore dispatch.SphereStore, mgr dispatch.SessionManager, logger *events.Logger) (*dispatch.CastResult, error)
 
@@ -273,7 +273,7 @@ var errShutdown = fmt.Errorf("shutdown requested")
 // For each stale tether:
 // 1. Log the recovery
 // 2. Clear the tether file
-// 3. Update work item status -> "open", clear assignee
+// 3. Update writ status -> "open", clear assignee
 // 4. Update agent state -> "idle", clear tether_item
 // 5. Emit event
 //
@@ -322,21 +322,21 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 
 // recoverOneTether recovers a single stale tether.
 func (d *Consul) recoverOneTether(agent store.Agent) error {
-	d.logInfo("consul_recover_tether", map[string]any{"agent_id": agent.ID, "work_item_id": agent.TetherItem})
+	d.logInfo("consul_recover_tether", map[string]any{"agent_id": agent.ID, "writ_id": agent.TetherItem})
 
-	// 1. Open the world store to update the work item.
+	// 1. Open the world store to update the writ.
 	worldStore, err := d.worldOpener(agent.World)
 	if err != nil {
 		return fmt.Errorf("failed to open world %q: %w", agent.World, err)
 	}
 	defer worldStore.Close()
 
-	// 2. Update work item: status -> "open", clear assignee.
-	if err := worldStore.UpdateWorkItem(agent.TetherItem, store.WorkItemUpdates{
+	// 2. Update writ: status -> "open", clear assignee.
+	if err := worldStore.UpdateWrit(agent.TetherItem, store.WritUpdates{
 		Status:   "open",
 		Assignee: "-", // "-" clears assignee
 	}); err != nil {
-		return fmt.Errorf("failed to update work item %q: %w", agent.TetherItem, err)
+		return fmt.Errorf("failed to update writ %q: %w", agent.TetherItem, err)
 	}
 
 	// 3. Update agent state -> "idle", clear tether_item.
@@ -354,7 +354,7 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 		d.logger.Emit(events.EventConsulStaleTether, "sphere/consul", "sphere/consul", "both",
 			map[string]any{
 				"agent_id":     agent.ID,
-				"work_item_id": agent.TetherItem,
+				"writ_id": agent.TetherItem,
 				"world":        agent.World,
 			})
 	}
@@ -392,7 +392,7 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 		// Group ready items by world.
 		readyByWorld := map[string][]store.CaravanItemStatus{}
 		for _, st := range statuses {
-			if st.Ready && st.WorkItemStatus == "open" {
+			if st.Ready && st.WritStatus == "open" {
 				readyByWorld[st.World] = append(readyByWorld[st.World], st)
 			}
 		}
@@ -476,7 +476,7 @@ func (d *Consul) dispatchWorldItems(caravanID, world string, items []store.Carav
 	dispatched := 0
 	for _, st := range items {
 		castOpts := dispatch.CastOpts{
-			WorkItemID:  st.WorkItemID,
+			WritID:  st.WritID,
 			World:       world,
 			SourceRepo:  sourceRepo,
 			WorldConfig: &worldCfg,
@@ -486,7 +486,7 @@ func (d *Consul) dispatchWorldItems(caravanID, world string, items []store.Carav
 			d.logInfo("consul_error", map[string]any{
 				"action":       "dispatch_item",
 				"caravan_id":   caravanID,
-				"work_item_id": st.WorkItemID,
+				"writ_id": st.WritID,
 				"world":        world,
 				"error":        err.Error(),
 			})
@@ -497,7 +497,7 @@ func (d *Consul) dispatchWorldItems(caravanID, world string, items []store.Carav
 			d.logger.Emit(events.EventConsulCaravanDispatch, "sphere/consul", "sphere/consul", "both",
 				map[string]any{
 					"caravan_id":   caravanID,
-					"work_item_id": st.WorkItemID,
+					"writ_id": st.WritID,
 					"agent":        result.AgentName,
 					"session":      result.SessionName,
 					"world":        world,

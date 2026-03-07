@@ -52,18 +52,18 @@ func TestGatherCaravansSplitsDoneClosed(t *testing.T) {
 		},
 		items: map[string][]store.CaravanItem{
 			"car-1111": {
-				{CaravanID: "car-1111", WorkItemID: "sol-aaa", World: "haven", Phase: 0},
-				{CaravanID: "car-1111", WorkItemID: "sol-bbb", World: "haven", Phase: 0},
-				{CaravanID: "car-1111", WorkItemID: "sol-ccc", World: "haven", Phase: 0},
-				{CaravanID: "car-1111", WorkItemID: "sol-ddd", World: "haven", Phase: 0},
+				{CaravanID: "car-1111", WritID: "sol-aaa", World: "haven", Phase: 0},
+				{CaravanID: "car-1111", WritID: "sol-bbb", World: "haven", Phase: 0},
+				{CaravanID: "car-1111", WritID: "sol-ccc", World: "haven", Phase: 0},
+				{CaravanID: "car-1111", WritID: "sol-ddd", World: "haven", Phase: 0},
 			},
 		},
 		statuses: map[string][]store.CaravanItemStatus{
 			"car-1111": {
-				{WorkItemID: "sol-aaa", World: "haven", WorkItemStatus: "closed"},  // merged
-				{WorkItemID: "sol-bbb", World: "haven", WorkItemStatus: "done"},    // awaiting merge
-				{WorkItemID: "sol-ccc", World: "haven", WorkItemStatus: "working"}, // in progress
-				{WorkItemID: "sol-ddd", World: "haven", WorkItemStatus: "open", Ready: true},
+				{WritID: "sol-aaa", World: "haven", WritStatus: "closed"},  // merged
+				{WritID: "sol-bbb", World: "haven", WritStatus: "done"},    // awaiting merge
+				{WritID: "sol-ccc", World: "haven", WritStatus: "working"}, // in progress
+				{WritID: "sol-ddd", World: "haven", WritStatus: "open", Ready: true},
 			},
 		},
 	}
@@ -92,16 +92,16 @@ func TestGatherCaravansSplitsDoneClosed(t *testing.T) {
 
 func TestComputePhaseProgressSplitsDoneClosed(t *testing.T) {
 	items := []store.CaravanItem{
-		{CaravanID: "car-1", WorkItemID: "sol-aaa", World: "haven", Phase: 0},
-		{CaravanID: "car-1", WorkItemID: "sol-bbb", World: "haven", Phase: 0},
-		{CaravanID: "car-1", WorkItemID: "sol-ccc", World: "haven", Phase: 1},
-		{CaravanID: "car-1", WorkItemID: "sol-ddd", World: "haven", Phase: 1},
+		{CaravanID: "car-1", WritID: "sol-aaa", World: "haven", Phase: 0},
+		{CaravanID: "car-1", WritID: "sol-bbb", World: "haven", Phase: 0},
+		{CaravanID: "car-1", WritID: "sol-ccc", World: "haven", Phase: 1},
+		{CaravanID: "car-1", WritID: "sol-ddd", World: "haven", Phase: 1},
 	}
 	statuses := []store.CaravanItemStatus{
-		{WorkItemID: "sol-aaa", World: "haven", WorkItemStatus: "closed"},
-		{WorkItemID: "sol-bbb", World: "haven", WorkItemStatus: "done"},
-		{WorkItemID: "sol-ccc", World: "haven", WorkItemStatus: "closed"},
-		{WorkItemID: "sol-ddd", World: "haven", WorkItemStatus: "tethered"},
+		{WritID: "sol-aaa", World: "haven", WritStatus: "closed"},
+		{WritID: "sol-bbb", World: "haven", WritStatus: "done"},
+		{WritID: "sol-ccc", World: "haven", WritStatus: "closed"},
+		{WritID: "sol-ddd", World: "haven", WritStatus: "tethered"},
 	}
 
 	phases := computePhaseProgress(items, statuses)
@@ -146,18 +146,18 @@ func TestGatherSphereCaravanSplitsDoneClosed(t *testing.T) {
 		},
 		items: map[string][]store.CaravanItem{
 			"car-2222": {
-				{CaravanID: "car-2222", WorkItemID: "sol-aaa", World: "haven", Phase: 0},
-				{CaravanID: "car-2222", WorkItemID: "sol-bbb", World: "haven", Phase: 0},
-				{CaravanID: "car-2222", WorkItemID: "sol-ccc", World: "haven", Phase: 0},
-				{CaravanID: "car-2222", WorkItemID: "sol-ddd", World: "haven", Phase: 0},
+				{CaravanID: "car-2222", WritID: "sol-aaa", World: "haven", Phase: 0},
+				{CaravanID: "car-2222", WritID: "sol-bbb", World: "haven", Phase: 0},
+				{CaravanID: "car-2222", WritID: "sol-ccc", World: "haven", Phase: 0},
+				{CaravanID: "car-2222", WritID: "sol-ddd", World: "haven", Phase: 0},
 			},
 		},
 		statuses: map[string][]store.CaravanItemStatus{
 			"car-2222": {
-				{WorkItemID: "sol-aaa", World: "haven", WorkItemStatus: "closed"},
-				{WorkItemID: "sol-bbb", World: "haven", WorkItemStatus: "done"},
-				{WorkItemID: "sol-ccc", World: "haven", WorkItemStatus: "tethered"}, // dispatched
-				{WorkItemID: "sol-ddd", World: "haven", WorkItemStatus: "open", Ready: true},
+				{WritID: "sol-aaa", World: "haven", WritStatus: "closed"},
+				{WritID: "sol-bbb", World: "haven", WritStatus: "done"},
+				{WritID: "sol-ccc", World: "haven", WritStatus: "tethered"}, // dispatched
+				{WritID: "sol-ddd", World: "haven", WritStatus: "open", Ready: true},
 			},
 		},
 	}
@@ -192,7 +192,7 @@ func TestGatherExcludesStaleFailedMRs(t *testing.T) {
 
 	sphere := &mockSphereStore{agents: nil}
 	world := &mockWorldStore{
-		items: map[string]*store.WorkItem{
+		items: map[string]*store.Writ{
 			"sol-aaa": {ID: "sol-aaa", Status: "closed"}, // re-cast and merged
 			"sol-bbb": {ID: "sol-bbb", Status: "open"},   // still open (genuine failure)
 		},
@@ -201,9 +201,9 @@ func TestGatherExcludesStaleFailedMRs(t *testing.T) {
 
 	mqStore := &mockMergeQueueStore{
 		mrs: []store.MergeRequest{
-			{ID: "mr-1", WorkItemID: "sol-aaa", Phase: "failed"}, // stale — work item closed
-			{ID: "mr-2", WorkItemID: "sol-bbb", Phase: "failed"}, // genuine failure
-			{ID: "mr-3", WorkItemID: "sol-ccc", Phase: "ready"},
+			{ID: "mr-1", WritID: "sol-aaa", Phase: "failed"}, // stale — writ closed
+			{ID: "mr-2", WritID: "sol-bbb", Phase: "failed"}, // genuine failure
+			{ID: "mr-3", WritID: "sol-ccc", Phase: "ready"},
 		},
 	}
 
@@ -223,7 +223,7 @@ func TestGatherExcludesStaleFailedMRs(t *testing.T) {
 	}
 }
 
-func TestGatherKeepsFailedMRsWithOpenWorkItems(t *testing.T) {
+func TestGatherKeepsFailedMRsWithOpenWrits(t *testing.T) {
 	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
@@ -231,7 +231,7 @@ func TestGatherKeepsFailedMRsWithOpenWorkItems(t *testing.T) {
 
 	sphere := &mockSphereStore{agents: nil}
 	world := &mockWorldStore{
-		items: map[string]*store.WorkItem{
+		items: map[string]*store.Writ{
 			"sol-aaa": {ID: "sol-aaa", Status: "open"},
 		},
 	}
@@ -239,7 +239,7 @@ func TestGatherKeepsFailedMRsWithOpenWorkItems(t *testing.T) {
 
 	mqStore := &mockMergeQueueStore{
 		mrs: []store.MergeRequest{
-			{ID: "mr-1", WorkItemID: "sol-aaa", Phase: "failed"},
+			{ID: "mr-1", WritID: "sol-aaa", Phase: "failed"},
 		},
 	}
 
@@ -249,6 +249,6 @@ func TestGatherKeepsFailedMRsWithOpenWorkItems(t *testing.T) {
 	}
 
 	if result.MergeQueue.Failed != 1 {
-		t.Errorf("MergeQueue.Failed = %d, want 1 (open work item still counts)", result.MergeQueue.Failed)
+		t.Errorf("MergeQueue.Failed = %d, want 1 (open writ still counts)", result.MergeQueue.Failed)
 	}
 }

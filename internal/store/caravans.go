@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Caravan represents a group of related work items tracked together.
+// Caravan represents a group of related writs tracked together.
 type Caravan struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
@@ -19,27 +19,27 @@ type Caravan struct {
 	ClosedAt  *time.Time `json:"closed_at,omitempty"`
 }
 
-// CaravanItem is a work item associated with a caravan.
+// CaravanItem is a writ associated with a caravan.
 type CaravanItem struct {
 	CaravanID  string `json:"caravan_id"`
-	WorkItemID string `json:"work_item_id"`
+	WritID string `json:"writ_id"`
 	World      string `json:"world"`
 	Phase      int    `json:"phase"`
 }
 
-// CaravanItemStatus represents the status of a work item within a caravan.
+// CaravanItemStatus represents the status of a writ within a caravan.
 type CaravanItemStatus struct {
-	WorkItemID     string `json:"work_item_id"`
+	WritID     string `json:"writ_id"`
 	World          string `json:"world"`
 	Phase          int    `json:"phase"`
-	WorkItemStatus string `json:"work_item_status"`
+	WritStatus string `json:"writ_status"`
 	Ready          bool   `json:"ready"`
 	Assignee       string `json:"assignee,omitempty"`
 }
 
 // IsDispatched returns true if the item is actively being worked on by an agent.
 func (s CaravanItemStatus) IsDispatched() bool {
-	return s.WorkItemStatus == "tethered" || s.WorkItemStatus == "working"
+	return s.WritStatus == "tethered" || s.WritStatus == "working"
 }
 
 // generateCaravanID returns a new caravan ID in the format "car-" + 16 hex chars.
@@ -194,14 +194,14 @@ func (s *Store) UpdateCaravanStatus(id, status string) error {
 	return nil
 }
 
-// CreateCaravanItem associates a work item with a caravan at the given phase.
-func (s *Store) CreateCaravanItem(caravanID, workItemID, world string, phase int) error {
+// CreateCaravanItem associates a writ with a caravan at the given phase.
+func (s *Store) CreateCaravanItem(caravanID, writID, world string, phase int) error {
 	_, err := s.db.Exec(
-		`INSERT OR IGNORE INTO caravan_items (caravan_id, work_item_id, world, phase) VALUES (?, ?, ?, ?)`,
-		caravanID, workItemID, world, phase,
+		`INSERT OR IGNORE INTO caravan_items (caravan_id, writ_id, world, phase) VALUES (?, ?, ?, ?)`,
+		caravanID, writID, world, phase,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to add item %q to caravan %q: %w", workItemID, caravanID, err)
+		return fmt.Errorf("failed to add item %q to caravan %q: %w", writID, caravanID, err)
 	}
 	return nil
 }
@@ -215,33 +215,33 @@ func (s *Store) DeleteCaravanItemsForWorld(world string) error {
 	return nil
 }
 
-// RemoveCaravanItem removes a work item from a caravan.
-func (s *Store) RemoveCaravanItem(caravanID, workItemID string) error {
+// RemoveCaravanItem removes a writ from a caravan.
+func (s *Store) RemoveCaravanItem(caravanID, writID string) error {
 	_, err := s.db.Exec(
-		`DELETE FROM caravan_items WHERE caravan_id = ? AND work_item_id = ?`,
-		caravanID, workItemID,
+		`DELETE FROM caravan_items WHERE caravan_id = ? AND writ_id = ?`,
+		caravanID, writID,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to remove item %q from caravan %q: %w", workItemID, caravanID, err)
+		return fmt.Errorf("failed to remove item %q from caravan %q: %w", writID, caravanID, err)
 	}
 	return nil
 }
 
 // UpdateCaravanItemPhase sets the phase of a single item in a caravan.
-func (s *Store) UpdateCaravanItemPhase(caravanID, workItemID string, phase int) error {
+func (s *Store) UpdateCaravanItemPhase(caravanID, writID string, phase int) error {
 	result, err := s.db.Exec(
-		`UPDATE caravan_items SET phase = ? WHERE caravan_id = ? AND work_item_id = ?`,
-		phase, caravanID, workItemID,
+		`UPDATE caravan_items SET phase = ? WHERE caravan_id = ? AND writ_id = ?`,
+		phase, caravanID, writID,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to update phase for item %q in caravan %q: %w", workItemID, caravanID, err)
+		return fmt.Errorf("failed to update phase for item %q in caravan %q: %w", writID, caravanID, err)
 	}
 	n, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to check rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("item %q in caravan %q: %w", workItemID, caravanID, ErrNotFound)
+		return fmt.Errorf("item %q in caravan %q: %w", writID, caravanID, ErrNotFound)
 	}
 	return nil
 }
@@ -265,7 +265,7 @@ func (s *Store) UpdateAllCaravanItemPhases(caravanID string, phase int) (int64, 
 // ListCaravanItems returns all items in a caravan.
 func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
 	rows, err := s.db.Query(
-		`SELECT caravan_id, work_item_id, world, phase FROM caravan_items WHERE caravan_id = ? ORDER BY phase, work_item_id`,
+		`SELECT caravan_id, writ_id, world, phase FROM caravan_items WHERE caravan_id = ? ORDER BY phase, writ_id`,
 		caravanID,
 	)
 	if err != nil {
@@ -276,7 +276,7 @@ func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
 	var items []CaravanItem
 	for rows.Next() {
 		var ci CaravanItem
-		if err := rows.Scan(&ci.CaravanID, &ci.WorkItemID, &ci.World, &ci.Phase); err != nil {
+		if err := rows.Scan(&ci.CaravanID, &ci.WritID, &ci.World, &ci.Phase); err != nil {
 			return nil, fmt.Errorf("failed to scan caravan item: %w", err)
 		}
 		items = append(items, ci)
@@ -288,7 +288,7 @@ func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
 }
 
 // CheckCaravanReadiness returns the status of all items in a caravan.
-// This requires opening each world's database to check work item status
+// This requires opening each world's database to check writ status
 // and dependency satisfaction.
 //
 // Caravan-level dependencies: if this caravan depends on other caravans that
@@ -332,24 +332,24 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 			var out []CaravanItemStatus
 			for _, ci := range worldItems {
 				cis := CaravanItemStatus{
-					WorkItemID: ci.WorkItemID,
+					WritID: ci.WritID,
 					World:      ci.World,
 					Phase:      ci.Phase,
 				}
 
-				item, err := worldStore.GetWorkItem(ci.WorkItemID)
+				item, err := worldStore.GetWrit(ci.WritID)
 				if err != nil {
-					cis.WorkItemStatus = "unknown"
+					cis.WritStatus = "unknown"
 					out = append(out, cis)
 					continue
 				}
 
-				cis.WorkItemStatus = item.Status
+				cis.WritStatus = item.Status
 				cis.Assignee = item.Assignee
 
-				ready, err := worldStore.IsReady(ci.WorkItemID)
+				ready, err := worldStore.IsReady(ci.WritID)
 				if err != nil {
-					return nil, fmt.Errorf("failed to check readiness for %q: %w", ci.WorkItemID, err)
+					return nil, fmt.Errorf("failed to check readiness for %q: %w", ci.WritID, err)
 				}
 				cis.Ready = ready
 
@@ -385,7 +385,7 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 		// Check if all items in lower phases are closed (merged).
 		for j := range results {
 			if results[j].Phase < results[i].Phase {
-				if results[j].WorkItemStatus != "closed" {
+				if results[j].WritStatus != "closed" {
 					results[i].Ready = false
 					break
 				}
@@ -414,7 +414,7 @@ func (s *Store) TryCloseCaravan(caravanID string,
 	}
 
 	for _, st := range statuses {
-		if st.WorkItemStatus != "closed" {
+		if st.WritStatus != "closed" {
 			return false, nil
 		}
 	}

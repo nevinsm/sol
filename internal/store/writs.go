@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// WorkItem represents a tracked work item in a world database.
-type WorkItem struct {
+// Writ represents a tracked writ in a world database.
+type Writ struct {
 	ID          string
 	Title       string
 	Description string
@@ -26,7 +26,7 @@ type WorkItem struct {
 	Labels      []string
 }
 
-// ListFilters controls which work items are returned by ListWorkItems.
+// ListFilters controls which writs are returned by ListWrits.
 type ListFilters struct {
 	Status   string // empty = all
 	Assignee string // empty = all
@@ -35,8 +35,8 @@ type ListFilters struct {
 	ParentID string // empty = all
 }
 
-// WorkItemUpdates specifies which fields to update on a work item.
-type WorkItemUpdates struct {
+// WritUpdates specifies which fields to update on a writ.
+type WritUpdates struct {
 	Status      string // empty = no change
 	Assignee    string // empty = no change, "-" = clear
 	Priority    int    // 0 = no change
@@ -44,17 +44,17 @@ type WorkItemUpdates struct {
 	Description string // empty = no change
 }
 
-// generateID returns a new work item ID in the format "sol-" + 16 hex chars.
+// generateID returns a new writ ID in the format "sol-" + 16 hex chars.
 func generateID() (string, error) {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate work item ID: %w", err)
+		return "", fmt.Errorf("failed to generate writ ID: %w", err)
 	}
 	return "sol-" + hex.EncodeToString(b), nil
 }
 
-// CreateWorkItem creates a new work item and returns its generated ID.
-func (s *Store) CreateWorkItem(title, description, createdBy string, priority int, labels []string) (string, error) {
+// CreateWrit creates a new writ and returns its generated ID.
+func (s *Store) CreateWrit(title, description, createdBy string, priority int, labels []string) (string, error) {
 	id, err := generateID()
 	if err != nil {
 		return "", err
@@ -71,37 +71,37 @@ func (s *Store) CreateWorkItem(title, description, createdBy string, priority in
 	defer tx.Rollback()
 
 	_, err = tx.Exec(
-		`INSERT INTO work_items (id, title, description, status, priority, created_by, created_at, updated_at)
+		`INSERT INTO writs (id, title, description, status, priority, created_by, created_at, updated_at)
 		 VALUES (?, ?, ?, 'open', ?, ?, ?, ?)`,
 		id, title, description, priority, createdBy, now, now,
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to insert work item: %w", err)
+		return "", fmt.Errorf("failed to insert writ: %w", err)
 	}
 
 	for _, label := range labels {
-		_, err = tx.Exec(`INSERT INTO labels (work_item_id, label) VALUES (?, ?)`, id, label)
+		_, err = tx.Exec(`INSERT INTO labels (writ_id, label) VALUES (?, ?)`, id, label)
 		if err != nil {
 			return "", fmt.Errorf("failed to insert label %q: %w", label, err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return "", fmt.Errorf("failed to commit work item: %w", err)
+		return "", fmt.Errorf("failed to commit writ: %w", err)
 	}
 	return id, nil
 }
 
-// CreateWorkItemOpts holds options for creating a work item with full control.
-type CreateWorkItemOpts struct {
+// CreateWritOpts holds options for creating a writ with full control.
+type CreateWritOpts struct {
 	Title, Description, CreatedBy string
 	Priority                      int
 	Labels                        []string
 	ParentID                      string // optional
 }
 
-// CreateWorkItemWithOpts creates a new work item with full options including parent_id.
-func (s *Store) CreateWorkItemWithOpts(opts CreateWorkItemOpts) (string, error) {
+// CreateWritWithOpts creates a new writ with full options including parent_id.
+func (s *Store) CreateWritWithOpts(opts CreateWritOpts) (string, error) {
 	id, err := generateID()
 	if err != nil {
 		return "", err
@@ -119,36 +119,36 @@ func (s *Store) CreateWorkItemWithOpts(opts CreateWorkItemOpts) (string, error) 
 
 	if opts.ParentID != "" {
 		_, err = tx.Exec(
-			`INSERT INTO work_items (id, title, description, status, priority, parent_id, created_by, created_at, updated_at)
+			`INSERT INTO writs (id, title, description, status, priority, parent_id, created_by, created_at, updated_at)
 			 VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?)`,
 			id, opts.Title, opts.Description, opts.Priority, opts.ParentID, opts.CreatedBy, now, now,
 		)
 	} else {
 		_, err = tx.Exec(
-			`INSERT INTO work_items (id, title, description, status, priority, created_by, created_at, updated_at)
+			`INSERT INTO writs (id, title, description, status, priority, created_by, created_at, updated_at)
 			 VALUES (?, ?, ?, 'open', ?, ?, ?, ?)`,
 			id, opts.Title, opts.Description, opts.Priority, opts.CreatedBy, now, now,
 		)
 	}
 	if err != nil {
-		return "", fmt.Errorf("failed to insert work item: %w", err)
+		return "", fmt.Errorf("failed to insert writ: %w", err)
 	}
 
 	for _, label := range opts.Labels {
-		_, err = tx.Exec(`INSERT INTO labels (work_item_id, label) VALUES (?, ?)`, id, label)
+		_, err = tx.Exec(`INSERT INTO labels (writ_id, label) VALUES (?, ?)`, id, label)
 		if err != nil {
 			return "", fmt.Errorf("failed to insert label %q: %w", label, err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return "", fmt.Errorf("failed to commit work item: %w", err)
+		return "", fmt.Errorf("failed to commit writ: %w", err)
 	}
 	return id, nil
 }
 
-// HasLabel returns true if the work item has the given label.
-func (w *WorkItem) HasLabel(label string) bool {
+// HasLabel returns true if the writ has the given label.
+func (w *Writ) HasLabel(label string) bool {
 	for _, l := range w.Labels {
 		if l == label {
 			return true
@@ -157,22 +157,22 @@ func (w *WorkItem) HasLabel(label string) bool {
 	return false
 }
 
-// GetWorkItem returns a work item by ID, including its labels.
-func (s *Store) GetWorkItem(id string) (*WorkItem, error) {
-	w := &WorkItem{}
+// GetWrit returns a writ by ID, including its labels.
+func (s *Store) GetWrit(id string) (*Writ, error) {
+	w := &Writ{}
 	var desc, assignee, parentID sql.NullString
 	var closedAt sql.NullString
 	var createdAt, updatedAt string
 
 	err := s.db.QueryRow(
 		`SELECT id, title, description, status, priority, assignee, parent_id, created_by, created_at, updated_at, closed_at
-		 FROM work_items WHERE id = ?`, id,
+		 FROM writs WHERE id = ?`, id,
 	).Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.CreatedBy, &createdAt, &updatedAt, &closedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("work item %q: %w", id, ErrNotFound)
+		return nil, fmt.Errorf("writ %q: %w", id, ErrNotFound)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get work item %q: %w", id, err)
+		return nil, fmt.Errorf("failed to get writ %q: %w", id, err)
 	}
 
 	w.Description = desc.String
@@ -180,24 +180,24 @@ func (s *Store) GetWorkItem(id string) (*WorkItem, error) {
 	w.ParentID = parentID.String
 	w.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse created_at for work item %q: %w", id, err)
+		return nil, fmt.Errorf("failed to parse created_at for writ %q: %w", id, err)
 	}
 	w.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse updated_at for work item %q: %w", id, err)
+		return nil, fmt.Errorf("failed to parse updated_at for writ %q: %w", id, err)
 	}
 	if closedAt.Valid {
 		t, err := time.Parse(time.RFC3339, closedAt.String)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse closed_at for work item %q: %w", id, err)
+			return nil, fmt.Errorf("failed to parse closed_at for writ %q: %w", id, err)
 		}
 		w.ClosedAt = &t
 	}
 
 	// Fetch labels.
-	rows, err := s.db.Query(`SELECT label FROM labels WHERE work_item_id = ? ORDER BY label`, id)
+	rows, err := s.db.Query(`SELECT label FROM labels WHERE writ_id = ? ORDER BY label`, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get labels for work item %q: %w", id, err)
+		return nil, fmt.Errorf("failed to get labels for writ %q: %w", id, err)
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -208,20 +208,20 @@ func (s *Store) GetWorkItem(id string) (*WorkItem, error) {
 		w.Labels = append(w.Labels, label)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed iterating labels for work item %q: %w", id, err)
+		return nil, fmt.Errorf("failed iterating labels for writ %q: %w", id, err)
 	}
 	return w, nil
 }
 
-// ListWorkItems returns work items matching the filters.
-func (s *Store) ListWorkItems(filters ListFilters) ([]WorkItem, error) {
+// ListWrits returns writs matching the filters.
+func (s *Store) ListWrits(filters ListFilters) ([]Writ, error) {
 	query := `SELECT DISTINCT w.id, w.title, w.description, w.status, w.priority, w.assignee, w.parent_id, w.created_by, w.created_at, w.updated_at, w.closed_at
-	           FROM work_items w`
+	           FROM writs w`
 	var conditions []string
 	var args []interface{}
 
 	if filters.Label != "" {
-		query += ` JOIN labels l ON w.id = l.work_item_id`
+		query += ` JOIN labels l ON w.id = l.writ_id`
 		conditions = append(conditions, "l.label = ?")
 		args = append(args, filters.Label)
 	}
@@ -249,19 +249,19 @@ func (s *Store) ListWorkItems(filters ListFilters) ([]WorkItem, error) {
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list work items: %w", err)
+		return nil, fmt.Errorf("failed to list writs: %w", err)
 	}
 	defer rows.Close()
 
-	var items []WorkItem
+	var items []Writ
 	for rows.Next() {
-		var w WorkItem
+		var w Writ
 		var desc, assignee, parentID sql.NullString
 		var closedAt sql.NullString
 		var createdAt, updatedAt string
 
 		if err := rows.Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.CreatedBy, &createdAt, &updatedAt, &closedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan work item: %w", err)
+			return nil, fmt.Errorf("failed to scan writ: %w", err)
 		}
 		w.Description = desc.String
 		w.Assignee = assignee.String
@@ -269,23 +269,23 @@ func (s *Store) ListWorkItems(filters ListFilters) ([]WorkItem, error) {
 		var parseErr error
 		w.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
 		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for work item %q: %w", w.ID, parseErr)
+			return nil, fmt.Errorf("failed to parse created_at for writ %q: %w", w.ID, parseErr)
 		}
 		w.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
 		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse updated_at for work item %q: %w", w.ID, parseErr)
+			return nil, fmt.Errorf("failed to parse updated_at for writ %q: %w", w.ID, parseErr)
 		}
 		if closedAt.Valid {
 			t, parseErr := time.Parse(time.RFC3339, closedAt.String)
 			if parseErr != nil {
-				return nil, fmt.Errorf("failed to parse closed_at for work item %q: %w", w.ID, parseErr)
+				return nil, fmt.Errorf("failed to parse closed_at for writ %q: %w", w.ID, parseErr)
 			}
 			w.ClosedAt = &t
 		}
 		items = append(items, w)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed iterating work items: %w", err)
+		return nil, fmt.Errorf("failed iterating writs: %w", err)
 	}
 
 	// Batch-fetch all labels for returned items.
@@ -298,7 +298,7 @@ func (s *Store) ListWorkItems(filters ListFilters) ([]WorkItem, error) {
 		}
 
 		labelQuery := fmt.Sprintf(
-			`SELECT work_item_id, label FROM labels WHERE work_item_id IN (%s) ORDER BY work_item_id, label`,
+			`SELECT writ_id, label FROM labels WHERE writ_id IN (%s) ORDER BY writ_id, label`,
 			strings.Join(placeholders, ","),
 		)
 		labelRows, err := s.db.Query(labelQuery, ids...)
@@ -326,13 +326,13 @@ func (s *Store) ListWorkItems(filters ListFilters) ([]WorkItem, error) {
 	return items, nil
 }
 
-// ListChildWorkItems returns all work items with the given parent_id.
-func (s *Store) ListChildWorkItems(parentID string) ([]WorkItem, error) {
-	return s.ListWorkItems(ListFilters{ParentID: parentID})
+// ListChildWrits returns all writs with the given parent_id.
+func (s *Store) ListChildWrits(parentID string) ([]Writ, error) {
+	return s.ListWrits(ListFilters{ParentID: parentID})
 }
 
-// validWorkItemStatuses is the set of allowed work item status values.
-var validWorkItemStatuses = map[string]bool{
+// validWritStatuses is the set of allowed writ status values.
+var validWritStatuses = map[string]bool{
 	"open":     true,
 	"tethered": true,
 	"working":  true,
@@ -341,14 +341,14 @@ var validWorkItemStatuses = map[string]bool{
 	"closed":   true,
 }
 
-// UpdateWorkItem updates fields on a work item. Only non-zero fields are applied.
-func (s *Store) UpdateWorkItem(id string, updates WorkItemUpdates) error {
+// UpdateWrit updates fields on a writ. Only non-zero fields are applied.
+func (s *Store) UpdateWrit(id string, updates WritUpdates) error {
 	var sets []string
 	var args []interface{}
 
 	if updates.Status != "" {
-		if !validWorkItemStatuses[updates.Status] {
-			return fmt.Errorf("invalid work item status %q", updates.Status)
+		if !validWritStatuses[updates.Status] {
+			return fmt.Errorf("invalid writ status %q", updates.Status)
 		}
 		sets = append(sets, "status = ?")
 		args = append(args, updates.Status)
@@ -373,7 +373,7 @@ func (s *Store) UpdateWorkItem(id string, updates WorkItemUpdates) error {
 	}
 
 	if len(sets) == 0 {
-		return fmt.Errorf("no updates specified for work item %q", id)
+		return fmt.Errorf("no updates specified for writ %q", id)
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -382,11 +382,11 @@ func (s *Store) UpdateWorkItem(id string, updates WorkItemUpdates) error {
 	args = append(args, id)
 
 	result, err := s.db.Exec(
-		fmt.Sprintf("UPDATE work_items SET %s WHERE id = ?", strings.Join(sets, ", ")),
+		fmt.Sprintf("UPDATE writs SET %s WHERE id = ?", strings.Join(sets, ", ")),
 		args...,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to update work item %q: %w", id, err)
+		return fmt.Errorf("failed to update writ %q: %w", id, err)
 	}
 	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
 	n, raErr := result.RowsAffected()
@@ -394,20 +394,20 @@ func (s *Store) UpdateWorkItem(id string, updates WorkItemUpdates) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("work item %q: %w", id, ErrNotFound)
+		return fmt.Errorf("writ %q: %w", id, ErrNotFound)
 	}
 	return nil
 }
 
-// CloseWorkItem sets status to "closed" and records closed_at.
-func (s *Store) CloseWorkItem(id string) error {
+// CloseWrit sets status to "closed" and records closed_at.
+func (s *Store) CloseWrit(id string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := s.db.Exec(
-		`UPDATE work_items SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
+		`UPDATE writs SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
 		now, now, id,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to close work item %q: %w", id, err)
+		return fmt.Errorf("failed to close writ %q: %w", id, err)
 	}
 	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
 	n, raErr := result.RowsAffected()
@@ -415,31 +415,31 @@ func (s *Store) CloseWorkItem(id string) error {
 		return fmt.Errorf("failed to check rows affected: %w", raErr)
 	}
 	if n == 0 {
-		return fmt.Errorf("work item %q: %w", id, ErrNotFound)
+		return fmt.Errorf("writ %q: %w", id, ErrNotFound)
 	}
 	return nil
 }
 
-// AddLabel adds a label to a work item. No-op if already present.
+// AddLabel adds a label to a writ. No-op if already present.
 func (s *Store) AddLabel(itemID, label string) error {
 	_, err := s.db.Exec(
-		`INSERT OR IGNORE INTO labels (work_item_id, label) VALUES (?, ?)`,
+		`INSERT OR IGNORE INTO labels (writ_id, label) VALUES (?, ?)`,
 		itemID, label,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to add label %q to work item %q: %w", label, itemID, err)
+		return fmt.Errorf("failed to add label %q to writ %q: %w", label, itemID, err)
 	}
 	return nil
 }
 
-// RemoveLabel removes a label from a work item.
+// RemoveLabel removes a label from a writ.
 func (s *Store) RemoveLabel(itemID, label string) error {
 	_, err := s.db.Exec(
-		`DELETE FROM labels WHERE work_item_id = ? AND label = ?`,
+		`DELETE FROM labels WHERE writ_id = ? AND label = ?`,
 		itemID, label,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to remove label %q from work item %q: %w", label, itemID, err)
+		return fmt.Errorf("failed to remove label %q from writ %q: %w", label, itemID, err)
 	}
 	return nil
 }

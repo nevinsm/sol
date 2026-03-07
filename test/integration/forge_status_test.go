@@ -46,10 +46,10 @@ func TestForgeStatusWithMRs(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	// Create a work item.
-	itemID, err := worldStore.CreateWorkItem("Test feature", "A test feature", "test", 2, nil)
+	// Create a writ.
+	itemID, err := worldStore.CreateWrit("Test feature", "A test feature", "test", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 
 	// Create MRs in various states.
@@ -111,10 +111,10 @@ func TestForgeStatusJSON(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	// Create a work item and a ready MR.
-	itemID, err := worldStore.CreateWorkItem("JSON test", "Test JSON output", "test", 2, nil)
+	// Create a writ and a ready MR.
+	itemID, err := worldStore.CreateWrit("JSON test", "Test JSON output", "test", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 	if _, err := worldStore.CreateMergeRequest(itemID, "feature/json", 2); err != nil {
 		t.Fatalf("create MR: %v", err)
@@ -164,10 +164,10 @@ func TestForgeStatusClaimed(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	// Create a work item and a MR, then claim it.
-	itemID, err := worldStore.CreateWorkItem("Claimed task", "Testing claimed display", "test", 2, nil)
+	// Create a writ and a MR, then claim it.
+	itemID, err := worldStore.CreateWrit("Claimed task", "Testing claimed display", "test", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 	if _, err := worldStore.CreateMergeRequest(itemID, "feature/claimed", 1); err != nil {
 		t.Fatalf("create MR: %v", err)
@@ -196,7 +196,7 @@ func TestForgeStatusClaimed(t *testing.T) {
 		t.Errorf("expected branch name in output, got: %s", out)
 	}
 	if !strings.Contains(out, "Claimed task") {
-		t.Errorf("expected work item title in output, got: %s", out)
+		t.Errorf("expected writ title in output, got: %s", out)
 	}
 
 	// Also verify the JSON output includes claimed_mr.

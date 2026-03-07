@@ -47,14 +47,14 @@ func setupSphere(t *testing.T) *Store {
 func TestSchemaCreation(t *testing.T) {
 	s := setupWorld(t)
 
-	// Verify work_items table exists.
+	// Verify writs table exists.
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='work_items'`).Scan(&count)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='writs'`).Scan(&count)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
-		t.Fatalf("expected work_items table, got count=%d", count)
+		t.Fatalf("expected writs table, got count=%d", count)
 	}
 
 	// Verify labels table exists.
@@ -76,7 +76,7 @@ func TestSchemaCreation(t *testing.T) {
 	}
 
 	// Verify indexes exist.
-	for _, idx := range []string{"idx_work_status", "idx_work_assignee", "idx_work_priority", "idx_labels_label", "idx_mr_phase", "idx_mr_work_item", "idx_mr_blocked_by"} {
+	for _, idx := range []string{"idx_writ_status", "idx_writ_assignee", "idx_writ_priority", "idx_labels_label", "idx_mr_phase", "idx_mr_writ", "idx_mr_blocked_by"} {
 		err = s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?`, idx).Scan(&count)
 		if err != nil {
 			t.Fatal(err)
@@ -92,8 +92,8 @@ func TestSchemaCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 7 {
-		t.Fatalf("expected schema version 7, got %d", version)
+	if version != CurrentWorldSchema {
+		t.Fatalf("expected schema version %d, got %d", CurrentWorldSchema, version)
 	}
 }
 
@@ -132,14 +132,14 @@ func TestMigrateSphereV5(t *testing.T) {
 		t.Fatalf("expected escalations table, got count=%d", count)
 	}
 
-	// Verify schema_version is 8.
+	// Verify schema_version is latest.
 	var version int
 	err = s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 8 {
-		t.Fatalf("expected schema version 8, got %d", version)
+	if version != CurrentSphereSchema {
+		t.Fatalf("expected schema version %d, got %d", CurrentSphereSchema, version)
 	}
 
 	// Verify indexes exist.
@@ -206,14 +206,14 @@ func TestMigrateSphereV1ToLatest(t *testing.T) {
 		t.Fatalf("expected agent name 'Toast', got %q", agent.Name)
 	}
 
-	// Verify schema_version is 8 (V1→V2→V3→V4→V5→V6→V7→V8 all applied).
+	// Verify schema_version is latest (all sphere migrations applied).
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 8 {
-		t.Fatalf("expected schema version 8, got %d", version)
+	if version != CurrentSphereSchema {
+		t.Fatalf("expected schema version %d, got %d", CurrentSphereSchema, version)
 	}
 
 	// Verify phase column was added to caravan_items.
@@ -226,11 +226,11 @@ func TestMigrateSphereV1ToLatest(t *testing.T) {
 	}
 }
 
-func TestWorkItemCRUD(t *testing.T) {
+func TestWritCRUD(t *testing.T) {
 	s := setupWorld(t)
 
 	// Create.
-	id, err := s.CreateWorkItem("Test item", "A test work item", "operator", 2, []string{"sol:task"})
+	id, err := s.CreateWrit("Test item", "A test writ", "operator", 2, []string{"sol:task"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,15 +239,15 @@ func TestWorkItemCRUD(t *testing.T) {
 	}
 
 	// Get.
-	item, err := s.GetWorkItem(id)
+	item, err := s.GetWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if item.Title != "Test item" {
 		t.Fatalf("expected title 'Test item', got %q", item.Title)
 	}
-	if item.Description != "A test work item" {
-		t.Fatalf("expected description 'A test work item', got %q", item.Description)
+	if item.Description != "A test writ" {
+		t.Fatalf("expected description 'A test writ', got %q", item.Description)
 	}
 	if item.Status != "open" {
 		t.Fatalf("expected status 'open', got %q", item.Status)
@@ -263,7 +263,7 @@ func TestWorkItemCRUD(t *testing.T) {
 	}
 
 	// List.
-	items, err := s.ListWorkItems(ListFilters{})
+	items, err := s.ListWrits(ListFilters{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,11 +272,11 @@ func TestWorkItemCRUD(t *testing.T) {
 	}
 
 	// Update.
-	err = s.UpdateWorkItem(id, WorkItemUpdates{Status: "working", Assignee: "haven/Toast"})
+	err = s.UpdateWrit(id, WritUpdates{Status: "working", Assignee: "haven/Toast"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = s.GetWorkItem(id)
+	item, err = s.GetWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,11 +288,11 @@ func TestWorkItemCRUD(t *testing.T) {
 	}
 
 	// Clear assignee.
-	err = s.UpdateWorkItem(id, WorkItemUpdates{Assignee: "-"})
+	err = s.UpdateWrit(id, WritUpdates{Assignee: "-"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = s.GetWorkItem(id)
+	item, err = s.GetWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,11 +301,11 @@ func TestWorkItemCRUD(t *testing.T) {
 	}
 
 	// Update title and description.
-	err = s.UpdateWorkItem(id, WorkItemUpdates{Title: "New title", Description: "New desc"})
+	err = s.UpdateWrit(id, WritUpdates{Title: "New title", Description: "New desc"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = s.GetWorkItem(id)
+	item, err = s.GetWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,11 +317,11 @@ func TestWorkItemCRUD(t *testing.T) {
 	}
 
 	// Update only title, description should remain unchanged.
-	err = s.UpdateWorkItem(id, WorkItemUpdates{Title: "Updated title"})
+	err = s.UpdateWrit(id, WritUpdates{Title: "Updated title"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = s.GetWorkItem(id)
+	item, err = s.GetWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,11 +333,11 @@ func TestWorkItemCRUD(t *testing.T) {
 	}
 
 	// Close.
-	err = s.CloseWorkItem(id)
+	err = s.CloseWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = s.GetWorkItem(id)
+	item, err = s.GetWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,25 +349,25 @@ func TestWorkItemCRUD(t *testing.T) {
 	}
 }
 
-func TestUpdateWorkItemInvalidStatus(t *testing.T) {
+func TestUpdateWritInvalidStatus(t *testing.T) {
 	s := setupWorld(t)
 
-	id, err := s.CreateWorkItem("Status test", "", "operator", 2, nil)
+	id, err := s.CreateWrit("Status test", "", "operator", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = s.UpdateWorkItem(id, WorkItemUpdates{Status: "banana"})
+	err = s.UpdateWrit(id, WritUpdates{Status: "banana"})
 	if err == nil {
 		t.Fatal("expected error for invalid status")
 	}
-	if err.Error() != `invalid work item status "banana"` {
+	if err.Error() != `invalid writ status "banana"` {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// Valid statuses should work.
 	for _, status := range []string{"open", "tethered", "working", "resolve", "done", "closed"} {
-		if err := s.UpdateWorkItem(id, WorkItemUpdates{Status: status}); err != nil {
+		if err := s.UpdateWrit(id, WritUpdates{Status: status}); err != nil {
 			t.Fatalf("expected valid status %q to succeed, got: %v", status, err)
 		}
 	}
@@ -376,13 +376,13 @@ func TestUpdateWorkItemInvalidStatus(t *testing.T) {
 func TestLabels(t *testing.T) {
 	s := setupWorld(t)
 
-	id, err := s.CreateWorkItem("Label test", "", "operator", 2, []string{"bug", "urgent"})
+	id, err := s.CreateWrit("Label test", "", "operator", 2, []string{"bug", "urgent"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Verify initial labels.
-	item, err := s.GetWorkItem(id)
+	item, err := s.GetWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +395,7 @@ func TestLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = s.GetWorkItem(id)
+	item, err = s.GetWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,7 @@ func TestLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = s.GetWorkItem(id)
+	item, err = s.GetWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +421,7 @@ func TestLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = s.GetWorkItem(id)
+	item, err = s.GetWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +430,7 @@ func TestLabels(t *testing.T) {
 	}
 
 	// Filter by label.
-	items, err := s.ListWorkItems(ListFilters{Label: "backend"})
+	items, err := s.ListWrits(ListFilters{Label: "backend"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +438,7 @@ func TestLabels(t *testing.T) {
 		t.Fatalf("expected 1 item with label 'backend', got %d", len(items))
 	}
 
-	items, err = s.ListWorkItems(ListFilters{Label: "nonexistent"})
+	items, err = s.ListWrits(ListFilters{Label: "nonexistent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +454,7 @@ func TestIDGeneration(t *testing.T) {
 	seen := make(map[string]bool)
 
 	for i := 0; i < 100; i++ {
-		id, err := s.CreateWorkItem("ID test", "", "operator", 2, nil)
+		id, err := s.CreateWrit("ID test", "", "operator", 2, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -497,14 +497,14 @@ func TestConcurrentAccess(t *testing.T) {
 		wg.Add(2)
 		go func(n int) {
 			defer wg.Done()
-			_, err := s1.CreateWorkItem("item from s1", "", "operator", 2, nil)
+			_, err := s1.CreateWrit("item from s1", "", "operator", 2, nil)
 			if err != nil {
 				errs <- err
 			}
 		}(i)
 		go func(n int) {
 			defer wg.Done()
-			_, err := s2.CreateWorkItem("item from s2", "", "operator", 2, nil)
+			_, err := s2.CreateWrit("item from s2", "", "operator", 2, nil)
 			if err != nil {
 				errs <- err
 			}
@@ -518,7 +518,7 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 
 	// Verify all items were written.
-	items, err := s1.ListWorkItems(ListFilters{})
+	items, err := s1.ListWrits(ListFilters{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,11 +530,11 @@ func TestConcurrentAccess(t *testing.T) {
 func TestNotFound(t *testing.T) {
 	s := setupWorld(t)
 
-	_, err := s.GetWorkItem("sol-nonexist")
+	_, err := s.GetWrit("sol-nonexist")
 	if err == nil {
-		t.Fatal("expected error for nonexistent work item")
+		t.Fatal("expected error for nonexistent writ")
 	}
-	expected := `work item "sol-nonexist": not found`
+	expected := `writ "sol-nonexist": not found`
 	if err.Error() != expected {
 		t.Fatalf("expected error %q, got %q", expected, err.Error())
 	}
@@ -737,20 +737,20 @@ func TestAgentNotFound(t *testing.T) {
 	}
 }
 
-func TestListWorkItemsFilters(t *testing.T) {
+func TestListWritsFilters(t *testing.T) {
 	s := setupWorld(t)
 
 	// Create items with different statuses and priorities.
-	id1, _ := s.CreateWorkItem("High priority", "", "operator", 1, []string{"feature"})
-	id2, _ := s.CreateWorkItem("Normal priority", "", "operator", 2, []string{"bug"})
-	s.CreateWorkItem("Low priority", "", "operator", 3, nil)
+	id1, _ := s.CreateWrit("High priority", "", "operator", 1, []string{"feature"})
+	id2, _ := s.CreateWrit("Normal priority", "", "operator", 2, []string{"bug"})
+	s.CreateWrit("Low priority", "", "operator", 3, nil)
 
 	// Assign one.
-	s.UpdateWorkItem(id1, WorkItemUpdates{Assignee: "haven/Toast"})
-	s.UpdateWorkItem(id2, WorkItemUpdates{Status: "working"})
+	s.UpdateWrit(id1, WritUpdates{Assignee: "haven/Toast"})
+	s.UpdateWrit(id2, WritUpdates{Status: "working"})
 
 	// Filter by status.
-	items, err := s.ListWorkItems(ListFilters{Status: "open"})
+	items, err := s.ListWrits(ListFilters{Status: "open"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -759,7 +759,7 @@ func TestListWorkItemsFilters(t *testing.T) {
 	}
 
 	// Filter by assignee.
-	items, err = s.ListWorkItems(ListFilters{Assignee: "haven/Toast"})
+	items, err = s.ListWrits(ListFilters{Assignee: "haven/Toast"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -768,7 +768,7 @@ func TestListWorkItemsFilters(t *testing.T) {
 	}
 
 	// Filter by priority.
-	items, err = s.ListWorkItems(ListFilters{Priority: 1})
+	items, err = s.ListWrits(ListFilters{Priority: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -787,7 +787,7 @@ func TestMigrationIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s1.CreateWorkItem("test", "", "operator", 2, nil)
+	s1.CreateWrit("test", "", "operator", 2, nil)
 	s1.Close()
 
 	s2, err := OpenWorld("idempotent")
@@ -796,7 +796,7 @@ func TestMigrationIdempotent(t *testing.T) {
 	}
 	defer s2.Close()
 
-	items, err := s2.ListWorkItems(ListFilters{})
+	items, err := s2.ListWrits(ListFilters{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -820,8 +820,8 @@ func TestMigrationIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 7 {
-		t.Fatalf("expected schema version 7 after reopen, got %d", version)
+	if version != CurrentWorldSchema {
+		t.Fatalf("expected schema version %d after reopen, got %d", CurrentWorldSchema, version)
 	}
 }
 
@@ -842,9 +842,9 @@ func TestMigrateWorldV1ToV4(t *testing.T) {
 	if _, err := s.db.Exec("INSERT INTO schema_version VALUES (1)"); err != nil {
 		t.Fatal(err)
 	}
-	// Create a work item while at V1.
+	// Create a writ while at V1.
 	_, err = s.db.Exec(
-		`INSERT INTO work_items (id, title, status, priority, created_by, created_at, updated_at)
+		`INSERT INTO writs (id, title, status, priority, created_by, created_at, updated_at)
 		 VALUES ('sol-v1item01', 'V1 item', 'open', 2, 'operator', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`)
 	if err != nil {
 		t.Fatal(err)
@@ -868,8 +868,8 @@ func TestMigrateWorldV1ToV4(t *testing.T) {
 		t.Fatalf("expected merge_requests table, got count=%d", count)
 	}
 
-	// Verify existing work items are untouched.
-	item, err := s2.GetWorkItem("sol-v1item01")
+	// Verify existing writs are untouched.
+	item, err := s2.GetWrit("sol-v1item01")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -877,21 +877,21 @@ func TestMigrateWorldV1ToV4(t *testing.T) {
 		t.Fatalf("expected title 'V1 item', got %q", item.Title)
 	}
 
-	// Verify schema version is 7 (V1→V2→V3→V4→V5→V6→V7 all applied).
+	// Verify schema version is latest (all world migrations applied).
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 7 {
-		t.Fatalf("expected schema version 7, got %d", version)
+	if version != CurrentWorldSchema {
+		t.Fatalf("expected schema version %d, got %d", CurrentWorldSchema, version)
 	}
 }
 
-func TestCreateWorkItemWithOpts(t *testing.T) {
+func TestCreateWritWithOpts(t *testing.T) {
 	s := setupWorld(t)
 
-	id, err := s.CreateWorkItemWithOpts(CreateWorkItemOpts{
+	id, err := s.CreateWritWithOpts(CreateWritOpts{
 		Title:       "Resolve conflicts",
 		Description: "Resolve merge conflicts for branch X",
 		CreatedBy:   "haven/forge",
@@ -903,7 +903,7 @@ func TestCreateWorkItemWithOpts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	item, err := s.GetWorkItem(id)
+	item, err := s.GetWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -924,10 +924,10 @@ func TestCreateWorkItemWithOpts(t *testing.T) {
 	}
 }
 
-func TestCreateWorkItemWithOptsNoParent(t *testing.T) {
+func TestCreateWritWithOptsNoParent(t *testing.T) {
 	s := setupWorld(t)
 
-	id, err := s.CreateWorkItemWithOpts(CreateWorkItemOpts{
+	id, err := s.CreateWritWithOpts(CreateWritOpts{
 		Title:     "No parent",
 		CreatedBy: "operator",
 	})
@@ -935,7 +935,7 @@ func TestCreateWorkItemWithOptsNoParent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	item, err := s.GetWorkItem(id)
+	item, err := s.GetWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -948,7 +948,7 @@ func TestCreateWorkItemWithOptsNoParent(t *testing.T) {
 }
 
 func TestHasLabel(t *testing.T) {
-	item := &WorkItem{Labels: []string{"bug", "urgent", "conflict-resolution"}}
+	item := &Writ{Labels: []string{"bug", "urgent", "conflict-resolution"}}
 
 	if !item.HasLabel("bug") {
 		t.Error("expected HasLabel(\"bug\") = true")
@@ -964,7 +964,7 @@ func TestHasLabel(t *testing.T) {
 	}
 
 	// Empty labels.
-	empty := &WorkItem{}
+	empty := &Writ{}
 	if empty.HasLabel("anything") {
 		t.Error("expected HasLabel on empty labels = false")
 	}
@@ -972,8 +972,8 @@ func TestHasLabel(t *testing.T) {
 
 func TestColumnExists(t *testing.T) {
 	s := setupWorld(t)
-	// work_items table has a "title" column.
-	exists, err := columnExists(s.db, "work_items", "title")
+	// writs table has a "title" column.
+	exists, err := columnExists(s.db, "writs", "title")
 	if err != nil {
 		t.Fatalf("columnExists error: %v", err)
 	}
@@ -981,7 +981,7 @@ func TestColumnExists(t *testing.T) {
 		t.Fatal("expected title column to exist")
 	}
 	// Nonexistent column.
-	exists, err = columnExists(s.db, "work_items", "nonexistent")
+	exists, err = columnExists(s.db, "writs", "nonexistent")
 	if err != nil {
 		t.Fatalf("columnExists error: %v", err)
 	}
@@ -992,12 +992,12 @@ func TestColumnExists(t *testing.T) {
 
 func TestTableExists(t *testing.T) {
 	s := setupWorld(t)
-	exists, err := tableExists(s.db, "work_items")
+	exists, err := tableExists(s.db, "writs")
 	if err != nil {
 		t.Fatalf("tableExists error: %v", err)
 	}
 	if !exists {
-		t.Fatal("expected work_items table to exist")
+		t.Fatal("expected writs table to exist")
 	}
 	exists, err = tableExists(s.db, "nonexistent")
 	if err != nil {
@@ -1024,10 +1024,10 @@ func TestErrNotFound(t *testing.T) {
 		t.Fatalf("expected error to contain entity ID, got: %v", err)
 	}
 
-	// GetWorkItem with nonexistent ID.
-	_, err = worldStore.GetWorkItem("nonexistent")
+	// GetWrit with nonexistent ID.
+	_, err = worldStore.GetWrit("nonexistent")
 	if err == nil {
-		t.Fatal("expected error for nonexistent work item")
+		t.Fatal("expected error for nonexistent writ")
 	}
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected errors.Is(err, ErrNotFound), got: %v", err)

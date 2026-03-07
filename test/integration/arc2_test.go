@@ -206,7 +206,7 @@ func TestInitThenFullFlow(t *testing.T) {
 		t.Fatalf("init failed: %v: %s", err, out)
 	}
 
-	// Create a work item.
+	// Create a writ.
 	out, err = runGT(t, solHome, "store", "create", "--world=myworld", "--title=First task")
 	if err != nil {
 		t.Fatalf("store create failed: %v: %s", err, out)
@@ -353,7 +353,7 @@ func TestStatusWorldWithLipgloss(t *testing.T) {
 		t.Fatalf("init failed: %v: %s", err, out)
 	}
 
-	// Create a work item.
+	// Create a writ.
 	_, err = runGT(t, solHome, "store", "create", "--world=myworld", "--title=Test item")
 	if err != nil {
 		t.Fatalf("store create failed: %v", err)

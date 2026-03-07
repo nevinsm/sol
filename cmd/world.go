@@ -154,7 +154,7 @@ var worldInitCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Println("Next steps:")
 		fmt.Printf("  sol store create --world=%s --title=\"First task\"\n", name)
-		fmt.Printf("  sol cast <work-item-id> --world=%s\n", name)
+		fmt.Printf("  sol cast <writ-id> --world=%s\n", name)
 		return nil
 	},
 }
@@ -520,7 +520,7 @@ var worldSummaryCmd = &cobra.Command{
 var worldCloneCmd = &cobra.Command{
 	Use:          "clone <source> <target>",
 	Short:        "Clone a world",
-	Long: `Duplicate a world with copied configuration, database state (work items,
+	Long: `Duplicate a world with copied configuration, database state (writs,
 dependencies), and directory structure. Credentials and tethers are NOT copied.
 The new world gets a fresh agent pool.
 

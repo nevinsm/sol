@@ -320,18 +320,18 @@ instructions = "steps/01.md"
 		t.Fatalf("write step: %v", err)
 	}
 
-	// Create agent and work item.
+	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("ProjectBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWorkItem("Project WF task", "Test project workflow", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Project WF task", "Test project workflow", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("CreateWorkItem: %v", err)
+		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	// Cast with the project-level formula.
 	result, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      world,
 		AgentName:  "ProjectBot",
 		SourceRepo: sourceRepo,
@@ -363,7 +363,7 @@ instructions = "steps/01.md"
 		t.Fatalf("ReadCurrentStep: %v", err)
 	}
 	if !strings.Contains(step.Instructions, itemID) {
-		t.Errorf("step instructions should contain work item ID %s, got: %s", itemID, step.Instructions)
+		t.Errorf("step instructions should contain writ ID %s, got: %s", itemID, step.Instructions)
 	}
 	if !strings.Contains(step.Instructions, "Project workflow step") {
 		t.Error("step instructions should contain project workflow text")

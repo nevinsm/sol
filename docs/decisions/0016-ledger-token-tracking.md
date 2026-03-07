@@ -33,7 +33,7 @@ to a work item. This is the "span" in OTel terms.
 |--------------|------|--------------------------------|
 | id           | TEXT | PK, `ah-` + 16 hex chars       |
 | agent_name   | TEXT | NOT NULL                       |
-| work_item_id | TEXT | FK to work_items(id), nullable |
+| writ_id | TEXT | FK to writs(id), nullable |
 | action       | TEXT | NOT NULL (cast, resolve, etc.) |
 | started_at   | TEXT | NOT NULL, RFC3339              |
 | ended_at     | TEXT | nullable, RFC3339              |
@@ -66,7 +66,7 @@ Schema version: world DB v6.
 
 ## Consequences
 
-- Operators can query per-agent and per-work-item token spend through
+- Operators can query per-agent and per-writ token spend through
   the store directly. Future CLI commands (`sol status`, `sol ledger`)
   can surface this data.
 - The schema mirrors OTel's span/metric model, so exporting to an

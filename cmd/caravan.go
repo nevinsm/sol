@@ -23,8 +23,8 @@ var (
 
 var caravanCmd = &cobra.Command{
 	Use:     "caravan",
-	Short:   "Manage caravans (grouped work item batches)",
-	GroupID: groupWorkItems,
+	Short:   "Manage caravans (grouped writ batches)",
+	GroupID: groupWrits,
 }
 
 // --- sol caravan create ---
@@ -177,13 +177,13 @@ var caravanCheckCmd = &cobra.Command{
 		// Separate ready, in progress, awaiting merge, and blocked items.
 		var ready, inProgress, awaitingMerge, blocked []store.CaravanItemStatus
 		for _, st := range statuses {
-			if st.WorkItemStatus == "closed" {
+			if st.WritStatus == "closed" {
 				// fully merged, skip for now
-			} else if st.WorkItemStatus == "done" {
+			} else if st.WritStatus == "done" {
 				awaitingMerge = append(awaitingMerge, st)
 			} else if st.IsDispatched() {
 				inProgress = append(inProgress, st)
-			} else if st.WorkItemStatus == "open" && st.Ready {
+			} else if st.WritStatus == "open" && st.Ready {
 				ready = append(ready, st)
 			} else {
 				blocked = append(blocked, st)
@@ -193,8 +193,8 @@ var caravanCheckCmd = &cobra.Command{
 		if len(ready) > 0 {
 			fmt.Println("Ready for dispatch:")
 			for _, st := range ready {
-				title := itemTitle(st.WorkItemID, st.World)
-				fmt.Printf("  %s  %s  (%s)\n", st.WorkItemID, title, st.World)
+				title := itemTitle(st.WritID, st.World)
+				fmt.Printf("  %s  %s  (%s)\n", st.WritID, title, st.World)
 			}
 			fmt.Println()
 		}
@@ -202,12 +202,12 @@ var caravanCheckCmd = &cobra.Command{
 		if len(inProgress) > 0 {
 			fmt.Println("In progress:")
 			for _, st := range inProgress {
-				title := itemTitle(st.WorkItemID, st.World)
+				title := itemTitle(st.WritID, st.World)
 				agent := ""
 				if st.Assignee != "" {
 					agent = fmt.Sprintf("  [%s]", agentShortName(st.Assignee))
 				}
-				fmt.Printf("  %s  %s  (%s)%s\n", st.WorkItemID, title, st.World, agent)
+				fmt.Printf("  %s  %s  (%s)%s\n", st.WritID, title, st.World, agent)
 			}
 			fmt.Println()
 		}
@@ -215,8 +215,8 @@ var caravanCheckCmd = &cobra.Command{
 		if len(awaitingMerge) > 0 {
 			fmt.Println("Awaiting merge:")
 			for _, st := range awaitingMerge {
-				title := itemTitle(st.WorkItemID, st.World)
-				fmt.Printf("  %s  %s  (%s)\n", st.WorkItemID, title, st.World)
+				title := itemTitle(st.WritID, st.World)
+				fmt.Printf("  %s  %s  (%s)\n", st.WritID, title, st.World)
 			}
 			fmt.Println()
 		}
@@ -224,12 +224,12 @@ var caravanCheckCmd = &cobra.Command{
 		if len(blocked) > 0 {
 			fmt.Println("Blocked:")
 			for _, st := range blocked {
-				title := itemTitle(st.WorkItemID, st.World)
-				waitingOn := blockedByList(st.WorkItemID, st.World)
+				title := itemTitle(st.WritID, st.World)
+				waitingOn := blockedByList(st.WritID, st.World)
 				if waitingOn != "" {
-					fmt.Printf("  %s  %s  (%s)  <- waiting on %s\n", st.WorkItemID, title, st.World, waitingOn)
+					fmt.Printf("  %s  %s  (%s)  <- waiting on %s\n", st.WritID, title, st.World, waitingOn)
 				} else {
-					fmt.Printf("  %s  %s  (%s)  [%s]\n", st.WorkItemID, title, st.World, st.WorkItemStatus)
+					fmt.Printf("  %s  %s  (%s)  [%s]\n", st.WritID, title, st.World, st.WritStatus)
 				}
 			}
 		}
@@ -306,13 +306,13 @@ var caravanStatusCmd = &cobra.Command{
 			}
 
 			for _, st := range statuses {
-				title := itemTitle(st.WorkItemID, st.World)
+				title := itemTitle(st.WritID, st.World)
 				marker := "[ ]"
 				suffix := ""
 				switch {
-				case st.WorkItemStatus == "closed":
+				case st.WritStatus == "closed":
 					marker = "[x]"
-				case st.WorkItemStatus == "done":
+				case st.WritStatus == "done":
 					marker = "[~]"
 					suffix = " (awaiting merge)"
 				case st.IsDispatched():
@@ -321,22 +321,22 @@ var caravanStatusCmd = &cobra.Command{
 					if st.Assignee != "" {
 						suffix = fmt.Sprintf(" (in progress: %s)", agentShortName(st.Assignee))
 					}
-				case st.WorkItemStatus == "open" && st.Ready:
+				case st.WritStatus == "open" && st.Ready:
 					marker = "[>]"
 					suffix = " (ready)"
 				default:
-					waitingOn := blockedByList(st.WorkItemID, st.World)
+					waitingOn := blockedByList(st.WritID, st.World)
 					if waitingOn != "" {
 						suffix = " <- waiting on " + waitingOn
 					} else {
-						suffix = fmt.Sprintf(" [%s]", st.WorkItemStatus)
+						suffix = fmt.Sprintf(" [%s]", st.WritStatus)
 					}
 				}
 				phasePrefix := ""
 				if hasPhases {
 					phasePrefix = fmt.Sprintf("[p%d] ", st.Phase)
 				}
-				fmt.Printf("  %s %s%s  %s  (%s)%s\n", marker, phasePrefix, st.WorkItemID, title, st.World, suffix)
+				fmt.Printf("  %s %s%s  %s  (%s)%s\n", marker, phasePrefix, st.WritID, title, st.World, suffix)
 			}
 			return nil
 		}
@@ -387,13 +387,13 @@ var caravanStatusCmd = &cobra.Command{
 			}
 			for _, st := range statuses {
 				switch {
-				case st.WorkItemStatus == "closed":
+				case st.WritStatus == "closed":
 					closedCount++
-				case st.WorkItemStatus == "done":
+				case st.WritStatus == "done":
 					mergingCount++
 				case st.IsDispatched():
 					dispatchedCount++
-				case st.WorkItemStatus == "open" && st.Ready:
+				case st.WritStatus == "open" && st.Ready:
 					readyCount++
 				default:
 					blockedCount++
@@ -500,7 +500,7 @@ var caravanListCmd = &cobra.Command{
 					statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
 					if err == nil {
 						for _, st := range statuses {
-							if st.WorkItemStatus == "closed" {
+							if st.WritStatus == "closed" {
 								entry.Merged++
 							}
 						}
@@ -536,7 +536,7 @@ var caravanListCmd = &cobra.Command{
 				statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
 				if err == nil {
 					for _, st := range statuses {
-						if st.WorkItemStatus == "closed" {
+						if st.WritStatus == "closed" {
 							merged++
 						}
 					}
@@ -661,9 +661,9 @@ var caravanLaunchCmd = &cobra.Command{
 			if st.World != world {
 				continue
 			}
-			if st.WorkItemStatus == "open" && st.Ready {
+			if st.WritStatus == "open" && st.Ready {
 				readyItems = append(readyItems, st)
-			} else if st.WorkItemStatus != "done" && st.WorkItemStatus != "closed" {
+			} else if st.WritStatus != "done" && st.WritStatus != "closed" {
 				blockedItems = append(blockedItems, st)
 			}
 		}
@@ -704,7 +704,7 @@ var caravanLaunchCmd = &cobra.Command{
 		dispatched := 0
 		for _, st := range readyItems {
 			castOpts := dispatch.CastOpts{
-				WorkItemID:  st.WorkItemID,
+				WritID:  st.WritID,
 				World:       world,
 				SourceRepo:  sourceRepo,
 				WorldConfig: &worldCfg,
@@ -715,10 +715,10 @@ var caravanLaunchCmd = &cobra.Command{
 			}
 			result, err := dispatch.Cast(castOpts, worldStore, sphereStore, mgr, logger)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to dispatch %s: %v\n", st.WorkItemID, err)
+				fmt.Fprintf(os.Stderr, "Warning: failed to dispatch %s: %v\n", st.WritID, err)
 				continue
 			}
-			fmt.Printf("Dispatched %s -> %s (%s)\n", result.WorkItemID, result.AgentName, result.SessionName)
+			fmt.Printf("Dispatched %s -> %s (%s)\n", result.WritID, result.AgentName, result.SessionName)
 			dispatched++
 		}
 
@@ -909,8 +909,8 @@ var caravanCloseCmd = &cobra.Command{
 				}
 				var unmerged []string
 				for _, st := range statuses {
-					if st.WorkItemStatus != "closed" {
-						unmerged = append(unmerged, fmt.Sprintf("%s (%s: %s)", st.WorkItemID, st.World, st.WorkItemStatus))
+					if st.WritStatus != "closed" {
+						unmerged = append(unmerged, fmt.Sprintf("%s (%s: %s)", st.WritID, st.World, st.WritStatus))
 					}
 				}
 				return fmt.Errorf("not all items are merged; unmerged: %s (use --force to close anyway)",
@@ -942,13 +942,13 @@ func agentShortName(assignee string) string {
 	return assignee
 }
 
-func itemTitle(workItemID, world string) string {
+func itemTitle(writID, world string) string {
 	worldStore, err := gatedWorldOpener(world)
 	if err != nil {
 		return "(unknown)"
 	}
 	defer worldStore.Close()
-	item, err := worldStore.GetWorkItem(workItemID)
+	item, err := worldStore.GetWrit(writID)
 	if err != nil {
 		return "(unknown)"
 	}
@@ -968,13 +968,13 @@ func caravanDepNames(sphereStore *store.Store, ids []string) string {
 	return strings.Join(parts, ", ")
 }
 
-func blockedByList(workItemID, world string) string {
+func blockedByList(writID, world string) string {
 	worldStore, err := gatedWorldOpener(world)
 	if err != nil {
 		return ""
 	}
 	defer worldStore.Close()
-	deps, err := worldStore.GetDependencies(workItemID)
+	deps, err := worldStore.GetDependencies(writID)
 	if err != nil || len(deps) == 0 {
 		return ""
 	}
@@ -982,7 +982,7 @@ func blockedByList(workItemID, world string) string {
 	// Filter to unsatisfied deps — only "closed" (merged) satisfies.
 	var unsatisfied []string
 	for _, depID := range deps {
-		item, err := worldStore.GetWorkItem(depID)
+		item, err := worldStore.GetWrit(depID)
 		if err != nil {
 			unsatisfied = append(unsatisfied, depID)
 			continue

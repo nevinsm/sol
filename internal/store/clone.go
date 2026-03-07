@@ -6,13 +6,13 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 )
 
-// CloneWorldData copies work items, labels, dependencies, and merge requests
+// CloneWorldData copies writs, labels, dependencies, and merge requests
 // from the source world database into the target world database. When
 // includeHistory is true, agent_history, token_usage, and agent_memories are
 // also copied. Both databases must already exist (target should be freshly
 // created via OpenWorld).
 //
-// Credentials, tethers, and agent assignments are NOT copied — work items have
+// Credentials, tethers, and agent assignments are NOT copied — writs have
 // their assignee cleared and merge request claims are reset.
 func CloneWorldData(source, target string, includeHistory bool) error {
 	srcPath := fmt.Sprintf("%s/%s.db", config.StoreDir(), source)
@@ -36,20 +36,20 @@ func CloneWorldData(source, target string, includeHistory bool) error {
 	}
 	defer tx.Rollback()
 
-	// Copy work items — clear assignee (agents are not cloned).
+	// Copy writs — clear assignee (agents are not cloned).
 	if _, err := tx.Exec(`
-		INSERT INTO main.work_items
+		INSERT INTO main.writs
 			(id, title, description, status, priority, assignee, parent_id, created_by, created_at, updated_at, closed_at)
 		SELECT id, title, description, status, priority, NULL, parent_id, created_by, created_at, updated_at, closed_at
-		FROM src.work_items
+		FROM src.writs
 	`); err != nil {
-		return fmt.Errorf("failed to copy work items: %w", err)
+		return fmt.Errorf("failed to copy writs: %w", err)
 	}
 
 	// Copy labels.
 	if _, err := tx.Exec(`
-		INSERT INTO main.labels (work_item_id, label)
-		SELECT work_item_id, label FROM src.labels
+		INSERT INTO main.labels (writ_id, label)
+		SELECT writ_id, label FROM src.labels
 	`); err != nil {
 		return fmt.Errorf("failed to copy labels: %w", err)
 	}
@@ -65,8 +65,8 @@ func CloneWorldData(source, target string, includeHistory bool) error {
 	// Copy merge requests — clear claims (no agents in new world).
 	if _, err := tx.Exec(`
 		INSERT INTO main.merge_requests
-			(id, work_item_id, branch, phase, claimed_by, claimed_at, attempts, priority, created_at, updated_at, merged_at, blocked_by)
-		SELECT id, work_item_id, branch, phase, NULL, NULL, 0, priority, created_at, updated_at, merged_at, blocked_by
+			(id, writ_id, branch, phase, claimed_by, claimed_at, attempts, priority, created_at, updated_at, merged_at, blocked_by)
+		SELECT id, writ_id, branch, phase, NULL, NULL, 0, priority, created_at, updated_at, merged_at, blocked_by
 		FROM src.merge_requests
 	`); err != nil {
 		return fmt.Errorf("failed to copy merge requests: %w", err)
@@ -76,8 +76,8 @@ func CloneWorldData(source, target string, includeHistory bool) error {
 		// Copy agent history.
 		if _, err := tx.Exec(`
 			INSERT INTO main.agent_history
-				(id, agent_name, work_item_id, action, started_at, ended_at, summary)
-			SELECT id, agent_name, work_item_id, action, started_at, ended_at, summary
+				(id, agent_name, writ_id, action, started_at, ended_at, summary)
+			SELECT id, agent_name, writ_id, action, started_at, ended_at, summary
 			FROM src.agent_history
 		`); err != nil {
 			return fmt.Errorf("failed to copy agent history: %w", err)

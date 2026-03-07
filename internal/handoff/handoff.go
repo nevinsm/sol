@@ -20,7 +20,7 @@ import (
 
 // State captures an agent's context at the moment of handoff.
 type State struct {
-	WorkItemID       string    `json:"work_item_id"`
+	WritID       string    `json:"writ_id"`
 	AgentName        string    `json:"agent_name"`
 	World            string    `json:"world"`
 	Role             string    `json:"role,omitempty"`
@@ -107,12 +107,12 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		role = "agent"
 	}
 
-	// 1. Read tether file to get work item ID.
-	workItemID, err := tether.Read(opts.World, opts.AgentName, role)
+	// 1. Read tether file to get writ ID.
+	writID, err := tether.Read(opts.World, opts.AgentName, role)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tether: %w", err)
 	}
-	if workItemID == "" {
+	if writID == "" {
 		return nil, fmt.Errorf("no work tethered for agent %q in world %q", opts.AgentName, opts.World)
 	}
 
@@ -178,14 +178,14 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 	// 7. Auto-generate summary if not provided.
 	summary := opts.Summary
 	if summary == "" {
-		summary = fmt.Sprintf("Session handoff for %s. Working on %s.", opts.AgentName, workItemID)
+		summary = fmt.Sprintf("Session handoff for %s. Working on %s.", opts.AgentName, writID)
 		if len(recentCommits) > 0 {
 			summary += fmt.Sprintf(" Last commit: %s", recentCommits[0])
 		}
 	}
 
 	return &State{
-		WorkItemID:       workItemID,
+		WritID:       writID,
 		AgentName:        opts.AgentName,
 		World:            opts.World,
 		Role:             role,
@@ -427,7 +427,7 @@ func (s *State) BuildResumeState(reason string) startup.ResumeState {
 	return startup.ResumeState{
 		CurrentStep:     s.WorkflowStep,
 		StepDescription: s.StepDescription,
-		ClaimedResource: s.WorkItemID,
+		ClaimedResource: s.WritID,
 		Reason:          reason,
 	}
 }
@@ -449,9 +449,9 @@ func CaptureResumeState(world, agent, role, reason string) startup.ResumeState {
 	}
 
 	// Read claimed work from tether.
-	workItemID, _ := tether.Read(world, agent, role)
-	if workItemID != "" {
-		state.ClaimedResource = workItemID
+	writID, _ := tether.Read(world, agent, role)
+	if writID != "" {
+		state.ClaimedResource = writID
 	}
 
 	return state
@@ -514,8 +514,8 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	}
 
 	// Try to capture state from tethered work (outposts and envoys with active work).
-	workItemID, _ := tether.Read(opts.World, opts.AgentName, role)
-	hasTether := workItemID != ""
+	writID, _ := tether.Read(opts.World, opts.AgentName, role)
+	hasTether := writID != ""
 
 	if hasTether {
 		// Full capture + handoff file + notification for tethered agents.
@@ -539,7 +539,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		// Emit event after writing handoff file (before stopping session).
 		if logger != nil {
 			logger.Emit(events.EventHandoff, "sol", opts.AgentName, "both", map[string]string{
-				"work_item_id": state.WorkItemID,
+				"writ_id": state.WritID,
 				"agent":        opts.AgentName,
 				"world":        opts.World,
 				"role":         role,
@@ -558,7 +558,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 			if state.WorkflowProgress != "" {
 				body += "\n\nWorkflow: " + state.WorkflowProgress
 			}
-			subject := fmt.Sprintf("HANDOFF: %s", state.WorkItemID)
+			subject := fmt.Sprintf("HANDOFF: %s", state.WritID)
 			if _, err := sphereStore.SendMessage(agentID, agentID, subject, body, 2, "notification"); err != nil {
 				fmt.Fprintf(os.Stderr, "handoff: failed to send self-notification: %v\n", err)
 			}

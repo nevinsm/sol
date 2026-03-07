@@ -12,7 +12,7 @@ session with exponential backoff. It has no concept of "max respawns" or
 "return work to open" — it retries indefinitely with increasing delays.
 
 The sentinel (Loop 3) adds per-world outpost monitoring with richer
-recovery: AI-assisted assessment, max-2-respawns-per-work-item, and
+recovery: AI-assisted assessment, max-2-respawns-per-writ, and
 return-to-open when respawns are exhausted. It also runs on a 3-minute
 patrol interval.
 

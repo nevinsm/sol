@@ -172,7 +172,7 @@ var agentResetCmd = &cobra.Command{
 			return nil
 		}
 
-		// Untether the work item if one is assigned.
+		// Untether the writ if one is assigned.
 		tetherItemID := agent.TetherItem
 		if tetherItemID != "" {
 			worldStore, err := store.OpenWorld(world)
@@ -181,13 +181,13 @@ var agentResetCmd = &cobra.Command{
 			}
 			defer worldStore.Close()
 
-			if err := worldStore.UpdateWorkItem(tetherItemID, store.WorkItemUpdates{
+			if err := worldStore.UpdateWrit(tetherItemID, store.WritUpdates{
 				Status:   "open",
 				Assignee: "-",
 			}); err != nil {
-				fmt.Fprintf(os.Stderr, "WARNING: failed to untether work item %s: %v\n", tetherItemID, err)
+				fmt.Fprintf(os.Stderr, "WARNING: failed to untether writ %s: %v\n", tetherItemID, err)
 			} else {
-				fmt.Printf("Untethered work item %s (status → open, assignee cleared)\n", tetherItemID)
+				fmt.Printf("Untethered writ %s (status → open, assignee cleared)\n", tetherItemID)
 			}
 		}
 

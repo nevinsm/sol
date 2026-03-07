@@ -269,7 +269,7 @@ architecture, never built.
 
 ### History & Cost
 
-- `agent_history` table: agent_id, work_item_id, action, started_at, ended_at, summary, cost_usd
+- `agent_history` table: agent_id, writ_id, action, started_at, ended_at, summary, cost_usd
 - Instrument cast/resolve to write history records
 - `sol agent history <name>` — show work trail for an agent
 - `sol agent history --world=<name>` — show all agent activity in a world

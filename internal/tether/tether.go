@@ -15,7 +15,7 @@ func TetherPath(world, agentName, role string) string {
 	return filepath.Join(config.AgentDir(world, agentName, role), ".tether")
 }
 
-// Read reads the tether file and returns the work item ID.
+// Read reads the tether file and returns the writ ID.
 // Returns ("", nil) if no tether file exists (agent is idle).
 func Read(world, agentName, role string) (string, error) {
 	data, err := os.ReadFile(TetherPath(world, agentName, role))
@@ -28,10 +28,10 @@ func Read(world, agentName, role string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// Write writes a work item ID to the tether file.
+// Write writes a writ ID to the tether file.
 // Creates parent directories if needed. Uses fsync before rename
 // to guarantee durability across power failures.
-func Write(world, agentName, workItemID, role string) error {
+func Write(world, agentName, writID, role string) error {
 	path := TetherPath(world, agentName, role)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -42,7 +42,7 @@ func Write(world, agentName, workItemID, role string) error {
 	if err != nil {
 		return fmt.Errorf("failed to write tether for agent %q in world %q: %w", agentName, world, err)
 	}
-	if _, err := f.WriteString(workItemID); err != nil {
+	if _, err := f.WriteString(writID); err != nil {
 		f.Close()
 		os.Remove(tmp)
 		return fmt.Errorf("failed to write tether for agent %q in world %q: %w", agentName, world, err)

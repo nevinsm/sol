@@ -27,7 +27,7 @@ func TestCaravanPhaseCreation(t *testing.T) {
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "myworld")
 
-	// Create two work items.
+	// Create two writs.
 	id1, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=Phase 0 task")
 	if err != nil {
 		t.Fatalf("store create: %v: %s", err, id1)
@@ -59,7 +59,7 @@ func TestCaravanPhaseCreation(t *testing.T) {
 
 	var checkResult struct {
 		Items []struct {
-			WorkItemID string `json:"work_item_id"`
+			WritID string `json:"writ_id"`
 			Phase      int    `json:"phase"`
 			Ready      bool   `json:"ready"`
 		} `json:"items"`
@@ -125,8 +125,8 @@ func TestCaravanPhaseOrdering(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	if err := worldStore.CloseWorkItem(id1); err != nil {
-		t.Fatalf("close work item: %v", err)
+	if err := worldStore.CloseWrit(id1); err != nil {
+		t.Fatalf("close writ: %v", err)
 	}
 
 	// Check readiness again.
@@ -137,10 +137,10 @@ func TestCaravanPhaseOrdering(t *testing.T) {
 
 	var checkResult struct {
 		Items []struct {
-			WorkItemID     string `json:"work_item_id"`
+			WritID     string `json:"writ_id"`
 			Phase          int    `json:"phase"`
 			Ready          bool   `json:"ready"`
-			WorkItemStatus string `json:"work_item_status"`
+			WritStatus string `json:"writ_status"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(out), &checkResult); err != nil {
@@ -727,16 +727,16 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 		t.Fatal("envoy session not started")
 	}
 
-	// Create work item.
+	// Create writ.
 	worldStore, err := store.OpenWorld("myworld")
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
 	defer worldStore.Close()
 
-	itemID, err := worldStore.CreateWorkItem("Envoy task", "test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Envoy task", "test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 
 	// Update agent state to working and set tether.
@@ -755,9 +755,9 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 		t.Fatalf("write tether: %v", err)
 	}
 
-	// Update work item to tethered.
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered"}); err != nil {
-		t.Fatalf("update work item: %v", err)
+	// Update writ to tethered.
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered"}); err != nil {
+		t.Fatalf("update writ: %v", err)
 	}
 
 	// Use the envoy worktree created by envoy create.
@@ -786,13 +786,13 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 		t.Error("envoy session should still be running after resolve")
 	}
 
-	// Verify work item done.
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify writ done.
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("get work item: %v", err)
+		t.Fatalf("get writ: %v", err)
 	}
 	if item.Status != "done" {
-		t.Errorf("work item status: expected 'done', got %q", item.Status)
+		t.Errorf("writ status: expected 'done', got %q", item.Status)
 	}
 }
 
@@ -804,7 +804,7 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
-	// Create agent and work item manually.
+	// Create agent and writ manually.
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("open sphere store: %v", err)
@@ -821,17 +821,17 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	itemID, err := worldStore.CreateWorkItem("Agent task", "test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Agent task", "test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 
 	// Set agent to working state.
 	if err := sphereStore.UpdateAgentState("myworld/Alpha", "working", itemID); err != nil {
 		t.Fatalf("update agent state: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered"}); err != nil {
-		t.Fatalf("update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered"}); err != nil {
+		t.Fatalf("update writ: %v", err)
 	}
 
 	// Write tether.
@@ -862,17 +862,17 @@ func TestResolveAgentKillsSession(t *testing.T) {
 		t.Fatalf("resolve: %v: %s", err, out)
 	}
 
-	// Verify state changes: outpost agent deleted (name reclaimed), work item done.
+	// Verify state changes: outpost agent deleted (name reclaimed), writ done.
 	_, err = sphereStore.GetAgent("myworld/Alpha")
 	if err == nil {
 		t.Error("expected agent record to be deleted after resolve")
 	}
-	item, err := worldStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("get work item: %v", err)
+		t.Fatalf("get writ: %v", err)
 	}
 	if item.Status != "done" {
-		t.Errorf("expected work item status 'done', got %q", item.Status)
+		t.Errorf("expected writ status 'done', got %q", item.Status)
 	}
 	// Verify tether is cleared.
 	if _, err := os.Stat(tetherPath); !os.IsNotExist(err) {
@@ -1159,7 +1159,7 @@ func TestStatusCaravanPhases(t *testing.T) {
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "myworld")
 
-	// Create work items and phased caravan.
+	// Create writs and phased caravan.
 	id1, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=Phase0 task")
 	if err != nil {
 		t.Fatalf("store create: %v: %s", err, id1)
@@ -1233,16 +1233,16 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 		t.Fatal("envoy session not started")
 	}
 
-	// Create work item.
+	// Create writ.
 	worldStore, err := store.OpenWorld("myworld")
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
 	defer worldStore.Close()
 
-	itemID, err := worldStore.CreateWorkItem("Envoy full workflow", "test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Envoy full workflow", "test", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 
 	// Tether.
@@ -1255,8 +1255,8 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 	if err := sphereStore.UpdateAgentState("myworld/scout", "working", itemID); err != nil {
 		t.Fatalf("update agent state: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered"}); err != nil {
-		t.Fatalf("update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered"}); err != nil {
+		t.Fatalf("update writ: %v", err)
 	}
 
 	// Write tether file (envoy role — lives under envoys/, not outposts/).
@@ -1288,10 +1288,10 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 		t.Error("envoy session should remain after resolve")
 	}
 
-	// Verify work item done.
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify writ done.
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("get work item: %v", err)
+		t.Fatalf("get writ: %v", err)
 	}
 	if item.Status != "done" {
 		t.Errorf("expected status 'done', got %q", item.Status)

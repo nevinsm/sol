@@ -20,7 +20,7 @@ var wfVars []string
 var workflowCmd = &cobra.Command{
 	Use:     "workflow",
 	Short:   "Manage workflow instances",
-	GroupID: groupWorkItems,
+	GroupID: groupWrits,
 }
 
 var workflowInstantiateCmd = &cobra.Command{
@@ -100,11 +100,11 @@ var workflowAdvanceCmd = &cobra.Command{
 			return err
 		}
 
-		// Read work item ID for event payload before advancing.
+		// Read writ ID for event payload before advancing.
 		inst, _ := workflow.ReadInstance(world, agent, "agent")
-		workItemID := ""
+		writID := ""
 		if inst != nil {
-			workItemID = inst.WorkItemID
+			writID = inst.WritID
 		}
 
 		nextStep, done, err := workflow.Advance(world, agent, "agent")
@@ -115,7 +115,7 @@ var workflowAdvanceCmd = &cobra.Command{
 		logger := events.NewLogger(config.Home())
 		if done {
 			logger.Emit(events.EventWorkflowComplete, "sol", agent, "both", map[string]string{
-				"work_item_id": workItemID,
+				"writ_id": writID,
 				"agent":        agent,
 				"world":        world,
 			})
@@ -124,7 +124,7 @@ var workflowAdvanceCmd = &cobra.Command{
 		}
 
 		logger.Emit(events.EventWorkflowAdvance, "sol", agent, "both", map[string]string{
-			"work_item_id": workItemID,
+			"writ_id": writID,
 			"step":         nextStep.Title,
 			"step_id":      nextStep.ID,
 			"agent":        agent,
@@ -170,7 +170,7 @@ var workflowStatusCmd = &cobra.Command{
 		if jsonOut {
 			out := struct {
 				Formula        string   `json:"formula"`
-				WorkItemID     string   `json:"work_item_id"`
+				WritID     string   `json:"writ_id"`
 				Status         string   `json:"status"`
 				CurrentStep    string   `json:"current_step"`
 				Completed      []string `json:"completed"`
@@ -178,7 +178,7 @@ var workflowStatusCmd = &cobra.Command{
 				CompletedCount int      `json:"completed_count"`
 			}{
 				Formula:        inst.Formula,
-				WorkItemID:     inst.WorkItemID,
+				WritID:     inst.WritID,
 				Status:         state.Status,
 				CurrentStep:    state.CurrentStep,
 				Completed:      state.Completed,
@@ -191,7 +191,7 @@ var workflowStatusCmd = &cobra.Command{
 		}
 
 		// Human-readable output.
-		fmt.Printf("Workflow: %s (%s)\n", inst.Formula, inst.WorkItemID)
+		fmt.Printf("Workflow: %s (%s)\n", inst.Formula, inst.WritID)
 		fmt.Printf("Status: %s\n", state.Status)
 		fmt.Printf("Progress: %d/%d steps complete\n", len(state.Completed), len(steps))
 		fmt.Println()
@@ -430,7 +430,7 @@ func printShowHuman(m *workflow.Manifest, res *workflow.FormulaResolution, valid
 
 var workflowManifestCmd = &cobra.Command{
 	Use:          "manifest <formula>",
-	Short:        "Manifest a formula into work items and a caravan",
+	Short:        "Manifest a formula into writs and a caravan",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -486,7 +486,7 @@ var workflowManifestCmd = &cobra.Command{
 		// Sort by phase for readable output.
 		type entry struct {
 			stepID     string
-			workItemID string
+			writID string
 			phase      int
 		}
 		entries := make([]entry, 0, len(result.ChildIDs))
@@ -502,7 +502,7 @@ var workflowManifestCmd = &cobra.Command{
 
 		fmt.Println()
 		for _, e := range entries {
-			fmt.Printf("  phase %d: %s → %s\n", e.phase, e.stepID, e.workItemID)
+			fmt.Printf("  phase %d: %s → %s\n", e.phase, e.stepID, e.writID)
 		}
 
 		return nil
@@ -591,7 +591,7 @@ func init() {
 	workflowShowCmd.Flags().Bool("json", false, "output as JSON")
 
 	// instantiate flags
-	workflowInstantiateCmd.Flags().String("item", "", "work item ID")
+	workflowInstantiateCmd.Flags().String("item", "", "writ ID")
 	workflowInstantiateCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
 	workflowInstantiateCmd.Flags().String("agent", "", "agent name")
 	workflowInstantiateCmd.Flags().StringSliceVar(&wfVars, "var", nil, "variable assignment (key=val)")
@@ -617,7 +617,7 @@ func init() {
 	// manifest flags
 	workflowManifestCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
 	workflowManifestCmd.Flags().StringSliceVar(&wfVars, "var", nil, "variable assignment (key=val)")
-	workflowManifestCmd.Flags().String("target", "", "existing work item ID to manifest against (required for expansion formulas)")
+	workflowManifestCmd.Flags().String("target", "", "existing writ ID to manifest against (required for expansion formulas)")
 	workflowManifestCmd.Flags().Bool("json", false, "output as JSON")
 
 	// list flags

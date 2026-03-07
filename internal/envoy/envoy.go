@@ -255,8 +255,8 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 	// 3. Check for tether.
 	if tether.IsTethered(opts.World, opts.Name, "envoy") {
 		if !opts.Force {
-			workItem, _ := tether.Read(opts.World, opts.Name, "envoy")
-			return fmt.Errorf("envoy %q is tethered to %q — clear tether first or use --force", opts.Name, workItem)
+			writ, _ := tether.Read(opts.World, opts.Name, "envoy")
+			return fmt.Errorf("envoy %q is tethered to %q — clear tether first or use --force", opts.Name, writ)
 		}
 		fmt.Fprintf(os.Stderr, "Clearing tether for envoy %q\n", opts.Name)
 		if err := tether.Clear(opts.World, opts.Name, "envoy"); err != nil {

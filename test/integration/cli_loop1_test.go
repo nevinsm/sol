@@ -72,15 +72,15 @@ func TestCLIStatusJSON(t *testing.T) {
 	initWorld(t, solHome, "ember")
 	worldStore, sphereStore := openStores(t, "ember")
 
-	// Create an agent and work item, cast.
+	// Create an agent and writ, cast.
 	sphereStore.CreateAgent("Smoke", "ember", "agent")
-	itemID, _ := worldStore.CreateWorkItem("CLI status test", "JSON test", "operator", 2, nil)
+	itemID, _ := worldStore.CreateWrit("CLI status test", "JSON test", "operator", 2, nil)
 
 	// Need to cast from a git repo context via CLI.
 	// Use the API directly since the CLI discovers the repo from cwd.
 	mgr := dispatch.NewSessionManager()
 	dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "Smoke",
 		SourceRepo: sourceRepo,
@@ -123,7 +123,7 @@ func TestCLICastAutoProvision(t *testing.T) {
 	solHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, solHome, "ember", sourceRepo)
 
-	// Create a work item via CLI.
+	// Create a writ via CLI.
 	itemID, err := runGT(t, solHome, "store", "create", "--world=ember", "--title=auto provision test")
 	if err != nil {
 		t.Fatalf("sol store create failed: %v: %s", err, itemID)

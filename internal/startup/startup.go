@@ -50,7 +50,7 @@ type RoleConfig struct {
 
 	// Workflow
 	Formula   string // formula name to instantiate (empty = none)
-	NeedsItem bool   // whether formula requires a work item
+	NeedsItem bool   // whether formula requires a writ
 
 	// Prime context
 	PrimeBuilder func(world, agent string) string
@@ -178,7 +178,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 			return "", fmt.Errorf("startup: failed to register agent: %w", err)
 		}
 	}
-	// Preserve existing tether item (outpost agents have tethered work items).
+	// Preserve existing tether item (outpost agents have tethered writs).
 	tetherItem := ""
 	if existing != nil {
 		tetherItem = existing.TetherItem
@@ -228,7 +228,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		env["OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"] = "http/json"
 		attrs := fmt.Sprintf("agent.name=%s,world=%s", agent, world)
 		if tetherItem != "" {
-			attrs += ",work_item_id=" + tetherItem
+			attrs += ",writ_id=" + tetherItem
 		}
 		env["OTEL_RESOURCE_ATTRIBUTES"] = attrs
 	}

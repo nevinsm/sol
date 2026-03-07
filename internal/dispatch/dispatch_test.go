@@ -108,9 +108,9 @@ func TestCastHappyPath(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
@@ -123,7 +123,7 @@ func TestCastHappyPath(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	result, err := Cast(CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "Toast",
 		SourceRepo: repoDir,
@@ -133,8 +133,8 @@ func TestCastHappyPath(t *testing.T) {
 		t.Fatalf("Cast failed: %v", err)
 	}
 
-	if result.WorkItemID != itemID {
-		t.Errorf("expected work item ID %q, got %q", itemID, result.WorkItemID)
+	if result.WritID != itemID {
+		t.Errorf("expected writ ID %q, got %q", itemID, result.WritID)
 	}
 	if result.AgentName != "Toast" {
 		t.Errorf("expected agent name Toast, got %q", result.AgentName)
@@ -152,13 +152,13 @@ func TestCastHappyPath(t *testing.T) {
 		t.Errorf("tether has %q, expected %q", tetherID, itemID)
 	}
 
-	// Verify work item was updated.
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify writ was updated.
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("failed to get work item: %v", err)
+		t.Fatalf("failed to get writ: %v", err)
 	}
 	if item.Status != "tethered" {
-		t.Errorf("expected work item status 'tethered', got %q", item.Status)
+		t.Errorf("expected writ status 'tethered', got %q", item.Status)
 	}
 	if item.Assignee != "ember/Toast" {
 		t.Errorf("expected assignee 'ember/Toast', got %q", item.Assignee)
@@ -206,9 +206,9 @@ func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
 		t.Fatalf("failed to write world.toml: %v", err)
 	}
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
@@ -219,7 +219,7 @@ func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	_, err = Cast(CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 		AgentName:  "Toast",
 		SourceRepo: repoDir,
@@ -252,8 +252,8 @@ func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
 	if !strings.Contains(attrs, "world=ember") {
 		t.Errorf("OTEL_RESOURCE_ATTRIBUTES missing world: %s", attrs)
 	}
-	if !strings.Contains(attrs, "work_item_id="+itemID) {
-		t.Errorf("OTEL_RESOURCE_ATTRIBUTES missing work_item_id: %s", attrs)
+	if !strings.Contains(attrs, "writ_id="+itemID) {
+		t.Errorf("OTEL_RESOURCE_ATTRIBUTES missing writ_id: %s", attrs)
 	}
 }
 
@@ -261,9 +261,9 @@ func TestCastNoTelemetryWhenLedgerNotConfigured(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
@@ -274,7 +274,7 @@ func TestCastNoTelemetryWhenLedgerNotConfigured(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	_, err = Cast(CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 		AgentName:  "Toast",
 		SourceRepo: repoDir,
@@ -306,9 +306,9 @@ func TestCastAutoAgent(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Alpha", "ember", "agent"); err != nil {
@@ -320,7 +320,7 @@ func TestCastAutoAgent(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	result, err := Cast(CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
@@ -337,9 +337,9 @@ func TestCastAutoProvision(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	// No agent exists — Cast should auto-provision from the name pool.
@@ -348,7 +348,7 @@ func TestCastAutoProvision(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	result, err := Cast(CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
@@ -385,10 +385,10 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 	os.MkdirAll(worldDir, 0o755)
 	os.WriteFile(worldDir+"/world.toml", []byte("[agents]\ncapacity = 1\n"), 0o644)
 
-	// Create first work item and cast — should auto-provision one agent.
-	item1, err := worldStore.CreateWorkItem("Item 1", "First item", "operator", 2, nil)
+	// Create first writ and cast — should auto-provision one agent.
+	item1, err := worldStore.CreateWrit("Item 1", "First item", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	repoDir := t.TempDir()
@@ -396,7 +396,7 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	_, err = Cast(CastOpts{
-		WorkItemID: item1,
+		WritID: item1,
 		World:      "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
@@ -404,14 +404,14 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 		t.Fatalf("first Cast failed: %v", err)
 	}
 
-	// Create second work item and cast — should fail with capacity error.
-	item2, err := worldStore.CreateWorkItem("Item 2", "Second item", "operator", 2, nil)
+	// Create second writ and cast — should fail with capacity error.
+	item2, err := worldStore.CreateWrit("Item 2", "Second item", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	_, err = Cast(CastOpts{
-		WorkItemID: item2,
+		WritID: item2,
 		World:      "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
@@ -432,16 +432,16 @@ func TestCastAutoProvisionCapacityZeroUnlimited(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	// Create and cast multiple work items — all should succeed.
+	// Create and cast multiple writs — all should succeed.
 	for i := 0; i < 3; i++ {
-		itemID, err := worldStore.CreateWorkItem(
+		itemID, err := worldStore.CreateWrit(
 			fmt.Sprintf("Item %d", i), "desc", "operator", 2, nil)
 		if err != nil {
-			t.Fatalf("failed to create work item %d: %v", i, err)
+			t.Fatalf("failed to create writ %d: %v", i, err)
 		}
 
 		_, err = Cast(CastOpts{
-			WorkItemID: itemID,
+			WritID: itemID,
 			World:      "ember",
 			SourceRepo: repoDir,
 		}, worldStore, sphereStore, mgr, nil)
@@ -475,9 +475,9 @@ func TestCastAutoProvisionCustomNamePool(t *testing.T) {
 	toml := fmt.Sprintf("[agents]\nname_pool_path = %q\n", customPoolPath)
 	os.WriteFile(worldDir+"/world.toml", []byte(toml), 0o644)
 
-	itemID, err := worldStore.CreateWorkItem("Test item", "desc", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Test item", "desc", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	repoDir := t.TempDir()
@@ -485,7 +485,7 @@ func TestCastAutoProvisionCustomNamePool(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	result, err := Cast(CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
@@ -514,9 +514,9 @@ func TestCastAutoProvisionSkipsUsed(t *testing.T) {
 		}
 	}
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	repoDir := t.TempDir()
@@ -524,7 +524,7 @@ func TestCastAutoProvisionSkipsUsed(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	result, err := Cast(CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
@@ -548,20 +548,20 @@ func TestCastFlockPreventsDoubleDispatch(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	// Acquire the lock manually before calling Cast.
-	lock, err := AcquireWorkItemLock(itemID)
+	lock, err := AcquireWritLock(itemID)
 	if err != nil {
 		t.Fatalf("failed to acquire lock: %v", err)
 	}
 	defer lock.Release()
 
 	_, err = Cast(CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		SourceRepo: "/tmp",
 	}, worldStore, sphereStore, mgr, nil)
@@ -578,13 +578,13 @@ func TestCastItemNotOpen(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "done"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "done"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
@@ -592,14 +592,14 @@ func TestCastItemNotOpen(t *testing.T) {
 	}
 
 	_, err = Cast(CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		AgentName:  "Toast",
 		SourceRepo: "/tmp",
 	}, worldStore, sphereStore, mgr, nil)
 
 	if err == nil {
-		t.Fatal("expected error for non-open work item")
+		t.Fatal("expected error for non-open writ")
 	}
 	if !strings.Contains(err.Error(), "expected \"open\"") {
 		t.Errorf("expected 'expected open' error, got: %v", err)
@@ -612,9 +612,9 @@ func TestCastRejectsNonAgentRoles(t *testing.T) {
 			worldStore, sphereStore := setupStores(t)
 			mgr := newMockSessionManager()
 
-			itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+			itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 			if err != nil {
-				t.Fatalf("failed to create work item: %v", err)
+				t.Fatalf("failed to create writ: %v", err)
 			}
 
 			if _, err := sphereStore.CreateAgent("Toast", "ember", role); err != nil {
@@ -622,7 +622,7 @@ func TestCastRejectsNonAgentRoles(t *testing.T) {
 			}
 
 			_, err = Cast(CastOpts{
-				WorkItemID: itemID,
+				WritID: itemID,
 				World:      "ember",
 				AgentName:  "Toast",
 				SourceRepo: "/tmp",
@@ -643,9 +643,9 @@ func TestCastRejectsNonAgentRoles(t *testing.T) {
 func TestPrimeWithTether(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
@@ -664,7 +664,7 @@ func TestPrimeWithTether(t *testing.T) {
 		t.Error("output missing agent name")
 	}
 	if !strings.Contains(result.Output, itemID) {
-		t.Error("output missing work item ID")
+		t.Error("output missing writ ID")
 	}
 	if !strings.Contains(result.Output, "Add README") {
 		t.Error("output missing title")
@@ -728,7 +728,7 @@ needs = ["implement"]
 		t.Fatalf("write manifest: %v", err)
 	}
 	for _, f := range []struct{ name, content string }{
-		{"steps/01-load.md", "# Load\nRead the work item {{issue}}."},
+		{"steps/01-load.md", "# Load\nRead the writ {{issue}}."},
 		{"steps/02-impl.md", "# Implement\nWrite code for {{issue}}."},
 		{"steps/03-verify.md", "# Verify\nRun tests for {{issue}}."},
 	} {
@@ -818,9 +818,9 @@ func writeTestJSON(t *testing.T, path string, v any) {
 func TestPrimeWithWorkflowFullChecklist(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Implement feature X", "Build feature X", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Implement feature X", "Build feature X", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
 		t.Fatalf("write tether: %v", err)
@@ -873,7 +873,7 @@ func TestPrimeWithWorkflowFullChecklist(t *testing.T) {
 	}
 
 	// Other step instructions NOT shown (only titles).
-	if strings.Contains(output, "Read the work item "+itemID) {
+	if strings.Contains(output, "Read the writ "+itemID) {
 		t.Errorf("completed step instructions should not appear in output")
 	}
 	if strings.Contains(output, "Run tests for "+itemID) {
@@ -892,9 +892,9 @@ func TestPrimeWithWorkflowFullChecklist(t *testing.T) {
 func TestPrimeWithWorkflowFirstStep(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("First step test", "Test first step", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("First step test", "Test first step", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
 		t.Fatalf("write tether: %v", err)
@@ -935,12 +935,12 @@ func TestResolveHappyPath(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
@@ -975,8 +975,8 @@ func TestResolveHappyPath(t *testing.T) {
 		t.Fatalf("Resolve failed: %v", err)
 	}
 
-	if result.WorkItemID != itemID {
-		t.Errorf("expected work item ID %q, got %q", itemID, result.WorkItemID)
+	if result.WritID != itemID {
+		t.Errorf("expected writ ID %q, got %q", itemID, result.WritID)
 	}
 	if result.AgentName != "Toast" {
 		t.Errorf("expected agent name Toast, got %q", result.AgentName)
@@ -991,13 +991,13 @@ func TestResolveHappyPath(t *testing.T) {
 		t.Error("expected MergeRequestID to be set")
 	}
 
-	// Verify work item was updated to done.
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify writ was updated to done.
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("failed to get work item: %v", err)
+		t.Fatalf("failed to get writ: %v", err)
 	}
 	if item.Status != "done" {
-		t.Errorf("expected work item status 'done', got %q", item.Status)
+		t.Errorf("expected writ status 'done', got %q", item.Status)
 	}
 
 	// Verify outpost agent record is deleted (name reclaimed).
@@ -1043,20 +1043,20 @@ func TestResolveConflictResolution(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	// Create the original work item.
-	origItemID, err := worldStore.CreateWorkItem("Add feature X", "Implement feature X", "operator", 2, nil)
+	// Create the original writ.
+	origItemID, err := worldStore.CreateWrit("Add feature X", "Implement feature X", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	// Create a merge request for the original work item.
+	// Create a merge request for the original writ.
 	mrID, err := worldStore.CreateMergeRequest(origItemID, "outpost/Alpha/"+origItemID, 2)
 	if err != nil {
 		t.Fatalf("failed to create merge request: %v", err)
 	}
 
 	// Create the conflict-resolution task.
-	resolutionID, err := worldStore.CreateWorkItemWithOpts(store.CreateWorkItemOpts{
+	resolutionID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       "Resolve merge conflicts: Add feature X",
 		Description: "Resolve merge conflicts",
 		CreatedBy:   "ember/forge",
@@ -1074,8 +1074,8 @@ func TestResolveConflictResolution(t *testing.T) {
 	}
 
 	// Set up agent and tether the resolution task.
-	if err := worldStore.UpdateWorkItem(resolutionID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(resolutionID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
@@ -1112,8 +1112,8 @@ func TestResolveConflictResolution(t *testing.T) {
 		t.Errorf("expected empty MergeRequestID for conflict-resolution, got %q", result.MergeRequestID)
 	}
 
-	// Verify the resolution work item is closed.
-	resItem, err := worldStore.GetWorkItem(resolutionID)
+	// Verify the resolution writ is closed.
+	resItem, err := worldStore.GetWrit(resolutionID)
 	if err != nil {
 		t.Fatalf("failed to get resolution item: %v", err)
 	}
@@ -1155,12 +1155,12 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Implement login page", "Build the login page", "operator", 1, nil)
+	itemID, err := worldStore.CreateWrit("Implement login page", "Build the login page", "operator", 1, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
@@ -1210,8 +1210,8 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 	if mr.Phase != "ready" {
 		t.Errorf("expected MR phase 'ready', got %q", mr.Phase)
 	}
-	if mr.WorkItemID != itemID {
-		t.Errorf("expected MR work_item_id %q, got %q", itemID, mr.WorkItemID)
+	if mr.WritID != itemID {
+		t.Errorf("expected MR writ_id %q, got %q", itemID, mr.WritID)
 	}
 	expectedBranch := fmt.Sprintf("outpost/Toast/%s", itemID)
 	if mr.Branch != expectedBranch {
@@ -1221,13 +1221,13 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 		t.Errorf("expected MR priority 1, got %d", mr.Priority)
 	}
 
-	// Verify work item is done.
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify writ is done.
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("failed to get work item: %v", err)
+		t.Fatalf("failed to get writ: %v", err)
 	}
 	if item.Status != "done" {
-		t.Errorf("expected work item status 'done', got %q", item.Status)
+		t.Errorf("expected writ status 'done', got %q", item.Status)
 	}
 
 	// Verify outpost agent record is deleted (name reclaimed).
@@ -1244,9 +1244,9 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 func TestPrimeWithHandoff(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	// Write tether file.
@@ -1256,7 +1256,7 @@ func TestPrimeWithHandoff(t *testing.T) {
 
 	// Write handoff file.
 	state := &handoff.State{
-		WorkItemID:      itemID,
+		WritID:      itemID,
 		AgentName:       "Toast",
 		World:             "ember",
 		Role:            "agent",
@@ -1280,7 +1280,7 @@ func TestPrimeWithHandoff(t *testing.T) {
 		t.Error("output missing agent name")
 	}
 	if !strings.Contains(result.Output, itemID) {
-		t.Error("output missing work item ID")
+		t.Error("output missing writ ID")
 	}
 	if !strings.Contains(result.Output, "Implemented login form") {
 		t.Error("output missing summary")
@@ -1302,9 +1302,9 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 	worldStore, _ := setupStores(t)
 	solHome := os.Getenv("SOL_HOME")
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	// Write tether file.
@@ -1314,7 +1314,7 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 
 	// Write handoff file.
 	state := &handoff.State{
-		WorkItemID:       itemID,
+		WritID:       itemID,
 		AgentName:        "Toast",
 		World:              "ember",
 		Role:             "agent",
@@ -1358,9 +1358,9 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 func TestPrimeNoHandoff(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
@@ -1384,9 +1384,9 @@ func TestPrimeNoHandoff(t *testing.T) {
 func TestPrimeWithFreshSessionMarker(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
@@ -1421,9 +1421,9 @@ func TestPrimeWithFreshSessionMarker(t *testing.T) {
 func TestPrimeHandoffWithGitState(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
@@ -1432,7 +1432,7 @@ func TestPrimeHandoffWithGitState(t *testing.T) {
 
 	// Write handoff file with git state.
 	state := &handoff.State{
-		WorkItemID:      itemID,
+		WritID:      itemID,
 		AgentName:       "Toast",
 		World:           "ember",
 		Role:            "agent",
@@ -1477,9 +1477,9 @@ func TestPrimeHandoffWithGitState(t *testing.T) {
 func TestPrimeDurableHandoff(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
@@ -1487,7 +1487,7 @@ func TestPrimeDurableHandoff(t *testing.T) {
 	}
 
 	state := &handoff.State{
-		WorkItemID:      itemID,
+		WritID:      itemID,
 		AgentName:       "Toast",
 		World:           "ember",
 		Role:            "agent",
@@ -1536,9 +1536,9 @@ func TestPrimeDurableHandoff(t *testing.T) {
 func TestPrimeCompactRecoveryLightweight(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file with detailed instructions", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file with detailed instructions", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
@@ -1547,7 +1547,7 @@ func TestPrimeCompactRecoveryLightweight(t *testing.T) {
 
 	// Write handoff file.
 	state := &handoff.State{
-		WorkItemID:      itemID,
+		WritID:      itemID,
 		AgentName:       "Toast",
 		World:           "ember",
 		Role:            "agent",
@@ -1590,16 +1590,16 @@ func TestPrimeCompactRecoveryLightweight(t *testing.T) {
 		t.Error("output missing git status")
 	}
 
-	// Should NOT include full work item description (lightweight).
+	// Should NOT include full writ description (lightweight).
 	if strings.Contains(result.Output, "detailed instructions") {
-		t.Error("compact recovery should not include full work item description")
+		t.Error("compact recovery should not include full writ description")
 	}
 
 	// Should include continuation instructions.
 	if !strings.Contains(result.Output, "Continue from where you left off") {
 		t.Error("output missing continuation instructions")
 	}
-	if !strings.Contains(result.Output, "Do NOT re-read the work item description") {
+	if !strings.Contains(result.Output, "Do NOT re-read the writ description") {
 		t.Error("output missing instruction to avoid re-reading description")
 	}
 
@@ -1623,9 +1623,9 @@ func TestPrimeCompactRecoveryLightweight(t *testing.T) {
 func TestPrimeCompactRecoveryWithWorkflow(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
@@ -1634,7 +1634,7 @@ func TestPrimeCompactRecoveryWithWorkflow(t *testing.T) {
 
 	// Write handoff file with workflow state.
 	state := &handoff.State{
-		WorkItemID:       itemID,
+		WritID:       itemID,
 		AgentName:        "Toast",
 		World:            "ember",
 		Role:             "agent",
@@ -1676,9 +1676,9 @@ func TestPrimeCompactRecoveryWithWorkflow(t *testing.T) {
 func TestPrimeNonCompactHandoffUsesFullPrime(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
@@ -1686,7 +1686,7 @@ func TestPrimeNonCompactHandoffUsesFullPrime(t *testing.T) {
 	}
 
 	state := &handoff.State{
-		WorkItemID:      itemID,
+		WritID:      itemID,
 		AgentName:       "Toast",
 		World:           "ember",
 		Role:            "agent",
@@ -1725,9 +1725,9 @@ func TestPrimeNonCompactHandoffUsesFullPrime(t *testing.T) {
 func TestPrimeCompactWithoutHandoffFallsThrough(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
@@ -1760,11 +1760,11 @@ type mockWorldStore struct {
 	createMRErr error // if set, CreateMergeRequest returns this error
 }
 
-func (m *mockWorldStore) CreateMergeRequest(workItemID, branch string, priority int) (string, error) {
+func (m *mockWorldStore) CreateMergeRequest(writID, branch string, priority int) (string, error) {
 	if m.createMRErr != nil {
 		return "", m.createMRErr
 	}
-	return m.Store.CreateMergeRequest(workItemID, branch, priority)
+	return m.Store.CreateMergeRequest(writID, branch, priority)
 }
 
 // --- Resolve rollback/safety tests ---
@@ -1773,12 +1773,12 @@ func TestResolveRollbackOnMRFailure(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Add feature", "Build the feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Build the feature", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
@@ -1822,13 +1822,13 @@ func TestResolveRollbackOnMRFailure(t *testing.T) {
 		t.Errorf("expected simulated error, got: %v", err)
 	}
 
-	// Verify: work item status is rolled back to "tethered" (not stuck at "done").
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify: writ status is rolled back to "tethered" (not stuck at "done").
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("failed to get work item: %v", err)
+		t.Fatalf("failed to get writ: %v", err)
 	}
 	if item.Status != "tethered" {
-		t.Errorf("expected work item status rolled back to 'tethered', got %q", item.Status)
+		t.Errorf("expected writ status rolled back to 'tethered', got %q", item.Status)
 	}
 }
 
@@ -1836,12 +1836,12 @@ func TestResolvePushFailureCreatesMR(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Add feature", "Build the feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Build the feature", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
@@ -1889,13 +1889,13 @@ func TestResolvePushFailureCreatesMR(t *testing.T) {
 		t.Errorf("expected MR phase 'failed', got %q", mr.Phase)
 	}
 
-	// Verify: work item is "done", agent record is deleted.
-	item, err := worldStore.GetWorkItem(itemID)
+	// Verify: writ is "done", agent record is deleted.
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("failed to get work item: %v", err)
+		t.Fatalf("failed to get writ: %v", err)
 	}
 	if item.Status != "done" {
-		t.Errorf("expected work item status 'done', got %q", item.Status)
+		t.Errorf("expected writ status 'done', got %q", item.Status)
 	}
 
 	// Verify outpost agent record is deleted (name reclaimed).
@@ -1911,20 +1911,20 @@ func TestReCastPartialFailureRecovery(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Add feature", "Build the feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Build the feature", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	// Set up partial failure state: item tethered to agent, but agent still "idle".
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
-	// Agent state is "idle" with no tether_item — simulates crash after work item
+	// Agent state is "idle" with no tether_item — simulates crash after writ
 	// update but before agent state update.
 
 	repoDir := t.TempDir()
@@ -1932,7 +1932,7 @@ func TestReCastPartialFailureRecovery(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	result, err := Cast(CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:      "ember",
 		AgentName:  "Toast",
 		SourceRepo: repoDir,
@@ -1942,8 +1942,8 @@ func TestReCastPartialFailureRecovery(t *testing.T) {
 		t.Fatalf("Cast (partial failure recovery) failed: %v", err)
 	}
 
-	if result.WorkItemID != itemID {
-		t.Errorf("expected work item ID %q, got %q", itemID, result.WorkItemID)
+	if result.WritID != itemID {
+		t.Errorf("expected writ ID %q, got %q", itemID, result.WritID)
 	}
 	if result.AgentName != "Toast" {
 		t.Errorf("expected agent name Toast, got %q", result.AgentName)
@@ -1968,12 +1968,12 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Envoy task", "An envoy work item", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Envoy task", "An envoy writ", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	// Create an envoy agent.
@@ -2026,12 +2026,12 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 	}
 
 	// Work item should still be done.
-	item, err := worldStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("failed to get work item: %v", err)
+		t.Fatalf("failed to get writ: %v", err)
 	}
 	if item.Status != "done" {
-		t.Errorf("expected work item status 'done', got %q", item.Status)
+		t.Errorf("expected writ status 'done', got %q", item.Status)
 	}
 
 	// Agent should be idle.
@@ -2062,12 +2062,12 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Agent task", "A regular work item", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Agent task", "A regular writ", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	// Create a regular agent.
@@ -2112,12 +2112,12 @@ func TestResolveRemovesWorktreeForOutpostAgent(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Cleanup test", "Test worktree cleanup", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Cleanup test", "Test worktree cleanup", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
@@ -2220,12 +2220,12 @@ func TestResolveNudgesForgeWithMRReady(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Add feature", "Implement a feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Implement a feature", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
@@ -2282,7 +2282,7 @@ func TestResolveNudgesForgeWithMRReady(t *testing.T) {
 				t.Errorf("expected subject to contain MR ID %q, got %q", result.MergeRequestID, msg.Subject)
 			}
 			if !strings.Contains(msg.Body, itemID) {
-				t.Errorf("expected body to contain work item ID %q, got %q", itemID, msg.Body)
+				t.Errorf("expected body to contain writ ID %q, got %q", itemID, msg.Body)
 			}
 			if !strings.Contains(msg.Body, result.MergeRequestID) {
 				t.Errorf("expected body to contain MR ID %q, got %q", result.MergeRequestID, msg.Body)
@@ -2299,12 +2299,12 @@ func TestResolveSkipsForgeNudgeWhenNoForge(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Add feature", "Implement a feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Implement a feature", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
@@ -2355,12 +2355,12 @@ func TestResolveCreatesAndRemovesLock(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Lock test", "Test resolve lock", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Lock test", "Test resolve lock", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
@@ -2408,12 +2408,12 @@ func TestResolveIdempotent(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWorkItem("Idempotent test", "Test double resolve", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Idempotent test", "Test double resolve", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
-	if err := worldStore.UpdateWorkItem(itemID, store.WorkItemUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
-		t.Fatalf("failed to update work item: %v", err)
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
 	}
 
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
@@ -2448,7 +2448,7 @@ func TestResolveIdempotent(t *testing.T) {
 	}
 
 	// Now simulate a partial resolve state for second call:
-	// Re-create agent, re-write tether, set work item back to tethered.
+	// Re-create agent, re-write tether, set writ back to tethered.
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("failed to re-create agent: %v", err)
 	}
@@ -2481,9 +2481,9 @@ func TestResolveIdempotent(t *testing.T) {
 		t.Fatalf("second Resolve (idempotent) failed: %v", err)
 	}
 
-	// Both resolves should reference the same work item.
-	if result1.WorkItemID != result2.WorkItemID {
-		t.Errorf("expected same work item ID, got %q and %q", result1.WorkItemID, result2.WorkItemID)
+	// Both resolves should reference the same writ.
+	if result1.WritID != result2.WritID {
+		t.Errorf("expected same writ ID, got %q and %q", result1.WritID, result2.WritID)
 	}
 
 	// Second resolve should reuse the existing MR (not create a duplicate).
@@ -2492,21 +2492,21 @@ func TestResolveIdempotent(t *testing.T) {
 	}
 
 	// Work item should be done.
-	item, err := worldStore.GetWorkItem(itemID)
+	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
-		t.Fatalf("failed to get work item: %v", err)
+		t.Fatalf("failed to get writ: %v", err)
 	}
 	if item.Status != "done" {
-		t.Errorf("expected work item status 'done', got %q", item.Status)
+		t.Errorf("expected writ status 'done', got %q", item.Status)
 	}
 }
 
 func TestPrimeDetectsStaleLock(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWorkItem("Stale lock test", "Test stale lock detection", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Stale lock test", "Test stale lock detection", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("failed to create work item: %v", err)
+		t.Fatalf("failed to create writ: %v", err)
 	}
 
 	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {

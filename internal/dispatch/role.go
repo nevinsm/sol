@@ -27,32 +27,32 @@ func OutpostRoleConfig() startup.RoleConfig {
 }
 
 // OutpostResumeState builds a startup.ResumeState for outpost compact recovery.
-// Reads the current workflow step and tethered work item to determine where
+// Reads the current workflow step and tethered writ to determine where
 // the agent should resume from.
 func OutpostResumeState(world, agent string) startup.ResumeState {
 	return handoff.CaptureResumeState(world, agent, "agent", "compact")
 }
 
 // outpostPersona generates the outpost CLAUDE.local.md content.
-// Reads the tether to find the work item, then builds persona from work item data.
+// Reads the tether to find the writ, then builds persona from writ data.
 func outpostPersona(world, agent string) ([]byte, error) {
-	// Read tether to find work item.
-	workItemID, err := tether.Read(world, agent, "agent")
-	if err != nil || workItemID == "" {
+	// Read tether to find writ.
+	writID, err := tether.Read(world, agent, "agent")
+	if err != nil || writID == "" {
 		// No tether — minimal persona (e.g., during edge-case respawn).
-		return []byte(fmt.Sprintf("# Outpost Agent: %s (world: %s)\n\nNo work item tethered.\n", agent, world)), nil
+		return []byte(fmt.Sprintf("# Outpost Agent: %s (world: %s)\n\nNo writ tethered.\n", agent, world)), nil
 	}
 
-	// Read work item from world store.
+	// Read writ from world store.
 	ws, err := store.OpenWorld(world)
 	if err != nil {
 		return nil, fmt.Errorf("outpost persona: failed to open world store: %w", err)
 	}
 	defer ws.Close()
 
-	item, err := ws.GetWorkItem(workItemID)
+	item, err := ws.GetWrit(writID)
 	if err != nil {
-		return nil, fmt.Errorf("outpost persona: failed to get work item %q: %w", workItemID, err)
+		return nil, fmt.Errorf("outpost persona: failed to get writ %q: %w", writID, err)
 	}
 
 	// Read world config for model tier and quality gates.
@@ -68,7 +68,7 @@ func outpostPersona(world, agent string) ([]byte, error) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:    agent,
 		World:        world,
-		WorkItemID:   workItemID,
+		WritID:   writID,
 		Title:        item.Title,
 		Description:  item.Description,
 		HasWorkflow:  hasWorkflow,

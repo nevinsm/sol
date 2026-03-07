@@ -34,7 +34,7 @@ type AccountState struct {
 type PausedSession struct {
 	PausedAt        time.Time `json:"paused_at"`
 	PreviousAccount string    `json:"previous_account"`
-	WorkItem        string    `json:"work_item,omitempty"`
+	Writ        string    `json:"writ,omitempty"`
 	World           string    `json:"world"`
 	AgentName       string    `json:"agent_name"`
 	Role            string    `json:"role"`

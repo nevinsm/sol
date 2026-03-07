@@ -131,7 +131,7 @@ func TestProtocolMessageFlow(t *testing.T) {
 
 	// Send AGENT_DONE protocol message.
 	payload := store.AgentDonePayload{
-		WorkItemID: "sol-abc12345",
+		WritID: "sol-abc12345",
 		AgentID:    "ember/Toast",
 		Branch:     "outpost/Toast/sol-abc12345",
 		World:        "ember",
@@ -159,8 +159,8 @@ func TestProtocolMessageFlow(t *testing.T) {
 	if err := json.Unmarshal([]byte(msgs[0].Body), &parsed); err != nil {
 		t.Fatalf("parse protocol body: %v", err)
 	}
-	if parsed.WorkItemID != "sol-abc12345" {
-		t.Errorf("work_item_id: got %q, want %q", parsed.WorkItemID, "sol-abc12345")
+	if parsed.WritID != "sol-abc12345" {
+		t.Errorf("writ_id: got %q, want %q", parsed.WritID, "sol-abc12345")
 	}
 	if parsed.Branch != "outpost/Toast/sol-abc12345" {
 		t.Errorf("branch: got %q, want %q", parsed.Branch, "outpost/Toast/sol-abc12345")
@@ -420,10 +420,10 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 		t.Fatalf("UpdateAgentState: %v", err)
 	}
 
-	// Create work item.
+	// Create writ.
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := worldStore.DB().Exec(
-		`INSERT INTO work_items (id, title, description, status, priority, created_by, created_at, updated_at)
+		`INSERT INTO writs (id, title, description, status, priority, created_by, created_at, updated_at)
 		 VALUES (?, ?, '', 'tethered', 3, 'test', ?, ?)`,
 		"sol-abc12345", "Test task", now, now,
 	); err != nil {
@@ -491,7 +491,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := worldStore.DB().Exec(
-		`INSERT INTO work_items (id, title, description, status, priority, created_by, created_at, updated_at)
+		`INSERT INTO writs (id, title, description, status, priority, created_by, created_at, updated_at)
 		 VALUES (?, ?, '', 'tethered', 3, 'test', ?, ?)`,
 		"sol-abc12345", "Test task", now, now,
 	); err != nil {
@@ -551,12 +551,12 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	}
 
 	// Work item should be open.
-	item, err := worldStore.GetWorkItem("sol-abc12345")
+	item, err := worldStore.GetWrit("sol-abc12345")
 	if err != nil {
-		t.Fatalf("GetWorkItem: %v", err)
+		t.Fatalf("GetWrit: %v", err)
 	}
 	if item.Status != "open" {
-		t.Errorf("work item status: got %q, want %q", item.Status, "open")
+		t.Errorf("writ status: got %q, want %q", item.Status, "open")
 	}
 
 	// Tether file should be removed.
@@ -805,15 +805,15 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 	mgr := session.New()
 	logger := events.NewLogger(solHome)
 
-	// Create work item.
-	itemID, err := worldStore.CreateWorkItem("Dispatch events test", "Test events during dispatch", "operator", 2, nil)
+	// Create writ.
+	itemID, err := worldStore.CreateWrit("Dispatch events test", "Test events during dispatch", "operator", 2, nil)
 	if err != nil {
-		t.Fatalf("create work item: %v", err)
+		t.Fatalf("create writ: %v", err)
 	}
 
 	// Cast with logger.
 	result, err := dispatch.Cast(dispatch.CastOpts{
-		WorkItemID: itemID,
+		WritID: itemID,
 		World:        "ember",
 		SourceRepo: sourceClone,
 	}, worldStore, sphereStore, mgr, logger)

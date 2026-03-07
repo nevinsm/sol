@@ -221,13 +221,13 @@ func TestCheckCaravanReadinessWithCaravanDeps(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	// Create work items in world.
+	// Create writs in world.
 	worldStore, err := OpenWorld("ember")
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWorkItem("Item A", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWorkItem("Item B", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Item A", "", "operator", 2, nil)
+	idB, _ := worldStore.CreateWrit("Item B", "", "operator", 2, nil)
 	worldStore.Close()
 
 	// Create two caravans.
@@ -288,12 +288,12 @@ func TestCheckCaravanReadinessCaravanDepsPartialClose(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	// Create work items.
+	// Create writs.
 	worldStore, err := OpenWorld("ember")
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWorkItem("Item A", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Item A", "", "operator", 2, nil)
 	worldStore.Close()
 
 	// Two prerequisite caravans.
@@ -320,7 +320,7 @@ func TestCheckCaravanReadinessCaravanDepsPartialClose(t *testing.T) {
 	}
 }
 
-func TestIsWorkItemBlockedByCaravanDeps(t *testing.T) {
+func TestIsWritBlockedByCaravanDeps(t *testing.T) {
 	s := setupSphere(t)
 
 	prereq, _ := s.CreateCaravan("prereq", "operator")
@@ -330,12 +330,12 @@ func TestIsWorkItemBlockedByCaravanDeps(t *testing.T) {
 	s.AddCaravanDependency(dependent, prereq)
 
 	// sol-11111111 should be blocked.
-	blocked, blockers, err := s.IsWorkItemBlockedByCaravanDeps("sol-11111111")
+	blocked, blockers, err := s.IsWritBlockedByCaravanDeps("sol-11111111")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !blocked {
-		t.Fatal("expected work item blocked by caravan deps")
+		t.Fatal("expected writ blocked by caravan deps")
 	}
 	if len(blockers) != 1 || blockers[0] != prereq {
 		t.Fatalf("expected blocker [%s], got %v", prereq, blockers)
@@ -343,24 +343,24 @@ func TestIsWorkItemBlockedByCaravanDeps(t *testing.T) {
 
 	// Close prereq → no longer blocked.
 	s.UpdateCaravanStatus(prereq, "closed")
-	blocked, _, err = s.IsWorkItemBlockedByCaravanDeps("sol-11111111")
+	blocked, _, err = s.IsWritBlockedByCaravanDeps("sol-11111111")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if blocked {
-		t.Fatal("expected work item NOT blocked after prereq closed")
+		t.Fatal("expected writ NOT blocked after prereq closed")
 	}
 }
 
-func TestIsWorkItemBlockedByCaravanDepsNoCaravan(t *testing.T) {
+func TestIsWritBlockedByCaravanDepsNoCaravan(t *testing.T) {
 	s := setupSphere(t)
 
 	// Work item not in any caravan → not blocked.
-	blocked, _, err := s.IsWorkItemBlockedByCaravanDeps("sol-99999999")
+	blocked, _, err := s.IsWritBlockedByCaravanDeps("sol-99999999")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if blocked {
-		t.Fatal("expected work item NOT blocked (not in any caravan)")
+		t.Fatal("expected writ NOT blocked (not in any caravan)")
 	}
 }

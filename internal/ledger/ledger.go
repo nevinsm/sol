@@ -37,7 +37,7 @@ func DefaultConfig(solHome string) Config {
 type sessionKey struct {
 	World      string
 	AgentName  string
-	WorkItemID string
+	WritID string
 }
 
 // Ledger receives OTLP HTTP log events and writes token usage to world databases.
@@ -135,7 +135,7 @@ func (l *Ledger) processResourceLogs(rl ResourceLogs) {
 
 	agentName := resAttrs["agent.name"]
 	world := resAttrs["world"]
-	workItemID := resAttrs["work_item_id"]
+	writID := resAttrs["writ_id"]
 
 	if agentName == "" || world == "" {
 		return // skip events without required resource attributes
@@ -143,13 +143,13 @@ func (l *Ledger) processResourceLogs(rl ResourceLogs) {
 
 	for _, sl := range rl.ScopeLogs {
 		for _, rec := range sl.LogRecords {
-			l.processLogRecord(world, agentName, workItemID, rec)
+			l.processLogRecord(world, agentName, writID, rec)
 		}
 	}
 }
 
 // processLogRecord processes a single log record, extracting token usage.
-func (l *Ledger) processLogRecord(world, agentName, workItemID string, rec LogRecord) {
+func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord) {
 	attrs := attributeMap(rec.Attributes)
 
 	// Filter for claude_code.api_request events.
@@ -175,7 +175,7 @@ func (l *Ledger) processLogRecord(world, agentName, workItemID string, rec LogRe
 	cacheRead := parseIntAttr(attrs, "gen_ai.usage.cache_read_input_tokens")
 	cacheCreation := parseIntAttr(attrs, "gen_ai.usage.cache_creation_input_tokens")
 
-	historyID, err := l.ensureHistory(world, agentName, workItemID)
+	historyID, err := l.ensureHistory(world, agentName, writID)
 	if err != nil {
 		l.logger.Printf("failed to ensure history for %s/%s: %v", world, agentName, err)
 		return
@@ -193,8 +193,8 @@ func (l *Ledger) processLogRecord(world, agentName, workItemID string, rec LogRe
 }
 
 // ensureHistory returns the agent_history ID for the session, creating one if needed.
-func (l *Ledger) ensureHistory(world, agentName, workItemID string) (string, error) {
-	key := sessionKey{World: world, AgentName: agentName, WorkItemID: workItemID}
+func (l *Ledger) ensureHistory(world, agentName, writID string) (string, error) {
+	key := sessionKey{World: world, AgentName: agentName, WritID: writID}
 
 	l.mu.Lock()
 	if id, ok := l.sessions[key]; ok {
@@ -208,7 +208,7 @@ func (l *Ledger) ensureHistory(world, agentName, workItemID string) (string, err
 		return "", err
 	}
 
-	id, err := ws.WriteHistory(agentName, workItemID, "session", "", time.Now(), nil)
+	id, err := ws.WriteHistory(agentName, writID, "session", "", time.Now(), nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create agent history: %w", err)
 	}
@@ -217,7 +217,7 @@ func (l *Ledger) ensureHistory(world, agentName, workItemID string) (string, err
 	l.sessions[key] = id
 	l.mu.Unlock()
 
-	l.logger.Printf("created history %s for %s/%s (work_item: %s)", id, world, agentName, workItemID)
+	l.logger.Printf("created history %s for %s/%s (writ: %s)", id, world, agentName, writID)
 	return id, nil
 }
 

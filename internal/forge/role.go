@@ -100,7 +100,7 @@ func forgePrime(world, _ string) string {
 }
 
 // ForgeResumeState builds a startup.ResumeState for forge compact recovery.
-// If an MR is claimed (tether has work item), the agent resumes from the
+// If an MR is claimed (tether has writ), the agent resumes from the
 // current workflow step (typically gates, not scan). If no MR is claimed,
 // the workflow step reflects the scan phase.
 func ForgeResumeState(world string) startup.ResumeState {

@@ -121,15 +121,15 @@ func computeAgentStats(worldStore *store.Store, agentName string) (*AgentStatsRe
 	}
 
 	var cycleTimes []time.Duration
-	workItemCasts := make(map[string]int)
+	writCasts := make(map[string]int)
 
 	for _, h := range history {
 		if h.Action != "cast" {
 			continue
 		}
 		report.TotalCasts++
-		if h.WorkItemID != "" {
-			workItemCasts[h.WorkItemID]++
+		if h.WritID != "" {
+			writCasts[h.WritID]++
 		}
 		if h.EndedAt != nil {
 			report.CompletedCasts++
@@ -137,8 +137,8 @@ func computeAgentStats(worldStore *store.Store, agentName string) (*AgentStatsRe
 		}
 	}
 
-	// Rework: work items that required more than one cast.
-	for _, count := range workItemCasts {
+	// Rework: writs that required more than one cast.
+	for _, count := range writCasts {
 		if count > 1 {
 			report.ReworkCount += count - 1
 		}

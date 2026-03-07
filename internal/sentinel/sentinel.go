@@ -27,8 +27,8 @@ import (
 type Config struct {
 	World              string
 	PatrolInterval     time.Duration // default: 3 minutes
-	MaxRespawns        int           // default: 2 (per work item)
-	MaxRecastAttempts  int           // default: 3 (per failed MR work item)
+	MaxRespawns        int           // default: 2 (per writ)
+	MaxRecastAttempts  int           // default: 3 (per failed MR writ)
 	CaptureLines       int           // default: 80 (lines of tmux output to capture)
 	AssessCommand      string        // default: "claude -p" (AI assessment command)
 	SourceRepo         string        // path to source git repo
@@ -66,8 +66,8 @@ type SphereStore interface {
 
 // WorldStore is the subset of world store operations the sentinel needs.
 type WorldStore interface {
-	GetWorkItem(id string) (*store.WorkItem, error)
-	UpdateWorkItem(id string, updates store.WorkItemUpdates) error
+	GetWrit(id string) (*store.Writ, error)
+	UpdateWrit(id string, updates store.WritUpdates) error
 	ListMergeRequests(phase string) ([]store.MergeRequest, error)
 	ReleaseStaleClaims(ttl time.Duration) (int, error)
 }
@@ -95,7 +95,7 @@ type assessFunc func(agent store.Agent, sessionName, output string) (*Assessment
 
 // CastResult holds the output of a successful cast operation (matches dispatch.CastResult).
 type CastResult struct {
-	WorkItemID  string
+	WritID  string
 	AgentName   string
 	SessionName string
 	WorktreeDir string
@@ -103,7 +103,7 @@ type CastResult struct {
 
 type respawnKey struct {
 	AgentID    string
-	WorkItemID string
+	WritID string
 }
 
 // EventReader abstracts reading events for testability.
@@ -120,10 +120,10 @@ type Sentinel struct {
 	logger        *events.Logger
 	eventReader   EventReader       // reads raw events for frequency checks
 	respawnCounts map[respawnKey]int
-	recastCounts  map[string]int    // work item ID → recast attempt count
+	recastCounts  map[string]int    // writ ID → recast attempt count
 	lastCaptures  map[string]string // agent ID → hash of last captured output
 	assessFn      assessFunc        // nil = use real AI call
-	castFn        func(workItemID string) (*CastResult, error) // nil = skip recast
+	castFn        func(writID string) (*CastResult, error) // nil = skip recast
 
 	// Per-patrol counters, reset at start of each patrol.
 	patrolAssessed int
@@ -156,9 +156,9 @@ func (w *Sentinel) SetAssessFunc(fn func(agent store.Agent, sessionName, output 
 	w.assessFn = fn
 }
 
-// SetCastFunc sets the function used to re-cast failed MR work items.
+// SetCastFunc sets the function used to re-cast failed MR writs.
 // When nil, the sentinel skips the recast step during patrol.
-func (w *Sentinel) SetCastFunc(fn func(workItemID string) (*CastResult, error)) {
+func (w *Sentinel) SetCastFunc(fn func(writID string) (*CastResult, error)) {
 	w.castFn = fn
 }
 
@@ -564,7 +564,7 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 			store.ProtoRecoveryNeeded,
 			store.RecoveryNeededPayload{
 				AgentID:    agent.ID,
-				WorkItemID: agent.TetherItem,
+				WritID: agent.TetherItem,
 				Reason:     fmt.Sprintf("nudged: %s", result.Reason),
 			},
 		); err != nil && w.logger != nil {
@@ -579,7 +579,7 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 			store.ProtoRecoveryNeeded,
 			store.RecoveryNeededPayload{
 				AgentID:    agent.ID,
-				WorkItemID: agent.TetherItem,
+				WritID: agent.TetherItem,
 				Reason:     result.Reason,
 			},
 		); err != nil && w.logger != nil {
@@ -602,7 +602,7 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 
 // handleStalled handles an agent whose session died while work was tethered.
 func (w *Sentinel) handleStalled(agent store.Agent) error {
-	key := respawnKey{AgentID: agent.ID, WorkItemID: agent.TetherItem}
+	key := respawnKey{AgentID: agent.ID, WritID: agent.TetherItem}
 	attempts := w.respawnCounts[key]
 
 	if attempts >= w.config.MaxRespawns {
@@ -614,10 +614,10 @@ func (w *Sentinel) handleStalled(agent store.Agent) error {
 }
 
 // handleForgeStalled handles a forge agent whose session died.
-// Unlike regular agents, forge has no tethered work item. On max respawns,
+// Unlike regular agents, forge has no tethered writ. On max respawns,
 // it goes idle without resource cleanup (forge worktree is persistent).
 func (w *Sentinel) handleForgeStalled(agent store.Agent) error {
-	key := respawnKey{AgentID: agent.ID, WorkItemID: ""}
+	key := respawnKey{AgentID: agent.ID, WritID: ""}
 	attempts := w.respawnCounts[key]
 
 	if attempts >= w.config.MaxRespawns {
@@ -685,14 +685,14 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 		return fmt.Errorf("failed to start session for %s: %w", agent.Name, err)
 	}
 
-	key := respawnKey{AgentID: agent.ID, WorkItemID: agent.TetherItem}
+	key := respawnKey{AgentID: agent.ID, WritID: agent.TetherItem}
 	attempts := w.respawnCounts[key]
 
 	if w.logger != nil {
 		w.logger.Emit(events.EventRespawn, w.agentID(), agent.ID, "both",
 			map[string]any{
 				"agent":     agent.ID,
-				"work_item": agent.TetherItem,
+				"writ": agent.TetherItem,
 				"attempt":   attempts,
 			})
 	}
@@ -703,7 +703,7 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
 			AgentID:    agent.ID,
-			WorkItemID: agent.TetherItem,
+			WritID: agent.TetherItem,
 			Reason:     fmt.Sprintf("respawned (attempt %d)", attempts),
 			Attempts:   attempts,
 		},
@@ -715,16 +715,16 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 	return nil
 }
 
-// returnWorkToOpen returns a stalled agent's work item to the open pool
+// returnWorkToOpen returns a stalled agent's writ to the open pool
 // after exceeding max respawn attempts.
 func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
-	// 1. Update work item: status → open, clear assignee.
+	// 1. Update writ: status → open, clear assignee.
 	if agent.TetherItem != "" {
-		if err := w.worldStore.UpdateWorkItem(agent.TetherItem, store.WorkItemUpdates{
+		if err := w.worldStore.UpdateWrit(agent.TetherItem, store.WritUpdates{
 			Status:   "open",
 			Assignee: "-", // "-" clears assignee
 		}); err != nil {
-			return fmt.Errorf("failed to return work item %s to open: %w", agent.TetherItem, err)
+			return fmt.Errorf("failed to return writ %s to open: %w", agent.TetherItem, err)
 		}
 	}
 
@@ -740,7 +740,7 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 	w.cleanupAgentResources(agent.Name)
 
 	// 4. Clear respawn count.
-	key := respawnKey{AgentID: agent.ID, WorkItemID: agent.TetherItem}
+	key := respawnKey{AgentID: agent.ID, WritID: agent.TetherItem}
 	delete(w.respawnCounts, key)
 
 	// 5. Emit stalled event with recovered: false.
@@ -748,7 +748,7 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 		w.logger.Emit(events.EventStalled, w.agentID(), agent.ID, "both",
 			map[string]any{
 				"agent":     agent.ID,
-				"work_item": agent.TetherItem,
+				"writ": agent.TetherItem,
 				"recovered": false,
 			})
 	}
@@ -759,7 +759,7 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
 			AgentID:    agent.ID,
-			WorkItemID: agent.TetherItem,
+			WritID: agent.TetherItem,
 			Reason:     fmt.Sprintf("max respawns (%d) exceeded, work returned to open", w.config.MaxRespawns),
 			Attempts:   w.config.MaxRespawns,
 		},
@@ -845,7 +845,7 @@ func (w *Sentinel) checkHandoffFrequency(agents []store.Agent) int {
 				store.ProtoRecoveryNeeded,
 				store.RecoveryNeededPayload{
 					AgentID:    agent.ID,
-					WorkItemID: agent.TetherItem,
+					WritID: agent.TetherItem,
 					Reason:     fmt.Sprintf("handoff loop: %d handoffs in %s", len(handoffs), window),
 				},
 			); err != nil && w.logger != nil {
@@ -964,7 +964,7 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 			state.PausedSessions[la.agent.ID] = quota.PausedSession{
 				PausedAt:        time.Now().UTC(),
 				PreviousAccount: la.account,
-				WorkItem:        la.agent.TetherItem,
+				Writ:        la.agent.TetherItem,
 				World:           w.config.World,
 				AgentName:       la.agent.Name,
 				Role:            la.agent.Role,
@@ -976,7 +976,7 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 					map[string]any{
 						"agent":     la.agent.ID,
 						"world":     w.config.World,
-						"work_item": la.agent.TetherItem,
+						"writ": la.agent.TetherItem,
 						"reason":    "no available accounts for rotation",
 					})
 			}
@@ -1144,7 +1144,7 @@ func (w *Sentinel) checkQuotaPaused() int {
 		if cfg != nil {
 			resumeState := startup.ResumeState{
 				Reason:          "quota_rotate",
-				ClaimedResource: paused.WorkItem,
+				ClaimedResource: paused.Writ,
 			}
 
 			launchOpts := startup.LaunchOpts{
@@ -1236,7 +1236,7 @@ func (w *Sentinel) releaseStaleClaims() int {
 }
 
 // recastFailedMRs checks for merge requests in "failed" phase with open work
-// items and re-casts them. Returns the number of work items re-cast.
+// items and re-casts them. Returns the number of writs re-cast.
 // Caps retries at MaxRecastAttempts; after that, escalates to the operator.
 func (w *Sentinel) recastFailedMRs() int {
 	if w.castFn == nil {
@@ -1258,59 +1258,59 @@ func (w *Sentinel) recastFailedMRs() int {
 	}
 
 	var recastCount int
-	seen := make(map[string]bool) // deduplicate by work item
+	seen := make(map[string]bool) // deduplicate by writ
 
 	for _, mr := range failedMRs {
-		if seen[mr.WorkItemID] {
+		if seen[mr.WritID] {
 			continue
 		}
-		seen[mr.WorkItemID] = true
+		seen[mr.WritID] = true
 
-		item, err := w.worldStore.GetWorkItem(mr.WorkItemID)
+		item, err := w.worldStore.GetWrit(mr.WritID)
 		if err != nil {
 			continue
 		}
 
-		// Only re-cast if the work item has been reopened by the forge.
+		// Only re-cast if the writ has been reopened by the forge.
 		if item.Status != "open" {
 			// Work item already re-dispatched or handled — prune tracking.
-			delete(w.recastCounts, mr.WorkItemID)
+			delete(w.recastCounts, mr.WritID)
 			continue
 		}
 
-		attempts := w.recastCounts[mr.WorkItemID]
+		attempts := w.recastCounts[mr.WritID]
 
 		if attempts >= maxAttempts {
 			if attempts == maxAttempts {
 				// First time hitting max — escalate once.
 				w.escalateFailedRecast(mr, item, attempts)
-				w.recastCounts[mr.WorkItemID] = maxAttempts + 1
+				w.recastCounts[mr.WritID] = maxAttempts + 1
 			}
 			continue
 		}
 
-		result, err := w.castFn(mr.WorkItemID)
+		result, err := w.castFn(mr.WritID)
 		if err != nil {
 			if w.logger != nil {
 				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
 					map[string]any{
 						"action":    "recast",
 						"mr":        mr.ID,
-						"work_item": mr.WorkItemID,
+						"writ": mr.WritID,
 						"error":     err.Error(),
 					})
 			}
 			continue
 		}
 
-		w.recastCounts[mr.WorkItemID] = attempts + 1
+		w.recastCounts[mr.WritID] = attempts + 1
 		recastCount++
 
 		if w.logger != nil {
 			w.logger.Emit(events.EventRecast, w.agentID(), w.agentID(), "both",
 				map[string]any{
 					"mr":        mr.ID,
-					"work_item": mr.WorkItemID,
+					"writ": mr.WritID,
 					"agent":     result.AgentName,
 					"attempt":   attempts + 1,
 				})
@@ -1322,12 +1322,12 @@ func (w *Sentinel) recastFailedMRs() int {
 
 // escalateFailedRecast sends a RECOVERY_NEEDED protocol message when a work
 // item has exceeded the maximum recast attempts.
-func (w *Sentinel) escalateFailedRecast(mr store.MergeRequest, item *store.WorkItem, attempts int) {
+func (w *Sentinel) escalateFailedRecast(mr store.MergeRequest, item *store.Writ, attempts int) {
 	if _, err := w.sphereStore.SendProtocolMessage(
 		w.agentID(), "operator",
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
-			WorkItemID: mr.WorkItemID,
+			WritID: mr.WritID,
 			Reason:     fmt.Sprintf("merge failed %d times for %q, recast limit reached", attempts, item.Title),
 			Attempts:   attempts,
 		},
@@ -1339,7 +1339,7 @@ func (w *Sentinel) escalateFailedRecast(mr store.MergeRequest, item *store.WorkI
 	if w.logger != nil {
 		w.logger.Emit(events.EventStalled, w.agentID(), w.agentID(), "both",
 			map[string]any{
-				"work_item":  mr.WorkItemID,
+				"writ":  mr.WritID,
 				"mr":         mr.ID,
 				"attempts":   attempts,
 				"escalated":  true,

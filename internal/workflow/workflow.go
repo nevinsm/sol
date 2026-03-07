@@ -18,7 +18,7 @@ type Manifest struct {
 	Name        string                  `toml:"name"`
 	Type        string                  `toml:"type"`
 	Description string                  `toml:"description"`
-	Manifest    bool                    `toml:"manifest"` // default false; when true, steps become child work items
+	Manifest    bool                    `toml:"manifest"` // default false; when true, steps become child writs
 	Variables   map[string]VariableDecl `toml:"variables"`
 	Steps       []StepDef              `toml:"steps"`
 	Templates   []Template             `toml:"template"`
@@ -40,7 +40,7 @@ type StepDef struct {
 	Needs        []string `toml:"needs"`         // step IDs this depends on
 }
 
-// Template defines a child work item template in an expansion formula.
+// Template defines a child writ template in an expansion formula.
 type Template struct {
 	ID          string   `toml:"id"`
 	Title       string   `toml:"title"`
@@ -67,7 +67,7 @@ type Synthesis struct {
 // Instance holds metadata about an instantiated workflow.
 type Instance struct {
 	Formula        string            `json:"formula"`
-	WorkItemID     string            `json:"work_item_id"`
+	WritID     string            `json:"writ_id"`
 	Variables      map[string]string `json:"variables"`
 	InstantiatedAt time.Time         `json:"instantiated_at"`
 }
@@ -358,7 +358,7 @@ func Instantiate(world, agentName, role, formulaName string,
 	// Build instance.
 	inst := &Instance{
 		Formula:        formulaName,
-		WorkItemID:     resolved["issue"],
+		WritID:     resolved["issue"],
 		Variables:      resolved,
 		InstantiatedAt: time.Now().UTC(),
 	}
@@ -645,11 +645,11 @@ func readStepFile(path string) (*Step, error) {
 	return &s, nil
 }
 
-// ManifestResult holds the output of manifesting a formula into work items.
+// ManifestResult holds the output of manifesting a formula into writs.
 type ManifestResult struct {
 	CaravanID string            `json:"caravan_id"`
 	ParentID  string            `json:"parent_id"`
-	ChildIDs  map[string]string `json:"child_ids"` // step/template ID → work item ID
+	ChildIDs  map[string]string `json:"child_ids"` // step/template ID → writ ID
 	Phases    map[string]int    `json:"phases"`     // step/template ID → phase number
 }
 
@@ -657,7 +657,7 @@ type ManifestResult struct {
 type ManifestOpts struct {
 	FormulaName string
 	World       string
-	ParentID    string // if empty, a parent work item is created
+	ParentID    string // if empty, a parent writ is created
 	Variables   map[string]string
 	CreatedBy   string
 }
@@ -723,15 +723,15 @@ func (p phaseable) dagNeeds() []string { return p.needs }
 
 // renderTemplateField substitutes {target.title}, {target.description},
 // and {target.id} in a template string.
-func renderTemplateField(s string, target *store.WorkItem) string {
+func renderTemplateField(s string, target *store.Writ) string {
 	s = strings.ReplaceAll(s, "{target.title}", target.Title)
 	s = strings.ReplaceAll(s, "{target.description}", target.Description)
 	s = strings.ReplaceAll(s, "{target.id}", target.ID)
 	return s
 }
 
-// ManifestFormula materializes a formula into child work items with a caravan.
-// Each step (workflow) or template (expansion) becomes a child work item.
+// ManifestFormula materializes a formula into child writs with a caravan.
+// Each step (workflow) or template (expansion) becomes a child writ.
 // Dependencies between children mirror the formula's DAG. Children are
 // grouped in a caravan with phases derived from dependency depth.
 func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*ManifestResult, error) {
@@ -763,17 +763,17 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 
 	// For expansion formulas, the parent must exist (it's the target).
 	// For workflow and convoy formulas, create a parent if not provided.
-	var target *store.WorkItem
+	var target *store.Writ
 	if m.Type == "expansion" {
 		if parentID == "" {
-			return nil, fmt.Errorf("expansion formula requires a parent work item (target)")
+			return nil, fmt.Errorf("expansion formula requires a parent writ (target)")
 		}
-		target, err = worldStore.GetWorkItem(parentID)
+		target, err = worldStore.GetWrit(parentID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get target work item %q: %w", parentID, err)
+			return nil, fmt.Errorf("failed to get target writ %q: %w", parentID, err)
 		}
 	} else if parentID == "" {
-		parentID, err = worldStore.CreateWorkItem(
+		parentID, err = worldStore.CreateWrit(
 			m.Name+": "+resolved["issue"],
 			m.Description,
 			opts.CreatedBy,
@@ -781,7 +781,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 			[]string{"manifest"},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create parent work item: %w", err)
+			return nil, fmt.Errorf("failed to create parent writ: %w", err)
 		}
 	}
 
@@ -850,7 +850,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 	}
 	phases := ComputePhases(phaseItems)
 
-	// Create child work items.
+	// Create child writs.
 	childIDs := make(map[string]string, len(children))
 	for i, c := range children {
 		labels := append([]string{"manifest-child"}, c.labels...)
@@ -861,7 +861,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 		// (legs were created before synthesis in the children slice).
 		if m.Type == "convoy" && c.formulaID == "synthesis" {
 			var legRefs strings.Builder
-			legRefs.WriteString("\n\n## Leg Work Items\n")
+			legRefs.WriteString("\n\n## Leg Writs\n")
 			for _, leg := range m.Legs {
 				legItemID := childIDs[leg.ID]
 				legRefs.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", leg.Title, legItemID, leg.Description))
@@ -871,7 +871,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 			children[i].description = desc
 		}
 
-		id, err := worldStore.CreateWorkItemWithOpts(store.CreateWorkItemOpts{
+		id, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 			Title:       c.title,
 			Description: desc,
 			CreatedBy:   opts.CreatedBy,
@@ -879,7 +879,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 			Labels:      labels,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create child work item for %q: %w", c.formulaID, err)
+			return nil, fmt.Errorf("failed to create child writ for %q: %w", c.formulaID, err)
 		}
 		childIDs[c.formulaID] = id
 	}
@@ -910,9 +910,9 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 		return nil, fmt.Errorf("failed to create caravan: %w", err)
 	}
 
-	for formulaID, workItemID := range childIDs {
+	for formulaID, writID := range childIDs {
 		phase := phases[formulaID]
-		if err := sphereStore.CreateCaravanItem(caravanID, workItemID, opts.World, phase); err != nil {
+		if err := sphereStore.CreateCaravanItem(caravanID, writID, opts.World, phase); err != nil {
 			return nil, fmt.Errorf("failed to add item %q to caravan: %w", formulaID, err)
 		}
 	}

@@ -27,8 +27,8 @@ func TestWriteAndGetHistory(t *testing.T) {
 	if h.AgentName != "Toast" {
 		t.Fatalf("expected agent_name 'Toast', got %q", h.AgentName)
 	}
-	if h.WorkItemID != "sol-item01" {
-		t.Fatalf("expected work_item_id 'sol-item01', got %q", h.WorkItemID)
+	if h.WritID != "sol-item01" {
+		t.Fatalf("expected writ_id 'sol-item01', got %q", h.WritID)
 	}
 	if h.Action != "cast" {
 		t.Fatalf("expected action 'cast', got %q", h.Action)
@@ -52,7 +52,7 @@ func TestWriteHistoryNullableFields(t *testing.T) {
 
 	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
 
-	// No work_item_id, no ended_at, no summary.
+	// No writ_id, no ended_at, no summary.
 	id, err := s.WriteHistory("Jasper", "", "respawn", "", start, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -62,8 +62,8 @@ func TestWriteHistoryNullableFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h.WorkItemID != "" {
-		t.Fatalf("expected empty work_item_id, got %q", h.WorkItemID)
+	if h.WritID != "" {
+		t.Fatalf("expected empty writ_id, got %q", h.WritID)
 	}
 	if h.EndedAt != nil {
 		t.Fatalf("expected nil ended_at, got %v", h.EndedAt)
@@ -186,7 +186,7 @@ func TestEndHistoryClosesLatest(t *testing.T) {
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
 	start2 := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
 
-	// Two cast records for the same work item (re-cast scenario).
+	// Two cast records for the same writ (re-cast scenario).
 	id1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
 	id2, _ := s.WriteHistory("Jasper", "sol-item01", "cast", "", start2, nil)
 
@@ -344,12 +344,12 @@ func TestAggregateTokens(t *testing.T) {
 func TestMergeStatsForAgent(t *testing.T) {
 	s := setupWorld(t)
 
-	// Create work items (FK dependency for merge_requests).
-	item1, _ := s.CreateWorkItem("Item 1", "", "operator", 2, nil)
-	item2, _ := s.CreateWorkItem("Item 2", "", "operator", 2, nil)
-	item3, _ := s.CreateWorkItem("Item 3", "", "operator", 2, nil)
+	// Create writs (FK dependency for merge_requests).
+	item1, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
+	item2, _ := s.CreateWrit("Item 2", "", "operator", 2, nil)
+	item3, _ := s.CreateWrit("Item 3", "", "operator", 2, nil)
 
-	// Write cast history linking agents to work items.
+	// Write cast history linking agents to writs.
 	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
 	s.WriteHistory("Toast", item1, "cast", "", start, nil)
 	s.WriteHistory("Toast", item2, "cast", "", start, nil)
