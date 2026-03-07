@@ -303,13 +303,22 @@ Target branch: %s (SHA: %s)
 Original MR: %s
 Original writ: %s — %s
 
-Instructions:
-1. Rebase branch %s onto origin/%s
-2. Resolve all merge conflicts
-3. Run 'sol resolve' when conflicts are resolved`,
+WARNING: Do NOT just verify existing code and resolve. You MUST rebase and force-push so the branch merges cleanly.
+
+Instructions (follow every step in order):
+1. git fetch origin
+2. git rebase origin/%s  (resolve any conflicts during the rebase)
+3. make build && make test  (ensure the rebased code compiles and passes)
+4. Verify merge-base matches target HEAD:
+   git merge-base origin/%s HEAD
+   The output MUST equal the current origin/%s SHA. If it does not, the rebase did not work — try again.
+5. git push --force-with-lease origin %s
+6. ONLY AFTER the force-push succeeds, run 'sol resolve'`,
 		mr.Branch, r.cfg.TargetBranch, targetSHA, mr.ID,
 		item.ID, item.Title,
-		mr.Branch, r.cfg.TargetBranch)
+		r.cfg.TargetBranch,
+		r.cfg.TargetBranch, r.cfg.TargetBranch,
+		mr.Branch)
 
 	taskID, err := r.worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       fmt.Sprintf("Resolve merge conflicts: %s", item.Title),

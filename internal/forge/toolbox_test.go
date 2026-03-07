@@ -129,6 +129,22 @@ func TestCreateResolutionTask(t *testing.T) {
 		t.Error("task missing 'source-mr:mr-00000001' label")
 	}
 
+	// Verify the description includes explicit rebase instructions.
+	desc := item.Description
+	for _, want := range []string{
+		"WARNING: Do NOT just verify existing code and resolve",
+		"git fetch origin",
+		"git rebase origin/main",
+		"make build && make test",
+		"git merge-base origin/main HEAD",
+		"git push --force-with-lease origin outpost/Toast/sol-original1",
+		"ONLY AFTER the force-push succeeds",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("description missing %q", want)
+		}
+	}
+
 	// Verify the MR is blocked.
 	worldStore.mu.Lock()
 	blockedMR := worldStore.mrs[0]

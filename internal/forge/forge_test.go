@@ -180,13 +180,14 @@ func (m *mockWorldStore) CreateWritWithOpts(opts store.CreateWritOpts) (string, 
 	defer m.mu.Unlock()
 	id := fmt.Sprintf("sol-%08x", len(m.items))
 	m.items[id] = &store.Writ{
-		ID:        id,
-		Title:     opts.Title,
-		Status:    "open",
-		Priority:  opts.Priority,
-		ParentID:  opts.ParentID,
-		CreatedBy: opts.CreatedBy,
-		Labels:    opts.Labels,
+		ID:          id,
+		Title:       opts.Title,
+		Description: opts.Description,
+		Status:      "open",
+		Priority:    opts.Priority,
+		ParentID:    opts.ParentID,
+		CreatedBy:   opts.CreatedBy,
+		Labels:      opts.Labels,
 	}
 	return id, nil
 }
