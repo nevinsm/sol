@@ -701,3 +701,182 @@ func TestClaudeMDSectionOrder(t *testing.T) {
 		t.Error("Completion Checklist section should come before Protocol")
 	}
 }
+
+func TestClaudeMDCodeKindWithOutputDir(t *testing.T) {
+	ctx := protocol.ClaudeMDContext{
+		AgentName:    "TestBot",
+		World:        "ember",
+		WritID:       "sol-12345678",
+		Title:        "Test task",
+		Description:  "Test description",
+		Kind:         "code",
+		OutputDir:    "/home/sol/ember/output/sol-12345678",
+		QualityGates: []string{"make build && make test"},
+	}
+
+	content := protocol.GenerateClaudeMD(ctx)
+
+	// Code writs should mention output dir for auxiliary output.
+	if !strings.Contains(content, "auxiliary output") {
+		t.Error("code writ should mention output dir for auxiliary output")
+	}
+	if !strings.Contains(content, "/home/sol/ember/output/sol-12345678") {
+		t.Error("code writ should contain the output directory path")
+	}
+	// Code writs should have quality gates.
+	if !strings.Contains(content, "make build && make test") {
+		t.Error("code writ should contain quality gates")
+	}
+	// Code writs should have git-based session resilience advice.
+	if !strings.Contains(content, "Commit early and often") {
+		t.Error("code writ should have git-based session resilience advice")
+	}
+	// Code writs should describe resolve as pushing branch.
+	if !strings.Contains(content, "pushes your branch") {
+		t.Error("code writ resolve description should mention pushing branch")
+	}
+}
+
+func TestClaudeMDDefaultKindIsCode(t *testing.T) {
+	ctx := protocol.ClaudeMDContext{
+		AgentName:   "TestBot",
+		World:       "ember",
+		WritID:      "sol-12345678",
+		Title:       "Test task",
+		Description: "Test description",
+		// Kind is empty — should default to code behavior.
+		OutputDir: "/home/sol/ember/output/sol-12345678",
+	}
+
+	content := protocol.GenerateClaudeMD(ctx)
+
+	// Empty kind should produce code-style instructions.
+	if !strings.Contains(content, "auxiliary output") {
+		t.Error("empty kind should default to code behavior with auxiliary output mention")
+	}
+	if !strings.Contains(content, "Commit early and often") {
+		t.Error("empty kind should default to code-style session resilience")
+	}
+}
+
+func TestClaudeMDAnalysisKind(t *testing.T) {
+	ctx := protocol.ClaudeMDContext{
+		AgentName:    "TestBot",
+		World:        "ember",
+		WritID:       "sol-12345678",
+		Title:        "Analyze metrics",
+		Description:  "Analyze the system metrics",
+		Kind:         "analysis",
+		OutputDir:    "/home/sol/ember/output/sol-12345678",
+		QualityGates: []string{"make build && make test"},
+	}
+
+	content := protocol.GenerateClaudeMD(ctx)
+
+	// Non-code writs should describe output dir as primary output surface.
+	if !strings.Contains(content, "primary output surface") {
+		t.Error("analysis writ should describe output dir as primary output surface")
+	}
+	if !strings.Contains(content, "No branch or MR is created") {
+		t.Error("analysis writ should state no branch or MR is created")
+	}
+	// Non-code writs should skip quality gates.
+	if strings.Contains(content, "make build && make test") {
+		t.Error("analysis writ should not contain quality gates")
+	}
+	if !strings.Contains(content, "Review your output") {
+		t.Error("analysis writ completion checklist should mention reviewing output")
+	}
+	// Non-code writs should have output-dir-based session resilience.
+	if strings.Contains(content, "Commit early and often") {
+		t.Error("analysis writ should not have git-based session resilience advice")
+	}
+	if !strings.Contains(content, "Write findings to your output directory early") {
+		t.Error("analysis writ should have output-dir-based session resilience advice")
+	}
+	// Non-code resolve description should not mention pushing branch.
+	if strings.Contains(content, "pushes your branch") {
+		t.Error("analysis writ resolve should not mention pushing branch")
+	}
+	if !strings.Contains(content, "closes the writ") {
+		t.Error("analysis writ resolve should mention closing the writ")
+	}
+}
+
+func TestClaudeMDDirectDepsPopulated(t *testing.T) {
+	ctx := protocol.ClaudeMDContext{
+		AgentName:   "TestBot",
+		World:       "ember",
+		WritID:      "sol-12345678",
+		Title:       "Follow-up analysis",
+		Description: "Build on upstream analysis",
+		Kind:        "analysis",
+		OutputDir:   "/home/sol/ember/output/sol-12345678",
+		DirectDeps: []protocol.DepOutput{
+			{
+				WritID:    "sol-aabbccdd",
+				Title:     "Gather metrics",
+				Kind:      "analysis",
+				OutputDir: "/home/sol/ember/output/sol-aabbccdd",
+			},
+			{
+				WritID:    "sol-11223344",
+				Title:     "Build adapter",
+				Kind:      "code",
+				OutputDir: "/home/sol/ember/output/sol-11223344",
+			},
+		},
+	}
+
+	content := protocol.GenerateClaudeMD(ctx)
+
+	// Should have the direct dependencies section.
+	if !strings.Contains(content, "## Direct Dependencies") {
+		t.Error("should contain Direct Dependencies section when deps are populated")
+	}
+	if !strings.Contains(content, "Read them for context before starting work") {
+		t.Error("should instruct agent to read dependency output")
+	}
+	// Should list each dependency.
+	if !strings.Contains(content, "Gather metrics") {
+		t.Error("should list first dependency title")
+	}
+	if !strings.Contains(content, "sol-aabbccdd") {
+		t.Error("should list first dependency writ ID")
+	}
+	if !strings.Contains(content, "/home/sol/ember/output/sol-aabbccdd") {
+		t.Error("should list first dependency output dir")
+	}
+	if !strings.Contains(content, "Build adapter") {
+		t.Error("should list second dependency title")
+	}
+	if !strings.Contains(content, "sol-11223344") {
+		t.Error("should list second dependency writ ID")
+	}
+	if !strings.Contains(content, "/home/sol/ember/output/sol-11223344") {
+		t.Error("should list second dependency output dir")
+	}
+	// Each dep should show its kind.
+	if !strings.Contains(content, "kind: analysis") {
+		t.Error("should show kind for analysis dependency")
+	}
+	if !strings.Contains(content, "kind: code") {
+		t.Error("should show kind for code dependency")
+	}
+}
+
+func TestClaudeMDDirectDepsEmpty(t *testing.T) {
+	ctx := protocol.ClaudeMDContext{
+		AgentName:   "TestBot",
+		World:       "ember",
+		WritID:      "sol-12345678",
+		Title:       "Test task",
+		Description: "Test description",
+	}
+
+	content := protocol.GenerateClaudeMD(ctx)
+
+	if strings.Contains(content, "## Direct Dependencies") {
+		t.Error("should not contain Direct Dependencies section when deps are empty")
+	}
+}

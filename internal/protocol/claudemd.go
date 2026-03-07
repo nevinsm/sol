@@ -7,22 +7,39 @@ import (
 	"strings"
 )
 
+// DepOutput describes a direct dependency's output for inclusion in the agent persona.
+type DepOutput struct {
+	WritID    string
+	Title     string
+	Kind      string
+	OutputDir string
+}
+
 // ClaudeMDContext holds the fields used to generate a CLAUDE.md file for an outpost agent.
 type ClaudeMDContext struct {
 	AgentName    string
 	World        string
-	WritID   string
+	WritID       string
 	Title        string
 	Description  string
-	HasWorkflow  bool     // if true, include workflow commands
-	ModelTier    string   // "sonnet", "opus", "haiku" — informational
-	QualityGates []string // commands to run before resolving (from world config)
-	OutputDir    string   // persistent output directory for this writ
+	HasWorkflow  bool        // if true, include workflow commands
+	ModelTier    string      // "sonnet", "opus", "haiku" — informational
+	QualityGates []string   // commands to run before resolving (from world config)
+	OutputDir    string      // persistent output directory for this writ
+	Kind         string      // "code" (default), "analysis", etc.
+	DirectDeps   []DepOutput // upstream writs this writ depends on
+}
+
+// isCodeKind returns true if the kind represents code work (or is the default empty kind).
+func isCodeKind(kind string) bool {
+	return kind == "" || kind == "code"
 }
 
 // GenerateClaudeMD returns the contents of a CLAUDE.md file for an outpost agent.
 // This file is the agent's entire understanding of the system.
 func GenerateClaudeMD(ctx ClaudeMDContext) string {
+	codeWrit := isCodeKind(ctx.Kind)
+
 	workflowSection := ""
 	protocolSection := ""
 
@@ -55,22 +72,75 @@ func GenerateClaudeMD(ctx ClaudeMDContext) string {
 		modelSection = fmt.Sprintf("\n## Model\nConfigured model tier: %s\n", ctx.ModelTier)
 	}
 
+	// Build output directory section based on kind.
 	outputDirSection := ""
 	if ctx.OutputDir != "" {
-		outputDirSection = fmt.Sprintf("\n## Output Directory\nPersistent output directory for this writ: `%s`\n"+
-			"- Write findings, reports, or structured data here\n"+
-			"- This directory survives worktree cleanup\n"+
-			"- For non-code writs, this is the primary output surface\n", ctx.OutputDir)
+		if codeWrit {
+			outputDirSection = fmt.Sprintf("\n## Output Directory\nPersistent output directory for this writ: `%s`\n"+
+				"- Use for auxiliary output (test reports, benchmarks, etc.)\n"+
+				"- This directory survives worktree cleanup\n", ctx.OutputDir)
+		} else {
+			outputDirSection = fmt.Sprintf("\n## Output Directory\nWrite your output to `%s`. This directory persists after your session ends.\n"+
+				"- This is your primary output surface — all findings, reports, and structured data go here\n"+
+				"- When finished, run `sol resolve` — this closes the writ. No branch or MR is created.\n", ctx.OutputDir)
+		}
+	}
+
+	// Build direct dependencies section.
+	depsSection := ""
+	if len(ctx.DirectDeps) > 0 {
+		depsSection = "\n## Direct Dependencies\nYour dependencies produced output in these directories. Read them for context before starting work.\n\n"
+		for _, dep := range ctx.DirectDeps {
+			depsSection += fmt.Sprintf("- **%s** (%s, kind: %s): `%s`\n", dep.Title, dep.WritID, dep.Kind, dep.OutputDir)
+		}
 	}
 
 	// Build quality gate instructions for the completion checklist.
-	gateInstructions := "Run the project test suite before resolving."
-	if len(ctx.QualityGates) > 0 {
-		lines := ""
-		for _, g := range ctx.QualityGates {
-			lines += fmt.Sprintf("   - `%s`\n", g)
+	var gateInstructions string
+	if codeWrit {
+		gateInstructions = "Run the project test suite before resolving."
+		if len(ctx.QualityGates) > 0 {
+			lines := ""
+			for _, g := range ctx.QualityGates {
+				lines += fmt.Sprintf("   - `%s`\n", g)
+			}
+			gateInstructions = fmt.Sprintf("Run quality gates (all must pass):\n%s", lines)
 		}
-		gateInstructions = fmt.Sprintf("Run quality gates (all must pass):\n%s", lines)
+	} else {
+		gateInstructions = "Review your output in the output directory for completeness."
+	}
+
+	// Build the resolve command description based on kind.
+	resolveDesc := "Signal that your work is complete. This pushes your branch,\n  clears your tether, and ends your session."
+	if !codeWrit {
+		resolveDesc = "Signal that your work is complete. This closes the writ\n  and clears your tether. No branch or MR is created."
+	}
+
+	// Build session resilience section based on kind.
+	var resilienceSection string
+	if codeWrit {
+		resilienceSection = `## Session Resilience
+Your session can die at any time — context exhaustion, crash, infrastructure failure.
+Code you commit to git survives. Everything else is lost.
+
+Protect your work:
+- Commit early and often with meaningful messages (not just "wip")
+- After significant investigation or decisions, commit a progress note:
+  ` + "`" + `git commit --allow-empty -m "progress: decided to use X approach because Y"` + "`" + `
+- Before complex multi-step changes, commit what you have so far
+- Your commit messages are your successor's primary context if you die mid-task
+`
+	} else {
+		resilienceSection = fmt.Sprintf(`## Session Resilience
+Your session can die at any time — context exhaustion, crash, infrastructure failure.
+Files in your output directory survive. Everything else is lost.
+
+Protect your work:
+- Write findings to your output directory early — files there survive session death
+- Save incremental progress rather than waiting until the end
+- Structure output so partial results are still useful if your session dies
+- Output directory: `+"`%s`"+`
+`, ctx.OutputDir)
 	}
 
 	return fmt.Sprintf(`# Outpost Agent: %s (world: %s)
@@ -81,7 +151,7 @@ Your job is to execute the assigned writ.
 ## Warning
 - If you do not run `+"`sol resolve`"+`, your tether is orphaned, forge never sees your MR, your worktree leaks until sentinel reaps it, and the writ stays stuck in tethered state. Always resolve.
 - If you are stuck and cannot complete the work, run `+"`sol escalate`"+` — do not silently exit.
-%s%s
+%s%s%s
 ## Your Assignment
 - Writ: %s
 - Title: %s
@@ -93,8 +163,7 @@ Your job is to execute the assigned writ.
 - Make focused, minimal changes — do not refactor surrounding code.
 
 ## Commands
-- `+"`sol resolve`"+` — Signal that your work is complete. This pushes your branch,
-  clears your tether, and ends your session. Only run this when you are
+- `+"`sol resolve`"+` — %s Only run this when you are
   confident the work is done.
 - `+"`sol escalate`"+` — Request help if you are stuck. Describe the problem.
 %s
@@ -104,17 +173,7 @@ Your job is to execute the assigned writ.
 3. Run `+"`sol resolve`"+` — MANDATORY FINAL STEP.
 
 %s
-## Session Resilience
-Your session can die at any time — context exhaustion, crash, infrastructure failure.
-Code you commit to git survives. Everything else is lost.
-
-Protect your work:
-- Commit early and often with meaningful messages (not just "wip")
-- After significant investigation or decisions, commit a progress note:
-  `+"`"+`git commit --allow-empty -m "progress: decided to use X approach because Y"`+"`"+`
-- Before complex multi-step changes, commit what you have so far
-- Your commit messages are your successor's primary context if you die mid-task
-
+%s
 ## Session Management
 - `+"`sol handoff`"+` — Hand off to a fresh session (preserves context)
 - `+"`sol handoff --summary=\"what I've done so far\"`"+` — Hand off with a summary
@@ -123,18 +182,18 @@ Full Sol CLI reference: `+"`"+`.claude/sol-cli-reference.md`+"`"+`
 
 ## Memories
 Use `+"`"+`sol remember`+"`"+` to persist insights that would help a successor session:
-  `+"`"+`sol remember "key" "insight"`+"`"+` — save with explicit key
-  `+"`"+`sol remember "insight"`+"`"+` — save with auto-generated key
+  `+"`"+`sol remember \"key\" \"insight\"`+"`"+` — save with explicit key
+  `+"`"+`sol remember \"insight\"`+"`"+` — save with auto-generated key
 Use `+"`"+`sol memories`+"`"+` to review what previous sessions recorded.
-Use `+"`"+`sol forget "key"`+"`"+` to remove outdated memories.
+Use `+"`"+`sol forget \"key\"`+"`"+` to remove outdated memories.
 
 ## Important
 - You are working in an isolated git worktree. Commit your changes normally.
 - Do not modify files outside this worktree.
 - Do not attempt to interact with other agents directly.
 - Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
-`, ctx.AgentName, ctx.World, modelSection, outputDirSection, ctx.WritID, ctx.Title, ctx.Description,
-		workflowSection, gateInstructions, protocolSection)
+`, ctx.AgentName, ctx.World, modelSection, outputDirSection, depsSection, ctx.WritID, ctx.Title, ctx.Description,
+		resolveDesc, workflowSection, gateInstructions, protocolSection, resilienceSection)
 }
 
 // ForgeClaudeMDContext holds the fields used to generate a CLAUDE.md for the forge.
@@ -405,10 +464,10 @@ Full Sol CLI reference: `+"`"+`.claude/sol-cli-reference.md`+"`"+`
 
 ## Memories
 Use `+"`"+`sol remember`+"`"+` to persist insights that would help a successor session:
-  `+"`"+`sol remember "key" "insight"`+"`"+` — save with explicit key
-  `+"`"+`sol remember "insight"`+"`"+` — save with auto-generated key
+  `+"`"+`sol remember \"key\" \"insight\"`+"`"+` — save with explicit key
+  `+"`"+`sol remember \"insight\"`+"`"+` — save with auto-generated key
 Use `+"`"+`sol memories`+"`"+` to review what previous sessions recorded.
-Use `+"`"+`sol forget "key"`+"`"+` to remove outdated memories.
+Use `+"`"+`sol forget \"key\"`+"`"+` to remove outdated memories.
 
 ## Guidelines
 - You are human-supervised — ask when uncertain
@@ -553,10 +612,10 @@ Full Sol CLI reference: `+"`"+`.claude/sol-cli-reference.md`+"`"+`
 
 ## Memories
 Use `+"`"+`sol remember`+"`"+` to persist insights that would help a successor session:
-  `+"`"+`sol remember "key" "insight"`+"`"+` — save with explicit key
-  `+"`"+`sol remember "insight"`+"`"+` — save with auto-generated key
+  `+"`"+`sol remember \"key\" \"insight\"`+"`"+` — save with explicit key
+  `+"`"+`sol remember \"insight\"`+"`"+` — save with auto-generated key
 Use `+"`"+`sol memories`+"`"+` to review what previous sessions recorded.
-Use `+"`"+`sol forget "key"`+"`"+` to remove outdated memories.
+Use `+"`"+`sol forget \"key\"`+"`"+` to remove outdated memories.
 
 ## Guidelines
 - You coordinate — you don't write code

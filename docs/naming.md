@@ -32,7 +32,7 @@ structure; the action layer names the mechanisms.
 |---|---|---|
 | **Cast** | Dispatch work to an agent. Creates a worktree, tethers work, starts a session. From "farcaster" — instantaneous transit. | Sling |
 | **Prime** | Inject execution context into a session on startup. Unchanged — already perfect. | Prime |
-| **Resolve** | Signal that work is complete. Push branch, clear tether, stop session. | Done |
+| **Resolve** | Signal work completion. For code writs: push branch, create MR, clear tether. For non-code writs: close writ, clear tether. | Done |
 | **Debrief** | Clear an envoy's or governor's brief, giving a fresh start. CLI: `sol envoy debrief`. | *(new in Arc 3)* |
 
 ## Primitives
