@@ -74,6 +74,7 @@ func outpostPersona(world, agent string) ([]byte, error) {
 		HasWorkflow:  hasWorkflow,
 		ModelTier:    worldCfg.Agents.ModelTier,
 		QualityGates: worldCfg.Forge.QualityGates,
+		OutputDir:    config.WritOutputDir(world, writID),
 	}
 	content := protocol.GenerateClaudeMD(ctx)
 	return []byte(content), nil

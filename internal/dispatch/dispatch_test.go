@@ -2776,3 +2776,495 @@ func TestResolveSourceRepoManagedCloneTakesPriority(t *testing.T) {
 		t.Errorf("expected managed clone %q, got %q", repoPath, result)
 	}
 }
+
+// --- Non-code writ resolve tests ---
+
+func TestResolveNonCodeWritSkipsGitAndMR(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create a writ with kind=analysis.
+	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Analyze codebase",
+		Description: "Perform analysis",
+		CreatedBy:   "operator",
+		Kind:        "analysis",
+	})
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create a worktree directory with a git repo (simulating a worktree).
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+
+	sessName := SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	result, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// ResolveResult fields should be empty for non-code writs.
+	if result.BranchName != "" {
+		t.Errorf("expected empty BranchName for non-code writ, got %q", result.BranchName)
+	}
+	if result.MergeRequestID != "" {
+		t.Errorf("expected empty MergeRequestID for non-code writ, got %q", result.MergeRequestID)
+	}
+	if result.WritID != itemID {
+		t.Errorf("expected writ ID %q, got %q", itemID, result.WritID)
+	}
+
+	// Verify writ was closed (not set to "done").
+	item, err := worldStore.GetWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to get writ: %v", err)
+	}
+	if item.Status != "closed" {
+		t.Errorf("expected writ status 'closed' for non-code writ, got %q", item.Status)
+	}
+	if item.CloseReason != "completed" {
+		t.Errorf("expected close_reason 'completed', got %q", item.CloseReason)
+	}
+
+	// Verify no merge request was created.
+	mrs, err := worldStore.ListMergeRequestsByWrit(itemID, "")
+	if err != nil {
+		t.Fatalf("failed to list MRs: %v", err)
+	}
+	if len(mrs) != 0 {
+		t.Errorf("expected 0 merge requests for non-code writ, got %d", len(mrs))
+	}
+
+	// Verify tether is cleared.
+	tetherID, err := tether.Read("ember", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("failed to read tether: %v", err)
+	}
+	if tetherID != "" {
+		t.Errorf("expected empty tether, got %q", tetherID)
+	}
+
+	// Verify outpost agent record is deleted.
+	_, err = sphereStore.GetAgent("ember/Toast")
+	if err == nil {
+		t.Error("expected agent record to be deleted after resolve")
+	}
+}
+
+func TestResolveNonCodeWritSkipsForgeNudge(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create a writ with kind=analysis.
+	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Analyze codebase",
+		Description: "Perform analysis",
+		CreatedBy:   "operator",
+		Kind:        "analysis",
+	})
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+
+	sessName := SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	// Start forge and governor sessions so we can verify nudges are NOT sent.
+	forgeSession := config.SessionName("ember", "forge")
+	mgr.started[forgeSession] = true
+	govSession := config.SessionName("ember", "governor")
+	mgr.started[govSession] = true
+
+	_, err = Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Verify forge did NOT receive a nudge.
+	forgeMsgs, err := nudge.List(forgeSession)
+	if err != nil {
+		t.Fatalf("failed to list forge nudge queue: %v", err)
+	}
+	for _, msg := range forgeMsgs {
+		if msg.Type == "MR_READY" {
+			t.Error("expected no MR_READY nudge for non-code writ, but found one")
+		}
+	}
+
+	// Verify governor did NOT receive a nudge.
+	govMsgs, err := nudge.List(govSession)
+	if err != nil {
+		t.Fatalf("failed to list governor nudge queue: %v", err)
+	}
+	for _, msg := range govMsgs {
+		if msg.Type == "AGENT_DONE" {
+			t.Error("expected no AGENT_DONE nudge for non-code writ, but found one")
+		}
+	}
+}
+
+func TestResolveCodeWritDefaultKind(t *testing.T) {
+	// Writs with empty kind (the default) should follow the code path.
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// CreateWrit uses the default kind (empty → defaults to "code" in schema).
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	result, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Default-kind writs should follow code path: branch and MR set.
+	expectedBranch := fmt.Sprintf("outpost/Toast/%s", itemID)
+	if result.BranchName != expectedBranch {
+		t.Errorf("expected branch %q, got %q", expectedBranch, result.BranchName)
+	}
+	if result.MergeRequestID == "" {
+		t.Error("expected MergeRequestID to be set for code writ")
+	}
+
+	// Verify writ was updated to done (not closed).
+	item, err := worldStore.GetWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to get writ: %v", err)
+	}
+	if item.Status != "done" {
+		t.Errorf("expected writ status 'done', got %q", item.Status)
+	}
+}
+
+func TestCastCreatesOutputDirectory(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Create world.toml so Cast doesn't fail on config load.
+	worldDir := filepath.Join(solHome, "ember")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatalf("failed to create world dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(""), 0o644); err != nil {
+		t.Fatalf("failed to write world.toml: %v", err)
+	}
+
+	itemID, err := worldStore.CreateWrit("Test task", "Test description", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Set up git repo for worktree creation.
+	repoDir := filepath.Join(solHome, "ember", "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("failed to create repo dir: %v", err)
+	}
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	_, err = Cast(CastOpts{
+		WritID:    itemID,
+		World:     "ember",
+		AgentName: "Toast",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Cast failed: %v", err)
+	}
+
+	// Verify output directory was created.
+	outputDir := config.WritOutputDir("ember", itemID)
+	info, err := os.Stat(outputDir)
+	if err != nil {
+		t.Fatalf("expected output directory %q to exist: %v", outputDir, err)
+	}
+	if !info.IsDir() {
+		t.Errorf("expected %q to be a directory", outputDir)
+	}
+}
+
+func TestCastCreatesOutputDirectoryForNonCodeWrit(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	solHome := os.Getenv("SOL_HOME")
+
+	worldDir := filepath.Join(solHome, "ember")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatalf("failed to create world dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(""), 0o644); err != nil {
+		t.Fatalf("failed to write world.toml: %v", err)
+	}
+
+	// Create a non-code writ.
+	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Analyze codebase",
+		Description: "Perform analysis",
+		CreatedBy:   "operator",
+		Kind:        "analysis",
+	})
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	repoDir := filepath.Join(solHome, "ember", "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("failed to create repo dir: %v", err)
+	}
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	_, err = Cast(CastOpts{
+		WritID:     itemID,
+		World:      "ember",
+		AgentName:  "Toast",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Cast failed: %v", err)
+	}
+
+	// Output directory should be created for non-code writs too.
+	outputDir := config.WritOutputDir("ember", itemID)
+	info, err := os.Stat(outputDir)
+	if err != nil {
+		t.Fatalf("expected output directory %q to exist for non-code writ: %v", outputDir, err)
+	}
+	if !info.IsDir() {
+		t.Errorf("expected %q to be a directory", outputDir)
+	}
+}
+
+func TestOutputDirectorySurvivesResolve(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create a writ with kind=analysis.
+	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Analyze codebase",
+		Description: "Perform analysis",
+		CreatedBy:   "operator",
+		Kind:        "analysis",
+	})
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+
+	sessName := SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	// Pre-create the output directory (as Cast() would do).
+	outputDir := config.WritOutputDir("ember", itemID)
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		t.Fatalf("failed to create output dir: %v", err)
+	}
+	// Write a test file to the output directory.
+	testFile := filepath.Join(outputDir, "report.json")
+	if err := os.WriteFile(testFile, []byte(`{"status":"ok"}`), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	_, err = Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Output directory should still exist after resolve.
+	info, err := os.Stat(outputDir)
+	if err != nil {
+		t.Fatalf("expected output directory to survive resolve: %v", err)
+	}
+	if !info.IsDir() {
+		t.Errorf("expected %q to be a directory", outputDir)
+	}
+
+	// Test file should still exist.
+	if _, err := os.Stat(testFile); err != nil {
+		t.Errorf("expected test file to survive resolve: %v", err)
+	}
+}
+
+func TestWritKindDefaultsToCode(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	// CreateWrit (no Kind option) should default to "code".
+	itemID, err := worldStore.CreateWrit("Test task", "Test description", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	item, err := worldStore.GetWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to get writ: %v", err)
+	}
+	if item.Kind != "code" {
+		t.Errorf("expected default Kind 'code', got %q", item.Kind)
+	}
+}
+
+func TestWritKindSetByCreateWritWithOpts(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	// CreateWritWithOpts with Kind=analysis.
+	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Analyze codebase",
+		Description: "Perform analysis",
+		CreatedBy:   "operator",
+		Kind:        "analysis",
+	})
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	item, err := worldStore.GetWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to get writ: %v", err)
+	}
+	if item.Kind != "analysis" {
+		t.Errorf("expected Kind 'analysis', got %q", item.Kind)
+	}
+}
+
+func TestCloseWritWithReason(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWrit("Test task", "Test description", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if err := worldStore.CloseWrit(itemID, "completed"); err != nil {
+		t.Fatalf("CloseWrit with reason failed: %v", err)
+	}
+
+	item, err := worldStore.GetWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to get writ: %v", err)
+	}
+	if item.Status != "closed" {
+		t.Errorf("expected status 'closed', got %q", item.Status)
+	}
+	if item.CloseReason != "completed" {
+		t.Errorf("expected close_reason 'completed', got %q", item.CloseReason)
+	}
+	if item.ClosedAt == nil {
+		t.Error("expected ClosedAt to be set")
+	}
+}

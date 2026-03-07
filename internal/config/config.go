@@ -79,6 +79,12 @@ func RepoPath(world string) string {
 	return filepath.Join(WorldDir(world), "repo")
 }
 
+// WritOutputDir returns the persistent output directory for a writ.
+// Path: $SOL_HOME/{world}/writ-outputs/{writID}/
+func WritOutputDir(world, writID string) string {
+	return filepath.Join(Home(), world, "writ-outputs", writID)
+}
+
 var validAgentName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]*$`)
 
 const maxAgentNameLen = 64

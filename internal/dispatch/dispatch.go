@@ -276,6 +276,14 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
 
+	// 6b. Create persistent output directory for the writ.
+	// Lives in world storage (not the worktree) and survives worktree cleanup.
+	outputDir := config.WritOutputDir(opts.World, opts.WritID)
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		rollback()
+		return nil, fmt.Errorf("failed to create writ output directory: %w", err)
+	}
+
 	// 7. Instantiate workflow if formula provided (before Launch so persona
 	// can detect the active workflow).
 	if opts.Formula != "" {
@@ -1048,24 +1056,32 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 			agentID, sessName, agent.Role, worldStore, sphereStore, mgr, logger)
 	}
 
-	// 2. Git operations in the worktree.
-	// git add -A
-	addCmd := exec.Command("git", "-C", worktreeDir, "add", "-A")
-	if out, err := addCmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("git add failed: %s: %w", strings.TrimSpace(string(out)), err)
-	}
+	// Determine if this is a code writ. Non-code writs (analysis, etc.) skip
+	// git operations, MR creation, and forge/governor nudges entirely.
+	isCodeWrit := item.Kind == "" || item.Kind == "code"
 
-	// git commit (skip if nothing to commit)
-	commitMsg := fmt.Sprintf("sol resolve: %s", item.Title)
-	commitCmd := exec.Command("git", "-C", worktreeDir, "commit", "-m", commitMsg)
-	commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
+	var mrID string
+	var pushFailed bool
 
-	// git push origin HEAD
-	pushCmd := exec.Command("git", "-C", worktreeDir, "push", "origin", "HEAD")
-	pushFailed := false
-	if out, err := pushCmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: git push failed: %s\n", strings.TrimSpace(string(out)))
-		pushFailed = true
+	if isCodeWrit {
+		// 2. Git operations in the worktree (code writs only).
+		// git add -A
+		addCmd := exec.Command("git", "-C", worktreeDir, "add", "-A")
+		if out, err := addCmd.CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("git add failed: %s: %w", strings.TrimSpace(string(out)), err)
+		}
+
+		// git commit (skip if nothing to commit)
+		commitMsg := fmt.Sprintf("sol resolve: %s", item.Title)
+		commitCmd := exec.Command("git", "-C", worktreeDir, "commit", "-m", commitMsg)
+		commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
+
+		// git push origin HEAD
+		pushCmd := exec.Command("git", "-C", worktreeDir, "push", "origin", "HEAD")
+		if out, err := pushCmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: git push failed: %s\n", strings.TrimSpace(string(out)))
+			pushFailed = true
+		}
 	}
 
 	// Track what has been done so we can undo on failure.
@@ -1079,34 +1095,46 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		}
 	}
 
-	// 3. Update writ: status -> done (idempotent — skip if already done).
-	if item.Status != "done" {
-		if err := worldStore.UpdateWrit(writID, store.WritUpdates{Status: "done"}); err != nil {
-			return nil, fmt.Errorf("failed to update writ status: %w", err)
+	// 3. Update writ status.
+	if isCodeWrit {
+		// Code writs: status → done (idempotent — skip if already done).
+		if item.Status != "done" {
+			if err := worldStore.UpdateWrit(writID, store.WritUpdates{Status: "done"}); err != nil {
+				return nil, fmt.Errorf("failed to update writ status: %w", err)
+			}
+			writUpdated = true
 		}
-		writUpdated = true
+	} else {
+		// Non-code writs: close directly with close_reason "completed".
+		if item.Status != "closed" {
+			if err := worldStore.CloseWrit(writID, "completed"); err != nil {
+				return nil, fmt.Errorf("failed to close non-code writ: %w", err)
+			}
+			writUpdated = true
+		}
 	}
 
-	// 4. Create merge request (idempotent — skip if one already exists for this writ).
-	var mrID string
-	existingMRs, err := worldStore.ListMergeRequestsByWrit(writID, "")
-	if err != nil {
-		rollback()
-		return nil, fmt.Errorf("failed to check existing merge requests: %w", err)
-	}
-	if len(existingMRs) > 0 {
-		mrID = existingMRs[0].ID
-	} else {
-		mrID, err = worldStore.CreateMergeRequest(writID, branchName, item.Priority)
+	if isCodeWrit {
+		// 4. Create merge request (idempotent — skip if one already exists for this writ).
+		existingMRs, err := worldStore.ListMergeRequestsByWrit(writID, "")
 		if err != nil {
 			rollback()
-			return nil, fmt.Errorf("failed to create merge request for %q: %w", writID, err)
+			return nil, fmt.Errorf("failed to check existing merge requests: %w", err)
 		}
+		if len(existingMRs) > 0 {
+			mrID = existingMRs[0].ID
+		} else {
+			mrID, err = worldStore.CreateMergeRequest(writID, branchName, item.Priority)
+			if err != nil {
+				rollback()
+				return nil, fmt.Errorf("failed to create merge request for %q: %w", writID, err)
+			}
 
-		// If push failed, immediately mark the MR as failed so forge doesn't try to merge it.
-		if pushFailed {
-			if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
-				fmt.Fprintf(os.Stderr, "resolve: failed to mark MR as failed after push failure: %v\n", err)
+			// If push failed, immediately mark the MR as failed so forge doesn't try to merge it.
+			if pushFailed {
+				if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+					fmt.Fprintf(os.Stderr, "resolve: failed to mark MR as failed after push failure: %v\n", err)
+				}
 			}
 		}
 	}
@@ -1166,60 +1194,78 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		sessionKept = true
 	}
 
-	if logger != nil {
-		logger.Emit(events.EventResolve, "sol", opts.AgentName, "both", map[string]string{
-			"writ_id":  writID,
-			"agent":         opts.AgentName,
-			"branch":        branchName,
-			"merge_request": mrID,
-		})
-	}
+	// 8. Emit event and nudge downstream agents (code writs only for nudges).
+	if isCodeWrit {
+		if logger != nil {
+			logger.Emit(events.EventResolve, "sol", opts.AgentName, "both", map[string]string{
+				"writ_id":      writID,
+				"agent":        opts.AgentName,
+				"branch":       branchName,
+				"merge_request": mrID,
+			})
+		}
 
-	// 8. Nudge governor that work is done (best-effort, silent skip if no governor).
-	govSession := config.SessionName(opts.World, "governor")
-	if mgr.Exists(govSession) {
-		body := fmt.Sprintf(`{"writ_id":%q,"agent_name":%q,"branch":%q,"title":%q,"merge_request_id":%q}`,
-			writID, opts.AgentName, branchName, item.Title, mrID)
-		if err := nudge.Enqueue(govSession, nudge.Message{
-			Sender:   opts.AgentName,
-			Type:     "AGENT_DONE",
-			Subject:  fmt.Sprintf("Agent %s resolved %s", opts.AgentName, writID),
-			Body:     body,
-			Priority: "normal",
-		}); err != nil {
-			fmt.Fprintf(os.Stderr, "resolve: failed to nudge governor: %v\n", err)
+		// Nudge governor that work is done (best-effort, silent skip if no governor).
+		govSession := config.SessionName(opts.World, "governor")
+		if mgr.Exists(govSession) {
+			body := fmt.Sprintf(`{"writ_id":%q,"agent_name":%q,"branch":%q,"title":%q,"merge_request_id":%q}`,
+				writID, opts.AgentName, branchName, item.Title, mrID)
+			if err := nudge.Enqueue(govSession, nudge.Message{
+				Sender:   opts.AgentName,
+				Type:     "AGENT_DONE",
+				Subject:  fmt.Sprintf("Agent %s resolved %s", opts.AgentName, writID),
+				Body:     body,
+				Priority: "normal",
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "resolve: failed to nudge governor: %v\n", err)
+			}
+		}
+
+		// Nudge forge that a new MR is ready (best-effort).
+		forgeSession := config.SessionName(opts.World, "forge")
+		if mgr.Exists(forgeSession) {
+			forgeBody := fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
+				writID, mrID, branchName, item.Title)
+			if err := nudge.Enqueue(forgeSession, nudge.Message{
+				Sender:   opts.AgentName,
+				Type:     "MR_READY",
+				Subject:  fmt.Sprintf("MR %s ready for merge", mrID),
+				Body:     forgeBody,
+				Priority: "normal",
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "resolve: failed to nudge forge: %v\n", err)
+			}
+		}
+
+		// Poke forge to trigger turn boundary and drain pending nudges.
+		nudge.Poke(forgeSession)
+	} else {
+		// Non-code writs: emit event without branch/MR fields.
+		if logger != nil {
+			logger.Emit(events.EventResolve, "sol", opts.AgentName, "both", map[string]string{
+				"writ_id": writID,
+				"agent":   opts.AgentName,
+				"kind":    item.Kind,
+			})
 		}
 	}
 
-	// 9. Nudge forge that a new MR is ready (best-effort).
-	forgeSession := config.SessionName(opts.World, "forge")
-	if mgr.Exists(forgeSession) {
-		forgeBody := fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
-			writID, mrID, branchName, item.Title)
-		if err := nudge.Enqueue(forgeSession, nudge.Message{
-			Sender:   opts.AgentName,
-			Type:     "MR_READY",
-			Subject:  fmt.Sprintf("MR %s ready for merge", mrID),
-			Body:     forgeBody,
-			Priority: "normal",
-		}); err != nil {
-			fmt.Fprintf(os.Stderr, "resolve: failed to nudge forge: %v\n", err)
-		}
-	}
-
-	// 10. Poke forge to trigger turn boundary and drain pending nudges.
-	nudge.Poke(forgeSession)
-
-	// 11. Close history record for cycle-time tracking.
+	// 9. Close history record for cycle-time tracking.
 	if _, err := worldStore.EndHistory(writID); err != nil {
 		fmt.Fprintf(os.Stderr, "resolve: failed to end history: %v\n", err)
 	}
 
+	// For non-code writs, BranchName and MergeRequestID are empty strings.
+	resultBranch := ""
+	if isCodeWrit {
+		resultBranch = branchName
+	}
+
 	return &ResolveResult{
-		WritID:     writID,
+		WritID:         writID,
 		Title:          item.Title,
 		AgentName:      opts.AgentName,
-		BranchName:     branchName,
+		BranchName:     resultBranch,
 		MergeRequestID: mrID,
 		SessionKept:    sessionKept,
 	}, nil

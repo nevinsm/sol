@@ -17,6 +17,7 @@ type ClaudeMDContext struct {
 	HasWorkflow  bool     // if true, include workflow commands
 	ModelTier    string   // "sonnet", "opus", "haiku" — informational
 	QualityGates []string // commands to run before resolving (from world config)
+	OutputDir    string   // persistent output directory for this writ
 }
 
 // GenerateClaudeMD returns the contents of a CLAUDE.md file for an outpost agent.
@@ -54,6 +55,14 @@ func GenerateClaudeMD(ctx ClaudeMDContext) string {
 		modelSection = fmt.Sprintf("\n## Model\nConfigured model tier: %s\n", ctx.ModelTier)
 	}
 
+	outputDirSection := ""
+	if ctx.OutputDir != "" {
+		outputDirSection = fmt.Sprintf("\n## Output Directory\nPersistent output directory for this writ: `%s`\n"+
+			"- Write findings, reports, or structured data here\n"+
+			"- This directory survives worktree cleanup\n"+
+			"- For non-code writs, this is the primary output surface\n", ctx.OutputDir)
+	}
+
 	// Build quality gate instructions for the completion checklist.
 	gateInstructions := "Run the project test suite before resolving."
 	if len(ctx.QualityGates) > 0 {
@@ -72,7 +81,7 @@ Your job is to execute the assigned writ.
 ## Warning
 - If you do not run `+"`sol resolve`"+`, your tether is orphaned, forge never sees your MR, your worktree leaks until sentinel reaps it, and the writ stays stuck in tethered state. Always resolve.
 - If you are stuck and cannot complete the work, run `+"`sol escalate`"+` — do not silently exit.
-%s
+%s%s
 ## Your Assignment
 - Writ: %s
 - Title: %s
@@ -124,7 +133,7 @@ Use `+"`"+`sol forget "key"`+"`"+` to remove outdated memories.
 - Do not modify files outside this worktree.
 - Do not attempt to interact with other agents directly.
 - Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
-`, ctx.AgentName, ctx.World, modelSection, ctx.WritID, ctx.Title, ctx.Description,
+`, ctx.AgentName, ctx.World, modelSection, outputDirSection, ctx.WritID, ctx.Title, ctx.Description,
 		workflowSection, gateInstructions, protocolSection)
 }
 
