@@ -1,6 +1,6 @@
 name = "idea-to-plan"
 type = "workflow"
-description = "Planning pipeline from concept to work items — takes a vague idea through requirements review, design exploration, and plan review to produce concrete work items."
+description = "Planning pipeline from concept to writs — takes a vague idea through requirements review, design exploration, and plan review to produce concrete writs."
 
 [variables]
 idea = { required = true }
@@ -30,13 +30,13 @@ instructions = "steps/04-review-plan.md"
 needs = ["explore-design"]
 
 [[steps]]
-id = "create-work-items"
-title = "Create work items"
-instructions = "steps/05-create-work-items.md"
+id = "create-writs"
+title = "Create writs"
+instructions = "steps/05-create-writs.md"
 needs = ["review-plan"]
 
 [[steps]]
 id = "summarize"
 title = "Summarize"
 instructions = "steps/06-summarize.md"
-needs = ["create-work-items"]
+needs = ["create-writs"]

@@ -7,7 +7,7 @@ Arc: 3
 ## Context
 
 Sol's agent model is built around outposts: ephemeral workers that follow the
-cast/resolve cycle. Each work item gets a fresh session, a temporary worktree,
+cast/resolve cycle. Each writ gets a fresh session, a temporary worktree,
 and goes through the forge merge pipeline. This model scales well for discrete,
 well-defined tasks dispatched by the system.
 
@@ -15,13 +15,13 @@ However, several operator use cases don't fit the ephemeral model:
 
 - **Pair programming** — interactive collaboration requiring a persistent
   agent that maintains context as the conversation evolves
-- **Long-running research** — tasks spanning multiple work items where
+- **Long-running research** — tasks spanning multiple writs where
   accumulated context is essential
 - **Design partnering** — persistent persona for feature design, spikes, and
   exploration where the agent's accumulated knowledge is the primary value
 
 Outposts lose context on every cast/resolve cycle. There is no way to maintain
-an ongoing relationship with an agent across work items.
+an ongoing relationship with an agent across writs.
 
 The Gastown prototype implemented "crew" agents for this purpose — persistent
 named Claude Code sessions with mail, self-directed work, direct push to main,
@@ -48,7 +48,7 @@ code through forge.
 ### 2. Outpost with session persistence
 
 Modify the existing outpost model to optionally preserve sessions across
-work items. This avoids introducing a new role but conflates two different
+writs. This avoids introducing a new role but conflates two different
 interaction models: system-dispatched ephemeral work (outpost) and
 human-directed persistent collaboration (envoy). Sentinel, prefect, and
 dispatch logic would need role-aware branching throughout.
@@ -90,12 +90,12 @@ and a long-lived tmux session. Unlike outposts, the session and worktree
 survive resolve — resolve creates an MR (through forge) but does not kill
 the session or tear down the worktree.
 
-**Work item flow:**
+**Writ flow:**
 
 Envoys support three modes:
-1. Tether to an existing work item (operator or governor assigns it)
-2. Create and tether to their own work item (self-service via `sol store create-item`)
-3. Freeform — no tether, no work item (exploration, research, design)
+1. Tether to an existing writ (operator or governor assigns it)
+2. Create and tether to their own writ (self-service via `sol store create`)
+3. Freeform — no tether, no writ (exploration, research, design)
 
 The envoy's default persona instructs voluntary tethering when starting focused
 work. This uses the existing `tether_item` column in the agents table — no
@@ -137,7 +137,7 @@ outpost code. No forge bypass, no trust asymmetry.
 **Resolve behavior:**
 
 Envoy resolve runs the standard resolve flow (commit, push, create MR,
-update work item status, clear tether) but skips session stop and worktree
+update writ status, clear tether) but skips session stop and worktree
 cleanup. After resolve, the worktree is on a stale branch. Worktree reset
 is agent-managed — CLAUDE.md instructs `git checkout main && git pull`
 before new work. System-managed reset was considered but adds forge-to-envoy

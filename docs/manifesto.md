@@ -65,7 +65,7 @@ is your job, and it will still be your job when you come back."
 ### Complexity That Doesn't Earn Its Keep
 
 **Universal bus coupling**: Using a single state substrate (beads) for everything
-— work items, mail, agent identity, molecules, escalations — creates deep coupling
+— writs, mail, agent identity, molecules, escalations — creates deep coupling
 that makes every subsystem depend on one storage layer. When that layer is
 unreliable, everything is unreliable.
 

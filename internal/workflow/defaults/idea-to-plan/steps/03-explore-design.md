@@ -6,7 +6,7 @@ For each option:
 1. Describe the approach — what changes, where, and how
 2. List the files and packages that would be touched
 3. Identify trade-offs: complexity, risk, consistency with existing patterns
-4. Estimate the scope — how many work items would this require?
+4. Estimate the scope — how many writs would this require?
 
 Select a recommended approach and explain why it is preferred over the
 alternatives. The recommendation should favor:

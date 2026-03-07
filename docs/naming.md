@@ -18,11 +18,12 @@ structure; the action layer names the mechanisms.
 
 | Term | Definition | Replaces (Gastown) |
 |---|---|---|
-| **World** | A project or workspace. Contains agents, work items, and configuration. Each world has its own database and directory tree. | Rig |
+| **World** | A project or workspace. Contains agents, writs, and configuration. Each world has its own database and directory tree. | Rig |
 | **Outpost** | A worker agent's station within a world. Directory at `$SOL_HOME/{world}/outposts/{agent}/`. | Polecat |
 | **Envoy** | A persistent, human-directed agent. Maintains context across sessions via a brief. Directory at `$SOL_HOME/{world}/envoys/{name}/`. | Crew |
 | **Governor** | Per-world work coordinator. Singleton Claude session that handles natural language dispatch, caravan creation, and cast coordination. Directory at `$SOL_HOME/{world}/governor/`. | Mayor (partial) |
-| **Senate** | Sphere-scoped work planner. Claude session for cross-world planning — creates work items, caravans, and dependencies across worlds. Queries governors for world context. Directory at `$SOL_HOME/senate/`. | *(new in Arc 4)* |
+| **Senate** | Sphere-scoped work planner. Claude session for cross-world planning — creates writs, caravans, and dependencies across worlds. Queries governors for world context. Directory at `$SOL_HOME/senate/`. | *(new in Arc 4)* |
+| **Writ** | A unit of work. Created in the store, assigned to agents via cast, tracked through tether/resolve lifecycle. Stored in per-world database. | *(was: work item)* |
 | **Sphere** | The global registry connecting all worlds. Stores agents, messages, escalations, caravans. Database: `sphere.db`. | Town |
 
 ## Actions
@@ -38,7 +39,7 @@ structure; the action layer names the mechanisms.
 
 | Term | Definition | Replaces (Gastown) |
 |---|---|---|
-| **Tether** | The durability primitive. A file at `$SOL_HOME/{world}/outposts/{agent}/.tether` that binds an agent to a work item. If the tether exists, the work is assigned. | Hook |
+| **Tether** | The durability primitive. A file at `$SOL_HOME/{world}/outposts/{agent}/.tether` that binds an agent to a writ. If the tether exists, the work is assigned. | Hook |
 | **Charter** | Per-world configuration file (`world.toml`). Defines source repo, agent capacity, model tier, and forge settings. Layered with global `sol.toml`. | *(new in Arc 1)* |
 | **Brief** | An envoy's, governor's, or senate's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start and after compaction, save-checked on stop. GLASS-inspectable. | *(new in Arc 3)* |
 | **World Summary** | Governor-maintained external-facing summary of a world. Structured file at `.brief/world-summary.md` with prescribed sections (Project, Architecture, Priorities, Constraints). Read by Senate and operators via `sol world summary`. | *(new in Arc 3)* |
@@ -58,7 +59,7 @@ structure; the action layer names the mechanisms.
 
 | Term | Definition | Replaces (Gastown) |
 |---|---|---|
-| **Caravan** | A batch of related work items dispatched together. Tracks readiness and dependencies across worlds. Items are assigned a **phase** for cross-world sequencing — phase 0 dispatches first, phase N waits for earlier phases to complete. | Convoy |
+| **Caravan** | A batch of related writs dispatched together. Tracks readiness and dependencies across worlds. Items are assigned a **phase** for cross-world sequencing — phase 0 dispatches first, phase N waits for earlier phases to complete. | Convoy |
 
 ## Sessions
 
@@ -70,7 +71,7 @@ Example: `sol-myproject-Toast`
 
 | Entity | Format | Example |
 |---|---|---|
-| Work item | `sol-` + 8 hex chars | `sol-a1b2c3d4` |
+| Writ | `sol-` + 8 hex chars | `sol-a1b2c3d4` |
 | Merge request | `mr-` + 8 hex chars | `mr-a1b2c3d4` |
 | Message | `msg-` + 8 hex chars | `msg-a1b2c3d4` |
 | Escalation | `esc-` + 8 hex chars | `esc-a1b2c3d4` |
@@ -98,5 +99,6 @@ For contributors familiar with the Gastown prototype naming:
 | convoy | caravan |
 | supervisor | prefect |
 | prime | prime (unchanged) |
+| work item | writ |
 | crew | envoy |
 | mayor | governor (dispatch) + senate (cross-world planning) + consul (coordination) + sol init (onboarding) |

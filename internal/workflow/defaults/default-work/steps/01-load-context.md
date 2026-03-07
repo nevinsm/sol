@@ -1,8 +1,8 @@
 # Load Context
 
-Read work item {{issue}} and understand the requirements fully.
+Read writ {{issue}} and understand the requirements fully.
 
-1. Review the work item title and description
+1. Review the writ title and description
 2. Explore the relevant areas of the codebase
 3. Identify the files that need to change
 4. Note any dependencies or related work

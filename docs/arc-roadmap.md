@@ -27,7 +27,7 @@ Explicit world management — the biggest operational gap.
 
 - `sol world init <name>` — create world database, directory structure, optional source repo association
 - `sol world list` — list all registered worlds from sphere database
-- `sol world status <name>` — aggregate view (agents, work items, active sessions, config)
+- `sol world status <name>` — aggregate view (agents, writs, active sessions, config)
 - `sol world delete <name>` — safe teardown with confirmation
 - Source repo association — persisted in world.toml, no longer relies on cwd for `cast`
 - Configuration files: `sol.toml` (global), `world.toml` (per-world)
@@ -101,7 +101,7 @@ collaboration. Maintain accumulated context (brief) across sessions.
 - Brief system: agent-maintained `.brief/memory.md` (GLASS-inspectable)
 - Claude Code hooks: `SessionStart` injects brief, `Stop` prompt hook ensures save before exit
 - `SessionStart` compact hook re-injects brief after context compaction
-- Voluntary tether: envoy can bind to existing work items or create its own
+- Voluntary tether: envoy can bind to existing writs or create its own
 - Resolve creates MR (through forge) but does not kill session or clear worktree.
   Worktree reset is agent-managed: CLAUDE.md tells envoy to checkout main
   and pull before starting new work. No forge-to-envoy coupling.
@@ -117,7 +117,7 @@ Architecturally similar to forge: Claude session + sol CLI toolbox (ADR-0005 pat
 - Read-only mirror of main at `governor/mirror/` — for codebase research, never edited
 - Mirror auto-refreshes on session start + periodic pulls
 - Uses brief system for accumulated world knowledge (patterns, agent capabilities, preferences)
-- NL work dispatch: parses operator intent → creates work items, caravans, dispatches via cast
+- NL work dispatch: parses operator intent → creates writs, caravans, dispatches via cast
 - Claude handles NL parsing and coordination logic; Go CLI handles mechanical operations
 - CLI: `sol governor start/stop/attach/brief/debrief` (singleton — no `create`)
 
@@ -239,11 +239,11 @@ always running, not supervised. Sits above governors in the planning hierarchy.
 - Brief system for accumulated sphere-wide knowledge
 - Lazy world summary loading — persona boot says summaries exist, pulls on demand
 - Interactive governor queries via synchronous CLI (`sol world query`)
-- Creates cross-world work items, caravans, dependencies
+- Creates cross-world writs, caravans, dependencies
 - Delegates per-world dispatch to governors
 - Governor notification: caravan items need no notification (consul
   handles stranded caravans). Standalone items — Senate sends mail
-  explicitly to `{world}/governor` with `WORK_ITEM_CREATED` subject.
+  explicitly to `{world}/governor` with `WRIT_CREATED` subject.
 - CLI: `sol senate start/stop/attach/brief/debrief`
 
 ### Governor Enhancements
@@ -281,7 +281,7 @@ Track per-agent performance metrics across casts to enable capability-based
 routing and quality feedback loops. Inspired by gastown's persistent polecat
 identity / CV system.
 
-- **Cycle time**: time from cast to resolve per work item
+- **Cycle time**: time from cast to resolve per writ
 - **First-pass success rate**: percentage of MRs that merge without rework
   (no conflict resolution tasks, no mark-failed)
 - **Rework count**: how many times an agent's MR needed conflict resolution

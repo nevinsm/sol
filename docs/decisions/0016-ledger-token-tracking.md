@@ -7,12 +7,12 @@ Date: 2026-03-05
 
 Sol orchestrates multiple concurrent AI agents, each consuming API tokens
 across sessions. Today there is no visibility into token spend — operators
-cannot answer "how many tokens did this work item cost?" or "which agent
+cannot answer "how many tokens did this writ cost?" or "which agent
 consumes the most cache-read tokens?" Without this data, cost attribution,
 budget enforcement, and efficiency analysis are impossible.
 
 The data naturally lives in the world database: token usage is tied to
-agent sessions that work on world-scoped work items. Each session has a
+agent sessions that work on world-scoped writs. Each session has a
 lifecycle (started, ended) and produces token consumption records broken
 down by model and token type (input, output, cache read, cache creation).
 
@@ -27,7 +27,7 @@ Add two tables to the world database:
 
 **`agent_history`** — records agent session lifecycle events. Each row
 represents a discrete agent action (cast, resolve, respawn, etc.) tied
-to a work item. This is the "span" in OTel terms.
+to a writ. This is the "span" in OTel terms.
 
 | Column       | Type | Notes                          |
 |--------------|------|--------------------------------|

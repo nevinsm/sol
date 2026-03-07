@@ -10,11 +10,11 @@ git diff --cached --quiet
 **If exit code 1** (there ARE staged changes): commit and push:
 
 ```
-git commit -m "<MR title> (<work_item_id>)"
+git commit -m "<MR title> (<writ_id>)"
 git push origin HEAD:{{target_branch}}
 ```
 
-Use the MR title as the commit message. Include the work item ID for traceability.
+Use the MR title as the commit message. Include the writ ID for traceability.
 
 **Verify the push**: confirm the remote SHA matches what you pushed.
 

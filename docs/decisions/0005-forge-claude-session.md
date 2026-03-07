@@ -52,7 +52,7 @@ been released, so there are no backward-compatibility concerns.
 
 **Benefits:**
 - Merge conflicts are resolvable: trivial ones directly, complex ones
-  delegated to outposts via conflict-resolution work items
+  delegated to outposts via conflict-resolution writs
 - Test failures can be attributed (branch vs pre-existing)
 - The "senior engineer" model: handles easy stuff directly, delegates
   hard stuff intelligently
@@ -67,6 +67,6 @@ been released, so there are no backward-compatibility concerns.
 
 **Schema change:**
 - `merge_requests.blocked_by` (TEXT, nullable) — tracks which
-  conflict-resolution work item is blocking an MR
+  conflict-resolution writ is blocking an MR
 - `resolve` flow detects `conflict-resolution` label and uses
   `--force-with-lease` push, skips MR creation, unblocks original MR

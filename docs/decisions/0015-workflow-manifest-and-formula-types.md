@@ -45,7 +45,7 @@ checkpointing — if the agent dies, it restarts from the last advance. This
 is the current model, enhanced with full-formula visibility.
 
 **Manifested (workflow or expansion with `manifest = true`)**
-Each step materializes as a child work item in the store, with dependencies
+Each step materializes as a child writ in the store, with dependencies
 mirroring the step DAG. Each child is cast to a separate outpost and goes
 through the full cast → resolve → forge pipeline independently. A caravan
 groups all children for tracking. The branch carries forward — each outpost
@@ -60,14 +60,14 @@ dimensions of the same problem.
 
 **`type = "workflow"`** — Sequential steps with dependency DAG.
 - Default execution: inline (all steps shown, single session).
-- With `manifest = true`: each step becomes a child work item.
+- With `manifest = true`: each step becomes a child writ.
 - Steps use `needs` for ordering. DAG validated at parse time.
 - Schema: `[[steps]]` with `id`, `title`, `instructions`, `needs`.
 
-**`type = "expansion"`** — Template-based generation of related work items.
+**`type = "expansion"`** — Template-based generation of related writs.
 - Always manifested (expansion implies manifest).
-- `[[template]]` entries define child work items generated against a
-  target work item. Variable substitution via `{target.title}`,
+- `[[template]]` entries define child writs generated against a
+  target writ. Variable substitution via `{target.title}`,
   `{target.description}`, `{target.id}`.
 - Templates use `needs` for ordering between generated items.
 - Use case: iterative refinement (rule-of-five pattern), multi-pass
@@ -79,7 +79,7 @@ dimensions of the same problem.
   separate outpost simultaneously.
 - `[synthesis]` defines a follow-up step that runs after all legs merge.
   `depends_on` lists which legs must complete.
-- Each leg gets its own work item, branch, and outpost session.
+- Each leg gets its own writ, branch, and outpost session.
 - Synthesis receives all leg outputs and produces a consolidated result.
 - Schema: `[[legs]]` with `id`, `title`, `description`, `focus`.
   `[synthesis]` with `title`, `description`, `depends_on`.
@@ -88,8 +88,8 @@ dimensions of the same problem.
 
 When a formula is manifested (explicitly or by type):
 
-1. A parent work item is created (or an existing target item is used).
-2. Child work items are created for each step/template/leg.
+1. A parent writ is created (or an existing target item is used).
+2. Child writs are created for each step/template/leg.
 3. Dependencies between children mirror the formula's DAG (`needs`).
 4. Children are grouped in a caravan, with phases derived from
    dependency depth (roots = phase 0, their dependents = phase 1, etc.).
@@ -104,7 +104,7 @@ step N+1's outpost branches from that new HEAD.
 ### CLI surface
 
 - `sol workflow manifest <formula> --world=W --var key=val` — manifest
-  a formula into work items + caravan.
+  a formula into writs + caravan.
 - Inline display requires no new commands — `primeWithWorkflow()` is
   updated to show all steps.
 - Convoy dispatch integrates with `sol cast --formula=<convoy>`.
@@ -145,7 +145,7 @@ depends_on = ["..."]
 - Manifested workflows enable multi-session execution where each step
   gets fresh context — better for iterative refinement patterns.
 - Convoy formulas enable parallel fan-out for review and analysis work.
-- All three modes reuse existing infrastructure: work items, dependencies,
+- All three modes reuse existing infrastructure: writs, dependencies,
   caravans, cast, forge. No new state management or execution engine needed.
 - Expansion formulas always manifest — there is no inline expansion.
 - The `manifest` flag on workflow formulas is opt-in. Existing workflows

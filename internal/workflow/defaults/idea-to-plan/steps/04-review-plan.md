@@ -10,7 +10,7 @@ Review checklist:
 5. Are there any risks or blockers that should be flagged?
 
 Refine the plan if the review surfaces issues. The plan should be a sequence
-of discrete, implementable changes — each one a candidate work item.
+of discrete, implementable changes — each one a candidate writ.
 
 When the plan passes review, advance:
 `sol workflow advance --world={{world}} --agent=$SOL_AGENT`

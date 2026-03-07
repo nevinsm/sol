@@ -141,7 +141,7 @@ See: ADR-0005 (forge), ADR-0010 (governor), ADR-0011 (senate).
 
 Configuration and agent context live in files (`world.toml`, `.brief/memory.md`).
 The database provides indexing, querying, and transactional writes for
-coordination state (work items, agent records, messages).
+coordination state (writs, agent records, messages).
 
 Files are authoritative for operator-facing state. The database is authoritative
 for coordination state. Neither duplicates the other's role.
@@ -225,7 +225,7 @@ Lessons from the Gastown prototype — complexity that doesn't earn its keep.
 
 ### Universal Bus Coupling
 
-Using a single state substrate for everything (work items, mail, agent
+Using a single state substrate for everything (writs, mail, agent
 identity, workflows, escalations) creates deep coupling. When that layer
 is unreliable, everything is unreliable. Sol uses purpose-specific schemas
 within shared databases instead.
@@ -254,7 +254,7 @@ adding new ones.
 | Element | Format | Example |
 |---------|--------|---------|
 | Timestamps | RFC 3339, UTC | `2026-03-06T14:30:00Z` |
-| Work item IDs | `sol-` + 16 hex chars | `sol-a1b2c3d4e5f6a7b8` |
+| Writ IDs | `sol-` + 16 hex chars | `sol-a1b2c3d4e5f6a7b8` |
 | Session names | `sol-{world}-{agent}` | `sol-myworld-Toast` |
 | Error messages | Include context | `"failed to open world database %q: %w"` |
 | SQLite connections | WAL + busy timeout + FK | `journal_mode=WAL, busy_timeout=5000, foreign_keys=ON` |

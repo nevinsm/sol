@@ -6,7 +6,7 @@ Arc: 3
 
 ## Context
 
-Work dispatch in Sol requires multiple CLI commands: create work items, form
+Work dispatch in Sol requires multiple CLI commands: create writs, form
 caravans, add items, dispatch with cast. For an operator managing 10-30+
 agents across a world, this is friction. The Gastown prototype addressed this
 with a "mayor" — a persistent sphere-scoped AI agent that handled work
@@ -66,7 +66,7 @@ subcommands. It follows the forge architecture pattern (ADR-0005): Claude runs
 the coordination logic, Go subcommands handle mechanical operations.
 
 **What the governor does:**
-- Parses natural language work requests into work items
+- Parses natural language work requests into writs
 - Groups related items into caravans
 - Dispatches work to available outposts via `sol cast`
 - Tracks completion and suggests next priorities
@@ -83,7 +83,7 @@ the coordination logic, Go subcommands handle mechanical operations.
 The governor does not edit code. Instead it has a read-only checkout of main
 at `$SOL_HOME/{world}/governor/mirror/` for codebase research — reading files,
 searching for patterns, understanding project structure. This helps the
-governor create better work items and make informed coordination decisions.
+governor create better writs and make informed coordination decisions.
 
 Three mirror approaches were considered:
 
@@ -91,11 +91,11 @@ Three mirror approaches were considered:
   muddies the role boundary. If the governor writes code, what goes through
   forge? The governor coordinates; envoys and outposts write code.
 - **No codebase access** — governor works purely from its brief and operator
-  input. Rejected: governor can't create good work items without understanding
-  the codebase structure. "Add auth middleware" is a worse work item than
+  input. Rejected: governor can't create good writs without understanding
+  the codebase structure. "Add auth middleware" is a worse writ than
   "extend `internal/auth/middleware.go` with OAuth2 support."
 - **Read-only mirror** (chosen) — governor reads the codebase but can't modify
-  it. Clean role boundary, better work item quality.
+  it. Clean role boundary, better writ quality.
 
 The mirror auto-refreshes on session start via a `SessionStart` hook that runs
 `git pull`. The governor's CLAUDE.md also instructs it to pull before major

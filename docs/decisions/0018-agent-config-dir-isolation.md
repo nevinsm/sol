@@ -22,7 +22,7 @@ state cross-contaminates:
   agent to deviate from prescribed steps.
 - **Transcript bloat.** Outposts are ephemeral but their transcripts
   persist indefinitely — Nova accumulated 127 sessions (62MB) across
-  multiple work items assigned to different Nova instances.
+  multiple writs assigned to different Nova instances.
 - **No role isolation.** A forge memory could theoretically influence an
   outpost session working in the same directory, and vice versa.
 

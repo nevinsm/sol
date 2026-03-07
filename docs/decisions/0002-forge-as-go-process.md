@@ -19,7 +19,7 @@ During Loop 2 implementation, we evaluated the merge pipeline steps:
 4. Merge agent's branch → git merge --no-ff
 5. Run quality gates → shell commands (go test, etc.)
 6. Push to target branch → git push
-7. Update MR phase and work item status → SQL updates
+7. Update MR phase and writ status → SQL updates
 8. Clean up remote branch → git push --delete (best-effort)
 
 Every step is a deterministic shell command or SQL operation. None

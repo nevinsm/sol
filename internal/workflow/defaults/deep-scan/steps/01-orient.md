@@ -1,8 +1,8 @@
 # Orient on the Symptom
 
-Read work item {{issue}} and understand what is being investigated.
+Read writ {{issue}} and understand what is being investigated.
 
-1. Read the work item title and description
+1. Read the writ title and description
 2. Identify the reported symptom — what is actually happening
 3. Identify the expected behavior — what should happen instead
 4. Determine which area of the codebase is likely involved

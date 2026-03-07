@@ -1,6 +1,6 @@
 name = "guided-design"
 type = "convoy"
-description = "Parallel design exploration across six dimensions with synthesis into a coherent design recommendation. Useful for ADR authoring and architecture work items."
+description = "Parallel design exploration across six dimensions with synthesis into a coherent design recommendation. Useful for ADR authoring and architecture writs."
 
 [[legs]]
 id = "api-design"

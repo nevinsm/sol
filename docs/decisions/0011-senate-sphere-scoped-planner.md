@@ -12,7 +12,7 @@ consul (ADR-0007) handles sphere-wide infrastructure patrol: stale tether
 recovery, stranded caravan feeding, and lifecycle management.
 
 Neither component handles cross-world work planning — the task of breaking a
-high-level goal into work items, dependencies, and caravans that span multiple
+high-level goal into writs, dependencies, and caravans that span multiple
 worlds. This gap surfaces when an operator needs to coordinate features or
 changes across projects:
 
@@ -53,8 +53,8 @@ when the operator needs it and doesn't when they don't.
 
 - Reads governor-maintained world summaries for cross-world context
 - Queries governors interactively for world-specific knowledge
-- Proposes work item breakdowns across worlds
-- Creates work items via `sol store create-item --world=X`
+- Proposes writ breakdowns across worlds
+- Creates writs via `sol store create --world=X`
 - Sets up cross-world dependencies via caravan phases
 - Creates caravans grouping related cross-world items
 - Delegates per-world dispatch to governors
@@ -97,7 +97,7 @@ Two paths based on whether items are in a caravan:
 - Caravan items: no notification needed. Consul already patrols for stranded
   caravans with ready items (ADR-0007).
 - Standalone items: Senate sends mail explicitly to `{world}/governor` with
-  subject `WORK_ITEM_CREATED`. Senate's CLAUDE.md instructs this — the CLI
+  subject `WRIT_CREATED`. Senate's CLAUDE.md instructs this — the CLI
   stays generic.
 
 ## Consequences
@@ -111,7 +111,7 @@ Two paths based on whether items are in a caravan:
 - Follows established patterns: Claude session + Go toolbox (ADR-0005), brief
   system (ADR-0009), operator-managed lifecycle (envoy pattern)
 - Hierarchical delegation: Senate reads up from governors (world summaries)
-  and writes down to worlds (work items, caravans). Governors handle execution
+  and writes down to worlds (writs, caravans). Governors handle execution
   within their worlds.
 - Caravan phases (sphere.db V6) provide the cross-world sequencing that
   Senate needs — no new dependency mechanism required.
@@ -125,7 +125,7 @@ world Y starts." Three mechanisms were evaluated:
   per-item edges. More flexible but adds cycle detection, DAG traversal,
   and complexity. Phases + within-world deps cover all practical cases.
   Can be added later if phases prove insufficient (unlikely).
-- **Convention-based** — Senate writes blocking instructions in work item
+- **Convention-based** — Senate writes blocking instructions in writ
   descriptions, governors interpret them. No schema enforcement. Fragile —
   depends on AI correctly interpreting free text every time.
 - **Caravan phases** (chosen) — `phase INTEGER` column on `caravan_items`

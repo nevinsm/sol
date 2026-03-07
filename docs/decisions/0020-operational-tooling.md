@@ -140,7 +140,7 @@ standard migration code brings the world database up to date.
 ### World clone: `sol world clone <source> <target>`
 
 Clone creates a new world with the same configuration and optionally
-the same work item history as an existing world. Two modes:
+the same writ history as an existing world. Two modes:
 
 **Shallow clone (default):** Copies only configuration — `world.toml`
 with `source_repo` preserved. Creates a fresh, empty world database.
@@ -152,7 +152,7 @@ sol world clone myproject myproject-staging
 ```
 
 **Deep clone (`--deep`):** Equivalent to export-then-import with name
-rewriting. Copies the full world database (work items, merge requests,
+rewriting. Copies the full world database (writs, merge requests,
 history, token usage) and sphere-scoped data (agents, messages,
 escalations). Agent states reset to `idle`. Tethers are not copied.
 

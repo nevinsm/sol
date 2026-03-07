@@ -1,10 +1,10 @@
 # Chart the Fix Caravan
 
-Create the fix work items and commission a drydocked caravan.
+Create the fix writs and commission a drydocked caravan.
 
 For each fix designed in the previous step:
 
-1. Create a work item:
+1. Create a writ:
    ```
    sol store create --title="<fix title>" \
      --description="<what to fix, where, why, how>" \

@@ -8,7 +8,7 @@ For each root cause identified, document:
 3. **Why** it happens
 4. **How** to fix it
 
-Break the fixes into discrete work items:
+Break the fixes into discrete writs:
 - Each item should be independently implementable and testable
 - Consider dependencies between fixes — does fix B require fix A to land first?
 - Think about phasing and ordering
