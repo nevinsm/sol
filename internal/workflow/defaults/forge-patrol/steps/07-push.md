@@ -2,6 +2,14 @@
 
 ```
 echo "=== STEP 7/10: PUSH ==="
+git diff --cached --quiet
+```
+
+**If exit code 0** (no staged changes — empty commit): the branch's changes are already on main. Do NOT commit or push. Run `sol forge mark-merged --world={{world}} <mr_id>` and go back to scan (step 2).
+
+**If exit code 1** (there ARE staged changes): commit and push:
+
+```
 git commit -m "<MR title> (<work_item_id>)"
 git push origin HEAD:{{target_branch}}
 ```
