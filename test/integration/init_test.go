@@ -132,10 +132,10 @@ func TestInitThenWorldOperations(t *testing.T) {
 		t.Fatalf("init failed: %v: %s", err, out)
 	}
 
-	// Run: sol store create --world=myworld --title="test"
-	out, err = runGT(t, solHome, "store", "create", "--world=myworld", "--title=test")
+	// Run: sol writ create --world=myworld --title="test"
+	out, err = runGT(t, solHome, "writ", "create", "--world=myworld", "--title=test")
 	if err != nil {
-		t.Fatalf("store create failed: %v: %s", err, out)
+		t.Fatalf("writ create failed: %v: %s", err, out)
 	}
 
 	// Run: sol world list

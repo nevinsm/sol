@@ -133,7 +133,7 @@ func TestWorldInitPreArc1World(t *testing.T) {
 	// Verify DB exists but world.toml does not.
 	dbPath := filepath.Join(gtHome, ".store", "legacy.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		t.Fatal("legacy.db not created by store create")
+		t.Fatal("legacy.db not created by writ create")
 	}
 	tomlPath := filepath.Join(gtHome, "legacy", "world.toml")
 	if _, err := os.Stat(tomlPath); !os.IsNotExist(err) {
@@ -467,9 +467,9 @@ func TestWorldDeleteCleansUpCaravanItems(t *testing.T) {
 	initWorld(t, gtHome, "myworld")
 
 	// Create a writ.
-	itemID, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=test item")
+	itemID, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=test item")
 	if err != nil {
-		t.Fatalf("store create failed: %v: %s", err, itemID)
+		t.Fatalf("writ create failed: %v: %s", err, itemID)
 	}
 	itemID = strings.TrimSpace(itemID)
 

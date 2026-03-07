@@ -153,7 +153,7 @@ var worldInitCmd = &cobra.Command{
 		fmt.Printf("  Source:   %s\n", sourceDisplay)
 		fmt.Println()
 		fmt.Println("Next steps:")
-		fmt.Printf("  sol store create --world=%s --title=\"First task\"\n", name)
+		fmt.Printf("  sol writ create --world=%s --title=\"First task\"\n", name)
 		fmt.Printf("  sol cast <writ-id> --world=%s\n", name)
 		return nil
 	},

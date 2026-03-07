@@ -28,13 +28,13 @@ func TestCaravanPhaseCreation(t *testing.T) {
 	initWorld(t, gtHome, "myworld")
 
 	// Create two writs.
-	id1, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=Phase 0 task")
+	id1, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=Phase 0 task")
 	if err != nil {
-		t.Fatalf("store create: %v: %s", err, id1)
+		t.Fatalf("writ create: %v: %s", err, id1)
 	}
-	id2, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=Phase 1 task")
+	id2, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=Phase 1 task")
 	if err != nil {
-		t.Fatalf("store create: %v: %s", err, id2)
+		t.Fatalf("writ create: %v: %s", err, id2)
 	}
 
 	// Create caravan with phase 0 item.
@@ -95,13 +95,13 @@ func TestCaravanPhaseOrdering(t *testing.T) {
 	initWorld(t, gtHome, "myworld")
 
 	// Create items.
-	id1, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=Phase 0 task")
+	id1, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=Phase 0 task")
 	if err != nil {
-		t.Fatalf("store create: %v: %s", err, id1)
+		t.Fatalf("writ create: %v: %s", err, id1)
 	}
-	id2, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=Phase 1 task")
+	id2, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=Phase 1 task")
 	if err != nil {
-		t.Fatalf("store create: %v: %s", err, id2)
+		t.Fatalf("writ create: %v: %s", err, id2)
 	}
 
 	// Create caravan with both phases.
@@ -163,13 +163,13 @@ func TestCaravanPhaseBackwardCompat(t *testing.T) {
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "myworld")
 
-	id1, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=Task A")
+	id1, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=Task A")
 	if err != nil {
-		t.Fatalf("store create: %v: %s", err, id1)
+		t.Fatalf("writ create: %v: %s", err, id1)
 	}
-	id2, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=Task B")
+	id2, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=Task B")
 	if err != nil {
-		t.Fatalf("store create: %v: %s", err, id2)
+		t.Fatalf("writ create: %v: %s", err, id2)
 	}
 
 	// Create caravan without explicit phase — should default to 0.
@@ -1160,13 +1160,13 @@ func TestStatusCaravanPhases(t *testing.T) {
 	initWorld(t, gtHome, "myworld")
 
 	// Create writs and phased caravan.
-	id1, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=Phase0 task")
+	id1, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=Phase0 task")
 	if err != nil {
-		t.Fatalf("store create: %v: %s", err, id1)
+		t.Fatalf("writ create: %v: %s", err, id1)
 	}
-	id2, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=Phase1 task")
+	id2, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=Phase1 task")
 	if err != nil {
-		t.Fatalf("store create: %v: %s", err, id2)
+		t.Fatalf("writ create: %v: %s", err, id2)
 	}
 
 	out, err := runGT(t, gtHome, "caravan", "create", "phased-test", id1, "--world=myworld", "--phase=0")

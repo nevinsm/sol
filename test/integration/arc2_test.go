@@ -207,9 +207,9 @@ func TestInitThenFullFlow(t *testing.T) {
 	}
 
 	// Create a writ.
-	out, err = runGT(t, solHome, "store", "create", "--world=myworld", "--title=First task")
+	out, err = runGT(t, solHome, "writ", "create", "--world=myworld", "--title=First task")
 	if err != nil {
-		t.Fatalf("store create failed: %v: %s", err, out)
+		t.Fatalf("writ create failed: %v: %s", err, out)
 	}
 
 	// World list shows the world.
@@ -354,9 +354,9 @@ func TestStatusWorldWithLipgloss(t *testing.T) {
 	}
 
 	// Create a writ.
-	_, err = runGT(t, solHome, "store", "create", "--world=myworld", "--title=Test item")
+	_, err = runGT(t, solHome, "writ", "create", "--world=myworld", "--title=Test item")
 	if err != nil {
-		t.Fatalf("store create failed: %v", err)
+		t.Fatalf("writ create failed: %v", err)
 	}
 
 	// Note: exit code may be non-zero (degraded) since prefect is not running.

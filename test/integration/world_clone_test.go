@@ -29,20 +29,20 @@ func TestWorldCloneBasic(t *testing.T) {
 	}
 
 	// Create writs in source.
-	itemID, err := runGT(t, gtHome, "store", "create", "--world=source", "--title=Task One")
+	itemID, err := runGT(t, gtHome, "writ", "create", "--world=source", "--title=Task One")
 	if err != nil {
-		t.Fatalf("store create failed: %v: %s", err, itemID)
+		t.Fatalf("writ create failed: %v: %s", err, itemID)
 	}
 	itemID = strings.TrimSpace(itemID)
 
-	item2ID, err := runGT(t, gtHome, "store", "create", "--world=source", "--title=Task Two")
+	item2ID, err := runGT(t, gtHome, "writ", "create", "--world=source", "--title=Task Two")
 	if err != nil {
-		t.Fatalf("store create failed: %v: %s", err, item2ID)
+		t.Fatalf("writ create failed: %v: %s", err, item2ID)
 	}
 	item2ID = strings.TrimSpace(item2ID)
 
 	// Add a dependency.
-	if _, err := runGT(t, gtHome, "store", "dep", "add", itemID, item2ID, "--world=source"); err != nil {
+	if _, err := runGT(t, gtHome, "writ", "dep", "add", itemID, item2ID, "--world=source"); err != nil {
 		t.Fatalf("dep add failed: %v", err)
 	}
 

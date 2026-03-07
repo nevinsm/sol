@@ -12,14 +12,14 @@ import (
 
 var depJSON bool
 
-var storeDepCmd = &cobra.Command{
+var writDepCmd = &cobra.Command{
 	Use:   "dep",
 	Short: "Manage writ dependencies",
 }
 
-// --- sol store dep add ---
+// --- sol writ dep add ---
 
-var storeDepAddCmd = &cobra.Command{
+var writDepAddCmd = &cobra.Command{
 	Use:          "add <from-id> <to-id>",
 	Short:        "Add a dependency (from depends on to)",
 	Args:         cobra.ExactArgs(2),
@@ -45,9 +45,9 @@ var storeDepAddCmd = &cobra.Command{
 	},
 }
 
-// --- sol store dep remove ---
+// --- sol writ dep remove ---
 
-var storeDepRemoveCmd = &cobra.Command{
+var writDepRemoveCmd = &cobra.Command{
 	Use:          "remove <from-id> <to-id>",
 	Short:        "Remove a dependency",
 	Args:         cobra.ExactArgs(2),
@@ -73,9 +73,9 @@ var storeDepRemoveCmd = &cobra.Command{
 	},
 }
 
-// --- sol store dep list ---
+// --- sol writ dep list ---
 
-var storeDepListCmd = &cobra.Command{
+var writDepListCmd = &cobra.Command{
 	Use:          "list <item-id>",
 	Short:        "List dependencies for a writ",
 	Args:         cobra.ExactArgs(1),
@@ -168,14 +168,14 @@ var storeDepListCmd = &cobra.Command{
 }
 
 func init() {
-	storeCmd.AddCommand(storeDepCmd)
-	storeDepCmd.AddCommand(storeDepAddCmd)
-	storeDepCmd.AddCommand(storeDepRemoveCmd)
-	storeDepCmd.AddCommand(storeDepListCmd)
+	writCmd.AddCommand(writDepCmd)
+	writDepCmd.AddCommand(writDepAddCmd)
+	writDepCmd.AddCommand(writDepRemoveCmd)
+	writDepCmd.AddCommand(writDepListCmd)
 
 	// Shared --world flag for dep subcommands.
-	storeDepAddCmd.Flags().String("world", "", "world name")
-	storeDepRemoveCmd.Flags().String("world", "", "world name")
-	storeDepListCmd.Flags().String("world", "", "world name")
-	storeDepListCmd.Flags().BoolVar(&depJSON, "json", false, "output as JSON")
+	writDepAddCmd.Flags().String("world", "", "world name")
+	writDepRemoveCmd.Flags().String("world", "", "world name")
+	writDepListCmd.Flags().String("world", "", "world name")
+	writDepListCmd.Flags().BoolVar(&depJSON, "json", false, "output as JSON")
 }

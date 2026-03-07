@@ -25,9 +25,9 @@ func TestCastUsesConfigSourceRepo(t *testing.T) {
 	}
 
 	// Create a writ.
-	itemID, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=test cast config")
+	itemID, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=test cast config")
 	if err != nil {
-		t.Fatalf("store create failed: %v: %s", err, itemID)
+		t.Fatalf("writ create failed: %v: %s", err, itemID)
 	}
 	itemID = strings.TrimSpace(itemID)
 
@@ -62,15 +62,15 @@ func TestDispatchCapacityEnforced(t *testing.T) {
 	})
 
 	// Create 2 writs.
-	item1, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=item 1")
+	item1, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=item 1")
 	if err != nil {
-		t.Fatalf("store create 1 failed: %v: %s", err, item1)
+		t.Fatalf("writ create 1 failed: %v: %s", err, item1)
 	}
 	item1 = strings.TrimSpace(item1)
 
-	item2, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=item 2")
+	item2, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=item 2")
 	if err != nil {
-		t.Fatalf("store create 2 failed: %v: %s", err, item2)
+		t.Fatalf("writ create 2 failed: %v: %s", err, item2)
 	}
 	item2 = strings.TrimSpace(item2)
 
@@ -174,9 +174,9 @@ func TestDispatchCapacityZeroUnlimited(t *testing.T) {
 
 	// Default capacity = 0 (unlimited). Cast multiple items.
 	for i := 0; i < 3; i++ {
-		itemID, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=item")
+		itemID, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=item")
 		if err != nil {
-			t.Fatalf("store create %d failed: %v: %s", i, err, itemID)
+			t.Fatalf("writ create %d failed: %v: %s", i, err, itemID)
 		}
 		itemID = strings.TrimSpace(itemID)
 
@@ -212,9 +212,9 @@ func TestDispatchNamePoolFromConfig(t *testing.T) {
 	})
 
 	// Create and cast item.
-	itemID, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=test name pool")
+	itemID, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=test name pool")
 	if err != nil {
-		t.Fatalf("store create failed: %v: %s", err, itemID)
+		t.Fatalf("writ create failed: %v: %s", err, itemID)
 	}
 	itemID = strings.TrimSpace(itemID)
 

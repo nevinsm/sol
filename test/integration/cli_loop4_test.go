@@ -142,30 +142,30 @@ func TestCLICaravanLaunchHelp(t *testing.T) {
 	}
 }
 
-func TestCLIStoreDepAddHelp(t *testing.T) {
+func TestCLIWritDepAddHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	solHome := t.TempDir()
 
-	out, err := runGT(t, solHome, "store", "dep", "add", "--help")
+	out, err := runGT(t, solHome, "writ", "dep", "add", "--help")
 	if err != nil {
-		t.Fatalf("sol store dep add --help failed: %v: %s", err, out)
+		t.Fatalf("sol writ dep add --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "dependency") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
 
-func TestCLIStoreDepListHelp(t *testing.T) {
+func TestCLIWritDepListHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	solHome := t.TempDir()
 
-	out, err := runGT(t, solHome, "store", "dep", "list", "--help")
+	out, err := runGT(t, solHome, "writ", "dep", "list", "--help")
 	if err != nil {
-		t.Fatalf("sol store dep list --help failed: %v: %s", err, out)
+		t.Fatalf("sol writ dep list --help failed: %v: %s", err, out)
 	}
 	if !strings.Contains(out, "dependencies") {
 		t.Errorf("output missing expected text: %s", out)

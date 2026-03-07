@@ -95,24 +95,24 @@ When an agent session starts, credentials are symlinked from the resolved accoun
 | `sol agent handoffs` | Show recent handoff events |
 | `sol agent stats [name]` | Show agent performance metrics |
 
-## Store (Writs)
+## Writs
 
 | Command | Description |
 |---------|-------------|
-| `sol store create` | Create a writ |
-| `sol store status <id>` | Show writ status |
-| `sol store list` | List writs |
-| `sol store update <id>` | Update a writ |
-| `sol store close <id>` | Close a writ |
-| `sol store query` | Run a read-only SQL query |
+| `sol writ create` | Create a writ |
+| `sol writ status <id>` | Show writ status |
+| `sol writ list` | List writs |
+| `sol writ update <id>` | Update a writ |
+| `sol writ close <id>` | Close a writ |
+| `sol writ query` | Run a read-only SQL query |
 
 ## Dependencies
 
 | Command | Description |
 |---------|-------------|
-| `sol store dep add <from-id> <to-id>` | Add a dependency (from depends on to) |
-| `sol store dep remove <from-id> <to-id>` | Remove a dependency |
-| `sol store dep list <item-id>` | List dependencies for a writ |
+| `sol writ dep add <from-id> <to-id>` | Add a dependency (from depends on to) |
+| `sol writ dep remove <from-id> <to-id>` | Remove a dependency |
+| `sol writ dep list <item-id>` | List dependencies for a writ |
 
 ## Sessions
 

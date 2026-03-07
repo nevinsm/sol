@@ -92,12 +92,12 @@ var docSections = []docSection{
 		paths:   []string{"agent create", "agent list", "agent reset", "agent postmortem", "agent history", "agent handoffs", "agent stats"},
 	},
 	{
-		heading: "Store (Writs)",
-		paths:   []string{"store create", "store status", "store list", "store update", "store close", "store query"},
+		heading: "Writs",
+		paths:   []string{"writ create", "writ status", "writ list", "writ update", "writ close", "writ query"},
 	},
 	{
 		heading: "Dependencies",
-		paths:   []string{"store dep add", "store dep remove", "store dep list"},
+		paths:   []string{"writ dep add", "writ dep remove", "writ dep list"},
 	},
 	{
 		heading: "Sessions",
@@ -248,7 +248,7 @@ var docSections = []docSection{
 // skipUndocumented lists command paths that are intentionally undocumented
 // (aliases, cobra built-ins, etc.).
 var skipUndocumented = map[string]bool{
-	"store get": true, // alias for store status
+	"writ get": true, // alias for writ status
 	"help":      true, // cobra built-in
 }
 

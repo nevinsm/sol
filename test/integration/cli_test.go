@@ -79,15 +79,15 @@ func TestCLIHelp(t *testing.T) {
 	}
 }
 
-func TestCLIStoreHelp(t *testing.T) {
+func TestCLIWritHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	gtHome := t.TempDir()
 
-	out, err := runGT(t, gtHome, "store", "--help")
+	out, err := runGT(t, gtHome, "writ", "--help")
 	if err != nil {
-		t.Fatalf("sol store --help failed: %v: %s", err, out)
+		t.Fatalf("sol writ --help failed: %v: %s", err, out)
 	}
 }
 
@@ -115,7 +115,7 @@ func TestCLICastHelp(t *testing.T) {
 	}
 }
 
-func TestCLIStoreCreate(t *testing.T) {
+func TestCLIWritCreate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -123,16 +123,16 @@ func TestCLIStoreCreate(t *testing.T) {
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	initWorld(t, gtHome, "ember")
 
-	out, err := runGT(t, gtHome, "store", "create", "--world=ember", "--title=test")
+	out, err := runGT(t, gtHome, "writ", "create", "--world=ember", "--title=test")
 	if err != nil {
-		t.Fatalf("sol store create failed: %v: %s", err, out)
+		t.Fatalf("sol writ create failed: %v: %s", err, out)
 	}
 	if !strings.HasPrefix(out, "sol-") {
-		t.Errorf("store create output not an ID: %q", out)
+		t.Errorf("writ create output not an ID: %q", out)
 	}
 }
 
-func TestCLIStoreListJSON(t *testing.T) {
+func TestCLIWritListJSON(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -141,14 +141,14 @@ func TestCLIStoreListJSON(t *testing.T) {
 	initWorld(t, gtHome, "ember")
 
 	// Create an item first.
-	runGT(t, gtHome, "store", "create", "--world=ember", "--title=json test")
+	runGT(t, gtHome, "writ", "create", "--world=ember", "--title=json test")
 
-	out, err := runGT(t, gtHome, "store", "list", "--world=ember", "--json")
+	out, err := runGT(t, gtHome, "writ", "list", "--world=ember", "--json")
 	if err != nil {
-		t.Fatalf("sol store list --json failed: %v: %s", err, out)
+		t.Fatalf("sol writ list --json failed: %v: %s", err, out)
 	}
 	if !json.Valid([]byte(out)) {
-		t.Errorf("store list --json output is not valid JSON: %s", out)
+		t.Errorf("writ list --json output is not valid JSON: %s", out)
 	}
 }
 

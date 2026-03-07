@@ -95,9 +95,9 @@ func TestStatusWorldDetail(t *testing.T) {
 	initWorld(t, gtHome, "myworld")
 
 	// Create a writ.
-	_, err := runGT(t, gtHome, "store", "create", "--world=myworld", "--title=Test item")
+	_, err := runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=Test item")
 	if err != nil {
-		t.Fatalf("store create failed: %v", err)
+		t.Fatalf("writ create failed: %v", err)
 	}
 
 	// Text mode always exits 0 (health exit codes are --json only).

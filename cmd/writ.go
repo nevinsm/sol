@@ -12,25 +12,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var storeCmd = &cobra.Command{
-	Use:     "store",
-	Short:   "Work item store operations",
+var writCmd = &cobra.Command{
+	Use:   "writ",
+	Short: "Manage writs",
 	GroupID: groupWrits,
 }
 
 func init() {
-	rootCmd.AddCommand(storeCmd)
+	rootCmd.AddCommand(writCmd)
 
-	storeCmd.AddCommand(storeCreateCmd)
-	storeCmd.AddCommand(storeStatusCmd)
-	storeCmd.AddCommand(storeGetAliasCmd)
-	storeCmd.AddCommand(storeListCmd)
-	storeCmd.AddCommand(storeUpdateCmd)
-	storeCmd.AddCommand(storeCloseCmd)
-	storeCmd.AddCommand(storeQueryCmd)
+	writCmd.AddCommand(writCreateCmd)
+	writCmd.AddCommand(writStatusCmd)
+	writCmd.AddCommand(writGetAliasCmd)
+	writCmd.AddCommand(writListCmd)
+	writCmd.AddCommand(writUpdateCmd)
+	writCmd.AddCommand(writCloseCmd)
+	writCmd.AddCommand(writQueryCmd)
 }
 
-// --- sol store create ---
+// --- sol writ create ---
 
 var (
 	createTitle       string
@@ -39,7 +39,7 @@ var (
 	createLabels      []string
 )
 
-var storeCreateCmd = &cobra.Command{
+var writCreateCmd = &cobra.Command{
 	Use:          "create",
 	Short:        "Create a writ",
 	SilenceUsage: true,
@@ -68,18 +68,18 @@ var storeCreateCmd = &cobra.Command{
 }
 
 func init() {
-	storeCreateCmd.Flags().String("world", "", "world name")
-	storeCreateCmd.Flags().StringVar(&createTitle, "title", "", "writ title")
-	storeCreateCmd.Flags().StringVar(&createDescription, "description", "", "writ description")
-	storeCreateCmd.Flags().IntVar(&createPriority, "priority", 2, "priority (1=high, 2=normal, 3=low)")
-	storeCreateCmd.Flags().StringArrayVar(&createLabels, "label", nil, "label (can be repeated)")
+	writCreateCmd.Flags().String("world", "", "world name")
+	writCreateCmd.Flags().StringVar(&createTitle, "title", "", "writ title")
+	writCreateCmd.Flags().StringVar(&createDescription, "description", "", "writ description")
+	writCreateCmd.Flags().IntVar(&createPriority, "priority", 2, "priority (1=high, 2=normal, 3=low)")
+	writCreateCmd.Flags().StringArrayVar(&createLabels, "label", nil, "label (can be repeated)")
 }
 
-// --- sol store status ---
+// --- sol writ status ---
 
-var storeStatusJSON bool
+var writStatusJSON bool
 
-var storeStatusRunE = func(cmd *cobra.Command, args []string) error {
+var writStatusRunE = func(cmd *cobra.Command, args []string) error {
 	world, _ := cmd.Flags().GetString("world")
 	if world == "" {
 		return fmt.Errorf("--world is required")
@@ -98,39 +98,39 @@ var storeStatusRunE = func(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if storeStatusJSON {
+	if writStatusJSON {
 		return printJSON(item)
 	}
 	printWrit(item)
 	return nil
 }
 
-var storeStatusCmd = &cobra.Command{
+var writStatusCmd = &cobra.Command{
 	Use:          "status <id>",
 	Short:        "Show writ status",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
-	RunE:         storeStatusRunE,
+	RunE:         writStatusRunE,
 }
 
 // Hidden alias for backwards compatibility.
-var storeGetAliasCmd = &cobra.Command{
+var writGetAliasCmd = &cobra.Command{
 	Use:          "get <id>",
 	Short:        "Show writ status",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	Hidden:       true,
-	RunE:         storeStatusRunE,
+	RunE:         writStatusRunE,
 }
 
 func init() {
-	for _, cmd := range []*cobra.Command{storeStatusCmd, storeGetAliasCmd} {
+	for _, cmd := range []*cobra.Command{writStatusCmd, writGetAliasCmd} {
 		cmd.Flags().String("world", "", "world name")
-		cmd.Flags().BoolVar(&storeStatusJSON, "json", false, "output as JSON")
+		cmd.Flags().BoolVar(&writStatusJSON, "json", false, "output as JSON")
 	}
 }
 
-// --- sol store list ---
+// --- sol writ list ---
 
 var (
 	listStatus   string
@@ -139,7 +139,7 @@ var (
 	listJSON     bool
 )
 
-var storeListCmd = &cobra.Command{
+var writListCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "List writs",
 	SilenceUsage: true,
@@ -191,14 +191,14 @@ var storeListCmd = &cobra.Command{
 }
 
 func init() {
-	storeListCmd.Flags().String("world", "", "world name")
-	storeListCmd.Flags().StringVar(&listStatus, "status", "", "filter by status")
-	storeListCmd.Flags().StringVar(&listLabel, "label", "", "filter by label")
-	storeListCmd.Flags().StringVar(&listAssignee, "assignee", "", "filter by assignee")
-	storeListCmd.Flags().BoolVar(&listJSON, "json", false, "output as JSON")
+	writListCmd.Flags().String("world", "", "world name")
+	writListCmd.Flags().StringVar(&listStatus, "status", "", "filter by status")
+	writListCmd.Flags().StringVar(&listLabel, "label", "", "filter by label")
+	writListCmd.Flags().StringVar(&listAssignee, "assignee", "", "filter by assignee")
+	writListCmd.Flags().BoolVar(&listJSON, "json", false, "output as JSON")
 }
 
-// --- sol store update ---
+// --- sol writ update ---
 
 var (
 	updateStatus      string
@@ -208,7 +208,7 @@ var (
 	updateDescription string
 )
 
-var storeUpdateCmd = &cobra.Command{
+var writUpdateCmd = &cobra.Command{
 	Use:          "update <id>",
 	Short:        "Update a writ",
 	Args:         cobra.ExactArgs(1),
@@ -241,17 +241,17 @@ var storeUpdateCmd = &cobra.Command{
 }
 
 func init() {
-	storeUpdateCmd.Flags().String("world", "", "world name")
-	storeUpdateCmd.Flags().StringVar(&updateStatus, "status", "", "new status")
-	storeUpdateCmd.Flags().StringVar(&updateAssignee, "assignee", "", "new assignee (- to clear)")
-	storeUpdateCmd.Flags().IntVar(&updatePriority, "priority", 0, "new priority")
-	storeUpdateCmd.Flags().StringVar(&updateTitle, "title", "", "new title")
-	storeUpdateCmd.Flags().StringVar(&updateDescription, "description", "", "new description")
+	writUpdateCmd.Flags().String("world", "", "world name")
+	writUpdateCmd.Flags().StringVar(&updateStatus, "status", "", "new status")
+	writUpdateCmd.Flags().StringVar(&updateAssignee, "assignee", "", "new assignee (- to clear)")
+	writUpdateCmd.Flags().IntVar(&updatePriority, "priority", 0, "new priority")
+	writUpdateCmd.Flags().StringVar(&updateTitle, "title", "", "new title")
+	writUpdateCmd.Flags().StringVar(&updateDescription, "description", "", "new description")
 }
 
-// --- sol store close ---
+// --- sol writ close ---
 
-var storeCloseCmd = &cobra.Command{
+var writCloseCmd = &cobra.Command{
 	Use:          "close <id>",
 	Short:        "Close a writ",
 	Args:         cobra.ExactArgs(1),
@@ -277,17 +277,17 @@ var storeCloseCmd = &cobra.Command{
 }
 
 func init() {
-	storeCloseCmd.Flags().String("world", "", "world name")
+	writCloseCmd.Flags().String("world", "", "world name")
 }
 
-// --- sol store query ---
+// --- sol writ query ---
 
 var (
 	querySQL  string
 	queryJSON bool
 )
 
-var storeQueryCmd = &cobra.Command{
+var writQueryCmd = &cobra.Command{
 	Use:          "query",
 	Short:        "Run a read-only SQL query",
 	SilenceUsage: true,
@@ -334,9 +334,9 @@ var storeQueryCmd = &cobra.Command{
 }
 
 func init() {
-	storeQueryCmd.Flags().String("world", "", "world name")
-	storeQueryCmd.Flags().StringVar(&querySQL, "sql", "", "SQL SELECT query")
-	storeQueryCmd.Flags().BoolVar(&queryJSON, "json", false, "output as JSON")
+	writQueryCmd.Flags().String("world", "", "world name")
+	writQueryCmd.Flags().StringVar(&querySQL, "sql", "", "SQL SELECT query")
+	writQueryCmd.Flags().BoolVar(&queryJSON, "json", false, "output as JSON")
 }
 
 // --- helpers ---

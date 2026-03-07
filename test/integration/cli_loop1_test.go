@@ -124,9 +124,9 @@ func TestCLICastAutoProvision(t *testing.T) {
 	initWorldWithRepo(t, solHome, "ember", sourceRepo)
 
 	// Create a writ via CLI.
-	itemID, err := runGT(t, solHome, "store", "create", "--world=ember", "--title=auto provision test")
+	itemID, err := runGT(t, solHome, "writ", "create", "--world=ember", "--title=auto provision test")
 	if err != nil {
-		t.Fatalf("sol store create failed: %v: %s", err, itemID)
+		t.Fatalf("sol writ create failed: %v: %s", err, itemID)
 	}
 
 	// Cast without --agent flag. Must run from a git repo directory.

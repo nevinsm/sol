@@ -1,7 +1,7 @@
 # Loop 0 Acceptance Criteria
 
-## 1. Create work item via store
-- [x] `sol store create --title="Add tests for login" --world=myworld` prints an ID
+## 1. Create writ via CLI
+- [x] `sol writ create --title="Add tests for login" --world=myworld` prints an ID
 - [x] ID format: sol-[0-9a-f]{8}
 
 ## 2. Dispatch to outpost

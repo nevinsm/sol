@@ -21,16 +21,16 @@ func TestHardGateAllCommands(t *testing.T) {
 		args []string
 	}{
 		// store commands
-		{"store create", []string{"store", "create", "--world=noworld", "--title=test"}},
-		{"store status", []string{"store", "status", "sol-00000000", "--world=noworld"}},
-		{"store list", []string{"store", "list", "--world=noworld"}},
-		{"store update", []string{"store", "update", "sol-00000000", "--world=noworld", "--status=closed"}},
-		{"store close", []string{"store", "close", "sol-00000000", "--world=noworld"}},
-		{"store query", []string{"store", "query", "--world=noworld", "--sql=SELECT 1"}},
-		// store dep commands
-		{"store dep add", []string{"store", "dep", "add", "sol-00000001", "sol-00000002", "--world=noworld"}},
-		{"store dep remove", []string{"store", "dep", "remove", "sol-00000001", "sol-00000002", "--world=noworld"}},
-		{"store dep list", []string{"store", "dep", "list", "sol-00000001", "--world=noworld"}},
+		{"writ create", []string{"writ", "create", "--world=noworld", "--title=test"}},
+		{"writ status", []string{"writ", "status", "sol-00000000", "--world=noworld"}},
+		{"writ list", []string{"writ", "list", "--world=noworld"}},
+		{"writ update", []string{"writ", "update", "sol-00000000", "--world=noworld", "--status=closed"}},
+		{"writ close", []string{"writ", "close", "sol-00000000", "--world=noworld"}},
+		{"writ query", []string{"writ", "query", "--world=noworld", "--sql=SELECT 1"}},
+		// writ dep commands
+		{"writ dep add", []string{"writ", "dep", "add", "sol-00000001", "sol-00000002", "--world=noworld"}},
+		{"writ dep remove", []string{"writ", "dep", "remove", "sol-00000001", "sol-00000002", "--world=noworld"}},
+		{"writ dep list", []string{"writ", "dep", "list", "sol-00000001", "--world=noworld"}},
 		// core commands
 		{"cast", []string{"cast", "sol-00000000", "--world=noworld"}},
 		{"status", []string{"status", "noworld"}},
@@ -81,7 +81,7 @@ func TestHardGatePreArc1World(t *testing.T) {
 	}
 	s.Close()
 
-	out, err := runGT(t, gtHome, "store", "create", "--world=legacy", "--title=test")
+	out, err := runGT(t, gtHome, "writ", "create", "--world=legacy", "--title=test")
 	if err == nil {
 		t.Fatalf("expected error, got success: %s", out)
 	}
@@ -104,11 +104,11 @@ func TestHardGatePassesAfterInit(t *testing.T) {
 	}
 
 	// Store create should now succeed.
-	out, err = runGT(t, gtHome, "store", "create", "--world=myworld", "--title=test")
+	out, err = runGT(t, gtHome, "writ", "create", "--world=myworld", "--title=test")
 	if err != nil {
-		t.Fatalf("store create failed after init: %v: %s", err, out)
+		t.Fatalf("writ create failed after init: %v: %s", err, out)
 	}
 	if !strings.HasPrefix(out, "sol-") {
-		t.Errorf("store create output not an ID: %q", out)
+		t.Errorf("writ create output not an ID: %q", out)
 	}
 }
