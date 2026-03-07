@@ -62,7 +62,7 @@ var agentHandoffsCmd = &cobra.Command{
 		}
 
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "AGENT\tREASON\tSESSION AGE\tWORK ITEM\tTIME\n")
+		fmt.Fprintf(tw, "AGENT\tREASON\tSESSION AGE\tWRIT\tTIME\n")
 
 		for _, ev := range filtered {
 			payload, _ := payloadMap(ev.Payload)

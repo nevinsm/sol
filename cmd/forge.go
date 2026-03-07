@@ -480,7 +480,7 @@ var forgeReadyCmd = &cobra.Command{
 			return nil
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "ID\tWORK ITEM\tBRANCH\tPRIORITY\tATTEMPTS\n")
+		fmt.Fprintf(tw, "ID\tWRIT\tBRANCH\tPRIORITY\tATTEMPTS\n")
 		for _, mr := range mrs {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\n",
 				mr.ID, mr.WritID, mr.Branch, mr.Priority, mr.Attempts)
@@ -522,7 +522,7 @@ var forgeBlockedCmd = &cobra.Command{
 			return nil
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "ID\tWORK ITEM\tBRANCH\tBLOCKED BY\n")
+		fmt.Fprintf(tw, "ID\tWRIT\tBRANCH\tBLOCKED BY\n")
 		for _, mr := range mrs {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
 				mr.ID, mr.WritID, mr.Branch, mr.BlockedBy)
@@ -579,7 +579,7 @@ var forgeClaimCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Claimed: %s\n", mr.ID)
-		fmt.Printf("  Work item: %s\n", mr.WritID)
+		fmt.Printf("  Writ: %s\n", mr.WritID)
 		fmt.Printf("  Branch:    %s\n", mr.Branch)
 		fmt.Printf("  Priority:  %d\n", mr.Priority)
 		fmt.Printf("  Attempts:  %d\n", mr.Attempts)
@@ -824,7 +824,7 @@ func printQueue(world string, mrs []store.MergeRequest) {
 	fmt.Printf("Merge Queue: %s (%d items)\n\n", world, len(mrs))
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "ID\tWORK ITEM\tBRANCH\tPHASE\tBLOCKED BY\tATTEMPTS\n")
+	fmt.Fprintf(tw, "ID\tWRIT\tBRANCH\tPHASE\tBLOCKED BY\tATTEMPTS\n")
 	for _, mr := range mrs {
 		blocked := ""
 		if mr.BlockedBy != "" {

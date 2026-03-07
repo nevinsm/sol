@@ -216,7 +216,7 @@ Nudge queue counts are also shown in the NUDGE column of `sol status --world=W` 
 | Command | Description |
 |---------|-------------|
 | `sol escalate <description>` | Create an escalation |
-| `sol escalation list` | List open escalations (use `--all` to include resolved) |
+| `sol escalation list` | List escalations |
 | `sol escalation ack <id>` | Acknowledge an escalation |
 | `sol escalation resolve <id>` | Resolve an escalation |
 

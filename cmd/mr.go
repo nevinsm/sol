@@ -98,7 +98,7 @@ var mrCreateCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Created: %s\n", mrID)
-		fmt.Printf("  Work item: %s (%s)\n", item.ID, item.Title)
+		fmt.Printf("  Writ: %s (%s)\n", item.ID, item.Title)
 		fmt.Printf("  Branch:    %s\n", branch)
 		fmt.Printf("  Priority:  %d\n", priority)
 		fmt.Printf("  Phase:     ready\n")

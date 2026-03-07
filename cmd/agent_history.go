@@ -144,7 +144,7 @@ func renderHistory(rows []historyRow, agentName, world string) {
 	// Table header.
 	hdr := fmt.Sprintf("  %-14s", "AGENT")
 	hdr += fmt.Sprintf("%-10s", "ACTION")
-	hdr += fmt.Sprintf("%-22s", "WORK ITEM")
+	hdr += fmt.Sprintf("%-22s", "WRIT")
 	hdr += fmt.Sprintf("%-22s", "STARTED")
 	hdr += fmt.Sprintf("%-10s", "DURATION")
 	hdr += fmt.Sprintf("%-12s", "TOKENS")

@@ -126,7 +126,7 @@ var writDepListCmd = &cobra.Command{
 			return enc.Encode(out)
 		}
 
-		fmt.Printf("Work item: %s\n", itemID)
+		fmt.Printf("Writ: %s\n", itemID)
 		fmt.Println()
 
 		if len(deps) == 0 {
