@@ -152,7 +152,7 @@ func TestLaunchBasic(t *testing.T) {
 	}
 
 	// Verify persona was written.
-	personaPath := filepath.Join(worktreeDir, ".claude", "CLAUDE.local.md")
+	personaPath := filepath.Join(worktreeDir, "CLAUDE.local.md")
 	data, err := os.ReadFile(personaPath)
 	if err != nil {
 		t.Fatalf("persona not written: %v", err)

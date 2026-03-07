@@ -468,7 +468,7 @@ func TestGUPPRecovery(t *testing.T) {
 		t.Error("tether file does not exist after cast")
 	}
 
-	claudeMD := filepath.Join(worktreeDir, ".claude", "CLAUDE.local.md")
+	claudeMD := filepath.Join(worktreeDir, "CLAUDE.local.md")
 	data, err := os.ReadFile(claudeMD)
 	if err != nil {
 		t.Fatalf("read CLAUDE.local.md: %v", err)

@@ -404,14 +404,10 @@ func buildCommand(cfg RoleConfig, worktreeDir, prompt string, continueSession bo
 	return args
 }
 
-// installPersona writes persona content to .claude/CLAUDE.local.md.
+// installPersona writes persona content to CLAUDE.local.md at the worktree root.
+// Written at root level so Claude Code's upward directory walk discovers it.
 func installPersona(worktreeDir string, content []byte) error {
-	claudeDir := fmt.Sprintf("%s/.claude", worktreeDir)
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create .claude directory: %w", err)
-	}
-
-	path := fmt.Sprintf("%s/CLAUDE.local.md", claudeDir)
+	path := filepath.Join(worktreeDir, "CLAUDE.local.md")
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		return fmt.Errorf("failed to write CLAUDE.local.md: %w", err)
 	}

@@ -358,8 +358,8 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 	if !strings.Contains(content, ".claude/settings.local.json") {
 		t.Error("exclude file missing .claude/settings.local.json pattern")
 	}
-	if !strings.Contains(content, ".claude/CLAUDE.local.md") {
-		t.Error("exclude file missing .claude/CLAUDE.local.md pattern")
+	if !strings.Contains(content, "CLAUDE.local.md") {
+		t.Error("exclude file missing CLAUDE.local.md pattern")
 	}
 	if !strings.Contains(content, ".brief/") {
 		t.Error("exclude file missing .brief/ pattern")
@@ -370,7 +370,7 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 
 	// Verify git ignores sol-managed local files but NOT shared .claude/ files.
 	os.MkdirAll(filepath.Join(repoPath, ".claude"), 0o755)
-	writeFile(t, filepath.Join(repoPath, ".claude", "CLAUDE.local.md"), "test")
+	writeFile(t, filepath.Join(repoPath, "CLAUDE.local.md"), "test")
 	writeFile(t, filepath.Join(repoPath, ".claude", "settings.local.json"), "test")
 	writeFile(t, filepath.Join(repoPath, ".claude", "CLAUDE.md"), "shared project instructions")
 	writeFile(t, filepath.Join(repoPath, ".claude", "settings.json"), "shared settings")
@@ -383,7 +383,7 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 	// Sol-managed local files should be ignored.
 	shouldBeIgnored := []string{
 		".claude/settings.local.json",
-		".claude/CLAUDE.local.md",
+		"CLAUDE.local.md",
 		".brief/memory.md",
 		".workflow/manifest.json",
 	}

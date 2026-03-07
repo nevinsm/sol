@@ -1292,7 +1292,7 @@ func TestExecStartupPathForRegisteredRole(t *testing.T) {
 	}
 
 	// Persona should be installed (CLAUDE.local.md).
-	personaPath := filepath.Join(worktreeDir, ".claude", "CLAUDE.local.md")
+	personaPath := filepath.Join(worktreeDir, "CLAUDE.local.md")
 	data, err := os.ReadFile(personaPath)
 	if err != nil {
 		t.Fatalf("persona file not installed: %v", err)
@@ -1420,7 +1420,7 @@ func TestExecLegacyPathForUnregisteredRole(t *testing.T) {
 	}
 
 	// No persona should be installed.
-	personaPath := filepath.Join(worktreeDir, ".claude", "CLAUDE.local.md")
+	personaPath := filepath.Join(worktreeDir, "CLAUDE.local.md")
 	if _, err := os.Stat(personaPath); err == nil {
 		t.Error("expected no persona file for unregistered role")
 	}

@@ -424,16 +424,12 @@ Use `+"`"+`sol forget "key"`+"`"+` to remove outdated memories.
 	return content
 }
 
-// InstallEnvoyClaudeMD writes .claude/CLAUDE.local.md for an envoy into the worktree.
+// InstallEnvoyClaudeMD writes CLAUDE.local.md for an envoy at the worktree root.
+// Written at root level so Claude Code's upward directory walk discovers it.
 // Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
 func InstallEnvoyClaudeMD(worktreeDir string, ctx EnvoyClaudeMDContext) error {
-	claudeDir := filepath.Join(worktreeDir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create .claude directory in worktree: %w", err)
-	}
-
 	content := GenerateEnvoyClaudeMD(ctx)
-	path := filepath.Join(claudeDir, "CLAUDE.local.md")
+	path := filepath.Join(worktreeDir, "CLAUDE.local.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write envoy CLAUDE.local.md in worktree: %w", err)
 	}
@@ -444,16 +440,12 @@ func InstallEnvoyClaudeMD(worktreeDir string, ctx EnvoyClaudeMDContext) error {
 	return nil
 }
 
-// InstallForgeClaudeMD writes .claude/CLAUDE.local.md for the forge into the worktree.
+// InstallForgeClaudeMD writes CLAUDE.local.md for the forge at the worktree root.
+// Written at root level so Claude Code's upward directory walk discovers it.
 // Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
 func InstallForgeClaudeMD(worktreeDir string, ctx ForgeClaudeMDContext) error {
-	claudeDir := filepath.Join(worktreeDir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create .claude directory in worktree: %w", err)
-	}
-
 	content := GenerateForgeClaudeMD(ctx)
-	path := filepath.Join(claudeDir, "CLAUDE.local.md")
+	path := filepath.Join(worktreeDir, "CLAUDE.local.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write forge CLAUDE.local.md in worktree: %w", err)
 	}
@@ -580,16 +572,12 @@ Use `+"`"+`sol forget "key"`+"`"+` to remove outdated memories.
 	)
 }
 
-// InstallGovernorClaudeMD writes CLAUDE.local.md for the governor into the governor directory.
+// InstallGovernorClaudeMD writes CLAUDE.local.md for the governor at the directory root.
+// Written at root level so Claude Code's upward directory walk discovers it.
 // Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
 func InstallGovernorClaudeMD(govDir string, ctx GovernorClaudeMDContext) error {
-	claudeDir := filepath.Join(govDir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create .claude directory for governor: %w", err)
-	}
-
 	content := GenerateGovernorClaudeMD(ctx)
-	path := filepath.Join(claudeDir, "CLAUDE.local.md")
+	path := filepath.Join(govDir, "CLAUDE.local.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write governor CLAUDE.local.md: %w", err)
 	}
@@ -600,17 +588,12 @@ func InstallGovernorClaudeMD(govDir string, ctx GovernorClaudeMDContext) error {
 	return nil
 }
 
-// InstallClaudeMD writes .claude/CLAUDE.local.md into the given worktree directory.
+// InstallClaudeMD writes CLAUDE.local.md at the worktree root.
+// Written at root level so Claude Code's upward directory walk discovers it.
 // Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
-// Creates .claude/ if it doesn't exist.
 func InstallClaudeMD(worktreeDir string, ctx ClaudeMDContext) error {
-	claudeDir := filepath.Join(worktreeDir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create .claude directory in worktree: %w", err)
-	}
-
 	content := GenerateClaudeMD(ctx)
-	path := filepath.Join(claudeDir, "CLAUDE.local.md")
+	path := filepath.Join(worktreeDir, "CLAUDE.local.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write CLAUDE.local.md in worktree: %w", err)
 	}

@@ -85,9 +85,9 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Error("worktree does not exist after cast")
 	}
 
-	claudeMD := filepath.Join(worktreeDir, ".claude", "CLAUDE.local.md")
+	claudeMD := filepath.Join(worktreeDir, "CLAUDE.local.md")
 	if _, err := os.Stat(claudeMD); os.IsNotExist(err) {
-		t.Error(".claude/CLAUDE.local.md does not exist in worktree")
+		t.Error("CLAUDE.local.md does not exist in worktree")
 	}
 
 	// 5. Simulate agent work: create a file in the worktree.

@@ -49,7 +49,7 @@ func TestInstallClaudeMD(t *testing.T) {
 		t.Fatalf("InstallClaudeMD failed: %v", err)
 	}
 
-	path := filepath.Join(dir, ".claude", "CLAUDE.local.md")
+	path := filepath.Join(dir, "CLAUDE.local.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
@@ -114,7 +114,7 @@ func TestInstallForgeClaudeMD(t *testing.T) {
 		t.Fatalf("InstallForgeClaudeMD failed: %v", err)
 	}
 
-	path := filepath.Join(dir, ".claude", "CLAUDE.local.md")
+	path := filepath.Join(dir, "CLAUDE.local.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
@@ -281,7 +281,7 @@ func TestInstallEnvoyClaudeMD(t *testing.T) {
 		t.Fatalf("InstallEnvoyClaudeMD failed: %v", err)
 	}
 
-	path := filepath.Join(dir, ".claude", "CLAUDE.local.md")
+	path := filepath.Join(dir, "CLAUDE.local.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
@@ -309,7 +309,7 @@ func TestInstallEnvoyClaudeMDWithPersona(t *testing.T) {
 		t.Fatalf("InstallEnvoyClaudeMD failed: %v", err)
 	}
 
-	path := filepath.Join(dir, ".claude", "CLAUDE.local.md")
+	path := filepath.Join(dir, "CLAUDE.local.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read CLAUDE.local.md: %v", err)

@@ -324,7 +324,7 @@ instructions = "steps/01.md"
 	}
 
 	// Verify CLAUDE.local.md includes workflow commands.
-	claudeMD := filepath.Join(result.WorktreeDir, ".claude", "CLAUDE.local.md")
+	claudeMD := filepath.Join(result.WorktreeDir, "CLAUDE.local.md")
 	data, err := os.ReadFile(claudeMD)
 	if err != nil {
 		t.Fatalf("read CLAUDE.local.md: %v", err)

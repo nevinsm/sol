@@ -182,7 +182,7 @@ func TestCastHappyPath(t *testing.T) {
 	}
 
 	// Verify CLAUDE.local.md was installed.
-	claudeMD := result.WorktreeDir + "/.claude/CLAUDE.local.md"
+	claudeMD := result.WorktreeDir + "/CLAUDE.local.md"
 	data, err := os.ReadFile(claudeMD)
 	if err != nil {
 		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
