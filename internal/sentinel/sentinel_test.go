@@ -1630,7 +1630,7 @@ func TestDispatchOrphanedResolution_SkipClosed(t *testing.T) {
 	createBlockedMR(t, worldStore, "sol-orig3333", "sol-res-3333", "Feature C", "outpost/Toast/sol-orig3333", 10*time.Minute)
 
 	// Close the resolution writ (already handled).
-	worldStore.UpdateWrit("sol-res-3333", store.WritUpdates{Status: "done"})
+	worldStore.UpdateWrit("sol-res-3333", store.WritUpdates{Status: "closed"})
 
 	castCalled := false
 	w := New(cfg, sphereStore, worldStore, mock, nil)
