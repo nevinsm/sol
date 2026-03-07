@@ -247,6 +247,22 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 		sessionName := dispatch.SessionName(w.config.World, agent.Name)
 		alive := w.sessions.Exists(sessionName)
 
+		// Check if outpost agent is tethered to a closed writ — reap immediately.
+		if agent.Role == "agent" && agent.TetherItem != "" && w.worldStore != nil {
+			if writ, err := w.worldStore.GetWrit(agent.TetherItem); err == nil && writ.Status == "closed" {
+				reapedCount++
+				if err := w.reapClosedWritAgent(agent, sessionName, writ.CloseReason); err != nil {
+					if w.logger != nil {
+						w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+							"agent": agent.ID, "action": "reap_closed_writ", "error": err.Error(),
+						})
+					}
+				}
+				actionsTaken = append(actionsTaken, "reaped_closed_writ:"+agent.Name)
+				continue
+			}
+		}
+
 		switch {
 		case agent.State == "working" && alive:
 			// Working agent with live session — check for progress.
@@ -804,6 +820,36 @@ func (w *Sentinel) reapIdleAgent(agent store.Agent) error {
 				"agent":      agent.ID,
 				"idle_since": agent.UpdatedAt.Format(time.RFC3339),
 			})
+	}
+
+	return nil
+}
+
+// reapClosedWritAgent reaps an outpost agent whose tethered writ has been closed
+// (cancelled, superseded, etc.). Stops the session, clears the tether, and deletes
+// the agent record — same reap path as idle agent cleanup.
+func (w *Sentinel) reapClosedWritAgent(agent store.Agent, sessionName, closeReason string) error {
+	if w.logger != nil {
+		w.logger.Emit(events.EventReap, w.agentID(), agent.ID, "both",
+			map[string]any{
+				"agent":        agent.ID,
+				"writ":         agent.TetherItem,
+				"close_reason": closeReason,
+				"reason":       "writ closed",
+			})
+	}
+
+	// 1. Set agent idle and clear tether before resource cleanup.
+	if err := w.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
+		return fmt.Errorf("failed to set agent %s idle: %w", agent.ID, err)
+	}
+
+	// 2. Clean up all agent resources (session, worktree, tether, etc.).
+	w.cleanupAgentResources(agent.Name)
+
+	// 3. Delete the agent record to free the name pool slot.
+	if err := w.sphereStore.DeleteAgent(agent.ID); err != nil {
+		return fmt.Errorf("failed to delete agent %s: %w", agent.ID, err)
 	}
 
 	return nil

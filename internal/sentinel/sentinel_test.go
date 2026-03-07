@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/quota"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -2257,5 +2258,117 @@ func TestCheckQuotaPausedUsesStartupPathForRegisteredRole(t *testing.T) {
 	}
 	if !strings.Contains(cmd, "--append-system-prompt-file") {
 		t.Errorf("expected --append-system-prompt-file in command, got %q", cmd)
+	}
+}
+
+func TestPatrolReapsAgentTetheredToClosedWrit(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a working agent with a live session tethered to a writ.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	createWrit(t, worldStore, "sol-abc12345", "Cancelled task")
+	mock.alive["sol-ember-Toast"] = true
+
+	// Close the writ with a reason.
+	if err := worldStore.CloseWrit("sol-abc12345", "superseded"); err != nil {
+		t.Fatalf("CloseWrit() error: %v", err)
+	}
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Session should have been stopped.
+	stopped := mock.getStopped()
+	if len(stopped) != 1 {
+		t.Fatalf("expected 1 session stopped, got %d: %v", len(stopped), stopped)
+	}
+	if stopped[0] != "sol-ember-Toast" {
+		t.Errorf("stopped session = %q, want %q", stopped[0], "sol-ember-Toast")
+	}
+
+	// Agent record should be deleted.
+	_, err := sphereStore.GetAgent("ember/Toast")
+	if err == nil {
+		t.Error("expected agent to be deleted, but GetAgent succeeded")
+	}
+}
+
+func TestPatrolDoesNotReapAgentTetheredToOpenWrit(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a working agent with a live session tethered to an open writ.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	createWrit(t, worldStore, "sol-abc12345", "Active task")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "working on task..."
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// No sessions should have been stopped.
+	if stopped := mock.getStopped(); len(stopped) != 0 {
+		t.Errorf("expected 0 sessions stopped, got %d: %v", len(stopped), stopped)
+	}
+
+	// Agent should still exist and be working.
+	agent, err := sphereStore.GetAgent("ember/Toast")
+	if err != nil {
+		t.Fatalf("GetAgent() error: %v", err)
+	}
+	if agent.State != "working" {
+		t.Errorf("agent state = %q, want %q", agent.State, "working")
+	}
+}
+
+func TestPatrolClosedWritReapLogsCloseReason(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a logger that writes to a temp file.
+	solHome := os.Getenv("SOL_HOME")
+	logger := events.NewLogger(solHome)
+
+	// Create a working agent tethered to a closed writ.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	createWrit(t, worldStore, "sol-abc12345", "Cancelled task")
+	mock.alive["sol-ember-Toast"] = true
+
+	if err := worldStore.CloseWrit("sol-abc12345", "cancelled_by_governor"); err != nil {
+		t.Fatalf("CloseWrit() error: %v", err)
+	}
+
+	w := New(cfg, sphereStore, worldStore, mock, logger)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Read the events log and verify close_reason appears.
+	eventsFile := filepath.Join(solHome, ".events.jsonl")
+	data, err := os.ReadFile(eventsFile)
+	if err != nil {
+		t.Fatalf("failed to read events file: %v", err)
+	}
+
+	logContent := string(data)
+	if !strings.Contains(logContent, "cancelled_by_governor") {
+		t.Errorf("expected close_reason 'cancelled_by_governor' in events log, got:\n%s", logContent)
+	}
+	if !strings.Contains(logContent, `"type":"reap"`) {
+		t.Errorf("expected reap event in events log, got:\n%s", logContent)
 	}
 }

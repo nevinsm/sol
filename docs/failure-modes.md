@@ -103,6 +103,14 @@ Event logging is best-effort — failures are silently ignored. If the chronicle
 crashes, the raw log continues growing and the curated feed is stale. The
 prefect restarts the chronicle. No primary operations are affected.
 
+### Writ Closed While Agent Is Working
+
+When a governor closes a writ (cancelled, superseded, etc.) while an agent is
+actively working on it, the sentinel detects the closed writ on its next patrol
+cycle (≤60s). The agent's session is stopped, its tether cleared, and the
+outpost reaped. Agent work in progress is lost (acceptable — the writ was
+cancelled).
+
 ## Mass Failure
 
 When 3+ agent sessions die within 30 seconds, the prefect enters degraded mode:
