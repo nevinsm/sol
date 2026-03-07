@@ -102,6 +102,7 @@ When an agent session starts, credentials are symlinked from the resolved accoun
 | `sol writ create` | Create a writ |
 | `sol writ status <id>` | Show writ status |
 | `sol writ list` | List writs |
+| `sol writ ready` | List writs ready for dispatch |
 | `sol writ update <id>` | Update a writ |
 | `sol writ close <id>` | Close a writ |
 | `sol writ query` | Run a read-only SQL query |

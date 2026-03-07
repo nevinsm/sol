@@ -28,6 +28,7 @@ func init() {
 	writCmd.AddCommand(writUpdateCmd)
 	writCmd.AddCommand(writCloseCmd)
 	writCmd.AddCommand(writQueryCmd)
+	writCmd.AddCommand(writReadyCmd)
 }
 
 // --- sol writ create ---
@@ -362,6 +363,85 @@ func init() {
 	writQueryCmd.Flags().String("world", "", "world name")
 	writQueryCmd.Flags().StringVar(&querySQL, "sql", "", "SQL SELECT query")
 	writQueryCmd.Flags().BoolVar(&queryJSON, "json", false, "output as JSON")
+}
+
+// --- sol writ ready ---
+
+var readyJSON bool
+
+var writReadyCmd = &cobra.Command{
+	Use:          "ready",
+	Short:        "List writs ready for dispatch",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
+			return err
+		}
+		s, err := store.OpenWorld(world)
+		if err != nil {
+			return err
+		}
+		defer s.Close()
+
+		items, err := s.ReadyWrits()
+		if err != nil {
+			return err
+		}
+
+		// Apply caravan-level filtering (deps + phase gating) using
+		// the sphere store. If the sphere store is unavailable, skip
+		// caravan checks and return dependency-ready writs only.
+		sphereStore, sphereErr := store.OpenSphere()
+		if sphereErr == nil {
+			defer sphereStore.Close()
+
+			var filtered []store.Writ
+			for _, item := range items {
+				blocked, err := sphereStore.IsWritBlockedByCaravan(
+					item.ID, world, store.OpenWorld)
+				if err != nil {
+					// On error, include the writ (conservative: prefer
+					// showing it over silently hiding it).
+					filtered = append(filtered, item)
+					continue
+				}
+				if !blocked {
+					filtered = append(filtered, item)
+				}
+			}
+			items = filtered
+		}
+
+		if readyJSON {
+			return printJSON(items)
+		}
+		if len(items) == 0 {
+			fmt.Println("No ready writs found.")
+			return nil
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintf(tw, "ID\tSTATUS\tPRI\tTITLE\tASSIGNEE\tLABELS\n")
+		for _, item := range items {
+			assignee := item.Assignee
+			if assignee == "" {
+				assignee = "-"
+			}
+			labels := "-"
+			if len(item.Labels) > 0 {
+				labels = strings.Join(item.Labels, ", ")
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\n", item.ID, item.Status, item.Priority, item.Title, assignee, labels)
+		}
+		tw.Flush()
+		return nil
+	},
+}
+
+func init() {
+	writReadyCmd.Flags().String("world", "", "world name")
+	writReadyCmd.Flags().BoolVar(&readyJSON, "json", false, "output as JSON")
 }
 
 // --- helpers ---

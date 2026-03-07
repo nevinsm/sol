@@ -199,6 +199,114 @@ func (s *Store) DeleteCaravanDependencies(caravanID string) error {
 	return nil
 }
 
+// IsWritBlockedByCaravan checks whether a writ is blocked by any caravan
+// constraint. This includes caravan-level dependency blocking (the writ's
+// caravan depends on another caravan that isn't closed) AND phase gating
+// (the writ is in a phase > 0 and items in lower phases aren't all closed).
+//
+// The worldOpener function opens a world store by name — the caller provides
+// this so the caravan checker doesn't need to know about store paths.
+func (s *Store) IsWritBlockedByCaravan(writID, world string,
+	worldOpener func(world string) (*Store, error)) (bool, error) {
+
+	// Check caravan-level dependency blocking.
+	blocked, _, err := s.IsWritBlockedByCaravanDeps(writID)
+	if err != nil {
+		return false, err
+	}
+	if blocked {
+		return true, nil
+	}
+
+	// Check phase gating: find all caravans containing this writ.
+	rows, err := s.db.Query(
+		`SELECT caravan_id, phase FROM caravan_items WHERE writ_id = ?`,
+		writID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to find caravans for writ %q: %w", writID, err)
+	}
+	defer rows.Close()
+
+	type caravanPhase struct {
+		caravanID string
+		phase     int
+	}
+	var memberships []caravanPhase
+	for rows.Next() {
+		var cp caravanPhase
+		if err := rows.Scan(&cp.caravanID, &cp.phase); err != nil {
+			return false, fmt.Errorf("failed to scan caravan membership: %w", err)
+		}
+		memberships = append(memberships, cp)
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+
+	// For each caravan where the writ is in phase > 0, check if all items
+	// in lower phases are closed.
+	for _, cp := range memberships {
+		if cp.phase == 0 {
+			continue // Phase 0 uses only within-world dependency check.
+		}
+
+		// Get all items in lower phases of this caravan.
+		lowerRows, err := s.db.Query(
+			`SELECT writ_id, world FROM caravan_items WHERE caravan_id = ? AND phase < ?`,
+			cp.caravanID, cp.phase,
+		)
+		if err != nil {
+			return false, fmt.Errorf("failed to query lower phase items: %w", err)
+		}
+
+		type lowerItem struct {
+			writID string
+			world  string
+		}
+		var lowerItems []lowerItem
+		for lowerRows.Next() {
+			var li lowerItem
+			if err := lowerRows.Scan(&li.writID, &li.world); err != nil {
+				lowerRows.Close()
+				return false, fmt.Errorf("failed to scan lower phase item: %w", err)
+			}
+			lowerItems = append(lowerItems, li)
+		}
+		lowerRows.Close()
+
+		// Check if any lower-phase item is not closed.
+		// Group by world for efficiency.
+		byWorld := map[string][]string{}
+		for _, li := range lowerItems {
+			byWorld[li.world] = append(byWorld[li.world], li.writID)
+		}
+
+		for w, writIDs := range byWorld {
+			ws, err := worldOpener(w)
+			if err != nil {
+				return false, fmt.Errorf("failed to open world %q: %w", w, err)
+			}
+
+			for _, wid := range writIDs {
+				item, err := ws.GetWrit(wid)
+				if err != nil {
+					ws.Close()
+					// If the writ is not found, treat it as blocking (conservative).
+					return true, nil
+				}
+				if item.Status != "closed" {
+					ws.Close()
+					return true, nil
+				}
+			}
+			ws.Close()
+		}
+	}
+
+	return false, nil
+}
+
 // wouldCreateCaravanCycle checks if adding the edge from→to would create a
 // cycle by walking the dependency graph from toID to see if fromID is reachable.
 func (s *Store) wouldCreateCaravanCycle(fromID, toID string) (bool, error) {

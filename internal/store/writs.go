@@ -533,6 +533,112 @@ func (s *Store) SetWritMetadata(id string, metadata map[string]any) error {
 	return nil
 }
 
+// ReadyWrits returns writs that are ready for dispatch: status is "open"
+// and all dependencies (direct) are closed. A writ whose direct dependency
+// is not closed is implicitly transitively blocked — e.g. if A blocks B and
+// B blocks C, then B is not closed, so C's direct dep check fails.
+//
+// Writs are returned sorted by priority (highest first = lowest number),
+// then creation date (oldest first).
+//
+// Caravan-level checks (caravan deps, phase gating) are NOT applied here —
+// callers should use IsWritBlockedByCaravan on the sphere store for that.
+func (s *Store) ReadyWrits() ([]Writ, error) {
+	query := `SELECT DISTINCT w.id, w.title, w.description, w.status, w.priority, w.assignee, w.parent_id, w.kind, w.metadata, w.created_by, w.created_at, w.updated_at, w.closed_at, w.close_reason
+	           FROM writs w
+	           WHERE w.status = 'open'
+	           AND NOT EXISTS (
+	               SELECT 1 FROM dependencies d
+	               JOIN writs dep ON d.to_id = dep.id
+	               WHERE d.from_id = w.id AND dep.status != 'closed'
+	           )
+	           ORDER BY w.priority ASC, w.created_at ASC`
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query ready writs: %w", err)
+	}
+	defer rows.Close()
+
+	var items []Writ
+	for rows.Next() {
+		var w Writ
+		var desc, assignee, parentID, closeReason, metadataRaw sql.NullString
+		var closedAt sql.NullString
+		var createdAt, updatedAt string
+
+		if err := rows.Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.Kind, &metadataRaw, &w.CreatedBy, &createdAt, &updatedAt, &closedAt, &closeReason); err != nil {
+			return nil, fmt.Errorf("failed to scan ready writ: %w", err)
+		}
+		w.Description = desc.String
+		w.Assignee = assignee.String
+		w.ParentID = parentID.String
+		w.CloseReason = closeReason.String
+		if metadataRaw.Valid {
+			if err := json.Unmarshal([]byte(metadataRaw.String), &w.Metadata); err != nil {
+				return nil, fmt.Errorf("failed to parse metadata for writ %q: %w", w.ID, err)
+			}
+		}
+		var parseErr error
+		w.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse created_at for writ %q: %w", w.ID, parseErr)
+		}
+		w.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse updated_at for writ %q: %w", w.ID, parseErr)
+		}
+		if closedAt.Valid {
+			t, parseErr := time.Parse(time.RFC3339, closedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("failed to parse closed_at for writ %q: %w", w.ID, parseErr)
+			}
+			w.ClosedAt = &t
+		}
+		items = append(items, w)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating ready writs: %w", err)
+	}
+
+	// Batch-fetch all labels for returned items.
+	if len(items) > 0 {
+		ids := make([]interface{}, len(items))
+		placeholders := make([]string, len(items))
+		for i, item := range items {
+			ids[i] = item.ID
+			placeholders[i] = "?"
+		}
+
+		labelQuery := fmt.Sprintf(
+			`SELECT writ_id, label FROM labels WHERE writ_id IN (%s) ORDER BY writ_id, label`,
+			strings.Join(placeholders, ","),
+		)
+		labelRows, err := s.db.Query(labelQuery, ids...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query labels: %w", err)
+		}
+		defer labelRows.Close()
+
+		labelMap := make(map[string][]string)
+		for labelRows.Next() {
+			var itemID, label string
+			if err := labelRows.Scan(&itemID, &label); err != nil {
+				return nil, fmt.Errorf("failed to scan label: %w", err)
+			}
+			labelMap[itemID] = append(labelMap[itemID], label)
+		}
+		if err := labelRows.Err(); err != nil {
+			return nil, fmt.Errorf("failed to iterate labels: %w", err)
+		}
+
+		for i := range items {
+			items[i].Labels = labelMap[items[i].ID]
+		}
+	}
+	return items, nil
+}
+
 // AddLabel adds a label to a writ. No-op if already present.
 func (s *Store) AddLabel(itemID, label string) error {
 	_, err := s.db.Exec(

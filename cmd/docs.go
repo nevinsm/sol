@@ -93,7 +93,7 @@ var docSections = []docSection{
 	},
 	{
 		heading: "Writs",
-		paths:   []string{"writ create", "writ status", "writ list", "writ update", "writ close", "writ query"},
+		paths:   []string{"writ create", "writ status", "writ list", "writ ready", "writ update", "writ close", "writ query"},
 	},
 	{
 		heading: "Dependencies",
