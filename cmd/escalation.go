@@ -16,6 +16,7 @@ import (
 var (
 	escalationListStatus string
 	escalationListJSON   bool
+	escalationListAll    bool
 )
 
 var escalationCmd = &cobra.Command{
@@ -38,7 +39,17 @@ var escalationListCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
-		escs, err := sphereStore.ListEscalations(escalationListStatus)
+		var escs []store.Escalation
+		if escalationListStatus != "" {
+			// Explicit status filter takes precedence.
+			escs, err = sphereStore.ListEscalations(escalationListStatus)
+		} else if escalationListAll {
+			// --all: show everything including resolved.
+			escs, err = sphereStore.ListEscalations("")
+		} else {
+			// Default: only open/acknowledged (exclude resolved).
+			escs, err = sphereStore.ListOpenEscalations()
+		}
 		if err != nil {
 			return err
 		}
@@ -69,7 +80,10 @@ var escalationListCmd = &cobra.Command{
 		}
 
 		// Human-readable output.
-		statusLabel := "All"
+		statusLabel := "Open"
+		if escalationListAll {
+			statusLabel = "All"
+		}
 		if escalationListStatus != "" {
 			statusLabel = escalationListStatus
 			// Capitalize first letter.
@@ -174,5 +188,6 @@ func init() {
 	escalationCmd.AddCommand(escalationResolveCmd)
 
 	escalationListCmd.Flags().StringVar(&escalationListStatus, "status", "", "Filter by status (open, acknowledged, resolved)")
+	escalationListCmd.Flags().BoolVar(&escalationListAll, "all", false, "Include resolved escalations")
 	escalationListCmd.Flags().BoolVar(&escalationListJSON, "json", false, "Output as JSON array")
 }

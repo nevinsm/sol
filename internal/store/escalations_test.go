@@ -121,6 +121,65 @@ func TestListEscalations(t *testing.T) {
 	}
 }
 
+func TestListOpenEscalations(t *testing.T) {
+	s := setupSphere(t)
+
+	// Create 3 escalations.
+	id1, _ := s.CreateEscalation("low", "operator", "Issue 1")
+	_, _ = s.CreateEscalation("medium", "operator", "Issue 2")
+	id3, _ := s.CreateEscalation("high", "operator", "Issue 3")
+
+	// All 3 are open -> ListOpenEscalations returns 3.
+	escs, err := s.ListOpenEscalations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 3 {
+		t.Fatalf("expected 3 open escalations, got %d", len(escs))
+	}
+
+	// Resolve one -> ListOpenEscalations returns 2.
+	s.ResolveEscalation(id1)
+	escs, err = s.ListOpenEscalations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 2 {
+		t.Fatalf("expected 2 open escalations after resolve, got %d", len(escs))
+	}
+
+	// Acknowledge one -> still returned (not resolved).
+	s.AckEscalation(id3)
+	escs, err = s.ListOpenEscalations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 2 {
+		t.Fatalf("expected 2 open escalations after ack, got %d", len(escs))
+	}
+
+	// Resolve all remaining -> ListOpenEscalations returns 0.
+	for _, e := range escs {
+		s.ResolveEscalation(e.ID)
+	}
+	escs, err = s.ListOpenEscalations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 0 {
+		t.Fatalf("expected 0 open escalations after resolving all, got %d", len(escs))
+	}
+
+	// ListEscalations("") still returns all 3.
+	all, err := s.ListEscalations("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("expected 3 total escalations, got %d", len(all))
+	}
+}
+
 func TestAckEscalation(t *testing.T) {
 	s := setupSphere(t)
 

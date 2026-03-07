@@ -105,6 +105,19 @@ func (s *Store) ListEscalations(status string) ([]Escalation, error) {
 	}
 	query += ` ORDER BY created_at DESC`
 
+	return s.scanEscalations(query, args...)
+}
+
+// ListOpenEscalations returns all non-resolved escalations.
+// Ordered by created_at DESC (newest first).
+func (s *Store) ListOpenEscalations() ([]Escalation, error) {
+	query := `SELECT id, severity, source, description, status, acknowledged, created_at, updated_at
+	          FROM escalations WHERE status != 'resolved' ORDER BY created_at DESC`
+	return s.scanEscalations(query)
+}
+
+// scanEscalations executes a query and scans the results into Escalation structs.
+func (s *Store) scanEscalations(query string, args ...interface{}) ([]Escalation, error) {
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list escalations: %w", err)
