@@ -67,6 +67,14 @@ func (m *mockSessionManager) WaitForIdle(name string, timeout time.Duration) err
 	return nil
 }
 
+func (m *mockSessionManager) Capture(name string, lines int) (string, error) {
+	return "", nil
+}
+
+func (m *mockSessionManager) Cycle(name, workdir, cmd string, env map[string]string, role, world string) error {
+	return fmt.Errorf("cycle not supported in mock")
+}
+
 // --- Helper to set up real stores in temp dirs ---
 
 func setupStores(t *testing.T) (*store.Store, *store.Store) {
