@@ -10,9 +10,16 @@ const helpContent = `Sol Dash — Keyboard Shortcuts
 
 Navigation
   ↑/↓ or j/k    Move selection
-  enter or l     Drill in / Peek process / Attach
-  esc or h       Back to sphere view
+  enter or l     Drill in / Peek at agent
+  a              Direct attach to session
+  esc or h       Back to previous view
   tab            Cycle sections
+
+Peek Mode
+  ↑/↓ or j/k    Cycle through items
+  enter or a     Attach to selected session
+  esc or h       Return to previous view
+  r              Force capture refresh
 
 Actions
   a              Attach directly to session

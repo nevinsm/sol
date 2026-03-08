@@ -243,14 +243,29 @@ func (sm sphereModel) handleProcessAction() (sphereModel, tea.Cmd) {
 	if sm.processCursor >= len(sm.processItems) {
 		return sm, nil
 	}
-	item := sm.processItems[sm.processCursor]
-	if !item.peekable || item.sessionName == "" {
-		sm.showNoSession = true
+
+	// Build peek items from all sphere process items.
+	var items []peekItem
+	for _, pi := range sm.processItems {
+		items = append(items, peekItem{
+			name:        pi.name,
+			sessionName: pi.sessionName,
+			category:    "Processes",
+			state:       pi.detail,
+			alive:       pi.running,
+			peekable:    pi.peekable,
+		})
+	}
+	if len(items) == 0 {
 		return sm, nil
 	}
-	return sm, func() tea.Msg {
-		return peekMsg{sessionName: item.sessionName}
+
+	msg := peekMsg{
+		items:         items,
+		initialCursor: sm.processCursor,
+		fromView:      viewSphere,
 	}
+	return sm, func() tea.Msg { return msg }
 }
 
 // handleProcessAttach handles 'a' on a process item — direct attach.
@@ -540,7 +555,7 @@ func (sm sphereModel) renderCaravans(b *strings.Builder, caravans []status.Carav
 }
 
 func (sm sphereModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter drill/peek · a attach · R restart · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter drill in · a attach · R restart · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {

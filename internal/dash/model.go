@@ -18,9 +18,6 @@ const refreshInterval = 3 * time.Second
 // animInterval is the animation tick cadence (~30 FPS).
 const animInterval = 33 * time.Millisecond
 
-// captureInterval is reserved for peek-mode capture ticks.
-const captureInterval = 250 * time.Millisecond
-
 // highlightTickInterval is how often highlight levels decay (5 levels × 400ms = ~2s total fade).
 const highlightTickInterval = 400 * time.Millisecond
 
@@ -76,9 +73,6 @@ type animTickMsg time.Time
 // dataTickMsg triggers a data refresh (database queries, status gathering).
 type dataTickMsg time.Time
 
-// captureTickMsg is reserved for peek-mode dashboard capture.
-type captureTickMsg time.Time
-
 // highlightTickMsg triggers highlight level decay.
 type highlightTickMsg time.Time
 
@@ -108,11 +102,6 @@ type attachDoneMsg struct {
 
 // noSessionMsg signals an inline "no active session" message.
 type noSessionMsg struct{}
-
-// peekMsg signals a request to peek at a process session.
-type peekMsg struct {
-	sessionName string
-}
 
 // restartProcessMsg signals a request to restart a sphere process.
 type restartProcessMsg struct {
@@ -352,14 +341,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case viewPeek:
 			// In peek mode, the capture panel already shows "No active session".
 		}
-
-	case peekMsg:
-		// Peek at a process session — for now, attach directly.
-		// A dedicated peek view can intercept this message in the future.
-		cmd := exec.Command("tmux", "attach-session", "-t", "="+msg.sessionName+":")
-		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-			return attachDoneMsg{err: err}
-		})
 
 	case restartProcessMsg:
 		m.dirty = true

@@ -144,7 +144,7 @@ func TestSphereViewFooter(t *testing.T) {
 	checks := []string{
 		"q quit",
 		"select",
-		"drill/peek",
+		"drill in",
 		"r refresh",
 		"refreshed",
 	}
@@ -865,7 +865,7 @@ func TestWorldViewMergeQueueRows(t *testing.T) {
 	}
 }
 
-func TestWorldViewAttachProducesMsg(t *testing.T) {
+func TestWorldViewEnterProducesPeekMsg(t *testing.T) {
 	wm := newWorldModel()
 	wm.outpostLen = 1
 	wm.hasFocus = true
@@ -878,10 +878,41 @@ func TestWorldViewAttachProducesMsg(t *testing.T) {
 		},
 	}
 
-	// Press enter to attach.
+	// Press enter to peek.
 	_, cmd := wm.update(keyMsg("enter"), data)
 	if cmd == nil {
 		t.Fatal("enter on live agent should produce a command")
+	}
+	msg := cmd()
+	peek, ok := msg.(peekMsg)
+	if !ok {
+		t.Fatalf("expected peekMsg, got %T", msg)
+	}
+	if len(peek.items) == 0 {
+		t.Fatal("peekMsg should have items")
+	}
+	if peek.items[0].sessionName != "sol-testworld-Toast" {
+		t.Errorf("peekMsg item sessionName = %q, want %q", peek.items[0].sessionName, "sol-testworld-Toast")
+	}
+}
+
+func TestWorldViewDirectAttachProducesMsg(t *testing.T) {
+	wm := newWorldModel()
+	wm.outpostLen = 1
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
+
+	data := &status.WorldStatus{
+		World: "testworld",
+		Agents: []status.AgentStatus{
+			{Name: "Toast", State: "working", SessionAlive: true},
+		},
+	}
+
+	// Press 'a' to direct attach.
+	_, cmd := wm.update(keyMsg("a"), data)
+	if cmd == nil {
+		t.Fatal("'a' on live agent should produce a command")
 	}
 	msg := cmd()
 	attach, ok := msg.(attachMsg)
@@ -906,10 +937,10 @@ func TestWorldViewAttachNoSession(t *testing.T) {
 		},
 	}
 
-	// Press enter on dead agent.
-	_, cmd := wm.update(keyMsg("enter"), data)
+	// Press 'a' on dead agent for direct attach.
+	_, cmd := wm.update(keyMsg("a"), data)
 	if cmd == nil {
-		t.Fatal("enter on dead agent should produce a command")
+		t.Fatal("'a' on dead agent should produce a command")
 	}
 	msg := cmd()
 	if _, ok := msg.(noSessionMsg); !ok {
@@ -917,7 +948,7 @@ func TestWorldViewAttachNoSession(t *testing.T) {
 	}
 }
 
-func TestWorldViewAttachEnvoy(t *testing.T) {
+func TestWorldViewDirectAttachEnvoy(t *testing.T) {
 	wm := newWorldModel()
 	wm.outpostLen = 0
 	wm.envoyLen = 1
@@ -931,10 +962,10 @@ func TestWorldViewAttachEnvoy(t *testing.T) {
 		},
 	}
 
-	// Press enter to attach to envoy.
-	_, cmd := wm.update(keyMsg("enter"), data)
+	// Press 'a' to direct attach to envoy.
+	_, cmd := wm.update(keyMsg("a"), data)
 	if cmd == nil {
-		t.Fatal("enter on live envoy should produce a command")
+		t.Fatal("'a' on live envoy should produce a command")
 	}
 	msg := cmd()
 	attach, ok := msg.(attachMsg)
@@ -1010,7 +1041,8 @@ func TestWorldViewFooter(t *testing.T) {
 		"q quit",
 		"select",
 		"tab section",
-		"enter attach",
+		"enter peek",
+		"a attach",
 		"esc back",
 		"r refresh",
 	}
@@ -2257,6 +2289,224 @@ func TestEnterNoOpWithoutFocus(t *testing.T) {
 	_, cmd := wm.update(keyMsg("enter"), data)
 	if cmd != nil {
 		t.Error("enter without focus should be no-op")
+	}
+}
+
+// --- Peek mode tests ---
+
+func TestPeekModelNavigation(t *testing.T) {
+	pm := newPeekModel(nil)
+	pm.width = 120
+	pm.height = 40
+
+	items := []peekItem{
+		{name: "Toast", sessionName: "sol-dev-Toast", category: "Outposts", state: "working", alive: true, peekable: true},
+		{name: "Vega", sessionName: "sol-dev-Vega", category: "Outposts", state: "idle", alive: false, peekable: false},
+		{name: "Forge", sessionName: "sol-dev-forge", category: "Processes", state: "alive", alive: true, peekable: true},
+	}
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+
+	if pm.cursor != 0 {
+		t.Errorf("initial cursor should be 0, got %d", pm.cursor)
+	}
+
+	// Move down.
+	pm, _ = pm.update(keyMsg("j"))
+	if pm.cursor != 1 {
+		t.Errorf("cursor after down should be 1, got %d", pm.cursor)
+	}
+
+	// Move down again.
+	pm, _ = pm.update(keyMsg("j"))
+	if pm.cursor != 2 {
+		t.Errorf("cursor after second down should be 2, got %d", pm.cursor)
+	}
+
+	// Move down past end (should stay at 2).
+	pm, _ = pm.update(keyMsg("j"))
+	if pm.cursor != 2 {
+		t.Errorf("cursor past end should stay at 2, got %d", pm.cursor)
+	}
+
+	// Move up.
+	pm, _ = pm.update(keyMsg("k"))
+	if pm.cursor != 1 {
+		t.Errorf("cursor after up should be 1, got %d", pm.cursor)
+	}
+}
+
+func TestPeekModelAttachAlive(t *testing.T) {
+	pm := newPeekModel(nil)
+	pm.width = 120
+	pm.height = 40
+
+	items := []peekItem{
+		{name: "Toast", sessionName: "sol-dev-Toast", category: "Outposts", state: "working", alive: true, peekable: true},
+	}
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+
+	_, cmd := pm.update(keyMsg("enter"))
+	if cmd == nil {
+		t.Fatal("enter on alive item should produce a command")
+	}
+	msg := cmd()
+	attach, ok := msg.(attachMsg)
+	if !ok {
+		t.Fatalf("expected attachMsg, got %T", msg)
+	}
+	if attach.sessionName != "sol-dev-Toast" {
+		t.Errorf("attachMsg.sessionName = %q, want %q", attach.sessionName, "sol-dev-Toast")
+	}
+}
+
+func TestPeekModelAttachDead(t *testing.T) {
+	pm := newPeekModel(nil)
+	pm.width = 120
+	pm.height = 40
+
+	items := []peekItem{
+		{name: "Vega", sessionName: "sol-dev-Vega", category: "Outposts", state: "idle", alive: false, peekable: false},
+	}
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+
+	_, cmd := pm.update(keyMsg("enter"))
+	if cmd == nil {
+		t.Fatal("enter on dead item should produce a command")
+	}
+	msg := cmd()
+	if _, ok := msg.(noSessionMsg); !ok {
+		t.Fatalf("expected noSessionMsg, got %T", msg)
+	}
+}
+
+func TestPeekModelEscPops(t *testing.T) {
+	pm := newPeekModel(nil)
+	pm.width = 120
+	pm.height = 40
+
+	items := []peekItem{
+		{name: "Toast", sessionName: "sol-dev-Toast", category: "Outposts", state: "working", alive: true, peekable: true},
+	}
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+
+	_, cmd := pm.update(keyMsg("esc"))
+	if cmd == nil {
+		t.Fatal("esc should produce a command")
+	}
+	msg := cmd()
+	if _, ok := msg.(peekPopMsg); !ok {
+		t.Fatalf("expected peekPopMsg, got %T", msg)
+	}
+}
+
+func TestPeekModelViewRendersItems(t *testing.T) {
+	pm := newPeekModel(nil)
+	pm.width = 120
+	pm.height = 40
+
+	items := []peekItem{
+		{name: "Toast", sessionName: "sol-dev-Toast", category: "Outposts", state: "working", alive: true, peekable: true},
+		{name: "Vega", sessionName: "sol-dev-Vega", category: "Outposts", state: "idle", alive: false, peekable: false},
+		{name: "Forge", sessionName: "sol-dev-forge", category: "Processes", state: "alive", alive: true, peekable: true},
+	}
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+
+	feedView := dimStyle.Render(strings.Repeat("─", 120)) + "\n" + dimStyle.Render("  No recent activity") + "\n"
+	output := pm.view(feedView)
+
+	// Should contain category headers and item names.
+	checks := []string{
+		"Outposts",
+		"Toast",
+		"Vega",
+		"Processes",
+		"Forge",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("peek view missing %q", check)
+		}
+	}
+
+	// Should contain footer.
+	if !strings.Contains(output, "esc back") {
+		t.Error("peek view should contain footer with 'esc back'")
+	}
+}
+
+func TestPeekModelViewDeadSession(t *testing.T) {
+	pm := newPeekModel(nil)
+	pm.width = 120
+	pm.height = 40
+
+	items := []peekItem{
+		{name: "Vega", sessionName: "sol-dev-Vega", category: "Outposts", state: "idle", alive: false, peekable: false},
+	}
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+
+	feedView := dimStyle.Render(strings.Repeat("─", 120)) + "\n" + dimStyle.Render("  No recent activity") + "\n"
+	output := pm.view(feedView)
+
+	if !strings.Contains(output, "No active session") {
+		t.Error("peek view should show 'No active session' for dead items")
+	}
+}
+
+func TestBuildWorldPeekItems(t *testing.T) {
+	data := &status.WorldStatus{
+		World: "testworld",
+		Agents: []status.AgentStatus{
+			{Name: "Toast", State: "working", SessionAlive: true},
+			{Name: "Vega", State: "idle", SessionAlive: false},
+		},
+		Envoys: []status.EnvoyStatus{
+			{Name: "Scout", State: "working", SessionAlive: true},
+		},
+		Forge:    status.ForgeInfo{Running: true, SessionName: "sol-testworld-forge"},
+		Sentinel: status.SentinelInfo{Running: true, SessionName: "sol-testworld-sentinel"},
+	}
+
+	items := buildWorldPeekItems(data)
+
+	if len(items) < 5 {
+		t.Fatalf("expected at least 5 items, got %d", len(items))
+	}
+
+	// Verify categories.
+	categories := make(map[string]int)
+	for _, item := range items {
+		categories[item.category]++
+	}
+	if categories["Outposts"] != 2 {
+		t.Errorf("expected 2 Outposts, got %d", categories["Outposts"])
+	}
+	if categories["Envoys"] != 1 {
+		t.Errorf("expected 1 Envoy, got %d", categories["Envoys"])
+	}
+	if categories["Processes"] < 2 {
+		t.Errorf("expected at least 2 Processes, got %d", categories["Processes"])
+	}
+
+	// Verify first item.
+	if items[0].name != "Toast" || items[0].sessionName != "sol-testworld-Toast" {
+		t.Errorf("first item = %+v, want Toast with sol-testworld-Toast", items[0])
+	}
+}
+
+func TestPeekModelInitialCursor(t *testing.T) {
+	pm := newPeekModel(nil)
+	pm.width = 120
+	pm.height = 40
+
+	items := []peekItem{
+		{name: "Toast", category: "Outposts"},
+		{name: "Vega", category: "Outposts"},
+		{name: "Forge", category: "Processes"},
+	}
+	pm.enter(peekMsg{items: items, initialCursor: 2, fromView: viewWorld, world: "dev"})
+
+	if pm.cursor != 2 {
+		t.Errorf("initial cursor should be 2, got %d", pm.cursor)
 	}
 }
 
