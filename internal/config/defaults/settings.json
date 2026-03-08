@@ -1,0 +1,9 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash {{STATUSLINE_PATH}}"
+  },
+  "gitAttribution": false,
+  "includeCoAuthoredBy": false,
+  "skipDangerousModePermissionPrompt": true
+}

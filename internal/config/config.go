@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/nevinsm/sol/internal/config/defaults"
 )
 
 // SessionName returns the tmux session name for an agent.
@@ -320,6 +322,10 @@ func EnsureClaudeConfigDir(worldDir, role, name, account string) (string, error)
 		return "", fmt.Errorf("failed to create claude config dir %q: %w", dir, err)
 	}
 
+	// Copy settings.json from .claude-defaults/ (always-overwrite).
+	// Ensures config changes propagate to all agents on next session start.
+	seedClaudeSettings(dir)
+
 	if account != "" {
 		// Named account: write access-token-only credentials.
 		srcCreds := filepath.Join(AccountDir(account), ".credentials.json")
@@ -508,6 +514,56 @@ func writeAccessTokenOnlyCreds(srcPath, destDir string) error {
 // Path: $SOL_HOME/.runtime/nudge_queue/{session}/
 func NudgeQueueDir(session string) string {
 	return filepath.Join(RuntimeDir(), "nudge_queue", session)
+}
+
+// ClaudeDefaultsDir returns the path to $SOL_HOME/.claude-defaults/.
+// This directory serves as the template for all agent config dirs.
+func ClaudeDefaultsDir() string {
+	return filepath.Join(Home(), ".claude-defaults")
+}
+
+// EnsureClaudeDefaults writes the embedded default settings.json and
+// statusline.sh to $SOL_HOME/.claude-defaults/. The settings.json template
+// has its {{STATUSLINE_PATH}} placeholder replaced with the absolute path
+// to statusline.sh. Safe to call multiple times — always overwrites.
+func EnsureClaudeDefaults() error {
+	dir := ClaudeDefaultsDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create claude defaults dir %q: %w", dir, err)
+	}
+
+	// Write statusline.sh.
+	statuslinePath := filepath.Join(dir, "statusline.sh")
+	if err := os.WriteFile(statuslinePath, defaults.StatuslineSh, 0o755); err != nil {
+		return fmt.Errorf("failed to write statusline.sh: %w", err)
+	}
+
+	// Write settings.json with resolved absolute path to statusline.sh.
+	settingsContent := strings.ReplaceAll(
+		string(defaults.SettingsJSON),
+		"{{STATUSLINE_PATH}}",
+		statuslinePath,
+	)
+	settingsPath := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(settingsContent), 0o644); err != nil {
+		return fmt.Errorf("failed to write settings.json: %w", err)
+	}
+
+	return nil
+}
+
+// seedClaudeSettings copies settings.json from .claude-defaults/ into the
+// given agent config dir. Skips silently if .claude-defaults/settings.json
+// doesn't exist (no defaults configured yet — not an error).
+func seedClaudeSettings(agentConfigDir string) {
+	src := filepath.Join(ClaudeDefaultsDir(), "settings.json")
+	data, err := os.ReadFile(src)
+	if err != nil {
+		// No defaults template — skip silently.
+		return
+	}
+	dst := filepath.Join(agentConfigDir, "settings.json")
+	_ = os.WriteFile(dst, data, 0o644)
 }
 
 // EnsureDirs creates .store/ and .runtime/ if they don't exist.

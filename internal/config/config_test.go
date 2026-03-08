@@ -336,6 +336,165 @@ func TestResolveAgentFlagWinsOverEnv(t *testing.T) {
 	}
 }
 
+func TestClaudeDefaultsDir(t *testing.T) {
+	t.Setenv("SOL_HOME", "/tmp/test-sol")
+	got := ClaudeDefaultsDir()
+	if got != "/tmp/test-sol/.claude-defaults" {
+		t.Fatalf("expected /tmp/test-sol/.claude-defaults, got %q", got)
+	}
+}
+
+func TestEnsureClaudeDefaults(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	if err := EnsureClaudeDefaults(); err != nil {
+		t.Fatalf("EnsureClaudeDefaults() error: %v", err)
+	}
+
+	defaultsDir := filepath.Join(dir, ".claude-defaults")
+
+	// Verify settings.json was created.
+	settingsPath := filepath.Join(defaultsDir, "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("expected settings.json to exist: %v", err)
+	}
+
+	// Verify the statusline path was resolved (no template placeholder).
+	if strings.Contains(string(data), "{{STATUSLINE_PATH}}") {
+		t.Error("settings.json still contains {{STATUSLINE_PATH}} placeholder")
+	}
+
+	// Verify absolute path to statusline.sh is present.
+	expectedStatuslinePath := filepath.Join(defaultsDir, "statusline.sh")
+	if !strings.Contains(string(data), expectedStatuslinePath) {
+		t.Errorf("settings.json should contain absolute path %q, got:\n%s", expectedStatuslinePath, data)
+	}
+
+	// Verify settings.json is valid JSON.
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("settings.json is not valid JSON: %v", err)
+	}
+
+	// Verify expected keys.
+	if _, ok := parsed["statusLine"]; !ok {
+		t.Error("settings.json missing statusLine key")
+	}
+	if v, ok := parsed["gitAttribution"]; !ok || v != false {
+		t.Error("settings.json missing or wrong gitAttribution")
+	}
+
+	// Verify statusline.sh was created and is executable.
+	info, err := os.Stat(expectedStatuslinePath)
+	if err != nil {
+		t.Fatalf("expected statusline.sh to exist: %v", err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Error("statusline.sh should be executable")
+	}
+}
+
+func TestEnsureClaudeDefaultsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Call twice — should not error.
+	if err := EnsureClaudeDefaults(); err != nil {
+		t.Fatalf("first call error: %v", err)
+	}
+	if err := EnsureClaudeDefaults(); err != nil {
+		t.Fatalf("second call error: %v", err)
+	}
+}
+
+func TestEnsureClaudeConfigDirCopiesSettings(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	t.Setenv("HOME", t.TempDir())
+
+	// Seed defaults first.
+	if err := EnsureClaudeDefaults(); err != nil {
+		t.Fatalf("EnsureClaudeDefaults() error: %v", err)
+	}
+
+	worldDir := filepath.Join(solHome, "testworld")
+	dir, err := EnsureClaudeConfigDir(worldDir, "agent", "Toast", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify settings.json was copied to agent config dir.
+	agentSettings := filepath.Join(dir, "settings.json")
+	data, err := os.ReadFile(agentSettings)
+	if err != nil {
+		t.Fatalf("expected settings.json in agent config dir: %v", err)
+	}
+
+	// Verify it contains the absolute statusline path.
+	statuslinePath := filepath.Join(solHome, ".claude-defaults", "statusline.sh")
+	if !strings.Contains(string(data), statuslinePath) {
+		t.Errorf("agent settings.json should reference %q", statuslinePath)
+	}
+}
+
+func TestEnsureClaudeConfigDirSkipsWithoutDefaults(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	t.Setenv("HOME", t.TempDir())
+
+	// Do NOT seed defaults — .claude-defaults/ doesn't exist.
+	worldDir := filepath.Join(solHome, "testworld")
+	dir, err := EnsureClaudeConfigDir(worldDir, "agent", "Toast", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// settings.json should NOT exist in agent config dir.
+	agentSettings := filepath.Join(dir, "settings.json")
+	if _, err := os.Stat(agentSettings); !os.IsNotExist(err) {
+		t.Error("settings.json should not exist when no defaults are configured")
+	}
+}
+
+func TestEnsureClaudeConfigDirOverwritesSettings(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	t.Setenv("HOME", t.TempDir())
+
+	// Seed defaults.
+	if err := EnsureClaudeDefaults(); err != nil {
+		t.Fatalf("EnsureClaudeDefaults() error: %v", err)
+	}
+
+	worldDir := filepath.Join(solHome, "testworld")
+
+	// First call — seeds settings.json.
+	dir, err := EnsureClaudeConfigDir(worldDir, "agent", "Toast", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Overwrite agent settings.json with garbage.
+	agentSettings := filepath.Join(dir, "settings.json")
+	os.WriteFile(agentSettings, []byte(`{"old": true}`), 0o644)
+
+	// Second call — should overwrite with defaults.
+	_, err = EnsureClaudeConfigDir(worldDir, "agent", "Toast", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, _ := os.ReadFile(agentSettings)
+	if strings.Contains(string(data), `"old"`) {
+		t.Error("settings.json should have been overwritten with defaults")
+	}
+	if !strings.Contains(string(data), "statusLine") {
+		t.Error("settings.json should contain statusLine from defaults")
+	}
+}
+
 func TestEnsureClaudeConfigDirLegacyFallback(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
