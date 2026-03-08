@@ -35,6 +35,11 @@ var sessionNudgeLocks sync.Map // map[string]chan struct{}
 // nudgeLockTimeout is how long to wait to acquire the per-session nudge lock.
 const nudgeLockTimeout = 30 * time.Second
 
+// startupVerifyDelay is the time to wait after session creation before checking
+// if the process survived startup. Short enough to not slow down normal startup,
+// long enough to catch missing binaries, bad flags, and permission errors.
+const startupVerifyDelay = 1500 * time.Millisecond
+
 // sendKeysChunkSize is the maximum bytes per tmux send-keys call.
 // Messages larger than this are split into chunks with inter-chunk delays.
 const sendKeysChunkSize = 512
@@ -221,6 +226,27 @@ func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, 
 	if err := os.WriteFile(metadataPath(name), data, 0o644); err != nil {
 		_ = m.Stop(name, true)
 		return fmt.Errorf("failed to write session metadata for %q: %w", name, err)
+	}
+
+	// Verify the process survived startup. Catches missing binaries,
+	// bad flags, permission errors, and immediate crashes.
+	time.Sleep(startupVerifyDelay)
+	// Check if the session still exists — tmux destroys it when the process
+	// exits (unless remain-on-exit is set for envoy/governor roles).
+	if !m.Exists(name) {
+		_ = os.Remove(metadataPath(name))
+		_ = os.Remove(captureHashPath(name))
+		return fmt.Errorf("session %q: process died during startup", name)
+	}
+	// Session exists — check if the pane process is dead (remain-on-exit case).
+	target := tmuxExactTarget(name)
+	paneCmd, paneCmdCancel := tmuxCmd("list-panes", "-t", target, "-F", "#{pane_dead}")
+	defer paneCmdCancel()
+	if out, err := paneCmd.Output(); err == nil {
+		if strings.TrimSpace(string(out)) == "1" {
+			_ = m.Stop(name, true)
+			return fmt.Errorf("session %q: process died during startup", name)
+		}
 	}
 
 	return nil
@@ -519,6 +545,22 @@ func (m *Manager) Cycle(name, workdir, cmd string, env map[string]string, role, 
 	defer respawnCancel()
 	if out, err := respawn.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to respawn pane in session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
+	}
+
+	// Best-effort verification: if we reached here, this is NOT a self-handoff
+	// (self-handoff kills the calling process at respawn-pane). Check if the
+	// new process survived startup.
+	time.Sleep(startupVerifyDelay)
+	if !m.Exists(name) {
+		return fmt.Errorf("session %q: process died during startup (cycle)", name)
+	}
+	target := tmuxExactTarget(name)
+	paneCmd, paneCmdCancel := tmuxCmd("list-panes", "-t", target, "-F", "#{pane_dead}")
+	defer paneCmdCancel()
+	if out, err := paneCmd.Output(); err == nil {
+		if strings.TrimSpace(string(out)) == "1" {
+			return fmt.Errorf("session %q: process died during startup (cycle)", name)
+		}
 	}
 
 	return nil
