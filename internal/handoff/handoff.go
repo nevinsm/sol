@@ -576,6 +576,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 
 	hasWork := hasTether || hasActiveWrit
 
+	var resumeState startup.ResumeState
 	if hasWork {
 		// Full capture + handoff file + notification for agents with active work.
 		state, err := Capture(CaptureOpts{
@@ -623,6 +624,10 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 				fmt.Fprintf(os.Stderr, "handoff: failed to send self-notification: %v\n", err)
 			}
 		}
+
+		// Derive resume state from already-captured handoff state
+		// to avoid redundant disk reads.
+		resumeState = state.BuildResumeState(reason)
 	} else {
 		// No tether — emit event only.
 		if logger != nil {
@@ -634,6 +639,11 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 				"session_age": sessionAge.Round(time.Second).String(),
 			})
 		}
+
+		// No captured state available — read durable state from disk
+		// (workflow state, active writ) for roles like governor that may
+		// have workflows without tethers.
+		resumeState = CaptureResumeState(opts.World, opts.AgentName, role, reason, sphereStore)
 	}
 
 	// Check for resolve lock — if resolve is in progress, skip the handoff.
@@ -678,7 +688,6 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// dies before completing, the prefect can use this to call
 	// startup.Resume() instead of a bare startup.Launch(), preserving
 	// workflow position and claimed resources.
-	resumeState := CaptureResumeState(opts.World, opts.AgentName, role, reason, sphereStore)
 	if err := startup.WriteResumeState(opts.World, opts.AgentName, role, resumeState); err != nil {
 		fmt.Fprintf(os.Stderr, "handoff: failed to write resume state: %v\n", err)
 	}
