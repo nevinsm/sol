@@ -106,6 +106,15 @@ var caravanAddCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
+		// Guard against adding to closed caravans.
+		caravan, err := sphereStore.GetCaravan(caravanID)
+		if err != nil {
+			return err
+		}
+		if caravan.Status == "closed" {
+			return fmt.Errorf("caravan %s is closed — reopen it first with: sol caravan reopen %s", caravanID, caravanID)
+		}
+
 		phase, _ := cmd.Flags().GetInt("phase")
 		for _, itemID := range itemIDs {
 			if err := sphereStore.CreateCaravanItem(caravanID, itemID, world, phase); err != nil {
@@ -618,6 +627,40 @@ var caravanDrydockCmd = &cobra.Command{
 	},
 }
 
+// --- sol caravan reopen ---
+
+var caravanReopenCmd = &cobra.Command{
+	Use:          "reopen <caravan-id>",
+	Short:        "Reopen a closed caravan (closed → drydock)",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		caravanID := args[0]
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		caravan, err := sphereStore.GetCaravan(caravanID)
+		if err != nil {
+			return err
+		}
+
+		if caravan.Status != "closed" {
+			return fmt.Errorf("caravan %s is %q, not closed — only closed caravans can be reopened", caravanID, caravan.Status)
+		}
+
+		if err := sphereStore.UpdateCaravanStatus(caravanID, "drydock"); err != nil {
+			return err
+		}
+
+		fmt.Printf("Reopened caravan %s → drydock\n", caravanID)
+		return nil
+	},
+}
+
 // --- sol caravan launch ---
 
 var caravanLaunchCmd = &cobra.Command{
@@ -1006,6 +1049,7 @@ func init() {
 	caravanCmd.AddCommand(caravanSetPhaseCmd)
 	caravanCmd.AddCommand(caravanCommissionCmd)
 	caravanCmd.AddCommand(caravanDrydockCmd)
+	caravanCmd.AddCommand(caravanReopenCmd)
 
 	// set-phase flags
 	caravanSetPhaseCmd.Flags().Bool("all", false, "update all items in the caravan")

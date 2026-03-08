@@ -306,6 +306,7 @@ Built-in convoy formulas set `kind` based on their work type:
 | `sol caravan launch <caravan-id>` | Dispatch ready items in a caravan |
 | `sol caravan commission <caravan-id>` | Commission a caravan (drydock → open) |
 | `sol caravan drydock <caravan-id>` | Return a caravan to drydock (open → drydock) |
+| `sol caravan reopen <caravan-id>` | Reopen a closed caravan (closed → drydock) |
 | `sol caravan set-phase <caravan-id> [<item-id>] <phase>` | Update the phase of items in a caravan |
 | `sol caravan close [<caravan-id>]` | Close a completed caravan |
 | `sol caravan dep add <caravan-id> <depends-on-caravan-id>` | Declare that a caravan depends on another caravan being closed |

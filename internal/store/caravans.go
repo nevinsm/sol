@@ -176,7 +176,7 @@ func (s *Store) UpdateCaravanStatus(id, status string) error {
 		)
 	} else {
 		result, err = s.db.Exec(
-			`UPDATE caravans SET status = ? WHERE id = ?`,
+			`UPDATE caravans SET status = ?, closed_at = NULL WHERE id = ?`,
 			status, id,
 		)
 	}
