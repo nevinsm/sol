@@ -434,7 +434,7 @@ func (r *Forge) nudgeGovernor(msgType, subject, body string) {
 		return // no governor configured — skip silently
 	}
 	govSession := config.SessionName(r.world, "governor")
-	if err := nudge.Enqueue(govSession, nudge.Message{
+	if err := nudge.Deliver(govSession, nudge.Message{
 		Sender:   "forge",
 		Type:     msgType,
 		Subject:  subject,

@@ -284,22 +284,19 @@ const deliverIdleTimeout = 3 * time.Second
 //
 // 1. Waits up to 3 seconds for the session to be idle (WaitForIdle).
 // 2. If idle: formats the message and sends it via NudgeSession.
-// 3. If busy (timeout): enqueues the message for later drain at turn boundary.
+// 3. If busy or not running: enqueues the message for later drain at turn boundary.
 // 4. If enqueue fails: falls back to NudgeSession anyway (last resort).
 //
-// Best-effort: returns nil if session doesn't exist.
+// Messages are always enqueued as a fallback, even if the session doesn't
+// currently exist — they will be drained when the session starts.
 func Deliver(sessionName string, msg Message) error {
-	mgr := session.New()
-	if !mgr.Exists(sessionName) {
-		return nil
-	}
-
 	// Ensure message has a timestamp.
 	if msg.CreatedAt.IsZero() {
 		msg.CreatedAt = time.Now().UTC()
 	}
 
 	// Try to wait for idle prompt.
+	mgr := session.New()
 	err := mgr.WaitForIdle(sessionName, deliverIdleTimeout)
 	if err == nil {
 		// Session is idle — deliver directly via NudgeSession.
@@ -307,7 +304,7 @@ func Deliver(sessionName string, msg Message) error {
 		return mgr.NudgeSession(sessionName, notification)
 	}
 
-	// Session is busy or WaitForIdle failed — queue for later drain.
+	// Session is busy, not running, or WaitForIdle failed — queue for later drain.
 	if qErr := Enqueue(sessionName, msg); qErr != nil {
 		// Enqueue failed — last resort: try NudgeSession anyway.
 		notification := formatNotification(msg)

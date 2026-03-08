@@ -1561,38 +1561,31 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 			})
 		}
 
-		// Nudge governor that work is done (best-effort, silent skip if no governor).
+		// Nudge governor that work is done (best-effort, smart delivery).
 		govSession := config.SessionName(opts.World, "governor")
-		if mgr.Exists(govSession) {
-			govBody := fmt.Sprintf(`{"writ_id":%q,"agent_name":%q,"branch":%q,"title":%q,"merge_request_id":%q}`,
-				writID, opts.AgentName, branchName, item.Title, mrID)
-			if err := nudge.Enqueue(govSession, nudge.Message{
-				Sender:   opts.AgentName,
-				Type:     "AGENT_DONE",
-				Subject:  fmt.Sprintf("Agent %s resolved %s", opts.AgentName, writID),
-				Body:     govBody,
-				Priority: "normal",
-			}); err != nil {
-				fmt.Fprintf(os.Stderr, "resolve: failed to nudge governor: %v\n", err)
-			}
+		govBody := fmt.Sprintf(`{"writ_id":%q,"agent_name":%q,"branch":%q,"title":%q,"merge_request_id":%q}`,
+			writID, opts.AgentName, branchName, item.Title, mrID)
+		if err := nudge.Deliver(govSession, nudge.Message{
+			Sender:   opts.AgentName,
+			Type:     "AGENT_DONE",
+			Subject:  fmt.Sprintf("Agent %s resolved %s", opts.AgentName, writID),
+			Body:     govBody,
+			Priority: "normal",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to nudge governor: %v\n", err)
 		}
 
-		// Nudge forge that a new MR is ready (best-effort).
+		// Nudge forge that a new MR is ready (best-effort, smart delivery).
 		forgeSession := config.SessionName(opts.World, "forge")
-		forgeMsg := nudge.Message{
+		if err := nudge.Deliver(forgeSession, nudge.Message{
 			Sender:   opts.AgentName,
 			Type:     "MR_READY",
 			Subject:  fmt.Sprintf("MR %s ready for merge", mrID),
 			Body:     fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`, writID, mrID, branchName, item.Title),
 			Priority: "normal",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to nudge forge: %v\n", err)
 		}
-		if mgr.Exists(forgeSession) {
-			if err := nudge.Enqueue(forgeSession, forgeMsg); err != nil {
-				fmt.Fprintf(os.Stderr, "resolve: failed to nudge forge: %v\n", err)
-			}
-		}
-		// Deliver attempts direct session delivery; no-op if session doesn't exist.
-		nudge.Deliver(forgeSession, forgeMsg)
 	} else {
 		// Non-code writs: emit event without branch/MR fields.
 		if logger != nil {
@@ -1601,6 +1594,20 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 				"agent":   opts.AgentName,
 				"kind":    item.Kind,
 			})
+		}
+
+		// Nudge governor that non-code work is done (best-effort, smart delivery).
+		govSession := config.SessionName(opts.World, "governor")
+		govBody := fmt.Sprintf(`{"writ_id":%q,"agent_name":%q,"kind":%q,"title":%q}`,
+			writID, opts.AgentName, item.Kind, item.Title)
+		if err := nudge.Deliver(govSession, nudge.Message{
+			Sender:   opts.AgentName,
+			Type:     "AGENT_DONE",
+			Subject:  fmt.Sprintf("Agent %s resolved %s", opts.AgentName, writID),
+			Body:     govBody,
+			Priority: "normal",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to nudge governor: %v\n", err)
 		}
 	}
 

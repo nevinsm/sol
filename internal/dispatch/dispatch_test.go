@@ -2761,7 +2761,7 @@ func TestResolveNudgesForgeWithMRReady(t *testing.T) {
 	}
 }
 
-func TestResolveSkipsForgeNudgeWhenNoForge(t *testing.T) {
+func TestResolveQueuesForgeNudgeEvenWithoutForge(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
@@ -2794,7 +2794,8 @@ func TestResolveSkipsForgeNudgeWhenNoForge(t *testing.T) {
 
 	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
-	// No forge session started — nudge should be skipped.
+	// No forge session started — smart delivery queues the message
+	// for when forge eventually starts and drains its queue.
 
 	_, err = Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
@@ -2804,14 +2805,16 @@ func TestResolveSkipsForgeNudgeWhenNoForge(t *testing.T) {
 		t.Fatalf("Resolve failed: %v", err)
 	}
 
-	// Verify no forge nudge was enqueued.
+	// Verify forge nudge is queued even without a running forge session.
+	// Smart delivery (nudge.Deliver) always queues as fallback — the message
+	// will be drained when forge starts.
 	forgeSession := config.SessionName("ember", "forge")
 	msgs, err := nudge.List(forgeSession)
 	if err != nil {
 		t.Fatalf("failed to list nudge queue: %v", err)
 	}
-	if len(msgs) != 0 {
-		t.Errorf("expected no forge nudge messages, got %d", len(msgs))
+	if len(msgs) == 0 {
+		t.Error("expected forge nudge to be queued for later delivery, got none")
 	}
 }
 
@@ -3197,15 +3200,23 @@ func TestResolveNonCodeWritSkipsForgeNudge(t *testing.T) {
 		}
 	}
 
-	// Verify governor did NOT receive a nudge.
+	// Verify governor DID receive an AGENT_DONE nudge for non-code writ resolve.
+	// Governor should be notified when any writ completes, not just code writs.
 	govMsgs, err := nudge.List(govSession)
 	if err != nil {
 		t.Fatalf("failed to list governor nudge queue: %v", err)
 	}
+	foundAgentDone := false
 	for _, msg := range govMsgs {
 		if msg.Type == "AGENT_DONE" {
-			t.Error("expected no AGENT_DONE nudge for non-code writ, but found one")
+			foundAgentDone = true
+			if !strings.Contains(msg.Body, itemID) {
+				t.Errorf("expected AGENT_DONE body to contain writ ID %q, got %q", itemID, msg.Body)
+			}
 		}
+	}
+	if !foundAgentDone {
+		t.Error("expected AGENT_DONE nudge for non-code writ resolve, but found none")
 	}
 }
 
