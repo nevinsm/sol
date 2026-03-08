@@ -165,9 +165,37 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 		summary.Capacity = worldCfg.Agents.Capacity
 	}
 
-	// Sleeping worlds get a distinct health indicator and skip further checks.
+	// Sleeping worlds: still count active agents/envoys, but skip
+	// forge/sentinel/governor/MR checks.
 	if summary.Sleeping {
 		summary.Health = "sleeping"
+
+		// Count agents and envoys that may still be winding down.
+		agents, err := sphereStore.ListAgents(w.Name, "")
+		if err == nil {
+			for _, a := range agents {
+				switch a.Role {
+				case "envoy":
+					summary.Envoys++
+				case "forge", "sentinel", "consul", "governor":
+					continue
+				default: // "agent"
+					summary.Agents++
+					switch a.State {
+					case "working":
+						summary.Working++
+						sessName := config.SessionName(w.Name, a.Name)
+						if !checker.Exists(sessName) {
+							summary.Dead++
+						}
+					case "idle":
+						summary.Idle++
+					case "stalled":
+						summary.Stalled++
+					}
+				}
+			}
+		}
 		return summary
 	}
 

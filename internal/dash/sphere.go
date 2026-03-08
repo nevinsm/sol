@@ -470,7 +470,12 @@ func (sm sphereModel) renderWorldsTable(b *strings.Builder, worlds []status.Worl
 
 func (sm sphereModel) renderWorldRow(w status.WorldSummary) string {
 	if w.Sleeping {
-		return "  " + padRight(w.Name, 16) + " " + padRight(dimStyle.Render("—"), 20) + " " + padRight(sleepingBadge, 14) + " " + padRight(dimStyle.Render("—"), 5) + " " + padRight(dimStyle.Render("—"), 7) + " " + padRight(dimStyle.Render("—"), 10) + " " + dimStyle.Render("—")
+		// Show active agent/envoy counts for sleeping worlds (soft sleep wind-down).
+		agents := dimStyle.Render("—")
+		if w.Agents > 0 {
+			agents = fmt.Sprintf("%d", w.Agents)
+		}
+		return "  " + padRight(w.Name, 16) + " " + padRight(agents, 20) + " " + padRight(sleepingBadge, 14) + " " + padRight(dimStyle.Render("—"), 5) + " " + padRight(dimStyle.Render("—"), 7) + " " + padRight(dimStyle.Render("—"), 10) + " " + dimStyle.Render("—")
 	}
 
 	// Agents column with optional spinner.

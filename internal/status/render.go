@@ -199,9 +199,18 @@ func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 
 	for _, w := range worlds {
 		if w.Sleeping {
+			// Show active agent/envoy counts for sleeping worlds (soft sleep wind-down).
+			agents := dimStyle.Render("—")
+			if w.Agents > 0 {
+				agents = fmt.Sprintf("%d", w.Agents)
+			}
+			envoys := dimStyle.Render("—")
+			if w.Envoys > 0 {
+				envoys = fmt.Sprintf("%d", w.Envoys)
+			}
 			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				w.Name,
-				dimStyle.Render("—"), dimStyle.Render("—"), dimStyle.Render("—"),
+				agents, envoys, dimStyle.Render("—"),
 				dimStyle.Render("—"), dimStyle.Render("—"), dimStyle.Render("—"),
 				sleepingBadge)
 			continue

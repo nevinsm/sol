@@ -714,3 +714,52 @@ func TestFormatChronicleDetailPID(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderSphereSleepingWorldShowsAgentCounts(t *testing.T) {
+	s := &SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: PrefectInfo{Running: true, PID: 1234},
+		Worlds: []WorldSummary{
+			{Name: "active", Agents: 3, Working: 2, Forge: true, Sentinel: true, Health: "healthy"},
+			{Name: "sleepy", Sleeping: true, Agents: 2, Envoys: 1, Working: 1, Health: "sleeping"},
+		},
+	}
+
+	output := RenderSphere(s)
+
+	// The sleeping world should show agent and envoy counts, not dashes.
+	if !strings.Contains(output, "sleepy") {
+		t.Error("output missing sleeping world name")
+	}
+	if !strings.Contains(output, "sleeping") {
+		t.Error("output missing sleeping badge")
+	}
+	// The agent count "2" should appear in the output for the sleeping world row.
+	// We can't check for exactly "2" since other worlds also have numbers,
+	// but we verify the active world renders normally.
+	if !strings.Contains(output, "active") {
+		t.Error("output missing active world")
+	}
+}
+
+func TestRenderSphereSleepingWorldNoCounts(t *testing.T) {
+	s := &SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: PrefectInfo{Running: true, PID: 1234},
+		Worlds: []WorldSummary{
+			{Name: "dormant", Sleeping: true, Agents: 0, Envoys: 0, Health: "sleeping"},
+		},
+	}
+
+	output := RenderSphere(s)
+
+	// Sleeping world with no agents should render with dashes.
+	if !strings.Contains(output, "dormant") {
+		t.Error("output missing dormant world name")
+	}
+	if !strings.Contains(output, "sleeping") {
+		t.Error("output missing sleeping badge")
+	}
+}

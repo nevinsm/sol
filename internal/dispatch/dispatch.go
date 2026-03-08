@@ -147,6 +147,11 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		}
 	}
 
+	// 0b. Reject dispatch to sleeping worlds.
+	if worldCfg.World.Sleeping {
+		return nil, fmt.Errorf("world %q is sleeping: dispatch blocked", opts.World)
+	}
+
 	// 1. Acquire per-writ advisory lock to prevent double dispatch.
 	lock, err := AcquireWritLock(opts.WritID)
 	if err != nil {

@@ -667,6 +667,123 @@ func TestWorldSummaryUnlimitedCapacity(t *testing.T) {
 	}
 }
 
+func TestGatherSphereSleepingWorldShowsAgentCounts(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// Mark the world as sleeping in world.toml.
+	worldDir := filepath.Join(config.Home(), "slumber")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte("[world]\nsleeping = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	lister := &mockWorldLister{
+		worlds: []store.World{
+			{Name: "slumber"},
+		},
+	}
+	sphere := &mockSphereStore{
+		agents: []store.Agent{
+			{ID: "slumber/Alpha", Name: "Alpha", World: "slumber", Role: "agent", State: "working"},
+			{ID: "slumber/Beta", Name: "Beta", World: "slumber", Role: "agent", State: "idle"},
+			{ID: "slumber/Envoy1", Name: "Envoy1", World: "slumber", Role: "envoy", State: "working"},
+		},
+	}
+	checker := &mockChecker{
+		alive: map[string]bool{
+			"sol-slumber-Alpha":  true,
+			"sol-slumber-Beta":   false,
+			"sol-slumber-Envoy1": true,
+		},
+	}
+
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+
+	if len(result.Worlds) != 1 {
+		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
+	}
+	w := result.Worlds[0]
+
+	// Sleeping flag should be set.
+	if !w.Sleeping {
+		t.Error("Sleeping = false, want true")
+	}
+	if w.Health != "sleeping" {
+		t.Errorf("Health = %q, want %q", w.Health, "sleeping")
+	}
+
+	// Agent counts should still be populated.
+	if w.Agents != 2 {
+		t.Errorf("Agents = %d, want 2", w.Agents)
+	}
+	if w.Envoys != 1 {
+		t.Errorf("Envoys = %d, want 1", w.Envoys)
+	}
+	if w.Working != 1 {
+		t.Errorf("Working = %d, want 1", w.Working)
+	}
+	if w.Idle != 1 {
+		t.Errorf("Idle = %d, want 1", w.Idle)
+	}
+
+	// Infrastructure columns should not be set.
+	if w.Forge {
+		t.Error("Forge = true, want false (suppressed for sleeping worlds)")
+	}
+	if w.Sentinel {
+		t.Error("Sentinel = true, want false (suppressed for sleeping worlds)")
+	}
+	if w.Governor {
+		t.Error("Governor = true, want false (suppressed for sleeping worlds)")
+	}
+}
+
+func TestGatherSphereSleepingWorldNoAgents(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// Mark the world as sleeping.
+	worldDir := filepath.Join(config.Home(), "dormant")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte("[world]\nsleeping = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	lister := &mockWorldLister{
+		worlds: []store.World{
+			{Name: "dormant"},
+		},
+	}
+	sphere := &mockSphereStore{} // no agents
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+
+	if len(result.Worlds) != 1 {
+		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
+	}
+	w := result.Worlds[0]
+
+	if !w.Sleeping {
+		t.Error("Sleeping = false, want true")
+	}
+	if w.Agents != 0 {
+		t.Errorf("Agents = %d, want 0", w.Agents)
+	}
+	if w.Envoys != 0 {
+		t.Errorf("Envoys = %d, want 0", w.Envoys)
+	}
+}
+
 func TestEscalationSummaryAggregatesBySeverity(t *testing.T) {
 	setupTestHome(t)
 	clearPrefectPID(t)
