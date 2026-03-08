@@ -1416,21 +1416,23 @@ func TestHealthHighlightDecay(t *testing.T) {
 	// Simulate initial data.
 	m.prevSphereHealth = "healthy"
 
-	// Health changes.
+	// Health changes — should set time-based highlight.
 	m.trackSphereHighlights(&status.SphereStatus{Health: "degraded"})
-	if m.healthHighlight != highlightTTL {
-		t.Errorf("healthHighlight should be %d after change, got %d", highlightTTL, m.healthHighlight)
+	if m.healthHighlightEnd.IsZero() {
+		t.Error("healthHighlightEnd should be set after health change")
+	}
+	if !time.Now().Before(m.healthHighlightEnd) {
+		t.Error("healthHighlightEnd should be in the future")
 	}
 
-	// Decay.
+	// Decay should not clear a future highlight.
 	m.decayHighlights()
-	if m.healthHighlight != highlightTTL-1 {
-		t.Errorf("healthHighlight should decay by 1, got %d", m.healthHighlight)
-	}
+	// healthHighlightEnd is time-based, not counter-based — it stays set.
 
-	m.decayHighlights()
-	if m.healthHighlight != 0 {
-		t.Errorf("healthHighlight should be 0 after full decay, got %d", m.healthHighlight)
+	// Simulate expiry by setting the end time in the past.
+	m.healthHighlightEnd = time.Now().Add(-1 * time.Second)
+	if time.Now().Before(m.healthHighlightEnd) {
+		t.Error("healthHighlightEnd should be in the past after manual expiry")
 	}
 }
 
@@ -1444,7 +1446,7 @@ func TestAgentStateHighlight(t *testing.T) {
 			{Name: "Alpha", State: "idle"},
 		},
 	})
-	if _, ok := m.agentHighlights["Alpha"]; ok {
+	if _, ok := m.agentHighlightEnd["Alpha"]; ok {
 		t.Error("first data should not trigger highlights")
 	}
 
@@ -1455,15 +1457,17 @@ func TestAgentStateHighlight(t *testing.T) {
 			{Name: "Alpha", State: "working"},
 		},
 	})
-	if _, ok := m.agentHighlights["Alpha"]; !ok {
+	if end, ok := m.agentHighlightEnd["Alpha"]; !ok {
 		t.Error("state change should trigger highlight")
+	} else if !time.Now().Before(end) {
+		t.Error("highlight end should be in the future")
 	}
 
-	// Decay.
+	// Simulate expiry and decay.
+	m.agentHighlightEnd["Alpha"] = time.Now().Add(-1 * time.Second)
 	m.decayHighlights()
-	m.decayHighlights()
-	if _, ok := m.agentHighlights["Alpha"]; ok {
-		t.Error("highlight should be removed after full decay")
+	if _, ok := m.agentHighlightEnd["Alpha"]; ok {
+		t.Error("highlight should be removed after expiry and decay")
 	}
 }
 
