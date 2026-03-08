@@ -1542,6 +1542,9 @@ func writeTOMLConvoyManifest(t *testing.T, dir, name string, legs []Leg, synth *
 		if leg.Focus != "" {
 			f.WriteString("focus = \"" + leg.Focus + "\"\n")
 		}
+		if leg.Kind != "" {
+			f.WriteString("kind = \"" + leg.Kind + "\"\n")
+		}
 		f.WriteString("\n")
 	}
 
@@ -1601,6 +1604,9 @@ func writeTOMLManifest(t *testing.T, dir, name string, steps []StepDef, vars map
 				f.WriteString("\"" + n + "\"")
 			}
 			f.WriteString("]\n")
+		}
+		if s.Kind != "" {
+			f.WriteString("kind = \"" + s.Kind + "\"\n")
 		}
 		f.WriteString("\n")
 	}
@@ -2473,5 +2479,163 @@ func TestListFormulasUserShadowsEmbedded(t *testing.T) {
 	}
 	if !embeddedEntry.Shadowed {
 		t.Error("embedded tier entry should be shadowed by user tier")
+	}
+}
+
+func TestManifestFormulaConvoyWithKind(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Create convoy formula with analysis kind legs.
+	formulaDir := filepath.Join(solHome, "formulas", "test-convoy-kind")
+	os.MkdirAll(formulaDir, 0o755)
+
+	legs := []Leg{
+		{ID: "reqs", Title: "Requirements", Description: "Gather requirements.", Kind: "analysis"},
+		{ID: "impl", Title: "Implementation", Description: "Build the thing.", Kind: "code"},
+	}
+	synth := &Synthesis{
+		Title:       "Consolidate",
+		Description: "Combine results.",
+		DependsOn:   []string{"reqs", "impl"},
+	}
+	writeTOMLConvoyManifest(t, formulaDir, "test-convoy-kind", legs, synth)
+
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "test-convoy-kind",
+		World:       "test-world",
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	// Verify analysis leg has kind=analysis.
+	reqsID := result.ChildIDs["reqs"]
+	reqsItem, err := ws.GetWrit(reqsID)
+	if err != nil {
+		t.Fatalf("GetWrit(reqs) error: %v", err)
+	}
+	if reqsItem.Kind != "analysis" {
+		t.Errorf("reqs kind: got %q, want %q", reqsItem.Kind, "analysis")
+	}
+
+	// Verify code leg has kind=code.
+	implID := result.ChildIDs["impl"]
+	implItem, err := ws.GetWrit(implID)
+	if err != nil {
+		t.Fatalf("GetWrit(impl) error: %v", err)
+	}
+	if implItem.Kind != "code" {
+		t.Errorf("impl kind: got %q, want %q", implItem.Kind, "code")
+	}
+
+	// Verify synthesis defaults to code (no kind specified).
+	synthID := result.ChildIDs["synthesis"]
+	synthItem, err := ws.GetWrit(synthID)
+	if err != nil {
+		t.Fatalf("GetWrit(synthesis) error: %v", err)
+	}
+	if synthItem.Kind != "code" {
+		t.Errorf("synthesis kind: got %q, want %q", synthItem.Kind, "code")
+	}
+}
+
+func TestManifestFormulaConvoyKindDefaultsToCode(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Create convoy formula with no kind specified (should default to code).
+	formulaDir := filepath.Join(solHome, "formulas", "test-convoy-default")
+	os.MkdirAll(formulaDir, 0o755)
+
+	legs := []Leg{
+		{ID: "leg1", Title: "Leg One", Description: "First leg."},
+	}
+	synth := &Synthesis{
+		Title:       "Finish",
+		Description: "Wrap up.",
+		DependsOn:   []string{"leg1"},
+	}
+	writeTOMLConvoyManifest(t, formulaDir, "test-convoy-default", legs, synth)
+
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "test-convoy-default",
+		World:       "test-world",
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	legID := result.ChildIDs["leg1"]
+	legItem, err := ws.GetWrit(legID)
+	if err != nil {
+		t.Fatalf("GetWrit(leg1) error: %v", err)
+	}
+	if legItem.Kind != "code" {
+		t.Errorf("leg1 kind: got %q, want %q (default)", legItem.Kind, "code")
+	}
+}
+
+func TestCaravanPhaseGatingWithAnalysisWrit(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Create convoy: phase 0 = analysis writ, phase 1 = code writ.
+	formulaDir := filepath.Join(solHome, "formulas", "test-phase-gate")
+	os.MkdirAll(formulaDir, 0o755)
+
+	legs := []Leg{
+		{ID: "analyze", Title: "Analysis Phase", Description: "Analyze.", Kind: "analysis"},
+	}
+	synth := &Synthesis{
+		Title:       "Build Phase",
+		Description: "Build based on analysis.",
+		DependsOn:   []string{"analyze"},
+	}
+	writeTOMLConvoyManifest(t, formulaDir, "test-phase-gate", legs, synth)
+
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "test-phase-gate",
+		World:       "test-world",
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	analyzeID := result.ChildIDs["analyze"]
+	synthID := result.ChildIDs["synthesis"]
+
+	// worldOpener returns the existing world store (same test-world).
+	worldOpener := func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
+	}
+
+	// Phase 1 (synthesis) should be blocked while phase 0 (analyze) is open.
+	blocked, err := ss.IsWritBlockedByCaravan(synthID, "test-world", worldOpener)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan error: %v", err)
+	}
+	if !blocked {
+		t.Error("synthesis should be blocked while analysis writ is open")
+	}
+
+	// Close the analysis writ directly (simulating resolve for analysis writs).
+	if err := ws.CloseWrit(analyzeID); err != nil {
+		t.Fatalf("CloseWrit(analyze) error: %v", err)
+	}
+
+	// Phase 1 should now be unblocked.
+	blocked, err = ss.IsWritBlockedByCaravan(synthID, "test-world", worldOpener)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan error: %v", err)
+	}
+	if blocked {
+		t.Error("synthesis should be unblocked after analysis writ is closed")
 	}
 }

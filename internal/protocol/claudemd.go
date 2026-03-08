@@ -155,6 +155,7 @@ Your job is to execute the assigned writ.
 ## Your Assignment
 - Writ: %s
 - Title: %s
+- Kind: %s
 - Description: %s
 
 ## Approach
@@ -192,7 +193,7 @@ Use `+"`"+`sol forget \"key\"`+"`"+` to remove outdated memories.
 - Do not modify files outside this worktree.
 - Do not attempt to interact with other agents directly.
 - Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
-`, ctx.AgentName, ctx.World, modelSection, outputDirSection, depsSection, ctx.WritID, ctx.Title, ctx.Description,
+`, ctx.AgentName, ctx.World, modelSection, outputDirSection, depsSection, ctx.WritID, ctx.Title, ctx.Kind, ctx.Description,
 		resolveDesc, workflowSection, gateInstructions, protocolSection, resilienceSection)
 }
 

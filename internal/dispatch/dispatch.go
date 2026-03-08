@@ -46,6 +46,7 @@ type WorldStore interface {
 	ListAgentMemories(agentName string) ([]store.AgentMemory, error)
 	WriteHistory(agentName, writID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error)
 	EndHistory(writID string) (string, error)
+	GetDependencies(itemID string) ([]string, error)
 	Close() error
 }
 

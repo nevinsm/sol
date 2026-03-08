@@ -3268,3 +3268,153 @@ func TestCloseWritWithReason(t *testing.T) {
 		t.Error("expected ClosedAt to be set")
 	}
 }
+
+func TestCastKindPassedToContext(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create a writ with kind=analysis.
+	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Analyze codebase",
+		Description: "Perform analysis",
+		CreatedBy:   "operator",
+		Kind:        "analysis",
+	})
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	result, err := Cast(CastOpts{
+		WritID:     itemID,
+		World:      "ember",
+		AgentName:  "Toast",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Cast failed: %v", err)
+	}
+
+	// Verify CLAUDE.local.md contains the kind.
+	data, err := os.ReadFile(result.WorktreeDir + "/CLAUDE.local.md")
+	if err != nil {
+		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "Kind: analysis") {
+		t.Error("CLAUDE.local.md missing 'Kind: analysis'")
+	}
+}
+
+func TestCastCodeKindDefault(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create a writ without explicit kind — should default to "code".
+	itemID, err := worldStore.CreateWrit("Add feature", "Add a feature", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	result, err := Cast(CastOpts{
+		WritID:     itemID,
+		World:      "ember",
+		AgentName:  "Toast",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Cast failed: %v", err)
+	}
+
+	data, err := os.ReadFile(result.WorktreeDir + "/CLAUDE.local.md")
+	if err != nil {
+		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
+	}
+	if !strings.Contains(string(data), "Kind: code") {
+		t.Error("CLAUDE.local.md missing 'Kind: code' for default writ")
+	}
+}
+
+func TestCastDirectDeps(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create a dependency writ (analysis kind).
+	depID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Gather requirements",
+		Description: "Gather requirements for the feature",
+		CreatedBy:   "operator",
+		Kind:        "analysis",
+	})
+	if err != nil {
+		t.Fatalf("failed to create dep writ: %v", err)
+	}
+
+	// Create the main writ.
+	mainID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Implement feature",
+		Description: "Build the feature",
+		CreatedBy:   "operator",
+		Kind:        "code",
+	})
+	if err != nil {
+		t.Fatalf("failed to create main writ: %v", err)
+	}
+
+	// Add dependency: main depends on dep.
+	if err := worldStore.AddDependency(mainID, depID); err != nil {
+		t.Fatalf("failed to add dependency: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	result, err := Cast(CastOpts{
+		WritID:     mainID,
+		World:      "ember",
+		AgentName:  "Toast",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Cast failed: %v", err)
+	}
+
+	// Verify CLAUDE.local.md contains the dependency section.
+	data, err := os.ReadFile(result.WorktreeDir + "/CLAUDE.local.md")
+	if err != nil {
+		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "## Direct Dependencies") {
+		t.Error("CLAUDE.local.md missing Direct Dependencies section")
+	}
+	if !strings.Contains(content, "Gather requirements") {
+		t.Error("CLAUDE.local.md missing dependency title")
+	}
+	if !strings.Contains(content, depID) {
+		t.Error("CLAUDE.local.md missing dependency writ ID")
+	}
+	if !strings.Contains(content, "kind: analysis") {
+		t.Error("CLAUDE.local.md missing dependency kind")
+	}
+}

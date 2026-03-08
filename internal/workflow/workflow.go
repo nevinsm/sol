@@ -38,6 +38,7 @@ type StepDef struct {
 	Title        string   `toml:"title"`
 	Instructions string   `toml:"instructions"` // relative path to .md file
 	Needs        []string `toml:"needs"`         // step IDs this depends on
+	Kind         string   `toml:"kind"`          // "code" (default) or "analysis"
 }
 
 // Template defines a child writ template in an expansion formula.
@@ -54,6 +55,7 @@ type Leg struct {
 	Title       string `toml:"title"`
 	Description string `toml:"description"`
 	Focus       string `toml:"focus"`
+	Kind        string `toml:"kind"` // "code" (default) or "analysis"
 }
 
 // Synthesis defines the follow-up step in a convoy formula that runs
@@ -792,6 +794,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 		description string
 		needs       []string
 		labels      []string // additional labels beyond "manifest-child"
+		kind        string   // "code" (default) or "analysis"
 	}
 
 	var children []childDef
@@ -817,6 +820,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 				title:       leg.Title,
 				description: desc,
 				labels:      []string{"convoy-leg"},
+				kind:        leg.Kind,
 			})
 		}
 		// Synthesis description is enriched with leg references after leg items are created.
@@ -839,6 +843,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 				title:       step.Title,
 				description: rendered,
 				needs:       step.Needs,
+				kind:        step.Kind,
 			})
 		}
 	}
@@ -877,6 +882,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 			CreatedBy:   opts.CreatedBy,
 			ParentID:    parentID,
 			Labels:      labels,
+			Kind:        c.kind,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create child writ for %q: %w", c.formulaID, err)

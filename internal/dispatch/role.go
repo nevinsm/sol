@@ -65,16 +65,46 @@ func outpostPersona(world, agent string) ([]byte, error) {
 	wfState, _ := workflow.ReadState(world, agent, "agent")
 	hasWorkflow := wfState != nil && wfState.Status == "running"
 
+	// Resolve direct dependencies.
+	var directDeps []protocol.DepOutput
+	depIDs, err := ws.GetDependencies(writID)
+	if err != nil {
+		return nil, fmt.Errorf("outpost persona: failed to get dependencies for %q: %w", writID, err)
+	}
+	for _, depID := range depIDs {
+		depWrit, err := ws.GetWrit(depID)
+		if err != nil {
+			return nil, fmt.Errorf("outpost persona: failed to get dependency writ %q: %w", depID, err)
+		}
+		depKind := depWrit.Kind
+		if depKind == "" {
+			depKind = "code"
+		}
+		directDeps = append(directDeps, protocol.DepOutput{
+			WritID:    depID,
+			Title:     depWrit.Title,
+			Kind:      depKind,
+			OutputDir: config.WritOutputDir(world, depID),
+		})
+	}
+
+	kind := item.Kind
+	if kind == "" {
+		kind = "code"
+	}
+
 	ctx := protocol.ClaudeMDContext{
 		AgentName:    agent,
 		World:        world,
-		WritID:   writID,
+		WritID:       writID,
 		Title:        item.Title,
 		Description:  item.Description,
+		Kind:         kind,
 		HasWorkflow:  hasWorkflow,
 		ModelTier:    worldCfg.Agents.ModelTier,
 		QualityGates: worldCfg.Forge.QualityGates,
 		OutputDir:    config.WritOutputDir(world, writID),
+		DirectDeps:   directDeps,
 	}
 	content := protocol.GenerateClaudeMD(ctx)
 	return []byte(content), nil
