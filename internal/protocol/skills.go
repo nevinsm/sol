@@ -29,7 +29,7 @@ var roleSkillsMap = map[string][]string{
 	"outpost":  {"resolve-and-handoff", "memories"},
 	"forge":    {"forge-patrol", "forge-toolbox", "merge-operations"},
 	"governor": {"writ-dispatch", "caravan-management", "world-coordination", "notification-handling", "memories"},
-	"envoy":    {"resolve-and-submit", "writ-management", "dispatch", "session-management", "status-monitoring", "caravan-management", "world-operations", "memories"},
+	"envoy":    {"resolve-and-submit", "writ-management", "dispatch", "session-management", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "memories"},
 	"senate":   {"world-queries", "writ-planning", "memories"},
 }
 
@@ -115,6 +115,9 @@ func generateSkill(name string, ctx SkillContext) string {
 	case "world-coordination":
 		return skillWorldCoordination(ctx)
 	case "notification-handling":
+		if ctx.Role == "envoy" {
+			return skillEnvoyNotificationHandling(ctx)
+		}
 		return skillNotificationHandling(ctx)
 	case "writ-management":
 		return skillWritManagement(ctx)
@@ -428,6 +431,34 @@ Format: %[1]s[NOTIFICATION] TYPE: Subject — Body%[2]s
 
 Always update your brief after handling a notification.
 `, "`", "`", "`"+sol, world, "`")
+}
+
+func skillEnvoyNotificationHandling(_ SkillContext) string {
+	return `# Notification Handling
+
+Notifications arrive at each turn boundary via UserPromptSubmit hook.
+Format: ` + "`[NOTIFICATION] TYPE: Subject — Body`" + `
+
+## Notification Types
+
+**MAIL** — Operator sent a message via ` + "`sol mail send`" + `.
+- Fields: ` + "`subject`" + `, ` + "`body`" + `
+- Action: Read and acknowledge. The operator is communicating directly — respond to the content.
+
+**MERGED** — Forge merged one of your resolved writs.
+- Fields: ` + "`writ_id`" + `, ` + "`merge_request_id`" + `
+- Action: Note the merge. If you have follow-up work, proceed.
+
+**MERGE_FAILED** — Forge failed to merge your writ.
+- Fields: ` + "`writ_id`" + `, ` + "`merge_request_id`" + `, ` + "`reason`" + `
+- Action: Investigate the failure reason. May need to pull latest main, resolve conflicts, and re-resolve.
+
+**AGENT_DONE** — Another agent resolved a writ you dispatched.
+- Fields: ` + "`writ_id`" + `, ` + "`agent_name`" + `, ` + "`branch`" + `, ` + "`title`" + `, ` + "`merge_request_id`" + `
+- Action: Note the completion. Review the result if relevant to your current work.
+
+Always update your brief after handling a notification.
+`
 }
 
 func skillWritManagement(ctx SkillContext) string {

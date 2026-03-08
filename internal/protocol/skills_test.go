@@ -29,8 +29,8 @@ func TestRoleSkillsGovernor(t *testing.T) {
 
 func TestRoleSkillsEnvoy(t *testing.T) {
 	skills := RoleSkills("envoy")
-	if len(skills) != 8 {
-		t.Errorf("envoy should have 8 skills, got %d: %v", len(skills), skills)
+	if len(skills) != 9 {
+		t.Errorf("envoy should have 9 skills, got %d: %v", len(skills), skills)
 	}
 }
 
@@ -314,6 +314,39 @@ func TestGovernorSkillContentHasNotifications(t *testing.T) {
 		if !contains(content, notifType) {
 			t.Errorf("notification-handling skill should contain %q", notifType)
 		}
+	}
+}
+
+func TestEnvoySkillContentHasNotifications(t *testing.T) {
+	dir := t.TempDir()
+	ctx := SkillContext{
+		World:     "myworld",
+		AgentName: "Echo",
+		SolBinary: "sol",
+		Role:      "envoy",
+	}
+
+	if err := InstallSkills(dir, ctx); err != nil {
+		t.Fatalf("InstallSkills failed: %v", err)
+	}
+
+	// Check notification-handling skill has envoy notification types.
+	skillPath := filepath.Join(dir, ".claude", "skills", "notification-handling", "SKILL.md")
+	data, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("failed to read skill: %v", err)
+	}
+	content := string(data)
+
+	for _, notifType := range []string{"MAIL", "MERGED", "MERGE_FAILED", "AGENT_DONE"} {
+		if !contains(content, notifType) {
+			t.Errorf("envoy notification-handling skill should contain %q", notifType)
+		}
+	}
+
+	// Envoy should NOT have governor-specific notification types.
+	if contains(content, "RECOVERY_NEEDED") {
+		t.Error("envoy notification-handling skill should not contain RECOVERY_NEEDED")
 	}
 }
 
