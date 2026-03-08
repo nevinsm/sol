@@ -1,9 +1,7 @@
 package store
 
 import (
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -32,11 +30,7 @@ var validSeverities = map[string]bool{
 
 // generateEscalationID returns a new escalation ID in the format "esc-" + 16 hex chars.
 func generateEscalationID() (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate escalation ID: %w", err)
-	}
-	return "esc-" + hex.EncodeToString(b), nil
+	return generatePrefixedID("esc-")
 }
 
 // CreateEscalation creates an escalation record.
@@ -93,13 +87,11 @@ func (s *Store) GetEscalation(id string) (*Escalation, error) {
 		esc.SourceRef = sourceRef.String
 	}
 	esc.Acknowledged = acknowledged != 0
-	esc.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse created_at for escalation %q: %w", id, err)
+	if esc.CreatedAt, err = parseRFC3339(createdAt, "created_at", "escalation "+id); err != nil {
+		return nil, err
 	}
-	esc.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse updated_at for escalation %q: %w", id, err)
+	if esc.UpdatedAt, err = parseRFC3339(updatedAt, "updated_at", "escalation "+id); err != nil {
+		return nil, err
 	}
 	return esc, nil
 }
@@ -159,13 +151,11 @@ func (s *Store) scanEscalations(query string, args ...interface{}) ([]Escalation
 		}
 		esc.Acknowledged = acknowledged != 0
 		var parseErr error
-		esc.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for escalation %q: %w", esc.ID, parseErr)
+		if esc.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "escalation "+esc.ID); parseErr != nil {
+			return nil, parseErr
 		}
-		esc.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse updated_at for escalation %q: %w", esc.ID, parseErr)
+		if esc.UpdatedAt, parseErr = parseRFC3339(updatedAt, "updated_at", "escalation "+esc.ID); parseErr != nil {
+			return nil, parseErr
 		}
 		escs = append(escs, esc)
 	}
@@ -186,15 +176,7 @@ func (s *Store) AckEscalation(id string) error {
 	if err != nil {
 		return fmt.Errorf("failed to acknowledge escalation %q: %w", id, err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("escalation %q: %w", id, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "escalation", id)
 }
 
 // ResolveEscalation marks an escalation as resolved.
@@ -208,15 +190,7 @@ func (s *Store) ResolveEscalation(id string) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve escalation %q: %w", id, err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("escalation %q: %w", id, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "escalation", id)
 }
 
 // CountOpen returns the number of open (unresolved) escalations.

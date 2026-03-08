@@ -1,9 +1,7 @@
 package store
 
 import (
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -41,19 +39,11 @@ type TokenSummary struct {
 }
 
 func generateHistoryID() (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate history ID: %w", err)
-	}
-	return "ah-" + hex.EncodeToString(b), nil
+	return generatePrefixedID("ah-")
 }
 
 func generateTokenUsageID() (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate token usage ID: %w", err)
-	}
-	return "tu-" + hex.EncodeToString(b), nil
+	return generatePrefixedID("tu-")
 }
 
 // WriteHistory inserts an agent_history record and returns its generated ID.
@@ -110,16 +100,11 @@ func (s *Store) GetHistory(id string) (*HistoryEntry, error) {
 	h.WritID = writID.String
 	h.Summary = summary.String
 
-	h.StartedAt, err = time.Parse(time.RFC3339, startedAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse started_at for history %q: %w", id, err)
+	if h.StartedAt, err = parseRFC3339(startedAt, "started_at", "history "+id); err != nil {
+		return nil, err
 	}
-	if endedAt.Valid {
-		t, err := time.Parse(time.RFC3339, endedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse ended_at for history %q: %w", id, err)
-		}
-		h.EndedAt = &t
+	if h.EndedAt, err = parseOptionalRFC3339(endedAt, "ended_at", "history "+id); err != nil {
+		return nil, err
 	}
 	return h, nil
 }
@@ -155,16 +140,12 @@ func (s *Store) ListHistory(agentName string) ([]HistoryEntry, error) {
 		h.WritID = writID.String
 		h.Summary = summary.String
 
-		h.StartedAt, err = time.Parse(time.RFC3339, startedAt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse started_at: %w", err)
+		var parseErr error
+		if h.StartedAt, parseErr = parseRFC3339(startedAt, "started_at", "history "+h.ID); parseErr != nil {
+			return nil, parseErr
 		}
-		if endedAt.Valid {
-			t, err := time.Parse(time.RFC3339, endedAt.String)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse ended_at: %w", err)
-			}
-			h.EndedAt = &t
+		if h.EndedAt, parseErr = parseOptionalRFC3339(endedAt, "ended_at", "history "+h.ID); parseErr != nil {
+			return nil, parseErr
 		}
 		entries = append(entries, h)
 	}

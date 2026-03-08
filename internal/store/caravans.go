@@ -1,9 +1,7 @@
 package store
 
 import (
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -44,11 +42,7 @@ func (s CaravanItemStatus) IsDispatched() bool {
 
 // generateCaravanID returns a new caravan ID in the format "car-" + 16 hex chars.
 func generateCaravanID() (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate caravan ID: %w", err)
-	}
-	return "car-" + hex.EncodeToString(b), nil
+	return generatePrefixedID("car-")
 }
 
 // CreateCaravan creates a caravan with the given name and owner.
@@ -88,16 +82,11 @@ func (s *Store) GetCaravan(id string) (*Caravan, error) {
 	}
 
 	c.Owner = owner.String
-	c.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse created_at for caravan %q: %w", id, err)
+	if c.CreatedAt, err = parseRFC3339(createdAt, "created_at", "caravan "+id); err != nil {
+		return nil, err
 	}
-	if closedAt.Valid {
-		t, err := time.Parse(time.RFC3339, closedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse closed_at for caravan %q: %w", id, err)
-		}
-		c.ClosedAt = &t
+	if c.ClosedAt, err = parseOptionalRFC3339(closedAt, "closed_at", "caravan "+id); err != nil {
+		return nil, err
 	}
 	return c, nil
 }
@@ -133,16 +122,11 @@ func (s *Store) ListCaravans(status string) ([]Caravan, error) {
 		}
 		c.Owner = owner.String
 		var parseErr error
-		c.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for caravan %q: %w", c.ID, parseErr)
+		if c.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "caravan "+c.ID); parseErr != nil {
+			return nil, parseErr
 		}
-		if closedAt.Valid {
-			t, parseErr := time.Parse(time.RFC3339, closedAt.String)
-			if parseErr != nil {
-				return nil, fmt.Errorf("failed to parse closed_at for caravan %q: %w", c.ID, parseErr)
-			}
-			c.ClosedAt = &t
+		if c.ClosedAt, parseErr = parseOptionalRFC3339(closedAt, "closed_at", "caravan "+c.ID); parseErr != nil {
+			return nil, parseErr
 		}
 		caravans = append(caravans, c)
 	}
@@ -183,15 +167,7 @@ func (s *Store) UpdateCaravanStatus(id, status string) error {
 	if err != nil {
 		return fmt.Errorf("failed to update caravan %q status: %w", id, err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("caravan %q: %w", id, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "caravan", id)
 }
 
 // CreateCaravanItem associates a writ with a caravan at the given phase.
@@ -236,14 +212,7 @@ func (s *Store) UpdateCaravanItemPhase(caravanID, writID string, phase int) erro
 	if err != nil {
 		return fmt.Errorf("failed to update phase for item %q in caravan %q: %w", writID, caravanID, err)
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to check rows affected: %w", err)
-	}
-	if n == 0 {
-		return fmt.Errorf("item %q in caravan %q: %w", writID, caravanID, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "item "+writID+" in caravan", caravanID)
 }
 
 // UpdateAllCaravanItemPhases sets the phase of all items in a caravan.

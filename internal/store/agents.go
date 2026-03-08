@@ -79,13 +79,11 @@ func (s *Store) GetAgent(id string) (*Agent, error) {
 
 	a.ActiveWrit = activeWrit.String
 	var parseErr error
-	a.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-	if parseErr != nil {
-		return nil, fmt.Errorf("failed to parse created_at for agent %q: %w", id, parseErr)
+	if a.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "agent "+id); parseErr != nil {
+		return nil, parseErr
 	}
-	a.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
-	if parseErr != nil {
-		return nil, fmt.Errorf("failed to parse updated_at for agent %q: %w", id, parseErr)
+	if a.UpdatedAt, parseErr = parseRFC3339(updatedAt, "updated_at", "agent "+id); parseErr != nil {
+		return nil, parseErr
 	}
 	return a, nil
 }
@@ -120,15 +118,7 @@ func (s *Store) UpdateAgentState(id, state, activeWrit string) error {
 	if err != nil {
 		return fmt.Errorf("failed to update agent %q state: %w", id, err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("agent %q: %w", id, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "agent", id)
 }
 
 // ListAgents returns agents, optionally filtered by world and/or state.
@@ -162,13 +152,11 @@ func (s *Store) ListAgents(world string, state string) ([]Agent, error) {
 		}
 		a.ActiveWrit = activeWrit.String
 		var parseErr error
-		a.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for agent %q: %w", a.ID, parseErr)
+		if a.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "agent "+a.ID); parseErr != nil {
+			return nil, parseErr
 		}
-		a.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse updated_at for agent %q: %w", a.ID, parseErr)
+		if a.UpdatedAt, parseErr = parseRFC3339(updatedAt, "updated_at", "agent "+a.ID); parseErr != nil {
+			return nil, parseErr
 		}
 		agents = append(agents, a)
 	}
@@ -185,14 +173,7 @@ func (s *Store) DeleteAgent(id string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete agent %q: %w", id, err)
 	}
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("agent %q: %w", id, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "agent", id)
 }
 
 // DeleteAgentsForWorld removes all agent records for the given world.
@@ -225,13 +206,11 @@ func (s *Store) FindIdleAgent(world string) (*Agent, error) {
 
 	a.ActiveWrit = activeWrit.String
 	var parseErr error
-	a.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-	if parseErr != nil {
-		return nil, fmt.Errorf("failed to parse created_at for agent %q: %w", a.ID, parseErr)
+	if a.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "agent "+a.ID); parseErr != nil {
+		return nil, parseErr
 	}
-	a.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
-	if parseErr != nil {
-		return nil, fmt.Errorf("failed to parse updated_at for agent %q: %w", a.ID, parseErr)
+	if a.UpdatedAt, parseErr = parseRFC3339(updatedAt, "updated_at", "agent "+a.ID); parseErr != nil {
+		return nil, parseErr
 	}
 	return a, nil
 }

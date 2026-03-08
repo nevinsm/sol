@@ -18,7 +18,7 @@ func (s *Store) AddCaravanDependency(fromID, toID string) error {
 	}
 
 	// Check for cycles.
-	cycle, err := s.wouldCreateCaravanCycle(fromID, toID)
+	cycle, err := detectCycle(s.GetCaravanDependencies, fromID, toID)
 	if err != nil {
 		return fmt.Errorf("failed to check for cycles: %w", err)
 	}
@@ -304,26 +304,3 @@ func (s *Store) IsWritBlockedByCaravan(writID, world string,
 	return false, nil
 }
 
-// wouldCreateCaravanCycle checks if adding the edge from→to would create a
-// cycle by walking the dependency graph from toID to see if fromID is reachable.
-func (s *Store) wouldCreateCaravanCycle(fromID, toID string) (bool, error) {
-	visited := map[string]bool{}
-	queue := []string{toID}
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		if current == fromID {
-			return true, nil
-		}
-		if visited[current] {
-			continue
-		}
-		visited[current] = true
-		deps, err := s.GetCaravanDependencies(current)
-		if err != nil {
-			return false, err
-		}
-		queue = append(queue, deps...)
-	}
-	return false, nil
-}

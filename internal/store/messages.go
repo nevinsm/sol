@@ -1,9 +1,7 @@
 package store
 
 import (
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"time"
 )
@@ -34,11 +32,7 @@ type MessageFilters struct {
 
 // generateMessageID returns a new message ID in the format "msg-" + 16 hex chars.
 func generateMessageID() (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate message ID: %w", err)
-	}
-	return "msg-" + hex.EncodeToString(b), nil
+	return generatePrefixedID("msg-")
 }
 
 // SendMessage creates a new message in the store.
@@ -84,13 +78,8 @@ func (s *Store) ReadMessage(id string) (*Message, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read message %q: %w", id, err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return nil, fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return nil, fmt.Errorf("message %q: %w", id, ErrNotFound)
+	if err := checkRowsAffected(result, "message", id); err != nil {
+		return nil, err
 	}
 
 	// Fetch the message.
@@ -111,16 +100,11 @@ func (s *Store) ReadMessage(id string) (*Message, error) {
 	msg.Body = body.String
 	msg.ThreadID = threadID.String
 	msg.Read = read != 0
-	msg.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse created_at for message %q: %w", id, err)
+	if msg.CreatedAt, err = parseRFC3339(createdAt, "created_at", "message "+id); err != nil {
+		return nil, err
 	}
-	if ackedAt.Valid {
-		t, err := time.Parse(time.RFC3339, ackedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse acked_at for message %q: %w", id, err)
-		}
-		msg.AckedAt = &t
+	if msg.AckedAt, err = parseOptionalRFC3339(ackedAt, "acked_at", "message "+id); err != nil {
+		return nil, err
 	}
 	return msg, nil
 }
@@ -135,15 +119,7 @@ func (s *Store) AckMessage(id string) error {
 	if err != nil {
 		return fmt.Errorf("failed to ack message %q: %w", id, err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("message %q: %w", id, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "message", id)
 }
 
 // CountPending returns the number of pending (unacknowledged) messages for a recipient.
@@ -241,16 +217,11 @@ func (s *Store) scanMessages(query string, args ...interface{}) ([]Message, erro
 		msg.ThreadID = threadID.String
 		msg.Read = read != 0
 		var parseErr error
-		msg.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for message %q: %w", msg.ID, parseErr)
+		if msg.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "message "+msg.ID); parseErr != nil {
+			return nil, parseErr
 		}
-		if ackedAt.Valid {
-			t, parseErr := time.Parse(time.RFC3339, ackedAt.String)
-			if parseErr != nil {
-				return nil, fmt.Errorf("failed to parse acked_at for message %q: %w", msg.ID, parseErr)
-			}
-			msg.AckedAt = &t
+		if msg.AckedAt, parseErr = parseOptionalRFC3339(ackedAt, "acked_at", "message "+msg.ID); parseErr != nil {
+			return nil, parseErr
 		}
 		msgs = append(msgs, msg)
 	}

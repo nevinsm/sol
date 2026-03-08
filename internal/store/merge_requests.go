@@ -1,9 +1,7 @@
 package store
 
 import (
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -58,11 +56,7 @@ type MergeRequest struct {
 
 // generateMRID returns a new merge request ID in the format "mr-" + 16 hex chars.
 func generateMRID() (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate merge request ID: %w", err)
-	}
-	return "mr-" + hex.EncodeToString(b), nil
+	return generatePrefixedID("mr-")
 }
 
 // scanner is an interface satisfied by both *sql.Row and *sql.Rows,
@@ -89,27 +83,17 @@ func scanMergeRequest(s scanner) (*MergeRequest, error) {
 	mr.BlockedBy = blockedBy.String
 
 	var err error
-	mr.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", mr.ID, err)
+	if mr.CreatedAt, err = parseRFC3339(createdAt, "created_at", "merge request "+mr.ID); err != nil {
+		return nil, err
 	}
-	mr.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", mr.ID, err)
+	if mr.UpdatedAt, err = parseRFC3339(updatedAt, "updated_at", "merge request "+mr.ID); err != nil {
+		return nil, err
 	}
-	if claimedAt.Valid {
-		t, err := time.Parse(time.RFC3339, claimedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", mr.ID, err)
-		}
-		mr.ClaimedAt = &t
+	if mr.ClaimedAt, err = parseOptionalRFC3339(claimedAt, "claimed_at", "merge request "+mr.ID); err != nil {
+		return nil, err
 	}
-	if mergedAt.Valid {
-		t, err := time.Parse(time.RFC3339, mergedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", mr.ID, err)
-		}
-		mr.MergedAt = &t
+	if mr.MergedAt, err = parseOptionalRFC3339(mergedAt, "merged_at", "merge request "+mr.ID); err != nil {
+		return nil, err
 	}
 	return mr, nil
 }
@@ -303,15 +287,7 @@ func (s *Store) UpdateMergeRequestPhase(id, phase string) error {
 	if err != nil {
 		return fmt.Errorf("failed to update merge request %q: %w", id, err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("merge request %q: %w", id, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "merge request", id)
 }
 
 // BlockMergeRequest sets blocked_by on a merge request and ensures phase=ready.
@@ -327,15 +303,7 @@ func (s *Store) BlockMergeRequest(mrID, blockerWritID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to block merge request %q: %w", mrID, err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "merge request", mrID)
 }
 
 // UnblockMergeRequest clears blocked_by and ensures phase=ready.
@@ -349,15 +317,7 @@ func (s *Store) UnblockMergeRequest(mrID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to unblock merge request %q: %w", mrID, err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "merge request", mrID)
 }
 
 // FindMergeRequestByBlocker finds the MR blocked by a given writ ID.
@@ -444,12 +404,5 @@ func (s *Store) ResetMergeRequestForRetry(mrID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to reset merge request %q for retry: %w", mrID, err)
 	}
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "merge request", mrID)
 }

@@ -1,8 +1,6 @@
 package store
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"time"
 )
@@ -59,9 +57,8 @@ func (s *Store) ListAgentMemories(agentName string) ([]AgentMemory, error) {
 			return nil, fmt.Errorf("failed to scan agent memory: %w", err)
 		}
 		var parseErr error
-		m.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for memory %q: %w", m.Key, parseErr)
+		if m.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "memory "+m.Key); parseErr != nil {
+			return nil, parseErr
 		}
 		memories = append(memories, m)
 	}
@@ -77,14 +74,7 @@ func (s *Store) DeleteAgentMemory(agentName, key string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete agent memory %q/%q: %w", agentName, key, err)
 	}
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("memory %q for agent %q: %w", key, agentName, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "memory "+key+" for agent", agentName)
 }
 
 // DeleteAllAgentMemories deletes all memories for the given agent.
@@ -100,9 +90,5 @@ func (s *Store) DeleteAllAgentMemories(agentName string) (int64, error) {
 }
 
 func generateMemoryID() (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return "mem-" + hex.EncodeToString(b), nil
+	return generatePrefixedID("mem-")
 }

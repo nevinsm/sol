@@ -48,13 +48,11 @@ func (s *Store) GetWorld(name string) (*World, error) {
 	}
 
 	var parseErr error
-	w.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-	if parseErr != nil {
-		return nil, fmt.Errorf("failed to parse created_at for world %q: %w", name, parseErr)
+	if w.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "world "+name); parseErr != nil {
+		return nil, parseErr
 	}
-	w.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
-	if parseErr != nil {
-		return nil, fmt.Errorf("failed to parse updated_at for world %q: %w", name, parseErr)
+	if w.UpdatedAt, parseErr = parseRFC3339(updatedAt, "updated_at", "world "+name); parseErr != nil {
+		return nil, parseErr
 	}
 	return w, nil
 }
@@ -78,13 +76,11 @@ func (s *Store) ListWorlds() ([]World, error) {
 			return nil, fmt.Errorf("failed to scan world: %w", err)
 		}
 		var parseErr error
-		w.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for world %q: %w", w.Name, parseErr)
+		if w.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "world "+w.Name); parseErr != nil {
+			return nil, parseErr
 		}
-		w.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse updated_at for world %q: %w", w.Name, parseErr)
+		if w.UpdatedAt, parseErr = parseRFC3339(updatedAt, "updated_at", "world "+w.Name); parseErr != nil {
+			return nil, parseErr
 		}
 		worlds = append(worlds, w)
 	}
@@ -105,15 +101,7 @@ func (s *Store) UpdateWorldRepo(name, sourceRepo string) error {
 	if err != nil {
 		return fmt.Errorf("failed to update world %q repo: %w", name, err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("world %q: %w", name, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "world", name)
 }
 
 // DeleteWorldData removes all sphere-level data for a world in a single
