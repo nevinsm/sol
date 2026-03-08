@@ -58,6 +58,10 @@ var writCreateCmd = &cobra.Command{
 			return fmt.Errorf("--title is required")
 		}
 
+		if config.IsSleeping(world) {
+			return fmt.Errorf("world %q is sleeping: writ creation blocked (wake it with 'sol world wake %s')", world, world)
+		}
+
 		opts := store.CreateWritOpts{
 			Title:       createTitle,
 			Description: createDescription,

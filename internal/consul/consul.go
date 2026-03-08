@@ -535,6 +535,12 @@ func (d *Consul) dispatchWorldItems(ctx context.Context, caravanID, world string
 		return 0, fmt.Errorf("failed to load world config for %q: %w", world, err)
 	}
 
+	// Skip sleeping worlds — performance optimization to avoid per-item processing.
+	// Cast's gate is the correctness boundary.
+	if worldCfg.World.Sleeping {
+		return 0, nil
+	}
+
 	sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 	if err != nil {
 		return 0, fmt.Errorf("failed to resolve source repo for %q: %w", world, err)

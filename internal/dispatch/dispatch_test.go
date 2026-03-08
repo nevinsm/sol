@@ -655,6 +655,80 @@ func TestCastRejectsNonAgentRoles(t *testing.T) {
 	}
 }
 
+func TestCastRejectsSleepingWorld(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Mark the world as sleeping by writing world.toml.
+	solHome := os.Getenv("SOL_HOME")
+	worldDir := filepath.Join(solHome, "ember")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatalf("failed to create world dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte("[world]\nsleeping = true\n"), 0o644); err != nil {
+		t.Fatalf("failed to write world.toml: %v", err)
+	}
+
+	_, err = Cast(context.Background(), CastOpts{
+		WritID:     itemID,
+		World:      "ember",
+		AgentName:  "Toast",
+		SourceRepo: "/tmp",
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err == nil {
+		t.Fatal("expected error when dispatching to sleeping world")
+	}
+	if !strings.Contains(err.Error(), "sleeping") {
+		t.Errorf("expected sleeping error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "dispatch blocked") {
+		t.Errorf("expected 'dispatch blocked' in error, got: %v", err)
+	}
+}
+
+func TestCastRejectsSleepingWorldPreloaded(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Pass a pre-loaded config with sleeping=true.
+	sleepingCfg := config.WorldConfig{}
+	sleepingCfg.World.Sleeping = true
+
+	_, err = Cast(context.Background(), CastOpts{
+		WritID:      itemID,
+		World:       "ember",
+		AgentName:   "Toast",
+		SourceRepo:  "/tmp",
+		WorldConfig: &sleepingCfg,
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err == nil {
+		t.Fatal("expected error when dispatching to sleeping world (pre-loaded config)")
+	}
+	if !strings.Contains(err.Error(), "sleeping") {
+		t.Errorf("expected sleeping error, got: %v", err)
+	}
+}
+
 // --- Prime tests ---
 
 func TestPrimeWithTether(t *testing.T) {

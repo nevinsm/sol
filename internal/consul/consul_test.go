@@ -1123,6 +1123,63 @@ capacity = 2
 	}
 }
 
+func TestDispatchWorldItemsSkipsSleepingWorld(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "sleepy"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Mark the world as sleeping.
+	worldDir := fmt.Sprintf("%s/%s", solHome, worldName)
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatalf("failed to create world dir: %v", err)
+	}
+	if err := os.WriteFile(worldDir+"/world.toml", []byte("[world]\nsleeping = true\n"), 0o644); err != nil {
+		t.Fatalf("failed to write world.toml: %v", err)
+	}
+
+	// Create a caravan with ready items.
+	caravanID, _ := sphereStore.CreateCaravan("test-sleep-caravan", "operator")
+	sphereStore.UpdateCaravanStatus(caravanID, "open")
+
+	wi1, _ := worldStore.CreateWrit("sleep-task-1", "desc1", "test", 1, nil)
+	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
+
+	sessions := newMockSessions()
+	cfg := Config{
+		StaleTetherTimeout: 1 * time.Hour,
+		SolHome:            solHome,
+	}
+
+	var dispatched []mockDispatchResult
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
+	})
+	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
+
+	fed, err := d.feedStrandedCaravans(context.Background())
+	if err != nil {
+		t.Fatalf("feedStrandedCaravans failed: %v", err)
+	}
+	if fed != 0 {
+		t.Errorf("fed = %d, want 0 (sleeping world should be skipped)", fed)
+	}
+	if len(dispatched) != 0 {
+		t.Errorf("dispatch calls = %d, want 0 (sleeping world should be skipped)", len(dispatched))
+	}
+}
+
 func TestDetectOrphanedSessionsIdentifiesOrphan(t *testing.T) {
 	setupSolHome(t)
 
