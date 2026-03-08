@@ -163,6 +163,255 @@ func TestCaptureNoWorkflow(t *testing.T) {
 	}
 }
 
+func TestCaptureWithActiveWrit(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	// Set up multiple tethers (persistent agent scenario).
+	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "agent"); err != nil {
+		t.Fatalf("failed to write tether 1: %v", err)
+	}
+	if err := tether.Write("ember", "Toast", "sol-writ-bbb", "agent"); err != nil {
+		t.Fatalf("failed to write tether 2: %v", err)
+	}
+
+	// Set up workflow state.
+	wfDir := filepath.Join(solHome, "ember", "outposts", "Toast", ".workflow")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatalf("failed to create workflow dir: %v", err)
+	}
+	stateJSON := `{"current_step":"implement","completed":["plan"],"status":"running","started_at":"2026-02-27T10:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(stateJSON), 0o644); err != nil {
+		t.Fatalf("failed to write workflow state: %v", err)
+	}
+
+	// Sphere store with active writ set to the second tether.
+	sphere := &mockSphereStore{
+		agents: map[string]*store.Agent{
+			"ember/Toast": {ID: "ember/Toast", Name: "Toast", World: "ember", ActiveWrit: "sol-writ-bbb"},
+		},
+	}
+
+	mockGitLog := func(dir string, count int) ([]string, error) {
+		return []string{"abc1234 feat: working on bbb"}, nil
+	}
+
+	state, err := Capture(CaptureOpts{
+		World:     "ember",
+		AgentName: "Toast",
+		Role:      "agent",
+		Sphere:    sphere,
+	}, nil, mockGitLog)
+
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	// ActiveWritID should be set from DB.
+	if state.ActiveWritID != "sol-writ-bbb" {
+		t.Errorf("expected ActiveWritID sol-writ-bbb, got %q", state.ActiveWritID)
+	}
+	// WritID should also be set to the active writ (not the first tether).
+	if state.WritID != "sol-writ-bbb" {
+		t.Errorf("expected WritID sol-writ-bbb (from active writ), got %q", state.WritID)
+	}
+	// Git log should have been captured (writ-specific context).
+	if len(state.RecentCommits) != 1 {
+		t.Errorf("expected 1 recent commit, got %d", len(state.RecentCommits))
+	}
+}
+
+func TestCaptureNoActiveWrit(t *testing.T) {
+	setupSolHome(t)
+
+	// No tethers and no active writ in DB.
+	sphere := &mockSphereStore{
+		agents: map[string]*store.Agent{
+			"ember/Toast": {ID: "ember/Toast", Name: "Toast", World: "ember", ActiveWrit: ""},
+		},
+	}
+
+	mockCapture := func(name string, lines int) (string, error) {
+		return "$ idle output\n$", nil
+	}
+
+	state, err := Capture(CaptureOpts{
+		World:     "ember",
+		AgentName: "Toast",
+		Role:      "agent",
+		Sphere:    sphere,
+	}, mockCapture, nil)
+
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	// No active writ and no tether — general state only.
+	if state.ActiveWritID != "" {
+		t.Errorf("expected empty ActiveWritID, got %q", state.ActiveWritID)
+	}
+	if state.WritID != "" {
+		t.Errorf("expected empty WritID, got %q", state.WritID)
+	}
+	// Session output should still be captured.
+	if !strings.Contains(state.RecentOutput, "idle output") {
+		t.Errorf("expected recent output to contain 'idle output', got %q", state.RecentOutput)
+	}
+	// No writ-specific fields.
+	if state.GitStatus != "" {
+		t.Errorf("expected empty GitStatus, got %q", state.GitStatus)
+	}
+	if state.WorkflowStep != "" {
+		t.Errorf("expected empty WorkflowStep, got %q", state.WorkflowStep)
+	}
+	// Auto-generated summary should say no active work.
+	if !strings.Contains(state.Summary, "No active work") {
+		t.Errorf("expected summary to mention 'No active work', got %q", state.Summary)
+	}
+}
+
+func TestResumeAfterHandoffRestoresActiveWrit(t *testing.T) {
+	// Verify that BuildResumeState includes active writ for resume restoration.
+	state := &State{
+		WritID:       "sol-writ-bbb",
+		ActiveWritID: "sol-writ-bbb",
+		AgentName:    "Toast",
+		World:        "ember",
+		WorkflowStep: "implement",
+	}
+
+	resumeState := state.BuildResumeState("compact")
+
+	if resumeState.ClaimedResource != "sol-writ-bbb" {
+		t.Errorf("expected ClaimedResource sol-writ-bbb, got %q", resumeState.ClaimedResource)
+	}
+	if resumeState.NewActiveWrit != "sol-writ-bbb" {
+		t.Errorf("expected NewActiveWrit sol-writ-bbb, got %q", resumeState.NewActiveWrit)
+	}
+	if resumeState.Reason != "compact" {
+		t.Errorf("expected reason compact, got %q", resumeState.Reason)
+	}
+	if resumeState.CurrentStep != "implement" {
+		t.Errorf("expected CurrentStep implement, got %q", resumeState.CurrentStep)
+	}
+}
+
+func TestBuildResumeStateNoActiveWrit(t *testing.T) {
+	// When ActiveWritID is empty, NewActiveWrit should not be set.
+	state := &State{
+		WritID:    "sol-writ-aaa",
+		AgentName: "Toast",
+		World:     "ember",
+	}
+
+	resumeState := state.BuildResumeState("manual")
+
+	if resumeState.ClaimedResource != "sol-writ-aaa" {
+		t.Errorf("expected ClaimedResource sol-writ-aaa, got %q", resumeState.ClaimedResource)
+	}
+	if resumeState.NewActiveWrit != "" {
+		t.Errorf("expected empty NewActiveWrit, got %q", resumeState.NewActiveWrit)
+	}
+}
+
+func TestCompactRecoveryWithActiveWrit(t *testing.T) {
+	setupSolHome(t)
+
+	// Set up tethers and active writ.
+	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+	if err := tether.Write("ember", "Toast", "sol-writ-bbb", "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	sphere := &mockSphereStore{
+		agents: map[string]*store.Agent{
+			"ember/Toast": {ID: "ember/Toast", Name: "Toast", World: "ember", ActiveWrit: "sol-writ-bbb"},
+		},
+	}
+
+	// Capture state with active writ.
+	state, err := Capture(CaptureOpts{
+		World:     "ember",
+		AgentName: "Toast",
+		Role:      "agent",
+		Sphere:    sphere,
+	}, nil, nil)
+
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	// Write the handoff file.
+	if err := Write(state); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	// Read it back — simulates recovery after crash.
+	recovered, err := Read("ember", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+
+	// Active writ should be preserved through serialization.
+	if recovered.ActiveWritID != "sol-writ-bbb" {
+		t.Errorf("expected recovered ActiveWritID sol-writ-bbb, got %q", recovered.ActiveWritID)
+	}
+	if recovered.WritID != "sol-writ-bbb" {
+		t.Errorf("expected recovered WritID sol-writ-bbb, got %q", recovered.WritID)
+	}
+
+	// BuildResumeState from recovered state should include active writ.
+	resumeState := recovered.BuildResumeState("compact")
+	if resumeState.NewActiveWrit != "sol-writ-bbb" {
+		t.Errorf("expected NewActiveWrit sol-writ-bbb in resume state, got %q", resumeState.NewActiveWrit)
+	}
+}
+
+func TestCaptureResumeStateWithActiveWrit(t *testing.T) {
+	setupSolHome(t)
+
+	// Tether exists but active writ in DB is different.
+	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	sphere := &mockSphereStore{
+		agents: map[string]*store.Agent{
+			"ember/Toast": {ID: "ember/Toast", Name: "Toast", World: "ember", ActiveWrit: "sol-writ-bbb"},
+		},
+	}
+
+	resumeState := CaptureResumeState("ember", "Toast", "agent", "compact", sphere)
+
+	// Should use active writ from DB, not tether.
+	if resumeState.ClaimedResource != "sol-writ-bbb" {
+		t.Errorf("expected ClaimedResource sol-writ-bbb (from DB), got %q", resumeState.ClaimedResource)
+	}
+	if resumeState.NewActiveWrit != "sol-writ-bbb" {
+		t.Errorf("expected NewActiveWrit sol-writ-bbb, got %q", resumeState.NewActiveWrit)
+	}
+}
+
+func TestCaptureResumeStateWithoutSphere(t *testing.T) {
+	setupSolHome(t)
+
+	// Tether exists, no sphere store.
+	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	resumeState := CaptureResumeState("ember", "Toast", "agent", "compact", nil)
+
+	// Should fall back to tether.
+	if resumeState.ClaimedResource != "sol-writ-aaa" {
+		t.Errorf("expected ClaimedResource sol-writ-aaa (from tether), got %q", resumeState.ClaimedResource)
+	}
+	if resumeState.NewActiveWrit != "" {
+		t.Errorf("expected empty NewActiveWrit (no sphere), got %q", resumeState.NewActiveWrit)
+	}
+}
+
 func TestCaptureNoSummary(t *testing.T) {
 	setupSolHome(t)
 
@@ -452,7 +701,8 @@ func (m *mockSessionMgr) Cycle(name, workdir, cmd string, env map[string]string,
 }
 
 type mockSphereStore struct {
-	messages []msgCall
+	messages   []msgCall
+	agents     map[string]*store.Agent // agent ID → agent (for GetAgent)
 }
 
 type msgCall struct {
@@ -464,6 +714,15 @@ type msgCall struct {
 func (m *mockSphereStore) SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error) {
 	m.messages = append(m.messages, msgCall{sender, recipient, subject, body, priority, msgType})
 	return "msg-00000001", nil
+}
+
+func (m *mockSphereStore) GetAgent(id string) (*store.Agent, error) {
+	if m.agents != nil {
+		if a, ok := m.agents[id]; ok {
+			return a, nil
+		}
+	}
+	return &store.Agent{ID: id}, nil
 }
 
 func TestExec(t *testing.T) {

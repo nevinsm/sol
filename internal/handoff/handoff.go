@@ -13,6 +13,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/startup"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/workflow"
 )
@@ -20,6 +21,7 @@ import (
 // State captures an agent's context at the moment of handoff.
 type State struct {
 	WritID       string    `json:"writ_id"`
+	ActiveWritID     string    `json:"active_writ_id,omitempty"`
 	AgentName        string    `json:"agent_name"`
 	World            string    `json:"world"`
 	Role             string    `json:"role,omitempty"`
@@ -50,6 +52,7 @@ type SessionManager interface {
 // SphereStore is the subset of store.Store used by handoff.
 type SphereStore interface {
 	SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error)
+	GetAgent(id string) (*store.Agent, error)
 }
 
 // HandoffPath returns the path to an agent's handoff state file.
@@ -88,9 +91,14 @@ type CaptureOpts struct {
 	CaptureLines int    // lines of tmux output to capture (default: 100)
 	CommitCount  int    // recent commits to include (default: 10)
 	WorktreeDir  string // explicit worktree path (uses config.WorktreePath if empty)
+	Sphere       SphereStore // optional sphere store for reading active writ from DB
 }
 
 // Capture gathers the current state of an agent's session.
+// When a SphereStore is provided in opts, reads active_writ from DB to
+// determine the primary writ context. Falls back to tether.Read() when
+// no sphere store is available (backward compat). If neither active writ
+// nor tethers exist, captures general session state without writ-specific fields.
 func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 	gitLog func(string, int) ([]string, error)) (*State, error) {
 
@@ -106,19 +114,35 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		role = "agent"
 	}
 
-	// 1. Read tether file to get writ ID.
-	writID, err := tether.Read(opts.World, opts.AgentName, role)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read tether: %w", err)
+	// 1. Determine active writ from DB (preferred) or tether (fallback).
+	var activeWritID string
+	var writID string
+
+	if opts.Sphere != nil {
+		agentID := opts.World + "/" + opts.AgentName
+		agent, err := opts.Sphere.GetAgent(agentID)
+		if err == nil && agent != nil && agent.ActiveWrit != "" {
+			activeWritID = agent.ActiveWrit
+			writID = activeWritID
+		}
 	}
+
+	// Fallback to tether if no active writ from DB.
 	if writID == "" {
-		return nil, fmt.Errorf("no work tethered for agent %q in world %q", opts.AgentName, opts.World)
+		tetherID, err := tether.Read(opts.World, opts.AgentName, role)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tether: %w", err)
+		}
+		writID = tetherID
 	}
+
+	// No active writ and no tether — capture general session state.
+	hasWrit := writID != ""
 
 	// 2. Session name.
 	sessionName := config.SessionName(opts.World, opts.AgentName)
 
-	// 3. Capture tmux output.
+	// 3. Capture tmux output (always, regardless of writ).
 	recentOutput := ""
 	if sessionCapture != nil {
 		output, err := sessionCapture(sessionName, opts.CaptureLines)
@@ -127,64 +151,73 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		}
 	}
 
-	// 4. Capture recent git commits from worktree.
-	worktreeDir := opts.WorktreeDir
-	if worktreeDir == "" {
-		worktreeDir = config.WorktreePath(opts.World, opts.AgentName)
-	}
+	// 4-6: Writ-specific context (git, workflow) only when a writ is active.
 	var recentCommits []string
-	if gitLog != nil {
-		commits, err := gitLog(worktreeDir, opts.CommitCount)
-		if err == nil {
-			recentCommits = commits
+	var gitStatus, gitStash, diffStat string
+	var workflowStep, workflowProgress, stepDescription string
+
+	if hasWrit {
+		// 4. Capture recent git commits from worktree.
+		worktreeDir := opts.WorktreeDir
+		if worktreeDir == "" {
+			worktreeDir = config.WorktreePath(opts.World, opts.AgentName)
 		}
-	}
-	if recentCommits == nil {
-		recentCommits = []string{}
-	}
-
-	// 5. Capture git status, stash, and diff stat from worktree.
-	gitStatus := gitShort(worktreeDir, "status", "--short")
-	gitStash := gitShort(worktreeDir, "stash", "list")
-	diffStat := gitShort(worktreeDir, "diff", "--stat")
-
-	// 6. Read workflow state (if present).
-	workflowStep := ""
-	workflowProgress := ""
-	stepDescription := ""
-	wfState, err := workflow.ReadState(opts.World, opts.AgentName, role)
-	if err == nil && wfState != nil && wfState.Status == "running" {
-		workflowStep = wfState.CurrentStep
-		completed := len(wfState.Completed)
-		// Try to get total steps from instance.
-		instance, _ := workflow.ReadInstance(opts.World, opts.AgentName, role)
-		if instance != nil {
-			steps, _ := workflow.ListSteps(opts.World, opts.AgentName, role)
-			if steps != nil {
-				workflowProgress = fmt.Sprintf("%d/%d complete", completed, len(steps))
+		if gitLog != nil {
+			commits, err := gitLog(worktreeDir, opts.CommitCount)
+			if err == nil {
+				recentCommits = commits
 			}
 		}
-		if workflowProgress == "" {
-			workflowProgress = fmt.Sprintf("%d steps complete", completed)
+
+		// 5. Capture git status, stash, and diff stat from worktree.
+		gitStatus = gitShort(worktreeDir, "status", "--short")
+		gitStash = gitShort(worktreeDir, "stash", "list")
+		diffStat = gitShort(worktreeDir, "diff", "--stat")
+
+		// 6. Read workflow state (if present).
+		wfState, err := workflow.ReadState(opts.World, opts.AgentName, role)
+		if err == nil && wfState != nil && wfState.Status == "running" {
+			workflowStep = wfState.CurrentStep
+			completed := len(wfState.Completed)
+			// Try to get total steps from instance.
+			instance, _ := workflow.ReadInstance(opts.World, opts.AgentName, role)
+			if instance != nil {
+				steps, _ := workflow.ListSteps(opts.World, opts.AgentName, role)
+				if steps != nil {
+					workflowProgress = fmt.Sprintf("%d/%d complete", completed, len(steps))
+				}
+			}
+			if workflowProgress == "" {
+				workflowProgress = fmt.Sprintf("%d steps complete", completed)
+			}
+			// Capture step title/description for richer context.
+			currentStep, _ := workflow.ReadCurrentStep(opts.World, opts.AgentName, role)
+			if currentStep != nil {
+				stepDescription = currentStep.Title
+			}
 		}
-		// Capture step title/description for richer context.
-		currentStep, _ := workflow.ReadCurrentStep(opts.World, opts.AgentName, role)
-		if currentStep != nil {
-			stepDescription = currentStep.Title
-		}
+	}
+
+	if recentCommits == nil {
+		recentCommits = []string{}
 	}
 
 	// 7. Auto-generate summary if not provided.
 	summary := opts.Summary
 	if summary == "" {
-		summary = fmt.Sprintf("Session handoff for %s. Working on %s.", opts.AgentName, writID)
+		if hasWrit {
+			summary = fmt.Sprintf("Session handoff for %s. Working on %s.", opts.AgentName, writID)
+		} else {
+			summary = fmt.Sprintf("Session handoff for %s. No active work item.", opts.AgentName)
+		}
 		if len(recentCommits) > 0 {
 			summary += fmt.Sprintf(" Last commit: %s", recentCommits[0])
 		}
 	}
 
 	return &State{
-		WritID:       writID,
+		WritID:           writID,
+		ActiveWritID:     activeWritID,
 		AgentName:        opts.AgentName,
 		World:            opts.World,
 		Role:             role,
@@ -423,18 +456,23 @@ func roleUsesBrief(role string) bool {
 
 // BuildResumeState extracts a startup.ResumeState from a captured handoff State.
 func (s *State) BuildResumeState(reason string) startup.ResumeState {
-	return startup.ResumeState{
+	rs := startup.ResumeState{
 		CurrentStep:     s.WorkflowStep,
 		StepDescription: s.StepDescription,
 		ClaimedResource: s.WritID,
 		Reason:          reason,
 	}
+	if s.ActiveWritID != "" {
+		rs.NewActiveWrit = s.ActiveWritID
+	}
+	return rs
 }
 
 // CaptureResumeState reads durable state from disk and returns a ResumeState
-// suitable for startup.Resume(). Reads workflow state and tether to determine
-// the agent's current position.
-func CaptureResumeState(world, agent, role, reason string) startup.ResumeState {
+// suitable for startup.Resume(). Reads workflow state and active writ (from DB
+// when sphere is provided, falling back to tether) to determine the agent's
+// current position.
+func CaptureResumeState(world, agent, role, reason string, sphere SphereStore) startup.ResumeState {
 	state := startup.ResumeState{Reason: reason}
 
 	// Read workflow state.
@@ -447,7 +485,18 @@ func CaptureResumeState(world, agent, role, reason string) startup.ResumeState {
 		}
 	}
 
-	// Read claimed work from tether.
+	// Read active writ from DB (preferred) or tether (fallback).
+	if sphere != nil {
+		agentID := world + "/" + agent
+		ag, err := sphere.GetAgent(agentID)
+		if err == nil && ag != nil && ag.ActiveWrit != "" {
+			state.NewActiveWrit = ag.ActiveWrit
+			state.ClaimedResource = ag.ActiveWrit
+			return state
+		}
+	}
+
+	// Fallback: read claimed work from tether.
 	writID, _ := tether.Read(world, agent, role)
 	if writID != "" {
 		state.ClaimedResource = writID
@@ -512,18 +561,30 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		sessionAge = time.Since(markerTS)
 	}
 
-	// Try to capture state from tethered work (outposts and envoys with active work).
-	writID, _ := tether.Read(opts.World, opts.AgentName, role)
-	hasTether := writID != ""
+	// Try to capture state from active work (DB active_writ or tether fallback).
+	hasTether := tether.IsTethered(opts.World, opts.AgentName, role)
 
-	if hasTether {
-		// Full capture + handoff file + notification for tethered agents.
+	// Check for active writ in DB.
+	hasActiveWrit := false
+	if sphereStore != nil {
+		agentID := opts.World + "/" + opts.AgentName
+		agent, err := sphereStore.GetAgent(agentID)
+		if err == nil && agent != nil && agent.ActiveWrit != "" {
+			hasActiveWrit = true
+		}
+	}
+
+	hasWork := hasTether || hasActiveWrit
+
+	if hasWork {
+		// Full capture + handoff file + notification for agents with active work.
 		state, err := Capture(CaptureOpts{
 			World:       opts.World,
 			AgentName:   opts.AgentName,
 			Role:        role,
 			Summary:     opts.Summary,
 			WorktreeDir: worktreeDir,
+			Sphere:      sphereStore,
 		}, func(name string, lines int) (string, error) {
 			return sessionMgr.Capture(name, lines)
 		}, GitLog)
@@ -617,7 +678,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// dies before completing, the prefect can use this to call
 	// startup.Resume() instead of a bare startup.Launch(), preserving
 	// workflow position and claimed resources.
-	resumeState := CaptureResumeState(opts.World, opts.AgentName, role, reason)
+	resumeState := CaptureResumeState(opts.World, opts.AgentName, role, reason, sphereStore)
 	if err := startup.WriteResumeState(opts.World, opts.AgentName, role, resumeState); err != nil {
 		fmt.Fprintf(os.Stderr, "handoff: failed to write resume state: %v\n", err)
 	}

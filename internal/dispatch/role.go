@@ -30,7 +30,7 @@ func OutpostRoleConfig() startup.RoleConfig {
 // Reads the current workflow step and tethered writ to determine where
 // the agent should resume from.
 func OutpostResumeState(world, agent string) startup.ResumeState {
-	return handoff.CaptureResumeState(world, agent, "agent", "compact")
+	return handoff.CaptureResumeState(world, agent, "agent", "compact", nil)
 }
 
 // outpostPersona generates the outpost CLAUDE.local.md content.

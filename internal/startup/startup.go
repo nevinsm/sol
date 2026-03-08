@@ -334,6 +334,9 @@ func buildResumePrime(base string, state ResumeState) string {
 		} else if state.NewActiveWrit != "" {
 			fmt.Fprintf(&b, "Your active writ has changed to %s.\n", state.NewActiveWrit)
 		}
+	} else if state.NewActiveWrit != "" {
+		// Non-writ-switch resume with an active writ: restore active writ context.
+		fmt.Fprintf(&b, "Active writ: %s\n", state.NewActiveWrit)
 	}
 
 	if base != "" {

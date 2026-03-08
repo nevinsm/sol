@@ -975,6 +975,40 @@ func TestBuildResumePrimeWritSwitchWithBase(t *testing.T) {
 	}
 }
 
+func TestBuildResumePrimeActiveWritNonSwitch(t *testing.T) {
+	// Non-writ-switch resume with an active writ should show "Active writ:" line.
+	state := ResumeState{
+		Reason:          "compact",
+		NewActiveWrit:   "sol-ccc333",
+		ClaimedResource: "sol-ccc333",
+	}
+
+	prime := buildResumePrime("", state)
+	if !strings.Contains(prime, "Active writ: sol-ccc333") {
+		t.Errorf("expected 'Active writ: sol-ccc333' in prime, got %q", prime)
+	}
+	// Should NOT contain writ-switch language.
+	if strings.Contains(prime, "has changed to") {
+		t.Errorf("non-switch prime should not contain writ-switch language: %q", prime)
+	}
+}
+
+func TestBuildResumePrimeNoActiveWrit(t *testing.T) {
+	// Resume without any active writ should not mention active writ.
+	state := ResumeState{
+		Reason:          "compact",
+		ClaimedResource: "sol-aaa111",
+	}
+
+	prime := buildResumePrime("", state)
+	if strings.Contains(prime, "Active writ") {
+		t.Errorf("prime should not mention active writ when none set: %q", prime)
+	}
+	if !strings.Contains(prime, "sol-aaa111") {
+		t.Errorf("prime should contain claimed resource: %q", prime)
+	}
+}
+
 func TestWriteReadResumeStateWithWritSwitch(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 

@@ -104,7 +104,7 @@ func forgePrime(world, _ string) string {
 // current workflow step (typically gates, not scan). If no MR is claimed,
 // the workflow step reflects the scan phase.
 func ForgeResumeState(world string) startup.ResumeState {
-	return handoff.CaptureResumeState(world, "forge", "forge", "compact")
+	return handoff.CaptureResumeState(world, "forge", "forge", "compact", nil)
 }
 
 // resolveForgeConfigForRole loads world config and builds a forge.Config.
