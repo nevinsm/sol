@@ -16,6 +16,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var sentinelStatusWorld string
+
 var (
 	sentinelRunWorld    string
 	sentinelStartWorld  string
@@ -184,15 +186,66 @@ var sentinelAttachCmd = &cobra.Command{
 	},
 }
 
+// --- sol sentinel status ---
+
+type sentinelStatusSummary struct {
+	World       string `json:"world"`
+	Running     bool   `json:"running"`
+	SessionName string `json:"session_name"`
+}
+
+var sentinelStatusCmd = &cobra.Command{
+	Use:          "status",
+	Short:        "Show sentinel status",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(sentinelStatusWorld)
+		if err != nil {
+			return err
+		}
+
+		sessName := dispatch.SessionName(world, "sentinel")
+		mgr := session.New()
+		running := mgr.Exists(sessName)
+
+		summary := sentinelStatusSummary{
+			World:       world,
+			Running:     running,
+			SessionName: sessName,
+		}
+
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return printJSON(summary)
+		}
+
+		printSentinelStatus(summary)
+		return nil
+	},
+}
+
+func printSentinelStatus(s sentinelStatusSummary) {
+	fmt.Printf("Sentinel: %s\n\n", s.World)
+
+	if s.Running {
+		fmt.Printf("  Process:  running (%s)\n", s.SessionName)
+	} else {
+		fmt.Printf("  Process:  stopped\n")
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(sentinelCmd)
 	sentinelCmd.AddCommand(sentinelRunCmd)
 	sentinelCmd.AddCommand(sentinelStartCmd)
 	sentinelCmd.AddCommand(sentinelStopCmd)
 	sentinelCmd.AddCommand(sentinelAttachCmd)
+	sentinelCmd.AddCommand(sentinelStatusCmd)
 
 	sentinelRunCmd.Flags().StringVar(&sentinelRunWorld, "world", "", "world name")
 	sentinelStartCmd.Flags().StringVar(&sentinelStartWorld, "world", "", "world name")
 	sentinelStopCmd.Flags().StringVar(&sentinelStopWorld, "world", "", "world name")
 	sentinelAttachCmd.Flags().StringVar(&sentinelAttachWorld, "world", "", "world name")
+	sentinelStatusCmd.Flags().StringVar(&sentinelStatusWorld, "world", "", "world name")
+	sentinelStatusCmd.Flags().Bool("json", false, "output as JSON")
 }

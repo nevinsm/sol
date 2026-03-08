@@ -42,3 +42,27 @@ See ADR-0026 for details.
 | Command | Description |
 |---------|-------------|
 | `sol ledger status` | Show ledger running state and OTLP port (`--json` for machine-readable output) |
+
+### Sentinel
+
+| Command | Description |
+|---------|-------------|
+| `sol sentinel status --world=<world>` | Show sentinel running state. Supports `--json`. |
+
+### Governor
+
+| Command | Description |
+|---------|-------------|
+| `sol governor status --world=<world>` | Show governor running state, agent state, active writs, tethers, and brief age. Supports `--json`. |
+
+### Envoy
+
+| Command | Description |
+|---------|-------------|
+| `sol envoy status <name> --world=<world>` | Show envoy running state, agent state, active writ, and brief age. Supports `--json`. |
+
+### Senate
+
+| Command | Description |
+|---------|-------------|
+| `sol senate status` | Show senate running state and brief age. Supports `--json`. |

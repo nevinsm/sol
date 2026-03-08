@@ -131,8 +131,62 @@ var senateDebriefCmd = &cobra.Command{
 	},
 }
 
+// --- sol senate status ---
+
+var senateStatusJSON bool
+
+type senateStatusSummary struct {
+	Running     bool   `json:"running"`
+	SessionName string `json:"session_name"`
+	BriefAge    string `json:"brief_age,omitempty"`
+}
+
+var senateStatusCmd = &cobra.Command{
+	Use:          "status",
+	Short:        "Show senate status",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr := session.New()
+		running := mgr.Exists(senate.SessionName)
+
+		summary := senateStatusSummary{
+			Running:     running,
+			SessionName: senate.SessionName,
+		}
+
+		// Check brief age.
+		briefPath := senate.BriefPath()
+		if info, err := os.Stat(briefPath); err == nil {
+			summary.BriefAge = time.Since(info.ModTime()).Truncate(time.Second).String()
+		}
+
+		if senateStatusJSON {
+			return printJSON(summary)
+		}
+
+		printSenateStatus(summary)
+		return nil
+	},
+}
+
+func printSenateStatus(s senateStatusSummary) {
+	fmt.Printf("Senate\n\n")
+
+	if s.Running {
+		fmt.Printf("  Process:  running (%s)\n", s.SessionName)
+	} else {
+		fmt.Printf("  Process:  stopped\n")
+	}
+
+	if s.BriefAge != "" {
+		fmt.Printf("  Brief:    %s old\n", s.BriefAge)
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(senateCmd)
 	senateCmd.AddCommand(senateStartCmd, senateStopCmd, senateAttachCmd,
-		senateBriefCmd, senateDebriefCmd)
+		senateBriefCmd, senateDebriefCmd, senateStatusCmd)
+
+	senateStatusCmd.Flags().BoolVar(&senateStatusJSON, "json", false, "output as JSON")
 }

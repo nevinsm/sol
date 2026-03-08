@@ -12,6 +12,7 @@ import (
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
 )
@@ -253,6 +254,100 @@ var governorSyncCmd = &cobra.Command{
 	},
 }
 
+// --- sol governor status ---
+
+var governorStatusWorld string
+
+type governorStatusSummary struct {
+	World       string   `json:"world"`
+	Running     bool     `json:"running"`
+	SessionName string   `json:"session_name"`
+	State       string   `json:"state,omitempty"`
+	ActiveWrit  string   `json:"active_writ,omitempty"`
+	Tethers     []string `json:"tethers,omitempty"`
+	BriefAge    string   `json:"brief_age,omitempty"`
+}
+
+var governorStatusCmd = &cobra.Command{
+	Use:          "status",
+	Short:        "Show governor status",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(governorStatusWorld)
+		if err != nil {
+			return err
+		}
+
+		sessName := config.SessionName(world, "governor")
+		mgr := session.New()
+		running := mgr.Exists(sessName)
+
+		summary := governorStatusSummary{
+			World:       world,
+			Running:     running,
+			SessionName: sessName,
+		}
+
+		// Query sphere store for agent state.
+		sphereStore, err := store.OpenSphere()
+		if err == nil {
+			defer sphereStore.Close()
+			agentID := world + "/governor"
+			agent, err := sphereStore.GetAgent(agentID)
+			if err == nil && agent != nil {
+				summary.State = agent.State
+				summary.ActiveWrit = agent.ActiveWrit
+			}
+		}
+
+		// Check tether directory.
+		tethers, err := tether.List(world, "governor", "governor")
+		if err == nil && len(tethers) > 0 {
+			summary.Tethers = tethers
+		}
+
+		// Check brief age.
+		briefPath := governor.BriefPath(world)
+		if info, err := os.Stat(briefPath); err == nil {
+			summary.BriefAge = time.Since(info.ModTime()).Truncate(time.Second).String()
+		}
+
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return printJSON(summary)
+		}
+
+		printGovernorStatus(summary)
+		return nil
+	},
+}
+
+func printGovernorStatus(s governorStatusSummary) {
+	fmt.Printf("Governor: %s\n\n", s.World)
+
+	if s.Running {
+		fmt.Printf("  Process:  running (%s)\n", s.SessionName)
+	} else {
+		fmt.Printf("  Process:  stopped\n")
+	}
+
+	if s.State != "" {
+		fmt.Printf("  State:    %s\n", s.State)
+	}
+
+	if s.ActiveWrit != "" {
+		fmt.Printf("  Active:   %s\n", s.ActiveWrit)
+	}
+
+	if len(s.Tethers) > 0 {
+		fmt.Printf("  Tethers:  %s\n", strings.Join(s.Tethers, ", "))
+	}
+
+	if s.BriefAge != "" {
+		fmt.Printf("  Brief:    %s old\n", s.BriefAge)
+	}
+}
+
 func init() {
 	// Register governor role config for startup.Launch and prefect respawn.
 	startup.Register("governor", governor.RoleConfig())
@@ -260,7 +355,7 @@ func init() {
 	rootCmd.AddCommand(governorCmd)
 	governorCmd.AddCommand(governorStartCmd, governorStopCmd, governorAttachCmd,
 		governorBriefCmd, governorDebriefCmd,
-		governorSummaryCmd, governorSyncCmd)
+		governorSummaryCmd, governorSyncCmd, governorStatusCmd)
 
 	// governor start flags
 	governorStartCmd.Flags().StringVar(&governorStartWorld, "world", "", "world name")
@@ -282,4 +377,8 @@ func init() {
 
 	// governor sync flags
 	governorSyncCmd.Flags().StringVar(&governorSyncWorld, "world", "", "world name")
+
+	// governor status flags
+	governorStatusCmd.Flags().StringVar(&governorStatusWorld, "world", "", "world name")
+	governorStatusCmd.Flags().Bool("json", false, "output as JSON")
 }

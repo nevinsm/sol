@@ -372,13 +372,101 @@ var envoySyncCmd = &cobra.Command{
 	},
 }
 
+// --- sol envoy status ---
+
+var envoyStatusWorld string
+
+type envoyStatusSummary struct {
+	World       string `json:"world"`
+	Name        string `json:"name"`
+	Running     bool   `json:"running"`
+	SessionName string `json:"session_name"`
+	State       string `json:"state,omitempty"`
+	ActiveWrit  string `json:"active_writ,omitempty"`
+	BriefAge    string `json:"brief_age,omitempty"`
+}
+
+var envoyStatusCmd = &cobra.Command{
+	Use:          "status <name>",
+	Short:        "Show envoy status",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		world, err := config.ResolveWorld(envoyStatusWorld)
+		if err != nil {
+			return err
+		}
+
+		sessName := envoy.SessionName(world, name)
+		mgr := session.New()
+		running := mgr.Exists(sessName)
+
+		summary := envoyStatusSummary{
+			World:       world,
+			Name:        name,
+			Running:     running,
+			SessionName: sessName,
+		}
+
+		// Query sphere store for agent state.
+		sphereStore, err := store.OpenSphere()
+		if err == nil {
+			defer sphereStore.Close()
+			agentID := world + "/" + name
+			agent, err := sphereStore.GetAgent(agentID)
+			if err == nil && agent != nil {
+				summary.State = agent.State
+				summary.ActiveWrit = agent.ActiveWrit
+			}
+		}
+
+		// Check brief age.
+		briefPath := envoy.BriefPath(world, name)
+		if info, err := os.Stat(briefPath); err == nil {
+			summary.BriefAge = time.Since(info.ModTime()).Truncate(time.Second).String()
+		}
+
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return printJSON(summary)
+		}
+
+		printEnvoyStatus(summary)
+		return nil
+	},
+}
+
+func printEnvoyStatus(s envoyStatusSummary) {
+	fmt.Printf("Envoy: %s (%s)\n\n", s.Name, s.World)
+
+	if s.Running {
+		fmt.Printf("  Process:  running (%s)\n", s.SessionName)
+	} else {
+		fmt.Printf("  Process:  stopped\n")
+	}
+
+	if s.State != "" {
+		fmt.Printf("  State:    %s\n", s.State)
+	}
+
+	if s.ActiveWrit != "" {
+		fmt.Printf("  Active:   %s\n", s.ActiveWrit)
+	}
+
+	if s.BriefAge != "" {
+		fmt.Printf("  Brief:    %s old\n", s.BriefAge)
+	}
+}
+
 func init() {
 	// Register envoy role config for startup.Launch and prefect respawn.
 	startup.Register("envoy", envoy.RoleConfig())
 
 	rootCmd.AddCommand(envoyCmd)
 	envoyCmd.AddCommand(envoyCreateCmd, envoyStartCmd, envoyStopCmd,
-		envoyAttachCmd, envoyListCmd, envoyBriefCmd, envoyDebriefCmd, envoySyncCmd, envoyDeleteCmd)
+		envoyAttachCmd, envoyListCmd, envoyBriefCmd, envoyDebriefCmd, envoySyncCmd, envoyDeleteCmd,
+		envoyStatusCmd)
 
 	// envoy create flags
 	envoyCreateCmd.Flags().StringVar(&envoyCreateWorld, "world", "", "world name")
@@ -408,4 +496,8 @@ func init() {
 
 	// envoy sync flags
 	envoySyncCmd.Flags().StringVar(&envoySyncWorld, "world", "", "world name")
+
+	// envoy status flags
+	envoyStatusCmd.Flags().StringVar(&envoyStatusWorld, "world", "", "world name")
+	envoyStatusCmd.Flags().Bool("json", false, "output as JSON")
 }
