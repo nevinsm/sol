@@ -147,3 +147,11 @@ Labels: auth, critical
 ── Escalations ───────────────────────────────────────────────────────
   (none)
 ```
+
+### World Sleep/Wake
+
+| Command | Description |
+|---------|-------------|
+| `sol world sleep <name>` | Soft sleep: stop services, let agents finish naturally |
+| `sol world sleep --force <name>` | Hard sleep: stop services + stop all outpost agents, return writs, warn envoys |
+| `sol world wake <name>` | Wake world: start services with per-service verification reporting |
