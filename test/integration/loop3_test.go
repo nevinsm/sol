@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/tether"
@@ -882,7 +883,7 @@ func TestStatusShowsSentinelState(t *testing.T) {
 	}
 
 	// Start a mock sentinel session.
-	sentinelSessName := dispatch.SessionName("ember", "sentinel")
+	sentinelSessName := config.SessionName("ember", "sentinel")
 	if err := mgr.Start(sentinelSessName, solHome, "sleep 60",
 		map[string]string{"SOL_HOME": solHome}, "sentinel", "ember"); err != nil {
 		t.Fatalf("start sentinel session: %v", err)

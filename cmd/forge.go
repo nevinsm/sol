@@ -67,7 +67,7 @@ var forgeStartCmd = &cobra.Command{
 			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
 		}
 
-		sessName := dispatch.SessionName(world, "forge")
+		sessName := config.SessionName(world, "forge")
 		mgr := session.New()
 
 		// Check if already running.
@@ -129,7 +129,7 @@ var forgeStopCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := dispatch.SessionName(world, "forge")
+		sessName := config.SessionName(world, "forge")
 		mgr := session.New()
 
 		if !mgr.Exists(sessName) {
@@ -157,7 +157,7 @@ var forgeRestartCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := dispatch.SessionName(world, "forge")
+		sessName := config.SessionName(world, "forge")
 		mgr := session.New()
 
 		// Stop if running.
@@ -184,7 +184,7 @@ var forgeAttachCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := dispatch.SessionName(world, "forge")
+		sessName := config.SessionName(world, "forge")
 		mgr := session.New()
 
 		if !mgr.Exists(sessName) {
@@ -214,7 +214,7 @@ var forgeStatusCmd = &cobra.Command{
 		defer worldStore.Close()
 
 		// Check forge session.
-		sessName := dispatch.SessionName(world, "forge")
+		sessName := config.SessionName(world, "forge")
 		mgr := session.New()
 		running := mgr.Exists(sessName)
 
@@ -441,6 +441,7 @@ func resolveForgeConfig(world string, worldCfg config.WorldConfig) (forge.Config
 // --- Toolbox subcommands (backing Claude's forge operations) ---
 
 // openForge is a helper to create a Forge for toolbox subcommands.
+// Callers must defer Close() on the returned stores.
 func openForge(world string) (*forge.Forge, *store.Store, *store.Store, error) {
 	worldCfg, err := config.LoadWorldConfig(world)
 	if err != nil {
@@ -452,28 +453,36 @@ func openForge(world string) (*forge.Forge, *store.Store, *store.Store, error) {
 		return nil, nil, nil, err
 	}
 
+	success := false
+	defer func() {
+		if !success {
+			worldStore.Close()
+		}
+	}()
+
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		worldStore.Close()
 		return nil, nil, nil, err
 	}
+	defer func() {
+		if !success {
+			sphereStore.Close()
+		}
+	}()
 
 	sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 	if err != nil {
-		worldStore.Close()
-		sphereStore.Close()
 		return nil, nil, nil, err
 	}
 
 	cfg, err := resolveForgeConfig(world, worldCfg)
 	if err != nil {
-		worldStore.Close()
-		sphereStore.Close()
 		return nil, nil, nil, err
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger)
+	success = true
 	return ref, worldStore, sphereStore, nil
 }
 
@@ -928,7 +937,7 @@ var forgeAwaitCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := dispatch.SessionName(world, "forge")
+		sessName := config.SessionName(world, "forge")
 		timeout := time.Duration(forgeAwaitTimeout) * time.Second
 		start := time.Now()
 
@@ -1001,7 +1010,7 @@ var forgePauseCmd = &cobra.Command{
 		}
 
 		// Nudge the forge session so it notices the pause promptly.
-		sessName := dispatch.SessionName(world, "forge")
+		sessName := config.SessionName(world, "forge")
 		if err := nudge.Deliver(sessName, nudge.Message{
 			Sender:   "operator",
 			Type:     "FORGE_PAUSED",
@@ -1038,7 +1047,7 @@ var forgeResumeCmd = &cobra.Command{
 		}
 
 		// Nudge the forge session so it resumes promptly.
-		sessName := dispatch.SessionName(world, "forge")
+		sessName := config.SessionName(world, "forge")
 		if err := nudge.Deliver(sessName, nudge.Message{
 			Sender:   "operator",
 			Type:     "FORGE_RESUMED",

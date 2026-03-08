@@ -69,11 +69,6 @@ type SphereStore interface {
 	Close() error
 }
 
-// SessionName returns the tmux session name for an agent.
-func SessionName(world, agentName string) string {
-	return config.SessionName(world, agentName)
-}
-
 // WorktreePath returns the worktree directory for an agent.
 func WorktreePath(world, agentName string) string {
 	return config.WorktreePath(world, agentName)
@@ -221,7 +216,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	}
 
 	worktreeDir := WorktreePath(opts.World, agent.Name)
-	sessName := SessionName(opts.World, agent.Name)
+	sessName := config.SessionName(opts.World, agent.Name)
 	branchName := fmt.Sprintf("outpost/%s/%s", agent.Name, opts.WritID)
 
 	// Clean up any stale session (race between resolve teardown and next cast,
@@ -1267,7 +1262,7 @@ func IsResolveInProgress(world, agentName, role string) bool {
 // The logger parameter is optional — if nil, no events are emitted.
 func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
 	agentID := opts.World + "/" + opts.AgentName
-	sessName := SessionName(opts.World, opts.AgentName)
+	sessName := config.SessionName(opts.World, opts.AgentName)
 
 	// Look up agent first to determine role (needed for role-aware tether path).
 	agent, err := sphereStore.GetAgent(agentID)

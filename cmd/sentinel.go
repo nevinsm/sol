@@ -113,7 +113,7 @@ var sentinelStartCmd = &cobra.Command{
 			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
 		}
 
-		sessName := dispatch.SessionName(world, "sentinel")
+		sessName := config.SessionName(world, "sentinel")
 		mgr := session.New()
 
 		if mgr.Exists(sessName) {
@@ -149,7 +149,7 @@ var sentinelStopCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := dispatch.SessionName(world, "sentinel")
+		sessName := config.SessionName(world, "sentinel")
 		mgr := session.New()
 
 		if !mgr.Exists(sessName) {
@@ -177,7 +177,7 @@ var sentinelRestartCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := dispatch.SessionName(world, "sentinel")
+		sessName := config.SessionName(world, "sentinel")
 		mgr := session.New()
 
 		// Stop if running.
@@ -217,7 +217,7 @@ var sentinelAttachCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := dispatch.SessionName(world, "sentinel")
+		sessName := config.SessionName(world, "sentinel")
 		mgr := session.New()
 
 		if !mgr.Exists(sessName) {
@@ -246,7 +246,7 @@ var sentinelStatusCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := dispatch.SessionName(world, "sentinel")
+		sessName := config.SessionName(world, "sentinel")
 		mgr := session.New()
 		running := mgr.Exists(sessName)
 

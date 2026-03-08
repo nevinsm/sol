@@ -222,7 +222,7 @@ func (s *Prefect) heartbeat() {
 			continue
 		}
 
-		sessName := dispatch.SessionName(agent.World, agent.Name)
+		sessName := config.SessionName(agent.World, agent.Name)
 		if !s.sessions.Exists(sessName) {
 			deadCount++
 			s.recordDeath()
@@ -658,7 +658,7 @@ func (s *Prefect) getSentineledWorlds() map[string]bool {
 		if w.Role != "sentinel" {
 			continue
 		}
-		sessName := dispatch.SessionName(w.World, w.Name)
+		sessName := config.SessionName(w.World, w.Name)
 		if s.sessions.Exists(sessName) {
 			worlds[w.World] = true
 		}
@@ -714,7 +714,7 @@ func (s *Prefect) shutdown() {
 		if !s.worldAllowed(agent.World) {
 			continue
 		}
-		sessName := dispatch.SessionName(agent.World, agent.Name)
+		sessName := config.SessionName(agent.World, agent.Name)
 		if s.sessions.Exists(sessName) {
 			if err := s.sessions.Stop(sessName, false); err != nil {
 				s.logger.Error("failed to stop session during shutdown",

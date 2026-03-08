@@ -115,11 +115,10 @@ var governorRestartCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
+			defer sphereStore.Close()
 			if err := governor.Stop(world, sphereStore, mgr); err != nil {
-				sphereStore.Close()
 				return err
 			}
-			sphereStore.Close()
 			fmt.Printf("Stopped governor for world %q\n", world)
 		}
 
@@ -326,7 +325,9 @@ var governorStatusCmd = &cobra.Command{
 
 		// Query sphere store for agent state.
 		sphereStore, err := store.OpenSphere()
-		if err == nil {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: unable to open sphere store: %v\n", err)
+		} else {
 			defer sphereStore.Close()
 			agentID := world + "/governor"
 			agent, err := sphereStore.GetAgent(agentID)

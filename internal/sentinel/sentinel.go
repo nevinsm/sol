@@ -295,7 +295,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	}
 
 	for _, agent := range activeAgents {
-		sessionName := dispatch.SessionName(w.config.World, agent.Name)
+		sessionName := config.SessionName(w.config.World, agent.Name)
 		alive := w.sessions.Exists(sessionName)
 
 		switch {
@@ -470,7 +470,7 @@ func (w *Sentinel) checkClosedWritTethers(agents []store.Agent, reapedCount *int
 
 			if agent.Role == "agent" {
 				// Outpost agent with closed writ: full reap.
-				sessionName := dispatch.SessionName(w.config.World, agent.Name)
+				sessionName := config.SessionName(w.config.World, agent.Name)
 				*reapedCount++
 				if err := w.reapClosedWritAgent(agent, sessionName, writ.CloseReason); err != nil {
 					if w.logger != nil {
@@ -890,7 +890,7 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 
 // handleZombie handles an agent with a live session but no tethered work.
 func (w *Sentinel) handleZombie(agent store.Agent) error {
-	sessionName := dispatch.SessionName(w.config.World, agent.Name)
+	sessionName := config.SessionName(w.config.World, agent.Name)
 	if err := w.sessions.Stop(sessionName, false); err != nil {
 		return fmt.Errorf("failed to stop zombie session %s: %w", sessionName, err)
 	}
@@ -1022,7 +1022,7 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 		if a.Role == "sentinel" {
 			continue
 		}
-		sessionName := dispatch.SessionName(w.config.World, a.Name)
+		sessionName := config.SessionName(w.config.World, a.Name)
 		if !w.sessions.Exists(sessionName) {
 			continue
 		}
@@ -1577,7 +1577,7 @@ func (w *Sentinel) escalateOrphanedResolution(mr store.MergeRequest, writ *store
 // session metadata, tether file, handoff file, and workflow directory.
 // Best-effort: logs errors but does not fail.
 func (w *Sentinel) cleanupAgentResources(agentName string) {
-	sessionName := dispatch.SessionName(w.config.World, agentName)
+	sessionName := config.SessionName(w.config.World, agentName)
 
 	// Stop session if still alive.
 	if w.sessions.Exists(sessionName) {

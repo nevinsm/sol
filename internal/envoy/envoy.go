@@ -45,11 +45,6 @@ func PersonaPath(world, name string) string {
 	return filepath.Join(config.Home(), world, "envoys", name, "persona.md")
 }
 
-// SessionName returns the tmux session name for an envoy.
-func SessionName(world, name string) string {
-	return config.SessionName(world, name)
-}
-
 // --- Interfaces ---
 
 // SphereStore abstracts sphere store operations for Create.
@@ -187,7 +182,7 @@ func ensureWorktree(sourceRepo, world, name, worktree string) error {
 // worktree or directory.
 func Stop(world, name string, sphereStore StopStore, mgr StopManager) error {
 	agentID := world + "/" + name
-	sessName := SessionName(world, name)
+	sessName := config.SessionName(world, name)
 
 	// 1. Graceful stop: inject brief update prompt, wait for stability, then kill.
 	//    Falls back to immediate kill if no .brief/ directory exists.
@@ -230,7 +225,7 @@ func List(world string, sphereStore ListStore) ([]store.Agent, error) {
 // deletes git branch, and removes the agent record.
 func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 	agentID := opts.World + "/" + opts.Name
-	sessName := SessionName(opts.World, opts.Name)
+	sessName := config.SessionName(opts.World, opts.Name)
 
 	// 1. Verify agent exists and is an envoy.
 	agent, err := sphereStore.GetAgent(agentID)

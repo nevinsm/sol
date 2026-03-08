@@ -7,7 +7,6 @@ import (
 	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/consul"
-	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -174,14 +173,14 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 	}
 
 	// Check forge and sentinel sessions.
-	forgeSess := dispatch.SessionName(w.Name, "forge")
+	forgeSess := config.SessionName(w.Name, "forge")
 	summary.Forge = checker.Exists(forgeSess)
 
-	sentinelSess := dispatch.SessionName(w.Name, "sentinel")
+	sentinelSess := config.SessionName(w.Name, "sentinel")
 	summary.Sentinel = checker.Exists(sentinelSess)
 
 	// Check governor.
-	govSess := dispatch.SessionName(w.Name, "governor")
+	govSess := config.SessionName(w.Name, "governor")
 	govSessAlive := checker.Exists(govSess)
 
 	// Agent counts from sphere store, separated by role.
@@ -200,7 +199,7 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 				switch a.State {
 				case "working":
 					summary.Working++
-					sessName := dispatch.SessionName(w.Name, a.Name)
+					sessName := config.SessionName(w.Name, a.Name)
 					if !checker.Exists(sessName) {
 						summary.Dead++
 					}

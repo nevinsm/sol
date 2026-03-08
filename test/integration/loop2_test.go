@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/status"
@@ -68,7 +69,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 	}
 
 	// Start forge in a tmux session.
-	forgeSessName := dispatch.SessionName("ember", "forge")
+	forgeSessName := config.SessionName("ember", "forge")
 	err = mgr.Start(forgeSessName, sourceClone, "sleep 60",
 		map[string]string{"SOL_HOME": solHome}, "forge", "ember")
 	if err != nil {

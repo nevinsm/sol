@@ -660,7 +660,7 @@ var worldSleepCmd = &cobra.Command{
 		stopped := 0
 
 		for _, role := range []string{"forge", "sentinel", "governor"} {
-			sessName := dispatch.SessionName(name, role)
+			sessName := config.SessionName(name, role)
 			if mgr.Exists(sessName) {
 				if err := mgr.Stop(sessName, false); err != nil {
 					fmt.Fprintf(os.Stderr, "  warning: failed to stop %s: %v\n", role, err)
@@ -720,7 +720,7 @@ var worldWakeCmd = &cobra.Command{
 		mgr := session.New()
 
 		// Start sentinel.
-		sentinelSess := dispatch.SessionName(name, "sentinel")
+		sentinelSess := config.SessionName(name, "sentinel")
 		if !mgr.Exists(sentinelSess) {
 			out, err := exec.Command(solBin, "sentinel", "start", "--world="+name).CombinedOutput()
 			if err != nil {
@@ -731,7 +731,7 @@ var worldWakeCmd = &cobra.Command{
 		}
 
 		// Start forge.
-		forgeSess := dispatch.SessionName(name, "forge")
+		forgeSess := config.SessionName(name, "forge")
 		if !mgr.Exists(forgeSess) {
 			out, err := exec.Command(solBin, "forge", "start", "--world="+name).CombinedOutput()
 			if err != nil {
