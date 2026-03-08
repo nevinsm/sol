@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,6 +23,10 @@ import (
 	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/workflow"
 )
+
+// ErrCapacityExhausted is returned when a world has reached its agent capacity
+// and no more agents can be provisioned. Use errors.Is to check for this error.
+var ErrCapacityExhausted = errors.New("agent capacity exhausted")
 
 // Git operation timeout constants.
 const (
@@ -724,7 +729,7 @@ func autoProvision(world string, sphereStore SphereStore, namePoolPath string, c
 
 	// Enforce agent capacity.
 	if capacity > 0 && len(agents) >= capacity {
-		return nil, fmt.Errorf("world %q has reached agent capacity (%d)", world, capacity)
+		return nil, fmt.Errorf("world %q has reached agent capacity (%d): %w", world, capacity, ErrCapacityExhausted)
 	}
 
 	usedNames := make([]string, len(agents))
