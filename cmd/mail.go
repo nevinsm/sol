@@ -4,9 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/nudge"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -27,6 +31,8 @@ var mailSendCmd = &cobra.Command{
 		subject, _ := cmd.Flags().GetString("subject")
 		body, _ := cmd.Flags().GetString("body")
 		priority, _ := cmd.Flags().GetInt("priority")
+		noNotify, _ := cmd.Flags().GetBool("no-notify")
+		worldFlag, _ := cmd.Flags().GetString("world")
 		if priority < 1 || priority > 3 {
 			return fmt.Errorf("priority must be 1 (urgent), 2 (normal), or 3 (low)")
 		}
@@ -42,6 +48,12 @@ var mailSendCmd = &cobra.Command{
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "Sent: %s → %s\n", id, to)
+
+		// Bridge to nudge queue for agent delivery
+		if !noNotify && to != "operator" {
+			bridgeMailToNudge(to, worldFlag, subject, body, priority)
+		}
+
 		return nil
 	},
 }
@@ -163,6 +175,57 @@ var mailCheckCmd = &cobra.Command{
 	},
 }
 
+// bridgeMailToNudge resolves the recipient to a session and delivers a nudge notification.
+// Best-effort: failures are logged to stderr but do not affect mail delivery.
+func bridgeMailToNudge(to, worldFlag, subject, body string, priority int) {
+	var world, agent string
+
+	if strings.Contains(to, "/") {
+		// "world/agent" format
+		parts := strings.SplitN(to, "/", 2)
+		world, agent = parts[0], parts[1]
+	} else {
+		// Plain agent name — resolve world from flag/env/cwd
+		agent = to
+		var err error
+		world, err = config.ResolveWorld(worldFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "mail: skipping nudge: cannot resolve world: %v\n", err)
+			return
+		}
+	}
+
+	sessName := config.SessionName(world, agent)
+
+	mgr := session.New()
+	if !mgr.Exists(sessName) {
+		// No active session — sphere mail is the durable record
+		return
+	}
+
+	// Map mail priority to nudge priority
+	nudgePriority := "normal"
+	if priority == 1 {
+		nudgePriority = "urgent"
+	}
+
+	// Truncate body for nudge preview (max 500 chars)
+	nudgeBody := body
+	if len(nudgeBody) > 500 {
+		nudgeBody = nudgeBody[:497] + "..."
+	}
+
+	if err := nudge.Deliver(sessName, nudge.Message{
+		Sender:   "operator",
+		Type:     "MAIL",
+		Subject:  subject,
+		Body:     nudgeBody,
+		Priority: nudgePriority,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "mail: warning: nudge delivery failed: %v\n", err)
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(mailCmd)
 
@@ -170,6 +233,8 @@ func init() {
 	mailSendCmd.Flags().String("subject", "", "Message subject")
 	mailSendCmd.Flags().String("body", "", "Message body")
 	mailSendCmd.Flags().Int("priority", 2, "Priority (1=urgent, 2=normal, 3=low)")
+	mailSendCmd.Flags().Bool("no-notify", false, "Suppress nudge notification to recipient")
+	mailSendCmd.Flags().String("world", "", "World for recipient resolution (default: from env or cwd)")
 	mailSendCmd.MarkFlagRequired("to")
 	mailSendCmd.MarkFlagRequired("subject")
 
