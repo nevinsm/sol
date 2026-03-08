@@ -10,6 +10,7 @@ var (
 	errorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))              // red
 	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))              // gray
 	selectStyle = lipgloss.NewStyle().Background(lipgloss.Color("236")).Bold(true) // row highlight
+	focusStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))  // focused section header (cyan)
 )
 
 // Health badge strings — same semantics as render.go.

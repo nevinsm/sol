@@ -1,10 +1,12 @@
 package dash
 
 import (
+	"os/exec"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -51,14 +53,36 @@ type dataMsg struct {
 	world  *status.WorldStatus
 }
 
+// drillMsg signals that the sphere view wants to drill into a world.
+type drillMsg struct {
+	world string
+}
+
+// popMsg signals the world view wants to return to sphere.
+type popMsg struct{}
+
+// attachMsg signals that the world view wants to attach to an agent session.
+type attachMsg struct {
+	sessionName string
+}
+
+// attachDoneMsg fires when an agent tmux attach completes (user detached).
+type attachDoneMsg struct {
+	err error
+}
+
+// noSessionMsg signals an inline "no active session" message.
+type noSessionMsg struct{}
+
 // Model is the root Bubble Tea model for the dashboard.
 type Model struct {
-	mode    viewMode
-	world   string // populated in world view mode
-	config  Config
-	ready   bool
-	width   int
-	height  int
+	// viewStack tracks navigation depth. Last element is the active view.
+	viewStack []viewMode
+	world     string // populated in world view mode
+	config    Config
+	ready     bool
+	width     int
+	height    int
 	lastRefresh time.Time
 
 	// Data.
@@ -72,21 +96,29 @@ type Model struct {
 
 // NewModel creates a dashboard model. If world is empty, starts in sphere view.
 func NewModel(cfg Config) Model {
-	mode := viewSphere
+	startView := viewSphere
 	if cfg.World != "" {
-		mode = viewWorld
+		startView = viewWorld
 	}
 
 	m := Model{
-		mode:   mode,
-		world:  cfg.World,
-		config: cfg,
+		viewStack: []viewMode{startView},
+		world:     cfg.World,
+		config:    cfg,
 	}
 
 	m.sphereView = newSphereModel()
 	m.worldView = newWorldModel()
 
 	return m
+}
+
+// activeView returns the current top-of-stack view mode.
+func (m Model) activeView() viewMode {
+	if len(m.viewStack) == 0 {
+		return viewSphere
+	}
+	return m.viewStack[len(m.viewStack)-1]
 }
 
 // Init starts the first data fetch and tick timer.
@@ -121,7 +153,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Route navigation keys to active view.
-		switch m.mode {
+		switch m.activeView() {
 		case viewSphere:
 			sv, cmd := m.sphereView.update(msg, m.sphereData)
 			m.sphereView = sv
@@ -131,6 +163,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.worldView = wv
 			cmds = append(cmds, cmd)
 		}
+
+	case drillMsg:
+		// Push world view onto the stack.
+		m.world = msg.world
+		m.worldData = nil // clear stale data
+		m.worldView = newWorldModel()
+		m.worldView.width = m.width
+		m.worldView.height = m.height
+		m.viewStack = append(m.viewStack, viewWorld)
+		cmds = append(cmds, m.refresh(), m.worldView.init())
+
+	case popMsg:
+		// Pop back to sphere view.
+		if len(m.viewStack) > 1 {
+			m.viewStack = m.viewStack[:len(m.viewStack)-1]
+			m.world = ""
+			m.worldData = nil
+			// Re-gather sphere data (ZFC — fresh on return).
+			cmds = append(cmds, m.refresh())
+		}
+
+	case attachMsg:
+		// Suspend TUI and attach to tmux session.
+		cmd := exec.Command("tmux", "attach-session", "-t", "="+msg.sessionName+":")
+		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+			return attachDoneMsg{err: err}
+		})
+
+	case attachDoneMsg:
+		// Resume after detach — force immediate refresh.
+		cmds = append(cmds, m.refresh())
+
+	case noSessionMsg:
+		// Route to world view to show inline message.
+		m.worldView.showNoSession = true
 
 	case tickMsg:
 		cmds = append(cmds, m.refresh())
@@ -150,7 +217,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinner.TickMsg:
 		// Route spinner ticks to active view.
-		switch m.mode {
+		switch m.activeView() {
 		case viewSphere:
 			sv, cmd := m.sphereView.updateSpinner(msg)
 			m.sphereView = sv
@@ -171,7 +238,7 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	switch m.mode {
+	switch m.activeView() {
 	case viewSphere:
 		return m.sphereView.view(m.sphereData, m.lastRefresh)
 	case viewWorld:
@@ -186,7 +253,7 @@ func (m Model) refresh() tea.Cmd {
 	return func() tea.Msg {
 		var msg dataMsg
 
-		switch m.mode {
+		switch m.activeView() {
 		case viewSphere:
 			result := status.GatherSphere(
 				m.config.SphereStore,
@@ -227,4 +294,9 @@ func (m Model) tickCmd() tea.Cmd {
 	return tea.Tick(refreshInterval, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
+}
+
+// sessionName returns the tmux session name for an agent in the current world.
+func (m Model) sessionName(agentName string) string {
+	return config.SessionName(m.world, agentName)
 }

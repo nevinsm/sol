@@ -12,14 +12,33 @@ import (
 	"github.com/nevinsm/sol/internal/status"
 )
 
+// worldSection identifies a focusable section in the world view.
+type worldSection int
+
+const (
+	sectionOutposts worldSection = iota
+	sectionEnvoys
+	sectionMergeQueue
+)
+
 // worldModel handles the world detail view.
 type worldModel struct {
 	width  int
 	height int
 
-	// Row selection for the outposts table.
-	cursor   int
-	agentLen int
+	// Section focus and per-section cursors.
+	focusedSection worldSection
+	outpostCursor  int
+	envoyCursor    int
+	mrCursor       int
+
+	// Section row counts.
+	outpostLen int
+	envoyLen   int
+	mrLen      int
+
+	// Inline "no active session" message.
+	showNoSession bool
 
 	// Spinners for active processes.
 	processSpinners map[string]spinner.Model
@@ -91,7 +110,9 @@ func (wm *worldModel) updateData(data *status.WorldStatus) {
 		}
 	}
 
-	wm.agentLen = len(data.Agents)
+	wm.outpostLen = len(data.Agents)
+	wm.envoyLen = len(data.Envoys)
+	wm.mrLen = len(data.MergeRequests)
 }
 
 func (wm *worldModel) syncProcessSpinner(name string, running bool) {
@@ -106,21 +127,157 @@ func (wm *worldModel) syncProcessSpinner(name string, running bool) {
 	}
 }
 
-func (wm worldModel) update(msg tea.KeyMsg, _ *status.WorldStatus) (worldModel, tea.Cmd) {
+// availableSections returns the sections that have rows, in order.
+func (wm worldModel) availableSections() []worldSection {
+	var sections []worldSection
+	if wm.outpostLen > 0 {
+		sections = append(sections, sectionOutposts)
+	}
+	if wm.envoyLen > 0 {
+		sections = append(sections, sectionEnvoys)
+	}
+	if wm.mrLen > 0 {
+		sections = append(sections, sectionMergeQueue)
+	}
+	return sections
+}
+
+// sectionLen returns the number of rows in the given section.
+func (wm worldModel) sectionLen(s worldSection) int {
+	switch s {
+	case sectionOutposts:
+		return wm.outpostLen
+	case sectionEnvoys:
+		return wm.envoyLen
+	case sectionMergeQueue:
+		return wm.mrLen
+	}
+	return 0
+}
+
+// cursor returns the current cursor for the given section.
+func (wm worldModel) cursor(s worldSection) int {
+	switch s {
+	case sectionOutposts:
+		return wm.outpostCursor
+	case sectionEnvoys:
+		return wm.envoyCursor
+	case sectionMergeQueue:
+		return wm.mrCursor
+	}
+	return 0
+}
+
+// setCursor sets the cursor for a section.
+func (wm *worldModel) setCursor(s worldSection, v int) {
+	switch s {
+	case sectionOutposts:
+		wm.outpostCursor = v
+	case sectionEnvoys:
+		wm.envoyCursor = v
+	case sectionMergeQueue:
+		wm.mrCursor = v
+	}
+}
+
+func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldModel, tea.Cmd) {
+	// Any key dismisses the "no active session" message.
+	if wm.showNoSession {
+		wm.showNoSession = false
+		return wm, nil
+	}
+
 	switch msg.String() {
 	case "up", "k":
-		if wm.cursor > 0 {
-			wm.cursor--
+		cur := wm.cursor(wm.focusedSection)
+		if cur > 0 {
+			wm.setCursor(wm.focusedSection, cur-1)
 		}
+
 	case "down", "j":
-		max := wm.agentLen - 1
+		cur := wm.cursor(wm.focusedSection)
+		max := wm.sectionLen(wm.focusedSection) - 1
 		if max < 0 {
 			max = 0
 		}
-		if wm.cursor < max {
-			wm.cursor++
+		if cur < max {
+			wm.setCursor(wm.focusedSection, cur+1)
+		}
+
+	case "tab":
+		wm.cycleFocus(1)
+
+	case "shift+tab":
+		wm.cycleFocus(-1)
+
+	case "esc", "h", "left":
+		// Pop back to sphere view.
+		return wm, func() tea.Msg { return popMsg{} }
+
+	case "enter", "l", "right":
+		// Attach to agent/envoy session.
+		return wm.handleAttach(data)
+	}
+	return wm, nil
+}
+
+// cycleFocus moves focus to the next/previous section with rows.
+func (wm *worldModel) cycleFocus(dir int) {
+	sections := wm.availableSections()
+	if len(sections) == 0 {
+		return
+	}
+
+	// Find current section index.
+	idx := -1
+	for i, s := range sections {
+		if s == wm.focusedSection {
+			idx = i
+			break
 		}
 	}
+
+	if idx == -1 {
+		// Focus not on a valid section; snap to first.
+		wm.focusedSection = sections[0]
+		return
+	}
+
+	// Cycle.
+	next := (idx + dir + len(sections)) % len(sections)
+	wm.focusedSection = sections[next]
+}
+
+// handleAttach checks if the selected row has a live session and returns an attach command.
+func (wm worldModel) handleAttach(data *status.WorldStatus) (worldModel, tea.Cmd) {
+	if data == nil {
+		return wm, nil
+	}
+
+	switch wm.focusedSection {
+	case sectionOutposts:
+		if wm.outpostCursor < len(data.Agents) {
+			agent := data.Agents[wm.outpostCursor]
+			if !agent.SessionAlive {
+				return wm, func() tea.Msg { return noSessionMsg{} }
+			}
+			return wm, func() tea.Msg {
+				return attachMsg{sessionName: fmt.Sprintf("sol-%s-%s", data.World, agent.Name)}
+			}
+		}
+
+	case sectionEnvoys:
+		if wm.envoyCursor < len(data.Envoys) {
+			envoy := data.Envoys[wm.envoyCursor]
+			if !envoy.SessionAlive {
+				return wm, func() tea.Msg { return noSessionMsg{} }
+			}
+			return wm, func() tea.Msg {
+				return attachMsg{sessionName: fmt.Sprintf("sol-%s-%s", data.World, envoy.Name)}
+			}
+		}
+	}
+
 	return wm, nil
 }
 
@@ -172,7 +329,12 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time) strin
 
 	// Outposts.
 	if len(data.Agents) > 0 {
-		b.WriteString(headerStyle.Render(fmt.Sprintf("Outposts (%d)", len(data.Agents))))
+		sectionHeader := fmt.Sprintf("Outposts (%d)", len(data.Agents))
+		if wm.focusedSection == sectionOutposts {
+			b.WriteString(focusStyle.Render(sectionHeader))
+		} else {
+			b.WriteString(headerStyle.Render(sectionHeader))
+		}
 		b.WriteString("\n")
 		wm.renderAgentsTable(&b, data.Agents)
 		b.WriteString("\n")
@@ -180,7 +342,12 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time) strin
 
 	// Envoys.
 	if len(data.Envoys) > 0 {
-		b.WriteString(headerStyle.Render(fmt.Sprintf("Envoys (%d)", len(data.Envoys))))
+		sectionHeader := fmt.Sprintf("Envoys (%d)", len(data.Envoys))
+		if wm.focusedSection == sectionEnvoys {
+			b.WriteString(focusStyle.Render(sectionHeader))
+		} else {
+			b.WriteString(headerStyle.Render(sectionHeader))
+		}
 		b.WriteString("\n")
 		wm.renderEnvoysTable(&b, data.Envoys)
 		b.WriteString("\n")
@@ -192,9 +359,14 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time) strin
 	}
 
 	// Merge queue.
-	b.WriteString(headerStyle.Render("Merge Queue"))
+	mqHeader := "Merge Queue"
+	if wm.focusedSection == sectionMergeQueue {
+		b.WriteString(focusStyle.Render(mqHeader))
+	} else {
+		b.WriteString(headerStyle.Render(mqHeader))
+	}
 	b.WriteString("\n")
-	wm.renderMergeQueue(&b, data.MergeQueue)
+	wm.renderMergeQueue(&b, data.MergeQueue, data.MergeRequests)
 	b.WriteString("\n")
 
 	// Caravans.
@@ -203,6 +375,12 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time) strin
 		b.WriteString("\n")
 		wm.renderCaravans(&b, data.Caravans)
 		b.WriteString("\n")
+	}
+
+	// Inline "no active session" message.
+	if wm.showNoSession {
+		b.WriteString(warnStyle.Render("  no active session"))
+		b.WriteString("\n\n")
 	}
 
 	// Footer.
@@ -232,7 +410,7 @@ func (wm worldModel) renderAgentsTable(b *strings.Builder, agents []status.Agent
 
 	for i, a := range agents {
 		line := wm.renderAgentRow(a)
-		if i == wm.cursor {
+		if wm.focusedSection == sectionOutposts && i == wm.outpostCursor {
 			b.WriteString(selectStyle.Render(line))
 		} else {
 			b.WriteString(line)
@@ -288,56 +466,68 @@ func (wm worldModel) renderEnvoysTable(b *strings.Builder, envoys []status.Envoy
 		dimStyle.Render("BRIEF"),
 	))
 
-	for _, e := range envoys {
-		name := e.Name
-		if s, ok := wm.agentSpinners[e.Name]; ok {
-			name = s.View() + " " + e.Name
+	for i, e := range envoys {
+		line := wm.renderEnvoyRow(e)
+		if wm.focusedSection == sectionEnvoys && i == wm.envoyCursor {
+			b.WriteString(selectStyle.Render(line))
+		} else {
+			b.WriteString(line)
 		}
-
-		state := e.State
-		switch e.State {
-		case "working":
-			if e.SessionAlive {
-				state = okStyle.Render("working")
-			} else {
-				state = errorStyle.Render("working (dead!)")
-			}
-		case "idle":
-			state = dimStyle.Render("idle")
-		case "stalled":
-			state = warnStyle.Render("stalled")
-		}
-
-		sess := dimStyle.Render("—")
-		if e.State == "working" || e.State == "stalled" {
-			if e.SessionAlive {
-				sess = okStyle.Render("alive")
-			} else {
-				sess = errorStyle.Render("dead")
-			}
-		}
-
-		work := dimStyle.Render("—")
-		if e.TetherItem != "" {
-			work = e.WorkTitle
-		}
-
-		brief := dimStyle.Render("—")
-		if e.BriefAge != "" {
-			brief = e.BriefAge + " ago"
-		}
-
-		b.WriteString(fmt.Sprintf("  %-14s %-18s %-10s %-24s %s\n",
-			name, state, sess, work, brief))
+		b.WriteString("\n")
 	}
 }
 
-func (wm worldModel) renderMergeQueue(b *strings.Builder, mq status.MergeQueueInfo) {
+func (wm worldModel) renderEnvoyRow(e status.EnvoyStatus) string {
+	name := e.Name
+	if s, ok := wm.agentSpinners[e.Name]; ok {
+		name = s.View() + " " + e.Name
+	}
+
+	state := e.State
+	switch e.State {
+	case "working":
+		if e.SessionAlive {
+			state = okStyle.Render("working")
+		} else {
+			state = errorStyle.Render("working (dead!)")
+		}
+	case "idle":
+		state = dimStyle.Render("idle")
+	case "stalled":
+		state = warnStyle.Render("stalled")
+	}
+
+	sess := dimStyle.Render("—")
+	if e.State == "working" || e.State == "stalled" {
+		if e.SessionAlive {
+			sess = okStyle.Render("alive")
+		} else {
+			sess = errorStyle.Render("dead")
+		}
+	}
+
+	work := dimStyle.Render("—")
+	if e.TetherItem != "" {
+		work = e.WorkTitle
+	}
+
+	brief := dimStyle.Render("—")
+	if e.BriefAge != "" {
+		brief = e.BriefAge + " ago"
+	}
+
+	return fmt.Sprintf("  %-14s %-18s %-10s %-24s %s",
+		name, state, sess, work, brief)
+}
+
+func (wm worldModel) renderMergeQueue(b *strings.Builder, mq status.MergeQueueInfo, mrs []status.MergeRequestInfo) {
 	if mq.Total == 0 {
 		b.WriteString(dimStyle.Render("  empty"))
 		b.WriteString("\n")
 		return
 	}
+
+	// Summary line.
 	var parts []string
 	if mq.Ready > 0 {
 		parts = append(parts, fmt.Sprintf("%d ready", mq.Ready))
@@ -352,6 +542,46 @@ func (wm worldModel) renderMergeQueue(b *strings.Builder, mq status.MergeQueueIn
 		parts = append(parts, okStyle.Render(fmt.Sprintf("%d merged", mq.Merged)))
 	}
 	b.WriteString(fmt.Sprintf("  %s\n", strings.Join(parts, ", ")))
+
+	// Individual MR rows.
+	if len(mrs) > 0 {
+		b.WriteString(fmt.Sprintf("  %-20s %-20s %-10s %s\n",
+			dimStyle.Render("ID"),
+			dimStyle.Render("WRIT"),
+			dimStyle.Render("STATUS"),
+			dimStyle.Render("TITLE"),
+		))
+		for i, mr := range mrs {
+			line := wm.renderMRRow(mr)
+			if wm.focusedSection == sectionMergeQueue && i == wm.mrCursor {
+				b.WriteString(selectStyle.Render(line))
+			} else {
+				b.WriteString(line)
+			}
+			b.WriteString("\n")
+		}
+	}
+}
+
+func (wm worldModel) renderMRRow(mr status.MergeRequestInfo) string {
+	phase := mr.Phase
+	switch mr.Phase {
+	case "ready":
+		phase = okStyle.Render("ready")
+	case "claimed":
+		phase = warnStyle.Render("in progress")
+	case "failed":
+		phase = errorStyle.Render("failed")
+	case "merged":
+		phase = okStyle.Render("merged")
+	}
+
+	title := mr.Title
+	if len(title) > 40 {
+		title = title[:37] + "..."
+	}
+
+	return fmt.Sprintf("  %-20s %-20s %-10s %s", mr.ID, mr.WritID, phase, title)
 }
 
 func (wm worldModel) renderCaravans(b *strings.Builder, caravans []status.CaravanInfo) {
@@ -385,7 +615,7 @@ func (wm worldModel) renderCaravans(b *strings.Builder, caravans []status.Carava
 }
 
 func (wm worldModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter attach · esc back · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {

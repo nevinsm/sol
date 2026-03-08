@@ -107,6 +107,12 @@ func (sm sphereModel) update(msg tea.KeyMsg, data *status.SphereStatus) (sphereM
 		if sm.cursor < max {
 			sm.cursor++
 		}
+	case "enter", "l", "right":
+		// Drill into the selected world.
+		if data != nil && sm.cursor < len(data.Worlds) {
+			worldName := data.Worlds[sm.cursor].Name
+			return sm, func() tea.Msg { return drillMsg{world: worldName} }
+		}
 	}
 	return sm, nil
 }
@@ -304,7 +310,7 @@ func (sm sphereModel) renderCaravans(b *strings.Builder, caravans []status.Carav
 }
 
 func (sm sphereModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · enter drill in · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {

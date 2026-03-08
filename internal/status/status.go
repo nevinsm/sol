@@ -29,9 +29,10 @@ type WorldStatus struct {
 	Governor   GovernorInfo   `json:"governor"`
 	Agents     []AgentStatus  `json:"agents"`
 	Envoys     []EnvoyStatus  `json:"envoys"`
-	MergeQueue MergeQueueInfo `json:"merge_queue"`
-	Caravans   []CaravanInfo  `json:"caravans,omitempty"`
-	Summary    Summary        `json:"summary"`
+	MergeQueue    MergeQueueInfo    `json:"merge_queue"`
+	MergeRequests []MergeRequestInfo `json:"merge_requests,omitempty"`
+	Caravans      []CaravanInfo      `json:"caravans,omitempty"`
+	Summary       Summary            `json:"summary"`
 }
 
 // GovernorInfo holds governor process state.
@@ -113,6 +114,14 @@ type MergeQueueInfo struct {
 	Failed  int `json:"failed"`
 	Merged  int `json:"merged"`
 	Total   int `json:"total"`
+}
+
+// MergeRequestInfo holds individual merge request details for display.
+type MergeRequestInfo struct {
+	ID     string `json:"id"`
+	WritID string `json:"writ_id"`
+	Phase  string `json:"phase"`
+	Title  string `json:"title"`
 }
 
 // AgentStatus holds the combined state of one agent.
@@ -391,6 +400,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 	}
 	for _, mr := range mrs {
 		result.MergeQueue.Total++
+		include := true
 		switch mr.Phase {
 		case "ready":
 			result.MergeQueue.Ready++
@@ -400,9 +410,24 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			// Exclude failed MRs whose writs have been re-cast and closed.
 			if item, err := worldStore.GetWrit(mr.WritID); err != nil || item.Status != "closed" {
 				result.MergeQueue.Failed++
+			} else {
+				include = false
 			}
 		case "merged":
 			result.MergeQueue.Merged++
+		}
+
+		if include {
+			title := ""
+			if item, err := worldStore.GetWrit(mr.WritID); err == nil {
+				title = item.Title
+			}
+			result.MergeRequests = append(result.MergeRequests, MergeRequestInfo{
+				ID:     mr.ID,
+				WritID: mr.WritID,
+				Phase:  mr.Phase,
+				Title:  title,
+			})
 		}
 	}
 
