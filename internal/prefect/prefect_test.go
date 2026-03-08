@@ -2,9 +2,11 @@ package prefect
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -910,6 +912,11 @@ func TestHeartbeatStartsMissingWorldServices(t *testing.T) {
 source_repo = "/tmp/repo"
 `), 0o644)
 
+	// Write alive PID files for sphere daemons so checkSphereDaemons doesn't trigger.
+	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+		writePIDFile(t, name, os.Getpid())
+	}
+
 	cmdRunner := &mockCommandRunner{}
 
 	sup := New(cfg, sphereStore, mock, logger)
@@ -963,6 +970,11 @@ source_repo = "/tmp/repo"
 	mock.Start("sol-haven-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", "haven")
 	mock.Start("sol-haven-forge", "/tmp", "sol forge run", nil, "forge", "haven")
 
+	// Write alive PID files for sphere daemons so checkSphereDaemons doesn't trigger.
+	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+		writePIDFile(t, name, os.Getpid())
+	}
+
 	cmdRunner := &mockCommandRunner{}
 
 	sup := New(cfg, sphereStore, mock, logger)
@@ -993,6 +1005,11 @@ func TestHeartbeatSkipsSleepingWorldInfra(t *testing.T) {
 source_repo = "/tmp/repo"
 sleeping = true
 `), 0o644)
+
+	// Write alive PID files for sphere daemons so checkSphereDaemons doesn't trigger.
+	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+		writePIDFile(t, name, os.Getpid())
+	}
 
 	cmdRunner := &mockCommandRunner{}
 
@@ -1026,6 +1043,11 @@ func TestHeartbeatWorldInfraRespectsWorldsFilter(t *testing.T) {
 		os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
 source_repo = "/tmp/repo"
 `), 0o644)
+	}
+
+	// Write alive PID files for sphere daemons so checkSphereDaemons doesn't trigger.
+	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+		writePIDFile(t, name, os.Getpid())
 	}
 
 	cmdRunner := &mockCommandRunner{}
@@ -1184,6 +1206,11 @@ func TestHeartbeatInfraCheckPeriodicity(t *testing.T) {
 source_repo = "/tmp/repo"
 `), 0o644)
 
+	// Write alive PID files for sphere daemons so checkSphereDaemons doesn't trigger.
+	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+		writePIDFile(t, name, os.Getpid())
+	}
+
 	cmdRunner := &mockCommandRunner{}
 
 	sup := New(cfg, sphereStore, mock, logger)
@@ -1287,6 +1314,356 @@ source_repo = "/tmp/fakerepo"
 	}
 	if agent.ActiveWrit != "sol-abc12345" {
 		t.Errorf("agent active_writ = %q, want %q (tether item not preserved)", agent.ActiveWrit, "sol-abc12345")
+	}
+}
+
+// --- Sphere daemon supervision tests ---
+
+// mockDaemonTracker tracks calls to runCommand and startDaemonProcess for sphere daemon tests.
+type mockDaemonTracker struct {
+	mu               sync.Mutex
+	runCalls         [][]string // [binary, arg1, arg2, ...]
+	detachedCalls    [][]string // [daemon, binary, arg1, arg2, ...]
+	runErr           error      // if set, runCommand returns this error
+	detachedErr      error      // if set, startDaemonProcess returns this error
+}
+
+func (m *mockDaemonTracker) runCommand(name string, args ...string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	call := append([]string{name}, args...)
+	m.runCalls = append(m.runCalls, call)
+	return m.runErr
+}
+
+func (m *mockDaemonTracker) startDaemonProcess(daemon string, binPath string, args ...string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	call := append([]string{daemon, binPath}, args...)
+	m.detachedCalls = append(m.detachedCalls, call)
+	return m.detachedErr
+}
+
+func (m *mockDaemonTracker) getRunCalls() [][]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([][]string, len(m.runCalls))
+	for i, c := range m.runCalls {
+		cp := make([]string, len(c))
+		copy(cp, c)
+		result[i] = cp
+	}
+	return result
+}
+
+func (m *mockDaemonTracker) getDetachedCalls() [][]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([][]string, len(m.detachedCalls))
+	for i, c := range m.detachedCalls {
+		cp := make([]string, len(c))
+		copy(cp, c)
+		result[i] = cp
+	}
+	return result
+}
+
+// writePIDFile writes a PID file for a named daemon in the test runtime dir.
+func writePIDFile(t *testing.T, name string, pid int) {
+	t.Helper()
+	runtimeDir := filepath.Join(os.Getenv("SOL_HOME"), ".runtime")
+	os.MkdirAll(runtimeDir, 0o755)
+	path := filepath.Join(runtimeDir, name+".pid")
+	if err := os.WriteFile(path, []byte(strconv.Itoa(pid)), 0o644); err != nil {
+		t.Fatalf("failed to write PID file for %s: %v", name, err)
+	}
+}
+
+func TestCheckSphereDaemonsRestartsDeadDaemons(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = tracker.runCommand
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// No PID files exist and no tmux sessions — all daemons are dead.
+	// Run heartbeat (first heartbeat triggers sphere daemon check).
+	sup.heartbeat()
+
+	// Chronicle and ledger should be restarted via runCommand (non-detached).
+	runCalls := tracker.getRunCalls()
+	foundChronicle := false
+	foundLedger := false
+	for _, call := range runCalls {
+		if len(call) >= 3 && call[0] == "/usr/bin/sol" && call[1] == "chronicle" && call[2] == "start" {
+			foundChronicle = true
+		}
+		if len(call) >= 3 && call[0] == "/usr/bin/sol" && call[1] == "ledger" && call[2] == "start" {
+			foundLedger = true
+		}
+	}
+	if !foundChronicle {
+		t.Error("expected chronicle restart via runCommand, not found")
+	}
+	if !foundLedger {
+		t.Error("expected ledger restart via runCommand, not found")
+	}
+
+	// Token-broker should be restarted via startDaemonProcess (detached).
+	detachedCalls := tracker.getDetachedCalls()
+	foundBroker := false
+	for _, call := range detachedCalls {
+		if len(call) >= 4 && call[0] == "token-broker" && call[1] == "/usr/bin/sol" &&
+			call[2] == "token-broker" && call[3] == "run" {
+			foundBroker = true
+		}
+	}
+	if !foundBroker {
+		t.Error("expected token-broker restart via startDaemonProcess, not found")
+	}
+}
+
+func TestCheckSphereDaemonsSkipsAlivePID(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = tracker.runCommand
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// Write PID files with our own PID (alive).
+	myPID := os.Getpid()
+	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+		writePIDFile(t, name, myPID)
+	}
+
+	sup.heartbeat()
+
+	// No restarts should occur.
+	runCalls := tracker.getRunCalls()
+	detachedCalls := tracker.getDetachedCalls()
+	if len(runCalls) != 0 {
+		t.Errorf("expected 0 runCommand calls for alive daemons, got %d: %v", len(runCalls), runCalls)
+	}
+	if len(detachedCalls) != 0 {
+		t.Errorf("expected 0 startDaemonProcess calls for alive daemons, got %d: %v", len(detachedCalls), detachedCalls)
+	}
+}
+
+func TestCheckSphereDaemonsSkipsAliveSession(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = tracker.runCommand
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// No PID files, but tmux sessions exist for chronicle and ledger.
+	mock.Start("sol-chronicle", "/tmp", "sol chronicle run", nil, "chronicle", "")
+	mock.Start("sol-ledger", "/tmp", "sol ledger run", nil, "ledger", "")
+	// Token-broker has no session (and no PID file) — should be restarted.
+
+	sup.heartbeat()
+
+	// Only token-broker should be restarted (chronicle/ledger have live sessions).
+	runCalls := tracker.getRunCalls()
+	for _, call := range runCalls {
+		if len(call) >= 2 && (call[1] == "chronicle" || call[1] == "ledger") {
+			t.Errorf("should not restart daemon with live session: %v", call)
+		}
+	}
+
+	detachedCalls := tracker.getDetachedCalls()
+	foundBroker := false
+	for _, call := range detachedCalls {
+		if len(call) >= 1 && call[0] == "token-broker" {
+			foundBroker = true
+		}
+	}
+	if !foundBroker {
+		t.Error("expected token-broker restart (no session, no PID)")
+	}
+}
+
+func TestCheckSphereDaemonsRestartFailureNonFatal(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+
+	tracker := &mockDaemonTracker{
+		runErr:      fmt.Errorf("simulated failure"),
+		detachedErr: fmt.Errorf("simulated failure"),
+	}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = tracker.runCommand
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// No PID files — all daemons are dead.
+	// Heartbeat should not panic or crash even though restarts fail.
+	sup.heartbeat()
+
+	// Verify restart was attempted for all three daemons.
+	runCalls := tracker.getRunCalls()
+	detachedCalls := tracker.getDetachedCalls()
+	if len(runCalls) < 2 {
+		t.Errorf("expected at least 2 runCommand calls (chronicle + ledger), got %d", len(runCalls))
+	}
+	if len(detachedCalls) < 1 {
+		t.Errorf("expected at least 1 startDaemonProcess call (token-broker), got %d", len(detachedCalls))
+	}
+}
+
+func TestCheckSphereDaemonsSkipsWithoutSolBinary(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	// cfg.SolBinary is empty — sphere daemon check should be skipped.
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = tracker.runCommand
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// No PID files — all daemons are dead.
+	sup.heartbeat()
+
+	// No restarts should occur since SolBinary is not configured.
+	runCalls := tracker.getRunCalls()
+	detachedCalls := tracker.getDetachedCalls()
+	if len(runCalls) != 0 {
+		t.Errorf("expected 0 runCommand calls without SolBinary, got %d", len(runCalls))
+	}
+	if len(detachedCalls) != 0 {
+		t.Errorf("expected 0 startDaemonProcess calls without SolBinary, got %d", len(detachedCalls))
+	}
+}
+
+func TestCheckSphereDaemonsPeriodicity(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = tracker.runCommand
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// Write alive PID files for chronicle and ledger so only token-broker triggers.
+	// This lets us count detachedCalls precisely.
+	myPID := os.Getpid()
+	writePIDFile(t, "chronicle", myPID)
+	writePIDFile(t, "ledger", myPID)
+	// token-broker has no PID — will be restarted each check.
+
+	// Heartbeat 1 (count=1): should check sphere daemons.
+	sup.heartbeat()
+	calls1 := len(tracker.getDetachedCalls())
+	if calls1 != 1 {
+		t.Fatalf("heartbeat 1: expected 1 detached call, got %d", calls1)
+	}
+
+	// Heartbeat 2 (count=2): 2%%3 != 0, should NOT check.
+	sup.heartbeat()
+	calls2 := len(tracker.getDetachedCalls())
+	if calls2 != calls1 {
+		t.Errorf("heartbeat 2: should not check daemons, calls went from %d to %d", calls1, calls2)
+	}
+
+	// Heartbeat 3 (count=3): 3%%3 == 0, should check.
+	sup.heartbeat()
+	calls3 := len(tracker.getDetachedCalls())
+	if calls3 != calls1+1 {
+		t.Errorf("heartbeat 3: expected daemon check, calls = %d (want %d)", calls3, calls1+1)
+	}
+
+	// Heartbeat 4 (count=4): 4%%3 != 0, should NOT check.
+	sup.heartbeat()
+	calls4 := len(tracker.getDetachedCalls())
+	if calls4 != calls3 {
+		t.Errorf("heartbeat 4: should not check daemons, calls went from %d to %d", calls3, calls4)
+	}
+}
+
+func TestReadDaemonPID(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755)
+
+	// No file — returns 0.
+	if pid := ReadDaemonPID("noexist"); pid != 0 {
+		t.Errorf("ReadDaemonPID(noexist) = %d, want 0", pid)
+	}
+
+	// Valid PID file.
+	if err := WriteDaemonPID("test", 12345); err != nil {
+		t.Fatal(err)
+	}
+	if pid := ReadDaemonPID("test"); pid != 12345 {
+		t.Errorf("ReadDaemonPID(test) = %d, want 12345", pid)
+	}
+
+	// Invalid content.
+	os.WriteFile(filepath.Join(dir, ".runtime", "bad.pid"), []byte("not-a-number"), 0o644)
+	if pid := ReadDaemonPID("bad"); pid != 0 {
+		t.Errorf("ReadDaemonPID(bad) = %d, want 0", pid)
+	}
+}
+
+func TestCheckSphereDaemonsDeadPIDTriggersRestart(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = tracker.runCommand
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// Write PID files with a dead PID (very high, certainly not running).
+	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+		writePIDFile(t, name, 2147483647)
+	}
+
+	sup.heartbeat()
+
+	// All three daemons should be restarted.
+	runCalls := tracker.getRunCalls()
+	detachedCalls := tracker.getDetachedCalls()
+
+	// chronicle + ledger via runCommand
+	if len(runCalls) < 2 {
+		t.Errorf("expected at least 2 runCommand calls (chronicle + ledger), got %d", len(runCalls))
+	}
+	// token-broker via startDaemonProcess
+	if len(detachedCalls) < 1 {
+		t.Errorf("expected at least 1 startDaemonProcess call (token-broker), got %d", len(detachedCalls))
 	}
 }
 

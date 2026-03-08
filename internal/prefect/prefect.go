@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
@@ -68,6 +70,22 @@ func DefaultConfig() Config {
 // worldServices are the per-world infrastructure services the prefect manages.
 var worldServices = []string{"sentinel", "forge"}
 
+// sphereDaemonSpec describes a sphere-level daemon supervised via PID check.
+type sphereDaemonSpec struct {
+	Name     string   // daemon name (matches PID file: {name}.pid)
+	Session  string   // tmux session name to check (empty if not tmux-managed)
+	Args     []string // args for sol binary restart command
+	Detached bool     // true = start as detached process, false = simple runCommand
+}
+
+// supervisedSphereDaemons are sphere-level daemons the prefect monitors via PID/session check.
+// Consul is supervised separately via heartbeat file staleness.
+var supervisedSphereDaemons = []sphereDaemonSpec{
+	{Name: "chronicle", Session: "sol-chronicle", Args: []string{"chronicle", "start"}},
+	{Name: "ledger", Session: "sol-ledger", Args: []string{"ledger", "start"}},
+	{Name: "token-broker", Args: []string{"token-broker", "run"}, Detached: true},
+}
+
 // Prefect monitors agent sessions and restarts crashed ones.
 // It is sphere-level: one prefect watches all worlds.
 type Prefect struct {
@@ -80,6 +98,11 @@ type Prefect struct {
 	// runCommand executes an external command. Defaults to exec.Command(...).Run().
 	// Override in tests to avoid real process execution.
 	runCommand func(name string, args ...string) error
+
+	// startDaemonProcess starts a daemon as a detached background process.
+	// Takes the daemon name (for PID/log file paths) and the binary path + args.
+	// Override in tests to avoid real process execution.
+	startDaemonProcess func(daemon string, binPath string, args ...string) error
 
 	mu            sync.Mutex
 	degraded      bool
@@ -107,8 +130,9 @@ func New(cfg Config, sphereStore SphereStore, mgr SessionManager, logger *slog.L
 		runCommand: func(name string, args ...string) error {
 			return exec.Command(name, args...).Run()
 		},
-		backoff:     make(map[string]int),
-		lastStalled: make(map[string]time.Time),
+		startDaemonProcess: defaultStartDaemonProcess,
+		backoff:            make(map[string]int),
+		lastStalled:        make(map[string]time.Time),
 	}
 }
 
@@ -238,6 +262,11 @@ func (s *Prefect) heartbeat() {
 	// Check world infrastructure (sentinel/forge) on first heartbeat and every 3rd cycle.
 	if s.heartbeatCount == 1 || s.heartbeatCount%3 == 0 {
 		s.checkWorldInfrastructure()
+	}
+
+	// Check sphere daemons (chronicle/ledger/token-broker) on first heartbeat and every 3rd cycle.
+	if s.heartbeatCount == 1 || s.heartbeatCount%3 == 0 {
+		s.checkSphereDaemons()
 	}
 
 	s.logger.Info("heartbeat", "working_agents", len(workingAgents), "dead_sessions", deadCount)
@@ -435,6 +464,89 @@ func (s *Prefect) checkWorldInfrastructure() {
 			}
 		}
 	}
+}
+
+// checkSphereDaemons checks whether supervised sphere daemons (chronicle, ledger,
+// token-broker) are alive and restarts any that are dead. Uses PID files and tmux
+// session presence for liveness detection.
+// Requires cfg.SolBinary to be set — skips silently if empty.
+// Must be called with s.mu held.
+func (s *Prefect) checkSphereDaemons() {
+	if s.cfg.SolBinary == "" {
+		return
+	}
+
+	for _, d := range supervisedSphereDaemons {
+		// Check if daemon is alive via PID file.
+		pid := ReadDaemonPID(d.Name)
+		if pid > 0 && IsRunning(pid) {
+			continue
+		}
+
+		// For daemons with tmux sessions, also check session presence.
+		if d.Session != "" && s.sessions.Exists(d.Session) {
+			continue
+		}
+
+		s.logger.Warn("sphere daemon dead", "daemon", d.Name)
+
+		var err error
+		if d.Detached {
+			err = s.startDaemonProcess(d.Name, s.cfg.SolBinary, d.Args...)
+		} else {
+			err = s.runCommand(s.cfg.SolBinary, d.Args...)
+		}
+
+		if err != nil {
+			s.logger.Error("failed to restart sphere daemon",
+				"daemon", d.Name, "error", err)
+			continue
+		}
+
+		s.logger.Info("restarted sphere daemon", "daemon", d.Name)
+
+		if s.eventLog != nil {
+			s.eventLog.Emit(events.EventRespawn, "prefect", d.Name, "both", map[string]any{
+				"daemon": d.Name,
+				"type":   "sphere",
+			})
+		}
+	}
+}
+
+// defaultStartDaemonProcess starts a daemon as a detached background process,
+// matching the approach used by `sol up`.
+func defaultStartDaemonProcess(daemon string, binPath string, args ...string) error {
+	logPath := filepath.Join(config.RuntimeDir(), daemon+".log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("open log file: %w", err)
+	}
+
+	proc := exec.Command(binPath, args...)
+	proc.Stdout = logFile
+	proc.Stderr = logFile
+	proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+	proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	if err := proc.Start(); err != nil {
+		logFile.Close()
+		return fmt.Errorf("start process: %w", err)
+	}
+
+	pid := proc.Process.Pid
+	logFile.Close()
+
+	// Write PID file (non-fatal if it fails — process is still running).
+	if err := WriteDaemonPID(daemon, pid); err != nil {
+		// Log would be nice but we don't have a logger here.
+		// The process is running; next check will find it via PID file or session.
+	}
+
+	// Detach so the daemon survives the prefect.
+	_ = proc.Process.Release()
+
+	return nil
 }
 
 // recordDeath records a session death timestamp and checks for mass death.

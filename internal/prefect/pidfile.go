@@ -73,3 +73,29 @@ func IsRunning(pid int) bool {
 	err := syscall.Kill(pid, 0)
 	return err == nil || err == syscall.EPERM
 }
+
+// ReadDaemonPID reads the PID from a named daemon's PID file
+// at $SOL_HOME/.runtime/{name}.pid. Returns 0 if no file exists
+// or the content is invalid.
+func ReadDaemonPID(name string) int {
+	path := filepath.Join(config.RuntimeDir(), name+".pid")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0
+	}
+	return pid
+}
+
+// WriteDaemonPID writes a PID to a named daemon's PID file
+// at $SOL_HOME/.runtime/{name}.pid.
+func WriteDaemonPID(name string, pid int) error {
+	dir := config.RuntimeDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create runtime directory: %w", err)
+	}
+	return os.WriteFile(filepath.Join(dir, name+".pid"), []byte(strconv.Itoa(pid)), 0o644)
+}
