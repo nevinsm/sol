@@ -4317,7 +4317,7 @@ func TestResolveAutoResolvesWritLinkedEscalations(t *testing.T) {
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	// Create escalations linked to this writ.
@@ -4401,7 +4401,7 @@ func TestResolveAutoResolvesEscalationsForCodeWrit(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	// Create an escalation linked to this writ.
@@ -4464,7 +4464,7 @@ func TestResolveEscalationAutoResolveIsBestEffort(t *testing.T) {
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	// Don't create any escalations — ListEscalationsBySourceRef returns empty.
@@ -4523,7 +4523,7 @@ func TestResolveMultipleEscalationsForSameWrit(t *testing.T) {
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	// Create multiple escalations for the same writ.

@@ -247,6 +247,9 @@ func (r *Forge) resolveEscalationsForMR(mrID string) {
 // resolveEscalationsForWrit resolves open/acknowledged escalations whose
 // source_ref matches "writ:<writID>".
 func (r *Forge) resolveEscalationsForWrit(writID string) {
+	if r.sphereStore == nil {
+		return
+	}
 	escalations, err := r.sphereStore.ListEscalationsBySourceRef("writ:" + writID)
 	if err != nil {
 		r.logger.Error("failed to list escalations for writ resolution", "writ", writID, "error", err)
