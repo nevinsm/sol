@@ -56,6 +56,8 @@ const (
 	EventConsulStaleTether  = "consul_stale_tether"  // stale tether recovered
 	EventConsulCaravanFeed     = "consul_caravan_feed"     // consul auto-dispatched caravan items
 	EventConsulCaravanDispatch = "consul_caravan_dispatch" // individual item dispatched by consul
+	EventConsulEscalationAlert = "consul_escalation_alert" // escalation buildup alert fired
+	EventConsulEscRenotified   = "consul_esc_renotified"   // aging escalation re-notified
 
 	// Tether events.
 	EventTether       = "tether"        // agent tethered to writ

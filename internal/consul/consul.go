@@ -18,18 +18,22 @@ import (
 
 // Config holds consul patrol configuration.
 type Config struct {
-	PatrolInterval    time.Duration // time between patrols (default: 5 minutes)
-	StaleTetherTimeout time.Duration // how long a tether can be stale (default: 1 hour)
-	HeartbeatDir      string        // path to heartbeat directory (default: $SOL_HOME/consul)
-	SolHome           string        // $SOL_HOME path
-	EscalationWebhook string        // webhook URL for escalation routing (optional)
+	PatrolInterval      time.Duration // time between patrols (default: 5 minutes)
+	StaleTetherTimeout  time.Duration // how long a tether can be stale (default: 1 hour)
+	HeartbeatDir        string        // path to heartbeat directory (default: $SOL_HOME/consul)
+	SolHome             string        // $SOL_HOME path
+	EscalationWebhook   string        // webhook URL for escalation routing (optional)
+	EscalationThreshold int           // buildup alert threshold (default: 5)
+	EscalationConfig    config.EscalationSection // aging thresholds from sol.toml
 }
 
 // DefaultConfig returns a Config with default values.
 func DefaultConfig() Config {
 	return Config{
-		PatrolInterval:   5 * time.Minute,
-		StaleTetherTimeout: 1 * time.Hour,
+		PatrolInterval:      5 * time.Minute,
+		StaleTetherTimeout:  1 * time.Hour,
+		EscalationThreshold: 5,
+		EscalationConfig:    config.DefaultEscalationConfig(),
 	}
 }
 
@@ -58,6 +62,9 @@ type SphereStore interface {
 	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
 	ResolveEscalation(id string) error
 	CountOpen() (int, error)
+	ListOpenEscalations() ([]store.Escalation, error)
+	UpdateEscalationLastNotified(id string) error
+	ResolveEscalation(id string) error
 
 	// Messages
 	PendingProtocol(recipient, protoType string) ([]store.Message, error)
@@ -115,8 +122,9 @@ type Consul struct {
 	worldOpener  WorldOpener
 	dispatchFunc DispatchFunc
 
-	patrolCount      int
-	orphanedSessions map[string]*orphanEntry
+	patrolCount         int
+	orphanedSessions    map[string]*orphanEntry
+	lastEscalationAlert time.Time // debounce buildup alerts (30 min cooldown)
 }
 
 // New creates a new Consul.
@@ -215,9 +223,10 @@ func (d *Consul) Run(ctx context.Context) error {
 // 2. Feed stranded caravans
 // 3. Process lifecycle requests
 // 4. Detect orphaned sessions
-// 5. Count open escalations
-// 6. Write heartbeat
-// 7. Emit patrol event
+// 5. Check aging escalations + buildup alerting + stale source-ref resolution
+// 6. Count open escalations
+// 7. Write heartbeat
+// 8. Emit patrol event
 //
 // Errors in individual patrol steps are logged but do not stop the
 // patrol cycle. The consul continues to the next step (DEGRADE).
@@ -226,6 +235,8 @@ func (d *Consul) Patrol(ctx context.Context) error {
 
 	var staleTethers, caravanFeeds, orphansStopped int
 	var shutdown bool
+	var escRenotified int
+	var escalationAlert bool
 
 	// 1. Recover stale tethers.
 	recovered, err := d.recoverStaleTethers(ctx)
@@ -270,13 +281,26 @@ func (d *Consul) Patrol(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	// 5. Count open escalations.
+	// 5. Check aging escalations, buildup alerting, and stale source-ref resolution.
+	renotified, err := d.checkAgingEscalations(ctx)
+	if err != nil {
+		d.logInfo("consul_error", map[string]any{"action": "aging_escalations", "error": err.Error()})
+	}
+	escRenotified = renotified
+	escalationAlert = d.checkEscalationBuildup(ctx)
+	d.resolveStaleSourceRefs(ctx)
+
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// 6. Count open escalations.
 	openEsc, err := d.sphereStore.CountOpen()
 	if err != nil {
 		d.logInfo("consul_error", map[string]any{"action": "count_escalations", "error": err.Error()})
 	}
 
-	// 6. Write heartbeat.
+	// 7. Write heartbeat.
 	status := "running"
 	if shutdown {
 		status = "stopping"
@@ -289,11 +313,13 @@ func (d *Consul) Patrol(ctx context.Context) error {
 		CaravanFeeds:     caravanFeeds,
 		Escalations:      openEsc,
 		OrphanedSessions: orphansStopped,
+		EscRenotified:    escRenotified,
+		EscalationAlert:  escalationAlert,
 	}); err != nil {
 		d.logInfo("consul_error", map[string]any{"action": "write_heartbeat", "error": err.Error()})
 	}
 
-	// 7. Emit patrol event.
+	// 8. Emit patrol event.
 	if d.logger != nil {
 		d.logger.Emit(events.EventConsulPatrol, "sphere/consul", "sphere/consul", "feed",
 			map[string]any{
@@ -302,16 +328,20 @@ func (d *Consul) Patrol(ctx context.Context) error {
 				"caravan_feeds":     caravanFeeds,
 				"escalations":       openEsc,
 				"orphaned_sessions": orphansStopped,
+				"esc_renotified":    escRenotified,
+				"escalation_alert":  escalationAlert,
 			})
 	}
 
-	// 8. Log patrol summary.
+	// 9. Log patrol summary.
 	d.logInfo("consul_patrol", map[string]any{
 		"patrol_count":      d.patrolCount,
 		"stale_tethers":     staleTethers,
 		"caravan_feeds":     caravanFeeds,
 		"escalations":       openEsc,
 		"orphaned_sessions": orphansStopped,
+		"esc_renotified":    escRenotified,
+		"escalation_alert":  escalationAlert,
 	})
 
 	// If shutdown was requested, return a sentinel error that Run will detect.

@@ -11,12 +11,55 @@ import (
 
 // WorldConfig holds all configuration for a world.
 type WorldConfig struct {
-	World     WorldSection     `toml:"world" json:"world"`
-	Agents    AgentsSection    `toml:"agents" json:"agents"`
-	Forge     ForgeSection     `toml:"forge" json:"forge"`
-	Ledger    LedgerSection    `toml:"ledger" json:"ledger"`
-	WritClean WritCleanSection `toml:"writ-clean" json:"writ-clean"`
-	Pricing   PricingConfig    `toml:"pricing" json:"pricing,omitempty"`
+	World      WorldSection      `toml:"world" json:"world"`
+	Agents     AgentsSection     `toml:"agents" json:"agents"`
+	Forge      ForgeSection      `toml:"forge" json:"forge"`
+	Ledger     LedgerSection     `toml:"ledger" json:"ledger"`
+	WritClean  WritCleanSection  `toml:"writ-clean" json:"writ-clean"`
+	Pricing    PricingConfig     `toml:"pricing" json:"pricing,omitempty"`
+	Escalation EscalationSection `toml:"escalation" json:"escalation"`
+}
+
+// EscalationSection holds escalation management settings (sphere-level).
+// Configured in sol.toml under [escalation].
+type EscalationSection struct {
+	AgingCritical       string `toml:"aging_critical" json:"aging_critical"`              // re-notify threshold for critical (default: "30m")
+	AgingHigh           string `toml:"aging_high" json:"aging_high"`                      // re-notify threshold for high (default: "2h")
+	AgingMedium         string `toml:"aging_medium" json:"aging_medium"`                  // re-notify threshold for medium (default: "8h")
+	EscalationThreshold int    `toml:"escalation_threshold" json:"escalation_threshold"` // buildup alert threshold (default: 5)
+}
+
+// DefaultEscalationConfig returns an EscalationSection with built-in defaults.
+func DefaultEscalationConfig() EscalationSection {
+	return EscalationSection{
+		AgingCritical:       "30m",
+		AgingHigh:           "2h",
+		AgingMedium:         "8h",
+		EscalationThreshold: 5,
+	}
+}
+
+// AgingThreshold returns the parsed aging threshold for a severity level.
+// Returns zero duration for "low" severity (never re-notified).
+// Returns error for invalid duration strings.
+func (e EscalationSection) AgingThreshold(severity string) (time.Duration, error) {
+	var raw string
+	switch severity {
+	case "critical":
+		raw = e.AgingCritical
+	case "high":
+		raw = e.AgingHigh
+	case "medium":
+		raw = e.AgingMedium
+	case "low":
+		return 0, nil // low severity never re-notified
+	default:
+		return 0, fmt.Errorf("unknown severity %q", severity)
+	}
+	if raw == "" {
+		return 0, nil
+	}
+	return time.ParseDuration(raw)
 }
 
 // WorldSection holds world-level settings.
@@ -60,6 +103,7 @@ func DefaultWorldConfig() WorldConfig {
 			TargetBranch: "main",
 			GateTimeout:  "5m",
 		},
+		Escalation: DefaultEscalationConfig(),
 	}
 }
 
@@ -124,6 +168,23 @@ func (c WorldConfig) Validate() error {
 		}
 	}
 	return nil
+}
+
+// LoadGlobalConfig loads sphere-level configuration from sol.toml.
+// Returns defaults if sol.toml does not exist.
+func LoadGlobalConfig() (WorldConfig, error) {
+	cfg := DefaultWorldConfig()
+
+	globalPath := GlobalConfigPath()
+	if _, err := os.Stat(globalPath); err == nil {
+		if _, err := toml.DecodeFile(globalPath, &cfg); err != nil {
+			return cfg, fmt.Errorf("failed to parse %s: %w", globalPath, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return cfg, fmt.Errorf("failed to check %s: %w", globalPath, err)
+	}
+
+	return cfg, nil
 }
 
 // IsSleeping returns true if the world is marked as sleeping in its config.

@@ -12,11 +12,13 @@ import (
 type Heartbeat struct {
 	Timestamp        time.Time `json:"timestamp"`
 	PatrolCount      int       `json:"patrol_count"`
-	Status           string    `json:"status"` // "running", "stopping"
+	Status           string    `json:"status"`            // "running", "stopping"
 	StaleTethers     int       `json:"stale_tethers"`     // recovered this patrol
 	CaravanFeeds     int       `json:"caravan_feeds"`     // dispatched this patrol
 	Escalations      int       `json:"escalations"`       // open escalation count
 	OrphanedSessions int       `json:"orphaned_sessions"` // stopped this patrol
+	EscRenotified    int       `json:"esc_renotified"`    // re-notified this patrol
+	EscalationAlert  bool      `json:"escalation_alert"`  // buildup alert fired
 }
 
 // HeartbeatPath returns the path to the heartbeat file.
