@@ -246,6 +246,8 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		}
 	}
 
+	fmt.Fprintf(os.Stderr, "startup: session %s started (role=%s, world=%s)\n", sessName, cfg.Role, world)
+
 	return sessName, nil
 }
 

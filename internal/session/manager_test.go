@@ -451,16 +451,17 @@ func TestListWithStoppedSession(t *testing.T) {
 func TestHealthAgentDead(t *testing.T) {
 	mgr := setupTest(t)
 
-	// Start a session with a command that exits immediately
-	err := mgr.Start("test-ad", "/tmp", "echo done", nil, "agent", "haven")
+	// Start a session with a command that survives startup verification
+	// (1.5s) but exits shortly after. sleep 2 dies at 2s — past the
+	// verification window, so Start() succeeds.
+	err := mgr.Start("test-ad", "/tmp", "sleep 2", nil, "agent", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
 
-	// Wait for the command to exit and tmux to mark pane as dead.
-	// tmux keeps the pane with remain-on-exit if set, otherwise session
-	// may disappear. We use a short-lived command to test AgentDead.
-	time.Sleep(500 * time.Millisecond)
+	// Wait for the process to exit after startup verification.
+	// Start() already consumed 1.5s; sleep 2 exits at 2s from creation.
+	time.Sleep(1 * time.Second)
 
 	// The session might still exist (tmux default is to close window when
 	// process exits). If it does, check for AgentDead; if not, Dead is ok too.
@@ -472,6 +473,27 @@ func TestHealthAgentDead(t *testing.T) {
 	// Either Dead (session gone) or AgentDead (pane dead) is acceptable
 	if status != Dead && status != AgentDead {
 		t.Errorf("expected Dead or AgentDead, got %s", status)
+	}
+}
+
+func TestStartDeadOnStartup(t *testing.T) {
+	mgr := setupTest(t)
+
+	// A command that exits immediately should be caught by startup verification.
+	err := mgr.Start("test-dead-startup", "/tmp", "echo done", nil, "agent", "haven")
+	if err == nil {
+		t.Fatal("Start should fail for a command that dies immediately")
+	}
+	if !strings.Contains(err.Error(), "process died during startup") {
+		t.Errorf("error should mention process died during startup, got: %v", err)
+	}
+
+	// Session and metadata should be cleaned up.
+	if mgr.Exists("test-dead-startup") {
+		t.Error("session should not exist after dead-on-startup cleanup")
+	}
+	if _, err := os.Stat(metadataPath("test-dead-startup")); !os.IsNotExist(err) {
+		t.Error("metadata should be removed after dead-on-startup cleanup")
 	}
 }
 
