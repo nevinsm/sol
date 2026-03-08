@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,6 +21,14 @@ import (
 // Manager wraps tmux to provide process containers for AI agents.
 // No fields needed — all state lives in tmux server and .runtime/sessions/.
 type Manager struct{}
+
+// DefaultPromptPrefix is the Claude Code prompt character used for idle detection.
+// Claude Code renders "❯ " (U+276F + space) when waiting for input.
+const DefaultPromptPrefix = "❯ "
+
+// ErrIdleTimeout is returned by WaitForIdle when the timeout expires
+// without detecting an idle prompt.
+var ErrIdleTimeout = errors.New("session not idle before timeout")
 
 // New returns a new session Manager.
 func New() *Manager {
@@ -529,4 +538,114 @@ func (m *Manager) Exists(name string) bool {
 	cmd, cancel := tmuxCmd("has-session", "-t", tmuxExactTarget(name))
 	defer cancel()
 	return cmd.Run() == nil
+}
+
+// matchesPromptPrefix reports whether a captured pane line matches the
+// prompt prefix. It normalizes non-breaking spaces (U+00A0) to regular
+// spaces before matching, because Claude Code uses NBSP after its ❯
+// prompt character.
+func matchesPromptPrefix(line, promptPrefix string) bool {
+	if promptPrefix == "" {
+		return false
+	}
+	trimmed := strings.TrimSpace(line)
+	// Normalize NBSP (U+00A0) → regular space so that prompt matching
+	// works regardless of which whitespace character the agent uses.
+	trimmed = strings.ReplaceAll(trimmed, "\u00a0", " ")
+	normalizedPrefix := strings.ReplaceAll(promptPrefix, "\u00a0", " ")
+	prefix := strings.TrimSpace(normalizedPrefix)
+	return strings.HasPrefix(trimmed, normalizedPrefix) || (prefix != "" && trimmed == prefix)
+}
+
+// linesContainPrompt checks whether any of the captured pane lines
+// contain the Claude Code prompt prefix, indicating the agent is at
+// an idle input prompt.
+func linesContainPrompt(lines []string) bool {
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if matchesPromptPrefix(trimmed, DefaultPromptPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// linesAreBusy checks whether the captured pane lines indicate Claude Code
+// is actively running a tool call. The status bar shows "esc to interrupt"
+// while a tool is executing.
+func linesAreBusy(lines []string) bool {
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "esc to interrupt") {
+			return true
+		}
+	}
+	return false
+}
+
+// WaitForIdle polls capture-pane output until the session appears to be at
+// an idle prompt. It requires 2 consecutive idle detections 200ms apart to
+// filter out transient prompt appearances during inter-tool-call gaps where
+// the prompt briefly flashes between tool invocations.
+//
+// Returns nil if idle within timeout, ErrIdleTimeout on expiry.
+// Returns immediately with error if session not found.
+func (m *Manager) WaitForIdle(name string, timeout time.Duration) error {
+	if !m.Exists(name) {
+		return fmt.Errorf("session %q not found", name)
+	}
+
+	const requiredConsecutive = 2
+	consecutiveIdle := 0
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		content, err := m.Capture(name, 5)
+		if err != nil {
+			// Session disappeared during polling — return immediately.
+			if !m.Exists(name) {
+				return fmt.Errorf("session %q not found", name)
+			}
+			consecutiveIdle = 0
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+
+		lines := strings.Split(content, "\n")
+
+		// Check status bar first: if "esc to interrupt" is visible,
+		// Claude Code is actively running a tool call — NOT idle,
+		// regardless of whether the prompt is also visible.
+		if linesAreBusy(lines) {
+			consecutiveIdle = 0
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+
+		if linesContainPrompt(lines) {
+			consecutiveIdle++
+			if consecutiveIdle >= requiredConsecutive {
+				return nil
+			}
+		} else {
+			consecutiveIdle = 0
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return ErrIdleTimeout
+}
+
+// IsAtPrompt returns true if the session's pane currently shows the Claude
+// Code prompt prefix, indicating the agent is idle. This is a non-blocking
+// point-in-time snapshot — it does not poll or require consecutive checks.
+func (m *Manager) IsAtPrompt(name string) bool {
+	content, err := m.Capture(name, 5)
+	if err != nil {
+		return false
+	}
+	lines := strings.Split(content, "\n")
+	return linesContainPrompt(lines)
 }

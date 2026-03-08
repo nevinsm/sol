@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -780,5 +781,309 @@ func TestUnknownHealthStatus(t *testing.T) {
 	expected := fmt.Sprintf("unknown(%d)", 99)
 	if s.String() != expected {
 		t.Errorf("expected %q, got %q", expected, s.String())
+	}
+}
+
+// --- Idle detection unit tests ---
+
+func TestMatchesPromptPrefix(t *testing.T) {
+	tests := []struct {
+		name   string
+		line   string
+		prefix string
+		want   bool
+	}{
+		{"exact match", "❯ ", "❯ ", true},
+		{"prompt with trailing text", "❯ hello", "❯ ", true},
+		{"prompt only char", "❯", "❯ ", true},
+		{"leading whitespace", "  ❯ ", "❯ ", true},
+		{"NBSP after prompt", "❯\u00a0", "❯ ", true},
+		{"NBSP in prefix config", "❯ ", "❯\u00a0", true},
+		{"no match", "some other text", "❯ ", false},
+		{"empty line", "", "❯ ", false},
+		{"empty prefix", "❯ ", "", false},
+		{"partial match", "❯", "❯ hello", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchesPromptPrefix(tt.line, tt.prefix)
+			if got != tt.want {
+				t.Errorf("matchesPromptPrefix(%q, %q) = %v, want %v",
+					tt.line, tt.prefix, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLinesContainPrompt(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		want  bool
+	}{
+		{
+			"prompt on last line",
+			[]string{"output line 1", "output line 2", "❯ "},
+			true,
+		},
+		{
+			"prompt in middle of lines",
+			[]string{"output line 1", "❯ ", "status bar info"},
+			true,
+		},
+		{
+			"no prompt",
+			[]string{"output line 1", "output line 2", "still working..."},
+			false,
+		},
+		{
+			"empty lines only",
+			[]string{"", "  ", ""},
+			false,
+		},
+		{
+			"prompt with leading whitespace",
+			[]string{"", "   ❯ ", ""},
+			true,
+		},
+		{
+			"prompt with NBSP",
+			[]string{"❯\u00a0"},
+			true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := linesContainPrompt(tt.lines)
+			if got != tt.want {
+				t.Errorf("linesContainPrompt(%v) = %v, want %v", tt.lines, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLinesAreBusy(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		want  bool
+	}{
+		{
+			"busy with esc to interrupt",
+			[]string{"❯ ", "⏵⏵ running tool · esc to interrupt"},
+			true,
+		},
+		{
+			"not busy - normal status bar",
+			[]string{"❯ ", "⏵⏵ bypass permissions on (shift+tab) · 1 file"},
+			false,
+		},
+		{
+			"not busy - no status bar",
+			[]string{"some output", "❯ "},
+			false,
+		},
+		{
+			"busy text in middle of lines",
+			[]string{"line 1", "esc to interrupt", "line 3"},
+			true,
+		},
+		{
+			"empty lines",
+			[]string{"", "", ""},
+			false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := linesAreBusy(tt.lines)
+			if got != tt.want {
+				t.Errorf("linesAreBusy(%v) = %v, want %v", tt.lines, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaultPromptPrefix(t *testing.T) {
+	if DefaultPromptPrefix == "" {
+		t.Error("DefaultPromptPrefix should not be empty")
+	}
+	if !strings.Contains(DefaultPromptPrefix, "❯") {
+		t.Errorf("DefaultPromptPrefix = %q, want to contain ❯", DefaultPromptPrefix)
+	}
+}
+
+func TestErrIdleTimeout(t *testing.T) {
+	if ErrIdleTimeout == nil {
+		t.Fatal("ErrIdleTimeout should not be nil")
+	}
+	if !errors.Is(ErrIdleTimeout, ErrIdleTimeout) {
+		t.Error("ErrIdleTimeout should be identifiable with errors.Is")
+	}
+}
+
+// --- WaitForIdle integration tests ---
+
+func TestWaitForIdleDetectsPrompt(t *testing.T) {
+	mgr := setupTest(t)
+
+	// Start a session that prints the prompt character then sleeps.
+	// The prompt character appears in the pane, simulating an idle Claude Code.
+	err := mgr.Start("test-idle", "/tmp",
+		"printf '\\n❯ ' && sleep 300", nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Wait for printf to execute
+	time.Sleep(500 * time.Millisecond)
+
+	err = mgr.WaitForIdle("test-idle", 5*time.Second)
+	if err != nil {
+		t.Fatalf("WaitForIdle should detect idle prompt: %v", err)
+	}
+}
+
+func TestWaitForIdleTimeout(t *testing.T) {
+	mgr := setupTest(t)
+
+	// Start a session that never shows the prompt — just sleeps.
+	err := mgr.Start("test-idle-to", "/tmp", "sleep 300", nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	err = mgr.WaitForIdle("test-idle-to", 600*time.Millisecond)
+	if !errors.Is(err, ErrIdleTimeout) {
+		t.Errorf("expected ErrIdleTimeout, got: %v", err)
+	}
+}
+
+func TestWaitForIdleNonexistentSession(t *testing.T) {
+	mgr := setupTest(t)
+
+	err := mgr.WaitForIdle("nonexistent", 5*time.Second)
+	if err == nil {
+		t.Fatal("WaitForIdle should fail for nonexistent session")
+	}
+	if errors.Is(err, ErrIdleTimeout) {
+		t.Error("should return session-not-found error, not ErrIdleTimeout")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+func TestWaitForIdleBusySession(t *testing.T) {
+	mgr := setupTest(t)
+
+	// Start a session that shows both prompt and "esc to interrupt" —
+	// simulating Claude Code actively running a tool while prompt is visible.
+	err := mgr.Start("test-idle-busy", "/tmp",
+		`printf '\n❯ \n⏵⏵ running tool · esc to interrupt\n' && sleep 300`,
+		nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	// Should timeout because "esc to interrupt" means busy.
+	err = mgr.WaitForIdle("test-idle-busy", 600*time.Millisecond)
+	if !errors.Is(err, ErrIdleTimeout) {
+		t.Errorf("expected ErrIdleTimeout for busy session, got: %v", err)
+	}
+}
+
+func TestWaitForIdleTransientPrompt(t *testing.T) {
+	mgr := setupTest(t)
+
+	// Simulate transient prompt: show prompt briefly, then clear the pane
+	// and print non-prompt output. This tests that a prompt appearing only
+	// once (one poll) doesn't satisfy the 2-consecutive-poll requirement.
+	// We use clear to wipe the tmux pane buffer, then print enough lines
+	// to push the prompt out of the 5-line capture window.
+	err := mgr.Start("test-idle-transient", "/tmp",
+		`printf '\n❯ \n' && sleep 0.1 && clear && echo working1 && echo working2 && echo working3 && echo working4 && echo working5 && sleep 300`,
+		nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Wait for the script to show the prompt, clear, and print non-prompt output
+	time.Sleep(800 * time.Millisecond)
+
+	// By now the prompt has been cleared and replaced — should timeout.
+	err = mgr.WaitForIdle("test-idle-transient", 600*time.Millisecond)
+	if !errors.Is(err, ErrIdleTimeout) {
+		t.Errorf("expected ErrIdleTimeout for transient prompt, got: %v", err)
+	}
+}
+
+// --- IsAtPrompt tests ---
+
+func TestIsAtPromptTrue(t *testing.T) {
+	mgr := setupTest(t)
+
+	err := mgr.Start("test-prompt-t", "/tmp",
+		"printf '\\n❯ ' && sleep 300", nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	if !mgr.IsAtPrompt("test-prompt-t") {
+		t.Error("IsAtPrompt should return true when prompt is visible")
+	}
+}
+
+func TestIsAtPromptFalse(t *testing.T) {
+	mgr := setupTest(t)
+
+	err := mgr.Start("test-prompt-f", "/tmp", "sleep 300", nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	if mgr.IsAtPrompt("test-prompt-f") {
+		t.Error("IsAtPrompt should return false when prompt is not visible")
+	}
+}
+
+func TestIsAtPromptNonexistent(t *testing.T) {
+	mgr := setupTest(t)
+
+	if mgr.IsAtPrompt("nonexistent") {
+		t.Error("IsAtPrompt should return false for nonexistent session")
+	}
+}
+
+func TestWaitForIdleResetOnBusy(t *testing.T) {
+	mgr := setupTest(t)
+
+	// Start a session that shows prompt with "esc to interrupt" on a separate line.
+	// This tests that the consecutive counter resets when busy is detected.
+	err := mgr.Start("test-idle-reset", "/tmp",
+		`printf '\n❯ \nesc to interrupt\n' && sleep 300`,
+		nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	// Should timeout: "esc to interrupt" in captured lines means busy,
+	// which resets the consecutive idle counter every poll.
+	err = mgr.WaitForIdle("test-idle-reset", 600*time.Millisecond)
+	if !errors.Is(err, ErrIdleTimeout) {
+		t.Errorf("expected ErrIdleTimeout when busy indicator present, got: %v", err)
 	}
 }
