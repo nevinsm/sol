@@ -85,16 +85,16 @@ func (wm *worldModel) updateData(data *status.WorldStatus) {
 	}
 
 	// Sphere process spinners.
-	wm.syncProcessSpinner("Prefect", data.Prefect.Running)
-	wm.syncProcessSpinner("Chronicle", data.Chronicle.Running)
-	wm.syncProcessSpinner("Ledger", data.Ledger.Running)
-	wm.syncProcessSpinner("Broker", data.Broker.Running)
-	wm.syncProcessSpinner("Senate", data.Senate.Running)
+	wm.syncProcessSpinner("Prefect", data.Prefect.Running, spinnerForRole("sphere-process"))
+	wm.syncProcessSpinner("Chronicle", data.Chronicle.Running, spinnerForRole("sphere-process"))
+	wm.syncProcessSpinner("Ledger", data.Ledger.Running, spinnerForRole("sphere-process"))
+	wm.syncProcessSpinner("Broker", data.Broker.Running, spinnerForRole("sphere-process"))
+	wm.syncProcessSpinner("Senate", data.Senate.Running, spinnerForRole("sphere-process"))
 
 	// World process spinners.
-	wm.syncProcessSpinner("Forge", data.Forge.Running)
-	wm.syncProcessSpinner("Sentinel", data.Sentinel.Running)
-	wm.syncProcessSpinner("Governor", data.Governor.Running)
+	wm.syncProcessSpinner("Forge", data.Forge.Running, spinnerForRole("world-process"))
+	wm.syncProcessSpinner("Sentinel", data.Sentinel.Running, spinnerForRole("world-process"))
+	wm.syncProcessSpinner("Governor", data.Governor.Running, spinnerForRole("world-process"))
 
 	// Agent spinners — working agents get spinners.
 	active := make(map[string]bool)
@@ -103,7 +103,7 @@ func (wm *worldModel) updateData(data *status.WorldStatus) {
 			active[a.Name] = true
 			if _, ok := wm.agentSpinners[a.Name]; !ok {
 				s := spinner.New()
-				s.Spinner = spinner.Dot
+				s.Spinner = spinnerForRole("outpost")
 				wm.agentSpinners[a.Name] = s
 			}
 		}
@@ -113,7 +113,7 @@ func (wm *worldModel) updateData(data *status.WorldStatus) {
 			active[e.Name] = true
 			if _, ok := wm.agentSpinners[e.Name]; !ok {
 				s := spinner.New()
-				s.Spinner = spinner.Dot
+				s.Spinner = spinnerForRole("envoy")
 				wm.agentSpinners[e.Name] = s
 			}
 		}
@@ -146,11 +146,11 @@ func (wm *worldModel) updateData(data *status.WorldStatus) {
 	wm.mrLen = activeMRs
 }
 
-func (wm *worldModel) syncProcessSpinner(name string, running bool) {
+func (wm *worldModel) syncProcessSpinner(name string, running bool, style spinner.Spinner) {
 	if running {
 		if _, ok := wm.processSpinners[name]; !ok {
 			s := spinner.New()
-			s.Spinner = spinner.Dot
+			s.Spinner = style
 			wm.processSpinners[name] = s
 		}
 	} else {

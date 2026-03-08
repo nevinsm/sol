@@ -4,9 +4,26 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/status"
 )
+
+// spinnerForRole returns the spinner style for a given process/agent role.
+// Each role category gets a visually distinct animation so the dashboard
+// is easy to scan at a glance.
+func spinnerForRole(role string) spinner.Spinner {
+	switch role {
+	case "world-process":
+		return spinner.Line
+	case "outpost":
+		return spinner.MiniDot
+	case "envoy":
+		return spinner.Ellipsis
+	default: // sphere-process, world summary, etc.
+		return spinner.Dot
+	}
+}
 
 // Color semantics — mirror internal/status/render.go.
 var (
