@@ -289,11 +289,11 @@ Git commands for the forge merge workflow.
 
 ## Commands
 
-| Operation | Command |
-|-----------|---------|
-| Squash merge | %[1]s |
-| Push to target | %[2]s |
-| Reset on failure | %[3]s |
+| Command | Description |
+|---------|-------------|
+| %[1]s | Squash merge |
+| %[2]s | Push to target |
+| %[3]s | Reset on failure |
 
 ## Conflict Handling
 
@@ -350,9 +350,16 @@ Cast options: %[8]s (auto if omitted), %[9]s, %[10]s.
 func skillCaravanManagement(ctx SkillContext) string {
 	sol := ctx.sol()
 	world := ctx.World
+	desc := "Commands for grouping and sequencing related writs."
+	switch ctx.Role {
+	case "governor":
+		desc = "Commands for coordinating related writs across agents."
+	case "envoy":
+		desc = "Commands for sequencing your own multi-step work."
+	}
 	return fmt.Sprintf(`# Caravan Management
 
-Commands for grouping and sequencing related writs.
+%[4]s
 
 ## Commands
 
@@ -373,7 +380,7 @@ Commands for grouping and sequencing related writs.
 |---------|-------------|
 | %[1]s caravan dep add <caravan-id> <dep-id>%[3]s | Add inter-caravan dependency |
 | %[1]s caravan dep list <caravan-id>%[3]s | List caravan dependencies |
-`, "`"+sol, world, "`")
+`, "`"+sol, world, "`", desc)
 }
 
 func skillWorldCoordination(ctx SkillContext) string {
@@ -563,16 +570,13 @@ Commands for managing session continuity.
 |---------|-------------|
 | %[1]s handoff%[2]s | Hand off to a fresh session |
 
-Options:
-- %[3]s — provide progress summary
-- %[4]s — tag reason (compact, manual, health-check)
+## Options
 
-The handoff captures tmux output, git state, and workflow progress into
-%[5]s, then cycles the session atomically.
+- %[3]s — provide progress summary for successor
+- %[4]s — tag reason (compact, manual, health-check)
 `, "`"+sol, "`",
 		"`--summary=\"...\"`",
-		"`--reason=compact`",
-		"`.handoff.json`")
+		"`--reason=compact`")
 }
 
 func skillStatusMonitoring(ctx SkillContext) string {
@@ -671,10 +675,10 @@ Options: %[3]s, %[4]s, %[5]s, %[6]s (JSON).
 
 | Command | Description |
 |---------|-------------|
-| %[1]s caravan create "name" <id> [<id>...] --world=<world>%[2]s | Group writs into caravan |
-| %[1]s caravan commission <id>%[2]s | Mark ready for launch |
+| %[1]s caravan create "name" <id> [<id>...] --world=<world>%[2]s | Create caravan with items |
+| %[1]s caravan commission <id>%[2]s | Mark caravan as commissioned |
 | %[1]s caravan launch <id> --world=<world>%[2]s | Dispatch all ready items |
-| %[1]s caravan status [<caravan-id>]%[2]s | Check progress |
+| %[1]s caravan status [<caravan-id>]%[2]s | Check caravan progress |
 `, "`"+sol, "`",
 		"`--priority` (1=high, 2=normal, 3=low)",
 		"`--label` (repeatable)",

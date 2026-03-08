@@ -481,6 +481,52 @@ func TestWorldOperationsHasServiceLifecycle(t *testing.T) {
 	}
 }
 
+func TestCaravanManagementRoleAware(t *testing.T) {
+	// Governor version
+	govDir := t.TempDir()
+	govCtx := SkillContext{
+		World:     "testworld",
+		SolBinary: "sol",
+		Role:      "governor",
+	}
+	if err := InstallSkills(govDir, govCtx); err != nil {
+		t.Fatalf("InstallSkills (governor) failed: %v", err)
+	}
+	govPath := filepath.Join(govDir, ".claude", "skills", "caravan-management", "SKILL.md")
+	govData, err := os.ReadFile(govPath)
+	if err != nil {
+		t.Fatalf("failed to read governor caravan skill: %v", err)
+	}
+	if !contains(string(govData), "coordinating") {
+		t.Error("governor caravan-management should mention coordinating")
+	}
+
+	// Envoy version
+	envDir := t.TempDir()
+	envCtx := SkillContext{
+		World:     "testworld",
+		AgentName: "Echo",
+		SolBinary: "sol",
+		Role:      "envoy",
+	}
+	if err := InstallSkills(envDir, envCtx); err != nil {
+		t.Fatalf("InstallSkills (envoy) failed: %v", err)
+	}
+	envPath := filepath.Join(envDir, ".claude", "skills", "caravan-management", "SKILL.md")
+	envData, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("failed to read envoy caravan skill: %v", err)
+	}
+	if !contains(string(envData), "sequencing") {
+		t.Error("envoy caravan-management should mention sequencing")
+	}
+
+	// Descriptions should differ
+	if string(govData) == string(envData) {
+		t.Error("governor and envoy caravan-management should have different descriptions")
+	}
+}
+
 // contains is a test helper to check for substring presence.
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsSubstring(s, sub))
