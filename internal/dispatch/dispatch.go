@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,6 +21,16 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/workflow"
+)
+
+// Git operation timeout constants.
+const (
+	GitPushTimeout           = 60 * time.Second // network-bound
+	GitFetchTimeout          = 60 * time.Second // network-bound
+	GitWorktreeAddTimeout    = 30 * time.Second // local
+	GitWorktreeRemoveTimeout = 30 * time.Second // local
+	GitCheckoutTimeout       = 15 * time.Second // local
+	GitLocalOpTimeout        = 30 * time.Second // git add, commit, prune, rev-parse
 )
 
 // SessionManager defines the session operations used by the dispatch package.
@@ -73,10 +84,14 @@ func WorktreePath(world, agentName string) string {
 
 // cleanupWorktree removes a git worktree and prunes stale references.
 // Best-effort: logs what was cleaned up but does not fail.
+// Uses its own background context since it may run in a goroutine after
+// the parent context has been cancelled.
 func cleanupWorktree(world, worktreeDir string) {
 	repoPath := config.RepoPath(world)
 
-	rmCmd := exec.Command("git", "-C", repoPath, "worktree", "remove", "--force", worktreeDir)
+	rmCtx, rmCancel := context.WithTimeout(context.Background(), GitWorktreeRemoveTimeout)
+	defer rmCancel()
+	rmCmd := exec.CommandContext(rmCtx, "git", "-C", repoPath, "worktree", "remove", "--force", worktreeDir)
 	if out, err := rmCmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "resolve: worktree remove failed: %s: %v\n",
 			strings.TrimSpace(string(out)), err)
@@ -88,7 +103,9 @@ func cleanupWorktree(world, worktreeDir string) {
 	}
 	fmt.Fprintf(os.Stderr, "resolve: cleaned up worktree %s\n", worktreeDir)
 
-	pruneCmd := exec.Command("git", "-C", repoPath, "worktree", "prune")
+	pruneCtx, pruneCancel := context.WithTimeout(context.Background(), GitLocalOpTimeout)
+	defer pruneCancel()
+	pruneCmd := exec.CommandContext(pruneCtx, "git", "-C", repoPath, "worktree", "prune")
 	if out, err := pruneCmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "resolve: worktree prune failed: %s: %v\n",
 			strings.TrimSpace(string(out)), err)
@@ -120,7 +137,7 @@ type CastOpts struct {
 // Supports re-cast (crash recovery): if the item is already tethered to the
 // same agent, Cast recreates the worktree and session without error.
 // The logger parameter is optional — if nil, no events are emitted.
-func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*CastResult, error) {
+func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*CastResult, error) {
 	// 0. Load world config once for all consumers.
 	var worldCfg config.WorldConfig
 	if opts.WorldConfig != nil {
@@ -219,18 +236,26 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	// 5. Create worktree directory.
 	// Remove existing worktree if present.
 	if _, err := os.Stat(worktreeDir); err == nil {
-		rmCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
+		rmCtx, rmCancel := context.WithTimeout(ctx, GitWorktreeRemoveTimeout)
+		rmCmd := exec.CommandContext(rmCtx, "git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
 		rmCmd.Run() // best-effort
+		rmCancel()
 		os.RemoveAll(worktreeDir)
 	}
 	// Prune stale worktree references.
-	pruneCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "prune")
+	pruneCtx, pruneCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
+	pruneCmd := exec.CommandContext(pruneCtx, "git", "-C", opts.SourceRepo, "worktree", "prune")
 	pruneCmd.Run()
+	pruneCancel()
 
 	// Try creating worktree with new branch; fall back to existing branch (re-cast).
-	addCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "add", worktreeDir, "-b", branchName, "HEAD")
+	addCtx, addCancel := context.WithTimeout(ctx, GitWorktreeAddTimeout)
+	defer addCancel()
+	addCmd := exec.CommandContext(addCtx, "git", "-C", opts.SourceRepo, "worktree", "add", worktreeDir, "-b", branchName, "HEAD")
 	if out, err := addCmd.CombinedOutput(); err != nil {
-		addCmd2 := exec.Command("git", "-C", opts.SourceRepo, "worktree", "add", worktreeDir, branchName)
+		addCtx2, addCancel2 := context.WithTimeout(ctx, GitWorktreeAddTimeout)
+		defer addCancel2()
+		addCmd2 := exec.CommandContext(addCtx2, "git", "-C", opts.SourceRepo, "worktree", "add", worktreeDir, branchName)
 		if out2, err2 := addCmd2.CombinedOutput(); err2 != nil {
 			return nil, fmt.Errorf("failed to create worktree: %s: %w", strings.TrimSpace(string(out2)), err2)
 		}
@@ -248,10 +273,12 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		if err := sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to reset agent state: %v\n", err)
 		}
-		rmCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
+		rbCtx, rbCancel := context.WithTimeout(context.Background(), GitWorktreeRemoveTimeout)
+		rmCmd := exec.CommandContext(rbCtx, "git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
 		if out, err := rmCmd.CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to remove worktree: %s\n", strings.TrimSpace(string(out)))
 		}
+		rbCancel()
 		// Clean up workflow if it was instantiated.
 		workflow.Remove(opts.World, agent.Name, "agent") // best-effort
 	}
@@ -1252,7 +1279,7 @@ func IsResolveInProgress(world, agentName, role string) bool {
 
 // Resolve signals work completion: git operations, state updates, tether clear.
 // The logger parameter is optional — if nil, no events are emitted.
-func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
+func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
 	agentID := opts.World + "/" + opts.AgentName
 	sessName := SessionName(opts.World, opts.AgentName)
 
@@ -1340,7 +1367,7 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 
 	// Detect conflict-resolution tasks and handle separately.
 	if item.HasLabel("conflict-resolution") {
-		return resolveConflictResolution(opts, item, branchName, worktreeDir,
+		return resolveConflictResolution(ctx, opts, item, branchName, worktreeDir,
 			agentID, sessName, agent.Role, worldStore, sphereStore, mgr, logger)
 	}
 
@@ -1354,18 +1381,24 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 	if isCodeWrit {
 		// 2. Git operations in the worktree (code writs only).
 		// git add -A
-		addCmd := exec.Command("git", "-C", worktreeDir, "add", "-A")
+		addCtx, addCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
+		defer addCancel()
+		addCmd := exec.CommandContext(addCtx, "git", "-C", worktreeDir, "add", "-A")
 		if out, err := addCmd.CombinedOutput(); err != nil {
 			return nil, fmt.Errorf("git add failed: %s: %w", strings.TrimSpace(string(out)), err)
 		}
 
 		// git commit (skip if nothing to commit)
 		commitMsg := fmt.Sprintf("sol resolve: %s", item.Title)
-		commitCmd := exec.Command("git", "-C", worktreeDir, "commit", "-m", commitMsg)
+		commitCtx, commitCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
+		defer commitCancel()
+		commitCmd := exec.CommandContext(commitCtx, "git", "-C", worktreeDir, "commit", "-m", commitMsg)
 		commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
 
 		// git push origin HEAD
-		pushCmd := exec.Command("git", "-C", worktreeDir, "push", "origin", "HEAD")
+		pushCtx, pushCancel := context.WithTimeout(ctx, GitPushTimeout)
+		defer pushCancel()
+		pushCmd := exec.CommandContext(pushCtx, "git", "-C", worktreeDir, "push", "origin", "HEAD")
 		if out, err := pushCmd.CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: git push failed: %s\n", strings.TrimSpace(string(out)))
 			pushFailed = true
@@ -1595,21 +1628,27 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 // 2. Does NOT create a new merge request (original MR already exists)
 // 3. Unblocks the original MR
 // 4. Closes the resolution writ
-func resolveConflictResolution(opts ResolveOpts, item *store.Writ, branchName, worktreeDir,
+func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *store.Writ, branchName, worktreeDir,
 	agentID, sessName, role string, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
 
 	// 1. Git operations: add, commit, force-push (branch was rebased).
-	addCmd := exec.Command("git", "-C", worktreeDir, "add", "-A")
+	addCtx, addCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
+	defer addCancel()
+	addCmd := exec.CommandContext(addCtx, "git", "-C", worktreeDir, "add", "-A")
 	if out, err := addCmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("git add failed: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
 	commitMsg := fmt.Sprintf("sol resolve: %s", item.Title)
-	commitCmd := exec.Command("git", "-C", worktreeDir, "commit", "-m", commitMsg)
+	commitCtx, commitCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
+	defer commitCancel()
+	commitCmd := exec.CommandContext(commitCtx, "git", "-C", worktreeDir, "commit", "-m", commitMsg)
 	commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
 
 	// Force push with lease — branch was rebased, needs force push.
-	pushCmd := exec.Command("git", "-C", worktreeDir, "push", "--force-with-lease", "origin", "HEAD")
+	pushCtx, pushCancel := context.WithTimeout(ctx, GitPushTimeout)
+	defer pushCancel()
+	pushCmd := exec.CommandContext(pushCtx, "git", "-C", worktreeDir, "push", "--force-with-lease", "origin", "HEAD")
 	pushFailed := false
 	if out, err := pushCmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: git push --force-with-lease failed: %s\n",
@@ -1748,7 +1787,9 @@ func resolveConflictResolution(opts ResolveOpts, item *store.Writ, branchName, w
 
 // DiscoverSourceRepo finds the git repo root from the current directory.
 func DiscoverSourceRepo() (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	ctx, cancel := context.WithTimeout(context.Background(), GitLocalOpTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("not in a git repository: %w", err)

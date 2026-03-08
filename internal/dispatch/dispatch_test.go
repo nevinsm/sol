@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -122,7 +123,7 @@ func TestCastHappyPath(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	result, err := Cast(CastOpts{
+	result, err := Cast(context.Background(), CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "Toast",
@@ -218,7 +219,7 @@ func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	_, err = Cast(CastOpts{
+	_, err = Cast(context.Background(), CastOpts{
 		WritID: itemID,
 		World:      "ember",
 		AgentName:  "Toast",
@@ -273,7 +274,7 @@ func TestCastNoTelemetryWhenLedgerNotConfigured(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	_, err = Cast(CastOpts{
+	_, err = Cast(context.Background(), CastOpts{
 		WritID: itemID,
 		World:      "ember",
 		AgentName:  "Toast",
@@ -319,7 +320,7 @@ func TestCastAutoAgent(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	result, err := Cast(CastOpts{
+	result, err := Cast(context.Background(), CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		SourceRepo: repoDir,
@@ -347,7 +348,7 @@ func TestCastAutoProvision(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	result, err := Cast(CastOpts{
+	result, err := Cast(context.Background(), CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		SourceRepo: repoDir,
@@ -395,7 +396,7 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	_, err = Cast(CastOpts{
+	_, err = Cast(context.Background(), CastOpts{
 		WritID: item1,
 		World:      "ember",
 		SourceRepo: repoDir,
@@ -410,7 +411,7 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	_, err = Cast(CastOpts{
+	_, err = Cast(context.Background(), CastOpts{
 		WritID: item2,
 		World:      "ember",
 		SourceRepo: repoDir,
@@ -440,7 +441,7 @@ func TestCastAutoProvisionCapacityZeroUnlimited(t *testing.T) {
 			t.Fatalf("failed to create writ %d: %v", i, err)
 		}
 
-		_, err = Cast(CastOpts{
+		_, err = Cast(context.Background(), CastOpts{
 			WritID: itemID,
 			World:      "ember",
 			SourceRepo: repoDir,
@@ -484,7 +485,7 @@ func TestCastAutoProvisionCustomNamePool(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	result, err := Cast(CastOpts{
+	result, err := Cast(context.Background(), CastOpts{
 		WritID: itemID,
 		World:      "ember",
 		SourceRepo: repoDir,
@@ -523,7 +524,7 @@ func TestCastAutoProvisionSkipsUsed(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	result, err := Cast(CastOpts{
+	result, err := Cast(context.Background(), CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		SourceRepo: repoDir,
@@ -560,7 +561,7 @@ func TestCastFlockPreventsDoubleDispatch(t *testing.T) {
 	}
 	defer lock.Release()
 
-	_, err = Cast(CastOpts{
+	_, err = Cast(context.Background(), CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		SourceRepo: "/tmp",
@@ -591,7 +592,7 @@ func TestCastItemNotOpen(t *testing.T) {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
-	_, err = Cast(CastOpts{
+	_, err = Cast(context.Background(), CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "Toast",
@@ -621,7 +622,7 @@ func TestCastRejectsNonAgentRoles(t *testing.T) {
 				t.Fatalf("failed to create agent: %v", err)
 			}
 
-			_, err = Cast(CastOpts{
+			_, err = Cast(context.Background(), CastOpts{
 				WritID: itemID,
 				World:      "ember",
 				AgentName:  "Toast",
@@ -966,7 +967,7 @@ func TestResolveHappyPath(t *testing.T) {
 	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:       "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -1026,7 +1027,7 @@ func TestResolveNoTether(t *testing.T) {
 	// so create an agent record so we get past that check.
 	sphereStore.CreateAgent("Toast", "ember", "agent")
 
-	_, err := Resolve(ResolveOpts{
+	_, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -1099,7 +1100,7 @@ func TestResolveConflictResolution(t *testing.T) {
 	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:       "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -1217,7 +1218,7 @@ func TestResolveConflictResolutionResetsParentMR(t *testing.T) {
 	sessName := SessionName("ember", "Bravo")
 	mgr.started[sessName] = true
 
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Bravo",
 	}, worldStore, sphereStore, mgr, nil)
@@ -1325,7 +1326,7 @@ func TestResolveConflictResolutionResetsBlockedAndFailedMRs(t *testing.T) {
 	sessName := SessionName("ember", "Charlie")
 	mgr.started[sessName] = true
 
-	_, err = Resolve(ResolveOpts{
+	_, err = Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Charlie",
 	}, worldStore, sphereStore, mgr, nil)
@@ -1395,7 +1396,7 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:       "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -2020,7 +2021,7 @@ func TestResolveRollbackOnMRFailure(t *testing.T) {
 		createMRErr: fmt.Errorf("simulated MR creation failure"),
 	}
 
-	_, err = Resolve(ResolveOpts{
+	_, err = Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, mock, sphereStore, mgr, nil)
@@ -2077,7 +2078,7 @@ func TestResolvePushFailureCreatesMR(t *testing.T) {
 	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -2141,7 +2142,7 @@ func TestReCastPartialFailureRecovery(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	result, err := Cast(CastOpts{
+	result, err := Cast(context.Background(), CastOpts{
 		WritID: itemID,
 		World:      "ember",
 		AgentName:  "Toast",
@@ -2210,7 +2211,7 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 	sessName := SessionName("ember", "Scout")
 	mgr.started[sessName] = true
 
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Scout",
 	}, worldStore, sphereStore, mgr, nil)
@@ -2317,7 +2318,7 @@ func TestResolvePersistentAgentWithRemainingTethers(t *testing.T) {
 	mgr.started[sessName] = true
 
 	// Resolve the active writ (writ1).
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Scout",
 	}, worldStore, sphereStore, mgr, nil)
@@ -2406,7 +2407,7 @@ func TestResolvePersistentAgentNonActiveWrit(t *testing.T) {
 	mgr.started[sessName] = true
 
 	// Resolve the non-active writ (writ2) using explicit WritID.
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Scout",
 		WritID:    writ2,
@@ -2478,7 +2479,7 @@ func TestResolvePersistentAgentLastTether(t *testing.T) {
 	sessName := SessionName("ember", "Scout")
 	mgr.started[sessName] = true
 
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Scout",
 	}, worldStore, sphereStore, mgr, nil)
@@ -2550,7 +2551,7 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -2609,7 +2610,7 @@ func TestResolveRemovesWorktreeForOutpostAgent(t *testing.T) {
 	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -2711,7 +2712,7 @@ func TestResolveNudgesForgeWithMRReady(t *testing.T) {
 	forgeSession := config.SessionName("ember", "forge")
 	mgr.started[forgeSession] = true
 
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -2787,7 +2788,7 @@ func TestResolveSkipsForgeNudgeWhenNoForge(t *testing.T) {
 	mgr.started[sessName] = true
 	// No forge session started — nudge should be skipped.
 
-	_, err = Resolve(ResolveOpts{
+	_, err = Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -2847,7 +2848,7 @@ func TestResolveCreatesAndRemovesLock(t *testing.T) {
 		t.Fatal("resolve lock should not exist before resolve")
 	}
 
-	_, err = Resolve(ResolveOpts{
+	_, err = Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -2896,7 +2897,7 @@ func TestResolveIdempotent(t *testing.T) {
 	mgr.started[sessName] = true
 
 	// First resolve — normal path.
-	result1, err := Resolve(ResolveOpts{
+	result1, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -2930,7 +2931,7 @@ func TestResolveIdempotent(t *testing.T) {
 	mgr.stopped[sessName] = false
 
 	// Second resolve — should complete without error (idempotent).
-	result2, err := Resolve(ResolveOpts{
+	result2, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -3066,7 +3067,7 @@ func TestResolveNonCodeWritSkipsGitAndMR(t *testing.T) {
 	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -3168,7 +3169,7 @@ func TestResolveNonCodeWritSkipsForgeNudge(t *testing.T) {
 	govSession := config.SessionName("ember", "governor")
 	mgr.started[govSession] = true
 
-	_, err = Resolve(ResolveOpts{
+	_, err = Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -3236,7 +3237,7 @@ func TestResolveCodeWritDefaultKind(t *testing.T) {
 	sessName := SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
-	result, err := Resolve(ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -3296,7 +3297,7 @@ func TestCastCreatesOutputDirectory(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
-	_, err = Cast(CastOpts{
+	_, err = Cast(context.Background(), CastOpts{
 		WritID:    itemID,
 		World:     "ember",
 		AgentName: "Toast",
@@ -3354,7 +3355,7 @@ func TestCastCreatesOutputDirectoryForNonCodeWrit(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
-	_, err = Cast(CastOpts{
+	_, err = Cast(context.Background(), CastOpts{
 		WritID:     itemID,
 		World:      "ember",
 		AgentName:  "Toast",
@@ -3425,7 +3426,7 @@ func TestOutputDirectorySurvivesResolve(t *testing.T) {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	_, err = Resolve(ResolveOpts{
+	_, err = Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
@@ -3539,7 +3540,7 @@ func TestCastKindPassedToContext(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	result, err := Cast(CastOpts{
+	result, err := Cast(context.Background(), CastOpts{
 		WritID:     itemID,
 		World:      "ember",
 		AgentName:  "Toast",
@@ -3578,7 +3579,7 @@ func TestCastCodeKindDefault(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	result, err := Cast(CastOpts{
+	result, err := Cast(context.Background(), CastOpts{
 		WritID:     itemID,
 		World:      "ember",
 		AgentName:  "Toast",
@@ -3636,7 +3637,7 @@ func TestCastDirectDeps(t *testing.T) {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
-	result, err := Cast(CastOpts{
+	result, err := Cast(context.Background(), CastOpts{
 		WritID:     mainID,
 		World:      "ember",
 		AgentName:  "Toast",
@@ -4019,5 +4020,111 @@ func TestPrimeMultiTetherNoneActive(t *testing.T) {
 	// Should NOT contain WORK CONTEXT (no active writ).
 	if strings.Contains(result.Output, "Execute this writ") {
 		t.Error("no-active-writ prime should not contain execution instructions")
+	}
+}
+
+func TestCastCancelledContext(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	// Create repo.
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "init")
+
+	// Create agent and writ.
+	sphereStore.CreateAgent("Ash", "ember", "agent")
+	writID, _ := worldStore.CreateWrit("cancel-test", "test cancellation", "operator", 1, nil)
+
+	mgr := newMockSessionManager()
+
+	// Cancel the context before calling Cast.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // immediately cancelled
+
+	_, err := Cast(ctx, CastOpts{
+		WritID:     writID,
+		World:      "ember",
+		AgentName:  "Ash",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+
+	// Cast should fail because git worktree add will fail with cancelled context.
+	if err == nil {
+		t.Fatal("expected Cast to fail with cancelled context")
+	}
+}
+
+func TestCastContextTimeout(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	// Create repo.
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "init")
+
+	// Create agent and writ.
+	sphereStore.CreateAgent("Ember", "ember", "agent")
+	writID, _ := worldStore.CreateWrit("timeout-test", "test timeout", "operator", 1, nil)
+
+	mgr := newMockSessionManager()
+
+	// Use an already-expired timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(1 * time.Millisecond) // ensure timeout fires
+
+	_, err := Cast(ctx, CastOpts{
+		WritID:     writID,
+		World:      "ember",
+		AgentName:  "Ember",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+
+	// Cast should fail because the context has already expired.
+	if err == nil {
+		t.Fatal("expected Cast to fail with expired context")
+	}
+}
+
+func TestResolveContextCancelled(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	// Create repo with bare remote.
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "init")
+	addBareRemote(t, repoDir)
+
+	// Set up agent and writ.
+	agentName := "Blaze"
+	world := "ember"
+	sphereStore.CreateAgent(agentName, world, "agent")
+	writID, _ := worldStore.CreateWrit("cancel-resolve-test", "desc", "operator", 1, nil)
+	worldStore.UpdateWrit(writID, store.WritUpdates{Status: "tethered", Assignee: world + "/" + agentName})
+	sphereStore.UpdateAgentState(world+"/"+agentName, "working", writID)
+	tether.Write(world, agentName, writID, "agent")
+
+	// Create worktree.
+	worktreeDir := WorktreePath(world, agentName)
+	branchName := fmt.Sprintf("outpost/%s/%s", agentName, writID)
+	runGit(t, repoDir, "worktree", "add", worktreeDir, "-b", branchName, "HEAD")
+	// Make a change to commit.
+	os.WriteFile(filepath.Join(worktreeDir, "test.txt"), []byte("hello"), 0o644)
+
+	mgr := newMockSessionManager()
+	mgr.started["sol-"+world+"-"+agentName] = true
+
+	// Cancel context before calling Resolve.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := Resolve(ctx, ResolveOpts{
+		World:     world,
+		AgentName: agentName,
+	}, worldStore, sphereStore, mgr, nil)
+
+	// Resolve should fail because git operations use the cancelled context.
+	if err == nil {
+		t.Fatal("expected Resolve to fail with cancelled context")
 	}
 }

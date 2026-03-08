@@ -40,7 +40,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 	}
 
 	// Cast both without specifying agents (auto-provision).
-	result1, err := dispatch.Cast(dispatch.CastOpts{
+	result1, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: item1ID,
 		World:        "ember",
 		SourceRepo: sourceRepo,
@@ -49,7 +49,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 		t.Fatalf("cast item 1: %v", err)
 	}
 
-	result2, err := dispatch.Cast(dispatch.CastOpts{
+	result2, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: item2ID,
 		World:        "ember",
 		SourceRepo: sourceRepo,
@@ -238,7 +238,7 @@ func TestPrefectSessionRestart(t *testing.T) {
 		t.Fatalf("create writ: %v", err)
 	}
 
-	result, err := dispatch.Cast(dispatch.CastOpts{
+	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		SourceRepo: sourceRepo,
@@ -328,7 +328,7 @@ func TestMassDeathDegradation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create writ %d: %v", i, err)
 		}
-		result, err := dispatch.Cast(dispatch.CastOpts{
+		result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 			WritID: itemID,
 			World:        "ember",
 			SourceRepo: sourceRepo,
@@ -410,7 +410,7 @@ func TestMassDeathDegradation(t *testing.T) {
 		t.Fatalf("create new writ: %v", err)
 	}
 
-	newResult, err := dispatch.Cast(dispatch.CastOpts{
+	newResult, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: newItemID,
 		World:        "ember",
 		SourceRepo: sourceRepo,
@@ -452,7 +452,7 @@ func TestGUPPRecovery(t *testing.T) {
 		t.Fatalf("create writ: %v", err)
 	}
 
-	result, err := dispatch.Cast(dispatch.CastOpts{
+	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		SourceRepo: sourceRepo,
@@ -488,7 +488,7 @@ func TestGUPPRecovery(t *testing.T) {
 	}
 
 	// Re-cast the same writ to the same agent (simulate prefect restart).
-	_, err = dispatch.Cast(dispatch.CastOpts{
+	_, err = dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  agentName,
@@ -545,7 +545,7 @@ func TestStatusAccuracy(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create writ %q: %v", title, err)
 		}
-		result, err := dispatch.Cast(dispatch.CastOpts{
+		result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 			WritID: itemID,
 			World:        "ember",
 			SourceRepo: sourceRepo,
@@ -669,7 +669,7 @@ func TestNamePoolExhaustion(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create writ %d: %v", i, err)
 		}
-		_, err = dispatch.Cast(dispatch.CastOpts{
+		_, err = dispatch.Cast(context.Background(), dispatch.CastOpts{
 			WritID: itemID,
 			World:        "ember",
 			SourceRepo: sourceRepo,
@@ -685,7 +685,7 @@ func TestNamePoolExhaustion(t *testing.T) {
 		t.Fatalf("create writ 3: %v", err)
 	}
 
-	_, err = dispatch.Cast(dispatch.CastOpts{
+	_, err = dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: item3ID,
 		World:        "ember",
 		SourceRepo: sourceRepo,

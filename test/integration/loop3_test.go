@@ -830,7 +830,7 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 	}
 
 	// Cast with logger.
-	result, err := dispatch.Cast(dispatch.CastOpts{
+	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		SourceRepo: sourceClone,
@@ -849,7 +849,7 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 	}
 
 	// Resolve with logger.
-	_, err = dispatch.Resolve(dispatch.ResolveOpts{
+	_, err = dispatch.Resolve(context.Background(), dispatch.ResolveOpts{
 		World:       "ember",
 		AgentName: result.AgentName,
 	}, worldStore, sphereStore, mgr, logger)

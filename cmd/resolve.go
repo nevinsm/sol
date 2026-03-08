@@ -59,7 +59,7 @@ var resolveCmd = &cobra.Command{
 		mgr := dispatch.NewSessionManager()
 		logger := events.NewLogger(config.Home())
 
-		result, err := dispatch.Resolve(dispatch.ResolveOpts{
+		result, err := dispatch.Resolve(cmd.Context(), dispatch.ResolveOpts{
 			World:     world,
 			AgentName: agent,
 		}, worldStore, sphereStore, mgr, logger)

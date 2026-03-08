@@ -69,7 +69,7 @@ var castCmd = &cobra.Command{
 			return err
 		}
 
-		result, err := dispatch.Cast(dispatch.CastOpts{
+		result, err := dispatch.Cast(cmd.Context(), dispatch.CastOpts{
 			WritID:  writID,
 			World:       world,
 			AgentName:   castAgent,

@@ -78,7 +78,7 @@ type WorldOpener func(world string) (*store.Store, error)
 
 // DispatchFunc dispatches a single writ. Returns agent name and session name.
 // Default implementation uses dispatch.Cast.
-type DispatchFunc func(opts dispatch.CastOpts, worldStore dispatch.WorldStore, sphereStore dispatch.SphereStore, mgr dispatch.SessionManager, logger *events.Logger) (*dispatch.CastResult, error)
+type DispatchFunc func(ctx context.Context, opts dispatch.CastOpts, worldStore dispatch.WorldStore, sphereStore dispatch.SphereStore, mgr dispatch.SessionManager, logger *events.Logger) (*dispatch.CastResult, error)
 
 // Consul is the sphere-level patrol process.
 type Consul struct {
@@ -205,6 +205,10 @@ func (d *Consul) Patrol(ctx context.Context) error {
 	}
 	staleTethers = recovered
 
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	// 2. Feed stranded caravans.
 	fed, err := d.feedStrandedCaravans(ctx)
 	if err != nil {
@@ -212,10 +216,18 @@ func (d *Consul) Patrol(ctx context.Context) error {
 	}
 	caravanFeeds = fed
 
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	// 3. Process lifecycle requests.
 	shutdown, err = d.processLifecycleRequests(ctx)
 	if err != nil {
 		d.logInfo("consul_error", map[string]any{"action": "lifecycle_requests", "error": err.Error()})
+	}
+
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	// 4. Count open escalations.
@@ -287,6 +299,10 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 
 	var recovered int
 	for _, agent := range agents {
+		if ctx.Err() != nil {
+			return recovered, ctx.Err()
+		}
+
 		// Skip infrastructure roles (don't recover sentinel/forge/consul).
 		// Recover agents, envoys, and governors.
 		if agent.Role != "agent" && agent.Role != "envoy" && agent.Role != "governor" {
@@ -381,6 +397,10 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 
 	var totalDispatched int
 	for _, caravan := range caravans {
+		if ctx.Err() != nil {
+			return totalDispatched, ctx.Err()
+		}
+
 		statuses, err := d.sphereStore.CheckCaravanReadiness(caravan.ID, func(world string) (*store.Store, error) {
 			return d.worldOpener(world)
 		})
@@ -404,7 +424,7 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 		// Dispatch ready items per world.
 		caravanDispatched := 0
 		for world, items := range readyByWorld {
-			dispatched, dispatchErr := d.dispatchWorldItems(caravan.ID, world, items)
+			dispatched, dispatchErr := d.dispatchWorldItems(ctx, caravan.ID, world, items)
 			caravanDispatched += dispatched
 			if dispatchErr != nil {
 				d.logInfo("consul_error", map[string]any{
@@ -456,7 +476,7 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 
 // dispatchWorldItems dispatches ready caravan items within a single world.
 // Returns the number of items dispatched and any error from setup (not per-item).
-func (d *Consul) dispatchWorldItems(caravanID, world string, items []store.CaravanItemStatus) (int, error) {
+func (d *Consul) dispatchWorldItems(ctx context.Context, caravanID, world string, items []store.CaravanItemStatus) (int, error) {
 	worldCfg, err := config.LoadWorldConfig(world)
 	if err != nil {
 		return 0, fmt.Errorf("failed to load world config for %q: %w", world, err)
@@ -475,13 +495,17 @@ func (d *Consul) dispatchWorldItems(caravanID, world string, items []store.Carav
 
 	dispatched := 0
 	for _, st := range items {
+		if ctx.Err() != nil {
+			return dispatched, ctx.Err()
+		}
+
 		castOpts := dispatch.CastOpts{
 			WritID:  st.WritID,
 			World:       world,
 			SourceRepo:  sourceRepo,
 			WorldConfig: &worldCfg,
 		}
-		result, err := d.dispatchFunc(castOpts, worldStore, d.sphereStore, d.sessions, d.logger)
+		result, err := d.dispatchFunc(ctx, castOpts, worldStore, d.sphereStore, d.sessions, d.logger)
 		if err != nil {
 			d.logInfo("consul_error", map[string]any{
 				"action":       "dispatch_item",
@@ -525,6 +549,10 @@ func (d *Consul) processLifecycleRequests(ctx context.Context) (shutdown bool, e
 	}
 
 	for _, msg := range msgs {
+		if ctx.Err() != nil {
+			return shutdown, ctx.Err()
+		}
+
 		switch msg.Subject {
 		case "SHUTDOWN":
 			shutdown = true

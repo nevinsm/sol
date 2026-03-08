@@ -68,7 +68,7 @@ var sentinelRunCmd = &cobra.Command{
 
 		// Wire up cast function for auto-recast of failed MRs.
 		w.SetCastFunc(func(writID string) (*sentinel.CastResult, error) {
-			result, err := dispatch.Cast(dispatch.CastOpts{
+			result, err := dispatch.Cast(cmd.Context(), dispatch.CastOpts{
 				WritID: writID,
 				World:      world,
 				SourceRepo: sourceRepo,

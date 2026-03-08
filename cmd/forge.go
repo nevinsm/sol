@@ -741,7 +741,7 @@ var forgeCreateResolutionCmd = &cobra.Command{
 			}
 			mgr := dispatch.NewSessionManager()
 			logger := events.NewLogger(config.Home())
-			result, err := dispatch.Cast(dispatch.CastOpts{
+			result, err := dispatch.Cast(cmd.Context(), dispatch.CastOpts{
 				WritID:     taskID,
 				World:      world,
 				SourceRepo: sourceRepo,

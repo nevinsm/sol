@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"os/exec"
@@ -38,7 +39,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	}
 
 	// 3. Cast.
-	result, err := dispatch.Cast(dispatch.CastOpts{
+	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "TestBot",
@@ -96,7 +97,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	}
 
 	// 6. Call Resolve programmatically.
-	doneResult, err := dispatch.Resolve(dispatch.ResolveOpts{
+	doneResult, err := dispatch.Resolve(context.Background(), dispatch.ResolveOpts{
 		World:       "ember",
 		AgentName: "TestBot",
 	}, worldStore, sphereStore, mgr, nil)
@@ -167,7 +168,7 @@ func TestCrashRecoveryRecast(t *testing.T) {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	_, err = dispatch.Cast(dispatch.CastOpts{
+	_, err = dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "TestBot",
@@ -194,7 +195,7 @@ func TestCrashRecoveryRecast(t *testing.T) {
 	}
 
 	// Re-cast the same writ to the same agent.
-	_, err = dispatch.Cast(dispatch.CastOpts{
+	_, err = dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "TestBot",
@@ -238,7 +239,7 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	_, err = dispatch.Cast(dispatch.CastOpts{
+	_, err = dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: item1ID,
 		World:        "ember",
 		AgentName:  "TestBot",
@@ -254,7 +255,7 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	_, err = dispatch.Cast(dispatch.CastOpts{
+	_, err = dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: item2ID,
 		World:        "ember",
 		AgentName:  "TestBot",
@@ -293,7 +294,7 @@ func TestPrimeOutput(t *testing.T) {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	if _, err := dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "TestBot",
@@ -369,7 +370,7 @@ func TestStoreInspection(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	if _, err := dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: id1,
 		World:        "ember",
 		AgentName:  "TestBot",

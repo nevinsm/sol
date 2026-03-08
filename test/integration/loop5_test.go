@@ -263,7 +263,7 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	}
 
 	// Cast the writ.
-	if _, err := dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "HandBot",
@@ -353,7 +353,7 @@ func TestHandoffPreservesHook(t *testing.T) {
 	}
 
 	// Cast the writ.
-	if _, err := dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "HookBot",
@@ -449,7 +449,7 @@ needs = ["step1"]
 	}
 
 	// Cast with formula.
-	if _, err := dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "WFHandBot",
@@ -556,7 +556,7 @@ instructions = "steps/01.md"
 	}
 
 	// Cast with formula.
-	if _, err := dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "OverBot",
@@ -909,7 +909,7 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	d.SetWorldOpener(func(world string) (*store.Store, error) {
 		return store.OpenWorld(world)
 	})
-	d.SetDispatchFunc(func(opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {
+	d.SetDispatchFunc(func(ctx context.Context, opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {
 		dispatchedItems = append(dispatchedItems, opts.WritID)
 		return &dispatch.CastResult{
 			WritID:  opts.WritID,
@@ -1009,7 +1009,7 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	d.SetWorldOpener(func(world string) (*store.Store, error) {
 		return store.OpenWorld(world)
 	})
-	d.SetDispatchFunc(func(opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {
+	d.SetDispatchFunc(func(ctx context.Context, opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {
 		dispatchCount++
 		return &dispatch.CastResult{
 			WritID:  opts.WritID,
@@ -1436,7 +1436,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	d.SetWorldOpener(func(world string) (*store.Store, error) {
 		return store.OpenWorld(world)
 	})
-	d.SetDispatchFunc(func(opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {
+	d.SetDispatchFunc(func(ctx context.Context, opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {
 		dispatchedItems = append(dispatchedItems, opts.WritID)
 		return &dispatch.CastResult{
 			WritID:  opts.WritID,

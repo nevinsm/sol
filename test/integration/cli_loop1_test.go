@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -79,7 +80,7 @@ func TestCLIStatusJSON(t *testing.T) {
 	// Need to cast from a git repo context via CLI.
 	// Use the API directly since the CLI discovers the repo from cwd.
 	mgr := dispatch.NewSessionManager()
-	dispatch.Cast(dispatch.CastOpts{
+	dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "Smoke",

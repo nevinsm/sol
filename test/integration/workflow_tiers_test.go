@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -330,7 +331,7 @@ instructions = "steps/01.md"
 	}
 
 	// Cast with the project-level formula.
-	result, err := dispatch.Cast(dispatch.CastOpts{
+	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:      world,
 		AgentName:  "ProjectBot",
@@ -382,7 +383,7 @@ instructions = "steps/01.md"
 		t.Fatalf("write work.txt: %v", err)
 	}
 
-	_, err = dispatch.Resolve(dispatch.ResolveOpts{
+	_, err = dispatch.Resolve(context.Background(), dispatch.ResolveOpts{
 		World:     world,
 		AgentName: "ProjectBot",
 	}, worldStore, sphereStore, mgr, logger)

@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,7 +29,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 		t.Fatalf("create writ: %v", err)
 	}
 
-	result, err := dispatch.Cast(dispatch.CastOpts{
+	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		SourceRepo: sourceClone,
@@ -42,7 +43,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 		t.Fatalf("write status_test.go: %v", err)
 	}
 
-	_, err = dispatch.Resolve(dispatch.ResolveOpts{
+	_, err = dispatch.Resolve(context.Background(), dispatch.ResolveOpts{
 		World:       "ember",
 		AgentName: result.AgentName,
 	}, worldStore, sphereStore, mgr, nil)

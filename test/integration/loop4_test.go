@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -290,7 +291,7 @@ instructions = "steps/01.md"
 	logger := events.NewLogger(solHome)
 
 	// Cast with formula.
-	result, err := dispatch.Cast(dispatch.CastOpts{
+	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "WorkflowBot",
@@ -396,7 +397,7 @@ needs = ["step1"]
 	}
 
 	// Cast with formula.
-	if _, err := dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "PrimeBot",
@@ -454,7 +455,7 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	if _, err := dispatch.Cast(dispatch.CastOpts{
+	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "PlainBot",
@@ -532,7 +533,7 @@ instructions = "steps/01.md"
 	}
 
 	// Cast with formula.
-	result, err := dispatch.Cast(dispatch.CastOpts{
+	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "DoneBot",
@@ -555,7 +556,7 @@ instructions = "steps/01.md"
 	}
 
 	// Call Resolve.
-	_, err = dispatch.Resolve(dispatch.ResolveOpts{
+	_, err = dispatch.Resolve(context.Background(), dispatch.ResolveOpts{
 		World:       "ember",
 		AgentName: "DoneBot",
 	}, worldStore, sphereStore, mgr, nil)
@@ -991,7 +992,7 @@ func TestCaravanLaunchDispatch(t *testing.T) {
 		if st.WritStatus != "open" || !st.Ready {
 			continue
 		}
-		result, err := dispatch.Cast(dispatch.CastOpts{
+		result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 			WritID: st.WritID,
 			World:      "ember",
 			SourceRepo: sourceRepo,
@@ -1102,7 +1103,7 @@ needs = ["implement"]
 	logger := events.NewLogger(solHome)
 
 	// 1. Cast with formula (mock session).
-	result, err := dispatch.Cast(dispatch.CastOpts{
+	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "PropBot",
@@ -1170,7 +1171,7 @@ needs = ["implement"]
 	}
 
 	// 8. Resolve → workflow cleaned up, writ marked done.
-	_, err = dispatch.Resolve(dispatch.ResolveOpts{
+	_, err = dispatch.Resolve(context.Background(), dispatch.ResolveOpts{
 		World:       "ember",
 		AgentName: "PropBot",
 	}, worldStore, sphereStore, mgr, logger)

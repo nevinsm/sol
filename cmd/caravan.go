@@ -756,7 +756,7 @@ var caravanLaunchCmd = &cobra.Command{
 				castOpts.Formula = caravanFormula
 				castOpts.Variables = vars
 			}
-			result, err := dispatch.Cast(castOpts, worldStore, sphereStore, mgr, logger)
+			result, err := dispatch.Cast(cmd.Context(), castOpts, worldStore, sphereStore, mgr, logger)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to dispatch %s: %v\n", st.WritID, err)
 				continue

@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -137,7 +138,7 @@ func TestCLIResolveShowsMergeRequest(t *testing.T) {
 		t.Fatalf("create writ: %v", err)
 	}
 
-	result, err := dispatch.Cast(dispatch.CastOpts{
+	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "Smoke",

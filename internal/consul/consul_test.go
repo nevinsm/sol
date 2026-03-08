@@ -2,6 +2,8 @@ package consul
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -66,7 +68,7 @@ type mockDispatchResult struct {
 // newMockDispatchFunc returns a DispatchFunc that records calls and returns success.
 func newMockDispatchFunc(results *[]mockDispatchResult) DispatchFunc {
 	agentCounter := 0
-	return func(opts dispatch.CastOpts, worldStore dispatch.WorldStore, sphereStore dispatch.SphereStore, mgr dispatch.SessionManager, logger *events.Logger) (*dispatch.CastResult, error) {
+	return func(ctx context.Context, opts dispatch.CastOpts, worldStore dispatch.WorldStore, sphereStore dispatch.SphereStore, mgr dispatch.SessionManager, logger *events.Logger) (*dispatch.CastResult, error) {
 		agentCounter++
 		*results = append(*results, mockDispatchResult{
 			WritID: opts.WritID,
@@ -769,4 +771,170 @@ func TestPatrolCycle(t *testing.T) {
 
 	// Clean up.
 	os.RemoveAll(solHome)
+}
+
+func TestPatrolExitsEarlyOnCancelledContext(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "cancel-patrol"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create a stale tethered agent — should NOT be recovered if context is cancelled.
+	sphereStore.CreateAgent("ShouldSkip", worldName, "agent")
+	wiStale, _ := worldStore.CreateWrit("stale-cancel", "desc", "test", 1, nil)
+	sphereStore.UpdateAgentState(worldName+"/ShouldSkip", "working", wiStale)
+	worldStore.UpdateWrit(wiStale, store.WritUpdates{Status: "tethered", Assignee: worldName + "/ShouldSkip"})
+	tether.Write(worldName, "ShouldSkip", wiStale, "agent")
+	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
+		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/ShouldSkip")
+
+	sessions := newMockSessions()
+	cfg := Config{
+		StaleTetherTimeout: 1 * time.Hour,
+		SolHome:            solHome,
+		PatrolInterval:     5 * time.Minute,
+	}
+
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
+	})
+
+	// Cancel context before calling Patrol.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = d.Patrol(ctx)
+	if err == nil {
+		t.Fatal("expected Patrol to return error with cancelled context")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got: %v", err)
+	}
+
+	// Verify patrol count was incremented (patrol started).
+	if d.patrolCount != 1 {
+		t.Errorf("patrolCount = %d, want 1", d.patrolCount)
+	}
+}
+
+func TestRecoverStaleTethersExitsOnCancelledContext(t *testing.T) {
+	solHome := setupSolHome(t)
+	_ = solHome
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "cancel-recover"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create multiple stale agents — only some should be processed.
+	for i := 0; i < 3; i++ {
+		name := fmt.Sprintf("Agent%d", i)
+		sphereStore.CreateAgent(name, worldName, "agent")
+		wi, _ := worldStore.CreateWrit(fmt.Sprintf("task-%d", i), "desc", "test", 1, nil)
+		sphereStore.UpdateAgentState(worldName+"/"+name, "working", wi)
+		worldStore.UpdateWrit(wi, store.WritUpdates{Status: "tethered", Assignee: worldName + "/" + name})
+		tether.Write(worldName, name, wi, "agent")
+		sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
+			time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/"+name)
+	}
+
+	sessions := newMockSessions()
+	cfg := Config{
+		StaleTetherTimeout: 1 * time.Hour,
+		SolHome:            config.Home(),
+	}
+
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
+	})
+
+	// Cancel context immediately.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	recovered, err := d.recoverStaleTethers(ctx)
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+	// Should have recovered 0 (cancelled before processing).
+	if recovered != 0 {
+		t.Errorf("recovered = %d, want 0 (cancelled before processing)", recovered)
+	}
+}
+
+func TestFeedStrandedCaravansExitsOnCancelledContext(t *testing.T) {
+	setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "cancel-feed"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create an open caravan with ready items.
+	caravanID, _ := sphereStore.CreateCaravan("cancel-caravan", "operator")
+	sphereStore.UpdateCaravanStatus(caravanID, "open")
+	wi1, _ := worldStore.CreateWrit("cancel-task-1", "desc1", "test", 1, nil)
+	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
+
+	sessions := newMockSessions()
+	cfg := Config{
+		StaleTetherTimeout: 1 * time.Hour,
+		SolHome:            config.Home(),
+	}
+
+	var dispatched []mockDispatchResult
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
+	})
+	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
+
+	// Cancel context before calling.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	fed, err := d.feedStrandedCaravans(ctx)
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+	if fed != 0 {
+		t.Errorf("fed = %d, want 0 (cancelled before processing)", fed)
+	}
+	if len(dispatched) != 0 {
+		t.Errorf("dispatch calls = %d, want 0", len(dispatched))
+	}
 }
