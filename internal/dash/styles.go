@@ -131,6 +131,20 @@ func statusIndicator(running bool) string {
 	return errorStyle.Render(crossMark)
 }
 
+// pulsingStatusIndicator returns a status indicator that pulses when not running.
+func pulsingStatusIndicator(running bool, pulseBright bool) string {
+	if running {
+		return okStyle.Render(checkMark)
+	}
+	return pulseStyle(errorStyle, pulseBright).Render(crossMark)
+}
+
+// pulseStyle returns the base style with bold set according to the bright flag.
+// Used for pulsing critical indicators: bold toggles on/off at ~1s cycle.
+func pulseStyle(base lipgloss.Style, bright bool) lipgloss.Style {
+	return base.Bold(bright)
+}
+
 // Process detail formatters — mirror internal/status/render.go.
 
 func formatPrefectDetail(p status.PrefectInfo) string {

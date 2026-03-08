@@ -23,6 +23,9 @@ const captureInterval = 250 * time.Millisecond
 // highlightTickInterval is how often highlight levels decay (5 levels × 400ms = ~2s total fade).
 const highlightTickInterval = 400 * time.Millisecond
 
+// pulseFrames is the total frames in one pulse cycle (~1 second at 30 FPS).
+const pulseFrames = 30
+
 // Minimum terminal dimensions.
 const (
 	minTermWidth  = 80
@@ -141,6 +144,9 @@ type Model struct {
 	// Agent state tracking for highlights.
 	prevAgentStates map[string]string // agentName -> previous state
 	agentHighlights map[string]int   // agentName -> highlight level (5→0)
+
+	// Animation pulse phase — incremented on each animTickMsg, wraps at pulseFrames.
+	pulsePhase int
 }
 
 // NewModel creates a dashboard model. If world is empty, starts in sphere view.
@@ -278,6 +284,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case animTickMsg:
 		// Animation tick (~30 FPS) — drives visual state.
 		m.dirty = true
+		m.pulsePhase = (m.pulsePhase + 1) % pulseFrames
 		m.feed.decayAnimation()
 
 		// Route to active sub-view for spinner frame updates.
@@ -362,12 +369,14 @@ func (m Model) View() string {
 		return *m.viewCache
 	}
 
+	pulseBright := m.isPulseBright()
+
 	var content string
 	switch m.activeView() {
 	case viewSphere:
-		content = m.sphereView.view(m.sphereData, m.lastRefresh, m.healthHighlight)
+		content = m.sphereView.view(m.sphereData, m.lastRefresh, m.healthHighlight, pulseBright)
 	case viewWorld:
-		content = m.worldView.view(m.worldData, m.lastRefresh, m.healthHighlight, m.agentHighlights)
+		content = m.worldView.view(m.worldData, m.lastRefresh, m.healthHighlight, m.agentHighlights, pulseBright)
 	default:
 		content = "Unknown view"
 	}
@@ -484,6 +493,11 @@ func (m Model) highlightTickCmd() tea.Cmd {
 	return tea.Tick(highlightTickInterval, func(t time.Time) tea.Msg {
 		return highlightTickMsg(t)
 	})
+}
+
+// isPulseBright returns true during the bright phase of the pulse cycle.
+func (m Model) isPulseBright() bool {
+	return m.pulsePhase%pulseFrames < pulseFrames/2
 }
 
 // sessionName returns the tmux session name for an agent in the current world.
