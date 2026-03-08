@@ -383,16 +383,18 @@ func TestGenerateEnvoyClaudeMDMultiWritActive(t *testing.T) {
 		AgentName: "Meridian",
 		World:     "myworld",
 		SolBinary: "sol",
-		TetheredWrits: []WritSummary{
-			{ID: "sol-aaa1", Title: "Task A", Kind: "code", Status: "tethered"},
-			{ID: "sol-bbb2", Title: "Task B", Kind: "analysis", Status: "tethered"},
-			{ID: "sol-ccc3", Title: "Task C", Kind: "code", Status: "tethered"},
+		WritContext: WritContext{
+			TetheredWrits: []WritSummary{
+				{ID: "sol-aaa1", Title: "Task A", Kind: "code", Status: "tethered"},
+				{ID: "sol-bbb2", Title: "Task B", Kind: "analysis", Status: "tethered"},
+				{ID: "sol-ccc3", Title: "Task C", Kind: "code", Status: "tethered"},
+			},
+			ActiveWritID: "sol-bbb2",
+			ActiveTitle:  "Task B",
+			ActiveDesc:   "Analyze the system",
+			ActiveKind:   "analysis",
+			ActiveOutput: "/tmp/output/sol-bbb2",
 		},
-		ActiveWritID: "sol-bbb2",
-		ActiveTitle:  "Task B",
-		ActiveDesc:   "Analyze the system",
-		ActiveKind:   "analysis",
-		ActiveOutput: "/tmp/output/sol-bbb2",
 	}
 
 	content := GenerateEnvoyClaudeMD(ctx)
@@ -431,11 +433,13 @@ func TestGenerateEnvoyClaudeMDMultiWritNoActive(t *testing.T) {
 		AgentName: "Meridian",
 		World:     "myworld",
 		SolBinary: "sol",
-		TetheredWrits: []WritSummary{
-			{ID: "sol-aaa1", Title: "Task A", Kind: "code", Status: "tethered"},
-			{ID: "sol-bbb2", Title: "Task B", Kind: "code", Status: "tethered"},
+		WritContext: WritContext{
+			TetheredWrits: []WritSummary{
+				{ID: "sol-aaa1", Title: "Task A", Kind: "code", Status: "tethered"},
+				{ID: "sol-bbb2", Title: "Task B", Kind: "code", Status: "tethered"},
+			},
+			// No ActiveWritID set.
 		},
-		// No ActiveWritID set.
 	}
 
 	content := GenerateEnvoyClaudeMD(ctx)
@@ -485,14 +489,16 @@ func TestGenerateGovernorClaudeMDMultiWrit(t *testing.T) {
 		World:     "myworld",
 		SolBinary: "sol",
 		MirrorDir: "../repo",
-		TetheredWrits: []WritSummary{
-			{ID: "sol-aaa1", Title: "Plan feature X", Kind: "code", Status: "tethered"},
-			{ID: "sol-bbb2", Title: "Research Y", Kind: "analysis", Status: "tethered"},
+		WritContext: WritContext{
+			TetheredWrits: []WritSummary{
+				{ID: "sol-aaa1", Title: "Plan feature X", Kind: "code", Status: "tethered"},
+				{ID: "sol-bbb2", Title: "Research Y", Kind: "analysis", Status: "tethered"},
+			},
+			ActiveWritID: "sol-aaa1",
+			ActiveTitle:  "Plan feature X",
+			ActiveDesc:   "Create writs for feature X",
+			ActiveKind:   "code",
 		},
-		ActiveWritID: "sol-aaa1",
-		ActiveTitle:  "Plan feature X",
-		ActiveDesc:   "Create writs for feature X",
-		ActiveKind:   "code",
 	}
 
 	content := GenerateGovernorClaudeMD(ctx)

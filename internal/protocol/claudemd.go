@@ -403,14 +403,10 @@ Once you have the world name (and optionally source repo), run:
 `, ctx.SolBinary, ctx.SolBinary, ctx.SOLHome)
 }
 
-// EnvoyClaudeMDContext holds the fields used to generate a CLAUDE.md for an envoy agent.
-type EnvoyClaudeMDContext struct {
-	AgentName      string
-	World          string
-	SolBinary      string // path to sol binary (for CLI references)
-	PersonaContent string // optional persona file content, appended as ## Persona section
-
-	// Multi-writ fields for persistent agents.
+// WritContext holds the multi-writ fields shared by persistent agent personas
+// (envoy and governor). Both EnvoyClaudeMDContext and GovernorClaudeMDContext
+// embed this struct so writ-population logic lives in one place.
+type WritContext struct {
 	TetheredWrits []WritSummary // all tethered writs (for background listing)
 	ActiveWritID  string        // currently active writ ID (empty if none)
 	ActiveTitle   string        // active writ title
@@ -418,6 +414,16 @@ type EnvoyClaudeMDContext struct {
 	ActiveKind    string        // active writ kind
 	ActiveOutput  string        // active writ output directory
 	ActiveDeps    []DepOutput   // active writ direct dependencies
+}
+
+// EnvoyClaudeMDContext holds the fields used to generate a CLAUDE.md for an envoy agent.
+type EnvoyClaudeMDContext struct {
+	AgentName      string
+	World          string
+	SolBinary      string // path to sol binary (for CLI references)
+	PersonaContent string // optional persona file content, appended as ## Persona section
+
+	WritContext // embedded multi-writ fields for persistent agents
 }
 
 // GenerateEnvoyClaudeMD returns the contents of a CLAUDE.md for an envoy agent.
@@ -531,14 +537,7 @@ type GovernorClaudeMDContext struct {
 	SolBinary string // path to sol binary (for CLI references)
 	MirrorDir string // relative path to mirror for codebase research
 
-	// Multi-writ fields for persistent agents.
-	TetheredWrits []WritSummary // all tethered writs (for background listing)
-	ActiveWritID  string        // currently active writ ID (empty if none)
-	ActiveTitle   string        // active writ title
-	ActiveDesc    string        // active writ description
-	ActiveKind    string        // active writ kind
-	ActiveOutput  string        // active writ output directory
-	ActiveDeps    []DepOutput   // active writ direct dependencies
+	WritContext // embedded multi-writ fields for persistent agents
 }
 
 // GenerateGovernorClaudeMD returns the contents of a CLAUDE.md for the governor agent.
