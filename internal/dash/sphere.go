@@ -145,7 +145,7 @@ func (sm sphereModel) updateSpinner(msg spinner.TickMsg) (sphereModel, tea.Cmd) 
 	return sm, tea.Batch(cmds...)
 }
 
-func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, healthLevel int) string {
+func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, healthLevel int, pulseBright bool) string {
 	if data == nil {
 		return "Gathering sphere status..."
 	}
@@ -171,7 +171,7 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 	}
 	b.WriteString(headerStyle.Render("Processes"))
 	b.WriteString("\n")
-	sm.renderProcessGrid(&b, procs)
+	sm.renderProcessGrid(&b, procs, pulseBright)
 	b.WriteString("\n")
 
 	// Worlds table.
@@ -214,13 +214,13 @@ func (sm sphereModel) renderProcess(b *strings.Builder, name string, running boo
 }
 
 // renderProcessGrid renders processes in a compact 3-column grid.
-func (sm sphereModel) renderProcessGrid(b *strings.Builder, procs []processEntry) {
+func (sm sphereModel) renderProcessGrid(b *strings.Builder, procs []processEntry, pulseBright bool) {
 	cellWidth := (sm.width - 4) / 3
 	if cellWidth < 20 {
 		cellWidth = 20
 	}
 	for i, p := range procs {
-		indicator := statusIndicator(p.running)
+		indicator := pulsingStatusIndicator(p.running, pulseBright)
 		if p.running {
 			if s, ok := sm.processSpinners[p.name]; ok {
 				indicator = s.View()

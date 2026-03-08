@@ -26,7 +26,7 @@ func TestSphereViewRendersProcesses(t *testing.T) {
 	}
 	sm.updateData(data)
 
-	output := sm.view(data, time.Now(), 0)
+	output := sm.view(data, time.Now(), 0, false)
 
 	checks := []string{
 		"Sol Sphere",
@@ -63,7 +63,7 @@ func TestSphereViewRendersWorlds(t *testing.T) {
 	}
 	sm.updateData(data)
 
-	output := sm.view(data, time.Now(), 0)
+	output := sm.view(data, time.Now(), 0, false)
 
 	checks := []string{
 		"Worlds",
@@ -91,7 +91,7 @@ func TestSphereViewNoWorlds(t *testing.T) {
 	}
 	sm.updateData(data)
 
-	output := sm.view(data, time.Now(), 0)
+	output := sm.view(data, time.Now(), 0, false)
 
 	if !strings.Contains(output, "No worlds initialized.") {
 		t.Error("sphere view should show 'No worlds initialized.' when empty")
@@ -113,7 +113,7 @@ func TestSphereViewCaravans(t *testing.T) {
 	}
 	sm.updateData(data)
 
-	output := sm.view(data, time.Now(), 0)
+	output := sm.view(data, time.Now(), 0, false)
 
 	checks := []string{
 		"Caravans",
@@ -139,7 +139,7 @@ func TestSphereViewFooter(t *testing.T) {
 	}
 	sm.updateData(data)
 
-	output := sm.view(data, time.Now(), 0)
+	output := sm.view(data, time.Now(), 0, false)
 
 	checks := []string{
 		"q quit",
@@ -158,7 +158,7 @@ func TestSphereViewFooter(t *testing.T) {
 
 func TestSphereViewNilData(t *testing.T) {
 	sm := newSphereModel()
-	output := sm.view(nil, time.Time{}, 0)
+	output := sm.view(nil, time.Time{}, 0, false)
 	if !strings.Contains(output, "Gathering sphere status...") {
 		t.Error("sphere view with nil data should show loading message")
 	}
@@ -179,7 +179,7 @@ func TestWorldViewRendersProcesses(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	// Compact process grid: names visible but not detail (pid, session names).
 	checks := []string{
@@ -217,7 +217,7 @@ func TestWorldViewRendersAgents(t *testing.T) {
 	wm.updateData(data)
 
 	// Default (no focus): always-expanded table shows detail rows.
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	checks := []string{
 		"Outposts (2)",
@@ -239,7 +239,7 @@ func TestWorldViewRendersAgents(t *testing.T) {
 	// Focused: should also show detail rows with focus indicator.
 	wm.hasFocus = true
 	wm.focusedSection = sectionOutposts
-	output = wm.view(data, time.Now(), 0, nil)
+	output = wm.view(data, time.Now(), 0, nil, false)
 
 	for _, check := range checks {
 		if !strings.Contains(output, check) {
@@ -266,7 +266,7 @@ func TestWorldViewRendersEnvoys(t *testing.T) {
 	wm.updateData(data)
 
 	// Default (no focus): always-expanded table shows detail rows.
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	checks := []string{
 		"Envoys (1)",
@@ -285,7 +285,7 @@ func TestWorldViewRendersEnvoys(t *testing.T) {
 	// Focused: should also show detail rows with focus indicator.
 	wm.hasFocus = true
 	wm.focusedSection = sectionEnvoys
-	output = wm.view(data, time.Now(), 0, nil)
+	output = wm.view(data, time.Now(), 0, nil, false)
 
 	for _, check := range checks {
 		if !strings.Contains(output, check) {
@@ -308,7 +308,7 @@ func TestWorldViewNoAgents(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	if !strings.Contains(output, "No agents registered.") {
 		t.Error("world view should show 'No agents registered.' when empty")
@@ -328,7 +328,7 @@ func TestWorldViewMergeQueue(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	checks := []string{
 		"Merge Queue",
@@ -356,7 +356,7 @@ func TestWorldViewMergeQueueEmpty(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	if !strings.Contains(output, "empty") {
 		t.Error("world view should show 'empty' for empty merge queue")
@@ -365,7 +365,7 @@ func TestWorldViewMergeQueueEmpty(t *testing.T) {
 
 func TestWorldViewNilData(t *testing.T) {
 	wm := newWorldModel()
-	output := wm.view(nil, time.Time{}, 0, nil)
+	output := wm.view(nil, time.Time{}, 0, nil, false)
 	if !strings.Contains(output, "Gathering world status...") {
 		t.Error("world view with nil data should show loading message")
 	}
@@ -385,7 +385,7 @@ func TestWorldViewCaravans(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	checks := []string{
 		"Caravans",
@@ -656,7 +656,7 @@ func TestSleepingWorldRow(t *testing.T) {
 	}
 	sm.updateData(data)
 
-	output := sm.view(data, time.Now(), 0)
+	output := sm.view(data, time.Now(), 0, false)
 
 	if !strings.Contains(output, "sleepy") {
 		t.Error("sleeping world name should appear in output")
@@ -836,7 +836,7 @@ func TestWorldViewMergeQueueRows(t *testing.T) {
 	wm.hasFocus = true
 	wm.focusedSection = sectionMergeQueue
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	checks := []string{
 		"Merge Queue",
@@ -970,7 +970,7 @@ func TestWorldViewFocusIndicator(t *testing.T) {
 	wm.updateData(data)
 
 	// Without focus: always-expanded but no focus indicator.
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 	if !strings.Contains(output, "Outposts") {
 		t.Error("view should contain Outposts section")
 	}
@@ -981,7 +981,7 @@ func TestWorldViewFocusIndicator(t *testing.T) {
 	// With focus: shows focus indicator on the focused section.
 	wm.hasFocus = true
 	wm.focusedSection = sectionOutposts
-	output = wm.view(data, time.Now(), 0, nil)
+	output = wm.view(data, time.Now(), 0, nil, false)
 	if !strings.Contains(output, focusIndicator) {
 		t.Error("focused view should contain focus indicator")
 	}
@@ -998,7 +998,7 @@ func TestWorldViewFooter(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	checks := []string{
 		"q quit",
@@ -1081,7 +1081,7 @@ func TestWorldViewNoSessionMessage(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	if !strings.Contains(output, "no active session") {
 		t.Error("world view should show 'no active session' when showNoSession is true")
@@ -1526,8 +1526,8 @@ func TestHealthEmphasisInSphereView(t *testing.T) {
 	sm.updateData(data)
 
 	// Both with and without emphasis should render.
-	output1 := sm.view(data, time.Now(), 0)
-	output2 := sm.view(data, time.Now(), highlightMaxLevel)
+	output1 := sm.view(data, time.Now(), 0, false)
+	output2 := sm.view(data, time.Now(), highlightMaxLevel, false)
 	if !strings.Contains(output1, "healthy") {
 		t.Error("sphere view should show health badge")
 	}
@@ -1557,7 +1557,7 @@ func TestAgentHighlightInWorldView(t *testing.T) {
 	// Test at various highlight levels.
 	for _, level := range []int{1, 3, 5} {
 		highlights := map[string]int{"Alpha": level}
-		output := wm.view(data, time.Now(), 0, highlights)
+		output := wm.view(data, time.Now(), 0, highlights, false)
 		if !strings.Contains(output, "Alpha") {
 			t.Errorf("world view should still show agent name with highlight level %d", level)
 		}
@@ -1696,7 +1696,7 @@ func TestWorldViewSummary(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	checks := []string{
 		"3 agents",
@@ -1730,7 +1730,7 @@ func TestWorldViewSectionOrdering(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	// Verify order: Sphere Processes → World Processes → Outposts → Envoys → Caravans → Merge Queue → Summary
 	sphereIdx := strings.Index(output, "Sphere Processes")
@@ -1894,7 +1894,7 @@ func TestWorldViewMergedMRsFiltered(t *testing.T) {
 	wm.hasFocus = true
 	wm.focusedSection = sectionMergeQueue
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	// Active MRs should appear.
 	if !strings.Contains(output, "mr-001") {
@@ -1941,7 +1941,7 @@ func TestWorldViewWorkColumnTruncated(t *testing.T) {
 	wm.hasFocus = true
 	wm.focusedSection = sectionOutposts
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	// The full title should not appear — it would overflow.
 	if strings.Contains(output, "this is a very long work title that should be truncated") {
@@ -2143,7 +2143,7 @@ func TestProcessGridRendersThreeColumns(t *testing.T) {
 	}
 
 	var b strings.Builder
-	wm.renderProcessGrid(&b, procs)
+	wm.renderProcessGrid(&b, procs, false)
 	output := b.String()
 
 	// Should contain all process names.
@@ -2185,7 +2185,7 @@ func TestDefaultViewFitsTerminal(t *testing.T) {
 	wm.updateData(data)
 
 	// Default view: both agent sections always expanded as tables.
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
 	// With always-expanded tables for both sections, more lines expected.
 	if len(lines) > 40 {
@@ -2271,7 +2271,7 @@ func TestWorldViewSectionOrderingWithSummaries(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now(), 0, nil)
+	output := wm.view(data, time.Now(), 0, nil, false)
 
 	// Verify order: Sphere Processes → World Processes → Outposts → Envoys → Caravans → Merge Queue
 	sphereIdx := strings.Index(output, "Sphere Processes")
