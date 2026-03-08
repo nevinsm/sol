@@ -2794,3 +2794,257 @@ func TestManifestFormulaConvoyAnalysisSynthesisDescription(t *testing.T) {
 		t.Errorf("mixed synthesis description missing output dir for reqs: %s", synthItem2.Description)
 	}
 }
+
+// --- Code-Review Convoy Formula Integration Test ---
+//
+// This test exercises the rebuilt code-review embedded formula end-to-end:
+// 1. Creates a target writ (the code being reviewed).
+// 2. Manifests the code-review formula against the target.
+// 3. Verifies legs are created with kind=analysis and target-substituted titles.
+// 4. Simulates resolve of analysis legs (close directly, write output files).
+// 5. Verifies synthesis unblocks after leg writs close.
+// 6. Verifies synthesis agent can read leg output directories.
+
+func TestCodeReviewConvoyFormula(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	// --- Setup: create the target writ (the code being reviewed) ---
+	targetID, err := ws.CreateWrit(
+		"Implement OAuth2 login flow",
+		"Add OAuth2 authentication with Google and GitHub providers.",
+		"operator", 2, nil,
+	)
+	if err != nil {
+		t.Fatalf("CreateWrit(target) error: %v", err)
+	}
+
+	// --- Manifest the code-review formula against the target ---
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "code-review",
+		World:       "test-world",
+		ParentID:    targetID,
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	// Verify two legs + one synthesis = three children.
+	if len(result.ChildIDs) != 3 {
+		t.Fatalf("expected 3 children (2 legs + synthesis), got %d", len(result.ChildIDs))
+	}
+
+	// --- Verify legs: kind=analysis and target-substituted titles ---
+	reqsID := result.ChildIDs["requirements"]
+	reqsItem, err := ws.GetWrit(reqsID)
+	if err != nil {
+		t.Fatalf("GetWrit(requirements) error: %v", err)
+	}
+	if reqsItem.Kind != "analysis" {
+		t.Errorf("requirements kind: got %q, want %q", reqsItem.Kind, "analysis")
+	}
+	if reqsItem.Title != "Requirements Analysis: Implement OAuth2 login flow" {
+		t.Errorf("requirements title: got %q, want %q", reqsItem.Title, "Requirements Analysis: Implement OAuth2 login flow")
+	}
+	if !reqsItem.HasLabel("convoy-leg") {
+		t.Error("requirements missing convoy-leg label")
+	}
+	if !strings.Contains(reqsItem.Description, "requirements completeness") {
+		t.Error("requirements description should mention requirements completeness")
+	}
+	if !strings.Contains(reqsItem.Description, "Focus:") {
+		t.Error("requirements description should contain Focus section")
+	}
+
+	feasID := result.ChildIDs["feasibility"]
+	feasItem, err := ws.GetWrit(feasID)
+	if err != nil {
+		t.Fatalf("GetWrit(feasibility) error: %v", err)
+	}
+	if feasItem.Kind != "analysis" {
+		t.Errorf("feasibility kind: got %q, want %q", feasItem.Kind, "analysis")
+	}
+	if feasItem.Title != "Feasibility Assessment: Implement OAuth2 login flow" {
+		t.Errorf("feasibility title: got %q, want %q", feasItem.Title, "Feasibility Assessment: Implement OAuth2 login flow")
+	}
+	if !feasItem.HasLabel("convoy-leg") {
+		t.Error("feasibility missing convoy-leg label")
+	}
+
+	// --- Verify synthesis: target-substituted title and analysis output references ---
+	synthID := result.ChildIDs["synthesis"]
+	synthItem, err := ws.GetWrit(synthID)
+	if err != nil {
+		t.Fatalf("GetWrit(synthesis) error: %v", err)
+	}
+	if synthItem.Title != "Consolidate Review: Implement OAuth2 login flow" {
+		t.Errorf("synthesis title: got %q, want %q", synthItem.Title, "Consolidate Review: Implement OAuth2 login flow")
+	}
+	if !synthItem.HasLabel("convoy-synthesis") {
+		t.Error("synthesis missing convoy-synthesis label")
+	}
+	// All legs are analysis — synthesis should reference output directories, not merged branches.
+	if strings.Contains(synthItem.Description, "merged to the target branch") {
+		t.Error("synthesis should NOT mention merged branches (all legs are analysis)")
+	}
+	if !strings.Contains(synthItem.Description, "Read findings from leg output directories") {
+		t.Error("synthesis should reference leg output directories")
+	}
+	// Each analysis leg's output path should be listed in the synthesis description.
+	if !strings.Contains(synthItem.Description, config.WritOutputDir("test-world", reqsID)) {
+		t.Errorf("synthesis description missing output dir for requirements leg")
+	}
+	if !strings.Contains(synthItem.Description, config.WritOutputDir("test-world", feasID)) {
+		t.Errorf("synthesis description missing output dir for feasibility leg")
+	}
+
+	// --- Verify phases: legs at phase 0, synthesis at phase 1 ---
+	if result.Phases["requirements"] != 0 {
+		t.Errorf("requirements phase: got %d, want 0", result.Phases["requirements"])
+	}
+	if result.Phases["feasibility"] != 0 {
+		t.Errorf("feasibility phase: got %d, want 0", result.Phases["feasibility"])
+	}
+	if result.Phases["synthesis"] != 1 {
+		t.Errorf("synthesis phase: got %d, want 1", result.Phases["synthesis"])
+	}
+
+	// --- Verify synthesis is blocked while legs are open ---
+	worldOpener := func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
+	}
+	blocked, err := ss.IsWritBlockedByCaravan(synthID, "test-world", worldOpener)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan (before close) error: %v", err)
+	}
+	if !blocked {
+		t.Error("synthesis should be blocked while analysis legs are open")
+	}
+
+	// --- Simulate resolve of analysis legs ---
+	// Analysis writs close directly (no merge/forge) and write findings to output dir.
+
+	// Close requirements leg + write findings.
+	reqsOutputDir := config.WritOutputDir("test-world", reqsID)
+	if err := os.MkdirAll(reqsOutputDir, 0o755); err != nil {
+		t.Fatalf("create requirements output dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(reqsOutputDir, "findings.md"), []byte(
+		"# Requirements Analysis\n\n"+
+			"- Success criteria are well-defined.\n"+
+			"- Edge case: token expiry not handled.\n",
+	), 0o644); err != nil {
+		t.Fatalf("write requirements findings: %v", err)
+	}
+	if err := ws.CloseWrit(reqsID, "completed"); err != nil {
+		t.Fatalf("CloseWrit(requirements) error: %v", err)
+	}
+
+	// Synthesis should still be blocked (feasibility still open).
+	blocked, err = ss.IsWritBlockedByCaravan(synthID, "test-world", worldOpener)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan (after requirements close) error: %v", err)
+	}
+	if !blocked {
+		t.Error("synthesis should still be blocked (feasibility leg still open)")
+	}
+
+	// Close feasibility leg + write findings.
+	feasOutputDir := config.WritOutputDir("test-world", feasID)
+	if err := os.MkdirAll(feasOutputDir, 0o755); err != nil {
+		t.Fatalf("create feasibility output dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(feasOutputDir, "findings.md"), []byte(
+		"# Feasibility Assessment\n\n"+
+			"- Follows existing auth patterns.\n"+
+			"- OAuth2 library dependency is acceptable.\n",
+	), 0o644); err != nil {
+		t.Fatalf("write feasibility findings: %v", err)
+	}
+	if err := ws.CloseWrit(feasID, "completed"); err != nil {
+		t.Fatalf("CloseWrit(feasibility) error: %v", err)
+	}
+
+	// --- Verify synthesis unblocks after both legs close ---
+	blocked, err = ss.IsWritBlockedByCaravan(synthID, "test-world", worldOpener)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan (after all legs close) error: %v", err)
+	}
+	if blocked {
+		t.Error("synthesis should be unblocked after all analysis legs are closed")
+	}
+
+	// --- Verify synthesis agent can read leg output directories ---
+	// The synthesis description contains the output paths. Verify the files are readable.
+	reqsFindings, err := os.ReadFile(filepath.Join(reqsOutputDir, "findings.md"))
+	if err != nil {
+		t.Fatalf("read requirements findings: %v", err)
+	}
+	if !strings.Contains(string(reqsFindings), "token expiry") {
+		t.Error("requirements findings should contain expected content")
+	}
+
+	feasFindings, err := os.ReadFile(filepath.Join(feasOutputDir, "findings.md"))
+	if err != nil {
+		t.Fatalf("read feasibility findings: %v", err)
+	}
+	if !strings.Contains(string(feasFindings), "OAuth2 library") {
+		t.Error("feasibility findings should contain expected content")
+	}
+
+	// Verify the synthesis description contains paths that actually exist.
+	for _, path := range []string{reqsOutputDir, feasOutputDir} {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("output directory referenced in synthesis should exist: %s", path)
+		}
+	}
+}
+
+func TestCodeReviewConvoyFormulaSynthesisTargetSubstitution(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	// Create target writ.
+	targetID, err := ws.CreateWrit("Fix broken pagination", "The pagination component breaks on page 3.", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit error: %v", err)
+	}
+
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "code-review",
+		World:       "test-world",
+		ParentID:    targetID,
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	// All titles should contain the target title.
+	for formulaID, writID := range result.ChildIDs {
+		item, err := ws.GetWrit(writID)
+		if err != nil {
+			t.Fatalf("GetWrit(%s) error: %v", formulaID, err)
+		}
+		if !strings.Contains(item.Title, "Fix broken pagination") {
+			t.Errorf("%s title should contain target title, got: %q", formulaID, item.Title)
+		}
+	}
+}
+
+func TestCodeReviewConvoyFormulaRequiresTarget(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	// Manifesting code-review without a ParentID should fail because
+	// the manifest declares target as a required variable.
+	_, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "code-review",
+		World:       "test-world",
+		CreatedBy:   "operator",
+	})
+	if err == nil {
+		t.Fatal("ManifestFormula() should fail without a target (ParentID)")
+	}
+	if !strings.Contains(err.Error(), "required variable") {
+		t.Errorf("error should mention required variable, got: %v", err)
+	}
+}

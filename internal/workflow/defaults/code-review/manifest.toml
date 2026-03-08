@@ -2,19 +2,24 @@ name = "code-review"
 type = "convoy"
 description = "Multi-perspective code review with parallel analysis and synthesis."
 
+[vars]
+target = { description = "Writ ID of the code to review", required = true }
+
 [[legs]]
 id = "requirements"
-title = "Requirements Analysis"
-description = "Assess completeness of requirements."
-focus = "Are success criteria defined?"
+title = "Requirements Analysis: {target.title}"
+kind = "analysis"
+description = "Review the code changes for requirements completeness. Examine the branch, tests, and documentation."
+focus = "Are success criteria defined? Are edge cases handled? Is the scope well-bounded?"
 
 [[legs]]
 id = "feasibility"
-title = "Feasibility Assessment"
-description = "Evaluate technical feasibility."
-focus = "Is this buildable with current architecture?"
+title = "Feasibility Assessment: {target.title}"
+kind = "analysis"
+description = "Evaluate technical feasibility and architectural fit. Examine code structure, dependencies, and integration points."
+focus = "Does it follow existing patterns? Are there architectural concerns? Is it maintainable?"
 
 [synthesis]
-title = "Consolidate Findings"
-description = "Combine all analyses into prioritized action items."
+title = "Consolidate Review: {target.title}"
+description = "Read analysis findings from each leg output directory. Produce a consolidated review with prioritized action items, risks, and recommendations."
 depends_on = ["requirements", "feasibility"]

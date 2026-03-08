@@ -20,6 +20,7 @@ type Manifest struct {
 	Description string                  `toml:"description"`
 	Manifest    bool                    `toml:"manifest"` // default false; when true, steps become child writs
 	Variables   map[string]VariableDecl `toml:"variables"`
+	Vars        map[string]VariableDecl `toml:"vars"`
 	Steps       []StepDef              `toml:"steps"`
 	Templates   []Template             `toml:"template"`
 	Legs        []Leg                  `toml:"legs"`
@@ -28,8 +29,9 @@ type Manifest struct {
 
 // VariableDecl declares a workflow variable.
 type VariableDecl struct {
-	Required bool   `toml:"required"`
-	Default  string `toml:"default"`
+	Required    bool   `toml:"required"`
+	Default     string `toml:"default"`
+	Description string `toml:"description"`
 }
 
 // StepDef defines a step in the formula.
@@ -251,6 +253,7 @@ func (t dagNode) dagNeeds() []string { return t.Needs }
 
 // ResolveVariables merges provided variables with defaults, checks required.
 // Returns error if a required variable is not provided and has no default.
+// Supports both [variables] and [vars] sections in the manifest.
 func ResolveVariables(m *Manifest, provided map[string]string) (map[string]string, error) {
 	resolved := make(map[string]string)
 
@@ -259,8 +262,18 @@ func ResolveVariables(m *Manifest, provided map[string]string) (map[string]strin
 		resolved[k] = v
 	}
 
-	// Apply defaults and check required.
+	// Merge [variables] and [vars] declarations. [vars] entries take
+	// precedence if both sections declare the same key.
+	merged := make(map[string]VariableDecl)
 	for name, decl := range m.Variables {
+		merged[name] = decl
+	}
+	for name, decl := range m.Vars {
+		merged[name] = decl
+	}
+
+	// Apply defaults and check required.
+	for name, decl := range merged {
 		if _, ok := resolved[name]; ok {
 			continue
 		}
@@ -755,8 +768,20 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 		return nil, fmt.Errorf("formula %q is not configured for manifestation (set manifest = true or use expansion type)", opts.FormulaName)
 	}
 
+	// For convoy formulas with a ParentID, inject it as the "target" variable
+	// so that [vars] target = { required = true } declarations are satisfied.
+	vars := opts.Variables
+	if m.Type == "convoy" && opts.ParentID != "" {
+		if vars == nil {
+			vars = make(map[string]string)
+		}
+		if _, ok := vars["target"]; !ok {
+			vars["target"] = opts.ParentID
+		}
+	}
+
 	// Resolve variables (for workflow type step rendering).
-	resolved, err := ResolveVariables(m, opts.Variables)
+	resolved, err := ResolveVariables(m, vars)
 	if err != nil {
 		return nil, err
 	}
@@ -835,10 +860,16 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 			})
 		}
 		// Synthesis description is enriched with leg references after leg items are created.
+		synthTitle := m.Synth.Title
+		synthDesc := m.Synth.Description
+		if target != nil {
+			synthTitle = renderTemplateField(synthTitle, target)
+			synthDesc = renderTemplateField(synthDesc, target)
+		}
 		children = append(children, childDef{
 			formulaID:   "synthesis",
-			title:       m.Synth.Title,
-			description: m.Synth.Description,
+			title:       synthTitle,
+			description: synthDesc,
 			needs:       m.Synth.DependsOn,
 			labels:      []string{"convoy-synthesis"},
 		})
