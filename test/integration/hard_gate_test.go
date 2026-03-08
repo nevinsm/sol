@@ -22,17 +22,17 @@ func TestHardGateAllCommands(t *testing.T) {
 	}{
 		// store commands
 		{"writ create", []string{"writ", "create", "--world=noworld", "--title=test"}},
-		{"writ status", []string{"writ", "status", "sol-00000000", "--world=noworld"}},
+		{"writ status", []string{"writ", "status", "sol-0000000000000000", "--world=noworld"}},
 		{"writ list", []string{"writ", "list", "--world=noworld"}},
-		{"writ update", []string{"writ", "update", "sol-00000000", "--world=noworld", "--status=closed"}},
-		{"writ close", []string{"writ", "close", "sol-00000000", "--world=noworld"}},
+		{"writ update", []string{"writ", "update", "sol-0000000000000000", "--world=noworld", "--status=closed"}},
+		{"writ close", []string{"writ", "close", "sol-0000000000000000", "--world=noworld"}},
 		{"writ query", []string{"writ", "query", "--world=noworld", "--sql=SELECT 1"}},
 		// writ dep commands
-		{"writ dep add", []string{"writ", "dep", "add", "sol-00000001", "sol-00000002", "--world=noworld"}},
-		{"writ dep remove", []string{"writ", "dep", "remove", "sol-00000001", "sol-00000002", "--world=noworld"}},
-		{"writ dep list", []string{"writ", "dep", "list", "sol-00000001", "--world=noworld"}},
+		{"writ dep add", []string{"writ", "dep", "add", "sol-0000000000000001", "sol-0000000000000002", "--world=noworld"}},
+		{"writ dep remove", []string{"writ", "dep", "remove", "sol-0000000000000001", "sol-0000000000000002", "--world=noworld"}},
+		{"writ dep list", []string{"writ", "dep", "list", "sol-0000000000000001", "--world=noworld"}},
 		// core commands
-		{"cast", []string{"cast", "sol-00000000", "--world=noworld"}},
+		{"cast", []string{"cast", "sol-0000000000000000", "--world=noworld"}},
 		{"status", []string{"status", "noworld"}},
 		{"prime", []string{"prime", "--world=noworld", "--agent=test"}},
 		{"resolve", []string{"resolve", "--world=noworld", "--agent=test"}},

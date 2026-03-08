@@ -24,8 +24,9 @@ var primeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if primeAgent == "" {
-			return fmt.Errorf("--agent is required")
+		agent, err := config.ResolveAgent(primeAgent)
+		if err != nil {
+			return err
 		}
 
 		// Look up agent to determine role.
@@ -35,8 +36,8 @@ var primeCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
-		agentID := world + "/" + primeAgent
-		agent, err := sphereStore.GetAgent(agentID)
+		agentID := world + "/" + agent
+		agentRecord, err := sphereStore.GetAgent(agentID)
 		if err != nil {
 			return fmt.Errorf("failed to get agent %q: %w", agentID, err)
 		}
@@ -47,7 +48,7 @@ var primeCmd = &cobra.Command{
 		}
 		defer worldStore.Close()
 
-		result, err := dispatch.Prime(world, primeAgent, agent.Role, worldStore)
+		result, err := dispatch.Prime(world, agent, agentRecord.Role, worldStore)
 		if err != nil {
 			return err
 		}

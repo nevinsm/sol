@@ -105,6 +105,9 @@ func init() {
 var writStatusJSON bool
 
 var writStatusRunE = func(cmd *cobra.Command, args []string) error {
+	if err := config.ValidateWritID(args[0]); err != nil {
+		return err
+	}
 	world, _ := cmd.Flags().GetString("world")
 	if world == "" {
 		return fmt.Errorf("--world is required")
@@ -239,6 +242,9 @@ var writUpdateCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.ValidateWritID(args[0]); err != nil {
+			return err
+		}
 		worldFlag, _ := cmd.Flags().GetString("world")
 		world, err := config.ResolveWorld(worldFlag)
 		if err != nil {
@@ -284,6 +290,9 @@ var writCloseCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.ValidateWritID(args[0]); err != nil {
+			return err
+		}
 		worldFlag, _ := cmd.Flags().GetString("world")
 		world, err := config.ResolveWorld(worldFlag)
 		if err != nil {

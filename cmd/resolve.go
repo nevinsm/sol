@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -23,24 +22,12 @@ var resolveCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := resolveWorld
-		agent := resolveAgent
-
-		// Infer from environment if not provided.
-		if world == "" {
-			world = os.Getenv("SOL_WORLD")
+		world, err := config.ResolveWorld(resolveWorld)
+		if err != nil {
+			return err
 		}
-		if agent == "" {
-			agent = os.Getenv("SOL_AGENT")
-		}
-
-		if world == "" {
-			return fmt.Errorf("--world is required (or set SOL_WORLD env var)")
-		}
-		if agent == "" {
-			return fmt.Errorf("--agent is required (or set SOL_AGENT env var)")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		agent, err := config.ResolveAgent(resolveAgent)
+		if err != nil {
 			return err
 		}
 

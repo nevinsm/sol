@@ -6,6 +6,7 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -25,6 +26,12 @@ var caravanDepAddCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fromID := args[0]
 		toID := args[1]
+		if err := config.ValidateCaravanID(fromID); err != nil {
+			return err
+		}
+		if err := config.ValidateCaravanID(toID); err != nil {
+			return err
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -55,6 +62,12 @@ var caravanDepRemoveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fromID := args[0]
 		toID := args[1]
+		if err := config.ValidateCaravanID(fromID); err != nil {
+			return err
+		}
+		if err := config.ValidateCaravanID(toID); err != nil {
+			return err
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -80,6 +93,9 @@ var caravanDepListCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
 		jsonOut, _ := cmd.Flags().GetBool("json")
 
 		sphereStore, err := store.OpenSphere()

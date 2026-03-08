@@ -92,7 +92,15 @@ var caravanAddCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
 		itemIDs := args[1:]
+		for _, id := range itemIDs {
+			if err := config.ValidateWritID(id); err != nil {
+				return err
+			}
+		}
 
 		worldFlag, _ := cmd.Flags().GetString("world")
 		world, err := config.ResolveWorld(worldFlag)
@@ -136,6 +144,9 @@ var caravanCheckCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -266,6 +277,9 @@ var caravanStatusCmd = &cobra.Command{
 		// Detailed status for a specific caravan.
 		if len(args) == 1 {
 			caravanID := args[0]
+			if err := config.ValidateCaravanID(caravanID); err != nil {
+				return err
+			}
 			caravan, err := sphereStore.GetCaravan(caravanID)
 			if err != nil {
 				return err
@@ -568,6 +582,9 @@ var caravanCommissionCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -602,6 +619,9 @@ var caravanDrydockCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -636,6 +656,9 @@ var caravanReopenCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -670,6 +693,9 @@ var caravanLaunchCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
 
 		worldFlag, _ := cmd.Flags().GetString("world")
 		world, err := config.ResolveWorld(worldFlag)
@@ -820,6 +846,15 @@ var caravanSetPhaseCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		all, _ := cmd.Flags().GetBool("all")
 		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
+		if !all {
+			// args[1] is a writ ID when not using --all.
+			if err := config.ValidateWritID(args[1]); err != nil {
+				return err
+			}
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -928,6 +963,9 @@ var caravanCloseCmd = &cobra.Command{
 
 		// Close a specific caravan.
 		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
 
 		caravan, err := sphereStore.GetCaravan(caravanID)
 		if err != nil {

@@ -58,11 +58,10 @@ The managed repo (repo/) is excluded — it can be re-cloned from source_repo.`,
 		if err != nil {
 			return err
 		}
+		defer worldStore.Close()
 		if err := worldStore.Checkpoint(); err != nil {
-			worldStore.Close()
 			return fmt.Errorf("failed to checkpoint world database: %w", err)
 		}
-		worldStore.Close()
 
 		// Open output file.
 		f, err := os.Create(output)

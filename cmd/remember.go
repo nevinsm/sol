@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
@@ -29,12 +28,9 @@ With one argument:  sol remember "value"  (key auto-generated from hash)`,
 		if err != nil {
 			return err
 		}
-		agent := rememberAgent
-		if agent == "" {
-			agent = os.Getenv("SOL_AGENT")
-		}
-		if agent == "" {
-			return fmt.Errorf("--agent is required (or set SOL_AGENT env var)")
+		agent, err := config.ResolveAgent(rememberAgent)
+		if err != nil {
+			return err
 		}
 
 		var key, value string

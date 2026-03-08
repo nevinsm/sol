@@ -292,6 +292,50 @@ func TestEnsureClaudeConfigDirNamedAccount(t *testing.T) {
 	}
 }
 
+func TestResolveAgentFlagSet(t *testing.T) {
+	t.Setenv("SOL_AGENT", "EnvAgent")
+	agent, err := ResolveAgent("FlagAgent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if agent != "FlagAgent" {
+		t.Fatalf("expected FlagAgent, got %q", agent)
+	}
+}
+
+func TestResolveAgentEnvFallback(t *testing.T) {
+	t.Setenv("SOL_AGENT", "EnvAgent")
+	agent, err := ResolveAgent("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if agent != "EnvAgent" {
+		t.Fatalf("expected EnvAgent, got %q", agent)
+	}
+}
+
+func TestResolveAgentNeitherSet(t *testing.T) {
+	t.Setenv("SOL_AGENT", "")
+	_, err := ResolveAgent("")
+	if err == nil {
+		t.Fatal("expected error when neither flag nor env is set")
+	}
+	if !strings.Contains(err.Error(), "--agent is required") {
+		t.Fatalf("expected '--agent is required' in error, got: %v", err)
+	}
+}
+
+func TestResolveAgentFlagWinsOverEnv(t *testing.T) {
+	t.Setenv("SOL_AGENT", "EnvAgent")
+	agent, err := ResolveAgent("FlagAgent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if agent != "FlagAgent" {
+		t.Fatalf("expected flag to win, got %q", agent)
+	}
+}
+
 func TestEnsureClaudeConfigDirLegacyFallback(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)

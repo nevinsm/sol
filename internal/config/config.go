@@ -132,6 +132,18 @@ func ValidateWorldName(name string) error {
 	return nil
 }
 
+// ResolveAgent returns the agent name from the flag value, falling back to
+// SOL_AGENT env var. Returns an error if neither is set.
+func ResolveAgent(flagValue string) (string, error) {
+	if flagValue != "" {
+		return flagValue, nil
+	}
+	if env := os.Getenv("SOL_AGENT"); env != "" {
+		return env, nil
+	}
+	return "", fmt.Errorf("--agent is required (or set SOL_AGENT env var)")
+}
+
 // ResolveWorld determines the world name from available sources.
 // Precedence: explicit flag value > SOL_WORLD env var > detect from cwd.
 // After resolution, validates the world exists via RequireWorld.

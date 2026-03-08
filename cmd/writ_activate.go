@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -24,25 +23,16 @@ var writActivateCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		writID := args[0]
-
-		world := activateWorld
-		agent := activateAgent
-
-		// Infer from environment if not provided.
-		if world == "" {
-			world = os.Getenv("SOL_WORLD")
-		}
-		if agent == "" {
-			agent = os.Getenv("SOL_AGENT")
+		if err := config.ValidateWritID(writID); err != nil {
+			return err
 		}
 
-		if world == "" {
-			return fmt.Errorf("--world is required (or set SOL_WORLD env var)")
+		world, err := config.ResolveWorld(activateWorld)
+		if err != nil {
+			return err
 		}
-		if agent == "" {
-			return fmt.Errorf("--agent is required (or set SOL_AGENT env var)")
-		}
-		if err := config.RequireWorld(world); err != nil {
+		agent, err := config.ResolveAgent(activateAgent)
+		if err != nil {
 			return err
 		}
 

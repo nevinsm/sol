@@ -29,7 +29,11 @@ var nudgeDrainCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		session := config.SessionName(world, nudgeDrainAgent)
+		agent, err := config.ResolveAgent(nudgeDrainAgent)
+		if err != nil {
+			return err
+		}
+		session := config.SessionName(world, agent)
 
 		// Drain pending messages.
 		messages, err := nudge.Drain(session)
@@ -64,6 +68,5 @@ func init() {
 	rootCmd.AddCommand(nudgeCmd)
 	nudgeCmd.AddCommand(nudgeDrainCmd)
 	nudgeDrainCmd.Flags().StringVar(&nudgeDrainWorld, "world", "", "world name (optional with SOL_WORLD or inside a world directory)")
-	nudgeDrainCmd.Flags().StringVar(&nudgeDrainAgent, "agent", "", "agent name")
-	nudgeDrainCmd.MarkFlagRequired("agent")
+	nudgeDrainCmd.Flags().StringVar(&nudgeDrainAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 }

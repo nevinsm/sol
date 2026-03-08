@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
@@ -29,12 +28,9 @@ var forgetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		agent := forgetAgent
-		if agent == "" {
-			agent = os.Getenv("SOL_AGENT")
-		}
-		if agent == "" {
-			return fmt.Errorf("--agent is required (or set SOL_AGENT env var)")
+		agent, err := config.ResolveAgent(forgetAgent)
+		if err != nil {
+			return err
 		}
 
 		if !forgetAll && len(args) == 0 {

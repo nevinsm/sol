@@ -10,6 +10,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func validateWritIDs(ids ...string) error {
+	for _, id := range ids {
+		if err := config.ValidateWritID(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 var depJSON bool
 
 var writDepCmd = &cobra.Command{
@@ -25,6 +34,9 @@ var writDepAddCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(2),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateWritIDs(args[0], args[1]); err != nil {
+			return err
+		}
 		worldFlag, _ := cmd.Flags().GetString("world")
 		world, err := config.ResolveWorld(worldFlag)
 		if err != nil {
@@ -53,6 +65,9 @@ var writDepRemoveCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(2),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateWritIDs(args[0], args[1]); err != nil {
+			return err
+		}
 		worldFlag, _ := cmd.Flags().GetString("world")
 		world, err := config.ResolveWorld(worldFlag)
 		if err != nil {
@@ -81,6 +96,9 @@ var writDepListCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.ValidateWritID(args[0]); err != nil {
+			return err
+		}
 		worldFlag, _ := cmd.Flags().GetString("world")
 		world, err := config.ResolveWorld(worldFlag)
 		if err != nil {

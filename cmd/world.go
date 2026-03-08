@@ -323,13 +323,12 @@ var worldDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		defer sphereStore.Close()
 
 		// Remove all sphere-level data for this world in a single transaction.
 		if err := sphereStore.DeleteWorldData(name); err != nil {
-			sphereStore.Close()
 			return err
 		}
-		sphereStore.Close()
 
 		// Delete world database file and SQLite sidecar files.
 		dbPath := filepath.Join(config.StoreDir(), name+".db")
@@ -587,7 +586,7 @@ to copy it.`,
 		if err != nil {
 			return err
 		}
-		worldStore.Close()
+		defer worldStore.Close()
 
 		// Copy database state from source.
 		if err := store.CloneWorldData(source, target, worldCloneIncludeHistory); err != nil {
