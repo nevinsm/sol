@@ -9,7 +9,7 @@ import (
 
 // --- Tether tests ---
 
-func TestTetherHappyPath(t *testing.T) {
+func TestTetherPersistentAgent(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
 	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "operator", 2, nil)
@@ -22,9 +22,9 @@ func TestTetherHappyPath(t *testing.T) {
 	}
 
 	result, err := Tether(TetherOpts{
-		AgentName:  "Meridian",
-		WritID: itemID,
-		World:      "ember",
+		AgentName: "Meridian",
+		WritID:    itemID,
+		World:     "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {
 		t.Fatalf("Tether failed: %v", err)
@@ -40,13 +40,9 @@ func TestTetherHappyPath(t *testing.T) {
 		t.Errorf("expected role envoy, got %q", result.AgentRole)
 	}
 
-	// Verify tether file was written with correct role-aware path.
-	tetherID, err := tether.Read("ember", "Meridian", "envoy")
-	if err != nil {
-		t.Fatalf("failed to read tether: %v", err)
-	}
-	if tetherID != itemID {
-		t.Errorf("tether has %q, expected %q", tetherID, itemID)
+	// Verify tether file was written.
+	if !tether.IsTetheredTo("ember", "Meridian", itemID, "envoy") {
+		t.Error("expected tether file to exist")
 	}
 
 	// Verify writ was updated.
@@ -70,7 +66,7 @@ func TestTetherHappyPath(t *testing.T) {
 		t.Errorf("expected agent state 'working', got %q", agent.State)
 	}
 	if agent.ActiveWrit != itemID {
-		t.Errorf("expected tether item %q, got %q", itemID, agent.ActiveWrit)
+		t.Errorf("expected active writ %q, got %q", itemID, agent.ActiveWrit)
 	}
 }
 
@@ -87,9 +83,9 @@ func TestTetherGovernor(t *testing.T) {
 	}
 
 	result, err := Tether(TetherOpts{
-		AgentName:  "governor",
-		WritID: itemID,
-		World:      "ember",
+		AgentName: "governor",
+		WritID:    itemID,
+		World:     "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {
 		t.Fatalf("Tether failed: %v", err)
@@ -100,16 +96,66 @@ func TestTetherGovernor(t *testing.T) {
 	}
 
 	// Verify tether file was written with governor role-aware path.
-	tetherID, err := tether.Read("ember", "governor", "governor")
-	if err != nil {
-		t.Fatalf("failed to read tether: %v", err)
-	}
-	if tetherID != itemID {
-		t.Errorf("tether has %q, expected %q", tetherID, itemID)
+	if !tether.IsTetheredTo("ember", "governor", itemID, "governor") {
+		t.Error("expected tether file to exist for governor")
 	}
 }
 
-func TestTetherOutpostAgent(t *testing.T) {
+func TestTetherSecondWrit(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	item1, err := worldStore.CreateWrit("First task", "First", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 1: %v", err)
+	}
+	item2, err := worldStore.CreateWrit("Second task", "Second", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 2: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Tether first writ.
+	_, err = Tether(TetherOpts{
+		AgentName: "Meridian",
+		WritID:    item1,
+		World:     "ember",
+	}, worldStore, sphereStore, nil)
+	if err != nil {
+		t.Fatalf("Tether first failed: %v", err)
+	}
+
+	// Tether second writ — should succeed.
+	_, err = Tether(TetherOpts{
+		AgentName: "Meridian",
+		WritID:    item2,
+		World:     "ember",
+	}, worldStore, sphereStore, nil)
+	if err != nil {
+		t.Fatalf("Tether second failed: %v", err)
+	}
+
+	// Both tether files should exist.
+	if !tether.IsTetheredTo("ember", "Meridian", item1, "envoy") {
+		t.Error("expected first tether file to exist")
+	}
+	if !tether.IsTetheredTo("ember", "Meridian", item2, "envoy") {
+		t.Error("expected second tether file to exist")
+	}
+
+	// First writ should still be the active_writ.
+	agent, err := sphereStore.GetAgent("ember/Meridian")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.ActiveWrit != item1 {
+		t.Errorf("expected active writ to remain %q (first), got %q", item1, agent.ActiveWrit)
+	}
+}
+
+func TestTetherRejectsOutpost(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
 	itemID, err := worldStore.CreateWrit("Add feature", "Add the feature", "operator", 2, nil)
@@ -121,22 +167,20 @@ func TestTetherOutpostAgent(t *testing.T) {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
-	// Tether should work even for outpost agents (no restriction like cast).
-	result, err := Tether(TetherOpts{
-		AgentName:  "Toast",
-		WritID: itemID,
-		World:      "ember",
+	_, err = Tether(TetherOpts{
+		AgentName: "Toast",
+		WritID:    itemID,
+		World:     "ember",
 	}, worldStore, sphereStore, nil)
-	if err != nil {
-		t.Fatalf("Tether failed: %v", err)
+	if err == nil {
+		t.Fatal("expected error for outpost agent")
 	}
-
-	if result.AgentRole != "agent" {
-		t.Errorf("expected role agent, got %q", result.AgentRole)
+	if want := `agent "ember/Toast" has role "agent" — only persistent roles (envoy, governor, forge) can use tether; outposts use sol cast`; err.Error() != want {
+		t.Errorf("unexpected error:\n  got:  %v\n  want: %s", err, want)
 	}
 }
 
-func TestTetherRejectsNonOpenItem(t *testing.T) {
+func TestTetherRejectsNonOpenWrit(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
 	itemID, err := worldStore.CreateWrit("Done task", "Already done", "operator", 2, nil)
@@ -152,42 +196,14 @@ func TestTetherRejectsNonOpenItem(t *testing.T) {
 	}
 
 	_, err = Tether(TetherOpts{
-		AgentName:  "Meridian",
-		WritID: itemID,
-		World:      "ember",
+		AgentName: "Meridian",
+		WritID:    itemID,
+		World:     "ember",
 	}, worldStore, sphereStore, nil)
 	if err == nil {
 		t.Fatal("expected error for non-open writ")
 	}
 	if want := `writ "` + itemID + `" has status "tethered", expected "open"`; err.Error() != want {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestTetherRejectsNonIdleAgent(t *testing.T) {
-	worldStore, sphereStore := setupStores(t)
-
-	itemID, err := worldStore.CreateWrit("New task", "Something new", "operator", 2, nil)
-	if err != nil {
-		t.Fatalf("failed to create writ: %v", err)
-	}
-
-	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
-		t.Fatalf("failed to create agent: %v", err)
-	}
-	if err := sphereStore.UpdateAgentState("ember/Meridian", "working", "sol-other"); err != nil {
-		t.Fatalf("failed to update agent: %v", err)
-	}
-
-	_, err = Tether(TetherOpts{
-		AgentName:  "Meridian",
-		WritID: itemID,
-		World:      "ember",
-	}, worldStore, sphereStore, nil)
-	if err == nil {
-		t.Fatal("expected error for non-idle agent")
-	}
-	if want := `agent "ember/Meridian" has state "working", expected "idle"`; err.Error() != want {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -201,9 +217,9 @@ func TestTetherRejectsUnknownAgent(t *testing.T) {
 	}
 
 	_, err = Tether(TetherOpts{
-		AgentName:  "Ghost",
-		WritID: itemID,
-		World:      "ember",
+		AgentName: "Ghost",
+		WritID:    itemID,
+		World:     "ember",
 	}, worldStore, sphereStore, nil)
 	if err == nil {
 		t.Fatal("expected error for unknown agent")
@@ -226,9 +242,9 @@ func TestUntetherHappyPath(t *testing.T) {
 
 	// First tether.
 	_, err = Tether(TetherOpts{
-		AgentName:  "Meridian",
-		WritID: itemID,
-		World:      "ember",
+		AgentName: "Meridian",
+		WritID:    itemID,
+		World:     "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {
 		t.Fatalf("Tether failed: %v", err)
@@ -237,6 +253,7 @@ func TestUntetherHappyPath(t *testing.T) {
 	// Now untether.
 	result, err := Untether(UntetherOpts{
 		AgentName: "Meridian",
+		WritID:    itemID,
 		World:     "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {
@@ -254,12 +271,8 @@ func TestUntetherHappyPath(t *testing.T) {
 	}
 
 	// Verify tether was cleared.
-	tetherID, err := tether.Read("ember", "Meridian", "envoy")
-	if err != nil {
-		t.Fatalf("failed to read tether: %v", err)
-	}
-	if tetherID != "" {
-		t.Errorf("expected empty tether, got %q", tetherID)
+	if tether.IsTetheredTo("ember", "Meridian", itemID, "envoy") {
+		t.Error("expected tether file to be removed")
 	}
 
 	// Verify writ was reset.
@@ -274,7 +287,7 @@ func TestUntetherHappyPath(t *testing.T) {
 		t.Errorf("expected empty assignee, got %q", item.Assignee)
 	}
 
-	// Verify agent was reset.
+	// Verify agent was reset to idle (no remaining tethers).
 	agent, err := sphereStore.GetAgent("ember/Meridian")
 	if err != nil {
 		t.Fatalf("failed to get agent: %v", err)
@@ -283,32 +296,134 @@ func TestUntetherHappyPath(t *testing.T) {
 		t.Errorf("expected agent state 'idle', got %q", agent.State)
 	}
 	if agent.ActiveWrit != "" {
-		t.Errorf("expected empty tether item, got %q", agent.ActiveWrit)
+		t.Errorf("expected empty active writ, got %q", agent.ActiveWrit)
 	}
 }
 
-func TestUntetherRejectsUntetheredAgent(t *testing.T) {
-	_, sphereStore := setupStores(t)
+func TestUntetherOneOfTwo(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	item1, err := worldStore.CreateWrit("First task", "First", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 1: %v", err)
+	}
+	item2, err := worldStore.CreateWrit("Second task", "Second", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 2: %v", err)
+	}
 
 	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
-	worldStore2, err := store.OpenWorld("ember")
-	if err != nil {
-		t.Fatalf("failed to open world store: %v", err)
+	// Tether both.
+	if _, err := Tether(TetherOpts{AgentName: "Meridian", WritID: item1, World: "ember"}, worldStore, sphereStore, nil); err != nil {
+		t.Fatalf("Tether first failed: %v", err)
 	}
-	defer worldStore2.Close()
+	if _, err := Tether(TetherOpts{AgentName: "Meridian", WritID: item2, World: "ember"}, worldStore, sphereStore, nil); err != nil {
+		t.Fatalf("Tether second failed: %v", err)
+	}
+
+	// Untether second — first should remain.
+	_, err = Untether(UntetherOpts{AgentName: "Meridian", WritID: item2, World: "ember"}, worldStore, sphereStore, nil)
+	if err != nil {
+		t.Fatalf("Untether failed: %v", err)
+	}
+
+	// First tether should still exist.
+	if !tether.IsTetheredTo("ember", "Meridian", item1, "envoy") {
+		t.Error("expected first tether to remain")
+	}
+	// Second tether should be gone.
+	if tether.IsTetheredTo("ember", "Meridian", item2, "envoy") {
+		t.Error("expected second tether to be removed")
+	}
+
+	// Agent should still be working (has remaining tethers).
+	agent, err := sphereStore.GetAgent("ember/Meridian")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "working" {
+		t.Errorf("expected agent state 'working', got %q", agent.State)
+	}
+
+	// Second writ should be open.
+	writ2, err := worldStore.GetWrit(item2)
+	if err != nil {
+		t.Fatalf("failed to get writ 2: %v", err)
+	}
+	if writ2.Status != "open" {
+		t.Errorf("expected writ 2 status 'open', got %q", writ2.Status)
+	}
+}
+
+func TestUntetherActiveWrit(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	item1, err := worldStore.CreateWrit("First task", "First", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 1: %v", err)
+	}
+	item2, err := worldStore.CreateWrit("Second task", "Second", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 2: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Tether both — first becomes active_writ.
+	if _, err := Tether(TetherOpts{AgentName: "Meridian", WritID: item1, World: "ember"}, worldStore, sphereStore, nil); err != nil {
+		t.Fatalf("Tether first failed: %v", err)
+	}
+	if _, err := Tether(TetherOpts{AgentName: "Meridian", WritID: item2, World: "ember"}, worldStore, sphereStore, nil); err != nil {
+		t.Fatalf("Tether second failed: %v", err)
+	}
+
+	// Untether the active writ (first).
+	_, err = Untether(UntetherOpts{AgentName: "Meridian", WritID: item1, World: "ember"}, worldStore, sphereStore, nil)
+	if err != nil {
+		t.Fatalf("Untether active writ failed: %v", err)
+	}
+
+	// Active writ should be cleared.
+	agent, err := sphereStore.GetAgent("ember/Meridian")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.ActiveWrit != "" {
+		t.Errorf("expected active writ cleared, got %q", agent.ActiveWrit)
+	}
+	// Agent should still be working (second tether remains).
+	if agent.State != "working" {
+		t.Errorf("expected agent state 'working', got %q", agent.State)
+	}
+}
+
+func TestUntetherRejectsNonTetheredWrit(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	itemID, err := worldStore.CreateWrit("Task", "Do it", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
 
 	_, err = Untether(UntetherOpts{
 		AgentName: "Meridian",
+		WritID:    itemID,
 		World:     "ember",
-	}, worldStore2, sphereStore, nil)
+	}, worldStore, sphereStore, nil)
 	if err == nil {
-		t.Fatal("expected error for untethered agent")
+		t.Fatal("expected error for non-tethered writ")
 	}
-	if want := `no work tethered for agent "Meridian" in world "ember"`; err.Error() != want {
-		t.Errorf("unexpected error: %v", err)
+	if want := `writ "` + itemID + `" is not tethered to agent "Meridian" in world "ember"`; err.Error() != want {
+		t.Errorf("unexpected error:\n  got:  %v\n  want: %s", err, want)
 	}
 }
 
@@ -326,9 +441,9 @@ func TestTetherThenUntetherRoundTrip(t *testing.T) {
 
 	// Tether.
 	_, err = Tether(TetherOpts{
-		AgentName:  "governor",
-		WritID: itemID,
-		World:      "ember",
+		AgentName: "governor",
+		WritID:    itemID,
+		World:     "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {
 		t.Fatalf("Tether failed: %v", err)
@@ -337,6 +452,7 @@ func TestTetherThenUntetherRoundTrip(t *testing.T) {
 	// Untether.
 	_, err = Untether(UntetherOpts{
 		AgentName: "governor",
+		WritID:    itemID,
 		World:     "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {
@@ -345,9 +461,9 @@ func TestTetherThenUntetherRoundTrip(t *testing.T) {
 
 	// Agent should be idle and retetherable.
 	_, err = Tether(TetherOpts{
-		AgentName:  "governor",
-		WritID: itemID,
-		World:      "ember",
+		AgentName: "governor",
+		WritID:    itemID,
+		World:     "ember",
 	}, worldStore, sphereStore, nil)
 	if err != nil {
 		t.Fatalf("Re-tether after untether failed: %v", err)

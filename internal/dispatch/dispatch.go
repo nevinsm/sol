@@ -348,116 +348,133 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	}, nil
 }
 
+// persistentRoles are agent roles that can use sol tether/untether.
+// Outpost agents must use sol cast instead.
+var persistentRoles = map[string]bool{
+	"envoy":    true,
+	"governor": true,
+	"forge":    true,
+}
+
 // TetherResult holds the output of a successful tether operation.
 type TetherResult struct {
-	WritID string
-	AgentName  string
-	AgentRole  string
+	WritID    string
+	AgentName string
+	AgentRole string
 }
 
 // TetherOpts holds the inputs for a tether operation.
 type TetherOpts struct {
-	AgentName  string
-	WritID string
-	World      string
+	AgentName string
+	WritID    string
+	World     string
 }
 
-// Tether binds a writ to an agent without creating worktrees or sessions.
-// Works with any agent role. For outpost agents that need worktrees, use Cast instead.
+// Tether binds a writ to a persistent agent without creating worktrees or sessions.
+// Rejects outpost agents (use Cast instead). Supports multiple concurrent tethers
+// per agent — only sets active_writ if no current active writ exists.
 // The logger parameter is optional — if nil, no events are emitted.
 func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, logger *events.Logger) (*TetherResult, error) {
 	agentID := opts.World + "/" + opts.AgentName
 
-	// 1. Acquire per-writ advisory lock.
+	// 1. Verify writ exists and is open.
+	item, err := worldStore.GetWrit(opts.WritID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get writ %q: %w", opts.WritID, err)
+	}
+	if item.Status != "open" {
+		return nil, fmt.Errorf("writ %q has status %q, expected \"open\"", opts.WritID, item.Status)
+	}
+
+	// 2. Verify agent exists and has a persistent role.
+	agent, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
+	}
+	if !persistentRoles[agent.Role] {
+		return nil, fmt.Errorf("agent %q has role %q — only persistent roles (envoy, governor, forge) can use tether; outposts use sol cast", agentID, agent.Role)
+	}
+
+	// 3. Acquire per-writ lock, then per-agent lock (consistent ordering).
 	lock, err := AcquireWritLock(opts.WritID)
 	if err != nil {
 		return nil, err
 	}
 	defer lock.Release()
 
-	// 2. Get agent.
-	agent, err := sphereStore.GetAgent(agentID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
-	}
-
-	// 3. Acquire per-agent lock.
 	agentLock, err := AcquireAgentLock(agentID)
 	if err != nil {
 		return nil, err
 	}
 	defer agentLock.Release()
 
-	// 4. Get writ.
-	item, err := worldStore.GetWrit(opts.WritID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get writ %q: %w", opts.WritID, err)
-	}
-
-	// 5. Validate state.
-	if item.Status != "open" {
-		return nil, fmt.Errorf("writ %q has status %q, expected \"open\"", opts.WritID, item.Status)
-	}
-	if agent.State != "idle" {
-		return nil, fmt.Errorf("agent %q has state %q, expected \"idle\"", agentID, agent.State)
-	}
-
-	// 6. Write tether file (role-aware path).
+	// 4. Create tether file in agent tether directory.
 	if err := tether.Write(opts.World, opts.AgentName, opts.WritID, agent.Role); err != nil {
 		return nil, fmt.Errorf("failed to write tether: %w", err)
 	}
 
-	// 7. Update writ: status → tethered, assignee → agent ID.
+	// 5. Update writ: status → tethered, assignee → agent ID.
 	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
 		Status:   "tethered",
 		Assignee: agent.ID,
 	}); err != nil {
-		// Rollback tether.
-		tether.Clear(opts.World, opts.AgentName, agent.Role)
+		// Rollback tether file.
+		tether.ClearOne(opts.World, opts.AgentName, opts.WritID, agent.Role)
 		return nil, fmt.Errorf("failed to update writ: %w", err)
 	}
 
-	// 8. Update agent: state → working, active_writ → writ ID.
-	if err := sphereStore.UpdateAgentState(agentID, "working", opts.WritID); err != nil {
-		// Rollback tether + writ.
-		tether.Clear(opts.World, opts.AgentName, agent.Role)
-		worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"})
-		return nil, fmt.Errorf("failed to update agent state: %w", err)
+	// 6. Update agent: set working (if was idle), set active_writ only if none.
+	if agent.State == "idle" {
+		if err := sphereStore.UpdateAgentState(agentID, "working", opts.WritID); err != nil {
+			// Rollback tether + writ.
+			tether.ClearOne(opts.World, opts.AgentName, opts.WritID, agent.Role)
+			worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"})
+			return nil, fmt.Errorf("failed to update agent state: %w", err)
+		}
+	} else if agent.ActiveWrit == "" {
+		// Already working but no active writ — set this as active.
+		if err := sphereStore.UpdateAgentState(agentID, agent.State, opts.WritID); err != nil {
+			tether.ClearOne(opts.World, opts.AgentName, opts.WritID, agent.Role)
+			worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"})
+			return nil, fmt.Errorf("failed to update agent active writ: %w", err)
+		}
 	}
+	// If already working with an active_writ, leave it unchanged.
 
-	// 9. Emit event.
+	// 7. Emit event.
 	if logger != nil {
 		logger.Emit(events.EventTether, "sol", "operator", "both", map[string]string{
 			"writ_id": opts.WritID,
-			"agent":        opts.AgentName,
-			"world":        opts.World,
-			"role":         agent.Role,
+			"agent":   opts.AgentName,
+			"world":   opts.World,
+			"role":    agent.Role,
 		})
 	}
 
 	return &TetherResult{
-		WritID: opts.WritID,
-		AgentName:  opts.AgentName,
-		AgentRole:  agent.Role,
+		WritID:    opts.WritID,
+		AgentName: opts.AgentName,
+		AgentRole: agent.Role,
 	}, nil
 }
 
 // UntetherResult holds the output of a successful untether operation.
 type UntetherResult struct {
-	WritID string
-	AgentName  string
-	AgentRole  string
+	WritID    string
+	AgentName string
+	AgentRole string
 }
 
 // UntetherOpts holds the inputs for an untether operation.
 type UntetherOpts struct {
 	AgentName string
+	WritID    string
 	World     string
 }
 
-// Untether unbinds a writ from an agent without stopping sessions or cleaning worktrees.
-// Reverses the state changes made by Tether: clears tether file, resets writ to open,
-// and resets agent to idle.
+// Untether unbinds a specific writ from an agent without stopping sessions.
+// Removes only the specified tether file. If no tethers remain, agent goes idle.
+// If the untethered writ was the active_writ, clears it from the DB.
 // The logger parameter is optional — if nil, no events are emitted.
 func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore, logger *events.Logger) (*UntetherResult, error) {
 	agentID := opts.World + "/" + opts.AgentName
@@ -468,17 +485,13 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
 	}
 
-	// 2. Read tether to get writ ID.
-	writID, err := tether.Read(opts.World, opts.AgentName, agent.Role)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read tether: %w", err)
-	}
-	if writID == "" {
-		return nil, fmt.Errorf("no work tethered for agent %q in world %q", opts.AgentName, opts.World)
+	// 2. Verify writ is tethered to this agent.
+	if !tether.IsTetheredTo(opts.World, opts.AgentName, opts.WritID, agent.Role) {
+		return nil, fmt.Errorf("writ %q is not tethered to agent %q in world %q", opts.WritID, opts.AgentName, opts.World)
 	}
 
 	// 3. Acquire locks: writ first, then agent (consistent ordering).
-	lock, err := AcquireWritLock(writID)
+	lock, err := AcquireWritLock(opts.WritID)
 	if err != nil {
 		return nil, err
 	}
@@ -490,38 +503,52 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 	}
 	defer agentLock.Release()
 
-	// 4. Clear tether file.
-	if err := tether.Clear(opts.World, opts.AgentName, agent.Role); err != nil {
+	// 4. Remove single tether file.
+	if err := tether.ClearOne(opts.World, opts.AgentName, opts.WritID, agent.Role); err != nil {
 		return nil, fmt.Errorf("failed to clear tether: %w", err)
 	}
 
 	// 5. Update writ: status → open, assignee → clear.
-	if err := worldStore.UpdateWrit(writID, store.WritUpdates{
+	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
 		Status:   "open",
 		Assignee: "-",
 	}); err != nil {
 		return nil, fmt.Errorf("failed to update writ: %w", err)
 	}
 
-	// 6. Update agent: state → idle, active_writ → clear.
-	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
-		return nil, fmt.Errorf("failed to update agent state: %w", err)
+	// 6. If this was the active_writ, clear it.
+	// If no remaining tethers, set agent to idle.
+	remaining, err := tether.List(opts.World, opts.AgentName, agent.Role)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list remaining tethers: %w", err)
+	}
+
+	if len(remaining) == 0 {
+		// No more tethers — go idle.
+		if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+			return nil, fmt.Errorf("failed to update agent state: %w", err)
+		}
+	} else if agent.ActiveWrit == opts.WritID {
+		// Active writ was untethered — clear it but stay working.
+		if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
+			return nil, fmt.Errorf("failed to clear active writ: %w", err)
+		}
 	}
 
 	// 7. Emit event.
 	if logger != nil {
 		logger.Emit(events.EventUntether, "sol", "operator", "both", map[string]string{
-			"writ_id": writID,
-			"agent":        opts.AgentName,
-			"world":        opts.World,
-			"role":         agent.Role,
+			"writ_id": opts.WritID,
+			"agent":   opts.AgentName,
+			"world":   opts.World,
+			"role":    agent.Role,
 		})
 	}
 
 	return &UntetherResult{
-		WritID: writID,
-		AgentName:  opts.AgentName,
-		AgentRole:  agent.Role,
+		WritID:    opts.WritID,
+		AgentName: opts.AgentName,
+		AgentRole: agent.Role,
 	}, nil
 }
 

@@ -10,17 +10,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var tetherWorld string
+var (
+	tetherWorld string
+	tetherAgent string
+)
 
 var tetherCmd = &cobra.Command{
-	Use:          "tether <agent-name> <writ-id>",
-	Short:        "Bind a writ to an agent (any role)",
+	Use:          "tether <writ-id>",
+	Short:        "Bind a writ to a persistent agent (envoy, governor, forge)",
+	Long:         "Bind a writ to a persistent agent without creating a worktree or launching a session.\nOutpost agents must use sol cast instead.",
 	GroupID:      groupAgents,
-	Args:         cobra.ExactArgs(2),
+	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		agentName := args[0]
-		writID := args[1]
+		writID := args[0]
 		world, err := config.ResolveWorld(tetherWorld)
 		if err != nil {
 			return err
@@ -41,9 +44,9 @@ var tetherCmd = &cobra.Command{
 		logger := events.NewLogger(config.Home())
 
 		result, err := dispatch.Tether(dispatch.TetherOpts{
-			AgentName:  agentName,
-			WritID: writID,
-			World:      world,
+			AgentName: tetherAgent,
+			WritID:    writID,
+			World:     world,
 		}, worldStore, sphereStore, logger)
 		if err != nil {
 			return err
@@ -56,5 +59,7 @@ var tetherCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(tetherCmd)
+	tetherCmd.Flags().StringVar(&tetherAgent, "agent", "", "agent name (required)")
 	tetherCmd.Flags().StringVar(&tetherWorld, "world", "", "world name")
+	tetherCmd.MarkFlagRequired("agent")
 }

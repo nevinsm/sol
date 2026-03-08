@@ -67,8 +67,8 @@ Quota state is stored at `$SOL_HOME/.accounts/runtime/quota.json`. The scan comm
 | Command | Description |
 |---------|-------------|
 | `sol cast <writ-id>` | Assign a writ to an agent and start its session |
-| `sol tether <agent-name> <writ-id>` | Bind a writ to an agent (any role) |
-| `sol untether <agent-name>` | Unbind a writ from an agent (any role) |
+| `sol tether <writ-id>` | Bind a writ to a persistent agent (envoy, governor, forge) |
+| `sol untether <writ-id>` | Unbind a writ from a persistent agent |
 | `sol prime` | Assemble and print execution context for an agent |
 | `sol resolve` | Signal work completion — code writs push branch and create MR; non-code writs close directly |
 

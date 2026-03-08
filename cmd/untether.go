@@ -10,16 +10,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var untetherWorld string
+var (
+	untetherWorld string
+	untetherAgent string
+)
 
 var untetherCmd = &cobra.Command{
-	Use:          "untether <agent-name>",
-	Short:        "Unbind a writ from an agent (any role)",
+	Use:          "untether <writ-id>",
+	Short:        "Unbind a writ from a persistent agent",
+	Long:         "Unbind a specific writ from an agent without stopping the session.\nIf no tethers remain, the agent goes idle.",
 	GroupID:      groupAgents,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		agentName := args[0]
+		writID := args[0]
 		world, err := config.ResolveWorld(untetherWorld)
 		if err != nil {
 			return err
@@ -40,7 +44,8 @@ var untetherCmd = &cobra.Command{
 		logger := events.NewLogger(config.Home())
 
 		result, err := dispatch.Untether(dispatch.UntetherOpts{
-			AgentName: agentName,
+			AgentName: untetherAgent,
+			WritID:    writID,
 			World:     world,
 		}, worldStore, sphereStore, logger)
 		if err != nil {
@@ -54,5 +59,7 @@ var untetherCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(untetherCmd)
+	untetherCmd.Flags().StringVar(&untetherAgent, "agent", "", "agent name (required)")
 	untetherCmd.Flags().StringVar(&untetherWorld, "world", "", "world name")
+	untetherCmd.MarkFlagRequired("agent")
 }
