@@ -136,6 +136,9 @@ type Model struct {
 	dirty     bool
 	viewCache *string
 
+	// Confirmation overlay.
+	confirm confirmModel
+
 	// State-change highlight tracking (progressive fade).
 	prevSphereHealth string
 	prevWorldHealth  string
@@ -213,6 +216,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		m.dirty = true
+
+		// Confirmation overlay: captures all input while active.
+		if m.confirm.active {
+			consumed, cmd := m.confirm.update(msg)
+			if consumed {
+				return m, cmd
+			}
+		}
 
 		// Help overlay: any key dismisses it.
 		if m.showHelp {
@@ -357,6 +368,11 @@ func (m Model) View() string {
 			"\n  Terminal too small (%dx%d).\n  Minimum size: %dx%d.\n",
 			m.width, m.height, minTermWidth, minTermHeight,
 		)
+	}
+
+	// Confirmation overlay.
+	if m.confirm.active {
+		return m.confirm.view(m.width, m.height)
 	}
 
 	// Help overlay.
