@@ -275,6 +275,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Animation tick (~30 FPS) — drives visual state.
 		m.dirty = true
 		m.decayHighlights()
+		m.feed.decayAnimation()
 
 		// Route to active sub-view for spinner frame updates.
 		switch m.activeView() {

@@ -9,6 +9,12 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 )
 
+// feedFadeLevels is the number of brightness levels for new-event highlights.
+const feedFadeLevels = 4
+
+// feedFadeLevelDuration is how long each fade level persists before decaying.
+const feedFadeLevelDuration = 375 * time.Millisecond
+
 // feedModel manages the activity feed panel at the bottom of the dashboard.
 type feedModel struct {
 	solHome string
@@ -17,6 +23,10 @@ type feedModel struct {
 	events    []events.Event
 	lastSeen  time.Time
 	feedLines int // display height (5-8 lines depending on terminal)
+
+	// Highlight animation state.
+	newCount  int       // number of "new" events (counting from end of slice)
+	fadeStart time.Time // when the current fade cycle began
 }
 
 func newFeedModel(solHome, world string) feedModel {
@@ -64,6 +74,10 @@ func (fm *feedModel) refresh() {
 		fm.events = fm.events[len(fm.events)-20:]
 	}
 	fm.lastSeen = fm.events[len(fm.events)-1].Timestamp
+
+	// Mark new events for highlight animation.
+	fm.newCount += len(newEvts)
+	fm.fadeStart = time.Now()
 }
 
 // filterWorld filters events to the current world when in world view.
@@ -113,6 +127,28 @@ func (fm *feedModel) setHeight(termHeight int) {
 	}
 }
 
+// fadeLevel computes the current fade intensity from the time elapsed since fadeStart.
+// Returns feedFadeLevels (brightest) immediately after new events, decaying to 0.
+func (fm *feedModel) fadeLevel() int {
+	if fm.newCount == 0 || fm.fadeStart.IsZero() {
+		return 0
+	}
+	elapsed := time.Since(fm.fadeStart)
+	level := feedFadeLevels - int(elapsed/feedFadeLevelDuration)
+	if level < 0 {
+		return 0
+	}
+	return level
+}
+
+// decayAnimation is called from the root model on animation ticks.
+// When the fade has fully decayed, it clears newCount so events render normally.
+func (fm *feedModel) decayAnimation() {
+	if fm.newCount > 0 && fm.fadeLevel() == 0 {
+		fm.newCount = 0
+	}
+}
+
 // view renders the feed panel with separator.
 func (fm feedModel) view(width int) string {
 	var b strings.Builder
@@ -134,9 +170,16 @@ func (fm feedModel) view(width int) string {
 		shown = len(fm.events)
 	}
 
+	level := fm.fadeLevel()
+	highlightThreshold := len(fm.events) - fm.newCount // events at or after this index are "new"
+
 	for i := len(fm.events) - 1; i >= len(fm.events)-shown; i-- {
 		line := formatEvent(fm.events[i], width)
-		b.WriteString(dimStyle.Render(line))
+		if fm.newCount > 0 && i >= highlightThreshold && level > 0 {
+			b.WriteString(feedHighlightAtLevel(level).Render(line))
+		} else {
+			b.WriteString(dimStyle.Render(line))
+		}
 		b.WriteString("\n")
 	}
 
