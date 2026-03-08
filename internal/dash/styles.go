@@ -34,8 +34,30 @@ var (
 	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))              // gray
 	selectStyle    = lipgloss.NewStyle().Background(lipgloss.Color("236")).Bold(true) // row highlight
 	focusStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))  // focused section header (cyan)
-	highlightStyle = lipgloss.NewStyle().Background(lipgloss.Color("237"))            // state-change highlight
 )
+
+// highlightMaxLevel is the initial intensity level for state-change highlights.
+const highlightMaxLevel = 5
+
+// highlightColors maps highlight intensity levels to progressively dimmer background colors.
+// Level 5 is the brightest, level 1 is barely visible, level 0 means no highlight.
+var highlightColors = [6]string{
+	"",    // level 0: no highlight
+	"235", // level 1: barely visible
+	"236", // level 2
+	"237", // level 3: matches original highlightStyle
+	"238", // level 4
+	"239", // level 5: brightest
+}
+
+// highlightAtLevel returns a style with the background color for the given highlight level.
+// Returns an empty style for level 0 (no highlight).
+func highlightAtLevel(level int) lipgloss.Style {
+	if level <= 0 || level > 5 {
+		return lipgloss.NewStyle()
+	}
+	return lipgloss.NewStyle().Background(lipgloss.Color(highlightColors[level]))
+}
 
 // Health badge strings — same semantics as render.go.
 var (
@@ -47,10 +69,10 @@ var (
 )
 
 func healthBadge(health string) string {
-	return healthBadgeWithEmphasis(health, false)
+	return healthBadgeWithEmphasis(health, 0)
 }
 
-func healthBadgeWithEmphasis(health string, emphasis bool) string {
+func healthBadgeWithEmphasis(health string, level int) string {
 	var badge string
 	switch health {
 	case "healthy":
@@ -64,8 +86,9 @@ func healthBadgeWithEmphasis(health string, emphasis bool) string {
 	default:
 		badge = unknownBadge
 	}
-	if emphasis {
-		return lipgloss.NewStyle().Bold(true).Render(badge)
+	if level > 0 {
+		style := highlightAtLevel(level).Bold(true)
+		return style.Render(badge)
 	}
 	return badge
 }
