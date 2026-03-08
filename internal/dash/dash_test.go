@@ -2301,3 +2301,289 @@ func TestWorldViewSectionOrderingWithSummaries(t *testing.T) {
 		t.Error("Caravans should come before Merge Queue")
 	}
 }
+
+// --- Confirmation overlay tests ---
+
+func TestConfirmModelShowAndDismiss(t *testing.T) {
+	var c confirmModel
+
+	if c.active {
+		t.Fatal("confirm should start inactive")
+	}
+
+	called := false
+	c.show("Delete item?", "This cannot be undone.", func() tea.Msg {
+		called = true
+		return nil
+	})
+
+	if !c.active {
+		t.Fatal("confirm should be active after show()")
+	}
+	if c.title != "Delete item?" {
+		t.Errorf("title = %q, want %q", c.title, "Delete item?")
+	}
+	if c.detail != "This cannot be undone." {
+		t.Errorf("detail = %q, want %q", c.detail, "This cannot be undone.")
+	}
+
+	c.dismiss()
+	if c.active {
+		t.Fatal("confirm should be inactive after dismiss()")
+	}
+	if called {
+		t.Fatal("onYes should not have been called on dismiss")
+	}
+}
+
+func TestConfirmModelUpdateYes(t *testing.T) {
+	var c confirmModel
+	executed := false
+	c.show("Confirm?", "Detail.", func() tea.Msg {
+		executed = true
+		return nil
+	})
+
+	consumed, cmd := c.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if !consumed {
+		t.Fatal("y key should be consumed")
+	}
+	if cmd == nil {
+		t.Fatal("y key should return the onYes command")
+	}
+	if c.active {
+		t.Fatal("overlay should be dismissed after y")
+	}
+
+	// Execute the returned command.
+	cmd()
+	if !executed {
+		t.Fatal("onYes command should have executed")
+	}
+}
+
+func TestConfirmModelUpdateEnter(t *testing.T) {
+	var c confirmModel
+	executed := false
+	c.show("Confirm?", "", func() tea.Msg {
+		executed = true
+		return nil
+	})
+
+	consumed, cmd := c.update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !consumed {
+		t.Fatal("enter key should be consumed")
+	}
+	if cmd == nil {
+		t.Fatal("enter key should return the onYes command")
+	}
+	if c.active {
+		t.Fatal("overlay should be dismissed after enter")
+	}
+
+	cmd()
+	if !executed {
+		t.Fatal("onYes command should have executed")
+	}
+}
+
+func TestConfirmModelUpdateNo(t *testing.T) {
+	var c confirmModel
+	c.show("Confirm?", "Detail.", func() tea.Msg {
+		t.Fatal("onYes should not be called on n")
+		return nil
+	})
+
+	consumed, cmd := c.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if !consumed {
+		t.Fatal("n key should be consumed")
+	}
+	if cmd != nil {
+		t.Fatal("n key should not return a command")
+	}
+	if c.active {
+		t.Fatal("overlay should be dismissed after n")
+	}
+}
+
+func TestConfirmModelUpdateEsc(t *testing.T) {
+	var c confirmModel
+	c.show("Confirm?", "", func() tea.Msg {
+		t.Fatal("onYes should not be called on esc")
+		return nil
+	})
+
+	consumed, cmd := c.update(tea.KeyMsg{Type: tea.KeyEscape})
+	if !consumed {
+		t.Fatal("esc key should be consumed")
+	}
+	if cmd != nil {
+		t.Fatal("esc should not return a command")
+	}
+	if c.active {
+		t.Fatal("overlay should be dismissed after esc")
+	}
+}
+
+func TestConfirmModelUpdateQ(t *testing.T) {
+	var c confirmModel
+	c.show("Confirm?", "", func() tea.Msg {
+		t.Fatal("onYes should not be called on q")
+		return nil
+	})
+
+	consumed, cmd := c.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if !consumed {
+		t.Fatal("q key should be consumed")
+	}
+	if cmd != nil {
+		t.Fatal("q should not return a command")
+	}
+	if c.active {
+		t.Fatal("overlay should be dismissed after q")
+	}
+}
+
+func TestConfirmModelCapturesUnrelatedKeys(t *testing.T) {
+	var c confirmModel
+	c.show("Confirm?", "", func() tea.Msg { return nil })
+
+	// Other keys should be consumed but do nothing.
+	consumed, cmd := c.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if !consumed {
+		t.Fatal("unrelated key should be consumed while overlay is active")
+	}
+	if cmd != nil {
+		t.Fatal("unrelated key should not return a command")
+	}
+	if !c.active {
+		t.Fatal("overlay should remain active on unrelated keys")
+	}
+}
+
+func TestConfirmModelInactiveDoesNotConsume(t *testing.T) {
+	var c confirmModel // not active
+
+	consumed, cmd := c.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if consumed {
+		t.Fatal("inactive overlay should not consume keys")
+	}
+	if cmd != nil {
+		t.Fatal("inactive overlay should not return commands")
+	}
+}
+
+func TestConfirmModelViewRendersContent(t *testing.T) {
+	var c confirmModel
+	c.show("Restart Nova?", "This will kill the session.", func() tea.Msg { return nil })
+
+	output := c.view(80, 24)
+
+	checks := []string{
+		"Restart Nova?",
+		"This will kill the session.",
+		"y confirm",
+		"n cancel",
+	}
+
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("confirm view missing %q", check)
+		}
+	}
+}
+
+func TestConfirmModelViewInactive(t *testing.T) {
+	var c confirmModel // not active
+
+	output := c.view(80, 24)
+	if output != "" {
+		t.Errorf("inactive confirm view should return empty string, got %q", output)
+	}
+}
+
+func TestConfirmModelViewWordWraps(t *testing.T) {
+	var c confirmModel
+	c.show("Title", "This is a really long detail message that should be word wrapped to multiple lines for readability.", func() tea.Msg { return nil })
+
+	output := c.view(80, 30)
+
+	if !strings.Contains(output, "Title") {
+		t.Error("confirm view missing title")
+	}
+	if !strings.Contains(output, "word wrapped") {
+		t.Error("confirm view missing detail text")
+	}
+}
+
+func TestWordWrap(t *testing.T) {
+	tests := []struct {
+		input string
+		width int
+		want  int // expected line count
+	}{
+		{"short", 20, 1},
+		{"this is a longer text that needs wrapping", 15, 4},
+		{"", 20, 0},
+		{"single", 100, 1},
+	}
+
+	for _, tt := range tests {
+		result := wordWrap(tt.input, tt.width)
+		if tt.want == 0 {
+			if result != "" {
+				t.Errorf("wordWrap(%q, %d) = %q, want empty", tt.input, tt.width, result)
+			}
+			continue
+		}
+		lines := strings.Split(result, "\n")
+		if len(lines) != tt.want {
+			t.Errorf("wordWrap(%q, %d) = %d lines, want %d", tt.input, tt.width, len(lines), tt.want)
+		}
+	}
+}
+
+func TestModelConfirmOverlayBlocksKeys(t *testing.T) {
+	m := NewModel(Config{
+		SOLHome: t.TempDir(),
+	})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	// Activate the confirm overlay.
+	m.confirm.show("Confirm?", "Detail.", func() tea.Msg { return nil })
+
+	// 'r' should be consumed by confirm, not trigger a refresh.
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	updated := result.(Model)
+	if !updated.confirm.active {
+		t.Error("confirm should still be active — r is not a dismiss key")
+	}
+
+	// '?' should be consumed too, not toggle help.
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	updated = result.(Model)
+	if updated.showHelp {
+		t.Error("help should not be shown while confirm is active")
+	}
+}
+
+func TestModelConfirmOverlayRendered(t *testing.T) {
+	m := NewModel(Config{
+		SOLHome: t.TempDir(),
+	})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	m.confirm.show("Restart Agent?", "This is destructive.", func() tea.Msg { return nil })
+
+	output := m.View()
+	if !strings.Contains(output, "Restart Agent?") {
+		t.Error("View() should render the confirm overlay when active")
+	}
+	if !strings.Contains(output, "This is destructive.") {
+		t.Error("View() should render confirm detail")
+	}
+}
