@@ -272,6 +272,148 @@ func (s *Store) AggregateTokens(agentName string) ([]TokenSummary, error) {
 	return summaries, nil
 }
 
+// TokensForWrit sums token usage across all history entries for a writ,
+// grouped by model. Returns per-model totals.
+func (s *Store) TokensForWrit(writID string) ([]TokenSummary, error) {
+	rows, err := s.db.Query(
+		`SELECT tu.model,
+		        SUM(tu.input_tokens),
+		        SUM(tu.output_tokens),
+		        SUM(tu.cache_read_tokens),
+		        SUM(tu.cache_creation_tokens)
+		 FROM token_usage tu
+		 JOIN agent_history ah ON tu.history_id = ah.id
+		 WHERE ah.writ_id = ?
+		 GROUP BY tu.model
+		 ORDER BY tu.model`,
+		writID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate tokens for writ %q: %w", writID, err)
+	}
+	defer rows.Close()
+
+	var summaries []TokenSummary
+	for rows.Next() {
+		var ts TokenSummary
+		if err := rows.Scan(&ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens); err != nil {
+			return nil, fmt.Errorf("failed to scan token summary: %w", err)
+		}
+		summaries = append(summaries, ts)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating token summaries: %w", err)
+	}
+	return summaries, nil
+}
+
+// TokensForWorld sums all token usage in the world database, grouped by model.
+// Returns per-model totals across all agents and writs.
+func (s *Store) TokensForWorld() ([]TokenSummary, error) {
+	rows, err := s.db.Query(
+		`SELECT tu.model,
+		        SUM(tu.input_tokens),
+		        SUM(tu.output_tokens),
+		        SUM(tu.cache_read_tokens),
+		        SUM(tu.cache_creation_tokens)
+		 FROM token_usage tu
+		 GROUP BY tu.model
+		 ORDER BY tu.model`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate world tokens: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []TokenSummary
+	for rows.Next() {
+		var ts TokenSummary
+		if err := rows.Scan(&ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens); err != nil {
+			return nil, fmt.Errorf("failed to scan token summary: %w", err)
+		}
+		summaries = append(summaries, ts)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating token summaries: %w", err)
+	}
+	return summaries, nil
+}
+
+// TokensByWritForAgent returns token usage for a specific agent, broken down
+// by writ ID and model. The returned map is keyed by writ ID, with each value
+// being a slice of per-model TokenSummary entries.
+func (s *Store) TokensByWritForAgent(agentName string) (map[string][]TokenSummary, error) {
+	rows, err := s.db.Query(
+		`SELECT ah.writ_id,
+		        tu.model,
+		        SUM(tu.input_tokens),
+		        SUM(tu.output_tokens),
+		        SUM(tu.cache_read_tokens),
+		        SUM(tu.cache_creation_tokens)
+		 FROM token_usage tu
+		 JOIN agent_history ah ON tu.history_id = ah.id
+		 WHERE ah.agent_name = ?
+		 GROUP BY ah.writ_id, tu.model
+		 ORDER BY ah.writ_id, tu.model`,
+		agentName,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate tokens by writ for agent %q: %w", agentName, err)
+	}
+	defer rows.Close()
+
+	result := make(map[string][]TokenSummary)
+	for rows.Next() {
+		var writID sql.NullString
+		var ts TokenSummary
+		if err := rows.Scan(&writID, &ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens); err != nil {
+			return nil, fmt.Errorf("failed to scan token summary: %w", err)
+		}
+		key := writID.String
+		result[key] = append(result[key], ts)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating token summaries: %w", err)
+	}
+	return result, nil
+}
+
+// TokensSince sums token usage for history entries that started at or after
+// the given time, grouped by model. Returns per-model totals.
+func (s *Store) TokensSince(since time.Time) ([]TokenSummary, error) {
+	sinceStr := since.UTC().Format(time.RFC3339)
+	rows, err := s.db.Query(
+		`SELECT tu.model,
+		        SUM(tu.input_tokens),
+		        SUM(tu.output_tokens),
+		        SUM(tu.cache_read_tokens),
+		        SUM(tu.cache_creation_tokens)
+		 FROM token_usage tu
+		 JOIN agent_history ah ON tu.history_id = ah.id
+		 WHERE ah.started_at >= ?
+		 GROUP BY tu.model
+		 ORDER BY tu.model`,
+		sinceStr,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate tokens since %s: %w", sinceStr, err)
+	}
+	defer rows.Close()
+
+	var summaries []TokenSummary
+	for rows.Next() {
+		var ts TokenSummary
+		if err := rows.Scan(&ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens); err != nil {
+			return nil, fmt.Errorf("failed to scan token summary: %w", err)
+		}
+		summaries = append(summaries, ts)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating token summaries: %w", err)
+	}
+	return summaries, nil
+}
+
 // AgentMergeRequestSummary holds aggregate merge stats for an agent's writs.
 type AgentMergeRequestSummary struct {
 	TotalMRs     int
