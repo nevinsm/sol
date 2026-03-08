@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
@@ -80,6 +82,70 @@ var prefectRunCmd = &cobra.Command{
 	},
 }
 
+var prefectStartCmd = &cobra.Command{
+	Use:          "start",
+	Short:        "Start the prefect as a background process",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pid, err := prefect.ReadPID()
+		if err != nil {
+			return err
+		}
+		if pid > 0 && prefect.IsRunning(pid) {
+			fmt.Printf("Prefect already running (pid %d)\n", pid)
+			return nil
+		}
+
+		// Clear stale PID if any.
+		if pid > 0 {
+			_ = prefect.ClearPID()
+		}
+
+		solBin, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("failed to find sol binary: %w", err)
+		}
+
+		if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
+			return fmt.Errorf("failed to create runtime directory: %w", err)
+		}
+
+		logPath := filepath.Join(config.RuntimeDir(), "prefect.log")
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			return fmt.Errorf("failed to open log file: %w", err)
+		}
+
+		proc := exec.Command(solBin, "prefect", "run")
+		proc.Stdout = logFile
+		proc.Stderr = logFile
+		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+		if err := proc.Start(); err != nil {
+			logFile.Close()
+			return fmt.Errorf("failed to start prefect: %w", err)
+		}
+
+		newPID := proc.Process.Pid
+		logFile.Close()
+
+		// Don't write PID — prefect.Run() writes its own.
+		_ = proc.Process.Release()
+
+		// Wait briefly and confirm alive.
+		time.Sleep(time.Second)
+		if prefect.IsRunning(newPID) {
+			fmt.Printf("Prefect started (pid %d)\n", newPID)
+		} else {
+			return fmt.Errorf("prefect exited immediately (check %s)", logPath)
+		}
+
+		return nil
+	},
+}
+
 var prefectStopCmd = &cobra.Command{
 	Use:          "stop",
 	Short:        "Stop the running prefect",
@@ -108,6 +174,7 @@ var prefectStopCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(prefectCmd)
 	prefectCmd.AddCommand(prefectRunCmd)
+	prefectCmd.AddCommand(prefectStartCmd)
 	prefectCmd.AddCommand(prefectStopCmd)
 
 	prefectRunCmd.Flags().Bool("consul", false, "Enable consul monitoring and auto-start")

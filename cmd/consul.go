@@ -130,9 +130,82 @@ var consulStatusCmd = &cobra.Command{
 	},
 }
 
+var consulStartCmd = &cobra.Command{
+	Use:          "start",
+	Short:        "Start the consul as a background tmux session",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr := session.New()
+
+		if mgr.Exists(consulTmuxSession) {
+			fmt.Printf("Consul already running (session %s)\n", consulTmuxSession)
+			return nil
+		}
+
+		solBin, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("failed to find sol binary: %w", err)
+		}
+
+		env := map[string]string{
+			"SOL_HOME": config.Home(),
+		}
+
+		if err := mgr.Start(consulTmuxSession, config.Home(),
+			solBin+" consul run", env, "consul", ""); err != nil {
+			return fmt.Errorf("failed to start consul session: %w", err)
+		}
+
+		fmt.Printf("Consul started: %s\n", consulTmuxSession)
+		return nil
+	},
+}
+
+var consulStopCmd = &cobra.Command{
+	Use:          "stop",
+	Short:        "Stop the consul background session",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr := session.New()
+
+		if !mgr.Exists(consulTmuxSession) {
+			fmt.Println("Consul not running")
+			return nil
+		}
+
+		if err := mgr.Stop(consulTmuxSession, false); err != nil {
+			return fmt.Errorf("failed to stop consul: %w", err)
+		}
+
+		fmt.Printf("Consul stopped: %s\n", consulTmuxSession)
+		return nil
+	},
+}
+
+var consulAttachCmd = &cobra.Command{
+	Use:          "attach",
+	Short:        "Attach to the consul tmux session",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr := session.New()
+
+		if !mgr.Exists(consulTmuxSession) {
+			return fmt.Errorf("no consul session (run 'sol consul start' first)")
+		}
+
+		return mgr.Attach(consulTmuxSession)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(consulCmd)
 	consulCmd.AddCommand(consulRunCmd)
+	consulCmd.AddCommand(consulStartCmd)
+	consulCmd.AddCommand(consulStopCmd)
+	consulCmd.AddCommand(consulAttachCmd)
 	consulCmd.AddCommand(consulStatusCmd)
 
 	consulRunCmd.Flags().StringVar(&consulInterval, "interval", "5m", "patrol interval")
