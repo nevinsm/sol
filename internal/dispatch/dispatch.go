@@ -71,6 +71,8 @@ type SphereStore interface {
 	ListAgents(world string, state string) ([]store.Agent, error)
 	CreateAgent(name, world, role string) (string, error)
 	DeleteAgent(id string) error
+	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
+	ResolveEscalation(id string) error
 	Close() error
 }
 
@@ -1450,6 +1452,18 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 				} else if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
 					fmt.Fprintf(os.Stderr, "resolve: failed to mark MR as failed after push failure: %v\n", err)
 				}
+			}
+		}
+	}
+
+	// Auto-resolve writ-linked escalations (best-effort).
+	escalations, escErr := sphereStore.ListEscalationsBySourceRef("writ:" + writID)
+	if escErr != nil {
+		fmt.Fprintf(os.Stderr, "resolve: failed to check escalations: %v\n", escErr)
+	} else {
+		for _, esc := range escalations {
+			if err := sphereStore.ResolveEscalation(esc.ID); err != nil {
+				fmt.Fprintf(os.Stderr, "resolve: failed to auto-resolve escalation %s: %v\n", esc.ID, err)
 			}
 		}
 	}

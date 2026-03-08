@@ -778,3 +778,92 @@ func TestResolveEscalationsForMRUsesSourceRef(t *testing.T) {
 	}
 }
 
+func TestMarkMergedResolvesWritLinkedEscalations(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+
+	sphereStore := newMockSphereStore()
+	// Create writ-linked escalation.
+	sphereStore.CreateEscalation("high", "ember/Toast", "Agent stuck on writ", "writ:sol-aaa11111")
+	// Create MR-linked escalation (should NOT be resolved by writ auto-resolve).
+	sphereStore.CreateEscalation("high", "ember/forge", "MR merge failed", "mr:mr-00000001")
+	// Create escalation for different writ — should NOT be resolved.
+	sphereStore.CreateEscalation("low", "ember/Toast", "Other writ issue", "writ:sol-bbb22222")
+
+	dir := t.TempDir()
+	run(t, "git", "init", dir)
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worktree:    dir,
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         DefaultConfig(),
+	}
+
+	if err := r.MarkMerged("mr-00000001"); err != nil {
+		t.Fatalf("MarkMerged() error: %v", err)
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+
+	for _, esc := range sphereStore.escalations {
+		if esc.sourceRef == "writ:sol-aaa11111" && esc.status != "resolved" {
+			t.Errorf("writ-linked escalation status = %q, want 'resolved'", esc.status)
+		}
+		if esc.sourceRef == "mr:mr-00000001" && esc.status == "resolved" {
+			t.Error("MR-linked escalation should NOT be resolved by writ auto-resolve")
+		}
+		if esc.sourceRef == "writ:sol-bbb22222" && esc.status == "resolved" {
+			t.Error("escalation for different writ should NOT be resolved")
+		}
+	}
+}
+
+func TestMarkMergedMultipleWritLinkedEscalations(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+
+	sphereStore := newMockSphereStore()
+	// Create multiple writ-linked escalations.
+	for i := 0; i < 3; i++ {
+		sphereStore.CreateEscalation("high", "ember/Toast",
+			fmt.Sprintf("Escalation %d for writ", i), "writ:sol-aaa11111")
+	}
+
+	dir := t.TempDir()
+	run(t, "git", "init", dir)
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worktree:    dir,
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         DefaultConfig(),
+	}
+
+	if err := r.MarkMerged("mr-00000001"); err != nil {
+		t.Fatalf("MarkMerged() error: %v", err)
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+
+	for _, esc := range sphereStore.escalations {
+		if esc.sourceRef == "writ:sol-aaa11111" && esc.status != "resolved" {
+			t.Errorf("writ-linked escalation %q status = %q, want 'resolved'", esc.id, esc.status)
+		}
+	}
+}
+

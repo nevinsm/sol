@@ -182,6 +182,9 @@ func (r *Forge) MarkMerged(mrID string) error {
 	// Supersede prior failed MRs for the same writ (best-effort).
 	r.supersedeFailed(mrID, mr.WritID)
 
+	// Auto-resolve writ-linked escalations (best-effort).
+	r.resolveEscalationsForWrit(mr.WritID)
+
 	r.logger.Info("merged", "mr", mrID, "writ", mr.WritID, "branch", mr.Branch)
 
 	// Nudge governor that MR was merged (best-effort).
@@ -237,6 +240,22 @@ func (r *Forge) resolveEscalationsForMR(mrID string) {
 	for _, esc := range escalations {
 		if err := r.sphereStore.ResolveEscalation(esc.ID); err != nil {
 			r.logger.Error("failed to resolve escalation", "escalation", esc.ID, "mr", mrID, "error", err)
+		}
+	}
+}
+
+// resolveEscalationsForWrit resolves open/acknowledged escalations whose
+// source_ref matches "writ:<writID>".
+func (r *Forge) resolveEscalationsForWrit(writID string) {
+	escalations, err := r.sphereStore.ListEscalationsBySourceRef("writ:" + writID)
+	if err != nil {
+		r.logger.Error("failed to list escalations for writ resolution", "writ", writID, "error", err)
+		return
+	}
+
+	for _, esc := range escalations {
+		if err := r.sphereStore.ResolveEscalation(esc.ID); err != nil {
+			r.logger.Error("failed to resolve escalation", "escalation", esc.ID, "writ", writID, "error", err)
 		}
 	}
 }

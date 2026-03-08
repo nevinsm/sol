@@ -55,6 +55,8 @@ type SphereStore interface {
 
 	// Escalations
 	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
+	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
+	ResolveEscalation(id string) error
 	CountOpen() (int, error)
 
 	// Messages
