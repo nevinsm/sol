@@ -18,6 +18,7 @@ import (
 	"github.com/nevinsm/sol/internal/setup"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/worldexport"
 	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
@@ -34,6 +35,7 @@ var (
 	worldQueryTimeout        int
 	worldCloneIncludeHistory bool
 	worldImportName          string
+	worldSleepForce          bool
 )
 
 var worldCmd = &cobra.Command{
@@ -627,9 +629,22 @@ to copy it.`,
 	},
 }
 
+// forceStopStabilityTimeout is the maximum time to wait for an outpost agent
+// to stabilize (reach idle prompt) before killing the session. Brief save is
+// best-effort, not a gate.
+const forceStopStabilityTimeout = 30 * time.Second
+
 var worldSleepCmd = &cobra.Command{
 	Use:          "sleep <name>",
 	Short:        "Mark a world as sleeping and stop its services",
+	Long: `Mark a world as sleeping, which stops world services (sentinel, forge,
+governor) and activates dispatch gates that prevent new work from being cast.
+
+With --force, also stops all outpost agent sessions immediately:
+  - Injects a brief-save prompt and waits up to 30 seconds for stability
+  - Kills sessions that don't stabilize in time
+  - Returns writs to "open" status, sets agents to "idle", clears tethers
+  - Warns envoy sessions but does not stop them (human-directed)`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -649,7 +664,9 @@ var worldSleepCmd = &cobra.Command{
 			return nil
 		}
 
-		// Mark sleeping in config.
+		// Mark sleeping in config FIRST — this activates dispatch gates.
+		// If we crash after this point, gates are active and running agents
+		// finish naturally (soft sleep behavior).
 		cfg.World.Sleeping = true
 		if err := config.WriteWorldConfig(name, cfg); err != nil {
 			return fmt.Errorf("failed to write world config: %w", err)
@@ -657,7 +674,7 @@ var worldSleepCmd = &cobra.Command{
 
 		// Stop world services.
 		mgr := session.New()
-		stopped := 0
+		servicesStopped := 0
 
 		for _, role := range []string{"forge", "sentinel", "governor"} {
 			sessName := config.SessionName(name, role)
@@ -666,15 +683,137 @@ var worldSleepCmd = &cobra.Command{
 					fmt.Fprintf(os.Stderr, "  warning: failed to stop %s: %v\n", role, err)
 				} else {
 					fmt.Printf("  stopped %s\n", role)
-					stopped++
+					servicesStopped++
 				}
 			}
 		}
 
-		if stopped == 0 {
-			fmt.Printf("World %q is now sleeping (no services were running).\n", name)
+		if !worldSleepForce {
+			// Soft sleep: count running outpost agents for reporting.
+			agentsRunning := 0
+			sphereStore, err := store.OpenSphere()
+			if err == nil {
+				agents, listErr := sphereStore.ListAgents(name, "")
+				if listErr == nil {
+					for _, a := range agents {
+						if a.Role == "agent" && (a.State == "working" || a.State == "stalled") {
+							agentsRunning++
+						}
+					}
+				}
+				sphereStore.Close()
+			}
+
+			if servicesStopped == 0 && agentsRunning == 0 {
+				fmt.Printf("World %q is now sleeping (no services were running).\n", name)
+			} else if agentsRunning > 0 {
+				fmt.Printf("World %q is now sleeping (%d service(s) stopped, %d agent(s) still running).\n", name, servicesStopped, agentsRunning)
+			} else {
+				fmt.Printf("World %q is now sleeping (%d service(s) stopped).\n", name, servicesStopped)
+			}
+			return nil
+		}
+
+		// --- Hard sleep: stop outpost agents, warn envoys ---
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return fmt.Errorf("failed to open sphere store: %w", err)
+		}
+		defer sphereStore.Close()
+
+		worldStore, err := store.OpenWorld(name)
+		if err != nil {
+			return fmt.Errorf("failed to open world store for %q: %w", name, err)
+		}
+		defer worldStore.Close()
+
+		agents, err := sphereStore.ListAgents(name, "")
+		if err != nil {
+			return fmt.Errorf("failed to list agents for world %q: %w", name, err)
+		}
+
+		agentsStopped := 0
+		envoysWarned := 0
+
+		for _, agent := range agents {
+			if agent.Role == "envoy" {
+				// Warn envoy sessions but do not stop them.
+				sessName := dispatch.SessionName(name, agent.Name)
+				if mgr.Exists(sessName) {
+					warnMsg := "World is sleeping. Your session will continue but no new work will be dispatched."
+					if err := mgr.NudgeSession(sessName, warnMsg); err != nil {
+						fmt.Fprintf(os.Stderr, "  warning: failed to warn envoy %s: %v\n", agent.Name, err)
+					} else {
+						fmt.Printf("  warned envoy %s\n", agent.Name)
+						envoysWarned++
+					}
+				}
+				continue
+			}
+
+			if agent.Role != "agent" {
+				continue // skip non-outpost, non-envoy roles (governor, forge already stopped)
+			}
+
+			if agent.State != "working" && agent.State != "stalled" {
+				continue // skip idle agents
+			}
+
+			sessName := dispatch.SessionName(name, agent.Name)
+
+			if mgr.Exists(sessName) {
+				// Graceful stop: inject brief-save prompt, wait for stability, then kill.
+				_ = mgr.NudgeSession(sessName, "World is going to sleep. Please save your progress immediately by committing your work, then run: sol escalate \"world sleeping\"")
+
+				// Wait up to 30 seconds for the agent to stabilize (reach idle prompt).
+				// This is best-effort — if the agent doesn't stabilize, we kill it anyway.
+				_ = mgr.WaitForIdle(sessName, forceStopStabilityTimeout)
+
+				if err := mgr.Stop(sessName, true); err != nil {
+					fmt.Fprintf(os.Stderr, "  warning: failed to stop agent %s session: %v\n", agent.Name, err)
+				}
+			}
+
+			// Return writ to "open" status, clear assignee.
+			if agent.ActiveWrit != "" {
+				if err := worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
+					Status:   "open",
+					Assignee: "-", // "-" clears assignee
+				}); err != nil {
+					fmt.Fprintf(os.Stderr, "  warning: failed to return writ %s to open: %v\n", agent.ActiveWrit, err)
+				}
+			}
+
+			// Set agent to idle, clear active_writ.
+			if err := sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
+				fmt.Fprintf(os.Stderr, "  warning: failed to set agent %s to idle: %v\n", agent.Name, err)
+			}
+
+			// Clear tether.
+			if err := tether.Clear(name, agent.Name, agent.Role); err != nil {
+				fmt.Fprintf(os.Stderr, "  warning: failed to clear tether for %s: %v\n", agent.Name, err)
+			}
+
+			fmt.Printf("  stopped agent %s\n", agent.Name)
+			agentsStopped++
+		}
+
+		// Report.
+		parts := []string{}
+		if servicesStopped > 0 {
+			parts = append(parts, fmt.Sprintf("%d service(s) stopped", servicesStopped))
+		}
+		if agentsStopped > 0 {
+			parts = append(parts, fmt.Sprintf("%d agent(s) stopped", agentsStopped))
+		}
+		if envoysWarned > 0 {
+			parts = append(parts, fmt.Sprintf("%d envoy(s) warned", envoysWarned))
+		}
+		if len(parts) == 0 {
+			fmt.Printf("World %q is now sleeping.\n", name)
 		} else {
-			fmt.Printf("World %q is now sleeping (%d service(s) stopped).\n", name, stopped)
+			fmt.Printf("World %q is now sleeping (%s).\n", name, strings.Join(parts, ", "))
 		}
 		return nil
 	},
@@ -708,26 +847,39 @@ var worldWakeCmd = &cobra.Command{
 			return fmt.Errorf("failed to write world config: %w", err)
 		}
 
-		fmt.Printf("World %q is now active.\n", name)
-
 		// Start services via subcommands.
 		solBin, err := os.Executable()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  warning: cannot find sol binary to start services: %v\n", err)
+			fmt.Printf("World %q is now active.\n", name)
 			return nil
 		}
 
 		mgr := session.New()
+
+		type serviceResult struct {
+			name    string
+			started bool
+			err     string
+		}
+		var results []serviceResult
 
 		// Start sentinel.
 		sentinelSess := config.SessionName(name, "sentinel")
 		if !mgr.Exists(sentinelSess) {
 			out, err := exec.Command(solBin, "sentinel", "start", "--world="+name).CombinedOutput()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "  warning: failed to start sentinel: %s\n", strings.TrimSpace(string(out)))
+				results = append(results, serviceResult{name: "sentinel", started: false, err: strings.TrimSpace(string(out))})
 			} else {
-				fmt.Printf("  started sentinel\n")
+				// Verify session exists after start.
+				if mgr.Exists(sentinelSess) {
+					results = append(results, serviceResult{name: "sentinel", started: true})
+				} else {
+					results = append(results, serviceResult{name: "sentinel", started: false, err: "session not found after start"})
+				}
 			}
+		} else {
+			results = append(results, serviceResult{name: "sentinel", started: true})
 		}
 
 		// Start forge.
@@ -735,9 +887,26 @@ var worldWakeCmd = &cobra.Command{
 		if !mgr.Exists(forgeSess) {
 			out, err := exec.Command(solBin, "forge", "start", "--world="+name).CombinedOutput()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "  warning: failed to start forge: %s\n", strings.TrimSpace(string(out)))
+				results = append(results, serviceResult{name: "forge", started: false, err: strings.TrimSpace(string(out))})
 			} else {
-				fmt.Printf("  started forge\n")
+				// Verify session exists after start.
+				if mgr.Exists(forgeSess) {
+					results = append(results, serviceResult{name: "forge", started: true})
+				} else {
+					results = append(results, serviceResult{name: "forge", started: false, err: "session not found after start"})
+				}
+			}
+		} else {
+			results = append(results, serviceResult{name: "forge", started: true})
+		}
+
+		// Report.
+		fmt.Printf("World %q is now active.\n", name)
+		for _, r := range results {
+			if r.started {
+				fmt.Printf("  ✓ %-10s started\n", r.name)
+			} else {
+				fmt.Printf("  ✗ %-10s failed: %s\n", r.name, r.err)
 			}
 		}
 
@@ -816,4 +985,6 @@ func init() {
 		"seconds to wait for governor response")
 	worldImportCmd.Flags().StringVar(&worldImportName, "name", "",
 		"import under a different name (rewrites agent IDs and references)")
+	worldSleepCmd.Flags().BoolVar(&worldSleepForce, "force", false,
+		"stop all outpost agent sessions and return their writs to the open pool")
 }
