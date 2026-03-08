@@ -93,6 +93,11 @@ func (sm *sphereModel) syncProcessSpinner(name string, running bool) {
 	}
 }
 
+// updateAnim is called on each animation tick (~30 FPS).
+// Currently a no-op — spinners advance via their own spinner.TickMsg.
+// This hook exists for future pulse/fade effects.
+func (sm *sphereModel) updateAnim() {}
+
 func (sm sphereModel) update(msg tea.KeyMsg, data *status.SphereStatus) (sphereModel, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":

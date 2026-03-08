@@ -209,6 +209,11 @@ func (wm *worldModel) setCursor(s worldSection, v int) {
 	}
 }
 
+// updateAnim is called on each animation tick (~30 FPS).
+// Currently a no-op — spinners advance via their own spinner.TickMsg.
+// This hook exists for future pulse/fade/highlight effects.
+func (wm *worldModel) updateAnim() {}
+
 func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldModel, tea.Cmd) {
 	// Any key dismisses the "no active session" message.
 	if wm.showNoSession {
