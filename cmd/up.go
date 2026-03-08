@@ -22,6 +22,10 @@ import (
 // by the prefect (matches the constant in internal/prefect).
 const consulTmuxSession = "sol-sphere-consul"
 
+// senateSession is the tmux session name for the senate
+// (matches the constant in internal/senate).
+const senateSession = "sol-senate"
+
 // sphereDaemon describes a sphere-level daemon managed by sol up/down.
 type sphereDaemon struct {
 	name    string
@@ -44,6 +48,7 @@ var (
 	upWorldFlag   string
 	upWorldsFlag  []string
 	downWorldFlag string
+	downAllFlag   bool
 )
 
 var upCmd = &cobra.Command{
@@ -74,6 +79,7 @@ func init() {
 
 	downCmd.Flags().StringVar(&downWorldFlag, "world", "", "stop only world services (optionally for a specific world)")
 	downCmd.Flags().Lookup("world").NoOptDefVal = ""
+	downCmd.Flags().BoolVar(&downAllFlag, "all", false, "also stop envoy, governor, and senate sessions")
 }
 
 // --- PID helpers ---
@@ -244,7 +250,11 @@ func runUp(cmd *cobra.Command, _ []string) error {
 
 	// Sphere daemons (skipped with --world).
 	if !worldOnly {
-		if failed := startSphereDaemons(solBin, upWorldsFlag); failed {
+		failed, err := startSphereDaemons(solBin, upWorldsFlag)
+		if err != nil {
+			return err
+		}
+		if failed {
 			hadFailure = true
 		}
 	}
@@ -274,16 +284,18 @@ func runUp(cmd *cobra.Command, _ []string) error {
 
 // startSphereDaemons starts sphere-level daemons. Returns true if any failed.
 // If worlds is non-empty, the --worlds flag is passed to the prefect.
-func startSphereDaemons(solBin string, worlds []string) bool {
+// Returns an error if sphere daemons are managed by systemd (dual management).
+func startSphereDaemons(solBin string, worlds []string) (bool, error) {
 	if managed := checkSystemdUnits(); len(managed) > 0 {
-		warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
-		fmt.Fprintf(os.Stderr, "%s %s managed by systemd — use systemctl instead\n",
-			warnStyle.Render("Warning:"), strings.Join(managed, ", "))
+		return false, fmt.Errorf("sphere daemons managed by systemd (%s).\n"+
+			"Use 'systemctl --user start/stop/restart' to manage them,\n"+
+			"or 'sol service uninstall' to switch back to sol up",
+			strings.Join(managed, ", "))
 	}
 
 	if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create runtime directory: %v\n", err)
-		return true
+		return true, nil
 	}
 
 	type result struct {
@@ -392,7 +404,7 @@ func startSphereDaemons(solBin string, worlds []string) bool {
 	}
 	fmt.Println()
 
-	return hadFailure
+	return hadFailure, nil
 }
 
 // startWorldServicesBatch starts world services for the given worlds.
@@ -480,6 +492,11 @@ func runDown(cmd *cobra.Command, _ []string) error {
 
 	if len(worlds) > 0 {
 		stopWorldServicesBatch(worlds)
+	}
+
+	// With --all, also stop envoys, governors, and senate.
+	if downAllFlag {
+		stopManagedSessions(worlds)
 	}
 
 	return nil
@@ -618,6 +635,82 @@ func stopWorldServicesBatch(worlds []string) {
 		fmt.Printf("    %s %-12s %s\n", indicator, r.service, detail)
 	}
 	if len(results) > 0 {
+		fmt.Println()
+	}
+}
+
+// stopManagedSessions stops envoy, governor, and senate sessions.
+// Called by sol down --all.
+func stopManagedSessions(worlds []string) {
+	mgr := session.New()
+
+	type result struct {
+		role, name, status string
+		err                error
+	}
+	var results []result
+
+	// Query sphere store for envoys and governors.
+	sphereStore, err := store.OpenSphere()
+	if err == nil {
+		agents, err := sphereStore.ListAgents("", "")
+		if err == nil {
+			for _, a := range agents {
+				if a.Role != "envoy" && a.Role != "governor" {
+					continue
+				}
+				r := result{role: a.Role, name: config.SessionName(a.World, a.Name)}
+				if !mgr.Exists(r.name) {
+					r.status = "not running"
+					results = append(results, r)
+					continue
+				}
+				if err := mgr.Stop(r.name, false); err != nil {
+					r.status = "failed"
+					r.err = err
+				} else {
+					r.status = "stopped"
+				}
+				results = append(results, r)
+			}
+		}
+		sphereStore.Close()
+	}
+
+	// Senate session.
+	r := result{role: "senate", name: senateSession}
+	if !mgr.Exists(senateSession) {
+		r.status = "not running"
+	} else if err := mgr.Stop(senateSession, false); err != nil {
+		r.status = "failed"
+		r.err = err
+	} else {
+		r.status = "stopped"
+	}
+	results = append(results, r)
+
+	// Print results.
+	if len(results) > 0 {
+		fmt.Printf("  %s\n", upDim.Render("managed sessions"))
+		for _, r := range results {
+			var indicator, detail string
+			label := fmt.Sprintf("%s (%s)", r.name, r.role)
+			switch r.status {
+			case "stopped":
+				indicator = upOK.Render("✓")
+				detail = "stopped"
+			case "not running":
+				indicator = upDim.Render("—")
+				detail = upDim.Render("not running")
+			case "failed":
+				indicator = upErr.Render("✗")
+				detail = upErr.Render("error")
+				if r.err != nil {
+					detail += upDim.Render("  " + r.err.Error())
+				}
+			}
+			fmt.Printf("    %s %-32s %s\n", indicator, label, detail)
+		}
 		fmt.Println()
 	}
 }
