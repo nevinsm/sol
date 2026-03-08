@@ -187,6 +187,132 @@ func TestTrustDirectoryAtomicWrite(t *testing.T) {
 	}
 }
 
+func TestTrustDirectoryIn(t *testing.T) {
+	configDir := t.TempDir()
+
+	dir := "/test/worktree/agent1"
+
+	if err := TrustDirectoryIn(dir, configDir); err != nil {
+		t.Fatalf("TrustDirectoryIn failed: %v", err)
+	}
+
+	// Read back and verify.
+	data, err := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	if err != nil {
+		t.Fatalf("failed to read config dir .claude.json: %v", err)
+	}
+
+	var state map[string]any
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatalf("failed to parse .claude.json: %v", err)
+	}
+
+	projects, ok := state["projects"].(map[string]any)
+	if !ok {
+		t.Fatal("missing or invalid projects key")
+	}
+
+	entry, ok := projects[dir].(map[string]any)
+	if !ok {
+		t.Fatalf("missing project entry for %q", dir)
+	}
+
+	if trusted, _ := entry["hasTrustDialogAccepted"].(bool); !trusted {
+		t.Error("hasTrustDialogAccepted should be true")
+	}
+}
+
+func TestTrustDirectoryInIdempotent(t *testing.T) {
+	configDir := t.TempDir()
+
+	dir := "/test/worktree"
+
+	if err := TrustDirectoryIn(dir, configDir); err != nil {
+		t.Fatalf("first TrustDirectoryIn failed: %v", err)
+	}
+	if err := TrustDirectoryIn(dir, configDir); err != nil {
+		t.Fatalf("second TrustDirectoryIn failed: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	var state map[string]any
+	json.Unmarshal(data, &state)
+	projects := state["projects"].(map[string]any)
+
+	if len(projects) != 1 {
+		t.Errorf("expected 1 project entry, got %d", len(projects))
+	}
+}
+
+func TestTrustDirectoryInPreservesExisting(t *testing.T) {
+	configDir := t.TempDir()
+
+	// Write pre-existing state to config dir .claude.json.
+	existing := map[string]any{
+		"hasCompletedOnboarding": true,
+		"projects": map[string]any{
+			"/other/project": map[string]any{
+				"hasTrustDialogAccepted": true,
+			},
+		},
+	}
+	data, _ := json.MarshalIndent(existing, "", "  ")
+	os.WriteFile(filepath.Join(configDir, ".claude.json"), data, 0o600)
+
+	// Trust a new directory in the config dir.
+	if err := TrustDirectoryIn("/new/worktree", configDir); err != nil {
+		t.Fatalf("TrustDirectoryIn failed: %v", err)
+	}
+
+	// Verify existing data preserved.
+	data, _ = os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	var state map[string]any
+	json.Unmarshal(data, &state)
+
+	if v, ok := state["hasCompletedOnboarding"].(bool); !ok || !v {
+		t.Error("hasCompletedOnboarding was clobbered")
+	}
+
+	projects := state["projects"].(map[string]any)
+	if len(projects) != 2 {
+		t.Errorf("expected 2 project entries, got %d", len(projects))
+	}
+
+	if _, ok := projects["/other/project"].(map[string]any); !ok {
+		t.Error("existing project entry was lost")
+	}
+}
+
+func TestTrustDirectoryInDoesNotAffectGlobal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	configDir := t.TempDir()
+
+	// Trust in config dir only.
+	if err := TrustDirectoryIn("/agent/worktree", configDir); err != nil {
+		t.Fatalf("TrustDirectoryIn failed: %v", err)
+	}
+
+	// Global ~/.claude.json should NOT exist (was not written to).
+	if _, err := os.Stat(filepath.Join(home, ".claude.json")); !os.IsNotExist(err) {
+		t.Error("TrustDirectoryIn should not write to ~/.claude.json")
+	}
+
+	// Config dir .claude.json should exist with the trust entry.
+	data, err := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	if err != nil {
+		t.Fatalf("config dir .claude.json not created: %v", err)
+	}
+
+	var state map[string]any
+	json.Unmarshal(data, &state)
+	projects := state["projects"].(map[string]any)
+	if _, ok := projects["/agent/worktree"]; !ok {
+		t.Error("trust entry missing from config dir .claude.json")
+	}
+}
+
 func TestTrustDirectoryConcurrentPreservesExisting(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

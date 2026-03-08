@@ -354,3 +354,179 @@ func TestEnsureClaudeConfigDirLegacyFallback(t *testing.T) {
 		t.Error("legacy mode should not create .account file")
 	}
 }
+
+func TestSeedOnboardingStateFromSource(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Create source ~/.claude/.claude.json with onboarding state.
+	claudeDir := filepath.Join(home, ".claude")
+	os.MkdirAll(claudeDir, 0o755)
+	source := map[string]any{
+		"hasCompletedOnboarding": true,
+		"lastOnboardingVersion":  "1.0.50",
+		"firstStartTime":         "2025-01-15T10:30:00Z",
+		"theme":                  "dark", // personal pref — should NOT be copied
+		"numStartups":            float64(42),
+	}
+	data, _ := json.MarshalIndent(source, "", "  ")
+	os.WriteFile(filepath.Join(claudeDir, ".claude.json"), data, 0o600)
+
+	// Create empty agent config dir.
+	configDir := filepath.Join(t.TempDir(), "agent-config")
+	os.MkdirAll(configDir, 0o755)
+
+	err := SeedOnboardingState(configDir)
+	if err != nil {
+		t.Fatalf("SeedOnboardingState() error: %v", err)
+	}
+
+	// Read back agent's .claude.json.
+	agentData, err := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	if err != nil {
+		t.Fatalf("agent .claude.json not created: %v", err)
+	}
+
+	var agentState map[string]any
+	if err := json.Unmarshal(agentData, &agentState); err != nil {
+		t.Fatalf("failed to parse agent .claude.json: %v", err)
+	}
+
+	// Verify seeded fields.
+	if v, ok := agentState["hasCompletedOnboarding"].(bool); !ok || !v {
+		t.Error("hasCompletedOnboarding should be true")
+	}
+	if v, ok := agentState["lastOnboardingVersion"].(string); !ok || v != "1.0.50" {
+		t.Errorf("lastOnboardingVersion = %v, want 1.0.50", agentState["lastOnboardingVersion"])
+	}
+	if v, ok := agentState["firstStartTime"].(string); !ok || v != "2025-01-15T10:30:00Z" {
+		t.Errorf("firstStartTime = %v, want 2025-01-15T10:30:00Z", agentState["firstStartTime"])
+	}
+
+	// Verify personal prefs NOT copied.
+	if _, exists := agentState["theme"]; exists {
+		t.Error("personal preference 'theme' should not be copied")
+	}
+	if _, exists := agentState["numStartups"]; exists {
+		t.Error("personal field 'numStartups' should not be copied")
+	}
+}
+
+func TestSeedOnboardingStateNoSource(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// No ~/.claude/.claude.json exists.
+
+	configDir := filepath.Join(t.TempDir(), "agent-config")
+	os.MkdirAll(configDir, 0o755)
+
+	err := SeedOnboardingState(configDir)
+	if err != nil {
+		t.Fatalf("SeedOnboardingState() error: %v", err)
+	}
+
+	// Should have minimal onboarding state.
+	agentData, err := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	if err != nil {
+		t.Fatalf("agent .claude.json not created: %v", err)
+	}
+
+	var agentState map[string]any
+	if err := json.Unmarshal(agentData, &agentState); err != nil {
+		t.Fatalf("failed to parse agent .claude.json: %v", err)
+	}
+
+	if v, ok := agentState["hasCompletedOnboarding"].(bool); !ok || !v {
+		t.Error("hasCompletedOnboarding should be true even without source")
+	}
+}
+
+func TestSeedOnboardingStatePreservesExisting(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Create source.
+	claudeDir := filepath.Join(home, ".claude")
+	os.MkdirAll(claudeDir, 0o755)
+	source := map[string]any{
+		"hasCompletedOnboarding": true,
+		"lastOnboardingVersion":  "2.0.0",
+		"firstStartTime":         "2025-06-01T00:00:00Z",
+	}
+	data, _ := json.MarshalIndent(source, "", "  ")
+	os.WriteFile(filepath.Join(claudeDir, ".claude.json"), data, 0o600)
+
+	// Create agent config with pre-existing state.
+	configDir := filepath.Join(t.TempDir(), "agent-config")
+	os.MkdirAll(configDir, 0o755)
+	existing := map[string]any{
+		"hasCompletedOnboarding": true,
+		"lastOnboardingVersion":  "1.0.0", // older version — should NOT be overwritten
+		"customField":            "preserve-me",
+	}
+	existingData, _ := json.MarshalIndent(existing, "", "  ")
+	os.WriteFile(filepath.Join(configDir, ".claude.json"), existingData, 0o600)
+
+	err := SeedOnboardingState(configDir)
+	if err != nil {
+		t.Fatalf("SeedOnboardingState() error: %v", err)
+	}
+
+	agentData, err := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	if err != nil {
+		t.Fatalf("failed to read agent .claude.json: %v", err)
+	}
+
+	var agentState map[string]any
+	if err := json.Unmarshal(agentData, &agentState); err != nil {
+		t.Fatalf("failed to parse agent .claude.json: %v", err)
+	}
+
+	// Existing fields should NOT be overwritten.
+	if v := agentState["lastOnboardingVersion"]; v != "1.0.0" {
+		t.Errorf("lastOnboardingVersion = %v, want 1.0.0 (should not overwrite)", v)
+	}
+	if v := agentState["customField"]; v != "preserve-me" {
+		t.Error("customField should be preserved")
+	}
+
+	// Missing field from source should be added.
+	if _, exists := agentState["firstStartTime"]; !exists {
+		t.Error("firstStartTime should be seeded from source since it was missing")
+	}
+}
+
+func TestSeedOnboardingStateIdempotent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Create source.
+	claudeDir := filepath.Join(home, ".claude")
+	os.MkdirAll(claudeDir, 0o755)
+	source := map[string]any{
+		"hasCompletedOnboarding": true,
+		"lastOnboardingVersion":  "1.0.0",
+	}
+	data, _ := json.MarshalIndent(source, "", "  ")
+	os.WriteFile(filepath.Join(claudeDir, ".claude.json"), data, 0o600)
+
+	configDir := filepath.Join(t.TempDir(), "agent-config")
+	os.MkdirAll(configDir, 0o755)
+
+	// Run twice — should be idempotent.
+	if err := SeedOnboardingState(configDir); err != nil {
+		t.Fatalf("first SeedOnboardingState() error: %v", err)
+	}
+	if err := SeedOnboardingState(configDir); err != nil {
+		t.Fatalf("second SeedOnboardingState() error: %v", err)
+	}
+
+	agentData, _ := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	var agentState map[string]any
+	json.Unmarshal(agentData, &agentState)
+
+	if v, ok := agentState["hasCompletedOnboarding"].(bool); !ok || !v {
+		t.Error("hasCompletedOnboarding should be true")
+	}
+}

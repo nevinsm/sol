@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -121,6 +122,22 @@ func tmuxCmd(args ...string) (*exec.Cmd, context.CancelFunc) {
 	return cmd, cancel
 }
 
+// prependEnv wraps a command string with export statements for the given
+// environment variables. This ensures the spawned process receives the env
+// vars immediately, regardless of tmux version or respawn behavior.
+// The set-environment calls still happen separately for future pane inheritance.
+func prependEnv(cmd string, env map[string]string) string {
+	if len(env) == 0 {
+		return cmd
+	}
+	var exports []string
+	for k, v := range env {
+		exports = append(exports, k+"="+config.ShellQuote(v))
+	}
+	sort.Strings(exports) // deterministic order for testing
+	return "export " + strings.Join(exports, " ") + " && " + cmd
+}
+
 // sessionMeta is the JSON structure written to the metadata file.
 type sessionMeta struct {
 	Name      string    `json:"name"`
@@ -173,8 +190,11 @@ func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, 
 		fmt.Fprintf(os.Stderr, "session: failed to pre-trust directory %s: %v\n", workdir, err)
 	}
 
-	// Create the tmux session
-	newSess, newSessCancel := tmuxCmd("new-session", "-d", "-s", name, "-c", workdir, cmd)
+	// Create the tmux session. Prepend env vars to the command so the
+	// initial process receives them immediately (e.g., CLAUDE_CONFIG_DIR).
+	// The set-environment calls below still happen for future pane inheritance.
+	wrappedCmd := prependEnv(cmd, env)
+	newSess, newSessCancel := tmuxCmd("new-session", "-d", "-s", name, "-c", workdir, wrappedCmd)
 	defer newSessCancel()
 	if out, err := newSess.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to start session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
@@ -513,9 +533,12 @@ func (m *Manager) Cycle(name, workdir, cmd string, env map[string]string, role, 
 	}
 
 	// Atomically kill current process and start new command.
+	// Prepend env vars to the command so the new process receives them
+	// immediately, in addition to the set-environment calls above.
 	// NOTE: In self-handoff scenarios, this call kills the calling process.
 	// Everything below this line may not execute. All durable writes are above.
-	respawn, respawnCancel := tmuxCmd("respawn-pane", "-k", "-t", tmuxExactTarget(name), "-c", workdir, cmd)
+	wrappedCmd := prependEnv(cmd, env)
+	respawn, respawnCancel := tmuxCmd("respawn-pane", "-k", "-t", tmuxExactTarget(name), "-c", workdir, wrappedCmd)
 	defer respawnCancel()
 	if out, err := respawn.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to respawn pane in session %q: %s: %w", name, strings.TrimSpace(string(out)), err)

@@ -358,7 +358,114 @@ func EnsureClaudeConfigDir(worldDir, role, name, account string) (string, error)
 		}
 	}
 
+	// Pre-seed onboarding state so Claude Code doesn't show interactive
+	// onboarding when using the agent-specific config dir.
+	if err := SeedOnboardingState(dir); err != nil {
+		fmt.Fprintf(os.Stderr, "config: failed to seed onboarding state for %s: %v\n", name, err)
+	}
+
 	return dir, nil
+}
+
+// SeedOnboardingState seeds critical Claude Code state fields from the
+// operator's ~/.claude/.claude.json into the agent's config dir .claude.json.
+// Only sets fields that are missing — does not overwrite anything Claude Code
+// has already written.
+//
+// Fields seeded:
+//   - hasCompletedOnboarding: prevents onboarding flow
+//   - lastOnboardingVersion: prevents version-triggered re-onboarding
+//   - firstStartTime: Claude Code checks this exists
+//
+// Does NOT copy personal preferences (theme, status line, etc.) — agents
+// should have clean defaults.
+func SeedOnboardingState(configDir string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		// Can't find home — set minimal onboarding state directly.
+		return seedMinimalOnboardingState(configDir)
+	}
+
+	// Read source state from ~/.claude/.claude.json (Claude Code's state
+	// file inside the default config dir).
+	sourceJSON := filepath.Join(home, ".claude", ".claude.json")
+	sourceData, err := os.ReadFile(sourceJSON)
+	if err != nil {
+		// No source file — set minimal onboarding state.
+		return seedMinimalOnboardingState(configDir)
+	}
+
+	var sourceState map[string]any
+	if err := json.Unmarshal(sourceData, &sourceState); err != nil {
+		return seedMinimalOnboardingState(configDir)
+	}
+
+	// Read or create destination state.
+	destJSON := filepath.Join(configDir, ".claude.json")
+	var destState map[string]any
+	destData, err := os.ReadFile(destJSON)
+	if err != nil {
+		destState = make(map[string]any)
+	} else {
+		if err := json.Unmarshal(destData, &destState); err != nil {
+			destState = make(map[string]any)
+		}
+	}
+
+	// Seed only missing fields from source.
+	fieldsToSeed := []string{"hasCompletedOnboarding", "lastOnboardingVersion", "firstStartTime"}
+	changed := false
+	for _, field := range fieldsToSeed {
+		if _, exists := destState[field]; !exists {
+			if val, ok := sourceState[field]; ok {
+				destState[field] = val
+				changed = true
+			}
+		}
+	}
+
+	// Ensure hasCompletedOnboarding is always set, even if source lacks it.
+	if _, exists := destState["hasCompletedOnboarding"]; !exists {
+		destState["hasCompletedOnboarding"] = true
+		changed = true
+	}
+
+	if !changed {
+		return nil
+	}
+
+	out, err := json.MarshalIndent(destState, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal agent .claude.json: %w", err)
+	}
+	return os.WriteFile(destJSON, out, 0o600)
+}
+
+// seedMinimalOnboardingState writes the minimum required onboarding state
+// when no source ~/.claude/.claude.json is available.
+func seedMinimalOnboardingState(configDir string) error {
+	destJSON := filepath.Join(configDir, ".claude.json")
+	var destState map[string]any
+	destData, err := os.ReadFile(destJSON)
+	if err != nil {
+		destState = make(map[string]any)
+	} else {
+		if err := json.Unmarshal(destData, &destState); err != nil {
+			destState = make(map[string]any)
+		}
+	}
+
+	if _, exists := destState["hasCompletedOnboarding"]; exists {
+		return nil // Already set.
+	}
+
+	destState["hasCompletedOnboarding"] = true
+
+	out, err := json.MarshalIndent(destState, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal agent .claude.json: %w", err)
+	}
+	return os.WriteFile(destJSON, out, 0o600)
 }
 
 // writeAccessTokenOnlyCreds reads source credentials, strips the refresh token,

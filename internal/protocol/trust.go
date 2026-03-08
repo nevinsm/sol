@@ -16,11 +16,32 @@ import (
 // multiple sessions call TrustDirectory concurrently.
 func TrustDirectory(dir string) error {
 	claudeJSON := filepath.Join(os.Getenv("HOME"), ".claude.json")
+	return trustDirectoryInFile(dir, claudeJSON)
+}
 
+// TrustDirectoryIn marks a directory as trusted in the specified config dir's
+// .claude.json. Used when CLAUDE_CONFIG_DIR is set so Claude Code reads trust
+// from the agent-specific config dir rather than ~/.claude.json.
+//
+// Uses the same flock-based locking and atomic writes as TrustDirectory.
+func TrustDirectoryIn(dir, configDir string) error {
+	claudeJSON := filepath.Join(configDir, ".claude.json")
+	return trustDirectoryInFile(dir, claudeJSON)
+}
+
+// trustDirectoryInFile is the shared implementation for TrustDirectory and
+// TrustDirectoryIn. It marks a directory as trusted in the specified
+// .claude.json file using flock-based locking and atomic writes.
+func trustDirectoryInFile(dir, claudeJSON string) error {
 	// Resolve absolute path outside the lock to reduce lock hold time.
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return fmt.Errorf("failed to resolve absolute path for %q: %w", dir, err)
+	}
+
+	// Ensure parent directory exists (needed for agent config dirs).
+	if err := os.MkdirAll(filepath.Dir(claudeJSON), 0o755); err != nil {
+		return fmt.Errorf("failed to create directory for %s: %w", claudeJSON, err)
 	}
 
 	return withClaudeJSONLock(claudeJSON, func() error {
