@@ -51,11 +51,25 @@ var consulRunCmd = &cobra.Command{
 			webhook = os.Getenv("SOL_ESCALATION_WEBHOOK")
 		}
 
+		// Load global config for escalation thresholds.
+		globalCfg, err := config.LoadGlobalConfig()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load global config: %v (using defaults)\n", err)
+			globalCfg.Escalation = config.DefaultEscalationConfig()
+		}
+
+		escThreshold := globalCfg.Escalation.EscalationThreshold
+		if escThreshold <= 0 {
+			escThreshold = 5
+		}
+
 		cfg := consul.Config{
-			PatrolInterval:     interval,
-			StaleTetherTimeout: staleTimeout,
-			SolHome:            config.Home(),
-			EscalationWebhook:  webhook,
+			PatrolInterval:      interval,
+			StaleTetherTimeout:  staleTimeout,
+			SolHome:             config.Home(),
+			EscalationWebhook:   webhook,
+			EscalationThreshold: escThreshold,
+			EscalationConfig:    globalCfg.Escalation,
 		}
 
 		sphereStore, err := store.OpenSphere()
