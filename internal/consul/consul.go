@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
@@ -49,6 +50,9 @@ type SphereStore interface {
 	CheckCaravanReadiness(caravanID string, worldOpener func(string) (*store.Store, error)) ([]store.CaravanItemStatus, error)
 	TryCloseCaravan(caravanID string, worldOpener func(string) (*store.Store, error)) (bool, error)
 
+	// Worlds
+	ListWorlds() ([]store.World, error)
+
 	// Escalations
 	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
 	CountOpen() (int, error)
@@ -77,6 +81,28 @@ type WorldOpener func(world string) (*store.Store, error)
 // Default implementation uses dispatch.Cast.
 type DispatchFunc func(ctx context.Context, opts dispatch.CastOpts, worldStore dispatch.WorldStore, sphereStore dispatch.SphereStore, mgr dispatch.SessionManager, logger *events.Logger) (*dispatch.CastResult, error)
 
+// orphanEntry tracks a candidate orphaned session across patrols.
+type orphanEntry struct {
+	firstSeen time.Time // when the session was first detected as orphaned
+	count     int       // consecutive patrol detections
+}
+
+// orphanGracePeriod is the minimum time a session must be detected as orphaned
+// before it can be stopped. Prevents killing sessions during startup races.
+const orphanGracePeriod = 30 * time.Minute
+
+// orphanConsecutiveThreshold is how many consecutive patrols a session must be
+// detected as orphaned before it is stopped.
+const orphanConsecutiveThreshold = 2
+
+// infrastructureSessions are sphere-level tmux sessions not tracked as agents.
+var infrastructureSessions = []string{
+	"sol-sphere-consul",
+	"sol-chronicle",
+	"sol-ledger",
+	"sol-token-broker",
+}
+
 // Consul is the sphere-level patrol process.
 type Consul struct {
 	config       Config
@@ -87,20 +113,22 @@ type Consul struct {
 	worldOpener  WorldOpener
 	dispatchFunc DispatchFunc
 
-	patrolCount int
+	patrolCount      int
+	orphanedSessions map[string]*orphanEntry
 }
 
 // New creates a new Consul.
 func New(cfg Config, sphereStore SphereStore, sessions SessionManager,
 	router *escalation.Router, logger *events.Logger) *Consul {
 	return &Consul{
-		config:       cfg,
-		sphereStore:  sphereStore,
-		sessions:     sessions,
-		logger:       logger,
-		router:       router,
-		worldOpener:  store.OpenWorld,
-		dispatchFunc: dispatch.Cast,
+		config:           cfg,
+		sphereStore:      sphereStore,
+		sessions:         sessions,
+		logger:           logger,
+		router:           router,
+		worldOpener:      store.OpenWorld,
+		dispatchFunc:     dispatch.Cast,
+		orphanedSessions: make(map[string]*orphanEntry),
 	}
 }
 
@@ -181,18 +209,20 @@ func (d *Consul) Run(ctx context.Context) error {
 }
 
 // Patrol runs a single patrol cycle:
-// 1. Write heartbeat
-// 2. Recover stale tethers
-// 3. Feed stranded caravans
-// 4. Process lifecycle requests
-// 5. Emit patrol event
+// 1. Recover stale tethers
+// 2. Feed stranded caravans
+// 3. Process lifecycle requests
+// 4. Detect orphaned sessions
+// 5. Count open escalations
+// 6. Write heartbeat
+// 7. Emit patrol event
 //
 // Errors in individual patrol steps are logged but do not stop the
 // patrol cycle. The consul continues to the next step (DEGRADE).
 func (d *Consul) Patrol(ctx context.Context) error {
 	d.patrolCount++
 
-	var staleTethers, caravanFeeds int
+	var staleTethers, caravanFeeds, orphansStopped int
 	var shutdown bool
 
 	// 1. Recover stale tethers.
@@ -227,45 +257,59 @@ func (d *Consul) Patrol(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	// 4. Count open escalations.
+	// 4. Detect orphaned sessions.
+	stopped, err := d.detectOrphanedSessions(ctx)
+	if err != nil {
+		d.logInfo("consul_error", map[string]any{"action": "detect_orphaned_sessions", "error": err.Error()})
+	}
+	orphansStopped = stopped
+
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// 5. Count open escalations.
 	openEsc, err := d.sphereStore.CountOpen()
 	if err != nil {
 		d.logInfo("consul_error", map[string]any{"action": "count_escalations", "error": err.Error()})
 	}
 
-	// 5. Write heartbeat.
+	// 6. Write heartbeat.
 	status := "running"
 	if shutdown {
 		status = "stopping"
 	}
 	if err := WriteHeartbeat(d.config.SolHome, &Heartbeat{
-		Timestamp:    time.Now().UTC(),
-		PatrolCount:  d.patrolCount,
-		Status:       status,
-		StaleTethers: staleTethers,
-		CaravanFeeds: caravanFeeds,
-		Escalations:  openEsc,
+		Timestamp:        time.Now().UTC(),
+		PatrolCount:      d.patrolCount,
+		Status:           status,
+		StaleTethers:     staleTethers,
+		CaravanFeeds:     caravanFeeds,
+		Escalations:      openEsc,
+		OrphanedSessions: orphansStopped,
 	}); err != nil {
 		d.logInfo("consul_error", map[string]any{"action": "write_heartbeat", "error": err.Error()})
 	}
 
-	// 6. Emit patrol event.
+	// 7. Emit patrol event.
 	if d.logger != nil {
 		d.logger.Emit(events.EventConsulPatrol, "sphere/consul", "sphere/consul", "feed",
 			map[string]any{
-				"patrol_count":  d.patrolCount,
-				"stale_tethers": staleTethers,
-				"caravan_feeds": caravanFeeds,
-				"escalations":   openEsc,
+				"patrol_count":      d.patrolCount,
+				"stale_tethers":     staleTethers,
+				"caravan_feeds":     caravanFeeds,
+				"escalations":       openEsc,
+				"orphaned_sessions": orphansStopped,
 			})
 	}
 
-	// 7. Log patrol summary.
+	// 8. Log patrol summary.
 	d.logInfo("consul_patrol", map[string]any{
-		"patrol_count":  d.patrolCount,
-		"stale_tethers": staleTethers,
-		"caravan_feeds": caravanFeeds,
-		"escalations":   openEsc,
+		"patrol_count":      d.patrolCount,
+		"stale_tethers":     staleTethers,
+		"caravan_feeds":     caravanFeeds,
+		"escalations":       openEsc,
+		"orphaned_sessions": orphansStopped,
 	})
 
 	// If shutdown was requested, return a sentinel error that Run will detect.
@@ -589,5 +633,142 @@ func (d *Consul) processLifecycleRequests(ctx context.Context) (shutdown bool, e
 	}
 
 	return shutdown, nil
+}
+
+// detectOrphanedSessions finds tmux sessions matching sol-* that have no
+// corresponding agent record or known infrastructure role.
+//
+// Detection logic:
+// 1. List all tmux sessions, filter to sol-* prefix
+// 2. Build a "known sessions" set from agents + infrastructure
+// 3. Track candidate orphans across patrols
+// 4. Stop sessions that exceed grace period + consecutive threshold
+// 5. Prune tracking map for sessions that disappeared
+//
+// Returns the number of sessions stopped.
+func (d *Consul) detectOrphanedSessions(ctx context.Context) (int, error) {
+	// 1. List all tmux sessions.
+	allSessions, err := d.sessions.List()
+	if err != nil {
+		// DEGRADE: skip orphan detection, don't stop patrol.
+		d.logInfo("consul_error", map[string]any{
+			"action": "detect_orphaned_sessions",
+			"error":  err.Error(),
+		})
+		return 0, nil
+	}
+
+	// 2. Filter to sol-* prefix sessions.
+	var solSessions []session.SessionInfo
+	for _, s := range allSessions {
+		if strings.HasPrefix(s.Name, "sol-") {
+			solSessions = append(solSessions, s)
+		}
+	}
+
+	if len(solSessions) == 0 {
+		// No sol-* sessions at all — clear the tracking map.
+		d.orphanedSessions = make(map[string]*orphanEntry)
+		return 0, nil
+	}
+
+	// 3. Build the "known sessions" set.
+	known := make(map[string]bool)
+
+	// 3a. Infrastructure sessions (not tracked as agents).
+	for _, name := range infrastructureSessions {
+		known[name] = true
+	}
+
+	// 3b. All agents (any state) from sphere store → session names.
+	agents, err := d.sphereStore.ListAgents("", "")
+	if err != nil {
+		return 0, fmt.Errorf("failed to list agents for orphan detection: %w", err)
+	}
+	for _, agent := range agents {
+		known[config.SessionName(agent.World, agent.Name)] = true
+	}
+
+	// 3c. Per-world infrastructure: sentinel, forge, governor.
+	worlds, err := d.sphereStore.ListWorlds()
+	if err != nil {
+		return 0, fmt.Errorf("failed to list worlds for orphan detection: %w", err)
+	}
+	for _, w := range worlds {
+		known[fmt.Sprintf("sol-%s-sentinel", w.Name)] = true
+		known[fmt.Sprintf("sol-%s-forge", w.Name)] = true
+		known[fmt.Sprintf("sol-%s-governor", w.Name)] = true
+	}
+
+	// 4. Detect orphans and apply grace period + consecutive threshold.
+	now := time.Now()
+	currentSessions := make(map[string]bool)
+	var stopped int
+
+	for _, s := range solSessions {
+		currentSessions[s.Name] = true
+
+		if known[s.Name] {
+			continue // known session, not orphaned
+		}
+
+		entry, exists := d.orphanedSessions[s.Name]
+		if !exists {
+			// First detection — start tracking.
+			d.orphanedSessions[s.Name] = &orphanEntry{
+				firstSeen: now,
+				count:     1,
+			}
+			continue
+		}
+
+		entry.count++
+
+		// Grace period: skip if first seen less than 30 minutes ago.
+		if now.Sub(entry.firstSeen) < orphanGracePeriod {
+			continue
+		}
+
+		// Consecutive threshold: need at least 2 consecutive detections.
+		if entry.count < orphanConsecutiveThreshold {
+			continue
+		}
+
+		// Stop the orphaned session.
+		if err := d.sessions.Stop(s.Name, false); err != nil {
+			d.logInfo("consul_error", map[string]any{
+				"action":  "stop_orphaned_session",
+				"session": s.Name,
+				"error":   err.Error(),
+			})
+			continue
+		}
+
+		d.logInfo("consul_orphan_stopped", map[string]any{
+			"session":      s.Name,
+			"patrol_count": entry.count,
+			"age_minutes":  int(now.Sub(entry.firstSeen).Minutes()),
+		})
+
+		if d.logger != nil {
+			d.logger.Emit(events.EventConsulPatrol, "sphere/consul", "sphere/consul", "both",
+				map[string]any{
+					"action":  "orphan_stopped",
+					"session": s.Name,
+				})
+		}
+
+		stopped++
+		delete(d.orphanedSessions, s.Name)
+	}
+
+	// 5. Prune map entries for sessions no longer present.
+	for name := range d.orphanedSessions {
+		if !currentSessions[name] {
+			delete(d.orphanedSessions, name)
+		}
+	}
+
+	return stopped, nil
 }
 

@@ -10,12 +10,13 @@ import (
 
 // Heartbeat records the consul's liveness state.
 type Heartbeat struct {
-	Timestamp   time.Time `json:"timestamp"`
-	PatrolCount int       `json:"patrol_count"`
-	Status      string    `json:"status"` // "running", "stopping"
-	StaleTethers int       `json:"stale_tethers"` // recovered this patrol
-	CaravanFeeds int       `json:"caravan_feeds"` // dispatched this patrol
-	Escalations int       `json:"escalations"`  // open escalation count
+	Timestamp        time.Time `json:"timestamp"`
+	PatrolCount      int       `json:"patrol_count"`
+	Status           string    `json:"status"` // "running", "stopping"
+	StaleTethers     int       `json:"stale_tethers"`     // recovered this patrol
+	CaravanFeeds     int       `json:"caravan_feeds"`     // dispatched this patrol
+	Escalations      int       `json:"escalations"`       // open escalation count
+	OrphanedSessions int       `json:"orphaned_sessions"` // stopped this patrol
 }
 
 // HeartbeatPath returns the path to the heartbeat file.
