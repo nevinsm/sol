@@ -20,8 +20,8 @@ const animInterval = 33 * time.Millisecond
 // captureInterval is reserved for peek-mode capture ticks.
 const captureInterval = 250 * time.Millisecond
 
-// highlightDuration is how long a state-change highlight persists.
-const highlightDuration = 6 * time.Second
+// highlightTickInterval is how often highlight levels decay (5 levels × 400ms = ~2s total fade).
+const highlightTickInterval = 400 * time.Millisecond
 
 // Minimum terminal dimensions.
 const (
@@ -72,6 +72,9 @@ type dataTickMsg time.Time
 
 // captureTickMsg is reserved for peek-mode dashboard capture.
 type captureTickMsg time.Time
+
+// highlightTickMsg triggers highlight level decay.
+type highlightTickMsg time.Time
 
 // dataMsg delivers refreshed data to the model.
 type dataMsg struct {
@@ -130,14 +133,14 @@ type Model struct {
 	dirty     bool
 	viewCache *string
 
-	// State-change highlight tracking (time-based).
-	prevSphereHealth   string
-	prevWorldHealth    string
-	healthHighlightEnd time.Time // zero value = no highlight
+	// State-change highlight tracking (progressive fade).
+	prevSphereHealth string
+	prevWorldHealth  string
+	healthHighlight  int // highlight level (5→0) for health emphasis
 
 	// Agent state tracking for highlights.
-	prevAgentStates   map[string]string    // agentName -> previous state
-	agentHighlightEnd map[string]time.Time // agentName -> highlight expiry
+	prevAgentStates map[string]string // agentName -> previous state
+	agentHighlights map[string]int   // agentName -> highlight level (5→0)
 }
 
 // NewModel creates a dashboard model. If world is empty, starts in sphere view.
@@ -153,9 +156,9 @@ func NewModel(cfg Config) Model {
 		world:             cfg.World,
 		config:            cfg,
 		feed:              newFeedModel(cfg.SOLHome, cfg.World),
-		prevAgentStates:   make(map[string]string),
-		agentHighlightEnd: make(map[string]time.Time),
-		viewCache:         &viewCache,
+		prevAgentStates: make(map[string]string),
+		agentHighlights: make(map[string]int),
+		viewCache:       &viewCache,
 	}
 
 	m.sphereView = newSphereModel()
@@ -180,6 +183,7 @@ func (m Model) Init() tea.Cmd {
 		m.sphereView.init(),
 		m.worldView.init(),
 		animTickCmd(),
+		m.highlightTickCmd(),
 	)
 }
 
@@ -274,7 +278,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case animTickMsg:
 		// Animation tick (~30 FPS) — drives visual state.
 		m.dirty = true
-		m.decayHighlights()
 		m.feed.decayAnimation()
 
 		// Route to active sub-view for spinner frame updates.
@@ -290,6 +293,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dataTickMsg:
 		// Data refresh tick (3s) — database queries and status gathering.
 		cmds = append(cmds, m.refresh())
+
+	case highlightTickMsg:
+		m.dirty = true
+		m.decayHighlights()
+		cmds = append(cmds, m.highlightTickCmd())
 
 	case dataMsg:
 		m.dirty = true
@@ -354,23 +362,12 @@ func (m Model) View() string {
 		return *m.viewCache
 	}
 
-	now := time.Now()
-	healthEmphasis := now.Before(m.healthHighlightEnd)
-
-	// Compute active agent highlights from time-based map.
-	agentHighlights := make(map[string]int)
-	for name, end := range m.agentHighlightEnd {
-		if now.Before(end) {
-			agentHighlights[name] = 1
-		}
-	}
-
 	var content string
 	switch m.activeView() {
 	case viewSphere:
-		content = m.sphereView.view(m.sphereData, m.lastRefresh, healthEmphasis)
+		content = m.sphereView.view(m.sphereData, m.lastRefresh, m.healthHighlight)
 	case viewWorld:
-		content = m.worldView.view(m.worldData, m.lastRefresh, healthEmphasis, agentHighlights)
+		content = m.worldView.view(m.worldData, m.lastRefresh, m.healthHighlight, m.agentHighlights)
 	default:
 		content = "Unknown view"
 	}
@@ -389,7 +386,7 @@ func (m Model) View() string {
 // trackSphereHighlights detects health changes in sphere data.
 func (m *Model) trackSphereHighlights(data *status.SphereStatus) {
 	if m.prevSphereHealth != "" && data.Health != m.prevSphereHealth {
-		m.healthHighlightEnd = time.Now().Add(highlightDuration)
+		m.healthHighlight = highlightMaxLevel
 	}
 	m.prevSphereHealth = data.Health
 }
@@ -398,7 +395,7 @@ func (m *Model) trackSphereHighlights(data *status.SphereStatus) {
 func (m *Model) trackWorldHighlights(data *status.WorldStatus) {
 	newHealth := data.HealthString()
 	if m.prevWorldHealth != "" && newHealth != m.prevWorldHealth {
-		m.healthHighlightEnd = time.Now().Add(highlightDuration)
+		m.healthHighlight = highlightMaxLevel
 	}
 	m.prevWorldHealth = newHealth
 
@@ -406,18 +403,23 @@ func (m *Model) trackWorldHighlights(data *status.WorldStatus) {
 	for _, a := range data.Agents {
 		prev, exists := m.prevAgentStates[a.Name]
 		if exists && prev != a.State {
-			m.agentHighlightEnd[a.Name] = time.Now().Add(highlightDuration)
+			m.agentHighlights[a.Name] = highlightMaxLevel
 		}
 		m.prevAgentStates[a.Name] = a.State
 	}
 }
 
-// decayHighlights removes expired highlight entries.
+// decayHighlights decrements all highlight levels by one step.
+// Called on each highlightTickMsg (~400ms), producing a progressive fade over ~2 seconds.
 func (m *Model) decayHighlights() {
-	now := time.Now()
-	for name, end := range m.agentHighlightEnd {
-		if now.After(end) {
-			delete(m.agentHighlightEnd, name)
+	if m.healthHighlight > 0 {
+		m.healthHighlight--
+	}
+	for name, level := range m.agentHighlights {
+		if level <= 1 {
+			delete(m.agentHighlights, name)
+		} else {
+			m.agentHighlights[name] = level - 1
 		}
 	}
 }
@@ -474,6 +476,13 @@ func animTickCmd() tea.Cmd {
 func dataTickCmd() tea.Cmd {
 	return tea.Tick(refreshInterval, func(t time.Time) tea.Msg {
 		return dataTickMsg(t)
+	})
+}
+
+// highlightTickCmd schedules the next highlight decay tick.
+func (m Model) highlightTickCmd() tea.Cmd {
+	return tea.Tick(highlightTickInterval, func(t time.Time) tea.Msg {
+		return highlightTickMsg(t)
 	})
 }
 

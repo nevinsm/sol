@@ -446,7 +446,7 @@ func (wm worldModel) updateSpinner(msg spinner.TickMsg) (worldModel, tea.Cmd) {
 	return wm, tea.Batch(cmds...)
 }
 
-func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healthEmphasis bool, agentHighlights map[string]int) string {
+func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healthLevel int, agentHighlights map[string]int) string {
 	if data == nil {
 		return "Gathering world status..."
 	}
@@ -456,7 +456,7 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	// Header.
 	b.WriteString(headerStyle.Render(fmt.Sprintf("World: %s", data.World)))
 	b.WriteString("  ")
-	b.WriteString(healthBadgeWithEmphasis(data.HealthString(), healthEmphasis))
+	b.WriteString(healthBadgeWithEmphasis(data.HealthString(), healthLevel))
 	b.WriteString("\n\n")
 
 	// Sphere Processes — compact grid.
@@ -632,8 +632,8 @@ func (wm worldModel) renderAgentsTable(b *strings.Builder, agents []status.Agent
 		if isFocused && i == wm.outpostCursor {
 			b.WriteString(selectStyle.Render(padRight(line, wm.width)))
 		} else if agentHighlights != nil {
-			if _, highlighted := agentHighlights[a.Name]; highlighted {
-				b.WriteString(highlightStyle.Render(padRight(line, wm.width)))
+			if level, highlighted := agentHighlights[a.Name]; highlighted && level > 0 {
+				b.WriteString(highlightAtLevel(level).Render(padRight(line, wm.width)))
 			} else {
 				b.WriteString(line)
 			}
