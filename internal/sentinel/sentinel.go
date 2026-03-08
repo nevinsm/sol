@@ -176,6 +176,47 @@ func (w *Sentinel) Register() error {
 	return w.sphereStore.EnsureAgent("sentinel", w.config.World, "sentinel")
 }
 
+// reconcileRespawnCounts seeds in-memory respawn counts from the event log.
+//
+// CRASH SAFETY: Respawn counts are in-memory and lost on sentinel restart.
+// Without reconciliation, a restarted sentinel would reset all counts to 0,
+// potentially causing infinite respawn loops for persistently failing agents
+// (each restart resets the count, never reaching MaxRespawns). This method
+// reads recent respawn events from the event log and reconstructs the counts,
+// ensuring crash-restart doesn't bypass the MaxRespawns limit.
+func (w *Sentinel) reconcileRespawnCounts() {
+	if w.eventReader == nil {
+		return // no event reader configured (e.g., in tests)
+	}
+
+	// Look back 24 hours — respawn counts are per-writ, and any older
+	// respawns are for work that has likely been resolved or reassigned.
+	evts, err := w.eventReader.Read(events.ReadOpts{
+		Type:   events.EventRespawn,
+		Source: w.agentID(),
+		Since:  time.Now().Add(-24 * time.Hour),
+	})
+	if err != nil {
+		// Best-effort: if we can't read events, start with empty counts.
+		// The first patrol will establish new counts.
+		return
+	}
+
+	for _, ev := range evts {
+		payload, ok := ev.Payload.(map[string]any)
+		if !ok {
+			continue
+		}
+		agentID, _ := payload["agent"].(string)
+		writID, _ := payload["writ"].(string)
+		if agentID == "" {
+			continue
+		}
+		key := respawnKey{AgentID: agentID, WritID: writID}
+		w.respawnCounts[key]++
+	}
+}
+
 // Run starts the sentinel patrol loop. Blocks until context is cancelled.
 // Patrols immediately on start, then on each interval.
 func (w *Sentinel) Run(ctx context.Context) error {
@@ -186,6 +227,10 @@ func (w *Sentinel) Run(ctx context.Context) error {
 	if err := w.sphereStore.UpdateAgentState(w.agentID(), "working", ""); err != nil {
 		return fmt.Errorf("failed to set sentinel working: %w", err)
 	}
+
+	// Reconcile respawn counts from event history before first patrol.
+	// This prevents infinite respawn loops after sentinel crash-restart.
+	w.reconcileRespawnCounts()
 
 	// Patrol immediately.
 	w.patrol(ctx)
@@ -673,6 +718,13 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 }
 
 // handleStalled handles an agent whose session died while work was tethered.
+//
+// CRASH SAFETY: The in-memory respawnCounts map is incremented BEFORE the
+// persistent state change in respawnAgent (UpdateAgentState). If sentinel
+// crashes after incrementing but before persisting, the in-memory count is
+// lost (harmless — reconcileRespawnCounts recovers from event history on
+// restart). If sentinel crashes after respawnAgent emits the respawn event,
+// the count is recoverable from the event log.
 func (w *Sentinel) handleStalled(agent store.Agent) error {
 	key := respawnKey{AgentID: agent.ID, WritID: agent.ActiveWrit}
 	attempts := w.respawnCounts[key]
