@@ -316,9 +316,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 
 	case restartProcessMsg:
-		// Restart a sphere process — placeholder for confirmation overlay.
-		// The confirmation writ will intercept this message.
-		_ = msg.processName
+		m.dirty = true
+		// Check systemd guard before showing confirmation.
+		info, ok := sphereProcessMap[msg.processName]
+		if ok && checkSystemdManaged(info.cliName) {
+			m.confirm.show(
+				fmt.Sprintf("Cannot restart %s", msg.processName),
+				fmt.Sprintf("Managed by systemd — use systemctl --user restart sol-%s", info.cliName),
+				nil,
+			)
+		} else {
+			m.confirm.show(
+				fmt.Sprintf("Restart %s?", msg.processName),
+				"This will stop and re-launch the process.",
+				sphereRestartCmd(msg.processName),
+			)
+		}
+
+	case restartDoneMsg:
+		m.dirty = true
+		if msg.err != nil {
+			// Show error in confirmation overlay.
+			m.confirm.show(
+				fmt.Sprintf("Restart %s failed", msg.processName),
+				msg.err.Error(),
+				nil,
+			)
+		}
+		// Force refresh to pick up new state.
+		cmds = append(cmds, m.refresh())
 
 	case animTickMsg:
 		// Animation tick (~30 FPS) — drives visual state.

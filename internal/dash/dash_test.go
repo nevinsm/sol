@@ -2587,3 +2587,169 @@ func TestModelConfirmOverlayRendered(t *testing.T) {
 		t.Error("View() should render confirm detail")
 	}
 }
+
+// --- Sphere process restart tests ---
+
+func TestSphereProcessRestartMsgTriggersConfirmation(t *testing.T) {
+	m := NewModel(Config{
+		SOLHome: t.TempDir(),
+	})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	// Send a restartProcessMsg.
+	result, _ := m.Update(restartProcessMsg{processName: "Prefect"})
+	updated := result.(Model)
+
+	if !updated.confirm.active {
+		t.Error("restartProcessMsg should activate the confirmation overlay")
+	}
+	if !strings.Contains(updated.confirm.title, "Restart Prefect?") {
+		t.Errorf("confirm title should contain 'Restart Prefect?', got %q", updated.confirm.title)
+	}
+}
+
+func TestSphereProcessRestartDoneErrorShowsOverlay(t *testing.T) {
+	m := NewModel(Config{
+		SOLHome: t.TempDir(),
+	})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	// Simulate a restart failure.
+	result, _ := m.Update(restartDoneMsg{processName: "Consul", err: fmt.Errorf("process exited")})
+	updated := result.(Model)
+
+	if !updated.confirm.active {
+		t.Error("restartDoneMsg with error should show error overlay")
+	}
+	if !strings.Contains(updated.confirm.title, "failed") {
+		t.Errorf("confirm title should mention failure, got %q", updated.confirm.title)
+	}
+}
+
+func TestSphereProcessRestartDoneSuccessNoOverlay(t *testing.T) {
+	m := NewModel(Config{
+		SOLHome: t.TempDir(),
+	})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	// Simulate a successful restart.
+	result, _ := m.Update(restartDoneMsg{processName: "Chronicle", err: nil})
+	updated := result.(Model)
+
+	if updated.confirm.active {
+		t.Error("successful restart should not show a confirmation overlay")
+	}
+}
+
+func TestSphereRestartKeyOnProcessSection(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+
+	data := &status.SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: status.PrefectInfo{Running: true, PID: 1234},
+		Consul:  status.ConsulInfo{Running: true},
+	}
+	sm.updateData(data)
+
+	// Focus on processes section.
+	sm.hasFocus = true
+	sm.focusedSection = sphereSectionProcesses
+	sm.processCursor = 0 // Prefect
+
+	// Press 'R' to restart.
+	updated, cmd := sm.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}}, data)
+
+	if cmd == nil {
+		t.Fatal("pressing R on a process should return a command")
+	}
+
+	// Execute the command and verify it produces a restartProcessMsg.
+	msg := cmd()
+	rpMsg, ok := msg.(restartProcessMsg)
+	if !ok {
+		t.Fatalf("expected restartProcessMsg, got %T", msg)
+	}
+	if rpMsg.processName != "Prefect" {
+		t.Errorf("expected processName 'Prefect', got %q", rpMsg.processName)
+	}
+	_ = updated
+}
+
+func TestSphereRestartKeyNotFocused(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+
+	data := &status.SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: status.PrefectInfo{Running: true},
+	}
+	sm.updateData(data)
+
+	// Not focused.
+	sm.hasFocus = false
+
+	// Press 'R' — should do nothing.
+	_, cmd := sm.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}}, data)
+
+	if cmd != nil {
+		t.Error("R without focus should not produce a command")
+	}
+}
+
+func TestSphereRestartKeyOnWorldsSection(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+
+	data := &status.SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: status.PrefectInfo{Running: true},
+		Worlds: []status.WorldSummary{
+			{Name: "alpha", Health: "healthy"},
+		},
+	}
+	sm.updateData(data)
+
+	// Focus on worlds section.
+	sm.hasFocus = true
+	sm.focusedSection = sphereSectionWorlds
+
+	// Press 'R' — should do nothing (R only works in processes section).
+	_, cmd := sm.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}}, data)
+
+	if cmd != nil {
+		t.Error("R on worlds section should not produce a command")
+	}
+}
+
+func TestSphereProcessMapCoversAllProcesses(t *testing.T) {
+	// All 6 sphere processes should be in the map.
+	expected := []string{"Prefect", "Consul", "Chronicle", "Ledger", "Broker", "Senate"}
+	for _, name := range expected {
+		if _, ok := sphereProcessMap[name]; !ok {
+			t.Errorf("sphereProcessMap missing %q", name)
+		}
+	}
+}
+
+func TestRestartSphereProcessUnknown(t *testing.T) {
+	err := restartSphereProcess("/usr/bin/sol", "Unknown")
+	if err == nil {
+		t.Error("expected error for unknown process")
+	}
+	if !strings.Contains(err.Error(), "unknown sphere process") {
+		t.Errorf("error should mention unknown process, got %q", err.Error())
+	}
+}
