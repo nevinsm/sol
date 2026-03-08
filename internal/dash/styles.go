@@ -171,3 +171,20 @@ func formatGovernorDetail(g status.GovernorInfo) string {
 	}
 	return ""
 }
+
+// feedHighlightAtLevel returns a style for feed entries at the given fade level.
+// Level 4 is brightest (new!), level 0 is the normal dimStyle.
+func feedHighlightAtLevel(level int) lipgloss.Style {
+	switch level {
+	case 4:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("15"))  // bright white
+	case 3:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("7"))   // normal white
+	case 2:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("250")) // light gray
+	case 1:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("245")) // medium gray
+	default:
+		return dimStyle // level 0 — normal dim gray
+	}
+}
