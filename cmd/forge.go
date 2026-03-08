@@ -728,16 +728,50 @@ var forgeCreateResolutionCmd = &cobra.Command{
 			return err
 		}
 
+		// Best-effort immediate dispatch of the resolution writ.
+		var dispatchedAgent string
+		if dispatchErr := func() error {
+			worldCfg, err := config.LoadWorldConfig(world)
+			if err != nil {
+				return err
+			}
+			sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
+			if err != nil {
+				return err
+			}
+			mgr := dispatch.NewSessionManager()
+			logger := events.NewLogger(config.Home())
+			result, err := dispatch.Cast(dispatch.CastOpts{
+				WritID:     taskID,
+				World:      world,
+				SourceRepo: sourceRepo,
+			}, worldStore, sphereStore, mgr, logger)
+			if err != nil {
+				return err
+			}
+			dispatchedAgent = result.AgentName
+			return nil
+		}(); dispatchErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: created resolution writ %s but auto-dispatch failed: %v\n", taskID, dispatchErr)
+		}
+
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
-			return printJSON(map[string]string{
+			out := map[string]string{
 				"mr_id":   mrID,
 				"task_id": taskID,
-			})
+			}
+			if dispatchedAgent != "" {
+				out["dispatched_agent"] = dispatchedAgent
+			}
+			return printJSON(out)
 		}
 
 		fmt.Printf("Created resolution task: %s\n", taskID)
 		fmt.Printf("  MR %s is now blocked\n", mrID)
+		if dispatchedAgent != "" {
+			fmt.Printf("Dispatched %s -> %s\n", taskID, dispatchedAgent)
+		}
 		return nil
 	},
 }
