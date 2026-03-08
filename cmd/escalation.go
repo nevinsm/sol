@@ -58,9 +58,10 @@ var escalationListCmd = &cobra.Command{
 			type jsonEsc struct {
 				ID          string `json:"id"`
 				Severity    string `json:"severity"`
-				Source      string `json:"source"`
-				Description string `json:"description"`
 				Status      string `json:"status"`
+				Source      string `json:"source"`
+				SourceRef   string `json:"source_ref"`
+				Description string `json:"description"`
 				CreatedAt   string `json:"created_at"`
 			}
 			out := make([]jsonEsc, len(escs))
@@ -68,9 +69,10 @@ var escalationListCmd = &cobra.Command{
 				out[i] = jsonEsc{
 					ID:          e.ID,
 					Severity:    e.Severity,
-					Source:      e.Source,
-					Description: e.Description,
 					Status:      e.Status,
+					Source:      e.Source,
+					SourceRef:   e.SourceRef,
+					Description: e.Description,
 					CreatedAt:   e.CreatedAt.Format(time.RFC3339),
 				}
 			}
@@ -97,7 +99,12 @@ var escalationListCmd = &cobra.Command{
 
 		for _, e := range escs {
 			ago := timeAgo(time.Since(e.CreatedAt))
-			fmt.Printf("  %-14s [%-8s]  %-16s %s  (%s)\n", e.ID, e.Severity, e.Source, e.Description, ago)
+			sourceRef := e.SourceRef
+			if sourceRef == "" {
+				sourceRef = "—"
+			}
+			fmt.Printf("  %-18s [%-8s]  %-14s %-16s %-16s %s  (%s)\n",
+				e.ID, e.Severity, e.Status, e.Source, sourceRef, e.Description, ago)
 		}
 
 		fmt.Printf("\n%d escalation(s)\n", len(escs))

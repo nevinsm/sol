@@ -104,9 +104,18 @@ func (s *Store) GetEscalation(id string) (*Escalation, error) {
 	return esc, nil
 }
 
+// severityOrderSQL is a CASE expression that maps severity levels to
+// numeric weights for ORDER BY (higher = more severe, sorted first with DESC).
+const severityOrderSQL = `CASE severity
+	WHEN 'critical' THEN 4
+	WHEN 'high' THEN 3
+	WHEN 'medium' THEN 2
+	WHEN 'low' THEN 1
+	ELSE 0 END`
+
 // ListEscalations returns escalations filtered by status.
 // If status is empty, returns all escalations.
-// Ordered by created_at DESC (newest first).
+// Ordered by severity DESC (critical first), then created_at DESC (newest first).
 func (s *Store) ListEscalations(status string) ([]Escalation, error) {
 	query := `SELECT id, severity, source, description, source_ref, status, acknowledged, created_at, updated_at
 	          FROM escalations`
@@ -115,16 +124,17 @@ func (s *Store) ListEscalations(status string) ([]Escalation, error) {
 		query += ` WHERE status = ?`
 		args = append(args, status)
 	}
-	query += ` ORDER BY created_at DESC`
+	query += ` ORDER BY ` + severityOrderSQL + ` DESC, created_at DESC`
 
 	return s.scanEscalations(query, args...)
 }
 
 // ListOpenEscalations returns all non-resolved escalations.
-// Ordered by created_at DESC (newest first).
+// Ordered by severity DESC (critical first), then created_at DESC (newest first).
 func (s *Store) ListOpenEscalations() ([]Escalation, error) {
 	query := `SELECT id, severity, source, description, source_ref, status, acknowledged, created_at, updated_at
-	          FROM escalations WHERE status != 'resolved' ORDER BY created_at DESC`
+	          FROM escalations WHERE status != 'resolved'
+	          ORDER BY ` + severityOrderSQL + ` DESC, created_at DESC`
 	return s.scanEscalations(query)
 }
 
