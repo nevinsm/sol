@@ -29,7 +29,7 @@ var roleSkillsMap = map[string][]string{
 	"outpost":  {"resolve-and-handoff", "memories"},
 	"forge":    {"forge-patrol", "forge-toolbox", "merge-operations"},
 	"governor": {"writ-dispatch", "caravan-management", "world-coordination", "notification-handling", "memories"},
-	"envoy":    {"resolve-and-submit", "writ-management", "dispatch", "session-management", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "memories"},
+	"envoy":    {"resolve-and-submit", "writ-management", "dispatch", "session-management", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail", "memories"},
 	"senate":   {"world-queries", "writ-planning", "memories"},
 }
 
@@ -119,6 +119,8 @@ func generateSkill(name string, ctx SkillContext) string {
 			return skillEnvoyNotificationHandling(ctx)
 		}
 		return skillNotificationHandling(ctx)
+	case "mail":
+		return skillMail(ctx)
 	case "writ-management":
 		return skillWritManagement(ctx)
 	case "dispatch":
@@ -385,7 +387,8 @@ Commands for monitoring world state and coordinating agents.
 
 | Command | Description |
 |---------|-------------|
-| %[1]s status %[2]s%[3]s | World status overview |
+| %[1]s status%[3]s | Sphere overview (processes, worlds, unread mail count) |
+| %[1]s status %[2]s%[3]s | World detail (agents, writs, forge, nudge queue depth) |
 | %[1]s agent list%[3]s | List agents and availability |
 
 ## World Sync
@@ -393,6 +396,16 @@ Commands for monitoring world state and coordinating agents.
 | Command | Description |
 |---------|-------------|
 | %[1]s world sync --world=%[2]s%[3]s | Sync managed repo from upstream |
+
+## Service Management
+
+| Command | Description |
+|---------|-------------|
+| %[1]s sentinel status --world=%[2]s%[3]s | Check sentinel health |
+| %[1]s sentinel restart --world=%[2]s%[3]s | Restart sentinel |
+| %[1]s forge status %[2]s%[3]s | Check forge status |
+| %[1]s service status%[3]s | Show all sphere daemon status |
+| %[1]s down --all%[3]s | Stop all world services |
 
 ## Escalation
 
@@ -411,6 +424,10 @@ Notifications arrive at each turn boundary via UserPromptSubmit hook.
 Format: %[1]s[NOTIFICATION] TYPE: Subject — Body%[2]s
 
 ## Notification Types
+
+**MAIL** — Operator sent a message via %[3]s mail send%[5]s.
+- Fields: %[1]ssubject%[2]s, %[1]sbody%[2]s
+- Action: Read and respond to operator communication. Check %[3]s mail inbox%[5]s for full context.
 
 **AGENT_DONE** — An outpost resolved a writ.
 - Fields: %[1]swrit_id%[2]s, %[1]sagent_name%[2]s, %[1]sbranch%[2]s, %[1]stitle%[2]s, %[1]smerge_request_id%[2]s
@@ -459,6 +476,31 @@ Format: ` + "`[NOTIFICATION] TYPE: Subject — Body`" + `
 
 Always update your brief after handling a notification.
 `
+}
+
+func skillMail(ctx SkillContext) string {
+	sol := ctx.sol()
+	return fmt.Sprintf(`# Mail
+
+Commands for sending and reading operator mail.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| %[1]s mail inbox%[2]s | List pending messages |
+| %[1]s mail read <message-id>%[2]s | Read a message (marks as read) |
+| %[1]s mail ack <message-id>%[2]s | Acknowledge a message |
+| %[1]s mail check%[2]s | Count unread messages |
+| %[1]s mail send --to=<identity> --subject="..." --body="..."%[2]s | Send a message |
+
+Options for send: %[3]s (1=high, 2=normal, 3=low), %[4]s.
+
+Mail is delivered as a MAIL notification via the nudge system.
+Use %[1]s mail inbox%[2]s to see full message history.
+`, "`"+sol, "`",
+		"`--priority`",
+		"`--no-notify`")
 }
 
 func skillWritManagement(ctx SkillContext) string {
@@ -544,11 +586,24 @@ Commands for checking world and agent state.
 
 | Command | Description |
 |---------|-------------|
-| %[1]s status %[2]s%[3]s | World status overview (agents, writs, forge) |
+| %[1]s status%[3]s | Sphere overview (processes, worlds, unread mail count) |
+| %[1]s status %[2]s%[3]s | World detail (agents, writs, forge, nudge queue depth) |
 | %[1]s writ list --world=%[2]s%[3]s | List all writs |
 | %[1]s writ status <id> --world=%[2]s%[3]s | Check specific writ |
 | %[1]s agent list%[3]s | List agents and states |
 | %[1]s forge queue --world=%[2]s%[3]s | Check forge queue |
+
+## Component Status
+
+| Command | Description |
+|---------|-------------|
+| %[1]s prefect status%[3]s | Prefect health and uptime |
+| %[1]s consul status%[3]s | Consul patrol status |
+| %[1]s chronicle status%[3]s | Chronicle status |
+| %[1]s ledger status%[3]s | Ledger OTLP receiver status |
+| %[1]s sentinel status --world=%[2]s%[3]s | Sentinel health for this world |
+| %[1]s governor status --world=%[2]s%[3]s | Governor status for this world |
+| %[1]s forge status %[2]s%[3]s | Forge status for this world |
 `, "`"+sol, world, "`")
 }
 
@@ -567,6 +622,15 @@ Commands for world-level operations.
 | %[1]s world status %[2]s%[3]s | World health overview |
 | %[1]s world query %[2]s "question"%[3]s | Query the governor |
 | %[1]s world summary %[2]s%[3]s | Read governor's world summary |
+
+## Service Lifecycle
+
+| Command | Description |
+|---------|-------------|
+| %[1]s service status%[3]s | Show all sphere daemon status |
+| %[1]s service install%[3]s | Install systemd units |
+| %[1]s service uninstall%[3]s | Remove systemd units |
+| %[1]s down --all%[3]s | Stop all world services |
 `, "`"+sol, world, "`")
 }
 

@@ -33,8 +33,8 @@ func TestRoleSkillsGovernor(t *testing.T) {
 
 func TestRoleSkillsEnvoy(t *testing.T) {
 	skills := RoleSkills("envoy")
-	if len(skills) != 9 {
-		t.Errorf("envoy should have 9 skills, got %d: %v", len(skills), skills)
+	if len(skills) != 10 {
+		t.Errorf("envoy should have 10 skills, got %d: %v", len(skills), skills)
 	}
 }
 
@@ -314,7 +314,7 @@ func TestGovernorSkillContentHasNotifications(t *testing.T) {
 	}
 	content := string(data)
 
-	for _, notifType := range []string{"AGENT_DONE", "MERGED", "MERGE_FAILED", "RECOVERY_NEEDED"} {
+	for _, notifType := range []string{"MAIL", "AGENT_DONE", "MERGED", "MERGE_FAILED", "RECOVERY_NEEDED"} {
 		if !contains(content, notifType) {
 			t.Errorf("notification-handling skill should contain %q", notifType)
 		}
@@ -351,6 +351,133 @@ func TestEnvoySkillContentHasNotifications(t *testing.T) {
 	// Envoy should NOT have governor-specific notification types.
 	if contains(content, "RECOVERY_NEEDED") {
 		t.Error("envoy notification-handling skill should not contain RECOVERY_NEEDED")
+	}
+}
+
+func TestEnvoySkillContentHasMail(t *testing.T) {
+	dir := t.TempDir()
+	ctx := SkillContext{
+		World:     "myworld",
+		AgentName: "Echo",
+		SolBinary: "sol",
+		Role:      "envoy",
+	}
+
+	if err := InstallSkills(dir, ctx); err != nil {
+		t.Fatalf("InstallSkills failed: %v", err)
+	}
+
+	// Check mail skill has key commands.
+	skillPath := filepath.Join(dir, ".claude", "skills", "mail", "SKILL.md")
+	data, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("failed to read skill: %v", err)
+	}
+	content := string(data)
+
+	for _, cmd := range []string{"mail inbox", "mail read", "mail ack", "mail check", "mail send"} {
+		if !contains(content, cmd) {
+			t.Errorf("mail skill should contain %q", cmd)
+		}
+	}
+}
+
+func TestStatusMonitoringHasComponentStatus(t *testing.T) {
+	dir := t.TempDir()
+	ctx := SkillContext{
+		World:     "myworld",
+		AgentName: "Echo",
+		SolBinary: "sol",
+		Role:      "envoy",
+	}
+
+	if err := InstallSkills(dir, ctx); err != nil {
+		t.Fatalf("InstallSkills failed: %v", err)
+	}
+
+	skillPath := filepath.Join(dir, ".claude", "skills", "status-monitoring", "SKILL.md")
+	data, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("failed to read skill: %v", err)
+	}
+	content := string(data)
+
+	// Should mention component status commands.
+	for _, component := range []string{"prefect status", "consul status", "sentinel status"} {
+		if !contains(content, component) {
+			t.Errorf("status-monitoring skill should contain %q", component)
+		}
+	}
+
+	// Should mention new status output details.
+	if !contains(content, "unread mail") {
+		t.Error("status-monitoring skill should mention unread mail count")
+	}
+	if !contains(content, "nudge queue") {
+		t.Error("status-monitoring skill should mention nudge queue depth")
+	}
+}
+
+func TestWorldCoordinationHasServiceManagement(t *testing.T) {
+	dir := t.TempDir()
+	ctx := SkillContext{
+		World:     "myworld",
+		SolBinary: "sol",
+		Role:      "governor",
+	}
+
+	if err := InstallSkills(dir, ctx); err != nil {
+		t.Fatalf("InstallSkills failed: %v", err)
+	}
+
+	skillPath := filepath.Join(dir, ".claude", "skills", "world-coordination", "SKILL.md")
+	data, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("failed to read skill: %v", err)
+	}
+	content := string(data)
+
+	// Should have service management section.
+	if !contains(content, "Service Management") {
+		t.Error("world-coordination skill should contain Service Management section")
+	}
+	if !contains(content, "service status") {
+		t.Error("world-coordination skill should contain service status command")
+	}
+	if !contains(content, "down --all") {
+		t.Error("world-coordination skill should contain down --all command")
+	}
+}
+
+func TestWorldOperationsHasServiceLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	ctx := SkillContext{
+		World:     "myworld",
+		AgentName: "Echo",
+		SolBinary: "sol",
+		Role:      "envoy",
+	}
+
+	if err := InstallSkills(dir, ctx); err != nil {
+		t.Fatalf("InstallSkills failed: %v", err)
+	}
+
+	skillPath := filepath.Join(dir, ".claude", "skills", "world-operations", "SKILL.md")
+	data, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("failed to read skill: %v", err)
+	}
+	content := string(data)
+
+	// Should have service lifecycle section.
+	if !contains(content, "Service Lifecycle") {
+		t.Error("world-operations skill should contain Service Lifecycle section")
+	}
+	if !contains(content, "service install") {
+		t.Error("world-operations skill should contain service install command")
+	}
+	if !contains(content, "down --all") {
+		t.Error("world-operations skill should contain down --all command")
 	}
 }
 
