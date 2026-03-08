@@ -722,7 +722,7 @@ func (m *mockSphereStore) GetAgent(id string) (*store.Agent, error) {
 			return a, nil
 		}
 	}
-	return &store.Agent{ID: id}, nil
+	return nil, fmt.Errorf("agent %q not found", id)
 }
 
 func TestExec(t *testing.T) {
@@ -803,6 +803,68 @@ func TestExec(t *testing.T) {
 	}
 	if msg.MsgType != "notification" {
 		t.Errorf("expected msgType notification, got %q", msg.MsgType)
+	}
+}
+
+func TestExecGetAgentFailureFallsBackToTether(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	// Set up tether file — this is the fallback when GetAgent fails.
+	if err := tether.Write("ember", "Toast", "sol-tether999", "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create worktree directory.
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	registerMinimalRole(t, "agent", worktreeDir)
+
+	mgr := &mockSessionMgr{captureResult: "$ working"}
+	// No agents in map — GetAgent will return error for "ember/Toast".
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Toast",
+		Summary:       "Testing GetAgent failure fallback.",
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// Handoff file should be written (tether fallback provides hasWork=true).
+	if !HasHandoff("ember", "Toast", "agent") {
+		t.Error("expected handoff file to exist after Exec with GetAgent failure")
+	}
+
+	// Verify the handoff state used the tether writ ID (not an active writ from DB).
+	state, err := Read("ember", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("Read handoff state failed: %v", err)
+	}
+	if state.WritID != "sol-tether999" {
+		t.Errorf("expected WritID sol-tether999 (from tether fallback), got %q", state.WritID)
+	}
+	if state.ActiveWritID != "" {
+		t.Errorf("expected empty ActiveWritID (GetAgent failed), got %q", state.ActiveWritID)
+	}
+
+	// Session should be cycled.
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+
+	// Mail should be sent (hasWork was true via tether).
+	if len(ts.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(ts.messages))
+	}
+	if ts.messages[0].Subject != "HANDOFF: sol-tether999" {
+		t.Errorf("expected subject 'HANDOFF: sol-tether999', got %q", ts.messages[0].Subject)
 	}
 }
 
