@@ -1553,6 +1553,9 @@ func writeTOMLConvoyManifest(t *testing.T, dir, name string, legs []Leg, synth *
 		f.WriteString("[synthesis]\n")
 		f.WriteString("title = \"" + synth.Title + "\"\n")
 		f.WriteString("description = \"" + synth.Description + "\"\n")
+		if synth.Kind != "" {
+			f.WriteString("kind = \"" + synth.Kind + "\"\n")
+		}
 		if len(synth.DependsOn) > 0 {
 			f.WriteString("depends_on = [")
 			for i, dep := range synth.DependsOn {
@@ -2579,6 +2582,81 @@ func TestManifestFormulaConvoyKindDefaultsToCode(t *testing.T) {
 	if legItem.Kind != "code" {
 		t.Errorf("leg1 kind: got %q, want %q (default)", legItem.Kind, "code")
 	}
+}
+
+func TestManifestFormulaConvoySynthesisKind(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Test 1: Synthesis with explicit kind = "analysis".
+	t.Run("analysis", func(t *testing.T) {
+		formulaDir := filepath.Join(solHome, "formulas", "test-synth-analysis")
+		os.MkdirAll(formulaDir, 0o755)
+
+		legs := []Leg{
+			{ID: "review", Title: "Review", Description: "Review the code.", Kind: "analysis"},
+		}
+		synth := &Synthesis{
+			Title:       "Consolidate Review",
+			Description: "Combine review findings.",
+			DependsOn:   []string{"review"},
+			Kind:        "analysis",
+		}
+		writeTOMLConvoyManifest(t, formulaDir, "test-synth-analysis", legs, synth)
+
+		result, err := ManifestFormula(ws, ss, ManifestOpts{
+			FormulaName: "test-synth-analysis",
+			World:       "test-world",
+			CreatedBy:   "operator",
+		})
+		if err != nil {
+			t.Fatalf("ManifestFormula() error: %v", err)
+		}
+
+		synthID := result.ChildIDs["synthesis"]
+		synthItem, err := ws.GetWrit(synthID)
+		if err != nil {
+			t.Fatalf("GetWrit(synthesis) error: %v", err)
+		}
+		if synthItem.Kind != "analysis" {
+			t.Errorf("synthesis kind: got %q, want %q", synthItem.Kind, "analysis")
+		}
+	})
+
+	// Test 2: Synthesis with no kind defaults to "code".
+	t.Run("default_code", func(t *testing.T) {
+		formulaDir := filepath.Join(solHome, "formulas", "test-synth-default")
+		os.MkdirAll(formulaDir, 0o755)
+
+		legs := []Leg{
+			{ID: "build", Title: "Build", Description: "Build the thing."},
+		}
+		synth := &Synthesis{
+			Title:       "Finalize",
+			Description: "Finalize the build.",
+			DependsOn:   []string{"build"},
+		}
+		writeTOMLConvoyManifest(t, formulaDir, "test-synth-default", legs, synth)
+
+		result, err := ManifestFormula(ws, ss, ManifestOpts{
+			FormulaName: "test-synth-default",
+			World:       "test-world",
+			CreatedBy:   "operator",
+		})
+		if err != nil {
+			t.Fatalf("ManifestFormula() error: %v", err)
+		}
+
+		synthID := result.ChildIDs["synthesis"]
+		synthItem, err := ws.GetWrit(synthID)
+		if err != nil {
+			t.Fatalf("GetWrit(synthesis) error: %v", err)
+		}
+		if synthItem.Kind != "code" {
+			t.Errorf("synthesis kind: got %q, want %q (default)", synthItem.Kind, "code")
+		}
+	})
 }
 
 func TestCaravanPhaseGatingWithAnalysisWrit(t *testing.T) {

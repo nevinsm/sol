@@ -66,6 +66,7 @@ type Synthesis struct {
 	Title       string   `toml:"title"`
 	Description string   `toml:"description"`
 	DependsOn   []string `toml:"depends_on"`
+	Kind        string   `toml:"kind"` // "code" (default) or "analysis"
 }
 
 // Instance holds metadata about an instantiated workflow.
@@ -872,6 +873,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 			description: synthDesc,
 			needs:       m.Synth.DependsOn,
 			labels:      []string{"convoy-synthesis"},
+			kind:        m.Synth.Kind,
 		})
 	} else {
 		// Workflow type — render step instructions as descriptions.
