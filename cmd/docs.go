@@ -130,8 +130,8 @@ var docSections = []docSection{
 	},
 	{
 		heading: "Supervision",
-		paths:   []string{"prefect run", "prefect stop", "status"},
-		notes:   "`sol prefect run --worlds=a,b` — supervise only the listed worlds. Sleeping worlds in the list are still skipped.",
+		paths:   []string{"prefect run", "prefect stop", "status", "dash"},
+		notes:   "`sol prefect run --worlds=a,b` — supervise only the listed worlds. Sleeping worlds in the list are still skipped.\n\n`sol dash` is a live TUI dashboard — sphere overview with no args, world detail with a world argument. Refreshes every 3 seconds.",
 	},
 	{
 		heading: "Sentinel (Per-World Health Monitor)",

@@ -168,8 +168,11 @@ Without flags, `sol up` starts sphere daemons (prefect, consul, chronicle, ledge
 | `sol prefect run` | Run the prefect (foreground) |
 | `sol prefect stop` | Stop the running prefect |
 | `sol status [world]` | Show sphere or world status |
+| `sol dash [world]` | Live TUI dashboard |
 
 `sol prefect run --worlds=a,b` — supervise only the listed worlds. Sleeping worlds in the list are still skipped.
+
+`sol dash` is a live TUI dashboard — sphere overview with no args, world detail with a world argument. Refreshes every 3 seconds.
 
 ## Sentinel (Per-World Health Monitor)
 
