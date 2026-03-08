@@ -28,7 +28,7 @@ func (s *Store) AddDependency(fromID, toID string) error {
 	}
 
 	// Check for cycles.
-	cycle, err := s.wouldCreateCycle(fromID, toID)
+	cycle, err := detectCycle(s.GetDependencies, fromID, toID)
 	if err != nil {
 		return fmt.Errorf("failed to check for cycles: %w", err)
 	}
@@ -164,37 +164,3 @@ func (s *Store) HasOpenTransitiveDependents(writID string) (bool, error) {
 	return false, nil
 }
 
-// wouldCreateCycle checks if adding the edge from→to would create a cycle
-// by walking the dependency graph from toID to see if fromID is reachable.
-//
-// Implementation note: this does a BFS with one GetDependencies query per
-// node. For large dependency graphs (100+ nodes), consider replacing with
-// a recursive CTE:
-//
-//	WITH RECURSIVE chain(id) AS (
-//	    SELECT to_id FROM dependencies WHERE from_id = ?
-//	    UNION ALL
-//	    SELECT d.to_id FROM dependencies d JOIN chain c ON d.from_id = c.id
-//	)
-//	SELECT 1 FROM chain WHERE id = ? LIMIT 1
-func (s *Store) wouldCreateCycle(fromID, toID string) (bool, error) {
-	visited := map[string]bool{}
-	queue := []string{toID}
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		if current == fromID {
-			return true, nil
-		}
-		if visited[current] {
-			continue
-		}
-		visited[current] = true
-		deps, err := s.GetDependencies(current)
-		if err != nil {
-			return false, err
-		}
-		queue = append(queue, deps...)
-	}
-	return false, nil
-}

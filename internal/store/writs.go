@@ -1,9 +1,7 @@
 package store
 
 import (
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,11 +48,7 @@ type WritUpdates struct {
 
 // generateID returns a new writ ID in the format "sol-" + 16 hex chars.
 func generateID() (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate writ ID: %w", err)
-	}
-	return "sol-" + hex.EncodeToString(b), nil
+	return generatePrefixedID("sol-")
 }
 
 // CreateWrit creates a new writ and returns its generated ID.
@@ -201,20 +195,14 @@ func (s *Store) GetWrit(id string) (*Writ, error) {
 			return nil, fmt.Errorf("failed to parse metadata for writ %q: %w", id, err)
 		}
 	}
-	w.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse created_at for writ %q: %w", id, err)
+	if w.CreatedAt, err = parseRFC3339(createdAt, "created_at", "writ "+id); err != nil {
+		return nil, err
 	}
-	w.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse updated_at for writ %q: %w", id, err)
+	if w.UpdatedAt, err = parseRFC3339(updatedAt, "updated_at", "writ "+id); err != nil {
+		return nil, err
 	}
-	if closedAt.Valid {
-		t, err := time.Parse(time.RFC3339, closedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse closed_at for writ %q: %w", id, err)
-		}
-		w.ClosedAt = &t
+	if w.ClosedAt, err = parseOptionalRFC3339(closedAt, "closed_at", "writ "+id); err != nil {
+		return nil, err
 	}
 
 	// Fetch labels.
@@ -296,20 +284,14 @@ func (s *Store) ListWrits(filters ListFilters) ([]Writ, error) {
 			}
 		}
 		var parseErr error
-		w.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for writ %q: %w", w.ID, parseErr)
+		if w.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "writ "+w.ID); parseErr != nil {
+			return nil, parseErr
 		}
-		w.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse updated_at for writ %q: %w", w.ID, parseErr)
+		if w.UpdatedAt, parseErr = parseRFC3339(updatedAt, "updated_at", "writ "+w.ID); parseErr != nil {
+			return nil, parseErr
 		}
-		if closedAt.Valid {
-			t, parseErr := time.Parse(time.RFC3339, closedAt.String)
-			if parseErr != nil {
-				return nil, fmt.Errorf("failed to parse closed_at for writ %q: %w", w.ID, parseErr)
-			}
-			w.ClosedAt = &t
+		if w.ClosedAt, parseErr = parseOptionalRFC3339(closedAt, "closed_at", "writ "+w.ID); parseErr != nil {
+			return nil, parseErr
 		}
 		items = append(items, w)
 	}
@@ -417,15 +399,7 @@ func (s *Store) UpdateWrit(id string, updates WritUpdates) error {
 	if err != nil {
 		return fmt.Errorf("failed to update writ %q: %w", id, err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("writ %q: %w", id, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "writ", id)
 }
 
 // CloseWrit sets status to "closed" and records closed_at.
@@ -448,15 +422,7 @@ func (s *Store) CloseWrit(id string, closeReason ...string) error {
 	if err != nil {
 		return fmt.Errorf("failed to close writ %q: %w", id, err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("writ %q: %w", id, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "writ", id)
 }
 
 // GetWritMetadata returns the metadata for a writ.
@@ -523,14 +489,7 @@ func (s *Store) SetWritMetadata(id string, metadata map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("failed to set metadata for writ %q: %w", id, err)
 	}
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("failed to check rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return fmt.Errorf("writ %q: %w", id, ErrNotFound)
-	}
-	return nil
+	return checkRowsAffected(result, "writ", id)
 }
 
 // ReadyWrits returns writs that are ready for dispatch: status is "open"
@@ -580,20 +539,14 @@ func (s *Store) ReadyWrits() ([]Writ, error) {
 			}
 		}
 		var parseErr error
-		w.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for writ %q: %w", w.ID, parseErr)
+		if w.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "writ "+w.ID); parseErr != nil {
+			return nil, parseErr
 		}
-		w.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse updated_at for writ %q: %w", w.ID, parseErr)
+		if w.UpdatedAt, parseErr = parseRFC3339(updatedAt, "updated_at", "writ "+w.ID); parseErr != nil {
+			return nil, parseErr
 		}
-		if closedAt.Valid {
-			t, parseErr := time.Parse(time.RFC3339, closedAt.String)
-			if parseErr != nil {
-				return nil, fmt.Errorf("failed to parse closed_at for writ %q: %w", w.ID, parseErr)
-			}
-			w.ClosedAt = &t
+		if w.ClosedAt, parseErr = parseOptionalRFC3339(closedAt, "closed_at", "writ "+w.ID); parseErr != nil {
+			return nil, parseErr
 		}
 		items = append(items, w)
 	}
