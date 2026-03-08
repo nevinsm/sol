@@ -739,7 +739,7 @@ With --force, also stops all outpost agent sessions immediately:
 		for _, agent := range agents {
 			if agent.Role == "envoy" {
 				// Warn envoy sessions but do not stop them.
-				sessName := dispatch.SessionName(name, agent.Name)
+				sessName := config.SessionName(name, agent.Name)
 				if mgr.Exists(sessName) {
 					warnMsg := "World is sleeping. Your session will continue but no new work will be dispatched."
 					if err := mgr.NudgeSession(sessName, warnMsg); err != nil {
@@ -760,7 +760,7 @@ With --force, also stops all outpost agent sessions immediately:
 				continue // skip idle agents
 			}
 
-			sessName := dispatch.SessionName(name, agent.Name)
+			sessName := config.SessionName(name, agent.Name)
 
 			if mgr.Exists(sessName) {
 				// Graceful stop: inject brief-save prompt, wait for stability, then kill.

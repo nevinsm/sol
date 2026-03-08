@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -54,7 +53,7 @@ func TestWorldSleepForceStopsOutpostSessions(t *testing.T) {
 
 	// Start a tmux session to simulate the running agent.
 	mgr := session.New()
-	sessName := dispatch.SessionName("sleeptest", "Toast")
+	sessName := config.SessionName("sleeptest", "Toast")
 	if err := mgr.Start(sessName, os.TempDir(), config.SessionCommand(), nil, "agent", "sleeptest"); err != nil {
 		t.Fatalf("start session: %v", err)
 	}
@@ -151,7 +150,7 @@ func TestWorldSleepForceWarnsEnvoys(t *testing.T) {
 
 	// Start a tmux session for the envoy.
 	mgr := session.New()
-	sessName := dispatch.SessionName("sleeptest2", "Scout")
+	sessName := config.SessionName("sleeptest2", "Scout")
 	if err := mgr.Start(sessName, os.TempDir(), config.SessionCommand(), nil, "envoy", "sleeptest2"); err != nil {
 		t.Fatalf("start envoy session: %v", err)
 	}
@@ -409,7 +408,7 @@ func TestWorldSleepForceMultipleAgents(t *testing.T) {
 
 		// Start session.
 		mgr := session.New()
-		sessName := dispatch.SessionName("multitest", name)
+		sessName := config.SessionName("multitest", name)
 		if err := mgr.Start(sessName, os.TempDir(), config.SessionCommand(), nil, "agent", "multitest"); err != nil {
 			t.Fatalf("start session for %s: %v", name, err)
 		}
@@ -425,7 +424,7 @@ func TestWorldSleepForceMultipleAgents(t *testing.T) {
 	os.MkdirAll(envoyDir, 0o755)
 
 	mgr := session.New()
-	envoySess := dispatch.SessionName("multitest", "Scout")
+	envoySess := config.SessionName("multitest", "Scout")
 	if err := mgr.Start(envoySess, os.TempDir(), config.SessionCommand(), nil, "envoy", "multitest"); err != nil {
 		t.Fatalf("start envoy session: %v", err)
 	}
@@ -445,10 +444,10 @@ func TestWorldSleepForceMultipleAgents(t *testing.T) {
 	}
 
 	// Verify all agent sessions gone, envoy still running.
-	if mgr.Exists(dispatch.SessionName("multitest", "Agent1")) {
+	if mgr.Exists(config.SessionName("multitest", "Agent1")) {
 		t.Error("Agent1 session should not exist after force sleep")
 	}
-	if mgr.Exists(dispatch.SessionName("multitest", "Agent2")) {
+	if mgr.Exists(config.SessionName("multitest", "Agent2")) {
 		t.Error("Agent2 session should not exist after force sleep")
 	}
 	if !mgr.Exists(envoySess) {
