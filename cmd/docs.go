@@ -178,6 +178,18 @@ var docSections = []docSection{
 	{
 		heading: "Workflows",
 		paths:   []string{"workflow list", "workflow show", "workflow instantiate", "workflow manifest", "workflow current", "workflow advance", "workflow status"},
+		notes: "### Convoy Leg Kinds\n\n" +
+			"Convoy formulas dispatch parallel legs as child writs. Each leg can specify a `kind` in its manifest entry:\n\n" +
+			"- **`code`** (default) — the leg produces code changes. On resolve, the agent pushes a branch and creates a merge request. " +
+			"The forge reviews and merges it before the synthesis phase can begin.\n" +
+			"- **`analysis`** — the leg produces findings, reports, or structured data (written to its output directory). " +
+			"On resolve, the writ closes directly — no branch push, no MR, no forge involvement.\n\n" +
+			"The synthesis step waits for all legs to close regardless of kind. Phase gating checks that every " +
+			"lower-phase writ is closed before advancing, whether it was closed via forge merge (code) or direct close (analysis).\n\n" +
+			"Built-in convoy formulas set `kind` based on their work type:\n" +
+			"- `code-review` — analysis legs (reviewing existing code)\n" +
+			"- `guided-design` — analysis legs (design exploration)\n" +
+			"- `plan-review` — analysis legs (plan evaluation)",
 	},
 	{
 		heading: "Caravans",

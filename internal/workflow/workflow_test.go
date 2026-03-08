@@ -2795,6 +2795,205 @@ func TestManifestFormulaConvoyAnalysisSynthesisDescription(t *testing.T) {
 	}
 }
 
+// TestMixedKindConvoyEndToEnd validates the full lifecycle of a caravan with
+// mixed code and analysis legs:
+//   - Code legs (kind=code) → forge path (branch, MR, merge)
+//   - Analysis legs (kind=analysis) → close directly (no MR)
+//   - Synthesis waits for ALL legs regardless of kind
+//   - Phase gating works correctly across mixed kinds
+func TestMixedKindConvoyEndToEnd(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Create convoy formula with mixed code + analysis legs.
+	formulaDir := filepath.Join(solHome, "formulas", "test-e2e-mixed")
+	os.MkdirAll(formulaDir, 0o755)
+
+	legs := []Leg{
+		{ID: "code-impl", Title: "Implementation", Description: "Build the feature.", Kind: "code"},
+		{ID: "code-tests", Title: "Test Coverage", Description: "Write tests.", Kind: "code"},
+		{ID: "design-review", Title: "Design Review", Description: "Review the design.", Kind: "analysis"},
+		{ID: "risk-assessment", Title: "Risk Assessment", Description: "Assess risks.", Kind: "analysis"},
+	}
+	synth := &Synthesis{
+		Title:       "Final Integration",
+		Description: "Integrate code changes with review findings.",
+		DependsOn:   []string{"code-impl", "code-tests", "design-review", "risk-assessment"},
+	}
+	writeTOMLConvoyManifest(t, formulaDir, "test-e2e-mixed", legs, synth)
+
+	// Manifest the formula into writs + caravan.
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "test-e2e-mixed",
+		World:       "test-world",
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	// --- Verify writ kinds are set correctly ---
+
+	codeImplID := result.ChildIDs["code-impl"]
+	codeTestsID := result.ChildIDs["code-tests"]
+	designID := result.ChildIDs["design-review"]
+	riskID := result.ChildIDs["risk-assessment"]
+	synthID := result.ChildIDs["synthesis"]
+
+	codeImplWrit, err := ws.GetWrit(codeImplID)
+	if err != nil {
+		t.Fatalf("GetWrit(code-impl) error: %v", err)
+	}
+	if codeImplWrit.Kind != "code" {
+		t.Errorf("code-impl kind: got %q, want %q", codeImplWrit.Kind, "code")
+	}
+
+	codeTestsWrit, err := ws.GetWrit(codeTestsID)
+	if err != nil {
+		t.Fatalf("GetWrit(code-tests) error: %v", err)
+	}
+	if codeTestsWrit.Kind != "code" {
+		t.Errorf("code-tests kind: got %q, want %q", codeTestsWrit.Kind, "code")
+	}
+
+	designWrit, err := ws.GetWrit(designID)
+	if err != nil {
+		t.Fatalf("GetWrit(design-review) error: %v", err)
+	}
+	if designWrit.Kind != "analysis" {
+		t.Errorf("design-review kind: got %q, want %q", designWrit.Kind, "analysis")
+	}
+
+	riskWrit, err := ws.GetWrit(riskID)
+	if err != nil {
+		t.Fatalf("GetWrit(risk-assessment) error: %v", err)
+	}
+	if riskWrit.Kind != "analysis" {
+		t.Errorf("risk-assessment kind: got %q, want %q", riskWrit.Kind, "analysis")
+	}
+
+	// Synthesis defaults to code kind.
+	synthWrit, err := ws.GetWrit(synthID)
+	if err != nil {
+		t.Fatalf("GetWrit(synthesis) error: %v", err)
+	}
+	if synthWrit.Kind != "code" {
+		t.Errorf("synthesis kind: got %q, want %q", synthWrit.Kind, "code")
+	}
+
+	// --- Verify phase structure ---
+	// All legs should be phase 0, synthesis phase 1.
+	for _, legID := range []string{"code-impl", "code-tests", "design-review", "risk-assessment"} {
+		if result.Phases[legID] != 0 {
+			t.Errorf("phase[%s]: got %d, want 0", legID, result.Phases[legID])
+		}
+	}
+	if result.Phases["synthesis"] != 1 {
+		t.Errorf("phase[synthesis]: got %d, want 1", result.Phases["synthesis"])
+	}
+
+	// --- Verify labels ---
+	codeImplWrit, _ = ws.GetWrit(codeImplID)
+	hasConvoyLeg := false
+	for _, l := range codeImplWrit.Labels {
+		if l == "convoy-leg" {
+			hasConvoyLeg = true
+		}
+	}
+	if !hasConvoyLeg {
+		t.Error("code leg should have convoy-leg label")
+	}
+
+	synthWrit, _ = ws.GetWrit(synthID)
+	hasConvoySynthesis := false
+	for _, l := range synthWrit.Labels {
+		if l == "convoy-synthesis" {
+			hasConvoySynthesis = true
+		}
+	}
+	if !hasConvoySynthesis {
+		t.Error("synthesis should have convoy-synthesis label")
+	}
+
+	// --- Phase gating: synthesis blocked while ANY leg is open ---
+	worldOpener := func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
+	}
+
+	blocked, err := ss.IsWritBlockedByCaravan(synthID, "test-world", worldOpener)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan initial check error: %v", err)
+	}
+	if !blocked {
+		t.Error("synthesis should be blocked while all legs are open")
+	}
+
+	// --- Close analysis legs directly (simulating resolve for analysis writs) ---
+	if err := ws.CloseWrit(designID); err != nil {
+		t.Fatalf("CloseWrit(design-review) error: %v", err)
+	}
+	if err := ws.CloseWrit(riskID); err != nil {
+		t.Fatalf("CloseWrit(risk-assessment) error: %v", err)
+	}
+
+	// Synthesis still blocked — code legs are still open.
+	blocked, err = ss.IsWritBlockedByCaravan(synthID, "test-world", worldOpener)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan after analysis close error: %v", err)
+	}
+	if !blocked {
+		t.Error("synthesis should still be blocked while code legs are open")
+	}
+
+	// --- Close code legs (simulating forge merge completion) ---
+	if err := ws.CloseWrit(codeImplID); err != nil {
+		t.Fatalf("CloseWrit(code-impl) error: %v", err)
+	}
+
+	// Still blocked — one code leg remains.
+	blocked, err = ss.IsWritBlockedByCaravan(synthID, "test-world", worldOpener)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan after partial code close error: %v", err)
+	}
+	if !blocked {
+		t.Error("synthesis should be blocked while code-tests is still open")
+	}
+
+	// Close last code leg.
+	if err := ws.CloseWrit(codeTestsID); err != nil {
+		t.Fatalf("CloseWrit(code-tests) error: %v", err)
+	}
+
+	// --- Synthesis should now be unblocked ---
+	blocked, err = ss.IsWritBlockedByCaravan(synthID, "test-world", worldOpener)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan after all legs closed error: %v", err)
+	}
+	if blocked {
+		t.Error("synthesis should be unblocked after all legs (both code and analysis) are closed")
+	}
+
+	// --- Verify synthesis description has both code branch and analysis output references ---
+	synthWrit, err = ws.GetWrit(synthID)
+	if err != nil {
+		t.Fatalf("GetWrit(synthesis) final error: %v", err)
+	}
+	if !strings.Contains(synthWrit.Description, "code leg branches have been merged") {
+		t.Error("synthesis description should mention merged code branches")
+	}
+	if !strings.Contains(synthWrit.Description, "analysis leg output directories") {
+		t.Error("synthesis description should reference analysis output directories")
+	}
+	// Analysis legs should have output directory paths listed.
+	if !strings.Contains(synthWrit.Description, config.WritOutputDir("test-world", designID)) {
+		t.Errorf("synthesis description missing output dir for design-review")
+	}
+	if !strings.Contains(synthWrit.Description, config.WritOutputDir("test-world", riskID)) {
+		t.Errorf("synthesis description missing output dir for risk-assessment")
+	}
+}
+
 // --- Code-Review Convoy Formula Integration Test ---
 //
 // This test exercises the rebuilt code-review embedded formula end-to-end:

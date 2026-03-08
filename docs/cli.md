@@ -277,6 +277,20 @@ Sphere-scoped OTLP HTTP receiver on port 4318. Accepts `claude_code.api_request`
 | `sol workflow advance` | Advance to the next workflow step |
 | `sol workflow status` | Show workflow status |
 
+### Convoy Leg Kinds
+
+Convoy formulas dispatch parallel legs as child writs. Each leg can specify a `kind` in its manifest entry:
+
+- **`code`** (default) — the leg produces code changes. On resolve, the agent pushes a branch and creates a merge request. The forge reviews and merges it before the synthesis phase can begin.
+- **`analysis`** — the leg produces findings, reports, or structured data (written to its output directory). On resolve, the writ closes directly — no branch push, no MR, no forge involvement.
+
+The synthesis step waits for all legs to close regardless of kind. Phase gating checks that every lower-phase writ is closed before advancing, whether it was closed via forge merge (code) or direct close (analysis).
+
+Built-in convoy formulas set `kind` based on their work type:
+- `code-review` — analysis legs (reviewing existing code)
+- `guided-design` — analysis legs (design exploration)
+- `plan-review` — analysis legs (plan evaluation)
+
 ## Caravans
 
 | Command | Description |

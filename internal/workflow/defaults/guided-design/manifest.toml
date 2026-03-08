@@ -7,36 +7,42 @@ id = "api-design"
 title = "API Design Exploration"
 description = "Explore the public API surface: endpoints, methods, request/response shapes, versioning strategy, and error conventions."
 focus = "What should the API look like from a consumer's perspective?"
+kind = "analysis"
 
 [[legs]]
 id = "data-model"
 title = "Data Model Exploration"
 description = "Explore the data model: entities, relationships, storage strategy, migration path, and query patterns."
 focus = "What data structures and storage decisions does this design require?"
+kind = "analysis"
 
 [[legs]]
 id = "ux-interaction"
 title = "UX / Interaction Exploration"
 description = "Explore the user-facing interaction: CLI commands, flags, output format, feedback loops, and developer ergonomics."
 focus = "How will users interact with this feature and what does the experience feel like?"
+kind = "analysis"
 
 [[legs]]
 id = "scalability"
 title = "Scalability Exploration"
 description = "Explore scalability concerns: concurrency, resource usage, growth limits, caching strategy, and performance characteristics."
 focus = "What happens as load, data volume, or number of users grows?"
+kind = "analysis"
 
 [[legs]]
 id = "security"
 title = "Security Exploration"
 description = "Explore security implications: authentication, authorization, input validation, secrets handling, and attack surface."
 focus = "What are the trust boundaries and what could go wrong?"
+kind = "analysis"
 
 [[legs]]
 id = "integration"
 title = "Integration Surface Exploration"
 description = "Explore integration points: dependencies on existing components, extension hooks, backward compatibility, and migration from current behavior."
 focus = "How does this design connect to and affect the rest of the system?"
+kind = "analysis"
 
 [synthesis]
 title = "Design Synthesis"

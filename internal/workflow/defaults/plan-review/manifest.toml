@@ -7,30 +7,35 @@ id = "completeness"
 title = "Completeness Analysis"
 description = "Assess whether the plan covers all required elements: goals, deliverables, acceptance criteria, resource needs, and timeline."
 focus = "Are there gaps in what the plan promises to deliver versus what it actually specifies?"
+kind = "analysis"
 
 [[legs]]
 id = "sequencing"
 title = "Sequencing & Dependency Analysis"
 description = "Evaluate the ordering of steps and identify dependency relationships. Flag implicit dependencies, missing prerequisites, and parallelism opportunities."
 focus = "Can the steps execute in the proposed order without blocking or hidden prerequisites?"
+kind = "analysis"
 
 [[legs]]
 id = "risk"
 title = "Risk Assessment"
 description = "Identify technical, operational, and integration risks. Evaluate likelihood and impact. Flag single points of failure, untested assumptions, and rollback gaps."
 focus = "What can go wrong and how severe would the impact be?"
+kind = "analysis"
 
 [[legs]]
 id = "scope-creep"
 title = "Scope-Creep Detection"
 description = "Compare stated objectives against proposed work. Identify gold-plating, feature additions beyond requirements, and unnecessary complexity."
 focus = "Does any proposed work exceed what was actually requested or needed?"
+kind = "analysis"
 
 [[legs]]
 id = "testability"
 title = "Testability Review"
 description = "Assess whether each deliverable can be verified. Check for measurable acceptance criteria, test strategies, and observable outcomes."
 focus = "How will we know each step succeeded?"
+kind = "analysis"
 
 [synthesis]
 title = "Go/No-Go Recommendation"
