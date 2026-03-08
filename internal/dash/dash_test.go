@@ -216,19 +216,8 @@ func TestWorldViewRendersAgents(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	// Default (no focus): summary mode, shows one-line summary.
+	// Default (no focus): always-expanded table shows detail rows.
 	output := wm.view(data, time.Now(), false, nil)
-	if !strings.Contains(output, "Outposts (2)") {
-		t.Error("summary mode missing 'Outposts (2)'")
-	}
-	if !strings.Contains(output, "1 working") {
-		t.Error("summary mode missing '1 working'")
-	}
-
-	// Focused: expanded mode shows detail rows.
-	wm.hasFocus = true
-	wm.focusedSection = sectionOutposts
-	output = wm.view(data, time.Now(), false, nil)
 
 	checks := []string{
 		"Outposts (2)",
@@ -243,8 +232,22 @@ func TestWorldViewRendersAgents(t *testing.T) {
 
 	for _, check := range checks {
 		if !strings.Contains(output, check) {
-			t.Errorf("expanded world view missing %q", check)
+			t.Errorf("world view missing %q", check)
 		}
+	}
+
+	// Focused: should also show detail rows with focus indicator.
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
+	output = wm.view(data, time.Now(), false, nil)
+
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("focused world view missing %q", check)
+		}
+	}
+	if !strings.Contains(output, focusIndicator) {
+		t.Error("focused outposts should show focus indicator")
 	}
 }
 
@@ -262,19 +265,8 @@ func TestWorldViewRendersEnvoys(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	// Summary mode: one-line with name and state.
+	// Default (no focus): always-expanded table shows detail rows.
 	output := wm.view(data, time.Now(), false, nil)
-	if !strings.Contains(output, "Envoys (1)") {
-		t.Error("summary mode missing 'Envoys (1)'")
-	}
-	if !strings.Contains(output, "Scout (working)") {
-		t.Error("summary mode missing 'Scout (working)'")
-	}
-
-	// Focused: expanded mode shows detail rows.
-	wm.hasFocus = true
-	wm.focusedSection = sectionEnvoys
-	output = wm.view(data, time.Now(), false, nil)
 
 	checks := []string{
 		"Envoys (1)",
@@ -286,8 +278,22 @@ func TestWorldViewRendersEnvoys(t *testing.T) {
 
 	for _, check := range checks {
 		if !strings.Contains(output, check) {
-			t.Errorf("expanded envoy view missing %q", check)
+			t.Errorf("envoy view missing %q", check)
 		}
+	}
+
+	// Focused: should also show detail rows with focus indicator.
+	wm.hasFocus = true
+	wm.focusedSection = sectionEnvoys
+	output = wm.view(data, time.Now(), false, nil)
+
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("focused envoy view missing %q", check)
+		}
+	}
+	if !strings.Contains(output, focusIndicator) {
+		t.Error("focused envoys should show focus indicator")
 	}
 }
 
@@ -963,21 +969,21 @@ func TestWorldViewFocusIndicator(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	// Without focus: summary mode, no focus indicator.
+	// Without focus: always-expanded but no focus indicator.
 	output := wm.view(data, time.Now(), false, nil)
 	if !strings.Contains(output, "Outposts") {
-		t.Error("summary view should contain Outposts section")
+		t.Error("view should contain Outposts section")
 	}
 	if strings.Contains(output, focusIndicator) {
-		t.Error("summary view should not contain focus indicator")
+		t.Error("unfocused view should not contain focus indicator")
 	}
 
-	// With focus: expanded mode shows focus indicator.
+	// With focus: shows focus indicator on the focused section.
 	wm.hasFocus = true
 	wm.focusedSection = sectionOutposts
 	output = wm.view(data, time.Now(), false, nil)
 	if !strings.Contains(output, focusIndicator) {
-		t.Error("expanded view should contain focus indicator")
+		t.Error("focused view should contain focus indicator")
 	}
 }
 
@@ -2104,7 +2110,7 @@ func TestProcessGridRendersThreeColumns(t *testing.T) {
 	}
 }
 
-func TestSummaryModeDefaultFit(t *testing.T) {
+func TestDefaultViewFitsTerminal(t *testing.T) {
 	wm := newWorldModel()
 	wm.width = 120
 	wm.height = 40
@@ -2128,11 +2134,12 @@ func TestSummaryModeDefaultFit(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	// Default (no focus): all summaries.
+	// Default view: both agent sections always expanded as tables.
 	output := wm.view(data, time.Now(), false, nil)
 	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
-	if len(lines) > 24 {
-		t.Errorf("default view should fit in 24 lines, got %d", len(lines))
+	// With always-expanded tables for both sections, more lines expected.
+	if len(lines) > 40 {
+		t.Errorf("default view should fit in terminal height, got %d lines", len(lines))
 	}
 }
 
@@ -2145,18 +2152,18 @@ func TestScrollFollowsCursor(t *testing.T) {
 	wm.outpostLen = 30 // more than viewport
 
 	// Move cursor down past viewport.
-	vpHeight := wm.viewportHeight()
+	vpHeight := wm.agentSectionViewport()
 	for i := 0; i < vpHeight+2; i++ {
 		wm, _ = wm.update(keyMsg("j"), nil)
 	}
 
-	// scrollOffset should have adjusted.
-	if wm.scrollOffset == 0 {
-		t.Error("scrollOffset should have increased when cursor moved past viewport")
+	// outpostScroll should have adjusted.
+	if wm.outpostScroll == 0 {
+		t.Error("outpostScroll should have increased when cursor moved past viewport")
 	}
 	cur := wm.cursor(wm.focusedSection)
-	if cur < wm.scrollOffset || cur >= wm.scrollOffset+vpHeight {
-		t.Errorf("cursor %d should be within scroll window [%d, %d)", cur, wm.scrollOffset, wm.scrollOffset+vpHeight)
+	if cur < wm.outpostScroll || cur >= wm.outpostScroll+vpHeight {
+		t.Errorf("cursor %d should be within scroll window [%d, %d)", cur, wm.outpostScroll, wm.outpostScroll+vpHeight)
 	}
 }
 
