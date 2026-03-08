@@ -383,45 +383,62 @@ func formatGovernorDetail(g GovernorInfo) string {
 	return detail
 }
 
+// stateStyle maps an agent/envoy state to its styled display string.
+// This is the single source of truth for state→color mapping:
+//   working (session alive) → green, working (session dead) → red,
+//   idle → gray, stalled → yellow.
+func stateStyle(state string, sessionAlive bool) string {
+	switch state {
+	case "working":
+		if sessionAlive {
+			return okStyle.Render("working")
+		}
+		return errorStyle.Render("working (dead!)")
+	case "idle":
+		return dimStyle.Render("idle")
+	case "stalled":
+		return warnStyle.Render("stalled")
+	default:
+		return state
+	}
+}
+
+// sessionDisplay renders session liveness for an agent or envoy.
+// Only working/stalled agents have a meaningful session indicator.
+func sessionDisplay(state string, sessionAlive bool) string {
+	if state == "working" || state == "stalled" {
+		if sessionAlive {
+			return okStyle.Render("alive")
+		}
+		return errorStyle.Render("dead")
+	}
+	return dimStyle.Render("—")
+}
+
+// nudgeDisplay renders a nudge count, or a dim dash if zero.
+func nudgeDisplay(count int) string {
+	if count > 0 {
+		return fmt.Sprintf("%d", count)
+	}
+	return dimStyle.Render("—")
+}
+
 func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
 	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
 	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\tNUDGE\n")
 
 	for _, a := range agents {
-		state := a.State
-		switch a.State {
-		case "working":
-			if a.SessionAlive {
-				state = okStyle.Render("working")
-			} else {
-				state = errorStyle.Render("working (dead!)")
-			}
-		case "idle":
-			state = dimStyle.Render("idle")
-		case "stalled":
-			state = warnStyle.Render("stalled")
-		}
-
-		sess := dimStyle.Render("—")
-		if a.State == "working" || a.State == "stalled" {
-			if a.SessionAlive {
-				sess = okStyle.Render("alive")
-			} else {
-				sess = errorStyle.Render("dead")
-			}
-		}
-
 		work := dimStyle.Render("—")
 		if a.ActiveWrit != "" {
 			work = fmt.Sprintf("%s: %s", a.ActiveWrit, a.WorkTitle)
 		}
 
-		nudge := dimStyle.Render("—")
-		if a.NudgeCount > 0 {
-			nudge = fmt.Sprintf("%d", a.NudgeCount)
-		}
-
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", a.Name, state, sess, work, nudge)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n",
+			a.Name,
+			stateStyle(a.State, a.SessionAlive),
+			sessionDisplay(a.State, a.SessionAlive),
+			work,
+			nudgeDisplay(a.NudgeCount))
 	}
 	tw.Flush()
 }
@@ -431,29 +448,6 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\tBRIEF\tNUDGE\n")
 
 	for _, e := range envoys {
-		state := e.State
-		switch e.State {
-		case "working":
-			if e.SessionAlive {
-				state = okStyle.Render("working")
-			} else {
-				state = errorStyle.Render("working (dead!)")
-			}
-		case "idle":
-			state = dimStyle.Render("idle")
-		case "stalled":
-			state = warnStyle.Render("stalled")
-		}
-
-		sess := dimStyle.Render("—")
-		if e.State == "working" || e.State == "stalled" {
-			if e.SessionAlive {
-				sess = okStyle.Render("alive")
-			} else {
-				sess = errorStyle.Render("dead")
-			}
-		}
-
 		work := dimStyle.Render("—")
 		if e.ActiveWrit != "" {
 			work = e.WorkTitle
@@ -469,12 +463,13 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 			brief = e.BriefAge + " ago"
 		}
 
-		nudge := dimStyle.Render("—")
-		if e.NudgeCount > 0 {
-			nudge = fmt.Sprintf("%d", e.NudgeCount)
-		}
-
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n", e.Name, state, sess, work, brief, nudge)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n",
+			e.Name,
+			stateStyle(e.State, e.SessionAlive),
+			sessionDisplay(e.State, e.SessionAlive),
+			work,
+			brief,
+			nudgeDisplay(e.NudgeCount))
 	}
 	tw.Flush()
 }
