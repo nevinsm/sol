@@ -62,7 +62,7 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) {
 		if w.Working > 0 {
 			if _, ok := sm.worldSpinners[w.Name]; !ok {
 				s := spinner.New()
-				s.Spinner = spinner.Dot
+				s.Spinner = spinnerForRole("world-process")
 				sm.worldSpinners[w.Name] = s
 			}
 		} else {
