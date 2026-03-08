@@ -14,8 +14,9 @@ var dashCmd = &cobra.Command{
 	Short: "Live TUI dashboard",
 	Long: `Launch a live terminal dashboard.
 
-Without arguments, shows a sphere-level overview of all processes and worlds.
-With a world name, shows detailed status for that world.
+Without arguments, auto-detects the current world from SOL_WORLD or the
+working directory. Falls back to the sphere-level overview if no world
+is detected. With a world name, shows detailed status for that world.
 
 The dashboard refreshes every 3 seconds. Press r to force refresh.`,
 	Args:          cobra.MaximumNArgs(1),
@@ -41,8 +42,13 @@ func runDash(cmd *cobra.Command, args []string) error {
 		SOLHome:      config.Home(),
 	}
 
-	// Determine view mode from args.
-	if len(args) == 1 {
+	// Determine view mode from args or auto-detection.
+	if len(args) == 0 {
+		if detected, err := config.ResolveWorld(""); err == nil {
+			cfg.World = detected
+		}
+		// Silently fall back to sphere view if detection fails.
+	} else {
 		if err := config.RequireWorld(args[0]); err != nil {
 			return err
 		}
