@@ -1633,6 +1633,200 @@ func TestExecNoBriefSaveWithoutBriefDir(t *testing.T) {
 	}
 }
 
+func TestExecSelfHandoffSkipsBriefSave(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	solHome := setupSolHome(t)
+
+	// Simulate self-handoff: set SOL_AGENT and SOL_WORLD to match the target.
+	t.Setenv("SOL_AGENT", "Alice")
+	t.Setenv("SOL_WORLD", "ember")
+
+	// Set up envoy with brief directory.
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Alice")
+	briefDir := filepath.Join(envoyDir, ".brief")
+	if err := os.MkdirAll(briefDir, 0o755); err != nil {
+		t.Fatalf("failed to create brief dir: %v", err)
+	}
+	worktreeDir := filepath.Join(envoyDir, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	registerMinimalRole(t, "envoy", worktreeDir)
+
+	mgr := &mockSessionMgr{
+		exists:         true,
+		captureResults: []string{"stable", "stable", "stable"},
+	}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Alice",
+		Role:          "envoy",
+		WorktreeDir:   worktreeDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// Self-handoff should skip briefSave — no inject calls.
+	if len(mgr.injected) != 0 {
+		t.Errorf("expected 0 Inject calls for self-handoff, got %d", len(mgr.injected))
+	}
+
+	// Session should still be cycled.
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+}
+
+func TestExecExternalHandoffStillRunsBriefSave(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	solHome := setupSolHome(t)
+
+	// Simulate external handoff: SOL_AGENT/SOL_WORLD don't match the target.
+	t.Setenv("SOL_AGENT", "Bob")
+	t.Setenv("SOL_WORLD", "other-world")
+
+	// Set up envoy with brief directory.
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Alice")
+	briefDir := filepath.Join(envoyDir, ".brief")
+	if err := os.MkdirAll(briefDir, 0o755); err != nil {
+		t.Fatalf("failed to create brief dir: %v", err)
+	}
+	worktreeDir := filepath.Join(envoyDir, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	registerMinimalRole(t, "envoy", worktreeDir)
+
+	mgr := &mockSessionMgr{
+		exists:         true,
+		captureResults: []string{"stable", "stable", "stable"},
+	}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Alice",
+		Role:          "envoy",
+		WorktreeDir:   worktreeDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// External handoff should still run briefSave.
+	if len(mgr.injected) != 1 {
+		t.Fatalf("expected 1 Inject call for external handoff, got %d", len(mgr.injected))
+	}
+	if mgr.injected[0].Text != BriefSavePrompt {
+		t.Errorf("expected BriefSavePrompt, got %q", mgr.injected[0].Text)
+	}
+
+	// Session should be cycled.
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+}
+
+func TestExecSelfHandoffPartialMatchStillRunsBriefSave(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	solHome := setupSolHome(t)
+
+	// Partial match: same agent name, different world.
+	t.Setenv("SOL_AGENT", "Alice")
+	t.Setenv("SOL_WORLD", "other-world")
+
+	// Set up envoy with brief directory.
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Alice")
+	briefDir := filepath.Join(envoyDir, ".brief")
+	if err := os.MkdirAll(briefDir, 0o755); err != nil {
+		t.Fatalf("failed to create brief dir: %v", err)
+	}
+	worktreeDir := filepath.Join(envoyDir, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	registerMinimalRole(t, "envoy", worktreeDir)
+
+	mgr := &mockSessionMgr{
+		exists:         true,
+		captureResults: []string{"stable", "stable", "stable"},
+	}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Alice",
+		Role:          "envoy",
+		WorktreeDir:   worktreeDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// Partial match (agent matches, world doesn't) should still run briefSave.
+	if len(mgr.injected) != 1 {
+		t.Fatalf("expected 1 Inject call for partial match, got %d", len(mgr.injected))
+	}
+}
+
+func TestExecSelfHandoffEmptyEnvVarsNotDetectedAsSelf(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	solHome := setupSolHome(t)
+
+	// Ensure env vars are empty — shouldn't match as self-handoff even though
+	// both are technically "equal" (empty == empty).
+	t.Setenv("SOL_AGENT", "")
+	t.Setenv("SOL_WORLD", "")
+
+	// Set up envoy with brief directory.
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Alice")
+	briefDir := filepath.Join(envoyDir, ".brief")
+	if err := os.MkdirAll(briefDir, 0o755); err != nil {
+		t.Fatalf("failed to create brief dir: %v", err)
+	}
+	worktreeDir := filepath.Join(envoyDir, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	registerMinimalRole(t, "envoy", worktreeDir)
+
+	mgr := &mockSessionMgr{
+		exists:         true,
+		captureResults: []string{"stable", "stable", "stable"},
+	}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Alice",
+		Role:          "envoy",
+		WorktreeDir:   worktreeDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// Empty env vars should not be detected as self-handoff — briefSave should run.
+	if len(mgr.injected) != 1 {
+		t.Fatalf("expected 1 Inject call when env vars are empty, got %d", len(mgr.injected))
+	}
+}
+
 // --- Mock startup sphere store ---
 
 type mockStartupSphere struct{}
