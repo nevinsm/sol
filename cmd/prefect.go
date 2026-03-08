@@ -174,6 +174,40 @@ var prefectStopCmd = &cobra.Command{
 	},
 }
 
+var prefectRestartCmd = &cobra.Command{
+	Use:          "restart",
+	Short:        "Restart the prefect (stop then start)",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Stop if running.
+		pid, err := prefect.ReadPID()
+		if err != nil {
+			return err
+		}
+		if pid > 0 && prefect.IsRunning(pid) {
+			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+				return fmt.Errorf("failed to send SIGTERM to prefect (pid %d): %w", pid, err)
+			}
+			fmt.Fprintf(os.Stderr, "Sent SIGTERM to prefect (pid %d), waiting for exit...\n", pid)
+			for i := 0; i < 10; i++ {
+				time.Sleep(500 * time.Millisecond)
+				if !prefect.IsRunning(pid) {
+					break
+				}
+			}
+			if prefect.IsRunning(pid) {
+				return fmt.Errorf("prefect (pid %d) did not exit after SIGTERM", pid)
+			}
+		} else if pid > 0 {
+			_ = prefect.ClearPID()
+		}
+
+		// Start.
+		return prefectStartCmd.RunE(prefectStartCmd, args)
+	},
+}
+
 var prefectStatusCmd = &cobra.Command{
 	Use:          "status",
 	Short:        "Show prefect status",
@@ -235,6 +269,7 @@ func init() {
 	prefectCmd.AddCommand(prefectRunCmd)
 	prefectCmd.AddCommand(prefectStartCmd)
 	prefectCmd.AddCommand(prefectStopCmd)
+	prefectCmd.AddCommand(prefectRestartCmd)
 	prefectCmd.AddCommand(prefectStatusCmd)
 
 	prefectRunCmd.Flags().Bool("consul", false, "Enable consul monitoring and auto-start")

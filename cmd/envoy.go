@@ -130,6 +130,44 @@ var envoyStopCmd = &cobra.Command{
 	},
 }
 
+// --- sol envoy restart ---
+
+var envoyRestartWorld string
+
+var envoyRestartCmd = &cobra.Command{
+	Use:          "restart <name>",
+	Short:        "Restart an envoy session (stop then start)",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		world, err := config.ResolveWorld(envoyRestartWorld)
+		if err != nil {
+			return err
+		}
+
+		// Stop if running.
+		sessName := envoy.SessionName(world, name)
+		mgr := session.New()
+		if mgr.Exists(sessName) {
+			sphereStore, err := store.OpenSphere()
+			if err != nil {
+				return err
+			}
+			if err := envoy.Stop(world, name, sphereStore, mgr); err != nil {
+				sphereStore.Close()
+				return err
+			}
+			sphereStore.Close()
+			fmt.Printf("Stopped envoy %q in world %q\n", name, world)
+		}
+
+		// Start (delegate to start command).
+		envoyStartWorld = world
+		return envoyStartCmd.RunE(envoyStartCmd, args)
+	},
+}
+
 // --- sol envoy attach ---
 
 var envoyAttachWorld string
@@ -464,7 +502,7 @@ func init() {
 	startup.Register("envoy", envoy.RoleConfig())
 
 	rootCmd.AddCommand(envoyCmd)
-	envoyCmd.AddCommand(envoyCreateCmd, envoyStartCmd, envoyStopCmd,
+	envoyCmd.AddCommand(envoyCreateCmd, envoyStartCmd, envoyStopCmd, envoyRestartCmd,
 		envoyAttachCmd, envoyListCmd, envoyBriefCmd, envoyDebriefCmd, envoySyncCmd, envoyDeleteCmd,
 		envoyStatusCmd)
 
@@ -476,6 +514,9 @@ func init() {
 
 	// envoy stop flags
 	envoyStopCmd.Flags().StringVar(&envoyStopWorld, "world", "", "world name")
+
+	// envoy restart flags
+	envoyRestartCmd.Flags().StringVar(&envoyRestartWorld, "world", "", "world name")
 
 	// envoy attach flags
 	envoyAttachCmd.Flags().StringVar(&envoyAttachWorld, "world", "", "world name")

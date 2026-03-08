@@ -145,6 +145,35 @@ var forgeStopCmd = &cobra.Command{
 	},
 }
 
+var forgeRestartWorld string
+
+var forgeRestartCmd = &cobra.Command{
+	Use:          "restart",
+	Short:        "Restart the forge (stop then start)",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(forgeRestartWorld)
+		if err != nil {
+			return err
+		}
+
+		sessName := dispatch.SessionName(world, "forge")
+		mgr := session.New()
+
+		// Stop if running.
+		if mgr.Exists(sessName) {
+			if err := mgr.Stop(sessName, false); err != nil {
+				return fmt.Errorf("failed to stop forge: %w", err)
+			}
+			fmt.Printf("Forge stopped for world %q\n", world)
+		}
+
+		// Start (delegate to start command).
+		forgeStartWorld = world
+		return forgeStartCmd.RunE(forgeStartCmd, args)
+	},
+}
+
 var forgeAttachCmd = &cobra.Command{
 	Use:          "attach",
 	Short:        "Attach to the forge tmux session",
@@ -1032,6 +1061,7 @@ func init() {
 	rootCmd.AddCommand(forgeCmd)
 	forgeCmd.AddCommand(forgeStartCmd)
 	forgeCmd.AddCommand(forgeStopCmd)
+	forgeCmd.AddCommand(forgeRestartCmd)
 	forgeCmd.AddCommand(forgeSyncCmd)
 	forgeCmd.AddCommand(forgeStatusCmd)
 	forgeCmd.AddCommand(forgeQueueCmd)
@@ -1051,6 +1081,7 @@ func init() {
 	// --world flag for all subcommands.
 	forgeStartCmd.Flags().StringVar(&forgeStartWorld, "world", "", "world name")
 	forgeStopCmd.Flags().StringVar(&forgeStopWorld, "world", "", "world name")
+	forgeRestartCmd.Flags().StringVar(&forgeRestartWorld, "world", "", "world name")
 	forgeAttachCmd.Flags().StringVar(&forgeAttachWorld, "world", "", "world name")
 	forgeQueueCmd.Flags().StringVar(&forgeQueueWorld, "world", "", "world name")
 	forgeSyncCmd.Flags().StringVar(&forgeSyncWorld, "world", "", "world name")

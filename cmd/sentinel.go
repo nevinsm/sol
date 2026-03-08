@@ -165,6 +165,48 @@ var sentinelStopCmd = &cobra.Command{
 	},
 }
 
+var sentinelRestartWorld string
+
+var sentinelRestartCmd = &cobra.Command{
+	Use:          "restart",
+	Short:        "Restart the sentinel (stop then start)",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(sentinelRestartWorld)
+		if err != nil {
+			return err
+		}
+
+		sessName := dispatch.SessionName(world, "sentinel")
+		mgr := session.New()
+
+		// Stop if running.
+		if mgr.Exists(sessName) {
+			if err := mgr.Stop(sessName, false); err != nil {
+				return fmt.Errorf("failed to stop sentinel: %w", err)
+			}
+			fmt.Printf("Sentinel stopped for world %q\n", world)
+		}
+
+		// Start.
+		if config.IsSleeping(world) {
+			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
+		}
+
+		solBin, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("failed to find sol binary: %w", err)
+		}
+		env := map[string]string{"SOL_HOME": config.Home()}
+		if err := mgr.Start(sessName, config.Home(),
+			fmt.Sprintf("%s sentinel run --world=%s", solBin, world), env, "sentinel", world); err != nil {
+			return fmt.Errorf("failed to start sentinel session: %w", err)
+		}
+		fmt.Printf("Sentinel started: %s\n", sessName)
+		return nil
+	},
+}
+
 var sentinelAttachCmd = &cobra.Command{
 	Use:          "attach",
 	Short:        "Attach to the sentinel tmux session",
@@ -239,12 +281,14 @@ func init() {
 	sentinelCmd.AddCommand(sentinelRunCmd)
 	sentinelCmd.AddCommand(sentinelStartCmd)
 	sentinelCmd.AddCommand(sentinelStopCmd)
+	sentinelCmd.AddCommand(sentinelRestartCmd)
 	sentinelCmd.AddCommand(sentinelAttachCmd)
 	sentinelCmd.AddCommand(sentinelStatusCmd)
 
 	sentinelRunCmd.Flags().StringVar(&sentinelRunWorld, "world", "", "world name")
 	sentinelStartCmd.Flags().StringVar(&sentinelStartWorld, "world", "", "world name")
 	sentinelStopCmd.Flags().StringVar(&sentinelStopWorld, "world", "", "world name")
+	sentinelRestartCmd.Flags().StringVar(&sentinelRestartWorld, "world", "", "world name")
 	sentinelAttachCmd.Flags().StringVar(&sentinelAttachWorld, "world", "", "world name")
 	sentinelStatusCmd.Flags().StringVar(&sentinelStatusWorld, "world", "", "world name")
 	sentinelStatusCmd.Flags().Bool("json", false, "output as JSON")

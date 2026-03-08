@@ -99,6 +99,37 @@ var ledgerStopCmd = &cobra.Command{
 	},
 }
 
+var ledgerRestartCmd = &cobra.Command{
+	Use:          "restart",
+	Short:        "Restart the ledger (stop then start)",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr := session.New()
+
+		// Stop if running.
+		if mgr.Exists(ledgerSessionName) {
+			if err := mgr.Stop(ledgerSessionName, false); err != nil {
+				return fmt.Errorf("failed to stop ledger: %w", err)
+			}
+			fmt.Printf("Ledger stopped: %s\n", ledgerSessionName)
+		}
+
+		// Start.
+		solBin, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("failed to find sol binary: %w", err)
+		}
+		env := map[string]string{"SOL_HOME": config.Home()}
+		if err := mgr.Start(ledgerSessionName, config.Home(),
+			solBin+" ledger run", env, "ledger", ""); err != nil {
+			return fmt.Errorf("failed to start ledger session: %w", err)
+		}
+		fmt.Printf("Ledger started: %s\n", ledgerSessionName)
+		return nil
+	},
+}
+
 var ledgerStatusCmd = &cobra.Command{
 	Use:          "status",
 	Short:        "Show ledger status",
@@ -145,6 +176,7 @@ func init() {
 	ledgerCmd.AddCommand(ledgerRunCmd)
 	ledgerCmd.AddCommand(ledgerStartCmd)
 	ledgerCmd.AddCommand(ledgerStopCmd)
+	ledgerCmd.AddCommand(ledgerRestartCmd)
 	ledgerCmd.AddCommand(ledgerStatusCmd)
 
 	ledgerStatusCmd.Flags().BoolVar(&ledgerStatusJSON, "json", false, "output as JSON")

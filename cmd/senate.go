@@ -54,6 +54,32 @@ var senateStopCmd = &cobra.Command{
 	},
 }
 
+// --- sol senate restart ---
+
+var senateRestartCmd = &cobra.Command{
+	Use:          "restart",
+	Short:        "Restart the senate (stop then start)",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr := session.New()
+
+		// Stop if running.
+		if mgr.Exists(senate.SessionName) {
+			if err := senate.Stop(mgr); err != nil {
+				return err
+			}
+			fmt.Println("Stopped senate session")
+		}
+
+		// Start.
+		if err := senate.Start(mgr); err != nil {
+			return err
+		}
+		fmt.Println("Started senate session")
+		return nil
+	},
+}
+
 // --- sol senate attach ---
 
 var senateAttachCmd = &cobra.Command{
@@ -185,7 +211,7 @@ func printSenateStatus(s senateStatusSummary) {
 
 func init() {
 	rootCmd.AddCommand(senateCmd)
-	senateCmd.AddCommand(senateStartCmd, senateStopCmd, senateAttachCmd,
+	senateCmd.AddCommand(senateStartCmd, senateStopCmd, senateRestartCmd, senateAttachCmd,
 		senateBriefCmd, senateDebriefCmd, senateStatusCmd)
 
 	senateStatusCmd.Flags().BoolVar(&senateStatusJSON, "json", false, "output as JSON")

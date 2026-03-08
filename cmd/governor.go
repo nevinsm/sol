@@ -93,6 +93,42 @@ var governorStopCmd = &cobra.Command{
 	},
 }
 
+// --- sol governor restart ---
+
+var governorRestartWorld string
+
+var governorRestartCmd = &cobra.Command{
+	Use:          "restart",
+	Short:        "Restart the governor (stop then start)",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(governorRestartWorld)
+		if err != nil {
+			return err
+		}
+
+		// Stop if running.
+		sessName := config.SessionName(world, "governor")
+		mgr := session.New()
+		if mgr.Exists(sessName) {
+			sphereStore, err := store.OpenSphere()
+			if err != nil {
+				return err
+			}
+			if err := governor.Stop(world, sphereStore, mgr); err != nil {
+				sphereStore.Close()
+				return err
+			}
+			sphereStore.Close()
+			fmt.Printf("Stopped governor for world %q\n", world)
+		}
+
+		// Start (delegate to start command).
+		governorStartWorld = world
+		return governorStartCmd.RunE(governorStartCmd, args)
+	},
+}
+
 // --- sol governor attach ---
 
 var governorAttachWorld string
@@ -353,8 +389,8 @@ func init() {
 	startup.Register("governor", governor.RoleConfig())
 
 	rootCmd.AddCommand(governorCmd)
-	governorCmd.AddCommand(governorStartCmd, governorStopCmd, governorAttachCmd,
-		governorBriefCmd, governorDebriefCmd,
+	governorCmd.AddCommand(governorStartCmd, governorStopCmd, governorRestartCmd,
+		governorAttachCmd, governorBriefCmd, governorDebriefCmd,
 		governorSummaryCmd, governorSyncCmd, governorStatusCmd)
 
 	// governor start flags
@@ -362,6 +398,9 @@ func init() {
 
 	// governor stop flags
 	governorStopCmd.Flags().StringVar(&governorStopWorld, "world", "", "world name")
+
+	// governor restart flags
+	governorRestartCmd.Flags().StringVar(&governorRestartWorld, "world", "", "world name")
 
 	// governor attach flags
 	governorAttachCmd.Flags().StringVar(&governorAttachWorld, "world", "", "world name")

@@ -204,11 +204,41 @@ var tokenBrokerStopCmd = &cobra.Command{
 	},
 }
 
+var tokenBrokerRestartCmd = &cobra.Command{
+	Use:          "restart",
+	Short:        "Restart the token broker (stop then start)",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Stop if running.
+		pid := readDaemonPID("token-broker")
+		if pid > 0 && prefect.IsRunning(pid) {
+			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+				return fmt.Errorf("failed to send SIGTERM to token broker (pid %d): %w", pid, err)
+			}
+			clearDaemonPID("token-broker")
+			fmt.Fprintf(os.Stderr, "Sent SIGTERM to token broker (pid %d), waiting for exit...\n", pid)
+			for i := 0; i < 10; i++ {
+				time.Sleep(500 * time.Millisecond)
+				if !prefect.IsRunning(pid) {
+					break
+				}
+			}
+		} else if pid > 0 {
+			clearDaemonPID("token-broker")
+		}
+
+		// Start.
+		return tokenBrokerStartCmd.RunE(tokenBrokerStartCmd, args)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(tokenBrokerCmd)
 	tokenBrokerCmd.AddCommand(tokenBrokerRunCmd)
 	tokenBrokerCmd.AddCommand(tokenBrokerStartCmd)
 	tokenBrokerCmd.AddCommand(tokenBrokerStopCmd)
+	tokenBrokerCmd.AddCommand(tokenBrokerRestartCmd)
 	tokenBrokerCmd.AddCommand(tokenBrokerStatusCmd)
 
 	tokenBrokerRunCmd.Flags().StringVar(&brokerInterval, "interval", "5m", "patrol interval")
