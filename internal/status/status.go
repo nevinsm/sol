@@ -12,6 +12,7 @@ import (
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/governor"
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -52,6 +53,7 @@ type EnvoyStatus struct {
 	WorkTitle      string `json:"work_title,omitempty"`
 	TetheredCount  int    `json:"tethered_count,omitempty"`
 	BriefAge       string `json:"brief_age,omitempty"`
+	NudgeCount     int    `json:"nudge_count,omitempty"`
 }
 
 // PhaseProgress holds progress info for a single phase within a caravan.
@@ -133,6 +135,7 @@ type AgentStatus struct {
 	SessionAlive bool   `json:"session_alive"`
 	ActiveWrit   string `json:"active_writ,omitempty"`
 	WorkTitle    string `json:"work_title,omitempty"`
+	NudgeCount   int    `json:"nudge_count,omitempty"`
 }
 
 // Summary holds aggregate counts.
@@ -223,6 +226,7 @@ type SphereStatus struct {
 	Senate    SenateInfo     `json:"senate"`
 	Worlds    []WorldSummary `json:"worlds"`
 	Caravans  []CaravanInfo  `json:"caravans,omitempty"`
+	MailCount int            `json:"mail_count,omitempty"`
 	Health    string         `json:"health"`
 }
 
@@ -357,6 +361,10 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			if tethered, err := tether.List(world, agent.Name, "envoy"); err == nil {
 				es.TetheredCount = len(tethered)
 			}
+			// Nudge queue depth.
+			if count, err := nudge.Peek(sessName); err == nil && count > 0 {
+				es.NudgeCount = count
+			}
 			result.Envoys = append(result.Envoys, es)
 
 		default: // "agent", "forge", "sentinel", "consul"
@@ -377,6 +385,10 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 				} else {
 					as.WorkTitle = item.Title
 				}
+			}
+			// Nudge queue depth.
+			if count, err := nudge.Peek(sessName); err == nil && count > 0 {
+				as.NudgeCount = count
 			}
 			result.Agents = append(result.Agents, as)
 		}

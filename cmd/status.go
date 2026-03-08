@@ -68,6 +68,11 @@ func runSphereStatus() error {
 	result := status.GatherSphere(sphereStore, sphereStore, mgr,
 		gatedWorldOpener, sphereStore)
 
+	// Add operator mail count.
+	if count, err := sphereStore.CountPending("operator"); err == nil && count > 0 {
+		result.MailCount = count
+	}
+
 	if statusJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")

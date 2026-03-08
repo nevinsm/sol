@@ -217,6 +217,7 @@ func TestRenderWorldWithEnvoys(t *testing.T) {
 		"Scout",
 		"Toast",
 		"BRIEF",
+		"NUDGE",
 		"45m ago",
 		"Design review",
 	}
@@ -462,6 +463,79 @@ func TestRenderEnvoyNoTether(t *testing.T) {
 
 	if strings.Contains(output, "tethered") {
 		t.Error("RenderWorld with no-tether envoy should not show tethered count")
+	}
+}
+
+func TestRenderSphereMailCount(t *testing.T) {
+	s := &SphereStatus{
+		SOLHome:   "/home/test/sol",
+		Health:    "healthy",
+		Prefect:   PrefectInfo{Running: true, PID: 1234},
+		MailCount: 3,
+	}
+
+	output := RenderSphere(s)
+
+	if !strings.Contains(output, "Mail: 3 unread") {
+		t.Error("RenderSphere with mail count should contain 'Mail: 3 unread'")
+	}
+}
+
+func TestRenderSphereNoMail(t *testing.T) {
+	s := &SphereStatus{
+		SOLHome:   "/home/test/sol",
+		Health:    "healthy",
+		Prefect:   PrefectInfo{Running: true, PID: 1234},
+		MailCount: 0,
+	}
+
+	output := RenderSphere(s)
+
+	if strings.Contains(output, "Mail:") {
+		t.Error("RenderSphere with no mail should not contain 'Mail:'")
+	}
+}
+
+func TestRenderAgentNudgeCount(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "haven",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Agents: []AgentStatus{
+			{Name: "Toast", State: "working", SessionAlive: true, ActiveWrit: "sol-aaa", WorkTitle: "fix bug", NudgeCount: 2},
+			{Name: "Crisp", State: "idle"},
+		},
+		Summary: Summary{Total: 2, Working: 1, Idle: 1},
+	}
+
+	output := RenderWorld(ws)
+
+	if !strings.Contains(output, "NUDGE") {
+		t.Error("RenderWorld should show NUDGE column header")
+	}
+	// The output should contain "2" for Toast's nudge count.
+	if !strings.Contains(output, "2") {
+		t.Error("RenderWorld should show nudge count of 2 for Toast")
+	}
+}
+
+func TestRenderEnvoyNudgeCount(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "haven",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Envoys: []EnvoyStatus{
+			{Name: "Scout", State: "working", SessionAlive: true, ActiveWrit: "sol-bbb", WorkTitle: "Design review", BriefAge: "45m", NudgeCount: 5},
+			{Name: "Ranger", State: "idle", BriefAge: "1h"},
+		},
+		Summary: Summary{},
+	}
+
+	output := RenderWorld(ws)
+
+	if !strings.Contains(output, "NUDGE") {
+		t.Error("RenderWorld envoys should show NUDGE column header")
+	}
+	if !strings.Contains(output, "5") {
+		t.Error("RenderWorld should show nudge count of 5 for Scout")
 	}
 }
 

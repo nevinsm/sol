@@ -101,6 +101,12 @@ func RenderSphere(s *SphereStatus) string {
 		b.WriteString("\n")
 	}
 
+	// Operator mail (only when pending).
+	if s.MailCount > 0 {
+		b.WriteString(fmt.Sprintf("Mail: %d unread\n", s.MailCount))
+		b.WriteString("\n")
+	}
+
 	return b.String()
 }
 
@@ -379,7 +385,7 @@ func formatGovernorDetail(g GovernorInfo) string {
 
 func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
 	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\n")
+	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\tNUDGE\n")
 
 	for _, a := range agents {
 		state := a.State
@@ -410,14 +416,19 @@ func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
 			work = fmt.Sprintf("%s: %s", a.ActiveWrit, a.WorkTitle)
 		}
 
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", a.Name, state, sess, work)
+		nudge := dimStyle.Render("—")
+		if a.NudgeCount > 0 {
+			nudge = fmt.Sprintf("%d", a.NudgeCount)
+		}
+
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", a.Name, state, sess, work, nudge)
 	}
 	tw.Flush()
 }
 
 func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\tBRIEF\n")
+	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\tBRIEF\tNUDGE\n")
 
 	for _, e := range envoys {
 		state := e.State
@@ -458,7 +469,12 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 			brief = e.BriefAge + " ago"
 		}
 
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", e.Name, state, sess, work, brief)
+		nudge := dimStyle.Render("—")
+		if e.NudgeCount > 0 {
+			nudge = fmt.Sprintf("%d", e.NudgeCount)
+		}
+
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n", e.Name, state, sess, work, brief, nudge)
 	}
 	tw.Flush()
 }
