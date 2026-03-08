@@ -220,14 +220,6 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	// Monitor outpost agents and forge — envoys and governors are human-supervised.
-	var activeAgents []store.Agent
-	for _, a := range agents {
-		if a.Role == "agent" || a.Role == "forge" {
-			activeAgents = append(activeAgents, a)
-		}
-	}
-
 	w.patrolAssessed = 0
 	w.patrolNudged = 0
 
@@ -243,25 +235,23 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	var healthyCount, stalledCount, zombieCount, reapedCount int
 	var actionsTaken []string
 
+	// Check all agents' tether directories for closed writs.
+	// This covers both outpost and persistent agents.
+	reaped := w.checkClosedWritTethers(agents, &reapedCount, &actionsTaken)
+
+	// Monitor outpost agents and forge — envoys and governors are human-supervised.
+	var activeAgents []store.Agent
+	for _, a := range agents {
+		if a.Role == "agent" || a.Role == "forge" {
+			if !reaped[a.ID] {
+				activeAgents = append(activeAgents, a)
+			}
+		}
+	}
+
 	for _, agent := range activeAgents {
 		sessionName := dispatch.SessionName(w.config.World, agent.Name)
 		alive := w.sessions.Exists(sessionName)
-
-		// Check if outpost agent is tethered to a closed writ — reap immediately.
-		if agent.Role == "agent" && agent.ActiveWrit != "" && w.worldStore != nil {
-			if writ, err := w.worldStore.GetWrit(agent.ActiveWrit); err == nil && writ.Status == "closed" {
-				reapedCount++
-				if err := w.reapClosedWritAgent(agent, sessionName, writ.CloseReason); err != nil {
-					if w.logger != nil {
-						w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
-							"agent": agent.ID, "action": "reap_closed_writ", "error": err.Error(),
-						})
-					}
-				}
-				actionsTaken = append(actionsTaken, "reaped_closed_writ:"+agent.Name)
-				continue
-			}
-		}
 
 		switch {
 		case agent.State == "working" && alive:
@@ -287,8 +277,8 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 			}
 			actionsTaken = append(actionsTaken, "stalled:"+agent.Name)
 
-		case agent.State == "working" && !alive && agent.ActiveWrit != "":
-			// Session died while work was tethered — stalled.
+		case agent.State == "working" && !alive && tether.IsTethered(w.config.World, agent.Name, agent.Role):
+			// Session died while tether directory is non-empty — stalled.
 			stalledCount++
 			if err := w.handleStalled(agent); err != nil {
 				if w.logger != nil {
@@ -409,6 +399,65 @@ func (w *Sentinel) pruneRespawnCounts(activeAgentIDs map[string]bool) {
 			delete(w.respawnCounts, key)
 		}
 	}
+}
+
+// checkClosedWritTethers iterates all agents' tether directories and handles
+// closed writs. For outpost agents, a closed writ triggers a full reap. For
+// persistent agents, only the closed tether file is removed.
+// Returns a set of agent IDs that were reaped.
+func (w *Sentinel) checkClosedWritTethers(agents []store.Agent, reapedCount *int, actionsTaken *[]string) map[string]bool {
+	reaped := make(map[string]bool)
+	if w.worldStore == nil {
+		return reaped
+	}
+
+	for _, agent := range agents {
+		tetheredWrits, err := tether.List(w.config.World, agent.Name, agent.Role)
+		if err != nil || len(tetheredWrits) == 0 {
+			continue
+		}
+
+		for _, writID := range tetheredWrits {
+			writ, err := w.worldStore.GetWrit(writID)
+			if err != nil || writ.Status != "closed" {
+				continue
+			}
+
+			if agent.Role == "agent" {
+				// Outpost agent with closed writ: full reap.
+				sessionName := dispatch.SessionName(w.config.World, agent.Name)
+				*reapedCount++
+				if err := w.reapClosedWritAgent(agent, sessionName, writ.CloseReason); err != nil {
+					if w.logger != nil {
+						w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+							"agent": agent.ID, "action": "reap_closed_writ", "error": err.Error(),
+						})
+					}
+				}
+				*actionsTaken = append(*actionsTaken, "reaped_closed_writ:"+agent.Name)
+				reaped[agent.ID] = true
+				break // agent is deleted, no point checking more writs
+			}
+
+			// Persistent agent: remove just this tether, keep agent alive.
+			tether.ClearOne(w.config.World, agent.Name, writID, agent.Role)
+			if agent.ActiveWrit == writID {
+				_ = w.sphereStore.UpdateAgentState(agent.ID, agent.State, "")
+				agent.ActiveWrit = "" // update local copy
+			}
+			if w.logger != nil {
+				w.logger.Emit("sentinel_action", w.agentID(), agent.ID, "feed",
+					map[string]any{
+						"agent":        agent.ID,
+						"writ":         writID,
+						"close_reason": writ.CloseReason,
+						"action":       "cleared_closed_tether",
+					})
+			}
+		}
+	}
+
+	return reaped
 }
 
 // checkProgress checks whether a working agent with a live session is making progress.
@@ -1626,7 +1675,8 @@ func (w *Sentinel) cleanupOrphanedSessionMeta(agentNames map[string]bool) int {
 	return cleaned
 }
 
-// cleanupOrphanedTethers removes tether files for agents that are not working.
+// cleanupOrphanedTethers scans tether directories for agents that are not working
+// and clears all tether files within.
 func (w *Sentinel) cleanupOrphanedTethers(agentNames, workingAgents map[string]bool) int {
 	outpostsDir := filepath.Join(config.Home(), w.config.World, "outposts")
 	entries, err := os.ReadDir(outpostsDir)
@@ -1646,12 +1696,13 @@ func (w *Sentinel) cleanupOrphanedTethers(agentNames, workingAgents map[string]b
 			continue
 		}
 
-		// Check if a tether file exists (outpost agents only — scanning outposts/ dir).
+		// Check if the tether directory has any files.
 		if !tether.IsTethered(w.config.World, name, "agent") {
 			continue
 		}
 
-		// Tether exists but agent is not working — orphaned tether.
+		// Tether directory non-empty but agent is not working — orphaned tethers.
+		// Clear removes all files in the tether directory.
 		tether.Clear(w.config.World, name, "agent")
 		cleaned++
 
