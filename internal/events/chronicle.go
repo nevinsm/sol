@@ -459,17 +459,15 @@ func (c *Chronicle) truncateOnce() error {
 		os.Remove(tmpName)
 		return err
 	}
+	defer lockFile.Close()
+
 	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
-		lockFile.Close()
 		os.Remove(tmpName)
 		return err
 	}
+	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
 
-	err = os.Rename(tmpName, c.config.FeedPath)
-	syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
-	lockFile.Close()
-
-	if err != nil {
+	if err := os.Rename(tmpName, c.config.FeedPath); err != nil {
 		os.Remove(tmpName)
 		return err
 	}

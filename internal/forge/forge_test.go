@@ -218,48 +218,11 @@ type mockEscalation struct {
 
 type mockSphereStore struct {
 	mu          sync.Mutex
-	agents      map[string]*store.Agent
 	escalations []mockEscalation
 }
 
 func newMockSphereStore() *mockSphereStore {
-	return &mockSphereStore{agents: make(map[string]*store.Agent)}
-}
-
-func (m *mockSphereStore) CreateAgent(name, world, role string) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	id := world + "/" + name
-	m.agents[id] = &store.Agent{
-		ID:    id,
-		Name:  name,
-		World: world,
-		Role:  role,
-		State: "idle",
-	}
-	return id, nil
-}
-
-func (m *mockSphereStore) GetAgent(id string) (*store.Agent, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	agent, ok := m.agents[id]
-	if !ok {
-		return nil, fmt.Errorf("agent %q not found", id)
-	}
-	return agent, nil
-}
-
-func (m *mockSphereStore) UpdateAgentState(id, state, activeWrit string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	agent, ok := m.agents[id]
-	if !ok {
-		return fmt.Errorf("agent %q not found", id)
-	}
-	agent.State = state
-	agent.ActiveWrit = activeWrit
-	return nil
+	return &mockSphereStore{}
 }
 
 func (m *mockSphereStore) CreateEscalation(severity, source, description string) (string, error) {

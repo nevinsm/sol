@@ -33,9 +33,6 @@ type WorldStore interface {
 
 // SphereStore abstracts sphere store operations for testing.
 type SphereStore interface {
-	CreateAgent(name, world, role string) (string, error)
-	GetAgent(id string) (*store.Agent, error)
-	UpdateAgentState(id, state, activeWrit string) error
 	CreateEscalation(severity, source, description string) (string, error)
 	ListEscalations(status string) ([]store.Escalation, error)
 	ResolveEscalation(id string) error
