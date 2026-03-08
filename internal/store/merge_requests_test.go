@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"regexp"
 	"testing"
 	"time"
@@ -415,7 +416,11 @@ func TestSupersededPhase(t *testing.T) {
 	itemID, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
 
-	// Transition to superseded.
+	// Must go through valid path: ready → claimed → failed → superseded.
+	s.ClaimMergeRequest("forge/Forge")
+	if err := s.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+		t.Fatalf("UpdateMergeRequestPhase(failed) error: %v", err)
+	}
 	if err := s.UpdateMergeRequestPhase(mrID, "superseded"); err != nil {
 		t.Fatalf("UpdateMergeRequestPhase(superseded) error: %v", err)
 	}
@@ -701,5 +706,224 @@ func TestResetMergeRequestForRetryNotFound(t *testing.T) {
 	expected := `merge request "mr-nonexist": not found`
 	if err.Error() != expected {
 		t.Fatalf("error = %q, want %q", err.Error(), expected)
+	}
+}
+
+func TestPhaseTransitionGuards(t *testing.T) {
+	s := setupWorld(t)
+
+	t.Run("valid transitions", func(t *testing.T) {
+		// ready → claimed → merged
+		itemID, _ := s.CreateWrit("Merge path", "", "operator", 2, nil)
+		mrID, _ := s.CreateMergeRequest(itemID, "branch-merge", 2)
+		s.ClaimMergeRequest("forge/Forge")
+		if err := s.UpdateMergeRequestPhase(mrID, "merged"); err != nil {
+			t.Fatalf("claimed→merged: unexpected error: %v", err)
+		}
+
+		// ready → claimed → failed → superseded
+		itemID2, _ := s.CreateWrit("Fail path", "", "operator", 2, nil)
+		mrID2, _ := s.CreateMergeRequest(itemID2, "branch-fail", 2)
+		s.ClaimMergeRequest("forge/Forge")
+		if err := s.UpdateMergeRequestPhase(mrID2, "failed"); err != nil {
+			t.Fatalf("claimed→failed: unexpected error: %v", err)
+		}
+		if err := s.UpdateMergeRequestPhase(mrID2, "superseded"); err != nil {
+			t.Fatalf("failed→superseded: unexpected error: %v", err)
+		}
+
+		// ready → claimed → ready (release)
+		itemID3, _ := s.CreateWrit("Release path", "", "operator", 2, nil)
+		mrID3, _ := s.CreateMergeRequest(itemID3, "branch-release", 2)
+		s.ClaimMergeRequest("forge/Forge")
+		if err := s.UpdateMergeRequestPhase(mrID3, "ready"); err != nil {
+			t.Fatalf("claimed→ready: unexpected error: %v", err)
+		}
+	})
+
+	t.Run("idempotent transitions", func(t *testing.T) {
+		itemID, _ := s.CreateWrit("Idempotent", "", "operator", 2, nil)
+		mrID, _ := s.CreateMergeRequest(itemID, "branch-idem", 2)
+
+		// ready → ready (no-op)
+		if err := s.UpdateMergeRequestPhase(mrID, "ready"); err != nil {
+			t.Fatalf("ready→ready: unexpected error: %v", err)
+		}
+
+		// claimed → claimed (no-op)
+		s.ClaimMergeRequest("forge/Forge")
+		if err := s.UpdateMergeRequestPhase(mrID, "claimed"); err != nil {
+			t.Fatalf("claimed→claimed: unexpected error: %v", err)
+		}
+
+		// failed → failed (no-op)
+		if err := s.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+			t.Fatalf("claimed→failed: unexpected error: %v", err)
+		}
+		if err := s.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+			t.Fatalf("failed→failed: unexpected error: %v", err)
+		}
+
+		// merged → merged (no-op)
+		itemID2, _ := s.CreateWrit("Idempotent2", "", "operator", 2, nil)
+		mrID2, _ := s.CreateMergeRequest(itemID2, "branch-idem2", 2)
+		s.ClaimMergeRequest("forge/Forge")
+		s.UpdateMergeRequestPhase(mrID2, "merged")
+		if err := s.UpdateMergeRequestPhase(mrID2, "merged"); err != nil {
+			t.Fatalf("merged→merged: unexpected error: %v", err)
+		}
+	})
+
+	t.Run("invalid transitions from terminal states", func(t *testing.T) {
+		// merged → ready
+		itemID, _ := s.CreateWrit("Terminal merged", "", "operator", 2, nil)
+		mrID, _ := s.CreateMergeRequest(itemID, "branch-term-m", 2)
+		s.ClaimMergeRequest("forge/Forge")
+		s.UpdateMergeRequestPhase(mrID, "merged")
+
+		for _, target := range []string{"ready", "claimed", "failed", "superseded"} {
+			err := s.UpdateMergeRequestPhase(mrID, target)
+			if err == nil {
+				t.Fatalf("merged→%s: expected error, got nil", target)
+			}
+			if !errors.Is(err, ErrInvalidTransition) {
+				t.Fatalf("merged→%s: expected ErrInvalidTransition, got: %v", target, err)
+			}
+		}
+
+		// superseded → anything
+		itemID2, _ := s.CreateWrit("Terminal superseded", "", "operator", 2, nil)
+		mrID2, _ := s.CreateMergeRequest(itemID2, "branch-term-s", 2)
+		s.ClaimMergeRequest("forge/Forge")
+		s.UpdateMergeRequestPhase(mrID2, "failed")
+		s.UpdateMergeRequestPhase(mrID2, "superseded")
+
+		for _, target := range []string{"ready", "claimed", "merged", "failed"} {
+			err := s.UpdateMergeRequestPhase(mrID2, target)
+			if err == nil {
+				t.Fatalf("superseded→%s: expected error, got nil", target)
+			}
+			if !errors.Is(err, ErrInvalidTransition) {
+				t.Fatalf("superseded→%s: expected ErrInvalidTransition, got: %v", target, err)
+			}
+		}
+	})
+
+	t.Run("invalid transitions skip steps", func(t *testing.T) {
+		// ready → merged (skips claimed)
+		itemID, _ := s.CreateWrit("Skip merged", "", "operator", 2, nil)
+		mrID, _ := s.CreateMergeRequest(itemID, "branch-skip-m", 2)
+		err := s.UpdateMergeRequestPhase(mrID, "merged")
+		if err == nil {
+			t.Fatal("ready→merged: expected error, got nil")
+		}
+		if !errors.Is(err, ErrInvalidTransition) {
+			t.Fatalf("ready→merged: expected ErrInvalidTransition, got: %v", err)
+		}
+
+		// ready → failed (skips claimed)
+		err = s.UpdateMergeRequestPhase(mrID, "failed")
+		if err == nil {
+			t.Fatal("ready→failed: expected error, got nil")
+		}
+		if !errors.Is(err, ErrInvalidTransition) {
+			t.Fatalf("ready→failed: expected ErrInvalidTransition, got: %v", err)
+		}
+
+		// ready → superseded (not allowed)
+		err = s.UpdateMergeRequestPhase(mrID, "superseded")
+		if err == nil {
+			t.Fatal("ready→superseded: expected error, got nil")
+		}
+		if !errors.Is(err, ErrInvalidTransition) {
+			t.Fatalf("ready→superseded: expected ErrInvalidTransition, got: %v", err)
+		}
+
+		// failed → ready (must use ResetMergeRequestForRetry)
+		itemID2, _ := s.CreateWrit("Skip ready", "", "operator", 2, nil)
+		mrID2, _ := s.CreateMergeRequest(itemID2, "branch-skip-r", 2)
+		// Claim this specific MR by ID to ensure we're operating on the right one.
+		if err := s.UpdateMergeRequestPhase(mrID2, "claimed"); err != nil {
+			t.Fatalf("ready→claimed for mrID2: %v", err)
+		}
+		if err := s.UpdateMergeRequestPhase(mrID2, "failed"); err != nil {
+			t.Fatalf("claimed→failed for mrID2: %v", err)
+		}
+
+		err = s.UpdateMergeRequestPhase(mrID2, "ready")
+		if err == nil {
+			t.Fatal("failed→ready: expected error, got nil")
+		}
+		if !errors.Is(err, ErrInvalidTransition) {
+			t.Fatalf("failed→ready: expected ErrInvalidTransition, got: %v", err)
+		}
+
+		// failed → claimed (must go through ready first)
+		err = s.UpdateMergeRequestPhase(mrID2, "claimed")
+		if err == nil {
+			t.Fatal("failed→claimed: expected error, got nil")
+		}
+		if !errors.Is(err, ErrInvalidTransition) {
+			t.Fatalf("failed→claimed: expected ErrInvalidTransition, got: %v", err)
+		}
+	})
+}
+
+func TestClaimSkipsCaravanBlockedMRs(t *testing.T) {
+	s := setupWorld(t)
+
+	id1, _ := s.CreateWrit("Item 1", "", "operator", 1, nil)
+	id2, _ := s.CreateWrit("Item 2", "", "operator", 2, nil)
+	mr1ID, _ := s.CreateMergeRequest(id1, "branch1", 1) // Higher priority
+	mr2ID, _ := s.CreateMergeRequest(id2, "branch2", 2)
+
+	// Block the higher-priority MR with the caravan sentinel.
+	if err := s.BlockMergeRequest(mr1ID, CaravanBlockedSentinel); err != nil {
+		t.Fatalf("BlockMergeRequest(caravan-blocked) error: %v", err)
+	}
+
+	// Claim should skip the caravan-blocked MR and get the second one.
+	mr, err := s.ClaimMergeRequest("forge/Forge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr == nil {
+		t.Fatal("expected a claimed MR, got nil")
+	}
+	if mr.ID != mr2ID {
+		t.Errorf("claimed MR = %q, want %q (should skip caravan-blocked)", mr.ID, mr2ID)
+	}
+
+	// Verify the caravan-blocked MR is still blocked.
+	blocked, err := s.GetMergeRequest(mr1ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked.BlockedBy != CaravanBlockedSentinel {
+		t.Errorf("blocked_by = %q, want %q", blocked.BlockedBy, CaravanBlockedSentinel)
+	}
+	if blocked.Phase != "ready" {
+		t.Errorf("phase = %q, want 'ready'", blocked.Phase)
+	}
+
+	// Try to claim again — nothing left, caravan-blocked MR should NOT be claimed.
+	mr3, err := s.ClaimMergeRequest("forge/Forge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr3 != nil {
+		t.Fatalf("expected nil when only caravan-blocked MR remains, got %+v", mr3)
+	}
+}
+
+func TestPhaseTransitionNotFound(t *testing.T) {
+	s := setupWorld(t)
+
+	err := s.UpdateMergeRequestPhase("mr-nonexist", "ready")
+	if err == nil {
+		t.Fatal("expected error for nonexistent MR")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got: %v", err)
 	}
 }

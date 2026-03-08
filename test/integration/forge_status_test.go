@@ -63,16 +63,24 @@ func TestForgeStatusWithMRs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create MR: %v", err)
 	}
+	// Transition through valid path: ready → claimed → merged.
+	if err := worldStore.UpdateMergeRequestPhase(mrMerged, "claimed"); err != nil {
+		t.Fatalf("claim MR for merged: %v", err)
+	}
 	if err := worldStore.UpdateMergeRequestPhase(mrMerged, "merged"); err != nil {
-		t.Fatalf("update MR phase: %v", err)
+		t.Fatalf("update MR phase to merged: %v", err)
 	}
 
 	mrFailed, err := worldStore.CreateMergeRequest(itemID, "feature/failed", 2)
 	if err != nil {
 		t.Fatalf("create MR: %v", err)
 	}
+	// Transition through valid path: ready → claimed → failed.
+	if err := worldStore.UpdateMergeRequestPhase(mrFailed, "claimed"); err != nil {
+		t.Fatalf("claim MR for failed: %v", err)
+	}
 	if err := worldStore.UpdateMergeRequestPhase(mrFailed, "failed"); err != nil {
-		t.Fatalf("update MR phase: %v", err)
+		t.Fatalf("update MR phase to failed: %v", err)
 	}
 
 	out, err := runGT(t, gtHome, "forge", "status", "statusmrs")

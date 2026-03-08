@@ -1451,9 +1451,12 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 				return nil, fmt.Errorf("failed to create merge request for %q: %w", writID, err)
 			}
 
-			// If push failed, immediately mark the MR as failed so forge doesn't try to merge it.
+			// If push failed, transition through ready → claimed → failed
+			// so forge doesn't try to merge it.
 			if pushFailed {
-				if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+				if err := worldStore.UpdateMergeRequestPhase(mrID, "claimed"); err != nil {
+					fmt.Fprintf(os.Stderr, "resolve: failed to claim MR after push failure: %v\n", err)
+				} else if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
 					fmt.Fprintf(os.Stderr, "resolve: failed to mark MR as failed after push failure: %v\n", err)
 				}
 			}

@@ -14,6 +14,9 @@ import (
 // ErrNotFound is returned when a requested entity does not exist.
 var ErrNotFound = errors.New("not found")
 
+// ErrInvalidTransition is returned when a phase transition is not allowed.
+var ErrInvalidTransition = errors.New("invalid phase transition")
+
 // Store wraps a SQLite database connection.
 type Store struct {
 	db   *sql.DB

@@ -1223,12 +1223,16 @@ func TestCleanupDoesNotTouchOtherWorlds(t *testing.T) {
 // --- Recast tests ---
 
 // createFailedMR creates a writ and a failed MR for it.
+// Transitions through the valid path: ready → claimed → failed.
 func createFailedMR(t *testing.T, worldStore *store.Store, writID, title, branch string) string {
 	t.Helper()
 	createWrit(t, worldStore, writID, title)
 	mrID, err := worldStore.CreateMergeRequest(writID, branch, 3)
 	if err != nil {
 		t.Fatalf("failed to create MR: %v", err)
+	}
+	if _, err := worldStore.ClaimMergeRequest("test/forge"); err != nil {
+		t.Fatalf("failed to claim MR: %v", err)
 	}
 	if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
 		t.Fatalf("failed to set MR phase to failed: %v", err)
@@ -1487,8 +1491,10 @@ func TestRecastDeduplicatesByWrit(t *testing.T) {
 	// Create a writ with TWO failed MRs (e.g., two merge attempts).
 	createWrit(t, worldStore, "sol-dedup666", "Dedup task")
 	mr1, _ := worldStore.CreateMergeRequest("sol-dedup666", "outpost/A/sol-dedup666", 3)
+	worldStore.ClaimMergeRequest("test/forge")
 	worldStore.UpdateMergeRequestPhase(mr1, "failed")
 	mr2, _ := worldStore.CreateMergeRequest("sol-dedup666", "outpost/B/sol-dedup666", 3)
+	worldStore.ClaimMergeRequest("test/forge")
 	worldStore.UpdateMergeRequestPhase(mr2, "failed")
 
 	castCount := 0

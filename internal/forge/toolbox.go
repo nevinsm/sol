@@ -41,7 +41,9 @@ func ClearForgePaused(world string) error {
 }
 
 // ListReady returns MRs with phase=ready AND blocked_by IS NULL AND not
-// blocked by caravan-level dependencies.
+// blocked by caravan-level dependencies. Caravan-blocked MRs are marked
+// with the "caravan-blocked" sentinel so ClaimMergeRequest's SQL naturally
+// excludes them.
 func (r *Forge) ListReady() ([]store.MergeRequest, error) {
 	all, err := r.worldStore.ListMergeRequests("ready")
 	if err != nil {
@@ -61,6 +63,10 @@ func (r *Forge) ListReady() ([]store.MergeRequest, error) {
 			continue
 		}
 		if blocked {
+			// System-enforce: set blocked_by sentinel so claim SQL excludes it.
+			if err := r.worldStore.BlockMergeRequest(mr.ID, store.CaravanBlockedSentinel); err != nil {
+				r.logger.Error("failed to set caravan-blocked sentinel", "mr", mr.ID, "error", err)
+			}
 			continue
 		}
 		ready = append(ready, mr)
@@ -354,8 +360,9 @@ Instructions (follow every step in order):
 	return taskID, nil
 }
 
-// CheckUnblocked finds blocked MRs whose resolution tasks are closed (merged),
-// unblocks them, and returns the list of unblocked MR IDs.
+// CheckUnblocked finds blocked MRs whose resolution tasks are closed (merged)
+// or whose caravan dependencies are satisfied, unblocks them, and returns
+// the list of unblocked MR IDs.
 // Note: "done" (code complete, awaiting merge) is NOT sufficient — the
 // blocker's code must be merged to the target branch first.
 func (r *Forge) CheckUnblocked() ([]string, error) {
@@ -366,6 +373,25 @@ func (r *Forge) CheckUnblocked() ([]string, error) {
 
 	var unblocked []string
 	for _, mr := range blocked {
+		// Caravan-blocked MRs: re-check caravan deps.
+		if mr.BlockedBy == store.CaravanBlockedSentinel {
+			stillBlocked, _, err := r.sphereStore.IsWritBlockedByCaravanDeps(mr.WritID)
+			if err != nil {
+				r.logger.Warn("failed to re-check caravan deps", "mr", mr.ID, "writ", mr.WritID, "error", err)
+				continue
+			}
+			if !stillBlocked {
+				if err := r.worldStore.UnblockMergeRequest(mr.ID); err != nil {
+					r.logger.Error("failed to unblock caravan-blocked MR", "mr", mr.ID, "error", err)
+					continue
+				}
+				unblocked = append(unblocked, mr.ID)
+				r.logger.Info("unblocked caravan-blocked MR", "mr", mr.ID, "writ", mr.WritID)
+			}
+			continue
+		}
+
+		// Writ-blocked MRs: check if blocker writ is closed.
 		item, err := r.worldStore.GetWrit(mr.BlockedBy)
 		if err != nil {
 			r.logger.Warn("failed to get blocker writ", "blocker", mr.BlockedBy, "error", err)

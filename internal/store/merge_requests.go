@@ -9,6 +9,37 @@ import (
 	"time"
 )
 
+// CaravanBlockedSentinel is the blocked_by value used when an MR is blocked
+// by caravan-level dependencies. Using a sentinel lets the claim SQL
+// (blocked_by IS NULL) naturally exclude caravan-blocked MRs.
+const CaravanBlockedSentinel = "caravan-blocked"
+
+// validMRTransition returns true if transitioning from → to is allowed.
+// Terminal states (merged, superseded) reject all outgoing transitions.
+// Same-phase transitions are always allowed (idempotent no-op).
+func validMRTransition(from, to string) bool {
+	if from == to {
+		return true // idempotent
+	}
+	switch from {
+	case "merged", "superseded":
+		return false // terminal states
+	case "ready":
+		// ready → claimed is handled by ClaimMergeRequest (separate SQL).
+		// ready → blocked is handled by BlockMergeRequest (separate method).
+		// ready → merged or ready → failed skip the claimed step.
+		return to == "claimed"
+	case "claimed":
+		return to == "ready" || to == "merged" || to == "failed"
+	case "failed":
+		// failed → ready must go through ResetMergeRequestForRetry.
+		// failed → claimed must go through ready first.
+		return to == "superseded"
+	default:
+		return false
+	}
+}
+
 // MergeRequest represents a merge request in the world database.
 type MergeRequest struct {
 	ID         string
@@ -220,16 +251,36 @@ func (s *Store) ClaimMergeRequest(claimerID string) (*MergeRequest, error) {
 // UpdateMergeRequestPhase updates the phase of a merge request.
 // Also sets updated_at=now. If phase=merged, also sets merged_at=now.
 // If phase=ready, clears claimed_by and claimed_at (release).
+// Returns ErrInvalidTransition if the transition is not allowed.
 func (s *Store) UpdateMergeRequestPhase(id, phase string) error {
 	validPhases := map[string]bool{"ready": true, "claimed": true, "merged": true, "failed": true, "superseded": true}
 	if !validPhases[phase] {
 		return fmt.Errorf("invalid merge request phase %q", phase)
 	}
 
+	// Fetch current phase to validate the transition.
+	var currentPhase string
+	err := s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, id).Scan(&currentPhase)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("merge request %q: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get current phase for merge request %q: %w", id, err)
+	}
+
+	if !validMRTransition(currentPhase, phase) {
+		return fmt.Errorf("merge request %q: cannot transition from %q to %q: %w",
+			id, currentPhase, phase, ErrInvalidTransition)
+	}
+
+	// Same-phase transition is a no-op.
+	if currentPhase == phase {
+		return nil
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	var result sql.Result
-	var err error
 
 	switch phase {
 	case "merged":
