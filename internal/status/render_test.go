@@ -539,6 +539,144 @@ func TestRenderEnvoyNudgeCount(t *testing.T) {
 	}
 }
 
+func TestRenderWorldsTableCapacity(t *testing.T) {
+	s := &SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: PrefectInfo{Running: true, PID: 1234},
+		Worlds: []WorldSummary{
+			{Name: "capped", Agents: 4, Capacity: 5, Working: 2, Health: "healthy"},
+			{Name: "unlimited", Agents: 3, Capacity: 0, Working: 1, Health: "healthy"},
+		},
+	}
+
+	output := RenderSphere(s)
+
+	// Capped world should show "4/5" format.
+	if !strings.Contains(output, "4/5") {
+		t.Error("RenderSphere should show '4/5' for capped world")
+	}
+	// Unlimited world should NOT show "/0" or similar.
+	if strings.Contains(output, "3/0") {
+		t.Error("RenderSphere should not show '3/0' for unlimited world")
+	}
+}
+
+func TestRenderWorldSummaryWithCapacity(t *testing.T) {
+	ws := &WorldStatus{
+		World:    "haven",
+		Capacity: 5,
+		Prefect:  PrefectInfo{Running: true, PID: 42},
+		Summary:  Summary{Total: 3, Working: 2, Idle: 1},
+	}
+
+	output := RenderWorld(ws)
+
+	if !strings.Contains(output, "capacity: 5") {
+		t.Error("RenderWorld with capacity should contain 'capacity: 5'")
+	}
+}
+
+func TestRenderWorldSummaryWithoutCapacity(t *testing.T) {
+	ws := &WorldStatus{
+		World:    "haven",
+		Capacity: 0,
+		Prefect:  PrefectInfo{Running: true, PID: 42},
+		Summary:  Summary{Total: 3, Working: 2, Idle: 1},
+	}
+
+	output := RenderWorld(ws)
+
+	if strings.Contains(output, "capacity") {
+		t.Error("RenderWorld without capacity should not contain 'capacity'")
+	}
+}
+
+func TestRenderEscalationLine(t *testing.T) {
+	esc := &EscalationSummary{
+		Total: 3,
+		BySeverity: map[string]int{
+			"critical": 1,
+			"high":     2,
+		},
+	}
+
+	line := renderEscalationLine(esc)
+
+	checks := []string{
+		"Escalations: 3 open",
+		"1 critical",
+		"2 high",
+	}
+	for _, check := range checks {
+		if !strings.Contains(line, check) {
+			t.Errorf("renderEscalationLine missing %q in %q", check, line)
+		}
+	}
+}
+
+func TestRenderSphereWithEscalations(t *testing.T) {
+	s := &SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: PrefectInfo{Running: true, PID: 1234},
+		Escalations: &EscalationSummary{
+			Total: 2,
+			BySeverity: map[string]int{
+				"high":   1,
+				"medium": 1,
+			},
+		},
+	}
+
+	output := RenderSphere(s)
+
+	if !strings.Contains(output, "Escalations: 2 open") {
+		t.Error("RenderSphere with escalations should contain 'Escalations: 2 open'")
+	}
+	if !strings.Contains(output, "1 high") {
+		t.Error("RenderSphere with escalations should contain '1 high'")
+	}
+}
+
+func TestRenderSphereNoEscalations(t *testing.T) {
+	s := &SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: PrefectInfo{Running: true, PID: 1234},
+	}
+
+	output := RenderSphere(s)
+
+	if strings.Contains(output, "Escalations") {
+		t.Error("RenderSphere without escalations should not contain 'Escalations'")
+	}
+}
+
+func TestRenderCombinedWithEscalations(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "haven",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Summary: Summary{Total: 2, Working: 1, Idle: 1},
+	}
+	consulInfo := ConsulInfo{Running: true, PatrolCount: 5}
+	esc := &EscalationSummary{
+		Total: 1,
+		BySeverity: map[string]int{
+			"critical": 1,
+		},
+	}
+
+	output := RenderCombined(consulInfo, ws, esc)
+
+	if !strings.Contains(output, "Escalations: 1 open") {
+		t.Error("RenderCombined with escalations should contain 'Escalations: 1 open'")
+	}
+	if !strings.Contains(output, "1 critical") {
+		t.Error("RenderCombined with escalations should contain '1 critical'")
+	}
+}
+
 func TestFormatChronicleDetailPID(t *testing.T) {
 	tests := []struct {
 		name string
