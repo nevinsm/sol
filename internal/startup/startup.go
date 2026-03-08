@@ -163,6 +163,13 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		return "", fmt.Errorf("startup: failed to ensure claude config dir: %w", err)
 	}
 
+	// 4.5. Pre-trust the working directory in the agent's config dir so
+	// Claude Code doesn't block on an interactive trust prompt when using
+	// the agent-specific CLAUDE_CONFIG_DIR.
+	if err := protocol.TrustDirectoryIn(worktreeDir, claudeConfigDir); err != nil {
+		fmt.Fprintf(os.Stderr, "startup: failed to pre-trust directory in config dir %s: %v\n", claudeConfigDir, err)
+	}
+
 	// 5. Ensure agent record in sphere store.
 	sphereStore, closeSphere, err := resolveSphereStore(opts)
 	if err != nil {

@@ -373,6 +373,126 @@ func TestEnvVars(t *testing.T) {
 	}
 }
 
+func TestPrependEnv(t *testing.T) {
+	tests := []struct {
+		name     string
+		cmd      string
+		env      map[string]string
+		expected string
+	}{
+		{
+			name:     "nil env",
+			cmd:      "sleep 300",
+			env:      nil,
+			expected: "sleep 300",
+		},
+		{
+			name:     "empty env",
+			cmd:      "sleep 300",
+			env:      map[string]string{},
+			expected: "sleep 300",
+		},
+		{
+			name: "single var",
+			cmd:  "sleep 300",
+			env:  map[string]string{"MY_VAR": "hello"},
+			expected: `export MY_VAR="hello" && sleep 300`,
+		},
+		{
+			name: "multiple vars sorted",
+			cmd:  "sleep 300",
+			env: map[string]string{
+				"ZZZ_VAR": "last",
+				"AAA_VAR": "first",
+			},
+			expected: `export AAA_VAR="first" ZZZ_VAR="last" && sleep 300`,
+		},
+		{
+			name: "value with spaces",
+			cmd:  "sleep 300",
+			env:  map[string]string{"PATH_VAR": "/some/path with spaces"},
+			expected: `export PATH_VAR="/some/path with spaces" && sleep 300`,
+		},
+		{
+			name: "value with special chars",
+			cmd:  "sleep 300",
+			env:  map[string]string{"SPECIAL": `has "quotes" and $vars`},
+			expected: `export SPECIAL="has \"quotes\" and \$vars" && sleep 300`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := prependEnv(tt.cmd, tt.env)
+			if got != tt.expected {
+				t.Errorf("prependEnv(%q, %v) = %q, want %q", tt.cmd, tt.env, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestStartPrependsEnvToCommand(t *testing.T) {
+	mgr := setupTest(t)
+
+	env := map[string]string{
+		"TEST_SOL_VAR": "from_prepend",
+	}
+
+	// Start a session that prints the env var. If prependEnv works,
+	// the export runs before echo, making the var available.
+	err := mgr.Start("test-env-prepend", "/tmp",
+		"echo VAR_IS_$TEST_SOL_VAR && sleep 300", env, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Wait for echo to execute
+	time.Sleep(500 * time.Millisecond)
+
+	output, err := mgr.Capture("test-env-prepend", 50)
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	if !strings.Contains(output, "VAR_IS_from_prepend") {
+		t.Errorf("env var not visible in process, capture: %q", output)
+	}
+}
+
+func TestCyclePrependsEnvToCommand(t *testing.T) {
+	mgr := setupTest(t)
+
+	// Start without env.
+	err := mgr.Start("test-cycle-prepend", "/tmp", "sleep 300", nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	env := map[string]string{
+		"CYCLE_VAR": "from_cycle",
+	}
+
+	// Cycle with env — the new command should see the env var.
+	err = mgr.Cycle("test-cycle-prepend", "/tmp",
+		"echo CYCLE_IS_$CYCLE_VAR && sleep 300", env, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Cycle failed: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	output, err := mgr.Capture("test-cycle-prepend", 50)
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	if !strings.Contains(output, "CYCLE_IS_from_cycle") {
+		t.Errorf("env var not visible after cycle, capture: %q", output)
+	}
+}
+
 func TestGracefulStop(t *testing.T) {
 	mgr := setupTest(t)
 
