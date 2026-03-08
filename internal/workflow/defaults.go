@@ -6,11 +6,25 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 
 	"github.com/BurntSushi/toml"
 	"github.com/nevinsm/sol/internal/config"
 )
+
+// validFormulaName matches alphanumeric names with hyphens and underscores.
+var validFormulaName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+
+// ValidateFormulaName checks that a formula name is safe for use in file
+// paths. It rejects names containing path separators, traversal sequences,
+// or leading dots. A valid name matches [a-zA-Z0-9][a-zA-Z0-9_-]*.
+func ValidateFormulaName(name string) error {
+	if !validFormulaName.MatchString(name) {
+		return fmt.Errorf("invalid formula name %q: must not contain path separators or traversal sequences", name)
+	}
+	return nil
+}
 
 //go:embed defaults/default-work/manifest.toml
 //go:embed defaults/default-work/steps/01-load-context.md
@@ -100,6 +114,10 @@ type FormulaEntry struct {
 // Resolution is first-match-wins: project > user > embedded.
 // Pass an empty repoPath to skip the project tier.
 func EnsureFormula(formulaName, repoPath string) (*FormulaResolution, error) {
+	if err := ValidateFormulaName(formulaName); err != nil {
+		return nil, err
+	}
+
 	// Tier 1: Project-level — check {repoPath}/.sol/workflows/{name}/.
 	if repoPath != "" {
 		projectDir := ProjectFormulaDir(repoPath, formulaName)
