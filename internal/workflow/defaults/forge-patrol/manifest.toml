@@ -6,6 +6,7 @@ description = "Forge merge patrol loop — claim, merge, gate, push, repeat."
 world = { required = true }
 target_branch = { default = "main" }
 gate_command = { default = "make build && make test" }
+health_check_threshold = { default = "10", description = "Number of MRs to process before handing off to a fresh session" }
 
 [[steps]]
 id = "unblock"

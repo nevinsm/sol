@@ -4,10 +4,10 @@
 echo "=== STEP 9/10: LOOP ==="
 ```
 
-**Default action**: go back to scan (step 2) and process the next MR.
+Increment your processed-MR count (you are tracking how many MRs you have
+processed in this session — if this is your first, the count is now 1).
 
-Before looping, quick check:
-- If you have processed many MRs and context is growing large, proceed to health-check (step 10)
-- Otherwise, go back to step 2 (scan)
+If your count >= {{health_check_threshold}}, proceed to health-check (step 10).
+Otherwise, go back to scan (step 2).
 
 Do NOT explore the codebase. Do NOT investigate anything. Just loop.
