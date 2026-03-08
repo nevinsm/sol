@@ -47,4 +47,5 @@ kind = "analysis"
 [synthesis]
 title = "Design Synthesis"
 description = "Merge findings from all six exploration legs into a coherent design recommendation. Identify tensions between dimensions, propose trade-offs, and produce a draft ADR or design document suitable for review."
+kind = "analysis"
 depends_on = ["api-design", "data-model", "ux-interaction", "scalability", "security", "integration"]

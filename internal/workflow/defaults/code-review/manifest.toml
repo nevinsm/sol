@@ -22,4 +22,5 @@ focus = "Does it follow existing patterns? Are there architectural concerns? Is 
 [synthesis]
 title = "Consolidate Review: {target.title}"
 description = "Read analysis findings from each leg output directory. Produce a consolidated review with prioritized action items, risks, and recommendations."
+kind = "analysis"
 depends_on = ["requirements", "feasibility"]

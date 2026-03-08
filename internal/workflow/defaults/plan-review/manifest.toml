@@ -40,4 +40,5 @@ kind = "analysis"
 [synthesis]
 title = "Go/No-Go Recommendation"
 description = "Consolidate findings from all five analysis dimensions into a single go/no-go recommendation. List specific concerns ranked by severity, required changes before proceeding, and conditional approvals."
+kind = "analysis"
 depends_on = ["completeness", "sequencing", "risk", "scope-creep", "testability"]
