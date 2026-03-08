@@ -29,3 +29,16 @@ See ADR-0026 for details.
 | Command | Description |
 |---------|-------------|
 | `sol prefect start` | Start the prefect as a detached background process |
+| `sol prefect status` | Show prefect running state, PID, and uptime (`--json` for machine-readable output) |
+
+### Chronicle
+
+| Command | Description |
+|---------|-------------|
+| `sol chronicle status` | Show chronicle running state and checkpoint offset (`--json` for machine-readable output) |
+
+### Ledger
+
+| Command | Description |
+|---------|-------------|
+| `sol ledger status` | Show ledger running state and OTLP port (`--json` for machine-readable output) |

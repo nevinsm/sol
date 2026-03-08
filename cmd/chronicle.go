@@ -2,9 +2,13 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/nevinsm/sol/internal/config"
@@ -14,6 +18,8 @@ import (
 )
 
 const chronicleSessionName = "sol-chronicle"
+
+var chronicleStatusJSON bool
 
 var chronicleCmd = &cobra.Command{
 	Use:     "chronicle",
@@ -97,9 +103,73 @@ var chronicleStopCmd = &cobra.Command{
 	},
 }
 
+var chronicleStatusCmd = &cobra.Command{
+	Use:          "status",
+	Short:        "Show chronicle status",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr := session.New()
+		running := mgr.Exists(chronicleSessionName)
+
+		// Try to read the checkpoint offset.
+		var offset int64 = -1
+		checkpointPath := filepath.Join(config.Home(), ".chronicle-checkpoint")
+		if data, err := os.ReadFile(checkpointPath); err == nil {
+			if v, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64); err == nil {
+				offset = v
+			}
+		}
+
+		if !running {
+			if chronicleStatusJSON {
+				out := map[string]any{
+					"status": "stopped",
+				}
+				if offset >= 0 {
+					out["checkpoint_offset"] = offset
+				}
+				data, _ := json.Marshal(out)
+				fmt.Println(string(data))
+				return nil
+			}
+			fmt.Println("Chronicle is not running.")
+			if offset >= 0 {
+				fmt.Printf("Last checkpoint offset: %d\n", offset)
+			}
+			return &exitError{code: 1}
+		}
+
+		if chronicleStatusJSON {
+			out := map[string]any{
+				"status":  "running",
+				"session": chronicleSessionName,
+			}
+			if offset >= 0 {
+				out["checkpoint_offset"] = offset
+			}
+			data, err := json.Marshal(out)
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(data))
+			return nil
+		}
+
+		fmt.Printf("Chronicle: running\n")
+		fmt.Printf("Session: %s\n", chronicleSessionName)
+		if offset >= 0 {
+			fmt.Printf("Checkpoint offset: %d\n", offset)
+		}
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(chronicleCmd)
 	chronicleCmd.AddCommand(chronicleRunCmd)
 	chronicleCmd.AddCommand(chronicleStartCmd)
 	chronicleCmd.AddCommand(chronicleStopCmd)
+	chronicleCmd.AddCommand(chronicleStatusCmd)
+
+	chronicleStatusCmd.Flags().BoolVar(&chronicleStatusJSON, "json", false, "output as JSON")
 }

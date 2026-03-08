@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,6 +18,8 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
+
+var prefectStatusJSON bool
 
 var prefectCmd = &cobra.Command{
 	Use:     "prefect",
@@ -171,13 +174,72 @@ var prefectStopCmd = &cobra.Command{
 	},
 }
 
+var prefectStatusCmd = &cobra.Command{
+	Use:          "status",
+	Short:        "Show prefect status",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pid, err := prefect.ReadPID()
+		if err != nil {
+			return err
+		}
+
+		running := pid > 0 && prefect.IsRunning(pid)
+
+		if !running {
+			if prefectStatusJSON {
+				data, _ := json.Marshal(map[string]any{
+					"status": "stopped",
+				})
+				fmt.Println(string(data))
+				return nil
+			}
+			fmt.Println("Prefect is not running.")
+			return &exitError{code: 1}
+		}
+
+		// Read PID file mtime as proxy for start time.
+		pidFilePath := filepath.Join(config.RuntimeDir(), "prefect.pid")
+		var uptime time.Duration
+		if info, err := os.Stat(pidFilePath); err == nil {
+			uptime = time.Since(info.ModTime()).Round(time.Second)
+		}
+
+		if prefectStatusJSON {
+			out := map[string]any{
+				"status": "running",
+				"pid":    pid,
+			}
+			if uptime > 0 {
+				out["uptime_seconds"] = int(uptime.Seconds())
+			}
+			data, err := json.Marshal(out)
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(data))
+			return nil
+		}
+
+		fmt.Printf("Prefect: running\n")
+		fmt.Printf("PID: %d\n", pid)
+		if uptime > 0 {
+			fmt.Printf("Uptime: %s\n", uptime)
+		}
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(prefectCmd)
 	prefectCmd.AddCommand(prefectRunCmd)
 	prefectCmd.AddCommand(prefectStartCmd)
 	prefectCmd.AddCommand(prefectStopCmd)
+	prefectCmd.AddCommand(prefectStatusCmd)
 
 	prefectRunCmd.Flags().Bool("consul", false, "Enable consul monitoring and auto-start")
 	prefectRunCmd.Flags().String("source-repo", "", "Source repository path (for consul dispatch)")
 	prefectRunCmd.Flags().StringSlice("worlds", nil, "Comma-separated list of worlds to supervise (default: all)")
+
+	prefectStatusCmd.Flags().BoolVar(&prefectStatusJSON, "json", false, "output as JSON")
 }

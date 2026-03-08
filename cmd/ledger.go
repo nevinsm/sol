@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,6 +15,8 @@ import (
 )
 
 const ledgerSessionName = "sol-ledger"
+
+var ledgerStatusJSON bool
 
 var ledgerCmd = &cobra.Command{
 	Use:     "ledger",
@@ -96,9 +99,53 @@ var ledgerStopCmd = &cobra.Command{
 	},
 }
 
+var ledgerStatusCmd = &cobra.Command{
+	Use:          "status",
+	Short:        "Show ledger status",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr := session.New()
+		running := mgr.Exists(ledgerSessionName)
+
+		if !running {
+			if ledgerStatusJSON {
+				data, _ := json.Marshal(map[string]any{
+					"status": "stopped",
+				})
+				fmt.Println(string(data))
+				return nil
+			}
+			fmt.Println("Ledger is not running.")
+			return &exitError{code: 1}
+		}
+
+		if ledgerStatusJSON {
+			out := map[string]any{
+				"status":  "running",
+				"session": ledgerSessionName,
+				"port":    ledger.DefaultPort,
+			}
+			data, err := json.Marshal(out)
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(data))
+			return nil
+		}
+
+		fmt.Printf("Ledger: running\n")
+		fmt.Printf("Session: %s\n", ledgerSessionName)
+		fmt.Printf("OTLP port: %d\n", ledger.DefaultPort)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(ledgerCmd)
 	ledgerCmd.AddCommand(ledgerRunCmd)
 	ledgerCmd.AddCommand(ledgerStartCmd)
 	ledgerCmd.AddCommand(ledgerStopCmd)
+	ledgerCmd.AddCommand(ledgerStatusCmd)
+
+	ledgerStatusCmd.Flags().BoolVar(&ledgerStatusJSON, "json", false, "output as JSON")
 }
