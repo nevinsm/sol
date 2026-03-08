@@ -574,12 +574,40 @@ func TestListEmptyQueue(t *testing.T) {
 	}
 }
 
-func TestPokeNonexistentSessionReturnsNil(t *testing.T) {
+func TestDeliverNonexistentSessionReturnsNil(t *testing.T) {
 	setupTestDir(t)
 
-	// Poke on a session that doesn't exist should return nil (best-effort).
-	if err := Poke("nonexistent-session"); err != nil {
-		t.Fatalf("Poke on nonexistent session should return nil, got: %v", err)
+	// Deliver on a session that doesn't exist should return nil (best-effort).
+	msg := Message{Sender: "test", Type: "info", Subject: "no-session"}
+	if err := Deliver("nonexistent-session", msg); err != nil {
+		t.Fatalf("Deliver on nonexistent session should return nil, got: %v", err)
+	}
+}
+
+func TestFormatNotification(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      Message
+		expected string
+	}{
+		{
+			name:     "with subject",
+			msg:      Message{Sender: "sentinel", Type: "HEALTH", Subject: "check passed"},
+			expected: "[HEALTH] sentinel: check passed",
+		},
+		{
+			name:     "without subject",
+			msg:      Message{Sender: "forge", Type: "MR_READY"},
+			expected: "[MR_READY] forge",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatNotification(tt.msg)
+			if got != tt.expected {
+				t.Errorf("formatNotification() = %q, want %q", got, tt.expected)
+			}
+		})
 	}
 }
 

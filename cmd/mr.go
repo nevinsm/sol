@@ -7,7 +7,6 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/nudge"
-	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -70,22 +69,18 @@ var mrCreateCmd = &cobra.Command{
 		})
 
 		// Nudge forge that a new MR is ready (best-effort).
-		mgr := session.New()
 		forgeSession := config.SessionName(world, "forge")
-		if mgr.Exists(forgeSession) {
-			forgeBody := fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
-				writID, mrID, branch, item.Title)
-			if err := nudge.Enqueue(forgeSession, nudge.Message{
-				Sender:   "operator",
-				Type:     "MR_READY",
-				Subject:  fmt.Sprintf("MR %s ready for merge", mrID),
-				Body:     forgeBody,
-				Priority: "normal",
-			}); err != nil {
-				fmt.Fprintf(os.Stderr, "mr create: failed to nudge forge: %v\n", err)
-			}
+		forgeBody := fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
+			writID, mrID, branch, item.Title)
+		if err := nudge.Deliver(forgeSession, nudge.Message{
+			Sender:   "operator",
+			Type:     "MR_READY",
+			Subject:  fmt.Sprintf("MR %s ready for merge", mrID),
+			Body:     forgeBody,
+			Priority: "normal",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "mr create: failed to nudge forge: %v\n", err)
 		}
-		nudge.Poke(forgeSession)
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {

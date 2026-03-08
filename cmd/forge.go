@@ -973,19 +973,15 @@ var forgePauseCmd = &cobra.Command{
 
 		// Nudge the forge session so it notices the pause promptly.
 		sessName := dispatch.SessionName(world, "forge")
-		mgr := session.New()
-		if mgr.Exists(sessName) {
-			if err := nudge.Enqueue(sessName, nudge.Message{
-				Sender:   "operator",
-				Type:     "FORGE_PAUSED",
-				Subject:  "Forge paused by operator",
-				Body:     fmt.Sprintf(`{"world":%q}`, world),
-				Priority: "urgent",
-			}); err != nil {
-				// Best-effort — log but don't fail.
-				fmt.Fprintf(os.Stderr, "warning: failed to nudge forge session: %v\n", err)
-			}
-			nudge.Poke(sessName)
+		if err := nudge.Deliver(sessName, nudge.Message{
+			Sender:   "operator",
+			Type:     "FORGE_PAUSED",
+			Subject:  "Forge paused by operator",
+			Body:     fmt.Sprintf(`{"world":%q}`, world),
+			Priority: "urgent",
+		}); err != nil {
+			// Best-effort — log but don't fail.
+			fmt.Fprintf(os.Stderr, "warning: failed to nudge forge session: %v\n", err)
 		}
 
 		fmt.Printf("Forge paused for world %q\n", world)
@@ -1014,18 +1010,14 @@ var forgeResumeCmd = &cobra.Command{
 
 		// Nudge the forge session so it resumes promptly.
 		sessName := dispatch.SessionName(world, "forge")
-		mgr := session.New()
-		if mgr.Exists(sessName) {
-			if err := nudge.Enqueue(sessName, nudge.Message{
-				Sender:   "operator",
-				Type:     "FORGE_RESUMED",
-				Subject:  "Forge resumed by operator",
-				Body:     fmt.Sprintf(`{"world":%q}`, world),
-				Priority: "urgent",
-			}); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to nudge forge session: %v\n", err)
-			}
-			nudge.Poke(sessName)
+		if err := nudge.Deliver(sessName, nudge.Message{
+			Sender:   "operator",
+			Type:     "FORGE_RESUMED",
+			Subject:  "Forge resumed by operator",
+			Body:     fmt.Sprintf(`{"world":%q}`, world),
+			Priority: "urgent",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to nudge forge session: %v\n", err)
 		}
 
 		fmt.Printf("Forge resumed for world %q\n", world)

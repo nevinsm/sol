@@ -784,6 +784,79 @@ func TestUnknownHealthStatus(t *testing.T) {
 	}
 }
 
+// --- sanitizeNudgeMessage tests ---
+
+func TestSanitizeNudgeMessage(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"plain text", "hello world", "hello world"},
+		{"preserves newlines", "line1\nline2", "line1\nline2"},
+		{"strips ESC", "before\x1b[31mred\x1b[0m after", "before[31mred[0m after"},
+		{"strips CR", "hello\r\nworld", "hello\nworld"},
+		{"strips BS", "abc\x08def", "abcdef"},
+		{"tab to space", "col1\tcol2", "col1 col2"},
+		{"strips DEL", "abc\x7fdef", "abcdef"},
+		{"preserves unicode", "hello 世界 ❯", "hello 世界 ❯"},
+		{"preserves quotes", `he said "hello"`, `he said "hello"`},
+		{"empty string", "", ""},
+		{"strips NUL", "a\x00b", "ab"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeNudgeMessage(tt.input)
+			if got != tt.expected {
+				t.Errorf("sanitizeNudgeMessage(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// --- nudge lock tests ---
+
+func TestNudgeLockAcquireRelease(t *testing.T) {
+	session := "test-lock-session"
+
+	// Acquire should succeed.
+	if !acquireNudgeLock(session, 1*time.Second) {
+		t.Fatal("first acquire should succeed")
+	}
+
+	// Second acquire should fail (timeout quickly).
+	if acquireNudgeLock(session, 50*time.Millisecond) {
+		t.Fatal("second acquire should fail while lock is held")
+	}
+
+	// Release.
+	releaseNudgeLock(session)
+
+	// Now acquire should succeed again.
+	if !acquireNudgeLock(session, 1*time.Second) {
+		t.Fatal("acquire after release should succeed")
+	}
+	releaseNudgeLock(session)
+}
+
+func TestNudgeLockDifferentSessions(t *testing.T) {
+	sess1 := "lock-test-a"
+	sess2 := "lock-test-b"
+
+	if !acquireNudgeLock(sess1, 1*time.Second) {
+		t.Fatal("acquire sess1 should succeed")
+	}
+
+	// Different session should not be blocked.
+	if !acquireNudgeLock(sess2, 1*time.Second) {
+		t.Fatal("acquire sess2 should succeed while sess1 is locked")
+	}
+
+	releaseNudgeLock(sess1)
+	releaseNudgeLock(sess2)
+}
+
 // --- Idle detection unit tests ---
 
 func TestMatchesPromptPrefix(t *testing.T) {
@@ -922,6 +995,63 @@ func TestErrIdleTimeout(t *testing.T) {
 	}
 	if !errors.Is(ErrIdleTimeout, ErrIdleTimeout) {
 		t.Error("ErrIdleTimeout should be identifiable with errors.Is")
+	}
+}
+
+// --- NudgeSession integration tests ---
+
+func TestNudgeSessionDelivers(t *testing.T) {
+	mgr := setupTest(t)
+
+	// Start a session running cat which echoes stdin back.
+	err := mgr.Start("test-nudge", "/tmp", "cat", nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	err = mgr.NudgeSession("test-nudge", "hello from nudge")
+	if err != nil {
+		t.Fatalf("NudgeSession failed: %v", err)
+	}
+
+	// Give time for the text + enter to be processed.
+	time.Sleep(500 * time.Millisecond)
+
+	output, err := mgr.Capture("test-nudge", 50)
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	if !strings.Contains(output, "hello from nudge") {
+		t.Errorf("capture should contain nudged text, got: %q", output)
+	}
+}
+
+func TestNudgeSessionNonexistent(t *testing.T) {
+	mgr := setupTest(t)
+
+	err := mgr.NudgeSession("nonexistent", "hello")
+	if err == nil {
+		t.Fatal("NudgeSession should fail for nonexistent session")
+	}
+}
+
+func TestNudgeSessionSanitizes(t *testing.T) {
+	mgr := setupTest(t)
+
+	err := mgr.Start("test-nudge-san", "/tmp", "cat", nil, "agent", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	// Message with control characters — should be sanitized, not crash.
+	err = mgr.NudgeSession("test-nudge-san", "hello\x1b[31m\rworld\x08!")
+	if err != nil {
+		t.Fatalf("NudgeSession with control chars failed: %v", err)
 	}
 }
 

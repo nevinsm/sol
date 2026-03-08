@@ -71,6 +71,8 @@ type SessionManager interface {
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 	Stop(name string, force bool) error
 	Inject(name string, text string, submit bool) error
+	NudgeSession(name string, message string) error
+	WaitForIdle(name string, timeout time.Duration) error
 }
 
 // WorldOpener opens a world store by name.

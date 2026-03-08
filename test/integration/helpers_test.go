@@ -386,6 +386,14 @@ func (m *mockSessionChecker) Inject(name string, text string, submit bool) error
 	return nil
 }
 
+func (m *mockSessionChecker) NudgeSession(name string, message string) error {
+	return nil
+}
+
+func (m *mockSessionChecker) WaitForIdle(name string, timeout time.Duration) error {
+	return nil
+}
+
 func (m *mockSessionChecker) List() ([]session.SessionInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

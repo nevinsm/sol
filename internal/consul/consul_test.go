@@ -49,6 +49,14 @@ func (m *mockSessionManager) Inject(name string, text string, submit bool) error
 	return nil
 }
 
+func (m *mockSessionManager) NudgeSession(name string, message string) error {
+	return nil
+}
+
+func (m *mockSessionManager) WaitForIdle(name string, timeout time.Duration) error {
+	return nil
+}
+
 // setupSolHome creates a temporary SOL_HOME and sets the env var.
 // Returns the path and a cleanup function.
 func setupSolHome(t *testing.T) string {

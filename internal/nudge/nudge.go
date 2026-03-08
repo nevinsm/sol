@@ -276,15 +276,54 @@ func Cleanup(session string) error {
 	return nil
 }
 
-// Poke injects a short message into the target session to trigger a turn boundary,
-// causing the UserPromptSubmit hook to fire and drain any pending nudge messages.
-// Best-effort: returns nil if session doesn't exist or inject fails.
-func Poke(sessionName string) error {
+// deliverIdleTimeout is how long Deliver waits for a session to become idle
+// before falling back to queue-based delivery.
+const deliverIdleTimeout = 3 * time.Second
+
+// Deliver sends a nudge message to a session using smart idle-or-queue routing.
+//
+// 1. Waits up to 3 seconds for the session to be idle (WaitForIdle).
+// 2. If idle: formats the message and sends it via NudgeSession.
+// 3. If busy (timeout): enqueues the message for later drain at turn boundary.
+// 4. If enqueue fails: falls back to NudgeSession anyway (last resort).
+//
+// Best-effort: returns nil if session doesn't exist.
+func Deliver(sessionName string, msg Message) error {
 	mgr := session.New()
 	if !mgr.Exists(sessionName) {
 		return nil
 	}
-	return mgr.Inject(sessionName, "check nudge queue", true)
+
+	// Ensure message has a timestamp.
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = time.Now().UTC()
+	}
+
+	// Try to wait for idle prompt.
+	err := mgr.WaitForIdle(sessionName, deliverIdleTimeout)
+	if err == nil {
+		// Session is idle — deliver directly via NudgeSession.
+		notification := formatNotification(msg)
+		return mgr.NudgeSession(sessionName, notification)
+	}
+
+	// Session is busy or WaitForIdle failed — queue for later drain.
+	if qErr := Enqueue(sessionName, msg); qErr != nil {
+		// Enqueue failed — last resort: try NudgeSession anyway.
+		notification := formatNotification(msg)
+		return mgr.NudgeSession(sessionName, notification)
+	}
+
+	return nil
+}
+
+// formatNotification formats a Message into a human-readable notification string
+// suitable for injection into a Claude Code session.
+func formatNotification(msg Message) string {
+	if msg.Subject != "" {
+		return fmt.Sprintf("[%s] %s: %s", msg.Type, msg.Sender, msg.Subject)
+	}
+	return fmt.Sprintf("[%s] %s", msg.Type, msg.Sender)
 }
 
 func fileExists(path string) bool {

@@ -39,6 +39,8 @@ type SessionManager interface {
 	Stop(name string, force bool) error
 	Exists(name string) bool
 	Inject(name string, text string, submit bool) error
+	NudgeSession(name string, message string) error
+	WaitForIdle(name string, timeout time.Duration) error
 }
 
 // WorldStore defines the world store operations used by dispatch.
@@ -1562,13 +1564,13 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		// Nudge governor that work is done (best-effort, silent skip if no governor).
 		govSession := config.SessionName(opts.World, "governor")
 		if mgr.Exists(govSession) {
-			body := fmt.Sprintf(`{"writ_id":%q,"agent_name":%q,"branch":%q,"title":%q,"merge_request_id":%q}`,
+			govBody := fmt.Sprintf(`{"writ_id":%q,"agent_name":%q,"branch":%q,"title":%q,"merge_request_id":%q}`,
 				writID, opts.AgentName, branchName, item.Title, mrID)
 			if err := nudge.Enqueue(govSession, nudge.Message{
 				Sender:   opts.AgentName,
 				Type:     "AGENT_DONE",
 				Subject:  fmt.Sprintf("Agent %s resolved %s", opts.AgentName, writID),
-				Body:     body,
+				Body:     govBody,
 				Priority: "normal",
 			}); err != nil {
 				fmt.Fprintf(os.Stderr, "resolve: failed to nudge governor: %v\n", err)
@@ -1577,22 +1579,20 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 
 		// Nudge forge that a new MR is ready (best-effort).
 		forgeSession := config.SessionName(opts.World, "forge")
+		forgeMsg := nudge.Message{
+			Sender:   opts.AgentName,
+			Type:     "MR_READY",
+			Subject:  fmt.Sprintf("MR %s ready for merge", mrID),
+			Body:     fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`, writID, mrID, branchName, item.Title),
+			Priority: "normal",
+		}
 		if mgr.Exists(forgeSession) {
-			forgeBody := fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
-				writID, mrID, branchName, item.Title)
-			if err := nudge.Enqueue(forgeSession, nudge.Message{
-				Sender:   opts.AgentName,
-				Type:     "MR_READY",
-				Subject:  fmt.Sprintf("MR %s ready for merge", mrID),
-				Body:     forgeBody,
-				Priority: "normal",
-			}); err != nil {
+			if err := nudge.Enqueue(forgeSession, forgeMsg); err != nil {
 				fmt.Fprintf(os.Stderr, "resolve: failed to nudge forge: %v\n", err)
 			}
 		}
-
-		// Poke forge to trigger turn boundary and drain pending nudges.
-		nudge.Poke(forgeSession)
+		// Deliver attempts direct session delivery; no-op if session doesn't exist.
+		nudge.Deliver(forgeSession, forgeMsg)
 	} else {
 		// Non-code writs: emit event without branch/MR fields.
 		if logger != nil {

@@ -11,16 +11,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/protocol"
 )
-
-// Manager wraps tmux to provide process containers for AI agents.
-// No fields needed — all state lives in tmux server and .runtime/sessions/.
-type Manager struct{}
 
 // DefaultPromptPrefix is the Claude Code prompt character used for idle detection.
 // Claude Code renders "❯ " (U+276F + space) when waiting for input.
@@ -29,6 +26,22 @@ const DefaultPromptPrefix = "❯ "
 // ErrIdleTimeout is returned by WaitForIdle when the timeout expires
 // without detecting an idle prompt.
 var ErrIdleTimeout = errors.New("session not idle before timeout")
+
+// sessionNudgeLocks serializes nudges to the same session.
+// Uses channel-based semaphores instead of sync.Mutex to support
+// timed lock acquisition — preventing permanent lockout if a nudge hangs.
+var sessionNudgeLocks sync.Map // map[string]chan struct{}
+
+// nudgeLockTimeout is how long to wait to acquire the per-session nudge lock.
+const nudgeLockTimeout = 30 * time.Second
+
+// sendKeysChunkSize is the maximum bytes per tmux send-keys call.
+// Messages larger than this are split into chunks with inter-chunk delays.
+const sendKeysChunkSize = 512
+
+// Manager wraps tmux to provide process containers for AI agents.
+// No fields needed — all state lives in tmux server and .runtime/sessions/.
+type Manager struct{}
 
 // New returns a new session Manager.
 func New() *Manager {
@@ -399,8 +412,13 @@ func (m *Manager) Attach(name string) error {
 }
 
 // Inject sends text to the session's active pane using tmux send-keys in
-// literal mode, then presses Enter to submit it. Used for nudge delivery.
+// literal mode, then presses Enter to submit it.
 // If submit is false, the text is staged without pressing Enter.
+//
+// Deprecated: Use NudgeSession for reliable delivery to Claude Code sessions.
+// Inject does not handle copy mode, vim mode, control character sanitization,
+// detached session wakeup, or per-session serialization. Retained for callers
+// (e.g., sentinel) that intentionally bypass those safeguards.
 func (m *Manager) Inject(name string, text string, submit bool) error {
 	if !m.Exists(name) {
 		return fmt.Errorf("session %q not found", name)
@@ -533,11 +551,220 @@ func (m *Manager) GetMeta(name string) (*SessionInfo, error) {
 	}, nil
 }
 
-// Exists returns true if a tmux session with this name exists.
-func (m *Manager) Exists(name string) bool {
-	cmd, cancel := tmuxCmd("has-session", "-t", tmuxExactTarget(name))
+// NudgeSession sends a message to a Claude Code session reliably.
+// This is the canonical way to send messages to Claude sessions.
+// Uses: per-session mutex + copy mode exit + sanitization + chunking +
+// 500ms debounce + ESC (for vim mode) + 600ms readline gap + Enter with retry.
+// After sending, triggers SIGWINCH to wake Claude in detached sessions.
+//
+// Nudges to the same session are serialized to prevent interleaving.
+// If multiple goroutines try to nudge the same session concurrently, they will
+// queue up and execute one at a time.
+func (m *Manager) NudgeSession(name string, message string) error {
+	if !m.Exists(name) {
+		return fmt.Errorf("session %q not found", name)
+	}
+
+	// Serialize nudges to this session to prevent interleaving.
+	// Use a timed lock to avoid permanent blocking if a previous nudge hung.
+	if !acquireNudgeLock(name, nudgeLockTimeout) {
+		return fmt.Errorf("nudge lock timeout for session %q: previous nudge may be hung", name)
+	}
+	defer releaseNudgeLock(name)
+
+	target := tmuxExactTarget(name)
+
+	// 1. Exit copy/scroll mode if active — copy mode intercepts input,
+	//    preventing delivery to the underlying process.
+	modeCmd, modeCancel := tmuxCmd("display-message", "-p", "-t", target, "#{pane_in_mode}")
+	modeOut, err := modeCmd.Output()
+	modeCancel()
+	if err == nil && strings.TrimSpace(string(modeOut)) == "1" {
+		cancelCmd, cancelCancel := tmuxCmd("send-keys", "-t", target, "-X", "cancel")
+		_ = cancelCmd.Run()
+		cancelCancel()
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// 2. Sanitize control characters that corrupt delivery
+	sanitized := sanitizeNudgeMessage(message)
+
+	// 3. Send text via send-keys -l. Messages > 512 bytes are chunked
+	//    with 10ms inter-chunk delays to avoid argument length limits.
+	if err := m.sendMessageChunked(name, sanitized); err != nil {
+		return err
+	}
+
+	// 4. Wait 500ms for text delivery to complete
+	time.Sleep(500 * time.Millisecond)
+
+	// 5. Send Escape to exit vim INSERT mode if enabled (harmless in normal mode)
+	_ = m.SendKeys(name, "Escape")
+
+	// 6. Wait 600ms — must exceed bash readline's keyseq-timeout (500ms default)
+	// so ESC is processed alone, not as a meta prefix for the subsequent Enter.
+	// Without this, ESC+Enter within 500ms becomes M-Enter (meta-return) which
+	// does NOT submit the line.
+	time.Sleep(600 * time.Millisecond)
+
+	// 7. Send Enter with retry (critical for message submission)
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(200 * time.Millisecond)
+		}
+		if err := m.SendKeys(name, "Enter"); err != nil {
+			lastErr = err
+			continue
+		}
+		// 8. Wake the pane to trigger SIGWINCH for detached sessions
+		m.wakePaneIfDetached(name)
+		return nil
+	}
+	return fmt.Errorf("failed to send Enter after 3 attempts: %w", lastErr)
+}
+
+// sendMessageChunked sends a sanitized message to a session's pane.
+// For small messages (≤ sendKeysChunkSize), uses a single send-keys -l.
+// For larger messages, sends in chunks with 10ms inter-chunk delays.
+func (m *Manager) sendMessageChunked(name, text string) error {
+	target := tmuxExactTarget(name)
+	if len(text) <= sendKeysChunkSize {
+		cmd, cancel := tmuxCmd("send-keys", "-t", target, "-l", "--", text)
+		defer cancel()
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to send text to session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
+		}
+		return nil
+	}
+
+	// Send in chunks to avoid tmux send-keys argument length limits.
+	for i := 0; i < len(text); i += sendKeysChunkSize {
+		end := i + sendKeysChunkSize
+		if end > len(text) {
+			end = len(text)
+		}
+		chunk := text[i:end]
+		cmd, cancel := tmuxCmd("send-keys", "-t", target, "-l", "--", chunk)
+		out, err := cmd.CombinedOutput()
+		cancel()
+		if err != nil {
+			return fmt.Errorf("failed to send chunk to session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
+		}
+		if i+sendKeysChunkSize < len(text) {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	return nil
+}
+
+// sanitizeNudgeMessage removes control characters that corrupt tmux send-keys
+// delivery. ESC (0x1b) triggers terminal escape sequences, CR (0x0d) acts as
+// premature Enter, BS (0x08) deletes characters. TAB is replaced with a space
+// to avoid triggering shell completion. Printable characters (including quotes,
+// backticks, and Unicode) are preserved.
+func sanitizeNudgeMessage(msg string) string {
+	var b strings.Builder
+	b.Grow(len(msg))
+	for _, r := range msg {
+		switch {
+		case r == '\t': // TAB → space (avoid triggering completion)
+			b.WriteRune(' ')
+		case r == '\n': // preserve newlines
+			b.WriteRune(r)
+		case r < 0x20: // strip all other control chars (ESC, CR, BS, etc.)
+			continue
+		case r == 0x7f: // DEL
+			continue
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// isSessionAttached returns true if the session has any clients attached.
+func (m *Manager) isSessionAttached(name string) bool {
+	cmd, cancel := tmuxCmd("display-message", "-t", tmuxExactTarget(name), "-p", "#{session_attached}")
 	defer cancel()
-	return cmd.Run() == nil
+	out, err := cmd.Output()
+	return err == nil && strings.TrimSpace(string(out)) != "0"
+}
+
+// wakePaneIfDetached triggers a SIGWINCH only if the session is detached.
+// This avoids unnecessary latency on attached sessions where Claude is
+// already processing terminal events.
+func (m *Manager) wakePaneIfDetached(name string) {
+	if m.isSessionAttached(name) {
+		return
+	}
+	m.wakePane(name)
+}
+
+// wakePane triggers a SIGWINCH in a session by resizing the window slightly
+// then restoring. This wakes up Claude Code's event loop in detached sessions.
+func (m *Manager) wakePane(name string) {
+	target := tmuxExactTarget(name)
+
+	// Get current window width.
+	widthCmd, widthCancel := tmuxCmd("display-message", "-p", "-t", target, "#{window_width}")
+	widthOut, err := widthCmd.Output()
+	widthCancel()
+	if err != nil {
+		return // session may be dead
+	}
+	widthStr := strings.TrimSpace(string(widthOut))
+	w, err := strconv.Atoi(widthStr)
+	if err != nil || w < 1 {
+		return
+	}
+
+	// Bump width +1, sleep, then restore.
+	resizeUp, resizeUpCancel := tmuxCmd("resize-window", "-t", target, "-x", fmt.Sprintf("%d", w+1))
+	_ = resizeUp.Run()
+	resizeUpCancel()
+
+	time.Sleep(50 * time.Millisecond)
+
+	resizeDown, resizeDownCancel := tmuxCmd("resize-window", "-t", target, "-x", widthStr)
+	_ = resizeDown.Run()
+	resizeDownCancel()
+
+	// Reset window-size to "latest" after the resize dance. tmux automatically
+	// sets window-size to "manual" whenever resize-window is called, which
+	// permanently locks the window at the current dimensions.
+	resetCmd, resetCancel := tmuxCmd("set-option", "-w", "-t", target, "window-size", "latest")
+	_ = resetCmd.Run()
+	resetCancel()
+}
+
+// getSessionNudgeSem returns the channel semaphore for serializing nudges to a session.
+func getSessionNudgeSem(session string) chan struct{} {
+	sem := make(chan struct{}, 1)
+	actual, _ := sessionNudgeLocks.LoadOrStore(session, sem)
+	return actual.(chan struct{})
+}
+
+// acquireNudgeLock attempts to acquire the per-session nudge lock with a timeout.
+// Returns true if the lock was acquired, false if the timeout expired.
+func acquireNudgeLock(session string, timeout time.Duration) bool {
+	sem := getSessionNudgeSem(session)
+	select {
+	case sem <- struct{}{}:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+// releaseNudgeLock releases the per-session nudge lock.
+func releaseNudgeLock(session string) {
+	sem := getSessionNudgeSem(session)
+	select {
+	case <-sem:
+	default:
+		// Lock wasn't held — shouldn't happen, but don't block
+	}
 }
 
 // matchesPromptPrefix reports whether a captured pane line matches the
@@ -549,8 +776,7 @@ func matchesPromptPrefix(line, promptPrefix string) bool {
 		return false
 	}
 	trimmed := strings.TrimSpace(line)
-	// Normalize NBSP (U+00A0) → regular space so that prompt matching
-	// works regardless of which whitespace character the agent uses.
+	// Normalize NBSP (U+00A0) → regular space.
 	trimmed = strings.ReplaceAll(trimmed, "\u00a0", " ")
 	normalizedPrefix := strings.ReplaceAll(promptPrefix, "\u00a0", " ")
 	prefix := strings.TrimSpace(normalizedPrefix)
@@ -617,8 +843,7 @@ func (m *Manager) WaitForIdle(name string, timeout time.Duration) error {
 		lines := strings.Split(content, "\n")
 
 		// Check status bar first: if "esc to interrupt" is visible,
-		// Claude Code is actively running a tool call — NOT idle,
-		// regardless of whether the prompt is also visible.
+		// Claude Code is actively running a tool call — NOT idle.
 		if linesAreBusy(lines) {
 			consecutiveIdle = 0
 			time.Sleep(200 * time.Millisecond)
@@ -636,6 +861,13 @@ func (m *Manager) WaitForIdle(name string, timeout time.Duration) error {
 		time.Sleep(200 * time.Millisecond)
 	}
 	return ErrIdleTimeout
+}
+
+// Exists returns true if a tmux session with this name exists.
+func (m *Manager) Exists(name string) bool {
+	cmd, cancel := tmuxCmd("has-session", "-t", tmuxExactTarget(name))
+	defer cancel()
+	return cmd.Run() == nil
 }
 
 // IsAtPrompt returns true if the session's pane currently shows the Claude
