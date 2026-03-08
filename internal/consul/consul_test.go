@@ -17,10 +17,12 @@ import (
 	"github.com/nevinsm/sol/internal/tether"
 )
 
-// mockSessionManager tracks which sessions are "alive" and records starts.
+// mockSessionManager tracks which sessions are "alive" and records starts/stops.
 type mockSessionManager struct {
 	alive   map[string]bool
 	started []string // session names that were started
+	stopped []string // session names that were stopped
+	listErr error    // if set, List() returns this error
 }
 
 func newMockSessions() *mockSessionManager {
@@ -32,7 +34,18 @@ func (m *mockSessionManager) Exists(name string) bool {
 }
 
 func (m *mockSessionManager) List() ([]session.SessionInfo, error) {
-	return nil, nil
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
+	var infos []session.SessionInfo
+	for name := range m.alive {
+		infos = append(infos, session.SessionInfo{
+			Name:      name,
+			StartedAt: time.Now().Add(-1 * time.Hour),
+			Alive:     true,
+		})
+	}
+	return infos, nil
 }
 
 func (m *mockSessionManager) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
@@ -42,6 +55,7 @@ func (m *mockSessionManager) Start(name, workdir, cmd string, env map[string]str
 }
 
 func (m *mockSessionManager) Stop(name string, force bool) error {
+	m.stopped = append(m.stopped, name)
 	delete(m.alive, name)
 	return nil
 }
@@ -1106,5 +1120,272 @@ capacity = 2
 	}
 	if dispatchCount != 2 {
 		t.Errorf("dispatchCount = %d, want 2 (1 success + 1 capacity error, then break)", dispatchCount)
+	}
+}
+
+func TestDetectOrphanedSessionsIdentifiesOrphan(t *testing.T) {
+	setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "orphan-test"
+	sphereStore.RegisterWorld(worldName, "/tmp/repo")
+
+	// Create a known agent.
+	sphereStore.CreateAgent("KnownAgent", worldName, "agent")
+
+	sessions := newMockSessions()
+	// Known session: has an agent record.
+	sessions.alive["sol-"+worldName+"-KnownAgent"] = true
+	// Orphaned session: no agent record.
+	sessions.alive["sol-"+worldName+"-GhostAgent"] = true
+	// Infrastructure session: always known.
+	sessions.alive["sol-chronicle"] = true
+
+	cfg := Config{SolHome: config.Home()}
+	d := New(cfg, sphereStore, sessions, nil, nil)
+
+	// First patrol: detect the orphan, start tracking.
+	stopped, err := d.detectOrphanedSessions(context.Background())
+	if err != nil {
+		t.Fatalf("detectOrphanedSessions failed: %v", err)
+	}
+	if stopped != 0 {
+		t.Errorf("stopped = %d, want 0 (first detection, grace period)", stopped)
+	}
+
+	// Verify it's being tracked.
+	if _, ok := d.orphanedSessions["sol-"+worldName+"-GhostAgent"]; !ok {
+		t.Error("expected orphan to be tracked after first detection")
+	}
+
+	// Known sessions should NOT be tracked.
+	if _, ok := d.orphanedSessions["sol-"+worldName+"-KnownAgent"]; ok {
+		t.Error("known agent session should not be tracked as orphan")
+	}
+	if _, ok := d.orphanedSessions["sol-chronicle"]; ok {
+		t.Error("infrastructure session should not be tracked as orphan")
+	}
+}
+
+func TestDetectOrphanedSessionsGracePeriod(t *testing.T) {
+	setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "orphan-grace"
+	sphereStore.RegisterWorld(worldName, "/tmp/repo")
+
+	sessions := newMockSessions()
+	sessions.alive["sol-"+worldName+"-GhostAgent"] = true
+
+	cfg := Config{SolHome: config.Home()}
+	d := New(cfg, sphereStore, sessions, nil, nil)
+
+	// First patrol: detect orphan.
+	stopped, _ := d.detectOrphanedSessions(context.Background())
+	if stopped != 0 {
+		t.Errorf("patrol 1: stopped = %d, want 0", stopped)
+	}
+
+	// Second patrol: still within grace period (first-seen is moments ago).
+	stopped, _ = d.detectOrphanedSessions(context.Background())
+	if stopped != 0 {
+		t.Errorf("patrol 2: stopped = %d, want 0 (grace period)", stopped)
+	}
+
+	// Verify session is still alive.
+	if !sessions.alive["sol-"+worldName+"-GhostAgent"] {
+		t.Error("session should not have been killed during grace period")
+	}
+
+	// Verify no stops were recorded.
+	if len(sessions.stopped) != 0 {
+		t.Errorf("stopped sessions = %v, want none", sessions.stopped)
+	}
+}
+
+func TestDetectOrphanedSessionsKilledAfterThreshold(t *testing.T) {
+	setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "orphan-kill"
+	sphereStore.RegisterWorld(worldName, "/tmp/repo")
+
+	sessions := newMockSessions()
+	sessions.alive["sol-"+worldName+"-GhostAgent"] = true
+
+	cfg := Config{SolHome: config.Home()}
+	d := New(cfg, sphereStore, sessions, nil, nil)
+
+	// First patrol: detect orphan, start tracking.
+	d.detectOrphanedSessions(context.Background())
+
+	// Simulate the grace period having passed by backdating first-seen.
+	entry := d.orphanedSessions["sol-"+worldName+"-GhostAgent"]
+	entry.firstSeen = time.Now().Add(-31 * time.Minute)
+
+	// Second patrol: grace period expired, count=2 → should be stopped.
+	stopped, err := d.detectOrphanedSessions(context.Background())
+	if err != nil {
+		t.Fatalf("detectOrphanedSessions failed: %v", err)
+	}
+	if stopped != 1 {
+		t.Errorf("stopped = %d, want 1", stopped)
+	}
+
+	// Verify the session was stopped.
+	if sessions.alive["sol-"+worldName+"-GhostAgent"] {
+		t.Error("orphaned session should have been stopped")
+	}
+	found := false
+	for _, name := range sessions.stopped {
+		if name == "sol-"+worldName+"-GhostAgent" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected GhostAgent in stopped list, got %v", sessions.stopped)
+	}
+
+	// Verify tracking entry was removed.
+	if _, ok := d.orphanedSessions["sol-"+worldName+"-GhostAgent"]; ok {
+		t.Error("stopped orphan should be removed from tracking map")
+	}
+}
+
+func TestDetectOrphanedSessionsKnownNotFlagged(t *testing.T) {
+	setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "orphan-known"
+	sphereStore.RegisterWorld(worldName, "/tmp/repo")
+
+	// Create various known agents.
+	sphereStore.CreateAgent("Toast", worldName, "agent")
+	sphereStore.CreateAgent("sentinel", worldName, "sentinel")
+	sphereStore.CreateAgent("forge", worldName, "forge")
+	sphereStore.CreateAgent("governor", worldName, "governor")
+	sphereStore.CreateAgent("MyEnvoy", worldName, "envoy")
+	sphereStore.EnsureAgent("consul", "sphere", "consul")
+
+	sessions := newMockSessions()
+	// All of these are known and should NOT be flagged.
+	sessions.alive["sol-"+worldName+"-Toast"] = true
+	sessions.alive["sol-"+worldName+"-sentinel"] = true
+	sessions.alive["sol-"+worldName+"-forge"] = true
+	sessions.alive["sol-"+worldName+"-governor"] = true
+	sessions.alive["sol-"+worldName+"-MyEnvoy"] = true
+	sessions.alive["sol-sphere-consul"] = true
+	sessions.alive["sol-chronicle"] = true
+	sessions.alive["sol-ledger"] = true
+	sessions.alive["sol-token-broker"] = true
+
+	cfg := Config{SolHome: config.Home()}
+	d := New(cfg, sphereStore, sessions, nil, nil)
+
+	// Run multiple patrols — none should be flagged.
+	for i := 0; i < 5; i++ {
+		stopped, err := d.detectOrphanedSessions(context.Background())
+		if err != nil {
+			t.Fatalf("patrol %d: detectOrphanedSessions failed: %v", i+1, err)
+		}
+		if stopped != 0 {
+			t.Errorf("patrol %d: stopped = %d, want 0", i+1, stopped)
+		}
+	}
+
+	// Verify no sessions tracked as orphans.
+	if len(d.orphanedSessions) != 0 {
+		t.Errorf("orphanedSessions map has %d entries, want 0",
+			len(d.orphanedSessions))
+	}
+
+	// Verify no stops recorded.
+	if len(sessions.stopped) != 0 {
+		t.Errorf("stopped sessions = %v, want none", sessions.stopped)
+	}
+}
+
+func TestDetectOrphanedSessionsMapPruned(t *testing.T) {
+	setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "orphan-prune"
+	sphereStore.RegisterWorld(worldName, "/tmp/repo")
+
+	sessions := newMockSessions()
+	sessions.alive["sol-"+worldName+"-GhostA"] = true
+	sessions.alive["sol-"+worldName+"-GhostB"] = true
+
+	cfg := Config{SolHome: config.Home()}
+	d := New(cfg, sphereStore, sessions, nil, nil)
+
+	// First patrol: both detected.
+	d.detectOrphanedSessions(context.Background())
+	if len(d.orphanedSessions) != 2 {
+		t.Fatalf("expected 2 tracked orphans, got %d", len(d.orphanedSessions))
+	}
+
+	// GhostA disappears (maybe someone killed it manually).
+	delete(sessions.alive, "sol-"+worldName+"-GhostA")
+
+	// Second patrol: GhostA should be pruned, GhostB still tracked.
+	d.detectOrphanedSessions(context.Background())
+
+	if _, ok := d.orphanedSessions["sol-"+worldName+"-GhostA"]; ok {
+		t.Error("GhostA should have been pruned from tracking map")
+	}
+	if _, ok := d.orphanedSessions["sol-"+worldName+"-GhostB"]; !ok {
+		t.Error("GhostB should still be tracked")
+	}
+}
+
+func TestDetectOrphanedSessionsListError(t *testing.T) {
+	setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	sessions := newMockSessions()
+	sessions.listErr = fmt.Errorf("tmux server not running")
+
+	cfg := Config{SolHome: config.Home()}
+	d := New(cfg, sphereStore, sessions, nil, nil)
+
+	// Should degrade gracefully — return 0 stopped, no error.
+	stopped, err := d.detectOrphanedSessions(context.Background())
+	if err != nil {
+		t.Errorf("expected nil error on List() failure (DEGRADE), got: %v", err)
+	}
+	if stopped != 0 {
+		t.Errorf("stopped = %d, want 0", stopped)
 	}
 }
