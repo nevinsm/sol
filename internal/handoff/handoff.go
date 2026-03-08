@@ -666,7 +666,21 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// For roles that use briefs, prompt the agent to save its brief before cycling.
 	// This ensures the successor session gets fresh context. Uses shorter timeouts
 	// than GracefulStop since we only need the brief update, not a full wrap-up.
-	if roleUsesBrief(role) {
+	//
+	// Skip briefSave on self-handoff: when the agent initiates its own handoff
+	// (PreCompact hook or `sol handoff`), the session is blocked running that
+	// command and can't process the injected prompt. The prompt goes into the
+	// tmux pty buffer unread, and briefSave polls for 30s waiting for output
+	// stability before timing out. Skipping avoids the delay and pty pollution.
+	isSelfHandoff := os.Getenv("SOL_AGENT") == opts.AgentName &&
+		os.Getenv("SOL_WORLD") == opts.World &&
+		os.Getenv("SOL_AGENT") != "" // guard against both being empty
+
+	if roleUsesBrief(role) && isSelfHandoff {
+		fmt.Fprintf(os.Stderr, "handoff: self-handoff detected, skipping brief save\n")
+	}
+
+	if roleUsesBrief(role) && !isSelfHandoff {
 		briefDir := filepath.Join(config.AgentDir(opts.World, opts.AgentName, role), ".brief")
 		if _, err := os.Stat(briefDir); err == nil {
 			if os.Getenv("SOL_SESSION_COMMAND") != "" {
