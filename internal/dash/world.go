@@ -304,7 +304,7 @@ func (wm worldModel) updateSpinner(msg spinner.TickMsg) (worldModel, tea.Cmd) {
 	return wm, tea.Batch(cmds...)
 }
 
-func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time) string {
+func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healthEmphasis bool, agentHighlights map[string]int) string {
 	if data == nil {
 		return "Gathering world status..."
 	}
@@ -314,7 +314,7 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time) strin
 	// Header.
 	b.WriteString(headerStyle.Render(fmt.Sprintf("World: %s", data.World)))
 	b.WriteString("  ")
-	b.WriteString(healthBadge(data.HealthString()))
+	b.WriteString(healthBadgeWithEmphasis(data.HealthString(), healthEmphasis))
 	b.WriteString("\n\n")
 
 	// Processes.
@@ -336,7 +336,7 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time) strin
 			b.WriteString(headerStyle.Render(sectionHeader))
 		}
 		b.WriteString("\n")
-		wm.renderAgentsTable(&b, data.Agents)
+		wm.renderAgentsTable(&b, data.Agents, agentHighlights)
 		b.WriteString("\n")
 	}
 
@@ -399,7 +399,7 @@ func (wm worldModel) renderProcess(b *strings.Builder, name string, running bool
 	b.WriteString(fmt.Sprintf("  %s %-12s\n", indicator, name))
 }
 
-func (wm worldModel) renderAgentsTable(b *strings.Builder, agents []status.AgentStatus) {
+func (wm worldModel) renderAgentsTable(b *strings.Builder, agents []status.AgentStatus, agentHighlights map[string]int) {
 	// Column headers.
 	b.WriteString(fmt.Sprintf("  %-14s %-18s %-10s %s\n",
 		dimStyle.Render("NAME"),
@@ -412,6 +412,12 @@ func (wm worldModel) renderAgentsTable(b *strings.Builder, agents []status.Agent
 		line := wm.renderAgentRow(a)
 		if wm.focusedSection == sectionOutposts && i == wm.outpostCursor {
 			b.WriteString(selectStyle.Render(line))
+		} else if agentHighlights != nil {
+			if _, highlighted := agentHighlights[a.Name]; highlighted {
+				b.WriteString(highlightStyle.Render(line))
+			} else {
+				b.WriteString(line)
+			}
 		} else {
 			b.WriteString(line)
 		}

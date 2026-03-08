@@ -1,6 +1,7 @@
 package dash
 
 import (
+	"fmt"
 	"os/exec"
 	"time"
 
@@ -12,6 +13,15 @@ import (
 )
 
 const refreshInterval = 3 * time.Second
+
+// Minimum terminal dimensions.
+const (
+	minTermWidth  = 80
+	minTermHeight = 24
+)
+
+// highlightTTL is how many ticks a highlight persists (2 ticks = ~6 seconds).
+const highlightTTL = 2
 
 // viewMode tracks which view is currently active.
 type viewMode int
@@ -27,6 +37,9 @@ type Config struct {
 	WorldOpener  func(string) (*store.Store, error)
 	SessionCheck status.SessionChecker
 	CaravanStore caravanStore
+
+	// SOLHome is the runtime root directory for reading event feeds.
+	SOLHome string
 
 	// World is non-empty when starting in world detail view.
 	World string
@@ -92,6 +105,21 @@ type Model struct {
 	// Sub-views.
 	sphereView sphereModel
 	worldView  worldModel
+
+	// Activity feed.
+	feed feedModel
+
+	// Help overlay.
+	showHelp bool
+
+	// State-change highlight tracking.
+	prevSphereHealth string
+	prevWorldHealth  string
+	healthHighlight  int // ticks remaining for health emphasis
+
+	// Agent state tracking for highlights.
+	prevAgentStates map[string]string // agentName -> previous state
+	agentHighlights map[string]int   // agentName -> ticks remaining
 }
 
 // NewModel creates a dashboard model. If world is empty, starts in sphere view.
@@ -102,9 +130,12 @@ func NewModel(cfg Config) Model {
 	}
 
 	m := Model{
-		viewStack: []viewMode{startView},
-		world:     cfg.World,
-		config:    cfg,
+		viewStack:       []viewMode{startView},
+		world:           cfg.World,
+		config:          cfg,
+		feed:            newFeedModel(cfg.SOLHome, cfg.World),
+		prevAgentStates: make(map[string]string),
+		agentHighlights: make(map[string]int),
 	}
 
 	m.sphereView = newSphereModel()
@@ -123,6 +154,7 @@ func (m Model) activeView() viewMode {
 
 // Init starts the first data fetch and tick timer.
 func (m Model) Init() tea.Cmd {
+	m.feed.loadInitial()
 	return tea.Batch(
 		m.refresh(),
 		m.sphereView.init(),
@@ -142,14 +174,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sphereView.height = msg.Height
 		m.worldView.width = msg.Width
 		m.worldView.height = msg.Height
+		m.feed.setHeight(msg.Height)
 		m.ready = true
 
 	case tea.KeyMsg:
+		// Help overlay: any key dismisses it.
+		if m.showHelp {
+			m.showHelp = false
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "r":
 			return m, m.refresh()
+		case "?":
+			m.showHelp = true
+			return m, nil
 		}
 
 		// Route navigation keys to active view.
@@ -205,13 +247,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dataMsg:
 		m.lastRefresh = time.Now()
 		if msg.sphere != nil {
+			m.trackSphereHighlights(msg.sphere)
 			m.sphereData = msg.sphere
 			m.sphereView.updateData(m.sphereData)
 		}
 		if msg.world != nil {
+			m.trackWorldHighlights(msg.world)
 			m.worldData = msg.world
 			m.worldView.updateData(m.worldData)
 		}
+
+		// Decay highlight timers.
+		m.decayHighlights()
+
+		// Refresh feed.
+		m.feed.refresh()
+
 		// Schedule next tick.
 		cmds = append(cmds, m.tickCmd())
 
@@ -238,13 +289,72 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
+	// Minimum terminal size check.
+	if m.width < minTermWidth || m.height < minTermHeight {
+		return fmt.Sprintf(
+			"\n  Terminal too small (%dx%d).\n  Minimum size: %dx%d.\n",
+			m.width, m.height, minTermWidth, minTermHeight,
+		)
+	}
+
+	// Help overlay.
+	if m.showHelp {
+		return helpOverlay(m.width, m.height)
+	}
+
+	var content string
 	switch m.activeView() {
 	case viewSphere:
-		return m.sphereView.view(m.sphereData, m.lastRefresh)
+		content = m.sphereView.view(m.sphereData, m.lastRefresh, m.healthHighlight > 0)
 	case viewWorld:
-		return m.worldView.view(m.worldData, m.lastRefresh)
+		content = m.worldView.view(m.worldData, m.lastRefresh, m.healthHighlight > 0, m.agentHighlights)
 	default:
-		return "Unknown view"
+		content = "Unknown view"
+	}
+
+	// Append feed panel.
+	content += m.feed.view(m.width)
+
+	return content
+}
+
+// trackSphereHighlights detects health changes in sphere data.
+func (m *Model) trackSphereHighlights(data *status.SphereStatus) {
+	if m.prevSphereHealth != "" && data.Health != m.prevSphereHealth {
+		m.healthHighlight = highlightTTL
+	}
+	m.prevSphereHealth = data.Health
+}
+
+// trackWorldHighlights detects health and agent state changes in world data.
+func (m *Model) trackWorldHighlights(data *status.WorldStatus) {
+	newHealth := data.HealthString()
+	if m.prevWorldHealth != "" && newHealth != m.prevWorldHealth {
+		m.healthHighlight = highlightTTL
+	}
+	m.prevWorldHealth = newHealth
+
+	// Track agent state changes.
+	for _, a := range data.Agents {
+		prev, exists := m.prevAgentStates[a.Name]
+		if exists && prev != a.State {
+			m.agentHighlights[a.Name] = highlightTTL
+		}
+		m.prevAgentStates[a.Name] = a.State
+	}
+}
+
+// decayHighlights decrements all highlight timers.
+func (m *Model) decayHighlights() {
+	if m.healthHighlight > 0 {
+		m.healthHighlight--
+	}
+	for name, ttl := range m.agentHighlights {
+		if ttl <= 1 {
+			delete(m.agentHighlights, name)
+		} else {
+			m.agentHighlights[name] = ttl - 1
+		}
 	}
 }
 

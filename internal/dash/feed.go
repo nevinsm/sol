@@ -1,0 +1,293 @@
+package dash
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/nevinsm/sol/internal/events"
+)
+
+// feedModel manages the activity feed panel at the bottom of the dashboard.
+type feedModel struct {
+	solHome string
+	world   string // non-empty in world view — filters events to this world
+
+	events    []events.Event
+	lastSeen  time.Time
+	feedLines int // display height (5-8 lines depending on terminal)
+}
+
+func newFeedModel(solHome, world string) feedModel {
+	return feedModel{
+		solHome:   solHome,
+		world:     world,
+		feedLines: 6,
+	}
+}
+
+// loadInitial loads the last 10 events from the curated feed.
+func (fm *feedModel) loadInitial() {
+	reader := events.NewReader(fm.solHome, true)
+	opts := events.ReadOpts{Limit: 10}
+	evts, err := reader.Read(opts)
+	if err != nil {
+		return // best-effort
+	}
+	fm.events = fm.filterWorld(evts)
+	if len(fm.events) > 0 {
+		fm.lastSeen = fm.events[len(fm.events)-1].Timestamp
+	}
+}
+
+// refresh checks for new events since the last seen timestamp.
+func (fm *feedModel) refresh() {
+	reader := events.NewReader(fm.solHome, true)
+	opts := events.ReadOpts{Limit: 10}
+	if !fm.lastSeen.IsZero() {
+		// Add a nanosecond to avoid re-reading the last seen event.
+		opts.Since = fm.lastSeen.Add(time.Nanosecond)
+	}
+	newEvts, err := reader.Read(opts)
+	if err != nil {
+		return // best-effort
+	}
+	newEvts = fm.filterWorld(newEvts)
+	if len(newEvts) == 0 {
+		return
+	}
+
+	fm.events = append(fm.events, newEvts...)
+	// Keep at most 20 events in memory.
+	if len(fm.events) > 20 {
+		fm.events = fm.events[len(fm.events)-20:]
+	}
+	fm.lastSeen = fm.events[len(fm.events)-1].Timestamp
+}
+
+// filterWorld filters events to the current world when in world view.
+func (fm *feedModel) filterWorld(evts []events.Event) []events.Event {
+	if fm.world == "" {
+		return evts // sphere view — show all
+	}
+
+	var filtered []events.Event
+	for _, ev := range evts {
+		if eventMatchesWorld(ev, fm.world) {
+			filtered = append(filtered, ev)
+		}
+	}
+	return filtered
+}
+
+// eventMatchesWorld checks if an event relates to the given world.
+func eventMatchesWorld(ev events.Event, world string) bool {
+	// Check Source field (e.g., "worldname/sentinel", "worldname/forge").
+	if strings.HasPrefix(ev.Source, world+"/") || ev.Source == world {
+		return true
+	}
+
+	// Check payload for a "world" key.
+	payload, ok := ev.Payload.(map[string]any)
+	if !ok {
+		return false
+	}
+	if w, ok := payload["world"]; ok {
+		return fmt.Sprintf("%v", w) == world
+	}
+	return false
+}
+
+// setHeight adjusts the feed display height based on terminal height.
+func (fm *feedModel) setHeight(termHeight int) {
+	switch {
+	case termHeight >= 50:
+		fm.feedLines = 8
+	case termHeight >= 40:
+		fm.feedLines = 7
+	case termHeight >= 30:
+		fm.feedLines = 6
+	default:
+		fm.feedLines = 5
+	}
+}
+
+// view renders the feed panel with separator.
+func (fm feedModel) view(width int) string {
+	var b strings.Builder
+
+	// Separator line.
+	sep := strings.Repeat("─", width)
+	b.WriteString(dimStyle.Render(sep))
+	b.WriteString("\n")
+
+	if len(fm.events) == 0 {
+		b.WriteString(dimStyle.Render("  No recent activity"))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	// Show events most-recent-first, up to feedLines.
+	shown := fm.feedLines
+	if shown > len(fm.events) {
+		shown = len(fm.events)
+	}
+
+	for i := len(fm.events) - 1; i >= len(fm.events)-shown; i-- {
+		line := formatEvent(fm.events[i], width)
+		b.WriteString(dimStyle.Render(line))
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+// formatEvent formats a single event as a compact one-line display string.
+func formatEvent(ev events.Event, maxWidth int) string {
+	ts := ev.Timestamp.Local().Format("15:04")
+	verb := eventVerb(ev.Type)
+	detail := eventDetail(ev)
+
+	line := fmt.Sprintf("  %s  %s %s", ts, ev.Actor, verb)
+	if detail != "" {
+		line += " " + detail
+	}
+
+	// Truncate if too long for terminal.
+	if maxWidth > 0 && len(line) > maxWidth {
+		if maxWidth > 3 {
+			line = line[:maxWidth-3] + "..."
+		} else {
+			line = line[:maxWidth]
+		}
+	}
+
+	return line
+}
+
+// eventVerb maps event types to human-readable past-tense verbs.
+func eventVerb(eventType string) string {
+	switch eventType {
+	case events.EventCast:
+		return "dispatched"
+	case events.EventResolve:
+		return "resolved"
+	case events.EventMerged:
+		return "merged"
+	case events.EventMergeFailed:
+		return "merge failed"
+	case events.EventMergeQueued:
+		return "queued merge"
+	case events.EventMergeClaimed:
+		return "claimed merge"
+	case events.EventRespawn:
+		return "respawned"
+	case events.EventStalled:
+		return "stalled"
+	case events.EventEscalationCreated:
+		return "escalated"
+	case events.EventEscalationAcked:
+		return "acknowledged escalation"
+	case events.EventEscalationResolved:
+		return "resolved escalation"
+	case events.EventHandoff:
+		return "handed off"
+	case events.EventDegraded:
+		return "entered degraded mode"
+	case events.EventRecovered:
+		return "recovered"
+	case events.EventMassDeath:
+		return "detected mass death"
+	case events.EventPatrol:
+		return "patrolled"
+	case events.EventConsulPatrol:
+		return "consul patrolled"
+	case events.EventSessionStart:
+		return "started session"
+	case events.EventSessionStop:
+		return "stopped session"
+	case events.EventWorkflowAdvance:
+		return "advanced workflow"
+	case events.EventWorkflowComplete:
+		return "completed workflow"
+	case events.EventCaravanCreated:
+		return "created caravan"
+	case events.EventCaravanLaunched:
+		return "launched caravan"
+	case events.EventCaravanClosed:
+		return "closed caravan"
+	case events.EventRecast:
+		return "recast"
+	case events.EventReap:
+		return "reaped"
+	case "cast_batch":
+		return "dispatched batch"
+	case "respawn_batch":
+		return "respawned batch"
+	default:
+		return eventType
+	}
+}
+
+// eventDetail extracts a compact target/context string from the event payload.
+func eventDetail(ev events.Event) string {
+	payload, ok := ev.Payload.(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	get := func(key string) string {
+		if v, ok := payload[key]; ok {
+			return fmt.Sprintf("%v", v)
+		}
+		return ""
+	}
+
+	switch ev.Type {
+	case events.EventCast:
+		writID := get("writ_id")
+		world := get("world")
+		if writID != "" && world != "" {
+			return fmt.Sprintf("%s (%s)", writID, world)
+		}
+		return writID
+	case events.EventResolve:
+		return get("writ_id")
+	case events.EventMerged, events.EventMergeFailed, events.EventMergeClaimed:
+		mrID := get("merge_request_id")
+		world := get("world")
+		if mrID != "" && world != "" {
+			return fmt.Sprintf("MR %s (%s)", mrID, world)
+		}
+		return mrID
+	case events.EventRespawn:
+		agent := get("agent")
+		world := get("world")
+		if agent != "" && world != "" {
+			return fmt.Sprintf("%s (%s)", agent, world)
+		}
+		return agent
+	case events.EventStalled:
+		return get("agent")
+	case events.EventEscalationCreated:
+		return get("description")
+	case events.EventHandoff:
+		return get("writ_id")
+	case events.EventCaravanCreated, events.EventCaravanLaunched, events.EventCaravanClosed:
+		return get("name")
+	case "cast_batch":
+		return fmt.Sprintf("%s dispatches (%s)", get("count"), get("world"))
+	case "respawn_batch":
+		return fmt.Sprintf("%s respawns (%s)", get("count"), get("world"))
+	default:
+		// Fall back to a compact JSON of the payload.
+		if len(payload) > 0 {
+			data, err := json.Marshal(payload)
+			if err == nil && len(data) < 60 {
+				return string(data)
+			}
+		}
+		return ""
+	}
+}

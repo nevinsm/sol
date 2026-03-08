@@ -38,6 +38,7 @@ func runDash(cmd *cobra.Command, args []string) error {
 		WorldOpener:  gatedWorldOpener,
 		SessionCheck: mgr,
 		CaravanStore: sphereStore,
+		SOLHome:      config.Home(),
 	}
 
 	// Determine view mode from args.

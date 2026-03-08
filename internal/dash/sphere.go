@@ -140,7 +140,7 @@ func (sm sphereModel) updateSpinner(msg spinner.TickMsg) (sphereModel, tea.Cmd) 
 	return sm, tea.Batch(cmds...)
 }
 
-func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time) string {
+func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, healthEmphasis bool) string {
 	if data == nil {
 		return "Gathering sphere status..."
 	}
@@ -150,7 +150,7 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time) str
 	// Header.
 	b.WriteString(headerStyle.Render("Sol Sphere"))
 	b.WriteString("  ")
-	b.WriteString(healthBadge(data.Health))
+	b.WriteString(healthBadgeWithEmphasis(data.Health, healthEmphasis))
 	b.WriteString("\n")
 	b.WriteString(dimStyle.Render(data.SOLHome))
 	b.WriteString("\n\n")

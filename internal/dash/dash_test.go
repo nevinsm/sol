@@ -1,11 +1,14 @@
 package dash
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/status"
 )
 
@@ -22,7 +25,7 @@ func TestSphereViewRendersProcesses(t *testing.T) {
 	}
 	sm.updateData(data)
 
-	output := sm.view(data, time.Now())
+	output := sm.view(data, time.Now(), false)
 
 	checks := []string{
 		"Sol Sphere",
@@ -59,7 +62,7 @@ func TestSphereViewRendersWorlds(t *testing.T) {
 	}
 	sm.updateData(data)
 
-	output := sm.view(data, time.Now())
+	output := sm.view(data, time.Now(), false)
 
 	checks := []string{
 		"Worlds",
@@ -87,7 +90,7 @@ func TestSphereViewNoWorlds(t *testing.T) {
 	}
 	sm.updateData(data)
 
-	output := sm.view(data, time.Time{})
+	output := sm.view(data, time.Now(), false)
 
 	if !strings.Contains(output, "No worlds initialized.") {
 		t.Error("sphere view should show 'No worlds initialized.' when empty")
@@ -109,7 +112,7 @@ func TestSphereViewCaravans(t *testing.T) {
 	}
 	sm.updateData(data)
 
-	output := sm.view(data, time.Now())
+	output := sm.view(data, time.Now(), false)
 
 	checks := []string{
 		"Caravans",
@@ -135,7 +138,7 @@ func TestSphereViewFooter(t *testing.T) {
 	}
 	sm.updateData(data)
 
-	output := sm.view(data, time.Now())
+	output := sm.view(data, time.Now(), false)
 
 	checks := []string{
 		"q quit",
@@ -154,7 +157,7 @@ func TestSphereViewFooter(t *testing.T) {
 
 func TestSphereViewNilData(t *testing.T) {
 	sm := newSphereModel()
-	output := sm.view(nil, time.Time{})
+	output := sm.view(nil, time.Time{}, false)
 	if !strings.Contains(output, "Gathering sphere status...") {
 		t.Error("sphere view with nil data should show loading message")
 	}
@@ -172,7 +175,7 @@ func TestWorldViewRendersProcesses(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now())
+	output := wm.view(data, time.Now(), false, nil)
 
 	checks := []string{
 		"World: testworld",
@@ -204,7 +207,7 @@ func TestWorldViewRendersAgents(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now())
+	output := wm.view(data, time.Now(), false, nil)
 
 	checks := []string{
 		"Outposts (2)",
@@ -238,7 +241,7 @@ func TestWorldViewRendersEnvoys(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now())
+	output := wm.view(data, time.Now(), false, nil)
 
 	checks := []string{
 		"Envoys (1)",
@@ -266,7 +269,7 @@ func TestWorldViewNoAgents(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now())
+	output := wm.view(data, time.Now(), false, nil)
 
 	if !strings.Contains(output, "No agents registered.") {
 		t.Error("world view should show 'No agents registered.' when empty")
@@ -286,7 +289,7 @@ func TestWorldViewMergeQueue(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now())
+	output := wm.view(data, time.Now(), false, nil)
 
 	checks := []string{
 		"Merge Queue",
@@ -314,7 +317,7 @@ func TestWorldViewMergeQueueEmpty(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now())
+	output := wm.view(data, time.Now(), false, nil)
 
 	if !strings.Contains(output, "empty") {
 		t.Error("world view should show 'empty' for empty merge queue")
@@ -323,7 +326,7 @@ func TestWorldViewMergeQueueEmpty(t *testing.T) {
 
 func TestWorldViewNilData(t *testing.T) {
 	wm := newWorldModel()
-	output := wm.view(nil, time.Time{})
+	output := wm.view(nil, time.Time{}, false, nil)
 	if !strings.Contains(output, "Gathering world status...") {
 		t.Error("world view with nil data should show loading message")
 	}
@@ -343,7 +346,7 @@ func TestWorldViewCaravans(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now())
+	output := wm.view(data, time.Now(), false, nil)
 
 	checks := []string{
 		"Caravans",
@@ -612,7 +615,7 @@ func TestSleepingWorldRow(t *testing.T) {
 	}
 	sm.updateData(data)
 
-	output := sm.view(data, time.Now())
+	output := sm.view(data, time.Now(), false)
 
 	if !strings.Contains(output, "sleepy") {
 		t.Error("sleeping world name should appear in output")
@@ -802,7 +805,7 @@ func TestWorldViewMergeQueueRows(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now())
+	output := wm.view(data, time.Now(), false, nil)
 
 	checks := []string{
 		"Merge Queue",
@@ -931,7 +934,7 @@ func TestWorldViewFocusIndicator(t *testing.T) {
 	wm.updateData(data)
 
 	// Default focus is outposts — the "Outposts" header should use focus style.
-	output := wm.view(data, time.Now())
+	output := wm.view(data, time.Now(), false, nil)
 	if !strings.Contains(output, "Outposts") {
 		t.Error("world view should contain Outposts section")
 	}
@@ -948,7 +951,7 @@ func TestWorldViewFooter(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now())
+	output := wm.view(data, time.Now(), false, nil)
 
 	checks := []string{
 		"q quit",
@@ -1031,7 +1034,7 @@ func TestWorldViewNoSessionMessage(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	output := wm.view(data, time.Now())
+	output := wm.view(data, time.Now(), false, nil)
 
 	if !strings.Contains(output, "no active session") {
 		t.Error("world view should show 'no active session' when showNoSession is true")
@@ -1060,4 +1063,481 @@ func tabKeyMsg() tea.KeyMsg {
 
 func shiftTabKeyMsg() tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyShiftTab}
+}
+
+// --- Feed tests ---
+
+func TestFormatEventCast(t *testing.T) {
+	ev := events.Event{
+		Timestamp: time.Date(2025, 1, 1, 14, 32, 0, 0, time.UTC),
+		Type:      events.EventCast,
+		Actor:     "Toast",
+		Payload:   map[string]any{"writ_id": "sol-abc123", "world": "sol-dev"},
+	}
+	line := formatEvent(ev, 120)
+	checks := []string{"Toast", "dispatched", "sol-abc123", "sol-dev"}
+	for _, check := range checks {
+		if !strings.Contains(line, check) {
+			t.Errorf("formatEvent(cast) missing %q, got %q", check, line)
+		}
+	}
+}
+
+func TestFormatEventResolve(t *testing.T) {
+	ev := events.Event{
+		Timestamp: time.Date(2025, 1, 1, 14, 31, 0, 0, time.UTC),
+		Type:      events.EventResolve,
+		Actor:     "Toast",
+		Payload:   map[string]any{"writ_id": "sol-abc123"},
+	}
+	line := formatEvent(ev, 120)
+	if !strings.Contains(line, "resolved") {
+		t.Errorf("formatEvent(resolve) missing 'resolved', got %q", line)
+	}
+	if !strings.Contains(line, "sol-abc123") {
+		t.Errorf("formatEvent(resolve) missing writ_id, got %q", line)
+	}
+}
+
+func TestFormatEventMerged(t *testing.T) {
+	ev := events.Event{
+		Timestamp: time.Date(2025, 1, 1, 14, 30, 0, 0, time.UTC),
+		Type:      events.EventMerged,
+		Actor:     "Forge",
+		Payload:   map[string]any{"merge_request_id": "42", "world": "sol-dev"},
+	}
+	line := formatEvent(ev, 120)
+	if !strings.Contains(line, "merged") {
+		t.Errorf("formatEvent(merged) missing 'merged', got %q", line)
+	}
+	if !strings.Contains(line, "MR 42") {
+		t.Errorf("formatEvent(merged) missing MR ID, got %q", line)
+	}
+}
+
+func TestFormatEventTruncation(t *testing.T) {
+	ev := events.Event{
+		Timestamp: time.Date(2025, 1, 1, 14, 30, 0, 0, time.UTC),
+		Type:      events.EventCast,
+		Actor:     "SomeLongAgentName",
+		Payload:   map[string]any{"writ_id": "sol-verylongwritid1234567890", "world": "some-world-name"},
+	}
+	line := formatEvent(ev, 40)
+	if len(line) > 40 {
+		t.Errorf("formatEvent should truncate to maxWidth, got len=%d", len(line))
+	}
+	if !strings.HasSuffix(line, "...") {
+		t.Errorf("truncated line should end with ..., got %q", line)
+	}
+}
+
+func TestEventVerb(t *testing.T) {
+	tests := []struct {
+		eventType string
+		want      string
+	}{
+		{events.EventCast, "dispatched"},
+		{events.EventResolve, "resolved"},
+		{events.EventMerged, "merged"},
+		{events.EventMergeFailed, "merge failed"},
+		{events.EventRespawn, "respawned"},
+		{events.EventStalled, "stalled"},
+		{events.EventEscalationCreated, "escalated"},
+		{events.EventHandoff, "handed off"},
+		{events.EventDegraded, "entered degraded mode"},
+		{events.EventRecovered, "recovered"},
+	}
+
+	for _, tt := range tests {
+		got := eventVerb(tt.eventType)
+		if got != tt.want {
+			t.Errorf("eventVerb(%q) = %q, want %q", tt.eventType, got, tt.want)
+		}
+	}
+}
+
+func TestEventVerbUnknownType(t *testing.T) {
+	got := eventVerb("unknown_type")
+	if got != "unknown_type" {
+		t.Errorf("eventVerb(unknown) should return the type itself, got %q", got)
+	}
+}
+
+func TestFeedViewEmpty(t *testing.T) {
+	fm := newFeedModel(t.TempDir(), "")
+	output := fm.view(120)
+	if !strings.Contains(output, "No recent activity") {
+		t.Error("empty feed should show 'No recent activity'")
+	}
+	if !strings.Contains(output, "─") {
+		t.Error("feed should have separator line")
+	}
+}
+
+func TestFeedViewWithEvents(t *testing.T) {
+	fm := newFeedModel(t.TempDir(), "")
+	fm.events = []events.Event{
+		{
+			Timestamp: time.Date(2025, 1, 1, 14, 30, 0, 0, time.UTC),
+			Type:      events.EventCast,
+			Actor:     "Toast",
+			Payload:   map[string]any{"writ_id": "sol-aaa", "world": "dev"},
+		},
+		{
+			Timestamp: time.Date(2025, 1, 1, 14, 31, 0, 0, time.UTC),
+			Type:      events.EventResolve,
+			Actor:     "Toast",
+			Payload:   map[string]any{"writ_id": "sol-aaa"},
+		},
+	}
+	output := fm.view(120)
+	if !strings.Contains(output, "Toast") {
+		t.Error("feed should show actor name")
+	}
+	if strings.Contains(output, "No recent activity") {
+		t.Error("feed with events should not show empty message")
+	}
+}
+
+func TestFeedWorldFilter(t *testing.T) {
+	fm := newFeedModel(t.TempDir(), "alpha")
+
+	evts := []events.Event{
+		{
+			Timestamp: time.Now(),
+			Type:      events.EventCast,
+			Actor:     "Toast",
+			Source:    "sol",
+			Payload:   map[string]any{"writ_id": "sol-aaa", "world": "alpha"},
+		},
+		{
+			Timestamp: time.Now(),
+			Type:      events.EventCast,
+			Actor:     "Crisp",
+			Source:    "sol",
+			Payload:   map[string]any{"writ_id": "sol-bbb", "world": "beta"},
+		},
+		{
+			Timestamp: time.Now(),
+			Type:      events.EventPatrol,
+			Actor:     "sentinel",
+			Source:    "alpha/sentinel",
+			Payload:   map[string]any{},
+		},
+	}
+
+	filtered := fm.filterWorld(evts)
+	if len(filtered) != 2 {
+		t.Errorf("expected 2 events for world 'alpha', got %d", len(filtered))
+	}
+}
+
+func TestFeedSetHeight(t *testing.T) {
+	fm := newFeedModel(t.TempDir(), "")
+
+	fm.setHeight(60)
+	if fm.feedLines != 8 {
+		t.Errorf("height 60 should give 8 feed lines, got %d", fm.feedLines)
+	}
+
+	fm.setHeight(45)
+	if fm.feedLines != 7 {
+		t.Errorf("height 45 should give 7 feed lines, got %d", fm.feedLines)
+	}
+
+	fm.setHeight(35)
+	if fm.feedLines != 6 {
+		t.Errorf("height 35 should give 6 feed lines, got %d", fm.feedLines)
+	}
+
+	fm.setHeight(20)
+	if fm.feedLines != 5 {
+		t.Errorf("height 20 should give 5 feed lines, got %d", fm.feedLines)
+	}
+}
+
+func TestFeedMostRecentFirst(t *testing.T) {
+	fm := newFeedModel(t.TempDir(), "")
+	fm.events = []events.Event{
+		{
+			Timestamp: time.Date(2025, 1, 1, 10, 0, 0, 0, time.UTC),
+			Type:      events.EventCast,
+			Actor:     "OldActor",
+			Payload:   map[string]any{"writ_id": "sol-old"},
+		},
+		{
+			Timestamp: time.Date(2025, 1, 1, 14, 0, 0, 0, time.UTC),
+			Type:      events.EventResolve,
+			Actor:     "NewActor",
+			Payload:   map[string]any{"writ_id": "sol-new"},
+		},
+	}
+	output := fm.view(120)
+	// Most recent event should appear first (higher in the output).
+	newIdx := strings.Index(output, "NewActor")
+	oldIdx := strings.Index(output, "OldActor")
+	if newIdx == -1 || oldIdx == -1 {
+		t.Fatal("both events should appear in output")
+	}
+	if newIdx > oldIdx {
+		t.Error("most recent event should appear before older event")
+	}
+}
+
+// --- Help overlay tests ---
+
+func TestHelpOverlayContent(t *testing.T) {
+	output := helpOverlay(120, 40)
+
+	checks := []string{
+		"Sol Dash",
+		"Keyboard Shortcuts",
+		"Navigation",
+		"j/k",
+		"Move selection",
+		"enter or l",
+		"Actions",
+		"Force refresh",
+		"Toggle this help",
+	}
+
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("help overlay missing %q", check)
+		}
+	}
+}
+
+func TestHelpToggle(t *testing.T) {
+	m := NewModel(Config{})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	// Toggle help on.
+	m2, _ := m.Update(keyMsg("?"))
+	model := m2.(Model)
+	if !model.showHelp {
+		t.Error("? should toggle help on")
+	}
+
+	// View should show help overlay.
+	output := model.View()
+	if !strings.Contains(output, "Keyboard Shortcuts") {
+		t.Error("view should show help overlay when showHelp is true")
+	}
+
+	// Any key dismisses it.
+	m3, _ := model.Update(keyMsg("x"))
+	model2 := m3.(Model)
+	if model2.showHelp {
+		t.Error("any key should dismiss help overlay")
+	}
+}
+
+// --- Terminal size tests ---
+
+func TestMinTerminalSize(t *testing.T) {
+	m := NewModel(Config{})
+	m.ready = true
+	m.width = 60
+	m.height = 20
+
+	output := m.View()
+	if !strings.Contains(output, "Terminal too small") {
+		t.Error("should show 'Terminal too small' message for small terminals")
+	}
+}
+
+func TestMinTerminalSizeWidthOnly(t *testing.T) {
+	m := NewModel(Config{})
+	m.ready = true
+	m.width = 60
+	m.height = 40
+
+	output := m.View()
+	if !strings.Contains(output, "Terminal too small") {
+		t.Error("should show 'Terminal too small' when width is below minimum")
+	}
+}
+
+// --- State-change highlight tests ---
+
+func TestHealthHighlightDecay(t *testing.T) {
+	m := NewModel(Config{})
+
+	// Simulate initial data.
+	m.prevSphereHealth = "healthy"
+
+	// Health changes.
+	m.trackSphereHighlights(&status.SphereStatus{Health: "degraded"})
+	if m.healthHighlight != highlightTTL {
+		t.Errorf("healthHighlight should be %d after change, got %d", highlightTTL, m.healthHighlight)
+	}
+
+	// Decay.
+	m.decayHighlights()
+	if m.healthHighlight != highlightTTL-1 {
+		t.Errorf("healthHighlight should decay by 1, got %d", m.healthHighlight)
+	}
+
+	m.decayHighlights()
+	if m.healthHighlight != 0 {
+		t.Errorf("healthHighlight should be 0 after full decay, got %d", m.healthHighlight)
+	}
+}
+
+func TestAgentStateHighlight(t *testing.T) {
+	m := NewModel(Config{})
+
+	// First data — establishes baseline.
+	m.trackWorldHighlights(&status.WorldStatus{
+		World: "test",
+		Agents: []status.AgentStatus{
+			{Name: "Alpha", State: "idle"},
+		},
+	})
+	if _, ok := m.agentHighlights["Alpha"]; ok {
+		t.Error("first data should not trigger highlights")
+	}
+
+	// State changes.
+	m.trackWorldHighlights(&status.WorldStatus{
+		World: "test",
+		Agents: []status.AgentStatus{
+			{Name: "Alpha", State: "working"},
+		},
+	})
+	if _, ok := m.agentHighlights["Alpha"]; !ok {
+		t.Error("state change should trigger highlight")
+	}
+
+	// Decay.
+	m.decayHighlights()
+	m.decayHighlights()
+	if _, ok := m.agentHighlights["Alpha"]; ok {
+		t.Error("highlight should be removed after full decay")
+	}
+}
+
+func TestHealthEmphasisInSphereView(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+
+	data := &status.SphereStatus{
+		SOLHome: "/test",
+		Health:  "healthy",
+	}
+	sm.updateData(data)
+
+	// Both with and without emphasis should render.
+	output1 := sm.view(data, time.Now(), false)
+	output2 := sm.view(data, time.Now(), true)
+	if !strings.Contains(output1, "healthy") {
+		t.Error("sphere view should show health badge")
+	}
+	if !strings.Contains(output2, "healthy") {
+		t.Error("sphere view with emphasis should show health badge")
+	}
+}
+
+func TestAgentHighlightInWorldView(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:   "test",
+		Prefect: status.PrefectInfo{Running: true, PID: 1},
+		Agents: []status.AgentStatus{
+			{Name: "Alpha", State: "working", SessionAlive: true},
+		},
+	}
+	wm.updateData(data)
+
+	highlights := map[string]int{"Alpha": 2}
+	output := wm.view(data, time.Now(), false, highlights)
+	if !strings.Contains(output, "Alpha") {
+		t.Error("world view should still show agent name with highlights")
+	}
+}
+
+// --- Event matching tests ---
+
+func TestEventMatchesWorld(t *testing.T) {
+	tests := []struct {
+		name  string
+		ev    events.Event
+		world string
+		want  bool
+	}{
+		{
+			name:  "source prefix match",
+			ev:    events.Event{Source: "alpha/sentinel"},
+			world: "alpha",
+			want:  true,
+		},
+		{
+			name:  "source exact match",
+			ev:    events.Event{Source: "alpha"},
+			world: "alpha",
+			want:  true,
+		},
+		{
+			name:  "payload world match",
+			ev:    events.Event{Source: "sol", Payload: map[string]any{"world": "alpha"}},
+			world: "alpha",
+			want:  true,
+		},
+		{
+			name:  "no match",
+			ev:    events.Event{Source: "sol", Payload: map[string]any{"world": "beta"}},
+			world: "alpha",
+			want:  false,
+		},
+		{
+			name:  "nil payload no match",
+			ev:    events.Event{Source: "sol"},
+			world: "alpha",
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := eventMatchesWorld(tt.ev, tt.world)
+			if got != tt.want {
+				t.Errorf("eventMatchesWorld = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFeedLoadInitial(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write some events to the curated feed file.
+	feedFile := dir + "/.feed.jsonl"
+	var lines []string
+	for i := 0; i < 15; i++ {
+		ts := time.Now().Add(time.Duration(i) * time.Minute).UTC().Format(time.RFC3339Nano)
+		lines = append(lines, fmt.Sprintf(
+			`{"ts":"%s","source":"sol","type":"cast","actor":"op%d","visibility":"feed","payload":{"writ_id":"sol-%d"}}`,
+			ts, i, i,
+		))
+	}
+	if err := os.WriteFile(feedFile, []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fm := newFeedModel(dir, "")
+	fm.loadInitial()
+
+	if len(fm.events) != 10 {
+		t.Errorf("loadInitial should load 10 events, got %d", len(fm.events))
+	}
+	if fm.lastSeen.IsZero() {
+		t.Error("lastSeen should be set after loadInitial")
+	}
 }
