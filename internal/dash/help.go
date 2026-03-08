@@ -10,11 +10,13 @@ const helpContent = `Sol Dash — Keyboard Shortcuts
 
 Navigation
   ↑/↓ or j/k    Move selection
-  enter or l     Drill in / Attach to agent
+  enter or l     Drill in / Peek process / Attach
   esc or h       Back to sphere view
   tab            Cycle sections
 
 Actions
+  a              Attach directly to session
+  R              Restart process
   r              Force refresh
   q              Quit
   ?              Toggle this help`

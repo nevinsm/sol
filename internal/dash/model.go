@@ -106,6 +106,16 @@ type attachDoneMsg struct {
 // noSessionMsg signals an inline "no active session" message.
 type noSessionMsg struct{}
 
+// peekMsg signals a request to peek at a process session.
+type peekMsg struct {
+	sessionName string
+}
+
+// restartProcessMsg signals a request to restart a sphere process.
+type restartProcessMsg struct {
+	processName string
+}
+
 // Model is the root Bubble Tea model for the dashboard.
 type Model struct {
 	// viewStack tracks navigation depth. Last element is the active view.
@@ -278,8 +288,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case noSessionMsg:
 		m.dirty = true
-		// Route to world view to show inline message.
-		m.worldView.showNoSession = true
+		// Route to the active view to show inline message.
+		switch m.activeView() {
+		case viewSphere:
+			m.sphereView.showNoSession = true
+		case viewWorld:
+			m.worldView.showNoSession = true
+		}
+
+	case peekMsg:
+		// Peek at a process session — for now, attach directly.
+		// A dedicated peek view can intercept this message in the future.
+		cmd := exec.Command("tmux", "attach-session", "-t", "="+msg.sessionName+":")
+		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+			return attachDoneMsg{err: err}
+		})
+
+	case restartProcessMsg:
+		// Restart a sphere process — placeholder for confirmation overlay.
+		// The confirmation writ will intercept this message.
+		_ = msg.processName
 
 	case animTickMsg:
 		// Animation tick (~30 FPS) — drives visual state.

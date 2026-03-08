@@ -144,7 +144,7 @@ func TestSphereViewFooter(t *testing.T) {
 	checks := []string{
 		"q quit",
 		"select",
-		"drill in",
+		"drill/peek",
 		"r refresh",
 		"refreshed",
 	}
