@@ -39,6 +39,13 @@ each wait for prefect acknowledgment creates a bottleneck. Tether durability
 **Enforcement:** `sol prime` reads the tether and injects execution context
 on session start. The agent's persona instructs immediate execution.
 
+**Adaptation for persistent agents:** Outposts fire on session start —
+unchanged. Persistent agents (envoys, governors, senate) fire on operator
+direction via `sol writ activate`. The trigger changes (session start vs
+operator command) but the principle holds: when directed to a writ, the
+agent executes immediately. No confirmation loop, no polling. Propulsion
+is preserved — agents execute immediately when directed. See ADR-0025.
+
 ### CRASH — Crash Recovery As Standard Handling
 
 Every component has a defined crash recovery path. This is a first-class

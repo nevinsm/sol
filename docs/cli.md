@@ -74,6 +74,14 @@ Quota state is stored at `$SOL_HOME/.accounts/runtime/quota.json`. The scan comm
 
 `cast` accepts `--world` (or `SOL_WORLD` env), `--agent` (auto-selects idle if omitted), `--formula`, `--var`, and `--account` flags.
 
+### Tether directory model
+
+Tethers use a directory at `$SOL_HOME/{world}/{role}s/{agent}/.tether/` containing one file per bound writ. For outpost agents, `sol cast` writes a single tether file. For persistent agents, `sol tether` adds files to the directory — multiple writs can be tethered concurrently. The active writ (tracked in the sphere DB) determines which tethered writ the agent is currently focused on. See ADR-0025.
+
+`sol tether` accepts `--agent` and `--world` flags. Sets active_writ only if the agent has no current active writ (first tether activates; subsequent tethers are background).
+
+`sol untether` accepts `--agent` and `--world` flags. Removes the specified writ's tether file. If no tethers remain, the agent goes idle. If the untethered writ was the active writ, clears it.
+
 ### Account resolution for credentials
 
 When an agent session starts, credentials are symlinked from the resolved account's directory. Resolution priority:

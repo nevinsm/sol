@@ -446,6 +446,11 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 		work := dimStyle.Render("—")
 		if e.ActiveWrit != "" {
 			work = e.WorkTitle
+			// Show background tether count for multi-tether envoys.
+			bgCount := e.TetheredCount - 1 // exclude active writ
+			if bgCount > 0 {
+				work += dimStyle.Render(fmt.Sprintf(" [+%d tethered]", bgCount))
+			}
 		}
 
 		brief := dimStyle.Render("—")

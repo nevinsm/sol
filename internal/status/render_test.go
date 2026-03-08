@@ -379,6 +379,92 @@ func TestFormatLedgerDetail(t *testing.T) {
 	}
 }
 
+func TestRenderEnvoyMultiTether(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "haven",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Envoys: []EnvoyStatus{
+			{
+				Name:          "Scout",
+				State:         "working",
+				SessionAlive:  true,
+				ActiveWrit:    "sol-abc12345",
+				WorkTitle:     "Design review",
+				TetheredCount: 3,
+				BriefAge:      "45m",
+			},
+		},
+		Summary: Summary{},
+	}
+
+	output := RenderWorld(ws)
+
+	checks := []string{
+		"Scout",
+		"Design review",
+		"+2 tethered",
+		"45m ago",
+	}
+
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("RenderWorld with multi-tether envoy missing %q", check)
+		}
+	}
+}
+
+func TestRenderEnvoySingleTether(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "haven",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Envoys: []EnvoyStatus{
+			{
+				Name:          "Scout",
+				State:         "working",
+				SessionAlive:  true,
+				ActiveWrit:    "sol-abc12345",
+				WorkTitle:     "Design review",
+				TetheredCount: 1,
+				BriefAge:      "45m",
+			},
+		},
+		Summary: Summary{},
+	}
+
+	output := RenderWorld(ws)
+
+	// Should show work title but NOT tethered count for single tether.
+	if !strings.Contains(output, "Design review") {
+		t.Error("RenderWorld with single-tether envoy should show work title")
+	}
+	if strings.Contains(output, "tethered") {
+		t.Error("RenderWorld with single-tether envoy should not show tethered count")
+	}
+}
+
+func TestRenderEnvoyNoTether(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "haven",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Envoys: []EnvoyStatus{
+			{
+				Name:          "Scout",
+				State:         "idle",
+				SessionAlive:  false,
+				TetheredCount: 0,
+				BriefAge:      "2h",
+			},
+		},
+		Summary: Summary{},
+	}
+
+	output := RenderWorld(ws)
+
+	if strings.Contains(output, "tethered") {
+		t.Error("RenderWorld with no-tether envoy should not show tethered count")
+	}
+}
+
 func TestFormatChronicleDetailPID(t *testing.T) {
 	tests := []struct {
 		name string

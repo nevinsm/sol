@@ -133,6 +133,40 @@ This applies to both code and non-code writs. When a non-code writ resolves
 (closing it directly), any other agent that happens to be tethered to it is
 reaped by sentinel on the next patrol — same mechanism, same timing.
 
+### Multi-Tether Crash Recovery (Persistent Agents)
+
+Persistent agents (envoys, governors) use tether directories with multiple
+writ files. On crash:
+
+- **Tether directory survives.** All bound writs are recoverable via
+  `tether.List()`. No writ bindings are lost.
+- **`active_writ` may be stale.** The DB column reflects the last known
+  active writ. If the crash occurred during a writ switch, the column may
+  point to the previous or new writ. Recovery: the startup sequence reads
+  the tether directory and resume state file to determine the correct
+  active writ.
+- **Resume state file survives.** If `sol writ activate` wrote a
+  `.resume_state.json` before crash, the next startup picks it up and
+  resumes into the correct writ context.
+- **Safe default:** If active_writ points to a writ no longer in the tether
+  directory, the startup clears it. The operator or governor can re-activate
+  the appropriate writ.
+
+### Writ Switching Failure
+
+When `sol writ activate` triggers a session restart:
+
+- **DB update succeeds, session restart fails.** The active_writ is updated
+  in the DB, and a `.resume_state.json` is written to disk. On next session
+  start (manual or prefect respawn), `startup.Resume()` reads the resume
+  state and launches with the correct writ context. No data loss.
+- **Handoff marker written.** The resume state file acts as a handoff
+  marker — it persists across process crashes and tells the next startup
+  exactly where to resume.
+- **Partial restart.** If the session stops but doesn't restart (e.g., tmux
+  server crash), the prefect detects the dead session and respawns it. The
+  respawn reads the resume state and activates the correct writ.
+
 ## Mass Failure
 
 When 3+ agent sessions die within 30 seconds, the prefect enters degraded mode:

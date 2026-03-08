@@ -14,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
 )
 
 // WorldStatus holds the complete runtime state for a world.
@@ -44,12 +45,13 @@ type GovernorInfo struct {
 
 // EnvoyStatus holds the combined state of one envoy agent.
 type EnvoyStatus struct {
-	Name         string `json:"name"`
-	State        string `json:"state"`
-	SessionAlive bool   `json:"session_alive"`
-	ActiveWrit   string `json:"active_writ,omitempty"`
-	WorkTitle    string `json:"work_title,omitempty"`
-	BriefAge     string `json:"brief_age,omitempty"`
+	Name           string `json:"name"`
+	State          string `json:"state"`
+	SessionAlive   bool   `json:"session_alive"`
+	ActiveWrit     string `json:"active_writ,omitempty"`
+	WorkTitle      string `json:"work_title,omitempty"`
+	TetheredCount  int    `json:"tethered_count,omitempty"`
+	BriefAge       string `json:"brief_age,omitempty"`
 }
 
 // PhaseProgress holds progress info for a single phase within a caravan.
@@ -350,6 +352,10 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 				} else {
 					es.WorkTitle = item.Title
 				}
+			}
+			// Count tethered writs from directory listing.
+			if tethered, err := tether.List(world, agent.Name, "envoy"); err == nil {
+				es.TetheredCount = len(tethered)
 			}
 			result.Envoys = append(result.Envoys, es)
 
