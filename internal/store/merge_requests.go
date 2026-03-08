@@ -34,6 +34,55 @@ func generateMRID() (string, error) {
 	return "mr-" + hex.EncodeToString(b), nil
 }
 
+// scanner is an interface satisfied by both *sql.Row and *sql.Rows,
+// allowing scanMergeRequest to work with QueryRow and Query results.
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+// scanMergeRequest scans a single MergeRequest row from the given scanner,
+// parsing nullable fields and timestamps. Returns the raw scan error (if any)
+// so callers can check for sql.ErrNoRows.
+func scanMergeRequest(s scanner) (*MergeRequest, error) {
+	mr := &MergeRequest{}
+	var claimedBy, blockedBy sql.NullString
+	var claimedAt, mergedAt sql.NullString
+	var createdAt, updatedAt string
+
+	if err := s.Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
+		&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt); err != nil {
+		return nil, err
+	}
+
+	mr.ClaimedBy = claimedBy.String
+	mr.BlockedBy = blockedBy.String
+
+	var err error
+	mr.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", mr.ID, err)
+	}
+	mr.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", mr.ID, err)
+	}
+	if claimedAt.Valid {
+		t, err := time.Parse(time.RFC3339, claimedAt.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", mr.ID, err)
+		}
+		mr.ClaimedAt = &t
+	}
+	if mergedAt.Valid {
+		t, err := time.Parse(time.RFC3339, mergedAt.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", mr.ID, err)
+		}
+		mr.MergedAt = &t
+	}
+	return mr, nil
+}
+
 // CreateMergeRequest creates a new merge request with phase=ready.
 // Returns the generated MR ID (mr-XXXXXXXX).
 func (s *Store) CreateMergeRequest(writID, branch string, priority int) (string, error) {
@@ -56,47 +105,16 @@ func (s *Store) CreateMergeRequest(writID, branch string, priority int) (string,
 
 // GetMergeRequest returns a merge request by ID.
 func (s *Store) GetMergeRequest(id string) (*MergeRequest, error) {
-	mr := &MergeRequest{}
-	var claimedBy, blockedBy sql.NullString
-	var claimedAt, mergedAt sql.NullString
-	var createdAt, updatedAt string
-
-	err := s.db.QueryRow(
+	mr, err := scanMergeRequest(s.db.QueryRow(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 		        attempts, priority, blocked_by, created_at, updated_at, merged_at
 		 FROM merge_requests WHERE id = ?`, id,
-	).Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
-		&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("merge request %q: %w", id, ErrNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get merge request %q: %w", id, err)
-	}
-
-	mr.ClaimedBy = claimedBy.String
-	mr.BlockedBy = blockedBy.String
-	mr.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", id, err)
-	}
-	mr.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", id, err)
-	}
-	if claimedAt.Valid {
-		t, err := time.Parse(time.RFC3339, claimedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", id, err)
-		}
-		mr.ClaimedAt = &t
-	}
-	if mergedAt.Valid {
-		t, err := time.Parse(time.RFC3339, mergedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", id, err)
-		}
-		mr.MergedAt = &t
 	}
 	return mr, nil
 }
@@ -123,41 +141,11 @@ func (s *Store) ListMergeRequests(phase string) ([]MergeRequest, error) {
 
 	var mrs []MergeRequest
 	for rows.Next() {
-		var mr MergeRequest
-		var claimedBy, blockedBy sql.NullString
-		var claimedAt, mergedAt sql.NullString
-		var createdAt, updatedAt string
-
-		if err := rows.Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
-			&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt); err != nil {
+		mr, err := scanMergeRequest(rows)
+		if err != nil {
 			return nil, fmt.Errorf("failed to scan merge request: %w", err)
 		}
-		mr.ClaimedBy = claimedBy.String
-		mr.BlockedBy = blockedBy.String
-		var parseErr error
-		mr.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", mr.ID, parseErr)
-		}
-		mr.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", mr.ID, parseErr)
-		}
-		if claimedAt.Valid {
-			t, parseErr := time.Parse(time.RFC3339, claimedAt.String)
-			if parseErr != nil {
-				return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", mr.ID, parseErr)
-			}
-			mr.ClaimedAt = &t
-		}
-		if mergedAt.Valid {
-			t, parseErr := time.Parse(time.RFC3339, mergedAt.String)
-			if parseErr != nil {
-				return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", mr.ID, parseErr)
-			}
-			mr.MergedAt = &t
-		}
-		mrs = append(mrs, mr)
+		mrs = append(mrs, *mr)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed iterating merge requests: %w", err)
@@ -186,41 +174,11 @@ func (s *Store) ListMergeRequestsByWrit(writID, phase string) ([]MergeRequest, e
 
 	var mrs []MergeRequest
 	for rows.Next() {
-		var mr MergeRequest
-		var claimedBy, blockedBy sql.NullString
-		var claimedAt, mergedAt sql.NullString
-		var createdAt, updatedAt string
-
-		if err := rows.Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
-			&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt); err != nil {
+		mr, err := scanMergeRequest(rows)
+		if err != nil {
 			return nil, fmt.Errorf("failed to scan merge request: %w", err)
 		}
-		mr.ClaimedBy = claimedBy.String
-		mr.BlockedBy = blockedBy.String
-		var parseErr error
-		mr.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", mr.ID, parseErr)
-		}
-		mr.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", mr.ID, parseErr)
-		}
-		if claimedAt.Valid {
-			t, parseErr := time.Parse(time.RFC3339, claimedAt.String)
-			if parseErr != nil {
-				return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", mr.ID, parseErr)
-			}
-			mr.ClaimedAt = &t
-		}
-		if mergedAt.Valid {
-			t, parseErr := time.Parse(time.RFC3339, mergedAt.String)
-			if parseErr != nil {
-				return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", mr.ID, parseErr)
-			}
-			mr.MergedAt = &t
-		}
-		mrs = append(mrs, mr)
+		mrs = append(mrs, *mr)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed iterating merge requests: %w", err)
@@ -236,12 +194,7 @@ func (s *Store) ListMergeRequestsByWrit(writID, phase string) ([]MergeRequest, e
 func (s *Store) ClaimMergeRequest(claimerID string) (*MergeRequest, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	mr := &MergeRequest{}
-	var claimedBy, blockedBy sql.NullString
-	var claimedAt, mergedAt sql.NullString
-	var createdAt, updatedAt string
-
-	err := s.db.QueryRow(
+	mr, err := scanMergeRequest(s.db.QueryRow(
 		`UPDATE merge_requests
 		 SET phase = 'claimed', claimed_by = ?, claimed_at = ?,
 		     attempts = attempts + 1, updated_at = ?
@@ -254,38 +207,12 @@ func (s *Store) ClaimMergeRequest(claimerID string) (*MergeRequest, error) {
 		 RETURNING id, writ_id, branch, phase, claimed_by, claimed_at,
 		           attempts, priority, blocked_by, created_at, updated_at, merged_at`,
 		claimerID, now, now,
-	).Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
-		&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to claim merge request: %w", err)
-	}
-
-	mr.ClaimedBy = claimedBy.String
-	mr.BlockedBy = blockedBy.String
-	mr.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", mr.ID, err)
-	}
-	mr.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", mr.ID, err)
-	}
-	if claimedAt.Valid {
-		t, err := time.Parse(time.RFC3339, claimedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", mr.ID, err)
-		}
-		mr.ClaimedAt = &t
-	}
-	if mergedAt.Valid {
-		t, err := time.Parse(time.RFC3339, mergedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", mr.ID, err)
-		}
-		mr.MergedAt = &t
 	}
 	return mr, nil
 }
@@ -385,47 +312,16 @@ func (s *Store) UnblockMergeRequest(mrID string) error {
 // FindMergeRequestByBlocker finds the MR blocked by a given writ ID.
 // Returns nil if no MR is blocked by the given writ.
 func (s *Store) FindMergeRequestByBlocker(blockerID string) (*MergeRequest, error) {
-	mr := &MergeRequest{}
-	var claimedBy, blockedBy sql.NullString
-	var claimedAt, mergedAt sql.NullString
-	var createdAt, updatedAt string
-
-	err := s.db.QueryRow(
+	mr, err := scanMergeRequest(s.db.QueryRow(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 		        attempts, priority, blocked_by, created_at, updated_at, merged_at
 		 FROM merge_requests WHERE blocked_by = ?`, blockerID,
-	).Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
-		&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to find merge request blocked by %q: %w", blockerID, err)
-	}
-
-	mr.ClaimedBy = claimedBy.String
-	mr.BlockedBy = blockedBy.String
-	mr.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", mr.ID, err)
-	}
-	mr.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", mr.ID, err)
-	}
-	if claimedAt.Valid {
-		t, err := time.Parse(time.RFC3339, claimedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", mr.ID, err)
-		}
-		mr.ClaimedAt = &t
-	}
-	if mergedAt.Valid {
-		t, err := time.Parse(time.RFC3339, mergedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", mr.ID, err)
-		}
-		mr.MergedAt = &t
 	}
 	return mr, nil
 }
@@ -446,41 +342,11 @@ func (s *Store) ListBlockedMergeRequests() ([]MergeRequest, error) {
 
 	var mrs []MergeRequest
 	for rows.Next() {
-		var mr MergeRequest
-		var claimedBy, blockedBy sql.NullString
-		var claimedAt, mergedAt sql.NullString
-		var createdAt, updatedAt string
-
-		if err := rows.Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
-			&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt); err != nil {
+		mr, err := scanMergeRequest(rows)
+		if err != nil {
 			return nil, fmt.Errorf("failed to scan blocked merge request: %w", err)
 		}
-		mr.ClaimedBy = claimedBy.String
-		mr.BlockedBy = blockedBy.String
-		var parseErr error
-		mr.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse created_at for merge request %q: %w", mr.ID, parseErr)
-		}
-		mr.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse updated_at for merge request %q: %w", mr.ID, parseErr)
-		}
-		if claimedAt.Valid {
-			t, parseErr := time.Parse(time.RFC3339, claimedAt.String)
-			if parseErr != nil {
-				return nil, fmt.Errorf("failed to parse claimed_at for merge request %q: %w", mr.ID, parseErr)
-			}
-			mr.ClaimedAt = &t
-		}
-		if mergedAt.Valid {
-			t, parseErr := time.Parse(time.RFC3339, mergedAt.String)
-			if parseErr != nil {
-				return nil, fmt.Errorf("failed to parse merged_at for merge request %q: %w", mr.ID, parseErr)
-			}
-			mr.MergedAt = &t
-		}
-		mrs = append(mrs, mr)
+		mrs = append(mrs, *mr)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed iterating blocked merge requests: %w", err)
