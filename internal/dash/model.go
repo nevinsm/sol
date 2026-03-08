@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -38,6 +39,7 @@ type viewMode int
 const (
 	viewSphere viewMode = iota
 	viewWorld
+	viewPeek
 )
 
 // Config holds dependencies for the dashboard, mirroring cmd/status.go.
@@ -46,6 +48,7 @@ type Config struct {
 	WorldOpener  func(string) (*store.Store, error)
 	SessionCheck status.SessionChecker
 	CaravanStore caravanStore
+	SessionMgr   *session.Manager
 
 	// SOLHome is the runtime root directory for reading event feeds.
 	SOLHome string
@@ -134,6 +137,7 @@ type Model struct {
 	// Sub-views.
 	sphereView sphereModel
 	worldView  worldModel
+	peekView   peekModel
 
 	// Activity feed.
 	feed feedModel
@@ -182,6 +186,7 @@ func NewModel(cfg Config) Model {
 
 	m.sphereView = newSphereModel()
 	m.worldView = newWorldModel()
+	m.peekView = newPeekModel(cfg.SessionMgr)
 
 	return m
 }
@@ -220,6 +225,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sphereView.height = msg.Height
 		m.worldView.width = msg.Width
 		m.worldView.height = msg.Height
+		m.peekView.width = msg.Width
+		m.peekView.height = msg.Height
 		m.feed.setHeight(msg.Height)
 		m.ready = true
 		m.dirty = true
@@ -245,7 +252,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "r":
-			return m, m.refresh()
+			// In peek mode, r is handled by the peek view (force capture refresh).
+			if m.activeView() != viewPeek {
+				return m, m.refresh()
+			}
 		case "?":
 			m.showHelp = true
 			return m, nil
@@ -260,6 +270,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case viewWorld:
 			wv, cmd := m.worldView.update(msg, m.worldData)
 			m.worldView = wv
+			cmds = append(cmds, cmd)
+		case viewPeek:
+			pv, cmd := m.peekView.update(msg)
+			m.peekView = pv
 			cmds = append(cmds, cmd)
 		}
 
@@ -285,6 +299,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.refresh())
 		}
 
+	case peekMsg:
+		// Enter peek mode — push viewPeek onto the stack.
+		m.peekView.width = m.width
+		m.peekView.height = m.height
+		m.peekView.enter(msg)
+		m.viewStack = append(m.viewStack, viewPeek)
+		// Start capture tick and do an immediate capture.
+		cmds = append(cmds, captureTickCmd(), m.peekView.captureCmd())
+
+	case peekPopMsg:
+		// Pop back from peek to the previous view.
+		if len(m.viewStack) > 1 {
+			m.viewStack = m.viewStack[:len(m.viewStack)-1]
+			cmds = append(cmds, m.refresh())
+		}
+
+	case captureTickMsg:
+		// Only tick while in peek mode.
+		if m.activeView() == viewPeek {
+			cmds = append(cmds, m.peekView.captureCmd(), captureTickCmd())
+		}
+
+	case captureResultMsg:
+		if msg.err == nil {
+			m.peekView.capture = msg.content
+			m.peekView.captureAge = time.Now()
+		} else {
+			m.peekView.capture = ""
+		}
+
 	case attachMsg:
 		// Suspend TUI and attach to tmux session.
 		cmd := exec.Command("tmux", "attach-session", "-t", "="+msg.sessionName+":")
@@ -305,6 +349,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sphereView.showNoSession = true
 		case viewWorld:
 			m.worldView.showNoSession = true
+		case viewPeek:
+			// In peek mode, the capture panel already shows "No active session".
 		}
 
 	case peekMsg:
@@ -431,6 +477,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			wv, cmd := m.worldView.updateSpinner(msg)
 			m.worldView = wv
 			cmds = append(cmds, cmd)
+		case viewPeek:
+			pv, cmd := m.peekView.updateSpinner(msg)
+			m.peekView = pv
+			cmds = append(cmds, cmd)
 		}
 	}
 
@@ -475,12 +525,17 @@ func (m Model) View() string {
 		content = m.sphereView.view(m.sphereData, m.lastRefresh, m.healthHighlight, pulseBright)
 	case viewWorld:
 		content = m.worldView.view(m.worldData, m.lastRefresh, m.healthHighlight, m.agentHighlights, pulseBright)
+	case viewPeek:
+		// Peek mode renders its own layout including the feed.
+		content = m.peekView.view(m.feed.view(m.width))
 	default:
 		content = "Unknown view"
 	}
 
-	// Append feed panel.
-	content += m.feed.view(m.width)
+	// Append feed panel (peek mode handles its own feed).
+	if m.activeView() != viewPeek {
+		content += m.feed.view(m.width)
+	}
 
 	// Cache the rendered view for dirty-flag optimization.
 	if m.viewCache != nil {
@@ -536,7 +591,17 @@ func (m Model) refresh() tea.Cmd {
 	return func() tea.Msg {
 		var msg dataMsg
 
-		switch m.activeView() {
+		// In peek mode, refresh the underlying view's data.
+		view := m.activeView()
+		if view == viewPeek {
+			if m.peekView.world != "" {
+				view = viewWorld
+			} else {
+				view = viewSphere
+			}
+		}
+
+		switch view {
 		case viewSphere:
 			result := status.GatherSphere(
 				m.config.SphereStore,

@@ -290,7 +290,14 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 		if !wm.hasFocus {
 			return wm, nil
 		}
-		// Attach to agent/envoy/process session.
+		// Enter peek mode for the selected item.
+		return wm.handlePeek(data)
+
+	case "a":
+		if !wm.hasFocus {
+			return wm, nil
+		}
+		// Direct attach — bypass peek mode.
 		return wm.handleAttach(data)
 
 	case "R":
@@ -411,6 +418,101 @@ func (wm *worldModel) cycleFocus(dir int) {
 	// Cycle.
 	next := (idx + dir + len(sections)) % len(sections)
 	wm.focusedSection = sections[next]
+}
+
+// handlePeek builds peek items from the current world data and emits a peekMsg.
+func (wm worldModel) handlePeek(data *status.WorldStatus) (worldModel, tea.Cmd) {
+	if data == nil {
+		return wm, nil
+	}
+
+	items := buildWorldPeekItems(data)
+	if len(items) == 0 {
+		return wm, nil
+	}
+
+	// Determine initial cursor based on focused section and cursor.
+	initialCursor := 0
+	switch wm.focusedSection {
+	case sectionOutposts:
+		initialCursor = wm.outpostCursor
+	case sectionEnvoys:
+		initialCursor = len(data.Agents) + wm.envoyCursor
+	}
+
+	msg := peekMsg{
+		items:         items,
+		initialCursor: initialCursor,
+		fromView:      viewWorld,
+		world:         data.World,
+	}
+	return wm, func() tea.Msg { return msg }
+}
+
+// buildWorldPeekItems creates peek items for all agents, envoys, and world processes.
+func buildWorldPeekItems(data *status.WorldStatus) []peekItem {
+	var items []peekItem
+
+	// Outposts.
+	for _, a := range data.Agents {
+		items = append(items, peekItem{
+			name:        a.Name,
+			sessionName: fmt.Sprintf("sol-%s-%s", data.World, a.Name),
+			category:    "Outposts",
+			state:       a.State,
+			alive:       a.SessionAlive,
+			peekable:    a.SessionAlive,
+		})
+	}
+
+	// Envoys.
+	for _, e := range data.Envoys {
+		items = append(items, peekItem{
+			name:        e.Name,
+			sessionName: fmt.Sprintf("sol-%s-%s", data.World, e.Name),
+			category:    "Envoys",
+			state:       e.State,
+			alive:       e.SessionAlive,
+			peekable:    e.SessionAlive,
+		})
+	}
+
+	// World processes.
+	type proc struct {
+		name        string
+		running     bool
+		sessionName string
+	}
+	worldProcs := []proc{
+		{"Forge", data.Forge.Running, data.Forge.SessionName},
+		{"Sentinel", data.Sentinel.Running, data.Sentinel.SessionName},
+	}
+	if data.Governor.Running || data.Governor.SessionAlive {
+		worldProcs = append(worldProcs, proc{
+			"Governor", data.Governor.Running,
+			fmt.Sprintf("sol-%s-governor", data.World),
+		})
+	}
+	for _, p := range worldProcs {
+		state := "stopped"
+		if p.running {
+			state = "alive"
+		}
+		sessName := p.sessionName
+		if sessName == "" {
+			sessName = fmt.Sprintf("sol-%s-%s", data.World, strings.ToLower(p.name))
+		}
+		items = append(items, peekItem{
+			name:        p.name,
+			sessionName: sessName,
+			category:    "Processes",
+			state:       state,
+			alive:       p.running,
+			peekable:    p.running && sessName != "",
+		})
+	}
+
+	return items
 }
 
 // handleAttach checks if the selected row has a live session and returns an attach command.
@@ -963,7 +1065,7 @@ func (wm worldModel) renderSummary(data *status.WorldStatus) string {
 }
 
 func (wm worldModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter attach · R restart · esc back · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter peek · a attach · R restart · esc back · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {

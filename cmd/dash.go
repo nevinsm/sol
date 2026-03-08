@@ -39,6 +39,7 @@ func runDash(cmd *cobra.Command, args []string) error {
 		WorldOpener:  gatedWorldOpener,
 		SessionCheck: mgr,
 		CaravanStore: sphereStore,
+		SessionMgr:   mgr,
 		SOLHome:      config.Home(),
 	}
 
