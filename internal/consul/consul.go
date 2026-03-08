@@ -64,15 +64,10 @@ type SphereStore interface {
 }
 
 // SessionManager is the session operations used by the consul.
-// Extends the original SessionChecker with Start for auto-dispatch.
+// Embeds the canonical session.SessionManager and adds List for session enumeration.
 type SessionManager interface {
-	Exists(name string) bool
+	session.SessionManager
 	List() ([]session.SessionInfo, error)
-	Start(name, workdir, cmd string, env map[string]string, role, world string) error
-	Stop(name string, force bool) error
-	Inject(name string, text string, submit bool) error
-	NudgeSession(name string, message string) error
-	WaitForIdle(name string, timeout time.Duration) error
 }
 
 // WorldOpener opens a world store by name.

@@ -33,15 +33,10 @@ const (
 	GitLocalOpTimeout        = 30 * time.Second // git add, commit, prune, rev-parse
 )
 
-// SessionManager defines the session operations used by the dispatch package.
-type SessionManager interface {
-	Start(name, workdir, cmd string, env map[string]string, role, world string) error
-	Stop(name string, force bool) error
-	Exists(name string) bool
-	Inject(name string, text string, submit bool) error
-	NudgeSession(name string, message string) error
-	WaitForIdle(name string, timeout time.Duration) error
-}
+// SessionManager is the canonical session manager interface.
+// Alias to session.SessionManager for backward compatibility with
+// external references (consul, integration tests).
+type SessionManager = session.SessionManager
 
 // WorldStore defines the world store operations used by dispatch.
 type WorldStore interface {
@@ -654,25 +649,14 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 	// with --continue for conversation continuity.
 	cfg := startup.ConfigFor(agent.Role)
 	if cfg != nil {
-		sessName := SessionName(opts.World, opts.AgentName)
-
 		// Build a cycle operation: respawn-pane for atomic session replacement.
 		cycleOp := func(name, workdir, cmd string, env map[string]string, role, world string) error {
-			if cycler, ok := mgr.(interface {
-				Cycle(name, workdir, cmd string, env map[string]string, role, world string) error
-			}); ok {
-				if err := cycler.Cycle(name, workdir, cmd, env, role, world); err != nil {
-					// Fallback: stop + start.
-					mgr.Stop(name, true)
-					return mgr.Start(name, workdir, cmd, env, role, world)
-				}
-				return nil
-			}
-			// No Cycle support: stop + start.
-			if mgr.Exists(sessName) {
+			if err := mgr.Cycle(name, workdir, cmd, env, role, world); err != nil {
+				// Fallback: stop + start.
 				mgr.Stop(name, true)
+				return mgr.Start(name, workdir, cmd, env, role, world)
 			}
-			return mgr.Start(name, workdir, cmd, env, role, world)
+			return nil
 		}
 
 		launchOpts := startup.LaunchOpts{

@@ -57,6 +57,14 @@ func (m *mockSessionManager) WaitForIdle(name string, timeout time.Duration) err
 	return nil
 }
 
+func (m *mockSessionManager) Capture(name string, lines int) (string, error) {
+	return "", nil
+}
+
+func (m *mockSessionManager) Cycle(name, workdir, cmd string, env map[string]string, role, world string) error {
+	return fmt.Errorf("cycle not supported in mock")
+}
+
 // setupSolHome creates a temporary SOL_HOME and sets the env var.
 // Returns the path and a cleanup function.
 func setupSolHome(t *testing.T) string {

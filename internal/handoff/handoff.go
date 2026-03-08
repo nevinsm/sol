@@ -12,6 +12,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -39,15 +40,8 @@ type State struct {
 	StepDescription  string    `json:"step_description,omitempty"`
 }
 
-// SessionManager is the subset of session.Manager used by handoff.
-type SessionManager interface {
-	Exists(name string) bool
-	Inject(name string, text string, submit bool) error
-	Capture(name string, lines int) (string, error)
-	Stop(name string, force bool) error
-	Start(name, workdir, cmd string, env map[string]string, role, world string) error
-	Cycle(name, workdir, cmd string, env map[string]string, role, world string) error
-}
+// SessionManager is the canonical session manager interface.
+type SessionManager = session.SessionManager
 
 // SphereStore is the subset of store.Store used by handoff.
 type SphereStore interface {

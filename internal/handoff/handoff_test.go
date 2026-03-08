@@ -700,6 +700,14 @@ func (m *mockSessionMgr) Cycle(name, workdir, cmd string, env map[string]string,
 	return nil
 }
 
+func (m *mockSessionMgr) NudgeSession(name string, message string) error {
+	return nil
+}
+
+func (m *mockSessionMgr) WaitForIdle(name string, timeout time.Duration) error {
+	return nil
+}
+
 type mockSphereStore struct {
 	messages   []msgCall
 	agents     map[string]*store.Agent // agent ID → agent (for GetAgent)
