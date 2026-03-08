@@ -9,6 +9,17 @@ See ADR-0026 for details.
 
 ## New Commands
 
+### Agent Stats
+
+| Command | Description |
+|---------|-------------|
+| `sol agent stats [name] --world=<world>` | Show agent performance metrics. When a name is given, displays detailed stats including casts, cycle time, merge rate, token usage, and estimated cost. Without a name, shows a leaderboard across all agents. Supports `--json`. |
+
+Cost line behavior:
+- When `[pricing]` is configured in `sol.toml`, shows `Estimated cost: $X.XX (N models, pricing from sol.toml)`.
+- When some models lack pricing entries: `Estimated cost: $X.XX (N unpriced model(s))`.
+- When no pricing is configured: `Estimated cost: (no pricing configured)`.
+
 ### Consul
 
 | Command | Description |
