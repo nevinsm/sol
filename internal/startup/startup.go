@@ -254,7 +254,11 @@ type ResumeState struct {
 	CurrentStep     string // workflow step ID the agent was on
 	StepDescription string // human-readable step title
 	ClaimedResource string // MR ID or work-in-progress identifier
-	Reason          string // why handoff happened: "compact", "manual", "error"
+	Reason          string // why handoff happened: "compact", "manual", "error", "writ-switch"
+
+	// Writ-switch fields (populated when Reason == "writ-switch").
+	PreviousActiveWrit string // writ ID that was active before the switch
+	NewActiveWrit      string // writ ID that is now active
 }
 
 // Resume does everything Launch does but uses --continue for conversation
@@ -322,6 +326,14 @@ func buildResumePrime(base string, state ResumeState) string {
 
 	if state.ClaimedResource != "" {
 		fmt.Fprintf(&b, "Claimed resource: %s is claimed and in-progress.\n", state.ClaimedResource)
+	}
+
+	if state.Reason == "writ-switch" {
+		if state.PreviousActiveWrit != "" && state.NewActiveWrit != "" {
+			fmt.Fprintf(&b, "Your active writ has changed to %s. Previous active was %s.\n", state.NewActiveWrit, state.PreviousActiveWrit)
+		} else if state.NewActiveWrit != "" {
+			fmt.Fprintf(&b, "Your active writ has changed to %s.\n", state.NewActiveWrit)
+		}
 	}
 
 	if base != "" {

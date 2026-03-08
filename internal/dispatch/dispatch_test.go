@@ -3665,3 +3665,225 @@ func TestCastDirectDeps(t *testing.T) {
 		t.Error("CLAUDE.local.md missing dependency kind")
 	}
 }
+
+// --- ActivateWrit tests ---
+
+func TestActivateWritHappyPath(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create two writs.
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 1: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update writ 1: %v", err)
+	}
+	writ2, err := worldStore.CreateWrit("Envoy task 2", "Second task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 2: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ2, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update writ 2: %v", err)
+	}
+
+	// Create envoy agent with active_writ = writ1.
+	if _, err := sphereStore.CreateAgent("Scout", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Scout", "working", writ1); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	// Tether both writs.
+	if err := tether.Write("ember", "Scout", writ1, "envoy"); err != nil {
+		t.Fatalf("failed to write tether 1: %v", err)
+	}
+	if err := tether.Write("ember", "Scout", writ2, "envoy"); err != nil {
+		t.Fatalf("failed to write tether 2: %v", err)
+	}
+
+	// Activate writ2 (switching from writ1).
+	result, err := ActivateWrit(ActivateOpts{
+		World:     "ember",
+		AgentName: "Scout",
+		WritID:    writ2,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("ActivateWrit failed: %v", err)
+	}
+
+	// Verify result.
+	if result.WritID != writ2 {
+		t.Errorf("WritID = %q, want %q", result.WritID, writ2)
+	}
+	if result.PreviousWrit != writ1 {
+		t.Errorf("PreviousWrit = %q, want %q", result.PreviousWrit, writ1)
+	}
+	if result.AlreadyActive {
+		t.Error("AlreadyActive should be false for a switch")
+	}
+
+	// Verify DB updated.
+	agent, err := sphereStore.GetAgent("ember/Scout")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.ActiveWrit != writ2 {
+		t.Errorf("active_writ = %q, want %q", agent.ActiveWrit, writ2)
+	}
+	if agent.State != "working" {
+		t.Errorf("state = %q, want %q", agent.State, "working")
+	}
+}
+
+func TestActivateWritAlreadyActive(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create writ.
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	// Create envoy agent with active_writ = writ1.
+	if _, err := sphereStore.CreateAgent("Scout", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Scout", "working", writ1); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	// Tether writ1.
+	if err := tether.Write("ember", "Scout", writ1, "envoy"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Activate writ1 (already active — should be no-op).
+	result, err := ActivateWrit(ActivateOpts{
+		World:     "ember",
+		AgentName: "Scout",
+		WritID:    writ1,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("ActivateWrit failed: %v", err)
+	}
+
+	if !result.AlreadyActive {
+		t.Error("AlreadyActive should be true")
+	}
+	if result.WritID != writ1 {
+		t.Errorf("WritID = %q, want %q", result.WritID, writ1)
+	}
+}
+
+func TestActivateWritNotTethered(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create writ but don't tether it.
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	// Create envoy agent.
+	if _, err := sphereStore.CreateAgent("Scout", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Try to activate untethered writ — should fail.
+	_, err = ActivateWrit(ActivateOpts{
+		World:     "ember",
+		AgentName: "Scout",
+		WritID:    writ1,
+	}, worldStore, sphereStore, mgr, nil)
+	if err == nil {
+		t.Fatal("expected error for untethered writ")
+	}
+	if !strings.Contains(err.Error(), "not tethered") {
+		t.Errorf("error = %q, want it to mention 'not tethered'", err.Error())
+	}
+}
+
+func TestActivateWritAgentNotFound(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create writ.
+	writ1, err := worldStore.CreateWrit("Task", "Desc", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	// No agent created — should fail.
+	_, err = ActivateWrit(ActivateOpts{
+		World:     "ember",
+		AgentName: "Ghost",
+		WritID:    writ1,
+	}, worldStore, sphereStore, mgr, nil)
+	if err == nil {
+		t.Fatal("expected error for missing agent")
+	}
+	if !strings.Contains(err.Error(), "failed to get agent") {
+		t.Errorf("error = %q, want it to mention agent lookup failure", err.Error())
+	}
+}
+
+func TestActivateWritFromEmpty(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create writ.
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	// Create envoy agent with no active writ.
+	if _, err := sphereStore.CreateAgent("Scout", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Tether writ.
+	if err := tether.Write("ember", "Scout", writ1, "envoy"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Activate writ1 (no previous active writ).
+	result, err := ActivateWrit(ActivateOpts{
+		World:     "ember",
+		AgentName: "Scout",
+		WritID:    writ1,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("ActivateWrit failed: %v", err)
+	}
+
+	if result.AlreadyActive {
+		t.Error("AlreadyActive should be false")
+	}
+	if result.WritID != writ1 {
+		t.Errorf("WritID = %q, want %q", result.WritID, writ1)
+	}
+	if result.PreviousWrit != "" {
+		t.Errorf("PreviousWrit = %q, want empty string", result.PreviousWrit)
+	}
+
+	// Verify DB updated.
+	agent, err := sphereStore.GetAgent("ember/Scout")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.ActiveWrit != writ1 {
+		t.Errorf("active_writ = %q, want %q", agent.ActiveWrit, writ1)
+	}
+}

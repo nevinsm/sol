@@ -58,8 +58,9 @@ const (
 	EventConsulCaravanDispatch = "consul_caravan_dispatch" // individual item dispatched by consul
 
 	// Tether events.
-	EventTether   = "tether"   // agent tethered to writ
-	EventUntether = "untether" // agent untethered from writ
+	EventTether       = "tether"        // agent tethered to writ
+	EventUntether     = "untether"      // agent untethered from writ
+	EventWritActivate = "writ_activate" // active writ switched for persistent agent
 
 	// Sentinel lifecycle events.
 	EventReap           = "reap"            // idle agent reaped

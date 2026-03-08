@@ -922,3 +922,92 @@ func TestLaunchSkipsWorkflowIfActive(t *testing.T) {
 		t.Fatalf("expected 1 session start, got %d", len(mock.started))
 	}
 }
+
+func TestBuildResumePrimeWritSwitch(t *testing.T) {
+	state := ResumeState{
+		Reason:             "writ-switch",
+		PreviousActiveWrit: "sol-aaa111",
+		NewActiveWrit:      "sol-bbb222",
+	}
+
+	prime := buildResumePrime("", state)
+	if !strings.Contains(prime, "[RESUME] Session recovery (reason: writ-switch).") {
+		t.Errorf("prime missing writ-switch reason: %q", prime)
+	}
+	if !strings.Contains(prime, "Your active writ has changed to sol-bbb222. Previous active was sol-aaa111.") {
+		t.Errorf("prime missing writ-switch context: %q", prime)
+	}
+}
+
+func TestBuildResumePrimeWritSwitchNoPrevious(t *testing.T) {
+	state := ResumeState{
+		Reason:        "writ-switch",
+		NewActiveWrit: "sol-bbb222",
+	}
+
+	prime := buildResumePrime("", state)
+	if !strings.Contains(prime, "Your active writ has changed to sol-bbb222.") {
+		t.Errorf("prime missing new writ context: %q", prime)
+	}
+	// Should NOT mention "Previous active" when there's no previous.
+	if strings.Contains(prime, "Previous active") {
+		t.Errorf("prime should not mention previous when empty: %q", prime)
+	}
+}
+
+func TestBuildResumePrimeWritSwitchWithBase(t *testing.T) {
+	state := ResumeState{
+		Reason:             "writ-switch",
+		PreviousActiveWrit: "sol-aaa111",
+		NewActiveWrit:      "sol-bbb222",
+	}
+
+	base := "Execute your formula."
+	prime := buildResumePrime(base, state)
+	if !strings.Contains(prime, "[RESUME]") {
+		t.Errorf("prime missing [RESUME]: %q", prime)
+	}
+	if !strings.Contains(prime, "Your active writ has changed to sol-bbb222") {
+		t.Errorf("prime missing writ-switch context: %q", prime)
+	}
+	if !strings.Contains(prime, "Execute your formula.") {
+		t.Errorf("prime missing base prime: %q", prime)
+	}
+}
+
+func TestWriteReadResumeStateWithWritSwitch(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+
+	// Create agent dir.
+	agentDir := filepath.Join(solHome, "haven", "envoys", "Scout")
+	os.MkdirAll(agentDir, 0o755)
+
+	state := ResumeState{
+		Reason:             "writ-switch",
+		PreviousActiveWrit: "sol-aaa111",
+		NewActiveWrit:      "sol-bbb222",
+	}
+
+	// Write.
+	if err := WriteResumeState("haven", "Scout", "envoy", state); err != nil {
+		t.Fatalf("WriteResumeState() error: %v", err)
+	}
+
+	// Read.
+	got, err := ReadResumeState("haven", "Scout", "envoy")
+	if err != nil {
+		t.Fatalf("ReadResumeState() error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("ReadResumeState() returned nil")
+	}
+	if got.Reason != "writ-switch" {
+		t.Errorf("Reason = %q, want %q", got.Reason, "writ-switch")
+	}
+	if got.PreviousActiveWrit != "sol-aaa111" {
+		t.Errorf("PreviousActiveWrit = %q, want %q", got.PreviousActiveWrit, "sol-aaa111")
+	}
+	if got.NewActiveWrit != "sol-bbb222" {
+		t.Errorf("NewActiveWrit = %q, want %q", got.NewActiveWrit, "sol-bbb222")
+	}
+}

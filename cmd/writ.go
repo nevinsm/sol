@@ -29,6 +29,7 @@ func init() {
 	writCmd.AddCommand(writCloseCmd)
 	writCmd.AddCommand(writQueryCmd)
 	writCmd.AddCommand(writReadyCmd)
+	writCmd.AddCommand(writActivateCmd)
 	writCmd.AddCommand(writCleanCmd)
 }
 

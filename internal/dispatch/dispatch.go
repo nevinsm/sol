@@ -552,6 +552,131 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 	}, nil
 }
 
+// ActivateResult holds the output of a successful activate operation.
+type ActivateResult struct {
+	WritID        string // newly active writ
+	PreviousWrit  string // previously active writ (empty if none)
+	AlreadyActive bool   // true if writID was already active (no-op)
+}
+
+// ActivateOpts holds the inputs for an activate operation.
+type ActivateOpts struct {
+	World     string
+	AgentName string
+	WritID    string // writ to activate
+}
+
+// ActivateWrit switches the active writ for a persistent agent.
+// The writ must already be tethered to the agent. If the writ is already active,
+// this is a no-op (idempotent). Otherwise, updates active_writ in the DB,
+// writes a resume state with writ-switch context, and triggers a session
+// restart with --continue for conversation continuity.
+//
+// The logger parameter is optional — if nil, no events are emitted.
+func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ActivateResult, error) {
+	agentID := opts.World + "/" + opts.AgentName
+
+	// 1. Look up agent.
+	agent, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
+	}
+
+	// 2. Validate that the writ is tethered to this agent.
+	if !tether.IsTetheredTo(opts.World, opts.AgentName, opts.WritID, agent.Role) {
+		return nil, fmt.Errorf("writ %q is not tethered to agent %q in world %q", opts.WritID, opts.AgentName, opts.World)
+	}
+
+	// 3. Check if already active (idempotent).
+	if agent.ActiveWrit == opts.WritID {
+		return &ActivateResult{
+			WritID:        opts.WritID,
+			PreviousWrit:  opts.WritID,
+			AlreadyActive: true,
+		}, nil
+	}
+
+	previousWrit := agent.ActiveWrit
+
+	// 4. Acquire per-agent lock.
+	agentLock, err := AcquireAgentLock(agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer agentLock.Release()
+
+	// 5. Update active_writ in DB.
+	if err := sphereStore.UpdateAgentState(agentID, agent.State, opts.WritID); err != nil {
+		return nil, fmt.Errorf("failed to update active writ: %w", err)
+	}
+
+	// 6. Write resume state with writ-switch context.
+	resumeState := startup.ResumeState{
+		Reason:             "writ-switch",
+		PreviousActiveWrit: previousWrit,
+		NewActiveWrit:      opts.WritID,
+	}
+	if err := startup.WriteResumeState(opts.World, opts.AgentName, agent.Role, resumeState); err != nil {
+		return nil, fmt.Errorf("failed to write resume state: %w", err)
+	}
+
+	// 7. Trigger session restart via handoff with writ-switch reason.
+	// Use startup.Respawn which reads the resume state and calls Resume()
+	// with --continue for conversation continuity.
+	cfg := startup.ConfigFor(agent.Role)
+	if cfg != nil {
+		sessName := SessionName(opts.World, opts.AgentName)
+
+		// Build a cycle operation: respawn-pane for atomic session replacement.
+		cycleOp := func(name, workdir, cmd string, env map[string]string, role, world string) error {
+			if cycler, ok := mgr.(interface {
+				Cycle(name, workdir, cmd string, env map[string]string, role, world string) error
+			}); ok {
+				if err := cycler.Cycle(name, workdir, cmd, env, role, world); err != nil {
+					// Fallback: stop + start.
+					mgr.Stop(name, true)
+					return mgr.Start(name, workdir, cmd, env, role, world)
+				}
+				return nil
+			}
+			// No Cycle support: stop + start.
+			if mgr.Exists(sessName) {
+				mgr.Stop(name, true)
+			}
+			return mgr.Start(name, workdir, cmd, env, role, world)
+		}
+
+		launchOpts := startup.LaunchOpts{
+			SessionOp: cycleOp,
+		}
+
+		if _, err := startup.Resume(*cfg, opts.World, opts.AgentName, resumeState, launchOpts); err != nil {
+			// Non-fatal: the DB is updated, the resume state is on disk.
+			// Prefect or next session start will pick it up.
+			fmt.Fprintf(os.Stderr, "activate: session restart failed (resume state preserved): %v\n", err)
+		}
+
+		// Clear resume state after successful consumption.
+		startup.ClearResumeState(opts.World, opts.AgentName, agent.Role)
+	}
+
+	// 8. Emit event.
+	if logger != nil {
+		logger.Emit(events.EventWritActivate, "sol", "operator", "both", map[string]string{
+			"writ_id":       opts.WritID,
+			"previous_writ": previousWrit,
+			"agent":         opts.AgentName,
+			"world":         opts.World,
+			"role":          agent.Role,
+		})
+	}
+
+	return &ActivateResult{
+		WritID:       opts.WritID,
+		PreviousWrit: previousWrit,
+	}, nil
+}
+
 // autoProvision creates a new agent from the name pool.
 func autoProvision(world string, sphereStore SphereStore, namePoolPath string, capacity int) (*store.Agent, error) {
 	overridePath := namePoolPath

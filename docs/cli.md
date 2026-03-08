@@ -106,6 +106,7 @@ When an agent session starts, credentials are symlinked from the resolved accoun
 | `sol writ update <id>` | Update a writ |
 | `sol writ close <id>` | Close a writ |
 | `sol writ query` | Run a read-only SQL query |
+| `sol writ activate <writ-id>` | Switch active writ for a persistent agent |
 | `sol writ clean` | Clean writ output directories |
 
 `sol writ create` accepts `--title` (required), `--description`, `--priority` (1=high, 2=normal, 3=low), `--label` (repeatable), `--kind`, and `--metadata` (JSON object).
@@ -127,6 +128,8 @@ Every writ gets a persistent output directory at `$SOL_HOME/{world}/writ-outputs
 - **Non-code writs**: output directory is the primary delivery surface — all findings, reports, and structured data go here
 
 Agents see their output directory path in CLAUDE.local.md. When a writ has upstream dependencies, the persona also lists each dependency's output directory, so agents can read upstream analysis before starting work.
+
+`sol writ activate <id>` switches the active writ for a persistent agent (envoy, governor). Accepts `--agent` and `--world` flags (defaults from `SOL_AGENT`/`SOL_WORLD` env vars). The writ must be tethered to the agent. If already active, it's a no-op. Otherwise, updates the DB and restarts the session with `--continue` for conversation continuity.
 
 ## Dependencies
 

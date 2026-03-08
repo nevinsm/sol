@@ -93,7 +93,7 @@ var docSections = []docSection{
 	},
 	{
 		heading: "Writs",
-		paths:   []string{"writ create", "writ status", "writ list", "writ ready", "writ update", "writ close", "writ query", "writ clean"},
+		paths:   []string{"writ create", "writ status", "writ list", "writ ready", "writ update", "writ close", "writ query", "writ activate", "writ clean"},
 		notes: "`sol writ create` accepts `--title` (required), `--description`, `--priority` (1=high, 2=normal, 3=low), " +
 			"`--label` (repeatable), `--kind`, and `--metadata` (JSON object).\n\n" +
 			"### Writ Kind\n\n" +
@@ -108,7 +108,11 @@ var docSections = []docSection{
 			"- **Code writs**: output directory is auxiliary (test reports, benchmarks, etc.)\n" +
 			"- **Non-code writs**: output directory is the primary delivery surface — all findings, reports, and structured data go here\n\n" +
 			"Agents see their output directory path in CLAUDE.local.md. When a writ has upstream dependencies, the persona also " +
-			"lists each dependency's output directory, so agents can read upstream analysis before starting work.",
+			"lists each dependency's output directory, so agents can read upstream analysis before starting work.\n\n" +
+			"`sol writ activate <id>` switches the active writ for a persistent agent (envoy, governor). " +
+			"Accepts `--agent` and `--world` flags (defaults from `SOL_AGENT`/`SOL_WORLD` env vars). " +
+			"The writ must be tethered to the agent. If already active, it's a no-op. " +
+			"Otherwise, updates the DB and restarts the session with `--continue` for conversation continuity.",
 	},
 	{
 		heading: "Dependencies",
