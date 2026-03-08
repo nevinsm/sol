@@ -1,6 +1,12 @@
 package dash
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/nevinsm/sol/internal/status"
+)
 
 // Color semantics — mirror internal/status/render.go.
 var (
@@ -53,9 +59,101 @@ const (
 	crossMark = "✗"
 )
 
+// padRight pads s with spaces to reach the given visible width.
+// Unlike fmt.Sprintf("%-Ns"), this measures visible width excluding
+// ANSI escape codes, so styled strings align correctly.
+func padRight(s string, width int) string {
+	visible := lipgloss.Width(s)
+	if visible >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-visible)
+}
+
 func statusIndicator(running bool) string {
 	if running {
 		return okStyle.Render(checkMark)
 	}
 	return errorStyle.Render(crossMark)
+}
+
+// Process detail formatters — mirror internal/status/render.go.
+
+func formatPrefectDetail(p status.PrefectInfo) string {
+	if p.Running && p.PID > 0 {
+		return fmt.Sprintf("pid %d", p.PID)
+	}
+	return ""
+}
+
+func formatConsulDetail(c status.ConsulInfo) string {
+	if !c.Running {
+		return ""
+	}
+	parts := fmt.Sprintf("%d patrols", c.PatrolCount)
+	if c.HeartbeatAge != "" {
+		parts += fmt.Sprintf(", last %s ago", c.HeartbeatAge)
+	}
+	return parts
+}
+
+func formatChronicleDetail(c status.ChronicleInfo) string {
+	if !c.Running {
+		return ""
+	}
+	if c.SessionName != "" {
+		return c.SessionName
+	}
+	if c.PID > 0 {
+		return fmt.Sprintf("pid %d", c.PID)
+	}
+	return ""
+}
+
+func formatLedgerDetail(l status.LedgerInfo) string {
+	if !l.Running {
+		return ""
+	}
+	if l.SessionName != "" {
+		return l.SessionName
+	}
+	if l.PID > 0 {
+		return fmt.Sprintf("pid %d", l.PID)
+	}
+	return ""
+}
+
+func formatBrokerDetail(b status.BrokerInfo) string {
+	if !b.Running {
+		return ""
+	}
+	return fmt.Sprintf("%d accounts", b.Accounts)
+}
+
+func formatSenateDetail(s status.SenateInfo) string {
+	if s.Running {
+		return s.SessionName
+	}
+	return ""
+}
+
+func formatForgeDetail(f status.ForgeInfo) string {
+	if f.Running {
+		return f.SessionName
+	}
+	return ""
+}
+
+func formatSentinelDetail(s status.SentinelInfo) string {
+	if s.Running {
+		return s.SessionName
+	}
+	return ""
+}
+
+func formatGovernorDetail(g status.GovernorInfo) string {
+	if g.BriefAge != "" {
+		return "brief: " + g.BriefAge + " ago"
+	}
+	return ""
 }

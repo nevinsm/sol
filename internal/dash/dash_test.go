@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/status"
 )
@@ -169,9 +170,12 @@ func TestWorldViewRendersProcesses(t *testing.T) {
 	wm.height = 40
 
 	data := &status.WorldStatus{
-		World:   "testworld",
-		Prefect: status.PrefectInfo{Running: true, PID: 42},
-		Forge:   status.ForgeInfo{Running: true, SessionName: "sol-testworld-forge"},
+		World:     "testworld",
+		Prefect:   status.PrefectInfo{Running: true, PID: 42},
+		Forge:     status.ForgeInfo{Running: true, SessionName: "sol-testworld-forge"},
+		Sentinel:  status.SentinelInfo{Running: true, SessionName: "sol-testworld-sentinel"},
+		Chronicle: status.ChronicleInfo{Running: true, SessionName: "sol-testworld-chronicle"},
+		Governor:  status.GovernorInfo{Running: true, BriefAge: "5m"},
 	}
 	wm.updateData(data)
 
@@ -179,9 +183,18 @@ func TestWorldViewRendersProcesses(t *testing.T) {
 
 	checks := []string{
 		"World: testworld",
-		"Processes",
+		"Sphere Processes",
+		"World Processes",
+		"Prefect",
+		"pid 42",
 		"Forge",
+		"sol-testworld-forge",
 		"Sentinel",
+		"sol-testworld-sentinel",
+		"Chronicle",
+		"sol-testworld-chronicle",
+		"Governor",
+		"brief: 5m ago",
 	}
 
 	for _, check := range checks {
@@ -1511,6 +1524,209 @@ func TestEventMatchesWorld(t *testing.T) {
 				t.Errorf("eventMatchesWorld = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPadRightWithStyledStrings(t *testing.T) {
+	// Plain string should be padded normally.
+	plain := padRight("hello", 10)
+	if len(plain) != 10 {
+		t.Errorf("padRight plain: expected len 10, got %d", len(plain))
+	}
+	if plain != "hello     " {
+		t.Errorf("padRight plain: got %q", plain)
+	}
+
+	// Styled string should be padded based on visible width, not byte length.
+	styled := okStyle.Render("working")
+	padded := padRight(styled, 18)
+	// The visible width should be 18 (7 chars + 11 spaces).
+	visible := lipgloss.Width(padded)
+	if visible != 18 {
+		t.Errorf("padRight styled: visible width = %d, want 18", visible)
+	}
+
+	// Already wider string should not be truncated.
+	wide := padRight("very long string here", 5)
+	if wide != "very long string here" {
+		t.Errorf("padRight wider: should not truncate, got %q", wide)
+	}
+}
+
+func TestWorldViewSphereProcessSpinners(t *testing.T) {
+	wm := newWorldModel()
+
+	data := &status.WorldStatus{
+		World:     "test",
+		Prefect:   status.PrefectInfo{Running: true, PID: 100},
+		Chronicle: status.ChronicleInfo{Running: true},
+		Ledger:    status.LedgerInfo{Running: false},
+		Broker:    status.BrokerInfo{Running: true, Accounts: 3},
+		Senate:    status.SenateInfo{Running: false},
+		Forge:     status.ForgeInfo{Running: true},
+		Sentinel:  status.SentinelInfo{Running: true},
+	}
+	wm.updateData(data)
+
+	// Running sphere processes should have spinners.
+	for _, name := range []string{"Prefect", "Chronicle", "Broker"} {
+		if _, ok := wm.processSpinners[name]; !ok {
+			t.Errorf("running sphere process %q should have a spinner", name)
+		}
+	}
+	// Non-running should not.
+	for _, name := range []string{"Ledger", "Senate"} {
+		if _, ok := wm.processSpinners[name]; ok {
+			t.Errorf("stopped sphere process %q should not have a spinner", name)
+		}
+	}
+	// World processes should also have spinners.
+	for _, name := range []string{"Forge", "Sentinel"} {
+		if _, ok := wm.processSpinners[name]; !ok {
+			t.Errorf("running world process %q should have a spinner", name)
+		}
+	}
+}
+
+func TestWorldViewSummary(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:   "testworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 42},
+		Agents: []status.AgentStatus{
+			{Name: "Toast", State: "working", SessionAlive: true},
+			{Name: "Crisp", State: "idle"},
+			{Name: "Burnt", State: "stalled"},
+		},
+		Envoys: []status.EnvoyStatus{
+			{Name: "Scout", State: "working", SessionAlive: true},
+		},
+		Summary: status.Summary{Total: 3, Working: 1, Idle: 1, Stalled: 1},
+	}
+	wm.updateData(data)
+
+	output := wm.view(data, time.Now(), false, nil)
+
+	checks := []string{
+		"3 agents",
+		"1 envoys",
+		"1 working",
+		"1 idle",
+		"1 stalled",
+	}
+
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("world view summary missing %q", check)
+		}
+	}
+}
+
+func TestWorldViewSectionOrdering(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:      "testworld",
+		Prefect:    status.PrefectInfo{Running: true, PID: 42},
+		Forge:      status.ForgeInfo{Running: true},
+		Agents:     []status.AgentStatus{{Name: "A", State: "idle"}},
+		Envoys:     []status.EnvoyStatus{{Name: "E", State: "idle"}},
+		MergeQueue: status.MergeQueueInfo{Total: 1, Ready: 1},
+		Caravans:   []status.CaravanInfo{{ID: "c1", Name: "batch", TotalItems: 5}},
+		Summary:    status.Summary{Total: 1, Idle: 1},
+	}
+	wm.updateData(data)
+
+	output := wm.view(data, time.Now(), false, nil)
+
+	// Verify order: Sphere Processes → World Processes → Outposts → Envoys → Caravans → Merge Queue → Summary
+	sphereIdx := strings.Index(output, "Sphere Processes")
+	worldProcIdx := strings.Index(output, "World Processes")
+	outpostsIdx := strings.Index(output, "Outposts")
+	envoysIdx := strings.Index(output, "Envoys")
+	caravansIdx := strings.Index(output, "Caravans")
+	mqIdx := strings.Index(output, "Merge Queue")
+
+	if sphereIdx == -1 || worldProcIdx == -1 || outpostsIdx == -1 || envoysIdx == -1 || caravansIdx == -1 || mqIdx == -1 {
+		t.Fatalf("missing sections in output:\n%s", output)
+	}
+
+	if sphereIdx >= worldProcIdx {
+		t.Error("Sphere Processes should come before World Processes")
+	}
+	if worldProcIdx >= outpostsIdx {
+		t.Error("World Processes should come before Outposts")
+	}
+	if outpostsIdx >= envoysIdx {
+		t.Error("Outposts should come before Envoys")
+	}
+	if envoysIdx >= caravansIdx {
+		t.Error("Envoys should come before Caravans")
+	}
+	if caravansIdx >= mqIdx {
+		t.Error("Caravans should come before Merge Queue")
+	}
+}
+
+func TestProcessDetailFormats(t *testing.T) {
+	// Prefect detail.
+	if d := formatPrefectDetail(status.PrefectInfo{Running: true, PID: 123}); d != "pid 123" {
+		t.Errorf("prefect detail = %q, want %q", d, "pid 123")
+	}
+	if d := formatPrefectDetail(status.PrefectInfo{Running: false}); d != "" {
+		t.Errorf("stopped prefect detail should be empty, got %q", d)
+	}
+
+	// Forge detail.
+	if d := formatForgeDetail(status.ForgeInfo{Running: true, SessionName: "sol-dev-forge"}); d != "sol-dev-forge" {
+		t.Errorf("forge detail = %q, want %q", d, "sol-dev-forge")
+	}
+	if d := formatForgeDetail(status.ForgeInfo{Running: false}); d != "" {
+		t.Errorf("stopped forge detail should be empty, got %q", d)
+	}
+
+	// Sentinel detail.
+	if d := formatSentinelDetail(status.SentinelInfo{Running: true, SessionName: "sol-dev-sentinel"}); d != "sol-dev-sentinel" {
+		t.Errorf("sentinel detail = %q, want %q", d, "sol-dev-sentinel")
+	}
+
+	// Chronicle detail.
+	if d := formatChronicleDetail(status.ChronicleInfo{Running: true, SessionName: "chronicle-sess"}); d != "chronicle-sess" {
+		t.Errorf("chronicle detail = %q, want %q", d, "chronicle-sess")
+	}
+	if d := formatChronicleDetail(status.ChronicleInfo{Running: true, PID: 456}); d != "pid 456" {
+		t.Errorf("chronicle detail with PID = %q, want %q", d, "pid 456")
+	}
+
+	// Ledger detail.
+	if d := formatLedgerDetail(status.LedgerInfo{Running: true, SessionName: "ledger-sess"}); d != "ledger-sess" {
+		t.Errorf("ledger detail = %q, want %q", d, "ledger-sess")
+	}
+	if d := formatLedgerDetail(status.LedgerInfo{Running: true, PID: 789}); d != "pid 789" {
+		t.Errorf("ledger detail with PID = %q, want %q", d, "pid 789")
+	}
+
+	// Broker detail.
+	if d := formatBrokerDetail(status.BrokerInfo{Running: true, Accounts: 5}); d != "5 accounts" {
+		t.Errorf("broker detail = %q, want %q", d, "5 accounts")
+	}
+
+	// Senate detail.
+	if d := formatSenateDetail(status.SenateInfo{Running: true, SessionName: "senate-sess"}); d != "senate-sess" {
+		t.Errorf("senate detail = %q, want %q", d, "senate-sess")
+	}
+
+	// Governor detail.
+	if d := formatGovernorDetail(status.GovernorInfo{Running: true, BriefAge: "10m"}); d != "brief: 10m ago" {
+		t.Errorf("governor detail = %q, want %q", d, "brief: 10m ago")
+	}
+	if d := formatGovernorDetail(status.GovernorInfo{Running: true}); d != "" {
+		t.Errorf("governor detail without brief age should be empty, got %q", d)
 	}
 }
 

@@ -158,12 +158,12 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 	// Processes.
 	b.WriteString(headerStyle.Render("Processes"))
 	b.WriteString("\n")
-	sm.renderProcess(&b, "Prefect", data.Prefect.Running)
-	sm.renderProcess(&b, "Consul", data.Consul.Running)
-	sm.renderProcess(&b, "Chronicle", data.Chronicle.Running)
-	sm.renderProcess(&b, "Ledger", data.Ledger.Running)
-	sm.renderProcess(&b, "Broker", data.Broker.Running)
-	sm.renderProcess(&b, "Senate", data.Senate.Running)
+	sm.renderProcess(&b, "Prefect", data.Prefect.Running, formatPrefectDetail(data.Prefect))
+	sm.renderProcess(&b, "Consul", data.Consul.Running, formatConsulDetail(data.Consul))
+	sm.renderProcess(&b, "Chronicle", data.Chronicle.Running, formatChronicleDetail(data.Chronicle))
+	sm.renderProcess(&b, "Ledger", data.Ledger.Running, formatLedgerDetail(data.Ledger))
+	sm.renderProcess(&b, "Broker", data.Broker.Running, formatBrokerDetail(data.Broker))
+	sm.renderProcess(&b, "Senate", data.Senate.Running, formatSenateDetail(data.Senate))
 	b.WriteString("\n")
 
 	// Worlds table.
@@ -191,27 +191,23 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 	return b.String()
 }
 
-func (sm sphereModel) renderProcess(b *strings.Builder, name string, running bool) {
+func (sm sphereModel) renderProcess(b *strings.Builder, name string, running bool, detail string) {
 	indicator := statusIndicator(running)
 	if running {
 		if s, ok := sm.processSpinners[name]; ok {
 			indicator = s.View()
 		}
 	}
-	b.WriteString(fmt.Sprintf("  %s %-12s\n", indicator, name))
+	line := fmt.Sprintf("  %s %-12s", indicator, name)
+	if detail != "" {
+		line += dimStyle.Render("  " + detail)
+	}
+	b.WriteString(line + "\n")
 }
 
 func (sm sphereModel) renderWorldsTable(b *strings.Builder, worlds []status.WorldSummary) {
 	// Column headers.
-	b.WriteString(fmt.Sprintf("  %-16s %-20s %-14s %-5s %-7s %-10s %-10s\n",
-		dimStyle.Render("WORLD"),
-		dimStyle.Render("AGENTS"),
-		dimStyle.Render("HEALTH"),
-		dimStyle.Render("GOV"),
-		dimStyle.Render("FORGE"),
-		dimStyle.Render("SENTINEL"),
-		dimStyle.Render("MR QUEUE"),
-	))
+	b.WriteString("  " + padRight(dimStyle.Render("WORLD"), 16) + " " + padRight(dimStyle.Render("AGENTS"), 20) + " " + padRight(dimStyle.Render("HEALTH"), 14) + " " + padRight(dimStyle.Render("GOV"), 5) + " " + padRight(dimStyle.Render("FORGE"), 7) + " " + padRight(dimStyle.Render("SENTINEL"), 10) + " " + dimStyle.Render("MR QUEUE") + "\n")
 
 	for i, w := range worlds {
 		line := sm.renderWorldRow(w)
@@ -226,12 +222,7 @@ func (sm sphereModel) renderWorldsTable(b *strings.Builder, worlds []status.Worl
 
 func (sm sphereModel) renderWorldRow(w status.WorldSummary) string {
 	if w.Sleeping {
-		return fmt.Sprintf("  %-16s %-20s %-14s %-5s %-7s %-10s %-10s",
-			w.Name,
-			dimStyle.Render("—"), sleepingBadge,
-			dimStyle.Render("—"), dimStyle.Render("—"),
-			dimStyle.Render("—"), dimStyle.Render("—"),
-		)
+		return "  " + padRight(w.Name, 16) + " " + padRight(dimStyle.Render("—"), 20) + " " + padRight(sleepingBadge, 14) + " " + padRight(dimStyle.Render("—"), 5) + " " + padRight(dimStyle.Render("—"), 7) + " " + padRight(dimStyle.Render("—"), 10) + " " + dimStyle.Render("—")
 	}
 
 	// Agents column with optional spinner.
@@ -275,8 +266,7 @@ func (sm sphereModel) renderWorldRow(w status.WorldSummary) string {
 
 	health := healthBadge(w.Health)
 
-	return fmt.Sprintf("  %-16s %-20s %-14s %-5s %-7s %-10s %-10s",
-		w.Name, agents, health, gov, forge, sentinel, mrQueue)
+	return "  " + padRight(w.Name, 16) + " " + padRight(agents, 20) + " " + padRight(health, 14) + " " + padRight(gov, 5) + " " + padRight(forge, 7) + " " + padRight(sentinel, 10) + " " + mrQueue
 }
 
 func (sm sphereModel) renderCaravans(b *strings.Builder, caravans []status.CaravanInfo) {

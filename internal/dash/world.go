@@ -68,7 +68,14 @@ func (wm *worldModel) updateData(data *status.WorldStatus) {
 		return
 	}
 
-	// Process spinners.
+	// Sphere process spinners.
+	wm.syncProcessSpinner("Prefect", data.Prefect.Running)
+	wm.syncProcessSpinner("Chronicle", data.Chronicle.Running)
+	wm.syncProcessSpinner("Ledger", data.Ledger.Running)
+	wm.syncProcessSpinner("Broker", data.Broker.Running)
+	wm.syncProcessSpinner("Senate", data.Senate.Running)
+
+	// World process spinners.
 	wm.syncProcessSpinner("Forge", data.Forge.Running)
 	wm.syncProcessSpinner("Sentinel", data.Sentinel.Running)
 	wm.syncProcessSpinner("Governor", data.Governor.Running)
@@ -317,13 +324,23 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	b.WriteString(healthBadgeWithEmphasis(data.HealthString(), healthEmphasis))
 	b.WriteString("\n\n")
 
-	// Processes.
-	b.WriteString(headerStyle.Render("Processes"))
+	// Sphere Processes.
+	b.WriteString(headerStyle.Render("Sphere Processes"))
 	b.WriteString("\n")
-	wm.renderProcess(&b, "Forge", data.Forge.Running)
-	wm.renderProcess(&b, "Sentinel", data.Sentinel.Running)
+	wm.renderProcess(&b, "Prefect", data.Prefect.Running, formatPrefectDetail(data.Prefect))
+	wm.renderProcess(&b, "Chronicle", data.Chronicle.Running, formatChronicleDetail(data.Chronicle))
+	wm.renderProcess(&b, "Ledger", data.Ledger.Running, formatLedgerDetail(data.Ledger))
+	wm.renderProcess(&b, "Broker", data.Broker.Running, formatBrokerDetail(data.Broker))
+	wm.renderProcess(&b, "Senate", data.Senate.Running, formatSenateDetail(data.Senate))
+	b.WriteString("\n")
+
+	// World Processes.
+	b.WriteString(headerStyle.Render("World Processes"))
+	b.WriteString("\n")
+	wm.renderProcess(&b, "Forge", data.Forge.Running, formatForgeDetail(data.Forge))
+	wm.renderProcess(&b, "Sentinel", data.Sentinel.Running, formatSentinelDetail(data.Sentinel))
 	if data.Governor.Running {
-		wm.renderProcess(&b, "Governor", true)
+		wm.renderProcess(&b, "Governor", true, formatGovernorDetail(data.Governor))
 	}
 	b.WriteString("\n")
 
@@ -358,6 +375,14 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 		b.WriteString("\n")
 	}
 
+	// Caravans.
+	if len(data.Caravans) > 0 {
+		b.WriteString(headerStyle.Render("Caravans"))
+		b.WriteString("\n")
+		wm.renderCaravans(&b, data.Caravans)
+		b.WriteString("\n")
+	}
+
 	// Merge queue.
 	mqHeader := "Merge Queue"
 	if wm.focusedSection == sectionMergeQueue {
@@ -369,13 +394,8 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	wm.renderMergeQueue(&b, data.MergeQueue, data.MergeRequests)
 	b.WriteString("\n")
 
-	// Caravans.
-	if len(data.Caravans) > 0 {
-		b.WriteString(headerStyle.Render("Caravans"))
-		b.WriteString("\n")
-		wm.renderCaravans(&b, data.Caravans)
-		b.WriteString("\n")
-	}
+	// Summary.
+	b.WriteString(wm.renderSummary(data))
 
 	// Inline "no active session" message.
 	if wm.showNoSession {
@@ -389,24 +409,23 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	return b.String()
 }
 
-func (wm worldModel) renderProcess(b *strings.Builder, name string, running bool) {
+func (wm worldModel) renderProcess(b *strings.Builder, name string, running bool, detail string) {
 	indicator := statusIndicator(running)
 	if running {
 		if s, ok := wm.processSpinners[name]; ok {
 			indicator = s.View()
 		}
 	}
-	b.WriteString(fmt.Sprintf("  %s %-12s\n", indicator, name))
+	line := fmt.Sprintf("  %s %-12s", indicator, name)
+	if detail != "" {
+		line += dimStyle.Render("  " + detail)
+	}
+	b.WriteString(line + "\n")
 }
 
 func (wm worldModel) renderAgentsTable(b *strings.Builder, agents []status.AgentStatus, agentHighlights map[string]int) {
 	// Column headers.
-	b.WriteString(fmt.Sprintf("  %-14s %-18s %-10s %s\n",
-		dimStyle.Render("NAME"),
-		dimStyle.Render("STATE"),
-		dimStyle.Render("SESSION"),
-		dimStyle.Render("WORK"),
-	))
+	b.WriteString("  " + padRight(dimStyle.Render("NAME"), 14) + " " + padRight(dimStyle.Render("STATE"), 18) + " " + padRight(dimStyle.Render("SESSION"), 10) + " " + dimStyle.Render("WORK") + "\n")
 
 	for i, a := range agents {
 		line := wm.renderAgentRow(a)
@@ -460,17 +479,11 @@ func (wm worldModel) renderAgentRow(a status.AgentStatus) string {
 		work = fmt.Sprintf("%s: %s", a.TetherItem, a.WorkTitle)
 	}
 
-	return fmt.Sprintf("  %-14s %-18s %-10s %s", name, state, sess, work)
+	return "  " + padRight(name, 14) + " " + padRight(state, 18) + " " + padRight(sess, 10) + " " + work
 }
 
 func (wm worldModel) renderEnvoysTable(b *strings.Builder, envoys []status.EnvoyStatus) {
-	b.WriteString(fmt.Sprintf("  %-14s %-18s %-10s %-24s %s\n",
-		dimStyle.Render("NAME"),
-		dimStyle.Render("STATE"),
-		dimStyle.Render("SESSION"),
-		dimStyle.Render("WORK"),
-		dimStyle.Render("BRIEF"),
-	))
+	b.WriteString("  " + padRight(dimStyle.Render("NAME"), 14) + " " + padRight(dimStyle.Render("STATE"), 18) + " " + padRight(dimStyle.Render("SESSION"), 10) + " " + padRight(dimStyle.Render("WORK"), 24) + " " + dimStyle.Render("BRIEF") + "\n")
 
 	for i, e := range envoys {
 		line := wm.renderEnvoyRow(e)
@@ -522,8 +535,7 @@ func (wm worldModel) renderEnvoyRow(e status.EnvoyStatus) string {
 		brief = e.BriefAge + " ago"
 	}
 
-	return fmt.Sprintf("  %-14s %-18s %-10s %-24s %s",
-		name, state, sess, work, brief)
+	return "  " + padRight(name, 14) + " " + padRight(state, 18) + " " + padRight(sess, 10) + " " + padRight(work, 24) + " " + brief
 }
 
 func (wm worldModel) renderMergeQueue(b *strings.Builder, mq status.MergeQueueInfo, mrs []status.MergeRequestInfo) {
@@ -551,12 +563,7 @@ func (wm worldModel) renderMergeQueue(b *strings.Builder, mq status.MergeQueueIn
 
 	// Individual MR rows.
 	if len(mrs) > 0 {
-		b.WriteString(fmt.Sprintf("  %-20s %-20s %-10s %s\n",
-			dimStyle.Render("ID"),
-			dimStyle.Render("WRIT"),
-			dimStyle.Render("STATUS"),
-			dimStyle.Render("TITLE"),
-		))
+		b.WriteString("  " + padRight(dimStyle.Render("ID"), 20) + " " + padRight(dimStyle.Render("WRIT"), 20) + " " + padRight(dimStyle.Render("STATUS"), 10) + " " + dimStyle.Render("TITLE") + "\n")
 		for i, mr := range mrs {
 			line := wm.renderMRRow(mr)
 			if wm.focusedSection == sectionMergeQueue && i == wm.mrCursor {
@@ -587,7 +594,7 @@ func (wm worldModel) renderMRRow(mr status.MergeRequestInfo) string {
 		title = title[:37] + "..."
 	}
 
-	return fmt.Sprintf("  %-20s %-20s %-10s %s", mr.ID, mr.WritID, phase, title)
+	return "  " + padRight(mr.ID, 20) + " " + padRight(mr.WritID, 20) + " " + padRight(phase, 10) + " " + title
 }
 
 func (wm worldModel) renderCaravans(b *strings.Builder, caravans []status.CaravanInfo) {
@@ -618,6 +625,21 @@ func (wm worldModel) renderCaravans(b *strings.Builder, caravans []status.Carava
 			dimStyle.Render(phaseSummary),
 		))
 	}
+}
+
+func (wm worldModel) renderSummary(data *status.WorldStatus) string {
+	parts := fmt.Sprintf("%d agents", data.Summary.Total)
+	if len(data.Envoys) > 0 {
+		parts += fmt.Sprintf(", %d envoys", len(data.Envoys))
+	}
+	parts += fmt.Sprintf(" | %d working, %d idle", data.Summary.Working, data.Summary.Idle)
+	if data.Summary.Stalled > 0 {
+		parts += warnStyle.Render(fmt.Sprintf(", %d stalled", data.Summary.Stalled))
+	}
+	if data.Summary.Dead > 0 {
+		parts += errorStyle.Render(fmt.Sprintf(", %d dead", data.Summary.Dead))
+	}
+	return dimStyle.Render(parts) + "\n"
 }
 
 func (wm worldModel) renderFooter(lastRefresh time.Time) string {
