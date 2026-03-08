@@ -2268,6 +2268,253 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 	}
 }
 
+func TestResolvePersistentAgentWithRemainingTethers(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create two writs.
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 1: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update writ 1: %v", err)
+	}
+	writ2, err := worldStore.CreateWrit("Envoy task 2", "Second task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 2: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ2, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update writ 2: %v", err)
+	}
+
+	// Create envoy agent with active_writ = writ1.
+	if _, err := sphereStore.CreateAgent("Scout", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Scout", "working", writ1); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	// Tether both writs.
+	if err := tether.Write("ember", "Scout", writ1, "envoy"); err != nil {
+		t.Fatalf("failed to write tether 1: %v", err)
+	}
+	if err := tether.Write("ember", "Scout", writ2, "envoy"); err != nil {
+		t.Fatalf("failed to write tether 2: %v", err)
+	}
+
+	// Create worktree dir at envoy path with git repo.
+	worktreeDir := envoy.WorktreePath("ember", "Scout")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := SessionName("ember", "Scout")
+	mgr.started[sessName] = true
+
+	// Resolve the active writ (writ1).
+	result, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Scout",
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if result.WritID != writ1 {
+		t.Errorf("expected resolved writ %q, got %q", writ1, result.WritID)
+	}
+
+	// Agent should still be working (remaining tethers exist).
+	agent, err := sphereStore.GetAgent("ember/Scout")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "working" {
+		t.Errorf("expected agent state 'working', got %q", agent.State)
+	}
+
+	// Active writ should be cleared (we resolved it).
+	if agent.ActiveWrit != "" {
+		t.Errorf("expected active_writ to be cleared, got %q", agent.ActiveWrit)
+	}
+
+	// Only the resolved writ's tether should be removed.
+	if tether.IsTetheredTo("ember", "Scout", writ1, "envoy") {
+		t.Error("expected resolved writ's tether to be removed")
+	}
+	if !tether.IsTetheredTo("ember", "Scout", writ2, "envoy") {
+		t.Error("expected remaining writ's tether to still exist")
+	}
+
+	// Session should NOT have been stopped.
+	if mgr.stopped[sessName] {
+		t.Error("expected session to NOT be stopped for envoy resolve")
+	}
+}
+
+func TestResolvePersistentAgentNonActiveWrit(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create two writs.
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 1: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update writ 1: %v", err)
+	}
+	writ2, err := worldStore.CreateWrit("Envoy task 2", "Second task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 2: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ2, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update writ 2: %v", err)
+	}
+
+	// Create envoy agent with active_writ = writ1.
+	if _, err := sphereStore.CreateAgent("Scout", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Scout", "working", writ1); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	// Tether both writs.
+	if err := tether.Write("ember", "Scout", writ1, "envoy"); err != nil {
+		t.Fatalf("failed to write tether 1: %v", err)
+	}
+	if err := tether.Write("ember", "Scout", writ2, "envoy"); err != nil {
+		t.Fatalf("failed to write tether 2: %v", err)
+	}
+
+	// Create worktree dir at envoy path with git repo.
+	worktreeDir := envoy.WorktreePath("ember", "Scout")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := SessionName("ember", "Scout")
+	mgr.started[sessName] = true
+
+	// Resolve the non-active writ (writ2) using explicit WritID.
+	result, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Scout",
+		WritID:    writ2,
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if result.WritID != writ2 {
+		t.Errorf("expected resolved writ %q, got %q", writ2, result.WritID)
+	}
+
+	// Agent should still be working.
+	agent, err := sphereStore.GetAgent("ember/Scout")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "working" {
+		t.Errorf("expected agent state 'working', got %q", agent.State)
+	}
+
+	// Active writ should be UNCHANGED (we resolved a non-active writ).
+	if agent.ActiveWrit != writ1 {
+		t.Errorf("expected active_writ to remain %q, got %q", writ1, agent.ActiveWrit)
+	}
+
+	// Only the resolved writ's tether should be removed.
+	if tether.IsTetheredTo("ember", "Scout", writ2, "envoy") {
+		t.Error("expected resolved writ's tether to be removed")
+	}
+	if !tether.IsTetheredTo("ember", "Scout", writ1, "envoy") {
+		t.Error("expected active writ's tether to still exist")
+	}
+}
+
+func TestResolvePersistentAgentLastTether(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWrit("Envoy last task", "The only task", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	// Create envoy agent with single active writ.
+	if _, err := sphereStore.CreateAgent("Scout", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Scout", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Scout", itemID, "envoy"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create worktree dir at envoy path with git repo.
+	worktreeDir := envoy.WorktreePath("ember", "Scout")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := SessionName("ember", "Scout")
+	mgr.started[sessName] = true
+
+	result, err := Resolve(ResolveOpts{
+		World:     "ember",
+		AgentName: "Scout",
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if result.WritID != itemID {
+		t.Errorf("expected resolved writ %q, got %q", itemID, result.WritID)
+	}
+
+	// Agent should be idle (last tether resolved).
+	agent, err := sphereStore.GetAgent("ember/Scout")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("expected agent state 'idle', got %q", agent.State)
+	}
+
+	// Active writ should be cleared.
+	if agent.ActiveWrit != "" {
+		t.Errorf("expected active_writ to be cleared, got %q", agent.ActiveWrit)
+	}
+
+	// Tether should be removed.
+	if tether.IsTethered("ember", "Scout", "envoy") {
+		t.Error("expected all tethers to be cleared after last resolve")
+	}
+
+	// Session should NOT have been stopped (envoy keeps session).
+	if mgr.stopped[sessName] {
+		t.Error("expected session to NOT be stopped for envoy resolve")
+	}
+}
+
 func TestResolveAgentKillsSession(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()

@@ -968,6 +968,7 @@ type ResolveResult struct {
 type ResolveOpts struct {
 	World     string
 	AgentName string
+	WritID    string // Optional: specific writ to resolve (persistent agents only; ignored for outpost agents)
 }
 
 // ResolveLockPath returns the path to the resolve-in-progress lock file.
@@ -999,13 +1000,31 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		return nil, fmt.Errorf("failed to create lock directory: %w", err)
 	}
 
-	// 1. Read tether — get writ ID.
-	writID, err := tether.Read(opts.World, opts.AgentName, agent.Role)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read tether: %w", err)
-	}
-	if writID == "" {
-		return nil, fmt.Errorf("no work tethered for agent %q in world %q", opts.AgentName, opts.World)
+	// 1. Determine which writ to resolve.
+	var writID string
+	if agent.Role == "agent" {
+		// Outpost: read tether (single writ, unchanged behavior).
+		writID, err = tether.Read(opts.World, opts.AgentName, agent.Role)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tether: %w", err)
+		}
+		if writID == "" {
+			return nil, fmt.Errorf("no work tethered for agent %q in world %q", opts.AgentName, opts.World)
+		}
+	} else {
+		// Persistent agent: use explicit WritID, fall back to active_writ from DB.
+		if opts.WritID != "" {
+			writID = opts.WritID
+			// Validate the writ is actually tethered.
+			if !tether.IsTetheredTo(opts.World, opts.AgentName, writID, agent.Role) {
+				return nil, fmt.Errorf("writ %q is not tethered to agent %q", writID, opts.AgentName)
+			}
+		} else {
+			writID = agent.ActiveWrit
+			if writID == "" {
+				return nil, fmt.Errorf("no active writ for agent %q in world %q", opts.AgentName, opts.World)
+			}
+		}
 	}
 
 	// Write resolve lock with writ ID (enables crash recovery detection).
@@ -1142,7 +1161,8 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 
 	// 5. Update agent state (idempotent — check current state first).
 	// Outpost agents are ephemeral — delete the record to reclaim the name.
-	// Persistent roles (envoy, governor) remain idle for reuse.
+	// Persistent roles (envoy, governor) keep their record and update state
+	// based on remaining tethers.
 	if agent.Role == "agent" {
 		// Re-read agent to check if already deleted (idempotent re-run).
 		if _, getErr := sphereStore.GetAgent(agentID); getErr == nil {
@@ -1152,7 +1172,29 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 			}
 		}
 	} else {
-		if agent.State != "idle" {
+		// Persistent agent: determine remaining tethers after this resolve.
+		currentTethers, listErr := tether.List(opts.World, opts.AgentName, agent.Role)
+		remaining := 0
+		if listErr == nil {
+			for _, id := range currentTethers {
+				if id != writID {
+					remaining++
+				}
+			}
+		}
+
+		if remaining > 0 {
+			// More tethers remain: stay working.
+			if agent.ActiveWrit == writID {
+				// Resolving the active writ: clear active_writ but stay working.
+				if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
+					rollback()
+					return nil, fmt.Errorf("failed to update agent state: %w", err)
+				}
+			}
+			// If resolving a non-active writ, no state update needed.
+		} else {
+			// No remaining tethers: set to idle, clear active_writ.
 			if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 				rollback()
 				return nil, fmt.Errorf("failed to update agent state: %w", err)
@@ -1160,10 +1202,17 @@ func Resolve(opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, m
 		}
 	}
 
-	// 6. Clear tether file.
-	if err := tether.Clear(opts.World, opts.AgentName, agent.Role); err != nil {
-		// Agent is idle but tether remains — consul will clean this up.
-		fmt.Fprintf(os.Stderr, "resolve: failed to clear tether (consul will recover): %v\n", err)
+	// 6. Clear tether.
+	if agent.Role == "agent" {
+		// Outpost: clear entire tether directory.
+		if err := tether.Clear(opts.World, opts.AgentName, agent.Role); err != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to clear tether (consul will recover): %v\n", err)
+		}
+	} else {
+		// Persistent: remove only the resolved writ's tether file.
+		if err := tether.ClearOne(opts.World, opts.AgentName, writID, agent.Role); err != nil {
+			fmt.Fprintf(os.Stderr, "resolve: failed to clear tether (consul will recover): %v\n", err)
+		}
 	}
 
 	// 6b. Clean up workflow if present (envoys and governors don't use workflow system).
@@ -1345,19 +1394,50 @@ func resolveConflictResolution(opts ResolveOpts, item *store.Writ, branchName, w
 
 	// 4. Update agent state.
 	// Outpost agents are ephemeral — delete the record to reclaim the name.
+	// Persistent agents update state based on remaining tethers.
 	if role == "agent" {
 		if err := sphereStore.DeleteAgent(agentID); err != nil {
 			return nil, fmt.Errorf("failed to delete agent %q: %w", agentID, err)
 		}
 	} else {
-		if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
-			return nil, fmt.Errorf("failed to update agent state: %w", err)
+		// Persistent agent: determine remaining tethers after this resolve.
+		currentAgent, _ := sphereStore.GetAgent(agentID)
+		currentTethers, listErr := tether.List(opts.World, opts.AgentName, role)
+		remaining := 0
+		if listErr == nil {
+			for _, id := range currentTethers {
+				if id != item.ID {
+					remaining++
+				}
+			}
+		}
+
+		if remaining > 0 {
+			// More tethers remain: stay working.
+			if currentAgent != nil && currentAgent.ActiveWrit == item.ID {
+				if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
+					return nil, fmt.Errorf("failed to update agent state: %w", err)
+				}
+			}
+		} else {
+			// No remaining tethers: set to idle.
+			if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+				return nil, fmt.Errorf("failed to update agent state: %w", err)
+			}
 		}
 	}
 
-	// 5. Clear tether file.
-	if err := tether.Clear(opts.World, opts.AgentName, role); err != nil {
-		return nil, fmt.Errorf("failed to clear tether: %w", err)
+	// 5. Clear tether.
+	if role == "agent" {
+		// Outpost: clear entire tether directory.
+		if err := tether.Clear(opts.World, opts.AgentName, role); err != nil {
+			return nil, fmt.Errorf("failed to clear tether: %w", err)
+		}
+	} else {
+		// Persistent: remove only the resolved writ's tether file.
+		if err := tether.ClearOne(opts.World, opts.AgentName, item.ID, role); err != nil {
+			return nil, fmt.Errorf("failed to clear tether: %w", err)
+		}
 	}
 
 	// 6. Stop session after a brief delay to allow final output.
