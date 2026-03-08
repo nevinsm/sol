@@ -69,6 +69,12 @@ See ADR-0026 for details.
 | `sol envoy restart <name> --world=<world>` | Restart an envoy session (stop then start) |
 | `sol envoy status <name> --world=<world>` | Show envoy running state, agent state, active writ, and brief age. Supports `--json`. |
 
+### Config
+
+| Command | Description |
+|---------|-------------|
+| `sol config claude` | Launch Claude Code pointed at sphere-level defaults (`$SOL_HOME/.claude-defaults/`). Seeds defaults on first run. Changes propagate to all agents on next start. |
+
 ### Senate
 
 | Command | Description |

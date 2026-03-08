@@ -245,6 +245,12 @@ func Run(p Params) (*Result, error) {
 		return nil, fmt.Errorf("failed to write world config: %w", err)
 	}
 
+	// 8. Seed .claude-defaults/ with embedded defaults.
+	// Non-fatal: agents still work without defaults, they just get bare Claude Code settings.
+	if err := config.EnsureClaudeDefaults(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to seed claude defaults: %v\n", err)
+	}
+
 	return &Result{
 		SOLHome:    home,
 		WorldName:  p.WorldName,
