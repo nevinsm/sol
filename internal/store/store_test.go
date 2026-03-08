@@ -247,7 +247,8 @@ func TestMigrateSphereV9ToV10(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create agents table with tether_item (as it existed before V10).
+	// Create agents table with tether_item (as it existed before V10),
+	// and escalations table (as it existed before V11).
 	_, err = s.db.Exec(`
 		CREATE TABLE agents (
 			id TEXT PRIMARY KEY,
@@ -258,6 +259,16 @@ func TestMigrateSphereV9ToV10(t *testing.T) {
 			tether_item TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
+		);
+		CREATE TABLE escalations (
+			id           TEXT PRIMARY KEY,
+			severity     TEXT NOT NULL,
+			source       TEXT NOT NULL,
+			description  TEXT NOT NULL,
+			status       TEXT NOT NULL DEFAULT 'open',
+			acknowledged INTEGER NOT NULL DEFAULT 0,
+			created_at   TEXT NOT NULL,
+			updated_at   TEXT NOT NULL
 		);
 		CREATE TABLE schema_version (version INTEGER NOT NULL);
 		INSERT INTO schema_version VALUES (9);
@@ -334,6 +345,15 @@ func TestMigrateSphereV9ToV10(t *testing.T) {
 	}
 	if meridian.ActiveWrit != "" {
 		t.Fatalf("expected empty active_writ for idle agent, got %q", meridian.ActiveWrit)
+	}
+
+	// Verify source_ref column exists on escalations (V11 migration).
+	sourceRefExists, err := columnExists(s2.db, "escalations", "source_ref")
+	if err != nil {
+		t.Fatalf("failed to check source_ref column: %v", err)
+	}
+	if !sourceRefExists {
+		t.Fatal("expected source_ref column on escalations after V11 migration")
 	}
 }
 

@@ -17,12 +17,14 @@ import (
 // --- Mock stores ---
 
 type mockWorldStore struct {
-	mu            sync.Mutex
-	mrs           []store.MergeRequest
-	items         map[string]*store.Writ
-	claims        []string // IDs of claimed MRs
-	phaseUpdates  map[string]string
-	staleReleased int
+	mu              sync.Mutex
+	mrs             []store.MergeRequest
+	items           map[string]*store.Writ
+	claims          []string // IDs of claimed MRs
+	phaseUpdates    map[string]string
+	staleReleased   int
+	closeWritErr    error // inject CloseWrit failure
+	updateWritErr   error // inject UpdateWrit failure
 }
 
 func newMockWorldStore() *mockWorldStore {
@@ -96,6 +98,9 @@ func (m *mockWorldStore) GetWrit(id string) (*store.Writ, error) {
 func (m *mockWorldStore) UpdateWrit(id string, updates store.WritUpdates) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.updateWritErr != nil {
+		return m.updateWritErr
+	}
 	item, ok := m.items[id]
 	if !ok {
 		return fmt.Errorf("writ %q not found", id)
@@ -195,6 +200,9 @@ func (m *mockWorldStore) CreateWritWithOpts(opts store.CreateWritOpts) (string, 
 func (m *mockWorldStore) CloseWrit(id string, closeReason ...string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closeWritErr != nil {
+		return m.closeWritErr
+	}
 	item, ok := m.items[id]
 	if !ok {
 		return fmt.Errorf("writ %q not found", id)
@@ -213,6 +221,7 @@ type mockEscalation struct {
 	severity    string
 	source      string
 	description string
+	sourceRef   string
 	status      string
 }
 
@@ -225,29 +234,36 @@ func newMockSphereStore() *mockSphereStore {
 	return &mockSphereStore{}
 }
 
-func (m *mockSphereStore) CreateEscalation(severity, source, description string) (string, error) {
+func (m *mockSphereStore) CreateEscalation(severity, source, description string, sourceRef ...string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	id := fmt.Sprintf("esc-%08x", len(m.escalations)+1)
-	m.escalations = append(m.escalations, mockEscalation{id: id, severity: severity, source: source, description: description, status: "open"})
+	ref := ""
+	if len(sourceRef) > 0 {
+		ref = sourceRef[0]
+	}
+	m.escalations = append(m.escalations, mockEscalation{id: id, severity: severity, source: source, description: description, sourceRef: ref, status: "open"})
 	return id, nil
 }
 
-func (m *mockSphereStore) ListEscalations(status string) ([]store.Escalation, error) {
+func (m *mockSphereStore) ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []store.Escalation
 	for _, e := range m.escalations {
-		if status != "" && e.status != status {
+		if e.status == "resolved" {
 			continue
 		}
-		result = append(result, store.Escalation{
-			ID:          e.id,
-			Severity:    e.severity,
-			Source:      e.source,
-			Description: e.description,
-			Status:      e.status,
-		})
+		if e.sourceRef == sourceRef {
+			result = append(result, store.Escalation{
+				ID:          e.id,
+				Severity:    e.severity,
+				Source:      e.source,
+				Description: e.description,
+				SourceRef:   e.sourceRef,
+				Status:      e.status,
+			})
+		}
 	}
 	return result, nil
 }

@@ -265,3 +265,78 @@ func TestResolveEscalationNotFound(t *testing.T) {
 		t.Fatal("expected error for nonexistent escalation")
 	}
 }
+
+func TestCreateEscalationWithSourceRef(t *testing.T) {
+	s := setupSphere(t)
+
+	id, err := s.CreateEscalation("high", "ember/forge", "Merge failed for MR mr-abc123", "mr:mr-abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	esc, err := s.GetEscalation(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if esc.SourceRef != "mr:mr-abc123" {
+		t.Fatalf("expected source_ref %q, got %q", "mr:mr-abc123", esc.SourceRef)
+	}
+}
+
+func TestCreateEscalationWithoutSourceRef(t *testing.T) {
+	s := setupSphere(t)
+
+	// Existing callers that don't pass source_ref should still work.
+	id, err := s.CreateEscalation("low", "operator", "Something happened")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	esc, err := s.GetEscalation(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if esc.SourceRef != "" {
+		t.Fatalf("expected empty source_ref, got %q", esc.SourceRef)
+	}
+}
+
+func TestListEscalationsBySourceRef(t *testing.T) {
+	s := setupSphere(t)
+
+	// Create escalations with different source_refs.
+	id1, _ := s.CreateEscalation("high", "ember/forge", "Failed MR 1", "mr:mr-abc123")
+	_, _ = s.CreateEscalation("high", "ember/forge", "Failed MR 2", "mr:mr-def456")
+	id3, _ := s.CreateEscalation("low", "ember/forge", "Unclosed writ", "mr:mr-abc123")
+
+	// List by source_ref = "mr:mr-abc123" → should return 2.
+	escs, err := s.ListEscalationsBySourceRef("mr:mr-abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 2 {
+		t.Fatalf("expected 2 escalations for mr:mr-abc123, got %d", len(escs))
+	}
+
+	// Resolve one and list again → should return 1.
+	s.ResolveEscalation(id1)
+	escs, err = s.ListEscalationsBySourceRef("mr:mr-abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 1 {
+		t.Fatalf("expected 1 escalation after resolve, got %d", len(escs))
+	}
+	if escs[0].ID != id3 {
+		t.Fatalf("expected remaining escalation ID %q, got %q", id3, escs[0].ID)
+	}
+
+	// List by non-existent source_ref → should return 0.
+	escs, err = s.ListEscalationsBySourceRef("mr:mr-nonexist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 0 {
+		t.Fatalf("expected 0 escalations for nonexistent ref, got %d", len(escs))
+	}
+}

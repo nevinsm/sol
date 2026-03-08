@@ -33,8 +33,8 @@ type WorldStore interface {
 
 // SphereStore abstracts sphere store operations for testing.
 type SphereStore interface {
-	CreateEscalation(severity, source, description string) (string, error)
-	ListEscalations(status string) ([]store.Escalation, error)
+	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
+	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
 	ResolveEscalation(id string) error
 	IsWritBlockedByCaravanDeps(writID string) (bool, []string, error)
 	Close() error

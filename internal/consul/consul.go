@@ -50,7 +50,7 @@ type SphereStore interface {
 	TryCloseCaravan(caravanID string, worldOpener func(string) (*store.Store, error)) (bool, error)
 
 	// Escalations
-	CreateEscalation(severity, source, description string) (string, error)
+	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
 	CountOpen() (int, error)
 
 	// Messages

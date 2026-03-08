@@ -152,6 +152,13 @@ func (r *Forge) MarkMerged(mrID string) error {
 
 	if err := r.worldStore.CloseWrit(mr.WritID); err != nil {
 		r.logger.Error("failed to close writ", "writ", mr.WritID, "error", err)
+		// MR is merged (code is on main) but writ is still tethered.
+		// Create an escalation so the inconsistency is visible.
+		desc := fmt.Sprintf("Writ %s not closed after MR %s merged: %v", mr.WritID, mrID, err)
+		if _, escErr := r.sphereStore.CreateEscalation("low", r.agentID, desc, "mr:"+mrID); escErr != nil {
+			r.logger.Error("failed to create escalation for unclosed writ",
+				"writ", mr.WritID, "mr", mrID, "error", escErr)
+		}
 	}
 
 	// Clean up remote branch (best-effort).
@@ -207,21 +214,15 @@ func (r *Forge) supersedeFailed(mergedMRID, writID string) {
 }
 
 // resolveEscalationsForMR resolves open/acknowledged escalations whose
-// description contains the given MR ID.
+// source_ref matches "mr:<mrID>".
 func (r *Forge) resolveEscalationsForMR(mrID string) {
-	escalations, err := r.sphereStore.ListEscalations("")
+	escalations, err := r.sphereStore.ListEscalationsBySourceRef("mr:" + mrID)
 	if err != nil {
 		r.logger.Error("failed to list escalations for resolution", "mr", mrID, "error", err)
 		return
 	}
 
 	for _, esc := range escalations {
-		if esc.Status == "resolved" {
-			continue
-		}
-		if !strings.Contains(esc.Description, mrID) {
-			continue
-		}
 		if err := r.sphereStore.ResolveEscalation(esc.ID); err != nil {
 			r.logger.Error("failed to resolve escalation", "escalation", esc.ID, "mr", mrID, "error", err)
 		}
@@ -241,18 +242,23 @@ func (r *Forge) MarkFailed(mrID string) error {
 	}
 
 	// Reopen writ so it can be re-dispatched (best-effort).
-	if err := r.worldStore.UpdateWrit(mr.WritID, store.WritUpdates{
+	reopenErr := r.worldStore.UpdateWrit(mr.WritID, store.WritUpdates{
 		Status:   "open",
 		Assignee: "-",
-	}); err != nil {
+	})
+	if reopenErr != nil {
 		r.logger.Error("failed to reopen writ after merge failure",
-			"writ", mr.WritID, "error", err)
+			"writ", mr.WritID, "error", reopenErr)
 	}
 
 	// Create escalation so the governor knows about the failure (best-effort).
-	desc := fmt.Sprintf("Merge failed for MR %s (branch %s, writ %s). Writ reopened for re-dispatch.",
-		mrID, mr.Branch, mr.WritID)
-	if _, err := r.sphereStore.CreateEscalation("high", r.agentID, desc); err != nil {
+	desc := fmt.Sprintf("Merge failed for MR %s (branch %s, writ %s).", mrID, mr.Branch, mr.WritID)
+	if reopenErr != nil {
+		desc += fmt.Sprintf(" Writ reopen also failed: %v", reopenErr)
+	} else {
+		desc += " Writ reopened for re-dispatch."
+	}
+	if _, err := r.sphereStore.CreateEscalation("high", r.agentID, desc, "mr:"+mrID); err != nil {
 		r.logger.Error("failed to create escalation for merge failure",
 			"mr", mrID, "error", err)
 	}

@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -241,7 +242,7 @@ func TestMarkFailedReopensWrit(t *testing.T) {
 		t.Errorf("writ assignee = %q, want empty (cleared)", item.Assignee)
 	}
 
-	// Verify escalation created.
+	// Verify escalation created with source_ref.
 	sphereStore.mu.Lock()
 	defer sphereStore.mu.Unlock()
 	if len(sphereStore.escalations) != 1 {
@@ -256,6 +257,9 @@ func TestMarkFailedReopensWrit(t *testing.T) {
 	}
 	if !strings.Contains(esc.description, "sol-aaa11111") {
 		t.Errorf("escalation description should mention writ ID, got: %s", esc.description)
+	}
+	if esc.sourceRef != "mr:mr-00000001" {
+		t.Errorf("escalation source_ref = %q, want 'mr:mr-00000001'", esc.sourceRef)
 	}
 }
 
@@ -309,14 +313,17 @@ func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 	worldStore.items["sol-bbb22222"] = &store.Writ{ID: "sol-bbb22222", Title: "Other", Status: "done"}
 
 	sphereStore := newMockSphereStore()
-	// Pre-create escalations for the failed MRs.
+	// Pre-create escalations for the failed MRs with source_ref.
 	sphereStore.CreateEscalation("high", "ember/forge",
-		"Merge failed for MR mr-failed1 (branch outpost/Toast/sol-aaa11111, writ sol-aaa11111). Writ reopened for re-dispatch.")
+		"Merge failed for MR mr-failed1 (branch outpost/Toast/sol-aaa11111, writ sol-aaa11111). Writ reopened for re-dispatch.",
+		"mr:mr-failed1")
 	sphereStore.CreateEscalation("high", "ember/forge",
-		"Merge failed for MR mr-failed2 (branch outpost/Blaze/sol-aaa11111, writ sol-aaa11111). Writ reopened for re-dispatch.")
+		"Merge failed for MR mr-failed2 (branch outpost/Blaze/sol-aaa11111, writ sol-aaa11111). Writ reopened for re-dispatch.",
+		"mr:mr-failed2")
 	// Escalation for different writ — should NOT be resolved.
 	sphereStore.CreateEscalation("high", "ember/forge",
-		"Merge failed for MR mr-other1 (branch outpost/Toast/sol-bbb22222, writ sol-bbb22222). Writ reopened for re-dispatch.")
+		"Merge failed for MR mr-other1 (branch outpost/Toast/sol-bbb22222, writ sol-bbb22222). Writ reopened for re-dispatch.",
+		"mr:mr-other1")
 
 	dir := t.TempDir()
 	run(t, "git", "init", dir)
@@ -356,17 +363,17 @@ func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 		t.Error("MR for different writ should not be touched")
 	}
 
-	// Verify escalations for failed MRs are resolved.
+	// Verify escalations for failed MRs are resolved (using source_ref matching).
 	sphereStore.mu.Lock()
 	defer sphereStore.mu.Unlock()
 	for _, esc := range sphereStore.escalations {
-		if strings.Contains(esc.description, "mr-failed1") && esc.status != "resolved" {
+		if esc.sourceRef == "mr:mr-failed1" && esc.status != "resolved" {
 			t.Errorf("escalation for mr-failed1 status = %q, want 'resolved'", esc.status)
 		}
-		if strings.Contains(esc.description, "mr-failed2") && esc.status != "resolved" {
+		if esc.sourceRef == "mr:mr-failed2" && esc.status != "resolved" {
 			t.Errorf("escalation for mr-failed2 status = %q, want 'resolved'", esc.status)
 		}
-		if strings.Contains(esc.description, "mr-other1") && esc.status == "resolved" {
+		if esc.sourceRef == "mr:mr-other1" && esc.status == "resolved" {
 			t.Error("escalation for different writ should NOT be resolved")
 		}
 	}
@@ -571,6 +578,156 @@ func TestCreateResolutionTaskNudgesGovernor(t *testing.T) {
 	}
 	if !strings.Contains(msgs[0].Body, "mr-00000001") {
 		t.Errorf("nudge body should contain MR ID, got: %s", msgs[0].Body)
+	}
+}
+
+// --- Partial failure tests ---
+
+func TestMarkMergedCloseWritFailureCreatesEscalation(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+	worldStore.closeWritErr = fmt.Errorf("database locked")
+
+	sphereStore := newMockSphereStore()
+
+	dir := t.TempDir()
+	run(t, "git", "init", dir)
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worktree:    dir,
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         DefaultConfig(),
+	}
+
+	// MarkMerged should return nil (success) even when CloseWrit fails.
+	if err := r.MarkMerged("mr-00000001"); err != nil {
+		t.Fatalf("MarkMerged() error: %v", err)
+	}
+
+	// Verify MR phase set to merged.
+	worldStore.mu.Lock()
+	if phase := worldStore.phaseUpdates["mr-00000001"]; phase != "merged" {
+		t.Errorf("MR phase = %q, want 'merged'", phase)
+	}
+	worldStore.mu.Unlock()
+
+	// Verify escalation was created for the CloseWrit failure.
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.escalations) != 1 {
+		t.Fatalf("expected 1 escalation, got %d", len(sphereStore.escalations))
+	}
+	esc := sphereStore.escalations[0]
+	if esc.severity != "low" {
+		t.Errorf("escalation severity = %q, want 'low'", esc.severity)
+	}
+	if esc.source != "ember/forge" {
+		t.Errorf("escalation source = %q, want 'ember/forge'", esc.source)
+	}
+	if !strings.Contains(esc.description, "sol-aaa11111") {
+		t.Errorf("escalation description should mention writ ID, got: %s", esc.description)
+	}
+	if !strings.Contains(esc.description, "database locked") {
+		t.Errorf("escalation description should mention error, got: %s", esc.description)
+	}
+	if esc.sourceRef != "mr:mr-00000001" {
+		t.Errorf("escalation source_ref = %q, want 'mr:mr-00000001'", esc.sourceRef)
+	}
+}
+
+func TestMarkFailedUpdateWritFailureCreatesEscalation(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID:       "sol-aaa11111",
+		Title:    "Test feature",
+		Status:   "done",
+		Assignee: "Toast",
+	}
+	worldStore.updateWritErr = fmt.Errorf("database locked")
+
+	sphereStore := newMockSphereStore()
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         DefaultConfig(),
+	}
+
+	if err := r.MarkFailed("mr-00000001"); err != nil {
+		t.Fatalf("MarkFailed() error: %v", err)
+	}
+
+	// Verify MR phase set to failed.
+	worldStore.mu.Lock()
+	if phase := worldStore.phaseUpdates["mr-00000001"]; phase != "failed" {
+		t.Errorf("MR phase = %q, want 'failed'", phase)
+	}
+	worldStore.mu.Unlock()
+
+	// Verify escalation was created — it should mention the reopen failure.
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.escalations) != 1 {
+		t.Fatalf("expected 1 escalation, got %d", len(sphereStore.escalations))
+	}
+	esc := sphereStore.escalations[0]
+	if esc.severity != "high" {
+		t.Errorf("escalation severity = %q, want 'high'", esc.severity)
+	}
+	if !strings.Contains(esc.description, "database locked") {
+		t.Errorf("escalation description should mention reopen error, got: %s", esc.description)
+	}
+	if esc.sourceRef != "mr:mr-00000001" {
+		t.Errorf("escalation source_ref = %q, want 'mr:mr-00000001'", esc.sourceRef)
+	}
+}
+
+func TestResolveEscalationsForMRUsesSourceRef(t *testing.T) {
+	sphereStore := newMockSphereStore()
+	// Create escalations: one with source_ref matching, one with different source_ref.
+	sphereStore.CreateEscalation("high", "ember/forge", "Failed MR mr-target1", "mr:mr-target1")
+	sphereStore.CreateEscalation("high", "ember/forge", "Failed MR mr-other1", "mr:mr-other1")
+	// An escalation that mentions mr-target1 in description but has a different source_ref.
+	sphereStore.CreateEscalation("low", "ember/forge", "Contains mr-target1 in text", "mr:mr-unrelated")
+
+	worldStore := newMockWorldStore()
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+	}
+
+	r.resolveEscalationsForMR("mr-target1")
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+
+	for _, esc := range sphereStore.escalations {
+		if esc.sourceRef == "mr:mr-target1" && esc.status != "resolved" {
+			t.Errorf("escalation with source_ref 'mr:mr-target1' should be resolved, status = %q", esc.status)
+		}
+		if esc.sourceRef == "mr:mr-other1" && esc.status == "resolved" {
+			t.Error("escalation for different MR should NOT be resolved")
+		}
+		if esc.sourceRef == "mr:mr-unrelated" && esc.status == "resolved" {
+			t.Error("escalation with different source_ref (even if description matches) should NOT be resolved")
+		}
 	}
 }
 

@@ -8,7 +8,7 @@ import (
 // Current schema versions — the latest migration target for each database type.
 const (
 	CurrentWorldSchema  = 9
-	CurrentSphereSchema = 10
+	CurrentSphereSchema = 11
 )
 
 const worldSchemaV1 = `
@@ -374,6 +374,8 @@ const sphereSchemaV9 = "" // migration handled procedurally below — renames ca
 
 const sphereSchemaV10 = "" // migration handled procedurally below — renames agents.tether_item → active_writ
 
+const sphereSchemaV11 = `ALTER TABLE escalations ADD COLUMN source_ref TEXT;`
+
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
 	QueryRow(string, ...interface{}) *sql.Row
@@ -557,6 +559,17 @@ func (s *Store) migrateSphere() error {
 		if oldCol {
 			if _, err := tx.Exec(`ALTER TABLE agents RENAME COLUMN tether_item TO active_writ`); err != nil {
 				return fmt.Errorf("failed to rename agents.tether_item: %w", err)
+			}
+		}
+	}
+	if v < 11 {
+		exists, err := columnExists(tx, "escalations", "source_ref")
+		if err != nil {
+			return fmt.Errorf("V11 migration: failed to check column escalations.source_ref: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(sphereSchemaV11); err != nil {
+				return fmt.Errorf("failed to apply sphere schema v11: %w", err)
 			}
 		}
 	}
