@@ -64,7 +64,6 @@ type SphereStore interface {
 	CountOpen() (int, error)
 	ListOpenEscalations() ([]store.Escalation, error)
 	UpdateEscalationLastNotified(id string) error
-	ResolveEscalation(id string) error
 
 	// Messages
 	PendingProtocol(recipient, protoType string) ([]store.Message, error)
