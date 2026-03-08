@@ -417,56 +417,55 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 			}
 		}
 
-		if len(readyByWorld) == 0 {
-			continue
-		}
-
-		// Dispatch ready items per world.
-		caravanDispatched := 0
-		for world, items := range readyByWorld {
-			dispatched, dispatchErr := d.dispatchWorldItems(ctx, caravan.ID, world, items)
-			caravanDispatched += dispatched
-			if dispatchErr != nil {
-				d.logInfo("consul_error", map[string]any{
-					"action":     "dispatch_world_items",
-					"caravan_id": caravan.ID,
-					"world":      world,
-					"error":      dispatchErr.Error(),
-				})
-				// DEGRADE: continue with other worlds
-			}
-		}
-
-		totalDispatched += caravanDispatched
-
-		if caravanDispatched > 0 {
-			// Emit caravan-level feed event.
-			if d.logger != nil {
-				d.logger.Emit(events.EventConsulCaravanFeed, "sphere/consul", "sphere/consul", "both",
-					map[string]any{
+		if len(readyByWorld) > 0 {
+			// Dispatch ready items per world.
+			caravanDispatched := 0
+			for world, items := range readyByWorld {
+				dispatched, dispatchErr := d.dispatchWorldItems(ctx, caravan.ID, world, items)
+				caravanDispatched += dispatched
+				if dispatchErr != nil {
+					d.logInfo("consul_error", map[string]any{
+						"action":     "dispatch_world_items",
 						"caravan_id": caravan.ID,
-						"dispatched": caravanDispatched,
+						"world":      world,
+						"error":      dispatchErr.Error(),
 					})
+					// DEGRADE: continue with other worlds
+				}
 			}
 
-			// Try to auto-close the caravan.
-			closed, closeErr := d.sphereStore.TryCloseCaravan(caravan.ID, func(world string) (*store.Store, error) {
-				return d.worldOpener(world)
-			})
-			if closeErr != nil {
-				d.logInfo("consul_error", map[string]any{
-					"action":     "try_close_caravan",
-					"caravan_id": caravan.ID,
-					"error":      closeErr.Error(),
-				})
-			} else if closed {
+			totalDispatched += caravanDispatched
+
+			if caravanDispatched > 0 {
+				// Emit caravan-level feed event.
 				if d.logger != nil {
-					d.logger.Emit(events.EventCaravanClosed, "sphere/consul", "sphere/consul", "both",
+					d.logger.Emit(events.EventConsulCaravanFeed, "sphere/consul", "sphere/consul", "both",
 						map[string]any{
 							"caravan_id": caravan.ID,
-							"name":       caravan.Name,
+							"dispatched": caravanDispatched,
 						})
 				}
+			}
+		}
+
+		// Try to auto-close the caravan (unconditional — items may have
+		// been merged since the last patrol).
+		closed, closeErr := d.sphereStore.TryCloseCaravan(caravan.ID, func(world string) (*store.Store, error) {
+			return d.worldOpener(world)
+		})
+		if closeErr != nil {
+			d.logInfo("consul_error", map[string]any{
+				"action":     "try_close_caravan",
+				"caravan_id": caravan.ID,
+				"error":      closeErr.Error(),
+			})
+		} else if closed {
+			if d.logger != nil {
+				d.logger.Emit(events.EventCaravanClosed, "sphere/consul", "sphere/consul", "both",
+					map[string]any{
+						"caravan_id": caravan.ID,
+						"name":       caravan.Name,
+					})
 			}
 		}
 	}

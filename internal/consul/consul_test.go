@@ -523,6 +523,69 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 	}
 }
 
+func TestFeedStrandedCaravansAutoCloseAllMerged(t *testing.T) {
+	setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "drift-autoclose"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create an open caravan with all items closed (merged).
+	// This simulates the production bug: all items merged but caravan never closed
+	// because TryCloseCaravan only ran when new work was dispatched.
+	caravanID, _ := sphereStore.CreateCaravan("all-merged-caravan", "operator")
+	sphereStore.UpdateCaravanStatus(caravanID, "open")
+
+	wi1, _ := worldStore.CreateWrit("merged-1", "desc1", "test", 1, nil)
+	wi2, _ := worldStore.CreateWrit("merged-2", "desc2", "test", 1, nil)
+	worldStore.UpdateWrit(wi1, store.WritUpdates{Status: "closed"})
+	worldStore.UpdateWrit(wi2, store.WritUpdates{Status: "closed"})
+	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
+	sphereStore.CreateCaravanItem(caravanID, wi2, worldName, 0)
+
+	sessions := newMockSessions()
+	cfg := Config{
+		StaleTetherTimeout: 1 * time.Hour,
+		SolHome:            config.Home(),
+	}
+
+	var dispatched []mockDispatchResult
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
+	})
+	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
+
+	fed, err := d.feedStrandedCaravans(context.Background())
+	if err != nil {
+		t.Fatalf("feedStrandedCaravans failed: %v", err)
+	}
+	if fed != 0 {
+		t.Errorf("fed = %d, want 0 (no items to dispatch)", fed)
+	}
+	if len(dispatched) != 0 {
+		t.Errorf("dispatch calls = %d, want 0", len(dispatched))
+	}
+
+	// Key assertion: caravan should be auto-closed even though nothing was dispatched.
+	caravan, err := sphereStore.GetCaravan(caravanID)
+	if err != nil {
+		t.Fatalf("GetCaravan failed: %v", err)
+	}
+	if caravan.Status != "closed" {
+		t.Errorf("caravan status = %q, want closed (auto-close should run unconditionally)", caravan.Status)
+	}
+}
+
 func TestFeedStrandedCaravansDrydockIgnored(t *testing.T) {
 	setupSolHome(t)
 
