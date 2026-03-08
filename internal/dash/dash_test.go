@@ -181,20 +181,16 @@ func TestWorldViewRendersProcesses(t *testing.T) {
 
 	output := wm.view(data, time.Now(), false, nil)
 
+	// Compact process grid: names visible but not detail (pid, session names).
 	checks := []string{
 		"World: testworld",
 		"Sphere Processes",
 		"World Processes",
 		"Prefect",
-		"pid 42",
 		"Forge",
-		"sol-testworld-forge",
 		"Sentinel",
-		"sol-testworld-sentinel",
 		"Chronicle",
-		"sol-testworld-chronicle",
 		"Governor",
-		"brief: 5m ago",
 	}
 
 	for _, check := range checks {
@@ -220,7 +216,19 @@ func TestWorldViewRendersAgents(t *testing.T) {
 	}
 	wm.updateData(data)
 
+	// Default (no focus): summary mode, shows one-line summary.
 	output := wm.view(data, time.Now(), false, nil)
+	if !strings.Contains(output, "Outposts (2)") {
+		t.Error("summary mode missing 'Outposts (2)'")
+	}
+	if !strings.Contains(output, "1 working") {
+		t.Error("summary mode missing '1 working'")
+	}
+
+	// Focused: expanded mode shows detail rows.
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
+	output = wm.view(data, time.Now(), false, nil)
 
 	checks := []string{
 		"Outposts (2)",
@@ -235,7 +243,7 @@ func TestWorldViewRendersAgents(t *testing.T) {
 
 	for _, check := range checks {
 		if !strings.Contains(output, check) {
-			t.Errorf("world view missing %q", check)
+			t.Errorf("expanded world view missing %q", check)
 		}
 	}
 }
@@ -254,7 +262,19 @@ func TestWorldViewRendersEnvoys(t *testing.T) {
 	}
 	wm.updateData(data)
 
+	// Summary mode: one-line with name and state.
 	output := wm.view(data, time.Now(), false, nil)
+	if !strings.Contains(output, "Envoys (1)") {
+		t.Error("summary mode missing 'Envoys (1)'")
+	}
+	if !strings.Contains(output, "Scout (working)") {
+		t.Error("summary mode missing 'Scout (working)'")
+	}
+
+	// Focused: expanded mode shows detail rows.
+	wm.hasFocus = true
+	wm.focusedSection = sectionEnvoys
+	output = wm.view(data, time.Now(), false, nil)
 
 	checks := []string{
 		"Envoys (1)",
@@ -266,7 +286,7 @@ func TestWorldViewRendersEnvoys(t *testing.T) {
 
 	for _, check := range checks {
 		if !strings.Contains(output, check) {
-			t.Errorf("world view with envoys missing %q", check)
+			t.Errorf("expanded envoy view missing %q", check)
 		}
 	}
 }
@@ -530,6 +550,8 @@ func TestSphereViewCursorBounds(t *testing.T) {
 func TestWorldViewCursorBounds(t *testing.T) {
 	wm := newWorldModel()
 	wm.outpostLen = 2
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
 
 	// Move down.
 	wm, _ = wm.update(keyMsg("j"), nil)
@@ -700,10 +722,10 @@ func TestWorldViewPopBack(t *testing.T) {
 	wm := newWorldModel()
 	wm.outpostLen = 1
 
-	// Press esc to pop back.
+	// With no focus, esc pops back.
 	_, cmd := wm.update(keyMsg("esc"), nil)
 	if cmd == nil {
-		t.Fatal("esc in world view should produce a command")
+		t.Fatal("esc without focus should produce a command")
 	}
 	msg := cmd()
 	if _, ok := msg.(popMsg); !ok {
@@ -730,18 +752,16 @@ func TestWorldViewSectionFocusCycle(t *testing.T) {
 	wm.outpostLen = 2
 	wm.envoyLen = 1
 
-	// Start at outposts (default).
-	if wm.focusedSection != sectionOutposts {
-		t.Fatalf("initial focus should be outposts, got %d", wm.focusedSection)
-	}
-
-	// Tab to envoys.
+	// Tab to focus first section.
 	wm, _ = wm.update(tabKeyMsg(), nil)
+	if !wm.hasFocus {
+		t.Fatal("tab should set hasFocus")
+	}
 	if wm.focusedSection != sectionEnvoys {
-		t.Errorf("after tab, focus should be envoys, got %d", wm.focusedSection)
+		t.Errorf("first tab should focus envoys (cycles from default outposts), got %d", wm.focusedSection)
 	}
 
-	// Tab wraps to outposts (MR section is no longer focusable).
+	// Tab again wraps to outposts.
 	wm, _ = wm.update(tabKeyMsg(), nil)
 	if wm.focusedSection != sectionOutposts {
 		t.Errorf("tab should wrap around to outposts, got %d", wm.focusedSection)
@@ -753,8 +773,11 @@ func TestWorldViewSectionFocusReverseTab(t *testing.T) {
 	wm.outpostLen = 2
 	wm.envoyLen = 1
 
-	// Shift-tab wraps to envoys (MR section is no longer focusable).
+	// Shift-tab sets focus and wraps to envoys.
 	wm, _ = wm.update(shiftTabKeyMsg(), nil)
+	if !wm.hasFocus {
+		t.Error("shift-tab should set hasFocus")
+	}
 	if wm.focusedSection != sectionEnvoys {
 		t.Errorf("shift-tab should wrap to envoys, got %d", wm.focusedSection)
 	}
@@ -764,6 +787,8 @@ func TestWorldViewPerSectionCursors(t *testing.T) {
 	wm := newWorldModel()
 	wm.outpostLen = 3
 	wm.envoyLen = 2
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
 
 	// Move outpost cursor down.
 	wm, _ = wm.update(keyMsg("j"), nil)
@@ -801,6 +826,10 @@ func TestWorldViewMergeQueueRows(t *testing.T) {
 	}
 	wm.updateData(data)
 
+	// Focus on merge queue to see detail rows.
+	wm.hasFocus = true
+	wm.focusedSection = sectionMergeQueue
+
 	output := wm.view(data, time.Now(), false, nil)
 
 	checks := []string{
@@ -827,6 +856,8 @@ func TestWorldViewMergeQueueRows(t *testing.T) {
 func TestWorldViewAttachProducesMsg(t *testing.T) {
 	wm := newWorldModel()
 	wm.outpostLen = 1
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
 
 	data := &status.WorldStatus{
 		World: "testworld",
@@ -853,6 +884,8 @@ func TestWorldViewAttachProducesMsg(t *testing.T) {
 func TestWorldViewAttachNoSession(t *testing.T) {
 	wm := newWorldModel()
 	wm.outpostLen = 1
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
 
 	data := &status.WorldStatus{
 		World: "testworld",
@@ -876,6 +909,7 @@ func TestWorldViewAttachEnvoy(t *testing.T) {
 	wm := newWorldModel()
 	wm.outpostLen = 0
 	wm.envoyLen = 1
+	wm.hasFocus = true
 	wm.focusedSection = sectionEnvoys
 
 	data := &status.WorldStatus{
@@ -929,10 +963,21 @@ func TestWorldViewFocusIndicator(t *testing.T) {
 	}
 	wm.updateData(data)
 
-	// Default focus is outposts — the "Outposts" header should use focus style.
+	// Without focus: summary mode, no focus indicator.
 	output := wm.view(data, time.Now(), false, nil)
 	if !strings.Contains(output, "Outposts") {
-		t.Error("world view should contain Outposts section")
+		t.Error("summary view should contain Outposts section")
+	}
+	if strings.Contains(output, focusIndicator) {
+		t.Error("summary view should not contain focus indicator")
+	}
+
+	// With focus: expanded mode shows focus indicator.
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
+	output = wm.view(data, time.Now(), false, nil)
+	if !strings.Contains(output, focusIndicator) {
+		t.Error("expanded view should contain focus indicator")
 	}
 }
 
@@ -1452,6 +1497,10 @@ func TestAgentHighlightInWorldView(t *testing.T) {
 	}
 	wm.updateData(data)
 
+	// Focus on outposts to see agent rows with highlights.
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
+
 	highlights := map[string]int{"Alpha": 2}
 	output := wm.view(data, time.Now(), false, highlights)
 	if !strings.Contains(output, "Alpha") {
@@ -1785,6 +1834,10 @@ func TestWorldViewMergedMRsFiltered(t *testing.T) {
 	}
 	wm.updateData(data)
 
+	// Focus on merge queue to see detail rows.
+	wm.hasFocus = true
+	wm.focusedSection = sectionMergeQueue
+
 	output := wm.view(data, time.Now(), false, nil)
 
 	// Active MRs should appear.
@@ -1828,6 +1881,10 @@ func TestWorldViewWorkColumnTruncated(t *testing.T) {
 	}
 	wm.updateData(data)
 
+	// Focus on outposts to see agent detail rows.
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
+
 	output := wm.view(data, time.Now(), false, nil)
 
 	// The full title should not appear — it would overflow.
@@ -1840,27 +1897,350 @@ func TestWorldViewWorkColumnTruncated(t *testing.T) {
 	}
 }
 
-func TestWorldViewMRSectionNotFocusable(t *testing.T) {
+func TestWorldViewMRSectionFocusable(t *testing.T) {
 	wm := newWorldModel()
 	wm.outpostLen = 1
 	wm.envoyLen = 1
+	wm.mrLen = 2
 
-	// Tab through all sections — should never reach sectionMergeQueue.
+	// MR section should be in available sections when it has rows.
 	sections := wm.availableSections()
+	hasMQ := false
 	for _, s := range sections {
-		if s == 2 { // sectionMergeQueue was iota value 2
-			t.Error("MR section should not be in available sections")
+		if s == sectionMergeQueue {
+			hasMQ = true
 		}
 	}
+	if !hasMQ {
+		t.Error("MR section should be in available sections when it has active MRs")
+	}
 
-	// Verify that tabbing cycles only between outposts and envoys.
+	// Tab through: outposts → envoys → merge queue → outposts.
 	wm.focusedSection = sectionOutposts
 	wm, _ = wm.update(tabKeyMsg(), nil)
 	if wm.focusedSection != sectionEnvoys {
 		t.Errorf("tab from outposts should go to envoys, got %d", wm.focusedSection)
 	}
 	wm, _ = wm.update(tabKeyMsg(), nil)
+	if wm.focusedSection != sectionMergeQueue {
+		t.Errorf("tab from envoys should go to merge queue, got %d", wm.focusedSection)
+	}
+	wm, _ = wm.update(tabKeyMsg(), nil)
 	if wm.focusedSection != sectionOutposts {
-		t.Errorf("tab from envoys should wrap to outposts, got %d", wm.focusedSection)
+		t.Errorf("tab from merge queue should wrap to outposts, got %d", wm.focusedSection)
+	}
+}
+
+// --- New tests for summary-first, scroll, process grid, esc unfocus ---
+
+func TestOutpostSummary(t *testing.T) {
+	agents := []status.AgentStatus{
+		{Name: "A", State: "working", SessionAlive: true},
+		{Name: "B", State: "working", SessionAlive: true},
+		{Name: "C", State: "idle"},
+		{Name: "D", State: "stalled"},
+	}
+	s := outpostSummary(agents)
+	if !strings.Contains(s, "2 working") {
+		t.Errorf("outpostSummary missing '2 working', got %q", s)
+	}
+	if !strings.Contains(s, "1 idle") {
+		t.Errorf("outpostSummary missing '1 idle', got %q", s)
+	}
+	if !strings.Contains(s, "1 stalled") {
+		t.Errorf("outpostSummary missing '1 stalled', got %q", s)
+	}
+}
+
+func TestOutpostSummaryDead(t *testing.T) {
+	agents := []status.AgentStatus{
+		{Name: "A", State: "working", SessionAlive: false},
+	}
+	s := outpostSummary(agents)
+	if !strings.Contains(s, "1 dead") {
+		t.Errorf("outpostSummary missing '1 dead', got %q", s)
+	}
+}
+
+func TestEnvoySummarySingle(t *testing.T) {
+	envoys := []status.EnvoyStatus{
+		{Name: "Polaris", State: "working", SessionAlive: true},
+	}
+	s := envoySummary(envoys)
+	if s != "Polaris (working)" {
+		t.Errorf("envoySummary single = %q, want %q", s, "Polaris (working)")
+	}
+}
+
+func TestEnvoySummaryDeadSingle(t *testing.T) {
+	envoys := []status.EnvoyStatus{
+		{Name: "Polaris", State: "working", SessionAlive: false},
+	}
+	s := envoySummary(envoys)
+	if s != "Polaris (dead)" {
+		t.Errorf("envoySummary dead single = %q, want %q", s, "Polaris (dead)")
+	}
+}
+
+func TestEnvoySummaryMultiple(t *testing.T) {
+	envoys := []status.EnvoyStatus{
+		{Name: "A", State: "working", SessionAlive: true},
+		{Name: "B", State: "idle"},
+		{Name: "C", State: "working", SessionAlive: true},
+	}
+	s := envoySummary(envoys)
+	if !strings.Contains(s, "2 working") {
+		t.Errorf("envoySummary multi missing '2 working', got %q", s)
+	}
+	if !strings.Contains(s, "1 idle") {
+		t.Errorf("envoySummary multi missing '1 idle', got %q", s)
+	}
+}
+
+func TestMqSummaryLine(t *testing.T) {
+	mq := status.MergeQueueInfo{Total: 5, Ready: 2, Claimed: 1, Failed: 1, Merged: 1}
+	s := mqSummaryLine(mq)
+	if !strings.Contains(s, "2 ready") {
+		t.Errorf("mqSummaryLine missing '2 ready', got %q", s)
+	}
+	if !strings.Contains(s, "1 in progress") {
+		t.Errorf("mqSummaryLine missing '1 in progress', got %q", s)
+	}
+	if !strings.Contains(s, "1 failed") {
+		t.Errorf("mqSummaryLine missing '1 failed', got %q", s)
+	}
+	if !strings.Contains(s, "1 merged") {
+		t.Errorf("mqSummaryLine missing '1 merged', got %q", s)
+	}
+}
+
+func TestMqSummaryLineEmpty(t *testing.T) {
+	mq := status.MergeQueueInfo{Total: 0}
+	s := mqSummaryLine(mq)
+	if !strings.Contains(s, "empty") {
+		t.Errorf("mqSummaryLine empty = %q, should contain 'empty'", s)
+	}
+}
+
+func TestScrollIndicator(t *testing.T) {
+	// All visible — no indicator.
+	if s := scrollIndicator(0, 10, 5); s != "" {
+		t.Errorf("all visible: expected empty, got %q", s)
+	}
+
+	// At top, more below.
+	s := scrollIndicator(0, 5, 10)
+	if !strings.Contains(s, "1-5 of 10") || !strings.Contains(s, "↓") {
+		t.Errorf("at top: expected '1-5 of 10 ↓', got %q", s)
+	}
+
+	// In middle, both above and below.
+	s = scrollIndicator(3, 5, 10)
+	if !strings.Contains(s, "4-8 of 10") || !strings.Contains(s, "↕") {
+		t.Errorf("in middle: expected '4-8 of 10 ↕', got %q", s)
+	}
+
+	// At bottom, more above.
+	s = scrollIndicator(5, 5, 10)
+	if !strings.Contains(s, "6-10 of 10") || !strings.Contains(s, "↑") {
+		t.Errorf("at bottom: expected '6-10 of 10 ↑', got %q", s)
+	}
+}
+
+func TestEscUnfocusThenPop(t *testing.T) {
+	wm := newWorldModel()
+	wm.outpostLen = 2
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
+
+	// First esc: unfocus.
+	wm, cmd := wm.update(keyMsg("esc"), nil)
+	if cmd != nil {
+		t.Error("first esc should not produce a command (just unfocus)")
+	}
+	if wm.hasFocus {
+		t.Error("first esc should clear hasFocus")
+	}
+
+	// Second esc: pop back.
+	_, cmd = wm.update(keyMsg("esc"), nil)
+	if cmd == nil {
+		t.Fatal("second esc should produce a pop command")
+	}
+	msg := cmd()
+	if _, ok := msg.(popMsg); !ok {
+		t.Fatalf("expected popMsg, got %T", msg)
+	}
+}
+
+func TestProcessGridRendersThreeColumns(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	procs := []processEntry{
+		{"Prefect", true},
+		{"Chronicle", true},
+		{"Ledger", false},
+		{"Broker", true},
+		{"Senate", false},
+	}
+
+	var b strings.Builder
+	wm.renderProcessGrid(&b, procs)
+	output := b.String()
+
+	// Should contain all process names.
+	for _, p := range procs {
+		if !strings.Contains(output, p.name) {
+			t.Errorf("process grid missing %q", p.name)
+		}
+	}
+
+	// With 5 processes and 3 columns, should be 2 lines.
+	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Errorf("expected 2 grid rows, got %d: %v", len(lines), lines)
+	}
+}
+
+func TestSummaryModeDefaultFit(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:   "testworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 42},
+		Forge:   status.ForgeInfo{Running: true},
+		Agents: []status.AgentStatus{
+			{Name: "A", State: "working", SessionAlive: true},
+			{Name: "B", State: "idle"},
+			{Name: "C", State: "idle"},
+			{Name: "D", State: "working", SessionAlive: true},
+		},
+		Envoys: []status.EnvoyStatus{
+			{Name: "Scout", State: "working", SessionAlive: true},
+		},
+		MergeQueue:    status.MergeQueueInfo{Total: 3, Ready: 1, Claimed: 1, Merged: 1},
+		MergeRequests: []status.MergeRequestInfo{{ID: "mr-1", Phase: "ready"}, {ID: "mr-2", Phase: "claimed"}, {ID: "mr-3", Phase: "merged"}},
+		Summary:       status.Summary{Total: 4, Working: 2, Idle: 2},
+	}
+	wm.updateData(data)
+
+	// Default (no focus): all summaries.
+	output := wm.view(data, time.Now(), false, nil)
+	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
+	if len(lines) > 24 {
+		t.Errorf("default view should fit in 24 lines, got %d", len(lines))
+	}
+}
+
+func TestScrollFollowsCursor(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 30 // small height to trigger viewport limits
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
+	wm.outpostLen = 30 // more than viewport
+
+	// Move cursor down past viewport.
+	vpHeight := wm.viewportHeight()
+	for i := 0; i < vpHeight+2; i++ {
+		wm, _ = wm.update(keyMsg("j"), nil)
+	}
+
+	// scrollOffset should have adjusted.
+	if wm.scrollOffset == 0 {
+		t.Error("scrollOffset should have increased when cursor moved past viewport")
+	}
+	cur := wm.cursor(wm.focusedSection)
+	if cur < wm.scrollOffset || cur >= wm.scrollOffset+vpHeight {
+		t.Errorf("cursor %d should be within scroll window [%d, %d)", cur, wm.scrollOffset, wm.scrollOffset+vpHeight)
+	}
+}
+
+func TestUpDownNoOpWithoutFocus(t *testing.T) {
+	wm := newWorldModel()
+	wm.outpostLen = 5
+	wm.hasFocus = false
+
+	// Down should be no-op without focus.
+	wm, _ = wm.update(keyMsg("j"), nil)
+	if wm.outpostCursor != 0 {
+		t.Errorf("cursor should remain 0 without focus, got %d", wm.outpostCursor)
+	}
+
+	// Up should be no-op without focus.
+	wm, _ = wm.update(keyMsg("k"), nil)
+	if wm.outpostCursor != 0 {
+		t.Errorf("cursor should remain 0 without focus, got %d", wm.outpostCursor)
+	}
+}
+
+func TestEnterNoOpWithoutFocus(t *testing.T) {
+	wm := newWorldModel()
+	wm.outpostLen = 1
+	wm.hasFocus = false
+
+	data := &status.WorldStatus{
+		World: "testworld",
+		Agents: []status.AgentStatus{
+			{Name: "Toast", State: "working", SessionAlive: true},
+		},
+	}
+
+	// Enter should be no-op without focus.
+	_, cmd := wm.update(keyMsg("enter"), data)
+	if cmd != nil {
+		t.Error("enter without focus should be no-op")
+	}
+}
+
+func TestWorldViewSectionOrderingWithSummaries(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:      "testworld",
+		Prefect:    status.PrefectInfo{Running: true, PID: 42},
+		Forge:      status.ForgeInfo{Running: true},
+		Agents:     []status.AgentStatus{{Name: "A", State: "idle"}},
+		Envoys:     []status.EnvoyStatus{{Name: "E", State: "idle"}},
+		MergeQueue: status.MergeQueueInfo{Total: 1, Ready: 1},
+		Caravans:   []status.CaravanInfo{{ID: "c1", Name: "batch", TotalItems: 5}},
+		Summary:    status.Summary{Total: 1, Idle: 1},
+	}
+	wm.updateData(data)
+
+	output := wm.view(data, time.Now(), false, nil)
+
+	// Verify order: Sphere Processes → World Processes → Outposts → Envoys → Caravans → Merge Queue
+	sphereIdx := strings.Index(output, "Sphere Processes")
+	worldProcIdx := strings.Index(output, "World Processes")
+	outpostsIdx := strings.Index(output, "Outposts")
+	envoysIdx := strings.Index(output, "Envoys")
+	caravansIdx := strings.Index(output, "Caravans")
+	mqIdx := strings.Index(output, "Merge Queue")
+
+	if sphereIdx == -1 || worldProcIdx == -1 || outpostsIdx == -1 || envoysIdx == -1 || caravansIdx == -1 || mqIdx == -1 {
+		t.Fatalf("missing sections in output:\n%s", output)
+	}
+
+	if sphereIdx >= worldProcIdx {
+		t.Error("Sphere Processes should come before World Processes")
+	}
+	if worldProcIdx >= outpostsIdx {
+		t.Error("World Processes should come before Outposts")
+	}
+	if outpostsIdx >= envoysIdx {
+		t.Error("Outposts should come before Envoys")
+	}
+	if envoysIdx >= caravansIdx {
+		t.Error("Envoys should come before Caravans")
+	}
+	if caravansIdx >= mqIdx {
+		t.Error("Caravans should come before Merge Queue")
 	}
 }

@@ -18,21 +18,38 @@ type worldSection int
 const (
 	sectionOutposts worldSection = iota
 	sectionEnvoys
+	sectionMergeQueue
 )
+
+// processEntry holds the name and running state for the compact process grid.
+type processEntry struct {
+	name    string
+	running bool
+}
 
 // worldModel handles the world detail view.
 type worldModel struct {
 	width  int
 	height int
 
+	// Whether any section has focus (expanded). When false, all sections
+	// render as one-line summaries. Tab focuses the first section;
+	// esc unfocuses before popping to sphere view.
+	hasFocus bool
+
 	// Section focus and per-section cursors.
 	focusedSection worldSection
 	outpostCursor  int
 	envoyCursor    int
+	mqCursor       int
+
+	// Scroll offset for the expanded section viewport.
+	scrollOffset int
 
 	// Section row counts.
 	outpostLen int
 	envoyLen   int
+	mrLen      int // active (non-merged) MRs
 
 	// Inline "no active session" message.
 	showNoSession bool
@@ -116,6 +133,15 @@ func (wm *worldModel) updateData(data *status.WorldStatus) {
 
 	wm.outpostLen = len(data.Agents)
 	wm.envoyLen = len(data.Envoys)
+
+	// Count active (non-merged) MRs.
+	activeMRs := 0
+	for _, mr := range data.MergeRequests {
+		if mr.Phase != "merged" {
+			activeMRs++
+		}
+	}
+	wm.mrLen = activeMRs
 }
 
 func (wm *worldModel) syncProcessSpinner(name string, running bool) {
@@ -139,6 +165,9 @@ func (wm worldModel) availableSections() []worldSection {
 	if wm.envoyLen > 0 {
 		sections = append(sections, sectionEnvoys)
 	}
+	if wm.mrLen > 0 {
+		sections = append(sections, sectionMergeQueue)
+	}
 	return sections
 }
 
@@ -149,6 +178,8 @@ func (wm worldModel) sectionLen(s worldSection) int {
 		return wm.outpostLen
 	case sectionEnvoys:
 		return wm.envoyLen
+	case sectionMergeQueue:
+		return wm.mrLen
 	}
 	return 0
 }
@@ -160,6 +191,8 @@ func (wm worldModel) cursor(s worldSection) int {
 		return wm.outpostCursor
 	case sectionEnvoys:
 		return wm.envoyCursor
+	case sectionMergeQueue:
+		return wm.mqCursor
 	}
 	return 0
 }
@@ -171,6 +204,8 @@ func (wm *worldModel) setCursor(s worldSection, v int) {
 		wm.outpostCursor = v
 	case sectionEnvoys:
 		wm.envoyCursor = v
+	case sectionMergeQueue:
+		wm.mqCursor = v
 	}
 }
 
@@ -183,12 +218,19 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 
 	switch msg.String() {
 	case "up", "k":
+		if !wm.hasFocus {
+			return wm, nil
+		}
 		cur := wm.cursor(wm.focusedSection)
 		if cur > 0 {
 			wm.setCursor(wm.focusedSection, cur-1)
+			wm.adjustScroll()
 		}
 
 	case "down", "j":
+		if !wm.hasFocus {
+			return wm, nil
+		}
 		cur := wm.cursor(wm.focusedSection)
 		max := wm.sectionLen(wm.focusedSection) - 1
 		if max < 0 {
@@ -196,23 +238,69 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 		}
 		if cur < max {
 			wm.setCursor(wm.focusedSection, cur+1)
+			wm.adjustScroll()
 		}
 
 	case "tab":
+		wm.hasFocus = true
+		wm.scrollOffset = 0
 		wm.cycleFocus(1)
 
 	case "shift+tab":
+		wm.hasFocus = true
+		wm.scrollOffset = 0
 		wm.cycleFocus(-1)
 
-	case "esc", "h", "left":
+	case "esc":
+		if wm.hasFocus {
+			// First esc: unfocus (collapse all to summaries).
+			wm.hasFocus = false
+			wm.scrollOffset = 0
+			return wm, nil
+		}
+		// Second esc: pop back to sphere view.
+		return wm, func() tea.Msg { return popMsg{} }
+
+	case "h", "left":
 		// Pop back to sphere view.
 		return wm, func() tea.Msg { return popMsg{} }
 
 	case "enter", "l", "right":
+		if !wm.hasFocus {
+			return wm, nil
+		}
 		// Attach to agent/envoy session.
 		return wm.handleAttach(data)
 	}
 	return wm, nil
+}
+
+// adjustScroll updates scrollOffset so the cursor stays within the viewport.
+func (wm *worldModel) adjustScroll() {
+	vpHeight := wm.viewportHeight()
+	cur := wm.cursor(wm.focusedSection)
+	if cur < wm.scrollOffset {
+		wm.scrollOffset = cur
+	}
+	if cur >= wm.scrollOffset+vpHeight {
+		wm.scrollOffset = cur - vpHeight + 1
+	}
+}
+
+// viewportHeight computes how many rows the expanded section can show.
+func (wm worldModel) viewportHeight() int {
+	// Fixed lines: header(2) + processes(~4 grid rows) + unfocused summaries
+	// + caravans + summary(1) + footer(2) + feed separator
+	// We estimate conservatively: use 18 fixed lines as baseline.
+	fixedLines := 18
+	vpHeight := wm.height - fixedLines
+	if vpHeight < 4 {
+		vpHeight = 4
+	}
+	if vpHeight > 20 {
+		vpHeight = 20
+	}
+	return vpHeight
 }
 
 // cycleFocus moves focus to the next/previous section with rows.
@@ -311,50 +399,40 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	b.WriteString(healthBadgeWithEmphasis(data.HealthString(), healthEmphasis))
 	b.WriteString("\n\n")
 
-	// Sphere Processes.
+	// Sphere Processes — compact grid.
+	sphereProcs := []processEntry{
+		{"Prefect", data.Prefect.Running},
+		{"Chronicle", data.Chronicle.Running},
+		{"Ledger", data.Ledger.Running},
+		{"Broker", data.Broker.Running},
+		{"Senate", data.Senate.Running},
+	}
 	b.WriteString(headerStyle.Render("Sphere Processes"))
 	b.WriteString("\n")
-	wm.renderProcess(&b, "Prefect", data.Prefect.Running, formatPrefectDetail(data.Prefect))
-	wm.renderProcess(&b, "Chronicle", data.Chronicle.Running, formatChronicleDetail(data.Chronicle))
-	wm.renderProcess(&b, "Ledger", data.Ledger.Running, formatLedgerDetail(data.Ledger))
-	wm.renderProcess(&b, "Broker", data.Broker.Running, formatBrokerDetail(data.Broker))
-	wm.renderProcess(&b, "Senate", data.Senate.Running, formatSenateDetail(data.Senate))
+	wm.renderProcessGrid(&b, sphereProcs)
 	b.WriteString("\n")
 
-	// World Processes.
+	// World Processes — compact grid.
+	worldProcs := []processEntry{
+		{"Forge", data.Forge.Running},
+		{"Sentinel", data.Sentinel.Running},
+	}
+	if data.Governor.Running {
+		worldProcs = append(worldProcs, processEntry{"Governor", true})
+	}
 	b.WriteString(headerStyle.Render("World Processes"))
 	b.WriteString("\n")
-	wm.renderProcess(&b, "Forge", data.Forge.Running, formatForgeDetail(data.Forge))
-	wm.renderProcess(&b, "Sentinel", data.Sentinel.Running, formatSentinelDetail(data.Sentinel))
-	if data.Governor.Running {
-		wm.renderProcess(&b, "Governor", true, formatGovernorDetail(data.Governor))
-	}
+	wm.renderProcessGrid(&b, worldProcs)
 	b.WriteString("\n")
 
 	// Outposts.
 	if len(data.Agents) > 0 {
-		sectionHeader := fmt.Sprintf("Outposts (%d)", len(data.Agents))
-		if wm.focusedSection == sectionOutposts {
-			b.WriteString(focusStyle.Render(sectionHeader))
-		} else {
-			b.WriteString(headerStyle.Render(sectionHeader))
-		}
-		b.WriteString("\n")
-		wm.renderAgentsTable(&b, data.Agents, agentHighlights)
-		b.WriteString("\n")
+		wm.renderOutpostsSection(&b, data, agentHighlights)
 	}
 
 	// Envoys.
 	if len(data.Envoys) > 0 {
-		sectionHeader := fmt.Sprintf("Envoys (%d)", len(data.Envoys))
-		if wm.focusedSection == sectionEnvoys {
-			b.WriteString(focusStyle.Render(sectionHeader))
-		} else {
-			b.WriteString(headerStyle.Render(sectionHeader))
-		}
-		b.WriteString("\n")
-		wm.renderEnvoysTable(&b, data.Envoys)
-		b.WriteString("\n")
+		wm.renderEnvoysSection(&b, data)
 	}
 
 	if len(data.Agents) == 0 && len(data.Envoys) == 0 {
@@ -362,7 +440,7 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 		b.WriteString("\n")
 	}
 
-	// Caravans.
+	// Caravans — always expanded (already compact).
 	if len(data.Caravans) > 0 {
 		b.WriteString(headerStyle.Render("Caravans"))
 		b.WriteString("\n")
@@ -370,11 +448,8 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 		b.WriteString("\n")
 	}
 
-	// Merge queue.
-	b.WriteString(headerStyle.Render("Merge Queue"))
-	b.WriteString("\n")
-	wm.renderMergeQueue(&b, data.MergeQueue, data.MergeRequests)
-	b.WriteString("\n")
+	// Merge Queue.
+	wm.renderMergeQueueSection(&b, data)
 
 	// Summary.
 	b.WriteString(wm.renderSummary(data))
@@ -389,6 +464,80 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	b.WriteString(wm.renderFooter(lastRefresh))
 
 	return b.String()
+}
+
+// renderOutpostsSection renders the Outposts section in summary or expanded mode.
+func (wm worldModel) renderOutpostsSection(b *strings.Builder, data *status.WorldStatus, agentHighlights map[string]int) {
+	isFocused := wm.hasFocus && wm.focusedSection == sectionOutposts
+	sectionHeader := fmt.Sprintf("Outposts (%d)", len(data.Agents))
+
+	if !isFocused {
+		// Summary mode: one-line.
+		b.WriteString("  " + headerStyle.Render(sectionHeader))
+		summary := outpostSummary(data.Agents)
+		if summary != "" {
+			b.WriteString("      " + summary)
+		}
+		b.WriteString("\n")
+		return
+	}
+
+	// Expanded mode.
+	scrollInfo := scrollIndicator(wm.scrollOffset, wm.viewportHeight(), len(data.Agents))
+	header := "  " + focusIndicator + " " + focusStyle.Render(sectionHeader)
+	if scrollInfo != "" {
+		header += "  " + dimStyle.Render(scrollInfo)
+	}
+	b.WriteString(header + "\n")
+	wm.renderAgentsTable(b, data.Agents, agentHighlights)
+	b.WriteString("\n")
+}
+
+// renderEnvoysSection renders the Envoys section in summary or expanded mode.
+func (wm worldModel) renderEnvoysSection(b *strings.Builder, data *status.WorldStatus) {
+	isFocused := wm.hasFocus && wm.focusedSection == sectionEnvoys
+	sectionHeader := fmt.Sprintf("Envoys (%d)", len(data.Envoys))
+
+	if !isFocused {
+		// Summary mode: one-line.
+		b.WriteString("  " + headerStyle.Render(sectionHeader))
+		summary := envoySummary(data.Envoys)
+		if summary != "" {
+			b.WriteString("      " + summary)
+		}
+		b.WriteString("\n")
+		return
+	}
+
+	// Expanded mode.
+	scrollInfo := scrollIndicator(wm.scrollOffset, wm.viewportHeight(), len(data.Envoys))
+	header := "  " + focusIndicator + " " + focusStyle.Render(sectionHeader)
+	if scrollInfo != "" {
+		header += "  " + dimStyle.Render(scrollInfo)
+	}
+	b.WriteString(header + "\n")
+	wm.renderEnvoysTable(b, data.Envoys)
+	b.WriteString("\n")
+}
+
+// renderMergeQueueSection renders the Merge Queue in summary or expanded mode.
+func (wm worldModel) renderMergeQueueSection(b *strings.Builder, data *status.WorldStatus) {
+	isFocused := wm.hasFocus && wm.focusedSection == sectionMergeQueue
+	summary := mqSummaryLine(data.MergeQueue)
+
+	if !isFocused {
+		// Summary mode: one-line.
+		b.WriteString("  " + headerStyle.Render("Merge Queue"))
+		b.WriteString("      " + summary)
+		b.WriteString("\n")
+		return
+	}
+
+	// Expanded mode: header + summary line + MR detail rows.
+	header := "  " + focusIndicator + " " + focusStyle.Render("Merge Queue")
+	b.WriteString(header + "\n")
+	wm.renderMergeQueue(b, data.MergeQueue, data.MergeRequests)
+	b.WriteString("\n")
 }
 
 func (wm worldModel) renderProcess(b *strings.Builder, name string, running bool, detail string) {
@@ -409,7 +558,19 @@ func (wm worldModel) renderAgentsTable(b *strings.Builder, agents []status.Agent
 	// Column headers.
 	b.WriteString("  " + padRight(dimStyle.Render("NAME"), 14) + " " + padRight(dimStyle.Render("STATE"), 18) + " " + padRight(dimStyle.Render("SESSION"), 10) + " " + dimStyle.Render("WORK") + "\n")
 
-	for i, a := range agents {
+	// Apply viewport windowing.
+	vpHeight := wm.viewportHeight()
+	start := wm.scrollOffset
+	end := start + vpHeight
+	if end > len(agents) {
+		end = len(agents)
+	}
+	if start > len(agents) {
+		start = len(agents)
+	}
+
+	for i := start; i < end; i++ {
+		a := agents[i]
 		line := wm.renderAgentRow(a)
 		if wm.focusedSection == sectionOutposts && i == wm.outpostCursor {
 			b.WriteString(selectStyle.Render(padRight(line, wm.width)))
@@ -474,7 +635,19 @@ func (wm worldModel) renderAgentRow(a status.AgentStatus) string {
 func (wm worldModel) renderEnvoysTable(b *strings.Builder, envoys []status.EnvoyStatus) {
 	b.WriteString("  " + padRight(dimStyle.Render("NAME"), 14) + " " + padRight(dimStyle.Render("STATE"), 18) + " " + padRight(dimStyle.Render("SESSION"), 10) + " " + padRight(dimStyle.Render("WORK"), 24) + " " + dimStyle.Render("BRIEF") + "\n")
 
-	for i, e := range envoys {
+	// Apply viewport windowing.
+	vpHeight := wm.viewportHeight()
+	start := wm.scrollOffset
+	end := start + vpHeight
+	if end > len(envoys) {
+		end = len(envoys)
+	}
+	if start > len(envoys) {
+		start = len(envoys)
+	}
+
+	for i := start; i < end; i++ {
+		e := envoys[i]
 		line := wm.renderEnvoyRow(e)
 		if wm.focusedSection == sectionEnvoys && i == wm.envoyCursor {
 			b.WriteString(selectStyle.Render(padRight(line, wm.width)))
@@ -652,4 +825,132 @@ func (wm worldModel) renderFooter(lastRefresh time.Time) string {
 		return fmt.Sprintf("\n%s    %s\n", help, age)
 	}
 	return fmt.Sprintf("\n%s\n", help)
+}
+
+// outpostSummary builds a compact summary string for the outposts section.
+func outpostSummary(agents []status.AgentStatus) string {
+	working, idle, stalled, dead := 0, 0, 0, 0
+	for _, a := range agents {
+		switch a.State {
+		case "working":
+			working++
+			if !a.SessionAlive {
+				dead++
+			}
+		case "idle":
+			idle++
+		case "stalled":
+			stalled++
+		}
+	}
+	var parts []string
+	if working > 0 {
+		parts = append(parts, fmt.Sprintf("%d working", working))
+	}
+	if idle > 0 {
+		parts = append(parts, fmt.Sprintf("%d idle", idle))
+	}
+	if stalled > 0 {
+		parts = append(parts, warnStyle.Render(fmt.Sprintf("%d stalled", stalled)))
+	}
+	if dead > 0 {
+		parts = append(parts, errorStyle.Render(fmt.Sprintf("%d dead", dead)))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// envoySummary builds a compact summary string for the envoys section.
+func envoySummary(envoys []status.EnvoyStatus) string {
+	if len(envoys) == 1 {
+		e := envoys[0]
+		state := e.State
+		if e.State == "working" && !e.SessionAlive {
+			state = "dead"
+		}
+		return fmt.Sprintf("%s (%s)", e.Name, state)
+	}
+	// Multiple envoys — aggregate like outposts.
+	working, idle := 0, 0
+	for _, e := range envoys {
+		switch e.State {
+		case "working":
+			working++
+		case "idle":
+			idle++
+		}
+	}
+	var parts []string
+	if working > 0 {
+		parts = append(parts, fmt.Sprintf("%d working", working))
+	}
+	if idle > 0 {
+		parts = append(parts, fmt.Sprintf("%d idle", idle))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// mqSummaryLine builds the summary string for the merge queue.
+func mqSummaryLine(mq status.MergeQueueInfo) string {
+	if mq.Total == 0 {
+		return dimStyle.Render("empty")
+	}
+	var parts []string
+	if mq.Ready > 0 {
+		parts = append(parts, fmt.Sprintf("%d ready", mq.Ready))
+	}
+	if mq.Claimed > 0 {
+		parts = append(parts, fmt.Sprintf("%d in progress", mq.Claimed))
+	}
+	if mq.Failed > 0 {
+		parts = append(parts, errorStyle.Render(fmt.Sprintf("%d failed", mq.Failed)))
+	}
+	if mq.Merged > 0 {
+		parts = append(parts, okStyle.Render(fmt.Sprintf("%d merged", mq.Merged)))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// scrollIndicator returns a scroll position string like "1-8 of 12 ↓".
+func scrollIndicator(offset, vpHeight, totalRows int) string {
+	if totalRows <= vpHeight {
+		return ""
+	}
+	first := offset + 1
+	last := offset + vpHeight
+	if last > totalRows {
+		last = totalRows
+	}
+	indicator := fmt.Sprintf("%d-%d of %d", first, last, totalRows)
+	if offset > 0 && last < totalRows {
+		indicator += " ↕"
+	} else if offset > 0 {
+		indicator += " ↑"
+	} else {
+		indicator += " ↓"
+	}
+	return indicator
+}
+
+// renderProcessGrid renders processes in a compact 3-column grid.
+func (wm worldModel) renderProcessGrid(b *strings.Builder, procs []processEntry) {
+	cellWidth := (wm.width - 4) / 3
+	if cellWidth < 20 {
+		cellWidth = 20
+	}
+	for i, p := range procs {
+		indicator := statusIndicator(p.running)
+		if p.running {
+			if s, ok := wm.processSpinners[p.name]; ok {
+				indicator = s.View()
+			}
+		}
+		cell := padRight(indicator+" "+p.name, cellWidth)
+		if i%3 == 0 {
+			b.WriteString("  ")
+		}
+		b.WriteString(cell)
+		if i%3 == 2 || i == len(procs)-1 {
+			b.WriteString("\n")
+		}
+	}
 }

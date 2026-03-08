@@ -55,8 +55,9 @@ func healthBadgeWithEmphasis(health string, emphasis bool) string {
 
 // Static indicators for inactive items.
 const (
-	checkMark = "✓"
-	crossMark = "✗"
+	checkMark      = "✓"
+	crossMark      = "✗"
+	focusIndicator = "▸"
 )
 
 // padRight pads s with spaces to reach the given visible width.

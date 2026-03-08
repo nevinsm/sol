@@ -155,15 +155,18 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 	b.WriteString(dimStyle.Render(data.SOLHome))
 	b.WriteString("\n\n")
 
-	// Processes.
+	// Processes — compact grid.
+	procs := []processEntry{
+		{"Prefect", data.Prefect.Running},
+		{"Consul", data.Consul.Running},
+		{"Chronicle", data.Chronicle.Running},
+		{"Ledger", data.Ledger.Running},
+		{"Broker", data.Broker.Running},
+		{"Senate", data.Senate.Running},
+	}
 	b.WriteString(headerStyle.Render("Processes"))
 	b.WriteString("\n")
-	sm.renderProcess(&b, "Prefect", data.Prefect.Running, formatPrefectDetail(data.Prefect))
-	sm.renderProcess(&b, "Consul", data.Consul.Running, formatConsulDetail(data.Consul))
-	sm.renderProcess(&b, "Chronicle", data.Chronicle.Running, formatChronicleDetail(data.Chronicle))
-	sm.renderProcess(&b, "Ledger", data.Ledger.Running, formatLedgerDetail(data.Ledger))
-	sm.renderProcess(&b, "Broker", data.Broker.Running, formatBrokerDetail(data.Broker))
-	sm.renderProcess(&b, "Senate", data.Senate.Running, formatSenateDetail(data.Senate))
+	sm.renderProcessGrid(&b, procs)
 	b.WriteString("\n")
 
 	// Worlds table.
@@ -203,6 +206,30 @@ func (sm sphereModel) renderProcess(b *strings.Builder, name string, running boo
 		line += dimStyle.Render("  " + detail)
 	}
 	b.WriteString(line + "\n")
+}
+
+// renderProcessGrid renders processes in a compact 3-column grid.
+func (sm sphereModel) renderProcessGrid(b *strings.Builder, procs []processEntry) {
+	cellWidth := (sm.width - 4) / 3
+	if cellWidth < 20 {
+		cellWidth = 20
+	}
+	for i, p := range procs {
+		indicator := statusIndicator(p.running)
+		if p.running {
+			if s, ok := sm.processSpinners[p.name]; ok {
+				indicator = s.View()
+			}
+		}
+		cell := padRight(indicator+" "+p.name, cellWidth)
+		if i%3 == 0 {
+			b.WriteString("  ")
+		}
+		b.WriteString(cell)
+		if i%3 == 2 || i == len(procs)-1 {
+			b.WriteString("\n")
+		}
+	}
 }
 
 func (sm sphereModel) renderWorldsTable(b *strings.Builder, worlds []status.WorldSummary) {
