@@ -867,6 +867,350 @@ func TestShutdownWorldsFilter(t *testing.T) {
 	}
 }
 
+// mockCommandRunner tracks exec.Command calls for testing checkWorldInfrastructure.
+type mockCommandRunner struct {
+	mu    sync.Mutex
+	calls [][]string // each call is [name, arg1, arg2, ...]
+}
+
+func (m *mockCommandRunner) run(name string, args ...string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	call := append([]string{name}, args...)
+	m.calls = append(m.calls, call)
+	return nil
+}
+
+func (m *mockCommandRunner) getCalls() [][]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([][]string, len(m.calls))
+	for i, c := range m.calls {
+		cp := make([]string, len(c))
+		copy(cp, c)
+		result[i] = cp
+	}
+	return result
+}
+
+func TestHeartbeatStartsMissingWorldServices(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol" // Set so infrastructure check runs.
+
+	// Register a world in the sphere store.
+	sphereStore.RegisterWorld("haven", "/tmp/repo")
+
+	// Create world.toml so IsSleeping returns false (not sleeping).
+	worldDir := filepath.Join(os.Getenv("SOL_HOME"), "haven")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+`), 0o644)
+
+	cmdRunner := &mockCommandRunner{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = cmdRunner.run
+
+	// First heartbeat triggers infrastructure check.
+	sup.heartbeat()
+
+	// Should have started sentinel and forge for the world.
+	calls := cmdRunner.getCalls()
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 command calls (sentinel + forge), got %d: %v", len(calls), calls)
+	}
+
+	// Verify the commands contain the right service and world args.
+	foundSentinel := false
+	foundForge := false
+	for _, call := range calls {
+		// call is [solBin, service, "start", "--world=haven"]
+		if len(call) >= 4 && call[1] == "sentinel" && call[2] == "start" && call[3] == "--world=haven" {
+			foundSentinel = true
+		}
+		if len(call) >= 4 && call[1] == "forge" && call[2] == "start" && call[3] == "--world=haven" {
+			foundForge = true
+		}
+	}
+	if !foundSentinel {
+		t.Error("expected sentinel start command, not found in calls")
+	}
+	if !foundForge {
+		t.Error("expected forge start command, not found in calls")
+	}
+}
+
+func TestHeartbeatSkipsRunningWorldServices(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+
+	sphereStore.RegisterWorld("haven", "/tmp/repo")
+
+	worldDir := filepath.Join(os.Getenv("SOL_HOME"), "haven")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+`), 0o644)
+
+	// Mark both services as already running.
+	mock.Start("sol-haven-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", "haven")
+	mock.Start("sol-haven-forge", "/tmp", "sol forge run", nil, "forge", "haven")
+
+	cmdRunner := &mockCommandRunner{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = cmdRunner.run
+
+	sup.heartbeat()
+
+	// No commands should be issued — both services are already running.
+	calls := cmdRunner.getCalls()
+	if len(calls) != 0 {
+		t.Fatalf("expected 0 command calls (services running), got %d: %v", len(calls), calls)
+	}
+}
+
+func TestHeartbeatSkipsSleepingWorldInfra(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+
+	sphereStore.RegisterWorld("sleepy", "/tmp/repo")
+
+	// Create a sleeping world config.
+	worldDir := filepath.Join(os.Getenv("SOL_HOME"), "sleepy")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+sleeping = true
+`), 0o644)
+
+	cmdRunner := &mockCommandRunner{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = cmdRunner.run
+
+	sup.heartbeat()
+
+	// No commands should be issued — world is sleeping.
+	calls := cmdRunner.getCalls()
+	if len(calls) != 0 {
+		t.Fatalf("expected 0 command calls for sleeping world, got %d: %v", len(calls), calls)
+	}
+}
+
+func TestHeartbeatWorldInfraRespectsWorldsFilter(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+	cfg.Worlds = []string{"alpha"}
+
+	// Register two worlds.
+	sphereStore.RegisterWorld("alpha", "/tmp/repo")
+	sphereStore.RegisterWorld("beta", "/tmp/repo")
+
+	for _, w := range []string{"alpha", "beta"} {
+		worldDir := filepath.Join(os.Getenv("SOL_HOME"), w)
+		os.MkdirAll(worldDir, 0o755)
+		os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+`), 0o644)
+	}
+
+	cmdRunner := &mockCommandRunner{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = cmdRunner.run
+
+	sup.heartbeat()
+
+	// Only alpha services should be started.
+	calls := cmdRunner.getCalls()
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 command calls (sentinel + forge for alpha only), got %d: %v", len(calls), calls)
+	}
+
+	for _, call := range calls {
+		if len(call) >= 4 && call[3] != "--world=alpha" {
+			t.Errorf("expected only alpha world services, got call: %v", call)
+		}
+	}
+}
+
+func TestShutdownStopsWorldServices(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	sphereStore.RegisterWorld("haven", "/tmp/repo")
+
+	worldDir := filepath.Join(os.Getenv("SOL_HOME"), "haven")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+`), 0o644)
+
+	// Start world service sessions.
+	mock.Start("sol-haven-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", "haven")
+	mock.Start("sol-haven-forge", "/tmp", "sol forge run", nil, "forge", "haven")
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.shutdown()
+
+	// Both world service sessions should be stopped.
+	stopped := mock.GetStopped()
+	foundSentinel := false
+	foundForge := false
+	for _, s := range stopped {
+		if s == "sol-haven-sentinel" {
+			foundSentinel = true
+		}
+		if s == "sol-haven-forge" {
+			foundForge = true
+		}
+	}
+	if !foundSentinel {
+		t.Error("expected sol-haven-sentinel to be stopped during shutdown")
+	}
+	if !foundForge {
+		t.Error("expected sol-haven-forge to be stopped during shutdown")
+	}
+}
+
+func TestShutdownSkipsSleepingWorldServices(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	sphereStore.RegisterWorld("sleepy", "/tmp/repo")
+
+	worldDir := filepath.Join(os.Getenv("SOL_HOME"), "sleepy")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+sleeping = true
+`), 0o644)
+
+	// Start world service sessions (should not be stopped since world is sleeping).
+	mock.Start("sol-sleepy-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", "sleepy")
+	mock.Start("sol-sleepy-forge", "/tmp", "sol forge run", nil, "forge", "sleepy")
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.shutdown()
+
+	// World service sessions should NOT be stopped — world is sleeping.
+	stopped := mock.GetStopped()
+	for _, s := range stopped {
+		if s == "sol-sleepy-sentinel" || s == "sol-sleepy-forge" {
+			t.Errorf("sleeping world service %q should not be stopped during shutdown", s)
+		}
+	}
+}
+
+func TestShutdownWorldServicesRespectsWorldsFilter(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.Worlds = []string{"alpha"}
+
+	sphereStore.RegisterWorld("alpha", "/tmp/repo")
+	sphereStore.RegisterWorld("beta", "/tmp/repo")
+
+	for _, w := range []string{"alpha", "beta"} {
+		worldDir := filepath.Join(os.Getenv("SOL_HOME"), w)
+		os.MkdirAll(worldDir, 0o755)
+		os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+`), 0o644)
+		mock.Start("sol-"+w+"-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", w)
+		mock.Start("sol-"+w+"-forge", "/tmp", "sol forge run", nil, "forge", w)
+	}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.shutdown()
+
+	// Only alpha world services should be stopped.
+	stopped := mock.GetStopped()
+	for _, s := range stopped {
+		if strings.Contains(s, "beta") {
+			t.Errorf("beta world service %q should not be stopped with worlds filter", s)
+		}
+	}
+
+	foundAlphaSentinel := false
+	foundAlphaForge := false
+	for _, s := range stopped {
+		if s == "sol-alpha-sentinel" {
+			foundAlphaSentinel = true
+		}
+		if s == "sol-alpha-forge" {
+			foundAlphaForge = true
+		}
+	}
+	if !foundAlphaSentinel {
+		t.Error("expected sol-alpha-sentinel to be stopped during shutdown")
+	}
+	if !foundAlphaForge {
+		t.Error("expected sol-alpha-forge to be stopped during shutdown")
+	}
+}
+
+func TestHeartbeatInfraCheckPeriodicity(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+
+	sphereStore.RegisterWorld("haven", "/tmp/repo")
+
+	worldDir := filepath.Join(os.Getenv("SOL_HOME"), "haven")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+`), 0o644)
+
+	cmdRunner := &mockCommandRunner{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = cmdRunner.run
+
+	// Heartbeat 1: first cycle, should check infrastructure.
+	sup.heartbeat()
+	calls1 := len(cmdRunner.getCalls())
+	if calls1 == 0 {
+		t.Fatal("expected infrastructure check on first heartbeat")
+	}
+
+	// Heartbeat 2: count=2, not %3==0, should NOT check.
+	sup.heartbeat()
+	calls2 := len(cmdRunner.getCalls())
+	if calls2 != calls1 {
+		t.Errorf("heartbeat 2 should not trigger infra check, calls went from %d to %d", calls1, calls2)
+	}
+
+	// Heartbeat 3: count=3, 3%%3==0, should check.
+	sup.heartbeat()
+	calls3 := len(cmdRunner.getCalls())
+	if calls3 == calls2 {
+		t.Error("heartbeat 3 should trigger infra check")
+	}
+}
+
 func TestRespawnOutpostUsesStartupLaunch(t *testing.T) {
 	sphereStore := setupTestEnv(t)
 	mock := newMockSessions()

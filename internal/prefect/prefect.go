@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"sync"
 	"time"
 
@@ -31,6 +32,7 @@ type SessionManager interface {
 type SphereStore interface {
 	ListAgents(world string, state string) ([]store.Agent, error)
 	UpdateAgentState(id, state, activeWrit string) error
+	ListWorlds() ([]store.World, error)
 }
 
 // Config holds prefect configuration.
@@ -46,6 +48,8 @@ type Config struct {
 	ConsulHeartbeatMax time.Duration // max heartbeat age before restart (default: 15 minutes)
 	ConsulCommand      string        // command to start consul (default: "sol consul run")
 	ConsulSourceRepo   string        // source repo path for consul config
+
+	SolBinary string // path to sol binary for starting world services. If empty, infrastructure check is skipped.
 }
 
 // DefaultConfig returns the default prefect configuration.
@@ -61,6 +65,9 @@ func DefaultConfig() Config {
 	}
 }
 
+// worldServices are the per-world infrastructure services the prefect manages.
+var worldServices = []string{"sentinel", "forge"}
+
 // Prefect monitors agent sessions and restarts crashed ones.
 // It is sphere-level: one prefect watches all worlds.
 type Prefect struct {
@@ -69,6 +76,10 @@ type Prefect struct {
 	logger    *slog.Logger
 	eventLog  *events.Logger // optional event feed logger
 	cfg       Config
+
+	// runCommand executes an external command. Defaults to exec.Command(...).Run().
+	// Override in tests to avoid real process execution.
+	runCommand func(name string, args ...string) error
 
 	mu            sync.Mutex
 	degraded      bool
@@ -93,6 +104,9 @@ func New(cfg Config, sphereStore SphereStore, mgr SessionManager, logger *slog.L
 		logger:      logger,
 		eventLog:    el,
 		cfg:         cfg,
+		runCommand: func(name string, args ...string) error {
+			return exec.Command(name, args...).Run()
+		},
 		backoff:     make(map[string]int),
 		lastStalled: make(map[string]time.Time),
 	}
@@ -219,6 +233,11 @@ func (s *Prefect) heartbeat() {
 		if err := s.checkConsul(); err != nil {
 			s.logger.Error("consul health check failed", "error", err)
 		}
+	}
+
+	// Check world infrastructure (sentinel/forge) on first heartbeat and every 3rd cycle.
+	if s.heartbeatCount == 1 || s.heartbeatCount%3 == 0 {
+		s.checkWorldInfrastructure()
 	}
 
 	s.logger.Info("heartbeat", "working_agents", len(workingAgents), "dead_sessions", deadCount)
@@ -368,6 +387,54 @@ func (s *Prefect) startConsul() error {
 
 	s.logger.Info("consul session started", "session", consulSessionName)
 	return nil
+}
+
+// checkWorldInfrastructure ensures sentinel and forge sessions exist for
+// each non-sleeping, allowed world. Missing services are started by shelling
+// out to "sol sentinel start" / "sol forge start", which are idempotent.
+// Requires cfg.SolBinary to be set — skips silently if empty.
+// Must be called with s.mu held.
+func (s *Prefect) checkWorldInfrastructure() {
+	if s.cfg.SolBinary == "" {
+		return
+	}
+
+	worlds, err := s.sphereStore.ListWorlds()
+	if err != nil {
+		s.logger.Error("failed to list worlds for infrastructure check", "error", err)
+		return
+	}
+
+	for _, world := range worlds {
+		if config.IsSleeping(world.Name) {
+			continue
+		}
+		if !s.worldAllowed(world.Name) {
+			continue
+		}
+
+		for _, svc := range worldServices {
+			sessName := config.SessionName(world.Name, svc)
+			if s.sessions.Exists(sessName) {
+				continue
+			}
+
+			s.logger.Info("starting world service", "service", svc, "world", world.Name)
+
+			if err := s.runCommand(s.cfg.SolBinary, svc, "start", "--world="+world.Name); err != nil {
+				s.logger.Error("failed to start world service",
+					"service", svc, "world", world.Name, "error", err)
+				continue
+			}
+
+			if s.eventLog != nil {
+				s.eventLog.Emit(events.EventRespawn, "prefect", svc, "both", map[string]any{
+					"service": svc,
+					"world":   world.Name,
+				})
+			}
+		}
+	}
 }
 
 // recordDeath records a session death timestamp and checks for mass death.
@@ -558,6 +625,34 @@ func (s *Prefect) shutdown() {
 		} else {
 			stopped++
 			s.logger.Info("consul session stopped during shutdown")
+		}
+	}
+
+	// Stop world infrastructure services (sentinel/forge).
+	worlds, err := s.sphereStore.ListWorlds()
+	if err != nil {
+		s.logger.Error("failed to list worlds during shutdown", "error", err)
+	} else {
+		for _, world := range worlds {
+			if config.IsSleeping(world.Name) {
+				continue
+			}
+			if !s.worldAllowed(world.Name) {
+				continue
+			}
+			for _, svc := range worldServices {
+				sessName := config.SessionName(world.Name, svc)
+				if s.sessions.Exists(sessName) {
+					if err := s.sessions.Stop(sessName, false); err != nil {
+						s.logger.Error("failed to stop world service during shutdown",
+							"service", svc, "world", world.Name, "error", err)
+					} else {
+						stopped++
+						s.logger.Info("world service stopped during shutdown",
+							"service", svc, "world", world.Name)
+					}
+				}
+			}
 		}
 	}
 

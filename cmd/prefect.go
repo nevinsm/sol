@@ -59,6 +59,11 @@ var prefectRunCmd = &cobra.Command{
 			cfg.Worlds = worlds
 		}
 
+		// Resolve sol binary path for starting world services (sentinel/forge).
+		if solBin, err := os.Executable(); err == nil {
+			cfg.SolBinary = solBin
+		}
+
 		eventLog := events.NewLogger(config.Home())
 		sup := prefect.New(cfg, sphereStore, mgr, logger, eventLog)
 
