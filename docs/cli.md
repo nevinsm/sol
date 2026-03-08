@@ -92,3 +92,16 @@ Cost line behavior:
 |---------|-------------|
 | `sol senate restart` | Restart the senate (stop then start) |
 | `sol senate status` | Show senate running state and brief age. Supports `--json`. |
+
+### Cost
+
+| Command | Description |
+|---------|-------------|
+| `sol cost` | Show sphere-wide per-world cost totals |
+| `sol cost --world <world>` | Show per-agent breakdown within a world |
+| `sol cost --agent <name> --world <world>` | Show per-writ breakdown for an agent |
+| `sol cost --caravan <id-or-name>` | Show per-writ breakdown across worlds for a caravan |
+| `sol cost --since <duration-or-date>` | Filter by time window (e.g., `24h`, `7d`, `2026-03-01`) |
+| `sol cost --json` | Machine-readable JSON output |
+
+All `--since`, `--json` flags can be combined with any view flag. Missing pricing in `sol.toml` degrades gracefully to token-count-only display.
