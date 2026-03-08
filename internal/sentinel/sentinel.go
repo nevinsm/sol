@@ -126,6 +126,7 @@ type Sentinel struct {
 	lastCaptures             map[string]string // agent ID → hash of last captured output
 	assessFn                 assessFunc        // nil = use real AI call
 	castFn                   func(writID string) (*CastResult, error) // nil = skip recast
+	respawnFn                func(world, agentName, role string) error // nil = error on respawn
 
 	// Per-patrol counters, reset at start of each patrol.
 	patrolAssessed int
@@ -163,6 +164,13 @@ func (w *Sentinel) SetAssessFunc(fn func(agent store.Agent, sessionName, output 
 // When nil, the sentinel skips the recast step during patrol.
 func (w *Sentinel) SetCastFunc(fn func(writID string) (*CastResult, error)) {
 	w.castFn = fn
+}
+
+// SetRespawnFunc sets the function used to respawn crashed agent sessions.
+// This delegates to startup.Respawn, ensuring full session initialization
+// (persona, hooks, settings, system prompt). Must be set before patrol runs.
+func (w *Sentinel) SetRespawnFunc(fn func(world, agentName, role string) error) {
+	w.respawnFn = fn
 }
 
 func (w *Sentinel) agentID() string {
@@ -679,33 +687,21 @@ func (w *Sentinel) handleForgeStalled(agent store.Agent) error {
 	return w.respawnAgent(agent)
 }
 
-// respawnAgent restarts a crashed agent's tmux session.
-// The sentinel does NOT re-cast or re-prime. The tether file is durable,
-// and the Claude Code SessionStart hook fires sol prime automatically (GUPP).
+// respawnAgent restarts a crashed agent's tmux session via the injected
+// respawnFn, which delegates to startup.Respawn for full session initialization
+// (persona, hooks, settings, system prompt).
 func (w *Sentinel) respawnAgent(agent store.Agent) error {
-	// Ensure agent state is working.
+	if w.respawnFn == nil {
+		return fmt.Errorf("respawnFn not configured")
+	}
+
+	// Ensure agent state is working before respawn.
 	if err := w.sphereStore.UpdateAgentState(agent.ID, "working", agent.TetherItem); err != nil {
 		return fmt.Errorf("failed to set agent %s working: %w", agent.ID, err)
 	}
 
-	sessionName := dispatch.SessionName(w.config.World, agent.Name)
-	workdir := dispatch.WorktreePath(w.config.World, agent.Name)
-	worldCfg, _ := config.LoadWorldConfig(w.config.World)
-	resolvedAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
-	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(w.config.World), agent.Role, agent.Name, resolvedAccount)
-	if err != nil {
-		return fmt.Errorf("failed to ensure claude config dir for %s: %w", agent.Name, err)
-	}
-	env := map[string]string{
-		"SOL_HOME":         config.Home(),
-		"SOL_WORLD":        w.config.World,
-		"SOL_AGENT":        agent.Name,
-		"CLAUDE_CONFIG_DIR": claudeConfigDir,
-	}
-
-	if err := w.sessions.Start(sessionName, workdir,
-		config.SessionCommand(), env, agent.Role, w.config.World); err != nil {
-		return fmt.Errorf("failed to start session for %s: %w", agent.Name, err)
+	if err := w.respawnFn(w.config.World, agent.Name, agent.Role); err != nil {
+		return fmt.Errorf("failed to respawn %s: %w", agent.Name, err)
 	}
 
 	key := respawnKey{AgentID: agent.ID, WritID: agent.TetherItem}

@@ -448,14 +448,24 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 
 	w := sentinel.New(cfg, sphereStore, worldStore, mock, logger)
 
+	// Wire up respawnFn that marks the session alive in the mock.
+	respawnCalled := 0
+	w.SetRespawnFunc(func(world, agentName, role string) error {
+		respawnCalled++
+		mock.mu.Lock()
+		mock.alive["sol-"+world+"-"+agentName] = true
+		mock.mu.Unlock()
+		return nil
+	})
+
 	// Run one patrol.
 	if err := w.Patrol(context.Background()); err != nil {
 		t.Fatalf("Patrol: %v", err)
 	}
 
-	// Verify: respawn attempted (session start called).
-	if len(mock.started) != 1 {
-		t.Fatalf("expected 1 session started (respawn), got %d", len(mock.started))
+	// Verify: respawn attempted (respawnFn called).
+	if respawnCalled != 1 {
+		t.Fatalf("expected 1 respawnFn call (respawn), got %d", respawnCalled)
 	}
 
 	// Verify: respawn event emitted.
@@ -513,32 +523,46 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 
 	w := sentinel.New(cfg, sphereStore, worldStore, mock, logger)
 
+	// Wire up respawnFn that marks the session alive in the mock.
+	respawnCalled := 0
+	w.SetRespawnFunc(func(world, agentName, role string) error {
+		respawnCalled++
+		mock.mu.Lock()
+		mock.alive["sol-"+world+"-"+agentName] = true
+		mock.mu.Unlock()
+		return nil
+	})
+
 	// Patrol 1: stalled → respawn (attempt 1).
 	if err := w.Patrol(context.Background()); err != nil {
 		t.Fatalf("patrol 1: %v", err)
 	}
-	if len(mock.started) != 1 {
-		t.Fatalf("patrol 1: expected 1 start, got %d", len(mock.started))
+	if respawnCalled != 1 {
+		t.Fatalf("patrol 1: expected 1 respawnFn call, got %d", respawnCalled)
 	}
 	// Kill session.
+	mock.mu.Lock()
 	delete(mock.alive, "sol-ember-Toast")
+	mock.mu.Unlock()
 
 	// Patrol 2: still stalled → respawn (attempt 2).
 	if err := w.Patrol(context.Background()); err != nil {
 		t.Fatalf("patrol 2: %v", err)
 	}
-	if len(mock.started) != 2 {
-		t.Fatalf("patrol 2: expected 2 starts, got %d", len(mock.started))
+	if respawnCalled != 2 {
+		t.Fatalf("patrol 2: expected 2 respawnFn calls, got %d", respawnCalled)
 	}
 	// Kill session again.
+	mock.mu.Lock()
 	delete(mock.alive, "sol-ember-Toast")
+	mock.mu.Unlock()
 
 	// Patrol 3: max reached → return to open.
 	if err := w.Patrol(context.Background()); err != nil {
 		t.Fatalf("patrol 3: %v", err)
 	}
-	if len(mock.started) != 2 {
-		t.Fatalf("patrol 3: expected still 2 starts (max reached), got %d", len(mock.started))
+	if respawnCalled != 2 {
+		t.Fatalf("patrol 3: expected still 2 respawnFn calls (max reached), got %d", respawnCalled)
 	}
 
 	// Agent should be idle.
