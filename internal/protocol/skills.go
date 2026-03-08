@@ -161,7 +161,7 @@ Commands for completing work and managing session continuity.
 
 Options:
 - %[5]s — provide progress summary for successor
-- %[5]s — tag reason (compact, manual, health-check)
+- %[6]s — tag reason (compact, manual, health-check)
 `,
 		"`"+sol, flagsForResolve(ctx), flagsForEscalate(ctx), flagsForHandoff(ctx),
 		"`--summary=\"...\"`", "`--reason=compact`")
@@ -181,7 +181,7 @@ pushing your branch does not create a merge request.
 | Command | Description |
 |---------|-------------|
 | %[1]s resolve%[2]s | Push branch, create merge request, clear tether |
-| %[1]s escalate%[4]s | Request help when stuck |
+| %[1]s escalate "description"%[4]s | Request help when stuck |
 
 ## Submit Workflow
 
@@ -193,7 +193,7 @@ pushing your branch does not create a merge request.
 `,
 		"`"+sol, " --world="+ctx.World+" --agent="+ctx.AgentName+"`",
 		"`git push`",
-		" --world="+ctx.World+" --agent="+ctx.AgentName+" --message=\"...\"`",
+		"`",
 		"`git checkout main && git pull`")
 }
 
@@ -331,8 +331,8 @@ Options: %[4]s, %[5]s (repeatable), %[6]s, %[7]s (JSON).
 | Command | Description |
 |---------|-------------|
 | %[1]s cast <id> --world=%[2]s%[3]s | Dispatch writ to an agent |
-| %[1]s tether <agent> <id> --world=%[2]s%[3]s | Bind writ to persistent agent |
-| %[1]s untether <agent> <id> --world=%[2]s%[3]s | Unbind writ from agent |
+| %[1]s tether <id> --agent=<agent> --world=%[2]s%[3]s | Bind writ to persistent agent |
+| %[1]s untether <id> --agent=<agent> --world=%[2]s%[3]s | Unbind writ from agent |
 
 Cast options: %[8]s (auto if omitted), %[9]s, %[10]s.
 `, "`"+sol, world, "`",
@@ -358,19 +358,19 @@ Commands for grouping and sequencing related writs.
 |---------|-------------|
 | %[1]s caravan create "name" <id> [<id>...] --world=%[2]s%[3]s | Create caravan with items |
 | %[1]s caravan add <caravan-id> <id> --world=%[2]s%[3]s | Add item to caravan |
-| %[1]s caravan status --world=%[2]s%[3]s | Check caravan progress |
+| %[1]s caravan status [<caravan-id>]%[3]s | Check caravan progress |
 | %[1]s caravan launch <caravan-id> --world=%[2]s%[3]s | Dispatch all ready items |
-| %[1]s caravan commission <id> --world=%[2]s%[3]s | Mark caravan as commissioned |
-| %[1]s caravan set-phase <id> <phase> --world=%[2]s%[3]s | Set current phase |
-| %[1]s caravan check <id> --world=%[2]s%[3]s | Check phase-gate readiness |
-| %[1]s caravan list --world=%[2]s%[3]s | List all caravans |
+| %[1]s caravan commission <caravan-id>%[3]s | Mark caravan as commissioned |
+| %[1]s caravan set-phase <caravan-id> <phase>%[3]s | Set current phase |
+| %[1]s caravan check <caravan-id>%[3]s | Check phase-gate readiness |
+| %[1]s caravan list%[3]s | List all caravans |
 
 ## Dependencies
 
 | Command | Description |
 |---------|-------------|
-| %[1]s caravan dep add <caravan-id> <dep-id> --world=%[2]s%[3]s | Add inter-caravan dependency |
-| %[1]s caravan dep list <caravan-id> --world=%[2]s%[3]s | List caravan dependencies |
+| %[1]s caravan dep add <caravan-id> <dep-id>%[3]s | Add inter-caravan dependency |
+| %[1]s caravan dep list <caravan-id>%[3]s | List caravan dependencies |
 `, "`"+sol, world, "`")
 }
 
@@ -385,7 +385,7 @@ Commands for monitoring world state and coordinating agents.
 
 | Command | Description |
 |---------|-------------|
-| %[1]s status --world=%[2]s%[3]s | World status overview |
+| %[1]s status %[2]s%[3]s | World status overview |
 | %[1]s agent list%[3]s | List agents and availability |
 
 ## World Sync
@@ -398,7 +398,7 @@ Commands for monitoring world state and coordinating agents.
 
 | Command | Description |
 |---------|-------------|
-| %[1]s escalate --world=%[2]s --agent=governor --message="..."%[3]s | Escalate to operator |
+| %[1]s escalate "description"%[3]s | Escalate to operator |
 `, "`"+sol, world, "`")
 }
 
@@ -414,7 +414,7 @@ Format: %[1]s[NOTIFICATION] TYPE: Subject — Body%[2]s
 
 **AGENT_DONE** — An outpost resolved a writ.
 - Fields: %[1]swrit_id%[2]s, %[1]sagent_name%[2]s, %[1]sbranch%[2]s, %[1]stitle%[2]s, %[1]smerge_request_id%[2]s
-- Check caravan status: %[3]s caravan status --world=%[4]s%[5]s
+- Check caravan status: %[3]s caravan status%[5]s
 - Dispatch next ready work if agents are available
 
 **MERGED** — Forge successfully merged a writ.
@@ -473,8 +473,8 @@ Commands for creating and managing writs.
 | Command | Description |
 |---------|-------------|
 | %[1]s writ create --world=%[2]s --title="..." --description="..."%[3]s | Create a new writ |
-| %[1]s tether %[4]s <id> --world=%[2]s%[3]s | Bind writ to yourself |
-| %[1]s untether %[4]s <id> --world=%[2]s%[3]s | Unbind writ |
+| %[1]s tether <id> --agent=%[4]s --world=%[2]s%[3]s | Bind writ to yourself |
+| %[1]s untether <id> --agent=%[4]s --world=%[2]s%[3]s | Unbind writ |
 | %[1]s writ activate <id> --world=%[2]s --agent=%[4]s%[3]s | Switch active writ |
 | %[1]s writ status <id> --world=%[2]s%[3]s | Check writ status |
 | %[1]s writ list --world=%[2]s%[3]s | List writs |
@@ -544,7 +544,7 @@ Commands for checking world and agent state.
 
 | Command | Description |
 |---------|-------------|
-| %[1]s status --world=%[2]s%[3]s | World status overview (agents, writs, forge) |
+| %[1]s status %[2]s%[3]s | World status overview (agents, writs, forge) |
 | %[1]s writ list --world=%[2]s%[3]s | List all writs |
 | %[1]s writ status <id> --world=%[2]s%[3]s | Check specific writ |
 | %[1]s agent list%[3]s | List agents and states |
@@ -564,9 +564,9 @@ Commands for world-level operations.
 | Command | Description |
 |---------|-------------|
 | %[1]s world sync --world=%[2]s%[3]s | Sync managed repo from upstream |
-| %[1]s world status --world=%[2]s%[3]s | World health overview |
-| %[1]s world query --world=%[2]s "question"%[3]s | Query the governor |
-| %[1]s world summary --world=%[2]s%[3]s | Read governor's world summary |
+| %[1]s world status %[2]s%[3]s | World health overview |
+| %[1]s world query %[2]s "question"%[3]s | Query the governor |
+| %[1]s world summary %[2]s%[3]s | Read governor's world summary |
 `, "`"+sol, world, "`")
 }
 
@@ -580,10 +580,10 @@ Commands for cross-world intelligence gathering.
 
 | Command | Description |
 |---------|-------------|
-| %[1]s world summary --world=<world>%[2]s | Read a governor's world summary |
-| %[1]s world query --world=<world> "question"%[2]s | Query a governor |
+| %[1]s world summary <world>%[2]s | Read a governor's world summary |
+| %[1]s world query <world> "question"%[2]s | Query a governor |
 | %[1]s world list%[2]s | List all worlds |
-| %[1]s world export --world=<world>%[2]s | Export world state |
+| %[1]s world export <world>%[2]s | Export world state |
 
 Use these to gather context from multiple worlds before planning.
 `, "`"+sol, "`")
@@ -608,9 +608,9 @@ Options: %[3]s, %[4]s, %[5]s, %[6]s (JSON).
 | Command | Description |
 |---------|-------------|
 | %[1]s caravan create "name" <id> [<id>...] --world=<world>%[2]s | Group writs into caravan |
-| %[1]s caravan commission <id> --world=<world>%[2]s | Mark ready for launch |
+| %[1]s caravan commission <id>%[2]s | Mark ready for launch |
 | %[1]s caravan launch <id> --world=<world>%[2]s | Dispatch all ready items |
-| %[1]s caravan status --world=<world>%[2]s | Check progress |
+| %[1]s caravan status [<caravan-id>]%[2]s | Check progress |
 `, "`"+sol, "`",
 		"`--priority` (1=high, 2=normal, 3=low)",
 		"`--label` (repeatable)",
@@ -622,13 +622,14 @@ Options: %[3]s, %[4]s, %[5]s, %[6]s (JSON).
 
 func flagsForResolve(ctx SkillContext) string {
 	// Outpost agents don't need explicit flags — world/agent come from env.
-	return ""
+	// The trailing backtick closes the inline code span opened by %[1]s.
+	return "`"
 }
 
 func flagsForEscalate(ctx SkillContext) string {
-	return " --message=\"...\""
+	return " \"description\"`"
 }
 
 func flagsForHandoff(ctx SkillContext) string {
-	return ""
+	return "`"
 }

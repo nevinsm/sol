@@ -2,7 +2,11 @@ package protocol
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -362,4 +366,150 @@ func containsSubstring(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// findRepoRoot walks up from the current directory to find the go.mod file.
+func findRepoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get cwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("could not find repo root (go.mod)")
+		}
+		dir = parent
+	}
+}
+
+// TestSkillCommandReferencesExist verifies that every `sol <subcommand>` shown
+// in generated skill content corresponds to a real CLI command, and that flags
+// referenced alongside those commands actually exist.
+func TestSkillCommandReferencesExist(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping command reference validation in short mode")
+	}
+
+	// Build the sol binary into a temp location.
+	solBin := filepath.Join(t.TempDir(), "sol")
+	repoRoot := findRepoRoot(t)
+	build := exec.Command("go", "build", "-o", solBin, ".")
+	build.Dir = repoRoot
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build sol binary: %v\n%s", err, out)
+	}
+
+	// Generate skill content for every role.
+	roles := []string{"outpost", "forge", "governor", "envoy", "senate"}
+
+	// cmdEntry tracks a unique subcommand and the flags referenced with it.
+	type cmdEntry struct {
+		flags   map[string]bool
+		sources []string
+	}
+	commands := make(map[string]*cmdEntry)
+
+	// Regex to match backtick-wrapped commands starting with "sol ".
+	cmdRe := regexp.MustCompile("`sol ([^`]+)`")
+	// Regex to extract --flag names (stops at = or space).
+	flagRe := regexp.MustCompile(`--([a-z][-a-z0-9]*)`)
+
+	for _, role := range roles {
+		ctx := SkillContext{
+			World:        "testworld",
+			AgentName:    "TestBot",
+			SolBinary:    "sol",
+			Role:         role,
+			TargetBranch: "main",
+		}
+		for _, name := range RoleSkills(role) {
+			content := generateSkill(name, ctx)
+			matches := cmdRe.FindAllStringSubmatch(content, -1)
+			for _, m := range matches {
+				cmdLine := m[1]
+
+				// Skip matches that span across markdown table
+				// cells — a sign of a broken backtick pair.
+				if strings.Contains(cmdLine, "|") {
+					continue
+				}
+
+				parts := strings.Fields(cmdLine)
+
+				// Extract the subcommand path: consecutive words that are
+				// not flags, not placeholders, and not quoted strings.
+				var cmdPath []string
+				for _, p := range parts {
+					if strings.HasPrefix(p, "-") ||
+						strings.HasPrefix(p, "<") ||
+						strings.HasPrefix(p, "[") ||
+						strings.HasPrefix(p, "\"") ||
+						strings.HasPrefix(p, "'") {
+						break
+					}
+					// Skip known value-like tokens embedded in commands.
+					if p == "testworld" || p == "TestBot" {
+						// These are interpolated world/agent names used as
+						// positional arguments — not part of the subcommand.
+						break
+					}
+					cmdPath = append(cmdPath, p)
+				}
+				key := strings.Join(cmdPath, " ")
+				if key == "" {
+					continue
+				}
+
+				entry, ok := commands[key]
+				if !ok {
+					entry = &cmdEntry{flags: make(map[string]bool)}
+					commands[key] = entry
+				}
+				entry.sources = append(entry.sources, role+"/"+name)
+
+				// Extract flags from the full command line.
+				flagMatches := flagRe.FindAllStringSubmatch(cmdLine, -1)
+				for _, fm := range flagMatches {
+					entry.flags[fm[1]] = true
+				}
+			}
+		}
+	}
+
+	// Sort keys for deterministic output.
+	var keys []string
+	for k := range commands {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	// Verify each subcommand exists and accepts its flags.
+	for _, key := range keys {
+		entry := commands[key]
+		t.Run("cmd/"+strings.ReplaceAll(key, " ", "_"), func(t *testing.T) {
+			args := append(strings.Fields(key), "--help")
+			cmd := exec.Command(solBin, args...)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("command %q does not exist (from: %v): %v\n%s",
+					key, entry.sources, err, out)
+			}
+
+			helpText := string(out)
+			for flag := range entry.flags {
+				if flag == "help" {
+					continue // --help is always available
+				}
+				if !strings.Contains(helpText, "--"+flag) {
+					t.Errorf("command %q: flag --%s not found in help output (from: %v)",
+						key, flag, entry.sources)
+				}
+			}
+		})
+	}
 }
