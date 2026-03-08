@@ -106,6 +106,14 @@ func SyncForge(world, targetBranch string) error {
 			targetBranch, strings.TrimSpace(string(out)), err)
 	}
 
+	// Remove untracked files. -fd (without -x) respects .git/info/exclude,
+	// so sol-managed files like CLAUDE.local.md are preserved as ignored.
+	cleanCmd := exec.Command("git", "-C", wtPath, "clean", "-fd")
+	if out, err := cleanCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to clean forge worktree for world %q: %s: %w",
+			world, strings.TrimSpace(string(out)), err)
+	}
+
 	return nil
 }
 

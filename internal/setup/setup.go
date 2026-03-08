@@ -82,16 +82,33 @@ func CloneRepo(world, source string) error {
 	return nil
 }
 
-// InstallExcludes appends sol-managed path patterns to .git/info/exclude in the
+// excludeBlock is the canonical set of sol-managed path patterns.
+// If you add a new sol-managed path that gets written inside worktrees,
+// add it here. Keep in sync with the "Worktree excludes" note in CLAUDE.md.
+const excludeBlock = `# BEGIN sol-managed paths
+.claude/settings.local.json
+.claude/system-prompt.md
+.claude/sol-cli-reference.md
+CLAUDE.local.md
+.brief/
+.workflow/
+# END sol-managed paths
+`
+
+// InstallExcludes writes sol-managed path patterns to .git/info/exclude in the
 // given repo. These patterns propagate to all worktrees created from the repo.
-// Idempotent — skips if the patterns are already present.
+//
+// Uses a BEGIN/END delimited block that gets fully replaced on every call,
+// ensuring the exclude list stays current as new patterns are added.
+//
+// Handles three cases:
+//   - BEGIN/END block exists → replace the block with the current canonical block
+//   - Legacy "# sol-managed paths" marker (without BEGIN) → replace from marker to EOF
+//   - Neither exists → append the block
 //
 // Only excludes specific files sol writes — NOT the entire .claude/ directory,
 // because the project may have shared .claude/settings.json, .claude/CLAUDE.md,
 // .claude/agents/, or .claude/rules/ that belong in version control.
-//
-// If you add a new sol-managed path that gets written inside worktrees,
-// add it here. Keep in sync with the "Worktree excludes" note in CLAUDE.md.
 func InstallExcludes(repoPath string) error {
 	excludePath := filepath.Join(repoPath, ".git", "info", "exclude")
 
@@ -99,18 +116,41 @@ func InstallExcludes(repoPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", excludePath, err)
 	}
-	if strings.Contains(string(existing), "# sol-managed paths") {
-		return nil
+	content := string(existing)
+
+	var updated string
+	switch {
+	case strings.Contains(content, "# BEGIN sol-managed paths"):
+		// Replace existing BEGIN/END block.
+		beginIdx := strings.Index(content, "# BEGIN sol-managed paths")
+		endMarker := "# END sol-managed paths"
+		endIdx := strings.Index(content, endMarker)
+		if endIdx == -1 {
+			// Malformed: BEGIN without END — replace from BEGIN to EOF.
+			updated = content[:beginIdx] + excludeBlock
+		} else {
+			// Consume trailing newline after END marker if present.
+			afterEnd := endIdx + len(endMarker)
+			if afterEnd < len(content) && content[afterEnd] == '\n' {
+				afterEnd++
+			}
+			updated = content[:beginIdx] + excludeBlock + content[afterEnd:]
+		}
+
+	case strings.Contains(content, "# sol-managed paths"):
+		// Legacy format: replace from legacy marker to EOF.
+		idx := strings.Index(content, "# sol-managed paths")
+		updated = content[:idx] + excludeBlock
+
+	default:
+		// Fresh install: append with leading newline.
+		updated = content + "\n" + excludeBlock
 	}
 
-	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("failed to open %s: %w", excludePath, err)
+	if err := os.WriteFile(excludePath, []byte(updated), 0o644); err != nil {
+		return fmt.Errorf("failed to write %s: %w", excludePath, err)
 	}
-	defer f.Close()
-
-	_, err = f.WriteString("\n# sol-managed paths\n.claude/settings.local.json\nCLAUDE.local.md\n.claude/sol-cli-reference.md\n.brief/\n.workflow/\n")
-	return err
+	return nil
 }
 
 // Run executes the full first-time setup sequence.

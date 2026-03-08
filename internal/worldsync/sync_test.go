@@ -261,6 +261,88 @@ func TestSyncForge(t *testing.T) {
 	}
 }
 
+func TestSyncForgeCleanUntrackedFiles(t *testing.T) {
+	bare, _ := createBareAndClone(t)
+
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	world := "testworld"
+
+	// Clone bare into the forge worktree path and detach HEAD.
+	forgeWT := filepath.Join(solHome, world, "forge", "worktree")
+	run(t, "", "git", "clone", bare, forgeWT)
+	run(t, forgeWT, "git", "checkout", "--detach")
+
+	// Create untracked cruft in the forge worktree.
+	if err := os.WriteFile(filepath.Join(forgeWT, "cruft.txt"), []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(forgeWT, "cruft-dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(forgeWT, "cruft-dir", "junk.txt"), []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SyncForge(world, "main"); err != nil {
+		t.Fatalf("SyncForge failed: %v", err)
+	}
+
+	// Untracked files should be removed by git clean -fd.
+	if _, err := os.Stat(filepath.Join(forgeWT, "cruft.txt")); !os.IsNotExist(err) {
+		t.Error("expected cruft.txt to be removed by git clean")
+	}
+	if _, err := os.Stat(filepath.Join(forgeWT, "cruft-dir")); !os.IsNotExist(err) {
+		t.Error("expected cruft-dir/ to be removed by git clean")
+	}
+}
+
+func TestSyncForgePreservesExcludedFiles(t *testing.T) {
+	bare, _ := createBareAndClone(t)
+
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	world := "testworld"
+
+	// Clone bare into the forge worktree path and detach HEAD.
+	forgeWT := filepath.Join(solHome, world, "forge", "worktree")
+	run(t, "", "git", "clone", bare, forgeWT)
+	run(t, forgeWT, "git", "checkout", "--detach")
+
+	// Add sol-managed patterns to .git/info/exclude.
+	excludePath := filepath.Join(forgeWT, ".git", "info", "exclude")
+	existing, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	excludeContent := string(existing) + "\nCLAUDE.local.md\n.claude/settings.local.json\n"
+	if err := os.WriteFile(excludePath, []byte(excludeContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create both excluded (sol-managed) and untracked files.
+	if err := os.WriteFile(filepath.Join(forgeWT, "CLAUDE.local.md"), []byte("agent persona"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(forgeWT, "cruft.txt"), []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SyncForge(world, "main"); err != nil {
+		t.Fatalf("SyncForge failed: %v", err)
+	}
+
+	// Excluded file should be preserved (git clean -fd without -x respects excludes).
+	if _, err := os.Stat(filepath.Join(forgeWT, "CLAUDE.local.md")); os.IsNotExist(err) {
+		t.Error("CLAUDE.local.md should be preserved (excluded), but was removed")
+	}
+
+	// Untracked file should be removed.
+	if _, err := os.Stat(filepath.Join(forgeWT, "cruft.txt")); !os.IsNotExist(err) {
+		t.Error("expected cruft.txt to be removed by git clean")
+	}
+}
+
 func TestSyncForgeNoWorktree(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)

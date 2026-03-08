@@ -334,6 +334,185 @@ func TestCloneRepoFromURL(t *testing.T) {
 	}
 }
 
+func TestInstallExcludes(t *testing.T) {
+	t.Run("fresh install writes BEGIN/END block", func(t *testing.T) {
+		repoDir := t.TempDir()
+		runGit(t, repoDir, "init")
+
+		if err := InstallExcludes(repoDir); err != nil {
+			t.Fatalf("InstallExcludes failed: %v", err)
+		}
+
+		data, err := os.ReadFile(filepath.Join(repoDir, ".git", "info", "exclude"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(data)
+
+		if !strings.Contains(content, "# BEGIN sol-managed paths") {
+			t.Error("missing BEGIN marker")
+		}
+		if !strings.Contains(content, "# END sol-managed paths") {
+			t.Error("missing END marker")
+		}
+		for _, pat := range []string{
+			".claude/settings.local.json",
+			".claude/system-prompt.md",
+			".claude/sol-cli-reference.md",
+			"CLAUDE.local.md",
+			".brief/",
+			".workflow/",
+		} {
+			if !strings.Contains(content, pat) {
+				t.Errorf("missing pattern %q", pat)
+			}
+		}
+	})
+
+	t.Run("idempotent re-run replaces block without duplication", func(t *testing.T) {
+		repoDir := t.TempDir()
+		runGit(t, repoDir, "init")
+
+		if err := InstallExcludes(repoDir); err != nil {
+			t.Fatalf("first InstallExcludes failed: %v", err)
+		}
+		if err := InstallExcludes(repoDir); err != nil {
+			t.Fatalf("second InstallExcludes failed: %v", err)
+		}
+
+		data, err := os.ReadFile(filepath.Join(repoDir, ".git", "info", "exclude"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(data)
+
+		// Should have exactly one BEGIN and one END marker.
+		if strings.Count(content, "# BEGIN sol-managed paths") != 1 {
+			t.Errorf("expected exactly 1 BEGIN marker, got %d", strings.Count(content, "# BEGIN sol-managed paths"))
+		}
+		if strings.Count(content, "# END sol-managed paths") != 1 {
+			t.Errorf("expected exactly 1 END marker, got %d", strings.Count(content, "# END sol-managed paths"))
+		}
+	})
+
+	t.Run("legacy marker format gets migrated", func(t *testing.T) {
+		repoDir := t.TempDir()
+		runGit(t, repoDir, "init")
+
+		// Write legacy format (old style without BEGIN/END).
+		excludePath := filepath.Join(repoDir, ".git", "info", "exclude")
+		existing, err := os.ReadFile(excludePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		legacy := string(existing) + "\n# sol-managed paths\n.claude/\nCLAUDE.local.md\n"
+		if err := os.WriteFile(excludePath, []byte(legacy), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := InstallExcludes(repoDir); err != nil {
+			t.Fatalf("InstallExcludes failed: %v", err)
+		}
+
+		data, err := os.ReadFile(excludePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(data)
+
+		// Legacy marker should be gone, replaced by BEGIN/END block.
+		if strings.Contains(content, "# sol-managed paths\n.claude/\n") {
+			t.Error("legacy block was not replaced")
+		}
+		if !strings.Contains(content, "# BEGIN sol-managed paths") {
+			t.Error("missing BEGIN marker after migration")
+		}
+		if !strings.Contains(content, "# END sol-managed paths") {
+			t.Error("missing END marker after migration")
+		}
+		// Should have the new fine-grained patterns.
+		if !strings.Contains(content, ".claude/settings.local.json") {
+			t.Error("missing .claude/settings.local.json after migration")
+		}
+		if !strings.Contains(content, ".claude/system-prompt.md") {
+			t.Error("missing .claude/system-prompt.md after migration")
+		}
+	})
+
+	t.Run("updates existing block when canonical list changes", func(t *testing.T) {
+		repoDir := t.TempDir()
+		runGit(t, repoDir, "init")
+
+		// Write a stale BEGIN/END block missing .claude/system-prompt.md.
+		excludePath := filepath.Join(repoDir, ".git", "info", "exclude")
+		existing, err := os.ReadFile(excludePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stale := string(existing) + "\n# BEGIN sol-managed paths\n.claude/settings.local.json\nCLAUDE.local.md\n# END sol-managed paths\n"
+		if err := os.WriteFile(excludePath, []byte(stale), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := InstallExcludes(repoDir); err != nil {
+			t.Fatalf("InstallExcludes failed: %v", err)
+		}
+
+		data, err := os.ReadFile(excludePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(data)
+
+		// Should now have the full canonical list.
+		if !strings.Contains(content, ".claude/system-prompt.md") {
+			t.Error("missing .claude/system-prompt.md after update")
+		}
+		if !strings.Contains(content, ".brief/") {
+			t.Error("missing .brief/ after update")
+		}
+		if !strings.Contains(content, ".workflow/") {
+			t.Error("missing .workflow/ after update")
+		}
+	})
+
+	t.Run("preserves content before and after block", func(t *testing.T) {
+		repoDir := t.TempDir()
+		runGit(t, repoDir, "init")
+
+		excludePath := filepath.Join(repoDir, ".git", "info", "exclude")
+		existing, err := os.ReadFile(excludePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Add content before and after the block.
+		withSurrounding := string(existing) + "\n# custom exclude\n*.log\n\n# BEGIN sol-managed paths\nold-pattern\n# END sol-managed paths\n\n# another custom section\n*.tmp\n"
+		if err := os.WriteFile(excludePath, []byte(withSurrounding), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := InstallExcludes(repoDir); err != nil {
+			t.Fatalf("InstallExcludes failed: %v", err)
+		}
+
+		data, err := os.ReadFile(excludePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(data)
+
+		if !strings.Contains(content, "*.log") {
+			t.Error("content before block was lost")
+		}
+		if !strings.Contains(content, "*.tmp") {
+			t.Error("content after block was lost")
+		}
+		if strings.Contains(content, "old-pattern") {
+			t.Error("old block content was not replaced")
+		}
+	})
+}
+
 func TestCloneRepoInstallsExcludes(t *testing.T) {
 	sourceDir := t.TempDir()
 	runGit(t, sourceDir, "init")
@@ -355,8 +534,14 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 		t.Fatalf("failed to read exclude file: %v", err)
 	}
 	content := string(data)
+	if !strings.Contains(content, "# BEGIN sol-managed paths") {
+		t.Error("exclude file missing BEGIN marker")
+	}
 	if !strings.Contains(content, ".claude/settings.local.json") {
 		t.Error("exclude file missing .claude/settings.local.json pattern")
+	}
+	if !strings.Contains(content, ".claude/system-prompt.md") {
+		t.Error("exclude file missing .claude/system-prompt.md pattern")
 	}
 	if !strings.Contains(content, "CLAUDE.local.md") {
 		t.Error("exclude file missing CLAUDE.local.md pattern")
@@ -372,6 +557,7 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 	os.MkdirAll(filepath.Join(repoPath, ".claude"), 0o755)
 	writeFile(t, filepath.Join(repoPath, "CLAUDE.local.md"), "test")
 	writeFile(t, filepath.Join(repoPath, ".claude", "settings.local.json"), "test")
+	writeFile(t, filepath.Join(repoPath, ".claude", "system-prompt.md"), "test")
 	writeFile(t, filepath.Join(repoPath, ".claude", "CLAUDE.md"), "shared project instructions")
 	writeFile(t, filepath.Join(repoPath, ".claude", "settings.json"), "shared settings")
 	os.MkdirAll(filepath.Join(repoPath, ".brief"), 0o755)
@@ -383,6 +569,7 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 	// Sol-managed local files should be ignored.
 	shouldBeIgnored := []string{
 		".claude/settings.local.json",
+		".claude/system-prompt.md",
 		"CLAUDE.local.md",
 		".brief/memory.md",
 		".workflow/manifest.json",
