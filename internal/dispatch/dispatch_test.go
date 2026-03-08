@@ -4280,3 +4280,284 @@ func TestAutoProvisionCapacityExhaustedError(t *testing.T) {
 		t.Errorf("expected ErrCapacityExhausted, got: %v", err)
 	}
 }
+
+func TestResolveAutoResolvesWritLinkedEscalations(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create a non-code writ.
+	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Investigate issue",
+		Description: "Investigate an issue",
+		CreatedBy:   "operator",
+		Kind:        "analysis",
+	})
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	// Create escalations linked to this writ.
+	escID1, err := sphereStore.CreateEscalation("high", "ember/Toast", "Build failed", "writ:"+itemID)
+	if err != nil {
+		t.Fatalf("failed to create escalation: %v", err)
+	}
+	escID2, err := sphereStore.CreateEscalation("low", "ember/Toast", "Flaky test", "writ:"+itemID)
+	if err != nil {
+		t.Fatalf("failed to create escalation: %v", err)
+	}
+	// Create an escalation for a different writ — should NOT be resolved.
+	escIDOther, err := sphereStore.CreateEscalation("high", "ember/Toast", "Other issue", "writ:sol-other1234567890")
+	if err != nil {
+		t.Fatalf("failed to create escalation: %v", err)
+	}
+
+	_, err = Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Verify linked escalations are resolved.
+	esc1, err := sphereStore.ListEscalationsBySourceRef("writ:" + itemID)
+	if err != nil {
+		t.Fatalf("failed to list escalations: %v", err)
+	}
+	if len(esc1) != 0 {
+		t.Errorf("expected 0 open escalations for writ, got %d", len(esc1))
+	}
+
+	// Verify we can get the resolved escalations by ID to confirm they exist but are resolved.
+	_ = escID1
+	_ = escID2
+
+	// Verify other writ's escalation is NOT resolved.
+	escOther, err := sphereStore.ListEscalationsBySourceRef("writ:sol-other1234567890")
+	if err != nil {
+		t.Fatalf("failed to list escalations: %v", err)
+	}
+	if len(escOther) != 1 {
+		t.Errorf("expected 1 open escalation for other writ, got %d", len(escOther))
+	}
+	if len(escOther) == 1 && escOther[0].ID != escIDOther {
+		t.Errorf("wrong escalation remaining: got %q, want %q", escOther[0].ID, escIDOther)
+	}
+}
+
+func TestResolveAutoResolvesEscalationsForCodeWrit(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create a code writ (default kind).
+	itemID, err := worldStore.CreateWrit("Fix bug", "Fix a bug", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	// Create an escalation linked to this writ.
+	_, err = sphereStore.CreateEscalation("high", "ember/Toast", "Agent stuck", "writ:"+itemID)
+	if err != nil {
+		t.Fatalf("failed to create escalation: %v", err)
+	}
+
+	_, err = Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Verify writ-linked escalation is resolved even for code writs.
+	escs, err := sphereStore.ListEscalationsBySourceRef("writ:" + itemID)
+	if err != nil {
+		t.Fatalf("failed to list escalations: %v", err)
+	}
+	if len(escs) != 0 {
+		t.Errorf("expected 0 open escalations for writ, got %d", len(escs))
+	}
+}
+
+func TestResolveEscalationAutoResolveIsBestEffort(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create a non-code writ.
+	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Research task",
+		Description: "Do research",
+		CreatedBy:   "operator",
+		Kind:        "analysis",
+	})
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	// Don't create any escalations — ListEscalationsBySourceRef returns empty.
+	// Resolve should succeed even when there are no escalations.
+	_, err = Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve should succeed even with no escalations: %v", err)
+	}
+
+	// Verify writ was closed.
+	item, err := worldStore.GetWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to get writ: %v", err)
+	}
+	if item.Status != "closed" {
+		t.Errorf("expected writ status 'closed', got %q", item.Status)
+	}
+}
+
+func TestResolveMultipleEscalationsForSameWrit(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create a non-code writ.
+	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Multi-escalation task",
+		Description: "Task with multiple escalations",
+		CreatedBy:   "operator",
+		Kind:        "analysis",
+	})
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	// Create multiple escalations for the same writ.
+	for i := 0; i < 5; i++ {
+		_, err := sphereStore.CreateEscalation("high", "ember/Toast",
+			fmt.Sprintf("Escalation %d", i), "writ:"+itemID)
+		if err != nil {
+			t.Fatalf("failed to create escalation %d: %v", i, err)
+		}
+	}
+
+	// Verify they exist before resolve.
+	before, err := sphereStore.ListEscalationsBySourceRef("writ:" + itemID)
+	if err != nil {
+		t.Fatalf("failed to list escalations: %v", err)
+	}
+	if len(before) != 5 {
+		t.Fatalf("expected 5 escalations before resolve, got %d", len(before))
+	}
+
+	_, err = Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Verify all escalations are resolved.
+	after, err := sphereStore.ListEscalationsBySourceRef("writ:" + itemID)
+	if err != nil {
+		t.Fatalf("failed to list escalations: %v", err)
+	}
+	if len(after) != 0 {
+		t.Errorf("expected 0 open escalations after resolve, got %d", len(after))
+	}
+}

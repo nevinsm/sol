@@ -311,6 +311,17 @@ var writCloseCmd = &cobra.Command{
 		if err := s.CloseWrit(args[0], closeReason); err != nil {
 			return err
 		}
+
+		// Auto-resolve linked escalations (best-effort).
+		sphereStore, err := store.OpenSphere()
+		if err == nil {
+			defer sphereStore.Close()
+			escalations, _ := sphereStore.ListEscalationsBySourceRef("writ:" + args[0])
+			for _, esc := range escalations {
+				_ = sphereStore.ResolveEscalation(esc.ID)
+			}
+		}
+
 		fmt.Printf("Closed %s\n", args[0])
 		return nil
 	},
