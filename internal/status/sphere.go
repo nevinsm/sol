@@ -19,7 +19,8 @@ import (
 func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 	checker SessionChecker,
 	worldOpener func(string) (*store.Store, error),
-	caravanStore CaravanStore) *SphereStatus {
+	caravanStore CaravanStore,
+	escalationLister ...EscalationLister) *SphereStatus {
 
 	result := &SphereStatus{
 		SOLHome: config.Home(),
@@ -90,7 +91,21 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 		}
 	}
 
-	// 6. Compute sphere health.
+	// 6. Gather escalation summary (non-fatal if fails — DEGRADE).
+	if len(escalationLister) > 0 && escalationLister[0] != nil {
+		if escs, err := escalationLister[0].ListOpenEscalations(); err == nil && len(escs) > 0 {
+			summary := &EscalationSummary{
+				Total:      len(escs),
+				BySeverity: make(map[string]int),
+			}
+			for _, esc := range escs {
+				summary.BySeverity[esc.Severity]++
+			}
+			result.Escalations = summary
+		}
+	}
+
+	// 7. Compute sphere health.
 	result.Health = computeSphereHealth(result)
 
 	return result
@@ -143,6 +158,11 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 		Name:       w.Name,
 		SourceRepo: w.SourceRepo,
 		Sleeping:   config.IsSleeping(w.Name),
+	}
+
+	// Load world config for capacity (non-fatal if fails — DEGRADE).
+	if worldCfg, err := config.LoadWorldConfig(w.Name); err == nil {
+		summary.Capacity = worldCfg.Agents.Capacity
 	}
 
 	// Sleeping worlds get a distinct health indicator and skip further checks.

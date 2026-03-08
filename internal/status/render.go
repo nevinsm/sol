@@ -101,6 +101,12 @@ func RenderSphere(s *SphereStatus) string {
 		b.WriteString("\n")
 	}
 
+	// Escalations (only when open).
+	if s.Escalations != nil && s.Escalations.Total > 0 {
+		b.WriteString(renderEscalationLine(s.Escalations))
+		b.WriteString("\n")
+	}
+
 	// Operator mail (only when pending).
 	if s.MailCount > 0 {
 		b.WriteString(fmt.Sprintf("Mail: %d unread\n", s.MailCount))
@@ -201,9 +207,13 @@ func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 			continue
 		}
 
-		agents := fmt.Sprintf("%d", w.Agents)
+		agentCount := fmt.Sprintf("%d", w.Agents)
+		if w.Capacity > 0 {
+			agentCount = fmt.Sprintf("%d/%d", w.Agents, w.Capacity)
+		}
+		agents := agentCount
 		if w.Working > 0 || w.Stalled > 0 || w.Dead > 0 {
-			agents = fmt.Sprintf("%d (%d work", w.Agents, w.Working)
+			agents = fmt.Sprintf("%s (%d work", agentCount, w.Working)
 			if w.Stalled > 0 {
 				agents += fmt.Sprintf(", %d stall", w.Stalled)
 			}
@@ -498,6 +508,9 @@ func renderMergeQueue(b *strings.Builder, mq MergeQueueInfo) {
 
 func renderWorldSummary(b *strings.Builder, ws *WorldStatus) {
 	parts := fmt.Sprintf("%d agents", ws.Summary.Total)
+	if ws.Capacity > 0 {
+		parts += fmt.Sprintf(" (capacity: %d)", ws.Capacity)
+	}
 	if len(ws.Envoys) > 0 {
 		parts += fmt.Sprintf(", %d envoys", len(ws.Envoys))
 	}
@@ -514,7 +527,8 @@ func renderWorldSummary(b *strings.Builder, ws *WorldStatus) {
 
 // RenderCombined renders sphere processes and world detail as a single view.
 // Used when sol status auto-detects a world from the current directory.
-func RenderCombined(consul ConsulInfo, ws *WorldStatus) string {
+// An optional EscalationSummary is displayed when escalations are open.
+func RenderCombined(consul ConsulInfo, ws *WorldStatus, escalations ...*EscalationSummary) string {
 	var b strings.Builder
 
 	// Header — world-focused.
@@ -591,10 +605,44 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus) string {
 	renderMergeQueue(&b, ws.MergeQueue)
 	b.WriteString("\n")
 
+	// Escalations (only when open).
+	if len(escalations) > 0 && escalations[0] != nil && escalations[0].Total > 0 {
+		b.WriteString(renderEscalationLine(escalations[0]))
+		b.WriteString("\n")
+	}
+
 	// Summary.
 	renderWorldSummary(&b, ws)
 
 	return b.String()
+}
+
+// renderEscalationLine returns a formatted escalation summary line.
+// Format: "Escalations: 3 open (1 critical, 2 high)"
+func renderEscalationLine(esc *EscalationSummary) string {
+	line := fmt.Sprintf("Escalations: %d open", esc.Total)
+
+	// Build severity breakdown in decreasing severity order.
+	severityOrder := []string{"critical", "high", "medium", "low"}
+	var parts []string
+	for _, sev := range severityOrder {
+		if count, ok := esc.BySeverity[sev]; ok && count > 0 {
+			part := fmt.Sprintf("%d %s", count, sev)
+			switch sev {
+			case "critical":
+				part = errorStyle.Render(part)
+			case "high", "medium":
+				part = warnStyle.Render(part)
+			}
+			parts = append(parts, part)
+		}
+	}
+
+	if len(parts) > 0 {
+		line += " (" + strings.Join(parts, ", ") + ")"
+	}
+
+	return line + "\n"
 }
 
 // RenderWorldConfig renders the config section for sol world status.

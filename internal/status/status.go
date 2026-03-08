@@ -20,6 +20,7 @@ import (
 // WorldStatus holds the complete runtime state for a world.
 type WorldStatus struct {
 	World      string         `json:"world"`
+	Capacity   int            `json:"capacity"` // 0 = unlimited
 	Prefect    PrefectInfo    `json:"prefect"`
 	Forge      ForgeInfo      `json:"forge"`
 	Chronicle  ChronicleInfo  `json:"chronicle"`
@@ -221,25 +222,37 @@ type WorldLister interface {
 	ListWorlds() ([]store.World, error)
 }
 
+// EscalationLister abstracts escalation queries for sphere status.
+type EscalationLister interface {
+	ListOpenEscalations() ([]store.Escalation, error)
+}
+
 // SenateInfo holds senate process state (sphere-level).
 type SenateInfo struct {
 	Running     bool   `json:"running"`
 	SessionName string `json:"session_name,omitempty"`
 }
 
+// EscalationSummary holds aggregated escalation counts for status display.
+type EscalationSummary struct {
+	Total      int            `json:"total"`
+	BySeverity map[string]int `json:"by_severity"`
+}
+
 // SphereStatus holds the complete runtime state for the sphere.
 type SphereStatus struct {
-	SOLHome   string         `json:"sol_home"`
-	Prefect   PrefectInfo    `json:"prefect"`
-	Consul    ConsulInfo     `json:"consul"`
-	Chronicle ChronicleInfo  `json:"chronicle"`
-	Ledger    LedgerInfo     `json:"ledger"`
-	Broker    BrokerInfo     `json:"broker"`
-	Senate    SenateInfo     `json:"senate"`
-	Worlds    []WorldSummary `json:"worlds"`
-	Caravans  []CaravanInfo  `json:"caravans,omitempty"`
-	MailCount int            `json:"mail_count,omitempty"`
-	Health    string         `json:"health"`
+	SOLHome     string              `json:"sol_home"`
+	Prefect     PrefectInfo         `json:"prefect"`
+	Consul      ConsulInfo          `json:"consul"`
+	Chronicle   ChronicleInfo       `json:"chronicle"`
+	Ledger      LedgerInfo          `json:"ledger"`
+	Broker      BrokerInfo          `json:"broker"`
+	Senate      SenateInfo          `json:"senate"`
+	Worlds      []WorldSummary      `json:"worlds"`
+	Caravans    []CaravanInfo       `json:"caravans,omitempty"`
+	Escalations *EscalationSummary  `json:"escalations,omitempty"`
+	MailCount   int                 `json:"mail_count,omitempty"`
+	Health      string              `json:"health"`
 }
 
 // ConsulInfo holds consul process state.
@@ -266,6 +279,7 @@ type WorldSummary struct {
 	SourceRepo string `json:"source_repo,omitempty"`
 	Sleeping   bool   `json:"sleeping,omitempty"`
 	Agents     int    `json:"agents"`
+	Capacity   int    `json:"capacity"` // 0 = unlimited
 	Envoys     int    `json:"envoys"`
 	Governor   bool   `json:"governor"`
 	Working    int    `json:"working"`

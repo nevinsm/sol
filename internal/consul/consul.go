@@ -516,6 +516,15 @@ func (d *Consul) dispatchWorldItems(ctx context.Context, caravanID, world string
 		}
 		result, err := d.dispatchFunc(ctx, castOpts, worldStore, d.sphereStore, d.sessions, d.logger)
 		if err != nil {
+			// Capacity exhausted — no point trying more items in this world.
+			if errors.Is(err, dispatch.ErrCapacityExhausted) {
+				d.logInfo("consul_capacity_full", map[string]any{
+					"caravan_id": caravanID,
+					"world":      world,
+					"error":      err.Error(),
+				})
+				break
+			}
 			d.logInfo("consul_error", map[string]any{
 				"action":       "dispatch_item",
 				"caravan_id":   caravanID,

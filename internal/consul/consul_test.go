@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -1015,5 +1016,95 @@ func TestFeedStrandedCaravansExitsOnCancelledContext(t *testing.T) {
 	}
 	if len(dispatched) != 0 {
 		t.Errorf("dispatch calls = %d, want 0", len(dispatched))
+	}
+}
+
+func TestDispatchWorldItemsBreaksOnCapacityExhausted(t *testing.T) {
+	setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "full-world"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Write world config so dispatchWorldItems can load it.
+	worldDir := filepath.Join(config.Home(), worldName)
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configContent := `[world]
+source_repo = "/tmp/fake-repo"
+[agents]
+capacity = 2
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(configContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set up managed repo directory so ResolveSourceRepo doesn't fail.
+	repoDir := filepath.Join(config.Home(), worldName, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create caravan with 3 ready items.
+	caravanID, _ := sphereStore.CreateCaravan("cap-test-caravan", "operator")
+	sphereStore.UpdateCaravanStatus(caravanID, "open")
+
+	wi1, _ := worldStore.CreateWrit("cap-task-1", "desc1", "test", 1, nil)
+	wi2, _ := worldStore.CreateWrit("cap-task-2", "desc2", "test", 1, nil)
+	wi3, _ := worldStore.CreateWrit("cap-task-3", "desc3", "test", 1, nil)
+
+	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
+	sphereStore.CreateCaravanItem(caravanID, wi2, worldName, 0)
+	sphereStore.CreateCaravanItem(caravanID, wi3, worldName, 0)
+
+	sessions := newMockSessions()
+	cfg := Config{
+		StaleTetherTimeout: 1 * time.Hour,
+		SolHome:            config.Home(),
+	}
+
+	// Dispatch func: succeeds on first call, returns capacity exhausted on second.
+	dispatchCount := 0
+	capDispatchFunc := func(ctx context.Context, opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, logger *events.Logger) (*dispatch.CastResult, error) {
+		dispatchCount++
+		if dispatchCount >= 2 {
+			return nil, fmt.Errorf("world %q at capacity: %w", worldName, dispatch.ErrCapacityExhausted)
+		}
+		return &dispatch.CastResult{
+			WritID:      opts.WritID,
+			AgentName:   "MockAgent",
+			SessionName: "sol-mock-session",
+			WorktreeDir: "/tmp/mock",
+		}, nil
+	}
+
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
+	})
+	d.SetDispatchFunc(capDispatchFunc)
+
+	fed, err := d.feedStrandedCaravans(context.Background())
+	if err != nil {
+		t.Fatalf("feedStrandedCaravans failed: %v", err)
+	}
+
+	// Should have dispatched 1 item, then hit capacity on the 2nd and broken.
+	// The 3rd item should NOT have been tried.
+	if fed != 1 {
+		t.Errorf("fed = %d, want 1 (broke after capacity exhaustion)", fed)
+	}
+	if dispatchCount != 2 {
+		t.Errorf("dispatchCount = %d, want 2 (1 success + 1 capacity error, then break)", dispatchCount)
 	}
 }

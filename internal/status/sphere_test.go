@@ -14,6 +14,19 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
+// mockEscalationLister implements EscalationLister for testing.
+type mockEscalationLister struct {
+	escalations []store.Escalation
+	err         error
+}
+
+func (m *mockEscalationLister) ListOpenEscalations() ([]store.Escalation, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.escalations, nil
+}
+
 // --- Sphere-level mock implementations ---
 
 type mockWorldLister struct {
@@ -577,5 +590,148 @@ func TestGatherSphereChroniclePIDFallback(t *testing.T) {
 	}
 	if result.Chronicle.SessionName != "" {
 		t.Errorf("Chronicle.SessionName = %q, want empty (PID-based detection)", result.Chronicle.SessionName)
+	}
+}
+
+func TestWorldSummaryIncludesCapacity(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// Write a world.toml with capacity = 5.
+	worldName := "capped"
+	worldDir := filepath.Join(config.Home(), worldName)
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configContent := `[agents]
+capacity = 5
+model_tier = "sonnet"
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(configContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	lister := &mockWorldLister{
+		worlds: []store.World{
+			{Name: worldName},
+		},
+	}
+	sphere := &mockSphereStore{
+		agents: []store.Agent{
+			{ID: worldName + "/A", Name: "A", World: worldName, State: "working"},
+			{ID: worldName + "/B", Name: "B", World: worldName, State: "idle"},
+		},
+	}
+	checker := &mockChecker{alive: map[string]bool{
+		"sol-capped-A": true,
+	}}
+
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+
+	if len(result.Worlds) != 1 {
+		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
+	}
+	w := result.Worlds[0]
+	if w.Capacity != 5 {
+		t.Errorf("Capacity = %d, want 5", w.Capacity)
+	}
+	if w.Agents != 2 {
+		t.Errorf("Agents = %d, want 2", w.Agents)
+	}
+}
+
+func TestWorldSummaryUnlimitedCapacity(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// No world.toml → capacity = 0 (unlimited/default).
+	lister := &mockWorldLister{
+		worlds: []store.World{
+			{Name: "nocap"},
+		},
+	}
+	sphere := &mockSphereStore{}
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+
+	if len(result.Worlds) != 1 {
+		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
+	}
+	if result.Worlds[0].Capacity != 0 {
+		t.Errorf("Capacity = %d, want 0 (unlimited)", result.Worlds[0].Capacity)
+	}
+}
+
+func TestEscalationSummaryAggregatesBySeverity(t *testing.T) {
+	setupTestHome(t)
+	clearPrefectPID(t)
+
+	lister := &mockWorldLister{}
+	sphere := &mockSphereStore{}
+	checker := &mockChecker{alive: map[string]bool{}}
+	escalations := &mockEscalationLister{
+		escalations: []store.Escalation{
+			{ID: "esc-1", Severity: "critical", Status: "open"},
+			{ID: "esc-2", Severity: "high", Status: "open"},
+			{ID: "esc-3", Severity: "high", Status: "acknowledged"},
+			{ID: "esc-4", Severity: "low", Status: "open"},
+		},
+	}
+
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil, escalations)
+
+	if result.Escalations == nil {
+		t.Fatal("Escalations is nil, want non-nil")
+	}
+	if result.Escalations.Total != 4 {
+		t.Errorf("Escalations.Total = %d, want 4", result.Escalations.Total)
+	}
+	if result.Escalations.BySeverity["critical"] != 1 {
+		t.Errorf("BySeverity[critical] = %d, want 1", result.Escalations.BySeverity["critical"])
+	}
+	if result.Escalations.BySeverity["high"] != 2 {
+		t.Errorf("BySeverity[high] = %d, want 2", result.Escalations.BySeverity["high"])
+	}
+	if result.Escalations.BySeverity["low"] != 1 {
+		t.Errorf("BySeverity[low] = %d, want 1", result.Escalations.BySeverity["low"])
+	}
+}
+
+func TestEscalationSummaryOmittedWhenNone(t *testing.T) {
+	setupTestHome(t)
+	clearPrefectPID(t)
+
+	lister := &mockWorldLister{}
+	sphere := &mockSphereStore{}
+	checker := &mockChecker{alive: map[string]bool{}}
+	escalations := &mockEscalationLister{
+		escalations: nil, // no escalations
+	}
+
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil, escalations)
+
+	if result.Escalations != nil {
+		t.Errorf("Escalations = %+v, want nil (no escalations)", result.Escalations)
+	}
+}
+
+func TestEscalationSummaryOmittedWhenNoLister(t *testing.T) {
+	setupTestHome(t)
+	clearPrefectPID(t)
+
+	lister := &mockWorldLister{}
+	sphere := &mockSphereStore{}
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	// No escalation lister passed.
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+
+	if result.Escalations != nil {
+		t.Errorf("Escalations = %+v, want nil (no lister)", result.Escalations)
 	}
 }

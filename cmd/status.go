@@ -66,7 +66,7 @@ func runSphereStatus() error {
 	mgr := session.New()
 
 	result := status.GatherSphere(sphereStore, sphereStore, mgr,
-		gatedWorldOpener, sphereStore)
+		gatedWorldOpener, sphereStore, sphereStore)
 
 	// Add operator mail count.
 	if count, err := sphereStore.CountPending("operator"); err == nil && count > 0 {
@@ -105,14 +105,33 @@ func runCombinedStatus(world string) error {
 
 	status.GatherCaravans(result, sphereStore, gatedWorldOpener)
 
+	// Load world config for capacity (non-fatal).
+	if worldCfg, err := config.LoadWorldConfig(world); err == nil {
+		result.Capacity = worldCfg.Agents.Capacity
+	}
+
 	consulInfo := status.GatherConsulInfo()
+
+	// Gather escalation summary (non-fatal).
+	var escSummary *status.EscalationSummary
+	if escs, err := sphereStore.ListOpenEscalations(); err == nil && len(escs) > 0 {
+		escSummary = &status.EscalationSummary{
+			Total:      len(escs),
+			BySeverity: make(map[string]int),
+		}
+		for _, esc := range escs {
+			escSummary.BySeverity[esc.Severity]++
+		}
+	}
 
 	if statusJSON {
 		combined := struct {
-			Consul status.ConsulInfo `json:"consul"`
+			Consul      status.ConsulInfo          `json:"consul"`
+			Escalations *status.EscalationSummary   `json:"escalations,omitempty"`
 			*status.WorldStatus
 		}{
 			Consul:      consulInfo,
+			Escalations: escSummary,
 			WorldStatus: result,
 		}
 		enc := json.NewEncoder(os.Stdout)
@@ -126,7 +145,7 @@ func runCombinedStatus(world string) error {
 		return nil
 	}
 
-	fmt.Print(status.RenderCombined(consulInfo, result))
+	fmt.Print(status.RenderCombined(consulInfo, result, escSummary))
 	return nil
 }
 
@@ -155,6 +174,11 @@ func runWorldStatus(world string) error {
 	}
 
 	status.GatherCaravans(result, sphereStore, gatedWorldOpener)
+
+	// Load world config for capacity (non-fatal).
+	if worldCfg, err := config.LoadWorldConfig(world); err == nil {
+		result.Capacity = worldCfg.Agents.Capacity
+	}
 
 	if statusJSON {
 		enc := json.NewEncoder(os.Stdout)

@@ -4155,3 +4155,54 @@ func TestResolveContextCancelled(t *testing.T) {
 		t.Fatal("expected Resolve to fail with cancelled context")
 	}
 }
+
+func TestErrCapacityExhausted(t *testing.T) {
+	// ErrCapacityExhausted should be detectable via errors.Is.
+	err := fmt.Errorf("world %q has reached agent capacity (%d): %w", "testworld", 5, ErrCapacityExhausted)
+	if !errors.Is(err, ErrCapacityExhausted) {
+		t.Error("wrapped error should match ErrCapacityExhausted via errors.Is")
+	}
+
+	// Plain error should not match.
+	plainErr := fmt.Errorf("some other error")
+	if errors.Is(plainErr, ErrCapacityExhausted) {
+		t.Error("unrelated error should not match ErrCapacityExhausted")
+	}
+}
+
+func TestAutoProvisionCapacityExhaustedError(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	config.EnsureDirs()
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "capped-test"
+	// Create 3 agents — capacity of 3 should be exhausted.
+	for _, name := range []string{"Alpha", "Beta", "Gamma"} {
+		if _, err := sphereStore.CreateAgent(name, worldName, "agent"); err != nil {
+			t.Fatalf("failed to create agent: %v", err)
+		}
+	}
+
+	// Write a names.txt pool.
+	worldDir := filepath.Join(solHome, worldName)
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "names.txt"), []byte("Alpha\nBeta\nGamma\nDelta\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = autoProvision(worldName, sphereStore, "", 3)
+	if err == nil {
+		t.Fatal("expected autoProvision to fail when at capacity")
+	}
+	if !errors.Is(err, ErrCapacityExhausted) {
+		t.Errorf("expected ErrCapacityExhausted, got: %v", err)
+	}
+}
