@@ -146,12 +146,25 @@ type Summary struct {
 	Dead    int `json:"dead"`
 }
 
-// Health returns the overall health level.
-// 0 = healthy (all sessions alive or idle, no failed merge requests)
-// 1 = unhealthy (at least one dead session or failed merge request)
-// 2 = degraded (prefect not running)
+// Health returns the world-scoped health level for a single world.
+//
+// This is distinct from computeSphereHealth() in sphere.go which computes
+// sphere-wide health by aggregating across all worlds plus sphere-level
+// components (consul staleness, prefect).
+//
+// World health checks only local conditions:
+//   - Prefect running (required for session respawn)
+//   - Dead agent sessions (working agents whose tmux sessions have died)
+//   - Failed merge requests (work completed but merge failed)
+//
+// Returns:
+//   0 = healthy (all sessions alive or idle, no failed merge requests)
+//   1 = unhealthy (at least one dead session or failed merge request)
+//   2 = degraded (prefect not running — sessions cannot be respawned)
+//
 // Forge state does not affect health — an absent forge just means
-// merges won't happen, the system is still operational.
+// merges won't happen, the system is still operational. Envoy and
+// governor sessions are human-supervised and do not affect health.
 func (r *WorldStatus) Health() int {
 	if !r.Prefect.Running {
 		return 2
@@ -494,34 +507,36 @@ func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener 
 			continue
 		}
 
-		info := CaravanInfo{
-			ID:         c.ID,
-			Name:       c.Name,
-			Status:     c.Status,
-			TotalItems: len(items),
-		}
-
-		statuses, err := caravanStore.CheckCaravanReadiness(c.ID, worldOpener)
-		if err == nil {
-			for _, st := range statuses {
-				switch {
-				case st.WritStatus == "closed":
-					info.ClosedItems++
-				case st.WritStatus == "done":
-					info.DoneItems++
-				case st.IsDispatched():
-					info.DispatchedItems++
-				case st.WritStatus == "open" && st.Ready:
-					info.ReadyItems++
-				}
-			}
-		}
-
-		// Compute phase breakdown if any items have phase > 0.
-		info.Phases = computePhaseProgress(items, statuses)
-
+		statuses, _ := caravanStore.CheckCaravanReadiness(c.ID, worldOpener)
+		info := buildCaravanInfo(c, items, statuses)
 		result.Caravans = append(result.Caravans, info)
 	}
+}
+
+// buildCaravanInfo computes aggregate item counts and phase progress for a caravan.
+// This is the single source of truth for caravan status computation, used by both
+// GatherCaravans (world-scoped) and GatherSphere (sphere-scoped).
+func buildCaravanInfo(c store.Caravan, items []store.CaravanItem, statuses []store.CaravanItemStatus) CaravanInfo {
+	info := CaravanInfo{
+		ID:         c.ID,
+		Name:       c.Name,
+		Status:     c.Status,
+		TotalItems: len(items),
+	}
+	for _, st := range statuses {
+		switch {
+		case st.WritStatus == "closed":
+			info.ClosedItems++
+		case st.WritStatus == "done":
+			info.DoneItems++
+		case st.IsDispatched():
+			info.DispatchedItems++
+		case st.WritStatus == "open" && st.Ready:
+			info.ReadyItems++
+		}
+	}
+	info.Phases = computePhaseProgress(items, statuses)
+	return info
 }
 
 // computePhaseProgress builds phase breakdown for a caravan.

@@ -84,29 +84,8 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 				if err != nil {
 					continue
 				}
-				info := CaravanInfo{
-					ID:         c.ID,
-					Name:       c.Name,
-					Status:     c.Status,
-					TotalItems: len(items),
-				}
-				statuses, err := caravanStore.CheckCaravanReadiness(c.ID, worldOpener)
-				if err == nil {
-					for _, st := range statuses {
-						switch {
-						case st.WritStatus == "closed":
-							info.ClosedItems++
-						case st.WritStatus == "done":
-							info.DoneItems++
-						case st.IsDispatched():
-							info.DispatchedItems++
-						case st.WritStatus == "open" && st.Ready:
-							info.ReadyItems++
-						}
-					}
-				}
-				info.Phases = computePhaseProgress(items, statuses)
-				result.Caravans = append(result.Caravans, info)
+				statuses, _ := caravanStore.CheckCaravanReadiness(c.ID, worldOpener)
+				result.Caravans = append(result.Caravans, buildCaravanInfo(c, items, statuses))
 			}
 		}
 	}
@@ -255,7 +234,18 @@ func FormatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
-// computeSphereHealth derives overall sphere health from component states.
+// computeSphereHealth derives sphere-wide health by aggregating component states.
+//
+// This is distinct from WorldStatus.Health() in status.go which computes
+// health for a single world. Sphere health considers:
+//   - Prefect running (sphere-level orchestrator — if down, no sessions respawn)
+//   - Any world unhealthy or having dead sessions (propagates upward)
+//   - Consul staleness (sphere-level patrol — stale means tether reaping is delayed)
+//
+// Sleeping worlds are excluded from health computation since they are
+// intentionally inactive and their state is not actionable.
+//
+// Returns "healthy", "degraded", or "unhealthy".
 func computeSphereHealth(s *SphereStatus) string {
 	if !s.Prefect.Running {
 		return "degraded"
