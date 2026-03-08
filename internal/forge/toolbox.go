@@ -270,9 +270,15 @@ func (r *Forge) MarkFailed(mrID string) error {
 	} else {
 		desc += " Writ reopened for re-dispatch."
 	}
-	if _, err := r.sphereStore.CreateEscalation("high", r.agentID, desc, "mr:"+mrID); err != nil {
+	if escID, err := r.sphereStore.CreateEscalation("high", r.agentID, desc, "mr:"+mrID); err != nil {
 		r.logger.Error("failed to create escalation for merge failure",
 			"mr", mrID, "error", err)
+	} else {
+		// Record initial notification time for aging checks.
+		if err := r.sphereStore.UpdateEscalationLastNotified(escID); err != nil {
+			r.logger.Error("failed to set last_notified_at for escalation",
+				"escalation", escID, "error", err)
+		}
 	}
 
 	r.logger.Info("marked failed and reopened", "mr", mrID,

@@ -9,15 +9,16 @@ import (
 
 // Escalation represents a flagged problem requiring attention.
 type Escalation struct {
-	ID           string
-	Severity     string // "low", "medium", "high", "critical"
-	Source       string // agent ID or component that created it
-	Description  string
-	SourceRef    string // structured reference (e.g., "mr:mr-abc123", "writ:sol-xyz")
-	Status       string // "open", "acknowledged", "resolved"
-	Acknowledged bool
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID             string
+	Severity       string     // "low", "medium", "high", "critical"
+	Source         string     // agent ID or component that created it
+	Description    string
+	SourceRef      string     // structured reference (e.g., "mr:mr-abc123", "writ:sol-xyz")
+	Status         string     // "open", "acknowledged", "resolved"
+	Acknowledged   bool
+	LastNotifiedAt *time.Time // when notification was last sent; nil means use CreatedAt
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // validSeverities defines the allowed severity levels for escalations.
@@ -71,11 +72,12 @@ func (s *Store) GetEscalation(id string) (*Escalation, error) {
 	var createdAt, updatedAt string
 	var acknowledged int
 	var sourceRef sql.NullString
+	var lastNotifiedAt sql.NullString
 
 	err := s.db.QueryRow(
-		`SELECT id, severity, source, description, source_ref, status, acknowledged, created_at, updated_at
+		`SELECT id, severity, source, description, source_ref, status, acknowledged, last_notified_at, created_at, updated_at
 		 FROM escalations WHERE id = ?`, id,
-	).Scan(&esc.ID, &esc.Severity, &esc.Source, &esc.Description, &sourceRef, &esc.Status, &acknowledged, &createdAt, &updatedAt)
+	).Scan(&esc.ID, &esc.Severity, &esc.Source, &esc.Description, &sourceRef, &esc.Status, &acknowledged, &lastNotifiedAt, &createdAt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("escalation %q: %w", id, ErrNotFound)
 	}
@@ -87,6 +89,13 @@ func (s *Store) GetEscalation(id string) (*Escalation, error) {
 		esc.SourceRef = sourceRef.String
 	}
 	esc.Acknowledged = acknowledged != 0
+	if lastNotifiedAt.Valid {
+		t, err := time.Parse(time.RFC3339, lastNotifiedAt.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse last_notified_at for escalation %q: %w", id, err)
+		}
+		esc.LastNotifiedAt = &t
+	}
 	if esc.CreatedAt, err = parseRFC3339(createdAt, "created_at", "escalation "+id); err != nil {
 		return nil, err
 	}
@@ -109,7 +118,7 @@ const severityOrderSQL = `CASE severity
 // If status is empty, returns all escalations.
 // Ordered by severity DESC (critical first), then created_at DESC (newest first).
 func (s *Store) ListEscalations(status string) ([]Escalation, error) {
-	query := `SELECT id, severity, source, description, source_ref, status, acknowledged, created_at, updated_at
+	query := `SELECT id, severity, source, description, source_ref, status, acknowledged, last_notified_at, created_at, updated_at
 	          FROM escalations`
 	var args []interface{}
 	if status != "" {
@@ -124,7 +133,7 @@ func (s *Store) ListEscalations(status string) ([]Escalation, error) {
 // ListOpenEscalations returns all non-resolved escalations.
 // Ordered by severity DESC (critical first), then created_at DESC (newest first).
 func (s *Store) ListOpenEscalations() ([]Escalation, error) {
-	query := `SELECT id, severity, source, description, source_ref, status, acknowledged, created_at, updated_at
+	query := `SELECT id, severity, source, description, source_ref, status, acknowledged, last_notified_at, created_at, updated_at
 	          FROM escalations WHERE status != 'resolved'
 	          ORDER BY ` + severityOrderSQL + ` DESC, created_at DESC`
 	return s.scanEscalations(query)
@@ -133,7 +142,7 @@ func (s *Store) ListOpenEscalations() ([]Escalation, error) {
 // ListEscalationsBySourceRef returns non-resolved escalations matching a source_ref.
 // Ordered by created_at DESC (newest first).
 func (s *Store) ListEscalationsBySourceRef(sourceRef string) ([]Escalation, error) {
-	query := `SELECT id, severity, source, description, source_ref, status, acknowledged, created_at, updated_at
+	query := `SELECT id, severity, source, description, source_ref, status, acknowledged, last_notified_at, created_at, updated_at
 	          FROM escalations WHERE source_ref = ? AND status != 'resolved' ORDER BY created_at DESC`
 	return s.scanEscalations(query, sourceRef)
 }
@@ -152,14 +161,22 @@ func (s *Store) scanEscalations(query string, args ...interface{}) ([]Escalation
 		var createdAt, updatedAt string
 		var acknowledged int
 		var sourceRef sql.NullString
+		var lastNotifiedAt sql.NullString
 
-		if err := rows.Scan(&esc.ID, &esc.Severity, &esc.Source, &esc.Description, &sourceRef, &esc.Status, &acknowledged, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&esc.ID, &esc.Severity, &esc.Source, &esc.Description, &sourceRef, &esc.Status, &acknowledged, &lastNotifiedAt, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan escalation: %w", err)
 		}
 		if sourceRef.Valid {
 			esc.SourceRef = sourceRef.String
 		}
 		esc.Acknowledged = acknowledged != 0
+		if lastNotifiedAt.Valid {
+			t, parseErr := time.Parse(time.RFC3339, lastNotifiedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("failed to parse last_notified_at for escalation %q: %w", esc.ID, parseErr)
+			}
+			esc.LastNotifiedAt = &t
+		}
 		var parseErr error
 		if esc.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "escalation "+esc.ID); parseErr != nil {
 			return nil, parseErr
@@ -201,6 +218,14 @@ func (s *Store) ResolveEscalation(id string) error {
 		return fmt.Errorf("failed to resolve escalation %q: %w", id, err)
 	}
 	return checkRowsAffected(result, "escalation", id)
+}
+
+// UpdateEscalationLastNotified sets the last_notified_at timestamp to now.
+func (s *Store) UpdateEscalationLastNotified(id string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(
+		`UPDATE escalations SET last_notified_at = ? WHERE id = ?`, now, id)
+	return err
 }
 
 // CountOpen returns the number of open (unresolved) escalations.

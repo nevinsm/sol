@@ -81,6 +81,11 @@ var escalateCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Warning: notification error: %v\n", err)
 		}
 
+		// Record initial notification time for aging checks.
+		if err := sphereStore.UpdateEscalationLastNotified(id); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to set last_notified_at: %v\n", err)
+		}
+
 		fmt.Printf("Escalation created: %s [%s]\n", id, escalateSeverity)
 		return nil
 	},
