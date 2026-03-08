@@ -256,6 +256,31 @@ func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
 	return items, nil
 }
 
+// GetCaravanItemsForWrit returns all caravan items for a given writ ID.
+func (s *Store) GetCaravanItemsForWrit(writID string) ([]CaravanItem, error) {
+	rows, err := s.db.Query(
+		`SELECT caravan_id, writ_id, world, phase FROM caravan_items WHERE writ_id = ? ORDER BY caravan_id, phase`,
+		writID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get caravan items for writ %q: %w", writID, err)
+	}
+	defer rows.Close()
+
+	var items []CaravanItem
+	for rows.Next() {
+		var ci CaravanItem
+		if err := rows.Scan(&ci.CaravanID, &ci.WritID, &ci.World, &ci.Phase); err != nil {
+			return nil, fmt.Errorf("failed to scan caravan item: %w", err)
+		}
+		items = append(items, ci)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating caravan items for writ %q: %w", writID, err)
+	}
+	return items, nil
+}
+
 // CheckCaravanReadiness returns the status of all items in a caravan.
 // This requires opening each world's database to check writ status
 // and dependency satisfaction.

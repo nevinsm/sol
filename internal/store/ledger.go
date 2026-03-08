@@ -253,6 +253,47 @@ func (s *Store) AggregateTokens(agentName string) ([]TokenSummary, error) {
 	return summaries, nil
 }
 
+// HistoryForWrit returns all agent_history entries for a given writ ID,
+// ordered by started_at ASC.
+func (s *Store) HistoryForWrit(writID string) ([]HistoryEntry, error) {
+	rows, err := s.db.Query(
+		`SELECT id, agent_name, writ_id, action, started_at, ended_at, summary
+		 FROM agent_history WHERE writ_id = ?
+		 ORDER BY started_at ASC`, writID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list history for writ %q: %w", writID, err)
+	}
+	defer rows.Close()
+
+	var entries []HistoryEntry
+	for rows.Next() {
+		var h HistoryEntry
+		var wID, summary, endedAt sql.NullString
+		var startedAt string
+
+		if err := rows.Scan(&h.ID, &h.AgentName, &wID, &h.Action, &startedAt, &endedAt, &summary); err != nil {
+			return nil, fmt.Errorf("failed to scan agent history for writ %q: %w", writID, err)
+		}
+
+		h.WritID = wID.String
+		h.Summary = summary.String
+
+		var parseErr error
+		if h.StartedAt, parseErr = parseRFC3339(startedAt, "started_at", "history "+h.ID); parseErr != nil {
+			return nil, parseErr
+		}
+		if h.EndedAt, parseErr = parseOptionalRFC3339(endedAt, "ended_at", "history "+h.ID); parseErr != nil {
+			return nil, parseErr
+		}
+		entries = append(entries, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating history for writ %q: %w", writID, err)
+	}
+	return entries, nil
+}
+
 // TokensForWrit sums token usage across all history entries for a writ,
 // grouped by model. Returns per-model totals.
 func (s *Store) TokensForWrit(writID string) ([]TokenSummary, error) {

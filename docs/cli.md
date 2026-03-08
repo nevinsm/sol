@@ -105,3 +105,45 @@ Cost line behavior:
 | `sol cost --json` | Machine-readable JSON output |
 
 All `--since`, `--json` flags can be combined with any view flag. Missing pricing in `sol.toml` degrades gracefully to token-count-only display.
+
+### Writ Trace
+
+| Command | Description |
+|---------|-------------|
+| `sol writ trace <id>` | Show full trace: timeline, cost, and escalations |
+| `sol writ trace <id> --json` | Machine-readable JSON output |
+| `sol writ trace <id> --timeline` | Timeline only |
+| `sol writ trace <id> --cost` | Cost only |
+| `sol writ trace <id> --no-events` | Skip event log scan (faster) |
+| `sol writ trace <id> --world <name>` | Skip world auto-resolution |
+
+Data sources queried:
+- **World DB**: writ record, agent history, token usage, merge requests, dependencies, labels
+- **Sphere DB**: escalations, caravan items, active agents (degrades gracefully if unavailable)
+- **Tether filesystem**: active tether files across outposts and envoys
+- **Event log**: `.events.jsonl` feed events (skipped with `--no-events`)
+
+Example:
+```
+$ sol writ trace sol-a1b2c3d4e5f6a7b8
+Writ: sol-a1b2c3d4e5f6a7b8
+Title: Fix authentication token refresh
+Kind: code    Status: closed    Priority: 1
+Created: 2026-03-07T10:15:00Z    Closed: 2026-03-07T12:45:00Z    World: haven
+Labels: auth, critical
+
+── Timeline ──────────────────────────────────────────────────────────
+  10:15:00Z  created        by operator
+  10:15:05Z  cast           to Toast
+  11:30:00Z  resolved       by Toast
+  12:45:00Z  merged         mr-1a2b3c4d5e6f7a8b
+
+── Cost ──────────────────────────────────────────────────────────────
+  Model             Input      Output   Cache Read   Cache Write     Cost
+  claude-sonnet-4   125,400    48,200      890,000        12,500   $0.47
+                                                          Total:   $0.47
+  Cycle time: 2h 30m (cast → merge)
+
+── Escalations ───────────────────────────────────────────────────────
+  (none)
+```

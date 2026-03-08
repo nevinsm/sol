@@ -16,6 +16,7 @@ type WorldConfig struct {
 	Forge     ForgeSection     `toml:"forge" json:"forge"`
 	Ledger    LedgerSection    `toml:"ledger" json:"ledger"`
 	WritClean WritCleanSection `toml:"writ-clean" json:"writ-clean"`
+	Pricing   PricingConfig    `toml:"pricing" json:"pricing,omitempty"`
 }
 
 // WorldSection holds world-level settings.
