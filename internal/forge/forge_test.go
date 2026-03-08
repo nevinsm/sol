@@ -284,6 +284,10 @@ func (m *mockSphereStore) ResolveEscalation(id string) error {
 	return fmt.Errorf("escalation %q not found", id)
 }
 
+func (m *mockSphereStore) UpdateEscalationLastNotified(id string) error {
+	return nil
+}
+
 func (m *mockSphereStore) IsWritBlockedByCaravanDeps(writID string) (bool, []string, error) {
 	return false, nil, nil
 }

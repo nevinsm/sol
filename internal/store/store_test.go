@@ -355,6 +355,141 @@ func TestMigrateSphereV9ToV10(t *testing.T) {
 	if !sourceRefExists {
 		t.Fatal("expected source_ref column on escalations after V11 migration")
 	}
+
+	// Verify last_notified_at column exists on escalations (V12 migration).
+	lastNotifiedAtExists, err := columnExists(s2.db, "escalations", "last_notified_at")
+	if err != nil {
+		t.Fatalf("failed to check last_notified_at column: %v", err)
+	}
+	if !lastNotifiedAtExists {
+		t.Fatal("expected last_notified_at column on escalations after V12 migration")
+	}
+
+	// Verify partial index on source_ref exists (V12 migration).
+	var idxCount int
+	err = s2.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_escalations_source_ref'`).Scan(&idxCount)
+	if err != nil {
+		t.Fatalf("failed to check source_ref index: %v", err)
+	}
+	if idxCount != 1 {
+		t.Fatal("expected idx_escalations_source_ref index after V12 migration")
+	}
+}
+
+func TestMigrateSphereV11ToV12(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	// Simulate a V11 sphere database.
+	dbPath := filepath.Join(dir, ".store", "sphere.db")
+	s, err := open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create tables as they existed at V11.
+	_, err = s.db.Exec(`
+		CREATE TABLE agents (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			world TEXT NOT NULL,
+			role TEXT NOT NULL,
+			state TEXT NOT NULL DEFAULT 'idle',
+			active_writ TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		CREATE TABLE escalations (
+			id           TEXT PRIMARY KEY,
+			severity     TEXT NOT NULL,
+			source       TEXT NOT NULL,
+			description  TEXT NOT NULL,
+			source_ref   TEXT,
+			status       TEXT NOT NULL DEFAULT 'open',
+			acknowledged INTEGER NOT NULL DEFAULT 0,
+			created_at   TEXT NOT NULL,
+			updated_at   TEXT NOT NULL
+		);
+		CREATE TABLE schema_version (version INTEGER NOT NULL);
+		INSERT INTO schema_version VALUES (11);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed escalation data to verify it survives migration.
+	_, err = s.db.Exec(`
+		INSERT INTO escalations (id, severity, source, description, source_ref, status, acknowledged, created_at, updated_at)
+		VALUES ('esc-existing01', 'high', 'ember/forge', 'Test escalation', 'mr:mr-abc123', 'open', 0, '2025-06-01T10:00:00Z', '2025-06-01T10:00:00Z');
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Reopen through OpenSphere — should migrate V11 → V12.
+	s2, err := OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+
+	// Verify schema version is 12.
+	var version int
+	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 12 {
+		t.Fatalf("expected schema version 12, got %d", version)
+	}
+
+	// Verify last_notified_at column exists and is nullable.
+	lastNotifiedExists, err := columnExists(s2.db, "escalations", "last_notified_at")
+	if err != nil {
+		t.Fatalf("failed to check last_notified_at column: %v", err)
+	}
+	if !lastNotifiedExists {
+		t.Fatal("expected last_notified_at column after V12 migration")
+	}
+
+	// Verify partial index on source_ref exists.
+	var idxCount int
+	err = s2.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_escalations_source_ref'`).Scan(&idxCount)
+	if err != nil {
+		t.Fatalf("failed to check source_ref index: %v", err)
+	}
+	if idxCount != 1 {
+		t.Fatal("expected idx_escalations_source_ref index after V12 migration")
+	}
+
+	// Verify existing escalation data survived migration.
+	esc, err := s2.GetEscalation("esc-existing01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if esc.Severity != "high" {
+		t.Fatalf("expected severity 'high', got %q", esc.Severity)
+	}
+	if esc.SourceRef != "mr:mr-abc123" {
+		t.Fatalf("expected source_ref 'mr:mr-abc123', got %q", esc.SourceRef)
+	}
+	if esc.LastNotifiedAt != nil {
+		t.Fatalf("expected nil LastNotifiedAt for pre-existing escalation, got %v", esc.LastNotifiedAt)
+	}
+
+	// Verify UpdateEscalationLastNotified works on migrated data.
+	if err := s2.UpdateEscalationLastNotified("esc-existing01"); err != nil {
+		t.Fatal(err)
+	}
+	esc, err = s2.GetEscalation("esc-existing01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if esc.LastNotifiedAt == nil {
+		t.Fatal("expected non-nil LastNotifiedAt after update")
+	}
 }
 
 func TestWritCRUD(t *testing.T) {

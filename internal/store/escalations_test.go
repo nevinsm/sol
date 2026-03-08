@@ -379,6 +379,52 @@ func TestCreateEscalationWithoutSourceRef(t *testing.T) {
 	}
 }
 
+func TestUpdateEscalationLastNotified(t *testing.T) {
+	s := setupSphere(t)
+
+	id, err := s.CreateEscalation("high", "operator", "Test last_notified_at")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Initially nil.
+	esc, err := s.GetEscalation(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if esc.LastNotifiedAt != nil {
+		t.Fatalf("expected nil LastNotifiedAt, got %v", esc.LastNotifiedAt)
+	}
+
+	// Set last_notified_at.
+	if err := s.UpdateEscalationLastNotified(id); err != nil {
+		t.Fatal(err)
+	}
+
+	esc, err = s.GetEscalation(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if esc.LastNotifiedAt == nil {
+		t.Fatal("expected non-nil LastNotifiedAt after update")
+	}
+	if time.Since(*esc.LastNotifiedAt) > 5*time.Second {
+		t.Fatalf("LastNotifiedAt too old: %v", esc.LastNotifiedAt)
+	}
+
+	// Verify it's also returned by ListOpenEscalations.
+	escs, err := s.ListOpenEscalations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 1 {
+		t.Fatalf("expected 1 escalation, got %d", len(escs))
+	}
+	if escs[0].LastNotifiedAt == nil {
+		t.Fatal("expected non-nil LastNotifiedAt in ListOpenEscalations result")
+	}
+}
+
 func TestListEscalationsBySourceRef(t *testing.T) {
 	s := setupSphere(t)
 

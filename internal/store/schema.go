@@ -8,7 +8,7 @@ import (
 // Current schema versions — the latest migration target for each database type.
 const (
 	CurrentWorldSchema  = 9
-	CurrentSphereSchema = 11
+	CurrentSphereSchema = 12
 )
 
 const worldSchemaV1 = `
@@ -376,6 +376,12 @@ const sphereSchemaV10 = "" // migration handled procedurally below — renames a
 
 const sphereSchemaV11 = `ALTER TABLE escalations ADD COLUMN source_ref TEXT;`
 
+const sphereSchemaV12 = `
+ALTER TABLE escalations ADD COLUMN last_notified_at TEXT;
+CREATE INDEX IF NOT EXISTS idx_escalations_source_ref ON escalations(source_ref)
+    WHERE source_ref IS NOT NULL;
+`
+
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
 	QueryRow(string, ...interface{}) *sql.Row
@@ -570,6 +576,17 @@ func (s *Store) migrateSphere() error {
 		if !exists {
 			if _, err := tx.Exec(sphereSchemaV11); err != nil {
 				return fmt.Errorf("failed to apply sphere schema v11: %w", err)
+			}
+		}
+	}
+	if v < 12 {
+		exists, err := columnExists(tx, "escalations", "last_notified_at")
+		if err != nil {
+			return fmt.Errorf("V12 migration: failed to check column escalations.last_notified_at: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(sphereSchemaV12); err != nil {
+				return fmt.Errorf("failed to apply sphere schema v12: %w", err)
 			}
 		}
 	}
