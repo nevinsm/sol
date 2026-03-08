@@ -32,9 +32,9 @@ type worldModel struct {
 	width  int
 	height int
 
-	// Whether any section has focus (expanded). When false, all sections
-	// render as one-line summaries. Tab focuses the first section;
-	// esc unfocuses before popping to sphere view.
+	// Whether any section has focus (receives cursor/scroll input).
+	// Outpost and envoy sections are always expanded as full tables.
+	// MQ section uses collapse/expand (only expanded when focused).
 	hasFocus bool
 
 	// Section focus and per-section cursors.
@@ -43,8 +43,10 @@ type worldModel struct {
 	envoyCursor    int
 	mqCursor       int
 
-	// Scroll offset for the expanded section viewport.
-	scrollOffset int
+	// Per-section scroll offsets for independent scrolling.
+	outpostScroll int
+	envoyScroll   int
+	mqScroll      int
 
 	// Section row counts.
 	outpostLen int
@@ -243,19 +245,16 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 
 	case "tab":
 		wm.hasFocus = true
-		wm.scrollOffset = 0
 		wm.cycleFocus(1)
 
 	case "shift+tab":
 		wm.hasFocus = true
-		wm.scrollOffset = 0
 		wm.cycleFocus(-1)
 
 	case "esc":
 		if wm.hasFocus {
-			// First esc: unfocus (collapse all to summaries).
+			// First esc: unfocus (no section receives cursor input).
 			wm.hasFocus = false
-			wm.scrollOffset = 0
 			return wm, nil
 		}
 		// Second esc: pop back to sphere view.
@@ -275,32 +274,88 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 	return wm, nil
 }
 
-// adjustScroll updates scrollOffset so the cursor stays within the viewport.
+// adjustScroll updates the focused section's scroll offset so the cursor stays within the viewport.
 func (wm *worldModel) adjustScroll() {
-	vpHeight := wm.viewportHeight()
-	cur := wm.cursor(wm.focusedSection)
-	if cur < wm.scrollOffset {
-		wm.scrollOffset = cur
+	section := wm.focusedSection
+	vpHeight := wm.sectionViewportHeight(section)
+	cur := wm.cursor(section)
+	scroll := wm.scrollForSection(section)
+	if cur < scroll {
+		scroll = cur
 	}
-	if cur >= wm.scrollOffset+vpHeight {
-		wm.scrollOffset = cur - vpHeight + 1
+	if cur >= scroll+vpHeight {
+		scroll = cur - vpHeight + 1
+	}
+	wm.setScrollForSection(section, scroll)
+}
+
+// scrollForSection returns the scroll offset for a given section.
+func (wm worldModel) scrollForSection(s worldSection) int {
+	switch s {
+	case sectionOutposts:
+		return wm.outpostScroll
+	case sectionEnvoys:
+		return wm.envoyScroll
+	case sectionMergeQueue:
+		return wm.mqScroll
+	}
+	return 0
+}
+
+// setScrollForSection sets the scroll offset for a given section.
+func (wm *worldModel) setScrollForSection(s worldSection, v int) {
+	switch s {
+	case sectionOutposts:
+		wm.outpostScroll = v
+	case sectionEnvoys:
+		wm.envoyScroll = v
+	case sectionMergeQueue:
+		wm.mqScroll = v
 	}
 }
 
-// viewportHeight computes how many rows the expanded section can show.
-func (wm worldModel) viewportHeight() int {
-	// Fixed lines: header(2) + processes(~4 grid rows) + unfocused summaries
-	// + caravans + summary(1) + footer(2) + feed separator
-	// We estimate conservatively: use 18 fixed lines as baseline.
-	fixedLines := 18
-	vpHeight := wm.height - fixedLines
-	if vpHeight < 4 {
-		vpHeight = 4
+// agentSectionViewport computes the per-section viewport height for agent
+// sections (outposts and envoys). Available vertical space is split equally
+// between the two always-expanded agent sections.
+func (wm worldModel) agentSectionViewport() int {
+	// Fixed lines consumed by other UI elements:
+	//   header(2) + sphere procs grid(~2-3) + world procs grid(~1-2) +
+	//   outpost header(1) + envoy header(1) + caravans(~1-2) +
+	//   MQ summary(1) + summary(1) + footer(2) + column headers(2)
+	// Conservative estimate: 16 fixed lines.
+	fixedLines := 16
+	agentSpace := wm.height - fixedLines
+	if agentSpace < 4 {
+		agentSpace = 4
+	}
+	vpHeight := agentSpace / 2
+	if vpHeight < 2 {
+		vpHeight = 2
 	}
 	if vpHeight > 20 {
 		vpHeight = 20
 	}
 	return vpHeight
+}
+
+// sectionViewportHeight returns the viewport height for a given section.
+func (wm worldModel) sectionViewportHeight(s worldSection) int {
+	switch s {
+	case sectionOutposts, sectionEnvoys:
+		return wm.agentSectionViewport()
+	case sectionMergeQueue:
+		// MQ uses the old approach — same estimate.
+		fixedLines := 18
+		vpHeight := wm.height - fixedLines
+		if vpHeight < 4 {
+			vpHeight = 4
+		}
+		if vpHeight > 20 {
+			vpHeight = 20
+		}
+		return vpHeight
+	}
+	return 4
 }
 
 // cycleFocus moves focus to the next/previous section with rows.
@@ -466,56 +521,52 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	return b.String()
 }
 
-// renderOutpostsSection renders the Outposts section in summary or expanded mode.
+// renderOutpostsSection renders the Outposts section as a full table (always expanded).
 func (wm worldModel) renderOutpostsSection(b *strings.Builder, data *status.WorldStatus, agentHighlights map[string]int) {
 	isFocused := wm.hasFocus && wm.focusedSection == sectionOutposts
 	sectionHeader := fmt.Sprintf("Outposts (%d)", len(data.Agents))
 
-	if !isFocused {
-		// Summary mode: one-line.
-		b.WriteString("  " + headerStyle.Render(sectionHeader))
-		summary := outpostSummary(data.Agents)
-		if summary != "" {
-			b.WriteString("      " + summary)
-		}
-		b.WriteString("\n")
-		return
-	}
+	vpHeight := wm.agentSectionViewport()
+	scrollInfo := scrollIndicator(wm.outpostScroll, vpHeight, len(data.Agents))
 
-	// Expanded mode.
-	scrollInfo := scrollIndicator(wm.scrollOffset, wm.viewportHeight(), len(data.Agents))
-	header := "  " + focusIndicator + " " + focusStyle.Render(sectionHeader)
-	if scrollInfo != "" {
-		header += "  " + dimStyle.Render(scrollInfo)
+	if isFocused {
+		header := "  " + focusIndicator + " " + focusStyle.Render(sectionHeader)
+		if scrollInfo != "" {
+			header += "  " + dimStyle.Render(scrollInfo)
+		}
+		b.WriteString(header + "\n")
+	} else {
+		header := "  " + headerStyle.Render(sectionHeader)
+		if scrollInfo != "" {
+			header += "  " + dimStyle.Render(scrollInfo)
+		}
+		b.WriteString(header + "\n")
 	}
-	b.WriteString(header + "\n")
 	wm.renderAgentsTable(b, data.Agents, agentHighlights)
 	b.WriteString("\n")
 }
 
-// renderEnvoysSection renders the Envoys section in summary or expanded mode.
+// renderEnvoysSection renders the Envoys section as a full table (always expanded).
 func (wm worldModel) renderEnvoysSection(b *strings.Builder, data *status.WorldStatus) {
 	isFocused := wm.hasFocus && wm.focusedSection == sectionEnvoys
 	sectionHeader := fmt.Sprintf("Envoys (%d)", len(data.Envoys))
 
-	if !isFocused {
-		// Summary mode: one-line.
-		b.WriteString("  " + headerStyle.Render(sectionHeader))
-		summary := envoySummary(data.Envoys)
-		if summary != "" {
-			b.WriteString("      " + summary)
-		}
-		b.WriteString("\n")
-		return
-	}
+	vpHeight := wm.agentSectionViewport()
+	scrollInfo := scrollIndicator(wm.envoyScroll, vpHeight, len(data.Envoys))
 
-	// Expanded mode.
-	scrollInfo := scrollIndicator(wm.scrollOffset, wm.viewportHeight(), len(data.Envoys))
-	header := "  " + focusIndicator + " " + focusStyle.Render(sectionHeader)
-	if scrollInfo != "" {
-		header += "  " + dimStyle.Render(scrollInfo)
+	if isFocused {
+		header := "  " + focusIndicator + " " + focusStyle.Render(sectionHeader)
+		if scrollInfo != "" {
+			header += "  " + dimStyle.Render(scrollInfo)
+		}
+		b.WriteString(header + "\n")
+	} else {
+		header := "  " + headerStyle.Render(sectionHeader)
+		if scrollInfo != "" {
+			header += "  " + dimStyle.Render(scrollInfo)
+		}
+		b.WriteString(header + "\n")
 	}
-	b.WriteString(header + "\n")
 	wm.renderEnvoysTable(b, data.Envoys)
 	b.WriteString("\n")
 }
@@ -558,9 +609,9 @@ func (wm worldModel) renderAgentsTable(b *strings.Builder, agents []status.Agent
 	// Column headers.
 	b.WriteString("  " + padRight(dimStyle.Render("NAME"), 14) + " " + padRight(dimStyle.Render("STATE"), 18) + " " + padRight(dimStyle.Render("SESSION"), 10) + " " + dimStyle.Render("WORK") + "\n")
 
-	// Apply viewport windowing.
-	vpHeight := wm.viewportHeight()
-	start := wm.scrollOffset
+	// Apply viewport windowing with per-section scroll.
+	vpHeight := wm.agentSectionViewport()
+	start := wm.outpostScroll
 	end := start + vpHeight
 	if end > len(agents) {
 		end = len(agents)
@@ -569,10 +620,11 @@ func (wm worldModel) renderAgentsTable(b *strings.Builder, agents []status.Agent
 		start = len(agents)
 	}
 
+	isFocused := wm.hasFocus && wm.focusedSection == sectionOutposts
 	for i := start; i < end; i++ {
 		a := agents[i]
 		line := wm.renderAgentRow(a)
-		if wm.focusedSection == sectionOutposts && i == wm.outpostCursor {
+		if isFocused && i == wm.outpostCursor {
 			b.WriteString(selectStyle.Render(padRight(line, wm.width)))
 		} else if agentHighlights != nil {
 			if _, highlighted := agentHighlights[a.Name]; highlighted {
@@ -635,9 +687,9 @@ func (wm worldModel) renderAgentRow(a status.AgentStatus) string {
 func (wm worldModel) renderEnvoysTable(b *strings.Builder, envoys []status.EnvoyStatus) {
 	b.WriteString("  " + padRight(dimStyle.Render("NAME"), 14) + " " + padRight(dimStyle.Render("STATE"), 18) + " " + padRight(dimStyle.Render("SESSION"), 10) + " " + padRight(dimStyle.Render("WORK"), 24) + " " + dimStyle.Render("BRIEF") + "\n")
 
-	// Apply viewport windowing.
-	vpHeight := wm.viewportHeight()
-	start := wm.scrollOffset
+	// Apply viewport windowing with per-section scroll.
+	vpHeight := wm.agentSectionViewport()
+	start := wm.envoyScroll
 	end := start + vpHeight
 	if end > len(envoys) {
 		end = len(envoys)
@@ -646,10 +698,11 @@ func (wm worldModel) renderEnvoysTable(b *strings.Builder, envoys []status.Envoy
 		start = len(envoys)
 	}
 
+	isFocused := wm.hasFocus && wm.focusedSection == sectionEnvoys
 	for i := start; i < end; i++ {
 		e := envoys[i]
 		line := wm.renderEnvoyRow(e)
-		if wm.focusedSection == sectionEnvoys && i == wm.envoyCursor {
+		if isFocused && i == wm.envoyCursor {
 			b.WriteString(selectStyle.Render(padRight(line, wm.width)))
 		} else {
 			b.WriteString(line)
