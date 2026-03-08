@@ -84,12 +84,15 @@ func TestListEscalations(t *testing.T) {
 		t.Fatalf("expected 3 escalations, got %d", len(escs))
 	}
 
-	// Newest first ordering: last created should be first.
+	// Severity-first ordering: high > medium > low (then newest within same severity).
 	if escs[0].Description != "High issue" {
-		t.Fatalf("expected newest first, got %q", escs[0].Description)
+		t.Fatalf("expected high severity first, got %q", escs[0].Description)
+	}
+	if escs[1].Description != "Medium issue" {
+		t.Fatalf("expected medium severity second, got %q", escs[1].Description)
 	}
 	if escs[2].Description != "Low issue" {
-		t.Fatalf("expected oldest last, got %q", escs[2].Description)
+		t.Fatalf("expected low severity last, got %q", escs[2].Description)
 	}
 
 	// List by status="open" -> all 3.
@@ -118,6 +121,81 @@ func TestListEscalations(t *testing.T) {
 	}
 	if len(escs) != 1 {
 		t.Fatalf("expected 1 resolved escalation, got %d", len(escs))
+	}
+}
+
+func TestListEscalationsSortsBySeverityThenCreatedAt(t *testing.T) {
+	s := setupSphere(t)
+
+	now := time.Now().UTC()
+
+	// Insert escalations with mixed severities and timestamps.
+	// Two critical (older first), one high, one medium, one low.
+	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
+		"esc-low00000001", "low", "operator", "Low issue",
+		now.Add(-5*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
+	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
+		"esc-crit0000001", "critical", "operator", "Critical older",
+		now.Add(-2*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
+	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
+		"esc-med00000001", "medium", "operator", "Medium issue",
+		now.Add(-3*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
+	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
+		"esc-crit0000002", "critical", "operator", "Critical newer",
+		now.Add(-1*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
+	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
+		"esc-high0000001", "high", "operator", "High issue",
+		now.Add(-4*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
+
+	escs, err := s.ListEscalations("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 5 {
+		t.Fatalf("expected 5 escalations, got %d", len(escs))
+	}
+
+	// Expected order: critical newer, critical older, high, medium, low.
+	expected := []string{"Critical newer", "Critical older", "High issue", "Medium issue", "Low issue"}
+	for i, desc := range expected {
+		if escs[i].Description != desc {
+			t.Fatalf("position %d: expected %q, got %q", i, desc, escs[i].Description)
+		}
+	}
+}
+
+func TestListOpenEscalationsSortsBySeverity(t *testing.T) {
+	s := setupSphere(t)
+
+	now := time.Now().UTC()
+	// Insert with different severities — all open.
+	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
+		"esc-low00000010", "low", "operator", "Low issue",
+		now.Add(-1*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
+	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
+		"esc-high0000010", "high", "operator", "High issue",
+		now.Format(time.RFC3339), now.Format(time.RFC3339))
+
+	escs, err := s.ListOpenEscalations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(escs) != 2 {
+		t.Fatalf("expected 2, got %d", len(escs))
+	}
+	// High should come first despite being newer (severity wins).
+	if escs[0].Severity != "high" {
+		t.Fatalf("expected high first, got %q", escs[0].Severity)
+	}
+	if escs[1].Severity != "low" {
+		t.Fatalf("expected low second, got %q", escs[1].Severity)
 	}
 }
 

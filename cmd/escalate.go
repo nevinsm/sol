@@ -8,12 +8,14 @@ import (
 	"github.com/nevinsm/sol/internal/escalation"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
 	"github.com/spf13/cobra"
 )
 
 var (
-	escalateSeverity string
-	escalateSource   string
+	escalateSeverity  string
+	escalateSource    string
+	escalateSourceRef string
 )
 
 var escalateCmd = &cobra.Command{
@@ -25,13 +27,43 @@ var escalateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		description := args[0]
 
+		// Auto-detect source from SOL_WORLD/SOL_AGENT if --source not explicitly set.
+		source := escalateSource
+		if !cmd.Flags().Changed("source") {
+			world := os.Getenv("SOL_WORLD")
+			agent := os.Getenv("SOL_AGENT")
+			if world != "" && agent != "" {
+				source = world + "/" + agent
+			}
+		}
+
+		// Determine source_ref: explicit flag > auto-detect from tether.
+		sourceRef := escalateSourceRef
+		if sourceRef == "" {
+			world := os.Getenv("SOL_WORLD")
+			agent := os.Getenv("SOL_AGENT")
+			if world != "" && agent != "" {
+				// Best-effort: read tether to get current writ ID.
+				writID, err := tether.Read(world, agent, "outpost")
+				if err == nil && writID != "" {
+					sourceRef = "writ:" + writID
+				}
+				// If tether read fails or is empty, proceed without source_ref.
+			}
+		}
+
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
 		defer sphereStore.Close()
 
-		id, err := sphereStore.CreateEscalation(escalateSeverity, escalateSource, description)
+		var createArgs []string
+		if sourceRef != "" {
+			createArgs = append(createArgs, sourceRef)
+		}
+
+		id, err := sphereStore.CreateEscalation(escalateSeverity, source, description, createArgs...)
 		if err != nil {
 			return err
 		}
@@ -58,4 +90,5 @@ func init() {
 	rootCmd.AddCommand(escalateCmd)
 	escalateCmd.Flags().StringVar(&escalateSeverity, "severity", "medium", "Severity level (low, medium, high, critical)")
 	escalateCmd.Flags().StringVar(&escalateSource, "source", "operator", "Source of the escalation")
+	escalateCmd.Flags().StringVar(&escalateSourceRef, "source-ref", "", "Structured reference (e.g., mr:mr-abc123, writ:sol-xyz)")
 }
