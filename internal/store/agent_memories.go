@@ -58,7 +58,11 @@ func (s *Store) ListAgentMemories(agentName string) ([]AgentMemory, error) {
 		if err := rows.Scan(&m.ID, &m.AgentName, &m.Key, &m.Value, &createdAt); err != nil {
 			return nil, fmt.Errorf("failed to scan agent memory: %w", err)
 		}
-		m.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		var parseErr error
+		m.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse created_at for memory %q: %w", m.Key, parseErr)
+		}
 		memories = append(memories, m)
 	}
 	return memories, rows.Err()
@@ -73,7 +77,10 @@ func (s *Store) DeleteAgentMemory(agentName, key string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete agent memory %q/%q: %w", agentName, key, err)
 	}
-	n, _ := result.RowsAffected()
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
 	if n == 0 {
 		return fmt.Errorf("memory %q for agent %q: %w", key, agentName, ErrNotFound)
 	}

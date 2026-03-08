@@ -364,3 +364,114 @@ func TestIsWritBlockedByCaravanDepsNoCaravan(t *testing.T) {
 		t.Fatal("expected writ NOT blocked (not in any caravan)")
 	}
 }
+
+func TestIsWritBlockedByCaravanMultiWorld(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	sphereStore, err := OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sphereStore.Close()
+
+	// Create writs in two different worlds.
+	worldAlpha, err := OpenWorld("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	alphaWrit, _ := worldAlpha.CreateWrit("Alpha item", "", "operator", 2, nil)
+	worldAlpha.Close()
+
+	worldBeta, err := OpenWorld("beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	betaWrit, _ := worldBeta.CreateWrit("Beta item", "", "operator", 2, nil)
+	worldBeta.Close()
+
+	worldGamma, err := OpenWorld("gamma")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gammaWrit, _ := worldGamma.CreateWrit("Gamma item", "", "operator", 2, nil)
+	worldGamma.Close()
+
+	// Create a caravan with phase 0 items in alpha and beta, phase 1 item in gamma.
+	caravanID, _ := sphereStore.CreateCaravan("multi-world-caravan", "operator")
+	sphereStore.CreateCaravanItem(caravanID, alphaWrit, "alpha", 0)
+	sphereStore.CreateCaravanItem(caravanID, betaWrit, "beta", 0)
+	sphereStore.CreateCaravanItem(caravanID, gammaWrit, "gamma", 1)
+
+	// gammaWrit (phase 1) should be blocked — alpha and beta items are not closed.
+	blocked, err := sphereStore.IsWritBlockedByCaravan(gammaWrit, "gamma", OpenWorld)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan error: %v", err)
+	}
+	if !blocked {
+		t.Fatal("expected gamma writ blocked (alpha and beta items open)")
+	}
+
+	// Close only the alpha item — still blocked (beta is open).
+	worldAlpha, err = OpenWorld("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	worldAlpha.CloseWrit(alphaWrit)
+	worldAlpha.Close()
+
+	blocked, err = sphereStore.IsWritBlockedByCaravan(gammaWrit, "gamma", OpenWorld)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan error: %v", err)
+	}
+	if !blocked {
+		t.Fatal("expected gamma writ still blocked (beta item open)")
+	}
+
+	// Close the beta item — gamma should be unblocked.
+	worldBeta, err = OpenWorld("beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	worldBeta.CloseWrit(betaWrit)
+	worldBeta.Close()
+
+	blocked, err = sphereStore.IsWritBlockedByCaravan(gammaWrit, "gamma", OpenWorld)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan error: %v", err)
+	}
+	if blocked {
+		t.Fatal("expected gamma writ NOT blocked (all lower phase items closed)")
+	}
+
+	// Phase 0 items should never be blocked by phase gating.
+	blocked, err = sphereStore.IsWritBlockedByCaravan(alphaWrit, "alpha", OpenWorld)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan error: %v", err)
+	}
+	if blocked {
+		t.Fatal("expected alpha writ NOT blocked (phase 0)")
+	}
+}
+
+func TestIsWritBlockedByCaravanNotInCaravan(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	sphereStore, err := OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sphereStore.Close()
+
+	// Writ not in any caravan → not blocked.
+	blocked, err := sphereStore.IsWritBlockedByCaravan("sol-99999999", "ember", OpenWorld)
+	if err != nil {
+		t.Fatalf("IsWritBlockedByCaravan error: %v", err)
+	}
+	if blocked {
+		t.Fatal("expected writ NOT blocked (not in any caravan)")
+	}
+}
