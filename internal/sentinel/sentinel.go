@@ -176,6 +176,47 @@ func (w *Sentinel) Register() error {
 	return w.sphereStore.EnsureAgent("sentinel", w.config.World, "sentinel")
 }
 
+// reconcileRespawnCounts seeds in-memory respawn counts from the event log.
+//
+// CRASH SAFETY: Respawn counts are in-memory and lost on sentinel restart.
+// Without reconciliation, a restarted sentinel would reset all counts to 0,
+// potentially causing infinite respawn loops for persistently failing agents
+// (each restart resets the count, never reaching MaxRespawns). This method
+// reads recent respawn events from the event log and reconstructs the counts,
+// ensuring crash-restart doesn't bypass the MaxRespawns limit.
+func (w *Sentinel) reconcileRespawnCounts() {
+	if w.eventReader == nil {
+		return // no event reader configured (e.g., in tests)
+	}
+
+	// Look back 24 hours — respawn counts are per-writ, and any older
+	// respawns are for work that has likely been resolved or reassigned.
+	evts, err := w.eventReader.Read(events.ReadOpts{
+		Type:   events.EventRespawn,
+		Source: w.agentID(),
+		Since:  time.Now().Add(-24 * time.Hour),
+	})
+	if err != nil {
+		// Best-effort: if we can't read events, start with empty counts.
+		// The first patrol will establish new counts.
+		return
+	}
+
+	for _, ev := range evts {
+		payload, ok := ev.Payload.(map[string]any)
+		if !ok {
+			continue
+		}
+		agentID, _ := payload["agent"].(string)
+		writID, _ := payload["writ"].(string)
+		if agentID == "" {
+			continue
+		}
+		key := respawnKey{AgentID: agentID, WritID: writID}
+		w.respawnCounts[key]++
+	}
+}
+
 // Run starts the sentinel patrol loop. Blocks until context is cancelled.
 // Patrols immediately on start, then on each interval.
 func (w *Sentinel) Run(ctx context.Context) error {
@@ -186,6 +227,10 @@ func (w *Sentinel) Run(ctx context.Context) error {
 	if err := w.sphereStore.UpdateAgentState(w.agentID(), "working", ""); err != nil {
 		return fmt.Errorf("failed to set sentinel working: %w", err)
 	}
+
+	// Reconcile respawn counts from event history before first patrol.
+	// This prevents infinite respawn loops after sentinel crash-restart.
+	w.reconcileRespawnCounts()
 
 	// Patrol immediately.
 	w.patrol(ctx)
@@ -673,6 +718,13 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 }
 
 // handleStalled handles an agent whose session died while work was tethered.
+//
+// CRASH SAFETY: The in-memory respawnCounts map is incremented BEFORE the
+// persistent state change in respawnAgent (UpdateAgentState). If sentinel
+// crashes after incrementing but before persisting, the in-memory count is
+// lost (harmless — reconcileRespawnCounts recovers from event history on
+// restart). If sentinel crashes after respawnAgent emits the respawn event,
+// the count is recoverable from the event log.
 func (w *Sentinel) handleStalled(agent store.Agent) error {
 	key := respawnKey{AgentID: agent.ID, WritID: agent.ActiveWrit}
 	attempts := w.respawnCounts[key]
@@ -777,7 +829,21 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 // returnWorkToOpen returns a stalled agent's writ to the open pool
 // after exceeding max respawn attempts.
 func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
-	// 1. Update writ: status → open, clear assignee.
+	// CRASH SAFETY: Set agent idle FIRST, then update writ.
+	// An orphaned "idle" agent is self-correcting (sentinel will reap it or
+	// it will be reassigned). An orphaned "working" agent with no session
+	// blocks capacity and triggers wasted respawn attempts.
+	//
+	// If we crash after step 1 but before step 2: agent is idle (harmless),
+	// writ is still tethered. Consul's stale-tether recovery will eventually
+	// detect the tether and return the writ to open.
+
+	// 1. Set agent state → idle, clear active_writ.
+	if err := w.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
+		return fmt.Errorf("failed to set agent %s idle: %w", agent.ID, err)
+	}
+
+	// 2. Update writ: status → open, clear assignee.
 	if agent.ActiveWrit != "" {
 		if err := w.worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
 			Status:   "open",
@@ -785,14 +851,6 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 		}); err != nil {
 			return fmt.Errorf("failed to return writ %s to open: %w", agent.ActiveWrit, err)
 		}
-	}
-
-	// 2. Set agent state → idle, clear active_writ.
-	// Done before clearing tether so a crash leaves the agent idle with a stale
-	// tether (harmless — next dispatch overwrites it) rather than "working" with
-	// no tether (would trigger a wasted respawn).
-	if err := w.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
-		return fmt.Errorf("failed to set agent %s idle: %w", agent.ID, err)
 	}
 
 	// 3. Clean up all agent resources (worktree, session metadata, tether, etc.).

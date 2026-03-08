@@ -583,7 +583,7 @@ func TestCreateResolutionTaskNudgesGovernor(t *testing.T) {
 
 // --- Partial failure tests ---
 
-func TestMarkMergedCloseWritFailureCreatesEscalation(t *testing.T) {
+func TestMarkMergedCloseWritFailureReturnsError(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
 		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
@@ -606,19 +606,69 @@ func TestMarkMergedCloseWritFailureCreatesEscalation(t *testing.T) {
 		cfg:         DefaultConfig(),
 	}
 
-	// MarkMerged should return nil (success) even when CloseWrit fails.
+	// With crash-safe ordering, CloseWrit is attempted FIRST.
+	// If it fails, MarkMerged returns an error — nothing was changed.
+	err := r.MarkMerged("mr-00000001")
+	if err == nil {
+		t.Fatal("MarkMerged() should return error when CloseWrit fails")
+	}
+	if !strings.Contains(err.Error(), "database locked") {
+		t.Errorf("error should mention root cause, got: %v", err)
+	}
+
+	// Verify MR phase was NOT updated (crash-safe: nothing happened).
+	worldStore.mu.Lock()
+	if _, ok := worldStore.phaseUpdates["mr-00000001"]; ok {
+		t.Error("MR phase should not be updated when CloseWrit fails")
+	}
+	worldStore.mu.Unlock()
+
+	// No escalation needed — operation was cleanly aborted.
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.escalations) != 0 {
+		t.Errorf("expected 0 escalations, got %d", len(sphereStore.escalations))
+	}
+}
+
+func TestMarkMergedPhaseUpdateFailureCreatesEscalation(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+	worldStore.updatePhaseErr = fmt.Errorf("database locked")
+
+	sphereStore := newMockSphereStore()
+
+	dir := t.TempDir()
+	run(t, "git", "init", dir)
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worktree:    dir,
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         DefaultConfig(),
+	}
+
+	// With crash-safe ordering, CloseWrit succeeds first, then
+	// UpdateMergeRequestPhase fails. MarkMerged still returns nil
+	// because the critical state change (writ closed) succeeded.
 	if err := r.MarkMerged("mr-00000001"); err != nil {
 		t.Fatalf("MarkMerged() error: %v", err)
 	}
 
-	// Verify MR phase set to merged.
+	// Verify writ was closed (the critical operation succeeded).
 	worldStore.mu.Lock()
-	if phase := worldStore.phaseUpdates["mr-00000001"]; phase != "merged" {
-		t.Errorf("MR phase = %q, want 'merged'", phase)
+	if worldStore.items["sol-aaa11111"].Status != "closed" {
+		t.Errorf("writ status = %q, want 'closed'", worldStore.items["sol-aaa11111"].Status)
 	}
 	worldStore.mu.Unlock()
 
-	// Verify escalation was created for the CloseWrit failure.
+	// Verify escalation was created for the phase update failure.
 	sphereStore.mu.Lock()
 	defer sphereStore.mu.Unlock()
 	if len(sphereStore.escalations) != 1 {
@@ -630,9 +680,6 @@ func TestMarkMergedCloseWritFailureCreatesEscalation(t *testing.T) {
 	}
 	if esc.source != "ember/forge" {
 		t.Errorf("escalation source = %q, want 'ember/forge'", esc.source)
-	}
-	if !strings.Contains(esc.description, "sol-aaa11111") {
-		t.Errorf("escalation description should mention writ ID, got: %s", esc.description)
 	}
 	if !strings.Contains(esc.description, "database locked") {
 		t.Errorf("escalation description should mention error, got: %s", esc.description)

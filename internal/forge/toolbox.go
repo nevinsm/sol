@@ -152,17 +152,23 @@ func (r *Forge) MarkMerged(mrID string) error {
 		return err
 	}
 
-	if err := r.worldStore.UpdateMergeRequestPhase(mrID, "merged"); err != nil {
-		return fmt.Errorf("failed to mark MR as merged: %w", err)
+	// CRASH SAFETY: Close writ FIRST — this is the critical state transition.
+	// If we crash after closing the writ but before updating the MR phase,
+	// forge patrol will detect the closed writ and can retry the MR phase
+	// update. The reverse (MR "merged" but writ still "working") would leave
+	// the tether orphaned and the agent permanently assigned.
+	if err := r.worldStore.CloseWrit(mr.WritID); err != nil {
+		return fmt.Errorf("failed to close writ %s: %w", mr.WritID, err)
 	}
 
-	if err := r.worldStore.CloseWrit(mr.WritID); err != nil {
-		r.logger.Error("failed to close writ", "writ", mr.WritID, "error", err)
-		// MR is merged (code is on main) but writ is still tethered.
-		// Create an escalation so the inconsistency is visible.
-		desc := fmt.Sprintf("Writ %s not closed after MR %s merged: %v", mr.WritID, mrID, err)
+	if err := r.worldStore.UpdateMergeRequestPhase(mrID, "merged"); err != nil {
+		r.logger.Error("failed to mark MR as merged after closing writ",
+			"mr", mrID, "writ", mr.WritID, "error", err)
+		// Writ is closed (correct) but MR phase is stale. Forge patrol will
+		// detect this inconsistency and retry. Create an escalation for visibility.
+		desc := fmt.Sprintf("MR %s not marked merged after writ %s closed: %v", mrID, mr.WritID, err)
 		if _, escErr := r.sphereStore.CreateEscalation("low", r.agentID, desc, "mr:"+mrID); escErr != nil {
-			r.logger.Error("failed to create escalation for unclosed writ",
+			r.logger.Error("failed to create escalation for unmarked MR",
 				"writ", mr.WritID, "mr", mrID, "error", escErr)
 		}
 	}

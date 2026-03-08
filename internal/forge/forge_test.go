@@ -25,6 +25,7 @@ type mockWorldStore struct {
 	staleReleased   int
 	closeWritErr    error // inject CloseWrit failure
 	updateWritErr   error // inject UpdateWrit failure
+	updatePhaseErr  error // inject UpdateMergeRequestPhase failure
 }
 
 func newMockWorldStore() *mockWorldStore {
@@ -65,6 +66,9 @@ func (m *mockWorldStore) ClaimMergeRequest(claimerID string) (*store.MergeReques
 func (m *mockWorldStore) UpdateMergeRequestPhase(id, phase string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.updatePhaseErr != nil {
+		return m.updatePhaseErr
+	}
 	m.phaseUpdates[id] = phase
 	for i := range m.mrs {
 		if m.mrs[i].ID == id {

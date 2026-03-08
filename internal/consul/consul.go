@@ -339,6 +339,13 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 }
 
 // recoverOneTether recovers a single stale tether.
+//
+// CRASH SAFETY: The operation ordering ensures idempotent crash recovery.
+// Consul detects stale tethers by finding "working" agents with no live
+// session. The agent state update is done LAST — while the agent is still
+// "working", a crash at any point causes consul to retry on the next patrol.
+// Steps 1-3 are idempotent (updating an already-open writ is a no-op,
+// clearing an already-cleared tether is a no-op), so retries are safe.
 func (d *Consul) recoverOneTether(agent store.Agent) error {
 	d.logInfo("consul_recover_tether", map[string]any{"agent_id": agent.ID, "writ_id": agent.ActiveWrit})
 
@@ -350,6 +357,7 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 	defer worldStore.Close()
 
 	// 2. Update writ: status -> "open", clear assignee.
+	// Done first so work becomes available for reassignment immediately.
 	if err := worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
 		Status:   "open",
 		Assignee: "-", // "-" clears assignee
@@ -357,14 +365,19 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 		return fmt.Errorf("failed to update writ %q: %w", agent.ActiveWrit, err)
 	}
 
-	// 3. Update agent state -> "idle", clear active_writ.
-	if err := d.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
-		return fmt.Errorf("failed to update agent %q state: %w", agent.ID, err)
-	}
-
-	// 4. Clear the tether file.
+	// 3. Clear the tether file.
+	// Done before agent state update — if we crash here, the agent is still
+	// "working" so consul will retry on next patrol.
 	if err := tether.Clear(agent.World, agent.Name, agent.Role); err != nil {
 		return fmt.Errorf("failed to clear tether for %q: %w", agent.ID, err)
+	}
+
+	// 4. Update agent state -> "idle", clear active_writ.
+	// Done LAST — this is the signal that recovery is complete. While the
+	// agent is still "working", consul's next patrol will re-detect and
+	// retry (all prior steps are idempotent).
+	if err := d.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
+		return fmt.Errorf("failed to update agent %q state: %w", agent.ID, err)
 	}
 
 	// 5. Emit event.
