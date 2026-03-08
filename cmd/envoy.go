@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -146,24 +144,20 @@ var envoyRestartCmd = &cobra.Command{
 			return err
 		}
 
-		// Stop if running.
 		sessName := config.SessionName(world, name)
 		mgr := session.New()
-		if mgr.Exists(sessName) {
-			sphereStore, err := store.OpenSphere()
-			if err != nil {
-				return err
-			}
-			defer sphereStore.Close()
-			if err := envoy.Stop(world, name, sphereStore, mgr); err != nil {
-				return err
-			}
-			fmt.Printf("Stopped envoy %q in world %q\n", name, world)
-		}
 
-		// Start (delegate to start command).
 		envoyStartWorld = world
-		return envoyStartCmd.RunE(envoyStartCmd, args)
+		return restartSession(mgr, sessName, "envoy",
+			fmt.Sprintf("Stopped envoy %q in world %q", name, world),
+			func() error {
+				sphereStore, err := store.OpenSphere()
+				if err != nil {
+					return err
+				}
+				defer sphereStore.Close()
+				return envoy.Stop(world, name, sphereStore, mgr)
+			}, envoyStartCmd, args)
 	},
 }
 
@@ -301,22 +295,9 @@ var envoyDebriefCmd = &cobra.Command{
 			return fmt.Errorf("failed to check brief: %w", err)
 		}
 
-		// Create archive directory.
-		briefDir := envoy.BriefDir(world, name)
-		archiveDir := filepath.Join(briefDir, "archive")
-		if err := os.MkdirAll(archiveDir, 0o755); err != nil {
-			return fmt.Errorf("failed to create archive directory: %w", err)
-		}
-
-		// Generate archive filename with RFC3339 timestamp, colons replaced by dashes.
-		ts := time.Now().UTC().Format(time.RFC3339)
-		safeTS := strings.ReplaceAll(ts, ":", "-")
-		archiveFile := safeTS + ".md"
-		archivePath := filepath.Join(archiveDir, archiveFile)
-
-		// Move current brief to archive.
-		if err := os.Rename(briefPath, archivePath); err != nil {
-			return fmt.Errorf("failed to archive brief: %w", err)
+		archiveFile, err := archiveBrief(envoy.BriefDir(world, name), briefPath)
+		if err != nil {
+			return err
 		}
 
 		fmt.Printf("Archived brief to .brief/archive/%s\n", archiveFile)

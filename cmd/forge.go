@@ -160,17 +160,10 @@ var forgeRestartCmd = &cobra.Command{
 		sessName := config.SessionName(world, "forge")
 		mgr := session.New()
 
-		// Stop if running.
-		if mgr.Exists(sessName) {
-			if err := mgr.Stop(sessName, false); err != nil {
-				return fmt.Errorf("failed to stop forge: %w", err)
-			}
-			fmt.Printf("Forge stopped for world %q\n", world)
-		}
-
-		// Start (delegate to start command).
 		forgeStartWorld = world
-		return forgeStartCmd.RunE(forgeStartCmd, args)
+		return restartSession(mgr, sessName, "forge",
+			fmt.Sprintf("Forge stopped for world %q", world),
+			nil, forgeStartCmd, args)
 	},
 }
 

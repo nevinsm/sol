@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -107,24 +106,20 @@ var governorRestartCmd = &cobra.Command{
 			return err
 		}
 
-		// Stop if running.
 		sessName := config.SessionName(world, "governor")
 		mgr := session.New()
-		if mgr.Exists(sessName) {
-			sphereStore, err := store.OpenSphere()
-			if err != nil {
-				return err
-			}
-			defer sphereStore.Close()
-			if err := governor.Stop(world, sphereStore, mgr); err != nil {
-				return err
-			}
-			fmt.Printf("Stopped governor for world %q\n", world)
-		}
 
-		// Start (delegate to start command).
 		governorStartWorld = world
-		return governorStartCmd.RunE(governorStartCmd, args)
+		return restartSession(mgr, sessName, "governor",
+			fmt.Sprintf("Stopped governor for world %q", world),
+			func() error {
+				sphereStore, err := store.OpenSphere()
+				if err != nil {
+					return err
+				}
+				defer sphereStore.Close()
+				return governor.Stop(world, sphereStore, mgr)
+			}, governorStartCmd, args)
 	},
 }
 
@@ -206,22 +201,9 @@ var governorDebriefCmd = &cobra.Command{
 			return fmt.Errorf("failed to check brief: %w", err)
 		}
 
-		// Create archive directory.
-		briefDir := governor.BriefDir(world)
-		archiveDir := filepath.Join(briefDir, "archive")
-		if err := os.MkdirAll(archiveDir, 0o755); err != nil {
-			return fmt.Errorf("failed to create archive directory: %w", err)
-		}
-
-		// Generate archive filename with RFC3339 timestamp, colons replaced by dashes.
-		ts := time.Now().UTC().Format(time.RFC3339)
-		safeTS := strings.ReplaceAll(ts, ":", "-")
-		archiveFile := safeTS + ".md"
-		archivePath := filepath.Join(archiveDir, archiveFile)
-
-		// Move current brief to archive.
-		if err := os.Rename(briefPath, archivePath); err != nil {
-			return fmt.Errorf("failed to archive brief: %w", err)
+		archiveFile, err := archiveBrief(governor.BriefDir(world), briefPath)
+		if err != nil {
+			return err
 		}
 
 		fmt.Printf("Archived brief to .brief/archive/%s\n", archiveFile)

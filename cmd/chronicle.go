@@ -110,27 +110,9 @@ var chronicleRestartCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
-
-		// Stop if running.
-		if mgr.Exists(chronicleSessionName) {
-			if err := mgr.Stop(chronicleSessionName, false); err != nil {
-				return fmt.Errorf("failed to stop chronicle: %w", err)
-			}
-			fmt.Printf("Chronicle stopped: %s\n", chronicleSessionName)
-		}
-
-		// Start.
-		solBin, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("failed to find sol binary: %w", err)
-		}
-		env := map[string]string{"SOL_HOME": config.Home()}
-		if err := mgr.Start(chronicleSessionName, config.Home(),
-			solBin+" chronicle run", env, "chronicle", ""); err != nil {
-			return fmt.Errorf("failed to start chronicle session: %w", err)
-		}
-		fmt.Printf("Chronicle started: %s\n", chronicleSessionName)
-		return nil
+		return restartSession(mgr, chronicleSessionName, "chronicle",
+			fmt.Sprintf("Chronicle stopped: %s", chronicleSessionName),
+			nil, chronicleStartCmd, args)
 	},
 }
 

@@ -3,8 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/nevinsm/sol/internal/senate"
@@ -62,21 +60,10 @@ var senateRestartCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
-
-		// Stop if running.
-		if mgr.Exists(senate.SessionName) {
-			if err := senate.Stop(mgr); err != nil {
-				return err
-			}
-			fmt.Println("Stopped senate session")
-		}
-
-		// Start.
-		if err := senate.Start(mgr); err != nil {
-			return err
-		}
-		fmt.Println("Started senate session")
-		return nil
+		return restartSession(mgr, senate.SessionName, "senate",
+			"Stopped senate session",
+			func() error { return senate.Stop(mgr) },
+			senateStartCmd, args)
 	},
 }
 
@@ -134,21 +121,9 @@ var senateDebriefCmd = &cobra.Command{
 			return fmt.Errorf("failed to check brief: %w", err)
 		}
 
-		// Create archive directory.
-		archiveDir := filepath.Join(senate.BriefDir(), "archive")
-		if err := os.MkdirAll(archiveDir, 0o755); err != nil {
-			return fmt.Errorf("failed to create archive directory: %w", err)
-		}
-
-		// Generate archive filename with RFC3339 timestamp, colons replaced by dashes.
-		ts := time.Now().UTC().Format(time.RFC3339)
-		safeTS := strings.ReplaceAll(ts, ":", "-")
-		archiveFile := safeTS + ".md"
-		archivePath := filepath.Join(archiveDir, archiveFile)
-
-		// Move current brief to archive.
-		if err := os.Rename(briefPath, archivePath); err != nil {
-			return fmt.Errorf("failed to archive brief: %w", err)
+		archiveFile, err := archiveBrief(senate.BriefDir(), briefPath)
+		if err != nil {
+			return err
 		}
 
 		fmt.Printf("Archived brief to .brief/archive/%s\n", archiveFile)

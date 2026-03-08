@@ -106,27 +106,9 @@ var ledgerRestartCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
-
-		// Stop if running.
-		if mgr.Exists(ledgerSessionName) {
-			if err := mgr.Stop(ledgerSessionName, false); err != nil {
-				return fmt.Errorf("failed to stop ledger: %w", err)
-			}
-			fmt.Printf("Ledger stopped: %s\n", ledgerSessionName)
-		}
-
-		// Start.
-		solBin, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("failed to find sol binary: %w", err)
-		}
-		env := map[string]string{"SOL_HOME": config.Home()}
-		if err := mgr.Start(ledgerSessionName, config.Home(),
-			solBin+" ledger run", env, "ledger", ""); err != nil {
-			return fmt.Errorf("failed to start ledger session: %w", err)
-		}
-		fmt.Printf("Ledger started: %s\n", ledgerSessionName)
-		return nil
+		return restartSession(mgr, ledgerSessionName, "ledger",
+			fmt.Sprintf("Ledger stopped: %s", ledgerSessionName),
+			nil, ledgerStartCmd, args)
 	},
 }
 

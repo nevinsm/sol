@@ -180,30 +180,10 @@ var sentinelRestartCmd = &cobra.Command{
 		sessName := config.SessionName(world, "sentinel")
 		mgr := session.New()
 
-		// Stop if running.
-		if mgr.Exists(sessName) {
-			if err := mgr.Stop(sessName, false); err != nil {
-				return fmt.Errorf("failed to stop sentinel: %w", err)
-			}
-			fmt.Printf("Sentinel stopped for world %q\n", world)
-		}
-
-		// Start.
-		if config.IsSleeping(world) {
-			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
-		}
-
-		solBin, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("failed to find sol binary: %w", err)
-		}
-		env := map[string]string{"SOL_HOME": config.Home()}
-		if err := mgr.Start(sessName, config.Home(),
-			fmt.Sprintf("%s sentinel run --world=%s", solBin, world), env, "sentinel", world); err != nil {
-			return fmt.Errorf("failed to start sentinel session: %w", err)
-		}
-		fmt.Printf("Sentinel started: %s\n", sessName)
-		return nil
+		sentinelStartWorld = world
+		return restartSession(mgr, sessName, "sentinel",
+			fmt.Sprintf("Sentinel stopped for world %q", world),
+			nil, sentinelStartCmd, args)
 	},
 }
 
