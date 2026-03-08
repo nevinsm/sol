@@ -18,7 +18,7 @@ var (
 
 var resolveCmd = &cobra.Command{
 	Use:          "resolve",
-	Short:        "Signal work completion — push branch, update state, clear tether",
+	Short:        "Signal work completion — code writs push branch and create MR; non-code writs close directly",
 	GroupID:      groupDispatch,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,

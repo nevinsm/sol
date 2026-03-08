@@ -94,6 +94,21 @@ var docSections = []docSection{
 	{
 		heading: "Writs",
 		paths:   []string{"writ create", "writ status", "writ list", "writ ready", "writ update", "writ close", "writ query"},
+		notes: "`sol writ create` accepts `--title` (required), `--description`, `--priority` (1=high, 2=normal, 3=low), " +
+			"`--label` (repeatable), `--kind`, and `--metadata` (JSON object).\n\n" +
+			"### Writ Kind\n\n" +
+			"The `--kind` flag sets the writ's resolve path. Defaults to `code` when omitted.\n\n" +
+			"- **`code`** — produces code changes. Resolve pushes a branch, creates a merge request, and flows through the forge pipeline.\n" +
+			"- **`analysis`** (or any non-code value) — produces findings, reports, or structured data. Resolve closes the writ directly — no branch push, no MR, no forge involvement.\n\n" +
+			"Kind is stored as a dedicated column, not metadata, because it determines how the system processes the writ " +
+			"(resolve path, persona generation, forge involvement). See ADR-0024.\n\n" +
+			"### Output Directories\n\n" +
+			"Every writ gets a persistent output directory at `$SOL_HOME/{world}/writ-outputs/{writ-id}/`, created at cast time. " +
+			"This directory survives worktree cleanup.\n\n" +
+			"- **Code writs**: output directory is auxiliary (test reports, benchmarks, etc.)\n" +
+			"- **Non-code writs**: output directory is the primary delivery surface — all findings, reports, and structured data go here\n\n" +
+			"Agents see their output directory path in CLAUDE.local.md. When a writ has upstream dependencies, the persona also " +
+			"lists each dependency's output directory, so agents can read upstream analysis before starting work.",
 	},
 	{
 		heading: "Dependencies",

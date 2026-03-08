@@ -23,7 +23,7 @@ structure; the action layer names the mechanisms.
 | **Envoy** | A persistent, human-directed agent. Maintains context across sessions via a brief. Directory at `$SOL_HOME/{world}/envoys/{name}/`. | Crew |
 | **Governor** | Per-world work coordinator. Singleton Claude session that handles natural language dispatch, caravan creation, and cast coordination. Directory at `$SOL_HOME/{world}/governor/`. | Mayor (partial) |
 | **Senate** | Sphere-scoped work planner. Claude session for cross-world planning — creates writs, caravans, and dependencies across worlds. Queries governors for world context. Directory at `$SOL_HOME/senate/`. | *(new in Arc 4)* |
-| **Writ** | A unit of work. Created in the store, assigned to agents via cast, tracked through tether/resolve lifecycle. Stored in per-world database. | *(was: work item)* |
+| **Writ** | A unit of work with a kind (code or analysis). Created in the store, assigned to agents via cast, tracked through tether/resolve lifecycle. Kind determines the resolve path — code writs flow through forge, non-code writs close directly. Stored in per-world database. | *(was: work item)* |
 | **Sphere** | The global registry connecting all worlds. Stores agents, messages, escalations, caravans. Database: `sphere.db`. | Town |
 
 ## Actions
@@ -39,6 +39,7 @@ structure; the action layer names the mechanisms.
 
 | Term | Definition | Replaces (Gastown) |
 |---|---|---|
+| **Kind** | A writ's processing classification. Stored as a dedicated column (`TEXT NOT NULL DEFAULT 'code'`). Determines the resolve path, persona generation, and forge involvement. Code writs flow through forge; non-code writs (analysis, review, etc.) close directly. See ADR-0024. | *(new)* |
 | **Tether** | The durability primitive. A file at `$SOL_HOME/{world}/outposts/{agent}/.tether` that binds an agent to a writ. If the tether exists, the work is assigned. | Hook |
 | **Charter** | Per-world configuration file (`world.toml`). Defines source repo, agent capacity, model tier, and forge settings. Layered with global `sol.toml`. | *(new in Arc 1)* |
 | **Brief** | An envoy's, governor's, or senate's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start and after compaction, save-checked on stop. GLASS-inspectable. | *(new in Arc 3)* |

@@ -194,6 +194,13 @@ Agent-produced code merges through the forge pipeline — never direct to main.
 Forge applies quality gates (build, test, lint) before merge. This is the
 trust boundary between autonomous agents and the shared codebase.
 
+**Scope: code writs only.** Non-code writs (analysis, review, planning) produce
+findings rather than code changes. They resolve by closing directly — no branch
+push, no MR, no forge involvement. The forge pipeline was always scoped to code;
+the writ kind system (ADR-0024) makes this scope explicit. Output directories
+(`$SOL_HOME/{world}/writ-outputs/{writ-id}/`) provide the GLASS-inspectable
+delivery surface for non-code writs.
+
 ### Fail Predictably
 
 Every component has a defined failure mode. When storage is down, commands

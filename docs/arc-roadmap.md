@@ -262,6 +262,29 @@ created across worlds. Senate can query governors for world-specific context.
 
 ---
 
+## Gitea #2: Writ Kind — Code vs Analysis Resolve Paths
+
+Triggered by the code-review convoy workflow failure. Convoy legs that produced
+analysis (not code) could not resolve through the forge pipeline — empty
+branches fail squash-merge.
+
+- **ADR-0024**: Writ kind as a dedicated column. `kind TEXT NOT NULL DEFAULT 'code'`.
+  Non-code writs skip git/MR/forge and close directly.
+- `sol writ create --kind=analysis` — create non-code writs
+- Kind-aware persona generation: different quality gates, output instructions,
+  and resolve descriptions based on writ kind
+- Kind propagation through workflow manifests: convoy legs and manifest steps
+  carry kind from formula definitions to child writs
+- Output directories (`$SOL_HOME/{world}/writ-outputs/{writ-id}/`) as primary
+  delivery surface for non-code writs
+- Direct dependency visibility: agent personas list upstream dependency output
+  directories for cross-writ context
+- Sentinel reaps agents tethered to closed writs (covers non-code resolve path)
+
+**Status:** Complete.
+
+---
+
 ## Arc 5: Agent History, Performance & Cost Tracking
 
 Audit trail, performance insights, and cost visibility — specified in target

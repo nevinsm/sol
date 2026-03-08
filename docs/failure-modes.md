@@ -103,6 +103,24 @@ Event logging is best-effort — failures are silently ignored. If the chronicle
 crashes, the raw log continues growing and the curated feed is stale. The
 prefect restarts the chronicle. No primary operations are affected.
 
+### Non-Code Writ Resolve
+
+Non-code writs (kind != "code") follow a simpler resolve path with fewer
+failure points. There is no branch push, no MR creation, and no forge
+involvement. The writ transitions directly to closed status.
+
+**What can fail:**
+- Database write to close the writ (same as any store operation — retry on restart)
+- Tether clear (file deletion — best-effort, consul catches stale tethers)
+
+**What cannot fail:** No git push (no network dependency), no MR creation
+(no forge dependency), no squash-merge (the failure that motivated this design).
+
+Recovery is simpler than code writs: if the agent crashes mid-resolve, the writ
+remains tethered. On respawn, the agent re-reads its tether (GUPP) and resolves
+again. Since resolve is idempotent for non-code writs (close is a status update),
+no duplicate MRs are created.
+
 ### Writ Closed While Agent Is Working
 
 When a governor closes a writ (cancelled, superseded, etc.) while an agent is
@@ -110,6 +128,10 @@ actively working on it, the sentinel detects the closed writ on its next patrol
 cycle (≤60s). The agent's session is stopped, its tether cleared, and the
 outpost reaped. Agent work in progress is lost (acceptable — the writ was
 cancelled).
+
+This applies to both code and non-code writs. When a non-code writ resolves
+(closing it directly), any other agent that happens to be tethered to it is
+reaped by sentinel on the next patrol — same mechanism, same timing.
 
 ## Mass Failure
 
