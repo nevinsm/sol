@@ -224,24 +224,10 @@ func (s *Prefect) heartbeat() {
 	s.logger.Info("heartbeat", "working_agents", len(workingAgents), "dead_sessions", deadCount)
 }
 
-// respawnCommand returns the startup command for an agent based on its role.
-// Roles with registered startup configs (forge, governor, envoy) use startup.Launch
-// instead and never reach this function.
-func respawnCommand(agent store.Agent, worktreeDir string) string {
-	switch agent.Role {
-	case "sentinel":
-		return fmt.Sprintf("sol sentinel run --world=%s", agent.World)
-	default:
-		prompt := fmt.Sprintf("Agent %s, world %s (respawned). If no context appears, run: sol prime --world=%s --agent=%s",
-			agent.Name, agent.World, agent.World, agent.Name)
-		return config.BuildSessionCommand(config.SettingsPath(worktreeDir), prompt)
-	}
-}
-
 // worktreeForAgent returns the worktree path for an agent based on its role.
 // Roles with registered startup configs are resolved via their WorktreeDir function.
 func worktreeForAgent(agent store.Agent) string {
-	if cfg := startup.ConfigFor(agent.Role); cfg != nil {
+	if cfg := startup.ConfigFor(agent.Role); cfg != nil && cfg.WorktreeDir != nil {
 		return cfg.WorktreeDir(agent.World, agent.Name)
 	}
 	switch agent.Role {
@@ -299,34 +285,18 @@ func (s *Prefect) respawn(agent store.Agent) {
 	}
 
 	// Use startup.Respawn for roles with registered configs.
-	if cfg := startup.ConfigFor(agent.Role); cfg != nil {
-		_, err := startup.Respawn(agent.Role, agent.World, agent.Name, startup.LaunchOpts{
-			Sessions: s.sessions,
-		})
-		if err != nil {
-			s.logger.Error("failed to respawn session via startup",
-				"agent", agent.Name, "world", agent.World, "error", err)
-			return
-		}
-	} else {
-		// Fallback for roles without registered configs.
-		sessName := dispatch.SessionName(agent.World, agent.Name)
-		env := map[string]string{
-			"SOL_HOME":  config.Home(),
-			"SOL_WORLD": agent.World,
-			"SOL_AGENT": agent.Name,
-		}
-		if err := s.sessions.Start(sessName, worktreeDir,
-			respawnCommand(agent, worktreeDir), env, agent.Role, agent.World); err != nil {
-			s.logger.Error("failed to respawn session",
-				"agent", agent.Name, "world", agent.World, "error", err)
-			return
-		}
-
-		// Set agent back to working.
-		if err := s.sphereStore.UpdateAgentState(agentID, "working", agent.TetherItem); err != nil {
-			s.logger.Error("failed to set agent working after respawn", "agent", agent.Name, "error", err)
-		}
+	if cfg := startup.ConfigFor(agent.Role); cfg == nil {
+		s.logger.Error("no startup config registered for role, cannot respawn",
+			"agent", agent.Name, "world", agent.World, "role", agent.Role)
+		return
+	}
+	_, err := startup.Respawn(agent.Role, agent.World, agent.Name, startup.LaunchOpts{
+		Sessions: s.sessions,
+	})
+	if err != nil {
+		s.logger.Error("failed to respawn session via startup",
+			"agent", agent.Name, "world", agent.World, "error", err)
+		return
 	}
 
 	s.backoff[agentID] = restartCount

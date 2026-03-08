@@ -401,6 +401,7 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
+	registerAgentRole(t)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
 		t.Fatalf("create .store dir: %v", err)
 	}
@@ -448,24 +449,17 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 
 	w := sentinel.New(cfg, sphereStore, worldStore, mock, logger)
 
-	// Wire up respawnFn that marks the session alive in the mock.
-	respawnCalled := 0
-	w.SetRespawnFunc(func(world, agentName, role string) error {
-		respawnCalled++
-		mock.mu.Lock()
-		mock.alive["sol-"+world+"-"+agentName] = true
-		mock.mu.Unlock()
-		return nil
-	})
-
 	// Run one patrol.
 	if err := w.Patrol(context.Background()); err != nil {
 		t.Fatalf("Patrol: %v", err)
 	}
 
-	// Verify: respawn attempted (respawnFn called).
-	if respawnCalled != 1 {
-		t.Fatalf("expected 1 respawnFn call (respawn), got %d", respawnCalled)
+	// Verify: respawn attempted (session started via startup.Respawn).
+	mock.mu.Lock()
+	startedCount := len(mock.started)
+	mock.mu.Unlock()
+	if startedCount != 1 {
+		t.Fatalf("expected 1 session started (respawn), got %d", startedCount)
 	}
 
 	// Verify: respawn event emitted.
@@ -481,6 +475,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
+	registerAgentRole(t)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
 		t.Fatalf("create .store dir: %v", err)
 	}
@@ -523,22 +518,15 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 
 	w := sentinel.New(cfg, sphereStore, worldStore, mock, logger)
 
-	// Wire up respawnFn that marks the session alive in the mock.
-	respawnCalled := 0
-	w.SetRespawnFunc(func(world, agentName, role string) error {
-		respawnCalled++
-		mock.mu.Lock()
-		mock.alive["sol-"+world+"-"+agentName] = true
-		mock.mu.Unlock()
-		return nil
-	})
-
 	// Patrol 1: stalled → respawn (attempt 1).
 	if err := w.Patrol(context.Background()); err != nil {
 		t.Fatalf("patrol 1: %v", err)
 	}
-	if respawnCalled != 1 {
-		t.Fatalf("patrol 1: expected 1 respawnFn call, got %d", respawnCalled)
+	mock.mu.Lock()
+	startedCount := len(mock.started)
+	mock.mu.Unlock()
+	if startedCount != 1 {
+		t.Fatalf("patrol 1: expected 1 start, got %d", startedCount)
 	}
 	// Kill session.
 	mock.mu.Lock()
@@ -549,8 +537,11 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	if err := w.Patrol(context.Background()); err != nil {
 		t.Fatalf("patrol 2: %v", err)
 	}
-	if respawnCalled != 2 {
-		t.Fatalf("patrol 2: expected 2 respawnFn calls, got %d", respawnCalled)
+	mock.mu.Lock()
+	startedCount = len(mock.started)
+	mock.mu.Unlock()
+	if startedCount != 2 {
+		t.Fatalf("patrol 2: expected 2 starts, got %d", startedCount)
 	}
 	// Kill session again.
 	mock.mu.Lock()
@@ -561,8 +552,11 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	if err := w.Patrol(context.Background()); err != nil {
 		t.Fatalf("patrol 3: %v", err)
 	}
-	if respawnCalled != 2 {
-		t.Fatalf("patrol 3: expected still 2 respawnFn calls (max reached), got %d", respawnCalled)
+	mock.mu.Lock()
+	startedCount = len(mock.started)
+	mock.mu.Unlock()
+	if startedCount != 2 {
+		t.Fatalf("patrol 3: expected still 2 starts (max reached), got %d", startedCount)
 	}
 
 	// Agent should be idle.

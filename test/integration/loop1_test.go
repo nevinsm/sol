@@ -228,6 +228,7 @@ func TestPrefectSessionRestart(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
+	registerAgentRole(t)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
@@ -316,6 +317,7 @@ func TestMassDeathDegradation(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
+	registerAgentRole(t)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
@@ -531,6 +533,7 @@ func TestStatusAccuracy(t *testing.T) {
 	}
 
 	_, sourceRepo := setupTestEnv(t)
+	registerAgentRole(t)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 

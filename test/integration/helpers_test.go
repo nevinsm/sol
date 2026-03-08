@@ -11,8 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -79,6 +81,20 @@ func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 	isolateTmux(t)
 
 	return gtHome, sourceRepo
+}
+
+// registerAgentRole registers the "agent" role in the startup registry so
+// prefect/sentinel can respawn sessions via startup.Respawn. Without this,
+// respawn fails because "agent" has no registered startup config in tests
+// (the registration normally happens in cmd/cast.go at init time).
+func registerAgentRole(t *testing.T) {
+	t.Helper()
+	startup.Register("agent", startup.RoleConfig{
+		WorktreeDir: func(world, agent string) string {
+			return config.WorktreePath(world, agent)
+		},
+	})
+	t.Cleanup(func() { startup.Register("agent", startup.RoleConfig{}) })
 }
 
 func gitRun(t *testing.T, dir string, args ...string) {

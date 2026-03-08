@@ -129,13 +129,6 @@ func (m *mockSessions) getLastCmd(name string) string {
 	return m.lastCmds[name]
 }
 
-// respawnCall records a call to the injected respawnFn.
-type respawnCall struct {
-	world     string
-	agentName string
-	role      string
-}
-
 // --- Test helpers ---
 
 func setupTestEnv(t *testing.T) (*store.Store, *store.Store) {
@@ -316,29 +309,31 @@ func TestPatrolDetectsStalled(t *testing.T) {
 	createWrit(t, worldStore, "sol-abc12345", "Test task")
 	// Session is NOT alive (not in mock.alive).
 
-	w := New(cfg, sphereStore, worldStore, mock, nil)
+	// Create worktree directory so respawn doesn't fail on missing dir.
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
 
-	// Wire up respawnFn that marks the session alive in the mock.
-	var respawnCalls []respawnCall
-	w.SetRespawnFunc(func(world, agentName, role string) error {
-		respawnCalls = append(respawnCalls, respawnCall{world, agentName, role})
-		mock.mu.Lock()
-		mock.alive["sol-"+world+"-"+agentName] = true
-		mock.mu.Unlock()
-		return nil
+	// Register role so startup.Respawn succeeds.
+	startup.Register("agent", startup.RoleConfig{
+		WorktreeDir: func(w, a string) string {
+			return filepath.Join(os.Getenv("SOL_HOME"), w, "outposts", a, "worktree")
+		},
 	})
+	t.Cleanup(func() { startup.Register("agent", startup.RoleConfig{}) })
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
 
 	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
-	// Should have called respawnFn once.
-	if len(respawnCalls) != 1 {
-		t.Fatalf("expected 1 respawnFn call, got %d", len(respawnCalls))
+	// Should have started a session (respawn).
+	started := mock.getStarted()
+	if len(started) != 1 {
+		t.Fatalf("expected 1 session started (respawn), got %d: %v", len(started), started)
 	}
-	if respawnCalls[0].world != "ember" || respawnCalls[0].agentName != "Toast" || respawnCalls[0].role != "agent" {
-		t.Errorf("respawnFn called with (%q, %q, %q), want (ember, Toast, agent)",
-			respawnCalls[0].world, respawnCalls[0].agentName, respawnCalls[0].role)
+	if started[0] != "sol-ember-Toast" {
+		t.Errorf("started session = %q, want %q", started[0], "sol-ember-Toast")
 	}
 }
 
@@ -699,22 +694,24 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Test task")
 
-	w := New(cfg, sphereStore, worldStore, mock, nil)
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
 
-	// Wire up respawnFn that marks the session alive in the mock.
-	var respawnCalls []respawnCall
-	w.SetRespawnFunc(func(world, agentName, role string) error {
-		respawnCalls = append(respawnCalls, respawnCall{world, agentName, role})
-		mock.mu.Lock()
-		mock.alive["sol-"+world+"-"+agentName] = true
-		mock.mu.Unlock()
-		return nil
+	// Register role so startup.Respawn succeeds.
+	startup.Register("agent", startup.RoleConfig{
+		WorktreeDir: func(w, a string) string {
+			return filepath.Join(os.Getenv("SOL_HOME"), w, "outposts", a, "worktree")
+		},
 	})
+	t.Cleanup(func() { startup.Register("agent", startup.RoleConfig{}) })
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
 
 	// Patrol 1: stalled → respawn (attempt 1).
 	w.patrol(context.Background())
-	if len(respawnCalls) != 1 {
-		t.Fatalf("patrol 1: expected 1 respawnFn call, got %d", len(respawnCalls))
+	started := mock.getStarted()
+	if len(started) != 1 {
+		t.Fatalf("patrol 1: expected 1 start, got %d", len(started))
 	}
 
 	// Kill the session.
@@ -724,8 +721,9 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 
 	// Patrol 2: still stalled → respawn (attempt 2).
 	w.patrol(context.Background())
-	if len(respawnCalls) != 2 {
-		t.Fatalf("patrol 2: expected 2 respawnFn calls, got %d", len(respawnCalls))
+	started = mock.getStarted()
+	if len(started) != 2 {
+		t.Fatalf("patrol 2: expected 2 starts, got %d", len(started))
 	}
 
 	// Kill the session again.
@@ -735,8 +733,9 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 
 	// Patrol 3: still stalled → return to open (max reached).
 	w.patrol(context.Background())
-	if len(respawnCalls) != 2 {
-		t.Fatalf("patrol 3: expected still 2 respawnFn calls (max reached), got %d", len(respawnCalls))
+	started = mock.getStarted()
+	if len(started) != 2 {
+		t.Fatalf("patrol 3: expected still 2 starts (max reached), got %d", len(started))
 	}
 
 	// Agent should be idle, writ open.
@@ -754,93 +753,6 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 	}
 	if item.Status != "open" {
 		t.Errorf("writ status = %q, want %q after max respawns", item.Status, "open")
-	}
-}
-
-func TestRespawnFnCalledWithCorrectArgs(t *testing.T) {
-	sphereStore, worldStore := setupTestEnv(t)
-	mock := newMockSessions()
-	cfg := testConfig()
-
-	sphereStore.CreateAgent("Echo", "ember", "agent")
-	sphereStore.UpdateAgentState("ember/Echo", "working", "sol-writ1111")
-	createWrit(t, worldStore, "sol-writ1111", "Test task")
-
-	w := New(cfg, sphereStore, worldStore, mock, nil)
-
-	var respawnCalls []respawnCall
-	w.SetRespawnFunc(func(world, agentName, role string) error {
-		respawnCalls = append(respawnCalls, respawnCall{world, agentName, role})
-		mock.mu.Lock()
-		mock.alive["sol-"+world+"-"+agentName] = true
-		mock.mu.Unlock()
-		return nil
-	})
-
-	w.patrol(context.Background())
-
-	if len(respawnCalls) != 1 {
-		t.Fatalf("expected 1 respawnFn call, got %d", len(respawnCalls))
-	}
-	rc := respawnCalls[0]
-	if rc.world != "ember" {
-		t.Errorf("respawnFn world = %q, want %q", rc.world, "ember")
-	}
-	if rc.agentName != "Echo" {
-		t.Errorf("respawnFn agentName = %q, want %q", rc.agentName, "Echo")
-	}
-	if rc.role != "agent" {
-		t.Errorf("respawnFn role = %q, want %q", rc.role, "agent")
-	}
-}
-
-func TestRespawnFnErrorPropagates(t *testing.T) {
-	sphereStore, worldStore := setupTestEnv(t)
-	mock := newMockSessions()
-	cfg := testConfig()
-
-	sphereStore.CreateAgent("Echo", "ember", "agent")
-	sphereStore.UpdateAgentState("ember/Echo", "working", "sol-writ2222")
-	createWrit(t, worldStore, "sol-writ2222", "Test task")
-
-	w := New(cfg, sphereStore, worldStore, mock, nil)
-
-	// Set respawnFn that returns an error.
-	w.SetRespawnFunc(func(world, agentName, role string) error {
-		return fmt.Errorf("startup failure: out of tokens")
-	})
-
-	// Patrol should not crash — error is logged, not returned.
-	if err := w.patrol(context.Background()); err != nil {
-		t.Fatalf("patrol() error: %v", err)
-	}
-
-	// Session should NOT be alive (respawn failed).
-	if mock.Exists("sol-ember-Echo") {
-		t.Error("session should not be alive after respawnFn error")
-	}
-}
-
-func TestRespawnFnNilReturnsError(t *testing.T) {
-	sphereStore, worldStore := setupTestEnv(t)
-	mock := newMockSessions()
-	cfg := testConfig()
-
-	sphereStore.CreateAgent("Echo", "ember", "agent")
-	sphereStore.UpdateAgentState("ember/Echo", "working", "sol-writ3333")
-	createWrit(t, worldStore, "sol-writ3333", "Test task")
-
-	w := New(cfg, sphereStore, worldStore, mock, nil)
-	// Do NOT set respawnFn — leave it nil.
-
-	// Patrol should not crash — error is logged, not returned.
-	if err := w.patrol(context.Background()); err != nil {
-		t.Fatalf("patrol() error: %v", err)
-	}
-
-	// Session should NOT be alive (respawn not configured).
-	if mock.Exists("sol-ember-Echo") {
-		t.Error("session should not be alive when respawnFn is nil")
 	}
 }
 
@@ -1198,29 +1110,31 @@ func TestPatrolDetectsForgeStalled(t *testing.T) {
 	sphereStore.UpdateAgentState("ember/forge", "working", "")
 	// Session is NOT alive.
 
-	w := New(cfg, sphereStore, nil, mock, nil)
+	// Create worktree directory for respawn.
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
 
-	// Wire up respawnFn that marks the session alive in the mock.
-	var respawnCalls []respawnCall
-	w.SetRespawnFunc(func(world, agentName, role string) error {
-		respawnCalls = append(respawnCalls, respawnCall{world, agentName, role})
-		mock.mu.Lock()
-		mock.alive["sol-"+world+"-"+agentName] = true
-		mock.mu.Unlock()
-		return nil
+	// Register role so startup.Respawn succeeds.
+	startup.Register("forge", startup.RoleConfig{
+		WorktreeDir: func(w, a string) string {
+			return filepath.Join(os.Getenv("SOL_HOME"), w, "forge", "worktree")
+		},
 	})
+	t.Cleanup(func() { startup.Register("forge", startup.RoleConfig{}) })
+
+	w := New(cfg, sphereStore, nil, mock, nil)
 
 	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
-	// Should have called respawnFn once for forge.
-	if len(respawnCalls) != 1 {
-		t.Fatalf("expected 1 respawnFn call (forge respawn), got %d", len(respawnCalls))
+	// Should have started a session (respawn).
+	started := mock.getStarted()
+	if len(started) != 1 {
+		t.Fatalf("expected 1 session started (forge respawn), got %d: %v", len(started), started)
 	}
-	if respawnCalls[0].world != "ember" || respawnCalls[0].agentName != "forge" || respawnCalls[0].role != "forge" {
-		t.Errorf("respawnFn called with (%q, %q, %q), want (ember, forge, forge)",
-			respawnCalls[0].world, respawnCalls[0].agentName, respawnCalls[0].role)
+	if started[0] != "sol-ember-forge" {
+		t.Errorf("started session = %q, want %q", started[0], "sol-ember-forge")
 	}
 }
 
@@ -2100,6 +2014,21 @@ func TestQuotaPatrolRotatesEntireWorld(t *testing.T) {
 	} {
 		os.MkdirAll(dir, 0o755)
 	}
+
+	// Register roles so the startup path succeeds.
+	for _, role := range []string{"agent", "forge", "governor"} {
+		r := role
+		startup.Register(r, startup.RoleConfig{
+			WorktreeDir: func(w, a string) string {
+				return agentWorkdir(w, store.Agent{Name: a, Role: r})
+			},
+		})
+	}
+	t.Cleanup(func() {
+		for _, r := range []string{"agent", "forge", "governor"} {
+			startup.Register(r, startup.RoleConfig{})
+		}
+	})
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 

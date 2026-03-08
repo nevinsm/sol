@@ -22,6 +22,17 @@ func setupSolHome(t *testing.T) string {
 	return dir
 }
 
+// registerMinimalRole registers a minimal startup config for a role in tests.
+// The config only provides a WorktreeDir function — no persona, hooks, or
+// system prompt — so the startup path succeeds without side effects.
+func registerMinimalRole(t *testing.T, role, worktreeDir string) {
+	t.Helper()
+	startup.Register(role, startup.RoleConfig{
+		WorktreeDir: func(w, a string) string { return worktreeDir },
+	})
+	t.Cleanup(func() { startup.Register(role, startup.RoleConfig{}) })
+}
+
 func TestCapture(t *testing.T) {
 	solHome := setupSolHome(t)
 
@@ -469,13 +480,16 @@ func TestExec(t *testing.T) {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 
+	registerMinimalRole(t, "agent", worktreeDir)
+
 	mgr := &mockSessionMgr{captureResult: "$ make test\nAll tests passed."}
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:     "ember",
-		AgentName: "Toast",
-		Summary:   "Implemented login form.",
+		World:         "ember",
+		AgentName:     "Toast",
+		Summary:       "Implemented login form.",
+		StartupSphere: &mockStartupSphere{},
 	}, mgr, ts, nil)
 
 	if err != nil {
@@ -542,14 +556,17 @@ func TestExecNoTetherCyclesSession(t *testing.T) {
 		t.Fatalf("failed to create governor dir: %v", err)
 	}
 
+	registerMinimalRole(t, "governor", govDir)
+
 	mgr := &mockSessionMgr{}
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:       "ember",
-		AgentName:   "governor",
-		Role:        "governor",
-		WorktreeDir: govDir,
+		World:         "ember",
+		AgentName:     "governor",
+		Role:          "governor",
+		WorktreeDir:   govDir,
+		StartupSphere: &mockStartupSphere{},
 	}, mgr, ts, nil)
 
 	if err != nil {
@@ -596,14 +613,17 @@ func TestExecWithExplicitRole(t *testing.T) {
 		t.Fatalf("failed to create envoy dir: %v", err)
 	}
 
+	registerMinimalRole(t, "envoy", envoyDir)
+
 	mgr := &mockSessionMgr{}
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:       "ember",
-		AgentName:   "Alice",
-		Role:        "envoy",
-		WorktreeDir: envoyDir,
+		World:         "ember",
+		AgentName:     "Alice",
+		Role:          "envoy",
+		WorktreeDir:   envoyDir,
+		StartupSphere: &mockStartupSphere{},
 	}, mgr, ts, nil)
 
 	if err != nil {
@@ -804,13 +824,16 @@ func TestExecWritesMarker(t *testing.T) {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 
+	registerMinimalRole(t, "agent", worktreeDir)
+
 	mgr := &mockSessionMgr{captureResult: "$ make test\nAll tests passed."}
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:     "ember",
-		AgentName: "Toast",
-		Summary:   "Implemented login form.",
+		World:         "ember",
+		AgentName:     "Toast",
+		Summary:       "Implemented login form.",
+		StartupSphere: &mockStartupSphere{},
 	}, mgr, ts, nil)
 
 	if err != nil {
@@ -904,15 +927,18 @@ func TestCooldownEnforced(t *testing.T) {
 		t.Fatalf("WriteMarker failed: %v", err)
 	}
 
+	registerMinimalRole(t, "governor", govDir)
+
 	// Governor should NOT be affected by cooldown (exempt).
 	mgr := &mockSessionMgr{}
 	ts := &mockSphereStore{}
 	start := time.Now()
 	err := Exec(ExecOpts{
-		World:       "ember",
-		AgentName:   "governor",
-		Role:        "governor",
-		WorktreeDir: govDir,
+		World:         "ember",
+		AgentName:     "governor",
+		Role:          "governor",
+		WorktreeDir:   govDir,
+		StartupSphere: &mockStartupSphere{},
 	}, mgr, ts, nil)
 	if err != nil {
 		t.Fatalf("governor Exec failed: %v", err)
@@ -931,14 +957,17 @@ func TestExecCycleFallback(t *testing.T) {
 		t.Fatalf("failed to create governor dir: %v", err)
 	}
 
+	registerMinimalRole(t, "governor", govDir)
+
 	mgr := &mockSessionMgr{cycleErr: fmt.Errorf("respawn-pane failed")}
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:       "ember",
-		AgentName:   "governor",
-		Role:        "governor",
-		WorktreeDir: govDir,
+		World:         "ember",
+		AgentName:     "governor",
+		Role:          "governor",
+		WorktreeDir:   govDir,
+		StartupSphere: &mockStartupSphere{},
 	}, mgr, ts, nil)
 
 	if err != nil {
@@ -977,6 +1006,8 @@ func TestExecEnvoyBriefSave(t *testing.T) {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 
+	registerMinimalRole(t, "envoy", worktreeDir)
+
 	mgr := &mockSessionMgr{
 		exists: true,
 		// Simulate: changing output, then stable (agent done saving brief).
@@ -985,10 +1016,11 @@ func TestExecEnvoyBriefSave(t *testing.T) {
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:       "ember",
-		AgentName:   "Alice",
-		Role:        "envoy",
-		WorktreeDir: worktreeDir,
+		World:         "ember",
+		AgentName:     "Alice",
+		Role:          "envoy",
+		WorktreeDir:   worktreeDir,
+		StartupSphere: &mockStartupSphere{},
 	}, mgr, ts, nil)
 
 	if err != nil {
@@ -1026,6 +1058,8 @@ func TestExecGovernorBriefSave(t *testing.T) {
 		t.Fatalf("failed to create brief dir: %v", err)
 	}
 
+	registerMinimalRole(t, "governor", govDir)
+
 	mgr := &mockSessionMgr{
 		exists:         true,
 		captureResults: []string{"stable", "stable", "stable"},
@@ -1033,10 +1067,11 @@ func TestExecGovernorBriefSave(t *testing.T) {
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:       "ember",
-		AgentName:   "governor",
-		Role:        "governor",
-		WorktreeDir: govDir,
+		World:         "ember",
+		AgentName:     "governor",
+		Role:          "governor",
+		WorktreeDir:   govDir,
+		StartupSphere: &mockStartupSphere{},
 	}, mgr, ts, nil)
 
 	if err != nil {
@@ -1072,6 +1107,8 @@ func TestExecBriefSaveTimeout(t *testing.T) {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 
+	registerMinimalRole(t, "envoy", worktreeDir)
+
 	mgr := &mockSessionMgr{
 		exists: true,
 		// Output keeps changing — never stabilizes (simulates unresponsive agent).
@@ -1081,10 +1118,11 @@ func TestExecBriefSaveTimeout(t *testing.T) {
 
 	start := time.Now()
 	err := Exec(ExecOpts{
-		World:       "ember",
-		AgentName:   "Bob",
-		Role:        "envoy",
-		WorktreeDir: worktreeDir,
+		World:         "ember",
+		AgentName:     "Bob",
+		Role:          "envoy",
+		WorktreeDir:   worktreeDir,
+		StartupSphere: &mockStartupSphere{},
 	}, mgr, ts, nil)
 	elapsed := time.Since(start)
 
@@ -1121,12 +1159,15 @@ func TestExecNoBriefSaveForOutpost(t *testing.T) {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 
+	registerMinimalRole(t, "agent", worktreeDir)
+
 	mgr := &mockSessionMgr{captureResult: "test output"}
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:     "ember",
-		AgentName: "Toast",
+		World:         "ember",
+		AgentName:     "Toast",
+		StartupSphere: &mockStartupSphere{},
 	}, mgr, ts, nil)
 
 	if err != nil {
@@ -1154,14 +1195,17 @@ func TestExecNoBriefSaveForForge(t *testing.T) {
 		t.Fatalf("failed to create forge dir: %v", err)
 	}
 
+	registerMinimalRole(t, "forge", forgeDir)
+
 	mgr := &mockSessionMgr{}
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:       "ember",
-		AgentName:   "forge",
-		Role:        "forge",
-		WorktreeDir: forgeDir,
+		World:         "ember",
+		AgentName:     "forge",
+		Role:          "forge",
+		WorktreeDir:   forgeDir,
+		StartupSphere: &mockStartupSphere{},
 	}, mgr, ts, nil)
 
 	if err != nil {
@@ -1185,14 +1229,17 @@ func TestExecNoBriefSaveWithoutBriefDir(t *testing.T) {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 
+	registerMinimalRole(t, "envoy", worktreeDir)
+
 	mgr := &mockSessionMgr{}
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:       "ember",
-		AgentName:   "Carol",
-		Role:        "envoy",
-		WorktreeDir: worktreeDir,
+		World:         "ember",
+		AgentName:     "Carol",
+		Role:          "envoy",
+		WorktreeDir:   worktreeDir,
+		StartupSphere: &mockStartupSphere{},
 	}, mgr, ts, nil)
 
 	if err != nil {
@@ -1378,51 +1425,35 @@ func TestExecStartupCompactUsesResume(t *testing.T) {
 	}
 }
 
-func TestExecLegacyPathForUnregisteredRole(t *testing.T) {
-	solHome := setupSolHome(t)
+func TestExecErrorsForUnregisteredRole(t *testing.T) {
+	setupSolHome(t)
 
 	world := "ember"
 	agentName := "LegacyBot"
 	roleName := "unregistered-role-xyz"
 
-	worktreeDir := filepath.Join(solHome, world, "outposts", agentName, "worktree")
-	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
-		t.Fatalf("failed to create worktree dir: %v", err)
-	}
-
 	mgr := &mockSessionMgr{}
 	ts := &mockSphereStore{}
 
 	err := Exec(ExecOpts{
-		World:       world,
-		AgentName:   agentName,
-		Role:        roleName,
-		WorktreeDir: worktreeDir,
+		World:     world,
+		AgentName: agentName,
+		Role:      roleName,
 	}, mgr, ts, nil)
 
-	if err != nil {
-		t.Fatalf("Exec failed: %v", err)
+	if err == nil {
+		t.Fatal("expected error for unregistered role, got nil")
+	}
+	if !strings.Contains(err.Error(), "no startup config registered") {
+		t.Errorf("expected 'no startup config registered' error, got %q", err.Error())
 	}
 
-	if len(mgr.cycled) != 1 {
-		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	// No session operations should have been attempted.
+	if len(mgr.cycled) != 0 {
+		t.Errorf("expected 0 Cycle calls, got %d", len(mgr.cycled))
 	}
-	cmd := mgr.cycled[0].Cmd
-
-	// Legacy path should have generic handoff prompt.
-	if !strings.Contains(cmd, "handoff") {
-		t.Errorf("expected generic handoff prompt in command, got %q", cmd)
-	}
-
-	// Should NOT have system prompt flags (not registered).
-	if strings.Contains(cmd, "--system-prompt-file") {
-		t.Errorf("expected no --system-prompt-file for unregistered role, got %q", cmd)
-	}
-
-	// No persona should be installed.
-	personaPath := filepath.Join(worktreeDir, "CLAUDE.local.md")
-	if _, err := os.Stat(personaPath); err == nil {
-		t.Error("expected no persona file for unregistered role")
+	if len(mgr.started) != 0 {
+		t.Errorf("expected 0 Start calls, got %d", len(mgr.started))
 	}
 }
 

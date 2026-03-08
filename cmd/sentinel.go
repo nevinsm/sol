@@ -12,7 +12,6 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
-	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -83,15 +82,6 @@ var sentinelRunCmd = &cobra.Command{
 				SessionName: result.SessionName,
 				WorktreeDir: result.WorktreeDir,
 			}, nil
-		})
-
-		// Wire up respawn function for full session initialization via startup.Respawn.
-		w.SetRespawnFunc(func(world, agentName, role string) error {
-			_, err := startup.Respawn(role, world, agentName, startup.LaunchOpts{
-				Sessions: mgr,
-				Sphere:   sphereStore,
-			})
-			return err
 		})
 
 		ctx, cancel := context.WithCancel(cmd.Context())

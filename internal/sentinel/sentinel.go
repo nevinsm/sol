@@ -126,7 +126,6 @@ type Sentinel struct {
 	lastCaptures             map[string]string // agent ID → hash of last captured output
 	assessFn                 assessFunc        // nil = use real AI call
 	castFn                   func(writID string) (*CastResult, error) // nil = skip recast
-	respawnFn                func(world, agentName, role string) error // nil = error on respawn
 
 	// Per-patrol counters, reset at start of each patrol.
 	patrolAssessed int
@@ -164,13 +163,6 @@ func (w *Sentinel) SetAssessFunc(fn func(agent store.Agent, sessionName, output 
 // When nil, the sentinel skips the recast step during patrol.
 func (w *Sentinel) SetCastFunc(fn func(writID string) (*CastResult, error)) {
 	w.castFn = fn
-}
-
-// SetRespawnFunc sets the function used to respawn crashed agent sessions.
-// This delegates to startup.Respawn, ensuring full session initialization
-// (persona, hooks, settings, system prompt). Must be set before patrol runs.
-func (w *Sentinel) SetRespawnFunc(fn func(world, agentName, role string) error) {
-	w.respawnFn = fn
 }
 
 func (w *Sentinel) agentID() string {
@@ -687,21 +679,20 @@ func (w *Sentinel) handleForgeStalled(agent store.Agent) error {
 	return w.respawnAgent(agent)
 }
 
-// respawnAgent restarts a crashed agent's tmux session via the injected
-// respawnFn, which delegates to startup.Respawn for full session initialization
-// (persona, hooks, settings, system prompt).
+// respawnAgent restarts a crashed agent's tmux session using the startup
+// registry. The tether file is durable, and the Claude Code SessionStart
+// hook fires sol prime automatically (GUPP).
 func (w *Sentinel) respawnAgent(agent store.Agent) error {
-	if w.respawnFn == nil {
-		return fmt.Errorf("respawnFn not configured")
-	}
-
 	// Ensure agent state is working before respawn.
 	if err := w.sphereStore.UpdateAgentState(agent.ID, "working", agent.TetherItem); err != nil {
 		return fmt.Errorf("failed to set agent %s working: %w", agent.ID, err)
 	}
 
-	if err := w.respawnFn(w.config.World, agent.Name, agent.Role); err != nil {
-		return fmt.Errorf("failed to respawn %s: %w", agent.Name, err)
+	_, err := startup.Respawn(agent.Role, w.config.World, agent.Name, startup.LaunchOpts{
+		Sessions: w.sessions,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to respawn session for %s: %w", agent.Name, err)
 	}
 
 	key := respawnKey{AgentID: agent.ID, WritID: agent.TetherItem}
@@ -1078,33 +1069,12 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 				continue
 			}
 		} else {
-			// Legacy path for unregistered roles.
-			worldDir := config.WorldDir(w.config.World)
-			configDir := config.ClaudeConfigDir(worldDir, la.agent.Role, la.agent.Name)
-
-			if err := writeAgentCreds(configDir, toAccount); err != nil {
-				continue
+			// No startup config registered — skip this agent.
+			if w.logger != nil {
+				w.logger.Emit("sentinel_error", w.agentID(), la.agent.ID, "audit",
+					map[string]any{"action": "quota_rotate", "error": fmt.Sprintf("no startup config registered for role %q", la.agent.Role)})
 			}
-
-			workdir := agentWorkdir(w.config.World, la.agent)
-			settingsPath := config.SettingsPath(workdir)
-			cmd := config.BuildSessionCommandContinue(settingsPath,
-				"Your credentials have been rotated due to rate limiting. Continue working on your current task.")
-
-			env := map[string]string{
-				"SOL_HOME":          config.Home(),
-				"SOL_WORLD":         w.config.World,
-				"SOL_AGENT":         la.agent.Name,
-				"CLAUDE_CONFIG_DIR": configDir,
-			}
-
-			if err := w.sessions.Cycle(la.session, workdir, cmd, env, la.agent.Role, w.config.World); err != nil {
-				if w.logger != nil {
-					w.logger.Emit("sentinel_error", w.agentID(), la.agent.ID, "audit",
-						map[string]any{"action": "quota_rotate", "error": err.Error()})
-				}
-				continue
-			}
+			continue
 		}
 
 		rotated++
@@ -1209,35 +1179,12 @@ func (w *Sentinel) checkQuotaPaused() int {
 				continue
 			}
 		} else {
-			// Legacy path for unregistered roles.
-			worldDir := config.WorldDir(w.config.World)
-			configDir := config.ClaudeConfigDir(worldDir, paused.Role, paused.AgentName)
-
-			if err := writeAgentCreds(configDir, toAccount); err != nil {
-				continue
+			// No startup config registered — skip this agent.
+			if w.logger != nil {
+				w.logger.Emit("sentinel_error", w.agentID(), agentID, "audit",
+					map[string]any{"action": "quota_restart", "error": fmt.Sprintf("no startup config registered for role %q", paused.Role)})
 			}
-
-			sessionName := dispatch.SessionName(w.config.World, paused.AgentName)
-			workdir := dispatch.WorktreePath(w.config.World, paused.AgentName)
-			settingsPath := config.SettingsPath(workdir)
-
-			cmd := config.BuildSessionCommandContinue(settingsPath,
-				"Your session was paused due to rate limiting. An account is now available. Continue working on your current task.")
-
-			env := map[string]string{
-				"SOL_HOME":          config.Home(),
-				"SOL_WORLD":         w.config.World,
-				"SOL_AGENT":         paused.AgentName,
-				"CLAUDE_CONFIG_DIR": configDir,
-			}
-
-			if err := w.sessions.Start(sessionName, workdir, cmd, env, paused.Role, w.config.World); err != nil {
-				if w.logger != nil {
-					w.logger.Emit("sentinel_error", w.agentID(), agentID, "audit",
-						map[string]any{"action": "quota_restart", "error": err.Error()})
-				}
-				continue
-			}
+			continue
 		}
 
 		state.MarkLastUsed(toAccount)

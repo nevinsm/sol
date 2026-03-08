@@ -221,54 +221,33 @@ func swapAndRespawn(state *State, agent store.Agent, toAccount string, opts Rota
 	// Use startup.Resume for registered roles to get system prompt flags,
 	// persona, hooks, and workflow re-instantiation.
 	cfg := startup.ConfigFor(agent.Role)
-	if cfg != nil {
-		cycleOp := func(name, workdir, cmd string, env map[string]string, role, world string) error {
-			if err := mgr.Cycle(name, workdir, cmd, env, role, world); err != nil {
-				fmt.Fprintf(os.Stderr, "quota: cycle failed, falling back to stop+start: %v\n", err)
-				if stopErr := mgr.Stop(name, true); stopErr != nil {
-					fmt.Fprintf(os.Stderr, "quota: stop also failed: %v\n", stopErr)
-				}
-				return mgr.Start(name, workdir, cmd, env, role, world)
+	if cfg == nil {
+		return fmt.Errorf("quota rotate: no startup config registered for role %q", agent.Role)
+	}
+
+	cycleOp := func(name, workdir, cmd string, env map[string]string, role, world string) error {
+		if err := mgr.Cycle(name, workdir, cmd, env, role, world); err != nil {
+			fmt.Fprintf(os.Stderr, "quota: cycle failed, falling back to stop+start: %v\n", err)
+			if stopErr := mgr.Stop(name, true); stopErr != nil {
+				fmt.Fprintf(os.Stderr, "quota: stop also failed: %v\n", stopErr)
 			}
-			return nil
+			return mgr.Start(name, workdir, cmd, env, role, world)
 		}
+		return nil
+	}
 
-		resumeState := startup.ResumeState{
-			Reason:          "quota_rotate",
-			ClaimedResource: agent.TetherItem,
-		}
+	resumeState := startup.ResumeState{
+		Reason:          "quota_rotate",
+		ClaimedResource: agent.TetherItem,
+	}
 
-		launchOpts := startup.LaunchOpts{
-			Account:   toAccount,
-			SessionOp: cycleOp,
-		}
+	launchOpts := startup.LaunchOpts{
+		Account:   toAccount,
+		SessionOp: cycleOp,
+	}
 
-		if _, err := startup.Resume(*cfg, opts.World, agent.Name, resumeState, launchOpts); err != nil {
-			return fmt.Errorf("failed to respawn session %s: %w", sessionName, err)
-		}
-	} else {
-		// Legacy path for unregistered roles.
-		worldDir := config.WorldDir(opts.World)
-		configDir := config.ClaudeConfigDir(worldDir, agent.Role, agent.Name)
-		if err := writeAgentCredentials(configDir, toAccount); err != nil {
-			return err
-		}
-
-		workdir := config.WorktreePath(opts.World, agent.Name)
-		settingsPath := config.SettingsPath(workdir)
-		cmd := config.BuildSessionCommandContinue(settingsPath,
-			"Your credentials have been rotated due to rate limiting. Continue working on your current task.")
-
-		env := map[string]string{
-			"SOL_HOME":          config.Home(),
-			"SOL_WORLD":         opts.World,
-			"SOL_AGENT":         agent.Name,
-			"CLAUDE_CONFIG_DIR": configDir,
-		}
-
-		if err := mgr.Cycle(sessionName, workdir, cmd, env, agent.Role, opts.World); err != nil {
-			return fmt.Errorf("failed to respawn session %s: %w", sessionName, err)
-		}
+	if _, err := startup.Resume(*cfg, opts.World, agent.Name, resumeState, launchOpts); err != nil {
+		return fmt.Errorf("failed to respawn session %s: %w", sessionName, err)
 	}
 
 	if logger != nil {
@@ -343,49 +322,24 @@ func restartPausedSessions(state *State, opts RotateOpts, sphereStore *store.Sto
 			// Use startup.Resume for registered roles to get system prompt
 			// flags, persona, hooks, and workflow re-instantiation.
 			cfg := startup.ConfigFor(paused.Role)
-			if cfg != nil {
-				resumeState := startup.ResumeState{
-					Reason:          "quota_rotate",
-					ClaimedResource: paused.Writ,
-				}
+			if cfg == nil {
+				fmt.Fprintf(os.Stderr, "quota: no startup config registered for role %q (agent %s), skipping\n", paused.Role, agentID)
+				continue
+			}
 
-				launchOpts := startup.LaunchOpts{
-					Account:  toAccount,
-					Sessions: mgr,
-				}
+			resumeState := startup.ResumeState{
+				Reason:          "quota_rotate",
+				ClaimedResource: paused.Writ,
+			}
 
-				if _, err := startup.Resume(*cfg, opts.World, paused.AgentName, resumeState, launchOpts); err != nil {
-					fmt.Fprintf(os.Stderr, "quota: failed to restart session %s via startup: %v\n", agentID, err)
-					continue
-				}
-			} else {
-				// Legacy path for unregistered roles.
-				worldDir := config.WorldDir(opts.World)
-				configDir := config.ClaudeConfigDir(worldDir, paused.Role, paused.AgentName)
+			launchOpts := startup.LaunchOpts{
+				Account:  toAccount,
+				Sessions: mgr,
+			}
 
-				if err := writeAgentCredentials(configDir, toAccount); err != nil {
-					fmt.Fprintf(os.Stderr, "quota: failed to write credentials for %s: %v\n", agentID, err)
-					continue
-				}
-
-				sessionName := config.SessionName(opts.World, paused.AgentName)
-				workdir := config.WorktreePath(opts.World, paused.AgentName)
-				settingsPath := config.SettingsPath(workdir)
-
-				cmd := config.BuildSessionCommandContinue(settingsPath,
-					"Your session was paused due to rate limiting. An account is now available. Continue working on your current task.")
-
-				env := map[string]string{
-					"SOL_HOME":          config.Home(),
-					"SOL_WORLD":         opts.World,
-					"SOL_AGENT":         paused.AgentName,
-					"CLAUDE_CONFIG_DIR": configDir,
-				}
-
-				if err := mgr.Start(sessionName, workdir, cmd, env, paused.Role, opts.World); err != nil {
-					fmt.Fprintf(os.Stderr, "quota: failed to restart session %s: %v\n", sessionName, err)
-					continue
-				}
+			if _, err := startup.Resume(*cfg, opts.World, paused.AgentName, resumeState, launchOpts); err != nil {
+				fmt.Fprintf(os.Stderr, "quota: failed to restart session %s via startup: %v\n", agentID, err)
+				continue
 			}
 
 			state.MarkLastUsed(toAccount)

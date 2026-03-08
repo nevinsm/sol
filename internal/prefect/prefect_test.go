@@ -96,6 +96,22 @@ func setupTestEnv(t *testing.T) *store.Store {
 		t.Fatal(err)
 	}
 
+	// Register common roles so startup.Respawn succeeds in respawn tests.
+	startup.Register("agent", startup.RoleConfig{
+		WorktreeDir: func(w, a string) string {
+			return filepath.Join(os.Getenv("SOL_HOME"), w, "outposts", a, "worktree")
+		},
+	})
+	startup.Register("forge", startup.RoleConfig{
+		WorktreeDir: func(w, a string) string {
+			return filepath.Join(os.Getenv("SOL_HOME"), w, "forge", "worktree")
+		},
+	})
+	t.Cleanup(func() {
+		startup.Register("agent", startup.RoleConfig{})
+		startup.Register("forge", startup.RoleConfig{})
+	})
+
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("failed to open sphere store: %v", err)
@@ -601,29 +617,6 @@ func TestRespawnOutpostUnchanged(t *testing.T) {
 	}
 	if agent.State != "working" {
 		t.Errorf("agent state = %q, want %q", agent.State, "working")
-	}
-}
-
-func TestRespawnCommandByRole(t *testing.T) {
-	t.Setenv("SOL_SESSION_COMMAND", "")
-
-	agentBot := store.Agent{Name: "Toast", World: "haven", Role: "agent"}
-	sentinelAgent := store.Agent{Name: "sentinel", World: "haven", Role: "sentinel"}
-
-	// Agents use Claude sessions with --settings and prompt.
-	agentCmd := respawnCommand(agentBot, "/tmp/outposts/Toast/worktree")
-	if !strings.Contains(agentCmd, "--settings") {
-		t.Errorf("agent command missing --settings: %q", agentCmd)
-	}
-	if !strings.Contains(agentCmd, "Agent Toast, world haven") {
-		t.Errorf("agent command missing prompt: %q", agentCmd)
-	}
-
-	// Sentinel uses sol sentinel run.
-	sentCmd := respawnCommand(sentinelAgent, "/tmp/sol")
-	want := "sol sentinel run --world=haven"
-	if sentCmd != want {
-		t.Errorf("sentinel command = %q, want %q", sentCmd, want)
 	}
 }
 

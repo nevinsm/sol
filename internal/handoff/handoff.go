@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/startup"
@@ -642,50 +641,25 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// session gets system prompt flags, persona, hooks, workflow
 	// re-instantiation, and role-specific prime context.
 	cfg := startup.ConfigFor(role)
-	if cfg != nil {
-		launchOpts := startup.LaunchOpts{
-			SessionOp: cycleOp,
-			Sphere:    opts.StartupSphere,
-		}
-		var startupErr error
-		if reason == "compact" {
-			// Compact handoff: use Resume for --continue and resume-aware prime.
-			_, startupErr = startup.Resume(*cfg, opts.World, opts.AgentName, resumeState, launchOpts)
-		} else {
-			// Non-compact handoff: use Launch for fresh conversation with
-			// role-specific setup (persona, hooks, system prompt, workflow).
-			_, startupErr = startup.Launch(*cfg, opts.World, opts.AgentName, launchOpts)
-		}
-		if startupErr != nil {
-			return fmt.Errorf("handoff: startup failed: %w", startupErr)
-		}
-	} else {
-		// Legacy path for unregistered roles: build command inline.
-		worldCfg, _ := config.LoadWorldConfig(opts.World)
-		resolvedAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
-		claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(opts.World), role, opts.AgentName, resolvedAccount)
-		if err != nil {
-			return err
-		}
-		env := map[string]string{
-			"SOL_HOME":          config.Home(),
-			"SOL_WORLD":         opts.World,
-			"SOL_AGENT":         opts.AgentName,
-			"CLAUDE_CONFIG_DIR": claudeConfigDir,
-		}
-		prompt := fmt.Sprintf("Agent %s, world %s (handoff). If no context appears, run: sol prime --world=%s --agent=%s",
-			opts.AgentName, opts.World, opts.World, opts.AgentName)
-		settingsPath := config.SettingsPath(worktreeDir)
+	if cfg == nil {
+		return fmt.Errorf("handoff: no startup config registered for role %q", role)
+	}
 
-		var sessionCmd string
-		if opts.Reason == "compact" {
-			sessionCmd = config.BuildSessionCommandContinue(settingsPath, prompt)
-		} else {
-			sessionCmd = config.BuildSessionCommand(settingsPath, prompt)
-		}
-		if err := cycleOp(sessionName, worktreeDir, sessionCmd, env, role, opts.World); err != nil {
-			return fmt.Errorf("handoff: fallback start also failed: %w", err)
-		}
+	launchOpts := startup.LaunchOpts{
+		SessionOp: cycleOp,
+		Sphere:    opts.StartupSphere,
+	}
+	var startupErr error
+	if reason == "compact" {
+		// Compact handoff: use Resume for --continue and resume-aware prime.
+		_, startupErr = startup.Resume(*cfg, opts.World, opts.AgentName, resumeState, launchOpts)
+	} else {
+		// Non-compact handoff: use Launch for fresh conversation with
+		// role-specific setup (persona, hooks, system prompt, workflow).
+		_, startupErr = startup.Launch(*cfg, opts.World, opts.AgentName, launchOpts)
+	}
+	if startupErr != nil {
+		return fmt.Errorf("handoff: startup failed: %w", startupErr)
 	}
 
 	// Write marker for loop prevention. The new session's prime will detect
