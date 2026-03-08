@@ -12,7 +12,7 @@ import (
 )
 
 // Components lists the sphere daemons managed as systemd user units.
-var Components = []string{"prefect", "consul", "chronicle", "ledger"}
+var Components = []string{"prefect", "consul", "chronicle", "ledger", "token-broker"}
 
 // UnitName returns the systemd unit name for a component.
 func UnitName(component string) string {
@@ -22,6 +22,10 @@ func UnitName(component string) string {
 const unitTemplate = `[Unit]
 Description=Sol {{.Component}} daemon
 After=network.target
+{{- if .AfterUnits}}
+After={{.AfterUnits}}
+Wants={{.AfterUnits}}
+{{- end}}
 
 [Service]
 Type=simple
@@ -37,18 +41,37 @@ WantedBy=default.target
 var unitTmpl = template.Must(template.New("unit").Parse(unitTemplate))
 
 type unitData struct {
-	Component string
-	ExecStart string
-	SOLHome   string
+	Component  string
+	ExecStart  string
+	SOLHome    string
+	AfterUnits string
+}
+
+// prefectDeps lists the components that the prefect unit should start after.
+// The prefect supervises these daemons, so it must come up last.
+func prefectDeps() string {
+	var deps []string
+	for _, c := range Components {
+		if c != "prefect" {
+			deps = append(deps, UnitName(c))
+		}
+	}
+	return strings.Join(deps, " ")
 }
 
 // GenerateUnit returns the systemd unit file content for a component.
 func GenerateUnit(component, solBin, solHome string) (string, error) {
+	var afterUnits string
+	if component == "prefect" {
+		afterUnits = prefectDeps()
+	}
+
 	var buf strings.Builder
 	err := unitTmpl.Execute(&buf, unitData{
-		Component: component,
-		ExecStart: solBin + " " + component + " run",
-		SOLHome:   solHome,
+		Component:  component,
+		ExecStart:  solBin + " " + component + " run",
+		SOLHome:    solHome,
+		AfterUnits: afterUnits,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to render unit template for %s: %w", component, err)
