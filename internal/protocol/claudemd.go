@@ -15,6 +15,15 @@ type DepOutput struct {
 	OutputDir string
 }
 
+// WritSummary is a lightweight summary of a tethered writ, used for background listing
+// in persistent agent personas.
+type WritSummary struct {
+	ID     string
+	Title  string
+	Kind   string
+	Status string
+}
+
 // ClaudeMDContext holds the fields used to generate a CLAUDE.md file for an outpost agent.
 type ClaudeMDContext struct {
 	AgentName    string
@@ -22,12 +31,13 @@ type ClaudeMDContext struct {
 	WritID       string
 	Title        string
 	Description  string
-	HasWorkflow  bool        // if true, include workflow commands
-	ModelTier    string      // "sonnet", "opus", "haiku" — informational
-	QualityGates []string   // commands to run before resolving (from world config)
-	OutputDir    string      // persistent output directory for this writ
-	Kind         string      // "code" (default), "analysis", etc.
-	DirectDeps   []DepOutput // upstream writs this writ depends on
+	HasWorkflow  bool           // if true, include workflow commands
+	ModelTier    string         // "sonnet", "opus", "haiku" — informational
+	QualityGates []string      // commands to run before resolving (from world config)
+	OutputDir    string         // persistent output directory for this writ
+	Kind         string         // "code" (default), "analysis", etc.
+	DirectDeps   []DepOutput   // upstream writs this writ depends on
+	TetheredWrits []WritSummary // all tethered writs — for persistent agent background listing
 }
 
 // isCodeKind returns true if the kind represents code work (or is the default empty kind).
@@ -195,6 +205,72 @@ Use `+"`"+`sol forget \"key\"`+"`"+` to remove outdated memories.
 - Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
 `, ctx.AgentName, ctx.World, modelSection, outputDirSection, depsSection, ctx.WritID, ctx.Title, ctx.Kind, ctx.Description,
 		resolveDesc, workflowSection, gateInstructions, protocolSection, resilienceSection)
+}
+
+// generatePersistentWritSection renders the multi-writ section for persistent agent personas.
+// When activeWritID is set, the active writ gets full detail and others are listed as background.
+// When activeWritID is empty, all writs are listed with a wait-for-activation message.
+func generatePersistentWritSection(activeWritID, activeTitle, activeDesc, activeKind, activeOutput string,
+	activeDeps []DepOutput, tetheredWrits []WritSummary) string {
+
+	var b strings.Builder
+
+	if activeWritID != "" {
+		// Active writ: full detail section.
+		kind := activeKind
+		if kind == "" {
+			kind = "code"
+		}
+		b.WriteString("\n## Active Writ\n")
+		fmt.Fprintf(&b, "- Writ: %s\n", activeWritID)
+		fmt.Fprintf(&b, "- Title: %s\n", activeTitle)
+		fmt.Fprintf(&b, "- Kind: %s\n", kind)
+		if activeOutput != "" {
+			fmt.Fprintf(&b, "- Output: `%s`\n", activeOutput)
+		}
+		if activeDesc != "" {
+			fmt.Fprintf(&b, "\n### Description\n%s\n", activeDesc)
+		}
+		if len(activeDeps) > 0 {
+			b.WriteString("\n### Direct Dependencies\n")
+			for _, dep := range activeDeps {
+				fmt.Fprintf(&b, "- **%s** (%s, kind: %s): `%s`\n", dep.Title, dep.WritID, dep.Kind, dep.OutputDir)
+			}
+		}
+
+		// Background writs: summary list (exclude the active writ).
+		var background []WritSummary
+		for _, w := range tetheredWrits {
+			if w.ID != activeWritID {
+				background = append(background, w)
+			}
+		}
+		if len(background) > 0 {
+			b.WriteString("\n## Background Writs\n")
+			for _, w := range background {
+				kind := w.Kind
+				if kind == "" {
+					kind = "code"
+				}
+				fmt.Fprintf(&b, "- %s — %s (kind: %s, status: %s)\n", w.ID, w.Title, kind, w.Status)
+			}
+		}
+
+		b.WriteString("\n## Constraint\n")
+		b.WriteString("Work only on your active writ. Background writs are listed for awareness. Do not act on them until the operator activates one.\n")
+	} else {
+		// No active writ: summary of all tethered writs + wait message.
+		fmt.Fprintf(&b, "\n## Tethered Writs\nYou have %d tethered writs. Wait for the operator to activate one.\n\n", len(tetheredWrits))
+		for _, w := range tetheredWrits {
+			kind := w.Kind
+			if kind == "" {
+				kind = "code"
+			}
+			fmt.Fprintf(&b, "- %s — %s (kind: %s, status: %s)\n", w.ID, w.Title, kind, w.Status)
+		}
+	}
+
+	return b.String()
 }
 
 // ForgeClaudeMDContext holds the fields used to generate a CLAUDE.md for the forge.
@@ -411,6 +487,15 @@ type EnvoyClaudeMDContext struct {
 	World          string
 	SolBinary      string // path to sol binary (for CLI references)
 	PersonaContent string // optional persona file content, appended as ## Persona section
+
+	// Multi-writ fields for persistent agents.
+	TetheredWrits []WritSummary // all tethered writs (for background listing)
+	ActiveWritID  string         // currently active writ ID (empty if none)
+	ActiveTitle   string         // active writ title
+	ActiveDesc    string         // active writ description
+	ActiveKind    string         // active writ kind
+	ActiveOutput  string         // active writ output directory
+	ActiveDeps    []DepOutput    // active writ direct dependencies
 }
 
 // GenerateEnvoyClaudeMD returns the contents of a CLAUDE.md for an envoy agent.
@@ -490,6 +575,12 @@ Use `+"`"+`sol forget \"key\"`+"`"+` to remove outdated memories.
 		content += fmt.Sprintf("\n## Persona\n%s\n", strings.TrimSpace(ctx.PersonaContent))
 	}
 
+	// Append multi-writ section if tethered writs exist.
+	if len(ctx.TetheredWrits) > 0 {
+		content += generatePersistentWritSection(ctx.ActiveWritID, ctx.ActiveTitle, ctx.ActiveDesc,
+			ctx.ActiveKind, ctx.ActiveOutput, ctx.ActiveDeps, ctx.TetheredWrits)
+	}
+
 	return content
 }
 
@@ -530,6 +621,15 @@ type GovernorClaudeMDContext struct {
 	World     string
 	SolBinary string // path to sol binary (for CLI references)
 	MirrorDir string // relative path to mirror for codebase research
+
+	// Multi-writ fields for persistent agents.
+	TetheredWrits []WritSummary // all tethered writs (for background listing)
+	ActiveWritID  string         // currently active writ ID (empty if none)
+	ActiveTitle   string         // active writ title
+	ActiveDesc    string         // active writ description
+	ActiveKind    string         // active writ kind
+	ActiveOutput  string         // active writ output directory
+	ActiveDeps    []DepOutput    // active writ direct dependencies
 }
 
 // GenerateGovernorClaudeMD returns the contents of a CLAUDE.md for the governor agent.
@@ -539,7 +639,7 @@ func GenerateGovernorClaudeMD(ctx GovernorClaudeMDContext) string {
 		sol = "sol"
 	}
 
-	return fmt.Sprintf(`# Governor (world: %s)
+	content := fmt.Sprintf(`# Governor (world: %s)
 
 ## Identity
 You are the governor of world %q — a work coordinator.
@@ -639,6 +739,14 @@ Use `+"`"+`sol forget \"key\"`+"`"+` to remove outdated memories.
 		sol, ctx.World, // notification: escalate (MERGE_FAILED)
 		sol, // guidelines: agent list
 	)
+
+	// Append multi-writ section if tethered writs exist.
+	if len(ctx.TetheredWrits) > 0 {
+		content += generatePersistentWritSection(ctx.ActiveWritID, ctx.ActiveTitle, ctx.ActiveDesc,
+			ctx.ActiveKind, ctx.ActiveOutput, ctx.ActiveDeps, ctx.TetheredWrits)
+	}
+
+	return content
 }
 
 // InstallGovernorClaudeMD writes CLAUDE.local.md for the governor at the directory root.

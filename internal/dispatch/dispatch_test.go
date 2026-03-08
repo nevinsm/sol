@@ -3887,3 +3887,137 @@ func TestActivateWritFromEmpty(t *testing.T) {
 		t.Errorf("active_writ = %q, want %q", agent.ActiveWrit, writ1)
 	}
 }
+
+// --- Multi-writ prime tests ---
+
+func TestPrimeSingleTetherOutpostUnchanged(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "agent", worldStore)
+	if err != nil {
+		t.Fatalf("Prime failed: %v", err)
+	}
+
+	// Should produce standard WORK CONTEXT output.
+	if !strings.Contains(result.Output, "WORK CONTEXT") {
+		t.Error("output missing WORK CONTEXT header")
+	}
+	if !strings.Contains(result.Output, "Add README") {
+		t.Error("output missing writ title")
+	}
+	if !strings.Contains(result.Output, itemID) {
+		t.Error("output missing writ ID")
+	}
+	// Should NOT contain background writs section.
+	if strings.Contains(result.Output, "Background Writs") {
+		t.Error("outpost prime should not contain Background Writs section")
+	}
+}
+
+func TestPrimeMultiTetherOneActive(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	// Create three writs.
+	writ1, _ := worldStore.CreateWrit("First task", "Do the first thing", "operator", 2, nil)
+	writ2, _ := worldStore.CreateWrit("Second task", "Do the second thing", "operator", 2, nil)
+	writ3, _ := worldStore.CreateWrit("Third task", "Do the third thing", "operator", 2, nil)
+
+	// Create envoy agent.
+	sphereStore.CreateAgent("Meridian", "ember", "envoy")
+
+	// Tether all three writs.
+	for _, id := range []string{writ1, writ2, writ3} {
+		if err := tether.Write("ember", "Meridian", id, "envoy"); err != nil {
+			t.Fatalf("failed to write tether %s: %v", id, err)
+		}
+	}
+
+	// Set writ2 as active.
+	if err := sphereStore.UpdateAgentState("ember/Meridian", "working", writ2); err != nil {
+		t.Fatalf("failed to set active writ: %v", err)
+	}
+
+	result, err := Prime("ember", "Meridian", "envoy", worldStore)
+	if err != nil {
+		t.Fatalf("Prime failed: %v", err)
+	}
+
+	// Active writ should have full context.
+	if !strings.Contains(result.Output, "WORK CONTEXT") {
+		t.Error("output missing WORK CONTEXT header")
+	}
+	if !strings.Contains(result.Output, "Second task") {
+		t.Error("output missing active writ title")
+	}
+	if !strings.Contains(result.Output, writ2) {
+		t.Error("output missing active writ ID")
+	}
+
+	// Background writs should be listed.
+	if !strings.Contains(result.Output, "Background Writs") {
+		t.Error("output missing Background Writs section")
+	}
+	if !strings.Contains(result.Output, "First task") {
+		t.Error("output missing background writ 'First task'")
+	}
+	if !strings.Contains(result.Output, "Third task") {
+		t.Error("output missing background writ 'Third task'")
+	}
+}
+
+func TestPrimeMultiTetherNoneActive(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	// Create three writs.
+	writ1, _ := worldStore.CreateWrit("First task", "Do the first thing", "operator", 2, nil)
+	writ2, _ := worldStore.CreateWrit("Second task", "Do the second thing", "operator", 2, nil)
+	writ3, _ := worldStore.CreateWrit("Third task", "Do the third thing", "operator", 2, nil)
+
+	// Create envoy agent with no active writ.
+	sphereStore.CreateAgent("Meridian", "ember", "envoy")
+
+	// Tether all three writs.
+	for _, id := range []string{writ1, writ2, writ3} {
+		if err := tether.Write("ember", "Meridian", id, "envoy"); err != nil {
+			t.Fatalf("failed to write tether %s: %v", id, err)
+		}
+	}
+
+	result, err := Prime("ember", "Meridian", "envoy", worldStore)
+	if err != nil {
+		t.Fatalf("Prime failed: %v", err)
+	}
+
+	// Should show wait message.
+	if !strings.Contains(result.Output, "Wait for the operator to activate one") {
+		t.Error("output missing wait-for-activation message")
+	}
+	if !strings.Contains(result.Output, "3 tethered writs") {
+		t.Error("output missing tethered writ count")
+	}
+
+	// All writs should be listed.
+	if !strings.Contains(result.Output, "First task") {
+		t.Error("output missing 'First task'")
+	}
+	if !strings.Contains(result.Output, "Second task") {
+		t.Error("output missing 'Second task'")
+	}
+	if !strings.Contains(result.Output, "Third task") {
+		t.Error("output missing 'Third task'")
+	}
+
+	// Should NOT contain WORK CONTEXT (no active writ).
+	if strings.Contains(result.Output, "Execute this writ") {
+		t.Error("no-active-writ prime should not contain execution instructions")
+	}
+}

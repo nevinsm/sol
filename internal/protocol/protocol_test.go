@@ -368,3 +368,153 @@ func TestInstallHooks(t *testing.T) {
 		t.Errorf("hook command = %q, want %q", groups[0].Hooks[0].Command, wantCmd)
 	}
 }
+
+func TestGenerateEnvoyClaudeMDMultiWritActive(t *testing.T) {
+	ctx := EnvoyClaudeMDContext{
+		AgentName: "Meridian",
+		World:     "myworld",
+		SolBinary: "sol",
+		TetheredWrits: []WritSummary{
+			{ID: "sol-aaa1", Title: "Task A", Kind: "code", Status: "tethered"},
+			{ID: "sol-bbb2", Title: "Task B", Kind: "analysis", Status: "tethered"},
+			{ID: "sol-ccc3", Title: "Task C", Kind: "code", Status: "tethered"},
+		},
+		ActiveWritID: "sol-bbb2",
+		ActiveTitle:  "Task B",
+		ActiveDesc:   "Analyze the system",
+		ActiveKind:   "analysis",
+		ActiveOutput: "/tmp/output/sol-bbb2",
+	}
+
+	content := GenerateEnvoyClaudeMD(ctx)
+
+	// Active writ section.
+	if !strings.Contains(content, "## Active Writ") {
+		t.Error("missing Active Writ section")
+	}
+	if !strings.Contains(content, "sol-bbb2") {
+		t.Error("missing active writ ID")
+	}
+	if !strings.Contains(content, "Task B") {
+		t.Error("missing active writ title")
+	}
+	if !strings.Contains(content, "Analyze the system") {
+		t.Error("missing active writ description")
+	}
+
+	// Background writs.
+	if !strings.Contains(content, "## Background Writs") {
+		t.Error("missing Background Writs section")
+	}
+	if !strings.Contains(content, "Task A") {
+		t.Error("missing background writ 'Task A'")
+	}
+	if !strings.Contains(content, "Task C") {
+		t.Error("missing background writ 'Task C'")
+	}
+
+	// Constraint text.
+	if !strings.Contains(content, "Work only on your active writ") {
+		t.Error("missing constraint text")
+	}
+
+	// Should still contain base envoy content.
+	if !strings.Contains(content, "Envoy: Meridian") {
+		t.Error("missing envoy identity header")
+	}
+}
+
+func TestGenerateEnvoyClaudeMDMultiWritNoActive(t *testing.T) {
+	ctx := EnvoyClaudeMDContext{
+		AgentName: "Meridian",
+		World:     "myworld",
+		SolBinary: "sol",
+		TetheredWrits: []WritSummary{
+			{ID: "sol-aaa1", Title: "Task A", Kind: "code", Status: "tethered"},
+			{ID: "sol-bbb2", Title: "Task B", Kind: "code", Status: "tethered"},
+		},
+		// No ActiveWritID set.
+	}
+
+	content := GenerateEnvoyClaudeMD(ctx)
+
+	// Wait message.
+	if !strings.Contains(content, "Wait for the operator to activate one") {
+		t.Error("missing wait-for-activation message")
+	}
+	if !strings.Contains(content, "2 tethered writs") {
+		t.Error("missing tethered writ count")
+	}
+
+	// All writs listed.
+	if !strings.Contains(content, "Task A") {
+		t.Error("missing writ 'Task A'")
+	}
+	if !strings.Contains(content, "Task B") {
+		t.Error("missing writ 'Task B'")
+	}
+
+	// Should NOT have Active Writ section.
+	if strings.Contains(content, "## Active Writ") {
+		t.Error("no-active persona should not have Active Writ section")
+	}
+}
+
+func TestGenerateClaudeMDOutpostNoBackgroundSection(t *testing.T) {
+	// Outpost agents get TetheredWrits empty — no background section.
+	ctx := ClaudeMDContext{
+		AgentName:   "Toast",
+		World:       "myworld",
+		WritID:      "sol-a1b2c3d4",
+		Title:       "Add a README",
+		Description: "Create a README.md file",
+		Kind:        "code",
+	}
+
+	content := GenerateClaudeMD(ctx)
+
+	if !strings.Contains(content, "Outpost Agent: Toast") {
+		t.Error("missing outpost header")
+	}
+	if strings.Contains(content, "Background Writs") {
+		t.Error("outpost GenerateClaudeMD should NOT contain Background Writs section")
+	}
+	if strings.Contains(content, "Tethered Writs") {
+		t.Error("outpost GenerateClaudeMD should NOT contain Tethered Writs section")
+	}
+}
+
+func TestGenerateGovernorClaudeMDMultiWrit(t *testing.T) {
+	ctx := GovernorClaudeMDContext{
+		World:     "myworld",
+		SolBinary: "sol",
+		MirrorDir: "../repo",
+		TetheredWrits: []WritSummary{
+			{ID: "sol-aaa1", Title: "Plan feature X", Kind: "code", Status: "tethered"},
+			{ID: "sol-bbb2", Title: "Research Y", Kind: "analysis", Status: "tethered"},
+		},
+		ActiveWritID: "sol-aaa1",
+		ActiveTitle:  "Plan feature X",
+		ActiveDesc:   "Create writs for feature X",
+		ActiveKind:   "code",
+	}
+
+	content := GenerateGovernorClaudeMD(ctx)
+
+	if !strings.Contains(content, "## Active Writ") {
+		t.Error("missing Active Writ section")
+	}
+	if !strings.Contains(content, "Plan feature X") {
+		t.Error("missing active writ title")
+	}
+	if !strings.Contains(content, "## Background Writs") {
+		t.Error("missing Background Writs section")
+	}
+	if !strings.Contains(content, "Research Y") {
+		t.Error("missing background writ")
+	}
+	// Should still contain governor identity.
+	if !strings.Contains(content, "Governor (world: myworld)") {
+		t.Error("missing governor header")
+	}
+}

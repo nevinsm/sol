@@ -758,19 +758,51 @@ func Prime(world, agentName, role string, worldStore WorldStore) (*PrimeResult, 
 		handoff.RemoveMarker(world, agentName, role)
 	}
 
-	// Read the tether file.
-	writID, err := tether.Read(world, agentName, role)
+	// Read all tethered writs (directory-based).
+	allWritIDs, err := tether.List(world, agentName, role)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read tether: %w", err)
+		return nil, fmt.Errorf("failed to list tethers: %w", err)
 	}
-	if writID == "" {
+	if len(allWritIDs) == 0 {
 		return &PrimeResult{Output: "No work tethered"}, nil
 	}
 
-	// Get the writ.
-	item, err := worldStore.GetWrit(writID)
+	// Determine the active writ ID.
+	// For outpost agents (role="agent"): single tether, always active.
+	// For persistent agents: read active_writ from sphere store.
+	var activeWritID string
+	isPersistent := persistentRoles[role]
+
+	if isPersistent {
+		activeWritID = readActiveWrit(world, agentName)
+		// Validate active writ is actually tethered.
+		if activeWritID != "" {
+			found := false
+			for _, id := range allWritIDs {
+				if id == activeWritID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				fmt.Fprintf(os.Stderr, "prime: active_writ %s not in tether list — clearing\n", activeWritID)
+				activeWritID = ""
+			}
+		}
+	} else {
+		// Outpost: single tether is always the active writ.
+		activeWritID = allWritIDs[0]
+	}
+
+	// No active writ for persistent agent: summary + wait message.
+	if isPersistent && activeWritID == "" {
+		return primeNoActiveWrit(world, agentName, allWritIDs, worldStore)
+	}
+
+	// Get the active writ.
+	item, err := worldStore.GetWrit(activeWritID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get writ %q: %w", writID, err)
+		return nil, fmt.Errorf("failed to get writ %q: %w", activeWritID, err)
 	}
 
 	// Check for handoff context (session continuity).
@@ -834,6 +866,14 @@ If stuck, run: sol escalate "description"
 		}
 	}
 
+	// Append background writ summaries for persistent agents with multiple tethers.
+	if isPersistent && len(allWritIDs) > 1 && result != nil {
+		bgSection := primeBackgroundWrits(activeWritID, allWritIDs, worldStore)
+		if bgSection != "" {
+			result.Output += bgSection
+		}
+	}
+
 	// Append agent memories if any exist.
 	if result != nil {
 		memories, memErr := worldStore.ListAgentMemories(agentName)
@@ -856,6 +896,82 @@ If stuck, run: sol escalate "description"
 	}
 
 	return result, nil
+}
+
+// readActiveWrit reads the active_writ field for an agent from the sphere store.
+// Returns empty string on any error (best-effort).
+func readActiveWrit(world, agentName string) string {
+	ss, err := store.OpenSphere()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "prime: failed to open sphere store: %v\n", err)
+		return ""
+	}
+	defer ss.Close()
+
+	agentID := world + "/" + agentName
+	agent, err := ss.GetAgent(agentID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "prime: failed to get agent %q: %v\n", agentID, err)
+		return ""
+	}
+	return agent.ActiveWrit
+}
+
+// primeNoActiveWrit generates prime context when a persistent agent has tethered writs
+// but none is active. Lists all writs and tells the agent to wait.
+func primeNoActiveWrit(world, agentName string, writIDs []string, worldStore WorldStore) (*PrimeResult, error) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "=== WORK CONTEXT ===\nAgent: %s (world: %s)\n\n", agentName, world)
+	fmt.Fprintf(&b, "You have %d tethered writs. Wait for the operator to activate one.\n\n", len(writIDs))
+
+	for _, id := range writIDs {
+		writ, err := worldStore.GetWrit(id)
+		if err != nil {
+			fmt.Fprintf(&b, "- %s — (failed to load)\n", id)
+			continue
+		}
+		kind := writ.Kind
+		if kind == "" {
+			kind = "code"
+		}
+		fmt.Fprintf(&b, "- %s — %s (kind: %s, status: %s)\n", id, writ.Title, kind, writ.Status)
+	}
+
+	b.WriteString("\n=== END CONTEXT ===")
+	return &PrimeResult{Output: b.String()}, nil
+}
+
+// primeBackgroundWrits generates the background writs summary section
+// appended after the active writ's prime context for persistent agents.
+func primeBackgroundWrits(activeWritID string, allWritIDs []string, worldStore WorldStore) string {
+	var b strings.Builder
+	b.WriteString("\n\n## Background Writs\n")
+
+	hasBackground := false
+	for _, id := range allWritIDs {
+		if id == activeWritID {
+			continue
+		}
+		writ, err := worldStore.GetWrit(id)
+		if err != nil {
+			fmt.Fprintf(&b, "- %s — (failed to load)\n", id)
+			hasBackground = true
+			continue
+		}
+		kind := writ.Kind
+		if kind == "" {
+			kind = "code"
+		}
+		fmt.Fprintf(&b, "- %s — %s (kind: %s, status: %s)\n", id, writ.Title, kind, writ.Status)
+		hasBackground = true
+	}
+
+	if !hasBackground {
+		return ""
+	}
+
+	b.WriteString("\nWork only on your active writ. Background writs are listed for awareness.\n")
+	return b.String()
 }
 
 // primeWithWorkflow returns workflow-aware context for the prime command.
