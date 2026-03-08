@@ -187,6 +187,37 @@ func (s *Store) ListMessages(filters MessageFilters) ([]Message, error) {
 	return s.scanMessages(query, args...)
 }
 
+// PurgeAckedMessages deletes acknowledged messages with acked_at older than before.
+// Returns the number of deleted rows. Never deletes unread/pending messages.
+func (s *Store) PurgeAckedMessages(before time.Time) (int64, error) {
+	result, err := s.db.Exec(
+		`DELETE FROM messages WHERE delivery = 'acked' AND acked_at < ?`,
+		before.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to purge acked messages: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get purge count: %w", err)
+	}
+	return n, nil
+}
+
+// PurgeAllAcked deletes all acknowledged messages regardless of age.
+// Returns the number of deleted rows. Never deletes unread/pending messages.
+func (s *Store) PurgeAllAcked() (int64, error) {
+	result, err := s.db.Exec(`DELETE FROM messages WHERE delivery = 'acked'`)
+	if err != nil {
+		return 0, fmt.Errorf("failed to purge all acked messages: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get purge count: %w", err)
+	}
+	return n, nil
+}
+
 // scanMessages executes a query and scans the results into Message structs.
 func (s *Store) scanMessages(query string, args ...interface{}) ([]Message, error) {
 	rows, err := s.db.Query(query, args...)

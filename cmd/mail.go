@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/session"
@@ -175,6 +177,117 @@ var mailCheckCmd = &cobra.Command{
 	},
 }
 
+var mailPurgeCmd = &cobra.Command{
+	Use:          "purge",
+	Short:        "Delete acknowledged messages",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		allAcked, _ := cmd.Flags().GetBool("all-acked")
+		before, _ := cmd.Flags().GetString("before")
+		force, _ := cmd.Flags().GetBool("force")
+
+		if !allAcked && before == "" {
+			return fmt.Errorf("must specify --before=<duration> or --all-acked")
+		}
+
+		s, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer s.Close()
+
+		var count int64
+		if allAcked {
+			if !force {
+				var confirmed bool
+				form := huh.NewForm(
+					huh.NewGroup(
+						huh.NewConfirm().
+							Title("Delete all acknowledged messages?").
+							Description("This action cannot be undone.").
+							Affirmative("Delete").
+							Negative("Cancel").
+							Value(&confirmed),
+					),
+				)
+				if err := form.Run(); err != nil {
+					return fmt.Errorf("purge cancelled: %w", err)
+				}
+				if !confirmed {
+					fmt.Fprintln(os.Stderr, "Purge cancelled.")
+					return nil
+				}
+			}
+			count, err = s.PurgeAllAcked()
+		} else {
+			dur, parseErr := parseHumanDuration(before)
+			if parseErr != nil {
+				return fmt.Errorf("invalid --before duration %q: %w", before, parseErr)
+			}
+			cutoff := time.Now().UTC().Add(-dur)
+
+			if !force {
+				var confirmed bool
+				form := huh.NewForm(
+					huh.NewGroup(
+						huh.NewConfirm().
+							Title(fmt.Sprintf("Delete acked messages older than %s?", before)).
+							Description("This action cannot be undone.").
+							Affirmative("Delete").
+							Negative("Cancel").
+							Value(&confirmed),
+					),
+				)
+				if err := form.Run(); err != nil {
+					return fmt.Errorf("purge cancelled: %w", err)
+				}
+				if !confirmed {
+					fmt.Fprintln(os.Stderr, "Purge cancelled.")
+					return nil
+				}
+			}
+			count, err = s.PurgeAckedMessages(cutoff)
+		}
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintf(os.Stderr, "Purged %d message(s).\n", count)
+		return nil
+	},
+}
+
+// parseHumanDuration parses a duration string with support for "d" (days)
+// in addition to the standard Go duration units.
+// Examples: "7d", "24h", "30m", "7d12h".
+func parseHumanDuration(s string) (time.Duration, error) {
+	// Try standard Go duration first.
+	if d, err := time.ParseDuration(s); err == nil {
+		return d, nil
+	}
+
+	// Handle "d" suffix by converting days to hours.
+	if strings.Contains(s, "d") {
+		parts := strings.SplitN(s, "d", 2)
+		days, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return 0, fmt.Errorf("invalid day count in %q", s)
+		}
+		total := time.Duration(days) * 24 * time.Hour
+		if parts[1] != "" {
+			remainder, err := time.ParseDuration(parts[1])
+			if err != nil {
+				return 0, fmt.Errorf("invalid duration suffix in %q: %w", s, err)
+			}
+			total += remainder
+		}
+		return total, nil
+	}
+
+	return 0, fmt.Errorf("invalid duration %q", s)
+}
+
 // bridgeMailToNudge resolves the recipient to a session and delivers a nudge notification.
 // Best-effort: failures are logged to stderr but do not affect mail delivery.
 func bridgeMailToNudge(to, worldFlag, subject, body string, priority int) {
@@ -243,9 +356,14 @@ func init() {
 
 	mailCheckCmd.Flags().String("identity", "operator", "Recipient to check")
 
+	mailPurgeCmd.Flags().String("before", "", "Delete acked messages older than duration (e.g., 7d, 24h)")
+	mailPurgeCmd.Flags().Bool("all-acked", false, "Delete all acknowledged messages regardless of age")
+	mailPurgeCmd.Flags().Bool("force", false, "Skip confirmation prompt")
+
 	mailCmd.AddCommand(mailSendCmd)
 	mailCmd.AddCommand(mailInboxCmd)
 	mailCmd.AddCommand(mailReadCmd)
 	mailCmd.AddCommand(mailAckCmd)
 	mailCmd.AddCommand(mailCheckCmd)
+	mailCmd.AddCommand(mailPurgeCmd)
 }

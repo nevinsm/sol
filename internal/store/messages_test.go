@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSendMessage(t *testing.T) {
@@ -355,5 +356,286 @@ func TestMessageNotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected error containing 'not found', got %q", err.Error())
+	}
+}
+
+func TestPurgeAckedMessages(t *testing.T) {
+	s := setupSphere(t)
+
+	// Send 3 messages and ack them all.
+	id1, _ := s.SendMessage("agent1", "operator", "Msg 1", "", 2, "notification")
+	id2, _ := s.SendMessage("agent2", "operator", "Msg 2", "", 2, "notification")
+	id3, _ := s.SendMessage("agent3", "operator", "Msg 3", "", 2, "notification")
+
+	s.AckMessage(id1)
+	s.AckMessage(id2)
+	s.AckMessage(id3)
+
+	// Backdate acked_at for id1 and id2 to simulate old messages.
+	oldTime := time.Now().UTC().Add(-10 * 24 * time.Hour).Format(time.RFC3339)
+	s.db.Exec(`UPDATE messages SET acked_at = ? WHERE id = ?`, oldTime, id1)
+	s.db.Exec(`UPDATE messages SET acked_at = ? WHERE id = ?`, oldTime, id2)
+
+	// Purge messages acked more than 7 days ago.
+	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
+	count, err := s.PurgeAckedMessages(cutoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 purged, got %d", count)
+	}
+
+	// id3 should still exist (acked recently).
+	msgs, err := s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 remaining message, got %d", len(msgs))
+	}
+	if msgs[0].ID != id3 {
+		t.Fatalf("expected %s to remain, got %s", id3, msgs[0].ID)
+	}
+}
+
+func TestPurgeAckedMessagesNeverDeletesPending(t *testing.T) {
+	s := setupSphere(t)
+
+	// Send messages: 2 pending, 1 acked.
+	s.SendMessage("agent1", "operator", "Pending 1", "", 2, "notification")
+	s.SendMessage("agent2", "operator", "Pending 2", "", 2, "notification")
+	id3, _ := s.SendMessage("agent3", "operator", "Acked", "", 2, "notification")
+	s.AckMessage(id3)
+
+	// Backdate the acked message.
+	oldTime := time.Now().UTC().Add(-30 * 24 * time.Hour).Format(time.RFC3339)
+	s.db.Exec(`UPDATE messages SET acked_at = ? WHERE id = ?`, oldTime, id3)
+
+	// Purge old acked messages.
+	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
+	count, err := s.PurgeAckedMessages(cutoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 purged, got %d", count)
+	}
+
+	// Both pending messages should still exist.
+	pending, err := s.CountPending("operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending != 2 {
+		t.Fatalf("expected 2 pending messages preserved, got %d", pending)
+	}
+}
+
+func TestPurgeAllAcked(t *testing.T) {
+	s := setupSphere(t)
+
+	// Send 3 messages, ack 2, leave 1 pending.
+	id1, _ := s.SendMessage("agent1", "operator", "Acked 1", "", 2, "notification")
+	id2, _ := s.SendMessage("agent2", "operator", "Acked 2", "", 2, "notification")
+	s.SendMessage("agent3", "operator", "Pending", "", 2, "notification")
+
+	s.AckMessage(id1)
+	s.AckMessage(id2)
+
+	count, err := s.PurgeAllAcked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 purged, got %d", count)
+	}
+
+	// Only the pending message should remain.
+	msgs, err := s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 remaining message, got %d", len(msgs))
+	}
+	if msgs[0].Subject != "Pending" {
+		t.Fatalf("expected pending message to remain, got %q", msgs[0].Subject)
+	}
+}
+
+func TestPurgeAllAckedEmpty(t *testing.T) {
+	s := setupSphere(t)
+
+	// No messages at all.
+	count, err := s.PurgeAllAcked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 purged, got %d", count)
+	}
+}
+
+func TestMailLifecycle(t *testing.T) {
+	s := setupSphere(t)
+
+	// 1. Send message.
+	id, err := s.SendMessage("agent1", "operator", "Task complete", "Details here", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern := regexp.MustCompile(`^msg-[0-9a-f]{16}$`)
+	if !pattern.MatchString(id) {
+		t.Fatalf("ID %q does not match expected pattern", id)
+	}
+
+	// 2. Verify in Inbox.
+	msgs, err := s.Inbox("operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message in inbox, got %d", len(msgs))
+	}
+	if msgs[0].ID != id {
+		t.Fatalf("expected message %s in inbox, got %s", id, msgs[0].ID)
+	}
+
+	// 3. CountPending accurate.
+	count, err := s.CountPending("operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected count 1, got %d", count)
+	}
+
+	// 4. ReadMessage marks read.
+	msg, err := s.ReadMessage(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !msg.Read {
+		t.Fatal("expected message to be marked as read")
+	}
+	if msg.Delivery != "pending" {
+		t.Fatalf("expected delivery 'pending' after read, got %q", msg.Delivery)
+	}
+
+	// 5. CountPending unchanged by read.
+	count, err = s.CountPending("operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected count 1 after read, got %d", count)
+	}
+
+	// 6. AckMessage sets acked.
+	if err := s.AckMessage(id); err != nil {
+		t.Fatal(err)
+	}
+	msg, err = s.ReadMessage(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Delivery != "acked" {
+		t.Fatalf("expected delivery 'acked', got %q", msg.Delivery)
+	}
+	if msg.AckedAt == nil {
+		t.Fatal("expected acked_at to be set")
+	}
+
+	// 7. CountPending drops after ack.
+	count, err = s.CountPending("operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected count 0 after ack, got %d", count)
+	}
+
+	// 8. PurgeAllAcked cleans up.
+	purged, err := s.PurgeAllAcked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if purged != 1 {
+		t.Fatalf("expected 1 purged, got %d", purged)
+	}
+
+	// 9. Message is gone.
+	msgs, err = s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected 0 messages after purge, got %d", len(msgs))
+	}
+}
+
+func TestProtocolMessageSendAndFilter(t *testing.T) {
+	s := setupSphere(t)
+
+	// Send protocol messages of different types.
+	donePayload := AgentDonePayload{
+		WritID:  "sol-test12345678",
+		AgentID: "haven/Toast",
+		Branch:  "outpost/Toast/sol-test12345678",
+		World:   "haven",
+	}
+	id1, err := s.SendProtocolMessage("haven/Toast", "haven/sentinel", ProtoAgentDone, donePayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mergePayload := MergeReadyPayload{
+		MergeRequestID: "mr-001",
+		WritID:         "sol-test12345678",
+		Branch:         "outpost/Toast/sol-test12345678",
+	}
+	_, err = s.SendProtocolMessage("haven/sentinel", "haven/forge", ProtoMergeReady, mergePayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter by AGENT_DONE.
+	msgs, err := s.PendingProtocol("haven/sentinel", ProtoAgentDone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 AGENT_DONE, got %d", len(msgs))
+	}
+	if msgs[0].ID != id1 {
+		t.Fatalf("expected id %s, got %s", id1, msgs[0].ID)
+	}
+
+	// Verify body is valid JSON with correct fields.
+	var parsed AgentDonePayload
+	if err := json.Unmarshal([]byte(msgs[0].Body), &parsed); err != nil {
+		t.Fatalf("failed to unmarshal body: %v", err)
+	}
+	if parsed.WritID != "sol-test12345678" {
+		t.Fatalf("expected writ_id 'sol-test12345678', got %q", parsed.WritID)
+	}
+
+	// Filter by MERGE_READY for sentinel -> empty (wrong recipient).
+	msgs, err = s.PendingProtocol("haven/sentinel", ProtoMergeReady)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected 0 MERGE_READY for sentinel, got %d", len(msgs))
+	}
+
+	// Filter by MERGE_READY for forge -> 1 message.
+	msgs, err = s.PendingProtocol("haven/forge", ProtoMergeReady)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 MERGE_READY for forge, got %d", len(msgs))
 	}
 }
