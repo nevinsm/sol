@@ -593,6 +593,214 @@ func TestTokensSince(t *testing.T) {
 	}
 }
 
+func TestTokensByAgentForWorld(t *testing.T) {
+	s := setupWorld(t)
+
+	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	start2 := time.Date(2026, 3, 5, 11, 0, 0, 0, time.UTC)
+	start3 := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
+
+	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
+	h2, _ := s.WriteHistory("Toast", "sol-item02", "cast", "", start2, nil)
+	h3, _ := s.WriteHistory("Jasper", "sol-item03", "cast", "", start3, nil)
+
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100)
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50)
+	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 3000, 1000, 500, 200)
+
+	summaries, err := s.TokensByAgentForWorld()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("expected 2 agents, got %d", len(summaries))
+	}
+
+	// Results ordered by agent name.
+	jasper := summaries[0]
+	toast := summaries[1]
+
+	if jasper.AgentName != "Jasper" {
+		t.Fatalf("expected Jasper first, got %q", jasper.AgentName)
+	}
+	if jasper.WritCount != 1 {
+		t.Fatalf("expected 1 writ for Jasper, got %d", jasper.WritCount)
+	}
+	if jasper.InputTokens != 3000 {
+		t.Fatalf("Jasper input=%d, expected 3000", jasper.InputTokens)
+	}
+
+	if toast.AgentName != "Toast" {
+		t.Fatalf("expected Toast second, got %q", toast.AgentName)
+	}
+	if toast.WritCount != 2 {
+		t.Fatalf("expected 2 writs for Toast, got %d", toast.WritCount)
+	}
+	if toast.InputTokens != 3000 {
+		t.Fatalf("Toast input=%d, expected 3000", toast.InputTokens)
+	}
+}
+
+func TestTokensByAgentForWorldEmpty(t *testing.T) {
+	s := setupWorld(t)
+
+	summaries, err := s.TokensByAgentForWorld()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 0 {
+		t.Fatalf("expected 0 summaries, got %d", len(summaries))
+	}
+}
+
+func TestTokensByAgentSince(t *testing.T) {
+	s := setupWorld(t)
+
+	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	start2 := time.Date(2026, 3, 5, 14, 0, 0, 0, time.UTC)
+
+	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
+	h2, _ := s.WriteHistory("Jasper", "sol-item02", "cast", "", start2, nil)
+
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100)
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200)
+
+	// Since 12:00 — should only include Jasper.
+	since := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
+	summaries, err := s.TokensByAgentSince(since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 agent, got %d", len(summaries))
+	}
+	if summaries[0].AgentName != "Jasper" {
+		t.Fatalf("expected Jasper, got %q", summaries[0].AgentName)
+	}
+	if summaries[0].InputTokens != 3000 {
+		t.Fatalf("input=%d, expected 3000", summaries[0].InputTokens)
+	}
+}
+
+func TestTokensByWritForAgentSince(t *testing.T) {
+	s := setupWorld(t)
+
+	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	start2 := time.Date(2026, 3, 5, 14, 0, 0, 0, time.UTC)
+
+	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
+	h2, _ := s.WriteHistory("Toast", "sol-item02", "cast", "", start2, nil)
+
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100)
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200)
+
+	// Since 12:00 — should only include sol-item02.
+	since := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
+	result, err := s.TokensByWritForAgentSince("Toast", since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 writ, got %d", len(result))
+	}
+	if _, ok := result["sol-item02"]; !ok {
+		t.Fatal("expected sol-item02 in result")
+	}
+	if result["sol-item02"][0].InputTokens != 3000 {
+		t.Fatalf("input=%d, expected 3000", result["sol-item02"][0].InputTokens)
+	}
+}
+
+func TestWorldTokenMeta(t *testing.T) {
+	s := setupWorld(t)
+
+	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	start2 := time.Date(2026, 3, 5, 11, 0, 0, 0, time.UTC)
+	start3 := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
+
+	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
+	h2, _ := s.WriteHistory("Toast", "sol-item02", "cast", "", start2, nil)
+	h3, _ := s.WriteHistory("Jasper", "sol-item01", "cast", "", start3, nil)
+
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100)
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50)
+	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 3000, 1000, 500, 200)
+
+	agents, writs, err := s.WorldTokenMeta()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agents != 2 {
+		t.Fatalf("expected 2 agents, got %d", agents)
+	}
+	if writs != 2 {
+		t.Fatalf("expected 2 writs, got %d", writs)
+	}
+}
+
+func TestWorldTokenMetaEmpty(t *testing.T) {
+	s := setupWorld(t)
+
+	agents, writs, err := s.WorldTokenMeta()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agents != 0 || writs != 0 {
+		t.Fatalf("expected 0/0, got %d/%d", agents, writs)
+	}
+}
+
+func TestWorldTokenMetaSince(t *testing.T) {
+	s := setupWorld(t)
+
+	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	start2 := time.Date(2026, 3, 5, 14, 0, 0, 0, time.UTC)
+
+	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
+	h2, _ := s.WriteHistory("Jasper", "sol-item02", "cast", "", start2, nil)
+
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100)
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200)
+
+	since := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
+	agents, writs, err := s.WorldTokenMetaSince(since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agents != 1 {
+		t.Fatalf("expected 1 agent, got %d", agents)
+	}
+	if writs != 1 {
+		t.Fatalf("expected 1 writ, got %d", writs)
+	}
+}
+
+func TestTokensForWritSince(t *testing.T) {
+	s := setupWorld(t)
+
+	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	start2 := time.Date(2026, 3, 5, 14, 0, 0, 0, time.UTC)
+
+	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
+	h2, _ := s.WriteHistory("Jasper", "sol-item01", "cast", "", start2, nil)
+
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100)
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200)
+
+	// Since 12:00 — should only include h2.
+	since := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
+	summaries, err := s.TokensForWritSince("sol-item01", since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 model summary, got %d", len(summaries))
+	}
+	if summaries[0].InputTokens != 3000 {
+		t.Fatalf("input=%d, expected 3000", summaries[0].InputTokens)
+	}
+}
+
 func TestMergeStatsForAgent(t *testing.T) {
 	s := setupWorld(t)
 
