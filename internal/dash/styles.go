@@ -70,6 +70,19 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-visible)
 }
 
+// truncateStr truncates a plain (unstyled) string to max visible runes,
+// appending "..." if truncated.
+func truncateStr(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	if max <= 3 {
+		return string(runes[:max])
+	}
+	return string(runes[:max-3]) + "..."
+}
+
 func statusIndicator(running bool) string {
 	if running {
 		return okStyle.Render(checkMark)

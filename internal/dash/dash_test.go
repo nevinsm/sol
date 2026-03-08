@@ -729,7 +729,6 @@ func TestWorldViewSectionFocusCycle(t *testing.T) {
 	wm := newWorldModel()
 	wm.outpostLen = 2
 	wm.envoyLen = 1
-	wm.mrLen = 3
 
 	// Start at outposts (default).
 	if wm.focusedSection != sectionOutposts {
@@ -742,13 +741,7 @@ func TestWorldViewSectionFocusCycle(t *testing.T) {
 		t.Errorf("after tab, focus should be envoys, got %d", wm.focusedSection)
 	}
 
-	// Tab to merge queue.
-	wm, _ = wm.update(tabKeyMsg(), nil)
-	if wm.focusedSection != sectionMergeQueue {
-		t.Errorf("after second tab, focus should be merge queue, got %d", wm.focusedSection)
-	}
-
-	// Tab wraps to outposts.
+	// Tab wraps to outposts (MR section is no longer focusable).
 	wm, _ = wm.update(tabKeyMsg(), nil)
 	if wm.focusedSection != sectionOutposts {
 		t.Errorf("tab should wrap around to outposts, got %d", wm.focusedSection)
@@ -759,12 +752,11 @@ func TestWorldViewSectionFocusReverseTab(t *testing.T) {
 	wm := newWorldModel()
 	wm.outpostLen = 2
 	wm.envoyLen = 1
-	wm.mrLen = 3
 
-	// Shift-tab wraps to merge queue.
+	// Shift-tab wraps to envoys (MR section is no longer focusable).
 	wm, _ = wm.update(shiftTabKeyMsg(), nil)
-	if wm.focusedSection != sectionMergeQueue {
-		t.Errorf("shift-tab should wrap to merge queue, got %d", wm.focusedSection)
+	if wm.focusedSection != sectionEnvoys {
+		t.Errorf("shift-tab should wrap to envoys, got %d", wm.focusedSection)
 	}
 }
 
@@ -772,7 +764,6 @@ func TestWorldViewPerSectionCursors(t *testing.T) {
 	wm := newWorldModel()
 	wm.outpostLen = 3
 	wm.envoyLen = 2
-	wm.mrLen = 4
 
 	// Move outpost cursor down.
 	wm, _ = wm.update(keyMsg("j"), nil)
@@ -785,14 +776,6 @@ func TestWorldViewPerSectionCursors(t *testing.T) {
 	wm, _ = wm.update(keyMsg("j"), nil)
 	if wm.envoyCursor != 1 {
 		t.Errorf("envoy cursor should be 1, got %d", wm.envoyCursor)
-	}
-
-	// Tab to MR queue and move cursor.
-	wm, _ = wm.update(tabKeyMsg(), nil)
-	wm, _ = wm.update(keyMsg("j"), nil)
-	wm, _ = wm.update(keyMsg("j"), nil)
-	if wm.mrCursor != 2 {
-		t.Errorf("mr cursor should be 2, got %d", wm.mrCursor)
 	}
 
 	// Tab back to outposts — cursor should be preserved.
@@ -1755,5 +1738,129 @@ func TestFeedLoadInitial(t *testing.T) {
 	}
 	if fm.lastSeen.IsZero() {
 		t.Error("lastSeen should be set after loadInitial")
+	}
+}
+
+// --- Tests for merged MR filtering, work truncation, truncateStr ---
+
+func TestTruncateStr(t *testing.T) {
+	tests := []struct {
+		input string
+		max   int
+		want  string
+	}{
+		{"hello", 10, "hello"},
+		{"hello", 5, "hello"},
+		{"hello world", 8, "hello..."},
+		{"hello world", 3, "hel"},
+		{"hello world", 2, "he"},
+		{"abcdefghij", 7, "abcd..."},
+		{"", 5, ""},
+		{"ab", 5, "ab"},
+	}
+
+	for _, tt := range tests {
+		got := truncateStr(tt.input, tt.max)
+		if got != tt.want {
+			t.Errorf("truncateStr(%q, %d) = %q, want %q", tt.input, tt.max, got, tt.want)
+		}
+	}
+}
+
+func TestWorldViewMergedMRsFiltered(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:      "testworld",
+		Prefect:    status.PrefectInfo{Running: true, PID: 42},
+		MergeQueue: status.MergeQueueInfo{Total: 4, Ready: 1, Claimed: 1, Merged: 2},
+		MergeRequests: []status.MergeRequestInfo{
+			{ID: "mr-001", WritID: "sol-aaa", Phase: "ready", Title: "ready MR"},
+			{ID: "mr-002", WritID: "sol-bbb", Phase: "claimed", Title: "in progress MR"},
+			{ID: "mr-003", WritID: "sol-ccc", Phase: "merged", Title: "merged MR one"},
+			{ID: "mr-004", WritID: "sol-ddd", Phase: "merged", Title: "merged MR two"},
+		},
+	}
+	wm.updateData(data)
+
+	output := wm.view(data, time.Now(), false, nil)
+
+	// Active MRs should appear.
+	if !strings.Contains(output, "mr-001") {
+		t.Error("ready MR should appear in detail rows")
+	}
+	if !strings.Contains(output, "mr-002") {
+		t.Error("claimed MR should appear in detail rows")
+	}
+	// Merged MRs should NOT appear as detail rows.
+	if strings.Contains(output, "mr-003") {
+		t.Error("merged MR should not appear in detail rows")
+	}
+	if strings.Contains(output, "mr-004") {
+		t.Error("merged MR should not appear in detail rows")
+	}
+	// But the summary should still show merged count.
+	if !strings.Contains(output, "2 merged") {
+		t.Error("summary should still show merged count")
+	}
+}
+
+func TestWorldViewWorkColumnTruncated(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 80
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:   "testworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 42},
+		Agents: []status.AgentStatus{
+			{
+				Name:         "Toast",
+				State:        "working",
+				SessionAlive: true,
+				ActiveWrit:   "sol-a1b2c3d4e5f6a7b8",
+				WorkTitle:    "this is a very long work title that should be truncated",
+			},
+		},
+		Summary: status.Summary{Total: 1, Working: 1},
+	}
+	wm.updateData(data)
+
+	output := wm.view(data, time.Now(), false, nil)
+
+	// The full title should not appear — it would overflow.
+	if strings.Contains(output, "this is a very long work title that should be truncated") {
+		t.Error("long work title should be truncated on narrow terminal")
+	}
+	// But the truncated version should contain "..." suffix.
+	if !strings.Contains(output, "...") {
+		t.Error("truncated work title should contain '...'")
+	}
+}
+
+func TestWorldViewMRSectionNotFocusable(t *testing.T) {
+	wm := newWorldModel()
+	wm.outpostLen = 1
+	wm.envoyLen = 1
+
+	// Tab through all sections — should never reach sectionMergeQueue.
+	sections := wm.availableSections()
+	for _, s := range sections {
+		if s == 2 { // sectionMergeQueue was iota value 2
+			t.Error("MR section should not be in available sections")
+		}
+	}
+
+	// Verify that tabbing cycles only between outposts and envoys.
+	wm.focusedSection = sectionOutposts
+	wm, _ = wm.update(tabKeyMsg(), nil)
+	if wm.focusedSection != sectionEnvoys {
+		t.Errorf("tab from outposts should go to envoys, got %d", wm.focusedSection)
+	}
+	wm, _ = wm.update(tabKeyMsg(), nil)
+	if wm.focusedSection != sectionOutposts {
+		t.Errorf("tab from envoys should wrap to outposts, got %d", wm.focusedSection)
 	}
 }

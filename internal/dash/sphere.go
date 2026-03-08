@@ -212,7 +212,7 @@ func (sm sphereModel) renderWorldsTable(b *strings.Builder, worlds []status.Worl
 	for i, w := range worlds {
 		line := sm.renderWorldRow(w)
 		if i == sm.cursor {
-			b.WriteString(selectStyle.Render(line))
+			b.WriteString(selectStyle.Render(padRight(line, sm.width)))
 		} else {
 			b.WriteString(line)
 		}
@@ -291,11 +291,18 @@ func (sm sphereModel) renderCaravans(b *strings.Builder, caravans []status.Carav
 		}
 
 		phaseSummary := caravanPhaseSummary(c)
-		b.WriteString(fmt.Sprintf("  %s  %s  %s  %s\n",
-			c.Name, progressStr,
-			dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
-			dimStyle.Render(phaseSummary),
-		))
+		if phaseSummary != "" {
+			b.WriteString(fmt.Sprintf("  %s  %s  %s  %s\n",
+				c.Name, progressStr,
+				dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
+				dimStyle.Render(phaseSummary),
+			))
+		} else {
+			b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
+				c.Name, progressStr,
+				dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
+			))
+		}
 	}
 }
 

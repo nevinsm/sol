@@ -18,7 +18,6 @@ type worldSection int
 const (
 	sectionOutposts worldSection = iota
 	sectionEnvoys
-	sectionMergeQueue
 )
 
 // worldModel handles the world detail view.
@@ -30,12 +29,10 @@ type worldModel struct {
 	focusedSection worldSection
 	outpostCursor  int
 	envoyCursor    int
-	mrCursor       int
 
 	// Section row counts.
 	outpostLen int
 	envoyLen   int
-	mrLen      int
 
 	// Inline "no active session" message.
 	showNoSession bool
@@ -119,7 +116,6 @@ func (wm *worldModel) updateData(data *status.WorldStatus) {
 
 	wm.outpostLen = len(data.Agents)
 	wm.envoyLen = len(data.Envoys)
-	wm.mrLen = len(data.MergeRequests)
 }
 
 func (wm *worldModel) syncProcessSpinner(name string, running bool) {
@@ -143,9 +139,6 @@ func (wm worldModel) availableSections() []worldSection {
 	if wm.envoyLen > 0 {
 		sections = append(sections, sectionEnvoys)
 	}
-	if wm.mrLen > 0 {
-		sections = append(sections, sectionMergeQueue)
-	}
 	return sections
 }
 
@@ -156,8 +149,6 @@ func (wm worldModel) sectionLen(s worldSection) int {
 		return wm.outpostLen
 	case sectionEnvoys:
 		return wm.envoyLen
-	case sectionMergeQueue:
-		return wm.mrLen
 	}
 	return 0
 }
@@ -169,8 +160,6 @@ func (wm worldModel) cursor(s worldSection) int {
 		return wm.outpostCursor
 	case sectionEnvoys:
 		return wm.envoyCursor
-	case sectionMergeQueue:
-		return wm.mrCursor
 	}
 	return 0
 }
@@ -182,8 +171,6 @@ func (wm *worldModel) setCursor(s worldSection, v int) {
 		wm.outpostCursor = v
 	case sectionEnvoys:
 		wm.envoyCursor = v
-	case sectionMergeQueue:
-		wm.mrCursor = v
 	}
 }
 
@@ -384,12 +371,7 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	}
 
 	// Merge queue.
-	mqHeader := "Merge Queue"
-	if wm.focusedSection == sectionMergeQueue {
-		b.WriteString(focusStyle.Render(mqHeader))
-	} else {
-		b.WriteString(headerStyle.Render(mqHeader))
-	}
+	b.WriteString(headerStyle.Render("Merge Queue"))
 	b.WriteString("\n")
 	wm.renderMergeQueue(&b, data.MergeQueue, data.MergeRequests)
 	b.WriteString("\n")
@@ -430,10 +412,10 @@ func (wm worldModel) renderAgentsTable(b *strings.Builder, agents []status.Agent
 	for i, a := range agents {
 		line := wm.renderAgentRow(a)
 		if wm.focusedSection == sectionOutposts && i == wm.outpostCursor {
-			b.WriteString(selectStyle.Render(line))
+			b.WriteString(selectStyle.Render(padRight(line, wm.width)))
 		} else if agentHighlights != nil {
 			if _, highlighted := agentHighlights[a.Name]; highlighted {
-				b.WriteString(highlightStyle.Render(line))
+				b.WriteString(highlightStyle.Render(padRight(line, wm.width)))
 			} else {
 				b.WriteString(line)
 			}
@@ -477,6 +459,13 @@ func (wm worldModel) renderAgentRow(a status.AgentStatus) string {
 	work := dimStyle.Render("—")
 	if a.ActiveWrit != "" {
 		work = fmt.Sprintf("%s: %s", a.ActiveWrit, a.WorkTitle)
+		// Truncate work column to fit available width.
+		// Fixed columns: 2 (indent) + 14 (name) + 1 (sep) + 18 (state) + 1 (sep) + 10 (sess) + 1 (sep) = 47
+		maxWork := wm.width - 47
+		if maxWork < 20 {
+			maxWork = 20
+		}
+		work = truncateStr(work, maxWork)
 	}
 
 	return "  " + padRight(name, 14) + " " + padRight(state, 18) + " " + padRight(sess, 10) + " " + work
@@ -488,7 +477,7 @@ func (wm worldModel) renderEnvoysTable(b *strings.Builder, envoys []status.Envoy
 	for i, e := range envoys {
 		line := wm.renderEnvoyRow(e)
 		if wm.focusedSection == sectionEnvoys && i == wm.envoyCursor {
-			b.WriteString(selectStyle.Render(line))
+			b.WriteString(selectStyle.Render(padRight(line, wm.width)))
 		} else {
 			b.WriteString(line)
 		}
@@ -527,7 +516,7 @@ func (wm worldModel) renderEnvoyRow(e status.EnvoyStatus) string {
 
 	work := dimStyle.Render("—")
 	if e.ActiveWrit != "" {
-		work = e.WorkTitle
+		work = truncateStr(e.WorkTitle, 24)
 	}
 
 	brief := dimStyle.Render("—")
@@ -561,16 +550,17 @@ func (wm worldModel) renderMergeQueue(b *strings.Builder, mq status.MergeQueueIn
 	}
 	b.WriteString(fmt.Sprintf("  %s\n", strings.Join(parts, ", ")))
 
-	// Individual MR rows.
-	if len(mrs) > 0 {
+	// Individual MR rows — only show active (non-merged) MRs.
+	var activeMRs []status.MergeRequestInfo
+	for _, mr := range mrs {
+		if mr.Phase != "merged" {
+			activeMRs = append(activeMRs, mr)
+		}
+	}
+	if len(activeMRs) > 0 {
 		b.WriteString("  " + padRight(dimStyle.Render("ID"), 20) + " " + padRight(dimStyle.Render("WRIT"), 20) + " " + padRight(dimStyle.Render("STATUS"), 10) + " " + dimStyle.Render("TITLE") + "\n")
-		for i, mr := range mrs {
-			line := wm.renderMRRow(mr)
-			if wm.focusedSection == sectionMergeQueue && i == wm.mrCursor {
-				b.WriteString(selectStyle.Render(line))
-			} else {
-				b.WriteString(line)
-			}
+		for _, mr := range activeMRs {
+			b.WriteString(wm.renderMRRow(mr))
 			b.WriteString("\n")
 		}
 	}
@@ -619,11 +609,18 @@ func (wm worldModel) renderCaravans(b *strings.Builder, caravans []status.Carava
 		}
 
 		phaseSummary := caravanPhaseSummary(c)
-		b.WriteString(fmt.Sprintf("  %s  %s  %s  %s\n",
-			c.Name, progressStr,
-			dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
-			dimStyle.Render(phaseSummary),
-		))
+		if phaseSummary != "" {
+			b.WriteString(fmt.Sprintf("  %s  %s  %s  %s\n",
+				c.Name, progressStr,
+				dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
+				dimStyle.Render(phaseSummary),
+			))
+		} else {
+			b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
+				c.Name, progressStr,
+				dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
+			))
+		}
 	}
 }
 
