@@ -11,8 +11,8 @@ import (
 func TestGenerateClaudeMD(t *testing.T) {
 	ctx := ClaudeMDContext{
 		AgentName:   "Toast",
-		World:         "myworld",
-		WritID:  "sol-a1b2c3d4",
+		World:       "myworld",
+		WritID:      "sol-a1b2c3d4",
 		Title:       "Add a README",
 		Description: "Create a README.md file with project info",
 	}
@@ -39,8 +39,8 @@ func TestInstallClaudeMD(t *testing.T) {
 	dir := t.TempDir()
 	ctx := ClaudeMDContext{
 		AgentName:   "Toast",
-		World:         "myworld",
-		WritID:  "sol-a1b2c3d4",
+		World:       "myworld",
+		WritID:      "sol-a1b2c3d4",
 		Title:       "Add a README",
 		Description: "Create a README.md file",
 	}
@@ -62,11 +62,20 @@ func TestInstallClaudeMD(t *testing.T) {
 	if !strings.Contains(content, "sol-a1b2c3d4") {
 		t.Error("CLAUDE.local.md missing writ ID")
 	}
+
+	// Verify skills installed.
+	skills := RoleSkills("outpost")
+	for _, name := range skills {
+		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
+		if _, err := os.Stat(skillPath); err != nil {
+			t.Errorf("outpost skill %q should be installed: %v", name, err)
+		}
+	}
 }
 
 func TestGenerateForgeClaudeMD(t *testing.T) {
 	ctx := ForgeClaudeMDContext{
-		World:          "myworld",
+		World:        "myworld",
 		TargetBranch: "main",
 		WorktreeDir:  "/home/user/sol/myworld/forge/worktree",
 		QualityGates: []string{"go test ./...", "go vet ./..."},
@@ -79,18 +88,6 @@ func TestGenerateForgeClaudeMD(t *testing.T) {
 		"merge processor for world myworld",
 		"FORBIDDEN",
 		"Patrol Protocol",
-		"sol workflow current --world=myworld --agent=forge",
-		"sol workflow advance --world=myworld --agent=forge",
-		"sol forge check-unblocked --world=myworld",
-		"sol forge ready --world=myworld --json",
-		"sol forge claim --world=myworld --json",
-		"sol forge sync --world=myworld",
-		"git merge --squash",
-		"git push origin HEAD:main",
-		"sol forge mark-merged --world=myworld",
-		"sol forge mark-failed --world=myworld",
-		"sol forge create-resolution --world=myworld",
-		"sol forge release --world=myworld",
 		"go test ./...",
 		"go vet ./...",
 	}
@@ -104,7 +101,7 @@ func TestGenerateForgeClaudeMD(t *testing.T) {
 func TestInstallForgeClaudeMD(t *testing.T) {
 	dir := t.TempDir()
 	ctx := ForgeClaudeMDContext{
-		World:          "myworld",
+		World:        "myworld",
 		TargetBranch: "main",
 		WorktreeDir:  dir,
 		QualityGates: []string{"go test ./..."},
@@ -127,13 +124,22 @@ func TestInstallForgeClaudeMD(t *testing.T) {
 	if !strings.Contains(content, "myworld") {
 		t.Error("CLAUDE.local.md missing world name")
 	}
+
+	// Verify skills installed.
+	skills := RoleSkills("forge")
+	for _, name := range skills {
+		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
+		if _, err := os.Stat(skillPath); err != nil {
+			t.Errorf("forge skill %q should be installed: %v", name, err)
+		}
+	}
 }
 
 func TestGenerateClaudeMDWithModelTier(t *testing.T) {
 	ctx := ClaudeMDContext{
 		AgentName:   "Toast",
 		World:       "myworld",
-		WritID:  "sol-a1b2c3d4",
+		WritID:      "sol-a1b2c3d4",
 		Title:       "Test task",
 		Description: "Testing model tier",
 		ModelTier:   "opus",
@@ -153,7 +159,7 @@ func TestGenerateClaudeMDWithoutModelTier(t *testing.T) {
 	ctx := ClaudeMDContext{
 		AgentName:   "Toast",
 		World:       "myworld",
-		WritID:  "sol-a1b2c3d4",
+		WritID:      "sol-a1b2c3d4",
 		Title:       "Test task",
 		Description: "Testing no model tier",
 	}
@@ -178,10 +184,6 @@ func TestGenerateEnvoyClaudeMD(t *testing.T) {
 		"Envoy: scout (world: myworld)",
 		"scout",
 		"myworld",
-		"sol resolve --world=myworld --agent=scout",
-		"sol store create --world=myworld",
-		"sol escalate --world=myworld --agent=scout",
-		"sol status --world=myworld",
 		".brief/memory.md",
 		"200 lines",
 		"Brief Maintenance",
@@ -193,9 +195,7 @@ func TestGenerateEnvoyClaudeMD(t *testing.T) {
 		"Submitting Work",
 		"All code changes MUST go through",
 		"Never use `git push` alone",
-		"session stays alive",
 		"Never push directly or bypass forge",
-		".claude/sol-cli-reference.md",
 	}
 	for _, check := range checks {
 		if !strings.Contains(content, check) {
@@ -294,6 +294,15 @@ func TestInstallEnvoyClaudeMD(t *testing.T) {
 	if !strings.Contains(content, "myworld") {
 		t.Error("CLAUDE.local.md missing world name")
 	}
+
+	// Verify skills installed.
+	skills := RoleSkills("envoy")
+	for _, name := range skills {
+		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
+		if _, err := os.Stat(skillPath); err != nil {
+			t.Errorf("envoy skill %q should be installed: %v", name, err)
+		}
+	}
 }
 
 func TestInstallEnvoyClaudeMDWithPersona(t *testing.T) {
@@ -388,7 +397,6 @@ func TestGenerateEnvoyClaudeMDMultiWritActive(t *testing.T) {
 
 	content := GenerateEnvoyClaudeMD(ctx)
 
-	// Active writ section.
 	if !strings.Contains(content, "## Active Writ") {
 		t.Error("missing Active Writ section")
 	}
@@ -401,8 +409,6 @@ func TestGenerateEnvoyClaudeMDMultiWritActive(t *testing.T) {
 	if !strings.Contains(content, "Analyze the system") {
 		t.Error("missing active writ description")
 	}
-
-	// Background writs.
 	if !strings.Contains(content, "## Background Writs") {
 		t.Error("missing Background Writs section")
 	}
@@ -412,13 +418,9 @@ func TestGenerateEnvoyClaudeMDMultiWritActive(t *testing.T) {
 	if !strings.Contains(content, "Task C") {
 		t.Error("missing background writ 'Task C'")
 	}
-
-	// Constraint text.
 	if !strings.Contains(content, "Work only on your active writ") {
 		t.Error("missing constraint text")
 	}
-
-	// Should still contain base envoy content.
 	if !strings.Contains(content, "Envoy: Meridian") {
 		t.Error("missing envoy identity header")
 	}
@@ -438,30 +440,24 @@ func TestGenerateEnvoyClaudeMDMultiWritNoActive(t *testing.T) {
 
 	content := GenerateEnvoyClaudeMD(ctx)
 
-	// Wait message.
 	if !strings.Contains(content, "Wait for the operator to activate one") {
 		t.Error("missing wait-for-activation message")
 	}
 	if !strings.Contains(content, "2 tethered writs") {
 		t.Error("missing tethered writ count")
 	}
-
-	// All writs listed.
 	if !strings.Contains(content, "Task A") {
 		t.Error("missing writ 'Task A'")
 	}
 	if !strings.Contains(content, "Task B") {
 		t.Error("missing writ 'Task B'")
 	}
-
-	// Should NOT have Active Writ section.
 	if strings.Contains(content, "## Active Writ") {
 		t.Error("no-active persona should not have Active Writ section")
 	}
 }
 
 func TestGenerateClaudeMDOutpostNoBackgroundSection(t *testing.T) {
-	// Outpost agents get TetheredWrits empty — no background section.
 	ctx := ClaudeMDContext{
 		AgentName:   "Toast",
 		World:       "myworld",
@@ -513,7 +509,6 @@ func TestGenerateGovernorClaudeMDMultiWrit(t *testing.T) {
 	if !strings.Contains(content, "Research Y") {
 		t.Error("missing background writ")
 	}
-	// Should still contain governor identity.
 	if !strings.Contains(content, "Governor (world: myworld)") {
 		t.Error("missing governor header")
 	}

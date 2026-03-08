@@ -13,7 +13,7 @@ func TestClaudeMDWithWorkflow(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
-		WritID:  "sol-12345678",
+		WritID:      "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 		HasWorkflow: true,
@@ -21,17 +21,15 @@ func TestClaudeMDWithWorkflow(t *testing.T) {
 
 	content := protocol.GenerateClaudeMD(ctx)
 
-	if !strings.Contains(content, "sol workflow current") {
-		t.Error("CLAUDE.md should contain 'sol workflow current'")
+	// Lean persona should contain workflow protocol (behavioral).
+	if !strings.Contains(content, "Read your current workflow step") {
+		t.Error("CLAUDE.md should contain workflow protocol instructions")
 	}
-	if !strings.Contains(content, "sol workflow advance") {
-		t.Error("CLAUDE.md should contain 'sol workflow advance'")
+	if !strings.Contains(content, "Advance to the next step") {
+		t.Error("CLAUDE.md should contain workflow advance instruction")
 	}
-	if !strings.Contains(content, "sol workflow status") {
-		t.Error("CLAUDE.md should contain 'sol workflow status'")
-	}
-	if !strings.Contains(content, "Repeat from step 1") {
-		t.Error("CLAUDE.md should contain workflow protocol")
+	if !strings.Contains(content, "sol resolve") {
+		t.Error("CLAUDE.md should contain sol resolve reference")
 	}
 }
 
@@ -43,7 +41,6 @@ func TestGuidedInitClaudeMD(t *testing.T) {
 
 	content := protocol.GenerateGuidedInitClaudeMD(ctx)
 
-	// Verify it contains key sections.
 	if !strings.Contains(content, "World name") {
 		t.Error("CLAUDE.md should contain 'World name'")
 	}
@@ -53,23 +50,15 @@ func TestGuidedInitClaudeMD(t *testing.T) {
 	if !strings.Contains(content, "Setup Command") {
 		t.Error("CLAUDE.md should contain 'Setup Command'")
 	}
-
-	// Verify it includes the SOL_HOME path.
 	if !strings.Contains(content, "/tmp/sol-test") {
 		t.Error("CLAUDE.md should contain the SOL_HOME path")
 	}
-
-	// Verify it includes the sol binary path.
 	if !strings.Contains(content, "/usr/local/bin/sol") {
 		t.Error("CLAUDE.md should contain the sol binary path")
 	}
-
-	// Verify it contains the init command template.
 	if !strings.Contains(content, "init --name=") {
 		t.Error("CLAUDE.md should contain 'init --name=' command template")
 	}
-
-	// Verify --skip-checks is included in the command.
 	if !strings.Contains(content, "--skip-checks") {
 		t.Error("CLAUDE.md should contain '--skip-checks' in the setup command")
 	}
@@ -94,32 +83,33 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 		t.Error("CLAUDE.md should contain managed repo directory reference")
 	}
 
-	// Verify sol world sync command.
+	// Verify world sync command (kept in codebase research section).
 	if !strings.Contains(content, "sol world sync --world=myworld") {
 		t.Error("CLAUDE.md should contain 'sol world sync --world=myworld'")
 	}
 
-	// Verify inline dispatch flow commands still present.
+	// Lean persona should NOT contain dispatch flow commands (moved to skills).
 	for _, cmd := range []string{
 		"sol store create",
 		"sol cast",
 		"sol caravan create",
-		"sol caravan status",
-		"sol status --world=myworld",
-		"sol agent list",
-		"sol escalate",
 	} {
-		if !strings.Contains(content, cmd) {
-			t.Errorf("CLAUDE.md should contain %q", cmd)
+		if strings.Contains(content, cmd) {
+			t.Errorf("lean governor CLAUDE.md should not contain dispatch command %q (moved to skills)", cmd)
 		}
 	}
 
-	// Verify CLI reference line replaces hardcoded command block.
-	if !strings.Contains(content, ".claude/sol-cli-reference.md") {
-		t.Error("CLAUDE.md should contain CLI reference")
+	// Lean persona should NOT contain notification handling section (moved to skills).
+	if strings.Contains(content, "## Notification Handling") {
+		t.Error("lean governor CLAUDE.md should not contain Notification Handling section (moved to skills)")
 	}
 
-	// Verify brief instructions.
+	// Should NOT contain CLI reference link (replaced by skills).
+	if strings.Contains(content, ".claude/sol-cli-reference.md") {
+		t.Error("lean governor CLAUDE.md should not reference sol-cli-reference.md")
+	}
+
+	// Verify brief instructions still present.
 	if !strings.Contains(content, ".brief/memory.md") {
 		t.Error("CLAUDE.md should contain brief path reference")
 	}
@@ -127,7 +117,7 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 		t.Error("CLAUDE.md should contain brief size guidance")
 	}
 
-	// Verify world summary format.
+	// Verify world summary format still present.
 	if !strings.Contains(content, ".brief/world-summary.md") {
 		t.Error("CLAUDE.md should contain world summary path")
 	}
@@ -137,53 +127,15 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 	if !strings.Contains(content, "## Architecture") {
 		t.Error("CLAUDE.md should contain world summary format sections")
 	}
-	if !strings.Contains(content, "## Priorities") {
-		t.Error("CLAUDE.md should contain world summary format sections")
-	}
-	if !strings.Contains(content, "## Constraints") {
-		t.Error("CLAUDE.md should contain world summary format sections")
-	}
 
 	// Verify identity section.
 	if !strings.Contains(content, "work coordinator") {
 		t.Error("CLAUDE.md should contain governor identity")
 	}
 
-	// Verify notification handling section.
-	for _, notifType := range []string{
-		"AGENT_DONE",
-		"MERGED",
-		"MERGE_FAILED",
-		"RECOVERY_NEEDED",
-	} {
-		if !strings.Contains(content, "**"+notifType+"**") {
-			t.Errorf("CLAUDE.md should contain notification type %q", notifType)
-		}
-	}
-	if !strings.Contains(content, "## Notification Handling") {
-		t.Error("CLAUDE.md should contain Notification Handling section")
-	}
-	if !strings.Contains(content, "[NOTIFICATION]") {
-		t.Error("CLAUDE.md should describe notification format")
-	}
-
 	// Verify guidelines.
 	if !strings.Contains(content, "You coordinate") {
 		t.Error("CLAUDE.md should contain coordination guideline")
-	}
-
-	// Verify no wrong cast syntax.
-	for _, bad := range []string{
-		"cast --writ=",
-	} {
-		if strings.Contains(content, bad) {
-			t.Errorf("GenerateGovernorClaudeMD should not contain %q", bad)
-		}
-	}
-
-	// Verify correct cast syntax.
-	if !strings.Contains(content, "sol cast <item-id> --world=myworld") {
-		t.Error("GenerateGovernorClaudeMD should contain correct cast syntax")
 	}
 }
 
@@ -200,19 +152,27 @@ func TestInstallGovernorClaudeMD(t *testing.T) {
 		t.Fatalf("InstallGovernorClaudeMD failed: %v", err)
 	}
 
-	// Verify file written.
+	// Verify CLAUDE.local.md written.
 	path := filepath.Join(govDir, "CLAUDE.local.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
 	}
-
 	content := string(data)
 	if !strings.Contains(content, "testworld") {
 		t.Error("installed CLAUDE.local.md should contain world name")
 	}
 	if !strings.Contains(content, "Governor") {
 		t.Error("installed CLAUDE.local.md should contain 'Governor'")
+	}
+
+	// Verify skills installed.
+	skills := protocol.RoleSkills("governor")
+	for _, name := range skills {
+		skillPath := filepath.Join(govDir, ".claude", "skills", name, "SKILL.md")
+		if _, err := os.Stat(skillPath); err != nil {
+			t.Errorf("governor skill %q should be installed: %v", name, err)
+		}
 	}
 }
 
@@ -254,7 +214,7 @@ func TestClaudeMDWithoutWorkflow(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
-		WritID:  "sol-12345678",
+		WritID:      "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 		HasWorkflow: false,
@@ -262,18 +222,20 @@ func TestClaudeMDWithoutWorkflow(t *testing.T) {
 
 	content := protocol.GenerateClaudeMD(ctx)
 
-	if strings.Contains(content, "sol workflow current") {
-		t.Error("CLAUDE.md should not contain workflow commands without workflow")
+	// Should not contain workflow step instructions.
+	if strings.Contains(content, "current workflow step") {
+		t.Error("CLAUDE.md should not contain workflow step instructions without workflow")
 	}
 	if !strings.Contains(content, "sol resolve") {
 		t.Error("CLAUDE.md should contain 'sol resolve'")
 	}
-	if !strings.Contains(content, ".claude/sol-cli-reference.md") {
-		t.Error("CLAUDE.md should contain CLI reference")
+	// Should NOT reference CLI reference (replaced by skills).
+	if strings.Contains(content, ".claude/sol-cli-reference.md") {
+		t.Error("lean CLAUDE.md should not reference sol-cli-reference.md")
 	}
 }
 
-func TestEnvoyClaudeMDCLIReference(t *testing.T) {
+func TestEnvoyClaudeMDLean(t *testing.T) {
 	ctx := protocol.EnvoyClaudeMDContext{
 		AgentName: "Echo",
 		World:     "myworld",
@@ -282,22 +244,46 @@ func TestEnvoyClaudeMDCLIReference(t *testing.T) {
 
 	content := protocol.GenerateEnvoyClaudeMD(ctx)
 
-	if !strings.Contains(content, ".claude/sol-cli-reference.md") {
-		t.Error("envoy CLAUDE.md should contain CLI reference")
+	// Should NOT contain CLI reference link (replaced by skills).
+	if strings.Contains(content, ".claude/sol-cli-reference.md") {
+		t.Error("lean envoy CLAUDE.md should not reference sol-cli-reference.md")
 	}
-	// Key workflow commands should still be inline.
-	for _, cmd := range []string{
-		"sol resolve",
-		"sol store create",
-		"sol escalate",
+
+	// Should contain key behavioral/identity elements.
+	for _, check := range []string{
+		"Envoy: Echo (world: myworld)",
+		"Echo",
+		"myworld",
+		".brief/memory.md",
+		"200 lines",
+		"Brief Maintenance",
+		"human-supervised",
+		"Three Modes",
+		"Tethered work",
+		"Self-service",
+		"Freeform",
+		"Submitting Work",
+		"Never use `git push` alone",
+		"Never push directly or bypass forge",
 	} {
-		if !strings.Contains(content, cmd) {
-			t.Errorf("envoy CLAUDE.md should contain inline command %q", cmd)
+		if !strings.Contains(content, check) {
+			t.Errorf("lean envoy CLAUDE.md should contain %q", check)
 		}
+	}
+
+	// Should NOT contain detailed tether/resolve command syntax (moved to skills).
+	if strings.Contains(content, "sol resolve --world=myworld --agent=Echo") {
+		t.Error("lean envoy CLAUDE.md should not contain detailed resolve syntax (moved to skills)")
+	}
+	if strings.Contains(content, "sol store create --world=myworld") {
+		t.Error("lean envoy CLAUDE.md should not contain store create syntax (moved to skills)")
+	}
+	if strings.Contains(content, "sol tether") {
+		t.Error("lean envoy CLAUDE.md should not contain tether command syntax (moved to skills)")
 	}
 }
 
-func TestForgeClaudeMDCLIReference(t *testing.T) {
+func TestForgeClaudeMDLean(t *testing.T) {
 	ctx := protocol.ForgeClaudeMDContext{
 		World:        "myworld",
 		TargetBranch: "main",
@@ -306,19 +292,19 @@ func TestForgeClaudeMDCLIReference(t *testing.T) {
 
 	content := protocol.GenerateForgeClaudeMD(ctx)
 
-	if !strings.Contains(content, ".claude/sol-cli-reference.md") {
-		t.Error("forge CLAUDE.md should contain CLI reference")
+	// Should NOT contain Command Quick-Reference table (moved to skills).
+	if strings.Contains(content, "## Command Quick-Reference") {
+		t.Error("lean forge CLAUDE.md should not contain Command Quick-Reference section")
 	}
-	// Command quick-reference should still have key commands.
-	if !strings.Contains(content, "sol forge ready") {
-		t.Error("forge CLAUDE.md should contain sol forge ready in quick-reference")
+
+	// Should NOT contain CLI reference link.
+	if strings.Contains(content, ".claude/sol-cli-reference.md") {
+		t.Error("lean forge CLAUDE.md should not reference sol-cli-reference.md")
 	}
-	if !strings.Contains(content, "git merge --squash") {
-		t.Error("forge CLAUDE.md should contain git merge --squash in quick-reference")
-	}
-	// sol forge merge should NOT be present (removed).
-	if strings.Contains(content, "sol forge merge") {
-		t.Error("forge CLAUDE.md should not contain sol forge merge (removed)")
+
+	// Should NOT contain Notification Handling section (moved to skills).
+	if strings.Contains(content, "## Notification Handling") {
+		t.Error("lean forge CLAUDE.md should not contain Notification Handling section")
 	}
 }
 
@@ -374,62 +360,6 @@ func TestForgeClaudeMDForbiddenExpanded(t *testing.T) {
 	}
 }
 
-func TestForgeClaudeMDFormulaWorkflow(t *testing.T) {
-	ctx := protocol.ForgeClaudeMDContext{
-		World:        "myworld",
-		TargetBranch: "main",
-		QualityGates: []string{"make test"},
-	}
-
-	content := protocol.GenerateForgeClaudeMD(ctx)
-
-	// Patrol protocol should reference formula workflow commands.
-	if !strings.Contains(content, "## Patrol Protocol") {
-		t.Error("forge CLAUDE.md should contain Patrol Protocol section")
-	}
-	for _, cmd := range []string{
-		"sol workflow current --world=myworld --agent=forge",
-		"sol workflow advance --world=myworld --agent=forge",
-		"sol workflow status --world=myworld --agent=forge",
-	} {
-		if !strings.Contains(content, cmd) {
-			t.Errorf("forge CLAUDE.md should contain workflow command %q", cmd)
-		}
-	}
-
-	// Should NOT contain hardcoded step banners (formula handles steps now).
-	for _, banner := range []string{
-		"STEP 1/8",
-		"STEP 2/8",
-		"STEP 3/8",
-	} {
-		if strings.Contains(content, banner) {
-			t.Errorf("forge CLAUDE.md should NOT contain hardcoded step banner %q", banner)
-		}
-	}
-}
-
-func TestForgeClaudeMDWorkflowCommandsInQuickRef(t *testing.T) {
-	ctx := protocol.ForgeClaudeMDContext{
-		World:        "myworld",
-		TargetBranch: "main",
-		QualityGates: []string{"make test"},
-	}
-
-	content := protocol.GenerateForgeClaudeMD(ctx)
-
-	// Quick-reference table should include workflow commands.
-	for _, cmd := range []string{
-		"Read current step",
-		"Advance to next step",
-		"Check progress",
-	} {
-		if !strings.Contains(content, cmd) {
-			t.Errorf("forge CLAUDE.md quick-reference should contain %q", cmd)
-		}
-	}
-}
-
 func TestForgeClaudeMDErrorHandlingProtocol(t *testing.T) {
 	ctx := protocol.ForgeClaudeMDContext{
 		World:        "myworld",
@@ -445,7 +375,7 @@ func TestForgeClaudeMDErrorHandlingProtocol(t *testing.T) {
 	if !strings.Contains(content, "Errors are reported, never investigated") {
 		t.Error("forge CLAUDE.md should state errors are never investigated")
 	}
-	// Table should contain world-specific commands.
+	// Error handling table should contain world-specific commands (behavioral).
 	if !strings.Contains(content, "sol forge mark-merged --world=myworld") {
 		t.Error("error handling table should contain world-specific mark-merged command")
 	}
@@ -467,44 +397,12 @@ func TestForgeClaudeMDWaitBehavior(t *testing.T) {
 		t.Error("forge CLAUDE.md should contain Wait Behavior section")
 	}
 	for _, sub := range []string{
-		"sol forge await --world=myworld --timeout=120",
 		"Do NOT investigate why the queue is empty",
 		"Do NOT explore the codebase while waiting",
 		"Your ONLY activity during idle time is waiting",
 	} {
 		if !strings.Contains(content, sub) {
 			t.Errorf("forge CLAUDE.md Wait Behavior should contain %q", sub)
-		}
-	}
-}
-
-func TestForgeClaudeMDCommandQuickReference(t *testing.T) {
-	ctx := protocol.ForgeClaudeMDContext{
-		World:        "myworld",
-		TargetBranch: "main",
-		QualityGates: []string{"make test"},
-	}
-
-	content := protocol.GenerateForgeClaudeMD(ctx)
-
-	if !strings.Contains(content, "## Command Quick-Reference") {
-		t.Error("forge CLAUDE.md should contain Command Quick-Reference section")
-	}
-	// Table should have correct commands with world substitution.
-	for _, cmd := range []string{
-		"sol forge check-unblocked --world=myworld",
-		"sol forge ready --world=myworld --json",
-		"sol forge claim --world=myworld --json",
-		"sol forge sync --world=myworld",
-		"git merge --squash",
-		"git push origin HEAD:main",
-		"sol forge mark-merged --world=myworld",
-		"sol forge mark-failed --world=myworld",
-		"sol forge create-resolution --world=myworld",
-		"sol forge release --world=myworld",
-	} {
-		if !strings.Contains(content, cmd) {
-			t.Errorf("forge CLAUDE.md quick-reference should contain %q", cmd)
 		}
 	}
 }
@@ -518,20 +416,15 @@ func TestForgeClaudeMDWorldSubstitution(t *testing.T) {
 
 	content := protocol.GenerateForgeClaudeMD(ctx)
 
-	// World name should appear throughout.
 	if !strings.Contains(content, "world: testworld") {
 		t.Error("forge CLAUDE.md should contain world name in title")
 	}
 	if !strings.Contains(content, "sol forge mark-merged --world=testworld") {
 		t.Error("forge CLAUDE.md should use correct world in mark-merged command")
 	}
-
-	// Target branch should appear.
 	if !strings.Contains(content, "develop") {
 		t.Error("forge CLAUDE.md should contain target branch")
 	}
-
-	// Quality gates should appear.
 	if !strings.Contains(content, "`make vet`") {
 		t.Error("forge CLAUDE.md should contain quality gate 'make vet'")
 	}
@@ -558,7 +451,7 @@ func TestClaudeMDWarningSectionPresent(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
-		WritID:  "sol-12345678",
+		WritID:      "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 	}
@@ -583,7 +476,7 @@ func TestClaudeMDApproachSectionPresent(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
-		WritID:  "sol-12345678",
+		WritID:      "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 	}
@@ -608,7 +501,7 @@ func TestClaudeMDCompletionChecklistPresent(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
-		WritID:  "sol-12345678",
+		WritID:      "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 	}
@@ -630,7 +523,7 @@ func TestClaudeMDQualityGatesDefault(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
-		WritID:  "sol-12345678",
+		WritID:      "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
 	}
@@ -646,7 +539,7 @@ func TestClaudeMDQualityGatesConfigured(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:    "TestBot",
 		World:        "ember",
-		WritID:   "sol-12345678",
+		WritID:       "sol-12345678",
 		Title:        "Test task",
 		Description:  "Test description",
 		QualityGates: []string{"make test", "make vet"},
@@ -669,7 +562,7 @@ func TestClaudeMDSectionOrder(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:    "TestBot",
 		World:        "ember",
-		WritID:   "sol-12345678",
+		WritID:       "sol-12345678",
 		Title:        "Test task",
 		Description:  "Test description",
 		QualityGates: []string{"make test"},
@@ -677,11 +570,10 @@ func TestClaudeMDSectionOrder(t *testing.T) {
 
 	content := protocol.GenerateClaudeMD(ctx)
 
-	// Verify section ordering: Warning < Assignment < Approach < Commands < Checklist < Protocol
+	// Verify section ordering: Warning < Assignment < Approach < Checklist < Protocol
 	warningIdx := strings.Index(content, "## Warning")
 	assignmentIdx := strings.Index(content, "## Your Assignment")
 	approachIdx := strings.Index(content, "## Approach")
-	commandsIdx := strings.Index(content, "## Commands")
 	checklistIdx := strings.Index(content, "## Completion Checklist")
 	protocolIdx := strings.Index(content, "## Protocol")
 
@@ -691,11 +583,8 @@ func TestClaudeMDSectionOrder(t *testing.T) {
 	if assignmentIdx >= approachIdx {
 		t.Error("Assignment section should come before Approach")
 	}
-	if approachIdx >= commandsIdx {
-		t.Error("Approach section should come before Commands")
-	}
-	if commandsIdx >= checklistIdx {
-		t.Error("Commands section should come before Completion Checklist")
+	if approachIdx >= checklistIdx {
+		t.Error("Approach section should come before Completion Checklist")
 	}
 	if checklistIdx >= protocolIdx {
 		t.Error("Completion Checklist section should come before Protocol")
@@ -716,24 +605,20 @@ func TestClaudeMDCodeKindWithOutputDir(t *testing.T) {
 
 	content := protocol.GenerateClaudeMD(ctx)
 
-	// Code writs should mention output dir for auxiliary output.
 	if !strings.Contains(content, "auxiliary output") {
 		t.Error("code writ should mention output dir for auxiliary output")
 	}
 	if !strings.Contains(content, "/home/sol/ember/output/sol-12345678") {
 		t.Error("code writ should contain the output directory path")
 	}
-	// Code writs should have quality gates.
 	if !strings.Contains(content, "make build && make test") {
 		t.Error("code writ should contain quality gates")
 	}
-	// Code writs should have git-based session resilience advice.
 	if !strings.Contains(content, "Commit early and often") {
 		t.Error("code writ should have git-based session resilience advice")
 	}
-	// Code writs should describe resolve as pushing branch.
 	if !strings.Contains(content, "pushes your branch") {
-		t.Error("code writ resolve description should mention pushing branch")
+		// Note: resolve description removed from lean persona — no longer check.
 	}
 }
 
@@ -750,7 +635,6 @@ func TestClaudeMDDefaultKindIsCode(t *testing.T) {
 
 	content := protocol.GenerateClaudeMD(ctx)
 
-	// Empty kind should produce code-style instructions.
 	if !strings.Contains(content, "auxiliary output") {
 		t.Error("empty kind should default to code behavior with auxiliary output mention")
 	}
@@ -773,33 +657,23 @@ func TestClaudeMDAnalysisKind(t *testing.T) {
 
 	content := protocol.GenerateClaudeMD(ctx)
 
-	// Non-code writs should describe output dir as primary output surface.
 	if !strings.Contains(content, "primary output surface") {
 		t.Error("analysis writ should describe output dir as primary output surface")
 	}
 	if !strings.Contains(content, "No branch or MR is created") {
 		t.Error("analysis writ should state no branch or MR is created")
 	}
-	// Non-code writs should skip quality gates.
 	if strings.Contains(content, "make build && make test") {
 		t.Error("analysis writ should not contain quality gates")
 	}
 	if !strings.Contains(content, "Review your output") {
 		t.Error("analysis writ completion checklist should mention reviewing output")
 	}
-	// Non-code writs should have output-dir-based session resilience.
 	if strings.Contains(content, "Commit early and often") {
 		t.Error("analysis writ should not have git-based session resilience advice")
 	}
 	if !strings.Contains(content, "Write findings to your output directory early") {
 		t.Error("analysis writ should have output-dir-based session resilience advice")
-	}
-	// Non-code resolve description should not mention pushing branch.
-	if strings.Contains(content, "pushes your branch") {
-		t.Error("analysis writ resolve should not mention pushing branch")
-	}
-	if !strings.Contains(content, "closes the writ") {
-		t.Error("analysis writ resolve should mention closing the writ")
 	}
 }
 
@@ -830,14 +704,12 @@ func TestClaudeMDDirectDepsPopulated(t *testing.T) {
 
 	content := protocol.GenerateClaudeMD(ctx)
 
-	// Should have the direct dependencies section.
 	if !strings.Contains(content, "## Direct Dependencies") {
 		t.Error("should contain Direct Dependencies section when deps are populated")
 	}
 	if !strings.Contains(content, "Read them for context before starting work") {
 		t.Error("should instruct agent to read dependency output")
 	}
-	// Should list each dependency.
 	if !strings.Contains(content, "Gather metrics") {
 		t.Error("should list first dependency title")
 	}
@@ -849,19 +721,6 @@ func TestClaudeMDDirectDepsPopulated(t *testing.T) {
 	}
 	if !strings.Contains(content, "Build adapter") {
 		t.Error("should list second dependency title")
-	}
-	if !strings.Contains(content, "sol-11223344") {
-		t.Error("should list second dependency writ ID")
-	}
-	if !strings.Contains(content, "/home/sol/ember/output/sol-11223344") {
-		t.Error("should list second dependency output dir")
-	}
-	// Each dep should show its kind.
-	if !strings.Contains(content, "kind: analysis") {
-		t.Error("should show kind for analysis dependency")
-	}
-	if !strings.Contains(content, "kind: code") {
-		t.Error("should show kind for code dependency")
 	}
 }
 
@@ -878,5 +737,39 @@ func TestClaudeMDDirectDepsEmpty(t *testing.T) {
 
 	if strings.Contains(content, "## Direct Dependencies") {
 		t.Error("should not contain Direct Dependencies section when deps are empty")
+	}
+}
+
+// TestClaudeMDNoCommandSyntax verifies the lean persona does not contain
+// detailed command syntax that belongs in skills.
+func TestClaudeMDNoCommandSyntax(t *testing.T) {
+	ctx := protocol.ClaudeMDContext{
+		AgentName:   "TestBot",
+		World:       "ember",
+		WritID:      "sol-12345678",
+		Title:       "Test task",
+		Description: "Test description",
+	}
+
+	content := protocol.GenerateClaudeMD(ctx)
+
+	// Should not contain command sections moved to skills.
+	if strings.Contains(content, "## Commands\n") {
+		t.Error("lean CLAUDE.md should not have a Commands section")
+	}
+	if strings.Contains(content, "## Session Management") {
+		t.Error("lean CLAUDE.md should not have Session Management section")
+	}
+	if strings.Contains(content, "## Memories") {
+		t.Error("lean CLAUDE.md should not have Memories section")
+	}
+	if strings.Contains(content, "sol handoff") {
+		t.Error("lean CLAUDE.md should not contain sol handoff (moved to skills)")
+	}
+	if strings.Contains(content, "sol remember") {
+		t.Error("lean CLAUDE.md should not contain sol remember (moved to skills)")
+	}
+	if strings.Contains(content, ".claude/sol-cli-reference.md") {
+		t.Error("lean CLAUDE.md should not reference sol-cli-reference.md")
 	}
 }

@@ -358,7 +358,7 @@ func TestInstallExcludes(t *testing.T) {
 		for _, pat := range []string{
 			".claude/settings.local.json",
 			".claude/system-prompt.md",
-			".claude/sol-cli-reference.md",
+			".claude/skills/",
 			"CLAUDE.local.md",
 			".brief/",
 			".workflow/",

@@ -88,7 +88,7 @@ func CloneRepo(world, source string) error {
 const excludeBlock = `# BEGIN sol-managed paths
 .claude/settings.local.json
 .claude/system-prompt.md
-.claude/sol-cli-reference.md
+.claude/skills/
 CLAUDE.local.md
 .brief/
 .workflow/

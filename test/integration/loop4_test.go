@@ -324,18 +324,18 @@ instructions = "steps/01.md"
 		t.Errorf("current step: got %q, want only-step", state.CurrentStep)
 	}
 
-	// Verify CLAUDE.local.md includes workflow commands.
+	// Verify CLAUDE.local.md includes workflow protocol (lean persona).
 	claudeMD := filepath.Join(result.WorktreeDir, "CLAUDE.local.md")
 	data, err := os.ReadFile(claudeMD)
 	if err != nil {
 		t.Fatalf("read CLAUDE.local.md: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "workflow current") {
-		t.Error("CLAUDE.md should contain 'workflow current'")
+	if !strings.Contains(content, "current workflow step") {
+		t.Error("CLAUDE.md should contain workflow step reference")
 	}
-	if !strings.Contains(content, "workflow advance") {
-		t.Error("CLAUDE.md should contain 'workflow advance'")
+	if !strings.Contains(content, "Advance to the next step") {
+		t.Error("CLAUDE.md should contain workflow advance instruction")
 	}
 
 	// Verify workflow event was emitted.
