@@ -60,7 +60,7 @@ type SphereStore interface {
 
 // StopStore abstracts sphere store operations for Stop.
 type StopStore interface {
-	UpdateAgentState(id, state, tetherItem string) error
+	UpdateAgentState(id, state, activeWrit string) error
 }
 
 // ListStore abstracts sphere store operations for List.

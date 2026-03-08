@@ -59,7 +59,7 @@ type ExportAgent struct {
 	World      string `json:"world"`
 	Role       string `json:"role"`
 	State      string `json:"state"`
-	TetherItem string `json:"tether_item,omitempty"`
+	ActiveWrit string `json:"active_writ,omitempty"`
 	CreatedAt  string `json:"created_at"`
 	UpdatedAt  string `json:"updated_at"`
 }

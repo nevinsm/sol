@@ -406,8 +406,8 @@ func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
 		}
 
 		work := dimStyle.Render("—")
-		if a.TetherItem != "" {
-			work = fmt.Sprintf("%s: %s", a.TetherItem, a.WorkTitle)
+		if a.ActiveWrit != "" {
+			work = fmt.Sprintf("%s: %s", a.ActiveWrit, a.WorkTitle)
 		}
 
 		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", a.Name, state, sess, work)
@@ -444,7 +444,7 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 		}
 
 		work := dimStyle.Render("—")
-		if e.TetherItem != "" {
+		if e.ActiveWrit != "" {
 			work = e.WorkTitle
 		}
 

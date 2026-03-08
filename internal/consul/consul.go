@@ -36,7 +36,7 @@ func DefaultConfig() Config {
 type SphereStore interface {
 	// Agents
 	ListAgents(world string, state string) ([]store.Agent, error)
-	UpdateAgentState(id, state, tetherItem string) error
+	UpdateAgentState(id, state, activeWrit string) error
 	GetAgent(id string) (*store.Agent, error)
 	FindIdleAgent(world string) (*store.Agent, error)
 	CreateAgent(name, world, role string) (string, error)
@@ -274,7 +274,7 @@ var errShutdown = fmt.Errorf("shutdown requested")
 // 1. Log the recovery
 // 2. Clear the tether file
 // 3. Update writ status -> "open", clear assignee
-// 4. Update agent state -> "idle", clear tether_item
+// 4. Update agent state -> "idle", clear active_writ
 // 5. Emit event
 //
 // Returns the number of tethers recovered.
@@ -294,7 +294,7 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 		}
 
 		// Skip agents without tethered work.
-		if agent.TetherItem == "" {
+		if agent.ActiveWrit == "" {
 			continue
 		}
 
@@ -322,7 +322,7 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 
 // recoverOneTether recovers a single stale tether.
 func (d *Consul) recoverOneTether(agent store.Agent) error {
-	d.logInfo("consul_recover_tether", map[string]any{"agent_id": agent.ID, "writ_id": agent.TetherItem})
+	d.logInfo("consul_recover_tether", map[string]any{"agent_id": agent.ID, "writ_id": agent.ActiveWrit})
 
 	// 1. Open the world store to update the writ.
 	worldStore, err := d.worldOpener(agent.World)
@@ -332,14 +332,14 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 	defer worldStore.Close()
 
 	// 2. Update writ: status -> "open", clear assignee.
-	if err := worldStore.UpdateWrit(agent.TetherItem, store.WritUpdates{
+	if err := worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
 		Status:   "open",
 		Assignee: "-", // "-" clears assignee
 	}); err != nil {
-		return fmt.Errorf("failed to update writ %q: %w", agent.TetherItem, err)
+		return fmt.Errorf("failed to update writ %q: %w", agent.ActiveWrit, err)
 	}
 
-	// 3. Update agent state -> "idle", clear tether_item.
+	// 3. Update agent state -> "idle", clear active_writ.
 	if err := d.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
 		return fmt.Errorf("failed to update agent %q state: %w", agent.ID, err)
 	}
@@ -354,7 +354,7 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 		d.logger.Emit(events.EventConsulStaleTether, "sphere/consul", "sphere/consul", "both",
 			map[string]any{
 				"agent_id":     agent.ID,
-				"writ_id": agent.TetherItem,
+				"writ_id": agent.ActiveWrit,
 				"world":        agent.World,
 			})
 	}

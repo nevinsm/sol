@@ -213,7 +213,7 @@ func TestWorldViewRendersAgents(t *testing.T) {
 		World:   "testworld",
 		Prefect: status.PrefectInfo{Running: true, PID: 42},
 		Agents: []status.AgentStatus{
-			{Name: "Toast", State: "working", SessionAlive: true, TetherItem: "sol-aaa", WorkTitle: "fix bug"},
+			{Name: "Toast", State: "working", SessionAlive: true, ActiveWrit: "sol-aaa", WorkTitle: "fix bug"},
 			{Name: "Crisp", State: "idle"},
 		},
 		Summary: status.Summary{Total: 2, Working: 1, Idle: 1},
@@ -249,7 +249,7 @@ func TestWorldViewRendersEnvoys(t *testing.T) {
 		World:   "testworld",
 		Prefect: status.PrefectInfo{Running: true, PID: 42},
 		Envoys: []status.EnvoyStatus{
-			{Name: "Scout", State: "working", SessionAlive: true, TetherItem: "sol-bbb", WorkTitle: "Design review", BriefAge: "45m"},
+			{Name: "Scout", State: "working", SessionAlive: true, ActiveWrit: "sol-bbb", WorkTitle: "Design review", BriefAge: "45m"},
 		},
 	}
 	wm.updateData(data)

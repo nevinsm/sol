@@ -838,7 +838,7 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	if err := tether.Write("myworld", "Alpha", itemID, "agent"); err != nil {
 		t.Fatalf("write tether: %v", err)
 	}
-	tetherPath := tether.TetherPath("myworld", "Alpha", "agent")
+	tetherDir := tether.TetherDir("myworld", "Alpha", "agent")
 
 	// Create worktree with git repo.
 	worktree := filepath.Join(gtHome, "myworld", "outposts", "Alpha", "worktree")
@@ -875,8 +875,9 @@ func TestResolveAgentKillsSession(t *testing.T) {
 		t.Errorf("expected writ status 'done', got %q", item.Status)
 	}
 	// Verify tether is cleared.
-	if _, err := os.Stat(tetherPath); !os.IsNotExist(err) {
-		t.Error("tether file should be cleared after resolve")
+	entries, _ := os.ReadDir(tetherDir)
+	if len(entries) > 0 {
+		t.Error("tether directory should be empty after resolve")
 	}
 }
 

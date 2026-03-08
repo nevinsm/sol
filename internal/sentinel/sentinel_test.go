@@ -16,6 +16,7 @@ import (
 	"github.com/nevinsm/sol/internal/quota"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
 )
 
 // --- Mock implementations ---
@@ -862,10 +863,10 @@ func TestReapIdleAgent(t *testing.T) {
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
 		now.Format(time.RFC3339), "ember/Toast")
 
-	// Create outpost directory with a tether to verify cleanup.
-	outpostDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "outposts", "Toast")
-	os.MkdirAll(outpostDir, 0o755)
-	os.WriteFile(filepath.Join(outpostDir, ".tether"), []byte("sol-old-item"), 0o644)
+	// Create tether to verify cleanup.
+	if err := tether.Write("ember", "Toast", "sol-old-item", "agent"); err != nil {
+		t.Fatalf("tether.Write() error: %v", err)
+	}
 
 	w := New(cfg, sphereStore, nil, mock, nil)
 
@@ -879,9 +880,9 @@ func TestReapIdleAgent(t *testing.T) {
 		t.Error("expected agent to be deleted after reap, but it still exists")
 	}
 
-	// Tether file should be cleaned up.
-	if _, err := os.Stat(filepath.Join(outpostDir, ".tether")); !os.IsNotExist(err) {
-		t.Error("expected tether file to be removed after reap")
+	// Tether should be cleaned up.
+	if tether.IsTethered("ember", "Toast", "agent") {
+		t.Error("expected tether to be removed after reap")
 	}
 }
 
@@ -926,8 +927,9 @@ func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
 	solHome := os.Getenv("SOL_HOME")
 	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
-	tetherPath := filepath.Join(solHome, "ember", "outposts", "Toast", ".tether")
-	os.WriteFile(tetherPath, []byte("sol-abc12345"), 0o644)
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+		t.Fatalf("tether.Write() error: %v", err)
+	}
 
 	// Create session metadata.
 	sessDir := filepath.Join(solHome, ".runtime", "sessions")
@@ -950,8 +952,8 @@ func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
 	}
 
 	// Tether should be cleared.
-	if _, err := os.Stat(tetherPath); !os.IsNotExist(err) {
-		t.Error("expected tether file to be removed")
+	if tether.IsTethered("ember", "Toast", "agent") {
+		t.Error("expected tether to be removed")
 	}
 
 	// Session metadata should be removed.
@@ -970,9 +972,10 @@ func TestCleanupOrphanedWorktree(t *testing.T) {
 	solHome := os.Getenv("SOL_HOME")
 	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Ghost", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
-	// Also create a tether file.
-	os.WriteFile(filepath.Join(solHome, "ember", "outposts", "Ghost", ".tether"),
-		[]byte("sol-orphaned"), 0o644)
+	// Also create a tether.
+	if err := tether.Write("ember", "Ghost", "sol-orphaned", "agent"); err != nil {
+		t.Fatalf("tether.Write() error: %v", err)
+	}
 
 	w := New(cfg, sphereStore, nil, mock, nil)
 
@@ -981,8 +984,7 @@ func TestCleanupOrphanedWorktree(t *testing.T) {
 	}
 
 	// Tether should be cleaned up.
-	tetherPath := filepath.Join(solHome, "ember", "outposts", "Ghost", ".tether")
-	if _, err := os.Stat(tetherPath); !os.IsNotExist(err) {
+	if tether.IsTethered("ember", "Ghost", "agent") {
 		t.Error("expected orphaned tether to be removed")
 	}
 }
@@ -1021,15 +1023,13 @@ func TestCleanupOrphanedTether(t *testing.T) {
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	// Create an idle agent WITH a tether file (stale tether from failed cleanup).
+	// Create an idle agent WITH a tether (stale tether from failed cleanup).
 	sphereStore.CreateAgent("Toast", "ember", "agent")
 	// Agent is idle by default.
 
-	solHome := os.Getenv("SOL_HOME")
-	outpostDir := filepath.Join(solHome, "ember", "outposts", "Toast")
-	os.MkdirAll(outpostDir, 0o755)
-	tetherPath := filepath.Join(outpostDir, ".tether")
-	os.WriteFile(tetherPath, []byte("sol-stale-item"), 0o644)
+	if err := tether.Write("ember", "Toast", "sol-stale-item", "agent"); err != nil {
+		t.Fatalf("tether.Write() error: %v", err)
+	}
 
 	w := New(cfg, sphereStore, nil, mock, nil)
 
@@ -1038,7 +1038,7 @@ func TestCleanupOrphanedTether(t *testing.T) {
 	}
 
 	// Tether should be cleaned up (agent exists but is not working).
-	if _, err := os.Stat(tetherPath); !os.IsNotExist(err) {
+	if tether.IsTethered("ember", "Toast", "agent") {
 		t.Error("expected orphaned tether to be removed for idle agent")
 	}
 }
@@ -1054,11 +1054,9 @@ func TestCleanupOrphanedTetherSkipsWorking(t *testing.T) {
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "working output"
 
-	solHome := os.Getenv("SOL_HOME")
-	outpostDir := filepath.Join(solHome, "ember", "outposts", "Toast")
-	os.MkdirAll(outpostDir, 0o755)
-	tetherPath := filepath.Join(outpostDir, ".tether")
-	os.WriteFile(tetherPath, []byte("sol-active"), 0o644)
+	if err := tether.Write("ember", "Toast", "sol-active", "agent"); err != nil {
+		t.Fatalf("tether.Write() error: %v", err)
+	}
 
 	w := New(cfg, sphereStore, nil, mock, nil)
 
@@ -1067,7 +1065,7 @@ func TestCleanupOrphanedTetherSkipsWorking(t *testing.T) {
 	}
 
 	// Tether should NOT be cleaned up (agent is working).
-	if _, err := os.Stat(tetherPath); os.IsNotExist(err) {
+	if !tether.IsTethered("ember", "Toast", "agent") {
 		t.Error("tether for working agent should not be removed")
 	}
 }

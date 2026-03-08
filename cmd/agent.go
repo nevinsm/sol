@@ -118,11 +118,11 @@ var agentListCmd = &cobra.Command{
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 		fmt.Fprintf(tw, "ID\tNAME\tWORLD\tROLE\tSTATE\tTETHER ITEM\n")
 		for _, a := range agents {
-			tetherItem := a.TetherItem
-			if tetherItem == "" {
-				tetherItem = "-"
+			activeWrit := a.ActiveWrit
+			if activeWrit == "" {
+				activeWrit = "-"
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", a.ID, a.Name, a.World, a.Role, a.State, tetherItem)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", a.ID, a.Name, a.World, a.Role, a.State, activeWrit)
 		}
 		tw.Flush()
 		return nil
@@ -167,27 +167,27 @@ var agentResetCmd = &cobra.Command{
 		}
 
 		// Nothing to reset if already idle with no tether.
-		if agent.State == "idle" && agent.TetherItem == "" && !tether.IsTethered(world, name, agent.Role) {
+		if agent.State == "idle" && agent.ActiveWrit == "" && !tether.IsTethered(world, name, agent.Role) {
 			fmt.Printf("Agent %s is already idle with no tether — nothing to reset.\n", agentID)
 			return nil
 		}
 
 		// Untether the writ if one is assigned.
-		tetherItemID := agent.TetherItem
-		if tetherItemID != "" {
+		activeWritID := agent.ActiveWrit
+		if activeWritID != "" {
 			worldStore, err := store.OpenWorld(world)
 			if err != nil {
 				return fmt.Errorf("failed to open world store: %w", err)
 			}
 			defer worldStore.Close()
 
-			if err := worldStore.UpdateWrit(tetherItemID, store.WritUpdates{
+			if err := worldStore.UpdateWrit(activeWritID, store.WritUpdates{
 				Status:   "open",
 				Assignee: "-",
 			}); err != nil {
-				fmt.Fprintf(os.Stderr, "WARNING: failed to untether writ %s: %v\n", tetherItemID, err)
+				fmt.Fprintf(os.Stderr, "WARNING: failed to untether writ %s: %v\n", activeWritID, err)
 			} else {
-				fmt.Printf("Untethered writ %s (status → open, assignee cleared)\n", tetherItemID)
+				fmt.Printf("Untethered writ %s (status → open, assignee cleared)\n", activeWritID)
 			}
 		}
 
@@ -204,7 +204,7 @@ var agentResetCmd = &cobra.Command{
 		if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 			return fmt.Errorf("failed to reset agent state: %w", err)
 		}
-		fmt.Printf("Reset agent %s (state → idle, tether_item cleared)\n", agentID)
+		fmt.Printf("Reset agent %s (state → idle, active_writ cleared)\n", agentID)
 
 		return nil
 	},

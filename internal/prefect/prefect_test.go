@@ -941,8 +941,8 @@ source_repo = "/tmp/fakerepo"
 	if agent.State != "working" {
 		t.Errorf("agent state = %q, want %q", agent.State, "working")
 	}
-	if agent.TetherItem != "sol-abc12345" {
-		t.Errorf("agent tether_item = %q, want %q (tether item not preserved)", agent.TetherItem, "sol-abc12345")
+	if agent.ActiveWrit != "sol-abc12345" {
+		t.Errorf("agent active_writ = %q, want %q (tether item not preserved)", agent.ActiveWrit, "sol-abc12345")
 	}
 }
 

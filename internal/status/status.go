@@ -47,7 +47,7 @@ type EnvoyStatus struct {
 	Name         string `json:"name"`
 	State        string `json:"state"`
 	SessionAlive bool   `json:"session_alive"`
-	TetherItem   string `json:"tether_item,omitempty"`
+	ActiveWrit   string `json:"active_writ,omitempty"`
 	WorkTitle    string `json:"work_title,omitempty"`
 	BriefAge     string `json:"brief_age,omitempty"`
 }
@@ -129,7 +129,7 @@ type AgentStatus struct {
 	Name         string `json:"name"`
 	State        string `json:"state"`
 	SessionAlive bool   `json:"session_alive"`
-	TetherItem   string `json:"tether_item,omitempty"`
+	ActiveWrit   string `json:"active_writ,omitempty"`
 	WorkTitle    string `json:"work_title,omitempty"`
 }
 
@@ -342,9 +342,9 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 				SessionAlive: sessAlive,
 				BriefAge:     briefAge(envoy.BriefPath(world, agent.Name)),
 			}
-			if agent.TetherItem != "" {
-				es.TetherItem = agent.TetherItem
-				item, err := worldStore.GetWrit(agent.TetherItem)
+			if agent.ActiveWrit != "" {
+				es.ActiveWrit = agent.ActiveWrit
+				item, err := worldStore.GetWrit(agent.ActiveWrit)
 				if err != nil {
 					es.WorkTitle = "(unknown)"
 				} else {
@@ -363,9 +363,9 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 				State:        agent.State,
 				SessionAlive: sessAlive,
 			}
-			if agent.TetherItem != "" {
-				as.TetherItem = agent.TetherItem
-				item, err := worldStore.GetWrit(agent.TetherItem)
+			if agent.ActiveWrit != "" {
+				as.ActiveWrit = agent.ActiveWrit
+				item, err := worldStore.GetWrit(agent.ActiveWrit)
 				if err != nil {
 					as.WorkTitle = "(unknown)"
 				} else {

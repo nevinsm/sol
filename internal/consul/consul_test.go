@@ -147,8 +147,8 @@ func TestRecoverStaleTethers(t *testing.T) {
 	if agentA.State != "idle" {
 		t.Errorf("AgentA state = %q, want idle", agentA.State)
 	}
-	if agentA.TetherItem != "" {
-		t.Errorf("AgentA tether_item = %q, want empty", agentA.TetherItem)
+	if agentA.ActiveWrit != "" {
+		t.Errorf("AgentA active_writ = %q, want empty", agentA.ActiveWrit)
 	}
 
 	// Verify writ A is back to open.
@@ -245,8 +245,8 @@ func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
 	if envoy.State != "idle" {
 		t.Errorf("envoy state = %q, want idle", envoy.State)
 	}
-	if envoy.TetherItem != "" {
-		t.Errorf("envoy tether_item = %q, want empty", envoy.TetherItem)
+	if envoy.ActiveWrit != "" {
+		t.Errorf("envoy active_writ = %q, want empty", envoy.ActiveWrit)
 	}
 
 	// Verify governor was recovered.
@@ -254,8 +254,8 @@ func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
 	if gov.State != "idle" {
 		t.Errorf("governor state = %q, want idle", gov.State)
 	}
-	if gov.TetherItem != "" {
-		t.Errorf("governor tether_item = %q, want empty", gov.TetherItem)
+	if gov.ActiveWrit != "" {
+		t.Errorf("governor active_writ = %q, want empty", gov.ActiveWrit)
 	}
 
 	// Verify writs are back to open.

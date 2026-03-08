@@ -54,7 +54,7 @@ type WorldStore interface {
 type SphereStore interface {
 	GetAgent(id string) (*store.Agent, error)
 	FindIdleAgent(world string) (*store.Agent, error)
-	UpdateAgentState(id, state, tetherItem string) error
+	UpdateAgentState(id, state, activeWrit string) error
 	ListAgents(world string, state string) ([]store.Agent, error)
 	CreateAgent(name, world, role string) (string, error)
 	DeleteAgent(id string) error
@@ -189,9 +189,9 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 	// This handles crashes between writ update and agent state update.
 	reCast := false
 	if item.Status == "tethered" && item.Assignee == agentID {
-		if agent.State == "working" && agent.TetherItem == opts.WritID {
+		if agent.State == "working" && agent.ActiveWrit == opts.WritID {
 			reCast = true // clean re-cast
-		} else if agent.State == "idle" && (agent.TetherItem == "" || agent.TetherItem == opts.WritID) {
+		} else if agent.State == "idle" && (agent.ActiveWrit == "" || agent.ActiveWrit == opts.WritID) {
 			reCast = true // partial failure recovery — agent wasn't updated
 		}
 	}
@@ -271,7 +271,7 @@ func Cast(opts CastOpts, worldStore WorldStore, sphereStore SphereStore, mgr Ses
 		return nil, fmt.Errorf("failed to update writ: %w", err)
 	}
 
-	// 6. Update agent: state → working, tether_item → writ ID.
+	// 6. Update agent: state → working, active_writ → writ ID.
 	if err := sphereStore.UpdateAgentState(agent.ID, "working", opts.WritID); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
@@ -417,7 +417,7 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 		return nil, fmt.Errorf("failed to update writ: %w", err)
 	}
 
-	// 8. Update agent: state → working, tether_item → writ ID.
+	// 8. Update agent: state → working, active_writ → writ ID.
 	if err := sphereStore.UpdateAgentState(agentID, "working", opts.WritID); err != nil {
 		// Rollback tether + writ.
 		tether.Clear(opts.World, opts.AgentName, agent.Role)
@@ -503,7 +503,7 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 		return nil, fmt.Errorf("failed to update writ: %w", err)
 	}
 
-	// 6. Update agent: state → idle, tether_item → clear.
+	// 6. Update agent: state → idle, active_writ → clear.
 	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}

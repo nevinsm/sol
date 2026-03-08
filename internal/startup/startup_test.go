@@ -465,7 +465,7 @@ func TestBuildResumePrimeEmpty(t *testing.T) {
 	}
 }
 
-func TestLaunchPreservesTetherItem(t *testing.T) {
+func TestLaunchPreservesActiveWrit(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 	world := "haven"
 
@@ -505,8 +505,8 @@ func TestLaunchPreservesTetherItem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get agent: %v", err)
 	}
-	if agent.TetherItem != "sol-abc12345" {
-		t.Errorf("tether_item = %q, want %q (not preserved)", agent.TetherItem, "sol-abc12345")
+	if agent.ActiveWrit != "sol-abc12345" {
+		t.Errorf("active_writ = %q, want %q (not preserved)", agent.ActiveWrit, "sol-abc12345")
 	}
 	if agent.State != "working" {
 		t.Errorf("state = %q, want %q", agent.State, "working")

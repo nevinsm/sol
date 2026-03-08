@@ -39,7 +39,7 @@ type PostmortemAgent struct {
 	World     string    `json:"world"`
 	Role      string    `json:"role"`
 	State     string    `json:"state"`
-	TetherItem string   `json:"tether_item,omitempty"`
+	ActiveWrit string   `json:"active_writ,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -99,7 +99,7 @@ var agentPostmortemCmd = &cobra.Command{
 				World:      agent.World,
 				Role:       agent.Role,
 				State:      agent.State,
-				TetherItem: agent.TetherItem,
+				ActiveWrit: agent.ActiveWrit,
 				CreatedAt:  agent.CreatedAt,
 				UpdatedAt:  agent.UpdatedAt,
 			},
@@ -128,7 +128,7 @@ var agentPostmortemCmd = &cobra.Command{
 		}
 
 		// 4. Work item details.
-		writID := agent.TetherItem
+		writID := agent.ActiveWrit
 		if writID == "" {
 			writID, _ = tether.Read(world, name, agent.Role)
 		}
@@ -220,8 +220,8 @@ func renderPostmortem(r PostmortemReport) {
 	if r.Writ != nil {
 		b.WriteString(fmt.Sprintf("  %-18s %s — %s\n", "Writ:", r.Writ.ID, r.Writ.Title))
 		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Work Status:", r.Writ.Status))
-	} else if r.Agent.TetherItem != "" {
-		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Tether Item:", r.Agent.TetherItem))
+	} else if r.Agent.ActiveWrit != "" {
+		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Active Writ:", r.Agent.ActiveWrit))
 	}
 
 	b.WriteString("\n")

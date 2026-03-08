@@ -2,6 +2,8 @@ package tether
 
 import (
 	"os"
+	"path/filepath"
+	"sort"
 	"testing"
 )
 
@@ -27,6 +29,34 @@ func TestWriteAndRead(t *testing.T) {
 	}
 }
 
+func TestWriteCreatesDirectoryAndFile(t *testing.T) {
+	setupTest(t)
+
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	// Verify the directory was created.
+	dir := TetherDir("myworld", "Toast", "agent")
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("expected tether directory to exist: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("expected .tether to be a directory, got file")
+	}
+
+	// Verify the writ file exists inside the directory.
+	filePath := filepath.Join(dir, "sol-a1b2c3d4")
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("expected writ file to exist: %v", err)
+	}
+	if string(data) != "sol-a1b2c3d4" {
+		t.Errorf("expected file content %q, got %q", "sol-a1b2c3d4", string(data))
+	}
+}
+
 func TestReadNoTether(t *testing.T) {
 	setupTest(t)
 
@@ -39,22 +69,64 @@ func TestReadNoTether(t *testing.T) {
 	}
 }
 
+func TestListReturnsAllWritIDs(t *testing.T) {
+	setupTest(t)
+
+	writs := []string{"sol-a1b2c3d4", "sol-e5f6a7b8", "sol-11223344"}
+	for _, w := range writs {
+		if err := Write("myworld", "Toast", w, "agent"); err != nil {
+			t.Fatalf("Write %s failed: %v", w, err)
+		}
+	}
+
+	ids, err := List("myworld", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	sort.Strings(writs)
+	if len(ids) != len(writs) {
+		t.Fatalf("expected %d tethers, got %d", len(writs), len(ids))
+	}
+	for i, id := range ids {
+		if id != writs[i] {
+			t.Errorf("expected %q at index %d, got %q", writs[i], i, id)
+		}
+	}
+}
+
+func TestListEmpty(t *testing.T) {
+	setupTest(t)
+
+	ids, err := List("myworld", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(ids) != 0 {
+		t.Errorf("expected empty list, got %v", ids)
+	}
+}
+
 func TestClear(t *testing.T) {
 	setupTest(t)
 
 	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
+	if err := Write("myworld", "Toast", "sol-e5f6a7b8", "agent"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
 	if err := Clear("myworld", "Toast", "agent"); err != nil {
 		t.Fatalf("Clear failed: %v", err)
 	}
 
-	id, err := Read("myworld", "Toast", "agent")
+	ids, err := List("myworld", "Toast", "agent")
 	if err != nil {
-		t.Fatalf("Read after Clear failed: %v", err)
+		t.Fatalf("List after Clear failed: %v", err)
 	}
-	if id != "" {
-		t.Errorf("expected empty string after Clear, got %q", id)
+	if len(ids) != 0 {
+		t.Errorf("expected empty list after Clear, got %v", ids)
 	}
 }
 
@@ -64,6 +136,41 @@ func TestClearNoTether(t *testing.T) {
 	// Clear should be a no-op if no tether exists.
 	if err := Clear("myworld", "Toast", "agent"); err != nil {
 		t.Fatalf("Clear on non-existent tether failed: %v", err)
+	}
+}
+
+func TestClearOneRemovesOneFile(t *testing.T) {
+	setupTest(t)
+
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+	if err := Write("myworld", "Toast", "sol-e5f6a7b8", "agent"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	if err := ClearOne("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+		t.Fatalf("ClearOne failed: %v", err)
+	}
+
+	ids, err := List("myworld", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("List after ClearOne failed: %v", err)
+	}
+	if len(ids) != 1 {
+		t.Fatalf("expected 1 tether after ClearOne, got %d", len(ids))
+	}
+	if ids[0] != "sol-e5f6a7b8" {
+		t.Errorf("expected remaining tether sol-e5f6a7b8, got %q", ids[0])
+	}
+}
+
+func TestClearOneNoOp(t *testing.T) {
+	setupTest(t)
+
+	// ClearOne should be a no-op if the specific tether doesn't exist.
+	if err := ClearOne("myworld", "Toast", "sol-nonexistent", "agent"); err != nil {
+		t.Fatalf("ClearOne on non-existent tether failed: %v", err)
 	}
 }
 
@@ -91,14 +198,34 @@ func TestIsTethered(t *testing.T) {
 	}
 }
 
-func TestTetherPath(t *testing.T) {
+func TestIsTetheredTo(t *testing.T) {
 	setupTest(t)
 
-	path := TetherPath("myworld", "Toast", "agent")
+	if IsTetheredTo("myworld", "Toast", "sol-a1b2c3d4", "agent") {
+		t.Error("expected IsTetheredTo=false before Write")
+	}
+
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	if !IsTetheredTo("myworld", "Toast", "sol-a1b2c3d4", "agent") {
+		t.Error("expected IsTetheredTo=true for written writ")
+	}
+
+	if IsTetheredTo("myworld", "Toast", "sol-other", "agent") {
+		t.Error("expected IsTetheredTo=false for different writ")
+	}
+}
+
+func TestTetherDir(t *testing.T) {
+	setupTest(t)
+
+	dir := TetherDir("myworld", "Toast", "agent")
 	solHome := os.Getenv("SOL_HOME")
 	expected := solHome + "/myworld/outposts/Toast/.tether"
-	if path != expected {
-		t.Errorf("expected %q, got %q", expected, path)
+	if dir != expected {
+		t.Errorf("expected %q, got %q", expected, dir)
 	}
 }
 
@@ -112,11 +239,123 @@ func TestWriteOverwrite(t *testing.T) {
 		t.Fatalf("second Write failed: %v", err)
 	}
 
+	ids, err := List("myworld", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 tethers, got %d: %v", len(ids), ids)
+	}
+}
+
+func TestMigrateLegacyFile(t *testing.T) {
+	setupTest(t)
+
+	solHome := os.Getenv("SOL_HOME")
+	agentDir := filepath.Join(solHome, "myworld", "outposts", "Toast")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+
+	// Create a legacy .tether file (not directory).
+	legacyPath := filepath.Join(agentDir, ".tether")
+	if err := os.WriteFile(legacyPath, []byte("sol-legacy123456"), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Verify it's a file, not a directory.
+	info, err := os.Stat(legacyPath)
+	if err != nil {
+		t.Fatalf("Stat failed: %v", err)
+	}
+	if info.IsDir() {
+		t.Fatal("expected legacy .tether to be a file")
+	}
+
+	// Run migration.
+	if err := Migrate("myworld", "Toast", "agent"); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	// Verify the .tether is now a directory.
+	info, err = os.Stat(legacyPath)
+	if err != nil {
+		t.Fatalf("Stat after migration failed: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("expected .tether to be a directory after migration")
+	}
+
+	// Verify the writ ID file exists inside.
+	id, err := Read("myworld", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("Read after migration failed: %v", err)
+	}
+	if id != "sol-legacy123456" {
+		t.Errorf("expected sol-legacy123456, got %q", id)
+	}
+}
+
+func TestMigrateNoLegacyFile(t *testing.T) {
+	setupTest(t)
+
+	// Migration should be a no-op if no legacy file exists.
+	if err := Migrate("myworld", "Toast", "agent"); err != nil {
+		t.Fatalf("Migrate on non-existent tether failed: %v", err)
+	}
+}
+
+func TestMigrateAlreadyDirectory(t *testing.T) {
+	setupTest(t)
+
+	// Write using new model (creates directory).
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	// Migration should be a no-op if already a directory.
+	if err := Migrate("myworld", "Toast", "agent"); err != nil {
+		t.Fatalf("Migrate on existing directory failed: %v", err)
+	}
+
+	// Verify existing tether is preserved.
+	id, err := Read("myworld", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("Read after no-op migration failed: %v", err)
+	}
+	if id != "sol-a1b2c3d4" {
+		t.Errorf("expected sol-a1b2c3d4, got %q", id)
+	}
+}
+
+func TestReadReturnsSingleTether(t *testing.T) {
+	setupTest(t)
+
+	// Write multiple tethers.
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+	if err := Write("myworld", "Toast", "sol-e5f6a7b8", "agent"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	// Read returns the first (sorted) tether for backward compat.
 	id, err := Read("myworld", "Toast", "agent")
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
-	if id != "sol-22222222" {
-		t.Errorf("expected sol-22222222, got %q", id)
+	if id == "" {
+		t.Error("expected non-empty tether from Read")
+	}
+}
+
+func TestEnvoyTetherDir(t *testing.T) {
+	setupTest(t)
+
+	dir := TetherDir("myworld", "Polaris", "envoy")
+	solHome := os.Getenv("SOL_HOME")
+	expected := solHome + "/myworld/envoys/Polaris/.tether"
+	if dir != expected {
+		t.Errorf("expected %q, got %q", expected, dir)
 	}
 }

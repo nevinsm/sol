@@ -8,7 +8,7 @@ import (
 // Current schema versions — the latest migration target for each database type.
 const (
 	CurrentWorldSchema  = 9
-	CurrentSphereSchema = 9
+	CurrentSphereSchema = 10
 )
 
 const worldSchemaV1 = `
@@ -372,6 +372,8 @@ CREATE INDEX IF NOT EXISTS idx_caravan_deps_to ON caravan_dependencies(to_id);
 
 const sphereSchemaV9 = "" // migration handled procedurally below — renames caravan_items.work_item_id → writ_id
 
+const sphereSchemaV10 = "" // migration handled procedurally below — renames agents.tether_item → active_writ
+
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
 	QueryRow(string, ...interface{}) *sql.Row
@@ -543,6 +545,18 @@ func (s *Store) migrateSphere() error {
 		if oldCol {
 			if _, err := tx.Exec(`ALTER TABLE caravan_items RENAME COLUMN work_item_id TO writ_id`); err != nil {
 				return fmt.Errorf("failed to rename caravan_items.work_item_id: %w", err)
+			}
+		}
+	}
+	if v < 10 {
+		// Rename agents.tether_item → active_writ.
+		oldCol, err := columnExists(tx, "agents", "tether_item")
+		if err != nil {
+			return fmt.Errorf("V10 migration: failed to check column agents.tether_item: %w", err)
+		}
+		if oldCol {
+			if _, err := tx.Exec(`ALTER TABLE agents RENAME COLUMN tether_item TO active_writ`); err != nil {
+				return fmt.Errorf("failed to rename agents.tether_item: %w", err)
 			}
 		}
 	}

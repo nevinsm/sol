@@ -413,7 +413,7 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
-	// Create agent with state=working, tether_item set.
+	// Create agent with state=working, active_writ set.
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
@@ -606,7 +606,7 @@ func TestSentinelCleanupZombies(t *testing.T) {
 	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
-	// Create idle agent with no tether_item, no tether file.
+	// Create idle agent with no active_writ, no tether file.
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}

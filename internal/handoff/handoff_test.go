@@ -1267,7 +1267,7 @@ func (m *mockStartupSphere) GetAgent(id string) (*store.Agent, error) {
 func (m *mockStartupSphere) CreateAgent(name, world, role string) (string, error) {
 	return world + "/" + name, nil
 }
-func (m *mockStartupSphere) UpdateAgentState(id, state, tetherItem string) error {
+func (m *mockStartupSphere) UpdateAgentState(id, state, activeWrit string) error {
 	return nil
 }
 func (m *mockStartupSphere) Close() error {

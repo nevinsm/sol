@@ -30,7 +30,7 @@ type SessionManager interface {
 // SphereStore abstracts sphere database operations for testing.
 type SphereStore interface {
 	ListAgents(world string, state string) ([]store.Agent, error)
-	UpdateAgentState(id, state, tetherItem string) error
+	UpdateAgentState(id, state, activeWrit string) error
 }
 
 // Config holds prefect configuration.
@@ -197,7 +197,7 @@ func (s *Prefect) heartbeat() {
 			if s.degraded {
 				s.logger.Warn("session dead but degraded, setting stalled",
 					"agent", agent.Name, "world", agent.World)
-				if err := s.sphereStore.UpdateAgentState(agent.ID, "stalled", agent.TetherItem); err != nil {
+				if err := s.sphereStore.UpdateAgentState(agent.ID, "stalled", agent.ActiveWrit); err != nil {
 					s.logger.Error("failed to set agent stalled", "agent", agent.Name, "error", err)
 				}
 				continue
@@ -260,7 +260,7 @@ func (s *Prefect) respawn(agent store.Agent) {
 			s.logger.Info("session dead, deferring respawn",
 				"agent", agent.Name, "world", agent.World,
 				"restart", restartCount, "delay", delay)
-			if err := s.sphereStore.UpdateAgentState(agentID, "stalled", agent.TetherItem); err != nil {
+			if err := s.sphereStore.UpdateAgentState(agentID, "stalled", agent.ActiveWrit); err != nil {
 				s.logger.Error("failed to set agent stalled", "agent", agent.Name, "error", err)
 			}
 			return
@@ -304,13 +304,13 @@ func (s *Prefect) respawn(agent store.Agent) {
 
 	s.logger.Info("respawned session",
 		"agent", agent.Name, "world", agent.World,
-		"writ", agent.TetherItem, "restart", restartCount)
+		"writ", agent.ActiveWrit, "restart", restartCount)
 
 	if s.eventLog != nil {
 		s.eventLog.Emit(events.EventRespawn, "prefect", agent.Name, "both", map[string]any{
 			"agent":     agent.Name,
 			"world":     agent.World,
-			"writ": agent.TetherItem,
+			"writ": agent.ActiveWrit,
 			"restart":   restartCount,
 		})
 	}
@@ -545,7 +545,7 @@ func (s *Prefect) shutdown() {
 			}
 		}
 		// Set agent to stalled (hooks persist for recovery).
-		if err := s.sphereStore.UpdateAgentState(agent.ID, "stalled", agent.TetherItem); err != nil {
+		if err := s.sphereStore.UpdateAgentState(agent.ID, "stalled", agent.ActiveWrit); err != nil {
 			s.logger.Error("failed to set agent stalled during shutdown",
 				"agent", agent.Name, "error", err)
 		}

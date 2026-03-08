@@ -90,7 +90,7 @@ func TestRenderWorldBasic(t *testing.T) {
 		Prefect: PrefectInfo{Running: true, PID: 42},
 		Forge:   ForgeInfo{Running: true, SessionName: "sol-testworld-forge"},
 		Agents: []AgentStatus{
-			{Name: "Toast", State: "working", SessionAlive: true, TetherItem: "sol-aaa", WorkTitle: "fix bug"},
+			{Name: "Toast", State: "working", SessionAlive: true, ActiveWrit: "sol-aaa", WorkTitle: "fix bug"},
 			{Name: "Crisp", State: "idle"},
 		},
 		MergeQueue: MergeQueueInfo{Total: 2, Ready: 1, Claimed: 1},
@@ -201,10 +201,10 @@ func TestRenderWorldWithEnvoys(t *testing.T) {
 		World:   "haven",
 		Prefect: PrefectInfo{Running: true, PID: 42},
 		Agents: []AgentStatus{
-			{Name: "Toast", State: "working", SessionAlive: true, TetherItem: "sol-aaa", WorkTitle: "fix bug"},
+			{Name: "Toast", State: "working", SessionAlive: true, ActiveWrit: "sol-aaa", WorkTitle: "fix bug"},
 		},
 		Envoys: []EnvoyStatus{
-			{Name: "Scout", State: "working", SessionAlive: true, TetherItem: "sol-bbb", WorkTitle: "Design review", BriefAge: "45m"},
+			{Name: "Scout", State: "working", SessionAlive: true, ActiveWrit: "sol-bbb", WorkTitle: "Design review", BriefAge: "45m"},
 		},
 		Summary: Summary{Total: 1, Working: 1},
 	}

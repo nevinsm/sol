@@ -224,6 +224,117 @@ func TestMigrateSphereV1ToLatest(t *testing.T) {
 	if !phaseExists {
 		t.Fatal("expected phase column on caravan_items after V1→latest migration")
 	}
+
+	// Verify active_writ column exists (V10 migration renamed tether_item).
+	activeWritExists, err := columnExists(s2.db, "agents", "active_writ")
+	if err != nil {
+		t.Fatalf("failed to check active_writ column: %v", err)
+	}
+	if !activeWritExists {
+		t.Fatal("expected active_writ column on agents after V1→latest migration")
+	}
+}
+
+func TestMigrateSphereV9ToV10(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	// Simulate a V9 sphere database with tether_item column.
+	dbPath := filepath.Join(dir, ".store", "sphere.db")
+	s, err := open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create agents table with tether_item (as it existed before V10).
+	_, err = s.db.Exec(`
+		CREATE TABLE agents (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			world TEXT NOT NULL,
+			role TEXT NOT NULL,
+			state TEXT NOT NULL DEFAULT 'idle',
+			tether_item TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		CREATE TABLE schema_version (version INTEGER NOT NULL);
+		INSERT INTO schema_version VALUES (9);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed agents with tether_item values.
+	_, err = s.db.Exec(`
+		INSERT INTO agents (id, name, world, role, state, tether_item, created_at, updated_at)
+		VALUES ('haven/Toast', 'Toast', 'haven', 'agent', 'working', 'sol-a1b2c3d4e5f6a7b8', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z');
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.db.Exec(`
+		INSERT INTO agents (id, name, world, role, state, tether_item, created_at, updated_at)
+		VALUES ('haven/Meridian', 'Meridian', 'haven', 'envoy', 'idle', NULL, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z');
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Reopen through OpenSphere — should migrate to V10.
+	s2, err := OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+
+	// Verify schema version is V10.
+	var version int
+	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != CurrentSphereSchema {
+		t.Fatalf("expected schema version %d, got %d", CurrentSphereSchema, version)
+	}
+
+	// Verify active_writ column exists.
+	activeWritExists, err := columnExists(s2.db, "agents", "active_writ")
+	if err != nil {
+		t.Fatalf("failed to check active_writ column: %v", err)
+	}
+	if !activeWritExists {
+		t.Fatal("expected active_writ column after V10 migration")
+	}
+
+	// Verify tether_item column no longer exists.
+	oldColExists, err := columnExists(s2.db, "agents", "tether_item")
+	if err != nil {
+		t.Fatalf("failed to check tether_item column: %v", err)
+	}
+	if oldColExists {
+		t.Fatal("expected tether_item column to be renamed after V10 migration")
+	}
+
+	// Verify data was preserved.
+	agent, err := s2.GetAgent("haven/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.ActiveWrit != "sol-a1b2c3d4e5f6a7b8" {
+		t.Fatalf("expected active_writ 'sol-a1b2c3d4e5f6a7b8', got %q", agent.ActiveWrit)
+	}
+
+	// Verify NULL values are preserved.
+	meridian, err := s2.GetAgent("haven/Meridian")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meridian.ActiveWrit != "" {
+		t.Fatalf("expected empty active_writ for idle agent, got %q", meridian.ActiveWrit)
+	}
 }
 
 func TestWritCRUD(t *testing.T) {
@@ -569,8 +680,8 @@ func TestAgentCRUD(t *testing.T) {
 	if agent.State != "idle" {
 		t.Fatalf("expected state 'idle', got %q", agent.State)
 	}
-	if agent.TetherItem != "" {
-		t.Fatalf("expected empty tether_item, got %q", agent.TetherItem)
+	if agent.ActiveWrit != "" {
+		t.Fatalf("expected empty active_writ, got %q", agent.ActiveWrit)
 	}
 
 	// Update state with tether.
@@ -585,8 +696,8 @@ func TestAgentCRUD(t *testing.T) {
 	if agent.State != "working" {
 		t.Fatalf("expected state 'working', got %q", agent.State)
 	}
-	if agent.TetherItem != "sol-abc12345" {
-		t.Fatalf("expected tether_item 'sol-abc12345', got %q", agent.TetherItem)
+	if agent.ActiveWrit != "sol-abc12345" {
+		t.Fatalf("expected active_writ 'sol-abc12345', got %q", agent.ActiveWrit)
 	}
 
 	// Clear tether (back to idle).
@@ -601,8 +712,8 @@ func TestAgentCRUD(t *testing.T) {
 	if agent.State != "idle" {
 		t.Fatalf("expected state 'idle', got %q", agent.State)
 	}
-	if agent.TetherItem != "" {
-		t.Fatalf("expected empty tether_item, got %q", agent.TetherItem)
+	if agent.ActiveWrit != "" {
+		t.Fatalf("expected empty active_writ, got %q", agent.ActiveWrit)
 	}
 
 	// List agents.

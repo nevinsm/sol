@@ -11,7 +11,7 @@ type mockStopStore struct {
 	updateErr error
 }
 
-func (m *mockStopStore) UpdateAgentState(id, state, tetherItem string) error {
+func (m *mockStopStore) UpdateAgentState(id, state, activeWrit string) error {
 	if m.updateErr != nil {
 		return m.updateErr
 	}

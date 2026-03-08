@@ -172,8 +172,8 @@ func TestCastHappyPath(t *testing.T) {
 	if agent.State != "working" {
 		t.Errorf("expected agent state 'working', got %q", agent.State)
 	}
-	if agent.TetherItem != itemID {
-		t.Errorf("expected agent tether_item %q, got %q", itemID, agent.TetherItem)
+	if agent.ActiveWrit != itemID {
+		t.Errorf("expected agent active_writ %q, got %q", itemID, agent.ActiveWrit)
 	}
 
 	// Verify session was started.
@@ -370,8 +370,8 @@ func TestCastAutoProvision(t *testing.T) {
 	if agent.State != "working" {
 		t.Errorf("expected agent state 'working', got %q", agent.State)
 	}
-	if agent.TetherItem != itemID {
-		t.Errorf("expected agent tether_item %q, got %q", itemID, agent.TetherItem)
+	if agent.ActiveWrit != itemID {
+		t.Errorf("expected agent active_writ %q, got %q", itemID, agent.ActiveWrit)
 	}
 }
 
@@ -2134,7 +2134,7 @@ func TestReCastPartialFailureRecovery(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
-	// Agent state is "idle" with no tether_item — simulates crash after writ
+	// Agent state is "idle" with no active_writ — simulates crash after writ
 	// update but before agent state update.
 
 	repoDir := t.TempDir()

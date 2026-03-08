@@ -238,7 +238,7 @@ func swapAndRespawn(state *State, agent store.Agent, toAccount string, opts Rota
 
 	resumeState := startup.ResumeState{
 		Reason:          "quota_rotate",
-		ClaimedResource: agent.TetherItem,
+		ClaimedResource: agent.ActiveWrit,
 	}
 
 	launchOpts := startup.LaunchOpts{
@@ -278,7 +278,7 @@ func pauseAgent(state *State, agent store.Agent, previousAccount string, opts Ro
 	state.PausedSessions[agent.ID] = PausedSession{
 		PausedAt:        time.Now().UTC(),
 		PreviousAccount: previousAccount,
-		Writ:        agent.TetherItem,
+		Writ:        agent.ActiveWrit,
 		World:           opts.World,
 		AgentName:       agent.Name,
 		Role:            agent.Role,
@@ -289,7 +289,7 @@ func pauseAgent(state *State, agent store.Agent, previousAccount string, opts Ro
 			map[string]any{
 				"agent":     agent.ID,
 				"world":     opts.World,
-				"writ": agent.TetherItem,
+				"writ": agent.ActiveWrit,
 				"reason":    "no available accounts for rotation",
 			})
 	}

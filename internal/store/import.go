@@ -6,10 +6,10 @@ import (
 )
 
 // ImportAgent inserts an agent record with a specific ID and timestamps.
-// State is always reset to "idle" and tether_item is cleared on import.
+// State is always reset to "idle" and active_writ is cleared on import.
 func (s *Store) ImportAgent(id, name, world, role, createdAt, updatedAt string) error {
 	_, err := s.db.Exec(
-		`INSERT OR IGNORE INTO agents (id, name, world, role, state, tether_item, created_at, updated_at)
+		`INSERT OR IGNORE INTO agents (id, name, world, role, state, active_writ, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, 'idle', NULL, ?, ?)`,
 		id, name, world, role, createdAt, updatedAt,
 	)

@@ -57,7 +57,7 @@ func DefaultConfig(world, sourceRepo, solHome string) Config {
 type SphereStore interface {
 	GetAgent(id string) (*store.Agent, error)
 	ListAgents(world string, state string) ([]store.Agent, error)
-	UpdateAgentState(id, state, tetherItem string) error
+	UpdateAgentState(id, state, activeWrit string) error
 	CreateAgent(name, world, role string) (string, error)
 	EnsureAgent(name, world, role string) error
 	DeleteAgent(id string) error
@@ -248,8 +248,8 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 		alive := w.sessions.Exists(sessionName)
 
 		// Check if outpost agent is tethered to a closed writ — reap immediately.
-		if agent.Role == "agent" && agent.TetherItem != "" && w.worldStore != nil {
-			if writ, err := w.worldStore.GetWrit(agent.TetherItem); err == nil && writ.Status == "closed" {
+		if agent.Role == "agent" && agent.ActiveWrit != "" && w.worldStore != nil {
+			if writ, err := w.worldStore.GetWrit(agent.ActiveWrit); err == nil && writ.Status == "closed" {
 				reapedCount++
 				if err := w.reapClosedWritAgent(agent, sessionName, writ.CloseReason); err != nil {
 					if w.logger != nil {
@@ -287,7 +287,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 			}
 			actionsTaken = append(actionsTaken, "stalled:"+agent.Name)
 
-		case agent.State == "working" && !alive && agent.TetherItem != "":
+		case agent.State == "working" && !alive && agent.ActiveWrit != "":
 			// Session died while work was tethered — stalled.
 			stalledCount++
 			if err := w.handleStalled(agent); err != nil {
@@ -533,7 +533,7 @@ Status meanings:
   May be a zombie or may have completed work without calling sol resolve.
 
 Only suggest "escalate" if the situation requires human intervention
-(e.g., repeated failures, auth issues, infrastructure problems).`, agent.Name, agent.ID, agent.TetherItem, captureLines, capturedOutput)
+(e.g., repeated failures, auth issues, infrastructure problems).`, agent.Name, agent.ID, agent.ActiveWrit, captureLines, capturedOutput)
 }
 
 func extractJSON(data []byte) (AssessmentResult, error) {
@@ -587,7 +587,7 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 			store.ProtoRecoveryNeeded,
 			store.RecoveryNeededPayload{
 				AgentID:    agent.ID,
-				WritID: agent.TetherItem,
+				WritID: agent.ActiveWrit,
 				Reason:     fmt.Sprintf("nudged: %s", result.Reason),
 			},
 		); err != nil && w.logger != nil {
@@ -602,7 +602,7 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 			store.ProtoRecoveryNeeded,
 			store.RecoveryNeededPayload{
 				AgentID:    agent.ID,
-				WritID: agent.TetherItem,
+				WritID: agent.ActiveWrit,
 				Reason:     result.Reason,
 			},
 		); err != nil && w.logger != nil {
@@ -625,7 +625,7 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 
 // handleStalled handles an agent whose session died while work was tethered.
 func (w *Sentinel) handleStalled(agent store.Agent) error {
-	key := respawnKey{AgentID: agent.ID, WritID: agent.TetherItem}
+	key := respawnKey{AgentID: agent.ID, WritID: agent.ActiveWrit}
 	attempts := w.respawnCounts[key]
 
 	if attempts >= w.config.MaxRespawns {
@@ -684,7 +684,7 @@ func (w *Sentinel) handleForgeStalled(agent store.Agent) error {
 // hook fires sol prime automatically (GUPP).
 func (w *Sentinel) respawnAgent(agent store.Agent) error {
 	// Ensure agent state is working before respawn.
-	if err := w.sphereStore.UpdateAgentState(agent.ID, "working", agent.TetherItem); err != nil {
+	if err := w.sphereStore.UpdateAgentState(agent.ID, "working", agent.ActiveWrit); err != nil {
 		return fmt.Errorf("failed to set agent %s working: %w", agent.ID, err)
 	}
 
@@ -695,14 +695,14 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 		return fmt.Errorf("failed to respawn session for %s: %w", agent.Name, err)
 	}
 
-	key := respawnKey{AgentID: agent.ID, WritID: agent.TetherItem}
+	key := respawnKey{AgentID: agent.ID, WritID: agent.ActiveWrit}
 	attempts := w.respawnCounts[key]
 
 	if w.logger != nil {
 		w.logger.Emit(events.EventRespawn, w.agentID(), agent.ID, "both",
 			map[string]any{
 				"agent":     agent.ID,
-				"writ": agent.TetherItem,
+				"writ": agent.ActiveWrit,
 				"attempt":   attempts,
 			})
 	}
@@ -713,7 +713,7 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
 			AgentID:    agent.ID,
-			WritID: agent.TetherItem,
+			WritID: agent.ActiveWrit,
 			Reason:     fmt.Sprintf("respawned (attempt %d)", attempts),
 			Attempts:   attempts,
 		},
@@ -729,16 +729,16 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 // after exceeding max respawn attempts.
 func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 	// 1. Update writ: status → open, clear assignee.
-	if agent.TetherItem != "" {
-		if err := w.worldStore.UpdateWrit(agent.TetherItem, store.WritUpdates{
+	if agent.ActiveWrit != "" {
+		if err := w.worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
 			Status:   "open",
 			Assignee: "-", // "-" clears assignee
 		}); err != nil {
-			return fmt.Errorf("failed to return writ %s to open: %w", agent.TetherItem, err)
+			return fmt.Errorf("failed to return writ %s to open: %w", agent.ActiveWrit, err)
 		}
 	}
 
-	// 2. Set agent state → idle, clear tether_item.
+	// 2. Set agent state → idle, clear active_writ.
 	// Done before clearing tether so a crash leaves the agent idle with a stale
 	// tether (harmless — next dispatch overwrites it) rather than "working" with
 	// no tether (would trigger a wasted respawn).
@@ -750,7 +750,7 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 	w.cleanupAgentResources(agent.Name)
 
 	// 4. Clear respawn count.
-	key := respawnKey{AgentID: agent.ID, WritID: agent.TetherItem}
+	key := respawnKey{AgentID: agent.ID, WritID: agent.ActiveWrit}
 	delete(w.respawnCounts, key)
 
 	// 5. Emit stalled event with recovered: false.
@@ -758,7 +758,7 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 		w.logger.Emit(events.EventStalled, w.agentID(), agent.ID, "both",
 			map[string]any{
 				"agent":     agent.ID,
-				"writ": agent.TetherItem,
+				"writ": agent.ActiveWrit,
 				"recovered": false,
 			})
 	}
@@ -769,7 +769,7 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
 			AgentID:    agent.ID,
-			WritID: agent.TetherItem,
+			WritID: agent.ActiveWrit,
 			Reason:     fmt.Sprintf("max respawns (%d) exceeded, work returned to open", w.config.MaxRespawns),
 			Attempts:   w.config.MaxRespawns,
 		},
@@ -820,7 +820,7 @@ func (w *Sentinel) reapClosedWritAgent(agent store.Agent, sessionName, closeReas
 		w.logger.Emit(events.EventReap, w.agentID(), agent.ID, "both",
 			map[string]any{
 				"agent":        agent.ID,
-				"writ":         agent.TetherItem,
+				"writ":         agent.ActiveWrit,
 				"close_reason": closeReason,
 				"reason":       "writ closed",
 			})
@@ -885,7 +885,7 @@ func (w *Sentinel) checkHandoffFrequency(agents []store.Agent) int {
 				store.ProtoRecoveryNeeded,
 				store.RecoveryNeededPayload{
 					AgentID:    agent.ID,
-					WritID: agent.TetherItem,
+					WritID: agent.ActiveWrit,
 					Reason:     fmt.Sprintf("handoff loop: %d handoffs in %s", len(handoffs), window),
 				},
 			); err != nil && w.logger != nil {
@@ -1004,7 +1004,7 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 			state.PausedSessions[la.agent.ID] = quota.PausedSession{
 				PausedAt:        time.Now().UTC(),
 				PreviousAccount: la.account,
-				Writ:        la.agent.TetherItem,
+				Writ:        la.agent.ActiveWrit,
 				World:           w.config.World,
 				AgentName:       la.agent.Name,
 				Role:            la.agent.Role,
@@ -1016,7 +1016,7 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 					map[string]any{
 						"agent":     la.agent.ID,
 						"world":     w.config.World,
-						"writ": la.agent.TetherItem,
+						"writ": la.agent.ActiveWrit,
 						"reason":    "no available accounts for rotation",
 					})
 			}
@@ -1052,7 +1052,7 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 
 			resumeState := startup.ResumeState{
 				Reason:          "quota_rotate",
-				ClaimedResource: la.agent.TetherItem,
+				ClaimedResource: la.agent.ActiveWrit,
 			}
 
 			launchOpts := startup.LaunchOpts{

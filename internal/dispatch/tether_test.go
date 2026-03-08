@@ -69,8 +69,8 @@ func TestTetherHappyPath(t *testing.T) {
 	if agent.State != "working" {
 		t.Errorf("expected agent state 'working', got %q", agent.State)
 	}
-	if agent.TetherItem != itemID {
-		t.Errorf("expected tether item %q, got %q", itemID, agent.TetherItem)
+	if agent.ActiveWrit != itemID {
+		t.Errorf("expected tether item %q, got %q", itemID, agent.ActiveWrit)
 	}
 }
 
@@ -282,8 +282,8 @@ func TestUntetherHappyPath(t *testing.T) {
 	if agent.State != "idle" {
 		t.Errorf("expected agent state 'idle', got %q", agent.State)
 	}
-	if agent.TetherItem != "" {
-		t.Errorf("expected empty tether item, got %q", agent.TetherItem)
+	if agent.ActiveWrit != "" {
+		t.Errorf("expected empty tether item, got %q", agent.ActiveWrit)
 	}
 }
 

@@ -475,8 +475,8 @@ func (wm worldModel) renderAgentRow(a status.AgentStatus) string {
 	}
 
 	work := dimStyle.Render("—")
-	if a.TetherItem != "" {
-		work = fmt.Sprintf("%s: %s", a.TetherItem, a.WorkTitle)
+	if a.ActiveWrit != "" {
+		work = fmt.Sprintf("%s: %s", a.ActiveWrit, a.WorkTitle)
 	}
 
 	return "  " + padRight(name, 14) + " " + padRight(state, 18) + " " + padRight(sess, 10) + " " + work
@@ -526,7 +526,7 @@ func (wm worldModel) renderEnvoyRow(e status.EnvoyStatus) string {
 	}
 
 	work := dimStyle.Render("—")
-	if e.TetherItem != "" {
+	if e.ActiveWrit != "" {
 		work = e.WorkTitle
 	}
 

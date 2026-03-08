@@ -28,7 +28,7 @@ type SessionStarter interface {
 type SphereStore interface {
 	GetAgent(id string) (*store.Agent, error)
 	CreateAgent(name, world, role string) (string, error)
-	UpdateAgentState(id, state, tetherItem string) error
+	UpdateAgentState(id, state, activeWrit string) error
 	Close() error
 }
 
@@ -180,11 +180,11 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		}
 	}
 	// Preserve existing tether item (outpost agents have tethered writs).
-	tetherItem := ""
+	activeWrit := ""
 	if existing != nil {
-		tetherItem = existing.TetherItem
+		activeWrit = existing.ActiveWrit
 	}
-	if err := sphereStore.UpdateAgentState(agentID, "working", tetherItem); err != nil {
+	if err := sphereStore.UpdateAgentState(agentID, "working", activeWrit); err != nil {
 		return "", fmt.Errorf("startup: failed to set agent working: %w", err)
 	}
 
@@ -228,8 +228,8 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] = fmt.Sprintf("http://localhost:%d", worldCfg.Ledger.Port)
 		env["OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"] = "http/json"
 		attrs := fmt.Sprintf("agent.name=%s,world=%s", agent, world)
-		if tetherItem != "" {
-			attrs += ",writ_id=" + tetherItem
+		if activeWrit != "" {
+			attrs += ",writ_id=" + activeWrit
 		}
 		env["OTEL_RESOURCE_ATTRIBUTES"] = attrs
 	}

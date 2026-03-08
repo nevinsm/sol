@@ -72,8 +72,8 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	if agent.State != "working" {
 		t.Errorf("agent state: got %q, want working", agent.State)
 	}
-	if agent.TetherItem != itemID {
-		t.Errorf("agent tether_item: got %q, want %q", agent.TetherItem, itemID)
+	if agent.ActiveWrit != itemID {
+		t.Errorf("agent active_writ: got %q, want %q", agent.ActiveWrit, itemID)
 	}
 
 	if !tether.IsTethered("ember", "TestBot", "agent") {
