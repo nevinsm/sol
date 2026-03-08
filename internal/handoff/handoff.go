@@ -710,10 +710,32 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		SessionOp: cycleOp,
 		Sphere:    opts.StartupSphere,
 	}
+
+	// Write marker for loop prevention BEFORE the cycle operation.
+	// cycleOp uses respawn-pane -k which kills the calling process —
+	// any code after the startup call is dead on the success path.
+	// The marker must be on disk before we risk process death.
+	if err := WriteMarker(opts.World, opts.AgentName, role, reason); err != nil {
+		fmt.Fprintf(os.Stderr, "handoff: failed to write marker: %v\n", err)
+	}
+
 	var startupErr error
 	if reason == "compact" {
-		// Compact handoff: use Resume for --continue and resume-aware prime.
-		_, startupErr = startup.Resume(*cfg, opts.World, opts.AgentName, resumeState, launchOpts)
+		// Compact handoff: fresh conversation with resume context prepended
+		// to the role's prime. Do NOT use startup.Resume (which sets
+		// --continue) — reloading the conversation that triggered compaction
+		// causes an immediate re-compaction loop. The resume prime + brief
+		// injection + persona reinstall provide all necessary continuity.
+		modifiedCfg := *cfg
+		origPrime := modifiedCfg.PrimeBuilder
+		modifiedCfg.PrimeBuilder = func(w, a string) string {
+			base := ""
+			if origPrime != nil {
+				base = origPrime(w, a)
+			}
+			return startup.BuildResumePrime(base, resumeState)
+		}
+		_, startupErr = startup.Launch(modifiedCfg, opts.World, opts.AgentName, launchOpts)
 	} else {
 		// Non-compact handoff: use Launch for fresh conversation with
 		// role-specific setup (persona, hooks, system prompt, workflow).
@@ -721,12 +743,6 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	}
 	if startupErr != nil {
 		return fmt.Errorf("handoff: startup failed: %w", startupErr)
-	}
-
-	// Write marker for loop prevention. The new session's prime will detect
-	// this and warn the agent not to re-trigger handoff immediately.
-	if err := WriteMarker(opts.World, opts.AgentName, role, reason); err != nil {
-		fmt.Fprintf(os.Stderr, "handoff: failed to write marker: %v\n", err)
 	}
 
 	return nil

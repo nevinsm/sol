@@ -275,7 +275,7 @@ func Resume(cfg RoleConfig, world, agent string, state ResumeState, opts LaunchO
 		if origPrime != nil {
 			base = origPrime(w, a)
 		}
-		return buildResumePrime(base, state)
+		return BuildResumePrime(base, state)
 	}
 
 	return Launch(cfg, world, agent, opts)
@@ -306,9 +306,9 @@ func Respawn(role, world, agent string, opts LaunchOpts) (string, error) {
 	return Launch(*cfg, world, agent, opts)
 }
 
-// buildResumePrime constructs a resume-aware prime prompt that includes
+// BuildResumePrime constructs a resume-aware prime prompt that includes
 // workflow state and claimed resource information.
-func buildResumePrime(base string, state ResumeState) string {
+func BuildResumePrime(base string, state ResumeState) string {
 	var b strings.Builder
 	b.WriteString("[RESUME] Session recovery")
 	if state.Reason != "" {

@@ -73,7 +73,7 @@ func TestBuildResumeStateForQuotaRotation(t *testing.T) {
 	}
 }
 
-// buildTestResumePrime mimics startup.buildResumePrime for test verification.
+// buildTestResumePrime mimics startup.BuildResumePrime for test verification.
 func buildTestResumePrime(state startup.ResumeState) string {
 	var b strings.Builder
 	b.WriteString("[RESUME] Session recovery")

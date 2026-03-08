@@ -1099,7 +1099,8 @@ func TestExecWritesMarker(t *testing.T) {
 		t.Fatalf("Exec failed: %v", err)
 	}
 
-	// Verify marker was written.
+	// Verify marker was written. The marker is written BEFORE the cycle
+	// operation so it survives process death from respawn-pane -k.
 	markerTS, reason, err := ReadMarker("ember", "Toast", "agent")
 	if err != nil {
 		t.Fatalf("ReadMarker failed: %v", err)
@@ -1109,6 +1110,60 @@ func TestExecWritesMarker(t *testing.T) {
 	}
 	if reason != "unknown" {
 		t.Errorf("expected reason 'unknown', got %q", reason)
+	}
+}
+
+// TestExecWritesMarkerBeforeCycle verifies the marker is written before
+// the cycle operation, not after. In production, cycleOp uses respawn-pane -k
+// which kills the calling process — any WriteMarker after the cycle call
+// would be dead code. This test confirms the marker survives a successful cycle.
+func TestExecWritesMarkerBeforeCycle(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	world := "ember"
+	agentName := "MarkerBot"
+	roleName := "testrole-marker"
+
+	worktreeDir := filepath.Join(solHome, world, "outposts", agentName, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	startup.Register(roleName, startup.RoleConfig{
+		WorktreeDir: func(w, a string) string { return worktreeDir },
+	})
+
+	mgr := &mockSessionMgr{}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         world,
+		AgentName:     agentName,
+		Role:          roleName,
+		WorktreeDir:   worktreeDir,
+		Reason:        "compact",
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// Verify marker was written with the correct reason.
+	markerTS, reason, err := ReadMarker(world, agentName, roleName)
+	if err != nil {
+		t.Fatalf("ReadMarker failed: %v", err)
+	}
+	if markerTS.IsZero() {
+		t.Fatal("expected marker to be written")
+	}
+	if reason != "compact" {
+		t.Errorf("expected reason 'compact', got %q", reason)
+	}
+
+	// Verify cycle still happened (marker didn't prevent it).
+	if len(mgr.cycled) != 1 {
+		t.Errorf("expected 1 Cycle call, got %d", len(mgr.cycled))
 	}
 }
 
@@ -1668,12 +1723,13 @@ func TestExecStartupCompactUsesResume(t *testing.T) {
 	}
 	cmd := mgr.cycled[0].Cmd
 
-	// Compact should use --continue.
-	if !strings.Contains(cmd, "--continue") {
-		t.Errorf("expected --continue for compact handoff, got %q", cmd)
+	// Compact should NOT use --continue — reloading the bloated conversation
+	// that triggered compaction causes an immediate re-compaction loop.
+	if strings.Contains(cmd, "--continue") {
+		t.Errorf("compact handoff must NOT use --continue (causes compaction loop), got %q", cmd)
 	}
 
-	// Resume should prepend [RESUME] to prime.
+	// Resume context should still be prepended to prime (via BuildResumePrime).
 	if !strings.Contains(cmd, "[RESUME]") {
 		t.Errorf("expected [RESUME] prefix in prime for compact handoff, got %q", cmd)
 	}
@@ -1681,6 +1737,11 @@ func TestExecStartupCompactUsesResume(t *testing.T) {
 	// Should also contain the role-specific prime.
 	if !strings.Contains(cmd, "Role-specific prime") {
 		t.Errorf("expected role-specific prime in command, got %q", cmd)
+	}
+
+	// Should contain the claimed resource from tether.
+	if !strings.Contains(cmd, "sol-compact12345") {
+		t.Errorf("expected claimed resource in resume prime, got %q", cmd)
 	}
 }
 

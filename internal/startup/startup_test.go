@@ -353,7 +353,7 @@ func TestResumeWithWorkflowStep(t *testing.T) {
 		Reason:          "compact",
 	}
 
-	prime := buildResumePrime("", state)
+	prime := BuildResumePrime("", state)
 	if !strings.Contains(prime, "[RESUME]") {
 		t.Errorf("resume prime missing [RESUME] tag: %q", prime)
 	}
@@ -371,7 +371,7 @@ func TestResumeWithClaimedResource(t *testing.T) {
 		Reason:          "compact",
 	}
 
-	prime := buildResumePrime("", state)
+	prime := BuildResumePrime("", state)
 	if !strings.Contains(prime, "sol-abc123def456") {
 		t.Errorf("resume prime missing claimed resource: %q", prime)
 	}
@@ -387,7 +387,7 @@ func TestResumePreservesBasePrime(t *testing.T) {
 	}
 
 	base := "Execute your formula."
-	prime := buildResumePrime(base, state)
+	prime := BuildResumePrime(base, state)
 	if !strings.Contains(prime, "[RESUME]") {
 		t.Errorf("resume prime missing [RESUME]: %q", prime)
 	}
@@ -440,7 +440,7 @@ func TestBuildResumePrimeStepOnly(t *testing.T) {
 		Reason:      "manual",
 	}
 
-	prime := buildResumePrime("", state)
+	prime := BuildResumePrime("", state)
 	if !strings.Contains(prime, "step isolate. Resume from there.") {
 		t.Errorf("step-only prime missing step without description: %q", prime)
 	}
@@ -452,7 +452,7 @@ func TestBuildResumePrimeStepOnly(t *testing.T) {
 
 func TestBuildResumePrimeEmpty(t *testing.T) {
 	state := ResumeState{Reason: "compact"}
-	prime := buildResumePrime("", state)
+	prime := BuildResumePrime("", state)
 	if !strings.Contains(prime, "[RESUME] Session recovery (reason: compact).") {
 		t.Errorf("empty resume prime = %q", prime)
 	}
@@ -930,7 +930,7 @@ func TestBuildResumePrimeWritSwitch(t *testing.T) {
 		NewActiveWrit:      "sol-bbb222",
 	}
 
-	prime := buildResumePrime("", state)
+	prime := BuildResumePrime("", state)
 	if !strings.Contains(prime, "[RESUME] Session recovery (reason: writ-switch).") {
 		t.Errorf("prime missing writ-switch reason: %q", prime)
 	}
@@ -945,7 +945,7 @@ func TestBuildResumePrimeWritSwitchNoPrevious(t *testing.T) {
 		NewActiveWrit: "sol-bbb222",
 	}
 
-	prime := buildResumePrime("", state)
+	prime := BuildResumePrime("", state)
 	if !strings.Contains(prime, "Your active writ has changed to sol-bbb222.") {
 		t.Errorf("prime missing new writ context: %q", prime)
 	}
@@ -963,7 +963,7 @@ func TestBuildResumePrimeWritSwitchWithBase(t *testing.T) {
 	}
 
 	base := "Execute your formula."
-	prime := buildResumePrime(base, state)
+	prime := BuildResumePrime(base, state)
 	if !strings.Contains(prime, "[RESUME]") {
 		t.Errorf("prime missing [RESUME]: %q", prime)
 	}
@@ -983,7 +983,7 @@ func TestBuildResumePrimeActiveWritNonSwitch(t *testing.T) {
 		ClaimedResource: "sol-ccc333",
 	}
 
-	prime := buildResumePrime("", state)
+	prime := BuildResumePrime("", state)
 	if !strings.Contains(prime, "Active writ: sol-ccc333") {
 		t.Errorf("expected 'Active writ: sol-ccc333' in prime, got %q", prime)
 	}
@@ -1000,7 +1000,7 @@ func TestBuildResumePrimeNoActiveWrit(t *testing.T) {
 		ClaimedResource: "sol-aaa111",
 	}
 
-	prime := buildResumePrime("", state)
+	prime := BuildResumePrime("", state)
 	if strings.Contains(prime, "Active writ") {
 		t.Errorf("prime should not mention active writ when none set: %q", prime)
 	}
