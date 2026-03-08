@@ -36,6 +36,10 @@ type AgentStatsReport struct {
 	ReworkCount      int                `json:"rework_count"`
 	Tokens           []store.TokenSummary `json:"tokens"`
 	TotalTokens      int64              `json:"total_tokens"`
+	EstimatedCost    *float64           `json:"estimated_cost,omitempty"`
+	UnpricedModels   int                `json:"unpriced_models,omitempty"`
+	PricedModels     int                `json:"priced_models,omitempty"`
+	PricingAvailable bool               `json:"pricing_available"`
 }
 
 var agentStatsCmd = &cobra.Command{
@@ -56,10 +60,16 @@ var agentStatsCmd = &cobra.Command{
 		}
 		defer worldStore.Close()
 
+		pricing, pricingErr := config.LoadPricing()
+		if pricingErr != nil {
+			// Non-fatal: proceed without pricing.
+			pricing = config.PricingConfig{}
+		}
+
 		if len(args) == 1 {
 			// Single agent mode.
 			name := args[0]
-			report, err := computeAgentStats(worldStore, name)
+			report, err := computeAgentStats(worldStore, name, pricing)
 			if err != nil {
 				return err
 			}
@@ -86,7 +96,7 @@ var agentStatsCmd = &cobra.Command{
 
 		var reports []AgentStatsReport
 		for _, agent := range agents {
-			report, err := computeAgentStats(worldStore, agent.Name)
+			report, err := computeAgentStats(worldStore, agent.Name, pricing)
 			if err != nil {
 				return err
 			}
@@ -111,7 +121,7 @@ var agentStatsCmd = &cobra.Command{
 	},
 }
 
-func computeAgentStats(worldStore *store.Store, agentName string) (*AgentStatsReport, error) {
+func computeAgentStats(worldStore *store.Store, agentName string, pricing config.PricingConfig) (*AgentStatsReport, error) {
 	report := &AgentStatsReport{Name: agentName}
 
 	// 1. Get history entries for cycle time and rework.
@@ -176,6 +186,26 @@ func computeAgentStats(worldStore *store.Store, agentName string) (*AgentStatsRe
 	report.Tokens = tokens
 	for _, t := range tokens {
 		report.TotalTokens += t.InputTokens + t.OutputTokens + t.CacheReadTokens + t.CacheCreationTokens
+	}
+
+	// 4. Cost estimation.
+	report.PricingAvailable = len(pricing) > 0
+	if report.PricingAvailable && len(tokens) > 0 {
+		// Convert store.TokenSummary to config.TokenSummary for ComputeCost.
+		configSummaries := make([]config.TokenSummary, len(tokens))
+		for i, t := range tokens {
+			configSummaries[i] = config.TokenSummary{
+				Model:               t.Model,
+				InputTokens:         t.InputTokens,
+				OutputTokens:        t.OutputTokens,
+				CacheReadTokens:     t.CacheReadTokens,
+				CacheCreationTokens: t.CacheCreationTokens,
+			}
+		}
+		cost, unpriced := pricing.ComputeCost(configSummaries)
+		report.EstimatedCost = &cost
+		report.UnpricedModels = len(unpriced)
+		report.PricedModels = len(tokens) - len(unpriced)
 	}
 
 	return report, nil
@@ -273,6 +303,28 @@ func renderAgentStats(r *AgentStatsReport) {
 				formatTokenInt(totalCacheWrite))
 		}
 		tw.Flush()
+	}
+
+	// Cost estimation line.
+	b.WriteString("\n")
+	if !r.PricingAvailable {
+		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Estimated cost:", dimStyle.Render("(no pricing configured)")))
+	} else if r.EstimatedCost != nil {
+		costStr := fmt.Sprintf("$%.2f", *r.EstimatedCost)
+		if r.UnpricedModels > 0 {
+			costStr += fmt.Sprintf(" (%d unpriced model", r.UnpricedModels)
+			if r.UnpricedModels > 1 {
+				costStr += "s"
+			}
+			costStr += ")"
+		} else {
+			costStr += fmt.Sprintf(" (%d model", r.PricedModels)
+			if r.PricedModels > 1 {
+				costStr += "s"
+			}
+			costStr += ", pricing from sol.toml)"
+		}
+		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Estimated cost:", costStr))
 	}
 
 	fmt.Print(b.String())
