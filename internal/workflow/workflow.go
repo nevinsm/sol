@@ -765,11 +765,17 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 
 	// For expansion formulas, the parent must exist (it's the target).
 	// For workflow and convoy formulas, create a parent if not provided.
+	// If a parent is provided for convoy, load it as target for template substitution.
 	var target *store.Writ
 	if m.Type == "expansion" {
 		if parentID == "" {
 			return nil, fmt.Errorf("expansion formula requires a parent writ (target)")
 		}
+		target, err = worldStore.GetWrit(parentID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get target writ %q: %w", parentID, err)
+		}
+	} else if parentID != "" && m.Type == "convoy" {
 		target, err = worldStore.GetWrit(parentID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get target writ %q: %w", parentID, err)
@@ -811,13 +817,18 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 	} else if m.Type == "convoy" {
 		// Convoy: legs are independent (phase 0), synthesis depends on legs (phase 1).
 		for _, leg := range m.Legs {
+			title := leg.Title
 			desc := leg.Description
+			if target != nil {
+				title = renderTemplateField(title, target)
+				desc = renderTemplateField(desc, target)
+			}
 			if leg.Focus != "" {
 				desc += "\n\nFocus: " + leg.Focus
 			}
 			children = append(children, childDef{
 				formulaID:   leg.ID,
-				title:       leg.Title,
+				title:       title,
 				description: desc,
 				labels:      []string{"convoy-leg"},
 				kind:        leg.Kind,
@@ -867,11 +878,48 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 		if m.Type == "convoy" && c.formulaID == "synthesis" {
 			var legRefs strings.Builder
 			legRefs.WriteString("\n\n## Leg Writs\n")
+			hasCodeLegs := false
+			hasAnalysisLegs := false
 			for _, leg := range m.Legs {
 				legItemID := childIDs[leg.ID]
 				legRefs.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", leg.Title, legItemID, leg.Description))
+				kind := leg.Kind
+				if kind == "" {
+					kind = "code"
+				}
+				if kind == "analysis" {
+					hasAnalysisLegs = true
+				} else {
+					hasCodeLegs = true
+				}
 			}
-			legRefs.WriteString("\nAll leg branches have been merged to the target branch. Their changes are available in your worktree.")
+
+			// Build enrichment text based on leg kinds.
+			if hasCodeLegs && hasAnalysisLegs {
+				// Mixed: both code branches and analysis outputs.
+				legRefs.WriteString("\nAll code leg branches have been merged to the target branch. Their changes are available in your worktree.")
+				legRefs.WriteString("\n\nRead findings from analysis leg output directories:\n")
+				for _, leg := range m.Legs {
+					kind := leg.Kind
+					if kind == "" {
+						kind = "code"
+					}
+					if kind == "analysis" {
+						legItemID := childIDs[leg.ID]
+						legRefs.WriteString(fmt.Sprintf("- %s: `%s`\n", leg.Title, config.WritOutputDir(opts.World, legItemID)))
+					}
+				}
+			} else if hasAnalysisLegs {
+				// All analysis: reference output directories only.
+				legRefs.WriteString("\nRead findings from leg output directories. Leg outputs are at:\n")
+				for _, leg := range m.Legs {
+					legItemID := childIDs[leg.ID]
+					legRefs.WriteString(fmt.Sprintf("- %s: `%s`\n", leg.Title, config.WritOutputDir(opts.World, legItemID)))
+				}
+			} else {
+				// All code: original message.
+				legRefs.WriteString("\nAll leg branches have been merged to the target branch. Their changes are available in your worktree.")
+			}
 			desc += legRefs.String()
 			children[i].description = desc
 		}

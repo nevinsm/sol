@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -2637,5 +2638,159 @@ func TestCaravanPhaseGatingWithAnalysisWrit(t *testing.T) {
 	}
 	if blocked {
 		t.Error("synthesis should be unblocked after analysis writ is closed")
+	}
+}
+
+func TestManifestFormulaConvoyTargetSubstitution(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Create convoy formula with {target.*} placeholders in leg titles/descriptions.
+	formulaDir := filepath.Join(solHome, "formulas", "test-convoy-target")
+	os.MkdirAll(formulaDir, 0o755)
+
+	legs := []Leg{
+		{ID: "review", Title: "Review: {target.title}", Description: "Review the changes for {target.title} ({target.id})."},
+		{ID: "test", Title: "Test: {target.title}", Description: "Write tests for {target.description}."},
+	}
+	synth := &Synthesis{
+		Title:       "Merge Reviews",
+		Description: "Combine review and test results.",
+		DependsOn:   []string{"review", "test"},
+	}
+	writeTOMLConvoyManifest(t, formulaDir, "test-convoy-target", legs, synth)
+
+	// Create a target writ to act as the parent.
+	targetID, err := ws.CreateWrit("Add login page", "Implement the OAuth login flow", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit() error: %v", err)
+	}
+
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "test-convoy-target",
+		World:       "test-world",
+		ParentID:    targetID,
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	// Verify target substitution in leg titles.
+	reviewItem, err := ws.GetWrit(result.ChildIDs["review"])
+	if err != nil {
+		t.Fatalf("GetWrit(review) error: %v", err)
+	}
+	if reviewItem.Title != "Review: Add login page" {
+		t.Errorf("review title: got %q, want %q", reviewItem.Title, "Review: Add login page")
+	}
+	wantReviewDesc := "Review the changes for Add login page (" + targetID + ")."
+	if reviewItem.Description != wantReviewDesc {
+		t.Errorf("review description: got %q, want %q", reviewItem.Description, wantReviewDesc)
+	}
+
+	testItem, err := ws.GetWrit(result.ChildIDs["test"])
+	if err != nil {
+		t.Fatalf("GetWrit(test) error: %v", err)
+	}
+	if testItem.Title != "Test: Add login page" {
+		t.Errorf("test title: got %q, want %q", testItem.Title, "Test: Add login page")
+	}
+	if testItem.Description != "Write tests for Implement the OAuth login flow." {
+		t.Errorf("test description: got %q, want %q", testItem.Description, "Write tests for Implement the OAuth login flow.")
+	}
+}
+
+func TestManifestFormulaConvoyAnalysisSynthesisDescription(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// Test 1: All-analysis legs — synthesis should reference output directories.
+	formulaDir := filepath.Join(solHome, "formulas", "test-convoy-analysis")
+	os.MkdirAll(formulaDir, 0o755)
+
+	legs := []Leg{
+		{ID: "explore-api", Title: "API Exploration", Description: "Explore the API surface.", Kind: "analysis"},
+		{ID: "explore-data", Title: "Data Model", Description: "Explore data model.", Kind: "analysis"},
+	}
+	synth := &Synthesis{
+		Title:       "Design Synthesis",
+		Description: "Combine findings.",
+		DependsOn:   []string{"explore-api", "explore-data"},
+	}
+	writeTOMLConvoyManifest(t, formulaDir, "test-convoy-analysis", legs, synth)
+
+	result, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "test-convoy-analysis",
+		World:       "test-world",
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() error: %v", err)
+	}
+
+	synthItem, err := ws.GetWrit(result.ChildIDs["synthesis"])
+	if err != nil {
+		t.Fatalf("GetWrit(synthesis) error: %v", err)
+	}
+
+	// All-analysis: should mention output directories, NOT merged branches.
+	if strings.Contains(synthItem.Description, "merged to the target branch") {
+		t.Error("all-analysis synthesis should not mention merged branches")
+	}
+	if !strings.Contains(synthItem.Description, "Read findings from leg output directories") {
+		t.Error("all-analysis synthesis should reference leg output directories")
+	}
+	// Each analysis leg should have its output path listed.
+	apiID := result.ChildIDs["explore-api"]
+	dataID := result.ChildIDs["explore-data"]
+	if !strings.Contains(synthItem.Description, config.WritOutputDir("test-world", apiID)) {
+		t.Errorf("synthesis description missing output dir for explore-api: %s", synthItem.Description)
+	}
+	if !strings.Contains(synthItem.Description, config.WritOutputDir("test-world", dataID)) {
+		t.Errorf("synthesis description missing output dir for explore-data: %s", synthItem.Description)
+	}
+
+	// Test 2: Mixed legs — synthesis should mention both branches and output dirs.
+	formulaDir2 := filepath.Join(solHome, "formulas", "test-convoy-mixed")
+	os.MkdirAll(formulaDir2, 0o755)
+
+	mixedLegs := []Leg{
+		{ID: "reqs", Title: "Requirements", Description: "Gather requirements.", Kind: "analysis"},
+		{ID: "impl", Title: "Implementation", Description: "Build the thing.", Kind: "code"},
+	}
+	mixedSynth := &Synthesis{
+		Title:       "Consolidate",
+		Description: "Combine results.",
+		DependsOn:   []string{"reqs", "impl"},
+	}
+	writeTOMLConvoyManifest(t, formulaDir2, "test-convoy-mixed", mixedLegs, mixedSynth)
+
+	result2, err := ManifestFormula(ws, ss, ManifestOpts{
+		FormulaName: "test-convoy-mixed",
+		World:       "test-world",
+		CreatedBy:   "operator",
+	})
+	if err != nil {
+		t.Fatalf("ManifestFormula() mixed error: %v", err)
+	}
+
+	synthItem2, err := ws.GetWrit(result2.ChildIDs["synthesis"])
+	if err != nil {
+		t.Fatalf("GetWrit(synthesis) mixed error: %v", err)
+	}
+
+	// Mixed: should mention both merged branches (for code) and output dirs (for analysis).
+	if !strings.Contains(synthItem2.Description, "code leg branches have been merged") {
+		t.Error("mixed synthesis should mention merged code branches")
+	}
+	if !strings.Contains(synthItem2.Description, "analysis leg output directories") {
+		t.Error("mixed synthesis should reference analysis output directories")
+	}
+	reqsID := result2.ChildIDs["reqs"]
+	if !strings.Contains(synthItem2.Description, config.WritOutputDir("test-world", reqsID)) {
+		t.Errorf("mixed synthesis description missing output dir for reqs: %s", synthItem2.Description)
 	}
 }
