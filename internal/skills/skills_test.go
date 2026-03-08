@@ -463,13 +463,18 @@ func TestInstallSkill(t *testing.T) {
 	}
 }
 
-func TestInstallSkillAllThree(t *testing.T) {
+func TestInstallSkillAllGenerators(t *testing.T) {
 	dir := t.TempDir()
 
 	skills := map[string]string{
-		"sol-resolve":   GenerateResolve(ResolveContext{World: "w", Agent: "a"}),
-		"sol-workflow":  GenerateWorkflow(WorkflowContext{World: "w", Agent: "a"}),
-		"sol-forge-ops": GenerateForgeOps(ForgeOpsContext{World: "w", TargetBranch: "main"}),
+		"sol-resolve":    GenerateResolve(ResolveContext{World: "w", Agent: "a"}),
+		"sol-workflow":   GenerateWorkflow(WorkflowContext{World: "w", Agent: "a"}),
+		"sol-forge-ops":  GenerateForgeOps(ForgeOpsContext{World: "w", TargetBranch: "main"}),
+		SkillDispatch:    GenerateDispatch("w", "sol"),
+		SkillCaravan:     GenerateCaravan("w", "sol"),
+		SkillTetherMgmt:  GenerateTetherMgmt("w", "agent"),
+		SkillNotify:      GenerateNotify("w"),
+		SkillStatus:      GenerateStatus("w", "sol"),
 	}
 
 	for name, content := range skills {
@@ -494,5 +499,415 @@ func TestInstallSkillAllThree(t *testing.T) {
 		if fmName != name {
 			t.Errorf("%s: frontmatter name %q does not match directory name %q", name, fmName, name)
 		}
+	}
+}
+
+// --- sol-dispatch tests ---
+
+func TestGenerateDispatchProducesValidFrontmatter(t *testing.T) {
+	content := GenerateDispatch("myworld", "sol")
+
+	fm, _, ok := parseFrontmatter(content)
+	if !ok {
+		t.Fatal("GenerateDispatch should produce valid YAML frontmatter")
+	}
+
+	name := extractField(fm, "name")
+	if name != SkillDispatch {
+		t.Errorf("frontmatter name = %q, want %q", name, SkillDispatch)
+	}
+
+	desc := extractField(fm, "description")
+	if desc == "" {
+		t.Error("frontmatter description should not be empty")
+	}
+}
+
+func TestGenerateDispatchExpectedCommands(t *testing.T) {
+	content := GenerateDispatch("myworld", "sol")
+
+	for _, cmd := range []string{
+		"sol writ create --world=myworld",
+		"sol writ dep add",
+		"sol cast <writ-id> --world=myworld",
+		"sol writ ready --world=myworld",
+		"sol agent list --world=myworld",
+	} {
+		if !strings.Contains(content, cmd) {
+			t.Errorf("dispatch skill should contain %q", cmd)
+		}
+	}
+}
+
+func TestGenerateDispatchKindGuidance(t *testing.T) {
+	content := GenerateDispatch("myworld", "sol")
+
+	if !strings.Contains(content, "--kind=code") {
+		t.Error("dispatch skill should contain code kind guidance")
+	}
+	if !strings.Contains(content, "--kind=analysis") {
+		t.Error("dispatch skill should contain analysis kind guidance")
+	}
+	if !strings.Contains(content, "One concern per writ") {
+		t.Error("dispatch skill should contain one-concern guidance")
+	}
+	if !strings.Contains(content, "enough context") {
+		t.Error("dispatch skill should contain context guidance")
+	}
+}
+
+func TestGenerateDispatchTemplateSubstitution(t *testing.T) {
+	content := GenerateDispatch("testworld", "/usr/bin/sol")
+
+	if !strings.Contains(content, "testworld") {
+		t.Error("dispatch skill should contain substituted world name")
+	}
+	if !strings.Contains(content, "/usr/bin/sol") {
+		t.Error("dispatch skill should contain substituted sol binary path")
+	}
+	for _, placeholder := range []string{"{WORLD}", "{SOL_BINARY}", "§"} {
+		if strings.Contains(content, placeholder) {
+			t.Errorf("dispatch skill should not contain unreplaced placeholder %q", placeholder)
+		}
+	}
+}
+
+// --- sol-caravan tests ---
+
+func TestGenerateCaravanProducesValidFrontmatter(t *testing.T) {
+	content := GenerateCaravan("myworld", "sol")
+
+	fm, _, ok := parseFrontmatter(content)
+	if !ok {
+		t.Fatal("GenerateCaravan should produce valid YAML frontmatter")
+	}
+
+	name := extractField(fm, "name")
+	if name != SkillCaravan {
+		t.Errorf("frontmatter name = %q, want %q", name, SkillCaravan)
+	}
+}
+
+func TestGenerateCaravanExpectedCommands(t *testing.T) {
+	content := GenerateCaravan("myworld", "sol")
+
+	for _, cmd := range []string{
+		"sol caravan create",
+		"sol caravan add",
+		"sol caravan status",
+		"sol caravan set-phase",
+		"sol caravan commission",
+		"sol caravan launch",
+	} {
+		if !strings.Contains(content, cmd) {
+			t.Errorf("caravan skill should contain %q", cmd)
+		}
+	}
+}
+
+func TestGenerateCaravanPhaseGating(t *testing.T) {
+	content := GenerateCaravan("myworld", "sol")
+
+	if !strings.Contains(content, "phase order") {
+		t.Error("caravan skill should explain phase sequencing")
+	}
+	if !strings.Contains(content, "parallel") {
+		t.Error("caravan skill should mention parallel execution within phases")
+	}
+	if !strings.Contains(content, "writ ready") {
+		t.Error("caravan skill should mention ready query interaction")
+	}
+	if !strings.Contains(content, "phase gating") {
+		t.Error("caravan skill should mention phase gating in ready query")
+	}
+}
+
+func TestGenerateCaravanTemplateSubstitution(t *testing.T) {
+	content := GenerateCaravan("prodworld", "/opt/sol")
+
+	if !strings.Contains(content, "prodworld") {
+		t.Error("caravan skill should contain substituted world name")
+	}
+	if !strings.Contains(content, "/opt/sol") {
+		t.Error("caravan skill should contain substituted sol binary path")
+	}
+	for _, placeholder := range []string{"{WORLD}", "{SOL_BINARY}", "§"} {
+		if strings.Contains(content, placeholder) {
+			t.Errorf("caravan skill should not contain unreplaced placeholder %q", placeholder)
+		}
+	}
+}
+
+// --- sol-tether-mgmt tests ---
+
+func TestGenerateTetherMgmtProducesValidFrontmatter(t *testing.T) {
+	content := GenerateTetherMgmt("myworld", "Echo")
+
+	fm, _, ok := parseFrontmatter(content)
+	if !ok {
+		t.Fatal("GenerateTetherMgmt should produce valid YAML frontmatter")
+	}
+
+	name := extractField(fm, "name")
+	if name != SkillTetherMgmt {
+		t.Errorf("frontmatter name = %q, want %q", name, SkillTetherMgmt)
+	}
+}
+
+func TestGenerateTetherMgmtExpectedCommands(t *testing.T) {
+	content := GenerateTetherMgmt("myworld", "Echo")
+
+	for _, cmd := range []string{
+		"sol tether <writ-id> --agent=Echo --world=myworld",
+		"sol untether <writ-id> --agent=Echo --world=myworld",
+		"sol writ activate <writ-id> --agent=Echo --world=myworld",
+	} {
+		if !strings.Contains(content, cmd) {
+			t.Errorf("tether-mgmt skill should contain %q", cmd)
+		}
+	}
+}
+
+func TestGenerateTetherMgmtContent(t *testing.T) {
+	content := GenerateTetherMgmt("myworld", "Echo")
+
+	if !strings.Contains(content, ".tether/") {
+		t.Error("tether-mgmt skill should describe the tether directory")
+	}
+	if !strings.Contains(content, "active") {
+		t.Error("tether-mgmt skill should describe the active writ concept")
+	}
+	if !strings.Contains(content, "Cast") {
+		t.Error("tether-mgmt skill should explain cast vs tether")
+	}
+}
+
+func TestGenerateTetherMgmtTemplateSubstitution(t *testing.T) {
+	content := GenerateTetherMgmt("devworld", "Spark")
+
+	if !strings.Contains(content, "devworld") {
+		t.Error("tether-mgmt skill should contain substituted world name")
+	}
+	if !strings.Contains(content, "Spark") {
+		t.Error("tether-mgmt skill should contain substituted agent name")
+	}
+	for _, placeholder := range []string{"{WORLD}", "{AGENT}", "§"} {
+		if strings.Contains(content, placeholder) {
+			t.Errorf("tether-mgmt skill should not contain unreplaced placeholder %q", placeholder)
+		}
+	}
+}
+
+// --- sol-notify tests ---
+
+func TestGenerateNotifyProducesValidFrontmatter(t *testing.T) {
+	content := GenerateNotify("myworld")
+
+	fm, _, ok := parseFrontmatter(content)
+	if !ok {
+		t.Fatal("GenerateNotify should produce valid YAML frontmatter")
+	}
+
+	name := extractField(fm, "name")
+	if name != SkillNotify {
+		t.Errorf("frontmatter name = %q, want %q", name, SkillNotify)
+	}
+}
+
+func TestGenerateNotifyNotificationTypes(t *testing.T) {
+	content := GenerateNotify("myworld")
+
+	for _, notifType := range []string{
+		"AGENT_DONE",
+		"MERGED",
+		"MERGE_FAILED",
+		"RECOVERY_NEEDED",
+		"MR_READY",
+		"FORGE_PAUSED",
+		"FORGE_RESUMED",
+	} {
+		if !strings.Contains(content, notifType) {
+			t.Errorf("notify skill should contain notification type %q", notifType)
+		}
+	}
+}
+
+func TestGenerateNotifyDeliveryMechanism(t *testing.T) {
+	content := GenerateNotify("myworld")
+
+	if !strings.Contains(content, "UserPromptSubmit") {
+		t.Error("notify skill should describe the delivery mechanism")
+	}
+	if !strings.Contains(content, "[NOTIFICATION]") {
+		t.Error("notify skill should describe the notification format")
+	}
+}
+
+func TestGenerateNotifyResponsePatterns(t *testing.T) {
+	content := GenerateNotify("myworld")
+
+	if !strings.Contains(content, "caravan") {
+		t.Error("notify skill AGENT_DONE should mention checking caravan")
+	}
+	if !strings.Contains(content, "dispatch") {
+		t.Error("notify skill AGENT_DONE should mention dispatching next work")
+	}
+	if !strings.Contains(content, "brief") {
+		t.Error("notify skill MERGED should mention updating brief")
+	}
+	if !strings.Contains(content, "unblocked") {
+		t.Error("notify skill MERGED should mention checking unblocked items")
+	}
+	if !strings.Contains(content, "re-dispatch") {
+		t.Error("notify skill MERGE_FAILED should mention re-dispatching")
+	}
+	if !strings.Contains(strings.ToLower(content), "escalate") {
+		t.Error("notify skill MERGE_FAILED should mention escalation")
+	}
+	if !strings.Contains(content, "respawn") || !strings.Contains(content, "attempts") {
+		t.Error("notify skill RECOVERY_NEEDED should mention respawn attempts")
+	}
+}
+
+func TestGenerateNotifyTemplateSubstitution(t *testing.T) {
+	content := GenerateNotify("testworld")
+
+	for _, placeholder := range []string{"{WORLD}", "§"} {
+		if strings.Contains(content, placeholder) {
+			t.Errorf("notify skill should not contain unreplaced placeholder %q", placeholder)
+		}
+	}
+}
+
+// --- sol-status tests ---
+
+func TestGenerateStatusProducesValidFrontmatter(t *testing.T) {
+	content := GenerateStatus("myworld", "sol")
+
+	fm, _, ok := parseFrontmatter(content)
+	if !ok {
+		t.Fatal("GenerateStatus should produce valid YAML frontmatter")
+	}
+
+	name := extractField(fm, "name")
+	if name != SkillStatus {
+		t.Errorf("frontmatter name = %q, want %q", name, SkillStatus)
+	}
+}
+
+func TestGenerateStatusExpectedCommands(t *testing.T) {
+	content := GenerateStatus("myworld", "sol")
+
+	for _, cmd := range []string{
+		"sol status\n",
+		"sol status --world=myworld",
+		"sol agent list --world=myworld",
+		"sol writ ready --world=myworld",
+		"sol world sync --world=myworld",
+	} {
+		if !strings.Contains(content, cmd) {
+			t.Errorf("status skill should contain %q", cmd)
+		}
+	}
+}
+
+func TestGenerateStatusSections(t *testing.T) {
+	content := GenerateStatus("myworld", "sol")
+
+	if !strings.Contains(content, "Sphere Overview") {
+		t.Error("status skill should contain sphere overview section")
+	}
+	if !strings.Contains(content, "Per-World Detail") {
+		t.Error("status skill should contain per-world detail section")
+	}
+}
+
+func TestGenerateStatusTemplateSubstitution(t *testing.T) {
+	content := GenerateStatus("stagingworld", "/home/sol/bin/sol")
+
+	if !strings.Contains(content, "stagingworld") {
+		t.Error("status skill should contain substituted world name")
+	}
+	if !strings.Contains(content, "/home/sol/bin/sol") {
+		t.Error("status skill should contain substituted sol binary path")
+	}
+	for _, placeholder := range []string{"{WORLD}", "{SOL_BINARY}", "§"} {
+		if strings.Contains(content, placeholder) {
+			t.Errorf("status skill should not contain unreplaced placeholder %q", placeholder)
+		}
+	}
+}
+
+// --- Cross-skill validation (all generators) ---
+
+func TestAllSkillsFrontmatterNameMatchesConstant(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{SkillDispatch, GenerateDispatch("w", "sol")},
+		{SkillCaravan, GenerateCaravan("w", "sol")},
+		{SkillTetherMgmt, GenerateTetherMgmt("w", "agent")},
+		{SkillNotify, GenerateNotify("w")},
+		{SkillStatus, GenerateStatus("w", "sol")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fm, _, ok := parseFrontmatter(tt.content)
+			if !ok {
+				t.Errorf("%s: should have valid YAML frontmatter", tt.name)
+				return
+			}
+			if got := extractField(fm, "name"); got != tt.name {
+				t.Errorf("%s: frontmatter name = %q, want %q", tt.name, got, tt.name)
+			}
+		})
+	}
+}
+
+func TestAllSkillsHaveDescription(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{SkillDispatch, GenerateDispatch("w", "sol")},
+		{SkillCaravan, GenerateCaravan("w", "sol")},
+		{SkillTetherMgmt, GenerateTetherMgmt("w", "agent")},
+		{SkillNotify, GenerateNotify("w")},
+		{SkillStatus, GenerateStatus("w", "sol")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !strings.Contains(tt.content, "description:") {
+				t.Errorf("%s: should have a description in frontmatter", tt.name)
+			}
+		})
+	}
+}
+
+func TestAllSkillsNoUnreplacedPlaceholders(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{SkillDispatch, GenerateDispatch("w", "sol")},
+		{SkillCaravan, GenerateCaravan("w", "sol")},
+		{SkillTetherMgmt, GenerateTetherMgmt("w", "agent")},
+		{SkillNotify, GenerateNotify("w")},
+		{SkillStatus, GenerateStatus("w", "sol")},
+	}
+
+	placeholders := []string{"{WORLD}", "{SOL_BINARY}", "{AGENT}", "§"}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, p := range placeholders {
+				if strings.Contains(tt.content, p) {
+					t.Errorf("%s: should not contain unreplaced placeholder %q", tt.name, p)
+				}
+			}
+		})
 	}
 }
