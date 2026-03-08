@@ -341,6 +341,258 @@ func TestAggregateTokens(t *testing.T) {
 	}
 }
 
+func TestTokensForWrit(t *testing.T) {
+	s := setupWorld(t)
+
+	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	start2 := time.Date(2026, 3, 5, 11, 0, 0, 0, time.UTC)
+	start3 := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
+
+	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
+	h2, _ := s.WriteHistory("Jasper", "sol-item01", "cast", "", start2, nil)
+	h3, _ := s.WriteHistory("Toast", "sol-item02", "cast", "", start3, nil)
+
+	// Both agents use sonnet on sol-item01.
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100)
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50)
+	// Toast also uses opus on sol-item01.
+	s.WriteTokenUsage(h1, "claude-opus-4-6", 500, 200, 0, 0)
+	// Toast uses sonnet on sol-item02 (should not appear).
+	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 9000, 4000, 1000, 500)
+
+	summaries, err := s.TokensForWrit("sol-item01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("expected 2 model summaries, got %d", len(summaries))
+	}
+
+	// Ordered by model name.
+	opus := summaries[0]
+	sonnet := summaries[1]
+
+	if opus.Model != "claude-opus-4-6" {
+		t.Fatalf("expected opus model, got %q", opus.Model)
+	}
+	if opus.InputTokens != 500 || opus.OutputTokens != 200 {
+		t.Fatalf("opus: input=%d output=%d, expected 500/200", opus.InputTokens, opus.OutputTokens)
+	}
+
+	if sonnet.Model != "claude-sonnet-4-6" {
+		t.Fatalf("expected sonnet model, got %q", sonnet.Model)
+	}
+	if sonnet.InputTokens != 3000 {
+		t.Fatalf("sonnet input=%d, expected 3000", sonnet.InputTokens)
+	}
+	if sonnet.OutputTokens != 1300 {
+		t.Fatalf("sonnet output=%d, expected 1300", sonnet.OutputTokens)
+	}
+
+	// Nonexistent writ returns empty.
+	summaries, err = s.TokensForWrit("sol-nonexist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 0 {
+		t.Fatalf("expected 0 summaries for nonexistent writ, got %d", len(summaries))
+	}
+}
+
+func TestTokensForWorld(t *testing.T) {
+	s := setupWorld(t)
+
+	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	start2 := time.Date(2026, 3, 5, 11, 0, 0, 0, time.UTC)
+
+	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
+	h2, _ := s.WriteHistory("Jasper", "sol-item02", "cast", "", start2, nil)
+
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100)
+	s.WriteTokenUsage(h1, "claude-opus-4-6", 500, 200, 0, 0)
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200)
+
+	summaries, err := s.TokensForWorld()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("expected 2 model summaries, got %d", len(summaries))
+	}
+
+	opus := summaries[0]
+	sonnet := summaries[1]
+
+	if opus.Model != "claude-opus-4-6" {
+		t.Fatalf("expected opus, got %q", opus.Model)
+	}
+	if opus.InputTokens != 500 {
+		t.Fatalf("opus input=%d, expected 500", opus.InputTokens)
+	}
+
+	if sonnet.Model != "claude-sonnet-4-6" {
+		t.Fatalf("expected sonnet, got %q", sonnet.Model)
+	}
+	// 1000 + 3000 = 4000
+	if sonnet.InputTokens != 4000 {
+		t.Fatalf("sonnet input=%d, expected 4000", sonnet.InputTokens)
+	}
+	if sonnet.OutputTokens != 1500 {
+		t.Fatalf("sonnet output=%d, expected 1500", sonnet.OutputTokens)
+	}
+}
+
+func TestTokensForWorldEmpty(t *testing.T) {
+	s := setupWorld(t)
+
+	summaries, err := s.TokensForWorld()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 0 {
+		t.Fatalf("expected 0 summaries for empty world, got %d", len(summaries))
+	}
+}
+
+func TestTokensByWritForAgent(t *testing.T) {
+	s := setupWorld(t)
+
+	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	start2 := time.Date(2026, 3, 5, 11, 0, 0, 0, time.UTC)
+	start3 := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
+
+	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
+	h2, _ := s.WriteHistory("Toast", "sol-item02", "cast", "", start2, nil)
+	h3, _ := s.WriteHistory("Jasper", "sol-item01", "cast", "", start3, nil)
+
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100)
+	s.WriteTokenUsage(h1, "claude-opus-4-6", 500, 200, 0, 0)
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50)
+	// Jasper's tokens should not appear in Toast's results.
+	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 9000, 4000, 1000, 500)
+
+	result, err := s.TokensByWritForAgent("Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 writs, got %d", len(result))
+	}
+
+	// Check sol-item01 (should have opus + sonnet).
+	item01 := result["sol-item01"]
+	if len(item01) != 2 {
+		t.Fatalf("expected 2 models for sol-item01, got %d", len(item01))
+	}
+	if item01[0].Model != "claude-opus-4-6" {
+		t.Fatalf("expected opus first, got %q", item01[0].Model)
+	}
+	if item01[1].Model != "claude-sonnet-4-6" {
+		t.Fatalf("expected sonnet second, got %q", item01[1].Model)
+	}
+	if item01[1].InputTokens != 1000 {
+		t.Fatalf("sol-item01 sonnet input=%d, expected 1000", item01[1].InputTokens)
+	}
+
+	// Check sol-item02 (should have only sonnet).
+	item02 := result["sol-item02"]
+	if len(item02) != 1 {
+		t.Fatalf("expected 1 model for sol-item02, got %d", len(item02))
+	}
+	if item02[0].InputTokens != 2000 {
+		t.Fatalf("sol-item02 input=%d, expected 2000", item02[0].InputTokens)
+	}
+
+	// Nonexistent agent returns empty map.
+	result, err = s.TokensByWritForAgent("Nobody")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 0 {
+		t.Fatalf("expected empty map for Nobody, got %d entries", len(result))
+	}
+}
+
+func TestTokensByWritForAgentNoWrit(t *testing.T) {
+	s := setupWorld(t)
+
+	// History entry without a writ_id.
+	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	h, _ := s.WriteHistory("Toast", "", "respawn", "", start, nil)
+	s.WriteTokenUsage(h, "claude-sonnet-4-6", 500, 200, 0, 0)
+
+	result, err := s.TokensByWritForAgent("Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Entries without a writ_id should still appear, keyed by empty string.
+	if len(result) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(result))
+	}
+	noWrit := result[""]
+	if len(noWrit) != 1 {
+		t.Fatalf("expected 1 model for no-writ entry, got %d", len(noWrit))
+	}
+	if noWrit[0].InputTokens != 500 {
+		t.Fatalf("no-writ input=%d, expected 500", noWrit[0].InputTokens)
+	}
+}
+
+func TestTokensSince(t *testing.T) {
+	s := setupWorld(t)
+
+	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+	start2 := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
+	start3 := time.Date(2026, 3, 5, 14, 0, 0, 0, time.UTC)
+
+	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
+	h2, _ := s.WriteHistory("Toast", "sol-item01", "resolve", "", start2, nil)
+	h3, _ := s.WriteHistory("Jasper", "sol-item02", "cast", "", start3, nil)
+
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100)
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50)
+	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 3000, 1000, 500, 200)
+
+	// Since 12:00 — should include h2 and h3 but not h1.
+	since := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
+	summaries, err := s.TokensSince(since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 model summary, got %d", len(summaries))
+	}
+	if summaries[0].InputTokens != 5000 {
+		t.Fatalf("input=%d, expected 5000 (2000+3000)", summaries[0].InputTokens)
+	}
+	if summaries[0].OutputTokens != 1800 {
+		t.Fatalf("output=%d, expected 1800 (800+1000)", summaries[0].OutputTokens)
+	}
+
+	// Since future time — should return empty.
+	future := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	summaries, err = s.TokensSince(future)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 0 {
+		t.Fatalf("expected 0 summaries for future since, got %d", len(summaries))
+	}
+
+	// Since before all records — should return everything.
+	past := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	summaries, err = s.TokensSince(past)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 model summary, got %d", len(summaries))
+	}
+	if summaries[0].InputTokens != 6000 {
+		t.Fatalf("input=%d, expected 6000 (1000+2000+3000)", summaries[0].InputTokens)
+	}
+}
+
 func TestMergeStatsForAgent(t *testing.T) {
 	s := setupWorld(t)
 
