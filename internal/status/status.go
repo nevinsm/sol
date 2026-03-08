@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/nudge"
@@ -282,7 +281,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 	}
 
 	// 2. Check forge session.
-	forgeSessName := dispatch.SessionName(world, "forge")
+	forgeSessName := config.SessionName(world, "forge")
 	if checker.Exists(forgeSessName) {
 		result.Forge = ForgeInfo{Running: true, SessionName: forgeSessName}
 	}
@@ -313,13 +312,13 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 	}
 
 	// 2c. Check sentinel session.
-	sentinelSessName := dispatch.SessionName(world, "sentinel")
+	sentinelSessName := config.SessionName(world, "sentinel")
 	if checker.Exists(sentinelSessName) {
 		result.Sentinel = SentinelInfo{Running: true, SessionName: sentinelSessName}
 	}
 
 	// 2d. Check governor.
-	govSessName := dispatch.SessionName(world, "governor")
+	govSessName := config.SessionName(world, "governor")
 	govSessAlive := checker.Exists(govSessName)
 
 	// 3. List all agents for this world.
@@ -330,7 +329,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 
 	// 4. Build agent statuses, separated by role.
 	for _, agent := range agents {
-		sessName := dispatch.SessionName(world, agent.Name)
+		sessName := config.SessionName(world, agent.Name)
 		sessAlive := checker.Exists(sessName)
 
 		switch agent.Role {

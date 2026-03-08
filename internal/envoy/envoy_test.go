@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -307,7 +308,7 @@ func TestStop(t *testing.T) {
 		updated: map[string]string{},
 	}
 
-	sessName := SessionName("myworld", "Echo")
+	sessName := config.SessionName("myworld", "Echo")
 	mgr := &mockStopManager{sessions: map[string]bool{sessName: true}}
 
 	err := Stop("myworld", "Echo", ss, mgr)

@@ -980,7 +980,7 @@ func TestResolveHappyPath(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
@@ -1113,7 +1113,7 @@ func TestResolveConflictResolution(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
@@ -1231,7 +1231,7 @@ func TestResolveConflictResolutionResetsParentMR(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Bravo")
+	sessName := config.SessionName("ember", "Bravo")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
@@ -1339,7 +1339,7 @@ func TestResolveConflictResolutionResetsBlockedAndFailedMRs(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Charlie")
+	sessName := config.SessionName("ember", "Charlie")
 	mgr.started[sessName] = true
 
 	_, err = Resolve(context.Background(), ResolveOpts{
@@ -1409,7 +1409,7 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
@@ -2028,7 +2028,7 @@ func TestResolveRollbackOnMRFailure(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	// Use mock world store that fails on CreateMergeRequest.
@@ -2091,7 +2091,7 @@ func TestResolvePushFailureCreatesMR(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	// Intentionally NO addBareRemote — push will fail.
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
@@ -2224,7 +2224,7 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Scout")
+	sessName := config.SessionName("ember", "Scout")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
@@ -2330,7 +2330,7 @@ func TestResolvePersistentAgentWithRemainingTethers(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Scout")
+	sessName := config.SessionName("ember", "Scout")
 	mgr.started[sessName] = true
 
 	// Resolve the active writ (writ1).
@@ -2419,7 +2419,7 @@ func TestResolvePersistentAgentNonActiveWrit(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Scout")
+	sessName := config.SessionName("ember", "Scout")
 	mgr.started[sessName] = true
 
 	// Resolve the non-active writ (writ2) using explicit WritID.
@@ -2492,7 +2492,7 @@ func TestResolvePersistentAgentLastTether(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Scout")
+	sessName := config.SessionName("ember", "Scout")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
@@ -2564,7 +2564,7 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
@@ -2623,7 +2623,7 @@ func TestResolveRemovesWorktreeForOutpostAgent(t *testing.T) {
 		t.Fatalf("worktree should exist before resolve: %v", err)
 	}
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
@@ -2723,7 +2723,7 @@ func TestResolveNudgesForgeWithMRReady(t *testing.T) {
 	addBareRemote(t, worktreeDir)
 
 	// Start the agent session AND a forge session so the nudge fires.
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 	forgeSession := config.SessionName("ember", "forge")
 	mgr.started[forgeSession] = true
@@ -2800,7 +2800,7 @@ func TestResolveQueuesForgeNudgeEvenWithoutForge(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 	// No forge session started — smart delivery queues the message
 	// for when forge eventually starts and drains its queue.
@@ -2859,7 +2859,7 @@ func TestResolveCreatesAndRemovesLock(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	// Verify lock does not exist before resolve.
@@ -2912,7 +2912,7 @@ func TestResolveIdempotent(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	// First resolve — normal path.
@@ -3083,7 +3083,7 @@ func TestResolveNonCodeWritSkipsGitAndMR(t *testing.T) {
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
@@ -3179,7 +3179,7 @@ func TestResolveNonCodeWritSkipsForgeNudge(t *testing.T) {
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	// Start forge and governor sessions so we can verify nudges are NOT sent.
@@ -3261,7 +3261,7 @@ func TestResolveCodeWritDefaultKind(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
@@ -3439,7 +3439,7 @@ func TestOutputDirectorySurvivesResolve(t *testing.T) {
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 
-	sessName := SessionName("ember", "Toast")
+	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
 	// Pre-create the output directory (as Cast() would do).

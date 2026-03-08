@@ -147,18 +147,17 @@ var envoyRestartCmd = &cobra.Command{
 		}
 
 		// Stop if running.
-		sessName := envoy.SessionName(world, name)
+		sessName := config.SessionName(world, name)
 		mgr := session.New()
 		if mgr.Exists(sessName) {
 			sphereStore, err := store.OpenSphere()
 			if err != nil {
 				return err
 			}
+			defer sphereStore.Close()
 			if err := envoy.Stop(world, name, sphereStore, mgr); err != nil {
-				sphereStore.Close()
 				return err
 			}
-			sphereStore.Close()
 			fmt.Printf("Stopped envoy %q in world %q\n", name, world)
 		}
 
@@ -184,7 +183,7 @@ var envoyAttachCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := envoy.SessionName(world, name)
+		sessName := config.SessionName(world, name)
 		mgr := session.New()
 
 		if !mgr.Exists(sessName) {
@@ -234,7 +233,7 @@ var envoyListCmd = &cobra.Command{
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 		fmt.Fprintf(tw, "NAME\tWORLD\tSTATE\tSESSION\n")
 		for _, e := range envoys {
-			sessName := envoy.SessionName(e.World, e.Name)
+			sessName := config.SessionName(e.World, e.Name)
 			sessStatus := "stopped"
 			if mgr.Exists(sessName) {
 				sessStatus = "running"
@@ -436,7 +435,7 @@ var envoyStatusCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := envoy.SessionName(world, name)
+		sessName := config.SessionName(world, name)
 		mgr := session.New()
 		running := mgr.Exists(sessName)
 
@@ -449,7 +448,9 @@ var envoyStatusCmd = &cobra.Command{
 
 		// Query sphere store for agent state.
 		sphereStore, err := store.OpenSphere()
-		if err == nil {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: unable to open sphere store: %v\n", err)
+		} else {
 			defer sphereStore.Close()
 			agentID := world + "/" + name
 			agent, err := sphereStore.GetAgent(agentID)

@@ -312,7 +312,7 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 		}
 
 		// Check if session is alive.
-		sessionName := dispatch.SessionName(agent.World, agent.Name)
+		sessionName := config.SessionName(agent.World, agent.Name)
 		if d.sessions.Exists(sessionName) {
 			continue // session alive, not stale
 		}
