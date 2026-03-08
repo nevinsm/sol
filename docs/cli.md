@@ -106,6 +106,7 @@ When an agent session starts, credentials are symlinked from the resolved accoun
 | `sol writ update <id>` | Update a writ |
 | `sol writ close <id>` | Close a writ |
 | `sol writ query` | Run a read-only SQL query |
+| `sol writ clean` | Clean writ output directories |
 
 `sol writ create` accepts `--title` (required), `--description`, `--priority` (1=high, 2=normal, 3=low), `--label` (repeatable), `--kind`, and `--metadata` (JSON object).
 

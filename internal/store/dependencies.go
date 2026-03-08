@@ -129,6 +129,41 @@ func (s *Store) IsReady(itemID string) (bool, error) {
 	return unsatisfied == 0, nil
 }
 
+// HasOpenTransitiveDependents checks whether the given writ has any open
+// (non-closed) writs in its transitive dependent graph. This is used by
+// writ clean to guard against cleaning output directories that are still
+// needed by downstream writs.
+func (s *Store) HasOpenTransitiveDependents(writID string) (bool, error) {
+	visited := map[string]bool{}
+	queue := []string{writID}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if visited[current] {
+			continue
+		}
+		visited[current] = true
+
+		dependents, err := s.GetDependents(current)
+		if err != nil {
+			return false, err
+		}
+		for _, depID := range dependents {
+			// Check if this dependent is open (not closed).
+			var status string
+			err := s.db.QueryRow(`SELECT status FROM writs WHERE id = ?`, depID).Scan(&status)
+			if err != nil {
+				return false, fmt.Errorf("failed to check status of writ %q: %w", depID, err)
+			}
+			if status != "closed" {
+				return true, nil
+			}
+			queue = append(queue, depID)
+		}
+	}
+	return false, nil
+}
+
 // wouldCreateCycle checks if adding the edge from→to would create a cycle
 // by walking the dependency graph from toID to see if fromID is reachable.
 //

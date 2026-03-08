@@ -11,10 +11,11 @@ import (
 
 // WorldConfig holds all configuration for a world.
 type WorldConfig struct {
-	World  WorldSection  `toml:"world" json:"world"`
-	Agents AgentsSection `toml:"agents" json:"agents"`
-	Forge  ForgeSection  `toml:"forge" json:"forge"`
-	Ledger LedgerSection `toml:"ledger" json:"ledger"`
+	World     WorldSection     `toml:"world" json:"world"`
+	Agents    AgentsSection    `toml:"agents" json:"agents"`
+	Forge     ForgeSection     `toml:"forge" json:"forge"`
+	Ledger    LedgerSection    `toml:"ledger" json:"ledger"`
+	WritClean WritCleanSection `toml:"writ-clean" json:"writ-clean"`
 }
 
 // WorldSection holds world-level settings.
@@ -41,6 +42,11 @@ type ForgeSection struct {
 // LedgerSection holds ledger/telemetry settings.
 type LedgerSection struct {
 	Port int `toml:"port" json:"port"` // OTLP receiver port; 0 = disabled
+}
+
+// WritCleanSection holds writ output directory cleanup settings.
+type WritCleanSection struct {
+	RetentionDays int `toml:"retention_days" json:"retention_days"` // 0 = use default (15)
 }
 
 // DefaultWorldConfig returns a WorldConfig with built-in defaults.

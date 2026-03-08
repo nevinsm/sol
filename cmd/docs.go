@@ -93,7 +93,7 @@ var docSections = []docSection{
 	},
 	{
 		heading: "Writs",
-		paths:   []string{"writ create", "writ status", "writ list", "writ ready", "writ update", "writ close", "writ query"},
+		paths:   []string{"writ create", "writ status", "writ list", "writ ready", "writ update", "writ close", "writ query", "writ clean"},
 		notes: "`sol writ create` accepts `--title` (required), `--description`, `--priority` (1=high, 2=normal, 3=low), " +
 			"`--label` (repeatable), `--kind`, and `--metadata` (JSON object).\n\n" +
 			"### Writ Kind\n\n" +
