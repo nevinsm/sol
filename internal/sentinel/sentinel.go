@@ -829,7 +829,21 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 // returnWorkToOpen returns a stalled agent's writ to the open pool
 // after exceeding max respawn attempts.
 func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
-	// 1. Update writ: status → open, clear assignee.
+	// CRASH SAFETY: Set agent idle FIRST, then update writ.
+	// An orphaned "idle" agent is self-correcting (sentinel will reap it or
+	// it will be reassigned). An orphaned "working" agent with no session
+	// blocks capacity and triggers wasted respawn attempts.
+	//
+	// If we crash after step 1 but before step 2: agent is idle (harmless),
+	// writ is still tethered. Consul's stale-tether recovery will eventually
+	// detect the tether and return the writ to open.
+
+	// 1. Set agent state → idle, clear active_writ.
+	if err := w.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
+		return fmt.Errorf("failed to set agent %s idle: %w", agent.ID, err)
+	}
+
+	// 2. Update writ: status → open, clear assignee.
 	if agent.ActiveWrit != "" {
 		if err := w.worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
 			Status:   "open",
@@ -837,14 +851,6 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 		}); err != nil {
 			return fmt.Errorf("failed to return writ %s to open: %w", agent.ActiveWrit, err)
 		}
-	}
-
-	// 2. Set agent state → idle, clear active_writ.
-	// Done before clearing tether so a crash leaves the agent idle with a stale
-	// tether (harmless — next dispatch overwrites it) rather than "working" with
-	// no tether (would trigger a wasted respawn).
-	if err := w.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
-		return fmt.Errorf("failed to set agent %s idle: %w", agent.ID, err)
 	}
 
 	// 3. Clean up all agent resources (worktree, session metadata, tether, etc.).
