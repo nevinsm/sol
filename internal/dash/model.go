@@ -317,7 +317,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case restartProcessMsg:
 		m.dirty = true
-		// Check systemd guard before showing confirmation.
+		// Sphere process restart — check systemd guard before showing confirmation.
 		info, ok := sphereProcessMap[msg.processName]
 		if ok && checkSystemdManaged(info.cliName) {
 			m.confirm.show(
@@ -333,8 +333,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 		}
 
+	case requestRestartMsg:
+		m.dirty = true
+		// World-level restart — show confirmation using the confirmModel.
+		target := msg.target
+		m.confirm.show(
+			target.confirmTitle,
+			target.confirmDetail,
+			worldRestartCmd(target),
+		)
+
 	case restartDoneMsg:
 		m.dirty = true
+		// Sphere process restart result.
 		if msg.err != nil {
 			// Show error in confirmation overlay.
 			m.confirm.show(
@@ -345,6 +356,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Force refresh to pick up new state.
 		cmds = append(cmds, m.refresh())
+
+	case worldRestartDoneMsg:
+		m.dirty = true
+		// World-level restart result — show inline feedback.
+		if msg.err != nil {
+			m.worldView.restartFeedback = fmt.Sprintf("restart failed: %s", msg.err)
+			m.worldView.restartFeedbackErr = true
+		} else {
+			m.worldView.restartFeedback = fmt.Sprintf("%s restarted", msg.name)
+			m.worldView.restartFeedbackErr = false
+		}
+		cmds = append(cmds, scheduleClearFeedback(), m.refresh())
+
+	case clearRestartFeedbackMsg:
+		m.dirty = true
+		m.worldView.restartFeedback = ""
+		m.worldView.restartFeedbackErr = false
 
 	case animTickMsg:
 		// Animation tick (~30 FPS) — drives visual state.

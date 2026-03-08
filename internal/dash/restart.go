@@ -12,9 +12,12 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/startup"
 )
 
-// restartDoneMsg carries the result of a sphere process restart.
+// --- Sphere process restart (from sphere view) ---
+
+// restartDoneMsg carries the result of a process restart.
 type restartDoneMsg struct {
 	processName string
 	err         error
@@ -188,4 +191,84 @@ func sphereRestartCmd(processName string) tea.Cmd {
 		err = restartSphereProcess(solBin, processName)
 		return restartDoneMsg{processName: processName, err: err}
 	}
+}
+
+// --- World-level restart (agents and services from world view) ---
+
+// restartTarget describes an item to restart from the world view.
+type restartTarget struct {
+	name          string // display name (agent name or service name)
+	role          string // "outpost", "envoy", "forge", "sentinel", "governor"
+	world         string
+	sessionName   string // tmux session name
+	confirmTitle  string // e.g. "Restart Toast?"
+	confirmDetail string // e.g. "Kill session and re-cast tethered writ"
+}
+
+// requestRestartMsg is emitted by the world view when R is pressed on a restartable item.
+type requestRestartMsg struct {
+	target restartTarget
+}
+
+// worldRestartDoneMsg is emitted when a world-level restart operation completes.
+type worldRestartDoneMsg struct {
+	name string
+	err  error
+}
+
+// clearRestartFeedbackMsg triggers clearing the inline feedback message.
+type clearRestartFeedbackMsg struct{}
+
+// worldRestartCmd returns a tea.Cmd that executes a world-level restart in a goroutine.
+func worldRestartCmd(target restartTarget) tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		switch target.role {
+		case "outpost", "envoy":
+			err = restartAgent(target.world, target.name, target.role, target.sessionName)
+		case "forge", "sentinel", "governor":
+			err = restartService(target.world, target.role)
+		default:
+			err = fmt.Errorf("unknown restart target role %q", target.role)
+		}
+		return worldRestartDoneMsg{name: target.name, err: err}
+	}
+}
+
+// restartAgent stops a tmux session and respawns using startup.Respawn.
+func restartAgent(world, name, role, sessionName string) error {
+	mgr := session.New()
+	// Force-stop the session (ignore error — session may already be dead).
+	_ = mgr.Stop(sessionName, true)
+
+	// Respawn via startup — it opens its own sphere store when opts.Sphere is nil.
+	_, err := startup.Respawn(role, world, name, startup.LaunchOpts{})
+	return err
+}
+
+// restartService shells out to `sol <service> stop` then `sol <service> start`.
+func restartService(world, service string) error {
+	solBin, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to find sol binary: %w", err)
+	}
+
+	// Stop (ignore error — service may not be running).
+	stopCmd := exec.Command(solBin, service, "stop", "--world="+world)
+	_ = stopCmd.Run()
+
+	// Start.
+	startCmd := exec.Command(solBin, service, "start", "--world="+world)
+	out, startErr := startCmd.CombinedOutput()
+	if startErr != nil {
+		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// scheduleClearFeedback returns a Cmd that fires clearRestartFeedbackMsg after 3 seconds.
+func scheduleClearFeedback() tea.Cmd {
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return clearRestartFeedbackMsg{}
+	})
 }

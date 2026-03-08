@@ -16,7 +16,7 @@ Navigation
 
 Actions
   a              Attach directly to session
-  R              Restart process
+  R              Restart selected process/agent/service
   r              Force refresh
   q              Quit
   ?              Toggle this help`

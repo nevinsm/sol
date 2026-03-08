@@ -16,7 +16,8 @@ import (
 type worldSection int
 
 const (
-	sectionOutposts worldSection = iota
+	sectionProcesses worldSection = iota
+	sectionOutposts
 	sectionEnvoys
 	sectionMergeQueue
 )
@@ -39,6 +40,7 @@ type worldModel struct {
 
 	// Section focus and per-section cursors.
 	focusedSection worldSection
+	processCursor  int
 	outpostCursor  int
 	envoyCursor    int
 	mqCursor       int
@@ -49,12 +51,17 @@ type worldModel struct {
 	mqScroll      int
 
 	// Section row counts.
+	processLen int
 	outpostLen int
 	envoyLen   int
 	mrLen      int // active (non-merged) MRs
 
 	// Inline "no active session" message.
 	showNoSession bool
+
+	// Restart feedback message (auto-dismissed after 3 seconds).
+	restartFeedback    string
+	restartFeedbackErr bool
 
 	// Spinners for active processes.
 	processSpinners map[string]spinner.Model
@@ -133,6 +140,7 @@ func (wm *worldModel) updateData(data *status.WorldStatus) {
 		}
 	}
 
+	wm.processLen = len(worldProcessList(data))
 	wm.outpostLen = len(data.Agents)
 	wm.envoyLen = len(data.Envoys)
 
@@ -161,6 +169,9 @@ func (wm *worldModel) syncProcessSpinner(name string, running bool, style spinne
 // availableSections returns the sections that have rows, in order.
 func (wm worldModel) availableSections() []worldSection {
 	var sections []worldSection
+	if wm.processLen > 0 {
+		sections = append(sections, sectionProcesses)
+	}
 	if wm.outpostLen > 0 {
 		sections = append(sections, sectionOutposts)
 	}
@@ -176,6 +187,8 @@ func (wm worldModel) availableSections() []worldSection {
 // sectionLen returns the number of rows in the given section.
 func (wm worldModel) sectionLen(s worldSection) int {
 	switch s {
+	case sectionProcesses:
+		return wm.processLen
 	case sectionOutposts:
 		return wm.outpostLen
 	case sectionEnvoys:
@@ -189,6 +202,8 @@ func (wm worldModel) sectionLen(s worldSection) int {
 // cursor returns the current cursor for the given section.
 func (wm worldModel) cursor(s worldSection) int {
 	switch s {
+	case sectionProcesses:
+		return wm.processCursor
 	case sectionOutposts:
 		return wm.outpostCursor
 	case sectionEnvoys:
@@ -202,6 +217,8 @@ func (wm worldModel) cursor(s worldSection) int {
 // setCursor sets the cursor for a section.
 func (wm *worldModel) setCursor(s worldSection, v int) {
 	switch s {
+	case sectionProcesses:
+		wm.processCursor = v
 	case sectionOutposts:
 		wm.outpostCursor = v
 	case sectionEnvoys:
@@ -273,8 +290,14 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 		if !wm.hasFocus {
 			return wm, nil
 		}
-		// Attach to agent/envoy session.
+		// Attach to agent/envoy/process session.
 		return wm.handleAttach(data)
+
+	case "R":
+		if !wm.hasFocus {
+			return wm, nil
+		}
+		return wm.handleRestart(data)
 	}
 	return wm, nil
 }
@@ -397,6 +420,17 @@ func (wm worldModel) handleAttach(data *status.WorldStatus) (worldModel, tea.Cmd
 	}
 
 	switch wm.focusedSection {
+	case sectionProcesses:
+		procs := worldProcessList(data)
+		if wm.processCursor < len(procs) {
+			p := procs[wm.processCursor]
+			if !p.running {
+				return wm, func() tea.Msg { return noSessionMsg{} }
+			}
+			sessName := fmt.Sprintf("sol-%s-%s", data.World, strings.ToLower(p.name))
+			return wm, func() tea.Msg { return attachMsg{sessionName: sessName} }
+		}
+
 	case sectionOutposts:
 		if wm.outpostCursor < len(data.Agents) {
 			agent := data.Agents[wm.outpostCursor]
@@ -421,6 +455,64 @@ func (wm worldModel) handleAttach(data *status.WorldStatus) (worldModel, tea.Cmd
 	}
 
 	return wm, nil
+}
+
+// handleRestart builds a restart request for the currently selected item.
+func (wm worldModel) handleRestart(data *status.WorldStatus) (worldModel, tea.Cmd) {
+	if data == nil {
+		return wm, nil
+	}
+
+	var target restartTarget
+	target.world = data.World
+
+	switch wm.focusedSection {
+	case sectionProcesses:
+		procs := worldProcessList(data)
+		if wm.processCursor >= len(procs) {
+			return wm, nil
+		}
+		p := procs[wm.processCursor]
+		target.name = p.name
+		target.role = strings.ToLower(p.name)
+		target.sessionName = fmt.Sprintf("sol-%s-%s", data.World, target.role)
+		target.confirmTitle = fmt.Sprintf("Restart %s?", p.name)
+		switch target.role {
+		case "forge":
+			target.confirmDetail = "Stop and restart the forge pipeline"
+		case "sentinel":
+			target.confirmDetail = "Stop and restart the health monitor"
+		case "governor":
+			target.confirmDetail = "Stop and restart the governor"
+		}
+
+	case sectionOutposts:
+		if wm.outpostCursor >= len(data.Agents) {
+			return wm, nil
+		}
+		a := data.Agents[wm.outpostCursor]
+		target.name = a.Name
+		target.role = "outpost"
+		target.sessionName = fmt.Sprintf("sol-%s-%s", data.World, a.Name)
+		target.confirmTitle = fmt.Sprintf("Restart %s?", a.Name)
+		target.confirmDetail = "Kill session and re-cast tethered writ"
+
+	case sectionEnvoys:
+		if wm.envoyCursor >= len(data.Envoys) {
+			return wm, nil
+		}
+		e := data.Envoys[wm.envoyCursor]
+		target.name = e.Name
+		target.role = "envoy"
+		target.sessionName = fmt.Sprintf("sol-%s-%s", data.World, e.Name)
+		target.confirmTitle = fmt.Sprintf("Restart %s?", e.Name)
+		target.confirmDetail = "Kill session and restart (tethered work preserved)"
+
+	default:
+		return wm, nil
+	}
+
+	return wm, func() tea.Msg { return requestRestartMsg{target: target} }
 }
 
 func (wm worldModel) updateSpinner(msg spinner.TickMsg) (worldModel, tea.Cmd) {
@@ -472,18 +564,8 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	wm.renderProcessGrid(&b, sphereProcs, pulseBright)
 	b.WriteString("\n")
 
-	// World Processes — compact grid.
-	worldProcs := []processEntry{
-		{"Forge", data.Forge.Running},
-		{"Sentinel", data.Sentinel.Running},
-	}
-	if data.Governor.Running {
-		worldProcs = append(worldProcs, processEntry{"Governor", true})
-	}
-	b.WriteString(headerStyle.Render("World Processes"))
-	b.WriteString("\n")
-	wm.renderProcessGrid(&b, worldProcs, pulseBright)
-	b.WriteString("\n")
+	// World Processes — interactive section.
+	wm.renderWorldProcessesSection(&b, data)
 
 	// Outposts.
 	if len(data.Agents) > 0 {
@@ -517,6 +599,16 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	// Inline "no active session" message.
 	if wm.showNoSession {
 		b.WriteString(warnStyle.Render("  no active session"))
+		b.WriteString("\n\n")
+	}
+
+	// Restart feedback message.
+	if wm.restartFeedback != "" {
+		if wm.restartFeedbackErr {
+			b.WriteString(errorStyle.Render("  " + wm.restartFeedback))
+		} else {
+			b.WriteString(okStyle.Render("  " + wm.restartFeedback))
+		}
 		b.WriteString("\n\n")
 	}
 
@@ -871,7 +963,7 @@ func (wm worldModel) renderSummary(data *status.WorldStatus) string {
 }
 
 func (wm worldModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter attach · esc back · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter attach · R restart · esc back · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {
@@ -987,6 +1079,57 @@ func scrollIndicator(offset, vpHeight, totalRows int) string {
 		indicator += " ↓"
 	}
 	return indicator
+}
+
+// worldProcessList returns the list of world processes for the interactive section.
+// Always includes forge, sentinel, and governor regardless of running state.
+func worldProcessList(data *status.WorldStatus) []processEntry {
+	return []processEntry{
+		{"Forge", data.Forge.Running},
+		{"Sentinel", data.Sentinel.Running},
+		{"Governor", data.Governor.Running},
+	}
+}
+
+// renderWorldProcessesSection renders the World Processes as an interactive section.
+func (wm worldModel) renderWorldProcessesSection(b *strings.Builder, data *status.WorldStatus) {
+	isFocused := wm.hasFocus && wm.focusedSection == sectionProcesses
+	procs := worldProcessList(data)
+	sectionHeader := fmt.Sprintf("World Processes (%d)", len(procs))
+
+	if !isFocused {
+		// Summary mode: one-line with running count.
+		b.WriteString("  " + headerStyle.Render(sectionHeader))
+		running := 0
+		for _, p := range procs {
+			if p.running {
+				running++
+			}
+		}
+		b.WriteString(fmt.Sprintf("      %d/%d running", running, len(procs)))
+		b.WriteString("\n")
+		return
+	}
+
+	// Expanded mode: vertical list with cursor.
+	header := "  " + focusIndicator + " " + focusStyle.Render(sectionHeader)
+	b.WriteString(header + "\n")
+	for i, p := range procs {
+		indicator := statusIndicator(p.running)
+		if p.running {
+			if s, ok := wm.processSpinners[p.name]; ok {
+				indicator = s.View()
+			}
+		}
+		line := fmt.Sprintf("  %s %-12s", indicator, p.name)
+		if i == wm.processCursor {
+			b.WriteString(selectStyle.Render(padRight(line, wm.width)))
+		} else {
+			b.WriteString(line)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
 }
 
 // renderProcessGrid renders processes in a compact 3-column grid.

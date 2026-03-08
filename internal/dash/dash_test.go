@@ -181,16 +181,14 @@ func TestWorldViewRendersProcesses(t *testing.T) {
 
 	output := wm.view(data, time.Now(), 0, nil, false)
 
-	// Compact process grid: names visible but not detail (pid, session names).
+	// Sphere processes shown in compact grid; world processes shown as section summary.
 	checks := []string{
 		"World: testworld",
 		"Sphere Processes",
 		"World Processes",
 		"Prefect",
-		"Forge",
-		"Sentinel",
 		"Chronicle",
-		"Governor",
+		"3/3 running", // world processes summary
 	}
 
 	for _, check := range checks {
@@ -755,31 +753,39 @@ func TestWorldViewPopBackH(t *testing.T) {
 
 func TestWorldViewSectionFocusCycle(t *testing.T) {
 	wm := newWorldModel()
+	wm.processLen = 3
 	wm.outpostLen = 2
 	wm.envoyLen = 1
 
-	// Tab to focus first section.
+	// Tab to focus — default is sectionProcesses (iota 0), cycles forward to outposts.
 	wm, _ = wm.update(tabKeyMsg(), nil)
 	if !wm.hasFocus {
 		t.Fatal("tab should set hasFocus")
 	}
-	if wm.focusedSection != sectionEnvoys {
-		t.Errorf("first tab should focus envoys (cycles from default outposts), got %d", wm.focusedSection)
+	if wm.focusedSection != sectionOutposts {
+		t.Errorf("first tab should focus outposts (cycles from default processes), got %d", wm.focusedSection)
 	}
 
-	// Tab again wraps to outposts.
+	// Tab again cycles to envoys.
 	wm, _ = wm.update(tabKeyMsg(), nil)
-	if wm.focusedSection != sectionOutposts {
-		t.Errorf("tab should wrap around to outposts, got %d", wm.focusedSection)
+	if wm.focusedSection != sectionEnvoys {
+		t.Errorf("tab should cycle to envoys, got %d", wm.focusedSection)
+	}
+
+	// Tab again wraps to processes.
+	wm, _ = wm.update(tabKeyMsg(), nil)
+	if wm.focusedSection != sectionProcesses {
+		t.Errorf("tab should wrap around to processes, got %d", wm.focusedSection)
 	}
 }
 
 func TestWorldViewSectionFocusReverseTab(t *testing.T) {
 	wm := newWorldModel()
+	wm.processLen = 3
 	wm.outpostLen = 2
 	wm.envoyLen = 1
 
-	// Shift-tab sets focus and wraps to envoys.
+	// Shift-tab sets focus and wraps backward from processes to envoys.
 	wm, _ = wm.update(shiftTabKeyMsg(), nil)
 	if !wm.hasFocus {
 		t.Error("shift-tab should set hasFocus")
