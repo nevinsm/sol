@@ -22,8 +22,34 @@ func OutpostRoleConfig() startup.RoleConfig {
 		SystemPromptContent: protocol.OutpostSystemPrompt,
 		ReplacePrompt:       true, // full replace — outpost gets its own system prompt
 		NeedsItem:           true,
+		SkillInstaller:      outpostSkillInstaller,
 		PrimeBuilder:        outpostPrime,
 	}
+}
+
+// outpostSkillInstaller installs role-appropriate skills for outpost agents.
+func outpostSkillInstaller(worktreeDir, world, agent string) error {
+	// Read world config for quality gates.
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err != nil {
+		// Non-fatal: install skills without quality gates.
+		worldCfg = config.WorldConfig{}
+	}
+
+	// Read tether to find writ for output dir.
+	writID, _ := tether.Read(world, agent, "agent")
+	var outputDir string
+	if writID != "" {
+		outputDir = config.WritOutputDir(world, writID)
+	}
+
+	return protocol.InstallSkills(worktreeDir, protocol.SkillContext{
+		World:        world,
+		AgentName:    agent,
+		Role:         "outpost",
+		QualityGates: worldCfg.Forge.QualityGates,
+		OutputDir:    outputDir,
+	})
 }
 
 // OutpostResumeState builds a startup.ResumeState for outpost compact recovery.

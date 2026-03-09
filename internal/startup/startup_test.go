@@ -1045,3 +1045,153 @@ func TestWriteReadResumeStateWithWritSwitch(t *testing.T) {
 		t.Errorf("NewActiveWrit = %q, want %q", got.NewActiveWrit, "sol-bbb222")
 	}
 }
+
+func TestLaunchInstallsSkills(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	var skillInstallerCalled bool
+	var skillInstallerDir string
+
+	cfg := RoleConfig{
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+		Persona: func(w, _ string) ([]byte, error) {
+			return []byte("# Test Forge Persona"), nil
+		},
+		SkillInstaller: func(dir, w, a string) error {
+			skillInstallerCalled = true
+			skillInstallerDir = dir
+			// Actually install skills to verify end-to-end.
+			return protocol.InstallSkills(dir, protocol.SkillContext{
+				World: w,
+				Role:  "forge",
+			})
+		},
+	}
+
+	_, err = Launch(cfg, world, "forge", LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+
+	if !skillInstallerCalled {
+		t.Fatal("SkillInstaller was not called during Launch")
+	}
+	if skillInstallerDir != worktreeDir {
+		t.Errorf("SkillInstaller dir = %q, want %q", skillInstallerDir, worktreeDir)
+	}
+
+	// Verify skills were actually written.
+	skillsDir := filepath.Join(worktreeDir, ".claude", "skills")
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		t.Fatalf("failed to read skills directory: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no skills installed")
+	}
+
+	// Verify expected forge skills exist.
+	expectedSkills := protocol.RoleSkills("forge")
+	for _, name := range expectedSkills {
+		skillPath := filepath.Join(skillsDir, name, "SKILL.md")
+		if _, err := os.Stat(skillPath); err != nil {
+			t.Errorf("expected skill %q not found at %s", name, skillPath)
+		}
+	}
+}
+
+func TestLaunchSkillInstallerNil(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	cfg := RoleConfig{
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+		// SkillInstaller intentionally nil — should not error.
+	}
+
+	_, err = Launch(cfg, world, "forge", LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Launch() with nil SkillInstaller error: %v", err)
+	}
+
+	// Skills directory should not exist since no installer was set.
+	skillsDir := filepath.Join(worktreeDir, ".claude", "skills")
+	if _, err := os.Stat(skillsDir); err == nil {
+		t.Error("skills directory should not exist when SkillInstaller is nil")
+	}
+}
+
+func TestResumeInstallsSkills(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	var skillInstallerCalled bool
+
+	cfg := RoleConfig{
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+		SkillInstaller: func(dir, w, a string) error {
+			skillInstallerCalled = true
+			return nil
+		},
+	}
+
+	state := ResumeState{
+		CurrentStep: "gates",
+		Reason:      "compact",
+	}
+
+	_, err = Resume(cfg, world, "forge", state, LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Resume() error: %v", err)
+	}
+
+	if !skillInstallerCalled {
+		t.Fatal("SkillInstaller was not called during Resume")
+	}
+}

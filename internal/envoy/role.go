@@ -17,8 +17,19 @@ func RoleConfig() startup.RoleConfig {
 		Hooks:               envoyHooks,
 		SystemPromptContent: protocol.EnvoySystemPrompt,
 		ReplacePrompt:       false, // append mode — keep default system prompt
+		SkillInstaller:      envoySkillInstaller,
 		PrimeBuilder:        envoyPrime,
 	}
+}
+
+// envoySkillInstaller installs role-appropriate skills for envoy agents.
+func envoySkillInstaller(worktreeDir, world, agent string) error {
+	return protocol.InstallSkills(worktreeDir, protocol.SkillContext{
+		World:     world,
+		AgentName: agent,
+		SolBinary: "sol",
+		Role:      "envoy",
+	})
 }
 
 // envoyPersona generates the envoy CLAUDE.local.md content.
