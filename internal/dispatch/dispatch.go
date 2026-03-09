@@ -287,25 +287,29 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		workflow.Remove(opts.World, agent.Name, "agent") // best-effort
 	}
 
-	// 4. Write tether file.
+	// 4. Update agent: state → working, active_writ → writ ID.
+	// Done BEFORE tether.Write() to prevent a race with sentinel's
+	// cleanupOrphanedTethers, which clears tether files for non-working agents.
+	// If we wrote the tether first while agent is still "idle", a concurrent
+	// sentinel patrol could clear it before we update agent state.
+	if err := sphereStore.UpdateAgentState(agent.ID, "working", opts.WritID); err != nil {
+		rollback()
+		return nil, fmt.Errorf("failed to update agent state: %w", err)
+	}
+
+	// 5. Write tether file.
 	if err := tether.Write(opts.World, agent.Name, opts.WritID, "agent"); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to write tether: %w", err)
 	}
 
-	// 5. Update writ: status → tethered, assignee → agent ID.
+	// 6. Update writ: status → tethered, assignee → agent ID.
 	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
 		Status:   "tethered",
 		Assignee: agent.ID,
 	}); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to update writ: %w", err)
-	}
-
-	// 6. Update agent: state → working, active_writ → writ ID.
-	if err := sphereStore.UpdateAgentState(agent.ID, "working", opts.WritID); err != nil {
-		rollback()
-		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
 
 	// 6b. Create persistent output directory for the writ.

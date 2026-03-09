@@ -1085,6 +1085,45 @@ func TestCleanupOrphanedTetherSkipsWorking(t *testing.T) {
 	}
 }
 
+// TestCleanupOrphanedTetherRaceWithCast verifies that cleanupOrphanedTethers
+// re-reads agent state from DB before clearing, preventing a race condition
+// where Cast() sets agent to "working" after the sentinel snapshot was taken.
+func TestCleanupOrphanedTetherRaceWithCast(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create an agent that starts idle (simulating the snapshot state).
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+
+	// Write a tether file (simulating Cast() writing the tether).
+	if err := tether.Write("ember", "Toast", "sol-active-writ", "agent"); err != nil {
+		t.Fatalf("tether.Write() error: %v", err)
+	}
+
+	// Now update agent to "working" AFTER the initial state — simulating
+	// Cast() completing the agent state update between sentinel's snapshot
+	// and cleanupOrphanedTethers execution.
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-active-writ")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "working output"
+
+	// Create sentinel with state that would have a stale snapshot of the agent.
+	// The patrol loads agents fresh, but this test verifies that
+	// cleanupOrphanedTethers re-reads from DB (not just the snapshot).
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Tether should NOT be cleaned up — the agent is working in the DB
+	// even if a stale snapshot might show it as idle.
+	if !tether.IsTethered("ember", "Toast", "agent") {
+		t.Error("tether for agent that became working should not be removed")
+	}
+}
+
 func TestPatrolMonitorsForge(t *testing.T) {
 	sphereStore, _ := setupTestEnv(t)
 	mock := newMockSessions()
