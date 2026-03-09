@@ -655,13 +655,28 @@ func TestLaunchReinstantiatesDoneWorkflow(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 
 	// Create worktree.
-	worktreeDir := filepath.Join(solHome, "haven", "forge", "worktree")
+	worktreeDir := filepath.Join(solHome, "haven", "outposts", "TestBot", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
-	// Create an existing workflow with status "done" (simulate completed patrol).
-	wfDir := filepath.Join(solHome, "haven", "forge", ".workflow")
+	// Create an existing workflow with status "done" (simulate completed workflow).
+	wfDir := filepath.Join(solHome, "haven", "outposts", "TestBot", ".workflow")
 	os.MkdirAll(wfDir, 0o755)
-	os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(`{"current_step":"","completed":["scan","claim"],"status":"done","started_at":"2025-01-01T00:00:00Z"}`), 0o644)
+	os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(`{"current_step":"","completed":["load-context","implement"],"status":"done","started_at":"2025-01-01T00:00:00Z"}`), 0o644)
+
+	// Create a minimal test workflow with no required variables at user-level
+	// so Instantiate can resolve it without needing writ-specific vars.
+	testWfDir := filepath.Join(solHome, "workflows", "test-simple")
+	os.MkdirAll(filepath.Join(testWfDir, "steps"), 0o755)
+	os.WriteFile(filepath.Join(testWfDir, "manifest.toml"), []byte(`name = "test-simple"
+type = "workflow"
+description = "Minimal test workflow"
+
+[[steps]]
+id = "step-one"
+title = "Step One"
+instructions = "steps/01-step.md"
+`), 0o644)
+	os.WriteFile(filepath.Join(testWfDir, "steps", "01-step.md"), []byte("Do the thing.\n"), 0o644)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -672,12 +687,12 @@ func TestLaunchReinstantiatesDoneWorkflow(t *testing.T) {
 	mock := &mockSessionStarter{}
 
 	cfg := RoleConfig{
-		Role:        "forge",
-		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
-		Workflow:    "forge-patrol", // Real embedded workflow; requires only "world" var.
+		Role:        "outpost",
+		WorktreeDir: func(w, a string) string { return filepath.Join(solHome, w, "outposts", a, "worktree") },
+		Workflow:    "test-simple", // Minimal test workflow; no required variables.
 	}
 
-	_, err = Launch(cfg, "haven", "forge", LaunchOpts{
+	_, err = Launch(cfg, "haven", "TestBot", LaunchOpts{
 		Sessions: mock,
 		Sphere:   sphereStore,
 	})
@@ -686,7 +701,7 @@ func TestLaunchReinstantiatesDoneWorkflow(t *testing.T) {
 	}
 
 	// Verify workflow was re-instantiated (state.json should have status "running").
-	state, err := workflow.ReadState("haven", "forge", "forge")
+	state, err := workflow.ReadState("haven", "TestBot", "outpost")
 	if err != nil {
 		t.Fatalf("ReadState() error: %v", err)
 	}
@@ -1050,7 +1065,7 @@ func TestLaunchInstallsSkills(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 	world := "haven"
 
-	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	worktreeDir := filepath.Join(solHome, world, "outposts", "TestBot", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sphereStore, err := store.OpenSphere()
@@ -1065,10 +1080,10 @@ func TestLaunchInstallsSkills(t *testing.T) {
 	var skillInstallerDir string
 
 	cfg := RoleConfig{
-		Role:        "forge",
-		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
-		Persona: func(w, _ string) ([]byte, error) {
-			return []byte("# Test Forge Persona"), nil
+		Role:        "outpost",
+		WorktreeDir: func(w, a string) string { return filepath.Join(solHome, w, "outposts", a, "worktree") },
+		Persona: func(w, a string) ([]byte, error) {
+			return []byte("# Test Outpost Persona"), nil
 		},
 		SkillInstaller: func(dir, w, a string) error {
 			skillInstallerCalled = true
@@ -1076,12 +1091,12 @@ func TestLaunchInstallsSkills(t *testing.T) {
 			// Actually install skills to verify end-to-end.
 			return protocol.InstallSkills(dir, protocol.SkillContext{
 				World: w,
-				Role:  "forge",
+				Role:  "outpost",
 			})
 		},
 	}
 
-	_, err = Launch(cfg, world, "forge", LaunchOpts{
+	_, err = Launch(cfg, world, "TestBot", LaunchOpts{
 		Sessions: mock,
 		Sphere:   sphereStore,
 	})
@@ -1106,8 +1121,8 @@ func TestLaunchInstallsSkills(t *testing.T) {
 		t.Fatal("no skills installed")
 	}
 
-	// Verify expected forge skills exist.
-	expectedSkills := protocol.RoleSkills("forge")
+	// Verify expected outpost skills exist.
+	expectedSkills := protocol.RoleSkills("outpost")
 	for _, name := range expectedSkills {
 		skillPath := filepath.Join(skillsDir, name, "SKILL.md")
 		if _, err := os.Stat(skillPath); err != nil {

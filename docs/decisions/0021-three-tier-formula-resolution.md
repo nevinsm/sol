@@ -176,7 +176,7 @@ deploy         project    .sol/workflows/deploy/
 code-review    project    .sol/workflows/code-review/  (shadows: embedded)
 default-work   embedded   (built-in)
 rule-of-five   embedded   (built-in)
-forge-patrol   user       $SOL_HOME/workflows/forge-patrol/  (shadows: embedded)
+thorough-work  user       $SOL_HOME/workflows/thorough-work/  (shadows: embedded)
 ```
 
 ### Git implications

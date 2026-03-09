@@ -18,7 +18,7 @@ in-flight work continues. Recovery happens when services return.
 | Prefect | PID file, session registry | Heartbeat loop state | Restart prefect (systemd/launchd) | <10s |
 | Consul | Heartbeat file | Patrol cycle state | Prefect restarts, re-patrols | <3 min |
 | Sentinel | Patrol state file | Current patrol cycle | Prefect restarts, re-patrols | <3 min |
-| Forge | `merge_requests` table, slot lock | In-progress merge | Prefect restarts Claude session; TTL expiry releases claimed MR | <30 min |
+| Forge | `merge_requests` table, slot lock | In-progress merge | Prefect restarts Go process; patrol resumes from cycle start (idempotent) | <30s |
 | Outpost | Tether file, worktree, identity | Session memory | `sol prime` re-injects context (GUPP) | <30s |
 | Event Feed | JSONL files | Chronicle buffer | Chronicle restarts, tails from last position | <10s |
 
@@ -86,9 +86,21 @@ and re-derived on restart. No data loss.
 
 ### Forge
 
-If the forge session crashes, the prefect restarts it. Claimed merge requests
-with expired TTL (30 min) are automatically released for re-claim. No merges
-land while down; the queue accumulates.
+If the forge Go process crashes, the prefect detects heartbeat staleness and
+restarts the process. The patrol loop resumes from the beginning of the cycle
+— all steps are idempotent, so no state recovery is needed.
+
+**Crash during merge** (after `git merge --squash`, before push): the worktree
+is dirty. The next patrol cycle runs `git reset --hard` in the sync step,
+restoring a clean slate.
+
+**Crash after push, before mark-merged**: the writ is still open and the MR
+is still claimed. On restart, the patrol detects the stale claim (TTL expiry)
+or processes it normally. The existing crash-safety in `MarkMerged()` (close
+writ first) is unchanged.
+
+Claimed merge requests with expired TTL (30 min) are automatically released
+for re-claim. No merges land while down; the queue accumulates.
 
 ### Outpost (Worker Agent)
 

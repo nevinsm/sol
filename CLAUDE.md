@@ -32,7 +32,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 
 ## Components (built)
 - **Prefect**: Sphere-wide orchestrator — respawns sessions, health checks
-- **Forge**: Per-world merge pipeline — Claude session + sol CLI toolbox (ADR-0005)
+- **Forge**: Per-world merge pipeline — deterministic Go process + targeted AI callouts (ADR-0027)
 - **Sentinel**: Per-world health monitor — Go process + AI callouts (ADR-0001)
 - **Consul**: Sphere-level patrol — stale tethers, stranded caravans (ADR-0007)
 - **Chronicle**: Event log maintenance

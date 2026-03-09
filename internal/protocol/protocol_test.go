@@ -73,68 +73,6 @@ func TestInstallClaudeMD(t *testing.T) {
 	}
 }
 
-func TestGenerateForgeClaudeMD(t *testing.T) {
-	ctx := ForgeClaudeMDContext{
-		World:        "myworld",
-		TargetBranch: "main",
-		WorktreeDir:  "/home/user/sol/myworld/forge/worktree",
-		QualityGates: []string{"go test ./...", "go vet ./..."},
-	}
-
-	content := GenerateForgeClaudeMD(ctx)
-
-	checks := []string{
-		"Forge Agent (world: myworld)",
-		"merge processor for world myworld",
-		"FORBIDDEN",
-		"Patrol Protocol",
-		"go test ./...",
-		"go vet ./...",
-	}
-	for _, check := range checks {
-		if !strings.Contains(content, check) {
-			t.Errorf("GenerateForgeClaudeMD missing %q", check)
-		}
-	}
-}
-
-func TestInstallForgeClaudeMD(t *testing.T) {
-	dir := t.TempDir()
-	ctx := ForgeClaudeMDContext{
-		World:        "myworld",
-		TargetBranch: "main",
-		WorktreeDir:  dir,
-		QualityGates: []string{"go test ./..."},
-	}
-
-	if err := InstallForgeClaudeMD(dir, ctx); err != nil {
-		t.Fatalf("InstallForgeClaudeMD failed: %v", err)
-	}
-
-	path := filepath.Join(dir, "CLAUDE.local.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
-	}
-
-	content := string(data)
-	if !strings.Contains(content, "Forge Agent") {
-		t.Error("CLAUDE.local.md missing 'Forge Agent'")
-	}
-	if !strings.Contains(content, "myworld") {
-		t.Error("CLAUDE.local.md missing world name")
-	}
-
-	// Verify skills installed.
-	skills := RoleSkills("forge")
-	for _, name := range skills {
-		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
-		if _, err := os.Stat(skillPath); err != nil {
-			t.Errorf("forge skill %q should be installed: %v", name, err)
-		}
-	}
-}
-
 func TestGenerateClaudeMDWithModelTier(t *testing.T) {
 	ctx := ClaudeMDContext{
 		AgentName:   "Toast",

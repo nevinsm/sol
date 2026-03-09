@@ -309,9 +309,8 @@ Run the gate command for the {{world}} world:
 **Providing values:**
 
 ```bash
-sol workflow manifest forge-patrol --world=myworld \
-  --var world=myworld \
-  --var gate_command="make lint && make test"
+sol workflow manifest default-work --world=myworld \
+  --var world=myworld
 ```
 
 ### Target variables: `{target.*}`
@@ -698,46 +697,7 @@ sol cast sol-a1b2c3d4 --workflow=idea-to-plan \
 
 ---
 
-### 5. forge-patrol
-
-**Type:** workflow (inline, 10 steps)
-**Purpose:** Forge merge patrol loop. The workflow that drives the forge
-agent's merge cycle: unblock resolved MRs, scan the queue, claim, sync,
-merge, run gates, push, handle results, loop or health-check.
-
-**Variables:**
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `world` | yes | — | The world to patrol |
-| `target_branch` | no | `"main"` | Branch to merge into |
-| `gate_command` | no | `"make build && make test"` | Quality gate command |
-| `health_check_threshold` | no | `"10"` | Number of MRs to process before handing off to a fresh session |
-
-**Steps:**
-
-1. `unblock` — Unblock resolved MRs
-2. `scan` — Scan the merge queue (needs: unblock)
-3. `claim` — Claim next MR (needs: scan)
-4. `sync` — Sync to target branch (needs: claim)
-5. `merge` — Squash-merge the outpost branch (needs: sync)
-6. `gates` — Run quality gates (needs: merge)
-7. `push` — Push to target branch (needs: gates)
-8. `handle-result` — Handle merge result (needs: push)
-9. `loop` — Loop or health-check (needs: handle-result)
-10. `health-check` — Context health check (needs: loop)
-
-**Example:**
-
-```bash
-sol workflow manifest forge-patrol --world=myworld \
-  --var world=myworld \
-  --var gate_command="make lint && make build && make test"
-```
-
----
-
-### 6. rule-of-five
+### 5. rule-of-five
 
 **Type:** expansion (5 templates)
 **Purpose:** Five-pass iterative refinement. Each pass gets a fresh agent
@@ -764,7 +724,7 @@ sol workflow manifest rule-of-five --world=myworld \
 
 ---
 
-### 7. code-review
+### 6. code-review
 
 **Type:** convoy (2 legs + synthesis)
 **Purpose:** Multi-perspective code review with parallel analysis and
@@ -793,7 +753,7 @@ sol workflow manifest code-review --world=myworld \
 
 ---
 
-### 8. plan-review
+### 7. plan-review
 
 **Type:** convoy (5 legs + synthesis)
 **Purpose:** Parallel plan analysis with five independent review dimensions
@@ -821,7 +781,7 @@ sol workflow manifest plan-review --world=myworld \
 
 ---
 
-### 9. guided-design
+### 8. guided-design
 
 **Type:** convoy (6 legs + synthesis)
 **Purpose:** Parallel design exploration across six dimensions with

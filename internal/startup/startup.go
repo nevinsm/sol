@@ -209,7 +209,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 	if cfg.Workflow != "" {
 		// Instantiate if no workflow exists or previous one completed.
 		// A done workflow has no useful state to preserve — re-instantiate
-		// so looping workflows (e.g. forge-patrol) restart from step 1.
+		// so looping workflows restart from step 1.
 		existingState, _ := workflow.ReadState(world, agent, cfg.Role)
 		if existingState == nil || existingState.Status == "done" {
 			vars := map[string]string{

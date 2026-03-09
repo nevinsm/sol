@@ -27,7 +27,6 @@ func (ctx SkillContext) sol() string {
 // roleSkillsMap defines which skills belong to each role.
 var roleSkillsMap = map[string][]string{
 	"outpost":  {"resolve-and-handoff", "memories"},
-	"forge":    {"forge-patrol", "forge-toolbox", "merge-operations"},
 	"governor": {"writ-dispatch", "caravan-management", "world-coordination", "notification-handling", "handoff", "memories"},
 	"envoy":    {"resolve-and-submit", "writ-management", "dispatch", "handoff", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail", "memories"},
 	"senate":   {"world-queries", "writ-planning", "memories"},
@@ -102,12 +101,6 @@ func generateSkill(name string, ctx SkillContext) string {
 		return skillResolveAndSubmit(ctx)
 	case "memories":
 		return skillMemories(ctx)
-	case "forge-patrol":
-		return skillForgePatrol(ctx)
-	case "forge-toolbox":
-		return skillForgeToolbox(ctx)
-	case "merge-operations":
-		return skillMergeOperations(ctx)
 	case "writ-dispatch":
 		return skillWritDispatch(ctx)
 	case "caravan-management":
@@ -216,101 +209,6 @@ Persist insights across sessions so successors inherit your knowledge.
 
 Memories are injected during prime — successor sessions see them automatically.
 `, "`"+sol, "`")
-}
-
-func skillForgePatrol(ctx SkillContext) string {
-	sol := ctx.sol()
-	world := ctx.World
-	return fmt.Sprintf(`# Forge Patrol
-
-Workflow commands for driving the forge patrol loop.
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| %[1]s workflow current --world=%[2]s --agent=forge%[3]s | Read current step instructions |
-| %[1]s workflow advance --world=%[2]s --agent=forge%[3]s | Mark step complete, advance to next |
-| %[1]s workflow status --world=%[2]s --agent=forge%[3]s | Check progress |
-
-## Protocol
-
-1. Read current step: %[1]s workflow current --world=%[2]s --agent=forge%[3]s
-2. Execute the step instructions exactly.
-3. Advance: %[1]s workflow advance --world=%[2]s --agent=forge%[3]s
-4. Repeat from step 1.
-
-The workflow handles looping — when the last step completes, it cycles back.
-`, "`"+sol, world, "`")
-}
-
-func skillForgeToolbox(ctx SkillContext) string {
-	sol := ctx.sol()
-	world := ctx.World
-	return fmt.Sprintf(`# Forge Toolbox
-
-Forge-specific commands for queue management and merge processing.
-
-## Queue Commands
-
-| Command | Description |
-|---------|-------------|
-| %[1]s forge check-unblocked --world=%[2]s%[3]s | Check for unblocked MRs |
-| %[1]s forge ready --world=%[2]s --json%[3]s | Scan ready queue |
-| %[1]s forge claim --world=%[2]s --json%[3]s | Claim next MR |
-| %[1]s forge release --world=%[2]s <id>%[3]s | Release for retry |
-| %[1]s forge sync --world=%[2]s%[3]s | Sync worktree with target |
-
-## Result Commands
-
-| Command | Description |
-|---------|-------------|
-| %[1]s forge mark-merged --world=%[2]s <id>%[3]s | Mark MR as merged |
-| %[1]s forge mark-failed --world=%[2]s <id>%[3]s | Mark MR as failed |
-| %[1]s forge create-resolution --world=%[2]s <id>%[3]s | Request conflict resolution |
-
-## Pause/Wait
-
-| Command | Description |
-|---------|-------------|
-| %[1]s forge status %[2]s --json%[3]s | Check pause state |
-| %[1]s forge await --world=%[2]s --timeout=120%[3]s | Wait for nudge or timeout |
-`, "`"+sol, world, "`")
-}
-
-func skillMergeOperations(ctx SkillContext) string {
-	branch := ctx.TargetBranch
-	if branch == "" {
-		branch = "main"
-	}
-	return fmt.Sprintf(`# Merge Operations
-
-Git commands for the forge merge workflow.
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| %[1]s | Squash merge |
-| %[2]s | Push to target |
-| %[3]s | Reset on failure |
-
-## Conflict Handling
-
-If merge has conflicts: %[4]s then use %[5]s.
-
-## Important
-
-- Never use %[6]s
-- Never create branches (%[7]s)
-- Never modify application code
-`, "`git merge --squash origin/<branch>`",
-		"`git push origin HEAD:"+branch+"`",
-		"`git reset --hard origin/"+branch+"`",
-		"`git merge --abort`",
-		"`sol forge create-resolution`",
-		"`git push --force`",
-		"`git checkout -b`")
 }
 
 func skillWritDispatch(ctx SkillContext) string {

@@ -126,23 +126,24 @@ version fields. Rollback supported for at least one version back.
 
 ### Deterministic Go + Targeted AI Call-outs
 
-System processes (sentinel, consul) run as deterministic Go binaries. AI
-calls fire only when heuristics detect trouble — a few times per hour, not
+System processes (sentinel, consul, forge) run as deterministic Go binaries.
+AI calls fire only when heuristics detect trouble — a few times per hour, not
 continuously.
 
 > Keeps costs proportional to actual problems, not routine operations.
 
-See: ADR-0001 (sentinel), ADR-0003 (output hashing), ADR-0007 (consul).
+See: ADR-0001 (sentinel), ADR-0003 (output hashing), ADR-0007 (consul),
+ADR-0027 (forge).
 
 ### Claude Session + Go CLI Toolbox
 
-AI-driven roles (forge, governor, senate) run as persistent Claude sessions
+AI-driven roles (governor, senate) run as persistent Claude sessions
 with `sol` subcommands as their toolbox. Claude handles judgment and strategy;
 Go handles mechanical operations.
 
 > The AI decides *what* to do. The CLI does *how*.
 
-See: ADR-0005 (forge), ADR-0010 (governor), ADR-0011 (senate).
+See: ADR-0010 (governor), ADR-0011 (senate).
 
 ### Dual-Store: File Primary, DB as Registry
 
@@ -161,7 +162,7 @@ Workflows (TOML manifests) define work as explicit DAGs with steps,
 dependencies, and execution phases. Each step is a directory entry you can
 `ls` and `cat`. State tracked in `state.json`.
 
-See: ADR-0015 (workflow manifest), ADR-0017 (workflow-based forge).
+See: ADR-0015 (workflow manifest).
 
 ### Agent-Maintained Brief
 

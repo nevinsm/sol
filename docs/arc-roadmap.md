@@ -111,7 +111,7 @@ collaboration. Maintain accumulated context (brief) across sessions.
 ### Governor — Per-World Work Coordinator
 
 Singleton Claude session per world that handles natural language work dispatch.
-Architecturally similar to forge: Claude session + sol CLI toolbox (ADR-0005 pattern).
+Claude session + sol CLI toolbox (ADR-0010).
 
 - Agent role `governor` in agents table. Directory at `$SOL_HOME/{world}/governor/`
 - Read-only mirror of main at `governor/mirror/` — for codebase research, never edited

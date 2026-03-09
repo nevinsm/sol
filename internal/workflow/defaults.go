@@ -36,17 +36,6 @@ func ValidateName(name string) error {
 //go:embed defaults/code-review/manifest.toml
 //go:embed defaults/plan-review/manifest.toml
 //go:embed defaults/guided-design/manifest.toml
-//go:embed defaults/forge-patrol/manifest.toml
-//go:embed defaults/forge-patrol/steps/01-unblock.md
-//go:embed defaults/forge-patrol/steps/02-scan.md
-//go:embed defaults/forge-patrol/steps/03-claim.md
-//go:embed defaults/forge-patrol/steps/04-sync.md
-//go:embed defaults/forge-patrol/steps/05-merge.md
-//go:embed defaults/forge-patrol/steps/06-gates.md
-//go:embed defaults/forge-patrol/steps/07-push.md
-//go:embed defaults/forge-patrol/steps/08-handle-result.md
-//go:embed defaults/forge-patrol/steps/09-loop.md
-//go:embed defaults/forge-patrol/steps/10-health-check.md
 //go:embed defaults/thorough-work/manifest.toml
 //go:embed defaults/thorough-work/steps/01-design.md
 //go:embed defaults/thorough-work/steps/02-implement.md
@@ -75,7 +64,6 @@ var knownDefaults = map[string]bool{
 	"code-review":    true,
 	"plan-review":    true,
 	"guided-design":  true,
-	"forge-patrol":   true,
 	"thorough-work":  true,
 	"idea-to-plan":   true,
 	"deep-scan":      true,

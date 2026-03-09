@@ -17,13 +17,6 @@ func TestRoleSkillsOutpost(t *testing.T) {
 	}
 }
 
-func TestRoleSkillsForge(t *testing.T) {
-	skills := RoleSkills("forge")
-	if len(skills) != 3 {
-		t.Errorf("forge should have 3 skills, got %d: %v", len(skills), skills)
-	}
-}
-
 func TestRoleSkillsGovernor(t *testing.T) {
 	skills := RoleSkills("governor")
 	if len(skills) != 6 {
@@ -98,28 +91,6 @@ func TestInstallSkillsCreatesDirectories(t *testing.T) {
 	}
 }
 
-func TestInstallSkillsForge(t *testing.T) {
-	dir := t.TempDir()
-	ctx := SkillContext{
-		World:        "testworld",
-		Role:         "forge",
-		TargetBranch: "main",
-		QualityGates: []string{"make test"},
-	}
-
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
-	}
-
-	skills := RoleSkills("forge")
-	for _, name := range skills {
-		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
-		if _, err := os.Stat(skillPath); err != nil {
-			t.Errorf("forge skill %q should exist: %v", name, err)
-		}
-	}
-}
-
 func TestInstallSkillsGovernor(t *testing.T) {
 	dir := t.TempDir()
 	ctx := SkillContext{
@@ -187,26 +158,26 @@ func TestInstallSkillsSenate(t *testing.T) {
 func TestInstallSkillsCleansStale(t *testing.T) {
 	dir := t.TempDir()
 
-	// Install forge skills first.
-	forgeCtx := SkillContext{
-		World:        "testworld",
-		Role:         "forge",
-		TargetBranch: "main",
+	// Install governor skills first.
+	govCtx := SkillContext{
+		World:     "testworld",
+		SolBinary: "sol",
+		Role:      "governor",
 	}
-	if err := InstallSkills(dir, forgeCtx); err != nil {
-		t.Fatalf("InstallSkills (forge) failed: %v", err)
+	if err := InstallSkills(dir, govCtx); err != nil {
+		t.Fatalf("InstallSkills (governor) failed: %v", err)
 	}
 
-	// Verify forge skills exist.
-	forgeSkills := RoleSkills("forge")
-	for _, name := range forgeSkills {
+	// Verify governor skills exist.
+	govSkills := RoleSkills("governor")
+	for _, name := range govSkills {
 		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
 		if _, err := os.Stat(skillPath); err != nil {
-			t.Fatalf("forge skill %q should exist before cleanup: %v", name, err)
+			t.Fatalf("governor skill %q should exist before cleanup: %v", name, err)
 		}
 	}
 
-	// Now install outpost skills — should clean up forge skills.
+	// Now install outpost skills — should clean up governor-only skills.
 	outpostCtx := SkillContext{
 		World:     "testworld",
 		AgentName: "TestBot",
@@ -216,8 +187,8 @@ func TestInstallSkillsCleansStale(t *testing.T) {
 		t.Fatalf("InstallSkills (outpost) failed: %v", err)
 	}
 
-	// Verify forge-only skills are removed.
-	for _, name := range forgeSkills {
+	// Verify governor-only skills are removed.
+	for _, name := range govSkills {
 		isOutpost := false
 		for _, os := range RoleSkills("outpost") {
 			if os == name {
@@ -230,7 +201,7 @@ func TestInstallSkillsCleansStale(t *testing.T) {
 		}
 		skillDir := filepath.Join(dir, ".claude", "skills", name)
 		if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
-			t.Errorf("stale forge skill %q should be removed after outpost install", name)
+			t.Errorf("stale governor skill %q should be removed after outpost install", name)
 		}
 	}
 
@@ -266,31 +237,6 @@ func TestSkillContentHasWorldName(t *testing.T) {
 
 	if len(content) < 50 {
 		t.Error("skill content should be substantial, not just a header")
-	}
-}
-
-func TestForgeSkillContentHasBranch(t *testing.T) {
-	dir := t.TempDir()
-	ctx := SkillContext{
-		World:        "myworld",
-		Role:         "forge",
-		TargetBranch: "develop",
-	}
-
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
-	}
-
-	// Check merge-operations skill references the target branch.
-	skillPath := filepath.Join(dir, ".claude", "skills", "merge-operations", "SKILL.md")
-	data, err := os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("failed to read skill: %v", err)
-	}
-	content := string(data)
-
-	if !contains(content, "develop") {
-		t.Error("merge-operations skill should contain target branch name")
 	}
 }
 
@@ -578,7 +524,7 @@ func TestSkillCommandReferencesExist(t *testing.T) {
 	}
 
 	// Generate skill content for every role.
-	roles := []string{"outpost", "forge", "governor", "envoy", "senate"}
+	roles := []string{"outpost", "governor", "envoy", "senate"}
 
 	// cmdEntry tracks a unique subcommand and the flags referenced with it.
 	type cmdEntry struct {

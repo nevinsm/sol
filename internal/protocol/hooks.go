@@ -88,60 +88,6 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 	return WriteHookSettings(worktreeDir, cfg)
 }
 
-// InstallForgeHooks writes forge-specific Claude Code hooks that sync before priming.
-// The SessionStart hook runs "sol forge sync {world}" to reset the forge worktree
-// to the latest target branch, then "sol prime" to inject execution context.
-// The PreCompact hook hands off to a fresh session instead of lossy compaction.
-// The UserPromptSubmit hook drains nudge messages at turn boundaries.
-func InstallForgeHooks(worktreeDir, world string) error {
-	cfg := HookConfig{
-		Hooks: map[string][]HookMatcherGroup{
-			"SessionStart": {
-				{
-					Hooks: []HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol forge sync --world=%s && sol prime --world=%s --agent=forge", world, world),
-						},
-					},
-				},
-			},
-			"PreCompact": {
-				{
-					Hooks: []HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol handoff --world=%s --agent=forge --reason=compact", world),
-						},
-					},
-				},
-			},
-			"PreToolUse": append([]HookMatcherGroup{
-				{
-					Matcher: "EnterPlanMode",
-					Hooks: []HookHandler{
-						{
-							Type:    "command",
-							Command: `echo "BLOCKED: Plan mode requires human approval — no one is watching. Outline your approach in conversation, then implement directly." >&2; exit 2`,
-						},
-					},
-				},
-			}, GuardHooks("forge")...),
-			"UserPromptSubmit": {
-				{
-					Hooks: []HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol nudge drain --world=%s --agent=forge", world),
-						},
-					},
-				},
-			},
-		},
-	}
-	return WriteHookSettings(worktreeDir, cfg)
-}
-
 // GuardHooks returns PreToolUse matcher groups for sol guard commands.
 // These block dangerous commands (force push, rm -rf, etc.) and
 // workflow-bypass commands (push to main, gh pr create, manual branching).

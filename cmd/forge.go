@@ -17,8 +17,7 @@ import (
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/session"
-	"github.com/nevinsm/sol/internal/startup"
-	"github.com/nevinsm/sol/internal/store"
+"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
 )
@@ -1174,9 +1173,6 @@ requests from the queue immediately.`,
 }
 
 func init() {
-	// Register forge role config for startup.Launch and prefect respawn.
-	startup.Register("forge", forge.ForgeRoleConfig())
-
 	rootCmd.AddCommand(forgeCmd)
 	forgeCmd.AddCommand(forgeStartCmd)
 	forgeCmd.AddCommand(forgeStopCmd)
