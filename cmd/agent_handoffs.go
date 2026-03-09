@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"text/tabwriter"
 	"time"
 
@@ -14,6 +16,7 @@ var (
 	handoffsWorld string
 	handoffsAgent string
 	handoffsLast  int
+	handoffsJSON  bool
 )
 
 var agentHandoffsCmd = &cobra.Command{
@@ -54,6 +57,15 @@ var agentHandoffsCmd = &cobra.Command{
 			if w, _ := payload["world"].(string); w == world {
 				filtered = append(filtered, ev)
 			}
+		}
+
+		if handoffsJSON {
+			if filtered == nil {
+				filtered = []events.Event{}
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(filtered)
 		}
 
 		if len(filtered) == 0 {
@@ -137,4 +149,5 @@ func init() {
 	agentHandoffsCmd.Flags().StringVar(&handoffsWorld, "world", "", "world name")
 	agentHandoffsCmd.Flags().StringVar(&handoffsAgent, "agent", "", "filter by agent name")
 	agentHandoffsCmd.Flags().IntVar(&handoffsLast, "last", 20, "number of recent events to show")
+	agentHandoffsCmd.Flags().BoolVar(&handoffsJSON, "json", false, "output as JSON")
 }

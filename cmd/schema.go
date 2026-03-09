@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -18,17 +20,30 @@ var schemaCmd = &cobra.Command{
 	GroupID: groupSetup,
 }
 
+var schemaStatusJSON bool
+
 func init() {
 	rootCmd.AddCommand(schemaCmd)
 
 	schemaCmd.AddCommand(schemaStatusCmd)
-	schemaCmd.AddCommand(schemaMigrateCmd)
+	schemaStatusCmd.Flags().BoolVar(&schemaStatusJSON, "json", false, "output as JSON")
 
+	schemaCmd.AddCommand(schemaMigrateCmd)
 	schemaMigrateCmd.Flags().Bool("dry-run", false, "Preview migrations without applying them")
 	schemaMigrateCmd.Flags().Bool("backup", false, "Create a backup of each database before migrating")
 }
 
 // --- sol schema status ---
+
+// schemaEntry is a JSON-friendly representation of a database's schema info.
+type schemaEntry struct {
+	Database string `json:"database"`
+	Type     string `json:"type"` // "sphere" or "world"
+	Version  int    `json:"version"`
+	Target   int    `json:"target"`
+	Status   string `json:"status"`
+	Error    string `json:"error,omitempty"`
+}
 
 var schemaStatusCmd = &cobra.Command{
 	Use:          "status",
@@ -36,6 +51,10 @@ var schemaStatusCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		storeDir := config.StoreDir()
+
+		if schemaStatusJSON {
+			return schemaStatusJSONOutput(storeDir)
+		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 
@@ -87,6 +106,68 @@ var schemaStatusCmd = &cobra.Command{
 
 		return w.Flush()
 	},
+}
+
+func schemaStatusJSONOutput(storeDir string) error {
+	var results []schemaEntry
+
+	// Sphere database.
+	spherePath := filepath.Join(storeDir, "sphere.db")
+	sphereVersion, sphereErr := readSchemaVersion(spherePath)
+	entry := schemaEntry{
+		Database: "sphere",
+		Type:     "sphere",
+		Target:   store.CurrentSphereSchema,
+	}
+	if sphereErr != nil {
+		entry.Error = sphereErr.Error()
+	} else {
+		entry.Version = sphereVersion
+		entry.Status = versionStatus(sphereVersion, store.CurrentSphereSchema)
+	}
+	results = append(results, entry)
+
+	// World databases.
+	entries, err := os.ReadDir(storeDir)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read store directory: %w", err)
+	}
+
+	for _, e := range entries {
+		name := e.Name()
+		if name == "sphere.db" || !strings.HasSuffix(name, ".db") {
+			continue
+		}
+		if strings.HasSuffix(name, "-wal") || strings.HasSuffix(name, "-shm") || strings.HasSuffix(name, "-journal") {
+			continue
+		}
+		worldName := strings.TrimSuffix(name, ".db")
+		dbPath := filepath.Join(storeDir, name)
+		we := schemaEntry{
+			Database: worldName,
+			Type:     "world",
+			Target:   store.CurrentWorldSchema,
+		}
+		v, err := readSchemaVersion(dbPath)
+		if err != nil {
+			we.Error = err.Error()
+		} else {
+			we.Version = v
+			we.Status = versionStatus(v, store.CurrentWorldSchema)
+		}
+		results = append(results, we)
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Type != results[j].Type {
+			return results[i].Type == "sphere" // sphere first
+		}
+		return results[i].Database < results[j].Database
+	})
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(results)
 }
 
 // --- sol schema migrate ---

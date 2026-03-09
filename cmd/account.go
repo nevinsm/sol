@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"text/tabwriter"
 
 	"github.com/nevinsm/sol/internal/account"
@@ -54,6 +56,17 @@ var accountAddCmd = &cobra.Command{
 
 // --- sol account list ---
 
+var accountListJSON bool
+
+// accountEntry is a JSON-friendly representation of an account for list output.
+type accountEntry struct {
+	Handle      string `json:"handle"`
+	Email       string `json:"email,omitempty"`
+	Description string `json:"description,omitempty"`
+	ConfigDir   string `json:"config_dir"`
+	Default     bool   `json:"default"`
+}
+
 var accountListCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "List registered accounts",
@@ -62,6 +75,25 @@ var accountListCmd = &cobra.Command{
 		reg, err := account.LoadRegistry()
 		if err != nil {
 			return err
+		}
+
+		if accountListJSON {
+			entries := make([]accountEntry, 0, len(reg.Accounts))
+			for handle, acct := range reg.Accounts {
+				entries = append(entries, accountEntry{
+					Handle:      handle,
+					Email:       acct.Email,
+					Description: acct.Description,
+					ConfigDir:   acct.ConfigDir,
+					Default:     handle == reg.Default,
+				})
+			}
+			sort.Slice(entries, func(i, j int) bool {
+				return entries[i].Handle < entries[j].Handle
+			})
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(entries)
 		}
 
 		if len(reg.Accounts) == 0 {
@@ -198,6 +230,8 @@ func init() {
 	accountAddCmd.Flags().StringVar(&accountAddDescription, "description", "", "account description")
 
 	accountCmd.AddCommand(accountListCmd)
+	accountListCmd.Flags().BoolVar(&accountListJSON, "json", false, "output as JSON")
+
 	accountCmd.AddCommand(accountRemoveCmd)
 	accountCmd.AddCommand(accountDefaultCmd)
 	accountCmd.AddCommand(accountLoginCmd)
