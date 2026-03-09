@@ -51,6 +51,8 @@ type Config struct {
 	ConsulCommand      string        // command to start consul (default: "sol consul run")
 	ConsulSourceRepo   string        // source repo path for consul config
 
+	ForgeHeartbeatMax time.Duration // max forge heartbeat age before restart (default: 5 minutes)
+
 	SolBinary string // path to sol binary for starting world services. If empty, infrastructure check is skipped.
 }
 
@@ -64,11 +66,14 @@ func DefaultConfig() Config {
 
 		ConsulHeartbeatMax: 15 * time.Minute,
 		ConsulCommand:      "sol consul run",
+
+		ForgeHeartbeatMax: 5 * time.Minute,
 	}
 }
 
-// worldServices are the per-world infrastructure services the prefect manages.
-var worldServices = []string{"sentinel", "forge"}
+// worldServices are the per-world infrastructure services the prefect manages
+// via tmux session existence check. Forge is monitored separately via heartbeat.
+var worldServices = []string{"sentinel"}
 
 // sphereDaemonSpec describes a sphere-level daemon supervised via PID check.
 type sphereDaemonSpec struct {
@@ -463,6 +468,69 @@ func (s *Prefect) checkWorldInfrastructure() {
 				})
 			}
 		}
+
+		// Check forge via heartbeat staleness (forge is a Go process, not a session-based service).
+		s.checkForgeHealth(world.Name)
+	}
+}
+
+// checkForgeHealth reads the forge heartbeat and restarts if stale.
+// The forge runs as a Go process inside a tmux session.
+func (s *Prefect) checkForgeHealth(world string) {
+	if s.cfg.SolBinary == "" {
+		return
+	}
+
+	sessName := config.SessionName(world, "forge")
+
+	// If no session exists at all, start the forge.
+	if !s.sessions.Exists(sessName) {
+		s.logger.Info("forge session missing, starting", "world", world)
+		if err := s.runCommand(s.cfg.SolBinary, "forge", "start", "--world="+world); err != nil {
+			s.logger.Error("failed to start forge", "world", world, "error", err)
+		}
+		return
+	}
+
+	// Session exists — check heartbeat staleness.
+	hb, err := forge.ReadHeartbeat(world)
+	if err != nil {
+		s.logger.Warn("failed to read forge heartbeat", "world", world, "error", err)
+		return
+	}
+
+	if hb == nil {
+		// No heartbeat yet (forge just started) — give it time.
+		return
+	}
+
+	if !hb.IsStale(s.cfg.ForgeHeartbeatMax) {
+		return // heartbeat is fresh
+	}
+
+	// Heartbeat is stale — restart the forge.
+	s.logger.Warn("forge heartbeat is stale, restarting",
+		"world", world,
+		"last_heartbeat", hb.Timestamp,
+		"max_age", s.cfg.ForgeHeartbeatMax)
+
+	// Kill existing session.
+	if err := s.sessions.Stop(sessName, true); err != nil {
+		s.logger.Error("failed to stop stale forge session", "world", world, "error", err)
+	}
+
+	// Restart.
+	if err := s.runCommand(s.cfg.SolBinary, "forge", "start", "--world="+world); err != nil {
+		s.logger.Error("failed to restart forge", "world", world, "error", err)
+	} else {
+		s.logger.Info("forge restarted via heartbeat staleness", "world", world)
+		if s.eventLog != nil {
+			s.eventLog.Emit(events.EventRespawn, "prefect", "forge", "both", map[string]any{
+				"service": "forge",
+				"world":   world,
+				"reason":  "heartbeat_stale",
+			})
+		}
 	}
 }
 
@@ -740,7 +808,7 @@ func (s *Prefect) shutdown() {
 		}
 	}
 
-	// Stop world infrastructure services (sentinel/forge).
+	// Stop world infrastructure services (sentinel, forge).
 	worlds, err := s.sphereStore.ListWorlds()
 	if err != nil {
 		s.logger.Error("failed to list worlds during shutdown", "error", err)
@@ -752,6 +820,7 @@ func (s *Prefect) shutdown() {
 			if !s.worldAllowed(world.Name) {
 				continue
 			}
+			// Stop session-based services (sentinel).
 			for _, svc := range worldServices {
 				sessName := config.SessionName(world.Name, svc)
 				if s.sessions.Exists(sessName) {
@@ -763,6 +832,17 @@ func (s *Prefect) shutdown() {
 						s.logger.Info("world service stopped during shutdown",
 							"service", svc, "world", world.Name)
 					}
+				}
+			}
+			// Stop forge (runs as Go process in tmux, not in worldServices).
+			forgeSessName := config.SessionName(world.Name, "forge")
+			if s.sessions.Exists(forgeSessName) {
+				if err := s.sessions.Stop(forgeSessName, false); err != nil {
+					s.logger.Error("failed to stop forge during shutdown",
+						"world", world.Name, "error", err)
+				} else {
+					stopped++
+					s.logger.Info("forge stopped during shutdown", "world", world.Name)
 				}
 			}
 		}

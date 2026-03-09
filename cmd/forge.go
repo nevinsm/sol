@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"text/tabwriter"
 	"time"
@@ -40,6 +41,9 @@ var (
 	forgeAwaitTimeout        int
 	forgePauseWorld          string
 	forgeResumeWorld         string
+	forgeRunWorld            string
+	forgeLogWorld            string
+	forgeLogFollow           bool
 )
 
 var forgeCmd = &cobra.Command{
@@ -50,7 +54,7 @@ var forgeCmd = &cobra.Command{
 
 var forgeStartCmd = &cobra.Command{
 	Use:          "start",
-	Short:        "Start the forge as a Claude session",
+	Short:        "Start the forge as a Go patrol process",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeStartWorld)
@@ -100,21 +104,30 @@ var forgeStartCmd = &cobra.Command{
 		logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 		ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger)
 
-		// Ensure worktree exists (must happen before Launch).
+		// Ensure worktree exists.
 		if err := ref.EnsureWorktree(); err != nil {
 			return fmt.Errorf("failed to ensure worktree: %w", err)
 		}
 
-		// Launch via startup package.
-		sessName, err = startup.Launch(forge.ForgeRoleConfig(), world, "forge", startup.LaunchOpts{})
+		// Launch Go patrol process inside tmux session.
+		// The tmux session runs `sol forge run --world=<world>` which calls Forge.Run().
+		solBin, err := os.Executable()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to find sol binary: %w", err)
+		}
+		forgeCmd := fmt.Sprintf("%s forge run --world=%s", solBin, world)
+		env := map[string]string{
+			"SOL_HOME": config.Home(),
+		}
+		if err := mgr.Start(sessName, config.Home(), forgeCmd, env, "forge", world); err != nil {
+			return fmt.Errorf("failed to start forge session: %w", err)
 		}
 
-		fmt.Printf("Forge started for world %q (Claude session)\n", world)
+		fmt.Printf("Forge started for world %q (Go patrol process)\n", world)
 		fmt.Printf("  Session:  %s\n", sessName)
 		fmt.Printf("  Worktree: %s\n", ref.WorktreeDir())
 		fmt.Printf("  Attach:   sol forge attach --world=%s\n", world)
+		fmt.Printf("  Log:      sol forge log --world=%s --follow\n", world)
 		return nil
 	},
 }
@@ -983,6 +996,97 @@ var forgeAwaitCmd = &cobra.Command{
 	},
 }
 
+// forgeRunCmd is an internal subcommand that runs the forge patrol loop.
+// It is launched by `forge start` inside a tmux session and is not user-facing.
+var forgeRunCmd = &cobra.Command{
+	Use:          "run",
+	Short:        "Run the forge patrol loop (internal — launched by forge start)",
+	Hidden:       true,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(forgeRunWorld)
+		if err != nil {
+			return err
+		}
+
+		worldCfg, err := config.LoadWorldConfig(world)
+		if err != nil {
+			return err
+		}
+
+		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
+		if err != nil {
+			return err
+		}
+
+		worldStore, err := store.OpenWorld(world)
+		if err != nil {
+			return err
+		}
+		defer worldStore.Close()
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
+		cfg, err := resolveForgeConfig(world, worldCfg)
+		if err != nil {
+			return err
+		}
+
+		logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+		ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger)
+
+		// Build patrol config from world config.
+		pcfg := forge.DefaultPatrolConfig()
+		if worldCfg.Forge.GateTimeout != "" {
+			if parsed, parseErr := time.ParseDuration(worldCfg.Forge.GateTimeout); parseErr == nil && parsed > 0 {
+				pcfg.AssessTimeout = parsed
+			}
+		}
+
+		// Run the patrol loop (blocks until context is cancelled).
+		ctx := cmd.Context()
+		return ref.Run(ctx, pcfg)
+	},
+}
+
+// forgeLogCmd shows the forge log file.
+var forgeLogCmd = &cobra.Command{
+	Use:          "log",
+	Short:        "Show the forge log file",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(forgeLogWorld)
+		if err != nil {
+			return err
+		}
+
+		logPath := forge.LogPath(world)
+
+		if forgeLogFollow {
+			// Exec tail -f (replaces this process).
+			tailCmd := exec.Command("tail", "-f", logPath)
+			tailCmd.Stdout = os.Stdout
+			tailCmd.Stderr = os.Stderr
+			return tailCmd.Run()
+		}
+
+		// Cat the log file.
+		data, err := os.ReadFile(logPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("no forge log for world %q (is the forge running?)", world)
+			}
+			return err
+		}
+		fmt.Print(string(data))
+		return nil
+	},
+}
+
 var forgePauseCmd = &cobra.Command{
 	Use:          "pause",
 	Short:        "Pause the forge — stop claiming new MRs",
@@ -1079,6 +1183,8 @@ func init() {
 	forgeCmd.AddCommand(forgeAwaitCmd)
 	forgeCmd.AddCommand(forgePauseCmd)
 	forgeCmd.AddCommand(forgeResumeCmd)
+	forgeCmd.AddCommand(forgeRunCmd)
+	forgeCmd.AddCommand(forgeLogCmd)
 
 	// --world flag for all subcommands.
 	forgeStartCmd.Flags().StringVar(&forgeStartWorld, "world", "", "world name")
@@ -1099,6 +1205,9 @@ func init() {
 	forgeAwaitCmd.Flags().IntVar(&forgeAwaitTimeout, "timeout", 120, "max seconds to wait")
 	forgePauseCmd.Flags().StringVar(&forgePauseWorld, "world", "", "world name")
 	forgeResumeCmd.Flags().StringVar(&forgeResumeWorld, "world", "", "world name")
+	forgeRunCmd.Flags().StringVar(&forgeRunWorld, "world", "", "world name")
+	forgeLogCmd.Flags().StringVar(&forgeLogWorld, "world", "", "world name")
+	forgeLogCmd.Flags().BoolVar(&forgeLogFollow, "follow", false, "follow the log file (like tail -f)")
 
 	// --json flag for commands that support it.
 	forgeQueueCmd.Flags().BoolVar(&forgeQueueJSON, "json", false, "output as JSON")

@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
+	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/prefect"
@@ -87,8 +88,14 @@ type PrefectInfo struct {
 
 // ForgeInfo holds forge process state.
 type ForgeInfo struct {
-	Running     bool   `json:"running"`
-	SessionName string `json:"session_name,omitempty"`
+	Running      bool   `json:"running"`
+	SessionName  string `json:"session_name,omitempty"`
+	PatrolCount  int    `json:"patrol_count,omitempty"`
+	QueueDepth   int    `json:"queue_depth,omitempty"`
+	MergesTotal  int    `json:"merges_total,omitempty"`
+	HeartbeatAge string `json:"heartbeat_age,omitempty"`
+	Stale        bool   `json:"stale,omitempty"`
+	Paused       bool   `json:"paused,omitempty"`
 }
 
 // ChronicleInfo holds chronicle process state (sphere-level).
@@ -307,10 +314,20 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		result.Prefect = PrefectInfo{Running: true, PID: pid}
 	}
 
-	// 2. Check forge session.
+	// 2. Check forge process (Go process in tmux session).
 	forgeSessName := config.SessionName(world, "forge")
 	if checker.Exists(forgeSessName) {
-		result.Forge = ForgeInfo{Running: true, SessionName: forgeSessName}
+		forgeInfo := ForgeInfo{Running: true, SessionName: forgeSessName}
+		// Read heartbeat for metrics.
+		if hb, err := forge.ReadHeartbeat(world); err == nil && hb != nil {
+			forgeInfo.PatrolCount = hb.PatrolCount
+			forgeInfo.QueueDepth = hb.QueueDepth
+			forgeInfo.MergesTotal = hb.MergesTotal
+			forgeInfo.HeartbeatAge = FormatDuration(time.Since(hb.Timestamp))
+			forgeInfo.Stale = hb.IsStale(5 * time.Minute)
+		}
+		forgeInfo.Paused = forge.IsForgePaused(world)
+		result.Forge = forgeInfo
 	}
 
 	// 2b. Check chronicle (sphere-level): tmux session first, PID-file fallback.

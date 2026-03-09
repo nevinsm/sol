@@ -392,10 +392,26 @@ func RenderWorld(ws *WorldStatus) string {
 }
 
 func formatForgeDetail(f ForgeInfo) string {
-	if f.Running {
-		return f.SessionName
+	if !f.Running {
+		return ""
 	}
-	return ""
+	if f.Paused {
+		return warnStyle.Render("paused")
+	}
+	if f.PatrolCount > 0 || f.MergesTotal > 0 {
+		parts := fmt.Sprintf("%d patrols, %d merged", f.PatrolCount, f.MergesTotal)
+		if f.HeartbeatAge != "" {
+			parts += fmt.Sprintf(", last %s ago", f.HeartbeatAge)
+		}
+		if f.QueueDepth > 0 {
+			parts += fmt.Sprintf(", %d queued", f.QueueDepth)
+		}
+		if f.Stale {
+			parts += warnStyle.Render(" (stale)")
+		}
+		return parts
+	}
+	return f.SessionName
 }
 
 func formatSentinelDetail(s SentinelInfo) string {

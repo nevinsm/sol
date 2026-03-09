@@ -75,6 +75,9 @@ const (
 	EventQuotaRotate = "quota_rotate" // credential rotated to a different account
 	EventQuotaPause  = "quota_pause"  // agent paused due to no available accounts
 
+	// Forge events.
+	EventForgePatrol = "forge_patrol" // forge patrol cycle completed
+
 	// Token broker events.
 	EventBrokerRefresh = "broker_refresh" // token broker refreshed an account's OAuth token
 	EventBrokerPatrol  = "broker_patrol"  // token broker patrol completed
