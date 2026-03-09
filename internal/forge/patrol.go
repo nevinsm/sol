@@ -122,7 +122,7 @@ func verbColor(verb string) string {
 		return logGreen.Render(verb)
 	case "FAILED", "ERROR":
 		return logRed.Render(verb)
-	case "CONFLICT":
+	case "CONFLICT", "REBASE":
 		return logYellow.Render(verb)
 	default:
 		return verb
@@ -453,8 +453,54 @@ func (s *patrolState) patrol(ctx context.Context) {
 		s.emitPatrolEvent(len(ready))
 		return
 	case mergeConflict:
-		// Conflict — delegate to resolution task.
-		s.fl.Log("CONFLICT", fmt.Sprintf("%s  conflicts detected", mr.Branch))
+		// Conflict — attempt auto-rebase before creating resolution task.
+		s.fl.Log("CONFLICT", fmt.Sprintf("%s  conflicts detected, attempting auto-rebase", mr.Branch))
+		if s.autoRebase(ctx, mr) {
+			// Rebase succeeded — fetch and retry merge.
+			s.fl.Log("REBASE", fmt.Sprintf("auto-rebase succeeded for %s, retrying merge", mr.Branch))
+			if s.eventLog != nil {
+				s.eventLog.Emit(events.EventForgeRebase, "forge", "forge", "both", map[string]string{
+					"merge_request_id": mr.ID,
+					"writ_id":          mr.WritID,
+					"branch":           mr.Branch,
+				})
+			}
+			// Fetch to see the force-pushed branch.
+			if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "fetch", "origin"); err != nil {
+				s.forge.logger.Error("post-rebase fetch failed", "error", err)
+			}
+			// Retry squash merge.
+			retryResult := s.merge(ctx, mr)
+			if retryResult == mergeClean || retryResult == mergeEmpty {
+				// Merge succeeded after rebase — continue to gates and push.
+				if retryResult == mergeEmpty {
+					s.fl.Log("MERGE", fmt.Sprintf("%s  empty diff after rebase, marking merged", mr.Branch))
+					if err := s.forge.MarkMerged(mr.ID); err != nil {
+						s.forge.logger.Error("mark-merged failed", "mr", mr.ID, "error", err)
+					} else {
+						s.mergesTotal++
+						s.lastMerge = time.Now()
+						s.lastError = ""
+						s.fl.Log("MERGED", mr.ID)
+						if s.eventLog != nil {
+							s.eventLog.Emit(events.EventMerged, "forge", "forge", "both", map[string]string{
+								"merge_request_id": mr.ID,
+							})
+						}
+					}
+					s.writeHeartbeat("idle", len(ready)-1)
+					s.emitPatrolEvent(len(ready))
+					return
+				}
+				// mergeClean — fall through to gates and push below.
+				break
+			}
+			// Retry still has conflicts — fall through to resolution task.
+			s.fl.Log("REBASE", fmt.Sprintf("merge still conflicts after rebase for %s, creating resolution task", mr.Branch))
+		} else {
+			s.fl.Log("REBASE", fmt.Sprintf("auto-rebase failed for %s, creating resolution task", mr.Branch))
+		}
+		// Fall through to resolution task (existing path).
 		s.lastError = truncate(fmt.Sprintf("merge conflict: %s", mr.Branch), 200)
 		if _, err := s.forge.CreateResolutionTask(mr); err != nil {
 			s.forge.logger.Error("create-resolution failed", "mr", mr.ID, "error", err)
@@ -618,6 +664,41 @@ func (s *patrolState) merge(ctx context.Context, mr *store.MergeRequest) mergeOu
 	// Exit 1 = has changes.
 	s.fl.Log("MERGE", fmt.Sprintf("%s  clean", mr.Branch))
 	return mergeClean
+}
+
+// --- Auto-rebase ---
+
+// autoRebase attempts to rebase the MR branch onto origin/main.
+// Returns true if rebase and force-push succeeded, false otherwise.
+// Always leaves the worktree in detached HEAD on origin/main.
+func (s *patrolState) autoRebase(ctx context.Context, mr *store.MergeRequest) bool {
+	worktree := s.forge.worktree
+	targetRef := "origin/" + s.forge.cfg.TargetBranch
+
+	// 1. Check out the source branch.
+	if _, err := s.cmd.Run(ctx, worktree, "git", "checkout", mr.Branch); err != nil {
+		// Branch doesn't exist or other checkout failure.
+		s.cmd.Run(ctx, worktree, "git", "checkout", "--detach", targetRef)
+		return false
+	}
+
+	// 2. Attempt rebase onto target.
+	if _, err := s.cmd.Run(ctx, worktree, "git", "rebase", targetRef); err != nil {
+		// Rebase failed — true conflict.
+		s.cmd.Run(ctx, worktree, "git", "rebase", "--abort")
+		s.cmd.Run(ctx, worktree, "git", "checkout", "--detach", targetRef)
+		return false
+	}
+
+	// 3. Force-push the rebased branch.
+	if _, err := s.cmd.Run(ctx, worktree, "git", "push", "--force-with-lease", "origin", mr.Branch); err != nil {
+		s.cmd.Run(ctx, worktree, "git", "checkout", "--detach", targetRef)
+		return false
+	}
+
+	// 4. Reset worktree back to target for the retry merge.
+	s.cmd.Run(ctx, worktree, "git", "checkout", "--detach", targetRef)
+	return true
 }
 
 // --- Quality gates ---

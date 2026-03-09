@@ -343,7 +343,7 @@ func TestPatrolEmptyDiffAfterResolution(t *testing.T) {
 	}
 }
 
-func TestPatrolConflict(t *testing.T) {
+func TestPatrolConflictAutoRebaseFails(t *testing.T) {
 	state, worldStore, cmdRunner := setupPatrolTest(t)
 	defer state.fl.Close()
 
@@ -368,6 +368,13 @@ func TestPatrolConflict(t *testing.T) {
 		[]byte("CONFLICT (content): Merge conflict in main.go"), fmt.Errorf("merge conflict"))
 	cmdRunner.SetResult("git merge --abort", nil, nil)
 
+	// Auto-rebase: checkout succeeds, rebase fails (true conflict).
+	cmdRunner.SetResult("git checkout outpost/Toast/sol-aaa11111", nil, nil)
+	cmdRunner.SetResult("git rebase origin/main",
+		[]byte("CONFLICT (content): Merge conflict in main.go"), fmt.Errorf("rebase conflict"))
+	cmdRunner.SetResult("git rebase --abort", nil, nil)
+	cmdRunner.SetResult("git checkout --detach origin/main", nil, nil)
+
 	ctx := context.Background()
 	state.patrol(ctx)
 
@@ -383,7 +390,188 @@ func TestPatrolConflict(t *testing.T) {
 		}
 	}
 	if !foundResolution {
-		t.Error("expected resolution task to be created")
+		t.Error("expected resolution task to be created after auto-rebase failure")
+	}
+}
+
+func TestPatrolConflictAutoRebaseSucceeds(t *testing.T) {
+	state, worldStore, cmdRunner := setupPatrolTest(t)
+	defer state.fl.Close()
+
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Rebased change", Status: "done",
+	}
+
+	// First merge produces conflict.
+	mergeCallCount := 0
+	cmdRunner.fallback = func(dir, name string, args ...string) ([]byte, error) {
+		key := name + " " + strings.Join(args, " ")
+		if key == "git merge --squash origin/outpost/Toast/sol-aaa11111" {
+			mergeCallCount++
+			if mergeCallCount == 1 {
+				// First attempt: conflict.
+				return []byte("CONFLICT (content): Merge conflict in main.go"), fmt.Errorf("merge conflict")
+			}
+			// Second attempt (after rebase): clean merge.
+			return nil, nil
+		}
+		return nil, nil
+	}
+
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD", []byte("abc1234"), nil)
+	cmdRunner.SetResult("git merge --abort", nil, nil)
+
+	// Auto-rebase succeeds.
+	cmdRunner.SetResult("git checkout outpost/Toast/sol-aaa11111", nil, nil)
+	cmdRunner.SetResult("git rebase origin/main", nil, nil)
+	cmdRunner.SetResult("git push --force-with-lease origin outpost/Toast/sol-aaa11111", nil, nil)
+	cmdRunner.SetResult("git checkout --detach origin/main", nil, nil)
+
+	// Retry merge clean: has changes.
+	cmdRunner.SetResult("git diff --cached --quiet", nil, fmt.Errorf("exit 1"))
+
+	// Quality gates pass.
+	gateCmd := "go test ./..."
+	cmdRunner.SetResult("sh -c "+gateCmd, nil, nil)
+
+	// Push succeeds.
+	cmdRunner.SetResult("git commit -m Rebased change (sol-aaa11111)", nil, nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD~1", []byte("abc1234"), nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD", []byte("def5678"), nil)
+	cmdRunner.SetResult("git push origin HEAD:main", nil, nil)
+
+	ctx := context.Background()
+	state.patrol(ctx)
+
+	// Verify MR marked as merged (auto-rebase + retry succeeded).
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-001"]
+	worldStore.mu.Unlock()
+
+	if phase != "merged" {
+		t.Errorf("MR phase = %q, want 'merged' (auto-rebase should have succeeded)", phase)
+	}
+
+	if state.mergesTotal != 1 {
+		t.Errorf("mergesTotal = %d, want 1", state.mergesTotal)
+	}
+
+	// Verify auto-rebase was attempted (checkout of branch).
+	calls := cmdRunner.getCalls()
+	foundRebase := false
+	for _, c := range calls {
+		if c.Name == "git" && len(c.Args) > 0 && c.Args[0] == "rebase" {
+			foundRebase = true
+			break
+		}
+	}
+	if !foundRebase {
+		t.Error("expected git rebase to be called during auto-rebase")
+	}
+}
+
+func TestPatrolConflictAutoRebaseCheckoutFails(t *testing.T) {
+	state, worldStore, cmdRunner := setupPatrolTest(t)
+	defer state.fl.Close()
+
+	// Set up git repo for CreateResolutionTask rev-parse.
+	repoDir := t.TempDir()
+	run(t, "git", "init", repoDir)
+	run(t, "git", "-C", repoDir, "commit", "--allow-empty", "-m", "init")
+	state.forge.worktree = repoDir
+
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "No branch", Status: "done", Priority: 2,
+	}
+
+	// Merge produces conflict.
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD", []byte("abc1234"), nil)
+	cmdRunner.SetResult("git merge --squash origin/outpost/Toast/sol-aaa11111",
+		[]byte("CONFLICT (content): Merge conflict in main.go"), fmt.Errorf("merge conflict"))
+	cmdRunner.SetResult("git merge --abort", nil, nil)
+
+	// Auto-rebase: checkout fails (branch doesn't exist locally).
+	cmdRunner.SetResult("git checkout outpost/Toast/sol-aaa11111",
+		[]byte("error: pathspec 'outpost/Toast/sol-aaa11111' did not match"), fmt.Errorf("exit 1"))
+	cmdRunner.SetResult("git checkout --detach origin/main", nil, nil)
+
+	ctx := context.Background()
+	state.patrol(ctx)
+
+	// Verify resolution task was created (auto-rebase failed at checkout).
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+
+	foundResolution := false
+	for _, w := range worldStore.items {
+		if strings.Contains(w.Title, "Resolve merge conflicts") {
+			foundResolution = true
+			break
+		}
+	}
+	if !foundResolution {
+		t.Error("expected resolution task to be created when branch checkout fails")
+	}
+}
+
+func TestPatrolConflictAutoRebaseForcePushFails(t *testing.T) {
+	state, worldStore, cmdRunner := setupPatrolTest(t)
+	defer state.fl.Close()
+
+	// Set up git repo for CreateResolutionTask rev-parse.
+	repoDir := t.TempDir()
+	run(t, "git", "init", repoDir)
+	run(t, "git", "-C", repoDir, "commit", "--allow-empty", "-m", "init")
+	state.forge.worktree = repoDir
+
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Push rejected", Status: "done", Priority: 2,
+	}
+
+	// Merge produces conflict.
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD", []byte("abc1234"), nil)
+	cmdRunner.SetResult("git merge --squash origin/outpost/Toast/sol-aaa11111",
+		[]byte("CONFLICT (content): Merge conflict in main.go"), fmt.Errorf("merge conflict"))
+	cmdRunner.SetResult("git merge --abort", nil, nil)
+
+	// Auto-rebase: checkout and rebase succeed, but force-push fails.
+	cmdRunner.SetResult("git checkout outpost/Toast/sol-aaa11111", nil, nil)
+	cmdRunner.SetResult("git rebase origin/main", nil, nil)
+	cmdRunner.SetResult("git push --force-with-lease origin outpost/Toast/sol-aaa11111",
+		[]byte("error: failed to push"), fmt.Errorf("exit 1"))
+	cmdRunner.SetResult("git checkout --detach origin/main", nil, nil)
+
+	ctx := context.Background()
+	state.patrol(ctx)
+
+	// Verify resolution task was created (force-push failed).
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+
+	foundResolution := false
+	for _, w := range worldStore.items {
+		if strings.Contains(w.Title, "Resolve merge conflicts") {
+			foundResolution = true
+			break
+		}
+	}
+	if !foundResolution {
+		t.Error("expected resolution task to be created when force-push fails")
 	}
 }
 
