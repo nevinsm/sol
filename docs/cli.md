@@ -52,6 +52,20 @@ With --since, filters by time window (relative duration or absolute date).
 | `--since` | string | "" | time window: relative duration (24h) or absolute date (2006-01-02) |
 | `--world` | string | "" | world name |
 
+### `sol dash`
+
+Live TUI dashboard
+
+Launch a live terminal dashboard.
+
+Without arguments, auto-detects the current world from SOL_WORLD or the
+working directory. Falls back to the sphere-level overview if no world
+is detected. With a world name, shows detailed status for that world.
+
+The dashboard refreshes every 3 seconds. Press r to force refresh.
+
+**Usage:** `sol dash [world]`
+
 ### `sol handoff`
 
 Hand off to a fresh session with context preservation
@@ -1354,6 +1368,21 @@ Manage the per-world sentinel health monitor
 |------|------|---------|-------------|
 | `--world` | string | "" | world name |
 
+### `sol service`
+
+Manage systemd user units for sol sphere daemons
+
+**Subcommands:**
+
+| Command | Description |
+|---------|-------------|
+| `sol service install` | Generate and install systemd user units (enable but don't start) |
+| `sol service restart` | Restart all sol sphere daemon units |
+| `sol service start` | Start all sol sphere daemon units |
+| `sol service status` | Show status of sol sphere daemon units |
+| `sol service stop` | Stop all sol sphere daemon units |
+| `sol service uninstall` | Stop, disable, and remove systemd user units |
+
 ### `sol token-broker`
 
 Manage the token broker for centralized OAuth refresh
@@ -2087,33 +2116,4 @@ You will need to start a new shell for this setup to take effect.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--no-descriptions` | bool | false | disable completion descriptions |
-
-### `sol dash`
-
-Live TUI dashboard
-
-Launch a live terminal dashboard.
-
-Without arguments, auto-detects the current world from SOL_WORLD or the
-working directory. Falls back to the sphere-level overview if no world
-is detected. With a world name, shows detailed status for that world.
-
-The dashboard refreshes every 3 seconds. Press r to force refresh.
-
-**Usage:** `sol dash [world]`
-
-### `sol service`
-
-Manage systemd user units for sol sphere daemons
-
-**Subcommands:**
-
-| Command | Description |
-|---------|-------------|
-| `sol service install` | Generate and install systemd user units (enable but don't start) |
-| `sol service restart` | Restart all sol sphere daemon units |
-| `sol service start` | Start all sol sphere daemon units |
-| `sol service status` | Show status of sol sphere daemon units |
-| `sol service stop` | Stop all sol sphere daemon units |
-| `sol service uninstall` | Stop, disable, and remove systemd user units |
 
