@@ -68,6 +68,7 @@ type SphereStore interface {
 type WorldStore interface {
 	GetWrit(id string) (*store.Writ, error)
 	UpdateWrit(id string, updates store.WritUpdates) error
+	SetWritMetadata(id string, metadata map[string]any) error
 	ListMergeRequests(phase string) ([]store.MergeRequest, error)
 	ListMergeRequestsByWrit(writID string, phase string) ([]store.MergeRequest, error)
 	ListBlockedMergeRequests() ([]store.MergeRequest, error)
@@ -122,11 +123,12 @@ type Sentinel struct {
 	logger        *events.Logger
 	eventReader   EventReader       // reads raw events for frequency checks
 	respawnCounts            map[respawnKey]int
-	recastCounts             map[string]int    // writ ID → recast attempt count
-	resolutionDispatchCounts map[string]int    // blocker writ ID → dispatch attempt count
-	lastCaptures             map[string]string // agent ID → hash of last captured output
-	assessFn                 assessFunc        // nil = use real AI call
+	lastCastTime             map[string]time.Time // dedup guard: writ ID → last cast time
+	resolutionDispatchCounts map[string]int       // blocker writ ID → dispatch attempt count
+	lastCaptures             map[string]string    // agent ID → hash of last captured output
+	assessFn                 assessFunc           // nil = use real AI call
 	castFn                   func(writID string) (*CastResult, error) // nil = skip recast
+	nowFn                    func() time.Time     // nil = time.Now, for testing
 
 	// Per-patrol counters, reset at start of each patrol.
 	patrolAssessed int
@@ -143,7 +145,7 @@ func New(cfg Config, sphere SphereStore, world WorldStore,
 		sessions:      sessions,
 		logger:        logger,
 		respawnCounts:            make(map[respawnKey]int),
-		recastCounts:             make(map[string]int),
+		lastCastTime:             make(map[string]time.Time),
 		resolutionDispatchCounts: make(map[string]int),
 		lastCaptures:             make(map[string]string),
 	}
@@ -164,6 +166,67 @@ func (w *Sentinel) SetAssessFunc(fn func(agent store.Agent, sessionName, output 
 // When nil, the sentinel skips the recast step during patrol.
 func (w *Sentinel) SetCastFunc(fn func(writID string) (*CastResult, error)) {
 	w.castFn = fn
+}
+
+// SetNowFunc sets a custom time function for testing.
+// When nil, time.Now is used.
+func (w *Sentinel) SetNowFunc(fn func() time.Time) {
+	w.nowFn = fn
+}
+
+// now returns the current time, using nowFn if set (for testing).
+func (w *Sentinel) now() time.Time {
+	if w.nowFn != nil {
+		return w.nowFn()
+	}
+	return time.Now()
+}
+
+// recastBackoffIntervals defines the minimum wait time before each recast attempt.
+// Index maps to attempt number: [0] = 10m after failure, [1] = 30m after 1st, [2] = 60m after 2nd.
+var recastBackoffIntervals = []time.Duration{
+	10 * time.Minute,
+	30 * time.Minute,
+	60 * time.Minute,
+}
+
+// recastCountFromMetadata reads the persistent recast count from writ metadata.
+func recastCountFromMetadata(item *store.Writ) int {
+	if item.Metadata == nil {
+		return 0
+	}
+	v, ok := item.Metadata["recast-count"]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	default:
+		return 0
+	}
+}
+
+// lastRecastTimeFromMetadata reads the persistent last recast timestamp from writ metadata.
+func lastRecastTimeFromMetadata(item *store.Writ) time.Time {
+	if item.Metadata == nil {
+		return time.Time{}
+	}
+	v, ok := item.Metadata["recast-last"]
+	if !ok {
+		return time.Time{}
+	}
+	s, ok := v.(string)
+	if !ok {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }
 
 func (w *Sentinel) agentID() string {
@@ -1358,7 +1421,9 @@ func (w *Sentinel) releaseStaleClaims() int {
 
 // recastFailedMRs checks for merge requests in "failed" phase with open work
 // items and re-casts them. Returns the number of writs re-cast.
+// Uses exponential backoff (10m, 30m, 60m) between recast attempts.
 // Caps retries at MaxRecastAttempts; after that, escalates to the operator.
+// Recast count is persisted in writ metadata to survive sentinel restarts.
 func (w *Sentinel) recastFailedMRs() int {
 	if w.castFn == nil {
 		return 0
@@ -1378,6 +1443,7 @@ func (w *Sentinel) recastFailedMRs() int {
 		maxAttempts = 3
 	}
 
+	now := w.now()
 	var recastCount int
 	seen := make(map[string]bool) // deduplicate by writ
 
@@ -1386,6 +1452,14 @@ func (w *Sentinel) recastFailedMRs() int {
 			continue
 		}
 		seen[mr.WritID] = true
+
+		// Dedup guard: skip if writ was recently cast (within 2× patrol interval).
+		// Prevents race where sentinel sees writ as "open" between cast and tether.
+		if t, ok := w.lastCastTime[mr.WritID]; ok {
+			if now.Sub(t) < 2*w.config.PatrolInterval {
+				continue
+			}
+		}
 
 		item, err := w.worldStore.GetWrit(mr.WritID)
 		if err != nil {
@@ -1412,21 +1486,43 @@ func (w *Sentinel) recastFailedMRs() int {
 				continue
 			}
 		default:
-			// "tethered" or any other status — skip and prune tracking.
+			// "tethered" or any other status — skip and prune dedup guard.
 			// Tethered writs have an agent working on them (orphaned-working
 			// fix handles dead agents separately).
-			delete(w.recastCounts, mr.WritID)
+			delete(w.lastCastTime, mr.WritID)
 			continue
 		}
 
-		attempts := w.recastCounts[mr.WritID]
+		// Read persistent recast state from writ metadata.
+		attempts := recastCountFromMetadata(item)
+		lastRecastTime := lastRecastTimeFromMetadata(item)
 
 		if attempts >= maxAttempts {
 			if attempts == maxAttempts {
 				// First time hitting max — escalate once.
 				w.escalateFailedRecast(mr, item, attempts)
-				w.recastCounts[mr.WritID] = maxAttempts + 1
+				// Mark escalated in metadata to prevent re-escalation.
+				_ = w.worldStore.SetWritMetadata(mr.WritID, map[string]any{
+					"recast-count": float64(maxAttempts + 1),
+				})
 			}
+			continue
+		}
+
+		// Backoff check: ensure enough time has elapsed before next recast.
+		// For the first recast, wait after MR failure (mr.UpdatedAt).
+		// For subsequent recasts, wait after the last recast (from metadata).
+		var referenceTime time.Time
+		if attempts == 0 {
+			referenceTime = mr.UpdatedAt
+		} else {
+			referenceTime = lastRecastTime
+		}
+		backoffIdx := attempts
+		if backoffIdx >= len(recastBackoffIntervals) {
+			backoffIdx = len(recastBackoffIntervals) - 1
+		}
+		if now.Sub(referenceTime) < recastBackoffIntervals[backoffIdx] {
 			continue
 		}
 
@@ -1450,25 +1546,32 @@ func (w *Sentinel) recastFailedMRs() int {
 			if w.logger != nil {
 				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
 					map[string]any{
-						"action":    "recast",
-						"mr":        mr.ID,
-						"writ": mr.WritID,
-						"error":     err.Error(),
+						"action": "recast",
+						"mr":     mr.ID,
+						"writ":   mr.WritID,
+						"error":  err.Error(),
 					})
 			}
 			continue
 		}
 
-		w.recastCounts[mr.WritID] = attempts + 1
+		// Persist recast state in writ metadata (survives sentinel restart).
+		_ = w.worldStore.SetWritMetadata(mr.WritID, map[string]any{
+			"recast-count": float64(attempts + 1),
+			"recast-last":  now.UTC().Format(time.RFC3339),
+		})
+
+		// Update dedup guard.
+		w.lastCastTime[mr.WritID] = now
 		recastCount++
 
 		if w.logger != nil {
 			w.logger.Emit(events.EventRecast, w.agentID(), w.agentID(), "both",
 				map[string]any{
-					"mr":        mr.ID,
-					"writ": mr.WritID,
-					"agent":     result.AgentName,
-					"attempt":   attempts + 1,
+					"mr":      mr.ID,
+					"writ":    mr.WritID,
+					"agent":   result.AgentName,
+					"attempt": attempts + 1,
 				})
 		}
 	}
