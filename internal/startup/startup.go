@@ -53,6 +53,9 @@ type RoleConfig struct {
 	Workflow  string // workflow name to instantiate (empty = none)
 	NeedsItem bool   // whether workflow requires a writ
 
+	// Skills
+	SkillInstaller func(worktreeDir, world, agent string) error // installs .claude/skills/
+
 	// Prime context
 	PrimeBuilder func(world, agent string) string
 }
@@ -128,7 +131,14 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		}
 	}
 
-	// 2.5. Install system prompt content if provided.
+	// 2.5. Install skills (.claude/skills/).
+	if cfg.SkillInstaller != nil {
+		if err := cfg.SkillInstaller(worktreeDir, world, agent); err != nil {
+			return "", fmt.Errorf("startup: failed to install skills: %w", err)
+		}
+	}
+
+	// 2.6. Install system prompt content if provided.
 	if cfg.SystemPromptContent != "" {
 		promptDir := fmt.Sprintf("%s/.claude", worktreeDir)
 		if err := os.MkdirAll(promptDir, 0o755); err != nil {

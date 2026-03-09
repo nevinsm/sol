@@ -22,8 +22,25 @@ func ForgeRoleConfig() startup.RoleConfig {
 		ReplacePrompt:       true,
 		Workflow:            "forge-patrol",
 		NeedsItem:           false,
+		SkillInstaller:      forgeSkillInstaller,
 		PrimeBuilder:        forgePrime,
 	}
+}
+
+// forgeSkillInstaller installs role-appropriate skills for the forge.
+func forgeSkillInstaller(worktreeDir, world, _ string) error {
+	cfg, err := resolveForgeConfigForRole(world)
+	if err != nil {
+		// Non-fatal: install skills with defaults.
+		cfg = DefaultConfig()
+	}
+
+	return protocol.InstallSkills(worktreeDir, protocol.SkillContext{
+		World:        world,
+		Role:         "forge",
+		TargetBranch: cfg.TargetBranch,
+		QualityGates: cfg.QualityGates,
+	})
 }
 
 // forgePersona generates the forge CLAUDE.local.md content.

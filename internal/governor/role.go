@@ -17,8 +17,18 @@ func RoleConfig() startup.RoleConfig {
 		Hooks:               governorHooks,
 		SystemPromptContent: protocol.GovernorSystemPrompt,
 		ReplacePrompt:       false, // append mode — keep default system prompt
+		SkillInstaller:      governorSkillInstaller,
 		PrimeBuilder:        governorPrime,
 	}
+}
+
+// governorSkillInstaller installs role-appropriate skills for the governor.
+func governorSkillInstaller(worktreeDir, world, _ string) error {
+	return protocol.InstallSkills(worktreeDir, protocol.SkillContext{
+		World:     world,
+		SolBinary: "sol",
+		Role:      "governor",
+	})
 }
 
 // governorPersona generates the governor CLAUDE.local.md content.
