@@ -89,7 +89,7 @@ var worldInitCmd = &cobra.Command{
 		// Clone source repo into managed repo directory.
 		if sourceRepo != "" {
 			if err := setup.CloneRepo(name, sourceRepo); err != nil {
-				return err
+				return fmt.Errorf("failed to clone source repo: %w", err)
 			}
 		}
 
@@ -101,19 +101,19 @@ var worldInitCmd = &cobra.Command{
 		// Create world database (triggers schema migration).
 		worldStore, err := store.OpenWorld(name)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer worldStore.Close()
 
 		// Register in sphere.db.
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		if err := sphereStore.RegisterWorld(name, sourceRepo); err != nil {
-			return err
+			return fmt.Errorf("failed to register world: %w", err)
 		}
 
 		// Build config from defaults.
@@ -141,7 +141,7 @@ var worldInitCmd = &cobra.Command{
 
 		// Write world.toml.
 		if err := config.WriteWorldConfig(name, cfg); err != nil {
-			return err
+			return fmt.Errorf("failed to write world config: %w", err)
 		}
 
 		// Print confirmation.
@@ -169,13 +169,13 @@ var worldListCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		worlds, err := sphereStore.ListWorlds()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to list worlds: %w", err)
 		}
 
 		if worldListJSON {
@@ -233,18 +233,18 @@ var worldStatusCmd = &cobra.Command{
 
 		cfg, err := config.LoadWorldConfig(name)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to load world config: %w", err)
 		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		worldStore, err := store.OpenWorld(name)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer worldStore.Close()
 
@@ -252,7 +252,7 @@ var worldStatusCmd = &cobra.Command{
 
 		result, err := status.Gather(name, sphereStore, worldStore, worldStore, mgr)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to gather world status: %w", err)
 		}
 
 		status.GatherCaravans(result, sphereStore, gatedWorldOpener)
@@ -323,13 +323,13 @@ var worldDeleteCmd = &cobra.Command{
 		// Open sphere store.
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		// Remove all sphere-level data for this world in a single transaction.
 		if err := sphereStore.DeleteWorldData(name); err != nil {
-			return err
+			return fmt.Errorf("failed to delete world data: %w", err)
 		}
 
 		// Delete world database file and SQLite sidecar files.
@@ -372,14 +372,14 @@ With --all, also syncs forge worktree and notifies running envoy/governor sessio
 		if _, err := os.Stat(repoPath); os.IsNotExist(err) {
 			worldCfg, err := config.LoadWorldConfig(name)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to load world config: %w", err)
 			}
 			if worldCfg.World.SourceRepo == "" {
 				return fmt.Errorf("no managed repo and no source_repo configured for world %q", name)
 			}
 			fmt.Printf("Cloning %s into managed repo...\n", worldCfg.World.SourceRepo)
 			if err := setup.CloneRepo(name, worldCfg.World.SourceRepo); err != nil {
-				return err
+				return fmt.Errorf("failed to clone source repo: %w", err)
 			}
 			fmt.Printf("Managed repo created for world %q\n", name)
 			return nil
@@ -387,7 +387,7 @@ With --all, also syncs forge worktree and notifies running envoy/governor sessio
 
 		// Sync managed repo.
 		if err := worldsync.SyncRepo(name); err != nil {
-			return err
+			return fmt.Errorf("failed to sync managed repo: %w", err)
 		}
 		fmt.Printf("Synced managed repo for world %q\n", name)
 
@@ -395,17 +395,17 @@ With --all, also syncs forge worktree and notifies running envoy/governor sessio
 		if worldSyncAll {
 			worldCfg, err := config.LoadWorldConfig(name)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to load world config: %w", err)
 			}
 
 			cfg, err := resolveForgeConfig(name, worldCfg)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to resolve forge config: %w", err)
 			}
 
 			sphereStore, err := store.OpenSphere()
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to open sphere store: %w", err)
 			}
 			defer sphereStore.Close()
 
@@ -455,7 +455,7 @@ running, returns an error (callers should fall back to the static world summary)
 
 		// Write question to pending.md.
 		if err := governor.WritePending(world, question); err != nil {
-			return err
+			return fmt.Errorf("failed to write query: %w", err)
 		}
 
 		// Inject notification into governor's tmux session.
@@ -475,7 +475,7 @@ running, returns an error (callers should fall back to the static world summary)
 			response, found, err := governor.ReadResponse(world)
 			if err != nil {
 				governor.ClearQuery(world)
-				return err
+				return fmt.Errorf("failed to read query response: %w", err)
 			}
 			if found {
 				fmt.Print(response)
@@ -586,7 +586,7 @@ to copy it.`,
 		// Create target world database (triggers schema migration).
 		worldStore, err := store.OpenWorld(target)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open target world store: %w", err)
 		}
 		defer worldStore.Close()
 
@@ -598,12 +598,12 @@ to copy it.`,
 		// Register in sphere.db.
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		if err := sphereStore.RegisterWorld(target, sourceRepo); err != nil {
-			return err
+			return fmt.Errorf("failed to register cloned world: %w", err)
 		}
 
 		// Build target config from source — clear transient/local state.
@@ -612,7 +612,7 @@ to copy it.`,
 		targetCfg.World.DefaultAccount = ""
 
 		if err := config.WriteWorldConfig(target, targetCfg); err != nil {
-			return err
+			return fmt.Errorf("failed to write world config: %w", err)
 		}
 
 		// Print confirmation.
@@ -656,7 +656,7 @@ With --force, also stops all outpost agent sessions immediately:
 
 		cfg, err := config.LoadWorldConfig(name)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to load world config: %w", err)
 		}
 
 		if cfg.World.Sleeping {
@@ -833,7 +833,7 @@ var worldWakeCmd = &cobra.Command{
 
 		cfg, err := config.LoadWorldConfig(name)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to load world config: %w", err)
 		}
 
 		if !cfg.World.Sleeping {
@@ -936,7 +936,7 @@ restored — run sol world sync after import to clone the managed repo.`,
 			Name:        worldImportName,
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to import world: %w", err)
 		}
 
 		fmt.Printf("World %q imported.\n", result.World)

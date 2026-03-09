@@ -36,7 +36,7 @@ var castCmd = &cobra.Command{
 		// Config-first source repo discovery.
 		worldCfg, err := config.LoadWorldConfig(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to load world config: %w", err)
 		}
 
 		if worldCfg.World.Sleeping {
@@ -45,18 +45,18 @@ var castCmd = &cobra.Command{
 
 		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to resolve source repo: %w", err)
 		}
 
 		worldStore, err := store.OpenWorld(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer worldStore.Close()
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
@@ -80,7 +80,7 @@ var castCmd = &cobra.Command{
 			Account:     castAccount,
 		}, worldStore, sphereStore, mgr, logger)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to cast writ: %w", err)
 		}
 
 		fmt.Printf("Cast %s -> %s (%s)\n", result.WritID, result.AgentName, result.SessionName)

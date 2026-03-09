@@ -33,13 +33,13 @@ var resolveCmd = &cobra.Command{
 
 		worldStore, err := store.OpenWorld(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer worldStore.Close()
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
@@ -51,7 +51,7 @@ var resolveCmd = &cobra.Command{
 			AgentName: agent,
 		}, worldStore, sphereStore, mgr, logger)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to resolve writ: %w", err)
 		}
 
 		fmt.Printf("Done: %s (%s)\n", result.WritID, result.Title)

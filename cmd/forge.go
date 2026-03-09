@@ -64,7 +64,7 @@ var forgeStartCmd = &cobra.Command{
 
 		worldCfg, err := config.LoadWorldConfig(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to load world config: %w", err)
 		}
 
 		if worldCfg.World.Sleeping {
@@ -81,24 +81,24 @@ var forgeStartCmd = &cobra.Command{
 
 		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to resolve source repo: %w", err)
 		}
 
 		worldStore, err := store.OpenWorld(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer worldStore.Close()
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		cfg, err := resolveForgeConfig(world, worldCfg)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to resolve forge config: %w", err)
 		}
 
 		logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
@@ -215,7 +215,7 @@ var forgeStatusCmd = &cobra.Command{
 
 		worldStore, err := store.OpenWorld(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer worldStore.Close()
 
@@ -227,7 +227,7 @@ var forgeStatusCmd = &cobra.Command{
 		// Load all MRs for summary.
 		mrs, err := worldStore.ListMergeRequests("")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to list merge requests: %w", err)
 		}
 
 		// Check pause state.
@@ -400,13 +400,13 @@ var forgeQueueCmd = &cobra.Command{
 
 		worldStore, err := store.OpenWorld(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer worldStore.Close()
 
 		mrs, err := worldStore.ListMergeRequests("")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to list merge requests: %w", err)
 		}
 
 		if forgeQueueJSON {
@@ -504,14 +504,14 @@ var forgeReadyCmd = &cobra.Command{
 
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open forge: %w", err)
 		}
 		defer worldStore.Close()
 		defer sphereStore.Close()
 
 		mrs, err := ref.ListReady()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to list ready merge requests: %w", err)
 		}
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
@@ -546,14 +546,14 @@ var forgeBlockedCmd = &cobra.Command{
 
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open forge: %w", err)
 		}
 		defer worldStore.Close()
 		defer sphereStore.Close()
 
 		mrs, err := ref.ListBlocked()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to list blocked merge requests: %w", err)
 		}
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
@@ -592,14 +592,14 @@ var forgeClaimCmd = &cobra.Command{
 
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open forge: %w", err)
 		}
 		defer worldStore.Close()
 		defer sphereStore.Close()
 
 		mr, err := ref.Claim()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to claim merge request: %w", err)
 		}
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if mr == nil {
@@ -646,14 +646,14 @@ var forgeReleaseCmd = &cobra.Command{
 
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open forge: %w", err)
 		}
 		defer worldStore.Close()
 		defer sphereStore.Close()
 
 		failed, err := ref.Release(mrID)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to release merge request: %w", err)
 		}
 
 		if failed {
@@ -680,13 +680,13 @@ var forgeMarkMergedCmd = &cobra.Command{
 
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open forge: %w", err)
 		}
 		defer worldStore.Close()
 		defer sphereStore.Close()
 
 		if err := ref.MarkMerged(mrID); err != nil {
-			return err
+			return fmt.Errorf("failed to mark merge request as merged: %w", err)
 		}
 
 		eventLog := events.NewLogger(config.Home())
@@ -714,7 +714,7 @@ var forgeMarkFailedCmd = &cobra.Command{
 
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open forge: %w", err)
 		}
 		defer worldStore.Close()
 		defer sphereStore.Close()
@@ -723,7 +723,7 @@ var forgeMarkFailedCmd = &cobra.Command{
 		mr, mrErr := ref.GetMergeRequest(mrID)
 
 		if err := ref.MarkFailed(mrID); err != nil {
-			return err
+			return fmt.Errorf("failed to mark merge request as failed: %w", err)
 		}
 
 		payload := map[string]string{
@@ -757,19 +757,19 @@ var forgeCreateResolutionCmd = &cobra.Command{
 
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open forge: %w", err)
 		}
 		defer worldStore.Close()
 		defer sphereStore.Close()
 
 		mr, err := ref.GetMergeRequest(mrID)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get merge request: %w", err)
 		}
 
 		taskID, err := ref.CreateResolutionTask(mr)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create resolution task: %w", err)
 		}
 
 		// Best-effort immediate dispatch of the resolution writ.
@@ -832,14 +832,14 @@ var forgeCheckUnblockedCmd = &cobra.Command{
 
 		ref, worldStore, sphereStore, err := openForge(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open forge: %w", err)
 		}
 		defer worldStore.Close()
 		defer sphereStore.Close()
 
 		unblocked, err := ref.CheckUnblocked()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to check unblocked merge requests: %w", err)
 		}
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
@@ -870,12 +870,12 @@ var forgeSyncCmd = &cobra.Command{
 
 		worldCfg, err := config.LoadWorldConfig(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to load world config: %w", err)
 		}
 
 		cfg, err := resolveForgeConfig(world, worldCfg)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to resolve forge config: %w", err)
 		}
 
 		// Sync managed repo first.
@@ -885,7 +885,7 @@ var forgeSyncCmd = &cobra.Command{
 
 		// Sync forge worktree.
 		if err := worldsync.SyncForge(world, cfg.TargetBranch); err != nil {
-			return err
+			return fmt.Errorf("failed to sync forge worktree: %w", err)
 		}
 
 		fmt.Printf("Forge synced for world %q\n", world)
@@ -950,7 +950,7 @@ var forgeAwaitCmd = &cobra.Command{
 		// Phase 1: drain any already-pending nudges.
 		messages, err := nudge.Drain(sessName)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to drain nudges: %w", err)
 		}
 		if len(messages) > 0 {
 			waited := time.Since(start).Seconds()
@@ -970,7 +970,7 @@ var forgeAwaitCmd = &cobra.Command{
 
 			messages, err = nudge.Drain(sessName)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to drain nudges: %w", err)
 			}
 			if len(messages) > 0 {
 				waited := time.Since(start).Seconds()

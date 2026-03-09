@@ -41,16 +41,16 @@ var envoyCreateCmd = &cobra.Command{
 
 		worldCfg, err := config.LoadWorldConfig(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to load world config: %w", err)
 		}
 		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to resolve source repo: %w", err)
 		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
@@ -59,7 +59,7 @@ var envoyCreateCmd = &cobra.Command{
 			Name:       name,
 			SourceRepo: sourceRepo,
 		}, sphereStore); err != nil {
-			return err
+			return fmt.Errorf("failed to create envoy: %w", err)
 		}
 
 		fmt.Printf("Created envoy %q in world %q\n", name, world)
@@ -85,7 +85,7 @@ var envoyStartCmd = &cobra.Command{
 
 		sessName, err := startup.Launch(envoy.RoleConfig(), world, name, startup.LaunchOpts{})
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to start envoy: %w", err)
 		}
 
 		fmt.Printf("Started envoy %q in world %q\n", name, world)
@@ -113,14 +113,14 @@ var envoyStopCmd = &cobra.Command{
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		mgr := session.New()
 
 		if err := envoy.Stop(world, name, sphereStore, mgr); err != nil {
-			return err
+			return fmt.Errorf("failed to stop envoy: %w", err)
 		}
 
 		fmt.Printf("Stopped envoy %q in world %q\n", name, world)
@@ -203,13 +203,13 @@ var envoyListCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		envoys, err := envoy.List(envoyListWorld, sphereStore)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to list envoys: %w", err)
 		}
 
 		if envoyListJSON {
@@ -297,7 +297,7 @@ var envoyDebriefCmd = &cobra.Command{
 
 		archiveFile, err := archiveBrief(envoy.BriefDir(world, name), briefPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to archive brief: %w", err)
 		}
 
 		fmt.Printf("Archived brief to .brief/archive/%s\n", archiveFile)
@@ -329,16 +329,16 @@ var envoyDeleteCmd = &cobra.Command{
 
 		worldCfg, err := config.LoadWorldConfig(envoyDeleteWorld)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to load world config: %w", err)
 		}
 		sourceRepo, err := dispatch.ResolveSourceRepo(envoyDeleteWorld, worldCfg)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to resolve source repo: %w", err)
 		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
@@ -350,7 +350,7 @@ var envoyDeleteCmd = &cobra.Command{
 			SourceRepo: sourceRepo,
 			Force:      envoyDeleteForce,
 		}, sphereStore, mgr); err != nil {
-			return err
+			return fmt.Errorf("failed to delete envoy: %w", err)
 		}
 
 		fmt.Printf("Deleted envoy %q from world %q\n", name, envoyDeleteWorld)
@@ -382,7 +382,7 @@ var envoySyncCmd = &cobra.Command{
 		// Notify envoy session if running.
 		mgr := session.New()
 		if err := worldsync.SyncEnvoy(world, name, mgr); err != nil {
-			return err
+			return fmt.Errorf("failed to sync envoy: %w", err)
 		}
 
 		fmt.Printf("Synced for envoy %q in world %q\n", name, world)

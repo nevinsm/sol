@@ -81,13 +81,13 @@ var writCreateCmd = &cobra.Command{
 
 		s, err := store.OpenWorld(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer s.Close()
 
 		id, err := s.CreateWritWithOpts(opts)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create writ: %w", err)
 		}
 		fmt.Println(id)
 		return nil
@@ -121,13 +121,13 @@ var writStatusRunE = func(cmd *cobra.Command, args []string) error {
 	}
 	s, err := store.OpenWorld(world)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open world store: %w", err)
 	}
 	defer s.Close()
 
 	item, err := s.GetWrit(args[0])
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get writ: %w", err)
 	}
 
 	if writStatusJSON {
@@ -183,7 +183,7 @@ var writListCmd = &cobra.Command{
 		}
 		s, err := store.OpenWorld(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer s.Close()
 
@@ -194,7 +194,7 @@ var writListCmd = &cobra.Command{
 		}
 		items, err := s.ListWrits(filters)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to list writs: %w", err)
 		}
 
 		if listJSON {
@@ -263,12 +263,12 @@ var writUpdateCmd = &cobra.Command{
 		}
 		s, err := store.OpenWorld(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer s.Close()
 
 		if err := s.UpdateWrit(args[0], updates); err != nil {
-			return err
+			return fmt.Errorf("failed to update writ: %w", err)
 		}
 		fmt.Printf("Updated %s\n", args[0])
 		return nil
@@ -304,13 +304,13 @@ var writCloseCmd = &cobra.Command{
 		}
 		s, err := store.OpenWorld(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer s.Close()
 
 		superseded, err := s.CloseWrit(args[0], closeReason)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to close writ: %w", err)
 		}
 
 		// Auto-resolve linked escalations (best-effort).
@@ -375,7 +375,7 @@ var writQueryCmd = &cobra.Command{
 
 		s, err := store.OpenWorld(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer s.Close()
 
@@ -419,13 +419,13 @@ var writReadyCmd = &cobra.Command{
 		}
 		s, err := store.OpenWorld(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer s.Close()
 
 		items, err := s.ReadyWrits()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to list ready writs: %w", err)
 		}
 
 		// Apply caravan-level filtering (deps + phase gating) using

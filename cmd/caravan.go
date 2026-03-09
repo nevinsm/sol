@@ -50,7 +50,7 @@ var caravanCreateCmd = &cobra.Command{
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
@@ -61,13 +61,13 @@ var caravanCreateCmd = &cobra.Command{
 
 		caravanID, err := sphereStore.CreateCaravan(name, owner)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create caravan: %w", err)
 		}
 
 		phase, _ := cmd.Flags().GetInt("phase")
 		for _, itemID := range itemIDs {
 			if err := sphereStore.CreateCaravanItem(caravanID, itemID, world, phase); err != nil {
-				return err
+				return fmt.Errorf("failed to add item %s to caravan: %w", itemID, err)
 			}
 		}
 
@@ -110,14 +110,14 @@ var caravanAddCmd = &cobra.Command{
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		// Guard against adding to closed caravans.
 		caravan, err := sphereStore.GetCaravan(caravanID)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get caravan: %w", err)
 		}
 		if caravan.Status == "closed" {
 			return fmt.Errorf("caravan %s is closed — reopen it first with: sol caravan reopen %s", caravanID, caravanID)
@@ -126,7 +126,7 @@ var caravanAddCmd = &cobra.Command{
 		phase, _ := cmd.Flags().GetInt("phase")
 		for _, itemID := range itemIDs {
 			if err := sphereStore.CreateCaravanItem(caravanID, itemID, world, phase); err != nil {
-				return err
+				return fmt.Errorf("failed to add item %s to caravan: %w", itemID, err)
 			}
 		}
 
@@ -150,18 +150,18 @@ var caravanCheckCmd = &cobra.Command{
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		caravan, err := sphereStore.GetCaravan(caravanID)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get caravan: %w", err)
 		}
 
 		statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to check caravan readiness: %w", err)
 		}
 
 		// Check caravan-level dependencies.
@@ -270,7 +270,7 @@ var caravanStatusCmd = &cobra.Command{
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
@@ -282,12 +282,12 @@ var caravanStatusCmd = &cobra.Command{
 			}
 			caravan, err := sphereStore.GetCaravan(caravanID)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to get caravan: %w", err)
 			}
 
 			statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to check caravan readiness: %w", err)
 			}
 
 			// Check caravan-level dependencies.
@@ -367,7 +367,7 @@ var caravanStatusCmd = &cobra.Command{
 		// List all active caravans (drydock + open).
 		allCaravans, err := sphereStore.ListCaravans("")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to list caravans: %w", err)
 		}
 		var caravans []store.Caravan
 		for _, c := range allCaravans {
@@ -392,7 +392,7 @@ var caravanStatusCmd = &cobra.Command{
 		for _, c := range caravans {
 			items, err := sphereStore.ListCaravanItems(c.ID)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to list caravan items: %w", err)
 			}
 
 			if c.Status == "drydock" {
@@ -472,13 +472,13 @@ var caravanListCmd = &cobra.Command{
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		caravans, err := sphereStore.ListCaravans(filter)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to list caravans: %w", err)
 		}
 
 		if excludeClosed {
@@ -588,13 +588,13 @@ var caravanCommissionCmd = &cobra.Command{
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		caravan, err := sphereStore.GetCaravan(caravanID)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get caravan: %w", err)
 		}
 
 		if caravan.Status != "drydock" {
@@ -602,7 +602,7 @@ var caravanCommissionCmd = &cobra.Command{
 		}
 
 		if err := sphereStore.UpdateCaravanStatus(caravanID, "open"); err != nil {
-			return err
+			return fmt.Errorf("failed to commission caravan: %w", err)
 		}
 
 		fmt.Printf("Commissioned caravan %s: %q (drydock → open)\n", caravanID, caravan.Name)
@@ -625,13 +625,13 @@ var caravanDrydockCmd = &cobra.Command{
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		caravan, err := sphereStore.GetCaravan(caravanID)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get caravan: %w", err)
 		}
 
 		if caravan.Status != "open" {
@@ -639,7 +639,7 @@ var caravanDrydockCmd = &cobra.Command{
 		}
 
 		if err := sphereStore.UpdateCaravanStatus(caravanID, "drydock"); err != nil {
-			return err
+			return fmt.Errorf("failed to drydock caravan: %w", err)
 		}
 
 		fmt.Printf("Returned caravan %s: %q to drydock (open → drydock)\n", caravanID, caravan.Name)
@@ -662,13 +662,13 @@ var caravanReopenCmd = &cobra.Command{
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		caravan, err := sphereStore.GetCaravan(caravanID)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get caravan: %w", err)
 		}
 
 		if caravan.Status != "closed" {
@@ -676,7 +676,7 @@ var caravanReopenCmd = &cobra.Command{
 		}
 
 		if err := sphereStore.UpdateCaravanStatus(caravanID, "drydock"); err != nil {
-			return err
+			return fmt.Errorf("failed to reopen caravan: %w", err)
 		}
 
 		fmt.Printf("Reopened caravan %s → drydock\n", caravanID)
@@ -705,14 +705,14 @@ var caravanLaunchCmd = &cobra.Command{
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		// Reject launch for drydock caravans.
 		caravan, err := sphereStore.GetCaravan(caravanID)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get caravan: %w", err)
 		}
 		if caravan.Status == "drydock" {
 			return fmt.Errorf("caravan %s (%q) is in drydock — commission it first with: sol caravan commission %s", caravanID, caravan.Name, caravanID)
@@ -720,7 +720,7 @@ var caravanLaunchCmd = &cobra.Command{
 
 		statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to check caravan readiness: %w", err)
 		}
 
 		// Find ready items in the specified world.
@@ -748,16 +748,16 @@ var caravanLaunchCmd = &cobra.Command{
 		// Config-first source repo discovery.
 		worldCfg, err := config.LoadWorldConfig(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to load world config: %w", err)
 		}
 		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to resolve source repo: %w", err)
 		}
 
 		worldStore, err := store.OpenWorld(world)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer worldStore.Close()
 
@@ -858,13 +858,13 @@ var caravanSetPhaseCmd = &cobra.Command{
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
 		// Validate caravan exists.
 		if _, err := sphereStore.GetCaravan(caravanID); err != nil {
-			return err
+			return fmt.Errorf("failed to get caravan: %w", err)
 		}
 
 		if all {
@@ -874,7 +874,7 @@ var caravanSetPhaseCmd = &cobra.Command{
 			}
 			n, err := sphereStore.UpdateAllCaravanItemPhases(caravanID, phase)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to update caravan item phases: %w", err)
 			}
 			fmt.Printf("Updated %d items to phase %d in caravan %s\n", n, phase, caravanID)
 			return nil
@@ -887,7 +887,7 @@ var caravanSetPhaseCmd = &cobra.Command{
 		}
 
 		if err := sphereStore.UpdateCaravanItemPhase(caravanID, itemID, phase); err != nil {
-			return err
+			return fmt.Errorf("failed to update caravan item phase: %w", err)
 		}
 		fmt.Printf("Updated %s to phase %d in caravan %s\n", itemID, phase, caravanID)
 		return nil
@@ -926,7 +926,7 @@ var caravanCloseCmd = &cobra.Command{
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
@@ -935,7 +935,7 @@ var caravanCloseCmd = &cobra.Command{
 		if autoClose {
 			caravans, err := sphereStore.ListCaravans("open")
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to list open caravans: %w", err)
 			}
 			closed := 0
 			for _, c := range caravans {
@@ -969,7 +969,7 @@ var caravanCloseCmd = &cobra.Command{
 
 		caravan, err := sphereStore.GetCaravan(caravanID)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get caravan: %w", err)
 		}
 
 		if caravan.Status == "closed" {
@@ -980,7 +980,7 @@ var caravanCloseCmd = &cobra.Command{
 		if !force {
 			closed, err := sphereStore.TryCloseCaravan(caravanID, gatedWorldOpener)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to close caravan: %w", err)
 			}
 			if !closed {
 				// Show which items are not yet merged.
@@ -999,7 +999,7 @@ var caravanCloseCmd = &cobra.Command{
 			}
 		} else {
 			if err := sphereStore.UpdateCaravanStatus(caravanID, "closed"); err != nil {
-				return err
+				return fmt.Errorf("failed to close caravan: %w", err)
 			}
 		}
 

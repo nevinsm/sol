@@ -61,7 +61,7 @@ var sessionStartCmd = &cobra.Command{
 
 		mgr := session.New()
 		if err := mgr.Start(name, startWorkdir, startCmd, env, startRole, startWorld); err != nil {
-			return err
+			return fmt.Errorf("failed to start session: %w", err)
 		}
 		fmt.Printf("Session %s started\n", name)
 		return nil
@@ -88,7 +88,7 @@ var sessionStopCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
 		if err := mgr.Stop(args[0], stopForce); err != nil {
-			return err
+			return fmt.Errorf("failed to stop session: %w", err)
 		}
 		fmt.Printf("Session %s stopped\n", args[0])
 		return nil
@@ -111,7 +111,7 @@ var sessionListCmd = &cobra.Command{
 		mgr := session.New()
 		sessions, err := mgr.List()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to list sessions: %w", err)
 		}
 
 		if sessionListJSON {
@@ -156,7 +156,7 @@ var sessionHealthCmd = &cobra.Command{
 		mgr := session.New()
 		status, err := mgr.Health(args[0], healthMaxInactivity)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to check session health: %w", err)
 		}
 		fmt.Println(status)
 		if code := status.ExitCode(); code != 0 {
@@ -183,7 +183,7 @@ var sessionCaptureCmd = &cobra.Command{
 		mgr := session.New()
 		output, err := mgr.Capture(args[0], captureLines)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to capture session output: %w", err)
 		}
 		fmt.Print(output)
 		return nil
@@ -223,7 +223,7 @@ var sessionInjectCmd = &cobra.Command{
 		}
 		mgr := session.New()
 		if err := mgr.Inject(args[0], injectMessage, !injectNoSubmit); err != nil {
-			return err
+			return fmt.Errorf("failed to inject message into session: %w", err)
 		}
 		fmt.Printf("Injected message into session %s\n", args[0])
 		return nil
