@@ -404,7 +404,20 @@ func (s *patrolState) patrol(ctx context.Context) {
 	case mergeClean:
 		// Has changes, proceed to gates.
 	case mergeEmpty:
-		// No changes — mark merged directly.
+		if mr.Attempts > 1 {
+			// This MR was reclaimed after conflict resolution but now has
+			// no diff. The resolution likely discarded the branch's changes
+			// instead of rebasing them. Mark as failed rather than silently
+			// marking merged with no content.
+			s.fl.Log("SUSPECT", fmt.Sprintf("%s  empty after %d attempts, marking failed", mr.Branch, mr.Attempts))
+			if err := s.forge.MarkFailed(mr.ID); err != nil {
+				s.forge.logger.Error("mark-failed failed", "mr", mr.ID, "error", err)
+			}
+			s.writeHeartbeat("idle", len(ready)-1)
+			s.emitPatrolEvent(len(ready))
+			return
+		}
+		// Genuine empty diff (first attempt) — mark merged directly.
 		s.fl.Log("MERGE", fmt.Sprintf("%s  empty diff, marking merged", mr.Branch))
 		if err := s.forge.MarkMerged(mr.ID); err != nil {
 			s.forge.logger.Error("mark-merged failed", "mr", mr.ID, "error", err)

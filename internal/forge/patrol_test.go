@@ -281,13 +281,65 @@ func TestPatrolEmptyDiff(t *testing.T) {
 	ctx := context.Background()
 	state.patrol(ctx)
 
-	// Verify MR marked as merged (empty diff -> auto-merge).
+	// Verify MR marked as merged (empty diff on first attempt -> auto-merge).
 	worldStore.mu.Lock()
 	phase := worldStore.phaseUpdates["mr-001"]
 	worldStore.mu.Unlock()
 
 	if phase != "merged" {
 		t.Errorf("MR phase = %q, want 'merged'", phase)
+	}
+}
+
+func TestPatrolEmptyDiffAfterResolution(t *testing.T) {
+	state, worldStore, cmdRunner := setupPatrolTest(t)
+	defer state.fl.Close()
+
+	// MR has Attempts: 1 — after ClaimMergeRequest increments it becomes 2,
+	// meaning this MR was reclaimed after conflict resolution.
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-002", Phase: "ready", WritID: "sol-bbb22222", Branch: "outpost/Toast/sol-bbb22222", Attempts: 1},
+	}
+	worldStore.items["sol-bbb22222"] = &store.Writ{
+		ID: "sol-bbb22222", Title: "Lost change", Status: "done",
+	}
+
+	// Mock: merge succeeds but diff is empty (exit 0 from diff --cached --quiet).
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD", []byte("def5678"), nil)
+	cmdRunner.SetResult("git merge --squash origin/outpost/Toast/sol-bbb22222", nil, nil)
+	cmdRunner.SetResult("git diff --cached --quiet", nil, nil) // exit 0 = no diff
+
+	ctx := context.Background()
+	state.patrol(ctx)
+
+	// Verify MR marked as failed (empty diff after resolution is suspicious).
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-002"]
+	worldStore.mu.Unlock()
+
+	if phase != "failed" {
+		t.Errorf("MR phase = %q, want 'failed'", phase)
+	}
+
+	// Verify SUSPECT log line was emitted.
+	logData, err := os.ReadFile(state.fl.logPath)
+	if err != nil {
+		t.Fatalf("failed to read forge log: %v", err)
+	}
+	if !strings.Contains(string(logData), "SUSPECT") {
+		t.Errorf("forge log missing SUSPECT entry; got:\n%s", string(logData))
+	}
+
+	// Verify an escalation was created (MarkFailed creates one).
+	sphereStore := state.forge.sphereStore.(*mockSphereStore)
+	sphereStore.mu.Lock()
+	escCount := len(sphereStore.escalations)
+	sphereStore.mu.Unlock()
+
+	if escCount == 0 {
+		t.Error("expected an escalation to be created for empty-after-resolution")
 	}
 }
 
