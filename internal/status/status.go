@@ -362,7 +362,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		switch agent.Role {
 		case "governor":
 			result.Governor = GovernorInfo{
-				Running:      true,
+				Running:      govSessAlive,
 				SessionAlive: govSessAlive,
 				BriefAge:     briefAge(governor.BriefPath(world)),
 			}

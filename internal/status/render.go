@@ -51,6 +51,15 @@ func statusIndicator(running bool) string {
 	return errorStyle.Render("✗")
 }
 
+// optionalStatusIndicator returns a dim ○ for non-running optional processes
+// instead of the alarming red ✗ used for required processes.
+func optionalStatusIndicator(running bool) string {
+	if running {
+		return okStyle.Render("✓")
+	}
+	return dimStyle.Render("○")
+}
+
 // RenderSphere renders a SphereStatus as styled terminal output.
 func RenderSphere(s *SphereStatus) string {
 	var b strings.Builder
@@ -66,17 +75,17 @@ func RenderSphere(s *SphereStatus) string {
 	// Sphere processes.
 	b.WriteString(headerStyle.Render("Processes"))
 	b.WriteString("\n")
-	renderProcess(&b, "Prefect", s.Prefect.Running,
+	renderProcess(&b, "Prefect", s.Prefect.Running, true,
 		formatPrefectDetail(s.Prefect))
-	renderProcess(&b, "Consul", s.Consul.Running,
+	renderProcess(&b, "Consul", s.Consul.Running, true,
 		formatConsulDetail(s.Consul))
-	renderProcess(&b, "Chronicle", s.Chronicle.Running,
+	renderProcess(&b, "Chronicle", s.Chronicle.Running, false,
 		formatChronicleDetail(s.Chronicle))
-	renderProcess(&b, "Ledger", s.Ledger.Running,
+	renderProcess(&b, "Ledger", s.Ledger.Running, false,
 		formatLedgerDetail(s.Ledger))
-	renderProcess(&b, "Broker", s.Broker.Running,
+	renderProcess(&b, "Broker", s.Broker.Running, true,
 		formatBrokerDetail(s.Broker))
-	renderProcess(&b, "Senate", s.Senate.Running,
+	renderProcess(&b, "Senate", s.Senate.Running, false,
 		formatSenateDetail(s.Senate))
 	b.WriteString("\n")
 
@@ -116,8 +125,12 @@ func RenderSphere(s *SphereStatus) string {
 	return b.String()
 }
 
-func renderProcess(b *strings.Builder, name string, running bool, detail string) {
-	b.WriteString(fmt.Sprintf("  %s %-12s", statusIndicator(running), name))
+func renderProcess(b *strings.Builder, name string, running bool, required bool, detail string) {
+	indicator := optionalStatusIndicator(running)
+	if required {
+		indicator = statusIndicator(running)
+	}
+	b.WriteString(fmt.Sprintf("  %s %-12s", indicator, name))
 	if detail != "" {
 		b.WriteString(dimStyle.Render("  " + detail))
 	}
@@ -320,22 +333,20 @@ func RenderWorld(ws *WorldStatus) string {
 	// Processes.
 	b.WriteString(headerStyle.Render("Processes"))
 	b.WriteString("\n")
-	renderProcess(&b, "Prefect", ws.Prefect.Running,
+	renderProcess(&b, "Prefect", ws.Prefect.Running, true,
 		formatPrefectDetail(ws.Prefect))
-	renderProcess(&b, "Forge", ws.Forge.Running,
+	renderProcess(&b, "Forge", ws.Forge.Running, false,
 		formatForgeDetail(ws.Forge))
-	renderProcess(&b, "Sentinel", ws.Sentinel.Running,
+	renderProcess(&b, "Sentinel", ws.Sentinel.Running, false,
 		formatSentinelDetail(ws.Sentinel))
-	renderProcess(&b, "Chronicle", ws.Chronicle.Running,
+	renderProcess(&b, "Chronicle", ws.Chronicle.Running, false,
 		formatChronicleDetail(ws.Chronicle))
-	renderProcess(&b, "Ledger", ws.Ledger.Running,
+	renderProcess(&b, "Ledger", ws.Ledger.Running, false,
 		formatLedgerDetail(ws.Ledger))
-	renderProcess(&b, "Broker", ws.Broker.Running,
+	renderProcess(&b, "Broker", ws.Broker.Running, true,
 		formatBrokerDetail(ws.Broker))
-	if ws.Governor.Running {
-		renderProcess(&b, "Governor", true,
-			formatGovernorDetail(ws.Governor))
-	}
+	renderProcess(&b, "Governor", ws.Governor.Running, false,
+		formatGovernorDetail(ws.Governor))
 	b.WriteString("\n")
 
 	// Outposts (role=agent only).
@@ -551,31 +562,29 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, escalations ...*Escalati
 	// Sphere-level processes.
 	b.WriteString(headerStyle.Render("Sphere Processes"))
 	b.WriteString("\n")
-	renderProcess(&b, "Prefect", ws.Prefect.Running,
+	renderProcess(&b, "Prefect", ws.Prefect.Running, true,
 		formatPrefectDetail(ws.Prefect))
-	renderProcess(&b, "Consul", consul.Running,
+	renderProcess(&b, "Consul", consul.Running, true,
 		formatConsulDetail(consul))
-	renderProcess(&b, "Chronicle", ws.Chronicle.Running,
+	renderProcess(&b, "Chronicle", ws.Chronicle.Running, false,
 		formatChronicleDetail(ws.Chronicle))
-	renderProcess(&b, "Ledger", ws.Ledger.Running,
+	renderProcess(&b, "Ledger", ws.Ledger.Running, false,
 		formatLedgerDetail(ws.Ledger))
-	renderProcess(&b, "Broker", ws.Broker.Running,
+	renderProcess(&b, "Broker", ws.Broker.Running, true,
 		formatBrokerDetail(ws.Broker))
-	renderProcess(&b, "Senate", ws.Senate.Running,
+	renderProcess(&b, "Senate", ws.Senate.Running, false,
 		formatSenateDetail(ws.Senate))
 	b.WriteString("\n")
 
 	// World processes (Forge, Sentinel, Governor — not Prefect/Chronicle).
 	b.WriteString(headerStyle.Render("World Processes"))
 	b.WriteString("\n")
-	renderProcess(&b, "Forge", ws.Forge.Running,
+	renderProcess(&b, "Forge", ws.Forge.Running, false,
 		formatForgeDetail(ws.Forge))
-	renderProcess(&b, "Sentinel", ws.Sentinel.Running,
+	renderProcess(&b, "Sentinel", ws.Sentinel.Running, false,
 		formatSentinelDetail(ws.Sentinel))
-	if ws.Governor.Running {
-		renderProcess(&b, "Governor", true,
-			formatGovernorDetail(ws.Governor))
-	}
+	renderProcess(&b, "Governor", ws.Governor.Running, false,
+		formatGovernorDetail(ws.Governor))
 	b.WriteString("\n")
 
 	// Outposts (role=agent only).

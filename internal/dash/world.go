@@ -24,8 +24,9 @@ const (
 
 // processEntry holds the name and running state for the compact process grid.
 type processEntry struct {
-	name    string
-	running bool
+	name     string
+	running  bool
+	required bool // required processes show red ✗ when down; optional show dim ○
 }
 
 // worldModel handles the world detail view.
@@ -655,11 +656,11 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 
 	// Sphere Processes — compact grid.
 	sphereProcs := []processEntry{
-		{"Prefect", data.Prefect.Running},
-		{"Chronicle", data.Chronicle.Running},
-		{"Ledger", data.Ledger.Running},
-		{"Broker", data.Broker.Running},
-		{"Senate", data.Senate.Running},
+		{"Prefect", data.Prefect.Running, true},
+		{"Chronicle", data.Chronicle.Running, false},
+		{"Ledger", data.Ledger.Running, false},
+		{"Broker", data.Broker.Running, true},
+		{"Senate", data.Senate.Running, false},
 	}
 	b.WriteString(headerStyle.Render("Sphere Processes"))
 	b.WriteString("\n")
@@ -1187,9 +1188,9 @@ func scrollIndicator(offset, vpHeight, totalRows int) string {
 // Always includes forge, sentinel, and governor regardless of running state.
 func worldProcessList(data *status.WorldStatus) []processEntry {
 	return []processEntry{
-		{"Forge", data.Forge.Running},
-		{"Sentinel", data.Sentinel.Running},
-		{"Governor", data.Governor.Running},
+		{"Forge", data.Forge.Running, false},
+		{"Sentinel", data.Sentinel.Running, false},
+		{"Governor", data.Governor.Running, false},
 	}
 }
 
@@ -1217,7 +1218,10 @@ func (wm worldModel) renderWorldProcessesSection(b *strings.Builder, data *statu
 	header := "  " + focusIndicator + " " + focusStyle.Render(sectionHeader)
 	b.WriteString(header + "\n")
 	for i, p := range procs {
-		indicator := statusIndicator(p.running)
+		indicator := optionalStatusIndicator(p.running)
+		if p.required {
+			indicator = statusIndicator(p.running)
+		}
 		if p.running {
 			if s, ok := wm.processSpinners[p.name]; ok {
 				indicator = s.View()
@@ -1241,7 +1245,10 @@ func (wm worldModel) renderProcessGrid(b *strings.Builder, procs []processEntry,
 		cellWidth = 20
 	}
 	for i, p := range procs {
-		indicator := pulsingStatusIndicator(p.running, pulseBright)
+		indicator := optionalStatusIndicator(p.running)
+		if p.required {
+			indicator = pulsingStatusIndicator(p.running, pulseBright)
+		}
 		if p.running {
 			if s, ok := wm.processSpinners[p.name]; ok {
 				indicator = s.View()
