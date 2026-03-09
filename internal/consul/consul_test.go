@@ -139,7 +139,7 @@ func TestRecoverStaleTethers(t *testing.T) {
 	worldStore.UpdateWrit(wiA, store.WritUpdates{Status: "tethered", Assignee: worldName + "/AgentA"})
 	tether.Write(worldName, "AgentA", wiA, "agent")
 
-	// Make Agent A's updated_at old (> 1 hour ago).
+	// Make Agent A's updated_at old (> 15 minutes ago).
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
 		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/AgentA")
 
@@ -158,7 +158,7 @@ func TestRecoverStaleTethers(t *testing.T) {
 	sessions.alive["sol-"+worldName+"-AgentB"] = true
 
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:             solHome,
 	}
 
@@ -256,7 +256,7 @@ func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
 	sessions := newMockSessions() // no alive sessions
 
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 	}
 
@@ -341,7 +341,7 @@ func TestRecoverStaleTethersTooRecent(t *testing.T) {
 	sessions := newMockSessions() // no alive sessions
 
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour, // 1 hour timeout, 5 min is too recent
+		StaleTetherTimeout: 15 * time.Minute, // 15 min timeout, 5 min is too recent
 		SolHome:             solHome,
 	}
 
@@ -401,7 +401,7 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 	sessions := newMockSessions() // no alive sessions
 
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:             solHome,
 	}
 
@@ -463,7 +463,7 @@ func TestFeedStrandedCaravansAutoDispatch(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            config.Home(),
 	}
 
@@ -531,7 +531,7 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            config.Home(),
 	}
 
@@ -585,7 +585,7 @@ func TestFeedStrandedCaravansAutoCloseAllMerged(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            config.Home(),
 	}
 
@@ -642,7 +642,7 @@ func TestFeedStrandedCaravansDrydockIgnored(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            config.Home(),
 	}
 
@@ -804,7 +804,7 @@ func TestPatrolCycle(t *testing.T) {
 	sessions.alive["sol-"+worldName+"-Healthy"] = true
 
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:             solHome,
 		PatrolInterval:     5 * time.Minute,
 	}
@@ -894,7 +894,7 @@ func TestPatrolExitsEarlyOnCancelledContext(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 		PatrolInterval:     5 * time.Minute,
 	}
@@ -953,7 +953,7 @@ func TestRecoverStaleTethersExitsOnCancelledContext(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            config.Home(),
 	}
 
@@ -1003,7 +1003,7 @@ func TestFeedStrandedCaravansExitsOnCancelledContext(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            config.Home(),
 	}
 
@@ -1083,7 +1083,7 @@ capacity = 2
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            config.Home(),
 	}
 
@@ -1157,7 +1157,7 @@ func TestDispatchWorldItemsSkipsSleepingWorld(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 	}
 

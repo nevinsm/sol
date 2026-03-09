@@ -19,7 +19,7 @@ import (
 // Config holds consul patrol configuration.
 type Config struct {
 	PatrolInterval      time.Duration // time between patrols (default: 5 minutes)
-	StaleTetherTimeout  time.Duration // how long a tether can be stale (default: 1 hour)
+	StaleTetherTimeout  time.Duration // how long a tether can be stale (default: 15 minutes)
 	HeartbeatDir        string        // path to heartbeat directory (default: $SOL_HOME/consul)
 	SolHome             string        // $SOL_HOME path
 	EscalationWebhook   string        // webhook URL for escalation routing (optional)
@@ -31,7 +31,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		PatrolInterval:      5 * time.Minute,
-		StaleTetherTimeout:  1 * time.Hour,
+		StaleTetherTimeout:  15 * time.Minute,
 		EscalationThreshold: 5,
 		EscalationConfig:    config.DefaultEscalationConfig(),
 	}
