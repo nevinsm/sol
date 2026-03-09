@@ -77,7 +77,7 @@ func TestAgingAlertsFireForUnacknowledged(t *testing.T) {
 	// No notifiers needed — we just test the return count and DB updates.
 
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 		EscalationConfig:   config.DefaultEscalationConfig(),
 	}
@@ -125,7 +125,7 @@ func TestAgingAlertsSkipAcknowledged(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 		EscalationConfig:   config.DefaultEscalationConfig(),
 	}
@@ -159,7 +159,7 @@ func TestAgingAlertsSkipLowSeverity(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 		EscalationConfig:   config.DefaultEscalationConfig(),
 	}
@@ -195,7 +195,7 @@ func TestAgingAlertsRespectLastNotifiedAt(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 		EscalationConfig:   config.DefaultEscalationConfig(),
 	}
@@ -229,7 +229,7 @@ func TestAgingAlertsNotYetDue(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 		EscalationConfig:   config.DefaultEscalationConfig(),
 	}
@@ -276,7 +276,7 @@ func TestBuildupAlertFiresAboveThreshold(t *testing.T) {
 	sessions := newMockSessions()
 	logger := events.NewLogger(solHome)
 	cfg := Config{
-		StaleTetherTimeout:  1 * time.Hour,
+		StaleTetherTimeout:  15 * time.Minute,
 		SolHome:             solHome,
 		EscalationWebhook:   server.URL,
 		EscalationThreshold: 5,
@@ -328,7 +328,7 @@ func TestBuildupAlertDebounced(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout:  1 * time.Hour,
+		StaleTetherTimeout:  15 * time.Minute,
 		SolHome:             solHome,
 		EscalationWebhook:   server.URL,
 		EscalationThreshold: 5,
@@ -380,7 +380,7 @@ func TestBuildupAlertBelowThreshold(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout:  1 * time.Hour,
+		StaleTetherTimeout:  15 * time.Minute,
 		SolHome:             solHome,
 		EscalationWebhook:   server.URL,
 		EscalationThreshold: 5,
@@ -413,7 +413,7 @@ func TestBuildupAlertNoWebhook(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout:  1 * time.Hour,
+		StaleTetherTimeout:  15 * time.Minute,
 		SolHome:             solHome,
 		EscalationWebhook:   "", // no webhook
 		EscalationThreshold: 5,
@@ -462,7 +462,7 @@ func TestStaleSourceRefResolvesClosedWrit(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 		EscalationConfig:   config.DefaultEscalationConfig(),
 	}
@@ -516,7 +516,7 @@ func TestStaleSourceRefSkipsOpenWrit(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 		EscalationConfig:   config.DefaultEscalationConfig(),
 	}
@@ -575,7 +575,7 @@ func TestStaleSourceRefResolvesMergedMR(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 		EscalationConfig:   config.DefaultEscalationConfig(),
 	}
@@ -617,7 +617,7 @@ func TestStaleSourceRefDegradeOnWorldUnavailable(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 		EscalationConfig:   config.DefaultEscalationConfig(),
 	}
@@ -657,7 +657,7 @@ func TestStaleSourceRefNoSourceRef(t *testing.T) {
 
 	sessions := newMockSessions()
 	cfg := Config{
-		StaleTetherTimeout: 1 * time.Hour,
+		StaleTetherTimeout: 15 * time.Minute,
 		SolHome:            solHome,
 		EscalationConfig:   config.DefaultEscalationConfig(),
 	}
