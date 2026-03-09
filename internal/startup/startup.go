@@ -236,6 +236,10 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		"SOL_WORLD":         world,
 		"SOL_AGENT":         agent,
 		"CLAUDE_CONFIG_DIR": claudeConfigDir,
+		// Refresh API key every 5 minutes — matches broker patrol interval.
+		// Claude Code calls apiKeyHelper (configured in settings.json) at
+		// this interval to pick up rotated OAuth tokens.
+		"CLAUDE_CODE_API_KEY_HELPER_TTL_MS": "300000",
 	}
 
 	// Enable ledger telemetry if configured.

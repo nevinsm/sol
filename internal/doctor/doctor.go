@@ -124,6 +124,8 @@ func CheckClaude() CheckResult {
 }
 
 // CheckJq verifies jq is installed and executable.
+// Required by the apikey-helper.sh script that reads OAuth tokens
+// from broker-managed credentials files.
 func CheckJq() CheckResult {
 	path, err := exec.LookPath("jq")
 	if err != nil {

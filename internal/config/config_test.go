@@ -366,10 +366,21 @@ func TestEnsureClaudeDefaults(t *testing.T) {
 		t.Error("settings.json still contains {{STATUSLINE_PATH}} placeholder")
 	}
 
+	// Verify the API key helper path was resolved (no template placeholder).
+	if strings.Contains(string(data), "{{API_KEY_HELPER_PATH}}") {
+		t.Error("settings.json still contains {{API_KEY_HELPER_PATH}} placeholder")
+	}
+
 	// Verify absolute path to statusline.sh is present.
 	expectedStatuslinePath := filepath.Join(defaultsDir, "statusline.sh")
 	if !strings.Contains(string(data), expectedStatuslinePath) {
 		t.Errorf("settings.json should contain absolute path %q, got:\n%s", expectedStatuslinePath, data)
+	}
+
+	// Verify absolute path to apikey-helper.sh is present.
+	expectedApiKeyHelperPath := filepath.Join(defaultsDir, "apikey-helper.sh")
+	if !strings.Contains(string(data), expectedApiKeyHelperPath) {
+		t.Errorf("settings.json should contain absolute path %q, got:\n%s", expectedApiKeyHelperPath, data)
 	}
 
 	// Verify settings.json is valid JSON.
@@ -382,6 +393,9 @@ func TestEnsureClaudeDefaults(t *testing.T) {
 	if _, ok := parsed["statusLine"]; !ok {
 		t.Error("settings.json missing statusLine key")
 	}
+	if _, ok := parsed["apiKeyHelper"]; !ok {
+		t.Error("settings.json missing apiKeyHelper key")
+	}
 	if v, ok := parsed["gitAttribution"]; !ok || v != false {
 		t.Error("settings.json missing or wrong gitAttribution")
 	}
@@ -393,6 +407,15 @@ func TestEnsureClaudeDefaults(t *testing.T) {
 	}
 	if info.Mode()&0o111 == 0 {
 		t.Error("statusline.sh should be executable")
+	}
+
+	// Verify apikey-helper.sh was created and is executable.
+	info, err = os.Stat(expectedApiKeyHelperPath)
+	if err != nil {
+		t.Fatalf("expected apikey-helper.sh to exist: %v", err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Error("apikey-helper.sh should be executable")
 	}
 }
 
