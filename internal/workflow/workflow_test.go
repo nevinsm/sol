@@ -1840,7 +1840,12 @@ func writeTOMLManifestWithFlag(t *testing.T, dir, name string, steps []StepDef, 
 }
 
 // writeTOMLConvoyManifest writes a convoy manifest.toml file for testing.
-func writeTOMLConvoyManifest(t *testing.T, dir, name string, legs []Leg, synth *Synthesis) {
+// writeTOMLConvoyManifestOpts holds optional sections for convoy manifest generation.
+type writeTOMLConvoyManifestOpts struct {
+	vars map[string]VariableDecl
+}
+
+func writeTOMLConvoyManifest(t *testing.T, dir, name string, legs []Leg, synth *Synthesis, opts ...writeTOMLConvoyManifestOpts) {
 	t.Helper()
 	f, err := os.Create(filepath.Join(dir, "manifest.toml"))
 	if err != nil {
@@ -1851,6 +1856,18 @@ func writeTOMLConvoyManifest(t *testing.T, dir, name string, legs []Leg, synth *
 	f.WriteString("name = \"" + name + "\"\n")
 	f.WriteString("type = \"convoy\"\n")
 	f.WriteString("description = \"Test convoy workflow\"\n\n")
+
+	if len(opts) > 0 && len(opts[0].vars) > 0 {
+		f.WriteString("[vars]\n")
+		for k, v := range opts[0].vars {
+			if v.Required {
+				f.WriteString(k + " = { required = true }\n")
+			} else if v.Default != "" {
+				f.WriteString(k + " = { default = \"" + v.Default + "\" }\n")
+			}
+		}
+		f.WriteString("\n")
+	}
 
 	for _, leg := range legs {
 		f.WriteString("[[legs]]\n")
@@ -1863,6 +1880,9 @@ func writeTOMLConvoyManifest(t *testing.T, dir, name string, legs []Leg, synth *
 		if leg.Kind != "" {
 			f.WriteString("kind = \"" + leg.Kind + "\"\n")
 		}
+		if leg.Instructions != "" {
+			f.WriteString("instructions = \"" + leg.Instructions + "\"\n")
+		}
 		f.WriteString("\n")
 	}
 
@@ -1872,6 +1892,9 @@ func writeTOMLConvoyManifest(t *testing.T, dir, name string, legs []Leg, synth *
 		f.WriteString("description = \"" + synth.Description + "\"\n")
 		if synth.Kind != "" {
 			f.WriteString("kind = \"" + synth.Kind + "\"\n")
+		}
+		if synth.Instructions != "" {
+			f.WriteString("instructions = \"" + synth.Instructions + "\"\n")
 		}
 		if len(synth.DependsOn) > 0 {
 			f.WriteString("depends_on = [")
@@ -3640,5 +3663,435 @@ func TestCodeReviewConvoyWorkflowRequiresTarget(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "required variable") {
 		t.Errorf("error should mention required variable, got: %v", err)
+	}
+}
+
+// --- Schema parity tests ---
+
+func TestConvoyVariableSubstitution(t *testing.T) {
+	ws, ss := setupStores(t)
+	solHome := os.Getenv("SOL_HOME")
+
+	workflowDir := filepath.Join(solHome, "workflows", "test-convoy-vars")
+	os.MkdirAll(workflowDir, 0o755)
+
+	legs := []Leg{
+		{ID: "analyze", Title: "Analyze {{project}}", Description: "Review {{project}} code on {{branch}}.", Focus: "Check {{project}} patterns"},
+	}
+	synth := &Synthesis{
+		Title:       "Consolidate {{project}}",
+		Description: "Merge findings for {{project}} on {{branch}}.",
+		DependsOn:   []string{"analyze"},
+	}
+	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-vars", legs, synth, writeTOMLConvoyManifestOpts{
+		vars: map[string]VariableDecl{
+			"project": {Default: "myapp"},
+			"branch":  {Default: "main"},
+		},
+	})
+
+	result, err := Materialize(ws, ss, ManifestOpts{
+		Name:      "test-convoy-vars",
+		World:     "test-world",
+		Variables: map[string]string{"project": "sol", "branch": "develop"},
+		CreatedBy: "operator",
+	})
+	if err != nil {
+		t.Fatalf("Materialize() error: %v", err)
+	}
+
+	// Verify leg variable substitution.
+	legItem, err := ws.GetWrit(result.ChildIDs["analyze"])
+	if err != nil {
+		t.Fatalf("GetWrit(analyze) error: %v", err)
+	}
+	if legItem.Title != "Analyze sol" {
+		t.Errorf("leg title: got %q, want %q", legItem.Title, "Analyze sol")
+	}
+	if !strings.Contains(legItem.Description, "Review sol code on develop") {
+		t.Errorf("leg description should contain substituted vars, got: %q", legItem.Description)
+	}
+	if !strings.Contains(legItem.Description, "Check sol patterns") {
+		t.Errorf("leg description should contain substituted focus, got: %q", legItem.Description)
+	}
+
+	// Verify synthesis variable substitution.
+	synthItem, err := ws.GetWrit(result.ChildIDs["synthesis"])
+	if err != nil {
+		t.Fatalf("GetWrit(synthesis) error: %v", err)
+	}
+	if synthItem.Title != "Consolidate sol" {
+		t.Errorf("synthesis title: got %q, want %q", synthItem.Title, "Consolidate sol")
+	}
+	if !strings.Contains(synthItem.Description, "Merge findings for sol on develop") {
+		t.Errorf("synthesis description should contain substituted vars, got: %q", synthItem.Description)
+	}
+}
+
+func TestConvoyVariableAndTargetSubstitutionCompose(t *testing.T) {
+	ws, ss := setupStores(t)
+	solHome := os.Getenv("SOL_HOME")
+
+	workflowDir := filepath.Join(solHome, "workflows", "test-convoy-compose")
+	os.MkdirAll(workflowDir, 0o755)
+
+	legs := []Leg{
+		{ID: "review", Title: "Review {target.title} in {{scope}}", Description: "Check {target.id} with {{scope}}.", Focus: "{target.title} {{scope}}"},
+	}
+	synth := &Synthesis{
+		Title:       "Synthesis {target.title} {{scope}}",
+		Description: "Consolidate {target.id} review of {{scope}}.",
+		DependsOn:   []string{"review"},
+	}
+	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-compose", legs, synth, writeTOMLConvoyManifestOpts{
+		vars: map[string]VariableDecl{
+			"target": {Required: true},
+			"scope":  {Default: "full"},
+		},
+	})
+
+	// Create target writ.
+	targetID, err := ws.CreateWrit("Build API", "API implementation", "operator", 0, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit() error: %v", err)
+	}
+
+	result, err := Materialize(ws, ss, ManifestOpts{
+		Name:      "test-convoy-compose",
+		World:     "test-world",
+		ParentID:  targetID,
+		Variables: map[string]string{"scope": "security"},
+		CreatedBy: "operator",
+	})
+	if err != nil {
+		t.Fatalf("Materialize() error: %v", err)
+	}
+
+	// Verify both substitution types compose: {target.*} first, then {{var}}.
+	legItem, err := ws.GetWrit(result.ChildIDs["review"])
+	if err != nil {
+		t.Fatalf("GetWrit(review) error: %v", err)
+	}
+	if legItem.Title != "Review Build API in security" {
+		t.Errorf("leg title: got %q, want %q", legItem.Title, "Review Build API in security")
+	}
+	if !strings.Contains(legItem.Description, targetID) {
+		t.Errorf("leg description should contain target ID %q, got: %q", targetID, legItem.Description)
+	}
+	if !strings.Contains(legItem.Description, "security") {
+		t.Errorf("leg description should contain 'security', got: %q", legItem.Description)
+	}
+
+	// Verify synthesis.
+	synthItem, err := ws.GetWrit(result.ChildIDs["synthesis"])
+	if err != nil {
+		t.Fatalf("GetWrit(synthesis) error: %v", err)
+	}
+	if synthItem.Title != "Synthesis Build API security" {
+		t.Errorf("synthesis title: got %q, want %q", synthItem.Title, "Synthesis Build API security")
+	}
+}
+
+func TestConvoyLegWithInstructions(t *testing.T) {
+	ws, ss := setupStores(t)
+	solHome := os.Getenv("SOL_HOME")
+
+	workflowDir := filepath.Join(solHome, "workflows", "test-convoy-instr")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+
+	// Write external instruction file.
+	instrContent := "# Review Guide\n\nAnalyze {{project}} changes.\n\nCheck all endpoints.\n"
+	os.WriteFile(filepath.Join(workflowDir, "steps", "01-review.md"), []byte(instrContent), 0o644)
+
+	legs := []Leg{
+		{
+			ID:           "review",
+			Title:        "Review {{project}}",
+			Description:  "Short summary",
+			Focus:        "API patterns",
+			Instructions: "steps/01-review.md",
+		},
+	}
+	synth := &Synthesis{
+		Title:       "Consolidate",
+		Description: "Merge findings.",
+		DependsOn:   []string{"review"},
+	}
+	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-instr", legs, synth, writeTOMLConvoyManifestOpts{
+		vars: map[string]VariableDecl{
+			"project": {Default: "myapp"},
+		},
+	})
+
+	result, err := Materialize(ws, ss, ManifestOpts{
+		Name:      "test-convoy-instr",
+		World:     "test-world",
+		Variables: map[string]string{"project": "sol"},
+		CreatedBy: "operator",
+	})
+	if err != nil {
+		t.Fatalf("Materialize() error: %v", err)
+	}
+
+	legItem, err := ws.GetWrit(result.ChildIDs["review"])
+	if err != nil {
+		t.Fatalf("GetWrit(review) error: %v", err)
+	}
+
+	// Instructions content should be used as description (not inline description).
+	if !strings.Contains(legItem.Description, "# Review Guide") {
+		t.Errorf("leg description should contain instructions content, got: %q", legItem.Description)
+	}
+	// Variable substitution should be applied to instructions content.
+	if !strings.Contains(legItem.Description, "Analyze sol changes") {
+		t.Errorf("leg description should have {{project}} substituted, got: %q", legItem.Description)
+	}
+	// Focus should be appended as ## Focus section when instructions is set.
+	if !strings.Contains(legItem.Description, "## Focus") {
+		t.Errorf("leg description should contain ## Focus section, got: %q", legItem.Description)
+	}
+	if !strings.Contains(legItem.Description, "API patterns") {
+		t.Errorf("leg description should contain focus text, got: %q", legItem.Description)
+	}
+	// The inline description ("Short summary") should NOT be used as the writ description.
+	if strings.HasPrefix(legItem.Description, "Short summary") {
+		t.Errorf("leg description should use instructions, not inline description")
+	}
+}
+
+func TestConvoyLegWithoutInstructionsUnchanged(t *testing.T) {
+	ws, ss := setupStores(t)
+	solHome := os.Getenv("SOL_HOME")
+
+	workflowDir := filepath.Join(solHome, "workflows", "test-convoy-noinstr")
+	os.MkdirAll(workflowDir, 0o755)
+
+	legs := []Leg{
+		{ID: "review", Title: "Review", Description: "Inline description.", Focus: "patterns"},
+	}
+	synth := &Synthesis{
+		Title:       "Consolidate",
+		Description: "Merge.",
+		DependsOn:   []string{"review"},
+	}
+	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-noinstr", legs, synth)
+
+	result, err := Materialize(ws, ss, ManifestOpts{
+		Name:      "test-convoy-noinstr",
+		World:     "test-world",
+		CreatedBy: "operator",
+	})
+	if err != nil {
+		t.Fatalf("Materialize() error: %v", err)
+	}
+
+	legItem, err := ws.GetWrit(result.ChildIDs["review"])
+	if err != nil {
+		t.Fatalf("GetWrit(review) error: %v", err)
+	}
+
+	// Without instructions, should use description + "Focus: " format (old behavior).
+	if !strings.Contains(legItem.Description, "Inline description.") {
+		t.Errorf("leg description should start with inline description, got: %q", legItem.Description)
+	}
+	if !strings.Contains(legItem.Description, "Focus: patterns") {
+		t.Errorf("leg description should contain 'Focus: patterns' (old format), got: %q", legItem.Description)
+	}
+}
+
+func TestConvoySynthesisWithInstructions(t *testing.T) {
+	ws, ss := setupStores(t)
+	solHome := os.Getenv("SOL_HOME")
+
+	workflowDir := filepath.Join(solHome, "workflows", "test-convoy-synth-instr")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+
+	// Write external synthesis instruction file.
+	instrContent := "# Synthesis Guide\n\nConsolidate {{project}} findings.\n"
+	os.WriteFile(filepath.Join(workflowDir, "steps", "synthesis.md"), []byte(instrContent), 0o644)
+
+	legs := []Leg{
+		{ID: "analyze", Title: "Analyze", Description: "Do analysis.", Kind: "analysis"},
+	}
+	synth := &Synthesis{
+		Title:        "Synthesize {{project}}",
+		Description:  "Short synthesis summary.",
+		Kind:         "analysis",
+		Instructions: "steps/synthesis.md",
+		DependsOn:    []string{"analyze"},
+	}
+	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-synth-instr", legs, synth, writeTOMLConvoyManifestOpts{
+		vars: map[string]VariableDecl{
+			"project": {Default: "myapp"},
+		},
+	})
+
+	result, err := Materialize(ws, ss, ManifestOpts{
+		Name:      "test-convoy-synth-instr",
+		World:     "test-world",
+		Variables: map[string]string{"project": "sol"},
+		CreatedBy: "operator",
+	})
+	if err != nil {
+		t.Fatalf("Materialize() error: %v", err)
+	}
+
+	synthItem, err := ws.GetWrit(result.ChildIDs["synthesis"])
+	if err != nil {
+		t.Fatalf("GetWrit(synthesis) error: %v", err)
+	}
+
+	// Instructions content should be used as base description.
+	if !strings.Contains(synthItem.Description, "# Synthesis Guide") {
+		t.Errorf("synthesis description should contain instructions content, got: %q", synthItem.Description)
+	}
+	// Variable substitution should be applied.
+	if !strings.Contains(synthItem.Description, "Consolidate sol findings") {
+		t.Errorf("synthesis description should have {{project}} substituted, got: %q", synthItem.Description)
+	}
+	// Leg enrichment (leg references) should be appended AFTER instructions content.
+	if !strings.Contains(synthItem.Description, "## Leg Writs") {
+		t.Errorf("synthesis description should contain leg enrichment, got: %q", synthItem.Description)
+	}
+	// Title should also have variables substituted.
+	if synthItem.Title != "Synthesize sol" {
+		t.Errorf("synthesis title: got %q, want %q", synthItem.Title, "Synthesize sol")
+	}
+}
+
+func TestExpansionTemplateKind(t *testing.T) {
+	ws, ss := setupStores(t)
+	solHome := os.Getenv("SOL_HOME")
+
+	workflowDir := filepath.Join(solHome, "workflows", "test-expand-kind")
+	os.MkdirAll(workflowDir, 0o755)
+
+	toml := `name = "test-expand-kind"
+type = "expansion"
+description = "Test expansion with kind"
+
+[[template]]
+id = "analyze"
+title = "Analyze: {target.title}"
+description = "Analyze {target.title}."
+kind = "analysis"
+
+[[template]]
+id = "implement"
+title = "Implement: {target.title}"
+description = "Implement based on analysis."
+needs = ["analyze"]
+`
+	os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(toml), 0o644)
+
+	targetID, err := ws.CreateWrit("Build feature X", "Feature X implementation", "operator", 0, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit() error: %v", err)
+	}
+
+	result, err := Materialize(ws, ss, ManifestOpts{
+		Name:      "test-expand-kind",
+		World:     "test-world",
+		ParentID:  targetID,
+		CreatedBy: "operator",
+	})
+	if err != nil {
+		t.Fatalf("Materialize() error: %v", err)
+	}
+
+	// Verify analysis template creates analysis writ.
+	analyzeItem, err := ws.GetWrit(result.ChildIDs["analyze"])
+	if err != nil {
+		t.Fatalf("GetWrit(analyze) error: %v", err)
+	}
+	if analyzeItem.Kind != "analysis" {
+		t.Errorf("analyze kind: got %q, want %q", analyzeItem.Kind, "analysis")
+	}
+
+	// Verify implement template defaults to code (empty kind).
+	implItem, err := ws.GetWrit(result.ChildIDs["implement"])
+	if err != nil {
+		t.Fatalf("GetWrit(implement) error: %v", err)
+	}
+	if implItem.Kind != "" && implItem.Kind != "code" {
+		t.Errorf("implement kind: got %q, want empty or %q", implItem.Kind, "code")
+	}
+}
+
+func TestValidateConvoyInstructionsFileNotFound(t *testing.T) {
+	dir := t.TempDir()
+	m := &Manifest{
+		Type: "convoy",
+		Legs: []Leg{
+			{ID: "review", Title: "Review", Description: "Review.", Instructions: "steps/missing.md"},
+		},
+		Synth: &Synthesis{
+			Title:       "Synthesize",
+			Description: "Consolidate.",
+			DependsOn:   []string{"review"},
+		},
+	}
+
+	// Without dir, validation should pass (instructions paths not checked).
+	if err := Validate(m); err != nil {
+		t.Fatalf("Validate() without dir should pass: %v", err)
+	}
+
+	// With dir, validation should fail for missing instructions file.
+	err := Validate(m, dir)
+	if err == nil {
+		t.Fatal("Validate() with dir should fail for missing instructions file")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "review") {
+		t.Errorf("error should mention leg ID 'review', got: %v", err)
+	}
+}
+
+func TestValidateConvoySynthesisInstructionsFileNotFound(t *testing.T) {
+	dir := t.TempDir()
+	m := &Manifest{
+		Type: "convoy",
+		Legs: []Leg{
+			{ID: "review", Title: "Review", Description: "Review."},
+		},
+		Synth: &Synthesis{
+			Title:        "Synthesize",
+			Description:  "Consolidate.",
+			Instructions: "steps/missing-synth.md",
+			DependsOn:    []string{"review"},
+		},
+	}
+
+	err := Validate(m, dir)
+	if err == nil {
+		t.Fatal("Validate() should fail for missing synthesis instructions file")
+	}
+	if !strings.Contains(err.Error(), "synthesis") {
+		t.Errorf("error should mention 'synthesis', got: %v", err)
+	}
+}
+
+func TestValidateConvoyInstructionsFileExists(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "steps"), 0o755)
+	os.WriteFile(filepath.Join(dir, "steps", "01-review.md"), []byte("# review"), 0o644)
+
+	m := &Manifest{
+		Type: "convoy",
+		Legs: []Leg{
+			{ID: "review", Title: "Review", Description: "Review.", Instructions: "steps/01-review.md"},
+		},
+		Synth: &Synthesis{
+			Title:       "Synthesize",
+			Description: "Consolidate.",
+			DependsOn:   []string{"review"},
+		},
+	}
+
+	if err := Validate(m, dir); err != nil {
+		t.Fatalf("Validate() should pass when instructions file exists: %v", err)
 	}
 }

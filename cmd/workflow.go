@@ -407,7 +407,7 @@ var workflowShowCmd = &cobra.Command{
 			return err
 		}
 
-		validationErr := workflow.Validate(m)
+		validationErr := workflow.Validate(m, res.Path)
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
@@ -468,17 +468,22 @@ func printShowJSON(m *workflow.Manifest, res *workflow.Resolution, validationErr
 		Title       string   `json:"title"`
 		Description string   `json:"description"`
 		Needs       []string `json:"needs,omitempty"`
+		Kind        string   `json:"kind,omitempty"`
 	}
 	type legJSON struct {
-		ID          string `json:"id"`
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		Focus       string `json:"focus,omitempty"`
+		ID           string `json:"id"`
+		Title        string `json:"title"`
+		Description  string `json:"description"`
+		Focus        string `json:"focus,omitempty"`
+		Kind         string `json:"kind,omitempty"`
+		Instructions string `json:"instructions,omitempty"`
 	}
 	type synthesisJSON struct {
-		Title       string   `json:"title"`
-		Description string   `json:"description"`
-		DependsOn   []string `json:"depends_on"`
+		Title        string   `json:"title"`
+		Description  string   `json:"description"`
+		DependsOn    []string `json:"depends_on"`
+		Kind         string   `json:"kind,omitempty"`
+		Instructions string   `json:"instructions,omitempty"`
 	}
 	type output struct {
 		Name        string                `json:"name"`
@@ -518,13 +523,13 @@ func printShowJSON(m *workflow.Manifest, res *workflow.Resolution, validationErr
 		out.Steps = append(out.Steps, stepJSON{ID: s.ID, Title: s.Title, Instructions: s.Instructions, Needs: s.Needs})
 	}
 	for _, t := range m.Templates {
-		out.Templates = append(out.Templates, templateJSON{ID: t.ID, Title: t.Title, Description: t.Description, Needs: t.Needs})
+		out.Templates = append(out.Templates, templateJSON{ID: t.ID, Title: t.Title, Description: t.Description, Needs: t.Needs, Kind: t.Kind})
 	}
 	for _, l := range m.Legs {
-		out.Legs = append(out.Legs, legJSON{ID: l.ID, Title: l.Title, Description: l.Description, Focus: l.Focus})
+		out.Legs = append(out.Legs, legJSON{ID: l.ID, Title: l.Title, Description: l.Description, Focus: l.Focus, Kind: l.Kind, Instructions: l.Instructions})
 	}
 	if m.Synth != nil {
-		out.Synthesis = &synthesisJSON{Title: m.Synth.Title, Description: m.Synth.Description, DependsOn: m.Synth.DependsOn}
+		out.Synthesis = &synthesisJSON{Title: m.Synth.Title, Description: m.Synth.Description, DependsOn: m.Synth.DependsOn, Kind: m.Synth.Kind, Instructions: m.Synth.Instructions}
 	}
 
 	enc := json.NewEncoder(os.Stdout)
@@ -598,6 +603,9 @@ func printShowHuman(m *workflow.Manifest, res *workflow.Resolution, validationEr
 		fmt.Println("Templates:")
 		for i, t := range m.Templates {
 			line := fmt.Sprintf("  %d. %s — %s", i+1, t.ID, t.Title)
+			if t.Kind != "" {
+				line += fmt.Sprintf(" (%s)", t.Kind)
+			}
 			if len(t.Needs) > 0 {
 				line += fmt.Sprintf(" (needs: %s)", strings.Join(t.Needs, ", "))
 			}
@@ -610,12 +618,29 @@ func printShowHuman(m *workflow.Manifest, res *workflow.Resolution, validationEr
 		fmt.Println()
 		fmt.Println("Legs:")
 		for i, l := range m.Legs {
-			fmt.Printf("  %d. %s — %s\n", i+1, l.ID, l.Title)
+			line := fmt.Sprintf("  %d. %s — %s", i+1, l.ID, l.Title)
+			if l.Kind != "" {
+				line += fmt.Sprintf(" (%s)", l.Kind)
+			}
+			fmt.Println(line)
+			if l.Focus != "" {
+				fmt.Printf("     Focus: %s\n", l.Focus)
+			}
+			if l.Instructions != "" {
+				fmt.Printf("     Instructions: %s\n", l.Instructions)
+			}
 		}
 		if m.Synth != nil {
-			fmt.Printf("\nSynthesis: %s\n", m.Synth.Title)
+			synthLine := fmt.Sprintf("\nSynthesis: %s", m.Synth.Title)
+			if m.Synth.Kind != "" {
+				synthLine += fmt.Sprintf(" (%s)", m.Synth.Kind)
+			}
+			fmt.Println(synthLine)
 			if len(m.Synth.DependsOn) > 0 {
 				fmt.Printf("  depends on: %s\n", strings.Join(m.Synth.DependsOn, ", "))
+			}
+			if m.Synth.Instructions != "" {
+				fmt.Printf("  instructions: %s\n", m.Synth.Instructions)
 			}
 		}
 	}

@@ -49,24 +49,27 @@ type Template struct {
 	Title       string   `toml:"title"`
 	Description string   `toml:"description"`
 	Needs       []string `toml:"needs"`
+	Kind        string   `toml:"kind"` // "code" (default) or "analysis"
 }
 
 // Leg defines an independent work dimension in a convoy workflow.
 type Leg struct {
-	ID          string `toml:"id"`
-	Title       string `toml:"title"`
-	Description string `toml:"description"`
-	Focus       string `toml:"focus"`
-	Kind        string `toml:"kind"` // "code" (default) or "analysis"
+	ID           string `toml:"id"`
+	Title        string `toml:"title"`
+	Description  string `toml:"description"`
+	Focus        string `toml:"focus"`
+	Kind         string `toml:"kind"`         // "code" (default) or "analysis"
+	Instructions string `toml:"instructions"` // relative path to .md file
 }
 
 // Synthesis defines the follow-up step in a convoy workflow that runs
 // after all specified legs have completed.
 type Synthesis struct {
-	Title       string   `toml:"title"`
-	Description string   `toml:"description"`
-	DependsOn   []string `toml:"depends_on"`
-	Kind        string   `toml:"kind"` // "code" (default) or "analysis"
+	Title        string   `toml:"title"`
+	Description  string   `toml:"description"`
+	DependsOn    []string `toml:"depends_on"`
+	Kind         string   `toml:"kind"`         // "code" (default) or "analysis"
+	Instructions string   `toml:"instructions"` // relative path to .md file
 }
 
 // Instance holds metadata about an instantiated workflow.
@@ -126,8 +129,11 @@ func LoadManifest(workflowDir string) (*Manifest, error) {
 // - All IDs are unique
 // - All "needs"/"depends_on" references point to existing IDs
 // - No dependency cycles (DAG validation)
+// - When workflowDir is provided, instructions files exist on disk
 // Returns an error describing the first problem found.
-func Validate(m *Manifest) error {
+// The optional workflowDir parameter enables file-existence checks for
+// instruction paths. When omitted, instruction paths are not validated.
+func Validate(m *Manifest, workflowDir ...string) error {
 	if m.Type == "expansion" {
 		if len(m.Steps) > 0 {
 			return fmt.Errorf("expansion workflow must not contain [[steps]] entries")
@@ -168,6 +174,24 @@ func Validate(m *Manifest) error {
 		for _, dep := range m.Synth.DependsOn {
 			if !legIDs[dep] {
 				return fmt.Errorf("synthesis depends_on references unknown leg %q", dep)
+			}
+		}
+		// Validate instructions files exist when workflow directory is known.
+		if len(workflowDir) > 0 && workflowDir[0] != "" {
+			dir := workflowDir[0]
+			for _, leg := range m.Legs {
+				if leg.Instructions != "" {
+					path := filepath.Join(dir, leg.Instructions)
+					if _, err := os.Stat(path); err != nil {
+						return fmt.Errorf("leg %q instructions file %q not found", leg.ID, leg.Instructions)
+					}
+				}
+			}
+			if m.Synth.Instructions != "" {
+				path := filepath.Join(dir, m.Synth.Instructions)
+				if _, err := os.Stat(path); err != nil {
+					return fmt.Errorf("synthesis instructions file %q not found", m.Synth.Instructions)
+				}
 			}
 		}
 		return nil
@@ -349,7 +373,7 @@ func Instantiate(world, agentName, role, workflowName string,
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := Validate(m); err != nil {
+	if err := Validate(m, res.Path); err != nil {
 		return nil, nil, fmt.Errorf("invalid workflow %q: %w", workflowName, err)
 	}
 
@@ -892,7 +916,7 @@ func Materialize(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Mani
 	if err != nil {
 		return nil, err
 	}
-	if err := Validate(m); err != nil {
+	if err := Validate(m, res.Path); err != nil {
 		return nil, fmt.Errorf("invalid workflow %q: %w", opts.Name, err)
 	}
 
@@ -969,6 +993,7 @@ func Materialize(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Mani
 				title:       renderTemplateField(tmpl.Title, target),
 				description: renderTemplateField(tmpl.Description, target),
 				needs:       tmpl.Needs,
+				kind:        tmpl.Kind,
 			})
 		}
 	} else if m.Type == "convoy" {
@@ -976,12 +1001,37 @@ func Materialize(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Mani
 		for _, leg := range m.Legs {
 			title := leg.Title
 			desc := leg.Description
+			focus := leg.Focus
 			if target != nil {
 				title = renderTemplateField(title, target)
 				desc = renderTemplateField(desc, target)
+				focus = renderTemplateField(focus, target)
 			}
-			if leg.Focus != "" {
-				desc += "\n\nFocus: " + leg.Focus
+
+			// Apply {{variable}} substitution to leg fields.
+			for k, v := range resolved {
+				title = strings.ReplaceAll(title, "{{"+k+"}}", v)
+				desc = strings.ReplaceAll(desc, "{{"+k+"}}", v)
+				focus = strings.ReplaceAll(focus, "{{"+k+"}}", v)
+			}
+
+			// When instructions is set, load external .md file as description.
+			if leg.Instructions != "" {
+				instrPath := filepath.Join(res.Path, leg.Instructions)
+				data, err := os.ReadFile(instrPath)
+				if err != nil {
+					return nil, fmt.Errorf("failed to read leg %q instructions %q: %w", leg.ID, instrPath, err)
+				}
+				instrContent := string(data)
+				for k, v := range resolved {
+					instrContent = strings.ReplaceAll(instrContent, "{{"+k+"}}", v)
+				}
+				desc = instrContent
+				if focus != "" {
+					desc += "\n\n## Focus\n" + focus
+				}
+			} else if focus != "" {
+				desc += "\n\nFocus: " + focus
 			}
 			children = append(children, childDef{
 				itemID:   leg.ID,
@@ -998,6 +1048,27 @@ func Materialize(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Mani
 			synthTitle = renderTemplateField(synthTitle, target)
 			synthDesc = renderTemplateField(synthDesc, target)
 		}
+
+		// Apply {{variable}} substitution to synthesis fields.
+		for k, v := range resolved {
+			synthTitle = strings.ReplaceAll(synthTitle, "{{"+k+"}}", v)
+			synthDesc = strings.ReplaceAll(synthDesc, "{{"+k+"}}", v)
+		}
+
+		// When instructions is set, load external .md file as description.
+		if m.Synth.Instructions != "" {
+			instrPath := filepath.Join(res.Path, m.Synth.Instructions)
+			data, err := os.ReadFile(instrPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read synthesis instructions %q: %w", instrPath, err)
+			}
+			instrContent := string(data)
+			for k, v := range resolved {
+				instrContent = strings.ReplaceAll(instrContent, "{{"+k+"}}", v)
+			}
+			synthDesc = instrContent
+		}
+
 		children = append(children, childDef{
 			itemID:   "synthesis",
 			title:       synthTitle,
