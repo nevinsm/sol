@@ -1333,6 +1333,25 @@ func TestReleaseStaleClaims_SkipsFresh(t *testing.T) {
 	}
 }
 
+// recastNowFunc returns a time function that skips ahead by the given duration,
+// sufficient to bypass all cooldown/backoff checks in recast tests.
+func recastNowFunc(skip time.Duration) func() time.Time {
+	return func() time.Time { return time.Now().Add(skip) }
+}
+
+// assertRecastMetadata checks that a writ's metadata has the expected recast count.
+func assertRecastMetadata(t *testing.T, worldStore *store.Store, writID string, wantCount int) {
+	t.Helper()
+	item, err := worldStore.GetWrit(writID)
+	if err != nil {
+		t.Fatalf("GetWrit(%q) error: %v", writID, err)
+	}
+	got := recastCountFromMetadata(item)
+	if got != wantCount {
+		t.Errorf("recast-count metadata for %q = %d, want %d", writID, got, wantCount)
+	}
+}
+
 func TestRecastFailedMR(t *testing.T) {
 	sphereStore, worldStore := setupTestEnv(t)
 	mock := newMockSessions()
@@ -1346,11 +1365,12 @@ func TestRecastFailedMR(t *testing.T) {
 	var castWritID string
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute)) // skip past cooldown
 	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		castCalled = true
 		castWritID = writID
 		return &CastResult{
-			WritID:  writID,
+			WritID:      writID,
 			AgentName:   "Sage",
 			SessionName: "sol-ember-Sage",
 		}, nil
@@ -1367,10 +1387,8 @@ func TestRecastFailedMR(t *testing.T) {
 		t.Errorf("castFn called with %q, want %q", castWritID, "sol-fail1111")
 	}
 
-	// Recast count should be 1.
-	if w.recastCounts["sol-fail1111"] != 1 {
-		t.Errorf("recast count = %d, want 1", w.recastCounts["sol-fail1111"])
-	}
+	// Recast count should be 1 (persisted in metadata).
+	assertRecastMetadata(t, worldStore, "sol-fail1111", 1)
 }
 
 func TestRecastSkipsNonOpenWrit(t *testing.T) {
@@ -1408,15 +1426,19 @@ func TestRecastMaxAttemptsEscalates(t *testing.T) {
 	// Create a failed MR with an open writ.
 	createFailedMR(t, worldStore, "sol-maxr3333", "Max retries task", "outpost/Toast/sol-maxr3333")
 
+	// Pre-set recast count to max via writ metadata.
+	worldStore.SetWritMetadata("sol-maxr3333", map[string]any{
+		"recast-count": float64(2),
+		"recast-last":  time.Now().UTC().Format(time.RFC3339),
+	})
+
 	castCalled := false
 	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(2 * time.Hour)) // skip past all backoff
 	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		castCalled = true
 		return &CastResult{AgentName: "Sage"}, nil
 	})
-
-	// Pre-set recast count to max.
-	w.recastCounts["sol-maxr3333"] = 2
 
 	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
@@ -1436,9 +1458,7 @@ func TestRecastMaxAttemptsEscalates(t *testing.T) {
 	}
 
 	// Recast count should be incremented past max to prevent re-escalation.
-	if w.recastCounts["sol-maxr3333"] != 3 {
-		t.Errorf("recast count = %d, want %d (max+1)", w.recastCounts["sol-maxr3333"], 3)
-	}
+	assertRecastMetadata(t, worldStore, "sol-maxr3333", 3)
 }
 
 func TestRecastMaxAttemptsEscalatesOnlyOnce(t *testing.T) {
@@ -1450,13 +1470,16 @@ func TestRecastMaxAttemptsEscalatesOnlyOnce(t *testing.T) {
 	// Create a failed MR with an open writ.
 	createFailedMR(t, worldStore, "sol-once4444", "Escalate once", "outpost/Toast/sol-once4444")
 
+	// Pre-set recast count past max via metadata (already escalated).
+	worldStore.SetWritMetadata("sol-once4444", map[string]any{
+		"recast-count": float64(3),
+	})
+
 	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(2 * time.Hour))
 	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		return &CastResult{AgentName: "Sage"}, nil
 	})
-
-	// Pre-set recast count past max (already escalated).
-	w.recastCounts["sol-once4444"] = 3
 
 	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
@@ -1506,6 +1529,7 @@ func TestRecastDeduplicatesByWrit(t *testing.T) {
 
 	castCount := 0
 	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute)) // skip past cooldown
 	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		castCount++
 		return &CastResult{AgentName: "Sage"}, nil
@@ -1521,7 +1545,7 @@ func TestRecastDeduplicatesByWrit(t *testing.T) {
 	}
 }
 
-func TestRecastPrunesCountOnHandledItem(t *testing.T) {
+func TestRecastPrunesDedupOnHandledItem(t *testing.T) {
 	sphereStore, worldStore := setupTestEnv(t)
 	mock := newMockSessions()
 	cfg := testConfig()
@@ -1535,16 +1559,16 @@ func TestRecastPrunesCountOnHandledItem(t *testing.T) {
 		return &CastResult{AgentName: "Sage"}, nil
 	})
 
-	// Pre-set a recast count.
-	w.recastCounts["sol-prune777"] = 2
+	// Pre-set a dedup guard entry (old enough to pass the dedup check).
+	w.lastCastTime["sol-prune777"] = time.Now().Add(-time.Minute)
 
 	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
-	// Recast count should be pruned since writ is tethered (handled elsewhere).
-	if _, exists := w.recastCounts["sol-prune777"]; exists {
-		t.Error("expected recast count to be pruned for tethered writ")
+	// Dedup guard should be pruned since writ is tethered (handled elsewhere).
+	if _, exists := w.lastCastTime["sol-prune777"]; exists {
+		t.Error("expected lastCastTime to be pruned for tethered writ")
 	}
 }
 
@@ -1562,6 +1586,7 @@ func TestRecastDoneWritNoAssigneeTransitionsToOpen(t *testing.T) {
 	var castWritID string
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute)) // skip past cooldown
 	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		castCalled = true
 		castWritID = writID
@@ -1594,9 +1619,8 @@ func TestRecastDoneWritNoAssigneeTransitionsToOpen(t *testing.T) {
 		t.Error("writ should no longer be in done status after recast")
 	}
 
-	if w.recastCounts["sol-done1111"] != 1 {
-		t.Errorf("recast count = %d, want 1", w.recastCounts["sol-done1111"])
-	}
+	// Recast count should be 1 (persisted in metadata).
+	assertRecastMetadata(t, worldStore, "sol-done1111", 1)
 }
 
 func TestRecastDoneWritWithAssigneeSkipped(t *testing.T) {
@@ -1639,6 +1663,7 @@ func TestRecastSkipsDuplicateMR(t *testing.T) {
 
 	castCalled := false
 	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute)) // skip past cooldown
 	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		castCalled = true
 		return &CastResult{AgentName: "Sage"}, nil
@@ -1662,6 +1687,7 @@ func TestRecastCastFailureNonBlocking(t *testing.T) {
 	createFailedMR(t, worldStore, "sol-cfail888", "Cast failure", "outpost/X/sol-cfail888")
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute)) // skip past cooldown
 	w.SetCastFunc(func(writID string) (*CastResult, error) {
 		return nil, fmt.Errorf("no idle agents available")
 	})
@@ -1671,10 +1697,234 @@ func TestRecastCastFailureNonBlocking(t *testing.T) {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
-	// Recast count should NOT be incremented on failure.
-	if w.recastCounts["sol-cfail888"] != 0 {
-		t.Errorf("recast count = %d, want 0 (cast failed)", w.recastCounts["sol-cfail888"])
+	// Recast count should NOT be incremented on failure (metadata unchanged).
+	assertRecastMetadata(t, worldStore, "sol-cfail888", 0)
+}
+
+// --- Cooldown, backoff, and dedup guard tests ---
+
+func TestRecastCooldownSkipsRecentFailure(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	// Create a failed MR with an open writ (MR failure is "now").
+	createFailedMR(t, worldStore, "sol-cool1111", "Recent failure", "outpost/X/sol-cool1111")
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	// Do NOT set nowFn — default is time.Now, so MR failure is <10 min old.
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
 	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called when MR failure is less than 10 minutes old")
+	}
+}
+
+func TestRecastCooldownAllowsOldFailure(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	// Create a failed MR with an open writ.
+	createFailedMR(t, worldStore, "sol-cool2222", "Old failure", "outpost/X/sol-cool2222")
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	// Jump 11 minutes into the future — past the 10-minute cooldown.
+	w.SetNowFunc(recastNowFunc(11 * time.Minute))
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if !castCalled {
+		t.Error("castFn should be called when MR failure is older than 10 minutes")
+	}
+}
+
+func TestRecastBackoffDelaysSecondRecast(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	// Create a failed MR with an open writ.
+	createFailedMR(t, worldStore, "sol-back1111", "Backoff test", "outpost/X/sol-back1111")
+
+	// Pre-set: 1 recast already done, last recast 15 min ago.
+	recastTime := time.Now().Add(-15 * time.Minute).UTC().Format(time.RFC3339)
+	worldStore.SetWritMetadata("sol-back1111", map[string]any{
+		"recast-count": float64(1),
+		"recast-last":  recastTime,
+	})
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	// nowFn not needed — the last recast was 15 min ago but the 2nd recast
+	// requires 30 min backoff, so it should be skipped.
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called when 30-min backoff has not elapsed")
+	}
+}
+
+func TestRecastBackoffAllowsAfterElapsed(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	// Create a failed MR with an open writ.
+	createFailedMR(t, worldStore, "sol-back2222", "Backoff elapsed", "outpost/X/sol-back2222")
+
+	// Pre-set: 1 recast already done, last recast 35 min ago (>30 min backoff).
+	recastTime := time.Now().Add(-35 * time.Minute).UTC().Format(time.RFC3339)
+	worldStore.SetWritMetadata("sol-back2222", map[string]any{
+		"recast-count": float64(1),
+		"recast-last":  recastTime,
+	})
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	// MR failure is "now" but the cooldown check uses mr.UpdatedAt only for attempt 0.
+	// For attempt 1+, the backoff check uses recast-last. Since recast-last is 35 min ago
+	// and we need 30 min for the 2nd recast, this should pass. But we still need the
+	// initial cooldown check to pass (which it does because attempts > 0 uses recast-last).
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if !castCalled {
+		t.Error("castFn should be called when 30-min backoff has elapsed")
+	}
+	assertRecastMetadata(t, worldStore, "sol-back2222", 2)
+}
+
+func TestRecastThirdAttemptBackoff60Min(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	// Create a failed MR.
+	createFailedMR(t, worldStore, "sol-back3333", "60m backoff", "outpost/X/sol-back3333")
+
+	// Pre-set: 2 recasts done, last recast 45 min ago (<60 min backoff).
+	recastTime := time.Now().Add(-45 * time.Minute).UTC().Format(time.RFC3339)
+	worldStore.SetWritMetadata("sol-back3333", map[string]any{
+		"recast-count": float64(2),
+		"recast-last":  recastTime,
+	})
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called when 60-min backoff has not elapsed")
+	}
+}
+
+func TestRecastDeduplicationGuard(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.PatrolInterval = 3 * time.Minute // realistic interval for dedup test
+
+	// Create a failed MR with an open writ.
+	createFailedMR(t, worldStore, "sol-dedup111", "Dedup guard", "outpost/X/sol-dedup111")
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute)) // skip past cooldown
+
+	// Pre-set dedup guard: writ was cast very recently (within 2× patrol interval).
+	w.lastCastTime["sol-dedup111"] = w.now().Add(-time.Minute) // 1 min ago, within 6 min window
+
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called when writ was recently cast (dedup guard)")
+	}
+}
+
+func TestRecastPersistentCountSurvivesRestart(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	// Create a failed MR with an open writ.
+	createFailedMR(t, worldStore, "sol-pers1111", "Persistent count", "outpost/X/sol-pers1111")
+
+	// First sentinel instance: recast once.
+	w1 := New(cfg, sphereStore, worldStore, mock, nil)
+	w1.SetNowFunc(recastNowFunc(15 * time.Minute))
+	w1.SetCastFunc(func(writID string) (*CastResult, error) {
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+	if err := w1.patrol(context.Background()); err != nil {
+		t.Fatalf("w1.patrol() error: %v", err)
+	}
+	assertRecastMetadata(t, worldStore, "sol-pers1111", 1)
+
+	// Simulate sentinel restart — create a new Sentinel (no in-memory state).
+	// Reset writ to open (simulate MR failure cycle).
+	worldStore.UpdateWrit("sol-pers1111", store.WritUpdates{Status: "open", Assignee: "-"})
+
+	w2 := New(cfg, sphereStore, worldStore, mock, nil)
+	// Jump 35 min to pass the 30-min backoff for the 2nd recast.
+	w2.SetNowFunc(recastNowFunc(50 * time.Minute))
+	w2.SetCastFunc(func(writID string) (*CastResult, error) {
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+	if err := w2.patrol(context.Background()); err != nil {
+		t.Fatalf("w2.patrol() error: %v", err)
+	}
+
+	// Count should be 2 (persisted across sentinel restarts).
+	assertRecastMetadata(t, worldStore, "sol-pers1111", 2)
 }
 
 // --- Orphaned resolution dispatch tests ---
@@ -1946,7 +2196,7 @@ func TestPruneOrphanedBranches(t *testing.T) {
 		config:        cfg,
 		sessions:      mock,
 		respawnCounts: make(map[respawnKey]int),
-		recastCounts:  make(map[string]int),
+		lastCastTime:  make(map[string]time.Time),
 		lastCaptures:  make(map[string]string),
 	}
 
@@ -1993,7 +2243,7 @@ func TestPruneOrphanedBranchesNoSourceRepo(t *testing.T) {
 		config:        cfg,
 		sessions:      mock,
 		respawnCounts: make(map[respawnKey]int),
-		recastCounts:  make(map[string]int),
+		lastCastTime:  make(map[string]time.Time),
 		lastCaptures:  make(map[string]string),
 	}
 
