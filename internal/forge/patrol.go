@@ -46,9 +46,12 @@ type Heartbeat struct {
 	Status      string    `json:"status"`       // "idle", "working", "stopping"
 	PatrolCount int       `json:"patrol_count"`
 	QueueDepth  int       `json:"queue_depth"`
-	CurrentMR   string    `json:"current_mr"`
+	CurrentMR   string    `json:"current_mr,omitempty"`
+	CurrentWrit string    `json:"current_writ,omitempty"`
+	ClaimedAt   string    `json:"claimed_at,omitempty"`
 	LastMerge   time.Time `json:"last_merge,omitempty"`
 	MergesTotal int       `json:"merges_total"`
+	LastError   string    `json:"last_error,omitempty"`
 }
 
 // HeartbeatPath returns the path to the forge heartbeat file.
@@ -322,6 +325,7 @@ type patrolState struct {
 	patrolCount int
 	mergesTotal int
 	lastMerge   time.Time
+	lastError   string // most recent error, cleared on successful merge
 }
 
 // patrol runs one complete patrol cycle.
@@ -397,10 +401,14 @@ func (s *patrolState) patrol(ctx context.Context) {
 		})
 	}
 
+	// Write "working" heartbeat with MR context.
+	s.writeHeartbeatWithMR("working", len(ready), mr)
+
 	// 5. Sync worktree.
 	if err := s.syncWorktree(ctx); err != nil {
 		s.forge.logger.Error("sync failed", "error", err)
 		s.fl.Log("ERROR", fmt.Sprintf("sync failed: %s", truncate(err.Error(), 200)))
+		s.lastError = truncate(fmt.Sprintf("sync failed: %s", err.Error()), 200)
 		s.forge.Release(mr.ID)
 		s.writeHeartbeat("idle", len(ready))
 		s.emitPatrolEvent(len(ready))
@@ -433,6 +441,7 @@ func (s *patrolState) patrol(ctx context.Context) {
 		} else {
 			s.mergesTotal++
 			s.lastMerge = time.Now()
+			s.lastError = "" // clear on successful merge
 			s.fl.Log("MERGED", mr.ID)
 			if s.eventLog != nil {
 				s.eventLog.Emit(events.EventMerged, "forge", "forge", "both", map[string]string{
@@ -446,6 +455,7 @@ func (s *patrolState) patrol(ctx context.Context) {
 	case mergeConflict:
 		// Conflict — delegate to resolution task.
 		s.fl.Log("CONFLICT", fmt.Sprintf("%s  conflicts detected", mr.Branch))
+		s.lastError = truncate(fmt.Sprintf("merge conflict: %s", mr.Branch), 200)
 		if _, err := s.forge.CreateResolutionTask(mr); err != nil {
 			s.forge.logger.Error("create-resolution failed", "mr", mr.ID, "error", err)
 		}
@@ -455,6 +465,7 @@ func (s *patrolState) patrol(ctx context.Context) {
 	case mergeError:
 		// Other error — release MR.
 		s.fl.Log("ERROR", fmt.Sprintf("merge failed for %s", mr.Branch))
+		s.lastError = truncate(fmt.Sprintf("merge failed: %s", mr.Branch), 200)
 		s.forge.Release(mr.ID)
 		s.writeHeartbeat("idle", len(ready)-1)
 		s.emitPatrolEvent(len(ready))
@@ -472,6 +483,7 @@ func (s *patrolState) patrol(ctx context.Context) {
 		// Proceed to push.
 	case gateFail:
 		// Branch caused failure — already handled in runGates (MarkFailed called).
+		s.lastError = truncate(fmt.Sprintf("gate failed: %s", mr.Branch), 200)
 		s.writeHeartbeat("idle", len(ready)-1)
 		s.emitPatrolEvent(len(ready))
 		return
@@ -486,6 +498,7 @@ func (s *patrolState) patrol(ctx context.Context) {
 	// 8. Push.
 	if err := s.push(ctx, mr); err != nil {
 		s.fl.Log("REJECTED", fmt.Sprintf("push rejected for %s: %s", mr.Branch, truncate(err.Error(), 200)))
+		s.lastError = truncate(fmt.Sprintf("push rejected: %s", err.Error()), 200)
 		s.forge.Release(mr.ID)
 		s.writeHeartbeat("idle", len(ready)-1)
 		s.emitPatrolEvent(len(ready))
@@ -498,6 +511,7 @@ func (s *patrolState) patrol(ctx context.Context) {
 	} else {
 		s.mergesTotal++
 		s.lastMerge = time.Now()
+		s.lastError = "" // clear on successful merge
 		s.fl.Log("MERGED", mr.ID)
 		if s.eventLog != nil {
 			s.eventLog.Emit(events.EventMerged, "forge", "forge", "both", map[string]string{
@@ -774,6 +788,11 @@ func (s *patrolState) push(ctx context.Context, mr *store.MergeRequest) error {
 
 // writeHeartbeat writes the heartbeat file.
 func (s *patrolState) writeHeartbeat(status string, queueDepth int) {
+	s.writeHeartbeatWithMR(status, queueDepth, nil)
+}
+
+// writeHeartbeatWithMR writes the heartbeat file with optional merge request context.
+func (s *patrolState) writeHeartbeatWithMR(status string, queueDepth int, mr *store.MergeRequest) {
 	hb := &Heartbeat{
 		Timestamp:   time.Now().UTC(),
 		Status:      status,
@@ -781,6 +800,12 @@ func (s *patrolState) writeHeartbeat(status string, queueDepth int) {
 		QueueDepth:  queueDepth,
 		MergesTotal: s.mergesTotal,
 		LastMerge:   s.lastMerge,
+		LastError:   s.lastError,
+	}
+	if mr != nil {
+		hb.CurrentMR = mr.ID
+		hb.CurrentWrit = mr.WritID
+		hb.ClaimedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 	if err := WriteHeartbeat(s.forge.world, hb); err != nil {
 		s.forge.logger.Error("failed to write heartbeat", "error", err)
