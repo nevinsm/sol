@@ -1,0 +1,137 @@
+package forge
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/nevinsm/sol/internal/store"
+)
+
+func TestBuildInjection(t *testing.T) {
+	mr := &store.MergeRequest{
+		ID:       "mr-abc123",
+		WritID:   "sol-def456",
+		Branch:   "outpost/Toast/sol-def456",
+		Phase:    "claimed",
+		Attempts: 1,
+	}
+	writ := &store.Writ{
+		ID:          "sol-def456",
+		Title:       "feat: add widget support",
+		Description: "Add support for widgets in the dashboard.",
+	}
+	cfg := InjectionConfig{
+		MaxAttempts:  3,
+		GateCommands: []string{"make build", "make test"},
+		WorktreeDir:  "/home/user/sol/myworld/forge/worktree",
+		TargetBranch: "main",
+	}
+
+	t.Run("first attempt produces complete injection", func(t *testing.T) {
+		result := BuildInjection(mr, writ, cfg)
+
+		// Check MR metadata section.
+		mustContain(t, result, "MR: mr-abc123")
+		mustContain(t, result, "Branch: origin/outpost/Toast/sol-def456")
+		mustContain(t, result, "feat: add widget support (sol-def456)")
+		mustContain(t, result, "Attempt: 1 of 3")
+		mustContain(t, result, "Target: origin/main")
+
+		// Check writ context.
+		mustContain(t, result, "### Writ Context")
+		mustContain(t, result, "Add support for widgets in the dashboard.")
+
+		// Check first attempt notice.
+		mustContain(t, result, "First attempt.")
+
+		// Check gate commands.
+		mustContain(t, result, "`make build`")
+		mustContain(t, result, "`make test`")
+
+		// Check instructions.
+		mustContain(t, result, "git fetch origin && git reset --hard origin/main")
+		mustContain(t, result, "git merge --squash origin/outpost/Toast/sol-def456")
+		mustContain(t, result, `git commit -m "feat: add widget support"`)
+		mustContain(t, result, "make build && make test")
+		mustContain(t, result, "git push origin HEAD:main")
+		mustContain(t, result, ".forge-result.json")
+	})
+
+	t.Run("includes attempt history when present", func(t *testing.T) {
+		cfgWithHistory := cfg
+		cfgWithHistory.AttemptHistory = []string{
+			"Gate failure: test_auth.go:42 nil pointer",
+			"Conflict in internal/store/writs.go",
+		}
+
+		// Simulate attempt 3.
+		mr3 := *mr
+		mr3.Attempts = 3
+
+		result := BuildInjection(&mr3, writ, cfgWithHistory)
+
+		mustContain(t, result, "Attempt 1: Gate failure: test_auth.go:42 nil pointer")
+		mustContain(t, result, "Attempt 2: Conflict in internal/store/writs.go")
+		mustNotContain(t, result, "First attempt.")
+	})
+
+	t.Run("handles empty description", func(t *testing.T) {
+		writNoDesc := &store.Writ{
+			ID:    "sol-111",
+			Title: "fix: something",
+		}
+		result := BuildInjection(mr, writNoDesc, cfg)
+		mustContain(t, result, "No description provided.")
+	})
+
+	t.Run("handles no gate commands", func(t *testing.T) {
+		cfgNoGates := cfg
+		cfgNoGates.GateCommands = nil
+
+		result := BuildInjection(mr, writ, cfgNoGates)
+		mustContain(t, result, "No quality gates configured.")
+		mustContain(t, result, "No gates to run")
+	})
+
+	t.Run("defaults target branch to main", func(t *testing.T) {
+		cfgNoTarget := cfg
+		cfgNoTarget.TargetBranch = ""
+
+		result := BuildInjection(mr, writ, cfgNoTarget)
+		mustContain(t, result, "Target: origin/main")
+		mustContain(t, result, "git reset --hard origin/main")
+	})
+
+	t.Run("respects custom target branch", func(t *testing.T) {
+		cfgCustom := cfg
+		cfgCustom.TargetBranch = "develop"
+
+		result := BuildInjection(mr, writ, cfgCustom)
+		mustContain(t, result, "Target: origin/develop")
+		mustContain(t, result, "git reset --hard origin/develop")
+		mustContain(t, result, "git push origin HEAD:develop")
+	})
+
+	t.Run("escapes quotes in commit message", func(t *testing.T) {
+		writQuotes := &store.Writ{
+			ID:    "sol-222",
+			Title: `feat: handle "special" cases`,
+		}
+		result := BuildInjection(mr, writQuotes, cfg)
+		mustContain(t, result, `git commit -m "feat: handle \"special\" cases"`)
+	})
+}
+
+func mustContain(t *testing.T, s, substr string) {
+	t.Helper()
+	if !strings.Contains(s, substr) {
+		t.Errorf("output does not contain %q\n--- output ---\n%s", substr, s)
+	}
+}
+
+func mustNotContain(t *testing.T, s, substr string) {
+	t.Helper()
+	if strings.Contains(s, substr) {
+		t.Errorf("output should not contain %q", substr)
+	}
+}
