@@ -525,6 +525,40 @@ var workflowManifestCmd = &cobra.Command{
 	},
 }
 
+var workflowEjectCmd = &cobra.Command{
+	Use:          "eject <name>",
+	Short:        "Eject an embedded workflow for customization",
+	Long:         "Copies an embedded workflow to the user or project tier so it can be customized. Use --force to refresh from embedded defaults (backs up existing).",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		projectFlag, _ := cmd.Flags().GetBool("project")
+		worldFlag, _ := cmd.Flags().GetString("world")
+		forceFlag, _ := cmd.Flags().GetBool("force")
+
+		var repoPath string
+		if projectFlag {
+			if worldFlag == "" {
+				return fmt.Errorf("--project requires --world")
+			}
+			world, err := config.ResolveWorld(worldFlag)
+			if err != nil {
+				return err
+			}
+			repoPath = config.RepoPath(world)
+		}
+
+		targetDir, err := workflow.Eject(name, repoPath, forceFlag)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Ejected workflow %s to %s. Edit manifest.toml to customize.\n", name, targetDir)
+		return nil
+	},
+}
+
 var workflowListCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "List available workflows",
@@ -601,6 +635,12 @@ func init() {
 	workflowCmd.AddCommand(workflowManifestCmd)
 	workflowCmd.AddCommand(workflowShowCmd)
 	workflowCmd.AddCommand(workflowListCmd)
+	workflowCmd.AddCommand(workflowEjectCmd)
+
+	// eject flags
+	workflowEjectCmd.Flags().Bool("project", false, "eject to project tier instead of user tier (requires --world)")
+	workflowEjectCmd.Flags().String("world", "", "world name (for project tier path resolution)")
+	workflowEjectCmd.Flags().Bool("force", false, "overwrite existing workflow (backs up to {name}.bak-{timestamp})")
 
 	// show flags
 	workflowShowCmd.Flags().String("world", "", "world name (for project-tier resolution)")

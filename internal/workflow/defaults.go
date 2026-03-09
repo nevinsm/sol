@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/nevinsm/sol/internal/config"
@@ -137,7 +138,18 @@ func Resolve(workflowName, repoPath string) (*Resolution, error) {
 		return nil, fmt.Errorf("workflow %q not found and is not a known default", workflowName)
 	}
 
-	root := filepath.Join("defaults", workflowName)
+	if err := extractEmbedded(workflowName, userDir); err != nil {
+		return nil, err
+	}
+
+	return &Resolution{Path: userDir, Tier: TierEmbedded}, nil
+}
+
+// extractEmbedded walks the embedded FS for the named workflow and writes
+// all files to targetDir. This is the shared extraction logic used by both
+// Resolve (implicit extraction) and Eject (explicit extraction).
+func extractEmbedded(name, targetDir string) error {
+	root := filepath.Join("defaults", name)
 	if err := fs.WalkDir(defaultFormulas, root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -148,7 +160,7 @@ func Resolve(workflowName, repoPath string) (*Resolution, error) {
 		if err != nil {
 			return err
 		}
-		dest := filepath.Join(userDir, rel)
+		dest := filepath.Join(targetDir, rel)
 
 		if d.IsDir() {
 			return os.MkdirAll(dest, 0o755)
@@ -160,10 +172,53 @@ func Resolve(workflowName, repoPath string) (*Resolution, error) {
 		}
 		return os.WriteFile(dest, data, 0o644)
 	}); err != nil {
-		return nil, fmt.Errorf("failed to extract default workflow %q: %w", workflowName, err)
+		return fmt.Errorf("failed to extract default workflow %q: %w", name, err)
+	}
+	return nil
+}
+
+// Eject copies an embedded workflow to the user or project tier for
+// customization. If force is true and the target directory already exists,
+// the existing directory is renamed to {name}.bak-{RFC3339timestamp} before
+// extracting a fresh copy.
+//
+// Pass a non-empty repoPath to eject to the project tier instead of the
+// user tier.
+func Eject(name, repoPath string, force bool) (string, error) {
+	if err := ValidateName(name); err != nil {
+		return "", err
 	}
 
-	return &Resolution{Path: userDir, Tier: TierEmbedded}, nil
+	if !knownDefaults[name] {
+		return "", fmt.Errorf("workflow %q is not an embedded workflow — nothing to eject", name)
+	}
+
+	// Compute target directory.
+	var targetDir string
+	if repoPath != "" {
+		targetDir = ProjectDir(repoPath, name)
+	} else {
+		targetDir = Dir(name)
+	}
+
+	// Check if target already exists.
+	if info, err := os.Stat(targetDir); err == nil && info.IsDir() {
+		if !force {
+			return "", fmt.Errorf("workflow directory already exists: %s", targetDir)
+		}
+		// Backup existing directory.
+		backupDir := filepath.Join(filepath.Dir(targetDir),
+			name+".bak-"+time.Now().UTC().Format(time.RFC3339))
+		if err := os.Rename(targetDir, backupDir); err != nil {
+			return "", fmt.Errorf("failed to backup existing workflow directory: %w", err)
+		}
+	}
+
+	if err := extractEmbedded(name, targetDir); err != nil {
+		return "", err
+	}
+
+	return targetDir, nil
 }
 
 // ProjectDir returns the project-level workflow path.
