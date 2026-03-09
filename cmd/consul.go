@@ -98,8 +98,16 @@ var consulRunCmd = &cobra.Command{
 }
 
 var consulStatusCmd = &cobra.Command{
-	Use:          "status",
-	Short:        "Show consul status from heartbeat",
+	Use:   "status",
+	Short: "Show consul status from heartbeat",
+	Long: `Show consul status from its heartbeat file.
+
+Prints patrol count, stale tethers, caravan feeds, and escalation counts.
+Use --json for machine-readable output.
+
+Exit codes:
+  0 - Consul is running
+  1 - Consul is not running`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hb, err := consul.ReadHeartbeat(config.Home())

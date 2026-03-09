@@ -64,8 +64,16 @@ var tokenBrokerRunCmd = &cobra.Command{
 }
 
 var tokenBrokerStatusCmd = &cobra.Command{
-	Use:          "status",
-	Short:        "Show token broker status from heartbeat",
+	Use:   "status",
+	Short: "Show token broker status from heartbeat",
+	Long: `Show whether the token broker process is running via its heartbeat file.
+
+Prints patrol count, account info, and refresh statistics.
+Use --json for machine-readable output.
+
+Exit codes:
+  0 - Token broker is running
+  1 - Token broker is not running`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hb, err := broker.ReadHeartbeat()

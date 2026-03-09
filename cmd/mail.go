@@ -149,8 +149,15 @@ var mailAckCmd = &cobra.Command{
 }
 
 var mailCheckCmd = &cobra.Command{
-	Use:          "check",
-	Short:        "Count unread messages",
+	Use:   "check",
+	Short: "Count unread messages",
+	Long: `Check for unread messages and print the count.
+
+Useful in scripts to conditionally process mail.
+
+Exit codes:
+  0 - Unread messages exist
+  1 - No unread messages`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

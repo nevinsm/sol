@@ -65,8 +65,15 @@ var workflowInstantiateCmd = &cobra.Command{
 }
 
 var workflowCurrentCmd = &cobra.Command{
-	Use:          "current",
-	Short:        "Print the current step's instructions",
+	Use:   "current",
+	Short: "Print the current step's instructions",
+	Long: `Print the current step's instructions from the active workflow.
+
+Used by agents to read their next step in a step-driven workflow loop.
+
+Exit codes:
+  0 - Active workflow step found
+  1 - No active workflow step`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
