@@ -537,7 +537,7 @@ func ClaudeDefaultsDir() string {
 }
 
 // EnsureClaudeDefaults seeds the embedded default settings.json and
-// statusline.sh into $SOL_HOME/.claude-defaults/ if they don't already exist.
+// helper scripts into $SOL_HOME/.claude-defaults/ if they don't already exist.
 // Existing files are preserved — use `sol config claude` to customize.
 func EnsureClaudeDefaults() error {
 	dir := ClaudeDefaultsDir()
@@ -552,6 +552,13 @@ func EnsureClaudeDefaults() error {
 		return fmt.Errorf("failed to write statusline.sh: %w", err)
 	}
 
+	// Write apikey-helper.sh (always overwrite — sol-managed script).
+	// Called by Claude Code's apiKeyHelper to return fresh OAuth tokens.
+	apiKeyHelperPath := filepath.Join(dir, "apikey-helper.sh")
+	if err := os.WriteFile(apiKeyHelperPath, defaults.ApiKeyHelperSh, 0o755); err != nil {
+		return fmt.Errorf("failed to write apikey-helper.sh: %w", err)
+	}
+
 	// Write settings.json only if it doesn't exist — preserve customizations.
 	settingsPath := filepath.Join(dir, "settings.json")
 	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
@@ -559,6 +566,11 @@ func EnsureClaudeDefaults() error {
 			string(defaults.SettingsJSON),
 			"{{STATUSLINE_PATH}}",
 			statuslinePath,
+		)
+		settingsContent = strings.ReplaceAll(
+			settingsContent,
+			"{{API_KEY_HELPER_PATH}}",
+			apiKeyHelperPath,
 		)
 		if err := os.WriteFile(settingsPath, []byte(settingsContent), 0o644); err != nil {
 			return fmt.Errorf("failed to write settings.json: %w", err)
