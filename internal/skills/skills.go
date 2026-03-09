@@ -428,7 +428,7 @@ Check which agents are available for work:
 func GenerateCaravan(world, solBinary string) string {
 	tmpl := `---
 name: sol-caravan
-description: Organize related writs into phased batches. Use when grouping work items, setting execution order, or tracking batch progress.
+description: Organize related writs into phased batches. Use when grouping writs, setting execution order, or tracking batch progress.
 ---
 
 # Caravans

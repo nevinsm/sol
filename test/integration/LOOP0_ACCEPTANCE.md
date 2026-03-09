@@ -7,21 +7,21 @@
 ## 2. Dispatch to outpost
 - [x] `sol cast <id> myworld` spawns a outpost in a fresh worktree
 - [x] Worktree is at $SOL_HOME/myworld/outposts/{name}/world/
-- [x] .claude/CLAUDE.md exists with work item details
+- [x] .claude/CLAUDE.md exists with writ details
 
 ## 3. GUPP — work context injected on start
 - [x] Session starts with execution context visible
-- [x] `sol prime` output includes work item title and instructions
+- [x] `sol prime` output includes writ title and instructions
 
 ## 4. sol resolve completes work
 - [x] Branch pushed (or push attempted)
 - [x] Tether file cleared
-- [x] Work item status → resolve
+- [x] Writ status → resolve
 - [x] Agent state → idle
 
 ## 5. Operator observability
 - [x] `tmux attach -t sol-myworld-{name}` shows the agent working
-- [x] `sqlite3 $SOL_HOME/.store/myworld.db "SELECT * FROM work_items"` shows state
+- [x] `sqlite3 $SOL_HOME/.store/myworld.db "SELECT * FROM writs"` shows state
 
 ## 6. Crash recovery
 - [x] Kill tmux session → tether file persists

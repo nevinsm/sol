@@ -16,7 +16,7 @@ test-short:
 test-integration:
 	go test -race -run "Test" -count=1 ./test/integration/
 
-# Full end-to-end test: create agent, create work item, cast, verify, resolve, verify, clean up.
+# Full end-to-end test: create agent, create writ, cast, verify, resolve, verify, clean up.
 # Cleans up all artifacts: SOL_HOME dir, git worktrees, outpost branches, tmux sessions.
 test-e2e: build
 	@export SOL_HOME=$(SOL_TEST_HOME) WORLD=$(SOL_TEST_WORLD) AGENT=$(SOL_TEST_AGENT) && \
@@ -43,7 +43,7 @@ test-e2e: build
 	bin/sol agent create $$AGENT --world=$$WORLD && \
 	bin/sol agent list --world=$$WORLD && \
 	\
-	echo "=== E2E: create work item ===" && \
+	echo "=== E2E: create writ ===" && \
 	ITEM=$$(bin/sol store create --world=$$WORLD --title="E2E test item" --description="Automated end-to-end test") && \
 	echo "Created: $$ITEM" && \
 	\

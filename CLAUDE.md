@@ -16,7 +16,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 
 ## Key Concepts
 - **SOL_HOME**: Runtime root directory (env var, default ~/sol)
-- **Store**: SQLite (WAL mode) — sphere.db for agents, {world}.db for work items
+- **Store**: SQLite (WAL mode) — sphere.db for agents, {world}.db for writs
 - **Session**: tmux-based process containers for AI agents
 - **Tether**: File at $SOL_HOME/{world}/outposts/{name}/.tether — the durability primitive
 - **Cast**: Dispatch work to an agent (creates worktree, tethers work, starts session)
@@ -24,7 +24,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Resolve**: Signal work complete (push branch, clear tether, stop session)
 - **World Config**: `world.toml` per-world, `sol.toml` global — layered TOML configuration
 - **World Lifecycle**: `sol world init` required before use — explicit world creation
-- **Caravan**: Batch of related work items across worlds, with phase-based sequencing
+- **Caravan**: Batch of related writs across worlds, with phase-based sequencing
 - **Managed Repo**: Clone at $SOL_HOME/{world}/repo/ — source for all worktrees
 - **Brief**: Agent-maintained context file (`.brief/memory.md`) persisted across sessions
 - **Doctor**: Prerequisite validator — checks tmux, git, claude, SOL_HOME, SQLite WAL
@@ -75,7 +75,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 ## Conventions
 - Go module: github.com/nevinsm/sol
 - All timestamps: RFC3339 in UTC
-- Work item IDs: "sol-" + 16 hex chars (e.g., sol-a1b2c3d4e5f6a7b8)
+- Writ IDs: "sol-" + 16 hex chars (e.g., sol-a1b2c3d4e5f6a7b8)
 - Session names: sol-{world}-{agentName} (e.g., sol-myworld-Toast)
 - Error messages include context: "failed to open world database %q: %w"
 - SQLite connections always set: journal_mode=WAL, busy_timeout=5000, foreign_keys=ON

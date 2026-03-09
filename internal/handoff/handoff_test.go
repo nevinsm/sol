@@ -263,9 +263,9 @@ func TestCaptureNoActiveWrit(t *testing.T) {
 	if state.WorkflowStep != "" {
 		t.Errorf("expected empty WorkflowStep, got %q", state.WorkflowStep)
 	}
-	// Auto-generated summary should say no active work.
-	if !strings.Contains(state.Summary, "No active work") {
-		t.Errorf("expected summary to mention 'No active work', got %q", state.Summary)
+	// Auto-generated summary should say no active writ.
+	if !strings.Contains(state.Summary, "No active writ") {
+		t.Errorf("expected summary to mention 'No active writ', got %q", state.Summary)
 	}
 }
 

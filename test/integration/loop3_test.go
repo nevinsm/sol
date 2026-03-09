@@ -569,7 +569,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 		t.Errorf("agent state: got %q, want %q", agent.State, "idle")
 	}
 
-	// Work item should be open.
+	// Writ should be open.
 	item, err := worldStore.GetWrit("sol-abc12345")
 	if err != nil {
 		t.Fatalf("GetWrit: %v", err)

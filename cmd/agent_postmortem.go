@@ -127,7 +127,7 @@ var agentPostmortemCmd = &cobra.Command{
 			report.Session.Alive = mgr.Exists(sessName)
 		}
 
-		// 4. Work item details.
+		// 4. Writ details.
 		writID := agent.ActiveWrit
 		if writID == "" {
 			writID, _ = tether.Read(world, name, agent.Role)
@@ -216,7 +216,7 @@ func renderPostmortem(r PostmortemReport) {
 	b.WriteString(fmt.Sprintf("  %-18s %s\n", "World:", r.Agent.World))
 	b.WriteString(fmt.Sprintf("  %-18s %s\n", "Role:", r.Agent.Role))
 
-	// Work item.
+	// Writ.
 	if r.Writ != nil {
 		b.WriteString(fmt.Sprintf("  %-18s %s — %s\n", "Writ:", r.Writ.ID, r.Writ.Title))
 		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Work Status:", r.Writ.Status))

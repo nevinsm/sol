@@ -6,7 +6,7 @@
 - [x] Each outpost runs in its own worktree and tmux session
 
 ## 2. Dispatch serialization
-- [x] No two outposts get the same work item (flock prevents races)
+- [x] No two outposts get the same writ (flock prevents races)
 - [x] Concurrent `sol cast` for the same item: one wins, one fails with contention error
 
 ## 3. Name pool

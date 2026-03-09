@@ -66,7 +66,7 @@ func ValidateName(name string) error {
 //go:embed defaults/deep-scan/steps/03-isolate.md
 //go:embed defaults/deep-scan/steps/04-document.md
 //go:embed defaults/deep-scan/steps/05-chart.md
-var defaultFormulas embed.FS
+var defaultWorkflows embed.FS
 
 // knownDefaults lists workflow names that are embedded in the binary.
 var knownDefaults = map[string]bool{
@@ -153,7 +153,7 @@ func Resolve(workflowName, repoPath string) (*Resolution, error) {
 // Resolve (implicit extraction) and Eject (explicit extraction).
 func extractEmbedded(name, targetDir string) error {
 	root := filepath.Join("defaults", name)
-	if err := fs.WalkDir(defaultFormulas, root, func(path string, d fs.DirEntry, err error) error {
+	if err := fs.WalkDir(defaultWorkflows, root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -169,7 +169,7 @@ func extractEmbedded(name, targetDir string) error {
 			return os.MkdirAll(dest, 0o755)
 		}
 
-		data, err := defaultFormulas.ReadFile(path)
+		data, err := defaultWorkflows.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("failed to read embedded file %q: %w", path, err)
 		}
@@ -325,7 +325,7 @@ func List(repoPath string) ([]Entry, error) {
 // loadEmbeddedManifest reads and parses a manifest from the embedded FS
 // without extracting it to disk.
 func loadEmbeddedManifest(name string) (*Manifest, error) {
-	data, err := defaultFormulas.ReadFile(filepath.Join("defaults", name, "manifest.toml"))
+	data, err := defaultWorkflows.ReadFile(filepath.Join("defaults", name, "manifest.toml"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read embedded manifest for %q: %w", name, err)
 	}
