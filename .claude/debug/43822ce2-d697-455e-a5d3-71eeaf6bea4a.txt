@@ -1,0 +1,43 @@
+2026-03-09T02:13:51.415Z [DEBUG] detectFileEncoding failed for expected reason: ENOENT
+2026-03-09T02:13:51.415Z [DEBUG] MDM settings load completed in 1ms
+2026-03-09T02:13:51.420Z [DEBUG] [init] configureGlobalMTLS starting
+2026-03-09T02:13:51.420Z [DEBUG] [init] configureGlobalMTLS complete
+2026-03-09T02:13:51.420Z [DEBUG] [init] configureGlobalAgents starting
+2026-03-09T02:13:51.420Z [DEBUG] [init] configureGlobalAgents complete
+2026-03-09T02:13:51.424Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-03-09T02:13:51.426Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-03-09T02:13:51.426Z [DEBUG] [STARTUP] Running setup()...
+2026-03-09T02:13:51.429Z [DEBUG] Loading skills from: managed=/etc/claude-code/.claude/skills, user=/home/ubuntu/sol/sol-dev/envoys/Polaris/worktree/.claude/skills, project=[]
+2026-03-09T02:13:51.429Z [DEBUG] Error log sink initialized
+2026-03-09T02:13:51.436Z [DEBUG] [STARTUP] setup() completed in 10ms
+2026-03-09T02:13:51.436Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-03-09T02:13:51.438Z [DEBUG] installed_plugins.json doesn't exist, returning empty V2 object
+2026-03-09T02:13:51.438Z [DEBUG] Found 0 plugins (0 enabled, 0 disabled)
+2026-03-09T02:13:51.438Z [DEBUG] getPluginSkills: Processing 0 enabled plugins
+2026-03-09T02:13:51.438Z [DEBUG] Total plugin skills loaded: 0
+2026-03-09T02:13:51.438Z [DEBUG] Total plugin commands loaded: 0
+2026-03-09T02:13:51.438Z [DEBUG] Registered 0 hooks from 0 plugins
+2026-03-09T02:13:51.441Z [DEBUG] Total plugin agents loaded: 0
+2026-03-09T02:13:51.442Z [DEBUG] Writing to temp file: /home/ubuntu/sol/sol-dev/envoys/Polaris/worktree/.claude/.claude.json.tmp.769734.1773022431442
+2026-03-09T02:13:51.442Z [DEBUG] Preserving file permissions: 100600
+2026-03-09T02:13:51.445Z [DEBUG] Temp file written successfully, size: 366 bytes
+2026-03-09T02:13:51.446Z [DEBUG] Applied original permissions to temp file
+2026-03-09T02:13:51.446Z [DEBUG] Renaming /home/ubuntu/sol/sol-dev/envoys/Polaris/worktree/.claude/.claude.json.tmp.769734.1773022431442 to /home/ubuntu/sol/sol-dev/envoys/Polaris/worktree/.claude/.claude.json
+2026-03-09T02:13:51.446Z [DEBUG] File /home/ubuntu/sol/sol-dev/envoys/Polaris/worktree/.claude/.claude.json written atomically
+2026-03-09T02:13:51.446Z [DEBUG] Loaded 0 unique skills (0 unconditional, 0 conditional, managed: 0, user: 0, project: 0, additional: 0, legacy commands: 0)
+2026-03-09T02:13:51.446Z [DEBUG] getSkills returning: 0 skill dir commands, 0 plugin skills, 3 bundled skills
+2026-03-09T02:13:51.447Z [DEBUG] [STARTUP] Commands and agents loaded in 11ms
+2026-03-09T02:13:51.450Z [DEBUG] [STARTUP] Running showSetupScreens()...
+2026-03-09T02:13:51.463Z [DEBUG] [keybindings] KeybindingSetup initialized with 102 bindings, 0 warnings
+2026-03-09T02:13:51.475Z [DEBUG] [keybindings] Skipping file watcher - user customization disabled
+2026-03-09T02:13:51.493Z [DEBUG] [Claude in Chrome] Extension not found in any browser
+2026-03-09T02:13:51.493Z [DEBUG] Git remote URL: ssh://git@git.longtowel.com:2222/nevin/sol.git
+2026-03-09T02:13:51.493Z [DEBUG] Parsed repository: git.longtowel.com/nevin/sol from URL: ssh://git@git.longtowel.com:2222/nevin/sol.git
+2026-03-09T02:13:51.562Z [DEBUG] Writing to temp file: /home/ubuntu/sol/sol-dev/envoys/Polaris/worktree/.claude/.claude.json.tmp.769734.1773022431562
+2026-03-09T02:13:51.562Z [DEBUG] Preserving file permissions: 100600
+2026-03-09T02:13:51.566Z [DEBUG] Temp file written successfully, size: 366 bytes
+2026-03-09T02:13:51.566Z [DEBUG] Applied original permissions to temp file
+2026-03-09T02:13:51.566Z [DEBUG] Renaming /home/ubuntu/sol/sol-dev/envoys/Polaris/worktree/.claude/.claude.json.tmp.769734.1773022431562 to /home/ubuntu/sol/sol-dev/envoys/Polaris/worktree/.claude/.claude.json
+2026-03-09T02:13:51.566Z [DEBUG] File /home/ubuntu/sol/sol-dev/envoys/Polaris/worktree/.claude/.claude.json written atomically
+2026-03-09T02:13:51.663Z [DEBUG] High write ratio: blit=0, write=2321 (100.0% writes), screen=36x268
+2026-03-09T02:13:51.679Z [DEBUG] High write ratio: blit=0, write=2321 (100.0% writes), screen=36x268

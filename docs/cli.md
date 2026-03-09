@@ -12,6 +12,16 @@ Run `sol docs generate` to regenerate this file.
 
 Assign a writ to an agent and start its session
 
+Dispatch a writ to an outpost agent: create a worktree, tether the writ,
+and launch a Claude session.
+
+Selects an idle agent automatically unless --agent is specified. Respects
+world capacity limits and dispatch gates (sleeping worlds are rejected).
+
+With --workflow, instantiates a step-driven workflow for the agent. Variables
+can be passed with --var key=val. With --account, uses specific Claude OAuth
+credentials instead of the world's default_account.
+
 **Usage:** `sol cast <writ-id>`
 
 | Flag | Type | Default | Description |
@@ -40,27 +50,50 @@ With --since, filters by time window (relative duration or absolute date).
 | `--caravan` | string | "" | show per-writ breakdown for a caravan (ID or name) |
 | `--json` | bool | false | output as JSON |
 | `--since` | string | "" | time window: relative duration (24h) or absolute date (2006-01-02) |
-| `--world` | string | "" | show per-agent breakdown for a world |
+| `--world` | string | "" | world name |
 
 ### `sol handoff`
 
 Hand off to a fresh session with context preservation
+
+Stop the current agent session and start a new one for the same writ.
+
+The agent's tether, worktree, and writ assignment are preserved. Committed
+code and the git history carry over as the primary context for the successor
+session. Use --summary to pass additional context.
+
+Common reasons: context exhaustion (compact), operator-initiated (manual),
+or health-check triggered restart. Uses SOL_WORLD and SOL_AGENT environment
+variables when flags are not provided.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
 | `--reason` | string | "" | handoff reason (compact, manual, health-check) |
 | `--summary` | string | "" | summary of current progress |
-| `--world` | string | "" | world name (defaults to SOL_WORLD env) |
+| `--world` | string | "" | world name |
 
 ### `sol resolve`
 
 Signal work completion — code writs push branch and create MR; non-code writs close directly
 
+Mark the current writ as done and clean up the agent's tether.
+
+For code writs: pushes the worktree branch, creates a merge request in the
+forge queue, and sets the writ to "done" (awaiting merge).
+
+For non-code writs: closes the writ directly with no branch push.
+
+In both cases, clears the agent's tether and returns it to idle (unless the
+session is configured to stay alive for further dispatch).
+
+Typically called from within an agent session. Uses SOL_WORLD and SOL_AGENT
+environment variables when --world and --agent are not provided.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name (defaults to SOL_WORLD env) |
+| `--world` | string | "" | world name |
 
 ### `sol status`
 
@@ -101,12 +134,10 @@ Manage caravans (grouped writ batches)
 | `sol caravan close` | Close a completed caravan |
 | `sol caravan commission` | Commission a caravan (drydock → open) |
 | `sol caravan create` | Create a caravan with optional initial items |
-| `sol caravan delete` | Delete a drydocked or closed caravan entirely |
 | `sol caravan dep` | Manage caravan-level dependencies |
 | `sol caravan drydock` | Return a caravan to drydock (open → drydock) |
 | `sol caravan launch` | Dispatch ready items in a caravan |
 | `sol caravan list` | List caravans with optional status filtering |
-| `sol caravan remove` | Remove an item from a caravan |
 | `sol caravan reopen` | Reopen a closed caravan (closed → drydock) |
 | `sol caravan set-phase` | Update the phase of items in a caravan |
 | `sol caravan status` | Show caravan status |
@@ -118,7 +149,7 @@ Manage caravans (grouped writ batches)
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--phase` | int | 0 | phase for items (default 0) |
-| `--world` | string | "" | world name (optional with SOL_WORLD or inside a world directory) |
+| `--world` | string | "" | world name |
 
 #### `sol caravan check`
 
@@ -149,12 +180,6 @@ Close a caravan by ID, or use --auto to close all caravans where every item is m
 | `--phase` | int | 0 | phase for items (default 0) |
 | `--world` | string | "" | world name |
 
-#### `sol caravan delete`
-
-Delete a drydocked or closed caravan entirely, including all items and dependencies.
-
-**Usage:** `sol caravan delete <caravan-id>`
-
 #### `sol caravan dep`
 
 **Subcommands:**
@@ -175,13 +200,21 @@ Delete a drydocked or closed caravan entirely, including all items and dependenc
 
 #### `sol caravan launch`
 
+Check readiness of all items in the caravan and dispatch those that are
+ready (open, unblocked) in the specified world. Items blocked by dependencies
+or in earlier phases are skipped.
+
+Drydock caravans must be commissioned first. Auto-closes the caravan if all
+items complete after dispatch. Use --workflow to attach a workflow to each
+dispatched writ.
+
 **Usage:** `sol caravan launch <caravan-id>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--var` | stringSlice | [] | variable assignment (key=val) |
 | `--workflow` | string | "" | workflow for dispatched items |
-| `--world` | string | "" | world name (optional with SOL_WORLD or inside a world directory) |
+| `--world` | string | "" | world name |
 
 #### `sol caravan list`
 
@@ -192,12 +225,6 @@ List all caravans. Shows active (non-closed) caravans by default. Use --all for 
 | `--all` | bool | false | include closed caravans |
 | `--json` | bool | false | output as JSON |
 | `--status` | string | "" | filter by status (open, ready, closed) |
-
-#### `sol caravan remove`
-
-Remove an item from a caravan. Cannot remove from closed caravans.
-
-**Usage:** `sol caravan remove <caravan-id> <item-id>`
 
 #### `sol caravan set-phase`
 
@@ -242,14 +269,14 @@ Manage workflow instances
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name (optional with SOL_WORLD or inside a world directory) |
+| `--world` | string | "" | world name |
 
 #### `sol workflow current`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name (optional with SOL_WORLD or inside a world directory) |
+| `--world` | string | "" | world name |
 
 #### `sol workflow eject`
 
@@ -261,14 +288,14 @@ Copies an embedded workflow to the user or project tier so it can be customized.
 |------|------|---------|-------------|
 | `--force` | bool | false | overwrite existing workflow (backs up to {name}.bak-{timestamp}) |
 | `--project` | bool | false | eject to project tier instead of user tier (requires --world) |
-| `--world` | string | "" | world name (for project tier path resolution) |
+| `--world` | string | "" | world name |
 
 #### `sol workflow fail`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name (optional with SOL_WORLD or inside a world directory) |
+| `--world` | string | "" | world name |
 
 #### `sol workflow init`
 
@@ -278,7 +305,7 @@ Copies an embedded workflow to the user or project tier so it can be customized.
 |------|------|---------|-------------|
 | `--project` | bool | false | create in project tier (.sol/workflows/) |
 | `--type` | string | workflow | workflow type (workflow, expansion, or convoy) |
-| `--world` | string | "" | world name (required with --project) |
+| `--world` | string | "" | world name |
 
 #### `sol workflow instantiate`
 
@@ -289,7 +316,7 @@ Copies an embedded workflow to the user or project tier so it can be customized.
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
 | `--item` | string | "" | writ ID |
 | `--var` | stringSlice | [] | variable assignment (key=val) |
-| `--world` | string | "" | world name (optional with SOL_WORLD or inside a world directory) |
+| `--world` | string | "" | world name |
 
 #### `sol workflow list`
 
@@ -297,7 +324,7 @@ Copies an embedded workflow to the user or project tier so it can be customized.
 |------|------|---------|-------------|
 | `--all` | bool | false | show all tiers including shadowed workflows |
 | `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name (for project-tier discovery) |
+| `--world` | string | "" | world name |
 
 #### `sol workflow manifest`
 
@@ -308,7 +335,7 @@ Copies an embedded workflow to the user or project tier so it can be customized.
 | `--json` | bool | false | output as JSON |
 | `--target` | string | "" | existing writ ID to manifest against (required for expansion workflows) |
 | `--var` | stringSlice | [] | variable assignment (key=val) |
-| `--world` | string | "" | world name (optional with SOL_WORLD or inside a world directory) |
+| `--world` | string | "" | world name |
 
 #### `sol workflow show`
 
@@ -318,14 +345,14 @@ Copies an embedded workflow to the user or project tier so it can be customized.
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
 | `--path` | string | "" | load workflow from directory path instead of by name |
-| `--world` | string | "" | world name (for project-tier resolution) |
+| `--world` | string | "" | world name |
 
 #### `sol workflow skip`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name (optional with SOL_WORLD or inside a world directory) |
+| `--world` | string | "" | world name |
 
 #### `sol workflow status`
 
@@ -333,7 +360,7 @@ Copies an embedded workflow to the user or project tier so it can be customized.
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
 | `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name (optional with SOL_WORLD or inside a world directory) |
+| `--world` | string | "" | world name |
 
 ### `sol writ`
 
@@ -364,7 +391,7 @@ Switch the active writ with lightweight session handoff. The writ must be tether
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name (defaults to SOL_WORLD env) |
+| `--world` | string | "" | world name |
 
 #### `sol writ clean`
 
@@ -375,6 +402,12 @@ Switch the active writ with lightweight session handoff. The writ must be tether
 | `--world` | string | "" | world name |
 
 #### `sol writ close`
+
+Close a writ permanently. Supersedes any failed merge requests linked to
+the writ and auto-resolves linked escalations.
+
+Use --reason to record why the writ was closed (e.g. completed, superseded,
+cancelled). This is a terminal state — closed writs cannot be reopened.
 
 **Usage:** `sol writ close <id>`
 
@@ -476,7 +509,7 @@ Shows unified timeline, cost, and escalation data for a writ, aggregating data f
 | `--json` | bool | false | machine-readable JSON output |
 | `--no-events` | bool | false | skip event log scan (faster) |
 | `--timeline` | bool | false | show timeline only |
-| `--world` | string | "" | world name (skip world scanning) |
+| `--world` | string | "" | world name |
 
 #### `sol writ update`
 
@@ -525,6 +558,7 @@ Manage agents
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | filter by agent name |
+| `--json` | bool | false | output as JSON |
 | `--last` | int | 20 | number of recent events to show |
 | `--world` | string | "" | world name |
 
@@ -562,6 +596,13 @@ Gathers session metadata, commit history, writ state, and last output for an age
 | `--world` | string | "" | world name |
 
 #### `sol agent reset`
+
+Force an agent back to idle when it's stuck in a bad state.
+
+Clears the agent's tether file, returns any assigned writ to "open" status
+(with assignee cleared), and sets the agent state to idle. Warns if the
+agent's tmux session is still running — consider stopping it first to avoid
+conflicting state.
 
 **Usage:** `sol agent reset <name>`
 
@@ -634,6 +675,12 @@ Manage persistent envoy agents
 
 #### `sol envoy delete`
 
+Remove an envoy agent, its worktree, brief history, and agent record.
+
+Refuses to delete if the envoy's session is active or tethered unless --force
+is specified. With --force, stops the session and clears the tether before
+deleting.
+
 **Usage:** `sol envoy delete <name>`
 
 | Flag | Type | Default | Description |
@@ -646,7 +693,7 @@ Manage persistent envoy agents
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name (optional, lists all if omitted) |
+| `--world` | string | "" | world name |
 
 #### `sol envoy restart`
 
@@ -902,6 +949,7 @@ Manage the merge pipeline forge
 | `sol forge check-unblocked` | Check for resolved blockers and unblock MRs |
 | `sol forge claim` | Claim the next ready unblocked merge request |
 | `sol forge create-resolution` | Create a conflict resolution task and block the MR |
+| `sol forge log` | Show the forge log file |
 | `sol forge mark-failed` | Mark a merge request as failed |
 | `sol forge mark-merged` | Mark a merge request as merged |
 | `sol forge pause` | Pause the forge — stop claiming new MRs |
@@ -910,7 +958,7 @@ Manage the merge pipeline forge
 | `sol forge release` | Release a claimed merge request back to ready |
 | `sol forge restart` | Restart the forge (stop then start) |
 | `sol forge resume` | Resume the forge — start claiming MRs again |
-| `sol forge start` | Start the forge as a Claude session |
+| `sol forge start` | Start the forge as a Go patrol process |
 | `sol forge status` | Show forge health summary |
 | `sol forge stop` | Stop the forge |
 | `sol forge sync` | Sync forge worktree: fetch origin, reset to target branch |
@@ -951,11 +999,25 @@ Manage the merge pipeline forge
 
 #### `sol forge create-resolution`
 
+Create a resolution writ for a merge request that has conflicts, then block
+the MR until the resolution is complete. Attempts to auto-dispatch the
+resolution writ to an idle agent immediately.
+
+Used by the forge session when it encounters merge conflicts that need
+manual resolution.
+
 **Usage:** `sol forge create-resolution <mr-id>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
+| `--world` | string | "" | world name |
+
+#### `sol forge log`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--follow` | bool | false | follow the log file (like tail -f) |
 | `--world` | string | "" | world name |
 
 #### `sol forge mark-failed`
@@ -975,6 +1037,12 @@ Manage the merge pipeline forge
 | `--world` | string | "" | world name |
 
 #### `sol forge pause`
+
+Set the forge pause flag for the world. A paused forge will not claim new
+merge requests from the queue, but the forge session stays running.
+
+Nudges the forge session so it notices the pause promptly. Resume with
+sol forge resume.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1009,6 +1077,9 @@ Manage the merge pipeline forge
 | `--world` | string | "" | world name |
 
 #### `sol forge resume`
+
+Clear the forge pause flag and nudge the session to resume claiming merge
+requests from the queue immediately.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1279,6 +1350,15 @@ Start sphere daemons and world services
 
 Create an escalation
 
+Create an escalation record and route it for operator attention.
+
+Auto-detects source from SOL_WORLD/SOL_AGENT environment variables when
+called from within an agent session. Also auto-detects the active writ
+from the agent's tether to set --source-ref.
+
+Severity defaults to "medium". Routing behavior (event log, webhook) depends
+on the configured escalation router and SOL_ESCALATION_WEBHOOK.
+
 **Usage:** `sol escalate <description>`
 
 | Flag | Type | Default | Description |
@@ -1328,7 +1408,7 @@ View pending nudge queue messages
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
 | `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name (defaults to SOL_WORLD env) |
+| `--world` | string | "" | world name |
 
 **Subcommands:**
 
@@ -1388,7 +1468,7 @@ Inter-agent messaging
 | `--priority` | int | 2 | Priority (1=urgent, 2=normal, 3=low) |
 | `--subject` | string | "" | Message subject |
 | `--to` | string | "" | Recipient agent ID or "operator" |
-| `--world` | string | "" | World for recipient resolution (default: from env or cwd) |
+| `--world` | string | "" | world name |
 
 ### `sol nudge`
 
@@ -1405,7 +1485,7 @@ Nudge queue operations
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name (optional with SOL_WORLD or inside a world directory) |
+| `--world` | string | "" | world name |
 
 ---
 
@@ -1433,6 +1513,12 @@ Manage Claude OAuth accounts
 |------|------|---------|-------------|
 | `--description` | string | "" | account description |
 | `--email` | string | "" | email associated with the account |
+
+#### `sol account list`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 
 ### `sol config`
 
@@ -1528,6 +1614,12 @@ Schema version and migration management
 | `--backup` | bool | false | Create a backup of each database before migrating |
 | `--dry-run` | bool | false | Preview migrations without applying them |
 
+#### `sol schema status`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
 ### `sol world`
 
 Manage worlds
@@ -1565,6 +1657,14 @@ to copy it.
 | `--include-history` | bool | false | include agent history and memories in clone |
 
 #### `sol world delete`
+
+Permanently delete a world and all associated data:
+  - World database (writs, merge requests, dependencies)
+  - World directory (repo, outposts, worktrees, config)
+  - Agent records for the world in sphere.db
+
+Refuses to delete if any agent sessions are still running — stop them first.
+Requires --confirm to proceed; without it, prints what would be deleted and exits.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1606,6 +1706,17 @@ restored — run sol world sync after import to clone the managed repo.
 | `--name` | string | "" | import under a different name (rewrites agent IDs and references) |
 
 #### `sol world init`
+
+Create a new world with directory structure, database, and configuration.
+
+Creates:
+  - World directory at $SOL_HOME/<name>/ with outposts/ subdirectory
+  - World database (<name>.db) with schema migrations
+  - Default world.toml configuration
+  - Managed repo clone (if --source-repo is provided)
+
+Registers the world in sphere.db. If a pre-Arc1 database exists (DB without
+world.toml), migrates legacy quality gates and name pool settings.
 
 **Usage:** `sol world init <name>`
 
@@ -1779,7 +1890,7 @@ Plumbing command to manually queue a branch for forge review without going throu
 | `--branch` | string | "" | branch to merge (required) |
 | `--json` | bool | false | output as JSON |
 | `--priority` | int | 2 | priority (1=high, 2=normal, 3=low) |
-| `--world` | string | "" | world name (required) |
+| `--world` | string | "" | world name |
 | `--writ` | string | "" | writ ID (required) |
 
 ### `sol prime`

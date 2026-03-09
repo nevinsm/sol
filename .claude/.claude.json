@@ -1,0 +1,12 @@
+{
+  "firstStartTime": "2026-03-09T02:13:02.803Z",
+  "opusProMigrationComplete": true,
+  "sonnet1m45MigrationComplete": true,
+  "userID": "5f4224e0914726ef1f87ba7baea39880525c833d423c0477d69debbdb18f2569",
+  "clientDataCache": {
+    "data": null,
+    "timestamp": 1773022431442
+  },
+  "cachedChromeExtensionInstalled": false,
+  "changelogLastFetched": 1773022431561
+}
