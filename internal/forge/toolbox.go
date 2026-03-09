@@ -43,10 +43,8 @@ func ClearForgePaused(world string) error {
 	return nil
 }
 
-// ListReady returns MRs with phase=ready AND blocked_by IS NULL AND not
-// blocked by caravan-level dependencies. Caravan-blocked MRs are marked
-// with the "caravan-blocked" sentinel so ClaimMergeRequest's SQL naturally
-// excludes them.
+// ListReady returns MRs with phase=ready that are not blocked.
+// This is a pure read operation — it does not modify any state.
 func (r *Forge) ListReady() ([]store.MergeRequest, error) {
 	all, err := r.worldStore.ListMergeRequests("ready")
 	if err != nil {
@@ -57,24 +55,38 @@ func (r *Forge) ListReady() ([]store.MergeRequest, error) {
 		if mr.BlockedBy != "" {
 			continue
 		}
-		// Check caravan-level dependencies.
-		blocked, _, err := r.sphereStore.IsWritBlockedByCaravanDeps(mr.WritID)
-		if err != nil {
-			r.logger.Warn("failed to check caravan deps", "writ", mr.WritID, "error", err)
-			// On error, include the MR (fail open to avoid blocking the pipeline).
-			ready = append(ready, mr)
-			continue
-		}
-		if blocked {
-			// System-enforce: set blocked_by sentinel so claim SQL excludes it.
-			if err := r.worldStore.BlockMergeRequest(mr.ID, store.CaravanBlockedSentinel); err != nil {
-				r.logger.Error("failed to set caravan-blocked sentinel", "mr", mr.ID, "error", err)
-			}
-			continue
-		}
 		ready = append(ready, mr)
 	}
 	return ready, nil
+}
+
+// EnforceCaravanBlocks checks ready MRs for caravan-level dependencies and
+// sets the caravan-blocked sentinel on any that are blocked. Returns the
+// number of MRs blocked.
+func (r *Forge) EnforceCaravanBlocks() (int, error) {
+	all, err := r.worldStore.ListMergeRequests("ready")
+	if err != nil {
+		return 0, fmt.Errorf("failed to list ready merge requests: %w", err)
+	}
+	blocked := 0
+	for _, mr := range all {
+		if mr.BlockedBy != "" {
+			continue // already blocked
+		}
+		isBlocked, _, err := r.sphereStore.IsWritBlockedByCaravanDeps(mr.WritID)
+		if err != nil {
+			r.logger.Warn("failed to check caravan deps", "writ", mr.WritID, "error", err)
+			continue
+		}
+		if isBlocked {
+			if err := r.worldStore.BlockMergeRequest(mr.ID, store.CaravanBlockedSentinel); err != nil {
+				r.logger.Error("failed to set caravan-blocked sentinel", "mr", mr.ID, "error", err)
+			} else {
+				blocked++
+			}
+		}
+	}
+	return blocked, nil
 }
 
 // ListCaravanBlocked returns MRs that are blocked by caravan-level dependencies.

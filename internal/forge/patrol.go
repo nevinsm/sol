@@ -349,6 +349,13 @@ func (s *patrolState) patrol(ctx context.Context) {
 		return
 	}
 
+	// 2.5. Enforce caravan blocks.
+	if n, err := s.forge.EnforceCaravanBlocks(); err != nil {
+		s.forge.logger.Error("caravan block enforcement failed", "error", err)
+	} else if n > 0 {
+		s.fl.Log("BLOCK", fmt.Sprintf("blocked %d MRs by caravan deps", n))
+	}
+
 	// 3. Scan — list ready MRs.
 	ready, err := s.forge.ListReady()
 	if err != nil {
