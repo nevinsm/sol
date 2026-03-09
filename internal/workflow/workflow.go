@@ -622,6 +622,137 @@ func Advance(world, agentName, role string) (nextStep *Step, done bool, err erro
 	return ns, false, nil
 }
 
+// Skip marks the current step as skipped and finds the next ready step.
+// Skipped steps are treated as completed for DAG purposes — they don't block dependents.
+func Skip(world, agentName, role string) (nextStep *Step, done bool, err error) {
+	wfDir := InstanceDir(world, agentName, role)
+
+	// Read state.
+	state, err := ReadState(world, agentName, role)
+	if err != nil {
+		return nil, false, err
+	}
+	if state == nil {
+		return nil, false, fmt.Errorf("no workflow found for agent %q in world %q", agentName, world)
+	}
+	if state.Status != "running" {
+		return nil, false, fmt.Errorf("workflow status is %q, expected \"running\"", state.Status)
+	}
+	if state.CurrentStep == "" {
+		return nil, false, fmt.Errorf("no current step to skip")
+	}
+
+	// Mark current step as skipped.
+	stepPath := filepath.Join(wfDir, "steps", state.CurrentStep+".json")
+	currentStep, err := readStepFile(stepPath)
+	if err != nil {
+		return nil, false, err
+	}
+	now := time.Now().UTC()
+	currentStep.Status = "skipped"
+	currentStep.CompletedAt = &now
+	if err := writeJSON(stepPath, currentStep); err != nil {
+		return nil, false, fmt.Errorf("failed to write step %q: %w", state.CurrentStep, err)
+	}
+
+	// Add to completed list (skipped steps don't block dependents).
+	state.Completed = append(state.Completed, state.CurrentStep)
+
+	// Load manifest to determine next ready steps.
+	inst, err := ReadInstance(world, agentName, role)
+	if err != nil {
+		return nil, false, err
+	}
+	res, err := Resolve(inst.Workflow, config.RepoPath(world))
+	if err != nil {
+		return nil, false, err
+	}
+	m, err := LoadManifest(res.Path)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Find next ready steps.
+	ready := NextReadySteps(m.Steps, state.Completed)
+
+	if len(ready) == 0 {
+		// All steps complete — workflow is done.
+		state.CurrentStep = ""
+		state.Status = "done"
+		state.CompletedAt = &now
+		if err := writeJSON(filepath.Join(wfDir, "state.json"), state); err != nil {
+			return nil, false, fmt.Errorf("failed to write state.json: %w", err)
+		}
+		return nil, true, nil
+	}
+
+	// Pick first ready step (manifest order).
+	nextID := ready[0]
+	state.CurrentStep = nextID
+
+	// Mark next step as executing.
+	nextStepPath := filepath.Join(wfDir, "steps", nextID+".json")
+	ns, err := readStepFile(nextStepPath)
+	if err != nil {
+		return nil, false, err
+	}
+	ns.Status = "executing"
+	ns.StartedAt = &now
+	if err := writeJSON(nextStepPath, ns); err != nil {
+		return nil, false, fmt.Errorf("failed to update step %q: %w", nextID, err)
+	}
+
+	// Write state.
+	if err := writeJSON(filepath.Join(wfDir, "state.json"), state); err != nil {
+		return nil, false, fmt.Errorf("failed to write state.json: %w", err)
+	}
+
+	return ns, false, nil
+}
+
+// Fail marks the current step as failed and the workflow as failed.
+// Does not advance to the next step — execution stops.
+func Fail(world, agentName, role string) (failedStep *Step, err error) {
+	wfDir := InstanceDir(world, agentName, role)
+
+	// Read state.
+	state, err := ReadState(world, agentName, role)
+	if err != nil {
+		return nil, err
+	}
+	if state == nil {
+		return nil, fmt.Errorf("no workflow found for agent %q in world %q", agentName, world)
+	}
+	if state.Status != "running" {
+		return nil, fmt.Errorf("workflow status is %q, expected \"running\"", state.Status)
+	}
+	if state.CurrentStep == "" {
+		return nil, fmt.Errorf("no current step to fail")
+	}
+
+	// Mark current step as failed.
+	stepPath := filepath.Join(wfDir, "steps", state.CurrentStep+".json")
+	currentStep, err := readStepFile(stepPath)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	currentStep.Status = "failed"
+	currentStep.CompletedAt = &now
+	if err := writeJSON(stepPath, currentStep); err != nil {
+		return nil, fmt.Errorf("failed to write step %q: %w", state.CurrentStep, err)
+	}
+
+	// Mark workflow as failed. Do NOT add step to Completed or advance.
+	state.Status = "failed"
+	state.CompletedAt = &now
+	if err := writeJSON(filepath.Join(wfDir, "state.json"), state); err != nil {
+		return nil, fmt.Errorf("failed to write state.json: %w", err)
+	}
+
+	return currentStep, nil
+}
+
 // Remove deletes a workflow instance directory.
 func Remove(world, agentName, role string) error {
 	wfDir := InstanceDir(world, agentName, role)
