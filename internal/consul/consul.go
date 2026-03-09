@@ -589,6 +589,18 @@ func (d *Consul) dispatchWorldItems(ctx context.Context, caravanID, world string
 			return dispatched, ctx.Err()
 		}
 
+		// Don't re-dispatch items that have been worked on before.
+		// Existing MRs (any phase) mean the writ was dispatched, worked,
+		// and resolved at least once. Recovery is sentinel's domain.
+		mrs, mrsErr := worldStore.ListMergeRequestsByWrit(st.WritID, "")
+		if mrsErr == nil && len(mrs) > 0 {
+			if d.logger != nil {
+				d.logger.Emit("consul_skip_redispatch", "sphere/consul", "sphere/consul", "audit",
+					map[string]any{"writ": st.WritID, "reason": "existing_mrs"})
+			}
+			continue
+		}
+
 		castOpts := dispatch.CastOpts{
 			WritID:  st.WritID,
 			World:       world,
