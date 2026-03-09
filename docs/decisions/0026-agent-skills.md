@@ -50,6 +50,18 @@ Replace the monolithic CLI reference with role-scoped skills:
   No forge commands in outpost agents, no caravan commands in forge.
 - **Skill files are sol-managed** — added to `.git/info/exclude` via setup.go,
   not tracked in version control.
-- **`sol docs generate` deprecated** — no longer needed since skills replace the
-  flat reference. The command prints a deprecation message.
 - **Makefile simplified** — build no longer depends on docs generation.
+
+## Addendum: Operator Override — cli.md Coexistence (2026-03-09)
+
+The operator has decided that `docs/cli.md` should be maintained for **human**
+consumption alongside the skills system which serves **agents**. Both coexist:
+
+- **Skills** (`.claude/skills/`) — role-scoped, agent-facing, progressive disclosure
+- **cli.md** — complete reference, human-facing, auto-generated from the command tree
+
+`sol docs generate` has been resurrected to auto-generate `docs/cli.md` from the
+Cobra command tree. `sol docs validate` (or `sol docs generate --check`) detects
+drift between the command tree and the documented reference, suitable for CI.
+
+The deprecation of `sol docs generate` noted above is reversed.
