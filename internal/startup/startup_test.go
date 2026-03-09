@@ -60,7 +60,7 @@ func TestRegisterAndConfigFor(t *testing.T) {
 
 	cfg := RoleConfig{
 		Role:    "testrole",
-		Formula: "test-formula",
+		Workflow: "test-workflow",
 	}
 	Register("testrole", cfg)
 
@@ -71,8 +71,8 @@ func TestRegisterAndConfigFor(t *testing.T) {
 	if got.Role != "testrole" {
 		t.Errorf("Role = %q, want %q", got.Role, "testrole")
 	}
-	if got.Formula != "test-formula" {
-		t.Errorf("Formula = %q, want %q", got.Formula, "test-formula")
+	if got.Workflow != "test-workflow" {
+		t.Errorf("Workflow = %q, want %q", got.Workflow, "test-workflow")
 	}
 
 	// Unregistered role returns nil.
@@ -118,7 +118,7 @@ func TestLaunchBasic(t *testing.T) {
 			}
 		},
 		PrimeBuilder: func(w, a string) string {
-			return "Execute your formula."
+			return "Execute your workflow."
 		},
 	}
 
@@ -313,7 +313,7 @@ func TestResumeSetsContinue(t *testing.T) {
 		Role:        "forge",
 		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
 		PrimeBuilder: func(w, a string) string {
-			return "Execute your formula."
+			return "Execute your workflow."
 		},
 	}
 
@@ -386,12 +386,12 @@ func TestResumePreservesBasePrime(t *testing.T) {
 		Reason:      "compact",
 	}
 
-	base := "Execute your formula."
+	base := "Execute your workflow."
 	prime := BuildResumePrime(base, state)
 	if !strings.Contains(prime, "[RESUME]") {
 		t.Errorf("resume prime missing [RESUME]: %q", prime)
 	}
-	if !strings.Contains(prime, "Execute your formula.") {
+	if !strings.Contains(prime, "Execute your workflow.") {
 		t.Errorf("resume prime missing base prime: %q", prime)
 	}
 }
@@ -674,7 +674,7 @@ func TestLaunchReinstantiatesDoneWorkflow(t *testing.T) {
 	cfg := RoleConfig{
 		Role:        "forge",
 		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
-		Formula:     "forge-patrol", // Real embedded formula; requires only "world" var.
+		Workflow:    "forge-patrol", // Real embedded workflow; requires only "world" var.
 	}
 
 	_, err = Launch(cfg, "haven", "forge", LaunchOpts{
@@ -718,7 +718,7 @@ func TestRespawnWithResumeState(t *testing.T) {
 	Register("forge", RoleConfig{
 		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
 		PrimeBuilder: func(w, a string) string {
-			return "Execute your formula."
+			return "Execute your workflow."
 		},
 	})
 
@@ -785,7 +785,7 @@ func TestRespawnWithoutResumeState(t *testing.T) {
 	Register("forge", RoleConfig{
 		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
 		PrimeBuilder: func(w, a string) string {
-			return "Execute your formula."
+			return "Execute your workflow."
 		},
 	})
 
@@ -906,7 +906,7 @@ func TestLaunchSkipsWorkflowIfActive(t *testing.T) {
 	cfg := RoleConfig{
 		Role:        "forge",
 		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
-		Formula:     "nonexistent-formula", // Would fail if instantiation were attempted.
+		Workflow:    "nonexistent-workflow", // Would fail if instantiation were attempted.
 	}
 
 	_, err = Launch(cfg, "haven", "forge", LaunchOpts{
@@ -962,7 +962,7 @@ func TestBuildResumePrimeWritSwitchWithBase(t *testing.T) {
 		NewActiveWrit:      "sol-bbb222",
 	}
 
-	base := "Execute your formula."
+	base := "Execute your workflow."
 	prime := BuildResumePrime(base, state)
 	if !strings.Contains(prime, "[RESUME]") {
 		t.Errorf("prime missing [RESUME]: %q", prime)
@@ -970,7 +970,7 @@ func TestBuildResumePrimeWritSwitchWithBase(t *testing.T) {
 	if !strings.Contains(prime, "Your active writ has changed to sol-bbb222") {
 		t.Errorf("prime missing writ-switch context: %q", prime)
 	}
-	if !strings.Contains(prime, "Execute your formula.") {
+	if !strings.Contains(prime, "Execute your workflow.") {
 		t.Errorf("prime missing base prime: %q", prime)
 	}
 }

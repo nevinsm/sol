@@ -175,7 +175,7 @@ func Validate(m *Manifest) error {
 
 	// All other types (workflow, agent, etc.) validate steps.
 	if len(m.Templates) > 0 && m.Type != "" {
-		return fmt.Errorf("%s workflow must not contain [[template]] entries", m.Type)
+		return fmt.Errorf("type %q must not contain [[template]] entries", m.Type)
 	}
 	return validateDAG(m.Steps, "step")
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
-func setupTestFormula(t *testing.T, steps []StepDef, vars map[string]VariableDecl) string {
+func setupTestWorkflow(t *testing.T, steps []StepDef, vars map[string]VariableDecl) string {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -23,7 +23,7 @@ func setupTestFormula(t *testing.T, steps []StepDef, vars map[string]VariableDec
 	}
 
 	os.MkdirAll(filepath.Join(dir, "steps"), 0o755)
-	writeTOMLManifest(t, dir, "test-formula", steps, vars)
+	writeTOMLManifest(t, dir, "test-workflow", steps, vars)
 
 	for _, s := range steps {
 		content := "# " + s.Title + "\n\nWork on {{issue}} from {{base_branch}}.\n"
@@ -44,15 +44,15 @@ func linearSteps() []StepDef {
 }
 
 func TestLoadManifest(t *testing.T) {
-	dir := setupTestFormula(t, linearSteps(), nil)
+	dir := setupTestWorkflow(t, linearSteps(), nil)
 
 	m, err := LoadManifest(dir)
 	if err != nil {
 		t.Fatalf("LoadManifest() error: %v", err)
 	}
 
-	if m.Name != "test-formula" {
-		t.Errorf("name: got %q, want %q", m.Name, "test-formula")
+	if m.Name != "test-workflow" {
+		t.Errorf("name: got %q, want %q", m.Name, "test-workflow")
 	}
 	if m.Type != "workflow" {
 		t.Errorf("type: got %q, want %q", m.Type, "workflow")
@@ -188,18 +188,18 @@ func TestInstantiate(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	// Create formula dir.
-	formulaDir := filepath.Join(solHome, "formulas", "test-wf")
-	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+	// Create workflow dir.
+	workflowDir := filepath.Join(solHome, "workflows", "test-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
 
 	steps := linearSteps()
-	writeTOMLManifest(t, formulaDir, "test-wf", steps, map[string]VariableDecl{
+	writeTOMLManifest(t, workflowDir, "test-wf", steps, map[string]VariableDecl{
 		"issue":       {Required: true},
 		"base_branch": {Default: "main"},
 	})
 	for _, s := range steps {
 		content := "# " + s.Title + "\n\nWork on {{issue}} from {{base_branch}}.\n"
-		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte(content), 0o644)
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte(content), 0o644)
 	}
 
 	// Create outpost dir.
@@ -212,8 +212,8 @@ func TestInstantiate(t *testing.T) {
 		t.Fatalf("Instantiate() error: %v", err)
 	}
 
-	if inst.Formula != "test-wf" {
-		t.Errorf("formula: got %q, want %q", inst.Formula, "test-wf")
+	if inst.Workflow != "test-wf" {
+		t.Errorf("workflow: got %q, want %q", inst.Workflow, "test-wf")
 	}
 	if state.CurrentStep != "load-context" {
 		t.Errorf("current_step: got %q, want %q", state.CurrentStep, "load-context")
@@ -223,7 +223,7 @@ func TestInstantiate(t *testing.T) {
 	}
 
 	// Verify files created.
-	wfDir := WorkflowDir("haven", "Toast", "agent")
+	wfDir := InstanceDir("haven", "Toast", "agent")
 	for _, name := range []string{"manifest.json", "state.json"} {
 		if _, err := os.Stat(filepath.Join(wfDir, name)); err != nil {
 			t.Errorf("missing file %q: %v", name, err)
@@ -257,15 +257,15 @@ func TestInstantiateRequiredVariableMissing(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	formulaDir := filepath.Join(solHome, "formulas", "test-wf")
-	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+	workflowDir := filepath.Join(solHome, "workflows", "test-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
 
 	steps := linearSteps()
-	writeTOMLManifest(t, formulaDir, "test-wf", steps, map[string]VariableDecl{
+	writeTOMLManifest(t, workflowDir, "test-wf", steps, map[string]VariableDecl{
 		"issue": {Required: true},
 	})
 	for _, s := range steps {
-		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
 	}
 
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
@@ -276,7 +276,7 @@ func TestInstantiateRequiredVariableMissing(t *testing.T) {
 	}
 
 	// Verify no directory created.
-	wfDir := WorkflowDir("haven", "Toast", "agent")
+	wfDir := InstanceDir("haven", "Toast", "agent")
 	if _, err := os.Stat(wfDir); !os.IsNotExist(err) {
 		t.Errorf("workflow directory should not exist after error, but stat returned: %v", err)
 	}
@@ -296,14 +296,14 @@ func TestReadState(t *testing.T) {
 	}
 
 	// Create a workflow.
-	formulaDir := filepath.Join(solHome, "formulas", "test-wf")
-	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+	workflowDir := filepath.Join(solHome, "workflows", "test-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
 	steps := linearSteps()
-	writeTOMLManifest(t, formulaDir, "test-wf", steps, map[string]VariableDecl{
+	writeTOMLManifest(t, workflowDir, "test-wf", steps, map[string]VariableDecl{
 		"issue": {Required: true},
 	})
 	for _, s := range steps {
-		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
@@ -325,14 +325,14 @@ func TestReadCurrentStep(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	formulaDir := filepath.Join(solHome, "formulas", "test-wf")
-	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+	workflowDir := filepath.Join(solHome, "workflows", "test-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
 	steps := linearSteps()
-	writeTOMLManifest(t, formulaDir, "test-wf", steps, map[string]VariableDecl{
+	writeTOMLManifest(t, workflowDir, "test-wf", steps, map[string]VariableDecl{
 		"issue": {Required: true},
 	})
 	for _, s := range steps {
-		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("Do {{issue}}"), 0o644)
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("Do {{issue}}"), 0o644)
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
@@ -357,14 +357,14 @@ func TestAdvance(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	formulaDir := filepath.Join(solHome, "formulas", "test-wf")
-	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+	workflowDir := filepath.Join(solHome, "workflows", "test-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
 	steps := linearSteps()
-	writeTOMLManifest(t, formulaDir, "test-wf", steps, map[string]VariableDecl{
+	writeTOMLManifest(t, workflowDir, "test-wf", steps, map[string]VariableDecl{
 		"issue": {Required: true},
 	})
 	for _, s := range steps {
-		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
@@ -437,13 +437,13 @@ func TestAdvanceDAG(t *testing.T) {
 		{ID: "d", Title: "Step D", Instructions: "steps/d.md", Needs: []string{"b", "c"}},
 	}
 
-	formulaDir := filepath.Join(solHome, "formulas", "dag-wf")
-	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
-	writeTOMLManifest(t, formulaDir, "dag-wf", dagSteps, map[string]VariableDecl{
+	workflowDir := filepath.Join(solHome, "workflows", "dag-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+	writeTOMLManifest(t, workflowDir, "dag-wf", dagSteps, map[string]VariableDecl{
 		"issue": {Required: true},
 	})
 	for _, s := range dagSteps {
-		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
@@ -547,20 +547,20 @@ func TestRemove(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	formulaDir := filepath.Join(solHome, "formulas", "test-wf")
-	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+	workflowDir := filepath.Join(solHome, "workflows", "test-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
 	steps := linearSteps()
-	writeTOMLManifest(t, formulaDir, "test-wf", steps, map[string]VariableDecl{
+	writeTOMLManifest(t, workflowDir, "test-wf", steps, map[string]VariableDecl{
 		"issue": {Required: true},
 	})
 	for _, s := range steps {
-		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
 	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
 
-	wfDir := WorkflowDir("haven", "Toast", "agent")
+	wfDir := InstanceDir("haven", "Toast", "agent")
 	if _, err := os.Stat(wfDir); err != nil {
 		t.Fatalf("workflow dir should exist: %v", err)
 	}
@@ -574,14 +574,14 @@ func TestRemove(t *testing.T) {
 	}
 }
 
-func TestEnsureFormula(t *testing.T) {
+func TestResolve(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	// Known formula not on disk → extracted (embedded tier).
-	res, err := EnsureFormula("default-work", "")
+	// Known workflow not on disk → extracted (embedded tier).
+	res, err := Resolve("default-work", "")
 	if err != nil {
-		t.Fatalf("EnsureFormula(default-work) error: %v", err)
+		t.Fatalf("Resolve(default-work) error: %v", err)
 	}
 	if res.Tier != TierEmbedded {
 		t.Errorf("tier: got %q, want %q", res.Tier, TierEmbedded)
@@ -593,10 +593,10 @@ func TestEnsureFormula(t *testing.T) {
 		t.Errorf("step file not found after extraction: %v", err)
 	}
 
-	// Already exists → user tier (extracted to $SOL_HOME/formulas/).
-	res2, err := EnsureFormula("default-work", "")
+	// Already exists → user tier (extracted to $SOL_HOME/workflows/).
+	res2, err := Resolve("default-work", "")
 	if err != nil {
-		t.Fatalf("EnsureFormula(default-work) second call error: %v", err)
+		t.Fatalf("Resolve(default-work) second call error: %v", err)
 	}
 	if res.Path != res2.Path {
 		t.Errorf("paths differ: %q vs %q", res.Path, res2.Path)
@@ -605,14 +605,14 @@ func TestEnsureFormula(t *testing.T) {
 		t.Errorf("second call tier: got %q, want %q", res2.Tier, TierUser)
 	}
 
-	// Unknown formula → error.
-	_, err = EnsureFormula("nonexistent-formula", "")
+	// Unknown workflow → error.
+	_, err = Resolve("nonexistent-workflow", "")
 	if err == nil {
-		t.Fatal("EnsureFormula(nonexistent) expected error")
+		t.Fatal("Resolve(nonexistent) expected error")
 	}
 }
 
-func TestEnsureFormulaProjectTier(t *testing.T) {
+func TestResolveProjectTier(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
@@ -629,9 +629,9 @@ func TestEnsureFormulaProjectTier(t *testing.T) {
 	}
 
 	// Project tier resolves first.
-	res, err := EnsureFormula("custom-deploy", repoDir)
+	res, err := Resolve("custom-deploy", repoDir)
 	if err != nil {
-		t.Fatalf("EnsureFormula(custom-deploy) error: %v", err)
+		t.Fatalf("Resolve(custom-deploy) error: %v", err)
 	}
 	if res.Tier != TierProject {
 		t.Errorf("tier: got %q, want %q", res.Tier, TierProject)
@@ -641,13 +641,13 @@ func TestEnsureFormulaProjectTier(t *testing.T) {
 	}
 }
 
-func TestEnsureFormulaProjectOverridesUser(t *testing.T) {
+func TestResolveProjectOverridesUser(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
 	repoDir := t.TempDir()
 
-	// Create both project-level and user-level formulas with the same name.
+	// Create both project-level and user-level workflows with the same name.
 	projectDir := filepath.Join(repoDir, ".sol", "workflows", "default-work")
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -656,7 +656,7 @@ func TestEnsureFormulaProjectOverridesUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	userDir := FormulaDir("default-work")
+	userDir := Dir("default-work")
 	if err := os.MkdirAll(userDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -665,9 +665,9 @@ func TestEnsureFormulaProjectOverridesUser(t *testing.T) {
 	}
 
 	// Project tier wins over user tier.
-	res, err := EnsureFormula("default-work", repoDir)
+	res, err := Resolve("default-work", repoDir)
 	if err != nil {
-		t.Fatalf("EnsureFormula error: %v", err)
+		t.Fatalf("Resolve error: %v", err)
 	}
 	if res.Tier != TierProject {
 		t.Errorf("tier: got %q, want %q", res.Tier, TierProject)
@@ -677,9 +677,9 @@ func TestEnsureFormulaProjectOverridesUser(t *testing.T) {
 	}
 
 	// Without repoPath, user tier wins.
-	res2, err := EnsureFormula("default-work", "")
+	res2, err := Resolve("default-work", "")
 	if err != nil {
-		t.Fatalf("EnsureFormula error: %v", err)
+		t.Fatalf("Resolve error: %v", err)
 	}
 	if res2.Tier != TierUser {
 		t.Errorf("tier without repo: got %q, want %q", res2.Tier, TierUser)
@@ -690,14 +690,14 @@ func TestAdvanceIdempotentOnCompletedStep(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	formulaDir := filepath.Join(solHome, "formulas", "test-wf")
-	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+	workflowDir := filepath.Join(solHome, "workflows", "test-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
 	steps := linearSteps()
-	writeTOMLManifest(t, formulaDir, "test-wf", steps, map[string]VariableDecl{
+	writeTOMLManifest(t, workflowDir, "test-wf", steps, map[string]VariableDecl{
 		"issue": {Required: true},
 	})
 	for _, s := range steps {
-		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
@@ -729,7 +729,7 @@ func TestAdvanceIdempotentOnCompletedStep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal state: %v", err)
 	}
-	statePath := filepath.Join(WorkflowDir("haven", "Toast", "agent"), "state.json")
+	statePath := filepath.Join(InstanceDir("haven", "Toast", "agent"), "state.json")
 	if err := os.WriteFile(statePath, stateData, 0o644); err != nil {
 		t.Fatalf("write state.json: %v", err)
 	}
@@ -766,7 +766,7 @@ func TestLoadManifestExpansion(t *testing.T) {
 	dir := t.TempDir()
 	toml := `name = "test-expansion"
 type = "expansion"
-description = "Test expansion formula"
+description = "Test expansion workflow"
 
 [[template]]
 id = "{target}.draft"
@@ -874,7 +874,7 @@ func TestValidateExpansionEmpty(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() expected error for empty expansion")
 	}
-	if got := err.Error(); got != "expansion formula requires at least one [[template]] entry" {
+	if got := err.Error(); got != "expansion workflow requires at least one [[template]] entry" {
 		t.Errorf("error: got %q", got)
 	}
 }
@@ -889,7 +889,7 @@ func TestValidateExpansionWithSteps(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() expected error for expansion with steps")
 	}
-	if got := err.Error(); got != "expansion formula must not contain [[steps]] entries" {
+	if got := err.Error(); got != "expansion workflow must not contain [[steps]] entries" {
 		t.Errorf("error: got %q", got)
 	}
 }
@@ -904,7 +904,7 @@ func TestValidateWorkflowWithTemplates(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() expected error for workflow with templates")
 	}
-	if got := err.Error(); got != "workflow formula must not contain [[template]] entries" {
+	if got := err.Error(); got != "type "workflow" must not contain [[template]] entries" {
 		t.Errorf("error: got %q", got)
 	}
 }
@@ -919,24 +919,24 @@ func TestValidateOtherTypeWithTemplates(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() expected error for non-expansion type with templates")
 	}
-	if got := err.Error(); got != "agent formula must not contain [[template]] entries" {
+	if got := err.Error(); got != "type "agent" must not contain [[template]] entries" {
 		t.Errorf("error: got %q", got)
 	}
 }
 
-func TestEnsureFormulaRuleOfFive(t *testing.T) {
+func TestResolveRuleOfFive(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	res, err := EnsureFormula("rule-of-five", "")
+	res, err := Resolve("rule-of-five", "")
 	if err != nil {
-		t.Fatalf("EnsureFormula(rule-of-five) error: %v", err)
+		t.Fatalf("Resolve(rule-of-five) error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(res.Path, "manifest.toml")); err != nil {
 		t.Errorf("manifest.toml not found after extraction: %v", err)
 	}
 
-	// Load and validate the extracted formula.
+	// Load and validate the extracted workflow.
 	m, err := LoadManifest(res.Path)
 	if err != nil {
 		t.Fatalf("LoadManifest() error: %v", err)
@@ -952,9 +952,9 @@ func TestEnsureFormulaRuleOfFive(t *testing.T) {
 	}
 
 	// Second call is no-op.
-	res2, err := EnsureFormula("rule-of-five", "")
+	res2, err := Resolve("rule-of-five", "")
 	if err != nil {
-		t.Fatalf("EnsureFormula(rule-of-five) second call error: %v", err)
+		t.Fatalf("Resolve(rule-of-five) second call error: %v", err)
 	}
 	if res.Path != res2.Path {
 		t.Errorf("paths differ: %q vs %q", res.Path, res2.Path)
@@ -1046,32 +1046,32 @@ func TestShouldManifest(t *testing.T) {
 	}
 }
 
-func TestManifestFormulaWorkflow(t *testing.T) {
+func TestManifestWorkflow(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	solHome := os.Getenv("SOL_HOME")
 
-	// Create a manifested workflow formula.
-	formulaDir := filepath.Join(solHome, "formulas", "manifest-wf")
-	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+	// Create a manifested workflow.
+	workflowDir := filepath.Join(solHome, "workflows", "manifest-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
 
 	steps := linearSteps()
-	writeTOMLManifestWithFlag(t, formulaDir, "manifest-wf", steps, map[string]VariableDecl{
+	writeTOMLManifestWithFlag(t, workflowDir, "manifest-wf", steps, map[string]VariableDecl{
 		"issue": {Required: true},
 	}, true)
 	for _, s := range steps {
 		content := "# " + s.Title + "\n\nWork on {{issue}}.\n"
-		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte(content), 0o644)
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte(content), 0o644)
 	}
 
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "manifest-wf",
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "manifest-wf",
 		World:       "test-world",
 		Variables:   map[string]string{"issue": "sol-test123"},
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	// Verify result structure.
@@ -1186,18 +1186,18 @@ func TestManifestFormulaWorkflow(t *testing.T) {
 	}
 }
 
-func TestManifestFormulaExpansion(t *testing.T) {
+func TestManifestExpansion(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	solHome := os.Getenv("SOL_HOME")
 
-	// Create expansion formula.
-	formulaDir := filepath.Join(solHome, "formulas", "test-expand")
-	os.MkdirAll(formulaDir, 0o755)
+	// Create expansion workflow.
+	workflowDir := filepath.Join(solHome, "workflows", "test-expand")
+	os.MkdirAll(workflowDir, 0o755)
 
 	toml := `name = "test-expand"
 type = "expansion"
-description = "Test expansion formula"
+description = "Test expansion workflow"
 
 [[template]]
 id = "draft"
@@ -1210,7 +1210,7 @@ title = "Refine: {target.title}"
 description = "Second pass on {target.id}."
 needs = ["draft"]
 `
-	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(toml), 0o644)
+	os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(toml), 0o644)
 
 	// Create a target writ.
 	targetID, err := ws.CreateWrit("Build auth system", "Implement OAuth2", "operator", 2, nil)
@@ -1218,14 +1218,14 @@ needs = ["draft"]
 		t.Fatalf("CreateWrit() error: %v", err)
 	}
 
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "test-expand",
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "test-expand",
 		World:       "test-world",
 		ParentID:    targetID,
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	// Verify children.
@@ -1282,67 +1282,67 @@ needs = ["draft"]
 	}
 }
 
-func TestManifestFormulaExpansionRequiresParent(t *testing.T) {
+func TestManifestExpansionRequiresParent(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	solHome := os.Getenv("SOL_HOME")
 
-	formulaDir := filepath.Join(solHome, "formulas", "test-expand")
-	os.MkdirAll(formulaDir, 0o755)
+	workflowDir := filepath.Join(solHome, "workflows", "test-expand")
+	os.MkdirAll(workflowDir, 0o755)
 
 	toml := `name = "test-expand"
 type = "expansion"
-description = "Test expansion formula"
+description = "Test expansion workflow"
 
 [[template]]
 id = "draft"
 title = "Draft"
 description = "First pass."
 `
-	os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(toml), 0o644)
+	os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(toml), 0o644)
 
-	_, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "test-expand",
+	_, err := Manifest(ws, ss, ManifestOpts{
+		Name: "test-expand",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err == nil {
-		t.Fatal("ManifestFormula() expected error for expansion without parent")
+		t.Fatal("Manifest() expected error for expansion without parent")
 	}
 	if !strings.Contains(err.Error(), "requires a parent writ") {
 		t.Errorf("error: got %q", err.Error())
 	}
 }
 
-func TestManifestFormulaRejectsNonManifest(t *testing.T) {
+func TestManifestRejectsNonManifest(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	solHome := os.Getenv("SOL_HOME")
 
-	formulaDir := filepath.Join(solHome, "formulas", "plain-wf")
-	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+	workflowDir := filepath.Join(solHome, "workflows", "plain-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
 
 	steps := []StepDef{{ID: "s1", Title: "Step 1", Instructions: "steps/s1.md"}}
-	writeTOMLManifest(t, formulaDir, "plain-wf", steps, map[string]VariableDecl{
+	writeTOMLManifest(t, workflowDir, "plain-wf", steps, map[string]VariableDecl{
 		"issue": {Required: true},
 	})
-	os.WriteFile(filepath.Join(formulaDir, "steps", "s1.md"), []byte("test"), 0o644)
+	os.WriteFile(filepath.Join(workflowDir, "steps", "s1.md"), []byte("test"), 0o644)
 
-	_, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "plain-wf",
+	_, err := Manifest(ws, ss, ManifestOpts{
+		Name: "plain-wf",
 		World:       "test-world",
 		Variables:   map[string]string{"issue": "sol-test"},
 		CreatedBy:   "operator",
 	})
 	if err == nil {
-		t.Fatal("ManifestFormula() expected error for non-manifest formula")
+		t.Fatal("Manifest() expected error for non-manifest workflow")
 	}
 	if !strings.Contains(err.Error(), "not configured for manifestation") {
 		t.Errorf("error: got %q", err.Error())
 	}
 }
 
-func TestManifestFormulaDAGPhases(t *testing.T) {
+func TestManifestDAGPhases(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	solHome := os.Getenv("SOL_HOME")
@@ -1355,23 +1355,23 @@ func TestManifestFormulaDAGPhases(t *testing.T) {
 		{ID: "d", Title: "Step D", Instructions: "steps/d.md", Needs: []string{"b", "c"}},
 	}
 
-	formulaDir := filepath.Join(solHome, "formulas", "dag-manifest")
-	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
-	writeTOMLManifestWithFlag(t, formulaDir, "dag-manifest", dagSteps, map[string]VariableDecl{
+	workflowDir := filepath.Join(solHome, "workflows", "dag-manifest")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+	writeTOMLManifestWithFlag(t, workflowDir, "dag-manifest", dagSteps, map[string]VariableDecl{
 		"issue": {Required: true},
 	}, true)
 	for _, s := range dagSteps {
-		os.WriteFile(filepath.Join(formulaDir, s.Instructions), []byte("test"), 0o644)
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
 	}
 
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "dag-manifest",
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "dag-manifest",
 		World:       "test-world",
 		Variables:   map[string]string{"issue": "sol-dag-test"},
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	// Verify 4 children.
@@ -1401,21 +1401,21 @@ func TestManifestFormulaDAGPhases(t *testing.T) {
 	}
 }
 
-func TestManifestFormulaWithExistingParent(t *testing.T) {
+func TestManifestWithExistingParent(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	solHome := os.Getenv("SOL_HOME")
 
-	formulaDir := filepath.Join(solHome, "formulas", "parent-wf")
-	os.MkdirAll(filepath.Join(formulaDir, "steps"), 0o755)
+	workflowDir := filepath.Join(solHome, "workflows", "parent-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
 
 	steps := []StepDef{
 		{ID: "only-step", Title: "The only step", Instructions: "steps/only.md"},
 	}
-	writeTOMLManifestWithFlag(t, formulaDir, "parent-wf", steps, map[string]VariableDecl{
+	writeTOMLManifestWithFlag(t, workflowDir, "parent-wf", steps, map[string]VariableDecl{
 		"issue": {Required: true},
 	}, true)
-	os.WriteFile(filepath.Join(formulaDir, "steps", "only.md"), []byte("Do the thing."), 0o644)
+	os.WriteFile(filepath.Join(workflowDir, "steps", "only.md"), []byte("Do the thing."), 0o644)
 
 	// Create parent first.
 	parentID, err := ws.CreateWrit("Parent item", "Top-level work", "operator", 2, nil)
@@ -1423,15 +1423,15 @@ func TestManifestFormulaWithExistingParent(t *testing.T) {
 		t.Fatalf("CreateWrit() error: %v", err)
 	}
 
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "parent-wf",
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "parent-wf",
 		World:       "test-world",
 		ParentID:    parentID,
 		Variables:   map[string]string{"issue": "sol-test"},
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	// Verify parent is the provided one.
@@ -1489,7 +1489,7 @@ func writeTOMLManifestWithFlag(t *testing.T, dir, name string, steps []StepDef, 
 	if manifest {
 		f.WriteString("manifest = true\n")
 	}
-	f.WriteString("description = \"Test formula\"\n\n")
+	f.WriteString("description = \"Test workflow\"\n\n")
 
 	if len(vars) > 0 {
 		f.WriteString("[variables]\n")
@@ -1533,7 +1533,7 @@ func writeTOMLConvoyManifest(t *testing.T, dir, name string, legs []Leg, synth *
 
 	f.WriteString("name = \"" + name + "\"\n")
 	f.WriteString("type = \"convoy\"\n")
-	f.WriteString("description = \"Test convoy formula\"\n\n")
+	f.WriteString("description = \"Test convoy workflow\"\n\n")
 
 	for _, leg := range legs {
 		f.WriteString("[[legs]]\n")
@@ -1580,7 +1580,7 @@ func writeTOMLManifest(t *testing.T, dir, name string, steps []StepDef, vars map
 
 	f.WriteString("name = \"" + name + "\"\n")
 	f.WriteString("type = \"workflow\"\n")
-	f.WriteString("description = \"Test formula\"\n\n")
+	f.WriteString("description = \"Test workflow\"\n\n")
 
 	if len(vars) > 0 {
 		f.WriteString("[variables]\n")
@@ -1691,7 +1691,7 @@ func TestValidateConvoyNoLegs(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() expected error for convoy without legs")
 	}
-	if got := err.Error(); got != "convoy formula requires at least one [[legs]] entry" {
+	if got := err.Error(); got != "convoy workflow requires at least one [[legs]] entry" {
 		t.Errorf("error: got %q", got)
 	}
 }
@@ -1705,7 +1705,7 @@ func TestValidateConvoyNoSynthesis(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() expected error for convoy without synthesis")
 	}
-	if got := err.Error(); got != "convoy formula requires a [synthesis] section" {
+	if got := err.Error(); got != "convoy workflow requires a [synthesis] section" {
 		t.Errorf("error: got %q", got)
 	}
 }
@@ -1757,7 +1757,7 @@ func TestValidateConvoyWithSteps(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() expected error for convoy with steps")
 	}
-	if got := err.Error(); got != "convoy formula must not contain [[steps]] entries" {
+	if got := err.Error(); got != "convoy workflow must not contain [[steps]] entries" {
 		t.Errorf("error: got %q", got)
 	}
 }
@@ -1773,7 +1773,7 @@ func TestValidateConvoyWithTemplates(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() expected error for convoy with templates")
 	}
-	if got := err.Error(); got != "convoy formula must not contain [[template]] entries" {
+	if got := err.Error(); got != "convoy workflow must not contain [[template]] entries" {
 		t.Errorf("error: got %q", got)
 	}
 }
@@ -1785,24 +1785,24 @@ func TestShouldManifestConvoy(t *testing.T) {
 	}
 }
 
-func TestManifestFormulaConvoy(t *testing.T) {
+func TestManifestConvoy(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	solHome := os.Getenv("SOL_HOME")
 
-	// Create convoy formula.
-	formulaDir := filepath.Join(solHome, "formulas", "test-convoy")
-	os.MkdirAll(formulaDir, 0o755)
+	// Create convoy workflow.
+	workflowDir := filepath.Join(solHome, "workflows", "test-convoy")
+	os.MkdirAll(workflowDir, 0o755)
 
-	writeTOMLConvoyManifest(t, formulaDir, "test-convoy", testLegs(), testSynthesis())
+	writeTOMLConvoyManifest(t, workflowDir, "test-convoy", testLegs(), testSynthesis())
 
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "test-convoy",
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "test-convoy",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	// Verify result structure.
@@ -1915,11 +1915,11 @@ func TestManifestFormulaConvoy(t *testing.T) {
 	for _, ci := range items {
 		itemPhases[ci.WritID] = ci.Phase
 	}
-	for formulaID, writID := range result.ChildIDs {
-		expectedPhase := result.Phases[formulaID]
+	for childID, writID := range result.ChildIDs {
+		expectedPhase := result.Phases[childID]
 		gotPhase := itemPhases[writID]
 		if gotPhase != expectedPhase {
-			t.Errorf("caravan item phase for %q: got %d, want %d", formulaID, gotPhase, expectedPhase)
+			t.Errorf("caravan item phase for %q: got %d, want %d", childID, gotPhase, expectedPhase)
 		}
 	}
 }
@@ -1931,9 +1931,9 @@ func TestConvoyLifecycle(t *testing.T) {
 
 	solHome := os.Getenv("SOL_HOME")
 
-	// Create convoy formula.
-	formulaDir := filepath.Join(solHome, "formulas", "lifecycle-convoy")
-	os.MkdirAll(formulaDir, 0o755)
+	// Create convoy workflow.
+	workflowDir := filepath.Join(solHome, "workflows", "lifecycle-convoy")
+	os.MkdirAll(workflowDir, 0o755)
 
 	legs := []Leg{
 		{ID: "api", Title: "API Design", Description: "Design the API surface.", Focus: "REST endpoints"},
@@ -1945,16 +1945,16 @@ func TestConvoyLifecycle(t *testing.T) {
 		Description: "Combine all design dimensions into a unified plan.",
 		DependsOn:   []string{"api", "data", "ux"},
 	}
-	writeTOMLConvoyManifest(t, formulaDir, "lifecycle-convoy", legs, synth)
+	writeTOMLConvoyManifest(t, workflowDir, "lifecycle-convoy", legs, synth)
 
 	// --- Phase 1: Manifest the convoy ---
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "lifecycle-convoy",
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "lifecycle-convoy",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	// Verify 3 legs + 1 synthesis = 4 children.
@@ -2092,19 +2092,19 @@ func TestConvoyLifecycle(t *testing.T) {
 	}
 }
 
-func TestEnsureFormulaPlanReview(t *testing.T) {
+func TestResolvePlanReview(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	res, err := EnsureFormula("plan-review", "")
+	res, err := Resolve("plan-review", "")
 	if err != nil {
-		t.Fatalf("EnsureFormula(plan-review) error: %v", err)
+		t.Fatalf("Resolve(plan-review) error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(res.Path, "manifest.toml")); err != nil {
 		t.Errorf("manifest.toml not found after extraction: %v", err)
 	}
 
-	// Load and validate the extracted formula.
+	// Load and validate the extracted workflow.
 	m, err := LoadManifest(res.Path)
 	if err != nil {
 		t.Fatalf("LoadManifest() error: %v", err)
@@ -2144,19 +2144,19 @@ func TestEnsureFormulaPlanReview(t *testing.T) {
 	}
 }
 
-func TestEnsureFormulaCodeReview(t *testing.T) {
+func TestResolveCodeReview(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	res, err := EnsureFormula("code-review", "")
+	res, err := Resolve("code-review", "")
 	if err != nil {
-		t.Fatalf("EnsureFormula(code-review) error: %v", err)
+		t.Fatalf("Resolve(code-review) error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(res.Path, "manifest.toml")); err != nil {
 		t.Errorf("manifest.toml not found after extraction: %v", err)
 	}
 
-	// Load and validate the extracted formula.
+	// Load and validate the extracted workflow.
 	m, err := LoadManifest(res.Path)
 	if err != nil {
 		t.Fatalf("LoadManifest() error: %v", err)
@@ -2175,19 +2175,19 @@ func TestEnsureFormulaCodeReview(t *testing.T) {
 	}
 }
 
-func TestEnsureFormulaGuidedDesign(t *testing.T) {
+func TestResolveGuidedDesign(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	res, err := EnsureFormula("guided-design", "")
+	res, err := Resolve("guided-design", "")
 	if err != nil {
-		t.Fatalf("EnsureFormula(guided-design) error: %v", err)
+		t.Fatalf("Resolve(guided-design) error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(res.Path, "manifest.toml")); err != nil {
 		t.Errorf("manifest.toml not found after extraction: %v", err)
 	}
 
-	// Load and validate the extracted formula.
+	// Load and validate the extracted workflow.
 	m, err := LoadManifest(res.Path)
 	if err != nil {
 		t.Fatalf("LoadManifest() error: %v", err)
@@ -2229,13 +2229,13 @@ func TestEnsureFormulaGuidedDesign(t *testing.T) {
 	}
 }
 
-func TestEnsureFormulaThoroughWork(t *testing.T) {
+func TestResolveThoroughWork(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	res, err := EnsureFormula("thorough-work", "")
+	res, err := Resolve("thorough-work", "")
 	if err != nil {
-		t.Fatalf("EnsureFormula(thorough-work) error: %v", err)
+		t.Fatalf("Resolve(thorough-work) error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(res.Path, "manifest.toml")); err != nil {
 		t.Errorf("manifest.toml not found: %v", err)
@@ -2288,13 +2288,13 @@ func TestEnsureFormulaThoroughWork(t *testing.T) {
 	}
 }
 
-func TestListFormulasEmbeddedOnly(t *testing.T) {
+func TestListEmbeddedOnly(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	entries, err := ListFormulas("")
+	entries, err := List("")
 	if err != nil {
-		t.Fatalf("ListFormulas error: %v", err)
+		t.Fatalf("List error: %v", err)
 	}
 
 	// Should find all 8 known defaults.
@@ -2320,20 +2320,20 @@ func TestListFormulasEmbeddedOnly(t *testing.T) {
 	}
 }
 
-func TestListFormulasUserTier(t *testing.T) {
+func TestListUserTier(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	// Create a custom user formula.
-	userDir := filepath.Join(solHome, "formulas", "my-custom")
+	// Create a custom user workflow.
+	userDir := filepath.Join(solHome, "workflows", "my-custom")
 	os.MkdirAll(userDir, 0o755)
 	os.WriteFile(filepath.Join(userDir, "manifest.toml"), []byte(
-		"name = \"my-custom\"\ntype = \"workflow\"\ndescription = \"Custom formula\"\n",
+		"name = \"my-custom\"\ntype = \"workflow\"\ndescription = \"Custom workflow\"\n",
 	), 0o644)
 
-	entries, err := ListFormulas("")
+	entries, err := List("")
 	if err != nil {
-		t.Fatalf("ListFormulas error: %v", err)
+		t.Fatalf("List error: %v", err)
 	}
 
 	// Should have all embedded + 1 custom.
@@ -2349,8 +2349,8 @@ func TestListFormulasUserTier(t *testing.T) {
 			if e.Tier != TierUser {
 				t.Errorf("my-custom tier: got %q, want %q", e.Tier, TierUser)
 			}
-			if e.Description != "Custom formula" {
-				t.Errorf("my-custom description: got %q, want %q", e.Description, "Custom formula")
+			if e.Description != "Custom workflow" {
+				t.Errorf("my-custom description: got %q, want %q", e.Description, "Custom workflow")
 			}
 			if e.Type != "workflow" {
 				t.Errorf("my-custom type: got %q, want %q", e.Type, "workflow")
@@ -2362,22 +2362,22 @@ func TestListFormulasUserTier(t *testing.T) {
 	}
 }
 
-func TestListFormulasProjectTier(t *testing.T) {
+func TestListProjectTier(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
 	repoDir := t.TempDir()
 
-	// Create a project-level formula.
+	// Create a project-level workflow.
 	projectDir := filepath.Join(repoDir, ".sol", "workflows", "deploy")
 	os.MkdirAll(projectDir, 0o755)
 	os.WriteFile(filepath.Join(projectDir, "manifest.toml"), []byte(
 		"name = \"deploy\"\ntype = \"workflow\"\ndescription = \"Deploy workflow\"\n",
 	), 0o644)
 
-	entries, err := ListFormulas(repoDir)
+	entries, err := List(repoDir)
 	if err != nil {
-		t.Fatalf("ListFormulas error: %v", err)
+		t.Fatalf("List error: %v", err)
 	}
 
 	// Should have all embedded + 1 project.
@@ -2399,26 +2399,26 @@ func TestListFormulasProjectTier(t *testing.T) {
 	}
 }
 
-func TestListFormulasShadowing(t *testing.T) {
+func TestListShadowing(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
 	repoDir := t.TempDir()
 
-	// Create a project-level formula that shadows an embedded one.
+	// Create a project-level workflow that shadows an embedded one.
 	projectDir := filepath.Join(repoDir, ".sol", "workflows", "default-work")
 	os.MkdirAll(projectDir, 0o755)
 	os.WriteFile(filepath.Join(projectDir, "manifest.toml"), []byte(
 		"name = \"default-work\"\ntype = \"workflow\"\ndescription = \"Project override\"\n",
 	), 0o644)
 
-	entries, err := ListFormulas(repoDir)
+	entries, err := List(repoDir)
 	if err != nil {
-		t.Fatalf("ListFormulas error: %v", err)
+		t.Fatalf("List error: %v", err)
 	}
 
 	// Count default-work entries.
-	var projectEntry, embeddedEntry *FormulaEntry
+	var projectEntry, embeddedEntry *Entry
 	for i := range entries {
 		if entries[i].Name == "default-work" {
 			if entries[i].Tier == TierProject {
@@ -2444,23 +2444,23 @@ func TestListFormulasShadowing(t *testing.T) {
 	}
 }
 
-func TestListFormulasUserShadowsEmbedded(t *testing.T) {
+func TestListUserShadowsEmbedded(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	// Extract a default to user tier (simulates EnsureFormula extraction).
-	_, err := EnsureFormula("default-work", "")
+	// Extract a default to user tier (simulates Resolve extraction).
+	_, err := Resolve("default-work", "")
 	if err != nil {
-		t.Fatalf("EnsureFormula error: %v", err)
+		t.Fatalf("Resolve error: %v", err)
 	}
 
-	entries, err := ListFormulas("")
+	entries, err := List("")
 	if err != nil {
-		t.Fatalf("ListFormulas error: %v", err)
+		t.Fatalf("List error: %v", err)
 	}
 
 	// default-work should appear twice: user (winning) and embedded (shadowed).
-	var userEntry, embeddedEntry *FormulaEntry
+	var userEntry, embeddedEntry *Entry
 	for i := range entries {
 		if entries[i].Name == "default-work" {
 			if entries[i].Tier == TierUser {
@@ -2486,14 +2486,14 @@ func TestListFormulasUserShadowsEmbedded(t *testing.T) {
 	}
 }
 
-func TestManifestFormulaConvoyWithKind(t *testing.T) {
+func TestManifestConvoyWithKind(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	solHome := os.Getenv("SOL_HOME")
 
-	// Create convoy formula with analysis kind legs.
-	formulaDir := filepath.Join(solHome, "formulas", "test-convoy-kind")
-	os.MkdirAll(formulaDir, 0o755)
+	// Create convoy workflow with analysis kind legs.
+	workflowDir := filepath.Join(solHome, "workflows", "test-convoy-kind")
+	os.MkdirAll(workflowDir, 0o755)
 
 	legs := []Leg{
 		{ID: "reqs", Title: "Requirements", Description: "Gather requirements.", Kind: "analysis"},
@@ -2504,15 +2504,15 @@ func TestManifestFormulaConvoyWithKind(t *testing.T) {
 		Description: "Combine results.",
 		DependsOn:   []string{"reqs", "impl"},
 	}
-	writeTOMLConvoyManifest(t, formulaDir, "test-convoy-kind", legs, synth)
+	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-kind", legs, synth)
 
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "test-convoy-kind",
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "test-convoy-kind",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	// Verify analysis leg has kind=analysis.
@@ -2546,14 +2546,14 @@ func TestManifestFormulaConvoyWithKind(t *testing.T) {
 	}
 }
 
-func TestManifestFormulaConvoyKindDefaultsToCode(t *testing.T) {
+func TestManifestConvoyKindDefaultsToCode(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	solHome := os.Getenv("SOL_HOME")
 
-	// Create convoy formula with no kind specified (should default to code).
-	formulaDir := filepath.Join(solHome, "formulas", "test-convoy-default")
-	os.MkdirAll(formulaDir, 0o755)
+	// Create convoy workflow with no kind specified (should default to code).
+	workflowDir := filepath.Join(solHome, "workflows", "test-convoy-default")
+	os.MkdirAll(workflowDir, 0o755)
 
 	legs := []Leg{
 		{ID: "leg1", Title: "Leg One", Description: "First leg."},
@@ -2563,15 +2563,15 @@ func TestManifestFormulaConvoyKindDefaultsToCode(t *testing.T) {
 		Description: "Wrap up.",
 		DependsOn:   []string{"leg1"},
 	}
-	writeTOMLConvoyManifest(t, formulaDir, "test-convoy-default", legs, synth)
+	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-default", legs, synth)
 
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "test-convoy-default",
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "test-convoy-default",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	legID := result.ChildIDs["leg1"]
@@ -2584,15 +2584,15 @@ func TestManifestFormulaConvoyKindDefaultsToCode(t *testing.T) {
 	}
 }
 
-func TestManifestFormulaConvoySynthesisKind(t *testing.T) {
+func TestManifestConvoySynthesisKind(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	solHome := os.Getenv("SOL_HOME")
 
 	// Test 1: Synthesis with explicit kind = "analysis".
 	t.Run("analysis", func(t *testing.T) {
-		formulaDir := filepath.Join(solHome, "formulas", "test-synth-analysis")
-		os.MkdirAll(formulaDir, 0o755)
+		workflowDir := filepath.Join(solHome, "workflows", "test-synth-analysis")
+		os.MkdirAll(workflowDir, 0o755)
 
 		legs := []Leg{
 			{ID: "review", Title: "Review", Description: "Review the code.", Kind: "analysis"},
@@ -2603,15 +2603,15 @@ func TestManifestFormulaConvoySynthesisKind(t *testing.T) {
 			DependsOn:   []string{"review"},
 			Kind:        "analysis",
 		}
-		writeTOMLConvoyManifest(t, formulaDir, "test-synth-analysis", legs, synth)
+		writeTOMLConvoyManifest(t, workflowDir, "test-synth-analysis", legs, synth)
 
-		result, err := ManifestFormula(ws, ss, ManifestOpts{
-			FormulaName: "test-synth-analysis",
+		result, err := Manifest(ws, ss, ManifestOpts{
+			Name: "test-synth-analysis",
 			World:       "test-world",
 			CreatedBy:   "operator",
 		})
 		if err != nil {
-			t.Fatalf("ManifestFormula() error: %v", err)
+			t.Fatalf("Manifest() error: %v", err)
 		}
 
 		synthID := result.ChildIDs["synthesis"]
@@ -2626,8 +2626,8 @@ func TestManifestFormulaConvoySynthesisKind(t *testing.T) {
 
 	// Test 2: Synthesis with no kind defaults to "code".
 	t.Run("default_code", func(t *testing.T) {
-		formulaDir := filepath.Join(solHome, "formulas", "test-synth-default")
-		os.MkdirAll(formulaDir, 0o755)
+		workflowDir := filepath.Join(solHome, "workflows", "test-synth-default")
+		os.MkdirAll(workflowDir, 0o755)
 
 		legs := []Leg{
 			{ID: "build", Title: "Build", Description: "Build the thing."},
@@ -2637,15 +2637,15 @@ func TestManifestFormulaConvoySynthesisKind(t *testing.T) {
 			Description: "Finalize the build.",
 			DependsOn:   []string{"build"},
 		}
-		writeTOMLConvoyManifest(t, formulaDir, "test-synth-default", legs, synth)
+		writeTOMLConvoyManifest(t, workflowDir, "test-synth-default", legs, synth)
 
-		result, err := ManifestFormula(ws, ss, ManifestOpts{
-			FormulaName: "test-synth-default",
+		result, err := Manifest(ws, ss, ManifestOpts{
+			Name: "test-synth-default",
 			World:       "test-world",
 			CreatedBy:   "operator",
 		})
 		if err != nil {
-			t.Fatalf("ManifestFormula() error: %v", err)
+			t.Fatalf("Manifest() error: %v", err)
 		}
 
 		synthID := result.ChildIDs["synthesis"]
@@ -2665,8 +2665,8 @@ func TestCaravanPhaseGatingWithAnalysisWrit(t *testing.T) {
 	solHome := os.Getenv("SOL_HOME")
 
 	// Create convoy: phase 0 = analysis writ, phase 1 = code writ.
-	formulaDir := filepath.Join(solHome, "formulas", "test-phase-gate")
-	os.MkdirAll(formulaDir, 0o755)
+	workflowDir := filepath.Join(solHome, "workflows", "test-phase-gate")
+	os.MkdirAll(workflowDir, 0o755)
 
 	legs := []Leg{
 		{ID: "analyze", Title: "Analysis Phase", Description: "Analyze.", Kind: "analysis"},
@@ -2676,15 +2676,15 @@ func TestCaravanPhaseGatingWithAnalysisWrit(t *testing.T) {
 		Description: "Build based on analysis.",
 		DependsOn:   []string{"analyze"},
 	}
-	writeTOMLConvoyManifest(t, formulaDir, "test-phase-gate", legs, synth)
+	writeTOMLConvoyManifest(t, workflowDir, "test-phase-gate", legs, synth)
 
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "test-phase-gate",
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "test-phase-gate",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	analyzeID := result.ChildIDs["analyze"]
@@ -2719,14 +2719,14 @@ func TestCaravanPhaseGatingWithAnalysisWrit(t *testing.T) {
 	}
 }
 
-func TestManifestFormulaConvoyTargetSubstitution(t *testing.T) {
+func TestManifestConvoyTargetSubstitution(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	solHome := os.Getenv("SOL_HOME")
 
-	// Create convoy formula with {target.*} placeholders in leg titles/descriptions.
-	formulaDir := filepath.Join(solHome, "formulas", "test-convoy-target")
-	os.MkdirAll(formulaDir, 0o755)
+	// Create convoy workflow with {target.*} placeholders in leg titles/descriptions.
+	workflowDir := filepath.Join(solHome, "workflows", "test-convoy-target")
+	os.MkdirAll(workflowDir, 0o755)
 
 	legs := []Leg{
 		{ID: "review", Title: "Review: {target.title}", Description: "Review the changes for {target.title} ({target.id})."},
@@ -2737,7 +2737,7 @@ func TestManifestFormulaConvoyTargetSubstitution(t *testing.T) {
 		Description: "Combine review and test results.",
 		DependsOn:   []string{"review", "test"},
 	}
-	writeTOMLConvoyManifest(t, formulaDir, "test-convoy-target", legs, synth)
+	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-target", legs, synth)
 
 	// Create a target writ to act as the parent.
 	targetID, err := ws.CreateWrit("Add login page", "Implement the OAuth login flow", "operator", 2, nil)
@@ -2745,14 +2745,14 @@ func TestManifestFormulaConvoyTargetSubstitution(t *testing.T) {
 		t.Fatalf("CreateWrit() error: %v", err)
 	}
 
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "test-convoy-target",
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "test-convoy-target",
 		World:       "test-world",
 		ParentID:    targetID,
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	// Verify target substitution in leg titles.
@@ -2780,14 +2780,14 @@ func TestManifestFormulaConvoyTargetSubstitution(t *testing.T) {
 	}
 }
 
-func TestManifestFormulaConvoyAnalysisSynthesisDescription(t *testing.T) {
+func TestManifestConvoyAnalysisSynthesisDescription(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	solHome := os.Getenv("SOL_HOME")
 
 	// Test 1: All-analysis legs — synthesis should reference output directories.
-	formulaDir := filepath.Join(solHome, "formulas", "test-convoy-analysis")
-	os.MkdirAll(formulaDir, 0o755)
+	workflowDir := filepath.Join(solHome, "workflows", "test-convoy-analysis")
+	os.MkdirAll(workflowDir, 0o755)
 
 	legs := []Leg{
 		{ID: "explore-api", Title: "API Exploration", Description: "Explore the API surface.", Kind: "analysis"},
@@ -2798,15 +2798,15 @@ func TestManifestFormulaConvoyAnalysisSynthesisDescription(t *testing.T) {
 		Description: "Combine findings.",
 		DependsOn:   []string{"explore-api", "explore-data"},
 	}
-	writeTOMLConvoyManifest(t, formulaDir, "test-convoy-analysis", legs, synth)
+	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-analysis", legs, synth)
 
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "test-convoy-analysis",
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "test-convoy-analysis",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	synthItem, err := ws.GetWrit(result.ChildIDs["synthesis"])
@@ -2832,8 +2832,8 @@ func TestManifestFormulaConvoyAnalysisSynthesisDescription(t *testing.T) {
 	}
 
 	// Test 2: Mixed legs — synthesis should mention both branches and output dirs.
-	formulaDir2 := filepath.Join(solHome, "formulas", "test-convoy-mixed")
-	os.MkdirAll(formulaDir2, 0o755)
+	workflowDir2 := filepath.Join(solHome, "workflows", "test-convoy-mixed")
+	os.MkdirAll(workflowDir2, 0o755)
 
 	mixedLegs := []Leg{
 		{ID: "reqs", Title: "Requirements", Description: "Gather requirements.", Kind: "analysis"},
@@ -2844,15 +2844,15 @@ func TestManifestFormulaConvoyAnalysisSynthesisDescription(t *testing.T) {
 		Description: "Combine results.",
 		DependsOn:   []string{"reqs", "impl"},
 	}
-	writeTOMLConvoyManifest(t, formulaDir2, "test-convoy-mixed", mixedLegs, mixedSynth)
+	writeTOMLConvoyManifest(t, workflowDir2, "test-convoy-mixed", mixedLegs, mixedSynth)
 
-	result2, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "test-convoy-mixed",
+	result2, err := Manifest(ws, ss, ManifestOpts{
+		Name: "test-convoy-mixed",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() mixed error: %v", err)
+		t.Fatalf("Manifest() mixed error: %v", err)
 	}
 
 	synthItem2, err := ws.GetWrit(result2.ChildIDs["synthesis"])
@@ -2884,9 +2884,9 @@ func TestMixedKindConvoyEndToEnd(t *testing.T) {
 
 	solHome := os.Getenv("SOL_HOME")
 
-	// Create convoy formula with mixed code + analysis legs.
-	formulaDir := filepath.Join(solHome, "formulas", "test-e2e-mixed")
-	os.MkdirAll(formulaDir, 0o755)
+	// Create convoy workflow with mixed code + analysis legs.
+	workflowDir := filepath.Join(solHome, "workflows", "test-e2e-mixed")
+	os.MkdirAll(workflowDir, 0o755)
 
 	legs := []Leg{
 		{ID: "code-impl", Title: "Implementation", Description: "Build the feature.", Kind: "code"},
@@ -2899,16 +2899,16 @@ func TestMixedKindConvoyEndToEnd(t *testing.T) {
 		Description: "Integrate code changes with review findings.",
 		DependsOn:   []string{"code-impl", "code-tests", "design-review", "risk-assessment"},
 	}
-	writeTOMLConvoyManifest(t, formulaDir, "test-e2e-mixed", legs, synth)
+	writeTOMLConvoyManifest(t, workflowDir, "test-e2e-mixed", legs, synth)
 
-	// Manifest the formula into writs + caravan.
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "test-e2e-mixed",
+	// Manifest the workflow into writs + caravan.
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "test-e2e-mixed",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	// --- Verify writ kinds are set correctly ---
@@ -3072,17 +3072,17 @@ func TestMixedKindConvoyEndToEnd(t *testing.T) {
 	}
 }
 
-// --- Code-Review Convoy Formula Integration Test ---
+// --- Code-Review Convoy Workflow Integration Test ---
 //
-// This test exercises the rebuilt code-review embedded formula end-to-end:
+// This test exercises the rebuilt code-review embedded workflow end-to-end:
 // 1. Creates a target writ (the code being reviewed).
-// 2. Manifests the code-review formula against the target.
+// 2. Manifests the code-review workflow against the target.
 // 3. Verifies legs are created with kind=analysis and target-substituted titles.
 // 4. Simulates resolve of analysis legs (close directly, write output files).
 // 5. Verifies synthesis unblocks after leg writs close.
 // 6. Verifies synthesis agent can read leg output directories.
 
-func TestCodeReviewConvoyFormula(t *testing.T) {
+func TestCodeReviewConvoyWorkflow(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	// --- Setup: create the target writ (the code being reviewed) ---
@@ -3095,15 +3095,15 @@ func TestCodeReviewConvoyFormula(t *testing.T) {
 		t.Fatalf("CreateWrit(target) error: %v", err)
 	}
 
-	// --- Manifest the code-review formula against the target ---
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "code-review",
+	// --- Manifest the code-review workflow against the target ---
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "code-review",
 		World:       "test-world",
 		ParentID:    targetID,
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	// Verify two legs + one synthesis = three children.
@@ -3277,7 +3277,7 @@ func TestCodeReviewConvoyFormula(t *testing.T) {
 	}
 }
 
-func TestCodeReviewConvoyFormulaSynthesisTargetSubstitution(t *testing.T) {
+func TestCodeReviewConvoyWorkflowSynthesisTargetSubstitution(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	// Create target writ.
@@ -3286,40 +3286,40 @@ func TestCodeReviewConvoyFormulaSynthesisTargetSubstitution(t *testing.T) {
 		t.Fatalf("CreateWrit error: %v", err)
 	}
 
-	result, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "code-review",
+	result, err := Manifest(ws, ss, ManifestOpts{
+		Name: "code-review",
 		World:       "test-world",
 		ParentID:    targetID,
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("ManifestFormula() error: %v", err)
+		t.Fatalf("Manifest() error: %v", err)
 	}
 
 	// All titles should contain the target title.
-	for formulaID, writID := range result.ChildIDs {
+	for childID, writID := range result.ChildIDs {
 		item, err := ws.GetWrit(writID)
 		if err != nil {
-			t.Fatalf("GetWrit(%s) error: %v", formulaID, err)
+			t.Fatalf("GetWrit(%s) error: %v", childID, err)
 		}
 		if !strings.Contains(item.Title, "Fix broken pagination") {
-			t.Errorf("%s title should contain target title, got: %q", formulaID, item.Title)
+			t.Errorf("%s title should contain target title, got: %q", childID, item.Title)
 		}
 	}
 }
 
-func TestCodeReviewConvoyFormulaRequiresTarget(t *testing.T) {
+func TestCodeReviewConvoyWorkflowRequiresTarget(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	// Manifesting code-review without a ParentID should fail because
 	// the manifest declares target as a required variable.
-	_, err := ManifestFormula(ws, ss, ManifestOpts{
-		FormulaName: "code-review",
+	_, err := Manifest(ws, ss, ManifestOpts{
+		Name: "code-review",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err == nil {
-		t.Fatal("ManifestFormula() should fail without a target (ParentID)")
+		t.Fatal("Manifest() should fail without a target (ParentID)")
 	}
 	if !strings.Contains(err.Error(), "required variable") {
 		t.Errorf("error should mention required variable, got: %v", err)

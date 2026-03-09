@@ -780,13 +780,13 @@ func TestPrimeWithoutTether(t *testing.T) {
 
 // --- Workflow prime tests ---
 
-// setupTestFormula creates a minimal formula in $SOL_HOME/formulas/{name}/.
-func setupTestFormula(t *testing.T, name string) {
+// setupTestWorkflow creates a minimal workflow in $SOL_HOME/workflows/{name}/.
+func setupTestWorkflow(t *testing.T, name string) {
 	t.Helper()
-	formulaDir := filepath.Join(config.Home(), "formulas", name)
-	stepsDir := filepath.Join(formulaDir, "steps")
+	workflowDir := filepath.Join(config.Home(), "workflows", name)
+	stepsDir := filepath.Join(workflowDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
-		t.Fatalf("mkdir formula: %v", err)
+		t.Fatalf("mkdir workflow: %v", err)
 	}
 
 	manifest := `name = "` + name + `"
@@ -815,7 +815,7 @@ title = "Verify the implementation"
 instructions = "steps/03-verify.md"
 needs = ["implement"]
 `
-	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 	for _, f := range []struct{ name, content string }{
@@ -823,7 +823,7 @@ needs = ["implement"]
 		{"steps/02-impl.md", "# Implement\nWrite code for {{issue}}."},
 		{"steps/03-verify.md", "# Verify\nRun tests for {{issue}}."},
 	} {
-		if err := os.WriteFile(filepath.Join(formulaDir, f.name), []byte(f.content), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(workflowDir, f.name), []byte(f.content), 0o644); err != nil {
 			t.Fatalf("write %s: %v", f.name, err)
 		}
 	}
@@ -832,7 +832,7 @@ needs = ["implement"]
 // advanceWorkflowStep simulates completing the current step by writing state/step JSON directly.
 func advanceWorkflowStep(t *testing.T, world, agentName, role string) {
 	t.Helper()
-	wfDir := workflow.WorkflowDir(world, agentName, role)
+	wfDir := workflow.InstanceDir(world, agentName, role)
 
 	// Read current state.
 	stateData, err := os.ReadFile(filepath.Join(wfDir, "state.json"))
@@ -917,8 +917,8 @@ func TestPrimeWithWorkflowFullChecklist(t *testing.T) {
 		t.Fatalf("write tether: %v", err)
 	}
 
-	// Create formula and instantiate workflow.
-	setupTestFormula(t, "test-work")
+	// Create workflow and instantiate it.
+	setupTestWorkflow(t, "test-work")
 	if _, _, err := workflow.Instantiate("ember", "Toast", "agent", "test-work", map[string]string{
 		"issue": itemID,
 	}); err != nil {
@@ -991,7 +991,7 @@ func TestPrimeWithWorkflowFirstStep(t *testing.T) {
 		t.Fatalf("write tether: %v", err)
 	}
 
-	setupTestFormula(t, "test-work")
+	setupTestWorkflow(t, "test-work")
 	if _, _, err := workflow.Instantiate("ember", "Toast", "agent", "test-work", map[string]string{
 		"issue": itemID,
 	}); err != nil {
