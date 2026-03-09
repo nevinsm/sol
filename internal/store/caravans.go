@@ -281,6 +281,29 @@ func (s *Store) GetCaravanItemsForWrit(writID string) ([]CaravanItem, error) {
 	return items, nil
 }
 
+// DeleteCaravan permanently removes a caravan and its associated items and
+// dependencies. Only drydocked or closed caravans can be deleted.
+func (s *Store) DeleteCaravan(id string) error {
+	// Delete caravan items.
+	if _, err := s.db.Exec(`DELETE FROM caravan_items WHERE caravan_id = ?`, id); err != nil {
+		return fmt.Errorf("failed to delete caravan items for %q: %w", id, err)
+	}
+
+	// Delete caravan dependencies (both directions).
+	if _, err := s.db.Exec(
+		`DELETE FROM caravan_dependencies WHERE from_id = ? OR to_id = ?`, id, id,
+	); err != nil {
+		return fmt.Errorf("failed to delete caravan dependencies for %q: %w", id, err)
+	}
+
+	// Delete the caravan itself.
+	result, err := s.db.Exec(`DELETE FROM caravans WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete caravan %q: %w", id, err)
+	}
+	return checkRowsAffected(result, "caravan", id)
+}
+
 // CheckCaravanReadiness returns the status of all items in a caravan.
 // This requires opening each world's database to check writ status
 // and dependency satisfaction.

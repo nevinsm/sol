@@ -101,10 +101,12 @@ Manage caravans (grouped writ batches)
 | `sol caravan close` | Close a completed caravan |
 | `sol caravan commission` | Commission a caravan (drydock → open) |
 | `sol caravan create` | Create a caravan with optional initial items |
+| `sol caravan delete` | Delete a drydocked or closed caravan entirely |
 | `sol caravan dep` | Manage caravan-level dependencies |
 | `sol caravan drydock` | Return a caravan to drydock (open → drydock) |
 | `sol caravan launch` | Dispatch ready items in a caravan |
 | `sol caravan list` | List caravans with optional status filtering |
+| `sol caravan remove` | Remove an item from a caravan |
 | `sol caravan reopen` | Reopen a closed caravan (closed → drydock) |
 | `sol caravan set-phase` | Update the phase of items in a caravan |
 | `sol caravan status` | Show caravan status |
@@ -147,6 +149,12 @@ Close a caravan by ID, or use --auto to close all caravans where every item is m
 | `--phase` | int | 0 | phase for items (default 0) |
 | `--world` | string | "" | world name |
 
+#### `sol caravan delete`
+
+Delete a drydocked or closed caravan entirely, including all items and dependencies.
+
+**Usage:** `sol caravan delete <caravan-id>`
+
 #### `sol caravan dep`
 
 **Subcommands:**
@@ -184,6 +192,12 @@ List all caravans. Shows active (non-closed) caravans by default. Use --all for 
 | `--all` | bool | false | include closed caravans |
 | `--json` | bool | false | output as JSON |
 | `--status` | string | "" | filter by status (open, ready, closed) |
+
+#### `sol caravan remove`
+
+Remove an item from a caravan. Cannot remove from closed caravans.
+
+**Usage:** `sol caravan remove <caravan-id> <item-id>`
 
 #### `sol caravan set-phase`
 

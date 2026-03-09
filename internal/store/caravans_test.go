@@ -803,6 +803,73 @@ func TestCaravanPhaseMixedWorlds(t *testing.T) {
 	}
 }
 
+func TestDeleteCaravan(t *testing.T) {
+	s := setupSphere(t)
+
+	// Create a caravan with items and a dependency.
+	id1, _ := s.CreateCaravan("to-delete", "operator")
+	id2, _ := s.CreateCaravan("depends-on-deleted", "operator")
+	s.CreateCaravanItem(id1, "sol-aaaa000000000001", "testworld", 0)
+	s.CreateCaravanItem(id1, "sol-aaaa000000000002", "testworld", 1)
+	s.AddCaravanDependency(id2, id1) // id2 depends on id1
+
+	// Delete the caravan (drydock status).
+	if err := s.DeleteCaravan(id1); err != nil {
+		t.Fatalf("DeleteCaravan() error: %v", err)
+	}
+
+	// Verify caravan is gone.
+	_, err := s.GetCaravan(id1)
+	if err == nil {
+		t.Fatal("expected error for deleted caravan")
+	}
+
+	// Verify items are gone.
+	items, err := s.ListCaravanItems(id1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected 0 items after delete, got %d", len(items))
+	}
+
+	// Verify dependency is gone.
+	deps, err := s.GetCaravanDependencies(id2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deps) != 0 {
+		t.Fatalf("expected 0 dependencies after delete, got %d", len(deps))
+	}
+}
+
+func TestDeleteCaravanNotFound(t *testing.T) {
+	s := setupSphere(t)
+
+	err := s.DeleteCaravan("car-0000000000000000")
+	if err == nil {
+		t.Fatal("expected error for nonexistent caravan")
+	}
+}
+
+func TestDeleteCaravanClosed(t *testing.T) {
+	s := setupSphere(t)
+
+	id, _ := s.CreateCaravan("closed-delete", "operator")
+	s.CreateCaravanItem(id, "sol-aaaa000000000001", "testworld", 0)
+	s.UpdateCaravanStatus(id, "closed")
+
+	// Should succeed — closed caravans can be deleted.
+	if err := s.DeleteCaravan(id); err != nil {
+		t.Fatalf("DeleteCaravan() error: %v", err)
+	}
+
+	_, err := s.GetCaravan(id)
+	if err == nil {
+		t.Fatal("expected error for deleted caravan")
+	}
+}
+
 func TestUpdateCaravanItemPhase(t *testing.T) {
 	s := setupSphere(t)
 

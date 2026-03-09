@@ -833,6 +833,86 @@ dispatched writ.`,
 	},
 }
 
+// --- sol caravan remove ---
+
+var caravanRemoveCmd = &cobra.Command{
+	Use:          "remove <caravan-id> <item-id>",
+	Short:        "Remove an item from a caravan",
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
+		itemID := args[1]
+		if err := config.ValidateWritID(itemID); err != nil {
+			return err
+		}
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return fmt.Errorf("failed to open sphere store: %w", err)
+		}
+		defer sphereStore.Close()
+
+		// Verify caravan exists.
+		caravan, err := sphereStore.GetCaravan(caravanID)
+		if err != nil {
+			return fmt.Errorf("failed to get caravan: %w", err)
+		}
+
+		// Guard against removing from closed caravans.
+		if caravan.Status == "closed" {
+			return fmt.Errorf("caravan %s is closed — reopen it first with: sol caravan reopen %s", caravanID, caravanID)
+		}
+
+		if err := sphereStore.RemoveCaravanItem(caravanID, itemID); err != nil {
+			return fmt.Errorf("failed to remove item %s from caravan: %w", itemID, err)
+		}
+
+		fmt.Printf("Removed %s from caravan %s (%q)\n", itemID, caravanID, caravan.Name)
+		return nil
+	},
+}
+
+// --- sol caravan delete ---
+
+var caravanDeleteCmd = &cobra.Command{
+	Use:          "delete <caravan-id>",
+	Short:        "Delete a drydocked or closed caravan entirely",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return fmt.Errorf("failed to open sphere store: %w", err)
+		}
+		defer sphereStore.Close()
+
+		caravan, err := sphereStore.GetCaravan(caravanID)
+		if err != nil {
+			return fmt.Errorf("failed to get caravan: %w", err)
+		}
+
+		if caravan.Status != "drydock" && caravan.Status != "closed" {
+			return fmt.Errorf("caravan %s is %q — only drydocked or closed caravans can be deleted", caravanID, caravan.Status)
+		}
+
+		if err := sphereStore.DeleteCaravan(caravanID); err != nil {
+			return fmt.Errorf("failed to delete caravan: %w", err)
+		}
+
+		fmt.Printf("Deleted caravan %s: %q\n", caravanID, caravan.Name)
+		return nil
+	},
+}
+
 // --- sol caravan set-phase ---
 
 var caravanSetPhaseCmd = &cobra.Command{
@@ -1095,6 +1175,8 @@ func init() {
 	caravanCmd.AddCommand(caravanLaunchCmd)
 	caravanCmd.AddCommand(caravanCloseCmd)
 	caravanCmd.AddCommand(caravanSetPhaseCmd)
+	caravanCmd.AddCommand(caravanRemoveCmd)
+	caravanCmd.AddCommand(caravanDeleteCmd)
 	caravanCmd.AddCommand(caravanCommissionCmd)
 	caravanCmd.AddCommand(caravanDrydockCmd)
 	caravanCmd.AddCommand(caravanReopenCmd)
