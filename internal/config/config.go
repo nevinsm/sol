@@ -334,24 +334,9 @@ func EnsureClaudeConfigDir(worldDir, role, name, account string) (string, error)
 	seedClaudeSettings(dir)
 
 	if account != "" {
-		// Named account: write access-token-only credentials.
-		srcCreds := filepath.Join(AccountDir(account), ".credentials.json")
-		if err := writeAccessTokenOnlyCreds(srcCreds, dir); err != nil {
-			fmt.Fprintf(os.Stderr, "config: failed to write access-token-only credentials for %s: %v\n", name, err)
-		}
-
-		// Write .account metadata file for broker discovery and account resolution.
-		accountFile := filepath.Join(dir, ".account")
-		_ = os.WriteFile(accountFile, []byte(account+"\n"), 0o644)
-
-		// Clean up any legacy symlink.
-		dstCreds := filepath.Join(dir, ".credentials.json")
-		if target, err := os.Readlink(dstCreds); err == nil && target != "" {
-			// It's a symlink — remove it so we can write a regular file.
-			// The writeAccessTokenOnlyCreds above may have failed because
-			// the symlink existed. Remove and retry.
-			_ = os.Remove(dstCreds)
-			_ = writeAccessTokenOnlyCreds(srcCreds, dir)
+		// Named account: provision access-token-only credentials.
+		if err := ProvisionCredentials(dir, account); err != nil {
+			fmt.Fprintf(os.Stderr, "config: failed to provision credentials for %s: %v\n", name, err)
 		}
 	} else {
 		// Legacy fallback: symlink to ~/.claude/.credentials.json.
@@ -479,6 +464,28 @@ func seedMinimalOnboardingState(configDir string) error {
 		return fmt.Errorf("failed to marshal agent .claude.json: %w", err)
 	}
 	return os.WriteFile(destJSON, out, 0o600)
+}
+
+// ProvisionCredentials writes access-token-only credentials from the named
+// account into the given config directory. Used by EnsureClaudeConfigDir for
+// agent startup and by sol config claude for operator sessions.
+func ProvisionCredentials(configDir, accountHandle string) error {
+	srcCreds := filepath.Join(AccountDir(accountHandle), ".credentials.json")
+	if err := writeAccessTokenOnlyCreds(srcCreds, configDir); err != nil {
+		return fmt.Errorf("failed to write credentials for account %q: %w", accountHandle, err)
+	}
+
+	// Write .account metadata file for broker discovery.
+	accountFile := filepath.Join(configDir, ".account")
+	_ = os.WriteFile(accountFile, []byte(accountHandle+"\n"), 0o644)
+
+	// Clean up any legacy symlink.
+	dstCreds := filepath.Join(configDir, ".credentials.json")
+	if target, err := os.Readlink(dstCreds); err == nil && target != "" {
+		_ = os.Remove(dstCreds)
+		_ = writeAccessTokenOnlyCreds(srcCreds, configDir)
+	}
+	return nil
 }
 
 // writeAccessTokenOnlyCreds reads source credentials, strips the refresh token,

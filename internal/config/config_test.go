@@ -439,22 +439,33 @@ func TestEnsureClaudeConfigDirCopiesSettings(t *testing.T) {
 	}
 }
 
-func TestEnsureClaudeConfigDirSkipsWithoutDefaults(t *testing.T) {
+func TestEnsureClaudeConfigDirSelfHealsDefaults(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	t.Setenv("HOME", t.TempDir())
 
-	// Do NOT seed defaults — .claude-defaults/ doesn't exist.
+	// Do NOT pre-seed defaults — .claude-defaults/ doesn't exist.
+	// EnsureClaudeConfigDir should self-heal by creating them.
 	worldDir := filepath.Join(solHome, "testworld")
 	dir, err := EnsureClaudeConfigDir(worldDir, "agent", "Toast", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// settings.json should NOT exist in agent config dir.
+	// settings.json should exist — self-healed from embedded defaults.
 	agentSettings := filepath.Join(dir, "settings.json")
-	if _, err := os.Stat(agentSettings); !os.IsNotExist(err) {
-		t.Error("settings.json should not exist when no defaults are configured")
+	data, err := os.ReadFile(agentSettings)
+	if err != nil {
+		t.Fatal("settings.json should exist after self-healing defaults")
+	}
+	if !strings.Contains(string(data), "statusLine") {
+		t.Error("settings.json should contain statusLine from embedded defaults")
+	}
+
+	// .claude-defaults/ should also now exist.
+	defaultsSettings := filepath.Join(solHome, ".claude-defaults", "settings.json")
+	if _, err := os.Stat(defaultsSettings); os.IsNotExist(err) {
+		t.Error(".claude-defaults/settings.json should have been created")
 	}
 }
 
