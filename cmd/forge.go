@@ -743,8 +743,14 @@ var forgeMarkFailedCmd = &cobra.Command{
 }
 
 var forgeCreateResolutionCmd = &cobra.Command{
-	Use:          "create-resolution <mr-id>",
-	Short:        "Create a conflict resolution task and block the MR",
+	Use:   "create-resolution <mr-id>",
+	Short: "Create a conflict resolution task and block the MR",
+	Long: `Create a resolution writ for a merge request that has conflicts, then block
+the MR until the resolution is complete. Attempts to auto-dispatch the
+resolution writ to an idle agent immediately.
+
+Used by the forge session when it encounters merge conflicts that need
+manual resolution.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -1088,8 +1094,13 @@ var forgeLogCmd = &cobra.Command{
 }
 
 var forgePauseCmd = &cobra.Command{
-	Use:          "pause",
-	Short:        "Pause the forge — stop claiming new MRs",
+	Use:   "pause",
+	Short: "Pause the forge — stop claiming new MRs",
+	Long: `Set the forge pause flag for the world. A paused forge will not claim new
+merge requests from the queue, but the forge session stays running.
+
+Nudges the forge session so it notices the pause promptly. Resume with
+sol forge resume.`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgePauseWorld)
@@ -1125,8 +1136,10 @@ var forgePauseCmd = &cobra.Command{
 }
 
 var forgeResumeCmd = &cobra.Command{
-	Use:          "resume",
-	Short:        "Resume the forge — start claiming MRs again",
+	Use:   "resume",
+	Short: "Resume the forge — start claiming MRs again",
+	Long: `Clear the forge pause flag and nudge the session to resume claiming merge
+requests from the queue immediately.`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeResumeWorld)

@@ -75,7 +75,7 @@ func TestCLIHandoffHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sol handoff --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Hand off") {
+	if !strings.Contains(out, "Stop the current agent session") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }

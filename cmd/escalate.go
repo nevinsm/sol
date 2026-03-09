@@ -19,8 +19,16 @@ var (
 )
 
 var escalateCmd = &cobra.Command{
-	Use:          "escalate <description>",
-	Short:        "Create an escalation",
+	Use:   "escalate <description>",
+	Short: "Create an escalation",
+	Long: `Create an escalation record and route it for operator attention.
+
+Auto-detects source from SOL_WORLD/SOL_AGENT environment variables when
+called from within an agent session. Also auto-detects the active writ
+from the agent's tether to set --source-ref.
+
+Severity defaults to "medium". Routing behavior (event log, webhook) depends
+on the configured escalation router and SOL_ESCALATION_WEBHOOK.`,
 	GroupID:      groupCommunication,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,

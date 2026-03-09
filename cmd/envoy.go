@@ -314,8 +314,13 @@ var (
 )
 
 var envoyDeleteCmd = &cobra.Command{
-	Use:          "delete <name>",
-	Short:        "Delete an envoy agent and all associated resources",
+	Use:   "delete <name>",
+	Short: "Delete an envoy agent and all associated resources",
+	Long: `Remove an envoy agent, its worktree, brief history, and agent record.
+
+Refuses to delete if the envoy's session is active or tethered unless --force
+is specified. With --force, stops the session and clears the tether before
+deleting.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

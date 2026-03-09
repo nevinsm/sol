@@ -16,8 +16,20 @@ var (
 )
 
 var resolveCmd = &cobra.Command{
-	Use:          "resolve",
-	Short:        "Signal work completion — code writs push branch and create MR; non-code writs close directly",
+	Use:   "resolve",
+	Short: "Signal work completion — code writs push branch and create MR; non-code writs close directly",
+	Long: `Mark the current writ as done and clean up the agent's tether.
+
+For code writs: pushes the worktree branch, creates a merge request in the
+forge queue, and sets the writ to "done" (awaiting merge).
+
+For non-code writs: closes the writ directly with no branch push.
+
+In both cases, clears the agent's tether and returns it to idle (unless the
+session is configured to stay alive for further dispatch).
+
+Typically called from within an agent session. Uses SOL_WORLD and SOL_AGENT
+environment variables when --world and --agent are not provided.`,
 	GroupID:      groupDispatch,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,

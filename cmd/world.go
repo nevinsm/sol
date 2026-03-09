@@ -45,8 +45,18 @@ var worldCmd = &cobra.Command{
 }
 
 var worldInitCmd = &cobra.Command{
-	Use:          "init <name>",
-	Short:        "Initialize a new world",
+	Use:   "init <name>",
+	Short: "Initialize a new world",
+	Long: `Create a new world with directory structure, database, and configuration.
+
+Creates:
+  - World directory at $SOL_HOME/<name>/ with outposts/ subdirectory
+  - World database (<name>.db) with schema migrations
+  - Default world.toml configuration
+  - Managed repo clone (if --source-repo is provided)
+
+Registers the world in sphere.db. If a pre-Arc1 database exists (DB without
+world.toml), migrates legacy quality gates and name pool settings.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -279,8 +289,15 @@ var worldStatusCmd = &cobra.Command{
 }
 
 var worldDeleteCmd = &cobra.Command{
-	Use:          "delete",
-	Short:        "Delete a world",
+	Use:   "delete",
+	Short: "Delete a world",
+	Long: `Permanently delete a world and all associated data:
+  - World database (writs, merge requests, dependencies)
+  - World directory (repo, outposts, worktrees, config)
+  - Agent records for the world in sphere.db
+
+Refuses to delete if any agent sessions are still running — stop them first.
+Requires --confirm to proceed; without it, prints what would be deleted and exits.`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, err := config.ResolveWorld(worldDeleteWorld)
@@ -820,8 +837,14 @@ With --force, also stops all outpost agent sessions immediately:
 }
 
 var worldWakeCmd = &cobra.Command{
-	Use:          "wake <name>",
-	Short:        "Mark a world as active and start its services",
+	Use:   "wake <name>",
+	Short: "Mark a world as active and start its services",
+	Long: `Clear the sleeping flag in world.toml and restart world services
+(sentinel, forge). This reverses sol world sleep — dispatch gates are
+deactivated and new work can be cast again.
+
+Does not restart outpost agent sessions that were stopped by sleep --force;
+those must be re-dispatched manually.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

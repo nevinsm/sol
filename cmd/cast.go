@@ -20,8 +20,17 @@ var (
 )
 
 var castCmd = &cobra.Command{
-	Use:          "cast <writ-id>",
-	Short:        "Assign a writ to an agent and start its session",
+	Use:   "cast <writ-id>",
+	Short: "Assign a writ to an agent and start its session",
+	Long: `Dispatch a writ to an outpost agent: create a worktree, tether the writ,
+and launch a Claude session.
+
+Selects an idle agent automatically unless --agent is specified. Respects
+world capacity limits and dispatch gates (sleeping worlds are rejected).
+
+With --workflow, instantiates a step-driven workflow for the agent. Variables
+can be passed with --var key=val. With --account, uses specific Claude OAuth
+credentials instead of the world's default_account.`,
 	GroupID:      groupDispatch,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,

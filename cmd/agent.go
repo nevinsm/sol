@@ -134,8 +134,14 @@ var agentListCmd = &cobra.Command{
 var agentResetWorld string
 
 var agentResetCmd = &cobra.Command{
-	Use:          "reset <name>",
-	Short:        "Reset a stuck agent to idle state",
+	Use:   "reset <name>",
+	Short: "Reset a stuck agent to idle state",
+	Long: `Force an agent back to idle when it's stuck in a bad state.
+
+Clears the agent's tether file, returns any assigned writ to "open" status
+(with assignee cleared), and sets the agent state to idle. Warns if the
+agent's tmux session is still running — consider stopping it first to avoid
+conflicting state.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

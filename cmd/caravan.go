@@ -650,8 +650,11 @@ var caravanDrydockCmd = &cobra.Command{
 // --- sol caravan reopen ---
 
 var caravanReopenCmd = &cobra.Command{
-	Use:          "reopen <caravan-id>",
-	Short:        "Reopen a closed caravan (closed → drydock)",
+	Use:   "reopen <caravan-id>",
+	Short: "Reopen a closed caravan (closed → drydock)",
+	Long: `Move a closed caravan back to drydock status for modification. Only closed
+caravans can be reopened. After reopening, commission the caravan to make it
+dispatchable again.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -687,8 +690,15 @@ var caravanReopenCmd = &cobra.Command{
 // --- sol caravan launch ---
 
 var caravanLaunchCmd = &cobra.Command{
-	Use:          "launch <caravan-id>",
-	Short:        "Dispatch ready items in a caravan",
+	Use:   "launch <caravan-id>",
+	Short: "Dispatch ready items in a caravan",
+	Long: `Check readiness of all items in the caravan and dispatch those that are
+ready (open, unblocked) in the specified world. Items blocked by dependencies
+or in earlier phases are skipped.
+
+Drydock caravans must be commissioned first. Auto-closes the caravan if all
+items complete after dispatch. Use --workflow to attach a workflow to each
+dispatched writ.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

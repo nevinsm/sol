@@ -137,7 +137,7 @@ func TestCLICaravanLaunchHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sol caravan launch --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Dispatch ready items") {
+	if !strings.Contains(out, "Check readiness of all items") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }

@@ -289,8 +289,13 @@ func init() {
 var closeReason string
 
 var writCloseCmd = &cobra.Command{
-	Use:          "close <id>",
-	Short:        "Close a writ",
+	Use:   "close <id>",
+	Short: "Close a writ",
+	Long: `Close a writ permanently. Supersedes any failed merge requests linked to
+the writ and auto-resolves linked escalations.
+
+Use --reason to record why the writ was closed (e.g. completed, superseded,
+cancelled). This is a terminal state — closed writs cannot be reopened.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
