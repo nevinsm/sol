@@ -425,6 +425,50 @@ func TestUpdateEscalationLastNotified(t *testing.T) {
 	}
 }
 
+func TestUpdateEscalationLastNotifiedNotFound(t *testing.T) {
+	s := setupSphere(t)
+
+	err := s.UpdateEscalationLastNotified("esc-nonexist")
+	if err == nil {
+		t.Fatal("expected error for nonexistent escalation")
+	}
+}
+
+func TestUpdateEscalationLastNotifiedUpdatesUpdatedAt(t *testing.T) {
+	s := setupSphere(t)
+
+	id, err := s.CreateEscalation("high", "operator", "Test updated_at")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Backdate updated_at to ensure the update produces a different timestamp.
+	oldTime := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
+	if _, err := s.db.Exec(`UPDATE escalations SET updated_at = ? WHERE id = ?`, oldTime, id); err != nil {
+		t.Fatal(err)
+	}
+
+	esc, err := s.GetEscalation(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialUpdatedAt := esc.UpdatedAt
+
+	// Update last_notified_at — should also update updated_at.
+	if err := s.UpdateEscalationLastNotified(id); err != nil {
+		t.Fatal(err)
+	}
+
+	esc, err = s.GetEscalation(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !esc.UpdatedAt.After(initialUpdatedAt) {
+		t.Fatalf("expected updated_at to advance: initial=%v, after=%v",
+			initialUpdatedAt, esc.UpdatedAt)
+	}
+}
+
 func TestListEscalationsBySourceRef(t *testing.T) {
 	s := setupSphere(t)
 

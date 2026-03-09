@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -72,27 +73,22 @@ func (s *Store) Inbox(recipient string) ([]Message, error) {
 }
 
 // ReadMessage returns a message by ID and marks it as read (read=1).
+// Uses UPDATE...RETURNING to atomically mark read and fetch the message.
 func (s *Store) ReadMessage(id string) (*Message, error) {
-	// Mark as read.
-	result, err := s.db.Exec(`UPDATE messages SET read = 1 WHERE id = ?`, id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read message %q: %w", id, err)
-	}
-	if err := checkRowsAffected(result, "message", id); err != nil {
-		return nil, err
-	}
-
-	// Fetch the message.
 	msg := &Message{}
 	var body sql.NullString
 	var threadID, ackedAt sql.NullString
 	var createdAt string
 	var read int
 
-	err = s.db.QueryRow(
-		`SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at
-		 FROM messages WHERE id = ?`, id,
+	err := s.db.QueryRow(
+		`UPDATE messages SET read = 1 WHERE id = ?
+		 RETURNING id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at`,
+		id,
 	).Scan(&msg.ID, &msg.Sender, &msg.Recipient, &msg.Subject, &body, &msg.Priority, &msg.Type, &threadID, &msg.Delivery, &read, &createdAt, &ackedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("message %q: %w", id, ErrNotFound)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read message %q: %w", id, err)
 	}

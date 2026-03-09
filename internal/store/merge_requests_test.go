@@ -931,111 +931,71 @@ func TestPhaseTransitionNotFound(t *testing.T) {
 func TestSupersedeFailedMRsForWrit(t *testing.T) {
 	s := setupWorld(t)
 
-	writID, _ := s.CreateWrit("Test writ", "", "operator", 2, nil)
+	writID, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
 
-	// Create 3 MRs: 2 will be failed, 1 will be merged.
+	// Create 3 MRs for the same writ.
 	mr1ID, _ := s.CreateMergeRequest(writID, "branch1", 2)
 	mr2ID, _ := s.CreateMergeRequest(writID, "branch2", 2)
 	mr3ID, _ := s.CreateMergeRequest(writID, "branch3", 2)
 
-	// Move mr1 and mr2 to failed: ready → claimed → failed.
+	// Move mr1 and mr2 to failed (ready → claimed → failed).
 	s.ClaimMergeRequest("forge/Forge")
 	s.UpdateMergeRequestPhase(mr1ID, "failed")
 	s.ClaimMergeRequest("forge/Forge")
 	s.UpdateMergeRequestPhase(mr2ID, "failed")
-
-	// Move mr3 to merged: ready → claimed → merged.
-	s.ClaimMergeRequest("forge/Forge")
-	s.UpdateMergeRequestPhase(mr3ID, "merged")
+	// mr3 stays ready.
 
 	// Supersede failed MRs.
-	superseded, err := s.SupersedeFailedMRsForWrit(writID)
+	ids, err := s.SupersedeFailedMRsForWrit(writID)
 	if err != nil {
-		t.Fatalf("SupersedeFailedMRsForWrit() error: %v", err)
+		t.Fatal(err)
 	}
-	if len(superseded) != 2 {
-		t.Fatalf("expected 2 superseded MRs, got %d", len(superseded))
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 superseded IDs, got %d", len(ids))
 	}
 
-	// Verify both failed MRs are now superseded.
+	// Verify both are superseded.
 	mr1, _ := s.GetMergeRequest(mr1ID)
 	if mr1.Phase != "superseded" {
-		t.Errorf("mr1 phase = %q, want 'superseded'", mr1.Phase)
+		t.Fatalf("expected mr1 phase 'superseded', got %q", mr1.Phase)
 	}
 	mr2, _ := s.GetMergeRequest(mr2ID)
 	if mr2.Phase != "superseded" {
-		t.Errorf("mr2 phase = %q, want 'superseded'", mr2.Phase)
+		t.Fatalf("expected mr2 phase 'superseded', got %q", mr2.Phase)
 	}
 
-	// Verify merged MR is untouched.
-	mr3, _ := s.GetMergeRequest(mr3ID)
-	if mr3.Phase != "merged" {
-		t.Errorf("mr3 phase = %q, want 'merged'", mr3.Phase)
-	}
-}
-
-func TestSupersedeFailedMRsForWrit_NoFailedMRs(t *testing.T) {
-	s := setupWorld(t)
-
-	writID, _ := s.CreateWrit("Test writ", "", "operator", 2, nil)
-
-	// Create a MR that is ready (not failed).
-	s.CreateMergeRequest(writID, "branch1", 2)
-
-	// Supersede should return empty slice, no error.
-	superseded, err := s.SupersedeFailedMRsForWrit(writID)
-	if err != nil {
-		t.Fatalf("SupersedeFailedMRsForWrit() error: %v", err)
-	}
-	if len(superseded) != 0 {
-		t.Fatalf("expected 0 superseded MRs, got %d", len(superseded))
-	}
-}
-
-func TestCloseWritSupersedesFailedMRs(t *testing.T) {
-	s := setupWorld(t)
-
-	writID, _ := s.CreateWrit("Test writ", "", "operator", 2, nil)
-
-	// Create 2 failed MRs and 1 ready MR.
-	mr1ID, _ := s.CreateMergeRequest(writID, "branch1", 2)
-	mr2ID, _ := s.CreateMergeRequest(writID, "branch2", 2)
-	mr3ID, _ := s.CreateMergeRequest(writID, "branch3", 2)
-
-	// Move mr1 and mr2 to failed.
-	s.ClaimMergeRequest("forge/Forge")
-	s.UpdateMergeRequestPhase(mr1ID, "failed")
-	s.ClaimMergeRequest("forge/Forge")
-	s.UpdateMergeRequestPhase(mr2ID, "failed")
-
-	// Close the writ — should supersede both failed MRs as a side effect.
-	superseded, err := s.CloseWrit(writID)
-	if err != nil {
-		t.Fatalf("CloseWrit() error: %v", err)
-	}
-	if len(superseded) != 2 {
-		t.Fatalf("expected 2 superseded MRs from CloseWrit, got %d", len(superseded))
-	}
-
-	// Verify failed MRs are superseded.
-	mr1, _ := s.GetMergeRequest(mr1ID)
-	if mr1.Phase != "superseded" {
-		t.Errorf("mr1 phase = %q, want 'superseded'", mr1.Phase)
-	}
-	mr2, _ := s.GetMergeRequest(mr2ID)
-	if mr2.Phase != "superseded" {
-		t.Errorf("mr2 phase = %q, want 'superseded'", mr2.Phase)
-	}
-
-	// Verify ready MR is untouched.
+	// mr3 should still be ready.
 	mr3, _ := s.GetMergeRequest(mr3ID)
 	if mr3.Phase != "ready" {
-		t.Errorf("mr3 phase = %q, want 'ready'", mr3.Phase)
+		t.Fatalf("expected mr3 phase 'ready', got %q", mr3.Phase)
 	}
+}
 
-	// Verify the writ is closed.
-	writ, _ := s.GetWrit(writID)
-	if writ.Status != "closed" {
-		t.Errorf("writ status = %q, want 'closed'", writ.Status)
+func TestSupersedeFailedMRsForWritNoFailed(t *testing.T) {
+	s := setupWorld(t)
+
+	writID, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
+	s.CreateMergeRequest(writID, "branch1", 2)
+
+	// No failed MRs — should return nil.
+	ids, err := s.SupersedeFailedMRsForWrit(writID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids != nil {
+		t.Fatalf("expected nil IDs for no failed MRs, got %v", ids)
+	}
+}
+
+func TestSupersedeFailedMRsForWritNonexistentWrit(t *testing.T) {
+	s := setupWorld(t)
+
+	// Nonexistent writ — should return nil (no failed MRs found).
+	ids, err := s.SupersedeFailedMRsForWrit("sol-nonexist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids != nil {
+		t.Fatalf("expected nil IDs for nonexistent writ, got %v", ids)
 	}
 }

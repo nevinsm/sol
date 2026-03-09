@@ -26,7 +26,7 @@ func (s *Store) SetAgentMemory(agentName, key, value string) error {
 	_, err = s.db.Exec(
 		`INSERT INTO agent_memories (id, agent_name, key, value, created_at)
 		 VALUES (?, ?, ?, ?, ?)
-		 ON CONFLICT(agent_name, key) DO UPDATE SET value = excluded.value, created_at = excluded.created_at`,
+		 ON CONFLICT(agent_name, key) DO UPDATE SET value = excluded.value`,
 		id, agentName, key, value, now,
 	)
 	if err != nil {

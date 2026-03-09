@@ -89,12 +89,8 @@ func (s *Store) GetEscalation(id string) (*Escalation, error) {
 		esc.SourceRef = sourceRef.String
 	}
 	esc.Acknowledged = acknowledged != 0
-	if lastNotifiedAt.Valid {
-		t, err := time.Parse(time.RFC3339, lastNotifiedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse last_notified_at for escalation %q: %w", id, err)
-		}
-		esc.LastNotifiedAt = &t
+	if esc.LastNotifiedAt, err = parseOptionalRFC3339(lastNotifiedAt, "last_notified_at", "escalation "+id); err != nil {
+		return nil, err
 	}
 	if esc.CreatedAt, err = parseRFC3339(createdAt, "created_at", "escalation "+id); err != nil {
 		return nil, err
@@ -170,14 +166,10 @@ func (s *Store) scanEscalations(query string, args ...interface{}) ([]Escalation
 			esc.SourceRef = sourceRef.String
 		}
 		esc.Acknowledged = acknowledged != 0
-		if lastNotifiedAt.Valid {
-			t, parseErr := time.Parse(time.RFC3339, lastNotifiedAt.String)
-			if parseErr != nil {
-				return nil, fmt.Errorf("failed to parse last_notified_at for escalation %q: %w", esc.ID, parseErr)
-			}
-			esc.LastNotifiedAt = &t
-		}
 		var parseErr error
+		if esc.LastNotifiedAt, parseErr = parseOptionalRFC3339(lastNotifiedAt, "last_notified_at", "escalation "+esc.ID); parseErr != nil {
+			return nil, parseErr
+		}
 		if esc.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "escalation "+esc.ID); parseErr != nil {
 			return nil, parseErr
 		}
@@ -223,9 +215,12 @@ func (s *Store) ResolveEscalation(id string) error {
 // UpdateEscalationLastNotified sets the last_notified_at timestamp to now.
 func (s *Store) UpdateEscalationLastNotified(id string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := s.db.Exec(
-		`UPDATE escalations SET last_notified_at = ? WHERE id = ?`, now, id)
-	return err
+	result, err := s.db.Exec(
+		`UPDATE escalations SET last_notified_at = ?, updated_at = ? WHERE id = ?`, now, now, id)
+	if err != nil {
+		return fmt.Errorf("failed to update last_notified_at for escalation %q: %w", id, err)
+	}
+	return checkRowsAffected(result, "escalation", id)
 }
 
 // CountOpen returns the number of open (unresolved) escalations.
