@@ -113,8 +113,15 @@ var ledgerRestartCmd = &cobra.Command{
 }
 
 var ledgerStatusCmd = &cobra.Command{
-	Use:          "status",
-	Short:        "Show ledger status",
+	Use:   "status",
+	Short: "Show ledger status",
+	Long: `Show whether the ledger process is running.
+
+Prints session name and OTLP port. Use --json for machine-readable output.
+
+Exit codes:
+  0 - Ledger is running
+  1 - Ledger is not running`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()

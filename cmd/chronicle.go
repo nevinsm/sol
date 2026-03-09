@@ -117,8 +117,15 @@ var chronicleRestartCmd = &cobra.Command{
 }
 
 var chronicleStatusCmd = &cobra.Command{
-	Use:          "status",
-	Short:        "Show chronicle status",
+	Use:   "status",
+	Short: "Show chronicle status",
+	Long: `Show whether the chronicle process is running.
+
+Prints session name and checkpoint offset. Use --json for machine-readable output.
+
+Exit codes:
+  0 - Chronicle is running
+  1 - Chronicle is not running`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()

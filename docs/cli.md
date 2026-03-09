@@ -275,6 +275,14 @@ Manage workflow instances
 
 #### `sol workflow current`
 
+Print the current step's instructions from the active workflow.
+
+Used by agents to read their next step in a step-driven workflow loop.
+
+Exit codes:
+  0 - Active workflow step found
+  1 - No active workflow step
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
@@ -900,6 +908,14 @@ Manage the event feed chronicle
 
 #### `sol chronicle status`
 
+Show whether the chronicle process is running.
+
+Prints session name and checkpoint offset. Use --json for machine-readable output.
+
+Exit codes:
+  0 - Chronicle is running
+  1 - Chronicle is not running
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
@@ -928,6 +944,15 @@ Manage the sphere-level consul patrol process
 | `--webhook` | string | "" | escalation webhook URL |
 
 #### `sol consul status`
+
+Show consul status from its heartbeat file.
+
+Prints patrol count, stale tethers, caravan feeds, and escalation counts.
+Use --json for machine-readable output.
+
+Exit codes:
+  0 - Consul is running
+  1 - Consul is not running
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1207,6 +1232,14 @@ Manage the token tracking ledger
 
 #### `sol ledger status`
 
+Show whether the ledger process is running.
+
+Prints session name and OTLP port. Use --json for machine-readable output.
+
+Exit codes:
+  0 - Ledger is running
+  1 - Ledger is not running
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
@@ -1234,6 +1267,14 @@ Manage the sol prefect
 | `--worlds` | stringSlice | [] | Comma-separated list of worlds to supervise (default: all) |
 
 #### `sol prefect status`
+
+Show whether the prefect process is running.
+
+Prints status, PID, and uptime. Use --json for machine-readable output.
+
+Exit codes:
+  0 - Prefect is running
+  1 - Prefect is not running
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1335,6 +1376,15 @@ Manage the token broker for centralized OAuth refresh
 | `--refresh-margin` | string | 30m | refresh tokens this long before expiry |
 
 #### `sol token-broker status`
+
+Show whether the token broker process is running via its heartbeat file.
+
+Prints patrol count, account info, and refresh statistics.
+Use --json for machine-readable output.
+
+Exit codes:
+  0 - Token broker is running
+  1 - Token broker is not running
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1446,6 +1496,14 @@ Inter-agent messaging
 | `sol mail send` | Send a message |
 
 #### `sol mail check`
+
+Check for unread messages and print the count.
+
+Useful in scripts to conditionally process mail.
+
+Exit codes:
+  0 - Unread messages exist
+  1 - No unread messages
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
