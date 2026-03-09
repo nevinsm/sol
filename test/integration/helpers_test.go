@@ -180,45 +180,6 @@ func createSourceRepo(t *testing.T, gtHome string) (bareRepo, workingClone strin
 	return bareRepo, workingClone
 }
 
-// createBranchWithFile creates a new branch in the repo with a file change,
-// pushes it to origin, and returns to the original branch.
-func createBranchWithFile(t *testing.T, repoDir, branch, filename, content string) {
-	t.Helper()
-
-	// Get current branch to return to.
-	cmd := exec.Command("git", "-C", repoDir, "rev-parse", "--abbrev-ref", "HEAD")
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("get current branch: %v", err)
-	}
-	origBranch := strings.TrimSpace(string(out))
-
-	gitRun(t, repoDir, "checkout", "-b", branch)
-	if err := os.WriteFile(filepath.Join(repoDir, filename), []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", filename, err)
-	}
-	gitRun(t, repoDir, "add", ".")
-	gitRun(t, repoDir, "commit", "-m", "add "+filename)
-	gitRun(t, repoDir, "push", "origin", branch)
-	gitRun(t, repoDir, "checkout", origBranch)
-}
-
-// waitForMergePhase polls the store until a MR reaches the expected phase.
-func waitForMergePhase(t *testing.T, worldStore *store.Store, mrID, expectedPhase string, timeout time.Duration) {
-	t.Helper()
-	ok := pollUntil(timeout, 500*time.Millisecond, func() bool {
-		mr, err := worldStore.GetMergeRequest(mrID)
-		return err == nil && mr != nil && mr.Phase == expectedPhase
-	})
-	if !ok {
-		mr, err := worldStore.GetMergeRequest(mrID)
-		phase := "unknown"
-		if err == nil && mr != nil {
-			phase = mr.Phase
-		}
-		t.Fatalf("MR %s did not reach phase %q within %v (current phase: %s)", mrID, expectedPhase, timeout, phase)
-	}
-}
 
 // pollUntil polls fn every interval until it returns true or timeout elapses.
 func pollUntil(timeout, interval time.Duration, fn func() bool) bool {
@@ -230,55 +191,6 @@ func pollUntil(timeout, interval time.Duration, fn func() bool) bool {
 		time.Sleep(interval)
 	}
 	return false
-}
-
-// --- Loop 3 helpers ---
-
-// sendAndVerifyMessage sends a message and verifies it appears in the
-// recipient's inbox. Returns the message ID.
-func sendAndVerifyMessage(t *testing.T, sphereStore *store.Store,
-	sender, recipient, subject, body string) string {
-	t.Helper()
-	id, err := sphereStore.SendMessage(sender, recipient, subject, body, 2, "notification")
-	if err != nil {
-		t.Fatalf("SendMessage() error: %v", err)
-	}
-	msgs, err := sphereStore.Inbox(recipient)
-	if err != nil {
-		t.Fatalf("Inbox() error: %v", err)
-	}
-	found := false
-	for _, m := range msgs {
-		if m.ID == id {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("message %s not found in inbox for %s", id, recipient)
-	}
-	return id
-}
-
-// waitForProtocolMessage polls for a specific protocol message type
-// addressed to a recipient. Returns the message when found or fails
-// after timeout.
-func waitForProtocolMessage(t *testing.T, sphereStore *store.Store,
-	recipient, protoType string, timeout time.Duration) *store.Message {
-	t.Helper()
-	var found *store.Message
-	ok := pollUntil(timeout, 100*time.Millisecond, func() bool {
-		msgs, err := sphereStore.PendingProtocol(recipient, protoType)
-		if err != nil || len(msgs) == 0 {
-			return false
-		}
-		found = &msgs[0]
-		return true
-	})
-	if !ok {
-		t.Fatalf("protocol message %s for %s not found within %v", protoType, recipient, timeout)
-	}
-	return found
 }
 
 // collectEvents reads all events from the event feed file and returns
@@ -444,15 +356,6 @@ func writeTestFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// createTestRepo creates a temporary git repo with one commit and returns its path.
-func createTestRepo(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	runGit(t, dir, "init")
-	runGit(t, dir, "commit", "--allow-empty", "-m", "init")
-	return dir
 }
 
 // extractWritID extracts a sol-xxxx writ ID from command output.
