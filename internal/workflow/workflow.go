@@ -111,7 +111,7 @@ func Dir(workflowName string) string {
 // LoadManifest reads and parses a workflow's manifest.toml.
 // workflowDir is the absolute path to the workflow directory.
 func LoadManifest(workflowDir string) (*Manifest, error) {
-	path := filepath.Join(formulaDir, "manifest.toml")
+	path := filepath.Join(workflowDir, "manifest.toml")
 	var m Manifest
 	if _, err := toml.DecodeFile(path, &m); err != nil {
 		return nil, fmt.Errorf("failed to load manifest %q: %w", path, err)
@@ -750,7 +750,7 @@ func renderTemplateField(s string, target *store.Writ) string {
 // Each step (workflow) or template (expansion) becomes a child writ.
 // Dependencies between children mirror the workflow's DAG. Children are
 // grouped in a caravan with phases derived from dependency depth.
-func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*ManifestResult, error) {
+func Materialize(worldStore, sphereStore *store.Store, opts ManifestOpts) (*ManifestResult, error) {
 	// Load workflow.
 	res, err := Resolve(opts.Name, config.RepoPath(opts.World))
 	if err != nil {
@@ -769,7 +769,7 @@ func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Manifes
 		return nil, fmt.Errorf("workflow %q is not configured for manifestation (set manifest = true or use expansion type)", opts.Name)
 	}
 
-	// For convoy formulas with a ParentID, inject it as the "target" variable
+	// For convoy workflows with a ParentID, inject it as the "target" variable
 	// so that [vars] target = { required = true } declarations are satisfied.
 	vars := opts.Variables
 	if m.Type == "convoy" && opts.ParentID != "" {
@@ -789,8 +789,8 @@ func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Manifes
 
 	parentID := opts.ParentID
 
-	// For expansion formulas, the parent must exist (it's the target).
-	// For workflow and convoy formulas, create a parent if not provided.
+	// For expansion workflows, the parent must exist (it's the target).
+	// For workflow and convoy types, create a parent if not provided.
 	// If a parent is provided for convoy, load it as target for template substitution.
 	var target *store.Writ
 	if m.Type == "expansion" {
@@ -821,7 +821,7 @@ func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Manifes
 
 	// Build child items from steps or templates.
 	type childDef struct {
-		formulaID   string
+		itemID   string
 		title       string
 		description string
 		needs       []string
@@ -834,7 +834,7 @@ func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Manifes
 	if m.Type == "expansion" {
 		for _, tmpl := range m.Templates {
 			children = append(children, childDef{
-				formulaID:   tmpl.ID,
+				itemID:   tmpl.ID,
 				title:       renderTemplateField(tmpl.Title, target),
 				description: renderTemplateField(tmpl.Description, target),
 				needs:       tmpl.Needs,
@@ -853,7 +853,7 @@ func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Manifes
 				desc += "\n\nFocus: " + leg.Focus
 			}
 			children = append(children, childDef{
-				formulaID:   leg.ID,
+				itemID:   leg.ID,
 				title:       title,
 				description: desc,
 				labels:      []string{"convoy-leg"},
@@ -868,7 +868,7 @@ func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Manifes
 			synthDesc = renderTemplateField(synthDesc, target)
 		}
 		children = append(children, childDef{
-			formulaID:   "synthesis",
+			itemID:   "synthesis",
 			title:       synthTitle,
 			description: synthDesc,
 			needs:       m.Synth.DependsOn,
@@ -883,7 +883,7 @@ func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Manifes
 				return nil, fmt.Errorf("failed to render step %q instructions: %w", step.ID, err)
 			}
 			children = append(children, childDef{
-				formulaID:   step.ID,
+				itemID:   step.ID,
 				title:       step.Title,
 				description: rendered,
 				needs:       step.Needs,
@@ -895,7 +895,7 @@ func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Manifes
 	// Compute phases from the DAG.
 	phaseItems := make([]phaseable, len(children))
 	for i, c := range children {
-		phaseItems[i] = phaseable{id: c.formulaID, needs: c.needs}
+		phaseItems[i] = phaseable{id: c.itemID, needs: c.needs}
 	}
 	phases := ComputePhases(phaseItems)
 
@@ -908,7 +908,7 @@ func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Manifes
 
 		// For convoy synthesis: enrich description with leg references
 		// (legs were created before synthesis in the children slice).
-		if m.Type == "convoy" && c.formulaID == "synthesis" {
+		if m.Type == "convoy" && c.itemID == "synthesis" {
 			var legRefs strings.Builder
 			legRefs.WriteString("\n\n## Leg Writs\n")
 			hasCodeLegs := false
@@ -966,21 +966,21 @@ func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Manifes
 			Kind:        c.kind,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create child writ for %q: %w", c.formulaID, err)
+			return nil, fmt.Errorf("failed to create child writ for %q: %w", c.itemID, err)
 		}
-		childIDs[c.formulaID] = id
+		childIDs[c.itemID] = id
 	}
 
 	// Add dependencies between children mirroring the DAG.
 	for _, c := range children {
-		childID := childIDs[c.formulaID]
+		childID := childIDs[c.itemID]
 		for _, need := range c.needs {
 			depID, ok := childIDs[need]
 			if !ok {
-				return nil, fmt.Errorf("child %q references unknown dependency %q", c.formulaID, need)
+				return nil, fmt.Errorf("child %q references unknown dependency %q", c.itemID, need)
 			}
 			if err := worldStore.AddDependency(childID, depID); err != nil {
-				return nil, fmt.Errorf("failed to add dependency %q → %q: %w", c.formulaID, need, err)
+				return nil, fmt.Errorf("failed to add dependency %q → %q: %w", c.itemID, need, err)
 			}
 		}
 	}
@@ -997,10 +997,10 @@ func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*Manifes
 		return nil, fmt.Errorf("failed to create caravan: %w", err)
 	}
 
-	for formulaID, writID := range childIDs {
-		phase := phases[formulaID]
+	for itemID, writID := range childIDs {
+		phase := phases[itemID]
 		if err := sphereStore.CreateCaravanItem(caravanID, writID, opts.World, phase); err != nil {
-			return nil, fmt.Errorf("failed to add item %q to caravan: %w", formulaID, err)
+			return nil, fmt.Errorf("failed to add item %q to caravan: %w", itemID, err)
 		}
 	}
 

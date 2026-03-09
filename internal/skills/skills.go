@@ -167,7 +167,7 @@ At that point, run §sol resolve§ to submit your work.
 ## Looping Workflows
 
 Some workflows (like forge patrol) loop continuously — when the last step completes,
-the formula is re-instantiated and the workflow restarts from step 1. In this case,
+the workflow is re-instantiated and restarts from step 1. In this case,
 do not resolve after the workflow completes; instead, continue the loop.
 
 ## Important

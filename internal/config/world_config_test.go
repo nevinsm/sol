@@ -395,7 +395,7 @@ func TestWorldConfigValidateGateTimeout(t *testing.T) {
 }
 
 func TestValidateWorldNameReserved(t *testing.T) {
-	reserved := []string{"store", "runtime", "sol", "formulas"}
+	reserved := []string{"store", "runtime", "sol", "workflows"}
 	for _, name := range reserved {
 		if err := ValidateWorldName(name); err == nil {
 			t.Errorf("expected reserved name %q to be rejected, got nil error", name)

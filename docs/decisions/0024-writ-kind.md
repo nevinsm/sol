@@ -82,7 +82,7 @@ Kind flows through the full lifecycle:
 
 1. **Creation**: `sol writ create --kind=analysis` (defaults to `code`)
 2. **Workflow manifest**: convoy legs and manifest steps carry kind from
-   formula definitions to child writs
+   workflow definitions to child writs
 3. **Cast / persona**: `sol cast` reads kind and passes it to persona
    generation, which customizes instructions based on writ type
 4. **Resolve**: kind determines the resolve path as described above
@@ -126,7 +126,7 @@ before starting their own work.
 - **Extensible to new kinds.** The system branches on `code` vs not-code,
   so adding a new kind (e.g., `review`, `planning`) requires no code
   changes — it automatically follows the non-code resolve path.
-- **Workflow formulas can mix kinds.** A convoy can have code legs and
+- **Workflows can mix kinds.** A convoy can have code legs and
   analysis legs. Each leg resolves according to its own kind. Phase gating
   works correctly — analysis writs closing counts as completion for phase
   advancement.

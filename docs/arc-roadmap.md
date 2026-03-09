@@ -274,7 +274,7 @@ branches fail squash-merge.
 - Kind-aware persona generation: different quality gates, output instructions,
   and resolve descriptions based on writ kind
 - Kind propagation through workflow manifests: convoy legs and manifest steps
-  carry kind from formula definitions to child writs
+  carry kind from workflow definitions to child writs
 - Output directories (`$SOL_HOME/{world}/writ-outputs/{writ-id}/`) as primary
   delivery surface for non-code writs
 - Direct dependency visibility: agent personas list upstream dependency output
@@ -338,20 +338,20 @@ without manual filesystem operations.
 
 ---
 
-## Future: Three-Tier Formula Resolution (ADR-0021)
+## Future: Three-Tier Workflow Resolution (ADR-0021)
 
-Workflow formulas currently exist only as embedded defaults in the binary.
-Enable project-level and user-level formula customization with a three-tier
+Workflows currently exist only as embedded defaults in the binary.
+Enable project-level and user-level workflow customization with a three-tier
 resolution hierarchy (inspired by gastown):
 
-1. **Project-level** (most specific): formulas in the world's source repo
-   (`.sol/formulas/`) — project-specific workflows
-2. **User-level**: formulas in `$SOL_HOME/formulas/` — operator customizations
+1. **Project-level** (most specific): workflows in the world's source repo
+   (`.sol/workflows/`) — project-specific workflows
+2. **User-level**: workflows in `$SOL_HOME/workflows/` — operator customizations
    that apply across worlds
-3. **Embedded** (fallback): formulas compiled into the binary — system defaults
+3. **Embedded** (fallback): workflows compiled into the binary — system defaults
 
-Resolution: project > user > embedded. First match wins (whole formula, not
-per-step merge). See ADR-0021 for full design including `ResolveFormula()`
+Resolution: project > user > embedded. First match wins (whole workflow, not
+per-step merge). See ADR-0021 for full design including `Resolve()`
 signature, resolution reporting, `sol workflow list`, and git conventions.
 
 ---

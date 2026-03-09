@@ -153,7 +153,7 @@ func formatEventDescription(ev events.Event) string {
 	case events.EventNudge:
 		return fmt.Sprintf("Nudged %s: %s", get("agent"), get("message"))
 	case events.EventWorkflowInstantiate:
-		return fmt.Sprintf("Workflow %s instantiated for %s", get("formula"), get("writ_id"))
+		return fmt.Sprintf("Workflow %s instantiated for %s", get("workflow"), get("writ_id"))
 	case events.EventWorkflowAdvance:
 		return fmt.Sprintf("Advanced to step: %s (%s)", get("step"), get("writ_id"))
 	case events.EventWorkflowComplete:

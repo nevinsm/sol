@@ -477,7 +477,7 @@ var workflowManifestCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
-		result, err := workflow.Manifest(worldStore, sphereStore, workflow.ManifestOpts{
+		result, err := workflow.Materialize(worldStore, sphereStore, workflow.ManifestOpts{
 			Name:  workflowName,
 			World:       world,
 			ParentID:    target,

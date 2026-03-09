@@ -48,7 +48,7 @@ func TestLoadManifest(t *testing.T) {
 
 	m, err := LoadManifest(dir)
 	if err != nil {
-		t.Fatalf("LoadManifest() error: %v", err)
+		t.Fatalf("LoadMaterialize() error: %v", err)
 	}
 
 	if m.Name != "test-workflow" {
@@ -71,7 +71,7 @@ func TestLoadManifest(t *testing.T) {
 func TestLoadManifestMissing(t *testing.T) {
 	_, err := LoadManifest("/nonexistent/path")
 	if err == nil {
-		t.Fatal("LoadManifest() expected error for missing directory")
+		t.Fatal("LoadMaterialize() expected error for missing directory")
 	}
 }
 
@@ -783,7 +783,7 @@ needs = ["{target}.draft"]
 
 	m, err := LoadManifest(dir)
 	if err != nil {
-		t.Fatalf("LoadManifest() error: %v", err)
+		t.Fatalf("LoadMaterialize() error: %v", err)
 	}
 
 	if m.Type != "expansion" {
@@ -904,7 +904,7 @@ func TestValidateWorkflowWithTemplates(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() expected error for workflow with templates")
 	}
-	if got := err.Error(); got != "type "workflow" must not contain [[template]] entries" {
+	if got := err.Error(); got != `type "workflow" must not contain [[template]] entries` {
 		t.Errorf("error: got %q", got)
 	}
 }
@@ -919,7 +919,7 @@ func TestValidateOtherTypeWithTemplates(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() expected error for non-expansion type with templates")
 	}
-	if got := err.Error(); got != "type "agent" must not contain [[template]] entries" {
+	if got := err.Error(); got != `type "agent" must not contain [[template]] entries` {
 		t.Errorf("error: got %q", got)
 	}
 }
@@ -939,7 +939,7 @@ func TestResolveRuleOfFive(t *testing.T) {
 	// Load and validate the extracted workflow.
 	m, err := LoadManifest(res.Path)
 	if err != nil {
-		t.Fatalf("LoadManifest() error: %v", err)
+		t.Fatalf("LoadMaterialize() error: %v", err)
 	}
 	if m.Type != "expansion" {
 		t.Errorf("type: got %q, want %q", m.Type, "expansion")
@@ -1064,14 +1064,14 @@ func TestManifestWorkflow(t *testing.T) {
 		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte(content), 0o644)
 	}
 
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "manifest-wf",
 		World:       "test-world",
 		Variables:   map[string]string{"issue": "sol-test123"},
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	// Verify result structure.
@@ -1218,14 +1218,14 @@ needs = ["draft"]
 		t.Fatalf("CreateWrit() error: %v", err)
 	}
 
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-expand",
 		World:       "test-world",
 		ParentID:    targetID,
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	// Verify children.
@@ -1301,13 +1301,13 @@ description = "First pass."
 `
 	os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(toml), 0o644)
 
-	_, err := Manifest(ws, ss, ManifestOpts{
+	_, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-expand",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err == nil {
-		t.Fatal("Manifest() expected error for expansion without parent")
+		t.Fatal("Materialize() expected error for expansion without parent")
 	}
 	if !strings.Contains(err.Error(), "requires a parent writ") {
 		t.Errorf("error: got %q", err.Error())
@@ -1328,14 +1328,14 @@ func TestManifestRejectsNonManifest(t *testing.T) {
 	})
 	os.WriteFile(filepath.Join(workflowDir, "steps", "s1.md"), []byte("test"), 0o644)
 
-	_, err := Manifest(ws, ss, ManifestOpts{
+	_, err := Materialize(ws, ss, ManifestOpts{
 		Name: "plain-wf",
 		World:       "test-world",
 		Variables:   map[string]string{"issue": "sol-test"},
 		CreatedBy:   "operator",
 	})
 	if err == nil {
-		t.Fatal("Manifest() expected error for non-manifest workflow")
+		t.Fatal("Materialize() expected error for non-manifest workflow")
 	}
 	if !strings.Contains(err.Error(), "not configured for manifestation") {
 		t.Errorf("error: got %q", err.Error())
@@ -1364,14 +1364,14 @@ func TestManifestDAGPhases(t *testing.T) {
 		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
 	}
 
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "dag-manifest",
 		World:       "test-world",
 		Variables:   map[string]string{"issue": "sol-dag-test"},
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	// Verify 4 children.
@@ -1423,7 +1423,7 @@ func TestManifestWithExistingParent(t *testing.T) {
 		t.Fatalf("CreateWrit() error: %v", err)
 	}
 
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "parent-wf",
 		World:       "test-world",
 		ParentID:    parentID,
@@ -1431,7 +1431,7 @@ func TestManifestWithExistingParent(t *testing.T) {
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	// Verify parent is the provided one.
@@ -1465,13 +1465,13 @@ instructions = "steps/s1.md"
 
 	m, err := LoadManifest(dir)
 	if err != nil {
-		t.Fatalf("LoadManifest() error: %v", err)
+		t.Fatalf("LoadMaterialize() error: %v", err)
 	}
 	if !m.Manifest {
 		t.Error("Manifest field should be true")
 	}
 	if !ShouldManifest(m) {
-		t.Error("ShouldManifest() should return true")
+		t.Error("ShouldMaterialize() should return true")
 	}
 }
 
@@ -1639,7 +1639,7 @@ func TestLoadManifestConvoy(t *testing.T) {
 
 	m, err := LoadManifest(dir)
 	if err != nil {
-		t.Fatalf("LoadManifest() error: %v", err)
+		t.Fatalf("LoadMaterialize() error: %v", err)
 	}
 
 	if m.Type != "convoy" {
@@ -1796,13 +1796,13 @@ func TestManifestConvoy(t *testing.T) {
 
 	writeTOMLConvoyManifest(t, workflowDir, "test-convoy", testLegs(), testSynthesis())
 
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-convoy",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	// Verify result structure.
@@ -1948,13 +1948,13 @@ func TestConvoyLifecycle(t *testing.T) {
 	writeTOMLConvoyManifest(t, workflowDir, "lifecycle-convoy", legs, synth)
 
 	// --- Phase 1: Manifest the convoy ---
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "lifecycle-convoy",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	// Verify 3 legs + 1 synthesis = 4 children.
@@ -2107,7 +2107,7 @@ func TestResolvePlanReview(t *testing.T) {
 	// Load and validate the extracted workflow.
 	m, err := LoadManifest(res.Path)
 	if err != nil {
-		t.Fatalf("LoadManifest() error: %v", err)
+		t.Fatalf("LoadMaterialize() error: %v", err)
 	}
 	if m.Type != "convoy" {
 		t.Errorf("type: got %q, want %q", m.Type, "convoy")
@@ -2159,7 +2159,7 @@ func TestResolveCodeReview(t *testing.T) {
 	// Load and validate the extracted workflow.
 	m, err := LoadManifest(res.Path)
 	if err != nil {
-		t.Fatalf("LoadManifest() error: %v", err)
+		t.Fatalf("LoadMaterialize() error: %v", err)
 	}
 	if m.Type != "convoy" {
 		t.Errorf("type: got %q, want %q", m.Type, "convoy")
@@ -2190,7 +2190,7 @@ func TestResolveGuidedDesign(t *testing.T) {
 	// Load and validate the extracted workflow.
 	m, err := LoadManifest(res.Path)
 	if err != nil {
-		t.Fatalf("LoadManifest() error: %v", err)
+		t.Fatalf("LoadMaterialize() error: %v", err)
 	}
 	if m.Type != "convoy" {
 		t.Errorf("type: got %q, want %q", m.Type, "convoy")
@@ -2506,13 +2506,13 @@ func TestManifestConvoyWithKind(t *testing.T) {
 	}
 	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-kind", legs, synth)
 
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-convoy-kind",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	// Verify analysis leg has kind=analysis.
@@ -2565,13 +2565,13 @@ func TestManifestConvoyKindDefaultsToCode(t *testing.T) {
 	}
 	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-default", legs, synth)
 
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-convoy-default",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	legID := result.ChildIDs["leg1"]
@@ -2605,13 +2605,13 @@ func TestManifestConvoySynthesisKind(t *testing.T) {
 		}
 		writeTOMLConvoyManifest(t, workflowDir, "test-synth-analysis", legs, synth)
 
-		result, err := Manifest(ws, ss, ManifestOpts{
+		result, err := Materialize(ws, ss, ManifestOpts{
 			Name: "test-synth-analysis",
 			World:       "test-world",
 			CreatedBy:   "operator",
 		})
 		if err != nil {
-			t.Fatalf("Manifest() error: %v", err)
+			t.Fatalf("Materialize() error: %v", err)
 		}
 
 		synthID := result.ChildIDs["synthesis"]
@@ -2639,13 +2639,13 @@ func TestManifestConvoySynthesisKind(t *testing.T) {
 		}
 		writeTOMLConvoyManifest(t, workflowDir, "test-synth-default", legs, synth)
 
-		result, err := Manifest(ws, ss, ManifestOpts{
+		result, err := Materialize(ws, ss, ManifestOpts{
 			Name: "test-synth-default",
 			World:       "test-world",
 			CreatedBy:   "operator",
 		})
 		if err != nil {
-			t.Fatalf("Manifest() error: %v", err)
+			t.Fatalf("Materialize() error: %v", err)
 		}
 
 		synthID := result.ChildIDs["synthesis"]
@@ -2678,13 +2678,13 @@ func TestCaravanPhaseGatingWithAnalysisWrit(t *testing.T) {
 	}
 	writeTOMLConvoyManifest(t, workflowDir, "test-phase-gate", legs, synth)
 
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-phase-gate",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	analyzeID := result.ChildIDs["analyze"]
@@ -2745,14 +2745,14 @@ func TestManifestConvoyTargetSubstitution(t *testing.T) {
 		t.Fatalf("CreateWrit() error: %v", err)
 	}
 
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-convoy-target",
 		World:       "test-world",
 		ParentID:    targetID,
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	// Verify target substitution in leg titles.
@@ -2800,13 +2800,13 @@ func TestManifestConvoyAnalysisSynthesisDescription(t *testing.T) {
 	}
 	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-analysis", legs, synth)
 
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-convoy-analysis",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	synthItem, err := ws.GetWrit(result.ChildIDs["synthesis"])
@@ -2846,13 +2846,13 @@ func TestManifestConvoyAnalysisSynthesisDescription(t *testing.T) {
 	}
 	writeTOMLConvoyManifest(t, workflowDir2, "test-convoy-mixed", mixedLegs, mixedSynth)
 
-	result2, err := Manifest(ws, ss, ManifestOpts{
+	result2, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-convoy-mixed",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() mixed error: %v", err)
+		t.Fatalf("Materialize() mixed error: %v", err)
 	}
 
 	synthItem2, err := ws.GetWrit(result2.ChildIDs["synthesis"])
@@ -2902,13 +2902,13 @@ func TestMixedKindConvoyEndToEnd(t *testing.T) {
 	writeTOMLConvoyManifest(t, workflowDir, "test-e2e-mixed", legs, synth)
 
 	// Manifest the workflow into writs + caravan.
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-e2e-mixed",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	// --- Verify writ kinds are set correctly ---
@@ -3096,14 +3096,14 @@ func TestCodeReviewConvoyWorkflow(t *testing.T) {
 	}
 
 	// --- Manifest the code-review workflow against the target ---
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "code-review",
 		World:       "test-world",
 		ParentID:    targetID,
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	// Verify two legs + one synthesis = three children.
@@ -3286,14 +3286,14 @@ func TestCodeReviewConvoyWorkflowSynthesisTargetSubstitution(t *testing.T) {
 		t.Fatalf("CreateWrit error: %v", err)
 	}
 
-	result, err := Manifest(ws, ss, ManifestOpts{
+	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "code-review",
 		World:       "test-world",
 		ParentID:    targetID,
 		CreatedBy:   "operator",
 	})
 	if err != nil {
-		t.Fatalf("Manifest() error: %v", err)
+		t.Fatalf("Materialize() error: %v", err)
 	}
 
 	// All titles should contain the target title.
@@ -3313,13 +3313,13 @@ func TestCodeReviewConvoyWorkflowRequiresTarget(t *testing.T) {
 
 	// Manifesting code-review without a ParentID should fail because
 	// the manifest declares target as a required variable.
-	_, err := Manifest(ws, ss, ManifestOpts{
+	_, err := Materialize(ws, ss, ManifestOpts{
 		Name: "code-review",
 		World:       "test-world",
 		CreatedBy:   "operator",
 	})
 	if err == nil {
-		t.Fatal("Manifest() should fail without a target (ParentID)")
+		t.Fatal("Materialize() should fail without a target (ParentID)")
 	}
 	if !strings.Contains(err.Error(), "required variable") {
 		t.Errorf("error should mention required variable, got: %v", err)

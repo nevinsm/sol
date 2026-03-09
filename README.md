@@ -109,7 +109,7 @@ State on the filesystem:
 - **Tethers** — `$SOL_HOME/{world}/outposts/{agent}/.tether`
 - **Managed Repo** — `$SOL_HOME/{world}/repo/`
 - **Workflows** — `$SOL_HOME/{world}/outposts/{agent}/.workflow/`
-- **Formulas** — `$SOL_HOME/formulas/{name}/`
+- **Workflow Definitions** — `$SOL_HOME/workflows/{name}/`
 - **Events** — `$SOL_HOME/.events.jsonl` (raw), `$SOL_HOME/.feed.jsonl` (curated)
 - **World Config** — `$SOL_HOME/{world}/world.toml`
 - **Global Config** — `$SOL_HOME/sol.toml`
@@ -159,7 +159,7 @@ sol/
 │   ├── sentinel/                   Stall detection, AI assessment
 │   ├── status/                     World status gathering
 │   ├── events/                     JSONL event feed + chronicle
-│   ├── workflow/                   Directory-based state machine, formulas
+│   ├── workflow/                   Directory-based state machine, workflows
 │   ├── escalation/                 Notifier interface, log/mail/webhook
 │   ├── handoff/                    Session continuity, capture/exec
 │   ├── consul/                     Sphere-level patrol, heartbeat

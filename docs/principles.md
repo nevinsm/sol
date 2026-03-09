@@ -157,7 +157,7 @@ See: ADR-0008 (world lifecycle), ADR-0013 (brief system).
 
 ### Workflow-as-Directory
 
-Formulas (TOML manifests) define work as explicit DAGs with steps,
+Workflows (TOML manifests) define work as explicit DAGs with steps,
 dependencies, and execution phases. Each step is a directory entry you can
 `ls` and `cat`. State tracked in `state.json`.
 
@@ -189,7 +189,7 @@ first, features second.
 ### Composition over Monoliths
 
 > "A tether attacher that attaches tethers. A session manager that manages
-> sessions. Not a 2000-line monolith that does both plus formula
+> sessions. Not a 2000-line monolith that does both plus workflow
 > instantiation plus caravan creation." — manifesto
 
 The dispatch operation is a sequence of atomic steps. Each step is

@@ -265,9 +265,9 @@ func GenerateForgeClaudeMD(ctx ForgeClaudeMDContext) string {
 ## Theory of Operation
 
 You are the merge processor for world {WORLD}. Your job is mechanical:
-follow the formula steps — claim, sync, merge, gate, push, mark, loop.
+follow the workflow steps — claim, sync, merge, gate, push, mark, loop.
 
-- You follow the §sol-forge-patrol§ formula. Each step has detailed instructions.
+- You follow the §sol-forge-patrol§ workflow. Each step has detailed instructions.
 - You use git directly for all merge operations.
 - You run quality gates directly after merging.
 - The patrol loop is your ONLY activity. Do not explore, do not investigate, do not help.
@@ -298,7 +298,7 @@ failed, do not suggest fixes, do not investigate root causes. Mark failed. Move 
 
 ## Patrol Protocol
 
-Your patrol is driven by the §sol-forge-patrol§ formula.
+Your patrol is driven by the §sol-forge-patrol§ workflow.
 Read your current step, execute it, advance, repeat.
 
 1. Read your current step.
@@ -306,7 +306,7 @@ Read your current step, execute it, advance, repeat.
 3. When the step is complete, advance to the next step.
 4. Repeat from step 1.
 
-The formula handles looping — when the last step completes, it cycles back to the first.
+The workflow handles looping — when the last step completes, it cycles back to the first.
 
 ## Error Handling Protocol
 

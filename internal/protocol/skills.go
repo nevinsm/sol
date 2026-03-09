@@ -240,7 +240,7 @@ Workflow commands for driving the forge patrol loop.
 3. Advance: %[1]s workflow advance --world=%[2]s --agent=forge%[3]s
 4. Repeat from step 1.
 
-The formula handles looping — when the last step completes, it cycles back.
+The workflow handles looping — when the last step completes, it cycles back.
 `, "`"+sol, world, "`")
 }
 
@@ -343,7 +343,7 @@ Cast options: %[8]s (auto if omitted), %[9]s, %[10]s.
 		"`--kind` (code or analysis)",
 		"`--metadata`",
 		"`--agent`",
-		"`--formula`",
+		"`--workflow`",
 		"`--account`")
 }
 
@@ -554,7 +554,7 @@ Commands for dispatching work to outpost agents.
 Cast options: %[4]s (auto if omitted), %[5]s, %[6]s.
 `, "`"+sol, world, "`",
 		"`--agent`",
-		"`--formula`",
+		"`--workflow`",
 		"`--account`")
 }
 
