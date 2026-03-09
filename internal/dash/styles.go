@@ -131,6 +131,15 @@ func statusIndicator(running bool) string {
 	return errorStyle.Render(crossMark)
 }
 
+// optionalStatusIndicator returns a dim ○ for non-running optional processes
+// instead of the alarming red ✗ used for required processes.
+func optionalStatusIndicator(running bool) string {
+	if running {
+		return okStyle.Render(checkMark)
+	}
+	return dimStyle.Render("○")
+}
+
 // pulsingStatusIndicator returns a status indicator that pulses when not running.
 func pulsingStatusIndicator(running bool, pulseBright bool) string {
 	if running {

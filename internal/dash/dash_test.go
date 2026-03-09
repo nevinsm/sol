@@ -2173,11 +2173,11 @@ func TestProcessGridRendersThreeColumns(t *testing.T) {
 	wm.height = 40
 
 	procs := []processEntry{
-		{"Prefect", true},
-		{"Chronicle", true},
-		{"Ledger", false},
-		{"Broker", true},
-		{"Senate", false},
+		{"Prefect", true, true},
+		{"Chronicle", true, false},
+		{"Ledger", false, false},
+		{"Broker", true, true},
+		{"Senate", false, false},
 	}
 
 	var b strings.Builder

@@ -24,6 +24,7 @@ const (
 type processItem struct {
 	name        string
 	running     bool
+	required    bool   // required processes show red ✗ when down; optional show dim ○
 	sessionName string // empty for PID-only processes
 	detail      string // formatted detail string
 	peekable    bool   // has a tmux session
@@ -91,12 +92,12 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 
 	// Build process items for focused list navigation.
 	sm.processItems = []processItem{
-		{name: "Prefect", running: data.Prefect.Running, detail: formatPrefectDetail(data.Prefect), peekable: false},
-		{name: "Consul", running: data.Consul.Running, sessionName: "sol-sphere-consul", detail: formatConsulDetail(data.Consul), peekable: data.Consul.Running},
-		{name: "Chronicle", running: data.Chronicle.Running, sessionName: data.Chronicle.SessionName, detail: formatChronicleDetail(data.Chronicle), peekable: data.Chronicle.SessionName != ""},
-		{name: "Ledger", running: data.Ledger.Running, sessionName: data.Ledger.SessionName, detail: formatLedgerDetail(data.Ledger), peekable: data.Ledger.SessionName != ""},
-		{name: "Broker", running: data.Broker.Running, detail: formatBrokerDetail(data.Broker), peekable: false},
-		{name: "Senate", running: data.Senate.Running, sessionName: data.Senate.SessionName, detail: formatSenateDetail(data.Senate), peekable: data.Senate.SessionName != ""},
+		{name: "Prefect", running: data.Prefect.Running, required: true, detail: formatPrefectDetail(data.Prefect), peekable: false},
+		{name: "Consul", running: data.Consul.Running, required: true, sessionName: "sol-sphere-consul", detail: formatConsulDetail(data.Consul), peekable: data.Consul.Running},
+		{name: "Chronicle", running: data.Chronicle.Running, required: false, sessionName: data.Chronicle.SessionName, detail: formatChronicleDetail(data.Chronicle), peekable: data.Chronicle.SessionName != ""},
+		{name: "Ledger", running: data.Ledger.Running, required: false, sessionName: data.Ledger.SessionName, detail: formatLedgerDetail(data.Ledger), peekable: data.Ledger.SessionName != ""},
+		{name: "Broker", running: data.Broker.Running, required: true, detail: formatBrokerDetail(data.Broker), peekable: false},
+		{name: "Senate", running: data.Senate.Running, required: false, sessionName: data.Senate.SessionName, detail: formatSenateDetail(data.Senate), peekable: data.Senate.SessionName != ""},
 	}
 
 	// Clamp cursor.
@@ -364,12 +365,12 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 	} else {
 		// Unfocused: compact 3-column grid (existing behavior).
 		procs := []processEntry{
-			{"Prefect", data.Prefect.Running},
-			{"Consul", data.Consul.Running},
-			{"Chronicle", data.Chronicle.Running},
-			{"Ledger", data.Ledger.Running},
-			{"Broker", data.Broker.Running},
-			{"Senate", data.Senate.Running},
+			{"Prefect", data.Prefect.Running, true},
+			{"Consul", data.Consul.Running, true},
+			{"Chronicle", data.Chronicle.Running, false},
+			{"Ledger", data.Ledger.Running, false},
+			{"Broker", data.Broker.Running, true},
+			{"Senate", data.Senate.Running, false},
 		}
 		b.WriteString(headerStyle.Render("Processes"))
 		b.WriteString("\n")
@@ -416,7 +417,10 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 // renderProcessList renders processes as a vertical list with cursor selection (focused mode).
 func (sm sphereModel) renderProcessList(b *strings.Builder) {
 	for i, item := range sm.processItems {
-		indicator := statusIndicator(item.running)
+		indicator := optionalStatusIndicator(item.running)
+		if item.required {
+			indicator = statusIndicator(item.running)
+		}
 		if item.running {
 			if s, ok := sm.processSpinners[item.name]; ok {
 				indicator = s.View()
@@ -458,7 +462,10 @@ func (sm sphereModel) renderProcessGrid(b *strings.Builder, procs []processEntry
 		cellWidth = 20
 	}
 	for i, p := range procs {
-		indicator := pulsingStatusIndicator(p.running, pulseBright)
+		indicator := optionalStatusIndicator(p.running)
+		if p.required {
+			indicator = pulsingStatusIndicator(p.running, pulseBright)
+		}
 		if p.running {
 			if s, ok := sm.processSpinners[p.name]; ok {
 				indicator = s.View()

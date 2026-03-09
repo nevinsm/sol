@@ -196,6 +196,48 @@ func TestStatusIndicator(t *testing.T) {
 	}
 }
 
+func TestOptionalStatusIndicator(t *testing.T) {
+	running := optionalStatusIndicator(true)
+	if !strings.Contains(running, "✓") {
+		t.Errorf("optionalStatusIndicator(true) = %q, want it to contain '✓'", running)
+	}
+
+	stopped := optionalStatusIndicator(false)
+	if !strings.Contains(stopped, "○") {
+		t.Errorf("optionalStatusIndicator(false) = %q, want it to contain '○'", stopped)
+	}
+	if strings.Contains(stopped, "✗") {
+		t.Errorf("optionalStatusIndicator(false) = %q, should not contain '✗'", stopped)
+	}
+}
+
+func TestOptionalProcessesUseDimCircle(t *testing.T) {
+	// Verify that optional processes (Chronicle, Ledger, Senate) show dim ○
+	// when not running, while required processes (Prefect, Consul, Broker)
+	// still show red ✗.
+	s := &SphereStatus{
+		SOLHome:   "/home/test/sol",
+		Health:    "healthy",
+		Prefect:   PrefectInfo{Running: false},
+		Consul:    ConsulInfo{Running: false},
+		Chronicle: ChronicleInfo{Running: false},
+		Ledger:    LedgerInfo{Running: false},
+		Broker:    BrokerInfo{Running: false},
+		Senate:    SenateInfo{Running: false},
+	}
+
+	output := RenderSphere(s)
+
+	// Required processes should have ✗ (red cross).
+	if !strings.Contains(output, "✗") {
+		t.Error("RenderSphere should show ✗ for required non-running processes")
+	}
+	// Optional processes should have ○ (dim circle).
+	if !strings.Contains(output, "○") {
+		t.Error("RenderSphere should show ○ for optional non-running processes")
+	}
+}
+
 func TestRenderWorldWithEnvoys(t *testing.T) {
 	ws := &WorldStatus{
 		World:   "haven",
@@ -248,6 +290,26 @@ func TestRenderWorldWithGovernor(t *testing.T) {
 		if !strings.Contains(output, check) {
 			t.Errorf("RenderWorld with governor missing %q", check)
 		}
+	}
+}
+
+func TestRenderWorldGovernorAlwaysShown(t *testing.T) {
+	// Governor should always appear in the process list, even when not running.
+	ws := &WorldStatus{
+		World:    "haven",
+		Prefect:  PrefectInfo{Running: true, PID: 42},
+		Governor: GovernorInfo{Running: false, SessionAlive: false},
+		Summary:  Summary{},
+	}
+
+	output := RenderWorld(ws)
+
+	if !strings.Contains(output, "Governor") {
+		t.Error("RenderWorld should show Governor even when not running")
+	}
+	// Should use dim ○ indicator (optional process), not red ✗.
+	if !strings.Contains(output, "○") {
+		t.Error("RenderWorld should show dim ○ for non-running optional Governor")
 	}
 }
 

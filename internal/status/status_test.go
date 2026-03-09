@@ -651,6 +651,39 @@ func TestGatherWithGovernor(t *testing.T) {
 	}
 }
 
+func TestGatherGovernorRunningReflectsSession(t *testing.T) {
+	// When governor is registered in the DB but its session is dead,
+	// Running should be false (reflects session state, not registration).
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	sphere := &mockSphereStore{
+		agents: []store.Agent{
+			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: "idle"},
+		},
+	}
+	world := &mockWorldStore{items: nil}
+	checker := &mockChecker{
+		alive: map[string]bool{
+			"sol-haven-governor": false, // session dead
+		},
+	}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if result.Governor.Running {
+		t.Error("Governor.Running = true, want false (session dead)")
+	}
+	if result.Governor.SessionAlive {
+		t.Error("Governor.SessionAlive = true, want false")
+	}
+}
+
 func TestGatherWithEnvoys(t *testing.T) {
 	setupTestHome(t)
 
