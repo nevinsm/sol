@@ -147,6 +147,115 @@ var workflowAdvanceCmd = &cobra.Command{
 	},
 }
 
+var workflowSkipCmd = &cobra.Command{
+	Use:          "skip",
+	Short:        "Skip the current workflow step and advance to the next",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		agentFlag, _ := cmd.Flags().GetString("agent")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
+			return err
+		}
+		agent, err := config.ResolveAgent(agentFlag)
+		if err != nil {
+			return err
+		}
+
+		// Read writ ID for event payload before skipping.
+		inst, _ := workflow.ReadInstance(world, agent, "agent")
+		writID := ""
+		if inst != nil {
+			writID = inst.WritID
+		}
+
+		// Read current step ID before skip (it changes after).
+		state, _ := workflow.ReadState(world, agent, "agent")
+		skippedStepID := ""
+		if state != nil {
+			skippedStepID = state.CurrentStep
+		}
+
+		nextStep, done, err := workflow.Skip(world, agent, "agent")
+		if err != nil {
+			return err
+		}
+
+		logger := events.NewLogger(config.Home())
+		if done {
+			logger.Emit(events.EventWorkflowAdvance, "sol", agent, "both", map[string]string{
+				"writ_id": writID,
+				"step_id": skippedStepID,
+				"skipped": "true",
+				"agent":   agent,
+				"world":   world,
+			})
+			logger.Emit(events.EventWorkflowComplete, "sol", agent, "both", map[string]string{
+				"writ_id": writID,
+				"agent":   agent,
+				"world":   world,
+			})
+			fmt.Println("Step skipped. Workflow complete.")
+			return nil
+		}
+
+		logger.Emit(events.EventWorkflowAdvance, "sol", agent, "both", map[string]string{
+			"writ_id": writID,
+			"step":    nextStep.Title,
+			"step_id": nextStep.ID,
+			"skipped": "true",
+			"agent":   agent,
+			"world":   world,
+		})
+		fmt.Printf("Step skipped. Advanced to step: %s\n", nextStep.Title)
+		return nil
+	},
+}
+
+var workflowFailCmd = &cobra.Command{
+	Use:          "fail",
+	Short:        "Mark the current workflow step and workflow as failed",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		worldFlag, _ := cmd.Flags().GetString("world")
+		agentFlag, _ := cmd.Flags().GetString("agent")
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
+			return err
+		}
+		agent, err := config.ResolveAgent(agentFlag)
+		if err != nil {
+			return err
+		}
+
+		// Read writ ID for event payload.
+		inst, _ := workflow.ReadInstance(world, agent, "agent")
+		writID := ""
+		if inst != nil {
+			writID = inst.WritID
+		}
+
+		failedStep, err := workflow.Fail(world, agent, "agent")
+		if err != nil {
+			return err
+		}
+
+		logger := events.NewLogger(config.Home())
+		logger.Emit(events.EventWorkflowFail, "sol", agent, "both", map[string]string{
+			"writ_id": writID,
+			"step":    failedStep.Title,
+			"step_id": failedStep.ID,
+			"agent":   agent,
+			"world":   world,
+		})
+		fmt.Printf("Step failed: %s. Workflow marked as failed.\n", failedStep.Title)
+		return nil
+	},
+}
+
 var workflowStatusCmd = &cobra.Command{
 	Use:          "status",
 	Short:        "Show workflow status",
@@ -184,22 +293,33 @@ var workflowStatusCmd = &cobra.Command{
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
+			type stepStatus struct {
+				ID     string `json:"id"`
+				Title  string `json:"title"`
+				Status string `json:"status"`
+			}
+			stepStatuses := make([]stepStatus, len(steps))
+			for i, s := range steps {
+				stepStatuses[i] = stepStatus{ID: s.ID, Title: s.Title, Status: s.Status}
+			}
 			out := struct {
-				Workflow       string   `json:"workflow"`
-				WritID     string   `json:"writ_id"`
-				Status         string   `json:"status"`
-				CurrentStep    string   `json:"current_step"`
-				Completed      []string `json:"completed"`
-				TotalSteps     int      `json:"total_steps"`
-				CompletedCount int      `json:"completed_count"`
+				Workflow       string       `json:"workflow"`
+				WritID         string       `json:"writ_id"`
+				Status         string       `json:"status"`
+				CurrentStep    string       `json:"current_step"`
+				Completed      []string     `json:"completed"`
+				TotalSteps     int          `json:"total_steps"`
+				CompletedCount int          `json:"completed_count"`
+				Steps          []stepStatus `json:"steps"`
 			}{
 				Workflow:       inst.Workflow,
-				WritID:     inst.WritID,
+				WritID:         inst.WritID,
 				Status:         state.Status,
 				CurrentStep:    state.CurrentStep,
 				Completed:      state.Completed,
 				TotalSteps:     len(steps),
 				CompletedCount: len(state.Completed),
+				Steps:          stepStatuses,
 			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
@@ -219,6 +339,10 @@ var workflowStatusCmd = &cobra.Command{
 				marker = "[x]"
 			case "executing":
 				marker = "[>]"
+			case "skipped":
+				marker = "[s]"
+			case "failed":
+				marker = "[!]"
 			default:
 				marker = "[ ]"
 			}
@@ -686,6 +810,8 @@ func init() {
 	workflowCmd.AddCommand(workflowInstantiateCmd)
 	workflowCmd.AddCommand(workflowCurrentCmd)
 	workflowCmd.AddCommand(workflowAdvanceCmd)
+	workflowCmd.AddCommand(workflowSkipCmd)
+	workflowCmd.AddCommand(workflowFailCmd)
 	workflowCmd.AddCommand(workflowStatusCmd)
 	workflowCmd.AddCommand(workflowManifestCmd)
 	workflowCmd.AddCommand(workflowShowCmd)
@@ -722,6 +848,14 @@ func init() {
 	// advance flags
 	workflowAdvanceCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
 	workflowAdvanceCmd.Flags().String("agent", "", "agent name (defaults to SOL_AGENT env)")
+
+	// skip flags
+	workflowSkipCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	workflowSkipCmd.Flags().String("agent", "", "agent name (defaults to SOL_AGENT env)")
+
+	// fail flags
+	workflowFailCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	workflowFailCmd.Flags().String("agent", "", "agent name (defaults to SOL_AGENT env)")
 
 	// status flags
 	workflowStatusCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
