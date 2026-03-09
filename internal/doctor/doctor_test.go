@@ -47,6 +47,19 @@ func TestCheckClaude(t *testing.T) {
 	}
 }
 
+func TestCheckJq(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("jq not available in test environment")
+	}
+	result := CheckJq()
+	if !result.Passed {
+		t.Fatalf("expected Passed=true, got false: %s", result.Message)
+	}
+	if !strings.Contains(result.Message, "jq-") {
+		t.Errorf("expected Message to contain 'jq-', got %q", result.Message)
+	}
+}
+
 func TestCheckSOLHomeExists(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
@@ -106,8 +119,8 @@ func TestRunAll(t *testing.T) {
 	t.Setenv("SOL_HOME", t.TempDir())
 
 	report := RunAll()
-	if len(report.Checks) != 5 {
-		t.Fatalf("expected 5 checks, got %d", len(report.Checks))
+	if len(report.Checks) != 6 {
+		t.Fatalf("expected 6 checks, got %d", len(report.Checks))
 	}
 
 	// Verify AllPassed is consistent with individual checks.

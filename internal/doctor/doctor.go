@@ -123,6 +123,34 @@ func CheckClaude() CheckResult {
 	}
 }
 
+// CheckJq verifies jq is installed and executable.
+func CheckJq() CheckResult {
+	path, err := exec.LookPath("jq")
+	if err != nil {
+		return CheckResult{
+			Name:    "jq",
+			Passed:  false,
+			Message: "jq not found in PATH",
+			Fix:     "Install jq: 'brew install jq' (macOS) or 'apt install jq' (Linux)",
+		}
+	}
+	out, err := exec.Command(path, "--version").Output()
+	if err != nil {
+		return CheckResult{
+			Name:    "jq",
+			Passed:  false,
+			Message: fmt.Sprintf("jq found at %s but failed to run: %v", path, err),
+			Fix:     "Check jq installation",
+		}
+	}
+	version := strings.TrimSpace(string(out))
+	return CheckResult{
+		Name:    "jq",
+		Passed:  true,
+		Message: fmt.Sprintf("%s (%s)", version, path),
+	}
+}
+
 // CheckSOLHome verifies SOL_HOME exists and is writable.
 // If SOL_HOME doesn't exist yet, checks that the parent directory is
 // writable (so init can create it).
@@ -240,6 +268,7 @@ func RunAll() *Report {
 	report.Checks = append(report.Checks, CheckTmux())
 	report.Checks = append(report.Checks, CheckGit())
 	report.Checks = append(report.Checks, CheckClaude())
+	report.Checks = append(report.Checks, CheckJq())
 	report.Checks = append(report.Checks, CheckSOLHome())
 	report.Checks = append(report.Checks, CheckSQLiteWAL())
 	return report
