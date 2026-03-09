@@ -77,6 +77,7 @@ const (
 
 	// Forge events.
 	EventForgePatrol = "forge_patrol" // forge patrol cycle completed
+	EventForgeRebase = "forge_rebase" // forge auto-rebased a branch before merge
 
 	// Token broker events.
 	EventBrokerRefresh = "broker_refresh" // token broker refreshed an account's OAuth token
