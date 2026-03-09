@@ -23,16 +23,16 @@ func TestWorkflowInstantiateAndAdvance(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	// Create formula directory structure.
-	formulaDir := filepath.Join(solHome, "formulas", "test-formula")
-	stepsDir := filepath.Join(formulaDir, "steps")
+	// Create workflow directory structure.
+	workflowDir := filepath.Join(solHome, "workflows", "test-workflow")
+	stepsDir := filepath.Join(workflowDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
 		t.Fatalf("create steps dir: %v", err)
 	}
 
-	manifest := `name = "test-formula"
+	manifest := `name = "test-workflow"
 type = "agent"
-description = "Test formula"
+description = "Test workflow"
 
 [variables]
 [variables.issue]
@@ -55,7 +55,7 @@ title = "Third Step"
 instructions = "steps/03.md"
 needs = ["step2"]
 `
-	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest.toml: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("# Step 1\nDo the first thing for {{issue}}.\n"), 0o644); err != nil {
@@ -73,12 +73,12 @@ needs = ["step2"]
 	agent := "TestBot"
 
 	// 1. Instantiate.
-	inst, state, err := workflow.Instantiate(world, agent, "agent", "test-formula", map[string]string{"issue": "sol-12345678"})
+	inst, state, err := workflow.Instantiate(world, agent, "agent", "test-workflow", map[string]string{"issue": "sol-12345678"})
 	if err != nil {
 		t.Fatalf("Instantiate: %v", err)
 	}
-	if inst.Formula != "test-formula" {
-		t.Errorf("formula: got %q, want test-formula", inst.Formula)
+	if inst.Workflow != "test-workflow" {
+		t.Errorf("workflow: got %q, want test-workflow", inst.Workflow)
 	}
 	if state.Status != "running" {
 		t.Errorf("status: got %q, want running", state.Status)
@@ -153,14 +153,14 @@ func TestWorkflowCrashRecovery(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	// Create formula.
-	formulaDir := filepath.Join(solHome, "formulas", "crash-formula")
-	stepsDir := filepath.Join(formulaDir, "steps")
+	// Create workflow.
+	workflowDir := filepath.Join(solHome, "workflows", "crash-workflow")
+	stepsDir := filepath.Join(workflowDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
 		t.Fatalf("create steps dir: %v", err)
 	}
 
-	manifest := `name = "crash-formula"
+	manifest := `name = "crash-workflow"
 type = "agent"
 description = "Crash test"
 
@@ -185,7 +185,7 @@ title = "Step 3"
 instructions = "steps/03.md"
 needs = ["s2"]
 `
-	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest.toml: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Step 1 instructions.\n"), 0o644); err != nil {
@@ -202,7 +202,7 @@ needs = ["s2"]
 	agent := "CrashBot"
 
 	// 1. Instantiate and advance to step 2.
-	if _, _, err := workflow.Instantiate(world, agent, "agent", "crash-formula", map[string]string{"issue": "sol-crash"}); err != nil {
+	if _, _, err := workflow.Instantiate(world, agent, "agent", "crash-workflow", map[string]string{"issue": "sol-crash"}); err != nil {
 		t.Fatalf("Instantiate: %v", err)
 	}
 	if _, _, err := workflow.Advance(world, agent, "agent"); err != nil {
@@ -252,14 +252,14 @@ func TestCastWithWorkflow(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create formula.
-	formulaDir := filepath.Join(solHome, "formulas", "cast-formula")
-	stepsDir := filepath.Join(formulaDir, "steps")
+	// Create workflow.
+	workflowDir := filepath.Join(solHome, "workflows", "cast-workflow")
+	stepsDir := filepath.Join(workflowDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
 		t.Fatalf("create steps dir: %v", err)
 	}
 
-	manifest := `name = "cast-formula"
+	manifest := `name = "cast-workflow"
 type = "agent"
 description = "Cast test"
 
@@ -272,7 +272,7 @@ id = "only-step"
 title = "Only Step"
 instructions = "steps/01.md"
 `
-	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest.toml: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Do the thing for {{issue}}.\n"), 0o644); err != nil {
@@ -290,26 +290,26 @@ instructions = "steps/01.md"
 
 	logger := events.NewLogger(solHome)
 
-	// Cast with formula.
+	// Cast with workflow.
 	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "WorkflowBot",
 		SourceRepo: sourceRepo,
-		Formula:    "cast-formula",
+		Workflow:    "cast-workflow",
 	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
-		t.Fatalf("cast with formula: %v", err)
+		t.Fatalf("cast with workflow: %v", err)
 	}
 
-	if result.Formula != "cast-formula" {
-		t.Errorf("result formula: got %q, want cast-formula", result.Formula)
+	if result.Workflow != "cast-workflow" {
+		t.Errorf("result workflow: got %q, want cast-workflow", result.Workflow)
 	}
 
 	// Verify .workflow/ directory created in agent's outpost dir.
 	wfDir := filepath.Join(solHome, "ember", "outposts", "WorkflowBot", ".workflow")
 	if _, err := os.Stat(wfDir); os.IsNotExist(err) {
-		t.Error(".workflow/ directory should exist after cast with formula")
+		t.Error(".workflow/ directory should exist after cast with workflow")
 	}
 
 	// Verify state.json exists with current_step set.
@@ -351,14 +351,14 @@ func TestPrimeWithWorkflow(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create formula.
-	formulaDir := filepath.Join(solHome, "formulas", "prime-formula")
-	stepsDir := filepath.Join(formulaDir, "steps")
+	// Create workflow.
+	workflowDir := filepath.Join(solHome, "workflows", "prime-workflow")
+	stepsDir := filepath.Join(workflowDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
 		t.Fatalf("create steps dir: %v", err)
 	}
 
-	manifest := `name = "prime-formula"
+	manifest := `name = "prime-workflow"
 type = "agent"
 description = "Prime test"
 
@@ -377,7 +377,7 @@ title = "Second Step"
 instructions = "steps/02.md"
 needs = ["step1"]
 `
-	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest.toml: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Execute step 1 for {{issue}}.\n"), 0o644); err != nil {
@@ -396,13 +396,13 @@ needs = ["step1"]
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	// Cast with formula.
+	// Cast with workflow.
 	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "PrimeBot",
 		SourceRepo: sourceRepo,
-		Formula:    "prime-formula",
+		Workflow:    "prime-workflow",
 	}, worldStore, sphereStore, mgr, nil); err != nil {
 		t.Fatalf("cast: %v", err)
 	}
@@ -431,9 +431,9 @@ needs = ["step1"]
 		t.Error("prime output should contain current step marker '[>]'")
 	}
 
-	// Verify workflow formula name appears.
-	if !strings.Contains(result.Output, "prime-formula") {
-		t.Error("prime output should contain formula name")
+	// Verify workflow workflow name appears.
+	if !strings.Contains(result.Output, "prime-workflow") {
+		t.Error("prime output should contain workflow name")
 	}
 }
 
@@ -446,7 +446,7 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create agent and writ — cast without formula.
+	// Create agent and writ — cast without workflow.
 	if _, err := sphereStore.CreateAgent("PlainBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
@@ -472,10 +472,10 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 
 	// Verify standard format — should NOT contain workflow section.
 	if strings.Contains(result.Output, "Workflow:") {
-		t.Error("prime output should not contain workflow section without formula")
+		t.Error("prime output should not contain workflow section without workflow")
 	}
 	if strings.Contains(result.Output, "sol workflow advance") {
-		t.Error("prime output should not contain workflow commands without formula")
+		t.Error("prime output should not contain workflow commands without workflow")
 	}
 
 	// Should contain standard instructions.
@@ -496,14 +496,14 @@ func TestDoneWithWorkflowCleanup(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create formula.
-	formulaDir := filepath.Join(solHome, "formulas", "done-formula")
-	stepsDir := filepath.Join(formulaDir, "steps")
+	// Create workflow.
+	workflowDir := filepath.Join(solHome, "workflows", "done-workflow")
+	stepsDir := filepath.Join(workflowDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
 		t.Fatalf("create steps dir: %v", err)
 	}
 
-	manifest := `name = "done-formula"
+	manifest := `name = "done-workflow"
 type = "agent"
 description = "Done test"
 
@@ -516,7 +516,7 @@ id = "only"
 title = "Only Step"
 instructions = "steps/01.md"
 `
-	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest.toml: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Do it.\n"), 0o644); err != nil {
@@ -532,13 +532,13 @@ instructions = "steps/01.md"
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	// Cast with formula.
+	// Cast with workflow.
 	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "DoneBot",
 		SourceRepo: sourceRepo,
-		Formula:    "done-formula",
+		Workflow:    "done-workflow",
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("cast: %v", err)
@@ -1046,14 +1046,14 @@ func TestWorkflowPropulsionLoop(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create formula with 3 steps.
-	formulaDir := filepath.Join(solHome, "formulas", "propulsion-formula")
-	stepsDir := filepath.Join(formulaDir, "steps")
+	// Create workflow with 3 steps.
+	workflowDir := filepath.Join(solHome, "workflows", "propulsion-workflow")
+	stepsDir := filepath.Join(workflowDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
 		t.Fatalf("create steps dir: %v", err)
 	}
 
-	manifest := `name = "propulsion-formula"
+	manifest := `name = "propulsion-workflow"
 type = "agent"
 description = "Propulsion loop test"
 
@@ -1078,7 +1078,7 @@ title = "Verify"
 instructions = "steps/03-verify.md"
 needs = ["implement"]
 `
-	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest.toml: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(stepsDir, "01-load.md"), []byte("Load context for {{issue}}.\n"), 0o644); err != nil {
@@ -1102,13 +1102,13 @@ needs = ["implement"]
 
 	logger := events.NewLogger(solHome)
 
-	// 1. Cast with formula (mock session).
+	// 1. Cast with workflow (mock session).
 	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "PropBot",
 		SourceRepo: sourceRepo,
-		Formula:    "propulsion-formula",
+		Workflow:    "propulsion-workflow",
 	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
 		t.Fatalf("cast: %v", err)
@@ -1202,7 +1202,7 @@ needs = ["implement"]
 
 // --- CLI Smoke Tests ---
 
-func TestCLICastFormulaHelp(t *testing.T) {
+func TestCLICastWorkflowHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -1212,8 +1212,8 @@ func TestCLICastFormulaHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sol cast --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "--formula") {
-		t.Errorf("cast help missing --formula flag: %s", out)
+	if !strings.Contains(out, "--workflow") {
+		t.Errorf("cast help missing --workflow flag: %s", out)
 	}
 	if !strings.Contains(out, "--var") {
 		t.Errorf("cast help missing --var flag: %s", out)

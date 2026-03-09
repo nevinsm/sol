@@ -107,7 +107,7 @@ philosophy:
 
 - **Simple tools that do one thing well.** A tether attacher that attaches tethers.
   A session manager that manages sessions. Not a 2000-line monolith that does
-  both plus formula instantiation plus caravan creation.
+  both plus workflow instantiation plus caravan creation.
 - **Composition over monoliths.** The dispatch operation is a sequence of atomic
   steps. Each step should be independently understandable, testable, and
   replaceable.

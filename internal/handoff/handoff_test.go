@@ -51,7 +51,7 @@ func TestCapture(t *testing.T) {
 		t.Fatalf("failed to write workflow state: %v", err)
 	}
 	// Minimal instance manifest for step counting.
-	instanceJSON := `{"formula":"default-work","writ_id":"sol-abc12345","variables":{},"instantiated_at":"2026-02-27T10:00:00Z"}`
+	instanceJSON := `{"workflow":"default-work","writ_id":"sol-abc12345","variables":{},"instantiated_at":"2026-02-27T10:00:00Z"}`
 	if err := os.WriteFile(filepath.Join(wfDir, "manifest.json"), []byte(instanceJSON), 0o644); err != nil {
 		t.Fatalf("failed to write workflow instance: %v", err)
 	}

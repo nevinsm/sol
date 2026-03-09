@@ -112,7 +112,7 @@ var reservedWorldNames = map[string]bool{
 	"store":    true,
 	"runtime":  true,
 	"sol":      true,
-	"formulas": true,
+	"workflows": true,
 }
 
 const maxWorldNameLen = 64

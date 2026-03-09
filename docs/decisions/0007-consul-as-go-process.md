@@ -9,7 +9,7 @@ Loop: 5
 The target architecture (Section 3.7) describes the consul as a
 "sphere-level AI agent" — language that could imply a full Claude session
 like the forge (ADR-0005). The Gastown prototype ran its consul as a
-persistent Claude session executing a patrol formula with full AI
+persistent Claude session executing a patrol workflow with full AI
 reasoning on every cycle.
 
 ADR-0001 noted that "the Consul (Loop 5) will provide AI-agent-level

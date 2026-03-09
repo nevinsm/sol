@@ -47,7 +47,7 @@ type RoleConfig struct {
     SystemPromptFile string
     SystemPromptContent string
     ReplacePrompt    bool
-    Formula          string
+    Workflow         string
     NeedsItem        bool
     PrimeBuilder     func(world, agent string) string
 }
@@ -60,7 +60,7 @@ The startup package owns the **sequence** (9 steps, always in order):
 3. Install hooks (settings.local.json)
 4. Ensure CLAUDE_CONFIG_DIR
 5. Ensure agent record in sphere store
-6. Instantiate workflow (if formula set)
+6. Instantiate workflow (if workflow set)
 7. Build prime context
 8. Build claude command (with system prompt flags)
 9. Start tmux session with env vars
@@ -82,7 +82,7 @@ Claude Code supports `--system-prompt-file` (full replacement) and
 **Full replacement** (`ReplacePrompt: true`) for autonomous roles:
 - **Forge** — merge queue processor. The default system prompt's plan mode,
   codebase exploration, and interactive assistance instructions actively
-  conflict with formula-driven patrol behavior. Replacing eliminates the
+  conflict with workflow-driven patrol behavior. Replacing eliminates the
   conflict at the source.
 - **Outpost** — dispatched workers. Same conflict — outposts execute work
   items via workflow steps, not interactive assistance. No user to ask

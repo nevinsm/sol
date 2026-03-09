@@ -324,7 +324,7 @@ func TestForgeClaudeMDTheoryOfOperation(t *testing.T) {
 		t.Error("forge CLAUDE.md should describe mechanical role with world name")
 	}
 	if !strings.Contains(content, "sol-forge-patrol") {
-		t.Error("forge CLAUDE.md should reference the sol-forge-patrol formula")
+		t.Error("forge CLAUDE.md should reference the sol-forge-patrol workflow")
 	}
 	if !strings.Contains(content, "You use git directly") {
 		t.Error("forge CLAUDE.md should state using git directly")

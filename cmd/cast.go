@@ -14,7 +14,7 @@ import (
 var (
 	castWorld   string
 	castAgent   string
-	castFormula string
+	castWorkflow string
 	castVars    []string
 	castAccount string
 )
@@ -74,7 +74,7 @@ var castCmd = &cobra.Command{
 			World:       world,
 			AgentName:   castAgent,
 			SourceRepo:  sourceRepo,
-			Formula:     castFormula,
+			Workflow:    castWorkflow,
 			Variables:   vars,
 			WorldConfig: &worldCfg,
 			Account:     castAccount,
@@ -86,8 +86,8 @@ var castCmd = &cobra.Command{
 		fmt.Printf("Cast %s -> %s (%s)\n", result.WritID, result.AgentName, result.SessionName)
 		fmt.Printf("  Worktree: %s\n", result.WorktreeDir)
 		fmt.Printf("  Session:  %s\n", result.SessionName)
-		if result.Formula != "" {
-			fmt.Printf("  Formula:  %s\n", result.Formula)
+		if result.Workflow != "" {
+			fmt.Printf("  Workflow: %s\n", result.Workflow)
 		}
 		fmt.Printf("  Attach:   sol session attach %s\n", result.SessionName)
 		return nil
@@ -101,7 +101,7 @@ func init() {
 	rootCmd.AddCommand(castCmd)
 	castCmd.Flags().StringVar(&castWorld, "world", "", "world name")
 	castCmd.Flags().StringVar(&castAgent, "agent", "", "agent name (auto-selects idle agent if omitted)")
-	castCmd.Flags().StringVar(&castFormula, "formula", "", "workflow formula to instantiate")
+	castCmd.Flags().StringVar(&castWorkflow, "workflow", "", "workflow to instantiate")
 	castCmd.Flags().StringSliceVar(&castVars, "var", nil, "workflow variable (key=val, repeatable)")
 	castCmd.Flags().StringVar(&castAccount, "account", "", "account to use for credentials (overrides world.toml default_account)")
 }

@@ -403,14 +403,14 @@ func TestHandoffWithWorkflow(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create formula.
-	formulaDir := filepath.Join(solHome, "formulas", "handoff-formula")
-	stepsDir := filepath.Join(formulaDir, "steps")
+	// Create workflow.
+	workflowDir := filepath.Join(solHome, "workflows", "handoff-workflow")
+	stepsDir := filepath.Join(workflowDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
 		t.Fatalf("create steps dir: %v", err)
 	}
 
-	manifest := `name = "handoff-formula"
+	manifest := `name = "handoff-workflow"
 type = "agent"
 description = "Handoff test"
 
@@ -429,7 +429,7 @@ title = "Second Step"
 instructions = "steps/02.md"
 needs = ["step1"]
 `
-	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest.toml: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Step 1 instructions.\n"), 0o644); err != nil {
@@ -448,13 +448,13 @@ needs = ["step1"]
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	// Cast with formula.
+	// Cast with workflow.
 	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "WFHandBot",
 		SourceRepo: sourceRepo,
-		Formula:    "handoff-formula",
+		Workflow:    "handoff-workflow",
 	}, worldStore, sphereStore, mgr, nil); err != nil {
 		t.Fatalf("cast: %v", err)
 	}
@@ -519,14 +519,14 @@ func TestHandoffPrimeOverridesWorkflow(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create formula.
-	formulaDir := filepath.Join(solHome, "formulas", "override-formula")
-	stepsDir := filepath.Join(formulaDir, "steps")
+	// Create workflow.
+	workflowDir := filepath.Join(solHome, "workflows", "override-workflow")
+	stepsDir := filepath.Join(workflowDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
 		t.Fatalf("create steps dir: %v", err)
 	}
 
-	manifest := `name = "override-formula"
+	manifest := `name = "override-workflow"
 type = "agent"
 description = "Override test"
 
@@ -539,7 +539,7 @@ id = "only"
 title = "Only Step"
 instructions = "steps/01.md"
 `
-	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest.toml: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Only step.\n"), 0o644); err != nil {
@@ -555,13 +555,13 @@ instructions = "steps/01.md"
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	// Cast with formula.
+	// Cast with workflow.
 	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "OverBot",
 		SourceRepo: sourceRepo,
-		Formula:    "override-formula",
+		Workflow:    "override-workflow",
 	}, worldStore, sphereStore, mgr, nil); err != nil {
 		t.Fatalf("cast: %v", err)
 	}

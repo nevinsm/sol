@@ -18,7 +18,7 @@ state cross-contaminates:
 
 - **Stale memories poison behavior.** The forge accumulated memories about
   `sol forge merge` (a removed pipeline command) and old CLI patterns.
-  These competed with the workflow formula's instructions, causing the
+  These competed with the workflow's instructions, causing the
   agent to deviate from prescribed steps.
 - **Transcript bloat.** Outposts are ephemeral but their transcripts
   persist indefinitely — Nova accumulated 127 sessions (62MB) across

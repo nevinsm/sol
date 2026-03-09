@@ -4,10 +4,10 @@ import (
 	"testing"
 )
 
-func TestValidateFormulaName(t *testing.T) {
+func TestValidateName(t *testing.T) {
 	valid := []string{
 		"standard",
-		"my-formula",
+		"my-workflow",
 		"v2_build",
 		"default-work",
 		"A",
@@ -18,8 +18,8 @@ func TestValidateFormulaName(t *testing.T) {
 		"deep-scan",
 	}
 	for _, name := range valid {
-		if err := ValidateFormulaName(name); err != nil {
-			t.Errorf("ValidateFormulaName(%q) = %v, want nil", name, err)
+		if err := ValidateName(name); err != nil {
+			t.Errorf("ValidateName(%q) = %v, want nil", name, err)
 		}
 	}
 
@@ -42,15 +42,15 @@ func TestValidateFormulaName(t *testing.T) {
 	}
 	for _, tc := range invalid {
 		t.Run(tc.desc, func(t *testing.T) {
-			err := ValidateFormulaName(tc.name)
+			err := ValidateName(tc.name)
 			if err == nil {
-				t.Errorf("ValidateFormulaName(%q) = nil, want error (%s)", tc.name, tc.desc)
+				t.Errorf("ValidateName(%q) = nil, want error (%s)", tc.name, tc.desc)
 			}
 		})
 	}
 }
 
-func TestEnsureFormulaRejectsTraversal(t *testing.T) {
+func TestResolveRejectsTraversal(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
@@ -63,9 +63,9 @@ func TestEnsureFormulaRejectsTraversal(t *testing.T) {
 	}
 	for _, name := range cases {
 		t.Run(name, func(t *testing.T) {
-			_, err := EnsureFormula(name, "")
+			_, err := Resolve(name, "")
 			if err == nil {
-				t.Errorf("EnsureFormula(%q, \"\") = nil error, want validation error", name)
+				t.Errorf("Resolve(%q, \"\") = nil error, want validation error", name)
 			}
 		})
 	}

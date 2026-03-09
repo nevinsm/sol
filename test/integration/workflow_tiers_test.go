@@ -17,17 +17,17 @@ import (
 // --- Three-Tier Workflow Resolution Integration Tests ---
 //
 // These tests verify the project > user > embedded resolution order
-// defined in ADR-0021. Project formulas live in {repo}/.sol/workflows/,
-// user formulas in $SOL_HOME/formulas/, and embedded formulas are
+// defined in ADR-0021. Project workflows live in {repo}/.sol/workflows/,
+// user workflows in $SOL_HOME/workflows/, and embedded workflows are
 // compiled into the binary.
 
-// makeFormula creates a minimal workflow formula directory with a single step.
-func makeFormula(t *testing.T, dir, name, description string) {
+// makeWorkflow creates a minimal workflow directory with a single step.
+func makeWorkflow(t *testing.T, dir, name, description string) {
 	t.Helper()
-	formulaDir := filepath.Join(dir, name)
-	stepsDir := filepath.Join(formulaDir, "steps")
+	workflowDir := filepath.Join(dir, name)
+	stepsDir := filepath.Join(workflowDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
-		t.Fatalf("create formula dir %s: %v", name, err)
+		t.Fatalf("create workflow dir %s: %v", name, err)
 	}
 	manifest := `name = "` + name + `"
 type = "agent"
@@ -42,7 +42,7 @@ id = "only"
 title = "Only Step"
 instructions = "steps/01.md"
 `
-	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest for %s: %v", name, err)
 	}
 	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Instructions for "+name+" ("+description+"): {{issue}}\n"), 0o644); err != nil {
@@ -64,22 +64,22 @@ func TestProjectWorkflowOverridesUser(t *testing.T) {
 	world := "ember"
 	repoPath := config.RepoPath(world)
 
-	// Create same formula at project and user tiers.
+	// Create same workflow at project and user tiers.
 	projectBase := filepath.Join(repoPath, ".sol", "workflows")
-	userBase := filepath.Join(solHome, "formulas")
+	userBase := filepath.Join(solHome, "workflows")
 
-	makeFormula(t, projectBase, "shared-formula", "project tier")
-	makeFormula(t, userBase, "shared-formula", "user tier")
+	makeWorkflow(t, projectBase, "shared-workflow", "project tier")
+	makeWorkflow(t, userBase, "shared-workflow", "user tier")
 
 	// Resolve — project tier should win.
-	res, err := workflow.EnsureFormula("shared-formula", repoPath)
+	res, err := workflow.Resolve("shared-workflow", repoPath)
 	if err != nil {
-		t.Fatalf("EnsureFormula: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	if res.Tier != workflow.TierProject {
 		t.Errorf("tier: got %q, want %q", res.Tier, workflow.TierProject)
 	}
-	if !strings.Contains(res.Path, ".sol/workflows/shared-formula") {
+	if !strings.Contains(res.Path, ".sol/workflows/shared-workflow") {
 		t.Errorf("path should be project-level: %s", res.Path)
 	}
 }
@@ -98,18 +98,18 @@ func TestUserWorkflowFallback(t *testing.T) {
 	world := "ember"
 	repoPath := config.RepoPath(world)
 
-	// Create formula only at user tier. Project tier directory exists but
-	// does not contain this formula.
+	// Create workflow only at user tier. Project tier directory exists but
+	// does not contain this workflow.
 	if err := os.MkdirAll(filepath.Join(repoPath, ".sol", "workflows"), 0o755); err != nil {
 		t.Fatalf("create project workflows dir: %v", err)
 	}
-	userBase := filepath.Join(solHome, "formulas")
-	makeFormula(t, userBase, "user-only-formula", "user tier")
+	userBase := filepath.Join(solHome, "workflows")
+	makeWorkflow(t, userBase, "user-only-workflow", "user tier")
 
 	// Resolve — user tier should win.
-	res, err := workflow.EnsureFormula("user-only-formula", repoPath)
+	res, err := workflow.Resolve("user-only-workflow", repoPath)
 	if err != nil {
-		t.Fatalf("EnsureFormula: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	if res.Tier != workflow.TierUser {
 		t.Errorf("tier: got %q, want %q", res.Tier, workflow.TierUser)
@@ -135,19 +135,19 @@ func TestEmbeddedWorkflowFallback(t *testing.T) {
 		t.Fatalf("create project workflows dir: %v", err)
 	}
 
-	// No user formula either — embedded should be extracted and used.
-	res, err := workflow.EnsureFormula("default-work", repoPath)
+	// No user workflow either — embedded should be extracted and used.
+	res, err := workflow.Resolve("default-work", repoPath)
 	if err != nil {
-		t.Fatalf("EnsureFormula: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	if res.Tier != workflow.TierEmbedded {
 		t.Errorf("tier: got %q, want %q", res.Tier, workflow.TierEmbedded)
 	}
 
-	// Verify the embedded formula was extracted to user-level path.
-	extractedManifest := filepath.Join(solHome, "formulas", "default-work", "manifest.toml")
+	// Verify the embedded workflow was extracted to user-level path.
+	extractedManifest := filepath.Join(solHome, "workflows", "default-work", "manifest.toml")
 	if _, err := os.Stat(extractedManifest); os.IsNotExist(err) {
-		t.Error("embedded default-work should be extracted to $SOL_HOME/formulas/")
+		t.Error("embedded default-work should be extracted to $SOL_HOME/workflows/")
 	}
 }
 
@@ -167,23 +167,23 @@ func TestProjectShadowsEmbeddedDefault(t *testing.T) {
 
 	// Create a custom default-work at project tier — should shadow the embedded one.
 	projectBase := filepath.Join(repoPath, ".sol", "workflows")
-	makeFormula(t, projectBase, "default-work", "custom project default-work")
+	makeWorkflow(t, projectBase, "default-work", "custom project default-work")
 
-	res, err := workflow.EnsureFormula("default-work", repoPath)
+	res, err := workflow.Resolve("default-work", repoPath)
 	if err != nil {
-		t.Fatalf("EnsureFormula: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	if res.Tier != workflow.TierProject {
 		t.Errorf("tier: got %q, want %q — project should shadow embedded", res.Tier, workflow.TierProject)
 	}
 
 	// Verify embedded was NOT extracted (project took priority).
-	extractedManifest := filepath.Join(solHome, "formulas", "default-work", "manifest.toml")
+	extractedManifest := filepath.Join(solHome, "workflows", "default-work", "manifest.toml")
 	if _, err := os.Stat(extractedManifest); !os.IsNotExist(err) {
 		t.Error("embedded default-work should NOT be extracted when project tier matches")
 	}
 
-	// Verify the resolved formula has the project description.
+	// Verify the resolved workflow has the project description.
 	m, err := workflow.LoadManifest(res.Path)
 	if err != nil {
 		t.Fatalf("LoadManifest: %v", err)
@@ -209,30 +209,30 @@ func TestWorkflowListShowsCorrectTiers(t *testing.T) {
 
 	// Set up three tiers:
 	// - project-only: exists only at project tier
-	// - shared-formula: exists at project AND user tiers (user is shadowed)
+	// - shared-workflow: exists at project AND user tiers (user is shadowed)
 	// - default-work: exists at project tier (shadows embedded)
 	// - user-only: exists only at user tier
 	// - (embedded defaults exist automatically)
 	projectBase := filepath.Join(repoPath, ".sol", "workflows")
-	userBase := filepath.Join(solHome, "formulas")
+	userBase := filepath.Join(solHome, "workflows")
 
-	makeFormula(t, projectBase, "project-only", "project-only formula")
-	makeFormula(t, projectBase, "shared-formula", "project tier shared")
-	makeFormula(t, userBase, "shared-formula", "user tier shared")
-	makeFormula(t, projectBase, "default-work", "custom project default")
-	makeFormula(t, userBase, "user-only", "user-only formula")
+	makeWorkflow(t, projectBase, "project-only", "project-only workflow")
+	makeWorkflow(t, projectBase, "shared-workflow", "project tier shared")
+	makeWorkflow(t, userBase, "shared-workflow", "user tier shared")
+	makeWorkflow(t, projectBase, "default-work", "custom project default")
+	makeWorkflow(t, userBase, "user-only", "user-only workflow")
 
-	entries, err := workflow.ListFormulas(repoPath)
+	entries, err := workflow.List(repoPath)
 	if err != nil {
-		t.Fatalf("ListFormulas: %v", err)
+		t.Fatalf("List: %v", err)
 	}
 
 	// Build a lookup map: name → list of entries (multiple tiers possible).
 	type entryKey struct {
 		name string
-		tier workflow.FormulaTier
+		tier workflow.Tier
 	}
-	lookup := map[entryKey]workflow.FormulaEntry{}
+	lookup := map[entryKey]workflow.Entry{}
 	for _, e := range entries {
 		lookup[entryKey{e.Name, e.Tier}] = e
 	}
@@ -244,18 +244,18 @@ func TestWorkflowListShowsCorrectTiers(t *testing.T) {
 		t.Error("project-only should NOT be shadowed")
 	}
 
-	// shared-formula at project tier: not shadowed.
-	if e, ok := lookup[entryKey{"shared-formula", workflow.TierProject}]; !ok {
-		t.Error("shared-formula should appear at project tier")
+	// shared-workflow at project tier: not shadowed.
+	if e, ok := lookup[entryKey{"shared-workflow", workflow.TierProject}]; !ok {
+		t.Error("shared-workflow should appear at project tier")
 	} else if e.Shadowed {
-		t.Error("shared-formula at project tier should NOT be shadowed")
+		t.Error("shared-workflow at project tier should NOT be shadowed")
 	}
 
-	// shared-formula at user tier: IS shadowed by project.
-	if e, ok := lookup[entryKey{"shared-formula", workflow.TierUser}]; !ok {
-		t.Error("shared-formula should appear at user tier")
+	// shared-workflow at user tier: IS shadowed by project.
+	if e, ok := lookup[entryKey{"shared-workflow", workflow.TierUser}]; !ok {
+		t.Error("shared-workflow should appear at user tier")
 	} else if !e.Shadowed {
-		t.Error("shared-formula at user tier should be shadowed by project tier")
+		t.Error("shared-workflow at user tier should be shadowed by project tier")
 	}
 
 	// default-work at project tier: not shadowed.
@@ -292,18 +292,18 @@ func TestCastWithProjectWorkflow(t *testing.T) {
 
 	world := "ember"
 
-	// Create project-level formula in the managed repo path.
+	// Create project-level workflow in the managed repo path.
 	repoPath := config.RepoPath(world)
 	projectBase := filepath.Join(repoPath, ".sol", "workflows")
-	formulaDir := filepath.Join(projectBase, "project-cast-formula")
-	stepsDir := filepath.Join(formulaDir, "steps")
+	workflowDir := filepath.Join(projectBase, "project-cast-workflow")
+	stepsDir := filepath.Join(workflowDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
-		t.Fatalf("create project formula dir: %v", err)
+		t.Fatalf("create project workflow dir: %v", err)
 	}
 
-	manifest := `name = "project-cast-formula"
+	manifest := `name = "project-cast-workflow"
 type = "agent"
-description = "Project-level formula for cast test"
+description = "Project-level workflow for cast test"
 
 [variables]
 [variables.issue]
@@ -314,7 +314,7 @@ id = "project-step"
 title = "Project Step"
 instructions = "steps/01.md"
 `
-	if err := os.WriteFile(filepath.Join(formulaDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Project workflow step for {{issue}}.\n"), 0o644); err != nil {
@@ -330,20 +330,20 @@ instructions = "steps/01.md"
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	// Cast with the project-level formula.
+	// Cast with the project-level workflow.
 	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
 		WritID: itemID,
 		World:      world,
 		AgentName:  "ProjectBot",
 		SourceRepo: sourceRepo,
-		Formula:    "project-cast-formula",
+		Workflow:    "project-cast-workflow",
 	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
-		t.Fatalf("cast with project formula: %v", err)
+		t.Fatalf("cast with project workflow: %v", err)
 	}
 
-	if result.Formula != "project-cast-formula" {
-		t.Errorf("result formula: got %q, want project-cast-formula", result.Formula)
+	if result.Workflow != "project-cast-workflow" {
+		t.Errorf("result workflow: got %q, want project-cast-workflow", result.Workflow)
 	}
 
 	// Verify workflow state was created.
@@ -352,7 +352,7 @@ instructions = "steps/01.md"
 		t.Fatalf("ReadState: %v", err)
 	}
 	if state == nil {
-		t.Fatal("state should not be nil after cast with formula")
+		t.Fatal("state should not be nil after cast with workflow")
 	}
 	if state.CurrentStep != "project-step" {
 		t.Errorf("current step: got %q, want project-step", state.CurrentStep)
@@ -415,12 +415,12 @@ func TestInstantiateResolvesProjectTier(t *testing.T) {
 	world := "ember"
 	agent := "TierBot"
 
-	// Create formula at both project and user tiers with different content.
+	// Create workflow at both project and user tiers with different content.
 	repoPath := config.RepoPath(world)
 	projectBase := filepath.Join(repoPath, ".sol", "workflows")
-	userBase := filepath.Join(solHome, "formulas")
+	userBase := filepath.Join(solHome, "workflows")
 
-	// Project tier formula.
+	// Project tier workflow.
 	projectDir := filepath.Join(projectBase, "tier-test")
 	projectSteps := filepath.Join(projectDir, "steps")
 	if err := os.MkdirAll(projectSteps, 0o755); err != nil {
@@ -445,7 +445,7 @@ instructions = "steps/01.md"
 		t.Fatalf("write project step: %v", err)
 	}
 
-	// User tier formula (same name, different content).
+	// User tier workflow (same name, different content).
 	userDir := filepath.Join(userBase, "tier-test")
 	userSteps := filepath.Join(userDir, "steps")
 	if err := os.MkdirAll(userSteps, 0o755); err != nil {
@@ -482,8 +482,8 @@ instructions = "steps/01.md"
 		t.Fatalf("Instantiate: %v", err)
 	}
 
-	if inst.Formula != "tier-test" {
-		t.Errorf("formula: got %q, want tier-test", inst.Formula)
+	if inst.Workflow != "tier-test" {
+		t.Errorf("workflow: got %q, want tier-test", inst.Workflow)
 	}
 	if state.CurrentStep != "p1" {
 		t.Errorf("current step: got %q, want p1 (project tier)", state.CurrentStep)
@@ -522,79 +522,79 @@ func TestBranchChangesProjectWorkflows(t *testing.T) {
 	}
 	runGit(t, repoPath, "init")
 
-	// On main branch: create a project workflow "branch-formula".
+	// On main branch: create a project workflow "branch-workflow".
 	projectBase := filepath.Join(repoPath, ".sol", "workflows")
-	makeFormula(t, projectBase, "branch-formula", "main branch version")
+	makeWorkflow(t, projectBase, "branch-workflow", "main branch version")
 	runGit(t, repoPath, "add", ".")
-	runGit(t, repoPath, "commit", "-m", "add branch-formula on main")
+	runGit(t, repoPath, "commit", "-m", "add branch-workflow on main")
 
 	// Verify it resolves from project tier.
-	res, err := workflow.EnsureFormula("branch-formula", repoPath)
+	res, err := workflow.Resolve("branch-workflow", repoPath)
 	if err != nil {
-		t.Fatalf("EnsureFormula on main: %v", err)
+		t.Fatalf("Resolve on main: %v", err)
 	}
 	if res.Tier != workflow.TierProject {
 		t.Errorf("main branch tier: got %q, want project", res.Tier)
 	}
 
-	// Create a feature branch that adds a different formula and removes branch-formula.
+	// Create a feature branch that adds a different workflow and removes branch-workflow.
 	runGit(t, repoPath, "checkout", "-b", "feature-branch")
-	os.RemoveAll(filepath.Join(projectBase, "branch-formula"))
-	makeFormula(t, projectBase, "feature-formula", "feature branch only")
+	os.RemoveAll(filepath.Join(projectBase, "branch-workflow"))
+	makeWorkflow(t, projectBase, "feature-workflow", "feature branch only")
 	runGit(t, repoPath, "add", ".")
-	runGit(t, repoPath, "commit", "-m", "replace branch-formula with feature-formula")
+	runGit(t, repoPath, "commit", "-m", "replace branch-workflow with feature-workflow")
 
-	// On feature branch: branch-formula should NOT be found at project tier.
-	_, err = workflow.EnsureFormula("branch-formula", repoPath)
+	// On feature branch: branch-workflow should NOT be found at project tier.
+	_, err = workflow.Resolve("branch-workflow", repoPath)
 	if err == nil {
-		t.Error("branch-formula should NOT resolve on feature branch (removed)")
+		t.Error("branch-workflow should NOT resolve on feature branch (removed)")
 	}
 
-	// feature-formula should resolve on feature branch.
-	res, err = workflow.EnsureFormula("feature-formula", repoPath)
+	// feature-workflow should resolve on feature branch.
+	res, err = workflow.Resolve("feature-workflow", repoPath)
 	if err != nil {
-		t.Fatalf("EnsureFormula for feature-formula: %v", err)
+		t.Fatalf("Resolve for feature-workflow: %v", err)
 	}
 	if res.Tier != workflow.TierProject {
 		t.Errorf("feature branch tier: got %q, want project", res.Tier)
 	}
 
-	// ListFormulas should show feature-formula but not branch-formula on this branch.
-	entries, err := workflow.ListFormulas(repoPath)
+	// List should show feature-workflow but not branch-workflow on this branch.
+	entries, err := workflow.List(repoPath)
 	if err != nil {
-		t.Fatalf("ListFormulas on feature: %v", err)
+		t.Fatalf("List on feature: %v", err)
 	}
 	foundFeature := false
 	foundBranch := false
 	for _, e := range entries {
-		if e.Name == "feature-formula" && e.Tier == workflow.TierProject {
+		if e.Name == "feature-workflow" && e.Tier == workflow.TierProject {
 			foundFeature = true
 		}
-		if e.Name == "branch-formula" && e.Tier == workflow.TierProject {
+		if e.Name == "branch-workflow" && e.Tier == workflow.TierProject {
 			foundBranch = true
 		}
 	}
 	if !foundFeature {
-		t.Error("feature-formula should appear in list on feature branch")
+		t.Error("feature-workflow should appear in list on feature branch")
 	}
 	if foundBranch {
-		t.Error("branch-formula should NOT appear in list on feature branch")
+		t.Error("branch-workflow should NOT appear in list on feature branch")
 	}
 
-	// Switch back to main — branch-formula should be back.
+	// Switch back to main — branch-workflow should be back.
 	runGit(t, repoPath, "checkout", "main")
-	res, err = workflow.EnsureFormula("branch-formula", repoPath)
+	res, err = workflow.Resolve("branch-workflow", repoPath)
 	if err != nil {
-		t.Fatalf("EnsureFormula after checkout main: %v", err)
+		t.Fatalf("Resolve after checkout main: %v", err)
 	}
 	if res.Tier != workflow.TierProject {
 		t.Errorf("back on main tier: got %q, want project", res.Tier)
 	}
 
-	// feature-formula should NOT be available on main.
-	_, err = workflow.EnsureFormula("feature-formula", repoPath)
+	// feature-workflow should NOT be available on main.
+	_, err = workflow.Resolve("feature-workflow", repoPath)
 	if err == nil {
-		t.Error("feature-formula should NOT resolve on main branch")
+		t.Error("feature-workflow should NOT resolve on main branch")
 	}
 }
 
@@ -608,14 +608,14 @@ func TestWorkflowListCLIShowsTiers(t *testing.T) {
 	world := "ember"
 	initWorld(t, solHome, world)
 
-	// Create a project-level formula in the managed repo path.
+	// Create a project-level workflow in the managed repo path.
 	repoPath := config.RepoPath(world)
 	projectBase := filepath.Join(repoPath, ".sol", "workflows")
-	makeFormula(t, projectBase, "cli-project-wf", "CLI project workflow")
+	makeWorkflow(t, projectBase, "cli-project-wf", "CLI project workflow")
 
-	// Create a user-level formula.
-	userBase := filepath.Join(solHome, "formulas")
-	makeFormula(t, userBase, "cli-user-wf", "CLI user workflow")
+	// Create a user-level workflow.
+	userBase := filepath.Join(solHome, "workflows")
+	makeWorkflow(t, userBase, "cli-user-wf", "CLI user workflow")
 
 	// Run sol workflow list --world=ember --json.
 	out, err := runGT(t, solHome, "workflow", "list", "--world="+world, "--json")
@@ -623,13 +623,13 @@ func TestWorkflowListCLIShowsTiers(t *testing.T) {
 		t.Fatalf("sol workflow list: %v: %s", err, out)
 	}
 
-	var entries []workflow.FormulaEntry
+	var entries []workflow.Entry
 	if err := json.Unmarshal([]byte(out), &entries); err != nil {
 		t.Fatalf("unmarshal list output: %v\nraw: %s", err, out)
 	}
 
-	// Verify our formulas appear with correct tiers.
-	tierMap := map[string]workflow.FormulaTier{}
+	// Verify our workflows appear with correct tiers.
+	tierMap := map[string]workflow.Tier{}
 	for _, e := range entries {
 		if !e.Shadowed {
 			tierMap[e.Name] = e.Tier
@@ -669,7 +669,7 @@ func TestWorkflowListCLIShowsShadowed(t *testing.T) {
 	// Create default-work at project tier to shadow the embedded one.
 	repoPath := config.RepoPath(world)
 	projectBase := filepath.Join(repoPath, ".sol", "workflows")
-	makeFormula(t, projectBase, "default-work", "project override of default-work")
+	makeWorkflow(t, projectBase, "default-work", "project override of default-work")
 
 	// Run with --all to see shadowed entries.
 	out, err := runGT(t, solHome, "workflow", "list", "--world="+world, "--json", "--all")
@@ -677,13 +677,13 @@ func TestWorkflowListCLIShowsShadowed(t *testing.T) {
 		t.Fatalf("sol workflow list --all: %v: %s", err, out)
 	}
 
-	var entries []workflow.FormulaEntry
+	var entries []workflow.Entry
 	if err := json.Unmarshal([]byte(out), &entries); err != nil {
 		t.Fatalf("unmarshal: %v\nraw: %s", err, out)
 	}
 
 	// Find both default-work entries.
-	var projectEntry, embeddedEntry *workflow.FormulaEntry
+	var projectEntry, embeddedEntry *workflow.Entry
 	for i := range entries {
 		if entries[i].Name == "default-work" {
 			switch entries[i].Tier {

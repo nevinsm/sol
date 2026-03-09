@@ -117,7 +117,7 @@ type CastResult struct {
 	AgentName   string
 	SessionName string
 	WorktreeDir string
-	Formula     string // empty if no workflow
+	Workflow    string // empty if no workflow
 }
 
 // CastOpts holds the inputs for a cast operation.
@@ -126,7 +126,7 @@ type CastOpts struct {
 	World       string
 	AgentName   string              // optional: if empty, find an idle agent
 	SourceRepo  string              // path to the source git repo
-	Formula     string              // optional: formula name for workflow
+	Workflow    string              // optional: workflow name to instantiate
 	Variables   map[string]string   // optional: workflow variables
 	WorldConfig *config.WorldConfig // optional: pre-loaded config (avoids double load)
 	Account     string              // optional: explicit account override for credential provisioning
@@ -316,9 +316,9 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		return nil, fmt.Errorf("failed to create writ output directory: %w", err)
 	}
 
-	// 7. Instantiate workflow if formula provided (before Launch so persona
+	// 7. Instantiate workflow if provided (before Launch so persona
 	// can detect the active workflow).
-	if opts.Formula != "" {
+	if opts.Workflow != "" {
 		vars := opts.Variables
 		if vars == nil {
 			vars = map[string]string{}
@@ -327,9 +327,9 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		if _, ok := vars["issue"]; !ok {
 			vars["issue"] = opts.WritID
 		}
-		if _, _, err := workflow.Instantiate(opts.World, agent.Name, "agent", opts.Formula, vars); err != nil {
+		if _, _, err := workflow.Instantiate(opts.World, agent.Name, "agent", opts.Workflow, vars); err != nil {
 			rollback()
-			return nil, fmt.Errorf("failed to instantiate workflow %q: %w", opts.Formula, err)
+			return nil, fmt.Errorf("failed to instantiate workflow %q: %w", opts.Workflow, err)
 		}
 	}
 
@@ -355,10 +355,10 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		logger.Emit(events.EventCast, "sol", "operator", "both", castPayload)
 	}
 
-	// Emit workflow instantiation event if formula was used.
-	if opts.Formula != "" && logger != nil {
+	// Emit workflow instantiation event if workflow was used.
+	if opts.Workflow != "" && logger != nil {
 		logger.Emit(events.EventWorkflowInstantiate, "sol", "operator", "both", map[string]string{
-			"formula":      opts.Formula,
+			"workflow":     opts.Workflow,
 			"writ_id": opts.WritID,
 			"agent":        agent.Name,
 			"world":        opts.World,
@@ -375,7 +375,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		AgentName:   agent.Name,
 		SessionName: sessName,
 		WorktreeDir: worktreeDir,
-		Formula:     opts.Formula,
+		Workflow:    opts.Workflow,
 	}, nil
 }
 
@@ -1010,9 +1010,9 @@ func primeWithWorkflow(world, agentName, role string, item *store.Writ,
 	}
 
 	instance, _ := workflow.ReadInstance(world, agentName, role)
-	formula := ""
+	wfName := ""
 	if instance != nil {
-		formula = instance.Formula
+		wfName = instance.Workflow
 	}
 
 	// Find the current step index and build checklist.
@@ -1059,7 +1059,7 @@ When step is complete: sol workflow advance --world=%s --agent=%s
 After final step: sol resolve
 === END CONTEXT ===`,
 		agentName, world, item.ID, item.Title,
-		formula, currentIdx+1, totalSteps, currentStep.Title,
+		wfName, currentIdx+1, totalSteps, currentStep.Title,
 		strings.TrimRight(checklist.String(), "\n"),
 		currentStep.Instructions,
 		world, agentName)

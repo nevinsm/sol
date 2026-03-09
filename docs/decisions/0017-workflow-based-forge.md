@@ -27,16 +27,16 @@ In practice, the agent consistently routed around these constraints:
   earlier sessions (e.g., old CLI subcommands that no longer existed).
 
 The Gastown prototype solved a similar problem with its refinery by using
-a formula — a TOML workflow document with explicit step-by-step
+a workflow — a TOML document with explicit step-by-step
 instructions including the exact commands to run. The agent follows the
-formula mechanically rather than improvising a patrol strategy.
+workflow mechanically rather than improvising a patrol strategy.
 
 ## Decision
 
-Replace the forge's free-form patrol with a workflow formula
+Replace the forge's free-form patrol with a workflow
 (`sol-forge-patrol`) that prescribes the exact sequence of operations.
 
-**The formula defines:**
+**The workflow defines:**
 - 10 steps: unblock → scan → claim → sync → merge (git merge --squash) →
   gates → push → handle-result → loop → health-check
 - Each step includes the exact commands to execute
@@ -46,9 +46,9 @@ Replace the forge's free-form patrol with a workflow formula
 
 **What was removed:**
 - `sol forge merge` Go pipeline — the agent runs git commands directly as
-  prescribed by the formula steps
+  prescribed by the workflow steps
 - Most PreToolUse hook rules — only truly dangerous variants are blocked
-  (force push, `rm -rf`, `checkout -b`). The formula constrains behavior
+  (force push, `rm -rf`, `checkout -b`). The workflow constrains behavior
   more effectively than hooks.
 
 **What was kept:**
@@ -60,7 +60,7 @@ Replace the forge's free-form patrol with a workflow formula
 - Handoff mechanics for context recovery
 
 **Why this works where persona + hooks failed:**
-- A formula is a concrete checklist, not a behavioral suggestion. The
+- A workflow is a concrete checklist, not a behavioral suggestion. The
   agent follows prescribed commands rather than inventing its own.
 - Removing `sol forge merge` eliminates the "shortcut vs prescribed path"
   tension — there is only one path.
@@ -71,14 +71,14 @@ Replace the forge's free-form patrol with a workflow formula
 
 - The forge follows a predictable, observable sequence. Operators can
   watch the tmux session and verify step-by-step compliance.
-- Formula changes are TOML edits, not Go code changes. Adjusting the
+- Workflow changes are TOML edits, not Go code changes. Adjusting the
   merge strategy (e.g., switching from `--squash` to `--no-ff`) is a
   one-line change.
 - The agent retains judgment only where it matters: conflict resolution
   during the merge step, test failure attribution during gates, and
   delegation decisions for complex conflicts.
-- Hook evasion is no longer a concern — the formula tells the agent what
+- Hook evasion is no longer a concern — the workflow tells the agent what
   to do rather than trying to prevent what it shouldn't.
 - Auto-memory contamination remains a risk. Stale memories from previous
-  sessions can compete with formula instructions. ADR-0018 addresses
+  sessions can compete with workflow instructions. ADR-0018 addresses
   this with per-agent config directory isolation.
