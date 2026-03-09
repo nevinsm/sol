@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -90,6 +91,8 @@ const (
 	TierUser Tier = "user"
 	// TierEmbedded is a built-in workflow extracted from go:embed defaults.
 	TierEmbedded Tier = "embedded"
+	// TierLocal is used when loading a workflow from an arbitrary directory path.
+	TierLocal Tier = "local"
 )
 
 // Resolution is the result of resolving a workflow name to a path.
@@ -345,4 +348,120 @@ func tierPriority(t Tier) int {
 	default:
 		return 3
 	}
+}
+
+// Skeleton manifest templates for workflow init scaffolding.
+// The placeholder {name} is replaced with the actual workflow name.
+const skeletonWorkflow = `name = "{name}"
+type = "workflow"
+description = ""
+
+[variables]
+
+[[steps]]
+id = "start"
+title = "Start"
+instructions = "steps/01-start.md"
+`
+
+const skeletonExpansion = `name = "{name}"
+type = "expansion"
+description = ""
+
+[[template]]
+id = "{target}.first"
+title = "First pass: {target.title}"
+description = ""
+`
+
+const skeletonConvoy = `name = "{name}"
+type = "convoy"
+description = ""
+
+[[legs]]
+id = "first"
+title = "First dimension"
+description = ""
+kind = "analysis"
+
+[synthesis]
+title = "Synthesis"
+description = ""
+depends_on = ["first"]
+`
+
+// defaultStepContent is the placeholder content for the initial step file.
+const defaultStepContent = `# Start
+
+Describe what this step should do.
+`
+
+// Init creates a new workflow scaffold at the appropriate tier.
+// workflowType must be "workflow", "expansion", or "convoy".
+// If project is true, the workflow is created in the project tier at
+// {repoPath}/.sol/workflows/{name}/; otherwise it goes to the user tier
+// at $SOL_HOME/workflows/{name}/.
+func Init(name, workflowType, repoPath string, project bool) (string, error) {
+	if err := ValidateName(name); err != nil {
+		return "", err
+	}
+
+	// Select skeleton template.
+	var skeleton string
+	switch workflowType {
+	case "workflow":
+		skeleton = skeletonWorkflow
+	case "expansion":
+		skeleton = skeletonExpansion
+	case "convoy":
+		skeleton = skeletonConvoy
+	default:
+		return "", fmt.Errorf("invalid workflow type %q: must be workflow, expansion, or convoy", workflowType)
+	}
+
+	// Determine target directory.
+	var dir string
+	if project {
+		if repoPath == "" {
+			return "", fmt.Errorf("--project requires --world to determine the managed repo path")
+		}
+		dir = ProjectDir(repoPath, name)
+	} else {
+		dir = Dir(name)
+	}
+
+	// Check if directory already exists.
+	if _, err := os.Stat(dir); err == nil {
+		return "", fmt.Errorf("workflow directory already exists: %s", dir)
+	}
+
+	// Create directory structure.
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create workflow directory: %w", err)
+	}
+
+	// Write manifest.toml with name substituted.
+	manifest := strings.ReplaceAll(skeleton, "{name}", name)
+	manifestPath := filepath.Join(dir, "manifest.toml")
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+		// Clean up on failure.
+		os.RemoveAll(dir)
+		return "", fmt.Errorf("failed to write manifest.toml: %w", err)
+	}
+
+	// For workflow type, create steps/ directory with placeholder step file.
+	if workflowType == "workflow" {
+		stepsDir := filepath.Join(dir, "steps")
+		if err := os.MkdirAll(stepsDir, 0o755); err != nil {
+			os.RemoveAll(dir)
+			return "", fmt.Errorf("failed to create steps directory: %w", err)
+		}
+		stepPath := filepath.Join(stepsDir, "01-start.md")
+		if err := os.WriteFile(stepPath, []byte(defaultStepContent), 0o644); err != nil {
+			os.RemoveAll(dir)
+			return "", fmt.Errorf("failed to write step file: %w", err)
+		}
+	}
+
+	return dir, nil
 }

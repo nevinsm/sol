@@ -258,3 +258,308 @@ func TestResolveRejectsTraversal(t *testing.T) {
 		})
 	}
 }
+
+func TestInitWorkflowType(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	dir, err := Init("my-test", "workflow", "", false)
+	if err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	expectedDir := filepath.Join(solHome, "workflows", "my-test")
+	if dir != expectedDir {
+		t.Errorf("dir: got %q, want %q", dir, expectedDir)
+	}
+
+	// Check manifest.toml exists and contains correct content.
+	manifestData, err := os.ReadFile(filepath.Join(dir, "manifest.toml"))
+	if err != nil {
+		t.Fatalf("read manifest.toml: %v", err)
+	}
+	manifest := string(manifestData)
+	if !strings.Contains(manifest, `name = "my-test"`) {
+		t.Errorf("manifest missing name field")
+	}
+	if !strings.Contains(manifest, `type = "workflow"`) {
+		t.Errorf("manifest missing type field")
+	}
+	if !strings.Contains(manifest, `id = "start"`) {
+		t.Errorf("manifest missing step definition")
+	}
+	if !strings.Contains(manifest, `instructions = "steps/01-start.md"`) {
+		t.Errorf("manifest missing instructions field")
+	}
+
+	// Check steps/ directory and placeholder step file.
+	stepPath := filepath.Join(dir, "steps", "01-start.md")
+	if _, err := os.Stat(stepPath); os.IsNotExist(err) {
+		t.Errorf("step file %q not created", stepPath)
+	}
+
+	// Validate the manifest can be loaded and is valid.
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+	if err := Validate(m); err != nil {
+		t.Errorf("Validate() error: %v", err)
+	}
+}
+
+func TestInitExpansionType(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	dir, err := Init("my-expansion", "expansion", "", false)
+	if err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Check manifest.toml content.
+	manifestData, err := os.ReadFile(filepath.Join(dir, "manifest.toml"))
+	if err != nil {
+		t.Fatalf("read manifest.toml: %v", err)
+	}
+	manifest := string(manifestData)
+	if !strings.Contains(manifest, `name = "my-expansion"`) {
+		t.Errorf("manifest missing name field")
+	}
+	if !strings.Contains(manifest, `type = "expansion"`) {
+		t.Errorf("manifest missing type field")
+	}
+	if !strings.Contains(manifest, `[[template]]`) {
+		t.Errorf("manifest missing template section")
+	}
+
+	// No steps/ directory for expansion type.
+	stepsDir := filepath.Join(dir, "steps")
+	if _, err := os.Stat(stepsDir); !os.IsNotExist(err) {
+		t.Errorf("steps/ directory should not exist for expansion type")
+	}
+
+	// Validate the manifest can be loaded.
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+	if err := Validate(m); err != nil {
+		t.Errorf("Validate() error: %v", err)
+	}
+}
+
+func TestInitConvoyType(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	dir, err := Init("my-convoy", "convoy", "", false)
+	if err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	// Check manifest.toml content.
+	manifestData, err := os.ReadFile(filepath.Join(dir, "manifest.toml"))
+	if err != nil {
+		t.Fatalf("read manifest.toml: %v", err)
+	}
+	manifest := string(manifestData)
+	if !strings.Contains(manifest, `name = "my-convoy"`) {
+		t.Errorf("manifest missing name field")
+	}
+	if !strings.Contains(manifest, `type = "convoy"`) {
+		t.Errorf("manifest missing type field")
+	}
+	if !strings.Contains(manifest, `[[legs]]`) {
+		t.Errorf("manifest missing legs section")
+	}
+	if !strings.Contains(manifest, `[synthesis]`) {
+		t.Errorf("manifest missing synthesis section")
+	}
+
+	// No steps/ directory for convoy type.
+	stepsDir := filepath.Join(dir, "steps")
+	if _, err := os.Stat(stepsDir); !os.IsNotExist(err) {
+		t.Errorf("steps/ directory should not exist for convoy type")
+	}
+
+	// Validate the manifest can be loaded.
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+	if err := Validate(m); err != nil {
+		t.Errorf("Validate() error: %v", err)
+	}
+}
+
+func TestInitProjectTier(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	repoPath := t.TempDir()
+
+	dir, err := Init("proj-workflow", "workflow", repoPath, true)
+	if err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	expectedDir := filepath.Join(repoPath, ".sol", "workflows", "proj-workflow")
+	if dir != expectedDir {
+		t.Errorf("dir: got %q, want %q", dir, expectedDir)
+	}
+
+	// Verify manifest exists.
+	if _, err := os.Stat(filepath.Join(dir, "manifest.toml")); os.IsNotExist(err) {
+		t.Errorf("manifest.toml not created in project tier")
+	}
+
+	// Verify steps/ directory exists for workflow type.
+	if _, err := os.Stat(filepath.Join(dir, "steps", "01-start.md")); os.IsNotExist(err) {
+		t.Errorf("step file not created in project tier")
+	}
+}
+
+func TestInitErrorsOnExistingDirectory(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Create the first workflow successfully.
+	_, err := Init("existing", "workflow", "", false)
+	if err != nil {
+		t.Fatalf("first Init() error: %v", err)
+	}
+
+	// Second attempt should fail.
+	_, err = Init("existing", "workflow", "", false)
+	if err == nil {
+		t.Fatal("Init() expected error for existing directory")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error should mention 'already exists', got: %v", err)
+	}
+}
+
+func TestInitErrorsOnInvalidName(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	invalidNames := []string{
+		"../escape",
+		".hidden",
+		"foo/bar",
+		"",
+		"-leading-hyphen",
+	}
+	for _, name := range invalidNames {
+		t.Run(name, func(t *testing.T) {
+			_, err := Init(name, "workflow", "", false)
+			if err == nil {
+				t.Errorf("Init(%q) expected error for invalid name", name)
+			}
+		})
+	}
+}
+
+func TestInitProjectRequiresRepoPath(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	_, err := Init("test-proj", "workflow", "", true)
+	if err == nil {
+		t.Fatal("Init() expected error when project=true without repoPath")
+	}
+	if !strings.Contains(err.Error(), "--project requires --world") {
+		t.Errorf("error should mention --project requires --world, got: %v", err)
+	}
+}
+
+func TestInitInvalidType(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	_, err := Init("test-bad-type", "invalid", "", false)
+	if err == nil {
+		t.Fatal("Init() expected error for invalid type")
+	}
+	if !strings.Contains(err.Error(), "invalid workflow type") {
+		t.Errorf("error should mention invalid workflow type, got: %v", err)
+	}
+}
+
+func TestShowFromPath(t *testing.T) {
+	// Create a workflow at an arbitrary path and load it via LoadManifest.
+	dir := t.TempDir()
+
+	// Write a valid workflow manifest.
+	manifest := `name = "path-test"
+type = "workflow"
+description = "A test workflow"
+
+[[steps]]
+id = "start"
+title = "Start"
+instructions = "steps/01-start.md"
+`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	// Load and validate.
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+	if m.Name != "path-test" {
+		t.Errorf("name: got %q, want %q", m.Name, "path-test")
+	}
+	if err := Validate(m); err != nil {
+		t.Errorf("Validate() error: %v", err)
+	}
+
+	// Verify TierLocal constant is usable.
+	res := &Resolution{Path: dir, Tier: TierLocal}
+	if res.Tier != "local" {
+		t.Errorf("tier: got %q, want %q", res.Tier, "local")
+	}
+}
+
+func TestShowFromPathInvalidManifest(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write an invalid manifest (convoy without synthesis).
+	manifest := `name = "bad-convoy"
+type = "convoy"
+description = "Missing synthesis"
+
+[[legs]]
+id = "first"
+title = "First"
+description = ""
+`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+
+	err = Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for convoy without synthesis")
+	}
+	if !strings.Contains(err.Error(), "synthesis") {
+		t.Errorf("error should mention synthesis, got: %v", err)
+	}
+}
+
+func TestShowFromPathMissingManifest(t *testing.T) {
+	dir := t.TempDir()
+
+	_, err := LoadManifest(dir)
+	if err == nil {
+		t.Fatal("LoadManifest() expected error for missing manifest.toml")
+	}
+}

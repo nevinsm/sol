@@ -234,27 +234,48 @@ var workflowStatusCmd = &cobra.Command{
 }
 
 var workflowShowCmd = &cobra.Command{
-	Use:          "show <workflow>",
+	Use:          "show [workflow]",
 	Short:        "Display workflow details and resolution source",
-	Args:         cobra.ExactArgs(1),
+	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		workflowName := args[0]
+		pathFlag, _ := cmd.Flags().GetString("path")
 
-		// Resolve world for project-tier lookup (optional).
-		var repoPath string
-		worldFlag, _ := cmd.Flags().GetString("world")
-		if worldFlag != "" || os.Getenv("SOL_WORLD") != "" {
-			world, err := config.ResolveWorld(worldFlag)
+		// Validate mutual exclusivity: --path or positional arg, not both.
+		if pathFlag != "" && len(args) > 0 {
+			return fmt.Errorf("--path and positional <workflow> argument are mutually exclusive")
+		}
+		if pathFlag == "" && len(args) == 0 {
+			return fmt.Errorf("either a <workflow> name or --path must be provided")
+		}
+
+		var res *workflow.Resolution
+
+		if pathFlag != "" {
+			// Load from arbitrary directory path.
+			res = &workflow.Resolution{
+				Path: pathFlag,
+				Tier: workflow.TierLocal,
+			}
+		} else {
+			workflowName := args[0]
+
+			// Resolve world for project-tier lookup (optional).
+			var repoPath string
+			worldFlag, _ := cmd.Flags().GetString("world")
+			if worldFlag != "" || os.Getenv("SOL_WORLD") != "" {
+				world, err := config.ResolveWorld(worldFlag)
+				if err != nil {
+					return err
+				}
+				repoPath = config.RepoPath(world)
+			}
+
+			var err error
+			res, err = workflow.Resolve(workflowName, repoPath)
 			if err != nil {
 				return err
 			}
-			repoPath = config.RepoPath(world)
-		}
-
-		res, err := workflow.Resolve(workflowName, repoPath)
-		if err != nil {
-			return err
 		}
 
 		m, err := workflow.LoadManifest(res.Path)
@@ -270,6 +291,40 @@ var workflowShowCmd = &cobra.Command{
 		}
 
 		return printShowHuman(m, res, validationErr)
+	},
+}
+
+var workflowInitCmd = &cobra.Command{
+	Use:          "init <name>",
+	Short:        "Scaffold a new workflow",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		typeFlag, _ := cmd.Flags().GetString("type")
+		projectFlag, _ := cmd.Flags().GetBool("project")
+		worldFlag, _ := cmd.Flags().GetString("world")
+
+		// Validate --project requires --world.
+		var repoPath string
+		if projectFlag {
+			if worldFlag == "" {
+				return fmt.Errorf("--project requires --world")
+			}
+			world, err := config.ResolveWorld(worldFlag)
+			if err != nil {
+				return err
+			}
+			repoPath = config.RepoPath(world)
+		}
+
+		dir, err := workflow.Init(name, typeFlag, repoPath, projectFlag)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Created workflow at %s. Edit manifest.toml to define your workflow, then preview with `sol workflow show %s`.\n", dir, name)
+		return nil
 	},
 }
 
@@ -636,6 +691,7 @@ func init() {
 	workflowCmd.AddCommand(workflowShowCmd)
 	workflowCmd.AddCommand(workflowListCmd)
 	workflowCmd.AddCommand(workflowEjectCmd)
+	workflowCmd.AddCommand(workflowInitCmd)
 
 	// eject flags
 	workflowEjectCmd.Flags().Bool("project", false, "eject to project tier instead of user tier (requires --world)")
@@ -645,6 +701,12 @@ func init() {
 	// show flags
 	workflowShowCmd.Flags().String("world", "", "world name (for project-tier resolution)")
 	workflowShowCmd.Flags().Bool("json", false, "output as JSON")
+	workflowShowCmd.Flags().String("path", "", "load workflow from directory path instead of by name")
+
+	// init flags
+	workflowInitCmd.Flags().String("type", "workflow", "workflow type (workflow, expansion, or convoy)")
+	workflowInitCmd.Flags().Bool("project", false, "create in project tier (.sol/workflows/)")
+	workflowInitCmd.Flags().String("world", "", "world name (required with --project)")
 
 	// instantiate flags
 	workflowInstantiateCmd.Flags().String("item", "", "writ ID")
