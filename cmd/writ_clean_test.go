@@ -51,7 +51,7 @@ func createClosedWritWithAge(t *testing.T, s *store.Store, title string, age tim
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.CloseWrit(id); err != nil {
+	if _, err := s.CloseWrit(id); err != nil {
 		t.Fatal(err)
 	}
 	// Backdate closed_at.

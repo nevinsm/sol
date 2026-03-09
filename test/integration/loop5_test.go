@@ -936,7 +936,7 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	if err := rs.CloseWrit(idA); err != nil {
+	if _, err := rs.CloseWrit(idA); err != nil {
 		t.Fatalf("close writ A: %v", err)
 	}
 	rs.Close()

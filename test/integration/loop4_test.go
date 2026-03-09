@@ -656,7 +656,7 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	if err := rs.CloseWrit(idA); err != nil {
+	if _, err := rs.CloseWrit(idA); err != nil {
 		t.Fatalf("close writ A: %v", err)
 	}
 	rs.Close()
@@ -677,7 +677,7 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	if err := rs.CloseWrit(idB); err != nil {
+	if _, err := rs.CloseWrit(idB); err != nil {
 		t.Fatalf("close writ B: %v", err)
 	}
 	rs.Close()
@@ -876,7 +876,7 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open beta world: %v", err)
 	}
-	if err := bs.CloseWrit(idB); err != nil {
+	if _, err := bs.CloseWrit(idB); err != nil {
 		t.Fatalf("close writ B: %v", err)
 	}
 	bs.Close()
@@ -897,7 +897,7 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open alpha world: %v", err)
 	}
-	if err := as.CloseWrit(idA); err != nil {
+	if _, err := as.CloseWrit(idA); err != nil {
 		t.Fatalf("close writ A: %v", err)
 	}
 	as.Close()
@@ -906,10 +906,10 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open beta world: %v", err)
 	}
-	if err := bs.CloseWrit(idB); err != nil {
+	if _, err := bs.CloseWrit(idB); err != nil {
 		t.Fatalf("close writ B: %v", err)
 	}
-	if err := bs.CloseWrit(idC); err != nil {
+	if _, err := bs.CloseWrit(idC); err != nil {
 		t.Fatalf("close writ C: %v", err)
 	}
 	bs.Close()

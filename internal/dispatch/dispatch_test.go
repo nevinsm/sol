@@ -3738,7 +3738,7 @@ func TestCloseWritWithReason(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := worldStore.CloseWrit(itemID, "completed"); err != nil {
+	if _, err := worldStore.CloseWrit(itemID, "completed"); err != nil {
 		t.Fatalf("CloseWrit with reason failed: %v", err)
 	}
 

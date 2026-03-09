@@ -308,7 +308,8 @@ var writCloseCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		if err := s.CloseWrit(args[0], closeReason); err != nil {
+		superseded, err := s.CloseWrit(args[0], closeReason)
+		if err != nil {
 			return err
 		}
 
@@ -320,9 +321,20 @@ var writCloseCmd = &cobra.Command{
 			for _, esc := range escalations {
 				_ = sphereStore.ResolveEscalation(esc.ID)
 			}
+			// Resolve escalations for MRs superseded by writ closure.
+			for _, mrID := range superseded {
+				escalations, _ := sphereStore.ListEscalationsBySourceRef("mr:" + mrID)
+				for _, esc := range escalations {
+					_ = sphereStore.ResolveEscalation(esc.ID)
+				}
+			}
 		}
 
-		fmt.Printf("Closed %s\n", args[0])
+		if len(superseded) > 0 {
+			fmt.Printf("Closed %s (superseded %d failed MR(s))\n", args[0], len(superseded))
+		} else {
+			fmt.Printf("Closed %s\n", args[0])
+		}
 		return nil
 	},
 }

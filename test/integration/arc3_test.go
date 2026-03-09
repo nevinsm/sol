@@ -125,7 +125,7 @@ func TestCaravanPhaseOrdering(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	if err := worldStore.CloseWrit(id1); err != nil {
+	if _, err := worldStore.CloseWrit(id1); err != nil {
 		t.Fatalf("close writ: %v", err)
 	}
 

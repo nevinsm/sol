@@ -389,6 +389,48 @@ func (s *Store) ReleaseStaleClaims(ttl time.Duration) (int, error) {
 	return int(n), nil
 }
 
+// SupersedeFailedMRsForWrit transitions all failed MRs for the given writ
+// to "superseded". Returns the list of superseded MR IDs.
+func (s *Store) SupersedeFailedMRsForWrit(writID string) ([]string, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Collect the IDs of failed MRs before updating them.
+	rows, err := s.db.Query(
+		`SELECT id FROM merge_requests WHERE writ_id = ? AND phase = 'failed'`,
+		writID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list failed MRs for writ %q: %w", writID, err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan failed MR ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating failed MRs for writ %q: %w", writID, err)
+	}
+
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	_, err = s.db.Exec(
+		`UPDATE merge_requests SET phase = 'superseded', updated_at = ? WHERE writ_id = ? AND phase = 'failed'`,
+		now, writID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to supersede failed MRs for writ %q: %w", writID, err)
+	}
+
+	return ids, nil
+}
+
 // ResetMergeRequestForRetry resets a merge request for retry after conflict
 // resolution: sets phase to ready, resets attempts to 0, and clears
 // blocked_by, claimed_by, and claimed_at.

@@ -404,7 +404,8 @@ func (s *Store) UpdateWrit(id string, updates WritUpdates) error {
 
 // CloseWrit sets status to "closed" and records closed_at.
 // An optional close reason can be provided as the second argument.
-func (s *Store) CloseWrit(id string, closeReason ...string) error {
+// Also supersedes any failed MRs for the writ, returning their IDs.
+func (s *Store) CloseWrit(id string, closeReason ...string) ([]string, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	var result sql.Result
 	var err error
@@ -420,9 +421,18 @@ func (s *Store) CloseWrit(id string, closeReason ...string) error {
 		)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to close writ %q: %w", id, err)
+		return nil, fmt.Errorf("failed to close writ %q: %w", id, err)
 	}
-	return checkRowsAffected(result, "writ", id)
+	if err := checkRowsAffected(result, "writ", id); err != nil {
+		return nil, err
+	}
+
+	// Supersede any failed MRs for this writ.
+	superseded, err := s.SupersedeFailedMRsForWrit(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to supersede failed MRs for writ %q: %w", id, err)
+	}
+	return superseded, nil
 }
 
 // GetWritMetadata returns the metadata for a writ.

@@ -157,8 +157,16 @@ func (r *Forge) MarkMerged(mrID string) error {
 	// forge patrol will detect the closed writ and can retry the MR phase
 	// update. The reverse (MR "merged" but writ still "working") would leave
 	// the tether orphaned and the agent permanently assigned.
-	if err := r.worldStore.CloseWrit(mr.WritID); err != nil {
+	superseded, err := r.worldStore.CloseWrit(mr.WritID)
+	if err != nil {
 		return fmt.Errorf("failed to close writ %s: %w", mr.WritID, err)
+	}
+	if len(superseded) > 0 {
+		r.logger.Info("superseded failed MRs on writ close", "writ", mr.WritID, "count", len(superseded))
+		// Resolve escalations for MRs superseded by writ closure.
+		for _, sid := range superseded {
+			r.resolveEscalationsForMR(sid)
+		}
 	}
 
 	if err := r.worldStore.UpdateMergeRequestPhase(mrID, "merged"); err != nil {

@@ -2378,7 +2378,7 @@ func TestConvoyLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatalf("OpenWorld() error: %v", err)
 		}
-		if err := ws2.CloseWrit(legItemID); err != nil {
+		if _, err := ws2.CloseWrit(legItemID); err != nil {
 			t.Fatalf("CloseWrit(%q) error: %v", legItemID, err)
 		}
 		ws2.Close()
@@ -2410,7 +2410,7 @@ func TestConvoyLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenWorld() error: %v", err)
 	}
-	if err := ws3.CloseWrit(synthID); err != nil {
+	if _, err := ws3.CloseWrit(synthID); err != nil {
 		t.Fatalf("CloseWrit(synthesis) error: %v", err)
 	}
 	ws3.Close()
@@ -3045,7 +3045,7 @@ func TestCaravanPhaseGatingWithAnalysisWrit(t *testing.T) {
 	}
 
 	// Close the analysis writ directly (simulating resolve for analysis writs).
-	if err := ws.CloseWrit(analyzeID); err != nil {
+	if _, err := ws.CloseWrit(analyzeID); err != nil {
 		t.Fatalf("CloseWrit(analyze) error: %v", err)
 	}
 
@@ -3348,10 +3348,10 @@ func TestMixedKindConvoyEndToEnd(t *testing.T) {
 	}
 
 	// --- Close analysis legs directly (simulating resolve for analysis writs) ---
-	if err := ws.CloseWrit(designID); err != nil {
+	if _, err := ws.CloseWrit(designID); err != nil {
 		t.Fatalf("CloseWrit(design-review) error: %v", err)
 	}
-	if err := ws.CloseWrit(riskID); err != nil {
+	if _, err := ws.CloseWrit(riskID); err != nil {
 		t.Fatalf("CloseWrit(risk-assessment) error: %v", err)
 	}
 
@@ -3365,7 +3365,7 @@ func TestMixedKindConvoyEndToEnd(t *testing.T) {
 	}
 
 	// --- Close code legs (simulating forge merge completion) ---
-	if err := ws.CloseWrit(codeImplID); err != nil {
+	if _, err := ws.CloseWrit(codeImplID); err != nil {
 		t.Fatalf("CloseWrit(code-impl) error: %v", err)
 	}
 
@@ -3379,7 +3379,7 @@ func TestMixedKindConvoyEndToEnd(t *testing.T) {
 	}
 
 	// Close last code leg.
-	if err := ws.CloseWrit(codeTestsID); err != nil {
+	if _, err := ws.CloseWrit(codeTestsID); err != nil {
 		t.Fatalf("CloseWrit(code-tests) error: %v", err)
 	}
 
@@ -3553,7 +3553,7 @@ func TestCodeReviewConvoyWorkflow(t *testing.T) {
 	), 0o644); err != nil {
 		t.Fatalf("write requirements findings: %v", err)
 	}
-	if err := ws.CloseWrit(reqsID, "completed"); err != nil {
+	if _, err := ws.CloseWrit(reqsID, "completed"); err != nil {
 		t.Fatalf("CloseWrit(requirements) error: %v", err)
 	}
 
@@ -3578,7 +3578,7 @@ func TestCodeReviewConvoyWorkflow(t *testing.T) {
 	), 0o644); err != nil {
 		t.Fatalf("write feasibility findings: %v", err)
 	}
-	if err := ws.CloseWrit(feasID, "completed"); err != nil {
+	if _, err := ws.CloseWrit(feasID, "completed"); err != nil {
 		t.Fatalf("CloseWrit(feasibility) error: %v", err)
 	}
 

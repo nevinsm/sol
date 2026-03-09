@@ -599,7 +599,7 @@ func TestWritCRUD(t *testing.T) {
 	}
 
 	// Close.
-	err = s.CloseWrit(id)
+	_, err = s.CloseWrit(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1401,7 +1401,7 @@ func TestCloseWritWithReason(t *testing.T) {
 	}
 
 	// Close with reason.
-	if err := s.CloseWrit(id, "completed"); err != nil {
+	if _, err := s.CloseWrit(id, "completed"); err != nil {
 		t.Fatal(err)
 	}
 	item, err := s.GetWrit(id)
@@ -1427,7 +1427,7 @@ func TestCloseWritWithoutReason(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := s.CloseWrit(id); err != nil {
+	if _, err := s.CloseWrit(id); err != nil {
 		t.Fatal(err)
 	}
 	item, err := s.GetWrit(id)

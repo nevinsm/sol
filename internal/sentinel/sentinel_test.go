@@ -2441,7 +2441,7 @@ func TestPatrolReapsAgentTetheredToClosedWrit(t *testing.T) {
 	}
 
 	// Close the writ with a reason.
-	if err := worldStore.CloseWrit("sol-abc12345", "superseded"); err != nil {
+	if _, err := worldStore.CloseWrit("sol-abc12345", "superseded"); err != nil {
 		t.Fatalf("CloseWrit() error: %v", err)
 	}
 
@@ -2525,7 +2525,7 @@ func TestPatrolClosedWritReapLogsCloseReason(t *testing.T) {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
-	if err := worldStore.CloseWrit("sol-abc12345", "cancelled_by_governor"); err != nil {
+	if _, err := worldStore.CloseWrit("sol-abc12345", "cancelled_by_governor"); err != nil {
 		t.Fatalf("CloseWrit() error: %v", err)
 	}
 
@@ -2574,7 +2574,7 @@ func TestPersistentAgentClosedTetherRemoved(t *testing.T) {
 	}
 
 	// Close writ 2.
-	if err := worldStore.CloseWrit("sol-writ-2", "superseded"); err != nil {
+	if _, err := worldStore.CloseWrit("sol-writ-2", "superseded"); err != nil {
 		t.Fatalf("CloseWrit() error: %v", err)
 	}
 
@@ -2628,7 +2628,7 @@ func TestOutpostClosedTetherFullReap(t *testing.T) {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
-	if err := worldStore.CloseWrit("sol-abc12345", "completed"); err != nil {
+	if _, err := worldStore.CloseWrit("sol-abc12345", "completed"); err != nil {
 		t.Fatalf("CloseWrit() error: %v", err)
 	}
 

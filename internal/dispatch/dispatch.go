@@ -54,7 +54,7 @@ type WorldStore interface {
 	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
 	UnblockMergeRequest(mrID string) error
 	ResetMergeRequestForRetry(mrID string) error
-	CloseWrit(id string, closeReason ...string) error
+	CloseWrit(id string, closeReason ...string) ([]string, error)
 	ListChildWrits(parentID string) ([]store.Writ, error)
 	ListAgentMemories(agentName string) ([]store.AgentMemory, error)
 	WriteHistory(agentName, writID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error)
@@ -1421,7 +1421,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	} else {
 		// Non-code writs: close directly with close_reason "completed".
 		if item.Status != "closed" {
-			if err := worldStore.CloseWrit(writID, "completed"); err != nil {
+			if _, err := worldStore.CloseWrit(writID, "completed"); err != nil {
 				return nil, fmt.Errorf("failed to close non-code writ: %w", err)
 			}
 			writUpdated = true
@@ -1716,7 +1716,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	}
 
 	// 3. Close the resolution writ.
-	if err := worldStore.CloseWrit(item.ID); err != nil {
+	if _, err := worldStore.CloseWrit(item.ID); err != nil {
 		return nil, fmt.Errorf("failed to close resolution writ: %w", err)
 	}
 
