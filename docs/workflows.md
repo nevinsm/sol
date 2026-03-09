@@ -254,6 +254,7 @@ kind = "analysis"
 | `description` | string | no | Detailed description. Supports target substitutions. `focus` is appended to the description in the generated writ. |
 | `focus` | string | no | Guidance for the leg's focus area. Appended to the writ description as "Focus: {value}". |
 | `kind` | string | no | `"code"` (default) or `"analysis"`. Determines the resolve path for the leg's writ. |
+| `instructions` | string | no | Relative path to a `.md` file. When set, the file content replaces `description` on the generated writ (with `{{variable}}` substitution applied). If `focus` is also set, it is appended as a `## Focus` section. |
 
 ### Synthesis: `[synthesis]` (convoy type)
 
@@ -274,6 +275,7 @@ depends_on = ["security", "performance", "correctness"]
 | `description` | string | no | Detailed description. Supports target substitutions. Automatically enriched with leg writ references and output directory paths. |
 | `depends_on` | string[] | yes | Leg IDs that must complete before synthesis runs. |
 | `kind` | string | no | `"code"` (default) or `"analysis"`. |
+| `instructions` | string | no | Relative path to a `.md` file. When set, the file content replaces `description` on the generated writ (with `{{variable}}` substitution applied). Leg writ references are still appended automatically. |
 
 ---
 
