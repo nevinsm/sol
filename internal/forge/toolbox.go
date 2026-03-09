@@ -282,18 +282,24 @@ func (r *Forge) MarkFailed(mrID string) error {
 		return err
 	}
 
-	if err := r.worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
-		return fmt.Errorf("failed to mark MR as failed: %w", err)
-	}
-
-	// Reopen writ so it can be re-dispatched (best-effort).
+	// CRASH SAFETY: Reopen writ FIRST — this is the critical state transition.
+	// If we crash after reopening the writ but before marking the MR as failed,
+	// the writ is "open" and can be re-dispatched (safe), and the MR remains
+	// "claimed" — sentinel's releaseStaleClaims will eventually release it.
+	// The reverse (MR "failed" but writ still "working") would leave the writ
+	// permanently stuck: no agent is assigned (tether already cleared by
+	// resolve) and no new MR will be created because the writ isn't "open".
 	reopenErr := r.worldStore.UpdateWrit(mr.WritID, store.WritUpdates{
 		Status:   "open",
 		Assignee: "-",
 	})
 	if reopenErr != nil {
-		r.logger.Error("failed to reopen writ after merge failure",
+		r.logger.Error("failed to reopen writ before marking MR as failed",
 			"writ", mr.WritID, "error", reopenErr)
+	}
+
+	if err := r.worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+		return fmt.Errorf("failed to mark MR as failed: %w", err)
 	}
 
 	// Create escalation so the governor knows about the failure (best-effort).

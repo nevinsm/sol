@@ -236,7 +236,9 @@ func (fl *forgeLogger) maybeRotate() {
 	// Reopen log file.
 	f, err := os.OpenFile(fl.logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		return // degrade: lose logging until next rotation check
+		fmt.Fprintf(os.Stderr, "[forge] log rotation failed, logging to stderr: %v\n", err)
+		fl.logFile = nil // Log() already handles nil logFile for file writes
+		return
 	}
 	fl.logFile = f
 }

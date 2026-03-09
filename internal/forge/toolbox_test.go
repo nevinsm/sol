@@ -717,7 +717,8 @@ func TestMarkFailedUpdateWritFailureCreatesEscalation(t *testing.T) {
 		t.Fatalf("MarkFailed() error: %v", err)
 	}
 
-	// Verify MR phase set to failed.
+	// Verify MR phase set to failed (crash-safe ordering: writ reopen attempted
+	// first but failed, MR phase update still proceeds).
 	worldStore.mu.Lock()
 	if phase := worldStore.phaseUpdates["mr-00000001"]; phase != "failed" {
 		t.Errorf("MR phase = %q, want 'failed'", phase)
@@ -739,6 +740,59 @@ func TestMarkFailedUpdateWritFailureCreatesEscalation(t *testing.T) {
 	}
 	if esc.sourceRef != "mr:mr-00000001" {
 		t.Errorf("escalation source_ref = %q, want 'mr:mr-00000001'", esc.sourceRef)
+	}
+}
+
+func TestMarkFailedCrashSafetyOrdering(t *testing.T) {
+	// This test verifies that MarkFailed reopens the writ BEFORE marking
+	// the MR as failed. We simulate a "crash" by injecting a failure on
+	// UpdateMergeRequestPhase and verify the writ was already reopened.
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID:       "sol-aaa11111",
+		Title:    "Test feature",
+		Status:   "done",
+		Assignee: "Toast",
+	}
+	// Inject failure on MR phase update — simulates crash between the two operations.
+	worldStore.updatePhaseErr = fmt.Errorf("simulated crash")
+
+	sphereStore := newMockSphereStore()
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         DefaultConfig(),
+	}
+
+	err := r.MarkFailed("mr-00000001")
+	// Should return error because MR phase update failed.
+	if err == nil {
+		t.Fatal("MarkFailed() should return error when UpdateMergeRequestPhase fails")
+	}
+	if !strings.Contains(err.Error(), "simulated crash") {
+		t.Errorf("error should mention root cause, got: %v", err)
+	}
+
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+
+	// CRITICAL: Writ should already be reopened even though MR phase update
+	// failed. This proves crash safety: writ is reopened BEFORE MR is marked
+	// failed. If the order were reversed, the writ would still be "done" with
+	// assignee "Toast".
+	item := worldStore.items["sol-aaa11111"]
+	if item.Status != "open" {
+		t.Errorf("writ status = %q, want 'open' (should be reopened before MR phase update)", item.Status)
+	}
+	if item.Assignee != "" {
+		t.Errorf("writ assignee = %q, want empty (should be cleared before MR phase update)", item.Assignee)
 	}
 }
 

@@ -625,6 +625,45 @@ func TestLogRotation(t *testing.T) {
 	}
 }
 
+func TestLogRotationReopenFailure(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a real log file that the logger will use initially.
+	realLogPath := filepath.Join(dir, "real.log")
+	f, err := os.Create(realLogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Write enough data to exceed maxBytes threshold.
+	f.WriteString(strings.Repeat("x", 200) + "\n")
+
+	fl := &forgeLogger{
+		logFile:  f,
+		// Set logPath to a path under a non-existent directory so reopen fails.
+		logPath:  filepath.Join(dir, "nonexistent", "subdir", "forge.log"),
+		maxBytes: 100, // smaller than the data already written
+		maxFiles: 2,
+	}
+
+	// maybeRotate should:
+	// 1. Close fl.logFile (succeeds)
+	// 2. Try to rename files (fails silently — paths don't exist)
+	// 3. Try to reopen at logPath (fails — parent dir doesn't exist)
+	// 4. Log to stderr and set logFile=nil
+	fl.mu.Lock()
+	fl.maybeRotate()
+	logFileIsNil := fl.logFile == nil
+	fl.mu.Unlock()
+
+	if !logFileIsNil {
+		t.Error("logFile should be nil after rotation reopen failure")
+	}
+
+	// Subsequent Log() calls should not panic — stdout logging still works.
+	fl.Log("TEST", "after rotation failure — should not panic")
+}
+
 // --- lastNLines test ---
 
 func TestLastNLines(t *testing.T) {
