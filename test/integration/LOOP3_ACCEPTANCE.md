@@ -49,7 +49,7 @@
 - [x] Sentinel registers as {world}/sentinel with role=sentinel
 - [x] Patrol cycle runs every PatrolInterval
 - [x] Dead session + tethered work → stalled detection
-- [x] Stalled agent → respawn attempted (max 2 per work item)
+- [x] Stalled agent → respawn attempted (max 2 per writ)
 - [x] After max respawns → work returned to open, tether cleared, agent idle
 - [x] Zombie session (idle + no tether + live session) → session stopped
 - [x] Healthy agents → no action taken

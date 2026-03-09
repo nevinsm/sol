@@ -5,7 +5,7 @@
 - [x] MR has correct `writ_id` and `branch` fields
 - [x] MR ID starts with `mr-` prefix
 - [x] CLI output shows the merge request ID
-- [x] Work item status is "done", agent is "idle" (existing behavior preserved)
+- [x] Writ status is "done", agent is "idle" (existing behavior preserved)
 
 ## 2. Forge polls and claims
 - [x] Forge polls `merge_requests` table for `phase=ready` items
@@ -22,7 +22,7 @@
 ## 4. Merge on success
 - [x] Tests pass → forge merges to target branch
 - [x] MR phase updated to "merged", `merged_at` timestamp set
-- [x] Work item status updated to "closed"
+- [x] Writ status updated to "closed"
 - [x] Outpost's remote branch cleaned up (best-effort)
 
 ## 5. Retry on failure

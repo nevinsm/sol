@@ -202,7 +202,7 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		if hasWrit {
 			summary = fmt.Sprintf("Session handoff for %s. Working on %s.", opts.AgentName, writID)
 		} else {
-			summary = fmt.Sprintf("Session handoff for %s. No active work item.", opts.AgentName)
+			summary = fmt.Sprintf("Session handoff for %s. No active writ.", opts.AgentName)
 		}
 		if len(recentCommits) > 0 {
 			summary += fmt.Sprintf(" Last commit: %s", recentCommits[0])

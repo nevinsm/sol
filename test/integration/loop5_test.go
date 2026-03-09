@@ -756,7 +756,7 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 		t.Fatalf("Patrol: %v", err)
 	}
 
-	// Work item should still be tethered (not recovered — too recent).
+	// Writ should still be tethered (not recovered — too recent).
 	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
 		t.Fatalf("GetWrit: %v", err)
@@ -834,7 +834,7 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 		t.Fatalf("Patrol: %v", err)
 	}
 
-	// Work item should still be tethered (session is alive).
+	// Writ should still be tethered (session is alive).
 	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
 		t.Fatalf("GetWrit: %v", err)

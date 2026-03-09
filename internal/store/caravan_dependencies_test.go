@@ -355,7 +355,7 @@ func TestIsWritBlockedByCaravanDeps(t *testing.T) {
 func TestIsWritBlockedByCaravanDepsNoCaravan(t *testing.T) {
 	s := setupSphere(t)
 
-	// Work item not in any caravan → not blocked.
+	// Writ not in any caravan → not blocked.
 	blocked, _, err := s.IsWritBlockedByCaravanDeps("sol-99999999")
 	if err != nil {
 		t.Fatal(err)

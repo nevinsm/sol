@@ -173,7 +173,7 @@ func renderHistory(rows []historyRow, agentName, world string) {
 		b.WriteString(actionStr)
 		b.WriteString(strings.Repeat(" ", maxInt(10-len(row.Action), 1)))
 
-		// Work item.
+		// Writ.
 		writ := row.WritID
 		if writ == "" {
 			writ = "-"
