@@ -1540,6 +1540,145 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 	}
 }
 
+func TestResolveSkipsFailedMRCreatesNew(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "operator", 1, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	// Pre-create a failed MR for this writ (simulates a previous failed merge attempt).
+	failedMRID, err := worldStore.CreateMergeRequest(itemID, "outpost/Alpha/"+itemID, 1)
+	if err != nil {
+		t.Fatalf("failed to create MR: %v", err)
+	}
+	if err := worldStore.UpdateMergeRequestPhase(failedMRID, "claimed"); err != nil {
+		t.Fatalf("failed to claim MR: %v", err)
+	}
+	if err := worldStore.UpdateMergeRequestPhase(failedMRID, "failed"); err != nil {
+		t.Fatalf("failed to fail MR: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	result, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Should have created a NEW MR, not reused the failed one.
+	if result.MergeRequestID == failedMRID {
+		t.Errorf("expected new MR ID, but got failed MR ID %q", failedMRID)
+	}
+	if result.MergeRequestID == "" {
+		t.Fatal("expected MergeRequestID to be set")
+	}
+
+	// New MR should be in "ready" phase with the correct branch.
+	newMR, err := worldStore.GetMergeRequest(result.MergeRequestID)
+	if err != nil {
+		t.Fatalf("failed to get new merge request: %v", err)
+	}
+	if newMR.Phase != "ready" {
+		t.Errorf("expected new MR phase 'ready', got %q", newMR.Phase)
+	}
+	expectedBranch := fmt.Sprintf("outpost/Toast/%s", itemID)
+	if newMR.Branch != expectedBranch {
+		t.Errorf("expected new MR branch %q, got %q", expectedBranch, newMR.Branch)
+	}
+
+	// Failed MR should still exist and remain in "failed" phase.
+	oldMR, err := worldStore.GetMergeRequest(failedMRID)
+	if err != nil {
+		t.Fatalf("failed to get old merge request: %v", err)
+	}
+	if oldMR.Phase != "failed" {
+		t.Errorf("expected old MR to remain in 'failed' phase, got %q", oldMR.Phase)
+	}
+}
+
+func TestResolveReusesReadyMR(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "operator", 1, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	// Pre-create a ready MR for this writ (simulates idempotent re-resolve).
+	readyMRID, err := worldStore.CreateMergeRequest(itemID, "outpost/Toast/"+itemID, 1)
+	if err != nil {
+		t.Fatalf("failed to create MR: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	result, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Should reuse the existing ready MR.
+	if result.MergeRequestID != readyMRID {
+		t.Errorf("expected reused MR ID %q, got %q", readyMRID, result.MergeRequestID)
+	}
+}
+
 // --- Prime with handoff tests ---
 
 func TestPrimeWithHandoff(t *testing.T) {

@@ -1430,13 +1430,21 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 
 	if isCodeWrit {
 		// 4. Create merge request (idempotent — skip if one already exists for this writ).
+		// Filter out failed MRs so a new resolve after a failed MR creates a fresh
+		// MR with the current branch instead of reusing the stale failed one.
 		existingMRs, err := worldStore.ListMergeRequestsByWrit(writID, "")
 		if err != nil {
 			rollback()
 			return nil, fmt.Errorf("failed to check existing merge requests: %w", err)
 		}
-		if len(existingMRs) > 0 {
-			mrID = existingMRs[0].ID
+		var activeMRs []store.MergeRequest
+		for _, mr := range existingMRs {
+			if mr.Phase != "failed" {
+				activeMRs = append(activeMRs, mr)
+			}
+		}
+		if len(activeMRs) > 0 {
+			mrID = activeMRs[0].ID
 		} else {
 			mrID, err = worldStore.CreateMergeRequest(writID, branchName, item.Priority)
 			if err != nil {
