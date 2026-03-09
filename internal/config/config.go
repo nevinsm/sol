@@ -322,6 +322,13 @@ func EnsureClaudeConfigDir(worldDir, role, name, account string) (string, error)
 		return "", fmt.Errorf("failed to create claude config dir %q: %w", dir, err)
 	}
 
+	// Ensure .claude-defaults/ exists before seeding. This makes agent
+	// startup self-healing — if defaults were never created (e.g. SOL_HOME
+	// predates the init step that seeds them), create them now.
+	if err := EnsureClaudeDefaults(); err != nil {
+		fmt.Fprintf(os.Stderr, "config: failed to ensure claude defaults: %v\n", err)
+	}
+
 	// Copy settings.json from .claude-defaults/ (always-overwrite).
 	// Ensures config changes propagate to all agents on next session start.
 	seedClaudeSettings(dir)
