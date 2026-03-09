@@ -4769,3 +4769,117 @@ func TestResolveMultipleEscalationsForSameWrit(t *testing.T) {
 		t.Errorf("expected 0 open escalations after resolve, got %d", len(after))
 	}
 }
+
+// --- Outpost hooks tests ---
+
+func TestOutpostHooksPreCompactUsesPrimeCompact(t *testing.T) {
+	hooks := outpostHooks("ember", "Toast")
+
+	pcGroups, ok := hooks.Hooks["PreCompact"]
+	if !ok {
+		t.Fatal("outpost hooks missing PreCompact")
+	}
+	if len(pcGroups) != 1 {
+		t.Fatalf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
+	}
+	cmd := pcGroups[0].Hooks[0].Command
+	want := "sol prime --world=ember --agent=Toast --compact"
+	if cmd != want {
+		t.Errorf("PreCompact command = %q, want %q", cmd, want)
+	}
+}
+
+// --- Prime compact tests ---
+
+func TestPrimeCompactWithTether(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWrit("Fix login bug", "Detailed description", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "agent", worldStore, true)
+	if err != nil {
+		t.Fatalf("Prime compact failed: %v", err)
+	}
+
+	// Verify focus reminder format.
+	if !strings.Contains(result.Output, "[sol] Context compaction in progress") {
+		t.Error("output missing compaction header")
+	}
+	if !strings.Contains(result.Output, itemID) {
+		t.Error("output missing writ ID")
+	}
+	if !strings.Contains(result.Output, "Fix login bug") {
+		t.Error("output missing writ title")
+	}
+	if !strings.Contains(result.Output, "Continue where you left off") {
+		t.Error("output missing focus instruction")
+	}
+
+	// Should NOT contain full work context.
+	if strings.Contains(result.Output, "WORK CONTEXT") {
+		t.Error("compact prime should not contain full WORK CONTEXT")
+	}
+	if strings.Contains(result.Output, "Detailed description") {
+		t.Error("compact prime should not include full writ description")
+	}
+}
+
+func TestPrimeCompactNoTether(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	result, err := Prime("ember", "Toast", "agent", worldStore, true)
+	if err != nil {
+		t.Fatalf("Prime compact failed: %v", err)
+	}
+
+	if !strings.Contains(result.Output, "[sol] Context compaction in progress") {
+		t.Error("output missing compaction header")
+	}
+	if !strings.Contains(result.Output, "No active work tethered") {
+		t.Errorf("expected no-tether message, got %q", result.Output)
+	}
+}
+
+func TestPrimeCompactWithWorkflow(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWrit("Build feature", "Build it", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Set up workflow with 3 steps, 1 completed.
+	setupTestWorkflow(t, "test-compact-wf")
+	if _, _, err := workflow.Instantiate("ember", "Toast", "agent", "test-compact-wf", map[string]string{
+		"issue": itemID,
+	}); err != nil {
+		t.Fatalf("instantiate workflow: %v", err)
+	}
+	// Advance first step.
+	if _, _, err := workflow.Advance("ember", "Toast", "agent"); err != nil {
+		t.Fatalf("workflow advance failed: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "agent", worldStore, true)
+	if err != nil {
+		t.Fatalf("Prime compact with workflow failed: %v", err)
+	}
+
+	if !strings.Contains(result.Output, "Step:") {
+		t.Error("output missing workflow step info")
+	}
+	if !strings.Contains(result.Output, "Build feature") {
+		t.Error("output missing writ title")
+	}
+}

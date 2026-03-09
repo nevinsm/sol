@@ -68,7 +68,7 @@ func TestInstallHooksPreCompact(t *testing.T) {
 		t.Errorf("unexpected SessionStart command: %q", groups[0].Hooks[0].Command)
 	}
 
-	// Verify PreCompact hook.
+	// Verify PreCompact hook uses sol prime --compact (not handoff).
 	pcGroups, ok := cfg.Hooks["PreCompact"]
 	if !ok {
 		t.Fatal("settings.local.json missing PreCompact hook")
@@ -77,8 +77,9 @@ func TestInstallHooksPreCompact(t *testing.T) {
 		t.Fatalf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
 	}
 	pcCmd := pcGroups[0].Hooks[0].Command
-	if pcCmd != "sol handoff --world=ember --agent=Toast --reason=compact" {
-		t.Errorf("expected PreCompact command 'sol handoff --world=ember --agent=Toast --reason=compact', got %q", pcCmd)
+	wantPC := "sol prime --world=ember --agent=Toast --compact"
+	if pcCmd != wantPC {
+		t.Errorf("expected PreCompact command %q, got %q", wantPC, pcCmd)
 	}
 
 	// Verify PreToolUse hooks: 1 EnterPlanMode + 9 guard hooks = 10

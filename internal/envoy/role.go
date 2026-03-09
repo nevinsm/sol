@@ -74,25 +74,6 @@ func envoyHooks(world, agent string) startup.HookSet {
 						},
 					},
 				},
-				{
-					Matcher: "compact",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: "sol brief inject --path=.brief/memory.md --max-lines=200",
-						},
-					},
-				},
-			},
-			"PreCompact": {
-				{
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol handoff --world=%s --agent=%s --reason=compact", world, agent),
-						},
-					},
-				},
 			},
 			"PreToolUse": append([]protocol.HookMatcherGroup{
 				{

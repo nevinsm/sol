@@ -35,8 +35,8 @@ type HookHandler struct {
 //
 //	SessionStart:      runs "sol prime --world={world} --agent={name}" and outputs
 //	                   the result as initial context
-//	PreCompact:        runs "sol handoff --world={world} --agent={name}" to hand off
-//	                   to a fresh session instead of lossy context compaction
+//	PreCompact:        runs "sol prime --world={world} --agent={name} --compact" to
+//	                   output a focus reminder during native context compaction
 //	UserPromptSubmit:  runs "sol nudge drain --world={world} --agent={name}" to drain
 //	                   queued nudge messages at turn boundaries
 func InstallHooks(worktreeDir, world, agentName string) error {
@@ -57,7 +57,7 @@ func InstallHooks(worktreeDir, world, agentName string) error {
 					Hooks: []HookHandler{
 						{
 							Type:    "command",
-							Command: fmt.Sprintf("sol handoff --world=%s --agent=%s --reason=compact", world, agentName),
+							Command: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agentName),
 						},
 					},
 				},

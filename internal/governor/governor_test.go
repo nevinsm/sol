@@ -1,6 +1,7 @@
 package governor
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -41,6 +42,26 @@ func (m *mockStopManager) Capture(name string, lines int) (string, error) {
 }
 
 // --- Tests ---
+
+func TestGovernorHooksNoPreCompact(t *testing.T) {
+	hooks := governorHooks("myworld", "")
+	if _, ok := hooks.Hooks["PreCompact"]; ok {
+		t.Error("governor hooks should not have a PreCompact hook")
+	}
+}
+
+func TestGovernorHooksNoCompactSessionStart(t *testing.T) {
+	hooks := governorHooks("myworld", "")
+	groups, ok := hooks.Hooks["SessionStart"]
+	if !ok {
+		t.Fatal("governor hooks missing SessionStart")
+	}
+	for _, g := range groups {
+		if strings.Contains(g.Matcher, "compact") {
+			t.Error("governor SessionStart should not have a compact matcher")
+		}
+	}
+}
 
 func TestGovernorDir(t *testing.T) {
 	t.Setenv("SOL_HOME", "/tmp/sol-test")

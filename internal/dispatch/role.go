@@ -155,7 +155,7 @@ func outpostHooks(world, agent string) startup.HookSet {
 					Hooks: []protocol.HookHandler{
 						{
 							Type:    "command",
-							Command: fmt.Sprintf("sol handoff --world=%s --agent=%s --reason=compact", world, agent),
+							Command: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent),
 						},
 					},
 				},

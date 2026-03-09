@@ -133,6 +133,26 @@ func initGitRepo(t *testing.T, dir string) {
 
 // --- Tests ---
 
+func TestEnvoyHooksNoPreCompact(t *testing.T) {
+	hooks := envoyHooks("myworld", "Echo")
+	if _, ok := hooks.Hooks["PreCompact"]; ok {
+		t.Error("envoy hooks should not have a PreCompact hook")
+	}
+}
+
+func TestEnvoyHooksNoCompactSessionStart(t *testing.T) {
+	hooks := envoyHooks("myworld", "Echo")
+	groups, ok := hooks.Hooks["SessionStart"]
+	if !ok {
+		t.Fatal("envoy hooks missing SessionStart")
+	}
+	for _, g := range groups {
+		if strings.Contains(g.Matcher, "compact") {
+			t.Error("envoy SessionStart should not have a compact matcher")
+		}
+	}
+}
+
 func TestEnvoyDir(t *testing.T) {
 	t.Setenv("SOL_HOME", "/tmp/sol-test")
 

@@ -755,9 +755,14 @@ type PrimeResult struct {
 }
 
 // Prime assembles execution context from durable state and returns it.
-func Prime(world, agentName, role string, worldStore WorldStore) (*PrimeResult, error) {
+func Prime(world, agentName, role string, worldStore WorldStore, compact ...bool) (*PrimeResult, error) {
 	if role == "" {
 		role = "agent"
+	}
+
+	// Compact mode: short focus reminder during native context compaction.
+	if len(compact) > 0 && compact[0] {
+		return primeCompact(world, agentName, role, worldStore)
 	}
 
 	// Forge gets a special prime context.
@@ -923,6 +928,56 @@ If stuck, run: sol escalate "description"
 	}
 
 	return result, nil
+}
+
+// primeCompact generates a short focus reminder for context compaction.
+// Reads the tether to find the active writ, looks up its title, and checks
+// workflow state. Returns a concise message to keep the agent on track.
+func primeCompact(world, agentName, role string, worldStore WorldStore) (*PrimeResult, error) {
+	// Read tethered writs.
+	allWritIDs, err := tether.List(world, agentName, role)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tethers: %w", err)
+	}
+	if len(allWritIDs) == 0 {
+		return &PrimeResult{Output: "[sol] Context compaction in progress. No active work tethered."}, nil
+	}
+
+	// Determine active writ.
+	var activeWritID string
+	if persistentRoles[role] {
+		activeWritID = readActiveWrit(world, agentName)
+	} else {
+		activeWritID = allWritIDs[0]
+	}
+	if activeWritID == "" {
+		return &PrimeResult{Output: "[sol] Context compaction in progress. No active writ."}, nil
+	}
+
+	// Look up writ title.
+	item, err := worldStore.GetWrit(activeWritID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get writ %q: %w", activeWritID, err)
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "[sol] Context compaction in progress. Stay focused on your current assignment.\n\n")
+	fmt.Fprintf(&b, "Writ: %s — %s\n", item.ID, item.Title)
+
+	// Check for active workflow step.
+	state, _ := workflow.ReadState(world, agentName, role)
+	if state != nil && state.Status == "running" && state.CurrentStep != "" {
+		total := len(state.Completed) + 1 // completed + current
+		// Try to get the full step count from ListSteps.
+		if steps, err := workflow.ListSteps(world, agentName, role); err == nil && len(steps) > 0 {
+			total = len(steps)
+		}
+		current := len(state.Completed) + 1
+		fmt.Fprintf(&b, "Step: %s (%d/%d)\n", state.CurrentStep, current, total)
+	}
+
+	fmt.Fprintf(&b, "\nContinue where you left off. Do not restart from scratch.")
+	return &PrimeResult{Output: b.String()}, nil
 }
 
 // readActiveWrit reads the active_writ field for an agent from the sphere store.

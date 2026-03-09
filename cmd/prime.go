@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	primeWorld string
-	primeAgent string
+	primeWorld   string
+	primeAgent   string
+	primeCompact bool
 )
 
 var primeCmd = &cobra.Command{
@@ -48,7 +49,7 @@ var primeCmd = &cobra.Command{
 		}
 		defer worldStore.Close()
 
-		result, err := dispatch.Prime(world, agent, agentRecord.Role, worldStore)
+		result, err := dispatch.Prime(world, agent, agentRecord.Role, worldStore, primeCompact)
 		if err != nil {
 			return err
 		}
@@ -62,4 +63,5 @@ func init() {
 	rootCmd.AddCommand(primeCmd)
 	primeCmd.Flags().StringVar(&primeWorld, "world", "", "world name")
 	primeCmd.Flags().StringVar(&primeAgent, "agent", "", "agent name")
+	primeCmd.Flags().BoolVar(&primeCompact, "compact", false, "output a short focus reminder instead of the full prime")
 }
