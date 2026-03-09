@@ -42,6 +42,134 @@ func TestListReady(t *testing.T) {
 	}
 }
 
+func TestListReadyIsPureRead(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", Phase: "ready", WritID: "sol-aaa11111", BlockedBy: ""},
+		{ID: "mr-00000002", Phase: "ready", WritID: "sol-bbb22222", BlockedBy: ""},
+	}
+
+	// Even with caravan deps that would block, ListReady should NOT call BlockMergeRequest.
+	sphereStore := newMockSphereStore()
+	sphereStore.caravanBlockedMap = map[string]bool{
+		"sol-aaa11111": true,
+	}
+
+	r := &Forge{
+		world:       "ember",
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+	}
+
+	ready, err := r.ListReady()
+	if err != nil {
+		t.Fatalf("ListReady() error: %v", err)
+	}
+
+	// ListReady is a pure read — it returns all unblocked ready MRs without checking caravan deps.
+	if len(ready) != 2 {
+		t.Fatalf("expected 2 ready MRs, got %d", len(ready))
+	}
+
+	// Verify no BlockMergeRequest calls were made.
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+	if len(worldStore.blockCalls) != 0 {
+		t.Errorf("ListReady should not call BlockMergeRequest, got %d calls", len(worldStore.blockCalls))
+	}
+}
+
+func TestEnforceCaravanBlocks(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", Phase: "ready", WritID: "sol-aaa11111", BlockedBy: ""},
+		{ID: "mr-00000002", Phase: "ready", WritID: "sol-bbb22222", BlockedBy: ""},
+		{ID: "mr-00000003", Phase: "ready", WritID: "sol-ccc33333", BlockedBy: ""},
+	}
+
+	sphereStore := newMockSphereStore()
+	sphereStore.caravanBlockedMap = map[string]bool{
+		"sol-aaa11111": true,
+		"sol-ccc33333": true,
+	}
+
+	r := &Forge{
+		world:       "ember",
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+	}
+
+	n, err := r.EnforceCaravanBlocks()
+	if err != nil {
+		t.Fatalf("EnforceCaravanBlocks() error: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("expected 2 MRs blocked, got %d", n)
+	}
+
+	// Verify the correct MRs were blocked.
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+	if len(worldStore.blockCalls) != 2 {
+		t.Fatalf("expected 2 BlockMergeRequest calls, got %d", len(worldStore.blockCalls))
+	}
+	for _, call := range worldStore.blockCalls {
+		if call.BlockerID != store.CaravanBlockedSentinel {
+			t.Errorf("expected blocker %q, got %q", store.CaravanBlockedSentinel, call.BlockerID)
+		}
+	}
+
+	// Verify mr-00000002 was not blocked.
+	for _, mr := range worldStore.mrs {
+		if mr.ID == "mr-00000002" && mr.BlockedBy != "" {
+			t.Errorf("mr-00000002 should not be blocked, got BlockedBy=%q", mr.BlockedBy)
+		}
+	}
+}
+
+func TestEnforceCaravanBlocksSkipsAlreadyBlocked(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", Phase: "ready", WritID: "sol-aaa11111", BlockedBy: "sol-existing-blocker"},
+		{ID: "mr-00000002", Phase: "ready", WritID: "sol-bbb22222", BlockedBy: store.CaravanBlockedSentinel},
+		{ID: "mr-00000003", Phase: "ready", WritID: "sol-ccc33333", BlockedBy: ""},
+	}
+
+	sphereStore := newMockSphereStore()
+	sphereStore.caravanBlockedMap = map[string]bool{
+		"sol-aaa11111": true,
+		"sol-bbb22222": true,
+		"sol-ccc33333": true,
+	}
+
+	r := &Forge{
+		world:       "ember",
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+	}
+
+	n, err := r.EnforceCaravanBlocks()
+	if err != nil {
+		t.Fatalf("EnforceCaravanBlocks() error: %v", err)
+	}
+	// Only mr-00000003 should be newly blocked (mr-00000001 and mr-00000002 already blocked).
+	if n != 1 {
+		t.Errorf("expected 1 MR blocked, got %d", n)
+	}
+
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+	if len(worldStore.blockCalls) != 1 {
+		t.Fatalf("expected 1 BlockMergeRequest call, got %d", len(worldStore.blockCalls))
+	}
+	if worldStore.blockCalls[0].MRID != "mr-00000003" {
+		t.Errorf("expected mr-00000003 to be blocked, got %q", worldStore.blockCalls[0].MRID)
+	}
+}
+
 func TestListBlocked(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{

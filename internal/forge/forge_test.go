@@ -22,10 +22,16 @@ type mockWorldStore struct {
 	items           map[string]*store.Writ
 	claims          []string // IDs of claimed MRs
 	phaseUpdates    map[string]string
+	blockCalls      []blockCall // tracks BlockMergeRequest calls
 	staleReleased   int
 	closeWritErr    error // inject CloseWrit failure
 	updateWritErr   error // inject UpdateWrit failure
 	updatePhaseErr  error // inject UpdateMergeRequestPhase failure
+}
+
+type blockCall struct {
+	MRID      string
+	BlockerID string
 }
 
 func newMockWorldStore() *mockWorldStore {
@@ -149,6 +155,7 @@ func (m *mockWorldStore) ListMergeRequestsByWrit(writID, phase string) ([]store.
 func (m *mockWorldStore) BlockMergeRequest(mrID, blockerID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.blockCalls = append(m.blockCalls, blockCall{MRID: mrID, BlockerID: blockerID})
 	for i := range m.mrs {
 		if m.mrs[i].ID == mrID {
 			m.mrs[i].BlockedBy = blockerID
@@ -230,8 +237,9 @@ type mockEscalation struct {
 }
 
 type mockSphereStore struct {
-	mu          sync.Mutex
-	escalations []mockEscalation
+	mu                sync.Mutex
+	escalations       []mockEscalation
+	caravanBlockedMap map[string]bool // writID -> blocked
 }
 
 func newMockSphereStore() *mockSphereStore {
@@ -289,6 +297,13 @@ func (m *mockSphereStore) UpdateEscalationLastNotified(id string) error {
 }
 
 func (m *mockSphereStore) IsWritBlockedByCaravanDeps(writID string) (bool, []string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.caravanBlockedMap != nil {
+		if blocked, ok := m.caravanBlockedMap[writID]; ok {
+			return blocked, nil, nil
+		}
+	}
 	return false, nil, nil
 }
 
