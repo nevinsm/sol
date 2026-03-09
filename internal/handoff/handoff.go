@@ -67,7 +67,7 @@ func HasHandoff(world, agentName, role string) bool {
 func MarkConsumed(world, agentName, role string) error {
 	state, err := Read(world, agentName, role)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read handoff state: %w", err)
 	}
 	if state == nil {
 		return nil

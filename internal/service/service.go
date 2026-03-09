@@ -116,7 +116,7 @@ func LingerEnabled() bool {
 func Install(solBin, solHome string) error {
 	dir, err := unitDir()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to determine unit directory: %w", err)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create unit directory %s: %w", dir, err)
@@ -125,7 +125,7 @@ func Install(solBin, solHome string) error {
 	for _, comp := range Components {
 		content, err := GenerateUnit(comp, solBin, solHome)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to generate unit for %s: %w", comp, err)
 		}
 		path := filepath.Join(dir, UnitName(comp))
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -135,7 +135,7 @@ func Install(solBin, solHome string) error {
 	}
 
 	if err := systemctl("daemon-reload"); err != nil {
-		return err
+		return fmt.Errorf("failed to reload systemd daemon: %w", err)
 	}
 
 	for _, comp := range Components {
@@ -151,7 +151,7 @@ func Install(solBin, solHome string) error {
 func Uninstall() error {
 	dir, err := unitDir()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to determine unit directory: %w", err)
 	}
 
 	for _, comp := range Components {
@@ -167,7 +167,10 @@ func Uninstall() error {
 		fmt.Fprintf(os.Stderr, "Removed %s\n", path)
 	}
 
-	return systemctl("daemon-reload")
+	if err := systemctl("daemon-reload"); err != nil {
+		return fmt.Errorf("failed to reload systemd daemon: %w", err)
+	}
+	return nil
 }
 
 // Start starts all sol units.

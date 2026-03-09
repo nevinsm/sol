@@ -77,7 +77,7 @@ func Start(mgr SessionManager) error {
 	resolvedAccount := account.ResolveAccount("", "")
 	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.Home(), "senate", "senate", resolvedAccount)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to ensure claude config dir: %w", err)
 	}
 	prompt := "Senate session. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200"
 	sessionCmd := config.BuildSessionCommand(config.SettingsPath(senateDir), prompt)

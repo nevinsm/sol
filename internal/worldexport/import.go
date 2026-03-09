@@ -42,13 +42,13 @@ func Import(opts ImportOptions) (*ImportResult, error) {
 	// Find the archive root directory (the single top-level entry).
 	archiveRoot, err := findArchiveRoot(tmpDir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to find archive root: %w", err)
 	}
 
 	// 2. Read and validate manifest.
 	manifest, err := readManifest(archiveRoot)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read archive manifest: %w", err)
 	}
 	if err := manifest.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid archive: %w", err)
@@ -61,7 +61,7 @@ func Import(opts ImportOptions) (*ImportResult, error) {
 	}
 
 	if err := config.ValidateWorldName(worldName); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to validate world name: %w", err)
 	}
 
 	// 3. Check world name conflict.
@@ -171,27 +171,27 @@ func importSphereData(s *store.Store, archiveRoot, oldWorld, newWorld string, re
 
 	// Import agents.
 	if err := importAgents(s, sphereDir, oldWorld, newWorld, renaming); err != nil {
-		return err
+		return fmt.Errorf("failed to import agents: %w", err)
 	}
 
 	// Import messages.
 	if err := importMessages(s, sphereDir, oldWorld, newWorld, renaming); err != nil {
-		return err
+		return fmt.Errorf("failed to import messages: %w", err)
 	}
 
 	// Import escalations.
 	if err := importEscalations(s, sphereDir, oldWorld, newWorld, renaming); err != nil {
-		return err
+		return fmt.Errorf("failed to import escalations: %w", err)
 	}
 
 	// Import caravans.
 	if err := importCaravans(s, sphereDir); err != nil {
-		return err
+		return fmt.Errorf("failed to import caravans: %w", err)
 	}
 
 	// Import caravan items.
 	if err := importCaravanItems(s, sphereDir, oldWorld, newWorld, renaming); err != nil {
-		return err
+		return fmt.Errorf("failed to import caravan items: %w", err)
 	}
 
 	return nil
@@ -214,7 +214,7 @@ func importAgents(s *store.Store, sphereDir, oldWorld, newWorld string, renaming
 			world = newWorld
 		}
 		if err := s.ImportAgent(id, a.Name, world, a.Role, a.CreatedAt, a.UpdatedAt); err != nil {
-			return err
+			return fmt.Errorf("failed to import agent %q: %w", a.Name, err)
 		}
 	}
 	return nil
@@ -238,7 +238,7 @@ func importMessages(s *store.Store, sphereDir, oldWorld, newWorld string, renami
 		}
 		if err := s.ImportMessage(m.ID, sender, recipient, m.Subject, m.Body,
 			m.Priority, m.Type, m.ThreadID, m.Delivery, m.Read, m.CreatedAt, m.AckedAt); err != nil {
-			return err
+			return fmt.Errorf("failed to import message %q: %w", m.ID, err)
 		}
 	}
 	return nil
@@ -260,7 +260,7 @@ func importEscalations(s *store.Store, sphereDir, oldWorld, newWorld string, ren
 		}
 		if err := s.ImportEscalation(e.ID, e.Severity, source, e.Description,
 			e.Status, e.Acknowledged, e.CreatedAt, e.UpdatedAt); err != nil {
-			return err
+			return fmt.Errorf("failed to import escalation %q: %w", e.ID, err)
 		}
 	}
 	return nil
@@ -277,7 +277,7 @@ func importCaravans(s *store.Store, sphereDir string) error {
 
 	for _, c := range caravans {
 		if err := s.ImportCaravan(c.ID, c.Name, c.Status, c.Owner, c.CreatedAt, c.ClosedAt); err != nil {
-			return err
+			return fmt.Errorf("failed to import caravan %q: %w", c.ID, err)
 		}
 	}
 	return nil
@@ -298,7 +298,7 @@ func importCaravanItems(s *store.Store, sphereDir, oldWorld, newWorld string, re
 			world = newWorld
 		}
 		if err := s.ImportCaravanItem(ci.CaravanID, ci.WritID, world, ci.Phase); err != nil {
-			return err
+			return fmt.Errorf("failed to import caravan item %q: %w", ci.WritID, err)
 		}
 	}
 	return nil
@@ -410,27 +410,30 @@ func readManifest(archiveRoot string) (*Manifest, error) {
 func readJSONFile(path string, target interface{}) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read %s: %w", filepath.Base(path), err)
 	}
-	return json.Unmarshal(data, target)
+	if err := json.Unmarshal(data, target); err != nil {
+		return fmt.Errorf("failed to parse %s: %w", filepath.Base(path), err)
+	}
+	return nil
 }
 
 // copyFile copies a file from src to dst.
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open source file %q: %w", src, err)
 	}
 	defer in.Close()
 
 	out, err := os.Create(dst)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create destination file %q: %w", dst, err)
 	}
 	defer out.Close()
 
 	if _, err := io.Copy(out, in); err != nil {
-		return err
+		return fmt.Errorf("failed to copy file data: %w", err)
 	}
 	return out.Sync()
 }

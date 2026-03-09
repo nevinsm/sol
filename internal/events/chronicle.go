@@ -148,7 +148,7 @@ func (c *Chronicle) processCycle() error {
 	// 1. Read new lines from raw feed starting at offset.
 	newEvents, newOffset, err := c.readNewEvents()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read new events: %w", err)
 	}
 	c.offset = newOffset
 
@@ -199,7 +199,7 @@ func (c *Chronicle) processCycle() error {
 	// 6. Write surviving events to curated feed.
 	if len(output) > 0 {
 		if err := c.appendToFeed(output); err != nil {
-			return err
+			return fmt.Errorf("failed to append to curated feed: %w", err)
 		}
 	}
 
@@ -221,13 +221,13 @@ func (c *Chronicle) readNewEvents() ([]Event, int64, error) {
 		if os.IsNotExist(err) {
 			return nil, c.offset, nil
 		}
-		return nil, c.offset, err
+		return nil, c.offset, fmt.Errorf("failed to open raw events file: %w", err)
 	}
 	defer f.Close()
 
 	// Seek to offset.
 	if _, err := f.Seek(c.offset, io.SeekStart); err != nil {
-		return nil, c.offset, err
+		return nil, c.offset, fmt.Errorf("failed to seek raw events file: %w", err)
 	}
 
 	var events []Event
@@ -240,12 +240,12 @@ func (c *Chronicle) readNewEvents() ([]Event, int64, error) {
 		events = append(events, ev)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, c.offset, err
+		return nil, c.offset, fmt.Errorf("failed to scan raw events: %w", err)
 	}
 
 	newOffset, err := f.Seek(0, io.SeekCurrent)
 	if err != nil {
-		return events, c.offset, err
+		return events, c.offset, fmt.Errorf("failed to get current file offset: %w", err)
 	}
 
 	return events, newOffset, nil
@@ -400,7 +400,7 @@ func (c *Chronicle) truncateIfNeeded() error {
 			if os.IsNotExist(err) {
 				return nil
 			}
-			return err
+			return fmt.Errorf("failed to stat feed file: %w", err)
 		}
 
 		if info.Size() <= c.config.MaxFeedSize {
@@ -408,7 +408,7 @@ func (c *Chronicle) truncateIfNeeded() error {
 		}
 
 		if err := c.truncateOnce(); err != nil {
-			return err
+			return fmt.Errorf("failed to truncate feed: %w", err)
 		}
 	}
 }
@@ -418,7 +418,7 @@ func (c *Chronicle) truncateOnce() error {
 	// Read entire file.
 	data, err := os.ReadFile(c.config.FeedPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read feed file: %w", err)
 	}
 
 	// Find the byte offset at 25% mark.
@@ -439,37 +439,37 @@ func (c *Chronicle) truncateOnce() error {
 	dir := filepath.Dir(c.config.FeedPath)
 	tmp, err := os.CreateTemp(dir, ".feed-truncate-*.jsonl")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create temp file for truncation: %w", err)
 	}
 	tmpName := tmp.Name()
 
 	if _, err := tmp.Write(remaining); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
-		return err
+		return fmt.Errorf("failed to write truncated feed: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
-		return err
+		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
 	// Acquire flock on the curated feed during rename.
 	lockFile, err := os.OpenFile(c.config.FeedPath, os.O_RDONLY, 0644)
 	if err != nil {
 		os.Remove(tmpName)
-		return err
+		return fmt.Errorf("failed to open feed file for locking: %w", err)
 	}
 	defer lockFile.Close()
 
 	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
 		os.Remove(tmpName)
-		return err
+		return fmt.Errorf("failed to lock feed file: %w", err)
 	}
 	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
 
 	if err := os.Rename(tmpName, c.config.FeedPath); err != nil {
 		os.Remove(tmpName)
-		return err
+		return fmt.Errorf("failed to rename truncated feed: %w", err)
 	}
 
 	return nil

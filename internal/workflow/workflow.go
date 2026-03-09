@@ -790,7 +790,7 @@ func Remove(world, agentName, role string) error {
 func writeJSON(path string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal JSON for %s: %w", filepath.Base(path), err)
 	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {

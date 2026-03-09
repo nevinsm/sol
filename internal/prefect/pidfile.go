@@ -26,7 +26,7 @@ func pidSelf() int {
 func WritePID() error {
 	existing, err := ReadPID()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read existing PID: %w", err)
 	}
 	if existing != 0 && IsRunning(existing) {
 		return fmt.Errorf("prefect already running (pid %d)", existing)

@@ -95,7 +95,7 @@ func (r *Registry) Save() error {
 // If this is the first account, it becomes the default.
 func (r *Registry) Add(handle, email, description string) error {
 	if err := ValidateHandle(handle); err != nil {
-		return err
+		return fmt.Errorf("failed to validate account handle: %w", err)
 	}
 	if _, exists := r.Accounts[handle]; exists {
 		return fmt.Errorf("account %q already exists", handle)

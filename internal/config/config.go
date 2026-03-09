@@ -493,13 +493,13 @@ func ProvisionCredentials(configDir, accountHandle string) error {
 func writeAccessTokenOnlyCreds(srcPath, destDir string) error {
 	data, err := os.ReadFile(srcPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read credentials file: %w", err)
 	}
 
 	// Parse credentials as a generic map to preserve unknown fields.
 	var creds map[string]any
 	if err := json.Unmarshal(data, &creds); err != nil {
-		return err
+		return fmt.Errorf("failed to parse credentials: %w", err)
 	}
 
 	// Remove refreshToken from the claudeAiOauth object.
@@ -509,17 +509,17 @@ func writeAccessTokenOnlyCreds(srcPath, destDir string) error {
 
 	out, err := json.MarshalIndent(creds, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal credentials: %w", err)
 	}
 
 	destPath := filepath.Join(destDir, ".credentials.json")
 	tmp := destPath + ".tmp"
 	if err := os.WriteFile(tmp, append(out, '\n'), 0o600); err != nil {
-		return err
+		return fmt.Errorf("failed to write credentials temp file: %w", err)
 	}
 	if err := os.Rename(tmp, destPath); err != nil {
 		os.Remove(tmp)
-		return err
+		return fmt.Errorf("failed to rename credentials file: %w", err)
 	}
 	return nil
 }
@@ -598,7 +598,7 @@ func seedClaudeSettings(agentConfigDir string) {
 func EnsureDirs() error {
 	for _, dir := range []string{StoreDir(), RuntimeDir()} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
+			return fmt.Errorf("failed to create directory %q: %w", dir, err)
 		}
 	}
 	return nil

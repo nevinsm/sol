@@ -657,7 +657,7 @@ func (m *Manager) NudgeSession(name string, message string) error {
 	// 3. Send text via send-keys -l. Messages > 512 bytes are chunked
 	//    with 10ms inter-chunk delays to avoid argument length limits.
 	if err := m.sendMessageChunked(name, sanitized); err != nil {
-		return err
+		return fmt.Errorf("failed to send nudge message to session %q: %w", name, err)
 	}
 
 	// 4. Wait 500ms for text delivery to complete

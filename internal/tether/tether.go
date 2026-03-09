@@ -66,7 +66,7 @@ func Write(world, agentName, writID, role string) error {
 func Read(world, agentName, role string) (string, error) {
 	ids, err := List(world, agentName, role)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to list tethers: %w", err)
 	}
 	if len(ids) == 0 {
 		return "", nil

@@ -37,7 +37,10 @@ func ClearForgePaused(world string) error {
 	if os.IsNotExist(err) {
 		return nil // already unpaused
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to clear forge pause flag: %w", err)
+	}
+	return nil
 }
 
 // ListReady returns MRs with phase=ready AND blocked_by IS NULL AND not
@@ -47,7 +50,7 @@ func ClearForgePaused(world string) error {
 func (r *Forge) ListReady() ([]store.MergeRequest, error) {
 	all, err := r.worldStore.ListMergeRequests("ready")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list ready merge requests: %w", err)
 	}
 	var ready []store.MergeRequest
 	for _, mr := range all {
@@ -78,7 +81,7 @@ func (r *Forge) ListReady() ([]store.MergeRequest, error) {
 func (r *Forge) ListCaravanBlocked() ([]store.MergeRequest, error) {
 	all, err := r.worldStore.ListMergeRequests("ready")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list merge requests: %w", err)
 	}
 	var blocked []store.MergeRequest
 	for _, mr := range all {
@@ -100,7 +103,7 @@ func (r *Forge) ListCaravanBlocked() ([]store.MergeRequest, error) {
 func (r *Forge) ListBlocked() ([]store.MergeRequest, error) {
 	all, err := r.worldStore.ListMergeRequests("")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list merge requests: %w", err)
 	}
 	var blocked []store.MergeRequest
 	for _, mr := range all {

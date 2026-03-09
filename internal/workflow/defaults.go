@@ -142,7 +142,7 @@ func Resolve(workflowName, repoPath string) (*Resolution, error) {
 	}
 
 	if err := extractEmbedded(workflowName, userDir); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to extract embedded workflow %q: %w", workflowName, err)
 	}
 
 	return &Resolution{Path: userDir, Tier: TierEmbedded}, nil
@@ -218,7 +218,7 @@ func Eject(name, repoPath string, force bool) (string, error) {
 	}
 
 	if err := extractEmbedded(name, targetDir); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to extract embedded workflow %q: %w", name, err)
 	}
 
 	return targetDir, nil

@@ -165,9 +165,12 @@ func clearProcessPID(cliName string) {
 // writeProcessPID writes the PID to the runtime PID file.
 func writeProcessPID(cliName string, pid int) error {
 	if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
-		return err
+		return fmt.Errorf("failed to create runtime directory: %w", err)
 	}
-	return os.WriteFile(processFilePath(cliName, ".pid"), []byte(fmt.Sprintf("%d", pid)), 0o644)
+	if err := os.WriteFile(processFilePath(cliName, ".pid"), []byte(fmt.Sprintf("%d", pid)), 0o644); err != nil {
+		return fmt.Errorf("failed to write PID file for %s: %w", cliName, err)
+	}
+	return nil
 }
 
 // processFilePath returns the path for a process runtime file.
@@ -243,7 +246,10 @@ func restartAgent(world, name, role, sessionName string) error {
 
 	// Respawn via startup — it opens its own sphere store when opts.Sphere is nil.
 	_, err := startup.Respawn(role, world, name, startup.LaunchOpts{})
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to respawn agent %s: %w", name, err)
+	}
+	return nil
 }
 
 // restartService shells out to `sol <service> stop` then `sol <service> start`.
