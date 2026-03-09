@@ -13,6 +13,30 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
+// isolateCmdTmux sets up tmux isolation for cmd tests that create tmux sessions.
+// Mirrors the isolation from test/integration/helpers_test.go:
+//   TMUX_TMPDIR — isolated socket directory (new tmux server)
+//   TMUX=""     — unset inherited tmux var (forces socket-based discovery)
+//   SOL_SESSION_COMMAND="sleep 300" — stub process instead of real claude
+func isolateCmdTmux(t *testing.T) {
+	t.Helper()
+	tmuxDir := t.TempDir()
+	t.Setenv("TMUX_TMPDIR", tmuxDir)
+	t.Setenv("TMUX", "")
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	t.Cleanup(func() {
+		out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
+		if err != nil {
+			return
+		}
+		for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if strings.HasPrefix(name, "sol-") {
+				exec.Command("tmux", "kill-session", "-t", name).Run()
+			}
+		}
+	})
+}
+
 // initTestWorld sets up SOL_HOME with sphere.db and a world directory.
 func initTestWorld(t *testing.T, world string) string {
 	t.Helper()

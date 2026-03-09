@@ -16,6 +16,9 @@ import (
 func TestGovernorStartCommand(t *testing.T) {
 	solHome := initTestWorld(t, "myworld")
 
+	// Tmux isolation: prevent test from touching the real tmux server.
+	isolateCmdTmux(t)
+
 	// Create a source repo.
 	sourceRepo := filepath.Join(t.TempDir(), "repo")
 	initGitRepo(t, sourceRepo)

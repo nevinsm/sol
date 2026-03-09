@@ -1837,16 +1837,6 @@ func ResolveSourceRepo(world string, cfg config.WorldConfig) (string, error) {
 	return repo, nil
 }
 
-// OpenWorldStore opens a world store for the given world name. Convenience wrapper.
-func OpenWorldStore(world string) (*store.Store, error) {
-	return store.OpenWorld(world)
-}
-
-// OpenSphereStore opens the sphere store. Convenience wrapper.
-func OpenSphereStore() (*store.Store, error) {
-	return store.OpenSphere()
-}
-
 // NewSessionManager creates a new session manager. Convenience wrapper.
 func NewSessionManager() *session.Manager {
 	return session.New()
