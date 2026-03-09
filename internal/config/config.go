@@ -529,31 +529,33 @@ func ClaudeDefaultsDir() string {
 	return filepath.Join(Home(), ".claude-defaults")
 }
 
-// EnsureClaudeDefaults writes the embedded default settings.json and
-// statusline.sh to $SOL_HOME/.claude-defaults/. The settings.json template
-// has its {{STATUSLINE_PATH}} placeholder replaced with the absolute path
-// to statusline.sh. Safe to call multiple times — always overwrites.
+// EnsureClaudeDefaults seeds the embedded default settings.json and
+// statusline.sh into $SOL_HOME/.claude-defaults/ if they don't already exist.
+// Existing files are preserved — use `sol config claude` to customize.
 func EnsureClaudeDefaults() error {
 	dir := ClaudeDefaultsDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create claude defaults dir %q: %w", dir, err)
 	}
 
-	// Write statusline.sh.
+	// Write statusline.sh (always overwrite — it's a sol-managed script,
+	// not user-customizable content).
 	statuslinePath := filepath.Join(dir, "statusline.sh")
 	if err := os.WriteFile(statuslinePath, defaults.StatuslineSh, 0o755); err != nil {
 		return fmt.Errorf("failed to write statusline.sh: %w", err)
 	}
 
-	// Write settings.json with resolved absolute path to statusline.sh.
-	settingsContent := strings.ReplaceAll(
-		string(defaults.SettingsJSON),
-		"{{STATUSLINE_PATH}}",
-		statuslinePath,
-	)
+	// Write settings.json only if it doesn't exist — preserve customizations.
 	settingsPath := filepath.Join(dir, "settings.json")
-	if err := os.WriteFile(settingsPath, []byte(settingsContent), 0o644); err != nil {
-		return fmt.Errorf("failed to write settings.json: %w", err)
+	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
+		settingsContent := strings.ReplaceAll(
+			string(defaults.SettingsJSON),
+			"{{STATUSLINE_PATH}}",
+			statuslinePath,
+		)
+		if err := os.WriteFile(settingsPath, []byte(settingsContent), 0o644); err != nil {
+			return fmt.Errorf("failed to write settings.json: %w", err)
+		}
 	}
 
 	return nil
