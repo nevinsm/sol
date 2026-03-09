@@ -77,6 +77,19 @@ func (s *Store) DeleteAgentMemory(agentName, key string) error {
 	return checkRowsAffected(result, "memory "+key+" for agent", agentName)
 }
 
+// CountAgentMemories returns the number of memories for the given agent.
+func (s *Store) CountAgentMemories(agentName string) (int, error) {
+	var count int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM agent_memories WHERE agent_name = ?`,
+		agentName,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count agent memories for %q: %w", agentName, err)
+	}
+	return count, nil
+}
+
 // DeleteAllAgentMemories deletes all memories for the given agent.
 func (s *Store) DeleteAllAgentMemories(agentName string) (int64, error) {
 	result, err := s.db.Exec(

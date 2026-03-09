@@ -134,10 +134,12 @@ Manage caravans (grouped writ batches)
 | `sol caravan close` | Close a completed caravan |
 | `sol caravan commission` | Commission a caravan (drydock → open) |
 | `sol caravan create` | Create a caravan with optional initial items |
+| `sol caravan delete` | Delete a drydocked or closed caravan entirely |
 | `sol caravan dep` | Manage caravan-level dependencies |
 | `sol caravan drydock` | Return a caravan to drydock (open → drydock) |
 | `sol caravan launch` | Dispatch ready items in a caravan |
 | `sol caravan list` | List caravans with optional status filtering |
+| `sol caravan remove` | Remove an item from a caravan |
 | `sol caravan reopen` | Reopen a closed caravan (closed → drydock) |
 | `sol caravan set-phase` | Update the phase of items in a caravan |
 | `sol caravan status` | Show caravan status |
@@ -677,14 +679,17 @@ Manage persistent envoy agents
 
 Remove an envoy agent, its worktree, brief history, and agent record.
 
+Requires --confirm to proceed; without it, prints what would be deleted and exits.
+
 Refuses to delete if the envoy's session is active or tethered unless --force
 is specified. With --force, stops the session and clears the tether before
-deleting.
+deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 
 **Usage:** `sol envoy delete <name>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--confirm` | bool | false | confirm destructive action |
 | `--force` | bool | false | force delete even if session is active or tethered |
 | `--world` | string | "" | world name |
 
@@ -742,8 +747,9 @@ Delete a memory for the current agent
 
 Delete a memory by key, or all memories with --all.
 
-  sol forget "key"     — delete a single memory
-  sol forget --all     — delete all memories for this agent
+  sol forget "key"              — delete a single memory
+  sol forget --all              — preview what would be deleted
+  sol forget --all --confirm    — delete all memories for this agent
 
 **Usage:** `sol forget [key]`
 
@@ -751,6 +757,7 @@ Delete a memory by key, or all memories with --all.
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
 | `--all` | bool | false | delete all memories for this agent |
+| `--confirm` | bool | false | confirm destructive action |
 | `--world` | string | "" | world name |
 
 ### `sol memories`
@@ -1453,11 +1460,17 @@ Inter-agent messaging
 
 #### `sol mail purge`
 
+Delete acknowledged messages from the sphere mailbox.
+
+Requires --confirm to proceed; without it, previews what would be deleted and exits.
+The --force flag is accepted as an alias for --confirm for backward compatibility.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all-acked` | bool | false | Delete all acknowledged messages regardless of age |
 | `--before` | string | "" | Delete acked messages older than duration (e.g., 7d, 24h) |
-| `--force` | bool | false | Skip confirmation prompt |
+| `--confirm` | bool | false | confirm destructive action |
+| `--force` | bool | false | alias for --confirm (backward compatibility) |
 
 #### `sol mail send`
 
@@ -1900,6 +1913,7 @@ Assemble and print execution context for an agent
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name |
+| `--compact` | bool | false | output a short focus reminder instead of the full prime |
 | `--world` | string | "" | world name |
 
 ---
