@@ -202,6 +202,13 @@ Agent-produced code merges through the forge pipeline — never direct to main.
 Forge applies quality gates (build, test, lint) before merge. This is the
 trust boundary between autonomous agents and the shared codebase.
 
+**Never lose work.** Work enters the merge queue because an agent completed
+it. The forge lands that work on main — it does not decide whether the work
+deserves to land. Gates can reject a merge attempt, but the work stays in
+the queue for retry. Branches persist until their contents are on main.
+It's up to the agent on the next attempt to make whatever changes are needed.
+See ADR-0027.
+
 **Scope: code writs only.** Non-code writs (analysis, review, planning) produce
 findings rather than code changes. They resolve by closing directly — no branch
 push, no MR, no forge involvement. The forge pipeline was always scoped to code;

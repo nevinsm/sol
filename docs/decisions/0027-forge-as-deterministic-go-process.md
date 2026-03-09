@@ -54,6 +54,28 @@ The Claude session infrastructure is removed:
   merge-operations skills
 - `startup.Register("forge", ...)` — role registration for session launch
 
+## Invariant: Never Lose Work
+
+Work enters the merge queue because an agent completed it. The forge's job
+is to land that work on main — not to decide whether it deserves to land.
+Quality gates can reject a merge attempt, but the work stays in the queue
+for retry. The forge never unilaterally discards work from the queue.
+
+Concretely:
+
+- Branches are never deleted by the forge. A branch represents an agent's
+  completed work and persists until its contents land on main.
+- Gate failures abort the merge attempt, not the work. The MR moves to
+  failed phase; the branch remains for the next attempt.
+- Merge conflicts trigger rebase or resolution task dispatch. The original
+  branch is preserved — it's up to the agent on the next attempt to make
+  whatever changes are needed.
+- The forge never force-pushes main or resets main to an earlier state.
+
+This invariant applies to any forge implementation — the current Go process
+(this ADR), the proposed orchestrator redesign (ADR-0028), and manual forge
+operation.
+
 ## Consequences
 
 - **Zero API cost during normal merge operations.** AI cost proportional
