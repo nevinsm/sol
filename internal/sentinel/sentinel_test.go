@@ -1519,9 +1519,9 @@ func TestRecastPrunesCountOnHandledItem(t *testing.T) {
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	// Create a failed MR with a "done" writ (already resolved).
-	createFailedMR(t, worldStore, "sol-prune777", "Already done", "outpost/X/sol-prune777")
-	worldStore.UpdateWrit("sol-prune777", store.WritUpdates{Status: "done"})
+	// Create a failed MR with a "tethered" writ (already re-dispatched).
+	createFailedMR(t, worldStore, "sol-prune777", "Already tethered", "outpost/X/sol-prune777")
+	worldStore.UpdateWrit("sol-prune777", store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"})
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 	w.SetCastFunc(func(writID string) (*CastResult, error) {
@@ -1535,9 +1535,114 @@ func TestRecastPrunesCountOnHandledItem(t *testing.T) {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
-	// Recast count should be pruned since writ is no longer open.
+	// Recast count should be pruned since writ is tethered (handled elsewhere).
 	if _, exists := w.recastCounts["sol-prune777"]; exists {
-		t.Error("expected recast count to be pruned for non-open writ")
+		t.Error("expected recast count to be pruned for tethered writ")
+	}
+}
+
+func TestRecastDoneWritNoAssigneeTransitionsToOpen(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	// Create a failed MR with a "done" writ and no assignee (orphaned).
+	createFailedMR(t, worldStore, "sol-done1111", "Orphaned done", "outpost/X/sol-done1111")
+	worldStore.UpdateWrit("sol-done1111", store.WritUpdates{Status: "done"})
+
+	castCalled := false
+	var castWritID string
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		castWritID = writID
+		return &CastResult{
+			WritID:    writID,
+			AgentName: "Sage",
+		}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if !castCalled {
+		t.Fatal("expected castFn to be called for done writ with no assignee")
+	}
+	if castWritID != "sol-done1111" {
+		t.Errorf("castFn called with %q, want %q", castWritID, "sol-done1111")
+	}
+
+	// Verify writ was transitioned to "open".
+	item, err := worldStore.GetWrit("sol-done1111")
+	if err != nil {
+		t.Fatalf("GetWrit() error: %v", err)
+	}
+	// After castFn succeeds, dispatch sets the writ status; here we verify
+	// sentinel at least transitioned it from "done" (it's now "open" or
+	// whatever castFn/dispatch set it to).
+	if item.Status == "done" {
+		t.Error("writ should no longer be in done status after recast")
+	}
+
+	if w.recastCounts["sol-done1111"] != 1 {
+		t.Errorf("recast count = %d, want 1", w.recastCounts["sol-done1111"])
+	}
+}
+
+func TestRecastDoneWritWithAssigneeSkipped(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a failed MR with a "done" writ that has an assignee.
+	createFailedMR(t, worldStore, "sol-dassn222", "Done with agent", "outpost/X/sol-dassn222")
+	worldStore.UpdateWrit("sol-dassn222", store.WritUpdates{Status: "done", Assignee: "ember/Toast"})
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called for done writ with active assignee")
+	}
+}
+
+func TestRecastSkipsDuplicateMR(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a writ with a failed MR AND a non-failed MR (e.g., "ready").
+	createWrit(t, worldStore, "sol-dupmr333", "Dup MR task")
+	failedMR, _ := worldStore.CreateMergeRequest("sol-dupmr333", "outpost/A/sol-dupmr333", 3)
+	worldStore.ClaimMergeRequest("test/forge")
+	worldStore.UpdateMergeRequestPhase(failedMR, "failed")
+	readyMR, _ := worldStore.CreateMergeRequest("sol-dupmr333", "outpost/B/sol-dupmr333", 3)
+	_ = readyMR
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called when a non-failed MR exists (duplicate prevention)")
 	}
 }
 
