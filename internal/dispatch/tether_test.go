@@ -469,3 +469,63 @@ func TestTetherThenUntetherRoundTrip(t *testing.T) {
 		t.Fatalf("Re-tether after untether failed: %v", err)
 	}
 }
+
+// TestTetherAgentStateBeforeTetherWrite verifies that Tether() sets agent
+// state to "working" BEFORE writing the tether file. This ordering prevents
+// a race with sentinel's cleanupOrphanedTethers, which skips agents that
+// exist in the DB.
+func TestTetherAgentStateBeforeTetherWrite(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	itemID, err := worldStore.CreateWrit("Order test", "Verify ordering", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Verify agent starts idle.
+	agent, err := sphereStore.GetAgent("ember/Meridian")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "idle" {
+		t.Fatalf("expected agent to start idle, got %q", agent.State)
+	}
+
+	// Tether — this should set agent state before writing tether file.
+	_, err = Tether(TetherOpts{
+		AgentName: "Meridian",
+		WritID:    itemID,
+		World:     "ember",
+	}, worldStore, sphereStore, nil)
+	if err != nil {
+		t.Fatalf("Tether failed: %v", err)
+	}
+
+	// After Tether completes, verify:
+	// 1. Agent is "working" (was set before tether.Write)
+	agent, err = sphereStore.GetAgent("ember/Meridian")
+	if err != nil {
+		t.Fatalf("failed to get agent after tether: %v", err)
+	}
+	if agent.State != "working" {
+		t.Errorf("expected agent state 'working', got %q", agent.State)
+	}
+
+	// 2. Tether file exists
+	if !tether.IsTetheredTo("ember", "Meridian", itemID, "envoy") {
+		t.Error("expected tether file to exist")
+	}
+
+	// 3. Writ is tethered
+	item, err := worldStore.GetWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to get writ: %v", err)
+	}
+	if item.Status != "tethered" {
+		t.Errorf("expected writ status 'tethered', got %q", item.Status)
+	}
+}

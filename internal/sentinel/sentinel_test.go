@@ -1052,9 +1052,10 @@ func TestCleanupOrphanedTether(t *testing.T) {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
-	// Tether should be cleaned up (agent exists but is not working).
-	if tether.IsTethered("ember", "Toast", "agent") {
-		t.Error("expected orphaned tether to be removed for idle agent")
+	// Tether should NOT be cleaned up — agent exists in DB (even though idle).
+	// Consul's stale-tether recovery handles idle agents with tethers.
+	if !tether.IsTethered("ember", "Toast", "agent") {
+		t.Error("expected tether to be preserved for idle agent — sentinel only cleans truly orphaned tethers")
 	}
 }
 
@@ -1086,8 +1087,8 @@ func TestCleanupOrphanedTetherSkipsWorking(t *testing.T) {
 }
 
 // TestCleanupOrphanedTetherRaceWithCast verifies that cleanupOrphanedTethers
-// re-reads agent state from DB before clearing, preventing a race condition
-// where Cast() sets agent to "working" after the sentinel snapshot was taken.
+// skips agents that exist in the DB — regardless of state — preventing a race
+// with Cast() which updates agent state before writing the tether.
 func TestCleanupOrphanedTetherRaceWithCast(t *testing.T) {
 	sphereStore, _ := setupTestEnv(t)
 	mock := newMockSessions()
@@ -1108,19 +1109,73 @@ func TestCleanupOrphanedTetherRaceWithCast(t *testing.T) {
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "working output"
 
-	// Create sentinel with state that would have a stale snapshot of the agent.
-	// The patrol loads agents fresh, but this test verifies that
-	// cleanupOrphanedTethers re-reads from DB (not just the snapshot).
 	w := New(cfg, sphereStore, nil, mock, nil)
 
 	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
-	// Tether should NOT be cleaned up — the agent is working in the DB
-	// even if a stale snapshot might show it as idle.
+	// Tether should NOT be cleaned up — agent exists in DB.
 	if !tether.IsTethered("ember", "Toast", "agent") {
-		t.Error("tether for agent that became working should not be removed")
+		t.Error("tether for known agent should not be removed")
+	}
+}
+
+// TestCleanupOrphanedTethersIdleAgentPreserved verifies that an idle agent
+// with a tether directory is NOT cleaned up by sentinel. Only consul's
+// stale-tether recovery handles idle agents with tethers.
+func TestCleanupOrphanedTethersIdleAgentPreserved(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create an idle agent with a tether file.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	// Agent stays idle — do NOT update to "working".
+
+	if err := tether.Write("ember", "Toast", "sol-stale-writ", "agent"); err != nil {
+		t.Fatalf("tether.Write() error: %v", err)
+	}
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Tether should NOT be cleaned up — agent exists in DB (even though idle).
+	// Consul's stale-tether recovery handles this case with proper context.
+	if !tether.IsTethered("ember", "Toast", "agent") {
+		t.Error("tether for idle agent should not be removed by sentinel — consul handles stale tethers")
+	}
+}
+
+// TestCleanupOrphanedTethersTrulyOrphaned verifies that tether directories
+// for agents with NO record in the sphere DB are cleaned up.
+func TestCleanupOrphanedTethersTrulyOrphaned(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Write a tether for an agent that does NOT exist in the DB.
+	if err := tether.Write("ember", "Ghost", "sol-orphan-writ", "agent"); err != nil {
+		t.Fatalf("tether.Write() error: %v", err)
+	}
+
+	// Verify tether exists before patrol.
+	if !tether.IsTethered("ember", "Ghost", "agent") {
+		t.Fatal("expected tether to exist before patrol")
+	}
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Tether SHOULD be cleaned up — no agent record in DB (truly orphaned).
+	if tether.IsTethered("ember", "Ghost", "agent") {
+		t.Error("tether for non-existent agent should be cleaned up")
 	}
 }
 
@@ -2751,13 +2806,10 @@ func TestOrphanedTetherDirectoryCleaned(t *testing.T) {
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	// Create an idle agent with multiple orphaned tether files.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
-	// Agent is idle by default.
-
-	// Write multiple tether files.
+	// Write multiple tether files for an agent that does NOT exist in the DB.
+	// This is a truly orphaned agent — deleted from DB but tether dir remains.
 	for _, wid := range []string{"sol-orphan-1", "sol-orphan-2", "sol-orphan-3"} {
-		if err := tether.Write("ember", "Toast", wid, "agent"); err != nil {
+		if err := tether.Write("ember", "Ghost", wid, "agent"); err != nil {
 			t.Fatalf("tether.Write(%s) error: %v", wid, err)
 		}
 	}
@@ -2768,12 +2820,12 @@ func TestOrphanedTetherDirectoryCleaned(t *testing.T) {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
-	// All tether files should be cleaned up (agent exists but is not working).
-	if tether.IsTethered("ember", "Toast", "agent") {
-		t.Error("expected all orphaned tether files to be removed for idle agent")
+	// All tether files should be cleaned up — agent has no DB record (truly orphaned).
+	if tether.IsTethered("ember", "Ghost", "agent") {
+		t.Error("expected all orphaned tether files to be removed for non-existent agent")
 	}
 
-	remaining, err := tether.List("ember", "Toast", "agent")
+	remaining, err := tether.List("ember", "Ghost", "agent")
 	if err != nil {
 		t.Fatalf("tether.List() error: %v", err)
 	}

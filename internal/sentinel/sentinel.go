@@ -1859,8 +1859,12 @@ func (w *Sentinel) cleanupOrphanedTethers(agentNames, workingAgents map[string]b
 		}
 		name := entry.Name()
 
-		// If agent exists and is working (in snapshot), the tether is valid.
-		if workingAgents[name] {
+		// If agent exists in DB at all (any state), skip it.
+		// Only clear tethers for agents with NO record in the sphere DB
+		// (truly orphaned — the agent was deleted but its tether directory
+		// wasn't cleaned up). Idle agents with tethers are handled by
+		// consul's stale-tether recovery with proper context.
+		if agentNames[name] {
 			continue
 		}
 
@@ -1869,17 +1873,7 @@ func (w *Sentinel) cleanupOrphanedTethers(agentNames, workingAgents map[string]b
 			continue
 		}
 
-		// Re-read agent state from DB to avoid acting on stale snapshot.
-		// Cast() may have updated the agent to "working" since the snapshot
-		// was taken at the start of this patrol cycle.
-		agentID := w.config.World + "/" + name
-		freshAgent, err := w.sphereStore.GetAgent(agentID)
-		if err == nil && freshAgent.State == "working" {
-			continue // agent is now working — tether is valid
-		}
-
-		// Tether directory non-empty but agent is not working — orphaned tethers.
-		// Clear removes all files in the tether directory.
+		// Tether directory non-empty for agent with no DB record — truly orphaned.
 		tether.Clear(w.config.World, name, "agent")
 		cleaned++
 

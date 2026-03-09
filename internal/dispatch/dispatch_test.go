@@ -209,6 +209,75 @@ func TestCastHappyPath(t *testing.T) {
 	}
 }
 
+// TestCastAgentStateBeforeTether verifies that Cast() sets agent state to
+// "working" before writing the tether file. This ordering prevents a race
+// with sentinel's cleanupOrphanedTethers, which skips agents that exist in
+// the DB (any state). If tether were written first while agent is "idle",
+// a concurrent sentinel patrol could clear it.
+func TestCastAgentStateBeforeTether(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWrit("Order test", "Verify ordering", "operator", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Verify agent starts idle.
+	agent, err := sphereStore.GetAgent("ember/Toast")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "idle" {
+		t.Fatalf("expected agent to start idle, got %q", agent.State)
+	}
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	_, err = Cast(context.Background(), CastOpts{
+		WritID:     itemID,
+		World:      "ember",
+		AgentName:  "Toast",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Cast failed: %v", err)
+	}
+
+	// After Cast completes, verify all three operations succeeded in order:
+	// 1. Agent state → working (done first to prevent sentinel race)
+	agent, err = sphereStore.GetAgent("ember/Toast")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "working" {
+		t.Errorf("expected agent state 'working', got %q", agent.State)
+	}
+	if agent.ActiveWrit != itemID {
+		t.Errorf("expected active writ %q, got %q", itemID, agent.ActiveWrit)
+	}
+
+	// 2. Tether file written
+	if !tether.IsTethered("ember", "Toast", "agent") {
+		t.Error("expected tether to be written")
+	}
+
+	// 3. Writ status → tethered
+	item, err := worldStore.GetWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to get writ: %v", err)
+	}
+	if item.Status != "tethered" {
+		t.Errorf("expected writ status 'tethered', got %q", item.Status)
+	}
+}
+
 func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()

@@ -267,12 +267,13 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	}
 
 	// From here on, rollback on failure.
+	// Undo in reverse order of: (1) agent→working, (2) tether.Write, (3) writ→tethered.
 	rollback := func() {
-		if err := tether.Clear(opts.World, agent.Name, "agent"); err != nil {
-			fmt.Fprintf(os.Stderr, "rollback: failed to clear tether: %v\n", err)
-		}
 		if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"}); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to reset writ: %v\n", err)
+		}
+		if err := tether.Clear(opts.World, agent.Name, "agent"); err != nil {
+			fmt.Fprintf(os.Stderr, "rollback: failed to clear tether: %v\n", err)
 		}
 		if err := sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to reset agent state: %v\n", err)
@@ -443,38 +444,40 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 	}
 	defer agentLock.Release()
 
-	// 4. Create tether file in agent tether directory.
-	if err := tether.Write(opts.World, opts.AgentName, opts.WritID, agent.Role); err != nil {
-		return nil, fmt.Errorf("failed to write tether: %w", err)
-	}
-
-	// 5. Update writ: status → tethered, assignee → agent ID.
-	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
-		Status:   "tethered",
-		Assignee: agent.ID,
-	}); err != nil {
-		// Rollback tether file.
-		tether.ClearOne(opts.World, opts.AgentName, opts.WritID, agent.Role)
-		return nil, fmt.Errorf("failed to update writ: %w", err)
-	}
-
-	// 6. Update agent: set working (if was idle), set active_writ only if none.
+	// 4. Update agent: set working (if was idle), set active_writ only if none.
+	// Done BEFORE tether.Write() to prevent a race with sentinel's
+	// cleanupOrphanedTethers, which skips tether files for known agents.
+	prevState := agent.State
+	prevActiveWrit := agent.ActiveWrit
 	if agent.State == "idle" {
 		if err := sphereStore.UpdateAgentState(agentID, "working", opts.WritID); err != nil {
-			// Rollback tether + writ.
-			tether.ClearOne(opts.World, opts.AgentName, opts.WritID, agent.Role)
-			worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"})
 			return nil, fmt.Errorf("failed to update agent state: %w", err)
 		}
 	} else if agent.ActiveWrit == "" {
 		// Already working but no active writ — set this as active.
 		if err := sphereStore.UpdateAgentState(agentID, agent.State, opts.WritID); err != nil {
-			tether.ClearOne(opts.World, opts.AgentName, opts.WritID, agent.Role)
-			worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"})
 			return nil, fmt.Errorf("failed to update agent active writ: %w", err)
 		}
 	}
 	// If already working with an active_writ, leave it unchanged.
+
+	// 5. Create tether file in agent tether directory.
+	if err := tether.Write(opts.World, opts.AgentName, opts.WritID, agent.Role); err != nil {
+		// Rollback agent state.
+		sphereStore.UpdateAgentState(agentID, prevState, prevActiveWrit)
+		return nil, fmt.Errorf("failed to write tether: %w", err)
+	}
+
+	// 6. Update writ: status → tethered, assignee → agent ID.
+	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
+		Status:   "tethered",
+		Assignee: agent.ID,
+	}); err != nil {
+		// Rollback tether + agent state (reverse order).
+		tether.ClearOne(opts.World, opts.AgentName, opts.WritID, agent.Role)
+		sphereStore.UpdateAgentState(agentID, prevState, prevActiveWrit)
+		return nil, fmt.Errorf("failed to update writ: %w", err)
+	}
 
 	// 7. Emit event.
 	if logger != nil {
