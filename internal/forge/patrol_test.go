@@ -673,3 +673,269 @@ func TestHeartbeatJSON(t *testing.T) {
 		t.Errorf("merges_total = %d, want 12", parsed.MergesTotal)
 	}
 }
+
+// --- Enriched heartbeat tests ---
+
+func TestHeartbeatIncludesCurrentMRAndWrit(t *testing.T) {
+	state, worldStore, cmdRunner := setupPatrolTest(t)
+	defer state.fl.Close()
+
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Fix auth flow", Status: "done",
+	}
+
+	// Mock git commands for a successful merge cycle.
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD", []byte("abc1234"), nil)
+	cmdRunner.SetResult("git merge --squash origin/outpost/Toast/sol-aaa11111", nil, nil)
+	cmdRunner.SetResult("git diff --cached --quiet", nil, fmt.Errorf("exit 1"))
+	gateCmd := "go test ./..."
+	cmdRunner.SetResult("sh -c "+gateCmd, nil, nil)
+	cmdRunner.SetResult("git commit -m Fix auth flow (sol-aaa11111)", nil, nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD~1", []byte("abc1234"), nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD", []byte("def5678"), nil)
+	cmdRunner.SetResult("git push origin HEAD:main", nil, nil)
+
+	// Intercept heartbeat writes to capture the "working" heartbeat.
+	// We read the heartbeat file after patrol completes — the final write is "idle".
+	// Instead, let's verify the heartbeat JSON is valid and the final state is correct.
+	ctx := context.Background()
+	state.patrol(ctx)
+
+	// Final heartbeat should be "idle" after successful merge.
+	hb, err := ReadHeartbeat("ember")
+	if err != nil {
+		t.Fatalf("ReadHeartbeat error: %v", err)
+	}
+	if hb == nil {
+		t.Fatal("expected heartbeat to be written")
+	}
+	if hb.MergesTotal != 1 {
+		t.Errorf("merges_total = %d, want 1", hb.MergesTotal)
+	}
+
+	// Verify the heartbeat JSON includes new fields when populated.
+	// Write a heartbeat with MR context directly to verify the structure.
+	state.writeHeartbeatWithMR("working", 3, &store.MergeRequest{
+		ID:     "mr-002",
+		WritID: "sol-bbb22222",
+		Branch: "outpost/Blade/sol-bbb22222",
+	})
+
+	hb, err = ReadHeartbeat("ember")
+	if err != nil {
+		t.Fatalf("ReadHeartbeat error: %v", err)
+	}
+	if hb.Status != "working" {
+		t.Errorf("status = %q, want 'working'", hb.Status)
+	}
+	if hb.CurrentMR != "mr-002" {
+		t.Errorf("current_mr = %q, want 'mr-002'", hb.CurrentMR)
+	}
+	if hb.CurrentWrit != "sol-bbb22222" {
+		t.Errorf("current_writ = %q, want 'sol-bbb22222'", hb.CurrentWrit)
+	}
+	if hb.ClaimedAt == "" {
+		t.Error("claimed_at should be set when MR is provided")
+	}
+	// Verify claimed_at is a valid RFC3339 timestamp.
+	if _, err := time.Parse(time.RFC3339, hb.ClaimedAt); err != nil {
+		t.Errorf("claimed_at %q is not valid RFC3339: %v", hb.ClaimedAt, err)
+	}
+}
+
+func TestHeartbeatIncludesLastErrorAfterFailure(t *testing.T) {
+	state, worldStore, cmdRunner := setupPatrolTest(t)
+	defer state.fl.Close()
+
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Bad code", Status: "done",
+	}
+
+	// Sync fails.
+	cmdRunner.SetResult("git fetch origin", []byte("fatal: unable to access"), fmt.Errorf("exit 128"))
+
+	ctx := context.Background()
+	state.patrol(ctx)
+
+	hb, err := ReadHeartbeat("ember")
+	if err != nil {
+		t.Fatalf("ReadHeartbeat error: %v", err)
+	}
+	if hb == nil {
+		t.Fatal("expected heartbeat to be written")
+	}
+	if hb.LastError == "" {
+		t.Error("last_error should be set after sync failure")
+	}
+	if !strings.Contains(hb.LastError, "sync failed") {
+		t.Errorf("last_error = %q, should contain 'sync failed'", hb.LastError)
+	}
+}
+
+func TestHeartbeatClearsLastErrorAfterSuccessfulMerge(t *testing.T) {
+	state, worldStore, cmdRunner := setupPatrolTest(t)
+	defer state.fl.Close()
+
+	// Simulate a prior error.
+	state.lastError = "previous sync failure"
+
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Fix auth flow", Status: "done",
+	}
+
+	// Mock git commands for a successful merge cycle.
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD", []byte("abc1234"), nil)
+	cmdRunner.SetResult("git merge --squash origin/outpost/Toast/sol-aaa11111", nil, nil)
+	cmdRunner.SetResult("git diff --cached --quiet", nil, fmt.Errorf("exit 1"))
+	gateCmd := "go test ./..."
+	cmdRunner.SetResult("sh -c "+gateCmd, nil, nil)
+	cmdRunner.SetResult("git commit -m Fix auth flow (sol-aaa11111)", nil, nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD~1", []byte("abc1234"), nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD", []byte("def5678"), nil)
+	cmdRunner.SetResult("git push origin HEAD:main", nil, nil)
+
+	ctx := context.Background()
+	state.patrol(ctx)
+
+	// After successful merge, last_error should be cleared.
+	hb, err := ReadHeartbeat("ember")
+	if err != nil {
+		t.Fatalf("ReadHeartbeat error: %v", err)
+	}
+	if hb == nil {
+		t.Fatal("expected heartbeat to be written")
+	}
+	if hb.LastError != "" {
+		t.Errorf("last_error = %q, want empty (should be cleared after successful merge)", hb.LastError)
+	}
+	if state.lastError != "" {
+		t.Errorf("state.lastError = %q, want empty", state.lastError)
+	}
+}
+
+func TestHeartbeatJSONWithNewFields(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	hb := &Heartbeat{
+		Timestamp:   now,
+		Status:      "working",
+		PatrolCount: 10,
+		QueueDepth:  2,
+		CurrentMR:   "mr-001",
+		CurrentWrit: "sol-aaa11111",
+		ClaimedAt:   now.Format(time.RFC3339),
+		LastMerge:   now,
+		MergesTotal: 5,
+		LastError:   "sync failed: timeout",
+	}
+
+	data, err := json.MarshalIndent(hb, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	// Verify JSON string contains expected fields.
+	jsonStr := string(data)
+	for _, field := range []string{"current_mr", "current_writ", "claimed_at", "last_error"} {
+		if !strings.Contains(jsonStr, field) {
+			t.Errorf("JSON should contain field %q, got: %s", field, jsonStr)
+		}
+	}
+
+	// Verify round-trip.
+	var parsed Heartbeat
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if parsed.CurrentMR != "mr-001" {
+		t.Errorf("current_mr = %q, want 'mr-001'", parsed.CurrentMR)
+	}
+	if parsed.CurrentWrit != "sol-aaa11111" {
+		t.Errorf("current_writ = %q, want 'sol-aaa11111'", parsed.CurrentWrit)
+	}
+	if parsed.ClaimedAt != now.Format(time.RFC3339) {
+		t.Errorf("claimed_at = %q, want %q", parsed.ClaimedAt, now.Format(time.RFC3339))
+	}
+	if parsed.LastError != "sync failed: timeout" {
+		t.Errorf("last_error = %q, want 'sync failed: timeout'", parsed.LastError)
+	}
+}
+
+func TestHeartbeatOmitsEmptyNewFields(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	hb := &Heartbeat{
+		Timestamp:   now,
+		Status:      "idle",
+		PatrolCount: 5,
+		QueueDepth:  0,
+		MergesTotal: 3,
+	}
+
+	data, err := json.MarshalIndent(hb, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	jsonStr := string(data)
+	// With omitempty, empty string fields should not appear.
+	for _, field := range []string{"current_mr", "current_writ", "claimed_at", "last_error"} {
+		if strings.Contains(jsonStr, field) {
+			t.Errorf("JSON should omit empty field %q, got: %s", field, jsonStr)
+		}
+	}
+}
+
+func TestHeartbeatLastErrorOnPushRejected(t *testing.T) {
+	state, worldStore, cmdRunner := setupPatrolTest(t)
+	defer state.fl.Close()
+
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Attempts: 1},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Normal change", Status: "done",
+	}
+
+	// Merge and gates pass.
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD", []byte("abc1234"), nil)
+	cmdRunner.SetResult("git merge --squash origin/outpost/Toast/sol-aaa11111", nil, nil)
+	cmdRunner.SetResult("git diff --cached --quiet", nil, fmt.Errorf("exit 1"))
+	cmdRunner.SetResult("sh -c go test ./...", nil, nil)
+	cmdRunner.SetResult("git commit -m Normal change (sol-aaa11111)", nil, nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD~1", []byte("abc1234"), nil)
+	cmdRunner.SetResult("git rev-parse --short HEAD", []byte("def5678"), nil)
+	// Push rejected.
+	cmdRunner.SetResult("git push origin HEAD:main",
+		[]byte("error: failed to push some refs"), fmt.Errorf("exit 1"))
+
+	ctx := context.Background()
+	state.patrol(ctx)
+
+	hb, err := ReadHeartbeat("ember")
+	if err != nil {
+		t.Fatalf("ReadHeartbeat error: %v", err)
+	}
+	if hb == nil {
+		t.Fatal("expected heartbeat to be written")
+	}
+	if hb.LastError == "" {
+		t.Error("last_error should be set after push rejection")
+	}
+	if !strings.Contains(hb.LastError, "push rejected") {
+		t.Errorf("last_error = %q, should contain 'push rejected'", hb.LastError)
+	}
+}
