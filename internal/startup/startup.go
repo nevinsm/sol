@@ -50,8 +50,8 @@ type RoleConfig struct {
 	ReplacePrompt       bool   // true = --system-prompt-file, false = --append-system-prompt-file
 
 	// Workflow
-	Formula   string // formula name to instantiate (empty = none)
-	NeedsItem bool   // whether formula requires a writ
+	Workflow  string // workflow name to instantiate (empty = none)
+	NeedsItem bool   // whether workflow requires a writ
 
 	// Prime context
 	PrimeBuilder func(world, agent string) string
@@ -96,7 +96,7 @@ func ConfigFor(role string) *RoleConfig {
 //  3. Install hooks (cfg.Hooks → settings.local.json)
 //  4. Ensure CLAUDE_CONFIG_DIR (config.EnsureClaudeConfigDir)
 //  5. Ensure agent record in sphere store
-//  6. Instantiate workflow if cfg.Formula is set
+//  6. Instantiate workflow if cfg.Workflow is set
 //  7. Build prime context (cfg.PrimeBuilder)
 //  8. Build claude command (--system-prompt-file or --append-system-prompt-file)
 //  9. Start tmux session with env
@@ -195,18 +195,18 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		return "", fmt.Errorf("startup: failed to set agent working: %w", err)
 	}
 
-	// 6. Instantiate workflow if formula is set.
-	if cfg.Formula != "" {
+	// 6. Instantiate workflow if set.
+	if cfg.Workflow != "" {
 		// Instantiate if no workflow exists or previous one completed.
 		// A done workflow has no useful state to preserve — re-instantiate
-		// so looping formulas (e.g. forge-patrol) restart from step 1.
+		// so looping workflows (e.g. forge-patrol) restart from step 1.
 		existingState, _ := workflow.ReadState(world, agent, cfg.Role)
 		if existingState == nil || existingState.Status == "done" {
 			vars := map[string]string{
 				"world": world,
 			}
-			if _, _, err := workflow.Instantiate(world, agent, cfg.Role, cfg.Formula, vars); err != nil {
-				return "", fmt.Errorf("startup: failed to instantiate formula %q: %w", cfg.Formula, err)
+			if _, _, err := workflow.Instantiate(world, agent, cfg.Role, cfg.Workflow, vars); err != nil {
+				return "", fmt.Errorf("startup: failed to instantiate workflow %q: %w", cfg.Workflow, err)
 			}
 		}
 	}

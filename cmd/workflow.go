@@ -24,8 +24,8 @@ var workflowCmd = &cobra.Command{
 }
 
 var workflowInstantiateCmd = &cobra.Command{
-	Use:          "instantiate <formula>",
-	Short:        "Instantiate a workflow from a formula",
+	Use:          "instantiate <workflow>",
+	Short:        "Instantiate a workflow",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -41,7 +41,7 @@ var workflowInstantiateCmd = &cobra.Command{
 			return err
 		}
 
-		formula := args[0]
+		workflowName := args[0]
 
 		// Parse --var flags into map.
 		vars, err := parseVarFlags(wfVars)
@@ -53,13 +53,13 @@ var workflowInstantiateCmd = &cobra.Command{
 			vars["issue"] = item
 		}
 
-		inst, state, err := workflow.Instantiate(world, agent, "agent", formula, vars)
+		inst, state, err := workflow.Instantiate(world, agent, "agent", workflowName, vars)
 		if err != nil {
 			return err
 		}
 
 		fmt.Printf("Workflow instantiated: %s for %s (step: %s)\n",
-			inst.Formula, item, state.CurrentStep)
+			inst.Workflow, item, state.CurrentStep)
 		return nil
 	},
 }
@@ -185,7 +185,7 @@ var workflowStatusCmd = &cobra.Command{
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
 			out := struct {
-				Formula        string   `json:"formula"`
+				Workflow       string   `json:"workflow"`
 				WritID     string   `json:"writ_id"`
 				Status         string   `json:"status"`
 				CurrentStep    string   `json:"current_step"`
@@ -193,7 +193,7 @@ var workflowStatusCmd = &cobra.Command{
 				TotalSteps     int      `json:"total_steps"`
 				CompletedCount int      `json:"completed_count"`
 			}{
-				Formula:        inst.Formula,
+				Workflow:       inst.Workflow,
 				WritID:     inst.WritID,
 				Status:         state.Status,
 				CurrentStep:    state.CurrentStep,
@@ -207,7 +207,7 @@ var workflowStatusCmd = &cobra.Command{
 		}
 
 		// Human-readable output.
-		fmt.Printf("Workflow: %s (%s)\n", inst.Formula, inst.WritID)
+		fmt.Printf("Workflow: %s (%s)\n", inst.Workflow, inst.WritID)
 		fmt.Printf("Status: %s\n", state.Status)
 		fmt.Printf("Progress: %d/%d steps complete\n", len(state.Completed), len(steps))
 		fmt.Println()
@@ -234,12 +234,12 @@ var workflowStatusCmd = &cobra.Command{
 }
 
 var workflowShowCmd = &cobra.Command{
-	Use:          "show <formula>",
-	Short:        "Display formula details and resolution source",
+	Use:          "show <workflow>",
+	Short:        "Display workflow details and resolution source",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		formulaName := args[0]
+		workflowName := args[0]
 
 		// Resolve world for project-tier lookup (optional).
 		var repoPath string
@@ -252,7 +252,7 @@ var workflowShowCmd = &cobra.Command{
 			repoPath = config.RepoPath(world)
 		}
 
-		res, err := workflow.EnsureFormula(formulaName, repoPath)
+		res, err := workflow.Resolve(workflowName, repoPath)
 		if err != nil {
 			return err
 		}
@@ -273,7 +273,7 @@ var workflowShowCmd = &cobra.Command{
 	},
 }
 
-func printShowJSON(m *workflow.Manifest, res *workflow.FormulaResolution, validationErr error) error {
+func printShowJSON(m *workflow.Manifest, res *workflow.Resolution, validationErr error) error {
 	type varJSON struct {
 		Required bool   `json:"required"`
 		Default  string `json:"default,omitempty"`
@@ -306,7 +306,7 @@ func printShowJSON(m *workflow.Manifest, res *workflow.FormulaResolution, valida
 		Type        string                `json:"type"`
 		Description string                `json:"description,omitempty"`
 		Manifest    bool                  `json:"manifest"`
-		Tier        workflow.FormulaTier   `json:"tier"`
+		Tier        workflow.Tier           `json:"tier"`
 		Path        string                `json:"path"`
 		Valid       bool                  `json:"valid"`
 		Error       string                `json:"error,omitempty"`
@@ -353,14 +353,14 @@ func printShowJSON(m *workflow.Manifest, res *workflow.FormulaResolution, valida
 	return enc.Encode(out)
 }
 
-func printShowHuman(m *workflow.Manifest, res *workflow.FormulaResolution, validationErr error) error {
-	formulaType := m.Type
-	if formulaType == "" {
-		formulaType = "workflow"
+func printShowHuman(m *workflow.Manifest, res *workflow.Resolution, validationErr error) error {
+	wfType := m.Type
+	if wfType == "" {
+		wfType = "workflow"
 	}
 
 	fmt.Printf("Name:        %s\n", m.Name)
-	fmt.Printf("Type:        %s\n", formulaType)
+	fmt.Printf("Type:        %s\n", wfType)
 	fmt.Printf("Tier:        %s\n", res.Tier)
 	fmt.Printf("Path:        %s\n", res.Path)
 	if m.Description != "" {
@@ -445,8 +445,8 @@ func printShowHuman(m *workflow.Manifest, res *workflow.FormulaResolution, valid
 }
 
 var workflowManifestCmd = &cobra.Command{
-	Use:          "manifest <formula>",
-	Short:        "Manifest a formula into writs and a caravan",
+	Use:          "manifest <workflow>",
+	Short:        "Manifest a workflow into writs and a caravan",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -456,7 +456,7 @@ var workflowManifestCmd = &cobra.Command{
 			return err
 		}
 
-		formula := args[0]
+		workflowName := args[0]
 
 		vars, err := parseVarFlags(wfVars)
 		if err != nil {
@@ -477,8 +477,8 @@ var workflowManifestCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
-		result, err := workflow.ManifestFormula(worldStore, sphereStore, workflow.ManifestOpts{
-			FormulaName: formula,
+		result, err := workflow.Manifest(worldStore, sphereStore, workflow.ManifestOpts{
+			Name:  workflowName,
 			World:       world,
 			ParentID:    target,
 			Variables:   vars,
@@ -527,7 +527,7 @@ var workflowManifestCmd = &cobra.Command{
 
 var workflowListCmd = &cobra.Command{
 	Use:          "list",
-	Short:        "List available workflow formulas",
+	Short:        "List available workflows",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -550,14 +550,14 @@ var workflowListCmd = &cobra.Command{
 			}
 		}
 
-		entries, err := workflow.ListFormulas(repoPath)
+		entries, err := workflow.List(repoPath)
 		if err != nil {
 			return err
 		}
 
 		// Filter shadowed entries unless --all.
 		if !showAll {
-			filtered := []workflow.FormulaEntry{}
+			filtered := []workflow.Entry{}
 			for _, e := range entries {
 				if !e.Shadowed {
 					filtered = append(filtered, e)
@@ -573,7 +573,7 @@ var workflowListCmd = &cobra.Command{
 		}
 
 		if len(entries) == 0 {
-			fmt.Println("No formulas found.")
+			fmt.Println("No workflows found.")
 			return nil
 		}
 
@@ -629,11 +629,11 @@ func init() {
 	// manifest flags
 	workflowManifestCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
 	workflowManifestCmd.Flags().StringSliceVar(&wfVars, "var", nil, "variable assignment (key=val)")
-	workflowManifestCmd.Flags().String("target", "", "existing writ ID to manifest against (required for expansion formulas)")
+	workflowManifestCmd.Flags().String("target", "", "existing writ ID to manifest against (required for expansion workflows)")
 	workflowManifestCmd.Flags().Bool("json", false, "output as JSON")
 
 	// list flags
 	workflowListCmd.Flags().String("world", "", "world name (for project-tier discovery)")
-	workflowListCmd.Flags().Bool("all", false, "show all tiers including shadowed formulas")
+	workflowListCmd.Flags().Bool("all", false, "show all tiers including shadowed workflows")
 	workflowListCmd.Flags().Bool("json", false, "output as JSON")
 }

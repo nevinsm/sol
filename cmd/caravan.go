@@ -17,7 +17,7 @@ import (
 var (
 	caravanOwner   string
 	caravanPhase   int
-	caravanFormula string
+	caravanWorkflow string
 	caravanVars    []string
 )
 
@@ -778,8 +778,8 @@ var caravanLaunchCmd = &cobra.Command{
 				SourceRepo:  sourceRepo,
 				WorldConfig: &worldCfg,
 			}
-			if caravanFormula != "" {
-				castOpts.Formula = caravanFormula
+			if caravanWorkflow != "" {
+				castOpts.Workflow = caravanWorkflow
 				castOpts.Variables = vars
 			}
 			result, err := dispatch.Cast(cmd.Context(), castOpts, worldStore, sphereStore, mgr, logger)
@@ -1118,6 +1118,6 @@ func init() {
 
 	// launch flags
 	caravanLaunchCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
-	caravanLaunchCmd.Flags().StringVar(&caravanFormula, "formula", "", "workflow formula for dispatched items")
+	caravanLaunchCmd.Flags().StringVar(&caravanWorkflow, "workflow", "", "workflow for dispatched items")
 	caravanLaunchCmd.Flags().StringSliceVar(&caravanVars, "var", nil, "variable assignment (key=val)")
 }

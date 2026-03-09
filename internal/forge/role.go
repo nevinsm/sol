@@ -20,7 +20,7 @@ func ForgeRoleConfig() startup.RoleConfig {
 		Hooks:               forgeHooks,
 		SystemPromptContent: protocol.ForgeSystemPrompt,
 		ReplacePrompt:       true,
-		Formula:             "forge-patrol",
+		Workflow:            "forge-patrol",
 		NeedsItem:           false,
 		PrimeBuilder:        forgePrime,
 	}
@@ -95,7 +95,7 @@ func forgeHooks(world, _ string) startup.HookSet {
 // forgePrime builds the initial prompt for the forge session.
 func forgePrime(world, _ string) string {
 	return fmt.Sprintf(
-		"Execute your current formula step. Run sol workflow current --world=%s --agent=forge.",
+		"Execute your current workflow step. Run sol workflow current --world=%s --agent=forge.",
 		world)
 }
 
