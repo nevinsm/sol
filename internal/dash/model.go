@@ -440,6 +440,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.worldView.updateData(m.worldData)
 		}
 
+		// Refresh peek items if peek mode is active, so the list
+		// reflects agents that started or stopped since peek entry.
+		if m.activeView() == viewPeek {
+			if m.peekView.fromView == viewWorld && msg.world != nil {
+				m.peekView.refreshItems(buildWorldPeekItems(msg.world))
+			} else if m.peekView.fromView == viewSphere && msg.sphere != nil {
+				m.peekView.refreshItems(buildSpherePeekItems(m.sphereView))
+			}
+		}
+
 		// Refresh feed.
 		m.feed.refresh()
 

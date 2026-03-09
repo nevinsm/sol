@@ -244,7 +244,21 @@ func (sm sphereModel) handleProcessAction() (sphereModel, tea.Cmd) {
 		return sm, nil
 	}
 
-	// Build peek items from all sphere process items.
+	items := buildSpherePeekItems(sm)
+	if len(items) == 0 {
+		return sm, nil
+	}
+
+	msg := peekMsg{
+		items:         items,
+		initialCursor: sm.processCursor,
+		fromView:      viewSphere,
+	}
+	return sm, func() tea.Msg { return msg }
+}
+
+// buildSpherePeekItems creates peek items from the sphere process list.
+func buildSpherePeekItems(sm sphereModel) []peekItem {
 	var items []peekItem
 	for _, pi := range sm.processItems {
 		items = append(items, peekItem{
@@ -256,16 +270,7 @@ func (sm sphereModel) handleProcessAction() (sphereModel, tea.Cmd) {
 			peekable:    pi.peekable,
 		})
 	}
-	if len(items) == 0 {
-		return sm, nil
-	}
-
-	msg := peekMsg{
-		items:         items,
-		initialCursor: sm.processCursor,
-		fromView:      viewSphere,
-	}
-	return sm, func() tea.Msg { return msg }
+	return items
 }
 
 // handleProcessAttach handles 'a' on a process item — direct attach.

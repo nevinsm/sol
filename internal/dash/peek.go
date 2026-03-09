@@ -446,6 +446,41 @@ func (pm peekModel) renderFooter() string {
 	return dimStyle.Render("  ↑↓ cycle · enter attach · a attach · esc back · r refresh") + "\n"
 }
 
+// refreshItems updates the peek item list from fresh data without resetting
+// cursor position or causing spinner flicker. Called when the underlying view's
+// data refreshes while peek mode is active.
+func (pm *peekModel) refreshItems(items []peekItem) {
+	pm.items = items
+
+	// Clamp cursor if list shrank.
+	if pm.cursor >= len(pm.items) {
+		pm.cursor = len(pm.items) - 1
+	}
+	if pm.cursor < 0 {
+		pm.cursor = 0
+	}
+
+	// Sync spinners: keep existing, add new, remove gone.
+	active := make(map[string]bool)
+	for _, item := range items {
+		if item.alive {
+			active[item.name] = true
+			if _, ok := pm.itemSpinners[item.name]; !ok {
+				s := spinner.New()
+				s.Spinner = spinner.Dot
+				pm.itemSpinners[item.name] = s
+			}
+		}
+	}
+	for name := range pm.itemSpinners {
+		if !active[name] {
+			delete(pm.itemSpinners, name)
+		}
+	}
+
+	pm.adjustScroll()
+}
+
 // adjustScroll updates the scroll offset for the item list.
 func (pm *peekModel) adjustScroll() {
 	vpHeight := pm.viewportHeight()
