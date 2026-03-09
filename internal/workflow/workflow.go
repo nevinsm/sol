@@ -13,7 +13,7 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
-// Manifest represents a formula's manifest.toml.
+// Manifest represents a workflow's manifest.toml.
 type Manifest struct {
 	Name        string                  `toml:"name"`
 	Type        string                  `toml:"type"`
@@ -34,7 +34,7 @@ type VariableDecl struct {
 	Description string `toml:"description"`
 }
 
-// StepDef defines a step in the formula.
+// StepDef defines a step in the workflow.
 type StepDef struct {
 	ID           string   `toml:"id"`
 	Title        string   `toml:"title"`
@@ -43,7 +43,7 @@ type StepDef struct {
 	Kind         string   `toml:"kind"`          // "code" (default) or "analysis"
 }
 
-// Template defines a child writ template in an expansion formula.
+// Template defines a child writ template in an expansion workflow.
 type Template struct {
 	ID          string   `toml:"id"`
 	Title       string   `toml:"title"`
@@ -51,7 +51,7 @@ type Template struct {
 	Needs       []string `toml:"needs"`
 }
 
-// Leg defines an independent work dimension in a convoy formula.
+// Leg defines an independent work dimension in a convoy workflow.
 type Leg struct {
 	ID          string `toml:"id"`
 	Title       string `toml:"title"`
@@ -60,7 +60,7 @@ type Leg struct {
 	Kind        string `toml:"kind"` // "code" (default) or "analysis"
 }
 
-// Synthesis defines the follow-up step in a convoy formula that runs
+// Synthesis defines the follow-up step in a convoy workflow that runs
 // after all specified legs have completed.
 type Synthesis struct {
 	Title       string   `toml:"title"`
@@ -71,7 +71,7 @@ type Synthesis struct {
 
 // Instance holds metadata about an instantiated workflow.
 type Instance struct {
-	Formula        string            `json:"formula"`
+	Workflow       string            `json:"workflow"`
 	WritID     string            `json:"writ_id"`
 	Variables      map[string]string `json:"variables"`
 	InstantiatedAt time.Time         `json:"instantiated_at"`
@@ -96,21 +96,21 @@ type Step struct {
 	Instructions string     `json:"instructions"` // rendered markdown
 }
 
-// WorkflowDir returns the path to an agent's workflow instance.
+// InstanceDir returns the path to an agent's workflow instance.
 // Uses role-aware directory: outposts/{name}/ for agents, envoys/{name}/ for envoys, etc.
-func WorkflowDir(world, agentName, role string) string {
+func InstanceDir(world, agentName, role string) string {
 	return filepath.Join(config.AgentDir(world, agentName, role), ".workflow")
 }
 
-// FormulaDir returns the path to a formula.
-// $SOL_HOME/formulas/{formulaName}/
-func FormulaDir(formulaName string) string {
-	return filepath.Join(config.Home(), "formulas", formulaName)
+// Dir returns the path to a workflow.
+// $SOL_HOME/workflows/{workflowName}/
+func Dir(workflowName string) string {
+	return filepath.Join(config.Home(), "workflows", workflowName)
 }
 
-// LoadManifest reads and parses a formula's manifest.toml.
-// formulaDir is the absolute path to the formula directory.
-func LoadManifest(formulaDir string) (*Manifest, error) {
+// LoadManifest reads and parses a workflow's manifest.toml.
+// workflowDir is the absolute path to the workflow directory.
+func LoadManifest(workflowDir string) (*Manifest, error) {
 	path := filepath.Join(formulaDir, "manifest.toml")
 	var m Manifest
 	if _, err := toml.DecodeFile(path, &m); err != nil {
@@ -130,10 +130,10 @@ func LoadManifest(formulaDir string) (*Manifest, error) {
 func Validate(m *Manifest) error {
 	if m.Type == "expansion" {
 		if len(m.Steps) > 0 {
-			return fmt.Errorf("expansion formula must not contain [[steps]] entries")
+			return fmt.Errorf("expansion workflow must not contain [[steps]] entries")
 		}
 		if len(m.Templates) == 0 {
-			return fmt.Errorf("expansion formula requires at least one [[template]] entry")
+			return fmt.Errorf("expansion workflow requires at least one [[template]] entry")
 		}
 		// Convert templates to dagNodes for validation.
 		nodes := make([]dagNode, len(m.Templates))
@@ -145,16 +145,16 @@ func Validate(m *Manifest) error {
 
 	if m.Type == "convoy" {
 		if len(m.Steps) > 0 {
-			return fmt.Errorf("convoy formula must not contain [[steps]] entries")
+			return fmt.Errorf("convoy workflow must not contain [[steps]] entries")
 		}
 		if len(m.Templates) > 0 {
-			return fmt.Errorf("convoy formula must not contain [[template]] entries")
+			return fmt.Errorf("convoy workflow must not contain [[template]] entries")
 		}
 		if len(m.Legs) == 0 {
-			return fmt.Errorf("convoy formula requires at least one [[legs]] entry")
+			return fmt.Errorf("convoy workflow requires at least one [[legs]] entry")
 		}
 		if m.Synth == nil {
-			return fmt.Errorf("convoy formula requires a [synthesis] section")
+			return fmt.Errorf("convoy workflow requires a [synthesis] section")
 		}
 		// Validate unique leg IDs.
 		legIDs := make(map[string]bool, len(m.Legs))
@@ -175,7 +175,7 @@ func Validate(m *Manifest) error {
 
 	// All other types (workflow, agent, etc.) validate steps.
 	if len(m.Templates) > 0 && m.Type != "" {
-		return fmt.Errorf("%s formula must not contain [[template]] entries", m.Type)
+		return fmt.Errorf("%s workflow must not contain [[template]] entries", m.Type)
 	}
 	return validateDAG(m.Steps, "step")
 }
@@ -291,8 +291,8 @@ func ResolveVariables(m *Manifest, provided map[string]string) (map[string]strin
 // RenderStepInstructions reads a step's instruction file and performs
 // variable substitution. Variables use {{variable}} syntax.
 // Returns the rendered markdown string.
-func RenderStepInstructions(formulaDir string, step StepDef, vars map[string]string) (string, error) {
-	path := filepath.Join(formulaDir, step.Instructions)
+func RenderStepInstructions(workflowDir string, step StepDef, vars map[string]string) (string, error) {
+	path := filepath.Join(workflowDir, step.Instructions)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to read step instructions %q: %w", path, err)
@@ -335,13 +335,13 @@ func NextReadySteps(steps []StepDef, completed []string) []string {
 }
 
 // Instantiate creates a workflow instance for an agent's assignment.
-func Instantiate(world, agentName, role, formulaName string,
+func Instantiate(world, agentName, role, workflowName string,
 	vars map[string]string) (*Instance, *State, error) {
 
-	// Ensure formula exists (extract from embedded defaults if needed).
-	res, err := EnsureFormula(formulaName, config.RepoPath(world))
+	// Ensure workflow exists (extract from embedded defaults if needed).
+	res, err := Resolve(workflowName, config.RepoPath(world))
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to ensure formula %q: %w", formulaName, err)
+		return nil, nil, fmt.Errorf("failed to resolve workflow %q: %w", workflowName, err)
 	}
 
 	// Load and validate manifest.
@@ -350,7 +350,7 @@ func Instantiate(world, agentName, role, formulaName string,
 		return nil, nil, err
 	}
 	if err := Validate(m); err != nil {
-		return nil, nil, fmt.Errorf("invalid formula %q: %w", formulaName, err)
+		return nil, nil, fmt.Errorf("invalid workflow %q: %w", workflowName, err)
 	}
 
 	// Resolve variables.
@@ -360,7 +360,7 @@ func Instantiate(world, agentName, role, formulaName string,
 	}
 
 	// Create .workflow/ directory.
-	wfDir := WorkflowDir(world, agentName, role)
+	wfDir := InstanceDir(world, agentName, role)
 	stepsDir := filepath.Join(wfDir, "steps")
 	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
 		return nil, nil, fmt.Errorf("failed to create workflow directory: %w", err)
@@ -373,7 +373,7 @@ func Instantiate(world, agentName, role, formulaName string,
 
 	// Build instance.
 	inst := &Instance{
-		Formula:        formulaName,
+		Workflow:       workflowName,
 		WritID:     resolved["issue"],
 		Variables:      resolved,
 		InstantiatedAt: time.Now().UTC(),
@@ -446,7 +446,7 @@ func Instantiate(world, agentName, role, formulaName string,
 // ReadState reads the current workflow state for an agent.
 // Returns nil, nil if no workflow exists (no .workflow/ directory).
 func ReadState(world, agentName, role string) (*State, error) {
-	path := filepath.Join(WorkflowDir(world, agentName, role), "state.json")
+	path := filepath.Join(InstanceDir(world, agentName, role), "state.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -473,13 +473,13 @@ func ReadCurrentStep(world, agentName, role string) (*Step, error) {
 		return nil, nil
 	}
 
-	stepPath := filepath.Join(WorkflowDir(world, agentName, role), "steps", state.CurrentStep+".json")
+	stepPath := filepath.Join(InstanceDir(world, agentName, role), "steps", state.CurrentStep+".json")
 	return readStepFile(stepPath)
 }
 
 // ReadInstance reads the workflow instance metadata.
 func ReadInstance(world, agentName, role string) (*Instance, error) {
-	path := filepath.Join(WorkflowDir(world, agentName, role), "manifest.json")
+	path := filepath.Join(InstanceDir(world, agentName, role), "manifest.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -497,9 +497,9 @@ func ReadInstance(world, agentName, role string) (*Instance, error) {
 
 // ListSteps reads all step files and returns them in manifest order.
 func ListSteps(world, agentName, role string) ([]Step, error) {
-	wfDir := WorkflowDir(world, agentName, role)
+	wfDir := InstanceDir(world, agentName, role)
 
-	// Read the instance to get the formula and load the manifest for step order.
+	// Read the instance to get the workflow and load the manifest for step order.
 	inst, err := ReadInstance(world, agentName, role)
 	if err != nil {
 		return nil, err
@@ -508,7 +508,7 @@ func ListSteps(world, agentName, role string) ([]Step, error) {
 		return nil, nil
 	}
 
-	res, err := EnsureFormula(inst.Formula, config.RepoPath(world))
+	res, err := Resolve(inst.Workflow, config.RepoPath(world))
 	if err != nil {
 		return nil, err
 	}
@@ -533,7 +533,7 @@ func ListSteps(world, agentName, role string) ([]Step, error) {
 
 // Advance marks the current step as complete and finds the next ready step.
 func Advance(world, agentName, role string) (nextStep *Step, done bool, err error) {
-	wfDir := WorkflowDir(world, agentName, role)
+	wfDir := InstanceDir(world, agentName, role)
 
 	// Read state.
 	state, err := ReadState(world, agentName, role)
@@ -575,7 +575,7 @@ func Advance(world, agentName, role string) (nextStep *Step, done bool, err erro
 	if err != nil {
 		return nil, false, err
 	}
-	res, err := EnsureFormula(inst.Formula, config.RepoPath(world))
+	res, err := Resolve(inst.Workflow, config.RepoPath(world))
 	if err != nil {
 		return nil, false, err
 	}
@@ -624,7 +624,7 @@ func Advance(world, agentName, role string) (nextStep *Step, done bool, err erro
 
 // Remove deletes a workflow instance directory.
 func Remove(world, agentName, role string) error {
-	wfDir := WorkflowDir(world, agentName, role)
+	wfDir := InstanceDir(world, agentName, role)
 	if err := os.RemoveAll(wfDir); err != nil {
 		return fmt.Errorf("failed to remove workflow directory: %w", err)
 	}
@@ -661,7 +661,7 @@ func readStepFile(path string) (*Step, error) {
 	return &s, nil
 }
 
-// ManifestResult holds the output of manifesting a formula into writs.
+// ManifestResult holds the output of manifesting a workflow into writs.
 type ManifestResult struct {
 	CaravanID string            `json:"caravan_id"`
 	ParentID  string            `json:"parent_id"`
@@ -669,17 +669,17 @@ type ManifestResult struct {
 	Phases    map[string]int    `json:"phases"`     // step/template ID → phase number
 }
 
-// ManifestOpts holds parameters for ManifestFormula.
+// ManifestOpts holds parameters for Manifest.
 type ManifestOpts struct {
-	FormulaName string
+	Name  string
 	World       string
 	ParentID    string // if empty, a parent writ is created
 	Variables   map[string]string
 	CreatedBy   string
 }
 
-// ShouldManifest returns true if the formula should be manifested.
-// Expansion and convoy formulas always manifest. Workflow formulas
+// ShouldManifest returns true if the workflow should be manifested.
+// Expansion and convoy workflows always manifest. Step-based workflows
 // manifest when the manifest flag is set.
 func ShouldManifest(m *Manifest) bool {
 	return m.Type == "expansion" || m.Type == "convoy" || m.Manifest
@@ -728,7 +728,7 @@ func ComputePhases[T interface {
 	return phases
 }
 
-// phaseable adapts formula items for ComputePhases.
+// phaseable adapts workflow items for ComputePhases.
 type phaseable struct {
 	id    string
 	needs []string
@@ -746,15 +746,15 @@ func renderTemplateField(s string, target *store.Writ) string {
 	return s
 }
 
-// ManifestFormula materializes a formula into child writs with a caravan.
+// Manifest materializes a workflow into child writs with a caravan.
 // Each step (workflow) or template (expansion) becomes a child writ.
-// Dependencies between children mirror the formula's DAG. Children are
+// Dependencies between children mirror the workflow's DAG. Children are
 // grouped in a caravan with phases derived from dependency depth.
-func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*ManifestResult, error) {
-	// Load formula.
-	res, err := EnsureFormula(opts.FormulaName, config.RepoPath(opts.World))
+func Manifest(worldStore, sphereStore *store.Store, opts ManifestOpts) (*ManifestResult, error) {
+	// Load workflow.
+	res, err := Resolve(opts.Name, config.RepoPath(opts.World))
 	if err != nil {
-		return nil, fmt.Errorf("failed to ensure formula %q: %w", opts.FormulaName, err)
+		return nil, fmt.Errorf("failed to resolve workflow %q: %w", opts.Name, err)
 	}
 
 	m, err := LoadManifest(res.Path)
@@ -762,11 +762,11 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 		return nil, err
 	}
 	if err := Validate(m); err != nil {
-		return nil, fmt.Errorf("invalid formula %q: %w", opts.FormulaName, err)
+		return nil, fmt.Errorf("invalid workflow %q: %w", opts.Name, err)
 	}
 
 	if !ShouldManifest(m) {
-		return nil, fmt.Errorf("formula %q is not configured for manifestation (set manifest = true or use expansion type)", opts.FormulaName)
+		return nil, fmt.Errorf("workflow %q is not configured for manifestation (set manifest = true or use expansion type)", opts.Name)
 	}
 
 	// For convoy formulas with a ParentID, inject it as the "target" variable
@@ -795,7 +795,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 	var target *store.Writ
 	if m.Type == "expansion" {
 		if parentID == "" {
-			return nil, fmt.Errorf("expansion formula requires a parent writ (target)")
+			return nil, fmt.Errorf("expansion workflow requires a parent writ (target)")
 		}
 		target, err = worldStore.GetWrit(parentID)
 		if err != nil {
@@ -986,7 +986,7 @@ func ManifestFormula(worldStore, sphereStore *store.Store, opts ManifestOpts) (*
 	}
 
 	// Create caravan and add children.
-	caravanName := opts.FormulaName
+	caravanName := opts.Name
 	if opts.ParentID != "" {
 		caravanName += ":" + opts.ParentID
 	} else {

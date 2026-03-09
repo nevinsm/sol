@@ -13,15 +13,15 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 )
 
-// validFormulaName matches alphanumeric names with hyphens and underscores.
-var validFormulaName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+// validWorkflowName matches alphanumeric names with hyphens and underscores.
+var validWorkflowName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
-// ValidateFormulaName checks that a formula name is safe for use in file
+// ValidateName checks that a workflow name is safe for use in file
 // paths. It rejects names containing path separators, traversal sequences,
 // or leading dots. A valid name matches [a-zA-Z0-9][a-zA-Z0-9_-]*.
-func ValidateFormulaName(name string) error {
-	if !validFormulaName.MatchString(name) {
-		return fmt.Errorf("invalid formula name %q: must not contain path separators or traversal sequences", name)
+func ValidateName(name string) error {
+	if !validWorkflowName.MatchString(name) {
+		return fmt.Errorf("invalid workflow name %q: must not contain path separators or traversal sequences", name)
 	}
 	return nil
 }
@@ -66,7 +66,7 @@ func ValidateFormulaName(name string) error {
 //go:embed defaults/deep-scan/steps/05-chart.md
 var defaultFormulas embed.FS
 
-// knownDefaults lists formula names that are embedded in the binary.
+// knownDefaults lists workflow names that are embedded in the binary.
 var knownDefaults = map[string]bool{
 	"default-work":   true,
 	"rule-of-five":   true,
@@ -79,65 +79,65 @@ var knownDefaults = map[string]bool{
 	"deep-scan":      true,
 }
 
-// FormulaTier indicates which tier resolved a formula.
-type FormulaTier string
+// Tier indicates which tier resolved a workflow.
+type Tier string
 
 const (
 	// TierProject is a project-level workflow from {repo}/.sol/workflows/{name}/.
-	TierProject FormulaTier = "project"
-	// TierUser is a user-level formula from $SOL_HOME/formulas/{name}/.
-	TierUser FormulaTier = "user"
-	// TierEmbedded is a built-in formula extracted from go:embed defaults.
-	TierEmbedded FormulaTier = "embedded"
+	TierProject Tier = "project"
+	// TierUser is a user-level workflow from $SOL_HOME/workflows/{name}/.
+	TierUser Tier = "user"
+	// TierEmbedded is a built-in workflow extracted from go:embed defaults.
+	TierEmbedded Tier = "embedded"
 )
 
-// FormulaResolution is the result of resolving a formula name to a path.
-type FormulaResolution struct {
+// Resolution is the result of resolving a workflow name to a path.
+type Resolution struct {
 	Path string
-	Tier FormulaTier
+	Tier Tier
 }
 
-// FormulaEntry describes a formula discovered during tier scanning.
-type FormulaEntry struct {
-	Name        string      `json:"name"`
-	Type        string      `json:"type"`
-	Tier        FormulaTier `json:"tier"`
-	Description string      `json:"description"`
-	Shadowed    bool        `json:"shadowed,omitempty"`
+// Entry describes a workflow discovered during tier scanning.
+type Entry struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Tier        Tier   `json:"tier"`
+	Description string `json:"description"`
+	Shadowed    bool   `json:"shadowed,omitempty"`
 }
 
-// EnsureFormula resolves a formula using three-tier lookup:
+// Resolve resolves a workflow using three-tier lookup:
 //  1. Project-level: {repoPath}/.sol/workflows/{name}/ — project-specific workflows
-//  2. User-level: $SOL_HOME/formulas/{name}/ — operator customizations
-//  3. Embedded: go:embed defaults — built-in formulas (extracted on first use)
+//  2. User-level: $SOL_HOME/workflows/{name}/ — operator customizations
+//  3. Embedded: go:embed defaults — built-in workflows (extracted on first use)
 //
 // Resolution is first-match-wins: project > user > embedded.
 // Pass an empty repoPath to skip the project tier.
-func EnsureFormula(formulaName, repoPath string) (*FormulaResolution, error) {
-	if err := ValidateFormulaName(formulaName); err != nil {
+func Resolve(workflowName, repoPath string) (*Resolution, error) {
+	if err := ValidateName(workflowName); err != nil {
 		return nil, err
 	}
 
 	// Tier 1: Project-level — check {repoPath}/.sol/workflows/{name}/.
 	if repoPath != "" {
-		projectDir := ProjectFormulaDir(repoPath, formulaName)
+		projectDir := ProjectDir(repoPath, workflowName)
 		if info, err := os.Stat(projectDir); err == nil && info.IsDir() {
-			return &FormulaResolution{Path: projectDir, Tier: TierProject}, nil
+			return &Resolution{Path: projectDir, Tier: TierProject}, nil
 		}
 	}
 
-	// Tier 2: User-level — check $SOL_HOME/formulas/{name}/.
-	userDir := FormulaDir(formulaName)
+	// Tier 2: User-level — check $SOL_HOME/workflows/{name}/.
+	userDir := Dir(workflowName)
 	if info, err := os.Stat(userDir); err == nil && info.IsDir() {
-		return &FormulaResolution{Path: userDir, Tier: TierUser}, nil
+		return &Resolution{Path: userDir, Tier: TierUser}, nil
 	}
 
 	// Tier 3: Embedded — extract known default to user-level path.
-	if !knownDefaults[formulaName] {
-		return nil, fmt.Errorf("formula %q not found and is not a known default", formulaName)
+	if !knownDefaults[workflowName] {
+		return nil, fmt.Errorf("workflow %q not found and is not a known default", workflowName)
 	}
 
-	root := filepath.Join("defaults", formulaName)
+	root := filepath.Join("defaults", workflowName)
 	if err := fs.WalkDir(defaultFormulas, root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -160,24 +160,24 @@ func EnsureFormula(formulaName, repoPath string) (*FormulaResolution, error) {
 		}
 		return os.WriteFile(dest, data, 0o644)
 	}); err != nil {
-		return nil, fmt.Errorf("failed to extract default formula %q: %w", formulaName, err)
+		return nil, fmt.Errorf("failed to extract default workflow %q: %w", workflowName, err)
 	}
 
-	return &FormulaResolution{Path: userDir, Tier: TierEmbedded}, nil
+	return &Resolution{Path: userDir, Tier: TierEmbedded}, nil
 }
 
-// ProjectFormulaDir returns the project-level workflow path.
-// {repoPath}/.sol/workflows/{formulaName}/
-func ProjectFormulaDir(repoPath, formulaName string) string {
-	return filepath.Join(repoPath, ".sol", "workflows", formulaName)
+// ProjectDir returns the project-level workflow path.
+// {repoPath}/.sol/workflows/{workflowName}/
+func ProjectDir(repoPath, workflowName string) string {
+	return filepath.Join(repoPath, ".sol", "workflows", workflowName)
 }
 
-// ListFormulas discovers all available formulas across the three resolution
+// List discovers all available workflows across the three resolution
 // tiers: project > user > embedded. repoPath may be empty to skip the
 // project tier. Returns entries sorted by name, with shadowed entries
 // (overridden by a higher-priority tier) marked.
-func ListFormulas(repoPath string) ([]FormulaEntry, error) {
-	entries := []FormulaEntry{}
+func List(repoPath string) ([]Entry, error) {
+	entries := []Entry{}
 	seen := make(map[string]bool)
 
 	// Tier 1: Project-level — scan {repoPath}/.sol/workflows/.
@@ -194,7 +194,7 @@ func ListFormulas(repoPath string) ([]FormulaEntry, error) {
 				if err != nil {
 					continue
 				}
-				entries = append(entries, FormulaEntry{
+				entries = append(entries, Entry{
 					Name:        name,
 					Type:        m.Type,
 					Tier:        TierProject,
@@ -205,8 +205,8 @@ func ListFormulas(repoPath string) ([]FormulaEntry, error) {
 		}
 	}
 
-	// Tier 2: User-level — scan $SOL_HOME/formulas/.
-	userBase := filepath.Join(config.Home(), "formulas")
+	// Tier 2: User-level — scan $SOL_HOME/workflows/.
+	userBase := filepath.Join(config.Home(), "workflows")
 	if dirEntries, err := os.ReadDir(userBase); err == nil {
 		for _, de := range dirEntries {
 			if !de.IsDir() {
@@ -218,7 +218,7 @@ func ListFormulas(repoPath string) ([]FormulaEntry, error) {
 			if err != nil {
 				continue
 			}
-			entry := FormulaEntry{
+			entry := Entry{
 				Name:        name,
 				Type:        m.Type,
 				Tier:        TierUser,
@@ -239,7 +239,7 @@ func ListFormulas(repoPath string) ([]FormulaEntry, error) {
 		if err != nil {
 			continue
 		}
-		entry := FormulaEntry{
+		entry := Entry{
 			Name:        name,
 			Type:        m.Type,
 			Tier:        TierEmbedded,
@@ -279,7 +279,7 @@ func loadEmbeddedManifest(name string) (*Manifest, error) {
 }
 
 // tierPriority returns the sort priority for a tier (lower = higher priority).
-func tierPriority(t FormulaTier) int {
+func tierPriority(t Tier) int {
 	switch t {
 	case TierProject:
 		return 0
