@@ -292,10 +292,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Enter peek mode — push viewPeek onto the stack.
 		m.peekView.width = m.width
 		m.peekView.height = m.height
-		m.peekView.enter(msg)
+		spinnerTickCmd := m.peekView.enter(msg)
 		m.viewStack = append(m.viewStack, viewPeek)
-		// Start capture tick and do an immediate capture.
-		cmds = append(cmds, captureTickCmd(), m.peekView.captureCmd())
+		// Start capture tick, do an immediate capture, and schedule spinner tick.
+		cmds = append(cmds, captureTickCmd(), m.peekView.captureCmd(), spinnerTickCmd)
 
 	case peekPopMsg:
 		// Pop back from peek to the previous view.
@@ -432,12 +432,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.sphere != nil {
 			m.trackSphereHighlights(msg.sphere)
 			m.sphereData = msg.sphere
-			m.sphereView.updateData(m.sphereData)
+			cmds = append(cmds, m.sphereView.updateData(m.sphereData))
 		}
 		if msg.world != nil {
 			m.trackWorldHighlights(msg.world)
 			m.worldData = msg.world
-			m.worldView.updateData(m.worldData)
+			cmds = append(cmds, m.worldView.updateData(m.worldData))
 		}
 
 		// Refresh peek items if peek mode is active, so the list

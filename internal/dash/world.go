@@ -85,10 +85,13 @@ func (wm worldModel) init() tea.Cmd {
 	return nil
 }
 
-// updateData syncs spinners with fresh data.
-func (wm *worldModel) updateData(data *status.WorldStatus) {
+// updateData syncs spinners with fresh data and returns a tea.Cmd to
+// schedule initial spinner ticks. One tick per spinner type is sufficient
+// because all spinners sharing the same spinner.Spinner type use the same
+// TickMsg ID — one tick drives them all.
+func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 	if data == nil {
-		return
+		return nil
 	}
 
 	// Sphere process spinners.
@@ -152,6 +155,20 @@ func (wm *worldModel) updateData(data *status.WorldStatus) {
 		}
 	}
 	wm.mrLen = activeMRs
+
+	// Schedule initial spinner ticks. One representative tick per spinner
+	// type is enough — all spinners with the same ID advance together.
+	// s.Tick is a method value (func() tea.Msg) which satisfies tea.Cmd.
+	var cmds []tea.Cmd
+	for _, s := range wm.processSpinners {
+		cmds = append(cmds, s.Tick)
+		break
+	}
+	for _, s := range wm.agentSpinners {
+		cmds = append(cmds, s.Tick)
+		break
+	}
+	return tea.Batch(cmds...)
 }
 
 func (wm *worldModel) syncProcessSpinner(name string, running bool, style spinner.Spinner) {

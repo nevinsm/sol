@@ -78,8 +78,9 @@ func newPeekModel(mgr *session.Manager) peekModel {
 	}
 }
 
-// enter sets up the peek model with items and initial cursor.
-func (pm *peekModel) enter(msg peekMsg) {
+// enter sets up the peek model with items and initial cursor, returning
+// a tea.Cmd to schedule the initial spinner tick.
+func (pm *peekModel) enter(msg peekMsg) tea.Cmd {
 	pm.items = msg.items
 	pm.cursor = msg.initialCursor
 	pm.fromView = msg.fromView
@@ -107,6 +108,13 @@ func (pm *peekModel) enter(msg peekMsg) {
 	}
 
 	pm.adjustScroll()
+
+	// Schedule initial spinner tick from one representative spinner.
+	// s.Tick is a method value (func() tea.Msg) which satisfies tea.Cmd.
+	for _, s := range pm.itemSpinners {
+		return s.Tick
+	}
+	return nil
 }
 
 func (pm peekModel) update(msg tea.KeyMsg) (peekModel, tea.Cmd) {

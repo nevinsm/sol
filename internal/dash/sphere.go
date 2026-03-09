@@ -72,10 +72,13 @@ func (sm sphereModel) init() tea.Cmd {
 	return nil
 }
 
-// updateData syncs spinner and progress state with fresh data.
-func (sm *sphereModel) updateData(data *status.SphereStatus) {
+// updateData syncs spinner and progress state with fresh data and returns
+// a tea.Cmd to schedule initial spinner ticks. One tick per spinner type
+// is sufficient because all spinners sharing the same spinner.Spinner type
+// use the same TickMsg ID — one tick drives them all.
+func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 	if data == nil {
-		return
+		return nil
 	}
 
 	// Sync process spinners.
@@ -126,6 +129,20 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) {
 	}
 
 	sm.worldRows = len(data.Worlds)
+
+	// Schedule initial spinner ticks. One representative tick per spinner
+	// type is enough — all spinners with the same ID advance together.
+	// s.Tick is a method value (func() tea.Msg) which satisfies tea.Cmd.
+	var cmds []tea.Cmd
+	for _, s := range sm.processSpinners {
+		cmds = append(cmds, s.Tick)
+		break
+	}
+	for _, s := range sm.worldSpinners {
+		cmds = append(cmds, s.Tick)
+		break
+	}
+	return tea.Batch(cmds...)
 }
 
 func (sm *sphereModel) syncProcessSpinner(name string, running bool) {
