@@ -334,6 +334,18 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 			}
 			actionsTaken = append(actionsTaken, "stalled:"+agent.Name)
 
+		case agent.State == "working" && !alive && !tether.IsTethered(w.config.World, agent.Name, agent.Role):
+			// Session dead, no tether — likely partial resolve or lost tether.
+			stalledCount++
+			if err := w.handleOrphanedWorking(agent); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+						"agent": agent.ID, "action": "handle_orphaned_working", "error": err.Error(),
+					})
+				}
+			}
+			actionsTaken = append(actionsTaken, "orphaned:"+agent.Name)
+
 		case agent.State == "idle" && alive && !tether.IsTethered(w.config.World, agent.Name, agent.Role):
 			// Idle agent with live session and no tether — zombie.
 			zombieCount++
@@ -894,6 +906,65 @@ func (w *Sentinel) handleZombie(agent store.Agent) error {
 	if err := w.sessions.Stop(sessionName, false); err != nil {
 		return fmt.Errorf("failed to stop zombie session %s: %w", sessionName, err)
 	}
+	return nil
+}
+
+// handleOrphanedWorking handles an agent that is marked "working" with a dead
+// session and no tether file on disk. This state occurs when cast crashes before
+// writing the tether, consul's stale-tether recovery clears the tether while agent
+// DB state is still "working", or a persistent agent's tethers are cleared externally.
+//
+// For outpost agents: full cleanup and delete. If the active writ is still
+// "tethered", return it to "open" for recast. If "done", leave it for the MR pipeline.
+// For persistent agents: set idle and clear active_writ.
+// Always cleans up the .resolve_in_progress lock file if present.
+func (w *Sentinel) handleOrphanedWorking(agent store.Agent) error {
+	lockPath := dispatch.ResolveLockPath(w.config.World, agent.Name, agent.Role)
+	resolveWasInProgress := dispatch.IsResolveInProgress(w.config.World, agent.Name, agent.Role)
+
+	if agent.Role == "agent" {
+		// Outpost: clean up entirely.
+		// If resolve was in progress, the work was being submitted — MR may exist.
+		// If not, tether was lost. Either way, agent is stuck and useless.
+		w.cleanupAgentResources(agent.Name)
+		if err := w.sphereStore.DeleteAgent(agent.ID); err != nil {
+			return fmt.Errorf("failed to delete orphaned agent %s: %w", agent.ID, err)
+		}
+
+		// If active writ exists and is still "tethered", return it to open.
+		if agent.ActiveWrit != "" && w.worldStore != nil {
+			item, err := w.worldStore.GetWrit(agent.ActiveWrit)
+			if err == nil && item.Status == "tethered" {
+				w.worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
+					Status:   "open",
+					Assignee: "-",
+				})
+			}
+			// If writ is "done", leave it — MR pipeline will handle it.
+		}
+	} else {
+		// Persistent agent: set idle, clear active_writ.
+		if err := w.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
+			return fmt.Errorf("failed to set orphaned agent %s idle: %w", agent.ID, err)
+		}
+	}
+
+	// Clean up resolve lock if present.
+	if resolveWasInProgress {
+		os.Remove(lockPath)
+	}
+
+	// Emit event for observability.
+	if w.logger != nil {
+		w.logger.Emit(events.EventStalled, w.agentID(), agent.ID, "both", map[string]any{
+			"agent":               agent.ID,
+			"writ":                agent.ActiveWrit,
+			"recovered":           true,
+			"reason":              "orphaned_working_no_tether",
+			"resolve_in_progress": resolveWasInProgress,
+		})
+	}
+
 	return nil
 }
 
