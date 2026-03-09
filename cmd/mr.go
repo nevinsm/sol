@@ -105,7 +105,7 @@ func init() {
 	rootCmd.AddCommand(mrCmd)
 	mrCmd.AddCommand(mrCreateCmd)
 
-	mrCreateCmd.Flags().String("world", "", "world name (required)")
+	mrCreateCmd.Flags().String("world", "", "world name")
 	mrCreateCmd.Flags().String("branch", "", "branch to merge (required)")
 	mrCreateCmd.Flags().String("writ", "", "writ ID (required)")
 	mrCreateCmd.Flags().Int("priority", 2, "priority (1=high, 2=normal, 3=low)")

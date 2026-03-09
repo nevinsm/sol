@@ -75,6 +75,6 @@ var writActivateCmd = &cobra.Command{
 }
 
 func init() {
-	writActivateCmd.Flags().StringVar(&activateWorld, "world", "", "world name (defaults to SOL_WORLD env)")
+	writActivateCmd.Flags().StringVar(&activateWorld, "world", "", "world name")
 	writActivateCmd.Flags().StringVar(&activateAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 }

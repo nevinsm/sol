@@ -70,6 +70,6 @@ var resolveCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(resolveCmd)
-	resolveCmd.Flags().StringVar(&resolveWorld, "world", "", "world name (defaults to SOL_WORLD env)")
+	resolveCmd.Flags().StringVar(&resolveWorld, "world", "", "world name")
 	resolveCmd.Flags().StringVar(&resolveAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 }

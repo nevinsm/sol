@@ -67,6 +67,6 @@ var nudgeDrainCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(nudgeCmd)
 	nudgeCmd.AddCommand(nudgeDrainCmd)
-	nudgeDrainCmd.Flags().StringVar(&nudgeDrainWorld, "world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	nudgeDrainCmd.Flags().StringVar(&nudgeDrainWorld, "world", "", "world name")
 	nudgeDrainCmd.Flags().StringVar(&nudgeDrainAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 }

@@ -504,7 +504,7 @@ func init() {
 	envoyAttachCmd.Flags().StringVar(&envoyAttachWorld, "world", "", "world name")
 
 	// envoy list flags
-	envoyListCmd.Flags().StringVar(&envoyListWorld, "world", "", "world name (optional, lists all if omitted)")
+	envoyListCmd.Flags().StringVar(&envoyListWorld, "world", "", "world name")
 	envoyListCmd.Flags().BoolVar(&envoyListJSON, "json", false, "output as JSON")
 
 	// envoy brief flags

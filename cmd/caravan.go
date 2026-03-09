@@ -1102,7 +1102,7 @@ func init() {
 	caravanCreateCmd.Flags().Int("phase", 0, "phase for items (default 0)")
 
 	// add flags
-	caravanAddCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	caravanAddCmd.Flags().String("world", "", "world name")
 	caravanAddCmd.Flags().Int("phase", 0, "phase for items (default 0)")
 
 	// check flags
@@ -1117,7 +1117,7 @@ func init() {
 	caravanStatusCmd.Flags().Bool("json", false, "output as JSON")
 
 	// launch flags
-	caravanLaunchCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	caravanLaunchCmd.Flags().String("world", "", "world name")
 	caravanLaunchCmd.Flags().StringVar(&caravanWorkflow, "workflow", "", "workflow for dispatched items")
 	caravanLaunchCmd.Flags().StringSliceVar(&caravanVars, "var", nil, "variable assignment (key=val)")
 }

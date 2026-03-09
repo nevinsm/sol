@@ -93,7 +93,7 @@ func worktreeDirForRole(world, agentName, role string) string {
 
 func init() {
 	rootCmd.AddCommand(handoffCmd)
-	handoffCmd.Flags().StringVar(&handoffWorld, "world", "", "world name (defaults to SOL_WORLD env)")
+	handoffCmd.Flags().StringVar(&handoffWorld, "world", "", "world name")
 	handoffCmd.Flags().StringVar(&handoffAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 	handoffCmd.Flags().StringVar(&handoffSummary, "summary", "", "summary of current progress")
 	handoffCmd.Flags().StringVar(&handoffReason, "reason", "", "handoff reason (compact, manual, health-check)")

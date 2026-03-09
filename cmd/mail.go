@@ -347,7 +347,7 @@ func init() {
 	mailSendCmd.Flags().String("body", "", "Message body")
 	mailSendCmd.Flags().Int("priority", 2, "Priority (1=urgent, 2=normal, 3=low)")
 	mailSendCmd.Flags().Bool("no-notify", false, "Suppress nudge notification to recipient")
-	mailSendCmd.Flags().String("world", "", "World for recipient resolution (default: from env or cwd)")
+	mailSendCmd.Flags().String("world", "", "world name")
 	mailSendCmd.MarkFlagRequired("to")
 	mailSendCmd.MarkFlagRequired("subject")
 

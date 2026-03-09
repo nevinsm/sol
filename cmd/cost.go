@@ -38,7 +38,7 @@ With --since, filters by time window (relative duration or absolute date).`,
 
 func init() {
 	rootCmd.AddCommand(costCmd)
-	costCmd.Flags().StringVar(&costWorld, "world", "", "show per-agent breakdown for a world")
+	costCmd.Flags().StringVar(&costWorld, "world", "", "world name")
 	costCmd.Flags().StringVar(&costAgent, "agent", "", "show per-writ breakdown for an agent (requires --world)")
 	costCmd.Flags().StringVar(&costCaravan, "caravan", "", "show per-writ breakdown for a caravan (ID or name)")
 	costCmd.Flags().StringVar(&costSince, "since", "", "time window: relative duration (24h) or absolute date (2006-01-02)")

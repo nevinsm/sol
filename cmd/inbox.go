@@ -147,7 +147,7 @@ func resolveInboxSession(cmd *cobra.Command) (string, error) {
 func init() {
 	rootCmd.AddCommand(inboxCmd)
 
-	inboxCmd.PersistentFlags().StringVar(&inboxWorld, "world", "", "world name (defaults to SOL_WORLD env)")
+	inboxCmd.PersistentFlags().StringVar(&inboxWorld, "world", "", "world name")
 	inboxCmd.PersistentFlags().StringVar(&inboxAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 
 	inboxCmd.Flags().BoolVar(&inboxJSON, "json", false, "output as JSON")

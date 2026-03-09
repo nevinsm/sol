@@ -846,55 +846,55 @@ func init() {
 
 	// eject flags
 	workflowEjectCmd.Flags().Bool("project", false, "eject to project tier instead of user tier (requires --world)")
-	workflowEjectCmd.Flags().String("world", "", "world name (for project tier path resolution)")
+	workflowEjectCmd.Flags().String("world", "", "world name")
 	workflowEjectCmd.Flags().Bool("force", false, "overwrite existing workflow (backs up to {name}.bak-{timestamp})")
 
 	// show flags
-	workflowShowCmd.Flags().String("world", "", "world name (for project-tier resolution)")
+	workflowShowCmd.Flags().String("world", "", "world name")
 	workflowShowCmd.Flags().Bool("json", false, "output as JSON")
 	workflowShowCmd.Flags().String("path", "", "load workflow from directory path instead of by name")
 
 	// init flags
 	workflowInitCmd.Flags().String("type", "workflow", "workflow type (workflow, expansion, or convoy)")
 	workflowInitCmd.Flags().Bool("project", false, "create in project tier (.sol/workflows/)")
-	workflowInitCmd.Flags().String("world", "", "world name (required with --project)")
+	workflowInitCmd.Flags().String("world", "", "world name")
 
 	// instantiate flags
 	workflowInstantiateCmd.Flags().String("item", "", "writ ID")
-	workflowInstantiateCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	workflowInstantiateCmd.Flags().String("world", "", "world name")
 	workflowInstantiateCmd.Flags().String("agent", "", "agent name (defaults to SOL_AGENT env)")
 	workflowInstantiateCmd.Flags().StringSliceVar(&wfVars, "var", nil, "variable assignment (key=val)")
 	workflowInstantiateCmd.MarkFlagRequired("item")
 
 	// current flags
-	workflowCurrentCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	workflowCurrentCmd.Flags().String("world", "", "world name")
 	workflowCurrentCmd.Flags().String("agent", "", "agent name (defaults to SOL_AGENT env)")
 
 	// advance flags
-	workflowAdvanceCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	workflowAdvanceCmd.Flags().String("world", "", "world name")
 	workflowAdvanceCmd.Flags().String("agent", "", "agent name (defaults to SOL_AGENT env)")
 
 	// skip flags
-	workflowSkipCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	workflowSkipCmd.Flags().String("world", "", "world name")
 	workflowSkipCmd.Flags().String("agent", "", "agent name (defaults to SOL_AGENT env)")
 
 	// fail flags
-	workflowFailCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	workflowFailCmd.Flags().String("world", "", "world name")
 	workflowFailCmd.Flags().String("agent", "", "agent name (defaults to SOL_AGENT env)")
 
 	// status flags
-	workflowStatusCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	workflowStatusCmd.Flags().String("world", "", "world name")
 	workflowStatusCmd.Flags().String("agent", "", "agent name (defaults to SOL_AGENT env)")
 	workflowStatusCmd.Flags().Bool("json", false, "output as JSON")
 
 	// manifest flags
-	workflowManifestCmd.Flags().String("world", "", "world name (optional with SOL_WORLD or inside a world directory)")
+	workflowManifestCmd.Flags().String("world", "", "world name")
 	workflowManifestCmd.Flags().StringSliceVar(&wfVars, "var", nil, "variable assignment (key=val)")
 	workflowManifestCmd.Flags().String("target", "", "existing writ ID to manifest against (required for expansion workflows)")
 	workflowManifestCmd.Flags().Bool("json", false, "output as JSON")
 
 	// list flags
-	workflowListCmd.Flags().String("world", "", "world name (for project-tier discovery)")
+	workflowListCmd.Flags().String("world", "", "world name")
 	workflowListCmd.Flags().Bool("all", false, "show all tiers including shadowed workflows")
 	workflowListCmd.Flags().Bool("json", false, "output as JSON")
 }

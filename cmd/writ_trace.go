@@ -63,5 +63,5 @@ func init() {
 	writTraceCmd.Flags().BoolVar(&traceTimeline, "timeline", false, "show timeline only")
 	writTraceCmd.Flags().BoolVar(&traceCost, "cost", false, "show cost only")
 	writTraceCmd.Flags().BoolVar(&traceNoEvents, "no-events", false, "skip event log scan (faster)")
-	writTraceCmd.Flags().StringVar(&traceWorld, "world", "", "world name (skip world scanning)")
+	writTraceCmd.Flags().StringVar(&traceWorld, "world", "", "world name")
 }
