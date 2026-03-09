@@ -10,8 +10,9 @@ import (
 )
 
 var dashCmd = &cobra.Command{
-	Use:   "dash [world]",
-	Short: "Live TUI dashboard",
+	Use:     "dash [world]",
+	Short:   "Live TUI dashboard",
+	GroupID: groupDispatch,
 	Long: `Launch a live terminal dashboard.
 
 Without arguments, auto-detects the current world from SOL_WORLD or the

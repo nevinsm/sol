@@ -10,8 +10,9 @@ import (
 )
 
 var serviceCmd = &cobra.Command{
-	Use:   "service",
-	Short: "Manage systemd user units for sol sphere daemons",
+	Use:     "service",
+	Short:   "Manage systemd user units for sol sphere daemons",
+	GroupID: groupProcesses,
 }
 
 var serviceInstallCmd = &cobra.Command{
