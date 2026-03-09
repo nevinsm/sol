@@ -49,6 +49,14 @@ func Write(world, agentName, writID, role string) error {
 		os.Remove(tmp) // best-effort cleanup
 		return fmt.Errorf("failed to commit tether for agent %q in world %q: %w", agentName, world, err)
 	}
+
+	// Verify write succeeded — defensive check against silent filesystem failures.
+	content, err := os.ReadFile(path)
+	if err != nil || string(content) != writID {
+		return fmt.Errorf("tether write verification failed for agent %q in world %q: wrote %q but read back %q (err: %v)", agentName, world, writID, string(content), err)
+	}
+
+	fmt.Fprintf(os.Stderr, "tether: wrote %s for agent %s in world %s\n", writID, agentName, world)
 	return nil
 }
 

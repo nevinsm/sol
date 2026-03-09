@@ -9,11 +9,11 @@ set -euo pipefail
 # Read JSON from stdin.
 input=$(cat)
 
-# Extract fields from JSON using lightweight parsing.
-# Claude Code sends: {"cwd":"...","model":"...","contextPercent":N,...}
-model=$(echo "$input" | sed -n 's/.*"model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-context_pct=$(echo "$input" | sed -n 's/.*"contextPercent"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p')
-cwd=$(echo "$input" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+# Extract fields from JSON using jq.
+# Claude Code sends: {"cwd":"...","model":{"id":"...","display_name":"..."},"context_window":{"used_percentage":N,...}}
+model=$(echo "$input" | jq -r '.model.id // empty')
+context_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
+cwd=$(echo "$input" | jq -r '.cwd // empty')
 
 # Shorten model name (e.g., "claude-sonnet-4-20250514" → "Sonnet 4")
 short_model="$model"

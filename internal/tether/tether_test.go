@@ -57,6 +57,26 @@ func TestWriteCreatesDirectoryAndFile(t *testing.T) {
 	}
 }
 
+func TestWriteVerifiesContent(t *testing.T) {
+	setupTest(t)
+
+	// Write and verify the file content matches via Read.
+	writID := "sol-verify12345678"
+	if err := Write("myworld", "Toast", writID, "agent"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	// Verify via direct file read (not through Read()).
+	dir := TetherDir("myworld", "Toast", "agent")
+	data, err := os.ReadFile(filepath.Join(dir, writID))
+	if err != nil {
+		t.Fatalf("failed to read tether file: %v", err)
+	}
+	if string(data) != writID {
+		t.Errorf("tether file content mismatch: got %q, want %q", string(data), writID)
+	}
+}
+
 func TestReadNoTether(t *testing.T) {
 	setupTest(t)
 

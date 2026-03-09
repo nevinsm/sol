@@ -1842,6 +1842,9 @@ func (w *Sentinel) cleanupOrphanedSessionMeta(agentNames map[string]bool) int {
 
 // cleanupOrphanedTethers scans tether directories for agents that are not working
 // and clears all tether files within.
+//
+// IMPORTANT: Before clearing, re-reads agent state from DB (not the stale snapshot)
+// to avoid a race with Cast(), which writes the tether before updating agent state.
 func (w *Sentinel) cleanupOrphanedTethers(agentNames, workingAgents map[string]bool) int {
 	outpostsDir := filepath.Join(config.Home(), w.config.World, "outposts")
 	entries, err := os.ReadDir(outpostsDir)
@@ -1856,7 +1859,7 @@ func (w *Sentinel) cleanupOrphanedTethers(agentNames, workingAgents map[string]b
 		}
 		name := entry.Name()
 
-		// If agent exists and is working, the tether is valid.
+		// If agent exists and is working (in snapshot), the tether is valid.
 		if workingAgents[name] {
 			continue
 		}
@@ -1864,6 +1867,15 @@ func (w *Sentinel) cleanupOrphanedTethers(agentNames, workingAgents map[string]b
 		// Check if the tether directory has any files.
 		if !tether.IsTethered(w.config.World, name, "agent") {
 			continue
+		}
+
+		// Re-read agent state from DB to avoid acting on stale snapshot.
+		// Cast() may have updated the agent to "working" since the snapshot
+		// was taken at the start of this patrol cycle.
+		agentID := w.config.World + "/" + name
+		freshAgent, err := w.sphereStore.GetAgent(agentID)
+		if err == nil && freshAgent.State == "working" {
+			continue // agent is now working — tether is valid
 		}
 
 		// Tether directory non-empty but agent is not working — orphaned tethers.
