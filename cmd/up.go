@@ -605,6 +605,17 @@ func stopWorldServicesBatch(worlds []string) {
 			} else {
 				r.status = "stopped"
 			}
+
+			// Clean up stale forge agent record to prevent sentinel
+			// from seeing "working + dead session" on next sol up.
+			if svc == "forge" {
+				if ss, err := store.OpenSphere(); err == nil {
+					agentID := world + "/forge"
+					ss.DeleteAgent(agentID) // best-effort
+					ss.Close()
+				}
+			}
+
 			results = append(results, r)
 		}
 	}

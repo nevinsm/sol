@@ -1179,55 +1179,16 @@ func TestCleanupOrphanedTethersTrulyOrphaned(t *testing.T) {
 	}
 }
 
-func TestPatrolMonitorsForge(t *testing.T) {
-	sphereStore, _ := setupTestEnv(t)
-	mock := newMockSessions()
-	cfg := testConfig()
-
-	// Create a working forge agent with a live session.
-	sphereStore.CreateAgent("forge", "ember", "forge")
-	sphereStore.UpdateAgentState("ember/forge", "working", "")
-	mock.alive["sol-ember-forge"] = true
-	mock.captures["sol-ember-forge"] = "forge output"
-
-	assessCalled := false
-	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
-		assessCalled = true
-		return &AssessmentResult{Status: "progressing", Confidence: "high", SuggestedAction: "none"}, nil
-	}
-
-	// First patrol: establish baseline.
-	w.patrol(context.Background())
-	// Second patrol: same output → should trigger assessment (forge is monitored).
-	w.patrol(context.Background())
-
-	if !assessCalled {
-		t.Error("expected forge to be monitored and assessed when output is unchanged")
-	}
-}
-
-func TestPatrolDetectsForgeStalled(t *testing.T) {
+func TestPatrolIgnoresForgeAgents(t *testing.T) {
 	sphereStore, _ := setupTestEnv(t)
 	mock := newMockSessions()
 	cfg := testConfig()
 
 	// Create a working forge agent with a dead session.
+	// Sentinel should NOT monitor it (prefect handles forge via heartbeat).
 	sphereStore.CreateAgent("forge", "ember", "forge")
 	sphereStore.UpdateAgentState("ember/forge", "working", "")
-	// Session is NOT alive.
-
-	// Create worktree directory for respawn.
-	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "forge", "worktree")
-	os.MkdirAll(worktreeDir, 0o755)
-
-	// Register role so startup.Respawn succeeds.
-	startup.Register("forge", startup.RoleConfig{
-		WorktreeDir: func(w, a string) string {
-			return filepath.Join(os.Getenv("SOL_HOME"), w, "forge", "worktree")
-		},
-	})
-	t.Cleanup(func() { startup.Register("forge", startup.RoleConfig{}) })
+	// Session is NOT alive — sentinel should not attempt respawn.
 
 	w := New(cfg, sphereStore, nil, mock, nil)
 
@@ -1235,58 +1196,10 @@ func TestPatrolDetectsForgeStalled(t *testing.T) {
 		t.Fatalf("patrol() error: %v", err)
 	}
 
-	// Should have started a session (respawn).
-	started := mock.getStarted()
-	if len(started) != 1 {
-		t.Fatalf("expected 1 session started (forge respawn), got %d: %v", len(started), started)
-	}
-	if started[0] != "sol-ember-forge" {
-		t.Errorf("started session = %q, want %q", started[0], "sol-ember-forge")
-	}
-}
-
-func TestPatrolForgeMaxRespawns(t *testing.T) {
-	sphereStore, _ := setupTestEnv(t)
-	mock := newMockSessions()
-	cfg := testConfig()
-	cfg.MaxRespawns = 2
-
-	// Create a working forge agent with a dead session.
-	sphereStore.CreateAgent("forge", "ember", "forge")
-	sphereStore.UpdateAgentState("ember/forge", "working", "")
-	// Session is NOT alive.
-
-	w := New(cfg, sphereStore, nil, mock, nil)
-
-	// Pre-set respawn count to max.
-	w.respawnCounts[respawnKey{AgentID: "ember/forge", WritID: ""}] = 2
-
-	if err := w.patrol(context.Background()); err != nil {
-		t.Fatalf("patrol() error: %v", err)
-	}
-
-	// No respawn should happen.
+	// No sessions should have been started (forge is not sentinel's responsibility).
 	started := mock.getStarted()
 	if len(started) != 0 {
-		t.Fatalf("expected 0 sessions started (forge max respawns), got %d", len(started))
-	}
-
-	// Forge should be idle.
-	agent, err := sphereStore.GetAgent("ember/forge")
-	if err != nil {
-		t.Fatalf("GetAgent() error: %v", err)
-	}
-	if agent.State != "idle" {
-		t.Errorf("forge state = %q, want %q after max respawns", agent.State, "idle")
-	}
-
-	// Should have sent RECOVERY_NEEDED to operator.
-	msgs, err := sphereStore.PendingProtocol("operator", "RECOVERY_NEEDED")
-	if err != nil {
-		t.Fatalf("PendingProtocol() error: %v", err)
-	}
-	if len(msgs) == 0 {
-		t.Error("expected RECOVERY_NEEDED protocol message to operator after forge max respawns")
+		t.Fatalf("expected 0 sessions started (forge not monitored by sentinel), got %d: %v", len(started), started)
 	}
 }
 
@@ -2747,57 +2660,6 @@ func TestOutpostClosedTetherFullReap(t *testing.T) {
 	// Tether should be cleaned up.
 	if tether.IsTethered("ember", "Toast", "agent") {
 		t.Error("expected tether to be cleaned up after reap")
-	}
-}
-
-func TestStalledPersistentAgentRespawnKeepsTethers(t *testing.T) {
-	sphereStore, worldStore := setupTestEnv(t)
-	mock := newMockSessions()
-	cfg := testConfig()
-
-	// Create a working forge agent with a dead session and tether files.
-	sphereStore.CreateAgent("forge", "ember", "forge")
-	sphereStore.UpdateAgentState("ember/forge", "working", "")
-	// Session is NOT alive (dead).
-
-	// Write tether files to make tether directory non-empty.
-	// Forge doesn't normally use tethers, but this tests the generic path.
-	createWrit(t, worldStore, "sol-forge-1", "Forge writ")
-	if err := tether.Write("ember", "forge", "sol-forge-1", "forge"); err != nil {
-		t.Fatalf("tether.Write() error: %v", err)
-	}
-
-	// Create worktree directory for respawn.
-	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "forge", "worktree")
-	os.MkdirAll(worktreeDir, 0o755)
-
-	// Register role so startup.Respawn succeeds.
-	startup.Register("forge", startup.RoleConfig{
-		WorktreeDir: func(w, a string) string {
-			return filepath.Join(os.Getenv("SOL_HOME"), w, "forge", "worktree")
-		},
-	})
-	t.Cleanup(func() { startup.Register("forge", startup.RoleConfig{}) })
-
-	w := New(cfg, sphereStore, worldStore, mock, nil)
-
-	if err := w.patrol(context.Background()); err != nil {
-		t.Fatalf("patrol() error: %v", err)
-	}
-
-	// Should have started a session (respawn).
-	started := mock.getStarted()
-	if len(started) != 1 {
-		t.Fatalf("expected 1 session started (respawn), got %d: %v", len(started), started)
-	}
-
-	// Tether directory should still have the tether file intact.
-	remaining, err := tether.List("ember", "forge", "forge")
-	if err != nil {
-		t.Fatalf("tether.List() error: %v", err)
-	}
-	if len(remaining) != 1 || remaining[0] != "sol-forge-1" {
-		t.Errorf("expected tether 'sol-forge-1' to remain, got: %v", remaining)
 	}
 }
 
