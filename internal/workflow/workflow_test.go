@@ -543,6 +543,323 @@ func TestNextReadySteps(t *testing.T) {
 	}
 }
 
+func TestSkipMidWorkflow(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	workflowDir := filepath.Join(solHome, "workflows", "test-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+	steps := linearSteps()
+	writeTOMLManifest(t, workflowDir, "test-wf", steps, map[string]VariableDecl{
+		"issue": {Required: true},
+	})
+	for _, s := range steps {
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
+	}
+	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
+
+	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+
+	// Skip first step (load-context) → should advance to implement.
+	next, done, err := Skip("haven", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("Skip() error: %v", err)
+	}
+	if done {
+		t.Error("Skip(): unexpected done")
+	}
+	if next == nil || next.ID != "implement" {
+		t.Errorf("Skip(): got step %v, want implement", next)
+	}
+
+	// Verify skipped step status.
+	wfDir := InstanceDir("haven", "Toast", "agent")
+	stepData, err := os.ReadFile(filepath.Join(wfDir, "steps", "load-context.json"))
+	if err != nil {
+		t.Fatalf("read skipped step: %v", err)
+	}
+	var skippedStep Step
+	json.Unmarshal(stepData, &skippedStep)
+	if skippedStep.Status != "skipped" {
+		t.Errorf("skipped step status: got %q, want %q", skippedStep.Status, "skipped")
+	}
+	if skippedStep.CompletedAt == nil {
+		t.Error("skipped step completedAt nil")
+	}
+
+	// Verify state: load-context in completed list.
+	state, _ := ReadState("haven", "Toast", "agent")
+	if len(state.Completed) != 1 || state.Completed[0] != "load-context" {
+		t.Errorf("completed: got %v, want [load-context]", state.Completed)
+	}
+	if state.CurrentStep != "implement" {
+		t.Errorf("current step: got %q, want %q", state.CurrentStep, "implement")
+	}
+	if state.Status != "running" {
+		t.Errorf("status: got %q, want %q", state.Status, "running")
+	}
+}
+
+func TestSkipLastStep(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	workflowDir := filepath.Join(solHome, "workflows", "test-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+	steps := linearSteps()
+	writeTOMLManifest(t, workflowDir, "test-wf", steps, map[string]VariableDecl{
+		"issue": {Required: true},
+	})
+	for _, s := range steps {
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
+	}
+	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
+
+	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+
+	// Advance through first two steps normally.
+	Advance("haven", "Toast", "agent") // load-context → implement
+	Advance("haven", "Toast", "agent") // implement → verify
+
+	// Skip last step (verify) → workflow should complete.
+	next, done, err := Skip("haven", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("Skip() last step error: %v", err)
+	}
+	if !done {
+		t.Error("Skip() last step: expected done")
+	}
+	if next != nil {
+		t.Errorf("Skip() last step: got step %v, want nil", next)
+	}
+
+	// Verify final state.
+	state, _ := ReadState("haven", "Toast", "agent")
+	if state.Status != "done" {
+		t.Errorf("final status: got %q, want %q", state.Status, "done")
+	}
+	if state.CurrentStep != "" {
+		t.Errorf("final current_step: got %q, want empty", state.CurrentStep)
+	}
+	if state.CompletedAt == nil {
+		t.Error("completedAt nil")
+	}
+}
+
+func TestSkipWithDependents(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// DAG: A (no deps), B needs A, C needs A, D needs B and C.
+	dagSteps := []StepDef{
+		{ID: "a", Title: "Step A", Instructions: "steps/a.md"},
+		{ID: "b", Title: "Step B", Instructions: "steps/b.md", Needs: []string{"a"}},
+		{ID: "c", Title: "Step C", Instructions: "steps/c.md", Needs: []string{"a"}},
+		{ID: "d", Title: "Step D", Instructions: "steps/d.md", Needs: []string{"b", "c"}},
+	}
+
+	workflowDir := filepath.Join(solHome, "workflows", "dag-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+	writeTOMLManifest(t, workflowDir, "dag-wf", dagSteps, map[string]VariableDecl{
+		"issue": {Required: true},
+	})
+	for _, s := range dagSteps {
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
+	}
+	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
+
+	Instantiate("haven", "Toast", "agent", "dag-wf", map[string]string{"issue": "sol-test"})
+
+	// Skip A → B and C should become ready, B picked first.
+	next, done, err := Skip("haven", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("Skip() A error: %v", err)
+	}
+	if done {
+		t.Error("unexpected done after skipping A")
+	}
+	if next.ID != "b" {
+		t.Errorf("after skip A: got %q, want %q", next.ID, "b")
+	}
+
+	// Skip B → C should become ready.
+	next, done, err = Skip("haven", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("Skip() B error: %v", err)
+	}
+	if done {
+		t.Error("unexpected done after skipping B")
+	}
+	if next.ID != "c" {
+		t.Errorf("after skip B: got %q, want %q", next.ID, "c")
+	}
+
+	// Advance C normally → D should become ready (B was skipped, C completed).
+	next, done, err = Advance("haven", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("Advance() C error: %v", err)
+	}
+	if done {
+		t.Error("unexpected done after C")
+	}
+	if next.ID != "d" {
+		t.Errorf("after C: got %q, want %q", next.ID, "d")
+	}
+
+	// Verify skipped steps have correct status.
+	wfDir := InstanceDir("haven", "Toast", "agent")
+	for _, id := range []string{"a", "b"} {
+		data, _ := os.ReadFile(filepath.Join(wfDir, "steps", id+".json"))
+		var s Step
+		json.Unmarshal(data, &s)
+		if s.Status != "skipped" {
+			t.Errorf("step %q status: got %q, want %q", id, s.Status, "skipped")
+		}
+	}
+}
+
+func TestFail(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	workflowDir := filepath.Join(solHome, "workflows", "test-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+	steps := linearSteps()
+	writeTOMLManifest(t, workflowDir, "test-wf", steps, map[string]VariableDecl{
+		"issue": {Required: true},
+	})
+	for _, s := range steps {
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
+	}
+	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
+
+	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+
+	// Fail the first step.
+	failedStep, err := Fail("haven", "Toast", "agent")
+	if err != nil {
+		t.Fatalf("Fail() error: %v", err)
+	}
+	if failedStep == nil || failedStep.ID != "load-context" {
+		t.Errorf("Fail(): got step %v, want load-context", failedStep)
+	}
+	if failedStep.Status != "failed" {
+		t.Errorf("failed step status: got %q, want %q", failedStep.Status, "failed")
+	}
+
+	// Verify state.
+	state, _ := ReadState("haven", "Toast", "agent")
+	if state.Status != "failed" {
+		t.Errorf("workflow status: got %q, want %q", state.Status, "failed")
+	}
+	// Current step should still be set (not cleared).
+	if state.CurrentStep != "load-context" {
+		t.Errorf("current step: got %q, want %q", state.CurrentStep, "load-context")
+	}
+	// Step should NOT be in completed list.
+	if len(state.Completed) != 0 {
+		t.Errorf("completed: got %v, want empty", state.Completed)
+	}
+	if state.CompletedAt == nil {
+		t.Error("completedAt nil after fail")
+	}
+
+	// Verify step file has failed status.
+	wfDir := InstanceDir("haven", "Toast", "agent")
+	stepData, _ := os.ReadFile(filepath.Join(wfDir, "steps", "load-context.json"))
+	var step Step
+	json.Unmarshal(stepData, &step)
+	if step.Status != "failed" {
+		t.Errorf("step file status: got %q, want %q", step.Status, "failed")
+	}
+}
+
+func TestFailNoWorkflow(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	_, err := Fail("haven", "Ghost", "agent")
+	if err == nil {
+		t.Fatal("Fail() expected error for non-existent workflow")
+	}
+	if !strings.Contains(err.Error(), "no workflow found") {
+		t.Errorf("error: got %q, want containing 'no workflow found'", err.Error())
+	}
+}
+
+func TestSkipNoWorkflow(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	_, _, err := Skip("haven", "Ghost", "agent")
+	if err == nil {
+		t.Fatal("Skip() expected error for non-existent workflow")
+	}
+	if !strings.Contains(err.Error(), "no workflow found") {
+		t.Errorf("error: got %q, want containing 'no workflow found'", err.Error())
+	}
+}
+
+func TestFailAlreadyFailed(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	workflowDir := filepath.Join(solHome, "workflows", "test-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+	steps := linearSteps()
+	writeTOMLManifest(t, workflowDir, "test-wf", steps, map[string]VariableDecl{
+		"issue": {Required: true},
+	})
+	for _, s := range steps {
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
+	}
+	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
+
+	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+
+	// Fail once.
+	Fail("haven", "Toast", "agent")
+
+	// Fail again — should error because workflow is already failed.
+	_, err := Fail("haven", "Toast", "agent")
+	if err == nil {
+		t.Fatal("Fail() expected error for already-failed workflow")
+	}
+	if !strings.Contains(err.Error(), "workflow status is \"failed\"") {
+		t.Errorf("error: got %q", err.Error())
+	}
+}
+
+func TestSkipAfterFail(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	workflowDir := filepath.Join(solHome, "workflows", "test-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+	steps := linearSteps()
+	writeTOMLManifest(t, workflowDir, "test-wf", steps, map[string]VariableDecl{
+		"issue": {Required: true},
+	})
+	for _, s := range steps {
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte("test"), 0o644)
+	}
+	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
+
+	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+
+	// Fail the workflow.
+	Fail("haven", "Toast", "agent")
+
+	// Skip should error because workflow is already failed.
+	_, _, err := Skip("haven", "Toast", "agent")
+	if err == nil {
+		t.Fatal("Skip() expected error after workflow failed")
+	}
+	if !strings.Contains(err.Error(), "workflow status is \"failed\"") {
+		t.Errorf("error: got %q", err.Error())
+	}
+}
+
 func TestRemove(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)

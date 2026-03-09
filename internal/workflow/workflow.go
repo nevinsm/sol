@@ -625,7 +625,7 @@ func Advance(world, agentName, role string) (nextStep *Step, done bool, err erro
 // Skip marks the current step as skipped and finds the next ready step.
 // Skipped steps are treated as completed for DAG purposes — they don't block dependents.
 func Skip(world, agentName, role string) (nextStep *Step, done bool, err error) {
-	wfDir := WorkflowDir(world, agentName, role)
+	wfDir := InstanceDir(world, agentName, role)
 
 	// Read state.
 	state, err := ReadState(world, agentName, role)
@@ -713,7 +713,7 @@ func Skip(world, agentName, role string) (nextStep *Step, done bool, err error) 
 // Fail marks the current step as failed and the workflow as failed.
 // Does not advance to the next step — execution stops.
 func Fail(world, agentName, role string) (failedStep *Step, err error) {
-	wfDir := WorkflowDir(world, agentName, role)
+	wfDir := InstanceDir(world, agentName, role)
 
 	// Read state.
 	state, err := ReadState(world, agentName, role)
