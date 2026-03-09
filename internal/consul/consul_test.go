@@ -617,6 +617,70 @@ func TestFeedStrandedCaravansAutoCloseAllMerged(t *testing.T) {
 	}
 }
 
+func TestFeedStrandedCaravansSkipsRedispatch(t *testing.T) {
+	setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "drift-redispatch"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create a caravan with 2 open writs:
+	// - wi1: has existing MRs (was dispatched before, MR failed, writ reopened)
+	// - wi2: no MRs (fresh, never dispatched)
+	caravanID, _ := sphereStore.CreateCaravan("redispatch-caravan", "operator")
+	sphereStore.UpdateCaravanStatus(caravanID, "open")
+
+	wi1, _ := worldStore.CreateWrit("redispatch-task-1", "desc1", "test", 1, nil)
+	wi2, _ := worldStore.CreateWrit("redispatch-task-2", "desc2", "test", 1, nil)
+
+	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
+	sphereStore.CreateCaravanItem(caravanID, wi2, worldName, 0)
+
+	// wi1 has a failed MR — simulates forge marking MR as failed and reopening the writ.
+	mrID, _ := worldStore.CreateMergeRequest(wi1, "outpost/agent/worktree", 1)
+	worldStore.ClaimMergeRequest("forge")
+	worldStore.UpdateMergeRequestPhase(mrID, "failed")
+
+	sessions := newMockSessions()
+	cfg := Config{
+		StaleTetherTimeout: 15 * time.Minute,
+		SolHome:            config.Home(),
+	}
+
+	var dispatched []mockDispatchResult
+	logger := events.NewLogger(config.Home())
+	d := New(cfg, sphereStore, sessions, nil, logger)
+	d.SetWorldOpener(func(world string) (*store.Store, error) {
+		return store.OpenWorld(world)
+	})
+	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
+
+	fed, err := d.feedStrandedCaravans(context.Background())
+	if err != nil {
+		t.Fatalf("feedStrandedCaravans failed: %v", err)
+	}
+
+	// Only wi2 should be dispatched; wi1 should be skipped (existing MRs).
+	if fed != 1 {
+		t.Errorf("fed = %d, want 1 (only fresh item dispatched)", fed)
+	}
+	if len(dispatched) != 1 {
+		t.Fatalf("dispatch calls = %d, want 1", len(dispatched))
+	}
+	if dispatched[0].WritID != wi2 {
+		t.Errorf("dispatched writ = %s, want %s (fresh item)", dispatched[0].WritID, wi2)
+	}
+}
+
 func TestFeedStrandedCaravansDrydockIgnored(t *testing.T) {
 	setupSolHome(t)
 
