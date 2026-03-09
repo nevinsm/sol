@@ -69,6 +69,7 @@ type WorldStore interface {
 	GetWrit(id string) (*store.Writ, error)
 	UpdateWrit(id string, updates store.WritUpdates) error
 	ListMergeRequests(phase string) ([]store.MergeRequest, error)
+	ListMergeRequestsByWrit(writID string, phase string) ([]store.MergeRequest, error)
 	ListBlockedMergeRequests() ([]store.MergeRequest, error)
 	ReleaseStaleClaims(ttl time.Duration) (int, error)
 }
@@ -1445,9 +1446,29 @@ func (w *Sentinel) recastFailedMRs() int {
 			continue
 		}
 
-		// Only re-cast if the writ has been reopened by the forge.
-		if item.Status != "open" {
-			// Writ already re-dispatched or handled — prune tracking.
+		// Determine if this writ is eligible for recast based on status.
+		switch item.Status {
+		case "open":
+			// Fall through to recast logic.
+		case "done":
+			// A "done" writ with a failed MR and no assigned agent is orphaned.
+			// Transition it to "open" so it can be recast.
+			if item.Assignee == "" || item.Assignee == "-" {
+				if err := w.worldStore.UpdateWrit(mr.WritID, store.WritUpdates{
+					Status:   "open",
+					Assignee: "-",
+				}); err != nil {
+					continue
+				}
+				// Fall through to recast logic.
+			} else {
+				// Agent is still assigned — let them handle it.
+				continue
+			}
+		default:
+			// "tethered" or any other status — skip and prune tracking.
+			// Tethered writs have an agent working on them (orphaned-working
+			// fix handles dead agents separately).
 			delete(w.recastCounts, mr.WritID)
 			continue
 		}
@@ -1461,6 +1482,21 @@ func (w *Sentinel) recastFailedMRs() int {
 				w.recastCounts[mr.WritID] = maxAttempts + 1
 			}
 			continue
+		}
+
+		// Check for existing non-failed MRs to avoid creating duplicates.
+		existingMRs, err := w.worldStore.ListMergeRequestsByWrit(mr.WritID, "")
+		if err == nil {
+			hasActiveMR := false
+			for _, emr := range existingMRs {
+				if emr.Phase != "failed" {
+					hasActiveMR = true
+					break
+				}
+			}
+			if hasActiveMR {
+				continue // Active MR exists, skip recast.
+			}
 		}
 
 		result, err := w.castFn(mr.WritID)
