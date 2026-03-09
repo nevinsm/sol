@@ -9,7 +9,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/charmbracelet/huh"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/session"
@@ -178,14 +177,24 @@ var mailCheckCmd = &cobra.Command{
 }
 
 var mailPurgeCmd = &cobra.Command{
-	Use:          "purge",
-	Short:        "Delete acknowledged messages",
+	Use:   "purge",
+	Short: "Delete acknowledged messages",
+	Long: `Delete acknowledged messages from the sphere mailbox.
+
+Requires --confirm to proceed; without it, previews what would be deleted and exits.
+The --force flag is accepted as an alias for --confirm for backward compatibility.`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		allAcked, _ := cmd.Flags().GetBool("all-acked")
 		before, _ := cmd.Flags().GetString("before")
+		confirm, _ := cmd.Flags().GetBool("confirm")
 		force, _ := cmd.Flags().GetBool("force")
+
+		// --force is an alias for --confirm on this command (backward compat).
+		if force {
+			confirm = true
+		}
 
 		if !allAcked && before == "" {
 			return fmt.Errorf("must specify --before=<duration> or --all-acked")
@@ -199,25 +208,14 @@ var mailPurgeCmd = &cobra.Command{
 
 		var count int64
 		if allAcked {
-			if !force {
-				var confirmed bool
-				form := huh.NewForm(
-					huh.NewGroup(
-						huh.NewConfirm().
-							Title("Delete all acknowledged messages?").
-							Description("This action cannot be undone.").
-							Affirmative("Delete").
-							Negative("Cancel").
-							Value(&confirmed),
-					),
-				)
-				if err := form.Run(); err != nil {
-					return fmt.Errorf("purge cancelled: %w", err)
+			if !confirm {
+				n, err := s.CountAcked()
+				if err != nil {
+					return err
 				}
-				if !confirmed {
-					fmt.Fprintln(os.Stderr, "Purge cancelled.")
-					return nil
-				}
+				fmt.Printf("Would delete %d acknowledged message(s).\n", n)
+				fmt.Println("Run with --confirm to proceed.")
+				return &exitError{code: 1}
 			}
 			count, err = s.PurgeAllAcked()
 		} else {
@@ -227,25 +225,14 @@ var mailPurgeCmd = &cobra.Command{
 			}
 			cutoff := time.Now().UTC().Add(-dur)
 
-			if !force {
-				var confirmed bool
-				form := huh.NewForm(
-					huh.NewGroup(
-						huh.NewConfirm().
-							Title(fmt.Sprintf("Delete acked messages older than %s?", before)).
-							Description("This action cannot be undone.").
-							Affirmative("Delete").
-							Negative("Cancel").
-							Value(&confirmed),
-					),
-				)
-				if err := form.Run(); err != nil {
-					return fmt.Errorf("purge cancelled: %w", err)
+			if !confirm {
+				n, err := s.CountAckedBefore(cutoff)
+				if err != nil {
+					return err
 				}
-				if !confirmed {
-					fmt.Fprintln(os.Stderr, "Purge cancelled.")
-					return nil
-				}
+				fmt.Printf("Would delete %d acknowledged message(s) older than %s.\n", n, before)
+				fmt.Println("Run with --confirm to proceed.")
+				return &exitError{code: 1}
 			}
 			count, err = s.PurgeAckedMessages(cutoff)
 		}
@@ -358,7 +345,8 @@ func init() {
 
 	mailPurgeCmd.Flags().String("before", "", "Delete acked messages older than duration (e.g., 7d, 24h)")
 	mailPurgeCmd.Flags().Bool("all-acked", false, "Delete all acknowledged messages regardless of age")
-	mailPurgeCmd.Flags().Bool("force", false, "Skip confirmation prompt")
+	mailPurgeCmd.Flags().Bool("confirm", false, "confirm destructive action")
+	mailPurgeCmd.Flags().Bool("force", false, "alias for --confirm (backward compatibility)")
 
 	mailCmd.AddCommand(mailSendCmd)
 	mailCmd.AddCommand(mailInboxCmd)

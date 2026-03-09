@@ -159,6 +159,29 @@ func (s *Store) ListMessages(filters MessageFilters) ([]Message, error) {
 	return s.scanMessages(query, args...)
 }
 
+// CountAcked returns the number of acknowledged messages.
+func (s *Store) CountAcked() (int, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE delivery = 'acked'`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count acked messages: %w", err)
+	}
+	return count, nil
+}
+
+// CountAckedBefore returns the number of acknowledged messages with acked_at older than before.
+func (s *Store) CountAckedBefore(before time.Time) (int, error) {
+	var count int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM messages WHERE delivery = 'acked' AND acked_at < ?`,
+		before.UTC().Format(time.RFC3339),
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count acked messages before %s: %w", before.Format(time.RFC3339), err)
+	}
+	return count, nil
+}
+
 // PurgeAckedMessages deletes acknowledged messages with acked_at older than before.
 // Returns the number of deleted rows. Never deletes unread/pending messages.
 func (s *Store) PurgeAckedMessages(before time.Time) (int64, error) {

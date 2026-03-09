@@ -62,6 +62,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - ADR format: lightweight MADR — Context → Options Considered (when warranted) → Decision → Consequences
 - CLI changes (new commands, changed flags, removed subcommands) must be reflected in `docs/cli.md`
 - **Worktree excludes**: Sol-managed local files (`.claude/settings.local.json`, `CLAUDE.local.md`) and sol-specific directories (`.claude/skills/`, `.brief/`, `.workflow/`) are excluded from git via `.git/info/exclude` in the managed repo (`setup.InstallExcludes`). The shared `.claude/` contents (`settings.json`, `CLAUDE.md`, `agents/`, `rules/`) are NOT excluded — they belong to the project's version control. Agent persona files are written to `CLAUDE.local.md` at the worktree root (the local variant) so the project's shared instructions are preserved and Claude Code's upward directory walk discovers the file. If you add a new sol-managed path that gets written inside worktrees, add it to the exclude list in `internal/setup/setup.go`.
+- **Destructive command confirmation**: Commands that delete data or are hard to undo require a `--confirm` flag. Without `--confirm`, the command previews what would happen and exits 1 (dry-run pattern). `--force` is reserved for behavioral escalation (e.g., stop active sessions before deleting, close despite unmerged items), not for confirmation bypass. See `sol world delete` as the reference implementation.
 
 ## Testing
 - Tests that create tmux sessions MUST use `setupTestEnv()` or `setupTestEnvWithRepo()` from `test/integration/helpers_test.go`

@@ -309,8 +309,9 @@ var envoyDebriefCmd = &cobra.Command{
 // --- sol envoy delete ---
 
 var (
-	envoyDeleteWorld string
-	envoyDeleteForce bool
+	envoyDeleteWorld   string
+	envoyDeleteForce   bool
+	envoyDeleteConfirm bool
 )
 
 var envoyDeleteCmd = &cobra.Command{
@@ -318,9 +319,11 @@ var envoyDeleteCmd = &cobra.Command{
 	Short: "Delete an envoy agent and all associated resources",
 	Long: `Remove an envoy agent, its worktree, brief history, and agent record.
 
+Requires --confirm to proceed; without it, prints what would be deleted and exits.
+
 Refuses to delete if the envoy's session is active or tethered unless --force
 is specified. With --force, stops the session and clears the tether before
-deleting.`,
+deleting. Both flags may be needed together: sol envoy delete --confirm --force.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -330,6 +333,16 @@ deleting.`,
 		}
 		if err := config.RequireWorld(envoyDeleteWorld); err != nil {
 			return err
+		}
+
+		if !envoyDeleteConfirm {
+			fmt.Printf("This will permanently delete envoy %q from world %q:\n", name, envoyDeleteWorld)
+			fmt.Printf("  - Worktree: %s\n", envoy.WorktreePath(envoyDeleteWorld, name))
+			fmt.Printf("  - Brief history: %s\n", envoy.BriefDir(envoyDeleteWorld, name))
+			fmt.Printf("  - Agent record: %s/%s\n", envoyDeleteWorld, name)
+			fmt.Println()
+			fmt.Println("Run with --confirm to proceed.")
+			return &exitError{code: 1}
 		}
 
 		worldCfg, err := config.LoadWorldConfig(envoyDeleteWorld)
@@ -520,6 +533,7 @@ func init() {
 
 	// envoy delete flags
 	envoyDeleteCmd.Flags().StringVar(&envoyDeleteWorld, "world", "", "world name")
+	envoyDeleteCmd.Flags().BoolVar(&envoyDeleteConfirm, "confirm", false, "confirm destructive action")
 	envoyDeleteCmd.Flags().BoolVar(&envoyDeleteForce, "force", false, "force delete even if session is active or tethered")
 
 	// envoy sync flags

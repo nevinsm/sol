@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	forgetAgent string
-	forgetAll   bool
+	forgetAgent   string
+	forgetAll     bool
+	forgetConfirm bool
 )
 
 var forgetCmd = &cobra.Command{
@@ -18,8 +19,9 @@ var forgetCmd = &cobra.Command{
 	Short: "Delete a memory for the current agent",
 	Long: `Delete a memory by key, or all memories with --all.
 
-  sol forget "key"     — delete a single memory
-  sol forget --all     — delete all memories for this agent`,
+  sol forget "key"              — delete a single memory
+  sol forget --all              — preview what would be deleted
+  sol forget --all --confirm    — delete all memories for this agent`,
 	GroupID:      groupAgents,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -44,6 +46,16 @@ var forgetCmd = &cobra.Command{
 		defer s.Close()
 
 		if forgetAll {
+			if !forgetConfirm {
+				count, err := s.CountAgentMemories(agent)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("Would delete %d memories for agent %q.\n", count, agent)
+				fmt.Println("Run with --confirm to proceed.")
+				return &exitError{code: 1}
+			}
+
 			n, err := s.DeleteAllAgentMemories(agent)
 			if err != nil {
 				return err
@@ -66,4 +78,5 @@ func init() {
 	forgetCmd.Flags().String("world", "", "world name")
 	forgetCmd.Flags().StringVar(&forgetAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 	forgetCmd.Flags().BoolVar(&forgetAll, "all", false, "delete all memories for this agent")
+	forgetCmd.Flags().BoolVar(&forgetConfirm, "confirm", false, "confirm destructive action")
 }
