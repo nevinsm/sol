@@ -28,8 +28,8 @@ func (ctx SkillContext) sol() string {
 var roleSkillsMap = map[string][]string{
 	"outpost":  {"resolve-and-handoff", "memories"},
 	"forge":    {"forge-patrol", "forge-toolbox", "merge-operations"},
-	"governor": {"writ-dispatch", "caravan-management", "world-coordination", "notification-handling", "memories"},
-	"envoy":    {"resolve-and-submit", "writ-management", "dispatch", "session-management", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail", "memories"},
+	"governor": {"writ-dispatch", "caravan-management", "world-coordination", "notification-handling", "handoff", "memories"},
+	"envoy":    {"resolve-and-submit", "writ-management", "dispatch", "handoff", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail", "memories"},
 	"senate":   {"world-queries", "writ-planning", "memories"},
 }
 
@@ -125,8 +125,8 @@ func generateSkill(name string, ctx SkillContext) string {
 		return skillWritManagement(ctx)
 	case "dispatch":
 		return skillDispatch(ctx)
-	case "session-management":
-		return skillSessionManagement(ctx)
+	case "handoff":
+		return skillHandoff(ctx)
 	case "status-monitoring":
 		return skillStatusMonitoring(ctx)
 	case "world-operations":
@@ -558,11 +558,24 @@ Cast options: %[4]s (auto if omitted), %[5]s, %[6]s.
 		"`--account`")
 }
 
-func skillSessionManagement(ctx SkillContext) string {
+func skillHandoff(ctx SkillContext) string {
 	sol := ctx.sol()
-	return fmt.Sprintf(`# Session Management
+	return fmt.Sprintf(`# Handoff
 
-Commands for managing session continuity.
+Handoff cycles your session to a fresh one when context runs long. Your brief, worktree, and tether all persist — only the conversation context resets.
+
+## Automatic Handoff
+
+The system triggers handoff via PreCompact when context pressure is detected. You don't need to do anything — it just happens. Your brief (.brief/memory.md) is injected into the successor session automatically.
+
+## Manual Handoff
+
+Invoke handoff manually if context feels heavy and you want a clean start, or before a major phase transition in your work.
+
+Before a manual handoff:
+1. Update your brief (.brief/memory.md) with current state, decisions, and next steps
+2. Commit any work-in-progress
+3. Your brief is the primary context transfer mechanism — make it count
 
 ## Commands
 
@@ -570,13 +583,11 @@ Commands for managing session continuity.
 |---------|-------------|
 | %[1]s handoff%[2]s | Hand off to a fresh session |
 
-## Options
-
+Options:
 - %[3]s — provide progress summary for successor
 - %[4]s — tag reason (compact, manual, health-check)
 `, "`"+sol, "`",
-		"`--summary=\"...\"`",
-		"`--reason=compact`")
+		"`--summary=\"...\"`", "`--reason=compact`")
 }
 
 func skillStatusMonitoring(ctx SkillContext) string {

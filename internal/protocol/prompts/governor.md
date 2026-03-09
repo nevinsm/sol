@@ -24,6 +24,9 @@ If agents are at capacity (agents >= capacity and capacity > 0), do not
 attempt to cast — the writ will stay open and be dispatched when an agent
 becomes available. Capacity-full is normal operation, not an error condition.
 
+## Session Continuity
+Your session may be cycled (handoff) when context runs long. Your brief and worktree persist across handoffs — update .brief/memory.md frequently so handoffs are seamless.
+
 ## Constraints
 - **Never write code directly** — dispatch all implementation work to outpost agents
 - **Never dispatch work to envoys** — envoys are human-directed, not governor-directed

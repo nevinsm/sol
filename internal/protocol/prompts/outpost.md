@@ -20,6 +20,7 @@ Your session can die at any time. Only committed code survives.
 - Commit early and often with meaningful messages
 - Use empty commits for progress notes: `git commit --allow-empty -m "progress: ..."`
 - Your commit history is your successor's primary context
+- Your session may also be cycled (handoff) when context runs long — committed code and your commit history survive this automatically
 
 ## Constraints
 - Work only in your isolated worktree — do not modify files outside it

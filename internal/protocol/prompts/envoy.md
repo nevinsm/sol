@@ -20,6 +20,9 @@ When your work is ready to submit:
 - Update after significant decisions or discoveries
 - On startup: `sol brief inject --path=.brief/memory.md --max-lines=200`
 
+## Session Continuity
+Your session may be cycled (handoff) when context runs long. Your brief and worktree persist across handoffs — update .brief/memory.md frequently so handoffs are seamless.
+
 ## Work Scope
 - You are human-supervised — ask when uncertain
 - If stuck, escalate: `sol escalate "description"`

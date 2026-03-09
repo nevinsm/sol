@@ -26,8 +26,8 @@ func TestRoleSkillsForge(t *testing.T) {
 
 func TestRoleSkillsGovernor(t *testing.T) {
 	skills := RoleSkills("governor")
-	if len(skills) != 5 {
-		t.Errorf("governor should have 5 skills, got %d: %v", len(skills), skills)
+	if len(skills) != 6 {
+		t.Errorf("governor should have 6 skills, got %d: %v", len(skills), skills)
 	}
 }
 
