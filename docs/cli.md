@@ -1488,22 +1488,15 @@ View the event activity feed
 
 ### `sol inbox`
 
-View pending nudge queue messages
+Unified TUI for autarch escalations and mail
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
+Launch a unified inbox TUI showing escalations and unread mail.
 
-**Subcommands:**
+Presents a single priority-sorted view of everything needing the
+autarch's attention. Navigate with arrow keys, expand with enter,
+and take inline actions (ack, resolve, dismiss).
 
-| Command | Description |
-|---------|-------------|
-| `sol inbox count` | Print count of pending messages |
-| `sol inbox drain` | Drain and display all pending messages |
-
-#### `sol inbox drain`
+Use --json to dump the unified item list for scripting.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1574,18 +1567,32 @@ The --force flag is accepted as an alias for --confirm for backward compatibilit
 
 Nudge queue operations
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
+| `--world` | string | "" | world name |
+
 **Subcommands:**
 
 | Command | Description |
 |---------|-------------|
+| `sol nudge count` | Print count of pending nudge messages |
 | `sol nudge drain` | Drain pending nudge messages for an agent session |
+| `sol nudge list` | View pending nudge queue messages |
 
 #### `sol nudge drain`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
+
+#### `sol nudge list`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 
 ---
 
