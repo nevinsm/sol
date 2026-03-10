@@ -133,6 +133,73 @@ func initGitRepo(t *testing.T, dir string) {
 
 // --- Tests ---
 
+func TestEnvoyPrimeNoActiveWrit(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	// No stores set up — envoyPrime should return base string without error.
+	result := envoyPrime("myworld", "Echo")
+	if !strings.Contains(result, "Envoy Echo") {
+		t.Errorf("expected base prime to contain agent name, got %q", result)
+	}
+	if strings.Contains(result, "Active writ") {
+		t.Error("should not contain active writ when no store exists")
+	}
+}
+
+func TestEnvoyPrimeWithActiveWrit(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	if err := os.MkdirAll(filepath.Join(tmp, ".store"), 0o755); err != nil {
+		t.Fatalf("failed to create store dir: %v", err)
+	}
+
+	// Set up sphere store with an agent that has an active writ.
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	if _, err := sphereStore.CreateAgent("Echo", "myworld", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Set up world store with a writ.
+	worldStore, err := store.OpenWorld("myworld")
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	writID, err := worldStore.CreateWrit("Test Writ Title", "Description", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	worldStore.Close()
+
+	// Set active writ on the agent.
+	if err := sphereStore.UpdateAgentState("myworld/Echo", "working", writID); err != nil {
+		t.Fatalf("failed to update agent state: %v", err)
+	}
+	sphereStore.Close()
+
+	// Now test envoyPrime.
+	result := envoyPrime("myworld", "Echo")
+	if !strings.Contains(result, "Envoy Echo") {
+		t.Errorf("expected prime to contain agent name, got %q", result)
+	}
+	if !strings.Contains(result, "Active writ:") {
+		t.Errorf("expected prime to contain active writ info, got %q", result)
+	}
+	if !strings.Contains(result, writID) {
+		t.Errorf("expected prime to contain writ ID %q, got %q", writID, result)
+	}
+	if !strings.Contains(result, "Test Writ Title") {
+		t.Errorf("expected prime to contain writ title, got %q", result)
+	}
+	if !strings.Contains(result, "sol prime") {
+		t.Errorf("expected prime to contain sol prime command, got %q", result)
+	}
+}
+
 func TestEnvoyHooksPreCompact(t *testing.T) {
 	hooks := envoyHooks("myworld", "Echo")
 	pcGroups, ok := hooks.Hooks["PreCompact"]

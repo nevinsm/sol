@@ -648,43 +648,64 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 		return nil, fmt.Errorf("failed to update active writ: %w", err)
 	}
 
-	// 6. Write resume state with writ-switch context.
-	resumeState := startup.ResumeState{
-		Reason:             "writ-switch",
-		PreviousActiveWrit: previousWrit,
-		NewActiveWrit:      opts.WritID,
-	}
-	if err := startup.WriteResumeState(opts.World, opts.AgentName, agent.Role, resumeState); err != nil {
-		return nil, fmt.Errorf("failed to write resume state: %w", err)
-	}
+	// 6. For persistent roles (envoy, governor), nudge the running session
+	// instead of cycling it — cycling destroys the live conversation.
+	if persistentRoles[agent.Role] && agent.Role != "forge" {
+		sessionName := config.SessionName(opts.World, opts.AgentName)
 
-	// 7. Trigger session restart via handoff with writ-switch reason.
-	// Use startup.Respawn which reads the resume state and calls Resume()
-	// with --continue for conversation continuity.
-	cfg := startup.ConfigFor(agent.Role)
-	if cfg != nil {
-		// Build a cycle operation: respawn-pane for atomic session replacement.
-		cycleOp := func(name, workdir, cmd string, env map[string]string, role, world string) error {
-			if err := mgr.Cycle(name, workdir, cmd, env, role, world); err != nil {
-				// Fallback: stop + start.
-				mgr.Stop(name, true)
-				return mgr.Start(name, workdir, cmd, env, role, world)
+		// Look up writ title for the nudge message.
+		writTitle := opts.WritID // fallback to ID if lookup fails
+		if writ, err := worldStore.GetWrit(opts.WritID); err == nil {
+			writTitle = writ.Title
+		}
+
+		msg := nudge.Message{
+			Sender:   "sol",
+			Type:     "writ-activate",
+			Subject:  fmt.Sprintf("Writ %s activated: %s — run `sol prime --world=%s --agent=%s` for full context", opts.WritID, writTitle, opts.World, opts.AgentName),
+			Priority: "urgent",
+		}
+		if err := nudge.Deliver(sessionName, msg); err != nil {
+			// Non-fatal: the DB is updated, the nudge queue will deliver later.
+			fmt.Fprintf(os.Stderr, "activate: nudge delivery failed: %v\n", err)
+		}
+	} else {
+		// 6b. Outpost/forge: write resume state and cycle session.
+		resumeState := startup.ResumeState{
+			Reason:             "writ-switch",
+			PreviousActiveWrit: previousWrit,
+			NewActiveWrit:      opts.WritID,
+		}
+		if err := startup.WriteResumeState(opts.World, opts.AgentName, agent.Role, resumeState); err != nil {
+			return nil, fmt.Errorf("failed to write resume state: %w", err)
+		}
+
+		// 7. Trigger session restart via handoff with writ-switch reason.
+		cfg := startup.ConfigFor(agent.Role)
+		if cfg != nil {
+			// Build a cycle operation: respawn-pane for atomic session replacement.
+			cycleOp := func(name, workdir, cmd string, env map[string]string, role, world string) error {
+				if err := mgr.Cycle(name, workdir, cmd, env, role, world); err != nil {
+					// Fallback: stop + start.
+					mgr.Stop(name, true)
+					return mgr.Start(name, workdir, cmd, env, role, world)
+				}
+				return nil
 			}
-			return nil
-		}
 
-		launchOpts := startup.LaunchOpts{
-			SessionOp: cycleOp,
-		}
+			launchOpts := startup.LaunchOpts{
+				SessionOp: cycleOp,
+			}
 
-		if _, err := startup.Resume(*cfg, opts.World, opts.AgentName, resumeState, launchOpts); err != nil {
-			// Non-fatal: the DB is updated, the resume state is on disk.
-			// Prefect or next session start will pick it up.
-			fmt.Fprintf(os.Stderr, "activate: session restart failed (resume state preserved): %v\n", err)
+			if _, err := startup.Resume(*cfg, opts.World, opts.AgentName, resumeState, launchOpts); err != nil {
+				// Non-fatal: the DB is updated, the resume state is on disk.
+				// Prefect or next session start will pick it up.
+				fmt.Fprintf(os.Stderr, "activate: session restart failed (resume state preserved): %v\n", err)
+			} else {
+				// Clear resume state only after successful consumption.
+				startup.ClearResumeState(opts.World, opts.AgentName, agent.Role)
+			}
 		}
-
-		// Clear resume state after successful consumption.
-		startup.ClearResumeState(opts.World, opts.AgentName, agent.Role)
 	}
 
 	// 8. Emit event.
