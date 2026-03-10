@@ -21,6 +21,13 @@ in-flight work continues. Recovery happens when services return.
 | Forge | `merge_requests` table, slot lock | In-progress merge | Prefect restarts Go process; patrol resumes from cycle start (idempotent) | <30s |
 | Outpost | Tether file, worktree, identity | Session memory | `sol prime` re-injects context (GUPP) | <30s |
 | Event Feed | JSONL files | Chronicle buffer | Chronicle restarts, tails from last position | <10s |
+| Ledger | token_usage + agent_history in world DBs | In-memory session cache, in-flight requests | Restart; session cache rebuilds on first event | <1s |
+| Brief | `.brief/memory.md` file | None (file-based) | Read on next injection; missing = clean start | <1s |
+| Envoy | Worktree, tether dir, brief, resume state | Session memory | Brief re-injection + tether list + resume state | <30s |
+| Governor | Governor dir, tether dir, brief, world summary | Session memory | Brief re-injection + tether list + world sync | <30s |
+| Senate | Senate dir, tether dir, brief | Session memory | Brief re-injection + tether list | <30s |
+| Doctor | None (stateless) | N/A | No recovery needed | N/A |
+| Status | None (stateless) | N/A | No recovery needed | N/A |
 
 ## Graceful Degradation
 
@@ -35,6 +42,9 @@ halting.
 | Forge | Work accumulates in merge queue. No merges land. |
 | Consul | Stale tethers accumulate. Caravans with ready work wait. Resolved on restart. |
 | Network/git remote | Agents work locally. `sol resolve` push phase retries. |
+| Ledger | Token tracking pauses. Agents continue — no work is gated on telemetry. |
+| Senate | Cross-world planning pauses. Per-world governors and agents continue independently. |
+| Governor | Per-world coordination pauses. Tethered agents continue executing. New writ dispatch waits. |
 
 ## Per-Component Details
 
@@ -114,6 +124,142 @@ crashed — it just sees its tether and gets to work (GUPP).
 Event logging is best-effort — failures are silently ignored. If the chronicle
 crashes, the raw log continues growing and the curated feed is stale. The
 prefect restarts the chronicle. No primary operations are affected.
+
+### Ledger
+
+If the ledger crashes, token tracking pauses but no agent work is affected —
+ledger is a telemetry receiver, not a coordination component. The prefect
+detects the dead `sol-ledger` tmux session and restarts it.
+
+**State survives:** `agent_history` and `token_usage` rows in per-world SQLite
+databases. All committed token data is durable (WAL journaling).
+
+**State lost:** In-memory session cache (`sessionKey → history_id` map) and
+cached store handles. In-flight OTLP requests being processed at crash time.
+
+**Recovery:** On restart, the ledger starts with empty caches. The first OTLP
+event for each agent session calls `ensureHistory()` to create a new
+`agent_history` record and caches the ID. Subsequent events for that session
+reuse the cached ID. Token events received before the crash are safe in the
+database; events lost in-flight are gone (acceptable — telemetry is best-effort).
+
+**Recovery time:** <1s. Cache rebuilds lazily on first event per session.
+
+### Brief
+
+Brief files (`.brief/memory.md`) are the context durability primitive for
+persistent agents. They are plain files — no database backing, no in-memory
+cache.
+
+**State survives:** The markdown file itself. Brief files survive session
+crashes, process restarts, and tmux server restarts.
+
+**State lost:** Nothing — brief is file-based and written by the agent during
+its session. On crash, the file reflects the last agent write.
+
+**Recovery:** On next session start, startup hooks call `sol brief inject` to
+read the file and inject its contents. Missing brief = clean start (not a
+failure). Stale brief = reduced context (not an error). Three-layer size
+management: CLAUDE.md guidance, agent self-pruning, injection truncation
+(200-line hard cap).
+
+**Recovery time:** <1s (file read and injection).
+
+**Graceful shutdown:** `brief.GracefulStop()` injects an update prompt before
+killing the session, polling for output stability (4 stable captures at 10s
+intervals). Force-kills after 90s. If no `.brief/` directory exists, falls
+back to immediate kill.
+
+### Envoy
+
+Envoys are persistent human-directed agents with dedicated worktrees, brief
+files, and multi-writ tethers. Their failure profile mirrors outposts but with
+additional durable state.
+
+**State survives:** Git worktree (branch `envoy/{world}/{name}`), tether
+directory with per-writ files, `.brief/memory.md`, agent record in sphere DB,
+`.resume_state.json` (writ switch state). All survive crashes intact.
+
+**State lost:** Session conversation history and in-flight tool executions.
+
+**Recovery:** Prefect detects the dead session and respawns it. On startup,
+brief is re-injected (reduced context, not failure), tether directory is read
+to recover writ bindings, and resume state file determines the correct active
+writ. The envoy resumes from last durable state — it sees its tether and gets
+to work (GUPP).
+
+**Recovery time:** <30s (prefect respawn + brief injection).
+
+**Multi-tether crash:** Tether directory survives. If `active_writ` in the DB
+is stale (crash during writ switch), the startup sequence reads the resume
+state file and tether directory to reconcile. See Multi-Tether Crash Recovery
+section.
+
+### Governor
+
+Governors are per-world coordinators with persistent Claude sessions, brief
+files, and multi-writ tethers. Similar failure profile to envoys but with
+world-scoped coordination state.
+
+**State survives:** Governor directory (`$SOL_HOME/{world}/governor/`), tether
+directory, `.brief/memory.md`, `.brief/world-summary.md`, agent record in
+sphere DB, `.resume_state.json`.
+
+**State lost:** Session conversation history and in-flight coordination
+decisions (which writs to dispatch, caravan phase transitions).
+
+**Recovery:** Prefect detects the dead session and respawns it. On startup,
+brief and world summary are re-injected, tether directory is read to recover
+writ bindings, and `sol world sync` runs to refresh world state. The governor
+resumes coordination from last durable state. Pending decisions are lost but
+can be re-derived from writ and caravan state in the database.
+
+**Recovery time:** <30s (prefect respawn + brief injection + world sync).
+
+**While down:** Tethered agents continue executing. New writ dispatch waits
+until the governor session is restored. Sentinel continues health monitoring
+independently.
+
+### Senate
+
+The senate is a sphere-scoped planning agent with a fixed tmux session
+(`sol-senate`), brief system, and multi-writ tethers. Similar failure profile
+to governor but at sphere scope.
+
+**State survives:** Senate directory (`$SOL_HOME/senate/`), tether directory,
+`.brief/memory.md`, agent record in sphere DB.
+
+**State lost:** Session conversation history and in-flight cross-world planning
+decisions.
+
+**Recovery:** Prefect detects the dead session and respawns it. On startup,
+brief is re-injected and tether directory is read to recover writ bindings.
+The senate resumes planning from last durable state. Cross-world coordination
+pauses during downtime — per-world governors and agents continue independently.
+
+**Recovery time:** <30s (prefect respawn + brief injection).
+
+### Doctor
+
+Doctor is a stateless prerequisite checker. It runs read-only checks (tmux,
+git, claude, SOL_HOME, SQLite WAL support), produces an in-memory report, and
+exits. No persistent state is created or modified.
+
+**No recovery needed.** Doctor is idempotent and can be re-run at any time.
+A crash during a check has no side effects — temporary files (used for
+writability and WAL tests) are cleaned up via deferred removal.
+
+### Status
+
+Status is a stateless read-only renderer. It queries authoritative sources
+(databases, tmux sessions, PID files, heartbeat files, brief file timestamps)
+at point of use (ZFC principle) and produces a snapshot for display.
+
+**No recovery needed.** Status creates no persistent state. If it crashes
+mid-render, re-running produces a fresh snapshot. The accuracy of its output
+depends on other components' state — if a PID file or heartbeat is stale,
+status reports stale health, but that's a problem in the source component,
+not in status itself.
 
 ### Non-Code Writ Resolve
 
