@@ -31,7 +31,7 @@ type sphereDaemon struct {
 var sphereDaemons = []sphereDaemon{
 	{name: "prefect"},
 	{name: "consul"},
-	{name: "chronicle", session: chronicleSessionName},
+	{name: "chronicle"},
 	{name: "ledger"},
 	{name: "token-broker"},
 }

@@ -940,15 +940,15 @@ Manage the event feed chronicle
 |---------|-------------|
 | `sol chronicle restart` | Restart the chronicle (stop then start) |
 | `sol chronicle run` | Run the chronicle (foreground) |
-| `sol chronicle start` | Start the chronicle as a background tmux session |
+| `sol chronicle start` | Start the chronicle as a background process |
 | `sol chronicle status` | Show chronicle status |
-| `sol chronicle stop` | Stop the chronicle background session |
+| `sol chronicle stop` | Stop the chronicle background process |
 
 #### `sol chronicle status`
 
 Show whether the chronicle process is running.
 
-Prints session name and checkpoint offset. Use --json for machine-readable output.
+Prints PID, heartbeat metrics, and checkpoint offset. Use --json for machine-readable output.
 
 Exit codes:
   0 - Chronicle is running

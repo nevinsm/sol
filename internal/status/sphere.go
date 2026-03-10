@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/broker"
+	"github.com/nevinsm/sol/internal/chronicle"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/consul"
 	"github.com/nevinsm/sol/internal/forge"
@@ -39,13 +40,8 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 	// 2b. Check broker.
 	result.Broker = GatherBrokerInfo()
 
-	// 3. Check chronicle: tmux session first, PID-file fallback.
-	const chronicleSessionName = "sol-chronicle"
-	if checker.Exists(chronicleSessionName) {
-		result.Chronicle = ChronicleInfo{Running: true, SessionName: chronicleSessionName}
-	} else if pid := readChroniclePID(); pid > 0 && prefect.IsRunning(pid) {
-		result.Chronicle = ChronicleInfo{Running: true, PID: pid}
-	}
+	// 3. Check chronicle: PID + heartbeat.
+	result.Chronicle = GatherChronicleInfo()
 
 	// 3a. Check ledger: PID + heartbeat.
 	result.Ledger = GatherLedgerInfo()
@@ -144,6 +140,32 @@ func GatherConsulInfo() ConsulInfo {
 		age := time.Since(hb.Timestamp)
 		info.HeartbeatAge = FormatDuration(age)
 		info.Stale = hb.IsStale(10 * time.Minute)
+	}
+
+	return info
+}
+
+// GatherChronicleInfo reads chronicle PID + heartbeat state.
+// Chronicle is a Go process (not a tmux session), supervised via PID + heartbeat.
+func GatherChronicleInfo() ChronicleInfo {
+	info := ChronicleInfo{}
+
+	pid := readChroniclePID()
+	if pid > 0 && prefect.IsRunning(pid) {
+		info.Running = true
+		info.PID = pid
+	}
+
+	hb, err := chronicle.ReadHeartbeat()
+	if err == nil && hb != nil {
+		if !info.Running {
+			info.Running = true // heartbeat exists, process likely alive
+		}
+		info.EventsProcessed = hb.EventsProcessed
+
+		age := time.Since(hb.Timestamp)
+		info.HeartbeatAge = FormatDuration(age)
+		info.Stale = hb.IsStale(5 * time.Minute)
 	}
 
 	return info

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/nevinsm/sol/internal/chronicle"
 )
 
 // ChronicleConfig holds chronicle configuration.
@@ -43,6 +45,9 @@ type Chronicle struct {
 	offset     int64 // file offset — tracks position in raw feed
 	dedupCache []dedupEntry
 	aggBuffers map[string]*aggBuffer // keyed by event type
+
+	eventsProcessed int64 // total events processed across all cycles
+	cycleCount      int   // total processing cycles
 }
 
 type dedupEntry struct {
@@ -99,16 +104,58 @@ func (c *Chronicle) Run(ctx context.Context) error {
 		// If file doesn't exist, offset stays 0.
 	}
 
+	// Emit start event.
+	if c.logger != nil {
+		c.logger.Emit(EventChronicleStart, "chronicle", "chronicle", "audit",
+			map[string]any{"checkpoint_offset": c.offset})
+	}
+
+	// Write initial heartbeat.
+	c.writeHeartbeat("running")
+
 	ticker := time.NewTicker(c.config.PollInterval)
 	defer ticker.Stop()
 
+	heartbeatTicker := time.NewTicker(30 * time.Second)
+	defer heartbeatTicker.Stop()
+
+	// Patrol summary every 5 minutes.
+	patrolTicker := time.NewTicker(5 * time.Minute)
+	defer patrolTicker.Stop()
+
 	var consecutiveErrs int
+	var patrolEventsProcessed int64
 
 	for {
 		select {
 		case <-ctx.Done():
 			c.saveCheckpoint()
+			// Emit stop event.
+			if c.logger != nil {
+				c.logger.Emit(EventChronicleStop, "chronicle", "chronicle", "audit",
+					map[string]any{
+						"events_processed":  c.eventsProcessed,
+						"checkpoint_offset": c.offset,
+					})
+			}
+			// Write final heartbeat.
+			c.writeHeartbeat("stopping")
 			return nil
+		case <-heartbeatTicker.C:
+			c.writeHeartbeat("running")
+		case <-patrolTicker.C:
+			// Emit patrol summary.
+			if c.logger != nil {
+				processed := c.eventsProcessed - patrolEventsProcessed
+				patrolEventsProcessed = c.eventsProcessed
+				c.logger.Emit(EventChroniclePatrol, "chronicle", "chronicle", "audit",
+					map[string]any{
+						"events_processed":  processed,
+						"total_processed":   c.eventsProcessed,
+						"checkpoint_offset": c.offset,
+						"cycles":            c.cycleCount,
+					})
+			}
 		case <-ticker.C:
 			if err := c.processCycle(); err != nil {
 				consecutiveErrs++
@@ -124,6 +171,19 @@ func (c *Chronicle) Run(ctx context.Context) error {
 				consecutiveErrs = 0
 			}
 		}
+	}
+}
+
+// writeHeartbeat writes the chronicle heartbeat file.
+func (c *Chronicle) writeHeartbeat(status string) {
+	hb := &chronicle.Heartbeat{
+		Timestamp:        time.Now().UTC(),
+		Status:           status,
+		EventsProcessed:  c.eventsProcessed,
+		CheckpointOffset: c.offset,
+	}
+	if err := chronicle.WriteHeartbeat(hb); err != nil {
+		fmt.Fprintf(os.Stderr, "chronicle: failed to write heartbeat: %v\n", err)
 	}
 }
 
@@ -203,12 +263,16 @@ func (c *Chronicle) processCycle() error {
 		}
 	}
 
-	// 7. Check feed size, truncate if needed.
+	// 7. Track events processed.
+	c.eventsProcessed += int64(len(newEvents))
+	c.cycleCount++
+
+	// 8. Check feed size, truncate if needed.
 	if err := c.truncateIfNeeded(); err != nil {
 		return fmt.Errorf("feed truncation: %w", err)
 	}
 
-	// 8. Save checkpoint.
+	// 9. Save checkpoint.
 	c.saveCheckpoint()
 
 	return nil

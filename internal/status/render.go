@@ -181,13 +181,26 @@ func formatChronicleDetail(c ChronicleInfo) string {
 	if !c.Running {
 		return ""
 	}
-	if c.SessionName != "" {
-		return c.SessionName
-	}
+	var parts string
 	if c.PID > 0 {
-		return fmt.Sprintf("pid %d", c.PID)
+		parts = fmt.Sprintf("pid %d", c.PID)
 	}
-	return ""
+	if c.HeartbeatAge != "" {
+		if parts != "" {
+			parts += " "
+		}
+		parts += dimStyle.Render(fmt.Sprintf("hb %s", c.HeartbeatAge))
+	}
+	if c.EventsProcessed > 0 {
+		if parts != "" {
+			parts += " "
+		}
+		parts += dimStyle.Render(fmt.Sprintf("ev %d", c.EventsProcessed))
+	}
+	if c.Stale {
+		parts += warnStyle.Render(" (stale)")
+	}
+	return parts
 }
 
 func formatLedgerDetail(l LedgerInfo) string {

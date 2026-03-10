@@ -5,19 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/nevinsm/sol/internal/chronicle"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
-	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/spf13/cobra"
 )
-
-const chronicleSessionName = "sol-chronicle"
 
 var chronicleStatusJSON bool
 
@@ -35,7 +36,12 @@ var chronicleRunCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := events.DefaultChronicleConfig(config.Home())
 		logger := events.NewLogger(config.Home())
-		chronicle := events.NewChronicle(cfg, events.WithLogger(logger))
+		chron := events.NewChronicle(cfg, events.WithLogger(logger))
+
+		// Write PID file.
+		if err := prefect.WriteDaemonPID("chronicle", os.Getpid()); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to write PID file: %v\n", err)
+		}
 
 		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()
@@ -45,22 +51,25 @@ var chronicleRunCmd = &cobra.Command{
 		go func() { <-sigCh; cancel() }()
 
 		fmt.Fprintf(os.Stderr, "Chronicle started (raw: .events.jsonl -> feed: .feed.jsonl)\n")
-		err := chronicle.Run(ctx)
-		fmt.Fprintf(os.Stderr, "Chronicle stopped (offset: %d)\n", chronicle.Offset())
+		err := chron.Run(ctx)
+		fmt.Fprintf(os.Stderr, "Chronicle stopped (offset: %d)\n", chron.Offset())
+
+		// Clean up heartbeat and PID on exit.
+		os.Remove(chronicle.HeartbeatPath())
 		return err
 	},
 }
 
 var chronicleStartCmd = &cobra.Command{
 	Use:          "start",
-	Short:        "Start the chronicle as a background tmux session",
+	Short:        "Start the chronicle as a background process",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := session.New()
-
-		if mgr.Exists(chronicleSessionName) {
-			return fmt.Errorf("chronicle already running (session %s)", chronicleSessionName)
+		// Check if already running via PID.
+		pid := prefect.ReadDaemonPID("chronicle")
+		if pid > 0 && prefect.IsRunning(pid) {
+			return fmt.Errorf("chronicle already running (pid %d)", pid)
 		}
 
 		solBin, err := os.Executable()
@@ -68,37 +77,74 @@ var chronicleStartCmd = &cobra.Command{
 			return fmt.Errorf("failed to find sol binary: %w", err)
 		}
 
-		env := map[string]string{
-			"SOL_HOME": config.Home(),
+		// Open log file.
+		logPath := filepath.Join(config.RuntimeDir(), "chronicle.log")
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			return fmt.Errorf("failed to open log file: %w", err)
 		}
 
-		if err := mgr.Start(chronicleSessionName, config.Home(),
-			solBin+" chronicle run", env, "chronicle", ""); err != nil {
-			return fmt.Errorf("failed to start chronicle session: %w", err)
+		proc := exec.Command(solBin, "chronicle", "run")
+		proc.Stdout = logFile
+		proc.Stderr = logFile
+		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+		if err := proc.Start(); err != nil {
+			logFile.Close()
+			return fmt.Errorf("failed to start chronicle: %w", err)
 		}
 
-		fmt.Printf("Chronicle started: %s\n", chronicleSessionName)
+		newPid := proc.Process.Pid
+		logFile.Close()
+
+		// Write PID file.
+		if err := prefect.WriteDaemonPID("chronicle", newPid); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to write PID file: %v\n", err)
+		}
+
+		// Detach so chronicle survives.
+		_ = proc.Process.Release()
+
+		// Verify alive after a moment.
+		time.Sleep(time.Second)
+		if !prefect.IsRunning(newPid) {
+			return fmt.Errorf("chronicle exited immediately (check %s)", logPath)
+		}
+
+		fmt.Printf("Chronicle started (pid %d)\n", newPid)
 		return nil
 	},
 }
 
 var chronicleStopCmd = &cobra.Command{
 	Use:          "stop",
-	Short:        "Stop the chronicle background session",
+	Short:        "Stop the chronicle background process",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := session.New()
-
-		if !mgr.Exists(chronicleSessionName) {
-			return fmt.Errorf("no chronicle running (session %s not found)", chronicleSessionName)
+		pid := prefect.ReadDaemonPID("chronicle")
+		if pid <= 0 || !prefect.IsRunning(pid) {
+			return fmt.Errorf("no chronicle running (pid file not found or process dead)")
 		}
 
-		if err := mgr.Stop(chronicleSessionName, false); err != nil {
-			return fmt.Errorf("failed to stop chronicle: %w", err)
+		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+			return fmt.Errorf("failed to stop chronicle (pid %d): %w", pid, err)
 		}
 
-		fmt.Printf("Chronicle stopped: %s\n", chronicleSessionName)
+		// Wait for process to exit.
+		for i := 0; i < 20; i++ {
+			time.Sleep(500 * time.Millisecond)
+			if !prefect.IsRunning(pid) {
+				break
+			}
+		}
+
+		if prefect.IsRunning(pid) {
+			return fmt.Errorf("chronicle (pid %d) did not exit after SIGTERM", pid)
+		}
+
+		fmt.Printf("Chronicle stopped (pid %d)\n", pid)
 		return nil
 	},
 }
@@ -109,10 +155,22 @@ var chronicleRestartCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := session.New()
-		return restartSession(mgr, chronicleSessionName, "chronicle",
-			fmt.Sprintf("Chronicle stopped: %s", chronicleSessionName),
-			nil, chronicleStartCmd, args)
+		// Stop if running (ignore errors — may not be running).
+		pid := prefect.ReadDaemonPID("chronicle")
+		if pid > 0 && prefect.IsRunning(pid) {
+			if err := syscall.Kill(pid, syscall.SIGTERM); err == nil {
+				for i := 0; i < 20; i++ {
+					time.Sleep(500 * time.Millisecond)
+					if !prefect.IsRunning(pid) {
+						break
+					}
+				}
+			}
+			fmt.Println("Chronicle stopped")
+		}
+
+		// Start.
+		return chronicleStartCmd.RunE(cmd, args)
 	},
 }
 
@@ -121,15 +179,18 @@ var chronicleStatusCmd = &cobra.Command{
 	Short: "Show chronicle status",
 	Long: `Show whether the chronicle process is running.
 
-Prints session name and checkpoint offset. Use --json for machine-readable output.
+Prints PID, heartbeat metrics, and checkpoint offset. Use --json for machine-readable output.
 
 Exit codes:
   0 - Chronicle is running
   1 - Chronicle is not running`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := session.New()
-		running := mgr.Exists(chronicleSessionName)
+		pid := prefect.ReadDaemonPID("chronicle")
+		running := pid > 0 && prefect.IsRunning(pid)
+
+		// Read heartbeat for metrics.
+		hb, _ := chronicle.ReadHeartbeat()
 
 		// Try to read the checkpoint offset.
 		var offset int64 = -1
@@ -161,11 +222,15 @@ Exit codes:
 
 		if chronicleStatusJSON {
 			out := map[string]any{
-				"status":  "running",
-				"session": chronicleSessionName,
+				"status": "running",
+				"pid":    pid,
 			}
 			if offset >= 0 {
 				out["checkpoint_offset"] = offset
+			}
+			if hb != nil {
+				out["events_processed"] = hb.EventsProcessed
+				out["heartbeat_age"] = time.Since(hb.Timestamp).Truncate(time.Second).String()
 			}
 			data, err := json.Marshal(out)
 			if err != nil {
@@ -176,7 +241,11 @@ Exit codes:
 		}
 
 		fmt.Printf("Chronicle: running\n")
-		fmt.Printf("Session: %s\n", chronicleSessionName)
+		fmt.Printf("PID: %d\n", pid)
+		if hb != nil {
+			fmt.Printf("Events processed: %d\n", hb.EventsProcessed)
+			fmt.Printf("Heartbeat age: %s\n", time.Since(hb.Timestamp).Truncate(time.Second))
+		}
 		if offset >= 0 {
 			fmt.Printf("Checkpoint offset: %d\n", offset)
 		}
