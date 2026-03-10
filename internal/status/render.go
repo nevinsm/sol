@@ -413,10 +413,10 @@ func formatForgeDetail(f ForgeInfo) string {
 		return ""
 	}
 	if f.Paused {
-		return warnStyle.Render("paused")
+		return warnStyle.Render("paused") + fmt.Sprintf(" (pid %d)", f.PID)
 	}
 	if f.PatrolCount > 0 || f.MergesTotal > 0 {
-		parts := fmt.Sprintf("%d patrols, %d merged", f.PatrolCount, f.MergesTotal)
+		parts := fmt.Sprintf("pid %d, %d patrols, %d merged", f.PID, f.PatrolCount, f.MergesTotal)
 		if f.HeartbeatAge != "" {
 			parts += fmt.Sprintf(", last %s ago", f.HeartbeatAge)
 		}
@@ -426,9 +426,19 @@ func formatForgeDetail(f ForgeInfo) string {
 		if f.Stale {
 			parts += warnStyle.Render(" (stale)")
 		}
+		if f.Merging {
+			parts += okStyle.Render(" [merging]")
+		}
 		return parts
 	}
-	return f.SessionName
+	if f.PID > 0 {
+		detail := fmt.Sprintf("pid %d", f.PID)
+		if f.Merging {
+			detail += okStyle.Render(" [merging]")
+		}
+		return detail
+	}
+	return ""
 }
 
 func formatSentinelDetail(s SentinelInfo) string {

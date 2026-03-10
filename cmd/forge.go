@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/session"
-"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
 )
@@ -53,7 +54,7 @@ var forgeCmd = &cobra.Command{
 
 var forgeStartCmd = &cobra.Command{
 	Use:          "start",
-	Short:        "Start the forge as a Go patrol process",
+	Short:        "Start the forge as a background process",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeStartWorld)
@@ -70,12 +71,10 @@ var forgeStartCmd = &cobra.Command{
 			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
 		}
 
-		sessName := config.SessionName(world, "forge")
-		mgr := session.New()
-
-		// Check if already running.
-		if mgr.Exists(sessName) {
-			return fmt.Errorf("forge already running for world %q (session %s)", world, sessName)
+		// Check if already running via PID file.
+		existingPID := forge.ReadPID(world)
+		if existingPID > 0 && forge.IsRunning(existingPID) {
+			return fmt.Errorf("forge already running for world %q (pid %d)", world, existingPID)
 		}
 
 		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
@@ -108,24 +107,54 @@ var forgeStartCmd = &cobra.Command{
 			return fmt.Errorf("failed to ensure worktree: %w", err)
 		}
 
-		// Launch Go patrol process inside tmux session.
-		// The tmux session runs `sol forge run --world=<world>` which calls Forge.Run().
+		// Launch forge as a direct background process.
 		solBin, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("failed to find sol binary: %w", err)
 		}
-		forgeCmd := fmt.Sprintf("%s forge run --world=%s", solBin, world)
-		env := map[string]string{
-			"SOL_HOME": config.Home(),
-		}
-		if err := mgr.Start(sessName, config.Home(), forgeCmd, env, "forge", world); err != nil {
-			return fmt.Errorf("failed to start forge session: %w", err)
+
+		logPath := forge.LogPath(world)
+		logDir := filepath.Dir(logPath)
+		if err := os.MkdirAll(logDir, 0o755); err != nil {
+			return fmt.Errorf("failed to create forge log directory: %w", err)
 		}
 
-		fmt.Printf("Forge started for world %q (Go patrol process)\n", world)
-		fmt.Printf("  Session:  %s\n", sessName)
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			return fmt.Errorf("failed to open forge log file: %w", err)
+		}
+
+		proc := exec.Command(solBin, "forge", "run", "--world="+world)
+		proc.Stdout = logFile
+		proc.Stderr = logFile
+		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+		if err := proc.Start(); err != nil {
+			logFile.Close()
+			return fmt.Errorf("failed to start forge process: %w", err)
+		}
+
+		pid := proc.Process.Pid
+		logFile.Close()
+
+		// Write PID file.
+		if err := forge.WritePID(world, pid); err != nil {
+			return fmt.Errorf("forge started (pid %d) but failed to write PID file: %w", pid, err)
+		}
+
+		// Detach so the forge survives this process.
+		_ = proc.Process.Release()
+
+		// Brief wait and verify the process is still alive.
+		time.Sleep(200 * time.Millisecond)
+		if !forge.IsRunning(pid) {
+			forge.ClearPID(world)
+			return fmt.Errorf("forge process exited immediately (pid %d) — check log: %s", pid, logPath)
+		}
+
+		fmt.Printf("Forge started for world %q (pid %d)\n", world, pid)
 		fmt.Printf("  Worktree: %s\n", ref.WorktreeDir())
-		fmt.Printf("  Attach:   sol forge attach --world=%s\n", world)
 		fmt.Printf("  Log:      sol forge log --world=%s --follow\n", world)
 		return nil
 	},
@@ -141,15 +170,24 @@ var forgeStopCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := config.SessionName(world, "forge")
-		mgr := session.New()
-
-		if !mgr.Exists(sessName) {
+		pid := forge.ReadPID(world)
+		if pid <= 0 || !forge.IsRunning(pid) {
+			// Clean up stale PID file if present.
+			forge.ClearPID(world)
 			return fmt.Errorf("no forge running for world %q", world)
 		}
 
-		if err := mgr.Stop(sessName, false); err != nil {
+		if err := forge.StopProcess(world, 10*time.Second); err != nil {
 			return fmt.Errorf("failed to stop forge: %w", err)
+		}
+
+		// Stop any active merge session as part of cleanup.
+		mergeSessName := config.SessionName(world, "forge-merge")
+		mgr := session.New()
+		if mgr.Exists(mergeSessName) {
+			if err := mgr.Stop(mergeSessName, true); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to stop merge session %s: %v\n", mergeSessName, err)
+			}
 		}
 
 		fmt.Printf("Forge stopped for world %q\n", world)
@@ -169,19 +207,34 @@ var forgeRestartCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := config.SessionName(world, "forge")
-		mgr := session.New()
+		// Stop existing process if running.
+		pid := forge.ReadPID(world)
+		if pid > 0 && forge.IsRunning(pid) {
+			if err := forge.StopProcess(world, 10*time.Second); err != nil {
+				return fmt.Errorf("failed to stop forge: %w", err)
+			}
+			// Stop any active merge session.
+			mergeSessName := config.SessionName(world, "forge-merge")
+			mgr := session.New()
+			if mgr.Exists(mergeSessName) {
+				_ = mgr.Stop(mergeSessName, true)
+			}
+			fmt.Printf("Forge stopped for world %q\n", world)
+		}
 
 		forgeStartWorld = world
-		return restartSession(mgr, sessName, "forge",
-			fmt.Sprintf("Forge stopped for world %q", world),
-			nil, forgeStartCmd, args)
+		return forgeStartCmd.RunE(forgeStartCmd, args)
 	},
 }
 
 var forgeAttachCmd = &cobra.Command{
 	Use:          "attach",
-	Short:        "Attach to the forge tmux session",
+	Short:        "Attach to the forge merge session (if active)",
+	Long: `Attach to the ephemeral forge merge session (sol-{world}-forge-merge).
+
+The forge process itself runs as a direct background process (not in tmux).
+Use 'sol forge log --follow' to watch forge output. This command attaches
+to the merge session, which only exists while a merge is in progress.`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeAttachWorld)
@@ -189,14 +242,14 @@ var forgeAttachCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := config.SessionName(world, "forge")
+		mergeSessName := config.SessionName(world, "forge-merge")
 		mgr := session.New()
 
-		if !mgr.Exists(sessName) {
-			return fmt.Errorf("no forge session for world %q (run 'sol forge start --world=%s' first)", world, world)
+		if !mgr.Exists(mergeSessName) {
+			return fmt.Errorf("no active merge session for world %q (merge session only exists during merge execution)\nUse 'sol forge log --world=%s --follow' to watch forge output", world, world)
 		}
 
-		return mgr.Attach(sessName)
+		return mgr.Attach(mergeSessName)
 	},
 }
 
@@ -218,10 +271,9 @@ var forgeStatusCmd = &cobra.Command{
 		}
 		defer worldStore.Close()
 
-		// Check forge session.
-		sessName := config.SessionName(world, "forge")
-		mgr := session.New()
-		running := mgr.Exists(sessName)
+		// Check forge process via PID file.
+		pid := forge.ReadPID(world)
+		running := pid > 0 && forge.IsRunning(pid)
 
 		// Load all MRs for summary.
 		mrs, err := worldStore.ListMergeRequests("")
@@ -232,12 +284,18 @@ var forgeStatusCmd = &cobra.Command{
 		// Check pause state.
 		paused := forge.IsForgePaused(world)
 
+		// Check if a merge session is active.
+		mergeSessName := config.SessionName(world, "forge-merge")
+		mgr := session.New()
+		merging := mgr.Exists(mergeSessName)
+
 		// Build summary.
 		summary := forgeStatusSummary{
-			World:       world,
-			Running:     running,
-			Paused:      paused,
-			SessionName: sessName,
+			World:   world,
+			Running: running,
+			Paused:  paused,
+			PID:     pid,
+			Merging: merging,
 		}
 
 		for _, mr := range mrs {
@@ -312,7 +370,8 @@ type forgeStatusSummary struct {
 	World       string            `json:"world"`
 	Running     bool              `json:"running"`
 	Paused      bool              `json:"paused"`
-	SessionName string            `json:"session_name"`
+	PID         int               `json:"pid,omitempty"`
+	Merging     bool              `json:"merging,omitempty"`
 	Ready       int               `json:"ready"`
 	Blocked     int               `json:"blocked"`
 	InProgress  int               `json:"in_progress"`
@@ -345,9 +404,12 @@ func printForgeStatus(s forgeStatusSummary) {
 	// Process state.
 	if s.Running {
 		if s.Paused {
-			fmt.Printf("  Process:  paused (%s)\n", s.SessionName)
+			fmt.Printf("  Process:  paused (pid %d)\n", s.PID)
 		} else {
-			fmt.Printf("  Process:  running (%s)\n", s.SessionName)
+			fmt.Printf("  Process:  running (pid %d)\n", s.PID)
+		}
+		if s.Merging {
+			fmt.Printf("  Merge:    active\n")
 		}
 	} else {
 		fmt.Printf("  Process:  stopped\n")

@@ -88,7 +88,7 @@ func TestRenderWorldBasic(t *testing.T) {
 	ws := &WorldStatus{
 		World:   "testworld",
 		Prefect: PrefectInfo{Running: true, PID: 42},
-		Forge:   ForgeInfo{Running: true, SessionName: "sol-testworld-forge"},
+		Forge:   ForgeInfo{Running: true, PID: 12345},
 		Agents: []AgentStatus{
 			{Name: "Toast", State: "working", SessionAlive: true, ActiveWrit: "sol-aaa", WorkTitle: "fix bug"},
 			{Name: "Crisp", State: "idle"},

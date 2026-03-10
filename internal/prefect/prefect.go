@@ -479,24 +479,27 @@ func (s *Prefect) checkWorldInfrastructure() {
 }
 
 // checkForgeHealth reads the forge heartbeat and restarts if stale.
-// The forge runs as a Go process inside a tmux session.
+// The forge runs as a direct background process (not in tmux).
 func (s *Prefect) checkForgeHealth(world string) {
 	if s.cfg.SolBinary == "" {
 		return
 	}
 
-	sessName := config.SessionName(world, "forge")
+	pid := forge.ReadPID(world)
+	processAlive := pid > 0 && forge.IsRunning(pid)
 
-	// If no session exists at all, start the forge.
-	if !s.sessions.Exists(sessName) {
-		s.logger.Info("forge session missing, starting", "world", world)
+	// If no process is running, start the forge.
+	if !processAlive {
+		// Clean up stale PID file if present.
+		forge.ClearPID(world)
+		s.logger.Info("forge process not running, starting", "world", world)
 		if err := s.runCommand(s.cfg.SolBinary, "forge", "start", "--world="+world); err != nil {
 			s.logger.Error("failed to start forge", "world", world, "error", err)
 		}
 		return
 	}
 
-	// Session exists — check heartbeat staleness.
+	// Process exists — check heartbeat staleness.
 	hb, err := forge.ReadHeartbeat(world)
 	if err != nil {
 		s.logger.Warn("failed to read forge heartbeat", "world", world, "error", err)
@@ -518,9 +521,9 @@ func (s *Prefect) checkForgeHealth(world string) {
 		"last_heartbeat", hb.Timestamp,
 		"max_age", s.cfg.ForgeHeartbeatMax)
 
-	// Kill existing session.
-	if err := s.sessions.Stop(sessName, true); err != nil {
-		s.logger.Error("failed to stop stale forge session", "world", world, "error", err)
+	// Stop existing process via PID.
+	if err := forge.StopProcess(world, 10*time.Second); err != nil {
+		s.logger.Error("failed to stop stale forge process", "world", world, "error", err)
 	}
 
 	// Restart.
@@ -902,15 +905,28 @@ func (s *Prefect) shutdown() {
 					}
 				}
 			}
-			// Stop forge (runs as Go process in tmux, not in worldServices).
-			forgeSessName := config.SessionName(world.Name, "forge")
-			if s.sessions.Exists(forgeSessName) {
-				if err := s.sessions.Stop(forgeSessName, false); err != nil {
-					s.logger.Error("failed to stop forge during shutdown",
-						"world", world.Name, "error", err)
+			// Stop forge (runs as direct background process, not in tmux).
+			forgePID := forge.ReadPID(world.Name)
+			if forgePID > 0 {
+				if forge.IsRunning(forgePID) {
+					if err := forge.StopProcess(world.Name, 10*time.Second); err != nil {
+						s.logger.Error("failed to stop forge during shutdown",
+							"world", world.Name, "error", err)
+					} else {
+						stopped++
+						s.logger.Info("forge stopped during shutdown", "world", world.Name)
+					}
 				} else {
-					stopped++
-					s.logger.Info("forge stopped during shutdown", "world", world.Name)
+					// Process already dead — clean up stale PID file.
+					forge.ClearPID(world.Name)
+				}
+			}
+			// Also stop any active merge session.
+			mergeSessName := config.SessionName(world.Name, "forge-merge")
+			if s.sessions.Exists(mergeSessName) {
+				if err := s.sessions.Stop(mergeSessName, true); err != nil {
+					s.logger.Error("failed to stop forge merge session during shutdown",
+						"world", world.Name, "error", err)
 				}
 			}
 		}

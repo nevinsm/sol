@@ -4,9 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
-	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/status"
@@ -68,14 +68,12 @@ func TestStatusWithMergeQueue(t *testing.T) {
 		t.Errorf("merge queue total: got %d, want 1", rs.MergeQueue.Total)
 	}
 
-	// Start forge in a tmux session.
-	forgeSessName := config.SessionName("ember", "forge")
-	err = mgr.Start(forgeSessName, sourceClone, "sleep 60",
-		map[string]string{"SOL_HOME": solHome}, "forge", "ember")
-	if err != nil {
-		t.Fatalf("start forge session: %v", err)
-	}
-	defer mgr.Stop(forgeSessName, true)
+	// Simulate running forge via PID file (forge now runs as direct process).
+	forgeDir := filepath.Join(solHome, "ember", "forge")
+	os.MkdirAll(forgeDir, 0o755)
+	pidFile := filepath.Join(forgeDir, "forge.pid")
+	os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0o644)
+	defer os.Remove(pidFile)
 
 	// Gather status again — forge should be running.
 	rs2, err := status.Gather("ember", sphereStore, worldStore, worldStore, mgr)
@@ -86,7 +84,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 	if !rs2.Forge.Running {
 		t.Error("forge should be running")
 	}
-	if rs2.Forge.SessionName != forgeSessName {
-		t.Errorf("forge session name: got %q, want %q", rs2.Forge.SessionName, forgeSessName)
+	if rs2.Forge.PID != os.Getpid() {
+		t.Errorf("forge PID: got %d, want %d", rs2.Forge.PID, os.Getpid())
 	}
 }

@@ -172,7 +172,7 @@ func TestWorldViewRendersProcesses(t *testing.T) {
 	data := &status.WorldStatus{
 		World:     "testworld",
 		Prefect:   status.PrefectInfo{Running: true, PID: 42},
-		Forge:     status.ForgeInfo{Running: true, SessionName: "sol-testworld-forge"},
+		Forge:     status.ForgeInfo{Running: true, PID: 12345},
 		Sentinel:  status.SentinelInfo{Running: true, SessionName: "sol-testworld-sentinel"},
 		Chronicle: status.ChronicleInfo{Running: true, SessionName: "sol-testworld-chronicle"},
 		Governor:  status.GovernorInfo{Running: true, BriefAge: "5m"},
@@ -1809,8 +1809,8 @@ func TestProcessDetailFormats(t *testing.T) {
 	}
 
 	// Forge detail.
-	if d := formatForgeDetail(status.ForgeInfo{Running: true, SessionName: "sol-dev-forge"}); d != "sol-dev-forge" {
-		t.Errorf("forge detail = %q, want %q", d, "sol-dev-forge")
+	if d := formatForgeDetail(status.ForgeInfo{Running: true, PID: 12345}); d != "pid 12345" {
+		t.Errorf("forge detail = %q, want %q", d, "pid 12345")
 	}
 	if d := formatForgeDetail(status.ForgeInfo{Running: false}); d != "" {
 		t.Errorf("stopped forge detail should be empty, got %q", d)
@@ -2462,7 +2462,7 @@ func TestBuildWorldPeekItems(t *testing.T) {
 		Envoys: []status.EnvoyStatus{
 			{Name: "Scout", State: "working", SessionAlive: true},
 		},
-		Forge:    status.ForgeInfo{Running: true, SessionName: "sol-testworld-forge"},
+		Forge:    status.ForgeInfo{Running: true, PID: 12345},
 		Sentinel: status.SentinelInfo{Running: true, SessionName: "sol-testworld-sentinel"},
 	}
 
@@ -2513,7 +2513,7 @@ func TestPeekModelInitialCursor(t *testing.T) {
 func TestBuildWorldPeekItemsForgeSessionName(t *testing.T) {
 	data := &status.WorldStatus{
 		World:    "myworld",
-		Forge:    status.ForgeInfo{Running: true, SessionName: "sol-myworld-forge"},
+		Forge:    status.ForgeInfo{Running: true},
 		Sentinel: status.SentinelInfo{Running: true, SessionName: "sol-myworld-sentinel"},
 	}
 

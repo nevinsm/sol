@@ -132,6 +132,7 @@ func testConfig() Config {
 		MassDeathThreshold: 3,
 		MassDeathWindow:    30 * time.Second,
 		DegradedCooldown:   5 * time.Minute,
+		ForgeHeartbeatMax:  5 * time.Minute,
 	}
 }
 
@@ -966,9 +967,12 @@ func TestHeartbeatSkipsRunningWorldServices(t *testing.T) {
 source_repo = "/tmp/repo"
 `), 0o644)
 
-	// Mark both services as already running.
+	// Mark sentinel as already running (session-based).
 	mock.Start("sol-haven-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", "haven")
-	mock.Start("sol-haven-forge", "/tmp", "sol forge run", nil, "forge", "haven")
+
+	// Mark forge as already running (PID-based) with a fresh heartbeat.
+	writeForgePIDFile(t, "haven", os.Getpid())
+	writeForgeHeartbeat(t, "haven")
 
 	// Write alive PID files for sphere daemons so checkSphereDaemons doesn't trigger.
 	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
@@ -1084,30 +1088,32 @@ func TestShutdownStopsWorldServices(t *testing.T) {
 source_repo = "/tmp/repo"
 `), 0o644)
 
-	// Start world service sessions.
+	// Start sentinel session (still session-based).
 	mock.Start("sol-haven-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", "haven")
-	mock.Start("sol-haven-forge", "/tmp", "sol forge run", nil, "forge", "haven")
+
+	// Write forge PID file pointing to a PID that is NOT running
+	// (use PID 0 or a dead PID so StopProcess won't actually kill anything).
+	writeForgePIDFile(t, "haven", 99999999)
 
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.shutdown()
 
-	// Both world service sessions should be stopped.
+	// Sentinel session should be stopped.
 	stopped := mock.GetStopped()
 	foundSentinel := false
-	foundForge := false
 	for _, s := range stopped {
 		if s == "sol-haven-sentinel" {
 			foundSentinel = true
-		}
-		if s == "sol-haven-forge" {
-			foundForge = true
 		}
 	}
 	if !foundSentinel {
 		t.Error("expected sol-haven-sentinel to be stopped during shutdown")
 	}
-	if !foundForge {
-		t.Error("expected sol-haven-forge to be stopped during shutdown")
+
+	// Forge PID file should be cleaned up (process was dead).
+	pidPath := filepath.Join(os.Getenv("SOL_HOME"), "haven", "forge", "forge.pid")
+	if _, err := os.Stat(pidPath); err == nil {
+		t.Error("expected forge PID file to be cleaned up during shutdown")
 	}
 }
 
@@ -1126,9 +1132,10 @@ source_repo = "/tmp/repo"
 sleeping = true
 `), 0o644)
 
-	// Start world service sessions (should not be stopped since world is sleeping).
+	// Start sentinel session (should not be stopped since world is sleeping).
 	mock.Start("sol-sleepy-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", "sleepy")
-	mock.Start("sol-sleepy-forge", "/tmp", "sol forge run", nil, "forge", "sleepy")
+	// Write forge PID file (should not be touched since world is sleeping).
+	writeForgePIDFile(t, "sleepy", os.Getpid())
 
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.shutdown()
@@ -1136,9 +1143,15 @@ sleeping = true
 	// World service sessions should NOT be stopped — world is sleeping.
 	stopped := mock.GetStopped()
 	for _, s := range stopped {
-		if s == "sol-sleepy-sentinel" || s == "sol-sleepy-forge" {
+		if s == "sol-sleepy-sentinel" {
 			t.Errorf("sleeping world service %q should not be stopped during shutdown", s)
 		}
+	}
+
+	// Forge PID file should still exist (sleeping world not touched).
+	pidPath := filepath.Join(os.Getenv("SOL_HOME"), "sleepy", "forge", "forge.pid")
+	if _, err := os.Stat(pidPath); os.IsNotExist(err) {
+		t.Error("sleeping world forge PID file should not be cleaned up during shutdown")
 	}
 }
 
@@ -1159,13 +1172,14 @@ func TestShutdownWorldServicesRespectsWorldsFilter(t *testing.T) {
 source_repo = "/tmp/repo"
 `), 0o644)
 		mock.Start("sol-"+w+"-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", w)
-		mock.Start("sol-"+w+"-forge", "/tmp", "sol forge run", nil, "forge", w)
+		// Write forge PID files with dead PIDs (won't try to signal).
+		writeForgePIDFile(t, w, 99999999)
 	}
 
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.shutdown()
 
-	// Only alpha world services should be stopped.
+	// Only alpha sentinel should be stopped via session.
 	stopped := mock.GetStopped()
 	for _, s := range stopped {
 		if strings.Contains(s, "beta") {
@@ -1174,20 +1188,25 @@ source_repo = "/tmp/repo"
 	}
 
 	foundAlphaSentinel := false
-	foundAlphaForge := false
 	for _, s := range stopped {
 		if s == "sol-alpha-sentinel" {
 			foundAlphaSentinel = true
-		}
-		if s == "sol-alpha-forge" {
-			foundAlphaForge = true
 		}
 	}
 	if !foundAlphaSentinel {
 		t.Error("expected sol-alpha-sentinel to be stopped during shutdown")
 	}
-	if !foundAlphaForge {
-		t.Error("expected sol-alpha-forge to be stopped during shutdown")
+
+	// Alpha's forge PID file should be cleaned up.
+	alphaPID := filepath.Join(os.Getenv("SOL_HOME"), "alpha", "forge", "forge.pid")
+	if _, err := os.Stat(alphaPID); err == nil {
+		t.Error("expected alpha forge PID file to be cleaned up during shutdown")
+	}
+
+	// Beta's forge PID file should still exist (excluded from world filter).
+	betaPID := filepath.Join(os.Getenv("SOL_HOME"), "beta", "forge", "forge.pid")
+	if _, err := os.Stat(betaPID); os.IsNotExist(err) {
+		t.Error("expected beta forge PID file to remain (excluded from worlds filter)")
 	}
 }
 
@@ -1376,6 +1395,29 @@ func writePIDFile(t *testing.T, name string, pid int) {
 	path := filepath.Join(runtimeDir, name+".pid")
 	if err := os.WriteFile(path, []byte(strconv.Itoa(pid)), 0o644); err != nil {
 		t.Fatalf("failed to write PID file for %s: %v", name, err)
+	}
+}
+
+// writeForgePIDFile writes a forge PID file for a world in the test SOL_HOME.
+func writeForgePIDFile(t *testing.T, world string, pid int) {
+	t.Helper()
+	forgeDir := filepath.Join(os.Getenv("SOL_HOME"), world, "forge")
+	os.MkdirAll(forgeDir, 0o755)
+	path := filepath.Join(forgeDir, "forge.pid")
+	if err := os.WriteFile(path, []byte(strconv.Itoa(pid)), 0o644); err != nil {
+		t.Fatalf("failed to write forge PID file for world %s: %v", world, err)
+	}
+}
+
+// writeForgeHeartbeat writes a fresh forge heartbeat for a world.
+func writeForgeHeartbeat(t *testing.T, world string) {
+	t.Helper()
+	forgeDir := filepath.Join(os.Getenv("SOL_HOME"), world, "forge")
+	os.MkdirAll(forgeDir, 0o755)
+	hbJSON := fmt.Sprintf(`{"timestamp":"%s","status":"idle","patrol_count":1}`, time.Now().UTC().Format(time.RFC3339))
+	path := filepath.Join(forgeDir, "heartbeat.json")
+	if err := os.WriteFile(path, []byte(hbJSON), 0o644); err != nil {
+		t.Fatalf("failed to write forge heartbeat for world %s: %v", world, err)
 	}
 }
 

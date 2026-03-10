@@ -130,6 +130,20 @@ func clearPrefectPID(t *testing.T) {
 	os.Remove(path)
 }
 
+// writeForgePID writes a forge PID file for the given world. Returns cleanup func.
+func writeForgePID(t *testing.T, world string, pid int) func() {
+	t.Helper()
+	dir := filepath.Join(config.Home(), world, "forge")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "forge.pid")
+	if err := os.WriteFile(path, []byte(strconv.Itoa(pid)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return func() { os.Remove(path) }
+}
+
 // setupTestHome sets SOL_HOME to a temp dir.
 func setupTestHome(t *testing.T) {
 	t.Helper()
@@ -497,13 +511,13 @@ func TestGatherWithForge(t *testing.T) {
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
+	// Write forge PID file with our own PID (known running).
+	forgePIDCleanup := writeForgePID(t, "haven", os.Getpid())
+	defer forgePIDCleanup()
+
 	sphere := &mockSphereStore{agents: nil}
 	world := &mockWorldStore{items: nil}
-	checker := &mockChecker{
-		alive: map[string]bool{
-			"sol-haven-forge": true, // forge session alive
-		},
-	}
+	checker := &mockChecker{alive: nil}
 
 	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
@@ -513,8 +527,8 @@ func TestGatherWithForge(t *testing.T) {
 	if !result.Forge.Running {
 		t.Error("Forge.Running = false, want true")
 	}
-	if result.Forge.SessionName != "sol-haven-forge" {
-		t.Errorf("Forge.SessionName = %q, want %q", result.Forge.SessionName, "sol-haven-forge")
+	if result.Forge.PID != os.Getpid() {
+		t.Errorf("Forge.PID = %d, want %d", result.Forge.PID, os.Getpid())
 	}
 }
 
@@ -526,7 +540,7 @@ func TestGatherWithoutForge(t *testing.T) {
 
 	sphere := &mockSphereStore{agents: nil}
 	world := &mockWorldStore{items: nil}
-	checker := &mockChecker{alive: nil} // forge session not alive
+	checker := &mockChecker{alive: nil} // no forge PID file either
 
 	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
 	if err != nil {
@@ -536,8 +550,8 @@ func TestGatherWithoutForge(t *testing.T) {
 	if result.Forge.Running {
 		t.Error("Forge.Running = true, want false")
 	}
-	if result.Forge.SessionName != "" {
-		t.Errorf("Forge.SessionName = %q, want empty", result.Forge.SessionName)
+	if result.Forge.PID != 0 {
+		t.Errorf("Forge.PID = %d, want 0", result.Forge.PID)
 	}
 }
 
