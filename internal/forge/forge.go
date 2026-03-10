@@ -37,6 +37,7 @@ type SphereStore interface {
 	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
 	ResolveEscalation(id string) error
 	UpdateEscalationLastNotified(id string) error
+	UpdateAgentState(id, state, activeWrit string) error
 	IsWritBlockedByCaravanDeps(writID string) (bool, []string, error)
 	Close() error
 }
