@@ -393,8 +393,8 @@ func TestActOnResultMerged(t *testing.T) {
 	// Mock git commands for push verification.
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git branch -r --merged origin/main",
-		[]byte("  origin/outpost/Toast/sol-aaa11111\n  origin/main"), nil)
+	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+		[]byte("abc1234 Fix auth flow (sol-aaa11111)"), nil)
 
 	result := &ForgeResult{
 		Result:  "merged",
@@ -510,11 +510,11 @@ func TestActOnResultPushVerificationFails(t *testing.T) {
 		ID: "sol-aaa11111", Title: "Test change", Status: "done",
 	}
 
-	// Push verification fails: branch not in merged branches.
+	// Push verification fails: writ ID not found in recent commits.
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git branch -r --merged origin/main",
-		[]byte("  origin/main"), nil) // branch not listed
+	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+		[]byte(""), nil) // writ not found
 
 	result := &ForgeResult{
 		Result:  "merged",
@@ -523,13 +523,13 @@ func TestActOnResultPushVerificationFails(t *testing.T) {
 
 	state.actOnResult(context.Background(), mr, result, 1)
 
-	// MR should be released (not marked merged) because push verification failed.
+	// MR should be marked failed (not released) because push verification failed.
 	worldStore.mu.Lock()
 	phase := worldStore.phaseUpdates["mr-001"]
 	worldStore.mu.Unlock()
 
-	if phase != "ready" {
-		t.Errorf("MR phase = %q, want 'ready' (released due to push verification failure)", phase)
+	if phase != "failed" {
+		t.Errorf("MR phase = %q, want 'failed' (MarkFailed on push verification failure)", phase)
 	}
 	if !strings.Contains(state.lastError, "push verification failed") {
 		t.Errorf("lastError = %q, should contain 'push verification failed'", state.lastError)
@@ -697,8 +697,8 @@ func TestPatrolWithSessionManager(t *testing.T) {
 	// Mock git commands for push verification.
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git branch -r --merged origin/main",
-		[]byte("  origin/outpost/Toast/sol-aaa11111\n  origin/main"), nil)
+	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+		[]byte("abc1234 Fix auth flow (sol-aaa11111)"), nil)
 
 	// Use a goroutine to simulate the session completing: write result file,
 	// then exit (delete session). The result file must be written after
@@ -753,10 +753,11 @@ func TestVerifyPushSuccess(t *testing.T) {
 
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git branch -r --merged origin/main",
-		[]byte("  origin/outpost/Toast/sol-aaa11111\n  origin/main"), nil)
+	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+		[]byte("abc1234 Fix auth flow (sol-aaa11111)"), nil)
 
 	mr := &store.MergeRequest{
+		WritID: "sol-aaa11111",
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
@@ -766,25 +767,26 @@ func TestVerifyPushSuccess(t *testing.T) {
 	}
 }
 
-func TestVerifyPushBranchNotMerged(t *testing.T) {
+func TestVerifyPushWritNotFound(t *testing.T) {
 	state, _, _ := setupOrchestratorTest(t)
 	defer state.fl.Close()
 
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git branch -r --merged origin/main",
-		[]byte("  origin/main"), nil) // branch NOT in merged list
+	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+		[]byte(""), nil) // writ not found in recent commits
 
 	mr := &store.MergeRequest{
+		WritID: "sol-aaa11111",
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
 	err := state.verifyPush(context.Background(), mr)
 	if err == nil {
-		t.Fatal("expected error when branch not merged")
+		t.Fatal("expected error when writ not found in recent commits")
 	}
-	if !strings.Contains(err.Error(), "not found in merged branches") {
-		t.Errorf("error = %q, should contain 'not found in merged branches'", err.Error())
+	if !strings.Contains(err.Error(), "not found in recent commits") {
+		t.Errorf("error = %q, should contain 'not found in recent commits'", err.Error())
 	}
 }
 

@@ -87,7 +87,7 @@ When done, write .forge-result.json in the worktree root:
 { "result": "merged"|"failed"|"conflict", "summary": "...",
   "files_changed": [...], "gate_output": "..." }
 
-Then run /exit to end your session.
+Write .forge-result.json — session will exit automatically.
 `, world)
 }
 
@@ -98,6 +98,7 @@ Then run /exit to end your session.
 //   - PreToolUse: guard hooks appropriate for forge role (allows git reset --hard, push to main)
 func forgeHookConfig(world string) protocol.HookConfig {
 	injectionPath := filepath.Join(WorktreePath(world), injectionFileName)
+	resultPath := filepath.Join(WorktreePath(world), resultFileName)
 	return protocol.HookConfig{
 		Hooks: map[string][]protocol.HookMatcherGroup{
 			"PreCompact": {
@@ -121,6 +122,16 @@ func forgeHookConfig(world string) protocol.HookConfig {
 					},
 				},
 			}, protocol.GuardHooks("forge")...),
+			"Stop": {
+				{
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("test -f %s && exit 0", resultPath),
+						},
+					},
+				},
+			},
 		},
 	}
 }

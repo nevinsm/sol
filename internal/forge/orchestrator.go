@@ -351,7 +351,12 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 		if err := s.verifyPush(ctx, mr); err != nil {
 			s.fl.Log("ERROR", fmt.Sprintf("push verification failed for %s: %s", mr.Branch, truncate(err.Error(), 200)))
 			s.lastError = truncate(fmt.Sprintf("push verification failed: %s", err.Error()), 200)
-			s.forge.Release(mr.ID)
+			// MarkFailed instead of Release — retry destroys the good result
+			// (CleanForgeResult runs on session start) and produces an empty diff
+			// if the push actually succeeded.
+			if err := s.forge.MarkFailed(mr.ID); err != nil {
+				s.forge.logger.Error("mark-failed after verify failure", "mr", mr.ID, "error", err)
+			}
 			s.writeHeartbeat("idle", queueDepth-1)
 			s.emitPatrolEvent(queueDepth)
 			return
@@ -409,7 +414,9 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 }
 
 // verifyPush checks that the merge actually landed on the remote target branch
-// by verifying the branch commit includes the MR's branch content.
+// by searching for the writ ID in recent commits on the target. This works
+// regardless of merge strategy (squash, real merge, rebase) because forge
+// always includes the writ ID in the commit message format: {title} ({writ-id}).
 func (s *patrolState) verifyPush(ctx context.Context, mr *store.MergeRequest) error {
 	worktree := s.forge.worktree
 	targetRef := fmt.Sprintf("origin/%s", s.forge.cfg.TargetBranch)
@@ -419,15 +426,14 @@ func (s *patrolState) verifyPush(ctx context.Context, mr *store.MergeRequest) er
 		return fmt.Errorf("git fetch failed during push verification: %w", err)
 	}
 
-	// Check that the branch is fully merged into the target.
-	out, err := s.cmd.Run(ctx, worktree, "git", "branch", "-r", "--merged", targetRef)
+	// Search for the writ ID in recent commits on the target branch.
+	out, err := s.cmd.Run(ctx, worktree, "git", "log", targetRef, "--oneline", "-5", "--grep", mr.WritID)
 	if err != nil {
-		return fmt.Errorf("git branch --merged check failed: %w", err)
+		return fmt.Errorf("git log grep check failed: %w", err)
 	}
 
-	branchRef := "origin/" + mr.Branch
-	if !strings.Contains(string(out), branchRef) {
-		return fmt.Errorf("branch %s not found in merged branches of %s", branchRef, targetRef)
+	if len(strings.TrimSpace(string(out))) == 0 {
+		return fmt.Errorf("writ %s not found in recent commits on %s", mr.WritID, targetRef)
 	}
 
 	return nil
