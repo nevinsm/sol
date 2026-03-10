@@ -1,11 +1,13 @@
 .PHONY: build test test-short test-integration test-e2e install clean
 
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 SOL_TEST_HOME  := /tmp/sol-test
 SOL_TEST_WORLD := myworld
 SOL_TEST_AGENT := Toast
 
 build:
-	go build -o bin/sol .
+	go build -ldflags "-X github.com/nevinsm/sol/cmd.version=$(VERSION)" -o bin/sol .
 
 test:
 	go test -race ./...
@@ -66,9 +68,8 @@ test-e2e: build
 	\
 	echo "=== E2E: PASSED ==="
 
-install: build
-	mkdir -p ~/.local/bin
-	cp bin/sol ~/.local/bin/sol
+install:
+	go build -ldflags "-X github.com/nevinsm/sol/cmd.version=$(VERSION)" -o ~/.local/bin/sol .
 
 clean:
 	rm -rf bin/
