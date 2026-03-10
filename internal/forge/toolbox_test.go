@@ -389,6 +389,21 @@ func TestMarkFailedReopensWrit(t *testing.T) {
 	if esc.sourceRef != "mr:mr-00000001" {
 		t.Errorf("escalation source_ref = %q, want 'mr:mr-00000001'", esc.sourceRef)
 	}
+
+	// Verify agent state reset to idle.
+	if len(sphereStore.agentStateUpdates) != 1 {
+		t.Fatalf("expected 1 agent state update, got %d", len(sphereStore.agentStateUpdates))
+	}
+	update := sphereStore.agentStateUpdates[0]
+	if update.id != "ember/Toast" {
+		t.Errorf("agent state update id = %q, want 'ember/Toast'", update.id)
+	}
+	if update.state != "idle" {
+		t.Errorf("agent state update state = %q, want 'idle'", update.state)
+	}
+	if update.activeWrit != "" {
+		t.Errorf("agent state update activeWrit = %q, want empty", update.activeWrit)
+	}
 }
 
 func TestMarkMergedClosesWrit(t *testing.T) {

@@ -236,9 +236,16 @@ type mockEscalation struct {
 	status      string
 }
 
+type mockAgentStateUpdate struct {
+	id         string
+	state      string
+	activeWrit string
+}
+
 type mockSphereStore struct {
 	mu                sync.Mutex
 	escalations       []mockEscalation
+	agentStateUpdates []mockAgentStateUpdate
 	caravanBlockedMap map[string]bool // writID -> blocked
 }
 
@@ -293,6 +300,17 @@ func (m *mockSphereStore) ResolveEscalation(id string) error {
 }
 
 func (m *mockSphereStore) UpdateEscalationLastNotified(id string) error {
+	return nil
+}
+
+func (m *mockSphereStore) UpdateAgentState(id, state, activeWrit string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.agentStateUpdates = append(m.agentStateUpdates, mockAgentStateUpdate{
+		id:         id,
+		state:      state,
+		activeWrit: activeWrit,
+	})
 	return nil
 }
 
