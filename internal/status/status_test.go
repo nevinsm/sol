@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
+	"github.com/nevinsm/sol/internal/ledger"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -949,32 +950,7 @@ func TestGatherChronicleSessionPreferred(t *testing.T) {
 	}
 }
 
-func TestGatherLedgerSession(t *testing.T) {
-	setupTestHome(t)
-
-	pidCleanup := writePrefectPID(t, os.Getpid())
-	defer pidCleanup()
-
-	sphere := &mockSphereStore{agents: nil}
-	world := &mockWorldStore{items: nil}
-	checker := &mockChecker{alive: map[string]bool{
-		"sol-ledger": true,
-	}}
-
-	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
-	if err != nil {
-		t.Fatalf("Gather() error: %v", err)
-	}
-
-	if !result.Ledger.Running {
-		t.Error("Ledger.Running = false, want true")
-	}
-	if result.Ledger.SessionName != "sol-ledger" {
-		t.Errorf("Ledger.SessionName = %q, want %q", result.Ledger.SessionName, "sol-ledger")
-	}
-}
-
-func TestGatherLedgerPIDFallback(t *testing.T) {
+func TestGatherLedgerPID(t *testing.T) {
 	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
@@ -986,7 +962,6 @@ func TestGatherLedgerPIDFallback(t *testing.T) {
 
 	sphere := &mockSphereStore{agents: nil}
 	world := &mockWorldStore{items: nil}
-	// No tmux session for ledger — PID fallback should activate.
 	checker := &mockChecker{alive: map[string]bool{}}
 
 	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
@@ -995,13 +970,56 @@ func TestGatherLedgerPIDFallback(t *testing.T) {
 	}
 
 	if !result.Ledger.Running {
-		t.Error("Ledger.Running = false, want true (PID fallback)")
+		t.Error("Ledger.Running = false, want true")
 	}
 	if result.Ledger.PID != os.Getpid() {
 		t.Errorf("Ledger.PID = %d, want %d", result.Ledger.PID, os.Getpid())
 	}
-	if result.Ledger.SessionName != "" {
-		t.Errorf("Ledger.SessionName = %q, want empty (PID-based detection)", result.Ledger.SessionName)
+}
+
+func TestGatherLedgerWithHeartbeat(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	// Write ledger PID file with our own PID (known-alive).
+	ledgerCleanup := writeLedgerPID(t, os.Getpid())
+	defer ledgerCleanup()
+
+	// Write a fresh heartbeat.
+	hb := ledger.Heartbeat{
+		Timestamp:       time.Now().UTC(),
+		Status:          "running",
+		RequestsTotal:   42,
+		TokensProcessed: 10000,
+		WorldsWritten:   2,
+	}
+	if err := ledger.WriteHeartbeat(hb); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(ledger.RemoveHeartbeat)
+
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if !result.Ledger.Running {
+		t.Error("Ledger.Running = false, want true")
+	}
+	if result.Ledger.PID != os.Getpid() {
+		t.Errorf("Ledger.PID = %d, want %d", result.Ledger.PID, os.Getpid())
+	}
+	if result.Ledger.HeartbeatAge == "" {
+		t.Error("Ledger.HeartbeatAge = empty, want non-empty")
+	}
+	if result.Ledger.Stale {
+		t.Error("Ledger.Stale = true, want false (fresh heartbeat)")
 	}
 }
 

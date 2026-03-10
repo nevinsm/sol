@@ -90,7 +90,7 @@ type sphereDaemonSpec struct {
 // Consul is supervised separately via heartbeat file staleness.
 var supervisedSphereDaemons = []sphereDaemonSpec{
 	{Name: "chronicle", Session: "sol-chronicle", Args: []string{"chronicle", "start"}},
-	{Name: "ledger", Session: "sol-ledger", Args: []string{"ledger", "start"}},
+	{Name: "ledger", Args: []string{"ledger", "run"}, Detached: true},
 	{Name: "token-broker", Args: []string{"token-broker", "run"}, Detached: true},
 }
 
@@ -557,7 +557,8 @@ func (s *Prefect) checkForgeHealth(world string) {
 
 // checkSphereDaemons checks whether supervised sphere daemons (chronicle, ledger,
 // token-broker) are alive and restarts any that are dead. Uses PID files and tmux
-// session presence for liveness detection.
+// session presence for liveness detection. Additionally checks ledger heartbeat
+// staleness (like forge).
 // Requires cfg.SolBinary to be set — skips silently if empty.
 // Must be called with s.mu held.
 func (s *Prefect) checkSphereDaemons() {
@@ -598,6 +599,60 @@ func (s *Prefect) checkSphereDaemons() {
 			s.eventLog.Emit(events.EventRespawn, "prefect", d.Name, "both", map[string]any{
 				"daemon": d.Name,
 				"type":   "sphere",
+			})
+		}
+	}
+
+	// Check ledger heartbeat staleness (ledger is a detached process).
+	s.checkLedgerHealth()
+}
+
+// checkLedgerHealth reads the ledger heartbeat and restarts if stale.
+// The ledger runs as a detached Go process (not a tmux session).
+func (s *Prefect) checkLedgerHealth() {
+	if s.cfg.SolBinary == "" {
+		return
+	}
+
+	// If the ledger PID is not alive, checkSphereDaemons already handled restart.
+	pid := ReadDaemonPID("ledger")
+	if pid <= 0 || !IsRunning(pid) {
+		return
+	}
+
+	hb, err := ledger.ReadHeartbeat()
+	if err != nil {
+		s.logger.Warn("failed to read ledger heartbeat", "error", err)
+		return
+	}
+
+	if hb == nil {
+		// No heartbeat yet (ledger just started) — give it time.
+		return
+	}
+
+	if !hb.IsStale(s.cfg.LedgerHeartbeatMax) {
+		return // heartbeat is fresh
+	}
+
+	// Heartbeat is stale — kill and restart the ledger.
+	s.logger.Warn("ledger heartbeat is stale, restarting",
+		"last_heartbeat", hb.Timestamp,
+		"max_age", s.cfg.LedgerHeartbeatMax)
+
+	// Kill the existing process.
+	_ = syscall.Kill(pid, syscall.SIGTERM)
+
+	// Restart via detached process.
+	if err := s.startDaemonProcess("ledger", s.cfg.SolBinary, "ledger", "run"); err != nil {
+		s.logger.Error("failed to restart ledger", "error", err)
+	} else {
+		s.logger.Info("ledger restarted via heartbeat staleness")
+		if s.eventLog != nil {
+			s.eventLog.Emit(events.EventRespawn, "prefect", "ledger", "both", map[string]any{
+				"daemon": "ledger",
+				"type":   "sphere",
+				"reason": "heartbeat_stale",
 			})
 		}
 	}

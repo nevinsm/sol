@@ -12,9 +12,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -44,21 +46,34 @@ type sessionKey struct {
 
 // Ledger receives OTLP HTTP log events and writes token usage to world databases.
 type Ledger struct {
-	config Config
-	logger *log.Logger
+	config   Config
+	logger   *log.Logger
+	eventLog *events.Logger // optional event logger
 
 	mu       sync.Mutex
-	sessions map[sessionKey]string // sessionKey -> agent_history ID
-	stores   map[string]*store.Store // world name -> store (cached)
+	sessions map[sessionKey]string    // sessionKey -> agent_history ID
+	stores   map[string]*store.Store  // world name -> store (cached)
+	worlds   map[string]bool          // worlds written to (for heartbeat)
+
+	// Atomic counters for heartbeat/ingest events.
+	requestCount   atomic.Int64
+	tokensIngested atomic.Int64
 }
 
 // New creates a new Ledger instance.
-func New(cfg Config) *Ledger {
+// The eventLog parameter is optional — if nil, no events are emitted.
+func New(cfg Config, eventLog ...*events.Logger) *Ledger {
+	var el *events.Logger
+	if len(eventLog) > 0 {
+		el = eventLog[0]
+	}
 	return &Ledger{
 		config:   cfg,
 		logger:   log.New(os.Stderr, "[ledger] ", log.LstdFlags),
+		eventLog: el,
 		sessions: make(map[sessionKey]string),
 		stores:   make(map[string]*store.Store),
+		worlds:   make(map[string]bool),
 	}
 }
 
@@ -115,10 +130,20 @@ func (l *Ledger) Run(ctx context.Context) error {
 	// Start listener.
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
+		l.emitError("listen_failed", err)
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
 
-	// Start heartbeat goroutine (writes every 30 seconds).
+	// Emit start event.
+	l.emitEvent(events.EventLedgerStart, map[string]any{
+		"port": l.config.Port,
+		"addr": addr,
+	})
+
+	// Write initial heartbeat.
+	l.writeHeartbeat("running")
+
+	// Start heartbeat goroutine (every 30s).
 	go l.heartbeatLoop(ctx)
 
 	go func() {
@@ -130,8 +155,18 @@ func (l *Ledger) Run(ctx context.Context) error {
 
 	l.logger.Printf("listening on %s", addr)
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+		l.emitError("server_error", err)
 		return fmt.Errorf("server error: %w", err)
 	}
+
+	// Emit stop event.
+	l.emitEvent(events.EventLedgerStop, map[string]any{
+		"requests_total":   l.requestCount.Load(),
+		"tokens_processed": l.tokensIngested.Load(),
+	})
+
+	// Clean up heartbeat.
+	RemoveHeartbeat()
 
 	// Close cached stores.
 	l.mu.Lock()
@@ -143,16 +178,8 @@ func (l *Ledger) Run(ctx context.Context) error {
 	return nil
 }
 
-// heartbeatLoop writes a heartbeat file every 30 seconds until ctx is cancelled.
+// heartbeatLoop writes heartbeat and emits periodic ingest summary every 30 seconds.
 func (l *Ledger) heartbeatLoop(ctx context.Context) {
-	// Write an initial heartbeat immediately.
-	if err := WriteHeartbeat(&Heartbeat{
-		Timestamp: time.Now().UTC(),
-		Status:    "running",
-	}); err != nil {
-		l.logger.Printf("failed to write heartbeat: %v", err)
-	}
-
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -161,14 +188,42 @@ func (l *Ledger) heartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := WriteHeartbeat(&Heartbeat{
-				Timestamp: time.Now().UTC(),
-				Status:    "running",
-			}); err != nil {
-				l.logger.Printf("failed to write heartbeat: %v", err)
-			}
+			l.writeHeartbeat("running")
 		}
 	}
+}
+
+// writeHeartbeat writes a heartbeat file with current counters.
+func (l *Ledger) writeHeartbeat(status string) {
+	l.mu.Lock()
+	worldCount := len(l.worlds)
+	l.mu.Unlock()
+
+	hb := Heartbeat{
+		Timestamp:       time.Now().UTC(),
+		Status:          status,
+		RequestsTotal:   l.requestCount.Load(),
+		TokensProcessed: l.tokensIngested.Load(),
+		WorldsWritten:   worldCount,
+	}
+	if err := WriteHeartbeat(hb); err != nil {
+		l.logger.Printf("failed to write heartbeat: %v", err)
+	}
+}
+
+// emitEvent emits an event if an event logger is configured.
+func (l *Ledger) emitEvent(eventType string, payload any) {
+	if l.eventLog != nil {
+		l.eventLog.Emit(eventType, "ledger", "ledger", "both", payload)
+	}
+}
+
+// emitError emits a ledger_error event.
+func (l *Ledger) emitError(reason string, err error) {
+	l.emitEvent(events.EventLedgerError, map[string]any{
+		"reason": reason,
+		"error":  err.Error(),
+	})
 }
 
 // handleLogs processes OTLP HTTP log export requests.
@@ -250,18 +305,31 @@ func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord
 	historyID, err := l.ensureHistory(world, agentName, writID)
 	if err != nil {
 		l.logger.Printf("failed to ensure history for %s/%s: %v", world, agentName, err)
+		l.emitError("ensure_history", err)
 		return
 	}
 
 	ws, err := l.worldStore(world)
 	if err != nil {
 		l.logger.Printf("failed to open world store %q: %v", world, err)
+		l.emitError("open_world_store", err)
 		return
 	}
 
 	if _, err := ws.WriteTokenUsage(historyID, model, input, output, cacheRead, cacheCreation); err != nil {
 		l.logger.Printf("failed to write token usage: %v", err)
+		l.emitError("write_token_usage", err)
+		return
 	}
+
+	// Track counters for heartbeat.
+	l.requestCount.Add(1)
+	l.tokensIngested.Add(input + output + cacheRead + cacheCreation)
+
+	// Track worlds written to.
+	l.mu.Lock()
+	l.worlds[world] = true
+	l.mu.Unlock()
 }
 
 // ensureHistory returns the agent_history ID for the session, creating one if needed.

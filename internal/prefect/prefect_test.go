@@ -1438,33 +1438,34 @@ func TestCheckSphereDaemonsRestartsDeadDaemons(t *testing.T) {
 	// Run heartbeat (first heartbeat triggers sphere daemon check).
 	sup.heartbeat()
 
-	// Chronicle and ledger should be restarted via runCommand (non-detached).
+	// Chronicle should be restarted via runCommand (non-detached).
 	runCalls := tracker.getRunCalls()
 	foundChronicle := false
-	foundLedger := false
 	for _, call := range runCalls {
 		if len(call) >= 3 && call[0] == "/usr/bin/sol" && call[1] == "chronicle" && call[2] == "start" {
 			foundChronicle = true
-		}
-		if len(call) >= 3 && call[0] == "/usr/bin/sol" && call[1] == "ledger" && call[2] == "start" {
-			foundLedger = true
 		}
 	}
 	if !foundChronicle {
 		t.Error("expected chronicle restart via runCommand, not found")
 	}
-	if !foundLedger {
-		t.Error("expected ledger restart via runCommand, not found")
-	}
 
-	// Token-broker should be restarted via startDaemonProcess (detached).
+	// Ledger and token-broker should be restarted via startDaemonProcess (detached).
 	detachedCalls := tracker.getDetachedCalls()
+	foundLedger := false
 	foundBroker := false
 	for _, call := range detachedCalls {
+		if len(call) >= 4 && call[0] == "ledger" && call[1] == "/usr/bin/sol" &&
+			call[2] == "ledger" && call[3] == "run" {
+			foundLedger = true
+		}
 		if len(call) >= 4 && call[0] == "token-broker" && call[1] == "/usr/bin/sol" &&
 			call[2] == "token-broker" && call[3] == "run" {
 			foundBroker = true
 		}
+	}
+	if !foundLedger {
+		t.Error("expected ledger restart via startDaemonProcess, not found")
 	}
 	if !foundBroker {
 		t.Error("expected token-broker restart via startDaemonProcess, not found")
@@ -1516,18 +1517,18 @@ func TestCheckSphereDaemonsSkipsAliveSession(t *testing.T) {
 	sup.runCommand = tracker.runCommand
 	sup.startDaemonProcess = tracker.startDaemonProcess
 
-	// No PID files, but tmux sessions exist for chronicle and ledger.
+	// Chronicle has a tmux session, ledger has a PID file (both alive).
 	mock.Start("sol-chronicle", "/tmp", "sol chronicle run", nil, "chronicle", "")
-	mock.Start("sol-ledger", "/tmp", "sol ledger run", nil, "ledger", "")
+	writePIDFile(t, "ledger", os.Getpid()) // our PID is known-alive
 	// Token-broker has no session (and no PID file) — should be restarted.
 
 	sup.heartbeat()
 
-	// Only token-broker should be restarted (chronicle/ledger have live sessions).
+	// Only token-broker should be restarted (chronicle has live session, ledger has live PID).
 	runCalls := tracker.getRunCalls()
 	for _, call := range runCalls {
 		if len(call) >= 2 && (call[1] == "chronicle" || call[1] == "ledger") {
-			t.Errorf("should not restart daemon with live session: %v", call)
+			t.Errorf("should not restart daemon with live session/PID: %v", call)
 		}
 	}
 
@@ -1536,6 +1537,9 @@ func TestCheckSphereDaemonsSkipsAliveSession(t *testing.T) {
 	for _, call := range detachedCalls {
 		if len(call) >= 1 && call[0] == "token-broker" {
 			foundBroker = true
+		}
+		if len(call) >= 1 && call[0] == "ledger" {
+			t.Errorf("should not restart ledger with live PID: %v", call)
 		}
 	}
 	if !foundBroker {
@@ -1564,13 +1568,14 @@ func TestCheckSphereDaemonsRestartFailureNonFatal(t *testing.T) {
 	sup.heartbeat()
 
 	// Verify restart was attempted for all three daemons.
+	// Chronicle uses runCommand; ledger and token-broker use startDaemonProcess (detached).
 	runCalls := tracker.getRunCalls()
 	detachedCalls := tracker.getDetachedCalls()
-	if len(runCalls) < 2 {
-		t.Errorf("expected at least 2 runCommand calls (chronicle + ledger), got %d", len(runCalls))
+	if len(runCalls) < 1 {
+		t.Errorf("expected at least 1 runCommand call (chronicle), got %d", len(runCalls))
 	}
-	if len(detachedCalls) < 1 {
-		t.Errorf("expected at least 1 startDaemonProcess call (token-broker), got %d", len(detachedCalls))
+	if len(detachedCalls) < 2 {
+		t.Errorf("expected at least 2 startDaemonProcess calls (ledger + token-broker), got %d", len(detachedCalls))
 	}
 }
 
@@ -1696,16 +1701,17 @@ func TestCheckSphereDaemonsDeadPIDTriggersRestart(t *testing.T) {
 	sup.heartbeat()
 
 	// All three daemons should be restarted.
+	// Chronicle uses runCommand; ledger and token-broker use startDaemonProcess (detached).
 	runCalls := tracker.getRunCalls()
 	detachedCalls := tracker.getDetachedCalls()
 
-	// chronicle + ledger via runCommand
-	if len(runCalls) < 2 {
-		t.Errorf("expected at least 2 runCommand calls (chronicle + ledger), got %d", len(runCalls))
+	// chronicle via runCommand
+	if len(runCalls) < 1 {
+		t.Errorf("expected at least 1 runCommand call (chronicle), got %d", len(runCalls))
 	}
-	// token-broker via startDaemonProcess
-	if len(detachedCalls) < 1 {
-		t.Errorf("expected at least 1 startDaemonProcess call (token-broker), got %d", len(detachedCalls))
+	// ledger + token-broker via startDaemonProcess
+	if len(detachedCalls) < 2 {
+		t.Errorf("expected at least 2 startDaemonProcess calls (ledger + token-broker), got %d", len(detachedCalls))
 	}
 }
 

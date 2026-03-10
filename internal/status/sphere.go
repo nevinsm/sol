@@ -47,8 +47,8 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 		result.Chronicle = ChronicleInfo{Running: true, PID: pid}
 	}
 
-	// 3a. Check ledger: heartbeat primary, session/PID fallback.
-	result.Ledger = GatherLedgerInfo(checker)
+	// 3a. Check ledger: PID + heartbeat.
+	result.Ledger = GatherLedgerInfo()
 
 	// 3b. Check senate.
 	const senateSessionName = "sol-senate"
