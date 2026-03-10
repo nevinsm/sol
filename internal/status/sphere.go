@@ -7,6 +7,7 @@ import (
 	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/consul"
+	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -218,9 +219,9 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 		return summary
 	}
 
-	// Check forge and sentinel sessions.
-	forgeSess := config.SessionName(w.Name, "forge")
-	summary.Forge = checker.Exists(forgeSess)
+	// Check forge via PID file.
+	forgePID := forge.ReadPID(w.Name)
+	summary.Forge = forgePID > 0 && forge.IsRunning(forgePID)
 
 	sentinelSess := config.SessionName(w.Name, "sentinel")
 	summary.Sentinel = checker.Exists(sentinelSess)

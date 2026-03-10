@@ -99,7 +99,8 @@ type PrefectInfo struct {
 // ForgeInfo holds forge process state.
 type ForgeInfo struct {
 	Running      bool   `json:"running"`
-	SessionName  string `json:"session_name,omitempty"`
+	PID          int    `json:"pid,omitempty"`
+	Merging      bool   `json:"merging,omitempty"`
 	PatrolCount  int    `json:"patrol_count,omitempty"`
 	QueueDepth   int    `json:"queue_depth,omitempty"`
 	MergesTotal  int    `json:"merges_total,omitempty"`
@@ -334,10 +335,11 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		result.Prefect = PrefectInfo{Running: true, PID: pid}
 	}
 
-	// 2. Check forge process (Go process in tmux session).
-	forgeSessName := config.SessionName(world, "forge")
-	if checker.Exists(forgeSessName) {
-		forgeInfo := ForgeInfo{Running: true, SessionName: forgeSessName}
+	// 2. Check forge process via PID file (primary) and heartbeat (secondary).
+	forgePID := forge.ReadPID(world)
+	forgeRunning := forgePID > 0 && forge.IsRunning(forgePID)
+	if forgeRunning {
+		forgeInfo := ForgeInfo{Running: true, PID: forgePID}
 		// Read heartbeat for metrics.
 		if hb, err := forge.ReadHeartbeat(world); err == nil && hb != nil {
 			forgeInfo.PatrolCount = hb.PatrolCount
@@ -370,6 +372,11 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			}
 		}
 		forgeInfo.Paused = forge.IsForgePaused(world)
+		// Check if a merge session is active.
+		mergeSessName := config.SessionName(world, "forge-merge")
+		if checker.Exists(mergeSessName) {
+			forgeInfo.Merging = true
+		}
 		result.Forge = forgeInfo
 	}
 

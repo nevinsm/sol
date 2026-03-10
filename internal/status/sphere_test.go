@@ -120,12 +120,14 @@ func TestGatherSphereProcessChecks(t *testing.T) {
 	checker := &mockChecker{
 		alive: map[string]bool{
 			"sol-chronicle":      true,
-			"sol-alpha-forge":    true,
-			"sol-beta-forge":     false,
 			"sol-alpha-sentinel": true,
 			"sol-beta-sentinel":  false,
 		},
 	}
+
+	// Write forge PID file for alpha (running), not for beta.
+	forgePIDCleanup := writeForgePID(t, "alpha", os.Getpid())
+	defer forgePIDCleanup()
 
 	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
 
@@ -134,7 +136,7 @@ func TestGatherSphereProcessChecks(t *testing.T) {
 		t.Error("Chronicle.Running = false, want true")
 	}
 
-	// Alpha: forge running, sentinel running.
+	// Alpha: forge running (PID file), sentinel running (session).
 	if !result.Worlds[0].Forge {
 		t.Error("Worlds[0].Forge = false, want true")
 	}
@@ -142,7 +144,7 @@ func TestGatherSphereProcessChecks(t *testing.T) {
 		t.Error("Worlds[0].Sentinel = false, want true")
 	}
 
-	// Beta: forge not running, sentinel not running.
+	// Beta: forge not running (no PID file), sentinel not running.
 	if result.Worlds[1].Forge {
 		t.Error("Worlds[1].Forge = true, want false")
 	}

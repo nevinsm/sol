@@ -68,7 +68,7 @@ func TestCLIForgeAttachHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sol forge attach --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Attach to the forge") {
+	if !strings.Contains(out, "forge merge session") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }

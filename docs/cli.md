@@ -1013,7 +1013,7 @@ Manage the merge pipeline forge
 
 | Command | Description |
 |---------|-------------|
-| `sol forge attach` | Attach to the forge tmux session |
+| `sol forge attach` | Attach to the forge merge session (if active) |
 | `sol forge await` | Block until a nudge arrives or timeout expires |
 | `sol forge blocked` | List blocked merge requests |
 | `sol forge check-unblocked` | Check for resolved blockers and unblock MRs |
@@ -1028,12 +1028,18 @@ Manage the merge pipeline forge
 | `sol forge release` | Release a claimed merge request back to ready |
 | `sol forge restart` | Restart the forge (stop then start) |
 | `sol forge resume` | Resume the forge — start claiming MRs again |
-| `sol forge start` | Start the forge as a Go patrol process |
+| `sol forge start` | Start the forge as a background process |
 | `sol forge status` | Show forge health summary |
 | `sol forge stop` | Stop the forge |
 | `sol forge sync` | Sync forge worktree: fetch origin, reset to target branch |
 
 #### `sol forge attach`
+
+Attach to the ephemeral forge merge session (sol-{world}-forge-merge).
+
+The forge process itself runs as a direct background process (not in tmux).
+Use 'sol forge log --follow' to watch forge output. This command attaches
+to the merge session, which only exists while a merge is in progress.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

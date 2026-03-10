@@ -215,8 +215,12 @@ func formatSenateDetail(s status.SenateInfo) string {
 }
 
 func formatForgeDetail(f status.ForgeInfo) string {
-	if f.Running {
-		return f.SessionName
+	if f.Running && f.PID > 0 {
+		detail := fmt.Sprintf("pid %d", f.PID)
+		if f.Merging {
+			detail += " [merging]"
+		}
+		return detail
 	}
 	return ""
 }
