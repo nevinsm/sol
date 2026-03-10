@@ -12,6 +12,7 @@ import (
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/governor"
+	"github.com/nevinsm/sol/internal/ledger"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/store"
@@ -107,9 +108,11 @@ type ChronicleInfo struct {
 
 // LedgerInfo holds ledger process state (sphere-level OTLP receiver).
 type LedgerInfo struct {
-	Running     bool   `json:"running"`
-	SessionName string `json:"session_name,omitempty"`
-	PID         int    `json:"pid,omitempty"`
+	Running      bool   `json:"running"`
+	SessionName  string `json:"session_name,omitempty"`
+	PID          int    `json:"pid,omitempty"`
+	HeartbeatAge string `json:"heartbeat_age,omitempty"`
+	Stale        bool   `json:"stale,omitempty"`
 }
 
 // SentinelInfo holds sentinel process state (per-world).
@@ -338,13 +341,8 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		result.Chronicle = ChronicleInfo{Running: true, PID: pid}
 	}
 
-	// 2b1. Check ledger (sphere-level): tmux session first, PID-file fallback.
-	const ledgerSessionName = "sol-ledger"
-	if checker.Exists(ledgerSessionName) {
-		result.Ledger = LedgerInfo{Running: true, SessionName: ledgerSessionName}
-	} else if pid := readLedgerPID(); pid > 0 && prefect.IsRunning(pid) {
-		result.Ledger = LedgerInfo{Running: true, PID: pid}
-	}
+	// 2b1. Check ledger (sphere-level): heartbeat primary, session/PID fallback.
+	result.Ledger = GatherLedgerInfo(checker)
 
 	// 2b2. Check broker (sphere-level).
 	result.Broker = GatherBrokerInfo()
@@ -647,15 +645,37 @@ func readChroniclePID() int {
 	return pid
 }
 
-// readLedgerPID reads the ledger PID from its PID file. Returns 0 if not found.
-func readLedgerPID() int {
-	data, err := os.ReadFile(filepath.Join(config.RuntimeDir(), "ledger.pid"))
-	if err != nil {
-		return 0
+// GatherLedgerInfo reads ledger status using heartbeat as primary signal,
+// with tmux session and PID file as fallbacks.
+func GatherLedgerInfo(checker SessionChecker) LedgerInfo {
+	info := LedgerInfo{}
+
+	const ledgerSessionName = "sol-ledger"
+
+	// Primary: check heartbeat file.
+	if hb, err := ledger.ReadHeartbeat(); err == nil && hb != nil {
+		info.Running = true
+		info.HeartbeatAge = FormatDuration(time.Since(hb.Timestamp))
+		info.Stale = hb.IsStale(2 * time.Minute)
+		if checker.Exists(ledgerSessionName) {
+			info.SessionName = ledgerSessionName
+		}
+		return info
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return 0
+
+	// Fallback: tmux session exists.
+	if checker.Exists(ledgerSessionName) {
+		info.Running = true
+		info.SessionName = ledgerSessionName
+		return info
 	}
-	return pid
+
+	// Fallback: PID file.
+	if pid := ledger.ReadPID(); pid > 0 && prefect.IsRunning(pid) {
+		info.Running = true
+		info.PID = pid
+		return info
+	}
+
+	return info
 }

@@ -9,10 +9,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -60,8 +62,47 @@ func New(cfg Config) *Ledger {
 	}
 }
 
+// PIDPath returns the path to the ledger PID file.
+func PIDPath() string {
+	return filepath.Join(config.RuntimeDir(), "ledger.pid")
+}
+
+// WritePID writes the current process PID to the ledger PID file.
+func WritePID() error {
+	dir := config.RuntimeDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create runtime directory: %w", err)
+	}
+	return os.WriteFile(PIDPath(), []byte(strconv.Itoa(os.Getpid())), 0o644)
+}
+
+// RemovePID removes the ledger PID file on clean shutdown.
+func RemovePID() {
+	_ = os.Remove(PIDPath())
+}
+
+// ReadPID reads the ledger PID from its PID file. Returns 0 if not found.
+func ReadPID() int {
+	data, err := os.ReadFile(PIDPath())
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(string(data))
+	if err != nil {
+		return 0
+	}
+	return pid
+}
+
 // Run starts the OTLP HTTP server and blocks until the context is cancelled.
 func (l *Ledger) Run(ctx context.Context) error {
+	// Write PID file.
+	if err := WritePID(); err != nil {
+		return fmt.Errorf("failed to write PID file: %w", err)
+	}
+	defer RemovePID()
+	defer RemoveHeartbeat()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/logs", l.handleLogs)
 
@@ -76,6 +117,9 @@ func (l *Ledger) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
+
+	// Start heartbeat goroutine (writes every 30 seconds).
+	go l.heartbeatLoop(ctx)
 
 	go func() {
 		<-ctx.Done()
@@ -97,6 +141,34 @@ func (l *Ledger) Run(ctx context.Context) error {
 	l.mu.Unlock()
 
 	return nil
+}
+
+// heartbeatLoop writes a heartbeat file every 30 seconds until ctx is cancelled.
+func (l *Ledger) heartbeatLoop(ctx context.Context) {
+	// Write an initial heartbeat immediately.
+	if err := WriteHeartbeat(&Heartbeat{
+		Timestamp: time.Now().UTC(),
+		Status:    "running",
+	}); err != nil {
+		l.logger.Printf("failed to write heartbeat: %v", err)
+	}
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := WriteHeartbeat(&Heartbeat{
+				Timestamp: time.Now().UTC(),
+				Status:    "running",
+			}); err != nil {
+				l.logger.Printf("failed to write heartbeat: %v", err)
+			}
+		}
+	}
 }
 
 // handleLogs processes OTLP HTTP log export requests.

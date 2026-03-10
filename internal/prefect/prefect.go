@@ -16,6 +16,7 @@ import (
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/forge"
+	"github.com/nevinsm/sol/internal/ledger"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -51,7 +52,8 @@ type Config struct {
 	ConsulCommand      string        // command to start consul (default: "sol consul run")
 	ConsulSourceRepo   string        // source repo path for consul config
 
-	ForgeHeartbeatMax time.Duration // max forge heartbeat age before restart (default: 5 minutes)
+	ForgeHeartbeatMax  time.Duration // max forge heartbeat age before restart (default: 5 minutes)
+	LedgerHeartbeatMax time.Duration // max ledger heartbeat age before restart (default: 5 minutes)
 
 	SolBinary string // path to sol binary for starting world services. If empty, infrastructure check is skipped.
 }
@@ -67,7 +69,8 @@ func DefaultConfig() Config {
 		ConsulHeartbeatMax: 15 * time.Minute,
 		ConsulCommand:      "sol consul run",
 
-		ForgeHeartbeatMax: 5 * time.Minute,
+		ForgeHeartbeatMax:  5 * time.Minute,
+		LedgerHeartbeatMax: 5 * time.Minute,
 	}
 }
 
@@ -272,6 +275,7 @@ func (s *Prefect) heartbeat() {
 	// Check sphere daemons (chronicle/ledger/token-broker) on first heartbeat and every 3rd cycle.
 	if s.heartbeatCount == 1 || s.heartbeatCount%3 == 0 {
 		s.checkSphereDaemons()
+		s.checkLedgerHealth()
 	}
 
 	s.logger.Info("heartbeat", "working_agents", len(workingAgents), "dead_sessions", deadCount)
@@ -577,6 +581,70 @@ func (s *Prefect) checkSphereDaemons() {
 			s.eventLog.Emit(events.EventRespawn, "prefect", d.Name, "both", map[string]any{
 				"daemon": d.Name,
 				"type":   "sphere",
+			})
+		}
+	}
+}
+
+// checkLedgerHealth reads the ledger heartbeat and restarts if stale.
+// The ledger runs as a Go process inside a tmux session.
+// Must be called with s.mu held.
+func (s *Prefect) checkLedgerHealth() {
+	if s.cfg.SolBinary == "" {
+		return
+	}
+
+	const ledgerSession = "sol-ledger"
+
+	// If no session and no live PID, checkSphereDaemons already handled restart.
+	pid := ReadDaemonPID("ledger")
+	sessionAlive := s.sessions.Exists(ledgerSession)
+	if !sessionAlive && (pid <= 0 || !IsRunning(pid)) {
+		return // checkSphereDaemons handles this case
+	}
+
+	// Session or process exists — check heartbeat staleness.
+	hb, err := ledger.ReadHeartbeat()
+	if err != nil {
+		s.logger.Warn("failed to read ledger heartbeat", "error", err)
+		return
+	}
+
+	if hb == nil {
+		// No heartbeat yet (ledger just started) — give it time.
+		return
+	}
+
+	if !hb.IsStale(s.cfg.LedgerHeartbeatMax) {
+		return // heartbeat is fresh
+	}
+
+	// Heartbeat is stale — restart the ledger.
+	s.logger.Warn("ledger heartbeat is stale, restarting",
+		"last_heartbeat", hb.Timestamp,
+		"max_age", s.cfg.LedgerHeartbeatMax)
+
+	// Kill existing session if present.
+	if sessionAlive {
+		if err := s.sessions.Stop(ledgerSession, true); err != nil {
+			s.logger.Error("failed to stop stale ledger session", "error", err)
+		}
+	}
+
+	// Kill orphaned process if alive but no session.
+	if pid > 0 && IsRunning(pid) {
+		_ = syscall.Kill(pid, syscall.SIGTERM)
+	}
+
+	// Restart via sol ledger start.
+	if err := s.runCommand(s.cfg.SolBinary, "ledger", "start"); err != nil {
+		s.logger.Error("failed to restart ledger", "error", err)
+	} else {
+		s.logger.Info("ledger restarted via heartbeat staleness")
+		if s.eventLog != nil {
+			s.eventLog.Emit(events.EventRespawn, "prefect", "ledger", "both", map[string]any{
+				"daemon": "ledger",
+				"reason": "heartbeat_stale",
 			})
 		}
 	}

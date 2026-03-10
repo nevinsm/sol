@@ -46,13 +46,8 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 		result.Chronicle = ChronicleInfo{Running: true, PID: pid}
 	}
 
-	// 3a. Check ledger: tmux session first, PID-file fallback.
-	const ledgerSessionName = "sol-ledger"
-	if checker.Exists(ledgerSessionName) {
-		result.Ledger = LedgerInfo{Running: true, SessionName: ledgerSessionName}
-	} else if pid := readLedgerPID(); pid > 0 && prefect.IsRunning(pid) {
-		result.Ledger = LedgerInfo{Running: true, PID: pid}
-	}
+	// 3a. Check ledger: heartbeat primary, session/PID fallback.
+	result.Ledger = GatherLedgerInfo(checker)
 
 	// 3b. Check senate.
 	const senateSessionName = "sol-senate"
