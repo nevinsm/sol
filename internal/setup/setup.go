@@ -92,6 +92,8 @@ const excludeBlock = `# BEGIN sol-managed paths
 CLAUDE.local.md
 .brief/
 .workflow/
+.forge-result.json
+.forge-injection.md
 # END sol-managed paths
 `
 

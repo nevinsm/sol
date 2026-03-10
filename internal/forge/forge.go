@@ -77,6 +77,7 @@ type Forge struct {
 	worldStore  WorldStore
 	sphereStore SphereStore
 	sessions    ForgeSessionManager // session manager for merge sessions (nil = legacy mode)
+	launcher    SessionLauncher     // overridable for testing; nil = startup.Launch
 	logger      *slog.Logger
 	cfg         Config
 }

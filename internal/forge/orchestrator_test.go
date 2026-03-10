@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -78,6 +79,23 @@ func (m *mockSessionManager) Capture(name string, lines int) (string, error) {
 	return "", fmt.Errorf("session %q not found", name)
 }
 
+// --- Mock launcher ---
+
+// mockLauncher creates a SessionLauncher that delegates to the mock session manager.
+// This skips all startup infrastructure (world config, config dir, sphere store).
+func mockLauncher(sessMgr *mockSessionManager) SessionLauncher {
+	return func(cfg startup.RoleConfig, world, agent string, opts startup.LaunchOpts) (string, error) {
+		sessName := "sol-" + world + "-" + agent
+		if sessMgr.startErr != nil {
+			return "", sessMgr.startErr
+		}
+		sessMgr.mu.Lock()
+		sessMgr.sessions[sessName] = true
+		sessMgr.mu.Unlock()
+		return sessName, nil
+	}
+}
+
 // --- Test helpers ---
 
 func setupOrchestratorTest(t *testing.T) (*patrolState, *mockWorldStore, *mockSessionManager) {
@@ -106,6 +124,7 @@ func setupOrchestratorTest(t *testing.T) (*patrolState, *mockWorldStore, *mockSe
 		worldStore:  worldStore,
 		sphereStore: sphereStore,
 		sessions:    sessMgr,
+		launcher:    mockLauncher(sessMgr),
 		logger:      testLogger(),
 		cfg:         DefaultConfig(),
 	}
@@ -281,35 +300,16 @@ func TestRunMergeSessionNoSessionManager(t *testing.T) {
 	}
 }
 
-func TestRunMergeSessionStartFailure(t *testing.T) {
-	state, _, sessMgr := setupOrchestratorTest(t)
+func TestRunMergeSessionLaunchFailure(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
 	defer state.fl.Close()
 
-	sessMgr.startErr = fmt.Errorf("tmux not available")
-
-	mr := &store.MergeRequest{
-		ID:     "mr-001",
-		WritID: "sol-aaa11111",
-		Branch: "outpost/Toast/sol-aaa11111",
+	// Override launcher to return an error.
+	state.forge.launcher = func(cfg startup.RoleConfig, world, agent string, opts startup.LaunchOpts) (string, error) {
+		return "", fmt.Errorf("tmux not available")
 	}
 
-	_, err := state.runMergeSession(context.Background(), mr)
-	if err == nil {
-		t.Fatal("expected error on session start failure")
-	}
-	if !strings.Contains(err.Error(), "start merge session") {
-		t.Errorf("error = %q, should contain 'start merge session'", err.Error())
-	}
-}
-
-func TestRunMergeSessionInjectFailure(t *testing.T) {
-	state, _, sessMgr := setupOrchestratorTest(t)
-	defer state.fl.Close()
-
-	sessMgr.injectErr = fmt.Errorf("injection failed")
-
-	// Add writ so buildInjection works.
-	state.forge.worldStore.(*mockWorldStore).items["sol-aaa11111"] = &store.Writ{
+	worldStore.items["sol-aaa11111"] = &store.Writ{
 		ID: "sol-aaa11111", Title: "Test writ",
 	}
 
@@ -321,16 +321,56 @@ func TestRunMergeSessionInjectFailure(t *testing.T) {
 
 	_, err := state.runMergeSession(context.Background(), mr)
 	if err == nil {
-		t.Fatal("expected error on inject failure")
+		t.Fatal("expected error on launch failure")
 	}
-	if !strings.Contains(err.Error(), "inject merge context") {
-		t.Errorf("error = %q, should contain 'inject merge context'", err.Error())
+	if !strings.Contains(err.Error(), "failed to launch merge session") {
+		t.Errorf("error = %q, should contain 'failed to launch merge session'", err.Error())
+	}
+}
+
+func TestRunMergeSessionWritInjection(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID:          "sol-aaa11111",
+		Title:       "feat: add auth",
+		Description: "Add authentication support.",
 	}
 
-	// Session should have been cleaned up.
-	sessionName := mergeSessionName("ember")
-	if sessMgr.Exists(sessionName) {
-		t.Error("session should have been stopped after inject failure")
+	mr := &store.MergeRequest{
+		ID:       "mr-001",
+		WritID:   "sol-aaa11111",
+		Branch:   "outpost/Toast/sol-aaa11111",
+		Attempts: 1,
+	}
+
+	// Use a short context to cancel monitoring quickly.
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	state.runMergeSession(ctx, mr)
+
+	// Verify injection file was written with full context.
+	injectionPath := filepath.Join(state.forge.worktree, injectionFileName)
+	data, err := os.ReadFile(injectionPath)
+	if err != nil {
+		t.Fatalf("injection file not written: %v", err)
+	}
+	injection := string(data)
+
+	// Should contain full injection content (not the stub).
+	if !strings.Contains(injection, "### Writ Context") {
+		t.Error("injection should contain Writ Context section")
+	}
+	if !strings.Contains(injection, "feat: add auth") {
+		t.Error("injection should contain writ title")
+	}
+	if !strings.Contains(injection, "Add authentication support.") {
+		t.Error("injection should contain writ description")
+	}
+	if !strings.Contains(injection, "(sol-aaa11111)") {
+		t.Error("injection should contain writ ID in commit instruction")
 	}
 }
 
@@ -505,9 +545,11 @@ func TestCleanupSession(t *testing.T) {
 	sessionName := mergeSessionName("ember")
 	sessMgr.sessions[sessionName] = true
 
-	// Create result file.
+	// Create result file and injection file.
 	resultPath := filepath.Join(state.forge.worktree, resultFileName)
 	os.WriteFile(resultPath, []byte(`{"result":"merged"}`), 0o644)
+	injectionPath := filepath.Join(state.forge.worktree, injectionFileName)
+	os.WriteFile(injectionPath, []byte("injection context"), 0o644)
 
 	state.cleanupSession()
 
@@ -519,6 +561,11 @@ func TestCleanupSession(t *testing.T) {
 	// Result file should be removed.
 	if _, err := os.Stat(resultPath); !os.IsNotExist(err) {
 		t.Error("result file should have been removed")
+	}
+
+	// Injection file should be removed.
+	if _, err := os.Stat(injectionPath); !os.IsNotExist(err) {
+		t.Error("injection file should have been removed")
 	}
 }
 
@@ -534,38 +581,6 @@ func TestCleanupSessionNoResultFile(t *testing.T) {
 
 	if sessMgr.Exists(sessionName) {
 		t.Error("session should have been stopped")
-	}
-}
-
-// --- buildInjection test ---
-
-func TestBuildInjectionStub(t *testing.T) {
-	state, worldStore, _ := setupOrchestratorTest(t)
-	defer state.fl.Close()
-
-	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Fix auth flow",
-	}
-
-	mr := &store.MergeRequest{
-		ID:     "mr-001",
-		WritID: "sol-aaa11111",
-		Branch: "outpost/Toast/sol-aaa11111",
-	}
-
-	injection := state.buildInjection(mr)
-
-	if !strings.Contains(injection, "outpost/Toast/sol-aaa11111") {
-		t.Error("injection should contain branch name")
-	}
-	if !strings.Contains(injection, "sol-aaa11111") {
-		t.Error("injection should contain writ ID")
-	}
-	if !strings.Contains(injection, resultFileName) {
-		t.Error("injection should reference result file")
-	}
-	if !strings.Contains(injection, "Fix auth flow") {
-		t.Error("injection should contain writ title")
 	}
 }
 
@@ -674,22 +689,10 @@ func TestPatrolWithSessionManager(t *testing.T) {
 
 	sessionName := mergeSessionName("ember")
 
-	// Simulate the session completing immediately by having it not exist
-	// when monitorSession checks. The result file is pre-written.
-	// After session starts, we mark it as not existing to simulate exit.
+	// Pre-populate captures for the session.
 	sessMgr.mu.Lock()
 	sessMgr.captures[sessionName] = "Done! All work complete."
 	sessMgr.mu.Unlock()
-
-	// Write result file before patrol runs.
-	result := ForgeResult{
-		Result:       "merged",
-		Summary:      "Successfully merged branch",
-		FilesChanged: []string{"auth.go"},
-	}
-	data, _ := json.Marshal(result)
-	resultPath := filepath.Join(state.forge.worktree, resultFileName)
-	os.WriteFile(resultPath, data, 0o644)
 
 	// Mock git commands for push verification.
 	cmdRunner := state.cmd.(*mockCmdRunner)
@@ -697,27 +700,24 @@ func TestPatrolWithSessionManager(t *testing.T) {
 	cmdRunner.SetResult("git branch -r --merged origin/main",
 		[]byte("  origin/outpost/Toast/sol-aaa11111\n  origin/main"), nil)
 
-	// We need the monitor to exit quickly. Use a context with timeout.
-	// But monitorSession uses a 3-minute ticker, so we need to simulate
-	// the session not existing when the first tick fires.
-	// Instead, let's test the integration by calling executeMergeSession directly
-	// but have the session disappear immediately after inject.
-
-	// Trick: after session starts and inject succeeds, mark session as not alive.
-	// This means when monitorSession first checks Exists(), it returns false.
-	origInject := sessMgr.injectErr
-	_ = origInject
-
-	// Use a goroutine to stop the session shortly after inject.
+	// Use a goroutine to simulate the session completing: write result file,
+	// then exit (delete session). The result file must be written after
+	// runMergeSession calls CleanForgeResult.
 	go func() {
-		// Wait for session to be created.
 		for i := 0; i < 100; i++ {
 			sessMgr.mu.Lock()
 			exists := sessMgr.sessions[sessionName]
-			hasInjections := len(sessMgr.injections) > 0
 			sessMgr.mu.Unlock()
-			if exists && hasInjections {
+			if exists {
+				// Simulate session writing result then exiting.
 				time.Sleep(50 * time.Millisecond)
+				result := ForgeResult{
+					Result:       "merged",
+					Summary:      "Successfully merged branch",
+					FilesChanged: []string{"auth.go"},
+				}
+				data, _ := json.Marshal(result)
+				os.WriteFile(filepath.Join(state.forge.worktree, resultFileName), data, 0o644)
 				sessMgr.mu.Lock()
 				delete(sessMgr.sessions, sessionName)
 				sessMgr.mu.Unlock()

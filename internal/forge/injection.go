@@ -2,10 +2,15 @@ package forge
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// injectionFileName is the conventional name for the forge injection context file.
+const injectionFileName = ".forge-injection.md"
 
 // InjectionConfig holds configuration for building the forge merge injection.
 type InjectionConfig struct {
@@ -71,7 +76,7 @@ func BuildInjection(mr *store.MergeRequest, writ *store.Writ, cfg InjectionConfi
 	fmt.Fprintf(&b, "1. `git fetch origin && git reset --hard origin/%s`\n", targetBranch)
 	fmt.Fprintf(&b, "2. `git merge --squash origin/%s`\n", mr.Branch)
 	b.WriteString("3. If conflicts, resolve them\n")
-	fmt.Fprintf(&b, "4. Commit: `git commit -m \"%s\"`\n", escapeCommitMessage(writ.Title))
+	fmt.Fprintf(&b, "4. Commit: `git commit --no-edit -m \"%s (%s)\"`\n", escapeCommitMessage(writ.Title), writ.ID)
 
 	if len(cfg.GateCommands) > 0 {
 		gateStr := strings.Join(cfg.GateCommands, " && ")
@@ -91,4 +96,28 @@ func BuildInjection(mr *store.MergeRequest, writ *store.Writ, cfg InjectionConfi
 // in the instruction template.
 func escapeCommitMessage(s string) string {
 	return strings.ReplaceAll(s, `"`, `\"`)
+}
+
+// WriteInjectionFile writes the injection context to .forge-injection.md in the
+// given worktree directory. This file serves two purposes:
+//   - PrimeBuilder reads it to provide the initial prompt for startup.Launch
+//   - PreCompact hook cats it to re-inject context after compaction
+//
+// Called before startup.Launch for each merge session. Idempotent.
+func WriteInjectionFile(worktreeDir, content string) error {
+	path := filepath.Join(worktreeDir, injectionFileName)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("failed to write injection file %s: %w", path, err)
+	}
+	return nil
+}
+
+// CleanInjectionFile removes the .forge-injection.md file from the worktree.
+// Called during session cleanup. Ignores not-found errors (idempotent).
+func CleanInjectionFile(worktreeDir string) error {
+	path := filepath.Join(worktreeDir, injectionFileName)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to clean injection file: %w", err)
+	}
+	return nil
 }
