@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -13,6 +17,7 @@ import (
 	"github.com/nevinsm/sol/internal/consul"
 	"github.com/nevinsm/sol/internal/escalation"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -24,6 +29,43 @@ var (
 	consulWebhook      string
 	consulStatusJSON   bool
 )
+
+// consulPIDPath returns the path to the consul PID file.
+func consulPIDPath() string {
+	return filepath.Join(config.RuntimeDir(), "consul.pid")
+}
+
+// consulLogPath returns the path to the consul log file.
+func consulLogPath() string {
+	return filepath.Join(config.RuntimeDir(), "consul.log")
+}
+
+// readConsulPID reads the consul PID from its PID file. Returns 0 if not found.
+func readConsulPID() int {
+	data, err := os.ReadFile(consulPIDPath())
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0
+	}
+	return pid
+}
+
+// writeConsulPID writes the consul PID to the PID file.
+func writeConsulPID(pid int) error {
+	dir := config.RuntimeDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create runtime directory: %w", err)
+	}
+	return os.WriteFile(consulPIDPath(), []byte(strconv.Itoa(pid)), 0o644)
+}
+
+// clearConsulPID removes the consul PID file.
+func clearConsulPID() {
+	_ = os.Remove(consulPIDPath())
+}
 
 var consulCmd = &cobra.Command{
 	Use:     "consul",
@@ -72,6 +114,16 @@ var consulRunCmd = &cobra.Command{
 			EscalationConfig:    globalCfg.Escalation,
 		}
 
+		// Write PID file (guard against duplicate).
+		existing := readConsulPID()
+		if existing > 0 && prefect.IsRunning(existing) {
+			return fmt.Errorf("consul already running (pid %d)", existing)
+		}
+		if err := writeConsulPID(os.Getpid()); err != nil {
+			return fmt.Errorf("failed to write PID file: %w", err)
+		}
+		defer clearConsulPID()
+
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
@@ -91,8 +143,8 @@ var consulRunCmd = &cobra.Command{
 		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 		go func() { <-sigCh; cancel() }()
 
-		fmt.Fprintf(os.Stderr, "Consul starting (patrol every %s, stale timeout %s)\n",
-			cfg.PatrolInterval, cfg.StaleTetherTimeout)
+		fmt.Fprintf(os.Stderr, "Consul starting (patrol every %s, stale timeout %s, pid %d)\n",
+			cfg.PatrolInterval, cfg.StaleTetherTimeout, os.Getpid())
 		return d.Run(ctx)
 	},
 }
@@ -154,54 +206,91 @@ Exit codes:
 
 var consulStartCmd = &cobra.Command{
 	Use:          "start",
-	Short:        "Start the consul as a background tmux session",
+	Short:        "Start the consul as a background process",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := session.New()
-
-		if mgr.Exists(consulTmuxSession) {
-			fmt.Printf("Consul already running (session %s)\n", consulTmuxSession)
+		// Check if already running via PID.
+		if pid := readConsulPID(); pid > 0 && prefect.IsRunning(pid) {
+			fmt.Printf("Consul already running (pid %d)\n", pid)
 			return nil
 		}
+
+		// Clear stale PID file.
+		clearConsulPID()
 
 		solBin, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("failed to find sol binary: %w", err)
 		}
 
-		env := map[string]string{
-			"SOL_HOME": config.Home(),
+		logPath := consulLogPath()
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			return fmt.Errorf("failed to open log file: %w", err)
 		}
 
-		if err := mgr.Start(consulTmuxSession, config.Home(),
-			solBin+" consul run", env, "consul", ""); err != nil {
-			return fmt.Errorf("failed to start consul session: %w", err)
+		proc := exec.Command(solBin, "consul", "run")
+		proc.Stdout = logFile
+		proc.Stderr = logFile
+		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+		if err := proc.Start(); err != nil {
+			logFile.Close()
+			return fmt.Errorf("failed to start consul: %w", err)
 		}
 
-		fmt.Printf("Consul started: %s\n", consulTmuxSession)
+		pid := proc.Process.Pid
+		logFile.Close()
+
+		// Detach so consul survives our exit.
+		_ = proc.Process.Release()
+
+		// Wait briefly and confirm alive.
+		time.Sleep(time.Second)
+		if !prefect.IsRunning(pid) {
+			clearConsulPID()
+			return fmt.Errorf("consul exited immediately (check %s)", logPath)
+		}
+
+		fmt.Printf("Consul started (pid %d)\n", pid)
 		return nil
 	},
 }
 
 var consulStopCmd = &cobra.Command{
 	Use:          "stop",
-	Short:        "Stop the consul background session",
+	Short:        "Stop the consul background process",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := session.New()
-
-		if !mgr.Exists(consulTmuxSession) {
+		pid := readConsulPID()
+		if pid <= 0 || !prefect.IsRunning(pid) {
 			fmt.Println("Consul not running")
+			clearConsulPID()
 			return nil
 		}
 
-		if err := mgr.Stop(consulTmuxSession, false); err != nil {
-			return fmt.Errorf("failed to stop consul: %w", err)
+		// Send SIGTERM for graceful shutdown.
+		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+			return fmt.Errorf("failed to stop consul (pid %d): %w", pid, err)
 		}
 
-		fmt.Printf("Consul stopped: %s\n", consulTmuxSession)
+		// Wait for process to exit (up to 30 seconds for graceful shutdown).
+		for i := 0; i < 60; i++ {
+			time.Sleep(500 * time.Millisecond)
+			if !prefect.IsRunning(pid) {
+				clearConsulPID()
+				fmt.Printf("Consul stopped (pid %d)\n", pid)
+				return nil
+			}
+		}
+
+		// Force kill if still alive.
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+		clearConsulPID()
+		fmt.Printf("Consul killed (pid %d)\n", pid)
 		return nil
 	},
 }
@@ -212,26 +301,29 @@ var consulRestartCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := session.New()
-		return restartSession(mgr, consulTmuxSession, "consul",
-			fmt.Sprintf("Consul stopped: %s", consulTmuxSession),
-			nil, consulStartCmd, args)
-	},
-}
-
-var consulAttachCmd = &cobra.Command{
-	Use:          "attach",
-	Short:        "Attach to the consul tmux session",
-	Args:         cobra.NoArgs,
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := session.New()
-
-		if !mgr.Exists(consulTmuxSession) {
-			return fmt.Errorf("no consul session (run 'sol consul start' first)")
+		// Stop if running.
+		pid := readConsulPID()
+		if pid > 0 && prefect.IsRunning(pid) {
+			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+				return fmt.Errorf("failed to stop consul (pid %d): %w", pid, err)
+			}
+			// Wait for exit.
+			for i := 0; i < 60; i++ {
+				time.Sleep(500 * time.Millisecond)
+				if !prefect.IsRunning(pid) {
+					break
+				}
+			}
+			if prefect.IsRunning(pid) {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+				time.Sleep(500 * time.Millisecond)
+			}
+			clearConsulPID()
+			fmt.Printf("Consul stopped (pid %d)\n", pid)
 		}
 
-		return mgr.Attach(consulTmuxSession)
+		// Start.
+		return consulStartCmd.RunE(consulStartCmd, args)
 	},
 }
 
@@ -241,7 +333,6 @@ func init() {
 	consulCmd.AddCommand(consulStartCmd)
 	consulCmd.AddCommand(consulStopCmd)
 	consulCmd.AddCommand(consulRestartCmd)
-	consulCmd.AddCommand(consulAttachCmd)
 	consulCmd.AddCommand(consulStatusCmd)
 
 	consulRunCmd.Flags().StringVar(&consulInterval, "interval", "5m", "patrol interval")

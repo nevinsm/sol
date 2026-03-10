@@ -35,7 +35,7 @@ type sphereProcessInfo struct {
 // sphereProcessMap maps display names to process info for restart.
 var sphereProcessMap = map[string]sphereProcessInfo{
 	"Prefect":   {cliName: "prefect", startCmd: "run", pidBased: true},
-	"Consul":    {cliName: "consul", sessionName: "sol-sphere-consul", startCmd: "run", pidBased: true, tmuxManaged: true},
+	"Consul":    {cliName: "consul", startCmd: "run", pidBased: true},
 	"Chronicle": {cliName: "chronicle", sessionName: "sol-chronicle", startCmd: "run", tmuxManaged: true},
 	"Ledger":    {cliName: "ledger", sessionName: "sol-ledger", startCmd: "run", tmuxManaged: true},
 	"Broker":    {cliName: "token-broker", startCmd: "run", pidBased: true},

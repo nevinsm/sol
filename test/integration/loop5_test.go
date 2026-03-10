@@ -1238,25 +1238,37 @@ func TestPrefectConsulStartup(t *testing.T) {
 	cfg := prefect.DefaultConfig()
 	cfg.HeartbeatInterval = 50 * time.Millisecond
 	cfg.ConsulEnabled = true
+	cfg.SolBinary = "/usr/bin/sol"
+
+	// Track startDaemonProcess calls for consul.
+	var daemonCalls []string
+	var daemonMu sync.Mutex
 
 	sup := prefect.New(cfg, sphereStore, mock, logger)
+	sup.SetStartDaemonProcess(func(daemon string, binPath string, args ...string) error {
+		daemonMu.Lock()
+		daemonCalls = append(daemonCalls, daemon)
+		daemonMu.Unlock()
+		return nil
+	})
 
 	// Run with short-lived context (just enough for one heartbeat).
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	sup.Run(ctx)
 
-	// Verify: consul session started.
-	started := mock.getStarted()
+	// Verify: consul process started via startDaemonProcess.
+	daemonMu.Lock()
+	defer daemonMu.Unlock()
 	found := false
-	for _, s := range started {
-		if s == "sol-sphere-consul" {
+	for _, d := range daemonCalls {
+		if d == "consul" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected consul session started, got: %v", started)
+		t.Errorf("expected consul started via startDaemonProcess, got: %v", daemonCalls)
 	}
 }
 
@@ -1294,24 +1306,36 @@ func TestPrefectConsulRestart(t *testing.T) {
 	cfg.HeartbeatInterval = 50 * time.Millisecond
 	cfg.ConsulEnabled = true
 	cfg.ConsulHeartbeatMax = 15 * time.Minute
+	cfg.SolBinary = "/usr/bin/sol"
+
+	// Track startDaemonProcess calls for consul.
+	var daemonCalls []string
+	var daemonMu sync.Mutex
 
 	sup := prefect.New(cfg, sphereStore, mock, logger)
+	sup.SetStartDaemonProcess(func(daemon string, binPath string, args ...string) error {
+		daemonMu.Lock()
+		daemonCalls = append(daemonCalls, daemon)
+		daemonMu.Unlock()
+		return nil
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	sup.Run(ctx)
 
-	// Verify: consul session started (restarted).
-	started := mock.getStarted()
+	// Verify: consul process restarted via startDaemonProcess.
+	daemonMu.Lock()
+	defer daemonMu.Unlock()
 	found := false
-	for _, s := range started {
-		if s == "sol-sphere-consul" {
+	for _, d := range daemonCalls {
+		if d == "consul" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected consul session restarted, got: %v", started)
+		t.Errorf("expected consul restarted via startDaemonProcess, got: %v", daemonCalls)
 	}
 }
 
@@ -1349,17 +1373,29 @@ func TestPrefectConsulHealthy(t *testing.T) {
 	cfg.HeartbeatInterval = 50 * time.Millisecond
 	cfg.ConsulEnabled = true
 	cfg.ConsulHeartbeatMax = 15 * time.Minute
+	cfg.SolBinary = "/usr/bin/sol"
+
+	// Track startDaemonProcess calls.
+	var daemonCalls []string
+	var daemonMu sync.Mutex
 
 	sup := prefect.New(cfg, sphereStore, mock, logger)
+	sup.SetStartDaemonProcess(func(daemon string, binPath string, args ...string) error {
+		daemonMu.Lock()
+		daemonCalls = append(daemonCalls, daemon)
+		daemonMu.Unlock()
+		return nil
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	sup.Run(ctx)
 
-	// Verify: no restart attempted.
-	started := mock.getStarted()
-	for _, s := range started {
-		if s == "sol-sphere-consul" {
+	// Verify: no consul restart attempted.
+	daemonMu.Lock()
+	defer daemonMu.Unlock()
+	for _, d := range daemonCalls {
+		if d == "consul" {
 			t.Error("consul should not be restarted when heartbeat is fresh")
 		}
 	}

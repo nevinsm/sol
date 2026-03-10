@@ -104,8 +104,8 @@ const orphanGracePeriod = 30 * time.Minute
 const orphanConsecutiveThreshold = 2
 
 // infrastructureSessions are sphere-level tmux sessions not tracked as agents.
+// Note: consul is a PID-managed process (not a tmux session) and is excluded.
 var infrastructureSessions = []string{
-	"sol-sphere-consul",
 	"sol-chronicle",
 	"sol-ledger",
 	"sol-token-broker",

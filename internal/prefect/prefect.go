@@ -144,6 +144,12 @@ func New(cfg Config, sphereStore SphereStore, mgr SessionManager, logger *slog.L
 	}
 }
 
+// SetStartDaemonProcess overrides the daemon process starter for testing.
+// The function is called with (daemon, binPath, args...).
+func (s *Prefect) SetStartDaemonProcess(fn func(daemon string, binPath string, args ...string) error) {
+	s.startDaemonProcess = fn
+}
+
 // Run starts the prefect heartbeat loop. Blocks until ctx is cancelled.
 func (s *Prefect) Run(ctx context.Context) error {
 	if s.cfg.HeartbeatInterval <= 0 {
@@ -373,9 +379,6 @@ func (s *Prefect) respawn(agent store.Agent) {
 	}
 }
 
-// consulSessionName is the tmux session name for the consul.
-const consulSessionName = "sol-sphere-consul"
-
 // checkConsul reads the consul heartbeat and restarts if stale.
 // The consul is exempt from degraded mode — it is infrastructure, not a worker.
 func (s *Prefect) checkConsul() error {
@@ -385,7 +388,13 @@ func (s *Prefect) checkConsul() error {
 	}
 
 	if hb == nil {
-		// No heartbeat exists — start the consul.
+		// No heartbeat exists — check if process is alive via PID.
+		pid := ReadDaemonPID("consul")
+		if pid > 0 && IsRunning(pid) {
+			// Process alive but no heartbeat yet — give it time.
+			return nil
+		}
+		// No heartbeat and no process — start the consul.
 		s.logger.Info("no consul heartbeat found, starting consul")
 		return s.startConsul()
 	}
@@ -400,31 +409,36 @@ func (s *Prefect) checkConsul() error {
 		"last_heartbeat", hb.Timestamp,
 		"max_age", s.cfg.ConsulHeartbeatMax)
 
-	// Stop existing session if present (might be hung).
-	if s.sessions.Exists(consulSessionName) {
-		if err := s.sessions.Stop(consulSessionName, true); err != nil {
-			s.logger.Error("failed to stop stale consul session", "error", err)
+	// Stop existing process if running (might be hung).
+	pid := ReadDaemonPID("consul")
+	if pid > 0 && IsRunning(pid) {
+		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+			s.logger.Error("failed to SIGTERM stale consul process", "pid", pid, "error", err)
+		} else {
+			// Wait briefly for graceful shutdown.
+			for i := 0; i < 10; i++ {
+				time.Sleep(500 * time.Millisecond)
+				if !IsRunning(pid) {
+					break
+				}
+			}
+			// Force kill if still alive.
+			if IsRunning(pid) {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
 		}
 	}
 
 	return s.startConsul()
 }
 
-// startConsul starts the consul in a tmux session.
+// startConsul starts the consul as a detached background process.
 func (s *Prefect) startConsul() error {
-	env := map[string]string{
-		"SOL_HOME": config.Home(),
-	}
-	cmd := s.cfg.ConsulCommand
-	if s.cfg.ConsulSourceRepo != "" {
-		cmd += " --source-repo=" + s.cfg.ConsulSourceRepo
-	}
-	if err := s.sessions.Start(consulSessionName, config.Home(), cmd, env, "consul", "sphere"); err != nil {
-		return fmt.Errorf("failed to start consul session: %w", err)
+	if s.cfg.SolBinary == "" {
+		return fmt.Errorf("sol binary path not configured")
 	}
 
-	s.logger.Info("consul session started", "session", consulSessionName)
-	return nil
+	return s.startDaemonProcess("consul", s.cfg.SolBinary, "consul", "run")
 }
 
 // checkWorldInfrastructure ensures sentinel and forge sessions exist for
@@ -869,13 +883,16 @@ func (s *Prefect) shutdown() {
 		}
 	}
 
-	// Stop consul session if enabled.
-	if s.cfg.ConsulEnabled && s.sessions.Exists(consulSessionName) {
-		if err := s.sessions.Stop(consulSessionName, false); err != nil {
-			s.logger.Error("failed to stop consul session during shutdown", "error", err)
-		} else {
-			stopped++
-			s.logger.Info("consul session stopped during shutdown")
+	// Stop consul process if enabled.
+	if s.cfg.ConsulEnabled {
+		pid := ReadDaemonPID("consul")
+		if pid > 0 && IsRunning(pid) {
+			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+				s.logger.Error("failed to stop consul process during shutdown", "pid", pid, "error", err)
+			} else {
+				stopped++
+				s.logger.Info("consul process stopped during shutdown", "pid", pid)
+			}
 		}
 	}
 
