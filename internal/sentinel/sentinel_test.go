@@ -2945,3 +2945,219 @@ func TestOrphanedTetherDirectoryCleaned(t *testing.T) {
 		t.Errorf("expected 0 tether files remaining, got %d: %v", len(remaining), remaining)
 	}
 }
+
+// --- Escalation creation tests ---
+
+func TestAssessmentEscalateCreatesEscalation(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-esc-assess1")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "error output"
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+		return &AssessmentResult{
+			Status:          "stuck",
+			Confidence:      "high",
+			SuggestedAction: "escalate",
+			Reason:          "auth token expired",
+		}, nil
+	}
+
+	// First patrol: baseline capture.
+	w.patrol(context.Background())
+	// Second patrol: same output → assessment → escalate.
+	w.patrol(context.Background())
+
+	// Should have created a formal escalation in sphere.db.
+	escs, err := sphereStore.ListEscalations("")
+	if err != nil {
+		t.Fatalf("ListEscalations() error: %v", err)
+	}
+
+	var found *store.Escalation
+	for i := range escs {
+		if escs[i].Source == "ember/sentinel" && escs[i].Severity == "high" &&
+			strings.Contains(escs[i].Description, "Toast") &&
+			strings.Contains(escs[i].Description, "auth token expired") {
+			found = &escs[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected a high-severity escalation from ember/sentinel mentioning agent Toast")
+	}
+	if found.SourceRef != "writ:sol-esc-assess1" {
+		t.Errorf("escalation source_ref = %q, want %q", found.SourceRef, "writ:sol-esc-assess1")
+	}
+	if found.Status != "open" {
+		t.Errorf("escalation status = %q, want %q", found.Status, "open")
+	}
+
+	// Protocol message should still be sent alongside.
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Error("expected RECOVERY_NEEDED protocol message alongside escalation")
+	}
+}
+
+func TestAssessmentEscalateNoWritStillCreatesEscalation(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Agent with no active writ.
+	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "stuck output"
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+		return &AssessmentResult{
+			Status:          "stuck",
+			Confidence:      "high",
+			SuggestedAction: "escalate",
+			Reason:          "infrastructure problem",
+		}, nil
+	}
+
+	w.patrol(context.Background())
+	w.patrol(context.Background())
+
+	escs, err := sphereStore.ListEscalations("")
+	if err != nil {
+		t.Fatalf("ListEscalations() error: %v", err)
+	}
+
+	var found *store.Escalation
+	for i := range escs {
+		if escs[i].Source == "ember/sentinel" && strings.Contains(escs[i].Description, "infrastructure problem") {
+			found = &escs[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected escalation even with no active writ")
+	}
+	// source_ref should be empty when agent has no active writ.
+	if found.SourceRef != "" {
+		t.Errorf("escalation source_ref = %q, want empty (no active writ)", found.SourceRef)
+	}
+}
+
+func TestRecastMaxAttemptsCreatesEscalation(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 2
+
+	createFailedMR(t, worldStore, "sol-escr1111", "Escalation recast task", "outpost/Toast/sol-escr1111")
+
+	// Pre-set recast count to max via writ metadata.
+	worldStore.SetWritMetadata("sol-escr1111", map[string]any{
+		"recast-count": float64(2),
+		"recast-last":  time.Now().UTC().Format(time.RFC3339),
+	})
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(2 * time.Hour))
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Should have created a formal escalation.
+	escs, err := sphereStore.ListEscalations("")
+	if err != nil {
+		t.Fatalf("ListEscalations() error: %v", err)
+	}
+
+	var found *store.Escalation
+	for i := range escs {
+		if escs[i].Source == "ember/sentinel" && escs[i].Severity == "high" &&
+			strings.Contains(escs[i].Description, "sol-escr1111") &&
+			strings.Contains(escs[i].Description, "recast limit") {
+			found = &escs[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected a high-severity escalation from ember/sentinel for failed recast")
+	}
+	if found.SourceRef != "writ:sol-escr1111" {
+		t.Errorf("escalation source_ref = %q, want %q", found.SourceRef, "writ:sol-escr1111")
+	}
+
+	// Protocol message should still be sent alongside.
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Error("expected RECOVERY_NEEDED protocol message alongside escalation")
+	}
+}
+
+func TestOrphanedResolutionCreatesEscalation(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 2
+
+	// Create blocked MR with old resolution writ.
+	createBlockedMR(t, worldStore, "sol-escorph1", "sol-res-escorph1", "Feature orphan esc", "outpost/Toast/sol-escorph1", 10*time.Minute)
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	// Pre-set dispatch count to max.
+	w.resolutionDispatchCounts["sol-res-escorph1"] = 2
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Should have created a formal escalation with medium severity.
+	escs, err := sphereStore.ListEscalations("")
+	if err != nil {
+		t.Fatalf("ListEscalations() error: %v", err)
+	}
+
+	var found *store.Escalation
+	for i := range escs {
+		if escs[i].Source == "ember/sentinel" && escs[i].Severity == "medium" &&
+			strings.Contains(escs[i].Description, "sol-res-escorph1") &&
+			strings.Contains(escs[i].Description, "dispatch limit") {
+			found = &escs[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected a medium-severity escalation from ember/sentinel for orphaned resolution")
+	}
+	if found.SourceRef != "writ:sol-res-escorph1" {
+		t.Errorf("escalation source_ref = %q, want %q", found.SourceRef, "writ:sol-res-escorph1")
+	}
+
+	// Protocol message should still be sent alongside.
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Error("expected RECOVERY_NEEDED protocol message alongside escalation")
+	}
+}
