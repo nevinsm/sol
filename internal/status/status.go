@@ -19,6 +19,14 @@ import (
 	"github.com/nevinsm/sol/internal/tether"
 )
 
+// TokenInfo holds aggregated token usage for a 24-hour rolling window.
+type TokenInfo struct {
+	InputTokens  int64 `json:"input_tokens"`
+	OutputTokens int64 `json:"output_tokens"`
+	CacheTokens  int64 `json:"cache_tokens"`  // cache_read + cache_creation combined
+	AgentCount   int   `json:"agent_count"`    // distinct agents with token data in window
+}
+
 // WorldStatus holds the complete runtime state for a world.
 type WorldStatus struct {
 	World      string         `json:"world"`
@@ -36,6 +44,7 @@ type WorldStatus struct {
 	MergeQueue    MergeQueueInfo    `json:"merge_queue"`
 	MergeRequests []MergeRequestInfo `json:"merge_requests,omitempty"`
 	Caravans      []CaravanInfo      `json:"caravans,omitempty"`
+	Tokens        TokenInfo          `json:"tokens"`
 	Summary       Summary            `json:"summary"`
 }
 
@@ -266,6 +275,7 @@ type SphereStatus struct {
 	Broker      BrokerInfo          `json:"broker"`
 	Senate      SenateInfo          `json:"senate"`
 	Worlds      []WorldSummary      `json:"worlds"`
+	Tokens      TokenInfo           `json:"tokens"`
 	Caravans    []CaravanInfo       `json:"caravans,omitempty"`
 	Escalations *EscalationSummary  `json:"escalations,omitempty"`
 	MailCount   int                 `json:"mail_count,omitempty"`
@@ -708,4 +718,27 @@ func GatherLedgerInfo(checker SessionChecker) LedgerInfo {
 	}
 
 	return info
+}
+
+// GatherTokens populates token usage data on a WorldStatus using a 24-hour
+// rolling window. Errors are handled gracefully — if the store can't be queried,
+// TokenInfo is left zeroed and the renderer handles the zero case.
+func GatherTokens(result *WorldStatus, worldStore *store.Store) {
+	since := time.Now().Add(-24 * time.Hour)
+
+	summaries, err := worldStore.TokensSince(since)
+	if err != nil {
+		return
+	}
+	for _, ts := range summaries {
+		result.Tokens.InputTokens += ts.InputTokens
+		result.Tokens.OutputTokens += ts.OutputTokens
+		result.Tokens.CacheTokens += ts.CacheReadTokens + ts.CacheCreationTokens
+	}
+
+	agents, _, err := worldStore.WorldTokenMetaSince(since)
+	if err != nil {
+		return
+	}
+	result.Tokens.AgentCount = agents
 }

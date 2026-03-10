@@ -819,3 +819,167 @@ func TestRenderSphereSleepingWorldNoCounts(t *testing.T) {
 		t.Error("output missing sleeping badge")
 	}
 }
+
+func TestFormatCompactTokens(t *testing.T) {
+	tests := []struct {
+		input int64
+		want  string
+	}{
+		{0, "0"},
+		{42, "42"},
+		{999, "999"},
+		{1000, "1.0K"},
+		{1200, "1.2K"},
+		{9999, "10K"},
+		{10000, "10K"},
+		{340000, "340K"},
+		{999999, "1000K"},
+		{1000000, "1.0M"},
+		{1200000, "1.2M"},
+		{14300000, "14M"},
+		{100000000, "100M"},
+	}
+
+	for _, tt := range tests {
+		got := formatCompactTokens(tt.input)
+		if got != tt.want {
+			t.Errorf("formatCompactTokens(%d) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestRenderTokensZero(t *testing.T) {
+	var b strings.Builder
+	renderTokens(&b, TokenInfo{})
+
+	if b.Len() != 0 {
+		t.Errorf("renderTokens with zero values should produce empty string, got %q", b.String())
+	}
+}
+
+func TestRenderTokensPopulated(t *testing.T) {
+	var b strings.Builder
+	renderTokens(&b, TokenInfo{
+		InputTokens:  1_200_000,
+		OutputTokens: 340_000,
+		CacheTokens:  50_000,
+		AgentCount:   3,
+	})
+
+	output := b.String()
+
+	checks := []string{
+		"Tokens (24h)",
+		"1.2M in",
+		"340K out",
+		"3 agents",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("renderTokens output missing %q, got %q", check, output)
+		}
+	}
+}
+
+func TestRenderTokensNoAgents(t *testing.T) {
+	var b strings.Builder
+	renderTokens(&b, TokenInfo{
+		InputTokens:  500,
+		OutputTokens: 200,
+	})
+
+	output := b.String()
+
+	if !strings.Contains(output, "Tokens (24h)") {
+		t.Error("renderTokens should show header when tokens exist")
+	}
+	if !strings.Contains(output, "500 in") {
+		t.Errorf("renderTokens should show '500 in', got %q", output)
+	}
+	if strings.Contains(output, "agents") {
+		t.Error("renderTokens should not show agent count when zero")
+	}
+}
+
+func TestRenderWorldWithTokens(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "testworld",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Tokens: TokenInfo{
+			InputTokens:  5_000_000,
+			OutputTokens: 1_500_000,
+			CacheTokens:  200_000,
+			AgentCount:   4,
+		},
+		Summary: Summary{Total: 0},
+	}
+
+	output := RenderWorld(ws)
+
+	checks := []string{
+		"Tokens (24h)",
+		"5.0M in",
+		"1.5M out",
+		"4 agents",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("RenderWorld with tokens missing %q", check)
+		}
+	}
+}
+
+func TestRenderWorldWithoutTokens(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "testworld",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Summary: Summary{Total: 0},
+	}
+
+	output := RenderWorld(ws)
+
+	if strings.Contains(output, "Tokens (24h)") {
+		t.Error("RenderWorld without tokens should not show Tokens section")
+	}
+}
+
+func TestRenderSphereWithTokens(t *testing.T) {
+	s := &SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: PrefectInfo{Running: true, PID: 1234},
+		Tokens: TokenInfo{
+			InputTokens:  10_000_000,
+			OutputTokens: 3_000_000,
+			AgentCount:   6,
+		},
+	}
+
+	output := RenderSphere(s)
+
+	checks := []string{
+		"Tokens (24h)",
+		"10M in",
+		"3.0M out",
+		"6 agents",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("RenderSphere with tokens missing %q", check)
+		}
+	}
+}
+
+func TestRenderSphereWithoutTokens(t *testing.T) {
+	s := &SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: PrefectInfo{Running: true, PID: 1234},
+	}
+
+	output := RenderSphere(s)
+
+	if strings.Contains(output, "Tokens (24h)") {
+		t.Error("RenderSphere without tokens should not show Tokens section")
+	}
+}

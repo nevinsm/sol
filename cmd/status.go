@@ -104,6 +104,7 @@ func runCombinedStatus(world string) error {
 	}
 
 	status.GatherCaravans(result, sphereStore, gatedWorldOpener)
+	status.GatherTokens(result, worldStore)
 
 	// Load world config for capacity (non-fatal).
 	if worldCfg, err := config.LoadWorldConfig(world); err == nil {
@@ -180,6 +181,7 @@ func runWorldStatus(world string) error {
 	}
 
 	status.GatherCaravans(result, sphereStore, gatedWorldOpener)
+	status.GatherTokens(result, worldStore)
 
 	// Load world config for capacity (non-fatal).
 	if worldCfg, err := config.LoadWorldConfig(world); err == nil {
