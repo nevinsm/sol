@@ -254,16 +254,11 @@ func TestListMessages(t *testing.T) {
 func TestListMessagesThreadFilter(t *testing.T) {
 	s := setupSphere(t)
 
-	// Send messages with thread_id. Thread ID is stored as empty string by default,
-	// so we need to insert manually with a thread_id to test filtering.
+	// Send a message without thread_id and one with.
 	s.SendMessage("agent1", "autarch", "No thread", "", 2, "notification")
+	s.SendMessageWithThread("agent2", "autarch", "Threaded", "", 2, "notification", "thread-abc")
 
-	// Insert a message with a thread_id directly.
-	s.db.Exec(
-		`INSERT INTO messages (id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at)
-		 VALUES ('msg-thread01', 'agent2', 'autarch', 'Threaded', '', 2, 'notification', 'thread-abc', 'pending', 0, '2025-01-01T00:00:00Z')`)
-
-	// Filter by thread -> only the threaded message.
+	// Filter by exact thread -> only the threaded message.
 	msgs, err := s.ListMessages(MessageFilters{ThreadID: "thread-abc"})
 	if err != nil {
 		t.Fatal(err)
@@ -271,8 +266,99 @@ func TestListMessagesThreadFilter(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("expected 1 threaded message, got %d", len(msgs))
 	}
-	if msgs[0].ID != "msg-thread01" {
-		t.Fatalf("expected msg-thread01, got %q", msgs[0].ID)
+	if msgs[0].ThreadID != "thread-abc" {
+		t.Fatalf("expected thread_id 'thread-abc', got %q", msgs[0].ThreadID)
+	}
+}
+
+func TestSendMessageWithThread(t *testing.T) {
+	s := setupSphere(t)
+
+	id, err := s.SendMessageWithThread("agent1", "autarch", "Test", "Body", 2, "notification", "esc:sol-abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify the message has the correct ThreadID.
+	msg, err := s.ReadMessage(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.ThreadID != "esc:sol-abc123" {
+		t.Fatalf("expected thread_id 'esc:sol-abc123', got %q", msg.ThreadID)
+	}
+	if msg.Sender != "agent1" {
+		t.Fatalf("expected sender 'agent1', got %q", msg.Sender)
+	}
+}
+
+func TestHasPendingThreadMessage(t *testing.T) {
+	s := setupSphere(t)
+
+	// No messages -> false.
+	exists, err := s.HasPendingThreadMessage("esc:test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("expected false for nonexistent thread")
+	}
+
+	// Send a message with thread -> true.
+	id, _ := s.SendMessageWithThread("agent1", "autarch", "Test", "", 2, "notification", "esc:test")
+	exists, err = s.HasPendingThreadMessage("esc:test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("expected true for pending thread message")
+	}
+
+	// Ack the message -> false.
+	s.AckMessage(id)
+	exists, err = s.HasPendingThreadMessage("esc:test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("expected false after acking the message")
+	}
+}
+
+func TestListMessagesThreadIDPrefix(t *testing.T) {
+	s := setupSphere(t)
+
+	// Send messages with various thread IDs.
+	s.SendMessageWithThread("agent1", "autarch", "Esc 1", "", 2, "notification", "esc:sol-aaa")
+	s.SendMessageWithThread("agent2", "autarch", "Esc 2", "", 2, "notification", "esc:sol-bbb")
+	s.SendMessage("agent3", "autarch", "No thread", "", 2, "notification")
+	s.SendMessageWithThread("agent4", "autarch", "Other thread", "", 2, "notification", "other:xyz")
+
+	// Filter by prefix "esc:" -> should return both escalation messages.
+	msgs, err := s.ListMessages(MessageFilters{ThreadIDPrefix: "esc:"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages with prefix 'esc:', got %d", len(msgs))
+	}
+
+	// Filter by prefix "other:" -> 1 message.
+	msgs, err = s.ListMessages(MessageFilters{ThreadIDPrefix: "other:"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message with prefix 'other:', got %d", len(msgs))
+	}
+
+	// Empty prefix -> all messages (no prefix filter).
+	msgs, err = s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 4 {
+		t.Fatalf("expected 4 total messages, got %d", len(msgs))
 	}
 }
 

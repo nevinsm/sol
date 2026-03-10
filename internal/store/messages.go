@@ -25,10 +25,11 @@ type Message struct {
 
 // MessageFilters controls which messages are returned by ListMessages.
 type MessageFilters struct {
-	Recipient string // filter by recipient (empty = all)
-	Type      string // filter by type: "notification", "protocol" (empty = all)
-	Delivery  string // filter by delivery: "pending", "acked" (empty = all)
-	ThreadID  string // filter by thread (empty = all)
+	Recipient      string // filter by recipient (empty = all)
+	Type           string // filter by type: "notification", "protocol" (empty = all)
+	Delivery       string // filter by delivery: "pending", "acked" (empty = all)
+	ThreadID       string // filter by exact thread_id (empty = all)
+	ThreadIDPrefix string // filter by thread_id prefix using LIKE (empty = all)
 }
 
 // generateMessageID returns a new message ID in the format "msg-" + 16 hex chars.
@@ -54,6 +55,39 @@ func (s *Store) SendMessage(sender, recipient, subject, body string, priority in
 		return "", fmt.Errorf("failed to send message: %w", err)
 	}
 	return id, nil
+}
+
+// SendMessageWithThread creates a new message with an explicit ThreadID.
+// Returns the generated message ID (msg-XXXXXXXX).
+func (s *Store) SendMessageWithThread(sender, recipient, subject, body string, priority int, msgType, threadID string) (string, error) {
+	id, err := generateMessageID()
+	if err != nil {
+		return "", fmt.Errorf("failed to send message: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err = s.db.Exec(
+		`INSERT INTO messages (id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)`,
+		id, sender, recipient, subject, body, priority, msgType, threadID, now,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to send message: %w", err)
+	}
+	return id, nil
+}
+
+// HasPendingThreadMessage checks if a pending message with the given threadID exists.
+func (s *Store) HasPendingThreadMessage(threadID string) (bool, error) {
+	var count int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM messages WHERE thread_id = ? AND delivery = 'pending'`,
+		threadID,
+	).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to check pending thread message %q: %w", threadID, err)
+	}
+	return count > 0, nil
 }
 
 // Inbox returns pending messages for a recipient, ordered by priority ASC
@@ -153,6 +187,10 @@ func (s *Store) ListMessages(filters MessageFilters) ([]Message, error) {
 	if filters.ThreadID != "" {
 		query += ` AND thread_id = ?`
 		args = append(args, filters.ThreadID)
+	}
+	if filters.ThreadIDPrefix != "" {
+		query += ` AND thread_id LIKE ?`
+		args = append(args, filters.ThreadIDPrefix+"%")
 	}
 	query += ` ORDER BY priority ASC, created_at ASC`
 
