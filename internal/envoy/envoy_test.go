@@ -133,10 +133,19 @@ func initGitRepo(t *testing.T, dir string) {
 
 // --- Tests ---
 
-func TestEnvoyHooksNoPreCompact(t *testing.T) {
+func TestEnvoyHooksPreCompact(t *testing.T) {
 	hooks := envoyHooks("myworld", "Echo")
-	if _, ok := hooks.Hooks["PreCompact"]; ok {
-		t.Error("envoy hooks should not have a PreCompact hook")
+	pcGroups, ok := hooks.Hooks["PreCompact"]
+	if !ok {
+		t.Fatal("envoy hooks missing PreCompact")
+	}
+	if len(pcGroups) != 1 {
+		t.Fatalf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
+	}
+	cmd := pcGroups[0].Hooks[0].Command
+	want := "sol prime --world=myworld --agent=Echo --compact"
+	if cmd != want {
+		t.Errorf("PreCompact command = %q, want %q", cmd, want)
 	}
 }
 

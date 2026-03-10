@@ -95,6 +95,16 @@ func envoyHooks(world, agent string) startup.HookSet {
 					},
 				},
 			}, protocol.GuardHooks("envoy")...),
+			"PreCompact": {
+				{
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent),
+						},
+					},
+				},
+			},
 			"UserPromptSubmit": {
 				{
 					Hooks: []protocol.HookHandler{

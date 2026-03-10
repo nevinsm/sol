@@ -4883,3 +4883,47 @@ func TestPrimeCompactWithWorkflow(t *testing.T) {
 		t.Error("output missing writ title")
 	}
 }
+
+func TestPrimeCompactEnvoyNoTether(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	result, err := Prime("ember", "Echo", "envoy", worldStore, true)
+	if err != nil {
+		t.Fatalf("Prime compact failed: %v", err)
+	}
+
+	if !strings.Contains(result.Output, "[sol] Context compaction in progress") {
+		t.Error("output missing compaction header")
+	}
+	if !strings.Contains(result.Output, "You are envoy Echo in world ember") {
+		t.Errorf("expected envoy grounding reminder, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, ".brief/memory.md") {
+		t.Error("output missing brief path")
+	}
+	if strings.Contains(result.Output, "No active work tethered") {
+		t.Error("persistent role should not get generic no-tether message")
+	}
+}
+
+func TestPrimeCompactGovernorNoTether(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	result, err := Prime("ember", "governor", "governor", worldStore, true)
+	if err != nil {
+		t.Fatalf("Prime compact failed: %v", err)
+	}
+
+	if !strings.Contains(result.Output, "[sol] Context compaction in progress") {
+		t.Error("output missing compaction header")
+	}
+	if !strings.Contains(result.Output, "You are the governor of world ember") {
+		t.Errorf("expected governor grounding reminder, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, ".brief/memory.md") {
+		t.Error("output missing brief path")
+	}
+	if strings.Contains(result.Output, "No active work tethered") {
+		t.Error("persistent role should not get generic no-tether message")
+	}
+}

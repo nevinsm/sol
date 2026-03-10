@@ -940,6 +940,18 @@ func primeCompact(world, agentName, role string, worldStore WorldStore) (*PrimeR
 		return nil, fmt.Errorf("failed to list tethers: %w", err)
 	}
 	if len(allWritIDs) == 0 {
+		// Persistent roles (envoy/governor) may have no tether during freeform
+		// conversation — return a role-appropriate grounding reminder.
+		if role == "envoy" {
+			return &PrimeResult{Output: fmt.Sprintf(
+				"[sol] Context compaction in progress. You are envoy %s in world %s.\nYour brief is at .brief/memory.md — consult it to re-orient.\nContinue the current conversation.",
+				agentName, world)}, nil
+		}
+		if role == "governor" {
+			return &PrimeResult{Output: fmt.Sprintf(
+				"[sol] Context compaction in progress. You are the governor of world %s.\nYour brief is at .brief/memory.md — consult it to re-orient.\nContinue the current conversation.",
+				world)}, nil
+		}
 		return &PrimeResult{Output: "[sol] Context compaction in progress. No active work tethered."}, nil
 	}
 
