@@ -3009,3 +3009,87 @@ func TestRestartSphereProcessUnknown(t *testing.T) {
 		t.Errorf("error should mention unknown process, got %q", err.Error())
 	}
 }
+
+func TestWorldStartPopBackToSphere(t *testing.T) {
+	// Starting with a world should allow popping back to sphere view.
+	m := NewModel(Config{World: "myworld"})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	// Should start in world view.
+	if m.activeView() != viewWorld {
+		t.Fatalf("expected viewWorld, got %v", m.activeView())
+	}
+	// View stack should have sphere at the base.
+	if len(m.viewStack) != 2 {
+		t.Fatalf("viewStack length = %d, want 2", len(m.viewStack))
+	}
+	if m.viewStack[0] != viewSphere {
+		t.Errorf("viewStack[0] = %v, want viewSphere", m.viewStack[0])
+	}
+
+	// Pop back to sphere.
+	m2, _ := m.Update(popMsg{})
+	model := m2.(Model)
+	if model.activeView() != viewSphere {
+		t.Errorf("after pop, activeView = %v, want viewSphere", model.activeView())
+	}
+	if model.world != "" {
+		t.Errorf("after pop, world = %q, want empty", model.world)
+	}
+}
+
+func TestWorldStartPopGathersSphereData(t *testing.T) {
+	// When popping from world-started dash, refresh should gather sphere data.
+	m := NewModel(Config{World: "myworld"})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	// Verify starting state: no sphere data.
+	if m.sphereData != nil {
+		t.Fatal("sphereData should be nil on start")
+	}
+
+	// Pop triggers refresh which would gather sphere data.
+	m2, cmd := m.Update(popMsg{})
+	model := m2.(Model)
+	if model.activeView() != viewSphere {
+		t.Fatalf("after pop, activeView = %v, want viewSphere", model.activeView())
+	}
+	// The refresh command should be produced.
+	if cmd == nil {
+		t.Fatal("pop should produce a refresh command")
+	}
+}
+
+func TestWorldStartPopClearsFeedWorldFilter(t *testing.T) {
+	// When popping from world-started dash, the feed world filter should clear.
+	m := NewModel(Config{World: "myworld", SOLHome: t.TempDir()})
+
+	// Feed should start with world filter.
+	if m.feed.world != "myworld" {
+		t.Fatalf("feed.world = %q, want %q", m.feed.world, "myworld")
+	}
+
+	// Pop back to sphere.
+	m2, _ := m.Update(popMsg{})
+	model := m2.(Model)
+
+	// Feed world filter should be cleared.
+	if model.feed.world != "" {
+		t.Errorf("after pop, feed.world = %q, want empty", model.feed.world)
+	}
+}
+
+func TestDefaultModelViewStackHasSphereBase(t *testing.T) {
+	// Starting without a world should have sphere as the single view.
+	m := NewModel(Config{})
+	if len(m.viewStack) != 1 {
+		t.Fatalf("viewStack length = %d, want 1", len(m.viewStack))
+	}
+	if m.viewStack[0] != viewSphere {
+		t.Errorf("viewStack[0] = %v, want viewSphere", m.viewStack[0])
+	}
+}
