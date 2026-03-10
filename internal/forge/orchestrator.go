@@ -382,6 +382,8 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 				})
 			}
 		}
+		// Update managed repo so subsequent casts branch from current main.
+		s.updateSourceRepo(ctx)
 		s.writeHeartbeat("idle", queueDepth-1)
 		s.emitPatrolEvent(queueDepth)
 
@@ -444,4 +446,22 @@ func (s *patrolState) verifyPush(ctx context.Context, mr *store.MergeRequest) er
 	}
 
 	return nil
+}
+
+// updateSourceRepo fetches origin in the managed repo so its local main ref
+// tracks the remote after a successful merge push. This ensures subsequent
+// casts branch from the updated main rather than a stale ref. Best-effort:
+// errors are logged but not propagated since the merge itself already succeeded.
+func (s *patrolState) updateSourceRepo(ctx context.Context) {
+	sourceRepo := s.forge.sourceRepo
+	if sourceRepo == "" {
+		return
+	}
+	targetBranch := s.forge.cfg.TargetBranch
+	if _, err := s.cmd.Run(ctx, sourceRepo, "git", "fetch", "origin", targetBranch); err != nil {
+		s.forge.logger.Warn("failed to update managed repo after merge",
+			"repo", sourceRepo, "error", err)
+	} else {
+		s.fl.Log("SYNC", fmt.Sprintf("updated managed repo %s ref", targetBranch))
+	}
 }

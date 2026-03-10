@@ -469,6 +469,54 @@ func TestActOnResultMerged(t *testing.T) {
 	}
 }
 
+func TestActOnResultMergedUpdatesSourceRepo(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+	worldStore.mrs = []store.MergeRequest{*mr}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Test change", Status: "done",
+	}
+
+	// Mock git commands for push verification.
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+		[]byte("abc1234 Fix auth flow (sol-aaa11111)"), nil)
+	cmdRunner.SetResult("git fetch origin main", nil, nil)
+
+	result := &ForgeResult{
+		Result:  "merged",
+		Summary: "Successfully merged",
+	}
+
+	state.actOnResult(context.Background(), mr, result, 1)
+
+	// Verify that git fetch origin main was called on the source repo (not the worktree).
+	calls := cmdRunner.getCalls()
+	found := false
+	for _, call := range calls {
+		if call.Name == "git" &&
+			len(call.Args) == 3 &&
+			call.Args[0] == "fetch" && call.Args[1] == "origin" && call.Args[2] == "main" &&
+			call.Dir == state.forge.sourceRepo {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected git fetch origin main to be called on source repo after successful merge")
+		for _, call := range calls {
+			t.Logf("  call: dir=%s name=%s args=%v", call.Dir, call.Name, call.Args)
+		}
+	}
+}
+
 func TestActOnResultFailed(t *testing.T) {
 	state, worldStore, _ := setupOrchestratorTest(t)
 	defer state.fl.Close()
@@ -583,6 +631,46 @@ func TestActOnResultPushVerificationFails(t *testing.T) {
 	}
 	if !strings.Contains(state.lastError, "push verification failed") {
 		t.Errorf("lastError = %q, should contain 'push verification failed'", state.lastError)
+	}
+}
+
+func TestActOnResultPushVerificationFailureSkipsSourceRepoUpdate(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	mr := &store.MergeRequest{
+		ID:       "mr-001",
+		WritID:   "sol-aaa11111",
+		Branch:   "outpost/Toast/sol-aaa11111",
+		Attempts: 1,
+	}
+	worldStore.mrs = []store.MergeRequest{*mr}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Test change", Status: "done",
+	}
+
+	// Push verification fails: writ ID not found in recent commits.
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+		[]byte(""), nil) // writ not found
+
+	result := &ForgeResult{
+		Result:  "merged",
+		Summary: "Merged successfully",
+	}
+
+	state.actOnResult(context.Background(), mr, result, 1)
+
+	// Verify that git fetch origin main was NOT called on the source repo.
+	calls := cmdRunner.getCalls()
+	for _, call := range calls {
+		if call.Name == "git" &&
+			len(call.Args) == 3 &&
+			call.Args[0] == "fetch" && call.Args[1] == "origin" && call.Args[2] == "main" &&
+			call.Dir == state.forge.sourceRepo {
+			t.Error("git fetch origin main should NOT be called on source repo when push verification fails")
+		}
 	}
 }
 

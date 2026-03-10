@@ -584,6 +584,9 @@ func (s *patrolState) executeLegacyMerge(ctx context.Context, mr *store.MergeReq
 		}
 	}
 
+	// Update managed repo so subsequent casts branch from current main.
+	s.updateSourceRepo(ctx)
+
 	s.writeHeartbeat("idle", queueDepth-1)
 	s.emitPatrolEvent(queueDepth)
 }
