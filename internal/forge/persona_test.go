@@ -110,7 +110,7 @@ func TestForgePersonaContent(t *testing.T) {
 		"Conflict Resolution",
 		"Gate Failures",
 		".forge-result.json",
-		"run /exit to end your session",
+		"session will exit automatically",
 		// New hardening markers.
 		"Never Lose Work",
 		"Never delete a branch",
@@ -122,6 +122,11 @@ func TestForgePersonaContent(t *testing.T) {
 	missing := ForgePersonaContains(persona, markers)
 	if len(missing) > 0 {
 		t.Errorf("persona missing markers: %v", missing)
+	}
+
+	// Verify persona does NOT instruct agent to run /exit.
+	if strings.Contains(persona, "/exit") {
+		t.Error("persona should not mention /exit — session exit is handled by Stop hook")
 	}
 }
 
@@ -190,6 +195,22 @@ func TestForgeHookConfig(t *testing.T) {
 	}
 	if !strings.Contains(preCompact[0].Hooks[0].Command, ".forge-injection.md") {
 		t.Errorf("PreCompact hook should cat injection file, got: %s", preCompact[0].Hooks[0].Command)
+	}
+
+	// Check Stop hook exists and checks for result file.
+	stopHook, ok := cfg.Hooks["Stop"]
+	if !ok {
+		t.Fatal("Stop hooks not configured")
+	}
+	if len(stopHook) == 0 || len(stopHook[0].Hooks) == 0 {
+		t.Fatal("Stop should have at least one hook")
+	}
+	stopCmd := stopHook[0].Hooks[0].Command
+	if !strings.Contains(stopCmd, ".forge-result.json") {
+		t.Errorf("Stop hook should check for result file, got: %s", stopCmd)
+	}
+	if !strings.Contains(stopCmd, "test -f") {
+		t.Errorf("Stop hook should use test -f, got: %s", stopCmd)
 	}
 }
 
