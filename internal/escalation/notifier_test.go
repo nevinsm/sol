@@ -118,9 +118,15 @@ func TestMailNotifier(t *testing.T) {
 	if msg.Priority != 1 {
 		t.Fatalf("expected priority 1 for high severity, got %d", msg.Priority)
 	}
+	// Verify ThreadID is set.
+	expectedThreadID := EscalationThreadID(esc.ID)
+	if msg.ThreadID != expectedThreadID {
+		t.Fatalf("expected thread_id %q, got %q", expectedThreadID, msg.ThreadID)
+	}
 
 	// Test low severity -> priority 3.
 	escLow := testEscalation()
+	escLow.ID = "esc-test0002" // distinct ID to avoid dedup
 	escLow.Severity = "low"
 	err = n.Notify(context.Background(), escLow)
 	if err != nil {
@@ -134,6 +140,76 @@ func TestMailNotifier(t *testing.T) {
 				t.Fatalf("expected priority 3 for low severity, got %d", m.Priority)
 			}
 		}
+	}
+}
+
+func TestMailNotifierSkipsDuplicate(t *testing.T) {
+	s := setupSphereStore(t)
+
+	n := NewMailNotifier(s)
+	esc := testEscalation()
+
+	// First notification should succeed.
+	if err := n.Notify(context.Background(), esc); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second notification with the same escalation should be skipped
+	// (pending message with same ThreadID exists).
+	if err := n.Notify(context.Background(), esc); err != nil {
+		t.Fatal(err)
+	}
+
+	// Only 1 message should exist.
+	msgs, err := s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message (dedup), got %d", len(msgs))
+	}
+}
+
+func TestMailNotifierSendsAfterAck(t *testing.T) {
+	s := setupSphereStore(t)
+
+	n := NewMailNotifier(s)
+	esc := testEscalation()
+
+	// First notification.
+	if err := n.Notify(context.Background(), esc); err != nil {
+		t.Fatal(err)
+	}
+
+	// Ack the message.
+	msgs, _ := s.Inbox("autarch")
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	if err := s.AckMessage(msgs[0].ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second notification should succeed since the first was acked.
+	if err := n.Notify(context.Background(), esc); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should have 1 pending message (the new one).
+	msgs, err := s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 pending message after ack + re-send, got %d", len(msgs))
+	}
+}
+
+func TestEscalationThreadID(t *testing.T) {
+	got := EscalationThreadID("sol-abc123")
+	want := "esc:sol-abc123"
+	if got != want {
+		t.Fatalf("EscalationThreadID = %q, want %q", got, want)
 	}
 }
 
@@ -244,9 +320,10 @@ func TestRouterDefaultRouting(t *testing.T) {
 	router := DefaultRouter(logger, sphereStore, srv.URL)
 
 	// Route low -> only log fires (no mail, no webhook).
-	esc := testEscalation()
-	esc.Severity = "low"
-	router.Route(context.Background(), esc)
+	escLow := testEscalation()
+	escLow.ID = "esc-low-0001"
+	escLow.Severity = "low"
+	router.Route(context.Background(), escLow)
 
 	msgs, _ := sphereStore.Inbox("autarch")
 	if len(msgs) != 0 {
@@ -257,8 +334,10 @@ func TestRouterDefaultRouting(t *testing.T) {
 	}
 
 	// Route medium -> log + mail fire.
-	esc.Severity = "medium"
-	router.Route(context.Background(), esc)
+	escMed := testEscalation()
+	escMed.ID = "esc-med-0001"
+	escMed.Severity = "medium"
+	router.Route(context.Background(), escMed)
 
 	msgs, _ = sphereStore.Inbox("autarch")
 	if len(msgs) != 1 {
@@ -269,8 +348,10 @@ func TestRouterDefaultRouting(t *testing.T) {
 	}
 
 	// Route high -> log + mail + webhook fire.
-	esc.Severity = "high"
-	router.Route(context.Background(), esc)
+	escHigh := testEscalation()
+	escHigh.ID = "esc-high-0001"
+	escHigh.Severity = "high"
+	router.Route(context.Background(), escHigh)
 
 	msgs, _ = sphereStore.Inbox("autarch")
 	if len(msgs) != 2 {
@@ -281,8 +362,10 @@ func TestRouterDefaultRouting(t *testing.T) {
 	}
 
 	// Route critical -> log + mail + webhook fire.
-	esc.Severity = "critical"
-	router.Route(context.Background(), esc)
+	escCrit := testEscalation()
+	escCrit.ID = "esc-crit-0001"
+	escCrit.Severity = "critical"
+	router.Route(context.Background(), escCrit)
 
 	msgs, _ = sphereStore.Inbox("autarch")
 	if len(msgs) != 3 {
