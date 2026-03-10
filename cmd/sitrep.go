@@ -1,0 +1,143 @@
+package cmd
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/sitrep"
+	"github.com/nevinsm/sol/internal/store"
+	"github.com/spf13/cobra"
+)
+
+var sitrepCmd = &cobra.Command{
+	Use:           "sitrep",
+	Short:         "AI-generated situation report",
+	GroupID:       groupDispatch,
+	Args:          cobra.NoArgs,
+	SilenceErrors: true,
+	SilenceUsage:  true,
+	RunE:          runSitrep,
+}
+
+var sitrepEjectCmd = &cobra.Command{
+	Use:          "eject",
+	Short:        "Write default prompt template to SOL_HOME",
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		force, _ := cmd.Flags().GetBool("force")
+		dest, err := sitrep.Eject(force)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Ejected sitrep prompt to %s\n", dest)
+		return nil
+	},
+}
+
+func runSitrep(cmd *cobra.Command, args []string) error {
+	sphereFlag, _ := cmd.Flags().GetBool("sphere")
+	worldFlag, _ := cmd.Flags().GetString("world")
+	jsonFlag, _ := cmd.Flags().GetBool("json")
+
+	// Determine scope.
+	var scope sitrep.Scope
+	var scopeLabel string
+
+	if sphereFlag {
+		scope = sitrep.Scope{Sphere: true}
+		scopeLabel = "sphere"
+	} else {
+		// Try to resolve world from flag, env, or cwd.
+		world, err := config.ResolveWorld(worldFlag)
+		if err != nil {
+			// No world resolved — default to sphere scope.
+			scope = sitrep.Scope{Sphere: true}
+			scopeLabel = "sphere"
+		} else {
+			scope = sitrep.Scope{World: world}
+			scopeLabel = world
+		}
+	}
+
+	// Open sphere store.
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		return err
+	}
+	defer sphereStore.Close()
+
+	// Collect data.
+	data, err := sitrep.Collect(sphereStore, gatedWorldOpener, scope)
+	if err != nil {
+		return err
+	}
+
+	// JSON mode: dump collected data and exit.
+	if jsonFlag {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(data)
+	}
+
+	// Load config for AI invocation.
+	var cfg config.SitrepSection
+	if !scope.Sphere {
+		worldCfg, err := config.LoadWorldConfig(scope.World)
+		if err != nil {
+			// Fall back to global config.
+			globalCfg, gErr := config.LoadGlobalConfig()
+			if gErr != nil {
+				cfg = config.DefaultWorldConfig().Sitrep
+			} else {
+				cfg = globalCfg.Sitrep
+			}
+		} else {
+			cfg = worldCfg.Sitrep
+		}
+	} else {
+		globalCfg, err := config.LoadGlobalConfig()
+		if err != nil {
+			cfg = config.DefaultWorldConfig().Sitrep
+		} else {
+			cfg = globalCfg.Sitrep
+		}
+	}
+
+	// Build prompt.
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		return err
+	}
+
+	// Run AI assessment.
+	ctx := context.Background()
+	report, err := sitrep.Run(ctx, cfg, prompt)
+	if err != nil {
+		return err
+	}
+
+	// Print header + report.
+	header := fmt.Sprintf("Situation Report — %s — %s",
+		time.Now().UTC().Format("2006-01-02 15:04 UTC"), scopeLabel)
+	fmt.Println(header)
+	fmt.Println()
+	fmt.Println(report)
+
+	return nil
+}
+
+func init() {
+	rootCmd.AddCommand(sitrepCmd)
+	sitrepCmd.AddCommand(sitrepEjectCmd)
+
+	sitrepCmd.Flags().Bool("sphere", false, "force sphere scope")
+	sitrepCmd.Flags().String("world", "", "target specific world")
+	sitrepCmd.Flags().Bool("json", false, "dump collected data as JSON (no AI call)")
+
+	sitrepEjectCmd.Flags().Bool("force", false, "overwrite existing prompt")
+}
