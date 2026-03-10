@@ -11,6 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/consul"
+	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -123,14 +124,18 @@ func TestGatherSphereProcessChecks(t *testing.T) {
 	sphere := &mockSphereStore{}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"sol-alpha-sentinel": true,
-			"sol-beta-sentinel":  false,
 		},
 	}
 
 	// Write forge PID file for alpha (running), not for beta.
 	forgePIDCleanup := writeForgePID(t, "alpha", os.Getpid())
 	defer forgePIDCleanup()
+
+	// Write sentinel PID file for alpha (sentinel is a direct process, not tmux).
+	if err := sentinel.WritePID("alpha", os.Getpid()); err != nil {
+		t.Fatalf("failed to write sentinel PID for alpha: %v", err)
+	}
+	// No sentinel PID for beta — sentinel not running there.
 
 	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
 

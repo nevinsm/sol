@@ -15,6 +15,7 @@ import (
 	"github.com/nevinsm/sol/internal/ledger"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/prefect"
+	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -136,8 +137,15 @@ type LedgerInfo struct {
 
 // SentinelInfo holds sentinel process state (per-world).
 type SentinelInfo struct {
-	Running     bool   `json:"running"`
-	SessionName string `json:"session_name,omitempty"`
+	Running       bool   `json:"running"`
+	PID           int    `json:"pid,omitempty"`
+	PatrolCount   int    `json:"patrol_count,omitempty"`
+	AgentsChecked int    `json:"agents_checked,omitempty"`
+	StalledCount  int    `json:"stalled_count,omitempty"`
+	ReapedCount   int    `json:"reaped_count,omitempty"`
+	HeartbeatAge  string `json:"heartbeat_age,omitempty"`
+	Status        string `json:"status,omitempty"` // "running", "assessing", "stopping"
+	Stale         bool   `json:"stale,omitempty"`
 }
 
 // MergeQueueInfo holds merge queue summary.
@@ -397,11 +405,8 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		result.Senate = SenateInfo{Running: true, SessionName: senateSessionName}
 	}
 
-	// 2c. Check sentinel session.
-	sentinelSessName := config.SessionName(world, "sentinel")
-	if checker.Exists(sentinelSessName) {
-		result.Sentinel = SentinelInfo{Running: true, SessionName: sentinelSessName}
-	}
+	// 2c. Check sentinel process (direct Go process with PID + heartbeat).
+	result.Sentinel = GatherSentinelInfo(world)
 
 	// 2d. Check governor.
 	govSessName := config.SessionName(world, "governor")
@@ -674,6 +679,40 @@ func maxPhase(m map[int]*PhaseProgress) int {
 		}
 	}
 	return max
+}
+
+// GatherSentinelInfo reads sentinel PID + heartbeat state.
+// The sentinel is a direct Go process (not a tmux session), so PID + heartbeat
+// are the canonical signals.
+func GatherSentinelInfo(world string) SentinelInfo {
+	info := SentinelInfo{}
+
+	pid := sentinel.ReadPID(world)
+	if pid > 0 && prefect.IsRunning(pid) {
+		info.Running = true
+		info.PID = pid
+	}
+
+	hb, err := sentinel.ReadHeartbeat(world)
+	if err == nil && hb != nil {
+		info.PatrolCount = hb.PatrolCount
+		info.AgentsChecked = hb.AgentsChecked
+		info.StalledCount = hb.StalledCount
+		info.ReapedCount = hb.ReapedCount
+		info.Status = hb.Status
+
+		age := time.Since(hb.Timestamp)
+		info.HeartbeatAge = FormatDuration(age)
+		info.Stale = hb.IsStale(15 * time.Minute)
+
+		// If heartbeat is fresh but no PID, sentinel may still be running
+		// (PID file might be stale from previous run).
+		if !info.Running && !info.Stale {
+			info.Running = true
+		}
+	}
+
+	return info
 }
 
 // readChroniclePID reads the chronicle PID from its PID file. Returns 0 if not found.

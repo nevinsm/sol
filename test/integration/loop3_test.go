@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/tether"
@@ -869,7 +868,7 @@ func TestStatusShowsSentinelState(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome, _ := setupTestEnv(t)
+	_, _ = setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
@@ -882,13 +881,22 @@ func TestStatusShowsSentinelState(t *testing.T) {
 		t.Error("sentinel should not be running yet")
 	}
 
-	// Start a mock sentinel session.
-	sentinelSessName := config.SessionName("ember", "sentinel")
-	if err := mgr.Start(sentinelSessName, solHome, "sleep 60",
-		map[string]string{"SOL_HOME": solHome}, "sentinel", "ember"); err != nil {
-		t.Fatalf("start sentinel session: %v", err)
+	// Simulate sentinel running by writing PID file and heartbeat.
+	if err := sentinel.WritePID("ember", os.Getpid()); err != nil {
+		t.Fatalf("write sentinel PID: %v", err)
 	}
-	defer mgr.Stop(sentinelSessName, true)
+	defer sentinel.ClearPID("ember")
+
+	hb := &sentinel.Heartbeat{
+		Timestamp:     time.Now(),
+		Status:        "running",
+		PatrolCount:   3,
+		AgentsChecked: 5,
+	}
+	if err := sentinel.WriteHeartbeat("ember", hb); err != nil {
+		t.Fatalf("write sentinel heartbeat: %v", err)
+	}
+	defer sentinel.ClearHeartbeat("ember")
 
 	// Gather status — sentinel running.
 	rs2, err := status.Gather("ember", sphereStore, worldStore, worldStore, mgr)
@@ -898,7 +906,7 @@ func TestStatusShowsSentinelState(t *testing.T) {
 	if !rs2.Sentinel.Running {
 		t.Error("sentinel should be running")
 	}
-	if rs2.Sentinel.SessionName != sentinelSessName {
-		t.Errorf("sentinel session name: got %q, want %q", rs2.Sentinel.SessionName, sentinelSessName)
+	if rs2.Sentinel.PatrolCount != 3 {
+		t.Errorf("sentinel patrol count: got %d, want 3", rs2.Sentinel.PatrolCount)
 	}
 }

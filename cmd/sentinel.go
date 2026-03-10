@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -19,10 +21,11 @@ import (
 var sentinelStatusWorld string
 
 var (
-	sentinelRunWorld    string
-	sentinelStartWorld  string
-	sentinelStopWorld   string
-	sentinelAttachWorld string
+	sentinelRunWorld   string
+	sentinelStartWorld string
+	sentinelStopWorld  string
+	sentinelLogWorld   string
+	sentinelLogFollow  bool
 )
 
 var sentinelCmd = &cobra.Command{
@@ -101,7 +104,7 @@ var sentinelRunCmd = &cobra.Command{
 
 var sentinelStartCmd = &cobra.Command{
 	Use:          "start",
-	Short:        "Start the sentinel as a background tmux session",
+	Short:        "Start the sentinel as a background process",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(sentinelStartWorld)
@@ -113,11 +116,9 @@ var sentinelStartCmd = &cobra.Command{
 			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
 		}
 
-		sessName := config.SessionName(world, "sentinel")
-		mgr := session.New()
-
-		if mgr.Exists(sessName) {
-			return fmt.Errorf("sentinel already running for world %q (session %s)", world, sessName)
+		// Check if already running via PID file.
+		if pid := sentinel.ReadPID(world); pid > 0 && sentinel.IsRunning(pid) {
+			return fmt.Errorf("sentinel already running for world %q (pid %d)", world, pid)
 		}
 
 		solBin, err := os.Executable()
@@ -125,16 +126,33 @@ var sentinelStartCmd = &cobra.Command{
 			return fmt.Errorf("failed to find sol binary: %w", err)
 		}
 
-		env := map[string]string{
-			"SOL_HOME": config.Home(),
+		// Open log file for output.
+		logPath := sentinel.LogPath(world)
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			return fmt.Errorf("failed to open log file: %w", err)
 		}
 
-		if err := mgr.Start(sessName, config.Home(),
-			fmt.Sprintf("%s sentinel run --world=%s", solBin, world), env, "sentinel", world); err != nil {
-			return fmt.Errorf("failed to start sentinel session: %w", err)
+		// Fork `sol sentinel run --world=<world>` as a background process.
+		proc := exec.Command(solBin, "sentinel", "run", "--world="+world)
+		proc.Stdout = logFile
+		proc.Stderr = logFile
+		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+		if err := proc.Start(); err != nil {
+			logFile.Close()
+			return fmt.Errorf("failed to start sentinel process: %w", err)
 		}
 
-		fmt.Printf("Sentinel started: %s\n", sessName)
+		pid := proc.Process.Pid
+		logFile.Close()
+
+		// Detach so the sentinel survives the parent.
+		_ = proc.Process.Release()
+
+		fmt.Printf("Sentinel started for world %q (pid %d)\n", world, pid)
+		fmt.Printf("  Log: sol sentinel log --world=%s --follow\n", world)
 		return nil
 	},
 }
@@ -149,18 +167,33 @@ var sentinelStopCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := config.SessionName(world, "sentinel")
-		mgr := session.New()
-
-		if !mgr.Exists(sessName) {
+		pid := sentinel.ReadPID(world)
+		if pid <= 0 || !sentinel.IsRunning(pid) {
 			return fmt.Errorf("no sentinel running for world %q", world)
 		}
 
-		if err := mgr.Stop(sessName, false); err != nil {
-			return fmt.Errorf("failed to stop sentinel: %w", err)
+		// Send SIGTERM for graceful shutdown.
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			return fmt.Errorf("failed to find sentinel process: %w", err)
+		}
+		if err := proc.Signal(syscall.SIGTERM); err != nil {
+			return fmt.Errorf("failed to send SIGTERM to sentinel (pid %d): %w", pid, err)
 		}
 
-		fmt.Printf("Sentinel stopped for world %q\n", world)
+		// Wait briefly for process to exit.
+		for i := 0; i < 30; i++ {
+			if !sentinel.IsRunning(pid) {
+				fmt.Printf("Sentinel stopped for world %q\n", world)
+				return nil
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		// Force kill if still running.
+		_ = proc.Signal(syscall.SIGKILL)
+		sentinel.ClearPID(world)
+		fmt.Printf("Sentinel force-killed for world %q (pid %d)\n", world, pid)
 		return nil
 	},
 }
@@ -177,43 +210,62 @@ var sentinelRestartCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := config.SessionName(world, "sentinel")
-		mgr := session.New()
+		// Stop if running.
+		pid := sentinel.ReadPID(world)
+		if pid > 0 && sentinel.IsRunning(pid) {
+			sentinelStopWorld = world
+			if err := sentinelStopCmd.RunE(sentinelStopCmd, nil); err != nil {
+				return err
+			}
+		}
 
+		// Start.
 		sentinelStartWorld = world
-		return restartSession(mgr, sessName, "sentinel",
-			fmt.Sprintf("Sentinel stopped for world %q", world),
-			nil, sentinelStartCmd, args)
+		return sentinelStartCmd.RunE(sentinelStartCmd, nil)
 	},
 }
 
-var sentinelAttachCmd = &cobra.Command{
-	Use:          "attach",
-	Short:        "Attach to the sentinel tmux session",
+var sentinelLogCmd = &cobra.Command{
+	Use:          "log",
+	Short:        "Show or tail the sentinel log",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, err := config.ResolveWorld(sentinelAttachWorld)
+		world, err := config.ResolveWorld(sentinelLogWorld)
 		if err != nil {
 			return err
 		}
 
-		sessName := config.SessionName(world, "sentinel")
-		mgr := session.New()
-
-		if !mgr.Exists(sessName) {
-			return fmt.Errorf("no sentinel session for world %q (run 'sol sentinel start --world=%s' first)", world, world)
+		logPath := sentinel.LogPath(world)
+		if _, err := os.Stat(logPath); os.IsNotExist(err) {
+			return fmt.Errorf("no sentinel log for world %q", world)
 		}
 
-		return mgr.Attach(sessName)
+		if sentinelLogFollow {
+			c := exec.Command("tail", "-f", logPath)
+			c.Stdout = os.Stdout
+			c.Stderr = os.Stderr
+			return c.Run()
+		}
+
+		c := exec.Command("tail", "-50", logPath)
+		c.Stdout = os.Stdout
+		c.Stderr = os.Stderr
+		return c.Run()
 	},
 }
 
 // --- sol sentinel status ---
 
 type sentinelStatusSummary struct {
-	World       string `json:"world"`
-	Running     bool   `json:"running"`
-	SessionName string `json:"session_name"`
+	World        string `json:"world"`
+	Running      bool   `json:"running"`
+	PID          int    `json:"pid,omitempty"`
+	PatrolCount  int    `json:"patrol_count,omitempty"`
+	AgentsChecked int   `json:"agents_checked,omitempty"`
+	StalledCount int    `json:"stalled_count,omitempty"`
+	ReapedCount  int    `json:"reaped_count,omitempty"`
+	HeartbeatAge string `json:"heartbeat_age,omitempty"`
+	Status       string `json:"status,omitempty"`
 }
 
 var sentinelStatusCmd = &cobra.Command{
@@ -226,14 +278,26 @@ var sentinelStatusCmd = &cobra.Command{
 			return err
 		}
 
-		sessName := config.SessionName(world, "sentinel")
-		mgr := session.New()
-		running := mgr.Exists(sessName)
+		pid := sentinel.ReadPID(world)
+		running := pid > 0 && sentinel.IsRunning(pid)
 
 		summary := sentinelStatusSummary{
-			World:       world,
-			Running:     running,
-			SessionName: sessName,
+			World:   world,
+			Running: running,
+		}
+
+		if running {
+			summary.PID = pid
+		}
+
+		// Read heartbeat for metrics.
+		if hb, err := sentinel.ReadHeartbeat(world); err == nil && hb != nil {
+			summary.PatrolCount = hb.PatrolCount
+			summary.AgentsChecked = hb.AgentsChecked
+			summary.StalledCount = hb.StalledCount
+			summary.ReapedCount = hb.ReapedCount
+			summary.HeartbeatAge = time.Since(hb.Timestamp).Truncate(time.Second).String()
+			summary.Status = hb.Status
 		}
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
@@ -250,9 +314,24 @@ func printSentinelStatus(s sentinelStatusSummary) {
 	fmt.Printf("Sentinel: %s\n\n", s.World)
 
 	if s.Running {
-		fmt.Printf("  Process:  running (%s)\n", s.SessionName)
+		fmt.Printf("  Process:       running (pid %d)\n", s.PID)
 	} else {
-		fmt.Printf("  Process:  stopped\n")
+		fmt.Printf("  Process:       stopped\n")
+	}
+
+	if s.PatrolCount > 0 {
+		fmt.Printf("  Patrols:       %d\n", s.PatrolCount)
+		fmt.Printf("  Agents checked: %d\n", s.AgentsChecked)
+		if s.StalledCount > 0 {
+			fmt.Printf("  Stalled:       %d\n", s.StalledCount)
+		}
+		if s.ReapedCount > 0 {
+			fmt.Printf("  Reaped:        %d\n", s.ReapedCount)
+		}
+	}
+
+	if s.HeartbeatAge != "" {
+		fmt.Printf("  Heartbeat:     %s ago (%s)\n", s.HeartbeatAge, s.Status)
 	}
 }
 
@@ -262,14 +341,15 @@ func init() {
 	sentinelCmd.AddCommand(sentinelStartCmd)
 	sentinelCmd.AddCommand(sentinelStopCmd)
 	sentinelCmd.AddCommand(sentinelRestartCmd)
-	sentinelCmd.AddCommand(sentinelAttachCmd)
+	sentinelCmd.AddCommand(sentinelLogCmd)
 	sentinelCmd.AddCommand(sentinelStatusCmd)
 
 	sentinelRunCmd.Flags().StringVar(&sentinelRunWorld, "world", "", "world name")
 	sentinelStartCmd.Flags().StringVar(&sentinelStartWorld, "world", "", "world name")
 	sentinelStopCmd.Flags().StringVar(&sentinelStopWorld, "world", "", "world name")
 	sentinelRestartCmd.Flags().StringVar(&sentinelRestartWorld, "world", "", "world name")
-	sentinelAttachCmd.Flags().StringVar(&sentinelAttachWorld, "world", "", "world name")
+	sentinelLogCmd.Flags().StringVar(&sentinelLogWorld, "world", "", "world name")
+	sentinelLogCmd.Flags().BoolVar(&sentinelLogFollow, "follow", false, "follow (tail -f) the log")
 	sentinelStatusCmd.Flags().StringVar(&sentinelStatusWorld, "world", "", "world name")
 	sentinelStatusCmd.Flags().Bool("json", false, "output as JSON")
 }

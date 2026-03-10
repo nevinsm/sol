@@ -1411,8 +1411,8 @@ func TestDetectOrphanedSessionsKnownNotFlagged(t *testing.T) {
 
 	sessions := newMockSessions()
 	// All of these are known and should NOT be flagged.
+	// Note: sentinel is a direct process (no tmux session), so it's not listed here.
 	sessions.alive["sol-"+worldName+"-Toast"] = true
-	sessions.alive["sol-"+worldName+"-sentinel"] = true
 	sessions.alive["sol-"+worldName+"-forge"] = true
 	sessions.alive["sol-"+worldName+"-governor"] = true
 	sessions.alive["sol-"+worldName+"-MyEnvoy"] = true

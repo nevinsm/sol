@@ -743,7 +743,7 @@ func (d *Consul) detectOrphanedSessions(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("failed to list worlds for orphan detection: %w", err)
 	}
 	for _, w := range worlds {
-		known[fmt.Sprintf("sol-%s-sentinel", w.Name)] = true
+		// Sentinel is a direct Go process (no tmux session), so no session to mark as known.
 		known[fmt.Sprintf("sol-%s-forge", w.Name)] = true
 		known[fmt.Sprintf("sol-%s-governor", w.Name)] = true
 	}

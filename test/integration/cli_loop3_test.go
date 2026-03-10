@@ -180,7 +180,7 @@ func TestCLISentinelStartHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sol sentinel start --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "background tmux session") {
+	if !strings.Contains(out, "background process") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }
@@ -200,17 +200,17 @@ func TestCLISentinelStopHelp(t *testing.T) {
 	}
 }
 
-func TestCLISentinelAttachHelp(t *testing.T) {
+func TestCLISentinelLogHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	solHome := t.TempDir()
 
-	out, err := runGT(t, solHome, "sentinel", "attach", "--help")
+	out, err := runGT(t, solHome, "sentinel", "log", "--help")
 	if err != nil {
-		t.Fatalf("sol sentinel attach --help failed: %v: %s", err, out)
+		t.Fatalf("sol sentinel log --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "Attach to the sentinel") {
+	if !strings.Contains(out, "Show or tail the sentinel log") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }

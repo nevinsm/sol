@@ -1353,17 +1353,18 @@ Manage the per-world sentinel health monitor
 
 | Command | Description |
 |---------|-------------|
-| `sol sentinel attach` | Attach to the sentinel tmux session |
+| `sol sentinel log` | Show or tail the sentinel log |
 | `sol sentinel restart` | Restart the sentinel (stop then start) |
 | `sol sentinel run` | Run the sentinel patrol loop (foreground) |
-| `sol sentinel start` | Start the sentinel as a background tmux session |
+| `sol sentinel start` | Start the sentinel as a background process |
 | `sol sentinel status` | Show sentinel status |
 | `sol sentinel stop` | Stop the sentinel |
 
-#### `sol sentinel attach`
+#### `sol sentinel log`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--follow` | bool | false | follow (tail -f) the log |
 | `--world` | string | "" | world name |
 
 #### `sol sentinel restart`

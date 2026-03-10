@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -656,10 +657,13 @@ func TestHeartbeatDefersToSentinel(t *testing.T) {
 	logger := testLogger()
 	cfg := testConfig()
 
-	// Create a sentinel agent in working state with a live session.
+	// Create a sentinel agent in working state with a live PID.
 	sphereStore.CreateAgent("sentinel", "haven", "sentinel")
 	sphereStore.UpdateAgentState("haven/sentinel", "working", "")
-	mock.Start("sol-haven-sentinel", "/tmp", "sol sentinel run --world=haven", nil, "sentinel", "haven")
+	// Write sentinel PID file pointing to our own PID (alive process).
+	if err := sentinel.WritePID("haven", os.Getpid()); err != nil {
+		t.Fatalf("failed to write sentinel PID: %v", err)
+	}
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "haven", "agent")
@@ -967,12 +971,14 @@ func TestHeartbeatSkipsRunningWorldServices(t *testing.T) {
 source_repo = "/tmp/repo"
 `), 0o644)
 
-	// Mark sentinel as already running (session-based).
-	mock.Start("sol-haven-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", "haven")
-
 	// Mark forge as already running (PID-based) with a fresh heartbeat.
 	writeForgePIDFile(t, "haven", os.Getpid())
 	writeForgeHeartbeat(t, "haven")
+
+	// Mark sentinel as running (PID file).
+	if err := sentinel.WritePID("haven", os.Getpid()); err != nil {
+		t.Fatalf("failed to write sentinel PID: %v", err)
+	}
 
 	// Write alive PID files for sphere daemons so checkSphereDaemons doesn't trigger.
 	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
@@ -1088,27 +1094,15 @@ func TestShutdownStopsWorldServices(t *testing.T) {
 source_repo = "/tmp/repo"
 `), 0o644)
 
-	// Start sentinel session (still session-based).
-	mock.Start("sol-haven-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", "haven")
-
 	// Write forge PID file pointing to a PID that is NOT running
 	// (use PID 0 or a dead PID so StopProcess won't actually kill anything).
 	writeForgePIDFile(t, "haven", 99999999)
 
+	// Note: sentinel is now a direct process — shutdown sends SIGTERM via PID.
+	// We don't write a sentinel PID in this test to avoid SIGTERM-ing the test process.
+
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.shutdown()
-
-	// Sentinel session should be stopped.
-	stopped := mock.GetStopped()
-	foundSentinel := false
-	for _, s := range stopped {
-		if s == "sol-haven-sentinel" {
-			foundSentinel = true
-		}
-	}
-	if !foundSentinel {
-		t.Error("expected sol-haven-sentinel to be stopped during shutdown")
-	}
 
 	// Forge PID file should be cleaned up (process was dead).
 	pidPath := filepath.Join(os.Getenv("SOL_HOME"), "haven", "forge", "forge.pid")
@@ -1132,10 +1126,10 @@ source_repo = "/tmp/repo"
 sleeping = true
 `), 0o644)
 
-	// Start sentinel session (should not be stopped since world is sleeping).
-	mock.Start("sol-sleepy-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", "sleepy")
 	// Write forge PID file (should not be touched since world is sleeping).
 	writeForgePIDFile(t, "sleepy", os.Getpid())
+	// Note: sentinel is now a direct process. We don't write PID in this test
+	// to avoid SIGTERM-ing the test process.
 
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.shutdown()
@@ -1143,7 +1137,7 @@ sleeping = true
 	// World service sessions should NOT be stopped — world is sleeping.
 	stopped := mock.GetStopped()
 	for _, s := range stopped {
-		if s == "sol-sleepy-sentinel" {
+		if s == "sol-sleepy-sentinel" || s == "sol-sleepy-forge" {
 			t.Errorf("sleeping world service %q should not be stopped during shutdown", s)
 		}
 	}
@@ -1171,9 +1165,10 @@ func TestShutdownWorldServicesRespectsWorldsFilter(t *testing.T) {
 		os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
 source_repo = "/tmp/repo"
 `), 0o644)
-		mock.Start("sol-"+w+"-sentinel", "/tmp", "sol sentinel run", nil, "sentinel", w)
 		// Write forge PID files with dead PIDs (won't try to signal).
 		writeForgePIDFile(t, w, 99999999)
+		// Note: sentinel is now a direct process. We don't write PID in this test
+		// to avoid SIGTERM-ing the test process.
 	}
 
 	sup := New(cfg, sphereStore, mock, logger)
@@ -1185,16 +1180,6 @@ source_repo = "/tmp/repo"
 		if strings.Contains(s, "beta") {
 			t.Errorf("beta world service %q should not be stopped with worlds filter", s)
 		}
-	}
-
-	foundAlphaSentinel := false
-	for _, s := range stopped {
-		if s == "sol-alpha-sentinel" {
-			foundAlphaSentinel = true
-		}
-	}
-	if !foundAlphaSentinel {
-		t.Error("expected sol-alpha-sentinel to be stopped during shutdown")
 	}
 
 	// Alpha's forge PID file should be cleaned up.

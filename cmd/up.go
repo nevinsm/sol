@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/prefect"
+	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -418,8 +419,17 @@ func startWorldServicesBatch(solBin string, worlds []string) bool {
 		for _, svc := range worldServices {
 			r := result{world: world, service: svc}
 
-			sessName := config.SessionName(world, svc)
-			if mgr.Exists(sessName) {
+			// Check if already running: sentinel uses PID file, others use tmux session.
+			alreadyRunning := false
+			if svc == "sentinel" {
+				pid := sentinel.ReadPID(world)
+				alreadyRunning = pid > 0 && sentinel.IsRunning(pid)
+			} else {
+				sessName := config.SessionName(world, svc)
+				alreadyRunning = mgr.Exists(sessName)
+			}
+
+			if alreadyRunning {
 				r.status = "running"
 				results = append(results, r)
 				continue
@@ -588,18 +598,39 @@ func stopWorldServicesBatch(worlds []string) {
 		for _, svc := range worldServices {
 			r := result{world: world, service: svc}
 
-			sessName := config.SessionName(world, svc)
-			if !mgr.Exists(sessName) {
-				r.status = "not running"
-				results = append(results, r)
-				continue
-			}
-
-			if err := mgr.Stop(sessName, false); err != nil {
-				r.status = "failed"
-				r.err = err
+			if svc == "sentinel" {
+				// Sentinel is a direct process — stop via PID.
+				pid := sentinel.ReadPID(world)
+				if pid <= 0 || !sentinel.IsRunning(pid) {
+					r.status = "not running"
+					results = append(results, r)
+					continue
+				}
+				if proc, err := os.FindProcess(pid); err == nil {
+					if err := proc.Signal(syscall.SIGTERM); err != nil {
+						r.status = "failed"
+						r.err = err
+					} else {
+						r.status = "stopped"
+					}
+				} else {
+					r.status = "failed"
+					r.err = err
+				}
 			} else {
-				r.status = "stopped"
+				// Session-based service — stop via tmux.
+				sessName := config.SessionName(world, svc)
+				if !mgr.Exists(sessName) {
+					r.status = "not running"
+					results = append(results, r)
+					continue
+				}
+				if err := mgr.Stop(sessName, false); err != nil {
+					r.status = "failed"
+					r.err = err
+				} else {
+					r.status = "stopped"
+				}
 			}
 
 			// Clean up stale forge agent record to prevent sentinel
