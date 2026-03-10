@@ -64,6 +64,30 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 		}
 	}
 
+	// 4b. Gather token data across all worlds (24h rolling window).
+	if worldOpener != nil && len(worlds) > 0 {
+		since := time.Now().Add(-24 * time.Hour)
+		for _, w := range worlds {
+			ws, err := worldOpener(w.Name)
+			if err != nil {
+				continue
+			}
+			summaries, tErr := ws.TokensSince(since)
+			if tErr == nil {
+				for _, ts := range summaries {
+					result.Tokens.InputTokens += ts.InputTokens
+					result.Tokens.OutputTokens += ts.OutputTokens
+					result.Tokens.CacheTokens += ts.CacheReadTokens + ts.CacheCreationTokens
+				}
+			}
+			agents, _, tErr := ws.WorldTokenMetaSince(since)
+			if tErr == nil {
+				result.Tokens.AgentCount += agents
+			}
+			ws.Close()
+		}
+	}
+
 	// 5. Gather active caravans (sphere-wide, non-closed).
 	if caravanStore != nil {
 		allCaravans, err := caravanStore.ListCaravans("")

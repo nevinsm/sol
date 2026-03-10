@@ -102,6 +102,9 @@ func RenderSphere(s *SphereStatus) string {
 		b.WriteString("\n")
 	}
 
+	// Token summary (aggregated across all worlds).
+	renderTokens(&b, s.Tokens)
+
 	// Caravans (if any).
 	if len(s.Caravans) > 0 {
 		b.WriteString(headerStyle.Render("Caravans"))
@@ -396,6 +399,9 @@ func RenderWorld(ws *WorldStatus) string {
 	renderMergeQueue(&b, ws.MergeQueue)
 	b.WriteString("\n")
 
+	// Token summary.
+	renderTokens(&b, ws.Tokens)
+
 	// Summary.
 	renderWorldSummary(&b, ws)
 
@@ -531,6 +537,48 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 	tw.Flush()
 }
 
+// formatCompactTokens formats a token count as a compact human-readable string.
+// < 1,000: show as-is (e.g., "842")
+// 1,000–999,999: "1.2K", "340K"
+// 1,000,000+: "1.2M", "14.3M"
+func formatCompactTokens(n int64) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	if n < 1_000_000 {
+		v := float64(n) / 1000
+		if v < 9.95 {
+			return fmt.Sprintf("%.1fK", v)
+		}
+		return fmt.Sprintf("%.0fK", v)
+	}
+	v := float64(n) / 1_000_000
+	if v < 9.95 {
+		return fmt.Sprintf("%.1fM", v)
+	}
+	return fmt.Sprintf("%.0fM", v)
+}
+
+func renderTokens(b *strings.Builder, t TokenInfo) {
+	if t.InputTokens == 0 && t.OutputTokens == 0 && t.CacheTokens == 0 {
+		return
+	}
+
+	b.WriteString(headerStyle.Render("Tokens (24h)"))
+	b.WriteString("\n")
+
+	line := fmt.Sprintf("  %s in / %s out",
+		formatCompactTokens(t.InputTokens),
+		formatCompactTokens(t.OutputTokens))
+
+	if t.AgentCount > 0 {
+		line += fmt.Sprintf("  %s  %d agents", dimStyle.Render("•"), t.AgentCount)
+	}
+
+	b.WriteString(line)
+	b.WriteString("\n\n")
+}
+
 func renderMergeQueue(b *strings.Builder, mq MergeQueueInfo) {
 	if mq.Total == 0 {
 		b.WriteString(dimStyle.Render("  empty"))
@@ -649,6 +697,9 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 	b.WriteString("\n")
 	renderMergeQueue(&b, ws.MergeQueue)
 	b.WriteString("\n")
+
+	// Token summary.
+	renderTokens(&b, ws.Tokens)
 
 	// Unified inbox count (escalations + mail).
 	inboxCount := mailCount
