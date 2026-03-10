@@ -1,0 +1,409 @@
+package forge
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/store"
+)
+
+// ForgeSessionManager is the subset of session.SessionManager used by the forge
+// orchestrator. Defined here to avoid a dependency cycle and to keep the forge's
+// test surface small.
+type ForgeSessionManager interface {
+	Start(name, workdir, cmd string, env map[string]string, role, world string) error
+	Stop(name string, force bool) error
+	Exists(name string) bool
+	Inject(name string, text string, submit bool) error
+	Capture(name string, lines int) (string, error)
+}
+
+// ForgeResult and result file constants are defined in result.go.
+
+// sessionOutcome describes how the monitored session ended.
+type sessionOutcome int
+
+const (
+	sessionCompleted sessionOutcome = iota // session finished (result file may exist)
+	sessionStuck                           // AI assessment determined session is stuck
+	sessionCrashed                         // session died unexpectedly
+	sessionCancelled                       // context was cancelled
+)
+
+// monitorCaptureLines is how many tmux lines to capture per check.
+const monitorCaptureLines = 80
+
+// mergeSessionName returns the tmux session name for a forge merge session.
+func mergeSessionName(world string) string {
+	return config.SessionName(world, "forge-merge")
+}
+
+// runMergeSession starts a Claude session to execute the merge, monitors it,
+// reads the result, and returns the ForgeResult. The caller is responsible for
+// acting on the result (mark merged/failed/etc.) and cleaning up the session.
+func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeRequest) (*ForgeResult, error) {
+	if s.forge.sessions == nil {
+		return nil, fmt.Errorf("session manager not configured")
+	}
+
+	sessionName := mergeSessionName(s.forge.world)
+	worktree := s.forge.worktree
+
+	// 1. Stop any leftover session from a prior crash.
+	if s.forge.sessions.Exists(sessionName) {
+		s.fl.Log("CLEANUP", fmt.Sprintf("stopping leftover merge session %s", sessionName))
+		s.forge.sessions.Stop(sessionName, true)
+	}
+
+	// 2. Build injection context.
+	injection := s.buildInjection(mr)
+
+	// 3. Start fresh Claude session.
+	sessionCmd := config.SessionCommand()
+	env := map[string]string{
+		"SOL_HOME": config.Home(),
+	}
+	if err := s.forge.sessions.Start(sessionName, worktree, sessionCmd, env, "forge", s.forge.world); err != nil {
+		return nil, fmt.Errorf("failed to start merge session: %w", err)
+	}
+
+	// 4. Inject context.
+	if err := s.forge.sessions.Inject(sessionName, injection, true); err != nil {
+		s.forge.sessions.Stop(sessionName, true)
+		return nil, fmt.Errorf("failed to inject merge context: %w", err)
+	}
+
+	s.fl.Log("SESSION", fmt.Sprintf("started merge session %s for %s", sessionName, mr.Branch))
+
+	// 5. Monitor session progress.
+	outcome := s.monitorSession(ctx, sessionName, mr)
+
+	// 6. Read result based on outcome.
+	switch outcome {
+	case sessionCompleted, sessionStuck:
+		// Try to read the result file regardless — the session may have written
+		// one even if it appeared stuck/idle.
+		result, err := ReadResult(s.forge.worktree)
+		if err != nil {
+			if outcome == sessionStuck {
+				return &ForgeResult{
+					Result:  "failed",
+					Summary: "session was stuck and no result file found",
+				}, nil
+			}
+			return nil, fmt.Errorf("session completed but result file missing: %w", err)
+		}
+		return result, nil
+
+	case sessionCrashed:
+		// Try to read result in case it was written before crash.
+		result, err := ReadResult(s.forge.worktree)
+		if err != nil {
+			return nil, fmt.Errorf("session crashed and no result file: %w", err)
+		}
+		return result, nil
+
+	case sessionCancelled:
+		return nil, fmt.Errorf("merge session cancelled")
+
+	default:
+		return nil, fmt.Errorf("unexpected session outcome: %d", outcome)
+	}
+}
+
+// monitorSession watches the merge session using output hash comparison,
+// replicating the sentinel's checkProgress pattern. Writes heartbeat during
+// monitoring to maintain liveness.
+func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr *store.MergeRequest) sessionOutcome {
+	var lastHash string
+	interval := s.pcfg.MonitorInterval
+	if interval <= 0 {
+		interval = 3 * time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return sessionCancelled
+
+		case <-ticker.C:
+			// Write heartbeat to show we're still alive.
+			s.writeHeartbeatWithMR("working", 0, mr)
+
+			// Check if session still exists.
+			if !s.forge.sessions.Exists(sessionName) {
+				s.fl.Log("SESSION", "merge session exited")
+				return sessionCompleted
+			}
+
+			// Capture output and hash.
+			output, err := s.forge.sessions.Capture(sessionName, monitorCaptureLines)
+			if err != nil {
+				s.forge.logger.Warn("failed to capture merge session output", "error", err)
+				continue
+			}
+
+			hash := fmt.Sprintf("%x", sha256.Sum256([]byte(output)))
+
+			if lastHash == "" {
+				// First capture — establish baseline.
+				lastHash = hash
+				continue
+			}
+
+			if hash != lastHash {
+				// Output changed — session is making progress.
+				lastHash = hash
+				s.fl.Log("SESSION", "merge session progressing")
+				continue
+			}
+
+			// Output unchanged — assess with AI.
+			s.fl.Log("SESSION", "merge session output unchanged, assessing...")
+			assessment := s.assessMergeSession(ctx, sessionName, output, mr)
+
+			switch assessment {
+			case "progressing":
+				s.fl.Log("SESSION", "assessment: progressing, continuing to wait")
+				// Reset hash so we don't re-assess on the same output.
+				lastHash = hash
+			case "stuck":
+				s.fl.Log("SESSION", "assessment: stuck, stopping session")
+				return sessionStuck
+			case "idle":
+				s.fl.Log("SESSION", "assessment: idle, checking for result")
+				// Check if result file exists.
+				resultPath := filepath.Join(s.forge.worktree, resultFileName)
+				if _, err := os.Stat(resultPath); err == nil {
+					return sessionCompleted
+				}
+				// No result file and idle — likely stuck.
+				return sessionStuck
+			default:
+				// Unknown assessment — continue waiting.
+				s.fl.Log("SESSION", fmt.Sprintf("assessment: %s, continuing to wait", assessment))
+				lastHash = hash
+			}
+		}
+	}
+}
+
+// assessMergeSession runs AI assessment on a merge session's captured output.
+// Returns "progressing", "stuck", or "idle".
+func (s *patrolState) assessMergeSession(ctx context.Context, sessionName, output string, mr *store.MergeRequest) string {
+	prompt := buildMergeAssessmentPrompt(mr, output)
+
+	assessCtx, cancel := context.WithTimeout(ctx, s.pcfg.AssessTimeout)
+	defer cancel()
+
+	parts := strings.Fields(s.pcfg.AssessCommand)
+	if len(parts) == 0 {
+		return "progressing" // no assess command configured, assume progressing
+	}
+
+	cmd := exec.CommandContext(assessCtx, parts[0], parts[1:]...)
+	cmd.Stdin = strings.NewReader(prompt)
+	cmd.Dir = s.forge.worktree
+
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = io.Discard
+
+	if err := cmd.Run(); err != nil {
+		s.forge.logger.Warn("merge session AI assessment failed", "error", err)
+		return "progressing" // assume progressing on assessment failure
+	}
+
+	result := strings.TrimSpace(stdout.String())
+
+	// Try to parse as JSON first.
+	var parsed struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(result), &parsed); err == nil && parsed.Status != "" {
+		return normalizeAssessment(parsed.Status)
+	}
+
+	// Fall back to raw string matching.
+	return normalizeAssessment(result)
+}
+
+// normalizeAssessment normalizes an assessment result string.
+func normalizeAssessment(s string) string {
+	lower := strings.ToLower(strings.TrimSpace(s))
+	switch {
+	case strings.Contains(lower, "stuck"):
+		return "stuck"
+	case strings.Contains(lower, "idle"):
+		return "idle"
+	case strings.Contains(lower, "progressing"):
+		return "progressing"
+	default:
+		return "progressing" // conservative default
+	}
+}
+
+// buildMergeAssessmentPrompt builds the AI assessment prompt for a merge session.
+func buildMergeAssessmentPrompt(mr *store.MergeRequest, capturedOutput string) string {
+	return fmt.Sprintf(`You are monitoring a forge merge session in a multi-agent orchestration
+system. The session is executing a merge of branch %q (writ %s).
+The session output has not changed for 3 minutes. Analyze the output and
+determine the session's status.
+
+Session output (last %d lines):
+---
+%s
+---
+
+Respond with ONLY a JSON object (no markdown, no explanation):
+{
+    "status": "progressing|stuck|idle",
+    "reason": "brief explanation"
+}
+
+Status meanings:
+- "progressing": Session is actively working (e.g., running tests, compiling,
+  resolving conflicts). No action needed despite unchanged output.
+- "stuck": Session appears confused, looping, or unable to make progress.
+- "idle": Session appears to have finished or is not doing anything.`, mr.Branch, mr.WritID, monitorCaptureLines, capturedOutput)
+}
+
+// cleanupSession stops the merge session and removes the result file.
+func (s *patrolState) cleanupSession() {
+	sessionName := mergeSessionName(s.forge.world)
+
+	// Stop the session if it's still running.
+	if s.forge.sessions != nil && s.forge.sessions.Exists(sessionName) {
+		s.forge.sessions.Stop(sessionName, true)
+	}
+
+	// Remove result file.
+	resultPath := filepath.Join(s.forge.worktree, resultFileName)
+	os.Remove(resultPath)
+}
+
+// buildInjection constructs the injection context for the merge session.
+// This is a stub that will be replaced by the companion writ's builder.
+func (s *patrolState) buildInjection(mr *store.MergeRequest) string {
+	title := s.forge.writTitle(mr.WritID)
+	return fmt.Sprintf(`Execute merge for branch %s (writ %s: %q).
+
+Target branch: %s
+Worktree: %s
+MR ID: %s
+
+Write your result to %s in the worktree root when done.
+The result JSON must have this structure:
+{
+    "result": "merged|failed|conflict",
+    "summary": "description of what happened",
+    "files_changed": ["file1.go", "file2.go"],
+    "gate_output": "optional gate command output"
+}`, mr.Branch, mr.WritID, title,
+		s.forge.cfg.TargetBranch,
+		s.forge.worktree,
+		mr.ID,
+		resultFileName)
+}
+
+// actOnResult maps a ForgeResult to existing toolbox operations.
+func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, result *ForgeResult, queueDepth int) {
+	switch result.Result {
+	case "merged":
+		// Verify push landed by checking remote HEAD.
+		if err := s.verifyPush(ctx, mr); err != nil {
+			s.fl.Log("ERROR", fmt.Sprintf("push verification failed for %s: %s", mr.Branch, truncate(err.Error(), 200)))
+			s.lastError = truncate(fmt.Sprintf("push verification failed: %s", err.Error()), 200)
+			s.forge.Release(mr.ID)
+			s.writeHeartbeat("idle", queueDepth-1)
+			s.emitPatrolEvent(queueDepth)
+			return
+		}
+
+		if err := s.forge.MarkMerged(mr.ID); err != nil {
+			s.forge.logger.Error("mark-merged failed", "mr", mr.ID, "error", err)
+		} else {
+			s.mergesTotal++
+			s.lastMerge = time.Now()
+			s.lastError = ""
+			s.fl.Log("MERGED", fmt.Sprintf("%s  %s", mr.ID, truncate(result.Summary, 200)))
+			if s.eventLog != nil {
+				s.eventLog.Emit("merged", "forge", "forge", "both", map[string]string{
+					"merge_request_id": mr.ID,
+				})
+			}
+		}
+		s.writeHeartbeat("idle", queueDepth-1)
+		s.emitPatrolEvent(queueDepth)
+
+	case "failed":
+		s.fl.Log("FAILED", fmt.Sprintf("%s  %s", mr.ID, truncate(result.Summary, 200)))
+		s.lastError = truncate(fmt.Sprintf("merge failed: %s", result.Summary), 200)
+		if err := s.forge.MarkFailed(mr.ID); err != nil {
+			s.forge.logger.Error("mark-failed failed", "mr", mr.ID, "error", err)
+		}
+		if s.eventLog != nil {
+			s.eventLog.Emit("merge_failed", "forge", "forge", "both", map[string]string{
+				"merge_request_id": mr.ID,
+				"writ_id":          mr.WritID,
+				"reason":           truncate(result.Summary, 500),
+			})
+		}
+		s.writeHeartbeat("idle", queueDepth-1)
+		s.emitPatrolEvent(queueDepth)
+
+	case "conflict":
+		s.fl.Log("CONFLICT", fmt.Sprintf("%s  %s", mr.Branch, truncate(result.Summary, 200)))
+		s.lastError = truncate(fmt.Sprintf("merge conflict: %s", mr.Branch), 200)
+		if _, err := s.forge.CreateResolutionTask(mr); err != nil {
+			s.forge.logger.Error("create-resolution failed", "mr", mr.ID, "error", err)
+		}
+		s.writeHeartbeat("idle", queueDepth-1)
+		s.emitPatrolEvent(queueDepth)
+
+	default:
+		// Unknown result — release for retry.
+		s.fl.Log("ERROR", fmt.Sprintf("unknown result %q for %s", result.Result, mr.ID))
+		s.lastError = truncate(fmt.Sprintf("unknown result: %s", result.Result), 200)
+		s.forge.Release(mr.ID)
+		s.writeHeartbeat("idle", queueDepth-1)
+		s.emitPatrolEvent(queueDepth)
+	}
+}
+
+// verifyPush checks that the merge actually landed on the remote target branch
+// by verifying the branch commit includes the MR's branch content.
+func (s *patrolState) verifyPush(ctx context.Context, mr *store.MergeRequest) error {
+	worktree := s.forge.worktree
+	targetRef := fmt.Sprintf("origin/%s", s.forge.cfg.TargetBranch)
+
+	// Fetch to get latest remote state.
+	if _, err := s.cmd.Run(ctx, worktree, "git", "fetch", "origin"); err != nil {
+		return fmt.Errorf("git fetch failed during push verification: %w", err)
+	}
+
+	// Check that the branch is fully merged into the target.
+	out, err := s.cmd.Run(ctx, worktree, "git", "branch", "-r", "--merged", targetRef)
+	if err != nil {
+		return fmt.Errorf("git branch --merged check failed: %w", err)
+	}
+
+	branchRef := "origin/" + mr.Branch
+	if !strings.Contains(string(out), branchRef) {
+		return fmt.Errorf("branch %s not found in merged branches of %s", branchRef, targetRef)
+	}
+
+	return nil
+}

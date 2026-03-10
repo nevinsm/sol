@@ -1042,7 +1042,8 @@ var forgeRunCmd = &cobra.Command{
 		}
 
 		logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-		ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger)
+		mgr := session.New()
+		ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger, mgr)
 
 		// Build patrol config from world config.
 		pcfg := forge.DefaultPatrolConfig()

@@ -86,6 +86,7 @@ func testPatrolConfig() PatrolConfig {
 	cfg.WaitTimeout = 10 * time.Millisecond // don't wait in tests
 	cfg.AssessCommand = "echo assessment-stub"
 	cfg.AssessTimeout = 1 * time.Second
+	cfg.MonitorInterval = 100 * time.Millisecond // fast monitoring in tests
 	return cfg
 }
 

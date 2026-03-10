@@ -22,21 +22,23 @@ import (
 
 // PatrolConfig extends the base Config with patrol-specific settings.
 type PatrolConfig struct {
-	WaitTimeout    time.Duration // max wait between patrols (default: 30s)
-	AssessCommand  string        // AI assessment command (default: "claude -p")
-	AssessTimeout  time.Duration // AI callout timeout (default: 30s)
-	LogMaxBytes    int64         // max log file size before rotation (default: 10MB)
-	LogMaxRotated  int           // max rotated log files to keep (default: 3)
+	WaitTimeout     time.Duration // max wait between patrols (default: 30s)
+	AssessCommand   string        // AI assessment command (default: "claude -p")
+	AssessTimeout   time.Duration // AI callout timeout (default: 30s)
+	MonitorInterval time.Duration // interval for session output monitoring (default: 3m)
+	LogMaxBytes     int64         // max log file size before rotation (default: 10MB)
+	LogMaxRotated   int           // max rotated log files to keep (default: 3)
 }
 
 // DefaultPatrolConfig returns a PatrolConfig with sensible defaults.
 func DefaultPatrolConfig() PatrolConfig {
 	return PatrolConfig{
-		WaitTimeout:   30 * time.Second,
-		AssessCommand: "claude -p",
-		AssessTimeout: 30 * time.Second,
-		LogMaxBytes:   10 * 1024 * 1024, // 10MB
-		LogMaxRotated: 3,
+		WaitTimeout:     30 * time.Second,
+		AssessCommand:   "claude -p",
+		AssessTimeout:   30 * time.Second,
+		MonitorInterval: 3 * time.Minute,
+		LogMaxBytes:     10 * 1024 * 1024, // 10MB
+		LogMaxRotated:   3,
 	}
 }
 
@@ -404,14 +406,44 @@ func (s *patrolState) patrol(ctx context.Context) {
 	// Write "working" heartbeat with MR context.
 	s.writeHeartbeatWithMR("working", len(ready), mr)
 
+	// 5. Execute merge — session-based (ADR-0028) or legacy path.
+	if s.forge.sessions != nil {
+		s.executeMergeSession(ctx, mr, len(ready))
+	} else {
+		s.executeLegacyMerge(ctx, mr, len(ready))
+	}
+}
+
+// executeMergeSession runs the merge via an ephemeral Claude session (ADR-0028).
+func (s *patrolState) executeMergeSession(ctx context.Context, mr *store.MergeRequest, queueDepth int) {
+	defer s.cleanupSession()
+
+	result, err := s.runMergeSession(ctx, mr)
+	if err != nil {
+		s.forge.logger.Error("merge session failed", "mr", mr.ID, "error", err)
+		s.fl.Log("ERROR", fmt.Sprintf("merge session failed: %s", truncate(err.Error(), 200)))
+		s.lastError = truncate(fmt.Sprintf("merge session failed: %s", err.Error()), 200)
+		s.forge.Release(mr.ID)
+		s.writeHeartbeat("idle", queueDepth-1)
+		s.emitPatrolEvent(queueDepth)
+		return
+	}
+
+	s.actOnResult(ctx, mr, result, queueDepth)
+}
+
+// executeLegacyMerge runs the merge using direct Go code (pre-ADR-0028).
+// DEPRECATED: replaced by merge session (ADR-0028). Retained for fallback
+// when no session manager is configured.
+func (s *patrolState) executeLegacyMerge(ctx context.Context, mr *store.MergeRequest, queueDepth int) {
 	// 5. Sync worktree.
 	if err := s.syncWorktree(ctx); err != nil {
 		s.forge.logger.Error("sync failed", "error", err)
 		s.fl.Log("ERROR", fmt.Sprintf("sync failed: %s", truncate(err.Error(), 200)))
 		s.lastError = truncate(fmt.Sprintf("sync failed: %s", err.Error()), 200)
 		s.forge.Release(mr.ID)
-		s.writeHeartbeat("idle", len(ready))
-		s.emitPatrolEvent(len(ready))
+		s.writeHeartbeat("idle", queueDepth)
+		s.emitPatrolEvent(queueDepth)
 		return
 	}
 
@@ -422,26 +454,21 @@ func (s *patrolState) patrol(ctx context.Context) {
 		// Has changes, proceed to gates.
 	case mergeEmpty:
 		if mr.Attempts > 1 {
-			// This MR was reclaimed after conflict resolution but now has
-			// no diff. The resolution likely discarded the branch's changes
-			// instead of rebasing them. Mark as failed rather than silently
-			// marking merged with no content.
 			s.fl.Log("SUSPECT", fmt.Sprintf("%s  empty after %d attempts, marking failed", mr.Branch, mr.Attempts))
 			if err := s.forge.MarkFailed(mr.ID); err != nil {
 				s.forge.logger.Error("mark-failed failed", "mr", mr.ID, "error", err)
 			}
-			s.writeHeartbeat("idle", len(ready)-1)
-			s.emitPatrolEvent(len(ready))
+			s.writeHeartbeat("idle", queueDepth-1)
+			s.emitPatrolEvent(queueDepth)
 			return
 		}
-		// Genuine empty diff (first attempt) — mark merged directly.
 		s.fl.Log("MERGE", fmt.Sprintf("%s  empty diff, marking merged", mr.Branch))
 		if err := s.forge.MarkMerged(mr.ID); err != nil {
 			s.forge.logger.Error("mark-merged failed", "mr", mr.ID, "error", err)
 		} else {
 			s.mergesTotal++
 			s.lastMerge = time.Now()
-			s.lastError = "" // clear on successful merge
+			s.lastError = ""
 			s.fl.Log("MERGED", mr.ID)
 			if s.eventLog != nil {
 				s.eventLog.Emit(events.EventMerged, "forge", "forge", "both", map[string]string{
@@ -449,14 +476,12 @@ func (s *patrolState) patrol(ctx context.Context) {
 				})
 			}
 		}
-		s.writeHeartbeat("idle", len(ready)-1)
-		s.emitPatrolEvent(len(ready))
+		s.writeHeartbeat("idle", queueDepth-1)
+		s.emitPatrolEvent(queueDepth)
 		return
 	case mergeConflict:
-		// Conflict — attempt auto-rebase before creating resolution task.
 		s.fl.Log("CONFLICT", fmt.Sprintf("%s  conflicts detected, attempting auto-rebase", mr.Branch))
 		if s.autoRebase(ctx, mr) {
-			// Rebase succeeded — fetch and retry merge.
 			s.fl.Log("REBASE", fmt.Sprintf("auto-rebase succeeded for %s, retrying merge", mr.Branch))
 			if s.eventLog != nil {
 				s.eventLog.Emit(events.EventForgeRebase, "forge", "forge", "both", map[string]string{
@@ -465,14 +490,11 @@ func (s *patrolState) patrol(ctx context.Context) {
 					"branch":           mr.Branch,
 				})
 			}
-			// Fetch to see the force-pushed branch.
 			if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "fetch", "origin"); err != nil {
 				s.forge.logger.Error("post-rebase fetch failed", "error", err)
 			}
-			// Retry squash merge.
 			retryResult := s.merge(ctx, mr)
 			if retryResult == mergeClean || retryResult == mergeEmpty {
-				// Merge succeeded after rebase — continue to gates and push.
 				if retryResult == mergeEmpty {
 					s.fl.Log("MERGE", fmt.Sprintf("%s  empty diff after rebase, marking merged", mr.Branch))
 					if err := s.forge.MarkMerged(mr.ID); err != nil {
@@ -488,33 +510,30 @@ func (s *patrolState) patrol(ctx context.Context) {
 							})
 						}
 					}
-					s.writeHeartbeat("idle", len(ready)-1)
-					s.emitPatrolEvent(len(ready))
+					s.writeHeartbeat("idle", queueDepth-1)
+					s.emitPatrolEvent(queueDepth)
 					return
 				}
 				// mergeClean — fall through to gates and push below.
 				break
 			}
-			// Retry still has conflicts — fall through to resolution task.
 			s.fl.Log("REBASE", fmt.Sprintf("merge still conflicts after rebase for %s, creating resolution task", mr.Branch))
 		} else {
 			s.fl.Log("REBASE", fmt.Sprintf("auto-rebase failed for %s, creating resolution task", mr.Branch))
 		}
-		// Fall through to resolution task (existing path).
 		s.lastError = truncate(fmt.Sprintf("merge conflict: %s", mr.Branch), 200)
 		if _, err := s.forge.CreateResolutionTask(mr); err != nil {
 			s.forge.logger.Error("create-resolution failed", "mr", mr.ID, "error", err)
 		}
-		s.writeHeartbeat("idle", len(ready)-1)
-		s.emitPatrolEvent(len(ready))
+		s.writeHeartbeat("idle", queueDepth-1)
+		s.emitPatrolEvent(queueDepth)
 		return
 	case mergeError:
-		// Other error — release MR.
 		s.fl.Log("ERROR", fmt.Sprintf("merge failed for %s", mr.Branch))
 		s.lastError = truncate(fmt.Sprintf("merge failed: %s", mr.Branch), 200)
 		s.forge.Release(mr.ID)
-		s.writeHeartbeat("idle", len(ready)-1)
-		s.emitPatrolEvent(len(ready))
+		s.writeHeartbeat("idle", queueDepth-1)
+		s.emitPatrolEvent(queueDepth)
 		return
 	}
 
@@ -528,10 +547,9 @@ func (s *patrolState) patrol(ctx context.Context) {
 	case gatePass:
 		// Proceed to push.
 	case gateFail:
-		// Branch caused failure — already handled in runGates (MarkFailed called).
 		s.lastError = truncate(fmt.Sprintf("gate failed: %s", mr.Branch), 200)
-		s.writeHeartbeat("idle", len(ready)-1)
-		s.emitPatrolEvent(len(ready))
+		s.writeHeartbeat("idle", queueDepth-1)
+		s.emitPatrolEvent(queueDepth)
 		return
 	case gatePreExisting:
 		// Pre-existing failure — proceed to push.
@@ -546,8 +564,8 @@ func (s *patrolState) patrol(ctx context.Context) {
 		s.fl.Log("REJECTED", fmt.Sprintf("push rejected for %s: %s", mr.Branch, truncate(err.Error(), 200)))
 		s.lastError = truncate(fmt.Sprintf("push rejected: %s", err.Error()), 200)
 		s.forge.Release(mr.ID)
-		s.writeHeartbeat("idle", len(ready)-1)
-		s.emitPatrolEvent(len(ready))
+		s.writeHeartbeat("idle", queueDepth-1)
+		s.emitPatrolEvent(queueDepth)
 		return
 	}
 
@@ -557,7 +575,7 @@ func (s *patrolState) patrol(ctx context.Context) {
 	} else {
 		s.mergesTotal++
 		s.lastMerge = time.Now()
-		s.lastError = "" // clear on successful merge
+		s.lastError = ""
 		s.fl.Log("MERGED", mr.ID)
 		if s.eventLog != nil {
 			s.eventLog.Emit(events.EventMerged, "forge", "forge", "both", map[string]string{
@@ -566,8 +584,8 @@ func (s *patrolState) patrol(ctx context.Context) {
 		}
 	}
 
-	s.writeHeartbeat("idle", len(ready)-1)
-	s.emitPatrolEvent(len(ready))
+	s.writeHeartbeat("idle", queueDepth-1)
+	s.emitPatrolEvent(queueDepth)
 }
 
 // wait polls for nudges until one arrives or timeout expires.
@@ -613,6 +631,7 @@ const (
 	mergeError                        // other error
 )
 
+// DEPRECATED: replaced by merge session (ADR-0028). Retained for legacy fallback.
 // syncWorktree fetches and resets to origin/target branch.
 func (s *patrolState) syncWorktree(ctx context.Context) error {
 	worktree := s.forge.worktree
@@ -635,6 +654,7 @@ func (s *patrolState) syncWorktree(ctx context.Context) error {
 	return nil
 }
 
+// DEPRECATED: replaced by merge session (ADR-0028). Retained for legacy fallback.
 // merge performs a squash merge of the MR branch.
 func (s *patrolState) merge(ctx context.Context, mr *store.MergeRequest) mergeOutcome {
 	worktree := s.forge.worktree
@@ -668,6 +688,7 @@ func (s *patrolState) merge(ctx context.Context, mr *store.MergeRequest) mergeOu
 
 // --- Auto-rebase ---
 
+// DEPRECATED: replaced by merge session (ADR-0028). Retained for legacy fallback.
 // autoRebase attempts to rebase the MR branch onto origin/main.
 // Returns true if rebase and force-push succeeded, false otherwise.
 // Always leaves the worktree in detached HEAD on origin/main.
@@ -711,6 +732,7 @@ const (
 	gatePreExisting                    // pre-existing failure, proceed
 )
 
+// DEPRECATED: replaced by merge session (ADR-0028). Retained for legacy fallback.
 // runGates executes quality gate commands and performs the Scotty Test on failure.
 func (s *patrolState) runGates(ctx context.Context, mr *store.MergeRequest) gateOutcome {
 	worktree := s.forge.worktree
@@ -734,6 +756,7 @@ func (s *patrolState) runGates(ctx context.Context, mr *store.MergeRequest) gate
 	return s.scottyTest(ctx, mr, gateCmd, out)
 }
 
+// DEPRECATED: replaced by merge session (ADR-0028). Retained for legacy fallback.
 // scottyTest determines if a gate failure was caused by the branch or is pre-existing.
 func (s *patrolState) scottyTest(ctx context.Context, mr *store.MergeRequest, gateCmd string, branchOutput []byte) gateOutcome {
 	worktree := s.forge.worktree
@@ -766,6 +789,7 @@ func (s *patrolState) scottyTest(ctx context.Context, mr *store.MergeRequest, ga
 	return gateFail
 }
 
+// DEPRECATED: replaced by merge session (ADR-0028). Retained for legacy fallback.
 // handleBranchFailure runs AI callout for failure analysis and marks MR failed.
 func (s *patrolState) handleBranchFailure(ctx context.Context, mr *store.MergeRequest, gateCmd string, output []byte) {
 	// Run AI callout for enriched failure analysis.
@@ -835,6 +859,7 @@ func (s *patrolState) runAssessment(ctx context.Context, mr *store.MergeRequest,
 
 // --- Push step ---
 
+// DEPRECATED: replaced by merge session (ADR-0028). Retained for legacy fallback.
 // push commits and pushes to the target branch.
 func (s *patrolState) push(ctx context.Context, mr *store.MergeRequest) error {
 	worktree := s.forge.worktree

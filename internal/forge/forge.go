@@ -70,19 +70,26 @@ func WorktreePath(world string) string {
 
 // Forge processes the merge queue for a single world.
 type Forge struct {
-	world      string
-	agentID    string // "{world}/forge"
-	sourceRepo string // path to the source git repo
-	worktree   string // path to the forge's persistent worktree
-	worldStore WorldStore
+	world       string
+	agentID     string // "{world}/forge"
+	sourceRepo  string // path to the source git repo
+	worktree    string // path to the forge's persistent worktree
+	worldStore  WorldStore
 	sphereStore SphereStore
-	logger     *slog.Logger
-	cfg        Config
+	sessions    ForgeSessionManager // session manager for merge sessions (nil = legacy mode)
+	logger      *slog.Logger
+	cfg         Config
 }
 
-// New creates a new Forge.
+// New creates a new Forge. The sessions parameter is optional — if nil, the forge
+// operates in legacy mode (direct merge execution). If provided, the forge uses
+// ephemeral Claude sessions for merge execution (ADR-0028).
 func New(world, sourceRepo string, worldStore WorldStore, sphereStore SphereStore,
-	cfg Config, logger *slog.Logger) *Forge {
+	cfg Config, logger *slog.Logger, sessions ...ForgeSessionManager) *Forge {
+	var sess ForgeSessionManager
+	if len(sessions) > 0 {
+		sess = sessions[0]
+	}
 	return &Forge{
 		world:       world,
 		agentID:     world + "/forge",
@@ -90,8 +97,9 @@ func New(world, sourceRepo string, worldStore WorldStore, sphereStore SphereStor
 		worktree:    WorktreePath(world),
 		worldStore:  worldStore,
 		sphereStore: sphereStore,
-		logger:     logger,
-		cfg:        cfg,
+		sessions:    sess,
+		logger:      logger,
+		cfg:         cfg,
 	}
 }
 
