@@ -166,6 +166,13 @@ func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr
 			// Write heartbeat to show we're still alive.
 			s.writeHeartbeatWithMR("working", 0, mr)
 
+			// Fast path: result file means work is done, regardless of session state.
+			resultPath := filepath.Join(s.forge.worktree, resultFileName)
+			if _, err := os.Stat(resultPath); err == nil {
+				s.fl.Log("SESSION", "result file detected, completing")
+				return sessionCompleted
+			}
+
 			// Check if session still exists.
 			if !s.forge.sessions.Exists(sessionName) {
 				s.fl.Log("SESSION", "merge session exited")
