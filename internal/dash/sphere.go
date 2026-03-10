@@ -93,7 +93,7 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 	// Build process items for focused list navigation.
 	sm.processItems = []processItem{
 		{name: "Prefect", running: data.Prefect.Running, required: true, detail: formatPrefectDetail(data.Prefect), peekable: false},
-		{name: "Consul", running: data.Consul.Running, required: true, sessionName: "sol-sphere-consul", detail: formatConsulDetail(data.Consul), peekable: data.Consul.Running},
+		{name: "Consul", running: data.Consul.Running, required: true, detail: formatConsulDetail(data.Consul), peekable: false},
 		{name: "Chronicle", running: data.Chronicle.Running, required: false, sessionName: data.Chronicle.SessionName, detail: formatChronicleDetail(data.Chronicle), peekable: data.Chronicle.SessionName != ""},
 		{name: "Ledger", running: data.Ledger.Running, required: false, sessionName: data.Ledger.SessionName, detail: formatLedgerDetail(data.Ledger), peekable: data.Ledger.SessionName != ""},
 		{name: "Broker", running: data.Broker.Running, required: true, detail: formatBrokerDetail(data.Broker), peekable: false},

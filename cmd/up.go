@@ -18,10 +18,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// consulTmuxSession is the tmux session name used when consul is managed
-// by the prefect (matches the constant in internal/prefect).
-const consulTmuxSession = "sol-sphere-consul"
-
 // senateSession is the tmux session name for the senate
 // (matches the constant in internal/senate).
 const senateSession = "sol-senate"
@@ -34,7 +30,7 @@ type sphereDaemon struct {
 
 var sphereDaemons = []sphereDaemon{
 	{name: "prefect"},
-	{name: "consul", session: consulTmuxSession},
+	{name: "consul"},
 	{name: "chronicle", session: chronicleSessionName},
 	{name: "ledger", session: ledgerSessionName},
 	{name: "token-broker"},

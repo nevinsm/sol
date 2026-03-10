@@ -966,12 +966,11 @@ Manage the sphere-level consul patrol process
 
 | Command | Description |
 |---------|-------------|
-| `sol consul attach` | Attach to the consul tmux session |
 | `sol consul restart` | Restart the consul (stop then start) |
 | `sol consul run` | Run the consul patrol loop (foreground) |
-| `sol consul start` | Start the consul as a background tmux session |
+| `sol consul start` | Start the consul as a background process |
 | `sol consul status` | Show consul status from heartbeat |
-| `sol consul stop` | Stop the consul background session |
+| `sol consul stop` | Stop the consul background process |
 
 #### `sol consul run`
 
