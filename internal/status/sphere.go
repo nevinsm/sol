@@ -10,6 +10,7 @@ import (
 	"github.com/nevinsm/sol/internal/consul"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/prefect"
+	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -245,8 +246,9 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 	forgePID := forge.ReadPID(w.Name)
 	summary.Forge = forgePID > 0 && forge.IsRunning(forgePID)
 
-	sentinelSess := config.SessionName(w.Name, "sentinel")
-	summary.Sentinel = checker.Exists(sentinelSess)
+	// Check sentinel via PID + heartbeat (sentinel is a direct Go process).
+	sentinelPID := sentinel.ReadPID(w.Name)
+	summary.Sentinel = sentinelPID > 0 && prefect.IsRunning(sentinelPID)
 
 	// Check governor.
 	govSess := config.SessionName(w.Name, "governor")

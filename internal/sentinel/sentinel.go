@@ -134,6 +134,9 @@ type Sentinel struct {
 	// Per-patrol counters, reset at start of each patrol.
 	patrolAssessed int
 	patrolNudged   int
+
+	// Cumulative patrol count for heartbeat.
+	patrolCount int
 }
 
 // New creates a new Sentinel.
@@ -289,6 +292,12 @@ func (w *Sentinel) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to register sentinel: %w", err)
 	}
 
+	// Write PID file for process management.
+	if err := WritePID(w.config.World, os.Getpid()); err != nil {
+		return fmt.Errorf("failed to write PID file: %w", err)
+	}
+	defer ClearPID(w.config.World)
+
 	if err := w.sphereStore.UpdateAgentState(w.agentID(), "working", ""); err != nil {
 		return fmt.Errorf("failed to set sentinel working: %w", err)
 	}
@@ -296,6 +305,9 @@ func (w *Sentinel) Run(ctx context.Context) error {
 	// Reconcile respawn counts from event history before first patrol.
 	// This prevents infinite respawn loops after sentinel crash-restart.
 	w.reconcileRespawnCounts()
+
+	// Write initial heartbeat.
+	w.writeHeartbeat("running", 0, 0, 0, 0, "")
 
 	// Patrol immediately.
 	w.patrol(ctx)
@@ -306,6 +318,8 @@ func (w *Sentinel) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			// Write final heartbeat with stopping status.
+			w.writeHeartbeat("stopping", w.patrolCount, 0, 0, 0, "")
 			_ = w.sphereStore.UpdateAgentState(w.agentID(), "idle", "")
 			if w.logger != nil {
 				w.logger.Emit(events.EventSessionStop, w.agentID(), w.agentID(), "feed",
@@ -318,6 +332,26 @@ func (w *Sentinel) Run(ctx context.Context) error {
 	}
 }
 
+// writeHeartbeat writes a heartbeat file with current sentinel state.
+func (w *Sentinel) writeHeartbeat(status string, patrolCount, agentsChecked, stalledCount, reapedCount int, lastDuration string) {
+	hb := &Heartbeat{
+		Timestamp:          w.now(),
+		Status:             status,
+		PatrolCount:        patrolCount,
+		AgentsChecked:      agentsChecked,
+		StalledCount:       stalledCount,
+		ReapedCount:        reapedCount,
+		LastPatrolDuration: lastDuration,
+	}
+	if err := WriteHeartbeat(w.config.World, hb); err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit", map[string]any{
+				"action": "write_heartbeat", "error": err.Error(),
+			})
+		}
+	}
+}
+
 // Patrol runs one patrol cycle across all agents in the world. Exported for testing.
 func (w *Sentinel) Patrol(ctx context.Context) error {
 	return w.patrol(ctx)
@@ -325,6 +359,9 @@ func (w *Sentinel) Patrol(ctx context.Context) error {
 
 // patrol runs one patrol cycle across all agents in the world.
 func (w *Sentinel) patrol(ctx context.Context) error {
+	patrolStart := w.now()
+	w.patrolCount++
+
 	agents, err := w.sphereStore.ListAgents(w.config.World, "")
 	if err != nil {
 		return fmt.Errorf("failed to list agents: %w", err)
@@ -491,6 +528,10 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 			})
 	}
 
+	// Write heartbeat with patrol results.
+	patrolDuration := w.now().Sub(patrolStart)
+	w.writeHeartbeat("running", w.patrolCount, len(activeAgents), stalledCount, reapedCount, patrolDuration.String())
+
 	return nil
 }
 
@@ -601,6 +642,9 @@ func sha256Hash(s string) string {
 // assessAgent uses an AI model to evaluate a potentially stuck agent.
 func (w *Sentinel) assessAgent(ctx context.Context, agent store.Agent, sessionName, capturedOutput string) error {
 	w.patrolAssessed++
+
+	// Update heartbeat to "assessing" status so prefect knows not to respawn agents.
+	w.writeHeartbeat("assessing", w.patrolCount, 0, 0, 0, "")
 
 	var result *AssessmentResult
 	var err error

@@ -173,7 +173,7 @@ func TestWorldViewRendersProcesses(t *testing.T) {
 		World:     "testworld",
 		Prefect:   status.PrefectInfo{Running: true, PID: 42},
 		Forge:     status.ForgeInfo{Running: true, PID: 12345},
-		Sentinel:  status.SentinelInfo{Running: true, SessionName: "sol-testworld-sentinel"},
+		Sentinel:  status.SentinelInfo{Running: true, PID: 200, PatrolCount: 5},
 		Chronicle: status.ChronicleInfo{Running: true, PID: 100},
 		Governor:  status.GovernorInfo{Running: true, BriefAge: "5m"},
 	}
@@ -1817,8 +1817,11 @@ func TestProcessDetailFormats(t *testing.T) {
 	}
 
 	// Sentinel detail.
-	if d := formatSentinelDetail(status.SentinelInfo{Running: true, SessionName: "sol-dev-sentinel"}); d != "sol-dev-sentinel" {
-		t.Errorf("sentinel detail = %q, want %q", d, "sol-dev-sentinel")
+	if d := formatSentinelDetail(status.SentinelInfo{Running: true, PID: 123, PatrolCount: 10, AgentsChecked: 5, HeartbeatAge: "2m"}); d == "" {
+		t.Error("running sentinel detail should not be empty")
+	}
+	if d := formatSentinelDetail(status.SentinelInfo{Running: true, PID: 123}); d != "pid 123" {
+		t.Errorf("sentinel detail with PID only = %q, want %q", d, "pid 123")
 	}
 
 	// Chronicle detail.
@@ -2460,7 +2463,7 @@ func TestBuildWorldPeekItems(t *testing.T) {
 			{Name: "Scout", State: "working", SessionAlive: true},
 		},
 		Forge:    status.ForgeInfo{Running: true, PID: 12345},
-		Sentinel: status.SentinelInfo{Running: true, SessionName: "sol-testworld-sentinel"},
+		Sentinel: status.SentinelInfo{Running: true, PID: 200, PatrolCount: 5},
 	}
 
 	items := buildWorldPeekItems(data)
@@ -2511,7 +2514,7 @@ func TestBuildWorldPeekItemsForgeSessionName(t *testing.T) {
 	data := &status.WorldStatus{
 		World:    "myworld",
 		Forge:    status.ForgeInfo{Running: true},
-		Sentinel: status.SentinelInfo{Running: true, SessionName: "sol-myworld-sentinel"},
+		Sentinel: status.SentinelInfo{Running: true, PID: 200},
 	}
 
 	items := buildWorldPeekItems(data)

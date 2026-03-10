@@ -456,8 +456,21 @@ func formatForgeDetail(f ForgeInfo) string {
 }
 
 func formatSentinelDetail(s SentinelInfo) string {
-	if s.Running {
-		return s.SessionName
+	if !s.Running {
+		return ""
+	}
+	if s.PatrolCount > 0 {
+		parts := fmt.Sprintf("%d patrols, %d checked", s.PatrolCount, s.AgentsChecked)
+		if s.HeartbeatAge != "" {
+			parts += fmt.Sprintf(", last %s ago", s.HeartbeatAge)
+		}
+		if s.Stale {
+			parts += warnStyle.Render(" (stale)")
+		}
+		return parts
+	}
+	if s.PID > 0 {
+		return fmt.Sprintf("pid %d", s.PID)
 	}
 	return ""
 }

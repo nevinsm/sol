@@ -511,7 +511,7 @@ func buildWorldPeekItems(data *status.WorldStatus) []peekItem {
 	forgeMergeSess := fmt.Sprintf("sol-%s-forge-merge", data.World)
 	worldProcs := []proc{
 		{"Forge", data.Forge.Running, forgeMergeSess, true, "forge"},
-		{"Sentinel", data.Sentinel.Running, data.Sentinel.SessionName, false, "sentinel"},
+		{"Sentinel", data.Sentinel.Running, "", false, "sentinel"},
 	}
 	if data.Governor.Running || data.Governor.SessionAlive {
 		worldProcs = append(worldProcs, proc{

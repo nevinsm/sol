@@ -18,6 +18,7 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/ledger"
+	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -57,6 +58,7 @@ type Config struct {
 	LedgerHeartbeatMax time.Duration // max ledger heartbeat age before restart (default: 5 minutes)
 
 	ChronicleHeartbeatMax time.Duration // max chronicle heartbeat age before restart (default: 5 minutes)
+	SentinelHeartbeatMax  time.Duration // max sentinel heartbeat age before restart (default: 15 minutes)
 
 	SolBinary string // path to sol binary for starting world services. If empty, infrastructure check is skipped.
 }
@@ -75,12 +77,14 @@ func DefaultConfig() Config {
 		ForgeHeartbeatMax:     5 * time.Minute,
 		LedgerHeartbeatMax:    5 * time.Minute,
 		ChronicleHeartbeatMax: 5 * time.Minute,
+		SentinelHeartbeatMax:  15 * time.Minute,
 	}
 }
 
 // worldServices are the per-world infrastructure services the prefect manages
-// via tmux session existence check. Forge is monitored separately via heartbeat.
-var worldServices = []string{"sentinel"}
+// via tmux session existence check. Forge and sentinel are monitored separately
+// via heartbeat.
+var worldServices []string
 
 // sphereDaemonSpec describes a sphere-level daemon supervised via PID check.
 type sphereDaemonSpec struct {
@@ -226,6 +230,11 @@ func (s *Prefect) heartbeat() {
 	for _, agent := range workingAgents {
 		// Skip human-supervised roles — envoys and governors are not auto-respawned.
 		if agent.Role == "envoy" || agent.Role == "governor" {
+			continue
+		}
+
+		// Skip sentinel — it's managed as a direct process via heartbeat, not tmux session.
+		if agent.Role == "sentinel" {
 			continue
 		}
 
@@ -496,6 +505,9 @@ func (s *Prefect) checkWorldInfrastructure() {
 
 		// Check forge via heartbeat staleness (forge is a Go process, not a session-based service).
 		s.checkForgeHealth(world.Name)
+
+		// Check sentinel via heartbeat staleness (sentinel is a direct Go process).
+		s.checkSentinelHealth(world.Name)
 	}
 }
 
@@ -555,6 +567,88 @@ func (s *Prefect) checkForgeHealth(world string) {
 		if s.eventLog != nil {
 			s.eventLog.Emit(events.EventRespawn, "prefect", "forge", "both", map[string]any{
 				"service": "forge",
+				"world":   world,
+				"reason":  "heartbeat_stale",
+			})
+		}
+	}
+}
+
+// checkSentinelHealth reads the sentinel heartbeat and restarts if stale.
+// The sentinel runs as a direct Go process (not a tmux session).
+func (s *Prefect) checkSentinelHealth(world string) {
+	if s.cfg.SolBinary == "" {
+		return
+	}
+
+	pid := sentinel.ReadPID(world)
+
+	// If no process running at all, start the sentinel.
+	if pid <= 0 || !IsRunning(pid) {
+		hb, _ := sentinel.ReadHeartbeat(world)
+		if hb != nil && !hb.IsStale(s.cfg.SentinelHeartbeatMax) {
+			// Heartbeat is fresh but PID is gone — sentinel may have just exited.
+			// Give it a moment on the next cycle.
+			return
+		}
+
+		s.logger.Info("sentinel not running, starting", "world", world)
+		if err := s.runCommand(s.cfg.SolBinary, "sentinel", "start", "--world="+world); err != nil {
+			s.logger.Error("failed to start sentinel", "world", world, "error", err)
+		} else {
+			s.logger.Info("sentinel started", "world", world)
+			if s.eventLog != nil {
+				s.eventLog.Emit(events.EventRespawn, "prefect", "sentinel", "both", map[string]any{
+					"service": "sentinel",
+					"world":   world,
+					"reason":  "not_running",
+				})
+			}
+		}
+		return
+	}
+
+	// Process is alive — check heartbeat staleness.
+	hb, err := sentinel.ReadHeartbeat(world)
+	if err != nil {
+		s.logger.Warn("failed to read sentinel heartbeat", "world", world, "error", err)
+		return
+	}
+
+	if hb == nil {
+		// No heartbeat yet (sentinel just started) — give it time.
+		return
+	}
+
+	if !hb.IsStale(s.cfg.SentinelHeartbeatMax) {
+		return // heartbeat is fresh
+	}
+
+	// Heartbeat is stale — restart the sentinel.
+	s.logger.Warn("sentinel heartbeat is stale, restarting",
+		"world", world,
+		"last_heartbeat", hb.Timestamp,
+		"max_age", s.cfg.SentinelHeartbeatMax)
+
+	// Kill existing process.
+	if proc, err := os.FindProcess(pid); err == nil {
+		_ = proc.Signal(syscall.SIGTERM)
+		// Wait briefly for graceful exit.
+		time.Sleep(500 * time.Millisecond)
+		if IsRunning(pid) {
+			_ = proc.Signal(syscall.SIGKILL)
+		}
+	}
+	sentinel.ClearPID(world)
+
+	// Restart.
+	if err := s.runCommand(s.cfg.SolBinary, "sentinel", "start", "--world="+world); err != nil {
+		s.logger.Error("failed to restart sentinel", "world", world, "error", err)
+	} else {
+		s.logger.Info("sentinel restarted via heartbeat staleness", "world", world)
+		if s.eventLog != nil {
+			s.eventLog.Emit(events.EventRespawn, "prefect", "sentinel", "both", map[string]any{
+				"service": "sentinel",
 				"world":   world,
 				"reason":  "heartbeat_stale",
 			})
@@ -869,8 +963,10 @@ func (s *Prefect) pruneDeathTimes() {
 }
 
 // getSentineledWorlds returns the set of worlds with an active sentinel.
-// A world is sentineled when its sentinel agent is working AND the
-// sentinel tmux session is alive.
+// A world is sentineled when its sentinel process is alive (PID check)
+// and its heartbeat is fresh. When the sentinel is actively assessing
+// agents (heartbeat status = "assessing"), it is still considered active
+// but the prefect should skip agent respawning for that world.
 func (s *Prefect) getSentineledWorlds() map[string]bool {
 	sentinels, err := s.sphereStore.ListAgents("", "working")
 	if err != nil {
@@ -881,8 +977,9 @@ func (s *Prefect) getSentineledWorlds() map[string]bool {
 		if w.Role != "sentinel" {
 			continue
 		}
-		sessName := config.SessionName(w.World, w.Name)
-		if s.sessions.Exists(sessName) {
+		// Check if sentinel process is alive via PID file.
+		pid := sentinel.ReadPID(w.World)
+		if pid > 0 && IsRunning(pid) {
 			worlds[w.World] = true
 		}
 	}
@@ -978,7 +1075,7 @@ func (s *Prefect) shutdown() {
 			if !s.worldAllowed(world.Name) {
 				continue
 			}
-			// Stop session-based services (sentinel).
+			// Stop session-based services.
 			for _, svc := range worldServices {
 				sessName := config.SessionName(world.Name, svc)
 				if s.sessions.Exists(sessName) {
@@ -989,6 +1086,18 @@ func (s *Prefect) shutdown() {
 						stopped++
 						s.logger.Info("world service stopped during shutdown",
 							"service", svc, "world", world.Name)
+					}
+				}
+			}
+			// Stop sentinel (runs as direct Go process with PID file).
+			if pid := sentinel.ReadPID(world.Name); pid > 0 && IsRunning(pid) {
+				if proc, err := os.FindProcess(pid); err == nil {
+					if err := proc.Signal(syscall.SIGTERM); err == nil {
+						stopped++
+						s.logger.Info("sentinel stopped during shutdown", "world", world.Name)
+					} else {
+						s.logger.Error("failed to stop sentinel during shutdown",
+							"world", world.Name, "error", err)
 					}
 				}
 			}
