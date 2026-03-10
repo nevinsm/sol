@@ -126,7 +126,7 @@ func TestForgePersonaContent(t *testing.T) {
 
 	// Verify persona does NOT instruct agent to run /exit.
 	if strings.Contains(persona, "/exit") {
-		t.Error("persona should not mention /exit — session exit is handled by Stop hook")
+		t.Error("persona should not mention /exit — session exit is handled by the Go monitor")
 	}
 }
 
@@ -197,20 +197,10 @@ func TestForgeHookConfig(t *testing.T) {
 		t.Errorf("PreCompact hook should cat injection file, got: %s", preCompact[0].Hooks[0].Command)
 	}
 
-	// Check Stop hook exists and checks for result file.
-	stopHook, ok := cfg.Hooks["Stop"]
-	if !ok {
-		t.Fatal("Stop hooks not configured")
-	}
-	if len(stopHook) == 0 || len(stopHook[0].Hooks) == 0 {
-		t.Fatal("Stop should have at least one hook")
-	}
-	stopCmd := stopHook[0].Hooks[0].Command
-	if !strings.Contains(stopCmd, ".forge-result.json") {
-		t.Errorf("Stop hook should check for result file, got: %s", stopCmd)
-	}
-	if !strings.Contains(stopCmd, "test -f") {
-		t.Errorf("Stop hook should use test -f, got: %s", stopCmd)
+	// Verify Stop hook is NOT configured — exit 0 is the default behavior
+	// and the Go monitor detects the result file directly via os.Stat.
+	if _, ok := cfg.Hooks["Stop"]; ok {
+		t.Error("Stop hook should not be configured — it is a no-op (exit 0 is default)")
 	}
 }
 

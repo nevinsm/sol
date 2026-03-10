@@ -374,6 +374,56 @@ func TestRunMergeSessionWritInjection(t *testing.T) {
 	}
 }
 
+// --- monitorSession result file fast-path test ---
+
+func TestMonitorSessionResultFileDetected(t *testing.T) {
+	state, _, sessMgr := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	sessionName := mergeSessionName("ember")
+	sessMgr.mu.Lock()
+	sessMgr.sessions[sessionName] = true
+	sessMgr.captures[sessionName] = "Working on merge..."
+	sessMgr.mu.Unlock()
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+
+	// Write result file before monitor starts — simulates agent having
+	// already written its result.
+	result := ForgeResult{
+		Result:       "merged",
+		Summary:      "Successfully merged branch",
+		FilesChanged: []string{"auth.go"},
+	}
+	data, _ := json.Marshal(result)
+	os.WriteFile(filepath.Join(state.forge.worktree, resultFileName), data, 0o644)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	outcome := state.monitorSession(ctx, sessionName, mr)
+
+	if outcome != sessionCompleted {
+		t.Errorf("outcome = %d, want sessionCompleted (%d)", outcome, sessionCompleted)
+	}
+
+	// Verify session was NOT assessed (no AI assessment call needed).
+	// The fast path should return before reaching the output hash comparison
+	// and AI assessment logic.
+	logData, _ := os.ReadFile(state.fl.logPath)
+	logStr := string(logData)
+	if !strings.Contains(logStr, "result file detected") {
+		t.Error("expected 'result file detected' log message")
+	}
+	if strings.Contains(logStr, "assessing") {
+		t.Error("should not have reached AI assessment — result file fast path should return early")
+	}
+}
+
 // --- actOnResult tests ---
 
 func TestActOnResultMerged(t *testing.T) {
