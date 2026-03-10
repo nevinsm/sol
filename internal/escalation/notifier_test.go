@@ -98,8 +98,8 @@ func TestMailNotifier(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify message sent to "operator".
-	msgs, err := s.Inbox("operator")
+	// Verify message sent to "autarch".
+	msgs, err := s.Inbox("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,8 +111,8 @@ func TestMailNotifier(t *testing.T) {
 	if !strings.Contains(msg.Subject, "ESCALATION-high") {
 		t.Fatalf("expected subject containing 'ESCALATION-high', got %q", msg.Subject)
 	}
-	if msg.Recipient != "operator" {
-		t.Fatalf("expected recipient 'operator', got %q", msg.Recipient)
+	if msg.Recipient != "autarch" {
+		t.Fatalf("expected recipient 'autarch', got %q", msg.Recipient)
 	}
 	// High severity -> priority 1.
 	if msg.Priority != 1 {
@@ -126,7 +126,7 @@ func TestMailNotifier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgs, _ = s.Inbox("operator")
+	msgs, _ = s.Inbox("autarch")
 	// Find the low-priority message.
 	for _, m := range msgs {
 		if strings.Contains(m.Subject, "ESCALATION-low") {
@@ -248,7 +248,7 @@ func TestRouterDefaultRouting(t *testing.T) {
 	esc.Severity = "low"
 	router.Route(context.Background(), esc)
 
-	msgs, _ := sphereStore.Inbox("operator")
+	msgs, _ := sphereStore.Inbox("autarch")
 	if len(msgs) != 0 {
 		t.Fatalf("expected 0 messages for low severity, got %d", len(msgs))
 	}
@@ -260,7 +260,7 @@ func TestRouterDefaultRouting(t *testing.T) {
 	esc.Severity = "medium"
 	router.Route(context.Background(), esc)
 
-	msgs, _ = sphereStore.Inbox("operator")
+	msgs, _ = sphereStore.Inbox("autarch")
 	if len(msgs) != 1 {
 		t.Fatalf("expected 1 message for medium severity, got %d", len(msgs))
 	}
@@ -272,7 +272,7 @@ func TestRouterDefaultRouting(t *testing.T) {
 	esc.Severity = "high"
 	router.Route(context.Background(), esc)
 
-	msgs, _ = sphereStore.Inbox("operator")
+	msgs, _ = sphereStore.Inbox("autarch")
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages after high severity, got %d", len(msgs))
 	}
@@ -284,7 +284,7 @@ func TestRouterDefaultRouting(t *testing.T) {
 	esc.Severity = "critical"
 	router.Route(context.Background(), esc)
 
-	msgs, _ = sphereStore.Inbox("operator")
+	msgs, _ = sphereStore.Inbox("autarch")
 	if len(msgs) != 3 {
 		t.Fatalf("expected 3 messages after critical severity, got %d", len(msgs))
 	}
@@ -314,7 +314,7 @@ func TestRouterNoWebhook(t *testing.T) {
 	esc.Severity = "high"
 	router.Route(context.Background(), esc)
 
-	msgs, _ := sphereStore.Inbox("operator")
+	msgs, _ := sphereStore.Inbox("autarch")
 	if len(msgs) != 1 {
 		t.Fatalf("expected 1 message for high severity without webhook, got %d", len(msgs))
 	}

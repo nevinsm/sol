@@ -44,9 +44,9 @@ Worlds are explicit, discoverable, and configurable.
 
 ---
 
-## Arc 2: Operator Onboarding
+## Arc 2: Autarch Onboarding
 
-Make the system approachable for first-time operators.
+Make the system approachable for first-time use.
 
 - `sol doctor` — validate prerequisites (tmux, git, claude, writable dirs, SQLite WAL)
 - `sol init` — guided first-time setup (create SOL_HOME, first world)
@@ -73,7 +73,7 @@ overview for system-wide visibility.
 Role-aware sections (outposts/envoys/governor) land with Arc 3 when
 those roles exist.
 
-**Acceptance:** A new operator can go from zero to first successful `cast` with
+**Acceptance:** A new autarch can go from zero to first successful `cast` with
 clear guidance at every step. `sol doctor` catches all common setup issues.
 `sol status` gives a system-wide overview at a glance.
 
@@ -117,7 +117,7 @@ Claude session + sol CLI toolbox (ADR-0010).
 - Read-only mirror of main at `governor/mirror/` — for codebase research, never edited
 - Mirror auto-refreshes on session start + periodic pulls
 - Uses brief system for accumulated world knowledge (patterns, agent capabilities, preferences)
-- NL work dispatch: parses operator intent → creates writs, caravans, dispatches via cast
+- NL work dispatch: parses autarch intent → creates writs, caravans, dispatches via cast
 - Claude handles NL parsing and coordination logic; Go CLI handles mechanical operations
 - CLI: `sol governor start/stop/attach/brief/debrief` (singleton — no `create`)
 

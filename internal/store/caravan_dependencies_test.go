@@ -9,8 +9,8 @@ import (
 func TestAddCaravanDependency(t *testing.T) {
 	s := setupSphere(t)
 
-	idA, _ := s.CreateCaravan("caravan-a", "operator")
-	idB, _ := s.CreateCaravan("caravan-b", "operator")
+	idA, _ := s.CreateCaravan("caravan-a", "autarch")
+	idB, _ := s.CreateCaravan("caravan-b", "autarch")
 
 	if err := s.AddCaravanDependency(idA, idB); err != nil {
 		t.Fatalf("AddCaravanDependency() error: %v", err)
@@ -35,7 +35,7 @@ func TestAddCaravanDependency(t *testing.T) {
 
 func TestAddCaravanDependencySelfRef(t *testing.T) {
 	s := setupSphere(t)
-	idA, _ := s.CreateCaravan("caravan-a", "operator")
+	idA, _ := s.CreateCaravan("caravan-a", "autarch")
 
 	err := s.AddCaravanDependency(idA, idA)
 	if err == nil {
@@ -45,7 +45,7 @@ func TestAddCaravanDependencySelfRef(t *testing.T) {
 
 func TestAddCaravanDependencyNonexistent(t *testing.T) {
 	s := setupSphere(t)
-	idA, _ := s.CreateCaravan("caravan-a", "operator")
+	idA, _ := s.CreateCaravan("caravan-a", "autarch")
 
 	err := s.AddCaravanDependency(idA, "car-nonexistent")
 	if err == nil {
@@ -61,9 +61,9 @@ func TestAddCaravanDependencyNonexistent(t *testing.T) {
 func TestAddCaravanDependencyCycleDetection(t *testing.T) {
 	s := setupSphere(t)
 
-	idA, _ := s.CreateCaravan("caravan-a", "operator")
-	idB, _ := s.CreateCaravan("caravan-b", "operator")
-	idC, _ := s.CreateCaravan("caravan-c", "operator")
+	idA, _ := s.CreateCaravan("caravan-a", "autarch")
+	idB, _ := s.CreateCaravan("caravan-b", "autarch")
+	idC, _ := s.CreateCaravan("caravan-c", "autarch")
 
 	// A → B → C.
 	s.AddCaravanDependency(idA, idB)
@@ -79,8 +79,8 @@ func TestAddCaravanDependencyCycleDetection(t *testing.T) {
 func TestAddCaravanDependencyIdempotent(t *testing.T) {
 	s := setupSphere(t)
 
-	idA, _ := s.CreateCaravan("caravan-a", "operator")
-	idB, _ := s.CreateCaravan("caravan-b", "operator")
+	idA, _ := s.CreateCaravan("caravan-a", "autarch")
+	idB, _ := s.CreateCaravan("caravan-b", "autarch")
 
 	// Adding twice should not error (INSERT OR IGNORE).
 	s.AddCaravanDependency(idA, idB)
@@ -97,8 +97,8 @@ func TestAddCaravanDependencyIdempotent(t *testing.T) {
 func TestRemoveCaravanDependency(t *testing.T) {
 	s := setupSphere(t)
 
-	idA, _ := s.CreateCaravan("caravan-a", "operator")
-	idB, _ := s.CreateCaravan("caravan-b", "operator")
+	idA, _ := s.CreateCaravan("caravan-a", "autarch")
+	idB, _ := s.CreateCaravan("caravan-b", "autarch")
 
 	s.AddCaravanDependency(idA, idB)
 	s.RemoveCaravanDependency(idA, idB)
@@ -112,8 +112,8 @@ func TestRemoveCaravanDependency(t *testing.T) {
 func TestAreCaravanDependenciesSatisfied(t *testing.T) {
 	s := setupSphere(t)
 
-	idA, _ := s.CreateCaravan("caravan-a", "operator")
-	idB, _ := s.CreateCaravan("caravan-b", "operator")
+	idA, _ := s.CreateCaravan("caravan-a", "autarch")
+	idB, _ := s.CreateCaravan("caravan-b", "autarch")
 
 	s.AddCaravanDependency(idA, idB)
 
@@ -141,7 +141,7 @@ func TestAreCaravanDependenciesSatisfied(t *testing.T) {
 func TestAreCaravanDependenciesSatisfiedNoDeps(t *testing.T) {
 	s := setupSphere(t)
 
-	idA, _ := s.CreateCaravan("caravan-a", "operator")
+	idA, _ := s.CreateCaravan("caravan-a", "autarch")
 
 	satisfied, err := s.AreCaravanDependenciesSatisfied(idA)
 	if err != nil {
@@ -155,9 +155,9 @@ func TestAreCaravanDependenciesSatisfiedNoDeps(t *testing.T) {
 func TestUnsatisfiedCaravanDependencies(t *testing.T) {
 	s := setupSphere(t)
 
-	idA, _ := s.CreateCaravan("caravan-a", "operator")
-	idB, _ := s.CreateCaravan("caravan-b", "operator")
-	idC, _ := s.CreateCaravan("caravan-c", "operator")
+	idA, _ := s.CreateCaravan("caravan-a", "autarch")
+	idB, _ := s.CreateCaravan("caravan-b", "autarch")
+	idC, _ := s.CreateCaravan("caravan-c", "autarch")
 
 	s.AddCaravanDependency(idA, idB)
 	s.AddCaravanDependency(idA, idC)
@@ -189,9 +189,9 @@ func TestUnsatisfiedCaravanDependencies(t *testing.T) {
 func TestDeleteCaravanDependencies(t *testing.T) {
 	s := setupSphere(t)
 
-	idA, _ := s.CreateCaravan("caravan-a", "operator")
-	idB, _ := s.CreateCaravan("caravan-b", "operator")
-	idC, _ := s.CreateCaravan("caravan-c", "operator")
+	idA, _ := s.CreateCaravan("caravan-a", "autarch")
+	idB, _ := s.CreateCaravan("caravan-b", "autarch")
+	idC, _ := s.CreateCaravan("caravan-c", "autarch")
 
 	s.AddCaravanDependency(idA, idB)
 	s.AddCaravanDependency(idC, idA) // C depends on A
@@ -226,13 +226,13 @@ func TestCheckCaravanReadinessWithCaravanDeps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWrit("Item B", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := worldStore.CreateWrit("Item B", "", "autarch", 2, nil)
 	worldStore.Close()
 
 	// Create two caravans.
-	prereqID, _ := sphereStore.CreateCaravan("prereq-caravan", "operator")
-	dependentID, _ := sphereStore.CreateCaravan("dependent-caravan", "operator")
+	prereqID, _ := sphereStore.CreateCaravan("prereq-caravan", "autarch")
+	dependentID, _ := sphereStore.CreateCaravan("dependent-caravan", "autarch")
 
 	// Add items.
 	sphereStore.CreateCaravanItem(prereqID, idA, "ember", 0)
@@ -293,13 +293,13 @@ func TestCheckCaravanReadinessCaravanDepsPartialClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWrit("Item A", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
 	worldStore.Close()
 
 	// Two prerequisite caravans.
-	prereq1, _ := sphereStore.CreateCaravan("prereq-1", "operator")
-	prereq2, _ := sphereStore.CreateCaravan("prereq-2", "operator")
-	dependent, _ := sphereStore.CreateCaravan("dependent", "operator")
+	prereq1, _ := sphereStore.CreateCaravan("prereq-1", "autarch")
+	prereq2, _ := sphereStore.CreateCaravan("prereq-2", "autarch")
+	dependent, _ := sphereStore.CreateCaravan("dependent", "autarch")
 
 	sphereStore.CreateCaravanItem(dependent, idA, "ember", 0)
 	sphereStore.AddCaravanDependency(dependent, prereq1)
@@ -323,8 +323,8 @@ func TestCheckCaravanReadinessCaravanDepsPartialClose(t *testing.T) {
 func TestIsWritBlockedByCaravanDeps(t *testing.T) {
 	s := setupSphere(t)
 
-	prereq, _ := s.CreateCaravan("prereq", "operator")
-	dependent, _ := s.CreateCaravan("dependent", "operator")
+	prereq, _ := s.CreateCaravan("prereq", "autarch")
+	dependent, _ := s.CreateCaravan("dependent", "autarch")
 
 	s.CreateCaravanItem(dependent, "sol-11111111", "ember", 0)
 	s.AddCaravanDependency(dependent, prereq)
@@ -381,25 +381,25 @@ func TestIsWritBlockedByCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	alphaWrit, _ := worldAlpha.CreateWrit("Alpha item", "", "operator", 2, nil)
+	alphaWrit, _ := worldAlpha.CreateWrit("Alpha item", "", "autarch", 2, nil)
 	worldAlpha.Close()
 
 	worldBeta, err := OpenWorld("beta")
 	if err != nil {
 		t.Fatal(err)
 	}
-	betaWrit, _ := worldBeta.CreateWrit("Beta item", "", "operator", 2, nil)
+	betaWrit, _ := worldBeta.CreateWrit("Beta item", "", "autarch", 2, nil)
 	worldBeta.Close()
 
 	worldGamma, err := OpenWorld("gamma")
 	if err != nil {
 		t.Fatal(err)
 	}
-	gammaWrit, _ := worldGamma.CreateWrit("Gamma item", "", "operator", 2, nil)
+	gammaWrit, _ := worldGamma.CreateWrit("Gamma item", "", "autarch", 2, nil)
 	worldGamma.Close()
 
 	// Create a caravan with phase 0 items in alpha and beta, phase 1 item in gamma.
-	caravanID, _ := sphereStore.CreateCaravan("multi-world-caravan", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("multi-world-caravan", "autarch")
 	sphereStore.CreateCaravanItem(caravanID, alphaWrit, "alpha", 0)
 	sphereStore.CreateCaravanItem(caravanID, betaWrit, "beta", 0)
 	sphereStore.CreateCaravanItem(caravanID, gammaWrit, "gamma", 1)

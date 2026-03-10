@@ -693,7 +693,7 @@ var workflowManifestCmd = &cobra.Command{
 			World:       world,
 			ParentID:    target,
 			Variables:   vars,
-			CreatedBy:   "operator",
+			CreatedBy:   config.Autarch,
 		})
 		if err != nil {
 			return err

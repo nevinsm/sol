@@ -31,7 +31,7 @@ Writ kind determines how the system processes the writ at multiple points:
 
 Kind is not an annotation or tag — it controls system behavior. That makes
 it a schema-level concern. Metadata is for things the system does not need
-to understand (labels, descriptions, operator notes). Kind is for things it
+to understand (labels, descriptions, autarch notes). Kind is for things it
 does.
 
 ## Decision
@@ -116,7 +116,7 @@ before starting their own work.
   principle's documentation is updated to make this scope explicit.
 - **Output directories are the delivery surface for non-code writs.**
   GLASS-inspectable: `ls $SOL_HOME/{world}/writ-outputs/{writ-id}/`.
-  Operators can review analysis output with standard tools.
+  The autarch can review analysis output with standard tools.
 - **Sentinel reaps agents on closed writs.** When a non-code writ resolves
   (closes directly), any other agent that was somehow tethered to it gets
   reaped on the next sentinel patrol. This prevents orphaned sessions.

@@ -734,7 +734,7 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	itemID, err := worldStore.CreateWrit("Envoy task", "test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Envoy task", "test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
@@ -821,7 +821,7 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	itemID, err := worldStore.CreateWrit("Agent task", "test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Agent task", "test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
@@ -1241,7 +1241,7 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	itemID, err := worldStore.CreateWrit("Envoy full workflow", "test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Envoy full workflow", "test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}

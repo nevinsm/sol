@@ -6,7 +6,7 @@ Date: 2026-03-05
 ## Context
 
 Sol orchestrates multiple concurrent AI agents, each consuming API tokens
-across sessions. Today there is no visibility into token spend — operators
+across sessions. Today there is no visibility into token spend — the autarch
 cannot answer "how many tokens did this writ cost?" or "which agent
 consumes the most cache-read tokens?" Without this data, cost attribution,
 budget enforcement, and efficiency analysis are impossible.
@@ -66,7 +66,7 @@ Schema version: world DB v6.
 
 ## Consequences
 
-- Operators can query per-agent and per-writ token spend through
+- The autarch can query per-agent and per-writ token spend through
   the store directly. Future CLI commands (`sol status`, `sol ledger`)
   can surface this data.
 - The schema mirrors OTel's span/metric model, so exporting to an

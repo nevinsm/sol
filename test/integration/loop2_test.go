@@ -25,7 +25,7 @@ func TestStatusWithMergeQueue(t *testing.T) {
 	mgr := session.New()
 
 	// Create writ, cast, simulate work, done.
-	itemID, err := worldStore.CreateWrit("Status test", "Status with merge queue", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Status test", "Status with merge queue", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}

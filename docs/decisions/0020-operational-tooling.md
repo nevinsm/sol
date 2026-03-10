@@ -7,7 +7,7 @@ Arc: 6
 ## Context
 
 Sol has reached the point where multiple worlds run concurrently in
-production. The operator's toolkit for managing these worlds remains
+production. The autarch's toolkit for managing these worlds remains
 manual — backing up a world means knowing which files and database
 records to copy, restoring means reversing that process by hand, and
 there's no way to duplicate a world's configuration for a new project.
@@ -23,12 +23,12 @@ Four operational gaps need closing:
    `world.toml`, agent setup, and credential binding.
 
 3. **No schema migration visibility.** Migrations run automatically on
-   store open (`migrateWorld`, `migrateSphere`), but the operator has
+   store open (`migrateWorld`, `migrateSphere`), but the autarch has
    no way to check current schema versions, verify migration status, or
    understand what version an archive was created at.
 
 4. **No multi-world prefect filtering.** The prefect supervises all
-   worlds unconditionally. Operators running mixed environments (some
+   worlds unconditionally. The autarch running mixed environments (some
    worlds in maintenance, some in active development) cannot restrict
    prefect supervision to a subset of worlds without using the `sleeping`
    flag, which also affects other components.
@@ -104,7 +104,7 @@ self-consistent database file.
 as JSON rather than as a database slice. This avoids the complexity of
 extracting a filtered subset of a shared database and makes the archive
 contents inspectable — consistent with the manifesto's emphasis on
-operator inspectability.
+autarch inspectability.
 
 ### World import: `sol world import <archive>`
 
@@ -114,7 +114,7 @@ Import restores a world from an exported archive:
    versions are compatible (target sol binary must be at equal or higher
    schema versions).
 2. Check that the world name does not already exist. If it does, refuse
-   with an error. The operator must `sol world delete` first or use
+   with an error. The autarch must `sol world delete` first or use
    `--name=<newname>` to import under a different name.
 3. Register the world in sphere.db (`worlds` table).
 4. Create the world directory structure under `$SOL_HOME/{name}/`.
@@ -124,7 +124,7 @@ Import restores a world from an exported archive:
    caravan items) into sphere.db. Agent states are reset to `idle` on
    import — there are no active sessions for imported agents.
 7. Copy `world.toml` into the world directory.
-8. If `source_repo` is set in `world.toml`, prompt the operator to run
+8. If `source_repo` is set in `world.toml`, prompt the autarch to run
    `sol world sync <name>` to clone the managed repository.
 
 **`--name` flag:** `sol world import <archive> --name=newname` imports
@@ -133,7 +133,7 @@ references are rewritten to match. This supports the "import as copy"
 use case.
 
 **Schema forward-compatibility:** Import refuses archives with schema
-versions higher than the running binary supports. The operator must
+versions higher than the running binary supports. The autarch must
 upgrade sol first. Import from older schema versions succeeds — the
 standard migration code brings the world database up to date.
 
@@ -165,10 +165,10 @@ Agents in the cloned world inherit the account resolution chain
 (ADR-0019): per-dispatch flag → `world.toml` `default_account` →
 sphere default → `~/.claude` fallback. Since `world.toml` is copied
 (including `default_account` if set), the cloned world uses the same
-default account unless the operator overrides it.
+default account unless the autarch overrides it.
 
 **Managed repository:** The cloned world shares the same `source_repo`.
-The operator runs `sol world sync <target>` to create a separate
+The autarch runs `sol world sync <target>` to create a separate
 managed clone. Each world's managed clone is independent — they fetch
 from the same origin but have separate local state.
 
@@ -187,7 +187,7 @@ World databases:
 
 **`sol schema migrate`** runs migrations on all databases. This is what
 `store.Open*` already does automatically, but the explicit command
-gives operators visibility and control — particularly useful after a
+gives the autarch visibility and control — particularly useful after a
 sol binary upgrade where multiple worlds need migration.
 
 Migrations remain embedded in the binary (the `schema.go` constants).
@@ -223,7 +223,7 @@ parameter.
 **Interaction with sleeping:** The `sleeping` flag in `world.toml`
 remains the per-world opt-out mechanism. `--worlds` is additive
 filtering — a world must be both in the `--worlds` list and not
-sleeping to be supervised. This lets operators use `sleeping` for
+sleeping to be supervised. This lets the autarch use `sleeping` for
 temporary pauses and `--worlds` for structural partitioning (e.g.,
 separate prefect instances for production vs staging worlds).
 
@@ -235,14 +235,14 @@ override config or merge with it?).
 
 ## Consequences
 
-- Operators can backup and restore worlds with single commands,
+- The autarch can backup and restore worlds with single commands,
   eliminating manual file-and-database coordination.
 - Archives are self-describing (manifest) and inspectable (JSON for
   sphere data, standard SQLite for world data, plain TOML for config).
 - World cloning enables rapid environment replication — staging from
   production, experiment branches from main worlds.
 - Schema version visibility prevents surprise migration failures and
-  gives operators confidence during upgrades.
+  gives the autarch confidence during upgrades.
 - Export excludes ephemeral and reconstructible state (repos, worktrees,
   config dirs, briefs), keeping archives focused on durable world state.
 - Multi-world prefect filtering enables structural partitioning without

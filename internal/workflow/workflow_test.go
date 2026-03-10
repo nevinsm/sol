@@ -1385,7 +1385,7 @@ func TestManifestWorkflow(t *testing.T) {
 		Name: "manifest-wf",
 		World:       "test-world",
 		Variables:   map[string]string{"issue": "sol-test123"},
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -1530,7 +1530,7 @@ needs = ["draft"]
 	os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(toml), 0o644)
 
 	// Create a target writ.
-	targetID, err := ws.CreateWrit("Build auth system", "Implement OAuth2", "operator", 2, nil)
+	targetID, err := ws.CreateWrit("Build auth system", "Implement OAuth2", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit() error: %v", err)
 	}
@@ -1539,7 +1539,7 @@ needs = ["draft"]
 		Name: "test-expand",
 		World:       "test-world",
 		ParentID:    targetID,
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -1621,7 +1621,7 @@ description = "First pass."
 	_, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-expand",
 		World:       "test-world",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err == nil {
 		t.Fatal("Materialize() expected error for expansion without parent")
@@ -1649,7 +1649,7 @@ func TestManifestRejectsNonManifest(t *testing.T) {
 		Name: "plain-wf",
 		World:       "test-world",
 		Variables:   map[string]string{"issue": "sol-test"},
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err == nil {
 		t.Fatal("Materialize() expected error for non-manifest workflow")
@@ -1685,7 +1685,7 @@ func TestManifestDAGPhases(t *testing.T) {
 		Name: "dag-manifest",
 		World:       "test-world",
 		Variables:   map[string]string{"issue": "sol-dag-test"},
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -1735,7 +1735,7 @@ func TestManifestWithExistingParent(t *testing.T) {
 	os.WriteFile(filepath.Join(workflowDir, "steps", "only.md"), []byte("Do the thing."), 0o644)
 
 	// Create parent first.
-	parentID, err := ws.CreateWrit("Parent item", "Top-level work", "operator", 2, nil)
+	parentID, err := ws.CreateWrit("Parent item", "Top-level work", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit() error: %v", err)
 	}
@@ -1745,7 +1745,7 @@ func TestManifestWithExistingParent(t *testing.T) {
 		World:       "test-world",
 		ParentID:    parentID,
 		Variables:   map[string]string{"issue": "sol-test"},
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -2139,7 +2139,7 @@ func TestManifestConvoy(t *testing.T) {
 	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-convoy",
 		World:       "test-world",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -2291,7 +2291,7 @@ func TestConvoyLifecycle(t *testing.T) {
 	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "lifecycle-convoy",
 		World:       "test-world",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -2849,7 +2849,7 @@ func TestManifestConvoyWithKind(t *testing.T) {
 	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-convoy-kind",
 		World:       "test-world",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -2908,7 +2908,7 @@ func TestManifestConvoyKindDefaultsToCode(t *testing.T) {
 	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-convoy-default",
 		World:       "test-world",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -2948,7 +2948,7 @@ func TestManifestConvoySynthesisKind(t *testing.T) {
 		result, err := Materialize(ws, ss, ManifestOpts{
 			Name: "test-synth-analysis",
 			World:       "test-world",
-			CreatedBy:   "operator",
+			CreatedBy:   "autarch",
 		})
 		if err != nil {
 			t.Fatalf("Materialize() error: %v", err)
@@ -2982,7 +2982,7 @@ func TestManifestConvoySynthesisKind(t *testing.T) {
 		result, err := Materialize(ws, ss, ManifestOpts{
 			Name: "test-synth-default",
 			World:       "test-world",
-			CreatedBy:   "operator",
+			CreatedBy:   "autarch",
 		})
 		if err != nil {
 			t.Fatalf("Materialize() error: %v", err)
@@ -3021,7 +3021,7 @@ func TestCaravanPhaseGatingWithAnalysisWrit(t *testing.T) {
 	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-phase-gate",
 		World:       "test-world",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -3080,7 +3080,7 @@ func TestManifestConvoyTargetSubstitution(t *testing.T) {
 	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-target", legs, synth)
 
 	// Create a target writ to act as the parent.
-	targetID, err := ws.CreateWrit("Add login page", "Implement the OAuth login flow", "operator", 2, nil)
+	targetID, err := ws.CreateWrit("Add login page", "Implement the OAuth login flow", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit() error: %v", err)
 	}
@@ -3089,7 +3089,7 @@ func TestManifestConvoyTargetSubstitution(t *testing.T) {
 		Name: "test-convoy-target",
 		World:       "test-world",
 		ParentID:    targetID,
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -3143,7 +3143,7 @@ func TestManifestConvoyAnalysisSynthesisDescription(t *testing.T) {
 	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-convoy-analysis",
 		World:       "test-world",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -3189,7 +3189,7 @@ func TestManifestConvoyAnalysisSynthesisDescription(t *testing.T) {
 	result2, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-convoy-mixed",
 		World:       "test-world",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() mixed error: %v", err)
@@ -3245,7 +3245,7 @@ func TestMixedKindConvoyEndToEnd(t *testing.T) {
 	result, err := Materialize(ws, ss, ManifestOpts{
 		Name: "test-e2e-mixed",
 		World:       "test-world",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -3429,7 +3429,7 @@ func TestCodeReviewConvoyWorkflow(t *testing.T) {
 	targetID, err := ws.CreateWrit(
 		"Implement OAuth2 login flow",
 		"Add OAuth2 authentication with Google and GitHub providers.",
-		"operator", 2, nil,
+		"autarch", 2, nil,
 	)
 	if err != nil {
 		t.Fatalf("CreateWrit(target) error: %v", err)
@@ -3440,7 +3440,7 @@ func TestCodeReviewConvoyWorkflow(t *testing.T) {
 		Name: "code-review",
 		World:       "test-world",
 		ParentID:    targetID,
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -3621,7 +3621,7 @@ func TestCodeReviewConvoyWorkflowSynthesisTargetSubstitution(t *testing.T) {
 	ws, ss := setupStores(t)
 
 	// Create target writ.
-	targetID, err := ws.CreateWrit("Fix broken pagination", "The pagination component breaks on page 3.", "operator", 2, nil)
+	targetID, err := ws.CreateWrit("Fix broken pagination", "The pagination component breaks on page 3.", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit error: %v", err)
 	}
@@ -3630,7 +3630,7 @@ func TestCodeReviewConvoyWorkflowSynthesisTargetSubstitution(t *testing.T) {
 		Name: "code-review",
 		World:       "test-world",
 		ParentID:    targetID,
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -3656,7 +3656,7 @@ func TestCodeReviewConvoyWorkflowRequiresTarget(t *testing.T) {
 	_, err := Materialize(ws, ss, ManifestOpts{
 		Name: "code-review",
 		World:       "test-world",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 	})
 	if err == nil {
 		t.Fatal("Materialize() should fail without a target (ParentID)")
@@ -3694,7 +3694,7 @@ func TestConvoyVariableSubstitution(t *testing.T) {
 		Name:      "test-convoy-vars",
 		World:     "test-world",
 		Variables: map[string]string{"project": "sol", "branch": "develop"},
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -3751,7 +3751,7 @@ func TestConvoyVariableAndTargetSubstitutionCompose(t *testing.T) {
 	})
 
 	// Create target writ.
-	targetID, err := ws.CreateWrit("Build API", "API implementation", "operator", 0, nil)
+	targetID, err := ws.CreateWrit("Build API", "API implementation", "autarch", 0, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit() error: %v", err)
 	}
@@ -3761,7 +3761,7 @@ func TestConvoyVariableAndTargetSubstitutionCompose(t *testing.T) {
 		World:     "test-world",
 		ParentID:  targetID,
 		Variables: map[string]string{"scope": "security"},
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -3827,7 +3827,7 @@ func TestConvoyLegWithInstructions(t *testing.T) {
 		Name:      "test-convoy-instr",
 		World:     "test-world",
 		Variables: map[string]string{"project": "sol"},
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -3879,7 +3879,7 @@ func TestConvoyLegWithoutInstructionsUnchanged(t *testing.T) {
 	result, err := Materialize(ws, ss, ManifestOpts{
 		Name:      "test-convoy-noinstr",
 		World:     "test-world",
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -3930,7 +3930,7 @@ func TestConvoySynthesisWithInstructions(t *testing.T) {
 		Name:      "test-convoy-synth-instr",
 		World:     "test-world",
 		Variables: map[string]string{"project": "sol"},
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)
@@ -3984,7 +3984,7 @@ needs = ["analyze"]
 `
 	os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(toml), 0o644)
 
-	targetID, err := ws.CreateWrit("Build feature X", "Feature X implementation", "operator", 0, nil)
+	targetID, err := ws.CreateWrit("Build feature X", "Feature X implementation", "autarch", 0, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit() error: %v", err)
 	}
@@ -3993,7 +3993,7 @@ needs = ["analyze"]
 		Name:      "test-expand-kind",
 		World:     "test-world",
 		ParentID:  targetID,
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 	})
 	if err != nil {
 		t.Fatalf("Materialize() error: %v", err)

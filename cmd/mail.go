@@ -44,14 +44,14 @@ var mailSendCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		id, err := s.SendMessage("operator", to, subject, body, priority, "notification")
+		id, err := s.SendMessage(config.Autarch, to, subject, body, priority, "notification")
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "Sent: %s → %s\n", id, to)
 
 		// Bridge to nudge queue for agent delivery
-		if !noNotify && to != "operator" {
+		if !noNotify && to != config.Autarch {
 			bridgeMailToNudge(to, worldFlag, subject, body, priority)
 		}
 
@@ -323,7 +323,7 @@ func bridgeMailToNudge(to, worldFlag, subject, body string, priority int) {
 	}
 
 	if err := nudge.Deliver(sessName, nudge.Message{
-		Sender:   "operator",
+		Sender:   config.Autarch,
 		Type:     "MAIL",
 		Subject:  subject,
 		Body:     nudgeBody,
@@ -336,7 +336,7 @@ func bridgeMailToNudge(to, worldFlag, subject, body string, priority int) {
 func init() {
 	rootCmd.AddCommand(mailCmd)
 
-	mailSendCmd.Flags().String("to", "", "Recipient agent ID or \"operator\"")
+	mailSendCmd.Flags().String("to", "", "Recipient agent ID or \"autarch\"")
 	mailSendCmd.Flags().String("subject", "", "Message subject")
 	mailSendCmd.Flags().String("body", "", "Message body")
 	mailSendCmd.Flags().Int("priority", 2, "Priority (1=urgent, 2=normal, 3=low)")
@@ -345,10 +345,10 @@ func init() {
 	mailSendCmd.MarkFlagRequired("to")
 	mailSendCmd.MarkFlagRequired("subject")
 
-	mailInboxCmd.Flags().String("identity", "operator", "Recipient to check")
+	mailInboxCmd.Flags().String("identity", config.Autarch,"Recipient to check")
 	mailInboxCmd.Flags().Bool("json", false, "Output as JSON")
 
-	mailCheckCmd.Flags().String("identity", "operator", "Recipient to check")
+	mailCheckCmd.Flags().String("identity", config.Autarch,"Recipient to check")
 
 	mailPurgeCmd.Flags().String("before", "", "Delete acked messages older than duration (e.g., 7d, 24h)")
 	mailPurgeCmd.Flags().Bool("all-acked", false, "Delete all acknowledged messages regardless of age")

@@ -283,7 +283,7 @@ instructions = "steps/01.md"
 	if _, err := sphereStore.CreateAgent("WorkflowBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("WF task", "Workflow test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("WF task", "Workflow test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -391,7 +391,7 @@ needs = ["step1"]
 	if _, err := sphereStore.CreateAgent("PrimeBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Prime WF task", "Prime workflow test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Prime WF task", "Prime workflow test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -450,7 +450,7 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("PlainBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Plain task", "No workflow test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Plain task", "No workflow test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -527,7 +527,7 @@ instructions = "steps/01.md"
 	if _, err := sphereStore.CreateAgent("DoneBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Done WF task", "Done workflow test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Done WF task", "Done workflow test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -594,15 +594,15 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	idA, err := worldStore.CreateWrit("Task A", "First task", "operator", 2, nil)
+	idA, err := worldStore.CreateWrit("Task A", "First task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit A: %v", err)
 	}
-	idB, err := worldStore.CreateWrit("Task B", "Second task", "operator", 2, nil)
+	idB, err := worldStore.CreateWrit("Task B", "Second task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit B: %v", err)
 	}
-	idC, err := worldStore.CreateWrit("Task C", "Depends on A and B", "operator", 2, nil)
+	idC, err := worldStore.CreateWrit("Task C", "Depends on A and B", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit C: %v", err)
 	}
@@ -615,7 +615,7 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 	worldStore.Close()
 
 	// Create caravan with all 3.
-	caravanID, err := sphereStore.CreateCaravan("test-caravan", "operator")
+	caravanID, err := sphereStore.CreateCaravan("test-caravan", "autarch")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
@@ -716,11 +716,11 @@ func TestCaravanAutoClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	id1, err := worldStore.CreateWrit("Auto 1", "First", "operator", 2, nil)
+	id1, err := worldStore.CreateWrit("Auto 1", "First", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit 1: %v", err)
 	}
-	id2, err := worldStore.CreateWrit("Auto 2", "Second", "operator", 2, nil)
+	id2, err := worldStore.CreateWrit("Auto 2", "Second", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit 2: %v", err)
 	}
@@ -735,7 +735,7 @@ func TestCaravanAutoClose(t *testing.T) {
 	worldStore.Close()
 
 	// Create caravan.
-	caravanID, err := sphereStore.CreateCaravan("auto-close-test", "operator")
+	caravanID, err := sphereStore.CreateCaravan("auto-close-test", "autarch")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
@@ -790,7 +790,7 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open alpha world: %v", err)
 	}
-	idA, err := alphaStore.CreateWrit("Alpha task", "Task in alpha world", "operator", 2, nil)
+	idA, err := alphaStore.CreateWrit("Alpha task", "Task in alpha world", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit alpha: %v", err)
 	}
@@ -801,11 +801,11 @@ func TestCaravanMultiWorld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open beta world: %v", err)
 	}
-	idB, err := betaStore.CreateWrit("Beta task 1", "First task in beta", "operator", 2, nil)
+	idB, err := betaStore.CreateWrit("Beta task 1", "First task in beta", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit beta 1: %v", err)
 	}
-	idC, err := betaStore.CreateWrit("Beta task 2", "Second task in beta", "operator", 2, nil)
+	idC, err := betaStore.CreateWrit("Beta task 2", "Second task in beta", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit beta 2: %v", err)
 	}
@@ -816,7 +816,7 @@ func TestCaravanMultiWorld(t *testing.T) {
 	betaStore.Close()
 
 	// Create caravan spanning both worlds.
-	caravanID, err := sphereStore.CreateCaravan("multi-world-caravan", "operator")
+	caravanID, err := sphereStore.CreateCaravan("multi-world-caravan", "autarch")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
@@ -936,15 +936,15 @@ func TestCaravanLaunchDispatch(t *testing.T) {
 	logger := events.NewLogger(solHome)
 
 	// Create 3 writs: A and B are independent, C depends on A.
-	idA, err := worldStore.CreateWrit("Task A", "First task", "operator", 2, nil)
+	idA, err := worldStore.CreateWrit("Task A", "First task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit A: %v", err)
 	}
-	idB, err := worldStore.CreateWrit("Task B", "Second task", "operator", 2, nil)
+	idB, err := worldStore.CreateWrit("Task B", "Second task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit B: %v", err)
 	}
-	idC, err := worldStore.CreateWrit("Task C", "Depends on A", "operator", 2, nil)
+	idC, err := worldStore.CreateWrit("Task C", "Depends on A", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit C: %v", err)
 	}
@@ -953,7 +953,7 @@ func TestCaravanLaunchDispatch(t *testing.T) {
 	}
 
 	// Create a caravan with all 3 items.
-	caravanID, err := sphereStore.CreateCaravan("launch-test", "operator")
+	caravanID, err := sphereStore.CreateCaravan("launch-test", "autarch")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
@@ -1095,7 +1095,7 @@ needs = ["implement"]
 	if _, err := sphereStore.CreateAgent("PropBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Propulsion task", "E2E test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Propulsion task", "E2E test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}

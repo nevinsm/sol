@@ -258,7 +258,7 @@ func TestDeleteWorldDataDeletesCaravanItems(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	caravanID, err := s.CreateCaravan("test-caravan", "operator")
+	caravanID, err := s.CreateCaravan("test-caravan", "autarch")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,7 +11,7 @@ import (
 func TestSendMessage(t *testing.T) {
 	s := setupSphere(t)
 
-	id, err := s.SendMessage("haven/Toast", "operator", "Work done", "Finished task sol-abc12345", 2, "notification")
+	id, err := s.SendMessage("haven/Toast", "autarch", "Work done", "Finished task sol-abc12345", 2, "notification")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,8 +30,8 @@ func TestSendMessage(t *testing.T) {
 	if msg.Sender != "haven/Toast" {
 		t.Fatalf("expected sender 'haven/Toast', got %q", msg.Sender)
 	}
-	if msg.Recipient != "operator" {
-		t.Fatalf("expected recipient 'operator', got %q", msg.Recipient)
+	if msg.Recipient != "autarch" {
+		t.Fatalf("expected recipient 'autarch', got %q", msg.Recipient)
 	}
 	if msg.Subject != "Work done" {
 		t.Fatalf("expected subject 'Work done', got %q", msg.Subject)
@@ -56,13 +56,13 @@ func TestSendMessage(t *testing.T) {
 func TestInbox(t *testing.T) {
 	s := setupSphere(t)
 
-	// Send 3 messages to "operator" with different priorities.
-	s.SendMessage("agent1", "operator", "Low priority", "", 3, "notification")
-	s.SendMessage("agent2", "operator", "Urgent", "", 1, "notification")
-	s.SendMessage("agent3", "operator", "Normal", "", 2, "notification")
+	// Send 3 messages to "autarch" with different priorities.
+	s.SendMessage("agent1", "autarch", "Low priority", "", 3, "notification")
+	s.SendMessage("agent2", "autarch", "Urgent", "", 1, "notification")
+	s.SendMessage("agent3", "autarch", "Normal", "", 2, "notification")
 
 	// Inbox should return all 3, ordered by priority then age.
-	msgs, err := s.Inbox("operator")
+	msgs, err := s.Inbox("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestInbox(t *testing.T) {
 
 	// Send a message to "other" -> not in operator's inbox.
 	s.SendMessage("agent4", "other", "For other", "", 2, "notification")
-	msgs, err = s.Inbox("operator")
+	msgs, err = s.Inbox("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestInbox(t *testing.T) {
 
 	// Ack one message -> no longer in inbox.
 	s.AckMessage(msgs[0].ID)
-	msgs, err = s.Inbox("operator")
+	msgs, err = s.Inbox("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestInbox(t *testing.T) {
 func TestReadMessage(t *testing.T) {
 	s := setupSphere(t)
 
-	id, _ := s.SendMessage("agent1", "operator", "Test", "Body", 2, "notification")
+	id, _ := s.SendMessage("agent1", "autarch", "Test", "Body", 2, "notification")
 
 	// ReadMessage -> returns full message, marks as read.
 	msg, err := s.ReadMessage(id)
@@ -130,7 +130,7 @@ func TestReadMessage(t *testing.T) {
 func TestAckMessage(t *testing.T) {
 	s := setupSphere(t)
 
-	id, _ := s.SendMessage("agent1", "operator", "Test", "", 2, "notification")
+	id, _ := s.SendMessage("agent1", "autarch", "Test", "", 2, "notification")
 
 	// AckMessage -> delivery='acked', acked_at set.
 	err := s.AckMessage(id)
@@ -152,7 +152,7 @@ func TestAckMessage(t *testing.T) {
 	}
 
 	// Message no longer appears in Inbox.
-	msgs, _ := s.Inbox("operator")
+	msgs, _ := s.Inbox("autarch")
 	if len(msgs) != 0 {
 		t.Fatalf("expected 0 messages in inbox after ack, got %d", len(msgs))
 	}
@@ -162,7 +162,7 @@ func TestCountPending(t *testing.T) {
 	s := setupSphere(t)
 
 	// No messages -> 0.
-	count, err := s.CountPending("operator")
+	count, err := s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,11 +171,11 @@ func TestCountPending(t *testing.T) {
 	}
 
 	// Send 3 messages -> 3.
-	id1, _ := s.SendMessage("agent1", "operator", "Msg 1", "", 2, "notification")
-	s.SendMessage("agent2", "operator", "Msg 2", "", 2, "notification")
-	id3, _ := s.SendMessage("agent3", "operator", "Msg 3", "", 2, "notification")
+	id1, _ := s.SendMessage("agent1", "autarch", "Msg 1", "", 2, "notification")
+	s.SendMessage("agent2", "autarch", "Msg 2", "", 2, "notification")
+	id3, _ := s.SendMessage("agent3", "autarch", "Msg 3", "", 2, "notification")
 
-	count, err = s.CountPending("operator")
+	count, err = s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestCountPending(t *testing.T) {
 
 	// Read one -> still 3 (read doesn't affect count, only ack does).
 	s.ReadMessage(id1)
-	count, err = s.CountPending("operator")
+	count, err = s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestCountPending(t *testing.T) {
 
 	// Ack one -> 2.
 	s.AckMessage(id3)
-	count, err = s.CountPending("operator")
+	count, err = s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,14 +208,14 @@ func TestListMessages(t *testing.T) {
 	s := setupSphere(t)
 
 	// Send messages of different types and to different recipients.
-	s.SendMessage("agent1", "operator", "Notif 1", "", 2, "notification")
-	s.SendMessage("agent2", "operator", "Proto 1", "{}", 1, "protocol")
+	s.SendMessage("agent1", "autarch", "Notif 1", "", 2, "notification")
+	s.SendMessage("agent2", "autarch", "Proto 1", "{}", 1, "protocol")
 	s.SendMessage("agent3", "other", "Notif 2", "", 2, "notification")
-	id4, _ := s.SendMessage("agent4", "operator", "Acked", "", 2, "notification")
+	id4, _ := s.SendMessage("agent4", "autarch", "Acked", "", 2, "notification")
 	s.AckMessage(id4)
 
 	// Filter by recipient -> only matching.
-	msgs, err := s.ListMessages(MessageFilters{Recipient: "operator"})
+	msgs, err := s.ListMessages(MessageFilters{Recipient: "autarch"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,12 +256,12 @@ func TestListMessagesThreadFilter(t *testing.T) {
 
 	// Send messages with thread_id. Thread ID is stored as empty string by default,
 	// so we need to insert manually with a thread_id to test filtering.
-	s.SendMessage("agent1", "operator", "No thread", "", 2, "notification")
+	s.SendMessage("agent1", "autarch", "No thread", "", 2, "notification")
 
 	// Insert a message with a thread_id directly.
 	s.db.Exec(
 		`INSERT INTO messages (id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at)
-		 VALUES ('msg-thread01', 'agent2', 'operator', 'Threaded', '', 2, 'notification', 'thread-abc', 'pending', 0, '2025-01-01T00:00:00Z')`)
+		 VALUES ('msg-thread01', 'agent2', 'autarch', 'Threaded', '', 2, 'notification', 'thread-abc', 'pending', 0, '2025-01-01T00:00:00Z')`)
 
 	// Filter by thread -> only the threaded message.
 	msgs, err := s.ListMessages(MessageFilters{ThreadID: "thread-abc"})
@@ -363,9 +363,9 @@ func TestPurgeAckedMessages(t *testing.T) {
 	s := setupSphere(t)
 
 	// Send 3 messages and ack them all.
-	id1, _ := s.SendMessage("agent1", "operator", "Msg 1", "", 2, "notification")
-	id2, _ := s.SendMessage("agent2", "operator", "Msg 2", "", 2, "notification")
-	id3, _ := s.SendMessage("agent3", "operator", "Msg 3", "", 2, "notification")
+	id1, _ := s.SendMessage("agent1", "autarch", "Msg 1", "", 2, "notification")
+	id2, _ := s.SendMessage("agent2", "autarch", "Msg 2", "", 2, "notification")
+	id3, _ := s.SendMessage("agent3", "autarch", "Msg 3", "", 2, "notification")
 
 	s.AckMessage(id1)
 	s.AckMessage(id2)
@@ -403,9 +403,9 @@ func TestPurgeAckedMessagesNeverDeletesPending(t *testing.T) {
 	s := setupSphere(t)
 
 	// Send messages: 2 pending, 1 acked.
-	s.SendMessage("agent1", "operator", "Pending 1", "", 2, "notification")
-	s.SendMessage("agent2", "operator", "Pending 2", "", 2, "notification")
-	id3, _ := s.SendMessage("agent3", "operator", "Acked", "", 2, "notification")
+	s.SendMessage("agent1", "autarch", "Pending 1", "", 2, "notification")
+	s.SendMessage("agent2", "autarch", "Pending 2", "", 2, "notification")
+	id3, _ := s.SendMessage("agent3", "autarch", "Acked", "", 2, "notification")
 	s.AckMessage(id3)
 
 	// Backdate the acked message.
@@ -423,7 +423,7 @@ func TestPurgeAckedMessagesNeverDeletesPending(t *testing.T) {
 	}
 
 	// Both pending messages should still exist.
-	pending, err := s.CountPending("operator")
+	pending, err := s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,9 +436,9 @@ func TestPurgeAllAcked(t *testing.T) {
 	s := setupSphere(t)
 
 	// Send 3 messages, ack 2, leave 1 pending.
-	id1, _ := s.SendMessage("agent1", "operator", "Acked 1", "", 2, "notification")
-	id2, _ := s.SendMessage("agent2", "operator", "Acked 2", "", 2, "notification")
-	s.SendMessage("agent3", "operator", "Pending", "", 2, "notification")
+	id1, _ := s.SendMessage("agent1", "autarch", "Acked 1", "", 2, "notification")
+	id2, _ := s.SendMessage("agent2", "autarch", "Acked 2", "", 2, "notification")
+	s.SendMessage("agent3", "autarch", "Pending", "", 2, "notification")
 
 	s.AckMessage(id1)
 	s.AckMessage(id2)
@@ -481,7 +481,7 @@ func TestMailLifecycle(t *testing.T) {
 	s := setupSphere(t)
 
 	// 1. Send message.
-	id, err := s.SendMessage("agent1", "operator", "Task complete", "Details here", 2, "notification")
+	id, err := s.SendMessage("agent1", "autarch", "Task complete", "Details here", 2, "notification")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +491,7 @@ func TestMailLifecycle(t *testing.T) {
 	}
 
 	// 2. Verify in Inbox.
-	msgs, err := s.Inbox("operator")
+	msgs, err := s.Inbox("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +503,7 @@ func TestMailLifecycle(t *testing.T) {
 	}
 
 	// 3. CountPending accurate.
-	count, err := s.CountPending("operator")
+	count, err := s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -524,7 +524,7 @@ func TestMailLifecycle(t *testing.T) {
 	}
 
 	// 5. CountPending unchanged by read.
-	count, err = s.CountPending("operator")
+	count, err = s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +548,7 @@ func TestMailLifecycle(t *testing.T) {
 	}
 
 	// 7. CountPending drops after ack.
-	count, err = s.CountPending("operator")
+	count, err = s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -69,7 +69,7 @@ Replace the forge's free-form patrol with a workflow
 
 ## Consequences
 
-- The forge follows a predictable, observable sequence. Operators can
+- The forge follows a predictable, observable sequence. The autarch can
   watch the tmux session and verify step-by-step compliance.
 - Workflow changes are TOML edits, not Go code changes. Adjusting the
   merge strategy (e.g., switching from `--squash` to `--no-ff`) is a

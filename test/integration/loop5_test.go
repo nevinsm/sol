@@ -90,8 +90,8 @@ func TestEscalationCreateAndRoute(t *testing.T) {
 		t.Errorf("escalation severity: got %q, want high", dbEsc.Severity)
 	}
 
-	// Verify mail sent to "operator".
-	msgs, err := sphereStore.Inbox("operator")
+	// Verify mail sent to "autarch".
+	msgs, err := sphereStore.Inbox("autarch")
 	if err != nil {
 		t.Fatalf("Inbox: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestEscalationLifecycle(t *testing.T) {
 	defer sphereStore.Close()
 
 	// 1. Create escalation.
-	id, err := sphereStore.CreateEscalation("medium", "operator", "Test escalation lifecycle")
+	id, err := sphereStore.CreateEscalation("medium", "autarch", "Test escalation lifecycle")
 	if err != nil {
 		t.Fatalf("CreateEscalation: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestEscalationFromAgent(t *testing.T) {
 	}
 
 	// Verify mail sent.
-	msgs, err := sphereStore.Inbox("operator")
+	msgs, err := sphereStore.Inbox("autarch")
 	if err != nil {
 		t.Fatalf("Inbox: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("HandBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Handoff task", "Test handoff", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Handoff task", "Test handoff", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestHandoffPreservesHook(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("HookBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Tether task", "Test tether preservation", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Tether task", "Test tether preservation", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -443,7 +443,7 @@ needs = ["step1"]
 	if _, err := sphereStore.CreateAgent("WFHandBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("WF Handoff task", "Workflow handoff test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("WF Handoff task", "Workflow handoff test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -550,7 +550,7 @@ instructions = "steps/01.md"
 	if _, err := sphereStore.CreateAgent("OverBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Override task", "Override test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Override task", "Override test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -617,7 +617,7 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	defer worldStore.Close()
 
 	// Create writ in "tethered" status.
-	itemID, err := worldStore.CreateWrit("Stale task", "Stale tether test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Stale task", "Stale tether test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -714,7 +714,7 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	itemID, err := worldStore.CreateWrit("Recent task", "Recent tether test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Recent task", "Recent tether test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -789,7 +789,7 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	itemID, err := worldStore.CreateWrit("Alive task", "Alive tether test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Alive task", "Alive tether test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -867,11 +867,11 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	}
 
 	// Create writs: A (no deps), B→A.
-	idA, err := worldStore.CreateWrit("Task A", "First task", "operator", 2, nil)
+	idA, err := worldStore.CreateWrit("Task A", "First task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
-	idB, err := worldStore.CreateWrit("Task B", "Depends on A", "operator", 2, nil)
+	idB, err := worldStore.CreateWrit("Task B", "Depends on A", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -881,7 +881,7 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	worldStore.Close()
 
 	// Create caravan with both items and commission it.
-	caravanID, err := sphereStore.CreateCaravan("feed-caravan", "operator")
+	caravanID, err := sphereStore.CreateCaravan("feed-caravan", "autarch")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
@@ -978,13 +978,13 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	idA, err := worldStore.CreateWrit("Dup task", "No dup test", "operator", 2, nil)
+	idA, err := worldStore.CreateWrit("Dup task", "No dup test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 	worldStore.Close()
 
-	caravanID, err := sphereStore.CreateCaravan("nodup-caravan", "operator")
+	caravanID, err := sphereStore.CreateCaravan("nodup-caravan", "autarch")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}
@@ -1121,7 +1121,7 @@ func TestConsulLifecycleShutdown(t *testing.T) {
 	}
 
 	// Send SHUTDOWN protocol message to "sphere/consul".
-	if _, err := sphereStore.SendProtocolMessage("operator", "sphere/consul", "SHUTDOWN", nil); err != nil {
+	if _, err := sphereStore.SendProtocolMessage("autarch", "sphere/consul", "SHUTDOWN", nil); err != nil {
 		t.Fatalf("SendProtocolMessage: %v", err)
 	}
 
@@ -1395,11 +1395,11 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 
 	// 1. Create world with writs and dependencies.
-	idA, err := worldStore.CreateWrit("Task A", "No deps", "operator", 2, nil)
+	idA, err := worldStore.CreateWrit("Task A", "No deps", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
-	idB, err := worldStore.CreateWrit("Task B", "Depends on A", "operator", 2, nil)
+	idB, err := worldStore.CreateWrit("Task B", "Depends on A", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -1409,7 +1409,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	worldStore.Close()
 
 	// 2. Create caravan spanning the items and commission it.
-	caravanID, err := sphereStore.CreateCaravan("e2e-caravan", "operator")
+	caravanID, err := sphereStore.CreateCaravan("e2e-caravan", "autarch")
 	if err != nil {
 		t.Fatalf("CreateCaravan: %v", err)
 	}

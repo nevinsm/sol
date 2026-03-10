@@ -29,7 +29,7 @@ func setupEscalateTestEnv(t *testing.T) (string, *store.Store) {
 
 // resetEscalateFlags resets cobra flag state so Changed() is accurate between tests.
 func resetEscalateFlags() {
-	escalateSource = "operator"
+	escalateSource = "autarch"
 	escalateSourceRef = ""
 	escalateSeverity = "medium"
 	escalateCmd.Flags().VisitAll(func(f *pflag.Flag) {
@@ -270,8 +270,8 @@ func TestEscalateNoEnvUsesDefaultSource(t *testing.T) {
 	found := false
 	for _, e := range escs {
 		if e.Description == "no env test" {
-			if e.Source != "operator" {
-				t.Fatalf("expected default source 'operator', got %q", e.Source)
+			if e.Source != "autarch" {
+				t.Fatalf("expected default source 'autarch', got %q", e.Source)
 			}
 			found = true
 			break

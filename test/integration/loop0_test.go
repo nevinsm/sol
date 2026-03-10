@@ -33,7 +33,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	}
 
 	// 2. Create writ.
-	itemID, err := worldStore.CreateWrit("Test task", "Integration test description", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Test task", "Integration test description", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestCrashRecoveryRecast(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Crash test", "Recovery test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Crash test", "Recovery test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	item1ID, err := worldStore.CreateWrit("First task", "Task 1", "operator", 2, nil)
+	item1ID, err := worldStore.CreateWrit("First task", "Task 1", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 	}
 
 	// Create second writ and try to cast to same agent.
-	item2ID, err := worldStore.CreateWrit("Second task", "Task 2", "operator", 2, nil)
+	item2ID, err := worldStore.CreateWrit("Second task", "Task 2", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestPrimeOutput(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Prime test task", "Check prime output", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Prime test task", "Check prime output", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
@@ -357,11 +357,11 @@ func TestStoreInspection(t *testing.T) {
 	mgr := session.New()
 
 	// Create writs.
-	id1, err := worldStore.CreateWrit("Task one", "First", "operator", 2, nil)
+	id1, err := worldStore.CreateWrit("Task one", "First", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
-	id2, err := worldStore.CreateWrit("Task two", "Second", "operator", 2, nil)
+	id2, err := worldStore.CreateWrit("Task two", "Second", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}

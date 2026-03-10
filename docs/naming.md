@@ -18,6 +18,7 @@ structure; the action layer names the mechanisms.
 
 | Term | Definition | Replaces (Gastown) |
 |---|---|---|
+| **Autarch** | The human principal of the sol system. Creates writs, commissions caravans, reviews work, makes design decisions. The system and all its agents serve the autarch. From Greek *autarchēs* (self-ruler); cf. Gene Wolfe's *Book of the New Sun*. Identity label: `autarch`. | *(was: operator)* |
 | **World** | A project or workspace. Contains agents, writs, and configuration. Each world has its own database and directory tree. | Rig |
 | **Outpost** | A worker agent's station within a world. Directory at `$SOL_HOME/{world}/outposts/{agent}/`. | Polecat |
 | **Envoy** | A persistent, human-directed agent. Maintains context across sessions via a brief. Directory at `$SOL_HOME/{world}/envoys/{name}/`. | Crew |
@@ -44,7 +45,7 @@ structure; the action layer names the mechanisms.
 | **Active Writ** | The writ a persistent agent is currently focused on. Tracked in the sphere DB `agents.active_writ` column. Set by `sol cast`, `sol tether` (first tether only), and `sol writ activate`. Only one writ can be active because Claude Code caches the system prompt at session start. | *(new)* |
 | **Charter** | Per-world configuration file (`world.toml`). Defines source repo, agent capacity, model tier, and forge settings. Layered with global `sol.toml`. | *(new in Arc 1)* |
 | **Brief** | An envoy's, governor's, or senate's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start and after compaction, save-checked on stop. GLASS-inspectable. | *(new in Arc 3)* |
-| **World Summary** | Governor-maintained external-facing summary of a world. Structured file at `.brief/world-summary.md` with prescribed sections (Project, Architecture, Priorities, Constraints). Read by Senate and operators via `sol world summary`. | *(new in Arc 3)* |
+| **World Summary** | Governor-maintained external-facing summary of a world. Structured file at `.brief/world-summary.md` with prescribed sections (Project, Architecture, Priorities, Constraints). Read by Senate and the autarch via `sol world summary`. | *(new in Arc 3)* |
 
 ## Processes
 

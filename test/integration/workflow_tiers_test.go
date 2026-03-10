@@ -325,7 +325,7 @@ instructions = "steps/01.md"
 	if _, err := sphereStore.CreateAgent("ProjectBot", "ember", "agent"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Project WF task", "Test project workflow", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Project WF task", "Test project workflow", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}

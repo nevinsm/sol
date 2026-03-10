@@ -30,7 +30,7 @@ The agent's tether, worktree, and writ assignment are preserved. Committed
 code and the git history carry over as the primary context for the successor
 session. Use --summary to pass additional context.
 
-Common reasons: context exhaustion (compact), operator-initiated (manual),
+Common reasons: context exhaustion (compact), autarch-initiated (manual),
 or health-check triggered restart. Uses SOL_WORLD and SOL_AGENT environment
 variables when flags are not provided.`,
 	GroupID:      groupDispatch,

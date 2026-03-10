@@ -7,8 +7,8 @@ import (
 
 // Current schema versions — the latest migration target for each database type.
 const (
-	CurrentWorldSchema  = 9
-	CurrentSphereSchema = 12
+	CurrentWorldSchema  = 10
+	CurrentSphereSchema = 13
 )
 
 const worldSchemaV1 = `
@@ -181,6 +181,9 @@ const worldSchemaV8 = "" // migration handled procedurally below
 // worldSchemaV9 adds kind, metadata, and close_reason columns to writs.
 const worldSchemaV9 = "" // migration handled procedurally below
 
+// worldSchemaV10 renames created_by 'operator' → 'autarch' in writs.
+const worldSchemaV10 = "" // migration handled procedurally below
+
 func (s *Store) migrateWorld() error {
 	v, err := s.SchemaVersion()
 	if err != nil {
@@ -311,6 +314,12 @@ func (s *Store) migrateWorld() error {
 			}
 		}
 	}
+	if v < 10 {
+		// Rename identity: operator → autarch in writs.created_by.
+		if _, err := tx.Exec(`UPDATE writs SET created_by = 'autarch' WHERE created_by = 'operator'`); err != nil {
+			return fmt.Errorf("V10 migration: failed to rename operator → autarch in writs: %w", err)
+		}
+	}
 	if v < 1 {
 		if _, err := tx.Exec(fmt.Sprintf("INSERT INTO schema_version VALUES (%d)", CurrentWorldSchema)); err != nil {
 			return fmt.Errorf("failed to set schema version: %w", err)
@@ -381,6 +390,9 @@ ALTER TABLE escalations ADD COLUMN last_notified_at TEXT;
 CREATE INDEX IF NOT EXISTS idx_escalations_source_ref ON escalations(source_ref)
     WHERE source_ref IS NOT NULL;
 `
+
+// sphereSchemaV13 renames owner 'operator' → 'autarch' in caravans.
+const sphereSchemaV13 = "" // migration handled procedurally below
 
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
@@ -587,6 +599,20 @@ func (s *Store) migrateSphere() error {
 		if !exists {
 			if _, err := tx.Exec(sphereSchemaV12); err != nil {
 				return fmt.Errorf("failed to apply sphere schema v12: %w", err)
+			}
+		}
+	}
+	if v < 13 {
+		// Rename identity: operator → autarch in caravans.owner.
+		// Guard: caravans table may not exist in minimal test databases
+		// that start at a pre-V3 schema.
+		caravansExist, err := tableExists(tx, "caravans")
+		if err != nil {
+			return fmt.Errorf("V13 migration: failed to check table caravans: %w", err)
+		}
+		if caravansExist {
+			if _, err := tx.Exec(`UPDATE caravans SET owner = 'autarch' WHERE owner = 'operator'`); err != nil {
+				return fmt.Errorf("V13 migration: failed to rename operator → autarch in caravans: %w", err)
 			}
 		}
 	}

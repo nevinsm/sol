@@ -191,7 +191,7 @@ func TestChronicleAggregatesCastBurst(t *testing.T) {
 		writeRawEvent(t, cfg.RawPath, Event{
 			Timestamp: now.Add(time.Duration(i) * time.Millisecond),
 			Source:    "sol", Type: EventCast,
-			Actor: "operator" + string(rune('0'+i)), Visibility: "feed",
+			Actor: "autarch" + string(rune('0'+i)), Visibility: "feed",
 		})
 	}
 
@@ -247,7 +247,7 @@ func TestChronicleAggregatesSameActorCastBurst(t *testing.T) {
 			Timestamp:  now.Add(time.Duration(i) * time.Millisecond),
 			Source:     "sol",
 			Type:       EventCast,
-			Actor:      "operator",
+			Actor:      "autarch",
 			Visibility: "feed",
 			Payload:    map[string]string{"item": "sol-" + string(rune('a'+i))},
 		})

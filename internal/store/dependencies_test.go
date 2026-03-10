@@ -5,8 +5,8 @@ import "testing"
 func TestAddDependency(t *testing.T) {
 	s := setupWorld(t)
 
-	id1, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
-	id2, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
+	id1, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
+	id2, _ := s.CreateWrit("Item B", "", "autarch", 2, nil)
 
 	// Add dependency: A depends on B.
 	if err := s.AddDependency(id1, id2); err != nil {
@@ -26,7 +26,7 @@ func TestAddDependency(t *testing.T) {
 func TestAddDependencySelfRef(t *testing.T) {
 	s := setupWorld(t)
 
-	id1, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
+	id1, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
 
 	err := s.AddDependency(id1, id1)
 	if err == nil {
@@ -37,7 +37,7 @@ func TestAddDependencySelfRef(t *testing.T) {
 func TestAddDependencyNonexistentItem(t *testing.T) {
 	s := setupWorld(t)
 
-	id1, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
+	id1, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
 
 	err := s.AddDependency(id1, "sol-nonexist")
 	if err == nil {
@@ -53,9 +53,9 @@ func TestAddDependencyNonexistentItem(t *testing.T) {
 func TestAddDependencyCycleDetection(t *testing.T) {
 	s := setupWorld(t)
 
-	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
-	idC, _ := s.CreateWrit("Item C", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "autarch", 2, nil)
+	idC, _ := s.CreateWrit("Item C", "", "autarch", 2, nil)
 
 	// A depends on B.
 	if err := s.AddDependency(idA, idB); err != nil {
@@ -83,8 +83,8 @@ func TestAddDependencyCycleDetection(t *testing.T) {
 func TestRemoveDependency(t *testing.T) {
 	s := setupWorld(t)
 
-	id1, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
-	id2, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
+	id1, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
+	id2, _ := s.CreateWrit("Item B", "", "autarch", 2, nil)
 
 	// Add then remove.
 	s.AddDependency(id1, id2)
@@ -104,10 +104,10 @@ func TestRemoveDependency(t *testing.T) {
 func TestGetDependencies(t *testing.T) {
 	s := setupWorld(t)
 
-	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
-	idC, _ := s.CreateWrit("Item C", "", "operator", 2, nil)
-	idD, _ := s.CreateWrit("Item D", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "autarch", 2, nil)
+	idC, _ := s.CreateWrit("Item C", "", "autarch", 2, nil)
+	idD, _ := s.CreateWrit("Item D", "", "autarch", 2, nil)
 
 	// A depends on B, C, D.
 	s.AddDependency(idA, idB)
@@ -135,10 +135,10 @@ func TestGetDependencies(t *testing.T) {
 func TestGetDependents(t *testing.T) {
 	s := setupWorld(t)
 
-	idX, _ := s.CreateWrit("Item X", "", "operator", 2, nil)
-	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
-	idC, _ := s.CreateWrit("Item C", "", "operator", 2, nil)
+	idX, _ := s.CreateWrit("Item X", "", "autarch", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "autarch", 2, nil)
+	idC, _ := s.CreateWrit("Item C", "", "autarch", 2, nil)
 
 	// A, B, C all depend on X.
 	s.AddDependency(idA, idX)
@@ -157,9 +157,9 @@ func TestGetDependents(t *testing.T) {
 func TestIsReady(t *testing.T) {
 	s := setupWorld(t)
 
-	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
-	idC, _ := s.CreateWrit("Item C", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "autarch", 2, nil)
+	idC, _ := s.CreateWrit("Item C", "", "autarch", 2, nil)
 
 	// Item with no deps → ready.
 	ready, err := s.IsReady(idA)

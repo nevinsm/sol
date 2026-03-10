@@ -12,7 +12,7 @@ import (
 func TestTetherPersistentAgent(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestTetherPersistentAgent(t *testing.T) {
 func TestTetherGovernor(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Plan sprint", "Plan the sprint", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Plan sprint", "Plan the sprint", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -104,11 +104,11 @@ func TestTetherGovernor(t *testing.T) {
 func TestTetherSecondWrit(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	item1, err := worldStore.CreateWrit("First task", "First", "operator", 2, nil)
+	item1, err := worldStore.CreateWrit("First task", "First", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 1: %v", err)
 	}
-	item2, err := worldStore.CreateWrit("Second task", "Second", "operator", 2, nil)
+	item2, err := worldStore.CreateWrit("Second task", "Second", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 2: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestTetherSecondWrit(t *testing.T) {
 func TestTetherRejectsOutpost(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Add feature", "Add the feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Add the feature", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestTetherRejectsOutpost(t *testing.T) {
 func TestTetherRejectsNonOpenWrit(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Done task", "Already done", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Done task", "Already done", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestTetherRejectsNonOpenWrit(t *testing.T) {
 func TestTetherRejectsUnknownAgent(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Task", "Do it", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Task", "Do it", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestTetherRejectsUnknownAgent(t *testing.T) {
 func TestUntetherHappyPath(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -303,11 +303,11 @@ func TestUntetherHappyPath(t *testing.T) {
 func TestUntetherOneOfTwo(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	item1, err := worldStore.CreateWrit("First task", "First", "operator", 2, nil)
+	item1, err := worldStore.CreateWrit("First task", "First", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 1: %v", err)
 	}
-	item2, err := worldStore.CreateWrit("Second task", "Second", "operator", 2, nil)
+	item2, err := worldStore.CreateWrit("Second task", "Second", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 2: %v", err)
 	}
@@ -361,11 +361,11 @@ func TestUntetherOneOfTwo(t *testing.T) {
 func TestUntetherActiveWrit(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	item1, err := worldStore.CreateWrit("First task", "First", "operator", 2, nil)
+	item1, err := worldStore.CreateWrit("First task", "First", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 1: %v", err)
 	}
-	item2, err := worldStore.CreateWrit("Second task", "Second", "operator", 2, nil)
+	item2, err := worldStore.CreateWrit("Second task", "Second", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 2: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestUntetherActiveWrit(t *testing.T) {
 func TestUntetherRejectsNonTetheredWrit(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Task", "Do it", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Task", "Do it", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -430,7 +430,7 @@ func TestUntetherRejectsNonTetheredWrit(t *testing.T) {
 func TestTetherThenUntetherRoundTrip(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Round trip", "Test full cycle", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Round trip", "Test full cycle", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -477,7 +477,7 @@ func TestTetherThenUntetherRoundTrip(t *testing.T) {
 func TestTetherAgentStateBeforeTetherWrite(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Order test", "Verify ordering", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Order test", "Verify ordering", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}

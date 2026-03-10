@@ -28,7 +28,7 @@ func TestWorldSleepForceStopsOutpostSessions(t *testing.T) {
 		t.Fatalf("create agent: %v", err)
 	}
 
-	writID, err := worldStore.CreateWrit("Test task", "description", "operator", 2, nil)
+	writID, err := worldStore.CreateWrit("Test task", "description", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestWorldSleepForceCrashRecoveryScenario(t *testing.T) {
 		t.Fatalf("create agent: %v", err)
 	}
 
-	writID, err := worldStore.CreateWrit("Orphan task", "desc", "operator", 2, nil)
+	writID, err := worldStore.CreateWrit("Orphan task", "desc", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestWorldSleepForceMultipleAgents(t *testing.T) {
 			t.Fatalf("create agent %s: %v", name, err)
 		}
 
-		writID, err := worldStore.CreateWrit("Task for "+name, "desc", "operator", 2, nil)
+		writID, err := worldStore.CreateWrit("Task for "+name, "desc", "autarch", 2, nil)
 		if err != nil {
 			t.Fatalf("create writ for %s: %v", name, err)
 		}

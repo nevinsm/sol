@@ -68,8 +68,8 @@ func runSphereStatus() error {
 	result := status.GatherSphere(sphereStore, sphereStore, mgr,
 		gatedWorldOpener, sphereStore, sphereStore)
 
-	// Add operator mail count.
-	if count, err := sphereStore.CountPending("operator"); err == nil && count > 0 {
+	// Add autarch mail count.
+	if count, err := sphereStore.CountPending(config.Autarch); err == nil && count > 0 {
 		result.MailCount = count
 	}
 

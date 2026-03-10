@@ -71,7 +71,7 @@ func TestPopulateWritContextSingleWrit(t *testing.T) {
 	ss, ws := setupWritContextEnv(t, "myworld", "Echo", "envoy")
 
 	// Create a writ.
-	writID, err := ws.CreateWrit("Build feature", "Build the new feature", "operator", 2, nil)
+	writID, err := ws.CreateWrit("Build feature", "Build the new feature", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -127,11 +127,11 @@ func TestPopulateWritContextMultipleWrits(t *testing.T) {
 	ss, ws := setupWritContextEnv(t, "myworld", "Echo", "envoy")
 
 	// Create two writs.
-	writ1, err := ws.CreateWrit("First task", "First description", "operator", 2, nil)
+	writ1, err := ws.CreateWrit("First task", "First description", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 1: %v", err)
 	}
-	writ2, err := ws.CreateWrit("Second task", "Second description", "operator", 2, nil)
+	writ2, err := ws.CreateWrit("Second task", "Second description", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 2: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestPopulateWritContextNoActiveWrit(t *testing.T) {
 	_, ws := setupWritContextEnv(t, "myworld", "Echo", "envoy")
 
 	// Create a writ and tether it, but don't set it as active.
-	writID, err := ws.CreateWrit("Background task", "Background work", "operator", 2, nil)
+	writID, err := ws.CreateWrit("Background task", "Background work", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,13 +198,13 @@ func TestPopulateWritContextWithDependencies(t *testing.T) {
 	ss, ws := setupWritContextEnv(t, "myworld", "Echo", "envoy")
 
 	// Create dependency writ.
-	depID, err := ws.CreateWrit("Upstream task", "Upstream work", "operator", 2, nil)
+	depID, err := ws.CreateWrit("Upstream task", "Upstream work", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create main writ that depends on depID.
-	mainID, err := ws.CreateWrit("Main task", "Main work", "operator", 2, nil)
+	mainID, err := ws.CreateWrit("Main task", "Main work", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +247,7 @@ func TestPopulateWritContextEmptyKindDefaultsToCode(t *testing.T) {
 	ss, ws := setupWritContextEnv(t, "myworld", "Echo", "envoy")
 
 	// CreateWrit doesn't set Kind by default — should default to "code" in the context.
-	writID, err := ws.CreateWrit("Task", "Desc", "operator", 2, nil)
+	writID, err := ws.CreateWrit("Task", "Desc", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestPopulateWritContextEmptyKindDefaultsToCode(t *testing.T) {
 func TestPopulateWritContextGovernorRole(t *testing.T) {
 	ss, ws := setupWritContextEnv(t, "myworld", "governor", "governor")
 
-	writID, err := ws.CreateWrit("Governor task", "Governor work", "operator", 2, nil)
+	writID, err := ws.CreateWrit("Governor task", "Governor work", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

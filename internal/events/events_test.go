@@ -16,7 +16,7 @@ func TestLogEvent(t *testing.T) {
 	dir := t.TempDir()
 	logger := NewLogger(dir)
 
-	logger.Emit(EventCast, "sol", "operator", "both", map[string]string{
+	logger.Emit(EventCast, "sol", "autarch", "both", map[string]string{
 		"writ_id": "sol-a1b2c3d4",
 		"agent":        "Toast",
 		"world":        "haven",
@@ -45,8 +45,8 @@ func TestLogEvent(t *testing.T) {
 	if ev.Source != "sol" {
 		t.Errorf("source: got %q, want %q", ev.Source, "sol")
 	}
-	if ev.Actor != "operator" {
-		t.Errorf("actor: got %q, want %q", ev.Actor, "operator")
+	if ev.Actor != "autarch" {
+		t.Errorf("actor: got %q, want %q", ev.Actor, "autarch")
 	}
 	if ev.Visibility != "both" {
 		t.Errorf("visibility: got %q, want %q", ev.Visibility, "both")
@@ -143,7 +143,7 @@ func TestReadEvents(t *testing.T) {
 
 	// Log 10 events of mixed types.
 	for i := 0; i < 5; i++ {
-		logger.Emit(EventCast, "sol", "operator", "feed", nil)
+		logger.Emit(EventCast, "sol", "autarch", "feed", nil)
 	}
 	for i := 0; i < 5; i++ {
 		logger.Emit(EventResolve, "sol", "agent", "both", nil)
@@ -191,14 +191,14 @@ func TestReadSince(t *testing.T) {
 
 	// Log some events.
 	for i := 0; i < 3; i++ {
-		logger.Emit("old", "sol", "operator", "feed", nil)
+		logger.Emit("old", "sol", "autarch", "feed", nil)
 	}
 
 	cutoff := time.Now()
 	time.Sleep(10 * time.Millisecond)
 
 	for i := 0; i < 2; i++ {
-		logger.Emit("new", "sol", "operator", "feed", nil)
+		logger.Emit("new", "sol", "autarch", "feed", nil)
 	}
 
 	reader := NewReader(dir, false)
@@ -274,7 +274,7 @@ func TestFollow(t *testing.T) {
 
 	// Log new events.
 	for i := 0; i < 3; i++ {
-		logger.Emit("follow_test", "sol", "operator", "feed", map[string]int{"i": i})
+		logger.Emit("follow_test", "sol", "autarch", "feed", map[string]int{"i": i})
 	}
 
 	// Collect events from channel.
@@ -313,7 +313,7 @@ func TestFollowSurvivesTruncation(t *testing.T) {
 
 	// Write initial events so Follow can open the file.
 	for i := 0; i < 5; i++ {
-		logger.Emit("initial", "sol", "operator", "feed", nil)
+		logger.Emit("initial", "sol", "autarch", "feed", nil)
 	}
 
 	reader := NewReader(dir, false)
@@ -350,7 +350,7 @@ func TestFollowSurvivesTruncation(t *testing.T) {
 	// Write new events after truncation (appended to new inode).
 	time.Sleep(100 * time.Millisecond)
 	for i := 0; i < 3; i++ {
-		logger.Emit("post_truncation", "sol", "operator", "feed", nil)
+		logger.Emit("post_truncation", "sol", "autarch", "feed", nil)
 	}
 
 	// Should receive the "survived" event plus the 3 post-truncation events.

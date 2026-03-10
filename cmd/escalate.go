@@ -21,7 +21,7 @@ var (
 var escalateCmd = &cobra.Command{
 	Use:   "escalate <description>",
 	Short: "Create an escalation",
-	Long: `Create an escalation record and route it for operator attention.
+	Long: `Create an escalation record and route it for autarch attention.
 
 Auto-detects source from SOL_WORLD/SOL_AGENT environment variables when
 called from within an agent session. Also auto-detects the active writ
@@ -102,6 +102,6 @@ on the configured escalation router and SOL_ESCALATION_WEBHOOK.`,
 func init() {
 	rootCmd.AddCommand(escalateCmd)
 	escalateCmd.Flags().StringVar(&escalateSeverity, "severity", "medium", "Severity level (low, medium, high, critical)")
-	escalateCmd.Flags().StringVar(&escalateSource, "source", "operator", "Source of the escalation")
+	escalateCmd.Flags().StringVar(&escalateSource, "source", config.Autarch, "Source of the escalation")
 	escalateCmd.Flags().StringVar(&escalateSourceRef, "source-ref", "", "Structured reference (e.g., mr:mr-abc123, writ:sol-xyz)")
 }

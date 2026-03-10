@@ -118,7 +118,7 @@ func TestBackupDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.CreateWrit("backup item", "test", "operator", 2, nil)
+	_, err = s.CreateWrit("backup item", "test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,11 +166,11 @@ func TestBackupDatabaseNonexistent(t *testing.T) {
 
 func TestCurrentSchemaConstants(t *testing.T) {
 	// Verify constants are positive and match the expected values.
-	if CurrentWorldSchema != 9 {
-		t.Fatalf("CurrentWorldSchema = %d, expected 9", CurrentWorldSchema)
+	if CurrentWorldSchema != 10 {
+		t.Fatalf("CurrentWorldSchema = %d, expected 10", CurrentWorldSchema)
 	}
-	if CurrentSphereSchema != 12 {
-		t.Fatalf("CurrentSphereSchema = %d, expected 12", CurrentSphereSchema)
+	if CurrentSphereSchema != 13 {
+		t.Fatalf("CurrentSphereSchema = %d, expected 13", CurrentSphereSchema)
 	}
 }
 
@@ -230,7 +230,7 @@ func TestWorldSchemaV9Migration(t *testing.T) {
 	}
 	s.Close()
 
-	// Re-open with migration — should migrate to V9.
+	// Re-open with migration — should migrate to V10 (V9 adds kind/metadata/close_reason, V10 renames operator → autarch).
 	s2, err := OpenWorld("v9test")
 	if err != nil {
 		t.Fatalf("OpenWorld after migration: %v", err)
@@ -242,8 +242,8 @@ func TestWorldSchemaV9Migration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v != 9 {
-		t.Fatalf("expected schema version 9, got %d", v)
+	if v != 10 {
+		t.Fatalf("expected schema version 10, got %d", v)
 	}
 
 	// Verify existing writs got default values for new columns.
@@ -279,6 +279,14 @@ func TestWorldSchemaV9Migration(t *testing.T) {
 	}
 	if w2.Status != "closed" {
 		t.Errorf("writ 2 status = %q, want %q", w2.Status, "closed")
+	}
+
+	// Verify V10 migration renamed created_by from 'operator' to 'autarch'.
+	if w1.CreatedBy != "autarch" {
+		t.Errorf("writ 1 created_by = %q, want %q (V10 migration)", w1.CreatedBy, "autarch")
+	}
+	if w2.CreatedBy != "autarch" {
+		t.Errorf("writ 2 created_by = %q, want %q (V10 migration)", w2.CreatedBy, "autarch")
 	}
 
 	// Verify dependencies survived migration.

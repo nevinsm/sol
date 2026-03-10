@@ -1120,9 +1120,9 @@ sol forge resume.`,
 		// Nudge the forge session so it notices the pause promptly.
 		sessName := config.SessionName(world, "forge")
 		if err := nudge.Deliver(sessName, nudge.Message{
-			Sender:   "operator",
+			Sender:   config.Autarch,
 			Type:     "FORGE_PAUSED",
-			Subject:  "Forge paused by operator",
+			Subject:  "Forge paused by autarch",
 			Body:     fmt.Sprintf(`{"world":%q}`, world),
 			Priority: "urgent",
 		}); err != nil {
@@ -1159,9 +1159,9 @@ requests from the queue immediately.`,
 		// Nudge the forge session so it resumes promptly.
 		sessName := config.SessionName(world, "forge")
 		if err := nudge.Deliver(sessName, nudge.Message{
-			Sender:   "operator",
+			Sender:   config.Autarch,
 			Type:     "FORGE_RESUMED",
-			Subject:  "Forge resumed by operator",
+			Subject:  "Forge resumed by autarch",
 			Body:     fmt.Sprintf(`{"world":%q}`, world),
 			Priority: "urgent",
 		}); err != nil {

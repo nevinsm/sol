@@ -7,7 +7,7 @@ Arc: 3
 ## Context
 
 Work dispatch in Sol requires multiple CLI commands: create writs, form
-caravans, add items, dispatch with cast. For an operator managing 10-30+
+caravans, add items, dispatch with cast. For the autarch managing 10-30+
 agents across a world, this is friction. The Gastown prototype addressed this
 with a "mayor" — a persistent sphere-scoped AI agent that handled work
 coordination.
@@ -19,7 +19,7 @@ than bundling them into monolithic agents:
 - Consul: sphere-wide infrastructure patrol (ADR-0007)
 
 The Gastown mayor bundled three capabilities: natural language dispatch,
-proactive coordination, and operator onboarding. These are independent concerns
+proactive coordination, and autarch onboarding. These are independent concerns
 that don't need to be a single persistent process.
 
 ## Options Considered
@@ -27,7 +27,7 @@ that don't need to be a single persistent process.
 ### 1. Unified mayor (Gastown model)
 
 A single sphere-scoped persistent AI agent that handles dispatch, proactive
-coordination, and operator onboarding. The mayor would be always-on, expensive,
+coordination, and autarch onboarding. The mayor would be always-on, expensive,
 and monolithic — a single point of failure for three unrelated responsibilities.
 Sol's architecture consistently decomposes responsibilities (sentinel, forge,
 consul are all separate), and the mayor's capabilities have different scopes
@@ -90,7 +90,7 @@ Three mirror approaches were considered:
 - **Editable worktree** — governor could prototype or spike code. Rejected:
   muddies the role boundary. If the governor writes code, what goes through
   forge? The governor coordinates; envoys and outposts write code.
-- **No codebase access** — governor works purely from its brief and operator
+- **No codebase access** — governor works purely from its brief and autarch
   input. Rejected: governor can't create good writs without understanding
   the codebase structure. "Add auth middleware" is a worse writ than
   "extend `internal/auth/middleware.go` with OAuth2 support."
@@ -107,7 +107,7 @@ improvement.
 
 The governor uses the same brief infrastructure as envoys (ADR-0009). Its
 brief at `.brief/memory.md` accumulates knowledge about the world — project
-patterns, agent capabilities, work history, and operator preferences.
+patterns, agent capabilities, work history, and autarch preferences.
 
 **Per-world scope:**
 
@@ -119,7 +119,7 @@ responsibility.
 ## Consequences
 
 **Benefits:**
-- Natural language dispatch reduces operator friction from 10+ CLI commands
+- Natural language dispatch reduces autarch friction from 10+ CLI commands
   to a single conversational request
 - Per-world scope keeps the governor focused and its brief relevant
 - Follows established patterns: Claude session + Go toolbox (ADR-0005),
@@ -129,7 +129,7 @@ responsibility.
 
 **Tradeoffs:**
 - API cost proportional to interaction frequency (but only active when
-  operator is dispatching work, not always-on)
+  autarch is dispatching work, not always-on)
 - No sphere-wide coordination (consul handles cross-world concerns)
 - Governor depends on sol CLI commands being correct and well-documented
   in its CLAUDE.md

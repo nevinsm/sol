@@ -24,13 +24,13 @@ func TestMailFlowLifecycle(t *testing.T) {
 	defer s.Close()
 
 	// 1. Send message via store.
-	id, err := s.SendMessage("haven/Toast", "operator", "Task complete", "All tests pass", 2, "notification")
+	id, err := s.SendMessage("haven/Toast", "autarch", "Task complete", "All tests pass", 2, "notification")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// 2. Verify in Inbox.
-	msgs, err := s.Inbox("operator")
+	msgs, err := s.Inbox("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestMailCountPendingAccuracy(t *testing.T) {
 	defer s.Close()
 
 	// Initially 0.
-	count, err := s.CountPending("operator")
+	count, err := s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,11 +107,11 @@ func TestMailCountPendingAccuracy(t *testing.T) {
 	}
 
 	// Send 3 messages.
-	id1, _ := s.SendMessage("agent1", "operator", "Msg 1", "", 2, "notification")
-	s.SendMessage("agent2", "operator", "Msg 2", "", 2, "notification")
-	id3, _ := s.SendMessage("agent3", "operator", "Msg 3", "", 1, "notification")
+	id1, _ := s.SendMessage("agent1", "autarch", "Msg 1", "", 2, "notification")
+	s.SendMessage("agent2", "autarch", "Msg 2", "", 2, "notification")
+	id3, _ := s.SendMessage("agent3", "autarch", "Msg 3", "", 1, "notification")
 
-	count, err = s.CountPending("operator")
+	count, err = s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestMailCountPendingAccuracy(t *testing.T) {
 
 	// Read one — still 3 pending (read doesn't affect pending count).
 	s.ReadMessage(id1)
-	count, err = s.CountPending("operator")
+	count, err = s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestMailCountPendingAccuracy(t *testing.T) {
 
 	// Ack one — now 2.
 	s.AckMessage(id3)
-	count, err = s.CountPending("operator")
+	count, err = s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,9 +211,9 @@ func TestMailPurgeBeforeDuration(t *testing.T) {
 	defer s.Close()
 
 	// Send and ack 3 messages.
-	id1, _ := s.SendMessage("agent1", "operator", "Old 1", "", 2, "notification")
-	id2, _ := s.SendMessage("agent2", "operator", "Old 2", "", 2, "notification")
-	id3, _ := s.SendMessage("agent3", "operator", "Recent", "", 2, "notification")
+	id1, _ := s.SendMessage("agent1", "autarch", "Old 1", "", 2, "notification")
+	id2, _ := s.SendMessage("agent2", "autarch", "Old 2", "", 2, "notification")
+	id3, _ := s.SendMessage("agent3", "autarch", "Recent", "", 2, "notification")
 	s.AckMessage(id1)
 	s.AckMessage(id2)
 	s.AckMessage(id3)
@@ -257,9 +257,9 @@ func TestMailPurgeNeverDeletesPending(t *testing.T) {
 	defer s.Close()
 
 	// Send 2 pending and 1 acked.
-	s.SendMessage("agent1", "operator", "Pending 1", "", 2, "notification")
-	s.SendMessage("agent2", "operator", "Pending 2", "", 2, "notification")
-	id3, _ := s.SendMessage("agent3", "operator", "Acked", "", 2, "notification")
+	s.SendMessage("agent1", "autarch", "Pending 1", "", 2, "notification")
+	s.SendMessage("agent2", "autarch", "Pending 2", "", 2, "notification")
+	id3, _ := s.SendMessage("agent3", "autarch", "Acked", "", 2, "notification")
 	s.AckMessage(id3)
 
 	// Purge all acked.
@@ -272,7 +272,7 @@ func TestMailPurgeNeverDeletesPending(t *testing.T) {
 	}
 
 	// Both pending messages should remain.
-	pending, err := s.CountPending("operator")
+	pending, err := s.CountPending("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,7 @@ func TestMailPurgeCLIForce(t *testing.T) {
 	}
 
 	// Send and ack a message.
-	id, _ := s.SendMessage("agent1", "operator", "Test", "", 2, "notification")
+	id, _ := s.SendMessage("agent1", "autarch", "Test", "", 2, "notification")
 	s.AckMessage(id)
 	s.Close()
 
@@ -330,8 +330,8 @@ func TestMailPurgeCLIBeforeFlag(t *testing.T) {
 	}
 
 	// Send and ack 2 messages, backdate one.
-	id1, _ := s.SendMessage("agent1", "operator", "Old", "", 2, "notification")
-	id2, _ := s.SendMessage("agent2", "operator", "Recent", "", 2, "notification")
+	id1, _ := s.SendMessage("agent1", "autarch", "Old", "", 2, "notification")
+	id2, _ := s.SendMessage("agent2", "autarch", "Recent", "", 2, "notification")
 	s.AckMessage(id1)
 	s.AckMessage(id2)
 
@@ -558,9 +558,9 @@ func TestMailSendCLINoNotifySuppressesNudge(t *testing.T) {
 func TestMailSendToOperatorNoNudge(t *testing.T) {
 	gtHome, _ := setupTestEnv(t)
 
-	// Send to "operator" — should never generate a nudge.
+	// Send to "autarch" — should never generate a nudge.
 	out, err := runGT(t, gtHome, "mail", "send",
-		"--to=operator", "--subject=Report", "--body=All done")
+		"--to=autarch", "--subject=Report", "--body=All done")
 	if err != nil {
 		t.Fatalf("mail send failed: %v: %s", err, out)
 	}
@@ -575,7 +575,7 @@ func TestMailSendToOperatorNoNudge(t *testing.T) {
 	}
 	defer s.Close()
 
-	msgs, err := s.Inbox("operator")
+	msgs, err := s.Inbox("autarch")
 	if err != nil {
 		t.Fatal(err)
 	}

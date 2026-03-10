@@ -125,7 +125,7 @@ func TestCastHappyPath(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestCastAgentStateBeforeTether(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Order test", "Verify ordering", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Order test", "Verify ordering", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
 		t.Fatalf("failed to write world.toml: %v", err)
 	}
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestCastNoTelemetryWhenLedgerNotConfigured(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestCastAutoAgent(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -423,7 +423,7 @@ func TestCastAutoProvision(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 	os.WriteFile(worldDir+"/world.toml", []byte("[agents]\ncapacity = 1\n"), 0o644)
 
 	// Create first writ and cast — should auto-provision one agent.
-	item1, err := worldStore.CreateWrit("Item 1", "First item", "operator", 2, nil)
+	item1, err := worldStore.CreateWrit("Item 1", "First item", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -491,7 +491,7 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 	}
 
 	// Create second writ and cast — should fail with capacity error.
-	item2, err := worldStore.CreateWrit("Item 2", "Second item", "operator", 2, nil)
+	item2, err := worldStore.CreateWrit("Item 2", "Second item", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -521,7 +521,7 @@ func TestCastAutoProvisionCapacityZeroUnlimited(t *testing.T) {
 	// Create and cast multiple writs — all should succeed.
 	for i := 0; i < 3; i++ {
 		itemID, err := worldStore.CreateWrit(
-			fmt.Sprintf("Item %d", i), "desc", "operator", 2, nil)
+			fmt.Sprintf("Item %d", i), "desc", "autarch", 2, nil)
 		if err != nil {
 			t.Fatalf("failed to create writ %d: %v", i, err)
 		}
@@ -561,7 +561,7 @@ func TestCastAutoProvisionCustomNamePool(t *testing.T) {
 	toml := fmt.Sprintf("[agents]\nname_pool_path = %q\n", customPoolPath)
 	os.WriteFile(worldDir+"/world.toml", []byte(toml), 0o644)
 
-	itemID, err := worldStore.CreateWrit("Test item", "desc", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Test item", "desc", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -600,7 +600,7 @@ func TestCastAutoProvisionSkipsUsed(t *testing.T) {
 		}
 	}
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -634,7 +634,7 @@ func TestCastFlockPreventsDoubleDispatch(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -664,7 +664,7 @@ func TestCastItemNotOpen(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -698,7 +698,7 @@ func TestCastRejectsNonAgentRoles(t *testing.T) {
 			worldStore, sphereStore := setupStores(t)
 			mgr := newMockSessionManager()
 
-			itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+			itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 			if err != nil {
 				t.Fatalf("failed to create writ: %v", err)
 			}
@@ -728,7 +728,7 @@ func TestCastRejectsSleepingWorld(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -769,7 +769,7 @@ func TestCastRejectsSleepingWorldPreloaded(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -803,7 +803,7 @@ func TestCastRejectsSleepingWorldPreloaded(t *testing.T) {
 func TestPrimeWithTether(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -978,7 +978,7 @@ func writeTestJSON(t *testing.T, path string, v any) {
 func TestPrimeWithWorkflowFullChecklist(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Implement feature X", "Build feature X", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Implement feature X", "Build feature X", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
@@ -1052,7 +1052,7 @@ func TestPrimeWithWorkflowFullChecklist(t *testing.T) {
 func TestPrimeWithWorkflowFirstStep(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("First step test", "Test first step", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("First step test", "Test first step", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
@@ -1095,7 +1095,7 @@ func TestResolveHappyPath(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1204,7 +1204,7 @@ func TestResolveConflictResolution(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create the original writ.
-	origItemID, err := worldStore.CreateWrit("Add feature X", "Implement feature X", "operator", 2, nil)
+	origItemID, err := worldStore.CreateWrit("Add feature X", "Implement feature X", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1316,7 +1316,7 @@ func TestResolveConflictResolutionResetsParentMR(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create the original writ with a MR.
-	origItemID, err := worldStore.CreateWrit("Add feature Y", "Implement feature Y", "operator", 2, nil)
+	origItemID, err := worldStore.CreateWrit("Add feature Y", "Implement feature Y", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1420,7 +1420,7 @@ func TestResolveConflictResolutionResetsBlockedAndFailedMRs(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create original writ with TWO MRs — one blocked, one failed.
-	origItemID, err := worldStore.CreateWrit("Add feature Z", "Implement feature Z", "operator", 2, nil)
+	origItemID, err := worldStore.CreateWrit("Add feature Z", "Implement feature Z", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1525,7 +1525,7 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Implement login page", "Build the login page", "operator", 1, nil)
+	itemID, err := worldStore.CreateWrit("Implement login page", "Build the login page", "autarch", 1, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1613,7 +1613,7 @@ func TestResolveSkipsFailedMRCreatesNew(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "operator", 1, nil)
+	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "autarch", 1, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1698,7 +1698,7 @@ func TestResolveReusesReadyMR(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "operator", 1, nil)
+	itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "autarch", 1, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1753,7 +1753,7 @@ func TestResolveReusesReadyMR(t *testing.T) {
 func TestPrimeWithHandoff(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1811,7 +1811,7 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 	worldStore, _ := setupStores(t)
 	solHome := os.Getenv("SOL_HOME")
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1867,7 +1867,7 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 func TestPrimeNoHandoff(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1893,7 +1893,7 @@ func TestPrimeNoHandoff(t *testing.T) {
 func TestPrimeWithFreshSessionMarker(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1930,7 +1930,7 @@ func TestPrimeWithFreshSessionMarker(t *testing.T) {
 func TestPrimeHandoffWithGitState(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1986,7 +1986,7 @@ func TestPrimeHandoffWithGitState(t *testing.T) {
 func TestPrimeDurableHandoff(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -2045,7 +2045,7 @@ func TestPrimeDurableHandoff(t *testing.T) {
 func TestPrimeCompactRecoveryLightweight(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file with detailed instructions", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file with detailed instructions", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -2132,7 +2132,7 @@ func TestPrimeCompactRecoveryLightweight(t *testing.T) {
 func TestPrimeCompactRecoveryWithWorkflow(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -2185,7 +2185,7 @@ func TestPrimeCompactRecoveryWithWorkflow(t *testing.T) {
 func TestPrimeNonCompactHandoffUsesFullPrime(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -2234,7 +2234,7 @@ func TestPrimeNonCompactHandoffUsesFullPrime(t *testing.T) {
 func TestPrimeCompactWithoutHandoffFallsThrough(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -2282,7 +2282,7 @@ func TestResolveRollbackOnMRFailure(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add feature", "Build the feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Build the feature", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -2345,7 +2345,7 @@ func TestResolvePushFailureCreatesMR(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add feature", "Build the feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Build the feature", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -2420,7 +2420,7 @@ func TestReCastPartialFailureRecovery(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add feature", "Build the feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Build the feature", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -2477,7 +2477,7 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Envoy task", "An envoy writ", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Envoy task", "An envoy writ", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -2572,14 +2572,14 @@ func TestResolvePersistentAgentWithRemainingTethers(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create two writs.
-	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "operator", 2, nil)
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 1: %v", err)
 	}
 	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
 		t.Fatalf("failed to update writ 1: %v", err)
 	}
-	writ2, err := worldStore.CreateWrit("Envoy task 2", "Second task", "operator", 2, nil)
+	writ2, err := worldStore.CreateWrit("Envoy task 2", "Second task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 2: %v", err)
 	}
@@ -2661,14 +2661,14 @@ func TestResolvePersistentAgentNonActiveWrit(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create two writs.
-	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "operator", 2, nil)
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 1: %v", err)
 	}
 	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
 		t.Fatalf("failed to update writ 1: %v", err)
 	}
-	writ2, err := worldStore.CreateWrit("Envoy task 2", "Second task", "operator", 2, nil)
+	writ2, err := worldStore.CreateWrit("Envoy task 2", "Second task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 2: %v", err)
 	}
@@ -2745,7 +2745,7 @@ func TestResolvePersistentAgentLastTether(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Envoy last task", "The only task", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Envoy last task", "The only task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -2818,7 +2818,7 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Agent task", "A regular writ", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Agent task", "A regular writ", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -2868,7 +2868,7 @@ func TestResolveRemovesWorktreeForOutpostAgent(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Cleanup test", "Test worktree cleanup", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Cleanup test", "Test worktree cleanup", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -2976,7 +2976,7 @@ func TestResolveNudgesForgeWithMRReady(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add feature", "Implement a feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Implement a feature", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -3055,7 +3055,7 @@ func TestResolveQueuesForgeNudgeEvenWithoutForge(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Add feature", "Implement a feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Implement a feature", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -3114,7 +3114,7 @@ func TestResolveCreatesAndRemovesLock(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Lock test", "Test resolve lock", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Lock test", "Test resolve lock", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -3167,7 +3167,7 @@ func TestResolveIdempotent(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	itemID, err := worldStore.CreateWrit("Idempotent test", "Test double resolve", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Idempotent test", "Test double resolve", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -3263,7 +3263,7 @@ func TestResolveIdempotent(t *testing.T) {
 func TestPrimeDetectsStaleLock(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Stale lock test", "Test stale lock detection", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Stale lock test", "Test stale lock detection", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -3336,7 +3336,7 @@ func TestResolveNonCodeWritSkipsGitAndMR(t *testing.T) {
 	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       "Analyze codebase",
 		Description: "Perform analysis",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 		Kind:        "analysis",
 	})
 	if err != nil {
@@ -3433,7 +3433,7 @@ func TestResolveNonCodeWritSkipsForgeNudge(t *testing.T) {
 	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       "Analyze codebase",
 		Description: "Perform analysis",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 		Kind:        "analysis",
 	})
 	if err != nil {
@@ -3516,7 +3516,7 @@ func TestResolveCodeWritDefaultKind(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// CreateWrit uses the default kind (empty → defaults to "code" in schema).
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -3588,7 +3588,7 @@ func TestCastCreatesOutputDirectory(t *testing.T) {
 		t.Fatalf("failed to write world.toml: %v", err)
 	}
 
-	itemID, err := worldStore.CreateWrit("Test task", "Test description", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Test task", "Test description", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -3645,7 +3645,7 @@ func TestCastCreatesOutputDirectoryForNonCodeWrit(t *testing.T) {
 	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       "Analyze codebase",
 		Description: "Perform analysis",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 		Kind:        "analysis",
 	})
 	if err != nil {
@@ -3693,7 +3693,7 @@ func TestOutputDirectorySurvivesResolve(t *testing.T) {
 	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       "Analyze codebase",
 		Description: "Perform analysis",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 		Kind:        "analysis",
 	})
 	if err != nil {
@@ -3762,7 +3762,7 @@ func TestWritKindDefaultsToCode(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
 	// CreateWrit (no Kind option) should default to "code".
-	itemID, err := worldStore.CreateWrit("Test task", "Test description", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Test task", "Test description", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -3783,7 +3783,7 @@ func TestWritKindSetByCreateWritWithOpts(t *testing.T) {
 	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       "Analyze codebase",
 		Description: "Perform analysis",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 		Kind:        "analysis",
 	})
 	if err != nil {
@@ -3802,7 +3802,7 @@ func TestWritKindSetByCreateWritWithOpts(t *testing.T) {
 func TestCloseWritWithReason(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Test task", "Test description", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Test task", "Test description", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -3834,7 +3834,7 @@ func TestCastKindPassedToContext(t *testing.T) {
 	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       "Analyze codebase",
 		Description: "Perform analysis",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 		Kind:        "analysis",
 	})
 	if err != nil {
@@ -3875,7 +3875,7 @@ func TestCastCodeKindDefault(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create a writ without explicit kind — should default to "code".
-	itemID, err := worldStore.CreateWrit("Add feature", "Add a feature", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add feature", "Add a feature", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -3915,7 +3915,7 @@ func TestCastDirectDeps(t *testing.T) {
 	depID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       "Gather requirements",
 		Description: "Gather requirements for the feature",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 		Kind:        "analysis",
 	})
 	if err != nil {
@@ -3926,7 +3926,7 @@ func TestCastDirectDeps(t *testing.T) {
 	mainID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       "Implement feature",
 		Description: "Build the feature",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 		Kind:        "code",
 	})
 	if err != nil {
@@ -3983,14 +3983,14 @@ func TestActivateWritHappyPath(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create two writs.
-	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "operator", 2, nil)
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 1: %v", err)
 	}
 	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
 		t.Fatalf("failed to update writ 1: %v", err)
 	}
-	writ2, err := worldStore.CreateWrit("Envoy task 2", "Second task", "operator", 2, nil)
+	writ2, err := worldStore.CreateWrit("Envoy task 2", "Second task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ 2: %v", err)
 	}
@@ -4053,7 +4053,7 @@ func TestActivateWritAlreadyActive(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create writ.
-	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "operator", 2, nil)
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -4097,7 +4097,7 @@ func TestActivateWritNotTethered(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create writ but don't tether it.
-	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "operator", 2, nil)
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -4126,7 +4126,7 @@ func TestActivateWritAgentNotFound(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create writ.
-	writ1, err := worldStore.CreateWrit("Task", "Desc", "operator", 2, nil)
+	writ1, err := worldStore.CreateWrit("Task", "Desc", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -4150,7 +4150,7 @@ func TestActivateWritFromEmpty(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create writ.
-	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "operator", 2, nil)
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -4203,7 +4203,7 @@ func TestActivateWritFromEmpty(t *testing.T) {
 func TestPrimeSingleTetherOutpostUnchanged(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -4237,9 +4237,9 @@ func TestPrimeMultiTetherOneActive(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
 	// Create three writs.
-	writ1, _ := worldStore.CreateWrit("First task", "Do the first thing", "operator", 2, nil)
-	writ2, _ := worldStore.CreateWrit("Second task", "Do the second thing", "operator", 2, nil)
-	writ3, _ := worldStore.CreateWrit("Third task", "Do the third thing", "operator", 2, nil)
+	writ1, _ := worldStore.CreateWrit("First task", "Do the first thing", "autarch", 2, nil)
+	writ2, _ := worldStore.CreateWrit("Second task", "Do the second thing", "autarch", 2, nil)
+	writ3, _ := worldStore.CreateWrit("Third task", "Do the third thing", "autarch", 2, nil)
 
 	// Create envoy agent.
 	sphereStore.CreateAgent("Meridian", "ember", "envoy")
@@ -4288,9 +4288,9 @@ func TestPrimeMultiTetherNoneActive(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
 	// Create three writs.
-	writ1, _ := worldStore.CreateWrit("First task", "Do the first thing", "operator", 2, nil)
-	writ2, _ := worldStore.CreateWrit("Second task", "Do the second thing", "operator", 2, nil)
-	writ3, _ := worldStore.CreateWrit("Third task", "Do the third thing", "operator", 2, nil)
+	writ1, _ := worldStore.CreateWrit("First task", "Do the first thing", "autarch", 2, nil)
+	writ2, _ := worldStore.CreateWrit("Second task", "Do the second thing", "autarch", 2, nil)
+	writ3, _ := worldStore.CreateWrit("Third task", "Do the third thing", "autarch", 2, nil)
 
 	// Create envoy agent with no active writ.
 	sphereStore.CreateAgent("Meridian", "ember", "envoy")
@@ -4342,7 +4342,7 @@ func TestCastCancelledContext(t *testing.T) {
 
 	// Create agent and writ.
 	sphereStore.CreateAgent("Ash", "ember", "agent")
-	writID, _ := worldStore.CreateWrit("cancel-test", "test cancellation", "operator", 1, nil)
+	writID, _ := worldStore.CreateWrit("cancel-test", "test cancellation", "autarch", 1, nil)
 
 	mgr := newMockSessionManager()
 
@@ -4373,7 +4373,7 @@ func TestCastContextTimeout(t *testing.T) {
 
 	// Create agent and writ.
 	sphereStore.CreateAgent("Ember", "ember", "agent")
-	writID, _ := worldStore.CreateWrit("timeout-test", "test timeout", "operator", 1, nil)
+	writID, _ := worldStore.CreateWrit("timeout-test", "test timeout", "autarch", 1, nil)
 
 	mgr := newMockSessionManager()
 
@@ -4408,7 +4408,7 @@ func TestResolveContextCancelled(t *testing.T) {
 	agentName := "Blaze"
 	world := "ember"
 	sphereStore.CreateAgent(agentName, world, "agent")
-	writID, _ := worldStore.CreateWrit("cancel-resolve-test", "desc", "operator", 1, nil)
+	writID, _ := worldStore.CreateWrit("cancel-resolve-test", "desc", "autarch", 1, nil)
 	worldStore.UpdateWrit(writID, store.WritUpdates{Status: "tethered", Assignee: world + "/" + agentName})
 	sphereStore.UpdateAgentState(world+"/"+agentName, "working", writID)
 	tether.Write(world, agentName, writID, "agent")
@@ -4497,7 +4497,7 @@ func TestResolveAutoResolvesWritLinkedEscalations(t *testing.T) {
 	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       "Investigate issue",
 		Description: "Investigate an issue",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 		Kind:        "analysis",
 	})
 	if err != nil {
@@ -4582,7 +4582,7 @@ func TestResolveAutoResolvesEscalationsForCodeWrit(t *testing.T) {
 	mgr := newMockSessionManager()
 
 	// Create a code writ (default kind).
-	itemID, err := worldStore.CreateWrit("Fix bug", "Fix a bug", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Fix bug", "Fix a bug", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -4644,7 +4644,7 @@ func TestResolveEscalationAutoResolveIsBestEffort(t *testing.T) {
 	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       "Research task",
 		Description: "Do research",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 		Kind:        "analysis",
 	})
 	if err != nil {
@@ -4703,7 +4703,7 @@ func TestResolveMultipleEscalationsForSameWrit(t *testing.T) {
 	itemID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:       "Multi-escalation task",
 		Description: "Task with multiple escalations",
-		CreatedBy:   "operator",
+		CreatedBy:   "autarch",
 		Kind:        "analysis",
 	})
 	if err != nil {
@@ -4794,7 +4794,7 @@ func TestOutpostHooksPreCompactUsesPrimeCompact(t *testing.T) {
 func TestPrimeCompactWithTether(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Fix login bug", "Detailed description", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Fix login bug", "Detailed description", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -4850,7 +4850,7 @@ func TestPrimeCompactNoTether(t *testing.T) {
 func TestPrimeCompactWithWorkflow(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	itemID, err := worldStore.CreateWrit("Build feature", "Build it", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Build feature", "Build it", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}

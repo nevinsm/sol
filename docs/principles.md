@@ -40,9 +40,9 @@ each wait for prefect acknowledgment creates a bottleneck. Tether durability
 on session start. The agent's persona instructs immediate execution.
 
 **Adaptation for persistent agents:** Outposts fire on session start —
-unchanged. Persistent agents (envoys, governors, senate) fire on operator
+unchanged. Persistent agents (envoys, governors, senate) fire on autarch
 direction via `sol writ activate`. The trigger changes (session start vs
-operator command) but the principle holds: when directed to a writ, the
+autarch command) but the principle holds: when directed to a writ, the
 agent executes immediately. No confirmation loop, no polling. Propulsion
 is preserved — agents execute immediately when directed. See ADR-0025.
 
@@ -68,7 +68,7 @@ See: `docs/failure-modes.md` for per-component recovery details.
 
 ### GLASS — Glass Box Operations
 
-The operator must be able to answer at any time, using standard tools:
+The autarch must be able to answer at any time, using standard tools:
 
 1. What is each agent doing? (`tmux attach`, log tail)
 2. What work is pending? (SQLite query or CLI command)
@@ -82,7 +82,7 @@ No component may be a black box. State must be inspectable with `sqlite3`,
 most inspectable interface humans have.
 
 **Enforcement:** Configuration lives in files (`world.toml`, `.brief/memory.md`).
-Database serves as cache/registry, not sole source of truth for operator-facing
+Database serves as cache/registry, not sole source of truth for autarch-facing
 state. ADR-0008, ADR-0013.
 
 ### DEGRADE — Graceful Degradation
@@ -112,7 +112,7 @@ change must have a migration path that runs automatically.
 
 - Database schemas use a `schema_version` table
 - Migrations are numbered, sequential, and idempotent
-- No "delete and recreate" — operator data is sacred
+- No "delete and recreate" — autarch data is sacred
 
 **Rationale:** The system will change. Storage formats, communication
 mechanisms, and workflow patterns must be replaceable without rebuilding.
@@ -151,7 +151,7 @@ Configuration and agent context live in files (`world.toml`, `.brief/memory.md`)
 The database provides indexing, querying, and transactional writes for
 coordination state (writs, agent records, messages).
 
-Files are authoritative for operator-facing state. The database is authoritative
+Files are authoritative for autarch-facing state. The database is authoritative
 for coordination state. Neither duplicates the other's role.
 
 See: ADR-0008 (world lifecycle), ADR-0013 (brief system).

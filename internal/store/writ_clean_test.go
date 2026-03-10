@@ -4,7 +4,7 @@ import "testing"
 
 func TestHasOpenTransitiveDependents_NoDependents(t *testing.T) {
 	s := setupWorld(t)
-	id, _ := s.CreateWrit("Solo writ", "", "operator", 2, nil)
+	id, _ := s.CreateWrit("Solo writ", "", "autarch", 2, nil)
 
 	has, err := s.HasOpenTransitiveDependents(id)
 	if err != nil {
@@ -17,8 +17,8 @@ func TestHasOpenTransitiveDependents_NoDependents(t *testing.T) {
 
 func TestHasOpenTransitiveDependents_DirectOpenDependent(t *testing.T) {
 	s := setupWorld(t)
-	idA, _ := s.CreateWrit("Writ A", "", "operator", 2, nil)
-	idB, _ := s.CreateWrit("Writ B", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Writ A", "", "autarch", 2, nil)
+	idB, _ := s.CreateWrit("Writ B", "", "autarch", 2, nil)
 
 	// B depends on A → A has dependent B.
 	s.AddDependency(idB, idA)
@@ -35,8 +35,8 @@ func TestHasOpenTransitiveDependents_DirectOpenDependent(t *testing.T) {
 
 func TestHasOpenTransitiveDependents_AllDependentsClosed(t *testing.T) {
 	s := setupWorld(t)
-	idA, _ := s.CreateWrit("Writ A", "", "operator", 2, nil)
-	idB, _ := s.CreateWrit("Writ B", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Writ A", "", "autarch", 2, nil)
+	idB, _ := s.CreateWrit("Writ B", "", "autarch", 2, nil)
 
 	// B depends on A.
 	s.AddDependency(idB, idA)
@@ -55,9 +55,9 @@ func TestHasOpenTransitiveDependents_AllDependentsClosed(t *testing.T) {
 
 func TestHasOpenTransitiveDependents_TransitiveOpenDependent(t *testing.T) {
 	s := setupWorld(t)
-	idA, _ := s.CreateWrit("Writ A", "", "operator", 2, nil)
-	idB, _ := s.CreateWrit("Writ B", "", "operator", 2, nil)
-	idC, _ := s.CreateWrit("Writ C", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Writ A", "", "autarch", 2, nil)
+	idB, _ := s.CreateWrit("Writ B", "", "autarch", 2, nil)
+	idC, _ := s.CreateWrit("Writ C", "", "autarch", 2, nil)
 
 	// B depends on A, C depends on B → A → B → C.
 	s.AddDependency(idB, idA)

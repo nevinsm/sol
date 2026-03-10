@@ -10,9 +10,9 @@ func TestReadyWritsNoDeps(t *testing.T) {
 	s := setupWorld(t)
 
 	// Create open writs with no dependencies — all should be ready.
-	id1, _ := s.CreateWrit("Item A", "", "operator", 1, nil)
-	id2, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
-	id3, _ := s.CreateWrit("Item C", "", "operator", 3, nil)
+	id1, _ := s.CreateWrit("Item A", "", "autarch", 1, nil)
+	id2, _ := s.CreateWrit("Item B", "", "autarch", 2, nil)
+	id3, _ := s.CreateWrit("Item C", "", "autarch", 3, nil)
 
 	ready, err := s.ReadyWrits()
 	if err != nil {
@@ -36,8 +36,8 @@ func TestReadyWritsNoDeps(t *testing.T) {
 func TestReadyWritsBlockedByOpenWrit(t *testing.T) {
 	s := setupWorld(t)
 
-	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "autarch", 2, nil)
 
 	// A depends on B (B is open) → A is NOT ready, B IS ready.
 	s.AddDependency(idA, idB)
@@ -57,8 +57,8 @@ func TestReadyWritsBlockedByOpenWrit(t *testing.T) {
 func TestReadyWritsBlockedByClosedWrit(t *testing.T) {
 	s := setupWorld(t)
 
-	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "autarch", 2, nil)
 
 	// A depends on B, close B → A is ready.
 	s.AddDependency(idA, idB)
@@ -79,9 +79,9 @@ func TestReadyWritsBlockedByClosedWrit(t *testing.T) {
 func TestReadyWritsTransitiveBlocking(t *testing.T) {
 	s := setupWorld(t)
 
-	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
-	idC, _ := s.CreateWrit("Item C", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "autarch", 2, nil)
+	idC, _ := s.CreateWrit("Item C", "", "autarch", 2, nil)
 
 	// C depends on B, B depends on A. A is open.
 	// → Only A is ready (B is blocked by A, C is blocked by B).
@@ -103,9 +103,9 @@ func TestReadyWritsTransitiveBlocking(t *testing.T) {
 func TestReadyWritsTransitiveBlockingPartialClose(t *testing.T) {
 	s := setupWorld(t)
 
-	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
-	idC, _ := s.CreateWrit("Item C", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "autarch", 2, nil)
+	idC, _ := s.CreateWrit("Item C", "", "autarch", 2, nil)
 
 	// C → B → A. Close A → B becomes ready, C still blocked by B.
 	s.AddDependency(idC, idB)
@@ -140,10 +140,10 @@ func TestReadyWritsTransitiveBlockingPartialClose(t *testing.T) {
 func TestReadyWritsExcludesNonOpenStatuses(t *testing.T) {
 	s := setupWorld(t)
 
-	s.CreateWrit("Open writ", "", "operator", 2, nil)
-	tethered, _ := s.CreateWrit("Tethered writ", "", "operator", 2, nil)
-	done, _ := s.CreateWrit("Done writ", "", "operator", 2, nil)
-	closed, _ := s.CreateWrit("Closed writ", "", "operator", 2, nil)
+	s.CreateWrit("Open writ", "", "autarch", 2, nil)
+	tethered, _ := s.CreateWrit("Tethered writ", "", "autarch", 2, nil)
+	done, _ := s.CreateWrit("Done writ", "", "autarch", 2, nil)
+	closed, _ := s.CreateWrit("Closed writ", "", "autarch", 2, nil)
 
 	s.UpdateWrit(tethered, WritUpdates{Status: "tethered"})
 	s.UpdateWrit(done, WritUpdates{Status: "done"})
@@ -164,8 +164,8 @@ func TestReadyWritsExcludesNonOpenStatuses(t *testing.T) {
 func TestReadyWritsWithLabels(t *testing.T) {
 	s := setupWorld(t)
 
-	id1, _ := s.CreateWrit("Labeled writ", "", "operator", 2, []string{"infra", "urgent"})
-	s.CreateWrit("Unlabeled writ", "", "operator", 2, nil)
+	id1, _ := s.CreateWrit("Labeled writ", "", "autarch", 2, []string{"infra", "urgent"})
+	s.CreateWrit("Unlabeled writ", "", "autarch", 2, nil)
 
 	ready, err := s.ReadyWrits()
 	if err != nil {
@@ -190,8 +190,8 @@ func TestReadyWritsWithLabels(t *testing.T) {
 func TestReadyWritsDoneDepNotReady(t *testing.T) {
 	s := setupWorld(t)
 
-	idA, _ := s.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := s.CreateWrit("Item B", "", "operator", 2, nil)
+	idA, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := s.CreateWrit("Item B", "", "autarch", 2, nil)
 
 	// A depends on B, B is "done" (not closed) → A is NOT ready.
 	s.AddDependency(idA, idB)
@@ -222,11 +222,11 @@ func TestIsWritBlockedByCaravanDepsBlocking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWrit("Item A", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
 	worldStore.Close()
 
-	prereq, _ := sphereStore.CreateCaravan("prereq", "operator")
-	dependent, _ := sphereStore.CreateCaravan("dependent", "operator")
+	prereq, _ := sphereStore.CreateCaravan("prereq", "autarch")
+	dependent, _ := sphereStore.CreateCaravan("dependent", "autarch")
 
 	sphereStore.CreateCaravanItem(dependent, idA, "ember", 0)
 	sphereStore.AddCaravanDependency(dependent, prereq)
@@ -266,11 +266,11 @@ func TestIsWritBlockedByCaravanPhaseGating(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWrit("Phase 0 item", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWrit("Phase 1 item", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Phase 0 item", "", "autarch", 2, nil)
+	idB, _ := worldStore.CreateWrit("Phase 1 item", "", "autarch", 2, nil)
 	worldStore.Close()
 
-	caravan, _ := sphereStore.CreateCaravan("phased", "operator")
+	caravan, _ := sphereStore.CreateCaravan("phased", "autarch")
 	sphereStore.CreateCaravanItem(caravan, idA, "ember", 0)
 	sphereStore.CreateCaravanItem(caravan, idB, "ember", 1)
 
