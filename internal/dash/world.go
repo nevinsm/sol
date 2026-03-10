@@ -452,6 +452,9 @@ func (wm worldModel) handlePeek(data *status.WorldStatus) (worldModel, tea.Cmd) 
 	// Determine initial cursor based on focused section and cursor.
 	initialCursor := 0
 	switch wm.focusedSection {
+	case sectionProcesses:
+		// Processes appear after outposts and envoys in the item list.
+		initialCursor = len(data.Agents) + len(data.Envoys) + wm.processCursor
 	case sectionOutposts:
 		initialCursor = wm.outpostCursor
 	case sectionEnvoys:
@@ -500,15 +503,22 @@ func buildWorldPeekItems(data *status.WorldStatus) []peekItem {
 		name        string
 		running     bool
 		sessionName string
+		isForge     bool
+		source      string
 	}
+
+	// Forge: peek session is the merge agent session, not the forge process session.
+	forgeMergeSess := fmt.Sprintf("sol-%s-forge-merge", data.World)
 	worldProcs := []proc{
-		{"Forge", data.Forge.Running, data.Forge.SessionName},
-		{"Sentinel", data.Sentinel.Running, data.Sentinel.SessionName},
+		{"Forge", data.Forge.Running, forgeMergeSess, true, "forge"},
+		{"Sentinel", data.Sentinel.Running, data.Sentinel.SessionName, false, "sentinel"},
 	}
 	if data.Governor.Running || data.Governor.SessionAlive {
 		worldProcs = append(worldProcs, proc{
-			"Governor", data.Governor.Running,
-			fmt.Sprintf("sol-%s-governor", data.World),
+			name:    "Governor",
+			running: data.Governor.Running,
+			sessionName: fmt.Sprintf("sol-%s-governor", data.World),
+			source:  "governor",
 		})
 	}
 	for _, p := range worldProcs {
@@ -526,7 +536,9 @@ func buildWorldPeekItems(data *status.WorldStatus) []peekItem {
 			category:    "Processes",
 			state:       state,
 			alive:       p.running,
-			peekable:    p.running && sessName != "",
+			peekable:    true, // services are always peekable (forge shows idle state when no merge)
+			isForge:     p.isForge,
+			source:      p.source,
 		})
 	}
 

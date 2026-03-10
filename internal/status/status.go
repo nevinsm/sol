@@ -97,6 +97,13 @@ type ForgeInfo struct {
 	HeartbeatAge string `json:"heartbeat_age,omitempty"`
 	Stale        bool   `json:"stale,omitempty"`
 	Paused       bool   `json:"paused,omitempty"`
+
+	// Heartbeat details for peek view idle state display.
+	Status      string `json:"status,omitempty"`       // "idle", "working", "stopping"
+	LastMerge   string `json:"last_merge,omitempty"`    // human-readable age of last merge
+	LastError   string `json:"last_error,omitempty"`
+	CurrentMR   string `json:"current_mr,omitempty"`
+	CurrentWrit string `json:"current_writ,omitempty"`
 }
 
 // ChronicleInfo holds chronicle process state (sphere-level).
@@ -328,6 +335,29 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			forgeInfo.MergesTotal = hb.MergesTotal
 			forgeInfo.HeartbeatAge = FormatDuration(time.Since(hb.Timestamp))
 			forgeInfo.Stale = hb.IsStale(5 * time.Minute)
+			forgeInfo.Status = hb.Status
+			forgeInfo.CurrentMR = hb.CurrentMR
+			forgeInfo.CurrentWrit = hb.CurrentWrit
+			forgeInfo.LastError = hb.LastError
+			if !hb.LastMerge.IsZero() {
+				forgeInfo.LastMerge = FormatDuration(time.Since(hb.LastMerge))
+			}
+		}
+		forgeInfo.Paused = forge.IsForgePaused(world)
+		result.Forge = forgeInfo
+	} else {
+		// Forge not running — still read heartbeat for last merge context.
+		forgeInfo := ForgeInfo{Running: false}
+		if hb, err := forge.ReadHeartbeat(world); err == nil && hb != nil {
+			forgeInfo.Status = hb.Status
+			forgeInfo.QueueDepth = hb.QueueDepth
+			forgeInfo.MergesTotal = hb.MergesTotal
+			forgeInfo.CurrentMR = hb.CurrentMR
+			forgeInfo.CurrentWrit = hb.CurrentWrit
+			forgeInfo.LastError = hb.LastError
+			if !hb.LastMerge.IsZero() {
+				forgeInfo.LastMerge = FormatDuration(time.Since(hb.LastMerge))
+			}
 		}
 		forgeInfo.Paused = forge.IsForgePaused(world)
 		result.Forge = forgeInfo
