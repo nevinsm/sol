@@ -1892,20 +1892,24 @@ func (w *Sentinel) cleanupOrphanedOutpostDirs(agentNames map[string]bool) int {
 			continue // agent exists, not orphaned
 		}
 
-		// Check if a worktree exists in this directory.
-		worktreeDir := filepath.Join(outpostsDir, name, "worktree")
-		if _, err := os.Stat(worktreeDir); err != nil {
-			continue // no worktree, skip
-		}
-
-		// Orphaned worktree — clean it up.
+		// Orphaned outpost directory — clean it up regardless of contents.
+		// The directory may contain a worktree, stale .resume_state.json,
+		// empty .tether/ dirs, or other remnants. All are safe to remove
+		// since there is no matching agent record in sphere.db.
 		w.cleanupAgentResources(name)
+
+		// Force-remove any remaining files. cleanupAgentResources uses
+		// os.Remove (empty-only) for the directory, but orphan cleanup
+		// needs full removal of stale remnants.
+		outpostDir := filepath.Join(outpostsDir, name)
+		os.RemoveAll(outpostDir) // best-effort
+
 		cleaned++
 
 		if w.logger != nil {
 			w.logger.Emit(events.EventOrphanCleanup, w.agentID(), w.agentID(), "audit",
 				map[string]any{
-					"type":  "worktree",
+					"type":  "outpost-dir",
 					"agent": name,
 					"world": w.config.World,
 				})

@@ -1002,6 +1002,40 @@ func TestCleanupOrphanedWorktree(t *testing.T) {
 	if tether.IsTethered("ember", "Ghost", "agent") {
 		t.Error("expected orphaned tether to be removed")
 	}
+
+	// Outpost directory should be fully removed.
+	outpostDir := filepath.Join(solHome, "ember", "outposts", "Ghost")
+	if _, err := os.Stat(outpostDir); !os.IsNotExist(err) {
+		t.Error("expected orphaned outpost directory to be fully removed")
+	}
+}
+
+func TestCleanupOrphanedOutpostDirWithoutWorktree(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Do NOT create an agent record for "Phantom".
+	// Create an outpost directory with stale files but NO worktree.
+	solHome := os.Getenv("SOL_HOME")
+	outpostDir := filepath.Join(solHome, "ember", "outposts", "Phantom")
+	os.MkdirAll(outpostDir, 0o755)
+	// Stale .resume_state.json.
+	os.WriteFile(filepath.Join(outpostDir, ".resume_state.json"),
+		[]byte(`{"writ":"sol-stale"}`), 0o644)
+	// Empty .tether/ directory (leftover after tether clear).
+	os.MkdirAll(filepath.Join(outpostDir, ".tether"), 0o755)
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Entire outpost directory should be removed.
+	if _, err := os.Stat(outpostDir); !os.IsNotExist(err) {
+		t.Error("expected orphaned outpost directory without worktree to be removed")
+	}
 }
 
 func TestCleanupOrphanedSessionMeta(t *testing.T) {
