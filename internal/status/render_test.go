@@ -538,8 +538,8 @@ func TestRenderSphereMailCount(t *testing.T) {
 
 	output := RenderSphere(s)
 
-	if !strings.Contains(output, "Mail: 3 unread") {
-		t.Error("RenderSphere with mail count should contain 'Mail: 3 unread'")
+	if !strings.Contains(output, "Inbox: 3 items need attention") {
+		t.Error("RenderSphere with mail count should contain 'Inbox: 3 items need attention'")
 	}
 }
 
@@ -553,8 +553,8 @@ func TestRenderSphereNoMail(t *testing.T) {
 
 	output := RenderSphere(s)
 
-	if strings.Contains(output, "Mail:") {
-		t.Error("RenderSphere with no mail should not contain 'Mail:'")
+	if strings.Contains(output, "Inbox:") {
+		t.Error("RenderSphere with no mail should not contain 'Inbox:'")
 	}
 }
 
@@ -693,11 +693,8 @@ func TestRenderSphereWithEscalations(t *testing.T) {
 
 	output := RenderSphere(s)
 
-	if !strings.Contains(output, "Escalations: 2 open") {
-		t.Error("RenderSphere with escalations should contain 'Escalations: 2 open'")
-	}
-	if !strings.Contains(output, "1 high") {
-		t.Error("RenderSphere with escalations should contain '1 high'")
+	if !strings.Contains(output, "Inbox: 2 items need attention") {
+		t.Errorf("RenderSphere with escalations should contain 'Inbox: 2 items need attention', got:\n%s", output)
 	}
 }
 
@@ -710,8 +707,8 @@ func TestRenderSphereNoEscalations(t *testing.T) {
 
 	output := RenderSphere(s)
 
-	if strings.Contains(output, "Escalations") {
-		t.Error("RenderSphere without escalations should not contain 'Escalations'")
+	if strings.Contains(output, "Inbox:") {
+		t.Error("RenderSphere without escalations should not contain 'Inbox:'")
 	}
 }
 
@@ -729,13 +726,10 @@ func TestRenderCombinedWithEscalations(t *testing.T) {
 		},
 	}
 
-	output := RenderCombined(consulInfo, ws, esc)
+	output := RenderCombined(consulInfo, ws, 2, esc)
 
-	if !strings.Contains(output, "Escalations: 1 open") {
-		t.Error("RenderCombined with escalations should contain 'Escalations: 1 open'")
-	}
-	if !strings.Contains(output, "1 critical") {
-		t.Error("RenderCombined with escalations should contain '1 critical'")
+	if !strings.Contains(output, "Inbox: 3 items need attention") {
+		t.Errorf("RenderCombined with escalations+mail should contain 'Inbox: 3 items need attention', got:\n%s", output)
 	}
 }
 

@@ -110,15 +110,17 @@ func RenderSphere(s *SphereStatus) string {
 		b.WriteString("\n")
 	}
 
-	// Escalations (only when open).
-	if s.Escalations != nil && s.Escalations.Total > 0 {
-		b.WriteString(renderEscalationLine(s.Escalations))
-		b.WriteString("\n")
+	// Unified inbox count (escalations + mail).
+	inboxCount := s.MailCount
+	if s.Escalations != nil {
+		inboxCount += s.Escalations.Total
 	}
-
-	// Operator mail (only when pending).
-	if s.MailCount > 0 {
-		b.WriteString(fmt.Sprintf("Mail: %d unread\n", s.MailCount))
+	if inboxCount > 0 {
+		label := "items need attention"
+		if inboxCount == 1 {
+			label = "item needs attention"
+		}
+		b.WriteString(fmt.Sprintf("Inbox: %d %s\n", inboxCount, label))
 		b.WriteString("\n")
 	}
 
@@ -572,8 +574,8 @@ func renderWorldSummary(b *strings.Builder, ws *WorldStatus) {
 
 // RenderCombined renders sphere processes and world detail as a single view.
 // Used when sol status auto-detects a world from the current directory.
-// An optional EscalationSummary is displayed when escalations are open.
-func RenderCombined(consul ConsulInfo, ws *WorldStatus, escalations ...*EscalationSummary) string {
+// mailCount and escalations are used to compute a unified inbox count.
+func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalations ...*EscalationSummary) string {
 	var b strings.Builder
 
 	// Header — world-focused.
@@ -648,9 +650,17 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, escalations ...*Escalati
 	renderMergeQueue(&b, ws.MergeQueue)
 	b.WriteString("\n")
 
-	// Escalations (only when open).
-	if len(escalations) > 0 && escalations[0] != nil && escalations[0].Total > 0 {
-		b.WriteString(renderEscalationLine(escalations[0]))
+	// Unified inbox count (escalations + mail).
+	inboxCount := mailCount
+	if len(escalations) > 0 && escalations[0] != nil {
+		inboxCount += escalations[0].Total
+	}
+	if inboxCount > 0 {
+		label := "items need attention"
+		if inboxCount == 1 {
+			label = "item needs attention"
+		}
+		b.WriteString(fmt.Sprintf("Inbox: %d %s\n", inboxCount, label))
 		b.WriteString("\n")
 	}
 

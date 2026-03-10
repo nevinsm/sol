@@ -124,6 +124,12 @@ func runCombinedStatus(world string) error {
 		}
 	}
 
+	// Count autarch mail.
+	var mailCount int
+	if count, err := sphereStore.CountPending(config.Autarch); err == nil {
+		mailCount = count
+	}
+
 	if statusJSON {
 		combined := struct {
 			Consul      status.ConsulInfo          `json:"consul"`
@@ -145,7 +151,7 @@ func runCombinedStatus(world string) error {
 		return nil
 	}
 
-	fmt.Print(status.RenderCombined(consulInfo, result, escSummary))
+	fmt.Print(status.RenderCombined(consulInfo, result, mailCount, escSummary))
 	return nil
 }
 
