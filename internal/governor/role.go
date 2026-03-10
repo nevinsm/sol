@@ -86,6 +86,16 @@ func governorHooks(world, _ string) startup.HookSet {
 					},
 				},
 			}, protocol.GuardHooks("governor")...),
+			"PreCompact": {
+				{
+					Hooks: []protocol.HookHandler{
+						{
+							Type:    "command",
+							Command: fmt.Sprintf("sol prime --world=%s --agent=governor --compact", world),
+						},
+					},
+				},
+			},
 			"UserPromptSubmit": {
 				{
 					Hooks: []protocol.HookHandler{
