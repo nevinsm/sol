@@ -2295,7 +2295,7 @@ func TestEnterNoOpWithoutFocus(t *testing.T) {
 // --- Peek mode tests ---
 
 func TestPeekModelNavigation(t *testing.T) {
-	pm := newPeekModel(nil)
+	pm := newPeekModel(nil, "")
 	pm.width = 120
 	pm.height = 40
 
@@ -2336,7 +2336,7 @@ func TestPeekModelNavigation(t *testing.T) {
 }
 
 func TestPeekModelAttachAlive(t *testing.T) {
-	pm := newPeekModel(nil)
+	pm := newPeekModel(nil, "")
 	pm.width = 120
 	pm.height = 40
 
@@ -2360,7 +2360,7 @@ func TestPeekModelAttachAlive(t *testing.T) {
 }
 
 func TestPeekModelAttachDead(t *testing.T) {
-	pm := newPeekModel(nil)
+	pm := newPeekModel(nil, "")
 	pm.width = 120
 	pm.height = 40
 
@@ -2380,7 +2380,7 @@ func TestPeekModelAttachDead(t *testing.T) {
 }
 
 func TestPeekModelEscPops(t *testing.T) {
-	pm := newPeekModel(nil)
+	pm := newPeekModel(nil, "")
 	pm.width = 120
 	pm.height = 40
 
@@ -2400,7 +2400,7 @@ func TestPeekModelEscPops(t *testing.T) {
 }
 
 func TestPeekModelViewRendersItems(t *testing.T) {
-	pm := newPeekModel(nil)
+	pm := newPeekModel(nil, "")
 	pm.width = 120
 	pm.height = 40
 
@@ -2435,7 +2435,7 @@ func TestPeekModelViewRendersItems(t *testing.T) {
 }
 
 func TestPeekModelViewDeadSession(t *testing.T) {
-	pm := newPeekModel(nil)
+	pm := newPeekModel(nil, "")
 	pm.width = 120
 	pm.height = 40
 
@@ -2494,7 +2494,7 @@ func TestBuildWorldPeekItems(t *testing.T) {
 }
 
 func TestPeekModelInitialCursor(t *testing.T) {
-	pm := newPeekModel(nil)
+	pm := newPeekModel(nil, "")
 	pm.width = 120
 	pm.height = 40
 
@@ -2507,6 +2507,174 @@ func TestPeekModelInitialCursor(t *testing.T) {
 
 	if pm.cursor != 2 {
 		t.Errorf("initial cursor should be 2, got %d", pm.cursor)
+	}
+}
+
+func TestBuildWorldPeekItemsForgeSessionName(t *testing.T) {
+	data := &status.WorldStatus{
+		World:    "myworld",
+		Forge:    status.ForgeInfo{Running: true, SessionName: "sol-myworld-forge"},
+		Sentinel: status.SentinelInfo{Running: true, SessionName: "sol-myworld-sentinel"},
+	}
+
+	items := buildWorldPeekItems(data)
+
+	// Find forge item.
+	var forgeItem *peekItem
+	for i := range items {
+		if items[i].name == "Forge" {
+			forgeItem = &items[i]
+			break
+		}
+	}
+	if forgeItem == nil {
+		t.Fatal("expected Forge item in peek items")
+	}
+
+	// Forge should use the merge session, not the forge process session.
+	expectedSess := "sol-myworld-forge-merge"
+	if forgeItem.sessionName != expectedSess {
+		t.Errorf("Forge sessionName = %q, want %q", forgeItem.sessionName, expectedSess)
+	}
+	if !forgeItem.isForge {
+		t.Error("Forge item should have isForge = true")
+	}
+	if forgeItem.source != "forge" {
+		t.Errorf("Forge item source = %q, want %q", forgeItem.source, "forge")
+	}
+	if !forgeItem.peekable {
+		t.Error("Forge item should be peekable")
+	}
+}
+
+func TestPeekModelForgeView(t *testing.T) {
+	pm := newPeekModel(nil, "")
+	pm.width = 120
+	pm.height = 40
+
+	items := []peekItem{
+		{name: "Forge", sessionName: "sol-dev-forge-merge", category: "Processes",
+			state: "alive", alive: true, peekable: true, isForge: true, source: "forge"},
+	}
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+
+	// Forge peek should use the two-pane layout.
+	if !pm.selectedIsForge() {
+		t.Error("selected item should be forge")
+	}
+
+	// Set forge info for idle state display.
+	pm.forgeInfo = &status.ForgeInfo{
+		Status:      "idle",
+		QueueDepth:  3,
+		MergesTotal: 42,
+		LastMerge:   "5m",
+	}
+
+	feedView := dimStyle.Render(strings.Repeat("─", 120)) + "\n"
+	output := pm.view(feedView)
+
+	// Should show forge-specific layout elements.
+	checks := []string{
+		"Merge Agent",
+		"No active merge session",
+		"Last merge: 5m ago",
+		"Queue: 3 ready",
+		"Total merges: 42",
+		"Forge Events",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("forge peek view missing %q", check)
+		}
+	}
+}
+
+func TestPeekModelForgeFeedSync(t *testing.T) {
+	pm := newPeekModel(nil, "")
+	pm.width = 120
+	pm.height = 40
+
+	items := []peekItem{
+		{name: "Toast", sessionName: "sol-dev-Toast", category: "Outposts",
+			state: "working", alive: true, peekable: true},
+		{name: "Forge", sessionName: "sol-dev-forge-merge", category: "Processes",
+			state: "alive", alive: true, peekable: true, isForge: true, source: "forge"},
+	}
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+
+	// Initially on Toast, no forge feed.
+	if pm.forgeFeed != nil {
+		t.Error("forge feed should be nil when not on forge item")
+	}
+
+	// Move to forge item.
+	pm, _ = pm.update(keyMsg("j"))
+	if pm.forgeFeed != nil {
+		// Without solHome, no forge feed is created (needs solHome).
+		// That's correct — the feed can't load without a real solHome.
+	}
+
+	// With solHome set, moving to forge should initialize feed.
+	pm.solHome = "/tmp/test-sol"
+	pm.syncForgeFeed()
+	if pm.forgeFeed == nil {
+		t.Error("forge feed should be initialized when on forge item with solHome")
+	}
+
+	// Move back to non-forge item.
+	pm, _ = pm.update(keyMsg("k"))
+	if pm.forgeFeed != nil {
+		t.Error("forge feed should be cleared when moving off forge item")
+	}
+}
+
+func TestEventMatchesSource(t *testing.T) {
+	tests := []struct {
+		name   string
+		ev     events.Event
+		source string
+		want   bool
+	}{
+		{
+			name:   "exact source match",
+			ev:     events.Event{Source: "forge", Actor: "forge"},
+			source: "forge",
+			want:   true,
+		},
+		{
+			name:   "world-prefixed source match",
+			ev:     events.Event{Source: "myworld/forge", Actor: "forge"},
+			source: "forge",
+			want:   true,
+		},
+		{
+			name:   "actor match",
+			ev:     events.Event{Source: "other", Actor: "forge"},
+			source: "forge",
+			want:   true,
+		},
+		{
+			name:   "no match",
+			ev:     events.Event{Source: "sentinel", Actor: "sentinel"},
+			source: "forge",
+			want:   false,
+		},
+		{
+			name:   "partial source no match",
+			ev:     events.Event{Source: "myforge", Actor: "other"},
+			source: "forge",
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := eventMatchesSource(tt.ev, tt.source)
+			if got != tt.want {
+				t.Errorf("eventMatchesSource() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

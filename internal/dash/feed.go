@@ -19,6 +19,7 @@ const feedFadeLevelDuration = 375 * time.Millisecond
 type feedModel struct {
 	solHome string
 	world   string // non-empty in world view — filters events to this world
+	source  string // non-empty to filter events by source (e.g., "forge", "sentinel")
 
 	events    []events.Event
 	lastSeen  time.Time
@@ -33,6 +34,16 @@ func newFeedModel(solHome, world string) feedModel {
 	return feedModel{
 		solHome:   solHome,
 		world:     world,
+		feedLines: 6,
+	}
+}
+
+// newFeedModelWithSource creates a feed model filtered to a specific source.
+func newFeedModelWithSource(solHome, world, source string) feedModel {
+	return feedModel{
+		solHome:   solHome,
+		world:     world,
+		source:    source,
 		feedLines: 6,
 	}
 }
@@ -82,15 +93,19 @@ func (fm *feedModel) refresh() {
 
 // filterWorld filters events to the current world when in world view.
 func (fm *feedModel) filterWorld(evts []events.Event) []events.Event {
-	if fm.world == "" {
+	if fm.world == "" && fm.source == "" {
 		return evts // sphere view — show all
 	}
 
 	var filtered []events.Event
 	for _, ev := range evts {
-		if eventMatchesWorld(ev, fm.world) {
-			filtered = append(filtered, ev)
+		if fm.world != "" && !eventMatchesWorld(ev, fm.world) {
+			continue
 		}
+		if fm.source != "" && !eventMatchesSource(ev, fm.source) {
+			continue
+		}
+		filtered = append(filtered, ev)
 	}
 	return filtered
 }
@@ -109,6 +124,21 @@ func eventMatchesWorld(ev events.Event, world string) bool {
 	}
 	if w, ok := payload["world"]; ok {
 		return fmt.Sprintf("%v", w) == world
+	}
+	return false
+}
+
+// eventMatchesSource checks if an event relates to the given source component.
+// Matches against the Source field suffix (e.g., source "forge" matches
+// "myworld/forge") and against the Actor field.
+func eventMatchesSource(ev events.Event, source string) bool {
+	// Check Source field suffix (e.g., "worldname/forge" matches "forge").
+	if ev.Source == source || strings.HasSuffix(ev.Source, "/"+source) {
+		return true
+	}
+	// Check Actor field.
+	if ev.Actor == source {
+		return true
 	}
 	return false
 }

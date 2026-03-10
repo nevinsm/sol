@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/status"
 )
 
 // captureInterval is how frequently we refresh the tmux pane capture.
@@ -40,7 +41,9 @@ type peekItem struct {
 	category    string // "Outposts", "Envoys", "Processes"
 	state       string
 	alive       bool
-	peekable    bool // has a tmux session that is alive
+	peekable    bool   // has a tmux session that is alive
+	isForge     bool   // forge uses a dedicated two-pane peek layout
+	source      string // event source filter for service peek (e.g., "forge", "sentinel")
 }
 
 // peekModel handles the peek split-pane view.
@@ -68,13 +71,19 @@ type peekModel struct {
 
 	// Spinners for alive items.
 	itemSpinners map[string]spinner.Model
+
+	// Forge peek state.
+	forgeFeed  *feedModel          // dedicated forge-filtered feed (nil when not forge peek)
+	forgeInfo  *status.ForgeInfo   // forge heartbeat data for idle state display
+	solHome    string              // needed for forge feed initialization
 }
 
-func newPeekModel(mgr *session.Manager) peekModel {
+func newPeekModel(mgr *session.Manager, solHome string) peekModel {
 	return peekModel{
 		sessionMgr:   mgr,
 		listWidth:    defaultListWidth,
 		itemSpinners: make(map[string]spinner.Model),
+		solHome:      solHome,
 	}
 }
 
@@ -88,6 +97,8 @@ func (pm *peekModel) enter(msg peekMsg) tea.Cmd {
 	pm.capture = ""
 	pm.captureAge = time.Time{}
 	pm.scrollOffset = 0
+	pm.forgeFeed = nil
+	pm.forgeInfo = nil
 
 	// Clamp cursor.
 	if pm.cursor >= len(pm.items) {
@@ -96,6 +107,9 @@ func (pm *peekModel) enter(msg peekMsg) tea.Cmd {
 	if pm.cursor < 0 {
 		pm.cursor = 0
 	}
+
+	// Initialize forge feed if the selected item is forge.
+	pm.syncForgeFeed()
 
 	// Sync spinners for alive items.
 	pm.itemSpinners = make(map[string]spinner.Model)
@@ -117,6 +131,38 @@ func (pm *peekModel) enter(msg peekMsg) tea.Cmd {
 	return nil
 }
 
+// syncForgeFeed initializes or clears the forge-specific feed based on the
+// currently selected item.
+func (pm *peekModel) syncForgeFeed() {
+	if pm.cursor >= len(pm.items) {
+		pm.forgeFeed = nil
+		return
+	}
+	item := pm.items[pm.cursor]
+	if item.isForge && pm.solHome != "" {
+		fm := newFeedModelWithSource(pm.solHome, pm.world, "forge")
+		fm.loadInitial()
+		pm.forgeFeed = &fm
+	} else {
+		pm.forgeFeed = nil
+	}
+}
+
+// selectedIsForge returns true if the currently selected peek item is forge.
+func (pm peekModel) selectedIsForge() bool {
+	if pm.cursor >= len(pm.items) {
+		return false
+	}
+	return pm.items[pm.cursor].isForge
+}
+
+// updateForgeData updates forge heartbeat data from world status.
+func (pm *peekModel) updateForgeData(data *status.WorldStatus) {
+	if data != nil {
+		pm.forgeInfo = &data.Forge
+	}
+}
+
 func (pm peekModel) update(msg tea.KeyMsg) (peekModel, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
@@ -124,6 +170,7 @@ func (pm peekModel) update(msg tea.KeyMsg) (peekModel, tea.Cmd) {
 			pm.cursor--
 			pm.capture = "" // clear stale capture while switching
 			pm.adjustScroll()
+			pm.syncForgeFeed()
 		}
 
 	case "down", "j":
@@ -135,6 +182,7 @@ func (pm peekModel) update(msg tea.KeyMsg) (peekModel, tea.Cmd) {
 			pm.cursor++
 			pm.capture = ""
 			pm.adjustScroll()
+			pm.syncForgeFeed()
 		}
 
 	case "enter", "a":
@@ -220,6 +268,11 @@ func (pm peekModel) view(feedView string) string {
 		return "No items to peek.\n" + feedView
 	}
 
+	// Forge peek uses a dedicated two-pane layout.
+	if pm.selectedIsForge() {
+		return pm.viewForge()
+	}
+
 	// Calculate panel dimensions.
 	// Feed takes some lines at the bottom — estimate from feedView.
 	feedLines := strings.Count(feedView, "\n")
@@ -271,6 +324,155 @@ func (pm peekModel) view(feedView string) string {
 	b.WriteString(feedView)
 
 	return b.String()
+}
+
+// viewForge renders the forge-specific two-pane peek layout:
+// left pane: merge agent capture, right pane: forge-filtered event feed.
+func (pm peekModel) viewForge() string {
+	// Footer line.
+	footerLines := 2
+
+	// Available height for the two-pane layout.
+	contentHeight := pm.height - footerLines
+	if contentHeight < 6 {
+		contentHeight = 6
+	}
+
+	// Split vertically: left = merge agent capture, right = forge event feed.
+	leftWidth := pm.width / 2
+	rightWidth := pm.width - leftWidth - 1 // 1 for separator
+
+	if leftWidth < 20 {
+		leftWidth = 20
+	}
+	if rightWidth < 20 {
+		rightWidth = 20
+	}
+
+	leftLines := pm.renderForgeMergePane(contentHeight, leftWidth)
+	rightLines := pm.renderForgeFeedPane(contentHeight, rightWidth)
+
+	var b strings.Builder
+
+	for i := 0; i < contentHeight; i++ {
+		left := ""
+		if i < len(leftLines) {
+			left = leftLines[i]
+		}
+		right := ""
+		if i < len(rightLines) {
+			right = rightLines[i]
+		}
+
+		b.WriteString(padRight(left, leftWidth))
+		b.WriteString(dimStyle.Render("│"))
+		b.WriteString(padRight(right, rightWidth))
+		b.WriteString("\n")
+	}
+
+	// Footer.
+	b.WriteString(pm.renderFooter())
+
+	return b.String()
+}
+
+// renderForgeMergePane renders the merge agent capture pane for forge peek.
+func (pm peekModel) renderForgeMergePane(maxHeight, maxWidth int) []string {
+	header := " " + focusStyle.Render("Merge Agent")
+	lines := []string{header}
+
+	// If we have a capture (merge session is alive), show it.
+	if pm.capture != "" {
+		// Split capture into lines and show tail (most recent output).
+		capLines := strings.Split(pm.capture, "\n")
+		availHeight := maxHeight - 1 // minus header
+
+		// Tail behavior: show last N lines.
+		if len(capLines) > availHeight {
+			capLines = capLines[len(capLines)-availHeight:]
+		}
+
+		for _, cl := range capLines {
+			if len(cl) > maxWidth-1 {
+				cl = cl[:maxWidth-1]
+			}
+			lines = append(lines, " "+cl)
+		}
+	} else {
+		// No active merge session — show idle state with heartbeat info.
+		lines = append(lines, "")
+		lines = append(lines, " "+dimStyle.Render("No active merge session"))
+
+		if pm.forgeInfo != nil {
+			lines = append(lines, "")
+			if pm.forgeInfo.LastMerge != "" {
+				lines = append(lines, " "+dimStyle.Render(fmt.Sprintf("Last merge: %s ago", pm.forgeInfo.LastMerge)))
+			}
+			if pm.forgeInfo.CurrentMR != "" {
+				lines = append(lines, " "+dimStyle.Render(fmt.Sprintf("Current: %s (%s)", pm.forgeInfo.CurrentMR, pm.forgeInfo.CurrentWrit)))
+			}
+			if pm.forgeInfo.QueueDepth > 0 {
+				lines = append(lines, " "+dimStyle.Render(fmt.Sprintf("Queue: %d ready", pm.forgeInfo.QueueDepth)))
+			}
+			if pm.forgeInfo.MergesTotal > 0 {
+				lines = append(lines, " "+dimStyle.Render(fmt.Sprintf("Total merges: %d", pm.forgeInfo.MergesTotal)))
+			}
+			if pm.forgeInfo.LastError != "" {
+				lines = append(lines, " "+errorStyle.Render(fmt.Sprintf("Last error: %s", truncateStr(pm.forgeInfo.LastError, maxWidth-14))))
+			}
+			if pm.forgeInfo.Paused {
+				lines = append(lines, " "+warnStyle.Render("⏸ Forge is paused"))
+			}
+		}
+	}
+
+	// Pad to maxHeight.
+	for len(lines) < maxHeight {
+		lines = append(lines, "")
+	}
+
+	return lines
+}
+
+// renderForgeFeedPane renders the forge-filtered event feed pane.
+func (pm peekModel) renderForgeFeedPane(maxHeight, maxWidth int) []string {
+	header := " " + headerStyle.Render("Forge Events")
+	lines := []string{header}
+
+	if pm.forgeFeed == nil || len(pm.forgeFeed.events) == 0 {
+		lines = append(lines, "")
+		lines = append(lines, " "+dimStyle.Render("No recent forge events"))
+		for len(lines) < maxHeight {
+			lines = append(lines, "")
+		}
+		return lines
+	}
+
+	// Show events most-recent-first, filling available height.
+	availHeight := maxHeight - 1 // minus header
+	shown := availHeight
+	if shown > len(pm.forgeFeed.events) {
+		shown = len(pm.forgeFeed.events)
+	}
+
+	level := pm.forgeFeed.fadeLevel()
+	highlightThreshold := len(pm.forgeFeed.events) - pm.forgeFeed.newCount
+
+	for i := len(pm.forgeFeed.events) - 1; i >= len(pm.forgeFeed.events)-shown; i-- {
+		line := formatEvent(pm.forgeFeed.events[i], maxWidth)
+		if pm.forgeFeed.newCount > 0 && i >= highlightThreshold && level > 0 {
+			lines = append(lines, feedHighlightAtLevel(level).Render(line))
+		} else {
+			lines = append(lines, dimStyle.Render(line))
+		}
+	}
+
+	// Pad to maxHeight.
+	for len(lines) < maxHeight {
+		lines = append(lines, "")
+	}
+
+	return lines
 }
 
 // renderItemList renders the left panel item list with categories.

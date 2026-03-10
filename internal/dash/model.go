@@ -176,7 +176,7 @@ func NewModel(cfg Config) Model {
 
 	m.sphereView = newSphereModel()
 	m.worldView = newWorldModel()
-	m.peekView = newPeekModel(cfg.SessionMgr)
+	m.peekView = newPeekModel(cfg.SessionMgr, cfg.SOLHome)
 
 	return m
 }
@@ -218,6 +218,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.peekView.width = msg.Width
 		m.peekView.height = msg.Height
 		m.feed.setHeight(msg.Height)
+		if m.peekView.forgeFeed != nil {
+			m.peekView.forgeFeed.setHeight(msg.Height)
+		}
 		m.ready = true
 		m.dirty = true
 
@@ -412,6 +415,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pulsePhase = (m.pulsePhase + 1) % pulseFrames
 		m.feed.decayAnimation()
 
+		// Decay forge feed animation if active.
+		if m.peekView.forgeFeed != nil {
+			m.peekView.forgeFeed.decayAnimation()
+		}
+
 		// Route to active sub-view for spinner frame updates.
 		switch m.activeView() {
 		case viewSphere:
@@ -450,8 +458,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.activeView() == viewPeek {
 			if m.peekView.fromView == viewWorld && msg.world != nil {
 				m.peekView.refreshItems(buildWorldPeekItems(msg.world))
+				m.peekView.updateForgeData(msg.world)
 			} else if m.peekView.fromView == viewSphere && msg.sphere != nil {
 				m.peekView.refreshItems(buildSpherePeekItems(m.sphereView))
+			}
+			// Refresh forge-specific feed if active.
+			if m.peekView.forgeFeed != nil {
+				m.peekView.forgeFeed.refresh()
 			}
 		}
 
