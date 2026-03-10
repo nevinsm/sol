@@ -111,6 +111,28 @@ environment variables when --world and --agent are not provided.
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
 | `--world` | string | "" | world name |
 
+### `sol sitrep`
+
+AI-generated situation report
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | dump collected data as JSON (no AI call) |
+| `--sphere` | bool | false | force sphere scope |
+| `--world` | string | "" | target specific world |
+
+**Subcommands:**
+
+| Command | Description |
+|---------|-------------|
+| `sol sitrep eject` | Write default prompt template to SOL_HOME |
+
+#### `sol sitrep eject`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--force` | bool | false | overwrite existing prompt |
+
 ### `sol status`
 
 Show sphere or world status
