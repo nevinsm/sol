@@ -6,6 +6,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/startup"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // RoleConfig returns the startup.RoleConfig for the envoy role.
@@ -120,8 +121,36 @@ func envoyHooks(world, agent string) startup.HookSet {
 }
 
 // envoyPrime builds the initial prompt for the envoy session.
-func envoyPrime(world, agent string) string {
-	return fmt.Sprintf(
+// If the envoy has an active writ, include it in the prime output so the
+// envoy knows about its assignment immediately on startup/restart.
+func envoyPrime(world, agentName string) string {
+	base := fmt.Sprintf(
 		"Envoy %s, world %s. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200",
-		agent, world)
+		agentName, world)
+
+	// Look up active writ from sphere store.
+	agentID := world + "/" + agentName
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		return base
+	}
+	defer sphereStore.Close()
+
+	ag, err := sphereStore.GetAgent(agentID)
+	if err != nil || ag.ActiveWrit == "" {
+		return base
+	}
+
+	// Look up writ title from world store.
+	writTitle := ag.ActiveWrit // fallback to ID
+	worldStore, err := store.OpenWorld(world)
+	if err == nil {
+		defer worldStore.Close()
+		if writ, err := worldStore.GetWrit(ag.ActiveWrit); err == nil {
+			writTitle = writ.Title
+		}
+	}
+
+	return fmt.Sprintf("%s\nActive writ: %s — %s\nRun `sol prime --world=%s --agent=%s` for full writ context.",
+		base, ag.ActiveWrit, writTitle, world, agentName)
 }

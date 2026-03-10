@@ -4927,3 +4927,155 @@ func TestPrimeCompactGovernorNoTether(t *testing.T) {
 		t.Error("persistent role should not get generic no-tether message")
 	}
 }
+
+// --- Persistent role activation tests ---
+
+func TestActivateWritEnvoyNudgesInsteadOfCycle(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create two writs.
+	writ1, err := worldStore.CreateWrit("Envoy task 1", "First task", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 1: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update writ 1: %v", err)
+	}
+	writ2, err := worldStore.CreateWrit("Envoy task 2", "Second task", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 2: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ2, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("failed to update writ 2: %v", err)
+	}
+
+	// Create envoy agent with active_writ = writ1.
+	if _, err := sphereStore.CreateAgent("Scout", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Scout", "working", writ1); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	// Tether both writs.
+	if err := tether.Write("ember", "Scout", writ1, "envoy"); err != nil {
+		t.Fatalf("failed to write tether 1: %v", err)
+	}
+	if err := tether.Write("ember", "Scout", writ2, "envoy"); err != nil {
+		t.Fatalf("failed to write tether 2: %v", err)
+	}
+
+	// Activate writ2.
+	result, err := ActivateWrit(ActivateOpts{
+		World:     "ember",
+		AgentName: "Scout",
+		WritID:    writ2,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("ActivateWrit failed: %v", err)
+	}
+
+	// Verify result fields.
+	if result.WritID != writ2 {
+		t.Errorf("WritID = %q, want %q", result.WritID, writ2)
+	}
+	if result.PreviousWrit != writ1 {
+		t.Errorf("PreviousWrit = %q, want %q", result.PreviousWrit, writ1)
+	}
+
+	// Verify DB updated.
+	agent, err := sphereStore.GetAgent("ember/Scout")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.ActiveWrit != writ2 {
+		t.Errorf("active_writ = %q, want %q", agent.ActiveWrit, writ2)
+	}
+
+	// Verify session was NOT cycled (no stop/start).
+	sessName := config.SessionName("ember", "Scout")
+	if mgr.stopped[sessName] {
+		t.Error("envoy session should NOT be stopped on writ activation")
+	}
+	if mgr.started[sessName] {
+		t.Error("envoy session should NOT be started on writ activation")
+	}
+
+	// Verify nudge was enqueued.
+	messages, err := nudge.List(sessName)
+	if err != nil {
+		t.Fatalf("failed to list nudge messages: %v", err)
+	}
+	if len(messages) == 0 {
+		t.Fatal("expected nudge message to be enqueued for envoy activation")
+	}
+	found := false
+	for _, msg := range messages {
+		if msg.Type == "writ-activate" && strings.Contains(msg.Subject, writ2) {
+			found = true
+			if msg.Priority != "urgent" {
+				t.Errorf("nudge priority = %q, want \"urgent\"", msg.Priority)
+			}
+			if !strings.Contains(msg.Subject, "Envoy task 2") {
+				t.Errorf("nudge subject should contain writ title, got %q", msg.Subject)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("no writ-activate nudge found for the activated writ")
+	}
+}
+
+func TestActivateWritGovernorNudgesInsteadOfCycle(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create writ.
+	writ1, err := worldStore.CreateWrit("Governor task", "A task", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Apex"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	// Create governor agent.
+	if _, err := sphereStore.CreateAgent("Apex", "ember", "governor"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Tether writ.
+	if err := tether.Write("ember", "Apex", writ1, "governor"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Activate writ.
+	_, err = ActivateWrit(ActivateOpts{
+		World:     "ember",
+		AgentName: "Apex",
+		WritID:    writ1,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("ActivateWrit failed: %v", err)
+	}
+
+	// Verify session was NOT cycled.
+	sessName := config.SessionName("ember", "Apex")
+	if mgr.stopped[sessName] {
+		t.Error("governor session should NOT be stopped on writ activation")
+	}
+
+	// Verify nudge was enqueued.
+	messages, err := nudge.List(sessName)
+	if err != nil {
+		t.Fatalf("failed to list nudge messages: %v", err)
+	}
+	if len(messages) == 0 {
+		t.Fatal("expected nudge message for governor activation")
+	}
+	if messages[0].Type != "writ-activate" {
+		t.Errorf("nudge type = %q, want \"writ-activate\"", messages[0].Type)
+	}
+}
