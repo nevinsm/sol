@@ -39,7 +39,7 @@ structured prompt requesting a JSON assessment. The assessment determines
 whether to nudge, escalate, or do nothing.
 
 The assessment command is configurable (`AssessCommand` in sentinel
-config) so operators can substitute a different model or tool.
+config) so the autarch can substitute a different model or tool.
 
 ## Consequences
 

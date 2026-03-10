@@ -124,7 +124,7 @@ func TestWorldInitPreArc1World(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	_, err = s.CreateWrit("Old item", "", "operator", 2, nil)
+	_, err = s.CreateWrit("Old item", "", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
@@ -637,7 +637,7 @@ func buildTestArchive(t *testing.T, gtHome, worldName string) string {
 		t.Fatalf("create temp world db: %v", err)
 	}
 	// Add a writ so we can verify it survives import.
-	_, err = worldStore.CreateWrit("Test task", "A test writ", "operator", 2, nil)
+	_, err = worldStore.CreateWrit("Test task", "A test writ", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}

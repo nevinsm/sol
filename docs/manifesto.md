@@ -88,7 +88,7 @@ production-ready system informed by both.
 
 - **It works when things break.** Agents crash. Storage hiccups. Sessions die
   mid-work. The system must recover gracefully, not cascade failures.
-- **It's inspectable.** The operator can see what every agent is doing, what
+- **It's inspectable.** The autarch can see what every agent is doing, what
   work is pending, what failed and why — without specialized tooling. Files you
   can `cat`. State you can `ls`. Logs you can `tail`.
 - **It's simple to operate.** Start it, stop it, add a project, dispatch work.
@@ -127,7 +127,7 @@ philosophy:
 - If 30 concurrent agents need transactional writes, we use a database. Not
   because it's Unix, but because advisory locks on flat files at that concurrency
   level is reinventing a database badly.
-- If the operator needs to attach to an agent's session and see what it's doing,
+- If the autarch needs to attach to an agent's session and see what it's doing,
   we use tmux. Not because it's the simplest tool, but because no combination of
   process groups and named pipes gives you interactive debugging.
 - If a workflow needs atomic multi-step execution with rollback, we build that

@@ -12,7 +12,7 @@ creation.
 This duplication caused real bugs:
 
 - **Prefect respawn skipped `CLAUDE_CONFIG_DIR`.** A respawned agent used
-  the operator's personal Claude Code config directory, loading wrong
+  the autarch's personal Claude Code config directory, loading wrong
   auto-memory, settings, and project associations. The agent's behavior
   changed dramatically depending on whether it was started via CLI or
   respawned by the prefect.

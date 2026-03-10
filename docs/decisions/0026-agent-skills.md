@@ -52,9 +52,9 @@ Replace the monolithic CLI reference with role-scoped skills:
   not tracked in version control.
 - **Makefile simplified** — build no longer depends on docs generation.
 
-## Addendum: Operator Override — cli.md Coexistence (2026-03-09)
+## Addendum: Autarch Override — cli.md Coexistence (2026-03-09)
 
-The operator has decided that `docs/cli.md` should be maintained for **human**
+The autarch has decided that `docs/cli.md` should be maintained for **human**
 consumption alongside the skills system which serves **agents**. Both coexist:
 
 - **Skills** (`.claude/skills/`) — role-scoped, agent-facing, progressive disclosure

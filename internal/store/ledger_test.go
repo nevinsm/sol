@@ -805,9 +805,9 @@ func TestMergeStatsForAgent(t *testing.T) {
 	s := setupWorld(t)
 
 	// Create writs (FK dependency for merge_requests).
-	item1, _ := s.CreateWrit("Item 1", "", "operator", 2, nil)
-	item2, _ := s.CreateWrit("Item 2", "", "operator", 2, nil)
-	item3, _ := s.CreateWrit("Item 3", "", "operator", 2, nil)
+	item1, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
+	item2, _ := s.CreateWrit("Item 2", "", "autarch", 2, nil)
+	item3, _ := s.CreateWrit("Item 3", "", "autarch", 2, nil)
 
 	// Write cast history linking agents to writs.
 	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)

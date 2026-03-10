@@ -60,7 +60,7 @@ func TestBuildTimelineChronological(t *testing.T) {
 			Status:    "closed",
 			Kind:      "code",
 			Priority:  2,
-			CreatedBy: "operator",
+			CreatedBy: "autarch",
 			CreatedAt: now,
 			ClosedAt:  timePtr(now.Add(2 * time.Hour)),
 		},
@@ -128,7 +128,7 @@ func TestBuildTimelineEmpty(t *testing.T) {
 			ID:        "sol-a1b2c3d4e5f6a7b8",
 			Title:     "Empty writ",
 			Status:    "open",
-			CreatedBy: "operator",
+			CreatedBy: "autarch",
 			CreatedAt: now,
 		},
 	}
@@ -267,7 +267,7 @@ func TestCollectFullTrace(t *testing.T) {
 	// Create a writ.
 	writID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:     "Test trace writ",
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 		Priority:  1,
 		Labels:    []string{"test", "trace"},
 		Kind:      "code",
@@ -337,7 +337,7 @@ func TestCollectWorldAutoResolution(t *testing.T) {
 	// Create a writ.
 	writID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
 		Title:     "Auto resolve writ",
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -397,7 +397,7 @@ func TestCollectSphereDegrade(t *testing.T) {
 
 	writID, err := ws.CreateWritWithOpts(store.CreateWritOpts{
 		Title:     "Degrade test",
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -423,7 +423,7 @@ func TestRenderFull(t *testing.T) {
 			Status:    "closed",
 			Kind:      "code",
 			Priority:  1,
-			CreatedBy: "operator",
+			CreatedBy: "autarch",
 			CreatedAt: now,
 			ClosedAt:  timePtr(now.Add(2 * time.Hour)),
 			Labels:    []string{"auth", "critical"},
@@ -482,7 +482,7 @@ func TestRenderJSON(t *testing.T) {
 			Status:    "open",
 			Kind:      "code",
 			Priority:  2,
-			CreatedBy: "operator",
+			CreatedBy: "autarch",
 			CreatedAt: now,
 		},
 		Labels: []string{"test"},
@@ -545,9 +545,9 @@ func TestCollectEventData(t *testing.T) {
 
 	// Create events file.
 	events := []string{
-		`{"ts":"2026-03-07T10:15:00Z","source":"sol","type":"cast","actor":"operator","payload":{"writ_id":"sol-a1b2c3d4e5f6a7b8","agent":"Toast"}}`,
+		`{"ts":"2026-03-07T10:15:00Z","source":"sol","type":"cast","actor":"autarch","payload":{"writ_id":"sol-a1b2c3d4e5f6a7b8","agent":"Toast"}}`,
 		`{"ts":"2026-03-07T11:30:00Z","source":"sol","type":"resolve","actor":"Toast","payload":{"writ_id":"sol-a1b2c3d4e5f6a7b8"}}`,
-		`{"ts":"2026-03-07T11:35:00Z","source":"sol","type":"cast","actor":"operator","payload":{"writ_id":"sol-deadbeef12345678"}}`,
+		`{"ts":"2026-03-07T11:35:00Z","source":"sol","type":"cast","actor":"autarch","payload":{"writ_id":"sol-deadbeef12345678"}}`,
 	}
 	if err := os.WriteFile(filepath.Join(dir, ".events.jsonl"), []byte(strings.Join(events, "\n")+"\n"), 0o644); err != nil {
 		t.Fatal(err)

@@ -12,12 +12,12 @@ func TestHistoryForWrit(t *testing.T) {
 	now := time.Now().UTC()
 
 	// Create a writ.
-	_, err := s.CreateWrit("test writ", "", "operator", 2, nil)
+	_, err := s.CreateWrit("test writ", "", "autarch", 2, nil)
 	if err != nil {
 		// The random ID won't match, so create with specific ID manually.
 		_, err = s.db.Exec(
 			`INSERT INTO writs (id, title, status, priority, created_by, created_at, updated_at)
-			 VALUES (?, ?, 'open', 2, 'operator', ?, ?)`,
+			 VALUES (?, ?, 'open', 2, 'autarch', ?, ?)`,
 			writID, "test writ", now.Format(time.RFC3339), now.Format(time.RFC3339),
 		)
 		if err != nil {

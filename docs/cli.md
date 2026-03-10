@@ -76,7 +76,7 @@ The agent's tether, worktree, and writ assignment are preserved. Committed
 code and the git history carry over as the primary context for the successor
 session. Use --summary to pass additional context.
 
-Common reasons: context exhaustion (compact), operator-initiated (manual),
+Common reasons: context exhaustion (compact), autarch-initiated (manual),
 or health-check triggered restart. Uses SOL_WORLD and SOL_AGENT environment
 variables when flags are not provided.
 
@@ -192,7 +192,7 @@ Close a caravan by ID, or use --auto to close all caravans where every item is m
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--owner` | string | "" | caravan owner (default: operator) |
+| `--owner` | string | "" | caravan owner (default: autarch) |
 | `--phase` | int | 0 | phase for items (default 0) |
 | `--world` | string | "" | world name |
 
@@ -1436,7 +1436,7 @@ Start sphere daemons and world services
 
 Create an escalation
 
-Create an escalation record and route it for operator attention.
+Create an escalation record and route it for autarch attention.
 
 Auto-detects source from SOL_WORLD/SOL_AGENT environment variables when
 called from within an agent session. Also auto-detects the active writ
@@ -1450,7 +1450,7 @@ on the configured escalation router and SOL_ESCALATION_WEBHOOK.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--severity` | string | medium | Severity level (low, medium, high, critical) |
-| `--source` | string | operator | Source of the escalation |
+| `--source` | string | autarch | Source of the escalation |
 | `--source-ref` | string | "" | Structured reference (e.g., mr:mr-abc123, writ:sol-xyz) |
 
 ### `sol escalation`
@@ -1536,13 +1536,13 @@ Exit codes:
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--identity` | string | operator | Recipient to check |
+| `--identity` | string | autarch | Recipient to check |
 
 #### `sol mail inbox`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--identity` | string | operator | Recipient to check |
+| `--identity` | string | autarch | Recipient to check |
 | `--json` | bool | false | Output as JSON |
 
 #### `sol mail purge`
@@ -1567,7 +1567,7 @@ The --force flag is accepted as an alias for --confirm for backward compatibilit
 | `--no-notify` | bool | false | Suppress nudge notification to recipient |
 | `--priority` | int | 2 | Priority (1=urgent, 2=normal, 3=low) |
 | `--subject` | string | "" | Message subject |
-| `--to` | string | "" | Recipient agent ID or "operator" |
+| `--to` | string | "" | Recipient agent ID or "autarch" |
 | `--world` | string | "" | world name |
 
 ### `sol nudge`

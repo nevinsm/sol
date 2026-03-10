@@ -19,7 +19,7 @@ dispatch across many writs simultaneously.
 The single-file tether cannot represent this. A persistent agent needs:
 
 1. **Multiple concurrent tethers** — more than one writ bound at a time.
-2. **Active writ selection** — the operator chooses which tethered writ
+2. **Active writ selection** — the autarch chooses which tethered writ
    the agent focuses on. Only one writ can be active because Claude Code
    caches the system prompt and cannot rewrite it mid-session.
 3. **Lightweight binding** — tethering a writ to a persistent agent should
@@ -119,12 +119,12 @@ agents adapt this principle:
 
 - **Outposts**: fire on session start. Unchanged. The tether directory
   contains one file, and the agent executes it immediately.
-- **Persistent agents**: fire on operator direction. When the operator
+- **Persistent agents**: fire on autarch direction. When the autarch
   calls `sol writ activate`, the agent receives the writ context and
   executes immediately. No confirmation loop, no polling.
 
 Propulsion is preserved — agents execute immediately when directed. The
-trigger changes (session start vs operator command) but the principle holds:
+trigger changes (session start vs autarch command) but the principle holds:
 the tether IS the instruction, and the agent runs it without delay.
 
 ### Status display

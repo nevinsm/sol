@@ -13,7 +13,7 @@ recovery, stranded caravan feeding, and lifecycle management.
 
 Neither component handles cross-world work planning — the task of breaking a
 high-level goal into writs, dependencies, and caravans that span multiple
-worlds. This gap surfaces when an operator needs to coordinate features or
+worlds. This gap surfaces when the autarch needs to coordinate features or
 changes across projects:
 
 - "Add authentication across the API, web, and shared-libs worlds"
@@ -44,10 +44,10 @@ session for the entire sphere.
 
 **Session lifecycle:**
 
-Senate is operator-started and operator-stopped. It is not supervised by
+Senate is autarch-started and autarch-stopped. It is not supervised by
 prefect or consul, not always-running, and has no heartbeat or respawn logic.
 The human is the supervisor — same model as envoy (ADR-0009). Senate exists
-when the operator needs it and doesn't when they don't.
+when the autarch needs it and doesn't when they don't.
 
 **What Senate does:**
 
@@ -76,7 +76,7 @@ context. Senate pulls summaries on demand when the conversation warrants it.
 
 Senate uses the brief system (ADR-0009 infrastructure) for accumulated
 sphere-wide knowledge — project relationships, past planning decisions,
-cross-world patterns, operator preferences.
+cross-world patterns, autarch preferences.
 
 **Senate-Governor interaction:**
 
@@ -106,10 +106,10 @@ Two paths based on whether items are in a caravan:
 
 - Clean role separation: governor governs per-world, Senate plans across
   worlds. Neither component's responsibilities are muddied.
-- Not always-running — zero cost when not in use. Operator starts a session
+- Not always-running — zero cost when not in use. The autarch starts a session
   for planning, stops when done.
 - Follows established patterns: Claude session + Go toolbox (ADR-0005), brief
-  system (ADR-0009), operator-managed lifecycle (envoy pattern)
+  system (ADR-0009), autarch-managed lifecycle (envoy pattern)
 - Hierarchical delegation: Senate reads up from governors (world summaries)
   and writes down to worlds (writs, caravans). Governors handle execution
   within their worlds.
@@ -177,6 +177,6 @@ Synchronous injection was chosen over alternatives:
 | Scope | Sphere | Per-world | Per-world | Sphere |
 | Session type | Claude + sol CLI | Claude + sol CLI | Claude + sol CLI | Go process |
 | Purpose | Cross-world planning | Per-world dispatch | Merge pipeline | Sphere patrol |
-| Lifecycle | Operator-managed | Operator-managed | Prefect-managed | Prefect-managed |
+| Lifecycle | Autarch-managed | Autarch-managed | Prefect-managed | Prefect-managed |
 | Brief? | Yes | Yes | No | No |
 | Always running? | No | While world active | While world active | Yes |

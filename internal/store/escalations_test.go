@@ -51,7 +51,7 @@ func TestCreateEscalation(t *testing.T) {
 func TestCreateEscalationInvalidSeverity(t *testing.T) {
 	s := setupSphere(t)
 
-	_, err := s.CreateEscalation("invalid", "operator", "test")
+	_, err := s.CreateEscalation("invalid", "autarch", "test")
 	if err == nil {
 		t.Fatal("expected error for invalid severity")
 	}
@@ -64,15 +64,15 @@ func TestListEscalations(t *testing.T) {
 	now := time.Now().UTC()
 	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
-		"esc-oldest01", "low", "operator", "Low issue",
+		"esc-oldest01", "low", "autarch", "Low issue",
 		now.Add(-2*time.Hour).Format(time.RFC3339), now.Add(-2*time.Hour).Format(time.RFC3339))
 	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
-		"esc-middle01", "medium", "operator", "Medium issue",
+		"esc-middle01", "medium", "autarch", "Medium issue",
 		now.Add(-1*time.Hour).Format(time.RFC3339), now.Add(-1*time.Hour).Format(time.RFC3339))
 	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
-		"esc-newest01", "high", "operator", "High issue",
+		"esc-newest01", "high", "autarch", "High issue",
 		now.Format(time.RFC3339), now.Format(time.RFC3339))
 
 	// List all.
@@ -133,23 +133,23 @@ func TestListEscalationsSortsBySeverityThenCreatedAt(t *testing.T) {
 	// Two critical (older first), one high, one medium, one low.
 	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
-		"esc-low00000001", "low", "operator", "Low issue",
+		"esc-low00000001", "low", "autarch", "Low issue",
 		now.Add(-5*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
 	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
-		"esc-crit0000001", "critical", "operator", "Critical older",
+		"esc-crit0000001", "critical", "autarch", "Critical older",
 		now.Add(-2*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
 	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
-		"esc-med00000001", "medium", "operator", "Medium issue",
+		"esc-med00000001", "medium", "autarch", "Medium issue",
 		now.Add(-3*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
 	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
-		"esc-crit0000002", "critical", "operator", "Critical newer",
+		"esc-crit0000002", "critical", "autarch", "Critical newer",
 		now.Add(-1*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
 	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
-		"esc-high0000001", "high", "operator", "High issue",
+		"esc-high0000001", "high", "autarch", "High issue",
 		now.Add(-4*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
 
 	escs, err := s.ListEscalations("")
@@ -176,11 +176,11 @@ func TestListOpenEscalationsSortsBySeverity(t *testing.T) {
 	// Insert with different severities — all open.
 	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
-		"esc-low00000010", "low", "operator", "Low issue",
+		"esc-low00000010", "low", "autarch", "Low issue",
 		now.Add(-1*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
 	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
-		"esc-high0000010", "high", "operator", "High issue",
+		"esc-high0000010", "high", "autarch", "High issue",
 		now.Format(time.RFC3339), now.Format(time.RFC3339))
 
 	escs, err := s.ListOpenEscalations()
@@ -203,9 +203,9 @@ func TestListOpenEscalations(t *testing.T) {
 	s := setupSphere(t)
 
 	// Create 3 escalations.
-	id1, _ := s.CreateEscalation("low", "operator", "Issue 1")
-	_, _ = s.CreateEscalation("medium", "operator", "Issue 2")
-	id3, _ := s.CreateEscalation("high", "operator", "Issue 3")
+	id1, _ := s.CreateEscalation("low", "autarch", "Issue 1")
+	_, _ = s.CreateEscalation("medium", "autarch", "Issue 2")
+	id3, _ := s.CreateEscalation("high", "autarch", "Issue 3")
 
 	// All 3 are open -> ListOpenEscalations returns 3.
 	escs, err := s.ListOpenEscalations()
@@ -261,7 +261,7 @@ func TestListOpenEscalations(t *testing.T) {
 func TestAckEscalation(t *testing.T) {
 	s := setupSphere(t)
 
-	id, _ := s.CreateEscalation("medium", "operator", "Test ack")
+	id, _ := s.CreateEscalation("medium", "autarch", "Test ack")
 
 	err := s.AckEscalation(id)
 	if err != nil {
@@ -283,7 +283,7 @@ func TestAckEscalation(t *testing.T) {
 func TestResolveEscalation(t *testing.T) {
 	s := setupSphere(t)
 
-	id, _ := s.CreateEscalation("high", "operator", "Test resolve")
+	id, _ := s.CreateEscalation("high", "autarch", "Test resolve")
 
 	err := s.ResolveEscalation(id)
 	if err != nil {
@@ -303,9 +303,9 @@ func TestCountOpen(t *testing.T) {
 	s := setupSphere(t)
 
 	// Create 3.
-	_, _ = s.CreateEscalation("low", "operator", "Issue 1")
-	_, _ = s.CreateEscalation("medium", "operator", "Issue 2")
-	id3, _ := s.CreateEscalation("high", "operator", "Issue 3")
+	_, _ = s.CreateEscalation("low", "autarch", "Issue 1")
+	_, _ = s.CreateEscalation("medium", "autarch", "Issue 2")
+	id3, _ := s.CreateEscalation("high", "autarch", "Issue 3")
 
 	count, err := s.CountOpen()
 	if err != nil {
@@ -365,7 +365,7 @@ func TestCreateEscalationWithoutSourceRef(t *testing.T) {
 	s := setupSphere(t)
 
 	// Existing callers that don't pass source_ref should still work.
-	id, err := s.CreateEscalation("low", "operator", "Something happened")
+	id, err := s.CreateEscalation("low", "autarch", "Something happened")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +382,7 @@ func TestCreateEscalationWithoutSourceRef(t *testing.T) {
 func TestUpdateEscalationLastNotified(t *testing.T) {
 	s := setupSphere(t)
 
-	id, err := s.CreateEscalation("high", "operator", "Test last_notified_at")
+	id, err := s.CreateEscalation("high", "autarch", "Test last_notified_at")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +437,7 @@ func TestUpdateEscalationLastNotifiedNotFound(t *testing.T) {
 func TestUpdateEscalationLastNotifiedUpdatesUpdatedAt(t *testing.T) {
 	s := setupSphere(t)
 
-	id, err := s.CreateEscalation("high", "operator", "Test updated_at")
+	id, err := s.CreateEscalation("high", "autarch", "Test updated_at")
 	if err != nil {
 		t.Fatal(err)
 	}

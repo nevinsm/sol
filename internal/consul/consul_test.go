@@ -447,7 +447,7 @@ func TestFeedStrandedCaravansAutoDispatch(t *testing.T) {
 	defer worldStore.Close()
 
 	// Create a caravan with 3 writs: 2 open (ready), 1 tethered.
-	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "autarch")
 	sphereStore.UpdateCaravanStatus(caravanID, "open")
 
 	wi1, _ := worldStore.CreateWrit("caravan-task-1", "desc1", "test", 1, nil)
@@ -501,7 +501,7 @@ func TestFeedStrandedCaravansAutoDispatch(t *testing.T) {
 	}
 
 	// Verify NO CARAVAN_NEEDS_FEEDING message was sent (auto-dispatch replaces it).
-	pending, _ := sphereStore.PendingProtocol("operator", store.ProtoCaravanNeedsFeeding)
+	pending, _ := sphereStore.PendingProtocol("autarch", store.ProtoCaravanNeedsFeeding)
 	if len(pending) != 0 {
 		t.Errorf("pending CARAVAN_NEEDS_FEEDING = %d, want 0 (auto-dispatch replaces notification)", len(pending))
 	}
@@ -523,7 +523,7 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	caravanID, _ := sphereStore.CreateCaravan("test-caravan-3", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("test-caravan-3", "autarch")
 	sphereStore.UpdateCaravanStatus(caravanID, "open")
 	wi1, _ := worldStore.CreateWrit("all-tethered-1", "desc1", "test", 1, nil)
 	worldStore.UpdateWrit(wi1, store.WritUpdates{Status: "tethered", Assignee: worldName + "/X"})
@@ -573,7 +573,7 @@ func TestFeedStrandedCaravansAutoCloseAllMerged(t *testing.T) {
 	// Create an open caravan with all items closed (merged).
 	// This simulates the production bug: all items merged but caravan never closed
 	// because TryCloseCaravan only ran when new work was dispatched.
-	caravanID, _ := sphereStore.CreateCaravan("all-merged-caravan", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("all-merged-caravan", "autarch")
 	sphereStore.UpdateCaravanStatus(caravanID, "open")
 
 	wi1, _ := worldStore.CreateWrit("merged-1", "desc1", "test", 1, nil)
@@ -636,7 +636,7 @@ func TestFeedStrandedCaravansSkipsRedispatch(t *testing.T) {
 	// Create a caravan with 2 open writs:
 	// - wi1: has existing MRs (was dispatched before, MR failed, writ reopened)
 	// - wi2: no MRs (fresh, never dispatched)
-	caravanID, _ := sphereStore.CreateCaravan("redispatch-caravan", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("redispatch-caravan", "autarch")
 	sphereStore.UpdateCaravanStatus(caravanID, "open")
 
 	wi1, _ := worldStore.CreateWrit("redispatch-task-1", "desc1", "test", 1, nil)
@@ -698,7 +698,7 @@ func TestFeedStrandedCaravansDrydockIgnored(t *testing.T) {
 	defer worldStore.Close()
 
 	// Create a drydock caravan — should NOT be dispatched.
-	caravanID, _ := sphereStore.CreateCaravan("drydock-caravan", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("drydock-caravan", "autarch")
 	// Status remains "drydock" (default from CreateCaravan).
 
 	wi1, _ := worldStore.CreateWrit("drydock-task-1", "desc1", "test", 1, nil)
@@ -740,7 +740,7 @@ func TestProcessLifecycleShutdown(t *testing.T) {
 	defer sphereStore.Close()
 
 	// Send SHUTDOWN message to "sphere/consul".
-	sphereStore.SendProtocolMessage("operator", "sphere/consul", "SHUTDOWN", nil)
+	sphereStore.SendProtocolMessage("autarch", "sphere/consul", "SHUTDOWN", nil)
 
 	sessions := newMockSessions()
 	cfg := DefaultConfig()
@@ -772,7 +772,7 @@ func TestProcessLifecycleCycle(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	sphereStore.SendProtocolMessage("operator", "sphere/consul", "CYCLE", nil)
+	sphereStore.SendProtocolMessage("autarch", "sphere/consul", "CYCLE", nil)
 
 	sessions := newMockSessions()
 	cfg := DefaultConfig()
@@ -804,7 +804,7 @@ func TestProcessLifecycleUnknown(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	sphereStore.SendProtocolMessage("operator", "sphere/consul", "UNKNOWN_CMD", nil)
+	sphereStore.SendProtocolMessage("autarch", "sphere/consul", "UNKNOWN_CMD", nil)
 
 	sessions := newMockSessions()
 	cfg := DefaultConfig()
@@ -852,7 +852,7 @@ func TestPatrolCycle(t *testing.T) {
 		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/Stale")
 
 	// 2. Open caravan with ready items.
-	caravanID, _ := sphereStore.CreateCaravan("patrol-caravan", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("patrol-caravan", "autarch")
 	sphereStore.UpdateCaravanStatus(caravanID, "open")
 	wiCaravan, _ := worldStore.CreateWrit("caravan-ready", "desc", "test", 1, nil)
 	sphereStore.CreateCaravanItem(caravanID, wiCaravan, worldName, 0)
@@ -1060,7 +1060,7 @@ func TestFeedStrandedCaravansExitsOnCancelledContext(t *testing.T) {
 	defer worldStore.Close()
 
 	// Create an open caravan with ready items.
-	caravanID, _ := sphereStore.CreateCaravan("cancel-caravan", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("cancel-caravan", "autarch")
 	sphereStore.UpdateCaravanStatus(caravanID, "open")
 	wi1, _ := worldStore.CreateWrit("cancel-task-1", "desc1", "test", 1, nil)
 	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
@@ -1134,7 +1134,7 @@ capacity = 2
 	}
 
 	// Create caravan with 3 ready items.
-	caravanID, _ := sphereStore.CreateCaravan("cap-test-caravan", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("cap-test-caravan", "autarch")
 	sphereStore.UpdateCaravanStatus(caravanID, "open")
 
 	wi1, _ := worldStore.CreateWrit("cap-task-1", "desc1", "test", 1, nil)
@@ -1213,7 +1213,7 @@ func TestDispatchWorldItemsSkipsSleepingWorld(t *testing.T) {
 	}
 
 	// Create a caravan with ready items.
-	caravanID, _ := sphereStore.CreateCaravan("test-sleep-caravan", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("test-sleep-caravan", "autarch")
 	sphereStore.UpdateCaravanStatus(caravanID, "open")
 
 	wi1, _ := worldStore.CreateWrit("sleep-task-1", "desc1", "test", 1, nil)

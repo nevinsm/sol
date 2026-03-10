@@ -62,7 +62,7 @@ var mrCreateCmd = &cobra.Command{
 		}
 
 		eventLog := events.NewLogger(config.Home())
-		eventLog.Emit(events.EventMergeQueued, "operator", "operator", world, map[string]string{
+		eventLog.Emit(events.EventMergeQueued, config.Autarch, config.Autarch, world, map[string]string{
 			"merge_request_id": mrID,
 			"writ_id":     writID,
 			"branch":           branch,
@@ -73,7 +73,7 @@ var mrCreateCmd = &cobra.Command{
 		forgeBody := fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
 			writID, mrID, branch, item.Title)
 		if err := nudge.Deliver(forgeSession, nudge.Message{
-			Sender:   "operator",
+			Sender:   config.Autarch,
 			Type:     "MR_READY",
 			Subject:  fmt.Sprintf("MR %s ready for merge", mrID),
 			Body:     forgeBody,

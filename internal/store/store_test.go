@@ -428,21 +428,21 @@ func TestMigrateSphereV11ToV12(t *testing.T) {
 	}
 	s.Close()
 
-	// Reopen through OpenSphere — should migrate V11 → V12.
+	// Reopen through OpenSphere — should migrate V11 → V13.
 	s2, err := OpenSphere()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s2.Close()
 
-	// Verify schema version is 12.
+	// Verify schema version is current (13).
 	var version int
 	err = s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 12 {
-		t.Fatalf("expected schema version 12, got %d", version)
+	if version != CurrentSphereSchema {
+		t.Fatalf("expected schema version %d, got %d", CurrentSphereSchema, version)
 	}
 
 	// Verify last_notified_at column exists and is nullable.
@@ -496,7 +496,7 @@ func TestWritCRUD(t *testing.T) {
 	s := setupWorld(t)
 
 	// Create.
-	id, err := s.CreateWrit("Test item", "A test writ", "operator", 2, []string{"sol:task"})
+	id, err := s.CreateWrit("Test item", "A test writ", "autarch", 2, []string{"sol:task"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -521,8 +521,8 @@ func TestWritCRUD(t *testing.T) {
 	if item.Priority != 2 {
 		t.Fatalf("expected priority 2, got %d", item.Priority)
 	}
-	if item.CreatedBy != "operator" {
-		t.Fatalf("expected created_by 'operator', got %q", item.CreatedBy)
+	if item.CreatedBy != "autarch" {
+		t.Fatalf("expected created_by 'autarch', got %q", item.CreatedBy)
 	}
 	if len(item.Labels) != 1 || item.Labels[0] != "sol:task" {
 		t.Fatalf("expected labels [sol:task], got %v", item.Labels)
@@ -618,7 +618,7 @@ func TestWritCRUD(t *testing.T) {
 func TestUpdateWritInvalidStatus(t *testing.T) {
 	s := setupWorld(t)
 
-	id, err := s.CreateWrit("Status test", "", "operator", 2, nil)
+	id, err := s.CreateWrit("Status test", "", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -642,7 +642,7 @@ func TestUpdateWritInvalidStatus(t *testing.T) {
 func TestLabels(t *testing.T) {
 	s := setupWorld(t)
 
-	id, err := s.CreateWrit("Label test", "", "operator", 2, []string{"bug", "urgent"})
+	id, err := s.CreateWrit("Label test", "", "autarch", 2, []string{"bug", "urgent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -720,7 +720,7 @@ func TestIDGeneration(t *testing.T) {
 	seen := make(map[string]bool)
 
 	for i := 0; i < 100; i++ {
-		id, err := s.CreateWrit("ID test", "", "operator", 2, nil)
+		id, err := s.CreateWrit("ID test", "", "autarch", 2, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -763,14 +763,14 @@ func TestConcurrentAccess(t *testing.T) {
 		wg.Add(2)
 		go func(n int) {
 			defer wg.Done()
-			_, err := s1.CreateWrit("item from s1", "", "operator", 2, nil)
+			_, err := s1.CreateWrit("item from s1", "", "autarch", 2, nil)
 			if err != nil {
 				errs <- err
 			}
 		}(i)
 		go func(n int) {
 			defer wg.Done()
-			_, err := s2.CreateWrit("item from s2", "", "operator", 2, nil)
+			_, err := s2.CreateWrit("item from s2", "", "autarch", 2, nil)
 			if err != nil {
 				errs <- err
 			}
@@ -1007,9 +1007,9 @@ func TestListWritsFilters(t *testing.T) {
 	s := setupWorld(t)
 
 	// Create items with different statuses and priorities.
-	id1, _ := s.CreateWrit("High priority", "", "operator", 1, []string{"feature"})
-	id2, _ := s.CreateWrit("Normal priority", "", "operator", 2, []string{"bug"})
-	s.CreateWrit("Low priority", "", "operator", 3, nil)
+	id1, _ := s.CreateWrit("High priority", "", "autarch", 1, []string{"feature"})
+	id2, _ := s.CreateWrit("Normal priority", "", "autarch", 2, []string{"bug"})
+	s.CreateWrit("Low priority", "", "autarch", 3, nil)
 
 	// Assign one.
 	s.UpdateWrit(id1, WritUpdates{Assignee: "haven/Toast"})
@@ -1053,7 +1053,7 @@ func TestMigrationIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s1.CreateWrit("test", "", "operator", 2, nil)
+	s1.CreateWrit("test", "", "autarch", 2, nil)
 	s1.Close()
 
 	s2, err := OpenWorld("idempotent")
@@ -1195,7 +1195,7 @@ func TestCreateWritWithOptsNoParent(t *testing.T) {
 
 	id, err := s.CreateWritWithOpts(CreateWritOpts{
 		Title:     "No parent",
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1306,7 +1306,7 @@ func TestErrNotFound(t *testing.T) {
 func TestInvalidCaravanStatus(t *testing.T) {
 	s := setupSphere(t)
 
-	id, err := s.CreateCaravan("test-caravan", "operator")
+	id, err := s.CreateCaravan("test-caravan", "autarch")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1343,7 +1343,7 @@ func TestCreateWritWithOptsKindAndMetadata(t *testing.T) {
 	meta := map[string]any{"key1": "val1", "key2": float64(42)}
 	id, err := s.CreateWritWithOpts(CreateWritOpts{
 		Title:     "Analysis task",
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 		Kind:      "analysis",
 		Metadata:  meta,
 	})
@@ -1374,7 +1374,7 @@ func TestCreateWritWithOptsDefaultKind(t *testing.T) {
 
 	id, err := s.CreateWritWithOpts(CreateWritOpts{
 		Title:     "Default kind",
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1395,7 +1395,7 @@ func TestCreateWritWithOptsDefaultKind(t *testing.T) {
 func TestCloseWritWithReason(t *testing.T) {
 	s := setupWorld(t)
 
-	id, err := s.CreateWrit("Close test", "", "operator", 2, nil)
+	id, err := s.CreateWrit("Close test", "", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1422,7 +1422,7 @@ func TestCloseWritWithReason(t *testing.T) {
 func TestCloseWritWithoutReason(t *testing.T) {
 	s := setupWorld(t)
 
-	id, err := s.CreateWrit("Close no reason", "", "operator", 2, nil)
+	id, err := s.CreateWrit("Close no reason", "", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1444,7 +1444,7 @@ func TestSetWritMetadata(t *testing.T) {
 
 	id, err := s.CreateWritWithOpts(CreateWritOpts{
 		Title:     "Metadata test",
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 		Metadata:  map[string]any{"a": "1", "b": "2"},
 	})
 	if err != nil {
@@ -1488,7 +1488,7 @@ func TestSetWritMetadata(t *testing.T) {
 func TestGetWritMetadataEmpty(t *testing.T) {
 	s := setupWorld(t)
 
-	id, err := s.CreateWrit("No metadata", "", "operator", 2, nil)
+	id, err := s.CreateWrit("No metadata", "", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1505,7 +1505,7 @@ func TestGetWritMetadataEmpty(t *testing.T) {
 func TestSetWritMetadataOnEmptyWrit(t *testing.T) {
 	s := setupWorld(t)
 
-	id, err := s.CreateWrit("Empty meta writ", "", "operator", 2, nil)
+	id, err := s.CreateWrit("Empty meta writ", "", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1528,7 +1528,7 @@ func TestListWritsIncludesKindAndMetadata(t *testing.T) {
 
 	_, err := s.CreateWritWithOpts(CreateWritOpts{
 		Title:     "Listed writ",
-		CreatedBy: "operator",
+		CreatedBy: "autarch",
 		Kind:      "analysis",
 		Metadata:  map[string]any{"foo": "bar"},
 	})

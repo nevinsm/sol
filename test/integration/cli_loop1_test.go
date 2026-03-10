@@ -75,7 +75,7 @@ func TestCLIStatusJSON(t *testing.T) {
 
 	// Create an agent and writ, cast.
 	sphereStore.CreateAgent("Smoke", "ember", "agent")
-	itemID, _ := worldStore.CreateWrit("CLI status test", "JSON test", "operator", 2, nil)
+	itemID, _ := worldStore.CreateWrit("CLI status test", "JSON test", "autarch", 2, nil)
 
 	// Need to cast from a git repo context via CLI.
 	// Use the API directly since the CLI discovers the repo from cwd.

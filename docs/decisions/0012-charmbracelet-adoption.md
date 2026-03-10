@@ -6,20 +6,20 @@ Arc: 2
 
 ## Context
 
-Arc 2 introduces two operator-facing features that need polished terminal
+Arc 2 introduces two autarch-facing features that need polished terminal
 output: `sol doctor` (prerequisite validation with pass/fail indicators)
 and `sol status` (sphere overview with styled tables and colored status
 indicators). The existing status output uses raw `fmt.Printf` and
 `text/tabwriter` — functional but visually flat.
 
 Additionally, `sol init` needs interactive prompts (world name, source
-repo path, model tier selection) for operators who run it without flags.
+repo path, model tier selection) for the autarch who runs it without flags.
 Today the codebase has no interactive input capability.
 
 Three approaches were evaluated for terminal rendering:
 
 1. **Keep fmt/tabwriter** — zero dependencies, but no color, no
-   structure. Adequate for machine output, poor for operator experience.
+   structure. Adequate for machine output, poor for autarch experience.
    Interactive prompts would require manual stdin handling.
 
 2. **ANSI escape codes directly** — color support without dependencies,
@@ -66,15 +66,15 @@ Design constraints:
 ## Consequences
 
 **Benefits:**
-- Polished operator experience for doctor, init, and status output
+- Polished autarch experience for doctor, init, and status output
 - Interactive prompts without manual stdin handling
-- Consistent styling across all operator-facing commands
+- Consistent styling across all autarch-facing commands
 - Terminal capability detection handled by the library (no manual ANSI)
 - Foundation for future interactive TUI if desired
 
 **Tradeoffs:**
 - Adds transitive dependencies (lipgloss pulls in several Charmbracelet
   sub-packages). Acceptable: all are pure Go, MIT-licensed, widely used.
-- Binary size increases slightly. Acceptable for an operator-facing CLI.
+- Binary size increases slightly. Acceptable for an autarch-facing CLI.
 - Styling code must be kept separate from data gathering to maintain
   testability and `--json` bypass.

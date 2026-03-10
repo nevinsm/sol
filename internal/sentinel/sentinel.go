@@ -740,9 +740,9 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 				})
 		}
 
-		// Send informational mail to operator.
+		// Send informational mail to autarch.
 		if _, err := w.sphereStore.SendProtocolMessage(
-			w.agentID(), "operator",
+			w.agentID(), config.Autarch,
 			store.ProtoRecoveryNeeded,
 			store.RecoveryNeededPayload{
 				AgentID:    agent.ID,
@@ -755,9 +755,9 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 		}
 
 	case "escalate":
-		// Send RECOVERY_NEEDED protocol message to operator.
+		// Send RECOVERY_NEEDED protocol message to autarch.
 		if _, err := w.sphereStore.SendProtocolMessage(
-			w.agentID(), "operator",
+			w.agentID(), config.Autarch,
 			store.ProtoRecoveryNeeded,
 			store.RecoveryNeededPayload{
 				AgentID:    agent.ID,
@@ -832,7 +832,7 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 
 	// Send informational protocol message.
 	if _, err := w.sphereStore.SendProtocolMessage(
-		w.agentID(), "operator",
+		w.agentID(), config.Autarch,
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
 			AgentID:    agent.ID,
@@ -892,9 +892,9 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 			})
 	}
 
-	// 6. Send RECOVERY_NEEDED protocol message to operator.
+	// 6. Send RECOVERY_NEEDED protocol message to autarch.
 	if _, err := w.sphereStore.SendProtocolMessage(
-		w.agentID(), "operator",
+		w.agentID(), config.Autarch,
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
 			AgentID:    agent.ID,
@@ -1069,7 +1069,7 @@ func (w *Sentinel) checkHandoffFrequency(agents []store.Agent) int {
 			}
 
 			if _, err := w.sphereStore.SendProtocolMessage(
-				w.agentID(), "operator",
+				w.agentID(), config.Autarch,
 				store.ProtoRecoveryNeeded,
 				store.RecoveryNeededPayload{
 					AgentID:    agent.ID,
@@ -1173,7 +1173,7 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 		// No accounts available — pause autonomous agents on limited accounts.
 		var paused int
 		for _, la := range live {
-			// Governor is never paused — operator may need it.
+			// Governor is never paused — autarch may need it.
 			if la.agent.Role == "governor" {
 				continue
 			}
@@ -1422,7 +1422,7 @@ func (w *Sentinel) releaseStaleClaims() int {
 // recastFailedMRs checks for merge requests in "failed" phase with open work
 // items and re-casts them. Returns the number of writs re-cast.
 // Uses exponential backoff (10m, 30m, 60m) between recast attempts.
-// Caps retries at MaxRecastAttempts; after that, escalates to the operator.
+// Caps retries at MaxRecastAttempts; after that, escalates to the autarch.
 // Recast count is persisted in writ metadata to survive sentinel restarts.
 func (w *Sentinel) recastFailedMRs() int {
 	if w.castFn == nil {
@@ -1583,7 +1583,7 @@ func (w *Sentinel) recastFailedMRs() int {
 // item has exceeded the maximum recast attempts.
 func (w *Sentinel) escalateFailedRecast(mr store.MergeRequest, item *store.Writ, attempts int) {
 	if _, err := w.sphereStore.SendProtocolMessage(
-		w.agentID(), "operator",
+		w.agentID(), config.Autarch,
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
 			WritID: mr.WritID,
@@ -1705,7 +1705,7 @@ func (w *Sentinel) dispatchOrphanedResolutions() int {
 // conflict-resolution writ has exceeded the maximum dispatch attempts.
 func (w *Sentinel) escalateOrphanedResolution(mr store.MergeRequest, writ *store.Writ, attempts int) {
 	if _, err := w.sphereStore.SendProtocolMessage(
-		w.agentID(), "operator",
+		w.agentID(), config.Autarch,
 		store.ProtoRecoveryNeeded,
 		store.RecoveryNeededPayload{
 			WritID: writ.ID,

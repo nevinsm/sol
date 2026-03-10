@@ -56,7 +56,7 @@ var caravanCreateCmd = &cobra.Command{
 
 		owner := caravanOwner
 		if owner == "" {
-			owner = "operator"
+			owner = config.Autarch
 		}
 
 		caravanID, err := sphereStore.CreateCaravan(name, owner)
@@ -72,7 +72,7 @@ var caravanCreateCmd = &cobra.Command{
 		}
 
 		logger := events.NewLogger(config.Home())
-		logger.Emit(events.EventCaravanCreated, "sol", "operator", "both", map[string]string{
+		logger.Emit(events.EventCaravanCreated, "sol", config.Autarch, "both", map[string]string{
 			"caravan_id": caravanID,
 			"name":       name,
 			"count":      fmt.Sprintf("%d", len(itemIDs)),
@@ -801,7 +801,7 @@ dispatched writ.`,
 			dispatched++
 		}
 
-		logger.Emit(events.EventCaravanLaunched, "sol", "operator", "both", map[string]string{
+		logger.Emit(events.EventCaravanLaunched, "sol", config.Autarch, "both", map[string]string{
 			"caravan_id": caravanID,
 			"world":      world,
 			"dispatched": fmt.Sprintf("%d", dispatched),
@@ -822,7 +822,7 @@ dispatched writ.`,
 			if caravan != nil {
 				carName = caravan.Name
 			}
-			logger.Emit(events.EventCaravanClosed, "sol", "operator", "both", map[string]string{
+			logger.Emit(events.EventCaravanClosed, "sol", config.Autarch, "both", map[string]string{
 				"caravan_id": caravanID,
 				"name":       carName,
 			})
@@ -1035,7 +1035,7 @@ var caravanCloseCmd = &cobra.Command{
 					continue
 				}
 				if ok {
-					logger.Emit(events.EventCaravanClosed, "sol", "operator", "both", map[string]string{
+					logger.Emit(events.EventCaravanClosed, "sol", config.Autarch, "both", map[string]string{
 						"caravan_id": c.ID,
 						"name":       c.Name,
 					})
@@ -1093,7 +1093,7 @@ var caravanCloseCmd = &cobra.Command{
 			}
 		}
 
-		logger.Emit(events.EventCaravanClosed, "sol", "operator", "both", map[string]string{
+		logger.Emit(events.EventCaravanClosed, "sol", config.Autarch, "both", map[string]string{
 			"caravan_id": caravanID,
 			"name":       caravan.Name,
 		})
@@ -1190,7 +1190,7 @@ func init() {
 
 	// create flags
 	caravanCreateCmd.Flags().String("world", "", "world name")
-	caravanCreateCmd.Flags().StringVar(&caravanOwner, "owner", "", "caravan owner (default: operator)")
+	caravanCreateCmd.Flags().StringVar(&caravanOwner, "owner", "", "caravan owner (default: autarch)")
 	caravanCreateCmd.Flags().Int("phase", 0, "phase for items (default 0)")
 
 	// add flags

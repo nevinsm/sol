@@ -92,10 +92,10 @@ When no accounts have remaining quota:
 - **Autonomous agents** (outposts, forge) are paused — sessions are
   stopped and agents enter a `quota-paused` state. This prevents wasted
   API calls against an exhausted account.
-- **Governor is rotated but never paused** — the operator may need it
+- **Governor is rotated but never paused** — the autarch may need it
   for manual intervention, and it should remain accessible.
-- **Senate is operator-managed** — it is sphere-scoped with no sentinel
-  coverage, so the operator handles its credentials directly.
+- **Senate is autarch-managed** — it is sphere-scoped with no sentinel
+  coverage, so the autarch handles its credentials directly.
 - The sentinel tracks each account's reset time and restarts paused
   agents when the earliest account becomes available again.
 
@@ -104,7 +104,7 @@ When no accounts have remaining quota:
 Accounts are managed through the sol CLI:
 
 - `sol account login {handle}` — creates the account directory, opens a
-  Claude session with `CLAUDE_CONFIG_DIR` set for the operator to
+  Claude session with `CLAUDE_CONFIG_DIR` set for the autarch to
   complete OAuth login.
 - `sol account list` — shows registered accounts and their status.
 - `sol account default {handle}` — sets the sphere-level default.
@@ -119,7 +119,7 @@ Accounts are managed through the sol CLI:
 - The pause/resume model prevents wasted API calls when all accounts
   are exhausted, rather than letting agents spin against rate limits.
 - Account directories accumulate under `$SOL_HOME/.accounts/` — the
-  operator manages their lifecycle via `sol account add/remove`.
+  autarch manages their lifecycle via `sol account add/remove`.
 - Manual OAuth login is required per account (`CLAUDE_CONFIG_DIR={dir}
   claude`, then `/login`). This is a Claude Code limitation, not a sol
   design choice.

@@ -68,7 +68,7 @@ func TestWorldExportWithData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open world store: %v", err)
 	}
-	_, err = worldStore.CreateWrit("Test item", "Test description", "operator", 2, nil)
+	_, err = worldStore.CreateWrit("Test item", "Test description", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}

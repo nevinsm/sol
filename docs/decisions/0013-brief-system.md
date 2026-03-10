@@ -8,7 +8,7 @@ Arc: 3
 
 Envoys (ADR-0009), governors (ADR-0010), and the senate (ADR-0011) are all
 persistent Claude sessions that accumulate valuable context over their
-lifetime — decisions made, patterns discovered, operator preferences learned.
+lifetime — decisions made, patterns discovered, autarch preferences learned.
 When a session ends (clean exit, crash, or context compaction), that knowledge
 is lost unless explicitly persisted.
 
@@ -18,7 +18,7 @@ its own context persistence that:
 
 - Survives session restarts and crashes
 - Re-injects after context compaction (which discards earlier conversation)
-- Is GLASS-inspectable (operator can `cat` the file anytime)
+- Is GLASS-inspectable (the autarch can `cat` the file anytime)
 - Works across envoy, governor, and senate with shared infrastructure
 
 ## Options Considered
@@ -59,12 +59,12 @@ size management system.
 | File | Owner | Purpose |
 |------|-------|---------|
 | `.brief/memory.md` | envoy, governor, senate | Internal accumulated knowledge |
-| `.brief/world-summary.md` | governor only | External-facing world summary for senate and operators |
+| `.brief/world-summary.md` | governor only | External-facing world summary for senate and the autarch |
 
 The `memory.md` file is freeform — the agent organizes it naturally, same
 model as Claude Code's own MEMORY.md. The `world-summary.md` has prescribed
 sections (Project, Architecture, Priorities, Constraints) for consistency,
-since senate and operators depend on predictable structure.
+since senate and the autarch depend on predictable structure.
 
 **Injection via Claude Code hooks:**
 

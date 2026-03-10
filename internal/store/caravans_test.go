@@ -10,7 +10,7 @@ import (
 func TestCreateCaravan(t *testing.T) {
 	s := setupSphere(t)
 
-	id, err := s.CreateCaravan("auth-feature", "operator")
+	id, err := s.CreateCaravan("auth-feature", "autarch")
 	if err != nil {
 		t.Fatalf("CreateCaravan() error: %v", err)
 	}
@@ -32,8 +32,8 @@ func TestCreateCaravan(t *testing.T) {
 	if c.Status != "drydock" {
 		t.Fatalf("expected status %q, got %q", "drydock", c.Status)
 	}
-	if c.Owner != "operator" {
-		t.Fatalf("expected owner %q, got %q", "operator", c.Owner)
+	if c.Owner != "autarch" {
+		t.Fatalf("expected owner %q, got %q", "autarch", c.Owner)
 	}
 	if c.ClosedAt != nil {
 		t.Fatalf("expected nil closed_at, got %v", c.ClosedAt)
@@ -52,7 +52,7 @@ func TestGetCaravanNotFound(t *testing.T) {
 func TestCreateCaravanItem(t *testing.T) {
 	s := setupSphere(t)
 
-	caravanID, _ := s.CreateCaravan("test-caravan", "operator")
+	caravanID, _ := s.CreateCaravan("test-caravan", "autarch")
 
 	// Add 3 items.
 	s.CreateCaravanItem(caravanID, "sol-11111111", "haven", 0)
@@ -71,7 +71,7 @@ func TestCreateCaravanItem(t *testing.T) {
 func TestRemoveCaravanItem(t *testing.T) {
 	s := setupSphere(t)
 
-	caravanID, _ := s.CreateCaravan("test-caravan", "operator")
+	caravanID, _ := s.CreateCaravan("test-caravan", "autarch")
 	s.CreateCaravanItem(caravanID, "sol-11111111", "haven", 0)
 	s.CreateCaravanItem(caravanID, "sol-22222222", "haven", 0)
 
@@ -95,9 +95,9 @@ func TestRemoveCaravanItem(t *testing.T) {
 func TestListCaravans(t *testing.T) {
 	s := setupSphere(t)
 
-	s.CreateCaravan("caravan-1", "operator")
-	s.CreateCaravan("caravan-2", "operator")
-	id3, _ := s.CreateCaravan("caravan-3", "operator")
+	s.CreateCaravan("caravan-1", "autarch")
+	s.CreateCaravan("caravan-2", "autarch")
+	id3, _ := s.CreateCaravan("caravan-3", "autarch")
 
 	// List all → 3.
 	all, err := s.ListCaravans("")
@@ -131,7 +131,7 @@ func TestListCaravans(t *testing.T) {
 func TestUpdateCaravanStatus(t *testing.T) {
 	s := setupSphere(t)
 
-	id, _ := s.CreateCaravan("test-caravan", "operator")
+	id, _ := s.CreateCaravan("test-caravan", "autarch")
 
 	// Update to "closed" → sets closed_at.
 	if err := s.UpdateCaravanStatus(id, "closed"); err != nil {
@@ -152,7 +152,7 @@ func TestUpdateCaravanStatus(t *testing.T) {
 func TestUpdateCaravanStatusClearsClosedAt(t *testing.T) {
 	s := setupSphere(t)
 
-	id, _ := s.CreateCaravan("reopen-test", "operator")
+	id, _ := s.CreateCaravan("reopen-test", "autarch")
 
 	// Close the caravan → sets closed_at.
 	if err := s.UpdateCaravanStatus(id, "closed"); err != nil {
@@ -185,7 +185,7 @@ func TestUpdateCaravanStatusClearsClosedAt(t *testing.T) {
 func TestCaravanAddToClosedReturnsError(t *testing.T) {
 	s := setupSphere(t)
 
-	id, _ := s.CreateCaravan("closed-add-test", "operator")
+	id, _ := s.CreateCaravan("closed-add-test", "autarch")
 
 	// Close the caravan.
 	if err := s.UpdateCaravanStatus(id, "closed"); err != nil {
@@ -206,7 +206,7 @@ func TestCaravanAddToClosedReturnsError(t *testing.T) {
 func TestCaravanReopenClosedTransitionsToDrydock(t *testing.T) {
 	s := setupSphere(t)
 
-	id, _ := s.CreateCaravan("reopen-closed-test", "operator")
+	id, _ := s.CreateCaravan("reopen-closed-test", "autarch")
 
 	// Close the caravan.
 	if err := s.UpdateCaravanStatus(id, "closed"); err != nil {
@@ -237,7 +237,7 @@ func TestCaravanReopenClosedTransitionsToDrydock(t *testing.T) {
 func TestCaravanReopenNonClosedReturnsError(t *testing.T) {
 	s := setupSphere(t)
 
-	id, _ := s.CreateCaravan("reopen-nonclosed-test", "operator")
+	id, _ := s.CreateCaravan("reopen-nonclosed-test", "autarch")
 
 	// Caravan is in drydock (not closed) — reopen should be rejected.
 	caravan, err := s.GetCaravan(id)
@@ -261,7 +261,7 @@ func TestCaravanReopenNonClosedReturnsError(t *testing.T) {
 func TestCaravanAddToDrydockedAndOpenWorks(t *testing.T) {
 	s := setupSphere(t)
 
-	id, _ := s.CreateCaravan("add-allowed-test", "operator")
+	id, _ := s.CreateCaravan("add-allowed-test", "autarch")
 
 	// Add to drydocked caravan should work.
 	if err := s.CreateCaravanItem(id, "sol-aaaa000000000001", "testworld", 0); err != nil {
@@ -305,16 +305,16 @@ func TestCheckCaravanReadiness(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	idA, _ := worldStore.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWrit("Item B", "", "operator", 2, nil)
-	idC, _ := worldStore.CreateWrit("Item C", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := worldStore.CreateWrit("Item B", "", "autarch", 2, nil)
+	idC, _ := worldStore.CreateWrit("Item C", "", "autarch", 2, nil)
 
 	// A depends on B; C has no deps.
 	worldStore.AddDependency(idA, idB)
 	worldStore.Close()
 
 	// Create caravan with all 3 items.
-	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "autarch")
 	sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0)
 	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 0)
 	sphereStore.CreateCaravanItem(caravanID, idC, "ember", 0)
@@ -405,11 +405,11 @@ func TestTryCloseCaravan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWrit("Item B", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := worldStore.CreateWrit("Item B", "", "autarch", 2, nil)
 	worldStore.Close()
 
-	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "autarch")
 	sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0)
 	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 0)
 
@@ -468,11 +468,11 @@ func TestTryCloseCaravanDoneNotSufficient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWrit("Item A", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWrit("Item B", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := worldStore.CreateWrit("Item B", "", "autarch", 2, nil)
 	worldStore.Close()
 
-	caravanID, _ := sphereStore.CreateCaravan("test-done-not-closed", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("test-done-not-closed", "autarch")
 	sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0)
 	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 0)
 
@@ -549,7 +549,7 @@ func TestCaravanPhaseDefault(t *testing.T) {
 	}
 	defer s.Close()
 
-	caravanID, _ := s.CreateCaravan("phase-test", "operator")
+	caravanID, _ := s.CreateCaravan("phase-test", "autarch")
 	s.CreateCaravanItem(caravanID, "sol-11111111", "haven", 0)
 
 	items, err := s.ListCaravanItems(caravanID)
@@ -580,12 +580,12 @@ func TestCaravanPhaseReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWrit("Phase 0 item", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWrit("Phase 1 item", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Phase 0 item", "", "autarch", 2, nil)
+	idB, _ := worldStore.CreateWrit("Phase 1 item", "", "autarch", 2, nil)
 	worldStore.Close()
 
 	// Create caravan: A in phase 0, B in phase 1.
-	caravanID, _ := sphereStore.CreateCaravan("phase-readiness", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("phase-readiness", "autarch")
 	sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0)
 	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 1)
 
@@ -661,12 +661,12 @@ func TestCaravanPhaseMultiple(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := worldStore.CreateWrit("Phase 0", "", "operator", 2, nil)
-	idB, _ := worldStore.CreateWrit("Phase 1", "", "operator", 2, nil)
-	idC, _ := worldStore.CreateWrit("Phase 2", "", "operator", 2, nil)
+	idA, _ := worldStore.CreateWrit("Phase 0", "", "autarch", 2, nil)
+	idB, _ := worldStore.CreateWrit("Phase 1", "", "autarch", 2, nil)
+	idC, _ := worldStore.CreateWrit("Phase 2", "", "autarch", 2, nil)
 	worldStore.Close()
 
-	caravanID, _ := sphereStore.CreateCaravan("multi-phase", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("multi-phase", "autarch")
 	sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0)
 	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 1)
 	sphereStore.CreateCaravanItem(caravanID, idC, "ember", 2)
@@ -738,19 +738,19 @@ func TestCaravanPhaseMixedWorlds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idA, _ := alphaStore.CreateWrit("Alpha item", "", "operator", 2, nil)
+	idA, _ := alphaStore.CreateWrit("Alpha item", "", "autarch", 2, nil)
 	alphaStore.Close()
 
 	betaStore, err := OpenWorld("beta")
 	if err != nil {
 		t.Fatal(err)
 	}
-	idB, _ := betaStore.CreateWrit("Beta item phase 0", "", "operator", 2, nil)
-	idC, _ := betaStore.CreateWrit("Beta item phase 1", "", "operator", 2, nil)
+	idB, _ := betaStore.CreateWrit("Beta item phase 0", "", "autarch", 2, nil)
+	idC, _ := betaStore.CreateWrit("Beta item phase 1", "", "autarch", 2, nil)
 	betaStore.Close()
 
 	// A (alpha, phase 0), B (beta, phase 0), C (beta, phase 1).
-	caravanID, _ := sphereStore.CreateCaravan("mixed-worlds", "operator")
+	caravanID, _ := sphereStore.CreateCaravan("mixed-worlds", "autarch")
 	sphereStore.CreateCaravanItem(caravanID, idA, "alpha", 0)
 	sphereStore.CreateCaravanItem(caravanID, idB, "beta", 0)
 	sphereStore.CreateCaravanItem(caravanID, idC, "beta", 1)
@@ -807,8 +807,8 @@ func TestDeleteCaravan(t *testing.T) {
 	s := setupSphere(t)
 
 	// Create a caravan with items and a dependency.
-	id1, _ := s.CreateCaravan("to-delete", "operator")
-	id2, _ := s.CreateCaravan("depends-on-deleted", "operator")
+	id1, _ := s.CreateCaravan("to-delete", "autarch")
+	id2, _ := s.CreateCaravan("depends-on-deleted", "autarch")
 	s.CreateCaravanItem(id1, "sol-aaaa000000000001", "testworld", 0)
 	s.CreateCaravanItem(id1, "sol-aaaa000000000002", "testworld", 1)
 	s.AddCaravanDependency(id2, id1) // id2 depends on id1
@@ -855,7 +855,7 @@ func TestDeleteCaravanNotFound(t *testing.T) {
 func TestDeleteCaravanClosed(t *testing.T) {
 	s := setupSphere(t)
 
-	id, _ := s.CreateCaravan("closed-delete", "operator")
+	id, _ := s.CreateCaravan("closed-delete", "autarch")
 	s.CreateCaravanItem(id, "sol-aaaa000000000001", "testworld", 0)
 	s.UpdateCaravanStatus(id, "closed")
 
@@ -873,7 +873,7 @@ func TestDeleteCaravanClosed(t *testing.T) {
 func TestUpdateCaravanItemPhase(t *testing.T) {
 	s := setupSphere(t)
 
-	caravanID, _ := s.CreateCaravan("phase-test", "operator")
+	caravanID, _ := s.CreateCaravan("phase-test", "autarch")
 	s.CreateCaravanItem(caravanID, "sol-0000000000000001", "testworld", 0)
 	s.CreateCaravanItem(caravanID, "sol-0000000000000002", "testworld", 0)
 
@@ -899,7 +899,7 @@ func TestUpdateCaravanItemPhase(t *testing.T) {
 func TestUpdateCaravanItemPhaseNotFound(t *testing.T) {
 	s := setupSphere(t)
 
-	caravanID, _ := s.CreateCaravan("phase-notfound", "operator")
+	caravanID, _ := s.CreateCaravan("phase-notfound", "autarch")
 
 	err := s.UpdateCaravanItemPhase(caravanID, "sol-nonexistent", 1)
 	if err == nil {
@@ -910,7 +910,7 @@ func TestUpdateCaravanItemPhaseNotFound(t *testing.T) {
 func TestUpdateAllCaravanItemPhases(t *testing.T) {
 	s := setupSphere(t)
 
-	caravanID, _ := s.CreateCaravan("bulk-phase", "operator")
+	caravanID, _ := s.CreateCaravan("bulk-phase", "autarch")
 	s.CreateCaravanItem(caravanID, "sol-0000000000000001", "testworld", 0)
 	s.CreateCaravanItem(caravanID, "sol-0000000000000002", "testworld", 1)
 	s.CreateCaravanItem(caravanID, "sol-0000000000000003", "testworld", 2)

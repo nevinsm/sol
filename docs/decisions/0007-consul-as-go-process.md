@@ -83,11 +83,11 @@ liveness.
 - Cannot reason about novel cross-world failure patterns (mitigated:
   add targeted `claude -p` callouts when needed)
 - Escalation messages are template-based, not AI-crafted (mitigated:
-  structured templates with full context are adequate for operator
+  structured templates with full context are adequate for autarch
   triage)
 - "Poison work" detection uses simple counters, not pattern recognition
   (mitigated: counter-based detection covers the common case; edge
-  cases can escalate to operator)
+  cases can escalate to the autarch)
 
 **Comparison with other components:**
 - Sentinel (ADR-0001): Go process + targeted `claude -p` → consul

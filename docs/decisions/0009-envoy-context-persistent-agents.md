@@ -11,7 +11,7 @@ cast/resolve cycle. Each writ gets a fresh session, a temporary worktree,
 and goes through the forge merge pipeline. This model scales well for discrete,
 well-defined tasks dispatched by the system.
 
-However, several operator use cases don't fit the ephemeral model:
+However, several autarch use cases don't fit the ephemeral model:
 
 - **Pair programming** — interactive collaboration requiring a persistent
   agent that maintains context as the conversation evolves
@@ -93,7 +93,7 @@ the session or tear down the worktree.
 **Writ flow:**
 
 Envoys support three modes:
-1. Tether to an existing writ (operator or governor assigns it)
+1. Tether to an existing writ (autarch or governor assigns it)
 2. Create and tether to their own writ (self-service via `sol store create`)
 3. Freeform — no tether, no writ (exploration, research, design)
 
@@ -128,7 +128,7 @@ outpost code. No forge bypass, no trust asymmetry.
 
 **Tradeoffs:**
 - Persistent sessions have ongoing API cost (but human-controlled —
-  operator starts/stops at will)
+  autarch starts/stops at will)
 - Brief quality depends on the agent following CLAUDE.md instructions
   (mitigated by Stop hook safety net)
 - Crash recovery is lossy: if session is killed (not exited cleanly),

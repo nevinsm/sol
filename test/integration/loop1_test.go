@@ -30,11 +30,11 @@ func TestMultiAgentDispatch(t *testing.T) {
 	mgr := session.New()
 
 	// Create two writs.
-	item1ID, err := worldStore.CreateWrit("Task Alpha", "Alpha description", "operator", 2, nil)
+	item1ID, err := worldStore.CreateWrit("Task Alpha", "Alpha description", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create item 1: %v", err)
 	}
-	item2ID, err := worldStore.CreateWrit("Task Beta", "Beta description", "operator", 2, nil)
+	item2ID, err := worldStore.CreateWrit("Task Beta", "Beta description", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create item 2: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestFlockSerialization(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 
 	// Create one writ and two idle agents.
-	itemID, err := worldStore.CreateWrit("Contested task", "Flock test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Contested task", "Flock test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestPrefectSessionRestart(t *testing.T) {
 	mgr := session.New()
 
 	// Create a writ and cast it (auto-provisions an agent).
-	itemID, err := worldStore.CreateWrit("Prefect test", "Restart test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Prefect test", "Restart test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestMassDeathDegradation(t *testing.T) {
 	// Create and cast 5 writs (auto-provisions 5 agents).
 	var sessionNames []string
 	for i := 0; i < 5; i++ {
-		itemID, err := worldStore.CreateWrit("Mass death task", "Mass death test", "operator", 2, nil)
+		itemID, err := worldStore.CreateWrit("Mass death task", "Mass death test", "autarch", 2, nil)
 		if err != nil {
 			t.Fatalf("create writ %d: %v", i, err)
 		}
@@ -405,7 +405,7 @@ func TestMassDeathDegradation(t *testing.T) {
 
 	// After recovery, dispatch a new writ and verify prefect
 	// can respawn sessions again (not degraded anymore).
-	newItemID, err := worldStore.CreateWrit("Post-degraded task", "Recovery test", "operator", 2, nil)
+	newItemID, err := worldStore.CreateWrit("Post-degraded task", "Recovery test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create new writ: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestGUPPRecovery(t *testing.T) {
 	mgr := session.New()
 
 	// Create a writ, cast it.
-	itemID, err := worldStore.CreateWrit("GUPP test task", "GUPP recovery test", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("GUPP test task", "GUPP recovery test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
@@ -541,7 +541,7 @@ func TestStatusAccuracy(t *testing.T) {
 	var results []*dispatch.CastResult
 	titles := []string{"Status task A", "Status task B", "Status task C"}
 	for _, title := range titles {
-		itemID, err := worldStore.CreateWrit(title, "Status test", "operator", 2, nil)
+		itemID, err := worldStore.CreateWrit(title, "Status test", "autarch", 2, nil)
 		if err != nil {
 			t.Fatalf("create writ %q: %v", title, err)
 		}
@@ -665,7 +665,7 @@ func TestNamePoolExhaustion(t *testing.T) {
 
 	// Create and cast 2 writs (exhausts the pool).
 	for i := 0; i < 2; i++ {
-		itemID, err := worldStore.CreateWrit("Pool test", "Exhaustion test", "operator", 2, nil)
+		itemID, err := worldStore.CreateWrit("Pool test", "Exhaustion test", "autarch", 2, nil)
 		if err != nil {
 			t.Fatalf("create writ %d: %v", i, err)
 		}
@@ -680,7 +680,7 @@ func TestNamePoolExhaustion(t *testing.T) {
 	}
 
 	// Create a third writ and attempt to cast it.
-	item3ID, err := worldStore.CreateWrit("Pool overflow", "Should fail", "operator", 2, nil)
+	item3ID, err := worldStore.CreateWrit("Pool overflow", "Should fail", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ 3: %v", err)
 	}

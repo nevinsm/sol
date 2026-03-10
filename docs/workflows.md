@@ -397,7 +397,7 @@ agents in a world see the same workflow definitions.
 **Path:** `$SOL_HOME/workflows/{name}/manifest.toml`
 
 User workflows are global to the sol instance — not scoped per-world.
-These are operator customizations: personal workflow variants,
+These are autarch customizations: personal workflow variants,
 organization-standard workflows, or overrides of embedded defaults.
 
 ### Tier 3: Embedded

@@ -134,7 +134,7 @@ var escalationAckCmd = &cobra.Command{
 
 		// Emit event (best-effort).
 		logger := events.NewLogger(config.Home())
-		logger.Emit(events.EventEscalationAcked, "sol", "operator", "both", map[string]string{
+		logger.Emit(events.EventEscalationAcked, "sol", config.Autarch, "both", map[string]string{
 			"id": id,
 		})
 
@@ -165,7 +165,7 @@ var escalationResolveCmd = &cobra.Command{
 
 		// Emit event (best-effort).
 		logger := events.NewLogger(config.Home())
-		logger.Emit(events.EventEscalationResolved, "sol", "operator", "both", map[string]string{
+		logger.Emit(events.EventEscalationResolved, "sol", config.Autarch, "both", map[string]string{
 			"id": id,
 		})
 

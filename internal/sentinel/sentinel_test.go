@@ -592,7 +592,7 @@ func TestAssessmentEscalate(t *testing.T) {
 	}
 
 	// Check that a protocol message was sent (RECOVERY_NEEDED).
-	msgs, err := sphereStore.PendingProtocol("operator", "RECOVERY_NEEDED")
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
 	if err != nil {
 		t.Fatalf("PendingProtocol() error: %v", err)
 	}
@@ -1449,7 +1449,7 @@ func TestRecastMaxAttemptsEscalates(t *testing.T) {
 	}
 
 	// Should have sent RECOVERY_NEEDED to operator.
-	msgs, err := sphereStore.PendingProtocol("operator", "RECOVERY_NEEDED")
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
 	if err != nil {
 		t.Fatalf("PendingProtocol() error: %v", err)
 	}
@@ -1486,7 +1486,7 @@ func TestRecastMaxAttemptsEscalatesOnlyOnce(t *testing.T) {
 	}
 
 	// No new RECOVERY_NEEDED message.
-	msgs, err := sphereStore.PendingProtocol("operator", "RECOVERY_NEEDED")
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
 	if err != nil {
 		t.Fatalf("PendingProtocol() error: %v", err)
 	}
@@ -2105,7 +2105,7 @@ func TestDispatchOrphanedResolution_AttemptCapEscalates(t *testing.T) {
 	}
 
 	// Should have sent RECOVERY_NEEDED to operator.
-	msgs, err := sphereStore.PendingProtocol("operator", "RECOVERY_NEEDED")
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
 	if err != nil {
 		t.Fatalf("PendingProtocol() error: %v", err)
 	}

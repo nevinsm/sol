@@ -42,7 +42,7 @@ func TestMailSendAndReceive(t *testing.T) {
 	defer sphereStore.Close()
 
 	// Send message from operator to ember/Toast.
-	msgID, err := sphereStore.SendMessage("operator", "ember/Toast",
+	msgID, err := sphereStore.SendMessage("autarch", "ember/Toast",
 		"Deploy config", "Please update deploy.yaml", 2, "notification")
 	if err != nil {
 		t.Fatalf("SendMessage: %v", err)
@@ -195,7 +195,7 @@ func TestEventFeedEndToEnd(t *testing.T) {
 	logger := events.NewLogger(solHome)
 
 	// Emit events of different types.
-	logger.Emit(events.EventCast, "sol", "operator", "both", map[string]string{"item": "1"})
+	logger.Emit(events.EventCast, "sol", "autarch", "both", map[string]string{"item": "1"})
 	logger.Emit(events.EventResolve, "sol", "Toast", "both", map[string]string{"item": "1"})
 	logger.Emit(events.EventPatrol, "ember/sentinel", "sentinel", "feed", map[string]string{"world": "ember"})
 
@@ -825,7 +825,7 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 	logger := events.NewLogger(solHome)
 
 	// Create writ.
-	itemID, err := worldStore.CreateWrit("Dispatch events test", "Test events during dispatch", "operator", 2, nil)
+	itemID, err := worldStore.CreateWrit("Dispatch events test", "Test events during dispatch", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}

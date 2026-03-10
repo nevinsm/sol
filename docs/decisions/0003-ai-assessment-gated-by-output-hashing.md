@@ -63,13 +63,13 @@ of the suggested action.
 - Hash comparison is coarse — if the agent is producing output but not
   making meaningful progress (e.g., looping the same error), the hash
   changes and no AI call fires. These cases are caught by the AI on
-  the next unchanged cycle, or by the operator noticing in the feed.
+  the next unchanged cycle, or by the autarch noticing in the feed.
 - ~80 lines of captured output may miss important context earlier in
   the session
 
 **Mitigations:**
 - Assessment failure (timeout, parse error) is non-blocking — patrol
   continues normally
-- The assessment command is configurable — operators can point to a
+- The assessment command is configurable — the autarch can point to a
   cheaper/faster model if costs are a concern
-- Capture line count is configurable for operators who want more context
+- Capture line count is configurable for the autarch who wants more context

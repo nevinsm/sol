@@ -57,7 +57,7 @@ chronicle hasn't run. A `--raw` flag reads the unprocessed feed.
 - One more process to manage (chronicle alongside prefect, forge,
   sentinel)
 - Without the chronicle running, `sol feed` shows raw unfiltered events
-  (acceptable — operators can start the chronicle when they want curation)
+  (acceptable — the autarch can start the chronicle when they want curation)
 - Checkpoint file adds a small piece of state to manage
 
 **Note:** The chronicle is sphere-level (one instance, all worlds), matching

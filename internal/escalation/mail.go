@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -18,7 +19,7 @@ func NewMailNotifier(sphereStore *store.Store) *MailNotifier {
 	return &MailNotifier{store: sphereStore}
 }
 
-// Notify sends a mail message to "operator" with the escalation details.
+// Notify sends a mail message to the autarch with the escalation details.
 func (n *MailNotifier) Notify(_ context.Context, esc store.Escalation) error {
 	// Truncate description to 80 runes for subject.
 	desc := esc.Description
@@ -41,7 +42,7 @@ func (n *MailNotifier) Notify(_ context.Context, esc store.Escalation) error {
 		priority = 3
 	}
 
-	_, err := n.store.SendMessage(esc.Source, "operator", subject, body, priority, "notification")
+	_, err := n.store.SendMessage(esc.Source, config.Autarch, subject, body, priority, "notification")
 	if err != nil {
 		return fmt.Errorf("failed to send escalation mail: %w", err)
 	}

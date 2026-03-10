@@ -47,7 +47,7 @@ func setupCleanTest(t *testing.T) (*store.Store, string, string) {
 // createClosedWritWithAge creates a writ and closes it, then backdates closed_at.
 func createClosedWritWithAge(t *testing.T, s *store.Store, title string, age time.Duration) string {
 	t.Helper()
-	id, err := s.CreateWrit(title, "", "operator", 2, nil)
+	id, err := s.CreateWrit(title, "", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestWritClean_SkipOpenWrits(t *testing.T) {
 	s, world, solHome := setupCleanTest(t)
 
 	// Create an open writ (not closed).
-	id, err := s.CreateWrit("Open writ", "", "operator", 2, nil)
+	id, err := s.CreateWrit("Open writ", "", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestWritClean_SkipClosedWritsWithOpenDependents(t *testing.T) {
 	outputDir := createOutputDir(t, solHome, world, idA)
 
 	// Create writ B (open, depends on A).
-	idB, err := s.CreateWrit("Writ B (downstream)", "", "operator", 2, nil)
+	idB, err := s.CreateWrit("Writ B (downstream)", "", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

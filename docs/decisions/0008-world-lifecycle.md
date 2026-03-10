@@ -15,7 +15,7 @@ or delete worlds through the CLI.
 
 This created several operational problems:
 
-- **Discovery**: No way to enumerate worlds. Operators had to
+- **Discovery**: No way to enumerate worlds. The autarch had to
   `ls .store/*.db` and strip extensions.
 - **Configuration**: Quality gates lived in a flat file
   (`forge/quality-gates.txt`), name pool path was hardcoded, source
@@ -47,7 +47,7 @@ existence — a regex and file check, not a database query. This is GLASS-friend
 and requires no database connection.
 
 Pre-Arc1 worlds (database exists but no `world.toml`) get a specific
-error message directing the operator to run `sol world init <name>`
+error message directing the autarch to run `sol world init <name>`
 to adopt the existing world.
 
 ### Dual-store, file primary
@@ -62,7 +62,7 @@ Configuration uses a dual-store design:
   and discovery. Treated as a cache — `world.toml` existence is the
   authoritative signal.
 
-The file-primary design follows GLASS: operators can inspect and edit
+The file-primary design follows GLASS: the autarch can inspect and edit
 configuration with standard tools (`cat`, `vim`, `toml` parsers)
 without needing to query SQLite.
 

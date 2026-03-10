@@ -194,7 +194,7 @@ func TestRewriteAgentID(t *testing.T) {
 		{"myworld/Toast", "myworld", "newworld", "newworld/Toast"},
 		{"other/Agent", "myworld", "newworld", "other/Agent"},
 		{"myworld-extra/Toast", "myworld", "newworld", "myworld-extra/Toast"},
-		{"operator", "myworld", "newworld", "operator"},
+		{"autarch", "myworld", "newworld", "autarch"},
 	}
 
 	for _, tc := range tests {

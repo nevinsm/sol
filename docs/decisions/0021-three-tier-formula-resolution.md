@@ -11,7 +11,7 @@ checks `$SOL_HOME/workflows/{name}/` on disk, and if absent, extracts the
 workflow from `embed.FS` if it's in the `knownDefaults` map. This means
 there are effectively two tiers today — a user-tier cache on disk and
 embedded defaults — but the user-tier directory is only populated by
-extraction, never by the operator.
+extraction, never by the autarch.
 
 Three gaps result from this design:
 
@@ -19,13 +19,13 @@ Three gaps result from this design:
    deploy workflow for their repository must modify the sol binary. The
    workflow cannot live alongside the source code it governs.
 
-2. **No operator customization layer.** An operator running multiple
+2. **No autarch customization layer.** The autarch running multiple
    worlds cannot define personal workflow variants (e.g., a stricter
    code-review workflow) without rebuilding the binary. There is no way
    to override embedded defaults without touching source.
 
 3. **No development iteration.** Testing a workflow change requires
-   recompiling sol. Operators cannot prototype workflows by dropping files
+   recompiling sol. The autarch cannot prototype workflows by dropping files
    into a directory and running `sol workflow instantiate`.
 
 Sol's configuration system already uses layered resolution — world config
@@ -47,7 +47,7 @@ winning at the whole-workflow level:
    travel with the code they describe.
 
 2. **User tier**: `$SOL_HOME/workflows/{name}/manifest.toml`. Global to
-   the sol instance, not scoped per-world. These are operator
+   the sol instance, not scoped per-world. These are autarch
    customizations that apply across all worlds — personal workflow
    variants, organization-standard workflows, or overrides of embedded
    defaults.
@@ -78,7 +78,7 @@ func Resolve(name, world string) (dir string, tier string, err error)
 
 The `tier` return value is one of `"project"`, `"user"`, or `"embedded"`.
 This enables `sol workflow instantiate` and `sol cast` to report which
-tier a workflow resolved from, giving operators visibility into which
+tier a workflow resolved from, giving the autarch visibility into which
 workflow is actually in effect.
 
 For the embedded tier, the existing extraction behavior is preserved:
@@ -147,7 +147,7 @@ Per-world customization is handled by the project tier — since each
 world's managed repository can contain its own `.sol/workflows/`, worlds
 naturally get distinct workflows when their source repos differ. Adding a
 per-world user tier (`$SOL_HOME/{world}/workflows/`) would create a
-confusing four-tier hierarchy and blur the distinction between "operator
+confusing four-tier hierarchy and blur the distinction between "autarch
 preference" (user tier) and "project requirement" (project tier).
 
 ### Resolution reporting
@@ -160,7 +160,7 @@ workflow "code-review" resolved from project tier (.sol/workflows/code-review/)
 ```
 
 `sol workflow status` includes the resolution tier in its output when a
-workflow is active, so the operator can verify which workflow variant is
+workflow is active, so the autarch can verify which workflow variant is
 running.
 
 ### Listing available workflows
@@ -196,7 +196,7 @@ only defines `.sol/workflows/` — other `.sol/` contents are future work.
 - Projects can define custom workflows that travel with the code.
   Workflow authoring requires no sol binary modification and no special
   tooling — create a directory with a `manifest.toml` and step files.
-- Operators can customize workflows globally by placing them in
+- The autarch can customize workflows globally by placing them in
   `$SOL_HOME/workflows/`, enabling personal workflow variants without
   per-project configuration.
 - Embedded workflows continue to work unchanged. Existing deployments
@@ -205,11 +205,11 @@ only defines `.sol/workflows/` — other `.sol/` contents are future work.
   API change. All call sites (`Instantiate`, `Advance`, `ListSteps`,
   `Materialize`) must pass the world parameter. This is a
   straightforward mechanical update.
-- Whole-workflow replacement means operators must copy-and-modify rather
+- Whole-workflow replacement means the autarch must copy-and-modify rather
   than selectively override individual steps. This trades convenience
-  for predictability — the operator always knows exactly what a workflow
+  for predictability — the autarch always knows exactly what a workflow
   contains by reading a single directory.
-- The `sol workflow list` command gives operators a clear view of
+- The `sol workflow list` command gives the autarch a clear view of
   workflow resolution, making shadowing visible rather than surprising.
 - Project workflows read from the managed repo (not worktrees) means
   workflow changes require a push to the target branch to take effect

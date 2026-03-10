@@ -357,12 +357,12 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		"world":        opts.World,
 	}
 	if logger != nil {
-		logger.Emit(events.EventCast, "sol", "operator", "both", castPayload)
+		logger.Emit(events.EventCast, "sol", config.Autarch, "both", castPayload)
 	}
 
 	// Emit workflow instantiation event if workflow was used.
 	if opts.Workflow != "" && logger != nil {
-		logger.Emit(events.EventWorkflowInstantiate, "sol", "operator", "both", map[string]string{
+		logger.Emit(events.EventWorkflowInstantiate, "sol", config.Autarch, "both", map[string]string{
 			"workflow":     opts.Workflow,
 			"writ_id": opts.WritID,
 			"agent":        agent.Name,
@@ -481,7 +481,7 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 
 	// 7. Emit event.
 	if logger != nil {
-		logger.Emit(events.EventTether, "sol", "operator", "both", map[string]string{
+		logger.Emit(events.EventTether, "sol", config.Autarch, "both", map[string]string{
 			"writ_id": opts.WritID,
 			"agent":   opts.AgentName,
 			"world":   opts.World,
@@ -575,7 +575,7 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 
 	// 7. Emit event.
 	if logger != nil {
-		logger.Emit(events.EventUntether, "sol", "operator", "both", map[string]string{
+		logger.Emit(events.EventUntether, "sol", config.Autarch, "both", map[string]string{
 			"writ_id": opts.WritID,
 			"agent":   opts.AgentName,
 			"world":   opts.World,
@@ -689,7 +689,7 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 
 	// 8. Emit event.
 	if logger != nil {
-		logger.Emit(events.EventWritActivate, "sol", "operator", "both", map[string]string{
+		logger.Emit(events.EventWritActivate, "sol", config.Autarch, "both", map[string]string{
 			"writ_id":       opts.WritID,
 			"previous_writ": previousWrit,
 			"agent":         opts.AgentName,
