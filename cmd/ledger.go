@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/ledger"
+	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -59,6 +61,11 @@ var ledgerStartCmd = &cobra.Command{
 			return fmt.Errorf("ledger already running (session %s)", ledgerSessionName)
 		}
 
+		// Check for orphaned ledger process: port in use but no tmux session.
+		if err := killOrphanedLedger(mgr); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: orphan cleanup failed: %v\n", err)
+		}
+
 		solBin, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("failed to find sol binary: %w", err)
@@ -78,6 +85,45 @@ var ledgerStartCmd = &cobra.Command{
 	},
 }
 
+// killOrphanedLedger detects and kills an orphaned ledger process.
+// An orphan is a ledger process that is still alive (holding port 4318)
+// but has no tmux session managing it.
+func killOrphanedLedger(mgr *session.Manager) error {
+	// Check if the ledger port is in use.
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", ledger.DefaultPort))
+	if err == nil {
+		// Port is free — no orphan.
+		ln.Close()
+		return nil
+	}
+
+	// Port is in use. Check if there is a PID file pointing to a live process.
+	pid := ledger.ReadPID()
+	if pid <= 0 {
+		return fmt.Errorf("port %d in use but no PID file found; cannot identify orphan", ledger.DefaultPort)
+	}
+
+	if !prefect.IsRunning(pid) {
+		// PID file exists but process is dead — stale PID file.
+		// Clean up PID file; the port might be held by something else.
+		ledger.RemovePID()
+		ledger.RemoveHeartbeat()
+		return nil
+	}
+
+	// Process is alive but no tmux session — it's an orphan. Kill it.
+	fmt.Fprintf(os.Stderr, "killed orphaned ledger process (pid %d)\n", pid)
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		return fmt.Errorf("failed to kill orphaned ledger (pid %d): %w", pid, err)
+	}
+
+	// Clean up PID and heartbeat files.
+	ledger.RemovePID()
+	ledger.RemoveHeartbeat()
+
+	return nil
+}
+
 var ledgerStopCmd = &cobra.Command{
 	Use:          "stop",
 	Short:        "Stop the ledger background session",
@@ -87,12 +133,26 @@ var ledgerStopCmd = &cobra.Command{
 		mgr := session.New()
 
 		if !mgr.Exists(ledgerSessionName) {
+			// Check for orphan: no session but process alive.
+			pid := ledger.ReadPID()
+			if pid > 0 && prefect.IsRunning(pid) {
+				fmt.Fprintf(os.Stderr, "killed orphaned ledger process (pid %d)\n", pid)
+				_ = syscall.Kill(pid, syscall.SIGTERM)
+				ledger.RemovePID()
+				ledger.RemoveHeartbeat()
+				fmt.Printf("Ledger stopped (orphan killed)\n")
+				return nil
+			}
 			return fmt.Errorf("no ledger running (session %s not found)", ledgerSessionName)
 		}
 
 		if err := mgr.Stop(ledgerSessionName, false); err != nil {
 			return fmt.Errorf("failed to stop ledger: %w", err)
 		}
+
+		// Clean up PID/heartbeat in case the process didn't get to do it.
+		ledger.RemovePID()
+		ledger.RemoveHeartbeat()
 
 		fmt.Printf("Ledger stopped: %s\n", ledgerSessionName)
 		return nil
