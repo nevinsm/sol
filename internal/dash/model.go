@@ -157,20 +157,21 @@ type Model struct {
 
 // NewModel creates a dashboard model. If world is empty, starts in sphere view.
 func NewModel(cfg Config) Model {
-	startView := viewSphere
-	if cfg.World != "" {
-		startView = viewWorld
-	}
-
 	viewCache := ""
+	// Always seed sphere as the base of the view stack so the user can
+	// navigate back to it even when starting directly in world view.
 	m := Model{
-		viewStack:         []viewMode{startView},
-		world:             cfg.World,
-		config:            cfg,
-		feed:              newFeedModel(cfg.SOLHome, cfg.World),
+		viewStack:       []viewMode{viewSphere},
+		world:           cfg.World,
+		config:          cfg,
+		feed:            newFeedModel(cfg.SOLHome, cfg.World),
 		prevAgentStates: make(map[string]string),
 		agentHighlights: make(map[string]int),
 		viewCache:       &viewCache,
+	}
+
+	if cfg.World != "" {
+		m.viewStack = append(m.viewStack, viewWorld)
 	}
 
 	m.sphereView = newSphereModel()
@@ -284,6 +285,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewStack = m.viewStack[:len(m.viewStack)-1]
 			m.world = ""
 			m.worldData = nil
+			// Clear feed world filter so sphere view shows all events,
+			// and reload since cached events may have been world-filtered.
+			m.feed.world = ""
+			m.feed.loadInitial()
 			// Re-gather sphere data (ZFC — fresh on return).
 			cmds = append(cmds, m.refresh())
 		}
