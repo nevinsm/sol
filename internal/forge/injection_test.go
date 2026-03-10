@@ -1,6 +1,8 @@
 package forge
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -51,7 +53,7 @@ func TestBuildInjection(t *testing.T) {
 		// Check instructions.
 		mustContain(t, result, "git fetch origin && git reset --hard origin/main")
 		mustContain(t, result, "git merge --squash origin/outpost/Toast/sol-def456")
-		mustContain(t, result, `git commit -m "feat: add widget support"`)
+		mustContain(t, result, `git commit --no-edit -m "feat: add widget support (sol-def456)"`)
 		mustContain(t, result, "make build && make test")
 		mustContain(t, result, "git push origin HEAD:main")
 		mustContain(t, result, ".forge-result.json")
@@ -118,7 +120,54 @@ func TestBuildInjection(t *testing.T) {
 			Title: `feat: handle "special" cases`,
 		}
 		result := BuildInjection(mr, writQuotes, cfg)
-		mustContain(t, result, `git commit -m "feat: handle \"special\" cases"`)
+		mustContain(t, result, `git commit --no-edit -m "feat: handle \"special\" cases (sol-222)"`)
+	})
+
+	t.Run("includes writ ID in commit instruction", func(t *testing.T) {
+		result := BuildInjection(mr, writ, cfg)
+		// Commit instruction should include both title and writ ID.
+		mustContain(t, result, "(sol-def456)")
+	})
+}
+
+func TestWriteInjectionFile(t *testing.T) {
+	dir := t.TempDir()
+	content := "## Merge Task\n\nSome injection context here."
+
+	if err := WriteInjectionFile(dir, content); err != nil {
+		t.Fatalf("WriteInjectionFile() error: %v", err)
+	}
+
+	// Verify file was written.
+	data, err := os.ReadFile(filepath.Join(dir, injectionFileName))
+	if err != nil {
+		t.Fatalf("failed to read injection file: %v", err)
+	}
+	if string(data) != content {
+		t.Errorf("injection file content = %q, want %q", string(data), content)
+	}
+}
+
+func TestCleanInjectionFile(t *testing.T) {
+	t.Run("removes existing file", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, injectionFileName)
+		os.WriteFile(path, []byte("test"), 0o644)
+
+		if err := CleanInjectionFile(dir); err != nil {
+			t.Fatalf("CleanInjectionFile() error: %v", err)
+		}
+
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Error("injection file should have been removed")
+		}
+	})
+
+	t.Run("idempotent — no error if file missing", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := CleanInjectionFile(dir); err != nil {
+			t.Fatalf("CleanInjectionFile() should not error on missing file: %v", err)
+		}
 	})
 }
 

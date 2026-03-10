@@ -15,6 +15,9 @@ func TestInstallForgePersona(t *testing.T) {
 		dir := t.TempDir()
 		world := "test-world"
 
+		// Set SOL_HOME so WorktreePath resolves (used by forgeHookConfig).
+		t.Setenv("SOL_HOME", dir)
+
 		if err := InstallForgePersona(dir, world); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -57,11 +60,22 @@ func TestInstallForgePersona(t *testing.T) {
 		if preTool[0].Matcher != "EnterPlanMode" {
 			t.Errorf("first PreToolUse matcher = %q, want EnterPlanMode", preTool[0].Matcher)
 		}
+
+		// Verify PreCompact hook exists.
+		preCompact, ok := hookCfg.Hooks["PreCompact"]
+		if !ok || len(preCompact) == 0 {
+			t.Fatal("PreCompact hooks should be configured")
+		}
+		if !strings.Contains(preCompact[0].Hooks[0].Command, ".forge-injection.md") {
+			t.Errorf("PreCompact hook should cat injection file, got: %s", preCompact[0].Hooks[0].Command)
+		}
 	})
 
 	t.Run("idempotent — second call overwrites cleanly", func(t *testing.T) {
 		dir := t.TempDir()
 		world := "idempotent-world"
+
+		t.Setenv("SOL_HOME", dir)
 
 		// Install twice.
 		if err := InstallForgePersona(dir, world); err != nil {
@@ -96,7 +110,13 @@ func TestForgePersonaContent(t *testing.T) {
 		"Conflict Resolution",
 		"Gate Failures",
 		".forge-result.json",
-		"session will be recycled",
+		"run /exit to end your session",
+		// New hardening markers.
+		"Never Lose Work",
+		"Never delete a branch",
+		"Empty Branch and Reversion Detection",
+		"processing exactly one merge request",
+		"Commit Message Format",
 	}
 
 	missing := ForgePersonaContains(persona, markers)
@@ -106,7 +126,8 @@ func TestForgePersonaContent(t *testing.T) {
 }
 
 func TestForgeHookConfig(t *testing.T) {
-	cfg := forgeHookConfig()
+	t.Setenv("SOL_HOME", t.TempDir())
+	cfg := forgeHookConfig("test-world")
 
 	preTool, ok := cfg.Hooks["PreToolUse"]
 	if !ok {
@@ -157,5 +178,57 @@ func TestForgeHookConfig(t *testing.T) {
 	}
 	if hasPushMainGuard {
 		t.Error("forge should NOT have push-to-main guard (pushes to main by design)")
+	}
+
+	// Check PreCompact hook exists.
+	preCompact, ok := cfg.Hooks["PreCompact"]
+	if !ok {
+		t.Fatal("PreCompact hooks not configured")
+	}
+	if len(preCompact) == 0 || len(preCompact[0].Hooks) == 0 {
+		t.Fatal("PreCompact should have at least one hook")
+	}
+	if !strings.Contains(preCompact[0].Hooks[0].Command, ".forge-injection.md") {
+		t.Errorf("PreCompact hook should cat injection file, got: %s", preCompact[0].Hooks[0].Command)
+	}
+}
+
+func TestForgeMergeRoleConfig(t *testing.T) {
+	t.Setenv("SOL_HOME", t.TempDir())
+
+	cfg := ForgeMergeRoleConfig()
+
+	if cfg.Role != "forge-merge" {
+		t.Errorf("Role = %q, want forge-merge", cfg.Role)
+	}
+	if cfg.ReplacePrompt != true {
+		t.Error("ReplacePrompt should be true")
+	}
+	if cfg.SystemPromptContent == "" {
+		t.Error("SystemPromptContent should not be empty")
+	}
+	if cfg.SkillInstaller != nil {
+		t.Error("SkillInstaller should be nil — forge has no skills")
+	}
+	if cfg.NeedsItem != false {
+		t.Error("NeedsItem should be false")
+	}
+	if cfg.WorktreeDir == nil {
+		t.Error("WorktreeDir should be set")
+	}
+	if cfg.Persona == nil {
+		t.Error("Persona should be set")
+	}
+	if cfg.Hooks == nil {
+		t.Error("Hooks should be set")
+	}
+	if cfg.PrimeBuilder == nil {
+		t.Error("PrimeBuilder should be set")
+	}
+
+	// Verify WorktreeDir ignores agent parameter.
+	dir := cfg.WorktreeDir("myworld", "anything")
+	if !strings.Contains(dir, "myworld") {
+		t.Errorf("WorktreeDir should contain world name, got: %s", dir)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -48,6 +49,11 @@ func mergeSessionName(world string) string {
 	return config.SessionName(world, "forge-merge")
 }
 
+// SessionLauncher abstracts startup.Launch for testing. Production code uses
+// startup.Launch; tests can inject a mock that skips world config, config dir,
+// and sphere store setup.
+type SessionLauncher func(cfg startup.RoleConfig, world, agent string, opts startup.LaunchOpts) (string, error)
+
 // runMergeSession starts a Claude session to execute the merge, monitors it,
 // reads the result, and returns the ForgeResult. The caller is responsible for
 // acting on the result (mark merged/failed/etc.) and cleaning up the session.
@@ -65,30 +71,48 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 		s.forge.sessions.Stop(sessionName, true)
 	}
 
-	// 2. Build injection context.
-	injection := s.buildInjection(mr)
-
-	// 3. Start fresh Claude session.
-	sessionCmd := config.SessionCommand()
-	env := map[string]string{
-		"SOL_HOME": config.Home(),
-	}
-	if err := s.forge.sessions.Start(sessionName, worktree, sessionCmd, env, "forge", s.forge.world); err != nil {
-		return nil, fmt.Errorf("failed to start merge session: %w", err)
+	// 2. Build injection context using the full builder.
+	writ, err := s.forge.worldStore.GetWrit(mr.WritID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get writ %s for injection: %w", mr.WritID, err)
 	}
 
-	// 4. Inject context.
-	if err := s.forge.sessions.Inject(sessionName, injection, true); err != nil {
-		s.forge.sessions.Stop(sessionName, true)
-		return nil, fmt.Errorf("failed to inject merge context: %w", err)
+	injectionCfg := InjectionConfig{
+		MaxAttempts:  s.forge.cfg.MaxAttempts,
+		GateCommands: s.forge.cfg.QualityGates,
+		WorktreeDir:  worktree,
+		TargetBranch: s.forge.cfg.TargetBranch,
+	}
+	injection := BuildInjection(mr, writ, injectionCfg)
+
+	// 3. Write injection file for PrimeBuilder and PreCompact hook.
+	if err := WriteInjectionFile(worktree, injection); err != nil {
+		return nil, fmt.Errorf("failed to write injection file: %w", err)
+	}
+
+	// 4. Clean stale result file.
+	CleanForgeResult(worktree)
+
+	// 5. Launch session via startup infrastructure.
+	launch := s.forge.launcher
+	if launch == nil {
+		launch = startup.Launch
+	}
+
+	cfg := ForgeMergeRoleConfig()
+	opts := startup.LaunchOpts{
+		Sessions: s.forge.sessions,
+	}
+	if _, err := launch(cfg, s.forge.world, "forge-merge", opts); err != nil {
+		return nil, fmt.Errorf("failed to launch merge session: %w", err)
 	}
 
 	s.fl.Log("SESSION", fmt.Sprintf("started merge session %s for %s", sessionName, mr.Branch))
 
-	// 5. Monitor session progress.
+	// 6. Monitor session progress.
 	outcome := s.monitorSession(ctx, sessionName, mr)
 
-	// 6. Read result based on outcome.
+	// 7. Read result based on outcome.
 	switch outcome {
 	case sessionCompleted, sessionStuck:
 		// Try to read the result file regardless — the session may have written
@@ -280,7 +304,8 @@ Status meanings:
 - "idle": Session appears to have finished or is not doing anything.`, mr.Branch, mr.WritID, monitorCaptureLines, capturedOutput)
 }
 
-// cleanupSession stops the merge session and removes the result file.
+// cleanupSession stops the merge session, removes result and injection files,
+// and updates the agent record to idle.
 func (s *patrolState) cleanupSession() {
 	sessionName := mergeSessionName(s.forge.world)
 
@@ -292,30 +317,30 @@ func (s *patrolState) cleanupSession() {
 	// Remove result file.
 	resultPath := filepath.Join(s.forge.worktree, resultFileName)
 	os.Remove(resultPath)
+
+	// Remove injection file.
+	CleanInjectionFile(s.forge.worktree)
+
+	// Best-effort: update agent record to idle.
+	s.cleanupAgentRecord()
 }
 
-// buildInjection constructs the injection context for the merge session.
-// This is a stub that will be replaced by the companion writ's builder.
-func (s *patrolState) buildInjection(mr *store.MergeRequest) string {
-	title := s.forge.writTitle(mr.WritID)
-	return fmt.Sprintf(`Execute merge for branch %s (writ %s: %q).
+// cleanupAgentRecord updates the forge-merge agent record to idle state.
+// Best-effort — errors are logged but not propagated since cleanup is
+// non-critical and supervisors already filter out forge-merge agents.
+func (s *patrolState) cleanupAgentRecord() {
+	agentID := s.forge.world + "/forge-merge"
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		s.forge.logger.Warn("cleanup: failed to open sphere store for agent record", "error", err)
+		return
+	}
+	defer sphereStore.Close()
 
-Target branch: %s
-Worktree: %s
-MR ID: %s
-
-Write your result to %s in the worktree root when done.
-The result JSON must have this structure:
-{
-    "result": "merged|failed|conflict",
-    "summary": "description of what happened",
-    "files_changed": ["file1.go", "file2.go"],
-    "gate_output": "optional gate command output"
-}`, mr.Branch, mr.WritID, title,
-		s.forge.cfg.TargetBranch,
-		s.forge.worktree,
-		mr.ID,
-		resultFileName)
+	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+		// Not found is fine — record may not exist if Launch was never called.
+		s.forge.logger.Debug("cleanup: failed to update agent record", "error", err)
+	}
 }
 
 // actOnResult maps a ForgeResult to existing toolbox operations.

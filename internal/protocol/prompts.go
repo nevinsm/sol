@@ -16,3 +16,8 @@ var EnvoySystemPrompt string
 //
 //go:embed prompts/outpost.md
 var OutpostSystemPrompt string
+
+// ForgeMergeSystemPrompt is the full-replace system prompt for forge merge sessions.
+//
+//go:embed prompts/forge-merge.md
+var ForgeMergeSystemPrompt string
