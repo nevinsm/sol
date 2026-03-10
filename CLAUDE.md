@@ -6,7 +6,6 @@ Production-ready system for coordinating concurrent AI coding agents.
 - Read `docs/manifesto.md` for design philosophy
 - Read `docs/failure-modes.md` for crash recovery and degradation behavior
 - Read `docs/naming.md` for the naming glossary
-- Read `docs/arc-roadmap.md` for the arc roadmap
 - Read `docs/decisions/` for ADRs (architectural decision records)
 
 ## Build & Test

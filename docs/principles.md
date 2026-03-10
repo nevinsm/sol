@@ -310,5 +310,4 @@ Every new component must provide:
 ---
 
 *Cross-references: [manifesto](manifesto.md), [failure modes](failure-modes.md),
-[naming glossary](naming.md), [arc roadmap](arc-roadmap.md),
-[ADRs](decisions/).*
+[naming glossary](naming.md), [ADRs](decisions/).*

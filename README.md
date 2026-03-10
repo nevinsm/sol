@@ -174,7 +174,6 @@ sol/
     ├── manifesto.md                Design philosophy
     ├── failure-modes.md            Crash recovery and degradation
     ├── naming.md                   Naming glossary and migration reference
-    ├── arc-roadmap.md              Post-build arc roadmap
     └── decisions/                  Architecture Decision Records
 ```
 
@@ -202,5 +201,4 @@ make clean       # Remove build artifacts
 - [Manifesto](docs/manifesto.md) — Design philosophy: what we learned from the Gastown prototype, what we're building, why stability is the feature.
 - [Failure Modes](docs/failure-modes.md) — Per-component crash recovery, graceful degradation, and mass failure handling.
 - [Naming Glossary](docs/naming.md) — Sol naming conventions and migration reference from Gastown.
-- [Arc Roadmap](docs/arc-roadmap.md) — Current development roadmap. Work in progress and subject to change.
 - [Architecture Decision Records](docs/decisions/) — Records of significant architectural choices and the reasoning behind them.
