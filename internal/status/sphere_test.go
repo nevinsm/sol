@@ -110,6 +110,10 @@ func TestGatherSphereProcessChecks(t *testing.T) {
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
+	// Write chronicle PID file (PID-based detection).
+	chronicleCleanup := writeChroniclePID(t, os.Getpid())
+	defer chronicleCleanup()
+
 	lister := &mockWorldLister{
 		worlds: []store.World{
 			{Name: "alpha"},
@@ -119,7 +123,6 @@ func TestGatherSphereProcessChecks(t *testing.T) {
 	sphere := &mockSphereStore{}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"sol-chronicle":      true,
 			"sol-alpha-sentinel": true,
 			"sol-beta-sentinel":  false,
 		},
@@ -131,7 +134,7 @@ func TestGatherSphereProcessChecks(t *testing.T) {
 
 	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
 
-	// Chronicle.
+	// Chronicle (detected via PID file).
 	if !result.Chronicle.Running {
 		t.Error("Chronicle.Running = false, want true")
 	}
@@ -563,9 +566,6 @@ func TestGatherSphereChroniclePIDFallback(t *testing.T) {
 	}
 	if result.Chronicle.PID != os.Getpid() {
 		t.Errorf("Chronicle.PID = %d, want %d", result.Chronicle.PID, os.Getpid())
-	}
-	if result.Chronicle.SessionName != "" {
-		t.Errorf("Chronicle.SessionName = %q, want empty (PID-based detection)", result.Chronicle.SessionName)
 	}
 }
 

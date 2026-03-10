@@ -734,40 +734,27 @@ func TestRenderCombinedWithEscalations(t *testing.T) {
 }
 
 func TestFormatChronicleDetailPID(t *testing.T) {
-	tests := []struct {
-		name string
-		info ChronicleInfo
-		want string
-	}{
-		{
-			name: "not running",
-			info: ChronicleInfo{Running: false},
-			want: "",
-		},
-		{
-			name: "session-based",
-			info: ChronicleInfo{Running: true, SessionName: "sol-chronicle"},
-			want: "sol-chronicle",
-		},
-		{
-			name: "pid-based",
-			info: ChronicleInfo{Running: true, PID: 12345},
-			want: "pid 12345",
-		},
-		{
-			name: "session preferred over pid",
-			info: ChronicleInfo{Running: true, SessionName: "sol-chronicle", PID: 12345},
-			want: "sol-chronicle",
-		},
+	// Not running.
+	if got := formatChronicleDetail(ChronicleInfo{Running: false}); got != "" {
+		t.Errorf("formatChronicleDetail(not running) = %q, want empty", got)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := formatChronicleDetail(tt.info)
-			if got != tt.want {
-				t.Errorf("formatChronicleDetail() = %q, want %q", got, tt.want)
-			}
-		})
+	// PID-based.
+	got := formatChronicleDetail(ChronicleInfo{Running: true, PID: 12345})
+	if !strings.Contains(got, "pid 12345") {
+		t.Errorf("formatChronicleDetail(pid) = %q, want to contain %q", got, "pid 12345")
+	}
+
+	// With heartbeat age.
+	got = formatChronicleDetail(ChronicleInfo{Running: true, PID: 12345, HeartbeatAge: "30s"})
+	if !strings.Contains(got, "pid 12345") || !strings.Contains(got, "hb 30s") {
+		t.Errorf("formatChronicleDetail(pid+hb) = %q, want pid and hb info", got)
+	}
+
+	// Stale.
+	got = formatChronicleDetail(ChronicleInfo{Running: true, PID: 12345, Stale: true})
+	if !strings.Contains(got, "(stale)") {
+		t.Errorf("formatChronicleDetail(stale) = %q, want stale indicator", got)
 	}
 }
 

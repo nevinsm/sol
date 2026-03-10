@@ -174,7 +174,7 @@ func TestWorldViewRendersProcesses(t *testing.T) {
 		Prefect:   status.PrefectInfo{Running: true, PID: 42},
 		Forge:     status.ForgeInfo{Running: true, PID: 12345},
 		Sentinel:  status.SentinelInfo{Running: true, SessionName: "sol-testworld-sentinel"},
-		Chronicle: status.ChronicleInfo{Running: true, SessionName: "sol-testworld-chronicle"},
+		Chronicle: status.ChronicleInfo{Running: true, PID: 100},
 		Governor:  status.GovernorInfo{Running: true, BriefAge: "5m"},
 	}
 	wm.updateData(data)
@@ -1822,9 +1822,6 @@ func TestProcessDetailFormats(t *testing.T) {
 	}
 
 	// Chronicle detail.
-	if d := formatChronicleDetail(status.ChronicleInfo{Running: true, SessionName: "chronicle-sess"}); d != "chronicle-sess" {
-		t.Errorf("chronicle detail = %q, want %q", d, "chronicle-sess")
-	}
 	if d := formatChronicleDetail(status.ChronicleInfo{Running: true, PID: 456}); d != "pid 456" {
 		t.Errorf("chronicle detail with PID = %q, want %q", d, "pid 456")
 	}

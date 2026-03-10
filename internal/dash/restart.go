@@ -36,7 +36,7 @@ type sphereProcessInfo struct {
 var sphereProcessMap = map[string]sphereProcessInfo{
 	"Prefect":   {cliName: "prefect", startCmd: "run", pidBased: true},
 	"Consul":    {cliName: "consul", startCmd: "run", pidBased: true},
-	"Chronicle": {cliName: "chronicle", sessionName: "sol-chronicle", startCmd: "run", tmuxManaged: true},
+	"Chronicle": {cliName: "chronicle", startCmd: "run", pidBased: true},
 	"Ledger":    {cliName: "ledger", startCmd: "run", pidBased: true},
 	"Broker":    {cliName: "token-broker", startCmd: "run", pidBased: true},
 	"Senate":    {cliName: "senate", sessionName: "sol-senate", startCmd: "start", tmuxManaged: true},

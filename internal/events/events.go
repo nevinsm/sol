@@ -88,6 +88,11 @@ const (
 	EventLedgerStop   = "ledger_stop"   // ledger OTLP receiver stopped gracefully
 	EventLedgerError  = "ledger_error"  // ledger processing error
 	EventLedgerIngest = "ledger_ingest" // periodic ingestion summary
+
+	// Chronicle events.
+	EventChronicleStart  = "chronicle_start"  // chronicle process started
+	EventChronicleStop   = "chronicle_stop"   // chronicle process stopped gracefully
+	EventChroniclePatrol = "chronicle_patrol"  // chronicle periodic processing summary
 )
 
 // Logger handles event logging to the JSONL event feed.

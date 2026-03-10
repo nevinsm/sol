@@ -912,23 +912,21 @@ func TestGatherChroniclePIDFallback(t *testing.T) {
 	if result.Chronicle.PID != os.Getpid() {
 		t.Errorf("Chronicle.PID = %d, want %d", result.Chronicle.PID, os.Getpid())
 	}
-	if result.Chronicle.SessionName != "" {
-		t.Errorf("Chronicle.SessionName = %q, want empty (PID-based detection)", result.Chronicle.SessionName)
-	}
 }
 
-func TestGatherChronicleSessionPreferred(t *testing.T) {
+func TestGatherChronicleIgnoresSession(t *testing.T) {
 	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	// Both session and PID file exist — session should be preferred.
+	// PID file exists — chronicle detection is PID-based only now.
 	chronicleCleanup := writeChroniclePID(t, os.Getpid())
 	defer chronicleCleanup()
 
 	sphere := &mockSphereStore{agents: nil}
 	world := &mockWorldStore{items: nil}
+	// Even if a session checker reports sol-chronicle alive, we use PID.
 	checker := &mockChecker{alive: map[string]bool{
 		"sol-chronicle": true,
 	}}
@@ -941,12 +939,9 @@ func TestGatherChronicleSessionPreferred(t *testing.T) {
 	if !result.Chronicle.Running {
 		t.Error("Chronicle.Running = false, want true")
 	}
-	if result.Chronicle.SessionName != "sol-chronicle" {
-		t.Errorf("Chronicle.SessionName = %q, want %q", result.Chronicle.SessionName, "sol-chronicle")
-	}
-	// PID should not be set when session is detected.
-	if result.Chronicle.PID != 0 {
-		t.Errorf("Chronicle.PID = %d, want 0 (session takes precedence)", result.Chronicle.PID)
+	// PID should be set (not session-based).
+	if result.Chronicle.PID != os.Getpid() {
+		t.Errorf("Chronicle.PID = %d, want %d", result.Chronicle.PID, os.Getpid())
 	}
 }
 

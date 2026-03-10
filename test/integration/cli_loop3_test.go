@@ -135,7 +135,7 @@ func TestCLIChronicleStartHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sol chronicle start --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "background tmux session") {
+	if !strings.Contains(out, "background process") {
 		t.Errorf("output missing expected text: %s", out)
 	}
 }

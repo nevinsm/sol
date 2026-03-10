@@ -118,9 +118,11 @@ type ForgeInfo struct {
 
 // ChronicleInfo holds chronicle process state (sphere-level).
 type ChronicleInfo struct {
-	Running     bool   `json:"running"`
-	SessionName string `json:"session_name,omitempty"`
-	PID         int    `json:"pid,omitempty"`
+	Running         bool   `json:"running"`
+	PID             int    `json:"pid,omitempty"`
+	EventsProcessed int64  `json:"events_processed,omitempty"`
+	HeartbeatAge    string `json:"heartbeat_age,omitempty"`
+	Stale           bool   `json:"stale,omitempty"`
 }
 
 // LedgerInfo holds ledger process state (sphere-level OTLP receiver).
@@ -380,13 +382,8 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		result.Forge = forgeInfo
 	}
 
-	// 2b. Check chronicle (sphere-level): tmux session first, PID-file fallback.
-	const chronicleSessionName = "sol-chronicle"
-	if checker.Exists(chronicleSessionName) {
-		result.Chronicle = ChronicleInfo{Running: true, SessionName: chronicleSessionName}
-	} else if pid := readChroniclePID(); pid > 0 && prefect.IsRunning(pid) {
-		result.Chronicle = ChronicleInfo{Running: true, PID: pid}
-	}
+	// 2b. Check chronicle (sphere-level): PID + heartbeat.
+	result.Chronicle = GatherChronicleInfo()
 
 	// 2b1. Check ledger (sphere-level): PID + heartbeat.
 	result.Ledger = GatherLedgerInfo()

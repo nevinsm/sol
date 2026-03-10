@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nevinsm/sol/internal/chronicle"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/consul"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -55,6 +56,8 @@ type Config struct {
 	ForgeHeartbeatMax  time.Duration // max forge heartbeat age before restart (default: 5 minutes)
 	LedgerHeartbeatMax time.Duration // max ledger heartbeat age before restart (default: 5 minutes)
 
+	ChronicleHeartbeatMax time.Duration // max chronicle heartbeat age before restart (default: 5 minutes)
+
 	SolBinary string // path to sol binary for starting world services. If empty, infrastructure check is skipped.
 }
 
@@ -69,8 +72,9 @@ func DefaultConfig() Config {
 		ConsulHeartbeatMax: 15 * time.Minute,
 		ConsulCommand:      "sol consul run",
 
-		ForgeHeartbeatMax:  5 * time.Minute,
-		LedgerHeartbeatMax: 5 * time.Minute,
+		ForgeHeartbeatMax:     5 * time.Minute,
+		LedgerHeartbeatMax:    5 * time.Minute,
+		ChronicleHeartbeatMax: 5 * time.Minute,
 	}
 }
 
@@ -87,9 +91,8 @@ type sphereDaemonSpec struct {
 }
 
 // supervisedSphereDaemons are sphere-level daemons the prefect monitors via PID/session check.
-// Consul is supervised separately via heartbeat file staleness.
+// Consul and chronicle are supervised separately via heartbeat file staleness.
 var supervisedSphereDaemons = []sphereDaemonSpec{
-	{Name: "chronicle", Session: "sol-chronicle", Args: []string{"chronicle", "start"}},
 	{Name: "ledger", Args: []string{"ledger", "run"}, Detached: true},
 	{Name: "token-broker", Args: []string{"token-broker", "run"}, Detached: true},
 }
@@ -278,10 +281,14 @@ func (s *Prefect) heartbeat() {
 		s.checkWorldInfrastructure()
 	}
 
-	// Check sphere daemons (chronicle/ledger/token-broker) on first heartbeat and every 3rd cycle.
+	// Check sphere daemons (ledger/token-broker) on first heartbeat and every 3rd cycle.
 	if s.heartbeatCount == 1 || s.heartbeatCount%3 == 0 {
 		s.checkSphereDaemons()
-		s.checkLedgerHealth()
+	}
+
+	// Check chronicle health via heartbeat (on first heartbeat and every 3rd cycle).
+	if s.heartbeatCount == 1 || s.heartbeatCount%3 == 0 {
+		s.checkChronicleHealth()
 	}
 
 	s.logger.Info("heartbeat", "working_agents", len(workingAgents), "dead_sessions", deadCount)
@@ -555,10 +562,11 @@ func (s *Prefect) checkForgeHealth(world string) {
 	}
 }
 
-// checkSphereDaemons checks whether supervised sphere daemons (chronicle, ledger,
+// checkSphereDaemons checks whether supervised sphere daemons (ledger,
 // token-broker) are alive and restarts any that are dead. Uses PID files and tmux
 // session presence for liveness detection. Additionally checks ledger heartbeat
 // staleness (like forge).
+// Chronicle is supervised separately via checkChronicleHealth (heartbeat-based).
 // Requires cfg.SolBinary to be set — skips silently if empty.
 // Must be called with s.mu held.
 func (s *Prefect) checkSphereDaemons() {
@@ -658,64 +666,71 @@ func (s *Prefect) checkLedgerHealth() {
 	}
 }
 
-// checkLedgerHealth reads the ledger heartbeat and restarts if stale.
-// The ledger runs as a Go process inside a tmux session.
+// checkChronicleHealth reads the chronicle heartbeat and restarts if stale or missing.
+// Chronicle runs as a direct background process supervised via heartbeat file.
 // Must be called with s.mu held.
-func (s *Prefect) checkLedgerHealth() {
+func (s *Prefect) checkChronicleHealth() {
 	if s.cfg.SolBinary == "" {
 		return
 	}
 
-	const ledgerSession = "sol-ledger"
+	// Check if process is alive via PID.
+	pid := ReadDaemonPID("chronicle")
+	processAlive := pid > 0 && IsRunning(pid)
 
-	// If no session and no live PID, checkSphereDaemons already handled restart.
-	pid := ReadDaemonPID("ledger")
-	sessionAlive := s.sessions.Exists(ledgerSession)
-	if !sessionAlive && (pid <= 0 || !IsRunning(pid)) {
-		return // checkSphereDaemons handles this case
+	if !processAlive {
+		// No process running — start it.
+		s.logger.Info("chronicle process not running, starting")
+		if err := s.startDaemonProcess("chronicle", s.cfg.SolBinary, "chronicle", "run"); err != nil {
+			s.logger.Error("failed to start chronicle", "error", err)
+		} else {
+			s.logger.Info("chronicle started")
+			if s.eventLog != nil {
+				s.eventLog.Emit(events.EventRespawn, "prefect", "chronicle", "both", map[string]any{
+					"daemon": "chronicle",
+					"type":   "sphere",
+					"reason": "process_dead",
+				})
+			}
+		}
+		return
 	}
 
-	// Session or process exists — check heartbeat staleness.
-	hb, err := ledger.ReadHeartbeat()
+	// Process alive — check heartbeat staleness.
+	hb, err := chronicle.ReadHeartbeat()
 	if err != nil {
-		s.logger.Warn("failed to read ledger heartbeat", "error", err)
+		s.logger.Warn("failed to read chronicle heartbeat", "error", err)
 		return
 	}
 
 	if hb == nil {
-		// No heartbeat yet (ledger just started) — give it time.
+		// No heartbeat yet (chronicle just started) — give it time.
 		return
 	}
 
-	if !hb.IsStale(s.cfg.LedgerHeartbeatMax) {
+	if !hb.IsStale(s.cfg.ChronicleHeartbeatMax) {
 		return // heartbeat is fresh
 	}
 
-	// Heartbeat is stale — restart the ledger.
-	s.logger.Warn("ledger heartbeat is stale, restarting",
+	// Heartbeat is stale — kill and restart.
+	s.logger.Warn("chronicle heartbeat is stale, restarting",
 		"last_heartbeat", hb.Timestamp,
-		"max_age", s.cfg.LedgerHeartbeatMax)
+		"max_age", s.cfg.ChronicleHeartbeatMax)
 
-	// Kill existing session if present.
-	if sessionAlive {
-		if err := s.sessions.Stop(ledgerSession, true); err != nil {
-			s.logger.Error("failed to stop stale ledger session", "error", err)
-		}
+	// Kill existing process.
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		s.logger.Error("failed to SIGTERM chronicle", "pid", pid, "error", err)
 	}
 
-	// Kill orphaned process if alive but no session.
-	if pid > 0 && IsRunning(pid) {
-		_ = syscall.Kill(pid, syscall.SIGTERM)
-	}
-
-	// Restart via sol ledger start.
-	if err := s.runCommand(s.cfg.SolBinary, "ledger", "start"); err != nil {
-		s.logger.Error("failed to restart ledger", "error", err)
+	// Restart.
+	if err := s.startDaemonProcess("chronicle", s.cfg.SolBinary, "chronicle", "run"); err != nil {
+		s.logger.Error("failed to restart chronicle", "error", err)
 	} else {
-		s.logger.Info("ledger restarted via heartbeat staleness")
+		s.logger.Info("chronicle restarted via heartbeat staleness")
 		if s.eventLog != nil {
-			s.eventLog.Emit(events.EventRespawn, "prefect", "ledger", "both", map[string]any{
-				"daemon": "ledger",
+			s.eventLog.Emit(events.EventRespawn, "prefect", "chronicle", "both", map[string]any{
+				"daemon": "chronicle",
+				"type":   "sphere",
 				"reason": "heartbeat_stale",
 			})
 		}

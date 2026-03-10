@@ -178,13 +178,20 @@ func formatChronicleDetail(c status.ChronicleInfo) string {
 	if !c.Running {
 		return ""
 	}
-	if c.SessionName != "" {
-		return c.SessionName
-	}
+	var parts string
 	if c.PID > 0 {
-		return fmt.Sprintf("pid %d", c.PID)
+		parts = fmt.Sprintf("pid %d", c.PID)
 	}
-	return ""
+	if c.HeartbeatAge != "" {
+		if parts != "" {
+			parts += " "
+		}
+		parts += fmt.Sprintf("hb %s", c.HeartbeatAge)
+	}
+	if c.Stale {
+		parts += " (stale)"
+	}
+	return parts
 }
 
 func formatLedgerDetail(l status.LedgerInfo) string {
