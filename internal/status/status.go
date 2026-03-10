@@ -126,8 +126,8 @@ type ChronicleInfo struct {
 // LedgerInfo holds ledger process state (sphere-level OTLP receiver).
 type LedgerInfo struct {
 	Running      bool   `json:"running"`
-	SessionName  string `json:"session_name,omitempty"`
 	PID          int    `json:"pid,omitempty"`
+	Port         int    `json:"port,omitempty"`
 	HeartbeatAge string `json:"heartbeat_age,omitempty"`
 	Stale        bool   `json:"stale,omitempty"`
 }
@@ -388,8 +388,8 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		result.Chronicle = ChronicleInfo{Running: true, PID: pid}
 	}
 
-	// 2b1. Check ledger (sphere-level): heartbeat primary, session/PID fallback.
-	result.Ledger = GatherLedgerInfo(checker)
+	// 2b1. Check ledger (sphere-level): PID + heartbeat.
+	result.Ledger = GatherLedgerInfo()
 
 	// 2b2. Check broker (sphere-level).
 	result.Broker = GatherBrokerInfo()
@@ -692,41 +692,6 @@ func readChroniclePID() int {
 	return pid
 }
 
-// GatherLedgerInfo reads ledger status using heartbeat as primary signal,
-// with tmux session and PID file as fallbacks.
-func GatherLedgerInfo(checker SessionChecker) LedgerInfo {
-	info := LedgerInfo{}
-
-	const ledgerSessionName = "sol-ledger"
-
-	// Primary: check heartbeat file.
-	if hb, err := ledger.ReadHeartbeat(); err == nil && hb != nil {
-		info.Running = true
-		info.HeartbeatAge = FormatDuration(time.Since(hb.Timestamp))
-		info.Stale = hb.IsStale(2 * time.Minute)
-		if checker.Exists(ledgerSessionName) {
-			info.SessionName = ledgerSessionName
-		}
-		return info
-	}
-
-	// Fallback: tmux session exists.
-	if checker.Exists(ledgerSessionName) {
-		info.Running = true
-		info.SessionName = ledgerSessionName
-		return info
-	}
-
-	// Fallback: PID file.
-	if pid := ledger.ReadPID(); pid > 0 && prefect.IsRunning(pid) {
-		info.Running = true
-		info.PID = pid
-		return info
-	}
-
-	return info
-}
-
 // GatherTokens populates token usage data on a WorldStatus using a 24-hour
 // rolling window. Errors are handled gracefully — if the store can't be queried,
 // TokenInfo is left zeroed and the renderer handles the zero case.
@@ -748,4 +713,34 @@ func GatherTokens(result *WorldStatus, worldStore *store.Store) {
 		return
 	}
 	result.Tokens.AgentCount = agents
+}
+
+// GatherLedgerInfo reads ledger process state from PID file and heartbeat.
+// The ledger is a Go process (not a tmux session), so PID + heartbeat are
+// the canonical signals.
+func GatherLedgerInfo() LedgerInfo {
+	info := LedgerInfo{}
+
+	pid := ledger.ReadPID()
+	if pid > 0 && prefect.IsRunning(pid) {
+		info.Running = true
+		info.PID = pid
+		info.Port = ledger.DefaultPort
+	}
+
+	hb, err := ledger.ReadHeartbeat()
+	if err == nil && hb != nil {
+		if !info.Running {
+			// Heartbeat exists but PID is gone — might have just died.
+			// Still report as running if heartbeat is recent.
+			if !hb.IsStale(5 * time.Minute) {
+				info.Running = true
+				info.Port = ledger.DefaultPort
+			}
+		}
+		info.HeartbeatAge = FormatDuration(time.Since(hb.Timestamp))
+		info.Stale = hb.IsStale(5 * time.Minute)
+	}
+
+	return info
 }

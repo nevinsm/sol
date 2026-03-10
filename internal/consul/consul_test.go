@@ -1417,7 +1417,6 @@ func TestDetectOrphanedSessionsKnownNotFlagged(t *testing.T) {
 	sessions.alive["sol-"+worldName+"-governor"] = true
 	sessions.alive["sol-"+worldName+"-MyEnvoy"] = true
 	sessions.alive["sol-chronicle"] = true
-	sessions.alive["sol-ledger"] = true
 	sessions.alive["sol-token-broker"] = true
 
 	cfg := Config{SolHome: config.Home()}

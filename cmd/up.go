@@ -32,7 +32,7 @@ var sphereDaemons = []sphereDaemon{
 	{name: "prefect"},
 	{name: "consul"},
 	{name: "chronicle", session: chronicleSessionName},
-	{name: "ledger", session: ledgerSessionName},
+	{name: "ledger"},
 	{name: "token-broker"},
 }
 

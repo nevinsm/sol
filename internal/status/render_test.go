@@ -416,19 +416,19 @@ func TestFormatLedgerDetail(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "session-based",
-			info: LedgerInfo{Running: true, SessionName: "sol-ledger"},
-			want: "sol-ledger",
-		},
-		{
 			name: "pid-based",
 			info: LedgerInfo{Running: true, PID: 12345},
 			want: "pid 12345",
 		},
 		{
-			name: "session preferred over pid",
-			info: LedgerInfo{Running: true, SessionName: "sol-ledger", PID: 12345},
-			want: "sol-ledger",
+			name: "pid with heartbeat",
+			info: LedgerInfo{Running: true, PID: 12345, HeartbeatAge: "30s"},
+			want: "pid 12345  hb 30s",
+		},
+		{
+			name: "running no detail",
+			info: LedgerInfo{Running: true},
+			want: "running",
 		},
 	}
 

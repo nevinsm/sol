@@ -194,22 +194,23 @@ func formatLedgerDetail(l LedgerInfo) string {
 	if !l.Running {
 		return ""
 	}
-	parts := ""
-	if l.SessionName != "" {
-		parts = l.SessionName
-	} else if l.PID > 0 {
-		parts = fmt.Sprintf("pid %d", l.PID)
+	detail := ""
+	if l.PID > 0 {
+		detail = fmt.Sprintf("pid %d", l.PID)
 	}
 	if l.HeartbeatAge != "" {
-		if parts != "" {
-			parts += ", "
+		if detail != "" {
+			detail += "  "
 		}
-		parts += fmt.Sprintf("last %s ago", l.HeartbeatAge)
+		detail += fmt.Sprintf("hb %s", l.HeartbeatAge)
 	}
 	if l.Stale {
-		parts += warnStyle.Render(" (stale)")
+		detail += warnStyle.Render(" (stale)")
 	}
-	return parts
+	if detail == "" {
+		return "running"
+	}
+	return detail
 }
 
 func formatSenateDetail(s SenateInfo) string {

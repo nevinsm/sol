@@ -95,7 +95,7 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 		{name: "Prefect", running: data.Prefect.Running, required: true, detail: formatPrefectDetail(data.Prefect), peekable: false},
 		{name: "Consul", running: data.Consul.Running, required: true, detail: formatConsulDetail(data.Consul), peekable: false},
 		{name: "Chronicle", running: data.Chronicle.Running, required: false, sessionName: data.Chronicle.SessionName, detail: formatChronicleDetail(data.Chronicle), peekable: data.Chronicle.SessionName != ""},
-		{name: "Ledger", running: data.Ledger.Running, required: false, sessionName: data.Ledger.SessionName, detail: formatLedgerDetail(data.Ledger), peekable: data.Ledger.SessionName != ""},
+		{name: "Ledger", running: data.Ledger.Running, required: false, detail: formatLedgerDetail(data.Ledger), peekable: false},
 		{name: "Broker", running: data.Broker.Running, required: true, detail: formatBrokerDetail(data.Broker), peekable: false},
 		{name: "Senate", running: data.Senate.Running, required: false, sessionName: data.Senate.SessionName, detail: formatSenateDetail(data.Senate), peekable: data.Senate.SessionName != ""},
 	}

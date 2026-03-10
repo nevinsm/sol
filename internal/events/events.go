@@ -82,6 +82,12 @@ const (
 	// Token broker events.
 	EventBrokerRefresh = "broker_refresh" // token broker refreshed an account's OAuth token
 	EventBrokerPatrol  = "broker_patrol"  // token broker patrol completed
+
+	// Ledger events.
+	EventLedgerStart  = "ledger_start"  // ledger OTLP receiver started
+	EventLedgerStop   = "ledger_stop"   // ledger OTLP receiver stopped gracefully
+	EventLedgerError  = "ledger_error"  // ledger processing error
+	EventLedgerIngest = "ledger_ingest" // periodic ingestion summary
 )
 
 // Logger handles event logging to the JSONL event feed.

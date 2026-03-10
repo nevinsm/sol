@@ -1830,11 +1830,11 @@ func TestProcessDetailFormats(t *testing.T) {
 	}
 
 	// Ledger detail.
-	if d := formatLedgerDetail(status.LedgerInfo{Running: true, SessionName: "ledger-sess"}); d != "ledger-sess" {
-		t.Errorf("ledger detail = %q, want %q", d, "ledger-sess")
-	}
 	if d := formatLedgerDetail(status.LedgerInfo{Running: true, PID: 789}); d != "pid 789" {
 		t.Errorf("ledger detail with PID = %q, want %q", d, "pid 789")
+	}
+	if d := formatLedgerDetail(status.LedgerInfo{Running: true, PID: 789, HeartbeatAge: "30s"}); d != "pid 789  hb 30s" {
+		t.Errorf("ledger detail with heartbeat = %q, want %q", d, "pid 789  hb 30s")
 	}
 
 	// Broker detail.

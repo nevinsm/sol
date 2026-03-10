@@ -191,13 +191,20 @@ func formatLedgerDetail(l status.LedgerInfo) string {
 	if !l.Running {
 		return ""
 	}
-	if l.SessionName != "" {
-		return l.SessionName
-	}
+	detail := ""
 	if l.PID > 0 {
-		return fmt.Sprintf("pid %d", l.PID)
+		detail = fmt.Sprintf("pid %d", l.PID)
 	}
-	return ""
+	if l.HeartbeatAge != "" {
+		if detail != "" {
+			detail += "  "
+		}
+		detail += fmt.Sprintf("hb %s", l.HeartbeatAge)
+	}
+	if detail == "" {
+		return "running"
+	}
+	return detail
 }
 
 func formatBrokerDetail(b status.BrokerInfo) string {

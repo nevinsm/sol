@@ -1269,15 +1269,15 @@ Manage the token tracking ledger
 |---------|-------------|
 | `sol ledger restart` | Restart the ledger (stop then start) |
 | `sol ledger run` | Run the ledger OTLP receiver (foreground) |
-| `sol ledger start` | Start the ledger as a background tmux session |
+| `sol ledger start` | Start the ledger as a background process |
 | `sol ledger status` | Show ledger status |
-| `sol ledger stop` | Stop the ledger background session |
+| `sol ledger stop` | Stop the ledger background process |
 
 #### `sol ledger status`
 
 Show whether the ledger process is running.
 
-Prints session name and OTLP port. Use --json for machine-readable output.
+Prints PID, OTLP port, and heartbeat info. Use --json for machine-readable output.
 
 Exit codes:
   0 - Ledger is running
