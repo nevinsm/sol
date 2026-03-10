@@ -41,6 +41,7 @@ Show token usage and estimated cost.
 Without flags, shows sphere-wide per-world cost totals.
 With --world, shows per-agent breakdown within a world.
 With --agent and --world, shows per-writ breakdown for an agent.
+With --writ and --world, shows per-model breakdown for a specific writ.
 With --caravan, shows per-writ breakdown across worlds for a caravan.
 With --since, filters by time window (relative duration or absolute date).
 
@@ -51,6 +52,7 @@ With --since, filters by time window (relative duration or absolute date).
 | `--json` | bool | false | output as JSON |
 | `--since` | string | "" | time window: relative duration (24h) or absolute date (2006-01-02) |
 | `--world` | string | "" | world name |
+| `--writ` | string | "" | show per-model breakdown for a writ (requires --world) |
 
 ### `sol dash`
 

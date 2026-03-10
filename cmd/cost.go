@@ -16,6 +16,7 @@ import (
 var (
 	costWorld   string
 	costAgent   string
+	costWrit    string
 	costCaravan string
 	costSince   string
 	costJSON    bool
@@ -29,6 +30,7 @@ var costCmd = &cobra.Command{
 Without flags, shows sphere-wide per-world cost totals.
 With --world, shows per-agent breakdown within a world.
 With --agent and --world, shows per-writ breakdown for an agent.
+With --writ and --world, shows per-model breakdown for a specific writ.
 With --caravan, shows per-writ breakdown across worlds for a caravan.
 With --since, filters by time window (relative duration or absolute date).`,
 	GroupID:      groupDispatch,
@@ -40,6 +42,7 @@ func init() {
 	rootCmd.AddCommand(costCmd)
 	costCmd.Flags().StringVar(&costWorld, "world", "", "world name")
 	costCmd.Flags().StringVar(&costAgent, "agent", "", "show per-writ breakdown for an agent (requires --world)")
+	costCmd.Flags().StringVar(&costWrit, "writ", "", "show per-model breakdown for a writ (requires --world)")
 	costCmd.Flags().StringVar(&costCaravan, "caravan", "", "show per-writ breakdown for a caravan (ID or name)")
 	costCmd.Flags().StringVar(&costSince, "since", "", "time window: relative duration (24h) or absolute date (2006-01-02)")
 	costCmd.Flags().BoolVar(&costJSON, "json", false, "output as JSON")
@@ -60,8 +63,17 @@ func runCost(cmd *cobra.Command, args []string) error {
 	if costAgent != "" && costWorld == "" {
 		return fmt.Errorf("--agent requires --world")
 	}
+	if costWrit != "" && costWorld == "" {
+		return fmt.Errorf("--writ requires --world")
+	}
 	if costAgent != "" && costCaravan != "" {
 		return fmt.Errorf("--agent and --caravan cannot be used together")
+	}
+	if costWrit != "" && costAgent != "" {
+		return fmt.Errorf("--writ and --agent cannot be used together")
+	}
+	if costWrit != "" && costCaravan != "" {
+		return fmt.Errorf("--writ and --caravan cannot be used together")
 	}
 	if costWorld != "" && costCaravan != "" {
 		return fmt.Errorf("--world and --caravan cannot be used together")
@@ -76,6 +88,8 @@ func runCost(cmd *cobra.Command, args []string) error {
 	switch {
 	case costCaravan != "":
 		return runCostCaravan(pricing, since)
+	case costWrit != "":
+		return runCostWrit(pricing, since)
 	case costAgent != "":
 		return runCostAgent(pricing, since)
 	case costWorld != "":
@@ -250,11 +264,6 @@ func renderSphereCost(result sphereCostResult, hasPricing bool) {
 		return
 	}
 
-	if !hasPricing {
-		fmt.Println("No pricing configured. Add [pricing] section to sol.toml. Showing token counts only.")
-		fmt.Println()
-	}
-
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
 	if hasPricing {
 		fmt.Fprintf(tw, "World\tAgents\tWrits\tInput Tokens\tOutput Tokens\tCache Tokens\tCost\t\n")
@@ -408,11 +417,6 @@ func renderWorldCost(result worldCostResult, hasPricing bool) {
 	if len(result.Rows) == 0 {
 		fmt.Printf("No token usage data found for world %q.\n", result.World)
 		return
-	}
-
-	if !hasPricing {
-		fmt.Println("No pricing configured. Add [pricing] section to sol.toml. Showing token counts only.")
-		fmt.Println()
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
@@ -578,11 +582,6 @@ func renderAgentCost(result agentCostResult, hasPricing bool) {
 		return
 	}
 
-	if !hasPricing {
-		fmt.Println("No pricing configured. Add [pricing] section to sol.toml. Showing token counts only.")
-		fmt.Println()
-	}
-
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
 	if hasPricing {
 		fmt.Fprintf(tw, "Writ\tKind\tStatus\tInput\tOutput\tCache\tCost\t\n")
@@ -627,6 +626,208 @@ func renderAgentCost(result agentCostResult, hasPricing bool) {
 	if hasPricing && result.TotalCost != nil {
 		fmt.Fprintf(tw, "\t\t\t\tTotal:\t%s\t\n", formatDollars(*result.TotalCost))
 	}
+	tw.Flush()
+
+	if len(result.AllUnpriced) > 0 {
+		fmt.Printf("\n%d unpriced model(s): %s. Add to [pricing] in sol.toml.\n",
+			len(result.AllUnpriced), strings.Join(result.AllUnpriced, ", "))
+	}
+}
+
+// --- Writ-level cost (--writ --world) ---
+
+type writCostRow struct {
+	Model               string   `json:"model"`
+	InputTokens         int64    `json:"input_tokens"`
+	OutputTokens        int64    `json:"output_tokens"`
+	CacheReadTokens     int64    `json:"cache_read_tokens"`
+	CacheCreationTokens int64    `json:"cache_creation_tokens"`
+	Cost                *float64 `json:"cost,omitempty"`
+}
+
+type writCostResult struct {
+	WritID      string        `json:"writ_id"`
+	Title       string        `json:"title,omitempty"`
+	Kind        string        `json:"kind,omitempty"`
+	Status      string        `json:"status,omitempty"`
+	Rows        []writCostRow `json:"models"`
+	TotalCost   *float64      `json:"total_cost,omitempty"`
+	AllUnpriced []string      `json:"unpriced_models,omitempty"`
+	HasPricing  bool          `json:"has_pricing"`
+	Period      string        `json:"period"`
+}
+
+func runCostWrit(pricing config.PricingConfig, since *time.Time) error {
+	if err := config.RequireWorld(costWorld); err != nil {
+		return err
+	}
+
+	worldStore, err := store.OpenWorld(costWorld)
+	if err != nil {
+		return err
+	}
+	defer worldStore.Close()
+
+	// Look up writ metadata.
+	writ, err := worldStore.GetWrit(costWrit)
+	if err != nil {
+		return fmt.Errorf("writ %q not found in world %q", costWrit, costWorld)
+	}
+
+	hasPricing := len(pricing) > 0
+
+	var summaries []store.TokenSummary
+	if since != nil {
+		summaries, err = worldStore.TokensForWritSince(costWrit, *since)
+	} else {
+		summaries, err = worldStore.TokensForWrit(costWrit)
+	}
+	if err != nil {
+		return err
+	}
+
+	var rows []writCostRow
+	var totalCost float64
+	allUnpriced := make(map[string]bool)
+
+	for _, ts := range summaries {
+		row := writCostRow{
+			Model:               ts.Model,
+			InputTokens:         ts.InputTokens,
+			OutputTokens:        ts.OutputTokens,
+			CacheReadTokens:     ts.CacheReadTokens,
+			CacheCreationTokens: ts.CacheCreationTokens,
+		}
+
+		if hasPricing {
+			cfgSummaries := storeToConfigSummaries([]store.TokenSummary{ts})
+			cost, unpriced := pricing.ComputeCost(cfgSummaries)
+			row.Cost = &cost
+			totalCost += cost
+			for _, m := range unpriced {
+				allUnpriced[m] = true
+			}
+		}
+
+		rows = append(rows, row)
+	}
+
+	period := "all time"
+	if since != nil {
+		period = fmt.Sprintf("since %s", since.Format("2006-01-02"))
+	}
+
+	result := writCostResult{
+		WritID:     costWrit,
+		Title:      writ.Title,
+		Kind:       writ.Kind,
+		Status:     writ.Status,
+		Rows:       rows,
+		HasPricing: hasPricing,
+		Period:     period,
+	}
+	if hasPricing {
+		result.TotalCost = &totalCost
+	}
+	if len(allUnpriced) > 0 {
+		for m := range allUnpriced {
+			result.AllUnpriced = append(result.AllUnpriced, m)
+		}
+		sort.Strings(result.AllUnpriced)
+	}
+
+	if costJSON {
+		return printJSON(result)
+	}
+
+	renderWritCost(result, hasPricing)
+	return nil
+}
+
+func renderWritCost(result writCostResult, hasPricing bool) {
+	// Print writ header.
+	header := fmt.Sprintf("Writ: %s", result.WritID)
+	if result.Title != "" {
+		header += fmt.Sprintf(" — %s", result.Title)
+	}
+	meta := []string{}
+	if result.Kind != "" {
+		meta = append(meta, result.Kind)
+	}
+	if result.Status != "" {
+		meta = append(meta, result.Status)
+	}
+	if len(meta) > 0 {
+		header += fmt.Sprintf(" (%s)", strings.Join(meta, ", "))
+	}
+	fmt.Println(header)
+	fmt.Println()
+
+	if len(result.Rows) == 0 {
+		fmt.Println("No token usage data found.")
+		return
+	}
+
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
+	if hasPricing {
+		fmt.Fprintf(tw, "Model\tInput\tOutput\tCache Read\tCache Create\tCost\t\n")
+	} else {
+		fmt.Fprintf(tw, "Model\tInput\tOutput\tCache Read\tCache Create\t\n")
+	}
+
+	var totalInput, totalOutput, totalCacheRead, totalCacheCreate int64
+	for _, row := range result.Rows {
+		totalInput += row.InputTokens
+		totalOutput += row.OutputTokens
+		totalCacheRead += row.CacheReadTokens
+		totalCacheCreate += row.CacheCreationTokens
+
+		if hasPricing {
+			costStr := "unpriced"
+			if row.Cost != nil {
+				costStr = formatDollars(*row.Cost)
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t\n",
+				row.Model,
+				formatTokenInt(row.InputTokens),
+				formatTokenInt(row.OutputTokens),
+				formatTokenInt(row.CacheReadTokens),
+				formatTokenInt(row.CacheCreationTokens),
+				costStr)
+		} else {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t\n",
+				row.Model,
+				formatTokenInt(row.InputTokens),
+				formatTokenInt(row.OutputTokens),
+				formatTokenInt(row.CacheReadTokens),
+				formatTokenInt(row.CacheCreationTokens))
+		}
+	}
+
+	// Totals row (only when more than one model).
+	if len(result.Rows) > 1 {
+		if hasPricing {
+			fmt.Fprintf(tw, "\t-------\t------\t------\t------\t------\t\n")
+			costStr := "$0.00"
+			if result.TotalCost != nil {
+				costStr = formatDollars(*result.TotalCost)
+			}
+			fmt.Fprintf(tw, "Total\t%s\t%s\t%s\t%s\t%s\t\n",
+				formatTokenInt(totalInput),
+				formatTokenInt(totalOutput),
+				formatTokenInt(totalCacheRead),
+				formatTokenInt(totalCacheCreate),
+				costStr)
+		} else {
+			fmt.Fprintf(tw, "\t-------\t------\t------\t------\t\n")
+			fmt.Fprintf(tw, "Total\t%s\t%s\t%s\t%s\t\n",
+				formatTokenInt(totalInput),
+				formatTokenInt(totalOutput),
+				formatTokenInt(totalCacheRead),
+				formatTokenInt(totalCacheCreate))
+		}
+	}
+
 	tw.Flush()
 
 	if len(result.AllUnpriced) > 0 {
@@ -783,11 +984,6 @@ func renderCaravanCost(result caravanCostResult, hasPricing bool) {
 	if len(result.Rows) == 0 {
 		fmt.Println("No token usage data found.")
 		return
-	}
-
-	if !hasPricing {
-		fmt.Println("No pricing configured. Add [pricing] section to sol.toml. Showing token counts only.")
-		fmt.Println()
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
