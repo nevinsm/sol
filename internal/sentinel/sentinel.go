@@ -62,6 +62,7 @@ type SphereStore interface {
 	EnsureAgent(name, world, role string) error
 	DeleteAgent(id string) error
 	SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
+	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
 }
 
 // WorldStore is the subset of world store operations the sentinel needs.
@@ -755,7 +756,18 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 		}
 
 	case "escalate":
-		// Send RECOVERY_NEEDED protocol message to autarch.
+		// Create formal escalation for durable tracking.
+		escDesc := fmt.Sprintf("Agent %s needs recovery: %s", agent.Name, result.Reason)
+		var sourceRef string
+		if agent.ActiveWrit != "" {
+			sourceRef = "writ:" + agent.ActiveWrit
+		}
+		if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, sourceRef); err != nil && w.logger != nil {
+			w.logger.Emit("escalation_error", w.agentID(), agent.ID, "audit",
+				map[string]any{"error": err.Error()})
+		}
+
+		// Send RECOVERY_NEEDED protocol message to autarch (live nudge).
 		if _, err := w.sphereStore.SendProtocolMessage(
 			w.agentID(), config.Autarch,
 			store.ProtoRecoveryNeeded,
@@ -1580,8 +1592,17 @@ func (w *Sentinel) recastFailedMRs() int {
 }
 
 // escalateFailedRecast sends a RECOVERY_NEEDED protocol message when a work
-// item has exceeded the maximum recast attempts.
+// item has exceeded the maximum recast attempts, and creates a formal
+// escalation for durable tracking.
 func (w *Sentinel) escalateFailedRecast(mr store.MergeRequest, item *store.Writ, attempts int) {
+	// Create formal escalation for durable tracking.
+	escDesc := fmt.Sprintf("Merge failed %d times for writ %s (%s), recast limit reached", attempts, mr.WritID, item.Title)
+	if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, "writ:"+mr.WritID); err != nil && w.logger != nil {
+		w.logger.Emit("escalation_error", w.agentID(), w.agentID(), "audit",
+			map[string]any{"error": err.Error()})
+	}
+
+	// Send RECOVERY_NEEDED protocol message to autarch (live nudge).
 	if _, err := w.sphereStore.SendProtocolMessage(
 		w.agentID(), config.Autarch,
 		store.ProtoRecoveryNeeded,
@@ -1702,8 +1723,17 @@ func (w *Sentinel) dispatchOrphanedResolutions() int {
 }
 
 // escalateOrphanedResolution sends a RECOVERY_NEEDED protocol message when a
-// conflict-resolution writ has exceeded the maximum dispatch attempts.
+// conflict-resolution writ has exceeded the maximum dispatch attempts, and
+// creates a formal escalation for durable tracking.
 func (w *Sentinel) escalateOrphanedResolution(mr store.MergeRequest, writ *store.Writ, attempts int) {
+	// Create formal escalation for durable tracking.
+	escDesc := fmt.Sprintf("Orphaned conflict-resolution writ %s (%s) blocking MR %s, dispatch limit reached after %d attempts", writ.ID, writ.Title, mr.ID, attempts)
+	if _, err := w.sphereStore.CreateEscalation("medium", w.config.World+"/sentinel", escDesc, "writ:"+writ.ID); err != nil && w.logger != nil {
+		w.logger.Emit("escalation_error", w.agentID(), w.agentID(), "audit",
+			map[string]any{"error": err.Error()})
+	}
+
+	// Send RECOVERY_NEEDED protocol message to autarch (live nudge).
 	if _, err := w.sphereStore.SendProtocolMessage(
 		w.agentID(), config.Autarch,
 		store.ProtoRecoveryNeeded,
