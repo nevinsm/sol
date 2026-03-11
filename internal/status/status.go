@@ -704,12 +704,6 @@ func GatherSentinelInfo(world string) SentinelInfo {
 		age := time.Since(hb.Timestamp)
 		info.HeartbeatAge = FormatDuration(age)
 		info.Stale = hb.IsStale(15 * time.Minute)
-
-		// If heartbeat is fresh but no PID, sentinel may still be running
-		// (PID file might be stale from previous run).
-		if !info.Running && !info.Stale {
-			info.Running = true
-		}
 	}
 
 	return info
@@ -766,14 +760,6 @@ func GatherLedgerInfo() LedgerInfo {
 
 	hb, err := ledger.ReadHeartbeat()
 	if err == nil && hb != nil {
-		if !info.Running {
-			// Heartbeat exists but PID is gone — might have just died.
-			// Still report as running if heartbeat is recent.
-			if !hb.IsStale(5 * time.Minute) {
-				info.Running = true
-				info.Port = ledger.DefaultPort
-			}
-		}
 		info.HeartbeatAge = FormatDuration(time.Since(hb.Timestamp))
 		info.Stale = hb.IsStale(5 * time.Minute)
 	}
