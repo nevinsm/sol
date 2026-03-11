@@ -2548,46 +2548,79 @@ func TestBuildWorldPeekItemsForgeSessionName(t *testing.T) {
 }
 
 func TestPeekModelForgeView(t *testing.T) {
-	pm := newPeekModel(nil, "")
-	pm.width = 120
-	pm.height = 40
+	t.Run("idle", func(t *testing.T) {
+		pm := newPeekModel(nil, "")
+		pm.width = 120
+		pm.height = 40
 
-	items := []peekItem{
-		{name: "Forge", sessionName: "sol-dev-forge-merge", category: "Processes",
-			state: "alive", alive: true, peekable: true, isForge: true, source: "forge"},
-	}
-	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
-
-	// Forge peek should use the two-pane layout.
-	if !pm.selectedIsForge() {
-		t.Error("selected item should be forge")
-	}
-
-	// Set forge info for idle state display.
-	pm.forgeInfo = &status.ForgeInfo{
-		Status:      "idle",
-		QueueDepth:  3,
-		MergesTotal: 42,
-		LastMerge:   "5m",
-	}
-
-	feedView := dimStyle.Render(strings.Repeat("─", 120)) + "\n"
-	output := pm.view(feedView)
-
-	// Should show forge-specific layout elements.
-	checks := []string{
-		"Merge Agent",
-		"No active merge session",
-		"Last merge: 5m ago",
-		"Queue: 3 ready",
-		"Total merges: 42",
-		"Forge Events",
-	}
-	for _, check := range checks {
-		if !strings.Contains(output, check) {
-			t.Errorf("forge peek view missing %q", check)
+		items := []peekItem{
+			{name: "Forge", sessionName: "sol-dev-forge-merge", category: "Processes",
+				state: "idle", alive: false, peekable: true, isForge: true, source: "forge"},
 		}
-	}
+		pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+
+		if !pm.selectedIsForge() {
+			t.Error("selected item should be forge")
+		}
+
+		// Set forge info for idle state display.
+		pm.forgeInfo = &status.ForgeInfo{
+			Status:      "idle",
+			QueueDepth:  3,
+			MergesTotal: 42,
+			LastMerge:   "5m",
+		}
+
+		feedView := dimStyle.Render(strings.Repeat("─", 120)) + "\n"
+		output := pm.view(feedView)
+
+		// Standard layout: sidebar (with item list) + capture panel (with idle info).
+		checks := []string{
+			"Forge",
+			"No active merge session",
+			"Last merge: 5m ago",
+			"Queue: 3 ready",
+			"Total merges: 42",
+		}
+		for _, check := range checks {
+			if !strings.Contains(output, check) {
+				t.Errorf("forge peek view missing %q", check)
+			}
+		}
+
+		// Should use standard layout with sidebar separator.
+		if !strings.Contains(output, "│") {
+			t.Error("forge peek should use standard sidebar layout with separator")
+		}
+	})
+
+	t.Run("active_merge", func(t *testing.T) {
+		pm := newPeekModel(nil, "")
+		pm.width = 120
+		pm.height = 40
+
+		items := []peekItem{
+			{name: "Forge", sessionName: "sol-dev-forge-merge", category: "Processes",
+				state: "merging", alive: true, peekable: true, isForge: true, source: "forge"},
+		}
+		pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+
+		// Simulate captured merge output.
+		pm.capture = "Merging branch feature/foo into main..."
+
+		feedView := dimStyle.Render(strings.Repeat("─", 120)) + "\n"
+		output := pm.view(feedView)
+
+		// Should show merge agent terminal output in capture panel.
+		if !strings.Contains(output, "Merging branch feature/foo") {
+			t.Error("forge peek should show merge agent capture output")
+		}
+
+		// Standard layout with sidebar.
+		if !strings.Contains(output, "│") {
+			t.Error("forge peek should use standard sidebar layout")
+		}
+	})
 }
 
 func TestPeekModelForgeFeedSync(t *testing.T) {
