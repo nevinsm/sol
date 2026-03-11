@@ -310,11 +310,11 @@ func ClaudeConfigDir(worldDir, role, name string) string {
 // Credential handling (account parameter):
 //   - Non-empty account: writes access-token-only credentials (no refreshToken)
 //     copied from $SOL_HOME/.accounts/{account}/.credentials.json, and writes
-//     a .account metadata file with the account handle for the token broker.
+//     a .account metadata file with the account handle for the broker.
 //   - Empty account: falls back to ~/.claude/.credentials.json (backwards compat,
 //     uses symlink for legacy single-account setups).
 //
-// When using named accounts, the token broker is the sole consumer of refresh
+// When using named accounts, the broker is the sole consumer of refresh
 // tokens. Agents receive only access tokens and never attempt to refresh.
 func EnsureClaudeConfigDir(worldDir, role, name, account string) (string, error) {
 	dir := ClaudeConfigDir(worldDir, role, name)

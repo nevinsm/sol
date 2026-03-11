@@ -44,8 +44,8 @@ files.
 
 ### CLI
 
-- `sol token-broker run` — foreground broker loop
-- `sol token-broker status` — heartbeat-based status
+- `sol broker run` — foreground broker loop
+- `sol broker status` — heartbeat-based status
 
 ## Consequences
 

@@ -942,6 +942,42 @@ If no tethers remain, the agent goes idle.
 
 ## Processes:
 
+### `sol broker`
+
+Manage AI provider credentials and health
+
+**Subcommands:**
+
+| Command | Description |
+|---------|-------------|
+| `sol broker restart` | Restart the broker (stop then start) |
+| `sol broker run` | Run the broker loop (foreground) |
+| `sol broker start` | Start the broker as a background process |
+| `sol broker status` | Show broker status from heartbeat |
+| `sol broker stop` | Stop the running broker |
+
+#### `sol broker run`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--interval` | string | 5m | patrol interval |
+| `--refresh-margin` | string | 30m | refresh tokens this long before expiry |
+
+#### `sol broker status`
+
+Show whether the broker process is running via its heartbeat file.
+
+Prints patrol count, account info, and refresh statistics.
+Use --json for machine-readable output.
+
+Exit codes:
+  0 - Broker is running
+  1 - Broker is not running
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
 ### `sol chronicle`
 
 Manage the event feed chronicle
@@ -1424,42 +1460,6 @@ Manage systemd user units for sol sphere daemons
 | `sol service status` | Show status of sol sphere daemon units |
 | `sol service stop` | Stop all sol sphere daemon units |
 | `sol service uninstall` | Stop, disable, and remove systemd user units |
-
-### `sol token-broker`
-
-Manage the token broker for centralized OAuth refresh
-
-**Subcommands:**
-
-| Command | Description |
-|---------|-------------|
-| `sol token-broker restart` | Restart the token broker (stop then start) |
-| `sol token-broker run` | Run the token broker loop (foreground) |
-| `sol token-broker start` | Start the token broker as a background process |
-| `sol token-broker status` | Show token broker status from heartbeat |
-| `sol token-broker stop` | Stop the running token broker |
-
-#### `sol token-broker run`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--interval` | string | 5m | patrol interval |
-| `--refresh-margin` | string | 30m | refresh tokens this long before expiry |
-
-#### `sol token-broker status`
-
-Show whether the token broker process is running via its heartbeat file.
-
-Prints patrol count, account info, and refresh statistics.
-Use --json for machine-readable output.
-
-Exit codes:
-  0 - Token broker is running
-  1 - Token broker is not running
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
 
 ### `sol up`
 

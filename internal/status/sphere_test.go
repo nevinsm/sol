@@ -380,7 +380,7 @@ func TestGatherSphereBrokerInfo(t *testing.T) {
 	defer pidCleanup()
 
 	// Write broker PID (current process — always alive).
-	writeDaemonPID(t, "token-broker", os.Getpid())
+	writeDaemonPID(t, "broker", os.Getpid())
 
 	// Write a fresh broker heartbeat.
 	hb := &broker.Heartbeat{
@@ -461,7 +461,7 @@ func TestGatherSpherePrefectRunning(t *testing.T) {
 	}
 }
 
-// writeDaemonPID writes a daemon PID file for testing (e.g. "consul", "token-broker").
+// writeDaemonPID writes a daemon PID file for testing (e.g. "consul", "broker").
 func writeDaemonPID(t *testing.T, name string, pid int) {
 	t.Helper()
 	dir := config.RuntimeDir()

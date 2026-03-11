@@ -918,7 +918,7 @@ source_repo = "/tmp/repo"
 `), 0o644)
 
 	// Write alive PID files for sphere daemons so checkSphereDaemons doesn't trigger.
-	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+	for _, name := range []string{"chronicle", "ledger", "broker"} {
 		writePIDFile(t, name, os.Getpid())
 	}
 
@@ -981,7 +981,7 @@ source_repo = "/tmp/repo"
 	}
 
 	// Write alive PID files for sphere daemons so checkSphereDaemons doesn't trigger.
-	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+	for _, name := range []string{"chronicle", "ledger", "broker"} {
 		writePIDFile(t, name, os.Getpid())
 	}
 
@@ -1017,7 +1017,7 @@ sleeping = true
 `), 0o644)
 
 	// Write alive PID files for sphere daemons so checkSphereDaemons doesn't trigger.
-	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+	for _, name := range []string{"chronicle", "ledger", "broker"} {
 		writePIDFile(t, name, os.Getpid())
 	}
 
@@ -1056,7 +1056,7 @@ source_repo = "/tmp/repo"
 	}
 
 	// Write alive PID files for sphere daemons so checkSphereDaemons doesn't trigger.
-	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+	for _, name := range []string{"chronicle", "ledger", "broker"} {
 		writePIDFile(t, name, os.Getpid())
 	}
 
@@ -1211,7 +1211,7 @@ source_repo = "/tmp/repo"
 `), 0o644)
 
 	// Write alive PID files for sphere daemons so checkSphereDaemons doesn't trigger.
-	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+	for _, name := range []string{"chronicle", "ledger", "broker"} {
 		writePIDFile(t, name, os.Getpid())
 	}
 
@@ -1424,7 +1424,7 @@ func TestCheckSphereDaemonsRestartsDeadDaemons(t *testing.T) {
 	sup.heartbeat()
 
 	// All sphere daemons now use startDaemonProcess (detached).
-	// Ledger + token-broker via checkSphereDaemons; chronicle via checkChronicleHealth.
+	// Ledger + broker via checkSphereDaemons; chronicle via checkChronicleHealth.
 	detachedCalls := tracker.getDetachedCalls()
 	foundLedger := false
 	foundBroker := false
@@ -1434,8 +1434,8 @@ func TestCheckSphereDaemonsRestartsDeadDaemons(t *testing.T) {
 			call[2] == "ledger" && call[3] == "run" {
 			foundLedger = true
 		}
-		if len(call) >= 4 && call[0] == "token-broker" && call[1] == "/usr/bin/sol" &&
-			call[2] == "token-broker" && call[3] == "run" {
+		if len(call) >= 4 && call[0] == "broker" && call[1] == "/usr/bin/sol" &&
+			call[2] == "broker" && call[3] == "run" {
 			foundBroker = true
 		}
 		if len(call) >= 4 && call[0] == "chronicle" && call[1] == "/usr/bin/sol" &&
@@ -1447,7 +1447,7 @@ func TestCheckSphereDaemonsRestartsDeadDaemons(t *testing.T) {
 		t.Error("expected ledger restart via startDaemonProcess, not found")
 	}
 	if !foundBroker {
-		t.Error("expected token-broker restart via startDaemonProcess, not found")
+		t.Error("expected broker restart via startDaemonProcess, not found")
 	}
 	if !foundChronicle {
 		t.Error("expected chronicle restart via startDaemonProcess, not found")
@@ -1469,7 +1469,7 @@ func TestCheckSphereDaemonsSkipsAlivePID(t *testing.T) {
 
 	// Write PID files with our own PID (alive).
 	myPID := os.Getpid()
-	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+	for _, name := range []string{"chronicle", "ledger", "broker"} {
 		writePIDFile(t, name, myPID)
 	}
 
@@ -1502,11 +1502,11 @@ func TestCheckSphereDaemonsSkipsAliveSession(t *testing.T) {
 	// Chronicle has a tmux session, ledger has a PID file (both alive).
 	mock.Start("sol-chronicle", "/tmp", "sol chronicle run", nil, "chronicle", "")
 	writePIDFile(t, "ledger", os.Getpid()) // our PID is known-alive
-	// Token-broker has no session (and no PID file) — should be restarted.
+	// Broker has no session (and no PID file) — should be restarted.
 
 	sup.heartbeat()
 
-	// Only token-broker should be restarted (chronicle has live session, ledger has live PID).
+	// Only broker should be restarted (chronicle has live session, ledger has live PID).
 	runCalls := tracker.getRunCalls()
 	for _, call := range runCalls {
 		if len(call) >= 2 && (call[1] == "chronicle" || call[1] == "ledger") {
@@ -1517,7 +1517,7 @@ func TestCheckSphereDaemonsSkipsAliveSession(t *testing.T) {
 	detachedCalls := tracker.getDetachedCalls()
 	foundBroker := false
 	for _, call := range detachedCalls {
-		if len(call) >= 1 && call[0] == "token-broker" {
+		if len(call) >= 1 && call[0] == "broker" {
 			foundBroker = true
 		}
 		if len(call) >= 1 && call[0] == "ledger" {
@@ -1525,7 +1525,7 @@ func TestCheckSphereDaemonsSkipsAliveSession(t *testing.T) {
 		}
 	}
 	if !foundBroker {
-		t.Error("expected token-broker restart (no session, no PID)")
+		t.Error("expected broker restart (no session, no PID)")
 	}
 }
 
@@ -1553,7 +1553,7 @@ func TestCheckSphereDaemonsRestartFailureNonFatal(t *testing.T) {
 	// All sphere daemons use startDaemonProcess (detached) in the merged state.
 	detachedCalls := tracker.getDetachedCalls()
 	if len(detachedCalls) < 3 {
-		t.Errorf("expected at least 3 startDaemonProcess calls (ledger + token-broker + chronicle), got %d", len(detachedCalls))
+		t.Errorf("expected at least 3 startDaemonProcess calls (ledger + broker + chronicle), got %d", len(detachedCalls))
 	}
 }
 
@@ -1597,12 +1597,12 @@ func TestCheckSphereDaemonsPeriodicity(t *testing.T) {
 	sup.runCommand = tracker.runCommand
 	sup.startDaemonProcess = tracker.startDaemonProcess
 
-	// Write alive PID files for chronicle and ledger so only token-broker triggers.
+	// Write alive PID files for chronicle and ledger so only broker triggers.
 	// This lets us count detachedCalls precisely.
 	myPID := os.Getpid()
 	writePIDFile(t, "chronicle", myPID)
 	writePIDFile(t, "ledger", myPID)
-	// token-broker has no PID — will be restarted each check.
+	// broker has no PID — will be restarted each check.
 
 	// Heartbeat 1 (count=1): should check sphere daemons.
 	sup.heartbeat()
@@ -1672,7 +1672,7 @@ func TestCheckSphereDaemonsDeadPIDTriggersRestart(t *testing.T) {
 	sup.startDaemonProcess = tracker.startDaemonProcess
 
 	// Write PID files with a dead PID (very high, certainly not running).
-	for _, name := range []string{"chronicle", "ledger", "token-broker"} {
+	for _, name := range []string{"chronicle", "ledger", "broker"} {
 		writePIDFile(t, name, 2147483647)
 	}
 
@@ -1682,7 +1682,7 @@ func TestCheckSphereDaemonsDeadPIDTriggersRestart(t *testing.T) {
 	detachedCalls := tracker.getDetachedCalls()
 
 	if len(detachedCalls) < 3 {
-		t.Errorf("expected at least 3 startDaemonProcess calls (ledger + token-broker + chronicle), got %d", len(detachedCalls))
+		t.Errorf("expected at least 3 startDaemonProcess calls (ledger + broker + chronicle), got %d", len(detachedCalls))
 	}
 }
 

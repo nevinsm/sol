@@ -35,7 +35,7 @@ var sphereDaemons = []sphereDaemon{
 	{name: "consul"},
 	{name: "chronicle"},
 	{name: "ledger"},
-	{name: "token-broker"},
+	{name: "broker"},
 }
 
 // worldServices are the per-world services started/stopped by sol up/down.

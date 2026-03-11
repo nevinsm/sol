@@ -14,7 +14,7 @@ func TestComponents(t *testing.T) {
 		"consul":       true,
 		"chronicle":    true,
 		"ledger":       true,
-		"token-broker": true,
+		"broker": true,
 	}
 	for _, c := range Components {
 		if !expected[c] {
@@ -31,7 +31,7 @@ func TestUnitName(t *testing.T) {
 		{"prefect", "sol-prefect.service"},
 		{"consul", "sol-consul.service"},
 		{"chronicle", "sol-chronicle.service"},
-		{"token-broker", "sol-token-broker.service"},
+		{"broker", "sol-broker.service"},
 	}
 	for _, tt := range tests {
 		got := UnitName(tt.component)
@@ -74,7 +74,7 @@ func TestGenerateUnitPrefectDependencies(t *testing.T) {
 		"sol-consul.service",
 		"sol-chronicle.service",
 		"sol-ledger.service",
-		"sol-token-broker.service",
+		"sol-broker.service",
 	}
 	for _, dep := range depUnits {
 		if !strings.Contains(content, dep) {
@@ -107,7 +107,7 @@ func TestGenerateUnitPrefectDependencies(t *testing.T) {
 }
 
 func TestGenerateUnitNonPrefectNoDependencies(t *testing.T) {
-	nonPrefect := []string{"consul", "chronicle", "ledger", "token-broker"}
+	nonPrefect := []string{"consul", "chronicle", "ledger", "broker"}
 	for _, comp := range nonPrefect {
 		content, err := GenerateUnit(comp, "/usr/local/bin/sol", "/home/user/sol")
 		if err != nil {
