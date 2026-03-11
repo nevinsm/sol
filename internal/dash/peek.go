@@ -76,6 +76,9 @@ type peekModel struct {
 	forgeFeed  *feedModel          // dedicated forge-filtered feed (nil when not forge peek)
 	forgeInfo  *status.ForgeInfo   // forge heartbeat data for idle state display
 	solHome    string              // needed for forge feed initialization
+
+	// Source-filtered feed for non-peekable items with a source (e.g., sphere processes).
+	sourceFeed *feedModel // nil when selected item has no source or is peekable
 }
 
 func newPeekModel(mgr *session.Manager, solHome string) peekModel {
@@ -99,6 +102,7 @@ func (pm *peekModel) enter(msg peekMsg) tea.Cmd {
 	pm.scrollOffset = 0
 	pm.forgeFeed = nil
 	pm.forgeInfo = nil
+	pm.sourceFeed = nil
 
 	// Clamp cursor.
 	if pm.cursor >= len(pm.items) {
@@ -110,6 +114,8 @@ func (pm *peekModel) enter(msg peekMsg) tea.Cmd {
 
 	// Initialize forge feed if the selected item is forge.
 	pm.syncForgeFeed()
+	// Initialize source feed for non-peekable items with a source.
+	pm.syncSourceFeed()
 
 	// Sync spinners for alive items.
 	pm.itemSpinners = make(map[string]spinner.Model)
@@ -148,6 +154,26 @@ func (pm *peekModel) syncForgeFeed() {
 	}
 }
 
+// syncSourceFeed initializes or clears the source-filtered feed based on the
+// currently selected item. Used for non-peekable items with a source field
+// (e.g., sphere processes) to show their event feed in the right panel.
+func (pm *peekModel) syncSourceFeed() {
+	if pm.cursor >= len(pm.items) {
+		pm.sourceFeed = nil
+		return
+	}
+	item := pm.items[pm.cursor]
+	// Only create a source feed for non-peekable items with a source that
+	// aren't handled by the dedicated forge feed.
+	if item.source != "" && !item.peekable && !item.isForge && pm.solHome != "" {
+		fm := newFeedModelWithSource(pm.solHome, pm.world, item.source)
+		fm.loadInitial()
+		pm.sourceFeed = &fm
+	} else {
+		pm.sourceFeed = nil
+	}
+}
+
 // selectedIsForge returns true if the currently selected peek item is forge.
 func (pm peekModel) selectedIsForge() bool {
 	if pm.cursor >= len(pm.items) {
@@ -171,6 +197,7 @@ func (pm peekModel) update(msg tea.KeyMsg) (peekModel, tea.Cmd) {
 			pm.capture = "" // clear stale capture while switching
 			pm.adjustScroll()
 			pm.syncForgeFeed()
+			pm.syncSourceFeed()
 		}
 
 	case "down", "j":
@@ -183,6 +210,7 @@ func (pm peekModel) update(msg tea.KeyMsg) (peekModel, tea.Cmd) {
 			pm.capture = ""
 			pm.adjustScroll()
 			pm.syncForgeFeed()
+			pm.syncSourceFeed()
 		}
 
 	case "enter", "a":
@@ -327,6 +355,54 @@ func (pm peekModel) view(feedView string) string {
 
 	return b.String()
 }
+
+// renderSourceFeedPane renders a source-filtered event feed in the right panel
+// for non-peekable items that have a source field (e.g., sphere processes).
+func (pm peekModel) renderSourceFeedPane(maxHeight, maxWidth int) []string {
+	if pm.cursor >= len(pm.items) {
+		return nil
+	}
+	item := pm.items[pm.cursor]
+
+	header := " " + focusStyle.Render(item.name) + "  " + headerStyle.Render("Events")
+	lines := []string{header}
+
+	if pm.sourceFeed == nil || len(pm.sourceFeed.events) == 0 {
+		lines = append(lines, "")
+		lines = append(lines, " "+dimStyle.Render(fmt.Sprintf("No recent %s events", item.source)))
+		for len(lines) < maxHeight {
+			lines = append(lines, "")
+		}
+		return lines
+	}
+
+	// Show events most-recent-first, filling available height.
+	availHeight := maxHeight - 1 // minus header
+	shown := availHeight
+	if shown > len(pm.sourceFeed.events) {
+		shown = len(pm.sourceFeed.events)
+	}
+
+	level := pm.sourceFeed.fadeLevel()
+	highlightThreshold := len(pm.sourceFeed.events) - pm.sourceFeed.newCount
+
+	for i := len(pm.sourceFeed.events) - 1; i >= len(pm.sourceFeed.events)-shown; i-- {
+		line := formatEvent(pm.sourceFeed.events[i], maxWidth)
+		if pm.sourceFeed.newCount > 0 && i >= highlightThreshold && level > 0 {
+			lines = append(lines, feedHighlightAtLevel(level).Render(line))
+		} else {
+			lines = append(lines, dimStyle.Render(line))
+		}
+	}
+
+	// Pad to maxHeight.
+	for len(lines) < maxHeight {
+		lines = append(lines, "")
+	}
+
+	return lines
+}
+
 
 // renderItemList renders the left panel item list with categories.
 func (pm peekModel) renderItemList(maxHeight int) []string {
@@ -485,6 +561,10 @@ func (pm peekModel) renderCapture(maxHeight int) []string {
 					lines = append(lines, " "+warnStyle.Render("⏸ Forge is paused"))
 				}
 			}
+		} else if item.source != "" && pm.sourceFeed != nil {
+			// If the item has a source, show a source-filtered event feed
+			// instead of the generic "No active session" message.
+			return pm.renderSourceFeedPane(maxHeight, rightWidth)
 		} else {
 			// Show "No active session" message.
 			lines = append(lines, "")
