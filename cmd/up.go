@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
@@ -419,11 +420,14 @@ func startWorldServicesBatch(solBin string, worlds []string) bool {
 		for _, svc := range worldServices {
 			r := result{world: world, service: svc}
 
-			// Check if already running: sentinel uses PID file, others use tmux session.
+			// Check if already running: sentinel and forge use PID files, others use tmux session.
 			alreadyRunning := false
 			if svc == "sentinel" {
 				pid := sentinel.ReadPID(world)
 				alreadyRunning = pid > 0 && sentinel.IsRunning(pid)
+			} else if svc == "forge" {
+				pid := forge.ReadPID(world)
+				alreadyRunning = pid > 0 && forge.IsRunning(pid)
 			} else {
 				sessName := config.SessionName(world, svc)
 				alreadyRunning = mgr.Exists(sessName)
@@ -519,7 +523,12 @@ func stopSphereDaemons() {
 	}
 	var results []result
 
-	for _, d := range sphereDaemons {
+	// Stop in reverse order: non-prefect daemons first, then prefect last.
+	// This ensures each process is individually stopped and reported before
+	// prefect's shutdown cascade fires (which would kill them, causing
+	// misleading "not running" output).
+	for i := len(sphereDaemons) - 1; i >= 0; i-- {
+		d := sphereDaemons[i]
 		r := result{name: d.name}
 		stopped := false
 
@@ -616,6 +625,20 @@ func stopWorldServicesBatch(worlds []string) {
 				} else {
 					r.status = "failed"
 					r.err = err
+				}
+			} else if svc == "forge" {
+				// Forge is a direct process — stop via PID.
+				pid := forge.ReadPID(world)
+				if pid <= 0 || !forge.IsRunning(pid) {
+					r.status = "not running"
+					results = append(results, r)
+					continue
+				}
+				if err := forge.StopProcess(world, 10*time.Second); err != nil {
+					r.status = "failed"
+					r.err = err
+				} else {
+					r.status = "stopped"
 				}
 			} else {
 				// Session-based service — stop via tmux.
