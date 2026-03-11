@@ -71,7 +71,7 @@ func (b *Broker) SetRefreshFn(fn RefreshFn) {
 
 // Run starts the broker loop. Blocks until context is cancelled.
 func (b *Broker) Run(ctx context.Context) error {
-	fmt.Fprintf(os.Stderr, "Token broker starting (patrol every %s, refresh margin %s)\n",
+	fmt.Fprintf(os.Stderr, "Broker starting (patrol every %s, refresh margin %s)\n",
 		b.cfg.PatrolInterval, b.cfg.RefreshMargin)
 
 	// Initial patrol immediately.
@@ -84,7 +84,7 @@ func (b *Broker) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			b.writeHeartbeat("stopping", 0, 0, 0, 0, "")
-			fmt.Fprintln(os.Stderr, "Token broker stopping")
+			fmt.Fprintln(os.Stderr, "Broker stopping")
 			return nil
 		case <-ticker.C:
 			b.patrol()

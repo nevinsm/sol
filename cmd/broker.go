@@ -24,14 +24,14 @@ var (
 )
 
 var tokenBrokerCmd = &cobra.Command{
-	Use:     "token-broker",
-	Short:   "Manage the token broker for centralized OAuth refresh",
+	Use:     "broker",
+	Short:   "Manage AI provider credentials and health",
 	GroupID: groupProcesses,
 }
 
 var tokenBrokerRunCmd = &cobra.Command{
 	Use:          "run",
-	Short:        "Run the token broker loop (foreground)",
+	Short:        "Run the broker loop (foreground)",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -65,15 +65,15 @@ var tokenBrokerRunCmd = &cobra.Command{
 
 var tokenBrokerStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show token broker status from heartbeat",
-	Long: `Show whether the token broker process is running via its heartbeat file.
+	Short: "Show broker status from heartbeat",
+	Long: `Show whether the broker process is running via its heartbeat file.
 
 Prints patrol count, account info, and refresh statistics.
 Use --json for machine-readable output.
 
 Exit codes:
-  0 - Token broker is running
-  1 - Token broker is not running`,
+  0 - Broker is running
+  1 - Broker is not running`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hb, err := broker.ReadHeartbeat()
@@ -81,7 +81,7 @@ Exit codes:
 			return err
 		}
 		if hb == nil {
-			fmt.Println("Token broker is not running.")
+			fmt.Println("Broker is not running.")
 			return &exitError{code: 1}
 		}
 
@@ -108,7 +108,7 @@ Exit codes:
 		}
 
 		ago := time.Since(hb.Timestamp).Round(time.Second)
-		fmt.Printf("Token broker: %s\n", hb.Status)
+		fmt.Printf("Broker: %s\n", hb.Status)
 		fmt.Printf("Last patrol: %s ago (patrol #%d)\n", ago, hb.PatrolCount)
 		fmt.Printf("Accounts: %d\n", hb.Accounts)
 		fmt.Printf("Agent dirs managed: %d\n", hb.AgentDirs)
@@ -121,7 +121,7 @@ Exit codes:
 		}
 
 		if hb.IsStale(10 * time.Minute) {
-			fmt.Println("\nWarning: heartbeat is stale — token broker may not be running")
+			fmt.Println("\nWarning: heartbeat is stale — broker may not be running")
 		}
 		return nil
 	},
@@ -129,18 +129,18 @@ Exit codes:
 
 var tokenBrokerStartCmd = &cobra.Command{
 	Use:          "start",
-	Short:        "Start the token broker as a background process",
+	Short:        "Start the broker as a background process",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pid := readDaemonPID("token-broker")
+		pid := readDaemonPID("broker")
 		if pid > 0 && prefect.IsRunning(pid) {
-			fmt.Printf("Token broker already running (pid %d)\n", pid)
+			fmt.Printf("Broker already running (pid %d)\n", pid)
 			return nil
 		}
 
 		// Clear stale PID if any.
-		clearDaemonPID("token-broker")
+		clearDaemonPID("broker")
 
 		solBin, err := os.Executable()
 		if err != nil {
@@ -151,13 +151,13 @@ var tokenBrokerStartCmd = &cobra.Command{
 			return fmt.Errorf("failed to create runtime directory: %w", err)
 		}
 
-		logPath := daemonLogPath("token-broker")
+		logPath := daemonLogPath("broker")
 		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
 			return fmt.Errorf("failed to open log file: %w", err)
 		}
 
-		proc := exec.Command(solBin, "token-broker", "run")
+		proc := exec.Command(solBin, "broker", "run")
 		proc.Stdout = logFile
 		proc.Stderr = logFile
 		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
@@ -165,22 +165,22 @@ var tokenBrokerStartCmd = &cobra.Command{
 
 		if err := proc.Start(); err != nil {
 			logFile.Close()
-			return fmt.Errorf("failed to start token broker: %w", err)
+			return fmt.Errorf("failed to start broker: %w", err)
 		}
 
 		newPID := proc.Process.Pid
 		logFile.Close()
 
-		_ = writeDaemonPID("token-broker", newPID)
+		_ = writeDaemonPID("broker", newPID)
 		_ = proc.Process.Release()
 
 		// Wait briefly and confirm alive.
 		time.Sleep(time.Second)
 		if prefect.IsRunning(newPID) {
-			fmt.Printf("Token broker started (pid %d)\n", newPID)
+			fmt.Printf("Broker started (pid %d)\n", newPID)
 		} else {
-			clearDaemonPID("token-broker")
-			return fmt.Errorf("token broker exited immediately (check %s)", logPath)
+			clearDaemonPID("broker")
+			return fmt.Errorf("broker exited immediately (check %s)", logPath)
 		}
 
 		return nil
@@ -189,43 +189,43 @@ var tokenBrokerStartCmd = &cobra.Command{
 
 var tokenBrokerStopCmd = &cobra.Command{
 	Use:          "stop",
-	Short:        "Stop the running token broker",
+	Short:        "Stop the running broker",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pid := readDaemonPID("token-broker")
+		pid := readDaemonPID("broker")
 		if pid == 0 {
-			fmt.Println("Token broker not running")
+			fmt.Println("Broker not running")
 			return nil
 		}
 		if !prefect.IsRunning(pid) {
-			clearDaemonPID("token-broker")
-			fmt.Printf("Token broker not running (stale PID %d removed)\n", pid)
+			clearDaemonPID("broker")
+			fmt.Printf("Broker not running (stale PID %d removed)\n", pid)
 			return nil
 		}
 		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-			return fmt.Errorf("failed to send SIGTERM to token broker (pid %d): %w", pid, err)
+			return fmt.Errorf("failed to send SIGTERM to broker (pid %d): %w", pid, err)
 		}
-		clearDaemonPID("token-broker")
-		fmt.Printf("Sent SIGTERM to token broker (pid %d)\n", pid)
+		clearDaemonPID("broker")
+		fmt.Printf("Sent SIGTERM to broker (pid %d)\n", pid)
 		return nil
 	},
 }
 
 var tokenBrokerRestartCmd = &cobra.Command{
 	Use:          "restart",
-	Short:        "Restart the token broker (stop then start)",
+	Short:        "Restart the broker (stop then start)",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Stop if running.
-		pid := readDaemonPID("token-broker")
+		pid := readDaemonPID("broker")
 		if pid > 0 && prefect.IsRunning(pid) {
 			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-				return fmt.Errorf("failed to send SIGTERM to token broker (pid %d): %w", pid, err)
+				return fmt.Errorf("failed to send SIGTERM to broker (pid %d): %w", pid, err)
 			}
-			clearDaemonPID("token-broker")
-			fmt.Fprintf(os.Stderr, "Sent SIGTERM to token broker (pid %d), waiting for exit...\n", pid)
+			clearDaemonPID("broker")
+			fmt.Fprintf(os.Stderr, "Sent SIGTERM to broker (pid %d), waiting for exit...\n", pid)
 			for i := 0; i < 10; i++ {
 				time.Sleep(500 * time.Millisecond)
 				if !prefect.IsRunning(pid) {
@@ -233,7 +233,7 @@ var tokenBrokerRestartCmd = &cobra.Command{
 				}
 			}
 		} else if pid > 0 {
-			clearDaemonPID("token-broker")
+			clearDaemonPID("broker")
 		}
 
 		// Start.

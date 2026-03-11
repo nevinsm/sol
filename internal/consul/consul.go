@@ -107,7 +107,7 @@ const orphanConsecutiveThreshold = 2
 // Note: consul is a PID-managed process (not a tmux session) and is excluded.
 var infrastructureSessions = []string{
 	"sol-chronicle",
-	"sol-token-broker",
+	"sol-broker",
 }
 
 // Consul is the sphere-level patrol process.

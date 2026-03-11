@@ -313,7 +313,7 @@ type ConsulInfo struct {
 	Stale        bool   `json:"stale"`
 }
 
-// BrokerInfo holds token broker process state.
+// BrokerInfo holds broker process state.
 type BrokerInfo struct {
 	Running      bool   `json:"running"`
 	HeartbeatAge string `json:"heartbeat_age,omitempty"`

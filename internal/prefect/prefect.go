@@ -98,7 +98,7 @@ type sphereDaemonSpec struct {
 // Consul and chronicle are supervised separately via heartbeat file staleness.
 var supervisedSphereDaemons = []sphereDaemonSpec{
 	{Name: "ledger", Args: []string{"ledger", "run"}, Detached: true},
-	{Name: "token-broker", Args: []string{"token-broker", "run"}, Detached: true},
+	{Name: "broker", Args: []string{"broker", "run"}, Detached: true},
 }
 
 // Prefect monitors agent sessions and restarts crashed ones.
@@ -290,7 +290,7 @@ func (s *Prefect) heartbeat() {
 		s.checkWorldInfrastructure()
 	}
 
-	// Check sphere daemons (ledger/token-broker) on first heartbeat and every 3rd cycle.
+	// Check sphere daemons (ledger/broker) on first heartbeat and every 3rd cycle.
 	if s.heartbeatCount == 1 || s.heartbeatCount%3 == 0 {
 		s.checkSphereDaemons()
 	}
@@ -657,7 +657,7 @@ func (s *Prefect) checkSentinelHealth(world string) {
 }
 
 // checkSphereDaemons checks whether supervised sphere daemons (ledger,
-// token-broker) are alive and restarts any that are dead. Uses PID files and tmux
+// broker) are alive and restarts any that are dead. Uses PID files and tmux
 // session presence for liveness detection. Additionally checks ledger heartbeat
 // staleness (like forge).
 // Chronicle is supervised separately via checkChronicleHealth (heartbeat-based).

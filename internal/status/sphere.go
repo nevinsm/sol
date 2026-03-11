@@ -174,13 +174,13 @@ func GatherChronicleInfo() ChronicleInfo {
 	return info
 }
 
-// GatherBrokerInfo reads token broker PID + heartbeat state.
+// GatherBrokerInfo reads broker PID + heartbeat state.
 // The broker is a Go process (not a tmux session), so PID liveness is the canonical
 // running signal. Heartbeat data is populated regardless for diagnostic value.
 func GatherBrokerInfo() BrokerInfo {
 	info := BrokerInfo{}
 
-	pid := prefect.ReadDaemonPID("token-broker")
+	pid := prefect.ReadDaemonPID("broker")
 	if pid > 0 && prefect.IsRunning(pid) {
 		info.Running = true
 	}
