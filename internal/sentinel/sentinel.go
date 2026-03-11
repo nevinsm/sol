@@ -565,13 +565,34 @@ func (w *Sentinel) checkClosedWritTethers(agents []store.Agent, reapedCount *int
 
 	for _, agent := range agents {
 		tetheredWrits, err := tether.List(w.config.World, agent.Name, agent.Role)
-		if err != nil || len(tetheredWrits) == 0 {
+		if err != nil {
+			if w.logger != nil {
+				w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+					"agent":  agent.ID,
+					"action": "list_tethered_writs",
+					"error":  err.Error(),
+				})
+			}
+			continue
+		}
+		if len(tetheredWrits) == 0 {
 			continue
 		}
 
 		for _, writID := range tetheredWrits {
 			writ, err := w.worldStore.GetWrit(writID)
-			if err != nil || writ.Status != "closed" {
+			if err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+						"agent":  agent.ID,
+						"writ":   writID,
+						"action": "get_writ_for_closed_check",
+						"error":  err.Error(),
+					})
+				}
+				continue
+			}
+			if writ.Status != "closed" {
 				continue
 			}
 
@@ -1001,10 +1022,21 @@ func (w *Sentinel) handleOrphanedWorking(agent store.Agent) error {
 		if agent.ActiveWrit != "" && w.worldStore != nil {
 			item, err := w.worldStore.GetWrit(agent.ActiveWrit)
 			if err == nil && item.Status == "tethered" {
-				w.worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
+				if updateErr := w.worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
 					Status:   "open",
 					Assignee: "-",
-				})
+				}); updateErr != nil {
+					// Agent is already deleted — we can't fail the whole operation.
+					// Log so the orphaned writ is visible for manual recovery.
+					if w.logger != nil {
+						w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+							"agent":  agent.ID,
+							"writ":   agent.ActiveWrit,
+							"action": "return_orphaned_writ_to_open",
+							"error":  updateErr.Error(),
+						})
+					}
+				}
 			}
 			// If writ is "done", leave it — MR pipeline will handle it.
 		}
