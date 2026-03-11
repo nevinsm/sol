@@ -459,6 +459,8 @@ func (wm worldModel) handlePeek(data *status.WorldStatus) (worldModel, tea.Cmd) 
 		initialCursor = wm.outpostCursor
 	case sectionEnvoys:
 		initialCursor = len(data.Agents) + wm.envoyCursor
+	case sectionMergeQueue:
+		initialCursor = len(data.Agents) + len(data.Envoys) // Forge is first world process
 	}
 
 	msg := peekMsg{
