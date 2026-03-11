@@ -128,14 +128,19 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 	return result
 }
 
-// GatherConsulInfo reads consul heartbeat state.
-// Consul is a Go process (not a tmux session), so heartbeat is the canonical signal.
+// GatherConsulInfo reads consul PID + heartbeat state.
+// Consul is a Go process (not a tmux session), so PID liveness is the canonical
+// running signal. Heartbeat data is populated regardless for diagnostic value.
 func GatherConsulInfo() ConsulInfo {
 	info := ConsulInfo{}
 
+	pid := prefect.ReadDaemonPID("consul")
+	if pid > 0 && prefect.IsRunning(pid) {
+		info.Running = true
+	}
+
 	hb, err := consul.ReadHeartbeat(config.Home())
 	if err == nil && hb != nil {
-		info.Running = true
 		info.PatrolCount = hb.PatrolCount
 
 		age := time.Since(hb.Timestamp)
@@ -159,9 +164,6 @@ func GatherChronicleInfo() ChronicleInfo {
 
 	hb, err := chronicle.ReadHeartbeat()
 	if err == nil && hb != nil {
-		if !info.Running {
-			info.Running = true // heartbeat exists, process likely alive
-		}
 		info.EventsProcessed = hb.EventsProcessed
 
 		age := time.Since(hb.Timestamp)
@@ -172,14 +174,19 @@ func GatherChronicleInfo() ChronicleInfo {
 	return info
 }
 
-// GatherBrokerInfo reads token broker heartbeat state.
-// The broker is a Go process (not a tmux session), so heartbeat is the canonical signal.
+// GatherBrokerInfo reads token broker PID + heartbeat state.
+// The broker is a Go process (not a tmux session), so PID liveness is the canonical
+// running signal. Heartbeat data is populated regardless for diagnostic value.
 func GatherBrokerInfo() BrokerInfo {
 	info := BrokerInfo{}
 
+	pid := prefect.ReadDaemonPID("token-broker")
+	if pid > 0 && prefect.IsRunning(pid) {
+		info.Running = true
+	}
+
 	hb, err := broker.ReadHeartbeat()
 	if err == nil && hb != nil {
-		info.Running = true
 		info.PatrolCount = hb.PatrolCount
 		info.Accounts = hb.Accounts
 		info.AgentDirs = hb.AgentDirs

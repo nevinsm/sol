@@ -309,6 +309,9 @@ func TestGatherSphereConsulInfo(t *testing.T) {
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
+	// Write consul PID (current process — always alive).
+	writeDaemonPID(t, "consul", os.Getpid())
+
 	// Write a fresh consul heartbeat.
 	hb := &consul.Heartbeat{
 		Timestamp:   time.Now().UTC(),
@@ -375,6 +378,9 @@ func TestGatherSphereBrokerInfo(t *testing.T) {
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
+
+	// Write broker PID (current process — always alive).
+	writeDaemonPID(t, "token-broker", os.Getpid())
 
 	// Write a fresh broker heartbeat.
 	hb := &broker.Heartbeat{
@@ -452,6 +458,18 @@ func TestGatherSpherePrefectRunning(t *testing.T) {
 	}
 	if result.Prefect.PID != os.Getpid() {
 		t.Errorf("Prefect.PID = %d, want %d", result.Prefect.PID, os.Getpid())
+	}
+}
+
+// writeDaemonPID writes a daemon PID file for testing (e.g. "consul", "token-broker").
+func writeDaemonPID(t *testing.T, name string, pid int) {
+	t.Helper()
+	dir := config.RuntimeDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name+".pid"), []byte(fmt.Sprintf("%d", pid)), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
