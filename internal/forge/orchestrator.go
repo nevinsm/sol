@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -377,7 +378,7 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 			s.lastError = ""
 			s.fl.Log("MERGED", fmt.Sprintf("%s  %s", mr.ID, truncate(result.Summary, 200)))
 			if s.eventLog != nil {
-				s.eventLog.Emit("merged", "forge", "forge", "both", map[string]string{
+				s.eventLog.Emit(events.EventMerged, "forge", "forge", "both", map[string]string{
 					"merge_request_id": mr.ID,
 				})
 			}
@@ -394,7 +395,7 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 			s.forge.logger.Error("mark-failed failed", "mr", mr.ID, "error", err)
 		}
 		if s.eventLog != nil {
-			s.eventLog.Emit("merge_failed", "forge", "forge", "both", map[string]string{
+			s.eventLog.Emit(events.EventMergeFailed, "forge", "forge", "both", map[string]string{
 				"merge_request_id": mr.ID,
 				"writ_id":          mr.WritID,
 				"reason":           truncate(result.Summary, 500),
