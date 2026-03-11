@@ -537,8 +537,11 @@ func ClaudeDefaultsDir() string {
 }
 
 // EnsureClaudeDefaults seeds the embedded default settings.json and
-// helper scripts into $SOL_HOME/.claude-defaults/ if they don't already exist.
-// Existing files are preserved — use `sol config claude` to customize.
+// helper scripts into $SOL_HOME/.claude-defaults/. Sol owns settings.json
+// and always overwrites it from the embedded template so new keys (like
+// apiKeyHelper) propagate to existing installations. User overrides go in
+// settings.local.json in the same .claude-defaults/ directory — sol never
+// writes or modifies that file.
 func EnsureClaudeDefaults() error {
 	dir := ClaudeDefaultsDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -559,22 +562,21 @@ func EnsureClaudeDefaults() error {
 		return fmt.Errorf("failed to write apikey-helper.sh: %w", err)
 	}
 
-	// Write settings.json only if it doesn't exist — preserve customizations.
+	// Write settings.json (always overwrite — sol owns this file).
+	// User overrides go in settings.local.json in the same directory.
 	settingsPath := filepath.Join(dir, "settings.json")
-	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
-		settingsContent := strings.ReplaceAll(
-			string(defaults.SettingsJSON),
-			"{{STATUSLINE_PATH}}",
-			statuslinePath,
-		)
-		settingsContent = strings.ReplaceAll(
-			settingsContent,
-			"{{API_KEY_HELPER_PATH}}",
-			apiKeyHelperPath,
-		)
-		if err := os.WriteFile(settingsPath, []byte(settingsContent), 0o644); err != nil {
-			return fmt.Errorf("failed to write settings.json: %w", err)
-		}
+	settingsContent := strings.ReplaceAll(
+		string(defaults.SettingsJSON),
+		"{{STATUSLINE_PATH}}",
+		statuslinePath,
+	)
+	settingsContent = strings.ReplaceAll(
+		settingsContent,
+		"{{API_KEY_HELPER_PATH}}",
+		apiKeyHelperPath,
+	)
+	if err := os.WriteFile(settingsPath, []byte(settingsContent), 0o644); err != nil {
+		return fmt.Errorf("failed to write settings.json: %w", err)
 	}
 
 	return nil
@@ -583,6 +585,8 @@ func EnsureClaudeDefaults() error {
 // seedClaudeSettings copies settings.json from .claude-defaults/ into the
 // given agent config dir. Skips silently if .claude-defaults/settings.json
 // doesn't exist (no defaults configured yet — not an error).
+// Also copies settings.local.json from .claude-defaults/ if present — this
+// is the user customization surface; sol never writes it, only distributes it.
 func seedClaudeSettings(agentConfigDir string) {
 	src := filepath.Join(ClaudeDefaultsDir(), "settings.json")
 	data, err := os.ReadFile(src)
@@ -592,6 +596,16 @@ func seedClaudeSettings(agentConfigDir string) {
 	}
 	dst := filepath.Join(agentConfigDir, "settings.json")
 	_ = os.WriteFile(dst, data, 0o644)
+
+	// Copy settings.local.json if present — user customizations layered on top.
+	localSrc := filepath.Join(ClaudeDefaultsDir(), "settings.local.json")
+	localData, err := os.ReadFile(localSrc)
+	if err != nil {
+		// No user overrides file — skip silently.
+		return
+	}
+	localDst := filepath.Join(agentConfigDir, "settings.local.json")
+	_ = os.WriteFile(localDst, localData, 0o644)
 }
 
 // EnsureDirs creates .store/ and .runtime/ if they don't exist.

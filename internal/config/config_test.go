@@ -432,6 +432,97 @@ func TestEnsureClaudeDefaultsIdempotent(t *testing.T) {
 	}
 }
 
+func TestEnsureClaudeDefaultsOverwritesStale(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	defaultsDir := filepath.Join(dir, ".claude-defaults")
+	if err := os.MkdirAll(defaultsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a stale settings.json that is missing apiKeyHelper.
+	stalePath := filepath.Join(defaultsDir, "settings.json")
+	staleContent := `{"statusLine": {"enabled": true}, "gitAttribution": false}`
+	if err := os.WriteFile(stalePath, []byte(staleContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// EnsureClaudeDefaults should overwrite the stale file.
+	if err := EnsureClaudeDefaults(); err != nil {
+		t.Fatalf("EnsureClaudeDefaults() error: %v", err)
+	}
+
+	data, err := os.ReadFile(stalePath)
+	if err != nil {
+		t.Fatalf("expected settings.json to exist: %v", err)
+	}
+
+	// Verify apiKeyHelper is now present (was missing in the stale version).
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("settings.json is not valid JSON: %v", err)
+	}
+	if _, ok := parsed["apiKeyHelper"]; !ok {
+		t.Error("settings.json should have been overwritten with current template containing apiKeyHelper")
+	}
+}
+
+func TestSeedClaudeSettingsCopiesLocalSettings(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Seed defaults so settings.json exists.
+	if err := EnsureClaudeDefaults(); err != nil {
+		t.Fatalf("EnsureClaudeDefaults() error: %v", err)
+	}
+
+	// Write a settings.local.json in .claude-defaults/.
+	localContent := `{"theme": "dark"}`
+	localSrc := filepath.Join(solHome, ".claude-defaults", "settings.local.json")
+	if err := os.WriteFile(localSrc, []byte(localContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	agentConfigDir := t.TempDir()
+	seedClaudeSettings(agentConfigDir)
+
+	// Verify settings.local.json was copied to the agent config dir.
+	localDst := filepath.Join(agentConfigDir, "settings.local.json")
+	data, err := os.ReadFile(localDst)
+	if err != nil {
+		t.Fatalf("expected settings.local.json in agent config dir: %v", err)
+	}
+	if string(data) != localContent {
+		t.Errorf("settings.local.json content = %q, want %q", string(data), localContent)
+	}
+}
+
+func TestSeedClaudeSettingsSkipsLocalSettingsWhenAbsent(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Seed defaults so settings.json exists but no settings.local.json.
+	if err := EnsureClaudeDefaults(); err != nil {
+		t.Fatalf("EnsureClaudeDefaults() error: %v", err)
+	}
+
+	agentConfigDir := t.TempDir()
+	seedClaudeSettings(agentConfigDir)
+
+	// Verify settings.local.json was NOT created in the agent config dir.
+	localDst := filepath.Join(agentConfigDir, "settings.local.json")
+	if _, err := os.Stat(localDst); !os.IsNotExist(err) {
+		t.Error("settings.local.json should not be created when absent from defaults dir")
+	}
+
+	// settings.json should still have been copied.
+	settingsDst := filepath.Join(agentConfigDir, "settings.json")
+	if _, err := os.Stat(settingsDst); os.IsNotExist(err) {
+		t.Error("settings.json should have been copied to agent config dir")
+	}
+}
+
 func TestEnsureClaudeConfigDirCopiesSettings(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
