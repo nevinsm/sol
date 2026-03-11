@@ -259,7 +259,6 @@ func (s *Store) IsWritBlockedByCaravan(writID, world string,
 		if err != nil {
 			return false, fmt.Errorf("failed to query lower phase items: %w", err)
 		}
-		defer lowerRows.Close()
 
 		type lowerItem struct {
 			writID string
@@ -269,10 +268,16 @@ func (s *Store) IsWritBlockedByCaravan(writID, world string,
 		for lowerRows.Next() {
 			var li lowerItem
 			if err := lowerRows.Scan(&li.writID, &li.world); err != nil {
+				lowerRows.Close()
 				return false, fmt.Errorf("failed to scan lower phase item: %w", err)
 			}
 			lowerItems = append(lowerItems, li)
 		}
+		if err := lowerRows.Err(); err != nil {
+			lowerRows.Close()
+			return false, fmt.Errorf("failed iterating lower phase items: %w", err)
+		}
+		lowerRows.Close()
 
 		// Check if any lower-phase item is not closed.
 		// Group by world for efficiency.
@@ -286,17 +291,23 @@ func (s *Store) IsWritBlockedByCaravan(writID, world string,
 			if err != nil {
 				return false, fmt.Errorf("failed to open world %q: %w", w, err)
 			}
-			defer ws.Close()
 
+			blocked := false
 			for _, wid := range writIDs {
 				item, err := ws.GetWrit(wid)
 				if err != nil {
 					// If the writ is not found, treat it as blocking (conservative).
+					ws.Close()
 					return true, nil
 				}
 				if item.Status != "closed" {
-					return true, nil
+					blocked = true
+					break
 				}
+			}
+			ws.Close()
+			if blocked {
+				return true, nil
 			}
 		}
 	}

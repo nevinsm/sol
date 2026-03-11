@@ -1,104 +1,9 @@
 package forge
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/nevinsm/sol/internal/protocol"
 )
-
-func TestInstallForgePersona(t *testing.T) {
-	t.Run("writes persona and hooks", func(t *testing.T) {
-		dir := t.TempDir()
-		world := "test-world"
-
-		// Set SOL_HOME so WorktreePath resolves (used by forgeHookConfig).
-		t.Setenv("SOL_HOME", dir)
-
-		if err := InstallForgePersona(dir, world); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		// Check CLAUDE.local.md exists and has persona content.
-		personaPath := filepath.Join(dir, "CLAUDE.local.md")
-		data, err := os.ReadFile(personaPath)
-		if err != nil {
-			t.Fatalf("failed to read persona: %v", err)
-		}
-		persona := string(data)
-
-		// Verify key persona sections.
-		mustContain(t, persona, "Forge Merge Engineer — test-world")
-		mustContain(t, persona, "What You Do")
-		mustContain(t, persona, "What You Do NOT Do")
-		mustContain(t, persona, "Conflict Resolution")
-		mustContain(t, persona, "Gate Failures")
-		mustContain(t, persona, ".forge-result.json")
-
-		// Check settings.local.json exists and has hook config.
-		settingsPath := filepath.Join(dir, ".claude", "settings.local.json")
-		settingsData, err := os.ReadFile(settingsPath)
-		if err != nil {
-			t.Fatalf("failed to read settings: %v", err)
-		}
-
-		var hookCfg protocol.HookConfig
-		if err := json.Unmarshal(settingsData, &hookCfg); err != nil {
-			t.Fatalf("failed to parse settings: %v", err)
-		}
-
-		// Verify PreToolUse hooks exist.
-		preTool, ok := hookCfg.Hooks["PreToolUse"]
-		if !ok || len(preTool) == 0 {
-			t.Fatal("PreToolUse hooks should be configured")
-		}
-
-		// First hook should block EnterPlanMode.
-		if preTool[0].Matcher != "EnterPlanMode" {
-			t.Errorf("first PreToolUse matcher = %q, want EnterPlanMode", preTool[0].Matcher)
-		}
-
-		// Verify PreCompact hook exists.
-		preCompact, ok := hookCfg.Hooks["PreCompact"]
-		if !ok || len(preCompact) == 0 {
-			t.Fatal("PreCompact hooks should be configured")
-		}
-		if !strings.Contains(preCompact[0].Hooks[0].Command, ".forge-injection.md") {
-			t.Errorf("PreCompact hook should cat injection file, got: %s", preCompact[0].Hooks[0].Command)
-		}
-	})
-
-	t.Run("idempotent — second call overwrites cleanly", func(t *testing.T) {
-		dir := t.TempDir()
-		world := "idempotent-world"
-
-		t.Setenv("SOL_HOME", dir)
-
-		// Install twice.
-		if err := InstallForgePersona(dir, world); err != nil {
-			t.Fatalf("first install: %v", err)
-		}
-		if err := InstallForgePersona(dir, world); err != nil {
-			t.Fatalf("second install: %v", err)
-		}
-
-		// Verify content is correct (not doubled or corrupted).
-		data, err := os.ReadFile(filepath.Join(dir, "CLAUDE.local.md"))
-		if err != nil {
-			t.Fatalf("failed to read persona: %v", err)
-		}
-		persona := string(data)
-
-		// Should appear exactly once.
-		count := strings.Count(persona, "Forge Merge Engineer")
-		if count != 1 {
-			t.Errorf("persona header appears %d times, want 1", count)
-		}
-	})
-}
 
 func TestForgePersonaContent(t *testing.T) {
 	persona := ForgePersonaContent("prod-world")
@@ -241,5 +146,18 @@ func TestForgeMergeRoleConfig(t *testing.T) {
 	dir := cfg.WorktreeDir("myworld", "anything")
 	if !strings.Contains(dir, "myworld") {
 		t.Errorf("WorktreeDir should contain world name, got: %s", dir)
+	}
+
+	// Verify persona content via RoleConfig.Persona.
+	personaBytes, err := cfg.Persona("test-world", "")
+	if err != nil {
+		t.Fatalf("Persona() error: %v", err)
+	}
+	persona := string(personaBytes)
+	if !strings.Contains(persona, "Forge Merge Engineer — test-world") {
+		t.Error("persona from RoleConfig should contain world name")
+	}
+	if !strings.Contains(persona, ".forge-result.json") {
+		t.Error("persona from RoleConfig should contain result file reference")
 	}
 }

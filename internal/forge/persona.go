@@ -125,32 +125,6 @@ func forgeHookConfig(world string) protocol.HookConfig {
 	}
 }
 
-// InstallForgePersona writes the forge merge persona and hook configuration
-// into the given worktree directory. This prepares the worktree for a forge
-// merge session.
-//
-// Files written:
-//   - CLAUDE.local.md at worktree root (persona content)
-//   - .claude/settings.local.json (hook configuration)
-//
-// This function is idempotent — safe to call before every merge session.
-func InstallForgePersona(worktreeDir, world string) error {
-	// Write persona to CLAUDE.local.md at worktree root.
-	persona := forgePersonaTemplate(world)
-	personaPath := filepath.Join(worktreeDir, "CLAUDE.local.md")
-	if err := os.WriteFile(personaPath, []byte(persona), 0o644); err != nil {
-		return fmt.Errorf("failed to write forge persona to %s: %w", personaPath, err)
-	}
-
-	// Write hook configuration to .claude/settings.local.json.
-	hookCfg := forgeHookConfig(world)
-	if err := protocol.WriteHookSettings(worktreeDir, hookCfg); err != nil {
-		return fmt.Errorf("failed to write forge hook settings: %w", err)
-	}
-
-	return nil
-}
-
 // CleanForgeResult removes the .forge-result.json file from the worktree.
 // Called before each merge session so stale results from previous runs don't
 // confuse the result reader. Ignores not-found errors (idempotent).
