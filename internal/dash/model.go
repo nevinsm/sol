@@ -221,6 +221,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.peekView.forgeFeed != nil {
 			m.peekView.forgeFeed.setHeight(msg.Height)
 		}
+		if m.peekView.sourceFeed != nil {
+			m.peekView.sourceFeed.setHeight(msg.Height)
+		}
 		m.ready = true
 		m.dirty = true
 
@@ -419,6 +422,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.peekView.forgeFeed != nil {
 			m.peekView.forgeFeed.decayAnimation()
 		}
+		// Decay source feed animation if active.
+		if m.peekView.sourceFeed != nil {
+			m.peekView.sourceFeed.decayAnimation()
+		}
 
 		// Route to active sub-view for spinner frame updates.
 		switch m.activeView() {
@@ -465,6 +472,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Refresh forge-specific feed if active.
 			if m.peekView.forgeFeed != nil {
 				m.peekView.forgeFeed.refresh()
+			}
+			// Refresh source-filtered feed if active.
+			if m.peekView.sourceFeed != nil {
+				m.peekView.sourceFeed.refresh()
 			}
 		}
 

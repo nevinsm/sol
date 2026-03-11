@@ -28,6 +28,7 @@ type processItem struct {
 	sessionName string // empty for PID-only processes
 	detail      string // formatted detail string
 	peekable    bool   // has a tmux session
+	source      string // event source filter for feed-based peek (e.g., "prefect", "consul")
 }
 
 // sphereModel handles the sphere overview.
@@ -92,12 +93,12 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 
 	// Build process items for focused list navigation.
 	sm.processItems = []processItem{
-		{name: "Prefect", running: data.Prefect.Running, required: true, detail: formatPrefectDetail(data.Prefect), peekable: false},
-		{name: "Consul", running: data.Consul.Running, required: true, detail: formatConsulDetail(data.Consul), peekable: false},
-		{name: "Chronicle", running: data.Chronicle.Running, required: false, detail: formatChronicleDetail(data.Chronicle), peekable: false},
-		{name: "Ledger", running: data.Ledger.Running, required: false, detail: formatLedgerDetail(data.Ledger), peekable: false},
-		{name: "Broker", running: data.Broker.Running, required: true, detail: formatBrokerDetail(data.Broker), peekable: false},
-		{name: "Senate", running: data.Senate.Running, required: false, sessionName: data.Senate.SessionName, detail: formatSenateDetail(data.Senate), peekable: data.Senate.SessionName != ""},
+		{name: "Prefect", running: data.Prefect.Running, required: true, detail: formatPrefectDetail(data.Prefect), peekable: false, source: "prefect"},
+		{name: "Consul", running: data.Consul.Running, required: true, detail: formatConsulDetail(data.Consul), peekable: false, source: "consul"},
+		{name: "Chronicle", running: data.Chronicle.Running, required: false, detail: formatChronicleDetail(data.Chronicle), peekable: false, source: "chronicle"},
+		{name: "Ledger", running: data.Ledger.Running, required: false, detail: formatLedgerDetail(data.Ledger), peekable: false, source: "ledger"},
+		{name: "Broker", running: data.Broker.Running, required: true, detail: formatBrokerDetail(data.Broker), peekable: false, source: "broker"},
+		{name: "Senate", running: data.Senate.Running, required: false, sessionName: data.Senate.SessionName, detail: formatSenateDetail(data.Senate), peekable: data.Senate.SessionName != "", source: "senate"},
 	}
 
 	// Clamp cursor.
@@ -286,6 +287,7 @@ func buildSpherePeekItems(sm sphereModel) []peekItem {
 			state:       pi.detail,
 			alive:       pi.running,
 			peekable:    pi.peekable,
+			source:      pi.source,
 		})
 	}
 	return items

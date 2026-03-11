@@ -2662,6 +2662,152 @@ func TestPeekModelForgeFeedSync(t *testing.T) {
 	}
 }
 
+func TestPeekModelSourceFeedSync(t *testing.T) {
+	pm := newPeekModel(nil, "")
+	pm.width = 120
+	pm.height = 40
+
+	items := []peekItem{
+		{name: "Toast", sessionName: "sol-dev-Toast", category: "Outposts",
+			state: "working", alive: true, peekable: true},
+		{name: "Consul", category: "Processes",
+			state: "alive", alive: true, peekable: false, source: "consul"},
+		{name: "Chronicle", category: "Processes",
+			state: "stopped", alive: false, peekable: false, source: "chronicle"},
+	}
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewSphere})
+
+	// Initially on Toast (peekable), no source feed.
+	if pm.sourceFeed != nil {
+		t.Error("source feed should be nil when on a peekable item")
+	}
+
+	// Move to Consul (non-peekable, has source) — without solHome, no feed.
+	pm, _ = pm.update(keyMsg("j"))
+	if pm.sourceFeed != nil {
+		t.Log("source feed correctly nil without solHome")
+	}
+
+	// With solHome set, moving to source item should initialize feed.
+	pm.solHome = "/tmp/test-sol"
+	pm.syncSourceFeed()
+	if pm.sourceFeed == nil {
+		t.Error("source feed should be initialized when on source item with solHome")
+	}
+
+	// Move to Chronicle — should get a new source feed for "chronicle".
+	pm, _ = pm.update(keyMsg("j"))
+	if pm.sourceFeed == nil {
+		t.Error("source feed should be initialized for Chronicle")
+	}
+
+	// Move back to peekable item — source feed should clear.
+	pm, _ = pm.update(keyMsg("k"))
+	pm, _ = pm.update(keyMsg("k"))
+	if pm.sourceFeed != nil {
+		t.Error("source feed should be cleared when moving to peekable item")
+	}
+}
+
+func TestPeekModelSourceFeedRendering(t *testing.T) {
+	pm := newPeekModel(nil, "/tmp/test-sol")
+	pm.width = 120
+	pm.height = 40
+
+	items := []peekItem{
+		{name: "Consul", category: "Processes",
+			state: "alive", alive: true, peekable: false, source: "consul"},
+	}
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewSphere})
+
+	// Source feed is initialized but empty (no real events dir).
+	if pm.sourceFeed == nil {
+		t.Fatal("source feed should be initialized")
+	}
+
+	// Render capture — should show "No recent consul events" instead of "No active session".
+	lines := pm.renderCapture(20)
+	content := strings.Join(lines, "\n")
+
+	if strings.Contains(content, "No active session") {
+		t.Error("should not show 'No active session' for items with source feed")
+	}
+	if !strings.Contains(content, "No recent consul events") {
+		t.Errorf("should show 'No recent consul events', got:\n%s", content)
+	}
+}
+
+func TestPeekModelSourceFeedWithEvents(t *testing.T) {
+	pm := newPeekModel(nil, "/tmp/test-sol")
+	pm.width = 120
+	pm.height = 40
+
+	items := []peekItem{
+		{name: "Prefect", category: "Processes",
+			state: "alive", alive: true, peekable: false, source: "prefect"},
+	}
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewSphere})
+
+	// Manually inject events into the source feed.
+	if pm.sourceFeed == nil {
+		t.Fatal("source feed should be initialized")
+	}
+	pm.sourceFeed.events = []events.Event{
+		{Timestamp: time.Now().Add(-2 * time.Minute), Type: "respawn", Actor: "prefect", Source: "prefect"},
+		{Timestamp: time.Now().Add(-1 * time.Minute), Type: "patrol", Actor: "prefect", Source: "prefect"},
+	}
+
+	lines := pm.renderCapture(20)
+	content := strings.Join(lines, "\n")
+
+	if strings.Contains(content, "No recent prefect events") {
+		t.Error("should not show 'No recent' when events exist")
+	}
+	if strings.Contains(content, "No active session") {
+		t.Error("should not show 'No active session' for items with source feed")
+	}
+	// The events should be rendered (format: "HH:MM actor verb").
+	if !strings.Contains(content, "prefect") {
+		t.Errorf("should contain event actor 'prefect', got:\n%s", content)
+	}
+}
+
+func TestBuildSpherePeekItemsCopiesSource(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+
+	data := &status.SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: status.PrefectInfo{Running: true, PID: 1234},
+		Consul:  status.ConsulInfo{Running: true},
+	}
+	sm.updateData(data)
+
+	items := buildSpherePeekItems(sm)
+
+	// Verify all items have source fields.
+	expected := map[string]string{
+		"Prefect":   "prefect",
+		"Consul":    "consul",
+		"Chronicle": "chronicle",
+		"Ledger":    "ledger",
+		"Broker":    "broker",
+		"Senate":    "senate",
+	}
+	for _, item := range items {
+		wantSource, ok := expected[item.name]
+		if !ok {
+			t.Errorf("unexpected item %q", item.name)
+			continue
+		}
+		if item.source != wantSource {
+			t.Errorf("item %q source = %q, want %q", item.name, item.source, wantSource)
+		}
+	}
+}
+
 func TestEventMatchesSource(t *testing.T) {
 	tests := []struct {
 		name   string
