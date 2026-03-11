@@ -254,7 +254,7 @@ func (s *Prefect) heartbeat() {
 			s.recordDeath()
 
 			// Agents in sentineled worlds are the sentinel's responsibility.
-			if agent.Role == "agent" && sentineledWorlds[agent.World] {
+			if agent.Role == "outpost" && sentineledWorlds[agent.World] {
 				continue
 			}
 

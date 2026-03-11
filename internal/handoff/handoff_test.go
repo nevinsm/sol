@@ -37,7 +37,7 @@ func TestCapture(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -69,7 +69,7 @@ func TestCapture(t *testing.T) {
 	state, err := Capture(CaptureOpts{
 		World:     "ember",
 		AgentName: "Toast",
-		Role:      "agent",
+		Role:      "outpost",
 		Summary:   "Implemented login form. Tests passing.",
 	}, mockCapture, mockGitLog)
 
@@ -140,14 +140,14 @@ func TestCaptureNoWorkflow(t *testing.T) {
 	setupSolHome(t)
 
 	// Set up tether file only, no workflow.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	state, err := Capture(CaptureOpts{
 		World:     "ember",
 		AgentName: "Toast",
-		Role:      "agent",
+		Role:      "outpost",
 		Summary:   "Working on it.",
 	}, nil, nil)
 
@@ -167,10 +167,10 @@ func TestCaptureWithActiveWrit(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up multiple tethers (persistent agent scenario).
-	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "outpost"); err != nil {
 		t.Fatalf("failed to write tether 1: %v", err)
 	}
-	if err := tether.Write("ember", "Toast", "sol-writ-bbb", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-writ-bbb", "outpost"); err != nil {
 		t.Fatalf("failed to write tether 2: %v", err)
 	}
 
@@ -198,7 +198,7 @@ func TestCaptureWithActiveWrit(t *testing.T) {
 	state, err := Capture(CaptureOpts{
 		World:     "ember",
 		AgentName: "Toast",
-		Role:      "agent",
+		Role:      "outpost",
 		Sphere:    sphere,
 	}, nil, mockGitLog)
 
@@ -237,7 +237,7 @@ func TestCaptureNoActiveWrit(t *testing.T) {
 	state, err := Capture(CaptureOpts{
 		World:     "ember",
 		AgentName: "Toast",
-		Role:      "agent",
+		Role:      "outpost",
 		Sphere:    sphere,
 	}, mockCapture, nil)
 
@@ -317,10 +317,10 @@ func TestCompactRecoveryWithActiveWrit(t *testing.T) {
 	setupSolHome(t)
 
 	// Set up tethers and active writ.
-	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
-	if err := tether.Write("ember", "Toast", "sol-writ-bbb", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-writ-bbb", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -334,7 +334,7 @@ func TestCompactRecoveryWithActiveWrit(t *testing.T) {
 	state, err := Capture(CaptureOpts{
 		World:     "ember",
 		AgentName: "Toast",
-		Role:      "agent",
+		Role:      "outpost",
 		Sphere:    sphere,
 	}, nil, nil)
 
@@ -348,7 +348,7 @@ func TestCompactRecoveryWithActiveWrit(t *testing.T) {
 	}
 
 	// Read it back — simulates recovery after crash.
-	recovered, err := Read("ember", "Toast", "agent")
+	recovered, err := Read("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestCaptureResumeStateWithActiveWrit(t *testing.T) {
 	setupSolHome(t)
 
 	// Tether exists but active writ in DB is different.
-	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -382,7 +382,7 @@ func TestCaptureResumeStateWithActiveWrit(t *testing.T) {
 		},
 	}
 
-	resumeState := CaptureResumeState("ember", "Toast", "agent", "compact", sphere)
+	resumeState := CaptureResumeState("ember", "Toast", "outpost", "compact", sphere)
 
 	// Should use active writ from DB, not tether.
 	if resumeState.ClaimedResource != "sol-writ-bbb" {
@@ -397,11 +397,11 @@ func TestCaptureResumeStateWithoutSphere(t *testing.T) {
 	setupSolHome(t)
 
 	// Tether exists, no sphere store.
-	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
-	resumeState := CaptureResumeState("ember", "Toast", "agent", "compact", nil)
+	resumeState := CaptureResumeState("ember", "Toast", "outpost", "compact", nil)
 
 	// Should fall back to tether.
 	if resumeState.ClaimedResource != "sol-writ-aaa" {
@@ -415,7 +415,7 @@ func TestCaptureResumeStateWithoutSphere(t *testing.T) {
 func TestCaptureNoSummary(t *testing.T) {
 	setupSolHome(t)
 
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -426,7 +426,7 @@ func TestCaptureNoSummary(t *testing.T) {
 	state, err := Capture(CaptureOpts{
 		World:     "ember",
 		AgentName: "Toast",
-		Role:      "agent",
+		Role:      "outpost",
 	}, nil, mockGitLog)
 
 	if err != nil {
@@ -452,7 +452,7 @@ func TestWriteAndRead(t *testing.T) {
 		WritID:       "sol-abc12345",
 		AgentName:        "Toast",
 		World:            "ember",
-		Role:             "agent",
+		Role:             "outpost",
 		PreviousSession:  "sol-ember-Toast",
 		Summary:          "Implemented login form.",
 		RecentOutput:     "All tests passed.\n$",
@@ -471,7 +471,7 @@ func TestWriteAndRead(t *testing.T) {
 	}
 
 	// Verify JSON on disk is valid.
-	data, err := os.ReadFile(HandoffPath("ember", "Toast", "agent"))
+	data, err := os.ReadFile(HandoffPath("ember", "Toast", "outpost"))
 	if err != nil {
 		t.Fatalf("failed to read handoff file: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestWriteAndRead(t *testing.T) {
 	}
 
 	// Read back.
-	read, err := Read("ember", "Toast", "agent")
+	read, err := Read("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -521,7 +521,7 @@ func TestWriteAndRead(t *testing.T) {
 func TestReadNoFile(t *testing.T) {
 	setupSolHome(t)
 
-	state, err := Read("ember", "Toast", "agent")
+	state, err := Read("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Read returned error for missing file: %v", err)
 	}
@@ -538,19 +538,19 @@ func TestRemove(t *testing.T) {
 		WritID: "sol-abc12345",
 		AgentName:  "Toast",
 		World:      "ember",
-		Role:       "agent",
+		Role:       "outpost",
 		Summary:    "test",
 	}
 	if err := Write(state); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	if err := Remove("ember", "Toast", "agent"); err != nil {
+	if err := Remove("ember", "Toast", "outpost"); err != nil {
 		t.Fatalf("Remove failed: %v", err)
 	}
 
 	// Verify file is gone.
-	read, err := Read("ember", "Toast", "agent")
+	read, err := Read("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Read failed after remove: %v", err)
 	}
@@ -559,7 +559,7 @@ func TestRemove(t *testing.T) {
 	}
 
 	// Remove non-existent — no error.
-	if err := Remove("ember", "Toast", "agent"); err != nil {
+	if err := Remove("ember", "Toast", "outpost"); err != nil {
 		t.Fatalf("Remove non-existent returned error: %v", err)
 	}
 }
@@ -568,7 +568,7 @@ func TestHasHandoff(t *testing.T) {
 	setupSolHome(t)
 
 	// No file.
-	if HasHandoff("ember", "Toast", "agent") {
+	if HasHandoff("ember", "Toast", "outpost") {
 		t.Error("expected HasHandoff to be false with no file")
 	}
 
@@ -577,14 +577,14 @@ func TestHasHandoff(t *testing.T) {
 		WritID: "sol-abc12345",
 		AgentName:  "Toast",
 		World:      "ember",
-		Role:       "agent",
+		Role:       "outpost",
 		Summary:    "test",
 	}
 	if err := Write(state); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	if !HasHandoff("ember", "Toast", "agent") {
+	if !HasHandoff("ember", "Toast", "outpost") {
 		t.Error("expected HasHandoff to be true after write")
 	}
 }
@@ -737,7 +737,7 @@ func TestExec(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -747,7 +747,7 @@ func TestExec(t *testing.T) {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 
-	registerMinimalRole(t, "agent", worktreeDir)
+	registerMinimalRole(t, "outpost", worktreeDir)
 
 	mgr := &mockSessionMgr{captureResult: "$ make test\nAll tests passed."}
 	ts := &mockSphereStore{}
@@ -764,7 +764,7 @@ func TestExec(t *testing.T) {
 	}
 
 	// Verify handoff file was written.
-	if !HasHandoff("ember", "Toast", "agent") {
+	if !HasHandoff("ember", "Toast", "outpost") {
 		t.Error("expected handoff file to exist after Exec")
 	}
 
@@ -788,7 +788,7 @@ func TestExec(t *testing.T) {
 	if !strings.Contains(mgr.cycled[0].Cmd, "--settings") {
 		t.Errorf("expected session command to include --settings, got %q", mgr.cycled[0].Cmd)
 	}
-	if mgr.cycled[0].Role != "agent" {
+	if mgr.cycled[0].Role != "outpost" {
 		t.Errorf("expected role agent, got %q", mgr.cycled[0].Role)
 	}
 
@@ -818,7 +818,7 @@ func TestExecGetAgentFailureFallsBackToTether(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file — this is the fallback when GetAgent fails.
-	if err := tether.Write("ember", "Toast", "sol-tether999", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-tether999", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -828,7 +828,7 @@ func TestExecGetAgentFailureFallsBackToTether(t *testing.T) {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 
-	registerMinimalRole(t, "agent", worktreeDir)
+	registerMinimalRole(t, "outpost", worktreeDir)
 
 	mgr := &mockSessionMgr{captureResult: "$ working"}
 	// No agents in map — GetAgent will return error for "ember/Toast".
@@ -846,12 +846,12 @@ func TestExecGetAgentFailureFallsBackToTether(t *testing.T) {
 	}
 
 	// Handoff file should be written (tether fallback provides hasWork=true).
-	if !HasHandoff("ember", "Toast", "agent") {
+	if !HasHandoff("ember", "Toast", "outpost") {
 		t.Error("expected handoff file to exist after Exec with GetAgent failure")
 	}
 
 	// Verify the handoff state used the tether writ ID (not an active writ from DB).
-	state, err := Read("ember", "Toast", "agent")
+	state, err := Read("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Read handoff state failed: %v", err)
 	}
@@ -980,7 +980,7 @@ func TestCaptureGitStatusStashDiff(t *testing.T) {
 	setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1007,7 +1007,7 @@ func TestCaptureGitStatusStashDiff(t *testing.T) {
 	state, err := Capture(CaptureOpts{
 		World:       "ember",
 		AgentName:   "Toast",
-		Role:        "agent",
+		Role:        "outpost",
 		Summary:     "Working",
 		WorktreeDir: dir,
 	}, nil, GitLog)
@@ -1039,7 +1039,7 @@ func TestMarkConsumedAndHasHandoff(t *testing.T) {
 		WritID: "sol-abc12345",
 		AgentName:  "Toast",
 		World:      "ember",
-		Role:       "agent",
+		Role:       "outpost",
 		Summary:    "test",
 	}
 	if err := Write(state); err != nil {
@@ -1047,22 +1047,22 @@ func TestMarkConsumedAndHasHandoff(t *testing.T) {
 	}
 
 	// HasHandoff should return true for unconsumed.
-	if !HasHandoff("ember", "Toast", "agent") {
+	if !HasHandoff("ember", "Toast", "outpost") {
 		t.Error("expected HasHandoff to be true before consume")
 	}
 
 	// Mark consumed.
-	if err := MarkConsumed("ember", "Toast", "agent"); err != nil {
+	if err := MarkConsumed("ember", "Toast", "outpost"); err != nil {
 		t.Fatalf("MarkConsumed failed: %v", err)
 	}
 
 	// HasHandoff should return false after consume.
-	if HasHandoff("ember", "Toast", "agent") {
+	if HasHandoff("ember", "Toast", "outpost") {
 		t.Error("expected HasHandoff to be false after consume")
 	}
 
 	// File should still exist on disk.
-	read, err := Read("ember", "Toast", "agent")
+	read, err := Read("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Read failed after consume: %v", err)
 	}
@@ -1078,10 +1078,10 @@ func TestMarkConsumedAndHasHandoff(t *testing.T) {
 	if err := Write(state); err != nil {
 		t.Fatalf("overwrite Write failed: %v", err)
 	}
-	if !HasHandoff("ember", "Toast", "agent") {
+	if !HasHandoff("ember", "Toast", "outpost") {
 		t.Error("expected HasHandoff to be true after overwrite")
 	}
-	read, _ = Read("ember", "Toast", "agent")
+	read, _ = Read("ember", "Toast", "outpost")
 	if read.Consumed {
 		t.Error("expected Consumed to be false after fresh Write")
 	}
@@ -1091,7 +1091,7 @@ func TestMarkerWriteReadRemove(t *testing.T) {
 	setupSolHome(t)
 
 	// No marker initially.
-	ts, reason, err := ReadMarker("ember", "Toast", "agent")
+	ts, reason, err := ReadMarker("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("ReadMarker returned error for missing marker: %v", err)
 	}
@@ -1100,12 +1100,12 @@ func TestMarkerWriteReadRemove(t *testing.T) {
 	}
 
 	// Write marker.
-	if err := WriteMarker("ember", "Toast", "agent", "session handoff"); err != nil {
+	if err := WriteMarker("ember", "Toast", "outpost", "session handoff"); err != nil {
 		t.Fatalf("WriteMarker failed: %v", err)
 	}
 
 	// Read marker.
-	ts, reason, err = ReadMarker("ember", "Toast", "agent")
+	ts, reason, err = ReadMarker("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("ReadMarker failed: %v", err)
 	}
@@ -1120,12 +1120,12 @@ func TestMarkerWriteReadRemove(t *testing.T) {
 	}
 
 	// Remove marker.
-	if err := RemoveMarker("ember", "Toast", "agent"); err != nil {
+	if err := RemoveMarker("ember", "Toast", "outpost"); err != nil {
 		t.Fatalf("RemoveMarker failed: %v", err)
 	}
 
 	// Should be gone.
-	ts, _, err = ReadMarker("ember", "Toast", "agent")
+	ts, _, err = ReadMarker("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("ReadMarker after remove returned error: %v", err)
 	}
@@ -1134,7 +1134,7 @@ func TestMarkerWriteReadRemove(t *testing.T) {
 	}
 
 	// Remove again — no-op.
-	if err := RemoveMarker("ember", "Toast", "agent"); err != nil {
+	if err := RemoveMarker("ember", "Toast", "outpost"); err != nil {
 		t.Fatalf("RemoveMarker (second time) returned error: %v", err)
 	}
 }
@@ -1143,7 +1143,7 @@ func TestExecWritesMarker(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1153,7 +1153,7 @@ func TestExecWritesMarker(t *testing.T) {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 
-	registerMinimalRole(t, "agent", worktreeDir)
+	registerMinimalRole(t, "outpost", worktreeDir)
 
 	mgr := &mockSessionMgr{captureResult: "$ make test\nAll tests passed."}
 	ts := &mockSphereStore{}
@@ -1171,7 +1171,7 @@ func TestExecWritesMarker(t *testing.T) {
 
 	// Verify marker was written. The marker is written BEFORE the cycle
 	// operation so it survives process death from respawn-pane -k.
-	markerTS, reason, err := ReadMarker("ember", "Toast", "agent")
+	markerTS, reason, err := ReadMarker("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("ReadMarker failed: %v", err)
 	}
@@ -1241,7 +1241,7 @@ func TestExecSkipsWhenResolveInProgress(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1298,7 +1298,7 @@ func TestCooldownEnforced(t *testing.T) {
 	}
 
 	// Write a fresh marker for an outpost agent.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
@@ -1307,7 +1307,7 @@ func TestCooldownEnforced(t *testing.T) {
 	}
 
 	// Write a very recent marker (simulates just-completed handoff).
-	if err := WriteMarker("ember", "Toast", "agent", "previous handoff"); err != nil {
+	if err := WriteMarker("ember", "Toast", "outpost", "previous handoff"); err != nil {
 		t.Fatalf("WriteMarker failed: %v", err)
 	}
 
@@ -1535,7 +1535,7 @@ func TestExecNoBriefSaveForOutpost(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up outpost agent (no brief directory needed — they don't use briefs).
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
@@ -1543,7 +1543,7 @@ func TestExecNoBriefSaveForOutpost(t *testing.T) {
 		t.Fatalf("failed to create worktree dir: %v", err)
 	}
 
-	registerMinimalRole(t, "agent", worktreeDir)
+	registerMinimalRole(t, "outpost", worktreeDir)
 
 	mgr := &mockSessionMgr{captureResult: "test output"}
 	ts := &mockSphereStore{}

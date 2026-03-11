@@ -608,7 +608,7 @@ func TestWorldDeleteRefusesWithActiveSessions(t *testing.T) {
 	// Write session metadata so mgr.List() discovers it.
 	sessDir := filepath.Join(gtHome, ".runtime", "sessions")
 	os.MkdirAll(sessDir, 0o755)
-	meta := `{"name":"` + sessionName + `","role":"agent","world":"deltest","workdir":"/tmp","started_at":"2026-01-01T00:00:00Z"}`
+	meta := `{"name":"` + sessionName + `","role":"outpost","world":"deltest","workdir":"/tmp","started_at":"2026-01-01T00:00:00Z"}`
 	os.WriteFile(filepath.Join(sessDir, sessionName+".json"), []byte(meta), 0o644)
 
 	// Attempt to delete — should be refused.
@@ -678,7 +678,7 @@ gate_timeout = "5m"
 	agents := []worldexport.ExportAgent{
 		{
 			ID: worldName + "/TestAgent", Name: "TestAgent", World: worldName,
-			Role: "agent", State: "working", CreatedAt: now, UpdatedAt: now,
+			Role: "outpost", State: "working", CreatedAt: now, UpdatedAt: now,
 		},
 	}
 

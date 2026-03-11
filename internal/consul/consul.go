@@ -376,7 +376,7 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 
 		// Skip infrastructure roles (don't recover sentinel/forge/consul).
 		// Recover agents, envoys, and governors.
-		if agent.Role != "agent" && agent.Role != "envoy" && agent.Role != "governor" {
+		if agent.Role != "outpost" && agent.Role != "envoy" && agent.Role != "governor" {
 			continue
 		}
 

@@ -390,7 +390,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	// forge is supervised by prefect via heartbeat (ADR-0027).
 	var activeAgents []store.Agent
 	for _, a := range agents {
-		if a.Role == "agent" {
+		if a.Role == "outpost" {
 			if !reaped[a.ID] {
 				activeAgents = append(activeAgents, a)
 			}
@@ -575,7 +575,7 @@ func (w *Sentinel) checkClosedWritTethers(agents []store.Agent, reapedCount *int
 				continue
 			}
 
-			if agent.Role == "agent" {
+			if agent.Role == "outpost" {
 				// Outpost agent with closed writ: full reap.
 				sessionName := config.SessionName(w.config.World, agent.Name)
 				*reapedCount++
@@ -988,7 +988,7 @@ func (w *Sentinel) handleOrphanedWorking(agent store.Agent) error {
 	lockPath := dispatch.ResolveLockPath(w.config.World, agent.Name, agent.Role)
 	resolveWasInProgress := dispatch.IsResolveInProgress(w.config.World, agent.Name, agent.Role)
 
-	if agent.Role == "agent" {
+	if agent.Role == "outpost" {
 		// Outpost: clean up entirely.
 		// If resolve was in progress, the work was being submitted — MR may exist.
 		// If not, tether was lost. Either way, agent is stuck and useless.
@@ -1838,13 +1838,13 @@ func (w *Sentinel) cleanupAgentResources(agentName string) {
 	os.Remove(hashPath) // best-effort
 
 	// Clear tether file (outpost agents only — this is called from cleanupOrphanedOutpostDirs).
-	tether.Clear(w.config.World, agentName, "agent") // best-effort
+	tether.Clear(w.config.World, agentName, "outpost") // best-effort
 
 	// Remove handoff file.
-	handoff.Remove(w.config.World, agentName, "agent") // best-effort
+	handoff.Remove(w.config.World, agentName, "outpost") // best-effort
 
 	// Remove workflow directory.
-	workflow.Remove(w.config.World, agentName, "agent") // best-effort
+	workflow.Remove(w.config.World, agentName, "outpost") // best-effort
 
 	// Remove the outpost directory itself if empty.
 	outpostDir := filepath.Join(config.Home(), w.config.World, "outposts", agentName)
@@ -1996,12 +1996,12 @@ func (w *Sentinel) cleanupOrphanedTethers(agentNames, workingAgents map[string]b
 		}
 
 		// Check if the tether directory has any files.
-		if !tether.IsTethered(w.config.World, name, "agent") {
+		if !tether.IsTethered(w.config.World, name, "outpost") {
 			continue
 		}
 
 		// Tether directory non-empty for agent with no DB record — truly orphaned.
-		tether.Clear(w.config.World, name, "agent")
+		tether.Clear(w.config.World, name, "outpost")
 		cleaned++
 
 		if w.logger != nil {

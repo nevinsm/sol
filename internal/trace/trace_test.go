@@ -532,8 +532,8 @@ func TestCollectTetherData(t *testing.T) {
 	if td.Tethers[0].Agent != "Toast" {
 		t.Errorf("expected agent 'Toast', got %q", td.Tethers[0].Agent)
 	}
-	if td.Tethers[0].Role != "agent" {
-		t.Errorf("expected role 'agent', got %q", td.Tethers[0].Role)
+	if td.Tethers[0].Role != "outpost" {
+		t.Errorf("expected role 'outpost', got %q", td.Tethers[0].Role)
 	}
 }
 

@@ -811,7 +811,7 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	if _, err := sphereStore.CreateAgent("Alpha", "myworld", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Alpha", "myworld", "outpost"); err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
 
@@ -835,10 +835,10 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	}
 
 	// Write tether.
-	if err := tether.Write("myworld", "Alpha", itemID, "agent"); err != nil {
+	if err := tether.Write("myworld", "Alpha", itemID, "outpost"); err != nil {
 		t.Fatalf("write tether: %v", err)
 	}
-	tetherDir := tether.TetherDir("myworld", "Alpha", "agent")
+	tetherDir := tether.TetherDir("myworld", "Alpha", "outpost")
 
 	// Create worktree with git repo.
 	worktree := filepath.Join(gtHome, "myworld", "outposts", "Alpha", "worktree")

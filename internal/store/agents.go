@@ -194,7 +194,7 @@ func (s *Store) FindIdleAgent(world string) (*Agent, error) {
 
 	err := s.db.QueryRow(
 		`SELECT id, name, world, role, state, active_writ, created_at, updated_at
-		 FROM agents WHERE world = ? AND role = 'agent' AND state = 'idle'
+		 FROM agents WHERE world = ? AND role = 'outpost' AND state = 'idle'
 		 ORDER BY name LIMIT 1`, world,
 	).Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &activeWrit, &createdAt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {

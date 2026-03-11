@@ -133,25 +133,25 @@ func TestRecoverStaleTethers(t *testing.T) {
 
 	// Create agents.
 	// Agent A: working, session dead, old timestamp → should be recovered.
-	sphereStore.CreateAgent("AgentA", worldName, "agent")
+	sphereStore.CreateAgent("AgentA", worldName, "outpost")
 	wiA, _ := worldStore.CreateWrit("task-a", "description a", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/AgentA", "working", wiA)
 	worldStore.UpdateWrit(wiA, store.WritUpdates{Status: "tethered", Assignee: worldName + "/AgentA"})
-	tether.Write(worldName, "AgentA", wiA, "agent")
+	tether.Write(worldName, "AgentA", wiA, "outpost")
 
 	// Make Agent A's updated_at old (> 15 minutes ago).
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
 		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/AgentA")
 
 	// Agent B: working, session alive → should NOT be recovered.
-	sphereStore.CreateAgent("AgentB", worldName, "agent")
+	sphereStore.CreateAgent("AgentB", worldName, "outpost")
 	wiB, _ := worldStore.CreateWrit("task-b", "description b", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/AgentB", "working", wiB)
 	worldStore.UpdateWrit(wiB, store.WritUpdates{Status: "tethered", Assignee: worldName + "/AgentB"})
-	tether.Write(worldName, "AgentB", wiB, "agent")
+	tether.Write(worldName, "AgentB", wiB, "outpost")
 
 	// Agent C: idle → should NOT be recovered.
-	sphereStore.CreateAgent("AgentC", worldName, "agent")
+	sphereStore.CreateAgent("AgentC", worldName, "outpost")
 
 	// Set up mock sessions: only AgentB is alive.
 	sessions := newMockSessions()
@@ -196,7 +196,7 @@ func TestRecoverStaleTethers(t *testing.T) {
 	}
 
 	// Verify tether file was cleared.
-	if tether.IsTethered(worldName, "AgentA", "agent") {
+	if tether.IsTethered(worldName, "AgentA", "outpost") {
 		t.Error("AgentA tether file should have been cleared")
 	}
 
@@ -328,11 +328,11 @@ func TestRecoverStaleTethersTooRecent(t *testing.T) {
 	defer worldStore.Close()
 
 	// Agent with dead session but updated_at is 5 minutes ago.
-	sphereStore.CreateAgent("RecentAgent", worldName, "agent")
+	sphereStore.CreateAgent("RecentAgent", worldName, "outpost")
 	wiID, _ := worldStore.CreateWrit("task-recent", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/RecentAgent", "working", wiID)
 	worldStore.UpdateWrit(wiID, store.WritUpdates{Status: "tethered", Assignee: worldName + "/RecentAgent"})
-	tether.Write(worldName, "RecentAgent", wiID, "agent")
+	tether.Write(worldName, "RecentAgent", wiID, "outpost")
 
 	// Set updated_at to 5 minutes ago.
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
@@ -382,14 +382,14 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 	defer worldStore.Close()
 
 	// Agent 1: stale, recoverable.
-	sphereStore.CreateAgent("Good", worldName, "agent")
+	sphereStore.CreateAgent("Good", worldName, "outpost")
 	wi1, _ := worldStore.CreateWrit("task-good", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/Good", "working", wi1)
 	worldStore.UpdateWrit(wi1, store.WritUpdates{Status: "tethered", Assignee: worldName + "/Good"})
-	tether.Write(worldName, "Good", wi1, "agent")
+	tether.Write(worldName, "Good", wi1, "outpost")
 
 	// Agent 2: stale, but on a world that can't be opened (bad world name).
-	sphereStore.CreateAgent("Bad", "nonexistent-world-xyz", "agent")
+	sphereStore.CreateAgent("Bad", "nonexistent-world-xyz", "outpost")
 	sphereStore.UpdateAgentState("nonexistent-world-xyz/Bad", "working", "fake-item")
 
 	// Make both agents old.
@@ -843,11 +843,11 @@ func TestPatrolCycle(t *testing.T) {
 	defer worldStore.Close()
 
 	// 1. Stale tethered agent (dead session, old timestamp).
-	sphereStore.CreateAgent("Stale", worldName, "agent")
+	sphereStore.CreateAgent("Stale", worldName, "outpost")
 	wiStale, _ := worldStore.CreateWrit("stale-task", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/Stale", "working", wiStale)
 	worldStore.UpdateWrit(wiStale, store.WritUpdates{Status: "tethered", Assignee: worldName + "/Stale"})
-	tether.Write(worldName, "Stale", wiStale, "agent")
+	tether.Write(worldName, "Stale", wiStale, "outpost")
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
 		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/Stale")
 
@@ -858,11 +858,11 @@ func TestPatrolCycle(t *testing.T) {
 	sphereStore.CreateCaravanItem(caravanID, wiCaravan, worldName, 0)
 
 	// 3. Healthy working agent (session alive).
-	sphereStore.CreateAgent("Healthy", worldName, "agent")
+	sphereStore.CreateAgent("Healthy", worldName, "outpost")
 	wiHealthy, _ := worldStore.CreateWrit("healthy-task", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/Healthy", "working", wiHealthy)
 	worldStore.UpdateWrit(wiHealthy, store.WritUpdates{Status: "tethered", Assignee: worldName + "/Healthy"})
-	tether.Write(worldName, "Healthy", wiHealthy, "agent")
+	tether.Write(worldName, "Healthy", wiHealthy, "outpost")
 
 	sessions := newMockSessions()
 	sessions.alive["sol-"+worldName+"-Healthy"] = true
@@ -923,7 +923,7 @@ func TestPatrolCycle(t *testing.T) {
 	}
 
 	// Verify: tether file still present for healthy agent.
-	if !tether.IsTethered(worldName, "Healthy", "agent") {
+	if !tether.IsTethered(worldName, "Healthy", "outpost") {
 		t.Error("Healthy agent tether file should still exist")
 	}
 
@@ -948,11 +948,11 @@ func TestPatrolExitsEarlyOnCancelledContext(t *testing.T) {
 	defer worldStore.Close()
 
 	// Create a stale tethered agent — should NOT be recovered if context is cancelled.
-	sphereStore.CreateAgent("ShouldSkip", worldName, "agent")
+	sphereStore.CreateAgent("ShouldSkip", worldName, "outpost")
 	wiStale, _ := worldStore.CreateWrit("stale-cancel", "desc", "test", 1, nil)
 	sphereStore.UpdateAgentState(worldName+"/ShouldSkip", "working", wiStale)
 	worldStore.UpdateWrit(wiStale, store.WritUpdates{Status: "tethered", Assignee: worldName + "/ShouldSkip"})
-	tether.Write(worldName, "ShouldSkip", wiStale, "agent")
+	tether.Write(worldName, "ShouldSkip", wiStale, "outpost")
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
 		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/ShouldSkip")
 
@@ -1006,11 +1006,11 @@ func TestRecoverStaleTethersExitsOnCancelledContext(t *testing.T) {
 	// Create multiple stale agents — only some should be processed.
 	for i := 0; i < 3; i++ {
 		name := fmt.Sprintf("Agent%d", i)
-		sphereStore.CreateAgent(name, worldName, "agent")
+		sphereStore.CreateAgent(name, worldName, "outpost")
 		wi, _ := worldStore.CreateWrit(fmt.Sprintf("task-%d", i), "desc", "test", 1, nil)
 		sphereStore.UpdateAgentState(worldName+"/"+name, "working", wi)
 		worldStore.UpdateWrit(wi, store.WritUpdates{Status: "tethered", Assignee: worldName + "/" + name})
-		tether.Write(worldName, name, wi, "agent")
+		tether.Write(worldName, name, wi, "outpost")
 		sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
 			time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/"+name)
 	}
@@ -1257,7 +1257,7 @@ func TestDetectOrphanedSessionsIdentifiesOrphan(t *testing.T) {
 	sphereStore.RegisterWorld(worldName, "/tmp/repo")
 
 	// Create a known agent.
-	sphereStore.CreateAgent("KnownAgent", worldName, "agent")
+	sphereStore.CreateAgent("KnownAgent", worldName, "outpost")
 
 	sessions := newMockSessions()
 	// Known session: has an agent record.
@@ -1402,7 +1402,7 @@ func TestDetectOrphanedSessionsKnownNotFlagged(t *testing.T) {
 	sphereStore.RegisterWorld(worldName, "/tmp/repo")
 
 	// Create various known agents.
-	sphereStore.CreateAgent("Toast", worldName, "agent")
+	sphereStore.CreateAgent("Toast", worldName, "outpost")
 	sphereStore.CreateAgent("sentinel", worldName, "sentinel")
 	sphereStore.CreateAgent("forge", worldName, "forge")
 	sphereStore.CreateAgent("governor", worldName, "governor")

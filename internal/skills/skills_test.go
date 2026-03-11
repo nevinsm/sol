@@ -472,7 +472,7 @@ func TestInstallSkillAllGenerators(t *testing.T) {
 		"sol-forge-ops":  GenerateForgeOps(ForgeOpsContext{World: "w", TargetBranch: "main"}),
 		SkillDispatch:    GenerateDispatch("w", "sol"),
 		SkillCaravan:     GenerateCaravan("w", "sol"),
-		SkillTetherMgmt:  GenerateTetherMgmt("w", "agent"),
+		SkillTetherMgmt:  GenerateTetherMgmt("w", "outpost"),
 		SkillNotify:      GenerateNotify("w"),
 		SkillStatus:      GenerateStatus("w", "sol"),
 	}
@@ -847,7 +847,7 @@ func TestAllSkillsFrontmatterNameMatchesConstant(t *testing.T) {
 	}{
 		{SkillDispatch, GenerateDispatch("w", "sol")},
 		{SkillCaravan, GenerateCaravan("w", "sol")},
-		{SkillTetherMgmt, GenerateTetherMgmt("w", "agent")},
+		{SkillTetherMgmt, GenerateTetherMgmt("w", "outpost")},
 		{SkillNotify, GenerateNotify("w")},
 		{SkillStatus, GenerateStatus("w", "sol")},
 	}
@@ -873,7 +873,7 @@ func TestAllSkillsHaveDescription(t *testing.T) {
 	}{
 		{SkillDispatch, GenerateDispatch("w", "sol")},
 		{SkillCaravan, GenerateCaravan("w", "sol")},
-		{SkillTetherMgmt, GenerateTetherMgmt("w", "agent")},
+		{SkillTetherMgmt, GenerateTetherMgmt("w", "outpost")},
 		{SkillNotify, GenerateNotify("w")},
 		{SkillStatus, GenerateStatus("w", "sol")},
 	}
@@ -894,7 +894,7 @@ func TestAllSkillsNoUnreplacedPlaceholders(t *testing.T) {
 	}{
 		{SkillDispatch, GenerateDispatch("w", "sol")},
 		{SkillCaravan, GenerateCaravan("w", "sol")},
-		{SkillTetherMgmt, GenerateTetherMgmt("w", "agent")},
+		{SkillTetherMgmt, GenerateTetherMgmt("w", "outpost")},
 		{SkillNotify, GenerateNotify("w")},
 		{SkillStatus, GenerateStatus("w", "sol")},
 	}

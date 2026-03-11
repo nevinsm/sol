@@ -72,7 +72,7 @@ func init() {
 	sessionStartCmd.Flags().StringVar(&startWorkdir, "workdir", ".", "working directory")
 	sessionStartCmd.Flags().StringVar(&startCmd, "cmd", "", "command to run")
 	sessionStartCmd.Flags().StringArrayVar(&startEnv, "env", nil, "environment variable KEY=VAL (can be repeated)")
-	sessionStartCmd.Flags().StringVar(&startRole, "role", "agent", "session role")
+	sessionStartCmd.Flags().StringVar(&startRole, "role", "outpost", "session role")
 	sessionStartCmd.Flags().StringVar(&startWorld, "world", "", "world name")
 }
 

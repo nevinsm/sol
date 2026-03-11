@@ -16,11 +16,11 @@ func setupTest(t *testing.T) {
 func TestWriteAndRead(t *testing.T) {
 	setupTest(t)
 
-	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "outpost"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	id, err := Read("myworld", "Toast", "agent")
+	id, err := Read("myworld", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -32,12 +32,12 @@ func TestWriteAndRead(t *testing.T) {
 func TestWriteCreatesDirectoryAndFile(t *testing.T) {
 	setupTest(t)
 
-	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "outpost"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
 	// Verify the directory was created.
-	dir := TetherDir("myworld", "Toast", "agent")
+	dir := TetherDir("myworld", "Toast", "outpost")
 	info, err := os.Stat(dir)
 	if err != nil {
 		t.Fatalf("expected tether directory to exist: %v", err)
@@ -62,12 +62,12 @@ func TestWriteVerifiesContent(t *testing.T) {
 
 	// Write and verify the file content matches via Read.
 	writID := "sol-verify12345678"
-	if err := Write("myworld", "Toast", writID, "agent"); err != nil {
+	if err := Write("myworld", "Toast", writID, "outpost"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
 	// Verify via direct file read (not through Read()).
-	dir := TetherDir("myworld", "Toast", "agent")
+	dir := TetherDir("myworld", "Toast", "outpost")
 	data, err := os.ReadFile(filepath.Join(dir, writID))
 	if err != nil {
 		t.Fatalf("failed to read tether file: %v", err)
@@ -80,7 +80,7 @@ func TestWriteVerifiesContent(t *testing.T) {
 func TestReadNoTether(t *testing.T) {
 	setupTest(t)
 
-	id, err := Read("myworld", "Toast", "agent")
+	id, err := Read("myworld", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -94,12 +94,12 @@ func TestListReturnsAllWritIDs(t *testing.T) {
 
 	writs := []string{"sol-a1b2c3d4", "sol-e5f6a7b8", "sol-11223344"}
 	for _, w := range writs {
-		if err := Write("myworld", "Toast", w, "agent"); err != nil {
+		if err := Write("myworld", "Toast", w, "outpost"); err != nil {
 			t.Fatalf("Write %s failed: %v", w, err)
 		}
 	}
 
-	ids, err := List("myworld", "Toast", "agent")
+	ids, err := List("myworld", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestListReturnsAllWritIDs(t *testing.T) {
 func TestListEmpty(t *testing.T) {
 	setupTest(t)
 
-	ids, err := List("myworld", "Toast", "agent")
+	ids, err := List("myworld", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -130,18 +130,18 @@ func TestListEmpty(t *testing.T) {
 func TestClear(t *testing.T) {
 	setupTest(t)
 
-	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "outpost"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
-	if err := Write("myworld", "Toast", "sol-e5f6a7b8", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-e5f6a7b8", "outpost"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	if err := Clear("myworld", "Toast", "agent"); err != nil {
+	if err := Clear("myworld", "Toast", "outpost"); err != nil {
 		t.Fatalf("Clear failed: %v", err)
 	}
 
-	ids, err := List("myworld", "Toast", "agent")
+	ids, err := List("myworld", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("List after Clear failed: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestClearNoTether(t *testing.T) {
 	setupTest(t)
 
 	// Clear should be a no-op if no tether exists.
-	if err := Clear("myworld", "Toast", "agent"); err != nil {
+	if err := Clear("myworld", "Toast", "outpost"); err != nil {
 		t.Fatalf("Clear on non-existent tether failed: %v", err)
 	}
 }
@@ -162,18 +162,18 @@ func TestClearNoTether(t *testing.T) {
 func TestClearOneRemovesOneFile(t *testing.T) {
 	setupTest(t)
 
-	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "outpost"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
-	if err := Write("myworld", "Toast", "sol-e5f6a7b8", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-e5f6a7b8", "outpost"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	if err := ClearOne("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+	if err := ClearOne("myworld", "Toast", "sol-a1b2c3d4", "outpost"); err != nil {
 		t.Fatalf("ClearOne failed: %v", err)
 	}
 
-	ids, err := List("myworld", "Toast", "agent")
+	ids, err := List("myworld", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("List after ClearOne failed: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestClearOneNoOp(t *testing.T) {
 	setupTest(t)
 
 	// ClearOne should be a no-op if the specific tether doesn't exist.
-	if err := ClearOne("myworld", "Toast", "sol-nonexistent", "agent"); err != nil {
+	if err := ClearOne("myworld", "Toast", "sol-nonexistent", "outpost"); err != nil {
 		t.Fatalf("ClearOne on non-existent tether failed: %v", err)
 	}
 }
@@ -197,23 +197,23 @@ func TestClearOneNoOp(t *testing.T) {
 func TestIsTethered(t *testing.T) {
 	setupTest(t)
 
-	if IsTethered("myworld", "Toast", "agent") {
+	if IsTethered("myworld", "Toast", "outpost") {
 		t.Error("expected IsTethered=false before Write")
 	}
 
-	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "outpost"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	if !IsTethered("myworld", "Toast", "agent") {
+	if !IsTethered("myworld", "Toast", "outpost") {
 		t.Error("expected IsTethered=true after Write")
 	}
 
-	if err := Clear("myworld", "Toast", "agent"); err != nil {
+	if err := Clear("myworld", "Toast", "outpost"); err != nil {
 		t.Fatalf("Clear failed: %v", err)
 	}
 
-	if IsTethered("myworld", "Toast", "agent") {
+	if IsTethered("myworld", "Toast", "outpost") {
 		t.Error("expected IsTethered=false after Clear")
 	}
 }
@@ -221,19 +221,19 @@ func TestIsTethered(t *testing.T) {
 func TestIsTetheredTo(t *testing.T) {
 	setupTest(t)
 
-	if IsTetheredTo("myworld", "Toast", "sol-a1b2c3d4", "agent") {
+	if IsTetheredTo("myworld", "Toast", "sol-a1b2c3d4", "outpost") {
 		t.Error("expected IsTetheredTo=false before Write")
 	}
 
-	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "outpost"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	if !IsTetheredTo("myworld", "Toast", "sol-a1b2c3d4", "agent") {
+	if !IsTetheredTo("myworld", "Toast", "sol-a1b2c3d4", "outpost") {
 		t.Error("expected IsTetheredTo=true for written writ")
 	}
 
-	if IsTetheredTo("myworld", "Toast", "sol-other", "agent") {
+	if IsTetheredTo("myworld", "Toast", "sol-other", "outpost") {
 		t.Error("expected IsTetheredTo=false for different writ")
 	}
 }
@@ -241,7 +241,7 @@ func TestIsTetheredTo(t *testing.T) {
 func TestTetherDir(t *testing.T) {
 	setupTest(t)
 
-	dir := TetherDir("myworld", "Toast", "agent")
+	dir := TetherDir("myworld", "Toast", "outpost")
 	solHome := os.Getenv("SOL_HOME")
 	expected := solHome + "/myworld/outposts/Toast/.tether"
 	if dir != expected {
@@ -252,14 +252,14 @@ func TestTetherDir(t *testing.T) {
 func TestWriteOverwrite(t *testing.T) {
 	setupTest(t)
 
-	if err := Write("myworld", "Toast", "sol-11111111", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-11111111", "outpost"); err != nil {
 		t.Fatalf("first Write failed: %v", err)
 	}
-	if err := Write("myworld", "Toast", "sol-22222222", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-22222222", "outpost"); err != nil {
 		t.Fatalf("second Write failed: %v", err)
 	}
 
-	ids, err := List("myworld", "Toast", "agent")
+	ids, err := List("myworld", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestMigrateLegacyFile(t *testing.T) {
 	}
 
 	// Run migration.
-	if err := Migrate("myworld", "Toast", "agent"); err != nil {
+	if err := Migrate("myworld", "Toast", "outpost"); err != nil {
 		t.Fatalf("Migrate failed: %v", err)
 	}
 
@@ -307,7 +307,7 @@ func TestMigrateLegacyFile(t *testing.T) {
 	}
 
 	// Verify the writ ID file exists inside.
-	id, err := Read("myworld", "Toast", "agent")
+	id, err := Read("myworld", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Read after migration failed: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestMigrateNoLegacyFile(t *testing.T) {
 	setupTest(t)
 
 	// Migration should be a no-op if no legacy file exists.
-	if err := Migrate("myworld", "Toast", "agent"); err != nil {
+	if err := Migrate("myworld", "Toast", "outpost"); err != nil {
 		t.Fatalf("Migrate on non-existent tether failed: %v", err)
 	}
 }
@@ -329,17 +329,17 @@ func TestMigrateAlreadyDirectory(t *testing.T) {
 	setupTest(t)
 
 	// Write using new model (creates directory).
-	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "outpost"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
 	// Migration should be a no-op if already a directory.
-	if err := Migrate("myworld", "Toast", "agent"); err != nil {
+	if err := Migrate("myworld", "Toast", "outpost"); err != nil {
 		t.Fatalf("Migrate on existing directory failed: %v", err)
 	}
 
 	// Verify existing tether is preserved.
-	id, err := Read("myworld", "Toast", "agent")
+	id, err := Read("myworld", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Read after no-op migration failed: %v", err)
 	}
@@ -352,15 +352,15 @@ func TestReadReturnsSingleTether(t *testing.T) {
 	setupTest(t)
 
 	// Write multiple tethers.
-	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4", "outpost"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
-	if err := Write("myworld", "Toast", "sol-e5f6a7b8", "agent"); err != nil {
+	if err := Write("myworld", "Toast", "sol-e5f6a7b8", "outpost"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
 	// Read returns the first (sorted) tether for backward compat.
-	id, err := Read("myworld", "Toast", "agent")
+	id, err := Read("myworld", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}

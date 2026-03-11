@@ -243,7 +243,7 @@ func collectTetherData(td *TraceData, world, writID string) {
 		dir  string
 		role string
 	}{
-		{"outposts", "agent"},
+		{"outposts", "outpost"},
 		{"envoys", "envoy"},
 	}
 

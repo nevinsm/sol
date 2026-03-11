@@ -163,7 +163,7 @@ func TestTetherRejectsOutpost(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -175,7 +175,7 @@ func TestTetherRejectsOutpost(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for outpost agent")
 	}
-	if want := `agent "ember/Toast" has role "agent" — only persistent roles (envoy, governor, forge) can use tether; outposts use sol cast`; err.Error() != want {
+	if want := `agent "ember/Toast" has role "outpost" — only persistent roles (envoy, governor, forge) can use tether; outposts use sol cast`; err.Error() != want {
 		t.Errorf("unexpected error:\n  got:  %v\n  want: %s", err, want)
 	}
 }

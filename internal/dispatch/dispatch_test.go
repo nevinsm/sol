@@ -130,7 +130,7 @@ func TestCastHappyPath(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -161,7 +161,7 @@ func TestCastHappyPath(t *testing.T) {
 	}
 
 	// Verify tether was written.
-	tetherID, err := tether.Read("ember", "Toast", "agent")
+	tetherID, err := tether.Read("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("failed to read tether: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestCastAgentStateBeforeTether(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -264,7 +264,7 @@ func TestCastAgentStateBeforeTether(t *testing.T) {
 	}
 
 	// 2. Tether file written
-	if !tether.IsTethered("ember", "Toast", "agent") {
+	if !tether.IsTethered("ember", "Toast", "outpost") {
 		t.Error("expected tether to be written")
 	}
 
@@ -296,7 +296,7 @@ func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -351,7 +351,7 @@ func TestCastNoTelemetryWhenLedgerNotConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -397,7 +397,7 @@ func TestCastAutoAgent(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Alpha", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Alpha", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -592,7 +592,7 @@ func TestCastAutoProvisionSkipsUsed(t *testing.T) {
 	// Create agents with the first 3 pool names and set them to "working".
 	poolNames := []string{"Nova", "Vega", "Lyra"}
 	for _, name := range poolNames {
-		if _, err := sphereStore.CreateAgent(name, "ember", "agent"); err != nil {
+		if _, err := sphereStore.CreateAgent(name, "ember", "outpost"); err != nil {
 			t.Fatalf("failed to create agent %q: %v", name, err)
 		}
 		if err := sphereStore.UpdateAgentState("ember/"+name, "working", "sol-other"); err != nil {
@@ -673,7 +673,7 @@ func TestCastItemNotOpen(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -733,7 +733,7 @@ func TestCastRejectsSleepingWorld(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -774,7 +774,7 @@ func TestCastRejectsSleepingWorldPreloaded(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -808,11 +808,11 @@ func TestPrimeWithTether(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
 	}
@@ -837,7 +837,7 @@ func TestPrimeWithTether(t *testing.T) {
 func TestPrimeWithoutTether(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
 	}
@@ -982,22 +982,22 @@ func TestPrimeWithWorkflowFullChecklist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("write tether: %v", err)
 	}
 
 	// Create workflow and instantiate it.
 	setupTestWorkflow(t, "test-work")
-	if _, _, err := workflow.Instantiate("ember", "Toast", "agent", "test-work", map[string]string{
+	if _, _, err := workflow.Instantiate("ember", "Toast", "outpost", "test-work", map[string]string{
 		"issue": itemID,
 	}); err != nil {
 		t.Fatalf("instantiate workflow: %v", err)
 	}
 
 	// Step 1 (load-context) is current. Advance to step 2 (implement).
-	advanceWorkflowStep(t, "ember", "Toast", "agent")
+	advanceWorkflowStep(t, "ember", "Toast", "outpost")
 
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
 	}
@@ -1056,19 +1056,19 @@ func TestPrimeWithWorkflowFirstStep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("write tether: %v", err)
 	}
 
 	setupTestWorkflow(t, "test-work")
-	if _, _, err := workflow.Instantiate("ember", "Toast", "agent", "test-work", map[string]string{
+	if _, _, err := workflow.Instantiate("ember", "Toast", "outpost", "test-work", map[string]string{
 		"issue": itemID,
 	}); err != nil {
 		t.Fatalf("instantiate workflow: %v", err)
 	}
 
 	// Step 1 is current (no advance).
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
 	}
@@ -1103,14 +1103,14 @@ func TestResolveHappyPath(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1169,7 +1169,7 @@ func TestResolveHappyPath(t *testing.T) {
 	}
 
 	// Verify tether is cleared.
-	tetherID, err := tether.Read("ember", "Toast", "agent")
+	tetherID, err := tether.Read("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("failed to read tether: %v", err)
 	}
@@ -1184,7 +1184,7 @@ func TestResolveNoTether(t *testing.T) {
 
 	// Resolve now looks up the agent first (for role-aware tether path),
 	// so create an agent record so we get past that check.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 
 	_, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
@@ -1237,13 +1237,13 @@ func TestResolveConflictResolution(t *testing.T) {
 	if err := worldStore.UpdateWrit(resolutionID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
 		t.Fatalf("failed to update writ: %v", err)
 	}
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", resolutionID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
-	if err := tether.Write("ember", "Toast", resolutionID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", resolutionID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1302,7 +1302,7 @@ func TestResolveConflictResolution(t *testing.T) {
 	}
 
 	// Verify tether is cleared.
-	tetherID, err := tether.Read("ember", "Toast", "agent")
+	tetherID, err := tether.Read("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("failed to read tether: %v", err)
 	}
@@ -1355,13 +1355,13 @@ func TestResolveConflictResolutionResetsParentMR(t *testing.T) {
 	if err := worldStore.UpdateWrit(resolutionID, store.WritUpdates{Status: "tethered", Assignee: "ember/Bravo"}); err != nil {
 		t.Fatalf("failed to update writ: %v", err)
 	}
-	if _, err := sphereStore.CreateAgent("Bravo", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Bravo", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Bravo", "working", resolutionID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
-	if err := tether.Write("ember", "Bravo", resolutionID, "agent"); err != nil {
+	if err := tether.Write("ember", "Bravo", resolutionID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1464,13 +1464,13 @@ func TestResolveConflictResolutionResetsBlockedAndFailedMRs(t *testing.T) {
 	if err := worldStore.UpdateWrit(resolutionID, store.WritUpdates{Status: "tethered", Assignee: "ember/Charlie"}); err != nil {
 		t.Fatalf("failed to update writ: %v", err)
 	}
-	if _, err := sphereStore.CreateAgent("Charlie", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Charlie", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Charlie", "working", resolutionID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
-	if err := tether.Write("ember", "Charlie", resolutionID, "agent"); err != nil {
+	if err := tether.Write("ember", "Charlie", resolutionID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1533,14 +1533,14 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1621,7 +1621,7 @@ func TestResolveSkipsFailedMRCreatesNew(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
@@ -1640,7 +1640,7 @@ func TestResolveSkipsFailedMRCreatesNew(t *testing.T) {
 		t.Fatalf("failed to fail MR: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1706,7 +1706,7 @@ func TestResolveReusesReadyMR(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
@@ -1719,7 +1719,7 @@ func TestResolveReusesReadyMR(t *testing.T) {
 		t.Fatalf("failed to create MR: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1759,7 +1759,7 @@ func TestPrimeWithHandoff(t *testing.T) {
 	}
 
 	// Write tether file.
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1768,7 +1768,7 @@ func TestPrimeWithHandoff(t *testing.T) {
 		WritID:      itemID,
 		AgentName:       "Toast",
 		World:             "ember",
-		Role:            "agent",
+		Role:            "outpost",
 		PreviousSession: "sol-ember-Toast",
 		Summary:         "Implemented login form. Tests passing.",
 		RecentCommits:   []string{"abc1234 feat: add login form"},
@@ -1777,7 +1777,7 @@ func TestPrimeWithHandoff(t *testing.T) {
 		t.Fatalf("failed to write handoff: %v", err)
 	}
 
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime with handoff failed: %v", err)
 	}
@@ -1802,7 +1802,7 @@ func TestPrimeWithHandoff(t *testing.T) {
 	}
 
 	// Handoff file should be deleted after prime.
-	if handoff.HasHandoff("ember", "Toast", "agent") {
+	if handoff.HasHandoff("ember", "Toast", "outpost") {
 		t.Error("expected handoff file to be removed after prime")
 	}
 }
@@ -1817,7 +1817,7 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 	}
 
 	// Write tether file.
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1826,7 +1826,7 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 		WritID:       itemID,
 		AgentName:        "Toast",
 		World:              "ember",
-		Role:             "agent",
+		Role:             "outpost",
 		PreviousSession:  "sol-ember-Toast",
 		Summary:          "Handoff summary here.",
 		RecentCommits:    []string{"abc1234 feat: work"},
@@ -1845,7 +1845,7 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 	stateJSON := `{"current_step":"implement","completed":["plan"],"status":"running","started_at":"2026-02-27T10:00:00Z"}`
 	os.WriteFile(wfDir+"/state.json", []byte(stateJSON), 0o644)
 
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime with handoff+workflow failed: %v", err)
 	}
@@ -1859,7 +1859,7 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 	}
 
 	// Handoff file should be deleted.
-	if handoff.HasHandoff("ember", "Toast", "agent") {
+	if handoff.HasHandoff("ember", "Toast", "outpost") {
 		t.Error("expected handoff file to be removed after prime")
 	}
 }
@@ -1872,12 +1872,12 @@ func TestPrimeNoHandoff(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	// No handoff file — should use standard prime.
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
 	}
@@ -1898,16 +1898,16 @@ func TestPrimeWithFreshSessionMarker(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	// Write handoff marker (simulates recent handoff).
-	if err := handoff.WriteMarker("ember", "Toast", "agent", "session handoff"); err != nil {
+	if err := handoff.WriteMarker("ember", "Toast", "outpost", "session handoff"); err != nil {
 		t.Fatalf("failed to write marker: %v", err)
 	}
 
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime with marker failed: %v", err)
 	}
@@ -1921,7 +1921,7 @@ func TestPrimeWithFreshSessionMarker(t *testing.T) {
 	}
 
 	// Marker should be removed after prime.
-	ts, _, _ := handoff.ReadMarker("ember", "Toast", "agent")
+	ts, _, _ := handoff.ReadMarker("ember", "Toast", "outpost")
 	if !ts.IsZero() {
 		t.Error("expected marker to be removed after prime")
 	}
@@ -1935,7 +1935,7 @@ func TestPrimeHandoffWithGitState(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1944,7 +1944,7 @@ func TestPrimeHandoffWithGitState(t *testing.T) {
 		WritID:      itemID,
 		AgentName:       "Toast",
 		World:           "ember",
-		Role:            "agent",
+		Role:            "outpost",
 		PreviousSession: "sol-ember-Toast",
 		Summary:         "Working on login form.",
 		RecentCommits:   []string{"abc1234 feat: add login form"},
@@ -1959,7 +1959,7 @@ func TestPrimeHandoffWithGitState(t *testing.T) {
 		t.Fatalf("failed to write handoff: %v", err)
 	}
 
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
 	}
@@ -1991,7 +1991,7 @@ func TestPrimeDurableHandoff(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1999,7 +1999,7 @@ func TestPrimeDurableHandoff(t *testing.T) {
 		WritID:      itemID,
 		AgentName:       "Toast",
 		World:           "ember",
-		Role:            "agent",
+		Role:            "outpost",
 		PreviousSession: "sol-ember-Toast",
 		Summary:         "Working on it.",
 		RecentCommits:   []string{"abc1234 feat: work"},
@@ -2009,7 +2009,7 @@ func TestPrimeDurableHandoff(t *testing.T) {
 	}
 
 	// First prime consumes the handoff.
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("first Prime failed: %v", err)
 	}
@@ -2018,7 +2018,7 @@ func TestPrimeDurableHandoff(t *testing.T) {
 	}
 
 	// File should still exist but be consumed.
-	read, err := handoff.Read("ember", "Toast", "agent")
+	read, err := handoff.Read("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -2030,7 +2030,7 @@ func TestPrimeDurableHandoff(t *testing.T) {
 	}
 
 	// Second prime should NOT show handoff context (consumed).
-	result2, err := Prime("ember", "Toast", "agent", worldStore)
+	result2, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("second Prime failed: %v", err)
 	}
@@ -2050,7 +2050,7 @@ func TestPrimeCompactRecoveryLightweight(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -2059,7 +2059,7 @@ func TestPrimeCompactRecoveryLightweight(t *testing.T) {
 		WritID:      itemID,
 		AgentName:       "Toast",
 		World:           "ember",
-		Role:            "agent",
+		Role:            "outpost",
 		PreviousSession: "sol-ember-Toast",
 		Summary:         "Implemented login form. Tests passing.",
 		RecentCommits:   []string{"abc1234 feat: add login form"},
@@ -2071,11 +2071,11 @@ func TestPrimeCompactRecoveryLightweight(t *testing.T) {
 	}
 
 	// Write compact marker (simulates PreCompact-triggered handoff).
-	if err := handoff.WriteMarker("ember", "Toast", "agent", "compact"); err != nil {
+	if err := handoff.WriteMarker("ember", "Toast", "outpost", "compact"); err != nil {
 		t.Fatalf("failed to write marker: %v", err)
 	}
 
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime with compact recovery failed: %v", err)
 	}
@@ -2118,12 +2118,12 @@ func TestPrimeCompactRecoveryLightweight(t *testing.T) {
 	}
 
 	// Handoff file should be consumed.
-	if handoff.HasHandoff("ember", "Toast", "agent") {
+	if handoff.HasHandoff("ember", "Toast", "outpost") {
 		t.Error("expected handoff to be consumed after compact recovery prime")
 	}
 
 	// Marker should be removed.
-	ts, _, _ := handoff.ReadMarker("ember", "Toast", "agent")
+	ts, _, _ := handoff.ReadMarker("ember", "Toast", "outpost")
 	if !ts.IsZero() {
 		t.Error("expected marker to be removed after prime")
 	}
@@ -2137,7 +2137,7 @@ func TestPrimeCompactRecoveryWithWorkflow(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -2146,7 +2146,7 @@ func TestPrimeCompactRecoveryWithWorkflow(t *testing.T) {
 		WritID:       itemID,
 		AgentName:        "Toast",
 		World:            "ember",
-		Role:             "agent",
+		Role:             "outpost",
 		PreviousSession:  "sol-ember-Toast",
 		Summary:          "Working on step 2.",
 		RecentCommits:    []string{"abc1234 feat: step 1 done"},
@@ -2159,11 +2159,11 @@ func TestPrimeCompactRecoveryWithWorkflow(t *testing.T) {
 	}
 
 	// Compact marker.
-	if err := handoff.WriteMarker("ember", "Toast", "agent", "compact"); err != nil {
+	if err := handoff.WriteMarker("ember", "Toast", "outpost", "compact"); err != nil {
 		t.Fatalf("failed to write marker: %v", err)
 	}
 
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime with compact+workflow failed: %v", err)
 	}
@@ -2190,7 +2190,7 @@ func TestPrimeNonCompactHandoffUsesFullPrime(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -2198,7 +2198,7 @@ func TestPrimeNonCompactHandoffUsesFullPrime(t *testing.T) {
 		WritID:      itemID,
 		AgentName:       "Toast",
 		World:           "ember",
-		Role:            "agent",
+		Role:            "outpost",
 		PreviousSession: "sol-ember-Toast",
 		Summary:         "Working on it.",
 		RecentCommits:   []string{"abc1234 feat: work"},
@@ -2208,11 +2208,11 @@ func TestPrimeNonCompactHandoffUsesFullPrime(t *testing.T) {
 	}
 
 	// Non-compact marker (e.g., manual handoff or old-style).
-	if err := handoff.WriteMarker("ember", "Toast", "agent", "session handoff"); err != nil {
+	if err := handoff.WriteMarker("ember", "Toast", "outpost", "session handoff"); err != nil {
 		t.Fatalf("failed to write marker: %v", err)
 	}
 
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime with non-compact handoff failed: %v", err)
 	}
@@ -2239,16 +2239,16 @@ func TestPrimeCompactWithoutHandoffFallsThrough(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	// Compact marker but NO handoff file — should fall through to standard prime.
-	if err := handoff.WriteMarker("ember", "Toast", "agent", "compact"); err != nil {
+	if err := handoff.WriteMarker("ember", "Toast", "outpost", "compact"); err != nil {
 		t.Fatalf("failed to write marker: %v", err)
 	}
 
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime with compact but no handoff failed: %v", err)
 	}
@@ -2290,14 +2290,14 @@ func TestResolveRollbackOnMRFailure(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -2353,14 +2353,14 @@ func TestResolvePushFailureCreatesMR(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -2430,7 +2430,7 @@ func TestReCastPartialFailureRecovery(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	// Agent state is "idle" with no active_writ — simulates crash after writ
@@ -2827,14 +2827,14 @@ func TestResolveAgentKillsSession(t *testing.T) {
 	}
 
 	// Create a regular agent.
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -2876,14 +2876,14 @@ func TestResolveRemovesWorktreeForOutpostAgent(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -2984,14 +2984,14 @@ func TestResolveNudgesForgeWithMRReady(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -3063,14 +3063,14 @@ func TestResolveQueuesForgeNudgeEvenWithoutForge(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -3122,14 +3122,14 @@ func TestResolveCreatesAndRemovesLock(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -3145,7 +3145,7 @@ func TestResolveCreatesAndRemovesLock(t *testing.T) {
 	mgr.started[sessName] = true
 
 	// Verify lock does not exist before resolve.
-	if IsResolveInProgress("ember", "Toast", "agent") {
+	if IsResolveInProgress("ember", "Toast", "outpost") {
 		t.Fatal("resolve lock should not exist before resolve")
 	}
 
@@ -3158,7 +3158,7 @@ func TestResolveCreatesAndRemovesLock(t *testing.T) {
 	}
 
 	// Verify lock is removed after resolve completes.
-	if IsResolveInProgress("ember", "Toast", "agent") {
+	if IsResolveInProgress("ember", "Toast", "outpost") {
 		t.Error("resolve lock should be removed after successful resolve")
 	}
 }
@@ -3175,14 +3175,14 @@ func TestResolveIdempotent(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -3208,13 +3208,13 @@ func TestResolveIdempotent(t *testing.T) {
 
 	// Now simulate a partial resolve state for second call:
 	// Re-create agent, re-write tether, set writ back to tethered.
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to re-create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 	// Writ is already "done" from first resolve — simulates partial resolve.
@@ -3268,12 +3268,12 @@ func TestPrimeDetectsStaleLock(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	// Create a stale resolve lock (simulating a crash mid-resolve).
-	lockPath := ResolveLockPath("ember", "Toast", "agent")
+	lockPath := ResolveLockPath("ember", "Toast", "outpost")
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		t.Fatalf("failed to create lock dir: %v", err)
 	}
@@ -3282,18 +3282,18 @@ func TestPrimeDetectsStaleLock(t *testing.T) {
 	}
 
 	// Verify lock exists.
-	if !IsResolveInProgress("ember", "Toast", "agent") {
+	if !IsResolveInProgress("ember", "Toast", "outpost") {
 		t.Fatal("expected resolve lock to exist")
 	}
 
 	// Prime should detect and remove the stale lock.
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
 	}
 
 	// Lock should be cleaned up.
-	if IsResolveInProgress("ember", "Toast", "agent") {
+	if IsResolveInProgress("ember", "Toast", "outpost") {
 		t.Error("expected stale resolve lock to be removed after prime")
 	}
 
@@ -3346,14 +3346,14 @@ func TestResolveNonCodeWritSkipsGitAndMR(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -3410,7 +3410,7 @@ func TestResolveNonCodeWritSkipsGitAndMR(t *testing.T) {
 	}
 
 	// Verify tether is cleared.
-	tetherID, err := tether.Read("ember", "Toast", "agent")
+	tetherID, err := tether.Read("ember", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("failed to read tether: %v", err)
 	}
@@ -3443,14 +3443,14 @@ func TestResolveNonCodeWritSkipsForgeNudge(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -3524,14 +3524,14 @@ func TestResolveCodeWritDefaultKind(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -3593,7 +3593,7 @@ func TestCastCreatesOutputDirectory(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -3652,7 +3652,7 @@ func TestCastCreatesOutputDirectoryForNonCodeWrit(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -3703,14 +3703,14 @@ func TestOutputDirectorySurvivesResolve(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -3841,7 +3841,7 @@ func TestCastKindPassedToContext(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -3880,7 +3880,7 @@ func TestCastCodeKindDefault(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -3938,7 +3938,7 @@ func TestCastDirectDeps(t *testing.T) {
 		t.Fatalf("failed to add dependency: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
@@ -4208,11 +4208,11 @@ func TestPrimeSingleTetherOutpostUnchanged(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
-	result, err := Prime("ember", "Toast", "agent", worldStore)
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
 	}
@@ -4341,7 +4341,7 @@ func TestCastCancelledContext(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "init")
 
 	// Create agent and writ.
-	sphereStore.CreateAgent("Ash", "ember", "agent")
+	sphereStore.CreateAgent("Ash", "ember", "outpost")
 	writID, _ := worldStore.CreateWrit("cancel-test", "test cancellation", "autarch", 1, nil)
 
 	mgr := newMockSessionManager()
@@ -4372,7 +4372,7 @@ func TestCastContextTimeout(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "init")
 
 	// Create agent and writ.
-	sphereStore.CreateAgent("Ember", "ember", "agent")
+	sphereStore.CreateAgent("Ember", "ember", "outpost")
 	writID, _ := worldStore.CreateWrit("timeout-test", "test timeout", "autarch", 1, nil)
 
 	mgr := newMockSessionManager()
@@ -4407,11 +4407,11 @@ func TestResolveContextCancelled(t *testing.T) {
 	// Set up agent and writ.
 	agentName := "Blaze"
 	world := "ember"
-	sphereStore.CreateAgent(agentName, world, "agent")
+	sphereStore.CreateAgent(agentName, world, "outpost")
 	writID, _ := worldStore.CreateWrit("cancel-resolve-test", "desc", "autarch", 1, nil)
 	worldStore.UpdateWrit(writID, store.WritUpdates{Status: "tethered", Assignee: world + "/" + agentName})
 	sphereStore.UpdateAgentState(world+"/"+agentName, "working", writID)
-	tether.Write(world, agentName, writID, "agent")
+	tether.Write(world, agentName, writID, "outpost")
 
 	// Create worktree.
 	worktreeDir := WorktreePath(world, agentName)
@@ -4466,7 +4466,7 @@ func TestAutoProvisionCapacityExhaustedError(t *testing.T) {
 	worldName := "capped-test"
 	// Create 3 agents — capacity of 3 should be exhausted.
 	for _, name := range []string{"Alpha", "Beta", "Gamma"} {
-		if _, err := sphereStore.CreateAgent(name, worldName, "agent"); err != nil {
+		if _, err := sphereStore.CreateAgent(name, worldName, "outpost"); err != nil {
 			t.Fatalf("failed to create agent: %v", err)
 		}
 	}
@@ -4507,14 +4507,14 @@ func TestResolveAutoResolvesWritLinkedEscalations(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -4590,14 +4590,14 @@ func TestResolveAutoResolvesEscalationsForCodeWrit(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -4654,14 +4654,14 @@ func TestResolveEscalationAutoResolveIsBestEffort(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -4713,14 +4713,14 @@ func TestResolveMultipleEscalationsForSameWrit(t *testing.T) {
 		t.Fatalf("failed to update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
 		t.Fatalf("failed to update agent: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -4799,11 +4799,11 @@ func TestPrimeCompactWithTether(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
-	result, err := Prime("ember", "Toast", "agent", worldStore, true)
+	result, err := Prime("ember", "Toast", "outpost", worldStore, true)
 	if err != nil {
 		t.Fatalf("Prime compact failed: %v", err)
 	}
@@ -4834,7 +4834,7 @@ func TestPrimeCompactWithTether(t *testing.T) {
 func TestPrimeCompactNoTether(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
-	result, err := Prime("ember", "Toast", "agent", worldStore, true)
+	result, err := Prime("ember", "Toast", "outpost", worldStore, true)
 	if err != nil {
 		t.Fatalf("Prime compact failed: %v", err)
 	}
@@ -4855,23 +4855,23 @@ func TestPrimeCompactWithWorkflow(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", itemID, "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	// Set up workflow with 3 steps, 1 completed.
 	setupTestWorkflow(t, "test-compact-wf")
-	if _, _, err := workflow.Instantiate("ember", "Toast", "agent", "test-compact-wf", map[string]string{
+	if _, _, err := workflow.Instantiate("ember", "Toast", "outpost", "test-compact-wf", map[string]string{
 		"issue": itemID,
 	}); err != nil {
 		t.Fatalf("instantiate workflow: %v", err)
 	}
 	// Advance first step.
-	if _, _, err := workflow.Advance("ember", "Toast", "agent"); err != nil {
+	if _, _, err := workflow.Advance("ember", "Toast", "outpost"); err != nil {
 		t.Fatalf("workflow advance failed: %v", err)
 	}
 
-	result, err := Prime("ember", "Toast", "agent", worldStore, true)
+	result, err := Prime("ember", "Toast", "outpost", worldStore, true)
 	if err != nil {
 		t.Fatalf("Prime compact with workflow failed: %v", err)
 	}

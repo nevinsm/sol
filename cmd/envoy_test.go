@@ -184,7 +184,7 @@ func TestEnvoyListCommand(t *testing.T) {
 	}
 	ss.CreateAgent("scout", "myworld", "envoy")
 	ss.CreateAgent("ranger", "myworld", "envoy")
-	ss.CreateAgent("worker", "myworld", "agent")
+	ss.CreateAgent("worker", "myworld", "outpost")
 	ss.Close()
 
 	envoyListWorld = "myworld"
@@ -218,7 +218,7 @@ func TestEnvoyListCommand(t *testing.T) {
 	if !strings.Contains(output, "ranger") {
 		t.Errorf("expected 'ranger' in list output, got: %s", output)
 	}
-	// worker is role=agent, should NOT appear.
+	// worker is role=outpost, should NOT appear.
 	if strings.Contains(output, "worker") {
 		t.Errorf("did not expect 'worker' (role=agent) in envoy list, got: %s", output)
 	}

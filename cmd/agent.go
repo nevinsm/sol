@@ -44,8 +44,8 @@ var agentCreateCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
-		// Enforce capacity for outpost agents (role=agent).
-		if agentCreateRole == "agent" {
+		// Enforce capacity for outpost agents (role=outpost).
+		if agentCreateRole == "outpost" {
 			worldCfg, err := config.LoadWorldConfig(world)
 			if err != nil {
 				return fmt.Errorf("failed to load world config for %q: %w", world, err)
@@ -57,7 +57,7 @@ var agentCreateCmd = &cobra.Command{
 				}
 				count := 0
 				for _, a := range agents {
-					if a.Role == "agent" {
+					if a.Role == "outpost" {
 						count++
 					}
 				}
@@ -221,7 +221,7 @@ func init() {
 
 	agentCmd.AddCommand(agentCreateCmd)
 	agentCreateCmd.Flags().StringVar(&agentCreateWorld, "world", "", "world name")
-	agentCreateCmd.Flags().StringVar(&agentCreateRole, "role", "agent", "agent role")
+	agentCreateCmd.Flags().StringVar(&agentCreateRole, "role", "outpost", "agent role")
 
 	agentCmd.AddCommand(agentListCmd)
 	agentListCmd.Flags().StringVar(&agentListWorld, "world", "", "world name")

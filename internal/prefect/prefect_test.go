@@ -100,7 +100,7 @@ func setupTestEnv(t *testing.T) *store.Store {
 	}
 
 	// Register common roles so startup.Respawn succeeds in respawn tests.
-	startup.Register("agent", startup.RoleConfig{
+	startup.Register("outpost", startup.RoleConfig{
 		WorktreeDir: func(w, a string) string {
 			return filepath.Join(os.Getenv("SOL_HOME"), w, "outposts", a, "worktree")
 		},
@@ -111,7 +111,7 @@ func setupTestEnv(t *testing.T) *store.Store {
 		},
 	})
 	t.Cleanup(func() {
-		startup.Register("agent", startup.RoleConfig{})
+		startup.Register("outpost", startup.RoleConfig{})
 		startup.Register("forge", startup.RoleConfig{})
 	})
 
@@ -176,7 +176,7 @@ func TestHeartbeatDetectsDead(t *testing.T) {
 	cfg := testConfig()
 
 	// Create a working agent with a worktree.
-	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 
 	// Create the worktree directory so respawn doesn't bail.
@@ -215,7 +215,7 @@ func TestHeartbeatIgnoresIdle(t *testing.T) {
 	cfg := testConfig()
 
 	// Create an idle agent.
-	sphereStore.CreateAgent("Jasper", "haven", "agent")
+	sphereStore.CreateAgent("Jasper", "haven", "outpost")
 
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.heartbeat()
@@ -234,9 +234,9 @@ func TestHeartbeatMultipleWorlds(t *testing.T) {
 	cfg := testConfig()
 
 	// Create working agents in different worlds.
-	sphereStore.CreateAgent("Toast", "alpha", "agent")
+	sphereStore.CreateAgent("Toast", "alpha", "outpost")
 	sphereStore.UpdateAgentState("alpha/Toast", "working", "sol-aaa11111")
-	sphereStore.CreateAgent("Jasper", "beta", "agent")
+	sphereStore.CreateAgent("Jasper", "beta", "outpost")
 	sphereStore.UpdateAgentState("beta/Jasper", "working", "sol-bbb22222")
 
 	// Create worktree directories.
@@ -263,7 +263,7 @@ func TestBackoffEscalation(t *testing.T) {
 	logger := testLogger()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
@@ -308,7 +308,7 @@ func TestMassDeathDetection(t *testing.T) {
 
 	// Create 3 working agents.
 	for _, name := range []string{"Toast", "Jasper", "Olive"} {
-		sphereStore.CreateAgent(name, "haven", "agent")
+		sphereStore.CreateAgent(name, "haven", "outpost")
 		sphereStore.UpdateAgentState("haven/"+name, "working", "sol-"+name)
 		worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", name, "worktree")
 		os.MkdirAll(worktreeDir, 0o755)
@@ -361,7 +361,7 @@ func TestDegradedModeSkipsRespawn(t *testing.T) {
 	logger := testLogger()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
@@ -403,9 +403,9 @@ func TestShutdownStopsSessions(t *testing.T) {
 
 	// Create working agents with live sessions.
 	for _, name := range []string{"Toast", "Jasper"} {
-		sphereStore.CreateAgent(name, "haven", "agent")
+		sphereStore.CreateAgent(name, "haven", "outpost")
 		sphereStore.UpdateAgentState("haven/"+name, "working", "sol-"+name)
-		mock.Start("sol-haven-"+name, "/tmp", "echo", nil, "agent", "haven")
+		mock.Start("sol-haven-"+name, "/tmp", "echo", nil, "outpost", "haven")
 	}
 
 	sup := New(cfg, sphereStore, mock, logger)
@@ -435,7 +435,7 @@ func TestBackoffReset(t *testing.T) {
 	logger := testLogger()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
@@ -528,7 +528,7 @@ func TestRespawnMissingWorktree(t *testing.T) {
 	logger := testLogger()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Ghost", "haven", "agent")
+	sphereStore.CreateAgent("Ghost", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Ghost", "working", "sol-ghost123")
 
 	// Do NOT create worktree directory.
@@ -596,7 +596,7 @@ func TestRespawnOutpostUnchanged(t *testing.T) {
 	cfg := testConfig()
 
 	// Create an agent in working state.
-	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 
 	// Create the agent worktree directory.
@@ -629,7 +629,7 @@ func TestWorktreeForAgentByRole(t *testing.T) {
 	t.Setenv("SOL_HOME", dir)
 
 	forgeAgent := store.Agent{Name: "forge", World: "haven", Role: "forge"}
-	agentBot := store.Agent{Name: "Toast", World: "haven", Role: "agent"}
+	agentBot := store.Agent{Name: "Toast", World: "haven", Role: "outpost"}
 	sentinelAgent := store.Agent{Name: "sentinel", World: "haven", Role: "sentinel"}
 
 	forgePath := worktreeForAgent(forgeAgent)
@@ -666,7 +666,7 @@ func TestHeartbeatDefersToSentinel(t *testing.T) {
 	}
 
 	// Create a working agent with a dead session.
-	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
@@ -696,7 +696,7 @@ func TestHeartbeatRespondsWithoutSentinel(t *testing.T) {
 	// State is idle (default).
 
 	// Create a working agent with a dead session.
-	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
@@ -773,9 +773,9 @@ func TestShutdownSkipsEnvoyGovernor(t *testing.T) {
 	cfg := testConfig()
 
 	// Create working agents: one regular, one envoy, one governor — all with live sessions.
-	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
-	mock.Start("sol-haven-Toast", "/tmp", "echo", nil, "agent", "haven")
+	mock.Start("sol-haven-Toast", "/tmp", "echo", nil, "outpost", "haven")
 
 	sphereStore.CreateAgent("Scout", "haven", "envoy")
 	sphereStore.UpdateAgentState("haven/Scout", "working", "sol-envoy123")
@@ -814,9 +814,9 @@ func TestHeartbeatWorldsFilter(t *testing.T) {
 	cfg.Worlds = []string{"alpha"}
 
 	// Create working agents in two worlds.
-	sphereStore.CreateAgent("Toast", "alpha", "agent")
+	sphereStore.CreateAgent("Toast", "alpha", "outpost")
 	sphereStore.UpdateAgentState("alpha/Toast", "working", "sol-aaa11111")
-	sphereStore.CreateAgent("Jasper", "beta", "agent")
+	sphereStore.CreateAgent("Jasper", "beta", "outpost")
 	sphereStore.UpdateAgentState("beta/Jasper", "working", "sol-bbb22222")
 
 	// Create worktree directories.
@@ -848,13 +848,13 @@ func TestShutdownWorldsFilter(t *testing.T) {
 	cfg.Worlds = []string{"alpha"}
 
 	// Create working agents with live sessions in two worlds.
-	sphereStore.CreateAgent("Toast", "alpha", "agent")
+	sphereStore.CreateAgent("Toast", "alpha", "outpost")
 	sphereStore.UpdateAgentState("alpha/Toast", "working", "sol-aaa11111")
-	mock.Start("sol-alpha-Toast", "/tmp", "echo", nil, "agent", "alpha")
+	mock.Start("sol-alpha-Toast", "/tmp", "echo", nil, "outpost", "alpha")
 
-	sphereStore.CreateAgent("Jasper", "beta", "agent")
+	sphereStore.CreateAgent("Jasper", "beta", "outpost")
 	sphereStore.UpdateAgentState("beta/Jasper", "working", "sol-bbb22222")
-	mock.Start("sol-beta-Jasper", "/tmp", "echo", nil, "agent", "beta")
+	mock.Start("sol-beta-Jasper", "/tmp", "echo", nil, "outpost", "beta")
 
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.shutdown()
@@ -1250,8 +1250,8 @@ func TestRespawnOutpostUsesStartupLaunch(t *testing.T) {
 
 	// Register the outpost role config so prefect uses startup.Launch.
 	// Use a simplified config that avoids needing tether/world store for persona.
-	startup.Register("agent", startup.RoleConfig{
-		Role:        "agent",
+	startup.Register("outpost", startup.RoleConfig{
+		Role:        "outpost",
 		WorktreeDir: func(w, a string) string { return dispatch.WorktreePath(w, a) },
 		Persona:     func(w, a string) ([]byte, error) { return []byte("# Test Agent"), nil },
 		PrimeBuilder: func(w, a string) string {
@@ -1260,7 +1260,7 @@ func TestRespawnOutpostUsesStartupLaunch(t *testing.T) {
 	})
 	t.Cleanup(func() {
 		// Unregister to avoid polluting other tests.
-		startup.Register("agent", startup.RoleConfig{})
+		startup.Register("outpost", startup.RoleConfig{})
 	})
 
 	// Create world config (required by startup.Launch for CLAUDE_CONFIG_DIR).
@@ -1271,7 +1271,7 @@ source_repo = "/tmp/fakerepo"
 `), 0o644)
 
 	// Create a working agent with a worktree.
-	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 
 	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")

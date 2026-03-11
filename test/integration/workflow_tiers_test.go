@@ -322,7 +322,7 @@ instructions = "steps/01.md"
 	}
 
 	// Create agent and writ.
-	if _, err := sphereStore.CreateAgent("ProjectBot", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("ProjectBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	itemID, err := worldStore.CreateWrit("Project WF task", "Test project workflow", "autarch", 2, nil)
@@ -347,7 +347,7 @@ instructions = "steps/01.md"
 	}
 
 	// Verify workflow state was created.
-	state, err := workflow.ReadState(world, "ProjectBot", "agent")
+	state, err := workflow.ReadState(world, "ProjectBot", "outpost")
 	if err != nil {
 		t.Fatalf("ReadState: %v", err)
 	}
@@ -359,7 +359,7 @@ instructions = "steps/01.md"
 	}
 
 	// Verify step instructions contain the rendered variable.
-	step, err := workflow.ReadCurrentStep(world, "ProjectBot", "agent")
+	step, err := workflow.ReadCurrentStep(world, "ProjectBot", "outpost")
 	if err != nil {
 		t.Fatalf("ReadCurrentStep: %v", err)
 	}
@@ -371,7 +371,7 @@ instructions = "steps/01.md"
 	}
 
 	// Full cycle: advance → done → resolve.
-	_, done, err := workflow.Advance(world, "ProjectBot", "agent")
+	_, done, err := workflow.Advance(world, "ProjectBot", "outpost")
 	if err != nil {
 		t.Fatalf("Advance: %v", err)
 	}
@@ -477,7 +477,7 @@ instructions = "steps/01.md"
 	}
 
 	// Instantiate — should use project tier.
-	inst, state, err := workflow.Instantiate(world, agent, "agent", "tier-test", map[string]string{"issue": "sol-abcd1234"})
+	inst, state, err := workflow.Instantiate(world, agent, "outpost", "tier-test", map[string]string{"issue": "sol-abcd1234"})
 	if err != nil {
 		t.Fatalf("Instantiate: %v", err)
 	}
@@ -490,7 +490,7 @@ instructions = "steps/01.md"
 	}
 
 	// Read the step — instructions should be from project tier.
-	step, err := workflow.ReadCurrentStep(world, agent, "agent")
+	step, err := workflow.ReadCurrentStep(world, agent, "outpost")
 	if err != nil {
 		t.Fatalf("ReadCurrentStep: %v", err)
 	}

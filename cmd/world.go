@@ -713,7 +713,7 @@ With --force, also stops all outpost agent sessions immediately:
 				agents, listErr := sphereStore.ListAgents(name, "")
 				if listErr == nil {
 					for _, a := range agents {
-						if a.Role == "agent" && (a.State == "working" || a.State == "stalled") {
+						if a.Role == "outpost" && (a.State == "working" || a.State == "stalled") {
 							agentsRunning++
 						}
 					}
@@ -769,7 +769,7 @@ With --force, also stops all outpost agent sessions immediately:
 				continue
 			}
 
-			if agent.Role != "agent" {
+			if agent.Role != "outpost" {
 				continue // skip non-outpost, non-envoy roles (governor, forge already stopped)
 			}
 

@@ -257,7 +257,7 @@ func TestBuildCommandAppendSystemPrompt(t *testing.T) {
 	t.Setenv("SOL_SESSION_COMMAND", "")
 
 	cfg := RoleConfig{
-		Role:             "agent",
+		Role:             "outpost",
 		SystemPromptFile: "prompts/agent.md",
 		ReplacePrompt:    false,
 	}
@@ -480,13 +480,13 @@ func TestLaunchPreservesActiveWrit(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	sphereStore.CreateAgent("Toast", "haven", "agent")
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 
 	mock := &mockSessionStarter{}
 
 	cfg := RoleConfig{
-		Role:        "agent",
+		Role:        "outpost",
 		WorktreeDir: func(w, a string) string { return filepath.Join(solHome, w, "outposts", a, "worktree") },
 		Persona:     func(w, a string) ([]byte, error) { return []byte("# Test Agent"), nil },
 		PrimeBuilder: func(w, a string) string { return "Agent " + a },
@@ -530,7 +530,7 @@ func TestLaunchSystemPromptFullReplace(t *testing.T) {
 	mock := &mockSessionStarter{}
 
 	cfg := RoleConfig{
-		Role:                "agent",
+		Role:                "outpost",
 		WorktreeDir:         func(w, a string) string { return filepath.Join(solHome, w, "outposts", a, "worktree") },
 		Persona:             func(w, a string) ([]byte, error) { return []byte("# Test Agent"), nil },
 		SystemPromptContent: "# Outpost System Prompt\nYou are an outpost agent.",

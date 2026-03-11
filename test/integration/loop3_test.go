@@ -414,7 +414,7 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	mock := newMockSessionChecker()
 
 	// Create agent with state=working, active_writ set.
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
@@ -432,7 +432,7 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	}
 
 	// Write tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
@@ -487,7 +487,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
@@ -503,7 +503,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 		t.Fatalf("Exec: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
@@ -578,7 +578,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	}
 
 	// Tether file should be removed.
-	if tether.IsTethered("ember", "Toast", "agent") {
+	if tether.IsTethered("ember", "Toast", "outpost") {
 		t.Error("tether file should be removed after max respawns")
 	}
 
@@ -607,7 +607,7 @@ func TestSentinelCleanupZombies(t *testing.T) {
 	mock := newMockSessionChecker()
 
 	// Create idle agent with no active_writ, no tether file.
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	// Session is alive.
@@ -654,7 +654,7 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
@@ -717,7 +717,7 @@ func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
 	_, sphereStore := openStores(t, "ember")
 	mock := newMockSessionChecker()
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
@@ -773,7 +773,7 @@ func TestSentinelAIAssessmentFailure(t *testing.T) {
 	logger := events.NewLogger(solHome)
 	mock := newMockSessionChecker()
 
-	if _, err := sphereStore.CreateAgent("Toast", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {

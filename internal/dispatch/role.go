@@ -15,7 +15,7 @@ import (
 // OutpostRoleConfig returns the startup.RoleConfig for the outpost agent role.
 func OutpostRoleConfig() startup.RoleConfig {
 	return startup.RoleConfig{
-		Role:                "agent",
+		Role:                "outpost",
 		WorktreeDir:         func(w, a string) string { return WorktreePath(w, a) },
 		Persona:             outpostPersona,
 		Hooks:               outpostHooks,
@@ -37,7 +37,7 @@ func outpostSkillInstaller(worktreeDir, world, agent string) error {
 	}
 
 	// Read tether to find writ for output dir.
-	writID, _ := tether.Read(world, agent, "agent")
+	writID, _ := tether.Read(world, agent, "outpost")
 	var outputDir string
 	if writID != "" {
 		outputDir = config.WritOutputDir(world, writID)
@@ -56,14 +56,14 @@ func outpostSkillInstaller(worktreeDir, world, agent string) error {
 // Reads the current workflow step and tethered writ to determine where
 // the agent should resume from.
 func OutpostResumeState(world, agent string) startup.ResumeState {
-	return handoff.CaptureResumeState(world, agent, "agent", "compact", nil)
+	return handoff.CaptureResumeState(world, agent, "outpost", "compact", nil)
 }
 
 // outpostPersona generates the outpost CLAUDE.local.md content.
 // Reads the tether to find the writ, then builds persona from writ data.
 func outpostPersona(world, agent string) ([]byte, error) {
 	// Read tether to find writ.
-	writID, err := tether.Read(world, agent, "agent")
+	writID, err := tether.Read(world, agent, "outpost")
 	if err != nil || writID == "" {
 		// No tether — minimal persona (e.g., during edge-case respawn).
 		return []byte(fmt.Sprintf("# Outpost Agent: %s (world: %s)\n\nNo writ tethered.\n", agent, world)), nil
@@ -88,7 +88,7 @@ func outpostPersona(world, agent string) ([]byte, error) {
 	}
 
 	// Check if a workflow is active.
-	wfState, _ := workflow.ReadState(world, agent, "agent")
+	wfState, _ := workflow.ReadState(world, agent, "outpost")
 	hasWorkflow := wfState != nil && wfState.Status == "running"
 
 	// Resolve direct dependencies.

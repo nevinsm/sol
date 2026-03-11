@@ -598,7 +598,7 @@ Manage agents
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--role` | string | agent | agent role |
+| `--role` | string | outpost | agent role |
 | `--world` | string | "" | world name |
 
 #### `sol agent handoffs`
@@ -886,7 +886,7 @@ Manage tmux sessions for agents
 |------|------|---------|-------------|
 | `--cmd` | string | "" | command to run |
 | `--env` | stringArray | [] | environment variable KEY=VAL (can be repeated) |
-| `--role` | string | agent | session role |
+| `--role` | string | outpost | session role |
 | `--workdir` | string | . | working directory |
 | `--world` | string | "" | world name |
 
