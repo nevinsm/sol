@@ -15,10 +15,11 @@ import (
 )
 
 var (
-	caravanOwner   string
-	caravanPhase   int
-	caravanWorkflow string
-	caravanVars    []string
+	caravanOwner         string
+	caravanPhase         int
+	caravanWorkflow      string
+	caravanVars          []string
+	caravanDeleteConfirm bool
 )
 
 var caravanCmd = &cobra.Command{
@@ -879,8 +880,11 @@ var caravanRemoveCmd = &cobra.Command{
 // --- sol caravan delete ---
 
 var caravanDeleteCmd = &cobra.Command{
-	Use:          "delete <caravan-id>",
-	Short:        "Delete a drydocked or closed caravan entirely",
+	Use:   "delete <caravan-id>",
+	Short: "Delete a drydocked or closed caravan entirely",
+	Long: `Delete a drydocked or closed caravan entirely.
+
+Requires --confirm to proceed; without it, prints what would be deleted and exits.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -902,6 +906,21 @@ var caravanDeleteCmd = &cobra.Command{
 
 		if caravan.Status != "drydock" && caravan.Status != "closed" {
 			return fmt.Errorf("caravan %s is %q — only drydocked or closed caravans can be deleted", caravanID, caravan.Status)
+		}
+
+		items, err := sphereStore.ListCaravanItems(caravanID)
+		if err != nil {
+			return fmt.Errorf("failed to list caravan items: %w", err)
+		}
+
+		if !caravanDeleteConfirm {
+			fmt.Printf("This will permanently delete caravan %s:\n", caravanID)
+			fmt.Printf("  - Name:   %s\n", caravan.Name)
+			fmt.Printf("  - Status: %s\n", caravan.Status)
+			fmt.Printf("  - Items:  %d\n", len(items))
+			fmt.Println()
+			fmt.Println("Run with --confirm to proceed.")
+			return &exitError{code: 1}
 		}
 
 		if err := sphereStore.DeleteCaravan(caravanID); err != nil {
@@ -1180,6 +1199,9 @@ func init() {
 	caravanCmd.AddCommand(caravanCommissionCmd)
 	caravanCmd.AddCommand(caravanDrydockCmd)
 	caravanCmd.AddCommand(caravanReopenCmd)
+
+	// delete flags
+	caravanDeleteCmd.Flags().BoolVar(&caravanDeleteConfirm, "confirm", false, "confirm deletion (without this flag, prints what would be deleted)")
 
 	// set-phase flags
 	caravanSetPhaseCmd.Flags().Bool("all", false, "update all items in the caravan")

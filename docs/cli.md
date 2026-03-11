@@ -220,6 +220,18 @@ Close a caravan by ID, or use --auto to close all caravans where every item is m
 | `--phase` | int | 0 | phase for items (default 0) |
 | `--world` | string | "" | world name |
 
+#### `sol caravan delete`
+
+Delete a drydocked or closed caravan entirely.
+
+Requires --confirm to proceed; without it, prints what would be deleted and exits.
+
+**Usage:** `sol caravan delete <caravan-id>`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--confirm` | bool | false | confirm deletion (without this flag, prints what would be deleted) |
+
 #### `sol caravan dep`
 
 **Subcommands:**
