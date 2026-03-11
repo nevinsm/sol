@@ -3195,3 +3195,255 @@ func TestOrphanedResolutionCreatesEscalation(t *testing.T) {
 		t.Error("expected RECOVERY_NEEDED protocol message alongside escalation")
 	}
 }
+
+// --- Mock world store for error injection tests ---
+
+type mockWorldStore struct {
+	getWritFn      func(id string) (*store.Writ, error)
+	updateWritFn   func(id string, updates store.WritUpdates) error
+	setMetadataFn  func(id string, metadata map[string]any) error
+	listMRFn       func(phase string) ([]store.MergeRequest, error)
+	listMRByWritFn func(writID string, phase string) ([]store.MergeRequest, error)
+	listBlockedFn  func() ([]store.MergeRequest, error)
+	releaseClaimFn func(ttl time.Duration) (int, error)
+}
+
+func (m *mockWorldStore) GetWrit(id string) (*store.Writ, error) {
+	if m.getWritFn != nil {
+		return m.getWritFn(id)
+	}
+	return nil, fmt.Errorf("not found")
+}
+
+func (m *mockWorldStore) UpdateWrit(id string, updates store.WritUpdates) error {
+	if m.updateWritFn != nil {
+		return m.updateWritFn(id, updates)
+	}
+	return nil
+}
+
+func (m *mockWorldStore) SetWritMetadata(id string, metadata map[string]any) error {
+	if m.setMetadataFn != nil {
+		return m.setMetadataFn(id, metadata)
+	}
+	return nil
+}
+
+func (m *mockWorldStore) ListMergeRequests(phase string) ([]store.MergeRequest, error) {
+	if m.listMRFn != nil {
+		return m.listMRFn(phase)
+	}
+	return nil, nil
+}
+
+func (m *mockWorldStore) ListMergeRequestsByWrit(writID string, phase string) ([]store.MergeRequest, error) {
+	if m.listMRByWritFn != nil {
+		return m.listMRByWritFn(writID, phase)
+	}
+	return nil, nil
+}
+
+func (m *mockWorldStore) ListBlockedMergeRequests() ([]store.MergeRequest, error) {
+	if m.listBlockedFn != nil {
+		return m.listBlockedFn()
+	}
+	return nil, nil
+}
+
+func (m *mockWorldStore) ReleaseStaleClaims(ttl time.Duration) (int, error) {
+	if m.releaseClaimFn != nil {
+		return m.releaseClaimFn(ttl)
+	}
+	return 0, nil
+}
+
+// readEvents reads all events from the logger's event file and returns those
+// matching the given event type.
+func readEvents(t *testing.T, solHome, eventType string) []events.Event {
+	t.Helper()
+	path := filepath.Join(solHome, ".events.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		t.Fatalf("failed to read events file: %v", err)
+	}
+	var matched []events.Event
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if line == "" {
+			continue
+		}
+		var ev events.Event
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			continue
+		}
+		if ev.Type == eventType {
+			matched = append(matched, ev)
+		}
+	}
+	return matched
+}
+
+// --- Error path tests ---
+
+func TestHandleOrphanedWorking_UpdateWritError(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create an outpost agent that is "working" with a dead session and no tether.
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-orphwrit1")
+
+	// Use a mock world store that returns a tethered writ but fails on UpdateWrit.
+	mws := &mockWorldStore{
+		getWritFn: func(id string) (*store.Writ, error) {
+			return &store.Writ{ID: id, Status: "tethered"}, nil
+		},
+		updateWritFn: func(id string, updates store.WritUpdates) error {
+			return fmt.Errorf("database is locked")
+		},
+	}
+
+	logger := events.NewLogger(cfg.SolHome)
+	w := New(cfg, sphereStore, mws, mock, logger)
+
+	err := w.handleOrphanedWorking(store.Agent{
+		ID:         "ember/Toast",
+		Name:       "Toast",
+		World:      "ember",
+		Role:       "outpost",
+		ActiveWrit: "sol-orphwrit1",
+	})
+
+	// Should not return an error — the agent is already deleted.
+	if err != nil {
+		t.Fatalf("handleOrphanedWorking() unexpected error: %v", err)
+	}
+
+	// Verify sentinel_error event was emitted.
+	evts := readEvents(t, cfg.SolHome, "sentinel_error")
+	if len(evts) == 0 {
+		t.Fatal("expected sentinel_error event for UpdateWrit failure, got none")
+	}
+
+	// Verify the event payload contains the relevant details.
+	payload, ok := evts[0].Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map payload, got %T", evts[0].Payload)
+	}
+	if payload["action"] != "return_orphaned_writ_to_open" {
+		t.Errorf("event action = %q, want %q", payload["action"], "return_orphaned_writ_to_open")
+	}
+	if payload["writ"] != "sol-orphwrit1" {
+		t.Errorf("event writ = %q, want %q", payload["writ"], "sol-orphwrit1")
+	}
+	errMsg, _ := payload["error"].(string)
+	if !strings.Contains(errMsg, "database is locked") {
+		t.Errorf("event error = %q, want it to contain %q", errMsg, "database is locked")
+	}
+}
+
+func TestCheckClosedWritTethers_ListTetherError(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create an agent with a tether directory that will cause tether.List to fail.
+	// We simulate this by creating the tether dir as a file (not a dir) to cause an error.
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+
+	tetherDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "outposts", "Toast", ".tether")
+	// Remove any existing dir, then create a file where a directory is expected.
+	os.RemoveAll(tetherDir)
+	os.MkdirAll(filepath.Dir(tetherDir), 0o755)
+	os.WriteFile(tetherDir, []byte("not a directory"), 0o644)
+
+	mws := &mockWorldStore{}
+	logger := events.NewLogger(cfg.SolHome)
+	w := New(cfg, sphereStore, mws, mock, logger)
+
+	agents := []store.Agent{
+		{ID: "ember/Toast", Name: "Toast", World: "ember", Role: "outpost"},
+	}
+
+	reapedCount := 0
+	actionsTaken := []string{}
+	reaped := w.checkClosedWritTethers(agents, &reapedCount, &actionsTaken)
+
+	// Should not panic or crash — should log and continue.
+	if len(reaped) != 0 {
+		t.Errorf("expected no reaped agents, got %d", len(reaped))
+	}
+
+	// Verify sentinel_error event was emitted for the list error.
+	evts := readEvents(t, cfg.SolHome, "sentinel_error")
+	if len(evts) == 0 {
+		t.Fatal("expected sentinel_error event for tether list failure, got none")
+	}
+
+	payload, ok := evts[0].Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map payload, got %T", evts[0].Payload)
+	}
+	if payload["action"] != "list_tethered_writs" {
+		t.Errorf("event action = %q, want %q", payload["action"], "list_tethered_writs")
+	}
+}
+
+func TestCheckClosedWritTethers_GetWritError(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create an agent with a valid tether.
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	if err := tether.Write("ember", "Toast", "sol-getwrit1", "outpost"); err != nil {
+		t.Fatalf("tether.Write() error: %v", err)
+	}
+
+	// Mock world store that returns an error from GetWrit.
+	mws := &mockWorldStore{
+		getWritFn: func(id string) (*store.Writ, error) {
+			return nil, fmt.Errorf("database connection lost")
+		},
+	}
+
+	logger := events.NewLogger(cfg.SolHome)
+	w := New(cfg, sphereStore, mws, mock, logger)
+
+	agents := []store.Agent{
+		{ID: "ember/Toast", Name: "Toast", World: "ember", Role: "outpost"},
+	}
+
+	reapedCount := 0
+	actionsTaken := []string{}
+	reaped := w.checkClosedWritTethers(agents, &reapedCount, &actionsTaken)
+
+	// Should not crash — should log and continue.
+	if len(reaped) != 0 {
+		t.Errorf("expected no reaped agents, got %d", len(reaped))
+	}
+
+	// Verify sentinel_error event was emitted for GetWrit failure.
+	evts := readEvents(t, cfg.SolHome, "sentinel_error")
+	if len(evts) == 0 {
+		t.Fatal("expected sentinel_error event for GetWrit failure, got none")
+	}
+
+	payload, ok := evts[0].Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map payload, got %T", evts[0].Payload)
+	}
+	if payload["action"] != "get_writ_for_closed_check" {
+		t.Errorf("event action = %q, want %q", payload["action"], "get_writ_for_closed_check")
+	}
+	if payload["writ"] != "sol-getwrit1" {
+		t.Errorf("event writ = %q, want %q", payload["writ"], "sol-getwrit1")
+	}
+	errMsg, _ := payload["error"].(string)
+	if !strings.Contains(errMsg, "database connection lost") {
+		t.Errorf("event error = %q, want it to contain %q", errMsg, "database connection lost")
+	}
+}
