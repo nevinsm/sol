@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/chronicle"
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/logutil"
 )
 
 // ChronicleConfig holds chronicle configuration.
@@ -274,6 +276,10 @@ func (c *Chronicle) processCycle() error {
 
 	// 9. Save checkpoint.
 	c.saveCheckpoint()
+
+	// 10. Best-effort log rotation — chronicle's own log and raw event feed.
+	logutil.TruncateIfNeeded(filepath.Join(config.RuntimeDir(), "chronicle.log"), logutil.DefaultMaxLogSize)
+	logutil.TruncateIfNeeded(c.config.RawPath, logutil.DefaultMaxLogSize)
 
 	return nil
 }

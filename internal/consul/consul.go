@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/escalation"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -341,6 +343,9 @@ func (d *Consul) Patrol(ctx context.Context) error {
 		"esc_renotified":    escRenotified,
 		"escalation_alert":  escalationAlert,
 	})
+
+	// Best-effort log rotation.
+	logutil.TruncateIfNeeded(filepath.Join(config.RuntimeDir(), "consul.log"), logutil.DefaultMaxLogSize)
 
 	// If shutdown was requested, return a sentinel error that Run will detect.
 	if shutdown {

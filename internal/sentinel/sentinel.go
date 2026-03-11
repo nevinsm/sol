@@ -16,6 +16,7 @@ import (
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/handoff"
+	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/quota"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -531,6 +532,9 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	// Write heartbeat with patrol results.
 	patrolDuration := w.now().Sub(patrolStart)
 	w.writeHeartbeat("running", w.patrolCount, len(activeAgents), stalledCount, reapedCount, patrolDuration.String())
+
+	// Best-effort log rotation.
+	logutil.TruncateIfNeeded(filepath.Join(w.config.SolHome, w.config.World, "sentinel.log"), logutil.DefaultMaxLogSize)
 
 	return nil
 }
