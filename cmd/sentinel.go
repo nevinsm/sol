@@ -118,7 +118,8 @@ var sentinelStartCmd = &cobra.Command{
 
 		// Check if already running via PID file.
 		if pid := sentinel.ReadPID(world); pid > 0 && sentinel.IsRunning(pid) {
-			return fmt.Errorf("sentinel already running for world %q (pid %d)", world, pid)
+			fmt.Printf("Sentinel already running for world %q (pid %d)\n", world, pid)
+			return nil
 		}
 
 		solBin, err := os.Executable()

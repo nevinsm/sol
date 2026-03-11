@@ -117,7 +117,8 @@ var consulRunCmd = &cobra.Command{
 		// Write PID file (guard against duplicate).
 		existing := readConsulPID()
 		if existing > 0 && prefect.IsRunning(existing) {
-			return fmt.Errorf("consul already running (pid %d)", existing)
+			fmt.Printf("Consul already running (pid %d)\n", existing)
+			return nil
 		}
 		if err := writeConsulPID(os.Getpid()); err != nil {
 			return fmt.Errorf("failed to write PID file: %w", err)
