@@ -71,14 +71,17 @@ func runSitrep(cmd *cobra.Command, args []string) error {
 	}
 	defer sphereStore.Close()
 
-	// Collect data.
+	// Collect data (with spinner for interactive use).
+	spin := startSpinner("Collecting data...")
 	data, err := sitrep.Collect(sphereStore, gatedWorldOpener, scope)
 	if err != nil {
+		spin.stop()
 		return err
 	}
 
-	// JSON mode: dump collected data and exit.
+	// JSON mode: dump collected data and exit (no spinner output).
 	if jsonFlag {
+		spin.stop()
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(data)
@@ -111,12 +114,15 @@ func runSitrep(cmd *cobra.Command, args []string) error {
 	// Build prompt.
 	prompt, err := sitrep.BuildPrompt(data)
 	if err != nil {
+		spin.stop()
 		return err
 	}
 
 	// Run AI assessment.
+	spin.setLabel("Generating report...")
 	ctx := context.Background()
 	report, err := sitrep.Run(ctx, cfg, prompt)
+	spin.stop()
 	if err != nil {
 		return err
 	}
