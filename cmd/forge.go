@@ -125,8 +125,15 @@ var forgeStartCmd = &cobra.Command{
 			return fmt.Errorf("failed to open forge log file: %w", err)
 		}
 
+		devNull, err := os.Open(os.DevNull)
+		if err != nil {
+			logFile.Close()
+			return fmt.Errorf("failed to open devnull: %w", err)
+		}
+		defer devNull.Close()
+
 		proc := exec.Command(solBin, "forge", "run", "--world="+world)
-		proc.Stdout = logFile
+		proc.Stdout = devNull
 		proc.Stderr = logFile
 		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
 		proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
