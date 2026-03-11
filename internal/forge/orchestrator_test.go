@@ -888,6 +888,7 @@ func TestPatrolWithSessionManager(t *testing.T) {
 func TestVerifyPushSuccess(t *testing.T) {
 	state, _, _ := setupOrchestratorTest(t)
 	defer state.fl.Close()
+	state.verifyRetryDelay = time.Millisecond
 
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
@@ -908,6 +909,7 @@ func TestVerifyPushSuccess(t *testing.T) {
 func TestVerifyPushWritNotFound(t *testing.T) {
 	state, _, _ := setupOrchestratorTest(t)
 	defer state.fl.Close()
+	state.verifyRetryDelay = time.Millisecond
 
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
@@ -931,6 +933,7 @@ func TestVerifyPushWritNotFound(t *testing.T) {
 func TestVerifyPushFetchFails(t *testing.T) {
 	state, _, _ := setupOrchestratorTest(t)
 	defer state.fl.Close()
+	state.verifyRetryDelay = time.Millisecond
 
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, fmt.Errorf("network error"))
@@ -942,6 +945,78 @@ func TestVerifyPushFetchFails(t *testing.T) {
 	err := state.verifyPush(context.Background(), mr)
 	if err == nil {
 		t.Fatal("expected error on fetch failure")
+	}
+}
+
+func TestVerifyPushRetriesThenSucceeds(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	state.verifyRetryDelay = time.Millisecond
+
+	// Use a counter-based fallback to fail fetch on the first attempt
+	// and succeed on subsequent attempts.
+	var fetchCount int
+	var mu sync.Mutex
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.fallback = func(dir, name string, args ...string) ([]byte, error) {
+		key := name + " " + strings.Join(args, " ")
+		mu.Lock()
+		defer mu.Unlock()
+		if key == "git fetch origin" {
+			fetchCount++
+			if fetchCount <= 1 {
+				return nil, fmt.Errorf("transient network error")
+			}
+			return nil, nil
+		}
+		if key == "git log origin/main --oneline -5 --grep sol-aaa11111" {
+			return []byte("abc1234 Fix auth flow (sol-aaa11111)"), nil
+		}
+		return nil, nil
+	}
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+
+	err := state.verifyPush(context.Background(), mr)
+	if err != nil {
+		t.Fatalf("verifyPush() should succeed after retry, got: %v", err)
+	}
+
+	mu.Lock()
+	if fetchCount < 2 {
+		t.Errorf("expected at least 2 fetch attempts, got %d", fetchCount)
+	}
+	mu.Unlock()
+}
+
+func TestVerifyPushRespectsContextCancellation(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	state.verifyRetryDelay = time.Second // long enough to detect cancellation
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, fmt.Errorf("network error"))
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel immediately so the retry select picks it up.
+	cancel()
+
+	err := state.verifyPush(ctx, mr)
+	if err == nil {
+		t.Fatal("expected error on cancelled context")
+	}
+	if err != context.Canceled {
+		t.Errorf("expected context.Canceled, got: %v", err)
 	}
 }
 
