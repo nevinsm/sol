@@ -20,6 +20,7 @@ const (
 	sectionOutposts
 	sectionEnvoys
 	sectionMergeQueue
+	sectionCaravans
 )
 
 // processEntry holds the name and running state for the compact process grid.
@@ -52,10 +53,15 @@ type worldModel struct {
 	mqScroll      int
 
 	// Section row counts.
-	processLen int
-	outpostLen int
-	envoyLen   int
-	mrLen      int // active (non-merged) MRs
+	processLen  int
+	outpostLen  int
+	envoyLen    int
+	mrLen       int // active (non-merged) MRs
+	caravanLen  int
+
+	// Caravan section cursor and scroll.
+	caravanCursor int
+	caravanScroll int
 
 	// Inline "no active session" message.
 	showNoSession bool
@@ -147,6 +153,7 @@ func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 	wm.processLen = len(worldProcessList(data))
 	wm.outpostLen = len(data.Agents)
 	wm.envoyLen = len(data.Envoys)
+	wm.caravanLen = len(data.Caravans)
 
 	// Count active (non-merged) MRs.
 	activeMRs := 0
@@ -199,6 +206,9 @@ func (wm worldModel) availableSections() []worldSection {
 	if wm.mrLen > 0 {
 		sections = append(sections, sectionMergeQueue)
 	}
+	if wm.caravanLen > 0 {
+		sections = append(sections, sectionCaravans)
+	}
 	return sections
 }
 
@@ -213,6 +223,8 @@ func (wm worldModel) sectionLen(s worldSection) int {
 		return wm.envoyLen
 	case sectionMergeQueue:
 		return wm.mrLen
+	case sectionCaravans:
+		return wm.caravanLen
 	}
 	return 0
 }
@@ -228,6 +240,8 @@ func (wm worldModel) cursor(s worldSection) int {
 		return wm.envoyCursor
 	case sectionMergeQueue:
 		return wm.mqCursor
+	case sectionCaravans:
+		return wm.caravanCursor
 	}
 	return 0
 }
@@ -243,6 +257,8 @@ func (wm *worldModel) setCursor(s worldSection, v int) {
 		wm.envoyCursor = v
 	case sectionMergeQueue:
 		wm.mqCursor = v
+	case sectionCaravans:
+		wm.caravanCursor = v
 	}
 }
 
@@ -351,6 +367,8 @@ func (wm worldModel) scrollForSection(s worldSection) int {
 		return wm.envoyScroll
 	case sectionMergeQueue:
 		return wm.mqScroll
+	case sectionCaravans:
+		return wm.caravanScroll
 	}
 	return 0
 }
@@ -364,6 +382,8 @@ func (wm *worldModel) setScrollForSection(s worldSection, v int) {
 		wm.envoyScroll = v
 	case sectionMergeQueue:
 		wm.mqScroll = v
+	case sectionCaravans:
+		wm.caravanScroll = v
 	}
 }
 
@@ -396,8 +416,8 @@ func (wm worldModel) sectionViewportHeight(s worldSection) int {
 	switch s {
 	case sectionOutposts, sectionEnvoys:
 		return wm.agentSectionViewport()
-	case sectionMergeQueue:
-		// MQ uses the old approach — same estimate.
+	case sectionMergeQueue, sectionCaravans:
+		// MQ and caravans use the same estimate.
 		fixedLines := 18
 		vpHeight := wm.height - fixedLines
 		if vpHeight < 4 {
@@ -444,6 +464,11 @@ func (wm worldModel) handlePeek(data *status.WorldStatus) (worldModel, tea.Cmd) 
 		return wm, nil
 	}
 
+	// Caravan section uses its own peek item builder.
+	if wm.focusedSection == sectionCaravans {
+		return wm.handleCaravanPeek(data)
+	}
+
 	items := buildWorldPeekItems(data)
 	if len(items) == 0 {
 		return wm, nil
@@ -466,6 +491,26 @@ func (wm worldModel) handlePeek(data *status.WorldStatus) (worldModel, tea.Cmd) 
 	msg := peekMsg{
 		items:         items,
 		initialCursor: initialCursor,
+		fromView:      viewWorld,
+		world:         data.World,
+	}
+	return wm, func() tea.Msg { return msg }
+}
+
+// handleCaravanPeek builds caravan peek items and emits a peekMsg.
+func (wm worldModel) handleCaravanPeek(data *status.WorldStatus) (worldModel, tea.Cmd) {
+	if len(data.Caravans) == 0 {
+		return wm, nil
+	}
+
+	items := buildCaravanPeekItems(data.Caravans)
+	if len(items) == 0 {
+		return wm, nil
+	}
+
+	msg := peekMsg{
+		items:         items,
+		initialCursor: wm.caravanCursor,
 		fromView:      viewWorld,
 		world:         data.World,
 	}
@@ -716,12 +761,9 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 		b.WriteString("\n")
 	}
 
-	// Caravans — always expanded (already compact).
+	// Caravans — focusable section with Active/Drydocked subheadings.
 	if len(data.Caravans) > 0 {
-		b.WriteString(headerStyle.Render("Caravans"))
-		b.WriteString("\n")
-		wm.renderCaravans(&b, data.Caravans)
-		b.WriteString("\n")
+		wm.renderCaravansSection(&b, data.Caravans)
 	}
 
 	// Merge Queue.
@@ -1044,7 +1086,23 @@ func (wm worldModel) renderMRRow(mr status.MergeRequestInfo, pulseBright bool) s
 	return "  " + padRight(mr.ID, 20) + " " + padRight(mr.WritID, 20) + " " + padRight(phase, 10) + " " + title
 }
 
-func (wm worldModel) renderCaravans(b *strings.Builder, caravans []status.CaravanInfo) {
+// renderCaravansSection renders the Caravans section with Active/Drydocked subheadings.
+func (wm worldModel) renderCaravansSection(b *strings.Builder, caravans []status.CaravanInfo) {
+	isFocused := wm.hasFocus && wm.focusedSection == sectionCaravans
+
+	if isFocused {
+		b.WriteString("  " + focusIndicator + " " + focusStyle.Render("Caravans"))
+	} else {
+		b.WriteString(headerStyle.Render("Caravans"))
+	}
+	b.WriteString("\n")
+
+	wm.renderCaravanRows(b, caravans, isFocused, wm.caravanCursor)
+	b.WriteString("\n")
+}
+
+// renderCaravanRows renders caravan rows split into Active/Drydocked subgroups.
+func (wm worldModel) renderCaravanRows(b *strings.Builder, caravans []status.CaravanInfo, showCursor bool, cursor int) {
 	maxProgressWidth := wm.width / 3
 	if maxProgressWidth < 20 {
 		maxProgressWidth = 20
@@ -1053,32 +1111,76 @@ func (wm worldModel) renderCaravans(b *strings.Builder, caravans []status.Carava
 		maxProgressWidth = 40
 	}
 
+	// Split into active and drydocked.
+	var active, drydocked []status.CaravanInfo
 	for _, c := range caravans {
-		fraction := float64(0)
-		if c.TotalItems > 0 {
-			fraction = float64(c.ClosedItems) / float64(c.TotalItems)
-		}
-
-		progressStr := ""
-		if p, ok := wm.caravanProgress[c.ID]; ok {
-			p.Width = maxProgressWidth
-			progressStr = p.ViewAs(fraction)
-		}
-
-		phaseSummary := caravanPhaseSummary(c)
-		if phaseSummary != "" {
-			b.WriteString(fmt.Sprintf("  %s  %s  %s  %s\n",
-				c.Name, progressStr,
-				dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
-				dimStyle.Render(phaseSummary),
-			))
+		if c.Status == "drydock" {
+			drydocked = append(drydocked, c)
 		} else {
-			b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
-				c.Name, progressStr,
-				dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
-			))
+			active = append(active, c)
 		}
 	}
+
+	// Render active caravans.
+	idx := 0
+	if len(active) > 0 {
+		if len(drydocked) > 0 {
+			// Only show sub-header when both groups exist.
+			b.WriteString("  " + dimStyle.Render("Active") + "\n")
+		}
+		for _, c := range active {
+			line := wm.formatCaravanRow(c, maxProgressWidth)
+			if showCursor && idx == cursor {
+				b.WriteString(selectStyle.Render(padRight(line, wm.width)))
+			} else {
+				b.WriteString(line)
+			}
+			b.WriteString("\n")
+			idx++
+		}
+	}
+
+	// Render drydocked caravans.
+	if len(drydocked) > 0 {
+		b.WriteString("  " + dimStyle.Render("Drydocked") + "\n")
+		for _, c := range drydocked {
+			line := wm.formatCaravanRow(c, maxProgressWidth)
+			if showCursor && idx == cursor {
+				b.WriteString(selectStyle.Render(padRight(line, wm.width)))
+			} else {
+				b.WriteString(dimStyle.Render(line))
+			}
+			b.WriteString("\n")
+			idx++
+		}
+	}
+}
+
+// formatCaravanRow formats a single caravan row with progress bar.
+func (wm worldModel) formatCaravanRow(c status.CaravanInfo, maxProgressWidth int) string {
+	fraction := float64(0)
+	if c.TotalItems > 0 {
+		fraction = float64(c.ClosedItems) / float64(c.TotalItems)
+	}
+
+	progressStr := ""
+	if p, ok := wm.caravanProgress[c.ID]; ok {
+		p.Width = maxProgressWidth
+		progressStr = p.ViewAs(fraction)
+	}
+
+	phaseSummary := caravanPhaseSummary(c)
+	if phaseSummary != "" {
+		return fmt.Sprintf("  %s  %s  %s  %s",
+			c.Name, progressStr,
+			dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
+			dimStyle.Render(phaseSummary),
+		)
+	}
+	return fmt.Sprintf("  %s  %s  %s",
+		c.Name, progressStr,
+		dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
+	)
 }
 
 func (wm worldModel) renderSummary(data *status.WorldStatus) string {

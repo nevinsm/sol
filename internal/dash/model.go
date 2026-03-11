@@ -305,6 +305,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.peekView.height = m.height
 		spinnerTickCmd := m.peekView.enter(msg)
 		m.viewStack = append(m.viewStack, viewPeek)
+
+		// Store caravan data if entering caravan peek.
+		if len(msg.items) > 0 && msg.items[0].isCaravan {
+			if msg.fromView == viewWorld && m.worldData != nil {
+				m.peekView.caravanData = m.worldData.Caravans
+			} else if msg.fromView == viewSphere && m.sphereData != nil {
+				m.peekView.caravanData = m.sphereData.Caravans
+			}
+		}
+
 		// Start capture tick, do an immediate capture, and schedule spinner tick.
 		cmds = append(cmds, captureTickCmd(), m.peekView.captureCmd(), spinnerTickCmd)
 
@@ -463,11 +473,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Refresh peek items if peek mode is active, so the list
 		// reflects agents that started or stopped since peek entry.
 		if m.activeView() == viewPeek {
-			if m.peekView.fromView == viewWorld && msg.world != nil {
-				m.peekView.refreshItems(buildWorldPeekItems(msg.world))
-				m.peekView.updateForgeData(msg.world)
-			} else if m.peekView.fromView == viewSphere && msg.sphere != nil {
-				m.peekView.refreshItems(buildSpherePeekItems(m.sphereView))
+			if m.peekView.caravanData != nil {
+				// Caravan peek — refresh caravan data and items.
+				if m.peekView.fromView == viewWorld && msg.world != nil {
+					m.peekView.caravanData = msg.world.Caravans
+					m.peekView.refreshItems(buildCaravanPeekItems(msg.world.Caravans))
+				} else if m.peekView.fromView == viewSphere && msg.sphere != nil {
+					m.peekView.caravanData = msg.sphere.Caravans
+					m.peekView.refreshItems(buildCaravanPeekItems(msg.sphere.Caravans))
+				}
+			} else {
+				if m.peekView.fromView == viewWorld && msg.world != nil {
+					m.peekView.refreshItems(buildWorldPeekItems(msg.world))
+					m.peekView.updateForgeData(msg.world)
+				} else if m.peekView.fromView == viewSphere && msg.sphere != nil {
+					m.peekView.refreshItems(buildSpherePeekItems(m.sphereView))
+				}
 			}
 			// Refresh forge-specific feed if active.
 			if m.peekView.forgeFeed != nil {

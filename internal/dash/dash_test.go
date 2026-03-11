@@ -3440,3 +3440,333 @@ func TestDefaultModelViewStackHasSphereBase(t *testing.T) {
 		t.Errorf("viewStack[0] = %v, want viewSphere", m.viewStack[0])
 	}
 }
+
+// --- Caravan peek tests ---
+
+func TestBuildCaravanPeekItems(t *testing.T) {
+	caravans := []status.CaravanInfo{
+		{ID: "car-1", Name: "deploy-batch", Status: "open", TotalItems: 5, ClosedItems: 2, DispatchedItems: 1},
+		{ID: "car-2", Name: "cleanup", Status: "drydock", TotalItems: 3},
+		{ID: "car-3", Name: "migration", Status: "open", TotalItems: 10, ClosedItems: 8, ReadyItems: 2},
+	}
+
+	items := buildCaravanPeekItems(caravans)
+
+	if len(items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(items))
+	}
+
+	// Active caravans come first.
+	if items[0].name != "deploy-batch" {
+		t.Errorf("items[0].name = %q, want deploy-batch", items[0].name)
+	}
+	if items[0].category != "Active" {
+		t.Errorf("items[0].category = %q, want Active", items[0].category)
+	}
+	if !items[0].alive {
+		t.Error("items[0].alive = false, want true (open caravan)")
+	}
+	if !items[0].isCaravan {
+		t.Error("items[0].isCaravan = false, want true")
+	}
+	if items[0].caravanID != "car-1" {
+		t.Errorf("items[0].caravanID = %q, want car-1", items[0].caravanID)
+	}
+	if items[0].peekable {
+		t.Error("items[0].peekable = true, want false")
+	}
+
+	// Second active caravan.
+	if items[1].name != "migration" {
+		t.Errorf("items[1].name = %q, want migration", items[1].name)
+	}
+	if items[1].category != "Active" {
+		t.Errorf("items[1].category = %q, want Active", items[1].category)
+	}
+
+	// Drydocked caravan comes last.
+	if items[2].name != "cleanup" {
+		t.Errorf("items[2].name = %q, want cleanup", items[2].name)
+	}
+	if items[2].category != "Drydocked" {
+		t.Errorf("items[2].category = %q, want Drydocked", items[2].category)
+	}
+	if items[2].alive {
+		t.Error("items[2].alive = true, want false (drydocked caravan)")
+	}
+}
+
+func TestCaravanStateSummary(t *testing.T) {
+	tests := []struct {
+		name     string
+		caravan  status.CaravanInfo
+		contains []string
+	}{
+		{
+			name:     "merged and in progress",
+			caravan:  status.CaravanInfo{TotalItems: 5, ClosedItems: 2, DispatchedItems: 1},
+			contains: []string{"2/5 merged", "1 in progress"},
+		},
+		{
+			name:     "ready only",
+			caravan:  status.CaravanInfo{TotalItems: 3, ReadyItems: 3},
+			contains: []string{"3 ready"},
+		},
+		{
+			name:     "empty caravan",
+			caravan:  status.CaravanInfo{TotalItems: 0},
+			contains: []string{"0 items"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := caravanStateSummary(tt.caravan)
+			for _, want := range tt.contains {
+				if !strings.Contains(result, want) {
+					t.Errorf("caravanStateSummary = %q, missing %q", result, want)
+				}
+			}
+		})
+	}
+}
+
+func TestCaravanPeekDetailRendering(t *testing.T) {
+	pm := newPeekModel(nil, "")
+	pm.width = 120
+	pm.height = 40
+
+	caravans := []status.CaravanInfo{
+		{
+			ID: "car-1", Name: "deploy-batch", Status: "open",
+			TotalItems: 3, ClosedItems: 1,
+			Items: []status.CaravanItemDetail{
+				{WritID: "sol-aaa1111122222222", World: "dev", Phase: 0, Status: "closed", Title: "Fix bug A"},
+				{WritID: "sol-bbb1111122222222", World: "dev", Phase: 0, Status: "tethered", Assignee: "sol-dev/Nova", Title: "Implement feature B"},
+				{WritID: "sol-ccc1111122222222", World: "dev", Phase: 1, Status: "open", Ready: true, Title: "Add tests for C"},
+			},
+		},
+	}
+
+	items := buildCaravanPeekItems(caravans)
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+	pm.caravanData = caravans
+
+	// Render the detail panel.
+	detail := pm.renderCaravanDetail(items[0], 30, 100)
+
+	joined := strings.Join(detail, "\n")
+
+	// Check header.
+	if !strings.Contains(joined, "deploy-batch") {
+		t.Error("detail missing caravan name")
+	}
+
+	// Check column headers.
+	if !strings.Contains(joined, "WRIT") {
+		t.Error("detail missing WRIT column header")
+	}
+	if !strings.Contains(joined, "STATUS") {
+		t.Error("detail missing STATUS column header")
+	}
+	if !strings.Contains(joined, "ASSIGNEE") {
+		t.Error("detail missing ASSIGNEE column header")
+	}
+	if !strings.Contains(joined, "TITLE") {
+		t.Error("detail missing TITLE column header")
+	}
+
+	// Check item data.
+	if !strings.Contains(joined, "Fix bug A") {
+		t.Error("detail missing title 'Fix bug A'")
+	}
+	if !strings.Contains(joined, "Nova") {
+		t.Error("detail missing assignee 'Nova' (should strip world prefix)")
+	}
+	if !strings.Contains(joined, "Add tests for C") {
+		t.Error("detail missing title 'Add tests for C'")
+	}
+}
+
+func TestCaravanPeekDetailNoData(t *testing.T) {
+	pm := newPeekModel(nil, "")
+	pm.width = 120
+	pm.height = 40
+
+	item := peekItem{
+		name:      "missing-caravan",
+		isCaravan: true,
+		caravanID: "car-nonexistent",
+	}
+
+	// No caravanData set — should show "No caravan data".
+	detail := pm.renderCaravanDetail(item, 20, 80)
+	joined := strings.Join(detail, "\n")
+
+	if !strings.Contains(joined, "No caravan data") {
+		t.Error("detail should show 'No caravan data' when caravanData is nil")
+	}
+}
+
+func TestWorldViewCaravanSubheadings(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:   "testworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 42},
+		Caravans: []status.CaravanInfo{
+			{ID: "car-1", Name: "active-batch", Status: "open", TotalItems: 5, ClosedItems: 2},
+			{ID: "car-2", Name: "parked-batch", Status: "drydock", TotalItems: 3},
+		},
+	}
+	wm.updateData(data)
+
+	output := wm.view(data, time.Now(), 0, nil, false)
+
+	// Should have both subheadings when both active and drydocked exist.
+	if !strings.Contains(output, "Active") {
+		t.Error("world view missing 'Active' subheading")
+	}
+	if !strings.Contains(output, "Drydocked") {
+		t.Error("world view missing 'Drydocked' subheading")
+	}
+	if !strings.Contains(output, "active-batch") {
+		t.Error("world view missing active caravan name")
+	}
+	if !strings.Contains(output, "parked-batch") {
+		t.Error("world view missing drydocked caravan name")
+	}
+}
+
+func TestSphereViewCaravanSubheadings(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+
+	data := &status.SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: status.PrefectInfo{Running: true, PID: 100},
+		Caravans: []status.CaravanInfo{
+			{ID: "car-1", Name: "active-batch", Status: "open", TotalItems: 5, ClosedItems: 2},
+			{ID: "car-2", Name: "parked-batch", Status: "drydock", TotalItems: 3},
+		},
+	}
+	sm.updateData(data)
+
+	output := sm.view(data, time.Now(), 0, false)
+
+	if !strings.Contains(output, "Active") {
+		t.Error("sphere view missing 'Active' subheading")
+	}
+	if !strings.Contains(output, "Drydocked") {
+		t.Error("sphere view missing 'Drydocked' subheading")
+	}
+}
+
+func TestWorldCaravanSectionFocusable(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:   "testworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 42},
+		Agents: []status.AgentStatus{
+			{Name: "Toast", State: "idle"},
+		},
+		Caravans: []status.CaravanInfo{
+			{ID: "car-1", Name: "batch-1", Status: "open", TotalItems: 5},
+		},
+	}
+	wm.updateData(data)
+
+	// Caravans should appear in available sections.
+	sections := wm.availableSections()
+	found := false
+	for _, s := range sections {
+		if s == sectionCaravans {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("sectionCaravans not in availableSections when caravans exist")
+	}
+
+	// Test sectionLen and cursor for caravans.
+	if wm.sectionLen(sectionCaravans) != 1 {
+		t.Errorf("sectionLen(sectionCaravans) = %d, want 1", wm.sectionLen(sectionCaravans))
+	}
+	wm.setCursor(sectionCaravans, 0)
+	if wm.cursor(sectionCaravans) != 0 {
+		t.Errorf("cursor(sectionCaravans) = %d, want 0", wm.cursor(sectionCaravans))
+	}
+}
+
+func TestSphereCaravanSectionFocusable(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+
+	data := &status.SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: status.PrefectInfo{Running: true, PID: 100},
+		Caravans: []status.CaravanInfo{
+			{ID: "car-1", Name: "batch-1", Status: "open", TotalItems: 5},
+		},
+	}
+	sm.updateData(data)
+
+	// Tab should cycle through sections including caravans.
+	sm.hasFocus = true
+	sm.focusedSection = sphereSectionWorlds
+	sm.cycleFocus(1)
+
+	if sm.focusedSection != sphereSectionCaravans {
+		t.Errorf("after cycle from worlds, focusedSection = %d, want sphereSectionCaravans(%d)",
+			sm.focusedSection, sphereSectionCaravans)
+	}
+}
+
+func TestCaravanPeekViewLayout(t *testing.T) {
+	pm := newPeekModel(nil, "")
+	pm.width = 120
+	pm.height = 30
+
+	caravans := []status.CaravanInfo{
+		{
+			ID: "car-1", Name: "deploy-batch", Status: "open",
+			TotalItems: 2, ClosedItems: 1,
+			Items: []status.CaravanItemDetail{
+				{WritID: "sol-aaa111112222", World: "dev", Phase: 0, Status: "closed", Title: "Done task"},
+				{WritID: "sol-bbb111112222", World: "dev", Phase: 0, Status: "tethered", Assignee: "Nova", Title: "Active task"},
+			},
+		},
+	}
+
+	items := buildCaravanPeekItems(caravans)
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+	pm.caravanData = caravans
+
+	// Render the full caravan view.
+	output := pm.viewCaravan()
+
+	// Should have the sidebar separator.
+	if !strings.Contains(output, "│") {
+		t.Error("caravan peek view missing separator")
+	}
+
+	// Should have the footer.
+	if !strings.Contains(output, "esc back") {
+		t.Error("caravan peek view missing footer")
+	}
+
+	// Should NOT have the normal feed-based footer.
+	if strings.Contains(output, "enter attach") {
+		t.Error("caravan peek view should not have 'enter attach' footer")
+	}
+}
