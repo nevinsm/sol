@@ -62,7 +62,7 @@ func TestCollectWorldScoped(t *testing.T) {
 	}
 
 	// Create an agent.
-	if _, err := sphere.CreateAgent("Alpha", "test-world", "agent"); err != nil {
+	if _, err := sphere.CreateAgent("Alpha", "test-world", "outpost"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -108,10 +108,10 @@ func TestCollectSphereWithWorlds(t *testing.T) {
 	}
 
 	// Create agents in different worlds.
-	if _, err := sphere.CreateAgent("A1", "alpha", "agent"); err != nil {
+	if _, err := sphere.CreateAgent("A1", "alpha", "outpost"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sphere.CreateAgent("B1", "bravo", "agent"); err != nil {
+	if _, err := sphere.CreateAgent("B1", "bravo", "outpost"); err != nil {
 		t.Fatal(err)
 	}
 
