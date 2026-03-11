@@ -17,6 +17,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -189,6 +190,8 @@ func (l *Ledger) heartbeatLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			l.writeHeartbeat("running")
+			// Best-effort log rotation.
+			logutil.TruncateIfNeeded(filepath.Join(config.RuntimeDir(), "ledger.log"), logutil.DefaultMaxLogSize)
 		}
 	}
 }

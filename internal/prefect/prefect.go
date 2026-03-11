@@ -18,6 +18,7 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/ledger"
+	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
@@ -301,6 +302,9 @@ func (s *Prefect) heartbeat() {
 	}
 
 	s.logger.Info("heartbeat", "working_agents", len(workingAgents), "dead_sessions", deadCount)
+
+	// Best-effort log rotation — don't let rotation failure affect supervision.
+	logutil.TruncateIfNeeded(filepath.Join(config.RuntimeDir(), "prefect.log"), logutil.DefaultMaxLogSize)
 }
 
 // worktreeForAgent returns the worktree path for an agent based on its role.

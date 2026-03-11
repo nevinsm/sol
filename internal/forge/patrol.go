@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -293,6 +294,8 @@ func (r *Forge) Run(ctx context.Context, pcfg PatrolConfig) error {
 
 	// Patrol immediately.
 	state.patrol(ctx)
+	// Best-effort log rotation after each patrol.
+	logutil.TruncateIfNeeded(LogPath(r.world), logutil.DefaultMaxLogSize)
 
 	for {
 		select {
@@ -313,6 +316,8 @@ func (r *Forge) Run(ctx context.Context, pcfg PatrolConfig) error {
 		}
 
 		state.patrol(ctx)
+		// Best-effort log rotation after each patrol.
+		logutil.TruncateIfNeeded(LogPath(r.world), logutil.DefaultMaxLogSize)
 	}
 }
 
