@@ -324,10 +324,11 @@ type patrolState struct {
 	eventLog    *events.Logger
 	cmd         cmdRunner
 
-	patrolCount int
-	mergesTotal int
-	lastMerge   time.Time
-	lastError   string // most recent error, cleared on successful merge
+	patrolCount      int
+	mergesTotal      int
+	lastMerge        time.Time
+	lastError        string // most recent error, cleared on successful merge
+	verifyRetryDelay time.Duration // delay between verifyPush retries; 0 uses default (5s)
 }
 
 // patrol runs one complete patrol cycle.

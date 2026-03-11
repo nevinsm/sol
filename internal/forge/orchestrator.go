@@ -426,7 +426,40 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 // by searching for the writ ID in recent commits on the target. This works
 // regardless of merge strategy (squash, real merge, rebase) because forge
 // always includes the writ ID in the commit message format: {title} ({writ-id}).
+//
+// Retries up to 3 times with backoff to handle transient network failures
+// in the window between push and verification fetch.
 func (s *patrolState) verifyPush(ctx context.Context, mr *store.MergeRequest) error {
+	const maxAttempts = 3
+	const defaultRetryDelay = 5 * time.Second
+
+	retryDelay := s.verifyRetryDelay
+	if retryDelay == 0 {
+		retryDelay = defaultRetryDelay
+	}
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := s.tryVerifyPush(ctx, mr)
+		if err == nil {
+			return nil
+		}
+		if attempt < maxAttempts {
+			s.forge.logger.Warn("push verification failed, retrying",
+				"mr", mr.ID, "attempt", attempt, "error", err)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(retryDelay):
+			}
+		} else {
+			return err
+		}
+	}
+	return nil // unreachable
+}
+
+// tryVerifyPush performs a single fetch+grep attempt to verify the merge landed.
+func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest) error {
 	worktree := s.forge.worktree
 	targetRef := fmt.Sprintf("origin/%s", s.forge.cfg.TargetBranch)
 
