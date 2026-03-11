@@ -103,7 +103,7 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 					continue
 				}
 				statuses, _ := caravanStore.CheckCaravanReadiness(c.ID, worldOpener)
-				result.Caravans = append(result.Caravans, buildCaravanInfo(c, items, statuses))
+				result.Caravans = append(result.Caravans, buildCaravanInfo(c, items, statuses, worldOpener))
 			}
 		}
 	}

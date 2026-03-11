@@ -38,12 +38,14 @@ type captureResultMsg struct {
 type peekItem struct {
 	name        string
 	sessionName string
-	category    string // "Outposts", "Envoys", "Processes"
+	category    string // "Outposts", "Envoys", "Processes", "Active", "Drydocked"
 	state       string
 	alive       bool
 	peekable    bool   // has a tmux session that is alive
 	isForge     bool   // forge item — shows idle state info when no active merge
 	source      string // event source filter for service peek (e.g., "forge", "sentinel")
+	isCaravan   bool   // caravan uses a dedicated item detail table layout
+	caravanID   string // caravan ID for looking up detail data
 }
 
 // peekModel handles the peek split-pane view.
@@ -79,6 +81,9 @@ type peekModel struct {
 
 	// Source-filtered feed for non-peekable items with a source (e.g., sphere processes).
 	sourceFeed *feedModel // nil when selected item has no source or is peekable
+
+	// Caravan peek state.
+	caravanData []status.CaravanInfo // set when entering caravan peek
 }
 
 func newPeekModel(mgr *session.Manager, solHome string) peekModel {
@@ -103,6 +108,7 @@ func (pm *peekModel) enter(msg peekMsg) tea.Cmd {
 	pm.forgeFeed = nil
 	pm.forgeInfo = nil
 	pm.sourceFeed = nil
+	pm.caravanData = nil
 
 	// Clamp cursor.
 	if pm.cursor >= len(pm.items) {
@@ -180,6 +186,14 @@ func (pm peekModel) selectedIsForge() bool {
 		return false
 	}
 	return pm.items[pm.cursor].isForge
+}
+
+// selectedIsCaravan returns true if the currently selected peek item is a caravan.
+func (pm peekModel) selectedIsCaravan() bool {
+	if pm.cursor >= len(pm.items) {
+		return false
+	}
+	return pm.items[pm.cursor].isCaravan
 }
 
 // updateForgeData updates forge heartbeat data from world status.
@@ -301,6 +315,11 @@ func (pm peekModel) view(feedView string) string {
 	fv := feedView
 	if pm.selectedIsForge() && pm.forgeFeed != nil {
 		fv = pm.forgeFeed.view(pm.width)
+	}
+
+	// Caravan peek uses a sidebar + item detail table layout.
+	if pm.selectedIsCaravan() {
+		return pm.viewCaravan()
 	}
 
 	// Calculate panel dimensions.
@@ -531,6 +550,11 @@ func (pm peekModel) renderCapture(maxHeight int) []string {
 		rightWidth = 10
 	}
 
+	// Caravan items use a dedicated detail table.
+	if item.isCaravan {
+		return pm.renderCaravanDetail(item, maxHeight, rightWidth)
+	}
+
 	// Header line: item name.
 	header := " " + focusStyle.Render(item.name)
 	lines := []string{header}
@@ -670,4 +694,225 @@ func (pm peekModel) viewportHeight() int {
 		vp = 6
 	}
 	return vp
+}
+
+// buildCaravanPeekItems creates peek items for caravans.
+func buildCaravanPeekItems(caravans []status.CaravanInfo) []peekItem {
+	var items []peekItem
+
+	// Sort active first, then drydocked — same order as rendering.
+	var active, drydocked []status.CaravanInfo
+	for _, c := range caravans {
+		if c.Status == "drydock" {
+			drydocked = append(drydocked, c)
+		} else {
+			active = append(active, c)
+		}
+	}
+
+	for _, c := range active {
+		items = append(items, peekItem{
+			name:      c.Name,
+			category:  "Active",
+			state:     caravanStateSummary(c),
+			alive:     c.Status == "open",
+			peekable:  false,
+			isCaravan: true,
+			caravanID: c.ID,
+		})
+	}
+	for _, c := range drydocked {
+		items = append(items, peekItem{
+			name:      c.Name,
+			category:  "Drydocked",
+			state:     caravanStateSummary(c),
+			alive:     false,
+			peekable:  false,
+			isCaravan: true,
+			caravanID: c.ID,
+		})
+	}
+	return items
+}
+
+// caravanStateSummary builds a short state summary for a caravan peek item.
+func caravanStateSummary(c status.CaravanInfo) string {
+	var parts []string
+	if c.ClosedItems > 0 {
+		parts = append(parts, fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems))
+	}
+	if c.DispatchedItems > 0 {
+		parts = append(parts, fmt.Sprintf("%d in progress", c.DispatchedItems))
+	}
+	if c.ReadyItems > 0 {
+		parts = append(parts, fmt.Sprintf("%d ready", c.ReadyItems))
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("%d items", c.TotalItems)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// viewCaravan renders the caravan peek layout: sidebar + item detail table.
+func (pm peekModel) viewCaravan() string {
+	// Footer line.
+	footerLines := 2
+
+	// Available height for the split pane (no feed panel for caravan peek).
+	contentHeight := pm.height - footerLines
+	if contentHeight < 6 {
+		contentHeight = 6
+	}
+
+	var b strings.Builder
+
+	// Render the split pane line by line.
+	leftLines := pm.renderItemList(contentHeight)
+	rightLines := pm.renderCapture(contentHeight)
+
+	rightWidth := pm.width - pm.listWidth - 3 // 3 for separator + padding
+	if rightWidth < 10 {
+		rightWidth = 10
+	}
+
+	for i := 0; i < contentHeight; i++ {
+		left := ""
+		if i < len(leftLines) {
+			left = leftLines[i]
+		}
+		right := ""
+		if i < len(rightLines) {
+			right = rightLines[i]
+		}
+
+		b.WriteString(padRight(left, pm.listWidth))
+		b.WriteString(dimStyle.Render("│"))
+		b.WriteString(padRight(right, rightWidth))
+		b.WriteString("\n")
+	}
+
+	// Footer (no feed panel for caravan peek).
+	b.WriteString(dimStyle.Render("  ↑↓ cycle · esc back") + "\n")
+
+	return b.String()
+}
+
+// renderCaravanDetail renders the right panel for a caravan peek item.
+func (pm peekModel) renderCaravanDetail(item peekItem, maxHeight, maxWidth int) []string {
+	// Find the CaravanInfo for this item.
+	var info *status.CaravanInfo
+	for i := range pm.caravanData {
+		if pm.caravanData[i].ID == item.caravanID {
+			info = &pm.caravanData[i]
+			break
+		}
+	}
+
+	if info == nil {
+		lines := []string{" " + focusStyle.Render(item.name)}
+		lines = append(lines, "")
+		lines = append(lines, " "+dimStyle.Render("No caravan data"))
+		for len(lines) < maxHeight {
+			lines = append(lines, "")
+		}
+		return lines
+	}
+
+	// Header: caravan name + status + progress summary.
+	statusStr := info.Status
+	switch info.Status {
+	case "open":
+		statusStr = okStyle.Render("open")
+	case "drydock":
+		statusStr = dimStyle.Render("drydock")
+	case "ready":
+		statusStr = okStyle.Render("ready")
+	}
+	header := " " + focusStyle.Render(info.Name) + "  " + statusStr + "  " +
+		dimStyle.Render(fmt.Sprintf("%d/%d merged", info.ClosedItems, info.TotalItems))
+	lines := []string{header, ""}
+
+	if len(info.Items) == 0 {
+		lines = append(lines, " "+dimStyle.Render("No items"))
+		for len(lines) < maxHeight {
+			lines = append(lines, "")
+		}
+		return lines
+	}
+
+	// Column widths.
+	pCol := 2   // "P" column
+	writCol := 20 // writ ID
+	statusCol := 14 // status
+	assigneeCol := 12 // assignee
+	// Title gets remaining width.
+	titleCol := maxWidth - pCol - writCol - statusCol - assigneeCol - 7 // separators + indent
+	if titleCol < 10 {
+		titleCol = 10
+	}
+
+	// Column headers.
+	colHeader := " " + padRight(dimStyle.Render("P"), pCol) + "  " +
+		padRight(dimStyle.Render("WRIT"), writCol) + "  " +
+		padRight(dimStyle.Render("STATUS"), statusCol) + "  " +
+		padRight(dimStyle.Render("ASSIGNEE"), assigneeCol) + "  " +
+		dimStyle.Render("TITLE")
+	lines = append(lines, colHeader)
+
+	// Item rows.
+	for _, d := range info.Items {
+		phase := fmt.Sprintf("%d", d.Phase)
+
+		writID := d.WritID
+		if len(writID) > writCol {
+			writID = writID[:writCol-1] + "…"
+		}
+
+		itemStatus := d.Status
+		switch d.Status {
+		case "open":
+			if d.Ready {
+				itemStatus = okStyle.Render("ready")
+			} else {
+				itemStatus = dimStyle.Render("open")
+			}
+		case "tethered", "working":
+			itemStatus = warnStyle.Render("in progress")
+		case "done":
+			itemStatus = headerStyle.Render("done")
+		case "closed":
+			itemStatus = dimStyle.Render("closed")
+		}
+
+		assignee := "—"
+		if d.Assignee != "" {
+			// Strip world prefix (e.g., "sol-dev/Nova" → "Nova").
+			assignee = d.Assignee
+			if idx := strings.LastIndex(assignee, "/"); idx >= 0 {
+				assignee = assignee[idx+1:]
+			}
+		}
+		if len(assignee) > assigneeCol {
+			assignee = assignee[:assigneeCol-1] + "…"
+		}
+
+		title := d.Title
+		if len(title) > titleCol {
+			title = title[:titleCol-3] + "..."
+		}
+
+		row := " " + padRight(phase, pCol) + "  " +
+			padRight(writID, writCol) + "  " +
+			padRight(itemStatus, statusCol) + "  " +
+			padRight(assignee, assigneeCol) + "  " +
+			title
+		lines = append(lines, row)
+	}
+
+	// Pad to maxHeight.
+	for len(lines) < maxHeight {
+		lines = append(lines, "")
+	}
+
+	return lines
 }

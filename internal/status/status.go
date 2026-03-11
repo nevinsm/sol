@@ -78,17 +78,29 @@ type PhaseProgress struct {
 	Dispatched int `json:"dispatched"` // in progress (tethered/working)
 }
 
+// CaravanItemDetail holds per-item detail within a caravan.
+type CaravanItemDetail struct {
+	WritID   string `json:"writ_id"`
+	World    string `json:"world"`
+	Phase    int    `json:"phase"`
+	Status   string `json:"status"`   // writ status: open, tethered, done, closed
+	Ready    bool   `json:"ready"`
+	Assignee string `json:"assignee,omitempty"`
+	Title    string `json:"title"`
+}
+
 // CaravanInfo holds summary information about a caravan relevant to a world.
 type CaravanInfo struct {
-	ID              string          `json:"id"`
-	Name            string          `json:"name"`
-	Status          string          `json:"status"`
-	TotalItems      int             `json:"total_items"`
-	ReadyItems      int             `json:"ready_items"`
-	DoneItems       int             `json:"done_items"`       // awaiting merge
-	ClosedItems     int             `json:"closed_items"`     // fully merged
-	DispatchedItems int             `json:"dispatched_items"` // in progress (tethered/working)
-	Phases          []PhaseProgress `json:"phases,omitempty"`
+	ID              string              `json:"id"`
+	Name            string              `json:"name"`
+	Status          string              `json:"status"`
+	TotalItems      int                 `json:"total_items"`
+	ReadyItems      int                 `json:"ready_items"`
+	DoneItems       int                 `json:"done_items"`       // awaiting merge
+	ClosedItems     int                 `json:"closed_items"`     // fully merged
+	DispatchedItems int                 `json:"dispatched_items"` // in progress (tethered/working)
+	Phases          []PhaseProgress     `json:"phases,omitempty"`
+	Items           []CaravanItemDetail `json:"items,omitempty"`
 }
 
 // PrefectInfo holds prefect process state (sphere-level, not per-world).
@@ -586,7 +598,7 @@ func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener 
 		}
 
 		statuses, _ := caravanStore.CheckCaravanReadiness(c.ID, worldOpener)
-		info := buildCaravanInfo(c, items, statuses)
+		info := buildCaravanInfo(c, items, statuses, worldOpener)
 		result.Caravans = append(result.Caravans, info)
 	}
 }
@@ -594,7 +606,7 @@ func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener 
 // buildCaravanInfo computes aggregate item counts and phase progress for a caravan.
 // This is the single source of truth for caravan status computation, used by both
 // GatherCaravans (world-scoped) and GatherSphere (sphere-scoped).
-func buildCaravanInfo(c store.Caravan, items []store.CaravanItem, statuses []store.CaravanItemStatus) CaravanInfo {
+func buildCaravanInfo(c store.Caravan, items []store.CaravanItem, statuses []store.CaravanItemStatus, worldOpener func(string) (*store.Store, error)) CaravanInfo {
 	info := CaravanInfo{
 		ID:         c.ID,
 		Name:       c.Name,
@@ -614,6 +626,41 @@ func buildCaravanInfo(c store.Caravan, items []store.CaravanItem, statuses []sto
 		}
 	}
 	info.Phases = computePhaseProgress(items, statuses)
+
+	// Build per-item detail from statuses.
+	worldStores := make(map[string]*store.Store) // cache opened stores
+	for _, st := range statuses {
+		detail := CaravanItemDetail{
+			WritID:   st.WritID,
+			World:    st.World,
+			Phase:    st.Phase,
+			Status:   st.WritStatus,
+			Ready:    st.Ready,
+			Assignee: st.Assignee,
+			Title:    "(unknown)",
+		}
+		// Look up writ title via worldOpener.
+		if worldOpener != nil {
+			ws, ok := worldStores[st.World]
+			if !ok {
+				ws, _ = worldOpener(st.World)
+				worldStores[st.World] = ws // may be nil
+			}
+			if ws != nil {
+				if w, err := ws.GetWrit(st.WritID); err == nil {
+					detail.Title = w.Title
+				}
+			}
+		}
+		info.Items = append(info.Items, detail)
+	}
+	// Close cached stores.
+	for _, ws := range worldStores {
+		if ws != nil {
+			ws.Close()
+		}
+	}
+
 	return info
 }
 

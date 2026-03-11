@@ -18,6 +18,7 @@ type sphereSection int
 const (
 	sphereSectionProcesses sphereSection = iota
 	sphereSectionWorlds
+	sphereSectionCaravans
 )
 
 // processItem holds a sphere process entry for the focused list.
@@ -59,6 +60,10 @@ type sphereModel struct {
 
 	// Progress bars for caravans.
 	caravanProgress map[string]progress.Model
+
+	// Caravan section cursor and count.
+	caravanCursor int
+	caravanLen    int
 }
 
 func newSphereModel() sphereModel {
@@ -131,6 +136,7 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 	}
 
 	sm.worldRows = len(data.Worlds)
+	sm.caravanLen = len(data.Caravans)
 
 	// Schedule initial spinner ticks. One representative tick per spinner
 	// type is enough — all spinners with the same ID advance together.
@@ -191,6 +197,10 @@ func (sm sphereModel) update(msg tea.KeyMsg, data *status.SphereStatus) (sphereM
 			if sm.processCursor > 0 {
 				sm.processCursor--
 			}
+		} else if sm.hasFocus && sm.focusedSection == sphereSectionCaravans {
+			if sm.caravanCursor > 0 {
+				sm.caravanCursor--
+			}
 		} else {
 			// Worlds cursor (default).
 			if sm.cursor > 0 {
@@ -207,6 +217,14 @@ func (sm sphereModel) update(msg tea.KeyMsg, data *status.SphereStatus) (sphereM
 			if sm.processCursor < max {
 				sm.processCursor++
 			}
+		} else if sm.hasFocus && sm.focusedSection == sphereSectionCaravans {
+			max := sm.caravanLen - 1
+			if max < 0 {
+				max = 0
+			}
+			if sm.caravanCursor < max {
+				sm.caravanCursor++
+			}
 		} else {
 			// Worlds cursor (default).
 			max := sm.worldRows - 1
@@ -221,6 +239,9 @@ func (sm sphereModel) update(msg tea.KeyMsg, data *status.SphereStatus) (sphereM
 	case "enter", "l", "right":
 		if sm.hasFocus && sm.focusedSection == sphereSectionProcesses {
 			return sm.handleProcessAction()
+		}
+		if sm.hasFocus && sm.focusedSection == sphereSectionCaravans {
+			return sm.handleCaravanAction(data)
 		}
 		// Drill into the selected world.
 		if data != nil && sm.cursor < len(data.Worlds) {
@@ -244,6 +265,9 @@ func (sm sphereModel) update(msg tea.KeyMsg, data *status.SphereStatus) (sphereM
 // cycleFocus moves focus to the next/previous section.
 func (sm *sphereModel) cycleFocus(dir int) {
 	sections := []sphereSection{sphereSectionProcesses, sphereSectionWorlds}
+	if sm.caravanLen > 0 {
+		sections = append(sections, sphereSectionCaravans)
+	}
 
 	idx := 0
 	for i, s := range sections {
@@ -396,12 +420,9 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 		b.WriteString("\n")
 	}
 
-	// Caravans.
+	// Caravans — focusable section with Active/Drydocked subheadings.
 	if len(data.Caravans) > 0 {
-		b.WriteString(headerStyle.Render("Caravans"))
-		b.WriteString("\n")
-		sm.renderCaravans(&b, data.Caravans)
-		b.WriteString("\n")
+		sm.renderCaravansSection(&b, data.Caravans)
 	}
 
 	// Inline "no active session" message.
@@ -553,7 +574,23 @@ func (sm sphereModel) renderWorldRow(w status.WorldSummary) string {
 	return "  " + padRight(w.Name, 16) + " " + padRight(agents, 20) + " " + padRight(health, 14) + " " + padRight(gov, 5) + " " + padRight(forge, 7) + " " + padRight(sentinel, 10) + " " + mrQueue
 }
 
-func (sm sphereModel) renderCaravans(b *strings.Builder, caravans []status.CaravanInfo) {
+// renderCaravansSection renders the Caravans section with Active/Drydocked subheadings.
+func (sm sphereModel) renderCaravansSection(b *strings.Builder, caravans []status.CaravanInfo) {
+	isFocused := sm.hasFocus && sm.focusedSection == sphereSectionCaravans
+
+	if isFocused {
+		b.WriteString("  " + focusIndicator + " " + focusStyle.Render("Caravans"))
+	} else {
+		b.WriteString(headerStyle.Render("Caravans"))
+	}
+	b.WriteString("\n")
+
+	sm.renderCaravanRows(b, caravans, isFocused, sm.caravanCursor)
+	b.WriteString("\n")
+}
+
+// renderCaravanRows renders caravan rows split into Active/Drydocked subgroups.
+func (sm sphereModel) renderCaravanRows(b *strings.Builder, caravans []status.CaravanInfo, showCursor bool, cursor int) {
 	maxProgressWidth := sm.width / 3
 	if maxProgressWidth < 20 {
 		maxProgressWidth = 20
@@ -562,32 +599,94 @@ func (sm sphereModel) renderCaravans(b *strings.Builder, caravans []status.Carav
 		maxProgressWidth = 40
 	}
 
+	// Split into active and drydocked.
+	var active, drydocked []status.CaravanInfo
 	for _, c := range caravans {
-		fraction := float64(0)
-		if c.TotalItems > 0 {
-			fraction = float64(c.ClosedItems) / float64(c.TotalItems)
-		}
-
-		progressStr := ""
-		if p, ok := sm.caravanProgress[c.ID]; ok {
-			p.Width = maxProgressWidth
-			progressStr = p.ViewAs(fraction)
-		}
-
-		phaseSummary := caravanPhaseSummary(c)
-		if phaseSummary != "" {
-			b.WriteString(fmt.Sprintf("  %s  %s  %s  %s\n",
-				c.Name, progressStr,
-				dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
-				dimStyle.Render(phaseSummary),
-			))
+		if c.Status == "drydock" {
+			drydocked = append(drydocked, c)
 		} else {
-			b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
-				c.Name, progressStr,
-				dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
-			))
+			active = append(active, c)
 		}
 	}
+
+	// Render active caravans.
+	idx := 0
+	if len(active) > 0 {
+		if len(drydocked) > 0 {
+			b.WriteString("  " + dimStyle.Render("Active") + "\n")
+		}
+		for _, c := range active {
+			line := sm.formatCaravanRow(c, maxProgressWidth)
+			if showCursor && idx == cursor {
+				b.WriteString(selectStyle.Render(padRight(line, sm.width)))
+			} else {
+				b.WriteString(line)
+			}
+			b.WriteString("\n")
+			idx++
+		}
+	}
+
+	// Render drydocked caravans.
+	if len(drydocked) > 0 {
+		b.WriteString("  " + dimStyle.Render("Drydocked") + "\n")
+		for _, c := range drydocked {
+			line := sm.formatCaravanRow(c, maxProgressWidth)
+			if showCursor && idx == cursor {
+				b.WriteString(selectStyle.Render(padRight(line, sm.width)))
+			} else {
+				b.WriteString(dimStyle.Render(line))
+			}
+			b.WriteString("\n")
+			idx++
+		}
+	}
+}
+
+// formatCaravanRow formats a single caravan row with progress bar.
+func (sm sphereModel) formatCaravanRow(c status.CaravanInfo, maxProgressWidth int) string {
+	fraction := float64(0)
+	if c.TotalItems > 0 {
+		fraction = float64(c.ClosedItems) / float64(c.TotalItems)
+	}
+
+	progressStr := ""
+	if p, ok := sm.caravanProgress[c.ID]; ok {
+		p.Width = maxProgressWidth
+		progressStr = p.ViewAs(fraction)
+	}
+
+	phaseSummary := caravanPhaseSummary(c)
+	if phaseSummary != "" {
+		return fmt.Sprintf("  %s  %s  %s  %s",
+			c.Name, progressStr,
+			dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
+			dimStyle.Render(phaseSummary),
+		)
+	}
+	return fmt.Sprintf("  %s  %s  %s",
+		c.Name, progressStr,
+		dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
+	)
+}
+
+// handleCaravanAction handles enter on a caravan item — opens peek mode.
+func (sm sphereModel) handleCaravanAction(data *status.SphereStatus) (sphereModel, tea.Cmd) {
+	if data == nil || len(data.Caravans) == 0 {
+		return sm, nil
+	}
+
+	items := buildCaravanPeekItems(data.Caravans)
+	if len(items) == 0 {
+		return sm, nil
+	}
+
+	msg := peekMsg{
+		items:         items,
+		initialCursor: sm.caravanCursor,
+		fromView:      viewSphere,
+	}
+	return sm, func() tea.Msg { return msg }
 }
 
 func (sm sphereModel) renderFooter(lastRefresh time.Time) string {
