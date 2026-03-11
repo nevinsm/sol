@@ -103,7 +103,7 @@ schema changes required.
 
 **Supervision:**
 
-Envoys are human-supervised. Sentinel already filters to `role='agent'`, so
+Envoys are human-supervised. Sentinel already filters to `role='outpost'`, so
 envoys are invisible to health monitoring. Prefect also skips envoys — sessions
 are not auto-respawned. The human is the supervisor. Lighter-touch automated
 supervision was considered (e.g., sentinel awareness without respawn) but adds

@@ -830,7 +830,7 @@ func TestAgentCRUD(t *testing.T) {
 		t.Fatalf("expected world 'haven', got %q", agent.World)
 	}
 	if agent.Role != "outpost" {
-		t.Fatalf("expected role 'agent', got %q", agent.Role)
+		t.Fatalf("expected role 'outpost', got %q", agent.Role)
 	}
 	if agent.State != "idle" {
 		t.Fatalf("expected state 'idle', got %q", agent.State)
@@ -901,7 +901,7 @@ func TestAgentCRUD(t *testing.T) {
 		t.Fatal("expected an idle agent")
 	}
 	if idle.Role != "outpost" {
-		t.Fatalf("expected role 'agent', got %q", idle.Role)
+		t.Fatalf("expected role 'outpost', got %q", idle.Role)
 	}
 
 	// Set all agents to working, FindIdleAgent should return nil.
