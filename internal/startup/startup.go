@@ -316,7 +316,11 @@ func Respawn(role, world, agent string, opts LaunchOpts) (string, error) {
 
 	opts.Respawn = true
 
-	resumeState, _ := ReadResumeState(world, agent, role)
+	resumeState, resumeErr := ReadResumeState(world, agent, role)
+	if resumeErr != nil {
+		slog.Warn("ignoring corrupt resume state, falling through to launch",
+			"agent", agent, "world", world, "error", resumeErr)
+	}
 	if resumeState != nil {
 		slog.Info("found resume state, using startup.Resume",
 			"agent", agent, "world", world, "reason", resumeState.Reason)
