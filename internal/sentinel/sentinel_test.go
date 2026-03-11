@@ -2987,7 +2987,7 @@ func TestAssessmentEscalateCreatesEscalation(t *testing.T) {
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-esc-assess1")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "error output"
@@ -3048,7 +3048,7 @@ func TestAssessmentEscalateNoWritStillCreatesEscalation(t *testing.T) {
 	cfg := testConfig()
 
 	// Agent with no active writ.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "stuck output"
