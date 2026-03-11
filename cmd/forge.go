@@ -74,7 +74,8 @@ var forgeStartCmd = &cobra.Command{
 		// Check if already running via PID file.
 		existingPID := forge.ReadPID(world)
 		if existingPID > 0 && forge.IsRunning(existingPID) {
-			return fmt.Errorf("forge already running for world %q (pid %d)", world, existingPID)
+			fmt.Printf("Forge already running for world %q (pid %d)\n", world, existingPID)
+			return nil
 		}
 
 		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)

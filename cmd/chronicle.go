@@ -69,7 +69,8 @@ var chronicleStartCmd = &cobra.Command{
 		// Check if already running via PID.
 		pid := prefect.ReadDaemonPID("chronicle")
 		if pid > 0 && prefect.IsRunning(pid) {
-			return fmt.Errorf("chronicle already running (pid %d)", pid)
+			fmt.Printf("Chronicle already running (pid %d)\n", pid)
+			return nil
 		}
 
 		solBin, err := os.Executable()
