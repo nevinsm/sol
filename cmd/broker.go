@@ -68,7 +68,7 @@ var tokenBrokerStatusCmd = &cobra.Command{
 	Short: "Show broker status from heartbeat",
 	Long: `Show whether the broker process is running via its heartbeat file.
 
-Prints patrol count, account info, and refresh statistics.
+Prints patrol count, account info, refresh statistics, and provider health state.
 Use --json for machine-readable output.
 
 Exit codes:
@@ -99,6 +99,19 @@ Exit codes:
 			if hb.LastRefresh != "" {
 				out["last_refresh"] = hb.LastRefresh
 			}
+			// Provider health fields.
+			if hb.ProviderHealth != "" {
+				out["provider_health"] = string(hb.ProviderHealth)
+			} else {
+				out["provider_health"] = "healthy"
+			}
+			out["consecutive_failures"] = hb.ConsecutiveFailures
+			if !hb.LastProbe.IsZero() {
+				out["last_probe"] = hb.LastProbe.Format(time.RFC3339)
+			}
+			if !hb.LastHealthy.IsZero() {
+				out["last_healthy"] = hb.LastHealthy.Format(time.RFC3339)
+			}
 			data, err := json.Marshal(out)
 			if err != nil {
 				return err
@@ -118,6 +131,24 @@ Exit codes:
 		}
 		if hb.LastRefresh != "" {
 			fmt.Printf("Last refresh: %s\n", hb.LastRefresh)
+		}
+
+		// Provider health.
+		providerHealth := hb.ProviderHealth
+		if providerHealth == "" {
+			providerHealth = broker.HealthHealthy
+		}
+		fmt.Printf("Provider health: %s\n", providerHealth)
+		if hb.ConsecutiveFailures > 0 {
+			fmt.Printf("Consecutive failures: %d\n", hb.ConsecutiveFailures)
+		}
+		if !hb.LastProbe.IsZero() {
+			probeAgo := time.Since(hb.LastProbe).Round(time.Second)
+			fmt.Printf("Last probe: %s ago\n", probeAgo)
+		}
+		if !hb.LastHealthy.IsZero() && providerHealth != broker.HealthHealthy {
+			healthyAgo := time.Since(hb.LastHealthy).Round(time.Second)
+			fmt.Printf("Last healthy: %s ago\n", healthyAgo)
 		}
 
 		if hb.IsStale(10 * time.Minute) {
