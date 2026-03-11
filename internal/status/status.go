@@ -459,7 +459,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 
 		default: // "outpost", "forge", "sentinel", "consul"
 			// forge, sentinel, consul are handled separately above.
-			if agent.Role == "forge" || agent.Role == "sentinel" || agent.Role == "consul" {
+			if agent.Role == "forge" || agent.Role == "forge-merge" || agent.Role == "sentinel" || agent.Role == "consul" {
 				continue
 			}
 			as := AgentStatus{
