@@ -39,8 +39,8 @@ func CloneWorldData(source, target string, includeHistory bool) error {
 	// Copy writs — clear assignee (agents are not cloned).
 	if _, err := tx.Exec(`
 		INSERT INTO main.writs
-			(id, title, description, status, priority, assignee, parent_id, created_by, created_at, updated_at, closed_at)
-		SELECT id, title, description, status, priority, NULL, parent_id, created_by, created_at, updated_at, closed_at
+			(id, title, description, status, priority, assignee, parent_id, kind, metadata, close_reason, created_by, created_at, updated_at, closed_at)
+		SELECT id, title, description, status, priority, NULL, parent_id, kind, metadata, close_reason, created_by, created_at, updated_at, closed_at
 		FROM src.writs
 	`); err != nil {
 		return fmt.Errorf("failed to copy writs: %w", err)
