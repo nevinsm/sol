@@ -159,6 +159,44 @@ func TestBranchExists(t *testing.T) {
 	}
 }
 
+func TestBranchExistsRemoteOnly(t *testing.T) {
+	repoDir, _ := setupRepo(t)
+	createBranch(t, repoDir, "feat/remote-only", "remote.go", "package main\n")
+
+	// Delete the local branch ref — only the remote tracking ref remains.
+	runCmd(t, "git", "-C", repoDir, "branch", "-D", "feat/remote-only")
+
+	g := New(repoDir)
+
+	exists, err := g.BranchExists("origin/feat/remote-only")
+	if err != nil {
+		t.Fatalf("BranchExists remote-only: %v", err)
+	}
+	if !exists {
+		t.Error("expected remote tracking branch to exist")
+	}
+}
+
+func TestBranchExistsReturnsRemoteError(t *testing.T) {
+	// Point Git at a non-existent directory. Both the local and remote
+	// show-ref calls fail, but BranchExists should evaluate and return
+	// the *remote* check error (err2), not the local one (err).
+	g := New(t.TempDir()) // empty dir, not a git repo
+
+	exists, err := g.BranchExists("anything")
+	if exists {
+		t.Error("expected false for non-git directory")
+	}
+	// Both errors are *GitError from run(), so isGitError matches and
+	// the function returns false, nil. The fix ensures err2 (remote
+	// check) is the one being evaluated, not err (local check).
+	// With the old code checking err instead of err2, the wrong error
+	// was being inspected — this test guards against that regression.
+	if err != nil {
+		t.Fatalf("expected nil error (GitError caught), got: %v", err)
+	}
+}
+
 func TestFetchAndResetHard(t *testing.T) {
 	repoDir, _ := setupRepo(t)
 

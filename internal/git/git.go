@@ -128,10 +128,10 @@ func (g *Git) BranchExists(name string) (bool, error) {
 		if err2 != nil {
 			// show-ref returns exit 1 when ref doesn't exist — that's not an error.
 			var ge *GitError
-			if isGitError(err, &ge) {
+			if isGitError(err2, &ge) {
 				return false, nil
 			}
-			return false, err
+			return false, err2
 		}
 		return true, nil
 	}
