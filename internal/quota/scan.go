@@ -100,7 +100,7 @@ func resolveSessionAccount(world string, sess session.SessionInfo) string {
 
 	role := sess.Role
 	if role == "" {
-		role = "agent"
+		role = "outpost"
 	}
 
 	configDir := config.ClaudeConfigDir(worldDir, role, agentName)

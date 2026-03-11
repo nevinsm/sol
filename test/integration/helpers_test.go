@@ -83,18 +83,18 @@ func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 	return gtHome, sourceRepo
 }
 
-// registerAgentRole registers the "agent" role in the startup registry so
+// registerAgentRole registers the "outpost" role in the startup registry so
 // prefect/sentinel can respawn sessions via startup.Respawn. Without this,
-// respawn fails because "agent" has no registered startup config in tests
+// respawn fails because "outpost" has no registered startup config in tests
 // (the registration normally happens in cmd/cast.go at init time).
 func registerAgentRole(t *testing.T) {
 	t.Helper()
-	startup.Register("agent", startup.RoleConfig{
+	startup.Register("outpost", startup.RoleConfig{
 		WorktreeDir: func(world, agent string) string {
 			return config.WorktreePath(world, agent)
 		},
 	})
-	t.Cleanup(func() { startup.Register("agent", startup.RoleConfig{}) })
+	t.Cleanup(func() { startup.Register("outpost", startup.RoleConfig{}) })
 }
 
 func gitRun(t *testing.T, dir string, args ...string) {

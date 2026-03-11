@@ -243,7 +243,7 @@ gate_timeout = "5m"
 	agents := []ExportAgent{
 		{
 			ID: "testworld/Alpha", Name: "Alpha", World: "testworld",
-			Role: "agent", State: "working", CreatedAt: now, UpdatedAt: now,
+			Role: "outpost", State: "working", CreatedAt: now, UpdatedAt: now,
 		},
 	}
 
@@ -361,7 +361,7 @@ func TestImportWithRename(t *testing.T) {
 	agents := []ExportAgent{
 		{
 			ID: "oldworld/Beta", Name: "Beta", World: "oldworld",
-			Role: "agent", State: "working", CreatedAt: now, UpdatedAt: now,
+			Role: "outpost", State: "working", CreatedAt: now, UpdatedAt: now,
 		},
 	}
 

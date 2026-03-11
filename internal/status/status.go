@@ -457,7 +457,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			}
 			result.Envoys = append(result.Envoys, es)
 
-		default: // "agent", "forge", "sentinel", "consul"
+		default: // "outpost", "forge", "sentinel", "consul"
 			// forge, sentinel, consul are handled separately above.
 			if agent.Role == "forge" || agent.Role == "sentinel" || agent.Role == "consul" {
 				continue

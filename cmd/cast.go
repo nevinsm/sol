@@ -105,7 +105,7 @@ credentials instead of the world's default_account.`,
 
 func init() {
 	// Register outpost role config for startup.Launch and prefect respawn.
-	startup.Register("agent", dispatch.OutpostRoleConfig())
+	startup.Register("outpost", dispatch.OutpostRoleConfig())
 
 	rootCmd.AddCommand(castCmd)
 	castCmd.Flags().StringVar(&castWorld, "world", "", "world name")

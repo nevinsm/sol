@@ -277,7 +277,7 @@ func TestPatrolHealthyAgents(t *testing.T) {
 
 	// Create 3 working agents with live sessions and changing output.
 	for _, name := range []string{"Toast", "Jasper", "Sage"} {
-		sphereStore.CreateAgent(name, "ember", "agent")
+		sphereStore.CreateAgent(name, "ember", "outpost")
 		sphereStore.UpdateAgentState("ember/"+name, "working", "sol-"+name)
 		sessName := "sol-ember-" + name
 		mock.alive[sessName] = true
@@ -305,13 +305,13 @@ func TestPatrolDetectsStalled(t *testing.T) {
 	cfg := testConfig()
 
 	// Create a working agent with a dead session.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Test task")
 	// Session is NOT alive (not in mock.alive).
 
 	// Write tether so stalled detection sees non-empty tether directory.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -320,12 +320,12 @@ func TestPatrolDetectsStalled(t *testing.T) {
 	os.MkdirAll(worktreeDir, 0o755)
 
 	// Register role so startup.Respawn succeeds.
-	startup.Register("agent", startup.RoleConfig{
+	startup.Register("outpost", startup.RoleConfig{
 		WorktreeDir: func(w, a string) string {
 			return filepath.Join(os.Getenv("SOL_HOME"), w, "outposts", a, "worktree")
 		},
 	})
-	t.Cleanup(func() { startup.Register("agent", startup.RoleConfig{}) })
+	t.Cleanup(func() { startup.Register("outpost", startup.RoleConfig{}) })
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 
@@ -350,12 +350,12 @@ func TestPatrolMaxRespawns(t *testing.T) {
 	cfg.MaxRespawns = 2
 
 	// Create a working agent with a dead session.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Test task")
 
 	// Write tether so stalled detection sees non-empty tether directory.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -402,7 +402,7 @@ func TestPatrolDetectsZombie(t *testing.T) {
 	cfg := testConfig()
 
 	// Create an idle agent with a live session but no tether.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	// State is idle (default), no tether item.
 	mock.alive["sol-ember-Toast"] = true
 
@@ -428,7 +428,7 @@ func TestPatrolIgnoresIdleClean(t *testing.T) {
 	cfg := testConfig()
 
 	// Create an idle agent with no session and no tether.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	// State is idle (default), no session, no tether.
 
 	w := New(cfg, sphereStore, nil, mock, nil)
@@ -474,7 +474,7 @@ func TestProgressDetectionOutputChanged(t *testing.T) {
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 
@@ -503,7 +503,7 @@ func TestProgressDetectionOutputUnchanged(t *testing.T) {
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "same output"
@@ -531,7 +531,7 @@ func TestAssessmentNudge(t *testing.T) {
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "stuck output"
@@ -565,7 +565,7 @@ func TestAssessmentEscalate(t *testing.T) {
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "error output"
@@ -606,7 +606,7 @@ func TestAssessmentNone(t *testing.T) {
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "output"
@@ -638,7 +638,7 @@ func TestAssessmentLowConfidenceIgnored(t *testing.T) {
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "output"
@@ -669,7 +669,7 @@ func TestAssessmentFailureNonBlocking(t *testing.T) {
 	mock := newMockSessions()
 	cfg := testConfig()
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "output"
@@ -701,12 +701,12 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 	cfg := testConfig()
 	cfg.MaxRespawns = 2
 
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Test task")
 
 	// Write tether so stalled detection sees non-empty tether directory.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -714,12 +714,12 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 	os.MkdirAll(worktreeDir, 0o755)
 
 	// Register role so startup.Respawn succeeds.
-	startup.Register("agent", startup.RoleConfig{
+	startup.Register("outpost", startup.RoleConfig{
 		WorktreeDir: func(w, a string) string {
 			return filepath.Join(os.Getenv("SOL_HOME"), w, "outposts", a, "worktree")
 		},
 	})
-	t.Cleanup(func() { startup.Register("agent", startup.RoleConfig{}) })
+	t.Cleanup(func() { startup.Register("outpost", startup.RoleConfig{}) })
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 
@@ -872,14 +872,14 @@ func TestReapIdleAgent(t *testing.T) {
 	cfg.IdleReapTimeout = 1 * time.Millisecond // Very short for tests.
 
 	// Create an idle agent with an old UpdatedAt.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	// Agent is idle by default. Make it old.
 	now := time.Now().UTC().Add(-1 * time.Hour)
 	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
 		now.Format(time.RFC3339), "ember/Toast")
 
 	// Create tether to verify cleanup.
-	if err := tether.Write("ember", "Toast", "sol-old-item", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-old-item", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -896,7 +896,7 @@ func TestReapIdleAgent(t *testing.T) {
 	}
 
 	// Tether should be cleaned up.
-	if tether.IsTethered("ember", "Toast", "agent") {
+	if tether.IsTethered("ember", "Toast", "outpost") {
 		t.Error("expected tether to be removed after reap")
 	}
 }
@@ -908,7 +908,7 @@ func TestReapIdleAgentSkipsRecent(t *testing.T) {
 	cfg.IdleReapTimeout = 1 * time.Hour // Long timeout.
 
 	// Create a recently-updated idle agent.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	// UpdatedAt is now (recent), so it should not be reaped.
 
 	w := New(cfg, sphereStore, nil, mock, nil)
@@ -934,7 +934,7 @@ func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
 	cfg.MaxRespawns = 0 // Immediately return to open.
 
 	// Create a working agent with a dead session.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Test task")
 
@@ -942,7 +942,7 @@ func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
 	solHome := os.Getenv("SOL_HOME")
 	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -967,7 +967,7 @@ func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
 	}
 
 	// Tether should be cleared.
-	if tether.IsTethered("ember", "Toast", "agent") {
+	if tether.IsTethered("ember", "Toast", "outpost") {
 		t.Error("expected tether to be removed")
 	}
 
@@ -988,7 +988,7 @@ func TestCleanupOrphanedWorktree(t *testing.T) {
 	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Ghost", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 	// Also create a tether.
-	if err := tether.Write("ember", "Ghost", "sol-orphaned", "agent"); err != nil {
+	if err := tether.Write("ember", "Ghost", "sol-orphaned", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -999,7 +999,7 @@ func TestCleanupOrphanedWorktree(t *testing.T) {
 	}
 
 	// Tether should be cleaned up.
-	if tether.IsTethered("ember", "Ghost", "agent") {
+	if tether.IsTethered("ember", "Ghost", "outpost") {
 		t.Error("expected orphaned tether to be removed")
 	}
 
@@ -1048,7 +1048,7 @@ func TestCleanupOrphanedSessionMeta(t *testing.T) {
 	sessDir := filepath.Join(solHome, ".runtime", "sessions")
 	os.MkdirAll(sessDir, 0o755)
 	os.WriteFile(filepath.Join(sessDir, "sol-ember-Ghost.json"),
-		[]byte(`{"name":"sol-ember-Ghost","role":"agent","world":"ember"}`), 0o644)
+		[]byte(`{"name":"sol-ember-Ghost","role":"outpost","world":"ember"}`), 0o644)
 	os.WriteFile(filepath.Join(sessDir, "sol-ember-Ghost.last-capture-hash"),
 		[]byte(`{"hash":"abc"}`), 0o644)
 
@@ -1073,10 +1073,10 @@ func TestCleanupOrphanedTether(t *testing.T) {
 	cfg := testConfig()
 
 	// Create an idle agent WITH a tether (stale tether from failed cleanup).
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	// Agent is idle by default.
 
-	if err := tether.Write("ember", "Toast", "sol-stale-item", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-stale-item", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -1088,7 +1088,7 @@ func TestCleanupOrphanedTether(t *testing.T) {
 
 	// Tether should NOT be cleaned up — agent exists in DB (even though idle).
 	// Consul's stale-tether recovery handles idle agents with tethers.
-	if !tether.IsTethered("ember", "Toast", "agent") {
+	if !tether.IsTethered("ember", "Toast", "outpost") {
 		t.Error("expected tether to be preserved for idle agent — sentinel only cleans truly orphaned tethers")
 	}
 }
@@ -1099,12 +1099,12 @@ func TestCleanupOrphanedTetherSkipsWorking(t *testing.T) {
 	cfg := testConfig()
 
 	// Create a working agent with a live session and tether.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-active")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "working output"
 
-	if err := tether.Write("ember", "Toast", "sol-active", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-active", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -1115,7 +1115,7 @@ func TestCleanupOrphanedTetherSkipsWorking(t *testing.T) {
 	}
 
 	// Tether should NOT be cleaned up (agent is working).
-	if !tether.IsTethered("ember", "Toast", "agent") {
+	if !tether.IsTethered("ember", "Toast", "outpost") {
 		t.Error("tether for working agent should not be removed")
 	}
 }
@@ -1129,10 +1129,10 @@ func TestCleanupOrphanedTetherRaceWithCast(t *testing.T) {
 	cfg := testConfig()
 
 	// Create an agent that starts idle (simulating the snapshot state).
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 
 	// Write a tether file (simulating Cast() writing the tether).
-	if err := tether.Write("ember", "Toast", "sol-active-writ", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-active-writ", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -1150,7 +1150,7 @@ func TestCleanupOrphanedTetherRaceWithCast(t *testing.T) {
 	}
 
 	// Tether should NOT be cleaned up — agent exists in DB.
-	if !tether.IsTethered("ember", "Toast", "agent") {
+	if !tether.IsTethered("ember", "Toast", "outpost") {
 		t.Error("tether for known agent should not be removed")
 	}
 }
@@ -1164,10 +1164,10 @@ func TestCleanupOrphanedTethersIdleAgentPreserved(t *testing.T) {
 	cfg := testConfig()
 
 	// Create an idle agent with a tether file.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	// Agent stays idle — do NOT update to "working".
 
-	if err := tether.Write("ember", "Toast", "sol-stale-writ", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-stale-writ", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -1179,7 +1179,7 @@ func TestCleanupOrphanedTethersIdleAgentPreserved(t *testing.T) {
 
 	// Tether should NOT be cleaned up — agent exists in DB (even though idle).
 	// Consul's stale-tether recovery handles this case with proper context.
-	if !tether.IsTethered("ember", "Toast", "agent") {
+	if !tether.IsTethered("ember", "Toast", "outpost") {
 		t.Error("tether for idle agent should not be removed by sentinel — consul handles stale tethers")
 	}
 }
@@ -1192,12 +1192,12 @@ func TestCleanupOrphanedTethersTrulyOrphaned(t *testing.T) {
 	cfg := testConfig()
 
 	// Write a tether for an agent that does NOT exist in the DB.
-	if err := tether.Write("ember", "Ghost", "sol-orphan-writ", "agent"); err != nil {
+	if err := tether.Write("ember", "Ghost", "sol-orphan-writ", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
 	// Verify tether exists before patrol.
-	if !tether.IsTethered("ember", "Ghost", "agent") {
+	if !tether.IsTethered("ember", "Ghost", "outpost") {
 		t.Fatal("expected tether to exist before patrol")
 	}
 
@@ -1208,7 +1208,7 @@ func TestCleanupOrphanedTethersTrulyOrphaned(t *testing.T) {
 	}
 
 	// Tether SHOULD be cleaned up — no agent record in DB (truly orphaned).
-	if tether.IsTethered("ember", "Ghost", "agent") {
+	if tether.IsTethered("ember", "Ghost", "outpost") {
 		t.Error("tether for non-existent agent should be cleaned up")
 	}
 }
@@ -2368,13 +2368,13 @@ func TestQuotaPatrolNoRateLimits(t *testing.T) {
 	cfg := testConfig()
 
 	// Create agent and session.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "Working on task..."
 
 	setupQuotaAccount(t, "alice")
-	setupAgentCredentials(t, "ember", "agent", "Toast", "alice")
+	setupAgentCredentials(t, "ember", "outpost", "Toast", "alice")
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 
@@ -2402,9 +2402,9 @@ func TestQuotaPatrolRotatesEntireWorld(t *testing.T) {
 	setupQuotaAccount(t, "bob")
 
 	// Create agents across roles.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
-	setupAgentCredentials(t, "ember", "agent", "Toast", "alice")
+	setupAgentCredentials(t, "ember", "outpost", "Toast", "alice")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "You've hit your usage limit · resets 3:45pm"
 
@@ -2431,7 +2431,7 @@ func TestQuotaPatrolRotatesEntireWorld(t *testing.T) {
 	}
 
 	// Register roles so the startup path succeeds.
-	for _, role := range []string{"agent", "forge", "governor"} {
+	for _, role := range []string{"outpost", "forge", "governor"} {
 		r := role
 		startup.Register(r, startup.RoleConfig{
 			WorktreeDir: func(w, a string) string {
@@ -2440,7 +2440,7 @@ func TestQuotaPatrolRotatesEntireWorld(t *testing.T) {
 		})
 	}
 	t.Cleanup(func() {
-		for _, r := range []string{"agent", "forge", "governor"} {
+		for _, r := range []string{"outpost", "forge", "governor"} {
 			startup.Register(r, startup.RoleConfig{})
 		}
 	})
@@ -2478,9 +2478,9 @@ func TestQuotaPatrolPausesWhenNoAccountsAvailable(t *testing.T) {
 	setupQuotaAccount(t, "alice")
 
 	// Create agents.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
-	setupAgentCredentials(t, "ember", "agent", "Toast", "alice")
+	setupAgentCredentials(t, "ember", "outpost", "Toast", "alice")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "You've hit your usage limit"
 
@@ -2550,7 +2550,7 @@ func TestQuotaPatrolSkipsAgentsWithoutSession(t *testing.T) {
 	setupQuotaAccount(t, "alice")
 
 	// Agent exists but has no live session.
-	sphereStore.CreateAgent("Ghost", "ember", "agent")
+	sphereStore.CreateAgent("Ghost", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Ghost", "idle", "")
 	// No mock.alive entry — session doesn't exist.
 
@@ -2582,9 +2582,9 @@ func TestQuotaPatrolUsesStartupPathForRegisteredRole(t *testing.T) {
 	setupQuotaAccount(t, "bob")
 
 	// Create outpost agent on alice.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
-	setupAgentCredentials(t, "ember", "agent", "Toast", "alice")
+	setupAgentCredentials(t, "ember", "outpost", "Toast", "alice")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "You've hit your usage limit · resets 3:45pm"
 
@@ -2592,9 +2592,9 @@ func TestQuotaPatrolUsesStartupPathForRegisteredRole(t *testing.T) {
 	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
-	// Register the "agent" role with a system prompt so we can verify
+	// Register the "outpost" role with a system prompt so we can verify
 	// the startup path adds --append-system-prompt-file.
-	roleName := "agent"
+	roleName := "outpost"
 	startup.Register(roleName, startup.RoleConfig{
 		WorktreeDir: func(w, a string) string {
 			return filepath.Join(os.Getenv("SOL_HOME"), w, "outposts", a, "worktree")
@@ -2655,7 +2655,7 @@ func TestCheckQuotaPausedUsesStartupPathForRegisteredRole(t *testing.T) {
 	os.MkdirAll(worktreeDir, 0o755)
 
 	// Register the role.
-	roleName := "agent"
+	roleName := "outpost"
 	startup.Register(roleName, startup.RoleConfig{
 		WorktreeDir: func(w, a string) string {
 			return filepath.Join(os.Getenv("SOL_HOME"), w, "outposts", a, "worktree")
@@ -2677,7 +2677,7 @@ func TestCheckQuotaPausedUsesStartupPathForRegisteredRole(t *testing.T) {
 		Writ:        "sol-work-1",
 		World:           "ember",
 		AgentName:       "Toast",
-		Role:            "agent",
+		Role:            "outpost",
 	}
 	// bob is available.
 	state.MarkAvailable("bob")
@@ -2687,9 +2687,9 @@ func TestCheckQuotaPausedUsesStartupPathForRegisteredRole(t *testing.T) {
 	lock.Release()
 
 	// Create agent record.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
-	setupAgentCredentials(t, "ember", "agent", "Toast", "alice")
+	setupAgentCredentials(t, "ember", "outpost", "Toast", "alice")
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 
@@ -2721,13 +2721,13 @@ func TestPatrolReapsAgentTetheredToClosedWrit(t *testing.T) {
 	cfg := testConfig()
 
 	// Create a working agent with a live session tethered to a writ.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Cancelled task")
 	mock.alive["sol-ember-Toast"] = true
 
 	// Write tether file on disk so patrol discovers it via tether.List().
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -2764,14 +2764,14 @@ func TestPatrolDoesNotReapAgentTetheredToOpenWrit(t *testing.T) {
 	cfg := testConfig()
 
 	// Create a working agent with a live session tethered to an open writ.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Active task")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "working on task..."
 
 	// Write tether file on disk.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -2806,13 +2806,13 @@ func TestPatrolClosedWritReapLogsCloseReason(t *testing.T) {
 	logger := events.NewLogger(solHome)
 
 	// Create a working agent tethered to a closed writ.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Cancelled task")
 	mock.alive["sol-ember-Toast"] = true
 
 	// Write tether file on disk.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -2910,12 +2910,12 @@ func TestOutpostClosedTetherFullReap(t *testing.T) {
 	cfg := testConfig()
 
 	// Create an outpost agent tethered to a closed writ.
-	sphereStore.CreateAgent("Toast", "ember", "agent")
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Closed task")
 	mock.alive["sol-ember-Toast"] = true
 
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "agent"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -2942,7 +2942,7 @@ func TestOutpostClosedTetherFullReap(t *testing.T) {
 	}
 
 	// Tether should be cleaned up.
-	if tether.IsTethered("ember", "Toast", "agent") {
+	if tether.IsTethered("ember", "Toast", "outpost") {
 		t.Error("expected tether to be cleaned up after reap")
 	}
 }
@@ -2955,7 +2955,7 @@ func TestOrphanedTetherDirectoryCleaned(t *testing.T) {
 	// Write multiple tether files for an agent that does NOT exist in the DB.
 	// This is a truly orphaned agent — deleted from DB but tether dir remains.
 	for _, wid := range []string{"sol-orphan-1", "sol-orphan-2", "sol-orphan-3"} {
-		if err := tether.Write("ember", "Ghost", wid, "agent"); err != nil {
+		if err := tether.Write("ember", "Ghost", wid, "outpost"); err != nil {
 			t.Fatalf("tether.Write(%s) error: %v", wid, err)
 		}
 	}
@@ -2967,11 +2967,11 @@ func TestOrphanedTetherDirectoryCleaned(t *testing.T) {
 	}
 
 	// All tether files should be cleaned up — agent has no DB record (truly orphaned).
-	if tether.IsTethered("ember", "Ghost", "agent") {
+	if tether.IsTethered("ember", "Ghost", "outpost") {
 		t.Error("expected all orphaned tether files to be removed for non-existent agent")
 	}
 
-	remaining, err := tether.List("ember", "Ghost", "agent")
+	remaining, err := tether.List("ember", "Ghost", "outpost")
 	if err != nil {
 		t.Fatalf("tether.List() error: %v", err)
 	}

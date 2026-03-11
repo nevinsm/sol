@@ -80,7 +80,7 @@ func MarkConsumed(world, agentName, role string) error {
 type CaptureOpts struct {
 	World        string
 	AgentName    string
-	Role         string // agent role (default: "agent")
+	Role         string // agent role (default: "outpost")
 	Summary      string // agent-provided summary (optional)
 	CaptureLines int    // lines of tmux output to capture (default: 100)
 	CommitCount  int    // recent commits to include (default: 10)
@@ -105,7 +105,7 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 
 	role := opts.Role
 	if role == "" {
-		role = "agent"
+		role = "outpost"
 	}
 
 	// 1. Determine active writ from DB (preferred) or tether (fallback).
@@ -234,7 +234,7 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 func Write(state *State) error {
 	role := state.Role
 	if role == "" {
-		role = "agent"
+		role = "outpost"
 	}
 	path := HandoffPath(state.World, state.AgentName, role)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -504,7 +504,7 @@ type ExecOpts struct {
 	World       string
 	AgentName   string
 	Summary     string // optional agent-provided summary
-	Role        string // agent role: "agent", "envoy", "governor", "forge" (default: "agent")
+	Role        string // agent role: "outpost", "envoy", "governor", "forge" (default: "outpost")
 	WorktreeDir string // explicit worktree path (required for non-outpost roles)
 	Reason      string // handoff reason: "compact", "manual", "health-check" (default: "unknown")
 
@@ -532,7 +532,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 
 	role := opts.Role
 	if role == "" {
-		role = "agent"
+		role = "outpost"
 	}
 
 	reason := opts.Reason

@@ -17,7 +17,7 @@ func SessionName(world, agentName string) string {
 }
 
 // AgentDir returns the base directory for an agent based on its role.
-// - "agent" (default) → $SOL_HOME/{world}/outposts/{agentName}
+// - "outpost" (default) → $SOL_HOME/{world}/outposts/{agentName}
 // - "envoy"           → $SOL_HOME/{world}/envoys/{agentName}
 // - "governor"        → $SOL_HOME/{world}/governor
 // - "forge"           → $SOL_HOME/{world}/forge
@@ -296,7 +296,7 @@ func ClaudeConfigDir(worldDir, role, name string) string {
 	switch role {
 	case "envoy":
 		roleDir = "envoys"
-	case "agent":
+	case "outpost", "agent":
 		roleDir = "outposts"
 	default:
 		roleDir = role // forge, governor, senate

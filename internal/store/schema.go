@@ -8,7 +8,7 @@ import (
 // Current schema versions — the latest migration target for each database type.
 const (
 	CurrentWorldSchema  = 10
-	CurrentSphereSchema = 13
+	CurrentSphereSchema = 14
 )
 
 const worldSchemaV1 = `
@@ -394,6 +394,9 @@ CREATE INDEX IF NOT EXISTS idx_escalations_source_ref ON escalations(source_ref)
 // sphereSchemaV13 renames owner 'operator' → 'autarch' in caravans.
 const sphereSchemaV13 = "" // migration handled procedurally below
 
+// sphereSchemaV14 renames role 'agent' → 'outpost' in agents.
+const sphereSchemaV14 = "" // migration handled procedurally below
+
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
 	QueryRow(string, ...interface{}) *sql.Row
@@ -614,6 +617,14 @@ func (s *Store) migrateSphere() error {
 			if _, err := tx.Exec(`UPDATE caravans SET owner = 'autarch' WHERE owner = 'operator'`); err != nil {
 				return fmt.Errorf("V13 migration: failed to rename operator → autarch in caravans: %w", err)
 			}
+		}
+	}
+	if v < 14 {
+		// Rename role: 'agent' → 'outpost' in agents.
+		// Completes the outpost role rename — new code writes "outpost"
+		// but existing records may still have "agent".
+		if _, err := tx.Exec(`UPDATE agents SET role = 'outpost' WHERE role = 'agent'`); err != nil {
+			return fmt.Errorf("V14 migration: failed to rename agent role to outpost: %w", err)
 		}
 	}
 	if v < 1 {

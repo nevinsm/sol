@@ -23,7 +23,7 @@ func TestWorldSleepForceStopsOutpostSessions(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "sleeptest")
 
 	// Create an agent and a writ, simulate active work.
-	_, err := sphereStore.CreateAgent("Toast", "sleeptest", "agent")
+	_, err := sphereStore.CreateAgent("Toast", "sleeptest", "outpost")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
@@ -47,14 +47,14 @@ func TestWorldSleepForceStopsOutpostSessions(t *testing.T) {
 	}
 
 	// Create tether file.
-	if err := tether.Write("sleeptest", "Toast", writID, "agent"); err != nil {
+	if err := tether.Write("sleeptest", "Toast", writID, "outpost"); err != nil {
 		t.Fatalf("write tether: %v", err)
 	}
 
 	// Start a tmux session to simulate the running agent.
 	mgr := session.New()
 	sessName := config.SessionName("sleeptest", "Toast")
-	if err := mgr.Start(sessName, os.TempDir(), config.SessionCommand(), nil, "agent", "sleeptest"); err != nil {
+	if err := mgr.Start(sessName, os.TempDir(), config.SessionCommand(), nil, "outpost", "sleeptest"); err != nil {
 		t.Fatalf("start session: %v", err)
 	}
 
@@ -107,7 +107,7 @@ func TestWorldSleepForceStopsOutpostSessions(t *testing.T) {
 	}
 
 	// Verify tether cleared.
-	if tether.IsTethered("sleeptest", "Toast", "agent") {
+	if tether.IsTethered("sleeptest", "Toast", "outpost") {
 		t.Error("expected tether to be cleared")
 	}
 
@@ -186,7 +186,7 @@ func TestWorldSleepSoftReportsRunningAgents(t *testing.T) {
 	_, sphereStore := openStores(t, "softtest")
 
 	// Create agents — one working, one idle.
-	_, err := sphereStore.CreateAgent("Alpha", "softtest", "agent")
+	_, err := sphereStore.CreateAgent("Alpha", "softtest", "outpost")
 	if err != nil {
 		t.Fatalf("create agent Alpha: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestWorldSleepSoftReportsRunningAgents(t *testing.T) {
 		t.Fatalf("update agent state: %v", err)
 	}
 
-	_, err = sphereStore.CreateAgent("Beta", "softtest", "agent")
+	_, err = sphereStore.CreateAgent("Beta", "softtest", "outpost")
 	if err != nil {
 		t.Fatalf("create agent Beta: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestWorldSleepForceCrashRecoveryScenario(t *testing.T) {
 	}
 
 	// Create agent in working state with a tether.
-	_, err = sphereStore.CreateAgent("Orphan", "crashtest", "agent")
+	_, err = sphereStore.CreateAgent("Orphan", "crashtest", "outpost")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
@@ -338,12 +338,12 @@ func TestWorldSleepForceCrashRecoveryScenario(t *testing.T) {
 		t.Fatalf("update agent: %v", err)
 	}
 
-	if err := tether.Write("crashtest", "Orphan", writID, "agent"); err != nil {
+	if err := tether.Write("crashtest", "Orphan", writID, "outpost"); err != nil {
 		t.Fatalf("write tether: %v", err)
 	}
 
 	// Verify the stale tether exists.
-	if !tether.IsTethered("crashtest", "Orphan", "agent") {
+	if !tether.IsTethered("crashtest", "Orphan", "outpost") {
 		t.Fatal("expected tether to exist before crash scenario")
 	}
 
@@ -381,7 +381,7 @@ func TestWorldSleepForceMultipleAgents(t *testing.T) {
 
 	// Create 2 outpost agents and 1 envoy.
 	for _, name := range []string{"Agent1", "Agent2"} {
-		_, err := sphereStore.CreateAgent(name, "multitest", "agent")
+		_, err := sphereStore.CreateAgent(name, "multitest", "outpost")
 		if err != nil {
 			t.Fatalf("create agent %s: %v", name, err)
 		}
@@ -402,14 +402,14 @@ func TestWorldSleepForceMultipleAgents(t *testing.T) {
 			t.Fatalf("update agent %s state: %v", name, err)
 		}
 
-		if err := tether.Write("multitest", name, writID, "agent"); err != nil {
+		if err := tether.Write("multitest", name, writID, "outpost"); err != nil {
 			t.Fatalf("write tether for %s: %v", name, err)
 		}
 
 		// Start session.
 		mgr := session.New()
 		sessName := config.SessionName("multitest", name)
-		if err := mgr.Start(sessName, os.TempDir(), config.SessionCommand(), nil, "agent", "multitest"); err != nil {
+		if err := mgr.Start(sessName, os.TempDir(), config.SessionCommand(), nil, "outpost", "multitest"); err != nil {
 			t.Fatalf("start session for %s: %v", name, err)
 		}
 	}

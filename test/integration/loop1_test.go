@@ -105,7 +105,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 	}
 
 	// Both tether files exist with their respective writ IDs.
-	tetherID1, err := tether.Read("ember", result1.AgentName, "agent")
+	tetherID1, err := tether.Read("ember", result1.AgentName, "outpost")
 	if err != nil {
 		t.Fatalf("read tether 1: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 		t.Errorf("tether 1: got %q, want %q", tetherID1, item1ID)
 	}
 
-	tetherID2, err := tether.Read("ember", result2.AgentName, "agent")
+	tetherID2, err := tether.Read("ember", result2.AgentName, "outpost")
 	if err != nil {
 		t.Fatalf("read tether 2: %v", err)
 	}
@@ -151,10 +151,10 @@ func TestFlockSerialization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
 	}
-	if _, err := sphereStore.CreateAgent("Alpha", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Alpha", "ember", "outpost"); err != nil {
 		t.Fatalf("create agent Alpha: %v", err)
 	}
-	if _, err := sphereStore.CreateAgent("Beta", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("Beta", "ember", "outpost"); err != nil {
 		t.Fatalf("create agent Beta: %v", err)
 	}
 
@@ -199,7 +199,7 @@ func TestFlockSerialization(t *testing.T) {
 	// The winning agent has the writ tethered.
 	if len(successes) == 1 {
 		winner := successes[0]
-		tetherID, err := tether.Read("ember", winner, "agent")
+		tetherID, err := tether.Read("ember", winner, "outpost")
 		if err != nil {
 			t.Fatalf("read tether for winner %s: %v", winner, err)
 		}
@@ -292,7 +292,7 @@ func TestPrefectSessionRestart(t *testing.T) {
 	}
 
 	// Tether file still contains the same writ ID.
-	tetherID, err := tether.Read("ember", agentName, "agent")
+	tetherID, err := tether.Read("ember", agentName, "outpost")
 	if err != nil {
 		t.Fatalf("read tether: %v", err)
 	}
@@ -466,7 +466,7 @@ func TestGUPPRecovery(t *testing.T) {
 	worktreeDir := result.WorktreeDir
 
 	// Verify: tether file exists, CLAUDE.md in worktree has writ context.
-	if !tether.IsTethered("ember", agentName, "agent") {
+	if !tether.IsTethered("ember", agentName, "outpost") {
 		t.Error("tether file does not exist after cast")
 	}
 
@@ -483,7 +483,7 @@ func TestGUPPRecovery(t *testing.T) {
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
 
 	// Verify: tether file still exists (durability).
-	if !tether.IsTethered("ember", agentName, "agent") {
+	if !tether.IsTethered("ember", agentName, "outpost") {
 		t.Error("tether file missing after crash")
 	}
 
@@ -504,7 +504,7 @@ func TestGUPPRecovery(t *testing.T) {
 	}
 
 	// sol prime returns the writ context.
-	primeResult, err := dispatch.Prime("ember", agentName, "agent", worldStore)
+	primeResult, err := dispatch.Prime("ember", agentName, "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -516,7 +516,7 @@ func TestGUPPRecovery(t *testing.T) {
 	}
 
 	// Tether file still contains the same writ ID.
-	tetherID, err := tether.Read("ember", agentName, "agent")
+	tetherID, err := tether.Read("ember", agentName, "outpost")
 	if err != nil {
 		t.Fatalf("read tether: %v", err)
 	}

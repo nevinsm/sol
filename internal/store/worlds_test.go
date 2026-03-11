@@ -170,7 +170,7 @@ func TestDeleteWorldData(t *testing.T) {
 	}
 
 	// Create an agent, message, and escalation to verify cleanup.
-	_, err = s.CreateAgent("Toast", "haven", "agent")
+	_, err = s.CreateAgent("Toast", "haven", "outpost")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestDeleteWorldDataDeletesAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = s.CreateAgent("Toast", "haven", "agent")
+	_, err = s.CreateAgent("Toast", "haven", "outpost")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func TestDeleteWorldDataDeletesMessagesAndEscalations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = s.CreateAgent("Toast", "haven", "agent")
+	_, err = s.CreateAgent("Toast", "haven", "outpost")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,10 +347,10 @@ func TestDeleteWorldDataPreservesOtherWorlds(t *testing.T) {
 	if err := s.RegisterWorld("beta", "/path/beta"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateAgent("Toast", "alpha", "agent"); err != nil {
+	if _, err := s.CreateAgent("Toast", "alpha", "outpost"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateAgent("Sage", "beta", "agent"); err != nil {
+	if _, err := s.CreateAgent("Sage", "beta", "outpost"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.SendMessage("beta/Sage", "beta/Other", "test", "body", 2, "notification"); err != nil {
@@ -403,10 +403,10 @@ func TestDeleteWorldDataDoesNotAffectSimilarWorlds(t *testing.T) {
 	}
 
 	// Create agents in both worlds.
-	if _, err := s.CreateAgent("Agent", "dev", "agent"); err != nil {
+	if _, err := s.CreateAgent("Agent", "dev", "outpost"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateAgent("Agent", "dev-staging", "agent"); err != nil {
+	if _, err := s.CreateAgent("Agent", "dev-staging", "outpost"); err != nil {
 		t.Fatal(err)
 	}
 

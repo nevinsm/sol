@@ -27,7 +27,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	mgr := session.New()
 
 	// 1. Create agent.
-	_, err := sphereStore.CreateAgent("TestBot", "ember", "agent")
+	_, err := sphereStore.CreateAgent("TestBot", "ember", "outpost")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Errorf("agent active_writ: got %q, want %q", agent.ActiveWrit, itemID)
 	}
 
-	if !tether.IsTethered("ember", "TestBot", "agent") {
+	if !tether.IsTethered("ember", "TestBot", "outpost") {
 		t.Error("tether file does not exist after cast")
 	}
 
@@ -128,7 +128,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 		t.Error("expected agent record to be deleted after resolve")
 	}
 
-	if tether.IsTethered("ember", "TestBot", "agent") {
+	if tether.IsTethered("ember", "TestBot", "outpost") {
 		t.Error("tether file still exists after resolve")
 	}
 
@@ -160,7 +160,7 @@ func TestCrashRecoveryRecast(t *testing.T) {
 	mgr := session.New()
 
 	// Create agent + writ, cast.
-	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("TestBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	itemID, err := worldStore.CreateWrit("Crash test", "Recovery test", "autarch", 2, nil)
@@ -190,7 +190,7 @@ func TestCrashRecoveryRecast(t *testing.T) {
 	if item.Status != "tethered" {
 		t.Errorf("writ status after crash: got %q, want tethered", item.Status)
 	}
-	if !tether.IsTethered("ember", "TestBot", "agent") {
+	if !tether.IsTethered("ember", "TestBot", "outpost") {
 		t.Error("tether file missing after crash")
 	}
 
@@ -210,7 +210,7 @@ func TestCrashRecoveryRecast(t *testing.T) {
 		t.Error("tmux session not created after re-cast")
 	}
 
-	tetherID, err := tether.Read("ember", "TestBot", "agent")
+	tetherID, err := tether.Read("ember", "TestBot", "outpost")
 	if err != nil {
 		t.Fatalf("read tether after re-cast: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 	mgr := session.New()
 
 	// Create agent + first writ, cast.
-	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("TestBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	item1ID, err := worldStore.CreateWrit("First task", "Task 1", "autarch", 2, nil)
@@ -286,7 +286,7 @@ func TestPrimeOutput(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 
-	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("TestBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	itemID, err := worldStore.CreateWrit("Prime test task", "Check prime output", "autarch", 2, nil)
@@ -304,7 +304,7 @@ func TestPrimeOutput(t *testing.T) {
 	}
 
 	// Run Prime.
-	result, err := dispatch.Prime("ember", "TestBot", "agent", worldStore)
+	result, err := dispatch.Prime("ember", "TestBot", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -332,11 +332,11 @@ func TestPrimeWithoutHook(t *testing.T) {
 	setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
 
-	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("TestBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 
-	result, err := dispatch.Prime("ember", "TestBot", "agent", worldStore)
+	result, err := dispatch.Prime("ember", "TestBot", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("prime: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestStoreInspection(t *testing.T) {
 	}
 
 	// Cast one.
-	if _, err := sphereStore.CreateAgent("TestBot", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("TestBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{

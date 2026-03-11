@@ -708,7 +708,7 @@ func TestGatherWithEnvoys(t *testing.T) {
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
 			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "working", ActiveWrit: "sol-a1b2c3d4"},
-			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "agent", State: "working", ActiveWrit: "sol-11223344"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: "working", ActiveWrit: "sol-11223344"},
 		},
 	}
 	world := &mockWorldStore{
@@ -762,8 +762,8 @@ func TestGatherMixedRoles(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "agent", State: "working", ActiveWrit: "sol-a1b2c3d4"},
-			{ID: "haven/Crisp", Name: "Crisp", World: "haven", Role: "agent", State: "idle"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: "working", ActiveWrit: "sol-a1b2c3d4"},
+			{ID: "haven/Crisp", Name: "Crisp", World: "haven", Role: "outpost", State: "idle"},
 			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "working", ActiveWrit: "sol-11223344"},
 			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: "idle"},
 			{ID: "haven/forge", Name: "forge", World: "haven", Role: "forge", State: "idle"},
@@ -853,7 +853,7 @@ func TestHealthIgnoresEnvoyGovernor(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "agent", State: "working", ActiveWrit: "sol-a1b2c3d4"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: "working", ActiveWrit: "sol-a1b2c3d4"},
 			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "working", ActiveWrit: "sol-11223344"},
 			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: "idle"},
 		},

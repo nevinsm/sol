@@ -810,7 +810,7 @@ func TestAgentCRUD(t *testing.T) {
 	s := setupSphere(t)
 
 	// Create.
-	id, err := s.CreateAgent("Toast", "haven", "agent")
+	id, err := s.CreateAgent("Toast", "haven", "outpost")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -829,7 +829,7 @@ func TestAgentCRUD(t *testing.T) {
 	if agent.World != "haven" {
 		t.Fatalf("expected world 'haven', got %q", agent.World)
 	}
-	if agent.Role != "agent" {
+	if agent.Role != "outpost" {
 		t.Fatalf("expected role 'agent', got %q", agent.Role)
 	}
 	if agent.State != "idle" {
@@ -872,7 +872,7 @@ func TestAgentCRUD(t *testing.T) {
 	}
 
 	// List agents.
-	s.CreateAgent("Jasper", "haven", "agent")
+	s.CreateAgent("Jasper", "haven", "outpost")
 	s.CreateAgent("Wren", "haven", "sentinel")
 
 	agents, err := s.ListAgents("haven", "")
@@ -900,7 +900,7 @@ func TestAgentCRUD(t *testing.T) {
 	if idle == nil {
 		t.Fatal("expected an idle agent")
 	}
-	if idle.Role != "agent" {
+	if idle.Role != "outpost" {
 		t.Fatalf("expected role 'agent', got %q", idle.Role)
 	}
 
@@ -921,9 +921,9 @@ func TestDeleteAgentsForWorld(t *testing.T) {
 	s := setupSphere(t)
 
 	// Create agents in world "alpha" and "beta".
-	s.CreateAgent("Toast", "alpha", "agent")
-	s.CreateAgent("Jasper", "alpha", "agent")
-	s.CreateAgent("Wren", "beta", "agent")
+	s.CreateAgent("Toast", "alpha", "outpost")
+	s.CreateAgent("Jasper", "alpha", "outpost")
+	s.CreateAgent("Wren", "beta", "outpost")
 
 	// Delete agents for "alpha".
 	if err := s.DeleteAgentsForWorld("alpha"); err != nil {
@@ -961,8 +961,8 @@ func TestDeleteAgentsForWorldEmpty(t *testing.T) {
 func TestDeleteAgent(t *testing.T) {
 	s := setupSphere(t)
 
-	s.CreateAgent("Toast", "alpha", "agent")
-	s.CreateAgent("Jasper", "alpha", "agent")
+	s.CreateAgent("Toast", "alpha", "outpost")
+	s.CreateAgent("Jasper", "alpha", "outpost")
 
 	// Delete one agent.
 	if err := s.DeleteAgent("alpha/Toast"); err != nil {
@@ -1323,7 +1323,7 @@ func TestInvalidCaravanStatus(t *testing.T) {
 func TestInvalidAgentState(t *testing.T) {
 	s := setupSphere(t)
 
-	_, err := s.CreateAgent("TestAgent", "testworld", "agent")
+	_, err := s.CreateAgent("TestAgent", "testworld", "outpost")
 	if err != nil {
 		t.Fatal(err)
 	}

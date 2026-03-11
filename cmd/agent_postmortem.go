@@ -163,7 +163,7 @@ var agentPostmortemCmd = &cobra.Command{
 		// 7. Check for handoff state.
 		role := agent.Role
 		if role == "" {
-			role = "agent"
+			role = "outpost"
 		}
 		handoffState, _ := handoff.Read(world, name, role)
 		if handoffState != nil {

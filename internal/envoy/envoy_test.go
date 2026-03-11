@@ -446,7 +446,7 @@ func TestStopNoSession(t *testing.T) {
 
 func TestList(t *testing.T) {
 	agents := []store.Agent{
-		{ID: "w/A", Name: "A", World: "w", Role: "agent"},
+		{ID: "w/A", Name: "A", World: "w", Role: "outpost"},
 		{ID: "w/B", Name: "B", World: "w", Role: "envoy"},
 		{ID: "w/C", Name: "C", World: "w", Role: "envoy"},
 		{ID: "w/D", Name: "D", World: "w", Role: "forge"},

@@ -254,7 +254,7 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	mgr := newMockSessionChecker()
 
 	// Create agent and writ.
-	if _, err := sphereStore.CreateAgent("HandBot", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("HandBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	itemID, err := worldStore.CreateWrit("Handoff task", "Test handoff", "autarch", 2, nil)
@@ -295,13 +295,13 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	}
 
 	// 3. Verify file on disk.
-	handoffPath := handoff.HandoffPath("ember", "HandBot", "agent")
+	handoffPath := handoff.HandoffPath("ember", "HandBot", "outpost")
 	if _, err := os.Stat(handoffPath); os.IsNotExist(err) {
 		t.Fatal("handoff file should exist on disk")
 	}
 
 	// 4. Prime with handoff file → handoff context injected.
-	primeResult, err := dispatch.Prime("ember", "HandBot", "agent", worldStore)
+	primeResult, err := dispatch.Prime("ember", "HandBot", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime: %v", err)
 	}
@@ -316,7 +316,7 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	if _, err := os.Stat(handoffPath); os.IsNotExist(err) {
 		t.Error("handoff file should survive prime (durable)")
 	}
-	readBack, err := handoff.Read("ember", "HandBot", "agent")
+	readBack, err := handoff.Read("ember", "HandBot", "outpost")
 	if err != nil {
 		t.Fatalf("Read after prime: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 		t.Error("handoff should be marked consumed after prime")
 	}
 	// HasHandoff should return false (consumed).
-	if handoff.HasHandoff("ember", "HandBot", "agent") {
+	if handoff.HasHandoff("ember", "HandBot", "outpost") {
 		t.Error("HasHandoff should return false for consumed handoff")
 	}
 
@@ -344,7 +344,7 @@ func TestHandoffPreservesHook(t *testing.T) {
 	mgr := newMockSessionChecker()
 
 	// Create agent and writ.
-	if _, err := sphereStore.CreateAgent("HookBot", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("HookBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	itemID, err := worldStore.CreateWrit("Tether task", "Test tether preservation", "autarch", 2, nil)
@@ -367,7 +367,7 @@ func TestHandoffPreservesHook(t *testing.T) {
 		WritID:  itemID,
 		AgentName:   "HookBot",
 		World:         "ember",
-		Role:        "agent",
+		Role:        "outpost",
 		Summary:     "Test summary",
 		HandedOffAt: time.Now().UTC(),
 	}
@@ -376,7 +376,7 @@ func TestHandoffPreservesHook(t *testing.T) {
 	}
 
 	// Verify tether file still exists.
-	tetherContent, err := tether.Read("ember", "HookBot", "agent")
+	tetherContent, err := tether.Read("ember", "HookBot", "outpost")
 	if err != nil {
 		t.Fatalf("tether.Read: %v", err)
 	}
@@ -440,7 +440,7 @@ needs = ["step1"]
 	}
 
 	// Create agent and writ.
-	if _, err := sphereStore.CreateAgent("WFHandBot", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("WFHandBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	itemID, err := worldStore.CreateWrit("WF Handoff task", "Workflow handoff test", "autarch", 2, nil)
@@ -460,7 +460,7 @@ needs = ["step1"]
 	}
 
 	// Advance to step 2.
-	if _, _, err := workflow.Advance("ember", "WFHandBot", "agent"); err != nil {
+	if _, _, err := workflow.Advance("ember", "WFHandBot", "outpost"); err != nil {
 		t.Fatalf("Advance: %v", err)
 	}
 
@@ -486,7 +486,7 @@ needs = ["step1"]
 	}
 
 	// Prime with handoff → output references workflow step.
-	result, err := dispatch.Prime("ember", "WFHandBot", "agent", worldStore)
+	result, err := dispatch.Prime("ember", "WFHandBot", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime: %v", err)
 	}
@@ -498,7 +498,7 @@ needs = ["step1"]
 	}
 
 	// After handoff consumed: subsequent Prime → normal workflow prime.
-	result, err = dispatch.Prime("ember", "WFHandBot", "agent", worldStore)
+	result, err = dispatch.Prime("ember", "WFHandBot", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime after handoff: %v", err)
 	}
@@ -547,7 +547,7 @@ instructions = "steps/01.md"
 	}
 
 	// Create agent and writ.
-	if _, err := sphereStore.CreateAgent("OverBot", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("OverBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	itemID, err := worldStore.CreateWrit("Override task", "Override test", "autarch", 2, nil)
@@ -571,7 +571,7 @@ instructions = "steps/01.md"
 		WritID:  itemID,
 		AgentName:   "OverBot",
 		World:         "ember",
-		Role:        "agent",
+		Role:        "outpost",
 		Summary:     "Handed off mid-workflow",
 		HandedOffAt: time.Now().UTC(),
 	}
@@ -580,7 +580,7 @@ instructions = "steps/01.md"
 	}
 
 	// Prime → returns handoff context (not workflow).
-	result, err := dispatch.Prime("ember", "OverBot", "agent", worldStore)
+	result, err := dispatch.Prime("ember", "OverBot", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime: %v", err)
 	}
@@ -626,7 +626,7 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	}
 
 	// Create agent in "working" state.
-	if _, err := sphereStore.CreateAgent("StaleBot", "haven", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("StaleBot", "haven", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("haven/StaleBot", "working", itemID); err != nil {
@@ -640,7 +640,7 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	}
 
 	// Write tether file.
-	if err := tether.Write("haven", "StaleBot", itemID, "agent"); err != nil {
+	if err := tether.Write("haven", "StaleBot", itemID, "outpost"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
@@ -682,7 +682,7 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 	}
 
 	// Verify: tether file cleared.
-	tetherContent, err := tether.Read("haven", "StaleBot", "agent")
+	tetherContent, err := tether.Read("haven", "StaleBot", "outpost")
 	if err != nil {
 		t.Fatalf("tether.Read: %v", err)
 	}
@@ -722,7 +722,7 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 		t.Fatalf("update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("RecentBot", "haven", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("RecentBot", "haven", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("haven/RecentBot", "working", itemID); err != nil {
@@ -735,7 +735,7 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 		t.Fatalf("Exec: %v", err)
 	}
 
-	if err := tether.Write("haven", "RecentBot", itemID, "agent"); err != nil {
+	if err := tether.Write("haven", "RecentBot", itemID, "outpost"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
@@ -797,7 +797,7 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 		t.Fatalf("update writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("AliveBot", "haven", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("AliveBot", "haven", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("haven/AliveBot", "working", itemID); err != nil {
@@ -810,7 +810,7 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 		t.Fatalf("Exec: %v", err)
 	}
 
-	if err := tether.Write("haven", "AliveBot", itemID, "agent"); err != nil {
+	if err := tether.Write("haven", "AliveBot", itemID, "outpost"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
@@ -1521,7 +1521,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 	defer worldStore2.Close()
 
-	if _, err := sphereStore.CreateAgent("E2EBot", "ember", "agent"); err != nil {
+	if _, err := sphereStore.CreateAgent("E2EBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	if err := sphereStore.UpdateAgentState("ember/E2EBot", "working", idA); err != nil {
@@ -1530,7 +1530,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	if err := worldStore2.UpdateWrit(idA, store.WritUpdates{Status: "tethered", Assignee: "ember/E2EBot"}); err != nil {
 		t.Fatalf("update writ: %v", err)
 	}
-	if err := tether.Write("ember", "E2EBot", idA, "agent"); err != nil {
+	if err := tether.Write("ember", "E2EBot", idA, "outpost"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
@@ -1538,7 +1538,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 		WritID:  idA,
 		AgentName:   "E2EBot",
 		World:         "ember",
-		Role:        "agent",
+		Role:        "outpost",
 		Summary:     "E2E handoff test",
 		HandedOffAt: time.Now().UTC(),
 	}
@@ -1547,7 +1547,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 
 	// 8. Verify handoff context injected.
-	primeResult, err := dispatch.Prime("ember", "E2EBot", "agent", worldStore2)
+	primeResult, err := dispatch.Prime("ember", "E2EBot", "outpost", worldStore2)
 	if err != nil {
 		t.Fatalf("Prime with handoff: %v", err)
 	}
@@ -1564,7 +1564,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	if _, err := sphereStore.DB().Exec("UPDATE agents SET updated_at = ? WHERE id = ?", twoHoursAgo, "ember/E2EBot"); err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
-	if err := tether.Write("ember", "E2EBot", idA, "agent"); err != nil {
+	if err := tether.Write("ember", "E2EBot", idA, "outpost"); err != nil {
 		t.Fatalf("tether.Write 2: %v", err)
 	}
 	if err := worldStore2.UpdateWrit(idA, store.WritUpdates{Status: "tethered", Assignee: "ember/E2EBot"}); err != nil {

@@ -175,7 +175,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		if err != nil {
 			return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
 		}
-		if agent.Role != "agent" {
+		if agent.Role != "outpost" {
 			return nil, fmt.Errorf("cannot dispatch to %s agents — sol cast targets outpost agents only (got %s)", agent.Role, agent.Name)
 		}
 	} else {
@@ -272,7 +272,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"}); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to reset writ: %v\n", err)
 		}
-		if err := tether.Clear(opts.World, agent.Name, "agent"); err != nil {
+		if err := tether.Clear(opts.World, agent.Name, "outpost"); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to clear tether: %v\n", err)
 		}
 		if err := sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
@@ -285,7 +285,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		}
 		rbCancel()
 		// Clean up workflow if it was instantiated.
-		workflow.Remove(opts.World, agent.Name, "agent") // best-effort
+		workflow.Remove(opts.World, agent.Name, "outpost") // best-effort
 	}
 
 	// 4. Update agent: state → working, active_writ → writ ID.
@@ -299,7 +299,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	}
 
 	// 5. Write tether file.
-	if err := tether.Write(opts.World, agent.Name, opts.WritID, "agent"); err != nil {
+	if err := tether.Write(opts.World, agent.Name, opts.WritID, "outpost"); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to write tether: %w", err)
 	}
@@ -332,7 +332,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		if _, ok := vars["issue"]; !ok {
 			vars["issue"] = opts.WritID
 		}
-		if _, _, err := workflow.Instantiate(opts.World, agent.Name, "agent", opts.Workflow, vars); err != nil {
+		if _, _, err := workflow.Instantiate(opts.World, agent.Name, "outpost", opts.Workflow, vars); err != nil {
 			rollback()
 			return nil, fmt.Errorf("failed to instantiate workflow %q: %w", opts.Workflow, err)
 		}
@@ -756,7 +756,7 @@ func autoProvision(world string, sphereStore SphereStore, namePoolPath string, c
 		return nil, err
 	}
 
-	id, err := sphereStore.CreateAgent(name, world, "agent")
+	id, err := sphereStore.CreateAgent(name, world, "outpost")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent %q: %w", name, err)
 	}
@@ -765,7 +765,7 @@ func autoProvision(world string, sphereStore SphereStore, namePoolPath string, c
 		ID:    id,
 		Name:  name,
 		World: world,
-		Role:  "agent",
+		Role:  "outpost",
 		State: "idle",
 	}, nil
 }
@@ -778,7 +778,7 @@ type PrimeResult struct {
 // Prime assembles execution context from durable state and returns it.
 func Prime(world, agentName, role string, worldStore WorldStore, compact ...bool) (*PrimeResult, error) {
 	if role == "" {
-		role = "agent"
+		role = "outpost"
 	}
 
 	// Compact mode: short focus reminder during native context compaction.
@@ -821,7 +821,7 @@ func Prime(world, agentName, role string, worldStore WorldStore, compact ...bool
 	}
 
 	// Determine the active writ ID.
-	// For outpost agents (role="agent"): single tether, always active.
+	// For outpost agents (role="outpost"): single tether, always active.
 	// For persistent agents: read active_writ from sphere store.
 	var activeWritID string
 	isPersistent := persistentRoles[role]
@@ -1385,7 +1385,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 
 	// 1. Determine which writ to resolve.
 	var writID string
-	if agent.Role == "agent" {
+	if agent.Role == "outpost" {
 		// Outpost: read tether (single writ, unchanged behavior).
 		writID, err = tether.Read(opts.World, opts.AgentName, agent.Role)
 		if err != nil {
@@ -1575,7 +1575,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	// Outpost agents are ephemeral — delete the record to reclaim the name.
 	// Persistent roles (envoy, governor) keep their record and update state
 	// based on remaining tethers.
-	if agent.Role == "agent" {
+	if agent.Role == "outpost" {
 		// Re-read agent to check if already deleted (idempotent re-run).
 		if _, getErr := sphereStore.GetAgent(agentID); getErr == nil {
 			if err := sphereStore.DeleteAgent(agentID); err != nil {
@@ -1615,7 +1615,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	}
 
 	// 6. Clear tether.
-	if agent.Role == "agent" {
+	if agent.Role == "outpost" {
 		// Outpost: clear entire tether directory.
 		if err := tether.Clear(opts.World, opts.AgentName, agent.Role); err != nil {
 			fmt.Fprintf(os.Stderr, "resolve: failed to clear tether (consul will recover): %v\n", err)
@@ -1648,7 +1648,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 				fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
 			}
 			// 7b. Remove worktree for outpost agents (ephemeral worktrees only).
-			if agent.Role == "agent" {
+			if agent.Role == "outpost" {
 				cleanupWorktree(opts.World, worktreeDir)
 			}
 		}()
@@ -1818,7 +1818,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	// 4. Update agent state.
 	// Outpost agents are ephemeral — delete the record to reclaim the name.
 	// Persistent agents update state based on remaining tethers.
-	if role == "agent" {
+	if role == "outpost" {
 		if err := sphereStore.DeleteAgent(agentID); err != nil {
 			return nil, fmt.Errorf("failed to delete agent %q: %w", agentID, err)
 		}
@@ -1851,7 +1851,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	}
 
 	// 5. Clear tether.
-	if role == "agent" {
+	if role == "outpost" {
 		// Outpost: clear entire tether directory.
 		if err := tether.Clear(opts.World, opts.AgentName, role); err != nil {
 			return nil, fmt.Errorf("failed to clear tether: %w", err)
@@ -1875,7 +1875,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 				fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
 			}
 			// 6b. Remove worktree for outpost agents (ephemeral worktrees only).
-			if role == "agent" {
+			if role == "outpost" {
 				cleanupWorktree(opts.World, worktreeDir)
 			}
 		}()

@@ -83,7 +83,7 @@ func Rotate(opts RotateOpts, sphereStore *store.Store, mgr *session.Manager, log
 	// Filter to outpost agents (not governor, senate, envoy, forge).
 	var affectedAgents []store.Agent
 	for _, a := range agents {
-		if a.Role != "agent" {
+		if a.Role != "outpost" {
 			continue
 		}
 		// Resolve which account this agent is currently using.

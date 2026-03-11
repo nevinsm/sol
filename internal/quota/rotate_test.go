@@ -17,9 +17,9 @@ import (
 func TestSwapAndRespawnUsesStartupForRegisteredRole(t *testing.T) {
 	// This test verifies that swapAndRespawn calls startup.Resume when
 	// a role is registered. We verify by checking that startup.ConfigFor
-	// returns non-nil for the role used by quota rotation (role=agent).
+	// returns non-nil for the role used by quota rotation (role=outpost).
 
-	roleName := "agent"
+	roleName := "outpost"
 
 	// Before registration, ConfigFor returns nil.
 	if cfg := startup.ConfigFor(roleName); cfg != nil {

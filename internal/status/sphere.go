@@ -222,7 +222,7 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 					summary.Envoys++
 				case "forge", "sentinel", "consul", "governor":
 					continue
-				default: // "agent"
+				default: // "outpost"
 					summary.Agents++
 					switch a.State {
 					case "working":
@@ -265,7 +265,7 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 				summary.Envoys++
 			case "forge", "sentinel", "consul":
 				continue
-			default: // "agent"
+			default: // "outpost"
 				summary.Agents++
 				switch a.State {
 				case "working":

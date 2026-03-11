@@ -206,7 +206,7 @@ func TestInstantiate(t *testing.T) {
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
 	// Instantiate.
-	inst, state, err := Instantiate("haven", "Toast", "agent", "test-wf",
+	inst, state, err := Instantiate("haven", "Toast", "outpost", "test-wf",
 		map[string]string{"issue": "sol-abc12345"})
 	if err != nil {
 		t.Fatalf("Instantiate() error: %v", err)
@@ -223,7 +223,7 @@ func TestInstantiate(t *testing.T) {
 	}
 
 	// Verify files created.
-	wfDir := InstanceDir("haven", "Toast", "agent")
+	wfDir := InstanceDir("haven", "Toast", "outpost")
 	for _, name := range []string{"manifest.json", "state.json"} {
 		if _, err := os.Stat(filepath.Join(wfDir, name)); err != nil {
 			t.Errorf("missing file %q: %v", name, err)
@@ -270,13 +270,13 @@ func TestInstantiateRequiredVariableMissing(t *testing.T) {
 
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	_, _, err := Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{})
+	_, _, err := Instantiate("haven", "Toast", "outpost", "test-wf", map[string]string{})
 	if err == nil {
 		t.Fatal("Instantiate() expected error for missing required variable")
 	}
 
 	// Verify no directory created.
-	wfDir := InstanceDir("haven", "Toast", "agent")
+	wfDir := InstanceDir("haven", "Toast", "outpost")
 	if _, err := os.Stat(wfDir); !os.IsNotExist(err) {
 		t.Errorf("workflow directory should not exist after error, but stat returned: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestReadState(t *testing.T) {
 	t.Setenv("SOL_HOME", solHome)
 
 	// Non-existent workflow.
-	state, err := ReadState("haven", "Ghost", "agent")
+	state, err := ReadState("haven", "Ghost", "outpost")
 	if err != nil {
 		t.Fatalf("ReadState() error: %v", err)
 	}
@@ -307,9 +307,9 @@ func TestReadState(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+	Instantiate("haven", "Toast", "outpost", "test-wf", map[string]string{"issue": "sol-test"})
 
-	state, err = ReadState("haven", "Toast", "agent")
+	state, err = ReadState("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("ReadState() error: %v", err)
 	}
@@ -336,9 +336,9 @@ func TestReadCurrentStep(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-abc"})
+	Instantiate("haven", "Toast", "outpost", "test-wf", map[string]string{"issue": "sol-abc"})
 
-	step, err := ReadCurrentStep("haven", "Toast", "agent")
+	step, err := ReadCurrentStep("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("ReadCurrentStep() error: %v", err)
 	}
@@ -368,10 +368,10 @@ func TestAdvance(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+	Instantiate("haven", "Toast", "outpost", "test-wf", map[string]string{"issue": "sol-test"})
 
 	// Advance 1: load-context → implement.
-	next, done, err := Advance("haven", "Toast", "agent")
+	next, done, err := Advance("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Advance() 1 error: %v", err)
 	}
@@ -383,13 +383,13 @@ func TestAdvance(t *testing.T) {
 	}
 
 	// Verify previous step marked complete.
-	state, _ := ReadState("haven", "Toast", "agent")
+	state, _ := ReadState("haven", "Toast", "outpost")
 	if len(state.Completed) != 1 || state.Completed[0] != "load-context" {
 		t.Errorf("completed: got %v, want [load-context]", state.Completed)
 	}
 
 	// Advance 2: implement → verify.
-	next, done, err = Advance("haven", "Toast", "agent")
+	next, done, err = Advance("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Advance() 2 error: %v", err)
 	}
@@ -401,7 +401,7 @@ func TestAdvance(t *testing.T) {
 	}
 
 	// Advance 3: verify → done.
-	next, done, err = Advance("haven", "Toast", "agent")
+	next, done, err = Advance("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Advance() 3 error: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestAdvance(t *testing.T) {
 	}
 
 	// Verify final state.
-	state, _ = ReadState("haven", "Toast", "agent")
+	state, _ = ReadState("haven", "Toast", "outpost")
 	if state.Status != "done" {
 		t.Errorf("final status: got %q, want %q", state.Status, "done")
 	}
@@ -447,7 +447,7 @@ func TestAdvanceDAG(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	_, state, err := Instantiate("haven", "Toast", "agent", "dag-wf", map[string]string{"issue": "sol-test"})
+	_, state, err := Instantiate("haven", "Toast", "outpost", "dag-wf", map[string]string{"issue": "sol-test"})
 	if err != nil {
 		t.Fatalf("Instantiate() error: %v", err)
 	}
@@ -456,7 +456,7 @@ func TestAdvanceDAG(t *testing.T) {
 	}
 
 	// After A: both B and C ready, pick B (first in manifest order).
-	next, done, err := Advance("haven", "Toast", "agent")
+	next, done, err := Advance("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Advance() after A error: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestAdvanceDAG(t *testing.T) {
 	}
 
 	// After B: C ready (D still needs C).
-	next, done, err = Advance("haven", "Toast", "agent")
+	next, done, err = Advance("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Advance() after B error: %v", err)
 	}
@@ -480,7 +480,7 @@ func TestAdvanceDAG(t *testing.T) {
 	}
 
 	// After C: D ready (B and C both done).
-	next, done, err = Advance("haven", "Toast", "agent")
+	next, done, err = Advance("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Advance() after C error: %v", err)
 	}
@@ -492,7 +492,7 @@ func TestAdvanceDAG(t *testing.T) {
 	}
 
 	// After D: done.
-	next, done, err = Advance("haven", "Toast", "agent")
+	next, done, err = Advance("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Advance() after D error: %v", err)
 	}
@@ -558,10 +558,10 @@ func TestSkipMidWorkflow(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+	Instantiate("haven", "Toast", "outpost", "test-wf", map[string]string{"issue": "sol-test"})
 
 	// Skip first step (load-context) → should advance to implement.
-	next, done, err := Skip("haven", "Toast", "agent")
+	next, done, err := Skip("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Skip() error: %v", err)
 	}
@@ -573,7 +573,7 @@ func TestSkipMidWorkflow(t *testing.T) {
 	}
 
 	// Verify skipped step status.
-	wfDir := InstanceDir("haven", "Toast", "agent")
+	wfDir := InstanceDir("haven", "Toast", "outpost")
 	stepData, err := os.ReadFile(filepath.Join(wfDir, "steps", "load-context.json"))
 	if err != nil {
 		t.Fatalf("read skipped step: %v", err)
@@ -588,7 +588,7 @@ func TestSkipMidWorkflow(t *testing.T) {
 	}
 
 	// Verify state: load-context in completed list.
-	state, _ := ReadState("haven", "Toast", "agent")
+	state, _ := ReadState("haven", "Toast", "outpost")
 	if len(state.Completed) != 1 || state.Completed[0] != "load-context" {
 		t.Errorf("completed: got %v, want [load-context]", state.Completed)
 	}
@@ -615,14 +615,14 @@ func TestSkipLastStep(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+	Instantiate("haven", "Toast", "outpost", "test-wf", map[string]string{"issue": "sol-test"})
 
 	// Advance through first two steps normally.
-	Advance("haven", "Toast", "agent") // load-context → implement
-	Advance("haven", "Toast", "agent") // implement → verify
+	Advance("haven", "Toast", "outpost") // load-context → implement
+	Advance("haven", "Toast", "outpost") // implement → verify
 
 	// Skip last step (verify) → workflow should complete.
-	next, done, err := Skip("haven", "Toast", "agent")
+	next, done, err := Skip("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Skip() last step error: %v", err)
 	}
@@ -634,7 +634,7 @@ func TestSkipLastStep(t *testing.T) {
 	}
 
 	// Verify final state.
-	state, _ := ReadState("haven", "Toast", "agent")
+	state, _ := ReadState("haven", "Toast", "outpost")
 	if state.Status != "done" {
 		t.Errorf("final status: got %q, want %q", state.Status, "done")
 	}
@@ -668,10 +668,10 @@ func TestSkipWithDependents(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	Instantiate("haven", "Toast", "agent", "dag-wf", map[string]string{"issue": "sol-test"})
+	Instantiate("haven", "Toast", "outpost", "dag-wf", map[string]string{"issue": "sol-test"})
 
 	// Skip A → B and C should become ready, B picked first.
-	next, done, err := Skip("haven", "Toast", "agent")
+	next, done, err := Skip("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Skip() A error: %v", err)
 	}
@@ -683,7 +683,7 @@ func TestSkipWithDependents(t *testing.T) {
 	}
 
 	// Skip B → C should become ready.
-	next, done, err = Skip("haven", "Toast", "agent")
+	next, done, err = Skip("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Skip() B error: %v", err)
 	}
@@ -695,7 +695,7 @@ func TestSkipWithDependents(t *testing.T) {
 	}
 
 	// Advance C normally → D should become ready (B was skipped, C completed).
-	next, done, err = Advance("haven", "Toast", "agent")
+	next, done, err = Advance("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Advance() C error: %v", err)
 	}
@@ -707,7 +707,7 @@ func TestSkipWithDependents(t *testing.T) {
 	}
 
 	// Verify skipped steps have correct status.
-	wfDir := InstanceDir("haven", "Toast", "agent")
+	wfDir := InstanceDir("haven", "Toast", "outpost")
 	for _, id := range []string{"a", "b"} {
 		data, _ := os.ReadFile(filepath.Join(wfDir, "steps", id+".json"))
 		var s Step
@@ -733,10 +733,10 @@ func TestFail(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+	Instantiate("haven", "Toast", "outpost", "test-wf", map[string]string{"issue": "sol-test"})
 
 	// Fail the first step.
-	failedStep, err := Fail("haven", "Toast", "agent")
+	failedStep, err := Fail("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Fail() error: %v", err)
 	}
@@ -748,7 +748,7 @@ func TestFail(t *testing.T) {
 	}
 
 	// Verify state.
-	state, _ := ReadState("haven", "Toast", "agent")
+	state, _ := ReadState("haven", "Toast", "outpost")
 	if state.Status != "failed" {
 		t.Errorf("workflow status: got %q, want %q", state.Status, "failed")
 	}
@@ -765,7 +765,7 @@ func TestFail(t *testing.T) {
 	}
 
 	// Verify step file has failed status.
-	wfDir := InstanceDir("haven", "Toast", "agent")
+	wfDir := InstanceDir("haven", "Toast", "outpost")
 	stepData, _ := os.ReadFile(filepath.Join(wfDir, "steps", "load-context.json"))
 	var step Step
 	json.Unmarshal(stepData, &step)
@@ -778,7 +778,7 @@ func TestFailNoWorkflow(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	_, err := Fail("haven", "Ghost", "agent")
+	_, err := Fail("haven", "Ghost", "outpost")
 	if err == nil {
 		t.Fatal("Fail() expected error for non-existent workflow")
 	}
@@ -791,7 +791,7 @@ func TestSkipNoWorkflow(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	_, _, err := Skip("haven", "Ghost", "agent")
+	_, _, err := Skip("haven", "Ghost", "outpost")
 	if err == nil {
 		t.Fatal("Skip() expected error for non-existent workflow")
 	}
@@ -815,13 +815,13 @@ func TestFailAlreadyFailed(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+	Instantiate("haven", "Toast", "outpost", "test-wf", map[string]string{"issue": "sol-test"})
 
 	// Fail once.
-	Fail("haven", "Toast", "agent")
+	Fail("haven", "Toast", "outpost")
 
 	// Fail again — should error because workflow is already failed.
-	_, err := Fail("haven", "Toast", "agent")
+	_, err := Fail("haven", "Toast", "outpost")
 	if err == nil {
 		t.Fatal("Fail() expected error for already-failed workflow")
 	}
@@ -845,13 +845,13 @@ func TestSkipAfterFail(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+	Instantiate("haven", "Toast", "outpost", "test-wf", map[string]string{"issue": "sol-test"})
 
 	// Fail the workflow.
-	Fail("haven", "Toast", "agent")
+	Fail("haven", "Toast", "outpost")
 
 	// Skip should error because workflow is already failed.
-	_, _, err := Skip("haven", "Toast", "agent")
+	_, _, err := Skip("haven", "Toast", "outpost")
 	if err == nil {
 		t.Fatal("Skip() expected error after workflow failed")
 	}
@@ -875,14 +875,14 @@ func TestRemove(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+	Instantiate("haven", "Toast", "outpost", "test-wf", map[string]string{"issue": "sol-test"})
 
-	wfDir := InstanceDir("haven", "Toast", "agent")
+	wfDir := InstanceDir("haven", "Toast", "outpost")
 	if _, err := os.Stat(wfDir); err != nil {
 		t.Fatalf("workflow dir should exist: %v", err)
 	}
 
-	if err := Remove("haven", "Toast", "agent"); err != nil {
+	if err := Remove("haven", "Toast", "outpost"); err != nil {
 		t.Fatalf("Remove() error: %v", err)
 	}
 
@@ -1018,10 +1018,10 @@ func TestAdvanceIdempotentOnCompletedStep(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(solHome, "haven", "outposts", "Toast"), 0o755)
 
-	Instantiate("haven", "Toast", "agent", "test-wf", map[string]string{"issue": "sol-test"})
+	Instantiate("haven", "Toast", "outpost", "test-wf", map[string]string{"issue": "sol-test"})
 
 	// Advance 1: load-context → implement (normal advance).
-	next, done, err := Advance("haven", "Toast", "agent")
+	next, done, err := Advance("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Advance() 1 error: %v", err)
 	}
@@ -1030,7 +1030,7 @@ func TestAdvanceIdempotentOnCompletedStep(t *testing.T) {
 	}
 
 	// Verify step 1 appears exactly once in Completed.
-	state, err := ReadState("haven", "Toast", "agent")
+	state, err := ReadState("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("ReadState() error: %v", err)
 	}
@@ -1046,13 +1046,13 @@ func TestAdvanceIdempotentOnCompletedStep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal state: %v", err)
 	}
-	statePath := filepath.Join(InstanceDir("haven", "Toast", "agent"), "state.json")
+	statePath := filepath.Join(InstanceDir("haven", "Toast", "outpost"), "state.json")
 	if err := os.WriteFile(statePath, stateData, 0o644); err != nil {
 		t.Fatalf("write state.json: %v", err)
 	}
 
 	// Call Advance() again — should recover without duplicating "load-context".
-	next, done, err = Advance("haven", "Toast", "agent")
+	next, done, err = Advance("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("Advance() recovery error: %v", err)
 	}
@@ -1064,7 +1064,7 @@ func TestAdvanceIdempotentOnCompletedStep(t *testing.T) {
 	}
 
 	// Verify "load-context" still appears exactly ONCE (not duplicated).
-	state, err = ReadState("haven", "Toast", "agent")
+	state, err = ReadState("haven", "Toast", "outpost")
 	if err != nil {
 		t.Fatalf("ReadState() after recovery error: %v", err)
 	}

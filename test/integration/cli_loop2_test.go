@@ -132,7 +132,7 @@ func TestCLIResolveShowsMergeRequest(t *testing.T) {
 	mgr := session.New()
 
 	// Create writ, agent, and cast via API.
-	sphereStore.CreateAgent("Smoke", "ember", "agent")
+	sphereStore.CreateAgent("Smoke", "ember", "outpost")
 	itemID, err := worldStore.CreateWrit("CLI resolve test", "Test resolve CLI output", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("create writ: %v", err)
