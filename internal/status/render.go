@@ -174,6 +174,13 @@ func formatBrokerDetail(b BrokerInfo) string {
 	if b.Stale {
 		parts += warnStyle.Render(" (stale)")
 	}
+	// Show provider health when not healthy.
+	switch b.ProviderHealth {
+	case "degraded":
+		parts += warnStyle.Render(" [provider: degraded]")
+	case "down":
+		parts += errorStyle.Render(" [provider: down]")
+	}
 	return parts
 }
 

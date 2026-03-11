@@ -967,7 +967,7 @@ Manage AI provider credentials and health
 
 Show whether the broker process is running via its heartbeat file.
 
-Prints patrol count, account info, and refresh statistics.
+Prints patrol count, account info, refresh statistics, and provider health state.
 Use --json for machine-readable output.
 
 Exit codes:

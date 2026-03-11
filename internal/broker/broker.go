@@ -37,6 +37,12 @@ type Heartbeat struct {
 	Refreshed    int       `json:"refreshed"`
 	Errors       int       `json:"errors"`
 	LastRefresh  string    `json:"last_refresh,omitempty"` // account handle
+
+	// Provider health fields.
+	ProviderHealth      ProviderHealth `json:"provider_health,omitempty"`
+	ConsecutiveFailures int            `json:"consecutive_failures,omitempty"`
+	LastProbe           time.Time      `json:"last_probe,omitempty"`
+	LastHealthy         time.Time      `json:"last_healthy,omitempty"`
 }
 
 // Broker manages OAuth token refresh for all accounts.
@@ -44,6 +50,7 @@ type Broker struct {
 	cfg       Config
 	logger    *events.Logger
 	refreshFn RefreshFn
+	health    *HealthTracker
 
 	patrolCount int
 }
@@ -61,6 +68,7 @@ func New(cfg Config, logger *events.Logger) *Broker {
 		cfg:       cfg,
 		logger:    logger,
 		refreshFn: RefreshOAuthToken,
+		health:    NewHealthTracker(),
 	}
 }
 
@@ -69,16 +77,26 @@ func (b *Broker) SetRefreshFn(fn RefreshFn) {
 	b.refreshFn = fn
 }
 
+// SetHealthTracker overrides the health tracker (for testing).
+func (b *Broker) SetHealthTracker(ht *HealthTracker) {
+	b.health = ht
+}
+
 // Run starts the broker loop. Blocks until context is cancelled.
 func (b *Broker) Run(ctx context.Context) error {
 	fmt.Fprintf(os.Stderr, "Broker starting (patrol every %s, refresh margin %s)\n",
 		b.cfg.PatrolInterval, b.cfg.RefreshMargin)
 
-	// Initial patrol immediately.
+	// Initial patrol immediately (includes health probe).
 	b.patrol()
 
 	ticker := time.NewTicker(b.cfg.PatrolInterval)
 	defer ticker.Stop()
+
+	// Health probe timer — starts at patrol interval, adjusts based on health state.
+	healthInterval := b.health.NextProbeIn(b.cfg.PatrolInterval)
+	healthTicker := time.NewTicker(healthInterval)
+	defer healthTicker.Stop()
 
 	for {
 		select {
@@ -88,17 +106,97 @@ func (b *Broker) Run(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			b.patrol()
+			b.resetHealthTicker(healthTicker)
+		case <-healthTicker.C:
+			// Only run a standalone health probe if not healthy.
+			// When healthy, the patrol ticker handles probing.
+			if b.health.State().Health != HealthHealthy {
+				b.probeHealth()
+				b.resetHealthTicker(healthTicker)
+
+				// On recovery, run a full patrol (credentials may need refresh).
+				if b.health.State().Health == HealthHealthy {
+					fmt.Fprintln(os.Stderr, "broker: provider recovered, running full patrol")
+					b.patrol()
+				}
+			}
 		}
 	}
 }
 
+// resetHealthTicker adjusts the health ticker to the appropriate interval
+// for the current health state.
+func (b *Broker) resetHealthTicker(ticker *time.Ticker) {
+	interval := b.health.NextProbeIn(b.cfg.PatrolInterval)
+	ticker.Reset(interval)
+}
+
+// probeHealth runs a health probe and emits events on state transitions.
+func (b *Broker) probeHealth() {
+	prevHealth := b.health.State().Health
+	changed := b.health.Probe()
+
+	if changed {
+		newHealth := b.health.State().Health
+		fmt.Fprintf(os.Stderr, "broker: provider health changed: %s → %s (consecutive failures: %d)\n",
+			prevHealth, newHealth, b.health.State().ConsecutiveFailures)
+
+		if b.logger != nil {
+			b.logger.Emit(events.EventBrokerHealthChange, "broker", "broker", "audit",
+				map[string]any{
+					"from":                 string(prevHealth),
+					"to":                   string(newHealth),
+					"consecutive_failures": b.health.State().ConsecutiveFailures,
+				})
+		}
+	}
+
+	// Write a heartbeat after every probe to keep health state fresh.
+	b.writeHealthHeartbeat()
+}
+
+// writeHealthHeartbeat writes a heartbeat with the current health state only
+// (used for standalone health probes between patrols).
+func (b *Broker) writeHealthHeartbeat() {
+	hs := b.health.State()
+	hb := Heartbeat{
+		Timestamp:           time.Now().UTC(),
+		PatrolCount:         b.patrolCount,
+		Status:              "running",
+		ProviderHealth:      hs.Health,
+		ConsecutiveFailures: hs.ConsecutiveFailures,
+		LastProbe:           hs.LastProbe,
+		LastHealthy:         hs.LastHealthy,
+	}
+
+	data, err := json.MarshalIndent(hb, "", "  ")
+	if err != nil {
+		return
+	}
+
+	dir := filepath.Dir(heartbeatPath())
+	os.MkdirAll(dir, 0o755)
+
+	tmp := heartbeatPath() + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+		return
+	}
+	os.Rename(tmp, heartbeatPath())
+}
+
 // patrol performs one refresh cycle:
-// 1. Load all account credentials
-// 2. Check which need refreshing (approaching expiry)
-// 3. Refresh tokens
-// 4. Write updated access-token-only creds to all agent config dirs
+// 1. Probe provider health
+// 2. Load all account credentials
+// 3. Check which need refreshing (approaching expiry)
+// 4. Refresh tokens
+// 5. Write updated access-token-only creds to all agent config dirs
 func (b *Broker) patrol() {
 	b.patrolCount++
+
+	// Probe provider health on every patrol.
+	if b.health.ShouldProbe(b.cfg.PatrolInterval) {
+		b.probeHealth()
+	}
 
 	registry, err := account.LoadRegistry()
 	if err != nil {
@@ -302,15 +400,20 @@ func heartbeatPath() string {
 }
 
 func (b *Broker) writeHeartbeat(status string, accounts, agentDirs, refreshed, errors int, lastRefresh string) {
+	hs := b.health.State()
 	hb := Heartbeat{
-		Timestamp:   time.Now().UTC(),
-		PatrolCount: b.patrolCount,
-		Status:      status,
-		Accounts:    accounts,
-		AgentDirs:   agentDirs,
-		Refreshed:   refreshed,
-		Errors:      errors,
-		LastRefresh: lastRefresh,
+		Timestamp:           time.Now().UTC(),
+		PatrolCount:         b.patrolCount,
+		Status:              status,
+		Accounts:            accounts,
+		AgentDirs:           agentDirs,
+		Refreshed:           refreshed,
+		Errors:              errors,
+		LastRefresh:         lastRefresh,
+		ProviderHealth:      hs.Health,
+		ConsecutiveFailures: hs.ConsecutiveFailures,
+		LastProbe:           hs.LastProbe,
+		LastHealthy:         hs.LastHealthy,
 	}
 
 	data, err := json.MarshalIndent(hb, "", "  ")

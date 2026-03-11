@@ -194,6 +194,10 @@ func GatherBrokerInfo() BrokerInfo {
 		age := time.Since(hb.Timestamp)
 		info.HeartbeatAge = FormatDuration(age)
 		info.Stale = hb.IsStale(10 * time.Minute)
+
+		if hb.ProviderHealth != "" {
+			info.ProviderHealth = string(hb.ProviderHealth)
+		}
 	}
 
 	return info
@@ -340,6 +344,7 @@ func FormatDuration(d time.Duration) string {
 //   - Prefect running (sphere-level orchestrator — if down, no sessions respawn)
 //   - Any world unhealthy or having dead sessions (propagates upward)
 //   - Consul staleness (sphere-level patrol — stale means tether reaping is delayed)
+//   - Provider health (degraded/down broker signals AI provider issues)
 //
 // Sleeping worlds are excluded from health computation since they are
 // intentionally inactive and their state is not actionable.
@@ -358,6 +363,10 @@ func computeSphereHealth(s *SphereStatus) string {
 		}
 	}
 	if s.Consul.Stale {
+		return "degraded"
+	}
+	// Provider health affects sphere health.
+	if s.Broker.ProviderHealth == "down" || s.Broker.ProviderHealth == "degraded" {
 		return "degraded"
 	}
 	return "healthy"
