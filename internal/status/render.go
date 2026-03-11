@@ -377,7 +377,7 @@ func RenderWorld(ws *WorldStatus) string {
 		formatGovernorDetail(ws.Governor))
 	b.WriteString("\n")
 
-	// Outposts (role=agent only).
+	// Outposts (role=outpost only).
 	if len(ws.Agents) > 0 {
 		b.WriteString(headerStyle.Render(fmt.Sprintf("Outposts (%d)", len(ws.Agents))))
 		b.WriteString("\n")
@@ -699,7 +699,7 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 		formatGovernorDetail(ws.Governor))
 	b.WriteString("\n")
 
-	// Outposts (role=agent only).
+	// Outposts (role=outpost only).
 	if len(ws.Agents) > 0 {
 		b.WriteString(headerStyle.Render(fmt.Sprintf("Outposts (%d)", len(ws.Agents))))
 		b.WriteString("\n")

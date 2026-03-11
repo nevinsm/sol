@@ -220,7 +220,7 @@ func TestEnvoyListCommand(t *testing.T) {
 	}
 	// worker is role=outpost, should NOT appear.
 	if strings.Contains(output, "worker") {
-		t.Errorf("did not expect 'worker' (role=agent) in envoy list, got: %s", output)
+		t.Errorf("did not expect 'worker' (role=outpost) in envoy list, got: %s", output)
 	}
 }
 
