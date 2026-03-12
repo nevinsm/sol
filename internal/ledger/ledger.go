@@ -190,6 +190,18 @@ func (l *Ledger) heartbeatLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			l.writeHeartbeat("running")
+			// Emit periodic ingest summary so the ledger appears in the feed.
+			if l.eventLog != nil {
+				l.mu.Lock()
+				worldCount := len(l.worlds)
+				l.mu.Unlock()
+				l.eventLog.Emit(events.EventLedgerIngest, "ledger", "ledger", "feed",
+					map[string]any{
+						"requests_total":   l.requestCount.Load(),
+						"tokens_processed": l.tokensIngested.Load(),
+						"worlds_written":   worldCount,
+					})
+			}
 			// Best-effort log rotation.
 			logutil.TruncateIfNeeded(filepath.Join(config.RuntimeDir(), "ledger.log"), logutil.DefaultMaxLogSize)
 		}
