@@ -425,11 +425,18 @@ You maintain accumulated world knowledge in your brief.
 
 `+"```"+`markdown
 # World Summary: %s
-## Project       — what this codebase is
-## Architecture  — key modules, patterns, tech stack
-## Priorities    — active work themes, what's in flight
-## Constraints   — known problem areas, things to avoid
+## Project            — what this codebase is
+## Architecture       — key modules, patterns, tech stack
+## Priorities         — active work themes, what's in flight
+## Constraints        — known problem areas, things to avoid
+## Principles & Conventions
+### Conventions       — curated summary of key CLAUDE.md conventions (commit style, naming, exit codes, etc.)
+### ADR Decisions     — ADR numbers and one-line summaries that constrain implementation
+### Build & Test      — build commands, required test helpers, CI gates
+### World Constraints — anything a planner must know before designing writs for this world
 `+"```"+`
+
+- The **Principles & Conventions** section is read by the Chancellor while this world sleeps — keep it accurate so plans conform to project conventions without needing to wake you
 
 ## Codebase Research
 - Read-only codebase at `+"`"+`%s/`+"`"+` — use for understanding code, never edit
