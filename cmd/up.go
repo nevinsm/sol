@@ -329,8 +329,11 @@ func startSphereDaemons(solBin string, worlds []string) (bool, error) {
 
 		// Start: sol {component} run
 		args := []string{d.name, "run"}
-		if d.name == "prefect" && len(worlds) > 0 {
-			args = append(args, "--worlds="+strings.Join(worlds, ","))
+		if d.name == "prefect" {
+			args = append(args, "--consul")
+			if len(worlds) > 0 {
+				args = append(args, "--worlds="+strings.Join(worlds, ","))
+			}
 		}
 		proc := exec.Command(solBin, args...)
 		proc.Stdout = logFile
@@ -523,10 +526,9 @@ func stopSphereDaemons() {
 	}
 	var results []result
 
-	// Stop in reverse order: non-prefect daemons first, then prefect last.
-	// This ensures each process is individually stopped and reported before
-	// prefect's shutdown cascade fires (which would kill them, causing
-	// misleading "not running" output).
+	// Pass 1: SIGTERM all running daemons (reverse order — non-prefect first,
+	// prefect last so its shutdown cascade doesn't race with individual stops).
+	var sigtermedPIDs []int
 	for i := len(sphereDaemons) - 1; i >= 0; i-- {
 		d := sphereDaemons[i]
 		r := result{name: d.name}
@@ -540,6 +542,7 @@ func stopSphereDaemons() {
 				} else {
 					r.pid = pid
 					stopped = true
+					sigtermedPIDs = append(sigtermedPIDs, pid)
 				}
 			}
 			clearDaemonPID(d.name)
@@ -565,6 +568,32 @@ func stopSphereDaemons() {
 		}
 
 		results = append(results, r)
+	}
+
+	// Pass 2: wait for SIGTERMed processes to die (up to 5 seconds),
+	// then SIGKILL any survivors. This prevents a subsequent `sol up`
+	// from seeing dying processes as "running" and skipping their restart.
+	if len(sigtermedPIDs) > 0 {
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			allDead := true
+			for _, pid := range sigtermedPIDs {
+				if prefect.IsRunning(pid) {
+					allDead = false
+					break
+				}
+			}
+			if allDead {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		// SIGKILL any processes that outlasted the grace period.
+		for _, pid := range sigtermedPIDs {
+			if prefect.IsRunning(pid) {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
 	}
 
 	// Print results.

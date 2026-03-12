@@ -239,6 +239,11 @@ func (s *Prefect) heartbeat() {
 			continue
 		}
 
+		// Skip consul — managed as a direct process via heartbeat, supervised by checkConsul().
+		if agent.Role == "consul" {
+			continue
+		}
+
 		// Skip sleeping worlds — their services should not be respawned.
 		if sleepingWorlds[agent.World] {
 			continue
