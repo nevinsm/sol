@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/processutil"
 )
 
 // Heartbeat records the sentinel's liveness state.
@@ -114,16 +114,8 @@ func ClearHeartbeat(world string) {
 	os.Remove(HeartbeatPath(world))
 }
 
-// IsRunning checks if a sentinel process is alive by its PID.
+// IsRunning checks if a sentinel process is alive and not a zombie.
+// It delegates to processutil.IsRunning for zombie-aware detection.
 func IsRunning(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	// Signal 0 tests process existence without sending a real signal.
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil
+	return processutil.IsRunning(pid)
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/processutil"
 )
 
 // PIDPath returns the path to the forge PID file for a world.
@@ -45,13 +46,10 @@ func ClearPID(world string) {
 	os.Remove(PIDPath(world))
 }
 
-// IsRunning checks if a process with the given PID is alive.
+// IsRunning checks if a process with the given PID is alive and not a zombie.
+// It delegates to processutil.IsRunning for zombie-aware detection.
 func IsRunning(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || err == syscall.EPERM
+	return processutil.IsRunning(pid)
 }
 
 // StopProcess sends SIGTERM to the forge process and waits for it to exit.
