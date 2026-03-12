@@ -1687,7 +1687,7 @@ func TestWorldViewSphereProcessSpinners(t *testing.T) {
 		Prefect:   status.PrefectInfo{Running: true, PID: 100},
 		Chronicle: status.ChronicleInfo{Running: true},
 		Ledger:    status.LedgerInfo{Running: false},
-		Broker:    status.BrokerInfo{Running: true, Accounts: 3},
+		Broker:    status.BrokerInfo{Running: true, PatrolCount: 3},
 		Senate:    status.SenateInfo{Running: false},
 		Forge:     status.ForgeInfo{Running: true},
 		Sentinel:  status.SentinelInfo{Running: true},
@@ -1838,8 +1838,8 @@ func TestProcessDetailFormats(t *testing.T) {
 	}
 
 	// Broker detail.
-	if d := formatBrokerDetail(status.BrokerInfo{Running: true, Accounts: 5}); d != "5 accounts" {
-		t.Errorf("broker detail = %q, want %q", d, "5 accounts")
+	if d := formatBrokerDetail(status.BrokerInfo{Running: true, PatrolCount: 5}); d != "5 patrols" {
+		t.Errorf("broker detail = %q, want %q", d, "5 patrols")
 	}
 
 	// Senate detail.

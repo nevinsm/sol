@@ -362,18 +362,8 @@ func TestHeartbeatIncludesHealthFields(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	// Set up minimal account registry.
-	accountsDir := filepath.Join(solHome, ".accounts")
-	os.MkdirAll(accountsDir, 0o755)
-	registry := map[string]any{
-		"accounts": map[string]any{},
-		"default":  "",
-	}
-	regData, _ := json.Marshal(registry)
-	os.WriteFile(filepath.Join(accountsDir, "accounts.json"), regData, 0o644)
-
 	// Create broker with a mock health tracker.
-	b := New(Config{RefreshMargin: 30 * time.Minute}, nil)
+	b := New(Config{}, nil)
 	ht := NewHealthTracker()
 	ht.SetProbeFn(func() error { return nil }) // always healthy
 	b.SetHealthTracker(ht)

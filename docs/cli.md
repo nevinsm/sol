@@ -952,7 +952,7 @@ If no tethers remain, the agent goes idle.
 
 ### `sol broker`
 
-Manage AI provider credentials and health
+Manage AI provider health probing
 
 **Subcommands:**
 
@@ -969,13 +969,12 @@ Manage AI provider credentials and health
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--interval` | string | 5m | patrol interval |
-| `--refresh-margin` | string | 30m | refresh tokens this long before expiry |
 
 #### `sol broker status`
 
 Show whether the broker process is running via its heartbeat file.
 
-Prints patrol count, account info, refresh statistics, and provider health state.
+Prints patrol count and provider health state.
 Use --json for machine-readable output.
 
 Exit codes:
