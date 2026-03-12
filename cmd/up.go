@@ -20,9 +20,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// senateSession is the tmux session name for the senate
-// (matches the constant in internal/senate).
-const senateSession = "sol-senate"
+// chancellorSession is the tmux session name for the chancellor
+// (matches the constant in internal/chancellor).
+const chancellorSession = "sol-chancellor"
 
 // sphereDaemon describes a sphere-level daemon managed by sol up/down.
 type sphereDaemon struct {
@@ -77,7 +77,7 @@ func init() {
 
 	downCmd.Flags().StringVar(&downWorldFlag, "world", "", "stop only world services (optionally for a specific world)")
 	downCmd.Flags().Lookup("world").NoOptDefVal = ""
-	downCmd.Flags().BoolVar(&downAllFlag, "all", false, "also stop envoy, governor, and senate sessions")
+	downCmd.Flags().BoolVar(&downAllFlag, "all", false, "also stop envoy, governor, and chancellor sessions")
 }
 
 // --- PID helpers ---
@@ -507,7 +507,7 @@ func runDown(cmd *cobra.Command, _ []string) error {
 		stopWorldServicesBatch(worlds)
 	}
 
-	// With --all, also stop envoys, governors, and senate.
+	// With --all, also stop envoys, governors, and chancellor.
 	if downAllFlag {
 		stopManagedSessions(worlds)
 	}
@@ -729,7 +729,7 @@ func stopWorldServicesBatch(worlds []string) {
 	}
 }
 
-// stopManagedSessions stops envoy, governor, and senate sessions.
+// stopManagedSessions stops envoy, governor, and chancellor sessions.
 // Called by sol down --all.
 func stopManagedSessions(worlds []string) {
 	mgr := session.New()
@@ -767,11 +767,11 @@ func stopManagedSessions(worlds []string) {
 		sphereStore.Close()
 	}
 
-	// Senate session.
-	r := result{role: "senate", name: senateSession}
-	if !mgr.Exists(senateSession) {
+	// Chancellor session.
+	r := result{role: "chancellor", name: chancellorSession}
+	if !mgr.Exists(chancellorSession) {
 		r.status = "not running"
-	} else if err := mgr.Stop(senateSession, false); err != nil {
+	} else if err := mgr.Stop(chancellorSession, false); err != nil {
 		r.status = "failed"
 		r.err = err
 	} else {

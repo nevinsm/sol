@@ -31,10 +31,10 @@ func TestRoleSkillsEnvoy(t *testing.T) {
 	}
 }
 
-func TestRoleSkillsSenate(t *testing.T) {
-	skills := RoleSkills("senate")
+func TestRoleSkillsChancellor(t *testing.T) {
+	skills := RoleSkills("chancellor")
 	if len(skills) != 3 {
-		t.Errorf("senate should have 3 skills, got %d: %v", len(skills), skills)
+		t.Errorf("chancellor should have 3 skills, got %d: %v", len(skills), skills)
 	}
 }
 
@@ -134,23 +134,23 @@ func TestInstallSkillsEnvoy(t *testing.T) {
 	}
 }
 
-func TestInstallSkillsSenate(t *testing.T) {
+func TestInstallSkillsChancellor(t *testing.T) {
 	dir := t.TempDir()
 	ctx := SkillContext{
 		World:     "testworld",
 		SolBinary: "sol",
-		Role:      "senate",
+		Role:      "chancellor",
 	}
 
 	if err := InstallSkills(dir, ctx); err != nil {
 		t.Fatalf("InstallSkills failed: %v", err)
 	}
 
-	skills := RoleSkills("senate")
+	skills := RoleSkills("chancellor")
 	for _, name := range skills {
 		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
 		if _, err := os.Stat(skillPath); err != nil {
-			t.Errorf("senate skill %q should exist: %v", name, err)
+			t.Errorf("chancellor skill %q should exist: %v", name, err)
 		}
 	}
 }
@@ -524,7 +524,7 @@ func TestSkillCommandReferencesExist(t *testing.T) {
 	}
 
 	// Generate skill content for every role.
-	roles := []string{"outpost", "governor", "envoy", "senate"}
+	roles := []string{"outpost", "governor", "envoy", "chancellor"}
 
 	// cmdEntry tracks a unique subcommand and the flags referenced with it.
 	type cmdEntry struct {

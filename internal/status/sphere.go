@@ -47,10 +47,10 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 	// 3a. Check ledger: PID + heartbeat.
 	result.Ledger = GatherLedgerInfo()
 
-	// 3b. Check senate.
-	const senateSessionName = "sol-senate"
-	if checker.Exists(senateSessionName) {
-		result.Senate = SenateInfo{Running: true, SessionName: senateSessionName}
+	// 3b. Check chancellor.
+	const chancellorSessionName = "sol-chancellor"
+	if checker.Exists(chancellorSessionName) {
+		result.Chancellor = ChancellorInfo{Running: true, SessionName: chancellorSessionName}
 	}
 
 	// 4. Gather per-world summaries.

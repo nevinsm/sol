@@ -1,4 +1,4 @@
-package senate
+package chancellor
 
 import (
 	"encoding/json"
@@ -13,26 +13,26 @@ import (
 
 // --- Directory helpers ---
 
-// SenateDir returns the root directory for the senate.
-// $SOL_HOME/senate/
-func SenateDir() string {
-	return filepath.Join(config.Home(), "senate")
+// ChancellorDir returns the root directory for the chancellor.
+// $SOL_HOME/chancellor/
+func ChancellorDir() string {
+	return filepath.Join(config.Home(), "chancellor")
 }
 
-// BriefDir returns the brief directory for the senate.
-// $SOL_HOME/senate/.brief/
+// BriefDir returns the brief directory for the chancellor.
+// $SOL_HOME/chancellor/.brief/
 func BriefDir() string {
-	return filepath.Join(config.Home(), "senate", ".brief")
+	return filepath.Join(config.Home(), "chancellor", ".brief")
 }
 
-// BriefPath returns the senate's memory file path.
-// $SOL_HOME/senate/.brief/memory.md
+// BriefPath returns the chancellor's memory file path.
+// $SOL_HOME/chancellor/.brief/memory.md
 func BriefPath() string {
-	return filepath.Join(config.Home(), "senate", ".brief", "memory.md")
+	return filepath.Join(config.Home(), "chancellor", ".brief", "memory.md")
 }
 
-// SessionName is the fixed tmux session name for the senate.
-const SessionName = "sol-senate"
+// SessionName is the fixed tmux session name for the chancellor.
+const SessionName = "sol-chancellor"
 
 // --- Interfaces ---
 
@@ -50,52 +50,52 @@ type StopManager interface {
 
 // --- Start ---
 
-// Start launches the senate session.
+// Start launches the chancellor session.
 func Start(mgr SessionManager) error {
-	senateDir := SenateDir()
+	chancellorDir := ChancellorDir()
 	briefDir := BriefDir()
 
-	// 1. Create senate and brief directories.
-	if err := os.MkdirAll(senateDir, 0o755); err != nil {
-		return fmt.Errorf("failed to start senate: %w", err)
+	// 1. Create chancellor and brief directories.
+	if err := os.MkdirAll(chancellorDir, 0o755); err != nil {
+		return fmt.Errorf("failed to start chancellor: %w", err)
 	}
 	if err := os.MkdirAll(briefDir, 0o755); err != nil {
-		return fmt.Errorf("failed to start senate: %w", err)
+		return fmt.Errorf("failed to start chancellor: %w", err)
 	}
 
-	// 2. Install hooks in senate directory.
-	if err := installHooks(senateDir); err != nil {
-		return fmt.Errorf("failed to start senate: %w", err)
+	// 2. Install hooks in chancellor directory.
+	if err := installHooks(chancellorDir); err != nil {
+		return fmt.Errorf("failed to start chancellor: %w", err)
 	}
 
 	// 3. Check if session already exists.
 	if mgr.Exists(SessionName) {
-		return fmt.Errorf("senate session already running")
+		return fmt.Errorf("chancellor session already running")
 	}
 
 	// 4. Resolve account and start tmux session.
 	resolvedAccount := account.ResolveAccount("", "")
-	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.Home(), "senate", "senate", resolvedAccount)
+	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.Home(), "chancellor", "chancellor", resolvedAccount)
 	if err != nil {
 		return fmt.Errorf("failed to ensure claude config dir: %w", err)
 	}
-	prompt := "Senate session. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200"
-	sessionCmd := config.BuildSessionCommand(config.SettingsPath(senateDir), prompt)
+	prompt := "Chancellor session. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200"
+	sessionCmd := config.BuildSessionCommand(config.SettingsPath(chancellorDir), prompt)
 	env := map[string]string{
-		"SOL_HOME":         config.Home(),
-		"SOL_AGENT":        "senate",
+		"SOL_HOME":          config.Home(),
+		"SOL_AGENT":         "chancellor",
 		"CLAUDE_CONFIG_DIR": claudeConfigDir,
 	}
-	if err := mgr.Start(SessionName, senateDir, sessionCmd, env, "senate", ""); err != nil {
-		return fmt.Errorf("failed to start senate: %w", err)
+	if err := mgr.Start(SessionName, chancellorDir, sessionCmd, env, "chancellor", ""); err != nil {
+		return fmt.Errorf("failed to start chancellor: %w", err)
 	}
 
 	return nil
 }
 
 // installHooks writes .claude/settings.local.json with PreToolUse hooks.
-func installHooks(senateDir string) error {
-	claudeDir := filepath.Join(senateDir, ".claude")
+func installHooks(chancellorDir string) error {
+	claudeDir := filepath.Join(chancellorDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create .claude directory: %w", err)
 	}
@@ -121,7 +121,7 @@ func installHooks(senateDir string) error {
 						},
 					},
 				},
-			}, protocol.GuardHooks("senate")...),
+			}, protocol.GuardHooks("chancellor")...),
 		},
 	}
 
@@ -140,13 +140,13 @@ func installHooks(senateDir string) error {
 
 // --- Stop ---
 
-// Stop terminates the senate session.
+// Stop terminates the chancellor session.
 func Stop(mgr StopManager) error {
 	if !mgr.Exists(SessionName) {
-		return fmt.Errorf("no senate session running")
+		return fmt.Errorf("no chancellor session running")
 	}
 	if err := mgr.Stop(SessionName, true); err != nil {
-		return fmt.Errorf("failed to stop senate: %w", err)
+		return fmt.Errorf("failed to stop chancellor: %w", err)
 	}
 	return nil
 }

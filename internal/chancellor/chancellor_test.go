@@ -1,4 +1,4 @@
-package senate
+package chancellor
 
 import (
 	"encoding/json"
@@ -56,9 +56,9 @@ func TestDirectoryHelpers(t *testing.T) {
 		fn   func() string
 		want string
 	}{
-		{"SenateDir", SenateDir, "/tmp/sol-test/senate"},
-		{"BriefDir", BriefDir, "/tmp/sol-test/senate/.brief"},
-		{"BriefPath", BriefPath, "/tmp/sol-test/senate/.brief/memory.md"},
+		{"ChancellorDir", ChancellorDir, "/tmp/sol-test/chancellor"},
+		{"BriefDir", BriefDir, "/tmp/sol-test/chancellor/.brief"},
+		{"BriefPath", BriefPath, "/tmp/sol-test/chancellor/.brief/memory.md"},
 	}
 
 	for _, tt := range tests {
@@ -90,17 +90,17 @@ func TestStart(t *testing.T) {
 	if mgr.lastStart.name != SessionName {
 		t.Errorf("session name = %q, want %q", mgr.lastStart.name, SessionName)
 	}
-	senateDir := SenateDir()
-	if mgr.lastStart.workdir != senateDir {
-		t.Errorf("workdir = %q, want %q", mgr.lastStart.workdir, senateDir)
+	chancellorDir := ChancellorDir()
+	if mgr.lastStart.workdir != chancellorDir {
+		t.Errorf("workdir = %q, want %q", mgr.lastStart.workdir, chancellorDir)
 	}
-	if mgr.lastStart.role != "senate" {
-		t.Errorf("role = %q, want \"senate\"", mgr.lastStart.role)
+	if mgr.lastStart.role != "chancellor" {
+		t.Errorf("role = %q, want \"chancellor\"", mgr.lastStart.role)
 	}
 
-	// Verify senate directory created.
-	if _, err := os.Stat(senateDir); os.IsNotExist(err) {
-		t.Error("senate directory not created")
+	// Verify chancellor directory created.
+	if _, err := os.Stat(chancellorDir); os.IsNotExist(err) {
+		t.Error("chancellor directory not created")
 	}
 
 	// Verify brief directory created.
@@ -110,7 +110,7 @@ func TestStart(t *testing.T) {
 	}
 
 	// Verify hooks file written with PreToolUse hooks.
-	hooksPath := filepath.Join(senateDir, ".claude", "settings.local.json")
+	hooksPath := filepath.Join(chancellorDir, ".claude", "settings.local.json")
 	data, err := os.ReadFile(hooksPath)
 	if err != nil {
 		t.Fatalf("hooks file not found: %v", err)
@@ -171,8 +171,8 @@ func TestStartSessionError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when session start fails")
 	}
-	if !strings.Contains(err.Error(), "failed to start senate") {
-		t.Errorf("error = %q, want contains \"failed to start senate\"", err.Error())
+	if !strings.Contains(err.Error(), "failed to start chancellor") {
+		t.Errorf("error = %q, want contains \"failed to start chancellor\"", err.Error())
 	}
 }
 
@@ -203,7 +203,7 @@ func TestStopNoSession(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no session running")
 	}
-	if !strings.Contains(err.Error(), "no senate session running") {
-		t.Errorf("error = %q, want contains \"no senate session running\"", err.Error())
+	if !strings.Contains(err.Error(), "no chancellor session running") {
+		t.Errorf("error = %q, want contains \"no chancellor session running\"", err.Error())
 	}
 }

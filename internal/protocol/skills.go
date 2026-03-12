@@ -11,7 +11,7 @@ type SkillContext struct {
 	World        string
 	AgentName    string
 	SolBinary    string   // path to sol binary (defaults to "sol")
-	Role         string   // outpost, forge, governor, envoy, senate
+	Role         string   // outpost, forge, governor, envoy, chancellor
 	TargetBranch string   // forge: target branch for merges
 	QualityGates []string // commands to run before resolving
 	OutputDir    string   // persistent output directory for writ
@@ -29,7 +29,7 @@ var roleSkillsMap = map[string][]string{
 	"outpost":  {"resolve-and-handoff", "memories"},
 	"governor": {"writ-dispatch", "caravan-management", "world-coordination", "notification-handling", "handoff", "memories"},
 	"envoy":    {"resolve-and-submit", "writ-management", "dispatch", "handoff", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail", "memories"},
-	"senate":   {"world-queries", "writ-planning", "memories"},
+	"chancellor": {"world-queries", "writ-planning", "memories"},
 }
 
 // RoleSkills returns the skill names for a given role.

@@ -39,7 +39,7 @@ var sphereProcessMap = map[string]sphereProcessInfo{
 	"Chronicle": {cliName: "chronicle", startCmd: "run", pidBased: true},
 	"Ledger":    {cliName: "ledger", startCmd: "run", pidBased: true},
 	"Broker":    {cliName: "broker", startCmd: "run", pidBased: true},
-	"Senate":    {cliName: "senate", sessionName: "sol-senate", startCmd: "start", tmuxManaged: true},
+	"Chancellor": {cliName: "chancellor", sessionName: "sol-chancellor", startCmd: "start", tmuxManaged: true},
 }
 
 // checkSystemdManaged checks if a sphere process is managed by systemd.
