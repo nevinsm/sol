@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/forge"
@@ -315,11 +316,12 @@ type ConsulInfo struct {
 
 // BrokerInfo holds broker process state.
 type BrokerInfo struct {
-	Running        bool   `json:"running"`
-	HeartbeatAge   string `json:"heartbeat_age,omitempty"`
-	PatrolCount    int    `json:"patrol_count,omitempty"`
-	Stale          bool   `json:"stale"`
-	ProviderHealth string `json:"provider_health,omitempty"` // "healthy", "degraded", "down"
+	Running        bool                        `json:"running"`
+	HeartbeatAge   string                      `json:"heartbeat_age,omitempty"`
+	PatrolCount    int                         `json:"patrol_count,omitempty"`
+	Stale          bool                        `json:"stale"`
+	ProviderHealth string                      `json:"provider_health,omitempty"` // "healthy", "degraded", "down"
+	TokenHealth    []broker.AccountTokenHealth `json:"token_health,omitempty"`
 }
 
 // WorldSummary holds a condensed view of one world for the sphere overview.

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/config"
 )
 
@@ -85,6 +87,7 @@ func RenderSphere(s *SphereStatus) string {
 		formatLedgerDetail(s.Ledger))
 	renderProcess(&b, "Broker", s.Broker.Running, true,
 		formatBrokerDetail(s.Broker))
+	renderBrokerTokenHealth(&b, s.Broker.TokenHealth)
 	renderProcess(&b, "Senate", s.Senate.Running, false,
 		formatSenateDetail(s.Senate))
 	b.WriteString("\n")
@@ -182,6 +185,57 @@ func formatBrokerDetail(b BrokerInfo) string {
 		parts += errorStyle.Render(" [provider: down]")
 	}
 	return parts
+}
+
+// renderBrokerTokenHealth writes per-account token health lines below the broker process line.
+func renderBrokerTokenHealth(b *strings.Builder, tokenHealth []broker.AccountTokenHealth) {
+	if len(tokenHealth) == 0 {
+		return
+	}
+	for _, th := range tokenHealth {
+		line := renderAccountTokenLine(th)
+		b.WriteString(fmt.Sprintf("    %-16s  %s\n", th.Handle, line))
+	}
+}
+
+// renderAccountTokenLine returns a styled single-line token status for one account.
+func renderAccountTokenLine(th broker.AccountTokenHealth) string {
+	typeLabel := th.Type
+	if typeLabel == "oauth_token" {
+		typeLabel = "oauth"
+	} else if typeLabel == "api_key" {
+		typeLabel = "api_key"
+	}
+
+	prefix := dimStyle.Render(fmt.Sprintf("(%s)", typeLabel))
+
+	switch th.Status {
+	case "ok":
+		return fmt.Sprintf("%s  %s", prefix, okStyle.Render("ok"))
+	case "no_expiry":
+		return fmt.Sprintf("%s  %s", prefix, okStyle.Render("ok (no expiry)"))
+	case "expiring_soon":
+		if th.ExpiresAt != nil {
+			days := int(time.Until(*th.ExpiresAt).Hours() / 24)
+			return fmt.Sprintf("%s  %s", prefix, warnStyle.Render(fmt.Sprintf("expires in %d days", days)))
+		}
+		return fmt.Sprintf("%s  %s", prefix, warnStyle.Render("expiring soon"))
+	case "critical":
+		if th.ExpiresAt != nil {
+			days := int(time.Until(*th.ExpiresAt).Hours() / 24)
+			if days == 0 {
+				return fmt.Sprintf("%s  %s", prefix, errorStyle.Render("expires tomorrow"))
+			}
+			return fmt.Sprintf("%s  %s", prefix, errorStyle.Render(fmt.Sprintf("expires in %d days", days)))
+		}
+		return fmt.Sprintf("%s  %s", prefix, errorStyle.Render("expiring critically soon"))
+	case "expired":
+		return fmt.Sprintf("%s  %s", prefix, errorStyle.Render("EXPIRED"))
+	case "missing":
+		return fmt.Sprintf("%s  %s", prefix, errorStyle.Render("token missing"))
+	default:
+		return fmt.Sprintf("%s  %s", prefix, dimStyle.Render(th.Status))
+	}
 }
 
 func formatChronicleDetail(c ChronicleInfo) string {
@@ -380,6 +434,7 @@ func RenderWorld(ws *WorldStatus) string {
 		formatLedgerDetail(ws.Ledger))
 	renderProcess(&b, "Broker", ws.Broker.Running, true,
 		formatBrokerDetail(ws.Broker))
+	renderBrokerTokenHealth(&b, ws.Broker.TokenHealth)
 	renderProcess(&b, "Governor", ws.Governor.Running, false,
 		formatGovernorDetail(ws.Governor))
 	b.WriteString("\n")
@@ -691,6 +746,7 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 		formatLedgerDetail(ws.Ledger))
 	renderProcess(&b, "Broker", ws.Broker.Running, true,
 		formatBrokerDetail(ws.Broker))
+	renderBrokerTokenHealth(&b, ws.Broker.TokenHealth)
 	renderProcess(&b, "Senate", ws.Senate.Running, false,
 		formatSenateDetail(ws.Senate))
 	b.WriteString("\n")

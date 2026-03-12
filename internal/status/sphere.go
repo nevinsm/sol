@@ -196,6 +196,8 @@ func GatherBrokerInfo() BrokerInfo {
 		if hb.ProviderHealth != "" {
 			info.ProviderHealth = string(hb.ProviderHealth)
 		}
+
+		info.TokenHealth = hb.TokenHealth
 	}
 
 	return info
