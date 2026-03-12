@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 )
@@ -18,6 +19,14 @@ const DefaultPatrolInterval = 5 * time.Minute
 // Config holds broker configuration.
 type Config struct {
 	PatrolInterval time.Duration
+}
+
+// AccountTokenHealth holds token expiry status for one account.
+type AccountTokenHealth struct {
+	Handle    string     `json:"handle"`
+	Type      string     `json:"type"`                 // "oauth_token" or "api_key"
+	ExpiresAt *time.Time `json:"expires_at,omitempty"` // nil for API keys
+	Status    string     `json:"status"`               // "ok", "expiring_soon", "critical", "expired", "no_expiry", "missing"
 }
 
 // Heartbeat records the broker's last patrol status.
@@ -31,6 +40,9 @@ type Heartbeat struct {
 	ConsecutiveFailures int            `json:"consecutive_failures,omitempty"`
 	LastProbe           time.Time      `json:"last_probe,omitempty"`
 	LastHealthy         time.Time      `json:"last_healthy,omitempty"`
+
+	// Per-account token health.
+	TokenHealth []AccountTokenHealth `json:"token_health,omitempty"`
 }
 
 // Broker probes provider health and writes heartbeats.
@@ -78,7 +90,7 @@ func (b *Broker) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			b.writeHeartbeat("stopping")
+			b.writeHeartbeat("stopping", nil)
 			fmt.Fprintln(os.Stderr, "Broker stopping")
 			return nil
 		case <-ticker.C:
@@ -129,10 +141,11 @@ func (b *Broker) probeHealth() {
 	}
 
 	// Write a heartbeat after every probe to keep health state fresh.
-	b.writeHeartbeat("running")
+	b.writeHeartbeat("running", nil)
 }
 
-// patrol performs one health check cycle: probe provider health, write heartbeat.
+// patrol performs one health check cycle: probe provider health, check token
+// expiry, write heartbeat.
 func (b *Broker) patrol() {
 	b.patrolCount++
 
@@ -141,7 +154,10 @@ func (b *Broker) patrol() {
 		b.probeHealth()
 	}
 
-	b.writeHeartbeat("running")
+	// Check token expiry for all registered accounts.
+	tokenHealth := b.checkAllTokenExpiry()
+
+	b.writeHeartbeat("running", tokenHealth)
 
 	if b.logger != nil {
 		b.logger.Emit(events.EventBrokerPatrol, "broker", "broker", "audit",
@@ -151,12 +167,105 @@ func (b *Broker) patrol() {
 	}
 }
 
+// checkAllTokenExpiry loads the account registry and checks token expiry for
+// each account. Returns a slice of AccountTokenHealth (one per account).
+func (b *Broker) checkAllTokenExpiry() []AccountTokenHealth {
+	registry, err := account.LoadRegistry()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "broker: failed to load account registry: %v\n", err)
+		return nil
+	}
+
+	if len(registry.Accounts) == 0 {
+		return nil
+	}
+
+	var tokenHealth []AccountTokenHealth
+	for handle := range registry.Accounts {
+		tok, err := account.ReadToken(handle)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "broker: failed to read token for account %q: %v\n", handle, err)
+			tokenHealth = append(tokenHealth, AccountTokenHealth{
+				Handle: handle,
+				Type:   "unknown",
+				Status: "missing",
+			})
+			continue
+		}
+
+		th := checkTokenExpiry(handle, tok, b.logger)
+		tokenHealth = append(tokenHealth, th)
+	}
+
+	return tokenHealth
+}
+
+// checkTokenExpiry computes the token health for an account and logs expiry warnings.
+// Returns an AccountTokenHealth describing the current state.
+func checkTokenExpiry(handle string, tok *account.Token, logger *events.Logger) AccountTokenHealth {
+	th := AccountTokenHealth{Handle: handle}
+
+	if tok.ExpiresAt == nil {
+		// API key or other credential type with no expiry.
+		th.Type = tok.Type
+		th.Status = "no_expiry"
+		return th
+	}
+
+	th.Type = tok.Type
+	th.ExpiresAt = tok.ExpiresAt
+	timeLeft := time.Until(*tok.ExpiresAt)
+
+	const (
+		threshold30d = 30 * 24 * time.Hour
+		threshold7d  = 7 * 24 * time.Hour
+		threshold1d  = 24 * time.Hour
+	)
+
+	switch {
+	case timeLeft <= 0:
+		th.Status = "expired"
+		fmt.Fprintf(os.Stderr, "broker: CRITICAL: token for account %q has expired\n", handle)
+		if logger != nil {
+			logger.Emit(events.EventBrokerTokenExpiry, "broker", handle, "audit",
+				map[string]any{"account": handle, "status": "expired"})
+		}
+	case timeLeft <= threshold1d:
+		th.Status = "critical"
+		fmt.Fprintf(os.Stderr, "broker: CRITICAL: token for account %q expires tomorrow\n", handle)
+		if logger != nil {
+			logger.Emit(events.EventBrokerTokenExpiry, "broker", handle, "audit",
+				map[string]any{"account": handle, "status": "critical", "days": 0})
+		}
+	case timeLeft <= threshold7d:
+		th.Status = "critical"
+		days := int(timeLeft.Hours() / 24)
+		fmt.Fprintf(os.Stderr, "broker: WARNING: token for account %q expires in %d days\n", handle, days)
+		if logger != nil {
+			logger.Emit(events.EventBrokerTokenExpiry, "broker", handle, "audit",
+				map[string]any{"account": handle, "status": "critical", "days": days})
+		}
+	case timeLeft <= threshold30d:
+		th.Status = "expiring_soon"
+		days := int(timeLeft.Hours() / 24)
+		fmt.Fprintf(os.Stderr, "broker: token for account %q expires in %d days\n", handle, days)
+		if logger != nil {
+			logger.Emit(events.EventBrokerTokenExpiry, "broker", handle, "audit",
+				map[string]any{"account": handle, "status": "expiring_soon", "days": days})
+		}
+	default:
+		th.Status = "ok"
+	}
+
+	return th
+}
+
 // heartbeatPath returns the path to the broker heartbeat file.
 func heartbeatPath() string {
 	return filepath.Join(config.Home(), ".runtime", "broker-heartbeat.json")
 }
 
-func (b *Broker) writeHeartbeat(status string) {
+func (b *Broker) writeHeartbeat(status string, tokenHealth []AccountTokenHealth) {
 	hs := b.health.State()
 	hb := Heartbeat{
 		Timestamp:           time.Now().UTC(),
@@ -166,6 +275,7 @@ func (b *Broker) writeHeartbeat(status string) {
 		ConsecutiveFailures: hs.ConsecutiveFailures,
 		LastProbe:           hs.LastProbe,
 		LastHealthy:         hs.LastHealthy,
+		TokenHealth:         tokenHealth,
 	}
 
 	data, err := json.MarshalIndent(hb, "", "  ")

@@ -80,9 +80,10 @@ const (
 	EventForgeRebase = "forge_rebase" // forge auto-rebased a branch before merge
 
 	// Broker events.
-	EventBrokerRefresh      = "broker_refresh"      // broker refreshed an account's OAuth token
-	EventBrokerPatrol       = "broker_patrol"       // broker patrol completed
+	EventBrokerRefresh      = "broker_refresh"       // broker refreshed an account's OAuth token
+	EventBrokerPatrol       = "broker_patrol"        // broker patrol completed
 	EventBrokerHealthChange = "broker_health_change" // provider health state changed
+	EventBrokerTokenExpiry  = "broker_token_expiry"  // broker detected a token approaching expiry or expired
 
 	// Ledger events.
 	EventLedgerStart  = "ledger_start"  // ledger OTLP receiver started
