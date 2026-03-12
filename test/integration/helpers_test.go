@@ -51,6 +51,20 @@ func isolateTmux(t *testing.T) {
 //   TMUX_TMPDIR  → isolated socket directory (new tmux server)
 //   TMUX=""      → unset inherited tmux var (forces socket-based discovery)
 //   SOL_SESSION_COMMAND="sleep 300" → stub process instead of real claude
+// writeTestToken writes a minimal api_key token to $SOL_HOME/.accounts/token.json
+// so startup.Launch can inject credentials in tests (empty account handle).
+func writeTestToken(t *testing.T, solHome string) {
+	t.Helper()
+	accountsDir := filepath.Join(solHome, ".accounts")
+	if err := os.MkdirAll(accountsDir, 0o755); err != nil {
+		t.Fatalf("create .accounts dir: %v", err)
+	}
+	tokenJSON := `{"type":"api_key","token":"test-key","created_at":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(accountsDir, "token.json"), []byte(tokenJSON), 0o600); err != nil {
+		t.Fatalf("write test token: %v", err)
+	}
+}
+
 func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 	t.Helper()
 
@@ -66,7 +80,10 @@ func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 		t.Fatalf("create .runtime dir: %v", err)
 	}
 
-	// 3. Create a temp git repo with one commit.
+	// 3. Write a fake token so startup.Launch can inject credentials.
+	writeTestToken(t, gtHome)
+
+	// 4. Create a temp git repo with one commit.
 	sourceRepo = t.TempDir()
 	gitRun(t, sourceRepo, "init")
 	gitRun(t, sourceRepo, "config", "user.email", "test@test.com")
@@ -77,7 +94,7 @@ func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 	gitRun(t, sourceRepo, "add", ".")
 	gitRun(t, sourceRepo, "commit", "-m", "initial")
 
-	// 4. Isolated tmux server + stub session command + cleanup.
+	// 5. Isolated tmux server + stub session command + cleanup.
 	isolateTmux(t)
 
 	return gtHome, sourceRepo
@@ -389,6 +406,9 @@ func setupTestEnvWithRepo(t *testing.T) (gtHome string, sourceRepo string) {
 	if err := os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755); err != nil {
 		t.Fatalf("create .runtime dir: %v", err)
 	}
+
+	// Write a fake token so startup.Launch can inject credentials.
+	writeTestToken(t, gtHome)
 
 	// Create a temp git repo with one commit.
 	sourceRepo = t.TempDir()

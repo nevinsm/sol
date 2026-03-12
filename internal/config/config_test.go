@@ -238,21 +238,6 @@ func TestEnsureClaudeConfigDirNamedAccount(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	// Create account credentials.
-	accountDir := filepath.Join(solHome, ".accounts", "alice")
-	os.MkdirAll(accountDir, 0o755)
-	creds := map[string]any{
-		"claudeAiOauth": map[string]any{
-			"accessToken":      "sk-ant-oat01-test",
-			"refreshToken":     "sk-ant-ort01-test",
-			"expiresAt":        1900000000000,
-			"scopes":           []string{"user:inference"},
-			"subscriptionType": "max",
-		},
-	}
-	data, _ := json.MarshalIndent(creds, "", "  ")
-	os.WriteFile(filepath.Join(accountDir, ".credentials.json"), data, 0o600)
-
 	worldDir := filepath.Join(solHome, "testworld")
 
 	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast", "alice")
@@ -260,35 +245,19 @@ func TestEnsureClaudeConfigDirNamedAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify .account file.
-	acctData, err := os.ReadFile(filepath.Join(dir, ".account"))
-	if err != nil {
-		t.Fatalf("expected .account file: %v", err)
-	}
-	if strings.TrimSpace(string(acctData)) != "alice" {
-		t.Errorf("expected .account to contain 'alice', got %q", string(acctData))
+	// Verify the config dir was created.
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		t.Fatalf("expected config dir to exist: %s", dir)
 	}
 
-	// Verify .credentials.json is a regular file (not symlink).
-	credsPath := filepath.Join(dir, ".credentials.json")
-	info, err := os.Lstat(credsPath)
-	if err != nil {
-		t.Fatalf("expected .credentials.json: %v", err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		t.Error("credentials should be a regular file, not a symlink")
+	// Verify no .account file written (credentials via env vars now).
+	if _, err := os.ReadFile(filepath.Join(dir, ".account")); err == nil {
+		t.Error("expected no .account file (credentials are injected via env vars)")
 	}
 
-	// Verify no refreshToken in agent credentials.
-	agentData, _ := os.ReadFile(credsPath)
-	var agentCreds map[string]any
-	json.Unmarshal(agentData, &agentCreds)
-	oauth := agentCreds["claudeAiOauth"].(map[string]any)
-	if _, hasRefresh := oauth["refreshToken"]; hasRefresh {
-		t.Error("agent credentials should NOT contain refreshToken")
-	}
-	if oauth["accessToken"] != "sk-ant-oat01-test" {
-		t.Errorf("expected accessToken preserved, got %v", oauth["accessToken"])
+	// Verify no .credentials.json written (credentials via env vars now).
+	if _, err := os.Lstat(filepath.Join(dir, ".credentials.json")); err == nil {
+		t.Error("expected no .credentials.json (credentials are injected via env vars)")
 	}
 }
 
@@ -366,7 +335,10 @@ func TestEnsureClaudeDefaults(t *testing.T) {
 		t.Error("settings.json still contains {{STATUSLINE_PATH}} placeholder")
 	}
 
-	// Verify the API key helper path was resolved (no template placeholder).
+	// Verify no template placeholders remain.
+	if strings.Contains(string(data), "{{STATUSLINE_PATH}}") {
+		t.Error("settings.json still contains {{STATUSLINE_PATH}} placeholder")
+	}
 	if strings.Contains(string(data), "{{API_KEY_HELPER_PATH}}") {
 		t.Error("settings.json still contains {{API_KEY_HELPER_PATH}} placeholder")
 	}
@@ -377,10 +349,10 @@ func TestEnsureClaudeDefaults(t *testing.T) {
 		t.Errorf("settings.json should contain absolute path %q, got:\n%s", expectedStatuslinePath, data)
 	}
 
-	// Verify absolute path to apikey-helper.sh is present.
+	// Verify apikey-helper.sh is NOT present (removed).
 	expectedApiKeyHelperPath := filepath.Join(defaultsDir, "apikey-helper.sh")
-	if !strings.Contains(string(data), expectedApiKeyHelperPath) {
-		t.Errorf("settings.json should contain absolute path %q, got:\n%s", expectedApiKeyHelperPath, data)
+	if strings.Contains(string(data), expectedApiKeyHelperPath) {
+		t.Errorf("settings.json should NOT contain apikey-helper.sh path, got:\n%s", data)
 	}
 
 	// Verify settings.json is valid JSON.
@@ -393,8 +365,8 @@ func TestEnsureClaudeDefaults(t *testing.T) {
 	if _, ok := parsed["statusLine"]; !ok {
 		t.Error("settings.json missing statusLine key")
 	}
-	if _, ok := parsed["apiKeyHelper"]; !ok {
-		t.Error("settings.json missing apiKeyHelper key")
+	if _, ok := parsed["apiKeyHelper"]; ok {
+		t.Error("settings.json should NOT have apiKeyHelper key (removed)")
 	}
 	if v, ok := parsed["gitAttribution"]; !ok || v != false {
 		t.Error("settings.json missing or wrong gitAttribution")
@@ -409,13 +381,9 @@ func TestEnsureClaudeDefaults(t *testing.T) {
 		t.Error("statusline.sh should be executable")
 	}
 
-	// Verify apikey-helper.sh was created and is executable.
-	info, err = os.Stat(expectedApiKeyHelperPath)
-	if err != nil {
-		t.Fatalf("expected apikey-helper.sh to exist: %v", err)
-	}
-	if info.Mode()&0o111 == 0 {
-		t.Error("apikey-helper.sh should be executable")
+	// Verify apikey-helper.sh was NOT created.
+	if _, err := os.Stat(filepath.Join(defaultsDir, "apikey-helper.sh")); err == nil {
+		t.Error("apikey-helper.sh should NOT exist (removed)")
 	}
 }
 
@@ -458,13 +426,17 @@ func TestEnsureClaudeDefaultsOverwritesStale(t *testing.T) {
 		t.Fatalf("expected settings.json to exist: %v", err)
 	}
 
-	// Verify apiKeyHelper is now present (was missing in the stale version).
+	// Verify statusLine is now present (was missing in the stale version).
 	var parsed map[string]any
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("settings.json is not valid JSON: %v", err)
 	}
-	if _, ok := parsed["apiKeyHelper"]; !ok {
-		t.Error("settings.json should have been overwritten with current template containing apiKeyHelper")
+	if _, ok := parsed["statusLine"]; !ok {
+		t.Error("settings.json should have been overwritten with current template containing statusLine")
+	}
+	// Verify apiKeyHelper is NOT present (removed from template).
+	if _, ok := parsed["apiKeyHelper"]; ok {
+		t.Error("settings.json should NOT have apiKeyHelper key (removed)")
 	}
 }
 

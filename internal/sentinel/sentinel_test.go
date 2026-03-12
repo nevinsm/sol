@@ -132,6 +132,20 @@ func (m *mockSessions) getLastCmd(name string) string {
 
 // --- Test helpers ---
 
+// writeTestToken writes a minimal api_key token to $SOL_HOME/.accounts/token.json
+// so startup.Launch can inject credentials in tests (empty account handle).
+func writeTestToken(t *testing.T, solHome string) {
+	t.Helper()
+	accountsDir := filepath.Join(solHome, ".accounts")
+	if err := os.MkdirAll(accountsDir, 0o755); err != nil {
+		t.Fatalf("failed to create .accounts dir: %v", err)
+	}
+	tokenJSON := `{"type":"api_key","token":"test-key","created_at":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(accountsDir, "token.json"), []byte(tokenJSON), 0o600); err != nil {
+		t.Fatalf("failed to write test token: %v", err)
+	}
+}
+
 func setupTestEnv(t *testing.T) (*store.Store, *store.Store) {
 	t.Helper()
 	dir := t.TempDir()
@@ -142,6 +156,9 @@ func setupTestEnv(t *testing.T) (*store.Store, *store.Store) {
 	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+
+	// Write a fake token so startup.Launch can inject credentials.
+	writeTestToken(t, dir)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -2289,7 +2306,7 @@ func TestPruneOrphanedBranchesNoSourceRepo(t *testing.T) {
 
 // --- Quota patrol tests ---
 
-// setupQuotaAccount creates an account directory with a .credentials.json file
+// setupQuotaAccount creates an account directory with a token.json file
 // and registers the account in the account registry.
 func setupQuotaAccount(t *testing.T, handle string) {
 	t.Helper()
@@ -2298,7 +2315,9 @@ func setupQuotaAccount(t *testing.T, handle string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".credentials.json"), []byte(`{}`), 0o644); err != nil {
+	// Write a token.json so startup.Launch can inject credentials.
+	tokenJSON := `{"type":"api_key","token":"test-key","created_at":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(dir, "token.json"), []byte(tokenJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2314,7 +2333,7 @@ func setupQuotaAccount(t *testing.T, handle string) {
 	if reg.Accounts == nil {
 		reg.Accounts = make(map[string]any)
 	}
-	reg.Accounts[handle] = map[string]string{"config_dir": dir}
+	reg.Accounts[handle] = map[string]any{}
 	data, _ := json.Marshal(reg)
 	os.WriteFile(regPath, data, 0o644)
 }

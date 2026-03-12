@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -66,7 +65,6 @@ type accountEntry struct {
 	Handle      string `json:"handle"`
 	Email       string `json:"email,omitempty"`
 	Description string `json:"description,omitempty"`
-	ConfigDir   string `json:"config_dir"`
 	Default     bool   `json:"default"`
 }
 
@@ -87,7 +85,6 @@ var accountListCmd = &cobra.Command{
 					Handle:      handle,
 					Email:       acct.Email,
 					Description: acct.Description,
-					ConfigDir:   acct.ConfigDir,
 					Default:     handle == reg.Default,
 				})
 			}
@@ -189,39 +186,6 @@ var accountDefaultCmd = &cobra.Command{
 
 		fmt.Printf("Default account set to %q\n", handle)
 		return nil
-	},
-}
-
-// --- sol account login ---
-
-var accountLoginCmd = &cobra.Command{
-	Use:          "login <handle>",
-	Short:        "Open a Claude session to complete OAuth login",
-	Args:         cobra.ExactArgs(1),
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		handle := args[0]
-
-		reg, err := account.LoadRegistry()
-		if err != nil {
-			return err
-		}
-
-		acct, exists := reg.Accounts[handle]
-		if !exists {
-			return fmt.Errorf("account %q not found — run: sol account add %s", handle, handle)
-		}
-
-		fmt.Printf("Starting Claude session for account %q...\n", handle)
-		fmt.Println("Complete OAuth login with /login, then exit the session.")
-
-		claude := exec.Command("claude")
-		claude.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+acct.ConfigDir)
-		claude.Stdin = os.Stdin
-		claude.Stdout = os.Stdout
-		claude.Stderr = os.Stderr
-
-		return claude.Run()
 	},
 }
 
@@ -348,7 +312,6 @@ func init() {
 
 	accountCmd.AddCommand(accountRemoveCmd)
 	accountCmd.AddCommand(accountDefaultCmd)
-	accountCmd.AddCommand(accountLoginCmd)
 	accountCmd.AddCommand(accountSetTokenCmd)
 	accountCmd.AddCommand(accountSetAPIKeyCmd)
 }

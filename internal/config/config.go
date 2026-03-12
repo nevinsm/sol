@@ -307,15 +307,9 @@ func ClaudeConfigDir(worldDir, role, name string) string {
 // EnsureClaudeConfigDir computes and creates the CLAUDE_CONFIG_DIR for an agent.
 // Returns the absolute path. Creates the directory (and parents) if needed.
 //
-// Credential handling (account parameter):
-//   - Non-empty account: writes access-token-only credentials (no refreshToken)
-//     copied from $SOL_HOME/.accounts/{account}/.credentials.json, and writes
-//     a .account metadata file with the account handle for the broker.
-//   - Empty account: falls back to ~/.claude/.credentials.json (backwards compat,
-//     uses symlink for legacy single-account setups).
-//
-// When using named accounts, the broker is the sole consumer of refresh
-// tokens. Agents receive only access tokens and never attempt to refresh.
+// Creates the config dir, seeds settings.json, plugins, and onboarding state.
+// Credentials are injected via environment variables at session start — no
+// credential files are written here.
 func EnsureClaudeConfigDir(worldDir, role, name, account string) (string, error) {
 	dir := ClaudeConfigDir(worldDir, role, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -336,29 +330,6 @@ func EnsureClaudeConfigDir(worldDir, role, name, account string) (string, error)
 	// Copy plugin metadata from .claude-defaults/plugins/ (always-overwrite).
 	// Ensures sphere-level plugins are available to all agents.
 	seedClaudePlugins(dir)
-
-	if account != "" {
-		// Named account: provision access-token-only credentials.
-		if err := ProvisionCredentials(dir, account); err != nil {
-			fmt.Fprintf(os.Stderr, "config: failed to provision credentials for %s: %v\n", name, err)
-		}
-	} else {
-		// Legacy fallback: symlink to ~/.claude/.credentials.json.
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return dir, nil
-		}
-		srcCreds := filepath.Join(home, ".claude", ".credentials.json")
-		dstCreds := filepath.Join(dir, ".credentials.json")
-		if _, err := os.Stat(srcCreds); err == nil {
-			if target, err := os.Readlink(dstCreds); err == nil && target != srcCreds {
-				_ = os.Remove(dstCreds)
-			}
-			if _, err := os.Lstat(dstCreds); os.IsNotExist(err) {
-				_ = os.Symlink(srcCreds, dstCreds)
-			}
-		}
-	}
 
 	// Pre-seed onboarding state so Claude Code doesn't show interactive
 	// onboarding when using the agent-specific config dir.
@@ -470,64 +441,6 @@ func seedMinimalOnboardingState(configDir string) error {
 	return os.WriteFile(destJSON, out, 0o600)
 }
 
-// ProvisionCredentials writes access-token-only credentials from the named
-// account into the given config directory. Used by EnsureClaudeConfigDir for
-// agent startup and by sol config claude for operator sessions.
-func ProvisionCredentials(configDir, accountHandle string) error {
-	srcCreds := filepath.Join(AccountDir(accountHandle), ".credentials.json")
-	if err := writeAccessTokenOnlyCreds(srcCreds, configDir); err != nil {
-		return fmt.Errorf("failed to write credentials for account %q: %w", accountHandle, err)
-	}
-
-	// Write .account metadata file for broker discovery.
-	accountFile := filepath.Join(configDir, ".account")
-	_ = os.WriteFile(accountFile, []byte(accountHandle+"\n"), 0o644)
-
-	// Clean up any legacy symlink.
-	dstCreds := filepath.Join(configDir, ".credentials.json")
-	if target, err := os.Readlink(dstCreds); err == nil && target != "" {
-		_ = os.Remove(dstCreds)
-		_ = writeAccessTokenOnlyCreds(srcCreds, configDir)
-	}
-	return nil
-}
-
-// writeAccessTokenOnlyCreds reads source credentials, strips the refresh token,
-// and writes the access-token-only copy to the destination directory.
-func writeAccessTokenOnlyCreds(srcPath, destDir string) error {
-	data, err := os.ReadFile(srcPath)
-	if err != nil {
-		return fmt.Errorf("failed to read credentials file: %w", err)
-	}
-
-	// Parse credentials as a generic map to preserve unknown fields.
-	var creds map[string]any
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return fmt.Errorf("failed to parse credentials: %w", err)
-	}
-
-	// Remove refreshToken from the claudeAiOauth object.
-	if oauth, ok := creds["claudeAiOauth"].(map[string]any); ok {
-		delete(oauth, "refreshToken")
-	}
-
-	out, err := json.MarshalIndent(creds, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal credentials: %w", err)
-	}
-
-	destPath := filepath.Join(destDir, ".credentials.json")
-	tmp := destPath + ".tmp"
-	if err := os.WriteFile(tmp, append(out, '\n'), 0o600); err != nil {
-		return fmt.Errorf("failed to write credentials temp file: %w", err)
-	}
-	if err := os.Rename(tmp, destPath); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to rename credentials file: %w", err)
-	}
-	return nil
-}
-
 // NudgeQueueDir returns the nudge queue directory for a session.
 // Path: $SOL_HOME/.runtime/nudge_queue/{session}/
 func NudgeQueueDir(session string) string {
@@ -542,10 +455,9 @@ func ClaudeDefaultsDir() string {
 
 // EnsureClaudeDefaults seeds the embedded default settings.json and
 // helper scripts into $SOL_HOME/.claude-defaults/. Sol owns settings.json
-// and always overwrites it from the embedded template so new keys (like
-// apiKeyHelper) propagate to existing installations. User overrides go in
-// settings.local.json in the same .claude-defaults/ directory — sol never
-// writes or modifies that file.
+// and always overwrites it from the embedded template so new keys propagate
+// to existing installations. User overrides go in settings.local.json in
+// the same .claude-defaults/ directory — sol never writes or modifies that file.
 func EnsureClaudeDefaults() error {
 	dir := ClaudeDefaultsDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -559,13 +471,6 @@ func EnsureClaudeDefaults() error {
 		return fmt.Errorf("failed to write statusline.sh: %w", err)
 	}
 
-	// Write apikey-helper.sh (always overwrite — sol-managed script).
-	// Called by Claude Code's apiKeyHelper to return fresh OAuth tokens.
-	apiKeyHelperPath := filepath.Join(dir, "apikey-helper.sh")
-	if err := os.WriteFile(apiKeyHelperPath, defaults.ApiKeyHelperSh, 0o755); err != nil {
-		return fmt.Errorf("failed to write apikey-helper.sh: %w", err)
-	}
-
 	// Write settings.json (always overwrite — sol owns this file).
 	// User overrides go in settings.local.json in the same directory.
 	settingsPath := filepath.Join(dir, "settings.json")
@@ -573,11 +478,6 @@ func EnsureClaudeDefaults() error {
 		string(defaults.SettingsJSON),
 		"{{STATUSLINE_PATH}}",
 		statuslinePath,
-	)
-	settingsContent = strings.ReplaceAll(
-		settingsContent,
-		"{{API_KEY_HELPER_PATH}}",
-		apiKeyHelperPath,
 	)
 	if err := os.WriteFile(settingsPath, []byte(settingsContent), 0o644); err != nil {
 		return fmt.Errorf("failed to write settings.json: %w", err)

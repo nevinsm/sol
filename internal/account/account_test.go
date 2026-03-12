@@ -2,8 +2,9 @@ package account
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
+
+	"github.com/nevinsm/sol/internal/config"
 )
 
 func setupTestHome(t *testing.T) {
@@ -140,7 +141,7 @@ func TestRemoveDeletesDir(t *testing.T) {
 	}
 	_ = reg.Add("work", "", "")
 
-	dir := reg.Accounts["work"].ConfigDir
+	dir := config.AccountDir("work")
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		t.Fatalf("account directory should exist after add: %s", dir)
 	}
@@ -183,11 +184,7 @@ func TestAddCreatesDir(t *testing.T) {
 	}
 	_ = reg.Add("work", "", "")
 
-	home := os.Getenv("SOL_HOME")
-	expected := filepath.Join(home, ".accounts", "work")
-	if reg.Accounts["work"].ConfigDir != expected {
-		t.Errorf("config_dir = %q, want %q", reg.Accounts["work"].ConfigDir, expected)
-	}
+	expected := config.AccountDir("work")
 	if _, err := os.Stat(expected); os.IsNotExist(err) {
 		t.Fatalf("directory should exist: %s", expected)
 	}

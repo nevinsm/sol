@@ -14,7 +14,6 @@ import (
 type Account struct {
 	Email       string `json:"email,omitempty"`
 	Description string `json:"description,omitempty"`
-	ConfigDir   string `json:"config_dir"`
 }
 
 // Registry holds the account registry persisted in accounts.json.
@@ -109,7 +108,6 @@ func (r *Registry) Add(handle, email, description string) error {
 	r.Accounts[handle] = Account{
 		Email:       email,
 		Description: description,
-		ConfigDir:   configDir,
 	}
 
 	if len(r.Accounts) == 1 {

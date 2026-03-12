@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/config/defaults"
 	"github.com/spf13/cobra"
@@ -54,14 +53,6 @@ func runConfigClaude(cmd *cobra.Command, args []string) error {
 	personaPath := filepath.Join(defaultsDir, "CLAUDE.local.md")
 	if err := os.WriteFile(personaPath, defaults.ConfigSessionMD, 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to write config session persona: %v\n", err)
-	}
-
-	// Provision credentials from the sphere default account.
-	resolvedAccount := account.ResolveAccount("", "")
-	if resolvedAccount != "" {
-		if err := config.ProvisionCredentials(defaultsDir, resolvedAccount); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to provision account %q credentials: %v\n", resolvedAccount, err)
-		}
 	}
 
 	// Seed onboarding state to skip interactive prompts.

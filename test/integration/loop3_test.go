@@ -408,6 +408,7 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
 		t.Fatalf("create .runtime dir: %v", err)
 	}
+	writeTestToken(t, solHome)
 
 	worldStore, sphereStore := openStores(t, "ember")
 	logger := events.NewLogger(solHome)
@@ -482,6 +483,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
 		t.Fatalf("create .runtime dir: %v", err)
 	}
+	writeTestToken(t, solHome)
 
 	worldStore, sphereStore := openStores(t, "ember")
 	logger := events.NewLogger(solHome)
