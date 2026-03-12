@@ -29,7 +29,7 @@ var roleSkillsMap = map[string][]string{
 	"outpost":  {"resolve-and-handoff", "memories"},
 	"governor": {"writ-dispatch", "caravan-management", "world-coordination", "notification-handling", "handoff", "memories"},
 	"envoy":    {"resolve-and-submit", "writ-management", "dispatch", "handoff", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail", "memories"},
-	"chancellor": {"world-queries", "writ-planning", "memories"},
+	"chancellor": {"world-queries", "writ-planning", "memories", "mail", "handoff"},
 }
 
 // RoleSkills returns the skill names for a given role.

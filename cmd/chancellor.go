@@ -30,6 +30,8 @@ var chancellorStartCmd = &cobra.Command{
 		}
 
 		fmt.Println("Started chancellor session")
+		fmt.Printf("  Session: %s\n", chancellor.SessionName)
+		fmt.Printf("  Attach:  sol chancellor attach\n")
 		return nil
 	},
 }
@@ -186,8 +188,8 @@ func printChancellorStatus(s chancellorStatusSummary) {
 
 func init() {
 	rootCmd.AddCommand(chancellorCmd)
-	chancellorCmd.AddCommand(chancellorStartCmd, chancellorStopCmd, chancellorRestartCmd, chancellorAttachCmd,
-		chancellorBriefCmd, chancellorDebriefCmd, chancellorStatusCmd)
+	chancellorCmd.AddCommand(chancellorStartCmd, chancellorStopCmd, chancellorRestartCmd,
+		chancellorAttachCmd, chancellorBriefCmd, chancellorDebriefCmd, chancellorStatusCmd)
 
 	chancellorStatusCmd.Flags().BoolVar(&chancellorStatusJSON, "json", false, "output as JSON")
 }
