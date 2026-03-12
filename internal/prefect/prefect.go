@@ -424,6 +424,17 @@ func (s *Prefect) checkConsul() error {
 		return s.startConsul()
 	}
 
+	if hb.Status == "stopping" {
+		// Consul shut down gracefully but the heartbeat is still fresh.
+		// Treat as dead — check PID and restart if needed.
+		pid := ReadDaemonPID("consul")
+		if pid > 0 && IsRunning(pid) {
+			return nil // process somehow still alive, give it time
+		}
+		s.logger.Info("consul heartbeat shows stopping, restarting")
+		return s.startConsul()
+	}
+
 	if !hb.IsStale(s.cfg.ConsulHeartbeatMax) {
 		// Heartbeat is fresh — no action needed.
 		return nil
@@ -860,14 +871,7 @@ func defaultStartDaemonProcess(daemon string, binPath string, args ...string) er
 		return fmt.Errorf("start process: %w", err)
 	}
 
-	pid := proc.Process.Pid
 	logFile.Close()
-
-	// Write PID file (non-fatal if it fails — process is still running).
-	if err := WriteDaemonPID(daemon, pid); err != nil {
-		// Log would be nice but we don't have a logger here.
-		// The process is running; next check will find it via PID file or session.
-	}
 
 	// Reap the child in the background so it does not become a zombie when it
 	// exits. We must not call Release() here — that would prevent Go's runtime
