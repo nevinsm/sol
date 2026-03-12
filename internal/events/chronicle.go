@@ -150,7 +150,7 @@ func (c *Chronicle) Run(ctx context.Context) error {
 			if c.logger != nil {
 				processed := c.eventsProcessed - patrolEventsProcessed
 				patrolEventsProcessed = c.eventsProcessed
-				c.logger.Emit(EventChroniclePatrol, "chronicle", "chronicle", "audit",
+				c.logger.Emit(EventChroniclePatrol, "chronicle", "chronicle", "feed",
 					map[string]any{
 						"events_processed":  processed,
 						"total_processed":   c.eventsProcessed,

@@ -299,14 +299,10 @@ func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	// Configure ledger port in world config.
+	// Configure ledger port in global config (sol.toml — ledger is sphere-scoped).
 	solHome := os.Getenv("SOL_HOME")
-	worldDir := filepath.Join(solHome, "ember")
-	if err := os.MkdirAll(worldDir, 0o755); err != nil {
-		t.Fatalf("failed to create world dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte("[ledger]\nport = 9999\n"), 0o644); err != nil {
-		t.Fatalf("failed to write world.toml: %v", err)
+	if err := os.WriteFile(filepath.Join(solHome, "sol.toml"), []byte("[ledger]\nport = 9999\n"), 0o644); err != nil {
+		t.Fatalf("failed to write sol.toml: %v", err)
 	}
 
 	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
@@ -360,9 +356,16 @@ func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
 	}
 }
 
-func TestCastNoTelemetryWhenLedgerNotConfigured(t *testing.T) {
+func TestCastNoTelemetryWhenLedgerDisabled(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
+
+	// Explicitly disable the ledger by setting port=0 in global config.
+	// (Default is 4318; without this, telemetry would be active.)
+	solHome := os.Getenv("SOL_HOME")
+	if err := os.WriteFile(filepath.Join(solHome, "sol.toml"), []byte("[ledger]\nport = 0\n"), 0o644); err != nil {
+		t.Fatalf("failed to write sol.toml: %v", err)
+	}
 
 	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
 	if err != nil {
@@ -400,7 +403,7 @@ func TestCastNoTelemetryWhenLedgerNotConfigured(t *testing.T) {
 	}
 	for _, k := range otelKeys {
 		if v, ok := env[k]; ok {
-			t.Errorf("env[%s] = %q, expected absent when ledger not configured", k, v)
+			t.Errorf("env[%s] = %q, expected absent when ledger disabled (port=0)", k, v)
 		}
 	}
 }

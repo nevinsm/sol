@@ -160,7 +160,7 @@ func (b *Broker) patrol() {
 	b.writeHeartbeat("running", tokenHealth)
 
 	if b.logger != nil {
-		b.logger.Emit(events.EventBrokerPatrol, "broker", "broker", "audit",
+		b.logger.Emit(events.EventBrokerPatrol, "broker", "broker", "feed",
 			map[string]any{
 				"patrol_count": b.patrolCount,
 			})

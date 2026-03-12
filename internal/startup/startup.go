@@ -252,11 +252,15 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		env["ANTHROPIC_API_KEY"] = tok.Token
 	}
 
-	// Enable ledger telemetry if configured.
-	if worldCfg.Ledger.Port > 0 {
+	// Enable ledger telemetry from global config (sphere-scoped; defaults to port 4318).
+	globalCfg, err := config.LoadGlobalConfig()
+	if err != nil {
+		slog.Warn("startup: failed to load global config for ledger port", "error", err)
+	}
+	if globalCfg.Ledger.Port > 0 {
 		env["CLAUDE_CODE_ENABLE_TELEMETRY"] = "1"
 		env["OTEL_LOGS_EXPORTER"] = "otlp"
-		env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] = fmt.Sprintf("http://localhost:%d", worldCfg.Ledger.Port)
+		env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] = fmt.Sprintf("http://localhost:%d", globalCfg.Ledger.Port)
 		env["OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"] = "http/json"
 		attrs := fmt.Sprintf("agent.name=%s,world=%s", agent, world)
 		if activeWrit != "" {

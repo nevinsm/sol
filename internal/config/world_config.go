@@ -122,6 +122,9 @@ func DefaultWorldConfig() WorldConfig {
 			TargetBranch: "main",
 			GateTimeout:  "5m",
 		},
+		Ledger: LedgerSection{
+			Port: 4318, // ledger.DefaultPort — sphere-scoped, configurable in sol.toml
+		},
 		Escalation: DefaultEscalationConfig(),
 		Sitrep: SitrepSection{
 			Model:         "claude-sonnet-4-6",
