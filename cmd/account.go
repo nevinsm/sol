@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"sort"
+	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/spf13/cobra"
@@ -222,6 +225,117 @@ var accountLoginCmd = &cobra.Command{
 	},
 }
 
+// --- sol account set-token ---
+
+var accountSetTokenCmd = &cobra.Command{
+	Use:          "set-token <handle> [token]",
+	Short:        "Store an OAuth token for an account",
+	Args:         cobra.RangeArgs(1, 2),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		handle := args[0]
+
+		reg, err := account.LoadRegistry()
+		if err != nil {
+			return err
+		}
+		if _, exists := reg.Accounts[handle]; !exists {
+			return fmt.Errorf("account %q not found — run: sol account add %s", handle, handle)
+		}
+
+		var tokenValue string
+		if len(args) == 2 {
+			tokenValue = args[1]
+		} else {
+			fmt.Println("To get a setup token:")
+			fmt.Println("  1. Run 'claude setup-token' in another terminal")
+			fmt.Println("  2. Complete the browser authentication")
+			fmt.Println("  3. Copy the token printed by Claude")
+			fmt.Println()
+			fmt.Print("Paste token: ")
+			scanner := bufio.NewScanner(os.Stdin)
+			if scanner.Scan() {
+				tokenValue = strings.TrimSpace(scanner.Text())
+			}
+			if err := scanner.Err(); err != nil {
+				return fmt.Errorf("failed to read token: %w", err)
+			}
+		}
+
+		if tokenValue == "" {
+			return fmt.Errorf("token must not be empty")
+		}
+
+		now := time.Now().UTC()
+		expires := now.Add(365 * 24 * time.Hour)
+		tok := &account.Token{
+			Type:      "oauth_token",
+			Token:     tokenValue,
+			CreatedAt: now,
+			ExpiresAt: &expires,
+		}
+
+		if err := account.WriteToken(handle, tok); err != nil {
+			return err
+		}
+
+		fmt.Printf("Token stored for account %q (expires %s)\n", handle, expires.Format("2006-01-02"))
+		return nil
+	},
+}
+
+// --- sol account set-api-key ---
+
+var accountSetAPIKeyCmd = &cobra.Command{
+	Use:          "set-api-key <handle> [key]",
+	Short:        "Store an API key for an account",
+	Args:         cobra.RangeArgs(1, 2),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		handle := args[0]
+
+		reg, err := account.LoadRegistry()
+		if err != nil {
+			return err
+		}
+		if _, exists := reg.Accounts[handle]; !exists {
+			return fmt.Errorf("account %q not found — run: sol account add %s", handle, handle)
+		}
+
+		var keyValue string
+		if len(args) == 2 {
+			keyValue = args[1]
+		} else {
+			fmt.Print("Paste API key: ")
+			scanner := bufio.NewScanner(os.Stdin)
+			if scanner.Scan() {
+				keyValue = strings.TrimSpace(scanner.Text())
+			}
+			if err := scanner.Err(); err != nil {
+				return fmt.Errorf("failed to read API key: %w", err)
+			}
+		}
+
+		if keyValue == "" {
+			return fmt.Errorf("API key must not be empty")
+		}
+
+		now := time.Now().UTC()
+		tok := &account.Token{
+			Type:      "api_key",
+			Token:     keyValue,
+			CreatedAt: now,
+		}
+
+		if err := account.WriteToken(handle, tok); err != nil {
+			return err
+		}
+
+		fmt.Printf("API key stored for account %q\n", handle)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(accountCmd)
 
@@ -235,4 +349,6 @@ func init() {
 	accountCmd.AddCommand(accountRemoveCmd)
 	accountCmd.AddCommand(accountDefaultCmd)
 	accountCmd.AddCommand(accountLoginCmd)
+	accountCmd.AddCommand(accountSetTokenCmd)
+	accountCmd.AddCommand(accountSetAPIKeyCmd)
 }
