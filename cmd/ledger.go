@@ -35,6 +35,11 @@ var ledgerRunCmd = &cobra.Command{
 		eventLog := events.NewLogger(config.Home())
 		l := ledger.New(cfg, eventLog)
 
+		// Write PID file so prefect can track this process.
+		if err := prefect.WriteDaemonPID("ledger", os.Getpid()); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to write PID file: %v\n", err)
+		}
+
 		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()
 

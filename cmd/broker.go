@@ -46,6 +46,11 @@ var tokenBrokerRunCmd = &cobra.Command{
 		eventLog := events.NewLogger(config.Home())
 		b := broker.New(cfg, eventLog)
 
+		// Write PID file so prefect can track this process.
+		if err := prefect.WriteDaemonPID("broker", os.Getpid()); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to write PID file: %v\n", err)
+		}
+
 		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()
 

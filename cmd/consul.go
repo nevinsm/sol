@@ -245,8 +245,8 @@ var consulStartCmd = &cobra.Command{
 		pid := proc.Process.Pid
 		logFile.Close()
 
-		// Detach so consul survives our exit.
-		_ = proc.Process.Release()
+		// Reap the child in the background so it does not become a zombie.
+		go func() { _ = proc.Wait() }()
 
 		// Wait briefly and confirm alive.
 		time.Sleep(time.Second)
