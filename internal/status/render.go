@@ -812,6 +812,25 @@ func RenderWorldConfig(world string, cfg config.WorldConfig) string {
 		b.WriteString(fmt.Sprintf("  Agent capacity: %d\n", cfg.Agents.Capacity))
 	}
 	b.WriteString(fmt.Sprintf("  Model tier:     %s\n", cfg.Agents.ModelTier))
+
+	// Show per-role model overrides if any are configured.
+	m := cfg.Agents.Models
+	if m.Outpost != "" || m.Envoy != "" || m.Governor != "" || m.Forge != "" {
+		b.WriteString("  Model overrides:\n")
+		if m.Outpost != "" {
+			b.WriteString(fmt.Sprintf("    outpost:      %s\n", m.Outpost))
+		}
+		if m.Envoy != "" {
+			b.WriteString(fmt.Sprintf("    envoy:        %s\n", m.Envoy))
+		}
+		if m.Governor != "" {
+			b.WriteString(fmt.Sprintf("    governor:     %s\n", m.Governor))
+		}
+		if m.Forge != "" {
+			b.WriteString(fmt.Sprintf("    forge:        %s\n", m.Forge))
+		}
+	}
+
 	b.WriteString(fmt.Sprintf("  Quality gates:  %d\n", len(cfg.Forge.QualityGates)))
 
 	namePool := dimStyle.Render("(default)")

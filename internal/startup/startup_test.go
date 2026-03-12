@@ -223,7 +223,7 @@ func TestBuildCommand(t *testing.T) {
 		Role: "forge",
 	}
 
-	cmd := buildCommand(cfg, "/tmp/worktree", "Hello forge", false)
+	cmd := buildCommand(cfg, "/tmp/worktree", "Hello forge", false, "")
 	if !strings.Contains(cmd, "claude --dangerously-skip-permissions") {
 		t.Errorf("command missing claude: %q", cmd)
 	}
@@ -244,7 +244,7 @@ func TestBuildCommandWithSystemPrompt(t *testing.T) {
 		ReplacePrompt:    true,
 	}
 
-	cmd := buildCommand(cfg, "/tmp/worktree", "Hello forge", false)
+	cmd := buildCommand(cfg, "/tmp/worktree", "Hello forge", false, "")
 	if !strings.Contains(cmd, "--system-prompt-file") {
 		t.Errorf("command missing --system-prompt-file: %q", cmd)
 	}
@@ -262,7 +262,7 @@ func TestBuildCommandAppendSystemPrompt(t *testing.T) {
 		ReplacePrompt:    false,
 	}
 
-	cmd := buildCommand(cfg, "/tmp/worktree", "Hello agent", false)
+	cmd := buildCommand(cfg, "/tmp/worktree", "Hello agent", false, "")
 	if !strings.Contains(cmd, "--append-system-prompt-file") {
 		t.Errorf("command missing --append-system-prompt-file: %q", cmd)
 	}
@@ -273,7 +273,7 @@ func TestBuildCommandContinue(t *testing.T) {
 
 	cfg := RoleConfig{Role: "forge"}
 
-	cmd := buildCommand(cfg, "/tmp/worktree", "Hello", true)
+	cmd := buildCommand(cfg, "/tmp/worktree", "Hello", true, "")
 	if !strings.Contains(cmd, "--continue") {
 		t.Errorf("command missing --continue: %q", cmd)
 	}
@@ -288,9 +288,31 @@ func TestBuildCommandOverride(t *testing.T) {
 		ReplacePrompt:    true,
 	}
 
-	cmd := buildCommand(cfg, "/tmp/worktree", "Hello", false)
+	cmd := buildCommand(cfg, "/tmp/worktree", "Hello", false, "opus")
 	if cmd != "sleep 300" {
 		t.Errorf("expected override, got %q", cmd)
+	}
+}
+
+func TestBuildCommandWithModel(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "")
+
+	cfg := RoleConfig{Role: "outpost"}
+
+	cmd := buildCommand(cfg, "/tmp/worktree", "Hello", false, "opus")
+	if !strings.Contains(cmd, "--model opus") {
+		t.Errorf("command missing --model opus: %q", cmd)
+	}
+}
+
+func TestBuildCommandNoModelFlag(t *testing.T) {
+	t.Setenv("SOL_SESSION_COMMAND", "")
+
+	cfg := RoleConfig{Role: "outpost"}
+
+	cmd := buildCommand(cfg, "/tmp/worktree", "Hello", false, "")
+	if strings.Contains(cmd, "--model") {
+		t.Errorf("command should not contain --model when empty: %q", cmd)
 	}
 }
 

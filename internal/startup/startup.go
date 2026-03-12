@@ -228,7 +228,8 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 	}
 
 	// 8. Build claude command.
-	sessionCmd := buildCommand(cfg, worktreeDir, prompt, opts.Continue)
+	model := worldCfg.ResolveModel(cfg.Role)
+	sessionCmd := buildCommand(cfg, worktreeDir, prompt, opts.Continue, model)
 
 	// 9. Start tmux session.
 	env := map[string]string{
@@ -443,7 +444,7 @@ func resolveSessionStarter(opts LaunchOpts) SessionStarter {
 }
 
 // buildCommand constructs the claude startup command with system prompt flags.
-func buildCommand(cfg RoleConfig, worktreeDir, prompt string, continueSession bool) string {
+func buildCommand(cfg RoleConfig, worktreeDir, prompt string, continueSession bool, model string) string {
 	if cmd := os.Getenv("SOL_SESSION_COMMAND"); cmd != "" {
 		return cmd
 	}
@@ -457,6 +458,10 @@ func buildCommand(cfg RoleConfig, worktreeDir, prompt string, continueSession bo
 	}
 
 	args += " --settings " + config.ShellQuote(settingsPath)
+
+	if model != "" {
+		args += " --model " + model
+	}
 
 	if cfg.SystemPromptFile != "" {
 		if cfg.ReplacePrompt {

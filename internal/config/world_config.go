@@ -70,11 +70,22 @@ type WorldSection struct {
 	DefaultAccount string `toml:"default_account,omitempty" json:"default_account,omitempty"`
 }
 
+// ModelsSection holds per-role model overrides for agents.
+// Each field overrides the top-level model_tier for that specific role.
+// Valid values are "sonnet", "opus", or "haiku". Empty means no override.
+type ModelsSection struct {
+	Outpost  string `toml:"outpost,omitempty" json:"outpost,omitempty"`
+	Envoy    string `toml:"envoy,omitempty" json:"envoy,omitempty"`
+	Governor string `toml:"governor,omitempty" json:"governor,omitempty"`
+	Forge    string `toml:"forge,omitempty" json:"forge,omitempty"`
+}
+
 // AgentsSection holds agent-related settings.
 type AgentsSection struct {
-	Capacity     int    `toml:"capacity" json:"capacity"`               // 0 = unlimited
-	NamePoolPath string `toml:"name_pool_path" json:"name_pool_path"`   // empty = embedded default
-	ModelTier    string `toml:"model_tier" json:"model_tier"`           // "sonnet", "opus", "haiku"
+	Capacity     int           `toml:"capacity" json:"capacity"`               // 0 = unlimited
+	NamePoolPath string        `toml:"name_pool_path" json:"name_pool_path"`   // empty = embedded default
+	ModelTier    string        `toml:"model_tier" json:"model_tier"`           // "sonnet", "opus", "haiku"
+	Models       ModelsSection `toml:"models,omitempty" json:"models,omitempty"` // per-role overrides
 }
 
 // ForgeSection holds forge/merge pipeline settings.
@@ -162,6 +173,41 @@ func LoadWorldConfig(world string) (WorldConfig, error) {
 	return cfg, nil
 }
 
+// ResolveModel returns the model tier for a given role.
+// Checks agents.models.<role> first, falls back to agents.model_tier,
+// then to "sonnet" as the hardcoded default.
+func (c WorldConfig) ResolveModel(role string) string {
+	var override string
+	switch role {
+	case "outpost", "agent":
+		override = c.Agents.Models.Outpost
+	case "envoy":
+		override = c.Agents.Models.Envoy
+	case "governor":
+		override = c.Agents.Models.Governor
+	case "forge", "forge-merge":
+		override = c.Agents.Models.Forge
+	}
+	if override != "" {
+		return override
+	}
+	if c.Agents.ModelTier != "" {
+		return c.Agents.ModelTier
+	}
+	return "sonnet"
+}
+
+// validModelTier returns an error if the given model tier is not a valid
+// non-empty value. Empty string is treated as "not set" and is valid.
+func validModelTier(field, value string) error {
+	switch value {
+	case "", "sonnet", "opus", "haiku":
+		return nil
+	default:
+		return fmt.Errorf("%s must be sonnet, opus, or haiku; got %q", field, value)
+	}
+}
+
 // Validate checks that config values are within acceptable ranges.
 func (c WorldConfig) Validate() error {
 	if c.Agents.Capacity < 0 {
@@ -174,6 +220,18 @@ func (c WorldConfig) Validate() error {
 		default:
 			return fmt.Errorf("agents.model_tier must be sonnet, opus, or haiku; got %q", c.Agents.ModelTier)
 		}
+	}
+	if err := validModelTier("agents.models.outpost", c.Agents.Models.Outpost); err != nil {
+		return err
+	}
+	if err := validModelTier("agents.models.envoy", c.Agents.Models.Envoy); err != nil {
+		return err
+	}
+	if err := validModelTier("agents.models.governor", c.Agents.Models.Governor); err != nil {
+		return err
+	}
+	if err := validModelTier("agents.models.forge", c.Agents.Models.Forge); err != nil {
+		return err
 	}
 	if c.Forge.GateTimeout != "" {
 		if _, err := time.ParseDuration(c.Forge.GateTimeout); err != nil {
