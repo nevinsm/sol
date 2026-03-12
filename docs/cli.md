@@ -985,6 +985,28 @@ Exit codes:
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
 
+### `sol chancellor`
+
+Manage the sphere-scoped planning session
+
+**Subcommands:**
+
+| Command | Description |
+|---------|-------------|
+| `sol chancellor attach` | Attach to the chancellor tmux session |
+| `sol chancellor brief` | Display the chancellor's brief |
+| `sol chancellor debrief` | Archive the chancellor's brief and reset |
+| `sol chancellor restart` | Restart the chancellor (stop then start) |
+| `sol chancellor start` | Start the chancellor planning session |
+| `sol chancellor status` | Show chancellor status |
+| `sol chancellor stop` | Stop the chancellor session |
+
+#### `sol chancellor status`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
 ### `sol chronicle`
 
 Manage the event feed chronicle
@@ -1056,7 +1078,7 @@ Stop sphere daemons and world services
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--all` | bool | false | also stop envoy, governor, and senate sessions |
+| `--all` | bool | false | also stop envoy, governor, and chancellor sessions |
 | `--world` | string | "" | stop only world services (optionally for a specific world) |
 
 ### `sol forge`
@@ -1373,28 +1395,6 @@ Prints status, PID, and uptime. Use --json for machine-readable output.
 Exit codes:
   0 - Prefect is running
   1 - Prefect is not running
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-
-### `sol senate`
-
-Manage the sphere-scoped planning session
-
-**Subcommands:**
-
-| Command | Description |
-|---------|-------------|
-| `sol senate attach` | Attach to the senate tmux session |
-| `sol senate brief` | Display the senate's brief |
-| `sol senate debrief` | Archive the senate's brief and reset |
-| `sol senate restart` | Restart the senate (stop then start) |
-| `sol senate start` | Start the senate planning session |
-| `sol senate status` | Show senate status |
-| `sol senate stop` | Stop the senate session |
-
-#### `sol senate status`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

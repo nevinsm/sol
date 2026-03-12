@@ -221,7 +221,7 @@ func formatBrokerDetail(b status.BrokerInfo) string {
 	return fmt.Sprintf("%d patrols", b.PatrolCount)
 }
 
-func formatSenateDetail(s status.SenateInfo) string {
+func formatChancellorDetail(s status.ChancellorInfo) string {
 	if s.Running {
 		return s.SessionName
 	}

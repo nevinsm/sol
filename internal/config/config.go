@@ -290,7 +290,7 @@ func BuildSessionCommandContinue(settingsPath, prompt string) string {
 
 // ClaudeConfigDir returns the CLAUDE_CONFIG_DIR path for an agent.
 // World-scoped agents: <worldDir>/.claude-config/<roleDir>/<name>/
-// Sphere-scoped agents (senate): <solHome>/.claude-config/senate/senate/
+// Sphere-scoped agents (chancellor): <solHome>/.claude-config/chancellor/chancellor/
 func ClaudeConfigDir(worldDir, role, name string) string {
 	var roleDir string
 	switch role {
@@ -299,7 +299,7 @@ func ClaudeConfigDir(worldDir, role, name string) string {
 	case "outpost", "agent":
 		roleDir = "outposts"
 	default:
-		roleDir = role // forge, governor, senate
+		roleDir = role // forge, governor, chancellor
 	}
 	return filepath.Join(worldDir, ".claude-config", roleDir, name)
 }

@@ -106,7 +106,7 @@ func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 	wm.syncProcessSpinner("Chronicle", data.Chronicle.Running, spinnerForRole("sphere-process"))
 	wm.syncProcessSpinner("Ledger", data.Ledger.Running, spinnerForRole("sphere-process"))
 	wm.syncProcessSpinner("Broker", data.Broker.Running, spinnerForRole("sphere-process"))
-	wm.syncProcessSpinner("Senate", data.Senate.Running, spinnerForRole("sphere-process"))
+	wm.syncProcessSpinner("Chancellor", data.Chancellor.Running, spinnerForRole("sphere-process"))
 
 	// World process spinners.
 	wm.syncProcessSpinner("Forge", data.Forge.Running, spinnerForRole("world-process"))
@@ -736,7 +736,7 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 		{"Chronicle", data.Chronicle.Running, false},
 		{"Ledger", data.Ledger.Running, false},
 		{"Broker", data.Broker.Running, true},
-		{"Senate", data.Senate.Running, false},
+		{"Chancellor", data.Chancellor.Running, false},
 	}
 	b.WriteString(headerStyle.Render("Sphere Processes"))
 	b.WriteString("\n")
