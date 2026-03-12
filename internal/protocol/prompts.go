@@ -21,3 +21,8 @@ var OutpostSystemPrompt string
 //
 //go:embed prompts/forge-merge.md
 var ForgeMergeSystemPrompt string
+
+// ChancellorSystemPrompt is the append-mode system prompt for the chancellor role.
+//
+//go:embed prompts/chancellor.md
+var ChancellorSystemPrompt string

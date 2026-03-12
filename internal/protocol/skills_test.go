@@ -33,8 +33,8 @@ func TestRoleSkillsEnvoy(t *testing.T) {
 
 func TestRoleSkillsChancellor(t *testing.T) {
 	skills := RoleSkills("chancellor")
-	if len(skills) != 3 {
-		t.Errorf("chancellor should have 3 skills, got %d: %v", len(skills), skills)
+	if len(skills) != 5 {
+		t.Errorf("chancellor should have 5 skills, got %d: %v", len(skills), skills)
 	}
 }
 

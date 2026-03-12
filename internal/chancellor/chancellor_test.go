@@ -10,6 +10,19 @@ import (
 	"github.com/nevinsm/sol/internal/protocol"
 )
 
+// writeTestToken writes a minimal api_key token so Start() can inject credentials in tests.
+func writeTestToken(t *testing.T, solHome string) {
+	t.Helper()
+	accountsDir := filepath.Join(solHome, ".accounts")
+	if err := os.MkdirAll(accountsDir, 0o755); err != nil {
+		t.Fatalf("failed to create .accounts dir: %v", err)
+	}
+	tokenJSON := `{"type":"api_key","token":"test-key","created_at":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(accountsDir, "token.json"), []byte(tokenJSON), 0o600); err != nil {
+		t.Fatalf("failed to write test token: %v", err)
+	}
+}
+
 // --- Mocks ---
 
 type mockSessionManager struct {
@@ -46,6 +59,14 @@ func (m *mockSessionManager) Stop(name string, force bool) error {
 	return nil
 }
 
+func (m *mockSessionManager) Inject(name string, text string, submit bool) error {
+	return nil
+}
+
+func (m *mockSessionManager) Capture(name string, lines int) (string, error) {
+	return "", nil
+}
+
 // --- Tests ---
 
 func TestDirectoryHelpers(t *testing.T) {
@@ -75,6 +96,7 @@ func TestStart(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("SOL_HOME", tmp)
 	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	writeTestToken(t, tmp)
 
 	mgr := &mockSessionManager{sessions: map[string]bool{}}
 
@@ -161,6 +183,7 @@ func TestStartSessionError(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("SOL_HOME", tmp)
 	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	writeTestToken(t, tmp)
 
 	mgr := &mockSessionManager{
 		sessions: map[string]bool{},

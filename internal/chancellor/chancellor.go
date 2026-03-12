@@ -1,12 +1,12 @@
 package chancellor
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/nevinsm/sol/internal/account"
+	"github.com/nevinsm/sol/internal/brief"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/protocol"
 )
@@ -44,109 +44,140 @@ type SessionManager interface {
 
 // StopManager abstracts session operations for Stop.
 type StopManager interface {
-	Exists(name string) bool
-	Stop(name string, force bool) error
+	brief.GracefulStopManager
 }
 
 // --- Start ---
 
 // Start launches the chancellor session.
 func Start(mgr SessionManager) error {
-	chancellorDir := ChancellorDir()
+	dir := ChancellorDir()
 	briefDir := BriefDir()
 
 	// 1. Create chancellor and brief directories.
-	if err := os.MkdirAll(chancellorDir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to start chancellor: %w", err)
 	}
 	if err := os.MkdirAll(briefDir, 0o755); err != nil {
 		return fmt.Errorf("failed to start chancellor: %w", err)
 	}
 
-	// 2. Install hooks in chancellor directory.
-	if err := installHooks(chancellorDir); err != nil {
+	// 2. Install persona (CLAUDE.local.md).
+	ctx := protocol.ChancellorClaudeMDContext{
+		SolBinary: "sol",
+	}
+	if err := protocol.InstallChancellorClaudeMD(dir, ctx); err != nil {
 		return fmt.Errorf("failed to start chancellor: %w", err)
 	}
 
-	// 3. Check if session already exists.
+	// 3. Install hooks in chancellor directory.
+	cfg := RoleConfig()
+	hookCfg := cfg.Hooks("", "chancellor")
+	if err := protocol.WriteHookSettings(dir, hookCfg); err != nil {
+		return fmt.Errorf("failed to start chancellor: %w", err)
+	}
+
+	// 4. Install system prompt.
+	if cfg.SystemPromptContent != "" {
+		claudeDir := filepath.Join(dir, ".claude")
+		if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+			return fmt.Errorf("failed to start chancellor: create .claude dir: %w", err)
+		}
+		promptPath := filepath.Join(claudeDir, "system-prompt.md")
+		if err := os.WriteFile(promptPath, []byte(cfg.SystemPromptContent), 0o644); err != nil {
+			return fmt.Errorf("failed to start chancellor: write system prompt: %w", err)
+		}
+	}
+
+	// 5. Check if session already exists.
 	if mgr.Exists(SessionName) {
 		return fmt.Errorf("chancellor session already running")
 	}
 
-	// 4. Resolve account and start tmux session.
+	// 6. Resolve account and CLAUDE_CONFIG_DIR.
 	resolvedAccount := account.ResolveAccount("", "")
 	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.Home(), "chancellor", "chancellor", resolvedAccount)
 	if err != nil {
 		return fmt.Errorf("failed to ensure claude config dir: %w", err)
 	}
-	prompt := "Chancellor session. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200"
-	sessionCmd := config.BuildSessionCommand(config.SettingsPath(chancellorDir), prompt)
+
+	// 7. Pre-trust working directory.
+	if err := protocol.TrustDirectoryIn(dir, claudeConfigDir); err != nil {
+		fmt.Fprintf(os.Stderr, "chancellor: failed to pre-trust directory: %v\n", err)
+	}
+
+	// 8. Read token for credential injection.
+	tok, err := account.ReadToken(resolvedAccount)
+	if err != nil {
+		return fmt.Errorf("no token found for account %q — run: sol account set-token %s (or sol account set-api-key %s): %w",
+			resolvedAccount, resolvedAccount, resolvedAccount, err)
+	}
+
+	// 9. Build session command and environment.
+	prompt := cfg.PrimeBuilder("", "chancellor")
+	settingsPath := config.SettingsPath(dir)
+
+	var sessionCmd string
+	if cfg.SystemPromptContent != "" {
+		promptFile := ".claude/system-prompt.md"
+		sessionCmd = buildCommandWithPromptFile(settingsPath, prompt, promptFile, cfg.ReplacePrompt)
+	} else {
+		sessionCmd = config.BuildSessionCommand(settingsPath, prompt)
+	}
+
 	env := map[string]string{
 		"SOL_HOME":          config.Home(),
 		"SOL_AGENT":         "chancellor",
 		"CLAUDE_CONFIG_DIR": claudeConfigDir,
 	}
-	if err := mgr.Start(SessionName, chancellorDir, sessionCmd, env, "chancellor", ""); err != nil {
+	switch tok.Type {
+	case "oauth_token":
+		env["CLAUDE_CODE_OAUTH_TOKEN"] = tok.Token
+	case "api_key":
+		env["ANTHROPIC_API_KEY"] = tok.Token
+	}
+
+	// 10. Start tmux session.
+	if err := mgr.Start(SessionName, dir, sessionCmd, env, "chancellor", ""); err != nil {
 		return fmt.Errorf("failed to start chancellor: %w", err)
 	}
 
 	return nil
 }
 
-// installHooks writes .claude/settings.local.json with PreToolUse hooks.
-func installHooks(chancellorDir string) error {
-	claudeDir := filepath.Join(chancellorDir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create .claude directory: %w", err)
+// buildCommandWithPromptFile constructs a claude startup command with a system prompt file.
+func buildCommandWithPromptFile(settingsPath, prompt, promptFile string, replace bool) string {
+	if cmd := os.Getenv("SOL_SESSION_COMMAND"); cmd != "" {
+		return cmd
 	}
 
-	cfg := protocol.HookConfig{
-		Hooks: map[string][]protocol.HookMatcherGroup{
-			"PreToolUse": append([]protocol.HookMatcherGroup{
-				{
-					Matcher: "Write|Edit",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: `FILE=$(jq -r '.tool_input.file_path // empty'); if echo "$FILE" | grep -q '.claude/projects/.*/memory/'; then echo "BLOCKED: Use .brief/memory.md, not Claude Code auto-memory." >&2; exit 2; fi`,
-						},
-					},
-				},
-				{
-					Matcher: "EnterPlanMode",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`,
-						},
-					},
-				},
-			}, protocol.GuardHooks("chancellor")...),
-		},
+	args := "claude --dangerously-skip-permissions"
+	args += " --settings " + config.ShellQuote(settingsPath)
+
+	if replace {
+		args += " --system-prompt-file " + config.ShellQuote(promptFile)
+	} else {
+		args += " --append-system-prompt-file " + config.ShellQuote(promptFile)
 	}
 
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal hook settings: %w", err)
+	if prompt != "" {
+		args += " " + config.ShellQuote(prompt)
 	}
 
-	settingsPath := filepath.Join(claudeDir, "settings.local.json")
-	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write settings.local.json: %w", err)
-	}
-
-	return nil
+	return args
 }
 
 // --- Stop ---
 
-// Stop terminates the chancellor session.
+// Stop terminates the chancellor session gracefully.
 func Stop(mgr StopManager) error {
 	if !mgr.Exists(SessionName) {
 		return fmt.Errorf("no chancellor session running")
 	}
-	if err := mgr.Stop(SessionName, true); err != nil {
+
+	if err := brief.GracefulStop(SessionName, BriefDir(), mgr); err != nil {
 		return fmt.Errorf("failed to stop chancellor: %w", err)
 	}
+
 	return nil
 }
