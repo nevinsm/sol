@@ -278,6 +278,14 @@ List all caravans. Shows active (non-closed) caravans by default. Use --all for 
 | `--json` | bool | false | output as JSON |
 | `--status` | string | "" | filter by status (open, ready, closed) |
 
+#### `sol caravan reopen`
+
+Move a closed caravan back to drydock status for modification. Only closed
+caravans can be reopened. After reopening, commission the caravan to make it
+dispatchable again.
+
+**Usage:** `sol caravan reopen <caravan-id>`
+
 #### `sol caravan set-phase`
 
 Update the phase of a single item, or use --all to update all items in the caravan.
@@ -1679,6 +1687,26 @@ Manage sol configuration
 |---------|-------------|
 | `sol config claude` | Edit sphere-level Claude Code defaults |
 
+#### `sol config claude`
+
+Launch an interactive Claude Code session for configuring sphere-level defaults.
+
+The defaults directory ($SOL_HOME/.claude-defaults/) is the template for all
+agent config directories. Changes made here propagate to all agents on their
+next session start.
+
+File ownership:
+  settings.json        Sol-owned. Always overwritten from template. Do not edit.
+  settings.local.json  User-owned. Your customizations go here.
+  plugins/             Managed by /install and /uninstall. Shared sphere-wide.
+
+Plugins installed here are available to all agents across all worlds.
+After installing a plugin, verify its enabledPlugins entry exists in
+settings.local.json (not just settings.json) to ensure it persists
+across sol restarts.
+
+Uses the sphere-level default account for authentication.
+
 ### `sol doctor`
 
 Check system prerequisites
@@ -1931,6 +1959,17 @@ With --all, also syncs forge worktree and notifies running envoy/governor sessio
 | `--all` | bool | false | also sync forge, envoys, and governor |
 | `--world` | string | "" | world name |
 
+#### `sol world wake`
+
+Clear the sleeping flag in world.toml and restart world services
+(sentinel, forge). This reverses sol world sleep — dispatch gates are
+deactivated and new work can be cast again.
+
+Does not restart outpost agent sessions that were stopped by sleep --force;
+those must be re-dispatched manually.
+
+**Usage:** `sol world wake <name>`
+
 ---
 
 ## Plumbing:
@@ -1977,6 +2016,10 @@ Generate docs/cli.md from the Cobra command tree. Use --check to validate withou
 | `--check` | bool | false | Validate docs/cli.md without writing (same as sol docs validate) |
 | `--stdout` | bool | false | Write to stdout instead of docs/cli.md |
 
+#### `sol docs validate`
+
+Compare docs/cli.md against what the command tree would generate. Exits non-zero if discrepancies are found.
+
 ### `sol guard`
 
 Block forbidden operations (PreToolUse hook)
@@ -2005,6 +2048,41 @@ Example hook configuration:
 |---------|-------------|
 | `sol guard dangerous-command` | Block dangerous commands (rm -rf, force push, hard reset, etc.) |
 | `sol guard workflow-bypass` | Block commands that circumvent the forge merge pipeline |
+
+#### `sol guard dangerous-command`
+
+Block dangerous commands via Claude Code PreToolUse hooks.
+
+This guard blocks operations that could cause irreversible damage:
+  - git push --force/-f  (--force-with-lease and --force-if-includes are allowed)
+  - git reset --hard
+  - git clean -f / git clean -fd
+  - git checkout -- . / git restore .
+  - rm -rf /
+
+The guard reads the tool input from stdin (Claude Code hook protocol)
+and exits with code 2 to block dangerous operations.
+
+Exit codes:
+  0 - Operation allowed
+  2 - Operation BLOCKED
+
+#### `sol guard workflow-bypass`
+
+Block workflow-bypass operations via Claude Code PreToolUse hooks.
+
+This guard blocks commands that circumvent Sol's forge merge pipeline:
+  - git push origin main/master  (agents must use sol resolve → forge)
+  - gh pr create                 (Sol uses its own MR system)
+  - git checkout -b / git switch -c  (outposts have their branch assigned)
+
+Role exemptions:
+  Forge (SOL_ROLE=forge) is exempt since it needs to push to the target
+  branch for merges.
+
+Exit codes:
+  0 - Operation allowed
+  2 - Operation BLOCKED
 
 ### `sol log-event`
 
