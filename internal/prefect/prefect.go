@@ -869,8 +869,11 @@ func defaultStartDaemonProcess(daemon string, binPath string, args ...string) er
 		// The process is running; next check will find it via PID file or session.
 	}
 
-	// Detach so the daemon survives the prefect.
-	_ = proc.Process.Release()
+	// Reap the child in the background so it does not become a zombie when it
+	// exits. We must not call Release() here — that would prevent Go's runtime
+	// from waiting on the child, leaving a defunct process that IsRunning()
+	// would incorrectly report as alive.
+	go func() { _ = proc.Wait() }()
 
 	return nil
 }

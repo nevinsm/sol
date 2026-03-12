@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/processutil"
 )
 
 // pidPath returns the path to the prefect PID file.
@@ -65,13 +65,10 @@ func ClearPID() error {
 	return nil
 }
 
-// IsRunning checks if a process with the given PID is alive.
+// IsRunning checks if a process with the given PID is alive and not a zombie.
+// It delegates to processutil.IsRunning for zombie-aware detection.
 func IsRunning(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || err == syscall.EPERM
+	return processutil.IsRunning(pid)
 }
 
 // ReadDaemonPID reads the PID from a named daemon's PID file

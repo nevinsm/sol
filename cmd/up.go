@@ -357,8 +357,11 @@ func startSphereDaemons(solBin string, worlds []string) (bool, error) {
 			_ = writeDaemonPID(d.name, pid)
 		}
 
-		// Detach so daemon survives sol up exit.
-		_ = proc.Process.Release()
+		// Reap the child in the background so it does not become a zombie if it
+		// exits before sol up does. We must not call Release() — that would
+		// prevent Go's runtime from reaping the child, leaving a defunct process
+		// that IsRunning() would incorrectly report as alive.
+		go func() { _ = proc.Wait() }()
 
 		// Wait briefly and confirm alive.
 		time.Sleep(time.Second)
