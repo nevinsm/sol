@@ -318,8 +318,6 @@ type BrokerInfo struct {
 	Running        bool   `json:"running"`
 	HeartbeatAge   string `json:"heartbeat_age,omitempty"`
 	PatrolCount    int    `json:"patrol_count,omitempty"`
-	Accounts       int    `json:"accounts,omitempty"`
-	AgentDirs      int    `json:"agent_dirs,omitempty"`
 	Stale          bool   `json:"stale"`
 	ProviderHealth string `json:"provider_health,omitempty"` // "healthy", "degraded", "down"
 }

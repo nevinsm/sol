@@ -218,7 +218,7 @@ func formatBrokerDetail(b status.BrokerInfo) string {
 	if !b.Running {
 		return ""
 	}
-	return fmt.Sprintf("%d accounts", b.Accounts)
+	return fmt.Sprintf("%d patrols", b.PatrolCount)
 }
 
 func formatSenateDetail(s status.SenateInfo) string {

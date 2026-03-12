@@ -18,14 +18,13 @@ import (
 )
 
 var (
-	brokerInterval      string
-	brokerRefreshMargin string
-	brokerStatusJSON    bool
+	brokerInterval   string
+	brokerStatusJSON bool
 )
 
 var tokenBrokerCmd = &cobra.Command{
 	Use:     "broker",
-	Short:   "Manage AI provider credentials and health",
+	Short:   "Manage AI provider health probing",
 	GroupID: groupProcesses,
 }
 
@@ -39,14 +38,9 @@ var tokenBrokerRunCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("invalid --interval: %w", err)
 		}
-		margin, err := time.ParseDuration(brokerRefreshMargin)
-		if err != nil {
-			return fmt.Errorf("invalid --refresh-margin: %w", err)
-		}
 
 		cfg := broker.Config{
 			PatrolInterval: interval,
-			RefreshMargin:  margin,
 		}
 
 		eventLog := events.NewLogger(config.Home())
@@ -68,7 +62,7 @@ var tokenBrokerStatusCmd = &cobra.Command{
 	Short: "Show broker status from heartbeat",
 	Long: `Show whether the broker process is running via its heartbeat file.
 
-Prints patrol count, account info, refresh statistics, and provider health state.
+Prints patrol count and provider health state.
 Use --json for machine-readable output.
 
 Exit codes:
@@ -90,14 +84,7 @@ Exit codes:
 				"status":       hb.Status,
 				"timestamp":    hb.Timestamp.Format(time.RFC3339),
 				"patrol_count": hb.PatrolCount,
-				"accounts":     hb.Accounts,
-				"agent_dirs":   hb.AgentDirs,
-				"refreshed":    hb.Refreshed,
-				"errors":       hb.Errors,
 				"stale":        hb.IsStale(10 * time.Minute),
-			}
-			if hb.LastRefresh != "" {
-				out["last_refresh"] = hb.LastRefresh
 			}
 			// Provider health fields.
 			if hb.ProviderHealth != "" {
@@ -123,15 +110,6 @@ Exit codes:
 		ago := time.Since(hb.Timestamp).Round(time.Second)
 		fmt.Printf("Broker: %s\n", hb.Status)
 		fmt.Printf("Last patrol: %s ago (patrol #%d)\n", ago, hb.PatrolCount)
-		fmt.Printf("Accounts: %d\n", hb.Accounts)
-		fmt.Printf("Agent dirs managed: %d\n", hb.AgentDirs)
-		fmt.Printf("Tokens refreshed this patrol: %d\n", hb.Refreshed)
-		if hb.Errors > 0 {
-			fmt.Printf("Errors: %d\n", hb.Errors)
-		}
-		if hb.LastRefresh != "" {
-			fmt.Printf("Last refresh: %s\n", hb.LastRefresh)
-		}
 
 		// Provider health.
 		providerHealth := hb.ProviderHealth
@@ -281,7 +259,6 @@ func init() {
 	tokenBrokerCmd.AddCommand(tokenBrokerStatusCmd)
 
 	tokenBrokerRunCmd.Flags().StringVar(&brokerInterval, "interval", "5m", "patrol interval")
-	tokenBrokerRunCmd.Flags().StringVar(&brokerRefreshMargin, "refresh-margin", "30m", "refresh tokens this long before expiry")
 
 	tokenBrokerStatusCmd.Flags().BoolVar(&brokerStatusJSON, "json", false, "output as JSON")
 }

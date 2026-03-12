@@ -167,7 +167,7 @@ func formatBrokerDetail(b BrokerInfo) string {
 	if !b.Running {
 		return ""
 	}
-	parts := fmt.Sprintf("%d accounts, %d dirs, %d patrols", b.Accounts, b.AgentDirs, b.PatrolCount)
+	parts := fmt.Sprintf("%d patrols", b.PatrolCount)
 	if b.HeartbeatAge != "" {
 		parts += fmt.Sprintf(", last %s ago", b.HeartbeatAge)
 	}

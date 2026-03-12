@@ -188,8 +188,6 @@ func GatherBrokerInfo() BrokerInfo {
 	hb, err := broker.ReadHeartbeat()
 	if err == nil && hb != nil {
 		info.PatrolCount = hb.PatrolCount
-		info.Accounts = hb.Accounts
-		info.AgentDirs = hb.AgentDirs
 
 		age := time.Since(hb.Timestamp)
 		info.HeartbeatAge = FormatDuration(age)

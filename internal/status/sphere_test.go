@@ -387,8 +387,6 @@ func TestGatherSphereBrokerInfo(t *testing.T) {
 		Timestamp:   time.Now().UTC(),
 		PatrolCount: 7,
 		Status:      "running",
-		Accounts:    2,
-		AgentDirs:   5,
 	}
 	writeBrokerHeartbeat(t, hb)
 
@@ -403,12 +401,6 @@ func TestGatherSphereBrokerInfo(t *testing.T) {
 	}
 	if result.Broker.PatrolCount != 7 {
 		t.Errorf("Broker.PatrolCount = %d, want 7", result.Broker.PatrolCount)
-	}
-	if result.Broker.Accounts != 2 {
-		t.Errorf("Broker.Accounts = %d, want 2", result.Broker.Accounts)
-	}
-	if result.Broker.AgentDirs != 5 {
-		t.Errorf("Broker.AgentDirs = %d, want 5", result.Broker.AgentDirs)
 	}
 	if result.Broker.Stale {
 		t.Error("Broker.Stale = true, want false (fresh heartbeat)")
