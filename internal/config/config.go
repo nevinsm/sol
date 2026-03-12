@@ -522,6 +522,12 @@ func seedClaudePlugins(agentConfigDir string) {
 // seedClaudeSettings copies settings.json from .claude-defaults/ into the
 // given agent config dir. Skips silently if .claude-defaults/settings.json
 // doesn't exist (no defaults configured yet — not an error).
+//
+// Also merges enabledPlugins from installed_plugins.json into settings.json
+// so that Claude Code discovers enabled plugins from the base settings file
+// rather than relying on settings.local.json (which may not trigger plugin
+// initialization in all Claude Code versions).
+//
 // Also copies settings.local.json from .claude-defaults/ if present — this
 // is the user customization surface; sol never writes it, only distributes it.
 func seedClaudeSettings(agentConfigDir string) {
@@ -531,6 +537,10 @@ func seedClaudeSettings(agentConfigDir string) {
 		// No defaults template — skip silently.
 		return
 	}
+
+	// Merge enabledPlugins from installed_plugins.json into settings.json.
+	data = mergeEnabledPlugins(data)
+
 	dst := filepath.Join(agentConfigDir, "settings.json")
 	_ = os.WriteFile(dst, data, 0o644)
 
@@ -543,6 +553,46 @@ func seedClaudeSettings(agentConfigDir string) {
 	}
 	localDst := filepath.Join(agentConfigDir, "settings.local.json")
 	_ = os.WriteFile(localDst, localData, 0o644)
+}
+
+// mergeEnabledPlugins reads installed_plugins.json from .claude-defaults/plugins/
+// and merges an enabledPlugins map into the given settings.json content.
+// Returns the original content unchanged if no plugins are installed or on
+// any error (best-effort — plugin enablement should not break settings seeding).
+func mergeEnabledPlugins(settingsData []byte) []byte {
+	installedPath := filepath.Join(ClaudeDefaultsDir(), "plugins", "installed_plugins.json")
+	installedData, err := os.ReadFile(installedPath)
+	if err != nil {
+		return settingsData
+	}
+
+	// Parse installed_plugins.json — format:
+	// {"version": 2, "plugins": {"name@marketplace": [...]}}
+	var installed struct {
+		Plugins map[string]json.RawMessage `json:"plugins"`
+	}
+	if err := json.Unmarshal(installedData, &installed); err != nil || len(installed.Plugins) == 0 {
+		return settingsData
+	}
+
+	// Build enabledPlugins map: every installed plugin is enabled.
+	enabled := make(map[string]bool, len(installed.Plugins))
+	for key := range installed.Plugins {
+		enabled[key] = true
+	}
+
+	// Parse settings, merge, re-serialize.
+	var settings map[string]any
+	if err := json.Unmarshal(settingsData, &settings); err != nil {
+		return settingsData
+	}
+	settings["enabledPlugins"] = enabled
+
+	out, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return settingsData
+	}
+	return out
 }
 
 // EnsureDirs creates .store/ and .runtime/ if they don't exist.
