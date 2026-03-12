@@ -56,7 +56,31 @@ Creates:
   - Managed repo clone (if --source-repo is provided)
 
 Registers the world in sphere.db. If a pre-Arc1 database exists (DB without
-world.toml), migrates legacy quality gates and name pool settings.`,
+world.toml), migrates legacy quality gates and name pool settings.
+
+world.toml configuration reference:
+
+  [world]
+  source_repo = "/path/to/repo"   # persistent source repo binding
+
+  [agents]
+  capacity = 10                   # max concurrent agents (0 = unlimited)
+  name_pool_path = ""             # custom name pool file (empty = built-in)
+  model_tier = "sonnet"           # default model for all roles
+
+  [agents.models]                 # optional per-role model overrides
+  outpost = "sonnet"              # overrides model_tier for outpost agents
+  envoy = "opus"                  # overrides model_tier for envoy agents
+  governor = "opus"               # overrides model_tier for governor
+  forge = "sonnet"                # overrides model_tier for forge
+
+  [forge]
+  target_branch = "main"          # merge target branch
+  quality_gates = ["make test"]   # commands that must pass before merge
+  gate_timeout = "5m"             # per-gate timeout
+
+Resolution order for model: agents.models.<role> → agents.model_tier → "sonnet".
+Valid model values: "sonnet", "opus", "haiku".`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

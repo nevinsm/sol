@@ -337,6 +337,124 @@ func TestRequireWorldPreArc1(t *testing.T) {
 	}
 }
 
+func TestResolveModelFallbackToDefault(t *testing.T) {
+	// No model_tier set → falls back to "sonnet".
+	cfg := WorldConfig{}
+	for _, role := range []string{"outpost", "agent", "envoy", "governor", "forge", "forge-merge", "unknown"} {
+		got := cfg.ResolveModel(role)
+		if got != "sonnet" {
+			t.Errorf("ResolveModel(%q) with no config = %q, want %q", role, got, "sonnet")
+		}
+	}
+}
+
+func TestResolveModelFallbackToModelTier(t *testing.T) {
+	// model_tier set, no per-role overrides → uses model_tier.
+	cfg := WorldConfig{
+		Agents: AgentsSection{ModelTier: "opus"},
+	}
+	for _, role := range []string{"outpost", "agent", "envoy", "governor", "forge", "forge-merge", "unknown"} {
+		got := cfg.ResolveModel(role)
+		if got != "opus" {
+			t.Errorf("ResolveModel(%q) with model_tier=opus = %q, want %q", role, got, "opus")
+		}
+	}
+}
+
+func TestResolveModelPerRoleOverride(t *testing.T) {
+	cfg := WorldConfig{
+		Agents: AgentsSection{
+			ModelTier: "opus",
+			Models: ModelsSection{
+				Outpost:  "haiku",
+				Envoy:    "sonnet",
+				Governor: "opus",
+				Forge:    "haiku",
+			},
+		},
+	}
+
+	cases := []struct {
+		role string
+		want string
+	}{
+		{"outpost", "haiku"},
+		{"agent", "haiku"},   // "agent" maps to Outpost
+		{"envoy", "sonnet"},
+		{"governor", "opus"},
+		{"forge", "haiku"},
+		{"forge-merge", "haiku"}, // "forge-merge" maps to Forge
+		{"unknown", "opus"},      // unknown role falls back to model_tier
+	}
+
+	for _, tc := range cases {
+		got := cfg.ResolveModel(tc.role)
+		if got != tc.want {
+			t.Errorf("ResolveModel(%q) = %q, want %q", tc.role, got, tc.want)
+		}
+	}
+}
+
+func TestResolveModelPartialOverride(t *testing.T) {
+	// Only outpost has override; other roles use model_tier.
+	cfg := WorldConfig{
+		Agents: AgentsSection{
+			ModelTier: "opus",
+			Models: ModelsSection{
+				Outpost: "sonnet",
+			},
+		},
+	}
+
+	if got := cfg.ResolveModel("outpost"); got != "sonnet" {
+		t.Errorf("ResolveModel(outpost) = %q, want sonnet", got)
+	}
+	if got := cfg.ResolveModel("envoy"); got != "opus" {
+		t.Errorf("ResolveModel(envoy) = %q, want opus (model_tier)", got)
+	}
+	if got := cfg.ResolveModel("forge"); got != "opus" {
+		t.Errorf("ResolveModel(forge) = %q, want opus (model_tier)", got)
+	}
+}
+
+func TestWorldConfigValidateModelsSection(t *testing.T) {
+	valid := []ModelsSection{
+		{},
+		{Outpost: "sonnet"},
+		{Envoy: "opus"},
+		{Governor: "haiku"},
+		{Forge: "sonnet"},
+		{Outpost: "haiku", Envoy: "opus", Governor: "sonnet", Forge: "haiku"},
+	}
+	for _, m := range valid {
+		cfg := DefaultWorldConfig()
+		cfg.Agents.Models = m
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("expected valid models %+v, got error: %v", m, err)
+		}
+	}
+
+	invalid := []struct {
+		models ModelsSection
+		field  string
+	}{
+		{ModelsSection{Outpost: "gpt-4"}, "agents.models.outpost"},
+		{ModelsSection{Envoy: "claude"}, "agents.models.envoy"},
+		{ModelsSection{Governor: "fast"}, "agents.models.governor"},
+		{ModelsSection{Forge: "slow"}, "agents.models.forge"},
+	}
+	for _, tc := range invalid {
+		cfg := DefaultWorldConfig()
+		cfg.Agents.Models = tc.models
+		err := cfg.Validate()
+		if err == nil {
+			t.Errorf("expected error for invalid models %+v, got nil", tc.models)
+		} else if !strings.Contains(err.Error(), tc.field) {
+			t.Errorf("expected error to mention %q, got: %v", tc.field, err)
+		}
+	}
+}
+
 func TestWorldConfigValidateModelTier(t *testing.T) {
 	valid := []string{"sonnet", "opus", "haiku", ""}
 	for _, tier := range valid {
