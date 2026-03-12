@@ -470,6 +470,92 @@ func TestSeedClaudeSettingsCopiesLocalSettings(t *testing.T) {
 	}
 }
 
+func TestSeedClaudeSettingsMergesEnabledPlugins(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Seed defaults so settings.json exists.
+	if err := EnsureClaudeDefaults(); err != nil {
+		t.Fatalf("EnsureClaudeDefaults() error: %v", err)
+	}
+
+	// Write installed_plugins.json with two plugins.
+	pluginsDir := filepath.Join(solHome, ".claude-defaults", "plugins")
+	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installedJSON := `{
+		"version": 2,
+		"plugins": {
+			"gopls-lsp@claude-plugins-official": [{"scope": "user", "version": "1.0.0"}],
+			"pyright-lsp@claude-plugins-official": [{"scope": "user", "version": "1.0.0"}]
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(pluginsDir, "installed_plugins.json"), []byte(installedJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	agentConfigDir := t.TempDir()
+	seedClaudeSettings(agentConfigDir)
+
+	// Read the agent's settings.json and verify enabledPlugins was merged.
+	data, err := os.ReadFile(filepath.Join(agentConfigDir, "settings.json"))
+	if err != nil {
+		t.Fatalf("expected settings.json in agent config dir: %v", err)
+	}
+
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("settings.json is not valid JSON: %v", err)
+	}
+
+	ep, ok := settings["enabledPlugins"].(map[string]any)
+	if !ok {
+		t.Fatalf("settings.json missing enabledPlugins, got: %s", data)
+	}
+	if ep["gopls-lsp@claude-plugins-official"] != true {
+		t.Error("gopls-lsp should be enabled")
+	}
+	if ep["pyright-lsp@claude-plugins-official"] != true {
+		t.Error("pyright-lsp should be enabled")
+	}
+
+	// Verify original settings keys are preserved.
+	if _, ok := settings["statusLine"]; !ok {
+		t.Error("statusLine should still be present after plugin merge")
+	}
+}
+
+func TestSeedClaudeSettingsNoPlugins(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Seed defaults — no installed_plugins.json exists.
+	if err := EnsureClaudeDefaults(); err != nil {
+		t.Fatalf("EnsureClaudeDefaults() error: %v", err)
+	}
+
+	agentConfigDir := t.TempDir()
+	seedClaudeSettings(agentConfigDir)
+
+	// settings.json should still be valid, just without enabledPlugins.
+	data, err := os.ReadFile(filepath.Join(agentConfigDir, "settings.json"))
+	if err != nil {
+		t.Fatalf("expected settings.json: %v", err)
+	}
+
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("settings.json is not valid JSON: %v", err)
+	}
+	if _, ok := settings["enabledPlugins"]; ok {
+		t.Error("enabledPlugins should not be present when no plugins are installed")
+	}
+	if _, ok := settings["statusLine"]; !ok {
+		t.Error("statusLine should still be present")
+	}
+}
+
 func TestSeedClaudeSettingsSkipsLocalSettingsWhenAbsent(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
