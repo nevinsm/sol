@@ -21,3 +21,10 @@ var ApiKeyHelperSh []byte
 //
 //go:embed settings.json
 var SettingsJSON []byte
+
+// ConfigSessionMD is the CLAUDE.local.md persona for sol config claude sessions.
+// Written to $SOL_HOME/.claude-defaults/ before launching the interactive session
+// so Claude Code discovers it and the operator understands file ownership.
+//
+//go:embed config-session.md
+var ConfigSessionMD []byte

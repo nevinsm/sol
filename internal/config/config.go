@@ -333,6 +333,10 @@ func EnsureClaudeConfigDir(worldDir, role, name, account string) (string, error)
 	// Ensures config changes propagate to all agents on next session start.
 	seedClaudeSettings(dir)
 
+	// Copy plugin metadata from .claude-defaults/plugins/ (always-overwrite).
+	// Ensures sphere-level plugins are available to all agents.
+	seedClaudePlugins(dir)
+
 	if account != "" {
 		// Named account: provision access-token-only credentials.
 		if err := ProvisionCredentials(dir, account); err != nil {
@@ -580,6 +584,39 @@ func EnsureClaudeDefaults() error {
 	}
 
 	return nil
+}
+
+// seedClaudePlugins copies plugin metadata from .claude-defaults/plugins/
+// into the agent's plugins/ directory. Always overwrites — sol owns these
+// files; the operator manages plugins via `sol config claude`.
+//
+// Files copied:
+//   - installed_plugins.json — plugin installation records
+//   - known_marketplaces.json — marketplace on-disk locations
+//   - blocklist.json — blocked plugins
+//
+// Paths inside these files already point at .claude-defaults/plugins/
+// (cache/, marketplaces/) since that's where the config session installed them.
+// All agents share the same underlying plugin data.
+func seedClaudePlugins(agentConfigDir string) {
+	srcPluginsDir := filepath.Join(ClaudeDefaultsDir(), "plugins")
+	dstPluginsDir := filepath.Join(agentConfigDir, "plugins")
+
+	files := []string{"installed_plugins.json", "known_marketplaces.json", "blocklist.json"}
+	for _, f := range files {
+		src := filepath.Join(srcPluginsDir, f)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			// Source doesn't exist — no plugins configured, skip silently.
+			continue
+		}
+		if err := os.MkdirAll(dstPluginsDir, 0o755); err != nil {
+			// Can't create destination — skip silently.
+			continue
+		}
+		dst := filepath.Join(dstPluginsDir, f)
+		_ = os.WriteFile(dst, data, 0o644)
+	}
 }
 
 // seedClaudeSettings copies settings.json from .claude-defaults/ into the

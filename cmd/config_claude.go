@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/config/defaults"
 	"github.com/spf13/cobra"
 )
 
@@ -19,12 +21,22 @@ var configCmd = &cobra.Command{
 var configClaudeCmd = &cobra.Command{
 	Use:   "claude",
 	Short: "Edit sphere-level Claude Code defaults",
-	Long: `Launch Claude Code pointed at the sphere-level defaults directory.
+	Long: `Launch an interactive Claude Code session for configuring sphere-level defaults.
 
-The defaults directory ($SOL_HOME/.claude-defaults/) contains settings.json
-and statusline.sh that are copied to all agent config dirs on session start.
+The defaults directory ($SOL_HOME/.claude-defaults/) is the template for all
+agent config directories. Changes made here propagate to all agents on their
+next session start.
 
-Changes made in this session propagate to all agents on their next start.
+File ownership:
+  settings.json        Sol-owned. Always overwritten from template. Do not edit.
+  settings.local.json  User-owned. Your customizations go here.
+  plugins/             Managed by /install and /uninstall. Shared sphere-wide.
+
+Plugins installed here are available to all agents across all worlds.
+After installing a plugin, verify its enabledPlugins entry exists in
+settings.local.json (not just settings.json) to ensure it persists
+across sol restarts.
+
 Uses the sphere-level default account for authentication.`,
 	SilenceUsage: true,
 	RunE:         runConfigClaude,
@@ -36,6 +48,12 @@ func runConfigClaude(cmd *cobra.Command, args []string) error {
 
 	if err := config.EnsureClaudeDefaults(); err != nil {
 		return fmt.Errorf("failed to seed claude defaults: %w", err)
+	}
+
+	// Write CLAUDE.local.md persona so the operator understands file ownership.
+	personaPath := filepath.Join(defaultsDir, "CLAUDE.local.md")
+	if err := os.WriteFile(personaPath, defaults.ConfigSessionMD, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to write config session persona: %v\n", err)
 	}
 
 	// Provision credentials from the sphere default account.
@@ -57,12 +75,14 @@ func runConfigClaude(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("claude not found in PATH: %w", err)
 	}
 
-	// Launch claude with CLAUDE_CONFIG_DIR set to .claude-defaults/.
+	// Launch claude with CLAUDE_CONFIG_DIR set to .claude-defaults/ and
+	// CWD also set to .claude-defaults/ so Claude Code discovers CLAUDE.local.md.
 	claudeCmd := exec.Command(claudeBin, "--dangerously-skip-permissions")
 	claudeCmd.Stdin = os.Stdin
 	claudeCmd.Stdout = os.Stdout
 	claudeCmd.Stderr = os.Stderr
 	claudeCmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+defaultsDir)
+	claudeCmd.Dir = defaultsDir
 
 	if err := claudeCmd.Run(); err != nil {
 		// Exit errors from interactive processes are expected (user quit).

@@ -155,10 +155,12 @@ func writeSubcommandDetail(b *strings.Builder, cmd *cobra.Command, headingLevel 
 	heading := strings.Repeat("#", headingLevel)
 	fullPath := cmd.CommandPath()
 
-	// Only write details if the subcommand has flags, aliases, or its own subcommands.
+	// Only write details if the subcommand has flags, aliases, its own
+	// subcommands, or a Long description that differs from Short.
 	flags := collectFlags(cmd)
 	subs := collectSubcommands(cmd)
-	hasDetail := len(flags) > 0 || len(cmd.Aliases) > 0 || len(subs) > 0
+	hasLong := cmd.Long != "" && cmd.Long != cmd.Short
+	hasDetail := len(flags) > 0 || len(cmd.Aliases) > 0 || len(subs) > 0 || hasLong
 
 	if !hasDetail {
 		return
