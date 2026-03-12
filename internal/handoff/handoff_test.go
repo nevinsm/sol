@@ -19,6 +19,17 @@ func setupSolHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
+
+	// Write a fake token so startup.Launch can inject credentials.
+	accountsDir := filepath.Join(dir, ".accounts")
+	if err := os.MkdirAll(accountsDir, 0o755); err != nil {
+		t.Fatalf("failed to create .accounts dir: %v", err)
+	}
+	tokenJSON := `{"type":"api_key","token":"test-key","created_at":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(accountsDir, "token.json"), []byte(tokenJSON), 0o600); err != nil {
+		t.Fatalf("failed to write test token: %v", err)
+	}
+
 	return dir
 }
 

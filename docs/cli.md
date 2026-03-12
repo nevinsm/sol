@@ -1658,7 +1658,6 @@ Manage Claude OAuth accounts
 | `sol account add` | Register a new account |
 | `sol account default` | Show or set the default account |
 | `sol account list` | List registered accounts |
-| `sol account login` | Open a Claude session to complete OAuth login |
 | `sol account remove` | Remove a registered account |
 | `sol account set-api-key` | Store an API key for an account |
 | `sol account set-token` | Store an OAuth token for an account |

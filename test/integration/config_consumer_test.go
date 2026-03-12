@@ -16,6 +16,7 @@ func TestCastUsesConfigSourceRepo(t *testing.T) {
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	writeTestToken(t, gtHome)
 
 	// Init world with source repo pointing to a real git repo.
 	sourceRepo := setupGitRepo(t)
@@ -49,6 +50,7 @@ func TestDispatchCapacityEnforced(t *testing.T) {
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	writeTestToken(t, gtHome)
 
 	sourceRepo := setupGitRepo(t)
 	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo="+sourceRepo)
@@ -165,6 +167,7 @@ func TestDispatchCapacityZeroUnlimited(t *testing.T) {
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	writeTestToken(t, gtHome)
 
 	sourceRepo := setupGitRepo(t)
 	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo="+sourceRepo)
@@ -195,6 +198,7 @@ func TestDispatchNamePoolFromConfig(t *testing.T) {
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	writeTestToken(t, gtHome)
 
 	sourceRepo := setupGitRepo(t)
 	out, err := runGT(t, gtHome, "world", "init", "myworld", "--source-repo="+sourceRepo)

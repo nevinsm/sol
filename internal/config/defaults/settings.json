@@ -1,5 +1,4 @@
 {
-  "apiKeyHelper": "bash {{API_KEY_HELPER_PATH}}",
   "statusLine": {
     "type": "command",
     "command": "bash {{STATUSLINE_PATH}}"

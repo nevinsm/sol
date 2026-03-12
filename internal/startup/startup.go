@@ -231,17 +231,25 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 	model := worldCfg.ResolveModel(cfg.Role)
 	sessionCmd := buildCommand(cfg, worktreeDir, prompt, opts.Continue, model)
 
+	// 4.6. Inject credentials from token.json as env vars.
+	tok, err := account.ReadToken(resolvedAccount)
+	if err != nil {
+		return "", fmt.Errorf("startup: no token found for account %q — run: sol account set-token %s (or sol account set-api-key %s): %w", resolvedAccount, resolvedAccount, resolvedAccount, err)
+	}
+
 	// 9. Start tmux session.
 	env := map[string]string{
 		"SOL_HOME":          config.Home(),
 		"SOL_WORLD":         world,
 		"SOL_AGENT":         agent,
 		"CLAUDE_CONFIG_DIR": claudeConfigDir,
-		// Refresh API key every 30 seconds to minimize stale-token window
-		// after broker refreshes OAuth credentials. Claude Code calls
-		// apiKeyHelper (configured in settings.json) at this interval to
-		// pick up rotated tokens from .credentials.json.
-		"CLAUDE_CODE_API_KEY_HELPER_TTL_MS": "30000",
+	}
+
+	switch tok.Type {
+	case "oauth_token":
+		env["CLAUDE_CODE_OAUTH_TOKEN"] = tok.Token
+	case "api_key":
+		env["ANTHROPIC_API_KEY"] = tok.Token
 	}
 
 	// Enable ledger telemetry if configured.

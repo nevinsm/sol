@@ -57,6 +57,16 @@ func initTestWorld(t *testing.T, world string) string {
 		t.Fatal(err)
 	}
 
+	// Write a fake token so startup.Launch can inject credentials.
+	accountsDir := filepath.Join(solHome, ".accounts")
+	if err := os.MkdirAll(accountsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tokenJSON := `{"type":"api_key","token":"test-key","created_at":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(accountsDir, "token.json"), []byte(tokenJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	// Create sphere.db with schema.
 	ss, err := store.OpenSphere()
 	if err != nil {
