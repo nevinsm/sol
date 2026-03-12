@@ -455,6 +455,7 @@ func (s *State) BuildResumeState(reason string) startup.ResumeState {
 		StepDescription: s.StepDescription,
 		ClaimedResource: s.WritID,
 		Reason:          reason,
+		Summary:         s.Summary,
 	}
 	if s.ActiveWritID != "" {
 		rs.NewActiveWrit = s.ActiveWritID
