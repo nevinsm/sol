@@ -292,6 +292,7 @@ type ResumeState struct {
 	StepDescription string // human-readable step title
 	ClaimedResource string // MR ID or work-in-progress identifier
 	Reason          string // why handoff happened: "compact", "manual", "error", "writ-switch"
+	Summary         string // predecessor's handoff summary (what was done, what's next)
 
 	// Writ-switch fields (populated when Reason == "writ-switch").
 	PreviousActiveWrit string // writ ID that was active before the switch
@@ -356,6 +357,10 @@ func BuildResumePrime(base string, state ResumeState) string {
 		fmt.Fprintf(&b, " (reason: %s)", state.Reason)
 	}
 	b.WriteString(".\n")
+
+	if state.Summary != "" {
+		fmt.Fprintf(&b, "Your predecessor's handoff message: %s\n", state.Summary)
+	}
 
 	if state.CurrentStep != "" {
 		if state.StepDescription != "" {

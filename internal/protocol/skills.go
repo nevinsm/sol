@@ -154,8 +154,10 @@ Commands for completing work and managing session continuity.
 |---------|-------------|
 | %[1]s handoff%[4]s | Hand off to a fresh session (preserves context) |
 
+Always pass %[5]s describing what you were doing, what's completed, what's in progress, and what the next step is. This becomes the first thing your successor sees.
+
 Options:
-- %[5]s — provide progress summary for successor
+- %[5]s — **required**: summary for your successor (what you were doing, what's done, what's next)
 - %[6]s — tag reason (compact, manual, health-check)
 `,
 		"`"+sol, flagsForResolve(ctx), flagsForEscalate(ctx), flagsForHandoff(ctx),
@@ -462,18 +464,14 @@ func skillHandoff(ctx SkillContext) string {
 
 Handoff cycles your session to a fresh one when context runs long. Your brief, worktree, and tether all persist — only the conversation context resets.
 
-## Automatic Handoff
-
-The system triggers handoff via PreCompact when context pressure is detected. You don't need to do anything — it just happens. Your brief (.brief/memory.md) is injected into the successor session automatically.
-
 ## Manual Handoff
 
 Invoke handoff manually if context feels heavy and you want a clean start, or before a major phase transition in your work.
 
 Before a manual handoff:
-1. Update your brief (.brief/memory.md) with current state, decisions, and next steps
-2. Commit any work-in-progress
-3. Your brief is the primary context transfer mechanism — make it count
+1. Commit any work-in-progress
+2. Update your brief (.brief/memory.md) with current state, decisions, and next steps
+3. Run %[1]s handoff%[2]s with a %[3]s describing what you were doing, what's completed, what's in progress, and what the next step is — this becomes the first thing your successor sees
 
 ## Commands
 
@@ -482,7 +480,7 @@ Before a manual handoff:
 | %[1]s handoff%[2]s | Hand off to a fresh session |
 
 Options:
-- %[3]s — provide progress summary for successor
+- %[3]s — **required**: summary for your successor (what you were doing, what's done, what's next)
 - %[4]s — tag reason (compact, manual, health-check)
 `, "`"+sol, "`",
 		"`--summary=\"...\"`", "`--reason=compact`")
