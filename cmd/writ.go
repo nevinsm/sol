@@ -322,13 +322,19 @@ cancelled). This is a terminal state — closed writs cannot be reopened.`,
 		sphereStore, err := store.OpenSphere()
 		if err == nil {
 			defer sphereStore.Close()
-			escalations, _ := sphereStore.ListEscalationsBySourceRef("writ:" + args[0])
+			escalations, escErr := sphereStore.ListEscalationsBySourceRef("writ:" + args[0])
+			if escErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: list escalations for writ %s: %v\n", args[0], escErr)
+			}
 			for _, esc := range escalations {
 				_ = sphereStore.ResolveEscalation(esc.ID)
 			}
 			// Resolve escalations for MRs superseded by writ closure.
 			for _, mrID := range superseded {
-				escalations, _ := sphereStore.ListEscalationsBySourceRef("mr:" + mrID)
+				escalations, escErr := sphereStore.ListEscalationsBySourceRef("mr:" + mrID)
+				if escErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: list escalations for mr %s: %v\n", mrID, escErr)
+				}
 				for _, esc := range escalations {
 					_ = sphereStore.ResolveEscalation(esc.ID)
 				}

@@ -321,7 +321,12 @@ func (w *Sentinel) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			// Write final heartbeat with stopping status.
 			w.writeHeartbeat("stopping", w.patrolCount, 0, 0, 0, "")
-			_ = w.sphereStore.UpdateAgentState(w.agentID(), store.AgentIdle, "")
+			if err := w.sphereStore.UpdateAgentState(w.agentID(), store.AgentIdle, ""); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+						map[string]any{"action": "update_agent_state", "error": err.Error()})
+				}
+			}
 			if w.logger != nil {
 				w.logger.Emit(events.EventSessionStop, w.agentID(), w.agentID(), "feed",
 					map[string]any{"world": w.config.World, "component": "sentinel"})
@@ -1254,7 +1259,12 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 	}
 
 	if len(limitedAccounts) == 0 {
-		_ = quota.Save(state)
+		if err := quota.Save(state); err != nil {
+			if w.logger != nil {
+				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+					map[string]any{"action": "quota_save", "error": err.Error()})
+			}
+		}
 		return scanned, 0, 0
 	}
 
@@ -1302,7 +1312,12 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 			}
 		}
 
-		_ = quota.Save(state)
+		if err := quota.Save(state); err != nil {
+			if w.logger != nil {
+				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+					map[string]any{"action": "quota_save", "error": err.Error()})
+			}
+		}
 		return scanned, 0, paused
 	}
 
@@ -1371,7 +1386,12 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 	}
 
 	state.MarkLastUsed(toAccount)
-	_ = quota.Save(state)
+	if err := quota.Save(state); err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+				map[string]any{"action": "quota_save", "error": err.Error()})
+		}
+	}
 
 	return scanned, rotated, 0
 }

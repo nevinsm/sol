@@ -191,7 +191,12 @@ func (d *Consul) Run(ctx context.Context) error {
 			Status:      "stopping",
 			Escalations: openEsc,
 		})
-		_ = d.sphereStore.UpdateAgentState("sphere/consul", store.AgentIdle, "")
+		if err := d.sphereStore.UpdateAgentState("sphere/consul", store.AgentIdle, ""); err != nil {
+			if d.logger != nil {
+				d.logger.Emit("consul_error", "sphere/consul", "sphere/consul", "audit",
+					map[string]any{"action": "update_agent_state", "error": err.Error()})
+			}
+		}
 	}
 
 	// Patrol immediately.

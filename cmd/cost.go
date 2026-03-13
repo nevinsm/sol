@@ -186,12 +186,20 @@ func runCostSphere(pricing config.PricingConfig, since *time.Time) error {
 		if since != nil {
 			summaries, err = worldStore.TokensSince(*since)
 			if err == nil {
-				agents, writs, _ = worldStore.WorldTokenMetaSince(*since)
+				var metaErr error
+				agents, writs, metaErr = worldStore.WorldTokenMetaSince(*since)
+				if metaErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: world token meta since: %v\n", metaErr)
+				}
 			}
 		} else {
 			summaries, err = worldStore.TokensForWorld()
 			if err == nil {
-				agents, writs, _ = worldStore.WorldTokenMeta()
+				var metaErr error
+				agents, writs, metaErr = worldStore.WorldTokenMeta()
+				if metaErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: world token meta: %v\n", metaErr)
+				}
 			}
 		}
 		worldStore.Close()
