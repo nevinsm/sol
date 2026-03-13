@@ -37,10 +37,6 @@ func WorldSummaryPath(world string) string {
 
 // --- Interfaces ---
 
-// StopStore abstracts sphere store operations for Stop.
-type StopStore interface {
-	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
-}
 
 // StopManager abstracts session operations for Stop.
 type StopManager interface {
@@ -52,7 +48,7 @@ type StopManager interface {
 // Stop terminates a governor session. Injects a brief-update prompt and waits
 // for output stability before killing the session. Does NOT remove the
 // governor directory, mirror, or brief.
-func Stop(world string, sphereStore StopStore, mgr StopManager) error {
+func Stop(world string, sphereStore store.AgentWriter, mgr StopManager) error {
 	sessName := config.SessionName(world, "governor")
 	agentID := world + "/governor"
 

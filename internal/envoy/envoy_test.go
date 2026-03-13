@@ -45,9 +45,37 @@ func (m *mockSphereStore) DeleteAgent(id string) error {
 	return nil
 }
 
+func (m *mockSphereStore) UpdateAgentState(id string, state store.AgentState, activeWrit string) error {
+	return nil // not exercised in Create tests
+}
+
+func (m *mockSphereStore) EnsureAgent(name, world, role string) error {
+	return nil // not exercised in Create tests
+}
+
+func (m *mockSphereStore) DeleteAgentsForWorld(world string) error {
+	return nil // not exercised in Create tests
+}
+
 type mockStopStore struct {
 	updated   map[string]store.AgentState // id -> state
 	updateErr error
+}
+
+func (m *mockStopStore) CreateAgent(name, world, role string) (string, error) {
+	return "", nil // not exercised in Stop tests
+}
+
+func (m *mockStopStore) EnsureAgent(name, world, role string) error {
+	return nil // not exercised in Stop tests
+}
+
+func (m *mockStopStore) DeleteAgent(id string) error {
+	return nil // not exercised in Stop tests
+}
+
+func (m *mockStopStore) DeleteAgentsForWorld(world string) error {
+	return nil // not exercised in Stop tests
 }
 
 func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, activeWrit string) error {
@@ -82,6 +110,14 @@ func (m *mockStopManager) Capture(name string, lines int) (string, error) {
 type mockListStore struct {
 	agents  []store.Agent
 	listErr error
+}
+
+func (m *mockListStore) GetAgent(id string) (*store.Agent, error) {
+	return nil, nil // not exercised in List tests
+}
+
+func (m *mockListStore) FindIdleAgent(world string) (*store.Agent, error) {
+	return nil, nil // not exercised in List tests
 }
 
 func (m *mockListStore) ListAgents(world string, state store.AgentState) ([]store.Agent, error) {
