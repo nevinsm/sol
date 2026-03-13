@@ -822,7 +822,7 @@ With --force, also stops all outpost agent sessions immediately:
 			}
 
 			// Set agent to idle, clear active_writ.
-			if err := sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
+			if err := sphereStore.UpdateAgentState(agent.ID, store.AgentIdle, ""); err != nil {
 				fmt.Fprintf(os.Stderr, "  warning: failed to set agent %s to idle: %v\n", agent.Name, err)
 			}
 

@@ -203,7 +203,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		if existing != nil {
 			activeWrit = existing.ActiveWrit
 		}
-		if err := sphereStore.UpdateAgentState(agentID, "working", activeWrit); err != nil {
+		if err := sphereStore.UpdateAgentState(agentID, store.AgentWorking, activeWrit); err != nil {
 			return "", fmt.Errorf("startup: failed to set agent working: %w", err)
 		}
 	}

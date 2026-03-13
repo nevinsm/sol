@@ -204,7 +204,7 @@ conflicting state.`,
 		}
 
 		// Reset agent state to idle.
-		if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+		if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
 			return fmt.Errorf("failed to reset agent state: %w", err)
 		}
 		fmt.Printf("Reset agent %s (state → idle, active_writ cleared)\n", agentID)

@@ -336,7 +336,7 @@ func (r *Forge) MarkFailed(mrID string) error {
 	// Parse agent name from branch convention: outpost/{agentName}/{writID}.
 	if parts := strings.SplitN(mr.Branch, "/", 3); len(parts) >= 2 && parts[0] == "outpost" {
 		agentID := r.world + "/" + parts[1]
-		if err := r.sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+		if err := r.sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
 			r.logger.Error("failed to reset agent state to idle",
 				"agent", agentID, "mr", mrID, "error", err)
 		}

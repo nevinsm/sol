@@ -28,43 +28,28 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // ErrNotFound is returned by Read when the heartbeat file does not exist.
 var ErrNotFound = errors.New("heartbeat file not found")
 
 // Write marshals v as indented JSON and atomically writes it to path via
-// a temp-file rename. The destination directory must already exist.
+// a temp-file rename with fsync. The destination directory must already exist.
 func Write(path string, v any) error {
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal heartbeat: %w", err)
-	}
-	return atomicWrite(path, data)
+	return fileutil.AtomicWriteJSON(path, v, 0o644)
 }
 
 // WriteCompact marshals v as compact JSON and atomically writes it to path
-// via a temp-file rename. Use this for machine-read-only heartbeat files
-// where human readability is not required.
+// via a temp-file rename with fsync. Use this for machine-read-only heartbeat
+// files where human readability is not required.
 func WriteCompact(path string, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("failed to marshal heartbeat: %w", err)
 	}
-	return atomicWrite(path, data)
-}
-
-// atomicWrite writes data to path atomically using a temp-file rename.
-func atomicWrite(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write heartbeat temp file: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to rename heartbeat file: %w", err)
-	}
-	return nil
+	return fileutil.AtomicWrite(path, data, 0o644)
 }
 
 // Read reads the heartbeat file at path and unmarshals it into v.

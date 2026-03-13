@@ -65,7 +65,7 @@ func Stop(world string, sphereStore StopStore, mgr StopManager) error {
 	}
 
 	// 2. Update agent state to "idle".
-	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+	if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
 		return fmt.Errorf("failed to stop governor for world %q: %w", world, err)
 	}
 
