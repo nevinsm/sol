@@ -18,7 +18,7 @@ type RuntimeAdapter interface {
 	// InjectSystemPrompt injects the system prompt for this session.
 	// replace=true replaces the agent's entire operating context (outpost, forge).
 	// replace=false appends to the base persona (envoy, governor, chancellor).
-	InjectSystemPrompt(worktree string, content string, replace bool) error
+	InjectSystemPrompt(worktree string, content string) error
 
 	// InstallHooks writes runtime-agnostic hook descriptions into whatever
 	// format the runtime requires (e.g., Claude's settings.local.json).
