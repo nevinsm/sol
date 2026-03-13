@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,30 +45,25 @@ const (
 type SessionManager = session.SessionManager
 
 // WorldStore defines the world store operations used by dispatch.
+// It composes canonical interfaces from the store package.
 type WorldStore interface {
-	GetWrit(id string) (*store.Writ, error)
-	UpdateWrit(id string, updates store.WritUpdates) error
-	CreateMergeRequest(writID, branch string, priority int) (string, error)
-	ListMergeRequestsByWrit(writID string, phase store.MRPhase) ([]store.MergeRequest, error)
-	UpdateMergeRequestPhase(id string, phase store.MRPhase) error
-	CreateWritWithOpts(opts store.CreateWritOpts) (string, error)
-	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
-	UnblockMergeRequest(mrID string) error
-	ResetMergeRequestForRetry(mrID string) error
-	CloseWrit(id string, closeReason ...string) ([]string, error)
-	ListChildWrits(parentID string) ([]store.Writ, error)
-	ListAgentMemories(agentName string) ([]store.AgentMemory, error)
-	WriteHistory(agentName, writID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error)
-	EndHistory(writID string) (string, error)
-	GetDependencies(itemID string) ([]string, error)
-	Close() error
+	store.WritReader
+	store.WritWriter
+	store.MRReader
+	store.MRWriter
+	store.DepReader
+	store.HistoryStore
+	store.AgentMemoryStore
+	io.Closer
 }
 
 // SphereStore defines the sphere store operations used by dispatch.
+// It composes canonical interfaces from the store package.
 type SphereStore interface {
 	store.AgentReader
 	store.AgentWriter
 	store.EscalationStore
+	io.Closer
 }
 
 // WorktreePath returns the worktree directory for an agent.

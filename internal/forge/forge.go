@@ -2,6 +2,7 @@ package forge
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -13,33 +14,23 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
-// WorldStore abstracts world store operations for testing.
+// WorldStore defines the world store operations used by forge.
+// It composes canonical interfaces from the store package.
 type WorldStore interface {
-	GetMergeRequest(id string) (*store.MergeRequest, error)
-	ClaimMergeRequest(claimerID string) (*store.MergeRequest, error)
-	UpdateMergeRequestPhase(id string, phase store.MRPhase) error
-	ReleaseStaleClaims(ttl time.Duration) (int, error)
-	GetWrit(id string) (*store.Writ, error)
-	UpdateWrit(id string, updates store.WritUpdates) error
-	ListMergeRequests(phase store.MRPhase) ([]store.MergeRequest, error)
-	ListMergeRequestsByWrit(writID string, phase store.MRPhase) ([]store.MergeRequest, error)
-	BlockMergeRequest(mrID, blockerID string) error
-	UnblockMergeRequest(mrID string) error
-	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
-	CreateWritWithOpts(opts store.CreateWritOpts) (string, error)
-	CloseWrit(id string, closeReason ...string) ([]string, error)
-	Close() error
+	store.WritReader
+	store.WritWriter
+	store.MRReader
+	store.MRWriter
+	io.Closer
 }
 
-// SphereStore abstracts sphere store operations for testing.
+// SphereStore defines the sphere store operations used by forge.
+// It composes canonical interfaces from the store package.
 type SphereStore interface {
-	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
-	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
-	ResolveEscalation(id string) error
-	UpdateEscalationLastNotified(id string) error
-	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
-	IsWritBlockedByCaravanDeps(writID string) (bool, []string, error)
-	Close() error
+	store.EscalationStore
+	store.AgentWriter
+	store.CaravanDepReader
+	io.Closer
 }
 
 // Config holds forge configuration.

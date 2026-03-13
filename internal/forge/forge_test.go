@@ -225,6 +225,27 @@ func (m *mockWorldStore) CloseWrit(id string, closeReason ...string) ([]string, 
 	return nil, nil
 }
 
+// Stub methods to satisfy the wider store.WritReader / store.WritWriter /
+// store.MRReader / store.MRWriter canonical interfaces embedded in forge.WorldStore.
+func (m *mockWorldStore) CreateWrit(title, description, createdBy string, priority int, labels []string) (string, error) {
+	return "", nil
+}
+func (m *mockWorldStore) ListWrits(filters store.ListFilters) ([]store.Writ, error) { return nil, nil }
+func (m *mockWorldStore) ListChildWrits(parentID string) ([]store.Writ, error)      { return nil, nil }
+func (m *mockWorldStore) ReadyWrits() ([]store.Writ, error)                         { return nil, nil }
+func (m *mockWorldStore) GetWritMetadata(id string) (map[string]any, error)         { return nil, nil }
+func (m *mockWorldStore) SetWritMetadata(id string, metadata map[string]any) error  { return nil }
+func (m *mockWorldStore) AddLabel(itemID, label string) error                       { return nil }
+func (m *mockWorldStore) RemoveLabel(itemID, label string) error                    { return nil }
+func (m *mockWorldStore) ListBlockedMergeRequests() ([]store.MergeRequest, error)   { return nil, nil }
+func (m *mockWorldStore) CreateMergeRequest(writID, branch string, priority int) (string, error) {
+	return "", nil
+}
+func (m *mockWorldStore) ResetMergeRequestForRetry(mrID string) error { return nil }
+func (m *mockWorldStore) SupersedeFailedMRsForWrit(writID string) ([]string, error) {
+	return nil, nil
+}
+
 func (m *mockWorldStore) Close() error { return nil }
 
 type mockEscalation struct {
@@ -323,6 +344,34 @@ func (m *mockSphereStore) IsWritBlockedByCaravanDeps(writID string) (bool, []str
 		}
 	}
 	return false, nil, nil
+}
+
+// Stub methods to satisfy the wider store.EscalationStore / store.AgentWriter /
+// store.CaravanDepReader canonical interfaces embedded in forge.SphereStore.
+func (m *mockSphereStore) GetEscalation(id string) (*store.Escalation, error) { return nil, nil }
+func (m *mockSphereStore) ListEscalations(status string) ([]store.Escalation, error) {
+	return nil, nil
+}
+func (m *mockSphereStore) ListOpenEscalations() ([]store.Escalation, error)  { return nil, nil }
+func (m *mockSphereStore) AckEscalation(id string) error                     { return nil }
+func (m *mockSphereStore) CountOpen() (int, error)                            { return 0, nil }
+func (m *mockSphereStore) CreateAgent(name, world, role string) (string, error) {
+	return "", nil
+}
+func (m *mockSphereStore) EnsureAgent(name, world, role string) error           { return nil }
+func (m *mockSphereStore) DeleteAgent(id string) error                          { return nil }
+func (m *mockSphereStore) DeleteAgentsForWorld(world string) error               { return nil }
+func (m *mockSphereStore) GetCaravanDependencies(caravanID string) ([]string, error) {
+	return nil, nil
+}
+func (m *mockSphereStore) GetCaravanDependents(caravanID string) ([]string, error) {
+	return nil, nil
+}
+func (m *mockSphereStore) AreCaravanDependenciesSatisfied(caravanID string) (bool, error) {
+	return true, nil
+}
+func (m *mockSphereStore) UnsatisfiedCaravanDependencies(caravanID string) ([]string, error) {
+	return nil, nil
 }
 
 func (m *mockSphereStore) Close() error { return nil }
