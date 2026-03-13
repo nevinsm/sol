@@ -228,7 +228,16 @@ func skillMemories(ctx SkillContext) string {
 	sol := ctx.sol()
 	return fmt.Sprintf(`# Agent Memories
 
-Persist insights across sessions so successors inherit your knowledge.
+Memories are key-value pairs persisted in the sphere store and injected
+automatically during prime — every successor session sees them. Use memories
+for durable facts that remain true across many sessions: learned patterns,
+recurring gotchas, important constraints. For current work state (what you're
+doing right now, what's next), use your brief instead — the brief is for
+context, memories are for knowledge.
+
+Keep memories focused. Successor agents have limited context windows; a
+hundred vague memories are worse than ten sharp ones. Retire stale memories
+with %[3]s forget%[2]s when they're no longer useful.
 
 ## Commands
 
@@ -239,8 +248,16 @@ Persist insights across sessions so successors inherit your knowledge.
 | %[1]s memories%[2]s | Review stored memories |
 | %[1]s forget "key"%[2]s | Remove outdated memory |
 
-Memories are injected during prime — successor sessions see them automatically.
-`, "`"+sol, "`")
+## Patterns
+
+**Saving a discovery:** After finding a non-obvious fact (a quirky build step,
+a brittle integration point), save it immediately:
+%[1]s remember "key" "insight"%[2]s
+
+**Pruning stale memories:** When a memory is no longer accurate, remove it
+before it misleads your successor:
+%[1]s memories%[2]s → review → %[1]s forget "old-key"%[2]s
+`, "`"+sol, "`", "`"+sol)
 }
 
 func skillWritDispatch(ctx SkillContext) string {
@@ -496,23 +513,28 @@ func skillMail(ctx SkillContext) string {
 	sol := ctx.sol()
 	return fmt.Sprintf(`# Mail
 
-Commands for sending and reading operator mail.
+Mail is the channel for informational and conversational communication with
+the operator. Use mail when you have something to report, a question to ask,
+or a status update to share. Use %[1]s escalate%[2]s instead when you are
+blocked and need the operator's help to continue — escalation is for urgent
+needs, mail is for everything else.
+
+For outbound messages, choose priority intentionally: 1 = urgent (operator
+notified immediately), 2 = normal (default), 3 = low (batch-friendly, no
+interruption).
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| %[1]s mail inbox%[2]s | List pending messages |
-| %[1]s mail read <message-id>%[2]s | Read a message (marks as read) |
-| %[1]s mail ack <message-id>%[2]s | Acknowledge a message |
-| %[1]s mail check%[2]s | Count unread messages |
-| %[1]s mail send --to=<identity> --subject="..." --body="..."%[2]s | Send a message |
+| %[3]s mail inbox%[2]s | List pending messages |
+| %[3]s mail read <message-id>%[2]s | Read a message (marks as read) |
+| %[3]s mail ack <message-id>%[2]s | Acknowledge a message |
+| %[3]s mail check%[2]s | Count unread messages |
+| %[3]s mail send --to=<identity> --subject="..." --body="..."%[2]s | Send a message |
 
-Options for send: %[3]s (1=high, 2=normal, 3=low), %[4]s.
-
-Mail is delivered as a MAIL notification via the nudge system.
-Use %[1]s mail inbox%[2]s to see full message history.
-`, "`"+sol, "`",
+Options for send: %[4]s (1=urgent, 2=normal, 3=low), %[5]s.
+`, "`"+sol+" escalate", "`", "`"+sol,
 		"`--priority`",
 		"`--no-notify`")
 }
@@ -608,27 +630,53 @@ func skillHandoff(ctx SkillContext) string {
 	sol := ctx.sol()
 	return fmt.Sprintf(`# Handoff
 
-Handoff cycles your session to a fresh one when context runs long. Your brief, worktree, and tether all persist — only the conversation context resets.
+Handoff cycles your session to a fresh one, resetting the conversation context
+while preserving your brief, worktree, and tether. Use it when context feels
+heavy (responses slow, compression artifacts appearing), at a major phase
+transition in your work, or after a long run where early context has been
+compressed beyond usefulness.
 
-## Manual Handoff
+## When to Handoff
 
-Invoke handoff manually if context feels heavy and you want a clean start, or before a major phase transition in your work.
+- Context feels heavy — compression artifacts or noticeably slow responses
+- You've completed a major phase and are starting a new one
+- You've been running long enough that earliest context is compressed
 
-Before a manual handoff:
-1. Commit any work-in-progress
-2. Update your brief (.brief/memory.md) with current state, decisions, and next steps
-3. Run %[1]s handoff%[2]s with a %[3]s describing what you were doing, what's completed, what's in progress, and what the next step is — this becomes the first thing your successor sees
+Do not handoff mid-task without committing first. Your successor inherits only
+what's in git and your brief.
+
+## Procedure
+
+**Update brief BEFORE running handoff.** If your session crashes during the
+handoff procedure, your brief is all your successor gets. Do not rely on the
+summary alone.
+
+1. Commit any work-in-progress with a meaningful message
+2. Update %[1]s.brief/memory.md%[2]s: current state, decisions made, what's
+   done, what's in progress, and the exact next step
+3. Run %[3]s handoff%[2]s with a clear %[4]s
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| %[1]s handoff%[2]s | Hand off to a fresh session |
+| %[3]s handoff%[2]s | Hand off to a fresh session |
 
 Options:
-- %[3]s — **required**: summary for your successor (what you were doing, what's done, what's next)
-- %[4]s — tag reason (compact, manual, health-check)
-`, "`"+sol, "`",
+- %[4]s — **required**: summary for your successor (what you were doing, what's done, what's next)
+- %[5]s — tag reason (compact, manual, health-check)
+
+## Failure Modes
+
+**Summary too vague** — Successor starts confused. Be specific: name the file
+you were editing, the exact command you ran last, the decision you made.
+
+**Brief not updated before handoff** — Session crashes mid-handoff. Successor
+gets stale brief. Always update brief first, then hand off.
+
+**Handoff with unstaged changes** — Successor inherits a dirty worktree with
+no context. Commit everything (even as WIP) before handing off.
+`, "`", "`", "`"+sol,
 		"`--summary=\"...\"`", "`--reason=compact`")
 }
 
@@ -637,7 +685,19 @@ func skillStatusMonitoring(ctx SkillContext) string {
 	world := ctx.World
 	return fmt.Sprintf(`# Status Monitoring
 
-Commands for checking world and agent state.
+Status commands give you a live picture of what's happening across the sphere.
+Check status proactively — before dispatching work (to confirm agents are
+available and forge is healthy), after receiving a notification (to see the
+full picture), or when something feels stuck (a writ that should be done
+but isn't).
+
+## When to Check
+
+- **Before dispatching:** Confirm agents are available and forge is healthy
+- **After MERGED/MERGE_FAILED notification:** See what's now unblocked or needs attention
+- **When something feels stuck:** Check writ status, forge queue, agent health
+
+Status indicators: %[4]s✓%[5]s = healthy/running, %[4]s○%[5]s = not running, %[4]s?%[5]s = unknown
 
 ## Commands
 
@@ -661,7 +721,15 @@ Commands for checking world and agent state.
 | %[1]s sentinel status --world=%[2]s%[3]s | Sentinel health for this world |
 | %[1]s governor status --world=%[2]s%[3]s | Governor status for this world |
 | %[1]s forge status %[2]s%[3]s | Forge status for this world |
-`, "`"+sol, world, "`")
+
+## Common Patterns
+
+**Before dispatching work:**
+%[1]s status%[3]s → confirm agents available and forge healthy → dispatch
+
+**Investigating a stuck writ:**
+%[1]s writ status <id> --world=%[2]s%[3]s → %[1]s forge queue --world=%[2]s%[3]s → %[1]s sentinel status --world=%[2]s%[3]s
+`, "`"+sol, world, "`", "`", "`")
 }
 
 func skillWorldOperations(ctx SkillContext) string {
@@ -669,7 +737,20 @@ func skillWorldOperations(ctx SkillContext) string {
 	world := ctx.World
 	return fmt.Sprintf(`# World Operations
 
-Commands for world-level operations.
+World operations let you sync the managed repo, inspect world health, and
+query the governor. As an envoy, you'll mainly use world sync and governor
+queries. Service lifecycle commands (install, uninstall, down) are usually
+operator territory — use them only if the operator has asked or you're doing
+explicit infrastructure work.
+
+## When to Use
+
+- **World sync:** Before starting work that depends on latest main, or when
+  merge conflicts appear from an outdated base
+- **World summary:** When you need a current-state snapshot — reads a file,
+  doesn't wake the governor
+- **World query:** When you need live governor context not captured in the
+  summary — wakes the session if idle, so prefer summary when possible
 
 ## Commands
 
@@ -677,8 +758,8 @@ Commands for world-level operations.
 |---------|-------------|
 | %[1]s world sync --world=%[2]s%[3]s | Sync managed repo from upstream |
 | %[1]s world status %[2]s%[3]s | World health overview |
-| %[1]s world query %[2]s "question"%[3]s | Query the governor |
-| %[1]s world summary %[2]s%[3]s | Read governor's world summary |
+| %[1]s world summary %[2]s%[3]s | Read governor's world summary (cheap) |
+| %[1]s world query %[2]s "question"%[3]s | Query the governor directly (wakes session) |
 
 ## Service Lifecycle
 
@@ -688,6 +769,23 @@ Commands for world-level operations.
 | %[1]s service install%[3]s | Install systemd units |
 | %[1]s service uninstall%[3]s | Remove systemd units |
 | %[1]s down --all%[3]s | Stop all world services |
+
+## Common Patterns
+
+**Syncing before starting work:**
+%[1]s world sync --world=%[2]s%[3]s → pull latest in your worktree
+
+**Checking world state before dispatching:**
+%[1]s world summary %[2]s%[3]s → read snapshot → run %[1]s world query%[3]s only if you need live detail
+
+## Failure Modes
+
+**Sync fails with conflict:** The managed repo has diverged. Check
+%[1]s world status %[2]s%[3]s and escalate if operator intervention is needed.
+
+**Governor not responding:** %[1]s world query%[3]s hangs or errors. Check
+%[1]s governor status --world=%[2]s%[3]s. The summary may still be readable
+even when the governor is idle — try that first.
 `, "`"+sol, world, "`")
 }
 
@@ -695,26 +793,86 @@ func skillWorldQueries(ctx SkillContext) string {
 	sol := ctx.sol()
 	return fmt.Sprintf(`# World Queries
 
-Commands for cross-world intelligence gathering.
+World queries let you gather intelligence across worlds before planning or
+advising the autarch. The key discipline is cost awareness: you have three
+tiers of context ranging from free to expensive, and good planning uses
+them in order.
+
+**Three tiers (cheapest to most expensive):**
+1. **Brief** (%[1]s$SOL_HOME/chancellor/.brief/memory.md%[2]s) — your own
+   accumulated knowledge. Free to read. Always check first.
+2. **World summaries** (%[3]s world summary <world>%[2]s) — governor-maintained
+   snapshots. Cheap — reads a file, doesn't wake anyone.
+3. **Live queries** (%[3]s world query <world> "question"%[2]s) — asks the
+   governor directly. Expensive — wakes the governor session if idle.
+
+A planning session that wakes 5 governors to ask questions already answered
+in their summaries is wasteful. Prefer summaries. Use live queries only for
+specific unknowns not covered by tier 1 or 2.
+
+## When to Use
+
+- Check your brief first for everything you already know about a world
+- Read world summaries for current-state snapshots before any planning work
+- Run live queries only when summaries don't answer your specific question
+- Batch live queries — if you need multiple things from one governor, ask once
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| %[1]s world summary <world>%[2]s | Read a governor's world summary |
-| %[1]s world query <world> "question"%[2]s | Query a governor |
-| %[1]s world list%[2]s | List all worlds |
-| %[1]s world export <world>%[2]s | Export world state |
+| %[3]s world list%[2]s | List all worlds |
+| %[3]s world summary <world>%[2]s | Read governor's world summary (cheap) |
+| %[3]s world query <world> "question"%[2]s | Query a governor directly (wakes session) |
+| %[3]s world export <world>%[2]s | Export full world state |
 
-Use these to gather context from multiple worlds before planning.
-`, "`"+sol, "`")
+## Common Patterns
+
+**Gathering context before a planning session:**
+Read brief → %[3]s world list%[2]s → %[3]s world summary <world>%[2]s for each
+relevant world → identify gaps → %[3]s world query%[2]s only for specific unknowns
+
+**Batching a live query:**
+Combine questions: %[3]s world query <world> "What agents are available, what
+writs are in progress, and are there any blockers?"%[2]s
+
+## Failure Modes
+
+**Governor not running:** %[3]s world query%[2]s fails or times out. Check
+%[3]s world status <world>%[2]s. The summary may still be readable even if
+the governor is idle — try that first.
+
+**Stale summary:** Summary hasn't been updated recently. If the timestamp looks
+old and you need current state, fall back to a live query. Note it in your
+brief so future sessions know.
+`, "`", "`", "`"+sol)
 }
 
 func skillWritPlanning(ctx SkillContext) string {
 	sol := ctx.sol()
 	return fmt.Sprintf(`# Writ Planning
 
-Commands for creating writs and caravans across worlds.
+Writ planning translates an autarch's initiative into a structured set of
+writs and caravans ready for dispatch. The planning session itself is cheap —
+gather context from briefs and summaries, design the work breakdown, present
+for approval. Only dispatch after the autarch confirms the plan.
+
+## Planning Workflow
+
+1. **Gather context (tiers 1+2):** Read your brief, then read world summaries
+   for each relevant world. This costs nothing and covers most questions.
+2. **Identify gaps (tier 3):** Use live queries only for specific unknowns not
+   answered by summaries. Batch your questions per governor.
+3. **Decompose:** Break the initiative into writs. Identify dependencies, group
+   related work into caravans, assign to appropriate worlds.
+4. **Present for approval:** Show the autarch the plan before dispatching.
+   Dispatch only after explicit approval.
+
+## When to Use
+
+- When the autarch describes a multi-writ or multi-world initiative
+- When work needs phase sequencing (phase-gated caravans)
+- When scope is large enough that speculative dispatch would be risky
 
 ## Creating Writs
 
@@ -724,7 +882,7 @@ Commands for creating writs and caravans across worlds.
 
 Options: %[3]s, %[4]s, %[5]s, %[6]s (JSON).
 
-## Caravans
+## Managing Caravans
 
 | Command | Description |
 |---------|-------------|
@@ -732,6 +890,31 @@ Options: %[3]s, %[4]s, %[5]s, %[6]s (JSON).
 | %[1]s caravan commission <id>%[2]s | Mark caravan as commissioned |
 | %[1]s caravan launch <id> --world=<world>%[2]s | Dispatch all ready items |
 | %[1]s caravan status [<caravan-id>]%[2]s | Check caravan progress |
+| %[1]s caravan dep add <caravan-id> <dep-id>%[2]s | Add inter-caravan dependency |
+
+## Common Patterns
+
+**Planning a phased initiative:**
+Brief → summaries → identify worlds and phases → create writs → group into
+caravans with phase gates → present to autarch → dispatch on approval
+
+**Simple multi-world task:**
+Summaries for each world → create one writ per world → single caravan →
+commission → present → launch
+
+## Failure Modes
+
+**Dispatching without approval** — Never dispatch speculatively. Present the
+plan, wait for autarch confirmation. If unavailable, save the plan to your
+brief and wait.
+
+**Over-querying governors** — If you're waking governors to answer questions
+their summaries already cover, stop. Re-read the summaries. Prefer stale
+summary data over expensive live queries for planning purposes.
+
+**Writ descriptions too thin** — Outpost agents execute from the description
+alone. A vague description produces vague work. Invest time in clear,
+complete writ descriptions before dispatch.
 `, "`"+sol, "`",
 		"`--priority` (1=high, 2=normal, 3=low)",
 		"`--label` (repeatable)",
