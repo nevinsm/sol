@@ -260,10 +260,14 @@ func TestGovernorSkillContentHasNotifications(t *testing.T) {
 	}
 	content := string(data)
 
-	for _, notifType := range []string{"MAIL", "AGENT_DONE", "MERGED", "MERGE_FAILED", "RECOVERY_NEEDED"} {
+	for _, notifType := range []string{"MAIL", "AGENT_DONE", "MERGED", "MERGE_FAILED"} {
 		if !contains(content, notifType) {
 			t.Errorf("notification-handling skill should contain %q", notifType)
 		}
+	}
+	// RECOVERY_NEEDED goes to autarch, not governor — must not appear in governor skill.
+	if contains(content, "RECOVERY_NEEDED") {
+		t.Error("governor notification-handling skill should not contain RECOVERY_NEEDED")
 	}
 }
 
