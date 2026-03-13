@@ -245,37 +245,6 @@ type SessionChecker interface {
 	Exists(name string) bool
 }
 
-// WorldStore abstracts writ lookups for testing.
-type WorldStore interface {
-	GetWrit(id string) (*store.Writ, error)
-}
-
-// SphereStore abstracts agent queries for testing.
-type SphereStore interface {
-	ListAgents(world string, state store.AgentState) ([]store.Agent, error)
-}
-
-// MergeQueueStore abstracts merge request queries for testing.
-type MergeQueueStore interface {
-	ListMergeRequests(phase store.MRPhase) ([]store.MergeRequest, error)
-}
-
-// CaravanStore abstracts caravan queries for status gathering.
-type CaravanStore interface {
-	ListCaravans(status store.CaravanStatus) ([]store.Caravan, error)
-	CheckCaravanReadiness(caravanID string, worldOpener func(world string) (*store.Store, error)) ([]store.CaravanItemStatus, error)
-	ListCaravanItems(caravanID string) ([]store.CaravanItem, error)
-}
-
-// WorldLister abstracts world listing for sphere status.
-type WorldLister interface {
-	ListWorlds() ([]store.World, error)
-}
-
-// EscalationLister abstracts escalation queries for sphere status.
-type EscalationLister interface {
-	ListOpenEscalations() ([]store.Escalation, error)
-}
 
 // ChancellorInfo holds chancellor process state (sphere-level).
 type ChancellorInfo struct {
@@ -345,8 +314,8 @@ type WorldSummary struct {
 }
 
 // Gather collects runtime state for a world.
-func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
-	mqStore MergeQueueStore, checker SessionChecker) (*WorldStatus, error) {
+func Gather(world string, sphereStore store.AgentReader, worldStore store.WritReader,
+	mqStore store.MergeRequestReader, checker SessionChecker) (*WorldStatus, error) {
 	result := &WorldStatus{World: world}
 
 	// 1. Check prefect (sphere-level).
@@ -567,8 +536,8 @@ func briefAge(path string) string {
 // GatherCaravans adds caravan information to a WorldStatus.
 // This is separate from Gather because it requires the CaravanStore interface
 // which not all callers may have available.
-func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener func(string) (*store.Store, error)) {
-	allCaravans, err := caravanStore.ListCaravans(store.CaravanStatus(""))
+func GatherCaravans(result *WorldStatus, caravanStore store.CaravanReader, worldOpener func(string) (*store.Store, error)) {
+	allCaravans, err := caravanStore.ListCaravans("")
 	if err != nil {
 		return // non-fatal: degrade gracefully
 	}

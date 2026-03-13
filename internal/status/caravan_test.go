@@ -1,6 +1,7 @@
 package status
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -34,6 +35,14 @@ func (m *mockCaravanStore) ListCaravanItems(caravanID string) ([]store.CaravanIt
 
 func (m *mockCaravanStore) CheckCaravanReadiness(caravanID string, _ func(string) (*store.Store, error)) ([]store.CaravanItemStatus, error) {
 	return m.statuses[caravanID], nil
+}
+
+func (m *mockCaravanStore) GetCaravan(id string) (*store.Caravan, error) {
+	return nil, fmt.Errorf("mockCaravanStore.GetCaravan not implemented")
+}
+
+func (m *mockCaravanStore) GetCaravanItemsForWrit(writID string) ([]store.CaravanItem, error) {
+	return nil, fmt.Errorf("mockCaravanStore.GetCaravanItemsForWrit not implemented")
 }
 
 // --- Tests for Bug 1: GatherCaravans done/closed split ---
