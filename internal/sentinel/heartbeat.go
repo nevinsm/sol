@@ -74,29 +74,18 @@ func (hb *Heartbeat) IsStale(maxAge time.Duration) bool {
 
 // WritePID writes the sentinel PID to the PID file.
 func WritePID(world string, pid int) error {
-	path := PIDPath(world)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("failed to create PID directory: %w", err)
-	}
-	return os.WriteFile(path, []byte(fmt.Sprintf("%d", pid)), 0o644)
+	return processutil.WritePID(PIDPath(world), pid)
 }
 
 // ReadPID reads the sentinel PID from its PID file. Returns 0 if not found.
 func ReadPID(world string) int {
-	data, err := os.ReadFile(PIDPath(world))
-	if err != nil {
-		return 0
-	}
-	var pid int
-	if _, err := fmt.Sscanf(string(data), "%d", &pid); err != nil {
-		return 0
-	}
+	pid, _ := processutil.ReadPID(PIDPath(world))
 	return pid
 }
 
 // ClearPID removes the sentinel PID file.
 func ClearPID(world string) {
-	os.Remove(PIDPath(world))
+	_ = processutil.ClearPID(PIDPath(world))
 }
 
 // ClearHeartbeat removes the sentinel heartbeat file.

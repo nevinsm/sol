@@ -449,20 +449,8 @@ func (s *Prefect) checkConsul() error {
 	// Stop existing process if running (might be hung).
 	pid := ReadDaemonPID("consul")
 	if pid > 0 && IsRunning(pid) {
-		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-			s.logger.Error("failed to SIGTERM stale consul process", "pid", pid, "error", err)
-		} else {
-			// Wait briefly for graceful shutdown.
-			for i := 0; i < 10; i++ {
-				time.Sleep(500 * time.Millisecond)
-				if !IsRunning(pid) {
-					break
-				}
-			}
-			// Force kill if still alive.
-			if IsRunning(pid) {
-				_ = syscall.Kill(pid, syscall.SIGKILL)
-			}
+		if err := processutil.GracefulKill(pid, 5*time.Second); err != nil {
+			s.logger.Error("failed to stop stale consul process", "pid", pid, "error", err)
 		}
 	}
 
@@ -652,13 +640,8 @@ func (s *Prefect) checkSentinelHealth(world string) {
 		"max_age", s.cfg.SentinelHeartbeatMax)
 
 	// Kill existing process.
-	if proc, err := os.FindProcess(pid); err == nil {
-		_ = proc.Signal(syscall.SIGTERM)
-		// Wait briefly for graceful exit.
-		time.Sleep(500 * time.Millisecond)
-		if IsRunning(pid) {
-			_ = proc.Signal(syscall.SIGKILL)
-		}
+	if err := processutil.GracefulKill(pid, 500*time.Millisecond); err != nil {
+		s.logger.Error("failed to stop stale sentinel process", "world", world, "pid", pid, "error", err)
 	}
 	sentinel.ClearPID(world)
 
