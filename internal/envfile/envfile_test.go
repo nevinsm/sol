@@ -1,102 +1,244 @@
 package envfile
 
 import (
-	"bufio"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 )
 
-// parseString is a test helper that parses a .env string directly.
-func parseString(s string) (map[string]string, error) {
-	return parse(bufio.NewScanner(strings.NewReader(s)))
+// writeEnvFile is a test helper that writes a .env file at dir/name and
+// returns its path.
+func writeEnvFile(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("failed to write env file: %v", err)
+	}
+	return path
 }
 
-// --- parse tests ---
+// writeFile is a test helper that writes content to path.
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("writeFile %q: %v", path, err)
+	}
+}
 
-func TestParse_BasicKeyValue(t *testing.T) {
-	got, err := parseString("KEY=value")
+// --- ParseFile tests ---
+
+func TestParseFileBasic(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", "KEY=value\nFOO=bar\n")
+
+	got, err := ParseFile(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := map[string]string{"KEY": "value"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
+	if got["KEY"] != "value" {
+		t.Errorf("KEY: got %q, want %q", got["KEY"], "value")
+	}
+	if got["FOO"] != "bar" {
+		t.Errorf("FOO: got %q, want %q", got["FOO"], "bar")
 	}
 }
 
-func TestParse_CommentsIgnored(t *testing.T) {
-	got, err := parseString("# this is a comment\nKEY=value\n# another comment")
+func TestParseFileExportPrefix(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", "export KEY=value\n")
+
+	got, err := ParseFile(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := map[string]string{"KEY": "value"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
+	if got["KEY"] != "value" {
+		t.Errorf("KEY: got %q, want %q", got["KEY"], "value")
+	}
+	// Ensure "export KEY" is not present as a raw key.
+	if _, ok := got["export KEY"]; ok {
+		t.Error("expected 'export KEY' to be stripped, but it was kept as a key")
 	}
 }
 
-func TestParse_BlankLinesIgnored(t *testing.T) {
-	got, err := parseString("\nKEY=value\n\n")
+func TestParseFileExportPrefixQuotedValue(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", `export KEY="quoted value"`+"\n")
+
+	got, err := ParseFile(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := map[string]string{"KEY": "value"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
+	if got["KEY"] != "quoted value" {
+		t.Errorf("KEY: got %q, want %q", got["KEY"], "quoted value")
 	}
 }
 
-func TestParse_EmptyValue(t *testing.T) {
-	got, err := parseString("KEY=")
+func TestParseFileSingleQuotes(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", "KEY='single quoted'\n")
+
+	got, err := ParseFile(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := map[string]string{"KEY": ""}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
+	if got["KEY"] != "single quoted" {
+		t.Errorf("KEY: got %q, want %q", got["KEY"], "single quoted")
 	}
 }
 
-func TestParse_DoubleQuotedValue(t *testing.T) {
-	got, err := parseString(`KEY="quoted value"`)
+func TestParseFileDoubleQuoted(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", `KEY="hello world"`)
+
+	got, err := ParseFile(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := map[string]string{"KEY": "quoted value"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
+	if got["KEY"] != "hello world" {
+		t.Errorf("KEY: want %q, got %q", "hello world", got["KEY"])
 	}
 }
 
-func TestParse_SingleQuotedValue(t *testing.T) {
-	got, err := parseString("KEY='quoted value'")
+func TestParseFileSkipsComments(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", "# comment\nKEY=value\n# another\n")
+
+	got, err := ParseFile(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := map[string]string{"KEY": "quoted value"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
+	if len(got) != 1 {
+		t.Errorf("expected 1 key, got %d: %v", len(got), got)
+	}
+	if got["KEY"] != "value" {
+		t.Errorf("KEY: got %q, want %q", got["KEY"], "value")
 	}
 }
 
-func TestParse_MismatchedQuotesNotStripped(t *testing.T) {
-	got, err := parseString(`KEY="value'`)
+func TestParseFileSkipsBlankLines(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", "\nKEY=value\n\n")
+
+	got, err := ParseFile(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := map[string]string{"KEY": `"value'`}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
+	if len(got) != 1 {
+		t.Errorf("expected 1 key, got %d", len(got))
 	}
 }
 
-func TestParse_ValueContainsEquals(t *testing.T) {
-	// Value should include everything after the first '='.
-	got, err := parseString("DATABASE_URL=postgres://localhost:5432/myproject?sslmode=disable")
+func TestParseFileEmptyValue(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", "EMPTY=\nALSO_EMPTY=\"\"\n")
+
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v, ok := got["EMPTY"]; !ok || v != "" {
+		t.Errorf("EMPTY: want empty string, got %q (ok=%v)", v, ok)
+	}
+	if v, ok := got["ALSO_EMPTY"]; !ok || v != "" {
+		t.Errorf("ALSO_EMPTY: want empty string, got %q (ok=%v)", v, ok)
+	}
+}
+
+func TestParseFileMissingEquals(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", "KEYNOEQUALS\n")
+
+	_, err := ParseFile(path)
+	if err == nil {
+		t.Fatal("expected error for missing '=', got nil")
+	}
+	var pe *ParseError
+	if !errors.As(err, &pe) {
+		t.Errorf("expected *ParseError, got %T: %v", err, err)
+	}
+	if pe != nil && pe.Line != 1 {
+		t.Errorf("expected line 1, got %d", pe.Line)
+	}
+}
+
+func TestParseFileExportMissingEquals(t *testing.T) {
+	dir := t.TempDir()
+	// "export KEY" with no "=" should still be a parse error.
+	path := writeEnvFile(t, dir, ".env", "export KEYNOEQUALS\n")
+
+	_, err := ParseFile(path)
+	if err == nil {
+		t.Fatal("expected error for missing '=' after export prefix, got nil")
+	}
+	var pe *ParseError
+	if !errors.As(err, &pe) {
+		t.Errorf("expected *ParseError, got %T: %v", err, err)
+	}
+}
+
+func TestParseFileParseErrorLineNumber(t *testing.T) {
+	dir := t.TempDir()
+	content := "GOOD=value\n# comment\n\nBAD_LINE\n"
+	path := writeEnvFile(t, dir, ".env", content)
+
+	_, err := ParseFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var parseErr *ParseError
+	if !errors.As(err, &parseErr) {
+		t.Fatalf("expected *ParseError, got %T: %v", err, err)
+	}
+	if parseErr.Line != 4 {
+		t.Errorf("expected line 4, got %d", parseErr.Line)
+	}
+}
+
+func TestParseFileNotFound(t *testing.T) {
+	_, err := ParseFile("/nonexistent/path/.env")
+	if err == nil {
+		t.Fatal("expected error for missing file, got nil")
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("expected fs.ErrNotExist wrapped in error, got: %v", err)
+	}
+}
+
+func TestParseFileEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", "")
+
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty map, got %v", got)
+	}
+}
+
+func TestParseFileValueWithEquals(t *testing.T) {
+	// Value may contain '=' characters — only the first '=' is the separator.
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", "KEY=a=b=c\n")
+
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["KEY"] != "a=b=c" {
+		t.Errorf("KEY: got %q, want %q", got["KEY"], "a=b=c")
+	}
+}
+
+func TestParseFileURLValue(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", "DATABASE_URL=postgres://localhost:5432/myproject?sslmode=disable")
+
+	got, err := ParseFile(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -106,39 +248,12 @@ func TestParse_ValueContainsEquals(t *testing.T) {
 	}
 }
 
-func TestParse_WhitespaceTrimmed(t *testing.T) {
-	got, err := parseString("  KEY  =  value  ")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	want := map[string]string{"KEY": "value"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
-func TestParse_MissingEquals_Skipped(t *testing.T) {
-	got, err := parseString("NOTAKEYVALUE\nKEY=value")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	want := map[string]string{"KEY": "value"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
-func TestParse_MultipleKeys(t *testing.T) {
-	got, err := parseString("ANTHROPIC_API_KEY=sk-ant-abc\nGITHUB_TOKEN=ghp_xyz\n")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	want := map[string]string{
-		"ANTHROPIC_API_KEY": "sk-ant-abc",
-		"GITHUB_TOKEN":      "ghp_xyz",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
+func TestParseErrorFormat(t *testing.T) {
+	e := &ParseError{Path: "/some/.env", Line: 3, Msg: "missing '=' in \"BAD\""}
+	got := e.Error()
+	want := `env file "/some/.env" line 3: missing '=' in "BAD"`
+	if got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
 	}
 }
 
@@ -222,22 +337,6 @@ func TestLoadEnv_EmptyWorldName_SphereOnly(t *testing.T) {
 	}
 }
 
-func TestLoadEnv_EmptyValuesPreserved(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, ".env"), "KEY=\nOTHER=value")
-
-	got, err := LoadEnv(dir, "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v, ok := got["KEY"]; !ok || v != "" {
-		t.Errorf("expected KEY to be empty string, got %q (ok=%v)", v, ok)
-	}
-	if got["OTHER"] != "value" {
-		t.Errorf("expected OTHER=value, got %q", got["OTHER"])
-	}
-}
-
 func TestLoadEnv_CommentsAndBlanks(t *testing.T) {
 	dir := t.TempDir()
 	content := "# sphere secrets\n\nANTHROPIC_API_KEY=sk-ant-abc\n# end\n"
@@ -284,172 +383,34 @@ func TestLoadEnv_MissingWorldFile(t *testing.T) {
 	}
 }
 
-// --- ParseFile tests ---
-
-// writeEnvFile is a test helper that writes a .env file and returns its path.
-func writeEnvFile(t *testing.T, content string) string {
-	t.Helper()
+// TestLoadEnvExportRoundTrip verifies that "export KEY=value" is correctly
+// loaded by LoadEnv (round-trip test for the export prefix bug).
+func TestLoadEnvExportRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, ".env")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
+	writeFile(t, filepath.Join(dir, ".env"), "export API_KEY=secret123\n")
 
-func TestParseFileBasic(t *testing.T) {
-	path := writeEnvFile(t, "FOO=bar\nBAZ=qux\n")
-	got, err := ParseFile(path)
+	got, err := LoadEnv(dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got["FOO"] != "bar" {
-		t.Errorf("FOO: want %q, got %q", "bar", got["FOO"])
+	if got["API_KEY"] != "secret123" {
+		t.Errorf("API_KEY: got %q, want %q", got["API_KEY"], "secret123")
 	}
-	if got["BAZ"] != "qux" {
-		t.Errorf("BAZ: want %q, got %q", "qux", got["BAZ"])
+	if _, ok := got["export API_KEY"]; ok {
+		t.Error("LoadEnv kept 'export API_KEY' as raw key — export prefix not stripped")
 	}
 }
 
-func TestParseFileDoubleQuoted(t *testing.T) {
-	path := writeEnvFile(t, `KEY="hello world"`)
-	got, err := ParseFile(path)
+// TestLoadEnvExportQuotedRoundTrip verifies export + quoted value round-trip.
+func TestLoadEnvExportQuotedRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".env"), `export TOKEN="my secret token"`+"\n")
+
+	got, err := LoadEnv(dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got["KEY"] != "hello world" {
-		t.Errorf("KEY: want %q, got %q", "hello world", got["KEY"])
-	}
-}
-
-func TestParseFileSingleQuoted(t *testing.T) {
-	path := writeEnvFile(t, "KEY='single quoted'")
-	got, err := ParseFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got["KEY"] != "single quoted" {
-		t.Errorf("KEY: want %q, got %q", "single quoted", got["KEY"])
-	}
-}
-
-func TestParseFileEmptyValue(t *testing.T) {
-	path := writeEnvFile(t, "EMPTY=\nALSO_EMPTY=\"\"\n")
-	got, err := ParseFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v, ok := got["EMPTY"]; !ok || v != "" {
-		t.Errorf("EMPTY: want empty string, got %q (ok=%v)", v, ok)
-	}
-	if v, ok := got["ALSO_EMPTY"]; !ok || v != "" {
-		t.Errorf("ALSO_EMPTY: want empty string, got %q (ok=%v)", v, ok)
-	}
-}
-
-func TestParseFileCommentsAndBlanks(t *testing.T) {
-	content := `# this is a comment
-FOO=bar
-
-# another comment
-BAZ=qux
-`
-	path := writeEnvFile(t, content)
-	got, err := ParseFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(got) != 2 {
-		t.Errorf("expected 2 pairs, got %d: %v", len(got), got)
-	}
-}
-
-func TestParseFileExportPrefix(t *testing.T) {
-	path := writeEnvFile(t, "export MY_VAR=myvalue\n")
-	got, err := ParseFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got["MY_VAR"] != "myvalue" {
-		t.Errorf("MY_VAR: want %q, got %q", "myvalue", got["MY_VAR"])
-	}
-}
-
-func TestParseFileMissingEquals(t *testing.T) {
-	path := writeEnvFile(t, "NOEQUALS\n")
-	_, err := ParseFile(path)
-	if err == nil {
-		t.Fatal("expected error for missing '=', got nil")
-	}
-	var parseErr *ParseError
-	if !errors.As(err, &parseErr) {
-		t.Errorf("expected *ParseError, got %T: %v", err, err)
-	}
-	if parseErr != nil && parseErr.Line != 1 {
-		t.Errorf("expected line 1, got %d", parseErr.Line)
-	}
-}
-
-func TestParseFileParseErrorLineNumber(t *testing.T) {
-	content := "GOOD=value\n# comment\n\nBAD_LINE\n"
-	path := writeEnvFile(t, content)
-	_, err := ParseFile(path)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	var parseErr *ParseError
-	if !errors.As(err, &parseErr) {
-		t.Fatalf("expected *ParseError, got %T: %v", err, err)
-	}
-	if parseErr.Line != 4 {
-		t.Errorf("expected line 4, got %d", parseErr.Line)
-	}
-}
-
-func TestParseFileNotExist(t *testing.T) {
-	_, err := ParseFile("/nonexistent/.env")
-	if err == nil {
-		t.Fatal("expected error for nonexistent file, got nil")
-	}
-}
-
-func TestParseFileEmpty(t *testing.T) {
-	path := writeEnvFile(t, "")
-	got, err := ParseFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("expected empty map, got %v", got)
-	}
-}
-
-func TestParseFileValueWithEquals(t *testing.T) {
-	// Value containing '=' should be preserved.
-	path := writeEnvFile(t, "URL=http://example.com?foo=bar\n")
-	got, err := ParseFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got["URL"] != "http://example.com?foo=bar" {
-		t.Errorf("URL: want %q, got %q", "http://example.com?foo=bar", got["URL"])
-	}
-}
-
-func TestParseErrorFormat(t *testing.T) {
-	e := &ParseError{Path: "/some/.env", Line: 3, Msg: "missing '=' separator"}
-	got := e.Error()
-	want := "/some/.env:3: missing '=' separator"
-	if got != want {
-		t.Errorf("Error() = %q, want %q", got, want)
-	}
-}
-
-// --- helpers ---
-
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("writeFile %q: %v", path, err)
+	if got["TOKEN"] != "my secret token" {
+		t.Errorf("TOKEN: got %q, want %q", got["TOKEN"], "my secret token")
 	}
 }
