@@ -248,7 +248,14 @@ func skillWritDispatch(ctx SkillContext) string {
 	world := ctx.World
 	return fmt.Sprintf(`# Writ Dispatch
 
-Commands for creating writs and dispatching work to agents.
+As governor, you create work and send it to agents — you never do the implementation yourself. A writ is the unit of work: size it so an outpost can complete it in a coherent session. Too large and agents lose focus mid-task; too small and dispatch/merge overhead exceeds the value of the work.
+
+## When to Use
+
+- Create writs for any discrete, self-contained task an outpost can execute
+- Use %[1]s cast%[3]s for disposable outposts (most tasks); use %[1]s tether%[3]s for persistent agents (envoy, governor)
+- Priority 1 = urgent/blocking, 2 = normal, 3 = background
+- Group related writs in a caravan when order matters (see caravan-management skill)
 
 ## Creating Work
 
@@ -262,11 +269,25 @@ Options: %[4]s, %[5]s (repeatable), %[6]s, %[7]s (JSON).
 
 | Command | Description |
 |---------|-------------|
-| %[1]s cast <id> --world=%[2]s%[3]s | Dispatch writ to an agent |
-| %[1]s tether <id> --agent=<agent> --world=%[2]s%[3]s | Bind writ to persistent agent |
+| %[1]s cast <id> --world=%[2]s%[3]s | Dispatch writ to a disposable outpost |
+| %[1]s tether <id> --agent=<agent> --world=%[2]s%[3]s | Bind writ to a persistent agent |
 | %[1]s untether <id> --agent=<agent> --world=%[2]s%[3]s | Unbind writ from agent |
 
 Cast options: %[8]s (auto if omitted), %[9]s, %[10]s.
+
+## Common Patterns
+
+**Normal dispatch:** %[1]s writ create%[3]s → %[1]s cast <id>%[3]s → await AGENT_DONE notification.
+
+**Batched work:** create all writs → %[1]s caravan create%[3]s → assign phases → %[1]s caravan commission%[3]s → consul dispatches ready items automatically.
+
+**No idle agents:** writ stays in "ready" state — consul/sentinel picks it up on next patrol (every 5 min). No action needed.
+
+## Failure Modes
+
+- **No agents idle:** writ stays ready — consul dispatches on next patrol. Use %[1]s agent list%[3]s to check availability.
+- **Dispatched to wrong agent:** %[1]s untether <id> --agent=<wrong>%[3]s then re-cast.
+- **Writ too large:** agent loses coherence. Split into smaller writs and use a caravan to sequence them.
 `, "`"+sol, world, "`",
 		"`--priority` (1=high, 2=normal, 3=low)",
 		"`--label`",
@@ -354,7 +375,14 @@ func skillWorldCoordination(ctx SkillContext) string {
 	world := ctx.World
 	return fmt.Sprintf(`# World Coordination
 
-Commands for monitoring world state and coordinating agents.
+As governor, you monitor agent states, keep the managed repo current, watch service health, and escalate what you cannot handle. You don't implement code — you orchestrate the agents that do.
+
+## When to Use
+
+- Check status before dispatching to verify agents are available and forge isn't backed up
+- Sync repo before dispatching work that depends on latest main
+- Escalate when the issue is outside your control (infrastructure, permissions, external services)
+- Handle locally when you can re-dispatch, adjust priorities, or unblock a stuck writ yourself
 
 ## Status
 
@@ -362,7 +390,7 @@ Commands for monitoring world state and coordinating agents.
 |---------|-------------|
 | %[1]s status%[3]s | Sphere overview (processes, worlds, unread mail count) |
 | %[1]s status %[2]s%[3]s | World detail (agents, writs, forge, nudge queue depth) |
-| %[1]s agent list%[3]s | List agents and availability |
+| %[1]s agent list%[3]s | Agent states: working (active), idle (available), stuck (sentinel handles) |
 
 ## World Sync
 
@@ -385,6 +413,18 @@ Commands for monitoring world state and coordinating agents.
 | Command | Description |
 |---------|-------------|
 | %[1]s escalate "description"%[3]s | Escalate to operator |
+
+## Common Patterns
+
+**Before dispatching:** %[1]s status %[2]s%[3]s → verify idle agents → %[1]s world sync%[3]s if work depends on latest main → cast.
+
+**After AGENT_DONE:** check caravan status → dispatch next-phase items → update brief.
+
+## Failure Modes
+
+- **Agent stuck:** sentinel respawns; sends RECOVERY_NEEDED after exhaustion. Re-dispatch or escalate if pattern repeats.
+- **Forge backlogged:** check %[1]s forge status %[2]s%[3]s — usually self-clears. Escalate if forge process is down.
+- **Sentinel/forge process down:** restart with commands above; escalate if restart fails (operator territory).
 `, "`"+sol, world, "`")
 }
 
@@ -482,7 +522,14 @@ func skillWritManagement(ctx SkillContext) string {
 	world := ctx.World
 	return fmt.Sprintf(`# Writ Management
 
-Commands for creating and managing writs.
+A writ moves through a fixed lifecycle: **open** → **tethered** → **working** → **done** → **closed**. "Done" means code complete with MR in the forge queue. "Closed" means merged. You interact with writs at creation, while working on them yourself, and when delegating to outposts.
+
+## When to Use
+
+- Create writs for work you plan to do yourself or dispatch to an outpost
+- Tether yourself to a writ to track it as your active work
+- Use %[1]s writ activate%[3]s to switch focus when managing multiple writs
+- Labels for filtering/grouping; %[8]s for structured data the description can't capture
 
 ## Commands
 
@@ -496,6 +543,20 @@ Commands for creating and managing writs.
 | %[1]s writ list --world=%[2]s%[3]s | List writs |
 
 Options for create: %[5]s, %[6]s (repeatable), %[7]s (code or analysis), %[8]s (JSON).
+
+## Common Patterns
+
+**Self-service work:** %[1]s writ create%[3]s → %[1]s tether <id>%[3]s → do work → %[1]s resolve%[3]s (writ moves to done → closed when merged).
+
+**Multi-writ session:** tether several writs → %[1]s writ activate <id>%[3]s to switch focus → resolve each when done.
+
+**Delegating after creation:** %[1]s writ create%[3]s → %[1]s cast <id>%[3]s (see dispatch skill).
+
+## Failure Modes
+
+- **Writ already tethered:** check %[1]s writ status%[3]s — untether first if reassigning.
+- **Writ stuck in "done":** "closed" requires the MR to merge. Check forge queue for the MR.
+- **Lost active writ:** %[1]s writ list --world=%[2]s%[3]s to find your tethered writs.
 `, "`"+sol, world, "`",
 		ctx.AgentName,
 		"`--priority` (1=high, 2=normal, 3=low)",
@@ -509,16 +570,34 @@ func skillDispatch(ctx SkillContext) string {
 	world := ctx.World
 	return fmt.Sprintf(`# Dispatch
 
-Commands for dispatching work to outpost agents.
+As envoy, you dispatch work to outpost agents when a task is better handled by a dedicated, isolated session than by doing it yourself. Outposts are disposable — they execute one writ and resolve. You remain responsible for reviewing their output after the writ is merged.
+
+## When to Dispatch vs Do It Yourself
+
+**Dispatch when:** the task is scoped and independent — it doesn't need your accumulated context, can be described completely in a writ, and benefits from a fresh isolated worktree.
+
+**Do it yourself when:** the task is exploratory, requires iterative interaction, or depends on context only you hold from the current session.
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| %[1]s cast <id> --world=%[2]s%[3]s | Dispatch writ to an agent |
-| %[1]s agent list%[3]s | List agents and availability |
+| %[1]s cast <id> --world=%[2]s%[3]s | Dispatch writ to an outpost agent |
+| %[1]s agent list%[3]s | Check agent availability before dispatching |
 
 Cast options: %[4]s (auto if omitted), %[5]s, %[6]s.
+
+## Common Patterns
+
+**Standard dispatch:** check agents (%[1]s agent list%[3]s) → %[1]s cast <id>%[3]s → continue your work → review on AGENT_DONE notification.
+
+**No idle agents:** writ stays ready — consul dispatches on next patrol. Continue with other work.
+
+## Failure Modes
+
+- **No agents available:** writ stays ready. If urgent, wait for AGENT_DONE notification before re-dispatching.
+- **Wrong agent selected:** %[1]s untether <id> --agent=<wrong>%[3]s then re-cast.
+- **Outpost gets stuck:** you receive a RECOVERY_NEEDED notification — re-dispatch or escalate if pattern repeats.
 `, "`"+sol, world, "`",
 		"`--agent`",
 		"`--workflow`",
