@@ -520,144 +520,203 @@ func (s *Prefect) checkWorldInfrastructure() {
 	}
 }
 
-// checkForgeHealth reads the forge heartbeat and restarts if stale.
-// The forge runs as a direct background process (not in tmux).
-func (s *Prefect) checkForgeHealth(world string) {
-	if s.cfg.SolBinary == "" {
-		return
-	}
-
-	pid := forge.ReadPID(world)
-	processAlive := pid > 0 && forge.IsRunning(pid)
-
-	// If no process is running, start the forge.
-	if !processAlive {
-		// Clean up stale PID file if present.
-		forge.ClearPID(world)
-		s.logger.Info("forge process not running, starting", "world", world)
-		if err := s.runCommand(s.cfg.SolBinary, "forge", "start", "--world="+world); err != nil {
-			s.logger.Error("failed to start forge", "world", world, "error", err)
-		}
-		return
-	}
-
-	// Process exists — check heartbeat staleness.
-	hb, err := forge.ReadHeartbeat(world)
-	if err != nil {
-		s.logger.Warn("failed to read forge heartbeat", "world", world, "error", err)
-		return
-	}
-
-	if hb == nil {
-		// No heartbeat yet (forge just started) — give it time.
-		return
-	}
-
-	if !hb.IsStale(s.cfg.ForgeHeartbeatMax) {
-		return // heartbeat is fresh
-	}
-
-	// Heartbeat is stale — restart the forge.
-	s.logger.Warn("forge heartbeat is stale, restarting",
-		"world", world,
-		"last_heartbeat", hb.Timestamp,
-		"max_age", s.cfg.ForgeHeartbeatMax)
-
-	// Stop existing process via PID.
-	if err := forge.StopProcess(world, 10*time.Second); err != nil {
-		s.logger.Error("failed to stop stale forge process", "world", world, "error", err)
-	}
-
-	// Restart.
-	if err := s.runCommand(s.cfg.SolBinary, "forge", "start", "--world="+world); err != nil {
-		s.logger.Error("failed to restart forge", "world", world, "error", err)
-	} else {
-		s.logger.Info("forge restarted via heartbeat staleness", "world", world)
-		if s.eventLog != nil {
-			s.eventLog.Emit(events.EventRespawn, "prefect", "forge", "both", map[string]any{
-				"service": "forge",
-				"world":   world,
-				"reason":  "heartbeat_stale",
-			})
-		}
-	}
+// serviceHeartbeat carries the minimal heartbeat data needed for health checking.
+type serviceHeartbeat struct {
+	Timestamp time.Time
+	isStale   func(maxAge time.Duration) bool
 }
 
-// checkSentinelHealth reads the sentinel heartbeat and restarts if stale.
-// The sentinel runs as a direct Go process (not a tmux session).
-func (s *Prefect) checkSentinelHealth(world string) {
+// IsStale delegates to the underlying heartbeat implementation.
+func (h *serviceHeartbeat) IsStale(maxAge time.Duration) bool {
+	return h.isStale(maxAge)
+}
+
+// serviceSpec describes a supervised service for checkServiceHealth.
+type serviceSpec struct {
+	// Name is used in log messages and event payloads.
+	Name string
+
+	// ReadPID returns the current PID (0 if not set).
+	ReadPID func() int
+
+	// ReadHeartbeat returns the most recent heartbeat, or (nil, nil) if none yet.
+	ReadHeartbeat func() (*serviceHeartbeat, error)
+
+	// MaxStaleAge is the heartbeat age threshold that triggers a restart.
+	MaxStaleAge time.Duration
+
+	// StopStale terminates the running process when the heartbeat is stale.
+	// Receives the current PID.
+	StopStale func(pid int) error
+
+	// StartDead starts the service when no process is running.
+	// If nil, dead-process restart is skipped (handled externally).
+	StartDead func() error
+
+	// StartStale starts the service after stopping a stale one.
+	StartStale func() error
+
+	// DeadEventData, if non-nil, is emitted as EventRespawn on dead-process restart.
+	DeadEventData map[string]any
+
+	// StaleEventData is emitted as EventRespawn on stale-process restart.
+	StaleEventData map[string]any
+
+	// SkipDeadRestart, if non-nil, is called when the process is dead.
+	// If it returns true, the restart is skipped for this cycle.
+	SkipDeadRestart func() bool
+}
+
+// checkServiceHealth implements the shared health check pattern used by forge,
+// sentinel, ledger, and chronicle:
+//  1. Read PID → check if alive
+//  2. If not alive → restart (unless StartDead is nil or SkipDeadRestart returns true)
+//  3. If alive → read heartbeat
+//  4. If no heartbeat → return (give it time)
+//  5. If heartbeat stale → stop + restart + emit EventRespawn
+func (s *Prefect) checkServiceHealth(spec serviceSpec) {
 	if s.cfg.SolBinary == "" {
 		return
 	}
 
-	pid := sentinel.ReadPID(world)
+	pid := spec.ReadPID()
+	processAlive := pid > 0 && IsRunning(pid)
 
-	// If no process running at all, start the sentinel.
-	if pid <= 0 || !IsRunning(pid) {
-		hb, _ := sentinel.ReadHeartbeat(world)
-		if hb != nil && !hb.IsStale(s.cfg.SentinelHeartbeatMax) {
-			// Heartbeat is fresh but PID is gone — sentinel may have just exited.
-			// Give it a moment on the next cycle.
+	if !processAlive {
+		// Optional: skip restart for this cycle (e.g., sentinel recovery window).
+		if spec.SkipDeadRestart != nil && spec.SkipDeadRestart() {
+			return
+		}
+		// If no dead-restart handler, skip (handled externally).
+		if spec.StartDead == nil {
 			return
 		}
 
-		s.logger.Info("sentinel not running, starting", "world", world)
-		if err := s.runCommand(s.cfg.SolBinary, "sentinel", "start", "--world="+world); err != nil {
-			s.logger.Error("failed to start sentinel", "world", world, "error", err)
+		s.logger.Info(spec.Name+" process not running, starting")
+		if err := spec.StartDead(); err != nil {
+			s.logger.Error("failed to start "+spec.Name, "error", err)
 		} else {
-			s.logger.Info("sentinel started", "world", world)
-			if s.eventLog != nil {
-				s.eventLog.Emit(events.EventRespawn, "prefect", "sentinel", "both", map[string]any{
-					"service": "sentinel",
-					"world":   world,
-					"reason":  "not_running",
-				})
+			s.logger.Info(spec.Name + " started")
+			if s.eventLog != nil && spec.DeadEventData != nil {
+				s.eventLog.Emit(events.EventRespawn, "prefect", spec.Name, "both", spec.DeadEventData)
 			}
 		}
 		return
 	}
 
-	// Process is alive — check heartbeat staleness.
-	hb, err := sentinel.ReadHeartbeat(world)
+	// Process alive — check heartbeat staleness.
+	hb, err := spec.ReadHeartbeat()
 	if err != nil {
-		s.logger.Warn("failed to read sentinel heartbeat", "world", world, "error", err)
+		s.logger.Warn("failed to read "+spec.Name+" heartbeat", "error", err)
 		return
 	}
 
 	if hb == nil {
-		// No heartbeat yet (sentinel just started) — give it time.
+		// No heartbeat yet (service just started) — give it time.
 		return
 	}
 
-	if !hb.IsStale(s.cfg.SentinelHeartbeatMax) {
+	if !hb.IsStale(spec.MaxStaleAge) {
 		return // heartbeat is fresh
 	}
 
-	// Heartbeat is stale — restart the sentinel.
-	s.logger.Warn("sentinel heartbeat is stale, restarting",
-		"world", world,
+	// Heartbeat is stale — stop and restart.
+	s.logger.Warn(spec.Name+" heartbeat is stale, restarting",
 		"last_heartbeat", hb.Timestamp,
-		"max_age", s.cfg.SentinelHeartbeatMax)
+		"max_age", spec.MaxStaleAge)
 
-	// Kill existing process.
-	if err := processutil.GracefulKill(pid, 500*time.Millisecond); err != nil {
-		s.logger.Error("failed to stop stale sentinel process", "world", world, "pid", pid, "error", err)
+	if err := spec.StopStale(pid); err != nil {
+		s.logger.Error("failed to stop stale "+spec.Name+" process", "error", err)
 	}
-	sentinel.ClearPID(world)
 
-	// Restart.
-	if err := s.runCommand(s.cfg.SolBinary, "sentinel", "start", "--world="+world); err != nil {
-		s.logger.Error("failed to restart sentinel", "world", world, "error", err)
+	if err := spec.StartStale(); err != nil {
+		s.logger.Error("failed to restart "+spec.Name, "error", err)
 	} else {
-		s.logger.Info("sentinel restarted via heartbeat staleness", "world", world)
+		s.logger.Info(spec.Name + " restarted via heartbeat staleness")
 		if s.eventLog != nil {
-			s.eventLog.Emit(events.EventRespawn, "prefect", "sentinel", "both", map[string]any{
-				"service": "sentinel",
-				"world":   world,
-				"reason":  "heartbeat_stale",
-			})
+			s.eventLog.Emit(events.EventRespawn, "prefect", spec.Name, "both", spec.StaleEventData)
 		}
 	}
+}
+
+// checkForgeHealth reads the forge heartbeat and restarts if stale.
+// The forge runs as a direct background process (not in tmux).
+func (s *Prefect) checkForgeHealth(world string) {
+	start := func() error {
+		return s.runCommand(s.cfg.SolBinary, "forge", "start", "--world="+world)
+	}
+	s.checkServiceHealth(serviceSpec{
+		Name:    "forge",
+		ReadPID: func() int { return forge.ReadPID(world) },
+		ReadHeartbeat: func() (*serviceHeartbeat, error) {
+			hb, err := forge.ReadHeartbeat(world)
+			if err != nil || hb == nil {
+				return nil, err
+			}
+			return &serviceHeartbeat{Timestamp: hb.Timestamp, isStale: hb.IsStale}, nil
+		},
+		MaxStaleAge: s.cfg.ForgeHeartbeatMax,
+		StopStale:   func(_ int) error { return forge.StopProcess(world, 10*time.Second) },
+		StartDead: func() error {
+			forge.ClearPID(world)
+			return start()
+		},
+		StartStale: start,
+		// No DeadEventData — forge dead-restart does not emit an event.
+		StaleEventData: map[string]any{
+			"service": "forge",
+			"world":   world,
+			"reason":  "heartbeat_stale",
+		},
+	})
+}
+
+// checkSentinelHealth reads the sentinel heartbeat and restarts if stale.
+// The sentinel runs as a direct Go process (not a tmux session).
+func (s *Prefect) checkSentinelHealth(world string) {
+	start := func() error {
+		return s.runCommand(s.cfg.SolBinary, "sentinel", "start", "--world="+world)
+	}
+	s.checkServiceHealth(serviceSpec{
+		Name:    "sentinel",
+		ReadPID: func() int { return sentinel.ReadPID(world) },
+		ReadHeartbeat: func() (*serviceHeartbeat, error) {
+			hb, err := sentinel.ReadHeartbeat(world)
+			if err != nil || hb == nil {
+				return nil, err
+			}
+			return &serviceHeartbeat{Timestamp: hb.Timestamp, isStale: hb.IsStale}, nil
+		},
+		MaxStaleAge: s.cfg.SentinelHeartbeatMax,
+		StopStale: func(pid int) error {
+			if proc, err := os.FindProcess(pid); err == nil {
+				_ = proc.Signal(syscall.SIGTERM)
+				time.Sleep(500 * time.Millisecond)
+				if IsRunning(pid) {
+					_ = proc.Signal(syscall.SIGKILL)
+				}
+			}
+			sentinel.ClearPID(world)
+			return nil
+		},
+		StartDead:  start,
+		StartStale: start,
+		// Skip dead restart if the heartbeat is still fresh (recovery window).
+		SkipDeadRestart: func() bool {
+			hb, _ := sentinel.ReadHeartbeat(world)
+			return hb != nil && !hb.IsStale(s.cfg.SentinelHeartbeatMax)
+		},
+		DeadEventData: map[string]any{
+			"service": "sentinel",
+			"world":   world,
+			"reason":  "not_running",
+		},
+		StaleEventData: map[string]any{
+			"service": "sentinel",
+			"world":   world,
+			"reason":  "heartbeat_stale",
+		},
+	})
 }
 
 // checkSphereDaemons checks whether supervised sphere daemons (ledger,
@@ -715,124 +774,65 @@ func (s *Prefect) checkSphereDaemons() {
 
 // checkLedgerHealth reads the ledger heartbeat and restarts if stale.
 // The ledger runs as a detached Go process (not a tmux session).
+// Dead-process restart is handled by checkSphereDaemons; this only handles stale heartbeats.
 func (s *Prefect) checkLedgerHealth() {
-	if s.cfg.SolBinary == "" {
-		return
-	}
-
-	// If the ledger PID is not alive, checkSphereDaemons already handled restart.
-	pid := ReadDaemonPID("ledger")
-	if pid <= 0 || !IsRunning(pid) {
-		return
-	}
-
-	hb, err := ledger.ReadHeartbeat()
-	if err != nil {
-		s.logger.Warn("failed to read ledger heartbeat", "error", err)
-		return
-	}
-
-	if hb == nil {
-		// No heartbeat yet (ledger just started) — give it time.
-		return
-	}
-
-	if !hb.IsStale(s.cfg.LedgerHeartbeatMax) {
-		return // heartbeat is fresh
-	}
-
-	// Heartbeat is stale — kill and restart the ledger.
-	s.logger.Warn("ledger heartbeat is stale, restarting",
-		"last_heartbeat", hb.Timestamp,
-		"max_age", s.cfg.LedgerHeartbeatMax)
-
-	// Kill the existing process.
-	_ = syscall.Kill(pid, syscall.SIGTERM)
-
-	// Restart via detached process.
-	if err := s.startDaemonProcess("ledger", s.cfg.SolBinary, "ledger", "run"); err != nil {
-		s.logger.Error("failed to restart ledger", "error", err)
-	} else {
-		s.logger.Info("ledger restarted via heartbeat staleness")
-		if s.eventLog != nil {
-			s.eventLog.Emit(events.EventRespawn, "prefect", "ledger", "both", map[string]any{
-				"daemon": "ledger",
-				"type":   "sphere",
-				"reason": "heartbeat_stale",
-			})
-		}
-	}
+	s.checkServiceHealth(serviceSpec{
+		Name:    "ledger",
+		ReadPID: func() int { return ReadDaemonPID("ledger") },
+		ReadHeartbeat: func() (*serviceHeartbeat, error) {
+			hb, err := ledger.ReadHeartbeat()
+			if err != nil || hb == nil {
+				return nil, err
+			}
+			return &serviceHeartbeat{Timestamp: hb.Timestamp, isStale: hb.IsStale}, nil
+		},
+		MaxStaleAge: s.cfg.LedgerHeartbeatMax,
+		StopStale:   func(pid int) error { return syscall.Kill(pid, syscall.SIGTERM) },
+		// StartDead is nil — checkSphereDaemons handles dead ledger restarts.
+		StartStale: func() error {
+			return s.startDaemonProcess("ledger", s.cfg.SolBinary, "ledger", "run")
+		},
+		// No DeadEventData — dead ledger restart is handled (and emitted) elsewhere.
+		StaleEventData: map[string]any{
+			"daemon": "ledger",
+			"type":   "sphere",
+			"reason": "heartbeat_stale",
+		},
+	})
 }
 
 // checkChronicleHealth reads the chronicle heartbeat and restarts if stale or missing.
 // Chronicle runs as a direct background process supervised via heartbeat file.
 // Must be called with s.mu held.
 func (s *Prefect) checkChronicleHealth() {
-	if s.cfg.SolBinary == "" {
-		return
+	start := func() error {
+		return s.startDaemonProcess("chronicle", s.cfg.SolBinary, "chronicle", "run")
 	}
-
-	// Check if process is alive via PID.
-	pid := ReadDaemonPID("chronicle")
-	processAlive := pid > 0 && IsRunning(pid)
-
-	if !processAlive {
-		// No process running — start it.
-		s.logger.Info("chronicle process not running, starting")
-		if err := s.startDaemonProcess("chronicle", s.cfg.SolBinary, "chronicle", "run"); err != nil {
-			s.logger.Error("failed to start chronicle", "error", err)
-		} else {
-			s.logger.Info("chronicle started")
-			if s.eventLog != nil {
-				s.eventLog.Emit(events.EventRespawn, "prefect", "chronicle", "both", map[string]any{
-					"daemon": "chronicle",
-					"type":   "sphere",
-					"reason": "process_dead",
-				})
+	s.checkServiceHealth(serviceSpec{
+		Name:    "chronicle",
+		ReadPID: func() int { return ReadDaemonPID("chronicle") },
+		ReadHeartbeat: func() (*serviceHeartbeat, error) {
+			hb, err := chronicle.ReadHeartbeat()
+			if err != nil || hb == nil {
+				return nil, err
 			}
-		}
-		return
-	}
-
-	// Process alive — check heartbeat staleness.
-	hb, err := chronicle.ReadHeartbeat()
-	if err != nil {
-		s.logger.Warn("failed to read chronicle heartbeat", "error", err)
-		return
-	}
-
-	if hb == nil {
-		// No heartbeat yet (chronicle just started) — give it time.
-		return
-	}
-
-	if !hb.IsStale(s.cfg.ChronicleHeartbeatMax) {
-		return // heartbeat is fresh
-	}
-
-	// Heartbeat is stale — kill and restart.
-	s.logger.Warn("chronicle heartbeat is stale, restarting",
-		"last_heartbeat", hb.Timestamp,
-		"max_age", s.cfg.ChronicleHeartbeatMax)
-
-	// Kill existing process.
-	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-		s.logger.Error("failed to SIGTERM chronicle", "pid", pid, "error", err)
-	}
-
-	// Restart.
-	if err := s.startDaemonProcess("chronicle", s.cfg.SolBinary, "chronicle", "run"); err != nil {
-		s.logger.Error("failed to restart chronicle", "error", err)
-	} else {
-		s.logger.Info("chronicle restarted via heartbeat staleness")
-		if s.eventLog != nil {
-			s.eventLog.Emit(events.EventRespawn, "prefect", "chronicle", "both", map[string]any{
-				"daemon": "chronicle",
-				"type":   "sphere",
-				"reason": "heartbeat_stale",
-			})
-		}
-	}
+			return &serviceHeartbeat{Timestamp: hb.Timestamp, isStale: hb.IsStale}, nil
+		},
+		MaxStaleAge: s.cfg.ChronicleHeartbeatMax,
+		StopStale:   func(pid int) error { return syscall.Kill(pid, syscall.SIGTERM) },
+		StartDead:   start,
+		StartStale:  start,
+		DeadEventData: map[string]any{
+			"daemon": "chronicle",
+			"type":   "sphere",
+			"reason": "process_dead",
+		},
+		StaleEventData: map[string]any{
+			"daemon": "chronicle",
+			"type":   "sphere",
+			"reason": "heartbeat_stale",
+		},
+	})
 }
 
 // defaultStartDaemonProcess starts a daemon as a detached background process,
