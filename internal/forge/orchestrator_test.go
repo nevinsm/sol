@@ -437,7 +437,7 @@ func TestActOnResultMerged(t *testing.T) {
 	}
 	worldStore.mrs = []store.MergeRequest{*mr}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Test change", Status: "done",
+		ID: "sol-aaa11111", Title: "Test change", Status: store.WritDone,
 	}
 
 	// Mock git commands for push verification.
@@ -458,7 +458,7 @@ func TestActOnResultMerged(t *testing.T) {
 	phase := worldStore.phaseUpdates["mr-001"]
 	worldStore.mu.Unlock()
 
-	if phase != "merged" {
+	if phase != store.MRMerged {
 		t.Errorf("MR phase = %q, want 'merged'", phase)
 	}
 	if s.mergesTotal != 1 {
@@ -480,7 +480,7 @@ func TestActOnResultMergedUpdatesSourceRepo(t *testing.T) {
 	}
 	worldStore.mrs = []store.MergeRequest{*mr}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Test change", Status: "done",
+		ID: "sol-aaa11111", Title: "Test change", Status: store.WritDone,
 	}
 
 	// Mock git commands for push verification.
@@ -528,7 +528,7 @@ func TestActOnResultFailed(t *testing.T) {
 	}
 	worldStore.mrs = []store.MergeRequest{*mr}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Bad change", Status: "done",
+		ID: "sol-aaa11111", Title: "Bad change", Status: store.WritDone,
 	}
 
 	result := &ForgeResult{
@@ -542,7 +542,7 @@ func TestActOnResultFailed(t *testing.T) {
 	phase := worldStore.phaseUpdates["mr-001"]
 	worldStore.mu.Unlock()
 
-	if phase != "failed" {
+	if phase != store.MRFailed {
 		t.Errorf("MR phase = %q, want 'failed'", phase)
 	}
 	if !strings.Contains(state.lastError, "merge failed") {
@@ -567,7 +567,7 @@ func TestActOnResultConflict(t *testing.T) {
 	}
 	worldStore.mrs = []store.MergeRequest{*mr}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Conflicting change", Status: "done", Priority: 2,
+		ID: "sol-aaa11111", Title: "Conflicting change", Status: store.WritDone, Priority: 2,
 	}
 
 	result := &ForgeResult{
@@ -605,7 +605,7 @@ func TestActOnResultPushVerificationFails(t *testing.T) {
 	}
 	worldStore.mrs = []store.MergeRequest{*mr}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Test change", Status: "done",
+		ID: "sol-aaa11111", Title: "Test change", Status: store.WritDone,
 	}
 
 	// Push verification fails: writ ID not found in recent commits.
@@ -626,7 +626,7 @@ func TestActOnResultPushVerificationFails(t *testing.T) {
 	phase := worldStore.phaseUpdates["mr-001"]
 	worldStore.mu.Unlock()
 
-	if phase != "failed" {
+	if phase != store.MRFailed {
 		t.Errorf("MR phase = %q, want 'failed' (MarkFailed on push verification failure)", phase)
 	}
 	if !strings.Contains(state.lastError, "push verification failed") {
@@ -646,7 +646,7 @@ func TestActOnResultPushVerificationFailureSkipsSourceRepoUpdate(t *testing.T) {
 	}
 	worldStore.mrs = []store.MergeRequest{*mr}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Test change", Status: "done",
+		ID: "sol-aaa11111", Title: "Test change", Status: store.WritDone,
 	}
 
 	// Push verification fails: writ ID not found in recent commits.
@@ -819,10 +819,10 @@ func TestPatrolWithSessionManager(t *testing.T) {
 	defer state.fl.Close()
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Fix auth flow", Status: "done",
+		ID: "sol-aaa11111", Title: "Fix auth flow", Status: store.WritDone,
 	}
 
 	sessionName := mergeSessionName("ember")
@@ -878,7 +878,7 @@ func TestPatrolWithSessionManager(t *testing.T) {
 	phase := worldStore.phaseUpdates["mr-001"]
 	worldStore.mu.Unlock()
 
-	if phase != "merged" {
+	if phase != store.MRMerged {
 		t.Errorf("MR phase = %q, want 'merged'", phase)
 	}
 }

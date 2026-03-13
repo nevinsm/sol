@@ -195,7 +195,7 @@ func TestPatrolClaimRace(t *testing.T) {
 
 	// MR is ready but will be claimed by someone else.
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "claimed", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRClaimed, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 
 	ctx := context.Background()
@@ -216,10 +216,10 @@ func TestPatrolCleanMerge(t *testing.T) {
 	defer state.fl.Close()
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Fix auth flow", Status: "done",
+		ID: "sol-aaa11111", Title: "Fix auth flow", Status: store.WritDone,
 	}
 
 	// Mock git commands for a successful merge cycle.
@@ -246,7 +246,7 @@ func TestPatrolCleanMerge(t *testing.T) {
 	phase := worldStore.phaseUpdates["mr-001"]
 	worldStore.mu.Unlock()
 
-	if phase != "merged" {
+	if phase != store.MRMerged {
 		t.Errorf("MR phase = %q, want 'merged'", phase)
 	}
 
@@ -266,10 +266,10 @@ func TestPatrolEmptyDiff(t *testing.T) {
 	defer state.fl.Close()
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "No-op change", Status: "done",
+		ID: "sol-aaa11111", Title: "No-op change", Status: store.WritDone,
 	}
 
 	// Mock: merge succeeds but diff is empty (exit 0 from diff --cached --quiet).
@@ -287,7 +287,7 @@ func TestPatrolEmptyDiff(t *testing.T) {
 	phase := worldStore.phaseUpdates["mr-001"]
 	worldStore.mu.Unlock()
 
-	if phase != "merged" {
+	if phase != store.MRMerged {
 		t.Errorf("MR phase = %q, want 'merged'", phase)
 	}
 }
@@ -299,10 +299,10 @@ func TestPatrolEmptyDiffAfterResolution(t *testing.T) {
 	// MR has Attempts: 1 — after ClaimMergeRequest increments it becomes 2,
 	// meaning this MR was reclaimed after conflict resolution.
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-002", Phase: "ready", WritID: "sol-bbb22222", Branch: "outpost/Toast/sol-bbb22222", Attempts: 1},
+		{ID: "mr-002", Phase: store.MRReady, WritID: "sol-bbb22222", Branch: "outpost/Toast/sol-bbb22222", Attempts: 1},
 	}
 	worldStore.items["sol-bbb22222"] = &store.Writ{
-		ID: "sol-bbb22222", Title: "Lost change", Status: "done",
+		ID: "sol-bbb22222", Title: "Lost change", Status: store.WritDone,
 	}
 
 	// Mock: merge succeeds but diff is empty (exit 0 from diff --cached --quiet).
@@ -320,7 +320,7 @@ func TestPatrolEmptyDiffAfterResolution(t *testing.T) {
 	phase := worldStore.phaseUpdates["mr-002"]
 	worldStore.mu.Unlock()
 
-	if phase != "failed" {
+	if phase != store.MRFailed {
 		t.Errorf("MR phase = %q, want 'failed'", phase)
 	}
 
@@ -355,10 +355,10 @@ func TestPatrolConflictAutoRebaseFails(t *testing.T) {
 	state.forge.worktree = repoDir
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Conflicting change", Status: "done", Priority: 2,
+		ID: "sol-aaa11111", Title: "Conflicting change", Status: store.WritDone, Priority: 2,
 	}
 
 	// Mock: merge produces conflict.
@@ -400,10 +400,10 @@ func TestPatrolConflictAutoRebaseSucceeds(t *testing.T) {
 	defer state.fl.Close()
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Rebased change", Status: "done",
+		ID: "sol-aaa11111", Title: "Rebased change", Status: store.WritDone,
 	}
 
 	// First merge produces conflict.
@@ -454,7 +454,7 @@ func TestPatrolConflictAutoRebaseSucceeds(t *testing.T) {
 	phase := worldStore.phaseUpdates["mr-001"]
 	worldStore.mu.Unlock()
 
-	if phase != "merged" {
+	if phase != store.MRMerged {
 		t.Errorf("MR phase = %q, want 'merged' (auto-rebase should have succeeded)", phase)
 	}
 
@@ -487,10 +487,10 @@ func TestPatrolConflictAutoRebaseCheckoutFails(t *testing.T) {
 	state.forge.worktree = repoDir
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "No branch", Status: "done", Priority: 2,
+		ID: "sol-aaa11111", Title: "No branch", Status: store.WritDone, Priority: 2,
 	}
 
 	// Merge produces conflict.
@@ -536,10 +536,10 @@ func TestPatrolConflictAutoRebaseForcePushFails(t *testing.T) {
 	state.forge.worktree = repoDir
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Push rejected", Status: "done", Priority: 2,
+		ID: "sol-aaa11111", Title: "Push rejected", Status: store.WritDone, Priority: 2,
 	}
 
 	// Merge produces conflict.
@@ -581,10 +581,10 @@ func TestPatrolGateFailBranchCaused(t *testing.T) {
 	defer state.fl.Close()
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Bad code", Status: "done",
+		ID: "sol-aaa11111", Title: "Bad code", Status: store.WritDone,
 	}
 
 	// Merge clean.
@@ -630,7 +630,7 @@ func TestPatrolGateFailBranchCaused(t *testing.T) {
 	phase := worldStore.phaseUpdates["mr-001"]
 	worldStore.mu.Unlock()
 
-	if phase != "failed" {
+	if phase != store.MRFailed {
 		t.Errorf("MR phase = %q, want 'failed'", phase)
 	}
 }
@@ -640,10 +640,10 @@ func TestPatrolGateFailPreExisting(t *testing.T) {
 	defer state.fl.Close()
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Good code", Status: "done",
+		ID: "sol-aaa11111", Title: "Good code", Status: store.WritDone,
 	}
 
 	// Merge clean.
@@ -673,7 +673,7 @@ func TestPatrolGateFailPreExisting(t *testing.T) {
 	phase := worldStore.phaseUpdates["mr-001"]
 	worldStore.mu.Unlock()
 
-	if phase != "merged" {
+	if phase != store.MRMerged {
 		t.Errorf("MR phase = %q, want 'merged' (pre-existing failure should proceed)", phase)
 	}
 }
@@ -683,10 +683,10 @@ func TestPatrolPushRejected(t *testing.T) {
 	defer state.fl.Close()
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Attempts: 1},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Attempts: 1},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Normal change", Status: "done",
+		ID: "sol-aaa11111", Title: "Normal change", Status: store.WritDone,
 	}
 
 	// Merge and gates pass.
@@ -711,7 +711,7 @@ func TestPatrolPushRejected(t *testing.T) {
 	phase := worldStore.phaseUpdates["mr-001"]
 	worldStore.mu.Unlock()
 
-	if phase != "ready" {
+	if phase != store.MRReady {
 		t.Errorf("MR phase = %q, want 'ready' (push rejected, released)", phase)
 	}
 }
@@ -876,9 +876,9 @@ func TestPatrolUnblocks(t *testing.T) {
 	defer state.fl.Close()
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", BlockedBy: "sol-resolved1"},
+		{ID: "mr-001", Phase: store.MRReady, BlockedBy: "sol-resolved1"},
 	}
-	worldStore.items["sol-resolved1"] = &store.Writ{ID: "sol-resolved1", Status: "closed"}
+	worldStore.items["sol-resolved1"] = &store.Writ{ID: "sol-resolved1", Status: store.WritClosed}
 
 	ctx := context.Background()
 	state.patrol(ctx)
@@ -961,10 +961,10 @@ func TestHeartbeatIncludesCurrentMRAndWrit(t *testing.T) {
 	defer state.fl.Close()
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Fix auth flow", Status: "done",
+		ID: "sol-aaa11111", Title: "Fix auth flow", Status: store.WritDone,
 	}
 
 	// Mock git commands for a successful merge cycle.
@@ -1033,10 +1033,10 @@ func TestHeartbeatIncludesLastErrorAfterFailure(t *testing.T) {
 	defer state.fl.Close()
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Bad code", Status: "done",
+		ID: "sol-aaa11111", Title: "Bad code", Status: store.WritDone,
 	}
 
 	// Sync fails.
@@ -1068,10 +1068,10 @@ func TestHeartbeatClearsLastErrorAfterSuccessfulMerge(t *testing.T) {
 	state.lastError = "previous sync failure"
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111"},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Fix auth flow", Status: "done",
+		ID: "sol-aaa11111", Title: "Fix auth flow", Status: store.WritDone,
 	}
 
 	// Mock git commands for a successful merge cycle.
@@ -1182,10 +1182,10 @@ func TestHeartbeatLastErrorOnPushRejected(t *testing.T) {
 	defer state.fl.Close()
 
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-001", Phase: "ready", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Attempts: 1},
+		{ID: "mr-001", Phase: store.MRReady, WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Attempts: 1},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Normal change", Status: "done",
+		ID: "sol-aaa11111", Title: "Normal change", Status: store.WritDone,
 	}
 
 	// Merge and gates pass.

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // DepOutput describes a direct dependency's output for inclusion in the agent persona.
@@ -21,7 +23,7 @@ type WritSummary struct {
 	ID     string
 	Title  string
 	Kind   string
-	Status string
+	Status store.WritStatus
 }
 
 // ClaudeMDContext holds the fields used to generate a CLAUDE.md file for an outpost agent.

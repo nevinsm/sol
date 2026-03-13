@@ -623,7 +623,7 @@ func TestUpdateWritInvalidStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = s.UpdateWrit(id, WritUpdates{Status: "banana"})
+	err = s.UpdateWrit(id, WritUpdates{Status: WritStatus("banana")})
 	if err == nil {
 		t.Fatal("expected error for invalid status")
 	}
@@ -632,7 +632,7 @@ func TestUpdateWritInvalidStatus(t *testing.T) {
 	}
 
 	// Valid statuses should work.
-	for _, status := range []string{"open", "tethered", "working", "resolve", "done", "closed"} {
+	for _, status := range []WritStatus{WritOpen, WritTethered, WritWorking, WritResolve, WritDone, WritClosed} {
 		if err := s.UpdateWrit(id, WritUpdates{Status: status}); err != nil {
 			t.Fatalf("expected valid status %q to succeed, got: %v", status, err)
 		}

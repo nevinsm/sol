@@ -989,7 +989,7 @@ func printQueue(world string, mrs []store.MergeRequest) {
 	tw.Flush()
 
 	// Summary counts.
-	counts := map[string]int{}
+	counts := map[store.MRPhase]int{}
 	blockedCount := 0
 	for _, mr := range mrs {
 		counts[mr.Phase]++
@@ -998,7 +998,7 @@ func printQueue(world string, mrs []store.MergeRequest) {
 		}
 	}
 	fmt.Printf("\nSummary: %d ready, %d blocked, %d in progress, %d merged\n",
-		counts["ready"]-blockedCount, blockedCount, counts["claimed"], counts["merged"])
+		counts[store.MRReady]-blockedCount, blockedCount, counts[store.MRClaimed], counts[store.MRMerged])
 }
 
 // forgeAwaitResult is the JSON output of forge await.

@@ -42,7 +42,7 @@ func TestCreateMergeRequest(t *testing.T) {
 	if mr.Branch != "outpost/Toast/"+itemID {
 		t.Fatalf("expected branch 'outpost/Toast/%s', got %q", itemID, mr.Branch)
 	}
-	if mr.Phase != "ready" {
+	if mr.Phase != MRReady {
 		t.Fatalf("expected phase 'ready', got %q", mr.Phase)
 	}
 	if mr.ClaimedBy != "" {
@@ -76,7 +76,7 @@ func TestListMergeRequests(t *testing.T) {
 	s.CreateMergeRequest(id3, "branch3", 3)
 
 	// List all.
-	all, err := s.ListMergeRequests("")
+	all, err := s.ListMergeRequests(MRPhase(""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestListMergeRequests(t *testing.T) {
 	}
 
 	// List by phase.
-	ready, err := s.ListMergeRequests("ready")
+	ready, err := s.ListMergeRequests(MRReady)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestListMergeRequests(t *testing.T) {
 		t.Fatalf("expected 3 ready MRs, got %d", len(ready))
 	}
 
-	claimed, err := s.ListMergeRequests("claimed")
+	claimed, err := s.ListMergeRequests(MRClaimed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestClaimMergeRequest(t *testing.T) {
 	if mr.Priority != 1 {
 		t.Fatalf("expected priority 1 MR, got priority %d", mr.Priority)
 	}
-	if mr.Phase != "claimed" {
+	if mr.Phase != MRClaimed {
 		t.Fatalf("expected phase 'claimed', got %q", mr.Phase)
 	}
 	if mr.ClaimedBy != "forge/Forge" {
@@ -198,7 +198,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
 	s.ClaimMergeRequest("forge/Forge")
 
-	err := s.UpdateMergeRequestPhase(mrID, "merged")
+	err := s.UpdateMergeRequestPhase(mrID, MRMerged)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mr.Phase != "merged" {
+	if mr.Phase != MRMerged {
 		t.Fatalf("expected phase 'merged', got %q", mr.Phase)
 	}
 	if mr.MergedAt == nil {
@@ -218,7 +218,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 	mrID2, _ := s.CreateMergeRequest(itemID2, "branch2", 2)
 	s.ClaimMergeRequest("forge/Forge")
 
-	err = s.UpdateMergeRequestPhase(mrID2, "failed")
+	err = s.UpdateMergeRequestPhase(mrID2, MRFailed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mr2.Phase != "failed" {
+	if mr2.Phase != MRFailed {
 		t.Fatalf("expected phase 'failed', got %q", mr2.Phase)
 	}
 	if mr2.MergedAt != nil {
@@ -238,7 +238,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 	mrID3, _ := s.CreateMergeRequest(itemID3, "branch3", 2)
 	s.ClaimMergeRequest("forge/Forge")
 
-	err = s.UpdateMergeRequestPhase(mrID3, "ready")
+	err = s.UpdateMergeRequestPhase(mrID3, MRReady)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mr3.Phase != "ready" {
+	if mr3.Phase != MRReady {
 		t.Fatalf("expected phase 'ready', got %q", mr3.Phase)
 	}
 	if mr3.ClaimedBy != "" {
@@ -300,7 +300,7 @@ func TestReleaseStaleClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mr.Phase != "ready" {
+	if mr.Phase != MRReady {
 		t.Fatalf("expected phase 'ready' after release, got %q", mr.Phase)
 	}
 	if mr.ClaimedBy != "" {
@@ -341,12 +341,12 @@ func TestReleaseStaleLeavesRecentClaims(t *testing.T) {
 
 	// Verify only the stale one was released.
 	mr1, _ := s.GetMergeRequest(mrID1)
-	if mr1.Phase != "ready" {
+	if mr1.Phase != MRReady {
 		t.Fatalf("expected stale MR to be ready, got %q", mr1.Phase)
 	}
 
 	// The fresh one should still be claimed.
-	claimed, _ := s.ListMergeRequests("claimed")
+	claimed, _ := s.ListMergeRequests(MRClaimed)
 	if len(claimed) != 1 {
 		t.Fatalf("expected 1 still-claimed MR, got %d", len(claimed))
 	}
@@ -365,7 +365,7 @@ func TestListMergeRequestsByWrit(t *testing.T) {
 
 	// Mark one as failed.
 	s.ClaimMergeRequest("forge/Forge")
-	s.UpdateMergeRequestPhase(mr1ID, "failed")
+	s.UpdateMergeRequestPhase(mr1ID, MRFailed)
 
 	// List all for id1.
 	mrs, err := s.ListMergeRequestsByWrit(id1, "")
@@ -377,7 +377,7 @@ func TestListMergeRequestsByWrit(t *testing.T) {
 	}
 
 	// List only failed for id1.
-	failed, err := s.ListMergeRequestsByWrit(id1, "failed")
+	failed, err := s.ListMergeRequestsByWrit(id1, MRFailed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,7 +389,7 @@ func TestListMergeRequestsByWrit(t *testing.T) {
 	}
 
 	// List only ready for id1.
-	ready, err := s.ListMergeRequestsByWrit(id1, "ready")
+	ready, err := s.ListMergeRequestsByWrit(id1, MRReady)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,10 +418,10 @@ func TestSupersededPhase(t *testing.T) {
 
 	// Must go through valid path: ready → claimed → failed → superseded.
 	s.ClaimMergeRequest("forge/Forge")
-	if err := s.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+	if err := s.UpdateMergeRequestPhase(mrID, MRFailed); err != nil {
 		t.Fatalf("UpdateMergeRequestPhase(failed) error: %v", err)
 	}
-	if err := s.UpdateMergeRequestPhase(mrID, "superseded"); err != nil {
+	if err := s.UpdateMergeRequestPhase(mrID, MRSuperseded); err != nil {
 		t.Fatalf("UpdateMergeRequestPhase(superseded) error: %v", err)
 	}
 
@@ -429,7 +429,7 @@ func TestSupersededPhase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mr.Phase != "superseded" {
+	if mr.Phase != MRSuperseded {
 		t.Errorf("phase = %q, want 'superseded'", mr.Phase)
 	}
 }
@@ -466,8 +466,8 @@ func TestBlockAndUnblockMergeRequest(t *testing.T) {
 	if mr.BlockedBy != "sol-blocker1" {
 		t.Errorf("blocked_by = %q, want %q", mr.BlockedBy, "sol-blocker1")
 	}
-	if mr.Phase != "ready" {
-		t.Errorf("phase = %q, want %q", mr.Phase, "ready")
+	if mr.Phase != MRReady {
+		t.Errorf("phase = %q, want %q", mr.Phase, MRReady)
 	}
 
 	// Unblock the MR.
@@ -483,8 +483,8 @@ func TestBlockAndUnblockMergeRequest(t *testing.T) {
 	if mr.BlockedBy != "" {
 		t.Errorf("blocked_by after unblock = %q, want empty", mr.BlockedBy)
 	}
-	if mr.Phase != "ready" {
-		t.Errorf("phase after unblock = %q, want %q", mr.Phase, "ready")
+	if mr.Phase != MRReady {
+		t.Errorf("phase after unblock = %q, want %q", mr.Phase, MRReady)
 	}
 }
 
@@ -581,7 +581,7 @@ func TestResetMergeRequestForRetry(t *testing.T) {
 	s.ClaimMergeRequest("forge/Forge")
 
 	// Mark it as failed (simulates forge giving up after max attempts).
-	if err := s.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+	if err := s.UpdateMergeRequestPhase(mrID, MRFailed); err != nil {
 		t.Fatal(err)
 	}
 
@@ -591,7 +591,7 @@ func TestResetMergeRequestForRetry(t *testing.T) {
 
 	// Verify pre-conditions.
 	mr, _ := s.GetMergeRequest(mrID)
-	if mr.Phase != "failed" {
+	if mr.Phase != MRFailed {
 		t.Fatalf("expected phase 'failed', got %q", mr.Phase)
 	}
 	if mr.Attempts != 1 {
@@ -608,7 +608,7 @@ func TestResetMergeRequestForRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mr.Phase != "ready" {
+	if mr.Phase != MRReady {
 		t.Errorf("phase = %q, want 'ready'", mr.Phase)
 	}
 	if mr.Attempts != 0 {
@@ -717,7 +717,7 @@ func TestPhaseTransitionGuards(t *testing.T) {
 		itemID, _ := s.CreateWrit("Merge path", "", "autarch", 2, nil)
 		mrID, _ := s.CreateMergeRequest(itemID, "branch-merge", 2)
 		s.ClaimMergeRequest("forge/Forge")
-		if err := s.UpdateMergeRequestPhase(mrID, "merged"); err != nil {
+		if err := s.UpdateMergeRequestPhase(mrID, MRMerged); err != nil {
 			t.Fatalf("claimed→merged: unexpected error: %v", err)
 		}
 
@@ -725,10 +725,10 @@ func TestPhaseTransitionGuards(t *testing.T) {
 		itemID2, _ := s.CreateWrit("Fail path", "", "autarch", 2, nil)
 		mrID2, _ := s.CreateMergeRequest(itemID2, "branch-fail", 2)
 		s.ClaimMergeRequest("forge/Forge")
-		if err := s.UpdateMergeRequestPhase(mrID2, "failed"); err != nil {
+		if err := s.UpdateMergeRequestPhase(mrID2, MRFailed); err != nil {
 			t.Fatalf("claimed→failed: unexpected error: %v", err)
 		}
-		if err := s.UpdateMergeRequestPhase(mrID2, "superseded"); err != nil {
+		if err := s.UpdateMergeRequestPhase(mrID2, MRSuperseded); err != nil {
 			t.Fatalf("failed→superseded: unexpected error: %v", err)
 		}
 
@@ -736,7 +736,7 @@ func TestPhaseTransitionGuards(t *testing.T) {
 		itemID3, _ := s.CreateWrit("Release path", "", "autarch", 2, nil)
 		mrID3, _ := s.CreateMergeRequest(itemID3, "branch-release", 2)
 		s.ClaimMergeRequest("forge/Forge")
-		if err := s.UpdateMergeRequestPhase(mrID3, "ready"); err != nil {
+		if err := s.UpdateMergeRequestPhase(mrID3, MRReady); err != nil {
 			t.Fatalf("claimed→ready: unexpected error: %v", err)
 		}
 	})
@@ -746,21 +746,21 @@ func TestPhaseTransitionGuards(t *testing.T) {
 		mrID, _ := s.CreateMergeRequest(itemID, "branch-idem", 2)
 
 		// ready → ready (no-op)
-		if err := s.UpdateMergeRequestPhase(mrID, "ready"); err != nil {
+		if err := s.UpdateMergeRequestPhase(mrID, MRReady); err != nil {
 			t.Fatalf("ready→ready: unexpected error: %v", err)
 		}
 
 		// claimed → claimed (no-op)
 		s.ClaimMergeRequest("forge/Forge")
-		if err := s.UpdateMergeRequestPhase(mrID, "claimed"); err != nil {
+		if err := s.UpdateMergeRequestPhase(mrID, MRClaimed); err != nil {
 			t.Fatalf("claimed→claimed: unexpected error: %v", err)
 		}
 
 		// failed → failed (no-op)
-		if err := s.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+		if err := s.UpdateMergeRequestPhase(mrID, MRFailed); err != nil {
 			t.Fatalf("claimed→failed: unexpected error: %v", err)
 		}
-		if err := s.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+		if err := s.UpdateMergeRequestPhase(mrID, MRFailed); err != nil {
 			t.Fatalf("failed→failed: unexpected error: %v", err)
 		}
 
@@ -768,8 +768,8 @@ func TestPhaseTransitionGuards(t *testing.T) {
 		itemID2, _ := s.CreateWrit("Idempotent2", "", "autarch", 2, nil)
 		mrID2, _ := s.CreateMergeRequest(itemID2, "branch-idem2", 2)
 		s.ClaimMergeRequest("forge/Forge")
-		s.UpdateMergeRequestPhase(mrID2, "merged")
-		if err := s.UpdateMergeRequestPhase(mrID2, "merged"); err != nil {
+		s.UpdateMergeRequestPhase(mrID2, MRMerged)
+		if err := s.UpdateMergeRequestPhase(mrID2, MRMerged); err != nil {
 			t.Fatalf("merged→merged: unexpected error: %v", err)
 		}
 	})
@@ -779,9 +779,9 @@ func TestPhaseTransitionGuards(t *testing.T) {
 		itemID, _ := s.CreateWrit("Terminal merged", "", "autarch", 2, nil)
 		mrID, _ := s.CreateMergeRequest(itemID, "branch-term-m", 2)
 		s.ClaimMergeRequest("forge/Forge")
-		s.UpdateMergeRequestPhase(mrID, "merged")
+		s.UpdateMergeRequestPhase(mrID, MRMerged)
 
-		for _, target := range []string{"ready", "claimed", "failed", "superseded"} {
+		for _, target := range []MRPhase{MRReady, MRClaimed, MRFailed, MRSuperseded} {
 			err := s.UpdateMergeRequestPhase(mrID, target)
 			if err == nil {
 				t.Fatalf("merged→%s: expected error, got nil", target)
@@ -795,10 +795,10 @@ func TestPhaseTransitionGuards(t *testing.T) {
 		itemID2, _ := s.CreateWrit("Terminal superseded", "", "autarch", 2, nil)
 		mrID2, _ := s.CreateMergeRequest(itemID2, "branch-term-s", 2)
 		s.ClaimMergeRequest("forge/Forge")
-		s.UpdateMergeRequestPhase(mrID2, "failed")
-		s.UpdateMergeRequestPhase(mrID2, "superseded")
+		s.UpdateMergeRequestPhase(mrID2, MRFailed)
+		s.UpdateMergeRequestPhase(mrID2, MRSuperseded)
 
-		for _, target := range []string{"ready", "claimed", "merged", "failed"} {
+		for _, target := range []MRPhase{MRReady, MRClaimed, MRMerged, MRFailed} {
 			err := s.UpdateMergeRequestPhase(mrID2, target)
 			if err == nil {
 				t.Fatalf("superseded→%s: expected error, got nil", target)
@@ -813,7 +813,7 @@ func TestPhaseTransitionGuards(t *testing.T) {
 		// ready → merged (skips claimed)
 		itemID, _ := s.CreateWrit("Skip merged", "", "autarch", 2, nil)
 		mrID, _ := s.CreateMergeRequest(itemID, "branch-skip-m", 2)
-		err := s.UpdateMergeRequestPhase(mrID, "merged")
+		err := s.UpdateMergeRequestPhase(mrID, MRMerged)
 		if err == nil {
 			t.Fatal("ready→merged: expected error, got nil")
 		}
@@ -822,7 +822,7 @@ func TestPhaseTransitionGuards(t *testing.T) {
 		}
 
 		// ready → failed (skips claimed)
-		err = s.UpdateMergeRequestPhase(mrID, "failed")
+		err = s.UpdateMergeRequestPhase(mrID, MRFailed)
 		if err == nil {
 			t.Fatal("ready→failed: expected error, got nil")
 		}
@@ -831,7 +831,7 @@ func TestPhaseTransitionGuards(t *testing.T) {
 		}
 
 		// ready → superseded (not allowed)
-		err = s.UpdateMergeRequestPhase(mrID, "superseded")
+		err = s.UpdateMergeRequestPhase(mrID, MRSuperseded)
 		if err == nil {
 			t.Fatal("ready→superseded: expected error, got nil")
 		}
@@ -846,7 +846,7 @@ func TestPhaseTransitionGuards(t *testing.T) {
 		if err := s.UpdateMergeRequestPhase(mrID2, "claimed"); err != nil {
 			t.Fatalf("ready→claimed for mrID2: %v", err)
 		}
-		if err := s.UpdateMergeRequestPhase(mrID2, "failed"); err != nil {
+		if err := s.UpdateMergeRequestPhase(mrID2, MRFailed); err != nil {
 			t.Fatalf("claimed→failed for mrID2: %v", err)
 		}
 
@@ -940,7 +940,7 @@ func TestSupersedeFailedMRsForWrit(t *testing.T) {
 
 	// Move mr1 and mr2 to failed (ready → claimed → failed).
 	s.ClaimMergeRequest("forge/Forge")
-	s.UpdateMergeRequestPhase(mr1ID, "failed")
+	s.UpdateMergeRequestPhase(mr1ID, MRFailed)
 	s.ClaimMergeRequest("forge/Forge")
 	s.UpdateMergeRequestPhase(mr2ID, "failed")
 	// mr3 stays ready.
@@ -966,7 +966,7 @@ func TestSupersedeFailedMRsForWrit(t *testing.T) {
 
 	// mr3 should still be ready.
 	mr3, _ := s.GetMergeRequest(mr3ID)
-	if mr3.Phase != "ready" {
+	if mr3.Phase != MRReady {
 		t.Fatalf("expected mr3 phase 'ready', got %q", mr3.Phase)
 	}
 }

@@ -179,7 +179,7 @@ var caravanCheckCmd = &cobra.Command{
 			}{
 				ID:        caravan.ID,
 				Name:      caravan.Name,
-				Status:    caravan.Status,
+				Status:    string(caravan.Status),
 				BlockedBy: unsatisfiedCaravanDeps,
 				Items:     statuses,
 			}
@@ -304,7 +304,7 @@ var caravanStatusCmd = &cobra.Command{
 				}{
 					ID:        caravan.ID,
 					Name:      caravan.Name,
-					Status:    caravan.Status,
+					Status:    string(caravan.Status),
 					BlockedBy: unsatisfiedCaravanDeps,
 					Items:     statuses,
 				}
@@ -477,7 +477,7 @@ var caravanListCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
-		caravans, err := sphereStore.ListCaravans(filter)
+		caravans, err := sphereStore.ListCaravans(store.CaravanStatus(filter))
 		if err != nil {
 			return fmt.Errorf("failed to list caravans: %w", err)
 		}
@@ -485,7 +485,7 @@ var caravanListCmd = &cobra.Command{
 		if excludeClosed {
 			var active []store.Caravan
 			for _, c := range caravans {
-				if c.Status != "closed" {
+				if c.Status != store.CaravanClosed {
 					active = append(active, c)
 				}
 			}
@@ -508,7 +508,7 @@ var caravanListCmd = &cobra.Command{
 				entry := caravanListEntry{
 					ID:        c.ID,
 					Name:      c.Name,
-					Status:    c.Status,
+					Status:    string(c.Status),
 					Owner:     c.Owner,
 					CreatedAt: c.CreatedAt.Format("2006-01-02"),
 				}

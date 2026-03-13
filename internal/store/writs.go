@@ -14,7 +14,7 @@ type Writ struct {
 	ID          string
 	Title       string
 	Description string
-	Status      string
+	Status      WritStatus
 	Priority    int
 	Assignee    string
 	ParentID    string
@@ -30,20 +30,20 @@ type Writ struct {
 
 // ListFilters controls which writs are returned by ListWrits.
 type ListFilters struct {
-	Status   string // empty = all
-	Assignee string // empty = all
-	Label    string // empty = all
-	Priority int    // 0 = all
-	ParentID string // empty = all
+	Status   WritStatus // empty = all
+	Assignee string     // empty = all
+	Label    string     // empty = all
+	Priority int        // 0 = all
+	ParentID string     // empty = all
 }
 
 // WritUpdates specifies which fields to update on a writ.
 type WritUpdates struct {
-	Status      string // empty = no change
-	Assignee    string // empty = no change, "-" = clear
-	Priority    int    // 0 = no change
-	Title       string // empty = no change
-	Description string // empty = no change
+	Status      WritStatus // empty = no change
+	Assignee    string     // empty = no change, "-" = clear
+	Priority    int        // 0 = no change
+	Title       string     // empty = no change
+	Description string     // empty = no change
 }
 
 // generateID returns a new writ ID in the format "sol-" + 16 hex chars.
@@ -343,13 +343,13 @@ func (s *Store) ListChildWrits(parentID string) ([]Writ, error) {
 }
 
 // validWritStatuses is the set of allowed writ status values.
-var validWritStatuses = map[string]bool{
-	"open":     true,
-	"tethered": true,
-	"working":  true,
-	"resolve":  true,
-	"done":     true,
-	"closed":   true,
+var validWritStatuses = map[WritStatus]bool{
+	WritOpen:     true,
+	WritTethered: true,
+	WritWorking:  true,
+	WritResolve:  true,
+	WritDone:     true,
+	WritClosed:   true,
 }
 
 // UpdateWrit updates fields on a writ. Only non-zero fields are applied.

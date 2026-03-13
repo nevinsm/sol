@@ -16,7 +16,7 @@ type Agent struct {
 	Name       string
 	World      string
 	Role       string
-	State      string
+	State      AgentState
 	ActiveWrit string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
@@ -88,15 +88,15 @@ func (s *Store) GetAgent(id string) (*Agent, error) {
 	return a, nil
 }
 
-var validAgentStates = map[string]bool{
-	"idle":    true,
-	"working": true,
-	"stalled": true,
+var validAgentStates = map[AgentState]bool{
+	AgentIdle:    true,
+	AgentWorking: true,
+	AgentStalled: true,
 }
 
 // UpdateAgentState updates an agent's state and optionally its active_writ.
 // Pass empty activeWrit to clear it, or a writ ID to set it.
-func (s *Store) UpdateAgentState(id, state, activeWrit string) error {
+func (s *Store) UpdateAgentState(id string, state AgentState, activeWrit string) error {
 	if !validAgentStates[state] {
 		return fmt.Errorf("invalid agent state %q", state)
 	}
@@ -123,7 +123,7 @@ func (s *Store) UpdateAgentState(id, state, activeWrit string) error {
 
 // ListAgents returns agents, optionally filtered by world and/or state.
 // When world is empty, agents across all worlds are returned.
-func (s *Store) ListAgents(world string, state string) ([]Agent, error) {
+func (s *Store) ListAgents(world string, state AgentState) ([]Agent, error) {
 	query := `SELECT id, name, world, role, state, active_writ, created_at, updated_at FROM agents WHERE 1=1`
 	var args []interface{}
 	if world != "" {

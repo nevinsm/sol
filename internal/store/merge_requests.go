@@ -15,24 +15,24 @@ const CaravanBlockedSentinel = "caravan-blocked"
 // validMRTransition returns true if transitioning from → to is allowed.
 // Terminal states (merged, superseded) reject all outgoing transitions.
 // Same-phase transitions are always allowed (idempotent no-op).
-func validMRTransition(from, to string) bool {
+func validMRTransition(from, to MRPhase) bool {
 	if from == to {
 		return true // idempotent
 	}
 	switch from {
-	case "merged", "superseded":
+	case MRMerged, MRSuperseded:
 		return false // terminal states
-	case "ready":
+	case MRReady:
 		// ready → claimed is handled by ClaimMergeRequest (separate SQL).
 		// ready → blocked is handled by BlockMergeRequest (separate method).
 		// ready → merged or ready → failed skip the claimed step.
-		return to == "claimed"
-	case "claimed":
-		return to == "ready" || to == "merged" || to == "failed"
-	case "failed":
+		return to == MRClaimed
+	case MRClaimed:
+		return to == MRReady || to == MRMerged || to == MRFailed
+	case MRFailed:
 		// failed → ready must go through ResetMergeRequestForRetry.
 		// failed → claimed must go through ready first.
-		return to == "superseded"
+		return to == MRSuperseded
 	default:
 		return false
 	}
@@ -40,18 +40,18 @@ func validMRTransition(from, to string) bool {
 
 // MergeRequest represents a merge request in the world database.
 type MergeRequest struct {
-	ID         string
-	WritID string
-	Branch     string
-	Phase      string // ready, claimed, merged, failed, superseded
-	ClaimedBy  string // forge agent ID (empty if unclaimed)
-	ClaimedAt  *time.Time
-	Attempts   int
-	Priority   int
-	BlockedBy  string // writ ID blocking this MR (empty = not blocked)
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	MergedAt   *time.Time
+	ID        string
+	WritID    string
+	Branch    string
+	Phase     MRPhase // ready, claimed, merged, failed, superseded
+	ClaimedBy string  // forge agent ID (empty if unclaimed)
+	ClaimedAt *time.Time
+	Attempts  int
+	Priority  int
+	BlockedBy string // writ ID blocking this MR (empty = not blocked)
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	MergedAt  *time.Time
 }
 
 // generateMRID returns a new merge request ID in the format "mr-" + 16 hex chars.
@@ -137,7 +137,7 @@ func (s *Store) GetMergeRequest(id string) (*MergeRequest, error) {
 // ListMergeRequests returns merge requests filtered by phase.
 // If phase is empty, returns all. Ordered by priority ASC, created_at ASC
 // (highest priority first, oldest first within same priority).
-func (s *Store) ListMergeRequests(phase string) ([]MergeRequest, error) {
+func (s *Store) ListMergeRequests(phase MRPhase) ([]MergeRequest, error) {
 	query := `SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 	                 attempts, priority, blocked_by, created_at, updated_at, merged_at
 	          FROM merge_requests`
@@ -170,7 +170,7 @@ func (s *Store) ListMergeRequests(phase string) ([]MergeRequest, error) {
 
 // ListMergeRequestsByWrit returns merge requests for a given writ,
 // optionally filtered by phase. If phase is empty, returns all phases.
-func (s *Store) ListMergeRequestsByWrit(writID, phase string) ([]MergeRequest, error) {
+func (s *Store) ListMergeRequestsByWrit(writID string, phase MRPhase) ([]MergeRequest, error) {
 	query := `SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 	                 attempts, priority, blocked_by, created_at, updated_at, merged_at
 	          FROM merge_requests WHERE writ_id = ?`
@@ -236,14 +236,14 @@ func (s *Store) ClaimMergeRequest(claimerID string) (*MergeRequest, error) {
 // Also sets updated_at=now. If phase=merged, also sets merged_at=now.
 // If phase=ready, clears claimed_by and claimed_at (release).
 // Returns ErrInvalidTransition if the transition is not allowed.
-func (s *Store) UpdateMergeRequestPhase(id, phase string) error {
-	validPhases := map[string]bool{"ready": true, "claimed": true, "merged": true, "failed": true, "superseded": true}
+func (s *Store) UpdateMergeRequestPhase(id string, phase MRPhase) error {
+	validPhases := map[MRPhase]bool{MRReady: true, MRClaimed: true, MRMerged: true, MRFailed: true, MRSuperseded: true}
 	if !validPhases[phase] {
 		return fmt.Errorf("invalid merge request phase %q", phase)
 	}
 
 	// Fetch current phase to validate the transition.
-	var currentPhase string
+	var currentPhase MRPhase
 	err := s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, id).Scan(&currentPhase)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("merge request %q: %w", id, ErrNotFound)
@@ -267,12 +267,12 @@ func (s *Store) UpdateMergeRequestPhase(id, phase string) error {
 	var result sql.Result
 
 	switch phase {
-	case "merged":
+	case MRMerged:
 		result, err = s.db.Exec(
 			`UPDATE merge_requests SET phase = ?, merged_at = ?, updated_at = ? WHERE id = ?`,
 			phase, now, now, id,
 		)
-	case "ready":
+	case MRReady:
 		result, err = s.db.Exec(
 			`UPDATE merge_requests SET phase = ?, claimed_by = NULL, claimed_at = NULL, updated_at = ? WHERE id = ?`,
 			phase, now, id,

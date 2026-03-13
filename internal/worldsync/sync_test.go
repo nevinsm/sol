@@ -39,7 +39,7 @@ type mockAgentLister struct {
 	err    error
 }
 
-func (m *mockAgentLister) ListAgents(world string, state string) ([]store.Agent, error) {
+func (m *mockAgentLister) ListAgents(world string, state store.AgentState) ([]store.Agent, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

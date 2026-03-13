@@ -21,7 +21,7 @@ type NotifyManager interface {
 
 // AgentLister lists agents from the sphere store.
 type AgentLister interface {
-	ListAgents(world string, state string) ([]store.Agent, error)
+	ListAgents(world string, state store.AgentState) ([]store.Agent, error)
 }
 
 // SyncResult records the outcome of syncing a single component.

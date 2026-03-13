@@ -31,7 +31,7 @@ func (m *mockSphereStore) CreateAgent(name, world, role string) (string, error) 
 		Name:  name,
 		World: world,
 		Role:  role,
-		State: "idle",
+		State: store.AgentIdle,
 	}
 	return id, nil
 }
@@ -46,11 +46,11 @@ func (m *mockSphereStore) DeleteAgent(id string) error {
 }
 
 type mockStopStore struct {
-	updated   map[string]string // id -> state
+	updated   map[string]store.AgentState // id -> state
 	updateErr error
 }
 
-func (m *mockStopStore) UpdateAgentState(id, state, activeWrit string) error {
+func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, activeWrit string) error {
 	if m.updateErr != nil {
 		return m.updateErr
 	}
@@ -84,7 +84,7 @@ type mockListStore struct {
 	listErr error
 }
 
-func (m *mockListStore) ListAgents(world string, state string) ([]store.Agent, error) {
+func (m *mockListStore) ListAgents(world string, state store.AgentState) ([]store.Agent, error) {
 	if m.listErr != nil {
 		return nil, m.listErr
 	}
@@ -176,7 +176,7 @@ func TestEnvoyPrimeWithActiveWrit(t *testing.T) {
 	worldStore.Close()
 
 	// Set active writ on the agent.
-	if err := sphereStore.UpdateAgentState("myworld/Echo", "working", writID); err != nil {
+	if err := sphereStore.UpdateAgentState("myworld/Echo", store.AgentWorking, writID); err != nil {
 		t.Fatalf("failed to update agent state: %v", err)
 	}
 	sphereStore.Close()
@@ -401,7 +401,7 @@ func TestStop(t *testing.T) {
 	t.Setenv("SOL_HOME", tmp)
 
 	ss := &mockStopStore{
-		updated: map[string]string{},
+		updated: map[string]store.AgentState{},
 	}
 
 	sessName := config.SessionName("myworld", "Echo")
@@ -418,7 +418,7 @@ func TestStop(t *testing.T) {
 	}
 
 	// Verify agent state updated.
-	if ss.updated["myworld/Echo"] != "idle" {
+	if ss.updated["myworld/Echo"] != store.AgentIdle {
 		t.Errorf("agent state = %q, want \"idle\"", ss.updated["myworld/Echo"])
 	}
 }
@@ -428,7 +428,7 @@ func TestStopNoSession(t *testing.T) {
 	t.Setenv("SOL_HOME", tmp)
 
 	ss := &mockStopStore{
-		updated: map[string]string{},
+		updated: map[string]store.AgentState{},
 	}
 
 	mgr := &mockStopManager{sessions: map[string]bool{}}
@@ -439,7 +439,7 @@ func TestStopNoSession(t *testing.T) {
 	}
 
 	// Verify agent state still updated to idle.
-	if ss.updated["myworld/Echo"] != "idle" {
+	if ss.updated["myworld/Echo"] != store.AgentIdle {
 		t.Errorf("agent state = %q, want \"idle\"", ss.updated["myworld/Echo"])
 	}
 }

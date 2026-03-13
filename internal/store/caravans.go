@@ -9,12 +9,12 @@ import (
 
 // Caravan represents a group of related writs tracked together.
 type Caravan struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	Status    string     `json:"status"` // "drydock", "open", "ready", "closed"
-	Owner     string     `json:"owner"`
-	CreatedAt time.Time  `json:"created_at"`
-	ClosedAt  *time.Time `json:"closed_at,omitempty"`
+	ID        string        `json:"id"`
+	Name      string        `json:"name"`
+	Status    CaravanStatus `json:"status"` // "drydock", "open", "ready", "closed"
+	Owner     string        `json:"owner"`
+	CreatedAt time.Time     `json:"created_at"`
+	ClosedAt  *time.Time    `json:"closed_at,omitempty"`
 }
 
 // CaravanItem is a writ associated with a caravan.
@@ -27,17 +27,17 @@ type CaravanItem struct {
 
 // CaravanItemStatus represents the status of a writ within a caravan.
 type CaravanItemStatus struct {
-	WritID     string `json:"writ_id"`
-	World          string `json:"world"`
-	Phase          int    `json:"phase"`
-	WritStatus string `json:"writ_status"`
-	Ready          bool   `json:"ready"`
-	Assignee       string `json:"assignee,omitempty"`
+	WritID     string     `json:"writ_id"`
+	World      string     `json:"world"`
+	Phase      int        `json:"phase"`
+	WritStatus WritStatus `json:"writ_status"`
+	Ready      bool       `json:"ready"`
+	Assignee   string     `json:"assignee,omitempty"`
 }
 
 // IsDispatched returns true if the item is actively being worked on by an agent.
 func (s CaravanItemStatus) IsDispatched() bool {
-	return s.WritStatus == "tethered" || s.WritStatus == "working"
+	return s.WritStatus == WritTethered || s.WritStatus == WritWorking
 }
 
 // generateCaravanID returns a new caravan ID in the format "car-" + 16 hex chars.
@@ -94,7 +94,7 @@ func (s *Store) GetCaravan(id string) (*Caravan, error) {
 // ListCaravans returns caravans, optionally filtered by status.
 // If status is empty, returns all caravans.
 // Ordered by created_at DESC (newest first).
-func (s *Store) ListCaravans(status string) ([]Caravan, error) {
+func (s *Store) ListCaravans(status CaravanStatus) ([]Caravan, error) {
 	query := `SELECT id, name, status, owner, created_at, closed_at FROM caravans`
 	var args []interface{}
 
@@ -136,23 +136,23 @@ func (s *Store) ListCaravans(status string) ([]Caravan, error) {
 	return caravans, nil
 }
 
-var validCaravanStatuses = map[string]bool{
-	"drydock": true,
-	"open":    true,
-	"ready":   true,
-	"closed":  true,
+var validCaravanStatuses = map[CaravanStatus]bool{
+	CaravanDrydock: true,
+	CaravanOpen:    true,
+	CaravanReady:   true,
+	CaravanClosed:  true,
 }
 
 // UpdateCaravanStatus sets the caravan's status. If status is "closed",
 // also sets closed_at.
-func (s *Store) UpdateCaravanStatus(id, status string) error {
+func (s *Store) UpdateCaravanStatus(id string, status CaravanStatus) error {
 	if !validCaravanStatuses[status] {
 		return fmt.Errorf("invalid caravan status %q", status)
 	}
 	var result sql.Result
 	var err error
 
-	if status == "closed" {
+	if status == CaravanClosed {
 		now := time.Now().UTC().Format(time.RFC3339)
 		result, err = s.db.Exec(
 			`UPDATE caravans SET status = ?, closed_at = ? WHERE id = ?`,
@@ -356,7 +356,7 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 
 				item, err := worldStore.GetWrit(ci.WritID)
 				if err != nil {
-					cis.WritStatus = "unknown"
+					cis.WritStatus = "unknown" // not a valid WritStatus constant, but kept for error reporting
 					out = append(out, cis)
 					continue
 				}
@@ -402,7 +402,7 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 		// Check if all items in lower phases are closed (merged).
 		for j := range results {
 			if results[j].Phase < results[i].Phase {
-				if results[j].WritStatus != "closed" {
+				if results[j].WritStatus != WritClosed {
 					results[i].Ready = false
 					break
 				}
@@ -431,12 +431,12 @@ func (s *Store) TryCloseCaravan(caravanID string,
 	}
 
 	for _, st := range statuses {
-		if st.WritStatus != "closed" {
+		if st.WritStatus != WritClosed {
 			return false, nil
 		}
 	}
 
-	if err := s.UpdateCaravanStatus(caravanID, "closed"); err != nil {
+	if err := s.UpdateCaravanStatus(caravanID, CaravanClosed); err != nil {
 		return false, err
 	}
 	return true, nil

@@ -6,6 +6,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/brief"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // --- Directory helpers ---
@@ -38,7 +39,7 @@ func WorldSummaryPath(world string) string {
 
 // StopStore abstracts sphere store operations for Stop.
 type StopStore interface {
-	UpdateAgentState(id, state, activeWrit string) error
+	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
 }
 
 // StopManager abstracts session operations for Stop.
