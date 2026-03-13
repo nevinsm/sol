@@ -504,7 +504,7 @@ func (UnimplementedSphereStore) GetEscalation(id string) (*Escalation, error) {
 	return nil, fmt.Errorf("unimplemented: GetEscalation")
 }
 
-func (UnimplementedSphereStore) ListEscalations(status string) ([]Escalation, error) {
+func (UnimplementedSphereStore) ListEscalations(status EscalationStatus) ([]Escalation, error) {
 	return nil, fmt.Errorf("unimplemented: ListEscalations")
 }
 

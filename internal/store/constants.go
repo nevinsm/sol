@@ -41,3 +41,12 @@ const (
 	CaravanReady   CaravanStatus = "ready"
 	CaravanClosed  CaravanStatus = "closed"
 )
+
+// EscalationStatus represents the review status of an escalation.
+type EscalationStatus = string
+
+const (
+	EscalationOpen         EscalationStatus = "open"
+	EscalationAcknowledged EscalationStatus = "acknowledged"
+	EscalationResolved     EscalationStatus = "resolved"
+)

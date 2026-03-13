@@ -46,22 +46,22 @@ type WritWriter interface {
 // MRReader provides read access to merge requests in a world database.
 type MRReader interface {
 	GetMergeRequest(id string) (*MergeRequest, error)
-	ListMergeRequests(phase string) ([]MergeRequest, error)
-	ListMergeRequestsByWrit(writID string, phase string) ([]MergeRequest, error)
+	ListMergeRequests(phase MRPhase) ([]MergeRequest, error)
+	ListMergeRequestsByWrit(writID string, phase MRPhase) ([]MergeRequest, error)
 	ListBlockedMergeRequests() ([]MergeRequest, error)
 	FindMergeRequestByBlocker(blockerID string) (*MergeRequest, error)
 }
 
 // MergeRequestReader provides narrow read access to merge requests (subset of MRReader).
 type MergeRequestReader interface {
-	ListMergeRequests(phase string) ([]MergeRequest, error)
+	ListMergeRequests(phase MRPhase) ([]MergeRequest, error)
 }
 
 // MRWriter provides write access to merge requests in a world database.
 type MRWriter interface {
 	CreateMergeRequest(writID, branch string, priority int) (string, error)
 	ClaimMergeRequest(claimerID string) (*MergeRequest, error)
-	UpdateMergeRequestPhase(id string, phase string) error
+	UpdateMergeRequestPhase(id string, phase MRPhase) error
 	BlockMergeRequest(mrID, blockerWritID string) error
 	UnblockMergeRequest(mrID string) error
 	ReleaseStaleClaims(ttl time.Duration) (int, error)
@@ -128,7 +128,7 @@ type AgentMemoryStore interface {
 // AgentReader provides read access to agent records in the sphere database.
 type AgentReader interface {
 	GetAgent(id string) (*Agent, error)
-	ListAgents(world string, state string) ([]Agent, error)
+	ListAgents(world string, state AgentState) ([]Agent, error)
 	FindIdleAgent(world string) (*Agent, error)
 }
 
@@ -136,7 +136,7 @@ type AgentReader interface {
 type AgentWriter interface {
 	CreateAgent(name, world, role string) (string, error)
 	EnsureAgent(name, world, role string) error
-	UpdateAgentState(id string, state string, activeWrit string) error
+	UpdateAgentState(id string, state AgentState, activeWrit string) error
 	DeleteAgent(id string) error
 	DeleteAgentsForWorld(world string) error
 }
@@ -144,7 +144,7 @@ type AgentWriter interface {
 // CaravanReader provides read access to caravan records in the sphere database.
 type CaravanReader interface {
 	GetCaravan(id string) (*Caravan, error)
-	ListCaravans(status string) ([]Caravan, error)
+	ListCaravans(status CaravanStatus) ([]Caravan, error)
 	ListCaravanItems(caravanID string) ([]CaravanItem, error)
 	GetCaravanItemsForWrit(writID string) ([]CaravanItem, error)
 	CheckCaravanReadiness(caravanID string, worldOpener func(world string) (*WorldStore, error)) ([]CaravanItemStatus, error)
@@ -153,7 +153,7 @@ type CaravanReader interface {
 // CaravanWriter provides write access to caravan records in the sphere database.
 type CaravanWriter interface {
 	CreateCaravan(name, owner string) (string, error)
-	UpdateCaravanStatus(id string, status string) error
+	UpdateCaravanStatus(id string, status CaravanStatus) error
 	CreateCaravanItem(caravanID, writID, world string, phase int) error
 	DeleteCaravanItemsForWorld(world string) error
 	RemoveCaravanItem(caravanID, writID string) error
@@ -202,7 +202,7 @@ type MessageStore interface {
 type EscalationStore interface {
 	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
 	GetEscalation(id string) (*Escalation, error)
-	ListEscalations(status string) ([]Escalation, error)
+	ListEscalations(status EscalationStatus) ([]Escalation, error)
 	ListOpenEscalations() ([]Escalation, error)
 	ListEscalationsBySourceRef(sourceRef string) ([]Escalation, error)
 	AckEscalation(id string) error
