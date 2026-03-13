@@ -289,7 +289,7 @@ func (a *Adapter) TelemetryEnv(port int, agent, world, activeWrit string) map[st
 	return map[string]string{
 		"CLAUDE_CODE_ENABLE_TELEMETRY":     "1",
 		"OTEL_LOGS_EXPORTER":               "otlp",
-		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": fmt.Sprintf("http://localhost:%d", port),
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": fmt.Sprintf("http://localhost:%d/v1/logs", port),
 		"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "http/json",
 		"OTEL_RESOURCE_ATTRIBUTES":         attrs,
 	}
