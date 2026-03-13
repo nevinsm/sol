@@ -5,7 +5,47 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/nevinsm/sol/internal/adapter"
 )
+
+// PlanModeBlockCommand is the standard PreToolUse command to block EnterPlanMode
+// for roles that use brief memory (envoy, governor, chancellor).
+const PlanModeBlockCommand = `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`
+
+// ForgePlanModeBlockCommand is the forge-specific EnterPlanMode blocker.
+const ForgePlanModeBlockCommand = `echo "BLOCKED: Plan mode is not permitted in forge merge sessions." >&2; exit 2`
+
+// AutoMemoryBlockCommand is the standard PreToolUse command to block Claude Code
+// auto-memory writes (roles that use .brief/memory.md instead).
+const AutoMemoryBlockCommand = `FILE=$(jq -r '.tool_input.file_path // empty'); if echo "$FILE" | grep -q '.claude/projects/.*/memory/'; then echo "BLOCKED: Use .brief/memory.md, not Claude Code auto-memory." >&2; exit 2; fi`
+
+// RoleGuards returns the standard adapter.Guard entries for the given role.
+// These represent PreToolUse blockers that the adapter translates to
+// runtime-specific hook format.
+//
+// Roles:
+//   - "forge": dangerous-command guards only (no workflow-bypass guards,
+//     no git reset/restore guards — forge needs these operations)
+//   - all others: full set of dangerous-command and workflow-bypass guards
+func RoleGuards(role string) []adapter.Guard {
+	guards := []adapter.Guard{
+		{Pattern: "Bash(git push --force*)|Bash(git push -f *)", Command: "sol guard dangerous-command"},
+		{Pattern: "Bash(git checkout -b*)|Bash(git switch -c*)", Command: "sol guard dangerous-command"},
+		{Pattern: "Bash(rm -rf /*)", Command: "sol guard dangerous-command"},
+	}
+	if role != "forge" {
+		guards = append(guards,
+			adapter.Guard{Pattern: "Bash(git reset --hard*)", Command: "sol guard dangerous-command"},
+			adapter.Guard{Pattern: "Bash(git clean -f*)", Command: "sol guard dangerous-command"},
+			adapter.Guard{Pattern: "Bash(git checkout -- *)", Command: "sol guard dangerous-command"},
+			adapter.Guard{Pattern: "Bash(git restore .*)", Command: "sol guard dangerous-command"},
+			adapter.Guard{Pattern: "Bash(git push origin main*)|Bash(git push origin master*)", Command: "sol guard workflow-bypass"},
+			adapter.Guard{Pattern: "Bash(gh pr create*)", Command: "sol guard workflow-bypass"},
+		)
+	}
+	return guards
+}
 
 // HookConfig represents the Claude Code settings.local.json structure for hooks.
 type HookConfig struct {

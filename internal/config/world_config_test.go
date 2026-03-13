@@ -417,6 +417,47 @@ func TestResolveModelPartialOverride(t *testing.T) {
 	}
 }
 
+func TestResolveRuntimeFallbackToClaude(t *testing.T) {
+	cfg := WorldConfig{}
+	for _, role := range []string{"outpost", "envoy", "governor", "forge", "chancellor", "unknown"} {
+		got := cfg.ResolveRuntime(role)
+		if got != "claude" {
+			t.Errorf("ResolveRuntime(%q) with no config = %q, want %q", role, got, "claude")
+		}
+	}
+}
+
+func TestResolveRuntimeDefaultRuntime(t *testing.T) {
+	cfg := WorldConfig{
+		Agents: AgentsSection{
+			DefaultRuntime: "claude",
+		},
+	}
+	for _, role := range []string{"outpost", "envoy", "governor"} {
+		got := cfg.ResolveRuntime(role)
+		if got != "claude" {
+			t.Errorf("ResolveRuntime(%q) with default_runtime=claude = %q, want %q", role, got, "claude")
+		}
+	}
+}
+
+func TestResolveRuntimePerRoleOverride(t *testing.T) {
+	cfg := WorldConfig{
+		Agents: AgentsSection{
+			DefaultRuntime: "claude",
+			Runtimes: RuntimesSection{
+				Outpost: "custom",
+			},
+		},
+	}
+	if got := cfg.ResolveRuntime("outpost"); got != "custom" {
+		t.Errorf("ResolveRuntime(outpost) = %q, want custom", got)
+	}
+	if got := cfg.ResolveRuntime("envoy"); got != "claude" {
+		t.Errorf("ResolveRuntime(envoy) = %q, want claude (default)", got)
+	}
+}
+
 func TestWorldConfigValidateModelsSection(t *testing.T) {
 	valid := []ModelsSection{
 		{},

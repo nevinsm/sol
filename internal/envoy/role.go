@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -23,9 +24,9 @@ func RoleConfig() startup.RoleConfig {
 	}
 }
 
-// envoySkillInstaller installs role-appropriate skills for envoy agents.
-func envoySkillInstaller(worktreeDir, world, agent string) error {
-	return protocol.InstallSkills(worktreeDir, protocol.SkillContext{
+// envoySkillInstaller builds role-appropriate skills for envoy agents.
+func envoySkillInstaller(world, agent string) []adapter.Skill {
+	return protocol.BuildSkills(protocol.SkillContext{
 		World:     world,
 		AgentName: agent,
 		SolBinary: "sol",
@@ -61,19 +62,29 @@ func envoyPersona(world, agent string) ([]byte, error) {
 	return []byte(content), nil
 }
 
-// envoyHooks returns the Claude Code hook configuration for the envoy.
+// envoyHooks returns the runtime-agnostic hook configuration for the envoy.
 func envoyHooks(world, agent string) startup.HookSet {
-	return protocol.BaseHooks(protocol.HookOptions{
-		Role:          "envoy",
-		BriefPath:     ".brief/memory.md",
-		PreCompactCmd: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent),
-		NudgeDrainCmd: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agent),
-	})
+	return startup.HookSet{
+		SessionStart: []startup.HookCommand{
+			{
+				Command: "sol brief inject --path=.brief/memory.md --max-lines=200",
+				Matcher: "startup|resume",
+			},
+		},
+		PreCompact: []startup.HookCommand{
+			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent)},
+		},
+		TurnBoundary: []startup.HookCommand{
+			{Command: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agent)},
+		},
+		Guards: append([]startup.Guard{
+			{Pattern: "Write|Edit", Command: protocol.AutoMemoryBlockCommand},
+			{Pattern: "EnterPlanMode", Command: protocol.PlanModeBlockCommand},
+		}, protocol.RoleGuards("envoy")...),
+	}
 }
 
 // envoyPrime builds the initial prompt for the envoy session.
-// If the envoy has an active writ, include it in the prime output so the
-// envoy knows about its assignment immediately on startup/restart.
 func envoyPrime(world, agentName string) string {
 	base := fmt.Sprintf(
 		"Envoy %s, world %s. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200",

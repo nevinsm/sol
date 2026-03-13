@@ -63,14 +63,10 @@ func (m *mockStopManager) Capture(name string, lines int) (string, error) {
 
 func TestGovernorHooksPreCompact(t *testing.T) {
 	hooks := governorHooks("myworld", "")
-	pcGroups, ok := hooks.Hooks["PreCompact"]
-	if !ok {
+	if len(hooks.PreCompact) == 0 {
 		t.Fatal("governor hooks missing PreCompact")
 	}
-	if len(pcGroups) != 1 {
-		t.Fatalf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
-	}
-	cmd := pcGroups[0].Hooks[0].Command
+	cmd := hooks.PreCompact[0].Command
 	want := "sol prime --world=myworld --agent=governor --compact"
 	if cmd != want {
 		t.Errorf("PreCompact command = %q, want %q", cmd, want)
@@ -79,11 +75,10 @@ func TestGovernorHooksPreCompact(t *testing.T) {
 
 func TestGovernorHooksNoCompactSessionStart(t *testing.T) {
 	hooks := governorHooks("myworld", "")
-	groups, ok := hooks.Hooks["SessionStart"]
-	if !ok {
+	if len(hooks.SessionStart) == 0 {
 		t.Fatal("governor hooks missing SessionStart")
 	}
-	for _, g := range groups {
+	for _, g := range hooks.SessionStart {
 		if strings.Contains(g.Matcher, "compact") {
 			t.Error("governor SessionStart should not have a compact matcher")
 		}

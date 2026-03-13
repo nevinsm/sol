@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/startup"
 )
@@ -22,9 +23,9 @@ func RoleConfig() startup.RoleConfig {
 	}
 }
 
-// governorSkillInstaller installs role-appropriate skills for the governor.
-func governorSkillInstaller(worktreeDir, world, _ string) error {
-	return protocol.InstallSkills(worktreeDir, protocol.SkillContext{
+// governorSkillInstaller builds role-appropriate skills for the governor.
+func governorSkillInstaller(world, _ string) []adapter.Skill {
+	return protocol.BuildSkills(protocol.SkillContext{
 		World:     world,
 		SolBinary: "sol",
 		Role:      "governor",
@@ -51,15 +52,26 @@ func governorPersona(world, _ string) ([]byte, error) {
 	return []byte(content), nil
 }
 
-// governorHooks returns the Claude Code hook configuration for the governor.
+// governorHooks returns the runtime-agnostic hook configuration for the governor.
 func governorHooks(world, _ string) startup.HookSet {
-	return protocol.BaseHooks(protocol.HookOptions{
-		Role:             "governor",
-		BriefPath:        ".brief/memory.md",
-		SessionStartCmds: []string{fmt.Sprintf("sol world sync --world=%s", world)},
-		PreCompactCmd:    fmt.Sprintf("sol prime --world=%s --agent=governor --compact", world),
-		NudgeDrainCmd:    fmt.Sprintf("sol nudge drain --world=%s --agent=governor", world),
-	})
+	return startup.HookSet{
+		SessionStart: []startup.HookCommand{
+			{
+				Command: fmt.Sprintf("sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync --world=%s", world),
+				Matcher: "startup|resume",
+			},
+		},
+		PreCompact: []startup.HookCommand{
+			{Command: fmt.Sprintf("sol prime --world=%s --agent=governor --compact", world)},
+		},
+		TurnBoundary: []startup.HookCommand{
+			{Command: fmt.Sprintf("sol nudge drain --world=%s --agent=governor", world)},
+		},
+		Guards: append([]startup.Guard{
+			{Pattern: "Write|Edit", Command: protocol.AutoMemoryBlockCommand},
+			{Pattern: "EnterPlanMode", Command: protocol.PlanModeBlockCommand},
+		}, protocol.RoleGuards("governor")...),
+	}
 }
 
 // governorPrime builds the initial prompt for the governor session.

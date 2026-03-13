@@ -3,6 +3,7 @@ package dispatch
 import (
 	"fmt"
 
+	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/protocol"
@@ -27,12 +28,12 @@ func OutpostRoleConfig() startup.RoleConfig {
 	}
 }
 
-// outpostSkillInstaller installs role-appropriate skills for outpost agents.
-func outpostSkillInstaller(worktreeDir, world, agent string) error {
+// outpostSkillInstaller builds role-appropriate skills for outpost agents.
+func outpostSkillInstaller(world, agent string) []adapter.Skill {
 	// Read world config for quality gates.
 	worldCfg, err := config.LoadWorldConfig(world)
 	if err != nil {
-		// Non-fatal: install skills without quality gates.
+		// Non-fatal: build skills without quality gates.
 		worldCfg = config.WorldConfig{}
 	}
 
@@ -43,7 +44,7 @@ func outpostSkillInstaller(worktreeDir, world, agent string) error {
 		outputDir = config.WritOutputDir(world, writID)
 	}
 
-	return protocol.InstallSkills(worktreeDir, protocol.SkillContext{
+	return protocol.BuildSkills(protocol.SkillContext{
 		World:        world,
 		AgentName:    agent,
 		Role:         "outpost",
@@ -53,19 +54,15 @@ func outpostSkillInstaller(worktreeDir, world, agent string) error {
 }
 
 // OutpostResumeState builds a startup.ResumeState for outpost compact recovery.
-// Reads the current workflow step and tethered writ to determine where
-// the agent should resume from.
 func OutpostResumeState(world, agent string) startup.ResumeState {
 	return handoff.CaptureResumeState(world, agent, "outpost", "compact", nil)
 }
 
 // outpostPersona generates the outpost CLAUDE.local.md content.
-// Reads the tether to find the writ, then builds persona from writ data.
 func outpostPersona(world, agent string) ([]byte, error) {
 	// Read tether to find writ.
 	writID, err := tether.Read(world, agent, "outpost")
 	if err != nil || writID == "" {
-		// No tether — minimal persona (e.g., during edge-case respawn).
 		return []byte(fmt.Sprintf("# Outpost Agent: %s (world: %s)\n\nNo writ tethered.\n", agent, world)), nil
 	}
 
@@ -136,14 +133,22 @@ func outpostPersona(world, agent string) ([]byte, error) {
 	return []byte(content), nil
 }
 
-// outpostHooks returns the Claude Code hook configuration for outpost agents.
+// outpostHooks returns the runtime-agnostic hook configuration for outpost agents.
 func outpostHooks(world, agent string) startup.HookSet {
-	return protocol.BaseHooks(protocol.HookOptions{
-		Role:             "outpost",
-		SessionStartCmds: []string{fmt.Sprintf("sol prime --world=%s --agent=%s", world, agent)},
-		PreCompactCmd:    fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent),
-		NudgeDrainCmd:    fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agent),
-	})
+	return startup.HookSet{
+		SessionStart: []startup.HookCommand{
+			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s", world, agent)},
+		},
+		PreCompact: []startup.HookCommand{
+			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent)},
+		},
+		TurnBoundary: []startup.HookCommand{
+			{Command: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agent)},
+		},
+		Guards: append([]startup.Guard{
+			{Pattern: "EnterPlanMode", Command: protocol.PlanModeBlockCommand},
+		}, protocol.RoleGuards("outpost")...),
+	}
 }
 
 // outpostPrime builds the initial prompt for the outpost session.

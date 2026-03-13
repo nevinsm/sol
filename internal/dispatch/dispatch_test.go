@@ -4795,14 +4795,10 @@ func TestResolveMultipleEscalationsForSameWrit(t *testing.T) {
 func TestOutpostHooksPreCompactUsesPrimeCompact(t *testing.T) {
 	hooks := outpostHooks("ember", "Toast")
 
-	pcGroups, ok := hooks.Hooks["PreCompact"]
-	if !ok {
+	if len(hooks.PreCompact) == 0 {
 		t.Fatal("outpost hooks missing PreCompact")
 	}
-	if len(pcGroups) != 1 {
-		t.Fatalf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
-	}
-	cmd := pcGroups[0].Hooks[0].Command
+	cmd := hooks.PreCompact[0].Command
 	want := "sol prime --world=ember --agent=Toast --compact"
 	if cmd != want {
 		t.Errorf("PreCompact command = %q, want %q", cmd, want)

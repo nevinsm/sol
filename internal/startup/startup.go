@@ -9,16 +9,24 @@ import (
 	"strings"
 
 	"github.com/nevinsm/sol/internal/account"
+	"github.com/nevinsm/sol/internal/adapter"
+	_ "github.com/nevinsm/sol/internal/adapter/claude" // register the "claude" runtime adapter
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envfile"
-	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/workflow"
 )
 
-// HookSet holds all the Claude Code hooks for a role.
-type HookSet = protocol.HookConfig
+// HookSet is the runtime-agnostic hook configuration for a role session.
+// It is an alias for adapter.HookSet.
+type HookSet = adapter.HookSet
+
+// HookCommand is an alias for adapter.HookCommand (for use in role packages).
+type HookCommand = adapter.HookCommand
+
+// Guard is an alias for adapter.Guard (for use in role packages).
+type Guard = adapter.Guard
 
 // SessionStarter abstracts tmux session creation for testing.
 type SessionStarter interface {
@@ -46,8 +54,7 @@ type RoleConfig struct {
 	Hooks   func(world, agent string) HookSet
 
 	// System prompt
-	SystemPromptFile    string // path to prompt file (embedded or on disk)
-	SystemPromptContent string // if set, written to .claude/system-prompt.md and used as SystemPromptFile
+	SystemPromptContent string // if set, written via adapter.InjectSystemPrompt
 	ReplacePrompt       bool   // true = --system-prompt-file, false = --append-system-prompt-file
 
 	// Workflow
@@ -55,10 +62,13 @@ type RoleConfig struct {
 	NeedsItem bool   // whether workflow requires a writ
 
 	// Skills
-	SkillInstaller func(worktreeDir, world, agent string) error // installs .claude/skills/
+	SkillInstaller func(world, agent string) []adapter.Skill // builds skills (adapter writes them)
 
 	// Prime context
 	PrimeBuilder func(world, agent string) string
+
+	// Runtime adapter (resolved from world config at launch time if nil)
+	Adapter adapter.RuntimeAdapter
 }
 
 // LaunchOpts holds optional parameters for Launch.
@@ -96,13 +106,15 @@ func ConfigFor(role string) *RoleConfig {
 // Launch executes the universal agent session launch sequence.
 // Steps:
 //  1. Ensure worktree exists
-//  2. Install persona (cfg.Persona → CLAUDE.local.md)
-//  3. Install hooks (cfg.Hooks → settings.local.json)
-//  4. Ensure CLAUDE_CONFIG_DIR (config.EnsureClaudeConfigDir)
+//  2. Install persona (cfg.Persona → adapter.InjectPersona)
+//  2.5. Install skills (cfg.SkillInstaller → adapter.InstallSkills)
+//  2.6. Install system prompt (cfg.SystemPromptContent → adapter.InjectSystemPrompt)
+//  3. Install hooks (cfg.Hooks → adapter.InstallHooks)
+//  4+4.5. Ensure config dir + pre-trust (adapter.EnsureConfigDir)
 //  5. Ensure agent record in sphere store
 //  6. Instantiate workflow if cfg.Workflow is set
 //  7. Build prime context (cfg.PrimeBuilder)
-//  8. Build claude command (--system-prompt-file or --append-system-prompt-file)
+//  8. Build session command (adapter.BuildCommand)
 //  9. Start tmux session with env
 func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error) {
 	sessName := config.SessionName(world, agent)
@@ -121,64 +133,68 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		return "", fmt.Errorf("startup: worktree directory does not exist: %s", worktreeDir)
 	}
 
+	// Load world config (needed for model resolution and adapter selection).
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err != nil {
+		return "", fmt.Errorf("startup: failed to load world config: %w", err)
+	}
+
+	// Resolve runtime adapter.
+	a := cfg.Adapter
+	if a == nil {
+		runtime := worldCfg.ResolveRuntime(cfg.Role)
+		var ok bool
+		a, ok = adapter.Get(runtime)
+		if !ok {
+			return "", fmt.Errorf("startup: unknown runtime %q for role %q", runtime, cfg.Role)
+		}
+	}
+
 	// 2. Install persona (CLAUDE.local.md).
 	if cfg.Persona != nil {
 		content, err := cfg.Persona(world, agent)
 		if err != nil {
 			return "", fmt.Errorf("startup: failed to generate persona: %w", err)
 		}
-		if err := installPersona(worktreeDir, content); err != nil {
+		if err := a.InjectPersona(worktreeDir, content); err != nil {
 			return "", fmt.Errorf("startup: failed to install persona: %w", err)
 		}
 	}
 
 	// 2.5. Install skills (.claude/skills/).
 	if cfg.SkillInstaller != nil {
-		if err := cfg.SkillInstaller(worktreeDir, world, agent); err != nil {
+		skills := cfg.SkillInstaller(world, agent)
+		if err := a.InstallSkills(worktreeDir, skills); err != nil {
 			return "", fmt.Errorf("startup: failed to install skills: %w", err)
 		}
 	}
 
 	// 2.6. Install system prompt content if provided.
+	systemPromptFile := ""
 	if cfg.SystemPromptContent != "" {
-		promptDir := fmt.Sprintf("%s/.claude", worktreeDir)
-		if err := os.MkdirAll(promptDir, 0o755); err != nil {
-			return "", fmt.Errorf("startup: failed to create .claude for system prompt: %w", err)
+		systemPromptFile, err = a.InjectSystemPrompt(worktreeDir, cfg.SystemPromptContent, cfg.ReplacePrompt)
+		if err != nil {
+			return "", fmt.Errorf("startup: failed to inject system prompt: %w", err)
 		}
-		promptPath := fmt.Sprintf("%s/system-prompt.md", promptDir)
-		if err := os.WriteFile(promptPath, []byte(cfg.SystemPromptContent), 0o644); err != nil {
-			return "", fmt.Errorf("startup: failed to write system prompt: %w", err)
-		}
-		cfg.SystemPromptFile = ".claude/system-prompt.md"
 	}
 
 	// 3. Install hooks (settings.local.json).
 	if cfg.Hooks != nil {
-		hookCfg := cfg.Hooks(world, agent)
-		if err := protocol.WriteHookSettings(worktreeDir, hookCfg); err != nil {
+		hookSet := cfg.Hooks(world, agent)
+		if err := a.InstallHooks(worktreeDir, hookSet); err != nil {
 			return "", fmt.Errorf("startup: failed to install hooks: %w", err)
 		}
 	}
 
-	// 4. Ensure CLAUDE_CONFIG_DIR.
-	worldCfg, err := config.LoadWorldConfig(world)
-	if err != nil {
-		return "", fmt.Errorf("startup: failed to load world config: %w", err)
-	}
+	// 4+4.5. Ensure runtime config dir and pre-trust working directory.
+	worldDir := config.WorldDir(world)
 	resolvedAccount := opts.Account
 	if resolvedAccount == "" {
 		resolvedAccount = account.ResolveAccount("", worldCfg.World.DefaultAccount)
 	}
-	claudeConfigDir, err := config.EnsureClaudeConfigDir(config.WorldDir(world), cfg.Role, agent, resolvedAccount)
+	configResult, err := a.EnsureConfigDir(worldDir, cfg.Role, agent, worktreeDir)
 	if err != nil {
-		return "", fmt.Errorf("startup: failed to ensure claude config dir: %w", err)
-	}
-
-	// 4.5. Pre-trust the working directory in the agent's config dir so
-	// Claude Code doesn't block on an interactive trust prompt when using
-	// the agent-specific CLAUDE_CONFIG_DIR.
-	if err := protocol.TrustDirectoryIn(worktreeDir, claudeConfigDir); err != nil {
-		fmt.Fprintf(os.Stderr, "startup: failed to pre-trust directory in config dir %s: %v\n", claudeConfigDir, err)
+		return "", fmt.Errorf("startup: failed to ensure config dir: %w", err)
 	}
 
 	// 5. Ensure agent record in sphere store.
@@ -209,8 +225,6 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 	// 6. Instantiate workflow if set.
 	if cfg.Workflow != "" {
 		// Instantiate if no workflow exists or previous one completed.
-		// A done workflow has no useful state to preserve — re-instantiate
-		// so looping workflows restart from step 1.
 		existingState, _ := workflow.ReadState(world, agent, cfg.Role)
 		if existingState == nil || existingState.Status == "done" {
 			vars := map[string]string{
@@ -228,11 +242,18 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		prompt = cfg.PrimeBuilder(world, agent)
 	}
 
-	// 8. Build claude command.
+	// 8. Build session command via adapter.
 	model := worldCfg.ResolveModel(cfg.Role)
-	sessionCmd := buildCommand(cfg, worktreeDir, prompt, opts.Continue, model)
+	sessionCmd := a.BuildCommand(adapter.CommandContext{
+		WorktreeDir:      worktreeDir,
+		Prompt:           prompt,
+		Continue:         opts.Continue,
+		Model:            model,
+		SystemPromptFile: systemPromptFile,
+		ReplacePrompt:    cfg.ReplacePrompt,
+	})
 
-	// 4.6. Inject credentials from token.json as env vars.
+	// 4.6. Read credentials.
 	tok, err := account.ReadToken(resolvedAccount)
 	if err != nil {
 		return "", fmt.Errorf("startup: no token found for account %q — run: sol account set-token %s (or sol account set-api-key %s): %w", resolvedAccount, resolvedAccount, resolvedAccount, err)
@@ -252,30 +273,25 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 	env["SOL_HOME"] = config.Home()
 	env["SOL_WORLD"] = world
 	env["SOL_AGENT"] = agent
-	env["CLAUDE_CONFIG_DIR"] = claudeConfigDir
 
-	switch tok.Type {
-	case "oauth_token":
-		env["CLAUDE_CODE_OAUTH_TOKEN"] = tok.Token
-	case "api_key":
-		env["ANTHROPIC_API_KEY"] = tok.Token
+	// Inject config dir env vars (e.g. CLAUDE_CONFIG_DIR).
+	for k, v := range configResult.EnvVar {
+		env[k] = v
 	}
 
-	// Enable ledger telemetry from global config (sphere-scoped; defaults to port 4318).
+	// Inject credential env vars.
+	cred := adapter.Credential{Type: tok.Type, Token: tok.Token}
+	for k, v := range a.CredentialEnv(cred) {
+		env[k] = v
+	}
+
+	// Inject telemetry env vars.
 	globalCfg, err := config.LoadGlobalConfig()
 	if err != nil {
 		slog.Warn("startup: failed to load global config for ledger port", "error", err)
 	}
-	if globalCfg.Ledger.Port > 0 {
-		env["CLAUDE_CODE_ENABLE_TELEMETRY"] = "1"
-		env["OTEL_LOGS_EXPORTER"] = "otlp"
-		env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] = fmt.Sprintf("http://localhost:%d", globalCfg.Ledger.Port)
-		env["OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"] = "http/json"
-		attrs := fmt.Sprintf("agent.name=%s,world=%s", agent, world)
-		if activeWrit != "" {
-			attrs += ",writ_id=" + activeWrit
-		}
-		env["OTEL_RESOURCE_ATTRIBUTES"] = attrs
+	for k, v := range a.TelemetryEnv(globalCfg.Ledger.Port, agent, world, activeWrit) {
+		env[k] = v
 	}
 
 	// 9. Start (or cycle) the tmux session.
@@ -310,9 +326,6 @@ type ResumeState struct {
 
 // Resume does everything Launch does but uses --continue for conversation
 // continuity and injects workflow state into the prime context.
-//
-// The resume prime prepends state context ("You were on step N...") to the
-// role's normal prime, so the agent immediately knows where it left off.
 func Resume(cfg RoleConfig, world, agent string, state ResumeState, opts LaunchOpts) (string, error) {
 	opts.Continue = true
 
@@ -329,8 +342,7 @@ func Resume(cfg RoleConfig, world, agent string, state ResumeState, opts LaunchO
 }
 
 // Respawn looks up the registered config for a role and performs a Launch
-// (or Resume if a resume-state file exists). It encapsulates the
-// read-resume → Resume-or-Launch decision so callers don't duplicate it.
+// (or Resume if a resume-state file exists).
 func Respawn(role, world, agent string, opts LaunchOpts) (string, error) {
 	cfg := ConfigFor(role)
 	if cfg == nil {
@@ -348,8 +360,6 @@ func Respawn(role, world, agent string, opts LaunchOpts) (string, error) {
 		slog.Info("found resume state, using startup.Resume",
 			"agent", agent, "world", world, "reason", resumeState.Reason)
 		sessName, err := Resume(*cfg, world, agent, *resumeState, opts)
-		// Clear the file whether Resume succeeded or not — stale state
-		// is worse than no state on the next attempt.
 		ClearResumeState(world, agent, role)
 		return sessName, err
 	}
@@ -390,7 +400,6 @@ func BuildResumePrime(base string, state ResumeState) string {
 			fmt.Fprintf(&b, "Your active writ has changed to %s.\n", state.NewActiveWrit)
 		}
 	} else if state.NewActiveWrit != "" {
-		// Non-writ-switch resume with an active writ: restore active writ context.
 		fmt.Fprintf(&b, "Active writ: %s\n", state.NewActiveWrit)
 	}
 
@@ -402,7 +411,6 @@ func BuildResumePrime(base string, state ResumeState) string {
 	return b.String()
 }
 
-// resumeStateFile returns the path to the resume state file for an agent.
 const resumeStateFilename = ".resume_state.json"
 
 func resumeStatePath(world, agent, role string) string {
@@ -467,50 +475,4 @@ func resolveSessionStarter(opts LaunchOpts) SessionStarter {
 		return opts.Sessions
 	}
 	return session.New()
-}
-
-// buildCommand constructs the claude startup command with system prompt flags.
-func buildCommand(cfg RoleConfig, worktreeDir, prompt string, continueSession bool, model string) string {
-	if cmd := os.Getenv("SOL_SESSION_COMMAND"); cmd != "" {
-		return cmd
-	}
-
-	settingsPath := config.SettingsPath(worktreeDir)
-
-	args := "claude --dangerously-skip-permissions"
-
-	if continueSession {
-		args += " --continue"
-	}
-
-	args += " --settings " + config.ShellQuote(settingsPath)
-
-	if model != "" {
-		args += " --model " + model
-	}
-
-	if cfg.SystemPromptFile != "" {
-		if cfg.ReplacePrompt {
-			args += " --system-prompt-file " + config.ShellQuote(cfg.SystemPromptFile)
-		} else {
-			args += " --append-system-prompt-file " + config.ShellQuote(cfg.SystemPromptFile)
-		}
-	}
-
-	if prompt != "" {
-		args += " " + config.ShellQuote(prompt)
-	}
-
-	return args
-}
-
-// installPersona writes persona content to CLAUDE.local.md at the worktree root.
-// Written at root level so Claude Code's upward directory walk discovers it.
-// Skills are installed separately by the Install*ClaudeMD functions or Launch.
-func installPersona(worktreeDir string, content []byte) error {
-	path := filepath.Join(worktreeDir, "CLAUDE.local.md")
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		return fmt.Errorf("failed to write CLAUDE.local.md: %w", err)
-	}
-	return nil
 }

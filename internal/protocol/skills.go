@@ -4,7 +4,25 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/nevinsm/sol/internal/adapter"
 )
+
+// BuildSkills generates skill content for the given context and returns it as
+// []adapter.Skill without writing to disk.
+// The returned slice has the same skills that InstallSkills would write.
+func BuildSkills(ctx SkillContext) []adapter.Skill {
+	names := RoleSkills(ctx.Role)
+	result := make([]adapter.Skill, 0, len(names))
+	for _, name := range names {
+		content := generateSkill(name, ctx)
+		if content == "" {
+			continue
+		}
+		result = append(result, adapter.Skill{Name: name, Content: content})
+	}
+	return result
+}
 
 // SkillContext holds common fields used when generating skill content for agents.
 type SkillContext struct {
