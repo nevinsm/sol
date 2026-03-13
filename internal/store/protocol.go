@@ -68,17 +68,17 @@ type CaravanNeedsFeedingPayload struct {
 // The subject is the protocol type (e.g., "AGENT_DONE").
 // The body is JSON-encoded from the payload.
 // Protocol messages always use priority=1 (urgent).
-func (s *Store) SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error) {
+func (ss *SphereStore) SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal protocol payload: %w", err)
 	}
-	return s.SendMessage(sender, recipient, protoType, string(body), 1, "protocol")
+	return ss.SendMessage(sender, recipient, protoType, string(body), 1, "protocol")
 }
 
 // PendingProtocol returns pending protocol messages for a recipient,
 // filtered by protocol type. If protoType is empty, returns all protocol messages.
-func (s *Store) PendingProtocol(recipient, protoType string) ([]Message, error) {
+func (ss *SphereStore) PendingProtocol(recipient, protoType string) ([]Message, error) {
 	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at
 	          FROM messages WHERE delivery = 'pending' AND type = 'protocol' AND recipient = ?`
 	args := []interface{}{recipient}
@@ -89,5 +89,5 @@ func (s *Store) PendingProtocol(recipient, protoType string) ([]Message, error) 
 	}
 	query += ` ORDER BY priority ASC, created_at ASC`
 
-	return s.scanMessages(query, args...)
+	return ss.scanMessages(query, args...)
 }
