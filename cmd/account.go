@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -91,9 +90,7 @@ var accountListCmd = &cobra.Command{
 			sort.Slice(entries, func(i, j int) bool {
 				return entries[i].Handle < entries[j].Handle
 			})
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(entries)
+			return printJSON(entries)
 		}
 
 		if len(reg.Accounts) == 0 {

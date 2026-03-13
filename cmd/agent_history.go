@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -114,9 +112,7 @@ Without a name argument, shows all agent activity in the world.`,
 		}
 
 		if historyJSON {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(rows)
+			return printJSON(rows)
 		}
 
 		renderHistory(rows, agentName, world)

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -165,9 +164,7 @@ func schemaStatusJSONOutput(storeDir string) error {
 		return results[i].Database < results[j].Database
 	})
 
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(results)
+	return printJSON(results)
 }
 
 // --- sol schema migrate ---

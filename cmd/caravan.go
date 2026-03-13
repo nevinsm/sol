@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -183,9 +182,7 @@ var caravanCheckCmd = &cobra.Command{
 				BlockedBy: unsatisfiedCaravanDeps,
 				Items:     statuses,
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(out)
+			return printJSON(out)
 		}
 
 		fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
@@ -308,9 +305,7 @@ var caravanStatusCmd = &cobra.Command{
 					BlockedBy: unsatisfiedCaravanDeps,
 					Items:     statuses,
 				}
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				return enc.Encode(out)
+				return printJSON(out)
 			}
 
 			fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
@@ -378,9 +373,7 @@ var caravanStatusCmd = &cobra.Command{
 		}
 
 		if jsonOut {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(caravans)
+			return printJSON(caravans)
 		}
 
 		if len(caravans) == 0 {
@@ -532,9 +525,7 @@ var caravanListCmd = &cobra.Command{
 				}
 				entries = append(entries, entry)
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(entries)
+			return printJSON(entries)
 		}
 
 		if len(caravans) == 0 {

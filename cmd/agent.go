@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -105,9 +104,7 @@ var agentListCmd = &cobra.Command{
 		}
 
 		if agentListJSON {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(agents)
+			return printJSON(agents)
 		}
 
 		if len(agents) == 0 {

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -213,9 +212,7 @@ var envoyListCmd = &cobra.Command{
 		}
 
 		if envoyListJSON {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(envoys)
+			return printJSON(envoys)
 		}
 
 		if len(envoys) == 0 {

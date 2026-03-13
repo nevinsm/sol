@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -46,9 +45,7 @@ var quotaScanCmd = &cobra.Command{
 		}
 
 		if quotaScanJSON {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(results)
+			return printJSON(results)
 		}
 
 		if len(results) == 0 {
@@ -92,9 +89,7 @@ var quotaStatusCmd = &cobra.Command{
 		state.ExpireCooldowns()
 
 		if quotaStatusJSON {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(state)
+			return printJSON(state)
 		}
 
 		if len(state.Accounts) == 0 {

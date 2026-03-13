@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -328,9 +327,7 @@ var workflowStatusCmd = &cobra.Command{
 				CompletedCount: len(state.Completed),
 				Steps:          stepStatuses,
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(out)
+			return printJSON(out)
 		}
 
 		// Human-readable output.
@@ -539,9 +536,7 @@ func printShowJSON(m *workflow.Manifest, res *workflow.Resolution, validationErr
 		out.Synthesis = &synthesisJSON{Title: m.Synth.Title, Description: m.Synth.Description, DependsOn: m.Synth.DependsOn, Kind: m.Synth.Kind, Instructions: m.Synth.Instructions}
 	}
 
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(out)
+	return printJSON(out)
 }
 
 func printShowHuman(m *workflow.Manifest, res *workflow.Resolution, validationErr error) error {
@@ -701,9 +696,7 @@ var workflowManifestCmd = &cobra.Command{
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(result)
+			return printJSON(result)
 		}
 
 		fmt.Printf("Caravan: %s\n", result.CaravanID)
@@ -812,9 +805,7 @@ var workflowListCmd = &cobra.Command{
 		}
 
 		if jsonOut {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(entries)
+			return printJSON(entries)
 		}
 
 		if len(entries) == 0 {

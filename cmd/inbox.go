@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nevinsm/sol/internal/inbox"
@@ -83,9 +81,7 @@ func runInboxJSON(sphereStore *store.Store) error {
 		return nil
 	}
 
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(out)
+	return printJSON(out)
 }
 
 func init() {

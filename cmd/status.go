@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
@@ -74,9 +72,7 @@ func runSphereStatus() error {
 	}
 
 	if statusJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(result)
+		return printJSON(result)
 	}
 
 	fmt.Print(status.RenderSphere(result))
@@ -141,9 +137,7 @@ func runCombinedStatus(world string) error {
 			Escalations: escSummary,
 			WorldStatus: result,
 		}
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(combined); err != nil {
+		if err := printJSON(combined); err != nil {
 			return err
 		}
 		if code := result.Health(); code != 0 {
@@ -189,9 +183,7 @@ func runWorldStatus(world string) error {
 	}
 
 	if statusJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(result); err != nil {
+		if err := printJSON(result); err != nil {
 			return err
 		}
 		if code := result.Health(); code != 0 {

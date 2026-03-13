@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -115,9 +114,7 @@ var sessionListCmd = &cobra.Command{
 		}
 
 		if sessionListJSON {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(sessions)
+			return printJSON(sessions)
 		}
 
 		if len(sessions) == 0 {

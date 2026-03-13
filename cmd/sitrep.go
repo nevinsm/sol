@@ -2,9 +2,7 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
@@ -82,9 +80,7 @@ func runSitrep(cmd *cobra.Command, args []string) error {
 	// JSON mode: dump collected data and exit (no spinner output).
 	if jsonFlag {
 		spin.stop()
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(data)
+		return printJSON(data)
 	}
 
 	// Load config for AI invocation.
