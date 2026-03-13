@@ -15,7 +15,7 @@ type mockCaravanStore struct {
 	statuses map[string][]store.CaravanItemStatus // keyed by caravan ID
 }
 
-func (m *mockCaravanStore) ListCaravans(status string) ([]store.Caravan, error) {
+func (m *mockCaravanStore) ListCaravans(status store.CaravanStatus) ([]store.Caravan, error) {
 	if status == "" {
 		return m.caravans, nil
 	}
@@ -48,7 +48,7 @@ func TestGatherCaravansSplitsDoneClosed(t *testing.T) {
 
 	cs := &mockCaravanStore{
 		caravans: []store.Caravan{
-			{ID: "car-1111", Name: "batch-1", Status: "open"},
+			{ID: "car-1111", Name: "batch-1", Status: store.CaravanOpen},
 		},
 		items: map[string][]store.CaravanItem{
 			"car-1111": {
@@ -60,10 +60,10 @@ func TestGatherCaravansSplitsDoneClosed(t *testing.T) {
 		},
 		statuses: map[string][]store.CaravanItemStatus{
 			"car-1111": {
-				{WritID: "sol-aaa", World: "haven", WritStatus: "closed"},  // merged
-				{WritID: "sol-bbb", World: "haven", WritStatus: "done"},    // awaiting merge
-				{WritID: "sol-ccc", World: "haven", WritStatus: "working"}, // in progress
-				{WritID: "sol-ddd", World: "haven", WritStatus: "open", Ready: true},
+				{WritID: "sol-aaa", World: "haven", WritStatus: store.WritClosed},  // merged
+				{WritID: "sol-bbb", World: "haven", WritStatus: store.WritDone},    // awaiting merge
+				{WritID: "sol-ccc", World: "haven", WritStatus: store.WritWorking}, // in progress
+				{WritID: "sol-ddd", World: "haven", WritStatus: store.WritOpen, Ready: true},
 			},
 		},
 	}
@@ -98,10 +98,10 @@ func TestComputePhaseProgressSplitsDoneClosed(t *testing.T) {
 		{CaravanID: "car-1", WritID: "sol-ddd", World: "haven", Phase: 1},
 	}
 	statuses := []store.CaravanItemStatus{
-		{WritID: "sol-aaa", World: "haven", WritStatus: "closed"},
-		{WritID: "sol-bbb", World: "haven", WritStatus: "done"},
-		{WritID: "sol-ccc", World: "haven", WritStatus: "closed"},
-		{WritID: "sol-ddd", World: "haven", WritStatus: "tethered"},
+		{WritID: "sol-aaa", World: "haven", WritStatus: store.WritClosed},
+		{WritID: "sol-bbb", World: "haven", WritStatus: store.WritDone},
+		{WritID: "sol-ccc", World: "haven", WritStatus: store.WritClosed},
+		{WritID: "sol-ddd", World: "haven", WritStatus: store.WritTethered},
 	}
 
 	phases := computePhaseProgress(items, statuses)
@@ -142,7 +142,7 @@ func TestGatherSphereCaravanSplitsDoneClosed(t *testing.T) {
 
 	cs := &mockCaravanStore{
 		caravans: []store.Caravan{
-			{ID: "car-2222", Name: "batch-2", Status: "open"},
+			{ID: "car-2222", Name: "batch-2", Status: store.CaravanOpen},
 		},
 		items: map[string][]store.CaravanItem{
 			"car-2222": {
@@ -154,10 +154,10 @@ func TestGatherSphereCaravanSplitsDoneClosed(t *testing.T) {
 		},
 		statuses: map[string][]store.CaravanItemStatus{
 			"car-2222": {
-				{WritID: "sol-aaa", World: "haven", WritStatus: "closed"},
-				{WritID: "sol-bbb", World: "haven", WritStatus: "done"},
-				{WritID: "sol-ccc", World: "haven", WritStatus: "tethered"}, // dispatched
-				{WritID: "sol-ddd", World: "haven", WritStatus: "open", Ready: true},
+				{WritID: "sol-aaa", World: "haven", WritStatus: store.WritClosed},
+				{WritID: "sol-bbb", World: "haven", WritStatus: store.WritDone},
+				{WritID: "sol-ccc", World: "haven", WritStatus: store.WritTethered}, // dispatched
+				{WritID: "sol-ddd", World: "haven", WritStatus: store.WritOpen, Ready: true},
 			},
 		},
 	}
@@ -193,17 +193,17 @@ func TestGatherExcludesStaleFailedMRs(t *testing.T) {
 	sphere := &mockSphereStore{agents: nil}
 	world := &mockWorldStore{
 		items: map[string]*store.Writ{
-			"sol-aaa": {ID: "sol-aaa", Status: "closed"}, // re-cast and merged
-			"sol-bbb": {ID: "sol-bbb", Status: "open"},   // still open (genuine failure)
+			"sol-aaa": {ID: "sol-aaa", Status: store.WritClosed}, // re-cast and merged
+			"sol-bbb": {ID: "sol-bbb", Status: store.WritOpen},   // still open (genuine failure)
 		},
 	}
 	checker := &mockChecker{alive: nil}
 
 	mqStore := &mockMergeQueueStore{
 		mrs: []store.MergeRequest{
-			{ID: "mr-1", WritID: "sol-aaa", Phase: "failed"}, // stale — writ closed
-			{ID: "mr-2", WritID: "sol-bbb", Phase: "failed"}, // genuine failure
-			{ID: "mr-3", WritID: "sol-ccc", Phase: "ready"},
+			{ID: "mr-1", WritID: "sol-aaa", Phase: store.MRFailed}, // stale — writ closed
+			{ID: "mr-2", WritID: "sol-bbb", Phase: store.MRFailed}, // genuine failure
+			{ID: "mr-3", WritID: "sol-ccc", Phase: store.MRReady},
 		},
 	}
 
@@ -232,14 +232,14 @@ func TestGatherKeepsFailedMRsWithOpenWrits(t *testing.T) {
 	sphere := &mockSphereStore{agents: nil}
 	world := &mockWorldStore{
 		items: map[string]*store.Writ{
-			"sol-aaa": {ID: "sol-aaa", Status: "open"},
+			"sol-aaa": {ID: "sol-aaa", Status: store.WritOpen},
 		},
 	}
 	checker := &mockChecker{alive: nil}
 
 	mqStore := &mockMergeQueueStore{
 		mrs: []store.MergeRequest{
-			{ID: "mr-1", WritID: "sol-aaa", Phase: "failed"},
+			{ID: "mr-1", WritID: "sol-aaa", Phase: store.MRFailed},
 		},
 	}
 

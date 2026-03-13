@@ -17,12 +17,12 @@ import (
 type WorldStore interface {
 	GetMergeRequest(id string) (*store.MergeRequest, error)
 	ClaimMergeRequest(claimerID string) (*store.MergeRequest, error)
-	UpdateMergeRequestPhase(id, phase string) error
+	UpdateMergeRequestPhase(id string, phase store.MRPhase) error
 	ReleaseStaleClaims(ttl time.Duration) (int, error)
 	GetWrit(id string) (*store.Writ, error)
 	UpdateWrit(id string, updates store.WritUpdates) error
-	ListMergeRequests(phase string) ([]store.MergeRequest, error)
-	ListMergeRequestsByWrit(writID, phase string) ([]store.MergeRequest, error)
+	ListMergeRequests(phase store.MRPhase) ([]store.MergeRequest, error)
+	ListMergeRequestsByWrit(writID string, phase store.MRPhase) ([]store.MergeRequest, error)
 	BlockMergeRequest(mrID, blockerID string) error
 	UnblockMergeRequest(mrID string) error
 	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
@@ -37,7 +37,7 @@ type SphereStore interface {
 	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
 	ResolveEscalation(id string) error
 	UpdateEscalationLastNotified(id string) error
-	UpdateAgentState(id, state, activeWrit string) error
+	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
 	IsWritBlockedByCaravanDeps(writID string) (bool, []string, error)
 	Close() error
 }

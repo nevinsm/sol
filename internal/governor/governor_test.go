@@ -3,16 +3,18 @@ package governor
 import (
 	"strings"
 	"testing"
+
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // --- Mocks ---
 
 type mockStopStore struct {
-	updated   map[string]string // id -> state
+	updated   map[string]store.AgentState // id -> state
 	updateErr error
 }
 
-func (m *mockStopStore) UpdateAgentState(id, state, activeWrit string) error {
+func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, activeWrit string) error {
 	if m.updateErr != nil {
 		return m.updateErr
 	}
@@ -101,7 +103,7 @@ func TestStop(t *testing.T) {
 	t.Setenv("SOL_HOME", tmp)
 
 	ss := &mockStopStore{
-		updated: map[string]string{},
+		updated: map[string]store.AgentState{},
 	}
 
 	sessName := "sol-myworld-governor"
@@ -118,7 +120,7 @@ func TestStop(t *testing.T) {
 	}
 
 	// Verify agent state updated to idle.
-	if ss.updated["myworld/governor"] != "idle" {
+	if ss.updated["myworld/governor"] != store.AgentIdle {
 		t.Errorf("agent state = %q, want \"idle\"", ss.updated["myworld/governor"])
 	}
 }
@@ -128,7 +130,7 @@ func TestStopNoSession(t *testing.T) {
 	t.Setenv("SOL_HOME", tmp)
 
 	ss := &mockStopStore{
-		updated: map[string]string{},
+		updated: map[string]store.AgentState{},
 	}
 
 	mgr := &mockStopManager{sessions: map[string]bool{}}
@@ -139,7 +141,7 @@ func TestStopNoSession(t *testing.T) {
 	}
 
 	// Verify agent state still updated to idle.
-	if ss.updated["myworld/governor"] != "idle" {
+	if ss.updated["myworld/governor"] != store.AgentIdle {
 		t.Errorf("agent state = %q, want \"idle\"", ss.updated["myworld/governor"])
 	}
 }

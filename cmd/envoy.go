@@ -454,7 +454,7 @@ var envoyStatusCmd = &cobra.Command{
 			agentID := world + "/" + name
 			agent, err := sphereStore.GetAgent(agentID)
 			if err == nil && agent != nil {
-				summary.State = agent.State
+				summary.State = string(agent.State)
 				summary.ActiveWrit = agent.ActiveWrit
 			}
 		}

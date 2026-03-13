@@ -15,10 +15,10 @@ import (
 func TestListReady(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", Phase: "ready", BlockedBy: ""},
-		{ID: "mr-00000002", Phase: "ready", BlockedBy: "sol-blocker1"},
-		{ID: "mr-00000003", Phase: "ready", BlockedBy: ""},
-		{ID: "mr-00000004", Phase: "claimed", BlockedBy: ""},
+		{ID: "mr-00000001", Phase: store.MRReady, BlockedBy: ""},
+		{ID: "mr-00000002", Phase: store.MRReady, BlockedBy: "sol-blocker1"},
+		{ID: "mr-00000003", Phase: store.MRReady, BlockedBy: ""},
+		{ID: "mr-00000004", Phase: store.MRClaimed, BlockedBy: ""},
 	}
 
 	r := &Forge{
@@ -45,8 +45,8 @@ func TestListReady(t *testing.T) {
 func TestListReadyIsPureRead(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", Phase: "ready", WritID: "sol-aaa11111", BlockedBy: ""},
-		{ID: "mr-00000002", Phase: "ready", WritID: "sol-bbb22222", BlockedBy: ""},
+		{ID: "mr-00000001", Phase: store.MRReady, WritID: "sol-aaa11111", BlockedBy: ""},
+		{ID: "mr-00000002", Phase: store.MRReady, WritID: "sol-bbb22222", BlockedBy: ""},
 	}
 
 	// Even with caravan deps that would block, ListReady should NOT call BlockMergeRequest.
@@ -83,9 +83,9 @@ func TestListReadyIsPureRead(t *testing.T) {
 func TestEnforceCaravanBlocks(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", Phase: "ready", WritID: "sol-aaa11111", BlockedBy: ""},
-		{ID: "mr-00000002", Phase: "ready", WritID: "sol-bbb22222", BlockedBy: ""},
-		{ID: "mr-00000003", Phase: "ready", WritID: "sol-ccc33333", BlockedBy: ""},
+		{ID: "mr-00000001", Phase: store.MRReady, WritID: "sol-aaa11111", BlockedBy: ""},
+		{ID: "mr-00000002", Phase: store.MRReady, WritID: "sol-bbb22222", BlockedBy: ""},
+		{ID: "mr-00000003", Phase: store.MRReady, WritID: "sol-ccc33333", BlockedBy: ""},
 	}
 
 	sphereStore := newMockSphereStore()
@@ -132,9 +132,9 @@ func TestEnforceCaravanBlocks(t *testing.T) {
 func TestEnforceCaravanBlocksSkipsAlreadyBlocked(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", Phase: "ready", WritID: "sol-aaa11111", BlockedBy: "sol-existing-blocker"},
-		{ID: "mr-00000002", Phase: "ready", WritID: "sol-bbb22222", BlockedBy: store.CaravanBlockedSentinel},
-		{ID: "mr-00000003", Phase: "ready", WritID: "sol-ccc33333", BlockedBy: ""},
+		{ID: "mr-00000001", Phase: store.MRReady, WritID: "sol-aaa11111", BlockedBy: "sol-existing-blocker"},
+		{ID: "mr-00000002", Phase: store.MRReady, WritID: "sol-bbb22222", BlockedBy: store.CaravanBlockedSentinel},
+		{ID: "mr-00000003", Phase: store.MRReady, WritID: "sol-ccc33333", BlockedBy: ""},
 	}
 
 	sphereStore := newMockSphereStore()
@@ -173,9 +173,9 @@ func TestEnforceCaravanBlocksSkipsAlreadyBlocked(t *testing.T) {
 func TestListBlocked(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", Phase: "ready", BlockedBy: ""},
-		{ID: "mr-00000002", Phase: "ready", BlockedBy: "sol-blocker1"},
-		{ID: "mr-00000003", Phase: "ready", BlockedBy: "sol-blocker2"},
+		{ID: "mr-00000001", Phase: store.MRReady, BlockedBy: ""},
+		{ID: "mr-00000002", Phase: store.MRReady, BlockedBy: "sol-blocker1"},
+		{ID: "mr-00000003", Phase: store.MRReady, BlockedBy: "sol-blocker2"},
 	}
 
 	r := &Forge{
@@ -210,7 +210,7 @@ func TestCreateResolutionTask(t *testing.T) {
 		Priority: 2,
 	}
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: store.MRClaimed},
 	}
 
 	r := &Forge{
@@ -226,7 +226,7 @@ func TestCreateResolutionTask(t *testing.T) {
 		ID:         "mr-00000001",
 		WritID: "sol-original1",
 		Branch:     "outpost/Toast/sol-original1",
-		Phase:      "claimed",
+		Phase:      store.MRClaimed,
 	}
 
 	taskID, err := r.CreateResolutionTask(mr)
@@ -286,11 +286,11 @@ func TestCreateResolutionTask(t *testing.T) {
 func TestCheckUnblocked(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", Phase: "ready", BlockedBy: "sol-resolved1"},
-		{ID: "mr-00000002", Phase: "ready", BlockedBy: "sol-pending1"},
+		{ID: "mr-00000001", Phase: store.MRReady, BlockedBy: "sol-resolved1"},
+		{ID: "mr-00000002", Phase: store.MRReady, BlockedBy: "sol-pending1"},
 	}
-	worldStore.items["sol-resolved1"] = &store.Writ{ID: "sol-resolved1", Status: "closed"}
-	worldStore.items["sol-pending1"] = &store.Writ{ID: "sol-pending1", Status: "open"}
+	worldStore.items["sol-resolved1"] = &store.Writ{ID: "sol-resolved1", Status: store.WritClosed}
+	worldStore.items["sol-pending1"] = &store.Writ{ID: "sol-pending1", Status: store.WritOpen}
 
 	r := &Forge{
 		world:      "ember",
@@ -329,12 +329,12 @@ func TestCheckUnblocked(t *testing.T) {
 func TestMarkFailedReopensWrit(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
 		ID:       "sol-aaa11111",
 		Title:    "Test feature",
-		Status:   "done",
+		Status:   store.WritDone,
 		Assignee: "Toast",
 	}
 
@@ -357,13 +357,13 @@ func TestMarkFailedReopensWrit(t *testing.T) {
 	defer worldStore.mu.Unlock()
 
 	// Verify MR phase set to failed.
-	if phase, ok := worldStore.phaseUpdates["mr-00000001"]; !ok || phase != "failed" {
+	if phase, ok := worldStore.phaseUpdates["mr-00000001"]; !ok || phase != store.MRFailed {
 		t.Errorf("MR phase = %q, want 'failed'", phase)
 	}
 
 	// Verify writ reopened.
 	item := worldStore.items["sol-aaa11111"]
-	if item.Status != "open" {
+	if item.Status != store.WritOpen {
 		t.Errorf("writ status = %q, want 'open'", item.Status)
 	}
 	if item.Assignee != "" {
@@ -398,7 +398,7 @@ func TestMarkFailedReopensWrit(t *testing.T) {
 	if update.id != "ember/Toast" {
 		t.Errorf("agent state update id = %q, want 'ember/Toast'", update.id)
 	}
-	if update.state != "idle" {
+	if update.state != store.AgentIdle {
 		t.Errorf("agent state update state = %q, want 'idle'", update.state)
 	}
 	if update.activeWrit != "" {
@@ -409,9 +409,9 @@ func TestMarkFailedReopensWrit(t *testing.T) {
 func TestMarkMergedClosesWrit(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
 	}
-	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: store.WritDone}
 
 	// Create a temp dir for git operations.
 	dir := t.TempDir()
@@ -434,12 +434,12 @@ func TestMarkMergedClosesWrit(t *testing.T) {
 	defer worldStore.mu.Unlock()
 
 	// Verify MR phase.
-	if phase, ok := worldStore.phaseUpdates["mr-00000001"]; !ok || phase != "merged" {
+	if phase, ok := worldStore.phaseUpdates["mr-00000001"]; !ok || phase != store.MRMerged {
 		t.Errorf("MR phase = %q, want 'merged'", phase)
 	}
 
 	// Verify writ closed.
-	if worldStore.items["sol-aaa11111"].Status != "closed" {
+	if worldStore.items["sol-aaa11111"].Status != store.WritClosed {
 		t.Errorf("writ status = %q, want 'closed'", worldStore.items["sol-aaa11111"].Status)
 	}
 }
@@ -447,13 +447,13 @@ func TestMarkMergedClosesWrit(t *testing.T) {
 func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-failed1", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "failed"},
-		{ID: "mr-failed2", WritID: "sol-aaa11111", Branch: "outpost/Blaze/sol-aaa11111", Phase: "failed"},
-		{ID: "mr-merged1", WritID: "sol-aaa11111", Branch: "outpost/Nova/sol-aaa11111", Phase: "claimed"},
-		{ID: "mr-other1", WritID: "sol-bbb22222", Branch: "outpost/Toast/sol-bbb22222", Phase: "failed"}, // different writ
+		{ID: "mr-failed1", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRFailed},
+		{ID: "mr-failed2", WritID: "sol-aaa11111", Branch: "outpost/Blaze/sol-aaa11111", Phase: store.MRFailed},
+		{ID: "mr-merged1", WritID: "sol-aaa11111", Branch: "outpost/Nova/sol-aaa11111", Phase: store.MRClaimed},
+		{ID: "mr-other1", WritID: "sol-bbb22222", Branch: "outpost/Toast/sol-bbb22222", Phase: store.MRFailed}, // different writ
 	}
-	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: "done"}
-	worldStore.items["sol-bbb22222"] = &store.Writ{ID: "sol-bbb22222", Title: "Other", Status: "done"}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: store.WritDone}
+	worldStore.items["sol-bbb22222"] = &store.Writ{ID: "sol-bbb22222", Title: "Other", Status: store.WritDone}
 
 	sphereStore := newMockSphereStore()
 	// Pre-create escalations for the failed MRs with source_ref.
@@ -489,15 +489,15 @@ func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 	defer worldStore.mu.Unlock()
 
 	// Verify merged MR is merged.
-	if phase := worldStore.phaseUpdates["mr-merged1"]; phase != "merged" {
+	if phase := worldStore.phaseUpdates["mr-merged1"]; phase != store.MRMerged {
 		t.Errorf("merged MR phase = %q, want 'merged'", phase)
 	}
 
 	// Verify failed sibling MRs are superseded.
-	if phase := worldStore.phaseUpdates["mr-failed1"]; phase != "superseded" {
+	if phase := worldStore.phaseUpdates["mr-failed1"]; phase != store.MRSuperseded {
 		t.Errorf("failed MR 1 phase = %q, want 'superseded'", phase)
 	}
-	if phase := worldStore.phaseUpdates["mr-failed2"]; phase != "superseded" {
+	if phase := worldStore.phaseUpdates["mr-failed2"]; phase != store.MRSuperseded {
 		t.Errorf("failed MR 2 phase = %q, want 'superseded'", phase)
 	}
 
@@ -551,10 +551,10 @@ func TestMarkFailedNudgesGovernor(t *testing.T) {
 
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Test", Status: "done", Assignee: "Toast",
+		ID: "sol-aaa11111", Title: "Test", Status: store.WritDone, Assignee: "Toast",
 	}
 
 	r := &Forge{
@@ -587,10 +587,10 @@ func TestReleaseNudgesPushRejected(t *testing.T) {
 
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed", Attempts: 1},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed, Attempts: 1},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Test", Status: "done",
+		ID: "sol-aaa11111", Title: "Test", Status: store.WritDone,
 	}
 
 	r := &Forge{
@@ -614,7 +614,7 @@ func TestReleaseNudgesPushRejected(t *testing.T) {
 	worldStore.mu.Lock()
 	phase := worldStore.phaseUpdates["mr-00000001"]
 	worldStore.mu.Unlock()
-	if phase != "ready" {
+	if phase != store.MRReady {
 		t.Errorf("MR phase = %q, want 'ready'", phase)
 	}
 
@@ -633,10 +633,10 @@ func TestReleaseMaxAttemptsMarksFailed(t *testing.T) {
 
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed", Attempts: 3},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed, Attempts: 3},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
-		ID: "sol-aaa11111", Title: "Test", Status: "done", Assignee: "Toast",
+		ID: "sol-aaa11111", Title: "Test", Status: store.WritDone, Assignee: "Toast",
 	}
 
 	r := &Forge{
@@ -660,7 +660,7 @@ func TestReleaseMaxAttemptsMarksFailed(t *testing.T) {
 	worldStore.mu.Lock()
 	phase := worldStore.phaseUpdates["mr-00000001"]
 	worldStore.mu.Unlock()
-	if phase != "failed" {
+	if phase != store.MRFailed {
 		t.Errorf("MR phase = %q, want 'failed'", phase)
 	}
 
@@ -687,7 +687,7 @@ func TestCreateResolutionTaskNudgesGovernor(t *testing.T) {
 		ID: "sol-original1", Title: "Add feature X", Priority: 2,
 	}
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: store.MRClaimed},
 	}
 
 	r := &Forge{
@@ -703,7 +703,7 @@ func TestCreateResolutionTaskNudgesGovernor(t *testing.T) {
 		ID:         "mr-00000001",
 		WritID: "sol-original1",
 		Branch:     "outpost/Toast/sol-original1",
-		Phase:      "claimed",
+		Phase:      store.MRClaimed,
 	}
 
 	_, err := r.CreateResolutionTask(mr)
@@ -729,9 +729,9 @@ func TestCreateResolutionTaskNudgesGovernor(t *testing.T) {
 func TestMarkMergedCloseWritFailureReturnsError(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
 	}
-	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: store.WritDone}
 	worldStore.closeWritErr = fmt.Errorf("database locked")
 
 	sphereStore := newMockSphereStore()
@@ -777,9 +777,9 @@ func TestMarkMergedCloseWritFailureReturnsError(t *testing.T) {
 func TestMarkMergedPhaseUpdateFailureCreatesEscalation(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
 	}
-	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: store.WritDone}
 	worldStore.updatePhaseErr = fmt.Errorf("database locked")
 
 	sphereStore := newMockSphereStore()
@@ -806,7 +806,7 @@ func TestMarkMergedPhaseUpdateFailureCreatesEscalation(t *testing.T) {
 
 	// Verify writ was closed (the critical operation succeeded).
 	worldStore.mu.Lock()
-	if worldStore.items["sol-aaa11111"].Status != "closed" {
+	if worldStore.items["sol-aaa11111"].Status != store.WritClosed {
 		t.Errorf("writ status = %q, want 'closed'", worldStore.items["sol-aaa11111"].Status)
 	}
 	worldStore.mu.Unlock()
@@ -835,12 +835,12 @@ func TestMarkMergedPhaseUpdateFailureCreatesEscalation(t *testing.T) {
 func TestMarkFailedUpdateWritFailureCreatesEscalation(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
 		ID:       "sol-aaa11111",
 		Title:    "Test feature",
-		Status:   "done",
+		Status:   store.WritDone,
 		Assignee: "Toast",
 	}
 	worldStore.updateWritErr = fmt.Errorf("database locked")
@@ -863,7 +863,7 @@ func TestMarkFailedUpdateWritFailureCreatesEscalation(t *testing.T) {
 	// Verify MR phase set to failed (crash-safe ordering: writ reopen attempted
 	// first but failed, MR phase update still proceeds).
 	worldStore.mu.Lock()
-	if phase := worldStore.phaseUpdates["mr-00000001"]; phase != "failed" {
+	if phase := worldStore.phaseUpdates["mr-00000001"]; phase != store.MRFailed {
 		t.Errorf("MR phase = %q, want 'failed'", phase)
 	}
 	worldStore.mu.Unlock()
@@ -892,12 +892,12 @@ func TestMarkFailedCrashSafetyOrdering(t *testing.T) {
 	// UpdateMergeRequestPhase and verify the writ was already reopened.
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
 	}
 	worldStore.items["sol-aaa11111"] = &store.Writ{
 		ID:       "sol-aaa11111",
 		Title:    "Test feature",
-		Status:   "done",
+		Status:   store.WritDone,
 		Assignee: "Toast",
 	}
 	// Inject failure on MR phase update — simulates crash between the two operations.
@@ -931,7 +931,7 @@ func TestMarkFailedCrashSafetyOrdering(t *testing.T) {
 	// failed. If the order were reversed, the writ would still be "done" with
 	// assignee "Toast".
 	item := worldStore.items["sol-aaa11111"]
-	if item.Status != "open" {
+	if item.Status != store.WritOpen {
 		t.Errorf("writ status = %q, want 'open' (should be reopened before MR phase update)", item.Status)
 	}
 	if item.Assignee != "" {
@@ -978,9 +978,9 @@ func TestResolveEscalationsForMRUsesSourceRef(t *testing.T) {
 func TestMarkMergedResolvesWritLinkedEscalations(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
 	}
-	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: store.WritDone}
 
 	sphereStore := newMockSphereStore()
 	// Create writ-linked escalation.
@@ -1026,9 +1026,9 @@ func TestMarkMergedResolvesWritLinkedEscalations(t *testing.T) {
 func TestMarkMergedMultipleWritLinkedEscalations(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
-		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: "claimed"},
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
 	}
-	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: "done"}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "Test", Status: store.WritDone}
 
 	sphereStore := newMockSphereStore()
 	// Create multiple writ-linked escalations.

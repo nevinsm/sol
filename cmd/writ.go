@@ -188,7 +188,7 @@ var writListCmd = &cobra.Command{
 		defer s.Close()
 
 		filters := store.ListFilters{
-			Status:   listStatus,
+			Status:   store.WritStatus(listStatus),
 			Assignee: listAssignee,
 			Label:    listLabel,
 		}
@@ -255,7 +255,7 @@ var writUpdateCmd = &cobra.Command{
 			return err
 		}
 		updates := store.WritUpdates{
-			Status:      updateStatus,
+			Status:      store.WritStatus(updateStatus),
 			Assignee:    updateAssignee,
 			Priority:    updatePriority,
 			Title:       updateTitle,

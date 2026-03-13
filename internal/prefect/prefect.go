@@ -36,8 +36,8 @@ type SessionManager interface {
 
 // SphereStore abstracts sphere database operations for testing.
 type SphereStore interface {
-	ListAgents(world string, state string) ([]store.Agent, error)
-	UpdateAgentState(id, state, activeWrit string) error
+	ListAgents(world string, state store.AgentState) ([]store.Agent, error)
+	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
 	ListWorlds() ([]store.World, error)
 }
 

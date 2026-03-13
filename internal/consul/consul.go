@@ -42,8 +42,8 @@ func DefaultConfig() Config {
 // SphereStore is the subset of store.Store used by the consul.
 type SphereStore interface {
 	// Agents
-	ListAgents(world string, state string) ([]store.Agent, error)
-	UpdateAgentState(id, state, activeWrit string) error
+	ListAgents(world string, state store.AgentState) ([]store.Agent, error)
+	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
 	GetAgent(id string) (*store.Agent, error)
 	FindIdleAgent(world string) (*store.Agent, error)
 	CreateAgent(name, world, role string) (string, error)
@@ -51,7 +51,7 @@ type SphereStore interface {
 	DeleteAgent(id string) error
 
 	// Caravans
-	ListCaravans(status string) ([]store.Caravan, error)
+	ListCaravans(status store.CaravanStatus) ([]store.Caravan, error)
 	GetCaravan(id string) (*store.Caravan, error)
 	CheckCaravanReadiness(caravanID string, worldOpener func(string) (*store.Store, error)) ([]store.CaravanItemStatus, error)
 	TryCloseCaravan(caravanID string, worldOpener func(string) (*store.Store, error)) (bool, error)
@@ -178,7 +178,7 @@ func (d *Consul) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to register consul: %w", err)
 	}
 
-	if err := d.sphereStore.UpdateAgentState("sphere/consul", "working", ""); err != nil {
+	if err := d.sphereStore.UpdateAgentState("sphere/consul", store.AgentWorking, ""); err != nil {
 		return fmt.Errorf("failed to set consul working: %w", err)
 	}
 
@@ -191,7 +191,7 @@ func (d *Consul) Run(ctx context.Context) error {
 			Status:      "stopping",
 			Escalations: openEsc,
 		})
-		_ = d.sphereStore.UpdateAgentState("sphere/consul", "idle", "")
+		_ = d.sphereStore.UpdateAgentState("sphere/consul", store.AgentIdle, "")
 	}
 
 	// Patrol immediately.
@@ -368,7 +368,7 @@ var errShutdown = fmt.Errorf("shutdown requested")
 // Returns the number of tethers recovered.
 func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 	// List all agents with state "working".
-	agents, err := d.sphereStore.ListAgents("", "working")
+	agents, err := d.sphereStore.ListAgents("", store.AgentWorking)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list working agents: %w", err)
 	}
@@ -433,7 +433,7 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 	// 2. Update writ: status -> "open", clear assignee.
 	// Done first so work becomes available for reassignment immediately.
 	if err := worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
-		Status:   "open",
+		Status:   store.WritOpen,
 		Assignee: "-", // "-" clears assignee
 	}); err != nil {
 		return fmt.Errorf("failed to update writ %q: %w", agent.ActiveWrit, err)
@@ -450,7 +450,7 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 	// Done LAST — this is the signal that recovery is complete. While the
 	// agent is still "working", consul's next patrol will re-detect and
 	// retry (all prior steps are idempotent).
-	if err := d.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
+	if err := d.sphereStore.UpdateAgentState(agent.ID, store.AgentIdle, ""); err != nil {
 		return fmt.Errorf("failed to update agent %q state: %w", agent.ID, err)
 	}
 
@@ -479,7 +479,7 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 //
 // Returns the number of items dispatched.
 func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
-	caravans, err := d.sphereStore.ListCaravans("open")
+	caravans, err := d.sphereStore.ListCaravans(store.CaravanOpen)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list open caravans: %w", err)
 	}
@@ -501,7 +501,7 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 		// Group ready items by world.
 		readyByWorld := map[string][]store.CaravanItemStatus{}
 		for _, st := range statuses {
-			if st.Ready && st.WritStatus == "open" {
+			if st.Ready && st.WritStatus == store.WritOpen {
 				readyByWorld[st.World] = append(readyByWorld[st.World], st)
 			}
 		}
@@ -734,7 +734,7 @@ func (d *Consul) detectOrphanedSessions(ctx context.Context) (int, error) {
 	}
 
 	// 3b. All agents (any state) from sphere store → session names.
-	agents, err := d.sphereStore.ListAgents("", "")
+	agents, err := d.sphereStore.ListAgents("", store.AgentState(""))
 	if err != nil {
 		return 0, fmt.Errorf("failed to list agents for orphan detection: %w", err)
 	}

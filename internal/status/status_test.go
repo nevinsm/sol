@@ -27,7 +27,7 @@ type mockSphereStore struct {
 	err    error
 }
 
-func (m *mockSphereStore) ListAgents(world, state string) ([]store.Agent, error) {
+func (m *mockSphereStore) ListAgents(world string, state store.AgentState) ([]store.Agent, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -61,7 +61,7 @@ type mockMergeQueueStore struct {
 	err error
 }
 
-func (m *mockMergeQueueStore) ListMergeRequests(phase string) ([]store.MergeRequest, error) {
+func (m *mockMergeQueueStore) ListMergeRequests(phase store.MRPhase) ([]store.MergeRequest, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -161,8 +161,8 @@ func TestGatherHealthy(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", ActiveWrit: "sol-a1b2c3d4"},
-			{ID: "haven/Sage", Name: "Sage", World: "haven", State: "working", ActiveWrit: "sol-11223344"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: store.AgentWorking, ActiveWrit: "sol-a1b2c3d4"},
+			{ID: "haven/Sage", Name: "Sage", World: "haven", State: store.AgentWorking, ActiveWrit: "sol-11223344"},
 		},
 	}
 	world := &mockWorldStore{
@@ -202,8 +202,8 @@ func TestGatherUnhealthy(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", ActiveWrit: "sol-a1b2c3d4"},
-			{ID: "haven/Jasper", Name: "Jasper", World: "haven", State: "working", ActiveWrit: "sol-c5d6e7f8"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: store.AgentWorking, ActiveWrit: "sol-a1b2c3d4"},
+			{ID: "haven/Jasper", Name: "Jasper", World: "haven", State: store.AgentWorking, ActiveWrit: "sol-c5d6e7f8"},
 		},
 	}
 	world := &mockWorldStore{
@@ -240,7 +240,7 @@ func TestGatherDegraded(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", ActiveWrit: "sol-a1b2c3d4"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: store.AgentWorking, ActiveWrit: "sol-a1b2c3d4"},
 		},
 	}
 	world := &mockWorldStore{
@@ -319,7 +319,7 @@ func TestGatherWithHookedWork(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", ActiveWrit: "sol-a1b2c3d4"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: store.AgentWorking, ActiveWrit: "sol-a1b2c3d4"},
 		},
 	}
 	world := &mockWorldStore{
@@ -356,7 +356,7 @@ func TestGatherMissingWrit(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", ActiveWrit: "sol-nonexist"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: store.AgentWorking, ActiveWrit: "sol-nonexist"},
 		},
 	}
 	world := &mockWorldStore{items: map[string]*store.Writ{}} // item not found
@@ -386,10 +386,10 @@ func TestGatherMixedStates(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working", ActiveWrit: "sol-a1b2c3d4"},
-			{ID: "haven/Jasper", Name: "Jasper", World: "haven", State: "working", ActiveWrit: "sol-c5d6e7f8"},
-			{ID: "haven/Sage", Name: "Sage", World: "haven", State: "idle"},
-			{ID: "haven/Copper", Name: "Copper", World: "haven", State: "stalled", ActiveWrit: "sol-11223344"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: store.AgentWorking, ActiveWrit: "sol-a1b2c3d4"},
+			{ID: "haven/Jasper", Name: "Jasper", World: "haven", State: store.AgentWorking, ActiveWrit: "sol-c5d6e7f8"},
+			{ID: "haven/Sage", Name: "Sage", World: "haven", State: store.AgentIdle},
+			{ID: "haven/Copper", Name: "Copper", World: "haven", State: store.AgentStalled, ActiveWrit: "sol-11223344"},
 		},
 	}
 	world := &mockWorldStore{
@@ -568,9 +568,9 @@ func TestGatherMergeQueue(t *testing.T) {
 
 	mqStore := &mockMergeQueueStore{
 		mrs: []store.MergeRequest{
-			{ID: "mr-11111111", Phase: "ready"},
-			{ID: "mr-22222222", Phase: "ready"},
-			{ID: "mr-33333333", Phase: "claimed"},
+			{ID: "mr-11111111", Phase: store.MRReady},
+			{ID: "mr-22222222", Phase: store.MRReady},
+			{ID: "mr-33333333", Phase: store.MRClaimed},
 		},
 	}
 
@@ -636,7 +636,7 @@ func TestGatherWithGovernor(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: "idle"},
+			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: store.AgentIdle},
 		},
 	}
 	world := &mockWorldStore{items: nil}
@@ -676,7 +676,7 @@ func TestGatherGovernorRunningReflectsSession(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: "idle"},
+			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: store.AgentIdle},
 		},
 	}
 	world := &mockWorldStore{items: nil}
@@ -707,8 +707,8 @@ func TestGatherWithEnvoys(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "working", ActiveWrit: "sol-a1b2c3d4"},
-			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: "working", ActiveWrit: "sol-11223344"},
+			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: store.AgentWorking, ActiveWrit: "sol-a1b2c3d4"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: store.AgentWorking, ActiveWrit: "sol-11223344"},
 		},
 	}
 	world := &mockWorldStore{
@@ -762,11 +762,11 @@ func TestGatherMixedRoles(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: "working", ActiveWrit: "sol-a1b2c3d4"},
-			{ID: "haven/Crisp", Name: "Crisp", World: "haven", Role: "outpost", State: "idle"},
-			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "working", ActiveWrit: "sol-11223344"},
-			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: "idle"},
-			{ID: "haven/forge", Name: "forge", World: "haven", Role: "forge", State: "idle"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: store.AgentWorking, ActiveWrit: "sol-a1b2c3d4"},
+			{ID: "haven/Crisp", Name: "Crisp", World: "haven", Role: "outpost", State: store.AgentIdle},
+			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: store.AgentWorking, ActiveWrit: "sol-11223344"},
+			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: store.AgentIdle},
+			{ID: "haven/forge", Name: "forge", World: "haven", Role: "forge", State: store.AgentIdle},
 		},
 	}
 	world := &mockWorldStore{
@@ -826,7 +826,7 @@ func TestGatherEnvoyBriefAge(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "idle"},
+			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: store.AgentIdle},
 		},
 	}
 	world := &mockWorldStore{items: nil}
@@ -853,9 +853,9 @@ func TestHealthIgnoresEnvoyGovernor(t *testing.T) {
 
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: "working", ActiveWrit: "sol-a1b2c3d4"},
-			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "working", ActiveWrit: "sol-11223344"},
-			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: "idle"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: store.AgentWorking, ActiveWrit: "sol-a1b2c3d4"},
+			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: store.AgentWorking, ActiveWrit: "sol-11223344"},
+			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: store.AgentIdle},
 		},
 	}
 	world := &mockWorldStore{

@@ -190,7 +190,7 @@ func caravanDepEntry(s *store.Store, id string) caravanDepInfo {
 	if err != nil {
 		return caravanDepInfo{ID: id, Name: "(unknown)", Status: "unknown"}
 	}
-	return caravanDepInfo{ID: c.ID, Name: c.Name, Status: c.Status}
+	return caravanDepInfo{ID: c.ID, Name: c.Name, Status: string(c.Status)}
 }
 
 func caravanName(s *store.Store, id string) string {

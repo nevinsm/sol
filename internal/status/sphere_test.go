@@ -265,10 +265,10 @@ func TestGatherSphereAgentCounts(t *testing.T) {
 	}
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Toast", Name: "Toast", World: "haven", State: "working"},
-			{ID: "haven/Sage", Name: "Sage", World: "haven", State: "working"},
-			{ID: "haven/Copper", Name: "Copper", World: "haven", State: "idle"},
-			{ID: "haven/Jade", Name: "Jade", World: "haven", State: "stalled"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", State: store.AgentWorking},
+			{ID: "haven/Sage", Name: "Sage", World: "haven", State: store.AgentWorking},
+			{ID: "haven/Copper", Name: "Copper", World: "haven", State: store.AgentIdle},
+			{ID: "haven/Jade", Name: "Jade", World: "haven", State: store.AgentStalled},
 		},
 	}
 	checker := &mockChecker{
@@ -494,12 +494,12 @@ func TestGatherSphereWithEnvoysAndGovernor(t *testing.T) {
 	}
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: "working"},
-			{ID: "haven/Crisp", Name: "Crisp", World: "haven", Role: "outpost", State: "idle"},
-			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: "working"},
-			{ID: "haven/Ranger", Name: "Ranger", World: "haven", Role: "envoy", State: "idle"},
-			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: "idle"},
-			{ID: "haven/forge", Name: "forge", World: "haven", Role: "forge", State: "idle"},
+			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: store.AgentWorking},
+			{ID: "haven/Crisp", Name: "Crisp", World: "haven", Role: "outpost", State: store.AgentIdle},
+			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: store.AgentWorking},
+			{ID: "haven/Ranger", Name: "Ranger", World: "haven", Role: "envoy", State: store.AgentIdle},
+			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: store.AgentIdle},
+			{ID: "haven/forge", Name: "forge", World: "haven", Role: "forge", State: store.AgentIdle},
 		},
 	}
 	checker := &mockChecker{
@@ -611,8 +611,8 @@ model_tier = "sonnet"
 	}
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: worldName + "/A", Name: "A", World: worldName, State: "working"},
-			{ID: worldName + "/B", Name: "B", World: worldName, State: "idle"},
+			{ID: worldName + "/A", Name: "A", World: worldName, State: store.AgentWorking},
+			{ID: worldName + "/B", Name: "B", World: worldName, State: store.AgentIdle},
 		},
 	}
 	checker := &mockChecker{alive: map[string]bool{
@@ -680,9 +680,9 @@ func TestGatherSphereSleepingWorldShowsAgentCounts(t *testing.T) {
 	}
 	sphere := &mockSphereStore{
 		agents: []store.Agent{
-			{ID: "slumber/Alpha", Name: "Alpha", World: "slumber", Role: "outpost", State: "working"},
-			{ID: "slumber/Beta", Name: "Beta", World: "slumber", Role: "outpost", State: "idle"},
-			{ID: "slumber/Envoy1", Name: "Envoy1", World: "slumber", Role: "envoy", State: "working"},
+			{ID: "slumber/Alpha", Name: "Alpha", World: "slumber", Role: "outpost", State: store.AgentWorking},
+			{ID: "slumber/Beta", Name: "Beta", World: "slumber", Role: "outpost", State: store.AgentIdle},
+			{ID: "slumber/Envoy1", Name: "Envoy1", World: "slumber", Role: "envoy", State: store.AgentWorking},
 		},
 	}
 	checker := &mockChecker{

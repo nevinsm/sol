@@ -21,7 +21,7 @@ type mockWorldStore struct {
 	mrs             []store.MergeRequest
 	items           map[string]*store.Writ
 	claims          []string // IDs of claimed MRs
-	phaseUpdates    map[string]string
+	phaseUpdates    map[string]store.MRPhase
 	blockCalls      []blockCall // tracks BlockMergeRequest calls
 	staleReleased   int
 	closeWritErr    error // inject CloseWrit failure
@@ -37,7 +37,7 @@ type blockCall struct {
 func newMockWorldStore() *mockWorldStore {
 	return &mockWorldStore{
 		items:        make(map[string]*store.Writ),
-		phaseUpdates: make(map[string]string),
+		phaseUpdates: make(map[string]store.MRPhase),
 	}
 }
 
@@ -57,8 +57,8 @@ func (m *mockWorldStore) ClaimMergeRequest(claimerID string) (*store.MergeReques
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.mrs {
-		if m.mrs[i].Phase == "ready" {
-			m.mrs[i].Phase = "claimed"
+		if m.mrs[i].Phase == store.MRReady {
+			m.mrs[i].Phase = store.MRClaimed
 			m.mrs[i].ClaimedBy = claimerID
 			m.mrs[i].Attempts++
 			m.claims = append(m.claims, m.mrs[i].ID)
@@ -69,7 +69,7 @@ func (m *mockWorldStore) ClaimMergeRequest(claimerID string) (*store.MergeReques
 	return nil, nil
 }
 
-func (m *mockWorldStore) UpdateMergeRequestPhase(id, phase string) error {
+func (m *mockWorldStore) UpdateMergeRequestPhase(id string, phase store.MRPhase) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.updatePhaseErr != nil {
@@ -124,7 +124,7 @@ func (m *mockWorldStore) UpdateWrit(id string, updates store.WritUpdates) error 
 	return nil
 }
 
-func (m *mockWorldStore) ListMergeRequests(phase string) ([]store.MergeRequest, error) {
+func (m *mockWorldStore) ListMergeRequests(phase store.MRPhase) ([]store.MergeRequest, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []store.MergeRequest
@@ -136,7 +136,7 @@ func (m *mockWorldStore) ListMergeRequests(phase string) ([]store.MergeRequest, 
 	return result, nil
 }
 
-func (m *mockWorldStore) ListMergeRequestsByWrit(writID, phase string) ([]store.MergeRequest, error) {
+func (m *mockWorldStore) ListMergeRequestsByWrit(writID string, phase store.MRPhase) ([]store.MergeRequest, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []store.MergeRequest
@@ -159,7 +159,7 @@ func (m *mockWorldStore) BlockMergeRequest(mrID, blockerID string) error {
 	for i := range m.mrs {
 		if m.mrs[i].ID == mrID {
 			m.mrs[i].BlockedBy = blockerID
-			m.mrs[i].Phase = "ready"
+			m.mrs[i].Phase = store.MRReady
 			return nil
 		}
 	}
@@ -172,7 +172,7 @@ func (m *mockWorldStore) UnblockMergeRequest(mrID string) error {
 	for i := range m.mrs {
 		if m.mrs[i].ID == mrID {
 			m.mrs[i].BlockedBy = ""
-			m.mrs[i].Phase = "ready"
+			m.mrs[i].Phase = store.MRReady
 			return nil
 		}
 	}
@@ -199,7 +199,7 @@ func (m *mockWorldStore) CreateWritWithOpts(opts store.CreateWritOpts) (string, 
 		ID:          id,
 		Title:       opts.Title,
 		Description: opts.Description,
-		Status:      "open",
+		Status:      store.WritOpen,
 		Priority:    opts.Priority,
 		ParentID:    opts.ParentID,
 		CreatedBy:   opts.CreatedBy,
@@ -218,7 +218,7 @@ func (m *mockWorldStore) CloseWrit(id string, closeReason ...string) ([]string, 
 	if !ok {
 		return nil, fmt.Errorf("writ %q not found", id)
 	}
-	item.Status = "closed"
+	item.Status = store.WritClosed
 	if len(closeReason) > 0 {
 		item.CloseReason = closeReason[0]
 	}
@@ -238,7 +238,7 @@ type mockEscalation struct {
 
 type mockAgentStateUpdate struct {
 	id         string
-	state      string
+	state      store.AgentState
 	activeWrit string
 }
 
@@ -303,7 +303,7 @@ func (m *mockSphereStore) UpdateEscalationLastNotified(id string) error {
 	return nil
 }
 
-func (m *mockSphereStore) UpdateAgentState(id, state, activeWrit string) error {
+func (m *mockSphereStore) UpdateAgentState(id string, state store.AgentState, activeWrit string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.agentStateUpdates = append(m.agentStateUpdates, mockAgentStateUpdate{

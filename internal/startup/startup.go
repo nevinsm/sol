@@ -28,7 +28,7 @@ type SessionStarter interface {
 type SphereStore interface {
 	GetAgent(id string) (*store.Agent, error)
 	CreateAgent(name, world, role string) (string, error)
-	UpdateAgentState(id, state, activeWrit string) error
+	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
 	Close() error
 }
 

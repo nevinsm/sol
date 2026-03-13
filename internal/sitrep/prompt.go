@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 //go:embed sitrep-prompt.md
@@ -161,12 +162,12 @@ func formatDataPayload(data *CollectedData) string {
 		if len(w.Writs) == 0 {
 			b.WriteString("No writs.\n\n")
 		} else {
-			statusCounts := map[string]int{}
+			statusCounts := map[store.WritStatus]int{}
 			for _, wr := range w.Writs {
 				statusCounts[wr.Status]++
 			}
 			b.WriteString(fmt.Sprintf("Writs: %d total", len(w.Writs)))
-			for _, s := range []string{"open", "tethered", "done", "closed"} {
+			for _, s := range []store.WritStatus{store.WritOpen, store.WritTethered, store.WritDone, store.WritClosed} {
 				if n, ok := statusCounts[s]; ok {
 					b.WriteString(fmt.Sprintf(", %s: %d", s, n))
 				}
@@ -176,7 +177,7 @@ func formatDataPayload(data *CollectedData) string {
 			// Detail for active writs (non-closed).
 			activeWrits := 0
 			for _, wr := range w.Writs {
-				if wr.Status == "closed" {
+				if wr.Status == store.WritClosed {
 					continue
 				}
 				activeWrits++
@@ -195,12 +196,12 @@ func formatDataPayload(data *CollectedData) string {
 		// Merge requests summary.
 		if len(w.MergeRequests) > 0 {
 			b.WriteString("### Merge Requests\n\n")
-			phaseCounts := map[string]int{}
+			phaseCounts := map[store.MRPhase]int{}
 			for _, mr := range w.MergeRequests {
 				phaseCounts[mr.Phase]++
 			}
 			b.WriteString(fmt.Sprintf("Total: %d", len(w.MergeRequests)))
-			for _, p := range []string{"ready", "claimed", "merged", "failed", "superseded"} {
+			for _, p := range []store.MRPhase{store.MRReady, store.MRClaimed, store.MRMerged, store.MRFailed, store.MRSuperseded} {
 				if n, ok := phaseCounts[p]; ok {
 					b.WriteString(fmt.Sprintf(", %s: %d", p, n))
 				}

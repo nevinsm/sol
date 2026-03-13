@@ -523,7 +523,7 @@ func runCostAgent(pricing config.PricingConfig, since *time.Time) error {
 			writ, wErr := worldStore.GetWrit(writID)
 			if wErr == nil {
 				row.Kind = writ.Kind
-				row.Status = writ.Status
+				row.Status = string(writ.Status)
 			}
 		}
 
@@ -721,7 +721,7 @@ func runCostWrit(pricing config.PricingConfig, since *time.Time) error {
 		WritID:     costWrit,
 		Title:      writ.Title,
 		Kind:       writ.Kind,
-		Status:     writ.Status,
+		Status:     string(writ.Status),
 		Rows:       rows,
 		HasPricing: hasPricing,
 		Period:     period,
@@ -916,7 +916,7 @@ func runCostCaravan(pricing config.PricingConfig, since *time.Time) error {
 			writ, wErr := worldStore.GetWrit(item.WritID)
 			if wErr == nil {
 				row.Kind = writ.Kind
-				row.Status = writ.Status
+				row.Status = string(writ.Status)
 			}
 
 			for _, ts := range summaries {

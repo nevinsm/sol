@@ -55,12 +55,12 @@ type SphereStore interface {
 
 // StopStore abstracts sphere store operations for Stop.
 type StopStore interface {
-	UpdateAgentState(id, state, activeWrit string) error
+	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
 }
 
 // ListStore abstracts sphere store operations for List.
 type ListStore interface {
-	ListAgents(world string, state string) ([]store.Agent, error)
+	ListAgents(world string, state store.AgentState) ([]store.Agent, error)
 }
 
 // StopManager abstracts session operations for Stop.

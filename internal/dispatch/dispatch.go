@@ -48,8 +48,8 @@ type WorldStore interface {
 	GetWrit(id string) (*store.Writ, error)
 	UpdateWrit(id string, updates store.WritUpdates) error
 	CreateMergeRequest(writID, branch string, priority int) (string, error)
-	ListMergeRequestsByWrit(writID, phase string) ([]store.MergeRequest, error)
-	UpdateMergeRequestPhase(id, phase string) error
+	ListMergeRequestsByWrit(writID string, phase store.MRPhase) ([]store.MergeRequest, error)
+	UpdateMergeRequestPhase(id string, phase store.MRPhase) error
 	CreateWritWithOpts(opts store.CreateWritOpts) (string, error)
 	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)
 	UnblockMergeRequest(mrID string) error
@@ -67,8 +67,8 @@ type WorldStore interface {
 type SphereStore interface {
 	GetAgent(id string) (*store.Agent, error)
 	FindIdleAgent(world string) (*store.Agent, error)
-	UpdateAgentState(id, state, activeWrit string) error
-	ListAgents(world string, state string) ([]store.Agent, error)
+	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
+	ListAgents(world string, state store.AgentState) ([]store.Agent, error)
 	CreateAgent(name, world, role string) (string, error)
 	DeleteAgent(id string) error
 	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
@@ -179,7 +179,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 			return nil, fmt.Errorf("cannot dispatch to %s agents — sol cast targets outpost agents only (got %s)", agent.Role, agent.Name)
 		}
 	} else {
-		if item.Status != "open" {
+		if item.Status != store.WritOpen {
 			return nil, fmt.Errorf("writ %q has status %q, expected \"open\"", opts.WritID, item.Status)
 		}
 		agent, err = sphereStore.FindIdleAgent(opts.World)
@@ -209,20 +209,20 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	// Partial match: writ is tethered to this agent but agent state is stale.
 	// This handles crashes between writ update and agent state update.
 	reCast := false
-	if item.Status == "tethered" && item.Assignee == agentID {
-		if agent.State == "working" && agent.ActiveWrit == opts.WritID {
+	if item.Status == store.WritTethered && item.Assignee == agentID {
+		if agent.State == store.AgentWorking && agent.ActiveWrit == opts.WritID {
 			reCast = true // clean re-cast
-		} else if agent.State == "idle" && (agent.ActiveWrit == "" || agent.ActiveWrit == opts.WritID) {
+		} else if agent.State == store.AgentIdle && (agent.ActiveWrit == "" || agent.ActiveWrit == opts.WritID) {
 			reCast = true // partial failure recovery — agent wasn't updated
 		}
 	}
 
 	// 5. Validate state.
 	if !reCast {
-		if item.Status != "open" {
+		if item.Status != store.WritOpen {
 			return nil, fmt.Errorf("writ %q has status %q, expected \"open\"", opts.WritID, item.Status)
 		}
-		if agent.State != "idle" {
+		if agent.State != store.AgentIdle {
 			return nil, fmt.Errorf("agent %q has state %q, expected \"idle\"", agentID, agent.State)
 		}
 	}
@@ -269,13 +269,13 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	// From here on, rollback on failure.
 	// Undo in reverse order of: (1) agent→working, (2) tether.Write, (3) writ→tethered.
 	rollback := func() {
-		if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"}); err != nil {
+		if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: store.WritOpen, Assignee: "-"}); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to reset writ: %v\n", err)
 		}
 		if err := tether.Clear(opts.World, agent.Name, "outpost"); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to clear tether: %v\n", err)
 		}
-		if err := sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
+		if err := sphereStore.UpdateAgentState(agent.ID, store.AgentIdle, ""); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to reset agent state: %v\n", err)
 		}
 		rbCtx, rbCancel := context.WithTimeout(context.Background(), GitWorktreeRemoveTimeout)
@@ -293,7 +293,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	// cleanupOrphanedTethers, which clears tether files for non-working agents.
 	// If we wrote the tether first while agent is still "idle", a concurrent
 	// sentinel patrol could clear it before we update agent state.
-	if err := sphereStore.UpdateAgentState(agent.ID, "working", opts.WritID); err != nil {
+	if err := sphereStore.UpdateAgentState(agent.ID, store.AgentWorking, opts.WritID); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
@@ -306,7 +306,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 
 	// 6. Update writ: status → tethered, assignee → agent ID.
 	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
-		Status:   "tethered",
+		Status:   store.WritTethered,
 		Assignee: agent.ID,
 	}); err != nil {
 		rollback()
@@ -418,7 +418,7 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 	if err != nil {
 		return nil, fmt.Errorf("failed to get writ %q: %w", opts.WritID, err)
 	}
-	if item.Status != "open" {
+	if item.Status != store.WritOpen {
 		return nil, fmt.Errorf("writ %q has status %q, expected \"open\"", opts.WritID, item.Status)
 	}
 
@@ -449,8 +449,8 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 	// cleanupOrphanedTethers, which skips tether files for known agents.
 	prevState := agent.State
 	prevActiveWrit := agent.ActiveWrit
-	if agent.State == "idle" {
-		if err := sphereStore.UpdateAgentState(agentID, "working", opts.WritID); err != nil {
+	if agent.State == store.AgentIdle {
+		if err := sphereStore.UpdateAgentState(agentID, store.AgentWorking, opts.WritID); err != nil {
 			return nil, fmt.Errorf("failed to update agent state: %w", err)
 		}
 	} else if agent.ActiveWrit == "" {
@@ -470,7 +470,7 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 
 	// 6. Update writ: status → tethered, assignee → agent ID.
 	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
-		Status:   "tethered",
+		Status:   store.WritTethered,
 		Assignee: agent.ID,
 	}); err != nil {
 		// Rollback tether + agent state (reverse order).
@@ -548,7 +548,7 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 
 	// 5. Update writ: status → open, assignee → clear.
 	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
-		Status:   "open",
+		Status:   store.WritOpen,
 		Assignee: "-",
 	}); err != nil {
 		return nil, fmt.Errorf("failed to update writ: %w", err)
@@ -563,12 +563,12 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 
 	if len(remaining) == 0 {
 		// No more tethers — go idle.
-		if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+		if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
 			return nil, fmt.Errorf("failed to update agent state: %w", err)
 		}
 	} else if agent.ActiveWrit == opts.WritID {
 		// Active writ was untethered — clear it but stay working.
-		if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
+		if err := sphereStore.UpdateAgentState(agentID, store.AgentWorking, ""); err != nil {
 			return nil, fmt.Errorf("failed to clear active writ: %w", err)
 		}
 	}
@@ -766,7 +766,7 @@ func autoProvision(world string, sphereStore SphereStore, namePoolPath string, c
 		Name:  name,
 		World: world,
 		Role:  "outpost",
-		State: "idle",
+		State: store.AgentIdle,
 	}, nil
 }
 
@@ -1498,7 +1498,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 
 	rollback := func() {
 		if writUpdated {
-			if err := worldStore.UpdateWrit(writID, store.WritUpdates{Status: "tethered"}); err != nil {
+			if err := worldStore.UpdateWrit(writID, store.WritUpdates{Status: store.WritTethered}); err != nil {
 				fmt.Fprintf(os.Stderr, "resolve rollback: failed to reset writ %s: %v\n", writID, err)
 			}
 		}
@@ -1507,15 +1507,15 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	// 3. Update writ status.
 	if isCodeWrit {
 		// Code writs: status → done (idempotent — skip if already done).
-		if item.Status != "done" {
-			if err := worldStore.UpdateWrit(writID, store.WritUpdates{Status: "done"}); err != nil {
+		if item.Status != store.WritDone {
+			if err := worldStore.UpdateWrit(writID, store.WritUpdates{Status: store.WritDone}); err != nil {
 				return nil, fmt.Errorf("failed to update writ status: %w", err)
 			}
 			writUpdated = true
 		}
 	} else {
 		// Non-code writs: close directly with close_reason "completed".
-		if item.Status != "closed" {
+		if item.Status != store.WritClosed {
 			if _, err := worldStore.CloseWrit(writID, "completed"); err != nil {
 				return nil, fmt.Errorf("failed to close non-code writ: %w", err)
 			}
@@ -1534,7 +1534,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		}
 		var activeMRs []store.MergeRequest
 		for _, mr := range existingMRs {
-			if mr.Phase != "failed" {
+			if mr.Phase != store.MRFailed {
 				activeMRs = append(activeMRs, mr)
 			}
 		}
@@ -1550,9 +1550,9 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 			// If push failed, transition through ready → claimed → failed
 			// so forge doesn't try to merge it.
 			if pushFailed {
-				if err := worldStore.UpdateMergeRequestPhase(mrID, "claimed"); err != nil {
+				if err := worldStore.UpdateMergeRequestPhase(mrID, store.MRClaimed); err != nil {
 					fmt.Fprintf(os.Stderr, "resolve: failed to claim MR after push failure: %v\n", err)
-				} else if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+				} else if err := worldStore.UpdateMergeRequestPhase(mrID, store.MRFailed); err != nil {
 					fmt.Fprintf(os.Stderr, "resolve: failed to mark MR as failed after push failure: %v\n", err)
 				}
 			}
@@ -1599,7 +1599,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 			// More tethers remain: stay working.
 			if agent.ActiveWrit == writID {
 				// Resolving the active writ: clear active_writ but stay working.
-				if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
+				if err := sphereStore.UpdateAgentState(agentID, store.AgentWorking, ""); err != nil {
 					rollback()
 					return nil, fmt.Errorf("failed to update agent state: %w", err)
 				}
@@ -1607,7 +1607,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 			// If resolving a non-active writ, no state update needed.
 		} else {
 			// No remaining tethers: set to idle, clear active_writ.
-			if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+			if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
 				rollback()
 				return nil, fmt.Errorf("failed to update agent state: %w", err)
 			}
@@ -1794,7 +1794,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 
 		// 2b. Check parent writ's MRs for any stuck in 'failed' phase.
 		if item.ParentID != "" {
-			parentMRs, err := worldStore.ListMergeRequestsByWrit(item.ParentID, "failed")
+			parentMRs, err := worldStore.ListMergeRequestsByWrit(item.ParentID, store.MRFailed)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "resolve: failed to list parent MRs: %v\n", err)
 			} else {
@@ -1838,13 +1838,13 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 		if remaining > 0 {
 			// More tethers remain: stay working.
 			if currentAgent != nil && currentAgent.ActiveWrit == item.ID {
-				if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
+				if err := sphereStore.UpdateAgentState(agentID, store.AgentWorking, ""); err != nil {
 					return nil, fmt.Errorf("failed to update agent state: %w", err)
 				}
 			}
 		} else {
 			// No remaining tethers: set to idle.
-			if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+			if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
 				return nil, fmt.Errorf("failed to update agent state: %w", err)
 			}
 		}

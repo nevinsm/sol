@@ -219,8 +219,8 @@ func TestRegisterAgent(t *testing.T) {
 	if agent.Role != "sentinel" {
 		t.Errorf("agent role = %q, want %q", agent.Role, "sentinel")
 	}
-	if agent.State != "idle" {
-		t.Errorf("agent state = %q, want %q", agent.State, "idle")
+	if agent.State != store.AgentIdle {
+		t.Errorf("agent state = %q, want %q", agent.State, store.AgentIdle)
 	}
 }
 
@@ -268,8 +268,8 @@ func TestRunLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent() error: %v", err)
 	}
-	if agent.State != "working" {
-		t.Errorf("agent state during run = %q, want %q", agent.State, "working")
+	if agent.State != store.AgentWorking {
+		t.Errorf("agent state during run = %q, want %q", agent.State, store.AgentWorking)
 	}
 
 	// Wait for context to expire.
@@ -282,8 +282,8 @@ func TestRunLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent() after run: %v", err)
 	}
-	if agent.State != "idle" {
-		t.Errorf("agent state after run = %q, want %q", agent.State, "idle")
+	if agent.State != store.AgentIdle {
+		t.Errorf("agent state after run = %q, want %q", agent.State, store.AgentIdle)
 	}
 }
 
@@ -295,7 +295,7 @@ func TestPatrolHealthyAgents(t *testing.T) {
 	// Create 3 working agents with live sessions and changing output.
 	for _, name := range []string{"Toast", "Jasper", "Sage"} {
 		sphereStore.CreateAgent(name, "ember", "outpost")
-		sphereStore.UpdateAgentState("ember/"+name, "working", "sol-"+name)
+		sphereStore.UpdateAgentState("ember/"+name, store.AgentWorking, "sol-"+name)
 		sessName := "sol-ember-" + name
 		mock.alive[sessName] = true
 		mock.captures[sessName] = "output for " + name
@@ -323,7 +323,7 @@ func TestPatrolDetectsStalled(t *testing.T) {
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Test task")
 	// Session is NOT alive (not in mock.alive).
 
@@ -368,7 +368,7 @@ func TestPatrolMaxRespawns(t *testing.T) {
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Test task")
 
 	// Write tether so stalled detection sees non-empty tether directory.
@@ -399,8 +399,8 @@ func TestPatrolMaxRespawns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetWrit() error: %v", err)
 	}
-	if item.Status != "open" {
-		t.Errorf("writ status = %q, want %q", item.Status, "open")
+	if item.Status != store.WritOpen {
+		t.Errorf("writ status = %q, want %q", item.Status, store.WritOpen)
 	}
 
 	// Agent should be idle.
@@ -408,8 +408,8 @@ func TestPatrolMaxRespawns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent() error: %v", err)
 	}
-	if agent.State != "idle" {
-		t.Errorf("agent state = %q, want %q", agent.State, "idle")
+	if agent.State != store.AgentIdle {
+		t.Errorf("agent state = %q, want %q", agent.State, store.AgentIdle)
 	}
 }
 
@@ -492,7 +492,7 @@ func TestProgressDetectionOutputChanged(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 
 	assessCalled := false
@@ -521,7 +521,7 @@ func TestProgressDetectionOutputUnchanged(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "same output"
 
@@ -549,7 +549,7 @@ func TestAssessmentNudge(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "stuck output"
 
@@ -583,7 +583,7 @@ func TestAssessmentEscalate(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "error output"
 
@@ -624,7 +624,7 @@ func TestAssessmentNone(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "output"
 
@@ -656,7 +656,7 @@ func TestAssessmentLowConfidenceIgnored(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "output"
 
@@ -687,7 +687,7 @@ func TestAssessmentFailureNonBlocking(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "output"
 
@@ -719,7 +719,7 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 	cfg.MaxRespawns = 2
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Test task")
 
 	// Write tether so stalled detection sees non-empty tether directory.
@@ -776,16 +776,16 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent.State != "idle" {
-		t.Errorf("agent state = %q, want %q after max respawns", agent.State, "idle")
+	if agent.State != store.AgentIdle {
+		t.Errorf("agent state = %q, want %q after max respawns", agent.State, store.AgentIdle)
 	}
 
 	item, err := worldStore.GetWrit("sol-abc12345")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item.Status != "open" {
-		t.Errorf("writ status = %q, want %q after max respawns", item.Status, "open")
+	if item.Status != store.WritOpen {
+		t.Errorf("writ status = %q, want %q after max respawns", item.Status, store.WritOpen)
 	}
 }
 
@@ -839,7 +839,7 @@ func TestSentinelIgnoresEnvoy(t *testing.T) {
 
 	// Create an envoy agent with a dead session.
 	sphereStore.CreateAgent("Scout", "ember", "envoy")
-	sphereStore.UpdateAgentState("ember/Scout", "working", "sol-envoy123")
+	sphereStore.UpdateAgentState("ember/Scout", store.AgentWorking, "sol-envoy123")
 	// Session is NOT alive.
 
 	w := New(cfg, sphereStore, nil, mock, nil)
@@ -864,7 +864,7 @@ func TestSentinelIgnoresGovernor(t *testing.T) {
 
 	// Create a governor agent with a dead session.
 	sphereStore.CreateAgent("governor", "ember", "governor")
-	sphereStore.UpdateAgentState("ember/governor", "working", "")
+	sphereStore.UpdateAgentState("ember/governor", store.AgentWorking, "")
 	// Session is NOT alive.
 
 	w := New(cfg, sphereStore, nil, mock, nil)
@@ -939,8 +939,8 @@ func TestReapIdleAgentSkipsRecent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent() error: %v — agent was incorrectly reaped", err)
 	}
-	if agent.State != "idle" {
-		t.Errorf("agent state = %q, want %q", agent.State, "idle")
+	if agent.State != store.AgentIdle {
+		t.Errorf("agent state = %q, want %q", agent.State, store.AgentIdle)
 	}
 }
 
@@ -952,7 +952,7 @@ func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Test task")
 
 	// Create outpost directory with worktree and tether.
@@ -979,8 +979,8 @@ func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetWrit() error: %v", err)
 	}
-	if item.Status != "open" {
-		t.Errorf("writ status = %q, want %q", item.Status, "open")
+	if item.Status != store.WritOpen {
+		t.Errorf("writ status = %q, want %q", item.Status, store.WritOpen)
 	}
 
 	// Tether should be cleared.
@@ -1117,7 +1117,7 @@ func TestCleanupOrphanedTetherSkipsWorking(t *testing.T) {
 
 	// Create a working agent with a live session and tether.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-active")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-active")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "working output"
 
@@ -1156,7 +1156,7 @@ func TestCleanupOrphanedTetherRaceWithCast(t *testing.T) {
 	// Now update agent to "working" AFTER the initial state — simulating
 	// Cast() completing the agent state update between sentinel's snapshot
 	// and cleanupOrphanedTethers execution.
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-active-writ")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-active-writ")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "working output"
 
@@ -1238,7 +1238,7 @@ func TestPatrolIgnoresForgeAgents(t *testing.T) {
 	// Create a working forge agent with a dead session.
 	// Sentinel should NOT monitor it (prefect handles forge via heartbeat).
 	sphereStore.CreateAgent("forge", "ember", "forge")
-	sphereStore.UpdateAgentState("ember/forge", "working", "")
+	sphereStore.UpdateAgentState("ember/forge", store.AgentWorking, "")
 	// Session is NOT alive — sentinel should not attempt respawn.
 
 	w := New(cfg, sphereStore, nil, mock, nil)
@@ -1292,7 +1292,7 @@ func createFailedMR(t *testing.T, worldStore *store.Store, writID, title, branch
 	if _, err := worldStore.ClaimMergeRequest("test/forge"); err != nil {
 		t.Fatalf("failed to claim MR: %v", err)
 	}
-	if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+	if err := worldStore.UpdateMergeRequestPhase(mrID, store.MRFailed); err != nil {
 		t.Fatalf("failed to set MR phase to failed: %v", err)
 	}
 	return mrID
@@ -1337,8 +1337,8 @@ func TestReleaseStaleClaims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get MR: %v", err)
 	}
-	if mr.Phase != "ready" {
-		t.Errorf("MR phase = %q, want %q", mr.Phase, "ready")
+	if mr.Phase != store.MRReady {
+		t.Errorf("MR phase = %q, want %q", mr.Phase, store.MRReady)
 	}
 	if mr.ClaimedBy != "" {
 		t.Errorf("MR claimed_by = %q, want empty", mr.ClaimedBy)
@@ -1376,8 +1376,8 @@ func TestReleaseStaleClaims_SkipsFresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get MR: %v", err)
 	}
-	if mr.Phase != "claimed" {
-		t.Errorf("MR phase = %q, want %q (claim is fresh, should not be released)", mr.Phase, "claimed")
+	if mr.Phase != store.MRClaimed {
+		t.Errorf("MR phase = %q, want %q (claim is fresh, should not be released)", mr.Phase, store.MRClaimed)
 	}
 	if mr.ClaimedBy != "forge-1" {
 		t.Errorf("MR claimed_by = %q, want %q", mr.ClaimedBy, "forge-1")
@@ -1450,7 +1450,7 @@ func TestRecastSkipsNonOpenWrit(t *testing.T) {
 	// Create a failed MR but set the writ to "tethered" (already re-dispatched).
 	mrID := createFailedMR(t, worldStore, "sol-teth2222", "Already tethered", "outpost/X/sol-teth2222")
 	_ = mrID
-	worldStore.UpdateWrit("sol-teth2222", store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"})
+	worldStore.UpdateWrit("sol-teth2222", store.WritUpdates{Status: store.WritTethered, Assignee: "ember/Toast"})
 
 	castCalled := false
 	w := New(cfg, sphereStore, worldStore, mock, nil)
@@ -1573,10 +1573,10 @@ func TestRecastDeduplicatesByWrit(t *testing.T) {
 	createWrit(t, worldStore, "sol-dedup666", "Dedup task")
 	mr1, _ := worldStore.CreateMergeRequest("sol-dedup666", "outpost/A/sol-dedup666", 3)
 	worldStore.ClaimMergeRequest("test/forge")
-	worldStore.UpdateMergeRequestPhase(mr1, "failed")
+	worldStore.UpdateMergeRequestPhase(mr1, store.MRFailed)
 	mr2, _ := worldStore.CreateMergeRequest("sol-dedup666", "outpost/B/sol-dedup666", 3)
 	worldStore.ClaimMergeRequest("test/forge")
-	worldStore.UpdateMergeRequestPhase(mr2, "failed")
+	worldStore.UpdateMergeRequestPhase(mr2, store.MRFailed)
 
 	castCount := 0
 	w := New(cfg, sphereStore, worldStore, mock, nil)
@@ -1603,7 +1603,7 @@ func TestRecastPrunesDedupOnHandledItem(t *testing.T) {
 
 	// Create a failed MR with a "tethered" writ (already re-dispatched).
 	createFailedMR(t, worldStore, "sol-prune777", "Already tethered", "outpost/X/sol-prune777")
-	worldStore.UpdateWrit("sol-prune777", store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"})
+	worldStore.UpdateWrit("sol-prune777", store.WritUpdates{Status: store.WritTethered, Assignee: "ember/Toast"})
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 	w.SetCastFunc(func(writID string) (*CastResult, error) {
@@ -1631,7 +1631,7 @@ func TestRecastDoneWritNoAssigneeTransitionsToOpen(t *testing.T) {
 
 	// Create a failed MR with a "done" writ and no assignee (orphaned).
 	createFailedMR(t, worldStore, "sol-done1111", "Orphaned done", "outpost/X/sol-done1111")
-	worldStore.UpdateWrit("sol-done1111", store.WritUpdates{Status: "done"})
+	worldStore.UpdateWrit("sol-done1111", store.WritUpdates{Status: store.WritDone})
 
 	castCalled := false
 	var castWritID string
@@ -1666,7 +1666,7 @@ func TestRecastDoneWritNoAssigneeTransitionsToOpen(t *testing.T) {
 	// After castFn succeeds, dispatch sets the writ status; here we verify
 	// sentinel at least transitioned it from "done" (it's now "open" or
 	// whatever castFn/dispatch set it to).
-	if item.Status == "done" {
+	if item.Status == store.WritDone {
 		t.Error("writ should no longer be in done status after recast")
 	}
 
@@ -1681,7 +1681,7 @@ func TestRecastDoneWritWithAssigneeSkipped(t *testing.T) {
 
 	// Create a failed MR with a "done" writ that has an assignee.
 	createFailedMR(t, worldStore, "sol-dassn222", "Done with agent", "outpost/X/sol-dassn222")
-	worldStore.UpdateWrit("sol-dassn222", store.WritUpdates{Status: "done", Assignee: "ember/Toast"})
+	worldStore.UpdateWrit("sol-dassn222", store.WritUpdates{Status: store.WritDone, Assignee: "ember/Toast"})
 
 	castCalled := false
 	w := New(cfg, sphereStore, worldStore, mock, nil)
@@ -1708,7 +1708,7 @@ func TestRecastSkipsDuplicateMR(t *testing.T) {
 	createWrit(t, worldStore, "sol-dupmr333", "Dup MR task")
 	failedMR, _ := worldStore.CreateMergeRequest("sol-dupmr333", "outpost/A/sol-dupmr333", 3)
 	worldStore.ClaimMergeRequest("test/forge")
-	worldStore.UpdateMergeRequestPhase(failedMR, "failed")
+	worldStore.UpdateMergeRequestPhase(failedMR, store.MRFailed)
 	readyMR, _ := worldStore.CreateMergeRequest("sol-dupmr333", "outpost/B/sol-dupmr333", 3)
 	_ = readyMR
 
@@ -1962,7 +1962,7 @@ func TestRecastPersistentCountSurvivesRestart(t *testing.T) {
 
 	// Simulate sentinel restart — create a new Sentinel (no in-memory state).
 	// Reset writ to open (simulate MR failure cycle).
-	worldStore.UpdateWrit("sol-pers1111", store.WritUpdates{Status: "open", Assignee: "-"})
+	worldStore.UpdateWrit("sol-pers1111", store.WritUpdates{Status: store.WritOpen, Assignee: "-"})
 
 	w2 := New(cfg, sphereStore, worldStore, mock, nil)
 	// Jump 35 min to pass the 30-min backoff for the 2nd recast.
@@ -2086,7 +2086,7 @@ func TestDispatchOrphanedResolution_SkipClosed(t *testing.T) {
 	createBlockedMR(t, worldStore, "sol-orig3333", "sol-res-3333", "Feature C", "outpost/Toast/sol-orig3333", 10*time.Minute)
 
 	// Close the resolution writ (already handled).
-	worldStore.UpdateWrit("sol-res-3333", store.WritUpdates{Status: "closed"})
+	worldStore.UpdateWrit("sol-res-3333", store.WritUpdates{Status: store.WritClosed})
 
 	castCalled := false
 	w := New(cfg, sphereStore, worldStore, mock, nil)
@@ -2388,7 +2388,7 @@ func TestQuotaPatrolNoRateLimits(t *testing.T) {
 
 	// Create agent and session.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-work-1")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "Working on task..."
 
@@ -2422,19 +2422,19 @@ func TestQuotaPatrolRotatesEntireWorld(t *testing.T) {
 
 	// Create agents across roles.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-work-1")
 	setupAgentCredentials(t, "ember", "outpost", "Toast", "alice")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "You've hit your usage limit · resets 3:45pm"
 
 	sphereStore.CreateAgent("forge", "ember", "forge")
-	sphereStore.UpdateAgentState("ember/forge", "working", "")
+	sphereStore.UpdateAgentState("ember/forge", store.AgentWorking, "")
 	setupAgentCredentials(t, "ember", "forge", "forge", "alice")
 	mock.alive["sol-ember-forge"] = true
 	mock.captures["sol-ember-forge"] = "Processing merge requests..."
 
 	sphereStore.CreateAgent("governor", "ember", "governor")
-	sphereStore.UpdateAgentState("ember/governor", "working", "")
+	sphereStore.UpdateAgentState("ember/governor", store.AgentWorking, "")
 	setupAgentCredentials(t, "ember", "governor", "governor", "alice")
 	mock.alive["sol-ember-governor"] = true
 	mock.captures["sol-ember-governor"] = "Idle, waiting for work..."
@@ -2498,13 +2498,13 @@ func TestQuotaPatrolPausesWhenNoAccountsAvailable(t *testing.T) {
 
 	// Create agents.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-work-1")
 	setupAgentCredentials(t, "ember", "outpost", "Toast", "alice")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "You've hit your usage limit"
 
 	sphereStore.CreateAgent("governor", "ember", "governor")
-	sphereStore.UpdateAgentState("ember/governor", "working", "")
+	sphereStore.UpdateAgentState("ember/governor", store.AgentWorking, "")
 	setupAgentCredentials(t, "ember", "governor", "governor", "alice")
 	mock.alive["sol-ember-governor"] = true
 	mock.captures["sol-ember-governor"] = "Idle..."
@@ -2541,7 +2541,7 @@ func TestQuotaPatrolGovernorNeverPaused(t *testing.T) {
 
 	// Only governor is running (on the limited account).
 	sphereStore.CreateAgent("governor", "ember", "governor")
-	sphereStore.UpdateAgentState("ember/governor", "working", "")
+	sphereStore.UpdateAgentState("ember/governor", store.AgentWorking, "")
 	setupAgentCredentials(t, "ember", "governor", "governor", "alice")
 	mock.alive["sol-ember-governor"] = true
 	mock.captures["sol-ember-governor"] = "You've hit your usage limit"
@@ -2570,7 +2570,7 @@ func TestQuotaPatrolSkipsAgentsWithoutSession(t *testing.T) {
 
 	// Agent exists but has no live session.
 	sphereStore.CreateAgent("Ghost", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Ghost", "idle", "")
+	sphereStore.UpdateAgentState("ember/Ghost", store.AgentIdle, "")
 	// No mock.alive entry — session doesn't exist.
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
@@ -2602,7 +2602,7 @@ func TestQuotaPatrolUsesStartupPathForRegisteredRole(t *testing.T) {
 
 	// Create outpost agent on alice.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-work-1")
 	setupAgentCredentials(t, "ember", "outpost", "Toast", "alice")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "You've hit your usage limit · resets 3:45pm"
@@ -2707,7 +2707,7 @@ func TestCheckQuotaPausedUsesStartupPathForRegisteredRole(t *testing.T) {
 
 	// Create agent record.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-work-1")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-work-1")
 	setupAgentCredentials(t, "ember", "outpost", "Toast", "alice")
 
 	w := New(cfg, sphereStore, worldStore, mock, nil)
@@ -2741,7 +2741,7 @@ func TestPatrolReapsAgentTetheredToClosedWrit(t *testing.T) {
 
 	// Create a working agent with a live session tethered to a writ.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Cancelled task")
 	mock.alive["sol-ember-Toast"] = true
 
@@ -2784,7 +2784,7 @@ func TestPatrolDoesNotReapAgentTetheredToOpenWrit(t *testing.T) {
 
 	// Create a working agent with a live session tethered to an open writ.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Active task")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "working on task..."
@@ -2810,8 +2810,8 @@ func TestPatrolDoesNotReapAgentTetheredToOpenWrit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent() error: %v", err)
 	}
-	if agent.State != "working" {
-		t.Errorf("agent state = %q, want %q", agent.State, "working")
+	if agent.State != store.AgentWorking {
+		t.Errorf("agent state = %q, want %q", agent.State, store.AgentWorking)
 	}
 }
 
@@ -2826,7 +2826,7 @@ func TestPatrolClosedWritReapLogsCloseReason(t *testing.T) {
 
 	// Create a working agent tethered to a closed writ.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Cancelled task")
 	mock.alive["sol-ember-Toast"] = true
 
@@ -2868,7 +2868,7 @@ func TestPersistentAgentClosedTetherRemoved(t *testing.T) {
 
 	// Create a persistent (forge) agent with 3 tethered writs.
 	sphereStore.CreateAgent("forge", "ember", "forge")
-	sphereStore.UpdateAgentState("ember/forge", "working", "sol-writ-1")
+	sphereStore.UpdateAgentState("ember/forge", store.AgentWorking, "sol-writ-1")
 	mock.alive["sol-ember-forge"] = true
 	mock.captures["sol-ember-forge"] = "forge output"
 
@@ -2913,8 +2913,8 @@ func TestPersistentAgentClosedTetherRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgent() error: %v", err)
 	}
-	if agent.State != "working" {
-		t.Errorf("agent state = %q, want %q (persistent agent should not be reaped)", agent.State, "working")
+	if agent.State != store.AgentWorking {
+		t.Errorf("agent state = %q, want %q (persistent agent should not be reaped)", agent.State, store.AgentWorking)
 	}
 
 	// No sessions should have been stopped.
@@ -2930,7 +2930,7 @@ func TestOutpostClosedTetherFullReap(t *testing.T) {
 
 	// Create an outpost agent tethered to a closed writ.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
 	createWrit(t, worldStore, "sol-abc12345", "Closed task")
 	mock.alive["sol-ember-Toast"] = true
 
@@ -3007,7 +3007,7 @@ func TestAssessmentEscalateCreatesEscalation(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-esc-assess1")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-esc-assess1")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "error output"
 
@@ -3068,7 +3068,7 @@ func TestAssessmentEscalateNoWritStillCreatesEscalation(t *testing.T) {
 
 	// Agent with no active writ.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "stuck output"
 
@@ -3221,8 +3221,8 @@ type mockWorldStore struct {
 	getWritFn      func(id string) (*store.Writ, error)
 	updateWritFn   func(id string, updates store.WritUpdates) error
 	setMetadataFn  func(id string, metadata map[string]any) error
-	listMRFn       func(phase string) ([]store.MergeRequest, error)
-	listMRByWritFn func(writID string, phase string) ([]store.MergeRequest, error)
+	listMRFn       func(phase store.MRPhase) ([]store.MergeRequest, error)
+	listMRByWritFn func(writID string, phase store.MRPhase) ([]store.MergeRequest, error)
 	listBlockedFn  func() ([]store.MergeRequest, error)
 	releaseClaimFn func(ttl time.Duration) (int, error)
 }
@@ -3248,14 +3248,14 @@ func (m *mockWorldStore) SetWritMetadata(id string, metadata map[string]any) err
 	return nil
 }
 
-func (m *mockWorldStore) ListMergeRequests(phase string) ([]store.MergeRequest, error) {
+func (m *mockWorldStore) ListMergeRequests(phase store.MRPhase) ([]store.MergeRequest, error) {
 	if m.listMRFn != nil {
 		return m.listMRFn(phase)
 	}
 	return nil, nil
 }
 
-func (m *mockWorldStore) ListMergeRequestsByWrit(writID string, phase string) ([]store.MergeRequest, error) {
+func (m *mockWorldStore) ListMergeRequestsByWrit(writID string, phase store.MRPhase) ([]store.MergeRequest, error) {
 	if m.listMRByWritFn != nil {
 		return m.listMRByWritFn(writID, phase)
 	}
@@ -3313,12 +3313,12 @@ func TestHandleOrphanedWorking_UpdateWritError(t *testing.T) {
 
 	// Create an outpost agent that is "working" with a dead session and no tether.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", "working", "sol-orphwrit1")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-orphwrit1")
 
 	// Use a mock world store that returns a tethered writ but fails on UpdateWrit.
 	mws := &mockWorldStore{
 		getWritFn: func(id string) (*store.Writ, error) {
-			return &store.Writ{ID: id, Status: "tethered"}, nil
+			return &store.Writ{ID: id, Status: store.WritTethered}, nil
 		},
 		updateWritFn: func(id string, updates store.WritUpdates) error {
 			return fmt.Errorf("database is locked")

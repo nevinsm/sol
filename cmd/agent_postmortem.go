@@ -98,7 +98,7 @@ var agentPostmortemCmd = &cobra.Command{
 				Name:       agent.Name,
 				World:      agent.World,
 				Role:       agent.Role,
-				State:      agent.State,
+				State:      string(agent.State),
 				ActiveWrit: agent.ActiveWrit,
 				CreatedAt:  agent.CreatedAt,
 				UpdatedAt:  agent.UpdatedAt,
@@ -141,7 +141,7 @@ var agentPostmortemCmd = &cobra.Command{
 					report.Writ = &PostmortemWrit{
 						ID:     item.ID,
 						Title:  item.Title,
-						Status: item.Status,
+						Status: string(item.Status),
 					}
 				}
 			}

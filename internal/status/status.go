@@ -252,17 +252,17 @@ type WorldStore interface {
 
 // SphereStore abstracts agent queries for testing.
 type SphereStore interface {
-	ListAgents(world string, state string) ([]store.Agent, error)
+	ListAgents(world string, state store.AgentState) ([]store.Agent, error)
 }
 
 // MergeQueueStore abstracts merge request queries for testing.
 type MergeQueueStore interface {
-	ListMergeRequests(phase string) ([]store.MergeRequest, error)
+	ListMergeRequests(phase store.MRPhase) ([]store.MergeRequest, error)
 }
 
 // CaravanStore abstracts caravan queries for status gathering.
 type CaravanStore interface {
-	ListCaravans(status string) ([]store.Caravan, error)
+	ListCaravans(status store.CaravanStatus) ([]store.Caravan, error)
 	CheckCaravanReadiness(caravanID string, worldOpener func(world string) (*store.Store, error)) ([]store.CaravanItemStatus, error)
 	ListCaravanItems(caravanID string) ([]store.CaravanItem, error)
 }
@@ -426,7 +426,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 	govSessAlive := checker.Exists(govSessName)
 
 	// 3. List all agents for this world.
-	agents, err := sphereStore.ListAgents(world, "")
+	agents, err := sphereStore.ListAgents(world, store.AgentState(""))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
@@ -447,7 +447,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		case "envoy":
 			es := EnvoyStatus{
 				Name:         agent.Name,
-				State:        agent.State,
+				State:        string(agent.State),
 				SessionAlive: sessAlive,
 				BriefAge:     briefAge(envoy.BriefPath(world, agent.Name)),
 			}
@@ -477,7 +477,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			}
 			as := AgentStatus{
 				Name:         agent.Name,
-				State:        agent.State,
+				State:        string(agent.State),
 				SessionAlive: sessAlive,
 			}
 			if agent.ActiveWrit != "" {
@@ -515,7 +515,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 	}
 
 	// 6. Gather merge queue info.
-	mrs, err := mqStore.ListMergeRequests("")
+	mrs, err := mqStore.ListMergeRequests(store.MRPhase(""))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list merge requests: %w", err)
 	}
@@ -523,18 +523,18 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		result.MergeQueue.Total++
 		include := true
 		switch mr.Phase {
-		case "ready":
+		case store.MRReady:
 			result.MergeQueue.Ready++
-		case "claimed":
+		case store.MRClaimed:
 			result.MergeQueue.Claimed++
-		case "failed":
+		case store.MRFailed:
 			// Exclude failed MRs whose writs have been re-cast and closed.
-			if item, err := worldStore.GetWrit(mr.WritID); err != nil || item.Status != "closed" {
+			if item, err := worldStore.GetWrit(mr.WritID); err != nil || item.Status != store.WritClosed {
 				result.MergeQueue.Failed++
 			} else {
 				include = false
 			}
-		case "merged":
+		case store.MRMerged:
 			result.MergeQueue.Merged++
 		}
 
@@ -546,7 +546,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			result.MergeRequests = append(result.MergeRequests, MergeRequestInfo{
 				ID:     mr.ID,
 				WritID: mr.WritID,
-				Phase:  mr.Phase,
+				Phase:  string(mr.Phase),
 				Title:  title,
 			})
 		}
@@ -568,14 +568,14 @@ func briefAge(path string) string {
 // This is separate from Gather because it requires the CaravanStore interface
 // which not all callers may have available.
 func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener func(string) (*store.Store, error)) {
-	allCaravans, err := caravanStore.ListCaravans("")
+	allCaravans, err := caravanStore.ListCaravans(store.CaravanStatus(""))
 	if err != nil {
 		return // non-fatal: degrade gracefully
 	}
 	// Filter to active (non-closed) caravans.
 	var caravans []store.Caravan
 	for _, c := range allCaravans {
-		if c.Status != "closed" {
+		if c.Status != store.CaravanClosed {
 			caravans = append(caravans, c)
 		}
 	}
@@ -611,18 +611,18 @@ func buildCaravanInfo(c store.Caravan, items []store.CaravanItem, statuses []sto
 	info := CaravanInfo{
 		ID:         c.ID,
 		Name:       c.Name,
-		Status:     c.Status,
+		Status:     string(c.Status),
 		TotalItems: len(items),
 	}
 	for _, st := range statuses {
 		switch {
-		case st.WritStatus == "closed":
+		case st.WritStatus == store.WritClosed:
 			info.ClosedItems++
-		case st.WritStatus == "done":
+		case st.WritStatus == store.WritDone:
 			info.DoneItems++
 		case st.IsDispatched():
 			info.DispatchedItems++
-		case st.WritStatus == "open" && st.Ready:
+		case st.WritStatus == store.WritOpen && st.Ready:
 			info.ReadyItems++
 		}
 	}
@@ -635,7 +635,7 @@ func buildCaravanInfo(c store.Caravan, items []store.CaravanItem, statuses []sto
 			WritID:   st.WritID,
 			World:    st.World,
 			Phase:    st.Phase,
-			Status:   st.WritStatus,
+			Status:   string(st.WritStatus),
 			Ready:    st.Ready,
 			Assignee: st.Assignee,
 			Title:    "(unknown)",
@@ -697,13 +697,13 @@ func computePhaseProgress(items []store.CaravanItem, statuses []store.CaravanIte
 		pp.Total++
 		if st, ok := statusMap[item.WritID]; ok {
 			switch {
-			case st.WritStatus == "closed":
+			case st.WritStatus == store.WritClosed:
 				pp.Closed++
-			case st.WritStatus == "done":
+			case st.WritStatus == store.WritDone:
 				pp.Done++
 			case st.IsDispatched():
 				pp.Dispatched++
-			case st.WritStatus == "open" && st.Ready:
+			case st.WritStatus == store.WritOpen && st.Ready:
 				pp.Ready++
 			}
 		}
