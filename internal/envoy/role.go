@@ -63,61 +63,12 @@ func envoyPersona(world, agent string) ([]byte, error) {
 
 // envoyHooks returns the Claude Code hook configuration for the envoy.
 func envoyHooks(world, agent string) startup.HookSet {
-	return protocol.HookConfig{
-		Hooks: map[string][]protocol.HookMatcherGroup{
-			"SessionStart": {
-				{
-					Matcher: "startup|resume",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: "sol brief inject --path=.brief/memory.md --max-lines=200",
-						},
-					},
-				},
-			},
-			"PreToolUse": append([]protocol.HookMatcherGroup{
-				{
-					Matcher: "Write|Edit",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: `FILE=$(jq -r '.tool_input.file_path // empty'); if echo "$FILE" | grep -q '.claude/projects/.*/memory/'; then echo "BLOCKED: Use .brief/memory.md, not Claude Code auto-memory." >&2; exit 2; fi`,
-						},
-					},
-				},
-				{
-					Matcher: "EnterPlanMode",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`,
-						},
-					},
-				},
-			}, protocol.GuardHooks("envoy")...),
-			"PreCompact": {
-				{
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent),
-						},
-					},
-				},
-			},
-			"UserPromptSubmit": {
-				{
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agent),
-						},
-					},
-				},
-			},
-		},
-	}
+	return protocol.BaseHooks(protocol.HookOptions{
+		Role:          "envoy",
+		BriefPath:     ".brief/memory.md",
+		PreCompactCmd: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent),
+		NudgeDrainCmd: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agent),
+	})
 }
 
 // envoyPrime builds the initial prompt for the envoy session.

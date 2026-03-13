@@ -53,61 +53,13 @@ func governorPersona(world, _ string) ([]byte, error) {
 
 // governorHooks returns the Claude Code hook configuration for the governor.
 func governorHooks(world, _ string) startup.HookSet {
-	return protocol.HookConfig{
-		Hooks: map[string][]protocol.HookMatcherGroup{
-			"SessionStart": {
-				{
-					Matcher: "startup|resume",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol brief inject --path=.brief/memory.md --max-lines=200 && sol world sync --world=%s", world),
-						},
-					},
-				},
-			},
-			"PreToolUse": append([]protocol.HookMatcherGroup{
-				{
-					Matcher: "Write|Edit",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: `FILE=$(jq -r '.tool_input.file_path // empty'); if echo "$FILE" | grep -q '.claude/projects/.*/memory/'; then echo "BLOCKED: Use .brief/memory.md, not Claude Code auto-memory." >&2; exit 2; fi`,
-						},
-					},
-				},
-				{
-					Matcher: "EnterPlanMode",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`,
-						},
-					},
-				},
-			}, protocol.GuardHooks("governor")...),
-			"PreCompact": {
-				{
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol prime --world=%s --agent=governor --compact", world),
-						},
-					},
-				},
-			},
-			"UserPromptSubmit": {
-				{
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol nudge drain --world=%s --agent=governor", world),
-						},
-					},
-				},
-			},
-		},
-	}
+	return protocol.BaseHooks(protocol.HookOptions{
+		Role:             "governor",
+		BriefPath:        ".brief/memory.md",
+		SessionStartCmds: []string{fmt.Sprintf("sol world sync --world=%s", world)},
+		PreCompactCmd:    fmt.Sprintf("sol prime --world=%s --agent=governor --compact", world),
+		NudgeDrainCmd:    fmt.Sprintf("sol nudge drain --world=%s --agent=governor", world),
+	})
 }
 
 // governorPrime builds the initial prompt for the governor session.

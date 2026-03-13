@@ -40,41 +40,10 @@ func chancellorPersona(_, _ string) ([]byte, error) {
 // The chancellor is sphere-level (no world), so world-dependent hooks (nudge drain,
 // sol prime --compact) are omitted.
 func chancellorHooks(_, _ string) startup.HookSet {
-	return protocol.HookConfig{
-		Hooks: map[string][]protocol.HookMatcherGroup{
-			"SessionStart": {
-				{
-					Matcher: "startup|resume",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: "sol brief inject --path=.brief/memory.md --max-lines=200",
-						},
-					},
-				},
-			},
-			"PreToolUse": append([]protocol.HookMatcherGroup{
-				{
-					Matcher: "Write|Edit",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: `FILE=$(jq -r '.tool_input.file_path // empty'); if echo "$FILE" | grep -q '.claude/projects/.*/memory/'; then echo "BLOCKED: Use .brief/memory.md, not Claude Code auto-memory." >&2; exit 2; fi`,
-						},
-					},
-				},
-				{
-					Matcher: "EnterPlanMode",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`,
-						},
-					},
-				},
-			}, protocol.GuardHooks("chancellor")...),
-		},
-	}
+	return protocol.BaseHooks(protocol.HookOptions{
+		Role:      "chancellor",
+		BriefPath: ".brief/memory.md",
+	})
 }
 
 // chancellorPrime builds the initial prompt for the chancellor session.

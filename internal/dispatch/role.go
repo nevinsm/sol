@@ -138,51 +138,12 @@ func outpostPersona(world, agent string) ([]byte, error) {
 
 // outpostHooks returns the Claude Code hook configuration for outpost agents.
 func outpostHooks(world, agent string) startup.HookSet {
-	return protocol.HookConfig{
-		Hooks: map[string][]protocol.HookMatcherGroup{
-			"SessionStart": {
-				{
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol prime --world=%s --agent=%s", world, agent),
-						},
-					},
-				},
-			},
-			"PreCompact": {
-				{
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent),
-						},
-					},
-				},
-			},
-			"PreToolUse": append([]protocol.HookMatcherGroup{
-				{
-					Matcher: "EnterPlanMode",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: `echo "BLOCKED: Plan mode requires human approval — no one is watching. Outline your approach in conversation, then implement directly." >&2; exit 2`,
-						},
-					},
-				},
-			}, protocol.GuardHooks("outpost")...),
-			"UserPromptSubmit": {
-				{
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agent),
-						},
-					},
-				},
-			},
-		},
-	}
+	return protocol.BaseHooks(protocol.HookOptions{
+		Role:             "outpost",
+		SessionStartCmds: []string{fmt.Sprintf("sol prime --world=%s --agent=%s", world, agent)},
+		PreCompactCmd:    fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent),
+		NudgeDrainCmd:    fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agent),
+	})
 }
 
 // outpostPrime builds the initial prompt for the outpost session.

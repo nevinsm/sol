@@ -145,6 +145,94 @@ func GuardHooks(role string) []HookMatcherGroup {
 	return groups
 }
 
+// HookOptions controls what BaseHooks generates.
+// BriefPath drives both brief injection in SessionStart and the Write|Edit
+// auto-memory blocker in PreToolUse — set it for roles that maintain a brief.
+// Leave it empty for roles that use sol prime instead (e.g. outpost).
+type HookOptions struct {
+	Role             string             // role name passed to GuardHooks
+	BriefPath        string             // if set: adds brief inject to SessionStart (with "startup|resume" matcher) and Write|Edit auto-memory blocker to PreToolUse
+	SessionStartCmds []string           // additional SessionStart commands appended (joined with " && ") after brief inject
+	PreCompactCmd    string             // if set, adds a PreCompact hook with this command
+	NudgeDrainCmd    string             // if set, adds a UserPromptSubmit hook with this command
+	ExtraPreToolUse  []HookMatcherGroup // role-specific PreToolUse matchers prepended before the standard blockers
+}
+
+// BaseHooks builds a HookConfig from common role options.
+//
+// Always included in PreToolUse:
+//   - EnterPlanMode blocker (exit 2)
+//   - GuardHooks(role)
+//
+// Conditionally included when options are set:
+//   - Write|Edit auto-memory blocker    — when BriefPath is non-empty
+//   - Brief inject in SessionStart       — when BriefPath is non-empty (matcher: "startup|resume")
+//   - Additional SessionStart commands  — when SessionStartCmds is non-empty
+//   - PreCompact hook                    — when PreCompactCmd is non-empty
+//   - UserPromptSubmit nudge drain       — when NudgeDrainCmd is non-empty
+func BaseHooks(opts HookOptions) HookConfig {
+	hooks := map[string][]HookMatcherGroup{}
+
+	// --- SessionStart ---
+	var sessionStartCmd string
+	var sessionStartMatcher string
+	if opts.BriefPath != "" {
+		sessionStartCmd = fmt.Sprintf("sol brief inject --path=%s --max-lines=200", opts.BriefPath)
+		sessionStartMatcher = "startup|resume"
+	}
+	for _, cmd := range opts.SessionStartCmds {
+		if sessionStartCmd != "" {
+			sessionStartCmd += " && " + cmd
+		} else {
+			sessionStartCmd = cmd
+		}
+	}
+	if sessionStartCmd != "" {
+		hooks["SessionStart"] = []HookMatcherGroup{{
+			Matcher: sessionStartMatcher,
+			Hooks:   []HookHandler{{Type: "command", Command: sessionStartCmd}},
+		}}
+	}
+
+	// --- PreToolUse ---
+	var preToolUse []HookMatcherGroup
+	preToolUse = append(preToolUse, opts.ExtraPreToolUse...)
+	if opts.BriefPath != "" {
+		preToolUse = append(preToolUse, HookMatcherGroup{
+			Matcher: "Write|Edit",
+			Hooks: []HookHandler{{
+				Type:    "command",
+				Command: `FILE=$(jq -r '.tool_input.file_path // empty'); if echo "$FILE" | grep -q '.claude/projects/.*/memory/'; then echo "BLOCKED: Use .brief/memory.md, not Claude Code auto-memory." >&2; exit 2; fi`,
+			}},
+		})
+	}
+	preToolUse = append(preToolUse, HookMatcherGroup{
+		Matcher: "EnterPlanMode",
+		Hooks: []HookHandler{{
+			Type:    "command",
+			Command: `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`,
+		}},
+	})
+	preToolUse = append(preToolUse, GuardHooks(opts.Role)...)
+	hooks["PreToolUse"] = preToolUse
+
+	// --- PreCompact (optional) ---
+	if opts.PreCompactCmd != "" {
+		hooks["PreCompact"] = []HookMatcherGroup{{
+			Hooks: []HookHandler{{Type: "command", Command: opts.PreCompactCmd}},
+		}}
+	}
+
+	// --- UserPromptSubmit nudge drain (optional) ---
+	if opts.NudgeDrainCmd != "" {
+		hooks["UserPromptSubmit"] = []HookMatcherGroup{{
+			Hooks: []HookHandler{{Type: "command", Command: opts.NudgeDrainCmd}},
+		}}
+	}
+
+	return HookConfig{Hooks: hooks}
+}
+
 // WriteHookSettings writes a HookConfig to .claude/settings.local.json.
 func WriteHookSettings(worktreeDir string, cfg HookConfig) error {
 	claudeDir := filepath.Join(worktreeDir, ".claude")
