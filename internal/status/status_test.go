@@ -76,6 +76,10 @@ func (m *mockWorldStore) ReadyWrits() ([]store.Writ, error) {
 	return nil, fmt.Errorf("mockWorldStore.ReadyWrits not implemented")
 }
 
+func (m *mockWorldStore) GetWritMetadata(id string) (map[string]any, error) {
+	return nil, nil
+}
+
 type mockMergeQueueStore struct {
 	mrs []store.MergeRequest
 	err error
