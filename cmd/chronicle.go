@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -17,6 +16,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/prefect"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/spf13/cobra"
 )
 
@@ -78,34 +78,16 @@ var chronicleStartCmd = &cobra.Command{
 			return fmt.Errorf("failed to find sol binary: %w", err)
 		}
 
-		// Open log file.
 		logPath := filepath.Join(config.RuntimeDir(), "chronicle.log")
-		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		newPid, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), solBin, "chronicle", "run")
 		if err != nil {
-			return fmt.Errorf("failed to open log file: %w", err)
-		}
-
-		proc := exec.Command(solBin, "chronicle", "run")
-		proc.Stdout = logFile
-		proc.Stderr = logFile
-		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
-		proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-		if err := proc.Start(); err != nil {
-			logFile.Close()
 			return fmt.Errorf("failed to start chronicle: %w", err)
 		}
-
-		newPid := proc.Process.Pid
-		logFile.Close()
 
 		// Write PID file.
 		if err := prefect.WriteDaemonPID("chronicle", newPid); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to write PID file: %v\n", err)
 		}
-
-		// Detach so chronicle survives.
-		_ = proc.Process.Release()
 
 		// Verify alive after a moment.
 		time.Sleep(time.Second)

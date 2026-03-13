@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/prefect"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/spf13/cobra"
 )
 
@@ -166,27 +166,12 @@ var tokenBrokerStartCmd = &cobra.Command{
 		}
 
 		logPath := daemonLogPath("broker")
-		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		newPID, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), solBin, "broker", "run")
 		if err != nil {
-			return fmt.Errorf("failed to open log file: %w", err)
-		}
-
-		proc := exec.Command(solBin, "broker", "run")
-		proc.Stdout = logFile
-		proc.Stderr = logFile
-		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
-		proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-		if err := proc.Start(); err != nil {
-			logFile.Close()
 			return fmt.Errorf("failed to start broker: %w", err)
 		}
 
-		newPID := proc.Process.Pid
-		logFile.Close()
-
 		_ = writeDaemonPID("broker", newPID)
-		_ = proc.Process.Release()
 
 		// Wait briefly and confirm alive.
 		time.Sleep(time.Second)

@@ -12,6 +12,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -127,30 +128,12 @@ var sentinelStartCmd = &cobra.Command{
 			return fmt.Errorf("failed to find sol binary: %w", err)
 		}
 
-		// Open log file for output.
-		logPath := sentinel.LogPath(world)
-		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-		if err != nil {
-			return fmt.Errorf("failed to open log file: %w", err)
-		}
-
 		// Fork `sol sentinel run --world=<world>` as a background process.
-		proc := exec.Command(solBin, "sentinel", "run", "--world="+world)
-		proc.Stdout = logFile
-		proc.Stderr = logFile
-		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
-		proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-		if err := proc.Start(); err != nil {
-			logFile.Close()
+		logPath := sentinel.LogPath(world)
+		pid, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), solBin, "sentinel", "run", "--world="+world)
+		if err != nil {
 			return fmt.Errorf("failed to start sentinel process: %w", err)
 		}
-
-		pid := proc.Process.Pid
-		logFile.Close()
-
-		// Detach so the sentinel survives the parent.
-		_ = proc.Process.Release()
 
 		fmt.Printf("Sentinel started for world %q (pid %d)\n", world, pid)
 		fmt.Printf("  Log: sol sentinel log --world=%s --follow\n", world)

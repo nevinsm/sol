@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/nudge"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/worldsync"
@@ -115,44 +115,15 @@ var forgeStartCmd = &cobra.Command{
 		}
 
 		logPath := forge.LogPath(world)
-		logDir := filepath.Dir(logPath)
-		if err := os.MkdirAll(logDir, 0o755); err != nil {
-			return fmt.Errorf("failed to create forge log directory: %w", err)
-		}
-
-		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		pid, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), solBin, "forge", "run", "--world="+world)
 		if err != nil {
-			return fmt.Errorf("failed to open forge log file: %w", err)
-		}
-
-		devNull, err := os.Open(os.DevNull)
-		if err != nil {
-			logFile.Close()
-			return fmt.Errorf("failed to open devnull: %w", err)
-		}
-		defer devNull.Close()
-
-		proc := exec.Command(solBin, "forge", "run", "--world="+world)
-		proc.Stdout = devNull
-		proc.Stderr = logFile
-		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
-		proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-		if err := proc.Start(); err != nil {
-			logFile.Close()
 			return fmt.Errorf("failed to start forge process: %w", err)
 		}
-
-		pid := proc.Process.Pid
-		logFile.Close()
 
 		// Write PID file.
 		if err := forge.WritePID(world, pid); err != nil {
 			return fmt.Errorf("forge started (pid %d) but failed to write PID file: %w", pid, err)
 		}
-
-		// Detach so the forge survives this process.
-		_ = proc.Process.Release()
 
 		// Brief wait and verify the process is still alive.
 		time.Sleep(200 * time.Millisecond)
