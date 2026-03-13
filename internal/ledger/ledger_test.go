@@ -35,8 +35,39 @@ func setupTestLedger(t *testing.T, worldName string) (*Ledger, *store.WorldStore
 	return l, ws
 }
 
-// makeOTLPBody builds an OTLP JSON body for testing.
+// makeOTLPBody builds an OTLP JSON body using Claude Code's actual attribute names.
 func makeOTLPBody(agentName, world, writID, eventName, model string, input, output, cacheRead, cacheCreation int64) []byte {
+	req := ExportLogsServiceRequest{
+		ResourceLogs: []ResourceLogs{{
+			Resource: Resource{
+				Attributes: []KeyValue{
+					{Key: "agent.name", Value: AnyValue{StringValue: agentName}},
+					{Key: "world", Value: AnyValue{StringValue: world}},
+					{Key: "writ_id", Value: AnyValue{StringValue: writID}},
+				},
+			},
+			ScopeLogs: []ScopeLogs{{
+				LogRecords: []LogRecord{{
+					TimeUnixNano: "1709740800000000000",
+					Body:         AnyValue{StringValue: eventName},
+					Attributes: []KeyValue{
+						{Key: "model", Value: AnyValue{StringValue: model}},
+						{Key: "input_tokens", Value: AnyValue{IntValue: fmt.Sprintf("%d", input)}},
+						{Key: "output_tokens", Value: AnyValue{IntValue: fmt.Sprintf("%d", output)}},
+						{Key: "cache_read_tokens", Value: AnyValue{IntValue: fmt.Sprintf("%d", cacheRead)}},
+						{Key: "cache_creation_tokens", Value: AnyValue{IntValue: fmt.Sprintf("%d", cacheCreation)}},
+					},
+				}},
+			}},
+		}},
+	}
+	b, _ := json.Marshal(req)
+	return b
+}
+
+// makeOTLPBodyGenAI builds an OTLP JSON body using OTel gen_ai.* attribute names
+// to verify the fallback path still works.
+func makeOTLPBodyGenAI(agentName, world, writID, eventName, model string, input, output, cacheRead, cacheCreation int64) []byte {
 	req := ExportLogsServiceRequest{
 		ResourceLogs: []ResourceLogs{{
 			Resource: Resource{
@@ -244,5 +275,91 @@ func TestParseIntAttr(t *testing.T) {
 	}
 	if v := parseIntAttr(attrs, "missing"); v != 0 {
 		t.Fatalf("expected 0 for missing, got %d", v)
+	}
+}
+
+// TestHandleLogs_GenAIFallback verifies that gen_ai.* attribute names are
+// still accepted when Claude Code's short names are absent.
+func TestHandleLogs_GenAIFallback(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	body := makeOTLPBodyGenAI("Toast", "testworld", "sol-item01", "claude_code.api_request",
+		"claude-sonnet-4-6", 1000, 500, 200, 100)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	l.handleLogs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	summaries, err := ws.AggregateTokens("Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 token summary, got %d", len(summaries))
+	}
+	if summaries[0].InputTokens != 1000 {
+		t.Fatalf("expected input_tokens 1000, got %d", summaries[0].InputTokens)
+	}
+	if summaries[0].OutputTokens != 500 {
+		t.Fatalf("expected output_tokens 500, got %d", summaries[0].OutputTokens)
+	}
+}
+
+// TestHandleLogs_EventNameAttrFallback verifies that events using the
+// event.name attribute set to "api_request" (without the prefix) are accepted.
+func TestHandleLogs_EventNameAttrFallback(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	// Body is empty; event name is conveyed via the event.name attribute.
+	otlpReq := ExportLogsServiceRequest{
+		ResourceLogs: []ResourceLogs{{
+			Resource: Resource{
+				Attributes: []KeyValue{
+					{Key: "agent.name", Value: AnyValue{StringValue: "Toast"}},
+					{Key: "world", Value: AnyValue{StringValue: "testworld"}},
+					{Key: "writ_id", Value: AnyValue{StringValue: "sol-item01"}},
+				},
+			},
+			ScopeLogs: []ScopeLogs{{
+				LogRecords: []LogRecord{{
+					TimeUnixNano: "1709740800000000000",
+					Body:         AnyValue{},
+					Attributes: []KeyValue{
+						{Key: "event.name", Value: AnyValue{StringValue: "api_request"}},
+						{Key: "model", Value: AnyValue{StringValue: "claude-sonnet-4-6"}},
+						{Key: "input_tokens", Value: AnyValue{IntValue: "750"}},
+						{Key: "output_tokens", Value: AnyValue{IntValue: "250"}},
+						{Key: "cache_read_tokens", Value: AnyValue{IntValue: "0"}},
+						{Key: "cache_creation_tokens", Value: AnyValue{IntValue: "0"}},
+					},
+				}},
+			}},
+		}},
+	}
+	body, _ := json.Marshal(otlpReq)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	l.handleLogs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	summaries, err := ws.AggregateTokens("Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 token summary, got %d", len(summaries))
+	}
+	if summaries[0].InputTokens != 750 {
+		t.Fatalf("expected input_tokens 750, got %d", summaries[0].InputTokens)
 	}
 }
