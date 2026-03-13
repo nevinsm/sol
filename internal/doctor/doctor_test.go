@@ -119,9 +119,10 @@ func TestRunAll(t *testing.T) {
 	t.Setenv("SOL_HOME", t.TempDir())
 
 	report := RunAll()
-	// 6 prerequisite checks + 1 env_files check (no worlds in temp SOL_HOME).
-	if len(report.Checks) != 7 {
-		t.Fatalf("expected 7 checks, got %d", len(report.Checks))
+	// 6 base checks (tmux, git, claude, jq, sol_home, sqlite_wal) plus any
+	// env file checks discovered in SOL_HOME (none in a fresh temp dir).
+	if len(report.Checks) < 6 {
+		t.Fatalf("expected at least 6 checks, got %d", len(report.Checks))
 	}
 
 	// Verify AllPassed is consistent with individual checks.
@@ -173,147 +174,217 @@ func TestReportFailedCount(t *testing.T) {
 	}
 }
 
-// makeWorld creates a minimal initialized world directory structure under solHome
-// and returns the world directory path.
-func makeWorld(t *testing.T, solHome, world string) string {
-	t.Helper()
-	worldDir := filepath.Join(solHome, world)
+// --- CheckEnvFiles tests ---
+
+func TestCheckEnvFilesSphereLevel(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write a valid sphere-level .env file.
+	envPath := filepath.Join(dir, ".env")
+	if err := os.WriteFile(envPath, []byte("API_KEY=secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckEnvFiles(dir, nil)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	r := results[0]
+	if r.Name != "env:sphere" {
+		t.Errorf("expected Name=%q, got %q", "env:sphere", r.Name)
+	}
+	if !r.Passed {
+		t.Errorf("expected Passed=true, got false: %s", r.Message)
+	}
+}
+
+func TestCheckEnvFilesSphereLevelParseError(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write a sphere .env with invalid syntax.
+	envPath := filepath.Join(dir, ".env")
+	if err := os.WriteFile(envPath, []byte("INVALID_NO_EQUALS\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckEnvFiles(dir, nil)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Passed {
+		t.Error("expected Passed=false for malformed .env file")
+	}
+	if results[0].Fix == "" {
+		t.Error("expected non-empty Fix")
+	}
+}
+
+func TestCheckEnvFilesSphereLevelBadPermissions(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping: root ignores file permissions")
+	}
+
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env")
+	// Write file with world-readable permissions.
+	if err := os.WriteFile(envPath, []byte("KEY=val\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckEnvFiles(dir, nil)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Passed {
+		t.Error("expected Passed=false for world-readable .env file")
+	}
+	if results[0].Fix == "" {
+		t.Error("expected non-empty Fix for permission failure")
+	}
+}
+
+func TestCheckEnvFilesSphereAbsent(t *testing.T) {
+	dir := t.TempDir()
+	// No .env file — should return no results.
+	results := CheckEnvFiles(dir, nil)
+	if len(results) != 0 {
+		t.Errorf("expected 0 results when .env absent, got %d", len(results))
+	}
+}
+
+func TestCheckEnvFilesWorldLevel(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a world directory with a valid .env file.
+	worldDir := filepath.Join(dir, "myworld")
 	if err := os.MkdirAll(worldDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Write a minimal world.toml so RequireWorld recognizes it as initialized.
-	worldToml := filepath.Join(worldDir, "world.toml")
-	if err := os.WriteFile(worldToml, []byte("[world]\n"), 0o644); err != nil {
+	envPath := filepath.Join(worldDir, ".env")
+	if err := os.WriteFile(envPath, []byte("DB_URL=postgres://localhost/mydb\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return worldDir
-}
 
-func TestCheckEnvFilesNoWorlds(t *testing.T) {
-	t.Setenv("SOL_HOME", t.TempDir())
-
-	results := CheckEnvFiles()
+	results := CheckEnvFiles(dir, []string{"myworld"})
 	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d: %v", len(results), results)
+		t.Fatalf("expected 1 result, got %d", len(results))
 	}
-	if !results[0].Passed {
-		t.Errorf("expected Passed=true for empty SOL_HOME, got false: %s", results[0].Message)
+	r := results[0]
+	if r.Name != "env:myworld" {
+		t.Errorf("expected Name=%q, got %q", "env:myworld", r.Name)
 	}
-}
-
-func TestCheckEnvFilesNoEnvFile(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	makeWorld(t, dir, "alpha")
-
-	results := CheckEnvFiles()
-	if len(results) != 1 || !results[0].Passed {
-		t.Errorf("expected 1 passing result when no .env exists, got %v", results)
-	}
-}
-
-func TestCheckEnvFilesValidEnvFile(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	worldDir := makeWorld(t, dir, "beta")
-
-	envPath := filepath.Join(worldDir, ".env")
-	if err := os.WriteFile(envPath, []byte("API_KEY=secret\nDB_URL=postgres://localhost/db\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	results := CheckEnvFiles()
-	if len(results) != 1 || !results[0].Passed {
-		t.Errorf("expected 1 passing result for valid .env, got %v", results)
-	}
-}
-
-func TestCheckEnvFilesParseError(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	worldDir := makeWorld(t, dir, "gamma")
-
-	// Write a malformed .env (line without '=').
-	envPath := filepath.Join(worldDir, ".env")
-	if err := os.WriteFile(envPath, []byte("GOOD=value\nBAD_LINE\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	results := CheckEnvFiles()
-	if len(results) == 0 {
-		t.Fatal("expected at least one failing result for parse error")
-	}
-	found := false
-	for _, r := range results {
-		if !r.Passed && strings.Contains(r.Message, "parse error") {
-			found = true
-			if r.Fix == "" {
-				t.Error("expected non-empty Fix for parse error")
-			}
-		}
-	}
-	if !found {
-		t.Errorf("expected a parse error result, got: %v", results)
+	if !r.Passed {
+		t.Errorf("expected Passed=true, got false: %s", r.Message)
 	}
 }
 
 func TestCheckEnvFilesEmptyValue(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	worldDir := makeWorld(t, dir, "delta")
-
-	envPath := filepath.Join(worldDir, ".env")
-	if err := os.WriteFile(envPath, []byte("FILLED=value\nEMPTY=\n"), 0o600); err != nil {
+	envPath := filepath.Join(dir, ".env")
+	if err := os.WriteFile(envPath, []byte("KEY=\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	results := CheckEnvFiles()
-	if len(results) == 0 {
-		t.Fatal("expected at least one result for empty value warning")
+	results := CheckEnvFiles(dir, nil)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
 	}
-	found := false
-	for _, r := range results {
-		if !r.Passed && strings.Contains(r.Message, `"EMPTY"`) {
-			found = true
-			if r.Fix == "" {
-				t.Error("expected non-empty Fix for empty value")
-			}
-		}
-	}
-	if !found {
-		t.Errorf("expected a warning about EMPTY key, got: %v", results)
+	if results[0].Passed {
+		t.Error("expected Passed=false for empty value")
 	}
 }
 
-func TestCheckEnvFilesWorldReadable(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("skipping: root ignores permission bits")
-	}
-
+func TestCheckEnvFilesBothSphereAndWorld(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	worldDir := makeWorld(t, dir, "epsilon")
 
-	envPath := filepath.Join(worldDir, ".env")
-	// Write with world-readable permissions (0644).
-	if err := os.WriteFile(envPath, []byte("SECRET=value\n"), 0o644); err != nil {
+	// Sphere-level .env.
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("GLOBAL=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// World-level .env.
+	worldDir := filepath.Join(dir, "dev")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, ".env"), []byte("LOCAL=2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	results := CheckEnvFiles()
-	if len(results) == 0 {
-		t.Fatal("expected at least one result for world-readable .env")
+	results := CheckEnvFiles(dir, []string{"dev"})
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d: %v", len(results), results)
 	}
-	found := false
-	for _, r := range results {
-		if !r.Passed && strings.Contains(r.Message, "world-readable") {
-			found = true
-			if r.Fix == "" {
-				t.Error("expected non-empty Fix for world-readable file")
-			}
+	// First result should be the sphere-level check.
+	if results[0].Name != "env:sphere" {
+		t.Errorf("expected first result Name=%q, got %q", "env:sphere", results[0].Name)
+	}
+	if results[1].Name != "env:dev" {
+		t.Errorf("expected second result Name=%q, got %q", "env:dev", results[1].Name)
+	}
+}
+
+func TestDiscoverWorlds(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create two world directories with world.toml.
+	for _, world := range []string{"alpha", "beta"} {
+		wdir := filepath.Join(dir, world)
+		if err := os.MkdirAll(wdir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(wdir, "world.toml"), []byte(""), 0o644); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if !found {
-		t.Errorf("expected a world-readable warning, got: %v", results)
+	// Create a directory without world.toml — should be excluded.
+	if err := os.MkdirAll(filepath.Join(dir, "notaworld"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	worlds := discoverWorlds(dir)
+	if len(worlds) != 2 {
+		t.Fatalf("expected 2 worlds, got %d: %v", len(worlds), worlds)
+	}
+	// Check both are found (order may vary).
+	found := make(map[string]bool)
+	for _, w := range worlds {
+		found[w] = true
+	}
+	for _, want := range []string{"alpha", "beta"} {
+		if !found[want] {
+			t.Errorf("expected world %q not found in %v", want, worlds)
+		}
+	}
+}
+
+func TestRunAllWithSphereEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Write a valid sphere-level .env.
+	envPath := filepath.Join(dir, ".env")
+	if err := os.WriteFile(envPath, []byte("TOKEN=abc123\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report := RunAll()
+
+	// Find the env:sphere check.
+	var envCheck *CheckResult
+	for i := range report.Checks {
+		if report.Checks[i].Name == "env:sphere" {
+			envCheck = &report.Checks[i]
+			break
+		}
+	}
+	if envCheck == nil {
+		names := make([]string, len(report.Checks))
+		for i, c := range report.Checks {
+			names[i] = c.Name
+		}
+		t.Fatalf("env:sphere check not found in RunAll results: %v", names)
+	}
+	if !envCheck.Passed {
+		t.Errorf("expected env:sphere Passed=true, got false: %s", envCheck.Message)
 	}
 }

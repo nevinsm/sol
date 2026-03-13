@@ -273,7 +273,11 @@ func RunAll() *Report {
 	report.Checks = append(report.Checks, CheckJq())
 	report.Checks = append(report.Checks, CheckSOLHome())
 	report.Checks = append(report.Checks, CheckSQLiteWAL())
-	report.Checks = append(report.Checks, CheckEnvFiles()...)
+
+	// Check .env files: sphere-level and any discovered world-level files.
+	solHome := config.Home()
+	worlds := discoverWorlds(solHome)
+	report.Checks = append(report.Checks, CheckEnvFiles(solHome, worlds)...)
 	return report
 }
 
