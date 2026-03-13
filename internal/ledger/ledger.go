@@ -286,26 +286,43 @@ func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord
 
 	// Filter for claude_code.api_request events.
 	// The event name may be in the body or in an attribute.
+	// Claude Code sets the body to "claude_code.api_request" and the
+	// event.name attribute to "api_request" (without the prefix).
+	// Accept both forms so we handle either path.
 	eventName := rec.Body.StringValue
 	if eventName == "" {
 		eventName = attrs["event.name"]
 	}
-	if eventName != "claude_code.api_request" {
+	if eventName != "claude_code.api_request" && eventName != "api_request" {
 		return
 	}
 
-	model := attrs["gen_ai.response.model"]
+	// Claude Code emits short attribute names ("model", "input_tokens", …).
+	// Fall back to OTel gen_ai.* semantic convention names for forward compatibility.
+	model := attrs["model"]
 	if model == "" {
-		model = attrs["model"]
+		model = attrs["gen_ai.response.model"]
 	}
 	if model == "" {
 		return // no model, skip
 	}
 
-	input := parseIntAttr(attrs, "gen_ai.usage.input_tokens")
-	output := parseIntAttr(attrs, "gen_ai.usage.output_tokens")
-	cacheRead := parseIntAttr(attrs, "gen_ai.usage.cache_read_input_tokens")
-	cacheCreation := parseIntAttr(attrs, "gen_ai.usage.cache_creation_input_tokens")
+	input := parseIntAttr(attrs, "input_tokens")
+	if input == 0 {
+		input = parseIntAttr(attrs, "gen_ai.usage.input_tokens")
+	}
+	output := parseIntAttr(attrs, "output_tokens")
+	if output == 0 {
+		output = parseIntAttr(attrs, "gen_ai.usage.output_tokens")
+	}
+	cacheRead := parseIntAttr(attrs, "cache_read_tokens")
+	if cacheRead == 0 {
+		cacheRead = parseIntAttr(attrs, "gen_ai.usage.cache_read_input_tokens")
+	}
+	cacheCreation := parseIntAttr(attrs, "cache_creation_tokens")
+	if cacheCreation == 0 {
+		cacheCreation = parseIntAttr(attrs, "gen_ai.usage.cache_creation_input_tokens")
+	}
 
 	historyID, err := l.ensureHistory(world, agentName, writID)
 	if err != nil {
