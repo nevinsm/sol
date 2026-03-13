@@ -4,6 +4,8 @@ package processutil
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 )
@@ -26,6 +28,51 @@ func IsRunning(pid int) bool {
 	// Fallback: signal-0 probe (works on all Unix; cannot distinguish zombies).
 	err := syscall.Kill(pid, 0)
 	return err == nil || err == syscall.EPERM
+}
+
+// StartDaemon launches solBin with the given args as a detached background process.
+//
+// stdout and stderr are both redirected to logPath (the directory is created if
+// it does not exist). env is the full environment for the child process — callers
+// typically pass append(os.Environ(), "SOL_HOME=<path>").
+//
+// The child is reaped in a background goroutine so it never becomes a zombie.
+// Callers must NOT call proc.Process.Release() after StartDaemon — that would
+// prevent Go's runtime from reaping the child, leaving a defunct process that
+// IsRunning() would incorrectly report as alive.
+//
+// Returns the PID of the launched process.
+func StartDaemon(logPath string, env []string, solBin string, args ...string) (int, error) {
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		return 0, fmt.Errorf("create log directory: %w", err)
+	}
+
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return 0, fmt.Errorf("open log file: %w", err)
+	}
+
+	proc := exec.Command(solBin, args...)
+	proc.Stdout = logFile
+	proc.Stderr = logFile
+	proc.Env = env
+	proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	if err := proc.Start(); err != nil {
+		logFile.Close()
+		return 0, fmt.Errorf("start process: %w", err)
+	}
+
+	pid := proc.Process.Pid
+	logFile.Close()
+
+	// Reap the child in the background so it never becomes a zombie when it
+	// exits. We must not call Release() — that prevents Go's runtime from
+	// waiting on the child, leaving a defunct process that IsRunning() would
+	// incorrectly report as alive.
+	go func() { _ = proc.Wait() }()
+
+	return pid, nil
 }
 
 // isRunningProc reads /proc/{pid}/stat and returns (alive, true) when /proc is

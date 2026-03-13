@@ -19,6 +19,7 @@ import (
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/ledger"
 	"github.com/nevinsm/sol/internal/logutil"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
@@ -852,34 +853,12 @@ func (s *Prefect) checkChronicleHealth() {
 }
 
 // defaultStartDaemonProcess starts a daemon as a detached background process,
-// matching the approach used by `sol up`.
+// matching the approach used by `sol up`. Delegates to processutil.StartDaemon
+// for the shared launch implementation.
 func defaultStartDaemonProcess(daemon string, binPath string, args ...string) error {
 	logPath := filepath.Join(config.RuntimeDir(), daemon+".log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return fmt.Errorf("open log file: %w", err)
-	}
-
-	proc := exec.Command(binPath, args...)
-	proc.Stdout = logFile
-	proc.Stderr = logFile
-	proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
-	proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-	if err := proc.Start(); err != nil {
-		logFile.Close()
-		return fmt.Errorf("start process: %w", err)
-	}
-
-	logFile.Close()
-
-	// Reap the child in the background so it does not become a zombie when it
-	// exits. We must not call Release() here — that would prevent Go's runtime
-	// from waiting on the child, leaving a defunct process that IsRunning()
-	// would incorrectly report as alive.
-	go func() { _ = proc.Wait() }()
-
-	return nil
+	_, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), binPath, args...)
+	return err
 }
 
 // recordDeath records a session death timestamp and checks for mass death.

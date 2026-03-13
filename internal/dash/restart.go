@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/prefect"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 )
@@ -98,32 +99,15 @@ func restartSphereProcess(solBin, name string) error {
 	// --- Start phase ---
 
 	logPath := processLogPath(info.cliName)
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	pid, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), solBin, info.cliName, info.startCmd)
 	if err != nil {
-		return fmt.Errorf("failed to open log file: %w", err)
-	}
-
-	proc := exec.Command(solBin, info.cliName, info.startCmd)
-	proc.Stdout = logFile
-	proc.Stderr = logFile
-	proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
-	proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-	if err := proc.Start(); err != nil {
-		logFile.Close()
 		return fmt.Errorf("failed to start %s: %w", name, err)
 	}
-
-	pid := proc.Process.Pid
-	logFile.Close()
 
 	// Write PID file (prefect writes its own).
 	if info.cliName != "prefect" && info.pidBased {
 		_ = writeProcessPID(info.cliName, pid)
 	}
-
-	// Detach so process survives.
-	_ = proc.Process.Release()
 
 	// Verify alive after 1 second.
 	time.Sleep(time.Second)

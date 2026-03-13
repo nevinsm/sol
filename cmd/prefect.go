@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -14,6 +13,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/prefect"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -110,32 +110,12 @@ var prefectStartCmd = &cobra.Command{
 			return fmt.Errorf("failed to find sol binary: %w", err)
 		}
 
-		if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
-			return fmt.Errorf("failed to create runtime directory: %w", err)
-		}
-
 		logPath := filepath.Join(config.RuntimeDir(), "prefect.log")
-		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		// Don't write PID — prefect.Run() writes its own.
+		newPID, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), solBin, "prefect", "run")
 		if err != nil {
-			return fmt.Errorf("failed to open log file: %w", err)
-		}
-
-		proc := exec.Command(solBin, "prefect", "run")
-		proc.Stdout = logFile
-		proc.Stderr = logFile
-		proc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
-		proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-		if err := proc.Start(); err != nil {
-			logFile.Close()
 			return fmt.Errorf("failed to start prefect: %w", err)
 		}
-
-		newPID := proc.Process.Pid
-		logFile.Close()
-
-		// Don't write PID — prefect.Run() writes its own.
-		_ = proc.Process.Release()
 
 		// Wait briefly and confirm alive.
 		time.Sleep(time.Second)
