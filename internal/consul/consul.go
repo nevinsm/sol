@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"time"
@@ -39,42 +40,19 @@ func DefaultConfig() Config {
 	}
 }
 
-// SphereStore is the subset of store.Store used by the consul.
+// SphereStore is the sphere store interface required by the consul.
+// Composed from canonical store interfaces covering all sphere-wide patrol operations.
 type SphereStore interface {
-	// Agents
-	ListAgents(world string, state store.AgentState) ([]store.Agent, error)
-	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
-	GetAgent(id string) (*store.Agent, error)
-	FindIdleAgent(world string) (*store.Agent, error)
-	CreateAgent(name, world, role string) (string, error)
-	EnsureAgent(name, world, role string) error
-	DeleteAgent(id string) error
-
-	// Caravans
-	ListCaravans(status store.CaravanStatus) ([]store.Caravan, error)
-	GetCaravan(id string) (*store.Caravan, error)
-	CheckCaravanReadiness(caravanID string, worldOpener func(string) (*store.Store, error)) ([]store.CaravanItemStatus, error)
-	TryCloseCaravan(caravanID string, worldOpener func(string) (*store.Store, error)) (bool, error)
-
-	// Worlds
-	ListWorlds() ([]store.World, error)
-
-	// Escalations
-	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
-	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
-	ResolveEscalation(id string) error
-	CountOpen() (int, error)
-	ListOpenEscalations() ([]store.Escalation, error)
-	UpdateEscalationLastNotified(id string) error
-
-	// Messages
-	PendingProtocol(recipient, protoType string) ([]store.Message, error)
-	AckMessage(id string) error
-	SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error)
-	SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
-
-	// Close
-	Close() error
+	store.AgentReader
+	store.AgentWriter
+	store.CaravanReader
+	store.CaravanWriter
+	store.CaravanDepReader
+	store.CaravanDepWriter
+	store.MessageStore
+	store.EscalationStore
+	store.WorldRegistry
+	io.Closer
 }
 
 // SessionManager is the session operations used by the consul.

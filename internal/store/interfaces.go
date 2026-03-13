@@ -47,8 +47,8 @@ type WritWriter interface {
 // MRReader provides read access to merge requests in a world database.
 type MRReader interface {
 	GetMergeRequest(id string) (*MergeRequest, error)
-	ListMergeRequests(phase string) ([]MergeRequest, error)
-	ListMergeRequestsByWrit(writID, phase string) ([]MergeRequest, error)
+	ListMergeRequests(phase MRPhase) ([]MergeRequest, error)
+	ListMergeRequestsByWrit(writID string, phase MRPhase) ([]MergeRequest, error)
 	ListBlockedMergeRequests() ([]MergeRequest, error)
 	FindMergeRequestByBlocker(blockerID string) (*MergeRequest, error)
 }
@@ -57,7 +57,7 @@ type MRReader interface {
 type MRWriter interface {
 	CreateMergeRequest(writID, branch string, priority int) (string, error)
 	ClaimMergeRequest(claimerID string) (*MergeRequest, error)
-	UpdateMergeRequestPhase(id, phase string) error
+	UpdateMergeRequestPhase(id string, phase MRPhase) error
 	BlockMergeRequest(mrID, blockerWritID string) error
 	UnblockMergeRequest(mrID string) error
 	ReleaseStaleClaims(ttl time.Duration) (int, error)
@@ -124,7 +124,7 @@ type AgentMemoryStore interface {
 // AgentReader provides read access to agent records in the sphere database.
 type AgentReader interface {
 	GetAgent(id string) (*Agent, error)
-	ListAgents(world string, state string) ([]Agent, error)
+	ListAgents(world string, state AgentState) ([]Agent, error)
 	FindIdleAgent(world string) (*Agent, error)
 }
 
@@ -132,7 +132,7 @@ type AgentReader interface {
 type AgentWriter interface {
 	CreateAgent(name, world, role string) (string, error)
 	EnsureAgent(name, world, role string) error
-	UpdateAgentState(id, state, activeWrit string) error
+	UpdateAgentState(id string, state AgentState, activeWrit string) error
 	DeleteAgent(id string) error
 	DeleteAgentsForWorld(world string) error
 }
@@ -140,7 +140,7 @@ type AgentWriter interface {
 // CaravanReader provides read access to caravan records in the sphere database.
 type CaravanReader interface {
 	GetCaravan(id string) (*Caravan, error)
-	ListCaravans(status string) ([]Caravan, error)
+	ListCaravans(status CaravanStatus) ([]Caravan, error)
 	ListCaravanItems(caravanID string) ([]CaravanItem, error)
 	GetCaravanItemsForWrit(writID string) ([]CaravanItem, error)
 	CheckCaravanReadiness(caravanID string, worldOpener func(world string) (*Store, error)) ([]CaravanItemStatus, error)
@@ -149,7 +149,7 @@ type CaravanReader interface {
 // CaravanWriter provides write access to caravan records in the sphere database.
 type CaravanWriter interface {
 	CreateCaravan(name, owner string) (string, error)
-	UpdateCaravanStatus(id, status string) error
+	UpdateCaravanStatus(id string, status CaravanStatus) error
 	CreateCaravanItem(caravanID, writID, world string, phase int) error
 	RemoveCaravanItem(caravanID, writID string) error
 	UpdateCaravanItemPhase(caravanID, writID string, phase int) error
@@ -213,27 +213,27 @@ type WorldRegistry interface {
 
 // WorldStore must satisfy all world-scoped interfaces.
 var (
-	_ WritReader      = (*WorldStore)(nil)
-	_ WritWriter      = (*WorldStore)(nil)
-	_ MRReader        = (*WorldStore)(nil)
-	_ MRWriter        = (*WorldStore)(nil)
-	_ DepReader       = (*WorldStore)(nil)
-	_ DepWriter       = (*WorldStore)(nil)
-	_ LedgerReader    = (*WorldStore)(nil)
-	_ LedgerWriter    = (*WorldStore)(nil)
-	_ HistoryStore    = (*WorldStore)(nil)
+	_ WritReader       = (*WorldStore)(nil)
+	_ WritWriter       = (*WorldStore)(nil)
+	_ MRReader         = (*WorldStore)(nil)
+	_ MRWriter         = (*WorldStore)(nil)
+	_ DepReader        = (*WorldStore)(nil)
+	_ DepWriter        = (*WorldStore)(nil)
+	_ LedgerReader     = (*WorldStore)(nil)
+	_ LedgerWriter     = (*WorldStore)(nil)
+	_ HistoryStore     = (*WorldStore)(nil)
 	_ AgentMemoryStore = (*WorldStore)(nil)
 )
 
 // SphereStore must satisfy all sphere-scoped interfaces.
 var (
-	_ AgentReader     = (*SphereStore)(nil)
-	_ AgentWriter     = (*SphereStore)(nil)
-	_ CaravanReader   = (*SphereStore)(nil)
-	_ CaravanWriter   = (*SphereStore)(nil)
+	_ AgentReader      = (*SphereStore)(nil)
+	_ AgentWriter      = (*SphereStore)(nil)
+	_ CaravanReader    = (*SphereStore)(nil)
+	_ CaravanWriter    = (*SphereStore)(nil)
 	_ CaravanDepReader = (*SphereStore)(nil)
 	_ CaravanDepWriter = (*SphereStore)(nil)
-	_ MessageStore    = (*SphereStore)(nil)
-	_ EscalationStore = (*SphereStore)(nil)
-	_ WorldRegistry   = (*SphereStore)(nil)
+	_ MessageStore     = (*SphereStore)(nil)
+	_ EscalationStore  = (*SphereStore)(nil)
+	_ WorldRegistry    = (*SphereStore)(nil)
 )

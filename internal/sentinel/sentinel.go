@@ -55,27 +55,22 @@ func DefaultConfig(world, sourceRepo, solHome string) Config {
 	}
 }
 
-// SphereStore is the subset of sphere store operations the sentinel needs.
+// SphereStore is the sphere store interface required by the sentinel.
+// Composed from canonical store interfaces covering agents, messaging, and escalations.
 type SphereStore interface {
-	GetAgent(id string) (*store.Agent, error)
-	ListAgents(world string, state store.AgentState) ([]store.Agent, error)
-	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
-	CreateAgent(name, world, role string) (string, error)
-	EnsureAgent(name, world, role string) error
-	DeleteAgent(id string) error
-	SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
-	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
+	store.AgentReader
+	store.AgentWriter
+	store.MessageStore
+	store.EscalationStore
 }
 
-// WorldStore is the subset of world store operations the sentinel needs.
+// WorldStore is the world store interface required by the sentinel.
+// Composed from canonical store interfaces covering writs and merge requests.
 type WorldStore interface {
-	GetWrit(id string) (*store.Writ, error)
-	UpdateWrit(id string, updates store.WritUpdates) error
-	SetWritMetadata(id string, metadata map[string]any) error
-	ListMergeRequests(phase store.MRPhase) ([]store.MergeRequest, error)
-	ListMergeRequestsByWrit(writID string, phase store.MRPhase) ([]store.MergeRequest, error)
-	ListBlockedMergeRequests() ([]store.MergeRequest, error)
-	ReleaseStaleClaims(ttl time.Duration) (int, error)
+	store.WritReader
+	store.WritWriter
+	store.MRReader
+	store.MRWriter
 }
 
 // SessionChecker abstracts session operations for testability.
