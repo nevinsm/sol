@@ -17,6 +17,7 @@ import (
 // --- Mock stores ---
 
 type mockWorldStore struct {
+	store.UnimplementedWorldStore
 	mu              sync.Mutex
 	mrs             []store.MergeRequest
 	items           map[string]*store.Writ
@@ -224,29 +225,6 @@ func (m *mockWorldStore) CloseWrit(id string, closeReason ...string) ([]string, 
 	}
 	return nil, nil
 }
-
-// Stub methods to satisfy the wider store.WritReader / store.WritWriter /
-// store.MRReader / store.MRWriter canonical interfaces embedded in forge.WorldStore.
-func (m *mockWorldStore) CreateWrit(title, description, createdBy string, priority int, labels []string) (string, error) {
-	return "", nil
-}
-func (m *mockWorldStore) ListWrits(filters store.ListFilters) ([]store.Writ, error) { return nil, nil }
-func (m *mockWorldStore) ListChildWrits(parentID string) ([]store.Writ, error)      { return nil, nil }
-func (m *mockWorldStore) ReadyWrits() ([]store.Writ, error)                         { return nil, nil }
-func (m *mockWorldStore) GetWritMetadata(id string) (map[string]any, error)         { return nil, nil }
-func (m *mockWorldStore) SetWritMetadata(id string, metadata map[string]any) error  { return nil }
-func (m *mockWorldStore) AddLabel(itemID, label string) error                       { return nil }
-func (m *mockWorldStore) RemoveLabel(itemID, label string) error                    { return nil }
-func (m *mockWorldStore) ListBlockedMergeRequests() ([]store.MergeRequest, error)   { return nil, nil }
-func (m *mockWorldStore) CreateMergeRequest(writID, branch string, priority int) (string, error) {
-	return "", nil
-}
-func (m *mockWorldStore) ResetMergeRequestForRetry(mrID string) error { return nil }
-func (m *mockWorldStore) SupersedeFailedMRsForWrit(writID string) ([]string, error) {
-	return nil, nil
-}
-
-func (m *mockWorldStore) Close() error { return nil }
 
 type mockEscalation struct {
 	id          string
