@@ -1,5 +1,7 @@
 package store
 
+import "time"
+
 // interfaces.go defines canonical composable interfaces for the store package.
 //
 // Consumer packages should depend on the narrowest interface(s) that satisfy
@@ -19,8 +21,6 @@ package store
 // Transitional note: until consumers fully migrate, *Store satisfies all
 // interfaces through embedding promotion. New code should target the
 // specific WorldStore/SphereStore interfaces below.
-
-import "time"
 
 // ——— World-scoped interfaces ———
 
@@ -51,6 +51,11 @@ type MRReader interface {
 	ListMergeRequestsByWrit(writID string, phase MRPhase) ([]MergeRequest, error)
 	ListBlockedMergeRequests() ([]MergeRequest, error)
 	FindMergeRequestByBlocker(blockerID string) (*MergeRequest, error)
+}
+
+// MergeRequestReader provides narrow read access to merge requests (subset of MRReader).
+type MergeRequestReader interface {
+	ListMergeRequests(phase MRPhase) ([]MergeRequest, error)
 }
 
 // MRWriter provides write access to merge requests in a world database.
@@ -200,6 +205,11 @@ type EscalationStore interface {
 	CountOpen() (int, error)
 }
 
+// EscalationReader provides narrow read access to open escalations (subset of EscalationStore).
+type EscalationReader interface {
+	ListOpenEscalations() ([]Escalation, error)
+}
+
 // WorldRegistry provides access to the world registry in the sphere database.
 type WorldRegistry interface {
 	RegisterWorld(name, sourceRepo string) error
@@ -209,20 +219,26 @@ type WorldRegistry interface {
 	DeleteWorldData(world string) error
 }
 
+// WorldReader provides narrow read access to the world registry (subset of WorldRegistry).
+type WorldReader interface {
+	ListWorlds() ([]World, error)
+}
+
 // ——— Compile-time interface satisfaction checks ———
 
 // WorldStore must satisfy all world-scoped interfaces.
 var (
-	_ WritReader       = (*WorldStore)(nil)
-	_ WritWriter       = (*WorldStore)(nil)
-	_ MRReader         = (*WorldStore)(nil)
-	_ MRWriter         = (*WorldStore)(nil)
-	_ DepReader        = (*WorldStore)(nil)
-	_ DepWriter        = (*WorldStore)(nil)
-	_ LedgerReader     = (*WorldStore)(nil)
-	_ LedgerWriter     = (*WorldStore)(nil)
-	_ HistoryStore     = (*WorldStore)(nil)
-	_ AgentMemoryStore = (*WorldStore)(nil)
+	_ WritReader        = (*WorldStore)(nil)
+	_ WritWriter        = (*WorldStore)(nil)
+	_ MRReader          = (*WorldStore)(nil)
+	_ MergeRequestReader = (*WorldStore)(nil)
+	_ MRWriter          = (*WorldStore)(nil)
+	_ DepReader         = (*WorldStore)(nil)
+	_ DepWriter         = (*WorldStore)(nil)
+	_ LedgerReader      = (*WorldStore)(nil)
+	_ LedgerWriter      = (*WorldStore)(nil)
+	_ HistoryStore      = (*WorldStore)(nil)
+	_ AgentMemoryStore  = (*WorldStore)(nil)
 )
 
 // SphereStore must satisfy all sphere-scoped interfaces.
@@ -235,5 +251,7 @@ var (
 	_ CaravanDepWriter = (*SphereStore)(nil)
 	_ MessageStore     = (*SphereStore)(nil)
 	_ EscalationStore  = (*SphereStore)(nil)
+	_ EscalationReader = (*SphereStore)(nil)
 	_ WorldRegistry    = (*SphereStore)(nil)
+	_ WorldReader      = (*SphereStore)(nil)
 )

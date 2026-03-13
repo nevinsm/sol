@@ -19,11 +19,11 @@ import (
 // The function degrades gracefully: if any per-world query fails,
 // that world gets partial data rather than causing the whole gather
 // to fail. GatherSphere never returns an error.
-func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
+func GatherSphere(sphereStore store.AgentReader, worldLister store.WorldReader,
 	checker SessionChecker,
 	worldOpener func(string) (*store.Store, error),
-	caravanStore CaravanStore,
-	escalationLister ...EscalationLister) *SphereStatus {
+	caravanStore store.CaravanReader,
+	escalationLister ...store.EscalationReader) *SphereStatus {
 
 	result := &SphereStatus{
 		SOLHome: config.Home(),
@@ -204,7 +204,7 @@ func GatherBrokerInfo() BrokerInfo {
 }
 
 // gatherWorldSummary builds a condensed status for a single world.
-func gatherWorldSummary(w store.World, sphereStore SphereStore,
+func gatherWorldSummary(w store.World, sphereStore store.AgentReader,
 	checker SessionChecker,
 	worldOpener func(string) (*store.Store, error)) WorldSummary {
 

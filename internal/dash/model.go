@@ -56,14 +56,14 @@ type Config struct {
 
 // sphereStore combines the interfaces the status package needs for sphere gathering.
 type sphereStore interface {
-	status.SphereStore
-	status.WorldLister
-	status.CaravanStore
+	store.AgentReader
+	store.WorldReader
+	store.CaravanReader
 }
 
 // caravanStore abstracts caravan queries.
 type caravanStore interface {
-	status.CaravanStore
+	store.CaravanReader
 }
 
 // animTickMsg fires at ~30 FPS to drive visual animation state

@@ -44,6 +44,14 @@ func (m *mockSphereStore) ListAgents(world string, state store.AgentState) ([]st
 	return result, nil
 }
 
+func (m *mockSphereStore) GetAgent(id string) (*store.Agent, error) {
+	return nil, fmt.Errorf("mockSphereStore.GetAgent not implemented")
+}
+
+func (m *mockSphereStore) FindIdleAgent(world string) (*store.Agent, error) {
+	return nil, fmt.Errorf("mockSphereStore.FindIdleAgent not implemented")
+}
+
 type mockWorldStore struct {
 	items map[string]*store.Writ
 }
@@ -54,6 +62,18 @@ func (m *mockWorldStore) GetWrit(id string) (*store.Writ, error) {
 		return nil, fmt.Errorf("writ %q not found", id)
 	}
 	return item, nil
+}
+
+func (m *mockWorldStore) ListWrits(filters store.ListFilters) ([]store.Writ, error) {
+	return nil, fmt.Errorf("mockWorldStore.ListWrits not implemented")
+}
+
+func (m *mockWorldStore) ListChildWrits(parentID string) ([]store.Writ, error) {
+	return nil, fmt.Errorf("mockWorldStore.ListChildWrits not implemented")
+}
+
+func (m *mockWorldStore) ReadyWrits() ([]store.Writ, error) {
+	return nil, fmt.Errorf("mockWorldStore.ReadyWrits not implemented")
 }
 
 type mockMergeQueueStore struct {
