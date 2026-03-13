@@ -22,6 +22,18 @@ import (
 	"strings"
 )
 
+// ParseError is returned when an .env file contains a syntax error.
+// It carries the file path and line number for actionable diagnostics.
+type ParseError struct {
+	Path string
+	Line int
+	Msg  string
+}
+
+func (e *ParseError) Error() string {
+	return fmt.Sprintf("%s:%d: %s", e.Path, e.Line, e.Msg)
+}
+
 // LoadEnv reads the sphere-level and world-level .env files and returns a
 // merged map of key-value pairs. World-level values override sphere-level
 // values on key collision. Missing .env files are not errors.
@@ -51,6 +63,82 @@ func LoadEnv(solHome, worldName string) (map[string]string, error) {
 	}
 
 	return merged, nil
+}
+
+// ParseFile parses a single .env file at path and returns the key-value pairs.
+// It returns a *ParseError if the file contains a syntax error (with file path
+// and line number). Returns an error (not *ParseError) if the file cannot be
+// opened. Returns an empty map for an empty file.
+//
+// Supported syntax:
+//   - KEY=value (unquoted)
+//   - KEY="value" (double-quoted)
+//   - KEY='value' (single-quoted)
+//   - KEY= (empty value)
+//   - export KEY=value (export prefix stripped)
+//   - # comment lines
+//   - blank lines
+func ParseFile(path string) (map[string]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("envfile: cannot open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	result := make(map[string]string)
+	scanner := bufio.NewScanner(f)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip blank lines and comments.
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Strip optional 'export ' prefix.
+		if strings.HasPrefix(line, "export ") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		}
+
+		// Must contain '='.
+		idx := strings.IndexByte(line, '=')
+		if idx < 0 {
+			return nil, &ParseError{
+				Path: path,
+				Line: lineNum,
+				Msg:  fmt.Sprintf("missing '=' separator: %q", line),
+			}
+		}
+
+		key := line[:idx]
+		if key == "" {
+			return nil, &ParseError{
+				Path: path,
+				Line: lineNum,
+				Msg:  "empty key name",
+			}
+		}
+
+		val := line[idx+1:]
+
+		// Strip matching outer quotes.
+		if len(val) >= 2 {
+			first, last := val[0], val[len(val)-1]
+			if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+				val = val[1 : len(val)-1]
+			}
+		}
+
+		result[key] = val
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("envfile: read error in %s: %w", path, err)
+	}
+
+	return result, nil
 }
 
 // parseFile reads a .env file and returns a map of key-value pairs.

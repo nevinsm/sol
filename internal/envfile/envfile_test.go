@@ -2,6 +2,7 @@ package envfile
 
 import (
 	"bufio"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -280,6 +281,167 @@ func TestLoadEnv_MissingWorldFile(t *testing.T) {
 	}
 	if got["SPHERE_KEY"] != "sv" {
 		t.Errorf("expected SPHERE_KEY=sv, got %v", got)
+	}
+}
+
+// --- ParseFile tests ---
+
+// writeEnvFile is a test helper that writes a .env file and returns its path.
+func writeEnvFile(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestParseFileBasic(t *testing.T) {
+	path := writeEnvFile(t, "FOO=bar\nBAZ=qux\n")
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["FOO"] != "bar" {
+		t.Errorf("FOO: want %q, got %q", "bar", got["FOO"])
+	}
+	if got["BAZ"] != "qux" {
+		t.Errorf("BAZ: want %q, got %q", "qux", got["BAZ"])
+	}
+}
+
+func TestParseFileDoubleQuoted(t *testing.T) {
+	path := writeEnvFile(t, `KEY="hello world"`)
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["KEY"] != "hello world" {
+		t.Errorf("KEY: want %q, got %q", "hello world", got["KEY"])
+	}
+}
+
+func TestParseFileSingleQuoted(t *testing.T) {
+	path := writeEnvFile(t, "KEY='single quoted'")
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["KEY"] != "single quoted" {
+		t.Errorf("KEY: want %q, got %q", "single quoted", got["KEY"])
+	}
+}
+
+func TestParseFileEmptyValue(t *testing.T) {
+	path := writeEnvFile(t, "EMPTY=\nALSO_EMPTY=\"\"\n")
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v, ok := got["EMPTY"]; !ok || v != "" {
+		t.Errorf("EMPTY: want empty string, got %q (ok=%v)", v, ok)
+	}
+	if v, ok := got["ALSO_EMPTY"]; !ok || v != "" {
+		t.Errorf("ALSO_EMPTY: want empty string, got %q (ok=%v)", v, ok)
+	}
+}
+
+func TestParseFileCommentsAndBlanks(t *testing.T) {
+	content := `# this is a comment
+FOO=bar
+
+# another comment
+BAZ=qux
+`
+	path := writeEnvFile(t, content)
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 pairs, got %d: %v", len(got), got)
+	}
+}
+
+func TestParseFileExportPrefix(t *testing.T) {
+	path := writeEnvFile(t, "export MY_VAR=myvalue\n")
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["MY_VAR"] != "myvalue" {
+		t.Errorf("MY_VAR: want %q, got %q", "myvalue", got["MY_VAR"])
+	}
+}
+
+func TestParseFileMissingEquals(t *testing.T) {
+	path := writeEnvFile(t, "NOEQUALS\n")
+	_, err := ParseFile(path)
+	if err == nil {
+		t.Fatal("expected error for missing '=', got nil")
+	}
+	var parseErr *ParseError
+	if !errors.As(err, &parseErr) {
+		t.Errorf("expected *ParseError, got %T: %v", err, err)
+	}
+	if parseErr != nil && parseErr.Line != 1 {
+		t.Errorf("expected line 1, got %d", parseErr.Line)
+	}
+}
+
+func TestParseFileParseErrorLineNumber(t *testing.T) {
+	content := "GOOD=value\n# comment\n\nBAD_LINE\n"
+	path := writeEnvFile(t, content)
+	_, err := ParseFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var parseErr *ParseError
+	if !errors.As(err, &parseErr) {
+		t.Fatalf("expected *ParseError, got %T: %v", err, err)
+	}
+	if parseErr.Line != 4 {
+		t.Errorf("expected line 4, got %d", parseErr.Line)
+	}
+}
+
+func TestParseFileNotExist(t *testing.T) {
+	_, err := ParseFile("/nonexistent/.env")
+	if err == nil {
+		t.Fatal("expected error for nonexistent file, got nil")
+	}
+}
+
+func TestParseFileEmpty(t *testing.T) {
+	path := writeEnvFile(t, "")
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty map, got %v", got)
+	}
+}
+
+func TestParseFileValueWithEquals(t *testing.T) {
+	// Value containing '=' should be preserved.
+	path := writeEnvFile(t, "URL=http://example.com?foo=bar\n")
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["URL"] != "http://example.com?foo=bar" {
+		t.Errorf("URL: want %q, got %q", "http://example.com?foo=bar", got["URL"])
+	}
+}
+
+func TestParseErrorFormat(t *testing.T) {
+	e := &ParseError{Path: "/some/.env", Line: 3, Msg: "missing '=' separator"}
+	got := e.Error()
+	want := "/some/.env:3: missing '=' separator"
+	if got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
 	}
 }
 
