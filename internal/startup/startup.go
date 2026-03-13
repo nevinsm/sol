@@ -26,10 +26,8 @@ type SessionStarter interface {
 
 // SphereStore abstracts sphere database operations for testing.
 type SphereStore interface {
-	GetAgent(id string) (*store.Agent, error)
-	CreateAgent(name, world, role string) (string, error)
-	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
-	Close() error
+	store.AgentReader
+	store.AgentWriter
 }
 
 // RoleConfig describes the startup configuration for a role.

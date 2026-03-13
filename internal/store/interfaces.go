@@ -210,6 +210,11 @@ type EscalationReader interface {
 	ListOpenEscalations() ([]Escalation, error)
 }
 
+// MessageSender provides narrow write access to send messages (subset of MessageStore).
+type MessageSender interface {
+	SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error)
+}
+
 // WorldRegistry provides access to the world registry in the sphere database.
 type WorldRegistry interface {
 	RegisterWorld(name, sourceRepo string) error
@@ -228,17 +233,17 @@ type WorldReader interface {
 
 // WorldStore must satisfy all world-scoped interfaces.
 var (
-	_ WritReader        = (*WorldStore)(nil)
-	_ WritWriter        = (*WorldStore)(nil)
-	_ MRReader          = (*WorldStore)(nil)
+	_ WritReader         = (*WorldStore)(nil)
+	_ WritWriter         = (*WorldStore)(nil)
+	_ MRReader           = (*WorldStore)(nil)
 	_ MergeRequestReader = (*WorldStore)(nil)
-	_ MRWriter          = (*WorldStore)(nil)
-	_ DepReader         = (*WorldStore)(nil)
-	_ DepWriter         = (*WorldStore)(nil)
-	_ LedgerReader      = (*WorldStore)(nil)
-	_ LedgerWriter      = (*WorldStore)(nil)
-	_ HistoryStore      = (*WorldStore)(nil)
-	_ AgentMemoryStore  = (*WorldStore)(nil)
+	_ MRWriter           = (*WorldStore)(nil)
+	_ DepReader          = (*WorldStore)(nil)
+	_ DepWriter          = (*WorldStore)(nil)
+	_ LedgerReader       = (*WorldStore)(nil)
+	_ LedgerWriter       = (*WorldStore)(nil)
+	_ HistoryStore       = (*WorldStore)(nil)
+	_ AgentMemoryStore   = (*WorldStore)(nil)
 )
 
 // SphereStore must satisfy all sphere-scoped interfaces.

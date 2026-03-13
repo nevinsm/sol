@@ -39,6 +39,14 @@ type mockAgentLister struct {
 	err    error
 }
 
+func (m *mockAgentLister) GetAgent(id string) (*store.Agent, error) {
+	return nil, nil
+}
+
+func (m *mockAgentLister) FindIdleAgent(world string) (*store.Agent, error) {
+	return nil, nil
+}
+
 func (m *mockAgentLister) ListAgents(world string, state store.AgentState) ([]store.Agent, error) {
 	if m.err != nil {
 		return nil, m.err
