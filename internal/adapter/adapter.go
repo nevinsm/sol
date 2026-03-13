@@ -34,4 +34,7 @@ type RuntimeAdapter interface {
 	// TelemetryEnv returns env vars for OTel telemetry.
 	// Returns empty map when port <= 0 (telemetry disabled).
 	TelemetryEnv(port int, agent, world, activeWrit string) map[string]string
+
+	// Name returns the adapter's registered name (e.g. "claude").
+	Name() string
 }

@@ -41,7 +41,7 @@ Define a `RuntimeAdapter` interface in `internal/adapter/` with nine methods map
 
 Tmux stays as the universal container. The adapter is responsible for the agent runtime layer (how the process is configured and launched), not the session container.
 
-The V1 implementation is a pure refactoring exercise: define the interface, create the Claude adapter skeleton, wire the registry. No existing code is modified — `startup.Launch` continues to operate as-is until a subsequent writ migrates it to use the adapter.
+The V1 implementation defines the interface, implements the full Claude adapter, and wires the registry. `startup.Launch` continues to operate as-is until a subsequent writ migrates it to use the adapter.
 
 ### Interface
 
@@ -49,15 +49,41 @@ The V1 implementation is a pure refactoring exercise: define the interface, crea
 package adapter
 
 type RuntimeAdapter interface {
-    InjectPersona(worktree string, persona []byte) error
-    InstallSkills(worktree string, skills []Skill) error
-    InjectSystemPrompt(worktree string, content string, replace bool) error
-    InstallHooks(worktree string, hooks HookSet) error
-    EnsureConfigDir(world, role, agent, worktree string) (ConfigDirResult, error)
-    BuildCommand(ctx CommandContext) (string, error)
+    InjectPersona(worktreeDir string, content []byte) error
+    InstallSkills(worktreeDir string, skills []Skill) error
+    InjectSystemPrompt(worktreeDir, content string, replace bool) (string, error)
+    InstallHooks(worktreeDir string, hooks HookSet) error
+    EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ConfigResult, error)
+    BuildCommand(ctx CommandContext) string
     CredentialEnv(cred Credential) map[string]string
     TelemetryEnv(port int, agent, world, activeWrit string) map[string]string
     Name() string
+}
+```
+
+### Supporting Types
+
+```go
+// CommandContext holds all arguments needed to build a session launch command.
+type CommandContext struct {
+    WorktreeDir      string
+    Prompt           string
+    Continue         bool
+    Model            string
+    SystemPromptFile string // relative path returned by InjectSystemPrompt (or "" if none)
+    ReplacePrompt    bool   // true = --system-prompt-file, false = --append-system-prompt-file
+}
+
+// ConfigResult holds the output of EnsureConfigDir.
+type ConfigResult struct {
+    Dir    string            // absolute path to the runtime config directory
+    EnvVar map[string]string // env vars to inject (e.g. {"CLAUDE_CONFIG_DIR": "..."})
+}
+
+// Guard is a pre-tool-use guard that blocks a matched tool call.
+type Guard struct {
+    Pattern string // PreToolUse matcher
+    Command string // command to execute; should exit 2 to block
 }
 ```
 
@@ -66,14 +92,14 @@ type RuntimeAdapter interface {
 ```go
 func Register(name string, a RuntimeAdapter)
 func Get(name string) (RuntimeAdapter, bool)
-func Default() RuntimeAdapter  // returns adapters["claude"]
+func Default() RuntimeAdapter  // panics if claude adapter not registered
 ```
 
-Adapters register themselves via `init()` in their package. Callers import the adapter package for its side effects.
+Adapters register themselves via `init()` in their package. Callers import the adapter package for its side effects. `Default()` panics with a clear message (`"adapter: claude adapter not registered (missing blank import)"`) rather than returning nil silently.
 
-### Claude Adapter Skeleton
+### Claude Adapter
 
-`internal/adapter/claude/` contains a `*Adapter` that satisfies `RuntimeAdapter` with panicking stubs. A compile-time check (`var _ adapter.RuntimeAdapter = (*Adapter)(nil)`) ensures the skeleton stays current as the interface evolves. Methods are filled in incrementally in subsequent writs.
+`internal/adapter/claude/` contains a `*Adapter` that satisfies `RuntimeAdapter`. A compile-time check (`var _ adapter.RuntimeAdapter = (*Adapter)(nil)`) ensures the implementation stays current as the interface evolves.
 
 ## Consequences
 
@@ -85,5 +111,4 @@ Adapters register themselves via `init()` in their package. Callers import the a
 
 **Negative / Trade-offs**:
 - V1 is purely additive. `startup.Launch` does not use the adapter yet — that migration is a separate writ. Until then, the adapter and startup code are parallel representations of the same knowledge.
-- The panicking stubs mean the Claude adapter is not callable until methods are filled in. This is intentional — it makes incomplete migration visible immediately rather than silently degrading.
 - Nine methods is a moderate interface size. If primitives are added later (e.g., a `BriefDir` method, a `ResumeState` method), the interface grows and every adapter must implement the new methods.

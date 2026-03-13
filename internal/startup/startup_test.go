@@ -105,6 +105,10 @@ func (m *mockRuntimeAdapter) TelemetryEnv(port int, agent, world, activeWrit str
 	return map[string]string{}
 }
 
+func (m *mockRuntimeAdapter) Name() string {
+	return "mock"
+}
+
 // setupTestEnv creates a minimal SOL_HOME with a world config and sphere DB.
 func setupTestEnv(t *testing.T, world string) string {
 	t.Helper()
