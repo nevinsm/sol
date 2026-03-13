@@ -139,7 +139,12 @@ func skillResolveAndHandoff(ctx SkillContext) string {
 	sol := ctx.sol()
 	return fmt.Sprintf(`# Resolve & Handoff
 
-Commands for completing work and managing session continuity.
+%[1]s resolve%[2]s is your **mandatory final step** — it pushes your branch, creates a merge request, clears the tether, and ends your session. There is no coming back after resolve; the worktree is cleaned up.
+
+## When to Use
+
+- Work is complete → %[1]s resolve%[2]s
+- Stuck or blocked → %[1]s escalate%[3]s instead of resolving
 
 ## Completing Work
 
@@ -159,39 +164,64 @@ Always pass %[5]s describing what you were doing, what's completed, what's in pr
 Options:
 - %[5]s — **required**: summary for your successor (what you were doing, what's done, what's next)
 - %[6]s — tag reason (compact, manual, health-check)
+
+## Common Patterns
+
+**Normal completion:** commit changes → %[1]s resolve%[2]s — session ends.
+
+**Partially done:** commit progress → %[1]s escalate%[3]s — describe what remains.
+
+**Context running long:** commit → update %[7]s → %[1]s handoff --summary="..."%[4]s
+
+## Failure Modes
+
+- **No tether found** → exit 1. Manual re-cast or tether restore needed.
+- **git push fails** → NON-FATAL. Resolve exits 0. MR in "failed" state; forge handles it. Writ reopens for re-dispatch.
+- **Database locked** → exit 1. Transient — retry.
+- Resolve is idempotent — safe to call multiple times.
 `,
 		"`"+sol, flagsForResolve(ctx), flagsForEscalate(ctx), flagsForHandoff(ctx),
-		"`--summary=\"...\"`", "`--reason=compact`")
+		"`--summary=\"...\"`", "`--reason=compact`", "`.brief/memory.md`")
 }
 
 func skillResolveAndSubmit(ctx SkillContext) string {
 	sol := ctx.sol()
 	return fmt.Sprintf(`# Resolve & Submit
 
-Commands for submitting work through the forge pipeline.
+%[1]s resolve%[2]s submits your work through the forge pipeline — it pushes your branch, creates a merge request, clears the tether, and keeps your session alive. Never use %[3]s alone; pushing does not create a merge request.
+
+## When to Use
+
+- Code changes are complete and committed → %[1]s resolve%[2]s
+- Stuck or blocked → %[1]s escalate "description"%[4]s
 
 ## Submitting Work
-
-All code changes MUST go through %[1]s resolve%[2]s. Never use %[3]s alone —
-pushing your branch does not create a merge request.
 
 | Command | Description |
 |---------|-------------|
 | %[1]s resolve%[2]s | Push branch, create merge request, clear tether |
 | %[1]s escalate "description"%[4]s | Request help when stuck |
 
-## Submit Workflow
+## Common Patterns
 
-1. Commit your changes to your branch
-2. Run %[1]s resolve%[2]s
-3. Your session stays alive — continue working after resolve
-4. Reset worktree for next task: %[5]s
-5. Update your brief
+**Normal submit:** commit all changes → %[1]s resolve%[2]s → %[5]s → update brief → tether next writ.
+
+**More tethered writs:** after resolve you stay "working" — activate the next writ and continue.
+
+**No remaining work:** after resolve you go idle — check for new writs or await instructions.
+
+## Failure Modes
+
+- **git push fails** → NON-FATAL. Resolve exits 0. MR in "failed" state; writ reopens. Pull main and re-resolve.
+- **No tether found** → exit 1. Check %[6]s to see your tethered writs.
+- **Database locked** → exit 1. Transient — retry.
+- Resolve is idempotent — safe to call multiple times.
 `,
 		"`"+sol, " --world="+ctx.World+" --agent="+ctx.AgentName+"`",
 		"`git push`",
 		"`",
-		"`git checkout main && git pull`")
+		"`git checkout main && git pull`",
+		"`sol writ list`")
 }
 
 func skillMemories(ctx SkillContext) string {
@@ -251,11 +281,47 @@ func skillCaravanManagement(ctx SkillContext) string {
 	sol := ctx.sol()
 	world := ctx.World
 	desc := "Commands for grouping and sequencing related writs."
+	var roleSection string
 	switch ctx.Role {
 	case "governor":
 		desc = "Commands for coordinating related writs across agents."
+		roleSection = `
+## Mental Model
+
+A caravan is an ordered batch of writs across phases (0, 1, 2, ...). Items in the same phase run in parallel. Items in phase N are blocked until ALL items in phases < N are **closed** (fully merged, not just done). Phase assignment is manual; consul auto-dispatches ready items every 5 minutes.
+
+## Common Patterns
+
+**Setup:** create writs → ` + "`sol caravan create`" + ` → ` + "`sol caravan set-phase`" + ` for each → ` + "`sol caravan commission`" + `.
+
+**After AGENT_DONE:** ` + "`sol caravan status`" + ` to check progress; consul handles dispatch on next patrol (or ` + "`sol caravan launch`" + ` for immediate).
+
+**Stalled:** ` + "`sol caravan check <id>`" + ` shows which items are blocking — typically an item stuck in forge.
+
+## Failure Modes
+
+- **Phase won't advance:** all prior-phase items must be "closed" (merged), not just "done". Check forge queue for stuck MRs.
+- **No idle agents:** items stay ready; consul dispatches on next patrol cycle.
+- **` + "`sol caravan launch`" + ` with no agents:** exits with message, items stay ready.`
 	case "envoy":
 		desc = "Commands for sequencing your own multi-step work."
+		roleSection = `
+## Mental Model
+
+A caravan sequences your own multi-step work across phases. Items in the same phase can run in parallel; items in phase N wait until all prior-phase items are **closed** (fully merged). You are the single worker — resolve each phase and consul advances to the next.
+
+## Common Patterns
+
+**Setup:** create writs → ` + "`sol caravan create`" + ` → assign phases via ` + "`sol caravan set-phase`" + ` → ` + "`sol caravan commission`" + `.
+
+**Working:** resolve phase 0 writs → consul detects closed items → dispatches phase 1 → repeat.
+
+**Check progress:** ` + "`sol caravan status`" + ` after each resolve to see what's next.
+
+## Failure Modes
+
+- **Phase won't advance:** prior items must be "closed" (merged), not just "done". Check forge queue.
+- **` + "`sol caravan launch`" + ` with no agents:** exits with message; wait for consul patrol.`
 	}
 	return fmt.Sprintf(`# Caravan Management
 
@@ -280,7 +346,7 @@ func skillCaravanManagement(ctx SkillContext) string {
 |---------|-------------|
 | %[1]s caravan dep add <caravan-id> <dep-id>%[3]s | Add inter-caravan dependency |
 | %[1]s caravan dep list <caravan-id>%[3]s | List caravan dependencies |
-`, "`"+sol, world, "`", desc)
+`, "`"+sol, world, "`", desc) + roleSection
 }
 
 func skillWorldCoordination(ctx SkillContext) string {
@@ -324,43 +390,44 @@ Commands for monitoring world state and coordinating agents.
 
 func skillNotificationHandling(ctx SkillContext) string {
 	sol := ctx.sol()
-	world := ctx.World
 	return fmt.Sprintf(`# Notification Handling
 
-Notifications arrive at each turn boundary via UserPromptSubmit hook.
-Format: %[1]s[NOTIFICATION] TYPE: Subject — Body%[2]s
+Notifications arrive at each turn boundary via UserPromptSubmit hook — a file-based queue drained each turn. Each notification may require dispatching more work or updating caravan state.
+
+Format: %[1]s[NOTIFICATION] TYPE: Subject — Body%[1]s
+
+## When to Act
+
+Read notifications immediately at each turn. Most require a caravan status check and potentially dispatching next work.
 
 ## Notification Types
 
-**MAIL** — Operator sent a message via %[3]s mail send%[5]s.
-- Fields: %[1]ssubject%[2]s, %[1]sbody%[2]s
-- Action: Read and respond to operator communication. Check %[3]s mail inbox%[5]s for full context.
+**MAIL** — Operator sent a message via %[2]s mail send%[1]s.
+- Fields: %[1]ssubject%[1]s, %[1]sbody%[1]s
+- Action: Read and respond. Check %[2]s mail inbox%[1]s for full context.
 
 **AGENT_DONE** — An outpost resolved a writ.
-- Fields: %[1]swrit_id%[2]s, %[1]sagent_name%[2]s, %[1]sbranch%[2]s, %[1]stitle%[2]s, %[1]smerge_request_id%[2]s
-- Check caravan status: %[3]s caravan status%[5]s
-- Dispatch next ready work if agents are available
+- Fields: %[1]swrit_id%[1]s, %[1]sagent_name%[1]s, %[1]sbranch%[1]s, %[1]stitle%[1]s, %[1]smerge_request_id%[1]s
+- Action: (1) Note resolution. (2) %[2]s caravan status%[1]s if part of caravan. (3) Dispatch next ready work if agents idle. MR is already in forge queue — no merge action needed.
 
 **MERGED** — Forge successfully merged a writ.
-- Fields: %[1]swrit_id%[2]s, %[1]smerge_request_id%[2]s
-- Check if blocked items are now unblocked
+- Fields: %[1]swrit_id%[1]s, %[1]smerge_request_id%[1]s, %[1]stitle%[1]s
+- Action: (1) Check if this unblocks next-phase caravan items. (2) Dispatch newly-ready items. (3) Caravan auto-closes when all items merged. (4) Update brief.
 
 **MERGE_FAILED** — Forge failed to merge.
-- Fields: %[1]swrit_id%[2]s, %[1]smerge_request_id%[2]s, %[1]sreason%[2]s
-- Consider re-dispatching for conflict resolution
+- Fields: %[1]swrit_id%[1]s, %[1]smerge_request_id%[1]s, %[1]sreason%[1]s
+- Side effects: writ reopened, escalation created, agent set idle.
+- Action: (1) Check reason (conflicts or gate failure). (2) For conflicts: writ already open — re-dispatch. (3) For gate failure: investigate test/lint. (4) Re-dispatch when ready.
 
-**RECOVERY_NEEDED** — Sentinel exhausted respawn attempts.
-- Fields: %[1]sagent_id%[2]s, %[1]swrit_id%[2]s, %[1]sreason%[2]s, %[1]sattempts%[2]s
-- Assess whether to re-dispatch or escalate
-
-Always update your brief after handling a notification.
-`, "`", "`", "`"+sol, world, "`")
+Always update your brief after handling notifications.
+`, "`", "`"+sol)
 }
 
 func skillEnvoyNotificationHandling(_ SkillContext) string {
 	return `# Notification Handling
 
-Notifications arrive at each turn boundary via UserPromptSubmit hook.
+Notifications arrive at each turn boundary via UserPromptSubmit hook — a file-based queue drained each turn. As an envoy you receive a focused subset; act on each promptly.
+
 Format: ` + "`[NOTIFICATION] TYPE: Subject — Body`" + `
 
 ## Notification Types
@@ -375,7 +442,7 @@ Format: ` + "`[NOTIFICATION] TYPE: Subject — Body`" + `
 
 **MERGE_FAILED** — Forge failed to merge your writ.
 - Fields: ` + "`writ_id`" + `, ` + "`merge_request_id`" + `, ` + "`reason`" + `
-- Action: Investigate the failure reason. May need to pull latest main, resolve conflicts, and re-resolve.
+- Action: (1) Investigate the failure reason. (2) ` + "`git checkout main && git pull`" + `. (3) Fix conflicts. (4) Re-resolve.
 
 **AGENT_DONE** — Another agent resolved a writ you dispatched.
 - Fields: ` + "`writ_id`" + `, ` + "`agent_name`" + `, ` + "`branch`" + `, ` + "`title`" + `, ` + "`merge_request_id`" + `
