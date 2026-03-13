@@ -240,68 +240,36 @@ var envoyListCmd = &cobra.Command{
 
 var envoyBriefWorld string
 
-var envoyBriefCmd = &cobra.Command{
-	Use:          "brief <name>",
-	Short:        "Display an envoy's brief",
-	Args:         cobra.ExactArgs(1),
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
+var envoyBriefCmd = briefSubcommand(
+	"brief <name>", "Display an envoy's brief", cobra.ExactArgs(1),
+	func(args []string) (string, string, error) {
 		name := args[0]
 		world, err := config.ResolveWorld(envoyBriefWorld)
 		if err != nil {
-			return err
+			return "", "", err
 		}
-
-		briefPath := envoy.BriefPath(world, name)
-		data, err := os.ReadFile(briefPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Printf("No brief found for envoy %q\n", name)
-				return nil
-			}
-			return fmt.Errorf("failed to read brief: %w", err)
-		}
-
-		fmt.Print(string(data))
-		return nil
+		return envoy.BriefPath(world, name),
+			fmt.Sprintf("No brief found for envoy %q", name), nil
 	},
-}
+)
 
 // --- sol envoy debrief ---
 
 var envoyDebriefWorld string
 
-var envoyDebriefCmd = &cobra.Command{
-	Use:          "debrief <name>",
-	Short:        "Archive the envoy's brief and reset for fresh engagement",
-	Args:         cobra.ExactArgs(1),
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
+var envoyDebriefCmd = debriefSubcommand(
+	"debrief <name>", "Archive the envoy's brief and reset for fresh engagement", cobra.ExactArgs(1),
+	func(args []string) (string, string, string, string, error) {
 		name := args[0]
 		world, err := config.ResolveWorld(envoyDebriefWorld)
 		if err != nil {
-			return err
+			return "", "", "", "", err
 		}
-
-		briefPath := envoy.BriefPath(world, name)
-		if _, err := os.Stat(briefPath); err != nil {
-			if os.IsNotExist(err) {
-				fmt.Printf("No brief found for envoy %q\n", name)
-				return nil
-			}
-			return fmt.Errorf("failed to check brief: %w", err)
-		}
-
-		archiveFile, err := archiveBrief(envoy.BriefDir(world, name), briefPath)
-		if err != nil {
-			return fmt.Errorf("failed to archive brief: %w", err)
-		}
-
-		fmt.Printf("Archived brief to .brief/archive/%s\n", archiveFile)
-		fmt.Printf("Envoy %q ready for fresh engagement\n", name)
-		return nil
+		return envoy.BriefPath(world, name), envoy.BriefDir(world, name),
+			fmt.Sprintf("No brief found for envoy %q", name),
+			fmt.Sprintf("Envoy %q ready for fresh engagement", name), nil
 	},
-}
+)
 
 // --- sol envoy delete ---
 
