@@ -29,6 +29,7 @@ type WritReader interface {
 	GetWrit(id string) (*Writ, error)
 	ListWrits(filters ListFilters) ([]Writ, error)
 	ListChildWrits(parentID string) ([]Writ, error)
+	GetWritMetadata(id string) (map[string]any, error)
 	ReadyWrits() ([]Writ, error)
 }
 
@@ -38,7 +39,6 @@ type WritWriter interface {
 	CreateWritWithOpts(opts CreateWritOpts) (string, error)
 	UpdateWrit(id string, updates WritUpdates) error
 	CloseWrit(id string, closeReason ...string) ([]string, error)
-	GetWritMetadata(id string) (map[string]any, error)
 	SetWritMetadata(id string, metadata map[string]any) error
 	AddLabel(itemID, label string) error
 	RemoveLabel(itemID, label string) error
@@ -86,6 +86,7 @@ type DepWriter interface {
 
 // LedgerReader provides read access to token usage history in a world database.
 type LedgerReader interface {
+	TokensForHistory(historyID string) (*TokenSummary, error)
 	AggregateTokens(agentName string) ([]TokenSummary, error)
 	TokensSince(since time.Time) ([]TokenSummary, error)
 	TokensForWrit(writID string) ([]TokenSummary, error)
@@ -112,7 +113,6 @@ type HistoryStore interface {
 	ListHistory(agentName string) ([]HistoryEntry, error)
 	EndHistory(writID string) (string, error)
 	HistoryForWrit(writID string) ([]HistoryEntry, error)
-	TokensForHistory(historyID string) (*TokenSummary, error)
 }
 
 // AgentMemoryStore provides access to per-agent key/value memories in a world database.
@@ -156,8 +156,10 @@ type CaravanWriter interface {
 	CreateCaravan(name, owner string) (string, error)
 	UpdateCaravanStatus(id string, status CaravanStatus) error
 	CreateCaravanItem(caravanID, writID, world string, phase int) error
+	DeleteCaravanItemsForWorld(world string) error
 	RemoveCaravanItem(caravanID, writID string) error
 	UpdateCaravanItemPhase(caravanID, writID string, phase int) error
+	UpdateAllCaravanItemPhases(caravanID string, phase int) (int64, error)
 	DeleteCaravan(id string) error
 	TryCloseCaravan(caravanID string, worldOpener func(world string) (*Store, error)) (bool, error)
 }
@@ -169,6 +171,7 @@ type CaravanDepReader interface {
 	AreCaravanDependenciesSatisfied(caravanID string) (bool, error)
 	UnsatisfiedCaravanDependencies(caravanID string) ([]string, error)
 	IsWritBlockedByCaravanDeps(writID string) (bool, []string, error)
+	IsWritBlockedByCaravan(writID, world string, worldOpener func(world string) (*Store, error)) (bool, error)
 }
 
 // CaravanDepWriter provides write access to caravan dependencies in the sphere database.
@@ -182,12 +185,16 @@ type CaravanDepWriter interface {
 type MessageStore interface {
 	SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error)
 	SendMessageWithThread(sender, recipient, subject, body string, priority int, msgType, threadID string) (string, error)
+	HasPendingThreadMessage(threadID string) (bool, error)
 	Inbox(recipient string) ([]Message, error)
 	ReadMessage(id string) (*Message, error)
 	AckMessage(id string) error
 	ListMessages(filters MessageFilters) ([]Message, error)
 	CountPending(recipient string) (int, error)
-	HasPendingThreadMessage(threadID string) (bool, error)
+	CountAcked() (int, error)
+	CountAckedBefore(before time.Time) (int, error)
+	PurgeAckedMessages(before time.Time) (int64, error)
+	PurgeAllAcked() (int64, error)
 	SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
 	PendingProtocol(recipient, protoType string) ([]Message, error)
 }
