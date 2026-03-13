@@ -39,7 +39,7 @@ func generateEscalationID() (string, error) {
 // An optional sourceRef provides a structured reference for the escalation
 // (e.g., "mr:mr-abc123" or "writ:sol-xyz").
 // Returns the escalation ID.
-func (s *Store) CreateEscalation(severity, source, description string, sourceRef ...string) (string, error) {
+func (ss *SphereStore) CreateEscalation(severity, source, description string, sourceRef ...string) (string, error) {
 	if !validSeverities[severity] {
 		return "", fmt.Errorf("invalid escalation severity %q: must be one of low, medium, high, critical", severity)
 	}
@@ -55,7 +55,7 @@ func (s *Store) CreateEscalation(severity, source, description string, sourceRef
 		ref = &sourceRef[0]
 	}
 
-	_, err = s.db.Exec(
+	_, err = ss.db.Exec(
 		`INSERT INTO escalations (id, severity, source, description, source_ref, status, acknowledged, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, 'open', 0, ?, ?)`,
 		id, severity, source, description, ref, now, now,
@@ -67,14 +67,14 @@ func (s *Store) CreateEscalation(severity, source, description string, sourceRef
 }
 
 // GetEscalation returns an escalation by ID.
-func (s *Store) GetEscalation(id string) (*Escalation, error) {
+func (ss *SphereStore) GetEscalation(id string) (*Escalation, error) {
 	esc := &Escalation{}
 	var createdAt, updatedAt string
 	var acknowledged int
 	var sourceRef sql.NullString
 	var lastNotifiedAt sql.NullString
 
-	err := s.db.QueryRow(
+	err := ss.db.QueryRow(
 		`SELECT id, severity, source, description, source_ref, status, acknowledged, last_notified_at, created_at, updated_at
 		 FROM escalations WHERE id = ?`, id,
 	).Scan(&esc.ID, &esc.Severity, &esc.Source, &esc.Description, &sourceRef, &esc.Status, &acknowledged, &lastNotifiedAt, &createdAt, &updatedAt)
@@ -113,7 +113,7 @@ const severityOrderSQL = `CASE severity
 // ListEscalations returns escalations filtered by status.
 // If status is empty, returns all escalations.
 // Ordered by severity DESC (critical first), then created_at DESC (newest first).
-func (s *Store) ListEscalations(status string) ([]Escalation, error) {
+func (ss *SphereStore) ListEscalations(status string) ([]Escalation, error) {
 	query := `SELECT id, severity, source, description, source_ref, status, acknowledged, last_notified_at, created_at, updated_at
 	          FROM escalations`
 	var args []interface{}
@@ -123,29 +123,29 @@ func (s *Store) ListEscalations(status string) ([]Escalation, error) {
 	}
 	query += ` ORDER BY ` + severityOrderSQL + ` DESC, created_at DESC`
 
-	return s.scanEscalations(query, args...)
+	return ss.scanEscalations(query, args...)
 }
 
 // ListOpenEscalations returns all non-resolved escalations.
 // Ordered by severity DESC (critical first), then created_at DESC (newest first).
-func (s *Store) ListOpenEscalations() ([]Escalation, error) {
+func (ss *SphereStore) ListOpenEscalations() ([]Escalation, error) {
 	query := `SELECT id, severity, source, description, source_ref, status, acknowledged, last_notified_at, created_at, updated_at
 	          FROM escalations WHERE status != 'resolved'
 	          ORDER BY ` + severityOrderSQL + ` DESC, created_at DESC`
-	return s.scanEscalations(query)
+	return ss.scanEscalations(query)
 }
 
 // ListEscalationsBySourceRef returns non-resolved escalations matching a source_ref.
 // Ordered by created_at DESC (newest first).
-func (s *Store) ListEscalationsBySourceRef(sourceRef string) ([]Escalation, error) {
+func (ss *SphereStore) ListEscalationsBySourceRef(sourceRef string) ([]Escalation, error) {
 	query := `SELECT id, severity, source, description, source_ref, status, acknowledged, last_notified_at, created_at, updated_at
 	          FROM escalations WHERE source_ref = ? AND status != 'resolved' ORDER BY created_at DESC`
-	return s.scanEscalations(query, sourceRef)
+	return ss.scanEscalations(query, sourceRef)
 }
 
 // scanEscalations executes a query and scans the results into Escalation structs.
-func (s *Store) scanEscalations(query string, args ...interface{}) ([]Escalation, error) {
-	rows, err := s.db.Query(query, args...)
+func (ss *SphereStore) scanEscalations(query string, args ...interface{}) ([]Escalation, error) {
+	rows, err := ss.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list escalations: %w", err)
 	}
@@ -186,9 +186,9 @@ func (s *Store) scanEscalations(query string, args ...interface{}) ([]Escalation
 
 // AckEscalation marks an escalation as acknowledged.
 // Sets acknowledged=true, status="acknowledged", updated_at=now.
-func (s *Store) AckEscalation(id string) error {
+func (ss *SphereStore) AckEscalation(id string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := s.db.Exec(
+	result, err := ss.db.Exec(
 		`UPDATE escalations SET acknowledged = 1, status = 'acknowledged', updated_at = ? WHERE id = ?`,
 		now, id,
 	)
@@ -200,9 +200,9 @@ func (s *Store) AckEscalation(id string) error {
 
 // ResolveEscalation marks an escalation as resolved.
 // Sets status="resolved", updated_at=now.
-func (s *Store) ResolveEscalation(id string) error {
+func (ss *SphereStore) ResolveEscalation(id string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := s.db.Exec(
+	result, err := ss.db.Exec(
 		`UPDATE escalations SET status = 'resolved', updated_at = ? WHERE id = ?`,
 		now, id,
 	)
@@ -213,9 +213,9 @@ func (s *Store) ResolveEscalation(id string) error {
 }
 
 // UpdateEscalationLastNotified sets the last_notified_at timestamp to now.
-func (s *Store) UpdateEscalationLastNotified(id string) error {
+func (ss *SphereStore) UpdateEscalationLastNotified(id string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := s.db.Exec(
+	result, err := ss.db.Exec(
 		`UPDATE escalations SET last_notified_at = ?, updated_at = ? WHERE id = ?`, now, now, id)
 	if err != nil {
 		return fmt.Errorf("failed to update last_notified_at for escalation %q: %w", id, err)
@@ -224,9 +224,9 @@ func (s *Store) UpdateEscalationLastNotified(id string) error {
 }
 
 // CountOpen returns the number of open (unresolved) escalations.
-func (s *Store) CountOpen() (int, error) {
+func (ss *SphereStore) CountOpen() (int, error) {
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM escalations WHERE status != 'resolved'`).Scan(&count)
+	err := ss.db.QueryRow(`SELECT COUNT(*) FROM escalations WHERE status != 'resolved'`).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count open escalations: %w", err)
 	}

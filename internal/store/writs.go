@@ -52,7 +52,7 @@ func generateID() (string, error) {
 }
 
 // CreateWrit creates a new writ and returns its generated ID.
-func (s *Store) CreateWrit(title, description, createdBy string, priority int, labels []string) (string, error) {
+func (ws *WorldStore) CreateWrit(title, description, createdBy string, priority int, labels []string) (string, error) {
 	id, err := generateID()
 	if err != nil {
 		return "", err
@@ -62,7 +62,7 @@ func (s *Store) CreateWrit(title, description, createdBy string, priority int, l
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	tx, err := s.db.Begin()
+	tx, err := ws.db.Begin()
 	if err != nil {
 		return "", fmt.Errorf("failed to begin transaction: %w", err)
 	}
@@ -101,7 +101,7 @@ type CreateWritOpts struct {
 }
 
 // CreateWritWithOpts creates a new writ with full options including parent_id, kind, and metadata.
-func (s *Store) CreateWritWithOpts(opts CreateWritOpts) (string, error) {
+func (ws *WorldStore) CreateWritWithOpts(opts CreateWritOpts) (string, error) {
 	id, err := generateID()
 	if err != nil {
 		return "", err
@@ -126,7 +126,7 @@ func (s *Store) CreateWritWithOpts(opts CreateWritOpts) (string, error) {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	tx, err := s.db.Begin()
+	tx, err := ws.db.Begin()
 	if err != nil {
 		return "", fmt.Errorf("failed to begin transaction: %w", err)
 	}
@@ -169,13 +169,13 @@ func (w *Writ) HasLabel(label string) bool {
 }
 
 // GetWrit returns a writ by ID, including its labels.
-func (s *Store) GetWrit(id string) (*Writ, error) {
+func (ws *WorldStore) GetWrit(id string) (*Writ, error) {
 	w := &Writ{}
 	var desc, assignee, parentID, closeReason, metadataRaw sql.NullString
 	var closedAt sql.NullString
 	var createdAt, updatedAt string
 
-	err := s.db.QueryRow(
+	err := ws.db.QueryRow(
 		`SELECT id, title, description, status, priority, assignee, parent_id, kind, metadata, created_by, created_at, updated_at, closed_at, close_reason
 		 FROM writs WHERE id = ?`, id,
 	).Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.Kind, &metadataRaw, &w.CreatedBy, &createdAt, &updatedAt, &closedAt, &closeReason)
@@ -206,7 +206,7 @@ func (s *Store) GetWrit(id string) (*Writ, error) {
 	}
 
 	// Fetch labels.
-	rows, err := s.db.Query(`SELECT label FROM labels WHERE writ_id = ? ORDER BY label`, id)
+	rows, err := ws.db.Query(`SELECT label FROM labels WHERE writ_id = ? ORDER BY label`, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get labels for writ %q: %w", id, err)
 	}
@@ -225,7 +225,7 @@ func (s *Store) GetWrit(id string) (*Writ, error) {
 }
 
 // ListWrits returns writs matching the filters.
-func (s *Store) ListWrits(filters ListFilters) ([]Writ, error) {
+func (ws *WorldStore) ListWrits(filters ListFilters) ([]Writ, error) {
 	query := `SELECT DISTINCT w.id, w.title, w.description, w.status, w.priority, w.assignee, w.parent_id, w.kind, w.metadata, w.created_by, w.created_at, w.updated_at, w.closed_at, w.close_reason
 	           FROM writs w`
 	var conditions []string
@@ -258,7 +258,7 @@ func (s *Store) ListWrits(filters ListFilters) ([]Writ, error) {
 	}
 	query += " ORDER BY w.priority ASC, w.created_at ASC"
 
-	rows, err := s.db.Query(query, args...)
+	rows, err := ws.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list writs: %w", err)
 	}
@@ -312,7 +312,7 @@ func (s *Store) ListWrits(filters ListFilters) ([]Writ, error) {
 			`SELECT writ_id, label FROM labels WHERE writ_id IN (%s) ORDER BY writ_id, label`,
 			strings.Join(placeholders, ","),
 		)
-		labelRows, err := s.db.Query(labelQuery, ids...)
+		labelRows, err := ws.db.Query(labelQuery, ids...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to query labels: %w", err)
 		}
@@ -338,8 +338,8 @@ func (s *Store) ListWrits(filters ListFilters) ([]Writ, error) {
 }
 
 // ListChildWrits returns all writs with the given parent_id.
-func (s *Store) ListChildWrits(parentID string) ([]Writ, error) {
-	return s.ListWrits(ListFilters{ParentID: parentID})
+func (ws *WorldStore) ListChildWrits(parentID string) ([]Writ, error) {
+	return ws.ListWrits(ListFilters{ParentID: parentID})
 }
 
 // validWritStatuses is the set of allowed writ status values.
@@ -353,7 +353,7 @@ var validWritStatuses = map[WritStatus]bool{
 }
 
 // UpdateWrit updates fields on a writ. Only non-zero fields are applied.
-func (s *Store) UpdateWrit(id string, updates WritUpdates) error {
+func (ws *WorldStore) UpdateWrit(id string, updates WritUpdates) error {
 	var sets []string
 	var args []interface{}
 
@@ -392,7 +392,7 @@ func (s *Store) UpdateWrit(id string, updates WritUpdates) error {
 	args = append(args, now)
 	args = append(args, id)
 
-	result, err := s.db.Exec(
+	result, err := ws.db.Exec(
 		fmt.Sprintf("UPDATE writs SET %s WHERE id = ?", strings.Join(sets, ", ")),
 		args...,
 	)
@@ -405,17 +405,17 @@ func (s *Store) UpdateWrit(id string, updates WritUpdates) error {
 // CloseWrit sets status to "closed" and records closed_at.
 // An optional close reason can be provided as the second argument.
 // Also supersedes any failed MRs for the writ, returning their IDs.
-func (s *Store) CloseWrit(id string, closeReason ...string) ([]string, error) {
+func (ws *WorldStore) CloseWrit(id string, closeReason ...string) ([]string, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	var result sql.Result
 	var err error
 	if len(closeReason) > 0 && closeReason[0] != "" {
-		result, err = s.db.Exec(
+		result, err = ws.db.Exec(
 			`UPDATE writs SET status = 'closed', closed_at = ?, close_reason = ?, updated_at = ? WHERE id = ?`,
 			now, closeReason[0], now, id,
 		)
 	} else {
-		result, err = s.db.Exec(
+		result, err = ws.db.Exec(
 			`UPDATE writs SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
 			now, now, id,
 		)
@@ -428,7 +428,7 @@ func (s *Store) CloseWrit(id string, closeReason ...string) ([]string, error) {
 	}
 
 	// Supersede any failed MRs for this writ.
-	superseded, err := s.SupersedeFailedMRsForWrit(id)
+	superseded, err := ws.SupersedeFailedMRsForWrit(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to supersede failed MRs for writ %q: %w", id, err)
 	}
@@ -436,9 +436,9 @@ func (s *Store) CloseWrit(id string, closeReason ...string) ([]string, error) {
 }
 
 // GetWritMetadata returns the metadata for a writ.
-func (s *Store) GetWritMetadata(id string) (map[string]any, error) {
+func (ws *WorldStore) GetWritMetadata(id string) (map[string]any, error) {
 	var raw sql.NullString
-	err := s.db.QueryRow(`SELECT metadata FROM writs WHERE id = ?`, id).Scan(&raw)
+	err := ws.db.QueryRow(`SELECT metadata FROM writs WHERE id = ?`, id).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("writ %q: %w", id, ErrNotFound)
 	}
@@ -457,14 +457,14 @@ func (s *Store) GetWritMetadata(id string) (map[string]any, error) {
 
 // SetWritMetadata merges the given metadata into the writ's existing metadata.
 // Keys set to nil are deleted from the metadata.
-func (s *Store) SetWritMetadata(id string, metadata map[string]any) error {
+func (ws *WorldStore) SetWritMetadata(id string, metadata map[string]any) error {
 	// Validate the provided metadata is well-formed by marshaling it.
 	if _, err := json.Marshal(metadata); err != nil {
 		return fmt.Errorf("invalid metadata: %w", err)
 	}
 
 	// Read existing metadata.
-	existing, err := s.GetWritMetadata(id)
+	existing, err := ws.GetWritMetadata(id)
 	if err != nil {
 		return err
 	}
@@ -492,7 +492,7 @@ func (s *Store) SetWritMetadata(id string, metadata map[string]any) error {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := s.db.Exec(
+	result, err := ws.db.Exec(
 		`UPDATE writs SET metadata = ?, updated_at = ? WHERE id = ?`,
 		metadataJSON, now, id,
 	)
@@ -512,7 +512,7 @@ func (s *Store) SetWritMetadata(id string, metadata map[string]any) error {
 //
 // Caravan-level checks (caravan deps, phase gating) are NOT applied here —
 // callers should use IsWritBlockedByCaravan on the sphere store for that.
-func (s *Store) ReadyWrits() ([]Writ, error) {
+func (ws *WorldStore) ReadyWrits() ([]Writ, error) {
 	query := `SELECT DISTINCT w.id, w.title, w.description, w.status, w.priority, w.assignee, w.parent_id, w.kind, w.metadata, w.created_by, w.created_at, w.updated_at, w.closed_at, w.close_reason
 	           FROM writs w
 	           WHERE w.status = 'open'
@@ -523,7 +523,7 @@ func (s *Store) ReadyWrits() ([]Writ, error) {
 	           )
 	           ORDER BY w.priority ASC, w.created_at ASC`
 
-	rows, err := s.db.Query(query)
+	rows, err := ws.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query ready writs: %w", err)
 	}
@@ -577,7 +577,7 @@ func (s *Store) ReadyWrits() ([]Writ, error) {
 			`SELECT writ_id, label FROM labels WHERE writ_id IN (%s) ORDER BY writ_id, label`,
 			strings.Join(placeholders, ","),
 		)
-		labelRows, err := s.db.Query(labelQuery, ids...)
+		labelRows, err := ws.db.Query(labelQuery, ids...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to query labels: %w", err)
 		}
@@ -603,8 +603,8 @@ func (s *Store) ReadyWrits() ([]Writ, error) {
 }
 
 // AddLabel adds a label to a writ. No-op if already present.
-func (s *Store) AddLabel(itemID, label string) error {
-	_, err := s.db.Exec(
+func (ws *WorldStore) AddLabel(itemID, label string) error {
+	_, err := ws.db.Exec(
 		`INSERT OR IGNORE INTO labels (writ_id, label) VALUES (?, ?)`,
 		itemID, label,
 	)
@@ -615,8 +615,8 @@ func (s *Store) AddLabel(itemID, label string) error {
 }
 
 // RemoveLabel removes a label from a writ.
-func (s *Store) RemoveLabel(itemID, label string) error {
-	_, err := s.db.Exec(
+func (ws *WorldStore) RemoveLabel(itemID, label string) error {
+	_, err := ws.db.Exec(
 		`DELETE FROM labels WHERE writ_id = ? AND label = ?`,
 		itemID, label,
 	)

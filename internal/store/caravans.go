@@ -47,14 +47,14 @@ func generateCaravanID() (string, error) {
 
 // CreateCaravan creates a caravan with the given name and owner.
 // Returns the caravan ID.
-func (s *Store) CreateCaravan(name, owner string) (string, error) {
+func (ss *SphereStore) CreateCaravan(name, owner string) (string, error) {
 	id, err := generateCaravanID()
 	if err != nil {
 		return "", err
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	_, err = s.db.Exec(
+	_, err = ss.db.Exec(
 		`INSERT INTO caravans (id, name, status, owner, created_at) VALUES (?, ?, 'drydock', ?, ?)`,
 		id, name, owner, now,
 	)
@@ -65,13 +65,13 @@ func (s *Store) CreateCaravan(name, owner string) (string, error) {
 }
 
 // GetCaravan returns a caravan by ID.
-func (s *Store) GetCaravan(id string) (*Caravan, error) {
+func (ss *SphereStore) GetCaravan(id string) (*Caravan, error) {
 	c := &Caravan{}
 	var owner sql.NullString
 	var closedAt sql.NullString
 	var createdAt string
 
-	err := s.db.QueryRow(
+	err := ss.db.QueryRow(
 		`SELECT id, name, status, owner, created_at, closed_at FROM caravans WHERE id = ?`, id,
 	).Scan(&c.ID, &c.Name, &c.Status, &owner, &createdAt, &closedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -94,7 +94,7 @@ func (s *Store) GetCaravan(id string) (*Caravan, error) {
 // ListCaravans returns caravans, optionally filtered by status.
 // If status is empty, returns all caravans.
 // Ordered by created_at DESC (newest first).
-func (s *Store) ListCaravans(status CaravanStatus) ([]Caravan, error) {
+func (ss *SphereStore) ListCaravans(status CaravanStatus) ([]Caravan, error) {
 	query := `SELECT id, name, status, owner, created_at, closed_at FROM caravans`
 	var args []interface{}
 
@@ -104,7 +104,7 @@ func (s *Store) ListCaravans(status CaravanStatus) ([]Caravan, error) {
 	}
 	query += ` ORDER BY created_at DESC`
 
-	rows, err := s.db.Query(query, args...)
+	rows, err := ss.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list caravans: %w", err)
 	}
@@ -145,7 +145,7 @@ var validCaravanStatuses = map[CaravanStatus]bool{
 
 // UpdateCaravanStatus sets the caravan's status. If status is "closed",
 // also sets closed_at.
-func (s *Store) UpdateCaravanStatus(id string, status CaravanStatus) error {
+func (ss *SphereStore) UpdateCaravanStatus(id string, status CaravanStatus) error {
 	if !validCaravanStatuses[status] {
 		return fmt.Errorf("invalid caravan status %q", status)
 	}
@@ -154,12 +154,12 @@ func (s *Store) UpdateCaravanStatus(id string, status CaravanStatus) error {
 
 	if status == CaravanClosed {
 		now := time.Now().UTC().Format(time.RFC3339)
-		result, err = s.db.Exec(
+		result, err = ss.db.Exec(
 			`UPDATE caravans SET status = ?, closed_at = ? WHERE id = ?`,
 			status, now, id,
 		)
 	} else {
-		result, err = s.db.Exec(
+		result, err = ss.db.Exec(
 			`UPDATE caravans SET status = ?, closed_at = NULL WHERE id = ?`,
 			status, id,
 		)
@@ -171,8 +171,8 @@ func (s *Store) UpdateCaravanStatus(id string, status CaravanStatus) error {
 }
 
 // CreateCaravanItem associates a writ with a caravan at the given phase.
-func (s *Store) CreateCaravanItem(caravanID, writID, world string, phase int) error {
-	_, err := s.db.Exec(
+func (ss *SphereStore) CreateCaravanItem(caravanID, writID, world string, phase int) error {
+	_, err := ss.db.Exec(
 		`INSERT OR IGNORE INTO caravan_items (caravan_id, writ_id, world, phase) VALUES (?, ?, ?, ?)`,
 		caravanID, writID, world, phase,
 	)
@@ -183,8 +183,8 @@ func (s *Store) CreateCaravanItem(caravanID, writID, world string, phase int) er
 }
 
 // DeleteCaravanItemsForWorld removes all caravan items for a given world.
-func (s *Store) DeleteCaravanItemsForWorld(world string) error {
-	_, err := s.db.Exec(`DELETE FROM caravan_items WHERE world = ?`, world)
+func (ss *SphereStore) DeleteCaravanItemsForWorld(world string) error {
+	_, err := ss.db.Exec(`DELETE FROM caravan_items WHERE world = ?`, world)
 	if err != nil {
 		return fmt.Errorf("failed to delete caravan items for world %q: %w", world, err)
 	}
@@ -192,8 +192,8 @@ func (s *Store) DeleteCaravanItemsForWorld(world string) error {
 }
 
 // RemoveCaravanItem removes a writ from a caravan.
-func (s *Store) RemoveCaravanItem(caravanID, writID string) error {
-	_, err := s.db.Exec(
+func (ss *SphereStore) RemoveCaravanItem(caravanID, writID string) error {
+	_, err := ss.db.Exec(
 		`DELETE FROM caravan_items WHERE caravan_id = ? AND writ_id = ?`,
 		caravanID, writID,
 	)
@@ -204,8 +204,8 @@ func (s *Store) RemoveCaravanItem(caravanID, writID string) error {
 }
 
 // UpdateCaravanItemPhase sets the phase of a single item in a caravan.
-func (s *Store) UpdateCaravanItemPhase(caravanID, writID string, phase int) error {
-	result, err := s.db.Exec(
+func (ss *SphereStore) UpdateCaravanItemPhase(caravanID, writID string, phase int) error {
+	result, err := ss.db.Exec(
 		`UPDATE caravan_items SET phase = ? WHERE caravan_id = ? AND writ_id = ?`,
 		phase, caravanID, writID,
 	)
@@ -216,8 +216,8 @@ func (s *Store) UpdateCaravanItemPhase(caravanID, writID string, phase int) erro
 }
 
 // UpdateAllCaravanItemPhases sets the phase of all items in a caravan.
-func (s *Store) UpdateAllCaravanItemPhases(caravanID string, phase int) (int64, error) {
-	result, err := s.db.Exec(
+func (ss *SphereStore) UpdateAllCaravanItemPhases(caravanID string, phase int) (int64, error) {
+	result, err := ss.db.Exec(
 		`UPDATE caravan_items SET phase = ? WHERE caravan_id = ?`,
 		phase, caravanID,
 	)
@@ -232,8 +232,8 @@ func (s *Store) UpdateAllCaravanItemPhases(caravanID string, phase int) (int64, 
 }
 
 // ListCaravanItems returns all items in a caravan.
-func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
-	rows, err := s.db.Query(
+func (ss *SphereStore) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
+	rows, err := ss.db.Query(
 		`SELECT caravan_id, writ_id, world, phase FROM caravan_items WHERE caravan_id = ? ORDER BY phase, writ_id`,
 		caravanID,
 	)
@@ -257,8 +257,8 @@ func (s *Store) ListCaravanItems(caravanID string) ([]CaravanItem, error) {
 }
 
 // GetCaravanItemsForWrit returns all caravan items for a given writ ID.
-func (s *Store) GetCaravanItemsForWrit(writID string) ([]CaravanItem, error) {
-	rows, err := s.db.Query(
+func (ss *SphereStore) GetCaravanItemsForWrit(writID string) ([]CaravanItem, error) {
+	rows, err := ss.db.Query(
 		`SELECT caravan_id, writ_id, world, phase FROM caravan_items WHERE writ_id = ? ORDER BY caravan_id, phase`,
 		writID,
 	)
@@ -283,21 +283,21 @@ func (s *Store) GetCaravanItemsForWrit(writID string) ([]CaravanItem, error) {
 
 // DeleteCaravan permanently removes a caravan and its associated items and
 // dependencies. Only drydocked or closed caravans can be deleted.
-func (s *Store) DeleteCaravan(id string) error {
+func (ss *SphereStore) DeleteCaravan(id string) error {
 	// Delete caravan items.
-	if _, err := s.db.Exec(`DELETE FROM caravan_items WHERE caravan_id = ?`, id); err != nil {
+	if _, err := ss.db.Exec(`DELETE FROM caravan_items WHERE caravan_id = ?`, id); err != nil {
 		return fmt.Errorf("failed to delete caravan items for %q: %w", id, err)
 	}
 
 	// Delete caravan dependencies (both directions).
-	if _, err := s.db.Exec(
+	if _, err := ss.db.Exec(
 		`DELETE FROM caravan_dependencies WHERE from_id = ? OR to_id = ?`, id, id,
 	); err != nil {
 		return fmt.Errorf("failed to delete caravan dependencies for %q: %w", id, err)
 	}
 
 	// Delete the caravan itself.
-	result, err := s.db.Exec(`DELETE FROM caravans WHERE id = ?`, id)
+	result, err := ss.db.Exec(`DELETE FROM caravans WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete caravan %q: %w", id, err)
 	}
@@ -316,16 +316,16 @@ func (s *Store) DeleteCaravan(id string) error {
 //
 // The worldOpener function opens a world store by name — the caller provides
 // this so the caravan checker doesn't need to know about store paths.
-func (s *Store) CheckCaravanReadiness(caravanID string,
+func (ss *SphereStore) CheckCaravanReadiness(caravanID string,
 	worldOpener func(world string) (*Store, error)) ([]CaravanItemStatus, error) {
 
-	items, err := s.ListCaravanItems(caravanID)
+	items, err := ss.ListCaravanItems(caravanID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Check caravan-level dependencies first.
-	caravanDepsOK, err := s.AreCaravanDependenciesSatisfied(caravanID)
+	caravanDepsOK, err := ss.AreCaravanDependenciesSatisfied(caravanID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check caravan dependencies for %q: %w", caravanID, err)
 	}
@@ -418,10 +418,10 @@ func (s *Store) CheckCaravanReadiness(caravanID string,
 // Returns true if the caravan was closed.
 // Note: "done" (code complete, awaiting merge) is NOT sufficient — all items
 // must be "closed" (fully merged) for the caravan to close.
-func (s *Store) TryCloseCaravan(caravanID string,
+func (ss *SphereStore) TryCloseCaravan(caravanID string,
 	worldOpener func(world string) (*Store, error)) (bool, error) {
 
-	statuses, err := s.CheckCaravanReadiness(caravanID, worldOpener)
+	statuses, err := ss.CheckCaravanReadiness(caravanID, worldOpener)
 	if err != nil {
 		return false, err
 	}
@@ -436,7 +436,7 @@ func (s *Store) TryCloseCaravan(caravanID string,
 		}
 	}
 
-	if err := s.UpdateCaravanStatus(caravanID, CaravanClosed); err != nil {
+	if err := ss.UpdateCaravanStatus(caravanID, CaravanClosed); err != nil {
 		return false, err
 	}
 	return true, nil

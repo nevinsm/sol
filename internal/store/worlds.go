@@ -18,9 +18,9 @@ type World struct {
 // RegisterWorld creates a world record in the sphere DB.
 // Uses INSERT OR IGNORE — idempotent, safe for re-init of existing worlds.
 // If the world already exists, this is a no-op (does not update fields).
-func (s *Store) RegisterWorld(name, sourceRepo string) error {
+func (ss *SphereStore) RegisterWorld(name, sourceRepo string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := s.db.Exec(
+	_, err := ss.db.Exec(
 		`INSERT OR IGNORE INTO worlds (name, source_repo, created_at, updated_at)
 		 VALUES (?, ?, ?, ?)`,
 		name, sourceRepo, now, now,
@@ -32,11 +32,11 @@ func (s *Store) RegisterWorld(name, sourceRepo string) error {
 }
 
 // GetWorld returns a world by name. Returns an error if not found.
-func (s *Store) GetWorld(name string) (*World, error) {
+func (ss *SphereStore) GetWorld(name string) (*World, error) {
 	w := &World{}
 	var createdAt, updatedAt string
 
-	err := s.db.QueryRow(
+	err := ss.db.QueryRow(
 		`SELECT name, source_repo, created_at, updated_at
 		 FROM worlds WHERE name = ?`, name,
 	).Scan(&w.Name, &w.SourceRepo, &createdAt, &updatedAt)
@@ -58,8 +58,8 @@ func (s *Store) GetWorld(name string) (*World, error) {
 }
 
 // ListWorlds returns all registered worlds, ordered by name.
-func (s *Store) ListWorlds() ([]World, error) {
-	rows, err := s.db.Query(
+func (ss *SphereStore) ListWorlds() ([]World, error) {
+	rows, err := ss.db.Query(
 		`SELECT name, source_repo, created_at, updated_at
 		 FROM worlds ORDER BY name ASC`,
 	)
@@ -92,9 +92,9 @@ func (s *Store) ListWorlds() ([]World, error) {
 
 // UpdateWorldRepo updates the source_repo for a world.
 // Also updates updated_at. Returns an error if the world does not exist.
-func (s *Store) UpdateWorldRepo(name, sourceRepo string) error {
+func (ss *SphereStore) UpdateWorldRepo(name, sourceRepo string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := s.db.Exec(
+	result, err := ss.db.Exec(
 		`UPDATE worlds SET source_repo = ?, updated_at = ? WHERE name = ?`,
 		sourceRepo, now, name,
 	)
@@ -106,8 +106,8 @@ func (s *Store) UpdateWorldRepo(name, sourceRepo string) error {
 
 // DeleteWorldData removes all sphere-level data for a world in a single
 // transaction: messages, escalations, caravan items, agents, and the world record.
-func (s *Store) DeleteWorldData(world string) error {
-	tx, err := s.db.Begin()
+func (ss *SphereStore) DeleteWorldData(world string) error {
+	tx, err := ss.db.Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
