@@ -376,26 +376,16 @@ only path for code to reach the target branch.
 // Written at root level so Claude Code's upward directory walk discovers it.
 // Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
 func InstallEnvoyClaudeMD(worktreeDir string, ctx EnvoyClaudeMDContext) error {
-	content := GenerateEnvoyClaudeMD(ctx)
-	path := filepath.Join(worktreeDir, "CLAUDE.local.md")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("failed to write envoy CLAUDE.local.md in worktree: %w", err)
-	}
-
 	sol := ctx.SolBinary
 	if sol == "" {
 		sol = "sol"
 	}
-	skillCtx := SkillContext{
+	return InstallPersona(worktreeDir, GenerateEnvoyClaudeMD(ctx), SkillContext{
 		World:     ctx.World,
 		AgentName: ctx.AgentName,
 		SolBinary: sol,
 		Role:      "envoy",
-	}
-	if err := InstallSkills(worktreeDir, skillCtx); err != nil {
-		return fmt.Errorf("failed to install skills for envoy: %w", err)
-	}
-	return nil
+	})
 }
 
 // GovernorClaudeMDContext holds the fields used to generate a CLAUDE.md for the governor.
@@ -472,25 +462,15 @@ You maintain accumulated world knowledge in your brief.
 // Written at root level so Claude Code's upward directory walk discovers it.
 // Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
 func InstallGovernorClaudeMD(govDir string, ctx GovernorClaudeMDContext) error {
-	content := GenerateGovernorClaudeMD(ctx)
-	path := filepath.Join(govDir, "CLAUDE.local.md")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("failed to write governor CLAUDE.local.md: %w", err)
-	}
-
 	sol := ctx.SolBinary
 	if sol == "" {
 		sol = "sol"
 	}
-	skillCtx := SkillContext{
+	return InstallPersona(govDir, GenerateGovernorClaudeMD(ctx), SkillContext{
 		World:     ctx.World,
 		SolBinary: sol,
 		Role:      "governor",
-	}
-	if err := InstallSkills(govDir, skillCtx); err != nil {
-		return fmt.Errorf("failed to install skills for governor: %w", err)
-	}
-	return nil
+	})
 }
 
 // ChancellorClaudeMDContext holds the fields used to generate a CLAUDE.md for the chancellor.
@@ -545,22 +525,26 @@ Reserve live governor queries for questions that summaries cannot answer.
 // Written at root level so Claude Code's upward directory walk discovers it.
 // Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
 func InstallChancellorClaudeMD(chancellorDir string, ctx ChancellorClaudeMDContext) error {
-	content := GenerateChancellorClaudeMD(ctx)
-	path := filepath.Join(chancellorDir, "CLAUDE.local.md")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("failed to write chancellor CLAUDE.local.md: %w", err)
-	}
-
 	sol := ctx.SolBinary
 	if sol == "" {
 		sol = "sol"
 	}
-	skillCtx := SkillContext{
+	return InstallPersona(chancellorDir, GenerateChancellorClaudeMD(ctx), SkillContext{
 		SolBinary: sol,
 		Role:      "chancellor",
+	})
+}
+
+// InstallPersona writes CLAUDE.local.md to dir with the given content, then
+// installs skills using skillCtx. This is the shared implementation used by all
+// role-specific Install functions.
+func InstallPersona(dir string, content string, skillCtx SkillContext) error {
+	path := filepath.Join(dir, "CLAUDE.local.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("failed to write CLAUDE.local.md: %w", err)
 	}
-	if err := InstallSkills(chancellorDir, skillCtx); err != nil {
-		return fmt.Errorf("failed to install skills for chancellor: %w", err)
+	if err := InstallSkills(dir, skillCtx); err != nil {
+		return fmt.Errorf("failed to install skills: %w", err)
 	}
 	return nil
 }
@@ -569,21 +553,11 @@ func InstallChancellorClaudeMD(chancellorDir string, ctx ChancellorClaudeMDConte
 // Written at root level so Claude Code's upward directory walk discovers it.
 // Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
 func InstallClaudeMD(worktreeDir string, ctx ClaudeMDContext) error {
-	content := GenerateClaudeMD(ctx)
-	path := filepath.Join(worktreeDir, "CLAUDE.local.md")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("failed to write CLAUDE.local.md in worktree: %w", err)
-	}
-
-	skillCtx := SkillContext{
+	return InstallPersona(worktreeDir, GenerateClaudeMD(ctx), SkillContext{
 		World:        ctx.World,
 		AgentName:    ctx.AgentName,
 		Role:         "outpost",
 		QualityGates: ctx.QualityGates,
 		OutputDir:    ctx.OutputDir,
-	}
-	if err := InstallSkills(worktreeDir, skillCtx); err != nil {
-		return fmt.Errorf("failed to install skills: %w", err)
-	}
-	return nil
+	})
 }

@@ -88,51 +88,22 @@ var chancellorAttachCmd = &cobra.Command{
 
 // --- sol chancellor brief ---
 
-var chancellorBriefCmd = &cobra.Command{
-	Use:          "brief",
-	Short:        "Display the chancellor's brief",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		data, err := os.ReadFile(chancellor.BriefPath())
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Println("No brief found for chancellor")
-				return nil
-			}
-			return fmt.Errorf("failed to read brief: %w", err)
-		}
-
-		fmt.Print(string(data))
-		return nil
+var chancellorBriefCmd = briefSubcommand(
+	"brief", "Display the chancellor's brief", nil,
+	func(_ []string) (string, string, error) {
+		return chancellor.BriefPath(), "No brief found for chancellor", nil
 	},
-}
+)
 
 // --- sol chancellor debrief ---
 
-var chancellorDebriefCmd = &cobra.Command{
-	Use:          "debrief",
-	Short:        "Archive the chancellor's brief and reset",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		briefPath := chancellor.BriefPath()
-		if _, err := os.Stat(briefPath); err != nil {
-			if os.IsNotExist(err) {
-				fmt.Println("No brief found for chancellor")
-				return nil
-			}
-			return fmt.Errorf("failed to check brief: %w", err)
-		}
-
-		archiveFile, err := archiveBrief(chancellor.BriefDir(), briefPath)
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("Archived brief to .brief/archive/%s\n", archiveFile)
-		fmt.Println("Chancellor ready for fresh engagement")
-		return nil
+var chancellorDebriefCmd = debriefSubcommand(
+	"debrief", "Archive the chancellor's brief and reset", nil,
+	func(_ []string) (string, string, string, string, error) {
+		return chancellor.BriefPath(), chancellor.BriefDir(),
+			"No brief found for chancellor", "Chancellor ready for fresh engagement", nil
 	},
-}
+)
 
 // --- sol chancellor status ---
 

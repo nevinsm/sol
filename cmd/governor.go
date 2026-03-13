@@ -153,64 +153,34 @@ var governorAttachCmd = &cobra.Command{
 
 var governorBriefWorld string
 
-var governorBriefCmd = &cobra.Command{
-	Use:          "brief",
-	Short:        "Display the governor's brief",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
+var governorBriefCmd = briefSubcommand(
+	"brief", "Display the governor's brief", nil,
+	func(_ []string) (string, string, error) {
 		world, err := config.ResolveWorld(governorBriefWorld)
 		if err != nil {
-			return err
+			return "", "", err
 		}
-
-		briefPath := governor.BriefPath(world)
-		data, err := os.ReadFile(briefPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Printf("No brief found for governor in world %q\n", world)
-				return nil
-			}
-			return fmt.Errorf("failed to read brief: %w", err)
-		}
-
-		fmt.Print(string(data))
-		return nil
+		return governor.BriefPath(world),
+			fmt.Sprintf("No brief found for governor in world %q", world), nil
 	},
-}
+)
 
 // --- sol governor debrief ---
 
 var governorDebriefWorld string
 
-var governorDebriefCmd = &cobra.Command{
-	Use:          "debrief",
-	Short:        "Archive the governor's brief and reset",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
+var governorDebriefCmd = debriefSubcommand(
+	"debrief", "Archive the governor's brief and reset", nil,
+	func(_ []string) (string, string, string, string, error) {
 		world, err := config.ResolveWorld(governorDebriefWorld)
 		if err != nil {
-			return err
+			return "", "", "", "", err
 		}
-
-		briefPath := governor.BriefPath(world)
-		if _, err := os.Stat(briefPath); err != nil {
-			if os.IsNotExist(err) {
-				fmt.Printf("No brief found for governor in world %q\n", world)
-				return nil
-			}
-			return fmt.Errorf("failed to check brief: %w", err)
-		}
-
-		archiveFile, err := archiveBrief(governor.BriefDir(world), briefPath)
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("Archived brief to .brief/archive/%s\n", archiveFile)
-		fmt.Printf("Governor in world %q ready for fresh engagement\n", world)
-		return nil
+		return governor.BriefPath(world), governor.BriefDir(world),
+			fmt.Sprintf("No brief found for governor in world %q", world),
+			fmt.Sprintf("Governor in world %q ready for fresh engagement", world), nil
 	},
-}
+)
 
 // --- sol governor summary ---
 

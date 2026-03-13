@@ -14,6 +14,76 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// briefSubcommand builds a brief subcommand with common read-and-print logic.
+// pathFn is called at runtime with command arguments and returns the brief path
+// and a not-found message (which may include dynamic values like world or agent
+// name). argsValidator may be nil to accept any arguments.
+func briefSubcommand(use, short string, argsValidator cobra.PositionalArgs,
+	pathFn func(args []string) (path, notFoundMsg string, err error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:          use,
+		Short:        short,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path, notFoundMsg, err := pathFn(args)
+			if err != nil {
+				return err
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				if os.IsNotExist(err) {
+					fmt.Println(notFoundMsg)
+					return nil
+				}
+				return fmt.Errorf("failed to read brief: %w", err)
+			}
+			fmt.Print(string(data))
+			return nil
+		},
+	}
+	if argsValidator != nil {
+		cmd.Args = argsValidator
+	}
+	return cmd
+}
+
+// debriefSubcommand builds a debrief subcommand with common archive logic.
+// pathFn is called at runtime with command arguments and returns the brief path,
+// brief directory, not-found message, and post-archive ready message.
+// argsValidator may be nil to accept any arguments.
+func debriefSubcommand(use, short string, argsValidator cobra.PositionalArgs,
+	pathFn func(args []string) (briefPath, briefDir, notFoundMsg, readyMsg string, err error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:          use,
+		Short:        short,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			briefPath, briefDir, notFoundMsg, readyMsg, err := pathFn(args)
+			if err != nil {
+				return err
+			}
+			if _, err := os.Stat(briefPath); err != nil {
+				if os.IsNotExist(err) {
+					fmt.Println(notFoundMsg)
+					return nil
+				}
+				return fmt.Errorf("failed to check brief: %w", err)
+			}
+			archiveFile, err := archiveBrief(briefDir, briefPath)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Archived brief to .brief/archive/%s\n", archiveFile)
+			fmt.Println(readyMsg)
+			return nil
+		},
+	}
+	if argsValidator != nil {
+		cmd.Args = argsValidator
+	}
+	return cmd
+}
+
 // restartSession stops a running session and then delegates to startCmd for
 // the start phase. If stopFn is non-nil it is called to stop the component;
 // otherwise mgr.Stop(sessName) is used directly. label is used in the
