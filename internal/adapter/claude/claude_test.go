@@ -138,7 +138,7 @@ func TestInjectSystemPrompt(t *testing.T) {
 	a := newAdapter()
 
 	content := "You are a helpful agent."
-	if err := a.InjectSystemPrompt(dir, content); err != nil {
+	if _, err := a.InjectSystemPrompt(dir, content, false); err != nil {
 		t.Fatalf("InjectSystemPrompt failed: %v", err)
 	}
 
@@ -157,12 +157,25 @@ func TestInjectSystemPromptCreatesDotClaude(t *testing.T) {
 	a := newAdapter()
 
 	// .claude doesn't exist yet.
-	if err := a.InjectSystemPrompt(dir, "prompt"); err != nil {
+	if _, err := a.InjectSystemPrompt(dir, "prompt", false); err != nil {
 		t.Fatalf("InjectSystemPrompt failed: %v", err)
 	}
 
 	if _, err := os.Stat(filepath.Join(dir, ".claude")); err != nil {
 		t.Errorf(".claude directory should exist: %v", err)
+	}
+}
+
+func TestInjectSystemPromptReturnsPath(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	path, err := a.InjectSystemPrompt(dir, "content", false)
+	if err != nil {
+		t.Fatalf("InjectSystemPrompt failed: %v", err)
+	}
+	if path != ".claude/system-prompt.md" {
+		t.Errorf("expected .claude/system-prompt.md, got %q", path)
 	}
 }
 
@@ -187,7 +200,9 @@ func TestInstallHooksSessionStart(t *testing.T) {
 	a := newAdapter()
 
 	hooks := adapter.HookSet{
-		SessionStart: []string{"sol prime --world=myworld --agent=Toast"},
+		SessionStart: []adapter.HookCommand{
+			{Command: "sol prime --world=myworld --agent=Toast"},
+		},
 	}
 	if err := a.InstallHooks(dir, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
@@ -211,7 +226,9 @@ func TestInstallHooksPreCompact(t *testing.T) {
 	a := newAdapter()
 
 	hooks := adapter.HookSet{
-		PreCompact: []string{"sol prime --world=myworld --agent=Toast --compact"},
+		PreCompact: []adapter.HookCommand{
+			{Command: "sol prime --world=myworld --agent=Toast --compact"},
+		},
 	}
 	if err := a.InstallHooks(dir, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
@@ -233,8 +250,8 @@ func TestInstallHooksGuards(t *testing.T) {
 
 	hooks := adapter.HookSet{
 		Guards: []adapter.Guard{
-			{Matcher: "EnterPlanMode", Command: `echo "BLOCKED" >&2; exit 2`},
-			{Matcher: "Bash(git push --force*)", Command: "sol guard dangerous-command"},
+			{Pattern: "EnterPlanMode", Command: `echo "BLOCKED" >&2; exit 2`},
+			{Pattern: "Bash(git push --force*)", Command: "sol guard dangerous-command"},
 		},
 	}
 	if err := a.InstallHooks(dir, hooks); err != nil {
@@ -262,7 +279,9 @@ func TestInstallHooksTurnBoundary(t *testing.T) {
 	a := newAdapter()
 
 	hooks := adapter.HookSet{
-		TurnBoundary: []string{"sol nudge drain --world=myworld --agent=Toast"},
+		TurnBoundary: []adapter.HookCommand{
+			{Command: "sol nudge drain --world=myworld --agent=Toast"},
+		},
 	}
 	if err := a.InstallHooks(dir, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
@@ -283,12 +302,12 @@ func TestInstallHooksFullHookSet(t *testing.T) {
 	a := newAdapter()
 
 	hooks := adapter.HookSet{
-		SessionStart: []string{"sol prime --world=w --agent=A"},
-		PreCompact:   []string{"sol prime --world=w --agent=A --compact"},
+		SessionStart: []adapter.HookCommand{{Command: "sol prime --world=w --agent=A"}},
+		PreCompact:   []adapter.HookCommand{{Command: "sol prime --world=w --agent=A --compact"}},
 		Guards: []adapter.Guard{
-			{Matcher: "EnterPlanMode", Command: "exit 2"},
+			{Pattern: "EnterPlanMode", Command: "exit 2"},
 		},
-		TurnBoundary: []string{"sol nudge drain --world=w --agent=A"},
+		TurnBoundary: []adapter.HookCommand{{Command: "sol nudge drain --world=w --agent=A"}},
 	}
 	if err := a.InstallHooks(dir, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
@@ -328,13 +347,10 @@ func TestBuildCommandBasic(t *testing.T) {
 	a := newAdapter()
 
 	ctx := adapter.CommandContext{
-		Worktree: dir,
-		Prime:    "Hello agent",
+		WorktreeDir: dir,
+		Prompt:      "Hello agent",
 	}
-	cmd, err := a.BuildCommand(ctx)
-	if err != nil {
-		t.Fatalf("BuildCommand failed: %v", err)
-	}
+	cmd := a.BuildCommand(ctx)
 
 	if !strings.HasPrefix(cmd, "claude --dangerously-skip-permissions") {
 		t.Errorf("expected claude prefix, got: %q", cmd)
@@ -352,14 +368,11 @@ func TestBuildCommandWithResume(t *testing.T) {
 	a := newAdapter()
 
 	ctx := adapter.CommandContext{
-		Worktree: dir,
-		Resume:   true,
-		Prime:    "resume",
+		WorktreeDir: dir,
+		Continue:    true,
+		Prompt:      "resume",
 	}
-	cmd, err := a.BuildCommand(ctx)
-	if err != nil {
-		t.Fatalf("BuildCommand failed: %v", err)
-	}
+	cmd := a.BuildCommand(ctx)
 
 	if !strings.Contains(cmd, "--continue") {
 		t.Errorf("expected --continue flag, got: %q", cmd)
@@ -371,14 +384,11 @@ func TestBuildCommandWithModel(t *testing.T) {
 	a := newAdapter()
 
 	ctx := adapter.CommandContext{
-		Worktree: dir,
-		Model:    "claude-opus-4-5",
-		Prime:    "go",
+		WorktreeDir: dir,
+		Model:       "claude-opus-4-5",
+		Prompt:      "go",
 	}
-	cmd, err := a.BuildCommand(ctx)
-	if err != nil {
-		t.Fatalf("BuildCommand failed: %v", err)
-	}
+	cmd := a.BuildCommand(ctx)
 
 	if !strings.Contains(cmd, "--model claude-opus-4-5") {
 		t.Errorf("expected --model flag, got: %q", cmd)
@@ -389,20 +399,13 @@ func TestBuildCommandReplacePrompt(t *testing.T) {
 	dir := t.TempDir()
 	a := newAdapter()
 
-	// Write system-prompt.md so the flag is included.
-	claudeDir := filepath.Join(dir, ".claude")
-	_ = os.MkdirAll(claudeDir, 0o755)
-	_ = os.WriteFile(filepath.Join(claudeDir, "system-prompt.md"), []byte("prompt"), 0o644)
-
 	ctx := adapter.CommandContext{
-		Worktree:      dir,
-		ReplacePrompt: true,
-		Prime:         "go",
+		WorktreeDir:      dir,
+		ReplacePrompt:    true,
+		SystemPromptFile: ".claude/system-prompt.md",
+		Prompt:           "go",
 	}
-	cmd, err := a.BuildCommand(ctx)
-	if err != nil {
-		t.Fatalf("BuildCommand failed: %v", err)
-	}
+	cmd := a.BuildCommand(ctx)
 
 	if !strings.Contains(cmd, "--system-prompt-file") {
 		t.Errorf("expected --system-prompt-file, got: %q", cmd)
@@ -416,20 +419,13 @@ func TestBuildCommandAppendPrompt(t *testing.T) {
 	dir := t.TempDir()
 	a := newAdapter()
 
-	// Write system-prompt.md so the flag is included.
-	claudeDir := filepath.Join(dir, ".claude")
-	_ = os.MkdirAll(claudeDir, 0o755)
-	_ = os.WriteFile(filepath.Join(claudeDir, "system-prompt.md"), []byte("prompt"), 0o644)
-
 	ctx := adapter.CommandContext{
-		Worktree:      dir,
-		ReplacePrompt: false,
-		Prime:         "go",
+		WorktreeDir:      dir,
+		ReplacePrompt:    false,
+		SystemPromptFile: ".claude/system-prompt.md",
+		Prompt:           "go",
 	}
-	cmd, err := a.BuildCommand(ctx)
-	if err != nil {
-		t.Fatalf("BuildCommand failed: %v", err)
-	}
+	cmd := a.BuildCommand(ctx)
 
 	if !strings.Contains(cmd, "--append-system-prompt-file") {
 		t.Errorf("expected --append-system-prompt-file, got: %q", cmd)
@@ -440,19 +436,16 @@ func TestBuildCommandNoSystemPromptFileIfMissing(t *testing.T) {
 	dir := t.TempDir()
 	a := newAdapter()
 
-	// No system-prompt.md written — flag should be absent.
+	// No SystemPromptFile in context — flag should be absent.
 	ctx := adapter.CommandContext{
-		Worktree:      dir,
+		WorktreeDir:   dir,
 		ReplacePrompt: true,
-		Prime:         "go",
+		Prompt:        "go",
 	}
-	cmd, err := a.BuildCommand(ctx)
-	if err != nil {
-		t.Fatalf("BuildCommand failed: %v", err)
-	}
+	cmd := a.BuildCommand(ctx)
 
 	if strings.Contains(cmd, "system-prompt") {
-		t.Errorf("should not have system-prompt flag when file missing, got: %q", cmd)
+		t.Errorf("should not have system-prompt flag when SystemPromptFile is empty, got: %q", cmd)
 	}
 }
 
@@ -461,10 +454,7 @@ func TestBuildCommandSOLSessionCommandOverride(t *testing.T) {
 	dir := t.TempDir()
 	a := newAdapter()
 
-	cmd, err := a.BuildCommand(adapter.CommandContext{Worktree: dir})
-	if err != nil {
-		t.Fatalf("BuildCommand failed: %v", err)
-	}
+	cmd := a.BuildCommand(adapter.CommandContext{WorktreeDir: dir})
 	if cmd != "sleep 300" {
 		t.Errorf("expected SOL_SESSION_COMMAND override, got: %q", cmd)
 	}
@@ -474,7 +464,7 @@ func TestBuildCommandSOLSessionCommandOverride(t *testing.T) {
 
 func TestCredentialEnvOAuthToken(t *testing.T) {
 	a := newAdapter()
-	env := a.CredentialEnv(adapter.Credential{Type: "oauth_token", Value: "my-token"})
+	env := a.CredentialEnv(adapter.Credential{Type: "oauth_token", Token: "my-token"})
 
 	if v, ok := env["CLAUDE_CODE_OAUTH_TOKEN"]; !ok || v != "my-token" {
 		t.Errorf("expected CLAUDE_CODE_OAUTH_TOKEN=my-token, got %v", env)
@@ -486,7 +476,7 @@ func TestCredentialEnvOAuthToken(t *testing.T) {
 
 func TestCredentialEnvAPIKey(t *testing.T) {
 	a := newAdapter()
-	env := a.CredentialEnv(adapter.Credential{Type: "api_key", Value: "sk-abc"})
+	env := a.CredentialEnv(adapter.Credential{Type: "api_key", Token: "sk-abc"})
 
 	if v, ok := env["ANTHROPIC_API_KEY"]; !ok || v != "sk-abc" {
 		t.Errorf("expected ANTHROPIC_API_KEY=sk-abc, got %v", env)
@@ -498,7 +488,7 @@ func TestCredentialEnvAPIKey(t *testing.T) {
 
 func TestCredentialEnvUnknown(t *testing.T) {
 	a := newAdapter()
-	env := a.CredentialEnv(adapter.Credential{Type: "unknown", Value: "val"})
+	env := a.CredentialEnv(adapter.Credential{Type: "unknown", Token: "val"})
 	if len(env) != 0 {
 		t.Errorf("expected empty map for unknown credential type, got %v", env)
 	}
@@ -569,6 +559,14 @@ func TestTelemetryEnvCustomPort(t *testing.T) {
 
 	if env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] != "http://localhost:9999" {
 		t.Errorf("unexpected endpoint: %q", env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"])
+	}
+}
+
+func TestTelemetryEnvDisabledWhenPortZero(t *testing.T) {
+	a := newAdapter()
+	env := a.TelemetryEnv(0, "Toast", "myworld", "sol-abc123")
+	if len(env) != 0 {
+		t.Errorf("expected empty map for port=0, got %v", env)
 	}
 }
 

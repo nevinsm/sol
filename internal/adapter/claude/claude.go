@@ -34,18 +34,18 @@ func (a *Adapter) Name() string {
 
 // InjectPersona writes persona content to CLAUDE.local.md at the worktree root.
 // The file is written at root level so Claude Code's upward directory walk discovers it.
-func (a *Adapter) InjectPersona(worktree string, persona []byte) error {
-	path := filepath.Join(worktree, "CLAUDE.local.md")
-	if err := os.WriteFile(path, persona, 0o644); err != nil {
+func (a *Adapter) InjectPersona(worktreeDir string, content []byte) error {
+	path := filepath.Join(worktreeDir, "CLAUDE.local.md")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
 		return fmt.Errorf("claude adapter: failed to write CLAUDE.local.md: %w", err)
 	}
 	return nil
 }
 
-// InstallSkills writes skill files to {worktree}/.claude/skills/{name}/SKILL.md.
+// InstallSkills writes skill files to {worktreeDir}/.claude/skills/{name}/SKILL.md.
 // Stale skill directories (present on disk but not in the skills list) are removed.
-func (a *Adapter) InstallSkills(worktree string, skills []adapter.Skill) error {
-	skillsDir := filepath.Join(worktree, ".claude", "skills")
+func (a *Adapter) InstallSkills(worktreeDir string, skills []adapter.Skill) error {
+	skillsDir := filepath.Join(worktreeDir, ".claude", "skills")
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		return fmt.Errorf("claude adapter: failed to create skills directory: %w", err)
 	}
@@ -85,17 +85,19 @@ func (a *Adapter) InstallSkills(worktree string, skills []adapter.Skill) error {
 	return nil
 }
 
-// InjectSystemPrompt writes content to {worktree}/.claude/system-prompt.md.
-func (a *Adapter) InjectSystemPrompt(worktree string, content string) error {
-	claudeDir := filepath.Join(worktree, ".claude")
+// InjectSystemPrompt writes content to {worktreeDir}/.claude/system-prompt.md.
+// Returns the relative path to the written file, for use in BuildCommand.
+// The replace parameter is passed through to BuildCommand via CommandContext.ReplacePrompt.
+func (a *Adapter) InjectSystemPrompt(worktreeDir, content string, _ bool) (string, error) {
+	claudeDir := filepath.Join(worktreeDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return fmt.Errorf("claude adapter: failed to create .claude directory: %w", err)
+		return "", fmt.Errorf("claude adapter: failed to create .claude directory: %w", err)
 	}
 	promptPath := filepath.Join(claudeDir, "system-prompt.md")
 	if err := os.WriteFile(promptPath, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("claude adapter: failed to write system prompt: %w", err)
+		return "", fmt.Errorf("claude adapter: failed to write system prompt: %w", err)
 	}
-	return nil
+	return ".claude/system-prompt.md", nil
 }
 
 // hookEntry is a single hook handler in Claude Code's settings.local.json.
@@ -116,22 +118,23 @@ type hookSettings struct {
 }
 
 // InstallHooks translates the runtime-agnostic HookSet to Claude Code hook JSON
-// and writes it to {worktree}/.claude/settings.local.json.
+// and writes it to {worktreeDir}/.claude/settings.local.json.
 //
 // Mapping:
 //   - HookSet.SessionStart  → Claude Code "SessionStart" hook entries
 //   - HookSet.PreCompact    → Claude Code "PreCompact" hook entries
 //   - HookSet.Guards        → Claude Code "PreToolUse" hook entries
 //   - HookSet.TurnBoundary  → Claude Code "UserPromptSubmit" hook entries
-func (a *Adapter) InstallHooks(worktree string, hooks adapter.HookSet) error {
+func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error {
 	hooksMap := map[string][]hookMatcherGroup{}
 
 	// SessionStart
 	if len(hooks.SessionStart) > 0 {
 		groups := make([]hookMatcherGroup, 0, len(hooks.SessionStart))
-		for _, cmd := range hooks.SessionStart {
+		for _, hc := range hooks.SessionStart {
 			groups = append(groups, hookMatcherGroup{
-				Hooks: []hookEntry{{Type: "command", Command: cmd}},
+				Matcher: hc.Matcher,
+				Hooks:   []hookEntry{{Type: "command", Command: hc.Command}},
 			})
 		}
 		hooksMap["SessionStart"] = groups
@@ -140,9 +143,10 @@ func (a *Adapter) InstallHooks(worktree string, hooks adapter.HookSet) error {
 	// PreCompact
 	if len(hooks.PreCompact) > 0 {
 		groups := make([]hookMatcherGroup, 0, len(hooks.PreCompact))
-		for _, cmd := range hooks.PreCompact {
+		for _, hc := range hooks.PreCompact {
 			groups = append(groups, hookMatcherGroup{
-				Hooks: []hookEntry{{Type: "command", Command: cmd}},
+				Matcher: hc.Matcher,
+				Hooks:   []hookEntry{{Type: "command", Command: hc.Command}},
 			})
 		}
 		hooksMap["PreCompact"] = groups
@@ -153,7 +157,7 @@ func (a *Adapter) InstallHooks(worktree string, hooks adapter.HookSet) error {
 		groups := make([]hookMatcherGroup, 0, len(hooks.Guards))
 		for _, g := range hooks.Guards {
 			groups = append(groups, hookMatcherGroup{
-				Matcher: g.Matcher,
+				Matcher: g.Pattern,
 				Hooks:   []hookEntry{{Type: "command", Command: g.Command}},
 			})
 		}
@@ -163,9 +167,10 @@ func (a *Adapter) InstallHooks(worktree string, hooks adapter.HookSet) error {
 	// UserPromptSubmit (TurnBoundary)
 	if len(hooks.TurnBoundary) > 0 {
 		groups := make([]hookMatcherGroup, 0, len(hooks.TurnBoundary))
-		for _, cmd := range hooks.TurnBoundary {
+		for _, hc := range hooks.TurnBoundary {
 			groups = append(groups, hookMatcherGroup{
-				Hooks: []hookEntry{{Type: "command", Command: cmd}},
+				Matcher: hc.Matcher,
+				Hooks:   []hookEntry{{Type: "command", Command: hc.Command}},
 			})
 		}
 		hooksMap["UserPromptSubmit"] = groups
@@ -173,7 +178,7 @@ func (a *Adapter) InstallHooks(worktree string, hooks adapter.HookSet) error {
 
 	settings := hookSettings{Hooks: hooksMap}
 
-	claudeDir := filepath.Join(worktree, ".claude")
+	claudeDir := filepath.Join(worktreeDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		return fmt.Errorf("claude adapter: failed to create .claude directory: %w", err)
 	}
@@ -194,20 +199,22 @@ func (a *Adapter) InstallHooks(worktree string, hooks adapter.HookSet) error {
 // EnsureConfigDir creates the Claude config directory, seeds defaults, and
 // pre-trusts the worktree. Delegates to config.EnsureClaudeConfigDir and
 // protocol.TrustDirectoryIn.
-func (a *Adapter) EnsureConfigDir(world, role, agent, worktree string) (adapter.ConfigDirResult, error) {
-	dir, err := config.EnsureClaudeConfigDir(config.WorldDir(world), role, agent, "")
+func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (adapter.ConfigResult, error) {
+	dir, err := config.EnsureClaudeConfigDir(worldDir, role, agent, "")
 	if err != nil {
-		return adapter.ConfigDirResult{}, fmt.Errorf("claude adapter: failed to ensure config dir: %w", err)
+		return adapter.ConfigResult{}, fmt.Errorf("claude adapter: failed to ensure config dir: %w", err)
 	}
 
-	if err := protocol.TrustDirectoryIn(worktree, dir); err != nil {
+	if err := protocol.TrustDirectoryIn(worktreeDir, dir); err != nil {
 		// Non-fatal: log but don't fail startup.
-		fmt.Fprintf(os.Stderr, "claude adapter: failed to pre-trust directory %s in config dir %s: %v\n", worktree, dir, err)
+		fmt.Fprintf(os.Stderr, "claude adapter: failed to pre-trust directory %s in config dir %s: %v\n", worktreeDir, dir, err)
 	}
 
-	return adapter.ConfigDirResult{
-		Path:   dir,
-		EnvVar: "CLAUDE_CONFIG_DIR",
+	return adapter.ConfigResult{
+		Dir: dir,
+		EnvVar: map[string]string{
+			"CLAUDE_CONFIG_DIR": dir,
+		},
 	}, nil
 }
 
@@ -218,19 +225,19 @@ func (a *Adapter) EnsureConfigDir(world, role, agent, worktree string) (adapter.
 //	claude --dangerously-skip-permissions [--continue] --settings <path>
 //	    [--model <model>]
 //	    [--system-prompt-file|--append-system-prompt-file <path>]
-//	    [<prime>]
+//	    [<prompt>]
 //
 // If SOL_SESSION_COMMAND is set (for testing), it is returned verbatim.
-func (a *Adapter) BuildCommand(ctx adapter.CommandContext) (string, error) {
+func (a *Adapter) BuildCommand(ctx adapter.CommandContext) string {
 	if cmd := os.Getenv("SOL_SESSION_COMMAND"); cmd != "" {
-		return cmd, nil
+		return cmd
 	}
 
-	settingsPath := config.SettingsPath(ctx.Worktree)
+	settingsPath := config.SettingsPath(ctx.WorktreeDir)
 
 	args := "claude --dangerously-skip-permissions"
 
-	if ctx.Resume {
+	if ctx.Continue {
 		args += " --continue"
 	}
 
@@ -240,21 +247,19 @@ func (a *Adapter) BuildCommand(ctx adapter.CommandContext) (string, error) {
 		args += " --model " + ctx.Model
 	}
 
-	// System prompt file is always at the conventional path.
-	systemPromptPath := filepath.Join(ctx.Worktree, ".claude", "system-prompt.md")
-	if _, err := os.Stat(systemPromptPath); err == nil {
+	if ctx.SystemPromptFile != "" {
 		if ctx.ReplacePrompt {
-			args += " --system-prompt-file " + config.ShellQuote(systemPromptPath)
+			args += " --system-prompt-file " + config.ShellQuote(ctx.SystemPromptFile)
 		} else {
-			args += " --append-system-prompt-file " + config.ShellQuote(systemPromptPath)
+			args += " --append-system-prompt-file " + config.ShellQuote(ctx.SystemPromptFile)
 		}
 	}
 
-	if ctx.Prime != "" {
-		args += " " + config.ShellQuote(ctx.Prime)
+	if ctx.Prompt != "" {
+		args += " " + config.ShellQuote(ctx.Prompt)
 	}
 
-	return args, nil
+	return args
 }
 
 // CredentialEnv returns the environment variable map for the given credential.
@@ -263,9 +268,9 @@ func (a *Adapter) BuildCommand(ctx adapter.CommandContext) (string, error) {
 func (a *Adapter) CredentialEnv(cred adapter.Credential) map[string]string {
 	switch cred.Type {
 	case "oauth_token":
-		return map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": cred.Value}
+		return map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": cred.Token}
 	case "api_key":
-		return map[string]string{"ANTHROPIC_API_KEY": cred.Value}
+		return map[string]string{"ANTHROPIC_API_KEY": cred.Token}
 	default:
 		return map[string]string{}
 	}
@@ -274,6 +279,9 @@ func (a *Adapter) CredentialEnv(cred adapter.Credential) map[string]string {
 // TelemetryEnv returns the environment variables for OTLP telemetry reporting
 // to the sol ledger service.
 func (a *Adapter) TelemetryEnv(port int, agent, world, activeWrit string) map[string]string {
+	if port <= 0 {
+		return map[string]string{}
+	}
 	attrs := fmt.Sprintf("agent.name=%s,world=%s", agent, world)
 	if activeWrit != "" {
 		attrs += ",writ_id=" + activeWrit

@@ -238,14 +238,10 @@ func TestEnvoyPrimeWithActiveWrit(t *testing.T) {
 
 func TestEnvoyHooksPreCompact(t *testing.T) {
 	hooks := envoyHooks("myworld", "Echo")
-	pcGroups, ok := hooks.Hooks["PreCompact"]
-	if !ok {
+	if len(hooks.PreCompact) == 0 {
 		t.Fatal("envoy hooks missing PreCompact")
 	}
-	if len(pcGroups) != 1 {
-		t.Fatalf("expected 1 PreCompact matcher group, got %d", len(pcGroups))
-	}
-	cmd := pcGroups[0].Hooks[0].Command
+	cmd := hooks.PreCompact[0].Command
 	want := "sol prime --world=myworld --agent=Echo --compact"
 	if cmd != want {
 		t.Errorf("PreCompact command = %q, want %q", cmd, want)
@@ -254,11 +250,10 @@ func TestEnvoyHooksPreCompact(t *testing.T) {
 
 func TestEnvoyHooksNoCompactSessionStart(t *testing.T) {
 	hooks := envoyHooks("myworld", "Echo")
-	groups, ok := hooks.Hooks["SessionStart"]
-	if !ok {
+	if len(hooks.SessionStart) == 0 {
 		t.Fatal("envoy hooks missing SessionStart")
 	}
-	for _, g := range groups {
+	for _, g := range hooks.SessionStart {
 		if strings.Contains(g.Matcher, "compact") {
 			t.Error("envoy SessionStart should not have a compact matcher")
 		}

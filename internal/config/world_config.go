@@ -82,12 +82,25 @@ type ModelsSection struct {
 	Forge    string `toml:"forge,omitempty" json:"forge,omitempty"`
 }
 
+// RuntimesSection holds per-role runtime overrides.
+// Each field overrides agents.default_runtime for that specific role.
+// Valid values are "claude". Empty means no override (falls back to default_runtime).
+type RuntimesSection struct {
+	Outpost    string `toml:"outpost,omitempty" json:"outpost,omitempty"`
+	Envoy      string `toml:"envoy,omitempty" json:"envoy,omitempty"`
+	Governor   string `toml:"governor,omitempty" json:"governor,omitempty"`
+	Forge      string `toml:"forge,omitempty" json:"forge,omitempty"`
+	Chancellor string `toml:"chancellor,omitempty" json:"chancellor,omitempty"`
+}
+
 // AgentsSection holds agent-related settings.
 type AgentsSection struct {
-	Capacity     int           `toml:"capacity" json:"capacity"`               // 0 = unlimited
-	NamePoolPath string        `toml:"name_pool_path" json:"name_pool_path"`   // empty = embedded default
-	ModelTier    string        `toml:"model_tier" json:"model_tier"`           // "sonnet", "opus", "haiku"
-	Models       ModelsSection `toml:"models,omitempty" json:"models,omitempty"` // per-role overrides
+	Capacity       int             `toml:"capacity" json:"capacity"`                                   // 0 = unlimited
+	NamePoolPath   string          `toml:"name_pool_path" json:"name_pool_path"`                       // empty = embedded default
+	ModelTier      string          `toml:"model_tier" json:"model_tier"`                               // "sonnet", "opus", "haiku"
+	Models         ModelsSection   `toml:"models,omitempty" json:"models,omitempty"`                   // per-role model overrides
+	DefaultRuntime string          `toml:"default_runtime,omitempty" json:"default_runtime,omitempty"` // e.g. "claude"
+	Runtimes       RuntimesSection `toml:"runtimes,omitempty" json:"runtimes,omitempty"`               // per-role runtime overrides
 }
 
 // ForgeSection holds forge/merge pipeline settings.
@@ -200,6 +213,33 @@ func (c WorldConfig) ResolveModel(role string) string {
 		return c.Agents.ModelTier
 	}
 	return "sonnet"
+}
+
+// ResolveRuntime returns the runtime adapter name for the given role.
+// Checks agents.runtimes.<role> first, falls back to agents.default_runtime,
+// then to "claude" as the hardcoded default.
+// In v1, only "claude" is a valid value.
+func (c WorldConfig) ResolveRuntime(role string) string {
+	var override string
+	switch role {
+	case "outpost", "agent":
+		override = c.Agents.Runtimes.Outpost
+	case "envoy":
+		override = c.Agents.Runtimes.Envoy
+	case "governor":
+		override = c.Agents.Runtimes.Governor
+	case "forge", "forge-merge":
+		override = c.Agents.Runtimes.Forge
+	case "chancellor":
+		override = c.Agents.Runtimes.Chancellor
+	}
+	if override != "" {
+		return override
+	}
+	if c.Agents.DefaultRuntime != "" {
+		return c.Agents.DefaultRuntime
+	}
+	return "claude"
 }
 
 // validModelTier returns an error if the given model tier is not a valid

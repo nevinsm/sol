@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/workflow"
@@ -28,6 +29,80 @@ type startCall struct {
 func (m *mockSessionStarter) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	m.started = append(m.started, startCall{name, workdir, cmd, env, role, world})
 	return nil
+}
+
+// mockRuntimeAdapter records adapter method calls.
+type mockRuntimeAdapter struct {
+	calls          []string
+	personaWritten []byte
+	skillsWritten  []adapter.Skill
+	promptFile     string
+	hookSet        HookSet
+	configResult   adapter.ConfigResult
+	buildCmdResult string
+}
+
+func newMockAdapter(t *testing.T) *mockRuntimeAdapter {
+	t.Helper()
+	return &mockRuntimeAdapter{
+		configResult:   adapter.ConfigResult{Dir: "/tmp/fake-config", EnvVar: map[string]string{"CLAUDE_CONFIG_DIR": "/tmp/fake-config"}},
+		buildCmdResult: "sleep 300",
+	}
+}
+
+func (m *mockRuntimeAdapter) InjectPersona(worktreeDir string, content []byte) error {
+	m.calls = append(m.calls, "InjectPersona")
+	m.personaWritten = content
+	// Actually write the file so tests that check persona content still work.
+	path := filepath.Join(worktreeDir, "CLAUDE.local.md")
+	return os.WriteFile(path, content, 0o644)
+}
+
+func (m *mockRuntimeAdapter) InstallSkills(worktreeDir string, skills []adapter.Skill) error {
+	m.calls = append(m.calls, "InstallSkills")
+	m.skillsWritten = skills
+	return nil
+}
+
+func (m *mockRuntimeAdapter) InjectSystemPrompt(worktreeDir, content string, replace bool) (string, error) {
+	m.calls = append(m.calls, "InjectSystemPrompt")
+	// Write file so tests that check file existence still pass.
+	promptDir := filepath.Join(worktreeDir, ".claude")
+	os.MkdirAll(promptDir, 0o755)
+	promptPath := filepath.Join(promptDir, "system-prompt.md")
+	os.WriteFile(promptPath, []byte(content), 0o644)
+	m.promptFile = ".claude/system-prompt.md"
+	return ".claude/system-prompt.md", nil
+}
+
+func (m *mockRuntimeAdapter) InstallHooks(worktreeDir string, hooks HookSet) error {
+	m.calls = append(m.calls, "InstallHooks")
+	m.hookSet = hooks
+	// Write a minimal settings.local.json so tests that check file existence pass.
+	claudeDir := filepath.Join(worktreeDir, ".claude")
+	os.MkdirAll(claudeDir, 0o755)
+	os.WriteFile(filepath.Join(claudeDir, "settings.local.json"), []byte(`{"hooks":{}}`), 0o644)
+	return nil
+}
+
+func (m *mockRuntimeAdapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (adapter.ConfigResult, error) {
+	m.calls = append(m.calls, "EnsureConfigDir")
+	return m.configResult, nil
+}
+
+func (m *mockRuntimeAdapter) BuildCommand(ctx adapter.CommandContext) string {
+	m.calls = append(m.calls, "BuildCommand")
+	return m.buildCmdResult
+}
+
+func (m *mockRuntimeAdapter) CredentialEnv(cred adapter.Credential) map[string]string {
+	m.calls = append(m.calls, "CredentialEnv")
+	return map[string]string{"ANTHROPIC_API_KEY": "test-key"}
+}
+
+func (m *mockRuntimeAdapter) TelemetryEnv(port int, agent, world, activeWrit string) map[string]string {
+	m.calls = append(m.calls, "TelemetryEnv")
+	return map[string]string{}
 }
 
 // setupTestEnv creates a minimal SOL_HOME with a world config and sphere DB.
@@ -76,7 +151,7 @@ func TestRegisterAndConfigFor(t *testing.T) {
 	t.Cleanup(func() { registry = origRegistry })
 
 	cfg := RoleConfig{
-		Role:    "testrole",
+		Role:     "testrole",
 		Workflow: "test-workflow",
 	}
 	Register("testrole", cfg)
@@ -114,6 +189,7 @@ func TestLaunchBasic(t *testing.T) {
 	defer sphereStore.Close()
 
 	mock := &mockSessionStarter{}
+	mockA := newMockAdapter(t)
 
 	cfg := RoleConfig{
 		Role:        "forge",
@@ -122,21 +198,14 @@ func TestLaunchBasic(t *testing.T) {
 			return []byte("# Test Forge Persona"), nil
 		},
 		Hooks: func(w, a string) HookSet {
-			return protocol.HookConfig{
-				Hooks: map[string][]protocol.HookMatcherGroup{
-					"SessionStart": {
-						{
-							Hooks: []protocol.HookHandler{
-								{Type: "command", Command: "echo test"},
-							},
-						},
-					},
-				},
+			return HookSet{
+				SessionStart: []HookCommand{{Command: "echo test"}},
 			}
 		},
 		PrimeBuilder: func(w, a string) string {
 			return "Execute your workflow."
 		},
+		Adapter: mockA,
 	}
 
 	opts := LaunchOpts{
@@ -193,12 +262,97 @@ func TestLaunchBasic(t *testing.T) {
 		t.Errorf("agent state = %q, want %q", agent.State, "working")
 	}
 
-	// Verify env includes CLAUDE_CONFIG_DIR.
+	// Verify env includes CLAUDE_CONFIG_DIR (from mock adapter's configResult).
 	if call.Env["CLAUDE_CONFIG_DIR"] == "" {
 		t.Error("CLAUDE_CONFIG_DIR not set in env")
 	}
 	if call.Env["SOL_HOME"] != solHome {
 		t.Errorf("SOL_HOME = %q, want %q", call.Env["SOL_HOME"], solHome)
+	}
+
+	// Verify adapter methods were called in order.
+	wantCalls := []string{"InjectPersona", "InstallHooks", "EnsureConfigDir", "BuildCommand", "CredentialEnv", "TelemetryEnv"}
+	for _, want := range wantCalls {
+		found := false
+		for _, got := range mockA.calls {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected adapter call %q, calls were: %v", want, mockA.calls)
+		}
+	}
+}
+
+func TestLaunchAdapterMethodOrder(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	var callOrder []string
+	orderedAdapter := &mockRuntimeAdapter{
+		configResult:   adapter.ConfigResult{Dir: "/tmp", EnvVar: map[string]string{"CLAUDE_CONFIG_DIR": "/tmp"}},
+		buildCmdResult: "sleep 300",
+	}
+	// Override methods to record order.
+	// We rely on the mockRuntimeAdapter.calls slice which records all calls.
+
+	cfg := RoleConfig{
+		Role:                "forge",
+		WorktreeDir:         func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+		Persona:             func(w, _ string) ([]byte, error) { return []byte("# persona"), nil },
+		Hooks:               func(w, a string) HookSet { return HookSet{} },
+		SystemPromptContent: "# System Prompt",
+		ReplacePrompt:       true,
+		SkillInstaller:      func(w, a string) []adapter.Skill { return nil },
+		Adapter:             orderedAdapter,
+	}
+
+	_, err = Launch(cfg, world, "forge", LaunchOpts{Sessions: mock, Sphere: sphereStore})
+	if err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+
+	callOrder = orderedAdapter.calls
+
+	// Verify InjectPersona comes before InstallSkills, which comes before
+	// InjectSystemPrompt, which comes before InstallHooks, etc.
+	findIdx := func(name string) int {
+		for i, c := range callOrder {
+			if c == name {
+				return i
+			}
+		}
+		return -1
+	}
+
+	checks := []struct{ first, second string }{
+		{"InjectPersona", "InstallSkills"},
+		{"InstallSkills", "InjectSystemPrompt"},
+		{"InjectSystemPrompt", "InstallHooks"},
+		{"InstallHooks", "EnsureConfigDir"},
+		{"EnsureConfigDir", "BuildCommand"},
+	}
+	for _, c := range checks {
+		i, j := findIdx(c.first), findIdx(c.second)
+		if i < 0 {
+			t.Errorf("%q not called", c.first)
+		} else if j < 0 {
+			t.Errorf("%q not called", c.second)
+		} else if i >= j {
+			t.Errorf("expected %q (idx %d) before %q (idx %d)", c.first, i, c.second, j)
+		}
 	}
 }
 
@@ -233,103 +387,39 @@ func TestLaunchNilWorktreeDir(t *testing.T) {
 	}
 }
 
-func TestBuildCommand(t *testing.T) {
-	t.Setenv("SOL_SESSION_COMMAND", "")
-
-	cfg := RoleConfig{
-		Role: "forge",
-	}
-
-	cmd := buildCommand(cfg, "/tmp/worktree", "Hello forge", false, "")
-	if !strings.Contains(cmd, "claude --dangerously-skip-permissions") {
-		t.Errorf("command missing claude: %q", cmd)
-	}
-	if !strings.Contains(cmd, "--settings") {
-		t.Errorf("command missing --settings: %q", cmd)
-	}
-	if !strings.Contains(cmd, "Hello forge") {
-		t.Errorf("command missing prompt: %q", cmd)
-	}
-}
-
-func TestBuildCommandWithSystemPrompt(t *testing.T) {
-	t.Setenv("SOL_SESSION_COMMAND", "")
-
-	cfg := RoleConfig{
-		Role:             "forge",
-		SystemPromptFile: "prompts/forge.md",
-		ReplacePrompt:    true,
-	}
-
-	cmd := buildCommand(cfg, "/tmp/worktree", "Hello forge", false, "")
-	if !strings.Contains(cmd, "--system-prompt-file") {
-		t.Errorf("command missing --system-prompt-file: %q", cmd)
-	}
-	if !strings.Contains(cmd, "prompts/forge.md") {
-		t.Errorf("command missing prompt file path: %q", cmd)
-	}
-}
-
-func TestBuildCommandAppendSystemPrompt(t *testing.T) {
-	t.Setenv("SOL_SESSION_COMMAND", "")
-
-	cfg := RoleConfig{
-		Role:             "outpost",
-		SystemPromptFile: "prompts/agent.md",
-		ReplacePrompt:    false,
-	}
-
-	cmd := buildCommand(cfg, "/tmp/worktree", "Hello agent", false, "")
-	if !strings.Contains(cmd, "--append-system-prompt-file") {
-		t.Errorf("command missing --append-system-prompt-file: %q", cmd)
-	}
-}
-
-func TestBuildCommandContinue(t *testing.T) {
-	t.Setenv("SOL_SESSION_COMMAND", "")
-
-	cfg := RoleConfig{Role: "forge"}
-
-	cmd := buildCommand(cfg, "/tmp/worktree", "Hello", true, "")
-	if !strings.Contains(cmd, "--continue") {
-		t.Errorf("command missing --continue: %q", cmd)
-	}
-}
-
-func TestBuildCommandOverride(t *testing.T) {
+func TestSessionCommandOverrideBypassesAdapter(t *testing.T) {
+	// SOL_SESSION_COMMAND override: adapter.BuildCommand is called but returns the env override.
+	// The test verifies the session still starts with the override command.
+	solHome := setupTestEnv(t, "haven")
 	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	world := "haven"
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
 
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	// Use the real claude adapter (registered via init), which respects SOL_SESSION_COMMAND.
 	cfg := RoleConfig{
-		Role:             "forge",
-		SystemPromptFile: "prompts/forge.md",
-		ReplacePrompt:    true,
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
 	}
 
-	cmd := buildCommand(cfg, "/tmp/worktree", "Hello", false, "opus")
-	if cmd != "sleep 300" {
-		t.Errorf("expected override, got %q", cmd)
+	_, err = Launch(cfg, world, "forge", LaunchOpts{Sessions: mock, Sphere: sphereStore})
+	if err != nil {
+		t.Fatalf("Launch() error: %v", err)
 	}
-}
 
-func TestBuildCommandWithModel(t *testing.T) {
-	t.Setenv("SOL_SESSION_COMMAND", "")
-
-	cfg := RoleConfig{Role: "outpost"}
-
-	cmd := buildCommand(cfg, "/tmp/worktree", "Hello", false, "opus")
-	if !strings.Contains(cmd, "--model opus") {
-		t.Errorf("command missing --model opus: %q", cmd)
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 session start, got %d", len(mock.started))
 	}
-}
-
-func TestBuildCommandNoModelFlag(t *testing.T) {
-	t.Setenv("SOL_SESSION_COMMAND", "")
-
-	cfg := RoleConfig{Role: "outpost"}
-
-	cmd := buildCommand(cfg, "/tmp/worktree", "Hello", false, "")
-	if strings.Contains(cmd, "--model") {
-		t.Errorf("command should not contain --model when empty: %q", cmd)
+	if mock.started[0].Cmd != "sleep 300" {
+		t.Errorf("expected SOL_SESSION_COMMAND override, got %q", mock.started[0].Cmd)
 	}
 }
 
@@ -375,9 +465,6 @@ func TestResumeSetsContinue(t *testing.T) {
 		t.Errorf("session name = %q, want %q", sessName, "sol-haven-forge")
 	}
 
-	// Resume always uses SOL_SESSION_COMMAND in tests, so we verify
-	// the session was started. The --continue flag is set on LaunchOpts.Continue
-	// which is verified by TestBuildCommandContinue.
 	if len(mock.started) != 1 {
 		t.Fatalf("expected 1 session start, got %d", len(mock.started))
 	}
@@ -483,7 +570,6 @@ func TestBuildResumePrimeStepOnly(t *testing.T) {
 	if !strings.Contains(prime, "step isolate. Resume from there.") {
 		t.Errorf("step-only prime missing step without description: %q", prime)
 	}
-	// Should not contain step description parentheses (reason parens are expected).
 	if strings.Contains(prime, "step isolate (") {
 		t.Errorf("step-only prime should not have step description parens: %q", prime)
 	}
@@ -495,7 +581,6 @@ func TestBuildResumePrimeEmpty(t *testing.T) {
 	if !strings.Contains(prime, "[RESUME] Session recovery (reason: compact).") {
 		t.Errorf("empty resume prime = %q", prime)
 	}
-	// Should not contain step or resource lines.
 	if strings.Contains(prime, "step") {
 		t.Errorf("empty resume prime should not mention step: %q", prime)
 	}
@@ -554,7 +639,7 @@ func TestLaunchPreservesActiveWrit(t *testing.T) {
 
 func TestLaunchSystemPromptFullReplace(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
-	t.Setenv("SOL_SESSION_COMMAND", "") // override setupTestEnv's sleep 300
+	t.Setenv("SOL_SESSION_COMMAND", "") // need real command to check --system-prompt-file flag
 	world := "haven"
 
 	worktreeDir := filepath.Join(solHome, world, "outposts", "Toast", "worktree")
@@ -702,8 +787,7 @@ func TestLaunchReinstantiatesDoneWorkflow(t *testing.T) {
 	os.MkdirAll(wfDir, 0o755)
 	os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(`{"current_step":"","completed":["load-context","implement"],"status":"done","started_at":"2025-01-01T00:00:00Z"}`), 0o644)
 
-	// Create a minimal test workflow with no required variables at user-level
-	// so Instantiate can resolve it without needing writ-specific vars.
+	// Create a minimal test workflow.
 	testWfDir := filepath.Join(solHome, "workflows", "test-simple")
 	os.MkdirAll(filepath.Join(testWfDir, "steps"), 0o755)
 	os.WriteFile(filepath.Join(testWfDir, "manifest.toml"), []byte(`name = "test-simple"
@@ -728,7 +812,7 @@ instructions = "steps/01-step.md"
 	cfg := RoleConfig{
 		Role:        "outpost",
 		WorktreeDir: func(w, a string) string { return filepath.Join(solHome, w, "outposts", a, "worktree") },
-		Workflow:    "test-simple", // Minimal test workflow; no required variables.
+		Workflow:    "test-simple",
 	}
 
 	_, err = Launch(cfg, "haven", "TestBot", LaunchOpts{
@@ -807,7 +891,6 @@ func TestRespawnWithResumeState(t *testing.T) {
 		t.Errorf("session name = %q, want %q", sessName, "sol-haven-forge")
 	}
 
-	// Verify session was started (Resume path).
 	if len(mock.started) != 1 {
 		t.Fatalf("expected 1 session start, got %d", len(mock.started))
 	}
@@ -826,24 +909,19 @@ func TestRespawnWithoutResumeState(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 	world := "haven"
 
-	// Reset registry for test isolation.
 	origRegistry := registry
 	registry = map[string]*RoleConfig{}
 	t.Cleanup(func() { registry = origRegistry })
 
-	// Create worktree directory.
 	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
-	// Register a role config.
 	Register("forge", RoleConfig{
 		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
 		PrimeBuilder: func(w, a string) string {
 			return "Execute your workflow."
 		},
 	})
-
-	// No resume state written — should take the Launch path.
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -865,19 +943,16 @@ func TestRespawnWithoutResumeState(t *testing.T) {
 		t.Errorf("session name = %q, want %q", sessName, "sol-haven-forge")
 	}
 
-	// Verify session was started (Launch path).
 	if len(mock.started) != 1 {
 		t.Fatalf("expected 1 session start, got %d", len(mock.started))
 	}
 }
 
 func TestRespawnUnregisteredRole(t *testing.T) {
-	// Reset registry for test isolation.
 	origRegistry := registry
 	registry = map[string]*RoleConfig{}
 	t.Cleanup(func() { registry = origRegistry })
 
-	// Do not register any role — Respawn should return error.
 	_, err := Respawn("nonexistent", "haven", "forge", LaunchOpts{})
 	if err == nil {
 		t.Fatal("expected error for unregistered role")
@@ -894,16 +969,12 @@ func TestRespawnSetsRespawnFlag(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 	world := "haven"
 
-	// Reset registry for test isolation.
 	origRegistry := registry
 	registry = map[string]*RoleConfig{}
 	t.Cleanup(func() { registry = origRegistry })
 
-	// Create worktree directory.
 	os.MkdirAll(filepath.Join(solHome, world, "forge", "worktree"), 0o755)
 
-	// Use SessionOp to verify that the full launch pipeline runs to completion.
-	// opts.Respawn is set unconditionally in Respawn() before calling Launch/Resume.
 	var sessionOpCalled bool
 	Register("forge", RoleConfig{
 		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
@@ -915,7 +986,6 @@ func TestRespawnSetsRespawnFlag(t *testing.T) {
 	}
 	defer sphereStore.Close()
 
-	// Pass Respawn=false initially — Respawn() should set it to true.
 	opts := LaunchOpts{
 		Sphere:  sphereStore,
 		Respawn: false,
@@ -930,8 +1000,6 @@ func TestRespawnSetsRespawnFlag(t *testing.T) {
 		t.Fatalf("Respawn() error: %v", err)
 	}
 
-	// Verify the session op was called (proves opts.Respawn=true didn't break flow,
-	// and the full Launch pipeline completed with the Respawn flag set).
 	if !sessionOpCalled {
 		t.Fatal("SessionOp was not called — launch pipeline did not complete")
 	}
@@ -940,11 +1008,9 @@ func TestRespawnSetsRespawnFlag(t *testing.T) {
 func TestLaunchSkipsWorkflowIfActive(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 
-	// Create worktree.
 	worktreeDir := filepath.Join(solHome, "haven", "forge", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
-	// Create an existing workflow directory (simulate active workflow).
 	wfDir := filepath.Join(solHome, "haven", "forge", ".workflow")
 	os.MkdirAll(wfDir, 0o755)
 	os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(`{"current_step":"scan","completed":[],"status":"running","started_at":"2025-01-01T00:00:00Z"}`), 0o644)
@@ -960,7 +1026,7 @@ func TestLaunchSkipsWorkflowIfActive(t *testing.T) {
 	cfg := RoleConfig{
 		Role:        "forge",
 		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
-		Workflow:    "nonexistent-workflow", // Would fail if instantiation were attempted.
+		Workflow:    "nonexistent-workflow",
 	}
 
 	_, err = Launch(cfg, "haven", "forge", LaunchOpts{
@@ -971,7 +1037,6 @@ func TestLaunchSkipsWorkflowIfActive(t *testing.T) {
 		t.Fatalf("Launch() error: %v", err)
 	}
 
-	// If we got here without error, workflow instantiation was skipped.
 	if len(mock.started) != 1 {
 		t.Fatalf("expected 1 session start, got %d", len(mock.started))
 	}
@@ -1003,7 +1068,6 @@ func TestBuildResumePrimeWritSwitchNoPrevious(t *testing.T) {
 	if !strings.Contains(prime, "Your active writ has changed to sol-bbb222.") {
 		t.Errorf("prime missing new writ context: %q", prime)
 	}
-	// Should NOT mention "Previous active" when there's no previous.
 	if strings.Contains(prime, "Previous active") {
 		t.Errorf("prime should not mention previous when empty: %q", prime)
 	}
@@ -1030,7 +1094,6 @@ func TestBuildResumePrimeWritSwitchWithBase(t *testing.T) {
 }
 
 func TestBuildResumePrimeActiveWritNonSwitch(t *testing.T) {
-	// Non-writ-switch resume with an active writ should show "Active writ:" line.
 	state := ResumeState{
 		Reason:          "compact",
 		NewActiveWrit:   "sol-ccc333",
@@ -1041,14 +1104,12 @@ func TestBuildResumePrimeActiveWritNonSwitch(t *testing.T) {
 	if !strings.Contains(prime, "Active writ: sol-ccc333") {
 		t.Errorf("expected 'Active writ: sol-ccc333' in prime, got %q", prime)
 	}
-	// Should NOT contain writ-switch language.
 	if strings.Contains(prime, "has changed to") {
 		t.Errorf("non-switch prime should not contain writ-switch language: %q", prime)
 	}
 }
 
 func TestBuildResumePrimeNoActiveWrit(t *testing.T) {
-	// Resume without any active writ should not mention active writ.
 	state := ResumeState{
 		Reason:          "compact",
 		ClaimedResource: "sol-aaa111",
@@ -1066,7 +1127,6 @@ func TestBuildResumePrimeNoActiveWrit(t *testing.T) {
 func TestWriteReadResumeStateWithWritSwitch(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 
-	// Create agent dir.
 	agentDir := filepath.Join(solHome, "haven", "envoys", "Scout")
 	os.MkdirAll(agentDir, 0o755)
 
@@ -1076,12 +1136,10 @@ func TestWriteReadResumeStateWithWritSwitch(t *testing.T) {
 		NewActiveWrit:      "sol-bbb222",
 	}
 
-	// Write.
 	if err := WriteResumeState("haven", "Scout", "envoy", state); err != nil {
 		t.Fatalf("WriteResumeState() error: %v", err)
 	}
 
-	// Read.
 	got, err := ReadResumeState("haven", "Scout", "envoy")
 	if err != nil {
 		t.Fatalf("ReadResumeState() error: %v", err)
@@ -1116,7 +1174,7 @@ func TestLaunchInstallsSkills(t *testing.T) {
 	mock := &mockSessionStarter{}
 
 	var skillInstallerCalled bool
-	var skillInstallerDir string
+	var skillsReturned []adapter.Skill
 
 	cfg := RoleConfig{
 		Role:        "outpost",
@@ -1124,14 +1182,14 @@ func TestLaunchInstallsSkills(t *testing.T) {
 		Persona: func(w, a string) ([]byte, error) {
 			return []byte("# Test Outpost Persona"), nil
 		},
-		SkillInstaller: func(dir, w, a string) error {
+		// Return real skills so the adapter can write them to disk.
+		SkillInstaller: func(w, a string) []adapter.Skill {
 			skillInstallerCalled = true
-			skillInstallerDir = dir
-			// Actually install skills to verify end-to-end.
-			return protocol.InstallSkills(dir, protocol.SkillContext{
+			skillsReturned = protocol.BuildSkills(protocol.SkillContext{
 				World: w,
 				Role:  "outpost",
 			})
+			return skillsReturned
 		},
 	}
 
@@ -1146,11 +1204,11 @@ func TestLaunchInstallsSkills(t *testing.T) {
 	if !skillInstallerCalled {
 		t.Fatal("SkillInstaller was not called during Launch")
 	}
-	if skillInstallerDir != worktreeDir {
-		t.Errorf("SkillInstaller dir = %q, want %q", skillInstallerDir, worktreeDir)
+	if len(skillsReturned) == 0 {
+		t.Fatal("SkillInstaller returned no skills")
 	}
 
-	// Verify skills were actually written.
+	// Verify skills were actually written to disk.
 	skillsDir := filepath.Join(worktreeDir, ".claude", "skills")
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
@@ -1226,7 +1284,7 @@ func TestResumeInstallsSkills(t *testing.T) {
 	cfg := RoleConfig{
 		Role:        "forge",
 		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
-		SkillInstaller: func(dir, w, a string) error {
+		SkillInstaller: func(w, a string) []adapter.Skill {
 			skillInstallerCalled = true
 			return nil
 		},

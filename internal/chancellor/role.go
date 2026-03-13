@@ -1,6 +1,7 @@
 package chancellor
 
 import (
+	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/startup"
 )
@@ -19,9 +20,9 @@ func RoleConfig() startup.RoleConfig {
 	}
 }
 
-// chancellorSkillInstaller installs role-appropriate skills for the chancellor.
-func chancellorSkillInstaller(worktreeDir, _, _ string) error {
-	return protocol.InstallSkills(worktreeDir, protocol.SkillContext{
+// chancellorSkillInstaller builds role-appropriate skills for the chancellor.
+func chancellorSkillInstaller(_, _ string) []adapter.Skill {
+	return protocol.BuildSkills(protocol.SkillContext{
 		SolBinary: "sol",
 		Role:      "chancellor",
 	})
@@ -36,14 +37,22 @@ func chancellorPersona(_, _ string) ([]byte, error) {
 	return []byte(content), nil
 }
 
-// chancellorHooks returns the Claude Code hook configuration for the chancellor.
+// chancellorHooks returns the runtime-agnostic hook configuration for the chancellor.
 // The chancellor is sphere-level (no world), so world-dependent hooks (nudge drain,
 // sol prime --compact) are omitted.
 func chancellorHooks(_, _ string) startup.HookSet {
-	return protocol.BaseHooks(protocol.HookOptions{
-		Role:      "chancellor",
-		BriefPath: ".brief/memory.md",
-	})
+	return startup.HookSet{
+		SessionStart: []startup.HookCommand{
+			{
+				Command: "sol brief inject --path=.brief/memory.md --max-lines=200",
+				Matcher: "startup|resume",
+			},
+		},
+		Guards: append([]startup.Guard{
+			{Pattern: "Write|Edit", Command: protocol.AutoMemoryBlockCommand},
+			{Pattern: "EnterPlanMode", Command: protocol.PlanModeBlockCommand},
+		}, protocol.RoleGuards("chancellor")...),
+	}
 }
 
 // chancellorPrime builds the initial prompt for the chancellor session.

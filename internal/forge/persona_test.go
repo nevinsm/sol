@@ -39,29 +39,18 @@ func TestForgeHookConfig(t *testing.T) {
 	t.Setenv("SOL_HOME", t.TempDir())
 	cfg := forgeHookConfig("test-world")
 
-	preTool, ok := cfg.Hooks["PreToolUse"]
-	if !ok {
-		t.Fatal("PreToolUse hooks not configured")
-	}
-
-	// Check EnterPlanMode is blocked.
+	// Check EnterPlanMode is blocked via Guards.
 	found := false
-	for _, group := range preTool {
-		if group.Matcher == "EnterPlanMode" {
+	for _, g := range cfg.Guards {
+		if g.Pattern == "EnterPlanMode" {
 			found = true
-			if len(group.Hooks) == 0 {
-				t.Error("EnterPlanMode matcher has no hooks")
-			}
-			if group.Hooks[0].Type != "command" {
-				t.Errorf("hook type = %q, want command", group.Hooks[0].Type)
-			}
-			if !strings.Contains(group.Hooks[0].Command, "exit 2") {
-				t.Error("EnterPlanMode hook should exit 2")
+			if !strings.Contains(g.Command, "exit 2") {
+				t.Error("EnterPlanMode guard should exit 2")
 			}
 		}
 	}
 	if !found {
-		t.Error("EnterPlanMode hook not found in PreToolUse")
+		t.Error("EnterPlanMode guard not found in Guards")
 	}
 
 	// Forge role should have guard hooks (force push, branching, rm -rf) but
@@ -69,14 +58,14 @@ func TestForgeHookConfig(t *testing.T) {
 	hasForceGuard := false
 	hasResetGuard := false
 	hasPushMainGuard := false
-	for _, group := range preTool {
-		if strings.Contains(group.Matcher, "git push --force") {
+	for _, g := range cfg.Guards {
+		if strings.Contains(g.Pattern, "git push --force") {
 			hasForceGuard = true
 		}
-		if strings.Contains(group.Matcher, "git reset --hard") {
+		if strings.Contains(g.Pattern, "git reset --hard") {
 			hasResetGuard = true
 		}
-		if strings.Contains(group.Matcher, "git push origin main") {
+		if strings.Contains(g.Pattern, "git push origin main") {
 			hasPushMainGuard = true
 		}
 	}
@@ -91,22 +80,15 @@ func TestForgeHookConfig(t *testing.T) {
 	}
 
 	// Check PreCompact hook exists.
-	preCompact, ok := cfg.Hooks["PreCompact"]
-	if !ok {
+	if len(cfg.PreCompact) == 0 {
 		t.Fatal("PreCompact hooks not configured")
 	}
-	if len(preCompact) == 0 || len(preCompact[0].Hooks) == 0 {
-		t.Fatal("PreCompact should have at least one hook")
-	}
-	if !strings.Contains(preCompact[0].Hooks[0].Command, ".forge-injection.md") {
-		t.Errorf("PreCompact hook should cat injection file, got: %s", preCompact[0].Hooks[0].Command)
+	if !strings.Contains(cfg.PreCompact[0].Command, ".forge-injection.md") {
+		t.Errorf("PreCompact hook should cat injection file, got: %s", cfg.PreCompact[0].Command)
 	}
 
-	// Verify Stop hook is NOT configured — exit 0 is the default behavior
+	// HookSet has no Stop concept — exit 0 is the default behavior
 	// and the Go monitor detects the result file directly via os.Stat.
-	if _, ok := cfg.Hooks["Stop"]; ok {
-		t.Error("Stop hook should not be configured — it is a no-op (exit 0 is default)")
-	}
 }
 
 func TestForgeMergeRoleConfig(t *testing.T) {

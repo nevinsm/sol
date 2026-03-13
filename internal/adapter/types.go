@@ -1,57 +1,49 @@
 package adapter
 
-// Skill represents a named skill definition to be installed into the runtime's
-// skill directory.
-type Skill struct {
-	Name    string
-	Content string
+// HookCommand is a runtime-agnostic hook command spec.
+type HookCommand struct {
+	Command string // shell command to execute
+	Matcher string // optional event-specific matcher (e.g. "startup|resume")
 }
 
-// HookSet describes agent hooks in runtime-agnostic terms.
-// The adapter translates this into whatever format the runtime requires.
-type HookSet struct {
-	// SessionStart commands run when the agent session starts.
-	// Each entry is a shell command string.
-	SessionStart []string
-
-	// PreCompact commands run before context compaction.
-	PreCompact []string
-
-	// Guards are PreToolUse guards that block matching tool invocations.
-	Guards []Guard
-
-	// TurnBoundary commands run at each user-prompt-submit boundary.
-	TurnBoundary []string
-}
-
-// Guard is a runtime-agnostic pre-tool guard that blocks dangerous patterns.
+// Guard is a pre-tool-use guard that blocks a matched tool call.
 type Guard struct {
-	Matcher string // pattern matched against tool invocations
-	Command string // shell command to run (non-zero exit blocks the tool)
+	Pattern string // PreToolUse matcher (e.g. "EnterPlanMode", "Bash(git push --force*)")
+	Command string // command to execute; should exit 2 to block
 }
 
-// CommandContext carries the parameters needed to construct the runtime's
-// launch command.
-type CommandContext struct {
-	Worktree      string // path to the agent's worktree
-	Prime         string // initial prompt text
-	Model         string // model override (empty = use default)
-	Resume        bool   // true = add --continue flag
-	ReplacePrompt bool   // true = --system-prompt-file, false = --append-system-prompt-file
+// HookSet is a runtime-agnostic hook configuration for a role session.
+type HookSet struct {
+	SessionStart []HookCommand // commands run on session start
+	PreCompact   []HookCommand // commands run before context compaction
+	TurnBoundary []HookCommand // commands run at turn boundaries (UserPromptSubmit)
+	Guards       []Guard       // pre-tool-use blockers (PreToolUse)
 }
 
-// Credential carries an authentication credential for the runtime's API.
+// Skill is a name + content pair for an agent skill file.
+type Skill struct {
+	Name    string // subdirectory name under .claude/skills/
+	Content string // SKILL.md content
+}
+
+// Credential holds authentication material for a session.
 type Credential struct {
-	// Type is the credential kind: "oauth_token" or "api_key".
-	Type  string
-	Value string
+	Type  string // "oauth_token" or "api_key"
+	Token string
 }
 
-// ConfigDirResult is returned by EnsureConfigDir.
-type ConfigDirResult struct {
-	// Path is the absolute path to the per-agent config directory.
-	Path string
-	// EnvVar is the environment variable name that points the runtime at Path
-	// (e.g., "CLAUDE_CONFIG_DIR").
-	EnvVar string
+// CommandContext holds all arguments needed to build a session launch command.
+type CommandContext struct {
+	WorktreeDir      string
+	Prompt           string
+	Continue         bool
+	Model            string
+	SystemPromptFile string // relative path returned by InjectSystemPrompt (or "" if none)
+	ReplacePrompt    bool   // true = --system-prompt-file, false = --append-system-prompt-file
+}
+
+// ConfigResult holds the output of EnsureConfigDir.
+type ConfigResult struct {
+	Dir    string            // absolute path to the runtime config directory
+	EnvVar map[string]string // env vars to inject (e.g. {"CLAUDE_CONFIG_DIR": "..."})
 }

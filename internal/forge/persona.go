@@ -91,37 +91,19 @@ Write .forge-result.json — session will exit automatically.
 `, world)
 }
 
-// forgeHookConfig returns the hook configuration for a forge merge session.
+// forgeHookConfig returns the runtime-agnostic hook configuration for a forge merge session.
 // Hooks installed:
 //   - PreCompact: re-inject context from the persisted injection file
-//   - PreToolUse: block EnterPlanMode (forge should not enter plan mode)
-//   - PreToolUse: guard hooks appropriate for forge role (allows git reset --hard, push to main)
-func forgeHookConfig(world string) protocol.HookConfig {
+//   - Guards: block EnterPlanMode + standard forge-role guards
+func forgeHookConfig(world string) startup.HookSet {
 	injectionPath := filepath.Join(WorktreePath(world), injectionFileName)
-	return protocol.HookConfig{
-		Hooks: map[string][]protocol.HookMatcherGroup{
-			"PreCompact": {
-				{
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("cat %s", injectionPath),
-						},
-					},
-				},
-			},
-			"PreToolUse": append([]protocol.HookMatcherGroup{
-				{
-					Matcher: "EnterPlanMode",
-					Hooks: []protocol.HookHandler{
-						{
-							Type:    "command",
-							Command: `echo "BLOCKED: Plan mode is not permitted in forge merge sessions." >&2; exit 2`,
-						},
-					},
-				},
-			}, protocol.GuardHooks("forge")...),
+	return startup.HookSet{
+		PreCompact: []startup.HookCommand{
+			{Command: fmt.Sprintf("cat %s", injectionPath)},
 		},
+		Guards: append([]startup.Guard{
+			{Pattern: "EnterPlanMode", Command: protocol.ForgePlanModeBlockCommand},
+		}, protocol.RoleGuards("forge")...),
 	}
 }
 
