@@ -524,7 +524,7 @@ func TestTelemetryEnvValues(t *testing.T) {
 	if env["OTEL_LOGS_EXPORTER"] != "otlp" {
 		t.Errorf("expected OTEL_LOGS_EXPORTER=otlp, got %q", env["OTEL_LOGS_EXPORTER"])
 	}
-	if env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] != "http://localhost:4318" {
+	if env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] != "http://localhost:4318/v1/logs" {
 		t.Errorf("unexpected endpoint: %q", env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"])
 	}
 	if env["OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"] != "http/json" {
@@ -557,7 +557,7 @@ func TestTelemetryEnvCustomPort(t *testing.T) {
 	a := newAdapter()
 	env := a.TelemetryEnv(9999, "Toast", "myworld", "")
 
-	if env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] != "http://localhost:9999" {
+	if env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] != "http://localhost:9999/v1/logs" {
 		t.Errorf("unexpected endpoint: %q", env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"])
 	}
 }

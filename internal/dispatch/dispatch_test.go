@@ -335,7 +335,7 @@ func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
 	checks := map[string]string{
 		"CLAUDE_CODE_ENABLE_TELEMETRY":    "1",
 		"OTEL_LOGS_EXPORTER":              "otlp",
-		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://localhost:9999",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://localhost:9999/v1/logs",
 		"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "http/json",
 	}
 	for k, want := range checks {
