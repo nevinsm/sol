@@ -23,6 +23,7 @@ type mockChecker struct {
 func (m *mockChecker) Exists(name string) bool { return m.alive[name] }
 
 type mockSphereStore struct {
+	store.UnimplementedSphereStore
 	agents []store.Agent
 	err    error
 }
@@ -53,6 +54,7 @@ func (m *mockSphereStore) FindIdleAgent(world string) (*store.Agent, error) {
 }
 
 type mockWorldStore struct {
+	store.UnimplementedWorldStore
 	items map[string]*store.Writ
 }
 

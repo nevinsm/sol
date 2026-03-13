@@ -284,6 +284,10 @@ func (UnimplementedWorldStore) DeleteAllAgentMemories(agentName string) (int64, 
 	return 0, fmt.Errorf("unimplemented: DeleteAllAgentMemories")
 }
 
+func (UnimplementedWorldStore) Close() error {
+	return fmt.Errorf("unimplemented: Close")
+}
+
 // UnimplementedSphereStore implements every sphere-scoped store interface by
 // returning an "unimplemented" error. Embed it in test mocks to avoid
 // hand-writing stubs for methods the package under test never calls.
@@ -548,4 +552,8 @@ func (UnimplementedSphereStore) UpdateWorldRepo(name, sourceRepo string) error {
 
 func (UnimplementedSphereStore) DeleteWorldData(world string) error {
 	return fmt.Errorf("unimplemented: DeleteWorldData")
+}
+
+func (UnimplementedSphereStore) Close() error {
+	return fmt.Errorf("unimplemented: Close")
 }
