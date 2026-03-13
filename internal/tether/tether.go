@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // TetherDir returns the path to an agent's tether directory.
@@ -26,28 +27,8 @@ func Write(world, agentName, writID, role string) error {
 	}
 
 	path := filepath.Join(dir, writID)
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
-	if err != nil {
+	if err := fileutil.AtomicWrite(path, []byte(writID), 0o644); err != nil {
 		return fmt.Errorf("failed to write tether for agent %q in world %q: %w", agentName, world, err)
-	}
-	if _, err := f.WriteString(writID); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return fmt.Errorf("failed to write tether for agent %q in world %q: %w", agentName, world, err)
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return fmt.Errorf("failed to sync tether for agent %q in world %q: %w", agentName, world, err)
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to close tether for agent %q in world %q: %w", agentName, world, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp) // best-effort cleanup
-		return fmt.Errorf("failed to commit tether for agent %q in world %q: %w", agentName, world, err)
 	}
 
 	// Verify write succeeded — defensive check against silent filesystem failures.

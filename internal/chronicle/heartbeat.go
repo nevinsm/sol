@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // Heartbeat records the chronicle's liveness state.
@@ -26,19 +27,8 @@ func HeartbeatPath() string {
 
 // WriteHeartbeat writes the heartbeat file atomically.
 func WriteHeartbeat(hb *Heartbeat) error {
-	data, err := json.MarshalIndent(hb, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal heartbeat: %w", err)
-	}
-
-	// Write to temp file, then rename for atomicity.
-	tmp := HeartbeatPath() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write heartbeat temp file: %w", err)
-	}
-	if err := os.Rename(tmp, HeartbeatPath()); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to rename heartbeat file: %w", err)
+	if err := fileutil.AtomicWriteJSON(HeartbeatPath(), hb, 0o644); err != nil {
+		return fmt.Errorf("failed to write heartbeat: %w", err)
 	}
 	return nil
 }

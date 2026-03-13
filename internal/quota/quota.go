@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // Status represents the quota state of an account.
@@ -175,15 +176,8 @@ func Save(state *State) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal quota state: %w", err)
 	}
-
-	path := statePath()
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(statePath(), append(data, '\n'), 0o644); err != nil {
 		return fmt.Errorf("failed to write quota state: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to commit quota state: %w", err)
 	}
 	return nil
 }

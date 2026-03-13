@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // Heartbeat records the consul's liveness state.
@@ -34,20 +36,8 @@ func WriteHeartbeat(solHome string, hb *Heartbeat) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create consul directory: %w", err)
 	}
-
-	data, err := json.MarshalIndent(hb, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal heartbeat: %w", err)
-	}
-
-	// Write to temp file, then rename for atomicity.
-	tmp := HeartbeatPath(solHome) + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write heartbeat temp file: %w", err)
-	}
-	if err := os.Rename(tmp, HeartbeatPath(solHome)); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to rename heartbeat file: %w", err)
+	if err := fileutil.AtomicWriteJSON(HeartbeatPath(solHome), hb, 0o644); err != nil {
+		return fmt.Errorf("failed to write heartbeat: %w", err)
 	}
 	return nil
 }

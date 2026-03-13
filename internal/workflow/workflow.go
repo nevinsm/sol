@@ -10,6 +10,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -788,19 +789,7 @@ func Remove(world, agentName, role string) error {
 
 // writeJSON marshals v to JSON and writes it to path atomically.
 func writeJSON(path string, v any) error {
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal JSON for %s: %w", filepath.Base(path), err)
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write %s: %w", filepath.Base(path), err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to commit %s: %w", filepath.Base(path), err)
-	}
-	return nil
+	return fileutil.AtomicWriteJSON(path, v, 0o644)
 }
 
 // readStepFile reads and parses a step JSON file.

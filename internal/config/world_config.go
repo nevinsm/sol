@@ -1,12 +1,14 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // WorldConfig holds all configuration for a world.
@@ -285,32 +287,9 @@ func WriteWorldConfig(world string, cfg WorldConfig) error {
 		return fmt.Errorf("failed to create config directory %q: %w", dir, err)
 	}
 
-	// Write to temp file first for atomic rename.
-	tmp, err := os.CreateTemp(dir, ".world.toml.*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file for %s: %w", path, err)
-	}
-	tmpPath := tmp.Name()
-
-	enc := toml.NewEncoder(tmp)
-	if err := enc.Encode(cfg); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
 		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to sync %s: %w", path, err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to close temp file for %s: %w", path, err)
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to rename temp file to %s: %w", path, err)
-	}
-	return nil
+	return fileutil.AtomicWrite(path, buf.Bytes(), 0o644)
 }

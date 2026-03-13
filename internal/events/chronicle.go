@@ -15,6 +15,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/chronicle"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/logutil"
 )
 
@@ -567,22 +568,8 @@ func (c *Chronicle) loadCheckpoint() {
 // saveCheckpoint writes the chronicle's current byte offset to the checkpoint file.
 // Uses temp-file-then-rename for crash safety.
 func (c *Chronicle) saveCheckpoint() {
-	tmp, err := os.CreateTemp(filepath.Dir(c.checkpointPath()), ".chronicle-checkpoint-*.tmp")
-	if err != nil {
-		return
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.WriteString(strconv.FormatInt(c.offset, 10)); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return
-	}
-	if err := os.Rename(tmpName, c.checkpointPath()); err != nil {
-		os.Remove(tmpName)
+	data := []byte(strconv.FormatInt(c.offset, 10))
+	if err := fileutil.AtomicWrite(c.checkpointPath(), data, 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "chronicle: failed to save checkpoint: %v\n", err)
 	}
 }

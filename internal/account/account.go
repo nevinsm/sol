@@ -8,6 +8,7 @@ import (
 	"regexp"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // Account represents a registered Claude OAuth account.
@@ -78,14 +79,8 @@ func (r *Registry) Save() error {
 		return fmt.Errorf("failed to marshal accounts registry: %w", err)
 	}
 
-	path := registryPath()
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(registryPath(), append(data, '\n'), 0o644); err != nil {
 		return fmt.Errorf("failed to write accounts registry: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to commit accounts registry: %w", err)
 	}
 	return nil
 }
