@@ -163,7 +163,7 @@ func TestRecoverStaleTethers(t *testing.T) {
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -261,7 +261,7 @@ func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -346,7 +346,7 @@ func TestRecoverStaleTethersTooRecent(t *testing.T) {
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -406,7 +406,7 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		if world == "nonexistent-world-xyz" {
 			// Simulate opening a world store — create it to open, but
 			// the writ won't exist, causing a controlled failure.
@@ -469,7 +469,7 @@ func TestFeedStrandedCaravansAutoDispatch(t *testing.T) {
 
 	var dispatched []mockDispatchResult
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
@@ -537,7 +537,7 @@ func TestFeedStrandedCaravansAllDispatched(t *testing.T) {
 
 	var dispatched []mockDispatchResult
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
@@ -591,7 +591,7 @@ func TestFeedStrandedCaravansAutoCloseAllMerged(t *testing.T) {
 
 	var dispatched []mockDispatchResult
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
@@ -659,7 +659,7 @@ func TestFeedStrandedCaravansSkipsRedispatch(t *testing.T) {
 	var dispatched []mockDispatchResult
 	logger := events.NewLogger(config.Home())
 	d := New(cfg, sphereStore, sessions, nil, logger)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
@@ -712,7 +712,7 @@ func TestFeedStrandedCaravansDrydockIgnored(t *testing.T) {
 
 	var dispatched []mockDispatchResult
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
@@ -875,7 +875,7 @@ func TestPatrolCycle(t *testing.T) {
 
 	var dispatched []mockDispatchResult
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
@@ -964,7 +964,7 @@ func TestPatrolExitsEarlyOnCancelledContext(t *testing.T) {
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -1022,7 +1022,7 @@ func TestRecoverStaleTethersExitsOnCancelledContext(t *testing.T) {
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -1073,7 +1073,7 @@ func TestFeedStrandedCaravansExitsOnCancelledContext(t *testing.T) {
 
 	var dispatched []mockDispatchResult
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
@@ -1167,7 +1167,7 @@ capacity = 2
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(capDispatchFunc)
@@ -1227,7 +1227,7 @@ func TestDispatchWorldItemsSkipsSleepingWorld(t *testing.T) {
 
 	var dispatched []mockDispatchResult
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))

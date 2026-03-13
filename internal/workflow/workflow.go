@@ -894,7 +894,7 @@ func renderTemplateField(s string, target *store.Writ) string {
 // Each step (workflow) or template (expansion) becomes a child writ.
 // Dependencies between children mirror the workflow's DAG. Children are
 // grouped in a caravan with phases derived from dependency depth.
-func Materialize(worldStore, sphereStore *store.Store, opts ManifestOpts) (*ManifestResult, error) {
+func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, opts ManifestOpts) (*ManifestResult, error) {
 	// Load workflow.
 	res, err := Resolve(opts.Name, config.RepoPath(opts.World))
 	if err != nil {

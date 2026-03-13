@@ -654,7 +654,7 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -748,7 +748,7 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -826,7 +826,7 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -906,7 +906,7 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	// Track dispatched items via mock dispatch function.
 	var dispatchedItems []string
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(func(ctx context.Context, opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {
@@ -1006,7 +1006,7 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	// Track dispatch calls.
 	var dispatchCount int
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(func(ctx context.Context, opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {
@@ -1058,7 +1058,7 @@ func TestConsulHeartbeat(t *testing.T) {
 		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -1134,7 +1134,7 @@ func TestConsulLifecycleShutdown(t *testing.T) {
 		SolHome:           solHome,
 	}
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -1469,7 +1469,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 	}
 	var dispatchedItems []string
 	d := consul.New(cfg, sphereStore, sessions, escalation.NewRouter(), logger)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 	d.SetDispatchFunc(func(ctx context.Context, opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {

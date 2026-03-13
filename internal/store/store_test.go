@@ -11,7 +11,7 @@ import (
 )
 
 // setupWorld creates a temporary world store for testing.
-func setupWorld(t *testing.T) *Store {
+func setupWorld(t *testing.T) *WorldStore {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
@@ -28,7 +28,7 @@ func setupWorld(t *testing.T) *Store {
 }
 
 // setupSphere creates a temporary sphere store for testing.
-func setupSphere(t *testing.T) *Store {
+func setupSphere(t *testing.T) *SphereStore {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)

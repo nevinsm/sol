@@ -150,7 +150,7 @@ func printJSON(v interface{}) error {
 }
 
 // gatedWorldOpener opens a world store after verifying the world exists.
-func gatedWorldOpener(world string) (*store.Store, error) {
+func gatedWorldOpener(world string) (*store.WorldStore, error) {
 	if err := config.RequireWorld(world); err != nil {
 		return nil, err
 	}

@@ -1,7 +1,7 @@
 package store
 
 // AgentState represents the lifecycle state of an agent.
-type AgentState string
+type AgentState = string
 
 const (
 	AgentIdle    AgentState = "idle"
@@ -10,7 +10,7 @@ const (
 )
 
 // WritStatus represents the lifecycle status of a writ.
-type WritStatus string
+type WritStatus = string
 
 const (
 	WritOpen     WritStatus = "open"
@@ -22,7 +22,7 @@ const (
 )
 
 // MRPhase represents the lifecycle phase of a merge request.
-type MRPhase string
+type MRPhase = string
 
 const (
 	MRReady      MRPhase = "ready"
@@ -33,7 +33,7 @@ const (
 )
 
 // CaravanStatus represents the lifecycle status of a caravan.
-type CaravanStatus string
+type CaravanStatus = string
 
 const (
 	CaravanDrydock CaravanStatus = "drydock"

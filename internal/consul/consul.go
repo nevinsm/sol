@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"path/filepath"
 	"strings"
 	"time"
@@ -41,18 +40,41 @@ func DefaultConfig() Config {
 }
 
 // SphereStore is the sphere store interface required by the consul.
-// Composed from canonical store interfaces covering all sphere-wide patrol operations.
 type SphereStore interface {
-	store.AgentReader
-	store.AgentWriter
-	store.CaravanReader
-	store.CaravanWriter
-	store.CaravanDepReader
-	store.CaravanDepWriter
-	store.MessageStore
-	store.EscalationStore
-	store.WorldRegistry
-	io.Closer
+	// Agents
+	ListAgents(world string, state string) ([]store.Agent, error)
+	UpdateAgentState(id, state, activeWrit string) error
+	GetAgent(id string) (*store.Agent, error)
+	FindIdleAgent(world string) (*store.Agent, error)
+	CreateAgent(name, world, role string) (string, error)
+	EnsureAgent(name, world, role string) error
+	DeleteAgent(id string) error
+
+	// Caravans
+	ListCaravans(status string) ([]store.Caravan, error)
+	GetCaravan(id string) (*store.Caravan, error)
+	CheckCaravanReadiness(caravanID string, worldOpener func(string) (*store.WorldStore, error)) ([]store.CaravanItemStatus, error)
+	TryCloseCaravan(caravanID string, worldOpener func(string) (*store.WorldStore, error)) (bool, error)
+
+	// Worlds
+	ListWorlds() ([]store.World, error)
+
+	// Escalations
+	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
+	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
+	ResolveEscalation(id string) error
+	CountOpen() (int, error)
+	ListOpenEscalations() ([]store.Escalation, error)
+	UpdateEscalationLastNotified(id string) error
+
+	// Messages
+	PendingProtocol(recipient, protoType string) ([]store.Message, error)
+	AckMessage(id string) error
+	SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error)
+	SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
+
+	// Close
+	Close() error
 }
 
 // SessionManager is the session operations used by the consul.
@@ -63,7 +85,7 @@ type SessionManager interface {
 }
 
 // WorldOpener opens a world store by name.
-type WorldOpener func(world string) (*store.Store, error)
+type WorldOpener func(world string) (*store.WorldStore, error)
 
 // DispatchFunc dispatches a single writ. Returns agent name and session name.
 // Default implementation uses dispatch.Cast.
@@ -156,7 +178,7 @@ func (d *Consul) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to register consul: %w", err)
 	}
 
-	if err := d.sphereStore.UpdateAgentState("sphere/consul", store.AgentWorking, ""); err != nil {
+	if err := d.sphereStore.UpdateAgentState("sphere/consul", "working", ""); err != nil {
 		return fmt.Errorf("failed to set consul working: %w", err)
 	}
 
@@ -169,12 +191,7 @@ func (d *Consul) Run(ctx context.Context) error {
 			Status:      "stopping",
 			Escalations: openEsc,
 		})
-		if err := d.sphereStore.UpdateAgentState("sphere/consul", store.AgentIdle, ""); err != nil {
-			if d.logger != nil {
-				d.logger.Emit("consul_error", "sphere/consul", "sphere/consul", "audit",
-					map[string]any{"action": "update_agent_state", "error": err.Error()})
-			}
-		}
+		_ = d.sphereStore.UpdateAgentState("sphere/consul", "idle", "")
 	}
 
 	// Patrol immediately.
@@ -351,7 +368,7 @@ var errShutdown = fmt.Errorf("shutdown requested")
 // Returns the number of tethers recovered.
 func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 	// List all agents with state "working".
-	agents, err := d.sphereStore.ListAgents("", store.AgentWorking)
+	agents, err := d.sphereStore.ListAgents("", "working")
 	if err != nil {
 		return 0, fmt.Errorf("failed to list working agents: %w", err)
 	}
@@ -416,7 +433,7 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 	// 2. Update writ: status -> "open", clear assignee.
 	// Done first so work becomes available for reassignment immediately.
 	if err := worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
-		Status:   store.WritOpen,
+		Status:   "open",
 		Assignee: "-", // "-" clears assignee
 	}); err != nil {
 		return fmt.Errorf("failed to update writ %q: %w", agent.ActiveWrit, err)
@@ -433,7 +450,7 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 	// Done LAST — this is the signal that recovery is complete. While the
 	// agent is still "working", consul's next patrol will re-detect and
 	// retry (all prior steps are idempotent).
-	if err := d.sphereStore.UpdateAgentState(agent.ID, store.AgentIdle, ""); err != nil {
+	if err := d.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
 		return fmt.Errorf("failed to update agent %q state: %w", agent.ID, err)
 	}
 
@@ -462,7 +479,7 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 //
 // Returns the number of items dispatched.
 func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
-	caravans, err := d.sphereStore.ListCaravans(store.CaravanOpen)
+	caravans, err := d.sphereStore.ListCaravans("open")
 	if err != nil {
 		return 0, fmt.Errorf("failed to list open caravans: %w", err)
 	}
@@ -473,7 +490,7 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 			return totalDispatched, ctx.Err()
 		}
 
-		statuses, err := d.sphereStore.CheckCaravanReadiness(caravan.ID, func(world string) (*store.Store, error) {
+		statuses, err := d.sphereStore.CheckCaravanReadiness(caravan.ID, func(world string) (*store.WorldStore, error) {
 			return d.worldOpener(world)
 		})
 		if err != nil {
@@ -484,7 +501,7 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 		// Group ready items by world.
 		readyByWorld := map[string][]store.CaravanItemStatus{}
 		for _, st := range statuses {
-			if st.Ready && st.WritStatus == store.WritOpen {
+			if st.Ready && st.WritStatus == "open" {
 				readyByWorld[st.World] = append(readyByWorld[st.World], st)
 			}
 		}
@@ -522,7 +539,7 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 
 		// Try to auto-close the caravan (unconditional — items may have
 		// been merged since the last patrol).
-		closed, closeErr := d.sphereStore.TryCloseCaravan(caravan.ID, func(world string) (*store.Store, error) {
+		closed, closeErr := d.sphereStore.TryCloseCaravan(caravan.ID, func(world string) (*store.WorldStore, error) {
 			return d.worldOpener(world)
 		})
 		if closeErr != nil {
@@ -717,7 +734,7 @@ func (d *Consul) detectOrphanedSessions(ctx context.Context) (int, error) {
 	}
 
 	// 3b. All agents (any state) from sphere store → session names.
-	agents, err := d.sphereStore.ListAgents("", store.AgentState(""))
+	agents, err := d.sphereStore.ListAgents("", "")
 	if err != nil {
 		return 0, fmt.Errorf("failed to list agents for orphan detection: %w", err)
 	}

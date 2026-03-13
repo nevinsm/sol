@@ -350,7 +350,7 @@ func (UnimplementedSphereStore) GetCaravanItemsForWrit(writID string) ([]Caravan
 	return nil, fmt.Errorf("unimplemented: GetCaravanItemsForWrit")
 }
 
-func (UnimplementedSphereStore) CheckCaravanReadiness(caravanID string, worldOpener func(world string) (*Store, error)) ([]CaravanItemStatus, error) {
+func (UnimplementedSphereStore) CheckCaravanReadiness(caravanID string, worldOpener func(world string) (*WorldStore, error)) ([]CaravanItemStatus, error) {
 	return nil, fmt.Errorf("unimplemented: CheckCaravanReadiness")
 }
 
@@ -388,7 +388,7 @@ func (UnimplementedSphereStore) DeleteCaravan(id string) error {
 	return fmt.Errorf("unimplemented: DeleteCaravan")
 }
 
-func (UnimplementedSphereStore) TryCloseCaravan(caravanID string, worldOpener func(world string) (*Store, error)) (bool, error) {
+func (UnimplementedSphereStore) TryCloseCaravan(caravanID string, worldOpener func(world string) (*WorldStore, error)) (bool, error) {
 	return false, fmt.Errorf("unimplemented: TryCloseCaravan")
 }
 
@@ -414,7 +414,7 @@ func (UnimplementedSphereStore) IsWritBlockedByCaravanDeps(writID string) (bool,
 	return false, nil, fmt.Errorf("unimplemented: IsWritBlockedByCaravanDeps")
 }
 
-func (UnimplementedSphereStore) IsWritBlockedByCaravan(writID, world string, worldOpener func(world string) (*Store, error)) (bool, error) {
+func (UnimplementedSphereStore) IsWritBlockedByCaravan(writID, world string, worldOpener func(world string) (*WorldStore, error)) (bool, error) {
 	return false, fmt.Errorf("unimplemented: IsWritBlockedByCaravan")
 }
 

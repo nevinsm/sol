@@ -54,7 +54,7 @@ type Ledger struct {
 
 	mu       sync.Mutex
 	sessions map[sessionKey]string    // sessionKey -> agent_history ID
-	stores   map[string]*store.Store  // world name -> store (cached)
+	stores   map[string]*store.WorldStore  // world name -> store (cached)
 	worlds   map[string]bool          // worlds written to (for heartbeat)
 
 	// Atomic counters for heartbeat/ingest events.
@@ -74,7 +74,7 @@ func New(cfg Config, eventLog ...*events.Logger) *Ledger {
 		logger:   log.New(os.Stderr, "[ledger] ", log.LstdFlags),
 		eventLog: el,
 		sessions: make(map[sessionKey]string),
-		stores:   make(map[string]*store.Store),
+		stores:   make(map[string]*store.WorldStore),
 		worlds:   make(map[string]bool),
 	}
 }
@@ -367,7 +367,7 @@ func (l *Ledger) ensureHistory(world, agentName, writID string) (string, error) 
 }
 
 // worldStore returns a cached store for the given world.
-func (l *Ledger) worldStore(world string) (*store.Store, error) {
+func (l *Ledger) worldStore(world string) (*store.WorldStore, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 

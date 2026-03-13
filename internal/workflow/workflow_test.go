@@ -1279,7 +1279,7 @@ func TestResolveRuleOfFive(t *testing.T) {
 }
 
 // setupStores creates a temporary world and sphere store for testing.
-func setupStores(t *testing.T) (worldStore, sphereStore *store.Store) {
+func setupStores(t *testing.T) (worldStore *store.WorldStore, sphereStore *store.SphereStore) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
@@ -3031,7 +3031,7 @@ func TestCaravanPhaseGatingWithAnalysisWrit(t *testing.T) {
 	synthID := result.ChildIDs["synthesis"]
 
 	// worldOpener returns the existing world store (same test-world).
-	worldOpener := func(world string) (*store.Store, error) {
+	worldOpener := func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	}
 
@@ -3335,7 +3335,7 @@ func TestMixedKindConvoyEndToEnd(t *testing.T) {
 	}
 
 	// --- Phase gating: synthesis blocked while ANY leg is open ---
-	worldOpener := func(world string) (*store.Store, error) {
+	worldOpener := func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	}
 
@@ -3527,7 +3527,7 @@ func TestCodeReviewConvoyWorkflow(t *testing.T) {
 	}
 
 	// --- Verify synthesis is blocked while legs are open ---
-	worldOpener := func(world string) (*store.Store, error) {
+	worldOpener := func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	}
 	blocked, err := ss.IsWritBlockedByCaravan(synthID, "test-world", worldOpener)

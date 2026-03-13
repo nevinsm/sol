@@ -15,24 +15,24 @@ const CaravanBlockedSentinel = "caravan-blocked"
 // validMRTransition returns true if transitioning from → to is allowed.
 // Terminal states (merged, superseded) reject all outgoing transitions.
 // Same-phase transitions are always allowed (idempotent no-op).
-func validMRTransition(from, to MRPhase) bool {
+func validMRTransition(from, to string) bool {
 	if from == to {
 		return true // idempotent
 	}
 	switch from {
-	case MRMerged, MRSuperseded:
+	case "merged", "superseded":
 		return false // terminal states
-	case MRReady:
+	case "ready":
 		// ready → claimed is handled by ClaimMergeRequest (separate SQL).
 		// ready → blocked is handled by BlockMergeRequest (separate method).
 		// ready → merged or ready → failed skip the claimed step.
-		return to == MRClaimed
-	case MRClaimed:
-		return to == MRReady || to == MRMerged || to == MRFailed
-	case MRFailed:
+		return to == "claimed"
+	case "claimed":
+		return to == "ready" || to == "merged" || to == "failed"
+	case "failed":
 		// failed → ready must go through ResetMergeRequestForRetry.
 		// failed → claimed must go through ready first.
-		return to == MRSuperseded
+		return to == "superseded"
 	default:
 		return false
 	}
@@ -40,18 +40,18 @@ func validMRTransition(from, to MRPhase) bool {
 
 // MergeRequest represents a merge request in the world database.
 type MergeRequest struct {
-	ID        string
-	WritID    string
-	Branch    string
-	Phase     MRPhase // ready, claimed, merged, failed, superseded
-	ClaimedBy string  // forge agent ID (empty if unclaimed)
-	ClaimedAt *time.Time
-	Attempts  int
-	Priority  int
-	BlockedBy string // writ ID blocking this MR (empty = not blocked)
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	MergedAt  *time.Time
+	ID         string
+	WritID string
+	Branch     string
+	Phase      string // ready, claimed, merged, failed, superseded
+	ClaimedBy  string // forge agent ID (empty if unclaimed)
+	ClaimedAt  *time.Time
+	Attempts   int
+	Priority   int
+	BlockedBy  string // writ ID blocking this MR (empty = not blocked)
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	MergedAt   *time.Time
 }
 
 // generateMRID returns a new merge request ID in the format "mr-" + 16 hex chars.
@@ -100,14 +100,14 @@ func scanMergeRequest(s scanner) (*MergeRequest, error) {
 
 // CreateMergeRequest creates a new merge request with phase=ready.
 // Returns the generated MR ID (mr-XXXXXXXX).
-func (ws *WorldStore) CreateMergeRequest(writID, branch string, priority int) (string, error) {
+func (s *WorldStore) CreateMergeRequest(writID, branch string, priority int) (string, error) {
 	id, err := generateMRID()
 	if err != nil {
 		return "", err
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	_, err = ws.db.Exec(
+	_, err = s.db.Exec(
 		`INSERT INTO merge_requests (id, writ_id, branch, phase, priority, created_at, updated_at)
 		 VALUES (?, ?, ?, 'ready', ?, ?, ?)`,
 		id, writID, branch, priority, now, now,
@@ -119,8 +119,8 @@ func (ws *WorldStore) CreateMergeRequest(writID, branch string, priority int) (s
 }
 
 // GetMergeRequest returns a merge request by ID.
-func (ws *WorldStore) GetMergeRequest(id string) (*MergeRequest, error) {
-	mr, err := scanMergeRequest(ws.db.QueryRow(
+func (s *WorldStore) GetMergeRequest(id string) (*MergeRequest, error) {
+	mr, err := scanMergeRequest(s.db.QueryRow(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 		        attempts, priority, blocked_by, created_at, updated_at, merged_at
 		 FROM merge_requests WHERE id = ?`, id,
@@ -137,7 +137,7 @@ func (ws *WorldStore) GetMergeRequest(id string) (*MergeRequest, error) {
 // ListMergeRequests returns merge requests filtered by phase.
 // If phase is empty, returns all. Ordered by priority ASC, created_at ASC
 // (highest priority first, oldest first within same priority).
-func (ws *WorldStore) ListMergeRequests(phase MRPhase) ([]MergeRequest, error) {
+func (s *WorldStore) ListMergeRequests(phase string) ([]MergeRequest, error) {
 	query := `SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 	                 attempts, priority, blocked_by, created_at, updated_at, merged_at
 	          FROM merge_requests`
@@ -148,7 +148,7 @@ func (ws *WorldStore) ListMergeRequests(phase MRPhase) ([]MergeRequest, error) {
 	}
 	query += " ORDER BY priority ASC, created_at ASC"
 
-	rows, err := ws.db.Query(query, args...)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list merge requests: %w", err)
 	}
@@ -170,7 +170,7 @@ func (ws *WorldStore) ListMergeRequests(phase MRPhase) ([]MergeRequest, error) {
 
 // ListMergeRequestsByWrit returns merge requests for a given writ,
 // optionally filtered by phase. If phase is empty, returns all phases.
-func (ws *WorldStore) ListMergeRequestsByWrit(writID string, phase MRPhase) ([]MergeRequest, error) {
+func (s *WorldStore) ListMergeRequestsByWrit(writID, phase string) ([]MergeRequest, error) {
 	query := `SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 	                 attempts, priority, blocked_by, created_at, updated_at, merged_at
 	          FROM merge_requests WHERE writ_id = ?`
@@ -181,7 +181,7 @@ func (ws *WorldStore) ListMergeRequestsByWrit(writID string, phase MRPhase) ([]M
 	}
 	query += " ORDER BY created_at ASC"
 
-	rows, err := ws.db.Query(query, args...)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list merge requests for writ %q: %w", writID, err)
 	}
@@ -206,10 +206,10 @@ func (ws *WorldStore) ListMergeRequestsByWrit(writID string, phase MRPhase) ([]M
 // Returns the claimed MR, or nil if no ready MRs exist.
 // Blocked MRs (blocked_by IS NOT NULL) are never claimed.
 // Uses a single UPDATE ... WHERE to prevent races.
-func (ws *WorldStore) ClaimMergeRequest(claimerID string) (*MergeRequest, error) {
+func (s *WorldStore) ClaimMergeRequest(claimerID string) (*MergeRequest, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	mr, err := scanMergeRequest(ws.db.QueryRow(
+	mr, err := scanMergeRequest(s.db.QueryRow(
 		`UPDATE merge_requests
 		 SET phase = 'claimed', claimed_by = ?, claimed_at = ?,
 		     attempts = attempts + 1, updated_at = ?
@@ -236,15 +236,15 @@ func (ws *WorldStore) ClaimMergeRequest(claimerID string) (*MergeRequest, error)
 // Also sets updated_at=now. If phase=merged, also sets merged_at=now.
 // If phase=ready, clears claimed_by and claimed_at (release).
 // Returns ErrInvalidTransition if the transition is not allowed.
-func (ws *WorldStore) UpdateMergeRequestPhase(id string, phase MRPhase) error {
-	validPhases := map[MRPhase]bool{MRReady: true, MRClaimed: true, MRMerged: true, MRFailed: true, MRSuperseded: true}
+func (s *WorldStore) UpdateMergeRequestPhase(id, phase string) error {
+	validPhases := map[string]bool{"ready": true, "claimed": true, "merged": true, "failed": true, "superseded": true}
 	if !validPhases[phase] {
 		return fmt.Errorf("invalid merge request phase %q", phase)
 	}
 
 	// Fetch current phase to validate the transition.
-	var currentPhase MRPhase
-	err := ws.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, id).Scan(&currentPhase)
+	var currentPhase string
+	err := s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, id).Scan(&currentPhase)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("merge request %q: %w", id, ErrNotFound)
 	}
@@ -267,18 +267,18 @@ func (ws *WorldStore) UpdateMergeRequestPhase(id string, phase MRPhase) error {
 	var result sql.Result
 
 	switch phase {
-	case MRMerged:
-		result, err = ws.db.Exec(
+	case "merged":
+		result, err = s.db.Exec(
 			`UPDATE merge_requests SET phase = ?, merged_at = ?, updated_at = ? WHERE id = ?`,
 			phase, now, now, id,
 		)
-	case MRReady:
-		result, err = ws.db.Exec(
+	case "ready":
+		result, err = s.db.Exec(
 			`UPDATE merge_requests SET phase = ?, claimed_by = NULL, claimed_at = NULL, updated_at = ? WHERE id = ?`,
 			phase, now, id,
 		)
 	default:
-		result, err = ws.db.Exec(
+		result, err = s.db.Exec(
 			`UPDATE merge_requests SET phase = ?, updated_at = ? WHERE id = ?`,
 			phase, now, id,
 		)
@@ -292,9 +292,9 @@ func (ws *WorldStore) UpdateMergeRequestPhase(id string, phase MRPhase) error {
 
 // BlockMergeRequest sets blocked_by on a merge request and ensures phase=ready.
 // A blocked MR is skipped during claiming.
-func (ws *WorldStore) BlockMergeRequest(mrID, blockerWritID string) error {
+func (s *WorldStore) BlockMergeRequest(mrID, blockerWritID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := ws.db.Exec(
+	result, err := s.db.Exec(
 		`UPDATE merge_requests SET blocked_by = ?, phase = 'ready',
 		        claimed_by = NULL, claimed_at = NULL, updated_at = ?
 		 WHERE id = ?`,
@@ -307,9 +307,9 @@ func (ws *WorldStore) BlockMergeRequest(mrID, blockerWritID string) error {
 }
 
 // UnblockMergeRequest clears blocked_by and ensures phase=ready.
-func (ws *WorldStore) UnblockMergeRequest(mrID string) error {
+func (s *WorldStore) UnblockMergeRequest(mrID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := ws.db.Exec(
+	result, err := s.db.Exec(
 		`UPDATE merge_requests SET blocked_by = NULL, phase = 'ready', updated_at = ?
 		 WHERE id = ?`,
 		now, mrID,
@@ -322,8 +322,8 @@ func (ws *WorldStore) UnblockMergeRequest(mrID string) error {
 
 // FindMergeRequestByBlocker finds the MR blocked by a given writ ID.
 // Returns nil if no MR is blocked by the given writ.
-func (ws *WorldStore) FindMergeRequestByBlocker(blockerID string) (*MergeRequest, error) {
-	mr, err := scanMergeRequest(ws.db.QueryRow(
+func (s *WorldStore) FindMergeRequestByBlocker(blockerID string) (*MergeRequest, error) {
+	mr, err := scanMergeRequest(s.db.QueryRow(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 		        attempts, priority, blocked_by, created_at, updated_at, merged_at
 		 FROM merge_requests WHERE blocked_by = ?`, blockerID,
@@ -339,8 +339,8 @@ func (ws *WorldStore) FindMergeRequestByBlocker(blockerID string) (*MergeRequest
 
 // ListBlockedMergeRequests returns all merge requests that have a non-empty
 // blocked_by field, ordered by creation time.
-func (ws *WorldStore) ListBlockedMergeRequests() ([]MergeRequest, error) {
-	rows, err := ws.db.Query(
+func (s *WorldStore) ListBlockedMergeRequests() ([]MergeRequest, error) {
+	rows, err := s.db.Query(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
 		        attempts, priority, blocked_by, created_at, updated_at, merged_at
 		 FROM merge_requests
@@ -368,11 +368,11 @@ func (ws *WorldStore) ListBlockedMergeRequests() ([]MergeRequest, error) {
 // ReleaseStaleClaims releases merge requests that have been claimed for
 // longer than the given TTL. Sets them back to phase=ready, clears
 // claimed_by and claimed_at. Returns the number of released MRs.
-func (ws *WorldStore) ReleaseStaleClaims(ttl time.Duration) (int, error) {
+func (s *WorldStore) ReleaseStaleClaims(ttl time.Duration) (int, error) {
 	threshold := time.Now().UTC().Add(-ttl).Format(time.RFC3339)
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	result, err := ws.db.Exec(
+	result, err := s.db.Exec(
 		`UPDATE merge_requests
 		 SET phase = 'ready', claimed_by = NULL, claimed_at = NULL, updated_at = ?
 		 WHERE phase = 'claimed' AND claimed_at < ?`,
@@ -392,9 +392,9 @@ func (ws *WorldStore) ReleaseStaleClaims(ttl time.Duration) (int, error) {
 // ResetMergeRequestForRetry resets a merge request for retry after conflict
 // resolution: sets phase to ready, resets attempts to 0, and clears
 // blocked_by, claimed_by, and claimed_at.
-func (ws *WorldStore) ResetMergeRequestForRetry(mrID string) error {
+func (s *WorldStore) ResetMergeRequestForRetry(mrID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := ws.db.Exec(
+	result, err := s.db.Exec(
 		`UPDATE merge_requests
 		 SET phase = 'ready', attempts = 0, blocked_by = NULL,
 		     claimed_by = NULL, claimed_at = NULL, updated_at = ?
@@ -410,10 +410,10 @@ func (ws *WorldStore) ResetMergeRequestForRetry(mrID string) error {
 // SupersedeFailedMRsForWrit atomically marks all failed MRs for a writ as
 // superseded, returning the IDs of superseded MRs. Uses a transaction to
 // ensure the IDs returned match the rows actually updated.
-func (ws *WorldStore) SupersedeFailedMRsForWrit(writID string) ([]string, error) {
+func (s *WorldStore) SupersedeFailedMRsForWrit(writID string) ([]string, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	tx, err := ws.db.Begin()
+	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}

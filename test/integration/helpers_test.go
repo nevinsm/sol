@@ -141,7 +141,7 @@ func initWorldWithRepo(t *testing.T, gtHome, world, sourceRepo string) {
 	}
 }
 
-func openStores(t *testing.T, world string) (*store.Store, *store.Store) {
+func openStores(t *testing.T, world string) (*store.WorldStore, *store.SphereStore) {
 	t.Helper()
 	worldStore, err := store.OpenWorld(world)
 	if err != nil {

@@ -15,7 +15,6 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
-	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/quota"
@@ -55,22 +54,27 @@ func DefaultConfig(world, sourceRepo, solHome string) Config {
 	}
 }
 
-// SphereStore is the sphere store interface required by the sentinel.
-// Composed from canonical store interfaces covering agents, messaging, and escalations.
+// SphereStore is the subset of sphere store operations the sentinel needs.
 type SphereStore interface {
-	store.AgentReader
-	store.AgentWriter
-	store.MessageStore
-	store.EscalationStore
+	GetAgent(id string) (*store.Agent, error)
+	ListAgents(world string, state string) ([]store.Agent, error)
+	UpdateAgentState(id, state, activeWrit string) error
+	CreateAgent(name, world, role string) (string, error)
+	EnsureAgent(name, world, role string) error
+	DeleteAgent(id string) error
+	SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
+	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
 }
 
-// WorldStore is the world store interface required by the sentinel.
-// Composed from canonical store interfaces covering writs and merge requests.
+// WorldStore is the subset of world store operations the sentinel needs.
 type WorldStore interface {
-	store.WritReader
-	store.WritWriter
-	store.MRReader
-	store.MRWriter
+	GetWrit(id string) (*store.Writ, error)
+	UpdateWrit(id string, updates store.WritUpdates) error
+	SetWritMetadata(id string, metadata map[string]any) error
+	ListMergeRequests(phase string) ([]store.MergeRequest, error)
+	ListMergeRequestsByWrit(writID string, phase string) ([]store.MergeRequest, error)
+	ListBlockedMergeRequests() ([]store.MergeRequest, error)
+	ReleaseStaleClaims(ttl time.Duration) (int, error)
 }
 
 // SessionChecker abstracts session operations for testability.
@@ -295,7 +299,7 @@ func (w *Sentinel) Run(ctx context.Context) error {
 	}
 	defer ClearPID(w.config.World)
 
-	if err := w.sphereStore.UpdateAgentState(w.agentID(), store.AgentWorking, ""); err != nil {
+	if err := w.sphereStore.UpdateAgentState(w.agentID(), "working", ""); err != nil {
 		return fmt.Errorf("failed to set sentinel working: %w", err)
 	}
 
@@ -317,12 +321,7 @@ func (w *Sentinel) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			// Write final heartbeat with stopping status.
 			w.writeHeartbeat("stopping", w.patrolCount, 0, 0, 0, "")
-			if err := w.sphereStore.UpdateAgentState(w.agentID(), store.AgentIdle, ""); err != nil {
-				if w.logger != nil {
-					w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
-						map[string]any{"action": "update_agent_state", "error": err.Error()})
-				}
-			}
+			_ = w.sphereStore.UpdateAgentState(w.agentID(), "idle", "")
 			if w.logger != nil {
 				w.logger.Emit(events.EventSessionStop, w.agentID(), w.agentID(), "feed",
 					map[string]any{"world": w.config.World, "component": "sentinel"})
@@ -364,7 +363,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	patrolStart := w.now()
 	w.patrolCount++
 
-	agents, err := w.sphereStore.ListAgents(w.config.World, store.AgentState(""))
+	agents, err := w.sphereStore.ListAgents(w.config.World, "")
 	if err != nil {
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
@@ -404,7 +403,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 		alive := w.sessions.Exists(sessionName)
 
 		switch {
-		case agent.State == store.AgentWorking && alive:
+		case agent.State == "working" && alive:
 			// Working agent with live session — check for progress.
 			if err := w.checkProgress(ctx, agent, sessionName); err != nil {
 				if w.logger != nil {
@@ -415,7 +414,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 			}
 			healthyCount++
 
-		case agent.State == store.AgentWorking && !alive && tether.IsTethered(w.config.World, agent.Name, agent.Role):
+		case agent.State == "working" && !alive && tether.IsTethered(w.config.World, agent.Name, agent.Role):
 			// Session died while tether directory is non-empty — stalled.
 			stalledCount++
 			if err := w.handleStalled(agent); err != nil {
@@ -427,7 +426,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 			}
 			actionsTaken = append(actionsTaken, "stalled:"+agent.Name)
 
-		case agent.State == store.AgentWorking && !alive && !tether.IsTethered(w.config.World, agent.Name, agent.Role):
+		case agent.State == "working" && !alive && !tether.IsTethered(w.config.World, agent.Name, agent.Role):
 			// Session dead, no tether — likely partial resolve or lost tether.
 			stalledCount++
 			if err := w.handleOrphanedWorking(agent); err != nil {
@@ -439,7 +438,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 			}
 			actionsTaken = append(actionsTaken, "orphaned:"+agent.Name)
 
-		case agent.State == store.AgentIdle && alive && !tether.IsTethered(w.config.World, agent.Name, agent.Role):
+		case agent.State == "idle" && alive && !tether.IsTethered(w.config.World, agent.Name, agent.Role):
 			// Idle agent with live session and no tether — zombie.
 			zombieCount++
 			if err := w.handleZombie(agent); err != nil {
@@ -451,7 +450,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 			}
 			actionsTaken = append(actionsTaken, "zombie:"+agent.Name)
 
-		case agent.State == store.AgentStalled:
+		case agent.State == "stalled":
 			// Already stalled — retry recovery.
 			stalledCount++
 			if err := w.handleStalled(agent); err != nil {
@@ -463,7 +462,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 			}
 			actionsTaken = append(actionsTaken, "stalled:"+agent.Name)
 
-		case agent.State == store.AgentIdle && !alive && w.config.IdleReapTimeout > 0 &&
+		case agent.State == "idle" && !alive && w.config.IdleReapTimeout > 0 &&
 			time.Since(agent.UpdatedAt) > w.config.IdleReapTimeout:
 			// Idle agent past reap threshold with no session — reap it.
 			reapedCount++
@@ -597,7 +596,7 @@ func (w *Sentinel) checkClosedWritTethers(agents []store.Agent, reapedCount *int
 				}
 				continue
 			}
-			if writ.Status != store.WritClosed {
+			if writ.Status != "closed" {
 				continue
 			}
 
@@ -889,7 +888,7 @@ func (w *Sentinel) handleStalled(agent store.Agent) error {
 // hook fires sol prime automatically (GUPP).
 func (w *Sentinel) respawnAgent(agent store.Agent) error {
 	// Ensure agent state is working before respawn.
-	if err := w.sphereStore.UpdateAgentState(agent.ID, store.AgentWorking, agent.ActiveWrit); err != nil {
+	if err := w.sphereStore.UpdateAgentState(agent.ID, "working", agent.ActiveWrit); err != nil {
 		return fmt.Errorf("failed to set agent %s working: %w", agent.ID, err)
 	}
 
@@ -943,14 +942,14 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 	// detect the tether and return the writ to open.
 
 	// 1. Set agent state → idle, clear active_writ.
-	if err := w.sphereStore.UpdateAgentState(agent.ID, store.AgentIdle, ""); err != nil {
+	if err := w.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
 		return fmt.Errorf("failed to set agent %s idle: %w", agent.ID, err)
 	}
 
 	// 2. Update writ: status → open, clear assignee.
 	if agent.ActiveWrit != "" {
 		if err := w.worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
-			Status:   store.WritOpen,
+			Status:   "open",
 			Assignee: "-", // "-" clears assignee
 		}); err != nil {
 			return fmt.Errorf("failed to return writ %s to open: %w", agent.ActiveWrit, err)
@@ -1026,9 +1025,9 @@ func (w *Sentinel) handleOrphanedWorking(agent store.Agent) error {
 		// If active writ exists and is still "tethered", return it to open.
 		if agent.ActiveWrit != "" && w.worldStore != nil {
 			item, err := w.worldStore.GetWrit(agent.ActiveWrit)
-			if err == nil && item.Status == store.WritTethered {
+			if err == nil && item.Status == "tethered" {
 				if updateErr := w.worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
-					Status:   store.WritOpen,
+					Status:   "open",
 					Assignee: "-",
 				}); updateErr != nil {
 					// Agent is already deleted — we can't fail the whole operation.
@@ -1047,7 +1046,7 @@ func (w *Sentinel) handleOrphanedWorking(agent store.Agent) error {
 		}
 	} else {
 		// Persistent agent: set idle, clear active_writ.
-		if err := w.sphereStore.UpdateAgentState(agent.ID, store.AgentIdle, ""); err != nil {
+		if err := w.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
 			return fmt.Errorf("failed to set orphaned agent %s idle: %w", agent.ID, err)
 		}
 	}
@@ -1108,7 +1107,7 @@ func (w *Sentinel) reapClosedWritAgent(agent store.Agent, sessionName, closeReas
 	}
 
 	// 1. Set agent idle and clear tether before resource cleanup.
-	if err := w.sphereStore.UpdateAgentState(agent.ID, store.AgentIdle, ""); err != nil {
+	if err := w.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
 		return fmt.Errorf("failed to set agent %s idle: %w", agent.ID, err)
 	}
 
@@ -1136,7 +1135,7 @@ func (w *Sentinel) checkHandoffFrequency(agents []store.Agent) int {
 	var escalated int
 
 	for _, agent := range agents {
-		if agent.State != store.AgentWorking {
+		if agent.State != "working" {
 			continue
 		}
 
@@ -1255,12 +1254,7 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 	}
 
 	if len(limitedAccounts) == 0 {
-		if err := quota.Save(state); err != nil {
-			if w.logger != nil {
-				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
-					map[string]any{"action": "quota_save", "error": err.Error()})
-			}
-		}
+		_ = quota.Save(state)
 		return scanned, 0, 0
 	}
 
@@ -1308,12 +1302,7 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 			}
 		}
 
-		if err := quota.Save(state); err != nil {
-			if w.logger != nil {
-				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
-					map[string]any{"action": "quota_save", "error": err.Error()})
-			}
-		}
+		_ = quota.Save(state)
 		return scanned, 0, paused
 	}
 
@@ -1382,12 +1371,7 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 	}
 
 	state.MarkLastUsed(toAccount)
-	if err := quota.Save(state); err != nil {
-		if w.logger != nil {
-			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
-				map[string]any{"action": "quota_save", "error": err.Error()})
-		}
-	}
+	_ = quota.Save(state)
 
 	return scanned, rotated, 0
 }
@@ -1576,14 +1560,14 @@ func (w *Sentinel) recastFailedMRs() int {
 
 		// Determine if this writ is eligible for recast based on status.
 		switch item.Status {
-		case store.WritOpen:
+		case "open":
 			// Fall through to recast logic.
-		case store.WritDone:
+		case "done":
 			// A "done" writ with a failed MR and no assigned agent is orphaned.
 			// Transition it to "open" so it can be recast.
 			if item.Assignee == "" || item.Assignee == "-" {
 				if err := w.worldStore.UpdateWrit(mr.WritID, store.WritUpdates{
-					Status:   store.WritOpen,
+					Status:   "open",
 					Assignee: "-",
 				}); err != nil {
 					continue
@@ -1760,7 +1744,7 @@ func (w *Sentinel) dispatchOrphanedResolutions() int {
 		}
 
 		// Only dispatch if writ is open (not already handled or closed).
-		if writ.Status != store.WritOpen {
+		if writ.Status != "open" {
 			delete(w.resolutionDispatchCounts, blockerID)
 			continue
 		}
@@ -1914,7 +1898,7 @@ func (w *Sentinel) cleanupOrphanedResources(agents []store.Agent) int {
 	// Build set of working agents for tether checks.
 	workingAgents := make(map[string]bool)
 	for _, a := range agents {
-		if a.State == store.AgentWorking {
+		if a.State == "working" {
 			workingAgents[a.Name] = true
 		}
 	}
@@ -2179,8 +2163,13 @@ func writeAgentCreds(configDir, accountHandle string) error {
 	destPath := filepath.Join(configDir, ".credentials.json")
 	_ = os.Remove(destPath)
 
-	if err := fileutil.AtomicWrite(destPath, append(out, '\n'), 0o600); err != nil {
+	tmp := destPath + ".tmp"
+	if err := os.WriteFile(tmp, append(out, '\n'), 0o600); err != nil {
 		return fmt.Errorf("failed to write credentials: %w", err)
+	}
+	if err := os.Rename(tmp, destPath); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to commit credentials: %w", err)
 	}
 
 	accountFile := filepath.Join(configDir, ".account")

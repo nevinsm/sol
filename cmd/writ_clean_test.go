@@ -13,7 +13,7 @@ import (
 // setupCleanTest creates a temporary SOL_HOME with a world and returns the
 // store, world name, and the SOL_HOME directory. The world is created with
 // world.toml so RequireWorld passes.
-func setupCleanTest(t *testing.T) (*store.Store, string, string) {
+func setupCleanTest(t *testing.T) (*store.WorldStore, string, string) {
 	t.Helper()
 
 	// Reset package-level flag vars to avoid cross-test pollution.
@@ -45,7 +45,7 @@ func setupCleanTest(t *testing.T) (*store.Store, string, string) {
 }
 
 // createClosedWritWithAge creates a writ and closes it, then backdates closed_at.
-func createClosedWritWithAge(t *testing.T, s *store.Store, title string, age time.Duration) string {
+func createClosedWritWithAge(t *testing.T, s *store.WorldStore, title string, age time.Duration) string {
 	t.Helper()
 	id, err := s.CreateWrit(title, "", "autarch", 2, nil)
 	if err != nil {

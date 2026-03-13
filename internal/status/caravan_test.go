@@ -33,7 +33,7 @@ func (m *mockCaravanStore) ListCaravanItems(caravanID string) ([]store.CaravanIt
 	return m.items[caravanID], nil
 }
 
-func (m *mockCaravanStore) CheckCaravanReadiness(caravanID string, _ func(string) (*store.Store, error)) ([]store.CaravanItemStatus, error) {
+func (m *mockCaravanStore) CheckCaravanReadiness(caravanID string, _ func(string) (*store.WorldStore, error)) ([]store.CaravanItemStatus, error) {
 	return m.statuses[caravanID], nil
 }
 

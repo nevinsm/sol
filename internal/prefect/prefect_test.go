@@ -88,7 +88,7 @@ func (m *mockSessions) GetStopped() []string {
 }
 
 // setupTestEnv creates a test SOL_HOME with a sphere DB and returns the store and cleanup function.
-func setupTestEnv(t *testing.T) *store.Store {
+func setupTestEnv(t *testing.T) *store.SphereStore {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)

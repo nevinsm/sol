@@ -91,7 +91,7 @@ func writeTestToken(t *testing.T, solHome string) {
 	}
 }
 
-func setupStores(t *testing.T) (*store.Store, *store.Store) {
+func setupStores(t *testing.T) (*store.WorldStore, *store.SphereStore) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
@@ -2285,7 +2285,7 @@ func TestPrimeCompactWithoutHandoffFallsThrough(t *testing.T) {
 // --- Mock world store that wraps a real store but can inject errors ---
 
 type mockWorldStore struct {
-	*store.Store
+	*store.WorldStore
 	createMRErr error // if set, CreateMergeRequest returns this error
 }
 
@@ -2293,7 +2293,7 @@ func (m *mockWorldStore) CreateMergeRequest(writID, branch string, priority int)
 	if m.createMRErr != nil {
 		return "", m.createMRErr
 	}
-	return m.Store.CreateMergeRequest(writID, branch, priority)
+	return m.WorldStore.CreateMergeRequest(writID, branch, priority)
 }
 
 // --- Resolve rollback/safety tests ---
@@ -2335,7 +2335,7 @@ func TestResolveRollbackOnMRFailure(t *testing.T) {
 
 	// Use mock world store that fails on CreateMergeRequest.
 	mock := &mockWorldStore{
-		Store:       worldStore,
+		WorldStore:  worldStore,
 		createMRErr: fmt.Errorf("simulated MR creation failure"),
 	}
 

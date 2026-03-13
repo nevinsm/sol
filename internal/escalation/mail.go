@@ -11,11 +11,11 @@ import (
 
 // MailNotifier sends an escalation as a protocol message via the sphere store.
 type MailNotifier struct {
-	store *store.Store
+	store *store.SphereStore
 }
 
 // NewMailNotifier creates a MailNotifier.
-func NewMailNotifier(sphereStore *store.Store) *MailNotifier {
+func NewMailNotifier(sphereStore *store.SphereStore) *MailNotifier {
 	return &MailNotifier{store: sphereStore}
 }
 

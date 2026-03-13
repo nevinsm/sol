@@ -12,7 +12,7 @@ import (
 
 // setupWritContextEnv creates a temp SOL_HOME with sphere and world stores,
 // registers an agent, and returns cleanup-ready store handles.
-func setupWritContextEnv(t *testing.T, world, agent, role string) (sphereStore *store.Store, worldStore *store.Store) {
+func setupWritContextEnv(t *testing.T, world, agent, role string) (sphereStore *store.SphereStore, worldStore *store.WorldStore) {
 	t.Helper()
 
 	tmp := t.TempDir()

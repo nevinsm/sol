@@ -11,7 +11,7 @@ import (
 )
 
 // setupEscalateTestEnv creates a SOL_HOME with a sphere store for testing.
-func setupEscalateTestEnv(t *testing.T) (string, *store.Store) {
+func setupEscalateTestEnv(t *testing.T) (string, *store.SphereStore) {
 	t.Helper()
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)

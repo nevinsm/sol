@@ -17,7 +17,7 @@ import (
 )
 
 // setEscalationCreatedAt backdates an escalation's created_at for testing aging.
-func setEscalationCreatedAt(t *testing.T, sphereStore *store.Store, escID string, createdAt time.Time) {
+func setEscalationCreatedAt(t *testing.T, sphereStore *store.SphereStore, escID string, createdAt time.Time) {
 	t.Helper()
 	_, err := sphereStore.DB().Exec(
 		`UPDATE escalations SET created_at = ? WHERE id = ?`,
@@ -29,7 +29,7 @@ func setEscalationCreatedAt(t *testing.T, sphereStore *store.Store, escID string
 }
 
 // setEscalationLastNotifiedAt sets last_notified_at for testing aging.
-func setEscalationLastNotifiedAt(t *testing.T, sphereStore *store.Store, escID string, lastNotified time.Time) {
+func setEscalationLastNotifiedAt(t *testing.T, sphereStore *store.SphereStore, escID string, lastNotified time.Time) {
 	t.Helper()
 	_, err := sphereStore.DB().Exec(
 		`UPDATE escalations SET last_notified_at = ? WHERE id = ?`,
@@ -468,7 +468,7 @@ func TestStaleSourceRefResolvesClosedWrit(t *testing.T) {
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -522,7 +522,7 @@ func TestStaleSourceRefSkipsOpenWrit(t *testing.T) {
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -581,7 +581,7 @@ func TestStaleSourceRefResolvesMergedMR(t *testing.T) {
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	})
 
@@ -623,7 +623,7 @@ func TestStaleSourceRefDegradeOnWorldUnavailable(t *testing.T) {
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		return nil, fmt.Errorf("world store unavailable (simulated)")
 	})
 
@@ -663,7 +663,7 @@ func TestStaleSourceRefNoSourceRef(t *testing.T) {
 	}
 
 	d := New(cfg, sphereStore, sessions, nil, nil)
-	d.SetWorldOpener(func(world string) (*store.Store, error) {
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		t.Fatalf("world opener should not be called for escalation without source_ref")
 		return nil, nil
 	})

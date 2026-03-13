@@ -488,7 +488,7 @@ func resolveForgeConfig(world string, worldCfg config.WorldConfig) (forge.Config
 
 // openForge is a helper to create a Forge for toolbox subcommands.
 // Callers must defer Close() on the returned stores.
-func openForge(world string) (*forge.Forge, *store.Store, *store.Store, error) {
+func openForge(world string) (*forge.Forge, *store.WorldStore, *store.SphereStore, error) {
 	worldCfg, err := config.LoadWorldConfig(world)
 	if err != nil {
 		return nil, nil, nil, err

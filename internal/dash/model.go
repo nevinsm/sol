@@ -42,7 +42,7 @@ const (
 // Config holds dependencies for the dashboard, mirroring cmd/status.go.
 type Config struct {
 	SphereStore  sphereStore
-	WorldOpener  func(string) (*store.Store, error)
+	WorldOpener  func(string) (*store.WorldStore, error)
 	SessionCheck status.SessionChecker
 	CaravanStore caravanStore
 	SessionMgr   *session.Manager

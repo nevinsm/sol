@@ -45,7 +45,7 @@ func (m *mockWorldLister) ListWorlds() ([]store.World, error) {
 // mockWorldOpener returns a function that either fails or returns a mock store.
 // For sphere tests we typically want it to fail since we can't create real SQLite
 // databases in unit tests without more setup. Use failingWorldOpener for degraded tests.
-func failingWorldOpener(world string) (*store.Store, error) {
+func failingWorldOpener(world string) (*store.WorldStore, error) {
 	return nil, fmt.Errorf("mock: cannot open world %q", world)
 }
 

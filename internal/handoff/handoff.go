@@ -12,7 +12,6 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
-	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -46,8 +45,8 @@ type SessionManager = session.SessionManager
 
 // SphereStore is the subset of store.Store used by handoff.
 type SphereStore interface {
-	store.AgentReader
-	store.MessageSender
+	SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error)
+	GetAgent(id string) (*store.Agent, error)
 }
 
 // HandoffPath returns the path to an agent's handoff state file.
@@ -242,8 +241,33 @@ func Write(state *State) error {
 		return fmt.Errorf("failed to create handoff directory: %w", err)
 	}
 
-	if err := fileutil.AtomicWriteJSON(path, state, 0o644); err != nil {
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal handoff state: %w", err)
+	}
+
+	tmp := path + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
 		return fmt.Errorf("failed to write handoff file: %w", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("failed to write handoff file: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("failed to sync handoff file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to close handoff file: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to commit handoff file: %w", err)
 	}
 	return nil
 }

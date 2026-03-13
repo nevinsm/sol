@@ -373,7 +373,7 @@ func (m *mockSphereStore) AreCaravanDependenciesSatisfied(caravanID string) (boo
 func (m *mockSphereStore) UnsatisfiedCaravanDependencies(caravanID string) ([]string, error) {
 	return nil, nil
 }
-func (m *mockSphereStore) IsWritBlockedByCaravan(writID, world string, worldOpener func(world string) (*store.Store, error)) (bool, error) {
+func (m *mockSphereStore) IsWritBlockedByCaravan(writID, world string, worldOpener func(world string) (*store.WorldStore, error)) (bool, error) {
 	return false, nil
 }
 

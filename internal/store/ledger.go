@@ -47,7 +47,7 @@ func generateTokenUsageID() (string, error) {
 }
 
 // WriteHistory inserts an agent_history record and returns its generated ID.
-func (ws *WorldStore) WriteHistory(agentName, writID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error) {
+func (s *WorldStore) WriteHistory(agentName, writID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error) {
 	id, err := generateHistoryID()
 	if err != nil {
 		return "", err
@@ -69,7 +69,7 @@ func (ws *WorldStore) WriteHistory(agentName, writID, action, summary string, st
 		sum = sql.NullString{String: summary, Valid: true}
 	}
 
-	_, err = ws.db.Exec(
+	_, err = s.db.Exec(
 		`INSERT INTO agent_history (id, agent_name, writ_id, action, started_at, ended_at, summary)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		id, agentName, writ, action, startStr, endStr, sum,
@@ -81,12 +81,12 @@ func (ws *WorldStore) WriteHistory(agentName, writID, action, summary string, st
 }
 
 // GetHistory returns a single agent_history entry by ID.
-func (ws *WorldStore) GetHistory(id string) (*HistoryEntry, error) {
+func (s *WorldStore) GetHistory(id string) (*HistoryEntry, error) {
 	h := &HistoryEntry{}
 	var writID, summary, endedAt sql.NullString
 	var startedAt string
 
-	err := ws.db.QueryRow(
+	err := s.db.QueryRow(
 		`SELECT id, agent_name, writ_id, action, started_at, ended_at, summary
 		 FROM agent_history WHERE id = ?`, id,
 	).Scan(&h.ID, &h.AgentName, &writID, &h.Action, &startedAt, &endedAt, &summary)
@@ -111,7 +111,7 @@ func (ws *WorldStore) GetHistory(id string) (*HistoryEntry, error) {
 
 // ListHistory returns agent_history entries filtered by agent name.
 // If agentName is empty, all entries are returned.
-func (ws *WorldStore) ListHistory(agentName string) ([]HistoryEntry, error) {
+func (s *WorldStore) ListHistory(agentName string) ([]HistoryEntry, error) {
 	query := `SELECT id, agent_name, writ_id, action, started_at, ended_at, summary
 	           FROM agent_history`
 	var args []interface{}
@@ -121,7 +121,7 @@ func (ws *WorldStore) ListHistory(agentName string) ([]HistoryEntry, error) {
 	}
 	query += ` ORDER BY started_at ASC`
 
-	rows, err := ws.db.Query(query, args...)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agent history: %w", err)
 	}
@@ -158,9 +158,9 @@ func (ws *WorldStore) ListHistory(agentName string) ([]HistoryEntry, error) {
 // EndHistory updates the ended_at timestamp on the most recent open cast record
 // for the given writ. Returns the history ID that was updated, or empty
 // string if no open record was found (best-effort — no error for missing records).
-func (ws *WorldStore) EndHistory(writID string) (string, error) {
+func (s *WorldStore) EndHistory(writID string) (string, error) {
 	var id string
-	err := ws.db.QueryRow(
+	err := s.db.QueryRow(
 		`SELECT id FROM agent_history
 		 WHERE writ_id = ? AND action = 'cast' AND ended_at IS NULL
 		 ORDER BY started_at DESC LIMIT 1`, writID,
@@ -173,7 +173,7 @@ func (ws *WorldStore) EndHistory(writID string) (string, error) {
 	}
 
 	endStr := time.Now().UTC().Format(time.RFC3339)
-	_, err = ws.db.Exec(`UPDATE agent_history SET ended_at = ? WHERE id = ?`, endStr, id)
+	_, err = s.db.Exec(`UPDATE agent_history SET ended_at = ? WHERE id = ?`, endStr, id)
 	if err != nil {
 		return "", fmt.Errorf("failed to update ended_at for history %q: %w", id, err)
 	}
@@ -181,13 +181,13 @@ func (ws *WorldStore) EndHistory(writID string) (string, error) {
 }
 
 // WriteTokenUsage inserts a token_usage record and returns its generated ID.
-func (ws *WorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64) (string, error) {
+func (s *WorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64) (string, error) {
 	id, err := generateTokenUsageID()
 	if err != nil {
 		return "", err
 	}
 
-	_, err = ws.db.Exec(
+	_, err = s.db.Exec(
 		`INSERT INTO token_usage (id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		id, historyID, model, input, output, cacheRead, cacheCreation,
@@ -199,9 +199,9 @@ func (ws *WorldStore) WriteTokenUsage(historyID, model string, input, output, ca
 }
 
 // TokensForHistory returns aggregated token totals for a single history entry.
-func (ws *WorldStore) TokensForHistory(historyID string) (*TokenSummary, error) {
+func (s *WorldStore) TokensForHistory(historyID string) (*TokenSummary, error) {
 	var ts TokenSummary
-	err := ws.db.QueryRow(
+	err := s.db.QueryRow(
 		`SELECT COALESCE(SUM(input_tokens),0),
 		        COALESCE(SUM(output_tokens),0),
 		        COALESCE(SUM(cache_read_tokens),0),
@@ -220,8 +220,8 @@ func (ws *WorldStore) TokensForHistory(historyID string) (*TokenSummary, error) 
 
 // AggregateTokens sums token usage across all history entries for an agent,
 // grouped by model. Returns per-model totals.
-func (ws *WorldStore) AggregateTokens(agentName string) ([]TokenSummary, error) {
-	rows, err := ws.db.Query(
+func (s *WorldStore) AggregateTokens(agentName string) ([]TokenSummary, error) {
+	rows, err := s.db.Query(
 		`SELECT tu.model,
 		        SUM(tu.input_tokens),
 		        SUM(tu.output_tokens),
@@ -255,8 +255,8 @@ func (ws *WorldStore) AggregateTokens(agentName string) ([]TokenSummary, error) 
 
 // HistoryForWrit returns all agent_history entries for a given writ ID,
 // ordered by started_at ASC.
-func (ws *WorldStore) HistoryForWrit(writID string) ([]HistoryEntry, error) {
-	rows, err := ws.db.Query(
+func (s *WorldStore) HistoryForWrit(writID string) ([]HistoryEntry, error) {
+	rows, err := s.db.Query(
 		`SELECT id, agent_name, writ_id, action, started_at, ended_at, summary
 		 FROM agent_history WHERE writ_id = ?
 		 ORDER BY started_at ASC`, writID,
@@ -296,8 +296,8 @@ func (ws *WorldStore) HistoryForWrit(writID string) ([]HistoryEntry, error) {
 
 // TokensForWrit sums token usage across all history entries for a writ,
 // grouped by model. Returns per-model totals.
-func (ws *WorldStore) TokensForWrit(writID string) ([]TokenSummary, error) {
-	rows, err := ws.db.Query(
+func (s *WorldStore) TokensForWrit(writID string) ([]TokenSummary, error) {
+	rows, err := s.db.Query(
 		`SELECT tu.model,
 		        SUM(tu.input_tokens),
 		        SUM(tu.output_tokens),
@@ -331,8 +331,8 @@ func (ws *WorldStore) TokensForWrit(writID string) ([]TokenSummary, error) {
 
 // TokensForWorld sums all token usage in the world database, grouped by model.
 // Returns per-model totals across all agents and writs.
-func (ws *WorldStore) TokensForWorld() ([]TokenSummary, error) {
-	rows, err := ws.db.Query(
+func (s *WorldStore) TokensForWorld() ([]TokenSummary, error) {
+	rows, err := s.db.Query(
 		`SELECT tu.model,
 		        SUM(tu.input_tokens),
 		        SUM(tu.output_tokens),
@@ -364,8 +364,8 @@ func (ws *WorldStore) TokensForWorld() ([]TokenSummary, error) {
 // TokensByWritForAgent returns token usage for a specific agent, broken down
 // by writ ID and model. The returned map is keyed by writ ID, with each value
 // being a slice of per-model TokenSummary entries.
-func (ws *WorldStore) TokensByWritForAgent(agentName string) (map[string][]TokenSummary, error) {
-	rows, err := ws.db.Query(
+func (s *WorldStore) TokensByWritForAgent(agentName string) (map[string][]TokenSummary, error) {
+	rows, err := s.db.Query(
 		`SELECT ah.writ_id,
 		        tu.model,
 		        SUM(tu.input_tokens),
@@ -402,9 +402,9 @@ func (ws *WorldStore) TokensByWritForAgent(agentName string) (map[string][]Token
 
 // TokensSince sums token usage for history entries that started at or after
 // the given time, grouped by model. Returns per-model totals.
-func (ws *WorldStore) TokensSince(since time.Time) ([]TokenSummary, error) {
+func (s *WorldStore) TokensSince(since time.Time) ([]TokenSummary, error) {
 	sinceStr := since.UTC().Format(time.RFC3339)
-	rows, err := ws.db.Query(
+	rows, err := s.db.Query(
 		`SELECT tu.model,
 		        SUM(tu.input_tokens),
 		        SUM(tu.output_tokens),
@@ -449,8 +449,8 @@ type AgentTokenSummary struct {
 // TokensByAgentForWorld returns per-agent token summaries across all models.
 // Each entry aggregates all model usage for one agent. WritCount is the number
 // of distinct writs the agent has token records for.
-func (ws *WorldStore) TokensByAgentForWorld() ([]AgentTokenSummary, error) {
-	rows, err := ws.db.Query(
+func (s *WorldStore) TokensByAgentForWorld() ([]AgentTokenSummary, error) {
+	rows, err := s.db.Query(
 		`SELECT ah.agent_name,
 		        COUNT(DISTINCT ah.writ_id),
 		        SUM(tu.input_tokens),
@@ -483,9 +483,9 @@ func (ws *WorldStore) TokensByAgentForWorld() ([]AgentTokenSummary, error) {
 
 // TokensByAgentSince returns per-agent token summaries for history entries
 // started at or after the given time.
-func (ws *WorldStore) TokensByAgentSince(since time.Time) ([]AgentTokenSummary, error) {
+func (s *WorldStore) TokensByAgentSince(since time.Time) ([]AgentTokenSummary, error) {
 	sinceStr := since.UTC().Format(time.RFC3339)
-	rows, err := ws.db.Query(
+	rows, err := s.db.Query(
 		`SELECT ah.agent_name,
 		        COUNT(DISTINCT ah.writ_id),
 		        SUM(tu.input_tokens),
@@ -521,9 +521,9 @@ func (ws *WorldStore) TokensByAgentSince(since time.Time) ([]AgentTokenSummary, 
 // TokensByWritForAgentSince returns token usage for a specific agent, broken
 // down by writ ID and model, filtered to history entries started at or after
 // the given time.
-func (ws *WorldStore) TokensByWritForAgentSince(agentName string, since time.Time) (map[string][]TokenSummary, error) {
+func (s *WorldStore) TokensByWritForAgentSince(agentName string, since time.Time) (map[string][]TokenSummary, error) {
 	sinceStr := since.UTC().Format(time.RFC3339)
-	rows, err := ws.db.Query(
+	rows, err := s.db.Query(
 		`SELECT ah.writ_id,
 		        tu.model,
 		        SUM(tu.input_tokens),
@@ -560,8 +560,8 @@ func (ws *WorldStore) TokensByWritForAgentSince(agentName string, since time.Tim
 
 // WorldTokenMeta returns the count of distinct agents and writs that have
 // token usage records in this world database.
-func (ws *WorldStore) WorldTokenMeta() (agents int, writs int, err error) {
-	err = ws.db.QueryRow(
+func (s *WorldStore) WorldTokenMeta() (agents int, writs int, err error) {
+	err = s.db.QueryRow(
 		`SELECT COUNT(DISTINCT ah.agent_name),
 		        COUNT(DISTINCT ah.writ_id)
 		 FROM agent_history ah
@@ -575,9 +575,9 @@ func (ws *WorldStore) WorldTokenMeta() (agents int, writs int, err error) {
 
 // WorldTokenMetaSince returns the count of distinct agents and writs that have
 // token usage records started at or after the given time.
-func (ws *WorldStore) WorldTokenMetaSince(since time.Time) (agents int, writs int, err error) {
+func (s *WorldStore) WorldTokenMetaSince(since time.Time) (agents int, writs int, err error) {
 	sinceStr := since.UTC().Format(time.RFC3339)
-	err = ws.db.QueryRow(
+	err = s.db.QueryRow(
 		`SELECT COUNT(DISTINCT ah.agent_name),
 		        COUNT(DISTINCT ah.writ_id)
 		 FROM agent_history ah
@@ -593,9 +593,9 @@ func (ws *WorldStore) WorldTokenMetaSince(since time.Time) (agents int, writs in
 
 // TokensForWritSince sums token usage for a writ, filtered to history entries
 // started at or after the given time, grouped by model.
-func (ws *WorldStore) TokensForWritSince(writID string, since time.Time) ([]TokenSummary, error) {
+func (s *WorldStore) TokensForWritSince(writID string, since time.Time) ([]TokenSummary, error) {
 	sinceStr := since.UTC().Format(time.RFC3339)
-	rows, err := ws.db.Query(
+	rows, err := s.db.Query(
 		`SELECT tu.model,
 		        SUM(tu.input_tokens),
 		        SUM(tu.output_tokens),
@@ -637,9 +637,9 @@ type AgentMergeRequestSummary struct {
 
 // MergeStatsForAgent returns aggregate merge request statistics for all work
 // items the given agent has worked on (via cast history entries).
-func (ws *WorldStore) MergeStatsForAgent(agentName string) (AgentMergeRequestSummary, error) {
+func (s *WorldStore) MergeStatsForAgent(agentName string) (AgentMergeRequestSummary, error) {
 	var summary AgentMergeRequestSummary
-	err := ws.db.QueryRow(
+	err := s.db.QueryRow(
 		`SELECT
 			COALESCE(COUNT(*), 0),
 			COALESCE(SUM(CASE WHEN mr.phase = 'merged' THEN 1 ELSE 0 END), 0),
