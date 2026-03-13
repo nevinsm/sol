@@ -1,13 +1,13 @@
 package ledger
 
 import (
-	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/fileutil"
+	"github.com/nevinsm/sol/internal/heartbeat"
 )
 
 // Heartbeat holds the ledger's periodic health state.
@@ -21,7 +21,7 @@ type Heartbeat struct {
 
 // IsStale returns true if the heartbeat is older than maxAge.
 func (h *Heartbeat) IsStale(maxAge time.Duration) bool {
-	return time.Since(h.Timestamp) > maxAge
+	return heartbeat.IsStale(h.Timestamp, maxAge)
 }
 
 // HeartbeatPath returns the path to the ledger heartbeat file.
@@ -30,31 +30,23 @@ func HeartbeatPath() string {
 }
 
 // WriteHeartbeat writes the heartbeat to disk atomically.
+// Uses compact JSON (not indented) since this file is machine-read only.
 func WriteHeartbeat(hb Heartbeat) error {
 	path := HeartbeatPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.Marshal(hb)
-	if err != nil {
-		return err
-	}
-	return fileutil.AtomicWrite(path, data, 0o644)
+	return heartbeat.WriteCompact(path, hb)
 }
 
 // ReadHeartbeat reads the ledger heartbeat from disk.
 // Returns nil, nil if no heartbeat file exists.
 func ReadHeartbeat() (*Heartbeat, error) {
-	data, err := os.ReadFile(HeartbeatPath())
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
 	var hb Heartbeat
-	if err := json.Unmarshal(data, &hb); err != nil {
+	if err := heartbeat.Read(HeartbeatPath(), &hb); err != nil {
+		if errors.Is(err, heartbeat.ErrNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &hb, nil

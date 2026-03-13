@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,7 +17,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
-	"github.com/nevinsm/sol/internal/fileutil"
+	"github.com/nevinsm/sol/internal/heartbeat"
 	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
@@ -69,33 +70,25 @@ func WriteHeartbeat(world string, hb *Heartbeat) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create forge directory: %w", err)
 	}
-	if err := fileutil.AtomicWriteJSON(HeartbeatPath(world), hb, 0o644); err != nil {
-		return fmt.Errorf("failed to write heartbeat: %w", err)
-	}
-	return nil
+	return heartbeat.Write(HeartbeatPath(world), hb)
 }
 
 // ReadHeartbeat reads the current forge heartbeat file.
 // Returns nil, nil if no heartbeat file exists.
 func ReadHeartbeat(world string) (*Heartbeat, error) {
-	data, err := os.ReadFile(HeartbeatPath(world))
-	if err != nil {
-		if os.IsNotExist(err) {
+	var hb Heartbeat
+	if err := heartbeat.Read(HeartbeatPath(world), &hb); err != nil {
+		if errors.Is(err, heartbeat.ErrNotFound) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to read forge heartbeat: %w", err)
-	}
-
-	var hb Heartbeat
-	if err := json.Unmarshal(data, &hb); err != nil {
-		return nil, fmt.Errorf("failed to parse forge heartbeat: %w", err)
+		return nil, err
 	}
 	return &hb, nil
 }
 
 // IsStale returns true if the heartbeat is older than maxAge.
 func (hb *Heartbeat) IsStale(maxAge time.Duration) bool {
-	return time.Since(hb.Timestamp) > maxAge
+	return heartbeat.IsStale(hb.Timestamp, maxAge)
 }
 
 // --- Structured logging ---
