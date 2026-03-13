@@ -12,7 +12,12 @@ import (
 )
 
 // SessionName returns the tmux session name for an agent.
+// For sphere-scoped agents (world == ""), returns "sol-{agentName}".
+// For world-scoped agents, returns "sol-{world}-{agentName}".
 func SessionName(world, agentName string) string {
+	if world == "" {
+		return fmt.Sprintf("sol-%s", agentName)
+	}
 	return fmt.Sprintf("sol-%s-%s", world, agentName)
 }
 

@@ -180,29 +180,32 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 		fmt.Fprintf(os.Stderr, "startup: failed to pre-trust directory in config dir %s: %v\n", claudeConfigDir, err)
 	}
 
-	// 5. Ensure agent record in sphere store.
-	sphereStore, closeSphere, err := resolveSphereStore(opts)
-	if err != nil {
-		return "", fmt.Errorf("startup: failed to open sphere store: %w", err)
-	}
-	if closeSphere != nil {
-		defer closeSphere()
-	}
-
-	agentID := world + "/" + agent
-	existing, getErr := sphereStore.GetAgent(agentID)
-	if getErr != nil {
-		if _, err := sphereStore.CreateAgent(agent, world, cfg.Role); err != nil {
-			return "", fmt.Errorf("startup: failed to register agent: %w", err)
-		}
-	}
-	// Preserve existing tether item (outpost agents have tethered writs).
+	// 5. Ensure agent record in sphere store (world-scoped agents only).
+	// Sphere-scoped agents (world == "") like chancellor are not tracked per-world.
 	activeWrit := ""
-	if existing != nil {
-		activeWrit = existing.ActiveWrit
-	}
-	if err := sphereStore.UpdateAgentState(agentID, "working", activeWrit); err != nil {
-		return "", fmt.Errorf("startup: failed to set agent working: %w", err)
+	if world != "" {
+		sphereStore, closeSphere, err := resolveSphereStore(opts)
+		if err != nil {
+			return "", fmt.Errorf("startup: failed to open sphere store: %w", err)
+		}
+		if closeSphere != nil {
+			defer closeSphere()
+		}
+
+		agentID := world + "/" + agent
+		existing, getErr := sphereStore.GetAgent(agentID)
+		if getErr != nil {
+			if _, err := sphereStore.CreateAgent(agent, world, cfg.Role); err != nil {
+				return "", fmt.Errorf("startup: failed to register agent: %w", err)
+			}
+		}
+		// Preserve existing tether item (outpost agents have tethered writs).
+		if existing != nil {
+			activeWrit = existing.ActiveWrit
+		}
+		if err := sphereStore.UpdateAgentState(agentID, "working", activeWrit); err != nil {
+			return "", fmt.Errorf("startup: failed to set agent working: %w", err)
+		}
 	}
 
 	// 6. Instantiate workflow if set.
