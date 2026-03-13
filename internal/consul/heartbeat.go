@@ -1,13 +1,13 @@
 package consul
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/nevinsm/sol/internal/fileutil"
+	"github.com/nevinsm/sol/internal/heartbeat"
 )
 
 // Heartbeat records the consul's liveness state.
@@ -36,31 +36,23 @@ func WriteHeartbeat(solHome string, hb *Heartbeat) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create consul directory: %w", err)
 	}
-	if err := fileutil.AtomicWriteJSON(HeartbeatPath(solHome), hb, 0o644); err != nil {
-		return fmt.Errorf("failed to write heartbeat: %w", err)
-	}
-	return nil
+	return heartbeat.Write(HeartbeatPath(solHome), hb)
 }
 
 // ReadHeartbeat reads the current heartbeat file.
 // Returns nil, nil if no heartbeat file exists.
 func ReadHeartbeat(solHome string) (*Heartbeat, error) {
-	data, err := os.ReadFile(HeartbeatPath(solHome))
-	if err != nil {
-		if os.IsNotExist(err) {
+	var hb Heartbeat
+	if err := heartbeat.Read(HeartbeatPath(solHome), &hb); err != nil {
+		if errors.Is(err, heartbeat.ErrNotFound) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to read heartbeat: %w", err)
-	}
-
-	var hb Heartbeat
-	if err := json.Unmarshal(data, &hb); err != nil {
-		return nil, fmt.Errorf("failed to parse heartbeat: %w", err)
+		return nil, err
 	}
 	return &hb, nil
 }
 
 // IsStale returns true if the heartbeat is older than maxAge.
 func (hb *Heartbeat) IsStale(maxAge time.Duration) bool {
-	return time.Since(hb.Timestamp) > maxAge
+	return heartbeat.IsStale(hb.Timestamp, maxAge)
 }

@@ -2,7 +2,7 @@ package broker
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,7 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
-	"github.com/nevinsm/sol/internal/fileutil"
+	"github.com/nevinsm/sol/internal/heartbeat"
 )
 
 // DefaultPatrolInterval is how often the broker probes provider health.
@@ -282,26 +282,17 @@ func (b *Broker) writeHeartbeat(status string, tokenHealth []AccountTokenHealth)
 	dir := filepath.Dir(heartbeatPath())
 	os.MkdirAll(dir, 0o755)
 
-	data, err := json.MarshalIndent(hb, "", "  ")
-	if err != nil {
-		return
-	}
-	_ = fileutil.AtomicWrite(heartbeatPath(), append(data, '\n'), 0o644)
+	_ = heartbeat.Write(heartbeatPath(), hb)
 }
 
 // ReadHeartbeat reads the broker's heartbeat file.
 // Returns nil if not found.
 func ReadHeartbeat() (*Heartbeat, error) {
-	data, err := os.ReadFile(heartbeatPath())
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
 	var hb Heartbeat
-	if err := json.Unmarshal(data, &hb); err != nil {
+	if err := heartbeat.Read(heartbeatPath(), &hb); err != nil {
+		if errors.Is(err, heartbeat.ErrNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &hb, nil
@@ -309,5 +300,5 @@ func ReadHeartbeat() (*Heartbeat, error) {
 
 // IsStale returns true if the heartbeat is older than the given max age.
 func (h *Heartbeat) IsStale(maxAge time.Duration) bool {
-	return time.Since(h.Timestamp) > maxAge
+	return heartbeat.IsStale(h.Timestamp, maxAge)
 }

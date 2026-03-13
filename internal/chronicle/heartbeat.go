@@ -1,22 +1,20 @@
 package chronicle
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
+	"errors"
 	"path/filepath"
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/fileutil"
+	"github.com/nevinsm/sol/internal/heartbeat"
 )
 
 // Heartbeat records the chronicle's liveness state.
 type Heartbeat struct {
-	Timestamp       time.Time `json:"timestamp"`
-	Status          string    `json:"status"`           // "running", "stopping"
-	EventsProcessed int64     `json:"events_processed"` // total events processed
-	CheckpointOffset int64    `json:"checkpoint_offset"` // current file offset
+	Timestamp        time.Time `json:"timestamp"`
+	Status           string    `json:"status"`            // "running", "stopping"
+	EventsProcessed  int64     `json:"events_processed"`  // total events processed
+	CheckpointOffset int64     `json:"checkpoint_offset"` // current file offset
 }
 
 // HeartbeatPath returns the path to the heartbeat file.
@@ -27,31 +25,23 @@ func HeartbeatPath() string {
 
 // WriteHeartbeat writes the heartbeat file atomically.
 func WriteHeartbeat(hb *Heartbeat) error {
-	if err := fileutil.AtomicWriteJSON(HeartbeatPath(), hb, 0o644); err != nil {
-		return fmt.Errorf("failed to write heartbeat: %w", err)
-	}
-	return nil
+	return heartbeat.Write(HeartbeatPath(), hb)
 }
 
 // ReadHeartbeat reads the current heartbeat file.
 // Returns nil, nil if no heartbeat file exists.
 func ReadHeartbeat() (*Heartbeat, error) {
-	data, err := os.ReadFile(HeartbeatPath())
-	if err != nil {
-		if os.IsNotExist(err) {
+	var hb Heartbeat
+	if err := heartbeat.Read(HeartbeatPath(), &hb); err != nil {
+		if errors.Is(err, heartbeat.ErrNotFound) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to read heartbeat: %w", err)
-	}
-
-	var hb Heartbeat
-	if err := json.Unmarshal(data, &hb); err != nil {
-		return nil, fmt.Errorf("failed to parse heartbeat: %w", err)
+		return nil, err
 	}
 	return &hb, nil
 }
 
 // IsStale returns true if the heartbeat is older than maxAge.
 func (hb *Heartbeat) IsStale(maxAge time.Duration) bool {
-	return time.Since(hb.Timestamp) > maxAge
+	return heartbeat.IsStale(hb.Timestamp, maxAge)
 }
