@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 	"unicode"
 
@@ -76,9 +74,7 @@ var escalationListCmd = &cobra.Command{
 					CreatedAt:   e.CreatedAt.Format(time.RFC3339),
 				}
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(out)
+			return printJSON(out)
 		}
 
 		// Human-readable output.

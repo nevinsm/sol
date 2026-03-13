@@ -495,12 +495,6 @@ func init() {
 
 // --- helpers ---
 
-func printJSON(v interface{}) error {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
-}
-
 func printWrit(w *store.Writ) {
 	fmt.Printf("ID:          %s\n", w.ID)
 	fmt.Printf("Title:       %s\n", w.Title)

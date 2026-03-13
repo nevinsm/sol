@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -69,6 +70,13 @@ func parseVarFlags(vars []string) (map[string]string, error) {
 		m[parts[0]] = parts[1]
 	}
 	return m, nil
+}
+
+// printJSON encodes v as indented JSON to stdout.
+func printJSON(v interface{}) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
 }
 
 // gatedWorldOpener opens a world store after verifying the world exists.

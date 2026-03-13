@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
@@ -139,9 +137,7 @@ var writDepListCmd = &cobra.Command{
 			if out.DependedBy == nil {
 				out.DependedBy = []string{}
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(out)
+			return printJSON(out)
 		}
 
 		fmt.Printf("Writ: %s\n", itemID)

@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -106,9 +104,7 @@ var agentStatsCmd = &cobra.Command{
 		}
 
 		if agentStatsJSON {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(reports)
+			return printJSON(reports)
 		}
 
 		if len(reports) == 0 {

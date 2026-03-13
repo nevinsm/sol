@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -176,9 +174,7 @@ var agentPostmortemCmd = &cobra.Command{
 
 		// 8. Render output.
 		if postmortemJSON {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(report)
+			return printJSON(report)
 		}
 
 		renderPostmortem(report)

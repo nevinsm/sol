@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -135,9 +134,7 @@ var caravanDepListCmd = &cobra.Command{
 			for _, depID := range dependents {
 				out.DependedBy = append(out.DependedBy, caravanDepEntry(sphereStore, depID))
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(out)
+			return printJSON(out)
 		}
 
 		fmt.Printf("Caravan: %s (%s)\n\n", caravan.Name, caravan.ID)

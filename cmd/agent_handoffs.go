@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"text/tabwriter"
 	"time"
 
@@ -63,9 +61,7 @@ var agentHandoffsCmd = &cobra.Command{
 			if filtered == nil {
 				filtered = []events.Event{}
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(filtered)
+			return printJSON(filtered)
 		}
 
 		if len(filtered) == 0 {

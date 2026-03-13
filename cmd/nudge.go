@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -44,9 +43,7 @@ var nudgeListCmd = &cobra.Command{
 		}
 
 		if asJSON {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(msgs)
+			return printJSON(msgs)
 		}
 
 		if len(msgs) == 0 {

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -232,9 +231,7 @@ var worldListCmd = &cobra.Command{
 					CreatedAt:  w.CreatedAt.Format("2006-01-02T15:04:05Z"),
 				})
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(items)
+			return printJSON(items)
 		}
 
 		if len(worlds) == 0 {
@@ -300,9 +297,7 @@ var worldStatusCmd = &cobra.Command{
 				WorldStatus: result,
 				Config:      cfg,
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(out)
+			return printJSON(out)
 		}
 
 		fmt.Print(status.RenderWorldConfig(name, cfg))

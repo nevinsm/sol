@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/nevinsm/sol/internal/doctor"
 	"github.com/spf13/cobra"
@@ -27,9 +25,7 @@ Exit code 0 if all checks pass, 1 if any check fails.`,
 		report := doctor.RunAll()
 
 		if doctorJSON {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(report)
+			return printJSON(report)
 		}
 
 		// Human-readable output.
