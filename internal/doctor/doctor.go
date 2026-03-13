@@ -273,6 +273,7 @@ func RunAll() *Report {
 	report.Checks = append(report.Checks, CheckJq())
 	report.Checks = append(report.Checks, CheckSOLHome())
 	report.Checks = append(report.Checks, CheckSQLiteWAL())
+	report.Checks = append(report.Checks, CheckEnvFiles()...)
 	return report
 }
 

@@ -119,8 +119,9 @@ func TestRunAll(t *testing.T) {
 	t.Setenv("SOL_HOME", t.TempDir())
 
 	report := RunAll()
-	if len(report.Checks) != 6 {
-		t.Fatalf("expected 6 checks, got %d", len(report.Checks))
+	// 6 prerequisite checks + 1 env_files check (no worlds in temp SOL_HOME).
+	if len(report.Checks) != 7 {
+		t.Fatalf("expected 7 checks, got %d", len(report.Checks))
 	}
 
 	// Verify AllPassed is consistent with individual checks.
@@ -169,5 +170,150 @@ func TestReportFailedCount(t *testing.T) {
 	}
 	if got := report.FailedCount(); got != 2 {
 		t.Errorf("expected FailedCount()=2, got %d", got)
+	}
+}
+
+// makeWorld creates a minimal initialized world directory structure under solHome
+// and returns the world directory path.
+func makeWorld(t *testing.T, solHome, world string) string {
+	t.Helper()
+	worldDir := filepath.Join(solHome, world)
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Write a minimal world.toml so RequireWorld recognizes it as initialized.
+	worldToml := filepath.Join(worldDir, "world.toml")
+	if err := os.WriteFile(worldToml, []byte("[world]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return worldDir
+}
+
+func TestCheckEnvFilesNoWorlds(t *testing.T) {
+	t.Setenv("SOL_HOME", t.TempDir())
+
+	results := CheckEnvFiles()
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %v", len(results), results)
+	}
+	if !results[0].Passed {
+		t.Errorf("expected Passed=true for empty SOL_HOME, got false: %s", results[0].Message)
+	}
+}
+
+func TestCheckEnvFilesNoEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	makeWorld(t, dir, "alpha")
+
+	results := CheckEnvFiles()
+	if len(results) != 1 || !results[0].Passed {
+		t.Errorf("expected 1 passing result when no .env exists, got %v", results)
+	}
+}
+
+func TestCheckEnvFilesValidEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	worldDir := makeWorld(t, dir, "beta")
+
+	envPath := filepath.Join(worldDir, ".env")
+	if err := os.WriteFile(envPath, []byte("API_KEY=secret\nDB_URL=postgres://localhost/db\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckEnvFiles()
+	if len(results) != 1 || !results[0].Passed {
+		t.Errorf("expected 1 passing result for valid .env, got %v", results)
+	}
+}
+
+func TestCheckEnvFilesParseError(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	worldDir := makeWorld(t, dir, "gamma")
+
+	// Write a malformed .env (line without '=').
+	envPath := filepath.Join(worldDir, ".env")
+	if err := os.WriteFile(envPath, []byte("GOOD=value\nBAD_LINE\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckEnvFiles()
+	if len(results) == 0 {
+		t.Fatal("expected at least one failing result for parse error")
+	}
+	found := false
+	for _, r := range results {
+		if !r.Passed && strings.Contains(r.Message, "parse error") {
+			found = true
+			if r.Fix == "" {
+				t.Error("expected non-empty Fix for parse error")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected a parse error result, got: %v", results)
+	}
+}
+
+func TestCheckEnvFilesEmptyValue(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	worldDir := makeWorld(t, dir, "delta")
+
+	envPath := filepath.Join(worldDir, ".env")
+	if err := os.WriteFile(envPath, []byte("FILLED=value\nEMPTY=\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckEnvFiles()
+	if len(results) == 0 {
+		t.Fatal("expected at least one result for empty value warning")
+	}
+	found := false
+	for _, r := range results {
+		if !r.Passed && strings.Contains(r.Message, `"EMPTY"`) {
+			found = true
+			if r.Fix == "" {
+				t.Error("expected non-empty Fix for empty value")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected a warning about EMPTY key, got: %v", results)
+	}
+}
+
+func TestCheckEnvFilesWorldReadable(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping: root ignores permission bits")
+	}
+
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	worldDir := makeWorld(t, dir, "epsilon")
+
+	envPath := filepath.Join(worldDir, ".env")
+	// Write with world-readable permissions (0644).
+	if err := os.WriteFile(envPath, []byte("SECRET=value\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckEnvFiles()
+	if len(results) == 0 {
+		t.Fatal("expected at least one result for world-readable .env")
+	}
+	found := false
+	for _, r := range results {
+		if !r.Passed && strings.Contains(r.Message, "world-readable") {
+			found = true
+			if r.Fix == "" {
+				t.Error("expected non-empty Fix for world-readable file")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected a world-readable warning, got: %v", results)
 	}
 }
