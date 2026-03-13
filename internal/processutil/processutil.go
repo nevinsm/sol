@@ -3,11 +3,15 @@ package processutil
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 )
 
 // IsRunning reports whether a process with the given PID is alive and not a zombie.
@@ -73,6 +77,130 @@ func StartDaemon(logPath string, env []string, solBin string, args ...string) (i
 	go func() { _ = proc.Wait() }()
 
 	return pid, nil
+}
+
+// pidFiles holds open file handles for active PID file locks.
+// Key: absolute path, Value: *os.File with LOCK_EX held.
+var pidFiles sync.Map
+
+// WritePID writes pid to the PID file at path, creating parent directories as
+// needed.
+//
+// When pid equals the current process's PID, an exclusive advisory flock is
+// acquired on the file and held for the process lifetime (until ClearPID is
+// called). This prevents a recycled PID from being treated as the original
+// process. If the flock cannot be acquired (another process holds it),
+// WritePID returns an error.
+//
+// When pid belongs to a different process (e.g. a parent recording a child's
+// PID), the file is written without locking. The child's own WritePID call
+// will acquire the lock.
+func WritePID(path string, pid int) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("failed to create directory for PID file %q: %w", path, err)
+	}
+
+	if pid == os.Getpid() {
+		// If we already hold the lock for this path (e.g. called twice), just
+		// update the file content via the existing fd.
+		if v, ok := pidFiles.Load(path); ok {
+			f := v.(*os.File)
+			if _, err := f.Seek(0, io.SeekStart); err == nil {
+				_ = f.Truncate(0)
+				_, _ = fmt.Fprintf(f, "%d\n", pid)
+			}
+			return nil
+		}
+
+		// Acquire exclusive advisory lock for this process's lifetime.
+		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
+		if err != nil {
+			return fmt.Errorf("failed to open PID file %q: %w", path, err)
+		}
+		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+			f.Close()
+			return fmt.Errorf("failed to lock PID file %q (another instance may be running): %w", path, err)
+		}
+		if _, err := fmt.Fprintf(f, "%d\n", pid); err != nil {
+			_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+			f.Close()
+			return fmt.Errorf("failed to write PID file %q: %w", path, err)
+		}
+		if old, loaded := pidFiles.Swap(path, f); loaded {
+			old.(*os.File).Close()
+		}
+		return nil
+	}
+
+	// Writing another process's PID — informational write without locking.
+	return os.WriteFile(path, []byte(fmt.Sprintf("%d\n", pid)), 0o644)
+}
+
+// ReadPID reads the PID from the file at path. Returns 0, nil if the file does
+// not exist or contains invalid content (treated as "not found").
+func ReadPID(path string) (int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to read PID file %q: %w", path, err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0, fmt.Errorf("invalid PID file content in %q: %w", path, err)
+	}
+	return pid, nil
+}
+
+// ClearPID releases any held flock on the PID file at path and removes it.
+// It is safe to call when no lock is held or when the file does not exist.
+func ClearPID(path string) error {
+	if v, ok := pidFiles.LoadAndDelete(path); ok {
+		v.(*os.File).Close()
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove PID file %q: %w", path, err)
+	}
+	return nil
+}
+
+// GracefulKill sends SIGTERM to pid and waits up to timeout for the process to
+// exit. If the process is still running after the timeout, SIGKILL is sent.
+// Returns nil if the process exits cleanly or is already gone.
+func GracefulKill(pid int, timeout time.Duration) error {
+	if pid <= 0 {
+		return fmt.Errorf("invalid PID: %d", pid)
+	}
+	if !IsRunning(pid) {
+		return nil
+	}
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		if !IsRunning(pid) {
+			return nil // already gone
+		}
+		return fmt.Errorf("failed to send SIGTERM to pid %d: %w", pid, err)
+	}
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !IsRunning(pid) {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Grace period expired — force kill.
+	if !IsRunning(pid) {
+		return nil
+	}
+	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+		if !IsRunning(pid) {
+			return nil
+		}
+		return fmt.Errorf("failed to send SIGKILL to pid %d: %w", pid, err)
+	}
+	return nil
 }
 
 // isRunningProc reads /proc/{pid}/stat and returns (alive, true) when /proc is

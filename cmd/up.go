@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/prefect"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -91,34 +91,16 @@ func daemonLogPath(name string) string {
 }
 
 func readDaemonPID(name string) int {
-	if name == "prefect" {
-		pid, _ := prefect.ReadPID()
-		return pid
-	}
-	data, err := os.ReadFile(daemonPIDPath(name))
-	if err != nil {
-		return 0
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return 0
-	}
+	pid, _ := processutil.ReadPID(daemonPIDPath(name))
 	return pid
 }
 
 func writeDaemonPID(name string, pid int) error {
-	if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(daemonPIDPath(name), []byte(strconv.Itoa(pid)), 0o644)
+	return processutil.WritePID(daemonPIDPath(name), pid)
 }
 
 func clearDaemonPID(name string) {
-	if name == "prefect" {
-		_ = prefect.ClearPID()
-		return
-	}
-	_ = os.Remove(daemonPIDPath(name))
+	_ = processutil.ClearPID(daemonPIDPath(name))
 }
 
 // isDaemonRunning checks PID file and tmux session.
@@ -529,9 +511,8 @@ func stopSphereDaemons() {
 	}
 	var results []result
 
-	// Pass 1: SIGTERM all running daemons (reverse order — non-prefect first,
-	// prefect last so its shutdown cascade doesn't race with individual stops).
-	var sigtermedPIDs []int
+	// Stop daemons in reverse order — non-prefect first, prefect last so its
+	// shutdown cascade doesn't race with individual stops.
 	for i := len(sphereDaemons) - 1; i >= 0; i-- {
 		d := sphereDaemons[i]
 		r := result{name: d.name}
@@ -539,13 +520,12 @@ func stopSphereDaemons() {
 
 		// PID-based stop.
 		if pid := readDaemonPID(d.name); pid > 0 {
-			if prefect.IsRunning(pid) {
-				if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-					r.err = fmt.Errorf("SIGTERM pid %d: %w", pid, err)
+			if processutil.IsRunning(pid) {
+				if err := processutil.GracefulKill(pid, 5*time.Second); err != nil {
+					r.err = fmt.Errorf("stop pid %d: %w", pid, err)
 				} else {
 					r.pid = pid
 					stopped = true
-					sigtermedPIDs = append(sigtermedPIDs, pid)
 				}
 			}
 			clearDaemonPID(d.name)
@@ -571,32 +551,6 @@ func stopSphereDaemons() {
 		}
 
 		results = append(results, r)
-	}
-
-	// Pass 2: wait for SIGTERMed processes to die (up to 5 seconds),
-	// then SIGKILL any survivors. This prevents a subsequent `sol up`
-	// from seeing dying processes as "running" and skipping their restart.
-	if len(sigtermedPIDs) > 0 {
-		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) {
-			allDead := true
-			for _, pid := range sigtermedPIDs {
-				if prefect.IsRunning(pid) {
-					allDead = false
-					break
-				}
-			}
-			if allDead {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		// SIGKILL any processes that outlasted the grace period.
-		for _, pid := range sigtermedPIDs {
-			if prefect.IsRunning(pid) {
-				_ = syscall.Kill(pid, syscall.SIGKILL)
-			}
-		}
 	}
 
 	// Print results.

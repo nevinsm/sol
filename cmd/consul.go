@@ -8,8 +8,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -18,6 +16,7 @@ import (
 	"github.com/nevinsm/sol/internal/escalation"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/prefect"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -40,31 +39,17 @@ func consulLogPath() string {
 	return filepath.Join(config.RuntimeDir(), "consul.log")
 }
 
-// readConsulPID reads the consul PID from its PID file. Returns 0 if not found.
 func readConsulPID() int {
-	data, err := os.ReadFile(consulPIDPath())
-	if err != nil {
-		return 0
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return 0
-	}
+	pid, _ := processutil.ReadPID(consulPIDPath())
 	return pid
 }
 
-// writeConsulPID writes the consul PID to the PID file.
 func writeConsulPID(pid int) error {
-	dir := config.RuntimeDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("failed to create runtime directory: %w", err)
-	}
-	return os.WriteFile(consulPIDPath(), []byte(strconv.Itoa(pid)), 0o644)
+	return processutil.WritePID(consulPIDPath(), pid)
 }
 
-// clearConsulPID removes the consul PID file.
 func clearConsulPID() {
-	_ = os.Remove(consulPIDPath())
+	_ = processutil.ClearPID(consulPIDPath())
 }
 
 var consulCmd = &cobra.Command{

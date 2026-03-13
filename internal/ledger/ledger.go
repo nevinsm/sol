@@ -18,6 +18,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/logutil"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -85,28 +86,17 @@ func PIDPath() string {
 
 // WritePID writes the current process PID to the ledger PID file.
 func WritePID() error {
-	dir := config.RuntimeDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("failed to create runtime directory: %w", err)
-	}
-	return os.WriteFile(PIDPath(), []byte(strconv.Itoa(os.Getpid())), 0o644)
+	return processutil.WritePID(PIDPath(), os.Getpid())
 }
 
 // RemovePID removes the ledger PID file on clean shutdown.
 func RemovePID() {
-	_ = os.Remove(PIDPath())
+	_ = processutil.ClearPID(PIDPath())
 }
 
 // ReadPID reads the ledger PID from its PID file. Returns 0 if not found.
 func ReadPID() int {
-	data, err := os.ReadFile(PIDPath())
-	if err != nil {
-		return 0
-	}
-	pid, err := strconv.Atoi(string(data))
-	if err != nil {
-		return 0
-	}
+	pid, _ := processutil.ReadPID(PIDPath())
 	return pid
 }
 
