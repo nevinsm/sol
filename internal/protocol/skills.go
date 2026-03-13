@@ -392,7 +392,8 @@ A caravan sequences your own multi-step work across phases. Items in the same ph
 | %[1]s caravan status [<caravan-id>]%[3]s | Check caravan progress |
 | %[1]s caravan launch <caravan-id> --world=%[2]s%[3]s | Dispatch all ready items |
 | %[1]s caravan commission <caravan-id>%[3]s | Mark caravan as commissioned |
-| %[1]s caravan set-phase <caravan-id> <phase>%[3]s | Set current phase |
+| %[1]s caravan set-phase <caravan-id> [<item-id>] <phase>%[3]s | Set phase for one item |
+| %[1]s caravan set-phase <caravan-id> --all <phase>%[3]s | Set phase for all items |
 | %[1]s caravan check <caravan-id>%[3]s | Check phase-gate readiness |
 | %[1]s caravan list%[3]s | List all caravans |
 
