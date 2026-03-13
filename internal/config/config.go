@@ -515,7 +515,9 @@ func seedClaudePlugins(agentConfigDir string) {
 			continue
 		}
 		dst := filepath.Join(dstPluginsDir, f)
-		_ = os.WriteFile(dst, data, 0o644)
+		if err := os.WriteFile(dst, data, 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: seedClaudePlugins: failed to write %s: %v\n", f, err)
+		}
 	}
 }
 
@@ -542,7 +544,9 @@ func seedClaudeSettings(agentConfigDir string) {
 	data = mergeEnabledPlugins(data)
 
 	dst := filepath.Join(agentConfigDir, "settings.json")
-	_ = os.WriteFile(dst, data, 0o644)
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: seedClaudeSettings: failed to write settings.json: %v\n", err)
+	}
 
 	// Copy settings.local.json if present — user customizations layered on top.
 	localSrc := filepath.Join(ClaudeDefaultsDir(), "settings.local.json")
@@ -552,7 +556,9 @@ func seedClaudeSettings(agentConfigDir string) {
 		return
 	}
 	localDst := filepath.Join(agentConfigDir, "settings.local.json")
-	_ = os.WriteFile(localDst, localData, 0o644)
+	if err := os.WriteFile(localDst, localData, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: seedClaudeSettings: failed to write settings.local.json: %v\n", err)
+	}
 }
 
 // mergeEnabledPlugins reads installed_plugins.json from .claude-defaults/plugins/
