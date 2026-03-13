@@ -3276,6 +3276,44 @@ func (m *mockWorldStore) ReleaseStaleClaims(ttl time.Duration) (int, error) {
 	return 0, nil
 }
 
+// Stub implementations for canonical WritReader methods not used by sentinel.
+func (m *mockWorldStore) ListWrits(filters store.ListFilters) ([]store.Writ, error) { return nil, nil }
+func (m *mockWorldStore) ListChildWrits(parentID string) ([]store.Writ, error)      { return nil, nil }
+func (m *mockWorldStore) ReadyWrits() ([]store.Writ, error)                         { return nil, nil }
+
+// Stub implementations for canonical WritWriter methods not used by sentinel.
+func (m *mockWorldStore) CreateWrit(title, description, createdBy string, priority int, labels []string) (string, error) {
+	return "", nil
+}
+func (m *mockWorldStore) CreateWritWithOpts(opts store.CreateWritOpts) (string, error) {
+	return "", nil
+}
+func (m *mockWorldStore) CloseWrit(id string, closeReason ...string) ([]string, error) {
+	return nil, nil
+}
+func (m *mockWorldStore) GetWritMetadata(id string) (map[string]any, error) { return nil, nil }
+func (m *mockWorldStore) AddLabel(itemID, label string) error                { return nil }
+func (m *mockWorldStore) RemoveLabel(itemID, label string) error             { return nil }
+
+// Stub implementations for canonical MRReader methods not used by sentinel.
+func (m *mockWorldStore) GetMergeRequest(id string) (*store.MergeRequest, error) { return nil, nil }
+func (m *mockWorldStore) FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error) {
+	return nil, nil
+}
+
+// Stub implementations for canonical MRWriter methods not used by sentinel.
+func (m *mockWorldStore) CreateMergeRequest(writID, branch string, priority int) (string, error) {
+	return "", nil
+}
+func (m *mockWorldStore) ClaimMergeRequest(claimerID string) (*store.MergeRequest, error) {
+	return nil, nil
+}
+func (m *mockWorldStore) UpdateMergeRequestPhase(id string, phase store.MRPhase) error { return nil }
+func (m *mockWorldStore) BlockMergeRequest(mrID, blockerWritID string) error           { return nil }
+func (m *mockWorldStore) UnblockMergeRequest(mrID string) error                        { return nil }
+func (m *mockWorldStore) ResetMergeRequestForRetry(mrID string) error                 { return nil }
+func (m *mockWorldStore) SupersedeFailedMRsForWrit(writID string) ([]string, error)   { return nil, nil }
+
 // readEvents reads all events from the logger's event file and returns those
 // matching the given event type.
 func readEvents(t *testing.T, solHome, eventType string) []events.Event {
