@@ -1249,3 +1249,100 @@ func TestResumeInstallsSkills(t *testing.T) {
 		t.Fatal("SkillInstaller was not called during Resume")
 	}
 }
+
+// TestLaunchInjectsDotEnv verifies that Launch merges world .env vars into the
+// session environment, with system-managed vars taking precedence over .env.
+func TestLaunchInjectsDotEnv(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	// Write a .env file in the world directory.
+	dotEnvContent := `# injected secrets
+MY_SECRET=supersecret
+API_ENDPOINT=https://api.example.com
+# SOL_HOME should be overridden by the system value
+SOL_HOME=/should/not/win
+`
+	if err := os.WriteFile(filepath.Join(solHome, world, ".env"), []byte(dotEnvContent), 0o600); err != nil {
+		t.Fatalf("failed to write .env: %v", err)
+	}
+
+	// Create worktree directory.
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	cfg := RoleConfig{
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+	}
+
+	opts := LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	}
+
+	if _, err := Launch(cfg, world, "forge", opts); err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 session start, got %d", len(mock.started))
+	}
+	call := mock.started[0]
+
+	// .env vars should be present.
+	if got := call.Env["MY_SECRET"]; got != "supersecret" {
+		t.Errorf("MY_SECRET = %q, want %q", got, "supersecret")
+	}
+	if got := call.Env["API_ENDPOINT"]; got != "https://api.example.com" {
+		t.Errorf("API_ENDPOINT = %q, want %q", got, "https://api.example.com")
+	}
+
+	// System-managed SOL_HOME must win over .env.
+	if got := call.Env["SOL_HOME"]; got != solHome {
+		t.Errorf("SOL_HOME = %q, want system value %q (not .env value)", got, solHome)
+	}
+}
+
+// TestLaunchDotEnvMissing verifies that Launch succeeds when no .env file exists.
+func TestLaunchDotEnvMissing(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	// No .env file written.
+
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+	cfg := RoleConfig{
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+	}
+
+	if _, err := Launch(cfg, world, "forge", LaunchOpts{Sessions: mock, Sphere: sphereStore}); err != nil {
+		t.Fatalf("Launch() should succeed without .env: %v", err)
+	}
+
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 session start, got %d", len(mock.started))
+	}
+	// System vars should still be present.
+	if call := mock.started[0]; call.Env["SOL_HOME"] != solHome {
+		t.Errorf("SOL_HOME = %q, want %q", call.Env["SOL_HOME"], solHome)
+	}
+}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/envfile"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -238,12 +239,20 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 	}
 
 	// 9. Start tmux session.
-	env := map[string]string{
-		"SOL_HOME":          config.Home(),
-		"SOL_WORLD":         world,
-		"SOL_AGENT":         agent,
-		"CLAUDE_CONFIG_DIR": claudeConfigDir,
+	// Load world .env and use it as the base environment; system vars below
+	// take precedence so SOL_HOME, CLAUDE_CONFIG_DIR, etc. cannot be overridden.
+	dotEnv, err := envfile.LoadEnv(config.Home(), world)
+	if err != nil {
+		slog.Warn("startup: failed to load world .env, skipping", "world", world, "error", err)
+		dotEnv = map[string]string{}
 	}
+	env := dotEnv
+
+	// System-managed variables always win over .env entries.
+	env["SOL_HOME"] = config.Home()
+	env["SOL_WORLD"] = world
+	env["SOL_AGENT"] = agent
+	env["CLAUDE_CONFIG_DIR"] = claudeConfigDir
 
 	switch tok.Type {
 	case "oauth_token":
