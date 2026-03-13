@@ -47,6 +47,21 @@ func PersonaPath(world, name string) string {
 
 // --- Interfaces ---
 
+// SphereStore abstracts sphere store operations for Create.
+type SphereStore interface {
+	CreateAgent(name, world, role string) (string, error)
+	DeleteAgent(id string) error
+}
+
+// StopStore abstracts sphere store operations for Stop.
+type StopStore interface {
+	UpdateAgentState(id, state, activeWrit string) error
+}
+
+// ListStore abstracts sphere store operations for List.
+type ListStore interface {
+	ListAgents(world string, state string) ([]store.Agent, error)
+}
 
 // StopManager abstracts session operations for Stop.
 type StopManager interface {
@@ -54,10 +69,9 @@ type StopManager interface {
 }
 
 // DeleteStore abstracts sphere store operations for Delete.
-// Requires both read (GetAgent) and write (DeleteAgent) access.
 type DeleteStore interface {
-	store.AgentReader
-	store.AgentWriter
+	GetAgent(id string) (*store.Agent, error)
+	DeleteAgent(id string) error
 }
 
 // --- Options ---
@@ -81,7 +95,7 @@ type DeleteOpts struct {
 
 // Create provisions a new envoy: agent record, directory, worktree, and brief.
 // If any step fails after the first, all previous steps are rolled back.
-func Create(opts CreateOpts, sphereStore store.AgentWriter) error {
+func Create(opts CreateOpts, sphereStore SphereStore) error {
 	envoyDir := EnvoyDir(opts.World, opts.Name)
 	briefDir := BriefDir(opts.World, opts.Name)
 	worktree := WorktreePath(opts.World, opts.Name)
@@ -166,7 +180,7 @@ func ensureWorktree(sourceRepo, world, name, worktree string) error {
 // Stop terminates an envoy session. Injects a brief-update prompt and waits
 // for output stability before killing the session. Does NOT remove the
 // worktree or directory.
-func Stop(world, name string, sphereStore store.AgentWriter, mgr StopManager) error {
+func Stop(world, name string, sphereStore StopStore, mgr StopManager) error {
 	agentID := world + "/" + name
 	sessName := config.SessionName(world, name)
 
@@ -179,7 +193,7 @@ func Stop(world, name string, sphereStore store.AgentWriter, mgr StopManager) er
 	}
 
 	// 2. Update agent state to "idle".
-	if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
+	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 		return fmt.Errorf("failed to stop envoy %q in world %q: %w", name, world, err)
 	}
 
@@ -189,7 +203,7 @@ func Stop(world, name string, sphereStore store.AgentWriter, mgr StopManager) er
 // --- List ---
 
 // List returns envoy agents for a world. If world is empty, returns all envoys.
-func List(world string, sphereStore store.AgentReader) ([]store.Agent, error) {
+func List(world string, sphereStore ListStore) ([]store.Agent, error) {
 	agents, err := sphereStore.ListAgents(world, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list envoys: %w", err)

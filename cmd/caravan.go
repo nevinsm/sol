@@ -1136,7 +1136,7 @@ func itemTitle(writID, world string) string {
 	return item.Title
 }
 
-func caravanDepNames(sphereStore *store.Store, ids []string) string {
+func caravanDepNames(sphereStore *store.SphereStore, ids []string) string {
 	var parts []string
 	for _, id := range ids {
 		c, err := sphereStore.GetCaravan(id)

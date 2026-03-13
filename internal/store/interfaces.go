@@ -18,9 +18,8 @@ import "time"
 //   CaravanDepReader, CaravanDepWriter, MessageStore, EscalationStore,
 //   WorldRegistry
 //
-// Transitional note: until consumers fully migrate, *Store satisfies all
-// interfaces through embedding promotion. New code should target the
-// specific WorldStore/SphereStore interfaces below.
+// All consumers should depend on WorldStore or SphereStore interfaces below.
+// The legacy Store transitional shim has been removed (see ADR-0030 Phase 2).
 
 // ——— World-scoped interfaces ———
 
@@ -47,22 +46,22 @@ type WritWriter interface {
 // MRReader provides read access to merge requests in a world database.
 type MRReader interface {
 	GetMergeRequest(id string) (*MergeRequest, error)
-	ListMergeRequests(phase MRPhase) ([]MergeRequest, error)
-	ListMergeRequestsByWrit(writID string, phase MRPhase) ([]MergeRequest, error)
+	ListMergeRequests(phase string) ([]MergeRequest, error)
+	ListMergeRequestsByWrit(writID string, phase string) ([]MergeRequest, error)
 	ListBlockedMergeRequests() ([]MergeRequest, error)
 	FindMergeRequestByBlocker(blockerID string) (*MergeRequest, error)
 }
 
 // MergeRequestReader provides narrow read access to merge requests (subset of MRReader).
 type MergeRequestReader interface {
-	ListMergeRequests(phase MRPhase) ([]MergeRequest, error)
+	ListMergeRequests(phase string) ([]MergeRequest, error)
 }
 
 // MRWriter provides write access to merge requests in a world database.
 type MRWriter interface {
 	CreateMergeRequest(writID, branch string, priority int) (string, error)
 	ClaimMergeRequest(claimerID string) (*MergeRequest, error)
-	UpdateMergeRequestPhase(id string, phase MRPhase) error
+	UpdateMergeRequestPhase(id string, phase string) error
 	BlockMergeRequest(mrID, blockerWritID string) error
 	UnblockMergeRequest(mrID string) error
 	ReleaseStaleClaims(ttl time.Duration) (int, error)
@@ -129,7 +128,7 @@ type AgentMemoryStore interface {
 // AgentReader provides read access to agent records in the sphere database.
 type AgentReader interface {
 	GetAgent(id string) (*Agent, error)
-	ListAgents(world string, state AgentState) ([]Agent, error)
+	ListAgents(world string, state string) ([]Agent, error)
 	FindIdleAgent(world string) (*Agent, error)
 }
 
@@ -137,7 +136,7 @@ type AgentReader interface {
 type AgentWriter interface {
 	CreateAgent(name, world, role string) (string, error)
 	EnsureAgent(name, world, role string) error
-	UpdateAgentState(id string, state AgentState, activeWrit string) error
+	UpdateAgentState(id string, state string, activeWrit string) error
 	DeleteAgent(id string) error
 	DeleteAgentsForWorld(world string) error
 }
@@ -145,23 +144,23 @@ type AgentWriter interface {
 // CaravanReader provides read access to caravan records in the sphere database.
 type CaravanReader interface {
 	GetCaravan(id string) (*Caravan, error)
-	ListCaravans(status CaravanStatus) ([]Caravan, error)
+	ListCaravans(status string) ([]Caravan, error)
 	ListCaravanItems(caravanID string) ([]CaravanItem, error)
 	GetCaravanItemsForWrit(writID string) ([]CaravanItem, error)
-	CheckCaravanReadiness(caravanID string, worldOpener func(world string) (*Store, error)) ([]CaravanItemStatus, error)
+	CheckCaravanReadiness(caravanID string, worldOpener func(world string) (*WorldStore, error)) ([]CaravanItemStatus, error)
 }
 
 // CaravanWriter provides write access to caravan records in the sphere database.
 type CaravanWriter interface {
 	CreateCaravan(name, owner string) (string, error)
-	UpdateCaravanStatus(id string, status CaravanStatus) error
+	UpdateCaravanStatus(id string, status string) error
 	CreateCaravanItem(caravanID, writID, world string, phase int) error
 	DeleteCaravanItemsForWorld(world string) error
 	RemoveCaravanItem(caravanID, writID string) error
 	UpdateCaravanItemPhase(caravanID, writID string, phase int) error
 	UpdateAllCaravanItemPhases(caravanID string, phase int) (int64, error)
 	DeleteCaravan(id string) error
-	TryCloseCaravan(caravanID string, worldOpener func(world string) (*Store, error)) (bool, error)
+	TryCloseCaravan(caravanID string, worldOpener func(world string) (*WorldStore, error)) (bool, error)
 }
 
 // CaravanDepReader provides read access to caravan dependency data in the sphere database.
@@ -171,7 +170,7 @@ type CaravanDepReader interface {
 	AreCaravanDependenciesSatisfied(caravanID string) (bool, error)
 	UnsatisfiedCaravanDependencies(caravanID string) ([]string, error)
 	IsWritBlockedByCaravanDeps(writID string) (bool, []string, error)
-	IsWritBlockedByCaravan(writID, world string, worldOpener func(world string) (*Store, error)) (bool, error)
+	IsWritBlockedByCaravan(writID, world string, worldOpener func(world string) (*WorldStore, error)) (bool, error)
 }
 
 // CaravanDepWriter provides write access to caravan dependencies in the sphere database.

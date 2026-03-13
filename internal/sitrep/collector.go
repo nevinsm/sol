@@ -33,10 +33,10 @@ type CollectedData struct {
 }
 
 // WorldOpener opens a world store by name.
-type WorldOpener func(world string) (*store.Store, error)
+type WorldOpener func(world string) (*store.WorldStore, error)
 
 // Collect gathers system state from sphere and world stores.
-func Collect(sphereStore *store.Store, worldOpener WorldOpener, scope Scope) (*CollectedData, error) {
+func Collect(sphereStore *store.SphereStore, worldOpener WorldOpener, scope Scope) (*CollectedData, error) {
 	data := &CollectedData{}
 
 	// Collect agents.

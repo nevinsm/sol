@@ -245,6 +245,37 @@ type SessionChecker interface {
 	Exists(name string) bool
 }
 
+// WorldStore abstracts writ lookups for testing.
+type WorldStore interface {
+	GetWrit(id string) (*store.Writ, error)
+}
+
+// SphereStore abstracts agent queries for testing.
+type SphereStore interface {
+	ListAgents(world string, state string) ([]store.Agent, error)
+}
+
+// MergeQueueStore abstracts merge request queries for testing.
+type MergeQueueStore interface {
+	ListMergeRequests(phase string) ([]store.MergeRequest, error)
+}
+
+// CaravanStore abstracts caravan queries for status gathering.
+type CaravanStore interface {
+	ListCaravans(status string) ([]store.Caravan, error)
+	CheckCaravanReadiness(caravanID string, worldOpener func(world string) (*store.WorldStore, error)) ([]store.CaravanItemStatus, error)
+	ListCaravanItems(caravanID string) ([]store.CaravanItem, error)
+}
+
+// WorldLister abstracts world listing for sphere status.
+type WorldLister interface {
+	ListWorlds() ([]store.World, error)
+}
+
+// EscalationLister abstracts escalation queries for sphere status.
+type EscalationLister interface {
+	ListOpenEscalations() ([]store.Escalation, error)
+}
 
 // ChancellorInfo holds chancellor process state (sphere-level).
 type ChancellorInfo struct {
@@ -314,8 +345,8 @@ type WorldSummary struct {
 }
 
 // Gather collects runtime state for a world.
-func Gather(world string, sphereStore store.AgentReader, worldStore store.WritReader,
-	mqStore store.MergeRequestReader, checker SessionChecker) (*WorldStatus, error) {
+func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
+	mqStore MergeQueueStore, checker SessionChecker) (*WorldStatus, error) {
 	result := &WorldStatus{World: world}
 
 	// 1. Check prefect (sphere-level).
@@ -395,7 +426,7 @@ func Gather(world string, sphereStore store.AgentReader, worldStore store.WritRe
 	govSessAlive := checker.Exists(govSessName)
 
 	// 3. List all agents for this world.
-	agents, err := sphereStore.ListAgents(world, store.AgentState(""))
+	agents, err := sphereStore.ListAgents(world, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
@@ -416,7 +447,7 @@ func Gather(world string, sphereStore store.AgentReader, worldStore store.WritRe
 		case "envoy":
 			es := EnvoyStatus{
 				Name:         agent.Name,
-				State:        string(agent.State),
+				State:        agent.State,
 				SessionAlive: sessAlive,
 				BriefAge:     briefAge(envoy.BriefPath(world, agent.Name)),
 			}
@@ -446,7 +477,7 @@ func Gather(world string, sphereStore store.AgentReader, worldStore store.WritRe
 			}
 			as := AgentStatus{
 				Name:         agent.Name,
-				State:        string(agent.State),
+				State:        agent.State,
 				SessionAlive: sessAlive,
 			}
 			if agent.ActiveWrit != "" {
@@ -484,7 +515,7 @@ func Gather(world string, sphereStore store.AgentReader, worldStore store.WritRe
 	}
 
 	// 6. Gather merge queue info.
-	mrs, err := mqStore.ListMergeRequests(store.MRPhase(""))
+	mrs, err := mqStore.ListMergeRequests("")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list merge requests: %w", err)
 	}
@@ -492,18 +523,18 @@ func Gather(world string, sphereStore store.AgentReader, worldStore store.WritRe
 		result.MergeQueue.Total++
 		include := true
 		switch mr.Phase {
-		case store.MRReady:
+		case "ready":
 			result.MergeQueue.Ready++
-		case store.MRClaimed:
+		case "claimed":
 			result.MergeQueue.Claimed++
-		case store.MRFailed:
+		case "failed":
 			// Exclude failed MRs whose writs have been re-cast and closed.
-			if item, err := worldStore.GetWrit(mr.WritID); err != nil || item.Status != store.WritClosed {
+			if item, err := worldStore.GetWrit(mr.WritID); err != nil || item.Status != "closed" {
 				result.MergeQueue.Failed++
 			} else {
 				include = false
 			}
-		case store.MRMerged:
+		case "merged":
 			result.MergeQueue.Merged++
 		}
 
@@ -515,7 +546,7 @@ func Gather(world string, sphereStore store.AgentReader, worldStore store.WritRe
 			result.MergeRequests = append(result.MergeRequests, MergeRequestInfo{
 				ID:     mr.ID,
 				WritID: mr.WritID,
-				Phase:  string(mr.Phase),
+				Phase:  mr.Phase,
 				Title:  title,
 			})
 		}
@@ -536,7 +567,7 @@ func briefAge(path string) string {
 // GatherCaravans adds caravan information to a WorldStatus.
 // This is separate from Gather because it requires the CaravanStore interface
 // which not all callers may have available.
-func GatherCaravans(result *WorldStatus, caravanStore store.CaravanReader, worldOpener func(string) (*store.Store, error)) {
+func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener func(string) (*store.WorldStore, error)) {
 	allCaravans, err := caravanStore.ListCaravans("")
 	if err != nil {
 		return // non-fatal: degrade gracefully
@@ -544,7 +575,7 @@ func GatherCaravans(result *WorldStatus, caravanStore store.CaravanReader, world
 	// Filter to active (non-closed) caravans.
 	var caravans []store.Caravan
 	for _, c := range allCaravans {
-		if c.Status != store.CaravanClosed {
+		if c.Status != "closed" {
 			caravans = append(caravans, c)
 		}
 	}
@@ -576,35 +607,35 @@ func GatherCaravans(result *WorldStatus, caravanStore store.CaravanReader, world
 // buildCaravanInfo computes aggregate item counts and phase progress for a caravan.
 // This is the single source of truth for caravan status computation, used by both
 // GatherCaravans (world-scoped) and GatherSphere (sphere-scoped).
-func buildCaravanInfo(c store.Caravan, items []store.CaravanItem, statuses []store.CaravanItemStatus, worldOpener func(string) (*store.Store, error)) CaravanInfo {
+func buildCaravanInfo(c store.Caravan, items []store.CaravanItem, statuses []store.CaravanItemStatus, worldOpener func(string) (*store.WorldStore, error)) CaravanInfo {
 	info := CaravanInfo{
 		ID:         c.ID,
 		Name:       c.Name,
-		Status:     string(c.Status),
+		Status:     c.Status,
 		TotalItems: len(items),
 	}
 	for _, st := range statuses {
 		switch {
-		case st.WritStatus == store.WritClosed:
+		case st.WritStatus == "closed":
 			info.ClosedItems++
-		case st.WritStatus == store.WritDone:
+		case st.WritStatus == "done":
 			info.DoneItems++
 		case st.IsDispatched():
 			info.DispatchedItems++
-		case st.WritStatus == store.WritOpen && st.Ready:
+		case st.WritStatus == "open" && st.Ready:
 			info.ReadyItems++
 		}
 	}
 	info.Phases = computePhaseProgress(items, statuses)
 
 	// Build per-item detail from statuses.
-	worldStores := make(map[string]*store.Store) // cache opened stores
+	worldStores := make(map[string]*store.WorldStore) // cache opened stores
 	for _, st := range statuses {
 		detail := CaravanItemDetail{
 			WritID:   st.WritID,
 			World:    st.World,
 			Phase:    st.Phase,
-			Status:   string(st.WritStatus),
+			Status:   st.WritStatus,
 			Ready:    st.Ready,
 			Assignee: st.Assignee,
 			Title:    "(unknown)",
@@ -666,13 +697,13 @@ func computePhaseProgress(items []store.CaravanItem, statuses []store.CaravanIte
 		pp.Total++
 		if st, ok := statusMap[item.WritID]; ok {
 			switch {
-			case st.WritStatus == store.WritClosed:
+			case st.WritStatus == "closed":
 				pp.Closed++
-			case st.WritStatus == store.WritDone:
+			case st.WritStatus == "done":
 				pp.Done++
 			case st.IsDispatched():
 				pp.Dispatched++
-			case st.WritStatus == store.WritOpen && st.Ready:
+			case st.WritStatus == "open" && st.Ready:
 				pp.Ready++
 			}
 		}
@@ -742,7 +773,7 @@ func readChroniclePID() int {
 // GatherTokens populates token usage data on a WorldStatus using a 24-hour
 // rolling window. Errors are handled gracefully — if the store can't be queried,
 // TokenInfo is left zeroed and the renderer handles the zero case.
-func GatherTokens(result *WorldStatus, worldStore *store.Store) {
+func GatherTokens(result *WorldStatus, worldStore *store.WorldStore) {
 	since := time.Now().Add(-24 * time.Hour)
 
 	summaries, err := worldStore.TokensSince(since)

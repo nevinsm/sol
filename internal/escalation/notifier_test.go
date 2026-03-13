@@ -28,7 +28,7 @@ func testEscalation() store.Escalation {
 	}
 }
 
-func setupSphereStore(t *testing.T) *store.Store {
+func setupSphereStore(t *testing.T) *store.SphereStore {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)

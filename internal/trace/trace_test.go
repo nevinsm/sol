@@ -11,7 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
-func setupTestEnv(t *testing.T) (worldStore *store.Store, sphereStore *store.Store) {
+func setupTestEnv(t *testing.T) (worldStore *store.WorldStore, sphereStore *store.SphereStore) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)

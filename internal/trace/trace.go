@@ -150,7 +150,7 @@ func Collect(writID string, opts Options) (*TraceData, error) {
 
 // resolveWorld finds the world containing the writ.
 // If world is specified, use it directly. Otherwise scan all worlds.
-func resolveWorld(writID, world string) (string, *store.Store, error) {
+func resolveWorld(writID, world string) (string, *store.WorldStore, error) {
 	if world != "" {
 		if err := config.RequireWorld(world); err != nil {
 			return "", nil, err

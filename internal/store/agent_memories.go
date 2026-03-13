@@ -16,14 +16,14 @@ type AgentMemory struct {
 
 // SetAgentMemory creates or updates a memory for the given agent.
 // Uses UPSERT semantics: if the (agent_name, key) pair exists, the value is replaced.
-func (ws *WorldStore) SetAgentMemory(agentName, key, value string) error {
+func (s *WorldStore) SetAgentMemory(agentName, key, value string) error {
 	id, err := generateMemoryID()
 	if err != nil {
 		return fmt.Errorf("failed to generate memory ID: %w", err)
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	_, err = ws.db.Exec(
+	_, err = s.db.Exec(
 		`INSERT INTO agent_memories (id, agent_name, key, value, created_at)
 		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(agent_name, key) DO UPDATE SET value = excluded.value`,
@@ -36,8 +36,8 @@ func (ws *WorldStore) SetAgentMemory(agentName, key, value string) error {
 }
 
 // ListAgentMemories returns all memories for the given agent, ordered by creation time.
-func (ws *WorldStore) ListAgentMemories(agentName string) ([]AgentMemory, error) {
-	rows, err := ws.db.Query(
+func (s *WorldStore) ListAgentMemories(agentName string) ([]AgentMemory, error) {
+	rows, err := s.db.Query(
 		`SELECT id, agent_name, key, value, created_at
 		 FROM agent_memories
 		 WHERE agent_name = ?
@@ -66,8 +66,8 @@ func (ws *WorldStore) ListAgentMemories(agentName string) ([]AgentMemory, error)
 }
 
 // DeleteAgentMemory deletes a single memory by agent name and key.
-func (ws *WorldStore) DeleteAgentMemory(agentName, key string) error {
-	result, err := ws.db.Exec(
+func (s *WorldStore) DeleteAgentMemory(agentName, key string) error {
+	result, err := s.db.Exec(
 		`DELETE FROM agent_memories WHERE agent_name = ? AND key = ?`,
 		agentName, key,
 	)
@@ -78,9 +78,9 @@ func (ws *WorldStore) DeleteAgentMemory(agentName, key string) error {
 }
 
 // CountAgentMemories returns the number of memories for the given agent.
-func (ws *WorldStore) CountAgentMemories(agentName string) (int, error) {
+func (s *WorldStore) CountAgentMemories(agentName string) (int, error) {
 	var count int
-	err := ws.db.QueryRow(
+	err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM agent_memories WHERE agent_name = ?`,
 		agentName,
 	).Scan(&count)
@@ -91,8 +91,8 @@ func (ws *WorldStore) CountAgentMemories(agentName string) (int, error) {
 }
 
 // DeleteAllAgentMemories deletes all memories for the given agent.
-func (ws *WorldStore) DeleteAllAgentMemories(agentName string) (int64, error) {
-	result, err := ws.db.Exec(
+func (s *WorldStore) DeleteAllAgentMemories(agentName string) (int64, error) {
+	result, err := s.db.Exec(
 		`DELETE FROM agent_memories WHERE agent_name = ?`,
 		agentName,
 	)

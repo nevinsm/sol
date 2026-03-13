@@ -1045,7 +1045,7 @@ func renderCaravanCost(result caravanCostResult, hasPricing bool) {
 // --- Helpers ---
 
 // resolveCaravan finds a caravan by ID or name.
-func resolveCaravan(sphereStore *store.Store, idOrName string) (*store.Caravan, error) {
+func resolveCaravan(sphereStore *store.SphereStore, idOrName string) (*store.Caravan, error) {
 	// Try by ID first.
 	c, err := sphereStore.GetCaravan(idOrName)
 	if err == nil {

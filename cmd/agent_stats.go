@@ -117,7 +117,7 @@ var agentStatsCmd = &cobra.Command{
 	},
 }
 
-func computeAgentStats(worldStore *store.Store, agentName string, pricing config.PricingConfig) (*AgentStatsReport, error) {
+func computeAgentStats(worldStore *store.WorldStore, agentName string, pricing config.PricingConfig) (*AgentStatsReport, error) {
 	report := &AgentStatsReport{Name: agentName}
 
 	// 1. Get history entries for cycle time and rework.

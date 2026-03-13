@@ -181,7 +181,7 @@ var schemaMigrateCmd = &cobra.Command{
 
 		// Sphere database.
 		spherePath := filepath.Join(storeDir, "sphere.db")
-		if err := migrateDatabase(spherePath, "sphere", store.CurrentSphereSchema, dryRun, backup, func() (*store.Store, error) {
+		if err := migrateDatabase(spherePath, "sphere", store.CurrentSphereSchema, dryRun, backup, func() (storeCloser, error) {
 			return store.OpenSphere()
 		}); err != nil {
 			return err
@@ -206,7 +206,7 @@ var schemaMigrateCmd = &cobra.Command{
 			}
 			worldName := strings.TrimSuffix(name, ".db")
 			dbPath := filepath.Join(storeDir, name)
-			if err := migrateDatabase(dbPath, worldName, store.CurrentWorldSchema, dryRun, backup, func() (*store.Store, error) {
+			if err := migrateDatabase(dbPath, worldName, store.CurrentWorldSchema, dryRun, backup, func() (storeCloser, error) {
 				return store.OpenWorld(worldName)
 			}); err != nil {
 				return err
@@ -242,7 +242,12 @@ func versionStatus(current, target int) string {
 }
 
 // migrateDatabase handles migration of a single database with optional dry-run and backup.
-func migrateDatabase(path, label string, targetVersion int, dryRun, backup bool, openFn func() (*store.Store, error)) error {
+// storeCloser is the minimal interface needed by migrateDatabase for the opened store.
+type storeCloser interface {
+	Close() error
+}
+
+func migrateDatabase(path, label string, targetVersion int, dryRun, backup bool, openFn func() (storeCloser, error)) error {
 	currentVersion, err := readSchemaVersion(path)
 	if err != nil {
 		// Database doesn't exist yet — migration will create it.

@@ -102,7 +102,7 @@ func TestStoreToConfigSummaries(t *testing.T) {
 
 // setupCostTest creates a temporary SOL_HOME with a world and returns the
 // store, world name, and the SOL_HOME directory. Resets cost flag vars.
-func setupCostTest(t *testing.T) (*store.Store, string, string) {
+func setupCostTest(t *testing.T) (*store.WorldStore, string, string) {
 	t.Helper()
 
 	// Reset package-level flag vars to avoid cross-test pollution.

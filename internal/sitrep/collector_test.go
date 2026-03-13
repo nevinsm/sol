@@ -9,7 +9,7 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
-func setupTestEnv(t *testing.T) (sphere *store.Store, worldOpener sitrep.WorldOpener) {
+func setupTestEnv(t *testing.T) (sphere *store.SphereStore, worldOpener sitrep.WorldOpener) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
@@ -24,7 +24,7 @@ func setupTestEnv(t *testing.T) (sphere *store.Store, worldOpener sitrep.WorldOp
 	}
 	t.Cleanup(func() { s.Close() })
 
-	opener := func(world string) (*store.Store, error) {
+	opener := func(world string) (*store.WorldStore, error) {
 		return store.OpenWorld(world)
 	}
 

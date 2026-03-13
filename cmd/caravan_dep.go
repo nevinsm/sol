@@ -182,7 +182,7 @@ type caravanDepInfo struct {
 	Status string `json:"status"`
 }
 
-func caravanDepEntry(s *store.Store, id string) caravanDepInfo {
+func caravanDepEntry(s *store.SphereStore, id string) caravanDepInfo {
 	c, err := s.GetCaravan(id)
 	if err != nil {
 		return caravanDepInfo{ID: id, Name: "(unknown)", Status: "unknown"}
@@ -190,7 +190,7 @@ func caravanDepEntry(s *store.Store, id string) caravanDepInfo {
 	return caravanDepInfo{ID: c.ID, Name: c.Name, Status: string(c.Status)}
 }
 
-func caravanName(s *store.Store, id string) string {
+func caravanName(s *store.SphereStore, id string) string {
 	c, err := s.GetCaravan(id)
 	if err != nil {
 		return "(unknown)"

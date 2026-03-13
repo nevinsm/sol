@@ -6,7 +6,6 @@ import (
 
 	"github.com/nevinsm/sol/internal/brief"
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/store"
 )
 
 // --- Directory helpers ---
@@ -37,6 +36,10 @@ func WorldSummaryPath(world string) string {
 
 // --- Interfaces ---
 
+// StopStore abstracts sphere store operations for Stop.
+type StopStore interface {
+	UpdateAgentState(id, state, activeWrit string) error
+}
 
 // StopManager abstracts session operations for Stop.
 type StopManager interface {
@@ -48,7 +51,7 @@ type StopManager interface {
 // Stop terminates a governor session. Injects a brief-update prompt and waits
 // for output stability before killing the session. Does NOT remove the
 // governor directory, mirror, or brief.
-func Stop(world string, sphereStore store.AgentWriter, mgr StopManager) error {
+func Stop(world string, sphereStore StopStore, mgr StopManager) error {
 	sessName := config.SessionName(world, "governor")
 	agentID := world + "/governor"
 
@@ -61,7 +64,7 @@ func Stop(world string, sphereStore store.AgentWriter, mgr StopManager) error {
 	}
 
 	// 2. Update agent state to "idle".
-	if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
+	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
 		return fmt.Errorf("failed to stop governor for world %q: %w", world, err)
 	}
 

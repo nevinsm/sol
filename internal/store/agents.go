@@ -16,20 +16,20 @@ type Agent struct {
 	Name       string
 	World      string
 	Role       string
-	State      AgentState
+	State      string
 	ActiveWrit string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
 
 // CreateAgent creates an agent record in the sphere DB. Returns the agent ID ("world/name").
-func (ss *SphereStore) CreateAgent(name, world, role string) (string, error) {
+func (s *SphereStore) CreateAgent(name, world, role string) (string, error) {
 	if err := config.ValidateAgentName(name); err != nil {
 		return "", fmt.Errorf("invalid agent: %w", err)
 	}
 	id := world + "/" + name
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := ss.db.Exec(
+	_, err := s.db.Exec(
 		`INSERT INTO agents (id, name, world, role, state, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, 'idle', ?, ?)`,
 		id, name, world, role, now, now,
@@ -42,9 +42,9 @@ func (ss *SphereStore) CreateAgent(name, world, role string) (string, error) {
 
 // EnsureAgent creates an agent if it doesn't already exist.
 // Returns nil if the agent already exists or was successfully created.
-func (ss *SphereStore) EnsureAgent(name, world, role string) error {
+func (s *SphereStore) EnsureAgent(name, world, role string) error {
 	id := world + "/" + name
-	agent, err := ss.GetAgent(id)
+	agent, err := s.GetAgent(id)
 	if err == nil && agent != nil {
 		return nil // already registered
 	}
@@ -53,7 +53,7 @@ func (ss *SphereStore) EnsureAgent(name, world, role string) error {
 		// CreateAgent will fail cleanly on unique constraint if agent exists.
 		fmt.Fprintf(os.Stderr, "store: GetAgent %q failed, attempting create: %v\n", id, err)
 	}
-	_, createErr := ss.CreateAgent(name, world, role)
+	_, createErr := s.CreateAgent(name, world, role)
 	if createErr != nil {
 		return fmt.Errorf("failed to ensure agent %q: %w", id, createErr)
 	}
@@ -61,12 +61,12 @@ func (ss *SphereStore) EnsureAgent(name, world, role string) error {
 }
 
 // GetAgent returns an agent by ID ("world/name").
-func (ss *SphereStore) GetAgent(id string) (*Agent, error) {
+func (s *SphereStore) GetAgent(id string) (*Agent, error) {
 	a := &Agent{}
 	var activeWrit sql.NullString
 	var createdAt, updatedAt string
 
-	err := ss.db.QueryRow(
+	err := s.db.QueryRow(
 		`SELECT id, name, world, role, state, active_writ, created_at, updated_at
 		 FROM agents WHERE id = ?`, id,
 	).Scan(&a.ID, &a.Name, &a.World, &a.Role, &a.State, &activeWrit, &createdAt, &updatedAt)
@@ -88,15 +88,15 @@ func (ss *SphereStore) GetAgent(id string) (*Agent, error) {
 	return a, nil
 }
 
-var validAgentStates = map[AgentState]bool{
-	AgentIdle:    true,
-	AgentWorking: true,
-	AgentStalled: true,
+var validAgentStates = map[string]bool{
+	"idle":    true,
+	"working": true,
+	"stalled": true,
 }
 
 // UpdateAgentState updates an agent's state and optionally its active_writ.
 // Pass empty activeWrit to clear it, or a writ ID to set it.
-func (ss *SphereStore) UpdateAgentState(id string, state AgentState, activeWrit string) error {
+func (s *SphereStore) UpdateAgentState(id, state, activeWrit string) error {
 	if !validAgentStates[state] {
 		return fmt.Errorf("invalid agent state %q", state)
 	}
@@ -105,12 +105,12 @@ func (ss *SphereStore) UpdateAgentState(id string, state AgentState, activeWrit 
 	var err error
 
 	if activeWrit == "" {
-		result, err = ss.db.Exec(
+		result, err = s.db.Exec(
 			`UPDATE agents SET state = ?, active_writ = NULL, updated_at = ? WHERE id = ?`,
 			state, now, id,
 		)
 	} else {
-		result, err = ss.db.Exec(
+		result, err = s.db.Exec(
 			`UPDATE agents SET state = ?, active_writ = ?, updated_at = ? WHERE id = ?`,
 			state, activeWrit, now, id,
 		)
@@ -123,7 +123,7 @@ func (ss *SphereStore) UpdateAgentState(id string, state AgentState, activeWrit 
 
 // ListAgents returns agents, optionally filtered by world and/or state.
 // When world is empty, agents across all worlds are returned.
-func (ss *SphereStore) ListAgents(world string, state AgentState) ([]Agent, error) {
+func (s *SphereStore) ListAgents(world string, state string) ([]Agent, error) {
 	query := `SELECT id, name, world, role, state, active_writ, created_at, updated_at FROM agents WHERE 1=1`
 	var args []interface{}
 	if world != "" {
@@ -136,7 +136,7 @@ func (ss *SphereStore) ListAgents(world string, state AgentState) ([]Agent, erro
 	}
 	query += ` ORDER BY name`
 
-	rows, err := ss.db.Query(query, args...)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents for world %q: %w", world, err)
 	}
@@ -168,8 +168,8 @@ func (ss *SphereStore) ListAgents(world string, state AgentState) ([]Agent, erro
 
 // DeleteAgent removes a single agent record by ID ("world/name").
 // Returns ErrNotFound if the agent does not exist.
-func (ss *SphereStore) DeleteAgent(id string) error {
-	result, err := ss.db.Exec(`DELETE FROM agents WHERE id = ?`, id)
+func (s *SphereStore) DeleteAgent(id string) error {
+	result, err := s.db.Exec(`DELETE FROM agents WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete agent %q: %w", id, err)
 	}
@@ -178,8 +178,8 @@ func (ss *SphereStore) DeleteAgent(id string) error {
 
 // DeleteAgentsForWorld removes all agent records for the given world.
 // Used during world deletion to clean up sphere state.
-func (ss *SphereStore) DeleteAgentsForWorld(world string) error {
-	_, err := ss.db.Exec(`DELETE FROM agents WHERE world = ?`, world)
+func (s *SphereStore) DeleteAgentsForWorld(world string) error {
+	_, err := s.db.Exec(`DELETE FROM agents WHERE world = ?`, world)
 	if err != nil {
 		return fmt.Errorf("failed to delete agents for world %q: %w", world, err)
 	}
@@ -187,12 +187,12 @@ func (ss *SphereStore) DeleteAgentsForWorld(world string) error {
 }
 
 // FindIdleAgent returns the first idle agent for a world, or nil if none available.
-func (ss *SphereStore) FindIdleAgent(world string) (*Agent, error) {
+func (s *SphereStore) FindIdleAgent(world string) (*Agent, error) {
 	a := &Agent{}
 	var activeWrit sql.NullString
 	var createdAt, updatedAt string
 
-	err := ss.db.QueryRow(
+	err := s.db.QueryRow(
 		`SELECT id, name, world, role, state, active_writ, created_at, updated_at
 		 FROM agents WHERE world = ? AND role = 'outpost' AND state = 'idle'
 		 ORDER BY name LIMIT 1`, world,

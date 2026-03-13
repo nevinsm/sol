@@ -50,7 +50,7 @@ func runInbox(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-func runInboxJSON(sphereStore *store.Store) error {
+func runInboxJSON(sphereStore *store.SphereStore) error {
 	items := inbox.FetchItems(sphereStore)
 
 	type jsonItem struct {

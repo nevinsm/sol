@@ -146,7 +146,7 @@ func writeTestToken(t *testing.T, solHome string) {
 	}
 }
 
-func setupTestEnv(t *testing.T) (*store.Store, *store.Store) {
+func setupTestEnv(t *testing.T) (*store.SphereStore, *store.WorldStore) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
@@ -186,7 +186,7 @@ func testConfig() Config {
 	}
 }
 
-func createWrit(t *testing.T, worldStore *store.Store, id, title string) {
+func createWrit(t *testing.T, worldStore *store.WorldStore, id, title string) {
 	t.Helper()
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := worldStore.DB().Exec(
@@ -1282,7 +1282,7 @@ func TestCleanupDoesNotTouchOtherWorlds(t *testing.T) {
 
 // createFailedMR creates a writ and a failed MR for it.
 // Transitions through the valid path: ready → claimed → failed.
-func createFailedMR(t *testing.T, worldStore *store.Store, writID, title, branch string) string {
+func createFailedMR(t *testing.T, worldStore *store.WorldStore, writID, title, branch string) string {
 	t.Helper()
 	createWrit(t, worldStore, writID, title)
 	mrID, err := worldStore.CreateMergeRequest(writID, branch, 3)
@@ -1391,7 +1391,7 @@ func recastNowFunc(skip time.Duration) func() time.Time {
 }
 
 // assertRecastMetadata checks that a writ's metadata has the expected recast count.
-func assertRecastMetadata(t *testing.T, worldStore *store.Store, writID string, wantCount int) {
+func assertRecastMetadata(t *testing.T, worldStore *store.WorldStore, writID string, wantCount int) {
 	t.Helper()
 	item, err := worldStore.GetWrit(writID)
 	if err != nil {
@@ -1983,7 +1983,7 @@ func TestRecastPersistentCountSurvivesRestart(t *testing.T) {
 // createBlockedMR creates an original writ with MR, a blocker (resolution) writ,
 // and blocks the MR with the blocker writ. Returns the MR ID.
 // The blocker writ is created with the given age (time before now).
-func createBlockedMR(t *testing.T, worldStore *store.Store, writID, blockerWritID, title, branch string, blockerAge time.Duration) string {
+func createBlockedMR(t *testing.T, worldStore *store.WorldStore, writID, blockerWritID, title, branch string, blockerAge time.Duration) string {
 	t.Helper()
 	createWrit(t, worldStore, writID, title)
 	mrID, err := worldStore.CreateMergeRequest(writID, branch, 3)

@@ -42,7 +42,7 @@ type RotateResult struct {
 // sessions with --continue for context preservation.
 //
 // The entire operation is protected by a flock on quota.json.
-func Rotate(opts RotateOpts, sphereStore *store.Store, mgr *session.Manager, logger *events.Logger) (*RotateResult, error) {
+func Rotate(opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manager, logger *events.Logger) (*RotateResult, error) {
 	lock, state, err := AcquireLock()
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire quota lock: %w", err)
@@ -265,7 +265,7 @@ func swapAndRespawn(state *State, agent store.Agent, toAccount string, opts Rota
 }
 
 // pauseAgent stops an agent session cleanly because no accounts are available.
-func pauseAgent(state *State, agent store.Agent, previousAccount string, opts RotateOpts, sphereStore *store.Store, mgr *session.Manager, logger *events.Logger) error {
+func pauseAgent(state *State, agent store.Agent, previousAccount string, opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manager, logger *events.Logger) error {
 	sessionName := config.SessionName(opts.World, agent.Name)
 
 	// Stop the session cleanly.
@@ -301,7 +301,7 @@ func pauseAgent(state *State, agent store.Agent, previousAccount string, opts Ro
 // restartPausedSessions checks for paused sessions in the given world and
 // restarts them if available accounts exist. Called when limits expire or
 // after rotation frees up accounts.
-func restartPausedSessions(state *State, opts RotateOpts, sphereStore *store.Store, mgr *session.Manager, logger *events.Logger, result *RotateResult) error {
+func restartPausedSessions(state *State, opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manager, logger *events.Logger, result *RotateResult) error {
 	available := state.AvailableAccountsLRU()
 	if len(available) == 0 {
 		return nil

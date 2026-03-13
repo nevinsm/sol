@@ -14,7 +14,7 @@ import (
 )
 
 // setupTestLedger creates a Ledger backed by a temp SOL_HOME with a world store.
-func setupTestLedger(t *testing.T, worldName string) (*Ledger, *store.Store) {
+func setupTestLedger(t *testing.T, worldName string) (*Ledger, *store.WorldStore) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)

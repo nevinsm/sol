@@ -162,7 +162,7 @@ func Import(opts ImportOptions) (*ImportResult, error) {
 // importSphereData reads JSON files from the sphere-data/ directory and
 // inserts them into sphere.db. If renaming is true, agent IDs and caravan
 // item world references are rewritten from oldWorld to newWorld.
-func importSphereData(s *store.Store, archiveRoot, oldWorld, newWorld string, renaming bool) error {
+func importSphereData(s *store.SphereStore, archiveRoot, oldWorld, newWorld string, renaming bool) error {
 	sphereDir := filepath.Join(archiveRoot, "sphere-data")
 	if _, err := os.Stat(sphereDir); os.IsNotExist(err) {
 		// No sphere data to import — not an error.
@@ -197,7 +197,7 @@ func importSphereData(s *store.Store, archiveRoot, oldWorld, newWorld string, re
 	return nil
 }
 
-func importAgents(s *store.Store, sphereDir, oldWorld, newWorld string, renaming bool) error {
+func importAgents(s *store.SphereStore, sphereDir, oldWorld, newWorld string, renaming bool) error {
 	var agents []ExportAgent
 	if err := readJSONFile(filepath.Join(sphereDir, "agents.json"), &agents); err != nil {
 		if os.IsNotExist(err) {
@@ -220,7 +220,7 @@ func importAgents(s *store.Store, sphereDir, oldWorld, newWorld string, renaming
 	return nil
 }
 
-func importMessages(s *store.Store, sphereDir, oldWorld, newWorld string, renaming bool) error {
+func importMessages(s *store.SphereStore, sphereDir, oldWorld, newWorld string, renaming bool) error {
 	var messages []ExportMessage
 	if err := readJSONFile(filepath.Join(sphereDir, "messages.json"), &messages); err != nil {
 		if os.IsNotExist(err) {
@@ -244,7 +244,7 @@ func importMessages(s *store.Store, sphereDir, oldWorld, newWorld string, renami
 	return nil
 }
 
-func importEscalations(s *store.Store, sphereDir, oldWorld, newWorld string, renaming bool) error {
+func importEscalations(s *store.SphereStore, sphereDir, oldWorld, newWorld string, renaming bool) error {
 	var escalations []ExportEscalation
 	if err := readJSONFile(filepath.Join(sphereDir, "escalations.json"), &escalations); err != nil {
 		if os.IsNotExist(err) {
@@ -266,7 +266,7 @@ func importEscalations(s *store.Store, sphereDir, oldWorld, newWorld string, ren
 	return nil
 }
 
-func importCaravans(s *store.Store, sphereDir string) error {
+func importCaravans(s *store.SphereStore, sphereDir string) error {
 	var caravans []ExportCaravan
 	if err := readJSONFile(filepath.Join(sphereDir, "caravans.json"), &caravans); err != nil {
 		if os.IsNotExist(err) {
@@ -283,7 +283,7 @@ func importCaravans(s *store.Store, sphereDir string) error {
 	return nil
 }
 
-func importCaravanItems(s *store.Store, sphereDir, oldWorld, newWorld string, renaming bool) error {
+func importCaravanItems(s *store.SphereStore, sphereDir, oldWorld, newWorld string, renaming bool) error {
 	var items []ExportCaravanItem
 	if err := readJSONFile(filepath.Join(sphereDir, "caravan_items.json"), &items); err != nil {
 		if os.IsNotExist(err) {

@@ -4,14 +4,14 @@ import "fmt"
 
 // AddDependency records that fromID depends on toID.
 // Both writs must exist. Returns error on cycle detection.
-func (ws *WorldStore) AddDependency(fromID, toID string) error {
+func (s *WorldStore) AddDependency(fromID, toID string) error {
 	if fromID == toID {
 		return fmt.Errorf("writ %q cannot depend on itself", fromID)
 	}
 
 	// Verify both writs exist.
 	var exists int
-	err := ws.db.QueryRow(`SELECT COUNT(*) FROM writs WHERE id = ?`, fromID).Scan(&exists)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM writs WHERE id = ?`, fromID).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("failed to check writ %q: %w", fromID, err)
 	}
@@ -19,7 +19,7 @@ func (ws *WorldStore) AddDependency(fromID, toID string) error {
 		return fmt.Errorf("writ %q not found", fromID)
 	}
 
-	err = ws.db.QueryRow(`SELECT COUNT(*) FROM writs WHERE id = ?`, toID).Scan(&exists)
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM writs WHERE id = ?`, toID).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("failed to check writ %q: %w", toID, err)
 	}
@@ -28,7 +28,7 @@ func (ws *WorldStore) AddDependency(fromID, toID string) error {
 	}
 
 	// Check for cycles.
-	cycle, err := detectCycle(ws.GetDependencies, fromID, toID)
+	cycle, err := detectCycle(s.GetDependencies, fromID, toID)
 	if err != nil {
 		return fmt.Errorf("failed to check for cycles: %w", err)
 	}
@@ -36,7 +36,7 @@ func (ws *WorldStore) AddDependency(fromID, toID string) error {
 		return fmt.Errorf("adding dependency %q → %q would create a cycle", fromID, toID)
 	}
 
-	_, err = ws.db.Exec(
+	_, err = s.db.Exec(
 		`INSERT OR IGNORE INTO dependencies (from_id, to_id) VALUES (?, ?)`,
 		fromID, toID,
 	)
@@ -47,8 +47,8 @@ func (ws *WorldStore) AddDependency(fromID, toID string) error {
 }
 
 // RemoveDependency removes a dependency relationship.
-func (ws *WorldStore) RemoveDependency(fromID, toID string) error {
-	_, err := ws.db.Exec(
+func (s *WorldStore) RemoveDependency(fromID, toID string) error {
+	_, err := s.db.Exec(
 		`DELETE FROM dependencies WHERE from_id = ? AND to_id = ?`,
 		fromID, toID,
 	)
@@ -60,8 +60,8 @@ func (ws *WorldStore) RemoveDependency(fromID, toID string) error {
 
 // GetDependencies returns the IDs of writs that itemID depends on.
 // (What must complete before this item can start.)
-func (ws *WorldStore) GetDependencies(itemID string) ([]string, error) {
-	rows, err := ws.db.Query(
+func (s *WorldStore) GetDependencies(itemID string) ([]string, error) {
+	rows, err := s.db.Query(
 		`SELECT to_id FROM dependencies WHERE from_id = ? ORDER BY to_id`,
 		itemID,
 	)
@@ -86,8 +86,8 @@ func (ws *WorldStore) GetDependencies(itemID string) ([]string, error) {
 
 // GetDependents returns the IDs of writs that depend on itemID.
 // (What is waiting for this item to complete.)
-func (ws *WorldStore) GetDependents(itemID string) ([]string, error) {
-	rows, err := ws.db.Query(
+func (s *WorldStore) GetDependents(itemID string) ([]string, error) {
+	rows, err := s.db.Query(
 		`SELECT from_id FROM dependencies WHERE to_id = ? ORDER BY from_id`,
 		itemID,
 	)
@@ -114,10 +114,10 @@ func (ws *WorldStore) GetDependents(itemID string) ([]string, error) {
 // (status is "closed" / merged). An item with no dependencies is
 // always ready. Note: "done" (code complete, awaiting merge) is NOT
 // sufficient — the prerequisite code must be merged to the target branch.
-func (ws *WorldStore) IsReady(itemID string) (bool, error) {
+func (s *WorldStore) IsReady(itemID string) (bool, error) {
 	// Count dependencies whose writ is NOT closed (merged).
 	var unsatisfied int
-	err := ws.db.QueryRow(`
+	err := s.db.QueryRow(`
 		SELECT COUNT(*) FROM dependencies d
 		JOIN writs w ON d.to_id = w.id
 		WHERE d.from_id = ? AND w.status != 'closed'`,
@@ -133,7 +133,7 @@ func (ws *WorldStore) IsReady(itemID string) (bool, error) {
 // (non-closed) writs in its transitive dependent graph. This is used by
 // writ clean to guard against cleaning output directories that are still
 // needed by downstream writs.
-func (ws *WorldStore) HasOpenTransitiveDependents(writID string) (bool, error) {
+func (s *WorldStore) HasOpenTransitiveDependents(writID string) (bool, error) {
 	visited := map[string]bool{}
 	queue := []string{writID}
 	for len(queue) > 0 {
@@ -144,14 +144,14 @@ func (ws *WorldStore) HasOpenTransitiveDependents(writID string) (bool, error) {
 		}
 		visited[current] = true
 
-		dependents, err := ws.GetDependents(current)
+		dependents, err := s.GetDependents(current)
 		if err != nil {
 			return false, err
 		}
 		for _, depID := range dependents {
 			// Check if this dependent is open (not closed).
 			var status string
-			err := ws.db.QueryRow(`SELECT status FROM writs WHERE id = ?`, depID).Scan(&status)
+			err := s.db.QueryRow(`SELECT status FROM writs WHERE id = ?`, depID).Scan(&status)
 			if err != nil {
 				return false, fmt.Errorf("failed to check status of writ %q: %w", depID, err)
 			}
