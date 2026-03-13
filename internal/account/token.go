@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // Token represents stored credentials for a Claude account.
@@ -70,14 +71,8 @@ func WriteToken(handle string, tok *Token) error {
 		return fmt.Errorf("failed to marshal token: %w", err)
 	}
 
-	path := TokenPath(handle)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+	if err := fileutil.AtomicWrite(TokenPath(handle), append(data, '\n'), 0o600); err != nil {
 		return fmt.Errorf("failed to write token: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to commit token: %w", err)
 	}
 	return nil
 }

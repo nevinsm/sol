@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -399,13 +400,8 @@ func writeAgentCredentials(configDir, accountHandle string) error {
 	destPath := filepath.Join(configDir, ".credentials.json")
 	_ = os.Remove(destPath)
 
-	tmp := destPath + ".tmp"
-	if err := os.WriteFile(tmp, append(out, '\n'), 0o600); err != nil {
+	if err := fileutil.AtomicWrite(destPath, append(out, '\n'), 0o600); err != nil {
 		return fmt.Errorf("failed to write credentials: %w", err)
-	}
-	if err := os.Rename(tmp, destPath); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to commit credentials: %w", err)
 	}
 
 	// Write .account metadata file.

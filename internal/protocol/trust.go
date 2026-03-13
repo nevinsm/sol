@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // TrustDirectory marks a directory as trusted in Claude Code's global state
@@ -94,7 +96,7 @@ func trustDirectoryInFile(dir, claudeJSON string) error {
 		if err != nil {
 			return fmt.Errorf("failed to marshal %s: %w", claudeJSON, err)
 		}
-		return atomicWriteFile(claudeJSON, out, 0o600)
+		return fileutil.AtomicWrite(claudeJSON, out, 0o600)
 	})
 }
 
@@ -119,31 +121,3 @@ func withClaudeJSONLock(claudeJSON string, fn func() error) error {
 	return fn()
 }
 
-// atomicWriteFile writes data to path atomically using the temp+fsync+rename
-// pattern. This ensures readers never see a partially-written file.
-func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
-	if err != nil {
-		return fmt.Errorf("failed to write %s: %w", path, err)
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return fmt.Errorf("failed to write %s: %w", path, err)
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return fmt.Errorf("failed to sync %s: %w", path, err)
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to close %s: %w", path, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to commit %s: %w", path, err)
-	}
-	return nil
-}

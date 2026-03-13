@@ -11,6 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // DefaultPatrolInterval is how often the broker probes provider health.
@@ -278,19 +279,14 @@ func (b *Broker) writeHeartbeat(status string, tokenHealth []AccountTokenHealth)
 		TokenHealth:         tokenHealth,
 	}
 
+	dir := filepath.Dir(heartbeatPath())
+	os.MkdirAll(dir, 0o755)
+
 	data, err := json.MarshalIndent(hb, "", "  ")
 	if err != nil {
 		return
 	}
-
-	dir := filepath.Dir(heartbeatPath())
-	os.MkdirAll(dir, 0o755)
-
-	tmp := heartbeatPath() + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
-		return
-	}
-	os.Rename(tmp, heartbeatPath())
+	_ = fileutil.AtomicWrite(heartbeatPath(), append(data, '\n'), 0o644)
 }
 
 // ReadHeartbeat reads the broker's heartbeat file.

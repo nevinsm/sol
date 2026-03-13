@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // QueryDir returns the query protocol directory for a world's governor.
@@ -31,30 +32,8 @@ func WritePending(world, question string) error {
 		return fmt.Errorf("failed to create query directory for world %q: %w", world, err)
 	}
 
-	path := PendingPath(world)
-	tmp := path + ".tmp"
-
-	f, err := os.Create(tmp)
-	if err != nil {
+	if err := fileutil.AtomicWrite(PendingPath(world), []byte(question), 0o644); err != nil {
 		return fmt.Errorf("failed to write query for world %q: %w", world, err)
-	}
-	if _, err := f.WriteString(question); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return fmt.Errorf("failed to write query for world %q: %w", world, err)
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return fmt.Errorf("failed to sync query for world %q: %w", world, err)
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to close query for world %q: %w", world, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to commit query for world %q: %w", world, err)
 	}
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/session"
 )
 
@@ -79,29 +80,8 @@ func Enqueue(session string, msg Message) error {
 		return fmt.Errorf("failed to marshal nudge message for %q: %w", session, err)
 	}
 
-	// Atomic write: temp file → sync → rename.
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
-	if err != nil {
+	if err := fileutil.AtomicWrite(path, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write nudge for %q: %w", session, err)
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return fmt.Errorf("failed to write nudge for %q: %w", session, err)
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return fmt.Errorf("failed to sync nudge for %q: %w", session, err)
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to close nudge for %q: %w", session, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to commit nudge for %q: %w", session, err)
 	}
 	return nil
 }

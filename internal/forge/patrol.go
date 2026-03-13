@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
@@ -68,20 +69,8 @@ func WriteHeartbeat(world string, hb *Heartbeat) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create forge directory: %w", err)
 	}
-
-	data, err := json.MarshalIndent(hb, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal heartbeat: %w", err)
-	}
-
-	path := HeartbeatPath(world)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write heartbeat temp file: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to rename heartbeat file: %w", err)
+	if err := fileutil.AtomicWriteJSON(HeartbeatPath(world), hb, 0o644); err != nil {
+		return fmt.Errorf("failed to write heartbeat: %w", err)
 	}
 	return nil
 }
