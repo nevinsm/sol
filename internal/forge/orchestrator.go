@@ -345,7 +345,7 @@ func (s *patrolState) cleanupAgentRecord() {
 	}
 	defer sphereStore.Close()
 
-	if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+	if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
 		// Not found is fine — record may not exist if Launch was never called.
 		s.forge.logger.Debug("cleanup: failed to update agent record", "error", err)
 	}

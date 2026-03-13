@@ -268,7 +268,7 @@ func (s *Prefect) heartbeat() {
 			if s.degraded {
 				s.logger.Warn("session dead but degraded, setting stalled",
 					"agent", agent.Name, "world", agent.World)
-				if err := s.sphereStore.UpdateAgentState(agent.ID, "stalled", agent.ActiveWrit); err != nil {
+				if err := s.sphereStore.UpdateAgentState(agent.ID, store.AgentStalled, agent.ActiveWrit); err != nil {
 					s.logger.Error("failed to set agent stalled", "agent", agent.Name, "error", err)
 				}
 				continue
@@ -349,7 +349,7 @@ func (s *Prefect) respawn(agent store.Agent) {
 			s.logger.Info("session dead, deferring respawn",
 				"agent", agent.Name, "world", agent.World,
 				"restart", restartCount, "delay", delay)
-			if err := s.sphereStore.UpdateAgentState(agentID, "stalled", agent.ActiveWrit); err != nil {
+			if err := s.sphereStore.UpdateAgentState(agentID, store.AgentStalled, agent.ActiveWrit); err != nil {
 				s.logger.Error("failed to set agent stalled", "agent", agent.Name, "error", err)
 			}
 			return
@@ -364,7 +364,7 @@ func (s *Prefect) respawn(agent store.Agent) {
 	if !dirExists(worktreeDir) {
 		s.logger.Warn("worktree missing, setting agent idle",
 			"agent", agent.Name, "world", agent.World, "worktree", worktreeDir)
-		if err := s.sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+		if err := s.sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
 			s.logger.Error("failed to set agent idle", "agent", agent.Name, "error", err)
 		}
 		tether.Clear(agent.World, agent.Name, agent.Role)
@@ -1022,7 +1022,7 @@ func (s *Prefect) shutdown() {
 			}
 		}
 		// Set agent to stalled (hooks persist for recovery).
-		if err := s.sphereStore.UpdateAgentState(agent.ID, "stalled", agent.ActiveWrit); err != nil {
+		if err := s.sphereStore.UpdateAgentState(agent.ID, store.AgentStalled, agent.ActiveWrit); err != nil {
 			s.logger.Error("failed to set agent stalled during shutdown",
 				"agent", agent.Name, "error", err)
 		}
