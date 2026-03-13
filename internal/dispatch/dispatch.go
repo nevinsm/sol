@@ -65,15 +65,9 @@ type WorldStore interface {
 
 // SphereStore defines the sphere store operations used by dispatch.
 type SphereStore interface {
-	GetAgent(id string) (*store.Agent, error)
-	FindIdleAgent(world string) (*store.Agent, error)
-	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
-	ListAgents(world string, state store.AgentState) ([]store.Agent, error)
-	CreateAgent(name, world, role string) (string, error)
-	DeleteAgent(id string) error
-	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
-	ResolveEscalation(id string) error
-	Close() error
+	store.AgentReader
+	store.AgentWriter
+	store.EscalationStore
 }
 
 // WorktreePath returns the worktree directory for an agent.

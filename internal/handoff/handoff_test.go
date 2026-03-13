@@ -744,6 +744,10 @@ func (m *mockSphereStore) GetAgent(id string) (*store.Agent, error) {
 	return nil, fmt.Errorf("agent %q not found", id)
 }
 
+func (m *mockSphereStore) ListAgents(world string, state string) ([]store.Agent, error) {
+	return nil, nil
+}
+
 func TestExec(t *testing.T) {
 	solHome := setupSolHome(t)
 
@@ -1852,6 +1856,9 @@ type mockStartupSphere struct{}
 
 func (m *mockStartupSphere) GetAgent(id string) (*store.Agent, error) {
 	return &store.Agent{ID: id}, nil
+}
+func (m *mockStartupSphere) ListAgents(world string, state string) ([]store.Agent, error) {
+	return nil, nil
 }
 func (m *mockStartupSphere) CreateAgent(name, world, role string) (string, error) {
 	return world + "/" + name, nil

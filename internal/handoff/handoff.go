@@ -46,8 +46,8 @@ type SessionManager = session.SessionManager
 
 // SphereStore is the subset of store.Store used by handoff.
 type SphereStore interface {
-	SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error)
-	GetAgent(id string) (*store.Agent, error)
+	store.AgentReader
+	store.MessageSender
 }
 
 // HandoffPath returns the path to an agent's handoff state file.

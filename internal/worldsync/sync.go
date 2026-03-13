@@ -19,11 +19,6 @@ type NotifyManager interface {
 	Inject(name, text string, submit bool) error
 }
 
-// AgentLister lists agents from the sphere store.
-type AgentLister interface {
-	ListAgents(world string, state store.AgentState) ([]store.Agent, error)
-}
-
 // SyncResult records the outcome of syncing a single component.
 type SyncResult struct {
 	Component string
@@ -151,7 +146,7 @@ func SyncGovernor(world string, mgr NotifyManager) error {
 
 // SyncAllComponents syncs the forge and notifies all envoys and the governor.
 // Called after the managed repo is already synced. Returns results for each component.
-func SyncAllComponents(world, targetBranch string, lister AgentLister, mgr NotifyManager) []SyncResult {
+func SyncAllComponents(world, targetBranch string, lister store.AgentReader, mgr NotifyManager) []SyncResult {
 	var results []SyncResult
 
 	// Sync forge if worktree exists.
