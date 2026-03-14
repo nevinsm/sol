@@ -11,6 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
 )
 
 // writeTestToken writes a minimal api_key token so startup.Launch can inject credentials in tests.
@@ -594,5 +595,323 @@ func TestEnvoyStart(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "Echo") {
 		t.Errorf("persona missing agent name, got: %q", string(data))
+	}
+}
+
+// --- mockDeleteStore ---
+
+type mockDeleteStore struct {
+	agents    map[string]*store.Agent
+	getErr    error
+	deleteErr error
+	deleted   []string
+}
+
+func (m *mockDeleteStore) GetAgent(id string) (*store.Agent, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	a, ok := m.agents[id]
+	if !ok {
+		return nil, fmt.Errorf("agent %q: %w", id, store.ErrNotFound)
+	}
+	return a, nil
+}
+
+func (m *mockDeleteStore) DeleteAgent(id string) error {
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
+	m.deleted = append(m.deleted, id)
+	delete(m.agents, id)
+	return nil
+}
+
+// newEnvoyAgent returns a store.Agent with role "envoy" for use in Delete tests.
+func newEnvoyAgent(world, name string) *store.Agent {
+	return &store.Agent{
+		ID:    world + "/" + name,
+		Name:  name,
+		World: world,
+		Role:  "envoy",
+		State: store.AgentIdle,
+	}
+}
+
+// setupEnvoy creates a git repo and provisions a real envoy in the temp dir,
+// then returns a matching mockDeleteStore for use in Delete tests.
+func setupEnvoy(t *testing.T, tmp, world, name string) (sourceRepo string, ds *mockDeleteStore) {
+	t.Helper()
+	sourceRepo = filepath.Join(tmp, "repo")
+	initGitRepo(t, sourceRepo)
+
+	ss := &mockSphereStore{agents: map[string]store.Agent{}}
+	if err := Create(CreateOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: sourceRepo,
+	}, ss); err != nil {
+		t.Fatalf("setupEnvoy: Create failed: %v", err)
+	}
+
+	ds = &mockDeleteStore{
+		agents: map[string]*store.Agent{
+			world + "/" + name: newEnvoyAgent(world, name),
+		},
+	}
+	return sourceRepo, ds
+}
+
+// --- Delete Tests ---
+
+func TestDeleteHappyPath(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	// Verify preconditions: dirs exist, no tether, no session.
+	if _, err := os.Stat(EnvoyDir(world, name)); os.IsNotExist(err) {
+		t.Fatal("precondition: envoy dir should exist before Delete")
+	}
+	if _, err := os.Stat(WorktreePath(world, name)); os.IsNotExist(err) {
+		t.Fatal("precondition: worktree should exist before Delete")
+	}
+
+	if err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: sourceRepo,
+		Force:      false,
+	}, ds, mgr); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	// Agent record deleted.
+	if len(ds.deleted) != 1 || ds.deleted[0] != world+"/"+name {
+		t.Errorf("DeleteAgent not called correctly, got %v", ds.deleted)
+	}
+	if _, ok := ds.agents[world+"/"+name]; ok {
+		t.Error("agent should have been removed from store")
+	}
+
+	// Envoy directory removed (covers worktree and brief dirs too).
+	if _, err := os.Stat(EnvoyDir(world, name)); !os.IsNotExist(err) {
+		t.Error("envoy directory should have been removed")
+	}
+
+	// Git branch deleted.
+	branch := "envoy/" + world + "/" + name
+	cmd := exec.Command("git", "-C", sourceRepo, "branch", "--list", branch)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git branch --list failed: %v", err)
+	}
+	if strings.TrimSpace(string(out)) != "" {
+		t.Errorf("git branch %q should have been deleted, still listed", branch)
+	}
+}
+
+func TestDeleteAgentNotFound(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	ds := &mockDeleteStore{
+		agents: map[string]*store.Agent{},
+		getErr: fmt.Errorf("agent %q: %w", "myworld/Echo", store.ErrNotFound),
+	}
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	err := Delete(DeleteOpts{
+		World:      "myworld",
+		Name:       "Echo",
+		SourceRepo: tmp,
+		Force:      false,
+	}, ds, mgr)
+	if err == nil {
+		t.Fatal("expected error when agent not found, got nil")
+	}
+}
+
+func TestDeleteWrongRole(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	ds := &mockDeleteStore{
+		agents: map[string]*store.Agent{
+			"myworld/Echo": {
+				ID:    "myworld/Echo",
+				Name:  "Echo",
+				World: "myworld",
+				Role:  "outpost", // wrong role
+				State: store.AgentIdle,
+			},
+		},
+	}
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	err := Delete(DeleteOpts{
+		World:      "myworld",
+		Name:       "Echo",
+		SourceRepo: tmp,
+		Force:      false,
+	}, ds, mgr)
+	if err == nil {
+		t.Fatal("expected error for wrong role, got nil")
+	}
+	if !strings.Contains(err.Error(), "expected \"envoy\"") {
+		t.Errorf("error should mention expected role, got %q", err.Error())
+	}
+}
+
+func TestDeleteActiveSessionRefuses(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+	ds := &mockDeleteStore{
+		agents: map[string]*store.Agent{
+			world + "/" + name: newEnvoyAgent(world, name),
+		},
+	}
+	sessName := config.SessionName(world, name)
+	mgr := &mockStopManager{sessions: map[string]bool{sessName: true}}
+
+	err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: tmp,
+		Force:      false,
+	}, ds, mgr)
+	if err == nil {
+		t.Fatal("expected error for active session with Force=false, got nil")
+	}
+	if !strings.Contains(err.Error(), "active session") {
+		t.Errorf("error should mention active session, got %q", err.Error())
+	}
+	// Session should not have been stopped.
+	if !mgr.sessions[sessName] {
+		t.Error("session should still be running after refused delete")
+	}
+}
+
+func TestDeleteActiveSessionForce(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
+
+	sessName := config.SessionName(world, name)
+	mgr := &mockStopManager{sessions: map[string]bool{sessName: true}}
+
+	if err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: sourceRepo,
+		Force:      true,
+	}, ds, mgr); err != nil {
+		t.Fatalf("Delete with Force=true failed: %v", err)
+	}
+
+	// Session should have been stopped.
+	if mgr.sessions[sessName] {
+		t.Error("session should have been stopped when Force=true")
+	}
+
+	// Agent record deleted.
+	if len(ds.deleted) != 1 {
+		t.Errorf("expected DeleteAgent called once, got %d", len(ds.deleted))
+	}
+
+	// Envoy directory removed.
+	if _, err := os.Stat(EnvoyDir(world, name)); !os.IsNotExist(err) {
+		t.Error("envoy directory should have been removed")
+	}
+}
+
+func TestDeleteTetheredRefuses(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+
+	// Create the envoy directory so tether.Write has a valid path.
+	envoyDir := EnvoyDir(world, name)
+	if err := os.MkdirAll(envoyDir, 0o755); err != nil {
+		t.Fatalf("failed to create envoy dir: %v", err)
+	}
+
+	// Write a tether file.
+	if err := tether.Write(world, name, "sol-abc12345abcdef01", "envoy"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	ds := &mockDeleteStore{
+		agents: map[string]*store.Agent{
+			world + "/" + name: newEnvoyAgent(world, name),
+		},
+	}
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: tmp,
+		Force:      false,
+	}, ds, mgr)
+	if err == nil {
+		t.Fatal("expected error for tethered envoy with Force=false, got nil")
+	}
+	if !strings.Contains(err.Error(), "tethered") {
+		t.Errorf("error should mention tether, got %q", err.Error())
+	}
+
+	// Tether should still be present.
+	if !tether.IsTethered(world, name, "envoy") {
+		t.Error("tether should still be present after refused delete")
+	}
+}
+
+func TestDeleteTetheredForce(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	// Write a tether file.
+	if err := tether.Write(world, name, "sol-abc12345abcdef01", "envoy"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+	if !tether.IsTethered(world, name, "envoy") {
+		t.Fatal("precondition: tether should be present before Delete")
+	}
+
+	if err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: sourceRepo,
+		Force:      true,
+	}, ds, mgr); err != nil {
+		t.Fatalf("Delete with Force=true (tethered) failed: %v", err)
+	}
+
+	// Tether should have been cleared.
+	if tether.IsTethered(world, name, "envoy") {
+		t.Error("tether should have been cleared when Force=true")
+	}
+
+	// Agent record deleted.
+	if len(ds.deleted) != 1 {
+		t.Errorf("expected DeleteAgent called once, got %d", len(ds.deleted))
+	}
+
+	// Envoy directory removed.
+	if _, err := os.Stat(EnvoyDir(world, name)); !os.IsNotExist(err) {
+		t.Error("envoy directory should have been removed")
 	}
 }
