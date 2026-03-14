@@ -654,28 +654,6 @@ func TestRenderWorldSummaryWithoutCapacity(t *testing.T) {
 	}
 }
 
-func TestRenderEscalationLine(t *testing.T) {
-	esc := &EscalationSummary{
-		Total: 3,
-		BySeverity: map[string]int{
-			"critical": 1,
-			"high":     2,
-		},
-	}
-
-	line := renderEscalationLine(esc)
-
-	checks := []string{
-		"Escalations: 3 open",
-		"1 critical",
-		"2 high",
-	}
-	for _, check := range checks {
-		if !strings.Contains(line, check) {
-			t.Errorf("renderEscalationLine missing %q in %q", check, line)
-		}
-	}
-}
 
 func TestRenderSphereWithEscalations(t *testing.T) {
 	s := &SphereStatus{

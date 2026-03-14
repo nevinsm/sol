@@ -443,24 +443,23 @@ func (s *patrolState) verifyPush(ctx context.Context, mr *store.MergeRequest) er
 		retryDelay = defaultRetryDelay
 	}
 
+	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		err := s.tryVerifyPush(ctx, mr)
-		if err == nil {
+		lastErr = s.tryVerifyPush(ctx, mr)
+		if lastErr == nil {
 			return nil
 		}
 		if attempt < maxAttempts {
 			s.forge.logger.Warn("push verification failed, retrying",
-				"mr", mr.ID, "attempt", attempt, "error", err)
+				"mr", mr.ID, "attempt", attempt, "error", lastErr)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-time.After(retryDelay):
 			}
-		} else {
-			return err
 		}
 	}
-	return nil // unreachable
+	return lastErr
 }
 
 // tryVerifyPush performs a single fetch+grep attempt to verify the merge landed.

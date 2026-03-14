@@ -821,34 +821,6 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 	return b.String()
 }
 
-// renderEscalationLine returns a formatted escalation summary line.
-// Format: "Escalations: 3 open (1 critical, 2 high)"
-func renderEscalationLine(esc *EscalationSummary) string {
-	line := fmt.Sprintf("Escalations: %d open", esc.Total)
-
-	// Build severity breakdown in decreasing severity order.
-	severityOrder := []string{"critical", "high", "medium", "low"}
-	var parts []string
-	for _, sev := range severityOrder {
-		if count, ok := esc.BySeverity[sev]; ok && count > 0 {
-			part := fmt.Sprintf("%d %s", count, sev)
-			switch sev {
-			case "critical":
-				part = errorStyle.Render(part)
-			case "high", "medium":
-				part = warnStyle.Render(part)
-			}
-			parts = append(parts, part)
-		}
-	}
-
-	if len(parts) > 0 {
-		line += " (" + strings.Join(parts, ", ") + ")"
-	}
-
-	return line + "\n"
-}
-
 // RenderWorldConfig renders the config section for sol world status.
 func RenderWorldConfig(world string, cfg config.WorldConfig) string {
 	var b strings.Builder
