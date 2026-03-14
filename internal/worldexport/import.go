@@ -259,7 +259,7 @@ func importEscalations(s *store.SphereStore, sphereDir, oldWorld, newWorld strin
 			source = rewriteAgentID(source, oldWorld, newWorld)
 		}
 		if err := s.ImportEscalation(e.ID, e.Severity, source, e.Description,
-			e.Status, e.Acknowledged, e.CreatedAt, e.UpdatedAt); err != nil {
+			e.Status, e.Acknowledged, e.CreatedAt, e.UpdatedAt, e.SourceRef, e.LastNotifiedAt); err != nil {
 			return fmt.Errorf("failed to import escalation %q: %w", e.ID, err)
 		}
 	}

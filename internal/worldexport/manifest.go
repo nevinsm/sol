@@ -82,14 +82,16 @@ type ExportMessage struct {
 
 // ExportEscalation is the JSON-serializable representation of an escalation record.
 type ExportEscalation struct {
-	ID           string `json:"id"`
-	Severity     string `json:"severity"`
-	Source       string `json:"source"`
-	Description  string `json:"description"`
-	Status       string `json:"status"`
-	Acknowledged bool   `json:"acknowledged"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
+	ID             string `json:"id"`
+	Severity       string `json:"severity"`
+	Source         string `json:"source"`
+	Description    string `json:"description"`
+	SourceRef      string `json:"source_ref,omitempty"`
+	Status         string `json:"status"`
+	Acknowledged   bool   `json:"acknowledged"`
+	LastNotifiedAt string `json:"last_notified_at,omitempty"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 // ExportCaravan is the JSON-serializable representation of a caravan record.
