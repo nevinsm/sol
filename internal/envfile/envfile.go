@@ -9,6 +9,7 @@
 //   - Optional "export " prefix (stripped)
 //   - Single or double quoted values (quotes stripped)
 //   - Lines without "=" are rejected with *ParseError
+//   - Lines with an empty key (e.g. "=value") are rejected with *ParseError
 package envfile
 
 import (
@@ -39,6 +40,7 @@ func (e *ParseError) Error() string {
 //   - An optional "export " prefix is stripped before parsing.
 //   - The first '=' on the line is the key/value separator.
 //   - A line with no '=' is a syntax error; ParseFile returns a *ParseError.
+//   - A line with an empty key (e.g. "=value") is a syntax error; ParseFile returns a *ParseError.
 //   - Values wrapped in matching single or double quotes have those quotes stripped.
 func ParseFile(path string) (map[string]string, error) {
 	f, err := os.Open(path)
@@ -75,6 +77,15 @@ func ParseFile(path string) (map[string]string, error) {
 			}
 		}
 		key = strings.TrimSpace(key)
+
+		// Reject empty keys (e.g. "=value").
+		if key == "" {
+			return nil, &ParseError{
+				Path: path,
+				Line: lineNum,
+				Msg:  fmt.Sprintf("empty key in %q", line),
+			}
+		}
 
 		// Strip matching surrounding quotes (single or double).
 		if len(value) >= 2 {
