@@ -2170,6 +2170,85 @@ func TestDispatchOrphanedResolution_AttemptCapEscalates(t *testing.T) {
 	}
 }
 
+func TestDispatchOrphanedResolution_CastFailureDoesNotIncrementCount(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	// Create blocked MR with resolution writ older than the grace period.
+	createBlockedMR(t, worldStore, "sol-cf-orig6", "sol-cf-res-6", "Feature F", "outpost/Toast/sol-cf-orig6", 10*time.Minute)
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		return nil, fmt.Errorf("no available agents")
+	})
+
+	// Pre-set dispatch count to 1 so we can observe it stays unchanged.
+	w.resolutionDispatchCounts["sol-cf-res-6"] = 1
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Count should still be 1 — cast failure must NOT increment the counter.
+	if w.resolutionDispatchCounts["sol-cf-res-6"] != 1 {
+		t.Errorf("resolution dispatch count = %d, want 1 (cast failure should not increment count)",
+			w.resolutionDispatchCounts["sol-cf-res-6"])
+	}
+}
+
+func TestDispatchOrphanedResolution_EscalatesExactlyOnce(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 2
+
+	// Create blocked MR with resolution writ older than the grace period.
+	createBlockedMR(t, worldStore, "sol-eo-orig7", "sol-eo-res-7", "Feature G", "outpost/Toast/sol-eo-orig7", 10*time.Minute)
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	// Pre-set dispatch count to max so the first patrol fires the escalation.
+	w.resolutionDispatchCounts["sol-eo-res-7"] = 2
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("first patrol() error: %v", err)
+	}
+
+	msgs1, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs1) == 0 {
+		t.Fatal("expected RECOVERY_NEEDED message after first patrol at max attempts")
+	}
+	countAfterFirst := len(msgs1)
+
+	// Second patrol — count is now maxAttempts+1; escalation should NOT fire again.
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("second patrol() error: %v", err)
+	}
+
+	msgs2, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs2) != countAfterFirst {
+		t.Errorf("RECOVERY_NEEDED count went from %d to %d after second patrol — escalation should fire exactly once",
+			countAfterFirst, len(msgs2))
+	}
+
+	if castCalled {
+		t.Error("castFn should not be called once max attempts reached")
+	}
+}
+
 func TestPruneOrphanedBranches(t *testing.T) {
 	// Create a bare "remote" repo and a local clone to simulate real git workflows.
 	tmpDir := t.TempDir()
