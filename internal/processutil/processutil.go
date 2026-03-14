@@ -142,7 +142,7 @@ func WritePID(path string, pid int) error {
 }
 
 // ReadPID reads the PID from the file at path. Returns 0, nil if the file does
-// not exist or contains invalid content (treated as "not found").
+// not exist. Returns 0, error if the content is not a valid integer.
 func ReadPID(path string) (int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
