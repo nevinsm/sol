@@ -32,6 +32,7 @@ type Config struct {
 	MaxRecastAttempts  int           // default: 3 (per failed MR writ)
 	CaptureLines       int           // default: 80 (lines of tmux output to capture)
 	AssessCommand      string        // default: "claude -p" (AI assessment command)
+	AssessTimeout      time.Duration // default: 30 seconds — timeout for AI assessment command
 	SourceRepo         string        // path to source git repo
 	SolHome            string        // SOL_HOME path
 	IdleReapTimeout    time.Duration // default: 10 minutes — reap idle agents older than this
@@ -47,6 +48,7 @@ func DefaultConfig(world, sourceRepo, solHome string) Config {
 		MaxRecastAttempts: 3,
 		CaptureLines:      80,
 		AssessCommand:     "claude -p",
+		AssessTimeout:     30 * time.Second,
 		SourceRepo:        sourceRepo,
 		SolHome:           solHome,
 		IdleReapTimeout:   10 * time.Minute,
@@ -642,6 +644,10 @@ func (w *Sentinel) checkClosedWritTethers(agents []store.Agent, reapedCount *int
 func (w *Sentinel) checkProgress(ctx context.Context, agent store.Agent, sessionName string) error {
 	output, err := w.sessions.Capture(sessionName, w.config.CaptureLines)
 	if err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit",
+				map[string]any{"error": err.Error(), "action": "capture_failed", "session": sessionName})
+		}
 		return nil // can't capture, skip assessment
 	}
 
@@ -705,7 +711,11 @@ func (w *Sentinel) assessAgent(ctx context.Context, agent store.Agent, sessionNa
 func (w *Sentinel) runAssessment(ctx context.Context, agent store.Agent, capturedOutput string) (*AssessmentResult, error) {
 	prompt := buildAssessmentPrompt(agent, capturedOutput, w.config.CaptureLines)
 
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	assessTimeout := w.config.AssessTimeout
+	if assessTimeout == 0 {
+		assessTimeout = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, assessTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", w.config.AssessCommand)
