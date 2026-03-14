@@ -750,6 +750,7 @@ func (d *Consul) detectOrphanedSessions(ctx context.Context) (int, error) {
 	for _, w := range worlds {
 		// Sentinel is a direct Go process (no tmux session), so no session to mark as known.
 		known[fmt.Sprintf("sol-%s-forge", w.Name)] = true
+		known[config.SessionName(w.Name, "forge-merge")] = true
 		known[fmt.Sprintf("sol-%s-governor", w.Name)] = true
 	}
 
