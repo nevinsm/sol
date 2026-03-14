@@ -89,28 +89,6 @@ func (r *Forge) EnforceCaravanBlocks() (int, error) {
 	return blocked, nil
 }
 
-// ListCaravanBlocked returns MRs that are blocked by caravan-level dependencies.
-func (r *Forge) ListCaravanBlocked() ([]store.MergeRequest, error) {
-	all, err := r.worldStore.ListMergeRequests("ready")
-	if err != nil {
-		return nil, fmt.Errorf("failed to list merge requests: %w", err)
-	}
-	var blocked []store.MergeRequest
-	for _, mr := range all {
-		if mr.BlockedBy != "" {
-			continue // already blocked by writ, shown in ListBlocked
-		}
-		isBlocked, _, err := r.sphereStore.IsWritBlockedByCaravanDeps(mr.WritID)
-		if err != nil {
-			continue
-		}
-		if isBlocked {
-			blocked = append(blocked, mr)
-		}
-	}
-	return blocked, nil
-}
-
 // ListBlocked returns MRs with blocked_by IS NOT NULL.
 func (r *Forge) ListBlocked() ([]store.MergeRequest, error) {
 	all, err := r.worldStore.ListMergeRequests("")

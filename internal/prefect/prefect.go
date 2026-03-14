@@ -82,11 +82,6 @@ func DefaultConfig() Config {
 	}
 }
 
-// worldServices are the per-world infrastructure services the prefect manages
-// via tmux session existence check. Forge and sentinel are monitored separately
-// via heartbeat.
-var worldServices []string
-
 // sphereDaemonSpec describes a sphere-level daemon supervised via PID check.
 type sphereDaemonSpec struct {
 	Name     string   // daemon name (matches PID file: {name}.pid)
@@ -499,28 +494,6 @@ func (s *Prefect) checkWorldInfrastructure() {
 		}
 		if !s.worldAllowed(world.Name) {
 			continue
-		}
-
-		for _, svc := range worldServices {
-			sessName := config.SessionName(world.Name, svc)
-			if s.sessions.Exists(sessName) {
-				continue
-			}
-
-			s.logger.Info("starting world service", "service", svc, "world", world.Name)
-
-			if err := s.runCommand(s.cfg.SolBinary, svc, "start", "--world="+world.Name); err != nil {
-				s.logger.Error("failed to start world service",
-					"service", svc, "world", world.Name, "error", err)
-				continue
-			}
-
-			if s.eventLog != nil {
-				s.eventLog.Emit(events.EventRespawn, "prefect", svc, "both", map[string]any{
-					"service": svc,
-					"world":   world.Name,
-				})
-			}
 		}
 
 		// Check forge via heartbeat staleness (forge is a Go process, not a session-based service).
@@ -1116,20 +1089,6 @@ func (s *Prefect) shutdown() {
 			}
 			if !s.worldAllowed(world.Name) {
 				continue
-			}
-			// Stop session-based services.
-			for _, svc := range worldServices {
-				sessName := config.SessionName(world.Name, svc)
-				if s.sessions.Exists(sessName) {
-					if err := s.sessions.Stop(sessName, false); err != nil {
-						s.logger.Error("failed to stop world service during shutdown",
-							"service", svc, "world", world.Name, "error", err)
-					} else {
-						stopped++
-						s.logger.Info("world service stopped during shutdown",
-							"service", svc, "world", world.Name)
-					}
-				}
 			}
 			// Stop sentinel (runs as direct Go process with PID file).
 			if pid := sentinel.ReadPID(world.Name); pid > 0 && IsRunning(pid) {
