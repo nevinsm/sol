@@ -370,14 +370,21 @@ func (l *Ledger) ensureHistory(world, agentName, writID string) (string, error) 
 		return "", err
 	}
 
+	// Re-acquire lock and re-check before writing: another goroutine may have
+	// raced past the first cache miss and already created the record. By holding
+	// the lock across WriteHistory we guarantee at most one DB write per key.
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if existing, ok := l.sessions[key]; ok {
+		return existing, nil
+	}
+
 	id, err := ws.WriteHistory(agentName, writID, "session", "", time.Now(), nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create agent history: %w", err)
 	}
-
-	l.mu.Lock()
 	l.sessions[key] = id
-	l.mu.Unlock()
 
 	l.logger.Printf("created history %s for %s/%s (writ: %s)", id, world, agentName, writID)
 	return id, nil
