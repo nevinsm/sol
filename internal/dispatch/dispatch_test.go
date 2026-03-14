@@ -529,6 +529,52 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 	}
 }
 
+func TestCastCapacityExhaustedErrorSentinel(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Set capacity = 1 via world config.
+	solHome := os.Getenv("SOL_HOME")
+	worldDir := solHome + "/ember"
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(worldDir+"/world.toml", []byte("[agents]\ncapacity = 1\n"), 0o644)
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	// First cast — auto-provisions one agent (fills capacity).
+	item1, err := worldStore.CreateWrit("Item 1", "First item", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	_, err = Cast(context.Background(), CastOpts{
+		WritID:     item1,
+		World:      "ember",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("first Cast failed: %v", err)
+	}
+
+	// Second cast — should fail with ErrCapacityExhausted.
+	item2, err := worldStore.CreateWrit("Item 2", "Second item", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	_, err = Cast(context.Background(), CastOpts{
+		WritID:     item2,
+		World:      "ember",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err == nil {
+		t.Fatal("expected capacity error on second cast")
+	}
+	if !errors.Is(err, ErrCapacityExhausted) {
+		t.Errorf("expected errors.Is(err, ErrCapacityExhausted) to be true, got: %v", err)
+	}
+}
+
 func TestCastAutoProvisionCapacityZeroUnlimited(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()

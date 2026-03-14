@@ -617,6 +617,76 @@ func TestStartDeadOnStartup(t *testing.T) {
 	}
 }
 
+func TestCycleDeadOnStartup(t *testing.T) {
+	mgr := setupTest(t)
+
+	// Start a long-lived session.
+	err := mgr.Start("test-cycle-dead-startup", "/tmp", "sleep 300", nil, "outpost", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Let tmux stabilize.
+	time.Sleep(300 * time.Millisecond)
+
+	// Cycle to a command that exits immediately — should fail startup verification.
+	err = mgr.Cycle("test-cycle-dead-startup", "/tmp", "echo done", nil, "outpost", "haven")
+	if err == nil {
+		t.Fatal("Cycle should fail for a command that dies immediately")
+	}
+	if !strings.Contains(err.Error(), "process died during startup") {
+		t.Errorf("error should mention process died during startup, got: %v", err)
+	}
+}
+
+func TestGetMeta(t *testing.T) {
+	mgr := setupTest(t)
+
+	// Session not found: GetMeta should return nil, nil.
+	meta, err := mgr.GetMeta("nonexistent-get-meta")
+	if err != nil {
+		t.Fatalf("GetMeta for nonexistent session should not error: %v", err)
+	}
+	if meta != nil {
+		t.Errorf("GetMeta for nonexistent session should return nil, got: %+v", meta)
+	}
+
+	// Start a session and verify GetMeta returns correct metadata.
+	err = mgr.Start("test-get-meta", "/tmp", "sleep 300", nil, "outpost", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Let tmux stabilize.
+	time.Sleep(300 * time.Millisecond)
+
+	meta, err = mgr.GetMeta("test-get-meta")
+	if err != nil {
+		t.Fatalf("GetMeta failed: %v", err)
+	}
+	if meta == nil {
+		t.Fatal("GetMeta should return non-nil for existing session")
+	}
+	if meta.Name != "test-get-meta" {
+		t.Errorf("expected name 'test-get-meta', got %q", meta.Name)
+	}
+	if meta.Role != "outpost" {
+		t.Errorf("expected role 'outpost', got %q", meta.Role)
+	}
+	if meta.World != "haven" {
+		t.Errorf("expected world 'haven', got %q", meta.World)
+	}
+	if meta.WorkDir != "/tmp" {
+		t.Errorf("expected workdir '/tmp', got %q", meta.WorkDir)
+	}
+	if !meta.Alive {
+		t.Error("GetMeta for live session should have Alive=true")
+	}
+	if meta.StartedAt.IsZero() {
+		t.Error("GetMeta StartedAt should not be zero")
+	}
+}
+
 func TestMultipleStartStop(t *testing.T) {
 	mgr := setupTest(t)
 
