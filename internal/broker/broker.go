@@ -263,7 +263,7 @@ func checkTokenExpiry(handle string, tok *account.Token, logger *events.Logger) 
 
 // heartbeatPath returns the path to the broker heartbeat file.
 func heartbeatPath() string {
-	return filepath.Join(config.Home(), ".runtime", "broker-heartbeat.json")
+	return filepath.Join(config.RuntimeDir(), "broker-heartbeat.json")
 }
 
 func (b *Broker) writeHeartbeat(status string, tokenHealth []AccountTokenHealth) {

@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
@@ -148,19 +147,4 @@ func extractAgentName(sessionName, world string) string {
 		return ""
 	}
 	return sessionName[len(prefix):]
-}
-
-// AvailableAccounts returns accounts that are currently available (not rate-limited).
-func AvailableAccounts(state *State) []string {
-	now := time.Now().UTC()
-	var available []string
-	for handle, acct := range state.Accounts {
-		switch {
-		case acct.Status == Available:
-			available = append(available, handle)
-		case acct.Status == Limited && acct.ResetsAt != nil && now.After(*acct.ResetsAt):
-			available = append(available, handle)
-		}
-	}
-	return available
 }
