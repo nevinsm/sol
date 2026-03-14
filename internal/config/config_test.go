@@ -839,6 +839,103 @@ func TestSeedOnboardingStatePreservesExisting(t *testing.T) {
 	}
 }
 
+// ----- detectWorldFromCwd -----
+
+func TestDetectWorldFromCwdAtSOLHome(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	if err := os.Chdir(solHome); err != nil {
+		t.Fatal(err)
+	}
+
+	// cwd == SOL_HOME → no world component → should return "".
+	got := detectWorldFromCwd()
+	if got != "" {
+		t.Fatalf("detectWorldFromCwd() at SOL_HOME = %q, want %q", got, "")
+	}
+}
+
+func TestDetectWorldFromCwdInsideStoreDir(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	storeDir := filepath.Join(solHome, ".store", "subdir")
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	if err := os.Chdir(storeDir); err != nil {
+		t.Fatal(err)
+	}
+
+	// .store/ subfolder → should be skipped → return "".
+	got := detectWorldFromCwd()
+	if got != "" {
+		t.Fatalf("detectWorldFromCwd() inside .store/ = %q, want %q", got, "")
+	}
+}
+
+func TestDetectWorldFromCwdOutsideSOLHome(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Use a completely separate directory.
+	outside := t.TempDir()
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	if err := os.Chdir(outside); err != nil {
+		t.Fatal(err)
+	}
+
+	got := detectWorldFromCwd()
+	if got != "" {
+		t.Fatalf("detectWorldFromCwd() outside SOL_HOME = %q, want %q", got, "")
+	}
+}
+
+func TestDetectWorldFromCwdInsideWorldDir(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	worldSub := filepath.Join(solHome, "myworld", "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worldSub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	if err := os.Chdir(worldSub); err != nil {
+		t.Fatal(err)
+	}
+
+	got := detectWorldFromCwd()
+	if got != "myworld" {
+		t.Fatalf("detectWorldFromCwd() inside world subdir = %q, want %q", got, "myworld")
+	}
+}
+
 func TestSeedOnboardingStateIdempotent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

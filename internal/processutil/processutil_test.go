@@ -1,0 +1,233 @@
+package processutil
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"testing"
+	"time"
+)
+
+// ----- WritePID -----
+
+func TestWritePIDNewFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "daemon.pid")
+
+	// Write a foreign PID (parent process) — no locking involved.
+	foreignPID := os.Getppid()
+	if err := WritePID(path, foreignPID); err != nil {
+		t.Fatalf("WritePID() error: %v", err)
+	}
+
+	pid, err := ReadPID(path)
+	if err != nil {
+		t.Fatalf("ReadPID() error: %v", err)
+	}
+	if pid != foreignPID {
+		t.Fatalf("ReadPID() = %d, want %d", pid, foreignPID)
+	}
+}
+
+func TestWritePIDCreatesParentDirs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nested", "sub", "daemon.pid")
+
+	if err := WritePID(path, os.Getppid()); err != nil {
+		t.Fatalf("WritePID() should create parent dirs: %v", err)
+	}
+
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("PID file should exist: %v", err)
+	}
+}
+
+func TestWritePIDReentry(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "self.pid")
+	t.Cleanup(func() { _ = ClearPID(path) })
+
+	myPID := os.Getpid()
+
+	// First call acquires the lock.
+	if err := WritePID(path, myPID); err != nil {
+		t.Fatalf("WritePID() first call error: %v", err)
+	}
+
+	// Second call with the same path and PID should succeed via the re-entry path
+	// (uses the already-held file descriptor rather than trying to flock again).
+	if err := WritePID(path, myPID); err != nil {
+		t.Fatalf("WritePID() re-entry error: %v", err)
+	}
+
+	pid, err := ReadPID(path)
+	if err != nil {
+		t.Fatalf("ReadPID() error: %v", err)
+	}
+	if pid != myPID {
+		t.Fatalf("ReadPID() = %d, want %d", pid, myPID)
+	}
+}
+
+func TestWritePIDErrorOnBadPath(t *testing.T) {
+	// A path whose parent directory cannot be created (SOL_HOME is a file).
+	tmpFile, err := os.CreateTemp("", "not-a-dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpFile.Close()
+	t.Cleanup(func() { os.Remove(tmpFile.Name()) })
+
+	// Attempt to write PID into a path whose ancestor is a file.
+	path := filepath.Join(tmpFile.Name(), "subdir", "daemon.pid")
+	if err := WritePID(path, os.Getppid()); err == nil {
+		t.Fatal("WritePID() expected error when parent cannot be created, got nil")
+	}
+}
+
+// ----- ReadPID -----
+
+func TestReadPIDValidFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.pid")
+
+	want := 12345
+	if err := os.WriteFile(path, []byte(strconv.Itoa(want)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ReadPID(path)
+	if err != nil {
+		t.Fatalf("ReadPID() error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("ReadPID() = %d, want %d", got, want)
+	}
+}
+
+func TestReadPIDMissingFile(t *testing.T) {
+	pid, err := ReadPID("/nonexistent/path/daemon.pid")
+	if err != nil {
+		t.Fatalf("ReadPID() on missing file should return nil error, got: %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("ReadPID() on missing file should return 0, got %d", pid)
+	}
+}
+
+func TestReadPIDInvalidContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.pid")
+
+	if err := os.WriteFile(path, []byte("not-a-number\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pid, err := ReadPID(path)
+	if err == nil {
+		t.Fatal("ReadPID() with invalid content expected error, got nil")
+	}
+	if pid != 0 {
+		t.Fatalf("ReadPID() with invalid content should return 0, got %d", pid)
+	}
+}
+
+// ----- ClearPID -----
+
+func TestClearPIDHappyPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "self.pid")
+
+	// WritePID with our own PID to acquire the lock.
+	if err := WritePID(path, os.Getpid()); err != nil {
+		t.Fatalf("WritePID() error: %v", err)
+	}
+
+	// ClearPID should release the lock and remove the file.
+	if err := ClearPID(path); err != nil {
+		t.Fatalf("ClearPID() error: %v", err)
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("PID file should be removed after ClearPID()")
+	}
+}
+
+func TestClearPIDNonExistentFile(t *testing.T) {
+	// Should not return an error for a file that doesn't exist.
+	if err := ClearPID("/nonexistent/path/daemon.pid"); err != nil {
+		t.Fatalf("ClearPID() on non-existent file should succeed, got: %v", err)
+	}
+}
+
+// ----- GracefulKill -----
+
+func TestGracefulKillExitsCleanly(t *testing.T) {
+	// Start a process that responds to SIGTERM (the default for sleep).
+	cmd := exec.Command("sleep", "300")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start test process: %v", err)
+	}
+
+	pid := cmd.Process.Pid
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	if err := GracefulKill(pid, 2*time.Second); err != nil {
+		t.Fatalf("GracefulKill() error: %v", err)
+	}
+
+	// Wait for the process to be reaped.
+	select {
+	case <-done:
+		// Process exited — success.
+	case <-time.After(3 * time.Second):
+		t.Fatal("process did not exit after GracefulKill()")
+	}
+}
+
+func TestGracefulKillRequiresSIGKILL(t *testing.T) {
+	// Start a process that ignores SIGTERM; GracefulKill must escalate to SIGKILL.
+	cmd := exec.Command("sh", "-c", "trap '' TERM; while true; do sleep 0.05; done")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start SIGTERM-ignoring process: %v", err)
+	}
+
+	pid := cmd.Process.Pid
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	// Use a short grace period so the test doesn't take long.
+	if err := GracefulKill(pid, 300*time.Millisecond); err != nil {
+		t.Fatalf("GracefulKill() error: %v", err)
+	}
+
+	select {
+	case <-done:
+		// Process was killed — success.
+	case <-time.After(3 * time.Second):
+		t.Fatal("process did not exit after SIGKILL escalation")
+	}
+}
+
+func TestGracefulKillAlreadyGone(t *testing.T) {
+	// Start and immediately wait for a process that exits on its own.
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to run test process: %v", err)
+	}
+	pid := cmd.Process.Pid
+
+	// Process is already gone — should return nil without error.
+	if err := GracefulKill(pid, time.Second); err != nil {
+		t.Fatalf("GracefulKill() on already-exited process error: %v", err)
+	}
+}
+
+func TestGracefulKillInvalidPID(t *testing.T) {
+	err := GracefulKill(-1, time.Second)
+	if err == nil {
+		t.Fatal("GracefulKill() with invalid PID expected error, got nil")
+	}
+}
