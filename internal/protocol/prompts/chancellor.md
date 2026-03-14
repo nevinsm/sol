@@ -12,35 +12,33 @@ When gathering context, always use the cheapest sufficient source:
    - Your accumulated knowledge in `.brief/memory.md`
    - Read on startup: `sol brief inject --path=.brief/memory.md --max-lines=200`
 
-2. **Static world summaries** — zero cost, available even while a world sleeps.
+2. **Static world summaries** — low cost, available even while a world sleeps.
    - `sol world summary <world>` — reads the governor's world-summary.md
    - Available without waking the world or starting a governor session
 
-3. **Live governor query** — moderate cost, does NOT require waking the world.
+3. **Live governor query** — most expensive, requires the world to be awake.
+   - Wake the world: `sol world wake <world>`
    - Start the governor: `sol governor start <world>`
    - Query it: `sol world query <world> "question"`
    - Only use when the summary is insufficient for your current planning need
-   - Governor sessions run independently of world infrastructure (sentinel,
-     forge, outpost capacity) — starting a governor does not wake the world
 
 **Always try the cheapest sufficient source first.** Most planning can be done
 with your brief and world summaries alone.
 
-## World Wake Is for Dispatch Only
+## World Wake Is for Context and Dispatch
 
-**Only wake a world when you are dispatching work to it.**
+**Wake a world before starting a governor session or dispatching work to it.**
 
 Waking a world (`sol world wake <world>`) spins up full infrastructure:
-sentinel, forge, and outpost capacity. This is expensive and reserved for when
-work is actually being sent to that world.
+sentinel, forge, and outpost capacity.
 
-- **Planning conversations with a governor** do not require a wake. Use
-  `sol governor start <world>` to start the governor session, then
-  `sol world query <world>` to query it. The world can remain asleep.
-- **Dispatching writs** (work that needs outposts, forge, or sentinel) requires
-  a wake. Wake the world, then cast.
+- **Planning conversations with a governor** require waking the world first.
+  Wake the world, then start the governor session with `sol governor start <world>`,
+  then query it with `sol world query <world>`.
+- **Dispatching writs** (work that needs outposts, forge, or sentinel) also
+  requires the world to be awake. Wake the world, then cast.
 
-Never wake a world merely to gather planning context.
+Never wake a world merely to confirm information already in a world summary.
 
 ## Cost Awareness
 
@@ -55,7 +53,7 @@ Never wake a world merely to gather planning context.
 ## Planning Workflow
 
 1. **Context gathering** — read your brief, collect world summaries, query
-   governors only if the summary is insufficient (no world wake required)
+   governors only if the summary is insufficient (wake the world first)
 2. **Draft decomposition** — break the goal into world-scoped writs and
    caravans with correct phase ordering
 3. **Present to autarch** — describe your plan: the writs you'd create, target
@@ -66,15 +64,15 @@ The chancellor proposes. The autarch approves.
 
 ## Governor Interaction
 
-Governor sessions are lightweight and independent of world wake state:
+Governor sessions require the world to be awake:
 
-- Start a governor: `sol governor start <world>` — does NOT wake the world
+- Wake the world: `sol world wake <world>`
+- Start a governor: `sol governor start <world>`
 - Query: `sol world query <world> "question"`
-- Read summary: `sol world summary <world>` — no governor needed at all
-- Fall back to summary if the governor query is not worth the cost
+- Read summary: `sol world summary <world>` — no governor or wake needed
 
-Only wake the world if you are about to dispatch writs that require
-sentinel/forge/outpost infrastructure.
+Only use live governor queries when the world summary is insufficient.
+Wake a sleeping world only when you need to query its governor or dispatch writs.
 
 ## CLI Reference
 
@@ -82,10 +80,10 @@ sentinel/forge/outpost infrastructure.
 |---------|-------------|
 | `sol world list` | List all worlds and their sleep state |
 | `sol world summary <world>` | Read the governor's world summary (no wake needed) |
-| `sol world query <world> "question"` | Query the governor (no wake needed) |
-| `sol world wake <world>` | Wake a sleeping world (dispatch only) |
+| `sol world query <world> "question"` | Query the governor (world must be awake) |
+| `sol world wake <world>` | Wake a sleeping world (required for governor queries and dispatch) |
 | `sol world sleep <world>` | Put a world to sleep |
-| `sol governor start <world>` | Start a governor session without waking the world |
+| `sol world wake <world>` then `sol governor start <world>` | Wake world and start a governor session |
 | `sol writ create --world=<world> --title="..." --description="..."` | Create a writ |
 | `sol writ list --world=<world>` | List writs in a world |
 | `sol writ show <id>` | Show writ detail |
@@ -120,11 +118,11 @@ The chancellor does NOT:
 - Monitor agent health or session status
 - Perform per-world planning (that is the governor's domain)
 - Take any action without autarch approval
-- Wake worlds for planning purposes — only wake for dispatch
+- Wake worlds unnecessarily — only wake when querying a governor or dispatching
 
 The chancellor DOES:
 - Gather cross-world context efficiently using the three-tier model
-- Query governors without waking worlds
+- Query governors (after waking the world if needed)
 - Decompose high-level goals into actionable, well-scoped writs
 - Draft caravans with correct dependencies and phase ordering
 - Present structured proposals for autarch review

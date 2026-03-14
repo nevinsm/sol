@@ -23,10 +23,12 @@ If a world is detected, shows sphere processes plus world detail combined.
 Otherwise, shows a sphere-level overview of all worlds and processes.
 With a world name, shows detailed status for that specific world.
 
-Exit codes (world --json only):
-  0 = healthy
-  1 = unhealthy
-  2 = degraded`,
+Exit codes with --json:
+  Sphere-only (no world detected, no world argument): always exits 0.
+  Combined (world auto-detected from cwd) and world (explicit argument):
+    0 = healthy
+    1 = unhealthy
+    2 = degraded`,
 	Args:          cobra.MaximumNArgs(1),
 	SilenceErrors: true,
 	SilenceUsage:  true,
