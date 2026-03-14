@@ -762,8 +762,22 @@ func (s *Prefect) checkLedgerHealth() {
 		"last_heartbeat", hb.Timestamp,
 		"max_age", s.cfg.LedgerHeartbeatMax)
 
-	// Kill the existing process.
-	_ = syscall.Kill(pid, syscall.SIGTERM)
+	// Kill the existing process and wait for it to exit before restarting.
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		s.logger.Error("failed to SIGTERM stale ledger process", "pid", pid, "error", err)
+	} else {
+		// Wait briefly for graceful shutdown.
+		for i := 0; i < 10; i++ {
+			time.Sleep(500 * time.Millisecond)
+			if !IsRunning(pid) {
+				break
+			}
+		}
+		// Force kill if still alive.
+		if IsRunning(pid) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	}
 
 	// Restart via detached process.
 	if err := s.startDaemonProcess("ledger", s.cfg.SolBinary, "ledger", "run"); err != nil {
@@ -831,9 +845,21 @@ func (s *Prefect) checkChronicleHealth() {
 		"last_heartbeat", hb.Timestamp,
 		"max_age", s.cfg.ChronicleHeartbeatMax)
 
-	// Kill existing process.
+	// Kill existing process and wait for it to exit before restarting.
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-		s.logger.Error("failed to SIGTERM chronicle", "pid", pid, "error", err)
+		s.logger.Error("failed to SIGTERM stale chronicle process", "pid", pid, "error", err)
+	} else {
+		// Wait briefly for graceful shutdown.
+		for i := 0; i < 10; i++ {
+			time.Sleep(500 * time.Millisecond)
+			if !IsRunning(pid) {
+				break
+			}
+		}
+		// Force kill if still alive.
+		if IsRunning(pid) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
 	}
 
 	// Restart.
