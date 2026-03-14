@@ -252,17 +252,17 @@ type WorldStore interface {
 
 // SphereStore abstracts agent queries for testing.
 type SphereStore interface {
-	ListAgents(world string, state string) ([]store.Agent, error)
+	ListAgents(world string, state store.AgentState) ([]store.Agent, error)
 }
 
 // MergeQueueStore abstracts merge request queries for testing.
 type MergeQueueStore interface {
-	ListMergeRequests(phase string) ([]store.MergeRequest, error)
+	ListMergeRequests(phase store.MRPhase) ([]store.MergeRequest, error)
 }
 
 // CaravanStore abstracts caravan queries for status gathering.
 type CaravanStore interface {
-	ListCaravans(status string) ([]store.Caravan, error)
+	ListCaravans(status store.CaravanStatus) ([]store.Caravan, error)
 	CheckCaravanReadiness(caravanID string, worldOpener func(world string) (*store.WorldStore, error)) ([]store.CaravanItemStatus, error)
 	ListCaravanItems(caravanID string) ([]store.CaravanItem, error)
 }

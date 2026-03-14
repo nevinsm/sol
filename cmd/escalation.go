@@ -7,6 +7,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -94,7 +95,7 @@ var escalationListCmd = &cobra.Command{
 		fmt.Printf("%s escalations:\n", statusLabel)
 
 		for _, e := range escs {
-			ago := timeAgo(time.Since(e.CreatedAt))
+			ago := status.FormatDuration(time.Since(e.CreatedAt)) + " ago"
 			sourceRef := e.SourceRef
 			if sourceRef == "" {
 				sourceRef = "—"
@@ -168,20 +169,6 @@ var escalationResolveCmd = &cobra.Command{
 		fmt.Printf("Resolved: %s\n", id)
 		return nil
 	},
-}
-
-// timeAgo formats a duration as a human-readable relative time.
-func timeAgo(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%ds ago", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
-	}
 }
 
 func init() {
