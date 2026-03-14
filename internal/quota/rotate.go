@@ -1,7 +1,6 @@
 package quota
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
-	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -366,47 +364,6 @@ func restartPausedSessions(state *State, opts RotateOpts, sphereStore *store.Sph
 
 		availIdx++
 	}
-
-	return nil
-}
-
-// writeAgentCredentials writes access-token-only credentials from the given
-// account to the agent's config directory. Also writes/updates the .account
-// metadata file.
-func writeAgentCredentials(configDir, accountHandle string) error {
-	srcPath := filepath.Join(config.AccountDir(accountHandle), ".credentials.json")
-
-	// Verify source exists.
-	data, err := os.ReadFile(srcPath)
-	if err != nil {
-		return fmt.Errorf("account %q credentials not found: %w", accountHandle, err)
-	}
-
-	// Parse and strip refreshToken.
-	var creds map[string]any
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return fmt.Errorf("failed to parse account %q credentials: %w", accountHandle, err)
-	}
-	if oauth, ok := creds["claudeAiOauth"].(map[string]any); ok {
-		delete(oauth, "refreshToken")
-	}
-
-	out, err := json.MarshalIndent(creds, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal credentials: %w", err)
-	}
-
-	// Remove any existing file (symlink or regular) before writing.
-	destPath := filepath.Join(configDir, ".credentials.json")
-	_ = os.Remove(destPath)
-
-	if err := fileutil.AtomicWrite(destPath, append(out, '\n'), 0o600); err != nil {
-		return fmt.Errorf("failed to write credentials: %w", err)
-	}
-
-	// Write .account metadata file.
-	accountFile := filepath.Join(configDir, ".account")
-	_ = os.WriteFile(accountFile, []byte(accountHandle+"\n"), 0o644)
 
 	return nil
 }
