@@ -1,11 +1,49 @@
 package governor
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// writeTestToken writes a minimal api_key token so startup.Launch can inject credentials in tests.
+func writeTestToken(t *testing.T, solHome string) {
+	t.Helper()
+	accountsDir := filepath.Join(solHome, ".accounts")
+	if err := os.MkdirAll(accountsDir, 0o755); err != nil {
+		t.Fatalf("failed to create .accounts dir: %v", err)
+	}
+	tokenJSON := `{"type":"api_key","token":"test-key","created_at":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(accountsDir, "token.json"), []byte(tokenJSON), 0o600); err != nil {
+		t.Fatalf("failed to write test token: %v", err)
+	}
+}
+
+// mockSessionStarter captures session start calls for startup.Launch tests.
+type mockSessionStarter struct {
+	startErr error
+	lastCall struct {
+		name    string
+		workdir string
+		role    string
+		world   string
+	}
+}
+
+func (m *mockSessionStarter) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
+	if m.startErr != nil {
+		return m.startErr
+	}
+	m.lastCall.name = name
+	m.lastCall.workdir = workdir
+	m.lastCall.role = role
+	m.lastCall.world = world
+	return nil
+}
 
 // --- Mocks ---
 
@@ -154,5 +192,69 @@ func TestStopNoSession(t *testing.T) {
 	// Verify agent state still updated to idle.
 	if ss.updated["myworld/governor"] != store.AgentIdle {
 		t.Errorf("agent state = %q, want \"idle\"", ss.updated["myworld/governor"])
+	}
+}
+
+func TestGovernorPrime(t *testing.T) {
+	result := governorPrime("myworld", "")
+	if !strings.Contains(result, "sol brief inject") {
+		t.Errorf("governorPrime missing 'sol brief inject': %q", result)
+	}
+	if !strings.Contains(result, "sol world sync") {
+		t.Errorf("governorPrime missing 'sol world sync': %q", result)
+	}
+	if !strings.Contains(result, "myworld") {
+		t.Errorf("governorPrime missing world name: %q", result)
+	}
+}
+
+func TestGovernorStart(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	writeTestToken(t, tmp)
+
+	// Create required dirs.
+	if err := os.MkdirAll(filepath.Join(tmp, ".store"), 0o755); err != nil {
+		t.Fatalf("failed to create .store dir: %v", err)
+	}
+
+	// Create governor dir (startup.Launch checks it exists).
+	governorDir := GovernorDir("myworld")
+	if err := os.MkdirAll(governorDir, 0o755); err != nil {
+		t.Fatalf("failed to create governor dir: %v", err)
+	}
+
+	// Open sphere store.
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	_, err = startup.Launch(RoleConfig(), "myworld", "governor", startup.LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	// Verify hooks file written.
+	hooksPath := filepath.Join(governorDir, ".claude", "settings.local.json")
+	if _, err := os.Stat(hooksPath); err != nil {
+		t.Errorf("hooks file not written: %v", err)
+	}
+
+	// Verify persona injected.
+	personaPath := filepath.Join(governorDir, "CLAUDE.local.md")
+	data, err := os.ReadFile(personaPath)
+	if err != nil {
+		t.Fatalf("persona not written: %v", err)
+	}
+	if !strings.Contains(string(data), "Governor") {
+		t.Errorf("persona missing governor content, got: %q", string(data))
 	}
 }
