@@ -53,8 +53,12 @@ func (s *SphereStore) EnsureAgent(name, world, role string) error {
 		// CreateAgent will fail cleanly on unique constraint if agent exists.
 		fmt.Fprintf(os.Stderr, "store: GetAgent %q failed, attempting create: %v\n", id, err)
 	}
+	getErr := err
 	_, createErr := s.CreateAgent(name, world, role)
 	if createErr != nil {
+		if getErr != nil {
+			return fmt.Errorf("failed to ensure agent %q: get: %w; create: %v", id, getErr, createErr)
+		}
 		return fmt.Errorf("failed to ensure agent %q: %w", id, createErr)
 	}
 	return nil

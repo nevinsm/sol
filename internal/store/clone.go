@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/nevinsm/sol/internal/config"
 )
@@ -28,7 +29,11 @@ func CloneWorldData(source, target string, includeHistory bool) error {
 	if _, err := tgt.db.Exec(fmt.Sprintf(`ATTACH DATABASE '%s' AS src`, srcPath)); err != nil {
 		return fmt.Errorf("failed to attach source database %q: %w", source, err)
 	}
-	defer tgt.db.Exec("DETACH DATABASE src")
+	defer func() {
+		if _, detachErr := tgt.db.Exec("DETACH DATABASE src"); detachErr != nil {
+			fmt.Fprintf(os.Stderr, "store: failed to detach source database %q: %v\n", source, detachErr)
+		}
+	}()
 
 	tx, err := tgt.db.Begin()
 	if err != nil {

@@ -9,6 +9,12 @@ import (
 
 // BackupDatabase creates a copy of a database file at path.backup.{timestamp}.
 // Returns the backup path. The original file is not modified.
+//
+// Note: This function copies the raw .db file only. In WAL mode (which sol uses),
+// recent committed writes may reside only in the .wal file and will not appear
+// in the backup. Callers should issue a WAL checkpoint (PRAGMA wal_checkpoint(FULL))
+// on the open database connection before calling BackupDatabase to ensure all
+// committed writes are reflected in the .db file.
 func BackupDatabase(path string) (string, error) {
 	backupPath := fmt.Sprintf("%s.backup.%s", path, time.Now().UTC().Format("20060102T150405Z"))
 

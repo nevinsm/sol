@@ -236,58 +236,89 @@ func (s *WorldStore) ClaimMergeRequest(claimerID string) (*MergeRequest, error) 
 // Also sets updated_at=now. If phase=merged, also sets merged_at=now.
 // If phase=ready, clears claimed_by and claimed_at (release).
 // Returns ErrInvalidTransition if the transition is not allowed.
+//
+// Uses a single atomic UPDATE with the transition validation encoded in the
+// WHERE clause, avoiding a TOCTOU race between reading and writing the phase.
 func (s *WorldStore) UpdateMergeRequestPhase(id, phase string) error {
 	validPhases := map[string]bool{"ready": true, "claimed": true, "merged": true, "failed": true, "superseded": true}
 	if !validPhases[phase] {
 		return fmt.Errorf("invalid merge request phase %q", phase)
 	}
 
-	// Fetch current phase to validate the transition.
-	var currentPhase string
-	err := s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, id).Scan(&currentPhase)
-	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("merge request %q: %w", id, ErrNotFound)
-	}
-	if err != nil {
-		return fmt.Errorf("failed to get current phase for merge request %q: %w", id, err)
-	}
-
-	if !validMRTransition(currentPhase, phase) {
-		return fmt.Errorf("merge request %q: cannot transition from %q to %q: %w",
-			id, currentPhase, phase, ErrInvalidTransition)
-	}
-
-	// Same-phase transition is a no-op.
-	if currentPhase == phase {
-		return nil
-	}
-
 	now := time.Now().UTC().Format(time.RFC3339)
 
+	// Encode the allowed source phases for this transition in the WHERE clause,
+	// making the phase validation and update a single atomic operation.
+	// Same-phase (idempotent) is always included per validMRTransition.
+	//
+	// valid source phases per target:
+	//   ready      ← claimed, ready
+	//   claimed    ← ready, claimed
+	//   merged     ← claimed, merged
+	//   failed     ← claimed, failed
+	//   superseded ← failed, superseded
+	var from1, from2 string
+	switch phase {
+	case "ready":
+		from1, from2 = "claimed", "ready"
+	case "claimed":
+		from1, from2 = "ready", "claimed"
+	case "merged":
+		from1, from2 = "claimed", "merged"
+	case "failed":
+		from1, from2 = "claimed", "failed"
+	case "superseded":
+		from1, from2 = "failed", "superseded"
+	}
+
 	var result sql.Result
+	var err error
 
 	switch phase {
 	case "merged":
+		// Preserve merged_at if already set (idempotent case).
 		result, err = s.db.Exec(
-			`UPDATE merge_requests SET phase = ?, merged_at = ?, updated_at = ? WHERE id = ?`,
-			phase, now, now, id,
+			`UPDATE merge_requests
+			 SET phase = ?, merged_at = COALESCE(merged_at, ?), updated_at = ?
+			 WHERE id = ? AND phase IN (?, ?)`,
+			phase, now, now, id, from1, from2,
 		)
 	case "ready":
 		result, err = s.db.Exec(
-			`UPDATE merge_requests SET phase = ?, claimed_by = NULL, claimed_at = NULL, updated_at = ? WHERE id = ?`,
-			phase, now, id,
+			`UPDATE merge_requests
+			 SET phase = ?, claimed_by = NULL, claimed_at = NULL, updated_at = ?
+			 WHERE id = ? AND phase IN (?, ?)`,
+			phase, now, id, from1, from2,
 		)
 	default:
 		result, err = s.db.Exec(
-			`UPDATE merge_requests SET phase = ?, updated_at = ? WHERE id = ?`,
-			phase, now, id,
+			`UPDATE merge_requests SET phase = ?, updated_at = ?
+			 WHERE id = ? AND phase IN (?, ?)`,
+			phase, now, id, from1, from2,
 		)
 	}
 
 	if err != nil {
 		return fmt.Errorf("failed to update merge request %q: %w", id, err)
 	}
-	return checkRowsAffected(result, "merge request", id)
+
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
+	if n == 0 {
+		// Distinguish not-found from invalid-transition.
+		var exists int
+		if err := s.db.QueryRow(`SELECT 1 FROM merge_requests WHERE id = ?`, id).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("merge request %q: %w", id, ErrNotFound)
+		}
+		// Row exists but its phase was not in the allowed source set.
+		var currentPhase string
+		_ = s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, id).Scan(&currentPhase)
+		return fmt.Errorf("merge request %q: cannot transition from %q to %q: %w",
+			id, currentPhase, phase, ErrInvalidTransition)
+	}
+	return nil
 }
 
 // BlockMergeRequest sets blocked_by on a merge request and ensures phase=ready.
@@ -369,14 +400,15 @@ func (s *WorldStore) ListBlockedMergeRequests() ([]MergeRequest, error) {
 // longer than the given TTL. Sets them back to phase=ready, clears
 // claimed_by and claimed_at. Returns the number of released MRs.
 func (s *WorldStore) ReleaseStaleClaims(ttl time.Duration) (int, error) {
-	threshold := time.Now().UTC().Add(-ttl).Format(time.RFC3339)
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := time.Now().UTC()
+	threshold := now.Add(-ttl).Format(time.RFC3339)
+	nowStr := now.Format(time.RFC3339)
 
 	result, err := s.db.Exec(
 		`UPDATE merge_requests
 		 SET phase = 'ready', claimed_by = NULL, claimed_at = NULL, updated_at = ?
 		 WHERE phase = 'claimed' AND claimed_at < ?`,
-		now, threshold,
+		nowStr, threshold,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to release stale claims: %w", err)
