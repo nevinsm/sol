@@ -1219,3 +1219,99 @@ func TestHeartbeatLastErrorOnPushRejected(t *testing.T) {
 		t.Errorf("last_error = %q, should contain 'push rejected'", hb.LastError)
 	}
 }
+
+// --- Session-based patrol path tests ---
+
+// TestPatrolSessionPathSuccessfulMerge exercises the patrol() dispatch to
+// executeMergeSession (ADR-0028) when sessions are configured. A goroutine
+// simulates the Claude session completing with a "merged" result file.
+func TestPatrolSessionPathSuccessfulMerge(t *testing.T) {
+	state, worldStore, sessMgr := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-sess-001", Phase: store.MRReady, WritID: "sol-sess1111", Branch: "outpost/Toast/sol-sess1111"},
+	}
+	worldStore.items["sol-sess1111"] = &store.Writ{
+		ID: "sol-sess1111", Title: "Session merge test", Status: store.WritDone,
+	}
+
+	sessionName := mergeSessionName("ember")
+
+	// Set up mock git commands for push verification.
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-sess1111",
+		[]byte("abc1234 Session merge test (sol-sess1111)"), nil)
+
+	// Goroutine simulates the Claude session: waits until session starts,
+	// then writes a "merged" result file and exits the session.
+	go func() {
+		for i := 0; i < 200; i++ {
+			sessMgr.mu.Lock()
+			exists := sessMgr.sessions[sessionName]
+			sessMgr.mu.Unlock()
+			if exists {
+				time.Sleep(30 * time.Millisecond)
+				result := ForgeResult{
+					Result:       "merged",
+					Summary:      "Merged via session path",
+					FilesChanged: []string{"main.go"},
+				}
+				data, _ := json.Marshal(result)
+				os.WriteFile(filepath.Join(state.forge.worktree, resultFileName), data, 0o644)
+				sessMgr.mu.Lock()
+				delete(sessMgr.sessions, sessionName)
+				sessMgr.mu.Unlock()
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	state.patrol(ctx)
+
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-sess-001"]
+	worldStore.mu.Unlock()
+
+	if phase != store.MRMerged {
+		t.Errorf("MR phase = %q, want 'merged' (session path through patrol)", phase)
+	}
+}
+
+// TestPatrolSessionPathMaxAttemptsMarksFailed verifies that when the session
+// path encounters a launch failure and MaxAttempts has been reached, patrol
+// calls MarkFailed so the MR transitions to "failed".
+func TestPatrolSessionPathMaxAttemptsMarksFailed(t *testing.T) {
+	state, worldStore, sessMgr := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	// Set MaxAttempts = 1 so the first claim-then-fail triggers MarkFailed.
+	state.forge.cfg.MaxAttempts = 1
+
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-maxatt-001", Phase: store.MRReady, WritID: "sol-maxatt1", Branch: "outpost/Toast/sol-maxatt1"},
+	}
+	worldStore.items["sol-maxatt1"] = &store.Writ{
+		ID: "sol-maxatt1", Title: "Max attempts test", Status: store.WritDone,
+	}
+
+	// Inject a session launch failure so runMergeSession returns an error,
+	// which causes executeMergeSession to call Release → MarkFailed.
+	sessMgr.startErr = fmt.Errorf("simulated launch failure")
+
+	ctx := context.Background()
+	state.patrol(ctx)
+
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-maxatt-001"]
+	worldStore.mu.Unlock()
+
+	if phase != store.MRFailed {
+		t.Errorf("MR phase = %q, want 'failed' (max attempts reached via session path)", phase)
+	}
+}

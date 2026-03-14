@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1700,6 +1701,138 @@ func TestCheckSphereDaemonsDeadPIDTriggersRestart(t *testing.T) {
 
 	if len(detachedCalls) < 3 {
 		t.Errorf("expected at least 3 startDaemonProcess calls (ledger + broker + chronicle), got %d", len(detachedCalls))
+	}
+}
+
+// TestCheckLedgerHealthStaleHeartbeatRestart verifies that when the ledger
+// process is alive but its heartbeat is stale, checkLedgerHealth sends SIGTERM
+// and then restarts the ledger via startDaemonProcess.
+func TestCheckLedgerHealthStaleHeartbeatRestart(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+	cfg.LedgerHeartbeatMax = 5 * time.Minute
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = tracker.runCommand
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// Start a real subprocess so IsRunning(pid) returns true.
+	// checkLedgerHealth will SIGTERM it when the heartbeat is stale.
+	cmd := exec.Command("sleep", "300")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start subprocess: %v", err)
+	}
+	subpid := cmd.Process.Pid
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	// Write the subprocess PID as the ledger daemon PID.
+	writePIDFile(t, "ledger", subpid)
+
+	// Write a stale ledger heartbeat (10 minutes old, well past the 5-minute max).
+	runtimeDir := filepath.Join(os.Getenv("SOL_HOME"), ".runtime")
+	staleTime := time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339)
+	hbJSON := fmt.Sprintf(`{"timestamp":%q,"status":"running","requests_total":0,"tokens_processed":0,"worlds_written":0}`, staleTime)
+	if err := os.WriteFile(filepath.Join(runtimeDir, "ledger-heartbeat.json"), []byte(hbJSON), 0o644); err != nil {
+		t.Fatalf("failed to write stale ledger heartbeat: %v", err)
+	}
+
+	// Write alive PIDs for broker and chronicle so they don't trigger restarts.
+	writePIDFile(t, "broker", os.Getpid())
+	writePIDFile(t, "chronicle", os.Getpid())
+	// No chronicle heartbeat file → checkChronicleHealth sees nil heartbeat and returns early.
+
+	sup.heartbeat()
+
+	// Verify startDaemonProcess was called to restart the ledger.
+	detachedCalls := tracker.getDetachedCalls()
+	foundLedger := false
+	for _, call := range detachedCalls {
+		if len(call) >= 4 && call[0] == "ledger" && call[1] == "/usr/bin/sol" &&
+			call[2] == "ledger" && call[3] == "run" {
+			foundLedger = true
+		}
+	}
+	if !foundLedger {
+		t.Errorf("expected ledger restart via startDaemonProcess (stale heartbeat), got calls: %v", detachedCalls)
+	}
+}
+
+// TestCheckChronicleHealthStaleHeartbeatRestart verifies that when the chronicle
+// process is alive but its heartbeat is stale, checkChronicleHealth sends SIGTERM
+// and then restarts chronicle via startDaemonProcess.
+func TestCheckChronicleHealthStaleHeartbeatRestart(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+	cfg.ChronicleHeartbeatMax = 5 * time.Minute
+	// Set a generous max so the fresh ledger heartbeat is never treated as stale
+	// (avoids accidental SIGTERM of the test process via the ledger PID path).
+	cfg.LedgerHeartbeatMax = 10 * time.Minute
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = tracker.runCommand
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// Start a real subprocess so IsRunning(pid) returns true.
+	// checkChronicleHealth will SIGTERM it when the heartbeat is stale.
+	cmd := exec.Command("sleep", "300")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start subprocess: %v", err)
+	}
+	subpid := cmd.Process.Pid
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	// Write the subprocess PID as the chronicle daemon PID.
+	writePIDFile(t, "chronicle", subpid)
+
+	// Write a stale chronicle heartbeat (10 minutes old, well past the 5-minute max).
+	solHome := os.Getenv("SOL_HOME")
+	staleTime := time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339)
+	hbJSON := fmt.Sprintf(`{"timestamp":%q,"status":"running","events_processed":0,"checkpoint_offset":0}`, staleTime)
+	if err := os.WriteFile(filepath.Join(solHome, "chronicle.heartbeat"), []byte(hbJSON), 0o644); err != nil {
+		t.Fatalf("failed to write stale chronicle heartbeat: %v", err)
+	}
+
+	// Write alive PIDs for ledger and broker so they don't trigger restarts.
+	writePIDFile(t, "ledger", os.Getpid())
+	writePIDFile(t, "broker", os.Getpid())
+
+	// Write a fresh ledger heartbeat so checkLedgerHealth does not restart it.
+	runtimeDir := filepath.Join(os.Getenv("SOL_HOME"), ".runtime")
+	freshTime := time.Now().UTC().Format(time.RFC3339)
+	freshHbJSON := fmt.Sprintf(`{"timestamp":%q,"status":"running","requests_total":0,"tokens_processed":0,"worlds_written":0}`, freshTime)
+	if err := os.WriteFile(filepath.Join(runtimeDir, "ledger-heartbeat.json"), []byte(freshHbJSON), 0o644); err != nil {
+		t.Fatalf("failed to write fresh ledger heartbeat: %v", err)
+	}
+
+	sup.heartbeat()
+
+	// Verify startDaemonProcess was called to restart chronicle.
+	detachedCalls := tracker.getDetachedCalls()
+	foundChronicle := false
+	for _, call := range detachedCalls {
+		if len(call) >= 4 && call[0] == "chronicle" && call[1] == "/usr/bin/sol" &&
+			call[2] == "chronicle" && call[3] == "run" {
+			foundChronicle = true
+		}
+	}
+	if !foundChronicle {
+		t.Errorf("expected chronicle restart via startDaemonProcess (stale heartbeat), got calls: %v", detachedCalls)
 	}
 }
 

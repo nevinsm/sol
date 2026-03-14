@@ -640,6 +640,67 @@ func TestStaleSourceRefDegradeOnWorldUnavailable(t *testing.T) {
 	}
 }
 
+func TestStaleSourceRefResolvesSupersededMR(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "superseded-mr-world"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	sphereStore.RegisterWorld(worldName, "")
+
+	// Create a writ and an MR, then mark the MR as superseded.
+	writID, _ := worldStore.CreateWrit("superseded-task", "desc", "test", 1, nil)
+	mrID, err := worldStore.CreateMergeRequest(writID, "feature-branch-v1", 2)
+	if err != nil {
+		t.Fatalf("failed to create MR: %v", err)
+	}
+
+	// Claim, fail, then supersede the MR (mimics a newer MR superseding a failed one).
+	// State machine requires: ready → claimed → failed → superseded.
+	worldStore.ClaimMergeRequest("forge/test")
+	worldStore.UpdateMergeRequestPhase(mrID, store.MRFailed)
+	worldStore.UpdateMergeRequestPhase(mrID, store.MRSuperseded)
+
+	// Create escalation linked to the now-superseded MR.
+	escID, err := sphereStore.CreateEscalation("high", "test/agent", "linked to superseded MR", "mr:"+mrID)
+	if err != nil {
+		t.Fatalf("failed to create escalation: %v", err)
+	}
+
+	sessions := newMockSessions()
+	cfg := Config{
+		StaleTetherTimeout: 15 * time.Minute,
+		SolHome:            solHome,
+		EscalationConfig:   config.DefaultEscalationConfig(),
+	}
+
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
+		return store.OpenWorld(world)
+	})
+
+	d.resolveStaleSourceRefs(context.Background())
+
+	// Escalation should be auto-resolved because the MR is superseded.
+	esc, err := sphereStore.GetEscalation(escID)
+	if err != nil {
+		t.Fatalf("failed to get escalation: %v", err)
+	}
+	if esc.Status != "resolved" {
+		t.Errorf("escalation status = %q, want %q (should auto-resolve for superseded MR)", esc.Status, "resolved")
+	}
+}
+
 func TestStaleSourceRefNoSourceRef(t *testing.T) {
 	solHome := setupSolHome(t)
 
