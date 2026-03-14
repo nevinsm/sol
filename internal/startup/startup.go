@@ -458,8 +458,14 @@ func ClearResumeState(world, agent, role string) error {
 }
 
 // resolveSphereStore returns the sphere store and an optional cleanup function.
+// If opts.Sphere is provided and opts.OwnsSphere is true, the cleanup function
+// closes the injected store. If opts.Sphere is nil, a new store is opened and
+// always closed via the returned cleanup function.
 func resolveSphereStore(opts LaunchOpts) (SphereStore, func(), error) {
 	if opts.Sphere != nil {
+		if opts.OwnsSphere {
+			return opts.Sphere, func() { opts.Sphere.Close() }, nil
+		}
 		return opts.Sphere, nil, nil
 	}
 	s, err := store.OpenSphere()
