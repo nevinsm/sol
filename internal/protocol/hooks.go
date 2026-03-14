@@ -66,68 +66,6 @@ type HookHandler struct {
 	Command string `json:"command"`
 }
 
-// InstallHooks writes Claude Code hooks into .claude/settings.local.json.
-// Values are inlined into the command string so hooks don't depend on
-// environment variables (tmux set-environment runs after the session
-// process starts, so env vars aren't available to SessionStart hooks).
-//
-// Hooks installed:
-//
-//	SessionStart:      runs "sol prime --world={world} --agent={name}" and outputs
-//	                   the result as initial context
-//	PreCompact:        runs "sol prime --world={world} --agent={name} --compact" to
-//	                   output a focus reminder during native context compaction
-//	UserPromptSubmit:  runs "sol nudge drain --world={world} --agent={name}" to drain
-//	                   queued nudge messages at turn boundaries
-func InstallHooks(worktreeDir, world, agentName string) error {
-	cfg := HookConfig{
-		Hooks: map[string][]HookMatcherGroup{
-			"SessionStart": {
-				{
-					Hooks: []HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol prime --world=%s --agent=%s", world, agentName),
-						},
-					},
-				},
-			},
-			"PreCompact": {
-				{
-					Hooks: []HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agentName),
-						},
-					},
-				},
-			},
-			"PreToolUse": append([]HookMatcherGroup{
-				{
-					Matcher: "EnterPlanMode",
-					Hooks: []HookHandler{
-						{
-							Type:    "command",
-							Command: `echo "BLOCKED: Plan mode requires human approval — no one is watching. Outline your approach in conversation, then implement directly." >&2; exit 2`,
-						},
-					},
-				},
-			}, GuardHooks("outpost")...),
-			"UserPromptSubmit": {
-				{
-					Hooks: []HookHandler{
-						{
-							Type:    "command",
-							Command: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agentName),
-						},
-					},
-				},
-			},
-		},
-	}
-	return WriteHookSettings(worktreeDir, cfg)
-}
-
 // GuardHooks returns PreToolUse matcher groups for sol guard commands.
 // These block dangerous commands (force push, rm -rf, etc.) and
 // workflow-bypass commands (push to main, gh pr create, manual branching).

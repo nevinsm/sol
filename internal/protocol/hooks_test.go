@@ -41,8 +41,14 @@ func TestGuardHooksForgeHasDangerousCommands(t *testing.T) {
 func TestInstallHooksPreCompact(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := InstallHooks(dir, "ember", "Toast"); err != nil {
-		t.Fatalf("InstallHooks failed: %v", err)
+	cfg := BaseHooks(HookOptions{
+		Role:             "outpost",
+		SessionStartCmds: []string{"sol prime --world=ember --agent=Toast"},
+		PreCompactCmd:    "sol prime --world=ember --agent=Toast --compact",
+		NudgeDrainCmd:    "sol nudge drain --world=ember --agent=Toast",
+	})
+	if err := WriteHookSettings(dir, cfg); err != nil {
+		t.Fatalf("WriteHookSettings failed: %v", err)
 	}
 
 	settingsPath := filepath.Join(dir, ".claude", "settings.local.json")
@@ -51,13 +57,13 @@ func TestInstallHooksPreCompact(t *testing.T) {
 		t.Fatalf("failed to read settings.local.json: %v", err)
 	}
 
-	var cfg HookConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	var parsed HookConfig
+	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("failed to parse settings.local.json: %v", err)
 	}
 
 	// Verify SessionStart hook.
-	groups, ok := cfg.Hooks["SessionStart"]
+	groups, ok := parsed.Hooks["SessionStart"]
 	if !ok {
 		t.Fatal("settings.local.json missing SessionStart hook")
 	}
@@ -69,7 +75,7 @@ func TestInstallHooksPreCompact(t *testing.T) {
 	}
 
 	// Verify PreCompact hook uses sol prime --compact (not handoff).
-	pcGroups, ok := cfg.Hooks["PreCompact"]
+	pcGroups, ok := parsed.Hooks["PreCompact"]
 	if !ok {
 		t.Fatal("settings.local.json missing PreCompact hook")
 	}
@@ -83,7 +89,7 @@ func TestInstallHooksPreCompact(t *testing.T) {
 	}
 
 	// Verify PreToolUse hooks: 1 EnterPlanMode + 9 guard hooks = 10
-	ptuGroups, ok := cfg.Hooks["PreToolUse"]
+	ptuGroups, ok := parsed.Hooks["PreToolUse"]
 	if !ok {
 		t.Fatal("settings.local.json missing PreToolUse hook")
 	}

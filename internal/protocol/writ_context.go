@@ -82,6 +82,7 @@ func PopulateWritContext(world, agent, role string) (WritContext, error) {
 				for _, depID := range depIDs {
 					depWrit, err := ws.GetWrit(depID)
 					if err != nil {
+						fmt.Fprintf(os.Stderr, "%s persona: failed to get dep writ %q: %v\n", role, depID, err)
 						continue
 					}
 					depKind := depWrit.Kind
