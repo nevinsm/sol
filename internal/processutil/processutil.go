@@ -105,9 +105,14 @@ func WritePID(path string, pid int) error {
 		// update the file content via the existing fd.
 		if v, ok := pidFiles.Load(path); ok {
 			f := v.(*os.File)
-			if _, err := f.Seek(0, io.SeekStart); err == nil {
-				_ = f.Truncate(0)
-				_, _ = fmt.Fprintf(f, "%d\n", pid)
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				return fmt.Errorf("failed to seek PID file %q: %w", path, err)
+			}
+			if err := f.Truncate(0); err != nil {
+				return fmt.Errorf("failed to truncate PID file %q: %w", path, err)
+			}
+			if _, err := fmt.Fprintf(f, "%d\n", pid); err != nil {
+				return fmt.Errorf("failed to write PID file %q: %w", path, err)
 			}
 			return nil
 		}
