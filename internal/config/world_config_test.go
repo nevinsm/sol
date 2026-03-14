@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefaultWorldConfig(t *testing.T) {
@@ -661,5 +662,201 @@ func TestLoadWorldConfigValidationError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "model_tier") {
 		t.Fatalf("expected error to mention model_tier, got: %v", err)
+	}
+}
+
+// ----- LoadGlobalConfig -----
+
+func TestLoadGlobalConfigMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// No sol.toml — should return defaults without error.
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		t.Fatalf("LoadGlobalConfig() error: %v", err)
+	}
+	defaults := DefaultWorldConfig()
+	if cfg.Agents.ModelTier != defaults.Agents.ModelTier {
+		t.Fatalf("model_tier = %q, want %q", cfg.Agents.ModelTier, defaults.Agents.ModelTier)
+	}
+	if cfg.Forge.TargetBranch != defaults.Forge.TargetBranch {
+		t.Fatalf("target_branch = %q, want %q", cfg.Forge.TargetBranch, defaults.Forge.TargetBranch)
+	}
+}
+
+func TestLoadGlobalConfigValidFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	content := "[agents]\nmodel_tier = \"haiku\"\n[forge]\ntarget_branch = \"develop\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		t.Fatalf("LoadGlobalConfig() error: %v", err)
+	}
+	if cfg.Agents.ModelTier != "haiku" {
+		t.Fatalf("model_tier = %q, want %q", cfg.Agents.ModelTier, "haiku")
+	}
+	if cfg.Forge.TargetBranch != "develop" {
+		t.Fatalf("target_branch = %q, want %q", cfg.Forge.TargetBranch, "develop")
+	}
+}
+
+func TestLoadGlobalConfigInvalidTOML(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte("this is [not valid = {\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadGlobalConfig()
+	if err == nil {
+		t.Fatal("LoadGlobalConfig() expected error for invalid TOML, got nil")
+	}
+	if !strings.Contains(err.Error(), "sol.toml") {
+		t.Fatalf("expected error to mention sol.toml, got: %v", err)
+	}
+}
+
+// ----- IsSleeping -----
+
+func TestIsSleepingFalseByDefault(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// No world.toml — defaults to not sleeping.
+	if IsSleeping("noworld") {
+		t.Fatal("IsSleeping() = true for world with no config, want false")
+	}
+}
+
+func TestIsSleepingTrue(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	worldDir := filepath.Join(dir, "sleepyworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte("[world]\nsleeping = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if !IsSleeping("sleepyworld") {
+		t.Fatal("IsSleeping() = false for world with sleeping = true, want true")
+	}
+}
+
+func TestIsSleepingFalseExplicit(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	worldDir := filepath.Join(dir, "activeworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte("[world]\nsleeping = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if IsSleeping("activeworld") {
+		t.Fatal("IsSleeping() = true for world with sleeping = false, want false")
+	}
+}
+
+func TestIsSleepingFailOpen(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Write an invalid world.toml so LoadWorldConfig returns an error.
+	worldDir := filepath.Join(dir, "badworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte("this is [not valid toml = {\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Fail-open: if config cannot be loaded, assume NOT sleeping.
+	if IsSleeping("badworld") {
+		t.Fatal("IsSleeping() = true when config read fails, want false (fail-open)")
+	}
+}
+
+// ----- EscalationSection.AgingThreshold -----
+
+func TestAgingThresholdZeroValue(t *testing.T) {
+	// Empty strings for all fields → zero duration, no error.
+	e := EscalationSection{}
+
+	for _, sev := range []string{"critical", "high", "medium"} {
+		d, err := e.AgingThreshold(sev)
+		if err != nil {
+			t.Errorf("AgingThreshold(%q) with empty config error: %v", sev, err)
+		}
+		if d != 0 {
+			t.Errorf("AgingThreshold(%q) = %v, want 0", sev, d)
+		}
+	}
+}
+
+func TestAgingThresholdExplicitValues(t *testing.T) {
+	e := EscalationSection{
+		AgingCritical: "30m",
+		AgingHigh:     "2h",
+		AgingMedium:   "8h",
+	}
+
+	cases := []struct {
+		sev  string
+		want time.Duration
+	}{
+		{"critical", 30 * time.Minute},
+		{"high", 2 * time.Hour},
+		{"medium", 8 * time.Hour},
+	}
+
+	for _, tc := range cases {
+		d, err := e.AgingThreshold(tc.sev)
+		if err != nil {
+			t.Errorf("AgingThreshold(%q) error: %v", tc.sev, err)
+			continue
+		}
+		if d != tc.want {
+			t.Errorf("AgingThreshold(%q) = %v, want %v", tc.sev, d, tc.want)
+		}
+	}
+}
+
+func TestAgingThresholdLowSeverity(t *testing.T) {
+	// "low" severity is never re-notified → always 0.
+	e := DefaultEscalationConfig()
+	d, err := e.AgingThreshold("low")
+	if err != nil {
+		t.Fatalf("AgingThreshold(\"low\") error: %v", err)
+	}
+	if d != 0 {
+		t.Fatalf("AgingThreshold(\"low\") = %v, want 0", d)
+	}
+}
+
+func TestAgingThresholdUnknownSeverity(t *testing.T) {
+	e := DefaultEscalationConfig()
+	_, err := e.AgingThreshold("unknown")
+	if err == nil {
+		t.Fatal("AgingThreshold(\"unknown\") expected error, got nil")
+	}
+}
+
+func TestAgingThresholdInvalidDuration(t *testing.T) {
+	e := EscalationSection{AgingCritical: "not-a-duration"}
+	_, err := e.AgingThreshold("critical")
+	if err == nil {
+		t.Fatal("AgingThreshold with invalid duration string expected error, got nil")
 	}
 }
