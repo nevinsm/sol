@@ -179,6 +179,47 @@ func TestParseFileExportMissingEquals(t *testing.T) {
 	}
 }
 
+// TestParseFileEmptyKey verifies that a line like "=value" (empty key) is
+// rejected with a *ParseError. An empty environment variable name is invalid
+// and should not be silently inserted into the result map as {"": "value"}.
+func TestParseFileEmptyKey(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", "=value\n")
+
+	_, err := ParseFile(path)
+	if err == nil {
+		t.Fatal("expected error for empty key '=value', got nil")
+	}
+	var pe *ParseError
+	if !errors.As(err, &pe) {
+		t.Errorf("expected *ParseError, got %T: %v", err, err)
+	}
+	if pe != nil && pe.Line != 1 {
+		t.Errorf("expected line 1, got %d", pe.Line)
+	}
+}
+
+// TestParseFileEmptyKeyWithGoodLines verifies that the empty-key error is
+// returned even when valid lines precede the bad line, and that the reported
+// line number is correct.
+func TestParseFileEmptyKeyWithGoodLines(t *testing.T) {
+	dir := t.TempDir()
+	// Line 1: valid, line 2: blank (skipped), line 3: empty key.
+	path := writeEnvFile(t, dir, ".env", "GOOD=ok\n\n=bad\n")
+
+	_, err := ParseFile(path)
+	if err == nil {
+		t.Fatal("expected error for empty key on line 3, got nil")
+	}
+	var pe *ParseError
+	if !errors.As(err, &pe) {
+		t.Fatalf("expected *ParseError, got %T: %v", err, err)
+	}
+	if pe.Line != 3 {
+		t.Errorf("expected line 3, got %d", pe.Line)
+	}
+}
+
 func TestParseFileParseErrorLineNumber(t *testing.T) {
 	dir := t.TempDir()
 	content := "GOOD=value\n# comment\n\nBAD_LINE\n"
