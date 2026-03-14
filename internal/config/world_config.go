@@ -258,13 +258,8 @@ func (c WorldConfig) Validate() error {
 	if c.Agents.Capacity < 0 {
 		return fmt.Errorf("agents.capacity must be >= 0, got %d", c.Agents.Capacity)
 	}
-	if c.Agents.ModelTier != "" {
-		switch c.Agents.ModelTier {
-		case "sonnet", "opus", "haiku":
-			// valid
-		default:
-			return fmt.Errorf("agents.model_tier must be sonnet, opus, or haiku; got %q", c.Agents.ModelTier)
-		}
+	if err := validModelTier("agents.model_tier", c.Agents.ModelTier); err != nil {
+		return err
 	}
 	if err := validModelTier("agents.models.outpost", c.Agents.Models.Outpost); err != nil {
 		return err

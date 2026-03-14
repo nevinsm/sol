@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -116,7 +117,11 @@ func InstallExcludes(repoPath string) error {
 
 	existing, err := os.ReadFile(excludePath)
 	if err != nil {
-		return fmt.Errorf("failed to read %s: %w", excludePath, err)
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to read %s: %w", excludePath, err)
+		}
+		// File doesn't exist yet (manually constructed repo) — treat as empty.
+		existing = nil
 	}
 	content := string(existing)
 

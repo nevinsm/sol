@@ -320,14 +320,11 @@ func (s *WorldStore) migrateWorld() error {
 			return fmt.Errorf("V10 migration: failed to rename operator → autarch in writs: %w", err)
 		}
 	}
-	if v < 1 {
-		if _, err := tx.Exec(fmt.Sprintf("INSERT INTO schema_version VALUES (%d)", CurrentWorldSchema)); err != nil {
-			return fmt.Errorf("failed to set schema version: %w", err)
-		}
-	} else {
-		if _, err := tx.Exec(fmt.Sprintf("UPDATE schema_version SET version = %d", CurrentWorldSchema)); err != nil {
-			return fmt.Errorf("failed to set schema version: %w", err)
-		}
+	if _, err := tx.Exec("DELETE FROM schema_version"); err != nil {
+		return fmt.Errorf("failed to clear schema version: %w", err)
+	}
+	if _, err := tx.Exec(fmt.Sprintf("INSERT INTO schema_version VALUES (%d)", CurrentWorldSchema)); err != nil {
+		return fmt.Errorf("failed to set schema version: %w", err)
 	}
 	return tx.Commit()
 }
@@ -399,14 +396,12 @@ const sphereSchemaV14 = "" // migration handled procedurally below
 
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
-	QueryRow(string, ...interface{}) *sql.Row
+	Query(string, ...interface{}) (*sql.Rows, error)
 }, table, column string) (bool, error) {
 	// PRAGMA table_info returns one row per column. We can't parameterize
 	// PRAGMA arguments, but table/column names come from our own schema
 	// constants, not user input.
-	rows, err := db.(interface {
-		Query(string, ...interface{}) (*sql.Rows, error)
-	}).Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
 		return false, err
 	}
@@ -627,14 +622,11 @@ func (s *SphereStore) migrateSphere() error {
 			return fmt.Errorf("V14 migration: failed to rename agent role to outpost: %w", err)
 		}
 	}
-	if v < 1 {
-		if _, err := tx.Exec(fmt.Sprintf("INSERT INTO schema_version VALUES (%d)", CurrentSphereSchema)); err != nil {
-			return fmt.Errorf("failed to set schema version: %w", err)
-		}
-	} else {
-		if _, err := tx.Exec(fmt.Sprintf("UPDATE schema_version SET version = %d", CurrentSphereSchema)); err != nil {
-			return fmt.Errorf("failed to set schema version: %w", err)
-		}
+	if _, err := tx.Exec("DELETE FROM schema_version"); err != nil {
+		return fmt.Errorf("failed to clear schema version: %w", err)
+	}
+	if _, err := tx.Exec(fmt.Sprintf("INSERT INTO schema_version VALUES (%d)", CurrentSphereSchema)); err != nil {
+		return fmt.Errorf("failed to set schema version: %w", err)
 	}
 	return tx.Commit()
 }
