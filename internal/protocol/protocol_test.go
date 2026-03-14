@@ -274,8 +274,14 @@ func TestInstallEnvoyClaudeMDWithPersona(t *testing.T) {
 func TestInstallHooks(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := InstallHooks(dir, "myworld", "Toast"); err != nil {
-		t.Fatalf("InstallHooks failed: %v", err)
+	cfg := BaseHooks(HookOptions{
+		Role:             "outpost",
+		SessionStartCmds: []string{"sol prime --world=myworld --agent=Toast"},
+		PreCompactCmd:    "sol prime --world=myworld --agent=Toast --compact",
+		NudgeDrainCmd:    "sol nudge drain --world=myworld --agent=Toast",
+	})
+	if err := WriteHookSettings(dir, cfg); err != nil {
+		t.Fatalf("WriteHookSettings failed: %v", err)
 	}
 
 	// Verify no script file — values are inlined in the hook command.
@@ -291,12 +297,12 @@ func TestInstallHooks(t *testing.T) {
 		t.Fatalf("failed to read settings.local.json: %v", err)
 	}
 
-	var cfg HookConfig
-	if err := json.Unmarshal(settingsData, &cfg); err != nil {
+	var hookCfg HookConfig
+	if err := json.Unmarshal(settingsData, &hookCfg); err != nil {
 		t.Fatalf("failed to parse settings.local.json: %v", err)
 	}
 
-	groups, ok := cfg.Hooks["SessionStart"]
+	groups, ok := hookCfg.Hooks["SessionStart"]
 	if !ok {
 		t.Fatal("settings.local.json missing SessionStart hook")
 	}
