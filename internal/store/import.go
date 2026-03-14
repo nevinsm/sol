@@ -41,15 +41,23 @@ func (s *SphereStore) ImportMessage(id, sender, recipient, subject, body string,
 }
 
 // ImportEscalation inserts an escalation record with specific ID and timestamps.
-func (s *SphereStore) ImportEscalation(id, severity, source, description, status string, acknowledged bool, createdAt, updatedAt string) error {
+func (s *SphereStore) ImportEscalation(id, severity, source, description, status string, acknowledged bool, createdAt, updatedAt, sourceRef, lastNotifiedAt string) error {
 	ackInt := 0
 	if acknowledged {
 		ackInt = 1
 	}
+	var sourceRefVal sql.NullString
+	if sourceRef != "" {
+		sourceRefVal = sql.NullString{String: sourceRef, Valid: true}
+	}
+	var lastNotifiedAtVal sql.NullString
+	if lastNotifiedAt != "" {
+		lastNotifiedAtVal = sql.NullString{String: lastNotifiedAt, Valid: true}
+	}
 	_, err := s.db.Exec(
-		`INSERT OR IGNORE INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, severity, source, description, status, ackInt, createdAt, updatedAt,
+		`INSERT OR IGNORE INTO escalations (id, severity, source, description, source_ref, status, acknowledged, last_notified_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, severity, source, description, sourceRefVal, status, ackInt, lastNotifiedAtVal, createdAt, updatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to import escalation %q: %w", id, err)

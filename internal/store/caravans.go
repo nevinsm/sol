@@ -284,24 +284,33 @@ func (s *SphereStore) GetCaravanItemsForWrit(writID string) ([]CaravanItem, erro
 // DeleteCaravan permanently removes a caravan and its associated items and
 // dependencies. Only drydocked or closed caravans can be deleted.
 func (s *SphereStore) DeleteCaravan(id string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction for delete caravan %q: %w", id, err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
 	// Delete caravan items.
-	if _, err := s.db.Exec(`DELETE FROM caravan_items WHERE caravan_id = ?`, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM caravan_items WHERE caravan_id = ?`, id); err != nil {
 		return fmt.Errorf("failed to delete caravan items for %q: %w", id, err)
 	}
 
 	// Delete caravan dependencies (both directions).
-	if _, err := s.db.Exec(
+	if _, err := tx.Exec(
 		`DELETE FROM caravan_dependencies WHERE from_id = ? OR to_id = ?`, id, id,
 	); err != nil {
 		return fmt.Errorf("failed to delete caravan dependencies for %q: %w", id, err)
 	}
 
 	// Delete the caravan itself.
-	result, err := s.db.Exec(`DELETE FROM caravans WHERE id = ?`, id)
+	result, err := tx.Exec(`DELETE FROM caravans WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete caravan %q: %w", id, err)
 	}
-	return checkRowsAffected(result, "caravan", id)
+	if err := checkRowsAffected(result, "caravan", id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // CheckCaravanReadiness returns the status of all items in a caravan.
