@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/governor"
+	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/setup"
 	"github.com/nevinsm/sol/internal/status"
@@ -712,7 +714,20 @@ With --force, also stops all outpost agent sessions immediately:
 		mgr := session.New()
 		servicesStopped := 0
 
-		for _, role := range []string{"forge", "sentinel", "governor"} {
+		// Stop sentinel via PID file (it's a daemon process, not a tmux session).
+		if pid := sentinel.ReadPID(name); pid > 0 && sentinel.IsRunning(pid) {
+			proc, err := os.FindProcess(pid)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  warning: failed to find sentinel process: %v\n", err)
+			} else if err := proc.Signal(syscall.SIGTERM); err != nil {
+				fmt.Fprintf(os.Stderr, "  warning: failed to stop sentinel: %v\n", err)
+			} else {
+				fmt.Printf("  stopped sentinel\n")
+				servicesStopped++
+			}
+		}
+
+		for _, role := range []string{"forge", "governor"} {
 			sessName := config.SessionName(name, role)
 			if mgr.Exists(sessName) {
 				if err := mgr.Stop(sessName, false); err != nil {
@@ -906,22 +921,22 @@ those must be re-dispatched manually.`,
 		}
 		var results []serviceResult
 
-		// Start sentinel.
-		sentinelSess := config.SessionName(name, "sentinel")
-		if !mgr.Exists(sentinelSess) {
+		// Start sentinel (daemon process, not a tmux session — check via PID file).
+		if pid := sentinel.ReadPID(name); pid > 0 && sentinel.IsRunning(pid) {
+			results = append(results, serviceResult{name: "sentinel", started: true})
+		} else {
 			out, err := exec.Command(solBin, "sentinel", "start", "--world="+name).CombinedOutput()
 			if err != nil {
 				results = append(results, serviceResult{name: "sentinel", started: false, err: strings.TrimSpace(string(out))})
 			} else {
-				// Verify session exists after start.
-				if mgr.Exists(sentinelSess) {
+				// Verify sentinel is running via PID file after start.
+				pid := sentinel.ReadPID(name)
+				if pid > 0 && sentinel.IsRunning(pid) {
 					results = append(results, serviceResult{name: "sentinel", started: true})
 				} else {
-					results = append(results, serviceResult{name: "sentinel", started: false, err: "session not found after start"})
+					results = append(results, serviceResult{name: "sentinel", started: false, err: "process not found after start"})
 				}
 			}
-		} else {
-			results = append(results, serviceResult{name: "sentinel", started: true})
 		}
 
 		// Start forge.
