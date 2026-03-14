@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
@@ -10,6 +11,9 @@ func ValidateWritID(id string) error {
 	if !strings.HasPrefix(id, "sol-") || len(id) != 20 {
 		return fmt.Errorf("invalid writ ID %q: expected format sol-<16 hex chars>", id)
 	}
+	if _, err := hex.DecodeString(id[4:]); err != nil {
+		return fmt.Errorf("invalid writ ID %q: suffix must be 16 hex chars", id)
+	}
 	return nil
 }
 
@@ -17,6 +21,9 @@ func ValidateWritID(id string) error {
 func ValidateCaravanID(id string) error {
 	if !strings.HasPrefix(id, "car-") || len(id) != 20 {
 		return fmt.Errorf("invalid caravan ID %q: expected format car-<16 hex chars>", id)
+	}
+	if _, err := hex.DecodeString(id[4:]); err != nil {
+		return fmt.Errorf("invalid caravan ID %q: suffix must be 16 hex chars", id)
 	}
 	return nil
 }

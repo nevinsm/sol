@@ -301,7 +301,7 @@ func ClaudeConfigDir(worldDir, role, name string) string {
 	switch role {
 	case "envoy":
 		roleDir = "envoys"
-	case "outpost", "agent":
+	case "outpost":
 		roleDir = "outposts"
 	default:
 		roleDir = role // forge, governor, chancellor
