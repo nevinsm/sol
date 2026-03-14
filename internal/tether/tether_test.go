@@ -316,6 +316,41 @@ func TestMigrateLegacyFile(t *testing.T) {
 	}
 }
 
+func TestMigrateEmptyLegacyFile(t *testing.T) {
+	setupTest(t)
+
+	solHome := os.Getenv("SOL_HOME")
+	agentDir := filepath.Join(solHome, "myworld", "outposts", "Toast")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+
+	// Create a legacy .tether file with empty content.
+	legacyPath := filepath.Join(agentDir, ".tether")
+	if err := os.WriteFile(legacyPath, []byte(""), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Run migration.
+	if err := Migrate("myworld", "Toast", "outpost"); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	// Verify the empty file was removed.
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Error("empty legacy .tether file should be removed after migration")
+	}
+
+	// Verify no tether is active (Read returns "").
+	id, err := Read("myworld", "Toast", "outpost")
+	if err != nil {
+		t.Fatalf("Read after empty migration failed: %v", err)
+	}
+	if id != "" {
+		t.Errorf("expected empty tether after empty migration, got %q", id)
+	}
+}
+
 func TestMigrateNoLegacyFile(t *testing.T) {
 	setupTest(t)
 
