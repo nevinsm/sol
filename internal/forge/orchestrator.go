@@ -417,7 +417,11 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 		// Unknown result — release for retry.
 		s.fl.Log("ERROR", fmt.Sprintf("unknown result %q for %s", result.Result, mr.ID))
 		s.lastError = truncate(fmt.Sprintf("unknown result: %s", result.Result), 200)
-		s.forge.Release(mr.ID)
+		if failed, err := s.forge.Release(mr.ID); err != nil {
+			s.forge.logger.Error("release failed", "mr", mr.ID, "error", err)
+		} else if failed {
+			s.fl.Log("FAILED", fmt.Sprintf("marked failed after max attempts: %s", mr.Branch))
+		}
 		s.writeHeartbeat("idle", queueDepth-1)
 		s.emitPatrolEvent(queueDepth)
 	}
