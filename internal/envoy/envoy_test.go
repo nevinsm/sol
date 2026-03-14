@@ -9,8 +9,44 @@ import (
 	"testing"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// writeTestToken writes a minimal api_key token so startup.Launch can inject credentials in tests.
+func writeTestToken(t *testing.T, solHome string) {
+	t.Helper()
+	accountsDir := filepath.Join(solHome, ".accounts")
+	if err := os.MkdirAll(accountsDir, 0o755); err != nil {
+		t.Fatalf("failed to create .accounts dir: %v", err)
+	}
+	tokenJSON := `{"type":"api_key","token":"test-key","created_at":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(accountsDir, "token.json"), []byte(tokenJSON), 0o600); err != nil {
+		t.Fatalf("failed to write test token: %v", err)
+	}
+}
+
+// mockSessionStarter captures session start calls for startup.Launch tests.
+type mockSessionStarter struct {
+	startErr error
+	lastCall struct {
+		name    string
+		workdir string
+		role    string
+		world   string
+	}
+}
+
+func (m *mockSessionStarter) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
+	if m.startErr != nil {
+		return m.startErr
+	}
+	m.lastCall.name = name
+	m.lastCall.workdir = workdir
+	m.lastCall.role = role
+	m.lastCall.world = world
+	return nil
+}
 
 // --- Mocks ---
 
@@ -507,5 +543,56 @@ func TestList(t *testing.T) {
 	}
 	if len(result) != 3 {
 		t.Fatalf("expected 3 envoys across all worlds, got %d", len(result))
+	}
+}
+
+func TestEnvoyStart(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
+	writeTestToken(t, tmp)
+
+	// Create required dirs.
+	if err := os.MkdirAll(filepath.Join(tmp, ".store"), 0o755); err != nil {
+		t.Fatalf("failed to create .store dir: %v", err)
+	}
+
+	// Create envoy worktree dir (startup.Launch checks it exists).
+	worktreeDir := WorktreePath("myworld", "Echo")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	// Open sphere store.
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	_, err = startup.Launch(RoleConfig(), "myworld", "Echo", startup.LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	// Verify hooks file written.
+	hooksPath := filepath.Join(worktreeDir, ".claude", "settings.local.json")
+	if _, err := os.Stat(hooksPath); err != nil {
+		t.Errorf("hooks file not written: %v", err)
+	}
+
+	// Verify persona injected.
+	personaPath := filepath.Join(worktreeDir, "CLAUDE.local.md")
+	data, err := os.ReadFile(personaPath)
+	if err != nil {
+		t.Fatalf("persona not written: %v", err)
+	}
+	if !strings.Contains(string(data), "Echo") {
+		t.Errorf("persona missing agent name, got: %q", string(data))
 	}
 }
