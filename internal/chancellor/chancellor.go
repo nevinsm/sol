@@ -72,6 +72,9 @@ func Start(mgr SessionManager) error {
 // --- Stop ---
 
 // Stop terminates the chancellor session gracefully.
+// Unlike envoy.Stop and governor.Stop, which silently skip when no session is
+// running, this returns an error — chancellor has no agent record to reset to
+// idle, so a missing session is always unexpected and worth surfacing.
 func Stop(mgr StopManager) error {
 	if !mgr.Exists(SessionName) {
 		return fmt.Errorf("no chancellor session running")

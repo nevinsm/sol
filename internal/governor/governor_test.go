@@ -52,22 +52,6 @@ type mockStopStore struct {
 	updateErr error
 }
 
-func (m *mockStopStore) CreateAgent(name, world, role string) (string, error) {
-	return "", nil // not exercised in Stop tests
-}
-
-func (m *mockStopStore) EnsureAgent(name, world, role string) error {
-	return nil // not exercised in Stop tests
-}
-
-func (m *mockStopStore) DeleteAgent(id string) error {
-	return nil // not exercised in Stop tests
-}
-
-func (m *mockStopStore) DeleteAgentsForWorld(world string) error {
-	return nil // not exercised in Stop tests
-}
-
 func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, activeWrit string) error {
 	if m.updateErr != nil {
 		return m.updateErr

@@ -45,6 +45,7 @@ func outpostSkillInstaller(world, agent string) []adapter.Skill {
 	}
 
 	return protocol.BuildSkills(protocol.SkillContext{
+		SolBinary: "sol",
 		World:        world,
 		AgentName:    agent,
 		Role:         "outpost",
