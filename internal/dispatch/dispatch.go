@@ -234,7 +234,9 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	// Clean up any stale session (race between resolve teardown and next cast,
 	// crashed agents, interrupted stops, etc.).
 	if mgr.Exists(sessName) {
-		mgr.Stop(sessName, true)
+		if err := mgr.Stop(sessName, true); err != nil {
+			fmt.Fprintf(os.Stderr, "cast: warning: failed to stop stale session %q: %v\n", sessName, err)
+		}
 	}
 
 	// 5. Create worktree directory.
@@ -444,6 +446,15 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 	}
 	defer agentLock.Release()
 
+	// Re-read agent state inside the locked section to avoid a TOCTOU race:
+	// another concurrent Tether may have changed agent state between step 2
+	// and the lock acquisition above. The rollback at step 5 uses these
+	// values, so they must reflect the state at lock time.
+	agent, err = sphereStore.GetAgent(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-read agent %q: %w", agentID, err)
+	}
+
 	// 4. Update agent: set working (if was idle), set active_writ only if none.
 	// Done BEFORE tether.Write() to prevent a race with sentinel's
 	// cleanupOrphanedTethers, which skips tether files for known agents.
@@ -523,12 +534,7 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
 	}
 
-	// 2. Verify writ is tethered to this agent.
-	if !tether.IsTetheredTo(opts.World, opts.AgentName, opts.WritID, agent.Role) {
-		return nil, fmt.Errorf("writ %q is not tethered to agent %q in world %q", opts.WritID, opts.AgentName, opts.World)
-	}
-
-	// 3. Acquire locks: writ first, then agent (consistent ordering).
+	// 2. Acquire locks: writ first, then agent (consistent ordering).
 	lock, err := AcquireWritLock(opts.WritID)
 	if err != nil {
 		return nil, err
@@ -540,6 +546,13 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 		return nil, err
 	}
 	defer agentLock.Release()
+
+	// 3. Verify writ is tethered to this agent (inside locked region to avoid
+	// a TOCTOU race: a concurrent clear between the check and lock acquisition
+	// could cause a spurious error or double-clear).
+	if !tether.IsTetheredTo(opts.World, opts.AgentName, opts.WritID, agent.Role) {
+		return nil, fmt.Errorf("writ %q is not tethered to agent %q in world %q", opts.WritID, opts.AgentName, opts.World)
+	}
 
 	// 4. Remove single tether file.
 	if err := tether.ClearOne(opts.World, opts.AgentName, opts.WritID, agent.Role); err != nil {
