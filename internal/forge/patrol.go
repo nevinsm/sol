@@ -519,7 +519,11 @@ func (s *patrolState) executeLegacyMerge(ctx context.Context, mr *store.MergeReq
 	case mergeError:
 		s.fl.Log("ERROR", fmt.Sprintf("merge failed for %s", mr.Branch))
 		s.lastError = truncate(fmt.Sprintf("merge failed: %s", mr.Branch), 200)
-		s.forge.Release(mr.ID)
+		if failed, err := s.forge.Release(mr.ID); err != nil {
+			s.forge.logger.Error("release failed", "mr", mr.ID, "error", err)
+		} else if failed {
+			s.fl.Log("FAILED", fmt.Sprintf("marked failed after max attempts: %s", mr.Branch))
+		}
 		s.writeHeartbeat("idle", queueDepth-1)
 		s.emitPatrolEvent(queueDepth)
 		return
@@ -551,7 +555,11 @@ func (s *patrolState) executeLegacyMerge(ctx context.Context, mr *store.MergeReq
 	if err := s.push(ctx, mr); err != nil {
 		s.fl.Log("REJECTED", fmt.Sprintf("push rejected for %s: %s", mr.Branch, truncate(err.Error(), 200)))
 		s.lastError = truncate(fmt.Sprintf("push rejected: %s", err.Error()), 200)
-		s.forge.Release(mr.ID)
+		if failed, releaseErr := s.forge.Release(mr.ID); releaseErr != nil {
+			s.forge.logger.Error("release failed", "mr", mr.ID, "error", releaseErr)
+		} else if failed {
+			s.fl.Log("FAILED", fmt.Sprintf("marked failed after max attempts: %s", mr.Branch))
+		}
 		s.writeHeartbeat("idle", queueDepth-1)
 		s.emitPatrolEvent(queueDepth)
 		return
