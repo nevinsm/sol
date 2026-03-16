@@ -1801,10 +1801,10 @@ func TestCheckChronicleHealthStaleHeartbeatRestart(t *testing.T) {
 	writePIDFile(t, "chronicle", subpid)
 
 	// Write a stale chronicle heartbeat (10 minutes old, well past the 5-minute max).
-	solHome := os.Getenv("SOL_HOME")
+	runtimeDir := filepath.Join(os.Getenv("SOL_HOME"), ".runtime")
 	staleTime := time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339)
 	hbJSON := fmt.Sprintf(`{"timestamp":%q,"status":"running","events_processed":0,"checkpoint_offset":0}`, staleTime)
-	if err := os.WriteFile(filepath.Join(solHome, "chronicle.heartbeat"), []byte(hbJSON), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(runtimeDir, "chronicle-heartbeat.json"), []byte(hbJSON), 0o644); err != nil {
 		t.Fatalf("failed to write stale chronicle heartbeat: %v", err)
 	}
 
@@ -1813,7 +1813,6 @@ func TestCheckChronicleHealthStaleHeartbeatRestart(t *testing.T) {
 	writePIDFile(t, "broker", os.Getpid())
 
 	// Write a fresh ledger heartbeat so checkLedgerHealth does not restart it.
-	runtimeDir := filepath.Join(os.Getenv("SOL_HOME"), ".runtime")
 	freshTime := time.Now().UTC().Format(time.RFC3339)
 	freshHbJSON := fmt.Sprintf(`{"timestamp":%q,"status":"running","requests_total":0,"tokens_processed":0,"worlds_written":0}`, freshTime)
 	if err := os.WriteFile(filepath.Join(runtimeDir, "ledger-heartbeat.json"), []byte(freshHbJSON), 0o644); err != nil {
