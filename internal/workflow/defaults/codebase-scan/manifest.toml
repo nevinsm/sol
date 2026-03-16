@@ -1,0 +1,58 @@
+name = "codebase-scan"
+type = "convoy"
+description = "Full codebase review — parallel analysis by component area, then synthesize findings into a fix caravan in drydock."
+
+[[legs]]
+id = "core-infra"
+title = "Review core infrastructure"
+kind = "analysis"
+description = "Review store, config, setup, and utility packages for bugs, convention violations, dead code, and test gaps."
+focus = "internal/store/, internal/config/, internal/setup/, internal/fileutil/, internal/processutil/, internal/logutil/"
+
+[[legs]]
+id = "session-lifecycle"
+title = "Review session lifecycle"
+kind = "analysis"
+description = "Review startup, dispatch, session management, tether, and adapter packages for bugs, convention violations, dead code, and test gaps."
+focus = "internal/startup/, internal/dispatch/, internal/session/, internal/tether/, internal/adapter/"
+
+[[legs]]
+id = "agent-roles"
+title = "Review agent roles"
+kind = "analysis"
+description = "Review agent role packages for bugs, convention violations, dead code, and test gaps."
+focus = "internal/envoy/, internal/governor/, internal/chancellor/, internal/dispatch/role.go"
+
+[[legs]]
+id = "services"
+title = "Review service components"
+kind = "analysis"
+description = "Review long-running service components for bugs, convention violations, dead code, and test gaps."
+focus = "internal/forge/, internal/sentinel/, internal/consul/, internal/prefect/"
+
+[[legs]]
+id = "protocol"
+title = "Review protocol layer"
+kind = "analysis"
+description = "Review protocol package — skills, hooks, prompts, persona generation — for bugs, factual errors, convention violations, and dead code."
+focus = "internal/protocol/"
+
+[[legs]]
+id = "support-systems"
+title = "Review support systems"
+kind = "analysis"
+description = "Review ledger, broker, nudge, chronicle, events, quota, and doctor packages for bugs, convention violations, dead code, and test gaps."
+focus = "internal/ledger/, internal/broker/, internal/nudge/, internal/chronicle/, internal/events/, internal/quota/, internal/doctor/"
+
+[[legs]]
+id = "cli-and-status"
+title = "Review CLI and status rendering"
+kind = "analysis"
+description = "Review CLI command definitions and status rendering for bugs, convention violations, dead code, and test gaps."
+focus = "cmd/, internal/status/"
+
+[synthesis]
+title = "Synthesize findings into fix caravan"
+kind = "analysis"
+description = "Read all leg analysis outputs. Deduplicate findings across legs. Create a fix writ for each actionable issue (bugs, convention violations, dead code, test gaps). Group writs into a caravan in drydock."
+depends_on = ["core-infra", "session-lifecycle", "agent-roles", "services", "protocol", "support-systems", "cli-and-status"]

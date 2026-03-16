@@ -155,7 +155,12 @@ func generateSkill(name string, ctx SkillContext) string {
 
 func skillResolveAndHandoff(ctx SkillContext) string {
 	sol := ctx.sol()
-	return fmt.Sprintf(`# Resolve & Handoff
+	return fmt.Sprintf(`---
+name: resolve-and-handoff
+description: Submit completed work and end your session — pushes branch, creates merge request, clears tether
+---
+
+# Resolve & Handoff
 
 %[1]s resolve%[2]s is your **mandatory final step** — it pushes your branch, creates a merge request, clears the tether, and ends your session. There is no coming back after resolve; the worktree is cleaned up.
 
@@ -204,7 +209,12 @@ Options:
 
 func skillResolveAndSubmit(ctx SkillContext) string {
 	sol := ctx.sol()
-	return fmt.Sprintf(`# Resolve & Submit
+	return fmt.Sprintf(`---
+name: resolve-and-submit
+description: Submit completed work through the forge pipeline — pushes branch, creates merge request, keeps session alive
+---
+
+# Resolve & Submit
 
 %[1]s resolve%[2]s submits your work through the forge pipeline — it pushes your branch, creates a merge request, clears the tether, and keeps your session alive. Never use %[3]s alone; pushing does not create a merge request.
 
@@ -244,7 +254,12 @@ func skillResolveAndSubmit(ctx SkillContext) string {
 
 func skillMemories(ctx SkillContext) string {
 	sol := ctx.sol()
-	return fmt.Sprintf(`# Agent Memories
+	return fmt.Sprintf(`---
+name: memories
+description: Persist and recall durable knowledge across sessions — learned patterns, constraints, recurring gotchas
+---
+
+# Agent Memories
 
 Memories are key-value pairs persisted in the sphere store and injected
 automatically during prime — every successor session sees them. Use memories
@@ -281,7 +296,12 @@ before it misleads your successor:
 func skillWritDispatch(ctx SkillContext) string {
 	sol := ctx.sol()
 	world := ctx.World
-	return fmt.Sprintf(`# Writ Dispatch
+	return fmt.Sprintf(`---
+name: writ-dispatch
+description: Create writs and dispatch work to outpost agents — size, prioritize, and send tasks
+---
+
+# Writ Dispatch
 
 As governor, you create work and send it to agents — you never do the implementation yourself. A writ is the unit of work: size it so an outpost can complete it in a coherent session. Too large and agents lose focus mid-task; too small and dispatch/merge overhead exceeds the value of the work.
 
@@ -336,6 +356,7 @@ Cast options: %[8]s (auto if omitted), %[9]s, %[10]s.
 func skillCaravanManagement(ctx SkillContext) string {
 	sol := ctx.sol()
 	world := ctx.World
+	fmDesc := "Sequence related writs across phases — group, order, and track batch progress"
 	desc := "Commands for grouping and sequencing related writs."
 	var roleSection string
 	switch ctx.Role {
@@ -379,7 +400,12 @@ A caravan sequences your own multi-step work across phases. Items in the same ph
 - **Phase won't advance:** prior items must be "closed" (merged), not just "done". Check forge queue.
 - **` + "`sol caravan launch`" + ` with no agents:** exits with message; wait for consul patrol.`
 	}
-	return fmt.Sprintf(`# Caravan Management
+	return fmt.Sprintf(`---
+name: caravan-management
+description: %[5]s
+---
+
+# Caravan Management
 
 %[4]s
 
@@ -403,13 +429,18 @@ A caravan sequences your own multi-step work across phases. Items in the same ph
 |---------|-------------|
 | %[1]s caravan dep add <caravan-id> <dep-id>%[3]s | Add inter-caravan dependency |
 | %[1]s caravan dep list <caravan-id>%[3]s | List caravan dependencies |
-`, "`"+sol, world, "`", desc) + roleSection
+`, "`"+sol, world, "`", desc, fmDesc) + roleSection
 }
 
 func skillWorldCoordination(ctx SkillContext) string {
 	sol := ctx.sol()
 	world := ctx.World
-	return fmt.Sprintf(`# World Coordination
+	return fmt.Sprintf(`---
+name: world-coordination
+description: Monitor agents, sync the repo, check service health, and escalate blockers
+---
+
+# World Coordination
 
 As governor, you monitor agent states, keep the managed repo current, watch service health, and escalate what you cannot handle. You don't implement code — you orchestrate the agents that do.
 
@@ -466,7 +497,12 @@ As governor, you monitor agent states, keep the managed repo current, watch serv
 
 func skillNotificationHandling(ctx SkillContext) string {
 	sol := ctx.sol()
-	return fmt.Sprintf(`# Notification Handling
+	return fmt.Sprintf(`---
+name: notification-handling
+description: Handle system notifications — MAIL, AGENT_DONE, MERGED, MERGE_FAILED — and take appropriate action
+---
+
+# Notification Handling
 
 Notifications arrive at each turn boundary via UserPromptSubmit hook — a file-based queue drained each turn. Each notification may require dispatching more work or updating caravan state.
 
@@ -500,7 +536,12 @@ Always update your brief after handling notifications.
 }
 
 func skillEnvoyNotificationHandling(_ SkillContext) string {
-	return `# Notification Handling
+	return `---
+name: notification-handling
+description: Handle system notifications — MAIL, MERGED, MERGE_FAILED, AGENT_DONE — and take appropriate action
+---
+
+# Notification Handling
 
 Notifications arrive at each turn boundary via UserPromptSubmit hook — a file-based queue drained each turn. As an envoy you receive a focused subset; act on each promptly.
 
@@ -530,13 +571,18 @@ Always update your brief after handling a notification.
 
 func skillMail(ctx SkillContext) string {
 	sol := ctx.sol()
-	return fmt.Sprintf(`# Mail
+	return fmt.Sprintf(`---
+name: mail
+description: Send and receive messages with the operator — status updates, questions, reports
+---
+
+# Mail
 
 Mail is the channel for informational and conversational communication with
 the operator. Use mail when you have something to report, a question to ask,
-or a status update to share. Use %[1]s escalate%[2]s instead when you are
-blocked and need the operator's help to continue — escalation is for urgent
-needs, mail is for everything else.
+or a status update to share. Use %[1]s escalate "description"%[2]s instead
+when you are blocked and need the operator's help to continue — escalation is
+for urgent needs, mail is for everything else.
 
 For outbound messages, choose priority intentionally: 1 = urgent (operator
 notified immediately), 2 = normal (default), 3 = low (batch-friendly, no
@@ -553,7 +599,20 @@ interruption).
 | %[3]s mail send --to=<identity> --subject="..." --body="..."%[2]s | Send a message |
 
 Options for send: %[4]s (1=urgent, 2=normal, 3=low), %[5]s.
-`, "`"+sol+" escalate", "`", "`"+sol,
+
+## Common Patterns
+
+**Status update after completing work:** %[3]s mail send --to=autarch --subject="..." --body="..."%[2]s with priority 3 — informational, no interruption needed.
+
+**Question that blocks your work:** Use %[1]s escalate "description"%[2]s instead of mail — escalation is for blockers, mail is for everything else.
+
+**Responding to operator mail:** %[3]s mail inbox%[2]s → %[3]s mail read <id>%[2]s → respond or act → %[3]s mail ack <id>%[2]s.
+
+## Failure Modes
+
+- **Priority 1 overuse:** Reserve urgent priority for genuinely time-sensitive communication. Frequent urgent mail trains the operator to ignore it.
+- **Unacknowledged messages:** %[3]s mail check%[2]s shows unread count. Acknowledge messages after reading to keep the inbox clean.
+`, "`"+sol, "`", "`"+sol,
 		"`--priority`",
 		"`--no-notify`")
 }
@@ -561,7 +620,12 @@ Options for send: %[4]s (1=urgent, 2=normal, 3=low), %[5]s.
 func skillWritManagement(ctx SkillContext) string {
 	sol := ctx.sol()
 	world := ctx.World
-	return fmt.Sprintf(`# Writ Management
+	return fmt.Sprintf(`---
+name: writ-management
+description: Create, tether, activate, and track writs through their lifecycle
+---
+
+# Writ Management
 
 A writ moves through a fixed lifecycle: **open** → **tethered** → **working** → **done** → **closed**. "Done" means code complete with MR in the forge queue. "Closed" means merged. You interact with writs at creation, while working on them yourself, and when delegating to outposts.
 
@@ -609,7 +673,12 @@ Options for create: %[5]s, %[6]s (repeatable), %[7]s (code or analysis), %[8]s (
 func skillDispatch(ctx SkillContext) string {
 	sol := ctx.sol()
 	world := ctx.World
-	return fmt.Sprintf(`# Dispatch
+	return fmt.Sprintf(`---
+name: dispatch
+description: Dispatch work to outpost agents — cast writs to isolated sessions for independent tasks
+---
+
+# Dispatch
 
 As envoy, you dispatch work to outpost agents when a task is better handled by a dedicated, isolated session than by doing it yourself. Outposts are disposable — they execute one writ and resolve. You remain responsible for reviewing their output after the writ is merged.
 
@@ -647,7 +716,12 @@ Cast options: %[4]s (auto if omitted), %[5]s, %[6]s.
 
 func skillHandoff(ctx SkillContext) string {
 	sol := ctx.sol()
-	return fmt.Sprintf(`# Handoff
+	return fmt.Sprintf(`---
+name: handoff
+description: Cycle to a fresh session — preserves brief, worktree, and tether across the transition
+---
+
+# Handoff
 
 Handoff cycles your session to a fresh one, resetting the conversation context
 while preserving your brief, worktree, and tether. Use it when context feels
@@ -702,7 +776,12 @@ no context. Commit everything (even as WIP) before handing off.
 func skillStatusMonitoring(ctx SkillContext) string {
 	sol := ctx.sol()
 	world := ctx.World
-	return fmt.Sprintf(`# Status Monitoring
+	return fmt.Sprintf(`---
+name: status-monitoring
+description: Check sphere and world health — agents, writs, forge queue, service status
+---
+
+# Status Monitoring
 
 Status commands give you a live picture of what's happening across the sphere.
 Check status proactively — before dispatching work (to confirm agents are
@@ -754,7 +833,12 @@ Status indicators: %[4]s✓%[5]s = healthy/running, %[4]s○%[5]s = not running,
 func skillWorldOperations(ctx SkillContext) string {
 	sol := ctx.sol()
 	world := ctx.World
-	return fmt.Sprintf(`# World Operations
+	return fmt.Sprintf(`---
+name: world-operations
+description: Sync the managed repo, inspect world health, and query the governor
+---
+
+# World Operations
 
 World operations let you sync the managed repo, inspect world health, and
 query the governor. As an envoy, you'll mainly use world sync and governor
@@ -810,7 +894,12 @@ even when the governor is idle — try that first.
 
 func skillWorldQueries(ctx SkillContext) string {
 	sol := ctx.sol()
-	return fmt.Sprintf(`# World Queries
+	return fmt.Sprintf(`---
+name: world-queries
+description: Gather intelligence across worlds — briefs, summaries, and live governor queries in cost order
+---
+
+# World Queries
 
 World queries let you gather intelligence across worlds before planning or
 advising the autarch. The key discipline is cost awareness: you have three
@@ -869,7 +958,12 @@ brief so future sessions know.
 
 func skillWritPlanning(ctx SkillContext) string {
 	sol := ctx.sol()
-	return fmt.Sprintf(`# Writ Planning
+	return fmt.Sprintf(`---
+name: writ-planning
+description: Decompose initiatives into writs and caravans — plan, size, sequence, and present for approval
+---
+
+# Writ Planning
 
 Writ planning translates an autarch's initiative into a structured set of
 writs and caravans ready for dispatch. The planning session itself is cheap —
