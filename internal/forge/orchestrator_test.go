@@ -116,6 +116,8 @@ func setupOrchestratorTest(t *testing.T) (*patrolState, *mockWorldStore, *mockSe
 	sessMgr := newMockSessionManager()
 	cmdRunner := newMockCmdRunner()
 
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main" // tests run outside world config — set explicitly
 	forge := &Forge{
 		world:       "ember",
 		agentID:     "ember/forge",
@@ -126,7 +128,7 @@ func setupOrchestratorTest(t *testing.T) (*patrolState, *mockWorldStore, *mockSe
 		sessions:    sessMgr,
 		launcher:    mockLauncher(sessMgr),
 		logger:      testLogger(),
-		cfg:         DefaultConfig(),
+		cfg:         forgeCfg,
 	}
 
 	pcfg := testPatrolConfig()

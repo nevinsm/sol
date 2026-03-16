@@ -472,8 +472,8 @@ func resolveForgeConfig(world string, worldCfg config.WorldConfig) (forge.Config
 		}
 		cfg.QualityGates = gates
 	}
-	if worldCfg.Forge.TargetBranch != "" {
-		cfg.TargetBranch = worldCfg.Forge.TargetBranch
+	if worldCfg.World.Branch != "" {
+		cfg.TargetBranch = worldCfg.World.Branch
 	}
 	if worldCfg.Forge.GateTimeout != "" {
 		parsed, _ := time.ParseDuration(worldCfg.Forge.GateTimeout)

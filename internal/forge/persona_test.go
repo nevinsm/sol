@@ -6,7 +6,7 @@ import (
 )
 
 func TestForgePersonaContent(t *testing.T) {
-	persona := ForgePersonaContent("prod-world")
+	persona := ForgePersonaContent("prod-world", "main")
 
 	markers := []string{
 		"Forge Merge Engineer — prod-world",
@@ -94,7 +94,7 @@ func TestForgeHookConfig(t *testing.T) {
 func TestForgeMergeRoleConfig(t *testing.T) {
 	t.Setenv("SOL_HOME", t.TempDir())
 
-	cfg := ForgeMergeRoleConfig()
+	cfg := ForgeMergeRoleConfig("main")
 
 	if cfg.Role != "forge-merge" {
 		t.Errorf("Role = %q, want forge-merge", cfg.Role)

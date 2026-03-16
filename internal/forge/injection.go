@@ -24,11 +24,9 @@ type InjectionConfig struct {
 // BuildInjection builds the injection context message for a forge merge session.
 // The injection provides the merge session with all the context it needs:
 // MR metadata, writ context, attempt history, gate commands, and step-by-step instructions.
+// InjectionConfig.TargetBranch must be set by the caller; an empty value is a bug.
 func BuildInjection(mr *store.MergeRequest, writ *store.Writ, cfg InjectionConfig) string {
 	targetBranch := cfg.TargetBranch
-	if targetBranch == "" {
-		targetBranch = "main"
-	}
 
 	var b strings.Builder
 

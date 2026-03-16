@@ -213,13 +213,15 @@ func TestCreateResolutionTask(t *testing.T) {
 		{ID: "mr-00000001", WritID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: store.MRClaimed},
 	}
 
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main" // tests run outside world config — set explicitly
 	r := &Forge{
 		world:      "ember",
-		agentID:  "ember/forge",
-		worktree: repoDir,
+		agentID:    "ember/forge",
+		worktree:   repoDir,
 		worldStore: worldStore,
-		logger:   testLogger(),
-		cfg:      DefaultConfig(),
+		logger:     testLogger(),
+		cfg:        forgeCfg,
 	}
 
 	mr := &store.MergeRequest{
