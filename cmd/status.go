@@ -24,8 +24,8 @@ Otherwise, shows a sphere-level overview of all worlds and processes.
 With a world name, shows detailed status for that specific world.
 
 Exit codes with --json:
-  Sphere-only (no world detected, no world argument): always exits 0.
-  Combined (world auto-detected from cwd) and world (explicit argument):
+  Sphere-only (no world detected or specified): always exits 0
+  World or combined (world detected from cwd or explicitly specified):
     0 = healthy
     1 = unhealthy
     2 = degraded`,
