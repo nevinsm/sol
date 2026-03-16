@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -135,13 +137,15 @@ func TestFragmentPatterns(t *testing.T) {
 // --- workflow-bypass matching ---
 
 func TestMatchPushToProtectedBranch(t *testing.T) {
+	// Without SOL_WORLD set, the function fails open — all pushes are allowed.
+	t.Setenv("SOL_WORLD", "")
 	tests := []struct {
 		name    string
 		command string
 		blocked bool
 	}{
-		{"push origin main", "git push origin main", true},
-		{"push origin master", "git push origin master", true},
+		{"push origin main - fail open without world", "git push origin main", false},
+		{"push origin master - fail open without world", "git push origin master", false},
 		{"push origin feature-branch allowed", "git push origin feature-branch", false},
 		{"push without remote allowed", "git push", false},
 		{"unrelated", "echo hello", false},
@@ -150,8 +154,47 @@ func TestMatchPushToProtectedBranch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			reason := matchPushToProtectedBranch(tt.command)
 			if (reason != "") != tt.blocked {
-				t.Errorf("matchPushToProtectedBranch(%q) blocked=%v, want blocked=%v",
-					tt.command, reason != "", tt.blocked)
+				t.Errorf("matchPushToProtectedBranch(%q) blocked=%v, want blocked=%v (reason=%q)",
+					tt.command, reason != "", tt.blocked, reason)
+			}
+		})
+	}
+}
+
+func TestMatchPushToProtectedBranchWithWorldConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	t.Setenv("SOL_WORLD", "testworld")
+
+	// Create world config with branch="main" and protected_branches.
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worldToml := "[world]\nbranch = \"main\"\nprotected_branches = [\"release/*\", \"staging\"]\n"
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(worldToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		command string
+		blocked bool
+	}{
+		{"push to world branch", "git push origin main", true},
+		{"push to protected glob release/1.0", "git push origin release/1.0", true},
+		{"push to protected glob release/2.0-rc", "git push origin release/2.0-rc", true},
+		{"push to protected exact staging", "git push origin staging", true},
+		{"push to feature branch allowed", "git push origin feature-branch", false},
+		{"push to outpost branch allowed", "git push origin outpost/Nova/sol-abc", false},
+		{"push without remote allowed", "git push", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reason := matchPushToProtectedBranch(tt.command)
+			if (reason != "") != tt.blocked {
+				t.Errorf("matchPushToProtectedBranch(%q) blocked=%v, want blocked=%v (reason=%q)",
+					tt.command, reason != "", tt.blocked, reason)
 			}
 		})
 	}

@@ -95,15 +95,6 @@ func TestBuildInjection(t *testing.T) {
 		mustContain(t, result, "No gates to run")
 	})
 
-	t.Run("defaults target branch to main", func(t *testing.T) {
-		cfgNoTarget := cfg
-		cfgNoTarget.TargetBranch = ""
-
-		result := BuildInjection(mr, writ, cfgNoTarget)
-		mustContain(t, result, "Target: origin/main")
-		mustContain(t, result, "git reset --hard origin/main")
-	})
-
 	t.Run("respects custom target branch", func(t *testing.T) {
 		cfgCustom := cfg
 		cfgCustom.TargetBranch = "develop"

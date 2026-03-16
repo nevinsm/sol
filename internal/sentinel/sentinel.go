@@ -2084,6 +2084,12 @@ func (w *Sentinel) pruneOrphanedBranches() int {
 		return 0
 	}
 
+	// Resolve the world's primary branch from config (default "main").
+	worldBranch := "main"
+	if worldCfg, cfgErr := config.LoadWorldConfig(w.config.World); cfgErr == nil {
+		worldBranch = worldCfg.World.Branch
+	}
+
 	// Build set of branches used by active worktrees.
 	worktreeBranches := w.listWorktreeBranches(repoPath)
 
@@ -2098,8 +2104,8 @@ func (w *Sentinel) pruneOrphanedBranches() int {
 
 		branch := strings.Fields(line)[0]
 
-		// Never delete the main/master branch.
-		if branch == "main" || branch == "master" {
+		// Never delete the world's primary branch.
+		if branch == worldBranch {
 			continue
 		}
 

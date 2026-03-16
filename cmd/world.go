@@ -75,8 +75,11 @@ world.toml configuration reference:
   governor = "opus"               # overrides model_tier for governor
   forge = "sonnet"                # overrides model_tier for forge
 
+  [world]
+  branch = "main"                 # primary branch (used for merges and guard protection)
+  protected_branches = []         # additional protected branches (glob patterns OK)
+
   [forge]
-  target_branch = "main"          # merge target branch
   quality_gates = ["make test"]   # commands that must pass before merge
   gate_timeout = "5m"             # per-gate timeout
 

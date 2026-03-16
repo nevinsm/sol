@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -290,13 +292,16 @@ func matchDangerousCheckoutRestore(command string) string {
 	return ""
 }
 
-// matchPushToProtectedBranch blocks "git push origin main" and "git push origin master".
+// matchPushToProtectedBranch blocks "git push origin <protected-branch>".
+// Protected branches are read from world config (World.Branch and World.ProtectedBranches).
+// Fails open if SOL_WORLD is not set or world config cannot be loaded.
 func matchPushToProtectedBranch(command string) string {
 	if !strings.Contains(command, "git") || !strings.Contains(command, "push") {
 		return ""
 	}
 	fields := strings.Fields(command)
 	hasPush := false
+	var targetBranch string
 	for i, f := range fields {
 		if f == "push" && i > 0 && fields[i-1] == "git" {
 			hasPush = true
@@ -305,14 +310,39 @@ func matchPushToProtectedBranch(command string) string {
 		if !hasPush {
 			continue
 		}
-		// After "git push", look for "origin main" or "origin master"
+		// After "git push", look for "origin <branch>"
 		if f == "origin" && i+1 < len(fields) {
-			next := fields[i+1]
-			if next == "main" || next == "master" {
-				return "Agents must use sol resolve → forge, not direct push to " + next
-			}
+			targetBranch = fields[i+1]
+			break
 		}
 	}
+	if targetBranch == "" {
+		return ""
+	}
+
+	// Load world config — fail open if world is unknown.
+	world := os.Getenv("SOL_WORLD")
+	if world == "" {
+		return "" // fail open: not running inside a sol session
+	}
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err != nil {
+		return "" // fail open: config unavailable
+	}
+
+	// Block push to the world's primary branch.
+	if targetBranch == worldCfg.World.Branch {
+		return "Agents must use sol resolve → forge, not direct push to " + targetBranch
+	}
+
+	// Block push to any additional protected branch (glob patterns supported).
+	for _, pattern := range worldCfg.World.ProtectedBranches {
+		matched, err := filepath.Match(pattern, targetBranch)
+		if err == nil && matched {
+			return "Agents must use sol resolve → forge, not direct push to " + targetBranch
+		}
+	}
+
 	return ""
 }
 

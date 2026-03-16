@@ -44,12 +44,12 @@ type Config struct {
 }
 
 // DefaultConfig returns a Config with sensible defaults.
+// Note: TargetBranch is not set here — it must be populated from world config (World.Branch).
 func DefaultConfig() Config {
 	return Config{
 		PollInterval: 10 * time.Second,
 		ClaimTTL:     30 * time.Minute,
 		MaxAttempts:  3,
-		TargetBranch: "main",
 		QualityGates: []string{"go test ./..."},
 		GateTimeout:  5 * time.Minute,
 	}

@@ -12,21 +12,22 @@ import (
 
 // forgePersonaTemplate returns the persona content for a forge merge session.
 // The persona is written to CLAUDE.local.md in the forge worktree root.
-func forgePersonaTemplate(world string) string {
-	return fmt.Sprintf(`# Forge Merge Engineer — %s
+// targetBranch is the primary branch to merge into (e.g. "main").
+func forgePersonaTemplate(world, targetBranch string) string {
+	tmpl := fmt.Sprintf(`# Forge Merge Engineer — %s
 
 You are a senior merge engineer. Your sole job is to merge the branch
-described in your injection context cleanly into main.
+described in your injection context cleanly into {{TARGET_BRANCH}}.
 
 You are processing exactly one merge request. Do not batch or look for
 additional work.
 
 ## What You Do
-- Sync the worktree to latest origin/main
+- Sync the worktree to latest origin/{{TARGET_BRANCH}}
 - Squash merge the source branch
 - Resolve merge conflicts using your judgment about code intent
 - Run quality gates and analyze failures
-- Push successful merges to main
+- Push successful merges to {{TARGET_BRANCH}}
 - Report your result
 
 ## What You Do NOT Do
@@ -39,10 +40,10 @@ additional work.
 ## Never Lose Work
 
 Work enters the merge queue because an agent completed it. Your job is to
-land that work on main — not to decide whether it deserves to land.
+land that work on {{TARGET_BRANCH}} — not to decide whether it deserves to land.
 
 - Never delete a branch — branches are the agent's work product
-- If anything goes wrong mid-merge, reset to origin/main — the branch
+- If anything goes wrong mid-merge, reset to origin/{{TARGET_BRANCH}} — the branch
   stays untouched
 - Gates can reject a merge attempt; work stays in queue for retry
 - The forge never unilaterally discards work from the queue
@@ -68,8 +69,8 @@ After squash merge, before committing, verify the merge produced changes:
 - Run `+"`"+`git diff --cached --stat`+"`"+` — if empty, report "failed" with summary
   explaining the squash merge produced an empty diff
 - Also verify the staged diff does not revert unrelated recently-merged
-  commits. Compare the staged changes against recent main commit history
-  (`+"`"+`git log --oneline -10 origin/main`+"`"+`). If your staged diff undoes
+  commits. Compare the staged changes against recent {{TARGET_BRANCH}} commit history
+  (`+"`"+`git log --oneline -10 origin/{{TARGET_BRANCH}}`+"`"+`). If your staged diff undoes
   recent work, report "failed" — the branch was likely emptied during
   a bad conflict resolution
 
@@ -89,6 +90,7 @@ When done, write .forge-result.json in the worktree root:
 
 Write .forge-result.json — session will exit automatically.
 `, world)
+	return strings.ReplaceAll(tmpl, "{{TARGET_BRANCH}}", targetBranch)
 }
 
 // forgeHookConfig returns the runtime-agnostic hook configuration for a forge merge session.
@@ -119,8 +121,8 @@ func CleanForgeResult(worktreeDir string) error {
 }
 
 // ForgePersonaContent returns the raw persona markdown for testing or inspection.
-func ForgePersonaContent(world string) string {
-	return forgePersonaTemplate(world)
+func ForgePersonaContent(world, targetBranch string) string {
+	return forgePersonaTemplate(world, targetBranch)
 }
 
 // ForgePersonaContains checks that the persona contains expected content markers.
@@ -139,12 +141,13 @@ func ForgePersonaContains(persona string, markers []string) []string {
 // This config is NOT registered with startup.Register — the forge orchestrator
 // manages merge session lifecycle directly, and supervisors (Prefect, Sentinel)
 // should not attempt to manage these sessions.
-func ForgeMergeRoleConfig() startup.RoleConfig {
+// targetBranch is the primary branch to merge into (from world config World.Branch).
+func ForgeMergeRoleConfig(targetBranch string) startup.RoleConfig {
 	return startup.RoleConfig{
 		Role:        "forge-merge",
 		WorktreeDir: func(world, _ string) string { return WorktreePath(world) },
 		Persona: func(world, _ string) ([]byte, error) {
-			return []byte(forgePersonaTemplate(world)), nil
+			return []byte(forgePersonaTemplate(world, targetBranch)), nil
 		},
 		Hooks: func(world, _ string) startup.HookSet {
 			return forgeHookConfig(world)

@@ -100,7 +100,7 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 		launch = startup.Launch
 	}
 
-	cfg := ForgeMergeRoleConfig()
+	cfg := ForgeMergeRoleConfig(s.forge.cfg.TargetBranch)
 	opts := startup.LaunchOpts{
 		Sessions: s.forge.sessions,
 	}

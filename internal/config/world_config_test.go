@@ -16,8 +16,8 @@ func TestDefaultWorldConfig(t *testing.T) {
 	if cfg.Agents.ModelTier != "sonnet" {
 		t.Fatalf("expected model_tier 'sonnet', got %q", cfg.Agents.ModelTier)
 	}
-	if cfg.Forge.TargetBranch != "main" {
-		t.Fatalf("expected target_branch 'main', got %q", cfg.Forge.TargetBranch)
+	if cfg.World.Branch != "main" {
+		t.Fatalf("expected world.branch 'main', got %q", cfg.World.Branch)
 	}
 	if cfg.Forge.QualityGates != nil {
 		t.Fatalf("expected nil quality_gates, got %v", cfg.Forge.QualityGates)
@@ -39,8 +39,8 @@ func TestLoadWorldConfigNoFiles(t *testing.T) {
 	if cfg.Agents.ModelTier != defaults.Agents.ModelTier {
 		t.Fatalf("expected model_tier %q, got %q", defaults.Agents.ModelTier, cfg.Agents.ModelTier)
 	}
-	if cfg.Forge.TargetBranch != defaults.Forge.TargetBranch {
-		t.Fatalf("expected target_branch %q, got %q", defaults.Forge.TargetBranch, cfg.Forge.TargetBranch)
+	if cfg.World.Branch != defaults.World.Branch {
+		t.Fatalf("expected world.branch %q, got %q", defaults.World.Branch, cfg.World.Branch)
 	}
 }
 
@@ -61,8 +61,8 @@ func TestLoadWorldConfigGlobalOnly(t *testing.T) {
 	if cfg.Agents.ModelTier != "opus" {
 		t.Fatalf("expected model_tier 'opus', got %q", cfg.Agents.ModelTier)
 	}
-	if cfg.Forge.TargetBranch != "main" {
-		t.Fatalf("expected target_branch 'main' (default), got %q", cfg.Forge.TargetBranch)
+	if cfg.World.Branch != "main" {
+		t.Fatalf("expected world.branch 'main' (default), got %q", cfg.World.Branch)
 	}
 }
 
@@ -120,8 +120,8 @@ func TestLoadWorldConfigPartialOverride(t *testing.T) {
 	if cfg.Agents.ModelTier != "sonnet" {
 		t.Fatalf("expected model_tier 'sonnet' (default), got %q", cfg.Agents.ModelTier)
 	}
-	if cfg.Forge.TargetBranch != "main" {
-		t.Fatalf("expected target_branch 'main' (default), got %q", cfg.Forge.TargetBranch)
+	if cfg.World.Branch != "main" {
+		t.Fatalf("expected world.branch 'main' (default), got %q", cfg.World.Branch)
 	}
 	if cfg.Agents.Capacity != 0 {
 		t.Fatalf("expected capacity 0 (default), got %d", cfg.Agents.Capacity)
@@ -198,6 +198,7 @@ func TestWriteWorldConfigRoundTrip(t *testing.T) {
 	original := WorldConfig{
 		World: WorldSection{
 			SourceRepo: "/home/user/myproject",
+			Branch:     "develop",
 		},
 		Agents: AgentsSection{
 			Capacity:     10,
@@ -205,7 +206,6 @@ func TestWriteWorldConfigRoundTrip(t *testing.T) {
 			ModelTier:    "opus",
 		},
 		Forge: ForgeSection{
-			TargetBranch: "develop",
 			QualityGates: []string{"make test", "make vet"},
 		},
 	}
@@ -230,8 +230,8 @@ func TestWriteWorldConfigRoundTrip(t *testing.T) {
 	if loaded.Agents.ModelTier != original.Agents.ModelTier {
 		t.Fatalf("model_tier: expected %q, got %q", original.Agents.ModelTier, loaded.Agents.ModelTier)
 	}
-	if loaded.Forge.TargetBranch != original.Forge.TargetBranch {
-		t.Fatalf("target_branch: expected %q, got %q", original.Forge.TargetBranch, loaded.Forge.TargetBranch)
+	if loaded.World.Branch != original.World.Branch {
+		t.Fatalf("world.branch: expected %q, got %q", original.World.Branch, loaded.World.Branch)
 	}
 	if len(loaded.Forge.QualityGates) != len(original.Forge.QualityGates) {
 		t.Fatalf("quality_gates length: expected %d, got %d", len(original.Forge.QualityGates), len(loaded.Forge.QualityGates))
@@ -554,6 +554,65 @@ func TestWorldConfigValidateGateTimeout(t *testing.T) {
 	}
 }
 
+func TestWorldConfigValidateBranchRequiredWithSourceRepo(t *testing.T) {
+	// World.Branch must be non-empty when World.SourceRepo is set.
+	cfg := DefaultWorldConfig()
+	cfg.World.SourceRepo = "/path/to/repo"
+	cfg.World.Branch = "" // explicitly clear the default
+
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error when world.branch is empty and world.source_repo is set")
+	} else if !strings.Contains(err.Error(), "world.branch") {
+		t.Errorf("expected error to mention world.branch, got: %v", err)
+	}
+
+	// With Branch set, validation should pass.
+	cfg.World.Branch = "main"
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected no error with branch set, got: %v", err)
+	}
+
+	// Without SourceRepo, Branch can be empty.
+	cfg.World.SourceRepo = ""
+	cfg.World.Branch = ""
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected no error when neither source_repo nor branch is set, got: %v", err)
+	}
+}
+
+func TestWorldSectionProtectedBranches(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Write world.toml with protected_branches.
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worldPath := filepath.Join(worldDir, "world.toml")
+	content := "[world]\nbranch = \"main\"\nprotected_branches = [\"release/*\", \"staging\"]\n"
+	if err := os.WriteFile(worldPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.World.Branch != "main" {
+		t.Fatalf("expected world.branch 'main', got %q", cfg.World.Branch)
+	}
+	if len(cfg.World.ProtectedBranches) != 2 {
+		t.Fatalf("expected 2 protected_branches, got %d", len(cfg.World.ProtectedBranches))
+	}
+	if cfg.World.ProtectedBranches[0] != "release/*" {
+		t.Fatalf("expected protected_branches[0] 'release/*', got %q", cfg.World.ProtectedBranches[0])
+	}
+	if cfg.World.ProtectedBranches[1] != "staging" {
+		t.Fatalf("expected protected_branches[1] 'staging', got %q", cfg.World.ProtectedBranches[1])
+	}
+}
+
 func TestValidateWorldNameReserved(t *testing.T) {
 	reserved := []string{"store", "runtime", "sol", "workflows"}
 	for _, name := range reserved {
@@ -680,8 +739,8 @@ func TestLoadGlobalConfigMissingFile(t *testing.T) {
 	if cfg.Agents.ModelTier != defaults.Agents.ModelTier {
 		t.Fatalf("model_tier = %q, want %q", cfg.Agents.ModelTier, defaults.Agents.ModelTier)
 	}
-	if cfg.Forge.TargetBranch != defaults.Forge.TargetBranch {
-		t.Fatalf("target_branch = %q, want %q", cfg.Forge.TargetBranch, defaults.Forge.TargetBranch)
+	if cfg.World.Branch != defaults.World.Branch {
+		t.Fatalf("branch = %q, want %q", cfg.World.Branch, defaults.World.Branch)
 	}
 }
 
@@ -689,7 +748,7 @@ func TestLoadGlobalConfigValidFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
-	content := "[agents]\nmodel_tier = \"haiku\"\n[forge]\ntarget_branch = \"develop\"\n"
+	content := "[agents]\nmodel_tier = \"haiku\"\n[world]\nbranch = \"develop\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -701,8 +760,8 @@ func TestLoadGlobalConfigValidFile(t *testing.T) {
 	if cfg.Agents.ModelTier != "haiku" {
 		t.Fatalf("model_tier = %q, want %q", cfg.Agents.ModelTier, "haiku")
 	}
-	if cfg.Forge.TargetBranch != "develop" {
-		t.Fatalf("target_branch = %q, want %q", cfg.Forge.TargetBranch, "develop")
+	if cfg.World.Branch != "develop" {
+		t.Fatalf("branch = %q, want %q", cfg.World.Branch, "develop")
 	}
 }
 

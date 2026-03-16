@@ -104,6 +104,8 @@ func setupPatrolTest(t *testing.T) (*patrolState, *mockWorldStore, *mockCmdRunne
 	sphereStore := newMockSphereStore()
 	cmdRunner := newMockCmdRunner()
 
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main" // tests run outside world config — set explicitly
 	forge := &Forge{
 		world:       "ember",
 		agentID:     "ember/forge",
@@ -112,7 +114,7 @@ func setupPatrolTest(t *testing.T) (*patrolState, *mockWorldStore, *mockCmdRunne
 		worldStore:  worldStore,
 		sphereStore: sphereStore,
 		logger:      testLogger(),
-		cfg:         DefaultConfig(),
+		cfg:         forgeCfg,
 	}
 
 	pcfg := testPatrolConfig()

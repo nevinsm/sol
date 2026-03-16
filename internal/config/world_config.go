@@ -67,9 +67,11 @@ func (e EscalationSection) AgingThreshold(severity string) (time.Duration, error
 
 // WorldSection holds world-level settings.
 type WorldSection struct {
-	SourceRepo     string `toml:"source_repo" json:"source_repo"`
-	Sleeping       bool   `toml:"sleeping,omitempty" json:"sleeping,omitempty"`
-	DefaultAccount string `toml:"default_account,omitempty" json:"default_account,omitempty"`
+	SourceRepo        string   `toml:"source_repo" json:"source_repo"`
+	Branch            string   `toml:"branch" json:"branch"`
+	ProtectedBranches []string `toml:"protected_branches" json:"protected_branches"`
+	Sleeping          bool     `toml:"sleeping,omitempty" json:"sleeping,omitempty"`
+	DefaultAccount    string   `toml:"default_account,omitempty" json:"default_account,omitempty"`
 }
 
 // ModelsSection holds per-role model overrides for agents.
@@ -105,7 +107,6 @@ type AgentsSection struct {
 
 // ForgeSection holds forge/merge pipeline settings.
 type ForgeSection struct {
-	TargetBranch string   `toml:"target_branch" json:"target_branch"`
 	QualityGates []string `toml:"quality_gates" json:"quality_gates"`
 	GateTimeout  string   `toml:"gate_timeout" json:"gate_timeout"` // duration string, e.g. "5m"
 }
@@ -130,12 +131,14 @@ type SitrepSection struct {
 // DefaultWorldConfig returns a WorldConfig with built-in defaults.
 func DefaultWorldConfig() WorldConfig {
 	return WorldConfig{
+		World: WorldSection{
+			Branch: "main",
+		},
 		Agents: AgentsSection{
 			ModelTier: "sonnet",
 		},
 		Forge: ForgeSection{
-			TargetBranch: "main",
-			GateTimeout:  "5m",
+			GateTimeout: "5m",
 		},
 		Ledger: LedgerSection{
 			Port: 4318, // ledger.DefaultPort — sphere-scoped, configurable in sol.toml
@@ -255,6 +258,9 @@ func validModelTier(field, value string) error {
 
 // Validate checks that config values are within acceptable ranges.
 func (c WorldConfig) Validate() error {
+	if c.World.SourceRepo != "" && c.World.Branch == "" {
+		return fmt.Errorf("world.branch must be non-empty when world.source_repo is set")
+	}
 	if c.Agents.Capacity < 0 {
 		return fmt.Errorf("agents.capacity must be >= 0, got %d", c.Agents.Capacity)
 	}

@@ -465,12 +465,14 @@ func TestEnsureWorktreeCreatesNew(t *testing.T) {
 	// Set worktree to a path inside SOL_HOME.
 	wtPath := filepath.Join(dir, "ember", "forge", "world")
 
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main" // tests run outside world config — set explicitly
 	r := &Forge{
 		world:      "ember",
 		sourceRepo: sourceRepo,
 		worktree:   wtPath,
 		logger:     testLogger(),
-		cfg:        DefaultConfig(),
+		cfg:        forgeCfg,
 	}
 
 	if err := r.EnsureWorktree(); err != nil {
