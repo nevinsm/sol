@@ -1,6 +1,7 @@
 package chronicle
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,12 +13,12 @@ func TestHeartbeatPath(t *testing.T) {
 	t.Setenv("SOL_HOME", solHome)
 
 	got := HeartbeatPath()
-	want := filepath.Join(solHome, "chronicle.heartbeat")
+	want := filepath.Join(solHome, ".runtime", "chronicle-heartbeat.json")
 	if got != want {
 		t.Errorf("HeartbeatPath() = %q, want %q", got, want)
 	}
-	if !strings.HasSuffix(got, "chronicle.heartbeat") {
-		t.Errorf("HeartbeatPath() should end with chronicle.heartbeat, got %q", got)
+	if !strings.HasSuffix(got, "chronicle-heartbeat.json") {
+		t.Errorf("HeartbeatPath() should end with chronicle-heartbeat.json, got %q", got)
 	}
 }
 
@@ -37,6 +38,9 @@ func TestReadHeartbeat_NotFound(t *testing.T) {
 func TestWriteAndReadHeartbeat(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
+	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("failed to create .runtime dir: %v", err)
+	}
 
 	now := time.Now().UTC().Round(time.Second)
 	hb := &Heartbeat{

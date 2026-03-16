@@ -18,9 +18,9 @@ type Heartbeat struct {
 }
 
 // HeartbeatPath returns the path to the heartbeat file.
-// $SOL_HOME/chronicle.heartbeat
+// $SOL_HOME/.runtime/chronicle-heartbeat.json
 func HeartbeatPath() string {
-	return filepath.Join(config.Home(), "chronicle.heartbeat")
+	return filepath.Join(config.RuntimeDir(), "chronicle-heartbeat.json")
 }
 
 // WriteHeartbeat writes the heartbeat file atomically.
