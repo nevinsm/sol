@@ -234,6 +234,12 @@ description: Submit completed work through the forge pipeline — pushes branch,
 
 **Normal submit:** commit all changes → %[1]s resolve%[2]s → %[5]s → update brief → tether next writ.
 
+**Freeform work (no tether):** resolve requires an active tether. If you did freeform work without an assigned writ, self-tether before resolving:
+1. %[1]s writ create --world=%[7]s --title="..." --description="..." --kind=code%[4]s — creates the writ, prints the ID
+2. %[1]s tether <writ-id> --agent=%[8]s%[4]s — binds the writ to you
+3. %[1]s writ activate <writ-id>%[4]s — makes it your active writ
+4. %[1]s resolve%[2]s — now works normally
+
 **More tethered writs:** after resolve you stay "working" — activate the next writ and continue.
 
 **No remaining work:** after resolve you go idle — check for new writs or await instructions.
@@ -241,7 +247,7 @@ description: Submit completed work through the forge pipeline — pushes branch,
 ## Failure Modes
 
 - **git push fails** → NON-FATAL. Resolve exits 0. MR in "failed" state; writ reopens. Pull main and re-resolve.
-- **No tether found** → exit 1. Check %[6]s to see your tethered writs.
+- **No tether found** → exit 1. Self-tether first (see Freeform work pattern above), or check %[6]s.
 - **Database locked** → exit 1. Transient — retry.
 - Resolve is idempotent — safe to call multiple times.
 `,
@@ -249,7 +255,9 @@ description: Submit completed work through the forge pipeline — pushes branch,
 		"`git push`",
 		"`",
 		"`git checkout main && git pull`",
-		"`sol writ list`")
+		"`sol writ list`",
+		ctx.World,
+		ctx.AgentName)
 }
 
 func skillMemories(ctx SkillContext) string {
