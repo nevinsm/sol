@@ -48,6 +48,9 @@ func chancellorHooks(_, _ string) startup.HookSet {
 				Matcher: "startup|resume",
 			},
 		},
+		PreCompact: []startup.HookCommand{
+			{Command: "sol brief inject --path=.brief/memory.md --max-lines=200"},
+		},
 		Guards: append([]startup.Guard{
 			{Pattern: "Write|Edit", Command: protocol.AutoMemoryBlockCommand},
 			{Pattern: "EnterPlanMode", Command: protocol.PlanModeBlockCommand},
