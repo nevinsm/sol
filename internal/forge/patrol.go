@@ -541,6 +541,9 @@ func (s *patrolState) executeLegacyMerge(ctx context.Context, mr *store.MergeReq
 		if _, err := s.forge.CreateResolutionTask(mr); err != nil {
 			s.forge.logger.Error("create-resolution failed", "mr", mr.ID, "error", err)
 		}
+		if err := s.forge.worldStore.UpdateMergeRequestPhase(mr.ID, "ready"); err != nil {
+			s.forge.logger.Error("release-conflict-claim failed", "mr", mr.ID, "error", err)
+		}
 		s.writeHeartbeat("idle", queueDepth-1)
 		s.emitPatrolEvent(queueDepth)
 		return
