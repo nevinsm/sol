@@ -39,10 +39,9 @@
 - [x] Released MRs are picked up by the next poll cycle
 
 ## 8. Forge lifecycle
-- [x] `sol forge run <world>` runs the merge loop in foreground
-- [x] `sol forge start <world>` starts forge in tmux session
-- [x] `sol forge stop <world>` stops the forge session
-- [x] `sol forge attach <world>` attaches to the forge session
+- [x] `sol forge start --world=<world>` starts forge as a background process (not tmux session)
+- [x] `sol forge stop --world=<world>` stops the forge process
+- [x] `sol forge attach --world=<world>` attaches to the ephemeral forge merge session
 
 ## 9. Operator visibility
 - [x] `sol forge queue <world>` shows pending, claimed, merged, and failed MRs
@@ -52,7 +51,7 @@
 
 ## 10. Prefect integration
 - [x] Prefect restarts crashed forge sessions
-- [x] Forge respawned with `sol forge run <world>` (not claude)
+- [x] Forge respawned with `sol forge start --world=<world>` (not claude)
 - [x] Outpost respawn behavior unchanged
 
 ## 11. All tests pass

@@ -1,7 +1,7 @@
 # Loop 1 Acceptance Criteria
 
 ## 1. Multi-agent dispatch
-- [x] `sol cast <item1> myworld && sol cast <item2> myworld` dispatches to two different outposts
+- [x] `sol cast --world=myworld <item1> && sol cast --world=myworld <item2>` dispatches to two different outposts
 - [x] Each outpost has a unique name from the name pool
 - [x] Each outpost runs in its own worktree and tmux session
 

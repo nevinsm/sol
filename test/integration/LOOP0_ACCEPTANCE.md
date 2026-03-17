@@ -2,12 +2,12 @@
 
 ## 1. Create writ via CLI
 - [x] `sol writ create --title="Add tests for login" --world=myworld` prints an ID
-- [x] ID format: sol-[0-9a-f]{8}
+- [x] ID format: sol-[0-9a-f]{16}
 
 ## 2. Dispatch to outpost
-- [x] `sol cast <id> myworld` spawns a outpost in a fresh worktree
-- [x] Worktree is at $SOL_HOME/myworld/outposts/{name}/world/
-- [x] .claude/CLAUDE.md exists with writ details
+- [x] `sol cast --world=myworld <id>` spawns a outpost in a fresh worktree
+- [x] Worktree is at $SOL_HOME/myworld/outposts/{name}/worktree/
+- [x] CLAUDE.local.md exists at the worktree root with writ details
 
 ## 3. GUPP — work context injected on start
 - [x] Session starts with execution context visible
