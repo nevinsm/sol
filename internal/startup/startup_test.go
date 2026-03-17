@@ -1,6 +1,7 @@
 package startup
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1406,5 +1407,102 @@ func TestLaunchDotEnvMissing(t *testing.T) {
 	// System vars should still be present.
 	if call := mock.started[0]; call.Env["SOL_HOME"] != solHome {
 		t.Errorf("SOL_HOME = %q, want %q", call.Env["SOL_HOME"], solHome)
+	}
+}
+
+// errSessionStarter is a SessionStarter that always returns an error.
+type errSessionStarter struct{ err error }
+
+func (e *errSessionStarter) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
+	return e.err
+}
+
+// TestLaunchRollsBackAgentStateOnSessionFailure verifies that if session start
+// fails after UpdateAgentState("working"), the agent state is rolled back to its
+// previous value so it is not stuck in "working" with no live session.
+func TestLaunchRollsBackAgentStateOnSessionFailure(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	// Pre-create agent in idle state.
+	if _, err := sphereStore.CreateAgent("forge", world, "forge"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+
+	failSess := &errSessionStarter{err: fmt.Errorf("session already exists")}
+	cfg := RoleConfig{
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+	}
+
+	_, launchErr := Launch(cfg, world, "forge", LaunchOpts{Sessions: failSess, Sphere: sphereStore})
+	if launchErr == nil {
+		t.Fatal("Launch() should have returned an error")
+	}
+
+	// Agent state must be rolled back to idle (not stuck at "working").
+	agent, err := sphereStore.GetAgent(world + "/forge")
+	if err != nil {
+		t.Fatalf("GetAgent: %v", err)
+	}
+	if agent.State != store.AgentIdle {
+		t.Errorf("agent state = %q after failed launch, want %q (rollback failed)", agent.State, store.AgentIdle)
+	}
+}
+
+// TestLaunchRollsBackToPreviousStateOnSessionFailure verifies that when an agent
+// is already in a non-idle state, a failed Launch rolls back to that prior state.
+func TestLaunchRollsBackToPreviousStateOnSessionFailure(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	worktreeDir := filepath.Join(solHome, world, "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	// Pre-create agent that already has a tethered writ.
+	if _, err := sphereStore.CreateAgent("Toast", world, "outpost"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState(world+"/Toast", store.AgentWorking, "sol-existingwrit"); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
+
+	failSess := &errSessionStarter{err: fmt.Errorf("session already exists")}
+	cfg := RoleConfig{
+		Role:        "outpost",
+		WorktreeDir: func(w, a string) string { return filepath.Join(solHome, w, "outposts", a, "worktree") },
+	}
+
+	_, launchErr := Launch(cfg, world, "Toast", LaunchOpts{Sessions: failSess, Sphere: sphereStore})
+	if launchErr == nil {
+		t.Fatal("Launch() should have returned an error")
+	}
+
+	// Agent state must be rolled back to its previous working state with the
+	// original active writ preserved.
+	agent, err := sphereStore.GetAgent(world + "/Toast")
+	if err != nil {
+		t.Fatalf("GetAgent: %v", err)
+	}
+	if agent.State != store.AgentWorking {
+		t.Errorf("agent state = %q, want %q", agent.State, store.AgentWorking)
+	}
+	if agent.ActiveWrit != "sol-existingwrit" {
+		t.Errorf("active_writ = %q, want %q", agent.ActiveWrit, "sol-existingwrit")
 	}
 }
