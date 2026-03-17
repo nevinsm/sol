@@ -282,11 +282,11 @@ func collectTetherData(td *TraceData, world, writID string) {
 
 // feedEvent represents a single parsed event from the JSONL feed.
 type feedEvent struct {
-	Timestamp  time.Time         `json:"ts"`
-	Source     string            `json:"source"`
-	Type       string            `json:"type"`
-	Actor      string            `json:"actor"`
-	Payload    map[string]string `json:"payload"`
+	Timestamp time.Time          `json:"ts"`
+	Source    string             `json:"source"`
+	Type      string             `json:"type"`
+	Actor     string             `json:"actor"`
+	Payload   map[string]any     `json:"payload"`
 }
 
 // collectEventData scans the event log for writ-related events.
@@ -315,7 +315,7 @@ func collectEventData(td *TraceData, writID string) {
 		}
 
 		// Check payload for writ_id match.
-		if evt.Payload["writ_id"] == writID || evt.Payload["writ"] == writID {
+		if fmt.Sprint(evt.Payload["writ_id"]) == writID || fmt.Sprint(evt.Payload["writ"]) == writID {
 			action := evt.Type
 			detail := evt.Actor
 			if evt.Source != "" && evt.Source != evt.Actor {

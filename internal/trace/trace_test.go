@@ -548,6 +548,8 @@ func TestCollectEventData(t *testing.T) {
 		`{"ts":"2026-03-07T10:15:00Z","source":"sol","type":"cast","actor":"autarch","payload":{"writ_id":"sol-a1b2c3d4e5f6a7b8","agent":"Toast"}}`,
 		`{"ts":"2026-03-07T11:30:00Z","source":"sol","type":"resolve","actor":"Toast","payload":{"writ_id":"sol-a1b2c3d4e5f6a7b8"}}`,
 		`{"ts":"2026-03-07T11:35:00Z","source":"sol","type":"cast","actor":"autarch","payload":{"writ_id":"sol-deadbeef12345678"}}`,
+		// Event with a numeric payload field — previously silently dropped due to map[string]string.
+		`{"ts":"2026-03-07T12:00:00Z","source":"sol","type":"cast","actor":"autarch","payload":{"writ_id":"sol-a1b2c3d4e5f6a7b8","priority":2}}`,
 	}
 	if err := os.WriteFile(filepath.Join(dir, ".events.jsonl"), []byte(strings.Join(events, "\n")+"\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -556,9 +558,10 @@ func TestCollectEventData(t *testing.T) {
 	td := &TraceData{}
 	collectEventData(td, writID)
 
-	// Should find 2 events (not the third with a different writ_id).
-	if len(td.Timeline) != 2 {
-		t.Errorf("expected 2 events from feed, got %d", len(td.Timeline))
+	// Should find 3 events matching the writ ID (not the one with a different writ_id).
+	// Includes the event with a numeric payload field that was previously silently dropped.
+	if len(td.Timeline) != 3 {
+		t.Errorf("expected 3 events from feed, got %d", len(td.Timeline))
 	}
 }
 
