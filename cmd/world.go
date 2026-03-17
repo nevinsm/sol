@@ -63,6 +63,8 @@ world.toml configuration reference:
 
   [world]
   source_repo = "/path/to/repo"   # persistent source repo binding
+  branch = "main"                 # primary branch (used for merges and guard protection)
+  protected_branches = []         # additional protected branches (glob patterns OK)
 
   [agents]
   capacity = 10                   # max concurrent agents (0 = unlimited)
@@ -74,10 +76,6 @@ world.toml configuration reference:
   envoy = "opus"                  # overrides model_tier for envoy agents
   governor = "opus"               # overrides model_tier for governor
   forge = "sonnet"                # overrides model_tier for forge
-
-  [world]
-  branch = "main"                 # primary branch (used for merges and guard protection)
-  protected_branches = []         # additional protected branches (glob patterns OK)
 
   [forge]
   quality_gates = ["make test"]   # commands that must pass before merge

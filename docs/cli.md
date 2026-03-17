@@ -145,8 +145,8 @@ Otherwise, shows a sphere-level overview of all worlds and processes.
 With a world name, shows detailed status for that specific world.
 
 Exit codes with --json:
-  Sphere-only (no world detected, no world argument): always exits 0.
-  Combined (world auto-detected from cwd) and world (explicit argument):
+  Sphere-only (no world detected or specified): always exits 0
+  World or combined (world detected from cwd or explicitly specified):
     0 = healthy
     1 = unhealthy
     2 = degraded
@@ -212,6 +212,10 @@ Close a caravan by ID, or use --auto to close all caravans where every item is m
 | `--auto` | bool | false | scan all open caravans and close any where all items are merged |
 | `--force` | bool | false | close even if not all items are merged |
 
+#### `sol caravan commission`
+
+**Usage:** `sol caravan commission <caravan-id>`
+
 #### `sol caravan create`
 
 **Usage:** `sol caravan create <name> [<item-id> ...]`
@@ -244,6 +248,10 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 | `sol caravan dep list` | Show caravan-level dependencies |
 | `sol caravan dep remove` | Remove a caravan dependency |
 
+##### `sol caravan dep add`
+
+**Usage:** `sol caravan dep add <caravan-id> <depends-on-caravan-id>`
+
 ##### `sol caravan dep list`
 
 **Usage:** `sol caravan dep list <caravan-id>`
@@ -251,6 +259,14 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
+
+##### `sol caravan dep remove`
+
+**Usage:** `sol caravan dep remove <caravan-id> <depends-on-caravan-id>`
+
+#### `sol caravan drydock`
+
+**Usage:** `sol caravan drydock <caravan-id>`
 
 #### `sol caravan launch`
 
@@ -279,6 +295,10 @@ List all caravans. Shows active (non-closed) caravans by default. Use --all for 
 | `--all` | bool | false | include closed caravans |
 | `--json` | bool | false | output as JSON |
 | `--status` | string | "" | filter by status (open, ready, closed) |
+
+#### `sol caravan remove`
+
+**Usage:** `sol caravan remove <caravan-id> <item-id>`
 
 #### `sol caravan reopen`
 
@@ -875,6 +895,10 @@ Manage tmux sessions for agents
 | `sol session list` | List all sessions |
 | `sol session start` | Start a tmux session |
 | `sol session stop` | Stop a tmux session |
+
+#### `sol session attach`
+
+**Usage:** `sol session attach <name>`
 
 #### `sol session capture`
 
@@ -1541,6 +1565,10 @@ Manage escalations
 | `sol escalation list` | List escalations |
 | `sol escalation resolve` | Resolve an escalation |
 
+#### `sol escalation ack`
+
+**Usage:** `sol escalation ack <id>`
+
 #### `sol escalation list`
 
 | Flag | Type | Default | Description |
@@ -1548,6 +1576,10 @@ Manage escalations
 | `--all` | bool | false | Include resolved escalations |
 | `--json` | bool | false | Output as JSON array |
 | `--status` | string | "" | Filter by status (open, acknowledged, resolved) |
+
+#### `sol escalation resolve`
+
+**Usage:** `sol escalation resolve <id>`
 
 ### `sol feed`
 
@@ -1593,6 +1625,10 @@ Inter-agent messaging
 | `sol mail read` | Read a message (marks as read) |
 | `sol mail send` | Send a message |
 
+#### `sol mail ack`
+
+**Usage:** `sol mail ack <message-id>`
+
 #### `sol mail check`
 
 Check for unread messages and print the count.
@@ -1627,6 +1663,10 @@ The --force flag is accepted as an alias for --confirm for backward compatibilit
 | `--before` | string | "" | Delete acked messages older than duration (e.g., 7d, 24h) |
 | `--confirm` | bool | false | confirm destructive action |
 | `--force` | bool | false | alias for --confirm (backward compatibility) |
+
+#### `sol mail read`
+
+**Usage:** `sol mail read <message-id>`
 
 #### `sol mail send`
 
@@ -1698,11 +1738,27 @@ Manage Claude OAuth accounts
 | `--description` | string | "" | account description |
 | `--email` | string | "" | email associated with the account |
 
+#### `sol account default`
+
+**Usage:** `sol account default [<handle>]`
+
 #### `sol account list`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
+
+#### `sol account remove`
+
+**Usage:** `sol account remove <handle>`
+
+#### `sol account set-api-key`
+
+**Usage:** `sol account set-api-key <handle> [key]`
+
+#### `sol account set-token`
+
+**Usage:** `sol account set-token <handle> [token]`
 
 ### `sol config`
 
@@ -1926,6 +1982,8 @@ world.toml configuration reference:
 
   [world]
   source_repo = "/path/to/repo"   # persistent source repo binding
+  branch = "main"                 # primary branch (used for merges and guard protection)
+  protected_branches = []         # additional protected branches (glob patterns OK)
 
   [agents]
   capacity = 10                   # max concurrent agents (0 = unlimited)
@@ -1939,7 +1997,6 @@ world.toml configuration reference:
   forge = "sonnet"                # overrides model_tier for forge
 
   [forge]
-  target_branch = "main"          # merge target branch
   quality_gates = ["make test"]   # commands that must pass before merge
   gate_timeout = "5m"             # per-gate timeout
 
@@ -1996,6 +2053,10 @@ With --force, also stops all outpost agent sessions immediately:
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
+
+#### `sol world summary`
+
+**Usage:** `sol world summary <name>`
 
 #### `sol world sync`
 
