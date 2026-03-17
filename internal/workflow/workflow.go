@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -582,8 +583,12 @@ func Advance(world, agentName, role string) (nextStep *Step, done bool, err erro
 		return nil, false, err
 	}
 	now := time.Now().UTC()
-	// If the step is already complete (e.g., from a crash recovery), skip to finding the next step.
+	// If the step is already complete (e.g., from a crash recovery), ensure it is recorded in
+	// state.Completed so NextReadySteps does not return it again (crash-recovery idempotency).
 	if currentStep.Status == "complete" {
+		if !slices.Contains(state.Completed, state.CurrentStep) {
+			state.Completed = append(state.Completed, state.CurrentStep)
+		}
 		// Fall through to the next-step logic below.
 	} else {
 		currentStep.Status = "complete"
