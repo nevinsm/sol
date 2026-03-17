@@ -320,6 +320,9 @@ func (r *Forge) MarkFailed(mrID string) error {
 		}
 	}
 
+	// Delete remote branch (best-effort) to prevent accumulation of stale branches.
+	exec.Command("git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
+
 	r.logger.Info("marked failed and reopened", "mr", mrID,
 		"writ", mr.WritID, "branch", mr.Branch)
 

@@ -2,6 +2,7 @@ package sentinel
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -41,8 +42,13 @@ func LogPath(world string) string {
 }
 
 // WriteHeartbeat writes the heartbeat file atomically.
+// Creates the world directory if it does not exist.
 func WriteHeartbeat(world string, hb *Heartbeat) error {
-	return heartbeat.Write(HeartbeatPath(world), hb)
+	path := HeartbeatPath(world)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("failed to create world directory: %w", err)
+	}
+	return heartbeat.Write(path, hb)
 }
 
 // ReadHeartbeat reads the current sentinel heartbeat file.
