@@ -1,0 +1,86 @@
+name = "codebase-scan"
+type = "convoy"
+description = "Comprehensive codebase review — parallel analysis across all code, tests, documentation, and configuration, then synthesize findings into a fix caravan in drydock."
+
+[[legs]]
+id = "core-infra"
+title = "Review core infrastructure"
+kind = "analysis"
+instructions = "steps/core-infra.md"
+focus = "internal/store/, internal/config/, internal/setup/, internal/fileutil/, internal/processutil/, internal/logutil/, internal/envfile/, internal/git/, internal/namepool/"
+
+[[legs]]
+id = "session-lifecycle"
+title = "Review session lifecycle"
+kind = "analysis"
+instructions = "steps/session-lifecycle.md"
+focus = "internal/startup/, internal/dispatch/, internal/session/, internal/tether/, internal/adapter/, internal/handoff/"
+
+[[legs]]
+id = "agent-roles"
+title = "Review agent roles"
+kind = "analysis"
+instructions = "steps/agent-roles.md"
+focus = "internal/envoy/, internal/governor/, internal/chancellor/, internal/brief/, internal/skills/"
+
+[[legs]]
+id = "services"
+title = "Review service components"
+kind = "analysis"
+instructions = "steps/services.md"
+focus = "internal/forge/, internal/sentinel/, internal/consul/, internal/prefect/, internal/service/, internal/heartbeat/"
+
+[[legs]]
+id = "protocol"
+title = "Review protocol layer"
+kind = "analysis"
+instructions = "steps/protocol.md"
+focus = "internal/protocol/"
+
+[[legs]]
+id = "support-systems"
+title = "Review support systems"
+kind = "analysis"
+instructions = "steps/support-systems.md"
+focus = "internal/ledger/, internal/broker/, internal/nudge/, internal/chronicle/, internal/events/, internal/quota/, internal/doctor/, internal/escalation/, internal/inbox/, internal/account/, internal/trace/"
+
+[[legs]]
+id = "cli"
+title = "Review CLI commands"
+kind = "analysis"
+instructions = "steps/cli.md"
+focus = "cmd/"
+
+[[legs]]
+id = "orchestration"
+title = "Review orchestration and presentation"
+kind = "analysis"
+instructions = "steps/orchestration.md"
+focus = "internal/workflow/, internal/worldexport/, internal/worldsync/, internal/status/, internal/dash/, internal/style/, internal/sitrep/, internal/docgen/"
+
+[[legs]]
+id = "integration-tests"
+title = "Review integration tests"
+kind = "analysis"
+instructions = "steps/integration-tests.md"
+focus = "test/integration/"
+
+[[legs]]
+id = "documentation"
+title = "Review documentation"
+kind = "analysis"
+instructions = "steps/documentation.md"
+focus = "docs/"
+
+[[legs]]
+id = "build-and-agent-env"
+title = "Review build system and agent environment"
+kind = "analysis"
+instructions = "steps/build-and-agent-env.md"
+focus = "Makefile, go.mod, go.sum, internal/workflow/defaults/, .claude/skills/, internal/protocol/prompts/, internal/config/defaults/"
+
+[synthesis]
+title = "Synthesize findings into fix caravan"
+kind = "analysis"
+instructions = "steps/synthesize.md"
+depends_on = ["core-infra", "session-lifecycle", "agent-roles", "services", "protocol", "support-systems", "cli", "orchestration", "integration-tests", "documentation", "build-and-agent-env"]
