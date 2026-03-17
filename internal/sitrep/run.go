@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/config/defaults"
 )
 
 // Run invokes the Claude CLI with the given prompt and returns the response.
@@ -29,7 +30,7 @@ func Run(ctx context.Context, cfg config.SitrepSection, prompt string) (string, 
 
 	model := cfg.Model
 	if model == "" {
-		model = "claude-sonnet-4-6"
+		model = defaults.DefaultSitrepModel
 	}
 
 	cmd := exec.CommandContext(ctx, assessCmd, "-p", "--model", model)

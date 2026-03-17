@@ -231,7 +231,7 @@ type flagInfo struct {
 // presence depends on command initialization state (non-deterministic).
 func collectFlags(cmd *cobra.Command) []flagInfo {
 	var flags []flagInfo
-	cmd.LocalFlags().VisitAll(func(f *pflag.Flag) {
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
 		if f.Hidden || f.Name == "help" {
 			return
 		}

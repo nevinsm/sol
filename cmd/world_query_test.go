@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -100,8 +101,13 @@ func TestWorldSummaryCommandNotFound(t *testing.T) {
 	captured.ReadFrom(r)
 	os.Stdout = oldStdout
 
-	if err != nil {
-		t.Fatalf("world summary should not error for missing summary: %v", err)
+	// Expect exit code 1 (not found) per convention.
+	if err == nil {
+		t.Fatal("world summary should return exit error 1 for missing summary")
+	}
+	var exitErr *exitError
+	if !errors.As(err, &exitErr) || exitErr.code != 1 {
+		t.Fatalf("expected exitError{code:1}, got: %v", err)
 	}
 
 	output := captured.String()
