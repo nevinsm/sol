@@ -69,7 +69,7 @@ These commands are the most likely integration points. Stabilize these first:
 | Command | Description | Returns |
 |---------|-------------|---------|
 | `sol writ create --json` | Create writ | `{"id": "sol-...", ...}` |
-| `sol cast <writ> <world> --json` | Dispatch work | cast result with agent, worktree |
+| `sol cast <writ-id> --world=<world> --json` | Dispatch work | cast result with agent, worktree |
 | `sol caravan create --json` | Create caravan | `{"id": "car-...", ...}` |
 
 ### Output Conventions
