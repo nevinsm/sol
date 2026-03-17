@@ -442,6 +442,34 @@ func (s *patrolState) executeLegacyMerge(ctx context.Context, mr *store.MergeReq
 		// Has changes, proceed to gates.
 	case mergeEmpty:
 		if mr.Attempts > 1 {
+			// Before concluding this is a permanent failure, check whether the
+			// branch commits are already present in origin/{targetBranch}. This
+			// handles the crash-after-push scenario: forge pushed successfully
+			// but crashed before MarkMerged, so on retry the diff is empty but
+			// the code is already on main.
+			targetRef := fmt.Sprintf("origin/%s", s.forge.cfg.TargetBranch)
+			out, logErr := s.cmd.Run(ctx, s.forge.worktree, "git", "log", targetRef, "--oneline", "-5", "--grep", mr.WritID)
+			if logErr == nil && len(strings.TrimSpace(string(out))) > 0 {
+				// Commits already landed on the target branch — this was a
+				// crash-after-push. Mark merged, not failed.
+				s.fl.Log("MERGE", fmt.Sprintf("%s  empty diff but writ %s already in %s, marking merged", mr.Branch, mr.WritID, targetRef))
+				if err := s.forge.MarkMerged(mr.ID); err != nil {
+					s.forge.logger.Error("mark-merged failed", "mr", mr.ID, "error", err)
+				} else {
+					s.mergesTotal++
+					s.lastMerge = time.Now()
+					s.lastError = ""
+					s.fl.Log("MERGED", mr.ID)
+					if s.eventLog != nil {
+						s.eventLog.Emit(events.EventMerged, "forge", "forge", "both", map[string]string{
+							"merge_request_id": mr.ID,
+						})
+					}
+				}
+				s.writeHeartbeat("idle", queueDepth-1)
+				s.emitPatrolEvent(queueDepth)
+				return
+			}
 			s.fl.Log("SUSPECT", fmt.Sprintf("%s  empty after %d attempts, marking failed", mr.Branch, mr.Attempts))
 			if err := s.forge.MarkFailed(mr.ID); err != nil {
 				s.forge.logger.Error("mark-failed failed", "mr", mr.ID, "error", err)
