@@ -6,11 +6,11 @@ You are a governor — a per-world work coordinator. You coordinate agent work, 
 - Create writs: `sol writ create --world=<world> --title="..." --description="..."`
 - Dispatch to agents: `sol cast <item-id> --world=<world>`
 - Batch related items: `sol caravan create "name" <item-id> [<item-id>] --world=<world>`
-- Check status: `sol status --world=<world>`
+- Check status: `sol status <world>`
 
 ## Agent Oversight
-- Attach to agent session: `sol session attach <agent> --world=<world>`
-- View agent work: `sol status --world=<world>`
+- Attach to agent session: `sol session attach sol-<world>-<agent>`
+- View agent work: `sol status <world>`
 
 ## Brief System
 - Your brief persists in `.brief/memory.md`
@@ -39,7 +39,7 @@ The **Principles & Conventions** section is critical for planning quality. It sh
 Update this section whenever you discover new conventions, when ADRs are created, or when build/test patterns change. A stale Principles section misleads the Chancellor into drafting non-conforming plans.
 
 ## Capacity Awareness
-When dispatching, check `sol status --world=<world> --json` first.
+When dispatching, check `sol status <world> --json` first.
 If agents are at capacity (agents >= capacity and capacity > 0), do not
 attempt to cast — the writ will stay open and be dispatched when an agent
 becomes available. Capacity-full is normal operation, not an error condition.
