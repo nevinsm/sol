@@ -2594,8 +2594,8 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 		t.Error("expected SessionKept to be true for envoy resolve")
 	}
 
-	// Branch name should have envoy/{world}/{agentName} format.
-	expectedBranch := "envoy/ember/Scout"
+	// Branch name should have envoy/{world}/{agentName}/{writID} format (per-writ).
+	expectedBranch := fmt.Sprintf("envoy/ember/Scout/%s", itemID)
 	if result.BranchName != expectedBranch {
 		t.Errorf("expected branch %q, got %q", expectedBranch, result.BranchName)
 	}
