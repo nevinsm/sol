@@ -13,6 +13,13 @@ import (
 // for roles that use brief memory (envoy, governor, chancellor).
 const PlanModeBlockCommand = `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`
 
+// OutpostPlanModeBlockCommand generates the PreToolUse command to block EnterPlanMode
+// for outpost agents. Outpost agents have no brief — their context comes from
+// CLAUDE.local.md and sol prime.
+func OutpostPlanModeBlockCommand(world, agent string) string {
+	return fmt.Sprintf(`echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your context is in CLAUDE.local.md — run 'sol prime --world=%s --agent=%s' to re-inject it." >&2; exit 2`, world, agent)
+}
+
 // ForgePlanModeBlockCommand is the forge-specific EnterPlanMode blocker.
 const ForgePlanModeBlockCommand = `echo "BLOCKED: Plan mode is not permitted in forge merge sessions." >&2; exit 2`
 

@@ -147,7 +147,7 @@ func outpostHooks(world, agent string) startup.HookSet {
 			{Command: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agent)},
 		},
 		Guards: append([]startup.Guard{
-			{Pattern: "EnterPlanMode", Command: protocol.PlanModeBlockCommand},
+			{Pattern: "EnterPlanMode", Command: protocol.OutpostPlanModeBlockCommand(world, agent)},
 		}, protocol.RoleGuards("outpost")...),
 	}
 }
