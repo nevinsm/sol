@@ -465,9 +465,13 @@ Switch the active writ with lightweight session handoff. The writ must be tether
 
 #### `sol writ clean`
 
+Delete output directories for closed writs past the retention threshold.
+
+Requires --confirm to proceed; without it, lists candidates and exits.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | list eligible writs without modifying anything |
+| `--confirm` | bool | false | confirm the destructive operation |
 | `--older-than` | string | "" | retention threshold (e.g., 7d, 15d, 30d) |
 | `--world` | string | "" | world name |
 
@@ -479,10 +483,13 @@ the writ and auto-resolves linked escalations.
 Use --reason to record why the writ was closed (e.g. completed, superseded,
 cancelled). This is a terminal state — closed writs cannot be reopened.
 
+Requires --confirm to proceed; without it, prints what would be closed and exits.
+
 **Usage:** `sol writ close <id>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--confirm` | bool | false | confirm the destructive operation |
 | `--reason` | string | "" | close reason (e.g. completed, superseded, cancelled) |
 | `--world` | string | "" | world name |
 

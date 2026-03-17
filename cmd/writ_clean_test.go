@@ -18,7 +18,7 @@ func setupCleanTest(t *testing.T) (*store.WorldStore, string, string) {
 
 	// Reset package-level flag vars to avoid cross-test pollution.
 	cleanOlderThan = ""
-	cleanDryRun = false
+	cleanConfirm = false
 
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
@@ -84,11 +84,11 @@ func TestWritClean_EligibleWrits(t *testing.T) {
 	id := createClosedWritWithAge(t, s, "Old closed writ", 20*24*time.Hour)
 	outputDir := createOutputDir(t, solHome, world, id)
 
-	// Run clean.
+	// Run clean with --confirm.
 	cmd := rootCmd
-	cmd.SetArgs([]string{"writ", "clean", "--world", world})
+	cmd.SetArgs([]string{"writ", "clean", "--world", world, "--confirm"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("writ clean failed: %v", err)
+		t.Fatalf("writ clean --confirm failed: %v", err)
 	}
 
 	// Verify output directory was removed.
@@ -172,22 +172,24 @@ func TestWritClean_SkipClosedWritsWithOpenDependents(t *testing.T) {
 	_ = idB // keep linter happy
 }
 
-func TestWritClean_DryRun(t *testing.T) {
+func TestWritClean_NoConfirm(t *testing.T) {
 	s, world, solHome := setupCleanTest(t)
 
 	// Create a closed writ older than 15 days.
 	id := createClosedWritWithAge(t, s, "Old closed writ", 20*24*time.Hour)
 	outputDir := createOutputDir(t, solHome, world, id)
 
+	// Without --confirm, should preview candidates and exit 1.
 	cmd := rootCmd
-	cmd.SetArgs([]string{"writ", "clean", "--world", world, "--dry-run"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("writ clean --dry-run failed: %v", err)
+	cmd.SetArgs([]string{"writ", "clean", "--world", world})
+	err := cmd.Execute()
+	if ee, ok := err.(*exitError); !ok || ee.code != 1 {
+		t.Fatalf("writ clean without --confirm: expected exitError{1}, got %v", err)
 	}
 
-	// Output directory should still exist (dry run).
+	// Output directory should still exist (no destructive action).
 	if _, err := os.Stat(outputDir); os.IsNotExist(err) {
-		t.Fatal("expected output directory to still exist in dry-run mode")
+		t.Fatal("expected output directory to still exist without --confirm")
 	}
 
 	// No metadata should be set.
@@ -197,7 +199,7 @@ func TestWritClean_DryRun(t *testing.T) {
 	}
 	if meta != nil {
 		if _, ok := meta["cleaned_at"]; ok {
-			t.Fatal("expected no cleaned_at in metadata during dry run")
+			t.Fatal("expected no cleaned_at in metadata without --confirm")
 		}
 	}
 }
@@ -242,7 +244,7 @@ func TestWritClean_CLIFlagOverridesConfig(t *testing.T) {
 
 	// Use --older-than=10d to override config (20 > 10, so should be cleaned).
 	cmd := rootCmd
-	cmd.SetArgs([]string{"writ", "clean", "--world", world, "--older-than", "10d"})
+	cmd.SetArgs([]string{"writ", "clean", "--world", world, "--older-than", "10d", "--confirm"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("writ clean failed: %v", err)
 	}

@@ -16,12 +16,15 @@ import (
 
 var (
 	cleanOlderThan string
-	cleanDryRun    bool
+	cleanConfirm   bool
 )
 
 var writCleanCmd = &cobra.Command{
-	Use:          "clean",
-	Short:        "Clean writ output directories",
+	Use:   "clean",
+	Short: "Clean writ output directories",
+	Long: `Delete output directories for closed writs past the retention threshold.
+
+Requires --confirm to proceed; without it, lists candidates and exits.`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worldFlag, _ := cmd.Flags().GetString("world")
@@ -115,7 +118,7 @@ var writCleanCmd = &cobra.Command{
 			return nil
 		}
 
-		if cleanDryRun {
+		if !cleanConfirm {
 			tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 			fmt.Fprintf(tw, "ID\tCLOSED AT\tSIZE\n")
 			var totalSize int64
@@ -128,8 +131,9 @@ var writCleanCmd = &cobra.Command{
 				totalSize += c.size
 			}
 			tw.Flush()
-			fmt.Printf("\nWould clean %d directories, reclaiming %s (dry run)\n", len(candidates), formatSize(totalSize))
-			return nil
+			fmt.Printf("\nWould clean %d directories, reclaiming %s.\n", len(candidates), formatSize(totalSize))
+			fmt.Println("Run with --confirm to proceed.")
+			return &exitError{code: 1}
 		}
 
 		// Execute cleanup.
@@ -160,7 +164,7 @@ var writCleanCmd = &cobra.Command{
 func init() {
 	writCleanCmd.Flags().String("world", "", "world name")
 	writCleanCmd.Flags().StringVar(&cleanOlderThan, "older-than", "", "retention threshold (e.g., 7d, 15d, 30d)")
-	writCleanCmd.Flags().BoolVar(&cleanDryRun, "dry-run", false, "list eligible writs without modifying anything")
+	writCleanCmd.Flags().BoolVar(&cleanConfirm, "confirm", false, "confirm the destructive operation")
 }
 
 // parseDaysDuration parses a string like "15d", "7d", "30d" into a number of days.
