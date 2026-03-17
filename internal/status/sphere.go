@@ -310,7 +310,10 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 			case "ready":
 				summary.MRReady++
 			case "failed":
-				summary.MRFailed++
+				// Exclude failed MRs whose writs have been re-cast and closed.
+				if !isFailedMRRecast(mr.WritID, ws) {
+					summary.MRFailed++
+				}
 			}
 		}
 	}
