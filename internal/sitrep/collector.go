@@ -111,7 +111,9 @@ func collectWorldData(worldOpener WorldOpener, world string) (*WorldData, error)
 
 	wd := &WorldData{Name: world}
 
-	writs, err := ws.ListWrits(store.ListFilters{})
+	writs, err := ws.ListWrits(store.ListFilters{
+		Statuses: []string{store.WritOpen, store.WritTethered, store.WritWorking, store.WritResolve, store.WritDone},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list writs for world %q: %w", world, err)
 	}
