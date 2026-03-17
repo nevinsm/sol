@@ -1,6 +1,6 @@
 # ADR-0017: Workflow-Based Forge
 
-Status: revised by ADR-0027 (revises ADR-0005)
+Status: superseded by ADR-0027 (which was superseded by ADR-0028) (revises ADR-0005)
 Date: 2026-03-06
 
 ## Context

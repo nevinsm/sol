@@ -29,7 +29,7 @@ detect trouble.
 
 ## Decision
 
-Forge runs as a deterministic Go process inside a tmux session.
+Forge runs as a deterministic Go process, started as a direct background process.
 
 - Implements the full patrol cycle (unblock → scan → claim → sync →
   merge → gates → push → result → loop) as Go code

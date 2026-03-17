@@ -74,11 +74,11 @@ Example: `sol-myproject-Toast`
 
 | Entity | Format | Example |
 |---|---|---|
-| Writ | `sol-` + 8 hex chars | `sol-a1b2c3d4` |
-| Merge request | `mr-` + 8 hex chars | `mr-a1b2c3d4` |
-| Message | `msg-` + 8 hex chars | `msg-a1b2c3d4` |
-| Escalation | `esc-` + 8 hex chars | `esc-a1b2c3d4` |
-| Caravan | `car-` + 8 hex chars | `car-a1b2c3d4` |
+| Writ | `sol-` + 16 hex chars | `sol-a1b2c3d4e5f6a7b8` |
+| Merge request | `mr-` + 16 hex chars | `mr-a1b2c3d4e5f6a7b8` |
+| Message | `msg-` + 16 hex chars | `msg-a1b2c3d4e5f6a7b8` |
+| Escalation | `esc-` + 16 hex chars | `esc-a1b2c3d4e5f6a7b8` |
+| Caravan | `car-` + 16 hex chars | `car-a1b2c3d4e5f6a7b8` |
 | Agent | `{world}/{name}` | `myproject/Toast` |
 
 ## Migration Reference
