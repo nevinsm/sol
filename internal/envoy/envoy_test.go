@@ -84,8 +84,21 @@ func (m *mockSphereStore) DeleteAgent(id string) error {
 
 
 type mockStopStore struct {
+	agents    map[string]*store.Agent
+	getErr    error
 	updated   map[string]store.AgentState // id -> state
 	updateErr error
+}
+
+func (m *mockStopStore) GetAgent(id string) (*store.Agent, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	a, ok := m.agents[id]
+	if !ok {
+		return nil, fmt.Errorf("agent %q: %w", id, store.ErrNotFound)
+	}
+	return a, nil
 }
 
 func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, activeWrit string) error {
@@ -434,6 +447,9 @@ func TestStop(t *testing.T) {
 	t.Setenv("SOL_HOME", tmp)
 
 	ss := &mockStopStore{
+		agents: map[string]*store.Agent{
+			"myworld/Echo": {ID: "myworld/Echo", Name: "Echo", World: "myworld", Role: "envoy", State: store.AgentIdle},
+		},
 		updated: map[string]store.AgentState{},
 	}
 
@@ -461,6 +477,9 @@ func TestStopNoSession(t *testing.T) {
 	t.Setenv("SOL_HOME", tmp)
 
 	ss := &mockStopStore{
+		agents: map[string]*store.Agent{
+			"myworld/Echo": {ID: "myworld/Echo", Name: "Echo", World: "myworld", Role: "envoy", State: store.AgentIdle},
+		},
 		updated: map[string]store.AgentState{},
 	}
 
@@ -474,6 +493,31 @@ func TestStopNoSession(t *testing.T) {
 	// Verify agent state still updated to idle.
 	if ss.updated["myworld/Echo"] != store.AgentIdle {
 		t.Errorf("agent state = %q, want \"idle\"", ss.updated["myworld/Echo"])
+	}
+}
+
+func TestStopWrongRole(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	ss := &mockStopStore{
+		agents: map[string]*store.Agent{
+			"myworld/governor": {ID: "myworld/governor", Name: "governor", World: "myworld", Role: "governor", State: store.AgentIdle},
+		},
+		updated: map[string]store.AgentState{},
+	}
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	err := Stop("myworld", "governor", ss, mgr)
+	if err == nil {
+		t.Fatal("expected error for wrong role, got nil")
+	}
+	if !strings.Contains(err.Error(), "expected \"envoy\"") {
+		t.Errorf("error should mention expected role, got %q", err.Error())
+	}
+	// Verify agent state was NOT updated.
+	if _, ok := ss.updated["myworld/governor"]; ok {
+		t.Error("agent state should not have been updated for wrong-role agent")
 	}
 }
 

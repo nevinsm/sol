@@ -55,6 +55,7 @@ type SphereStore interface {
 
 // StopStore abstracts sphere store operations for Stop.
 type StopStore interface {
+	GetAgent(id string) (*store.Agent, error)
 	UpdateAgentState(id, state, activeWrit string) error
 }
 
@@ -184,7 +185,16 @@ func Stop(world, name string, sphereStore StopStore, mgr StopManager) error {
 	agentID := world + "/" + name
 	sessName := config.SessionName(world, name)
 
-	// 1. Graceful stop: inject brief update prompt, wait for stability, then kill.
+	// 1. Verify agent exists and is an envoy.
+	agent, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		return fmt.Errorf("envoy %q not found in world %q: %w", name, world, err)
+	}
+	if agent.Role != "envoy" {
+		return fmt.Errorf("agent %q has role %q, expected \"envoy\"", agentID, agent.Role)
+	}
+
+	// 2. Graceful stop: inject brief update prompt, wait for stability, then kill.
 	//    Falls back to immediate kill if no .brief/ directory exists.
 	if mgr.Exists(sessName) {
 		if err := brief.GracefulStop(sessName, BriefDir(world, name), mgr); err != nil {
