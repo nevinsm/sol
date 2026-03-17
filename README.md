@@ -29,18 +29,18 @@ sol init --name=myworld --source-repo=git@github.com:org/your-repo.git
 sol init --name=myworld --source-repo=/path/to/local/repo
 
 # Create writs
-sol store create --world=myworld --title="Implement feature X" --description="..."
-sol store create --world=myworld --title="Fix bug Y" --description="..."
+sol writ create --world=myworld --title="Implement feature X" --description="..."
+sol writ create --world=myworld --title="Fix bug Y" --description="..."
 
 # Dispatch work — sol creates an agent, sets up a worktree, and starts a session
-sol cast <writ-id> myworld
+sol cast <writ-id> --world=myworld
 
 # Watch an agent work
 sol session attach sol-myworld-Toast
 
 # Check on things
 sol status myworld
-sol store list --world=myworld
+sol writ list --world=myworld
 
 # Run with full supervision (health monitoring, auto-merge, recovery)
 sol prefect run --consul
@@ -66,7 +66,7 @@ Everything is inspectable. Writs live in SQLite — query them with `sqlite3`. T
 |---------|-----------|
 | **World** | A repository under management. Has its own database, agents, and worktrees. |
 | **Agent** | A named identity (with work history and state) that runs in a tmux session. |
-| **Tether** | A file that tells an agent what to work on. If the tether exists, the agent runs it. Survives crashes. |
+| **Tether** | A directory with per-writ files that tells an agent what to work on. If the tether exists, the agent runs it. Survives crashes. |
 | **Cast** | Dispatch a writ: create worktree, write tether, start session. |
 | **Resolve** | Signal completion: push branch, update state, clear tether. |
 | **Outpost** | An agent's workspace within a world (`$SOL_HOME/{world}/outposts/{agent}/`). |
@@ -106,7 +106,7 @@ Two SQLite databases (WAL mode):
 
 State on the filesystem:
 
-- **Tethers** — `$SOL_HOME/{world}/outposts/{agent}/.tether`
+- **Tethers** — `$SOL_HOME/{world}/outposts/{agent}/.tether/`
 - **Managed Repo** — `$SOL_HOME/{world}/repo/`
 - **Workflows** — `$SOL_HOME/{world}/outposts/{agent}/.workflow/`
 - **Workflow Definitions** — `$SOL_HOME/workflows/{name}/`
@@ -129,7 +129,7 @@ sol/
 │   ├── world.go                    World lifecycle + sync
 │   ├── cast.go, prime.go, resolve.go  Dispatch pipeline
 │   ├── agent.go                    Agent management
-│   ├── store.go, store_dep.go      Writs and dependencies
+│   ├── writ.go, writ_dep.go        Writs and dependencies
 │   ├── session.go                  tmux session management
 │   ├── prefect.go                  Top-level orchestrator
 │   ├── forge.go                    Merge pipeline + toolbox
@@ -168,7 +168,8 @@ sol/
 │   ├── brief/                      Brief file management, size enforcement
 │   ├── envoy/                      Envoy lifecycle, worktree, hooks
 │   ├── governor/                   Governor lifecycle, hooks, world sync
-│   └── world/                      World operations (sync, managed repo)
+│   ├── worldexport/                World export operations
+│   └── worldsync/                  World sync operations
 ├── test/integration/               End-to-end tests
 └── docs/
     ├── manifesto.md                Design philosophy
@@ -201,4 +202,7 @@ make clean       # Remove build artifacts
 - [Manifesto](docs/manifesto.md) — Design philosophy: what we learned from the Gastown prototype, what we're building, why stability is the feature.
 - [Failure Modes](docs/failure-modes.md) — Per-component crash recovery, graceful degradation, and mass failure handling.
 - [Naming Glossary](docs/naming.md) — Sol naming conventions and migration reference from Gastown.
+- [Principles](docs/principles.md) — Core design principles guiding sol's development.
+- [Workflows](docs/workflows.md) — Workflow definitions and usage patterns.
+- [Integration API](docs/integration-api.md) — Design sketch for stable CLI output and event webhooks.
 - [Architecture Decision Records](docs/decisions/) — Records of significant architectural choices and the reasoning behind them.
