@@ -2,11 +2,38 @@ package integration
 
 import (
 	"encoding/json"
+	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// forgeStatusExpectStopped runs forge status and accepts exit 1 (not running) as valid.
+// Returns the output for further assertion.
+func forgeStatusExpectStopped(t *testing.T, gtHome string, args ...string) string {
+	t.Helper()
+	allArgs := append([]string{"forge", "status"}, args...)
+	out, err := runGT(t, gtHome, allArgs...)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if ok := isExitError(err, &exitErr); ok && exitErr.ExitCode() == 1 {
+			// Exit 1 is expected when forge is not running.
+			return out
+		}
+		t.Fatalf("forge status failed unexpectedly: %v: %s", err, out)
+	}
+	return out
+}
+
+// isExitError checks if err is an *exec.ExitError and sets the pointer.
+func isExitError(err error, target **exec.ExitError) bool {
+	e, ok := err.(*exec.ExitError)
+	if ok {
+		*target = e
+	}
+	return ok
+}
 
 func TestForgeStatusEmpty(t *testing.T) {
 	if testing.Short() {
@@ -16,10 +43,8 @@ func TestForgeStatusEmpty(t *testing.T) {
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "statustest")
 
-	out, err := runGT(t, gtHome, "forge", "status", "statustest")
-	if err != nil {
-		t.Fatalf("forge status failed: %v: %s", err, out)
-	}
+	// Forge is not running — expect exit 1 per new exit code convention.
+	out := forgeStatusExpectStopped(t, gtHome, "statustest")
 
 	if !strings.Contains(out, "Forge: statustest") {
 		t.Errorf("expected header, got: %s", out)
@@ -83,10 +108,8 @@ func TestForgeStatusWithMRs(t *testing.T) {
 		t.Fatalf("update MR phase to failed: %v", err)
 	}
 
-	out, err := runGT(t, gtHome, "forge", "status", "statusmrs")
-	if err != nil {
-		t.Fatalf("forge status failed: %v: %s", err, out)
-	}
+	// Forge is not running — expect exit 1 per new exit code convention.
+	out := forgeStatusExpectStopped(t, gtHome, "statusmrs")
 
 	if !strings.Contains(out, "1 ready") {
 		t.Errorf("expected '1 ready', got: %s", out)
@@ -128,10 +151,8 @@ func TestForgeStatusJSON(t *testing.T) {
 		t.Fatalf("create MR: %v", err)
 	}
 
-	out, err := runGT(t, gtHome, "forge", "status", "statusjson", "--json")
-	if err != nil {
-		t.Fatalf("forge status --json failed: %v: %s", err, out)
-	}
+	// Forge is not running — expect exit 1 per new exit code convention.
+	out := forgeStatusExpectStopped(t, gtHome, "statusjson", "--json")
 
 	var result struct {
 		World       string `json:"world"`
@@ -189,10 +210,8 @@ func TestForgeStatusClaimed(t *testing.T) {
 		t.Fatal("expected to claim a MR, got nil")
 	}
 
-	out, err := runGT(t, gtHome, "forge", "status", "statusclaim")
-	if err != nil {
-		t.Fatalf("forge status failed: %v: %s", err, out)
-	}
+	// Forge is not running — expect exit 1 per new exit code convention.
+	out := forgeStatusExpectStopped(t, gtHome, "statusclaim")
 
 	if !strings.Contains(out, "1 in-progress") {
 		t.Errorf("expected '1 in-progress', got: %s", out)
@@ -208,10 +227,8 @@ func TestForgeStatusClaimed(t *testing.T) {
 	}
 
 	// Also verify the JSON output includes claimed_mr.
-	jsonOut, err := runGT(t, gtHome, "forge", "status", "statusclaim", "--json")
-	if err != nil {
-		t.Fatalf("forge status --json failed: %v: %s", err, jsonOut)
-	}
+	// Forge is not running — expect exit 1.
+	jsonOut := forgeStatusExpectStopped(t, gtHome, "statusclaim", "--json")
 
 	var result struct {
 		InProgress int `json:"in_progress"`

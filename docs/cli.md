@@ -1249,6 +1249,12 @@ requests from the queue immediately.
 
 **Usage:** `sol forge status <world>`
 
+Show whether the forge process is running and its merge queue health.
+
+Exit codes:
+  0 - Forge is running
+  1 - Forge is not running
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
@@ -1314,6 +1320,12 @@ Manage the per-world governor coordinator
 | `--world` | string | "" | world name |
 
 #### `sol governor status`
+
+Show whether the governor session is running and its current state.
+
+Exit codes:
+  0 - Governor is running
+  1 - Governor is not running
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1443,6 +1455,12 @@ Manage the per-world sentinel health monitor
 | `--world` | string | "" | world name |
 
 #### `sol sentinel status`
+
+Show whether the sentinel process is running and its health metrics.
+
+Exit codes:
+  0 - Sentinel is running
+  1 - Sentinel is not running
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
