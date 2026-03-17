@@ -206,7 +206,7 @@ func TestMarkAvailable(t *testing.T) {
 	}
 }
 
-func TestExpireCooldowns(t *testing.T) {
+func TestExpireLimitsViaQuota(t *testing.T) {
 	past := time.Now().Add(-1 * time.Hour).UTC()
 	future := time.Now().Add(1 * time.Hour).UTC()
 
@@ -223,7 +223,7 @@ func TestExpireCooldowns(t *testing.T) {
 		},
 	}
 
-	state.ExpireCooldowns()
+	state.ExpireLimits()
 
 	if state.Accounts["expired"].Status != Available {
 		t.Errorf("expired account status = %s, want available", state.Accounts["expired"].Status)

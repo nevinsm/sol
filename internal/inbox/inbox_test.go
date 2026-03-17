@@ -123,7 +123,10 @@ func TestFetchItemsSortsByPriorityThenDate(t *testing.T) {
 		},
 	}
 
-	items := FetchItems(src)
+	items, err := FetchItems(src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(items) != 4 {
 		t.Fatalf("expected 4 items, got %d", len(items))
@@ -163,7 +166,10 @@ func TestFetchItemsDeduplicatesEscalationThreads(t *testing.T) {
 		},
 	}
 
-	items := FetchItems(src)
+	items, err := FetchItems(src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Should have 2 items: the escalation + the non-duplicate message.
 	if len(items) != 2 {
@@ -180,14 +186,18 @@ func TestFetchItemsDeduplicatesEscalationThreads(t *testing.T) {
 
 func TestFetchItemsEmptySources(t *testing.T) {
 	src := &mockDataSource{}
-	items := FetchItems(src)
+	items, err := FetchItems(src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(items) != 0 {
 		t.Fatalf("expected 0 items from empty sources, got %d", len(items))
 	}
 }
 
-func TestFetchItemsErrorsAreSwallowed(t *testing.T) {
-	// FetchItems swallows errors and returns what it can.
+func TestFetchItemsPartialErrorReturnsItems(t *testing.T) {
+	// FetchItems returns available items even when one source errors,
+	// but the error is surfaced rather than silently swallowed.
 	src := &mockDataSource{
 		escErr: errTestSentinel,
 		messages: []store.Message{
@@ -195,7 +205,10 @@ func TestFetchItemsErrorsAreSwallowed(t *testing.T) {
 		},
 	}
 
-	items := FetchItems(src)
+	items, err := FetchItems(src)
+	if err == nil {
+		t.Error("expected error when escalation fetch fails")
+	}
 
 	// Even though escalation fetch failed, messages should still appear.
 	if len(items) != 1 {
@@ -212,7 +225,10 @@ func TestFetchItemsBothErrors(t *testing.T) {
 		msgErr: errTestSentinel,
 	}
 
-	items := FetchItems(src)
+	items, err := FetchItems(src)
+	if err == nil {
+		t.Error("expected error when both fetches fail")
+	}
 	if len(items) != 0 {
 		t.Fatalf("expected 0 items when both fetches fail, got %d", len(items))
 	}
@@ -230,7 +246,10 @@ func TestFetchItemsEscalationFields(t *testing.T) {
 	}
 
 	src := &mockDataSource{escalations: []store.Escalation{esc}}
-	items := FetchItems(src)
+	items, err := FetchItems(src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
@@ -273,7 +292,10 @@ func TestFetchItemsMessageFields(t *testing.T) {
 	}
 
 	src := &mockDataSource{messages: []store.Message{msg}}
-	items := FetchItems(src)
+	items, err := FetchItems(src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
@@ -311,7 +333,10 @@ func TestFetchItemsSamePrioritySortsByDate(t *testing.T) {
 		},
 	}
 
-	items := FetchItems(src)
+	items, err := FetchItems(src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(items) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(items))

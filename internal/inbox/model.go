@@ -38,7 +38,8 @@ type Model struct {
 	height int
 
 	// Data.
-	items []InboxItem
+	items    []InboxItem
+	fetchErr string // non-empty when the last fetch encountered errors
 
 	// Navigation.
 	view         viewMode
@@ -98,6 +99,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case refreshMsg:
 		m.items = msg.items
+		if msg.err != nil {
+			m.fetchErr = msg.err.Error()
+		} else {
+			m.fetchErr = ""
+		}
 		// Clamp cursor.
 		if m.cursor >= len(m.items) {
 			m.cursor = len(m.items) - 1
@@ -199,22 +205,23 @@ func (m Model) View() string {
 			return renderDetailView(m.items[m.cursor], m.width, m.height)
 		}
 		m.view = viewList
-		return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights)
+		return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights, m.fetchErr)
 	default:
-		return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights)
+		return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights, m.fetchErr)
 	}
 }
 
 // refreshMsg carries fetched items back to the model.
 type refreshMsg struct {
 	items []InboxItem
+	err   error
 }
 
 // refresh fetches fresh data in a tea.Cmd.
 func (m Model) refresh() tea.Cmd {
 	return func() tea.Msg {
-		items := FetchItems(m.config.Store)
-		return refreshMsg{items: items}
+		items, err := FetchItems(m.config.Store)
+		return refreshMsg{items: items, err: err}
 	}
 }
 

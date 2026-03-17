@@ -20,7 +20,6 @@ type Status string
 const (
 	Available Status = "available"
 	Limited   Status = "limited"
-	Cooldown  Status = "cooldown"
 )
 
 // AccountState tracks the quota state for a single account.
@@ -206,18 +205,6 @@ func (s *State) TouchLastUsed(handle string) {
 	acct.LastUsed = &now
 }
 
-// ExpireCooldowns transitions limited accounts to available if their
-// reset time has passed.
-func (s *State) ExpireCooldowns() {
-	now := time.Now().UTC()
-	for _, acct := range s.Accounts {
-		if acct.Status == Limited && acct.ResetsAt != nil && now.After(*acct.ResetsAt) {
-			acct.Status = Available
-			acct.LimitedAt = nil
-			acct.ResetsAt = nil
-		}
-	}
-}
 
 func (s *State) ensureAccount(handle string) *AccountState {
 	if s.Accounts == nil {

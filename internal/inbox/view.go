@@ -25,15 +25,23 @@ func renderDetailFooter() string {
 }
 
 // renderListView renders the item list with cursor and scrolling.
-func renderListView(items []InboxItem, cursor int, scrollOffset int, width int, height int, highlights map[string]int) string {
+func renderListView(items []InboxItem, cursor int, scrollOffset int, width int, height int, highlights map[string]int, fetchErr string) string {
 	var b strings.Builder
 
 	// Header.
 	b.WriteString(renderHeader(len(items)))
 	b.WriteString("\n\n")
 
+	// Show fetch error indicator if present.
+	if fetchErr != "" {
+		b.WriteString(errorStyle.Render("  ⚠ fetch error: "+fetchErr))
+		b.WriteString("\n\n")
+	}
+
 	if len(items) == 0 {
-		b.WriteString(dimStyle.Render("  No items need attention."))
+		if fetchErr == "" {
+			b.WriteString(dimStyle.Render("  No items need attention."))
+		}
 		b.WriteString("\n")
 		b.WriteString("\n")
 		b.WriteString(renderFooter())
