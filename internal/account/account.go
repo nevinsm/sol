@@ -6,10 +6,56 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"syscall"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/fileutil"
 )
+
+// quotaState is a minimal representation of quota.json for account cleanup.
+// Using a local type avoids an import cycle (quota → startup → account).
+type quotaState struct {
+	Accounts map[string]json.RawMessage `json:"accounts"`
+}
+
+// removeFromQuotaState removes a handle from quota.json.
+// Errors are intentionally ignored — quota state is best-effort.
+func removeFromQuotaState(handle string) {
+	statePath := filepath.Join(config.RuntimeDir(), "quota.json")
+	lockPath := filepath.Join(config.RuntimeDir(), "quota.lock")
+
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return
+	}
+	defer lockFile.Close()
+
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return
+	}
+	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN) //nolint:errcheck
+
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		return // file may not exist yet — nothing to clean up
+	}
+
+	var state quotaState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return
+	}
+	if _, exists := state.Accounts[handle]; !exists {
+		return // nothing to remove
+	}
+
+	delete(state.Accounts, handle)
+
+	updated, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = fileutil.AtomicWrite(statePath, append(updated, '\n'), 0o644)
+}
 
 // Account represents a registered Claude OAuth account.
 type Account struct {
@@ -133,6 +179,9 @@ func (r *Registry) Remove(handle string) error {
 	if r.Default == handle {
 		r.Default = ""
 	}
+
+	// Remove the account from quota state so it is not returned as available.
+	removeFromQuotaState(handle)
 
 	return nil
 }

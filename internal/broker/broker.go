@@ -239,12 +239,12 @@ func checkTokenExpiry(handle string, tok *account.Token, logger *events.Logger) 
 				map[string]any{"account": handle, "status": "critical", "days": 0})
 		}
 	case timeLeft <= threshold7d:
-		th.Status = "critical"
+		th.Status = "warning"
 		days := int(timeLeft.Hours() / 24)
 		fmt.Fprintf(os.Stderr, "broker: WARNING: token for account %q expires in %d days\n", handle, days)
 		if logger != nil {
 			logger.Emit(events.EventBrokerTokenExpiry, "broker", handle, "audit",
-				map[string]any{"account": handle, "status": "critical", "days": days})
+				map[string]any{"account": handle, "status": "warning", "days": days})
 		}
 	case timeLeft <= threshold30d:
 		th.Status = "expiring_soon"

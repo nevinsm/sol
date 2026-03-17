@@ -1,10 +1,12 @@
 package inbox
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -72,12 +74,18 @@ type DataSource interface {
 }
 
 // FetchItems queries escalations and messages, deduplicates, and returns
-// a unified sorted list of inbox items.
-func FetchItems(src DataSource) []InboxItem {
+// a unified sorted list of inbox items. Any fetch errors are returned so
+// callers can surface them to the user rather than silently treating
+// unavailability as an empty inbox.
+func FetchItems(src DataSource) ([]InboxItem, error) {
 	var items []InboxItem
+	var errs []string
 
 	// Fetch open + acknowledged (not resolved) escalations.
-	if escs, err := src.ListOpenEscalations(); err == nil {
+	escs, err := src.ListOpenEscalations()
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("escalations: %v", err))
+	} else {
 		for i := range escs {
 			esc := escs[i]
 			items = append(items, InboxItem{
@@ -92,8 +100,11 @@ func FetchItems(src DataSource) []InboxItem {
 		}
 	}
 
-	// Fetch pending messages for the operator (autarch).
-	if msgs, err := src.Inbox("autarch"); err == nil {
+	// Fetch pending messages for the operator.
+	msgs, err := src.Inbox(config.Autarch)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("inbox: %v", err))
+	} else {
 		for i := range msgs {
 			msg := msgs[i]
 
@@ -122,5 +133,8 @@ func FetchItems(src DataSource) []InboxItem {
 		return items[i].CreatedAt.Before(items[j].CreatedAt)
 	})
 
-	return items
+	if len(errs) > 0 {
+		return items, fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return items, nil
 }

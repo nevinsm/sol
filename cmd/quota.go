@@ -85,8 +85,8 @@ var quotaStatusCmd = &cobra.Command{
 			return err
 		}
 
-		// Expire any cooldowns that have passed.
-		state.ExpireCooldowns()
+		// Expire any limits that have passed.
+		state.ExpireLimits()
 
 		if quotaStatusJSON {
 			return printJSON(state)

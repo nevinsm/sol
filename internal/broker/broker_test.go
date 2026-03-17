@@ -55,7 +55,7 @@ func TestCheckTokenExpiry_NearExpiry_Critical_Under1d(t *testing.T) {
 	}
 }
 
-func TestCheckTokenExpiry_NearExpiry_Critical_Under7d(t *testing.T) {
+func TestCheckTokenExpiry_NearExpiry_Warning_Under7d(t *testing.T) {
 	// Expires in 3 days — within 7-day threshold but beyond 1-day threshold.
 	tok := &account.Token{
 		Type:      "oauth_token",
@@ -63,8 +63,8 @@ func TestCheckTokenExpiry_NearExpiry_Critical_Under7d(t *testing.T) {
 		ExpiresAt: ptrTime(time.Now().Add(3 * 24 * time.Hour)),
 	}
 	th := checkTokenExpiry("dave", tok, nil)
-	if th.Status != "critical" {
-		t.Errorf("expected critical (under 7d), got %q", th.Status)
+	if th.Status != "warning" {
+		t.Errorf("expected warning (under 7d), got %q", th.Status)
 	}
 }
 

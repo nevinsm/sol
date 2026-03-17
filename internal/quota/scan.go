@@ -34,8 +34,8 @@ func ScanWorld(world string) ([]ScanResult, error) {
 	}
 	defer lock.Release()
 
-	// Expire any cooldowns that have passed.
-	state.ExpireCooldowns()
+	// Expire any limits that have passed.
+	state.ExpireLimits()
 
 	var results []ScanResult
 
