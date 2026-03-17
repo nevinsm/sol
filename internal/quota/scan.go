@@ -28,10 +28,11 @@ func ScanWorld(world string) ([]ScanResult, error) {
 		return nil, fmt.Errorf("failed to list sessions: %w", err)
 	}
 
-	state, err := Load()
+	lock, state, err := AcquireLock()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load quota state: %w", err)
+		return nil, fmt.Errorf("failed to acquire quota lock: %w", err)
 	}
+	defer lock.Release()
 
 	// Expire any cooldowns that have passed.
 	state.ExpireCooldowns()
