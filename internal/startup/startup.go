@@ -2,6 +2,7 @@ package startup
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -30,6 +31,7 @@ type Guard = adapter.Guard
 
 // SessionStarter abstracts tmux session creation for testing.
 type SessionStarter interface {
+	Exists(name string) bool
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 }
 
@@ -150,6 +152,16 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}
 
+	// Guard: fail early if the session is already running (skip when SessionOp
+	// is set — that path performs an atomic cycle and the session is expected
+	// to exist).
+	if opts.SessionOp == nil {
+		mgr := resolveSessionStarter(opts)
+		if mgr.Exists(sessName) {
+			return "", fmt.Errorf("session already running: %s", sessName)
+		}
+	}
+
 	// 2. Install persona (CLAUDE.local.md).
 	if cfg.Persona != nil {
 		content, err := cfg.Persona(world, agent)
@@ -209,6 +221,9 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	agentID := world + "/" + agent
 	existing, getErr := sphereStore.GetAgent(agentID)
 	if getErr != nil {
+		if !errors.Is(getErr, store.ErrNotFound) {
+			return "", fmt.Errorf("startup: failed to check agent record: %w", getErr)
+		}
 		if _, err := sphereStore.CreateAgent(agent, world, cfg.Role); err != nil {
 			return "", fmt.Errorf("startup: failed to register agent: %w", err)
 		}

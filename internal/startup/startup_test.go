@@ -27,6 +27,10 @@ type startCall struct {
 	World   string
 }
 
+func (m *mockSessionStarter) Exists(name string) bool {
+	return false
+}
+
 func (m *mockSessionStarter) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	m.started = append(m.started, startCall{name, workdir, cmd, env, role, world})
 	return nil
@@ -1412,6 +1416,8 @@ func TestLaunchDotEnvMissing(t *testing.T) {
 
 // errSessionStarter is a SessionStarter that always returns an error.
 type errSessionStarter struct{ err error }
+
+func (e *errSessionStarter) Exists(name string) bool { return false }
 
 func (e *errSessionStarter) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	return e.err
