@@ -570,6 +570,18 @@ func (m *Manager) Cycle(name, workdir, cmd string, env map[string]string, role, 
 		return fmt.Errorf("failed to respawn pane in session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
 	}
 
+	// Restore remain-on-exit to off for non-supervised roles (outpost, forge, etc.).
+	// envoy and governor need it on for crash inspection; all other roles should
+	// have it off so a crashed process results in session.Dead (not AgentDead),
+	// which prefect/sentinel use to trigger respawn.
+	if role != "envoy" && role != "governor" {
+		clearRemain, clearRemainCancel := tmuxCmd("set-option", "-t", tmuxExactTarget(name), "remain-on-exit", "off")
+		if out, err := clearRemain.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "session: failed to restore remain-on-exit for %s: %s\n", name, strings.TrimSpace(string(out)))
+		}
+		clearRemainCancel()
+	}
+
 	// Best-effort verification: if we reached here, this is NOT a self-handoff
 	// (self-handoff kills the calling process at respawn-pane). Check if the
 	// new process survived startup.
