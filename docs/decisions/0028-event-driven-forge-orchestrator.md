@@ -44,7 +44,7 @@ The Go process retains all existing orchestration logic:
 
 - Polls merge queue, claims MRs (unchanged)
 - Writes heartbeat, emits events (unchanged)
-- Runs inside a tmux session under prefect supervision (unchanged)
+- Runs as a direct background process under prefect supervision (unchanged)
 
 New responsibilities:
 

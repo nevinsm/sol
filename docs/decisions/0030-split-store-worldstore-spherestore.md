@@ -1,5 +1,7 @@
 # ADR-0030: Split Store into WorldStore and SphereStore
 
+Status: accepted; migration complete — `Store` shim and `OpenWorld`/`OpenSphere` have been removed; all consumers use `WorldStore`/`SphereStore` directly.
+
 ## Context
 
 `internal/store.Store` is a single type with ~100 exported methods across 17 files (5,300+ lines). It wraps two distinct SQLite databases — world (writs, MRs, dependencies, token usage, history) and sphere (agents, messages, escalations, caravans, worlds) — but the type system does not distinguish between them. `OpenWorld()` and `OpenSphere()` both return `*Store`. Calling a sphere method on a world store is a runtime surprise, not a compile error.
