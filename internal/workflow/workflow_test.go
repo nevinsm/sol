@@ -1476,8 +1476,8 @@ func TestManifestWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCaravan() error: %v", err)
 	}
-	if caravan.Status != "ready" {
-		t.Errorf("caravan status: got %q, want ready", caravan.Status)
+	if caravan.Status != "drydock" {
+		t.Errorf("caravan status: got %q, want drydock", caravan.Status)
 	}
 
 	// Verify caravan items.
@@ -2237,8 +2237,8 @@ func TestManifestConvoy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCaravan() error: %v", err)
 	}
-	if caravan.Status != "ready" {
-		t.Errorf("caravan status: got %q, want ready", caravan.Status)
+	if caravan.Status != "drydock" {
+		t.Errorf("caravan status: got %q, want drydock", caravan.Status)
 	}
 
 	// Verify caravan items.

@@ -1195,11 +1195,6 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 		}
 	}
 
-	// Mark caravan as ready for dispatch.
-	if err := sphereStore.UpdateCaravanStatus(caravanID, "ready"); err != nil {
-		return nil, fmt.Errorf("failed to update caravan status: %w", err)
-	}
-
 	result := &ManifestResult{
 		CaravanID: caravanID,
 		ParentID:  parentID,
