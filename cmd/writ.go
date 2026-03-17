@@ -286,7 +286,10 @@ func init() {
 
 // --- sol writ close ---
 
-var closeReason string
+var (
+	closeReason  string
+	closeConfirm bool
+)
 
 var writCloseCmd = &cobra.Command{
 	Use:   "close <id>",
@@ -295,7 +298,9 @@ var writCloseCmd = &cobra.Command{
 the writ and auto-resolves linked escalations.
 
 Use --reason to record why the writ was closed (e.g. completed, superseded,
-cancelled). This is a terminal state — closed writs cannot be reopened.`,
+cancelled). This is a terminal state — closed writs cannot be reopened.
+
+Requires --confirm to proceed; without it, prints what would be closed and exits.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -312,6 +317,26 @@ cancelled). This is a terminal state — closed writs cannot be reopened.`,
 			return fmt.Errorf("failed to open world store: %w", err)
 		}
 		defer s.Close()
+
+		if !closeConfirm {
+			w, err := s.GetWrit(args[0])
+			if err != nil {
+				return fmt.Errorf("failed to get writ: %w", err)
+			}
+			fmt.Printf("This will permanently close writ %s:\n", args[0])
+			fmt.Printf("  Title: %s\n", w.Title)
+			// Show any failed MRs that would be superseded.
+			failedMRs, mrErr := s.ListMergeRequestsByWrit(args[0], "failed")
+			if mrErr == nil && len(failedMRs) > 0 {
+				fmt.Printf("  Failed MRs to supersede: %d\n", len(failedMRs))
+				for _, mr := range failedMRs {
+					fmt.Printf("    - %s\n", mr.ID)
+				}
+			}
+			fmt.Println()
+			fmt.Println("Run with --confirm to proceed.")
+			return &exitError{code: 1}
+		}
 
 		superseded, err := s.CloseWrit(args[0], closeReason)
 		if err != nil {
@@ -353,6 +378,7 @@ cancelled). This is a terminal state — closed writs cannot be reopened.`,
 func init() {
 	writCloseCmd.Flags().String("world", "", "world name")
 	writCloseCmd.Flags().StringVar(&closeReason, "reason", "", "close reason (e.g. completed, superseded, cancelled)")
+	writCloseCmd.Flags().BoolVar(&closeConfirm, "confirm", false, "confirm the destructive operation")
 }
 
 // --- sol writ query ---
