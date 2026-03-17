@@ -30,11 +30,12 @@ type Writ struct {
 
 // ListFilters controls which writs are returned by ListWrits.
 type ListFilters struct {
-	Status   string // empty = all
-	Assignee string // empty = all
-	Label    string // empty = all
-	Priority int    // 0 = all
-	ParentID string // empty = all
+	Status   string   // empty = all; if Statuses is also set, Statuses takes precedence
+	Statuses []string // filter to any of these statuses; empty = all
+	Assignee string   // empty = all
+	Label    string   // empty = all
+	Priority int      // 0 = all
+	ParentID string   // empty = all
 }
 
 // WritUpdates specifies which fields to update on a writ.
@@ -236,7 +237,14 @@ func (s *WorldStore) ListWrits(filters ListFilters) ([]Writ, error) {
 		conditions = append(conditions, "l.label = ?")
 		args = append(args, filters.Label)
 	}
-	if filters.Status != "" {
+	if len(filters.Statuses) > 0 {
+		placeholders := strings.Repeat("?,", len(filters.Statuses))
+		placeholders = placeholders[:len(placeholders)-1] // trim trailing comma
+		conditions = append(conditions, "w.status IN ("+placeholders+")")
+		for _, s := range filters.Statuses {
+			args = append(args, s)
+		}
+	} else if filters.Status != "" {
 		conditions = append(conditions, "w.status = ?")
 		args = append(args, filters.Status)
 	}
