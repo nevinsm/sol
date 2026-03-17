@@ -28,15 +28,15 @@ func WorktreePath(world, name string) string {
 }
 
 // BriefDir returns the brief directory for an envoy.
-// $SOL_HOME/{world}/envoys/{name}/.brief/
+// $SOL_HOME/{world}/envoys/{name}/worktree/.brief/
 func BriefDir(world, name string) string {
-	return filepath.Join(config.Home(), world, "envoys", name, ".brief")
+	return filepath.Join(WorktreePath(world, name), ".brief")
 }
 
 // BriefPath returns the path to the envoy's memory file.
-// $SOL_HOME/{world}/envoys/{name}/.brief/memory.md
+// $SOL_HOME/{world}/envoys/{name}/worktree/.brief/memory.md
 func BriefPath(world, name string) string {
-	return filepath.Join(config.Home(), world, "envoys", name, ".brief", "memory.md")
+	return filepath.Join(WorktreePath(world, name), ".brief", "memory.md")
 }
 
 // PersonaPath returns the path to the envoy's optional persona file.

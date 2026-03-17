@@ -393,8 +393,8 @@ func TestEnvoyBriefAndDebrief(t *testing.T) {
 
 	createEnvoy(t, gtHome, "myworld", "scout")
 
-	// Write brief content.
-	briefDir := filepath.Join(gtHome, "myworld", "envoys", "scout", ".brief")
+	// Write brief content (brief lives in the envoy worktree, not the envoy dir).
+	briefDir := filepath.Join(gtHome, "myworld", "envoys", "scout", "worktree", ".brief")
 	briefPath := filepath.Join(briefDir, "memory.md")
 	if err := os.WriteFile(briefPath, []byte("# Scout Brief\nImportant context.\n"), 0o644); err != nil {
 		t.Fatalf("write brief: %v", err)
@@ -1298,8 +1298,8 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 		t.Errorf("expected status 'done', got %q", item.Status)
 	}
 
-	// Write brief and verify it's readable.
-	briefDir := filepath.Join(gtHome, "myworld", "envoys", "scout", ".brief")
+	// Write brief and verify it's readable (brief lives in the envoy worktree).
+	briefDir := filepath.Join(gtHome, "myworld", "envoys", "scout", "worktree", ".brief")
 	briefPath := filepath.Join(briefDir, "memory.md")
 	if err := os.WriteFile(briefPath, []byte("# Session notes\nCompleted workflow.\n"), 0o644); err != nil {
 		t.Fatalf("write brief: %v", err)
