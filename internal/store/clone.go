@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/nevinsm/sol/internal/config"
 )
@@ -16,8 +17,8 @@ import (
 // Credentials, tethers, and agent assignments are NOT copied — writs have
 // their assignee cleared and merge request claims are reset.
 func CloneWorldData(source, target string, includeHistory bool) error {
-	srcPath := fmt.Sprintf("%s/%s.db", config.StoreDir(), source)
-	tgtPath := fmt.Sprintf("%s/%s.db", config.StoreDir(), target)
+	srcPath := filepath.Join(config.StoreDir(), source+".db")
+	tgtPath := filepath.Join(config.StoreDir(), target+".db")
 
 	tgt, err := open(tgtPath)
 	if err != nil {

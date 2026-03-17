@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nevinsm/sol/internal/config/defaults"
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // SessionName returns the tmux session name for an agent.
@@ -195,7 +196,7 @@ func detectWorldFromCwd() string {
 	}
 	candidate := parts[0]
 	// Skip internal directories.
-	if candidate == ".store" || candidate == ".runtime" {
+	if candidate == ".store" || candidate == ".runtime" || candidate == ".accounts" || candidate == ".claude-defaults" {
 		return ""
 	}
 	return candidate
@@ -416,7 +417,7 @@ func SeedOnboardingState(configDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal agent .claude.json: %w", err)
 	}
-	return os.WriteFile(destJSON, out, 0o600)
+	return fileutil.AtomicWrite(destJSON, out, 0o600)
 }
 
 // seedMinimalOnboardingState writes the minimum required onboarding state
@@ -443,7 +444,7 @@ func seedMinimalOnboardingState(configDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal agent .claude.json: %w", err)
 	}
-	return os.WriteFile(destJSON, out, 0o600)
+	return fileutil.AtomicWrite(destJSON, out, 0o600)
 }
 
 // NudgeQueueDir returns the nudge queue directory for a session.

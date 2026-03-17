@@ -14,6 +14,7 @@ import (
 	_ "github.com/nevinsm/sol/internal/adapter/claude" // register the "claude" runtime adapter
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envfile"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/workflow"
@@ -458,7 +459,7 @@ func WriteResumeState(world, agent, role string, state ResumeState) error {
 	if err != nil {
 		return fmt.Errorf("startup: failed to marshal resume state: %w", err)
 	}
-	return os.WriteFile(p, data, 0o644)
+	return fileutil.AtomicWrite(p, data, 0o644)
 }
 
 // ReadResumeState loads a previously written ResumeState from disk.

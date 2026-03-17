@@ -205,6 +205,14 @@ func GracefulKill(pid int, timeout time.Duration) error {
 		}
 		return fmt.Errorf("failed to send SIGKILL to pid %d: %w", pid, err)
 	}
+
+	// Wait for process to actually die after SIGKILL.
+	for i := 0; i < 10; i++ {
+		if !IsRunning(pid) {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	return nil
 }
 
