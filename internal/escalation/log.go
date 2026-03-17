@@ -17,12 +17,18 @@ func NewLogNotifier(logger *events.Logger) *LogNotifier {
 	return &LogNotifier{logger: logger}
 }
 
-// Notify emits an escalation_created event.
+// Notify emits an escalation event. If the escalation has been previously
+// notified (LastNotifiedAt is set), it emits EventConsulEscRenotified.
+// Otherwise it emits EventEscalationCreated.
 func (n *LogNotifier) Notify(_ context.Context, esc store.Escalation) error {
 	if n.logger == nil {
 		return nil
 	}
-	n.logger.Emit(events.EventEscalationCreated, esc.Source, "sol", "both", map[string]string{
+	eventType := events.EventEscalationCreated
+	if esc.LastNotifiedAt != nil {
+		eventType = events.EventConsulEscRenotified
+	}
+	n.logger.Emit(eventType, esc.Source, "sol", "both", map[string]string{
 		"id":          esc.ID,
 		"severity":    esc.Severity,
 		"source":      esc.Source,

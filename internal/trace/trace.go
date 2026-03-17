@@ -443,6 +443,7 @@ func deduplicateEvents(events []TimelineEvent) []TimelineEvent {
 		isDup := false
 		for j := 0; j < i; j++ {
 			if events[j].Action == e.Action &&
+				events[j].Detail == e.Detail &&
 				absDuration(events[j].Timestamp.Sub(e.Timestamp)) < 2*time.Second {
 				isDup = true
 				break
