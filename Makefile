@@ -46,15 +46,15 @@ test-e2e: build
 	bin/sol agent list --world=$$WORLD && \
 	\
 	echo "=== E2E: create writ ===" && \
-	ITEM=$$(bin/sol store create --world=$$WORLD --title="E2E test item" --description="Automated end-to-end test") && \
+	ITEM=$$(bin/sol writ create --world=$$WORLD --title="E2E test item" --description="Automated end-to-end test") && \
 	echo "Created: $$ITEM" && \
 	\
 	echo "=== E2E: cast ===" && \
-	bin/sol cast $$ITEM $$WORLD --agent=$$AGENT && \
+	bin/sol cast $$ITEM --world=$$WORLD --agent=$$AGENT && \
 	\
 	echo "=== E2E: verify cast ===" && \
 	bin/sol session list && \
-	bin/sol store status $$ITEM --world=$$WORLD && \
+	bin/sol writ status $$ITEM --world=$$WORLD && \
 	bin/sol prime --world=$$WORLD --agent=$$AGENT && \
 	test -f $(SOL_TEST_HOME)/$$WORLD/outposts/$$AGENT/.tether && \
 	\
@@ -62,7 +62,7 @@ test-e2e: build
 	SOL_WORLD=$$WORLD SOL_AGENT=$$AGENT bin/sol resolve && \
 	\
 	echo "=== E2E: verify resolve ===" && \
-	bin/sol store status $$ITEM --world=$$WORLD && \
+	bin/sol writ status $$ITEM --world=$$WORLD && \
 	bin/sol agent list --world=$$WORLD && \
 	test ! -f $(SOL_TEST_HOME)/$$WORLD/outposts/$$AGENT/.tether && \
 	\
