@@ -529,10 +529,10 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			result.MergeQueue.Claimed++
 		case "failed":
 			// Exclude failed MRs whose writs have been re-cast and closed.
-			if item, err := worldStore.GetWrit(mr.WritID); err != nil || item.Status != "closed" {
-				result.MergeQueue.Failed++
-			} else {
+			if isFailedMRRecast(mr.WritID, worldStore) {
 				include = false
+			} else {
+				result.MergeQueue.Failed++
 			}
 		case "merged":
 			result.MergeQueue.Merged++
@@ -553,6 +553,13 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 	}
 
 	return result, nil
+}
+
+// isFailedMRRecast returns true if a failed MR should be excluded because
+// its writ has been re-cast and is now closed.
+func isFailedMRRecast(writID string, ws WorldStore) bool {
+	item, err := ws.GetWrit(writID)
+	return err == nil && item.Status == "closed"
 }
 
 // briefAge returns a human-readable age of a brief file, or empty if not found.

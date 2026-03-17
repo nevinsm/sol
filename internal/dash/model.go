@@ -671,6 +671,13 @@ func (m Model) refresh() tea.Cmd {
 				return msg
 			}
 			status.GatherCaravans(result, m.config.CaravanStore, m.config.WorldOpener)
+			status.GatherTokens(result, ws)
+
+			// Load world config for capacity (non-fatal).
+			if worldCfg, err := config.LoadWorldConfig(m.world); err == nil {
+				result.Capacity = worldCfg.Agents.Capacity
+			}
+
 			msg.world = result
 		}
 
