@@ -412,10 +412,10 @@ const briefSaveCaptureLines = 50
 func briefSave(sessionName string, mgr SessionManager,
 	pollInterval time.Duration, stableThreshold int, maxTimeout time.Duration) {
 
-	// Inject the brief save prompt.
+	// Send the brief save prompt via NudgeSession so detached sessions are woken.
 	fmt.Fprintf(os.Stderr, "handoff: requesting brief save before cycling...\n")
-	if err := mgr.Inject(sessionName, BriefSavePrompt, true); err != nil {
-		fmt.Fprintf(os.Stderr, "handoff: failed to inject brief save prompt: %v\n", err)
+	if err := mgr.NudgeSession(sessionName, BriefSavePrompt); err != nil {
+		fmt.Fprintf(os.Stderr, "handoff: failed to send brief save prompt: %v\n", err)
 		return
 	}
 
