@@ -169,19 +169,38 @@ func TestRenderStepInstructions(t *testing.T) {
 	stepsDir := filepath.Join(dir, "steps")
 	os.MkdirAll(stepsDir, 0o755)
 
-	content := "Work on {{issue}} from {{base_branch}}. Also {{unknown}}.\n"
-	os.WriteFile(filepath.Join(stepsDir, "step.md"), []byte(content), 0o644)
+	t.Run("all variables resolved", func(t *testing.T) {
+		content := "Work on {{issue}} from {{base_branch}}.\n"
+		os.WriteFile(filepath.Join(stepsDir, "step.md"), []byte(content), 0o644)
 
-	step := StepDef{ID: "test", Instructions: "steps/step.md"}
-	vars := map[string]string{"issue": "sol-abc12345", "base_branch": "main"}
+		step := StepDef{ID: "test", Instructions: "steps/step.md"}
+		vars := map[string]string{"issue": "sol-abc12345", "base_branch": "main"}
 
-	rendered, err := RenderStepInstructions(dir, step, vars)
-	if err != nil {
-		t.Fatalf("RenderStepInstructions() error: %v", err)
-	}
-	if rendered != "Work on sol-abc12345 from main. Also {{unknown}}.\n" {
-		t.Errorf("rendered: got %q", rendered)
-	}
+		rendered, err := RenderStepInstructions(dir, step, vars)
+		if err != nil {
+			t.Fatalf("RenderStepInstructions() unexpected error: %v", err)
+		}
+		if rendered != "Work on sol-abc12345 from main.\n" {
+			t.Errorf("rendered: got %q", rendered)
+		}
+	})
+
+	t.Run("unresolved variable returns error", func(t *testing.T) {
+		// Manifest declares {{issue}} but step file also uses {{issue_url}} — undefined.
+		content := "Work on {{issue}} from {{base_branch}}. Also {{issue_url}}.\n"
+		os.WriteFile(filepath.Join(stepsDir, "step_unresolved.md"), []byte(content), 0o644)
+
+		step := StepDef{ID: "test-unresolved", Instructions: "steps/step_unresolved.md"}
+		vars := map[string]string{"issue": "sol-abc12345", "base_branch": "main"}
+
+		_, err := RenderStepInstructions(dir, step, vars)
+		if err == nil {
+			t.Fatal("RenderStepInstructions() expected error for unresolved variable, got nil")
+		}
+		if !strings.Contains(err.Error(), "{{issue_url}}") {
+			t.Errorf("error should mention unresolved token, got: %v", err)
+		}
+	})
 }
 
 func TestInstantiate(t *testing.T) {

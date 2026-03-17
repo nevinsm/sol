@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -314,9 +315,13 @@ func ResolveVariables(m *Manifest, provided map[string]string) (map[string]strin
 	return resolved, nil
 }
 
+// unresolvedVarRe matches any remaining {{...}} tokens after substitution.
+var unresolvedVarRe = regexp.MustCompile(`\{\{[^}]+\}\}`)
+
 // RenderStepInstructions reads a step's instruction file and performs
 // variable substitution. Variables use {{variable}} syntax.
-// Returns the rendered markdown string.
+// Returns the rendered markdown string, or an error if any {{variable}}
+// tokens remain unresolved after substitution.
 func RenderStepInstructions(workflowDir string, step StepDef, vars map[string]string) (string, error) {
 	path := filepath.Join(workflowDir, step.Instructions)
 	data, err := os.ReadFile(path)
@@ -327,6 +332,10 @@ func RenderStepInstructions(workflowDir string, step StepDef, vars map[string]st
 	content := string(data)
 	for k, v := range vars {
 		content = strings.ReplaceAll(content, "{{"+k+"}}", v)
+	}
+
+	if unresolved := unresolvedVarRe.FindAllString(content, -1); len(unresolved) > 0 {
+		return "", fmt.Errorf("step %q has unresolved variables: %s", step.ID, strings.Join(unresolved, ", "))
 	}
 
 	return content, nil
