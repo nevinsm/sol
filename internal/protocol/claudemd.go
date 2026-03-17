@@ -375,6 +375,10 @@ only path for code to reach the target branch.
 // InstallEnvoyClaudeMD writes CLAUDE.local.md for an envoy at the worktree root.
 // Written at root level so Claude Code's upward directory walk discovers it.
 // Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
+//
+// NOTE: This function is test scaffolding only. Production startup uses
+// adapter.InjectPersona (to write CLAUDE.local.md) and adapter.InstallSkills
+// (to install skill files). Do not add new callers — use the adapter methods.
 func InstallEnvoyClaudeMD(worktreeDir string, ctx EnvoyClaudeMDContext) error {
 	sol := ctx.SolBinary
 	if sol == "" {
@@ -461,6 +465,10 @@ You maintain accumulated world knowledge in your brief.
 // InstallGovernorClaudeMD writes CLAUDE.local.md for the governor at the directory root.
 // Written at root level so Claude Code's upward directory walk discovers it.
 // Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
+//
+// NOTE: This function is test scaffolding only. Production startup uses
+// adapter.InjectPersona (to write CLAUDE.local.md) and adapter.InstallSkills
+// (to install skill files). Do not add new callers — use the adapter methods.
 func InstallGovernorClaudeMD(govDir string, ctx GovernorClaudeMDContext) error {
 	sol := ctx.SolBinary
 	if sol == "" {
@@ -524,6 +532,10 @@ Reserve live governor queries for questions that summaries cannot answer.
 // InstallChancellorClaudeMD writes CLAUDE.local.md for the chancellor at the directory root.
 // Written at root level so Claude Code's upward directory walk discovers it.
 // Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
+//
+// NOTE: This function is test scaffolding only. Production startup uses
+// adapter.InjectPersona (to write CLAUDE.local.md) and adapter.InstallSkills
+// (to install skill files). Do not add new callers — use the adapter methods.
 func InstallChancellorClaudeMD(chancellorDir string, ctx ChancellorClaudeMDContext) error {
 	sol := ctx.SolBinary
 	if sol == "" {
@@ -538,6 +550,10 @@ func InstallChancellorClaudeMD(chancellorDir string, ctx ChancellorClaudeMDConte
 // InstallPersona writes CLAUDE.local.md to dir with the given content, then
 // installs skills using skillCtx. This is the shared implementation used by all
 // role-specific Install functions.
+//
+// NOTE: This function is test scaffolding only. Production startup uses
+// adapter.InjectPersona (to write CLAUDE.local.md) and adapter.InstallSkills
+// (to install skill files). Do not add new callers — use the adapter methods.
 func InstallPersona(dir string, content string, skillCtx SkillContext) error {
 	path := filepath.Join(dir, "CLAUDE.local.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -552,6 +568,10 @@ func InstallPersona(dir string, content string, skillCtx SkillContext) error {
 // InstallClaudeMD writes CLAUDE.local.md at the worktree root.
 // Written at root level so Claude Code's upward directory walk discovers it.
 // Uses the local variant so the project's shared .claude/CLAUDE.md is preserved.
+//
+// NOTE: This function is test scaffolding only. Production startup uses
+// adapter.InjectPersona (to write CLAUDE.local.md) and adapter.InstallSkills
+// (to install skill files). Do not add new callers — use the adapter methods.
 func InstallClaudeMD(worktreeDir string, ctx ClaudeMDContext) error {
 	return InstallPersona(worktreeDir, GenerateClaudeMD(ctx), SkillContext{
 		World:        ctx.World,
