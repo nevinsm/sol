@@ -170,9 +170,9 @@ Exit codes:
 					"status": "stopped",
 				})
 				fmt.Println(string(data))
-				return nil
+			} else {
+				fmt.Println("Ledger is not running.")
 			}
-			fmt.Println("Ledger is not running.")
 			return &exitError{code: 1}
 		}
 
