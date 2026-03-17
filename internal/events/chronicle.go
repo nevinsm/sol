@@ -275,12 +275,23 @@ func (c *Chronicle) processCycle() error {
 		return fmt.Errorf("feed truncation: %w", err)
 	}
 
-	// 9. Save checkpoint.
-	c.saveCheckpoint()
-
-	// 10. Best-effort log rotation — chronicle's own log and raw event feed.
+	// 9. Best-effort log rotation — chronicle's own log and raw event feed.
 	logutil.TruncateIfNeeded(filepath.Join(config.RuntimeDir(), "chronicle.log"), logutil.DefaultMaxLogSize)
-	logutil.TruncateIfNeeded(c.config.RawPath, logutil.DefaultMaxLogSize)
+	if truncated, _ := logutil.TruncateIfNeeded(c.config.RawPath, logutil.DefaultMaxLogSize); truncated {
+		// Raw file was truncated in-place (copytruncate). The stored offset now
+		// points past valid data in the shorter file. Reset to the new EOF so
+		// the next cycle resumes from the current end rather than seeking into
+		// a stale position and permanently missing new events.
+		if info, err := os.Stat(c.config.RawPath); err == nil {
+			c.offset = info.Size()
+		} else {
+			c.offset = 0
+		}
+	}
+
+	// 10. Save checkpoint after any raw-file rotation so the persisted offset
+	// reflects the post-truncation file position.
+	c.saveCheckpoint()
 
 	return nil
 }
