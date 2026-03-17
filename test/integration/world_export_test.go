@@ -37,19 +37,25 @@ func TestWorldExportBasic(t *testing.T) {
 	// Verify archive exists and is valid.
 	entries := listTarEntries(t, output)
 
-	// Must contain manifest.json.
-	if !containsEntry(entries, "myworld/manifest.json") {
+	// Archive root should use the sol-export-{world}-{timestamp}/ prefix.
+	archiveRoot := findArchiveRoot(entries, "sol-export-myworld-")
+	if archiveRoot == "" {
+		t.Fatalf("archive root not found, entries: %v", entries)
+	}
+
+	// Must contain manifest.json at archive root.
+	if !containsEntry(entries, archiveRoot+"manifest.json") {
 		t.Errorf("archive missing manifest.json, entries: %v", entries)
 	}
 
-	// Must contain world database.
-	if !containsEntry(entries, "myworld/database/myworld.db") {
-		t.Errorf("archive missing database/myworld.db, entries: %v", entries)
+	// Must contain world database at expected path for Import().
+	if !containsEntry(entries, archiveRoot+"world.db") {
+		t.Errorf("archive missing world.db, entries: %v", entries)
 	}
 
-	// Must contain world.toml.
-	if !containsEntry(entries, "myworld/tree/world.toml") {
-		t.Errorf("archive missing tree/world.toml, entries: %v", entries)
+	// Must contain world.toml at expected path for Import().
+	if !containsEntry(entries, archiveRoot+"world.toml") {
+		t.Errorf("archive missing world.toml, entries: %v", entries)
 	}
 }
 
@@ -74,17 +80,6 @@ func TestWorldExportWithData(t *testing.T) {
 	}
 	worldStore.Close()
 
-	// Create some agent config dirs to verify they're included.
-	agentConfigDir := filepath.Join(gtHome, "myworld", ".claude-config", "outposts", "TestAgent")
-	os.MkdirAll(agentConfigDir, 0o755)
-	os.WriteFile(filepath.Join(agentConfigDir, "config.json"), []byte(`{"test": true}`), 0o644)
-
-	// Create an outpost dir with a .tether and worktree (should be excluded).
-	outpostDir := filepath.Join(gtHome, "myworld", "outposts", "TestAgent")
-	os.MkdirAll(filepath.Join(outpostDir, "worktree"), 0o755)
-	os.WriteFile(filepath.Join(outpostDir, ".tether"), []byte("sol-abc123"), 0o644)
-	os.WriteFile(filepath.Join(outpostDir, "worktree", "file.go"), []byte("package main"), 0o644)
-
 	outputDir := t.TempDir()
 	output := filepath.Join(outputDir, "export.tar.gz")
 
@@ -95,32 +90,38 @@ func TestWorldExportWithData(t *testing.T) {
 
 	entries := listTarEntries(t, output)
 
-	// Agent config should be included.
-	if !containsEntry(entries, "myworld/tree/.claude-config/outposts/TestAgent/config.json") {
-		t.Errorf("archive missing agent config, entries: %v", entries)
+	archiveRoot := findArchiveRoot(entries, "sol-export-myworld-")
+	if archiveRoot == "" {
+		t.Fatalf("archive root not found, entries: %v", entries)
 	}
 
-	// Outposts dir should be included.
-	if !containsEntryPrefix(entries, "myworld/tree/outposts/") {
-		t.Errorf("archive missing outposts dir, entries: %v", entries)
+	// sphere-data/ should be present with agent/message/escalation JSON files.
+	if !containsEntry(entries, archiveRoot+"sphere-data/agents.json") {
+		t.Errorf("archive missing sphere-data/agents.json, entries: %v", entries)
+	}
+	if !containsEntry(entries, archiveRoot+"sphere-data/messages.json") {
+		t.Errorf("archive missing sphere-data/messages.json, entries: %v", entries)
+	}
+	if !containsEntry(entries, archiveRoot+"sphere-data/caravans.json") {
+		t.Errorf("archive missing sphere-data/caravans.json, entries: %v", entries)
 	}
 
-	// .tether should be excluded.
+	// world.db and world.toml must be present for Import() compatibility.
+	if !containsEntry(entries, archiveRoot+"world.db") {
+		t.Errorf("archive missing world.db, entries: %v", entries)
+	}
+	if !containsEntry(entries, archiveRoot+"world.toml") {
+		t.Errorf("archive missing world.toml, entries: %v", entries)
+	}
+
+	// Ephemeral paths must not appear.
 	for _, e := range entries {
 		if strings.HasSuffix(e, ".tether") {
 			t.Errorf("archive should not contain .tether files, found: %s", e)
 		}
-	}
-
-	// worktree/ should be excluded.
-	for _, e := range entries {
 		if strings.Contains(e, "worktree/") {
 			t.Errorf("archive should not contain worktree/ paths, found: %s", e)
 		}
-	}
-
-	// repo/ should be excluded (doesn't exist here but verify no repo entries).
-	for _, e := range entries {
 		if strings.Contains(e, "/repo/") {
 			t.Errorf("archive should not contain repo/ paths, found: %s", e)
 		}
@@ -144,27 +145,56 @@ func TestWorldExportManifest(t *testing.T) {
 		t.Fatalf("world export failed: %v: %s", err, out)
 	}
 
-	// Extract and parse manifest.json.
-	manifestData := extractFileFromTar(t, output, "myworld/manifest.json")
+	// Find the archive root prefix.
+	entries := listTarEntries(t, output)
+	archiveRoot := findArchiveRoot(entries, "sol-export-myworld-")
+	if archiveRoot == "" {
+		t.Fatalf("archive root not found, entries: %v", entries)
+	}
+
+	// Extract and parse manifest.json from the correct path.
+	manifestData := extractFileFromTar(t, output, archiveRoot+"manifest.json")
 
 	var manifest struct {
-		World      string   `json:"world"`
-		ExportedAt string   `json:"exported_at"`
-		Contents   []string `json:"contents"`
+		Version        int    `json:"version"`
+		World          string `json:"world"`
+		ExportedAt     string `json:"exported_at"`
+		SolVersion     string `json:"sol_version"`
+		SchemaVersions struct {
+			World  int `json:"world"`
+			Sphere int `json:"sphere"`
+		} `json:"schema_versions"`
 	}
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		t.Fatalf("failed to parse manifest: %v", err)
 	}
 
+	if manifest.Version != 1 {
+		t.Errorf("expected manifest version 1, got %d", manifest.Version)
+	}
 	if manifest.World != "myworld" {
 		t.Errorf("expected world 'myworld', got %q", manifest.World)
 	}
 	if manifest.ExportedAt == "" {
 		t.Error("expected non-empty exported_at")
 	}
-	if len(manifest.Contents) == 0 {
-		t.Error("expected non-empty contents list")
+	if manifest.SchemaVersions.World == 0 {
+		t.Error("expected non-zero world schema version")
 	}
+	if manifest.SchemaVersions.Sphere == 0 {
+		t.Error("expected non-zero sphere schema version")
+	}
+}
+
+// findArchiveRoot finds the top-level directory entry in an archive whose name
+// starts with the given prefix and returns it (including trailing slash).
+func findArchiveRoot(entries []string, prefix string) string {
+	for _, e := range entries {
+		if strings.HasPrefix(e, prefix) && strings.HasSuffix(e, "/") {
+			return e
+		}
+	}
+	return ""
 }
 
 func TestWorldExportDefaultOutput(t *testing.T) {
