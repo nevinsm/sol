@@ -813,10 +813,9 @@ func Prime(world, agentName, role string, worldStore WorldStore, compact ...bool
 		return primeForge(world)
 	}
 
-	// Check for stale resolve lock (previous session died mid-resolve).
+	// Check for stale resolve lock(s) (previous session died mid-resolve).
 	if IsResolveInProgress(world, agentName, role) {
-		lockPath := ResolveLockPath(world, agentName, role)
-		os.Remove(lockPath) // clean up stale lock
+		ClearResolveLocksForAgent(world, agentName, role) // clean up stale lock(s)
 		fmt.Fprintf(os.Stderr, "prime: detected stale resolve lock — previous session interrupted during resolve\n")
 	}
 
@@ -1376,15 +1375,37 @@ type ResolveOpts struct {
 	WritID    string // Optional: specific writ to resolve (persistent agents only; ignored for outpost agents)
 }
 
-// ResolveLockPath returns the path to the resolve-in-progress lock file.
+// ResolveLockPath returns the path to the shared resolve-in-progress lock file (used for outpost agents).
 func ResolveLockPath(world, agentName, role string) string {
 	return filepath.Join(config.AgentDir(world, agentName, role), ".resolve_in_progress")
 }
 
-// IsResolveInProgress returns true if a resolve lock file exists for this agent.
+// ResolveWritLockPath returns the path to the per-writ resolve-in-progress lock file.
+// Used for persistent agents to avoid concurrent resolves sharing the same lock file.
+func ResolveWritLockPath(world, agentName, role, writID string) string {
+	return filepath.Join(config.AgentDir(world, agentName, role), ".resolve_in_progress."+writID)
+}
+
+// IsResolveInProgress returns true if any resolve lock file exists for this agent.
+// Checks both the shared lock file (outpost agents) and per-writ lock files (persistent agents).
 func IsResolveInProgress(world, agentName, role string) bool {
-	_, err := os.Stat(ResolveLockPath(world, agentName, role))
-	return err == nil
+	if _, err := os.Stat(ResolveLockPath(world, agentName, role)); err == nil {
+		return true
+	}
+	agentDir := config.AgentDir(world, agentName, role)
+	matches, err := filepath.Glob(filepath.Join(agentDir, ".resolve_in_progress.*"))
+	return err == nil && len(matches) > 0
+}
+
+// ClearResolveLocksForAgent removes all resolve lock files for an agent (shared and per-writ).
+func ClearResolveLocksForAgent(world, agentName, role string) {
+	os.Remove(ResolveLockPath(world, agentName, role))
+	agentDir := config.AgentDir(world, agentName, role)
+	if matches, err := filepath.Glob(filepath.Join(agentDir, ".resolve_in_progress.*")); err == nil {
+		for _, f := range matches {
+			os.Remove(f)
+		}
+	}
 }
 
 // Resolve signals work completion: git operations, state updates, tether clear.
@@ -1397,12 +1418,6 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	agent, err := sphereStore.GetAgent(agentID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
-	}
-
-	// Create resolve lock to prevent handoff from interrupting.
-	lockPath := ResolveLockPath(opts.World, opts.AgentName, agent.Role)
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create lock directory: %w", err)
 	}
 
 	// 1. Determine which writ to resolve.
@@ -1432,6 +1447,19 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		}
 	}
 
+	// Create resolve lock to prevent handoff from interrupting.
+	// Persistent agents use a per-writ lock file so concurrent resolves don't
+	// interfere: when Resolve-A finishes and removes its lock, Resolve-B's lock
+	// remains visible and the handoff guard still sees a resolve in progress.
+	var lockPath string
+	if agent.Role == "outpost" {
+		lockPath = ResolveLockPath(opts.World, opts.AgentName, agent.Role)
+	} else {
+		lockPath = ResolveWritLockPath(opts.World, opts.AgentName, agent.Role, writID)
+	}
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create lock directory: %w", err)
+	}
 	// Write resolve lock with writ ID (enables crash recovery detection).
 	if err := os.WriteFile(lockPath, []byte(writID), 0o644); err != nil {
 		return nil, fmt.Errorf("failed to write resolve lock: %w", err)

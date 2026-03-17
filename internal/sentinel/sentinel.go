@@ -1020,7 +1020,6 @@ func (w *Sentinel) handleZombie(agent store.Agent) error {
 // For persistent agents: set idle and clear active_writ.
 // Always cleans up the .resolve_in_progress lock file if present.
 func (w *Sentinel) handleOrphanedWorking(agent store.Agent) error {
-	lockPath := dispatch.ResolveLockPath(w.config.World, agent.Name, agent.Role)
 	resolveWasInProgress := dispatch.IsResolveInProgress(w.config.World, agent.Name, agent.Role)
 
 	if agent.Role == "outpost" {
@@ -1061,9 +1060,9 @@ func (w *Sentinel) handleOrphanedWorking(agent store.Agent) error {
 		}
 	}
 
-	// Clean up resolve lock if present.
+	// Clean up resolve lock(s) if present (shared or per-writ).
 	if resolveWasInProgress {
-		os.Remove(lockPath)
+		dispatch.ClearResolveLocksForAgent(w.config.World, agent.Name, agent.Role)
 	}
 
 	// Emit event for observability.
