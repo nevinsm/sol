@@ -116,8 +116,8 @@ func ConfigFor(role string) *RoleConfig {
 //  7. Build prime context (cfg.PrimeBuilder)
 //  8. Build session command (adapter.BuildCommand)
 //  9. Start tmux session with env
-func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error) {
-	sessName := config.SessionName(world, agent)
+func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName string, retErr error) {
+	sessName = config.SessionName(world, agent)
 
 	// 1. Get worktree directory.
 	worktreeDir := ""
@@ -215,12 +215,25 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (string, error
 	}
 	// Preserve existing tether item (outpost agents have tethered writs).
 	activeWrit := ""
+	prevState := store.AgentIdle
 	if existing != nil {
 		activeWrit = existing.ActiveWrit
+		prevState = existing.State
 	}
 	if err := sphereStore.UpdateAgentState(agentID, "working", activeWrit); err != nil {
 		return "", fmt.Errorf("startup: failed to set agent working: %w", err)
 	}
+	// Roll back agent state to its previous value if Launch fails after this
+	// point — prevents the agent from being stuck in "working" with no live
+	// session (e.g. if the tmux session already exists or credentials fail).
+	defer func() {
+		if retErr != nil {
+			if rbErr := sphereStore.UpdateAgentState(agentID, prevState, activeWrit); rbErr != nil {
+				slog.Warn("startup: failed to rollback agent state after launch error",
+					"agent", agentID, "error", rbErr)
+			}
+		}
+	}()
 
 	// 6. Instantiate workflow if set.
 	if cfg.Workflow != "" {
