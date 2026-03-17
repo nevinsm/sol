@@ -489,17 +489,32 @@ running, returns an error (callers should fall back to the static world summary)
 			return fmt.Errorf("governor not running for world %q (start with 'sol governor start --world=%s')", world, world)
 		}
 
-		// Clear any stale query files.
+		// Acquire exclusive query lock — serializes concurrent queries so they
+		// do not overwrite each other's pending/response files.
+		lockTimeout := time.Duration(worldQueryTimeout) * time.Second
+		lock, lockErr := governor.AcquireQueryLock(world, lockTimeout)
+		if lockErr != nil {
+			return fmt.Errorf("failed to acquire query lock: %w", lockErr)
+		}
+		defer lock.Release()
+
+		// Clear any stale query files now that we hold the lock.
 		governor.ClearQuery(world)
 
-		// Write question to pending.md.
-		if err := governor.WritePending(world, question); err != nil {
+		// Write question to pending.md; nonce is used to detect stale responses.
+		nonce, err := governor.WritePending(world, question)
+		if err != nil {
 			return fmt.Errorf("failed to write query: %w", err)
 		}
 
-		// Inject notification into governor's tmux session.
-		notification := fmt.Sprintf("A query has been submitted. Read the question from %s, write your response to %s, then continue your work.",
-			governor.PendingPath(world), governor.ResponsePath(world))
+		// Inject notification into governor's tmux session.  The nonce must be
+		// echoed back on the first line of response.md so the client can reject
+		// responses from a previous timed-out query.
+		notification := fmt.Sprintf(
+			"A query has been submitted (ID: %s). Read the question from %s. "+
+				"Write your response to %s, starting with the exact line 'QUERY-ID: %s', "+
+				"then provide your full answer on the following lines. Then continue your work.",
+			nonce, governor.PendingPath(world), governor.ResponsePath(world), nonce)
 		if err := mgr.Inject(sessName, notification, true); err != nil {
 			governor.ClearQuery(world)
 			return fmt.Errorf("failed to inject query into governor session: %w", err)
@@ -511,7 +526,7 @@ running, returns an error (callers should fall back to the static world summary)
 		pollInterval := 2 * time.Second
 
 		for time.Now().Before(deadline) {
-			response, found, err := governor.ReadResponse(world)
+			response, found, err := governor.ReadResponse(world, nonce)
 			if err != nil {
 				governor.ClearQuery(world)
 				return fmt.Errorf("failed to read query response: %w", err)
