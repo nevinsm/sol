@@ -675,7 +675,7 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 		msg := nudge.Message{
 			Sender:   "sol",
 			Type:     "writ-activate",
-			Subject:  fmt.Sprintf("Writ %s activated: %s — run `sol prime --world=%s --agent=%s` for full context", opts.WritID, writTitle, opts.World, opts.AgentName),
+			Subject:  fmt.Sprintf("Writ %s activated: %s — commit normally, `sol resolve` handles branch creation. Run `sol prime --world=%s --agent=%s` for full context", opts.WritID, writTitle, opts.World, opts.AgentName),
 			Priority: "urgent",
 		}
 		if err := nudge.Deliver(sessionName, msg); err != nil {
@@ -1448,7 +1448,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	switch agent.Role {
 	case "envoy":
 		worktreeDir = envoy.WorktreePath(opts.World, opts.AgentName)
-		branchName = fmt.Sprintf("envoy/%s/%s", opts.World, opts.AgentName)
+		branchName = fmt.Sprintf("envoy/%s/%s/%s", opts.World, opts.AgentName, writID)
 	case "governor":
 		worktreeDir = governor.GovernorDir(opts.World)
 		branchName = fmt.Sprintf("governor/%s", opts.World)
@@ -1496,10 +1496,24 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		commitCmd := exec.CommandContext(commitCtx, "git", "-C", worktreeDir, "commit", "-m", commitMsg)
 		commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
 
-		// git push origin HEAD
+		// git push: envoy creates a per-writ named branch and pushes it;
+		// other roles push HEAD (which tracks the pre-created branch).
 		pushCtx, pushCancel := context.WithTimeout(ctx, GitPushTimeout)
 		defer pushCancel()
-		pushCmd := exec.CommandContext(pushCtx, "git", "-C", worktreeDir, "push", "origin", "HEAD")
+		var pushCmd *exec.Cmd
+		if agent.Role == "envoy" {
+			// Create per-writ branch at current HEAD, then push the named branch.
+			// The envoy worktree stays on whatever branch it is on.
+			branchCtx, branchCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
+			defer branchCancel()
+			branchCmd := exec.CommandContext(branchCtx, "git", "-C", worktreeDir, "branch", "-f", branchName, "HEAD")
+			if out, err := branchCmd.CombinedOutput(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: git branch -f failed: %s\n", strings.TrimSpace(string(out)))
+			}
+			pushCmd = exec.CommandContext(pushCtx, "git", "-C", worktreeDir, "push", "origin", branchName)
+		} else {
+			pushCmd = exec.CommandContext(pushCtx, "git", "-C", worktreeDir, "push", "origin", "HEAD")
+		}
 		if out, err := pushCmd.CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: git push failed: %s\n", strings.TrimSpace(string(out)))
 			pushFailed = true

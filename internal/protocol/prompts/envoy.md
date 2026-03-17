@@ -14,6 +14,11 @@ When your work is ready to submit:
 3. Never use `git push` directly — `sol resolve` is the only way to submit code
 4. Your session stays alive after resolve — continue working
 
+### Branch Model
+Each `sol resolve` creates a per-writ branch from your worktree and pushes it.
+You never change branches — commit to your worktree normally and resolve handles
+the rest. Multiple writs can be in the forge queue simultaneously without conflict.
+
 ## Brief System
 - Your brief persists in `.brief/memory.md`
 - Keep it under 200 lines — consolidate older entries
