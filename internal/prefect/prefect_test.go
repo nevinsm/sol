@@ -1778,6 +1778,7 @@ func TestCheckChronicleHealthStaleHeartbeatRestart(t *testing.T) {
 	// Set a generous max so the fresh ledger heartbeat is never treated as stale
 	// (avoids accidental SIGTERM of the test process via the ledger PID path).
 	cfg.LedgerHeartbeatMax = 10 * time.Minute
+	cfg.BrokerHeartbeatMax = 10 * time.Minute
 
 	tracker := &mockDaemonTracker{}
 
@@ -1819,6 +1820,12 @@ func TestCheckChronicleHealthStaleHeartbeatRestart(t *testing.T) {
 		t.Fatalf("failed to write fresh ledger heartbeat: %v", err)
 	}
 
+	// Write a fresh broker heartbeat so checkBrokerHealth does not restart it.
+	freshBrokerJSON := fmt.Sprintf(`{"timestamp":%q,"status":"running","patrol_count":1}`, freshTime)
+	if err := os.WriteFile(filepath.Join(runtimeDir, "broker-heartbeat.json"), []byte(freshBrokerJSON), 0o644); err != nil {
+		t.Fatalf("failed to write fresh broker heartbeat: %v", err)
+	}
+
 	sup.heartbeat()
 
 	// Verify startDaemonProcess was called to restart chronicle.
@@ -1832,6 +1839,212 @@ func TestCheckChronicleHealthStaleHeartbeatRestart(t *testing.T) {
 	}
 	if !foundChronicle {
 		t.Errorf("expected chronicle restart via startDaemonProcess (stale heartbeat), got calls: %v", detachedCalls)
+	}
+}
+
+// TestMaxRespawnsStallsAgent verifies that when an agent has exceeded MaxRespawns,
+// it is permanently stalled and no further respawn attempts are made.
+func TestMaxRespawnsStallsAgent(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.MaxRespawns = 2
+
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, sphereStore, mock, logger)
+
+	// Pre-set backoff to MaxRespawns so the next respawn attempt is restartCount = MaxRespawns+1.
+	sup.mu.Lock()
+	sup.backoff["haven/Toast"] = cfg.MaxRespawns
+	sup.mu.Unlock()
+
+	// Heartbeat: session is dead, restartCount = MaxRespawns+1 = 3 > MaxRespawns=2.
+	sup.heartbeat()
+
+	// Should NOT have started a session — agent is permanently stalled.
+	started := mock.GetStarted()
+	if len(started) != 0 {
+		t.Fatalf("expected 0 sessions started (max respawns exceeded), got %d: %v", len(started), started)
+	}
+
+	// Agent should be in stalled state.
+	agent, err := sphereStore.GetAgent("haven/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.State != "stalled" {
+		t.Errorf("agent state = %q, want %q after exceeding max respawns", agent.State, "stalled")
+	}
+
+	// Backoff should be cleared after permanent stall.
+	sup.mu.Lock()
+	_, hasBackoff := sup.backoff["haven/Toast"]
+	sup.mu.Unlock()
+	if hasBackoff {
+		t.Error("backoff entry should be cleared after permanent stall")
+	}
+}
+
+// TestMaxRespawnsZeroMeansUnlimited verifies that MaxRespawns=0 disables the limit.
+func TestMaxRespawnsZeroMeansUnlimited(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.MaxRespawns = 0 // unlimited
+
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, sphereStore, mock, logger)
+
+	// Pre-set backoff to a high count (well beyond a typical MaxRespawns).
+	sup.mu.Lock()
+	sup.backoff["haven/Toast"] = 100
+	sup.mu.Unlock()
+
+	// Heartbeat: restartCount = 101, but MaxRespawns=0 so no limit.
+	// Backoff delay at 101 is 5 minutes — the agent will be stalled (deferred), not
+	// permanently terminated. Since lastStalled is empty, it should stall and return.
+	sup.heartbeat()
+
+	// Agent should be in stalled state (deferred respawn), not permanently dropped.
+	agent, err := sphereStore.GetAgent("haven/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// With backoff=100, restartCount=101, delay=5min. No lastStalled entry → first stall.
+	// Agent gets stalled (deferred), backoff set to 101.
+	if agent.State != "stalled" {
+		t.Errorf("agent state = %q, want %q (deferred respawn with unlimited respawns)", agent.State, "stalled")
+	}
+
+	// Backoff should still be present (deferred, not permanently cleared).
+	sup.mu.Lock()
+	count, hasBackoff := sup.backoff["haven/Toast"]
+	sup.mu.Unlock()
+	if !hasBackoff {
+		t.Error("backoff entry should remain for deferred respawn (not permanent stall)")
+	}
+	if count != 101 {
+		t.Errorf("backoff count = %d, want 101", count)
+	}
+}
+
+// writeBrokerHeartbeat writes a broker heartbeat file for testing.
+func writeBrokerHeartbeat(t *testing.T, timestamp time.Time) {
+	t.Helper()
+	runtimeDir := filepath.Join(os.Getenv("SOL_HOME"), ".runtime")
+	os.MkdirAll(runtimeDir, 0o755)
+	ts := timestamp.UTC().Format(time.RFC3339)
+	hbJSON := fmt.Sprintf(`{"timestamp":%q,"status":"running","patrol_count":1}`, ts)
+	path := filepath.Join(runtimeDir, "broker-heartbeat.json")
+	if err := os.WriteFile(path, []byte(hbJSON), 0o644); err != nil {
+		t.Fatalf("failed to write broker heartbeat: %v", err)
+	}
+}
+
+// TestCheckBrokerHealthStaleHeartbeatRestart verifies that when the broker
+// process is alive but its heartbeat is stale, checkBrokerHealth sends SIGTERM
+// and then restarts broker via startDaemonProcess.
+func TestCheckBrokerHealthStaleHeartbeatRestart(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+	cfg.BrokerHeartbeatMax = 5 * time.Minute
+	// Set generous maximums for ledger and chronicle to avoid unintended restarts.
+	cfg.LedgerHeartbeatMax = 10 * time.Minute
+	cfg.ChronicleHeartbeatMax = 10 * time.Minute
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = tracker.runCommand
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// Start a real subprocess so IsRunning(pid) returns true.
+	// checkBrokerHealth will SIGTERM it when the heartbeat is stale.
+	cmd := exec.Command("sleep", "300")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start subprocess: %v", err)
+	}
+	subpid := cmd.Process.Pid
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	// Write the subprocess PID as the broker daemon PID.
+	writePIDFile(t, "broker", subpid)
+
+	// Write a stale broker heartbeat (10 minutes old, well past the 5-minute max).
+	writeBrokerHeartbeat(t, time.Now().Add(-10*time.Minute))
+
+	// Write alive PIDs for ledger and chronicle so they don't trigger restarts.
+	writePIDFile(t, "ledger", os.Getpid())
+	writePIDFile(t, "chronicle", os.Getpid())
+	// No ledger or chronicle heartbeat files → checkLedgerHealth/checkChronicleHealth
+	// see nil heartbeat (just started) and return early.
+
+	sup.heartbeat()
+
+	// Verify startDaemonProcess was called to restart the broker.
+	detachedCalls := tracker.getDetachedCalls()
+	foundBroker := false
+	for _, call := range detachedCalls {
+		if len(call) >= 4 && call[0] == "broker" && call[1] == "/usr/bin/sol" &&
+			call[2] == "broker" && call[3] == "run" {
+			foundBroker = true
+		}
+	}
+	if !foundBroker {
+		t.Errorf("expected broker restart via startDaemonProcess (stale heartbeat), got calls: %v", detachedCalls)
+	}
+}
+
+// TestCheckBrokerHealthFreshHeartbeatSkipped verifies that a running broker with a
+// fresh heartbeat is not restarted.
+func TestCheckBrokerHealthFreshHeartbeatSkipped(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+	cfg.BrokerHeartbeatMax = 5 * time.Minute
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = tracker.runCommand
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// Write alive PID for broker and a fresh heartbeat.
+	writePIDFile(t, "broker", os.Getpid())
+	writeBrokerHeartbeat(t, time.Now())
+
+	// Write alive PIDs for ledger and chronicle.
+	writePIDFile(t, "ledger", os.Getpid())
+	writePIDFile(t, "chronicle", os.Getpid())
+
+	sup.heartbeat()
+
+	// No restart should occur for broker.
+	detachedCalls := tracker.getDetachedCalls()
+	for _, call := range detachedCalls {
+		if len(call) >= 1 && call[0] == "broker" {
+			t.Errorf("broker should not be restarted with fresh heartbeat, got call: %v", call)
+		}
 	}
 }
 
