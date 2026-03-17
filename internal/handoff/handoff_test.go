@@ -656,8 +656,7 @@ type mockSessionMgr struct {
 	cycled         []startCall
 	cycleErr       error
 	exists         bool
-	injected       []injectCall
-	injectErr      error
+	nudged         []nudgeCall
 	captureResults []string // sequential capture results (cycles through them)
 	captureIndex   int
 }
@@ -668,9 +667,8 @@ type startCall struct {
 	Role, World        string
 }
 
-type injectCall struct {
-	Name, Text string
-	Submit     bool
+type nudgeCall struct {
+	Name, Message string
 }
 
 func (m *mockSessionMgr) Exists(name string) bool {
@@ -678,8 +676,7 @@ func (m *mockSessionMgr) Exists(name string) bool {
 }
 
 func (m *mockSessionMgr) Inject(name string, text string, submit bool) error {
-	m.injected = append(m.injected, injectCall{name, text, submit})
-	return m.injectErr
+	return nil
 }
 
 func (m *mockSessionMgr) Capture(name string, lines int) (string, error) {
@@ -712,6 +709,7 @@ func (m *mockSessionMgr) Cycle(name, workdir, cmd string, env map[string]string,
 }
 
 func (m *mockSessionMgr) NudgeSession(name string, message string) error {
+	m.nudged = append(m.nudged, nudgeCall{name, message})
 	return nil
 }
 
@@ -1426,15 +1424,12 @@ func TestExecEnvoyBriefSave(t *testing.T) {
 		t.Fatalf("Exec failed: %v", err)
 	}
 
-	// Brief save prompt should have been injected.
-	if len(mgr.injected) != 1 {
-		t.Fatalf("expected 1 Inject call, got %d", len(mgr.injected))
+	// Brief save prompt should have been sent via NudgeSession.
+	if len(mgr.nudged) != 1 {
+		t.Fatalf("expected 1 NudgeSession call, got %d", len(mgr.nudged))
 	}
-	if mgr.injected[0].Text != BriefSavePrompt {
-		t.Errorf("expected BriefSavePrompt, got %q", mgr.injected[0].Text)
-	}
-	if !mgr.injected[0].Submit {
-		t.Error("expected Inject submit=true")
+	if mgr.nudged[0].Message != BriefSavePrompt {
+		t.Errorf("expected BriefSavePrompt, got %q", mgr.nudged[0].Message)
 	}
 
 	// Session should still be cycled after brief save.
@@ -1477,12 +1472,12 @@ func TestExecGovernorBriefSave(t *testing.T) {
 		t.Fatalf("Exec failed: %v", err)
 	}
 
-	// Brief save prompt should have been injected.
-	if len(mgr.injected) != 1 {
-		t.Fatalf("expected 1 Inject call for governor, got %d", len(mgr.injected))
+	// Brief save prompt should have been sent via NudgeSession.
+	if len(mgr.nudged) != 1 {
+		t.Fatalf("expected 1 NudgeSession call for governor, got %d", len(mgr.nudged))
 	}
-	if mgr.injected[0].Text != BriefSavePrompt {
-		t.Errorf("expected BriefSavePrompt, got %q", mgr.injected[0].Text)
+	if mgr.nudged[0].Message != BriefSavePrompt {
+		t.Errorf("expected BriefSavePrompt, got %q", mgr.nudged[0].Message)
 	}
 
 	// Session should be cycled.
@@ -1535,8 +1530,8 @@ func TestExecBriefSaveTimeout(t *testing.T) {
 	}
 
 	// Brief save was attempted.
-	if len(mgr.injected) != 1 {
-		t.Fatalf("expected 1 Inject call, got %d", len(mgr.injected))
+	if len(mgr.nudged) != 1 {
+		t.Fatalf("expected 1 NudgeSession call, got %d", len(mgr.nudged))
 	}
 
 	// Session should still be cycled despite timeout.
@@ -1574,8 +1569,8 @@ func TestExecNoBriefSaveForOutpost(t *testing.T) {
 	}
 
 	// No brief save for outpost role.
-	if len(mgr.injected) != 0 {
-		t.Errorf("expected 0 Inject calls for outpost, got %d", len(mgr.injected))
+	if len(mgr.nudged) != 0 {
+		t.Errorf("expected 0 NudgeSession calls for outpost, got %d", len(mgr.nudged))
 	}
 
 	// Session should be cycled normally.
@@ -1612,8 +1607,8 @@ func TestExecNoBriefSaveForForge(t *testing.T) {
 	}
 
 	// No brief save for forge role.
-	if len(mgr.injected) != 0 {
-		t.Errorf("expected 0 Inject calls for forge, got %d", len(mgr.injected))
+	if len(mgr.nudged) != 0 {
+		t.Errorf("expected 0 NudgeSession calls for forge, got %d", len(mgr.nudged))
 	}
 }
 
@@ -1646,8 +1641,8 @@ func TestExecNoBriefSaveWithoutBriefDir(t *testing.T) {
 	}
 
 	// No brief save when .brief/ doesn't exist.
-	if len(mgr.injected) != 0 {
-		t.Errorf("expected 0 Inject calls without brief dir, got %d", len(mgr.injected))
+	if len(mgr.nudged) != 0 {
+		t.Errorf("expected 0 NudgeSession calls without brief dir, got %d", len(mgr.nudged))
 	}
 
 	// Session should still be cycled.
@@ -1695,9 +1690,9 @@ func TestExecSelfHandoffSkipsBriefSave(t *testing.T) {
 		t.Fatalf("Exec failed: %v", err)
 	}
 
-	// Self-handoff should skip briefSave — no inject calls.
-	if len(mgr.injected) != 0 {
-		t.Errorf("expected 0 Inject calls for self-handoff, got %d", len(mgr.injected))
+	// Self-handoff should skip briefSave — no NudgeSession calls.
+	if len(mgr.nudged) != 0 {
+		t.Errorf("expected 0 NudgeSession calls for self-handoff, got %d", len(mgr.nudged))
 	}
 
 	// Session should still be cycled.
@@ -1746,11 +1741,11 @@ func TestExecExternalHandoffStillRunsBriefSave(t *testing.T) {
 	}
 
 	// External handoff should still run briefSave.
-	if len(mgr.injected) != 1 {
-		t.Fatalf("expected 1 Inject call for external handoff, got %d", len(mgr.injected))
+	if len(mgr.nudged) != 1 {
+		t.Fatalf("expected 1 NudgeSession call for external handoff, got %d", len(mgr.nudged))
 	}
-	if mgr.injected[0].Text != BriefSavePrompt {
-		t.Errorf("expected BriefSavePrompt, got %q", mgr.injected[0].Text)
+	if mgr.nudged[0].Message != BriefSavePrompt {
+		t.Errorf("expected BriefSavePrompt, got %q", mgr.nudged[0].Message)
 	}
 
 	// Session should be cycled.
@@ -1799,8 +1794,8 @@ func TestExecSelfHandoffPartialMatchStillRunsBriefSave(t *testing.T) {
 	}
 
 	// Partial match (agent matches, world doesn't) should still run briefSave.
-	if len(mgr.injected) != 1 {
-		t.Fatalf("expected 1 Inject call for partial match, got %d", len(mgr.injected))
+	if len(mgr.nudged) != 1 {
+		t.Fatalf("expected 1 NudgeSession call for partial match, got %d", len(mgr.nudged))
 	}
 }
 
@@ -1845,8 +1840,8 @@ func TestExecSelfHandoffEmptyEnvVarsNotDetectedAsSelf(t *testing.T) {
 	}
 
 	// Empty env vars should not be detected as self-handoff — briefSave should run.
-	if len(mgr.injected) != 1 {
-		t.Fatalf("expected 1 Inject call when env vars are empty, got %d", len(mgr.injected))
+	if len(mgr.nudged) != 1 {
+		t.Fatalf("expected 1 NudgeSession call when env vars are empty, got %d", len(mgr.nudged))
 	}
 }
 
