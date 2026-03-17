@@ -2,6 +2,7 @@ package tether
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -37,7 +38,7 @@ func Write(world, agentName, writID, role string) error {
 		return fmt.Errorf("tether write verification failed for agent %q in world %q: wrote %q but read back %q (err: %v)", agentName, world, writID, string(content), err)
 	}
 
-	fmt.Fprintf(os.Stderr, "tether: wrote %s for agent %s in world %s\n", writID, agentName, world)
+	slog.Debug("tether: wrote", "writID", writID, "agent", agentName, "world", world)
 	return nil
 }
 

@@ -401,7 +401,7 @@ func columnExists(db interface {
 	// PRAGMA table_info returns one row per column. We can't parameterize
 	// PRAGMA arguments, but table/column names come from our own schema
 	// constants, not user input.
-	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%q)", table))
 	if err != nil {
 		return false, err
 	}

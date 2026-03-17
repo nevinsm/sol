@@ -123,12 +123,19 @@ func (g *Git) Rev(ref string) (string, error) {
 func (g *Git) BranchExists(name string) (bool, error) {
 	_, err := g.run("show-ref", "--verify", "--quiet", "refs/heads/"+name)
 	if err != nil {
+		// If the local lookup failed with a non-GitError (e.g. permission denied,
+		// git binary missing), surface it immediately rather than falling through
+		// to the remote lookup and silently discarding the real error.
+		var ge *GitError
+		if !isGitError(err, &ge) {
+			return false, err
+		}
 		// Also try remote tracking refs.
 		_, err2 := g.run("show-ref", "--verify", "--quiet", "refs/remotes/"+name)
 		if err2 != nil {
 			// show-ref returns exit 1 when ref doesn't exist — that's not an error.
-			var ge *GitError
-			if isGitError(err2, &ge) {
+			var ge2 *GitError
+			if isGitError(err2, &ge2) {
 				return false, nil
 			}
 			return false, err2
