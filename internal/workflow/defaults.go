@@ -199,7 +199,7 @@ func Eject(name, repoPath string, force bool) (string, error) {
 		}
 		// Backup existing directory.
 		backupDir := filepath.Join(filepath.Dir(targetDir),
-			name+".bak-"+time.Now().UTC().Format(time.RFC3339))
+			name+".bak-"+time.Now().UTC().Format("2006-01-02T15-04-05Z"))
 		if err := os.Rename(targetDir, backupDir); err != nil {
 			return "", fmt.Errorf("failed to backup existing workflow directory: %w", err)
 		}

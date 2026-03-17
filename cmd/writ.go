@@ -54,10 +54,6 @@ var writCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if createTitle == "" {
-			return fmt.Errorf("--title is required")
-		}
-
 		if config.IsSleeping(world) {
 			return fmt.Errorf("world %q is sleeping: writ creation blocked (wake it with 'sol world wake %s')", world, world)
 		}
@@ -97,6 +93,7 @@ var writCreateCmd = &cobra.Command{
 func init() {
 	writCreateCmd.Flags().String("world", "", "world name")
 	writCreateCmd.Flags().StringVar(&createTitle, "title", "", "writ title")
+	_ = writCreateCmd.MarkFlagRequired("title")
 	writCreateCmd.Flags().StringVar(&createDescription, "description", "", "writ description")
 	writCreateCmd.Flags().IntVar(&createPriority, "priority", 2, "priority (1=high, 2=normal, 3=low)")
 	writCreateCmd.Flags().StringArrayVar(&createLabels, "label", nil, "label (can be repeated)")

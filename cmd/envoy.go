@@ -293,9 +293,6 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if envoyDeleteWorld == "" {
-			return fmt.Errorf("--world is required")
-		}
 		if err := config.RequireWorld(envoyDeleteWorld); err != nil {
 			return err
 		}
@@ -498,6 +495,7 @@ func init() {
 
 	// envoy delete flags
 	envoyDeleteCmd.Flags().StringVar(&envoyDeleteWorld, "world", "", "world name")
+	_ = envoyDeleteCmd.MarkFlagRequired("world")
 	envoyDeleteCmd.Flags().BoolVar(&envoyDeleteConfirm, "confirm", false, "confirm destructive action")
 	envoyDeleteCmd.Flags().BoolVar(&envoyDeleteForce, "force", false, "force delete even if session is active or tethered")
 

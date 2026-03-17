@@ -78,7 +78,7 @@ func runConfigClaude(cmd *cobra.Command, args []string) error {
 	if err := claudeCmd.Run(); err != nil {
 		// Exit errors from interactive processes are expected (user quit).
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
+			return &exitError{code: exitErr.ExitCode()}
 		}
 		return err
 	}

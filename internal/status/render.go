@@ -6,29 +6,18 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/style"
 )
 
 var (
-	// Section headers.
-	headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("12")) // bright blue
-
-	// Status indicators.
-	okStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("10")) // green
-	warnStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")) // yellow
-	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // red
-	dimStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))  // gray
-
 	// Health badges.
-	healthyBadge   = okStyle.Render("● healthy")
-	unhealthyBadge = errorStyle.Render("● unhealthy")
-	degradedBadge  = warnStyle.Render("● degraded")
-	sleepingBadge  = dimStyle.Render("○ sleeping")
-	unknownBadge   = dimStyle.Render("● unknown")
+	healthyBadge   = style.OK.Render("● healthy")
+	unhealthyBadge = style.Error.Render("● unhealthy")
+	degradedBadge  = style.Warn.Render("● degraded")
+	sleepingBadge  = style.Dim.Render("○ sleeping")
+	unknownBadge   = style.Dim.Render("● unknown")
 )
 
 func healthBadge(health string) string {
@@ -48,18 +37,18 @@ func healthBadge(health string) string {
 
 func statusIndicator(running bool) string {
 	if running {
-		return okStyle.Render("✓")
+		return style.OK.Render("✓")
 	}
-	return errorStyle.Render("✗")
+	return style.Error.Render("✗")
 }
 
 // optionalStatusIndicator returns a dim ○ for non-running optional processes
 // instead of the alarming red ✗ used for required processes.
 func optionalStatusIndicator(running bool) string {
 	if running {
-		return okStyle.Render("✓")
+		return style.OK.Render("✓")
 	}
-	return dimStyle.Render("○")
+	return style.Dim.Render("○")
 }
 
 // RenderSphere renders a SphereStatus as styled terminal output.
@@ -67,15 +56,15 @@ func RenderSphere(s *SphereStatus) string {
 	var b strings.Builder
 
 	// Header.
-	b.WriteString(headerStyle.Render("Sol Sphere"))
+	b.WriteString(style.Header.Render("Sol Sphere"))
 	b.WriteString("  ")
 	b.WriteString(healthBadge(s.Health))
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render(s.SOLHome))
+	b.WriteString(style.Dim.Render(s.SOLHome))
 	b.WriteString("\n\n")
 
 	// Sphere processes.
-	b.WriteString(headerStyle.Render("Processes"))
+	b.WriteString(style.Header.Render("Processes"))
 	b.WriteString("\n")
 	renderProcess(&b, "Prefect", s.Prefect.Running, true,
 		formatPrefectDetail(s.Prefect))
@@ -94,12 +83,12 @@ func RenderSphere(s *SphereStatus) string {
 
 	// Worlds table.
 	if len(s.Worlds) == 0 {
-		b.WriteString(dimStyle.Render("No worlds initialized."))
+		b.WriteString(style.Dim.Render("No worlds initialized."))
 		b.WriteString("\n")
-		b.WriteString(dimStyle.Render("Run: sol init --name=<world>"))
+		b.WriteString(style.Dim.Render("Run: sol init --name=<world>"))
 		b.WriteString("\n")
 	} else {
-		b.WriteString(headerStyle.Render("Worlds"))
+		b.WriteString(style.Header.Render("Worlds"))
 		b.WriteString("\n")
 		renderWorldsTable(&b, s.Worlds)
 		b.WriteString("\n")
@@ -110,7 +99,7 @@ func RenderSphere(s *SphereStatus) string {
 
 	// Caravans (if any).
 	if len(s.Caravans) > 0 {
-		b.WriteString(headerStyle.Render("Caravans"))
+		b.WriteString(style.Header.Render("Caravans"))
 		b.WriteString("\n")
 		renderCaravansTable(&b, s.Caravans)
 		b.WriteString("\n")
@@ -140,7 +129,7 @@ func renderProcess(b *strings.Builder, name string, running bool, required bool,
 	}
 	b.WriteString(fmt.Sprintf("  %s %-12s", indicator, name))
 	if detail != "" {
-		b.WriteString(dimStyle.Render("  " + detail))
+		b.WriteString(style.Dim.Render("  " + detail))
 	}
 	b.WriteString("\n")
 }
@@ -161,7 +150,7 @@ func formatConsulDetail(c ConsulInfo) string {
 		parts += fmt.Sprintf(", last %s ago", c.HeartbeatAge)
 	}
 	if c.Stale {
-		parts += warnStyle.Render(" (stale)")
+		parts += style.Warn.Render(" (stale)")
 	}
 	return parts
 }
@@ -175,14 +164,14 @@ func formatBrokerDetail(b BrokerInfo) string {
 		parts += fmt.Sprintf(", last %s ago", b.HeartbeatAge)
 	}
 	if b.Stale {
-		parts += warnStyle.Render(" (stale)")
+		parts += style.Warn.Render(" (stale)")
 	}
 	// Show provider health when not healthy.
 	switch b.ProviderHealth {
 	case "degraded":
-		parts += warnStyle.Render(" [provider: degraded]")
+		parts += style.Warn.Render(" [provider: degraded]")
 	case "down":
-		parts += errorStyle.Render(" [provider: down]")
+		parts += style.Error.Render(" [provider: down]")
 	}
 	return parts
 }
@@ -207,34 +196,34 @@ func renderAccountTokenLine(th broker.AccountTokenHealth) string {
 		typeLabel = "api_key"
 	}
 
-	prefix := dimStyle.Render(fmt.Sprintf("(%s)", typeLabel))
+	prefix := style.Dim.Render(fmt.Sprintf("(%s)", typeLabel))
 
 	switch th.Status {
 	case "ok":
-		return fmt.Sprintf("%s  %s", prefix, okStyle.Render("ok"))
+		return fmt.Sprintf("%s  %s", prefix, style.OK.Render("ok"))
 	case "no_expiry":
-		return fmt.Sprintf("%s  %s", prefix, okStyle.Render("ok (no expiry)"))
+		return fmt.Sprintf("%s  %s", prefix, style.OK.Render("ok (no expiry)"))
 	case "expiring_soon":
 		if th.ExpiresAt != nil {
 			days := int(time.Until(*th.ExpiresAt).Hours() / 24)
-			return fmt.Sprintf("%s  %s", prefix, warnStyle.Render(fmt.Sprintf("expires in %d days", days)))
+			return fmt.Sprintf("%s  %s", prefix, style.Warn.Render(fmt.Sprintf("expires in %d days", days)))
 		}
-		return fmt.Sprintf("%s  %s", prefix, warnStyle.Render("expiring soon"))
+		return fmt.Sprintf("%s  %s", prefix, style.Warn.Render("expiring soon"))
 	case "critical":
 		if th.ExpiresAt != nil {
 			days := int(time.Until(*th.ExpiresAt).Hours() / 24)
 			if days == 0 {
-				return fmt.Sprintf("%s  %s", prefix, errorStyle.Render("expires tomorrow"))
+				return fmt.Sprintf("%s  %s", prefix, style.Error.Render("expires tomorrow"))
 			}
-			return fmt.Sprintf("%s  %s", prefix, errorStyle.Render(fmt.Sprintf("expires in %d days", days)))
+			return fmt.Sprintf("%s  %s", prefix, style.Error.Render(fmt.Sprintf("expires in %d days", days)))
 		}
-		return fmt.Sprintf("%s  %s", prefix, errorStyle.Render("expiring critically soon"))
+		return fmt.Sprintf("%s  %s", prefix, style.Error.Render("expiring critically soon"))
 	case "expired":
-		return fmt.Sprintf("%s  %s", prefix, errorStyle.Render("EXPIRED"))
+		return fmt.Sprintf("%s  %s", prefix, style.Error.Render("EXPIRED"))
 	case "missing":
-		return fmt.Sprintf("%s  %s", prefix, errorStyle.Render("token missing"))
+		return fmt.Sprintf("%s  %s", prefix, style.Error.Render("token missing"))
 	default:
-		return fmt.Sprintf("%s  %s", prefix, dimStyle.Render(th.Status))
+		return fmt.Sprintf("%s  %s", prefix, style.Dim.Render(th.Status))
 	}
 }
 
@@ -250,16 +239,16 @@ func formatChronicleDetail(c ChronicleInfo) string {
 		if parts != "" {
 			parts += " "
 		}
-		parts += dimStyle.Render(fmt.Sprintf("hb %s", c.HeartbeatAge))
+		parts += style.Dim.Render(fmt.Sprintf("hb %s", c.HeartbeatAge))
 	}
 	if c.EventsProcessed > 0 {
 		if parts != "" {
 			parts += " "
 		}
-		parts += dimStyle.Render(fmt.Sprintf("ev %d", c.EventsProcessed))
+		parts += style.Dim.Render(fmt.Sprintf("ev %d", c.EventsProcessed))
 	}
 	if c.Stale {
-		parts += warnStyle.Render(" (stale)")
+		parts += style.Warn.Render(" (stale)")
 	}
 	return parts
 }
@@ -279,7 +268,7 @@ func formatLedgerDetail(l LedgerInfo) string {
 		detail += fmt.Sprintf("hb %s", l.HeartbeatAge)
 	}
 	if l.Stale {
-		detail += warnStyle.Render(" (stale)")
+		detail += style.Warn.Render(" (stale)")
 	}
 	if detail == "" {
 		return "running"
@@ -302,18 +291,18 @@ func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 	for _, w := range worlds {
 		if w.Sleeping {
 			// Show active agent/envoy counts for sleeping worlds (soft sleep wind-down).
-			agents := dimStyle.Render("—")
+			agents := style.Dim.Render("—")
 			if w.Agents > 0 {
 				agents = fmt.Sprintf("%d", w.Agents)
 			}
-			envoys := dimStyle.Render("—")
+			envoys := style.Dim.Render("—")
 			if w.Envoys > 0 {
 				envoys = fmt.Sprintf("%d", w.Envoys)
 			}
 			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				w.Name,
-				agents, envoys, dimStyle.Render("—"),
-				dimStyle.Render("—"), dimStyle.Render("—"), dimStyle.Render("—"),
+				agents, envoys, style.Dim.Render("—"),
+				style.Dim.Render("—"), style.Dim.Render("—"), style.Dim.Render("—"),
 				sleepingBadge)
 			continue
 		}
@@ -336,26 +325,26 @@ func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 
 		envoys := fmt.Sprintf("%d", w.Envoys)
 
-		gov := dimStyle.Render("—")
+		gov := style.Dim.Render("—")
 		if w.Governor {
-			gov = okStyle.Render("●")
+			gov = style.OK.Render("●")
 		}
 
-		forge := dimStyle.Render("—")
+		forge := style.Dim.Render("—")
 		if w.Forge {
-			forge = okStyle.Render("✓")
+			forge = style.OK.Render("✓")
 		}
 
-		sentinel := dimStyle.Render("—")
+		sentinel := style.Dim.Render("—")
 		if w.Sentinel {
-			sentinel = okStyle.Render("✓")
+			sentinel = style.OK.Render("✓")
 		}
 
-		mrQueue := dimStyle.Render("—")
+		mrQueue := style.Dim.Render("—")
 		if w.MRReady > 0 || w.MRFailed > 0 {
 			mrQueue = fmt.Sprintf("%d ready", w.MRReady)
 			if w.MRFailed > 0 {
-				mrQueue += errorStyle.Render(fmt.Sprintf(", %d failed", w.MRFailed))
+				mrQueue += style.Error.Render(fmt.Sprintf(", %d failed", w.MRFailed))
 			}
 		}
 
@@ -387,7 +376,7 @@ func renderCaravansTable(b *strings.Builder, caravans []CaravanInfo) {
 			}
 			progress := fmt.Sprintf("%d items  %s", c.TotalItems, strings.Join(parts, ", "))
 			b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
-				c.ID, c.Name, dimStyle.Render(progress)))
+				c.ID, c.Name, style.Dim.Render(progress)))
 		} else {
 			blocked := c.TotalItems - c.ClosedItems - c.DoneItems - c.ReadyItems - c.DispatchedItems
 			progress := fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)
@@ -404,7 +393,7 @@ func renderCaravansTable(b *strings.Builder, caravans []CaravanInfo) {
 				progress += fmt.Sprintf(", %d blocked", blocked)
 			}
 			b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
-				c.ID, c.Name, dimStyle.Render(progress)))
+				c.ID, c.Name, style.Dim.Render(progress)))
 		}
 	}
 }
@@ -414,13 +403,13 @@ func RenderWorld(ws *WorldStatus) string {
 	var b strings.Builder
 
 	// Header.
-	b.WriteString(headerStyle.Render(fmt.Sprintf("World: %s", ws.World)))
+	b.WriteString(style.Header.Render(fmt.Sprintf("World: %s", ws.World)))
 	b.WriteString("  ")
 	b.WriteString(healthBadge(ws.HealthString()))
 	b.WriteString("\n\n")
 
 	// Processes.
-	b.WriteString(headerStyle.Render("Processes"))
+	b.WriteString(style.Header.Render("Processes"))
 	b.WriteString("\n")
 	renderProcess(&b, "Prefect", ws.Prefect.Running, true,
 		formatPrefectDetail(ws.Prefect))
@@ -441,7 +430,7 @@ func RenderWorld(ws *WorldStatus) string {
 
 	// Outposts (role=outpost only).
 	if len(ws.Agents) > 0 {
-		b.WriteString(headerStyle.Render(fmt.Sprintf("Outposts (%d)", len(ws.Agents))))
+		b.WriteString(style.Header.Render(fmt.Sprintf("Outposts (%d)", len(ws.Agents))))
 		b.WriteString("\n")
 		renderAgentsTable(&b, ws.Agents)
 		b.WriteString("\n")
@@ -449,7 +438,7 @@ func RenderWorld(ws *WorldStatus) string {
 
 	// Envoys.
 	if len(ws.Envoys) > 0 {
-		b.WriteString(headerStyle.Render(fmt.Sprintf("Envoys (%d)", len(ws.Envoys))))
+		b.WriteString(style.Header.Render(fmt.Sprintf("Envoys (%d)", len(ws.Envoys))))
 		b.WriteString("\n")
 		renderEnvoysTable(&b, ws.Envoys)
 		b.WriteString("\n")
@@ -457,20 +446,20 @@ func RenderWorld(ws *WorldStatus) string {
 
 	// Show "no agents" if neither outposts nor envoys exist.
 	if len(ws.Agents) == 0 && len(ws.Envoys) == 0 {
-		b.WriteString(dimStyle.Render("No agents registered."))
+		b.WriteString(style.Dim.Render("No agents registered."))
 		b.WriteString("\n")
 	}
 
 	// Caravans.
 	if len(ws.Caravans) > 0 {
-		b.WriteString(headerStyle.Render("Caravans"))
+		b.WriteString(style.Header.Render("Caravans"))
 		b.WriteString("\n")
 		renderCaravansTable(&b, ws.Caravans)
 		b.WriteString("\n")
 	}
 
 	// Merge queue.
-	b.WriteString(headerStyle.Render("Merge Queue"))
+	b.WriteString(style.Header.Render("Merge Queue"))
 	b.WriteString("\n")
 	renderMergeQueue(&b, ws.MergeQueue)
 	b.WriteString("\n")
@@ -489,7 +478,7 @@ func formatForgeDetail(f ForgeInfo) string {
 		return ""
 	}
 	if f.Paused {
-		return warnStyle.Render("paused") + fmt.Sprintf(" (pid %d)", f.PID)
+		return style.Warn.Render("paused") + fmt.Sprintf(" (pid %d)", f.PID)
 	}
 	if f.PatrolCount > 0 || f.MergesTotal > 0 {
 		parts := fmt.Sprintf("pid %d, %d patrols, %d merged", f.PID, f.PatrolCount, f.MergesTotal)
@@ -500,17 +489,17 @@ func formatForgeDetail(f ForgeInfo) string {
 			parts += fmt.Sprintf(", %d queued", f.QueueDepth)
 		}
 		if f.Stale {
-			parts += warnStyle.Render(" (stale)")
+			parts += style.Warn.Render(" (stale)")
 		}
 		if f.Merging {
-			parts += okStyle.Render(" [merging]")
+			parts += style.OK.Render(" [merging]")
 		}
 		return parts
 	}
 	if f.PID > 0 {
 		detail := fmt.Sprintf("pid %d", f.PID)
 		if f.Merging {
-			detail += okStyle.Render(" [merging]")
+			detail += style.OK.Render(" [merging]")
 		}
 		return detail
 	}
@@ -527,7 +516,7 @@ func formatSentinelDetail(s SentinelInfo) string {
 			parts += fmt.Sprintf(", last %s ago", s.HeartbeatAge)
 		}
 		if s.Stale {
-			parts += warnStyle.Render(" (stale)")
+			parts += style.Warn.Render(" (stale)")
 		}
 		return parts
 	}
@@ -553,13 +542,13 @@ func stateStyle(state string, sessionAlive bool) string {
 	switch state {
 	case "working":
 		if sessionAlive {
-			return okStyle.Render("working")
+			return style.OK.Render("working")
 		}
-		return errorStyle.Render("working (dead!)")
+		return style.Error.Render("working (dead!)")
 	case "idle":
-		return dimStyle.Render("idle")
+		return style.Dim.Render("idle")
 	case "stalled":
-		return warnStyle.Render("stalled")
+		return style.Warn.Render("stalled")
 	default:
 		return state
 	}
@@ -570,11 +559,11 @@ func stateStyle(state string, sessionAlive bool) string {
 func sessionDisplay(state string, sessionAlive bool) string {
 	if state == "working" || state == "stalled" {
 		if sessionAlive {
-			return okStyle.Render("alive")
+			return style.OK.Render("alive")
 		}
-		return errorStyle.Render("dead")
+		return style.Error.Render("dead")
 	}
-	return dimStyle.Render("—")
+	return style.Dim.Render("—")
 }
 
 // nudgeDisplay renders a nudge count, or a dim dash if zero.
@@ -582,7 +571,7 @@ func nudgeDisplay(count int) string {
 	if count > 0 {
 		return fmt.Sprintf("%d", count)
 	}
-	return dimStyle.Render("—")
+	return style.Dim.Render("—")
 }
 
 func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
@@ -590,7 +579,7 @@ func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
 	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\tNUDGE\n")
 
 	for _, a := range agents {
-		work := dimStyle.Render("—")
+		work := style.Dim.Render("—")
 		if a.ActiveWrit != "" {
 			work = fmt.Sprintf("%s: %s", a.ActiveWrit, a.WorkTitle)
 		}
@@ -610,17 +599,17 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\tBRIEF\tNUDGE\n")
 
 	for _, e := range envoys {
-		work := dimStyle.Render("—")
+		work := style.Dim.Render("—")
 		if e.ActiveWrit != "" {
 			work = e.WorkTitle
 			// Show background tether count for multi-tether envoys.
 			bgCount := e.TetheredCount - 1 // exclude active writ
 			if bgCount > 0 {
-				work += dimStyle.Render(fmt.Sprintf(" [+%d tethered]", bgCount))
+				work += style.Dim.Render(fmt.Sprintf(" [+%d tethered]", bgCount))
 			}
 		}
 
-		brief := dimStyle.Render("—")
+		brief := style.Dim.Render("—")
 		if e.BriefAge != "" {
 			brief = e.BriefAge + " ago"
 		}
@@ -663,7 +652,7 @@ func renderTokens(b *strings.Builder, t TokenInfo) {
 		return
 	}
 
-	b.WriteString(headerStyle.Render("Tokens (24h)"))
+	b.WriteString(style.Header.Render("Tokens (24h)"))
 	b.WriteString("\n")
 
 	line := fmt.Sprintf("  %s in / %s out",
@@ -671,7 +660,7 @@ func renderTokens(b *strings.Builder, t TokenInfo) {
 		formatCompactTokens(t.OutputTokens))
 
 	if t.AgentCount > 0 {
-		line += fmt.Sprintf("  %s  %d agents", dimStyle.Render("•"), t.AgentCount)
+		line += fmt.Sprintf("  %s  %d agents", style.Dim.Render("•"), t.AgentCount)
 	}
 
 	b.WriteString(line)
@@ -680,7 +669,7 @@ func renderTokens(b *strings.Builder, t TokenInfo) {
 
 func renderMergeQueue(b *strings.Builder, mq MergeQueueInfo) {
 	if mq.Total == 0 {
-		b.WriteString(dimStyle.Render("  empty"))
+		b.WriteString(style.Dim.Render("  empty"))
 		b.WriteString("\n")
 		return
 	}
@@ -692,10 +681,10 @@ func renderMergeQueue(b *strings.Builder, mq MergeQueueInfo) {
 		parts = append(parts, fmt.Sprintf("%d in progress", mq.Claimed))
 	}
 	if mq.Failed > 0 {
-		parts = append(parts, errorStyle.Render(fmt.Sprintf("%d failed", mq.Failed)))
+		parts = append(parts, style.Error.Render(fmt.Sprintf("%d failed", mq.Failed)))
 	}
 	if mq.Merged > 0 {
-		parts = append(parts, okStyle.Render(fmt.Sprintf("%d merged", mq.Merged)))
+		parts = append(parts, style.OK.Render(fmt.Sprintf("%d merged", mq.Merged)))
 	}
 	b.WriteString(fmt.Sprintf("  %s\n", strings.Join(parts, ", ")))
 }
@@ -710,12 +699,12 @@ func renderWorldSummary(b *strings.Builder, ws *WorldStatus) {
 	}
 	parts += fmt.Sprintf(" | %d working, %d idle", ws.Summary.Working, ws.Summary.Idle)
 	if ws.Summary.Stalled > 0 {
-		parts += warnStyle.Render(fmt.Sprintf(", %d stalled", ws.Summary.Stalled))
+		parts += style.Warn.Render(fmt.Sprintf(", %d stalled", ws.Summary.Stalled))
 	}
 	if ws.Summary.Dead > 0 {
-		parts += errorStyle.Render(fmt.Sprintf(", %d dead", ws.Summary.Dead))
+		parts += style.Error.Render(fmt.Sprintf(", %d dead", ws.Summary.Dead))
 	}
-	b.WriteString(dimStyle.Render(parts))
+	b.WriteString(style.Dim.Render(parts))
 	b.WriteString("\n")
 }
 
@@ -726,15 +715,15 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 	var b strings.Builder
 
 	// Header — world-focused.
-	b.WriteString(headerStyle.Render(fmt.Sprintf("World: %s", ws.World)))
+	b.WriteString(style.Header.Render(fmt.Sprintf("World: %s", ws.World)))
 	b.WriteString("  ")
 	b.WriteString(healthBadge(ws.HealthString()))
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render(config.WorldDir(ws.World)))
+	b.WriteString(style.Dim.Render(config.WorldDir(ws.World)))
 	b.WriteString("\n\n")
 
 	// Sphere-level processes.
-	b.WriteString(headerStyle.Render("Sphere Processes"))
+	b.WriteString(style.Header.Render("Sphere Processes"))
 	b.WriteString("\n")
 	renderProcess(&b, "Prefect", ws.Prefect.Running, true,
 		formatPrefectDetail(ws.Prefect))
@@ -752,7 +741,7 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 	b.WriteString("\n")
 
 	// World processes (Forge, Sentinel, Governor — not Prefect/Chronicle).
-	b.WriteString(headerStyle.Render("World Processes"))
+	b.WriteString(style.Header.Render("World Processes"))
 	b.WriteString("\n")
 	renderProcess(&b, "Forge", ws.Forge.Running, false,
 		formatForgeDetail(ws.Forge))
@@ -764,7 +753,7 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 
 	// Outposts (role=outpost only).
 	if len(ws.Agents) > 0 {
-		b.WriteString(headerStyle.Render(fmt.Sprintf("Outposts (%d)", len(ws.Agents))))
+		b.WriteString(style.Header.Render(fmt.Sprintf("Outposts (%d)", len(ws.Agents))))
 		b.WriteString("\n")
 		renderAgentsTable(&b, ws.Agents)
 		b.WriteString("\n")
@@ -772,7 +761,7 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 
 	// Envoys.
 	if len(ws.Envoys) > 0 {
-		b.WriteString(headerStyle.Render(fmt.Sprintf("Envoys (%d)", len(ws.Envoys))))
+		b.WriteString(style.Header.Render(fmt.Sprintf("Envoys (%d)", len(ws.Envoys))))
 		b.WriteString("\n")
 		renderEnvoysTable(&b, ws.Envoys)
 		b.WriteString("\n")
@@ -780,20 +769,20 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 
 	// Show "no agents" if neither outposts nor envoys exist.
 	if len(ws.Agents) == 0 && len(ws.Envoys) == 0 {
-		b.WriteString(dimStyle.Render("No agents registered."))
+		b.WriteString(style.Dim.Render("No agents registered."))
 		b.WriteString("\n")
 	}
 
 	// Caravans.
 	if len(ws.Caravans) > 0 {
-		b.WriteString(headerStyle.Render("Caravans"))
+		b.WriteString(style.Header.Render("Caravans"))
 		b.WriteString("\n")
 		renderCaravansTable(&b, ws.Caravans)
 		b.WriteString("\n")
 	}
 
 	// Merge queue.
-	b.WriteString(headerStyle.Render("Merge Queue"))
+	b.WriteString(style.Header.Render("Merge Queue"))
 	b.WriteString("\n")
 	renderMergeQueue(&b, ws.MergeQueue)
 	b.WriteString("\n")
@@ -825,17 +814,17 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 func RenderWorldConfig(world string, cfg config.WorldConfig) string {
 	var b strings.Builder
 
-	b.WriteString(headerStyle.Render("Config"))
+	b.WriteString(style.Header.Render("Config"))
 	b.WriteString("\n")
 
 	sourceDisplay := cfg.World.SourceRepo
 	if sourceDisplay == "" {
-		sourceDisplay = dimStyle.Render("(none)")
+		sourceDisplay = style.Dim.Render("(none)")
 	}
 	b.WriteString(fmt.Sprintf("  Source repo:    %s\n", sourceDisplay))
 
 	if cfg.Agents.Capacity == 0 {
-		b.WriteString(fmt.Sprintf("  Agent capacity: %s\n", dimStyle.Render("unlimited")))
+		b.WriteString(fmt.Sprintf("  Agent capacity: %s\n", style.Dim.Render("unlimited")))
 	} else {
 		b.WriteString(fmt.Sprintf("  Agent capacity: %d\n", cfg.Agents.Capacity))
 	}
@@ -861,7 +850,7 @@ func RenderWorldConfig(world string, cfg config.WorldConfig) string {
 
 	b.WriteString(fmt.Sprintf("  Quality gates:  %d\n", len(cfg.Forge.QualityGates)))
 
-	namePool := dimStyle.Render("(default)")
+	namePool := style.Dim.Render("(default)")
 	if cfg.Agents.NamePoolPath != "" {
 		namePool = cfg.Agents.NamePoolPath
 	}

@@ -562,7 +562,7 @@ var worldSummaryCmd = &cobra.Command{
 			if os.IsNotExist(err) {
 				fmt.Printf("No world summary found for world %q\n", world)
 				fmt.Printf("Start a governor first: sol governor start --world=%s\n", world)
-				return nil
+				return &exitError{code: 1}
 			}
 			return fmt.Errorf("failed to read world summary: %w", err)
 		}
