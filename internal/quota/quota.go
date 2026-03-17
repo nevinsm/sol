@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
@@ -120,11 +119,6 @@ func statePath() string {
 	return filepath.Join(config.RuntimeDir(), "quota.json")
 }
 
-// lockPath returns the path to the quota lock file.
-func lockPath() string {
-	return filepath.Join(config.RuntimeDir(), "quota.lock")
-}
-
 // Load reads the quota state from disk.
 // Returns an empty state if the file does not exist.
 func Load() (*State, error) {
@@ -152,24 +146,13 @@ func Load() (*State, error) {
 	return &state, nil
 }
 
-// Save writes the quota state to disk with flock protection.
+// Save writes the quota state to disk. Callers MUST hold AcquireLock() before
+// calling Save to ensure mutual exclusion across all quota state mutations.
 func Save(state *State) error {
 	dir := config.RuntimeDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create quota runtime directory: %w", err)
 	}
-
-	// Acquire flock.
-	lockFile, err := os.OpenFile(lockPath(), os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return fmt.Errorf("failed to open quota lock: %w", err)
-	}
-	defer lockFile.Close()
-
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
-		return fmt.Errorf("failed to acquire quota lock: %w", err)
-	}
-	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
 
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {

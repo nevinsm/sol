@@ -23,6 +23,7 @@ type ScanResult struct {
 func ScanWorld(world string) ([]ScanResult, error) {
 	mgr := session.New()
 
+	// List sessions before acquiring the lock to minimise lock hold time.
 	sessions, err := mgr.List()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sessions: %w", err)

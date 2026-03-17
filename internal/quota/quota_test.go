@@ -128,9 +128,15 @@ func TestStateSaveLoad(t *testing.T) {
 		},
 	}
 
+	lock, _, err := AcquireLock()
+	if err != nil {
+		t.Fatalf("AcquireLock failed: %v", err)
+	}
 	if err := Save(state); err != nil {
+		lock.Release()
 		t.Fatalf("Save failed: %v", err)
 	}
+	lock.Release()
 
 	// Verify file exists.
 	path := filepath.Join(tmpDir, ".runtime", "quota.json")
