@@ -73,6 +73,38 @@ func TestLogNotifier(t *testing.T) {
 	}
 }
 
+func TestLogNotifierRenotify(t *testing.T) {
+	dir := t.TempDir()
+	logger := events.NewLogger(dir)
+
+	n := NewLogNotifier(logger)
+
+	// Set LastNotifiedAt to simulate a re-notification.
+	esc := testEscalation()
+	ts := time.Date(2026, 2, 27, 12, 0, 0, 0, time.UTC)
+	esc.LastNotifiedAt = &ts
+
+	err := n.Notify(context.Background(), esc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-notification should emit consul_esc_renotified, not escalation_created.
+	data, err := os.ReadFile(filepath.Join(dir, ".events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "escalation_created") {
+		t.Fatalf("re-notification must not emit escalation_created, got: %s", data)
+	}
+	if !strings.Contains(string(data), "consul_esc_renotified") {
+		t.Fatalf("expected consul_esc_renotified event in feed, got: %s", data)
+	}
+	if !strings.Contains(string(data), "esc-test0001") {
+		t.Fatalf("expected escalation ID in feed, got: %s", data)
+	}
+}
+
 func TestLogNotifierNilLogger(t *testing.T) {
 	n := NewLogNotifier(nil)
 

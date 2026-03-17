@@ -249,15 +249,18 @@ func TestFormatCycleTime(t *testing.T) {
 
 func TestDeduplicateEvents(t *testing.T) {
 	now := time.Now().UTC()
+
+	// Same action + same detail within 2s → dedup to 1; different detail → keep both.
 	events := []TimelineEvent{
 		{Timestamp: now, Action: "cast", Detail: "to Toast"},
-		{Timestamp: now.Add(500 * time.Millisecond), Action: "cast", Detail: "to Toast (sol)"},
+		{Timestamp: now.Add(500 * time.Millisecond), Action: "cast", Detail: "to Pepper"},
+		{Timestamp: now.Add(700 * time.Millisecond), Action: "cast", Detail: "to Toast"}, // dup of first
 		{Timestamp: now.Add(10 * time.Second), Action: "resolved", Detail: "by Toast"},
 	}
 
 	result := deduplicateEvents(events)
-	if len(result) != 2 {
-		t.Errorf("expected 2 events after dedup, got %d", len(result))
+	if len(result) != 3 {
+		t.Errorf("expected 3 events after dedup, got %d: %v", len(result), result)
 	}
 }
 
