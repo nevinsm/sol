@@ -204,6 +204,15 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	}
 	defer agentLock.Release()
 
+	// Re-read agent state inside the locked section to avoid a TOCTOU race:
+	// FindIdleAgent was called before lock acquisition, so a concurrent Cast
+	// may have selected the same idle agent, dispatched it, and updated its
+	// state between our FindIdleAgent call and lock acquisition above.
+	agent, err = sphereStore.GetAgent(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-read agent %q: %w", agentID, err)
+	}
+
 	// 4. Determine if this is a re-cast (crash recovery).
 	// Full match: all four fields consistent (clean re-cast).
 	// Partial match: writ is tethered to this agent but agent state is stale.
