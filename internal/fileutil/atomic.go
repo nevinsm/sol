@@ -5,16 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // AtomicWrite writes data to path atomically via a temp file, fsync, and rename.
-// The temp file is created as path+".tmp" in the same directory.
-// On any failure the temp file is removed before returning the error.
-// This ensures readers never see a partially-written file.
+// The temp file is created with a unique name in the same directory as path so
+// that concurrent callers each operate on their own temp file and the final
+// rename is still atomic. On any failure the temp file is removed before
+// returning the error. This ensures readers never see a partially-written file.
 func AtomicWrite(path string, data []byte, perm os.FileMode) error {
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
+	f, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
 	if err != nil {
+		return fmt.Errorf("failed to write %s: %w", path, err)
+	}
+	tmp := f.Name()
+	// Apply requested permissions; CreateTemp uses 0600 by default.
+	if err := os.Chmod(tmp, perm); err != nil {
+		f.Close()
+		os.Remove(tmp)
 		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
 	if _, err := f.Write(data); err != nil {
