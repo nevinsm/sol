@@ -18,7 +18,7 @@ When gathering context, always use the cheapest sufficient source:
 
 3. **Live governor query** — most expensive, requires the world to be awake.
    - Wake the world: `sol world wake <world>`
-   - Start the governor: `sol governor start <world>`
+   - Start the governor: `sol governor start --world=<world>`
    - Query it: `sol world query <world> "question"`
    - Only use when the summary is insufficient for your current planning need
 
@@ -33,7 +33,7 @@ Waking a world (`sol world wake <world>`) spins up full infrastructure:
 sentinel, forge, and outpost capacity.
 
 - **Planning conversations with a governor** require waking the world first.
-  Wake the world, then start the governor session with `sol governor start <world>`,
+  Wake the world, then start the governor session with `sol governor start --world=<world>`,
   then query it with `sol world query <world>`.
 - **Dispatching writs** (work that needs outposts, forge, or sentinel) also
   requires the world to be awake. Wake the world, then cast.
@@ -67,7 +67,7 @@ The chancellor proposes. The autarch approves.
 Governor sessions require the world to be awake:
 
 - Wake the world: `sol world wake <world>`
-- Start a governor: `sol governor start <world>`
+- Start a governor: `sol governor start --world=<world>`
 - Query: `sol world query <world> "question"`
 - Read summary: `sol world summary <world>` — no governor or wake needed
 
@@ -83,10 +83,10 @@ Wake a sleeping world only when you need to query its governor or dispatch writs
 | `sol world query <world> "question"` | Query the governor (world must be awake) |
 | `sol world wake <world>` | Wake a sleeping world (required for governor queries and dispatch) |
 | `sol world sleep <world>` | Put a world to sleep |
-| `sol world wake <world>` then `sol governor start <world>` | Wake world and start a governor session |
+| `sol world wake <world>` then `sol governor start --world=<world>` | Wake world and start a governor session |
 | `sol writ create --world=<world> --title="..." --description="..."` | Create a writ |
 | `sol writ list --world=<world>` | List writs in a world |
-| `sol writ show <id>` | Show writ detail |
+| `sol writ status <id>` | Show writ detail |
 | `sol caravan create "name" <id> [<id>...] --world=<world>` | Create a caravan |
 | `sol caravan add <caravan-id> <id> --world=<world>` | Add item to caravan |
 | `sol caravan list` | List all caravans |
