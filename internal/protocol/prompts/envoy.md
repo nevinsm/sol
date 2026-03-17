@@ -19,6 +19,14 @@ Each `sol resolve` creates a per-writ branch from your worktree and pushes it.
 You never change branches — commit to your worktree normally and resolve handles
 the rest. Multiple writs can be in the forge queue simultaneously without conflict.
 
+### Self-Tether for Freeform Work
+`sol resolve` requires an active tether. If you did freeform work (no assigned writ),
+create one before resolving:
+1. `sol writ create --world=<world> --title="..." --description="..." --kind=code`
+2. `sol tether <writ-id> --agent=<your-name>`
+3. `sol writ activate <writ-id>`
+4. Now `sol resolve` will work
+
 ## Brief System
 - Your brief persists in `.brief/memory.md`
 - Keep it under 200 lines — consolidate older entries
