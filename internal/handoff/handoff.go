@@ -55,6 +55,17 @@ func HandoffPath(world, agentName, role string) string {
 	return filepath.Join(config.AgentDir(world, agentName, role), ".handoff.json")
 }
 
+// isResolveInProgress returns true if any resolve lock file exists in the agent directory.
+// Checks both the shared .resolve_in_progress file (outpost agents) and per-writ
+// .resolve_in_progress.{writID} files (persistent agents with concurrent resolves).
+func isResolveInProgress(agentDir string) bool {
+	if _, err := os.Stat(filepath.Join(agentDir, ".resolve_in_progress")); err == nil {
+		return true
+	}
+	matches, err := filepath.Glob(filepath.Join(agentDir, ".resolve_in_progress.*"))
+	return err == nil && len(matches) > 0
+}
+
 // HasHandoff returns true if an unconsumed handoff file exists for this agent.
 func HasHandoff(world, agentName, role string) bool {
 	state, err := Read(world, agentName, role)
@@ -644,8 +655,8 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// Check for resolve lock — if resolve is in progress, skip the handoff.
 	// Resolve is about to kill the session anyway; we just need the context
 	// to survive long enough to finish the resolve sequence.
-	resolveLock := filepath.Join(config.AgentDir(opts.World, opts.AgentName, role), ".resolve_in_progress")
-	if _, err := os.Stat(resolveLock); err == nil {
+	// Checks both the shared lock (outpost) and any per-writ lock (persistent agents).
+	if isResolveInProgress(config.AgentDir(opts.World, opts.AgentName, role)) {
 		fmt.Fprintf(os.Stderr, "handoff: resolve in progress, deferring to compaction\n")
 		return nil
 	}
