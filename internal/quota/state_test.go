@@ -1,8 +1,10 @@
 package quota
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -51,9 +53,15 @@ func TestSaveAndLoadViaLock(t *testing.T) {
 		PausedSessions: make(map[string]PausedSession),
 	}
 
-	if err := Save(state); err != nil {
+	lock, _, err := AcquireLock()
+	if err != nil {
 		t.Fatal(err)
 	}
+	if err := Save(state); err != nil {
+		lock.Release()
+		t.Fatal(err)
+	}
+	lock.Release()
 
 	loaded, err := Load()
 	if err != nil {
@@ -228,6 +236,52 @@ func TestMarkLastUsed(t *testing.T) {
 
 	if state.Accounts["test"].LastUsed == nil {
 		t.Fatal("expected non-nil LastUsed after MarkLastUsed")
+	}
+}
+
+// TestConcurrentAcquireLockNoLostWrites verifies that concurrent
+// AcquireLock+Load+modify+Save+Release cycles never lose writes.
+// Each goroutine adds a unique account; all accounts must survive.
+func TestConcurrentAcquireLockNoLostWrites(t *testing.T) {
+	setupTestDir(t)
+
+	const n = 10
+	var wg sync.WaitGroup
+	wg.Add(n)
+
+	for i := 0; i < n; i++ {
+		handle := fmt.Sprintf("account-%d", i)
+		go func(h string) {
+			defer wg.Done()
+			lock, state, err := AcquireLock()
+			if err != nil {
+				t.Errorf("AcquireLock failed: %v", err)
+				return
+			}
+			state.Accounts[h] = &AccountState{Status: Available}
+			if err := Save(state); err != nil {
+				lock.Release()
+				t.Errorf("Save failed: %v", err)
+				return
+			}
+			lock.Release()
+		}(handle)
+	}
+
+	wg.Wait()
+
+	// All accounts must be present — no lost writes.
+	lock, state, err := AcquireLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+
+	for i := 0; i < n; i++ {
+		handle := fmt.Sprintf("account-%d", i)
+		if state.Accounts[handle] == nil {
+			t.Errorf("account %q was lost in concurrent writes", handle)
+		}
 	}
 }
 
