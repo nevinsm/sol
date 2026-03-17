@@ -272,8 +272,8 @@ func TestEnvoyDir(t *testing.T) {
 	}{
 		{"EnvoyDir", EnvoyDir, "/tmp/sol-test/myworld/envoys/Echo"},
 		{"WorktreePath", WorktreePath, "/tmp/sol-test/myworld/envoys/Echo/worktree"},
-		{"BriefDir", BriefDir, "/tmp/sol-test/myworld/envoys/Echo/.brief"},
-		{"BriefPath", BriefPath, "/tmp/sol-test/myworld/envoys/Echo/.brief/memory.md"},
+		{"BriefDir", BriefDir, "/tmp/sol-test/myworld/envoys/Echo/worktree/.brief"},
+		{"BriefPath", BriefPath, "/tmp/sol-test/myworld/envoys/Echo/worktree/.brief/memory.md"},
 		{"PersonaPath", PersonaPath, "/tmp/sol-test/myworld/envoys/Echo/persona.md"},
 	}
 
