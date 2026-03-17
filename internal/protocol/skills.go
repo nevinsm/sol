@@ -65,6 +65,11 @@ func RoleSkills(role string) []string {
 // InstallSkills generates and writes .claude/skills/{name}/SKILL.md for each
 // role-appropriate skill. Stale skill directories (from a previous role set)
 // are removed.
+//
+// NOTE: This function is test scaffolding only. Production startup uses
+// adapter.InstallSkills (via the adapter interface) which writes skill files
+// using []adapter.Skill slices built by BuildSkills. Do not add new callers —
+// use BuildSkills + adapter.InstallSkills instead.
 func InstallSkills(dir string, ctx SkillContext) error {
 	skillsDir := filepath.Join(dir, ".claude", "skills")
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {

@@ -55,6 +55,11 @@ func RoleGuards(role string) []adapter.Guard {
 }
 
 // HookConfig represents the Claude Code settings.local.json structure for hooks.
+//
+// NOTE: HookConfig, HookMatcherGroup, HookHandler, HookOptions, BaseHooks, and
+// WriteHookSettings are test scaffolding only. Production startup uses the
+// role config -> startup.HookSet -> adapter.InstallHooks path. Do not add new
+// callers outside of tests — use the adapter methods instead.
 type HookConfig struct {
 	Hooks map[string][]HookMatcherGroup `json:"hooks"`
 }
