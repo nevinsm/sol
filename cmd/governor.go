@@ -256,8 +256,13 @@ type governorStatusSummary struct {
 }
 
 var governorStatusCmd = &cobra.Command{
-	Use:          "status",
-	Short:        "Show governor status",
+	Use:   "status",
+	Short: "Show governor status",
+	Long: `Show whether the governor session is running and its current state.
+
+Exit codes:
+  0 - Governor is running
+  1 - Governor is not running`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(governorStatusWorld)
@@ -303,10 +308,15 @@ var governorStatusCmd = &cobra.Command{
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
-			return printJSON(summary)
+			if err := printJSON(summary); err != nil {
+				return err
+			}
+		} else {
+			printGovernorStatus(summary)
 		}
-
-		printGovernorStatus(summary)
+		if !running {
+			return &exitError{code: 1}
+		}
 		return nil
 	},
 }

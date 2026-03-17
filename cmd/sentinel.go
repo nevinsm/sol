@@ -253,8 +253,13 @@ type sentinelStatusSummary struct {
 }
 
 var sentinelStatusCmd = &cobra.Command{
-	Use:          "status",
-	Short:        "Show sentinel status",
+	Use:   "status",
+	Short: "Show sentinel status",
+	Long: `Show whether the sentinel process is running and its health metrics.
+
+Exit codes:
+  0 - Sentinel is running
+  1 - Sentinel is not running`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(sentinelStatusWorld)
@@ -286,10 +291,15 @@ var sentinelStatusCmd = &cobra.Command{
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
-			return printJSON(summary)
+			if err := printJSON(summary); err != nil {
+				return err
+			}
+		} else {
+			printSentinelStatus(summary)
 		}
-
-		printSentinelStatus(summary)
+		if !running {
+			return &exitError{code: 1}
+		}
 		return nil
 	},
 }

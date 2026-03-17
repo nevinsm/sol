@@ -233,8 +233,13 @@ to the merge session, which only exists while a merge is in progress.`,
 }
 
 var forgeStatusCmd = &cobra.Command{
-	Use:          "status <world>",
-	Short:        "Show forge health summary",
+	Use:   "status <world>",
+	Short: "Show forge health summary",
+	Long: `Show whether the forge process is running and its merge queue health.
+
+Exit codes:
+  0 - Forge is running
+  1 - Forge is not running`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -337,10 +342,15 @@ var forgeStatusCmd = &cobra.Command{
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
-			return printJSON(summary)
+			if err := printJSON(summary); err != nil {
+				return err
+			}
+		} else {
+			printForgeStatus(summary)
 		}
-
-		printForgeStatus(summary)
+		if !running {
+			return &exitError{code: 1}
+		}
 		return nil
 	},
 }
