@@ -360,7 +360,9 @@ func Respawn(role, world, agent string, opts LaunchOpts) (string, error) {
 		slog.Info("found resume state, using startup.Resume",
 			"agent", agent, "world", world, "reason", resumeState.Reason)
 		sessName, err := Resume(*cfg, world, agent, *resumeState, opts)
-		ClearResumeState(world, agent, role)
+		if err == nil {
+			ClearResumeState(world, agent, role)
+		}
 		return sessName, err
 	}
 
