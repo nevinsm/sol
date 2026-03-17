@@ -577,7 +577,7 @@ flags.
 
 ## Embedded Workflow Catalog
 
-Sol ships with nine embedded workflows covering common work patterns.
+Sol ships with eight embedded workflows covering common work patterns.
 
 ### 1. default-work
 
