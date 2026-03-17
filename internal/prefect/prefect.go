@@ -648,12 +648,18 @@ func (s *Prefect) checkSentinelHealth(world string) {
 	// Kill existing process.
 	if proc, err := os.FindProcess(pid); err == nil {
 		_ = proc.Signal(syscall.SIGTERM)
-		// Wait briefly for graceful exit.
-		time.Sleep(500 * time.Millisecond)
+		// Wait up to 5s for graceful exit (matches checkConsul pattern).
+		for i := 0; i < 10; i++ {
+			time.Sleep(500 * time.Millisecond)
+			if !IsRunning(pid) {
+				break
+			}
+		}
 		if IsRunning(pid) {
 			_ = proc.Signal(syscall.SIGKILL)
 		}
 	}
+	// Always clear PID file — even after SIGKILL the process is gone.
 	sentinel.ClearPID(world)
 
 	// Restart.

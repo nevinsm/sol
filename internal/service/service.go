@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -99,16 +100,20 @@ func CheckLinux() error {
 // LingerEnabled checks if loginctl enable-linger is set for the current user.
 func LingerEnabled() bool {
 	uid := fmt.Sprintf("%d", os.Getuid())
-	path := filepath.Join("/var/lib/systemd/linger", os.Getenv("USER"))
-	if _, err := os.Stat(path); err == nil {
-		return true
-	}
-	// Fallback: check via loginctl show-user.
+	// Prefer loginctl output as the authoritative source — it works correctly
+	// in containers and sudo environments where $USER may not match the login name.
 	out, err := exec.Command("loginctl", "show-user", uid, "--property=Linger").CombinedOutput()
+	if err == nil {
+		return strings.TrimSpace(string(out)) == "Linger=yes"
+	}
+	// Fallback: check linger file by username from os/user (more reliable than $USER).
+	u, err := user.Current()
 	if err != nil {
 		return false
 	}
-	return strings.TrimSpace(string(out)) == "Linger=yes"
+	path := filepath.Join("/var/lib/systemd/linger", u.Username)
+	_, statErr := os.Stat(path)
+	return statErr == nil
 }
 
 // Install generates unit files, writes them to ~/.config/systemd/user/,
@@ -213,7 +218,7 @@ func Status() error {
 func systemctl(args ...string) error {
 	fullArgs := append([]string{"--user"}, args...)
 	cmd := exec.Command("systemctl", fullArgs...)
-	cmd.Stdout = os.Stderr
+	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("systemctl %s failed: %w", strings.Join(args, " "), err)
