@@ -23,7 +23,7 @@ structure; the action layer names the mechanisms.
 | **Outpost** | A worker agent's station within a world. Directory at `$SOL_HOME/{world}/outposts/{agent}/`. | Polecat |
 | **Envoy** | A persistent, human-directed agent. Maintains context across sessions via a brief. Directory at `$SOL_HOME/{world}/envoys/{name}/`. | Crew |
 | **Governor** | Per-world work coordinator. Singleton Claude session that handles natural language dispatch, caravan creation, and cast coordination. Directory at `$SOL_HOME/{world}/governor/`. | Mayor (partial) |
-| **Senate** | Sphere-scoped work planner. Claude session for cross-world planning — creates writs, caravans, and dependencies across worlds. Queries governors for world context. Directory at `$SOL_HOME/senate/`. | *(new in Arc 4)* |
+| **Chancellor** | Sphere-scoped work planner. Claude session for cross-world planning — creates writs, caravans, and dependencies across worlds. Queries governors for world context. Directory at `$SOL_HOME/chancellor/`. Session: `sol-chancellor`. | *(new in Arc 4)* |
 | **Writ** | A unit of work with a kind (code or analysis). Created in the store, assigned to agents via cast, tracked through tether/resolve lifecycle. Kind determines the resolve path — code writs flow through forge, non-code writs close directly. Stored in per-world database. | *(was: work item)* |
 | **Sphere** | The global registry connecting all worlds. Stores agents, messages, escalations, caravans. Database: `sphere.db`. | Town |
 
@@ -44,8 +44,8 @@ structure; the action layer names the mechanisms.
 | **Tether** | The durability primitive. A directory at `$SOL_HOME/{world}/{role}s/{agent}/.tether/` containing one file per bound writ. For outposts, contains a single file; for persistent agents (envoys, governors), may contain multiple files representing concurrent writ bindings. If any tether file exists, work is assigned. See ADR-0025. | Hook |
 | **Active Writ** | The writ a persistent agent is currently focused on. Tracked in the sphere DB `agents.active_writ` column. Set by `sol cast`, `sol tether` (first tether only), and `sol writ activate`. Only one writ can be active because Claude Code caches the system prompt at session start. | *(new)* |
 | **Charter** | Per-world configuration file (`world.toml`). Defines source repo, agent capacity, model tier, and forge settings. Layered with global `sol.toml`. | *(new in Arc 1)* |
-| **Brief** | An envoy's, governor's, or senate's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start and after compaction, save-checked on stop. GLASS-inspectable. | *(new in Arc 3)* |
-| **World Summary** | Governor-maintained external-facing summary of a world. Structured file at `.brief/world-summary.md` with prescribed sections (Project, Architecture, Priorities, Constraints). Read by Senate and the autarch via `sol world summary`. | *(new in Arc 3)* |
+| **Brief** | An envoy's, governor's, or chancellor's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start and after compaction, save-checked on stop. GLASS-inspectable. | *(new in Arc 3)* |
+| **World Summary** | Governor-maintained external-facing summary of a world. Structured file at `.brief/world-summary.md` with prescribed sections (Project, Architecture, Priorities, Constraints). Read by Chancellor and the autarch via `sol world summary`. | *(new in Arc 3)* |
 
 ## Processes
 
@@ -104,4 +104,4 @@ For contributors familiar with the Gastown prototype naming:
 | prime | prime (unchanged) |
 | work item | writ |
 | crew | envoy |
-| mayor | governor (dispatch) + senate (cross-world planning) + consul (coordination) + sol init (onboarding) |
+| mayor | governor (dispatch) + chancellor (cross-world planning) + consul (coordination) + sol init (onboarding) |

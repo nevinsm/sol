@@ -1,6 +1,6 @@
 # ADR-0011: Senate as Sphere-Scoped Planning Session
 
-Status: accepted
+Status: accepted (component renamed to Chancellor in ADR-0029)
 Date: 2026-03-01
 Arc: 4
 
@@ -54,7 +54,7 @@ when the autarch needs it and doesn't when they don't.
 - Reads governor-maintained world summaries for cross-world context
 - Queries governors interactively for world-specific knowledge
 - Proposes writ breakdowns across worlds
-- Creates writs via `sol store create --world=X`
+- Creates writs via `sol writ create --world=X`
 - Sets up cross-world dependencies via caravan phases
 - Creates caravans grouping related cross-world items
 - Delegates per-world dispatch to governors
