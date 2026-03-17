@@ -1496,21 +1496,18 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		commitCmd := exec.CommandContext(commitCtx, "git", "-C", worktreeDir, "commit", "-m", commitMsg)
 		commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
 
-		// git push: envoy creates a per-writ named branch and pushes it;
+		// git push: envoy pushes HEAD to a per-writ remote ref via refspec;
 		// other roles push HEAD (which tracks the pre-created branch).
 		pushCtx, pushCancel := context.WithTimeout(ctx, GitPushTimeout)
 		defer pushCancel()
 		var pushCmd *exec.Cmd
 		if agent.Role == "envoy" {
-			// Create per-writ branch at current HEAD, then push the named branch.
-			// The envoy worktree stays on whatever branch it is on.
-			branchCtx, branchCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
-			defer branchCancel()
-			branchCmd := exec.CommandContext(branchCtx, "git", "-C", worktreeDir, "branch", "-f", branchName, "HEAD")
-			if out, err := branchCmd.CombinedOutput(); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: git branch -f failed: %s\n", strings.TrimSpace(string(out)))
-			}
-			pushCmd = exec.CommandContext(pushCtx, "git", "-C", worktreeDir, "push", "origin", branchName)
+			// Push HEAD to the per-writ remote ref without creating a local branch.
+			// (A local branch cannot coexist with the persistent envoy branch because
+			// git stores refs as a filesystem hierarchy and the envoy branch name is a
+			// prefix of the per-writ branch name.)
+			pushCmd = exec.CommandContext(pushCtx, "git", "-C", worktreeDir,
+				"push", "origin", "HEAD:refs/heads/"+branchName)
 		} else {
 			pushCmd = exec.CommandContext(pushCtx, "git", "-C", worktreeDir, "push", "origin", "HEAD")
 		}
