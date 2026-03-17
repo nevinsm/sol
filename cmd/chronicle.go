@@ -194,11 +194,11 @@ Exit codes:
 				}
 				data, _ := json.Marshal(out)
 				fmt.Println(string(data))
-				return nil
-			}
-			fmt.Println("Chronicle is not running.")
-			if offset >= 0 {
-				fmt.Printf("Last checkpoint offset: %d\n", offset)
+			} else {
+				fmt.Println("Chronicle is not running.")
+				if offset >= 0 {
+					fmt.Printf("Last checkpoint offset: %d\n", offset)
+				}
 			}
 			return &exitError{code: 1}
 		}

@@ -25,7 +25,13 @@ Exit code 0 if all checks pass, 1 if any check fails.`,
 		report := doctor.RunAll()
 
 		if doctorJSON {
-			return printJSON(report)
+			if err := printJSON(report); err != nil {
+				return err
+			}
+			if !report.AllPassed() {
+				return &exitError{code: 1}
+			}
+			return nil
 		}
 
 		// Human-readable output.
