@@ -38,6 +38,10 @@ type mockSessionStarter struct {
 	}
 }
 
+func (m *mockSessionStarter) Exists(name string) bool {
+	return false
+}
+
 func (m *mockSessionStarter) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	if m.startErr != nil {
 		return m.startErr
