@@ -164,6 +164,50 @@ func TestBackupDatabaseNonexistent(t *testing.T) {
 	}
 }
 
+// TestBackupDatabaseCapturesWALData verifies that BackupDatabase checkpoints the
+// WAL before copying, so committed transactions are present in the backup even
+// when an active store connection is open (preventing automatic checkpoint on close).
+func TestBackupDatabaseCapturesWALData(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	// Open a world store and write data. Keep the connection open to simulate
+	// an active sol process that might prevent auto-checkpoint on close.
+	s, err := OpenWorld("walcapturetest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writID, err := s.CreateWrit("WAL data item", "code", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Hold the connection open — do not close before backup.
+	defer s.Close()
+
+	// BackupDatabase must checkpoint the WAL so all committed data is in the backup.
+	dbPath := filepath.Join(dir, ".store", "walcapturetest.db")
+	backupPath, err := BackupDatabase(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Open the backup and verify the committed writ is present.
+	backupStore, err := OpenNoMigrate(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backupStore.Close()
+
+	w, err := backupStore.GetWrit(writID)
+	if err != nil {
+		t.Fatalf("writ not found in backup (WAL data missing): %v", err)
+	}
+	if w.Title != "WAL data item" {
+		t.Errorf("backup writ title = %q, want %q", w.Title, "WAL data item")
+	}
+}
+
 func TestCurrentSchemaConstants(t *testing.T) {
 	// Verify constants are positive and match the expected values.
 	if CurrentWorldSchema != 10 {
