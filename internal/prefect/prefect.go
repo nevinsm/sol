@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/chronicle"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/consul"
@@ -48,6 +49,8 @@ type Config struct {
 	MassDeathWindow    time.Duration // default: 30 seconds
 	DegradedCooldown   time.Duration // default: 5 minutes
 
+	MaxRespawns int // max consecutive respawn attempts before permanent stall (0 = unlimited, default: 5)
+
 	Worlds []string // if non-empty, only supervise these worlds (sleeping ones still skipped)
 
 	ConsulEnabled      bool          // whether to monitor the consul (default: false)
@@ -57,6 +60,7 @@ type Config struct {
 
 	ForgeHeartbeatMax  time.Duration // max forge heartbeat age before restart (default: 5 minutes)
 	LedgerHeartbeatMax time.Duration // max ledger heartbeat age before restart (default: 5 minutes)
+	BrokerHeartbeatMax time.Duration // max broker heartbeat age before restart (default: 5 minutes)
 
 	ChronicleHeartbeatMax time.Duration // max chronicle heartbeat age before restart (default: 5 minutes)
 	SentinelHeartbeatMax  time.Duration // max sentinel heartbeat age before restart (default: 15 minutes)
@@ -72,11 +76,14 @@ func DefaultConfig() Config {
 		MassDeathWindow:    30 * time.Second,
 		DegradedCooldown:   5 * time.Minute,
 
+		MaxRespawns: 5,
+
 		ConsulHeartbeatMax: 15 * time.Minute,
 		ConsulCommand:      "sol consul run",
 
 		ForgeHeartbeatMax:     5 * time.Minute,
 		LedgerHeartbeatMax:    5 * time.Minute,
+		BrokerHeartbeatMax:    5 * time.Minute,
 		ChronicleHeartbeatMax: 5 * time.Minute,
 		SentinelHeartbeatMax:  15 * time.Minute,
 	}
@@ -331,6 +338,21 @@ func (s *Prefect) respawn(agent store.Agent) {
 	worktreeDir := worktreeForAgent(agent)
 
 	restartCount := s.backoff[agentID] + 1
+
+	// If max respawns is configured and exceeded, permanently stall the agent.
+	// Consul's stale tether detection will recover the writ.
+	if s.cfg.MaxRespawns > 0 && restartCount > s.cfg.MaxRespawns {
+		s.logger.Warn("agent exceeded max respawns, permanently stalling",
+			"agent", agent.Name, "world", agent.World,
+			"restart_count", restartCount, "max_respawns", s.cfg.MaxRespawns)
+		if err := s.sphereStore.UpdateAgentState(agentID, "stalled", agent.ActiveWrit); err != nil {
+			s.logger.Error("failed to set agent stalled", "agent", agent.Name, "error", err)
+		}
+		delete(s.backoff, agentID)
+		delete(s.lastStalled, agentID)
+		return
+	}
+
 	delay := backoffDuration(restartCount)
 
 	// Check if enough time has passed since we stalled this agent.
@@ -700,6 +722,9 @@ func (s *Prefect) checkSphereDaemons() {
 
 	// Check ledger heartbeat staleness (ledger is a detached process).
 	s.checkLedgerHealth()
+
+	// Check broker heartbeat staleness (broker is a detached process).
+	s.checkBrokerHealth()
 }
 
 // checkLedgerHealth reads the ledger heartbeat and restarts if stale.
@@ -760,6 +785,71 @@ func (s *Prefect) checkLedgerHealth() {
 		if s.eventLog != nil {
 			s.eventLog.Emit(events.EventRespawn, "prefect", "ledger", "both", map[string]any{
 				"daemon": "ledger",
+				"type":   "sphere",
+				"reason": "heartbeat_stale",
+			})
+		}
+	}
+}
+
+// checkBrokerHealth reads the broker heartbeat and restarts if stale.
+// The broker runs as a detached Go process (not a tmux session).
+func (s *Prefect) checkBrokerHealth() {
+	if s.cfg.SolBinary == "" {
+		return
+	}
+
+	// If the broker PID is not alive, checkSphereDaemons already handled restart.
+	pid := ReadDaemonPID("broker")
+	if pid <= 0 || !IsRunning(pid) {
+		return
+	}
+
+	hb, err := broker.ReadHeartbeat()
+	if err != nil {
+		s.logger.Warn("failed to read broker heartbeat", "error", err)
+		return
+	}
+
+	if hb == nil {
+		// No heartbeat yet (broker just started) — give it time.
+		return
+	}
+
+	if !hb.IsStale(s.cfg.BrokerHeartbeatMax) {
+		return // heartbeat is fresh
+	}
+
+	// Heartbeat is stale — kill and restart the broker.
+	s.logger.Warn("broker heartbeat is stale, restarting",
+		"last_heartbeat", hb.Timestamp,
+		"max_age", s.cfg.BrokerHeartbeatMax)
+
+	// Kill the existing process and wait for it to exit before restarting.
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		s.logger.Error("failed to SIGTERM stale broker process", "pid", pid, "error", err)
+	} else {
+		// Wait briefly for graceful shutdown.
+		for i := 0; i < 10; i++ {
+			time.Sleep(500 * time.Millisecond)
+			if !IsRunning(pid) {
+				break
+			}
+		}
+		// Force kill if still alive.
+		if IsRunning(pid) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	}
+
+	// Restart via detached process.
+	if err := s.startDaemonProcess("broker", s.cfg.SolBinary, "broker", "run"); err != nil {
+		s.logger.Error("failed to restart broker", "error", err)
+	} else {
+		s.logger.Info("broker restarted via heartbeat staleness")
+		if s.eventLog != nil {
+			s.eventLog.Emit(events.EventRespawn, "prefect", "broker", "both", map[string]any{
+				"daemon": "broker",
 				"type":   "sphere",
 				"reason": "heartbeat_stale",
 			})
