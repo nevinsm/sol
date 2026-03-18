@@ -1490,7 +1490,7 @@ func TestManifestWorkflow(t *testing.T) {
 		t.Errorf("phase[verify]: got %d, want 2", result.Phases["verify"])
 	}
 
-	// Verify caravan was created and is ready.
+	// Verify caravan was created and is open.
 	caravan, err := ss.GetCaravan(result.CaravanID)
 	if err != nil {
 		t.Fatalf("GetCaravan() error: %v", err)
@@ -2251,7 +2251,7 @@ func TestManifestConvoy(t *testing.T) {
 		t.Errorf("phase[synthesis]: got %d, want 1", result.Phases["synthesis"])
 	}
 
-	// Verify caravan was created and is ready.
+	// Verify caravan was created and is open.
 	caravan, err := ss.GetCaravan(result.CaravanID)
 	if err != nil {
 		t.Fatalf("GetCaravan() error: %v", err)

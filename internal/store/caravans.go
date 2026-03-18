@@ -11,7 +11,7 @@ import (
 type Caravan struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
-	Status    string     `json:"status"` // "drydock", "open", "ready", "closed"
+	Status    string     `json:"status"` // "drydock", "open", "closed"
 	Owner     string     `json:"owner"`
 	CreatedAt time.Time  `json:"created_at"`
 	ClosedAt  *time.Time `json:"closed_at,omitempty"`
@@ -139,7 +139,6 @@ func (s *SphereStore) ListCaravans(status string) ([]Caravan, error) {
 var validCaravanStatuses = map[string]bool{
 	"drydock": true,
 	"open":    true,
-	"ready":   true,
 	"closed":  true,
 }
 

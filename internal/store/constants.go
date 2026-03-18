@@ -38,7 +38,6 @@ type CaravanStatus = string
 const (
 	CaravanDrydock CaravanStatus = "drydock"
 	CaravanOpen    CaravanStatus = "open"
-	CaravanReady   CaravanStatus = "ready"
 	CaravanClosed  CaravanStatus = "closed"
 )
 
