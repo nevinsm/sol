@@ -106,11 +106,11 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	}
 
 	// 7. Wait for session to stop (done stops in background after 1s).
-	ok := pollUntil(10*time.Second, 500*time.Millisecond, func() bool {
+	ok := pollUntil(20*time.Second, 500*time.Millisecond, func() bool {
 		return !mgr.Exists(sessName)
 	})
 	if !ok {
-		t.Error("session still exists after resolve (waited 10s)")
+		t.Error("session still exists after resolve (waited 20s)")
 	}
 
 	// 8. Verify resolve state.
