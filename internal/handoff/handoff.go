@@ -98,6 +98,7 @@ type CaptureOpts struct {
 	CommitCount  int    // recent commits to include (default: 10)
 	WorktreeDir  string // explicit worktree path (uses config.WorktreePath if empty)
 	Sphere       SphereStore // optional sphere store for reading active writ from DB
+	ActiveWrit   string      // pre-read active writ ID; when set, skips DB re-read in Capture
 }
 
 // Capture gathers the current state of an agent's session.
@@ -124,7 +125,11 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 	var activeWritID string
 	var writID string
 
-	if opts.Sphere != nil {
+	if opts.ActiveWrit != "" {
+		// Use pre-read active writ ID (avoids stale re-read from DB).
+		activeWritID = opts.ActiveWrit
+		writID = activeWritID
+	} else if opts.Sphere != nil {
 		agentID := opts.World + "/" + opts.AgentName
 		agent, err := opts.Sphere.GetAgent(agentID)
 		if err == nil && agent != nil && agent.ActiveWrit != "" {
@@ -571,15 +576,18 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// Try to capture state from active work (DB active_writ or tether fallback).
 	hasTether := tether.IsTethered(opts.World, opts.AgentName, role)
 
-	// Check for active writ in DB.
-	hasActiveWrit := false
+	// Read agent snapshot ONCE to avoid stale re-reads. Subsequent operations
+	// (Capture, resume state building) use this value consistently — a
+	// concurrent resolve or writ-activate between reads would otherwise
+	// produce an internally inconsistent handoff state.
+	var activeWritID string
 	if sphereStore != nil {
 		agentID := opts.World + "/" + opts.AgentName
-		agent, err := sphereStore.GetAgent(agentID)
-		if err == nil && agent != nil && agent.ActiveWrit != "" {
-			hasActiveWrit = true
+		if agent, err := sphereStore.GetAgent(agentID); err == nil && agent != nil {
+			activeWritID = agent.ActiveWrit
 		}
 	}
+	hasActiveWrit := activeWritID != ""
 
 	hasWork := hasTether || hasActiveWrit
 
@@ -593,6 +601,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 			Summary:     opts.Summary,
 			WorktreeDir: worktreeDir,
 			Sphere:      sphereStore,
+			ActiveWrit:  activeWritID, // pass pre-read snapshot to avoid DB re-read
 		}, func(name string, lines int) (string, error) {
 			return sessionMgr.Capture(name, lines)
 		}, GitLog)
