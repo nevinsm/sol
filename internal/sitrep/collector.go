@@ -63,10 +63,10 @@ func Collect(sphereStore *store.SphereStore, worldOpener WorldOpener, scope Scop
 	}
 	data.Caravans = caravans
 
-	// Check readiness for open caravans.
+	// Check readiness for all active (non-closed) caravans.
 	data.CaravanReadiness = make(map[string][]store.CaravanItemStatus)
 	for _, c := range caravans {
-		if c.Status == "open" || c.Status == "drydock" {
+		if c.Status != "closed" {
 			statuses, err := sphereStore.CheckCaravanReadiness(c.ID, worldOpener)
 			if err != nil {
 				// Non-fatal — skip readiness for this caravan.
