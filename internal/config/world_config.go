@@ -289,6 +289,21 @@ func (c WorldConfig) Validate() error {
 			return fmt.Errorf("sitrep.timeout %q is not a valid duration: %w", c.Sitrep.Timeout, err)
 		}
 	}
+	if c.Escalation.AgingCritical != "" {
+		if _, err := time.ParseDuration(c.Escalation.AgingCritical); err != nil {
+			return fmt.Errorf("escalation.aging_critical %q is not a valid duration: %w", c.Escalation.AgingCritical, err)
+		}
+	}
+	if c.Escalation.AgingHigh != "" {
+		if _, err := time.ParseDuration(c.Escalation.AgingHigh); err != nil {
+			return fmt.Errorf("escalation.aging_high %q is not a valid duration: %w", c.Escalation.AgingHigh, err)
+		}
+	}
+	if c.Escalation.AgingMedium != "" {
+		if _, err := time.ParseDuration(c.Escalation.AgingMedium); err != nil {
+			return fmt.Errorf("escalation.aging_medium %q is not a valid duration: %w", c.Escalation.AgingMedium, err)
+		}
+	}
 	return nil
 }
 
@@ -306,6 +321,9 @@ func LoadGlobalConfig() (WorldConfig, error) {
 		return cfg, fmt.Errorf("failed to check %s: %w", globalPath, err)
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return cfg, fmt.Errorf("invalid global config: %w", err)
+	}
 	return cfg, nil
 }
 
