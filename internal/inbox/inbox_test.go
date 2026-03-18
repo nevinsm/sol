@@ -505,6 +505,44 @@ func TestViewModeEnterWithEmptyItems(t *testing.T) {
 	}
 }
 
+func TestRefreshMsgTransitionsToListViewWhenItemsRemoved(t *testing.T) {
+	m := NewModel(Config{})
+	m.items = makeTestItems(1)
+	m.cursor = 0
+	m.view = viewDetail
+	m.ready = true
+
+	// Simulate a refresh that removes all items (e.g. last escalation resolved).
+	raw, _ := m.Update(refreshMsg{items: []InboxItem{}})
+	updated := raw.(Model)
+
+	if updated.view != viewList {
+		t.Errorf("expected view to transition to viewList after all items removed, got %d", updated.view)
+	}
+	if updated.cursor != 0 {
+		t.Errorf("expected cursor clamped to 0, got %d", updated.cursor)
+	}
+}
+
+func TestRefreshMsgKeepsDetailViewWhenItemsRemain(t *testing.T) {
+	m := NewModel(Config{})
+	m.items = makeTestItems(3)
+	m.cursor = 1
+	m.view = viewDetail
+	m.ready = true
+
+	// Simulate a refresh that still has items at cursor position.
+	raw, _ := m.Update(refreshMsg{items: makeTestItems(3)})
+	updated := raw.(Model)
+
+	if updated.view != viewDetail {
+		t.Errorf("expected view to remain viewDetail when items still present, got %d", updated.view)
+	}
+	if updated.cursor != 1 {
+		t.Errorf("expected cursor to remain at 1, got %d", updated.cursor)
+	}
+}
+
 // --- Style helper tests ---
 
 func TestPadRight(t *testing.T) {
