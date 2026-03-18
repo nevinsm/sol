@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/nevinsm/sol/internal/adapter"
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/startup"
 )
@@ -37,7 +38,7 @@ func governorPersona(world, _ string) ([]byte, error) {
 	ctx := protocol.GovernorClaudeMDContext{
 		World:     world,
 		SolBinary: "sol",
-		MirrorDir: "../repo",
+		MirrorDir: config.RepoPath(world),
 	}
 
 	// Read tethered writs for multi-writ awareness.

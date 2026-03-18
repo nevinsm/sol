@@ -30,8 +30,9 @@ func BriefPath() string {
 	return filepath.Join(config.Home(), "chancellor", ".brief", "memory.md")
 }
 
-// SessionName is the fixed tmux session name for the chancellor.
-const SessionName = "sol-chancellor"
+// SessionName is the tmux session name for the chancellor.
+// Derived from config.SessionName so it stays in sync if the naming scheme changes.
+var SessionName = config.SessionName("", "chancellor")
 
 // --- Interfaces ---
 
