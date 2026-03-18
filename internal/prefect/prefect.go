@@ -1174,6 +1174,19 @@ func (s *Prefect) shutdown() {
 		}
 	}
 
+	// Stop sphere daemons (chronicle, ledger, broker).
+	for _, daemon := range []string{"chronicle", "ledger", "broker"} {
+		pid := ReadDaemonPID(daemon)
+		if pid > 0 && IsRunning(pid) {
+			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+				s.logger.Error("failed to stop daemon during shutdown", "daemon", daemon, "pid", pid, "error", err)
+			} else {
+				stopped++
+				s.logger.Info("daemon stopped during shutdown", "daemon", daemon, "pid", pid)
+			}
+		}
+	}
+
 	// Stop world infrastructure services (sentinel, forge).
 	worlds, err := s.sphereStore.ListWorlds()
 	if err != nil {
