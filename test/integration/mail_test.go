@@ -283,7 +283,7 @@ func TestMailPurgeNeverDeletesPending(t *testing.T) {
 
 // --- CLI purge integration tests ---
 
-func TestMailPurgeCLIForce(t *testing.T) {
+func TestMailPurgeCLIConfirm(t *testing.T) {
 	gtHome, _ := setupTestEnv(t)
 
 	s, err := store.OpenSphere()
@@ -296,8 +296,8 @@ func TestMailPurgeCLIForce(t *testing.T) {
 	s.AckMessage(id)
 	s.Close()
 
-	// Run purge with --all-acked --force via CLI.
-	out, err := runGT(t, gtHome, "mail", "purge", "--all-acked", "--force")
+	// Run purge with --all-acked --confirm via CLI.
+	out, err := runGT(t, gtHome, "mail", "purge", "--all-acked", "--confirm")
 	if err != nil {
 		t.Fatalf("mail purge failed: %v: %s", err, out)
 	}
@@ -339,8 +339,8 @@ func TestMailPurgeCLIBeforeFlag(t *testing.T) {
 	s.DB().Exec(`UPDATE messages SET acked_at = ? WHERE id = ?`, oldTime, id1)
 	s.Close()
 
-	// Run purge with --before=7d --force.
-	out, err := runGT(t, gtHome, "mail", "purge", "--before=7d", "--force")
+	// Run purge with --before=7d --confirm.
+	out, err := runGT(t, gtHome, "mail", "purge", "--before=7d", "--confirm")
 	if err != nil {
 		t.Fatalf("mail purge failed: %v: %s", err, out)
 	}
@@ -371,7 +371,7 @@ func TestMailPurgeCLIRequiresFlag(t *testing.T) {
 	gtHome, _ := setupTestEnv(t)
 
 	// Running purge without --before or --all-acked should fail.
-	out, err := runGT(t, gtHome, "mail", "purge", "--force")
+	out, err := runGT(t, gtHome, "mail", "purge", "--confirm")
 	if err == nil {
 		t.Fatalf("expected error when no purge mode specified, got: %s", out)
 	}

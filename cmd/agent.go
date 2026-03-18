@@ -129,6 +129,7 @@ var agentListCmd = &cobra.Command{
 // --- sol agent reset ---
 
 var agentResetWorld string
+var agentResetConfirm bool
 
 var agentResetCmd = &cobra.Command{
 	Use:   "reset <name>",
@@ -138,7 +139,9 @@ var agentResetCmd = &cobra.Command{
 Clears the agent's tether file, returns any assigned writ to "open" status
 (with assignee cleared), and sets the agent state to idle. Warns if the
 agent's tmux session is still running — consider stopping it first to avoid
-conflicting state.`,
+conflicting state.
+
+Requires --confirm to proceed; without it, previews what would be reset and exits 1.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -162,17 +165,37 @@ conflicting state.`,
 			return fmt.Errorf("agent %q not found: %w", agentID, err)
 		}
 
+		// Nothing to reset if already idle with no tether.
+		if agent.State == "idle" && agent.ActiveWrit == "" && !tether.IsTethered(world, name, agent.Role) {
+			fmt.Printf("Agent %s is already idle with no tether — nothing to reset.\n", agentID)
+			return nil
+		}
+
+		// Preview mode: show what would be reset and exit 1.
+		if !agentResetConfirm {
+			fmt.Printf("Would reset agent %s:\n", agentID)
+			fmt.Printf("  State: %s → idle\n", agent.State)
+			if agent.ActiveWrit != "" {
+				fmt.Printf("  Active writ: %s → returned to open pool\n", agent.ActiveWrit)
+			}
+			if tether.IsTethered(world, name, agent.Role) {
+				fmt.Println("  Tether file: will be cleared")
+			}
+			// Warn if the agent session is still alive.
+			sessionName := config.SessionName(world, name)
+			mgr := session.New()
+			if mgr.Exists(sessionName) {
+				fmt.Fprintf(os.Stderr, "WARNING: session %q is still alive — consider stopping it first\n", sessionName)
+			}
+			fmt.Println("Run with --confirm to proceed.")
+			return &exitError{code: 1}
+		}
+
 		// Warn if the agent session is still alive.
 		sessionName := config.SessionName(world, name)
 		mgr := session.New()
 		if mgr.Exists(sessionName) {
 			fmt.Fprintf(os.Stderr, "WARNING: session %q is still alive — consider stopping it first\n", sessionName)
-		}
-
-		// Nothing to reset if already idle with no tether.
-		if agent.State == "idle" && agent.ActiveWrit == "" && !tether.IsTethered(world, name, agent.Role) {
-			fmt.Printf("Agent %s is already idle with no tether — nothing to reset.\n", agentID)
-			return nil
 		}
 
 		// Untether the writ if one is assigned.
@@ -226,4 +249,5 @@ func init() {
 
 	agentCmd.AddCommand(agentResetCmd)
 	agentResetCmd.Flags().StringVar(&agentResetWorld, "world", "", "world name")
+	agentResetCmd.Flags().BoolVar(&agentResetConfirm, "confirm", false, "confirm the destructive operation")
 }

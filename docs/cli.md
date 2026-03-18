@@ -701,10 +701,13 @@ Clears the agent's tether file, returns any assigned writ to "open" status
 agent's tmux session is still running — consider stopping it first to avoid
 conflicting state.
 
+Requires --confirm to proceed; without it, previews what would be reset and exits 1.
+
 **Usage:** `sol agent reset <name>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--confirm` | bool | false | confirm the destructive operation |
 | `--world` | string | "" | world name |
 
 #### `sol agent stats`
@@ -1654,15 +1657,13 @@ Exit codes:
 
 Delete acknowledged messages from the sphere mailbox.
 
-Requires --confirm to proceed; without it, previews what would be deleted and exits.
-The --force flag is accepted as an alias for --confirm for backward compatibility.
+Requires --confirm to proceed; without it, previews what would be deleted and exits 1.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all-acked` | bool | false | Delete all acknowledged messages regardless of age |
 | `--before` | string | "" | Delete acked messages older than duration (e.g., 7d, 24h) |
 | `--confirm` | bool | false | confirm destructive action |
-| `--force` | bool | false | alias for --confirm (backward compatibility) |
 
 #### `sol mail read`
 
