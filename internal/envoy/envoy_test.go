@@ -88,10 +88,11 @@ func (m *mockSphereStore) DeleteAgent(id string) error {
 
 
 type mockStopStore struct {
-	agents    map[string]*store.Agent
-	getErr    error
-	updated   map[string]store.AgentState // id -> state
-	updateErr error
+	agents      map[string]*store.Agent
+	getErr      error
+	updated     map[string]store.AgentState // id -> state
+	activeWrits map[string]string           // id -> activeWrit passed to UpdateAgentState
+	updateErr   error
 }
 
 func (m *mockStopStore) GetAgent(id string) (*store.Agent, error) {
@@ -110,6 +111,9 @@ func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, acti
 		return m.updateErr
 	}
 	m.updated[id] = state
+	if m.activeWrits != nil {
+		m.activeWrits[id] = activeWrit
+	}
 	return nil
 }
 
@@ -522,6 +526,30 @@ func TestStopWrongRole(t *testing.T) {
 	// Verify agent state was NOT updated.
 	if _, ok := ss.updated["myworld/governor"]; ok {
 		t.Error("agent state should not have been updated for wrong-role agent")
+	}
+}
+
+func TestStopPreservesActiveWrit(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	const writID = "sol-abc123def456abc1"
+	ss := &mockStopStore{
+		agents: map[string]*store.Agent{
+			"myworld/Echo": {ID: "myworld/Echo", Name: "Echo", World: "myworld", Role: "envoy", State: store.AgentWorking, ActiveWrit: writID},
+		},
+		updated:     map[string]store.AgentState{},
+		activeWrits: map[string]string{},
+	}
+
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	if err := Stop("myworld", "Echo", ss, mgr); err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+
+	if got := ss.activeWrits["myworld/Echo"]; got != writID {
+		t.Errorf("active_writ after stop = %q, want %q (should be preserved)", got, writID)
 	}
 }
 

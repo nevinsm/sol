@@ -202,8 +202,8 @@ func Stop(world, name string, sphereStore StopStore, mgr StopManager) error {
 		}
 	}
 
-	// 2. Update agent state to idle.
-	if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
+	// 2. Update agent state to idle, preserving active_writ so restart context is retained.
+	if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, agent.ActiveWrit); err != nil {
 		return fmt.Errorf("failed to stop envoy %q in world %q: %w", name, world, err)
 	}
 
