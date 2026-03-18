@@ -254,6 +254,29 @@ func (r *realCmdRunner) Run(ctx context.Context, dir string, name string, args .
 
 // --- Patrol loop ---
 
+// RunPatrol executes exactly one patrol cycle and returns. Unlike Run, it does
+// not block waiting for nudges or run additional cycles. Intended for testing.
+func (r *Forge) RunPatrol(ctx context.Context, pcfg PatrolConfig) error {
+	fl, err := newForgeLogger(r.world, pcfg)
+	if err != nil {
+		return fmt.Errorf("failed to initialize forge logger: %w", err)
+	}
+	defer fl.Close()
+
+	eventLog := events.NewLogger(config.Home())
+
+	state := &patrolState{
+		forge:    r,
+		pcfg:     pcfg,
+		fl:       fl,
+		eventLog: eventLog,
+		cmd:      &realCmdRunner{},
+	}
+
+	state.patrol(ctx)
+	return nil
+}
+
 // Run starts the forge patrol loop. Blocks until ctx is cancelled.
 func (r *Forge) Run(ctx context.Context, pcfg PatrolConfig) error {
 	fl, err := newForgeLogger(r.world, pcfg)
