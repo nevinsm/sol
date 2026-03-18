@@ -577,7 +577,7 @@ flags.
 
 ## Embedded Workflow Catalog
 
-Sol ships with eight embedded workflows covering common work patterns.
+Sol ships with nine embedded workflows covering common work patterns.
 
 ### 1. default-work
 
@@ -808,6 +808,40 @@ and architecture writs.
 ```bash
 sol workflow manifest guided-design --world=myworld \
   --target=sol-a1b2c3d4
+```
+
+---
+
+### 9. codebase-scan
+
+**Type:** convoy (11 legs + synthesis)
+**Purpose:** Comprehensive project-tier codebase review. Parallel analysis
+across all code, tests, documentation, and configuration dimensions, then
+synthesis into a consolidated findings report. Useful for full project
+health checks and generating a prioritized fix caravan.
+
+**Variables:** None declared. No target substitution.
+
+**Legs:**
+
+1. `core-infra` (analysis) — Review core infrastructure: store, config, setup, fileutil, processutil, logutil, envfile, git, namepool.
+2. `session-lifecycle` (analysis) — Review session lifecycle: startup, dispatch, session, tether, adapter, handoff.
+3. `agent-roles` (analysis) — Review agent roles: envoy, governor, chancellor, brief, skills.
+4. `services` (analysis) — Review service components: forge, sentinel, consul, prefect, service, heartbeat.
+5. `protocol` (analysis) — Review the protocol layer.
+6. `support-systems` (analysis) — Review support systems: ledger, broker, nudge, chronicle, events, quota, doctor, escalation, inbox, account, trace.
+7. `cli` (analysis) — Review CLI commands.
+8. `orchestration` (analysis) — Review orchestration and presentation: workflow, worldexport, worldsync, status, dash, style, sitrep, docgen.
+9. `integration-tests` (analysis) — Review integration tests.
+10. `documentation` (analysis) — Review documentation.
+11. `build-and-agent-env` (analysis) — Review build system and agent environment: Makefile, go.mod, embedded workflows, skill files, prompts, config defaults.
+
+**Synthesis:** `Synthesize findings into fix caravan` (analysis) — Read all leg findings and synthesize into a consolidated review with prioritized action items. Depends on all 11 legs.
+
+**Example:**
+
+```bash
+sol workflow manifest codebase-scan --world=myworld
 ```
 
 ---
