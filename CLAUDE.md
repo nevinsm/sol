@@ -17,7 +17,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **SOL_HOME**: Runtime root directory (env var, default ~/sol)
 - **Store**: SQLite (WAL mode) — sphere.db for agents, {world}.db for writs
 - **Session**: tmux-based process containers for AI agents
-- **Tether**: File at $SOL_HOME/{world}/outposts/{name}/.tether — the durability primitive
+- **Tether**: Directory at $SOL_HOME/{world}/{role}s/{agent}/.tether/ — contains one file per bound writ. See ADR-0025.
 - **Cast**: Dispatch work to an agent (creates worktree, tethers work, starts session)
 - **Prime**: Inject execution context on session start
 - **Resolve**: Signal work complete (push branch, clear tether, stop session)
