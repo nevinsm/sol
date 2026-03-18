@@ -919,3 +919,109 @@ func TestAgingThresholdInvalidDuration(t *testing.T) {
 		t.Fatal("AgingThreshold with invalid duration string expected error, got nil")
 	}
 }
+
+// ----- Validate: escalation aging durations -----
+
+func TestWorldConfigValidateEscalationAgingDurations(t *testing.T) {
+	// Valid duration strings should pass.
+	for _, d := range []string{"30m", "2h", "8h", "1s", ""} {
+		cfg := DefaultWorldConfig()
+		cfg.Escalation.AgingCritical = d
+		cfg.Escalation.AgingHigh = d
+		cfg.Escalation.AgingMedium = d
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("expected aging duration %q to be valid, got: %v", d, err)
+		}
+	}
+
+	// Invalid duration strings should fail with the right field name.
+	cases := []struct {
+		field string
+		set   func(*WorldConfig, string)
+	}{
+		{
+			field: "escalation.aging_critical",
+			set:   func(c *WorldConfig, v string) { c.Escalation.AgingCritical = v },
+		},
+		{
+			field: "escalation.aging_high",
+			set:   func(c *WorldConfig, v string) { c.Escalation.AgingHigh = v },
+		},
+		{
+			field: "escalation.aging_medium",
+			set:   func(c *WorldConfig, v string) { c.Escalation.AgingMedium = v },
+		},
+	}
+	for _, tc := range cases {
+		for _, bad := range []string{"30mins", "banana", "5x"} {
+			cfg := DefaultWorldConfig()
+			tc.set(&cfg, bad)
+			err := cfg.Validate()
+			if err == nil {
+				t.Errorf("%s = %q: expected validation error, got nil", tc.field, bad)
+			} else if !strings.Contains(err.Error(), tc.field) {
+				t.Errorf("%s = %q: expected error to mention %q, got: %v", tc.field, bad, tc.field, err)
+			}
+		}
+	}
+}
+
+// ----- LoadGlobalConfig: validation -----
+
+func TestLoadGlobalConfigInvalidModelTier(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	content := "[agents]\nmodel_tier = \"turbo\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadGlobalConfig()
+	if err == nil {
+		t.Fatal("LoadGlobalConfig() expected error for invalid model_tier, got nil")
+	}
+	if !strings.Contains(err.Error(), "model_tier") {
+		t.Fatalf("expected error to mention model_tier, got: %v", err)
+	}
+}
+
+func TestLoadGlobalConfigInvalidAgingDuration(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	content := "[escalation]\naging_critical = \"30mins\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadGlobalConfig()
+	if err == nil {
+		t.Fatal("LoadGlobalConfig() expected error for invalid aging duration, got nil")
+	}
+	if !strings.Contains(err.Error(), "aging_critical") {
+		t.Fatalf("expected error to mention aging_critical, got: %v", err)
+	}
+}
+
+func TestLoadWorldConfigInvalidAgingDuration(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "[escalation]\naging_critical = \"30mins\"\n"
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadWorldConfig("testworld")
+	if err == nil {
+		t.Fatal("LoadWorldConfig() expected error for invalid aging duration, got nil")
+	}
+	if !strings.Contains(err.Error(), "aging_critical") {
+		t.Fatalf("expected error to mention aging_critical, got: %v", err)
+	}
+}
