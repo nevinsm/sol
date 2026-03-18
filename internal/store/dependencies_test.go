@@ -3,6 +3,7 @@ package store
 import "testing"
 
 func TestAddDependency(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id1, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
@@ -24,6 +25,7 @@ func TestAddDependency(t *testing.T) {
 }
 
 func TestAddDependencySelfRef(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id1, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
@@ -35,6 +37,7 @@ func TestAddDependencySelfRef(t *testing.T) {
 }
 
 func TestAddDependencyNonexistentItem(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id1, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
@@ -51,6 +54,7 @@ func TestAddDependencyNonexistentItem(t *testing.T) {
 }
 
 func TestAddDependencyCycleDetection(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	idA, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
@@ -81,6 +85,7 @@ func TestAddDependencyCycleDetection(t *testing.T) {
 }
 
 func TestRemoveDependency(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id1, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
@@ -102,6 +107,7 @@ func TestRemoveDependency(t *testing.T) {
 }
 
 func TestGetDependencies(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	idA, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
@@ -133,6 +139,7 @@ func TestGetDependencies(t *testing.T) {
 }
 
 func TestGetDependents(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	idX, _ := s.CreateWrit("Item X", "", "autarch", 2, nil)
@@ -155,6 +162,7 @@ func TestGetDependents(t *testing.T) {
 }
 
 func TestIsReady(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	idA, _ := s.CreateWrit("Item A", "", "autarch", 2, nil)
@@ -222,6 +230,7 @@ func TestIsReady(t *testing.T) {
 }
 
 func TestV4Migration(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Verify the schema version.

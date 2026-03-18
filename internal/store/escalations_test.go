@@ -7,6 +7,7 @@ import (
 )
 
 func TestCreateEscalation(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	id, err := s.CreateEscalation("high", "haven/sentinel", "Agent Toast stalled for 30m")
@@ -49,6 +50,7 @@ func TestCreateEscalation(t *testing.T) {
 }
 
 func TestCreateEscalationInvalidSeverity(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	_, err := s.CreateEscalation("invalid", "autarch", "test")
@@ -58,6 +60,7 @@ func TestCreateEscalationInvalidSeverity(t *testing.T) {
 }
 
 func TestListEscalations(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Create 3 escalations with distinct timestamps by inserting directly.
@@ -125,6 +128,7 @@ func TestListEscalations(t *testing.T) {
 }
 
 func TestListEscalationsSortsBySeverityThenCreatedAt(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	now := time.Now().UTC()
@@ -170,6 +174,7 @@ func TestListEscalationsSortsBySeverityThenCreatedAt(t *testing.T) {
 }
 
 func TestListOpenEscalationsSortsBySeverity(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	now := time.Now().UTC()
@@ -200,6 +205,7 @@ func TestListOpenEscalationsSortsBySeverity(t *testing.T) {
 }
 
 func TestListOpenEscalations(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Create 3 escalations.
@@ -259,6 +265,7 @@ func TestListOpenEscalations(t *testing.T) {
 }
 
 func TestAckEscalation(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	id, _ := s.CreateEscalation("medium", "autarch", "Test ack")
@@ -281,6 +288,7 @@ func TestAckEscalation(t *testing.T) {
 }
 
 func TestResolveEscalation(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	id, _ := s.CreateEscalation("high", "autarch", "Test resolve")
@@ -300,6 +308,7 @@ func TestResolveEscalation(t *testing.T) {
 }
 
 func TestCountOpen(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Create 3.
@@ -327,6 +336,7 @@ func TestCountOpen(t *testing.T) {
 }
 
 func TestAckEscalationNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	err := s.AckEscalation("esc-nonexist")
@@ -336,6 +346,7 @@ func TestAckEscalationNotFound(t *testing.T) {
 }
 
 func TestResolveEscalationNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	err := s.ResolveEscalation("esc-nonexist")
@@ -345,6 +356,7 @@ func TestResolveEscalationNotFound(t *testing.T) {
 }
 
 func TestCreateEscalationWithSourceRef(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	id, err := s.CreateEscalation("high", "ember/forge", "Merge failed for MR mr-abc123", "mr:mr-abc123")
@@ -362,6 +374,7 @@ func TestCreateEscalationWithSourceRef(t *testing.T) {
 }
 
 func TestCreateEscalationWithoutSourceRef(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Existing callers that don't pass source_ref should still work.
@@ -380,6 +393,7 @@ func TestCreateEscalationWithoutSourceRef(t *testing.T) {
 }
 
 func TestUpdateEscalationLastNotified(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	id, err := s.CreateEscalation("high", "autarch", "Test last_notified_at")
@@ -426,6 +440,7 @@ func TestUpdateEscalationLastNotified(t *testing.T) {
 }
 
 func TestUpdateEscalationLastNotifiedNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	err := s.UpdateEscalationLastNotified("esc-nonexist")
@@ -435,6 +450,7 @@ func TestUpdateEscalationLastNotifiedNotFound(t *testing.T) {
 }
 
 func TestUpdateEscalationLastNotifiedUpdatesUpdatedAt(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	id, err := s.CreateEscalation("high", "autarch", "Test updated_at")
@@ -470,6 +486,7 @@ func TestUpdateEscalationLastNotifiedUpdatesUpdatedAt(t *testing.T) {
 }
 
 func TestListEscalationsBySourceRef(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Create escalations with different source_refs.

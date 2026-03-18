@@ -7,6 +7,7 @@ import (
 )
 
 func TestWriteAndGetHistory(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -48,6 +49,7 @@ func TestWriteAndGetHistory(t *testing.T) {
 }
 
 func TestWriteHistoryNullableFields(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -74,6 +76,7 @@ func TestWriteHistoryNullableFields(t *testing.T) {
 }
 
 func TestGetHistoryNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	_, err := s.GetHistory("ah-nonexistent")
@@ -86,6 +89,7 @@ func TestGetHistoryNotFound(t *testing.T) {
 }
 
 func TestListHistory(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -129,6 +133,7 @@ func TestListHistory(t *testing.T) {
 }
 
 func TestEndHistory(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -168,6 +173,7 @@ func TestEndHistory(t *testing.T) {
 }
 
 func TestEndHistoryNoRecord(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// EndHistory with no matching record should return empty, no error.
@@ -181,6 +187,7 @@ func TestEndHistoryNoRecord(t *testing.T) {
 }
 
 func TestEndHistoryClosesLatest(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -207,6 +214,7 @@ func TestEndHistoryClosesLatest(t *testing.T) {
 }
 
 func TestWriteTokenUsage(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -225,6 +233,7 @@ func TestWriteTokenUsage(t *testing.T) {
 }
 
 func TestTokensForHistory(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -265,6 +274,7 @@ func TestTokensForHistory(t *testing.T) {
 }
 
 func TestAggregateTokens(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -342,6 +352,7 @@ func TestAggregateTokens(t *testing.T) {
 }
 
 func TestTokensForWrit(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -400,6 +411,7 @@ func TestTokensForWrit(t *testing.T) {
 }
 
 func TestTokensForWorld(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -443,6 +455,7 @@ func TestTokensForWorld(t *testing.T) {
 }
 
 func TestTokensForWorldEmpty(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	summaries, err := s.TokensForWorld()
@@ -455,6 +468,7 @@ func TestTokensForWorldEmpty(t *testing.T) {
 }
 
 func TestTokensByWritForAgent(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -514,6 +528,7 @@ func TestTokensByWritForAgent(t *testing.T) {
 }
 
 func TestTokensByWritForAgentNoWrit(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// History entry without a writ_id.
@@ -539,6 +554,7 @@ func TestTokensByWritForAgentNoWrit(t *testing.T) {
 }
 
 func TestTokensSince(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -594,6 +610,7 @@ func TestTokensSince(t *testing.T) {
 }
 
 func TestTokensByAgentForWorld(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -642,6 +659,7 @@ func TestTokensByAgentForWorld(t *testing.T) {
 }
 
 func TestTokensByAgentForWorldEmpty(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	summaries, err := s.TokensByAgentForWorld()
@@ -654,6 +672,7 @@ func TestTokensByAgentForWorldEmpty(t *testing.T) {
 }
 
 func TestTokensByAgentSince(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -683,6 +702,7 @@ func TestTokensByAgentSince(t *testing.T) {
 }
 
 func TestTokensByWritForAgentSince(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -712,6 +732,7 @@ func TestTokensByWritForAgentSince(t *testing.T) {
 }
 
 func TestWorldTokenMeta(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -739,6 +760,7 @@ func TestWorldTokenMeta(t *testing.T) {
 }
 
 func TestWorldTokenMetaEmpty(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	agents, writs, err := s.WorldTokenMeta()
@@ -751,6 +773,7 @@ func TestWorldTokenMetaEmpty(t *testing.T) {
 }
 
 func TestWorldTokenMetaSince(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -776,6 +799,7 @@ func TestWorldTokenMetaSince(t *testing.T) {
 }
 
 func TestTokensForWritSince(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	start1 := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
@@ -802,6 +826,7 @@ func TestTokensForWritSince(t *testing.T) {
 }
 
 func TestMergeStatsForAgent(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Create writs (FK dependency for merge_requests).

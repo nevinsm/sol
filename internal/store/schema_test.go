@@ -8,6 +8,7 @@ import (
 )
 
 func TestSchemaVersionFreshDatabase(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "fresh.db")
 
@@ -27,15 +28,10 @@ func TestSchemaVersionFreshDatabase(t *testing.T) {
 }
 
 func TestSchemaVersionAfterWorldMigration(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
-	s, err := OpenWorld("versiontest")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
+	s := openWorldAt(t, filepath.Join(dir, "versiontest.db"))
 
 	v, err := s.SchemaVersion()
 	if err != nil {
@@ -47,15 +43,10 @@ func TestSchemaVersionAfterWorldMigration(t *testing.T) {
 }
 
 func TestSchemaVersionAfterSphereMigration(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
-	s, err := OpenSphere()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
+	s := openSphereAt(t, filepath.Join(dir, "sphere.db"))
 
 	v, err := s.SchemaVersion()
 	if err != nil {
@@ -67,6 +58,7 @@ func TestSchemaVersionAfterSphereMigration(t *testing.T) {
 }
 
 func TestOpenNoMigrateDoesNotMigrate(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "nomigrate.db")
 
@@ -109,23 +101,17 @@ func TestOpenNoMigrateDoesNotMigrate(t *testing.T) {
 }
 
 func TestBackupDatabase(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Create a world database with some data.
-	s, err := OpenWorld("backuptest")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.CreateWrit("backup item", "test", "autarch", 2, nil)
+	dbPath := filepath.Join(dir, "backuptest.db")
+	s := openWorldAt(t, dbPath)
+	_, err := s.CreateWrit("backup item", "test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
-
-	// Backup the database.
-	dbPath := filepath.Join(dir, ".store", "backuptest.db")
 	backupPath, err := BackupDatabase(dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -158,6 +144,7 @@ func TestBackupDatabase(t *testing.T) {
 }
 
 func TestBackupDatabaseNonexistent(t *testing.T) {
+	t.Parallel()
 	_, err := BackupDatabase("/nonexistent/path.db")
 	if err == nil {
 		t.Fatal("expected error for nonexistent database")
@@ -168,25 +155,18 @@ func TestBackupDatabaseNonexistent(t *testing.T) {
 // WAL before copying, so committed transactions are present in the backup even
 // when an active store connection is open (preventing automatic checkpoint on close).
 func TestBackupDatabaseCapturesWALData(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Open a world store and write data. Keep the connection open to simulate
 	// an active sol process that might prevent auto-checkpoint on close.
-	s, err := OpenWorld("walcapturetest")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := filepath.Join(dir, "walcapturetest.db")
+	s := openWorldAt(t, dbPath)
 	writID, err := s.CreateWrit("WAL data item", "code", "autarch", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Hold the connection open — do not close before backup.
-	defer s.Close()
-
-	// BackupDatabase must checkpoint the WAL so all committed data is in the backup.
-	dbPath := filepath.Join(dir, ".store", "walcapturetest.db")
 	backupPath, err := BackupDatabase(dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -209,6 +189,7 @@ func TestBackupDatabaseCapturesWALData(t *testing.T) {
 }
 
 func TestCurrentSchemaConstants(t *testing.T) {
+	t.Parallel()
 	// Verify constants are positive and match the expected values.
 	if CurrentWorldSchema != 10 {
 		t.Fatalf("CurrentWorldSchema = %d, expected 10", CurrentWorldSchema)
@@ -219,12 +200,11 @@ func TestCurrentSchemaConstants(t *testing.T) {
 }
 
 func TestWorldSchemaV9Migration(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Create a V8 database by hand: apply V1 schema and insert some data.
-	dbPath := filepath.Join(dir, ".store", "v9test.db")
+	dbPath := filepath.Join(dir, "v9test.db")
 	s, err := open(dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -274,12 +254,8 @@ func TestWorldSchemaV9Migration(t *testing.T) {
 	}
 	s.Close()
 
-	// Re-open with migration — should migrate to V10 (V9 adds kind/metadata/close_reason, V10 renames operator → autarch).
-	s2, err := OpenWorld("v9test")
-	if err != nil {
-		t.Fatalf("OpenWorld after migration: %v", err)
-	}
-	defer s2.Close()
+	// Re-open via openWorldAt — should migrate to V10 (V9 adds kind/metadata/close_reason, V10 renames operator → autarch).
+	s2 := openWorldAt(t, dbPath)
 
 	// Check schema version.
 	v, err := s2.SchemaVersion()

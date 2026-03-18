@@ -9,7 +9,9 @@ import (
 )
 
 func TestParseRFC3339(t *testing.T) {
+	t.Parallel()
 	t.Run("valid timestamp", func(t *testing.T) {
+		t.Parallel()
 		ts, err := parseRFC3339("2024-06-15T10:30:00Z", "created_at", "writ sol-abc")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -21,6 +23,7 @@ func TestParseRFC3339(t *testing.T) {
 	})
 
 	t.Run("invalid timestamp", func(t *testing.T) {
+		t.Parallel()
 		_, err := parseRFC3339("not-a-date", "created_at", "writ sol-abc")
 		if err == nil {
 			t.Fatal("expected error for invalid timestamp")
@@ -35,7 +38,9 @@ func TestParseRFC3339(t *testing.T) {
 }
 
 func TestParseOptionalRFC3339(t *testing.T) {
+	t.Parallel()
 	t.Run("null value", func(t *testing.T) {
+		t.Parallel()
 		result, err := parseOptionalRFC3339(sql.NullString{Valid: false}, "closed_at", "writ sol-abc")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -46,6 +51,7 @@ func TestParseOptionalRFC3339(t *testing.T) {
 	})
 
 	t.Run("valid value", func(t *testing.T) {
+		t.Parallel()
 		ns := sql.NullString{String: "2024-06-15T10:30:00Z", Valid: true}
 		result, err := parseOptionalRFC3339(ns, "closed_at", "writ sol-abc")
 		if err != nil {
@@ -61,6 +67,7 @@ func TestParseOptionalRFC3339(t *testing.T) {
 	})
 
 	t.Run("invalid value", func(t *testing.T) {
+		t.Parallel()
 		ns := sql.NullString{String: "bad-date", Valid: true}
 		_, err := parseOptionalRFC3339(ns, "closed_at", "writ sol-abc")
 		if err == nil {
@@ -82,7 +89,9 @@ func (m mockResult) LastInsertId() (int64, error) { return 0, nil }
 func (m mockResult) RowsAffected() (int64, error) { return m.rowsAffected, m.err }
 
 func TestCheckRowsAffected(t *testing.T) {
+	t.Parallel()
 	t.Run("one row affected", func(t *testing.T) {
+		t.Parallel()
 		err := checkRowsAffected(mockResult{rowsAffected: 1}, "writ", "sol-abc")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -90,6 +99,7 @@ func TestCheckRowsAffected(t *testing.T) {
 	})
 
 	t.Run("zero rows — not found", func(t *testing.T) {
+		t.Parallel()
 		err := checkRowsAffected(mockResult{rowsAffected: 0}, "writ", "sol-abc")
 		if err == nil {
 			t.Fatal("expected error for zero rows")
@@ -106,6 +116,7 @@ func TestCheckRowsAffected(t *testing.T) {
 	})
 
 	t.Run("driver error", func(t *testing.T) {
+		t.Parallel()
 		driverErr := errors.New("driver failure")
 		err := checkRowsAffected(mockResult{err: driverErr}, "writ", "sol-abc")
 		if err == nil {
@@ -118,10 +129,12 @@ func TestCheckRowsAffected(t *testing.T) {
 }
 
 func TestGeneratePrefixedID(t *testing.T) {
+	t.Parallel()
 	prefixes := []string{"sol-", "msg-", "mr-", "car-", "esc-", "mem-", "ah-", "tu-"}
 
 	for _, prefix := range prefixes {
 		t.Run(prefix, func(t *testing.T) {
+			t.Parallel()
 			id, err := generatePrefixedID(prefix)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -138,6 +151,7 @@ func TestGeneratePrefixedID(t *testing.T) {
 	}
 
 	t.Run("uniqueness", func(t *testing.T) {
+		t.Parallel()
 		seen := map[string]bool{}
 		for i := 0; i < 100; i++ {
 			id, err := generatePrefixedID("test-")
@@ -153,6 +167,7 @@ func TestGeneratePrefixedID(t *testing.T) {
 }
 
 func TestDetectCycle(t *testing.T) {
+	t.Parallel()
 	// Build a simple graph: A → B → C
 	graph := map[string][]string{
 		"A": {"B"},
@@ -164,6 +179,7 @@ func TestDetectCycle(t *testing.T) {
 	}
 
 	t.Run("no cycle", func(t *testing.T) {
+		t.Parallel()
 		// Adding D → A would not create a cycle (A → B → C, no path from A to D).
 		cycle, err := detectCycle(getNeighbors, "D", "A")
 		if err != nil {
@@ -175,6 +191,7 @@ func TestDetectCycle(t *testing.T) {
 	})
 
 	t.Run("direct cycle", func(t *testing.T) {
+		t.Parallel()
 		// Adding A → C: C's neighbors don't reach A, but we're checking
 		// if from (A) is reachable from to (C). C → (nothing), so no cycle.
 		// Actually A → B: from=A, to=B. BFS from B: B→C→(end). A not found, no cycle.
@@ -189,6 +206,7 @@ func TestDetectCycle(t *testing.T) {
 	})
 
 	t.Run("self-reference", func(t *testing.T) {
+		t.Parallel()
 		// Adding A → A: from=A, to=A. BFS starts at A, first check: A == A. Cycle!
 		cycle, err := detectCycle(getNeighbors, "A", "A")
 		if err != nil {
@@ -200,6 +218,7 @@ func TestDetectCycle(t *testing.T) {
 	})
 
 	t.Run("transitive cycle", func(t *testing.T) {
+		t.Parallel()
 		// Adding C → B: from=C, to=B. BFS from B: B→C. C == fromID. Cycle!
 		cycle, err := detectCycle(getNeighbors, "C", "B")
 		if err != nil {
@@ -211,6 +230,7 @@ func TestDetectCycle(t *testing.T) {
 	})
 
 	t.Run("error propagation", func(t *testing.T) {
+		t.Parallel()
 		failNeighbors := func(id string) ([]string, error) {
 			return nil, errors.New("db error")
 		}
@@ -221,6 +241,7 @@ func TestDetectCycle(t *testing.T) {
 	})
 
 	t.Run("disconnected nodes", func(t *testing.T) {
+		t.Parallel()
 		// X and Y are not in the graph at all.
 		cycle, err := detectCycle(getNeighbors, "X", "Y")
 		if err != nil {

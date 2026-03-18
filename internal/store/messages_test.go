@@ -9,6 +9,7 @@ import (
 )
 
 func TestSendMessage(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	id, err := s.SendMessage("haven/Toast", "autarch", "Work done", "Finished task sol-abc12345", 2, "notification")
@@ -54,6 +55,7 @@ func TestSendMessage(t *testing.T) {
 }
 
 func TestInbox(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Send 3 messages to "autarch" with different priorities.
@@ -101,6 +103,7 @@ func TestInbox(t *testing.T) {
 }
 
 func TestReadMessage(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	id, _ := s.SendMessage("agent1", "autarch", "Test", "Body", 2, "notification")
@@ -128,6 +131,7 @@ func TestReadMessage(t *testing.T) {
 }
 
 func TestAckMessage(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	id, _ := s.SendMessage("agent1", "autarch", "Test", "", 2, "notification")
@@ -159,6 +163,7 @@ func TestAckMessage(t *testing.T) {
 }
 
 func TestCountPending(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// No messages -> 0.
@@ -205,6 +210,7 @@ func TestCountPending(t *testing.T) {
 }
 
 func TestListMessages(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Send messages of different types and to different recipients.
@@ -252,6 +258,7 @@ func TestListMessages(t *testing.T) {
 }
 
 func TestListMessagesThreadFilter(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Send a message without thread_id and one with.
@@ -272,6 +279,7 @@ func TestListMessagesThreadFilter(t *testing.T) {
 }
 
 func TestSendMessageWithThread(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	id, err := s.SendMessageWithThread("agent1", "autarch", "Test", "Body", 2, "notification", "esc:sol-abc123")
@@ -293,6 +301,7 @@ func TestSendMessageWithThread(t *testing.T) {
 }
 
 func TestHasPendingThreadMessage(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// No messages -> false.
@@ -326,6 +335,7 @@ func TestHasPendingThreadMessage(t *testing.T) {
 }
 
 func TestListMessagesThreadIDPrefix(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Send messages with various thread IDs.
@@ -363,6 +373,7 @@ func TestListMessagesThreadIDPrefix(t *testing.T) {
 }
 
 func TestSendProtocolMessage(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	payload := AgentDonePayload{
@@ -424,6 +435,7 @@ func TestSendProtocolMessage(t *testing.T) {
 }
 
 func TestMessageNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// ReadMessage with bogus ID -> error containing "not found".
@@ -446,6 +458,7 @@ func TestMessageNotFound(t *testing.T) {
 }
 
 func TestPurgeAckedMessages(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Send 3 messages and ack them all.
@@ -486,6 +499,7 @@ func TestPurgeAckedMessages(t *testing.T) {
 }
 
 func TestPurgeAckedMessagesNeverDeletesPending(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Send messages: 2 pending, 1 acked.
@@ -519,6 +533,7 @@ func TestPurgeAckedMessagesNeverDeletesPending(t *testing.T) {
 }
 
 func TestPurgeAllAcked(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Send 3 messages, ack 2, leave 1 pending.
@@ -551,6 +566,7 @@ func TestPurgeAllAcked(t *testing.T) {
 }
 
 func TestPurgeAllAckedEmpty(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// No messages at all.
@@ -564,6 +580,7 @@ func TestPurgeAllAckedEmpty(t *testing.T) {
 }
 
 func TestMailLifecycle(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// 1. Send message.
@@ -662,6 +679,7 @@ func TestMailLifecycle(t *testing.T) {
 }
 
 func TestProtocolMessageSendAndFilter(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Send protocol messages of different types.

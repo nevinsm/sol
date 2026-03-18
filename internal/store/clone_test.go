@@ -7,6 +7,8 @@ import (
 )
 
 func TestCloneWorldDataPreservesWritColumns(t *testing.T) {
+	// This test cannot be parallelized: CloneWorldData reads SOL_HOME to locate
+	// databases, and t.Setenv cannot be used in parallel tests.
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 

@@ -9,6 +9,7 @@ import (
 // It must not fail even when no tmux session is running, since the empty check
 // returns before any tmux call.
 func TestInjectEnv_Empty(t *testing.T) {
+	t.Parallel()
 	if err := InjectEnv("nonexistent-session", map[string]string{}); err != nil {
 		t.Fatalf("InjectEnv with empty map should be a no-op, got: %v", err)
 	}
@@ -17,6 +18,7 @@ func TestInjectEnv_Empty(t *testing.T) {
 // TestInjectEnv_SetsVars verifies that InjectEnv calls tmux set-environment
 // for each key and that the injected vars are readable via tmux show-environment.
 func TestInjectEnv_SetsVars(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	const sessName = "injectenv-test"

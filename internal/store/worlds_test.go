@@ -7,6 +7,7 @@ import (
 )
 
 func TestRegisterWorld(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	err := s.RegisterWorld("haven", "/home/user/haven")
@@ -42,6 +43,7 @@ func TestRegisterWorld(t *testing.T) {
 }
 
 func TestRegisterWorldIdempotent(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	err := s.RegisterWorld("haven", "/home/user/haven")
@@ -66,6 +68,7 @@ func TestRegisterWorldIdempotent(t *testing.T) {
 }
 
 func TestGetWorldNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	_, err := s.GetWorld("nonexistent")
@@ -78,6 +81,7 @@ func TestGetWorldNotFound(t *testing.T) {
 }
 
 func TestListWorlds(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Register 3 worlds (in non-alphabetical order).
@@ -107,6 +111,7 @@ func TestListWorlds(t *testing.T) {
 }
 
 func TestListWorldsEmpty(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	worlds, err := s.ListWorlds()
@@ -119,6 +124,7 @@ func TestListWorldsEmpty(t *testing.T) {
 }
 
 func TestUpdateWorldRepo(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	err := s.RegisterWorld("haven", "/old/path")
@@ -150,6 +156,7 @@ func TestUpdateWorldRepo(t *testing.T) {
 }
 
 func TestUpdateWorldRepoNonexistent(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	err := s.UpdateWorldRepo("nonexistent", "/some/path")
@@ -162,6 +169,7 @@ func TestUpdateWorldRepoNonexistent(t *testing.T) {
 }
 
 func TestDeleteWorldData(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	err := s.RegisterWorld("haven", "/home/user/haven")
@@ -216,6 +224,7 @@ func TestDeleteWorldData(t *testing.T) {
 }
 
 func TestDeleteWorldDataDeletesAgents(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	err := s.RegisterWorld("haven", "/home/user/haven")
@@ -251,6 +260,7 @@ func TestDeleteWorldDataDeletesAgents(t *testing.T) {
 }
 
 func TestDeleteWorldDataDeletesCaravanItems(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	err := s.RegisterWorld("haven", "/home/user/haven")
@@ -294,6 +304,7 @@ func TestDeleteWorldDataDeletesCaravanItems(t *testing.T) {
 }
 
 func TestDeleteWorldDataDeletesMessagesAndEscalations(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	err := s.RegisterWorld("haven", "/home/user/haven")
@@ -338,6 +349,7 @@ func TestDeleteWorldDataDeletesMessagesAndEscalations(t *testing.T) {
 }
 
 func TestDeleteWorldDataPreservesOtherWorlds(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Register two worlds with agents.
@@ -392,6 +404,7 @@ func TestDeleteWorldDataPreservesOtherWorlds(t *testing.T) {
 }
 
 func TestDeleteWorldDataDoesNotAffectSimilarWorlds(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Register two worlds with similar names.
@@ -478,6 +491,7 @@ func TestDeleteWorldDataDoesNotAffectSimilarWorlds(t *testing.T) {
 }
 
 func TestDeleteWorldDataNonexistent(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Deleting a nonexistent world should not error.
@@ -488,6 +502,7 @@ func TestDeleteWorldDataNonexistent(t *testing.T) {
 }
 
 func TestSchemaV5Migration(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Verify worlds table exists.
