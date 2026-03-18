@@ -439,17 +439,10 @@ func (s *WorldStore) ResetMergeRequestForRetry(mrID string) error {
 	return checkRowsAffected(result, "merge request", mrID)
 }
 
-// SupersedeFailedMRsForWrit atomically marks all failed MRs for a writ as
-// superseded, returning the IDs of superseded MRs. Uses a transaction to
-// ensure the IDs returned match the rows actually updated.
-func (s *WorldStore) SupersedeFailedMRsForWrit(writID string) ([]string, error) {
+// supersedeFailedMRsInTx marks all failed MRs for a writ as superseded within
+// an existing transaction, returning the IDs of superseded MRs.
+func supersedeFailedMRsInTx(tx *sql.Tx, writID string) ([]string, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback()
 
 	rows, err := tx.Query(
 		`SELECT id FROM merge_requests WHERE writ_id = ? AND phase = 'failed'`,
@@ -485,6 +478,24 @@ func (s *WorldStore) SupersedeFailedMRsForWrit(writID string) ([]string, error) 
 		if err != nil {
 			return nil, fmt.Errorf("failed to supersede MR %q: %w", id, err)
 		}
+	}
+
+	return ids, nil
+}
+
+// SupersedeFailedMRsForWrit atomically marks all failed MRs for a writ as
+// superseded, returning the IDs of superseded MRs. Uses a transaction to
+// ensure the IDs returned match the rows actually updated.
+func (s *WorldStore) SupersedeFailedMRsForWrit(writID string) ([]string, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	ids, err := supersedeFailedMRsInTx(tx, writID)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
