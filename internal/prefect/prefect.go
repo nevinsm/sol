@@ -395,6 +395,11 @@ func (s *Prefect) respawn(agent store.Agent) {
 			"agent", agent.Name, "world", agent.World, "role", agent.Role)
 		return
 	}
+	// Increment backoff before the attempt so that failures still advance the
+	// backoff tier and prevent tight retry loops (e.g. missing binary, config
+	// error, tmux issue).
+	s.backoff[agentID] = restartCount
+
 	_, err := startup.Respawn(agent.Role, agent.World, agent.Name, startup.LaunchOpts{
 		Sessions: s.sessions,
 	})
@@ -404,7 +409,6 @@ func (s *Prefect) respawn(agent store.Agent) {
 		return
 	}
 
-	s.backoff[agentID] = restartCount
 	delete(s.lastStalled, agentID)
 
 	s.logger.Info("respawned session",
