@@ -106,12 +106,21 @@ func (s *baseStore) Path() string {
 	return s.path
 }
 
+// ErrCheckpointBusy is returned by Checkpoint when the WAL could not be fully
+// flushed because another connection holds a read lock (busy=1).
+var ErrCheckpointBusy = errors.New("WAL checkpoint incomplete: database busy")
+
 // Checkpoint forces a WAL checkpoint, flushing all WAL data into the main
 // database file. Uses TRUNCATE mode to also remove the WAL file afterward.
+// Returns ErrCheckpointBusy if another connection prevented full flushing.
 func (s *baseStore) Checkpoint() error {
-	_, err := s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	var busy, log, checkpointed int
+	err := s.db.QueryRow("PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &log, &checkpointed)
 	if err != nil {
 		return fmt.Errorf("failed to checkpoint database %q: %w", s.path, err)
+	}
+	if busy != 0 {
+		return fmt.Errorf("checkpoint database %q (log=%d checkpointed=%d): %w", s.path, log, checkpointed, ErrCheckpointBusy)
 	}
 	return nil
 }

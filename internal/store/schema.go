@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -157,7 +158,10 @@ func (s *baseStore) SchemaVersion() (int, error) {
 	var v int
 	err = s.db.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&v)
 	if err != nil {
-		return 0, nil // table exists but empty
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil // table exists but empty
+		}
+		return 0, err
 	}
 	return v, nil
 }
