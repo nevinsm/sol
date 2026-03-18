@@ -46,7 +46,7 @@ structure; the action layer names the mechanisms.
 | **Charter** | Per-world configuration file (`world.toml`). Defines source repo, agent capacity, model tier, and forge settings. Layered with global `sol.toml`. | *(new in Arc 1)* |
 | **Brief** | An envoy's, governor's, or chancellor's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start and after compaction, save-checked on stop. GLASS-inspectable. | *(new in Arc 3)* |
 | **World Summary** | Governor-maintained external-facing summary of a world. Structured file at `.brief/world-summary.md` with prescribed sections (Project, Architecture, Priorities, Constraints). Read by Chancellor and the autarch via `sol world summary`. | *(new in Arc 3)* |
-| **Writ Output Directory** | Persistent output directory for a writ. Path: `$SOL_HOME/{world}/writ-outputs/{writID}/`. Used by non-code writs (analysis, review, etc.) to deliver output that survives worktree cleanup. Defined in `internal/config/config.go`. | *(new)* |
+| **Writ Output Directory** | The delivery surface for non-code writs. Path: `$SOL_HOME/{world}/writ-outputs/{writID}/`. Created at cast time; contents are readable with standard shell tools. See also: `config.WritOutputDir()`. | *(new)* |
 
 ## Processes
 
