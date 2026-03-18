@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/quota"
 	"github.com/nevinsm/sol/internal/startup"
@@ -313,6 +314,48 @@ func TestPatrolHealthyAgents(t *testing.T) {
 	}
 	if stopped := mock.getStopped(); len(stopped) != 0 {
 		t.Errorf("expected 0 sessions stopped, got %d: %v", len(stopped), stopped)
+	}
+}
+
+func TestPatrolSkipsWhenWorldSleeping(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Put the world to sleep.
+	worldCfg := config.DefaultWorldConfig()
+	worldCfg.World.Sleeping = true
+	if err := config.WriteWorldConfig("ember", worldCfg); err != nil {
+		t.Fatalf("WriteWorldConfig() error: %v", err)
+	}
+
+	// Create a stalled agent (working state, no live session, tethered) —
+	// this would normally trigger a respawn.
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
+	createWrit(t, worldStore, "sol-abc12345", "Test task")
+	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+		t.Fatalf("tether.Write() error: %v", err)
+	}
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// No sessions should have been started — patrol must skip agent work while sleeping.
+	if started := mock.getStarted(); len(started) != 0 {
+		t.Errorf("expected 0 sessions started (world sleeping), got %d: %v", len(started), started)
+	}
+
+	// Heartbeat should have been written so prefect does not restart the sentinel.
+	hb, err := ReadHeartbeat("ember")
+	if err != nil {
+		t.Fatalf("ReadHeartbeat() error: %v", err)
+	}
+	if hb == nil {
+		t.Fatal("expected heartbeat to be written, got nil")
 	}
 }
 
