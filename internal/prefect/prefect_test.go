@@ -22,15 +22,23 @@ import (
 
 // mockSessions implements SessionManager for testing.
 type mockSessions struct {
-	mu      sync.Mutex
-	alive   map[string]bool
-	started []string
-	stopped []string
-	lastEnv map[string]string // env from the most recent Start call
+	mu       sync.Mutex
+	alive    map[string]bool
+	started  []string
+	stopped  []string
+	lastEnv  map[string]string // env from the most recent Start call
+	startErr error             // if set, Start returns this error
 }
 
 func newMockSessions() *mockSessions {
 	return &mockSessions{alive: make(map[string]bool)}
+}
+
+// SetStartErr configures the mock to return err from all future Start calls.
+func (m *mockSessions) SetStartErr(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.startErr = err
 }
 
 func (m *mockSessions) Exists(name string) bool {
@@ -42,6 +50,9 @@ func (m *mockSessions) Exists(name string) bool {
 func (m *mockSessions) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.startErr != nil {
+		return m.startErr
+	}
 	m.alive[name] = true
 	m.started = append(m.started, name)
 	m.lastEnv = env
@@ -2044,6 +2055,79 @@ func TestCheckBrokerHealthFreshHeartbeatSkipped(t *testing.T) {
 	for _, call := range detachedCalls {
 		if len(call) >= 1 && call[0] == "broker" {
 			t.Errorf("broker should not be restarted with fresh heartbeat, got call: %v", call)
+		}
+	}
+}
+
+// TestRespawnBackoffIncrementsOnFailure verifies that the backoff counter
+// advances even when startup.Respawn fails, preventing tight retry loops.
+func TestRespawnBackoffIncrementsOnFailure(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	// Raise the mass-death threshold so repeated failures don't trip degraded mode
+	// (which would skip respawns and confound the backoff assertions).
+	cfg.MassDeathThreshold = 20
+
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Inject a Start error so startup.Respawn fails.
+	mock.SetStartErr(fmt.Errorf("tmux: session start failed"))
+
+	sup := New(cfg, sphereStore, mock, logger)
+
+	// First heartbeat: session is dead, respawn is attempted (delay=0 for restart 1)
+	// and fails. Backoff must be incremented despite the failure.
+	sup.heartbeat()
+
+	// The session should NOT have been started (mock returns error).
+	if started := mock.GetStarted(); len(started) != 0 {
+		t.Errorf("expected no sessions started on failure, got %d: %v", len(started), started)
+	}
+
+	// Backoff must be incremented to 1 despite the failure.
+	sup.mu.Lock()
+	backoffCount := sup.backoff["haven/Toast"]
+	sup.mu.Unlock()
+	if backoffCount != 1 {
+		t.Errorf("backoff count = %d after failed respawn, want 1", backoffCount)
+	}
+
+	// Second heartbeat: restart 2 → delay=30s → deferred stall path runs.
+	// The deferred stall path also sets backoff (it always did), so backoff advances to 2.
+	sup.heartbeat()
+
+	sup.mu.Lock()
+	backoffCount = sup.backoff["haven/Toast"]
+	sup.mu.Unlock()
+	if backoffCount != 2 {
+		t.Errorf("backoff count = %d after deferred stall on second check, want 2", backoffCount)
+	}
+
+	// Now simulate consecutive respawn failures on later attempts. The agent
+	// must be reset to "working" each time so the heartbeat picks it up.
+	for i := 3; i <= 5; i++ {
+		// Reset agent to working state (simulate it being picked up again).
+		if err := sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345"); err != nil {
+			t.Fatalf("iteration %d: failed to reset agent state: %v", i, err)
+		}
+		// Advance lastStalled so the backoff delay check passes.
+		sup.mu.Lock()
+		sup.lastStalled["haven/Toast"] = time.Now().Add(-time.Hour)
+		sup.mu.Unlock()
+
+		sup.heartbeat()
+
+		sup.mu.Lock()
+		backoffCount = sup.backoff["haven/Toast"]
+		sup.mu.Unlock()
+		if backoffCount != i {
+			t.Errorf("backoff count = %d after respawn attempt %d, want %d", backoffCount, i, i)
 		}
 	}
 }
