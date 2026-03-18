@@ -339,6 +339,7 @@ type patrolState struct {
 	lastMerge        time.Time
 	lastError        string // most recent error, cleared on successful merge
 	verifyRetryDelay time.Duration // delay between verifyPush retries; 0 uses default (5s)
+	preMergeRef      string // origin/{targetBranch} HEAD captured before each merge push
 }
 
 // patrol runs one complete patrol cycle.

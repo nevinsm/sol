@@ -72,6 +72,20 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 		s.forge.sessions.Stop(sessionName, true)
 	}
 
+	// Capture the remote target branch HEAD before launching the merge session.
+	// The session will push to origin, and verifyPush uses this as the lower
+	// bound of a ref-range search (preMergeRef..origin/{targetBranch}) so that
+	// push verification is clock-independent and window-independent.
+	{
+		targetRef := fmt.Sprintf("origin/%s", s.forge.cfg.TargetBranch)
+		if out, err := s.cmd.Run(ctx, worktree, "git", "rev-parse", targetRef); err == nil {
+			s.preMergeRef = strings.TrimSpace(string(out))
+		} else {
+			s.forge.logger.Warn("failed to capture pre-merge ref, push verification will search full history", "error", err)
+			s.preMergeRef = ""
+		}
+	}
+
 	// 2. Build injection context using the full builder.
 	writ, err := s.forge.worldStore.GetWrit(mr.WritID)
 	if err != nil {
@@ -475,17 +489,25 @@ func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest)
 		return fmt.Errorf("git fetch failed during push verification: %w", err)
 	}
 
-	// Search for the writ ID in commits on the target branch from the past 2 hours.
-	// Using a time bound instead of a fixed count (-5) prevents false negatives in
-	// busy systems where concurrent merges from other worlds can push the target
-	// commit beyond a small count window during the verification retry window.
-	out, err := s.cmd.Run(ctx, worktree, "git", "log", targetRef, "--oneline", "--since=2 hours ago", "--grep", mr.WritID)
+	// Search for the writ ID in commits that appeared after the pre-merge ref.
+	// Using a ref range (preMergeRef..origin/{targetBranch}) is clock-independent —
+	// it finds exactly the commits introduced since we captured the baseline before
+	// the merge session started. If preMergeRef is empty (capture failed), fall back
+	// to searching all commits on the target branch.
+	var out []byte
+	var err error
+	if s.preMergeRef != "" {
+		refRange := fmt.Sprintf("%s..%s", s.preMergeRef, targetRef)
+		out, err = s.cmd.Run(ctx, worktree, "git", "log", refRange, "--oneline", "--grep", mr.WritID)
+	} else {
+		out, err = s.cmd.Run(ctx, worktree, "git", "log", targetRef, "--oneline", "--grep", mr.WritID)
+	}
 	if err != nil {
 		return fmt.Errorf("git log grep check failed: %w", err)
 	}
 
 	if len(strings.TrimSpace(string(out))) == 0 {
-		return fmt.Errorf("writ %s not found in recent commits on %s", mr.WritID, targetRef)
+		return fmt.Errorf("writ %s not found in commits on %s", mr.WritID, targetRef)
 	}
 
 	return nil

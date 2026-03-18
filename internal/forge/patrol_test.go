@@ -1241,10 +1241,14 @@ func TestPatrolSessionPathSuccessfulMerge(t *testing.T) {
 	sessionName := mergeSessionName("ember")
 
 	// Set up mock git commands for push verification.
+	// runMergeSession calls git rev-parse origin/main to capture the pre-merge ref;
+	// mock returns nil/nil (empty string), so preMergeRef="" and tryVerifyPush falls
+	// back to searching all commits on origin/main (no range prefix).
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git log origin/main --oneline --since=2 hours ago --grep sol-sess1111",
+	cmdRunner.SetResult("git log origin/main --oneline --grep sol-sess1111",
 		[]byte("abc1234 Session merge test (sol-sess1111)"), nil)
+	state.verifyRetryDelay = time.Millisecond
 
 	// Goroutine simulates the Claude session: waits until session starts,
 	// then writes a "merged" result file and exits the session.
