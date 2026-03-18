@@ -31,7 +31,7 @@ func TestWorkflowInstantiateAndAdvance(t *testing.T) {
 	}
 
 	manifest := `name = "test-workflow"
-type = "agent"
+type = "workflow"
 description = "Test workflow"
 
 [variables]
@@ -161,7 +161,7 @@ func TestWorkflowCrashRecovery(t *testing.T) {
 	}
 
 	manifest := `name = "crash-workflow"
-type = "agent"
+type = "workflow"
 description = "Crash test"
 
 [variables]
@@ -260,7 +260,7 @@ func TestCastWithWorkflow(t *testing.T) {
 	}
 
 	manifest := `name = "cast-workflow"
-type = "agent"
+type = "workflow"
 description = "Cast test"
 
 [variables]
@@ -359,7 +359,7 @@ func TestPrimeWithWorkflow(t *testing.T) {
 	}
 
 	manifest := `name = "prime-workflow"
-type = "agent"
+type = "workflow"
 description = "Prime test"
 
 [variables]
@@ -504,7 +504,7 @@ func TestDoneWithWorkflowCleanup(t *testing.T) {
 	}
 
 	manifest := `name = "done-workflow"
-type = "agent"
+type = "workflow"
 description = "Done test"
 
 [variables]
@@ -1054,7 +1054,7 @@ func TestWorkflowPropulsionLoop(t *testing.T) {
 	}
 
 	manifest := `name = "propulsion-workflow"
-type = "agent"
+type = "workflow"
 description = "Propulsion loop test"
 
 [variables]

@@ -1246,6 +1246,7 @@ func TestValidateWorkflowWithTemplates(t *testing.T) {
 }
 
 func TestValidateOtherTypeWithTemplates(t *testing.T) {
+	// Unknown types are rejected before template checks.
 	m := &Manifest{
 		Type:      "agent",
 		Steps:     []StepDef{{ID: "s1", Title: "Step 1"}},
@@ -1253,9 +1254,40 @@ func TestValidateOtherTypeWithTemplates(t *testing.T) {
 	}
 	err := Validate(m)
 	if err == nil {
-		t.Fatal("Validate() expected error for non-expansion type with templates")
+		t.Fatal("Validate() expected error for unknown type")
 	}
-	if got := err.Error(); got != `type "agent" must not contain [[template]] entries` {
+	if got := err.Error(); got != `unknown workflow type "agent": must be workflow, expansion, or convoy` {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateWorkflowTypeWithTemplates(t *testing.T) {
+	// Known type "workflow" with [[template]] entries is still rejected.
+	m := &Manifest{
+		Type:      "workflow",
+		Steps:     []StepDef{{ID: "s1", Title: "Step 1"}},
+		Templates: []Template{{ID: "t1", Title: "Template 1"}},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for workflow type with templates")
+	}
+	if got := err.Error(); got != `type "workflow" must not contain [[template]] entries` {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateUnknownType(t *testing.T) {
+	// A typo in the type field should be caught immediately.
+	m := &Manifest{
+		Type: "convyo",
+		Legs: []Leg{{ID: "leg1", Title: "Leg 1"}},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for unknown workflow type")
+	}
+	if got := err.Error(); got != `unknown workflow type "convyo": must be workflow, expansion, or convoy` {
 		t.Errorf("error: got %q", got)
 	}
 }

@@ -411,7 +411,7 @@ func TestHandoffWithWorkflow(t *testing.T) {
 	}
 
 	manifest := `name = "handoff-workflow"
-type = "agent"
+type = "workflow"
 description = "Handoff test"
 
 [variables]
@@ -527,7 +527,7 @@ func TestHandoffPrimeOverridesWorkflow(t *testing.T) {
 	}
 
 	manifest := `name = "override-workflow"
-type = "agent"
+type = "workflow"
 description = "Override test"
 
 [variables]

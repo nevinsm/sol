@@ -30,7 +30,7 @@ func makeWorkflow(t *testing.T, dir, name, description string) {
 		t.Fatalf("create workflow dir %s: %v", name, err)
 	}
 	manifest := `name = "` + name + `"
-type = "agent"
+type = "workflow"
 description = "` + description + `"
 
 [variables]
@@ -302,7 +302,7 @@ func TestCastWithProjectWorkflow(t *testing.T) {
 	}
 
 	manifest := `name = "project-cast-workflow"
-type = "agent"
+type = "workflow"
 description = "Project-level workflow for cast test"
 
 [variables]
@@ -427,7 +427,7 @@ func TestInstantiateResolvesProjectTier(t *testing.T) {
 		t.Fatalf("create project dir: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectDir, "manifest.toml"), []byte(`name = "tier-test"
-type = "agent"
+type = "workflow"
 description = "Project version"
 
 [variables]
@@ -452,7 +452,7 @@ instructions = "steps/01.md"
 		t.Fatalf("create user dir: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(userDir, "manifest.toml"), []byte(`name = "tier-test"
-type = "agent"
+type = "workflow"
 description = "User version"
 
 [variables]
