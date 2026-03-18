@@ -5,6 +5,8 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/inbox"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -41,7 +43,8 @@ func runInbox(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := inbox.Config{
-		Store: sphereStore,
+		Store:       sphereStore,
+		EventLogger: events.NewLogger(config.Home()),
 	}
 
 	m := inbox.NewModel(cfg)

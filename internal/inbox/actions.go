@@ -2,6 +2,7 @@ package inbox
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nevinsm/sol/internal/events"
 )
 
 // actionResultMsg carries the result of an action back to the model.
@@ -12,12 +13,19 @@ type actionResultMsg struct {
 }
 
 // ackCmd acknowledges an inbox item (escalation or message).
-func ackCmd(src DataSource, item InboxItem) tea.Cmd {
+// If logger is non-nil and the item is an escalation, emits EventEscalationAcked on success.
+func ackCmd(src DataSource, item InboxItem, logger *events.Logger) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		switch item.Type {
 		case ItemEscalation:
 			err = src.AckEscalation(item.ID)
+			if err == nil && logger != nil {
+				logger.Emit(events.EventEscalationAcked, item.Source, "sol", "both", map[string]string{
+					"id":     item.ID,
+					"source": item.Source,
+				})
+			}
 		case ItemMail:
 			err = src.AckMessage(item.ID)
 		}
@@ -26,12 +34,19 @@ func ackCmd(src DataSource, item InboxItem) tea.Cmd {
 }
 
 // resolveCmd resolves an escalation. No-op for messages.
-func resolveCmd(src DataSource, item InboxItem) tea.Cmd {
+// If logger is non-nil, emits EventEscalationResolved on success.
+func resolveCmd(src DataSource, item InboxItem, logger *events.Logger) tea.Cmd {
 	if item.Type != ItemEscalation {
 		return nil
 	}
 	return func() tea.Msg {
 		err := src.ResolveEscalation(item.ID)
+		if err == nil && logger != nil {
+			logger.Emit(events.EventEscalationResolved, item.Source, "sol", "both", map[string]string{
+				"id":     item.ID,
+				"source": item.Source,
+			})
+		}
 		return actionResultMsg{itemID: item.ID, action: "resolve", err: err}
 	}
 }

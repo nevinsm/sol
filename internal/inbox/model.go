@@ -4,6 +4,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nevinsm/sol/internal/events"
 )
 
 const refreshInterval = 3 * time.Second
@@ -27,7 +28,8 @@ type highlightTickMsg time.Time
 
 // Config holds dependencies for the inbox TUI.
 type Config struct {
-	Store DataSource
+	Store       DataSource
+	EventLogger *events.Logger
 }
 
 // Model is the root Bubble Tea model for the inbox TUI.
@@ -147,12 +149,12 @@ func (m *Model) updateListKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "a":
 		if len(m.items) > 0 && m.cursor < len(m.items) {
-			return ackCmd(m.config.Store, m.items[m.cursor])
+			return ackCmd(m.config.Store, m.items[m.cursor], m.config.EventLogger)
 		}
 
 	case "r":
 		if len(m.items) > 0 && m.cursor < len(m.items) {
-			return resolveCmd(m.config.Store, m.items[m.cursor])
+			return resolveCmd(m.config.Store, m.items[m.cursor], m.config.EventLogger)
 		}
 
 	case "d":
@@ -175,12 +177,12 @@ func (m *Model) updateDetailKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "a":
 		if len(m.items) > 0 && m.cursor < len(m.items) {
-			return ackCmd(m.config.Store, m.items[m.cursor])
+			return ackCmd(m.config.Store, m.items[m.cursor], m.config.EventLogger)
 		}
 
 	case "r":
 		if len(m.items) > 0 && m.cursor < len(m.items) {
-			return resolveCmd(m.config.Store, m.items[m.cursor])
+			return resolveCmd(m.config.Store, m.items[m.cursor], m.config.EventLogger)
 		}
 
 	case "d":
