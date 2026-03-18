@@ -185,20 +185,13 @@ var mailPurgeCmd = &cobra.Command{
 	Short: "Delete acknowledged messages",
 	Long: `Delete acknowledged messages from the sphere mailbox.
 
-Requires --confirm to proceed; without it, previews what would be deleted and exits.
-The --force flag is accepted as an alias for --confirm for backward compatibility.`,
+Requires --confirm to proceed; without it, previews what would be deleted and exits 1.`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		allAcked, _ := cmd.Flags().GetBool("all-acked")
 		before, _ := cmd.Flags().GetString("before")
 		confirm, _ := cmd.Flags().GetBool("confirm")
-		force, _ := cmd.Flags().GetBool("force")
-
-		// --force is an alias for --confirm on this command (backward compat).
-		if force {
-			confirm = true
-		}
 
 		if !allAcked && before == "" {
 			return fmt.Errorf("must specify --before=<duration> or --all-acked")
@@ -350,7 +343,6 @@ func init() {
 	mailPurgeCmd.Flags().String("before", "", "Delete acked messages older than duration (e.g., 7d, 24h)")
 	mailPurgeCmd.Flags().Bool("all-acked", false, "Delete all acknowledged messages regardless of age")
 	mailPurgeCmd.Flags().Bool("confirm", false, "confirm destructive action")
-	mailPurgeCmd.Flags().Bool("force", false, "alias for --confirm (backward compatibility)")
 
 	mailCmd.AddCommand(mailSendCmd)
 	mailCmd.AddCommand(mailInboxCmd)
