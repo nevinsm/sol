@@ -445,7 +445,7 @@ func TestActOnResultMerged(t *testing.T) {
 	// Mock git commands for push verification.
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+	cmdRunner.SetResult("git log origin/main --oneline --since=2 hours ago --grep sol-aaa11111",
 		[]byte("abc1234 Fix auth flow (sol-aaa11111)"), nil)
 
 	result := &ForgeResult{
@@ -488,7 +488,7 @@ func TestActOnResultMergedUpdatesSourceRepo(t *testing.T) {
 	// Mock git commands for push verification.
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+	cmdRunner.SetResult("git log origin/main --oneline --since=2 hours ago --grep sol-aaa11111",
 		[]byte("abc1234 Fix auth flow (sol-aaa11111)"), nil)
 	cmdRunner.SetResult("git fetch origin main", nil, nil)
 
@@ -613,7 +613,7 @@ func TestActOnResultPushVerificationFails(t *testing.T) {
 	// Push verification fails: writ ID not found in recent commits.
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+	cmdRunner.SetResult("git log origin/main --oneline --since=2 hours ago --grep sol-aaa11111",
 		[]byte(""), nil) // writ not found
 
 	result := &ForgeResult{
@@ -654,7 +654,7 @@ func TestActOnResultPushVerificationFailureSkipsSourceRepoUpdate(t *testing.T) {
 	// Push verification fails: writ ID not found in recent commits.
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+	cmdRunner.SetResult("git log origin/main --oneline --since=2 hours ago --grep sol-aaa11111",
 		[]byte(""), nil) // writ not found
 
 	result := &ForgeResult{
@@ -837,7 +837,7 @@ func TestPatrolWithSessionManager(t *testing.T) {
 	// Mock git commands for push verification.
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+	cmdRunner.SetResult("git log origin/main --oneline --since=2 hours ago --grep sol-aaa11111",
 		[]byte("abc1234 Fix auth flow (sol-aaa11111)"), nil)
 
 	// Use a goroutine to simulate the session completing: write result file,
@@ -894,7 +894,7 @@ func TestVerifyPushSuccess(t *testing.T) {
 
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+	cmdRunner.SetResult("git log origin/main --oneline --since=2 hours ago --grep sol-aaa11111",
 		[]byte("abc1234 Fix auth flow (sol-aaa11111)"), nil)
 
 	mr := &store.MergeRequest{
@@ -915,7 +915,7 @@ func TestVerifyPushWritNotFound(t *testing.T) {
 
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git log origin/main --oneline -5 --grep sol-aaa11111",
+	cmdRunner.SetResult("git log origin/main --oneline --since=2 hours ago --grep sol-aaa11111",
 		[]byte(""), nil) // writ not found in recent commits
 
 	mr := &store.MergeRequest{
@@ -971,7 +971,7 @@ func TestVerifyPushRetriesThenSucceeds(t *testing.T) {
 			}
 			return nil, nil
 		}
-		if key == "git log origin/main --oneline -5 --grep sol-aaa11111" {
+		if key == "git log origin/main --oneline --since=2 hours ago --grep sol-aaa11111" {
 			return []byte("abc1234 Fix auth flow (sol-aaa11111)"), nil
 		}
 		return nil, nil

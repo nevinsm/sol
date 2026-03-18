@@ -475,8 +475,11 @@ func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest)
 		return fmt.Errorf("git fetch failed during push verification: %w", err)
 	}
 
-	// Search for the writ ID in recent commits on the target branch.
-	out, err := s.cmd.Run(ctx, worktree, "git", "log", targetRef, "--oneline", "-5", "--grep", mr.WritID)
+	// Search for the writ ID in commits on the target branch from the past 2 hours.
+	// Using a time bound instead of a fixed count (-5) prevents false negatives in
+	// busy systems where concurrent merges from other worlds can push the target
+	// commit beyond a small count window during the verification retry window.
+	out, err := s.cmd.Run(ctx, worktree, "git", "log", targetRef, "--oneline", "--since=2 hours ago", "--grep", mr.WritID)
 	if err != nil {
 		return fmt.Errorf("git log grep check failed: %w", err)
 	}
