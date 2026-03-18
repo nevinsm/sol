@@ -1,3 +1,11 @@
+// Package tether manages the tether directory for agents — a set of files
+// under $SOL_HOME/{world}/{role}s/{agent}/.tether/ where each file represents
+// a bound writ.
+//
+// Concurrency contract: this package provides no internal locking. Callers must
+// hold the appropriate dispatch lock (AgentLock or WritLock) before calling
+// Write, Clear, or ClearOne. List and IsTethered are safe for concurrent read
+// access.
 package tether
 
 import (
