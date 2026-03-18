@@ -77,6 +77,7 @@ func ParseFile(path string) (map[string]string, error) {
 			}
 		}
 		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
 
 		// Reject empty keys (e.g. "=value").
 		if key == "" {
