@@ -365,6 +365,14 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	patrolStart := w.now()
 	w.patrolCount++
 
+	// If the world is sleeping, write heartbeat but skip all agent work.
+	// Prefect stops starting new sentinels for sleeping worlds, but an existing
+	// sentinel must keep writing heartbeats so it is not mistaken for dead.
+	if config.IsSleeping(w.config.World) {
+		w.writeHeartbeat("running", w.patrolCount, 0, 0, 0, "")
+		return nil
+	}
+
 	agents, err := w.sphereStore.ListAgents(w.config.World, "")
 	if err != nil {
 		return fmt.Errorf("failed to list agents: %w", err)
