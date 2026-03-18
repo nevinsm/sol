@@ -429,15 +429,19 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		}
 
 		// Nudge forge that a new MR is ready (best-effort, smart delivery).
-		forgeSession := config.SessionName(opts.World, "forge")
-		if err := nudge.Deliver(forgeSession, nudge.Message{
-			Sender:   opts.AgentName,
-			Type:     "MR_READY",
-			Subject:  fmt.Sprintf("MR %s ready for merge", mrID),
-			Body:     fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`, writID, mrID, branchName, item.Title),
-			Priority: "normal",
-		}); err != nil {
-			fmt.Fprintf(os.Stderr, "resolve: failed to nudge forge: %v\n", err)
+		// Only send when an MR was actually created — an empty mrID means push
+		// failed and no MR exists yet, so waking forge would be a no-op.
+		if mrID != "" {
+			forgeSession := config.SessionName(opts.World, "forge")
+			if err := nudge.Deliver(forgeSession, nudge.Message{
+				Sender:   opts.AgentName,
+				Type:     "MR_READY",
+				Subject:  fmt.Sprintf("MR %s ready for merge", mrID),
+				Body:     fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`, writID, mrID, branchName, item.Title),
+				Priority: "normal",
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "resolve: failed to nudge forge: %v\n", err)
+			}
 		}
 	} else {
 		// Non-code writs: emit event without branch/MR fields.
