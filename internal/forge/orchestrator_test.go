@@ -519,6 +519,92 @@ func TestActOnResultMergedUpdatesSourceRepo(t *testing.T) {
 	}
 }
 
+func TestUpdateSourceRepoAdvancesLocalBranch(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin main", nil, nil)
+	cmdRunner.SetResult("git update-ref refs/heads/main origin/main", nil, nil)
+
+	state.updateSourceRepo(context.Background())
+
+	calls := cmdRunner.getCalls()
+
+	// Verify fetch was called on the source repo.
+	fetchFound := false
+	for _, call := range calls {
+		if call.Name == "git" &&
+			len(call.Args) == 3 &&
+			call.Args[0] == "fetch" && call.Args[1] == "origin" && call.Args[2] == "main" &&
+			call.Dir == state.forge.sourceRepo {
+			fetchFound = true
+			break
+		}
+	}
+	if !fetchFound {
+		t.Error("expected git fetch origin main to be called on source repo")
+		for _, call := range calls {
+			t.Logf("  call: dir=%s name=%s args=%v", call.Dir, call.Name, call.Args)
+		}
+	}
+
+	// Verify update-ref was called on the source repo to advance the local branch.
+	updateRefFound := false
+	for _, call := range calls {
+		if call.Name == "git" &&
+			len(call.Args) == 3 &&
+			call.Args[0] == "update-ref" &&
+			call.Args[1] == "refs/heads/main" &&
+			call.Args[2] == "origin/main" &&
+			call.Dir == state.forge.sourceRepo {
+			updateRefFound = true
+			break
+		}
+	}
+	if !updateRefFound {
+		t.Error("expected git update-ref refs/heads/main origin/main to be called on source repo")
+		for _, call := range calls {
+			t.Logf("  call: dir=%s name=%s args=%v", call.Dir, call.Name, call.Args)
+		}
+	}
+}
+
+func TestUpdateSourceRepoSkipsUpdateRefOnFetchFailure(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin main", nil, fmt.Errorf("network error"))
+
+	state.updateSourceRepo(context.Background())
+
+	calls := cmdRunner.getCalls()
+
+	// Verify update-ref was NOT called when fetch failed.
+	for _, call := range calls {
+		if call.Name == "git" && len(call.Args) > 0 && call.Args[0] == "update-ref" {
+			t.Errorf("git update-ref should not be called when fetch fails, got: dir=%s args=%v", call.Dir, call.Args)
+		}
+	}
+}
+
+func TestUpdateSourceRepoNoSourceRepo(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	state.forge.sourceRepo = ""
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+
+	state.updateSourceRepo(context.Background())
+
+	calls := cmdRunner.getCalls()
+	if len(calls) != 0 {
+		t.Errorf("expected no git calls when sourceRepo is empty, got %d calls", len(calls))
+	}
+}
+
 func TestActOnResultFailed(t *testing.T) {
 	state, worldStore, _ := setupOrchestratorTest(t)
 	defer state.fl.Close()
