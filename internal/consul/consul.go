@@ -20,8 +20,12 @@ import (
 
 // Config holds consul patrol configuration.
 type Config struct {
-	PatrolInterval      time.Duration // time between patrols (default: 5 minutes)
-	StaleTetherTimeout  time.Duration // how long a tether can be stale (default: 15 minutes)
+	PatrolInterval time.Duration // time between patrols (default: 5 minutes)
+	// StaleTetherTimeout is how long a tether (working or stalled agent) can go
+	// without activity before consul recovers it. Must be greater than prefect's
+	// maximum backoff delay (5 min) to avoid racing with active backoff management.
+	// Default: 15 minutes.
+	StaleTetherTimeout  time.Duration
 	HeartbeatDir        string        // path to heartbeat directory (default: $SOL_HOME/consul)
 	SolHome             string        // $SOL_HOME path
 	EscalationWebhook   string        // webhook URL for escalation routing (optional)
@@ -365,13 +369,26 @@ var errShutdown = fmt.Errorf("shutdown requested")
 // 4. Update agent state -> "idle", clear active_writ
 // 5. Emit event
 //
+// Candidates are agents in state "working" (session died, no one noticed) or
+// "stalled" (prefect permanently stalled the agent after exceeding MaxRespawns).
+// Both are safe to recover after StaleTetherTimeout because that timeout is
+// intentionally larger than prefect's maximum backoff delay (5 min): any agent
+// that has been stalled for longer than StaleTetherTimeout (15 min) has been
+// fully abandoned by prefect's active backoff management.
+//
 // Returns the number of tethers recovered.
 func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
-	// List all agents with state "working".
-	agents, err := d.sphereStore.ListAgents("", "working")
+	// List all agents with state "working" (session died, not yet noticed) and
+	// "stalled" (prefect permanently stalled after exceeding MaxRespawns).
+	working, err := d.sphereStore.ListAgents("", "working")
 	if err != nil {
 		return 0, fmt.Errorf("failed to list working agents: %w", err)
 	}
+	stalled, err := d.sphereStore.ListAgents("", "stalled")
+	if err != nil {
+		return 0, fmt.Errorf("failed to list stalled agents: %w", err)
+	}
+	agents := append(working, stalled...)
 
 	var recovered int
 	for _, agent := range agents {
@@ -390,15 +407,19 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 			continue
 		}
 
-		// Check if session is alive.
+		// Check if session is alive (defensive: stalled agents should have no
+		// live session, but skip recovery if one exists to avoid disrupting it).
 		sessionName := config.SessionName(agent.World, agent.Name)
 		if d.sessions.Exists(sessionName) {
 			continue // session alive, not stale
 		}
 
 		// Check if the agent's updated_at is older than StaleTetherTimeout.
+		// For "stalled" agents in active backoff, prefect would have retried
+		// within MaxBackoff (5 min), resetting updated_at. Any agent older than
+		// StaleTetherTimeout (15 min) has been abandoned.
 		if time.Since(agent.UpdatedAt) < d.config.StaleTetherTimeout {
-			continue // too recent, might still be starting
+			continue // too recent, might still be starting or in active backoff
 		}
 
 		// This tether is stale — recover it.
@@ -415,11 +436,11 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 // recoverOneTether recovers a single stale tether.
 //
 // CRASH SAFETY: The operation ordering ensures idempotent crash recovery.
-// Consul detects stale tethers by finding "working" agents with no live
-// session. The agent state update is done LAST — while the agent is still
-// "working", a crash at any point causes consul to retry on the next patrol.
-// Steps 1-3 are idempotent (updating an already-open writ is a no-op,
-// clearing an already-cleared tether is a no-op), so retries are safe.
+// Consul detects stale tethers by finding "working" or "stalled" agents with
+// no live session. The agent state update is done LAST — while the agent is
+// still in its previous state, a crash at any point causes consul to retry on
+// the next patrol. Steps 1-3 are idempotent (updating an already-open writ is
+// a no-op, clearing an already-cleared tether is a no-op), so retries are safe.
 func (d *Consul) recoverOneTether(agent store.Agent) error {
 	d.logInfo("consul_recover_tether", map[string]any{"agent_id": agent.ID, "writ_id": agent.ActiveWrit})
 

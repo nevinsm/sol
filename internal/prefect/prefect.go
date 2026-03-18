@@ -340,7 +340,9 @@ func (s *Prefect) respawn(agent store.Agent) {
 	restartCount := s.backoff[agentID] + 1
 
 	// If max respawns is configured and exceeded, permanently stall the agent.
-	// Consul's stale tether detection will recover the writ.
+	// Consul's stale tether detection monitors both "working" and "stalled"
+	// agents: it will recover the writ once StaleTetherTimeout has elapsed
+	// (default 15 min, intentionally > max backoff of 5 min).
 	if s.cfg.MaxRespawns > 0 && restartCount > s.cfg.MaxRespawns {
 		s.logger.Warn("agent exceeded max respawns, permanently stalling",
 			"agent", agent.Name, "world", agent.World,

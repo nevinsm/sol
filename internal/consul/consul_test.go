@@ -311,6 +311,91 @@ func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
 	}
 }
 
+// TestRecoverStaleTethersStalled verifies that consul recovers agents that were
+// permanently stalled by prefect (MaxRespawns exceeded, state = "stalled"), and
+// that stalled agents updated recently (within StaleTetherTimeout) are skipped.
+func TestRecoverStaleTethersStalled(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "ember-stalled"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Agent A: permanently stalled (MaxRespawns exceeded), stale timestamp → should be recovered.
+	sphereStore.CreateAgent("StalledOld", worldName, "outpost")
+	wiOld, _ := worldStore.CreateWrit("task-stalled-old", "old stalled task", "test", 1, nil)
+	sphereStore.UpdateAgentState(worldName+"/StalledOld", "stalled", wiOld)
+	worldStore.UpdateWrit(wiOld, store.WritUpdates{Status: "tethered", Assignee: worldName + "/StalledOld"})
+	tether.Write(worldName, "StalledOld", wiOld, "outpost")
+
+	// Make StalledOld's updated_at 2 hours ago (well beyond StaleTetherTimeout).
+	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
+		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/StalledOld")
+
+	// Agent B: stalled recently (active backoff) → should NOT be recovered.
+	sphereStore.CreateAgent("StalledRecent", worldName, "outpost")
+	wiRecent, _ := worldStore.CreateWrit("task-stalled-recent", "recent stalled task", "test", 1, nil)
+	sphereStore.UpdateAgentState(worldName+"/StalledRecent", "stalled", wiRecent)
+	worldStore.UpdateWrit(wiRecent, store.WritUpdates{Status: "tethered", Assignee: worldName + "/StalledRecent"})
+	tether.Write(worldName, "StalledRecent", wiRecent, "outpost")
+	// updated_at defaults to now — within StaleTetherTimeout.
+
+	sessions := newMockSessions() // no alive sessions
+
+	cfg := Config{
+		StaleTetherTimeout: 15 * time.Minute,
+		SolHome:            solHome,
+	}
+
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
+		return store.OpenWorld(world)
+	})
+
+	recovered, err := d.recoverStaleTethers(context.Background())
+	if err != nil {
+		t.Fatalf("recoverStaleTethers failed: %v", err)
+	}
+	if recovered != 1 {
+		t.Errorf("recovered = %d, want 1 (only old stalled agent)", recovered)
+	}
+
+	// Verify StalledOld was recovered.
+	agentOld, _ := sphereStore.GetAgent(worldName + "/StalledOld")
+	if agentOld.State != "idle" {
+		t.Errorf("StalledOld state = %q, want idle", agentOld.State)
+	}
+	if agentOld.ActiveWrit != "" {
+		t.Errorf("StalledOld active_writ = %q, want empty", agentOld.ActiveWrit)
+	}
+
+	// Verify writ A is back to open.
+	itemOld, _ := worldStore.GetWrit(wiOld)
+	if itemOld.Status != "open" {
+		t.Errorf("wiOld status = %q, want open", itemOld.Status)
+	}
+
+	// Verify tether cleared.
+	if tether.IsTethered(worldName, "StalledOld", "outpost") {
+		t.Error("StalledOld tether file should have been cleared")
+	}
+
+	// Verify StalledRecent was NOT recovered (still in active backoff window).
+	agentRecent, _ := sphereStore.GetAgent(worldName + "/StalledRecent")
+	if agentRecent.State != "stalled" {
+		t.Errorf("StalledRecent state = %q, want stalled (too recent)", agentRecent.State)
+	}
+}
+
 func TestRecoverStaleTethersTooRecent(t *testing.T) {
 	solHome := setupSolHome(t)
 
