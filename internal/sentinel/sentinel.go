@@ -627,7 +627,13 @@ func (w *Sentinel) checkClosedWritTethers(agents []store.Agent, reapedCount *int
 			}
 
 			// Persistent agent: remove just this tether, keep agent alive.
-			tether.ClearOne(w.config.World, agent.Name, writID, agent.Role)
+			if err := tether.ClearOne(w.config.World, agent.Name, writID, agent.Role); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+						"agent": agent.ID, "writ": writID, "action": "clear_tether_failed", "error": err.Error(),
+					})
+				}
+			}
 			if agent.ActiveWrit == writID {
 				_ = w.sphereStore.UpdateAgentState(agent.ID, agent.State, "")
 				agent.ActiveWrit = "" // update local copy
