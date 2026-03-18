@@ -137,6 +137,12 @@ func LoadManifest(workflowDir string) (*Manifest, error) {
 // The optional workflowDir parameter enables file-existence checks for
 // instruction paths. When omitted, instruction paths are not validated.
 func Validate(m *Manifest, workflowDir ...string) error {
+	switch m.Type {
+	case "", "workflow", "expansion", "convoy": // valid types
+	default:
+		return fmt.Errorf("unknown workflow type %q: must be workflow, expansion, or convoy", m.Type)
+	}
+
 	if m.Type == "expansion" {
 		if len(m.Steps) > 0 {
 			return fmt.Errorf("expansion workflow must not contain [[steps]] entries")
