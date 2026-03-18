@@ -491,10 +491,16 @@ func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest)
 	return nil
 }
 
-// updateSourceRepo fetches origin in the managed repo so its local main ref
-// tracks the remote after a successful merge push. This ensures subsequent
-// casts branch from the updated main rather than a stale ref. Best-effort:
-// errors are logged but not propagated since the merge itself already succeeded.
+// updateSourceRepo fetches origin in the managed repo and advances the local
+// branch to match origin/{targetBranch} after a successful merge push. This
+// ensures subsequent casts branch from the post-merge code rather than a stale
+// ref. Best-effort: errors are logged but not propagated since the merge itself
+// already succeeded.
+//
+// git update-ref is used to advance the local branch — it is a pure ref
+// operation that does not require a working tree checkout or clean state, which
+// makes it safe for the managed repo (a read-only research copy with no local
+// state worth preserving).
 func (s *patrolState) updateSourceRepo(ctx context.Context) {
 	sourceRepo := s.forge.sourceRepo
 	if sourceRepo == "" {
@@ -502,9 +508,20 @@ func (s *patrolState) updateSourceRepo(ctx context.Context) {
 	}
 	targetBranch := s.forge.cfg.TargetBranch
 	if _, err := s.cmd.Run(ctx, sourceRepo, "git", "fetch", "origin", targetBranch); err != nil {
-		s.forge.logger.Warn("failed to update managed repo after merge",
+		s.forge.logger.Warn("failed to fetch managed repo after merge",
 			"repo", sourceRepo, "error", err)
-	} else {
-		s.fl.Log("SYNC", fmt.Sprintf("updated managed repo %s ref", targetBranch))
+		return
 	}
+	// Advance the local branch so HEAD points to the same commit as
+	// origin/{targetBranch}. Without this, refs/heads/{targetBranch} stays at
+	// whatever commit it was at during the last explicit sol world sync, and
+	// subsequent casts would branch from stale code.
+	localRef := fmt.Sprintf("refs/heads/%s", targetBranch)
+	remoteRef := fmt.Sprintf("origin/%s", targetBranch)
+	if _, err := s.cmd.Run(ctx, sourceRepo, "git", "update-ref", localRef, remoteRef); err != nil {
+		s.forge.logger.Warn("failed to advance local branch in managed repo after merge",
+			"repo", sourceRepo, "branch", targetBranch, "error", err)
+		return
+	}
+	s.fl.Log("SYNC", fmt.Sprintf("updated managed repo %s ref", targetBranch))
 }
