@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -910,5 +911,73 @@ func TestStatusShowsSentinelState(t *testing.T) {
 	}
 	if rs2.Sentinel.PatrolCount != 3 {
 		t.Errorf("sentinel patrol count: got %d, want 3", rs2.Sentinel.PatrolCount)
+	}
+}
+
+// --- Test 14: Event Feed Follow Mode ---
+
+// TestEventFeedFollowMode verifies that events.Reader.Follow() receives events
+// written to the feed after Follow() starts (tail -f semantics).
+func TestEventFeedFollowMode(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Create the events file so Follow() can open and seek to end immediately.
+	feedPath := filepath.Join(solHome, ".events.jsonl")
+	if err := os.WriteFile(feedPath, nil, 0o644); err != nil {
+		t.Fatalf("create feed file: %v", err)
+	}
+
+	reader := events.NewReader(solHome, false)
+	ch := make(chan events.Event, 16)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- reader.Follow(ctx, events.ReadOpts{}, ch)
+	}()
+
+	// Brief pause to let Follow() open the file and seek to end before we write.
+	time.Sleep(200 * time.Millisecond)
+
+	// Write two events after Follow() has started.
+	logger := events.NewLogger(solHome)
+	logger.Emit(events.EventCast, "sol", "test-actor", "both", map[string]string{"item": "x"})
+	logger.Emit(events.EventResolve, "sol", "test-actor", "both", map[string]string{"item": "x"})
+
+	// Verify both events arrive on the channel within the timeout.
+	var received []events.Event
+	deadline := time.After(5 * time.Second)
+	for len(received) < 2 {
+		select {
+		case ev := <-ch:
+			received = append(received, ev)
+		case <-deadline:
+			t.Fatalf("timeout waiting for events; received %d of 2", len(received))
+		}
+	}
+
+	if received[0].Type != events.EventCast {
+		t.Errorf("event[0].Type: got %q, want %q", received[0].Type, events.EventCast)
+	}
+	if received[1].Type != events.EventResolve {
+		t.Errorf("event[1].Type: got %q, want %q", received[1].Type, events.EventResolve)
+	}
+
+	// Cancel the context and verify Follow() terminates cleanly.
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("Follow() returned unexpected error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("Follow() did not return after context cancel")
 	}
 }

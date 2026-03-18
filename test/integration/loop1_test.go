@@ -12,10 +12,12 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/dispatch"
-	"github.com/nevinsm/sol/internal/tether"
-	"github.com/nevinsm/sol/internal/session"
-	"github.com/nevinsm/sol/internal/status"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/prefect"
+	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/startup"
+	"github.com/nevinsm/sol/internal/status"
+	"github.com/nevinsm/sol/internal/tether"
 )
 
 // --- Test 1: Multi-Agent Dispatch ---
@@ -707,5 +709,293 @@ func TestNamePoolExhaustion(t *testing.T) {
 	}
 	if item3.Assignee != "" {
 		t.Errorf("item 3 assignee: got %q, want empty", item3.Assignee)
+	}
+}
+
+// --- Test 8: Prefect Backoff Increases ---
+
+// TestPrefectBackoffIncreases verifies that repeated session crashes cause
+// the prefect to defer respawn with increasing delay (backoff accumulation).
+// After the first crash, the session is respawned immediately (restart 1,
+// delay=0). After the second crash, the session is stalled (restart 2,
+// delay=30s) and is NOT immediately respawned on the next heartbeat.
+func TestPrefectBackoffIncreases(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	_, sourceRepo := setupTestEnv(t)
+	registerAgentRole(t)
+	worldStore, sphereStore := openStores(t, "ember")
+	mgr := session.New()
+
+	itemID, err := worldStore.CreateWrit("Backoff test", "Backoff increases", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("create writ: %v", err)
+	}
+
+	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
+		WritID:     itemID,
+		World:      "ember",
+		SourceRepo: sourceRepo,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("cast: %v", err)
+	}
+
+	agentName := result.AgentName
+	sessName := result.SessionName
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	cfg := prefect.DefaultConfig()
+	cfg.MaxRespawns = 0       // unlimited — let backoff govern
+	cfg.MassDeathThreshold = 10 // high threshold so test kills don't trigger degraded mode
+	sup := prefect.New(cfg, sphereStore, mgr, logger)
+
+	// First kill: restart count = 1, delay = 0 → immediate respawn.
+	exec.Command("tmux", "kill-session", "-t", sessName).Run()
+	if mgr.Exists(sessName) {
+		t.Fatal("session should be dead after first kill")
+	}
+
+	sup.Heartbeat()
+
+	if !mgr.Exists(sessName) {
+		t.Error("session should be respawned after first crash (no backoff delay)")
+	}
+
+	// Second kill: restart count = 2, delay = 30s → deferred (stalled).
+	exec.Command("tmux", "kill-session", "-t", sessName).Run()
+	if mgr.Exists(sessName) {
+		t.Fatal("session should be dead after second kill")
+	}
+
+	sup.Heartbeat()
+
+	// Session must NOT be immediately respawned — 30s delay applies.
+	if mgr.Exists(sessName) {
+		t.Error("session should NOT be immediately respawned after second crash (30s backoff)")
+	}
+
+	// Agent state should be stalled (deferred respawn).
+	agent, err := sphereStore.GetAgent("ember/" + agentName)
+	if err != nil {
+		t.Fatalf("get agent: %v", err)
+	}
+	if agent.State != "stalled" {
+		t.Errorf("agent state after second crash: got %q, want stalled", agent.State)
+	}
+
+	// Another immediate heartbeat should still not respawn (delay not elapsed).
+	sup.Heartbeat()
+	if mgr.Exists(sessName) {
+		t.Error("session should still not be respawned before backoff delay elapses")
+	}
+}
+
+// --- Test 9: Prefect Backoff Resets ---
+
+// TestPrefectBackoffResets verifies that when an agent completes work normally
+// (transitions to idle), the prefect resets its backoff counter so the next
+// crash results in immediate respawn (count=1, delay=0) rather than continued
+// accumulation of the previous crash history.
+func TestPrefectBackoffResets(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	_, sourceRepo := setupTestEnv(t)
+	registerAgentRole(t)
+	worldStore, sphereStore := openStores(t, "ember")
+	mgr := session.New()
+
+	itemID, err := worldStore.CreateWrit("Backoff reset test", "Backoff resets", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("create writ: %v", err)
+	}
+
+	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
+		WritID:     itemID,
+		World:      "ember",
+		SourceRepo: sourceRepo,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("cast: %v", err)
+	}
+
+	agentName := result.AgentName
+	sessName := result.SessionName
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	cfg := prefect.DefaultConfig()
+	cfg.MaxRespawns = 0        // unlimited
+	cfg.MassDeathThreshold = 10 // high threshold so test kills don't trigger degraded mode
+	sup := prefect.New(cfg, sphereStore, mgr, logger)
+
+	// First crash: immediate respawn (backoff count becomes 1).
+	exec.Command("tmux", "kill-session", "-t", sessName).Run()
+	sup.Heartbeat()
+	if !mgr.Exists(sessName) {
+		t.Fatal("session not respawned after first crash")
+	}
+
+	// Second crash: stalled (backoff count = 2, delay = 30s).
+	exec.Command("tmux", "kill-session", "-t", sessName).Run()
+	sup.Heartbeat()
+	if mgr.Exists(sessName) {
+		t.Error("session should not be immediately respawned after second crash")
+	}
+	agent, err := sphereStore.GetAgent("ember/" + agentName)
+	if err != nil {
+		t.Fatalf("get agent after second crash: %v", err)
+	}
+	if agent.State != "stalled" {
+		t.Errorf("agent state after second crash: got %q, want stalled", agent.State)
+	}
+
+	// Simulate normal completion: agent resolves its writ and goes idle.
+	if err := sphereStore.UpdateAgentState("ember/"+agentName, "idle", ""); err != nil {
+		t.Fatalf("set agent idle: %v", err)
+	}
+
+	// Heartbeat resets backoff for idle agents.
+	sup.Heartbeat()
+
+	// Cast a new writ to the same agent (reuses the idle agent).
+	item2ID, err := worldStore.CreateWrit("After reset", "New writ post-reset", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("create writ 2: %v", err)
+	}
+	result2, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
+		WritID:     item2ID,
+		World:      "ember",
+		AgentName:  agentName,
+		SourceRepo: sourceRepo,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("cast writ 2: %v", err)
+	}
+	sessName2 := result2.SessionName
+
+	// Kill the session — since backoff was reset, should respawn immediately (count=1).
+	exec.Command("tmux", "kill-session", "-t", sessName2).Run()
+	sup.Heartbeat()
+
+	if !mgr.Exists(sessName2) {
+		t.Error("session should be immediately respawned after backoff reset (first crash again)")
+	}
+}
+
+// --- Test 10: Writ Activate Switches Context ---
+
+// TestWritActivateSwitchesContext verifies that dispatch.ActivateWrit():
+//  1. Updates active_writ in the sphere database to the newly activated writ.
+//  2. Writes a .resume_state.json file with writ-switch context.
+//  3. Returns the correct previous writ ID.
+//  4. Is idempotent (second activate of same writ is a no-op).
+func TestWritActivateSwitchesContext(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	solHome, _ := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
+
+	// Create two writs.
+	writ1ID, err := worldStore.CreateWrit("Writ One", "First writ", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("create writ 1: %v", err)
+	}
+	writ2ID, err := worldStore.CreateWrit("Writ Two", "Second writ", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("create writ 2: %v", err)
+	}
+
+	// Create an outpost agent and set it to working with writ1 active.
+	agentName := "Scout"
+	agentID := "ember/" + agentName
+	if _, err := sphereStore.CreateAgent(agentName, "ember", "outpost"); err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState(agentID, "working", writ1ID); err != nil {
+		t.Fatalf("update agent state: %v", err)
+	}
+
+	// Write tether files for both writs (agent has two active writs).
+	if err := tether.Write("ember", agentName, writ1ID, "outpost"); err != nil {
+		t.Fatalf("write tether 1: %v", err)
+	}
+	if err := tether.Write("ember", agentName, writ2ID, "outpost"); err != nil {
+		t.Fatalf("write tether 2: %v", err)
+	}
+
+	// Activate writ2 (switching from writ1).
+	// No startup config registered for "outpost" in this test, so ActivateWrit
+	// writes the resume state but skips session restart (non-fatal).
+	mgr := session.New()
+	logger := events.NewLogger(solHome)
+	result, err := dispatch.ActivateWrit(dispatch.ActivateOpts{
+		World:     "ember",
+		AgentName: agentName,
+		WritID:    writ2ID,
+	}, worldStore, sphereStore, mgr, logger)
+	if err != nil {
+		t.Fatalf("ActivateWrit: %v", err)
+	}
+
+	// Verify result fields.
+	if result.AlreadyActive {
+		t.Error("expected AlreadyActive=false (writ2 was not previously active)")
+	}
+	if result.WritID != writ2ID {
+		t.Errorf("result.WritID: got %q, want %q", result.WritID, writ2ID)
+	}
+	if result.PreviousWrit != writ1ID {
+		t.Errorf("result.PreviousWrit: got %q, want %q", result.PreviousWrit, writ1ID)
+	}
+
+	// Verify active_writ is updated in the sphere database.
+	agent, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		t.Fatalf("get agent: %v", err)
+	}
+	if agent.ActiveWrit != writ2ID {
+		t.Errorf("agent.ActiveWrit: got %q, want %q", agent.ActiveWrit, writ2ID)
+	}
+
+	// Verify resume_state.json was written with writ-switch context.
+	// Since no startup config is registered for "outpost", the state is written
+	// but not cleared (session restart is skipped when cfg is nil).
+	state, err := startup.ReadResumeState("ember", agentName, "outpost")
+	if err != nil {
+		t.Fatalf("ReadResumeState: %v", err)
+	}
+	if state == nil {
+		t.Fatal("resume_state.json should be written by ActivateWrit but was not found")
+	}
+	if state.Reason != "writ-switch" {
+		t.Errorf("resume state Reason: got %q, want %q", state.Reason, "writ-switch")
+	}
+	if state.NewActiveWrit != writ2ID {
+		t.Errorf("resume state NewActiveWrit: got %q, want %q", state.NewActiveWrit, writ2ID)
+	}
+	if state.PreviousActiveWrit != writ1ID {
+		t.Errorf("resume state PreviousActiveWrit: got %q, want %q", state.PreviousActiveWrit, writ1ID)
+	}
+
+	// Verify the writ_activate event was emitted.
+	assertEventEmitted(t, solHome, events.EventWritActivate)
+
+	// Verify idempotency: activating the same writ again is a no-op.
+	result2, err := dispatch.ActivateWrit(dispatch.ActivateOpts{
+		World:     "ember",
+		AgentName: agentName,
+		WritID:    writ2ID,
+	}, worldStore, sphereStore, mgr, logger)
+	if err != nil {
+		t.Fatalf("ActivateWrit idempotent call: %v", err)
+	}
+	if !result2.AlreadyActive {
+		t.Error("expected AlreadyActive=true when activating the already-active writ")
 	}
 }

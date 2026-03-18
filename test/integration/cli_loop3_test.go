@@ -1,8 +1,18 @@
 package integration
 
 import (
+	"bytes"
+	"context"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/nevinsm/sol/internal/events"
 )
 
 func TestCLIFeedHelp(t *testing.T) {
@@ -213,4 +223,80 @@ func TestCLISentinelLogHelp(t *testing.T) {
 	if !strings.Contains(out, "Show or tail the sentinel log") {
 		t.Errorf("output missing expected text: %s", out)
 	}
+}
+
+// TestCLIFeedFollow verifies that "sol feed --follow" streams events written
+// after the command starts. This covers the CLI integration path for Follow mode.
+func TestCLIFeedFollow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Create events file so the command can open it immediately.
+	feedPath := filepath.Join(solHome, ".events.jsonl")
+	if err := os.WriteFile(feedPath, nil, 0o644); err != nil {
+		t.Fatalf("create feed file: %v", err)
+	}
+
+	bin := gtBin(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, bin, "feed", "--follow", "--raw")
+	cmd.Env = append(os.Environ(), "SOL_HOME="+solHome)
+
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start sol feed --follow: %v", err)
+	}
+	defer func() {
+		cancel()
+		cmd.Wait() //nolint:errcheck
+	}()
+
+	// Drain stdout into a mutex-protected buffer to avoid data races.
+	var mu sync.Mutex
+	var buf bytes.Buffer
+	go func() {
+		io.Copy(io.Writer(&lockedWriter{mu: &mu, buf: &buf}), pipe) //nolint:errcheck
+	}()
+
+	// Give the process time to start and seek to end of file.
+	time.Sleep(300 * time.Millisecond)
+
+	// Write an event after the follow process has started.
+	logger := events.NewLogger(solHome)
+	logger.Emit(events.EventCast, "sol", "test-actor", "both", map[string]string{"item": "z"})
+
+	// Poll for the event to appear in output (sol feed prints event type on each line).
+	ok := pollUntil(5*time.Second, 200*time.Millisecond, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return strings.Contains(buf.String(), events.EventCast)
+	})
+	if !ok {
+		mu.Lock()
+		got := buf.String()
+		mu.Unlock()
+		t.Errorf("sol feed --follow did not output cast event within 5s; got: %q", got)
+	}
+}
+
+// lockedWriter wraps a bytes.Buffer with a mutex for safe concurrent access.
+type lockedWriter struct {
+	mu  *sync.Mutex
+	buf *bytes.Buffer
+}
+
+func (lw *lockedWriter) Write(p []byte) (int, error) {
+	lw.mu.Lock()
+	defer lw.mu.Unlock()
+	return lw.buf.Write(p)
 }
