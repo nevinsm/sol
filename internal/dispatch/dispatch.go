@@ -665,6 +665,16 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 	}
 	defer agentLock.Release()
 
+	// Re-read agent state inside the locked section to avoid a TOCTOU race:
+	// a concurrent state change between the pre-lock GetAgent and lock
+	// acquisition above could mean agent.State is stale. UpdateAgentState
+	// must use the current state, not the pre-lock snapshot.
+	agent, err = sphereStore.GetAgent(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-read agent %q: %w", agentID, err)
+	}
+	previousWrit = agent.ActiveWrit
+
 	// 5. Update active_writ in DB.
 	if err := sphereStore.UpdateAgentState(agentID, agent.State, opts.WritID); err != nil {
 		return nil, fmt.Errorf("failed to update active writ: %w", err)

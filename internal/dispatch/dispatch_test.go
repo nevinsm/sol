@@ -5141,3 +5141,80 @@ func TestActivateWritGovernorNudgesInsteadOfCycle(t *testing.T) {
 		t.Errorf("nudge type = %q, want \"writ-activate\"", messages[0].Type)
 	}
 }
+
+// TestCastConcurrentSingleAgent verifies that two concurrent Cast() calls
+// targeting the same idle agent cannot both succeed (double-dispatch). The
+// re-read of agent state after AcquireAgentLock ensures the second caller
+// sees the updated state and returns an error instead of overwriting the
+// first tether.
+func TestCastConcurrentSingleAgent(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	// Create two open writs.
+	writ1, err := worldStore.CreateWrit("Task 1", "First task", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 1: %v", err)
+	}
+	writ2, err := worldStore.CreateWrit("Task 2", "Second task", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 2: %v", err)
+	}
+
+	// Single idle agent — both concurrent casts will target it.
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Shared git repo for both Cast calls.
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	type castResult struct {
+		result *CastResult
+		err    error
+	}
+	ch := make(chan castResult, 2)
+
+	for _, writID := range []string{writ1, writ2} {
+		writID := writID
+		go func() {
+			r, err := Cast(context.Background(), CastOpts{
+				WritID:     writID,
+				World:      "ember",
+				AgentName:  "Toast",
+				SourceRepo: repoDir,
+			}, worldStore, sphereStore, newMockSessionManager(), nil)
+			ch <- castResult{r, err}
+		}()
+	}
+
+	r1 := <-ch
+	r2 := <-ch
+
+	successes := 0
+	failures := 0
+	for _, r := range []castResult{r1, r2} {
+		if r.err == nil {
+			successes++
+		} else {
+			failures++
+		}
+	}
+
+	if successes != 1 {
+		t.Errorf("expected exactly 1 successful Cast, got %d (err1=%v, err2=%v)", successes, r1.err, r2.err)
+	}
+	if failures != 1 {
+		t.Errorf("expected exactly 1 failed Cast, got %d", failures)
+	}
+
+	// Agent must only be dispatched to one writ.
+	agent, err := sphereStore.GetAgent("ember/Toast")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "working" {
+		t.Errorf("agent state = %q, want \"working\"", agent.State)
+	}
+}
