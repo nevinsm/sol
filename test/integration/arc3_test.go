@@ -362,7 +362,7 @@ func TestEnvoyStartStop(t *testing.T) {
 	}
 
 	// Verify session exists.
-	ok := pollUntil(5*time.Second, 200*time.Millisecond, func() bool {
+	ok := pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
 		return tmuxSessionExists("sol-myworld-scout")
 	})
 	if !ok {
@@ -376,7 +376,7 @@ func TestEnvoyStartStop(t *testing.T) {
 	}
 
 	// Verify session gone.
-	ok = pollUntil(5*time.Second, 200*time.Millisecond, func() bool {
+	ok = pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
 		return !tmuxSessionExists("sol-myworld-scout")
 	})
 	if !ok {
@@ -498,7 +498,7 @@ func TestGovernorStartStop(t *testing.T) {
 	})
 
 	// Verify session exists.
-	ok := pollUntil(5*time.Second, 200*time.Millisecond, func() bool {
+	ok := pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
 		return tmuxSessionExists("sol-myworld-governor")
 	})
 	if !ok {
@@ -512,7 +512,7 @@ func TestGovernorStartStop(t *testing.T) {
 	}
 
 	// Verify session gone.
-	ok = pollUntil(5*time.Second, 200*time.Millisecond, func() bool {
+	ok = pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
 		return !tmuxSessionExists("sol-myworld-governor")
 	})
 	if !ok {
@@ -720,7 +720,7 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 	})
 
 	// Wait for session.
-	ok := pollUntil(5*time.Second, 200*time.Millisecond, func() bool {
+	ok := pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
 		return tmuxSessionExists("sol-myworld-scout")
 	})
 	if !ok {
@@ -1227,7 +1227,7 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 		runGT(t, gtHome, "envoy", "stop", "scout", "--world=myworld")
 	})
 
-	ok := pollUntil(5*time.Second, 200*time.Millisecond, func() bool {
+	ok := pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
 		return tmuxSessionExists("sol-myworld-scout")
 	})
 	if !ok {

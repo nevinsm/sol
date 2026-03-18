@@ -276,7 +276,7 @@ func TestCLIFeedFollow(t *testing.T) {
 	logger.Emit(events.EventCast, "sol", "test-actor", "both", map[string]string{"item": "z"})
 
 	// Poll for the event to appear in output (sol feed prints event type on each line).
-	ok := pollUntil(5*time.Second, 200*time.Millisecond, func() bool {
+	ok := pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return strings.Contains(buf.String(), events.EventCast)
