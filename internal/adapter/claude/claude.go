@@ -9,6 +9,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/protocol"
 )
 
@@ -36,7 +37,7 @@ func (a *Adapter) Name() string {
 // The file is written at root level so Claude Code's upward directory walk discovers it.
 func (a *Adapter) InjectPersona(worktreeDir string, content []byte) error {
 	path := filepath.Join(worktreeDir, "CLAUDE.local.md")
-	if err := os.WriteFile(path, content, 0o644); err != nil {
+	if err := fileutil.AtomicWrite(path, content, 0o644); err != nil {
 		return fmt.Errorf("claude adapter: failed to write CLAUDE.local.md: %w", err)
 	}
 	return nil
@@ -94,7 +95,7 @@ func (a *Adapter) InjectSystemPrompt(worktreeDir, content string, _ bool) (strin
 		return "", fmt.Errorf("claude adapter: failed to create .claude directory: %w", err)
 	}
 	promptPath := filepath.Join(claudeDir, "system-prompt.md")
-	if err := os.WriteFile(promptPath, []byte(content), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(promptPath, []byte(content), 0o644); err != nil {
 		return "", fmt.Errorf("claude adapter: failed to write system prompt: %w", err)
 	}
 	return ".claude/system-prompt.md", nil
@@ -189,7 +190,7 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 	}
 
 	settingsPath := filepath.Join(claudeDir, "settings.local.json")
-	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
+	if err := fileutil.AtomicWrite(settingsPath, data, 0o644); err != nil {
 		return fmt.Errorf("claude adapter: failed to write settings.local.json: %w", err)
 	}
 
