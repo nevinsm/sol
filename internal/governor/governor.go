@@ -39,6 +39,7 @@ func WorldSummaryPath(world string) string {
 
 // StopStore abstracts sphere store operations for Stop.
 type StopStore interface {
+	GetAgent(id string) (*store.Agent, error)
 	UpdateAgentState(id, state, activeWrit string) error
 }
 
@@ -56,6 +57,12 @@ func Stop(world string, sphereStore StopStore, mgr StopManager) error {
 	sessName := config.SessionName(world, "governor")
 	agentID := world + "/governor"
 
+	// Read existing agent record to preserve active_writ across stop/start cycles.
+	existing, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		return fmt.Errorf("failed to stop governor for world %q: %w", world, err)
+	}
+
 	// 1. Graceful stop: inject brief update prompt, wait for stability, then kill.
 	//    Falls back to immediate kill if no .brief/ directory exists.
 	if mgr.Exists(sessName) {
@@ -64,8 +71,8 @@ func Stop(world string, sphereStore StopStore, mgr StopManager) error {
 		}
 	}
 
-	// 2. Update agent state to idle.
-	if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
+	// 2. Update agent state to idle, preserving active_writ so restart context is retained.
+	if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, existing.ActiveWrit); err != nil {
 		return fmt.Errorf("failed to stop governor for world %q: %w", world, err)
 	}
 

@@ -52,8 +52,21 @@ func (m *mockSessionStarter) Start(name, workdir, cmd string, env map[string]str
 // --- Mocks ---
 
 type mockStopStore struct {
-	updated   map[string]store.AgentState // id -> state
-	updateErr error
+	updated     map[string]store.AgentState // id -> state
+	activeWrits map[string]string           // id -> activeWrit passed to UpdateAgentState
+	updateErr   error
+	agents      map[string]*store.Agent
+	getAgentErr error
+}
+
+func (m *mockStopStore) GetAgent(id string) (*store.Agent, error) {
+	if m.getAgentErr != nil {
+		return nil, m.getAgentErr
+	}
+	if ag, ok := m.agents[id]; ok {
+		return ag, nil
+	}
+	return &store.Agent{ID: id}, nil
 }
 
 func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, activeWrit string) error {
@@ -61,6 +74,9 @@ func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, acti
 		return m.updateErr
 	}
 	m.updated[id] = state
+	if m.activeWrits != nil {
+		m.activeWrits[id] = activeWrit
+	}
 	return nil
 }
 
@@ -180,6 +196,30 @@ func TestStopNoSession(t *testing.T) {
 	// Verify agent state still updated to idle.
 	if ss.updated["myworld/governor"] != store.AgentIdle {
 		t.Errorf("agent state = %q, want \"idle\"", ss.updated["myworld/governor"])
+	}
+}
+
+func TestStopPreservesActiveWrit(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	const writID = "sol-abc123def456abc1"
+	ss := &mockStopStore{
+		updated:     map[string]store.AgentState{},
+		activeWrits: map[string]string{},
+		agents: map[string]*store.Agent{
+			"myworld/governor": {ID: "myworld/governor", ActiveWrit: writID},
+		},
+	}
+
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	if err := Stop("myworld", ss, mgr); err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+
+	if got := ss.activeWrits["myworld/governor"]; got != writID {
+		t.Errorf("active_writ after stop = %q, want %q (should be preserved)", got, writID)
 	}
 }
 
