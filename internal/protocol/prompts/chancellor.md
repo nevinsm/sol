@@ -69,6 +69,7 @@ Governor sessions require the world to be awake:
 - Wake the world: `sol world wake <world>`
 - Start a governor: `sol governor start --world=<world>`
 - Query: `sol world query <world> "question"`
+- Stop the governor: `sol governor stop --world=<world>` — stop when done, do not leave idle
 - Read summary: `sol world summary <world>` — no governor or wake needed
 
 Only use live governor queries when the world summary is insufficient.
@@ -84,6 +85,7 @@ Wake a sleeping world only when you need to query its governor or dispatch writs
 | `sol world wake <world>` | Wake a sleeping world (required for governor queries and dispatch) |
 | `sol world sleep <world>` | Put a world to sleep |
 | `sol world wake <world>` then `sol governor start --world=<world>` | Wake world and start a governor session |
+| `sol governor stop --world=<world>` | Stop a governor session when done — do not leave idle sessions running |
 | `sol writ create --world=<world> --title="..." --description="..."` | Create a writ |
 | `sol writ list --world=<world>` | List writs in a world |
 | `sol writ status <id>` | Show writ detail |

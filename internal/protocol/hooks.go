@@ -142,6 +142,7 @@ func GuardHooks(role string) []HookMatcherGroup {
 type HookOptions struct {
 	Role             string             // role name passed to GuardHooks
 	BriefPath        string             // if set: adds brief inject to SessionStart (with "startup|resume" matcher) and Write|Edit auto-memory blocker to PreToolUse
+	PlanModeBlockCmd string             // if set: overrides the EnterPlanMode block command; defaults to PlanModeBlockCommand
 	SessionStartCmds []string           // additional SessionStart commands appended (joined with " && ") after brief inject
 	PreCompactCmd    string             // if set, adds a PreCompact hook with this command
 	NudgeDrainCmd    string             // if set, adds a UserPromptSubmit hook with this command
@@ -196,11 +197,15 @@ func BaseHooks(opts HookOptions) HookConfig {
 			}},
 		})
 	}
+	planModeBlockCmd := opts.PlanModeBlockCmd
+	if planModeBlockCmd == "" {
+		planModeBlockCmd = PlanModeBlockCommand
+	}
 	preToolUse = append(preToolUse, HookMatcherGroup{
 		Matcher: "EnterPlanMode",
 		Hooks: []HookHandler{{
 			Type:    "command",
-			Command: `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`,
+			Command: planModeBlockCmd,
 		}},
 	})
 	preToolUse = append(preToolUse, GuardHooks(opts.Role)...)
