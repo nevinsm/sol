@@ -1611,21 +1611,16 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		}
 		if len(activeMRs) > 0 {
 			mrID = activeMRs[0].ID
-		} else {
+		} else if !pushFailed {
+			// Only create an MR when the branch was successfully pushed.
+			// If push failed, the remote branch doesn't exist yet, so creating
+			// an MR would let forge attempt to merge a non-existent branch —
+			// causing an infinite recast loop. The writ stays in "done" state;
+			// the next resolve (after a successful push) will create the MR.
 			mrID, err = worldStore.CreateMergeRequest(writID, branchName, item.Priority)
 			if err != nil {
 				rollback()
 				return nil, fmt.Errorf("failed to create merge request for %q: %w", writID, err)
-			}
-
-			// If push failed, transition through ready → claimed → failed
-			// so forge doesn't try to merge it.
-			if pushFailed {
-				if err := worldStore.UpdateMergeRequestPhase(mrID, "claimed"); err != nil {
-					fmt.Fprintf(os.Stderr, "resolve: failed to claim MR after push failure: %v\n", err)
-				} else if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
-					fmt.Fprintf(os.Stderr, "resolve: failed to mark MR as failed after push failure: %v\n", err)
-				}
 			}
 		}
 	}

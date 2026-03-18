@@ -2407,7 +2407,7 @@ func TestResolveRollbackOnMRFailure(t *testing.T) {
 	}
 }
 
-func TestResolvePushFailureCreatesMR(t *testing.T) {
+func TestResolvePushFailureDoesNotCreateMR(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
@@ -2451,17 +2451,27 @@ func TestResolvePushFailureCreatesMR(t *testing.T) {
 		t.Fatalf("Resolve failed: %v", err)
 	}
 
-	// Verify: MR is created with phase "failed".
-	if result.MergeRequestID == "" {
-		t.Fatal("expected MergeRequestID to be set even with push failure")
+	// Verify: no MR is created when push fails.
+	// The remote branch doesn't exist, so creating an MR would let forge
+	// attempt to merge a non-existent branch — causing an infinite recast loop.
+	if result.MergeRequestID != "" {
+		t.Errorf("expected no MergeRequestID when push fails, got %q", result.MergeRequestID)
 	}
 
-	mr, err := worldStore.GetMergeRequest(result.MergeRequestID)
+	// Confirm no MR record exists for this writ.
+	mrs, err := worldStore.ListMergeRequestsByWrit(itemID, "")
 	if err != nil {
-		t.Fatalf("failed to get merge request: %v", err)
+		t.Fatalf("failed to list merge requests: %v", err)
 	}
-	if mr.Phase != "failed" {
-		t.Errorf("expected MR phase 'failed', got %q", mr.Phase)
+	if len(mrs) != 0 {
+		t.Errorf("expected no merge requests for writ after push failure, got %d (phases: %v)",
+			len(mrs), func() []string {
+				phases := make([]string, len(mrs))
+				for i, mr := range mrs {
+					phases[i] = mr.Phase
+				}
+				return phases
+			}())
 	}
 
 	// Verify: writ is "done", agent record is deleted.
