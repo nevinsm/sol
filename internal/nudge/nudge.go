@@ -281,7 +281,11 @@ func Deliver(sessionName string, msg Message) error {
 	if err == nil {
 		// Session is idle — deliver directly via NudgeSession.
 		notification := formatNotification(msg)
-		return mgr.NudgeSession(sessionName, notification)
+		if injectErr := mgr.NudgeSession(sessionName, notification); injectErr != nil {
+			// Session died between idle check and nudge — queue for later drain.
+			return Enqueue(sessionName, msg)
+		}
+		return nil
 	}
 
 	// Session is busy, not running, or WaitForIdle failed — queue for later drain.
