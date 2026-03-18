@@ -413,17 +413,25 @@ func (s *WorldStore) UpdateWrit(id string, updates WritUpdates) error {
 // CloseWrit sets status to "closed" and records closed_at.
 // An optional close reason can be provided as the second argument.
 // Also supersedes any failed MRs for the writ, returning their IDs.
+// Both mutations are wrapped in a single transaction so a crash between them
+// cannot leave a closed writ with orphaned failed MRs.
 func (s *WorldStore) CloseWrit(id string, closeReason ...string) ([]string, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	var result sql.Result
-	var err error
 	if len(closeReason) > 0 && closeReason[0] != "" {
-		result, err = s.db.Exec(
+		result, err = tx.Exec(
 			`UPDATE writs SET status = 'closed', closed_at = ?, close_reason = ?, updated_at = ? WHERE id = ?`,
 			now, closeReason[0], now, id,
 		)
 	} else {
-		result, err = s.db.Exec(
+		result, err = tx.Exec(
 			`UPDATE writs SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
 			now, now, id,
 		)
@@ -435,11 +443,16 @@ func (s *WorldStore) CloseWrit(id string, closeReason ...string) ([]string, erro
 		return nil, err
 	}
 
-	// Supersede any failed MRs for this writ.
-	superseded, err := s.SupersedeFailedMRsForWrit(id)
+	// Supersede any failed MRs for this writ within the same transaction.
+	superseded, err := supersedeFailedMRsInTx(tx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to supersede failed MRs for writ %q: %w", id, err)
 	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit close writ transaction: %w", err)
+	}
+
 	return superseded, nil
 }
 
@@ -465,44 +478,19 @@ func (s *WorldStore) GetWritMetadata(id string) (map[string]any, error) {
 
 // SetWritMetadata merges the given metadata into the writ's existing metadata.
 // Keys set to nil are deleted from the metadata.
+// Uses a single atomic json_patch() statement to avoid read-modify-write races.
 func (s *WorldStore) SetWritMetadata(id string, metadata map[string]any) error {
-	// Validate the provided metadata is well-formed by marshaling it.
-	if _, err := json.Marshal(metadata); err != nil {
-		return fmt.Errorf("invalid metadata: %w", err)
-	}
-
-	// Read existing metadata.
-	existing, err := s.GetWritMetadata(id)
+	// Marshal the patch. json_patch treats JSON null values as deletions,
+	// which matches our "nil value = delete key" contract.
+	patch, err := json.Marshal(metadata)
 	if err != nil {
-		return err
-	}
-	if existing == nil {
-		existing = make(map[string]any)
-	}
-
-	// Merge: set keys, delete keys with nil values.
-	for k, v := range metadata {
-		if v == nil {
-			delete(existing, k)
-		} else {
-			existing[k] = v
-		}
-	}
-
-	// Serialize merged metadata.
-	var metadataJSON sql.NullString
-	if len(existing) > 0 {
-		b, err := json.Marshal(existing)
-		if err != nil {
-			return fmt.Errorf("failed to marshal metadata: %w", err)
-		}
-		metadataJSON = sql.NullString{String: string(b), Valid: true}
+		return fmt.Errorf("invalid metadata: %w", err)
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := s.db.Exec(
-		`UPDATE writs SET metadata = ?, updated_at = ? WHERE id = ?`,
-		metadataJSON, now, id,
+		`UPDATE writs SET metadata = json_patch(COALESCE(metadata, '{}'), ?), updated_at = ? WHERE id = ?`,
+		string(patch), now, id,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to set metadata for writ %q: %w", id, err)
