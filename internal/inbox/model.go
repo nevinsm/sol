@@ -104,12 +104,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.fetchErr = ""
 		}
-		// Clamp cursor.
+		// Clamp cursor and transition out of detail view if the selected item
+		// no longer exists (e.g. last escalation resolved while in detail view).
 		if m.cursor >= len(m.items) {
-			m.cursor = len(m.items) - 1
-		}
-		if m.cursor < 0 {
-			m.cursor = 0
+			m.cursor = max(0, len(m.items)-1)
+			m.view = viewList
 		}
 
 	case actionResultMsg:
@@ -204,7 +203,9 @@ func (m Model) View() string {
 		if m.cursor < len(m.items) {
 			return renderDetailView(m.items[m.cursor], m.width, m.height)
 		}
-		m.view = viewList
+		// Cursor is out of bounds — fall through to list view.
+		// (The Update handler transitions m.view to viewList on refreshMsg;
+		// this path is a safety fallback for any other code path.)
 		return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights, m.fetchErr)
 	default:
 		return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights, m.fetchErr)
