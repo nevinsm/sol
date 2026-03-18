@@ -679,7 +679,7 @@ func TestWrapIndent(t *testing.T) {
 func TestResolveCmdNilForNonEscalation(t *testing.T) {
 	src := &mockDataSource{}
 	item := InboxItem{Type: ItemMail, ID: "msg-1"}
-	cmd := resolveCmd(src, item)
+	cmd := resolveCmd(src, item, nil)
 	if cmd != nil {
 		t.Error("expected nil cmd for resolve on mail item")
 	}
@@ -697,7 +697,7 @@ func TestReadCmdNilForNonMail(t *testing.T) {
 func TestAckCmdEscalation(t *testing.T) {
 	src := &mockDataSource{}
 	item := InboxItem{Type: ItemEscalation, ID: "esc-1"}
-	cmd := ackCmd(src, item)
+	cmd := ackCmd(src, item, nil)
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd")
 	}
@@ -726,7 +726,7 @@ func TestAckCmdEscalation(t *testing.T) {
 func TestAckCmdMessage(t *testing.T) {
 	src := &mockDataSource{}
 	item := InboxItem{Type: ItemMail, ID: "msg-1"}
-	cmd := ackCmd(src, item)
+	cmd := ackCmd(src, item, nil)
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd")
 	}
@@ -745,7 +745,7 @@ func TestAckCmdMessage(t *testing.T) {
 func TestResolveCmdEscalation(t *testing.T) {
 	src := &mockDataSource{}
 	item := InboxItem{Type: ItemEscalation, ID: "esc-2"}
-	cmd := resolveCmd(src, item)
+	cmd := resolveCmd(src, item, nil)
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd for resolve on escalation")
 	}
