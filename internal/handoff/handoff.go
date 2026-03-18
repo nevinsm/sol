@@ -12,6 +12,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -362,7 +363,7 @@ func WriteMarker(world, agentName, role, reason string) error {
 		return fmt.Errorf("failed to create marker directory: %w", err)
 	}
 	content := fmt.Sprintf("%s\n%s\n", time.Now().UTC().Format(time.RFC3339), reason)
-	return os.WriteFile(path, []byte(content), 0o644)
+	return fileutil.AtomicWrite(path, []byte(content), 0o644)
 }
 
 // ReadMarker reads the handoff marker file. Returns the timestamp and reason.
