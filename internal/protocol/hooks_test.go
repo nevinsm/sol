@@ -43,6 +43,7 @@ func TestInstallHooksPreCompact(t *testing.T) {
 
 	cfg := BaseHooks(HookOptions{
 		Role:             "outpost",
+		PlanModeBlockCmd: OutpostPlanModeBlockCommand("ember", "Toast"),
 		SessionStartCmds: []string{"sol prime --world=ember --agent=Toast"},
 		PreCompactCmd:    "sol prime --world=ember --agent=Toast --compact",
 		NudgeDrainCmd:    "sol nudge drain --world=ember --agent=Toast",
@@ -104,5 +105,8 @@ func TestInstallHooksPreCompact(t *testing.T) {
 	}
 	if !strings.Contains(ptuGroups[0].Hooks[0].Command, "exit 2") {
 		t.Error("EnterPlanMode hook should exit 2 to block the tool call")
+	}
+	if strings.Contains(ptuGroups[0].Hooks[0].Command, ".brief/memory.md") {
+		t.Error("outpost EnterPlanMode hook should not reference .brief/memory.md — outpost agents have no brief")
 	}
 }

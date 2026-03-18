@@ -162,12 +162,18 @@ func skillResolveAndHandoff(ctx SkillContext) string {
 	sol := ctx.sol()
 	return fmt.Sprintf(`---
 name: resolve-and-handoff
-description: Submit completed work and end your session — pushes branch, creates merge request, clears tether
+description: Submit completed work and end your session — clears tether and ends session (code writs also push branch and create MR)
 ---
 
 # Resolve & Handoff
 
-%[1]s resolve%[2]s is your **mandatory final step** — it pushes your branch, creates a merge request, clears the tether, and ends your session. There is no coming back after resolve; the worktree is cleaned up.
+%[1]s resolve%[2]s is your **mandatory final step** — it clears the tether and signals work complete.
+
+**Behavior varies by writ kind:**
+- **Code writs:** resolve pushes your branch, creates a merge request, clears the tether, and ends your session.
+- **Analysis writs (kind=analysis):** resolve closes the writ directly — no branch or MR is created. The session ends.
+
+**Session behavior:** For outpost agents, the session ends and the worktree is cleaned up after resolve. Persistent roles (envoy, governor) keep their session alive after resolve.
 
 ## When to Use
 
@@ -178,7 +184,7 @@ description: Submit completed work and end your session — pushes branch, creat
 
 | Command | Description |
 |---------|-------------|
-| %[1]s resolve%[2]s | Push branch, clear tether, end session. **Mandatory final step.** |
+| %[1]s resolve%[2]s | Clear tether, signal complete. Code writs: pushes branch + creates MR. Analysis writs: closes directly. **Mandatory final step.** |
 | %[1]s escalate%[3]s | Request help when stuck. Always include a description. |
 
 ## Session Handoff
@@ -199,7 +205,7 @@ Options:
 
 **Partially done:** commit progress → %[1]s escalate%[3]s — describe what remains.
 
-**Context running long:** commit → update %[7]s → %[1]s handoff --summary="..."%[4]s
+**Context running long:** commit → %[1]s handoff --summary="..."%[4]s
 
 ## Failure Modes
 
@@ -209,7 +215,7 @@ Options:
 - Resolve is idempotent — safe to call multiple times.
 `,
 		"`"+sol, flagsForResolve(ctx), flagsForEscalate(ctx), flagsForHandoff(ctx),
-		"`--summary=\"...\"`", "`--reason=compact`", "`.brief/memory.md`")
+		"`--summary=\"...\"`", "`--reason=compact`")
 }
 
 func skillResolveAndSubmit(ctx SkillContext) string {
