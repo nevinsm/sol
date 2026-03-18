@@ -9,6 +9,7 @@ import (
 // distinct keys both have their keys preserved (no silent drops due to a
 // read-modify-write race).
 func TestSetWritMetadataConcurrentKeys(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 	writID, err := s.CreateWrit("concurrent-meta", "", "autarch", 2, nil)
 	if err != nil {
@@ -50,6 +51,7 @@ func TestSetWritMetadataConcurrentKeys(t *testing.T) {
 // writ and supersedes failed MRs — no failed MRs remain after a successful
 // close.
 func TestCloseWritAtomicSupersede(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 	writID, err := s.CreateWrit("atomic-close", "", "autarch", 2, nil)
 	if err != nil {

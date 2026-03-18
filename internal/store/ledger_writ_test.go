@@ -6,6 +6,7 @@ import (
 )
 
 func TestHistoryForWrit(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	writID := "sol-a1b2c3d4e5f6a7b8"

@@ -14,6 +14,7 @@ import "testing"
 // compile-time interface checks in interfaces.go. If this test exists and
 // the package builds, all assertions pass.
 func TestInterfaceSatisfaction(t *testing.T) {
+	t.Parallel()
 	// WorldStore interface assertions (verified at compile time in interfaces.go):
 	var _ WritReader = (*WorldStore)(nil)
 	var _ WritWriter = (*WorldStore)(nil)

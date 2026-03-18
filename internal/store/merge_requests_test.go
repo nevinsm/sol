@@ -8,6 +8,7 @@ import (
 )
 
 func TestCreateMergeRequest(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Create a writ first (FK dependency).
@@ -63,6 +64,7 @@ func TestCreateMergeRequest(t *testing.T) {
 }
 
 func TestListMergeRequests(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Create writs (FK dependency).
@@ -110,6 +112,7 @@ func TestListMergeRequests(t *testing.T) {
 }
 
 func TestClaimMergeRequest(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id1, _ := s.CreateWrit("Item 1", "", "autarch", 1, nil)
@@ -166,6 +169,7 @@ func TestClaimMergeRequest(t *testing.T) {
 }
 
 func TestClaimMergeRequestOrdering(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Create 3 writs.
@@ -191,6 +195,7 @@ func TestClaimMergeRequestOrdering(t *testing.T) {
 }
 
 func TestUpdateMergeRequestPhase(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Create and claim a MR, then update to "merged".
@@ -264,6 +269,7 @@ func TestUpdateMergeRequestPhase(t *testing.T) {
 }
 
 func TestReleaseStaleClaims(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	itemID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
@@ -312,6 +318,7 @@ func TestReleaseStaleClaims(t *testing.T) {
 }
 
 func TestReleaseStaleLeavesRecentClaims(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	itemID1, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
@@ -353,6 +360,7 @@ func TestReleaseStaleLeavesRecentClaims(t *testing.T) {
 }
 
 func TestListMergeRequestsByWrit(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id1, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
@@ -411,6 +419,7 @@ func TestListMergeRequestsByWrit(t *testing.T) {
 }
 
 func TestSupersededPhase(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	itemID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
@@ -435,6 +444,7 @@ func TestSupersededPhase(t *testing.T) {
 }
 
 func TestGetMergeRequestNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	_, err := s.GetMergeRequest("mr-nonexist")
@@ -448,6 +458,7 @@ func TestGetMergeRequestNotFound(t *testing.T) {
 }
 
 func TestBlockAndUnblockMergeRequest(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	itemID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
@@ -489,6 +500,7 @@ func TestBlockAndUnblockMergeRequest(t *testing.T) {
 }
 
 func TestClaimSkipsBlockedMRs(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id1, _ := s.CreateWrit("Item 1", "", "autarch", 1, nil)
@@ -513,6 +525,7 @@ func TestClaimSkipsBlockedMRs(t *testing.T) {
 }
 
 func TestFindMergeRequestByBlocker(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	itemID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
@@ -547,6 +560,7 @@ func TestFindMergeRequestByBlocker(t *testing.T) {
 }
 
 func TestV3Migration(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Verify the schema version is 5 (V3 migration was applied as part of V5).
@@ -572,6 +586,7 @@ func TestV3Migration(t *testing.T) {
 }
 
 func TestResetMergeRequestForRetry(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	itemID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
@@ -626,6 +641,7 @@ func TestResetMergeRequestForRetry(t *testing.T) {
 }
 
 func TestListBlockedMergeRequests(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Create writs for our MRs.
@@ -674,6 +690,7 @@ func TestListBlockedMergeRequests(t *testing.T) {
 }
 
 func TestListBlockedMergeRequests_Empty(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Create an unblocked MR.
@@ -697,6 +714,7 @@ func TestListBlockedMergeRequests_Empty(t *testing.T) {
 }
 
 func TestResetMergeRequestForRetryNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	err := s.ResetMergeRequestForRetry("mr-nonexist")
@@ -710,6 +728,7 @@ func TestResetMergeRequestForRetryNotFound(t *testing.T) {
 }
 
 func TestPhaseTransitionGuards(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	t.Run("valid transitions", func(t *testing.T) {
@@ -870,6 +889,7 @@ func TestPhaseTransitionGuards(t *testing.T) {
 }
 
 func TestClaimSkipsCaravanBlockedMRs(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id1, _ := s.CreateWrit("Item 1", "", "autarch", 1, nil)
@@ -917,6 +937,7 @@ func TestClaimSkipsCaravanBlockedMRs(t *testing.T) {
 }
 
 func TestPhaseTransitionNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	err := s.UpdateMergeRequestPhase("mr-nonexist", "ready")
@@ -929,6 +950,7 @@ func TestPhaseTransitionNotFound(t *testing.T) {
 }
 
 func TestSupersedeFailedMRsForWrit(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	writID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
@@ -972,6 +994,7 @@ func TestSupersedeFailedMRsForWrit(t *testing.T) {
 }
 
 func TestSupersedeFailedMRsForWritNoFailed(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	writID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
@@ -988,6 +1011,7 @@ func TestSupersedeFailedMRsForWritNoFailed(t *testing.T) {
 }
 
 func TestSupersedeFailedMRsForWritNonexistentWrit(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Nonexistent writ — should return nil (no failed MRs found).

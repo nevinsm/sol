@@ -7,6 +7,7 @@ import (
 )
 
 func TestAddCaravanDependency(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	idA, _ := s.CreateCaravan("caravan-a", "autarch")
@@ -34,6 +35,7 @@ func TestAddCaravanDependency(t *testing.T) {
 }
 
 func TestAddCaravanDependencySelfRef(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 	idA, _ := s.CreateCaravan("caravan-a", "autarch")
 
@@ -44,6 +46,7 @@ func TestAddCaravanDependencySelfRef(t *testing.T) {
 }
 
 func TestAddCaravanDependencyNonexistent(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 	idA, _ := s.CreateCaravan("caravan-a", "autarch")
 
@@ -59,6 +62,7 @@ func TestAddCaravanDependencyNonexistent(t *testing.T) {
 }
 
 func TestAddCaravanDependencyCycleDetection(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	idA, _ := s.CreateCaravan("caravan-a", "autarch")
@@ -77,6 +81,7 @@ func TestAddCaravanDependencyCycleDetection(t *testing.T) {
 }
 
 func TestAddCaravanDependencyIdempotent(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	idA, _ := s.CreateCaravan("caravan-a", "autarch")
@@ -95,6 +100,7 @@ func TestAddCaravanDependencyIdempotent(t *testing.T) {
 }
 
 func TestRemoveCaravanDependency(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	idA, _ := s.CreateCaravan("caravan-a", "autarch")
@@ -110,6 +116,7 @@ func TestRemoveCaravanDependency(t *testing.T) {
 }
 
 func TestAreCaravanDependenciesSatisfied(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	idA, _ := s.CreateCaravan("caravan-a", "autarch")
@@ -139,6 +146,7 @@ func TestAreCaravanDependenciesSatisfied(t *testing.T) {
 }
 
 func TestAreCaravanDependenciesSatisfiedNoDeps(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	idA, _ := s.CreateCaravan("caravan-a", "autarch")
@@ -153,6 +161,7 @@ func TestAreCaravanDependenciesSatisfiedNoDeps(t *testing.T) {
 }
 
 func TestUnsatisfiedCaravanDependencies(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	idA, _ := s.CreateCaravan("caravan-a", "autarch")
@@ -187,6 +196,7 @@ func TestUnsatisfiedCaravanDependencies(t *testing.T) {
 }
 
 func TestDeleteCaravanDependencies(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	idA, _ := s.CreateCaravan("caravan-a", "autarch")
@@ -211,21 +221,16 @@ func TestDeleteCaravanDependencies(t *testing.T) {
 }
 
 func TestCheckCaravanReadinessWithCaravanDeps(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
 
-	sphereStore, err := OpenSphere()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sphereStore.Close()
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
 
 	// Create writs in world.
-	worldStore, err := OpenWorld("ember")
-	if err != nil {
-		t.Fatal(err)
-	}
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
 	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
 	idB, _ := worldStore.CreateWrit("Item B", "", "autarch", 2, nil)
 	worldStore.Close()
@@ -242,7 +247,7 @@ func TestCheckCaravanReadinessWithCaravanDeps(t *testing.T) {
 	sphereStore.AddCaravanDependency(dependentID, prereqID)
 
 	// Item B should NOT be ready (prereq caravan is open).
-	statuses, err := sphereStore.CheckCaravanReadiness(dependentID, OpenWorld)
+	statuses, err := sphereStore.CheckCaravanReadiness(dependentID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +259,7 @@ func TestCheckCaravanReadinessWithCaravanDeps(t *testing.T) {
 	}
 
 	// Item A (in prereq caravan) should still be ready — no deps on it.
-	statuses, err = sphereStore.CheckCaravanReadiness(prereqID, OpenWorld)
+	statuses, err = sphereStore.CheckCaravanReadiness(prereqID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +273,7 @@ func TestCheckCaravanReadinessWithCaravanDeps(t *testing.T) {
 	// Close prereq caravan → item B should become ready.
 	sphereStore.UpdateCaravanStatus(prereqID, "closed")
 
-	statuses, err = sphereStore.CheckCaravanReadiness(dependentID, OpenWorld)
+	statuses, err = sphereStore.CheckCaravanReadiness(dependentID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,21 +283,16 @@ func TestCheckCaravanReadinessWithCaravanDeps(t *testing.T) {
 }
 
 func TestCheckCaravanReadinessCaravanDepsPartialClose(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
 
-	sphereStore, err := OpenSphere()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sphereStore.Close()
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
 
 	// Create writs.
-	worldStore, err := OpenWorld("ember")
-	if err != nil {
-		t.Fatal(err)
-	}
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
 	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
 	worldStore.Close()
 
@@ -307,20 +307,21 @@ func TestCheckCaravanReadinessCaravanDepsPartialClose(t *testing.T) {
 
 	// Close only prereq1 → dependent still blocked.
 	sphereStore.UpdateCaravanStatus(prereq1, "closed")
-	statuses, _ := sphereStore.CheckCaravanReadiness(dependent, OpenWorld)
+	statuses, _ := sphereStore.CheckCaravanReadiness(dependent, openWorldByName)
 	if statuses[0].Ready {
 		t.Fatal("expected item NOT ready (prereq-2 still open)")
 	}
 
 	// Close prereq2 → dependent unblocked.
 	sphereStore.UpdateCaravanStatus(prereq2, "closed")
-	statuses, _ = sphereStore.CheckCaravanReadiness(dependent, OpenWorld)
+	statuses, _ = sphereStore.CheckCaravanReadiness(dependent, openWorldByName)
 	if !statuses[0].Ready {
 		t.Fatal("expected item ready (both prereq caravans closed)")
 	}
 }
 
 func TestIsWritBlockedByCaravanDeps(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	prereq, _ := s.CreateCaravan("prereq", "autarch")
@@ -353,6 +354,7 @@ func TestIsWritBlockedByCaravanDeps(t *testing.T) {
 }
 
 func TestIsWritBlockedByCaravanDepsNoCaravan(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Writ not in any caravan → not blocked.
@@ -366,35 +368,24 @@ func TestIsWritBlockedByCaravanDepsNoCaravan(t *testing.T) {
 }
 
 func TestIsWritBlockedByCaravanMultiWorld(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
 
-	sphereStore, err := OpenSphere()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sphereStore.Close()
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
 
 	// Create writs in two different worlds.
-	worldAlpha, err := OpenWorld("alpha")
-	if err != nil {
-		t.Fatal(err)
-	}
+	worldAlpha := openWorldAt(t, filepath.Join(storeDir, "alpha.db"))
 	alphaWrit, _ := worldAlpha.CreateWrit("Alpha item", "", "autarch", 2, nil)
 	worldAlpha.Close()
 
-	worldBeta, err := OpenWorld("beta")
-	if err != nil {
-		t.Fatal(err)
-	}
+	worldBeta := openWorldAt(t, filepath.Join(storeDir, "beta.db"))
 	betaWrit, _ := worldBeta.CreateWrit("Beta item", "", "autarch", 2, nil)
 	worldBeta.Close()
 
-	worldGamma, err := OpenWorld("gamma")
-	if err != nil {
-		t.Fatal(err)
-	}
+	worldGamma := openWorldAt(t, filepath.Join(storeDir, "gamma.db"))
 	gammaWrit, _ := worldGamma.CreateWrit("Gamma item", "", "autarch", 2, nil)
 	worldGamma.Close()
 
@@ -405,7 +396,7 @@ func TestIsWritBlockedByCaravanMultiWorld(t *testing.T) {
 	sphereStore.CreateCaravanItem(caravanID, gammaWrit, "gamma", 1)
 
 	// gammaWrit (phase 1) should be blocked — alpha and beta items are not closed.
-	blocked, err := sphereStore.IsWritBlockedByCaravan(gammaWrit, "gamma", OpenWorld)
+	blocked, err := sphereStore.IsWritBlockedByCaravan(gammaWrit, "gamma", openWorldByName)
 	if err != nil {
 		t.Fatalf("IsWritBlockedByCaravan error: %v", err)
 	}
@@ -414,14 +405,11 @@ func TestIsWritBlockedByCaravanMultiWorld(t *testing.T) {
 	}
 
 	// Close only the alpha item — still blocked (beta is open).
-	worldAlpha, err = OpenWorld("alpha")
-	if err != nil {
-		t.Fatal(err)
-	}
+	worldAlpha = openWorldAt(t, filepath.Join(storeDir, "alpha.db"))
 	worldAlpha.CloseWrit(alphaWrit)
 	worldAlpha.Close()
 
-	blocked, err = sphereStore.IsWritBlockedByCaravan(gammaWrit, "gamma", OpenWorld)
+	blocked, err = sphereStore.IsWritBlockedByCaravan(gammaWrit, "gamma", openWorldByName)
 	if err != nil {
 		t.Fatalf("IsWritBlockedByCaravan error: %v", err)
 	}
@@ -430,14 +418,11 @@ func TestIsWritBlockedByCaravanMultiWorld(t *testing.T) {
 	}
 
 	// Close the beta item — gamma should be unblocked.
-	worldBeta, err = OpenWorld("beta")
-	if err != nil {
-		t.Fatal(err)
-	}
+	worldBeta = openWorldAt(t, filepath.Join(storeDir, "beta.db"))
 	worldBeta.CloseWrit(betaWrit)
 	worldBeta.Close()
 
-	blocked, err = sphereStore.IsWritBlockedByCaravan(gammaWrit, "gamma", OpenWorld)
+	blocked, err = sphereStore.IsWritBlockedByCaravan(gammaWrit, "gamma", openWorldByName)
 	if err != nil {
 		t.Fatalf("IsWritBlockedByCaravan error: %v", err)
 	}
@@ -446,7 +431,7 @@ func TestIsWritBlockedByCaravanMultiWorld(t *testing.T) {
 	}
 
 	// Phase 0 items should never be blocked by phase gating.
-	blocked, err = sphereStore.IsWritBlockedByCaravan(alphaWrit, "alpha", OpenWorld)
+	blocked, err = sphereStore.IsWritBlockedByCaravan(alphaWrit, "alpha", openWorldByName)
 	if err != nil {
 		t.Fatalf("IsWritBlockedByCaravan error: %v", err)
 	}
@@ -456,18 +441,16 @@ func TestIsWritBlockedByCaravanMultiWorld(t *testing.T) {
 }
 
 func TestIsWritBlockedByCaravanNotInCaravan(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
 
-	sphereStore, err := OpenSphere()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sphereStore.Close()
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
 
 	// Writ not in any caravan → not blocked.
-	blocked, err := sphereStore.IsWritBlockedByCaravan("sol-99999999", "ember", OpenWorld)
+	blocked, err := sphereStore.IsWritBlockedByCaravan("sol-99999999", "ember", openWorldByName)
 	if err != nil {
 		t.Fatalf("IsWritBlockedByCaravan error: %v", err)
 	}

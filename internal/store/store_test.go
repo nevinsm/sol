@@ -11,16 +11,22 @@ import (
 )
 
 // setupWorld creates a temporary world store for testing.
+// It opens the database directly by path (not via SOL_HOME) so that tests
+// calling this helper can safely call t.Parallel().
 func setupWorld(t *testing.T) *WorldStore {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-
-	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
+	storeDir := filepath.Join(dir, ".store")
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s, err := OpenWorld("ember")
+	base, err := open(filepath.Join(storeDir, "ember.db"))
 	if err != nil {
+		t.Fatal(err)
+	}
+	s := &WorldStore{baseStore: *base}
+	if err := s.migrateWorld(); err != nil {
+		s.Close()
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
@@ -28,23 +34,84 @@ func setupWorld(t *testing.T) *WorldStore {
 }
 
 // setupSphere creates a temporary sphere store for testing.
+// It opens the database directly by path (not via SOL_HOME) so that tests
+// calling this helper can safely call t.Parallel().
 func setupSphere(t *testing.T) *SphereStore {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-
-	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
+	storeDir := filepath.Join(dir, ".store")
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s, err := OpenSphere()
+	base, err := open(filepath.Join(storeDir, "sphere.db"))
 	if err != nil {
+		t.Fatal(err)
+	}
+	s := &SphereStore{baseStore: *base}
+	if err := s.migrateSphere(); err != nil {
+		s.Close()
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
 	return s
 }
 
+// openWorldAt opens a world database at an explicit path and runs migrations.
+// Used in tests that need to control the database path directly without setting SOL_HOME.
+func openWorldAt(t *testing.T, path string) *WorldStore {
+	t.Helper()
+	base, err := open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &WorldStore{baseStore: *base}
+	if err := s.migrateWorld(); err != nil {
+		s.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s
+}
+
+// openSphereAt opens a sphere database at an explicit path and runs migrations.
+// Used in tests that need to control the database path directly without setting SOL_HOME.
+func openSphereAt(t *testing.T, path string) *SphereStore {
+	t.Helper()
+	base, err := open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &SphereStore{baseStore: *base}
+	if err := s.migrateSphere(); err != nil {
+		s.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s
+}
+
+// makeWorldOpener returns a worldOpener function that opens world databases by
+// name within the given storeDir, without requiring SOL_HOME to be set.
+// The opener registers t.Cleanup for each opened connection.
+func makeWorldOpener(t *testing.T, storeDir string) func(world string) (*WorldStore, error) {
+	t.Helper()
+	return func(world string) (*WorldStore, error) {
+		base, err := open(filepath.Join(storeDir, world+".db"))
+		if err != nil {
+			return nil, err
+		}
+		s := &WorldStore{baseStore: *base}
+		if err := s.migrateWorld(); err != nil {
+			s.Close()
+			return nil, err
+		}
+		t.Cleanup(func() { s.Close() })
+		return s, nil
+	}
+}
+
 func TestSchemaCreation(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Verify writs table exists.
@@ -98,6 +165,7 @@ func TestSchemaCreation(t *testing.T) {
 }
 
 func TestSphereSchemaCreation(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	var count int
@@ -111,6 +179,7 @@ func TestSphereSchemaCreation(t *testing.T) {
 }
 
 func TestMigrateSphereV5(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Verify messages table exists.
@@ -155,8 +224,8 @@ func TestMigrateSphereV5(t *testing.T) {
 }
 
 func TestMigrateSphereV1ToLatest(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Simulate a V1-only sphere database.
@@ -180,12 +249,8 @@ func TestMigrateSphereV1ToLatest(t *testing.T) {
 	}
 	s.Close()
 
-	// Reopen through OpenSphere — should migrate to V2.
-	s2, err := OpenSphere()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s2.Close()
+	// Reopen via openSphereAt — should migrate to latest.
+	s2 := openSphereAt(t, dbPath)
 
 	// Verify messages table exists.
 	var count int
@@ -236,8 +301,8 @@ func TestMigrateSphereV1ToLatest(t *testing.T) {
 }
 
 func TestMigrateSphereV9ToV10(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Simulate a V9 sphere database with tether_item column.
@@ -294,12 +359,8 @@ func TestMigrateSphereV9ToV10(t *testing.T) {
 	}
 	s.Close()
 
-	// Reopen through OpenSphere — should migrate to V10.
-	s2, err := OpenSphere()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s2.Close()
+	// Reopen via openSphereAt — should migrate to latest.
+	s2 := openSphereAt(t, dbPath)
 
 	// Verify schema version is V10.
 	var version int
@@ -377,8 +438,8 @@ func TestMigrateSphereV9ToV10(t *testing.T) {
 }
 
 func TestMigrateSphereV11ToV12(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Simulate a V11 sphere database.
@@ -428,12 +489,8 @@ func TestMigrateSphereV11ToV12(t *testing.T) {
 	}
 	s.Close()
 
-	// Reopen through OpenSphere — should migrate V11 → V13.
-	s2, err := OpenSphere()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s2.Close()
+	// Reopen via openSphereAt — should migrate V11 → latest.
+	s2 := openSphereAt(t, dbPath)
 
 	// Verify schema version is current (13).
 	var version int
@@ -493,6 +550,7 @@ func TestMigrateSphereV11ToV12(t *testing.T) {
 }
 
 func TestWritCRUD(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Create.
@@ -616,6 +674,7 @@ func TestWritCRUD(t *testing.T) {
 }
 
 func TestUpdateWritInvalidStatus(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id, err := s.CreateWrit("Status test", "", "autarch", 2, nil)
@@ -640,6 +699,7 @@ func TestUpdateWritInvalidStatus(t *testing.T) {
 }
 
 func TestLabels(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id, err := s.CreateWrit("Label test", "", "autarch", 2, []string{"bug", "urgent"})
@@ -714,6 +774,7 @@ func TestLabels(t *testing.T) {
 }
 
 func TestIDGeneration(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	pattern := regexp.MustCompile(`^sol-[0-9a-f]{16}$`)
@@ -735,25 +796,17 @@ func TestIDGeneration(t *testing.T) {
 }
 
 func TestConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
 
 	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	// Open two connections to the same database.
-	s1, err := OpenWorld("concurrent")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s1.Close()
-
-	s2, err := OpenWorld("concurrent")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s2.Close()
+	dbPath := filepath.Join(dir, ".store", "concurrent.db")
+	s1 := openWorldAt(t, dbPath)
+	s2 := openWorldAt(t, dbPath)
 
 	var wg sync.WaitGroup
 	errs := make(chan error, 20)
@@ -794,6 +847,7 @@ func TestConcurrentAccess(t *testing.T) {
 }
 
 func TestNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	_, err := s.GetWrit("sol-nonexist")
@@ -807,6 +861,7 @@ func TestNotFound(t *testing.T) {
 }
 
 func TestAgentCRUD(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Create.
@@ -918,6 +973,7 @@ func TestAgentCRUD(t *testing.T) {
 }
 
 func TestDeleteAgentsForWorld(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Create agents in world "alpha" and "beta".
@@ -950,6 +1006,7 @@ func TestDeleteAgentsForWorld(t *testing.T) {
 }
 
 func TestDeleteAgentsForWorldEmpty(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	// Delete agents for a world that has none — should not error.
@@ -959,6 +1016,7 @@ func TestDeleteAgentsForWorldEmpty(t *testing.T) {
 }
 
 func TestDeleteAgent(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	s.CreateAgent("Toast", "alpha", "outpost")
@@ -986,6 +1044,7 @@ func TestDeleteAgent(t *testing.T) {
 }
 
 func TestDeleteAgentNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	err := s.DeleteAgent("noworld/NoAgent")
@@ -995,6 +1054,7 @@ func TestDeleteAgentNotFound(t *testing.T) {
 }
 
 func TestAgentNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	_, err := s.GetAgent("noworld/NoAgent")
@@ -1004,6 +1064,7 @@ func TestAgentNotFound(t *testing.T) {
 }
 
 func TestListWritsFilters(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Create items with different statuses and priorities.
@@ -1044,23 +1105,17 @@ func TestListWritsFilters(t *testing.T) {
 }
 
 func TestMigrationIdempotent(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Open and close twice — migration should be idempotent.
-	s1, err := OpenWorld("idempotent")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := filepath.Join(dir, ".store", "idempotent.db")
+	s1 := openWorldAt(t, dbPath)
 	s1.CreateWrit("test", "", "autarch", 2, nil)
 	s1.Close()
 
-	s2, err := OpenWorld("idempotent")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s2.Close()
+	s2 := openWorldAt(t, dbPath)
 
 	items, err := s2.ListWrits(ListFilters{})
 	if err != nil {
@@ -1092,8 +1147,8 @@ func TestMigrationIdempotent(t *testing.T) {
 }
 
 func TestMigrateWorldV1ToV4(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
 
 	// Simulate a V1-only database by manually creating it.
@@ -1117,12 +1172,8 @@ func TestMigrateWorldV1ToV4(t *testing.T) {
 	}
 	s.Close()
 
-	// Reopen through OpenWorld — should migrate to V2.
-	s2, err := OpenWorld("v1test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s2.Close()
+	// Reopen via openWorldAt — should migrate to latest.
+	s2 := openWorldAt(t, dbPath)
 
 	// Verify merge_requests table exists.
 	var count int
@@ -1155,6 +1206,7 @@ func TestMigrateWorldV1ToV4(t *testing.T) {
 }
 
 func TestCreateWritWithOpts(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id, err := s.CreateWritWithOpts(CreateWritOpts{
@@ -1191,6 +1243,7 @@ func TestCreateWritWithOpts(t *testing.T) {
 }
 
 func TestCreateWritWithOptsNoParent(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id, err := s.CreateWritWithOpts(CreateWritOpts{
@@ -1214,6 +1267,7 @@ func TestCreateWritWithOptsNoParent(t *testing.T) {
 }
 
 func TestHasLabel(t *testing.T) {
+	t.Parallel()
 	item := &Writ{Labels: []string{"bug", "urgent", "conflict-resolution"}}
 
 	if !item.HasLabel("bug") {
@@ -1237,6 +1291,7 @@ func TestHasLabel(t *testing.T) {
 }
 
 func TestColumnExists(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 	// writs table has a "title" column.
 	exists, err := columnExists(s.db, "writs", "title")
@@ -1257,6 +1312,7 @@ func TestColumnExists(t *testing.T) {
 }
 
 func TestTableExists(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 	exists, err := tableExists(s.db, "writs")
 	if err != nil {
@@ -1277,6 +1333,7 @@ func TestTableExists(t *testing.T) {
 func TestErrNotFound(t *testing.T) {
 	worldStore := setupWorld(t)
 	sphereStore := setupSphere(t)
+	t.Parallel()
 
 	// GetAgent with nonexistent ID.
 	_, err := sphereStore.GetAgent("nonexistent")
@@ -1304,6 +1361,7 @@ func TestErrNotFound(t *testing.T) {
 }
 
 func TestInvalidCaravanStatus(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	id, err := s.CreateCaravan("test-caravan", "autarch")
@@ -1321,6 +1379,7 @@ func TestInvalidCaravanStatus(t *testing.T) {
 }
 
 func TestInvalidAgentState(t *testing.T) {
+	t.Parallel()
 	s := setupSphere(t)
 
 	_, err := s.CreateAgent("TestAgent", "testworld", "outpost")
@@ -1338,6 +1397,7 @@ func TestInvalidAgentState(t *testing.T) {
 }
 
 func TestCreateWritWithOptsKindAndMetadata(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	meta := map[string]any{"key1": "val1", "key2": float64(42)}
@@ -1370,6 +1430,7 @@ func TestCreateWritWithOptsKindAndMetadata(t *testing.T) {
 }
 
 func TestCreateWritWithOptsDefaultKind(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id, err := s.CreateWritWithOpts(CreateWritOpts{
@@ -1393,6 +1454,7 @@ func TestCreateWritWithOptsDefaultKind(t *testing.T) {
 }
 
 func TestCloseWritWithReason(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id, err := s.CreateWrit("Close test", "", "autarch", 2, nil)
@@ -1420,6 +1482,7 @@ func TestCloseWritWithReason(t *testing.T) {
 }
 
 func TestCloseWritWithoutReason(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id, err := s.CreateWrit("Close no reason", "", "autarch", 2, nil)
@@ -1440,6 +1503,7 @@ func TestCloseWritWithoutReason(t *testing.T) {
 }
 
 func TestSetWritMetadata(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id, err := s.CreateWritWithOpts(CreateWritOpts{
@@ -1486,6 +1550,7 @@ func TestSetWritMetadata(t *testing.T) {
 }
 
 func TestGetWritMetadataEmpty(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id, err := s.CreateWrit("No metadata", "", "autarch", 2, nil)
@@ -1503,6 +1568,7 @@ func TestGetWritMetadataEmpty(t *testing.T) {
 }
 
 func TestSetWritMetadataOnEmptyWrit(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	id, err := s.CreateWrit("Empty meta writ", "", "autarch", 2, nil)
@@ -1524,6 +1590,7 @@ func TestSetWritMetadataOnEmptyWrit(t *testing.T) {
 }
 
 func TestListWritsIncludesKindAndMetadata(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	_, err := s.CreateWritWithOpts(CreateWritOpts{

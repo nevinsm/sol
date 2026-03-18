@@ -11,35 +11,40 @@ import (
 	"time"
 )
 
-// setupTest creates an isolated tmux environment for a single test.
-// It sets TMUX_TMPDIR to a test-specific temp directory so the tmux socket
-// doesn't collide with any running tmux server. It also sets SOL_HOME so
-// session metadata is written to a test-specific directory.
+// TestMain sets up a single shared tmux server for all session tests.
+// Using a shared server (via a single TMUX_TMPDIR) avoids per-test server
+// startup overhead (~300ms each) and enables t.Parallel() across all tests.
+// Session names are unique per test, so there is no cross-test interference.
+func TestMain(m *testing.M) {
+	tmpDir, err := os.MkdirTemp("", "sol-session-test-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create tmpdir: %v\n", err)
+		os.Exit(1)
+	}
+
+	os.Setenv("TMUX_TMPDIR", tmpDir)
+	os.Setenv("TMUX", "")
+	os.Setenv("SOL_HOME", filepath.Join(tmpDir, "sol"))
+
+	code := m.Run()
+
+	kill, killCancel := tmuxCmd("kill-server")
+	_ = kill.Run()
+	killCancel()
+
+	os.RemoveAll(tmpDir)
+	os.Exit(code)
+}
+
+// setupTest returns a session Manager. The shared tmux environment is
+// configured by TestMain; individual tests do not need their own isolation.
 func setupTest(t *testing.T) *Manager {
 	t.Helper()
-
-	tmpDir := t.TempDir()
-
-	// Isolate tmux socket
-	t.Setenv("TMUX_TMPDIR", tmpDir)
-	// Unset TMUX to avoid "sessions should be nested" errors
-	t.Setenv("TMUX", "")
-
-	// Isolate SOL_HOME for session metadata
-	solHome := filepath.Join(tmpDir, "sol")
-	t.Setenv("SOL_HOME", solHome)
-
-	t.Cleanup(func() {
-		// Kill all sessions in this isolated tmux server
-		kill, killCancel := tmuxCmd("kill-server")
-		_ = kill.Run()
-		killCancel()
-	})
-
 	return New()
 }
 
 func TestStartStop(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Start("test-ss", "/tmp", "sleep 300", nil, "outpost", "haven")
@@ -68,14 +73,17 @@ func TestStartStop(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	names := []string{"list-a", "list-b", "list-c"}
 	for _, name := range names {
+		name := name
 		err := mgr.Start(name, "/tmp", "sleep 300", nil, "outpost", "haven")
 		if err != nil {
 			t.Fatalf("Start %s failed: %v", name, err)
 		}
+		t.Cleanup(func() { _ = mgr.Stop(name, true) })
 	}
 
 	// Let tmux stabilize after creating all sessions
@@ -86,31 +94,33 @@ func TestList(t *testing.T) {
 		t.Fatalf("List failed: %v", err)
 	}
 
-	if len(sessions) != 3 {
-		t.Fatalf("expected 3 sessions, got %d", len(sessions))
-	}
-
-	found := make(map[string]bool)
-	for _, s := range sessions {
-		found[s.Name] = true
-		if !s.Alive {
-			t.Errorf("session %s should be alive", s.Name)
-		}
+	// Don't check exact count — other parallel tests may have sessions.
+	// Verify all expected sessions are present and alive.
+	found := make(map[string]*SessionInfo)
+	for i := range sessions {
+		found[sessions[i].Name] = &sessions[i]
 	}
 	for _, name := range names {
-		if !found[name] {
+		s, ok := found[name]
+		if !ok {
 			t.Errorf("session %s not found in list", name)
+			continue
+		}
+		if !s.Alive {
+			t.Errorf("session %s should be alive", name)
 		}
 	}
 }
 
 func TestCapture(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Start("test-cap", "/tmp", "echo 'hello world' && sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-cap", true) })
 
 	// Wait for echo to execute and tmux to capture output
 	time.Sleep(500 * time.Millisecond)
@@ -126,6 +136,7 @@ func TestCapture(t *testing.T) {
 }
 
 func TestInject(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start a session running cat which echoes stdin back
@@ -133,6 +144,7 @@ func TestInject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-inj", true) })
 
 	// Wait for cat to start
 	time.Sleep(300 * time.Millisecond)
@@ -156,6 +168,7 @@ func TestInject(t *testing.T) {
 }
 
 func TestHealthHealthy(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start a session that outputs text periodically
@@ -163,6 +176,7 @@ func TestHealthHealthy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-hh", true) })
 
 	// Wait for output to appear
 	time.Sleep(500 * time.Millisecond)
@@ -178,12 +192,14 @@ func TestHealthHealthy(t *testing.T) {
 }
 
 func TestHealthDead(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Start("test-hd", "/tmp", "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-hd", true) })
 
 	// Let tmux stabilize then force-kill the session
 	time.Sleep(300 * time.Millisecond)
@@ -207,6 +223,7 @@ func TestHealthDead(t *testing.T) {
 }
 
 func TestExists(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	if mgr.Exists("nonexistent") {
@@ -217,6 +234,7 @@ func TestExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-ex", true) })
 
 	// Let tmux stabilize
 	time.Sleep(300 * time.Millisecond)
@@ -227,6 +245,7 @@ func TestExists(t *testing.T) {
 }
 
 func TestMetadata(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Start("test-meta", "/tmp", "sleep 300", nil, "outpost", "haven")
@@ -277,12 +296,14 @@ func TestMetadata(t *testing.T) {
 }
 
 func TestDoubleStart(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Start("test-ds", "/tmp", "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("first Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-ds", true) })
 
 	// Let tmux stabilize
 	time.Sleep(300 * time.Millisecond)
@@ -297,6 +318,7 @@ func TestDoubleStart(t *testing.T) {
 }
 
 func TestStopNonexistent(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Stop("nonexistent", true)
@@ -309,6 +331,7 @@ func TestStopNonexistent(t *testing.T) {
 }
 
 func TestCaptureNonexistent(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	_, err := mgr.Capture("nonexistent", 50)
@@ -318,6 +341,7 @@ func TestCaptureNonexistent(t *testing.T) {
 }
 
 func TestInjectNonexistent(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Inject("nonexistent", "hello", true)
@@ -327,6 +351,7 @@ func TestInjectNonexistent(t *testing.T) {
 }
 
 func TestHealthStatusStrings(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		status   HealthStatus
 		str      string
@@ -340,6 +365,7 @@ func TestHealthStatusStrings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.str, func(t *testing.T) {
+			t.Parallel()
 			if got := tt.status.String(); got != tt.str {
 				t.Errorf("String() = %q, want %q", got, tt.str)
 			}
@@ -351,6 +377,7 @@ func TestHealthStatusStrings(t *testing.T) {
 }
 
 func TestEnvVars(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	env := map[string]string{
@@ -362,6 +389,7 @@ func TestEnvVars(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start with env vars failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-env", true) })
 
 	// Let tmux stabilize
 	time.Sleep(300 * time.Millisecond)
@@ -374,6 +402,7 @@ func TestEnvVars(t *testing.T) {
 }
 
 func TestPrependEnv(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		cmd      string
@@ -423,6 +452,7 @@ func TestPrependEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := prependEnv(tt.cmd, tt.env)
 			if got != tt.expected {
 				t.Errorf("prependEnv(%q, %v) = %q, want %q", tt.cmd, tt.env, got, tt.expected)
@@ -432,6 +462,7 @@ func TestPrependEnv(t *testing.T) {
 }
 
 func TestStartPrependsEnvToCommand(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	env := map[string]string{
@@ -445,6 +476,7 @@ func TestStartPrependsEnvToCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-env-prepend", true) })
 
 	// Wait for echo to execute
 	time.Sleep(500 * time.Millisecond)
@@ -460,6 +492,7 @@ func TestStartPrependsEnvToCommand(t *testing.T) {
 }
 
 func TestCyclePrependsEnvToCommand(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start without env.
@@ -467,6 +500,7 @@ func TestCyclePrependsEnvToCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-cycle-prepend", true) })
 
 	time.Sleep(300 * time.Millisecond)
 
@@ -494,6 +528,7 @@ func TestCyclePrependsEnvToCommand(t *testing.T) {
 }
 
 func TestGracefulStop(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Start("test-gs", "/tmp", "sleep 300", nil, "outpost", "haven")
@@ -536,12 +571,14 @@ func TestListEmpty(t *testing.T) {
 }
 
 func TestListWithStoppedSession(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Start("test-ls", "/tmp", "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-ls", true) })
 
 	// Let tmux stabilize
 	time.Sleep(300 * time.Millisecond)
@@ -559,16 +596,24 @@ func TestListWithStoppedSession(t *testing.T) {
 		t.Fatalf("List failed: %v", err)
 	}
 
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session (orphaned metadata), got %d", len(sessions))
+	// Find "test-ls" specifically — other parallel tests may also have sessions.
+	var found *SessionInfo
+	for i := range sessions {
+		if sessions[i].Name == "test-ls" {
+			found = &sessions[i]
+			break
+		}
 	}
-
-	if sessions[0].Alive {
+	if found == nil {
+		t.Fatal("expected orphaned metadata for 'test-ls' in List()")
+	}
+	if found.Alive {
 		t.Error("session should not be alive after tmux kill")
 	}
 }
 
 func TestHealthAgentDead(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start a session with a command that survives startup verification
@@ -578,6 +623,7 @@ func TestHealthAgentDead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-ad", true) })
 
 	// Wait for the process to exit after startup verification.
 	// Start() already consumed 1.5s; sleep 2 exits at 2s from creation.
@@ -597,6 +643,7 @@ func TestHealthAgentDead(t *testing.T) {
 }
 
 func TestStartDeadOnStartup(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// A command that exits immediately should be caught by startup verification.
@@ -618,6 +665,7 @@ func TestStartDeadOnStartup(t *testing.T) {
 }
 
 func TestCycleDeadOnStartup(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start a long-lived session.
@@ -625,6 +673,7 @@ func TestCycleDeadOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-cycle-dead-startup", true) })
 
 	// Let tmux stabilize.
 	time.Sleep(300 * time.Millisecond)
@@ -640,6 +689,7 @@ func TestCycleDeadOnStartup(t *testing.T) {
 }
 
 func TestGetMeta(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Session not found: GetMeta should return nil, nil.
@@ -656,6 +706,7 @@ func TestGetMeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-get-meta", true) })
 
 	// Let tmux stabilize.
 	time.Sleep(300 * time.Millisecond)
@@ -688,6 +739,7 @@ func TestGetMeta(t *testing.T) {
 }
 
 func TestMultipleStartStop(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start, stop, then start again with same name
@@ -712,6 +764,7 @@ func TestMultipleStartStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-ms", true) })
 
 	// Let tmux stabilize
 	time.Sleep(300 * time.Millisecond)
@@ -722,6 +775,7 @@ func TestMultipleStartStop(t *testing.T) {
 }
 
 func TestSessionInfoJSON(t *testing.T) {
+	t.Parallel()
 	// Test that SessionInfo serializes correctly to JSON
 	info := SessionInfo{
 		Name:      "test",
@@ -749,6 +803,7 @@ func TestSessionInfoJSON(t *testing.T) {
 }
 
 func TestHealthHung(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start a session that just sleeps (no output changes)
@@ -756,6 +811,7 @@ func TestHealthHung(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-hung", true) })
 
 	// Wait for session to stabilize
 	time.Sleep(500 * time.Millisecond)
@@ -805,6 +861,7 @@ func TestStartCreatesSessionsDir(t *testing.T) {
 }
 
 func TestSessionNameInErrors(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Test that error messages include session name
@@ -857,6 +914,7 @@ func BenchmarkExists(b *testing.B) {
 }
 
 func TestStopCleansMetadataOnKillFailure(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Start("test-meta-clean", "/tmp", "sleep 300", nil, "outpost", "haven")
@@ -907,6 +965,7 @@ func TestStopCleansMetadataOnKillFailure(t *testing.T) {
 }
 
 func TestCycle(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start a session running sleep.
@@ -914,6 +973,7 @@ func TestCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-cycle", true) })
 
 	// Let tmux stabilize.
 	time.Sleep(300 * time.Millisecond)
@@ -951,6 +1011,7 @@ func TestCycle(t *testing.T) {
 }
 
 func TestCycleNonexistent(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Cycle("nonexistent", "/tmp", "sleep 300", nil, "outpost", "haven")
@@ -963,12 +1024,14 @@ func TestCycleNonexistent(t *testing.T) {
 }
 
 func TestCycleWithEnv(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Start("test-cycle-env", "/tmp", "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-cycle-env", true) })
 
 	time.Sleep(300 * time.Millisecond)
 
@@ -989,6 +1052,7 @@ func TestCycleWithEnv(t *testing.T) {
 }
 
 func TestUnknownHealthStatus(t *testing.T) {
+	t.Parallel()
 	s := HealthStatus(99)
 	expected := fmt.Sprintf("unknown(%d)", 99)
 	if s.String() != expected {
@@ -999,6 +1063,7 @@ func TestUnknownHealthStatus(t *testing.T) {
 // --- sanitizeNudgeMessage tests ---
 
 func TestSanitizeNudgeMessage(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -1019,6 +1084,7 @@ func TestSanitizeNudgeMessage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := sanitizeNudgeMessage(tt.input)
 			if got != tt.expected {
 				t.Errorf("sanitizeNudgeMessage(%q) = %q, want %q", tt.input, got, tt.expected)
@@ -1030,6 +1096,7 @@ func TestSanitizeNudgeMessage(t *testing.T) {
 // --- nudge lock tests ---
 
 func TestNudgeLockAcquireRelease(t *testing.T) {
+	t.Parallel()
 	session := "test-lock-session"
 
 	// Acquire should succeed.
@@ -1053,6 +1120,7 @@ func TestNudgeLockAcquireRelease(t *testing.T) {
 }
 
 func TestNudgeLockDifferentSessions(t *testing.T) {
+	t.Parallel()
 	sess1 := "lock-test-a"
 	sess2 := "lock-test-b"
 
@@ -1072,6 +1140,7 @@ func TestNudgeLockDifferentSessions(t *testing.T) {
 // --- Idle detection unit tests ---
 
 func TestMatchesPromptPrefix(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		line   string
@@ -1092,6 +1161,7 @@ func TestMatchesPromptPrefix(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := matchesPromptPrefix(tt.line, tt.prefix)
 			if got != tt.want {
 				t.Errorf("matchesPromptPrefix(%q, %q) = %v, want %v",
@@ -1102,6 +1172,7 @@ func TestMatchesPromptPrefix(t *testing.T) {
 }
 
 func TestLinesContainPrompt(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		lines []string
@@ -1141,6 +1212,7 @@ func TestLinesContainPrompt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := linesContainPrompt(tt.lines)
 			if got != tt.want {
 				t.Errorf("linesContainPrompt(%v) = %v, want %v", tt.lines, got, tt.want)
@@ -1150,6 +1222,7 @@ func TestLinesContainPrompt(t *testing.T) {
 }
 
 func TestLinesAreBusy(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		lines []string
@@ -1184,6 +1257,7 @@ func TestLinesAreBusy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := linesAreBusy(tt.lines)
 			if got != tt.want {
 				t.Errorf("linesAreBusy(%v) = %v, want %v", tt.lines, got, tt.want)
@@ -1193,6 +1267,7 @@ func TestLinesAreBusy(t *testing.T) {
 }
 
 func TestDefaultPromptPrefix(t *testing.T) {
+	t.Parallel()
 	if DefaultPromptPrefix == "" {
 		t.Error("DefaultPromptPrefix should not be empty")
 	}
@@ -1202,6 +1277,7 @@ func TestDefaultPromptPrefix(t *testing.T) {
 }
 
 func TestErrIdleTimeout(t *testing.T) {
+	t.Parallel()
 	if ErrIdleTimeout == nil {
 		t.Fatal("ErrIdleTimeout should not be nil")
 	}
@@ -1213,6 +1289,7 @@ func TestErrIdleTimeout(t *testing.T) {
 // --- NudgeSession integration tests ---
 
 func TestNudgeSessionDelivers(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start a session running cat which echoes stdin back.
@@ -1220,6 +1297,7 @@ func TestNudgeSessionDelivers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-nudge", true) })
 
 	time.Sleep(300 * time.Millisecond)
 
@@ -1242,6 +1320,7 @@ func TestNudgeSessionDelivers(t *testing.T) {
 }
 
 func TestNudgeSessionNonexistent(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.NudgeSession("nonexistent", "hello")
@@ -1251,12 +1330,14 @@ func TestNudgeSessionNonexistent(t *testing.T) {
 }
 
 func TestNudgeSessionSanitizes(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Start("test-nudge-san", "/tmp", "cat", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-nudge-san", true) })
 
 	time.Sleep(300 * time.Millisecond)
 
@@ -1270,6 +1351,7 @@ func TestNudgeSessionSanitizes(t *testing.T) {
 // --- WaitForIdle integration tests ---
 
 func TestWaitForIdleDetectsPrompt(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start a session that prints the prompt character then sleeps.
@@ -1279,6 +1361,7 @@ func TestWaitForIdleDetectsPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-idle", true) })
 
 	// Wait for printf to execute
 	time.Sleep(500 * time.Millisecond)
@@ -1290,6 +1373,7 @@ func TestWaitForIdleDetectsPrompt(t *testing.T) {
 }
 
 func TestWaitForIdleTimeout(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start a session that never shows the prompt — just sleeps.
@@ -1297,6 +1381,7 @@ func TestWaitForIdleTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-idle-to", true) })
 
 	time.Sleep(300 * time.Millisecond)
 
@@ -1307,6 +1392,7 @@ func TestWaitForIdleTimeout(t *testing.T) {
 }
 
 func TestWaitForIdleNonexistentSession(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.WaitForIdle("nonexistent", 5*time.Second)
@@ -1322,6 +1408,7 @@ func TestWaitForIdleNonexistentSession(t *testing.T) {
 }
 
 func TestWaitForIdleBusySession(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start a session that shows both prompt and "esc to interrupt" —
@@ -1332,6 +1419,7 @@ func TestWaitForIdleBusySession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-idle-busy", true) })
 
 	time.Sleep(500 * time.Millisecond)
 
@@ -1343,6 +1431,7 @@ func TestWaitForIdleBusySession(t *testing.T) {
 }
 
 func TestWaitForIdleTransientPrompt(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Simulate transient prompt: show prompt briefly, then clear the pane
@@ -1356,6 +1445,7 @@ func TestWaitForIdleTransientPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-idle-transient", true) })
 
 	// Wait for the script to show the prompt, clear, and print non-prompt output
 	time.Sleep(800 * time.Millisecond)
@@ -1370,6 +1460,7 @@ func TestWaitForIdleTransientPrompt(t *testing.T) {
 // --- IsAtPrompt tests ---
 
 func TestIsAtPromptTrue(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Start("test-prompt-t", "/tmp",
@@ -1377,6 +1468,7 @@ func TestIsAtPromptTrue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-prompt-t", true) })
 
 	time.Sleep(500 * time.Millisecond)
 
@@ -1386,12 +1478,14 @@ func TestIsAtPromptTrue(t *testing.T) {
 }
 
 func TestIsAtPromptFalse(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	err := mgr.Start("test-prompt-f", "/tmp", "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-prompt-f", true) })
 
 	time.Sleep(300 * time.Millisecond)
 
@@ -1401,6 +1495,7 @@ func TestIsAtPromptFalse(t *testing.T) {
 }
 
 func TestIsAtPromptNonexistent(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	if mgr.IsAtPrompt("nonexistent") {
@@ -1409,6 +1504,7 @@ func TestIsAtPromptNonexistent(t *testing.T) {
 }
 
 func TestWaitForIdleResetOnBusy(t *testing.T) {
+	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start a session that shows prompt with "esc to interrupt" on a separate line.
@@ -1419,6 +1515,7 @@ func TestWaitForIdleResetOnBusy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-idle-reset", true) })
 
 	time.Sleep(500 * time.Millisecond)
 

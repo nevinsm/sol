@@ -6,6 +6,7 @@ import (
 )
 
 func TestSetAgentMemoryPreservesCreatedAt(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Set initial memory.
@@ -51,6 +52,7 @@ func TestSetAgentMemoryPreservesCreatedAt(t *testing.T) {
 }
 
 func TestSetAgentMemoryCRUD(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	// Set memory.
@@ -90,6 +92,7 @@ func TestSetAgentMemoryCRUD(t *testing.T) {
 }
 
 func TestDeleteAgentMemoryNotFound(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 
 	err := s.DeleteAgentMemory("Toast", "nonexistent")

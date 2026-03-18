@@ -3,6 +3,7 @@ package store
 import "testing"
 
 func TestHasOpenTransitiveDependents_NoDependents(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 	id, _ := s.CreateWrit("Solo writ", "", "autarch", 2, nil)
 
@@ -16,6 +17,7 @@ func TestHasOpenTransitiveDependents_NoDependents(t *testing.T) {
 }
 
 func TestHasOpenTransitiveDependents_DirectOpenDependent(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 	idA, _ := s.CreateWrit("Writ A", "", "autarch", 2, nil)
 	idB, _ := s.CreateWrit("Writ B", "", "autarch", 2, nil)
@@ -34,6 +36,7 @@ func TestHasOpenTransitiveDependents_DirectOpenDependent(t *testing.T) {
 }
 
 func TestHasOpenTransitiveDependents_AllDependentsClosed(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 	idA, _ := s.CreateWrit("Writ A", "", "autarch", 2, nil)
 	idB, _ := s.CreateWrit("Writ B", "", "autarch", 2, nil)
@@ -54,6 +57,7 @@ func TestHasOpenTransitiveDependents_AllDependentsClosed(t *testing.T) {
 }
 
 func TestHasOpenTransitiveDependents_TransitiveOpenDependent(t *testing.T) {
+	t.Parallel()
 	s := setupWorld(t)
 	idA, _ := s.CreateWrit("Writ A", "", "autarch", 2, nil)
 	idB, _ := s.CreateWrit("Writ B", "", "autarch", 2, nil)
