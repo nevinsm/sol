@@ -454,6 +454,17 @@ func (r *recordingNotifier) Notify(_ context.Context, _ store.Escalation) error 
 }
 func (r *recordingNotifier) Name() string { return "recording" }
 
+// ctxAwareNotifier records the context error at the time Notify is called.
+type ctxAwareNotifier struct {
+	ctxErr error
+}
+
+func (c *ctxAwareNotifier) Notify(ctx context.Context, _ store.Escalation) error {
+	c.ctxErr = ctx.Err()
+	return nil
+}
+func (c *ctxAwareNotifier) Name() string { return "ctx-aware" }
+
 func TestRouterBestEffort(t *testing.T) {
 	r := NewRouter()
 
@@ -474,5 +485,224 @@ func TestRouterBestEffort(t *testing.T) {
 	// But recording notifier still fired.
 	if !recording.called {
 		t.Fatal("expected recording notifier to still fire despite failure")
+	}
+}
+
+// --- Router edge cases ---
+
+func TestRouterUnknownSeverityReturnsNil(t *testing.T) {
+	r := NewRouter()
+	recording := &recordingNotifier{}
+	r.AddRule("high", recording)
+
+	esc := testEscalation()
+	esc.Severity = "unknown-severity"
+	err := r.Route(context.Background(), esc)
+
+	if err != nil {
+		t.Fatalf("expected nil error for unknown severity, got %v", err)
+	}
+	if recording.called {
+		t.Fatal("expected no notifiers to fire for unknown severity")
+	}
+}
+
+func TestRouterEmptyRouterReturnsNil(t *testing.T) {
+	r := NewRouter()
+
+	esc := testEscalation()
+	esc.Severity = "high"
+	err := r.Route(context.Background(), esc)
+
+	if err != nil {
+		t.Fatalf("expected nil error from empty router, got %v", err)
+	}
+}
+
+func TestRouterContextCancellationPassedToNotifier(t *testing.T) {
+	r := NewRouter()
+	n := &ctxAwareNotifier{}
+	r.AddRule("high", n)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled
+
+	esc := testEscalation()
+	esc.Severity = "high"
+	r.Route(ctx, esc) //nolint:errcheck
+
+	if n.ctxErr != context.Canceled {
+		t.Fatalf("expected notifier to receive cancelled context, got %v", n.ctxErr)
+	}
+}
+
+func TestRouterAddRuleAccumulates(t *testing.T) {
+	r := NewRouter()
+
+	recA := &recordingNotifier{}
+	recB := &recordingNotifier{}
+
+	r.AddRule("high", recA)
+	r.AddRule("high", recB)
+
+	esc := testEscalation()
+	esc.Severity = "high"
+	if err := r.Route(context.Background(), esc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !recA.called {
+		t.Error("expected first notifier (recA) to fire")
+	}
+	if !recB.called {
+		t.Error("expected second notifier (recB) to fire")
+	}
+}
+
+// --- Mail notifier edge cases ---
+
+func TestMailNotifierLongDescriptionTruncatesSubject(t *testing.T) {
+	s := setupSphereStore(t)
+	n := NewMailNotifier(s)
+
+	esc := testEscalation()
+	// Build a description that is exactly 100 runes.
+	esc.Description = strings.Repeat("x", 100)
+	esc.ID = "esc-long-001"
+
+	if err := n.Notify(context.Background(), esc); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+
+	// The subject should contain only 80 runes from the description.
+	subject := msgs[0].Subject
+	// Strip the "[ESCALATION-high] " prefix (18 chars) and check remaining length.
+	prefix := "[ESCALATION-high] "
+	if !strings.HasPrefix(subject, prefix) {
+		t.Fatalf("expected subject to start with %q, got %q", prefix, subject)
+	}
+	descPart := subject[len(prefix):]
+	if len([]rune(descPart)) != 80 {
+		t.Fatalf("expected truncated description of 80 runes, got %d", len([]rune(descPart)))
+	}
+}
+
+func TestMailNotifierEmptyDescription(t *testing.T) {
+	s := setupSphereStore(t)
+	n := NewMailNotifier(s)
+
+	esc := testEscalation()
+	esc.Description = ""
+	esc.ID = "esc-empty-001"
+
+	// Should not panic and should succeed.
+	if err := n.Notify(context.Background(), esc); err != nil {
+		t.Fatalf("unexpected error with empty description: %v", err)
+	}
+
+	msgs, err := s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message for empty description, got %d", len(msgs))
+	}
+}
+
+func TestMailNotifierSeverityPriorities(t *testing.T) {
+	s := setupSphereStore(t)
+	n := NewMailNotifier(s)
+
+	cases := []struct {
+		id       string
+		severity string
+		want     int
+	}{
+		{"esc-crit-p", "critical", 1},
+		{"esc-high-p", "high", 1},
+		{"esc-med-p", "medium", 2},
+		{"esc-low-p", "low", 3},
+	}
+
+	for _, tc := range cases {
+		esc := testEscalation()
+		esc.ID = tc.id
+		esc.Severity = tc.severity
+		if err := n.Notify(context.Background(), esc); err != nil {
+			t.Fatalf("severity %q: unexpected error: %v", tc.severity, err)
+		}
+	}
+
+	msgs, err := s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != len(cases) {
+		t.Fatalf("expected %d messages, got %d", len(cases), len(msgs))
+	}
+
+	// Build a map from subject keyword to priority for easy lookup.
+	priorityByEscID := make(map[string]int, len(msgs))
+	for _, m := range msgs {
+		// Extract escalation ID from thread ID ("esc:<id>").
+		if len(m.ThreadID) > 4 {
+			priorityByEscID[m.ThreadID[4:]] = m.Priority
+		}
+	}
+
+	for _, tc := range cases {
+		got, ok := priorityByEscID[tc.id]
+		if !ok {
+			t.Errorf("severity %q (id=%s): message not found", tc.severity, tc.id)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("severity %q: expected priority %d, got %d", tc.severity, tc.want, got)
+		}
+	}
+}
+
+// --- Webhook notifier edge cases ---
+
+func TestWebhookNotifierCancelledContext(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	n := NewWebhookNotifier(srv.URL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled
+
+	esc := testEscalation()
+	err := n.Notify(ctx, esc)
+	if err == nil {
+		t.Fatal("expected error for already-cancelled context")
+	}
+}
+
+func TestWebhookNotifierUnreachableURL(t *testing.T) {
+	// Start a server then immediately close it so the URL is unreachable.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	url := srv.URL
+	srv.Close() // closed before we notify
+
+	n := NewWebhookNotifier(url)
+
+	esc := testEscalation()
+	err := n.Notify(context.Background(), esc)
+	if err == nil {
+		t.Fatal("expected error for unreachable webhook URL")
 	}
 }
