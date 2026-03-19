@@ -602,7 +602,9 @@ func TestResetMergeRequestForRetry(t *testing.T) {
 
 	// Block it (simulates conflict-resolution blocker being set before failure).
 	// Use raw SQL since BlockMergeRequest also resets phase.
-	s.db.Exec(`UPDATE merge_requests SET blocked_by = 'sol-blocker1' WHERE id = ?`, mrID)
+	if _, err := s.db.Exec(`UPDATE merge_requests SET blocked_by = 'sol-blocker1' WHERE id = ?`, mrID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify pre-conditions.
 	mr, _ := s.GetMergeRequest(mrID)

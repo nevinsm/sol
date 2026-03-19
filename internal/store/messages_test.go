@@ -472,8 +472,12 @@ func TestPurgeAckedMessages(t *testing.T) {
 
 	// Backdate acked_at for id1 and id2 to simulate old messages.
 	oldTime := time.Now().UTC().Add(-10 * 24 * time.Hour).Format(time.RFC3339)
-	s.db.Exec(`UPDATE messages SET acked_at = ? WHERE id = ?`, oldTime, id1)
-	s.db.Exec(`UPDATE messages SET acked_at = ? WHERE id = ?`, oldTime, id2)
+	if _, err := s.db.Exec(`UPDATE messages SET acked_at = ? WHERE id = ?`, oldTime, id1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE messages SET acked_at = ? WHERE id = ?`, oldTime, id2); err != nil {
+		t.Fatal(err)
+	}
 
 	// Purge messages acked more than 7 days ago.
 	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
@@ -510,7 +514,9 @@ func TestPurgeAckedMessagesNeverDeletesPending(t *testing.T) {
 
 	// Backdate the acked message.
 	oldTime := time.Now().UTC().Add(-30 * 24 * time.Hour).Format(time.RFC3339)
-	s.db.Exec(`UPDATE messages SET acked_at = ? WHERE id = ?`, oldTime, id3)
+	if _, err := s.db.Exec(`UPDATE messages SET acked_at = ? WHERE id = ?`, oldTime, id3); err != nil {
+		t.Fatal(err)
+	}
 
 	// Purge old acked messages.
 	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
