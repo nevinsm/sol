@@ -15,6 +15,40 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// resolveMailIdentity returns the effective mail identity for the current caller.
+// If flagValue is non-empty (explicitly set), it is returned as-is.
+// If SOL_AGENT and SOL_WORLD are both set, returns "world/agent" canonical form.
+// Otherwise returns config.Autarch (operator default).
+func resolveMailIdentity(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	agent := os.Getenv("SOL_AGENT")
+	world := os.Getenv("SOL_WORLD")
+	if agent != "" && world != "" {
+		return world + "/" + agent
+	}
+	return config.Autarch
+}
+
+// canonicalizeRecipient ensures the recipient is in "world/agent" format for agents,
+// or plain "autarch" for the operator. If to is already "world/agent" or "autarch",
+// it is returned as-is. If it is a plain agent name, worldHint is used to prefix it.
+func canonicalizeRecipient(to, worldHint string) string {
+	if to == config.Autarch {
+		return to
+	}
+	if strings.Contains(to, "/") {
+		return to
+	}
+	// Plain agent name — prepend world
+	if worldHint != "" {
+		return worldHint + "/" + to
+	}
+	// No world hint available; return as-is (bridgeMailToNudge will handle resolution)
+	return to
+}
+
 var mailCmd = &cobra.Command{
 	Use:     "mail",
 	Short:   "Inter-agent messaging",
@@ -37,17 +71,28 @@ var mailSendCmd = &cobra.Command{
 			return fmt.Errorf("priority must be 1 (urgent), 2 (normal), or 3 (low)")
 		}
 
+		// Auto-detect sender: use world/agent if env vars set, otherwise autarch.
+		sender := resolveMailIdentity("")
+
+		// Canonicalize recipient to world/agent format.
+		// Resolve world from --world flag or SOL_WORLD env var.
+		resolvedWorld := worldFlag
+		if resolvedWorld == "" {
+			resolvedWorld = os.Getenv("SOL_WORLD")
+		}
+		storedTo := canonicalizeRecipient(to, resolvedWorld)
+
 		s, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
 		defer s.Close()
 
-		id, err := s.SendMessage(config.Autarch, to, subject, body, priority, "notification")
+		id, err := s.SendMessage(sender, storedTo, subject, body, priority, "notification")
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "Sent: %s → %s\n", id, to)
+		fmt.Fprintf(os.Stderr, "Sent: %s → %s\n", id, storedTo)
 
 		// Bridge to nudge queue for agent delivery
 		if !noNotify && to != config.Autarch {
@@ -64,7 +109,8 @@ var mailInboxCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		identity, _ := cmd.Flags().GetString("identity")
+		identityFlag, _ := cmd.Flags().GetString("identity")
+		identity := resolveMailIdentity(identityFlag)
 		asJSON, _ := cmd.Flags().GetBool("json")
 
 		s, err := store.OpenSphere()
@@ -103,6 +149,9 @@ var mailReadCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		identityFlag, _ := cmd.Flags().GetString("identity")
+		identity := resolveMailIdentity(identityFlag)
+
 		s, err := store.OpenSphere()
 		if err != nil {
 			return err
@@ -112,6 +161,10 @@ var mailReadCmd = &cobra.Command{
 		msg, err := s.ReadMessage(args[0])
 		if err != nil {
 			return err
+		}
+
+		if msg.Recipient != identity {
+			fmt.Fprintf(os.Stderr, "warning: message %s belongs to %s, not %s\n", args[0], msg.Recipient, identity)
 		}
 
 		fmt.Printf("From:    %s\n", msg.Sender)
@@ -131,11 +184,24 @@ var mailAckCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		identityFlag, _ := cmd.Flags().GetString("identity")
+		identity := resolveMailIdentity(identityFlag)
+
 		s, err := store.OpenSphere()
 		if err != nil {
 			return err
 		}
 		defer s.Close()
+
+		// Fetch the message to check recipient before acking.
+		// ReadMessage marks it as read, which is acceptable since we're acknowledging it anyway.
+		msg, err := s.ReadMessage(args[0])
+		if err != nil {
+			return err
+		}
+		if msg.Recipient != identity {
+			fmt.Fprintf(os.Stderr, "warning: message %s belongs to %s, not %s\n", args[0], msg.Recipient, identity)
+		}
 
 		if err := s.AckMessage(args[0]); err != nil {
 			return err
@@ -158,7 +224,8 @@ Exit codes:
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		identity, _ := cmd.Flags().GetString("identity")
+		identityFlag, _ := cmd.Flags().GetString("identity")
+		identity := resolveMailIdentity(identityFlag)
 
 		s, err := store.OpenSphere()
 		if err != nil {
@@ -335,10 +402,14 @@ func init() {
 	mailSendCmd.MarkFlagRequired("to")
 	mailSendCmd.MarkFlagRequired("subject")
 
-	mailInboxCmd.Flags().String("identity", config.Autarch,"Recipient to check")
+	mailInboxCmd.Flags().String("identity", "", "Recipient identity (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 	mailInboxCmd.Flags().Bool("json", false, "Output as JSON")
 
-	mailCheckCmd.Flags().String("identity", config.Autarch,"Recipient to check")
+	mailCheckCmd.Flags().String("identity", "", "Recipient identity (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
+
+	mailReadCmd.Flags().String("identity", "", "Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
+
+	mailAckCmd.Flags().String("identity", "", "Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 
 	mailPurgeCmd.Flags().String("before", "", "Delete acked messages older than duration (e.g., 7d, 24h)")
 	mailPurgeCmd.Flags().Bool("all-acked", false, "Delete all acknowledged messages regardless of age")
