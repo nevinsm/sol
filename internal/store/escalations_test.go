@@ -65,18 +65,24 @@ func TestListEscalations(t *testing.T) {
 
 	// Create 3 escalations with distinct timestamps by inserting directly.
 	now := time.Now().UTC()
-	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+	if _, err := s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
 		"esc-oldest01", "low", "autarch", "Low issue",
-		now.Add(-2*time.Hour).Format(time.RFC3339), now.Add(-2*time.Hour).Format(time.RFC3339))
-	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		now.Add(-2*time.Hour).Format(time.RFC3339), now.Add(-2*time.Hour).Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
 		"esc-middle01", "medium", "autarch", "Medium issue",
-		now.Add(-1*time.Hour).Format(time.RFC3339), now.Add(-1*time.Hour).Format(time.RFC3339))
-	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		now.Add(-1*time.Hour).Format(time.RFC3339), now.Add(-1*time.Hour).Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
 		"esc-newest01", "high", "autarch", "High issue",
-		now.Format(time.RFC3339), now.Format(time.RFC3339))
+		now.Format(time.RFC3339), now.Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
 
 	// List all.
 	escs, err := s.ListEscalations("")
@@ -135,26 +141,36 @@ func TestListEscalationsSortsBySeverityThenCreatedAt(t *testing.T) {
 
 	// Insert escalations with mixed severities and timestamps.
 	// Two critical (older first), one high, one medium, one low.
-	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+	if _, err := s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
 		"esc-low00000001", "low", "autarch", "Low issue",
-		now.Add(-5*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
-	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		now.Add(-5*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
 		"esc-crit0000001", "critical", "autarch", "Critical older",
-		now.Add(-2*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
-	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		now.Add(-2*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
 		"esc-med00000001", "medium", "autarch", "Medium issue",
-		now.Add(-3*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
-	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		now.Add(-3*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
 		"esc-crit0000002", "critical", "autarch", "Critical newer",
-		now.Add(-1*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
-	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		now.Add(-1*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
 		"esc-high0000001", "high", "autarch", "High issue",
-		now.Add(-4*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
+		now.Add(-4*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
 
 	escs, err := s.ListEscalations("")
 	if err != nil {
@@ -179,14 +195,18 @@ func TestListOpenEscalationsSortsBySeverity(t *testing.T) {
 
 	now := time.Now().UTC()
 	// Insert with different severities — all open.
-	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+	if _, err := s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
 		"esc-low00000010", "low", "autarch", "Low issue",
-		now.Add(-1*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339))
-	s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
+		now.Add(-1*time.Hour).Format(time.RFC3339), now.Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO escalations (id, severity, source, description, status, acknowledged, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'open', 0, ?, ?)`,
 		"esc-high0000010", "high", "autarch", "High issue",
-		now.Format(time.RFC3339), now.Format(time.RFC3339))
+		now.Format(time.RFC3339), now.Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
 
 	escs, err := s.ListOpenEscalations()
 	if err != nil {
