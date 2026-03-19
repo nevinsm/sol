@@ -1,9 +1,18 @@
 package integration
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -136,3 +145,207 @@ func TestForgeTTLClaimRelease_FreshClaimsNotReleased(t *testing.T) {
 	}
 }
 
+// TestForgeSessionEndToEnd exercises the complete session-based forge merge
+// pipeline with real git repositories. It:
+//  1. Creates a real bare git repo + working clone
+//  2. Creates a writ and MR in the store
+//  3. Simulates agent work: creates a branch, commits a file, pushes to origin
+//  4. Runs one forge patrol cycle; a goroutine simulates the Claude session by
+//     performing the real git merge and writing a "merged" result file
+//  5. Verifies: MR phase → merged, commit present in origin/main, writ closed
+//
+// This is the integration-level counterpart to the unit-level
+// TestPatrolSessionPathSuccessfulMerge in internal/forge/patrol_test.go.
+// It exercises real git operations (fetch, merge, push) rather than mocking
+// the command runner.
+func TestForgeSessionEndToEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	gtHome, _ := setupTestEnvWithRepo(t)
+	_ = gtHome
+
+	// Create a bare origin repo and a working clone with "origin" configured.
+	_, workingClone := createSourceRepo(t, gtHome)
+
+	// Initialize the world so startup.Launch (called inside patrol) can load
+	// world config and find the worktree path.
+	setupWorld(t, gtHome, "forgetest", workingClone)
+
+	// Open world and sphere stores for writ/MR operations.
+	worldStore, sphereStore := openStores(t, "forgetest")
+
+	// Create a writ.
+	writID, err := worldStore.CreateWrit(
+		"Add end-to-end feature",
+		"Integration test: session-based forge merge with real git repos",
+		"test", 2, nil,
+	)
+	if err != nil {
+		t.Fatalf("CreateWrit: %v", err)
+	}
+
+	// Simulate agent work: create a feature branch, commit a change, push.
+	branch := "outpost/TestAgent/" + writID
+	runGit(t, workingClone, "checkout", "-b", branch)
+	writeTestFile(t, filepath.Join(workingClone, "feature.go"), "package main\n\nfunc feature() {}\n")
+	runGit(t, workingClone, "add", "feature.go")
+	runGit(t, workingClone, "commit", "-m", "Add end-to-end feature ("+writID+")")
+	runGit(t, workingClone, "push", "origin", branch)
+	runGit(t, workingClone, "checkout", "main")
+
+	// Create MR in ready state.
+	mrID, err := worldStore.CreateMergeRequest(writID, branch, 2)
+	if err != nil {
+		t.Fatalf("CreateMergeRequest: %v", err)
+	}
+
+	// Build the forge with a mock session manager so no real Claude process
+	// is started (SOL_SESSION_COMMAND=sleep 300 is already set by isolateTmux,
+	// and startup.Launch delegates the actual Start call to the mock).
+	forgeCfg := forge.DefaultConfig()
+	forgeCfg.TargetBranch = "main"
+	forgeCfg.QualityGates = nil // no quality gates — test focuses on merge path
+	forgeCfg.MaxAttempts = 3
+	forgeCfg.ClaimTTL = 30 * time.Minute
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	sessMgr := newMockSessionChecker()
+	f := forge.New("forgetest", workingClone, worldStore, sphereStore, forgeCfg, logger, sessMgr)
+
+	// Create the forge worktree: a linked worktree from workingClone at origin/main.
+	if err := f.EnsureWorktree(); err != nil {
+		t.Fatalf("EnsureWorktree: %v", err)
+	}
+
+	worktreeDir := forge.WorktreePath("forgetest")
+
+	// Configure git identity in the forge worktree so merge commits succeed.
+	runGit(t, worktreeDir, "config", "user.email", "test@test.com")
+	runGit(t, worktreeDir, "config", "user.name", "Test")
+
+	// sessionName mirrors mergeSessionName("forgetest") = "sol-forgetest-forge-merge".
+	sessionName := "sol-forgetest-forge-merge"
+
+	// Goroutine simulates the Claude session:
+	//   waits until forge starts it → performs the real git merge →
+	//   writes the result file → removes the session (simulates exit).
+	goroutineErr := make(chan error, 1)
+	go func() {
+		// Poll until the forge launches the session via startup.Launch → mock.Start.
+		for i := 0; i < 300; i++ {
+			if sessMgr.Exists(sessionName) {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if !sessMgr.Exists(sessionName) {
+			goroutineErr <- fmt.Errorf("session %q never started after 3s", sessionName)
+			return
+		}
+
+		// Small buffer so patrol has time to enter monitorSession before
+		// we signal completion.
+		time.Sleep(30 * time.Millisecond)
+
+		// Perform real git operations in the forge worktree:
+		//   fetch origin, merge the feature branch, push to origin/main.
+		gitEnv := append(os.Environ(),
+			"GIT_AUTHOR_NAME=test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		for _, args := range [][]string{
+			{"fetch", "origin"},
+			{"merge", "--no-ff", "origin/" + branch, "-m", "Add end-to-end feature (" + writID + ")"},
+		} {
+			cmd := exec.Command("git", args...)
+			cmd.Dir = worktreeDir
+			cmd.Env = gitEnv
+			if out, runErr := cmd.CombinedOutput(); runErr != nil {
+				goroutineErr <- fmt.Errorf("git %v: %s: %v", args, out, runErr)
+				return
+			}
+		}
+
+		// Push the merged detached HEAD to origin/main.
+		pushCmd := exec.Command("git", "push", "origin", "HEAD:main")
+		pushCmd.Dir = worktreeDir
+		if out, runErr := pushCmd.CombinedOutput(); runErr != nil {
+			goroutineErr <- fmt.Errorf("git push origin HEAD:main: %s: %v", out, runErr)
+			return
+		}
+
+		// Write .forge-result.json to signal a successful merge.
+		// The file name matches the resultFileName constant in the forge package.
+		result := forge.ForgeResult{
+			Result:  "merged",
+			Summary: "Merged by integration test goroutine",
+		}
+		data, _ := json.Marshal(result)
+		if writeErr := os.WriteFile(
+			filepath.Join(worktreeDir, ".forge-result.json"), data, 0o644,
+		); writeErr != nil {
+			goroutineErr <- fmt.Errorf("write result file: %v", writeErr)
+			return
+		}
+
+		// Stop session so monitorSession detects exit and returns sessionCompleted.
+		sessMgr.Stop(sessionName, false)
+		goroutineErr <- nil
+	}()
+
+	// Run exactly one patrol cycle. The cycle claims the MR, launches the
+	// "session" (mock start), monitors it, picks up the result file, runs
+	// verifyPush (real git fetch + log grep), and marks the MR merged.
+	pcfg := forge.DefaultPatrolConfig()
+	pcfg.WaitTimeout = 500 * time.Millisecond
+	pcfg.MonitorInterval = 200 * time.Millisecond
+	pcfg.AssessCommand = "echo assessment-stub"
+	pcfg.AssessTimeout = 1 * time.Second
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := f.RunPatrol(ctx, pcfg); err != nil {
+		t.Fatalf("RunPatrol: %v", err)
+	}
+
+	// Collect goroutine result — it must have completed before patrol returned.
+	select {
+	case gErr := <-goroutineErr:
+		if gErr != nil {
+			t.Fatalf("simulation goroutine failed: %v", gErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("simulation goroutine timed out after RunPatrol returned")
+	}
+
+	// 1. Verify MR is marked merged.
+	mr, err := worldStore.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatalf("GetMergeRequest: %v", err)
+	}
+	if mr.Phase != store.MRMerged {
+		t.Errorf("MR phase = %q, want %q", mr.Phase, store.MRMerged)
+	}
+
+	// 2. Verify the feature commit is present in origin/main.
+	if out, fetchErr := exec.Command("git", "-C", workingClone, "fetch", "origin").CombinedOutput(); fetchErr != nil {
+		t.Fatalf("git fetch origin: %s: %v", out, fetchErr)
+	}
+	logOut := runGitOutput(t, workingClone, "log", "origin/main", "--oneline", "--grep", writID)
+	if !strings.Contains(logOut, writID) {
+		t.Errorf("writ %s not found in origin/main commits:\n%s", writID, logOut)
+	}
+
+	// 3. Verify writ is closed.
+	writ, err := worldStore.GetWrit(writID)
+	if err != nil {
+		t.Fatalf("GetWrit: %v", err)
+	}
+	if writ.Status != store.WritClosed {
+		t.Errorf("writ status = %q, want %q", writ.Status, store.WritClosed)
+	}
+}
