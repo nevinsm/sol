@@ -402,10 +402,11 @@ func TestMassDeathDegradation(t *testing.T) {
 
 	// Wait for death times to age past MassDeathWindow (5s) so they get
 	// pruned on the next heartbeat. By this point ~3s (DegradedCooldown)
-	// have elapsed since deaths were recorded; sleep for the remainder + margin.
-	// Without this sleep, re-activating a stalled agent records a new death
-	// that — combined with still-live old deaths — re-triggers degraded mode.
-	time.Sleep(2 * time.Second)
+	// have elapsed since deaths were recorded; sleep 4s more for ~7s total —
+	// well past the 5s window even under load. Without this sleep,
+	// re-activating a stalled agent records a new death that — combined with
+	// still-live old deaths — re-triggers degraded mode.
+	time.Sleep(4 * time.Second)
 
 	// After degraded recovery, re-activate a stalled agent and verify the
 	// prefect respawns it. Stalled agents were stalled via the degraded code
