@@ -780,9 +780,11 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 		t.Fatalf("resolve: %v: %s", err, out)
 	}
 
-	// Verify session STILL RUNNING.
-	time.Sleep(2 * time.Second) // Wait longer than the 1s delay for regular agents.
-	if !tmuxSessionExists("sol-myworld-scout") {
+	// Verify session survives past the 1s regular-agent shutdown delay.
+	died := pollUntil(3*time.Second, 200*time.Millisecond, func() bool {
+		return !tmuxSessionExists("sol-myworld-scout")
+	})
+	if died {
 		t.Error("envoy session should still be running after resolve")
 	}
 
@@ -1284,8 +1286,11 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 		t.Fatalf("resolve: %v: %s", err, out)
 	}
 
-	time.Sleep(2 * time.Second)
-	if !tmuxSessionExists("sol-myworld-scout") {
+	// Verify session survives past the 1s regular-agent shutdown delay.
+	died := pollUntil(3*time.Second, 200*time.Millisecond, func() bool {
+		return !tmuxSessionExists("sol-myworld-scout")
+	})
+	if died {
 		t.Error("envoy session should remain after resolve")
 	}
 
