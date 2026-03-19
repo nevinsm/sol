@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"testing"
 	"time"
@@ -1023,5 +1024,210 @@ func TestSupersedeFailedMRsForWritNonexistentWrit(t *testing.T) {
 	}
 	if ids != nil {
 		t.Fatalf("expected nil IDs for nonexistent writ, got %v", ids)
+	}
+}
+
+func TestBlockMergeRequestNotFound(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	err := s.BlockMergeRequest("mr-nonexist", "sol-blocker1")
+	if err == nil {
+		t.Fatal("expected error for nonexistent merge request")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got: %v", err)
+	}
+}
+
+func TestUnblockMergeRequestNotFound(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	err := s.UnblockMergeRequest("mr-nonexist")
+	if err == nil {
+		t.Fatal("expected error for nonexistent merge request")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got: %v", err)
+	}
+}
+
+func TestAttemptsIncrementAcrossRetries(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	writID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
+	mrID, _ := s.CreateMergeRequest(writID, "branch1", 2)
+
+	// First claim → attempts = 1.
+	mr, err := s.ClaimMergeRequest("forge/Forge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr == nil {
+		t.Fatal("expected a claimed MR, got nil")
+	}
+	if mr.Attempts != 1 {
+		t.Fatalf("after 1st claim: attempts = %d, want 1", mr.Attempts)
+	}
+
+	// Release back to ready (simulating forge returning it for retry).
+	if err := s.UpdateMergeRequestPhase(mrID, MRReady); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second claim → attempts = 2 (counter preserved across release).
+	mr2, err := s.ClaimMergeRequest("forge/Forge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr2 == nil {
+		t.Fatal("expected second claim to succeed")
+	}
+	if mr2.ID != mrID {
+		t.Fatalf("expected same MR %q, got %q", mrID, mr2.ID)
+	}
+	if mr2.Attempts != 2 {
+		t.Fatalf("after 2nd claim: attempts = %d, want 2", mr2.Attempts)
+	}
+
+	// Release and claim a third time → attempts = 3.
+	if err := s.UpdateMergeRequestPhase(mrID, MRReady); err != nil {
+		t.Fatal(err)
+	}
+	mr3, err := s.ClaimMergeRequest("forge/Forge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr3 == nil {
+		t.Fatal("expected third claim to succeed")
+	}
+	if mr3.Attempts != 3 {
+		t.Fatalf("after 3rd claim: attempts = %d, want 3", mr3.Attempts)
+	}
+
+	// ResetMergeRequestForRetry clears attempts back to 0.
+	if err := s.UpdateMergeRequestPhase(mrID, MRFailed); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ResetMergeRequestForRetry(mrID); err != nil {
+		t.Fatal(err)
+	}
+	mr4, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr4.Attempts != 0 {
+		t.Fatalf("after reset: attempts = %d, want 0", mr4.Attempts)
+	}
+}
+
+// TestPhaseTransitionMatrix is a table-driven test covering all valid and
+// invalid phase transitions for merge requests.
+func TestPhaseTransitionMatrix(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		from    MRPhase
+		to      MRPhase
+		wantErr bool
+	}
+
+	cases := []testCase{
+		// Idempotent (same → same): always valid.
+		{MRReady, MRReady, false},
+		{MRClaimed, MRClaimed, false},
+		{MRMerged, MRMerged, false},
+		{MRFailed, MRFailed, false},
+		{MRSuperseded, MRSuperseded, false},
+
+		// Valid forward transitions.
+		{MRReady, MRClaimed, false},
+		{MRClaimed, MRReady, false},
+		{MRClaimed, MRMerged, false},
+		{MRClaimed, MRFailed, false},
+		{MRFailed, MRSuperseded, false},
+
+		// Invalid: skip steps.
+		{MRReady, MRMerged, true},
+		{MRReady, MRFailed, true},
+		{MRReady, MRSuperseded, true},
+		{MRClaimed, MRSuperseded, true},
+
+		// Invalid: transitions from terminal state merged.
+		{MRMerged, MRReady, true},
+		{MRMerged, MRClaimed, true},
+		{MRMerged, MRFailed, true},
+		{MRMerged, MRSuperseded, true},
+
+		// Invalid: transitions from terminal state superseded.
+		{MRSuperseded, MRReady, true},
+		{MRSuperseded, MRClaimed, true},
+		{MRSuperseded, MRMerged, true},
+		{MRSuperseded, MRFailed, true},
+
+		// Invalid: backward from failed (must use ResetMergeRequestForRetry).
+		{MRFailed, MRReady, true},
+		{MRFailed, MRClaimed, true},
+		{MRFailed, MRMerged, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%s to %s", tc.from, tc.to), func(t *testing.T) {
+			t.Parallel()
+			s := setupWorld(t)
+
+			writID, _ := s.CreateWrit("item", "", "autarch", 2, nil)
+			mrID, _ := s.CreateMergeRequest(writID, "branch", 2)
+
+			// Advance MR to the desired starting phase.
+			switch tc.from {
+			case MRReady:
+				// Initial state — no action needed.
+			case MRClaimed:
+				if _, err := s.ClaimMergeRequest("forge/Forge"); err != nil {
+					t.Fatalf("setup: ClaimMergeRequest failed: %v", err)
+				}
+			case MRMerged:
+				if _, err := s.ClaimMergeRequest("forge/Forge"); err != nil {
+					t.Fatalf("setup: ClaimMergeRequest failed: %v", err)
+				}
+				if err := s.UpdateMergeRequestPhase(mrID, MRMerged); err != nil {
+					t.Fatalf("setup: UpdateMergeRequestPhase(merged) failed: %v", err)
+				}
+			case MRFailed:
+				if _, err := s.ClaimMergeRequest("forge/Forge"); err != nil {
+					t.Fatalf("setup: ClaimMergeRequest failed: %v", err)
+				}
+				if err := s.UpdateMergeRequestPhase(mrID, MRFailed); err != nil {
+					t.Fatalf("setup: UpdateMergeRequestPhase(failed) failed: %v", err)
+				}
+			case MRSuperseded:
+				if _, err := s.ClaimMergeRequest("forge/Forge"); err != nil {
+					t.Fatalf("setup: ClaimMergeRequest failed: %v", err)
+				}
+				if err := s.UpdateMergeRequestPhase(mrID, MRFailed); err != nil {
+					t.Fatalf("setup: UpdateMergeRequestPhase(failed) failed: %v", err)
+				}
+				if err := s.UpdateMergeRequestPhase(mrID, MRSuperseded); err != nil {
+					t.Fatalf("setup: UpdateMergeRequestPhase(superseded) failed: %v", err)
+				}
+			}
+
+			err := s.UpdateMergeRequestPhase(mrID, tc.to)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for %s → %s, got nil", tc.from, tc.to)
+				}
+				if !errors.Is(err, ErrInvalidTransition) {
+					t.Fatalf("expected ErrInvalidTransition for %s → %s, got: %v", tc.from, tc.to, err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error for %s → %s: %v", tc.from, tc.to, err)
+				}
+			}
+		})
 	}
 }

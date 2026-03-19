@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -888,5 +889,195 @@ func TestUpdateAllCaravanItemPhases(t *testing.T) {
 		if item.Phase != 5 {
 			t.Fatalf("expected phase 5 for %s, got %d", item.WritID, item.Phase)
 		}
+	}
+}
+
+// TestDeleteOpenCaravan verifies that the store layer permits deleting an open
+// (commissioned) caravan — there is no status restriction at the store level.
+// Guards against deleting open caravans are enforced at the command layer.
+func TestDeleteOpenCaravan(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id, _ := s.CreateCaravan("open-delete-test", "autarch")
+	s.CreateCaravanItem(id, "sol-aaaa000000000001", "testworld", 0)
+
+	// Commission the caravan to "open".
+	if err := s.UpdateCaravanStatus(id, "open"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Store layer does not restrict deletion by status — open caravans can be deleted.
+	if err := s.DeleteCaravan(id); err != nil {
+		t.Fatalf("DeleteCaravan() on open caravan error: %v", err)
+	}
+
+	// Verify caravan is gone.
+	_, err := s.GetCaravan(id)
+	if err == nil {
+		t.Fatal("expected error for deleted caravan, got nil")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got: %v", err)
+	}
+
+	// Verify items are also gone.
+	items, err := s.ListCaravanItems(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected 0 items after delete, got %d", len(items))
+	}
+}
+
+// TestPhaseGatingMultipleItemsSamePhase verifies that when multiple items occupy
+// phase 0, a phase-1 item is blocked until ALL phase-0 items are closed (merged).
+// Closing only a subset of phase-0 items is not sufficient.
+func TestPhaseGatingMultipleItemsSamePhase(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
+
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
+
+	// Create 3 items: A and B in phase 0, C in phase 1.
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	idA, _ := worldStore.CreateWrit("Phase 0 - A", "", "autarch", 2, nil)
+	idB, _ := worldStore.CreateWrit("Phase 0 - B", "", "autarch", 2, nil)
+	idC, _ := worldStore.CreateWrit("Phase 1 - C", "", "autarch", 2, nil)
+	worldStore.Close()
+
+	caravanID, _ := sphereStore.CreateCaravan("multi-item-phase", "autarch")
+	sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0)
+	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 0)
+	sphereStore.CreateCaravanItem(caravanID, idC, "ember", 1)
+
+	// Initially: A and B are ready (phase 0, no deps); C is NOT ready (phase 1).
+	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sm := map[string]CaravanItemStatus{}
+	for _, st := range statuses {
+		sm[st.WritID] = st
+	}
+	if !sm[idA].Ready {
+		t.Fatal("expected A (phase 0) to be ready")
+	}
+	if !sm[idB].Ready {
+		t.Fatal("expected B (phase 0) to be ready")
+	}
+	if sm[idC].Ready {
+		t.Fatal("expected C (phase 1) to NOT be ready (phase 0 items not closed)")
+	}
+
+	// Close A but not B → C still NOT ready (B remains open in phase 0).
+	ws := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	ws.CloseWrit(idA)
+	ws.Close()
+
+	statuses, err = sphereStore.CheckCaravanReadiness(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sm = map[string]CaravanItemStatus{}
+	for _, st := range statuses {
+		sm[st.WritID] = st
+	}
+	if sm[idC].Ready {
+		t.Fatal("expected C to NOT be ready (B still open in phase 0)")
+	}
+
+	// Close B too → now all phase-0 items are closed → C becomes ready.
+	ws2 := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	ws2.CloseWrit(idB)
+	ws2.Close()
+
+	statuses, err = sphereStore.CheckCaravanReadiness(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sm = map[string]CaravanItemStatus{}
+	for _, st := range statuses {
+		sm[st.WritID] = st
+	}
+	if !sm[idC].Ready {
+		t.Fatal("expected C (phase 1) to be ready after all phase-0 items closed")
+	}
+}
+
+// TestTryCloseCaravanPartiallyMerged verifies that TryCloseCaravan returns false
+// when some items are closed (merged) but at least one item is still open.
+// The caravan should only auto-close when ALL items are closed.
+func TestTryCloseCaravanPartiallyMerged(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
+
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
+
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
+	idB, _ := worldStore.CreateWrit("Item B", "", "autarch", 2, nil)
+	idC, _ := worldStore.CreateWrit("Item C", "", "autarch", 2, nil)
+	worldStore.Close()
+
+	caravanID, _ := sphereStore.CreateCaravan("partial-close-test", "autarch")
+	sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0)
+	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 0)
+	sphereStore.CreateCaravanItem(caravanID, idC, "ember", 0)
+
+	// Close A and B, leave C open.
+	ws := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	ws.CloseWrit(idA)
+	ws.CloseWrit(idB)
+	ws.Close()
+
+	// 2 of 3 items closed → caravan should NOT close.
+	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed {
+		t.Fatal("expected caravan to NOT close (item C still unmerged)")
+	}
+
+	// Verify caravan status remains unchanged (not closed).
+	c, err := sphereStore.GetCaravan(caravanID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Status == "closed" {
+		t.Fatalf("expected caravan to not be closed yet, got status %q", c.Status)
+	}
+
+	// Close the remaining item C → all items now closed → caravan should close.
+	ws2 := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	ws2.CloseWrit(idC)
+	ws2.Close()
+
+	closed, err = sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("expected caravan to close after all items merged")
+	}
+
+	// Verify caravan is now closed.
+	c, err = sphereStore.GetCaravan(caravanID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Status != "closed" {
+		t.Fatalf("expected caravan status %q, got %q", "closed", c.Status)
+	}
+	if c.ClosedAt == nil {
+		t.Fatal("expected closed_at to be set")
 	}
 }
