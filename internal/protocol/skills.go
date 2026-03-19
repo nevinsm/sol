@@ -592,48 +592,62 @@ func skillMail(ctx SkillContext) string {
 	sol := ctx.sol()
 	return fmt.Sprintf(`---
 name: mail
-description: Send and receive messages with the operator — status updates, questions, reports
+description: Inter-agent and operator messaging — send, receive, and acknowledge messages
 ---
 
 # Mail
 
-Mail is the channel for informational and conversational communication with
-the operator. Use mail when you have something to report, a question to ask,
-or a status update to share. Use %[1]s escalate "description"%[2]s instead
-when you are blocked and need the operator's help to continue — escalation is
-for urgent needs, mail is for everything else.
+Mail is the channel for inter-agent and operator messaging. Use mail to send
+status updates, reports, and questions to the operator or other agents. Use
+%[1]s escalate "description"%[2]s instead when you are blocked and need the
+operator's help to continue — escalation is for urgent blockers, mail is for
+everything else.
 
-For outbound messages, choose priority intentionally: 1 = urgent (operator
-notified immediately), 2 = normal (default), 3 = low (batch-friendly, no
-interruption).
+**Identity auto-detection:** %[3]s mail inbox%[2]s, %[3]s mail check%[2]s,
+%[3]s mail read%[2]s, and %[3]s mail ack%[2]s automatically detect your
+identity from SOL_WORLD/SOL_AGENT env vars (set as world/agent, e.g.
+%[1]ssol-dev/Nova%[2]s). Pass %[6]s to override. Sender is also
+auto-detected for %[3]s mail send%[2]s.
+
+**Recipient format:** Agent recipients are stored as world/agent. You can pass
+a plain agent name with %[3]s mail send --to=<agent-name>%[2]s and it is
+resolved to world/agent using SOL_WORLD. Pass %[1]sautarch%[2]s to reach
+the operator.
+
+For outbound messages, choose priority intentionally: 1 = urgent (notified
+immediately), 2 = normal (default), 3 = low (batch-friendly, no interruption).
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| %[3]s mail inbox%[2]s | List pending messages |
+| %[3]s mail inbox%[2]s | List pending messages (identity auto-detected) |
 | %[3]s mail read <message-id>%[2]s | Read a message (marks as read) |
 | %[3]s mail ack <message-id>%[2]s | Acknowledge a message |
-| %[3]s mail check%[2]s | Count unread messages |
-| %[3]s mail send --to=<identity> --subject="..." --body="..."%[2]s | Send a message |
+| %[3]s mail check%[2]s | Count unread messages (identity auto-detected) |
+| %[3]s mail send --to=<recipient> --subject="..." --body="..."%[2]s | Send a message |
 
 Options for send: %[4]s (1=urgent, 2=normal, 3=low), %[5]s.
 
 ## Common Patterns
 
-**Status update after completing work:** %[3]s mail send --to=autarch --subject="..." --body="..."%[2]s with priority 3 — informational, no interruption needed.
+**Status update to operator:** %[3]s mail send --to=autarch --subject="..." --body="..."%[2]s with priority 3 — informational, no interruption needed.
+
+**Agent-to-agent message:** %[3]s mail send --to=<agent-name> --subject="..." --body="..."%[2]s — plain name is resolved to world/agent using SOL_WORLD.
 
 **Question that blocks your work:** Use %[1]s escalate "description"%[2]s instead of mail — escalation is for blockers, mail is for everything else.
 
-**Responding to operator mail:** %[3]s mail inbox%[2]s → %[3]s mail read <id>%[2]s → respond or act → %[3]s mail ack <id>%[2]s.
+**Check and process your inbox:** %[3]s mail inbox%[2]s → %[3]s mail read <id>%[2]s → respond or act → %[3]s mail ack <id>%[2]s.
 
 ## Failure Modes
 
 - **Priority 1 overuse:** Reserve urgent priority for genuinely time-sensitive communication. Frequent urgent mail trains the operator to ignore it.
 - **Unacknowledged messages:** %[3]s mail check%[2]s shows unread count. Acknowledge messages after reading to keep the inbox clean.
+- **Wrong inbox:** If SOL_WORLD/SOL_AGENT are set, inbox auto-detects your identity. Use %[6]s to override if needed.
 `, "`"+sol, "`", "`"+sol,
 		"`--priority`",
-		"`--no-notify`")
+		"`--no-notify`",
+		"`--identity`")
 }
 
 func skillWritManagement(ctx SkillContext) string {

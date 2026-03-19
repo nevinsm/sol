@@ -1,9 +1,236 @@
 package cmd
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/store"
 )
+
+func TestResolveMailIdentity(t *testing.T) {
+	tests := []struct {
+		name      string
+		flagValue string
+		solAgent  string
+		solWorld  string
+		expected  string
+	}{
+		{
+			name:     "explicit flag value takes precedence",
+			flagValue: "explicit-identity",
+			solAgent: "Nova",
+			solWorld: "sol-dev",
+			expected: "explicit-identity",
+		},
+		{
+			name:     "world/agent from env vars when flag empty",
+			flagValue: "",
+			solAgent: "Nova",
+			solWorld: "sol-dev",
+			expected: "sol-dev/Nova",
+		},
+		{
+			name:     "autarch when env vars unset",
+			flagValue: "",
+			solAgent: "",
+			solWorld: "",
+			expected: config.Autarch,
+		},
+		{
+			name:     "autarch when only SOL_AGENT set",
+			flagValue: "",
+			solAgent: "Nova",
+			solWorld: "",
+			expected: config.Autarch,
+		},
+		{
+			name:     "autarch when only SOL_WORLD set",
+			flagValue: "",
+			solAgent: "",
+			solWorld: "sol-dev",
+			expected: config.Autarch,
+		},
+		{
+			name:     "explicit autarch flag returned as-is",
+			flagValue: config.Autarch,
+			solAgent: "Nova",
+			solWorld: "sol-dev",
+			expected: config.Autarch,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("SOL_AGENT", tt.solAgent)
+			t.Setenv("SOL_WORLD", tt.solWorld)
+			got := resolveMailIdentity(tt.flagValue)
+			if got != tt.expected {
+				t.Errorf("resolveMailIdentity(%q) with SOL_AGENT=%q SOL_WORLD=%q = %q, want %q",
+					tt.flagValue, tt.solAgent, tt.solWorld, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCanonicalizeRecipient(t *testing.T) {
+	tests := []struct {
+		name      string
+		to        string
+		worldHint string
+		expected  string
+	}{
+		{
+			name:      "autarch stays plain",
+			to:        "autarch",
+			worldHint: "sol-dev",
+			expected:  "autarch",
+		},
+		{
+			name:      "world/agent format preserved",
+			to:        "ember/Toast",
+			worldHint: "sol-dev",
+			expected:  "ember/Toast",
+		},
+		{
+			name:      "plain name with world hint becomes world/agent",
+			to:        "Toast",
+			worldHint: "sol-dev",
+			expected:  "sol-dev/Toast",
+		},
+		{
+			name:      "plain name without world hint returned as-is",
+			to:        "Toast",
+			worldHint: "",
+			expected:  "Toast",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := canonicalizeRecipient(tt.to, tt.worldHint)
+			if got != tt.expected {
+				t.Errorf("canonicalizeRecipient(%q, %q) = %q, want %q",
+					tt.to, tt.worldHint, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestResolveMailIdentitySenderAutoDetect(t *testing.T) {
+	// When SOL_AGENT and SOL_WORLD are set, sender should be world/agent.
+	t.Setenv("SOL_AGENT", "Polaris")
+	t.Setenv("SOL_WORLD", "sol-dev")
+	got := resolveMailIdentity("")
+	if got != "sol-dev/Polaris" {
+		t.Errorf("expected sender sol-dev/Polaris, got %q", got)
+	}
+}
+
+func TestResolveMailIdentitySenderFallsBackToAutarch(t *testing.T) {
+	// When env vars are unset, sender should be autarch.
+	t.Setenv("SOL_AGENT", "")
+	t.Setenv("SOL_WORLD", "")
+	got := resolveMailIdentity("")
+	if got != config.Autarch {
+		t.Errorf("expected sender %q, got %q", config.Autarch, got)
+	}
+}
+
+// setupMailTestEnv creates an isolated SOL_HOME with a sphere store.
+func setupMailTestEnv(t *testing.T) *store.SphereStore {
+	t.Helper()
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	t.Setenv("SOL_AGENT", "")
+	t.Setenv("SOL_WORLD", "")
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s
+}
+
+func TestMailReadWarnsMismatchedRecipient(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	// Send a message addressed to "sol-dev/OtherAgent".
+	msgID, err := s.SendMessage(config.Autarch, "sol-dev/OtherAgent", "Hello", "body text", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Intercept stderr.
+	r, w, _ := os.Pipe()
+	origStderr := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = origStderr })
+
+	// Run mail read as "sol-dev/CallerAgent" — recipient mismatch should warn.
+	t.Setenv("SOL_AGENT", "CallerAgent")
+	t.Setenv("SOL_WORLD", "sol-dev")
+	rootCmd.SetArgs([]string{"mail", "read", msgID})
+	// Ignore the error (message may still be read successfully).
+	rootCmd.Execute() //nolint:errcheck
+
+	w.Close()
+	os.Stderr = origStderr
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	stderrOutput := buf.String()
+
+	if !strings.Contains(stderrOutput, "warning: message") {
+		t.Errorf("expected warning in stderr about recipient mismatch, got: %q", stderrOutput)
+	}
+	if !strings.Contains(stderrOutput, "sol-dev/OtherAgent") {
+		t.Errorf("expected 'sol-dev/OtherAgent' in warning, got: %q", stderrOutput)
+	}
+	if !strings.Contains(stderrOutput, "sol-dev/CallerAgent") {
+		t.Errorf("expected 'sol-dev/CallerAgent' in warning, got: %q", stderrOutput)
+	}
+}
+
+func TestMailReadNoWarnMatchingRecipient(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	// Send a message addressed to "sol-dev/MyAgent".
+	msgID, err := s.SendMessage(config.Autarch, "sol-dev/MyAgent", "Hello", "body text", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Intercept stderr.
+	r, w, _ := os.Pipe()
+	origStderr := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = origStderr })
+
+	// Run mail read as the same identity — no warning expected.
+	t.Setenv("SOL_AGENT", "MyAgent")
+	t.Setenv("SOL_WORLD", "sol-dev")
+	rootCmd.SetArgs([]string{"mail", "read", msgID})
+	rootCmd.Execute() //nolint:errcheck
+
+	w.Close()
+	os.Stderr = origStderr
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	stderrOutput := buf.String()
+
+	if strings.Contains(stderrOutput, "warning: message") {
+		t.Errorf("unexpected warning in stderr when recipient matches: %q", stderrOutput)
+	}
+}
 
 func TestParseHumanDuration(t *testing.T) {
 	tests := []struct {

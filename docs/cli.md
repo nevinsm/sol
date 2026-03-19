@@ -1632,11 +1632,22 @@ Inter-agent messaging
 
 **Usage:** `sol mail ack <message-id>`
 
+Acknowledge a message. Identity is auto-detected from SOL_WORLD/SOL_AGENT env vars
+(stored as `world/agent`). Pass `--identity` to override. A warning is printed to
+stderr if the message recipient does not match the detected identity.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--identity` | string | "" | Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
+
 #### `sol mail check`
 
 Check for unread messages and print the count.
 
 Useful in scripts to conditionally process mail.
+
+Identity is auto-detected from SOL_WORLD/SOL_AGENT env vars (format: `world/agent`).
+Pass `--identity` to override. Falls back to `autarch` when env vars are unset.
 
 Exit codes:
   0 - Unread messages exist
@@ -1644,13 +1655,16 @@ Exit codes:
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--identity` | string | autarch | Recipient to check |
+| `--identity` | string | "" | Recipient identity (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
 
 #### `sol mail inbox`
 
+Identity is auto-detected from SOL_WORLD/SOL_AGENT env vars (format: `world/agent`).
+Pass `--identity` to override. Falls back to `autarch` when env vars are unset.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--identity` | string | autarch | Recipient to check |
+| `--identity` | string | "" | Recipient identity (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
 | `--json` | bool | false | Output as JSON |
 
 #### `sol mail purge`
@@ -1669,7 +1683,20 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 
 **Usage:** `sol mail read <message-id>`
 
+Read a message (marks as read). Identity is auto-detected from SOL_WORLD/SOL_AGENT env vars
+(stored as `world/agent`). Pass `--identity` to override. A warning is printed to
+stderr if the message recipient does not match the detected identity.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--identity` | string | "" | Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
+
 #### `sol mail send`
+
+Sender is auto-detected: if SOL_AGENT and SOL_WORLD are both set, sender is `world/agent`;
+otherwise sender is `autarch`. Recipient `--to` accepts a plain agent name (resolved to
+`world/agent` using `--world` or SOL_WORLD) or an explicit `world/agent` format. Pass
+`--to=autarch` to send to the operator. Recipients are stored as `world/agent` internally.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1677,8 +1704,8 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 | `--no-notify` | bool | false | Suppress nudge notification to recipient |
 | `--priority` | int | 2 | Priority (1=urgent, 2=normal, 3=low) |
 | `--subject` | string | "" | Message subject |
-| `--to` | string | "" | Recipient agent ID or "autarch" |
-| `--world` | string | "" | world name |
+| `--to` | string | "" | Recipient: plain agent name (resolved via SOL_WORLD), world/agent, or "autarch" |
+| `--world` | string | "" | world name (used to resolve plain recipient names) |
 
 ### `sol nudge`
 
