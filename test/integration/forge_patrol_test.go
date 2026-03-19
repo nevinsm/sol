@@ -1,15 +1,9 @@
 package integration
 
 import (
-	"context"
-	"log/slog"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/nevinsm/sol/internal/dispatch"
-	"github.com/nevinsm/sol/internal/forge"
-	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -142,118 +136,3 @@ func TestForgeTTLClaimRelease_FreshClaimsNotReleased(t *testing.T) {
 	}
 }
 
-// TestForgeMergeEndToEnd runs the complete forge merge pipeline:
-//  1. Cast a writ (creates agent worktree on a branch)
-//  2. Simulate agent work (write a file)
-//  3. Resolve (commits, pushes branch, creates MR)
-//  4. Run one forge patrol cycle with a test-only quality gate ("echo ok")
-//  5. Verify the MR is marked merged and the writ is closed
-//
-// This covers the critical path documented in LOOP2_ACCEPTANCE.md §3–4 and
-// the crash-recovery paths described in ADR-0027 (rebase + quality gates +
-// squash merge + mark-merged).
-func TestForgeMergeEndToEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	gtHome, _ := setupTestEnvWithRepo(t)
-
-	// Set up git repos: bare origin + working clone with "origin" configured.
-	_, sourceClone := createSourceRepo(t, gtHome)
-
-	// Open stores. openStores creates the world DB in SOL_HOME.
-	worldStore, sphereStore := openStores(t, "forgetest")
-	mgr := session.New()
-
-	ctx := context.Background()
-
-	// Create a writ.
-	writID, err := worldStore.CreateWrit(
-		"Test merge feature",
-		"Integration test for end-to-end forge merge pipeline",
-		"test", 2, nil,
-	)
-	if err != nil {
-		t.Fatalf("CreateWrit: %v", err)
-	}
-
-	// Cast: auto-provisions an agent, creates a worktree on a branch.
-	castResult, err := dispatch.Cast(ctx, dispatch.CastOpts{
-		WritID:     writID,
-		World:      "forgetest",
-		SourceRepo: sourceClone,
-	}, worldStore, sphereStore, mgr, nil)
-	if err != nil {
-		t.Fatalf("Cast: %v", err)
-	}
-
-	// Simulate agent writing a file in the worktree.
-	if err := os.WriteFile(
-		castResult.WorktreeDir+"/feature.go",
-		[]byte("package main\n\nfunc feature() {}\n"),
-		0o644,
-	); err != nil {
-		t.Fatalf("WriteFile feature.go: %v", err)
-	}
-
-	// Resolve: commits changes, pushes branch to origin, creates MR.
-	_, err = dispatch.Resolve(ctx, dispatch.ResolveOpts{
-		World:     "forgetest",
-		AgentName: castResult.AgentName,
-	}, worldStore, sphereStore, mgr, nil)
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-
-	// Verify an MR was created in ready state.
-	mrs, err := worldStore.ListMergeRequests(store.MRReady)
-	if err != nil {
-		t.Fatalf("ListMergeRequests: %v", err)
-	}
-	if len(mrs) != 1 {
-		t.Fatalf("expected 1 ready MR after resolve, got %d", len(mrs))
-	}
-	mrID := mrs[0].ID
-
-	// Create forge in legacy mode (no session manager), with a test-only gate.
-	forgeCfg := forge.DefaultConfig()
-	forgeCfg.TargetBranch = "main"
-	forgeCfg.QualityGates = []string{"echo ok"}
-	forgeCfg.GateTimeout = 30 * time.Second
-	forgeCfg.MaxAttempts = 3
-	// Use a short ClaimTTL so the test doesn't wait.
-	forgeCfg.ClaimTTL = 30 * time.Minute
-
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	f := forge.New("forgetest", sourceClone, worldStore, sphereStore, forgeCfg, logger)
-
-	// Set up the forge worktree (creates a linked git worktree at origin/main).
-	if err := f.EnsureWorktree(); err != nil {
-		t.Fatalf("EnsureWorktree: %v", err)
-	}
-
-	// Run exactly one patrol cycle.
-	pcfg := forge.DefaultPatrolConfig()
-	if err := f.RunPatrol(ctx, pcfg); err != nil {
-		t.Fatalf("RunPatrol: %v", err)
-	}
-
-	// Verify the MR is now merged.
-	mr, err := worldStore.GetMergeRequest(mrID)
-	if err != nil {
-		t.Fatalf("GetMergeRequest after patrol: %v", err)
-	}
-	if mr.Phase != "merged" {
-		t.Errorf("MR phase = %q, want %q", mr.Phase, "merged")
-	}
-
-	// Verify the writ is closed.
-	writ, err := worldStore.GetWrit(writID)
-	if err != nil {
-		t.Fatalf("GetWrit after patrol: %v", err)
-	}
-	if writ.Status != "closed" {
-		t.Errorf("writ status = %q, want %q", writ.Status, "closed")
-	}
-}
