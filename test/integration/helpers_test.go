@@ -2,6 +2,7 @@ package integration
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -28,13 +29,30 @@ func isolateTmux(t *testing.T) {
 	t.Setenv("TMUX", "")
 	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
 	t.Cleanup(func() {
-		out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
-		if err != nil {
+		// 5s timeout on the entire cleanup to prevent hangs.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Kill the entire isolated tmux server. This is more reliable than
+		// per-session cleanup and only affects the isolated server when
+		// TMUX_TMPDIR is set. tmuxDir is captured explicitly here so cleanup
+		// works even if the test panicked and the env var was lost.
+		// kill-server returns an error when no server is running — that's
+		// expected when a test created no sessions, so only log on timeout.
+		tmuxEnv := append(os.Environ(), "TMUX_TMPDIR="+tmuxDir, "TMUX=")
+		killCmd := exec.CommandContext(ctx, "tmux", "kill-server")
+		killCmd.Env = tmuxEnv
+		if err := killCmd.Run(); err != nil && ctx.Err() != nil {
+			t.Logf("isolateTmux: kill-server timed out: %v", err)
 			return
 		}
-		for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if strings.HasPrefix(name, "sol-") {
-				exec.Command("tmux", "kill-session", "-t", name).Run()
+
+		// Verify the server is gone: list-sessions should fail or return empty.
+		verifyCmd := exec.CommandContext(ctx, "tmux", "list-sessions", "-F", "#{session_name}")
+		verifyCmd.Env = tmuxEnv
+		if out, err := verifyCmd.Output(); err == nil {
+			if remaining := strings.TrimSpace(string(out)); remaining != "" {
+				t.Logf("isolateTmux: warning: sessions still alive after cleanup:\n%s", remaining)
 			}
 		}
 	})
