@@ -780,6 +780,117 @@ func TestReadCmdMessage(t *testing.T) {
 	}
 }
 
+// --- Action error propagation ---
+
+func TestAckCmdEscalationStoreError(t *testing.T) {
+	src := &mockDataSource{ackEscErr: errTestSentinel}
+	item := InboxItem{Type: ItemEscalation, ID: "esc-err-1"}
+	cmd := ackCmd(src, item, nil)
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+
+	msg := cmd()
+	result, ok := msg.(actionResultMsg)
+	if !ok {
+		t.Fatalf("expected actionResultMsg, got %T", msg)
+	}
+	if result.err == nil {
+		t.Fatal("expected error in actionResultMsg when store returns error")
+	}
+	if result.err != errTestSentinel {
+		t.Errorf("expected errTestSentinel, got %v", result.err)
+	}
+	if result.itemID != "esc-err-1" {
+		t.Errorf("expected itemID 'esc-err-1', got %q", result.itemID)
+	}
+}
+
+func TestResolveCmdEscalationStoreError(t *testing.T) {
+	src := &mockDataSource{resolveEscErr: errTestSentinel}
+	item := InboxItem{Type: ItemEscalation, ID: "esc-err-2"}
+	cmd := resolveCmd(src, item, nil)
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+
+	msg := cmd()
+	result, ok := msg.(actionResultMsg)
+	if !ok {
+		t.Fatalf("expected actionResultMsg, got %T", msg)
+	}
+	if result.err == nil {
+		t.Fatal("expected error in actionResultMsg when store returns error")
+	}
+	if result.err != errTestSentinel {
+		t.Errorf("expected errTestSentinel, got %v", result.err)
+	}
+	if result.itemID != "esc-err-2" {
+		t.Errorf("expected itemID 'esc-err-2', got %q", result.itemID)
+	}
+}
+
+func TestReadCmdMessageStoreError(t *testing.T) {
+	src := &mockDataSource{readMsgErr: errTestSentinel}
+	item := InboxItem{Type: ItemMail, ID: "msg-err-1"}
+	cmd := readCmd(src, item)
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+
+	msg := cmd()
+	result, ok := msg.(actionResultMsg)
+	if !ok {
+		t.Fatalf("expected actionResultMsg, got %T", msg)
+	}
+	if result.err == nil {
+		t.Fatal("expected error in actionResultMsg when store returns error")
+	}
+	if result.err != errTestSentinel {
+		t.Errorf("expected errTestSentinel, got %v", result.err)
+	}
+	if result.itemID != "msg-err-1" {
+		t.Errorf("expected itemID 'msg-err-1', got %q", result.itemID)
+	}
+}
+
+// --- Refresh edge cases ---
+
+func TestRefreshMsgCursorBeyondNewItemCountClampsToLast(t *testing.T) {
+	m := NewModel(Config{})
+	m.items = makeTestItems(5)
+	m.cursor = 4 // pointing at last item
+	m.ready = true
+
+	// Refresh with fewer items — cursor should clamp to last item index.
+	newItems := makeTestItems(2)
+	raw, _ := m.Update(refreshMsg{items: newItems})
+	updated := raw.(Model)
+
+	if updated.cursor != 1 {
+		t.Errorf("expected cursor clamped to 1 (last of 2 items), got %d", updated.cursor)
+	}
+	// View should switch to list since cursor was beyond bounds.
+	if updated.view != viewList {
+		t.Errorf("expected view to be viewList after cursor clamp, got %d", updated.view)
+	}
+}
+
+func TestRefreshMsgFetchErrorStoresErrorString(t *testing.T) {
+	m := NewModel(Config{})
+	m.ready = true
+
+	raw, _ := m.Update(refreshMsg{items: nil, err: errTestSentinel})
+	updated := raw.(Model)
+
+	if updated.fetchErr == "" {
+		t.Fatal("expected fetchErr to be set when refresh contains error")
+	}
+	if updated.fetchErr != errTestSentinel.Error() {
+		t.Errorf("expected fetchErr %q, got %q", errTestSentinel.Error(), updated.fetchErr)
+	}
+}
+
 // --- helpers ---
 
 var errTestSentinel = fmt.Errorf("test error")
