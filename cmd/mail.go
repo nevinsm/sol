@@ -45,7 +45,7 @@ func canonicalizeRecipient(to, worldHint string) string {
 	if worldHint != "" {
 		return worldHint + "/" + to
 	}
-	// No world hint available; return as-is (bridgeMailToNudge will handle resolution)
+	// No world hint available; return as-is
 	return to
 }
 
@@ -95,8 +95,8 @@ var mailSendCmd = &cobra.Command{
 		fmt.Fprintf(os.Stderr, "Sent: %s → %s\n", id, storedTo)
 
 		// Bridge to nudge queue for agent delivery
-		if !noNotify && to != config.Autarch {
-			bridgeMailToNudge(to, worldFlag, subject, body, priority)
+		if !noNotify && storedTo != config.Autarch {
+			bridgeMailToNudge(storedTo, subject, body, priority)
 		}
 
 		return nil
@@ -341,23 +341,12 @@ func parseHumanDuration(s string) (time.Duration, error) {
 
 // bridgeMailToNudge resolves the recipient to a session and delivers a nudge notification.
 // Best-effort: failures are logged to stderr but do not affect mail delivery.
-func bridgeMailToNudge(to, worldFlag, subject, body string, priority int) {
+func bridgeMailToNudge(to, subject, body string, priority int) {
 	var world, agent string
 
-	if strings.Contains(to, "/") {
-		// "world/agent" format
-		parts := strings.SplitN(to, "/", 2)
-		world, agent = parts[0], parts[1]
-	} else {
-		// Plain agent name — resolve world from flag/env/cwd
-		agent = to
-		var err error
-		world, err = config.ResolveWorld(worldFlag)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "mail: skipping nudge: cannot resolve world: %v\n", err)
-			return
-		}
-	}
+	// Caller always passes canonicalized "world/agent" format
+	parts := strings.SplitN(to, "/", 2)
+	world, agent = parts[0], parts[1]
 
 	sessName := config.SessionName(world, agent)
 

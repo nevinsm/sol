@@ -232,6 +232,39 @@ func TestMailReadNoWarnMatchingRecipient(t *testing.T) {
 	}
 }
 
+// TestMailSendPlainRecipientSOLWORLD_NudgeFires verifies that when a plain agent
+// name is sent with no --world flag but SOL_WORLD is set, bridgeMailToNudge
+// receives the canonicalized "world/agent" form and does not bail with a world
+// resolution error.
+func TestMailSendPlainRecipientSOLWORLD_NudgeFires(t *testing.T) {
+	setupMailTestEnv(t)
+	t.Setenv("SOL_WORLD", "test-world")
+
+	// Intercept stderr to verify no "skipping nudge" error.
+	r, w, _ := os.Pipe()
+	origStderr := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = origStderr })
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=PlainAgent", "--subject=Test nudge"})
+	_ = rootCmd.Execute()
+
+	w.Close()
+	os.Stderr = origStderr
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	stderrOutput := buf.String()
+
+	// Before the fix, bridgeMailToNudge received "PlainAgent" (no world),
+	// failed to resolve world, and printed "skipping nudge".
+	// After the fix, it receives "test-world/PlainAgent", splits correctly,
+	// and silently skips (no active session) without printing the error.
+	if strings.Contains(stderrOutput, "skipping nudge") {
+		t.Errorf("expected nudge path to proceed silently, got: %q", stderrOutput)
+	}
+}
+
 func TestParseHumanDuration(t *testing.T) {
 	tests := []struct {
 		input    string
