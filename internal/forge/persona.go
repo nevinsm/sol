@@ -95,11 +95,20 @@ Write .forge-result.json — session will exit automatically.
 
 // forgeHookConfig returns the runtime-agnostic hook configuration for a forge merge session.
 // Hooks installed:
+//   - SessionStart: restore remain-on-exit to off (safety net for self-handoff)
 //   - PreCompact: re-inject context from the persisted injection file
 //   - Guards: block EnterPlanMode + standard forge-role guards
 func forgeHookConfig(world string) startup.HookSet {
 	injectionPath := filepath.Join(WorktreePath(world), injectionFileName)
 	return startup.HookSet{
+		SessionStart: []startup.HookCommand{
+			// Best-effort: restore remain-on-exit to off after a self-handoff (Cycle).
+			// In self-handoff, respawn-pane -k kills the calling process before
+			// Cycle() can run the post-respawn cleanup, leaving remain-on-exit=on.
+			// Running this at SessionStart ensures the new session always has it off,
+			// so a normal exit destroys the pane instead of leaving a dead pane.
+			{Command: "tmux set-option -t $TMUX_PANE remain-on-exit off 2>/dev/null || true"},
+		},
 		PreCompact: []startup.HookCommand{
 			{Command: fmt.Sprintf("cat %s", injectionPath)},
 		},
