@@ -5,6 +5,7 @@ package logutil
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -15,63 +16,68 @@ import (
 const DefaultMaxLogSize int64 = 10 * 1024 * 1024
 
 // TruncateIfNeeded checks if the file at path exceeds maxBytes and, if so,
-// rotates it in place, keeping the tail portion. Returns true if truncation
-// occurred. Safe to call on files held open by other processes with O_APPEND.
+// rotates it in place, keeping the tail portion. Returns (truncated, tailStart,
+// err). tailStart is the byte offset in the original file from which the
+// retained content begins (0 if no truncation occurred). Safe to call on files
+// held open by other processes with O_APPEND.
 //
-// The algorithm uses an atomic rename to prevent data loss: read → compute
-// tail → flock → write tail to temp file → sync → rename temp over original →
-// unlock. If the process is killed before the rename, the original is
-// untouched. After the rename, the tail is durable. All daemon logs are opened
-// with O_APPEND, so after the rename the daemon's next write atomically seeks
-// to end-of-file and appends to the new file. There is a small window where
-// log lines written between read and rename are lost — the standard
-// copytruncate tradeoff, acceptable for operational log data.
-func TruncateIfNeeded(path string, maxBytes int64) (bool, error) {
+// The algorithm uses an atomic rename: read → compute tail → flock → read any
+// bytes appended since the initial read → write (tail + new bytes) to temp
+// file → sync → rename temp over original → unlock. Capturing the new bytes
+// after the flock closes the data-loss window: events appended between the
+// initial ReadFile and the flock are preserved in the new file. A residual
+// micro-window remains between the post-lock read and the rename, which is
+// inherent in append-only files and acceptable in practice.
+func TruncateIfNeeded(path string, maxBytes int64) (bool, int64, error) {
 	// 1. Stat the file.
 	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
+			return false, 0, nil
 		}
-		return false, err
+		return false, 0, err
 	}
 
 	// If size <= maxBytes, no-op.
 	if info.Size() <= maxBytes {
-		return false, nil
+		return false, 0, nil
 	}
 
 	// 2. Read the entire file content.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
+			return false, 0, nil
 		}
-		return false, err
+		return false, 0, err
 	}
 
 	// File could have been truncated between stat and read.
 	if int64(len(data)) <= maxBytes {
-		return false, nil
+		return false, 0, nil
 	}
 
 	// 3. Compute the tail to keep — last 75% of the file, snapped to the
 	// next newline boundary so we don't split a log line.
 	tail := computeTail(data)
 
+	// tailStart is the byte offset in the original file where the retained
+	// content begins. Callers use this to reposition read cursors after rename.
+	tailStart := int64(len(data)) - int64(len(tail))
+
 	// 4. Acquire an advisory flock (LOCK_EX) on the file to serialize
 	// concurrent truncation attempts.
 	f, err := os.OpenFile(path, os.O_RDWR, 0o644)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
+			return false, 0, nil
 		}
-		return false, err
+		return false, 0, err
 	}
 	defer f.Close()
 
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		return false, err
+		return false, 0, err
 	}
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
 
@@ -79,20 +85,39 @@ func TruncateIfNeeded(path string, maxBytes int64) (bool, error) {
 	// truncated the file.
 	info, err = f.Stat()
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	if info.Size() <= maxBytes {
-		return false, nil
+		return false, 0, nil
 	}
 
-	// 5. Write the tail to a temp file in the same directory, then atomically
+	// 4a. Read any bytes appended to the file after our initial ReadFile call.
+	// These bytes would be lost by the rename without this step. Seeking to
+	// int64(len(data)) and reading to EOF captures everything written between
+	// ReadFile and the flock acquisition, closing the data-loss window.
+	if _, err := f.Seek(int64(len(data)), io.SeekStart); err != nil {
+		return false, 0, err
+	}
+	newBytes, err := io.ReadAll(f)
+	if err != nil {
+		return false, 0, err
+	}
+
+	// 5. Build the payload: tail from the original read, plus any new bytes
+	// appended during the window.
+	payload := tail
+	if len(newBytes) > 0 {
+		payload = append(tail, newBytes...)
+	}
+
+	// 6. Write the payload to a temp file in the same directory, then atomically
 	// rename it over the original. This prevents permanent data loss if the
 	// process is killed between write and rename — before rename completes the
-	// original is untouched; after rename completes the tail is durable.
+	// original is untouched; after rename completes the payload is durable.
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".logrotate-*.tmp")
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	tmpPath := tmp.Name()
 	// Clean up the temp file on any failure before the rename commits.
@@ -104,25 +129,25 @@ func TruncateIfNeeded(path string, maxBytes int64) (bool, error) {
 		}
 	}()
 
-	if _, err := tmp.Write(tail); err != nil {
-		return false, err
+	if _, err := tmp.Write(payload); err != nil {
+		return false, 0, err
 	}
 	if err := tmp.Sync(); err != nil {
-		return false, err
+		return false, 0, err
 	}
 	if err := tmp.Close(); err != nil {
-		return false, err
+		return false, 0, err
 	}
 
-	// 6. Atomic rename — replace the original with the temp file.
+	// 7. Atomic rename — replace the original with the temp file.
 	if err := os.Rename(tmpPath, path); err != nil {
-		return false, err
+		return false, 0, err
 	}
 	committed = true
 
-	// 7. Flock released by deferred call (on the now-unlinked original fd).
-	// 8. Return true — truncation occurred.
-	return true, nil
+	// 8. Flock released by deferred call (on the now-unlinked original fd).
+	// 9. Return true and tailStart — truncation occurred.
+	return true, tailStart, nil
 }
 
 // computeTail returns the last ~75% of data, snapped forward to the next

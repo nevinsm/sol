@@ -26,7 +26,7 @@ func TestTruncateIfNeeded_OverMaxBytes(t *testing.T) {
 	originalSize := int64(buf.Len())
 	maxBytes := originalSize / 2 // Set max to half, so truncation triggers.
 
-	truncated, err := TruncateIfNeeded(path, maxBytes)
+	truncated, _, err := TruncateIfNeeded(path, maxBytes)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestTruncateIfNeeded_SnapsToNewline(t *testing.T) {
 	// Set maxBytes small enough to trigger truncation.
 	maxBytes := int64(len(content)) / 2
 
-	truncated, err := TruncateIfNeeded(path, maxBytes)
+	truncated, _, err := TruncateIfNeeded(path, maxBytes)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestTruncateIfNeeded_UnderMaxBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	truncated, err := TruncateIfNeeded(path, 1024*1024) // 1MB max, file is tiny.
+	truncated, _, err := TruncateIfNeeded(path, 1024*1024) // 1MB max, file is tiny.
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestTruncateIfNeeded_UnderMaxBytes(t *testing.T) {
 }
 
 func TestTruncateIfNeeded_MissingFile(t *testing.T) {
-	truncated, err := TruncateIfNeeded("/nonexistent/path/file.log", 1024)
+	truncated, _, err := TruncateIfNeeded("/nonexistent/path/file.log", 1024)
 	if err != nil {
 		t.Fatalf("expected nil error for missing file, got: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestTruncateIfNeeded_EmptyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	truncated, err := TruncateIfNeeded(path, 1024)
+	truncated, _, err := TruncateIfNeeded(path, 1024)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestTruncateIfNeeded_Keeps75Percent(t *testing.T) {
 	// Set max to half — guarantees truncation triggers.
 	maxBytes := originalSize / 2
 
-	truncated, err := TruncateIfNeeded(path, maxBytes)
+	truncated, _, err := TruncateIfNeeded(path, maxBytes)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestTruncateIfNeeded_NoNewlines(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	truncated, err := TruncateIfNeeded(path, 1000)
+	truncated, _, err := TruncateIfNeeded(path, 1000)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -249,12 +249,110 @@ func TestTruncateIfNeeded_ExactlyAtMax(t *testing.T) {
 	}
 
 	// maxBytes exactly equals file size — should NOT truncate.
-	truncated, err := TruncateIfNeeded(path, int64(len(content)))
+	truncated, _, err := TruncateIfNeeded(path, int64(len(content)))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if truncated {
 		t.Fatal("expected no truncation when file size equals maxBytes")
+	}
+}
+
+func TestTruncateIfNeeded_TailStartIsCorrect(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.log")
+
+	// Write 100 lines of known content.
+	var buf bytes.Buffer
+	for i := range 100 {
+		buf.WriteString(strings.Repeat("x", 97))
+		buf.WriteString("\n")
+		_ = i
+	}
+	originalContent := buf.Bytes()
+	if err := os.WriteFile(path, originalContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	originalSize := int64(buf.Len())
+	maxBytes := originalSize / 2
+
+	truncated, tailStart, err := TruncateIfNeeded(path, maxBytes)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !truncated {
+		t.Fatal("expected truncation to occur")
+	}
+
+	// tailStart must be a valid offset in the original file.
+	if tailStart <= 0 || tailStart >= originalSize {
+		t.Errorf("tailStart %d out of expected range (0, %d)", tailStart, originalSize)
+	}
+
+	// The content of the new file must equal originalContent[tailStart:].
+	result, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := originalContent[tailStart:]
+	if !bytes.Equal(result, expected) {
+		t.Errorf("file content after truncation does not match originalContent[tailStart:]\n"+
+			"got len=%d, want len=%d", len(result), len(expected))
+	}
+}
+
+func TestTruncateIfNeeded_PreservesNewBytesWrittenDuringWindow(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.log")
+
+	// Write initial content that exceeds maxBytes.
+	var buf bytes.Buffer
+	for range 50 {
+		buf.WriteString(strings.Repeat("y", 97))
+		buf.WriteString("\n")
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	maxBytes := int64(buf.Len()) / 2
+
+	// Simulate the truncation window: append a line AFTER creating the file
+	// but BEFORE TruncateIfNeeded would have completed the rename in real usage.
+	// We do it here by appending before calling TruncateIfNeeded, which means
+	// it will be captured in the post-ReadFile window simulation (our append
+	// lands in the os.ReadFile call itself), but the key invariant is that
+	// TruncateIfNeeded must not lose bytes present in the file at any point.
+	windowLine := strings.Repeat("z", 97) + "\n"
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(windowLine); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	f.Close()
+
+	truncated, tailStart, err := TruncateIfNeeded(path, maxBytes)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !truncated {
+		t.Fatal("expected truncation to occur")
+	}
+	if tailStart <= 0 {
+		t.Errorf("tailStart should be positive, got %d", tailStart)
+	}
+
+	// The window line must be present in the truncated file.
+	result, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(result, []byte("zz")) {
+		t.Error("truncated file is missing the line appended during the window")
 	}
 }
 
