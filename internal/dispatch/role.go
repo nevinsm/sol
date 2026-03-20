@@ -138,6 +138,12 @@ func outpostPersona(world, agent string) ([]byte, error) {
 func outpostHooks(world, agent string) startup.HookSet {
 	return startup.HookSet{
 		SessionStart: []startup.HookCommand{
+			// Best-effort: restore remain-on-exit to off after a self-handoff (Cycle).
+			// In self-handoff, respawn-pane -k kills the calling process before
+			// Cycle() can run the post-respawn cleanup, leaving remain-on-exit=on.
+			// Running this at SessionStart ensures the new session always has it off,
+			// so a normal exit destroys the pane instead of leaving a dead pane.
+			{Command: "tmux set-option -t $TMUX_PANE remain-on-exit off 2>/dev/null || true"},
 			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s", world, agent)},
 		},
 		PreCompact: []startup.HookCommand{
