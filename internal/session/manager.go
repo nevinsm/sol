@@ -62,6 +62,7 @@ type SessionInfo struct {
 	World     string    `json:"world"`
 	WorkDir   string    `json:"workdir"`
 	StartedAt time.Time `json:"started_at"`
+	CreatedAt time.Time `json:"created_at"` // tmux session creation time (#{session_created}); zero if unavailable
 	Alive     bool      `json:"alive"`
 }
 
@@ -353,7 +354,7 @@ func (m *Manager) List() ([]SessionInfo, error) {
 			Alive:     m.Exists(meta.Name),
 		}
 
-		// Get tmux server PID if session is alive
+		// Get tmux server PID and session creation time if session is alive
 		if info.Alive {
 			pid, pidCancel := tmuxCmd("display-message", "-t", tmuxExactTarget(meta.Name), "-p", "#{pid}")
 			if out, err := pid.Output(); err == nil {
@@ -362,6 +363,14 @@ func (m *Manager) List() ([]SessionInfo, error) {
 				}
 			}
 			pidCancel()
+
+			created, createdCancel := tmuxCmd("display-message", "-t", tmuxExactTarget(meta.Name), "-p", "#{session_created}")
+			if out, err := created.Output(); err == nil {
+				if ts, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64); err == nil {
+					info.CreatedAt = time.Unix(ts, 0)
+				}
+			}
+			createdCancel()
 		}
 
 		sessions = append(sessions, info)

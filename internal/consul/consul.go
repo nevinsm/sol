@@ -97,8 +97,7 @@ type DispatchFunc func(ctx context.Context, opts dispatch.CastOpts, worldStore d
 
 // orphanEntry tracks a candidate orphaned session across patrols.
 type orphanEntry struct {
-	firstSeen time.Time // when the session was first detected as orphaned
-	count     int       // consecutive patrol detections
+	count int // consecutive patrol detections
 }
 
 // orphanGracePeriod is the minimum time a session must be detected as orphaned
@@ -791,16 +790,19 @@ func (d *Consul) detectOrphanedSessions(ctx context.Context) (int, error) {
 		if !exists {
 			// First detection — start tracking.
 			d.orphanedSessions[s.Name] = &orphanEntry{
-				firstSeen: now,
-				count:     1,
+				count: 1,
 			}
 			continue
 		}
 
 		entry.count++
 
-		// Grace period: skip if first seen less than 30 minutes ago.
-		if now.Sub(entry.firstSeen) < orphanGracePeriod {
+		// Grace period: skip if the session was created less than 30 minutes ago.
+		// Use the session's tmux creation time (CreatedAt) so the threshold is
+		// anchored to the session's actual birth time and survives consul restarts.
+		// Fall back to now (no grace period elapsed) if CreatedAt is unavailable.
+		sessionAge := now.Sub(s.CreatedAt)
+		if s.CreatedAt.IsZero() || sessionAge < orphanGracePeriod {
 			continue
 		}
 
@@ -822,7 +824,7 @@ func (d *Consul) detectOrphanedSessions(ctx context.Context) (int, error) {
 		d.logInfo("consul_orphan_stopped", map[string]any{
 			"session":      s.Name,
 			"patrol_count": entry.count,
-			"age_minutes":  int(now.Sub(entry.firstSeen).Minutes()),
+			"age_minutes":  int(sessionAge.Minutes()),
 		})
 
 		if d.logger != nil {
