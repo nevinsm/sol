@@ -1252,6 +1252,20 @@ sol forge resume.
 
 #### `sol forge release`
 
+Release a claimed merge request, returning it to "ready" state for re-attempt.
+
+When forge claims an MR for processing, it transitions the MR to "claimed" state.
+If processing fails or is interrupted, "release" returns the MR to "ready" so it
+can be dispatched again on the next forge cycle.
+
+If the MR has exhausted its maximum attempt count, it is permanently marked
+"failed" instead of being returned to "ready". In this case the command prints
+a failure message and exits 1 so callers can distinguish the two outcomes.
+
+Exit codes:
+  0  MR returned to "ready" state (will be retried)
+  1  MR permanently failed (max attempts exceeded, will not be retried)
+
 **Usage:** `sol forge release <mr-id>`
 
 | Flag | Type | Default | Description |
@@ -1281,13 +1295,13 @@ requests from the queue immediately.
 
 #### `sol forge status`
 
-**Usage:** `sol forge status <world>`
-
 Show whether the forge process is running and its merge queue health.
 
 Exit codes:
   0 - Forge is running
   1 - Forge is not running
+
+**Usage:** `sol forge status <world>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1632,10 +1646,6 @@ Inter-agent messaging
 
 **Usage:** `sol mail ack <message-id>`
 
-Acknowledge a message. Identity is auto-detected from SOL_WORLD/SOL_AGENT env vars
-(stored as `world/agent`). Pass `--identity` to override. A warning is printed to
-stderr if the message recipient does not match the detected identity.
-
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--identity` | string | "" | Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
@@ -1646,9 +1656,6 @@ Check for unread messages and print the count.
 
 Useful in scripts to conditionally process mail.
 
-Identity is auto-detected from SOL_WORLD/SOL_AGENT env vars (format: `world/agent`).
-Pass `--identity` to override. Falls back to `autarch` when env vars are unset.
-
 Exit codes:
   0 - Unread messages exist
   1 - No unread messages
@@ -1658,9 +1665,6 @@ Exit codes:
 | `--identity` | string | "" | Recipient identity (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
 
 #### `sol mail inbox`
-
-Identity is auto-detected from SOL_WORLD/SOL_AGENT env vars (format: `world/agent`).
-Pass `--identity` to override. Falls back to `autarch` when env vars are unset.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1683,20 +1687,11 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 
 **Usage:** `sol mail read <message-id>`
 
-Read a message (marks as read). Identity is auto-detected from SOL_WORLD/SOL_AGENT env vars
-(stored as `world/agent`). Pass `--identity` to override. A warning is printed to
-stderr if the message recipient does not match the detected identity.
-
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--identity` | string | "" | Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
 
 #### `sol mail send`
-
-Sender is auto-detected: if SOL_AGENT and SOL_WORLD are both set, sender is `world/agent`;
-otherwise sender is `autarch`. Recipient `--to` accepts a plain agent name (resolved to
-`world/agent` using `--world` or SOL_WORLD) or an explicit `world/agent` format. Pass
-`--to=autarch` to send to the operator. Recipients are stored as `world/agent` internally.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1704,17 +1699,12 @@ otherwise sender is `autarch`. Recipient `--to` accepts a plain agent name (reso
 | `--no-notify` | bool | false | Suppress nudge notification to recipient |
 | `--priority` | int | 2 | Priority (1=urgent, 2=normal, 3=low) |
 | `--subject` | string | "" | Message subject |
-| `--to` | string | "" | Recipient: plain agent name (resolved via SOL_WORLD), world/agent, or "autarch" |
-| `--world` | string | "" | world name (used to resolve plain recipient names) |
+| `--to` | string | "" | Recipient agent ID or "autarch" |
+| `--world` | string | "" | world name |
 
 ### `sol nudge`
 
 Nudge queue operations
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name |
 
 **Subcommands:**
 
@@ -1964,8 +1954,8 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 Export a world's state to a compressed archive for backup or migration.
 
 The archive includes the world database (WAL-checkpointed), world.toml,
-agent configuration directories, and a metadata manifest. Ephemeral state
-(tmux sessions, PID files, worktrees) is excluded.
+sphere-scoped data (agents, messages, escalations, caravans), and a manifest.
+Ephemeral state (tmux sessions, PID files, worktrees) is excluded.
 
 The managed repo (repo/) is excluded — it can be re-cloned from source_repo.
 
