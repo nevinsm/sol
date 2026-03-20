@@ -72,7 +72,7 @@ func OpenSphere() (*SphereStore, error) {
 func OpenNoMigrate(path string) (*WorldStore, error) {
 	base, err := open(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open database %q: %w", path, err)
 	}
 	return &WorldStore{baseStore: *base}, nil
 }
