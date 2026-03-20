@@ -1,11 +1,11 @@
 # Create Writs
 
-Turn the plan into concrete writs using `sol store create`.
+Turn the plan into concrete writs using `sol writ create`.
 
 For each item in the plan:
 
 ```
-sol store create --world={{world}} \
+sol writ create --world={{world}} \
   --title="<concise title>" \
   --description="<what to implement, context, acceptance criteria>"
 ```
