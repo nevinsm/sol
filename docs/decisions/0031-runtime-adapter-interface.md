@@ -41,7 +41,7 @@ Define a `RuntimeAdapter` interface in `internal/adapter/` with nine methods map
 
 Tmux stays as the universal container. The adapter is responsible for the agent runtime layer (how the process is configured and launched), not the session container.
 
-The V1 implementation defines the interface, implements the full Claude adapter, and wires the registry. `startup.Launch` continues to operate as-is until a subsequent writ migrates it to use the adapter.
+The V1 implementation defines the interface, implements the full Claude adapter, wires the registry, and migrates `startup.Launch` to use the adapter throughout.
 
 ### Interface
 
@@ -110,5 +110,4 @@ Adapters register themselves via `init()` in their package. Callers import the a
 - Registry pattern enables adapter selection from configuration without import-cycle problems.
 
 **Negative / Trade-offs**:
-- V1 is purely additive. `startup.Launch` does not use the adapter yet — that migration is a separate writ. Until then, the adapter and startup code are parallel representations of the same knowledge.
 - Nine methods is a moderate interface size. If primitives are added later (e.g., a `BriefDir` method, a `ResumeState` method), the interface grows and every adapter must implement the new methods.

@@ -139,25 +139,27 @@ standard migration code brings the world database up to date.
 
 ### World clone: `sol world clone <source> <target>`
 
-Clone creates a new world with the same configuration and optionally
-the same writ history as an existing world. Two modes:
+Clone creates a new world with the same configuration and database
+state as an existing world. Two modes:
 
-**Shallow clone (default):** Copies only configuration — `world.toml`
-with `source_repo` preserved. Creates a fresh, empty world database.
-Registers the new world in sphere.db. This is the common case:
-standing up a new world for the same repository.
+**Standard clone (default):** Copies `world.toml` and world database
+state — writs, labels, dependencies, and merge requests. Writ assignees
+and merge request claims are cleared (the cloned world gets a fresh
+agent pool). Registers the new world in sphere.db. This is the common
+case: standing up a new world for the same repository with existing
+work history intact.
 
 ```
 sol world clone myproject myproject-staging
 ```
 
-**Deep clone (`--deep`):** Equivalent to export-then-import with name
-rewriting. Copies the full world database (writs, merge requests,
-history, token usage) and sphere-scoped data (agents, messages,
-escalations). Agent states reset to `idle`. Tethers are not copied.
+**With history (`--include-history`):** Also copies agent history,
+token usage records, and agent memories in addition to the standard
+clone contents. Useful when forking a world for archival or auditing
+purposes.
 
 ```
-sol world clone myproject myproject-backup --deep
+sol world clone myproject myproject-backup --include-history
 ```
 
 **Credential handling:** Clone does not copy credential bindings.
