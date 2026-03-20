@@ -737,6 +737,9 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 }
 
 // autoProvision creates a new agent from the name pool.
+// A per-world provision lock is held for the entire capacity-check + CreateAgent
+// sequence, so concurrent Cast calls cannot both pass the capacity check and
+// both create an agent (which would silently exceed the world limit).
 func autoProvision(world string, sphereStore SphereStore, namePoolPath string, capacity int) (*store.Agent, error) {
 	overridePath := namePoolPath
 	if overridePath == "" {
@@ -746,6 +749,15 @@ func autoProvision(world string, sphereStore SphereStore, namePoolPath string, c
 	if err != nil {
 		return nil, fmt.Errorf("failed to load name pool: %w", err)
 	}
+
+	// Acquire a per-world provision lock before the capacity check.
+	// This serializes concurrent autoProvision calls so that only one can
+	// proceed through the check-and-create window at a time.
+	provLock, err := AcquireProvisionLock(world)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize provisioning for world %q: %w", world, err)
+	}
+	defer provLock.Release()
 
 	agents, err := sphereStore.ListAgents(world, "")
 	if err != nil {
