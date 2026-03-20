@@ -213,7 +213,7 @@ func GracefulKill(pid int, timeout time.Duration) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return nil
+	return fmt.Errorf("process %d did not exit after SIGKILL within 1s", pid)
 }
 
 // isRunningProc reads /proc/{pid}/stat and returns (alive, true) when /proc is
