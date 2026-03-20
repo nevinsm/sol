@@ -211,6 +211,7 @@ func (c *Chronicle) Offset() int64 {
 // and appends results to the curated feed.
 func (c *Chronicle) processCycle() error {
 	// 1. Read new lines from raw feed starting at offset.
+	oldOffset := c.offset
 	newEvents, newOffset, err := c.readNewEvents()
 	if err != nil {
 		return fmt.Errorf("failed to read new events: %w", err)
@@ -288,17 +289,21 @@ func (c *Chronicle) processCycle() error {
 	// new (truncated) file, so events that arrived between readNewEvents and the
 	// rename are not silently skipped.
 	savedOffset := c.offset
+	rawTruncated := false
 	if truncated, tailStart, _ := logutil.TruncateIfNeeded(c.config.RawPath, rawMaxSize); truncated {
 		// The new file starts at tailStart bytes into the original file.
 		// Unprocessed events start at savedOffset in the original, which maps
 		// to savedOffset-tailStart in the new file. If savedOffset is before
 		// tailStart (file was much larger than offset), clamp to 0.
 		c.offset = max(0, savedOffset-tailStart)
+		rawTruncated = true
 	}
 
-	// 10. Save checkpoint after any raw-file rotation so the persisted offset
-	// reflects the post-truncation file position.
-	c.saveCheckpoint()
+	// 10. Save checkpoint only when new events were read or the raw file was
+	// rotated — avoid redundant atomic writes during idle periods.
+	if newOffset != oldOffset || rawTruncated {
+		c.saveCheckpoint()
+	}
 
 	return nil
 }

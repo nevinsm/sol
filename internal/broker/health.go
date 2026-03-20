@@ -3,6 +3,7 @@ package broker
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -182,7 +183,10 @@ func ProbeProvider() error {
 	if err != nil {
 		return fmt.Errorf("provider unreachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body) //nolint:errcheck
+		resp.Body.Close()
+	}()
 
 	// 5xx = server-side problem.
 	if resp.StatusCode >= 500 {

@@ -238,12 +238,12 @@ func (l *Ledger) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	defer r.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(r.Body, 10*1024*1024)) // 10MB limit
 	if err != nil {
 		http.Error(w, "failed to read body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
 
 	var req ExportLogsServiceRequest
 	if err := json.Unmarshal(body, &req); err != nil {
