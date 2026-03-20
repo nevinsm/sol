@@ -682,8 +682,21 @@ var forgeClaimCmd = &cobra.Command{
 }
 
 var forgeReleaseCmd = &cobra.Command{
-	Use:          "release <mr-id>",
-	Short:        "Release a claimed merge request back to ready",
+	Use:   "release <mr-id>",
+	Short: "Release a claimed merge request back to ready",
+	Long: `Release a claimed merge request, returning it to "ready" state for re-attempt.
+
+When forge claims an MR for processing, it transitions the MR to "claimed" state.
+If processing fails or is interrupted, "release" returns the MR to "ready" so it
+can be dispatched again on the next forge cycle.
+
+If the MR has exhausted its maximum attempt count, it is permanently marked
+"failed" instead of being returned to "ready". In this case the command prints
+a failure message and exits 1 so callers can distinguish the two outcomes.
+
+Exit codes:
+  0  MR returned to "ready" state (will be retried)
+  1  MR permanently failed (max attempts exceeded, will not be retried)`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -708,9 +721,9 @@ var forgeReleaseCmd = &cobra.Command{
 
 		if failed {
 			fmt.Printf("Failed (max attempts exceeded): %s\n", mrID)
-		} else {
-			fmt.Printf("Released: %s\n", mrID)
+			return &exitError{code: 1}
 		}
+		fmt.Printf("Released: %s\n", mrID)
 		return nil
 	},
 }
