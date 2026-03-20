@@ -165,9 +165,12 @@ func (r *Forge) MarkMerged(mrID string) error {
 	if err := r.worldStore.UpdateMergeRequestPhase(mrID, "merged"); err != nil {
 		r.logger.Error("failed to mark MR as merged after closing writ",
 			"mr", mrID, "writ", mr.WritID, "error", err)
-		// Writ is closed (correct) but MR phase is stale. Forge patrol will
-		// detect this inconsistency and retry. Create an escalation for visibility.
-		desc := fmt.Sprintf("MR %s not marked merged after writ %s closed: %v", mrID, mr.WritID, err)
+		// Writ is closed (correct) but MR phase is stale. The next forge patrol
+		// cycle will detect the claimed/closed inconsistency via
+		// RecoverOrphanedMerged and update the MR phase to "merged" directly.
+		// Create a low-severity escalation for operator visibility.
+		desc := fmt.Sprintf("MR %s not marked merged after writ %s closed: %v. "+
+			"The next forge patrol cycle will recover this automatically.", mrID, mr.WritID, err)
 		if _, escErr := r.sphereStore.CreateEscalation("low", r.agentID, desc, "mr:"+mrID); escErr != nil {
 			r.logger.Error("failed to create escalation for unmarked MR",
 				"writ", mr.WritID, "mr", mrID, "error", escErr)
@@ -412,6 +415,44 @@ Instructions (follow every step in order):
 			mr.WritID, mr.ID, mr.Branch, taskID))
 
 	return taskID, nil
+}
+
+// RecoverOrphanedMerged finds MRs in "claimed" phase whose associated writ
+// is "closed" — the state left by a partial MarkMerged failure where the writ
+// was closed but UpdateMergeRequestPhase did not complete. For each such MR,
+// it calls UpdateMergeRequestPhase directly to set the phase to "merged"; no
+// new merge session is needed because the code is already on main.
+// Returns the number of MRs recovered.
+func (r *Forge) RecoverOrphanedMerged() (int, error) {
+	claimed, err := r.worldStore.ListMergeRequests(store.MRClaimed)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list claimed merge requests: %w", err)
+	}
+
+	recovered := 0
+	for _, mr := range claimed {
+		writ, err := r.worldStore.GetWrit(mr.WritID)
+		if err != nil {
+			r.logger.Warn("failed to get writ for claimed MR during orphan recovery",
+				"mr", mr.ID, "writ", mr.WritID, "error", err)
+			continue
+		}
+		if writ.Status != store.WritClosed {
+			continue
+		}
+		// Writ is closed but MR is still claimed — partial MarkMerged failure.
+		if err := r.worldStore.UpdateMergeRequestPhase(mr.ID, store.MRMerged); err != nil {
+			r.logger.Error("failed to recover orphaned MR to merged",
+				"mr", mr.ID, "writ", mr.WritID, "error", err)
+			continue
+		}
+		// Resolve any escalations created for this MR (best-effort).
+		r.resolveEscalationsForMR(mr.ID)
+		r.logger.Info("recovered orphaned claimed MR to merged",
+			"mr", mr.ID, "writ", mr.WritID)
+		recovered++
+	}
+	return recovered, nil
 }
 
 // CheckUnblocked finds blocked MRs whose resolution tasks are closed (merged)
