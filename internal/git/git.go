@@ -309,8 +309,8 @@ func (g *Git) PushSubmoduleCommit(submodulePath, sha, remote string) error {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("pushing submodule %s commit %s: %s",
-			submodulePath, sha[:min(8, len(sha))], strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("pushing submodule %s commit %s: %s: %w",
+			submodulePath, sha[:min(8, len(sha))], strings.TrimSpace(stderr.String()), err)
 	}
 	return nil
 }
