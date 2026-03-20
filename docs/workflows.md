@@ -577,7 +577,7 @@ flags.
 
 ## Embedded Workflow Catalog
 
-Sol ships with nine embedded workflows covering common work patterns.
+Sol ships with eight embedded workflows covering common work patterns.
 
 ### 1. default-work
 
@@ -812,7 +812,14 @@ sol workflow manifest guided-design --world=myworld \
 
 ---
 
-### 9. codebase-scan
+## Project-Tier Example Workflows
+
+The following workflows ship with the sol source repository itself
+(`.sol/workflows/`) as project-tier examples. They are **not** compiled
+into the sol binary — users without the sol source repo will not see them
+in `sol workflow list`.
+
+### codebase-scan (project-tier)
 
 **Type:** convoy (11 legs + synthesis)
 **Purpose:** Comprehensive project-tier codebase review. Parallel analysis
