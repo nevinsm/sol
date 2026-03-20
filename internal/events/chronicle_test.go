@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -429,6 +430,87 @@ func TestChronicleCheckpoint(t *testing.T) {
 	events := readFeedEvents(t, cfg.FeedPath)
 	if len(events) != 10 {
 		t.Fatalf("expected 10 total events, got %d", len(events))
+	}
+}
+
+func TestChronicleRawFeedTruncationResetsOffset(t *testing.T) {
+	dir := t.TempDir()
+	cfg := testChronicleConfig(dir)
+	cfg.MaxRawSize = 2048 // small threshold for testing
+	c := NewChronicle(cfg)
+
+	// Write enough events to push the raw feed over MaxRawSize.
+	// Each event is ~120 bytes as JSON; 30 × 120 = ~3600 bytes > 2048.
+	for i := range 30 {
+		writeRawEvent(t, cfg.RawPath, Event{
+			Timestamp:  time.Now().UTC(),
+			Source:     "sol",
+			Type:       EventResolve,
+			Actor:      fmt.Sprintf("agent-%d", i),
+			Visibility: "feed",
+		})
+	}
+
+	// Confirm the raw file exceeds the threshold.
+	info, err := os.Stat(cfg.RawPath)
+	if err != nil {
+		t.Fatalf("stat raw file: %v", err)
+	}
+	originalRawSize := info.Size()
+	if originalRawSize <= cfg.MaxRawSize {
+		t.Skipf("raw file size %d did not exceed threshold %d; adjust test", originalRawSize, cfg.MaxRawSize)
+	}
+
+	// First cycle: reads all 30 events and truncates the raw feed.
+	if err := c.ProcessOnce(); err != nil {
+		t.Fatalf("ProcessOnce 1: %v", err)
+	}
+
+	// Confirm truncation occurred: file should be smaller than before.
+	// (TruncateIfNeeded keeps ~75%, so the file may still exceed MaxRawSize
+	// after a single pass — that is fine; the important thing is it shrank.)
+	info, err = os.Stat(cfg.RawPath)
+	if err != nil {
+		t.Fatalf("stat raw file after truncation: %v", err)
+	}
+	if info.Size() >= originalRawSize {
+		t.Errorf("raw file not truncated: size %d unchanged from %d", info.Size(), originalRawSize)
+	}
+
+	// Record feed state before writing new events.
+	prevFeedEvents := readFeedEvents(t, cfg.FeedPath)
+
+	// Write 3 more events AFTER the truncation cycle.
+	// The offset reset must allow these to be picked up in the next cycle.
+	for i := range 3 {
+		writeRawEvent(t, cfg.RawPath, Event{
+			Timestamp:  time.Now().UTC(),
+			Source:     "sol",
+			Type:       EventTether,
+			Actor:      fmt.Sprintf("post-trunc-agent-%d", i),
+			Visibility: "feed",
+		})
+	}
+
+	// Second cycle: should pick up the 3 post-truncation events.
+	if err := c.ProcessOnce(); err != nil {
+		t.Fatalf("ProcessOnce 2: %v", err)
+	}
+
+	feedEvents := readFeedEvents(t, cfg.FeedPath)
+	newInFeed := len(feedEvents) - len(prevFeedEvents)
+	if newInFeed != 3 {
+		t.Errorf("expected 3 new events in feed after truncation, got %d", newInFeed)
+	}
+
+	// Verify they are the post-truncation events.
+	for _, ev := range feedEvents[len(prevFeedEvents):] {
+		if ev.Type != EventTether {
+			t.Errorf("expected event type %q, got %q", EventTether, ev.Type)
+		}
+		if !strings.HasPrefix(ev.Actor, "post-trunc-agent-") {
+			t.Errorf("unexpected actor %q in post-truncation events", ev.Actor)
+		}
 	}
 }
 

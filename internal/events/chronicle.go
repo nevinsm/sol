@@ -27,6 +27,7 @@ type ChronicleConfig struct {
 	DedupWindow  time.Duration // dedup window for identical events (default: 10s)
 	AggWindow    time.Duration // aggregation window for burst events (default: 30s)
 	MaxFeedSize  int64         // max curated feed file size in bytes (default: 10MB)
+	MaxRawSize   int64         // max raw events file size in bytes (default: 10MB)
 }
 
 // DefaultChronicleConfig returns defaults for the given SOL_HOME.
@@ -38,6 +39,7 @@ func DefaultChronicleConfig(solHome string) ChronicleConfig {
 		DedupWindow:  10 * time.Second,
 		AggWindow:    30 * time.Second,
 		MaxFeedSize:  10 * 1024 * 1024, // 10MB
+		MaxRawSize:   10 * 1024 * 1024, // 10MB
 	}
 }
 
@@ -276,17 +278,22 @@ func (c *Chronicle) processCycle() error {
 	}
 
 	// 9. Best-effort log rotation — chronicle's own log and raw event feed.
-	logutil.TruncateIfNeeded(filepath.Join(config.RuntimeDir(), "chronicle.log"), logutil.DefaultMaxLogSize)
-	if truncated, _ := logutil.TruncateIfNeeded(c.config.RawPath, logutil.DefaultMaxLogSize); truncated {
-		// Raw file was truncated in-place (copytruncate). The stored offset now
-		// points past valid data in the shorter file. Reset to the new EOF so
-		// the next cycle resumes from the current end rather than seeking into
-		// a stale position and permanently missing new events.
-		if info, err := os.Stat(c.config.RawPath); err == nil {
-			c.offset = info.Size()
-		} else {
-			c.offset = 0
-		}
+	logutil.TruncateIfNeeded(filepath.Join(config.RuntimeDir(), "chronicle.log"), logutil.DefaultMaxLogSize) //nolint:errcheck
+	rawMaxSize := c.config.MaxRawSize
+	if rawMaxSize <= 0 {
+		rawMaxSize = logutil.DefaultMaxLogSize
+	}
+	// savedOffset is the position in the raw file after the last readNewEvents
+	// call in this cycle. We use it to compute the correct read position in the
+	// new (truncated) file, so events that arrived between readNewEvents and the
+	// rename are not silently skipped.
+	savedOffset := c.offset
+	if truncated, tailStart, _ := logutil.TruncateIfNeeded(c.config.RawPath, rawMaxSize); truncated {
+		// The new file starts at tailStart bytes into the original file.
+		// Unprocessed events start at savedOffset in the original, which maps
+		// to savedOffset-tailStart in the new file. If savedOffset is before
+		// tailStart (file was much larger than offset), clamp to 0.
+		c.offset = max(0, savedOffset-tailStart)
 	}
 
 	// 10. Save checkpoint after any raw-file rotation so the persisted offset
