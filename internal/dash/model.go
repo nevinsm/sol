@@ -41,11 +41,12 @@ const (
 
 // Config holds dependencies for the dashboard, mirroring cmd/status.go.
 type Config struct {
-	SphereStore  sphereStore
-	WorldOpener  func(string) (*store.WorldStore, error)
-	SessionCheck status.SessionChecker
-	CaravanStore caravanStore
-	SessionMgr   *session.Manager
+	SphereStore      sphereStore
+	EscalationLister status.EscalationLister
+	WorldOpener      func(string) (*store.WorldStore, error)
+	SessionCheck     status.SessionChecker
+	CaravanStore     caravanStore
+	SessionMgr       *session.Manager
 
 	// SOLHome is the runtime root directory for reading event feeds.
 	SOLHome string
@@ -59,6 +60,7 @@ type sphereStore interface {
 	store.AgentReader
 	store.WorldReader
 	store.CaravanReader
+	CountPending(recipient string) (int, error)
 }
 
 // caravanStore abstracts caravan queries.
@@ -650,7 +652,11 @@ func (m Model) refresh() tea.Cmd {
 				m.config.SessionCheck,
 				m.config.WorldOpener,
 				m.config.SphereStore,
+				m.config.EscalationLister,
 			)
+			if count, err := m.config.SphereStore.CountPending(config.Autarch); err == nil && count > 0 {
+				result.MailCount = count
+			}
 			msg.sphere = result
 
 		case viewWorld:
