@@ -1171,7 +1171,7 @@ func TestBuildMergeAssessmentPrompt(t *testing.T) {
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
-	prompt := buildMergeAssessmentPrompt(mr, "some output here")
+	prompt := buildMergeAssessmentPrompt(mr, "some output here", 3*time.Minute)
 
 	if !strings.Contains(prompt, "outpost/Toast/sol-aaa11111") {
 		t.Error("prompt should contain branch name")
@@ -1184,6 +1184,15 @@ func TestBuildMergeAssessmentPrompt(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "progressing|stuck|idle") {
 		t.Error("prompt should list valid statuses")
+	}
+	if !strings.Contains(prompt, "3m0s") {
+		t.Error("prompt should contain the monitor interval")
+	}
+
+	// Verify a non-default interval is reflected in the prompt.
+	prompt10 := buildMergeAssessmentPrompt(mr, "some output here", 10*time.Minute)
+	if !strings.Contains(prompt10, "10m0s") {
+		t.Error("prompt should reflect configured monitor interval, not hardcoded value")
 	}
 }
 
