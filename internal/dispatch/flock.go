@@ -148,3 +148,49 @@ func (l *MergeSlotLock) Release() error {
 	l.file = nil
 	return nil
 }
+
+// ProvisionLock holds an advisory flock that serializes autoProvision calls
+// for a given world. This prevents concurrent Cast calls from both passing
+// the capacity check and both creating an agent, exceeding the world limit.
+type ProvisionLock struct {
+	file *os.File
+	path string
+}
+
+// AcquireProvisionLock takes a blocking exclusive advisory lock on the
+// provision slot for the given world.
+// Lock file: $SOL_HOME/.runtime/locks/{world}-provision.lock.
+// Uses LOCK_EX (blocking) so callers wait rather than error on contention.
+func AcquireProvisionLock(world string) (*ProvisionLock, error) {
+	lockDir := filepath.Join(config.RuntimeDir(), "locks")
+	if err := os.MkdirAll(lockDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to acquire provision lock for world %q: %w", world, err)
+	}
+
+	lockPath := filepath.Join(lockDir, world+"-provision.lock")
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to acquire provision lock for world %q: %w", world, err)
+	}
+
+	// Blocking lock: wait for any concurrent autoProvision to finish.
+	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("failed to acquire provision lock for world %q: %w", world, err)
+	}
+
+	return &ProvisionLock{file: f, path: lockPath}, nil
+}
+
+// Release releases the provision lock and removes the lock file.
+func (l *ProvisionLock) Release() error {
+	if l == nil || l.file == nil {
+		return nil
+	}
+	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	l.file.Close()
+	os.Remove(l.path)
+	l.file = nil
+	return nil
+}

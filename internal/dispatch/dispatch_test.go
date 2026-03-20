@@ -4565,6 +4565,84 @@ func TestAutoProvisionCapacityExhaustedError(t *testing.T) {
 	}
 }
 
+func TestAutoProvisionConcurrentCapacityRace(t *testing.T) {
+	// Two concurrent autoProvision calls against a world at capacity-1 must
+	// result in exactly one success and one ErrCapacityExhausted failure.
+	// This exercises the provision lock that serializes the check-and-create
+	// window and prevents both goroutines from seeing the pre-limit count.
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	config.EnsureDirs()
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "race-test"
+	capacity := 2
+
+	// Pre-create one agent so the world is at capacity-1.
+	if _, err := sphereStore.CreateAgent("Existing", worldName, "outpost"); err != nil {
+		t.Fatalf("failed to pre-create agent: %v", err)
+	}
+
+	// Write a name pool with enough names for both goroutines.
+	worldDir := filepath.Join(solHome, worldName)
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "names.txt"), []byte("Alpha\nBeta\nGamma\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	type result struct {
+		agent *store.Agent
+		err   error
+	}
+	ch := make(chan result, 2)
+
+	// Launch two concurrent autoProvision calls.
+	for i := 0; i < 2; i++ {
+		go func() {
+			a, err := autoProvision(worldName, sphereStore, "", capacity)
+			ch <- result{a, err}
+		}()
+	}
+
+	r1 := <-ch
+	r2 := <-ch
+
+	successes := 0
+	capacityErrors := 0
+	for _, r := range []result{r1, r2} {
+		if r.err == nil {
+			successes++
+		} else if errors.Is(r.err, ErrCapacityExhausted) {
+			capacityErrors++
+		} else {
+			t.Errorf("unexpected error: %v", r.err)
+		}
+	}
+
+	if successes != 1 {
+		t.Errorf("expected exactly 1 successful provision, got %d", successes)
+	}
+	if capacityErrors != 1 {
+		t.Errorf("expected exactly 1 capacity error, got %d", capacityErrors)
+	}
+
+	// Verify final agent count equals capacity exactly.
+	agents, err := sphereStore.ListAgents(worldName, "")
+	if err != nil {
+		t.Fatalf("failed to list agents: %v", err)
+	}
+	if len(agents) != capacity {
+		t.Errorf("expected %d agents after concurrent provision, got %d", capacity, len(agents))
+	}
+}
+
 func TestResolveAutoResolvesWritLinkedEscalations(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
