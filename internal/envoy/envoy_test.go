@@ -119,6 +119,7 @@ func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, acti
 
 type mockStopManager struct {
 	sessions map[string]bool
+	stopErr  error
 }
 
 func (m *mockStopManager) Exists(name string) bool {
@@ -126,6 +127,9 @@ func (m *mockStopManager) Exists(name string) bool {
 }
 
 func (m *mockStopManager) Stop(name string, force bool) error {
+	if m.stopErr != nil {
+		return m.stopErr
+	}
 	delete(m.sessions, name)
 	return nil
 }
@@ -526,6 +530,40 @@ func TestStopWrongRole(t *testing.T) {
 	// Verify agent state was NOT updated.
 	if _, ok := ss.updated["myworld/governor"]; ok {
 		t.Error("agent state should not have been updated for wrong-role agent")
+	}
+}
+
+func TestStopUpdatesStateEvenWhenGracefulStopFails(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	ss := &mockStopStore{
+		agents: map[string]*store.Agent{
+			"myworld/Echo": {ID: "myworld/Echo", Name: "Echo", World: "myworld", Role: "envoy", State: store.AgentWorking, ActiveWrit: "sol-abc123"},
+		},
+		updated:     map[string]store.AgentState{},
+		activeWrits: map[string]string{},
+	}
+
+	sessName := config.SessionName("myworld", "Echo")
+	mgr := &mockStopManager{
+		sessions: map[string]bool{sessName: true},
+		stopErr:  fmt.Errorf("tmux: session vanished"),
+	}
+
+	err := Stop("myworld", "Echo", ss, mgr)
+	// Stop should return the GracefulStop error.
+	if err == nil {
+		t.Fatal("expected error when GracefulStop fails, got nil")
+	}
+
+	// Agent state should be updated to idle despite the stop error.
+	if ss.updated["myworld/Echo"] != store.AgentIdle {
+		t.Errorf("agent state = %q, want \"idle\" (state must be updated even on stop failure)", ss.updated["myworld/Echo"])
+	}
+	// ActiveWrit should be preserved.
+	if got := ss.activeWrits["myworld/Echo"]; got != "sol-abc123" {
+		t.Errorf("active_writ after failed stop = %q, want %q", got, "sol-abc123")
 	}
 }
 

@@ -1,6 +1,7 @@
 package governor
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,6 +83,7 @@ func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, acti
 
 type mockStopManager struct {
 	sessions map[string]bool
+	stopErr  error
 }
 
 func (m *mockStopManager) Exists(name string) bool {
@@ -89,6 +91,9 @@ func (m *mockStopManager) Exists(name string) bool {
 }
 
 func (m *mockStopManager) Stop(name string, force bool) error {
+	if m.stopErr != nil {
+		return m.stopErr
+	}
 	delete(m.sessions, name)
 	return nil
 }
@@ -196,6 +201,41 @@ func TestStopNoSession(t *testing.T) {
 	// Verify agent state still updated to idle.
 	if ss.updated["myworld/governor"] != store.AgentIdle {
 		t.Errorf("agent state = %q, want \"idle\"", ss.updated["myworld/governor"])
+	}
+}
+
+func TestStopUpdatesStateEvenWhenGracefulStopFails(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	const writID = "sol-abc123def456abc1"
+	ss := &mockStopStore{
+		updated:     map[string]store.AgentState{},
+		activeWrits: map[string]string{},
+		agents: map[string]*store.Agent{
+			"myworld/governor": {ID: "myworld/governor", ActiveWrit: writID},
+		},
+	}
+
+	sessName := "sol-myworld-governor"
+	mgr := &mockStopManager{
+		sessions: map[string]bool{sessName: true},
+		stopErr:  fmt.Errorf("tmux: session vanished"),
+	}
+
+	err := Stop("myworld", ss, mgr)
+	// Stop should return the GracefulStop error.
+	if err == nil {
+		t.Fatal("expected error when GracefulStop fails, got nil")
+	}
+
+	// Agent state should be updated to idle despite the stop error.
+	if ss.updated["myworld/governor"] != store.AgentIdle {
+		t.Errorf("agent state = %q, want \"idle\" (state must be updated even on stop failure)", ss.updated["myworld/governor"])
+	}
+	// ActiveWrit should be preserved.
+	if got := ss.activeWrits["myworld/governor"]; got != writID {
+		t.Errorf("active_writ after failed stop = %q, want %q", got, writID)
 	}
 }
 
