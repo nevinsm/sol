@@ -329,34 +329,40 @@ func TestFollowSurvivesTruncation(t *testing.T) {
 	// Give Follow time to start and seek to end.
 	time.Sleep(200 * time.Millisecond)
 
-	// Simulate chronicle truncation: write a new file and atomically rename
-	// over the feed path. This replaces the inode.
+	// Simulate chronicle truncation: write a new file containing previously-seen
+	// events (as truncateOnce keeps the tail of the old file) and atomically
+	// rename over the feed path. This replaces the inode.
 	tmp, err := os.CreateTemp(dir, ".truncate-*.jsonl")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ev := Event{
+	// Write a pre-existing event into the new file, simulating the 75% tail
+	// that chronicle's truncateOnce retains. This event must NOT be re-delivered.
+	preExisting := Event{
 		Timestamp:  time.Now().UTC(),
-		Type:       "survived",
+		Type:       "pre_existing",
 		Source:     "chronicle",
 		Actor:      "chronicle",
 		Visibility: "feed",
 	}
-	data, _ := json.Marshal(ev)
+	data, _ := json.Marshal(preExisting)
 	tmp.Write(append(data, '\n'))
 	tmp.Close()
 	os.Rename(tmp.Name(), feedPath)
 
+	// Give Follow time to detect the rotation (at least one ticker interval).
+	time.Sleep(600 * time.Millisecond)
+
 	// Write new events after truncation (appended to new inode).
-	time.Sleep(100 * time.Millisecond)
 	for i := 0; i < 3; i++ {
 		logger.Emit("post_truncation", "sol", "autarch", "feed", nil)
 	}
 
-	// Should receive the "survived" event plus the 3 post-truncation events.
+	// Should receive only the 3 post-truncation events.
+	// The pre_existing event must NOT be re-delivered.
 	var received []Event
 	timeout := time.After(5 * time.Second)
-	for len(received) < 4 {
+	for len(received) < 3 {
 		select {
 		case ev := <-ch:
 			received = append(received, ev)
@@ -365,18 +371,19 @@ func TestFollowSurvivesTruncation(t *testing.T) {
 		}
 	}
 
-	foundSurvived := false
+	for _, ev := range received {
+		if ev.Type == "pre_existing" {
+			t.Error("pre_existing event from rotated file must not be re-delivered")
+		}
+		if ev.Type == "post_truncation" {
+			// expected
+		}
+	}
 	postCount := 0
 	for _, ev := range received {
-		if ev.Type == "survived" {
-			foundSurvived = true
-		}
 		if ev.Type == "post_truncation" {
 			postCount++
 		}
-	}
-	if !foundSurvived {
-		t.Error("expected to receive 'survived' event from truncated file")
 	}
 	if postCount != 3 {
 		t.Errorf("expected 3 post_truncation events, got %d", postCount)

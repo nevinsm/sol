@@ -126,9 +126,18 @@ opened:
 				if err != nil {
 					continue // file may be temporarily unavailable during rename
 				}
+				// Seek to end of the new file so we only deliver events written
+				// after rotation. Without this, events already in the new file
+				// (e.g. the tail kept by chronicle's truncateOnce) would be
+				// re-delivered to the caller.
+				newOffset, err := newF.Seek(0, io.SeekEnd)
+				if err != nil {
+					newF.Close()
+					continue
+				}
 				f.Close()
 				f = newF
-				offset = 0
+				offset = newOffset
 			}
 
 			info, err := f.Stat()
