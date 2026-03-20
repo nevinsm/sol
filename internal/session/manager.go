@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/protocol"
 )
 
@@ -244,7 +245,7 @@ func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, 
 		_ = m.Stop(name, true)
 		return fmt.Errorf("failed to marshal session metadata: %w", err)
 	}
-	if err := os.WriteFile(metadataPath(name), data, 0o644); err != nil {
+	if err := fileutil.AtomicWrite(metadataPath(name), data, 0o644); err != nil {
 		_ = m.Stop(name, true)
 		return fmt.Errorf("failed to write session metadata for %q: %w", name, err)
 	}
@@ -563,7 +564,7 @@ func (m *Manager) Cycle(name, workdir, cmd string, env map[string]string, role, 
 	if err != nil {
 		return fmt.Errorf("failed to marshal session metadata: %w", err)
 	}
-	if err := os.WriteFile(metadataPath(name), data, 0o644); err != nil {
+	if err := fileutil.AtomicWrite(metadataPath(name), data, 0o644); err != nil {
 		return fmt.Errorf("failed to write session metadata for %q: %w", name, err)
 	}
 
