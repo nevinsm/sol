@@ -195,8 +195,8 @@ func detectWorldFromCwd() string {
 		return ""
 	}
 	candidate := parts[0]
-	// Skip internal directories.
-	if candidate == ".store" || candidate == ".runtime" || candidate == ".accounts" || candidate == ".claude-defaults" {
+	// Skip any name that is not a valid world name (includes reserved names and internal directories).
+	if ValidateWorldName(candidate) != nil {
 		return ""
 	}
 	return candidate

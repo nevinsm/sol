@@ -35,7 +35,7 @@ func Load(overridePath string) (*Pool, error) {
 		// If file doesn't exist, fall back to embedded default (no error).
 	}
 
-	names := parseNames(source)
+	names := parseNames(source, overridePath)
 	return &Pool{names: names}, nil
 }
 
@@ -64,15 +64,18 @@ func (p *Pool) AllocateName(usedNames []string) (string, error) {
 }
 
 // parseNames splits text into names, skipping blank lines, comments, and invalid names.
-func parseNames(text string) []string {
+// If overridePath is non-empty, invalid names produce a warning to stderr.
+func parseNames(text, overridePath string) []string {
 	var names []string
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		// Silently skip invalid names from override files.
 		if !validAgentNameRe.MatchString(line) {
+			if overridePath != "" {
+				fmt.Fprintf(os.Stderr, "namepool: skipping invalid name %q in %s\n", line, overridePath)
+			}
 			continue
 		}
 		names = append(names, line)
