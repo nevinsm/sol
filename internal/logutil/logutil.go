@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"path/filepath"
 	"syscall"
 )
 
@@ -14,15 +15,17 @@ import (
 const DefaultMaxLogSize int64 = 10 * 1024 * 1024
 
 // TruncateIfNeeded checks if the file at path exceeds maxBytes and, if so,
-// truncates it in place, keeping the tail portion. Returns true if truncation
+// rotates it in place, keeping the tail portion. Returns true if truncation
 // occurred. Safe to call on files held open by other processes with O_APPEND.
 //
-// The algorithm is copytruncate-style: read → compute tail → flock → truncate
-// → write back → unlock. All daemon logs are opened with O_APPEND, so after
-// truncation the daemon's next write atomically seeks to end-of-file and
-// appends. There is a small window where log lines written between read and
-// truncate are lost — the standard copytruncate tradeoff, acceptable for
-// operational log data.
+// The algorithm uses an atomic rename to prevent data loss: read → compute
+// tail → flock → write tail to temp file → sync → rename temp over original →
+// unlock. If the process is killed before the rename, the original is
+// untouched. After the rename, the tail is durable. All daemon logs are opened
+// with O_APPEND, so after the rename the daemon's next write atomically seeks
+// to end-of-file and appends to the new file. There is a small window where
+// log lines written between read and rename are lost — the standard
+// copytruncate tradeoff, acceptable for operational log data.
 func TruncateIfNeeded(path string, maxBytes int64) (bool, error) {
 	// 1. Stat the file.
 	info, err := os.Stat(path)
@@ -82,22 +85,42 @@ func TruncateIfNeeded(path string, maxBytes int64) (bool, error) {
 		return false, nil
 	}
 
-	// 5. Truncate the file to 0.
-	if err := f.Truncate(0); err != nil {
+	// 5. Write the tail to a temp file in the same directory, then atomically
+	// rename it over the original. This prevents permanent data loss if the
+	// process is killed between write and rename — before rename completes the
+	// original is untouched; after rename completes the tail is durable.
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".logrotate-*.tmp")
+	if err != nil {
+		return false, err
+	}
+	tmpPath := tmp.Name()
+	// Clean up the temp file on any failure before the rename commits.
+	committed := false
+	defer func() {
+		if !committed {
+			tmp.Close()
+			os.Remove(tmpPath) //nolint:errcheck
+		}
+	}()
+
+	if _, err := tmp.Write(tail); err != nil {
+		return false, err
+	}
+	if err := tmp.Sync(); err != nil {
+		return false, err
+	}
+	if err := tmp.Close(); err != nil {
 		return false, err
 	}
 
-	// Seek to beginning so the write lands at offset 0.
-	if _, err := f.Seek(0, 0); err != nil {
+	// 6. Atomic rename — replace the original with the temp file.
+	if err := os.Rename(tmpPath, path); err != nil {
 		return false, err
 	}
+	committed = true
 
-	// 6. Write the tail back.
-	if _, err := f.Write(tail); err != nil {
-		return false, err
-	}
-
-	// 7. Flock released by deferred call.
+	// 7. Flock released by deferred call (on the now-unlinked original fd).
 	// 8. Return true — truncation occurred.
 	return true, nil
 }
