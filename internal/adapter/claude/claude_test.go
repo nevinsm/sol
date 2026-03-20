@@ -464,8 +464,10 @@ func TestBuildCommandSOLSessionCommandOverride(t *testing.T) {
 
 func TestCredentialEnvOAuthToken(t *testing.T) {
 	a := newAdapter()
-	env := a.CredentialEnv(adapter.Credential{Type: "oauth_token", Token: "my-token"})
-
+	env, err := a.CredentialEnv(adapter.Credential{Type: "oauth_token", Token: "my-token"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if v, ok := env["CLAUDE_CODE_OAUTH_TOKEN"]; !ok || v != "my-token" {
 		t.Errorf("expected CLAUDE_CODE_OAUTH_TOKEN=my-token, got %v", env)
 	}
@@ -476,8 +478,10 @@ func TestCredentialEnvOAuthToken(t *testing.T) {
 
 func TestCredentialEnvAPIKey(t *testing.T) {
 	a := newAdapter()
-	env := a.CredentialEnv(adapter.Credential{Type: "api_key", Token: "sk-abc"})
-
+	env, err := a.CredentialEnv(adapter.Credential{Type: "api_key", Token: "sk-abc"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if v, ok := env["ANTHROPIC_API_KEY"]; !ok || v != "sk-abc" {
 		t.Errorf("expected ANTHROPIC_API_KEY=sk-abc, got %v", env)
 	}
@@ -488,9 +492,12 @@ func TestCredentialEnvAPIKey(t *testing.T) {
 
 func TestCredentialEnvUnknown(t *testing.T) {
 	a := newAdapter()
-	env := a.CredentialEnv(adapter.Credential{Type: "unknown", Token: "val"})
+	env, err := a.CredentialEnv(adapter.Credential{Type: "unknown", Token: "val"})
+	if err == nil {
+		t.Error("expected error for unknown credential type, got nil")
+	}
 	if len(env) != 0 {
-		t.Errorf("expected empty map for unknown credential type, got %v", env)
+		t.Errorf("expected nil/empty map for unknown credential type, got %v", env)
 	}
 }
 

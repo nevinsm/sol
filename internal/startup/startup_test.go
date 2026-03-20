@@ -100,9 +100,9 @@ func (m *mockRuntimeAdapter) BuildCommand(ctx adapter.CommandContext) string {
 	return m.buildCmdResult
 }
 
-func (m *mockRuntimeAdapter) CredentialEnv(cred adapter.Credential) map[string]string {
+func (m *mockRuntimeAdapter) CredentialEnv(cred adapter.Credential) (map[string]string, error) {
 	m.calls = append(m.calls, "CredentialEnv")
-	return map[string]string{"ANTHROPIC_API_KEY": "test-key"}
+	return map[string]string{"ANTHROPIC_API_KEY": "test-key"}, nil
 }
 
 func (m *mockRuntimeAdapter) TelemetryEnv(port int, agent, world, activeWrit string) map[string]string {
