@@ -29,7 +29,9 @@ type RuntimeAdapter interface {
 	BuildCommand(ctx CommandContext) string
 
 	// CredentialEnv returns env vars for the given credential (e.g. ANTHROPIC_API_KEY).
-	CredentialEnv(cred Credential) map[string]string
+	// Returns an error if the credential type is unrecognized, so that Launch can
+	// abort before creating a tmux session that would immediately fail authentication.
+	CredentialEnv(cred Credential) (map[string]string, error)
 
 	// TelemetryEnv returns env vars for OTel telemetry.
 	// Returns empty map when port <= 0 (telemetry disabled).

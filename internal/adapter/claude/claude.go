@@ -266,14 +266,17 @@ func (a *Adapter) BuildCommand(ctx adapter.CommandContext) string {
 // CredentialEnv returns the environment variable map for the given credential.
 //   - "oauth_token" → CLAUDE_CODE_OAUTH_TOKEN
 //   - "api_key"     → ANTHROPIC_API_KEY
-func (a *Adapter) CredentialEnv(cred adapter.Credential) map[string]string {
+//
+// Returns an error for unrecognized credential types so that the caller can
+// abort startup before creating a tmux session that would fail authentication.
+func (a *Adapter) CredentialEnv(cred adapter.Credential) (map[string]string, error) {
 	switch cred.Type {
 	case "oauth_token":
-		return map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": cred.Token}
+		return map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": cred.Token}, nil
 	case "api_key":
-		return map[string]string{"ANTHROPIC_API_KEY": cred.Token}
+		return map[string]string{"ANTHROPIC_API_KEY": cred.Token}, nil
 	default:
-		return map[string]string{}
+		return nil, fmt.Errorf("unrecognized credential type %q — no credentials set; session will fail authentication", cred.Type)
 	}
 }
 

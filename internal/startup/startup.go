@@ -310,7 +310,11 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 
 	// Inject credential env vars.
 	cred := adapter.Credential{Type: tok.Type, Token: tok.Token}
-	for k, v := range a.CredentialEnv(cred) {
+	credEnv, err := a.CredentialEnv(cred)
+	if err != nil {
+		return "", fmt.Errorf("startup: %w", err)
+	}
+	for k, v := range credEnv {
 		env[k] = v
 	}
 
