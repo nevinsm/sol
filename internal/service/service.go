@@ -194,7 +194,8 @@ func Restart() error {
 }
 
 // Status prints systemctl --user status for all sol units.
-// Returns an error only if systemctl itself fails to execute.
+// Returns nil for running (exit 0) and inactive (exit 3) units.
+// Returns an error for failed (exit 1) or not-found (exit 4) units.
 func Status() error {
 	args := []string{"--user", "status", "--no-pager"}
 	for _, comp := range Components {
@@ -204,11 +205,19 @@ func Status() error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
-	// systemctl status exits non-zero when units are inactive; ignore that.
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			_ = exitErr
-			return nil
+			switch exitErr.ExitCode() {
+			case 3:
+				// inactive — not an error
+				return nil
+			case 1:
+				return fmt.Errorf("one or more systemd units are in a failed state")
+			case 4:
+				return fmt.Errorf("one or more systemd units were not found")
+			default:
+				return fmt.Errorf("systemctl status exited with code %d", exitErr.ExitCode())
+			}
 		}
 		return fmt.Errorf("failed to run systemctl status: %w", err)
 	}
