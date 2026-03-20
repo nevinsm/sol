@@ -23,7 +23,7 @@ const (
 type InboxItem struct {
 	ID          string
 	Type        ItemType
-	Priority    int    // 1 = highest (P1), 2, 3
+	Priority    int    // 1 = highest (P1), 2, 3, 4
 	Source      string // escalation source or message sender
 	Description string // escalation description or message subject
 	CreatedAt   time.Time
@@ -57,7 +57,7 @@ func escalationPriority(severity string) int {
 	case "medium":
 		return 3
 	case "low":
-		return 3
+		return 4
 	default:
 		return 3
 	}
