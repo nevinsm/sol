@@ -56,7 +56,7 @@ test-e2e: build
 	bin/sol session list && \
 	bin/sol writ status $$ITEM --world=$$WORLD && \
 	bin/sol prime --world=$$WORLD --agent=$$AGENT && \
-	test -f $(SOL_TEST_HOME)/$$WORLD/outposts/$$AGENT/.tether && \
+	test -d $(SOL_TEST_HOME)/$$WORLD/outposts/$$AGENT/.tether && \
 	\
 	echo "=== E2E: resolve ===" && \
 	SOL_WORLD=$$WORLD SOL_AGENT=$$AGENT bin/sol resolve && \
@@ -64,7 +64,7 @@ test-e2e: build
 	echo "=== E2E: verify resolve ===" && \
 	bin/sol writ status $$ITEM --world=$$WORLD && \
 	bin/sol agent list --world=$$WORLD && \
-	test ! -f $(SOL_TEST_HOME)/$$WORLD/outposts/$$AGENT/.tether && \
+	test ! -d $(SOL_TEST_HOME)/$$WORLD/outposts/$$AGENT/.tether && \
 	\
 	echo "=== E2E: PASSED ==="
 
