@@ -423,6 +423,17 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 	}
 	defer agentLock.Release()
 
+	// Re-read writ state inside the locked section to avoid a TOCTOU race:
+	// a concurrent Cast may have tethered this writ between the pre-lock read
+	// at step 1 and the writ lock acquisition above.
+	item, err = worldStore.GetWrit(opts.WritID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-read writ %q: %w", opts.WritID, err)
+	}
+	if item.Status != "open" {
+		return nil, fmt.Errorf("writ %q has status %q, expected \"open\"", opts.WritID, item.Status)
+	}
+
 	// Re-read agent state inside the locked section to avoid a TOCTOU race:
 	// another concurrent Tether may have changed agent state between step 2
 	// and the lock acquisition above. The rollback at step 5 uses these

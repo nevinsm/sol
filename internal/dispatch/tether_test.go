@@ -1,11 +1,33 @@
 package dispatch
 
 import (
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
+
+// racingWorldStore wraps a real WorldStore and intercepts GetWrit.
+// On the Nth call (1-indexed), it updates the writ status to "tethered"
+// before returning, simulating a concurrent Cast completing between the
+// pre-lock and post-lock reads inside Tether.
+type racingWorldStore struct {
+	WorldStore
+	writID      string
+	injectAfter int32 // inject after this many GetWrit calls (atomic)
+	callCount   atomic.Int32
+}
+
+func (r *racingWorldStore) GetWrit(id string) (*store.Writ, error) {
+	count := int(r.callCount.Add(1))
+	// On the call number matching injectAfter, mutate the writ status first.
+	if id == r.writID && count == int(r.injectAfter) {
+		_ = r.WorldStore.UpdateWrit(id, store.WritUpdates{Status: "tethered", Assignee: "ember/other"})
+	}
+	return r.WorldStore.GetWrit(id)
+}
 
 // --- Tether tests ---
 
@@ -527,5 +549,58 @@ func TestTetherAgentStateBeforeTetherWrite(t *testing.T) {
 	}
 	if item.Status != "tethered" {
 		t.Errorf("expected writ status 'tethered', got %q", item.Status)
+	}
+}
+
+// TestTetherRejectsWritTetheredBetweenReadAndLock verifies the TOCTOU fix:
+// if a concurrent Cast tethers a writ between Tether's pre-lock status check
+// and the writ lock acquisition, the post-lock re-read detects the stale state
+// and returns an error rather than double-tethering.
+func TestTetherRejectsWritTetheredBetweenReadAndLock(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	itemID, err := worldStore.CreateWrit("Race task", "Concurrent dispatch", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// racingWorldStore intercepts the 2nd GetWrit call (the post-lock re-read)
+	// and updates the writ status to "tethered" before returning it, simulating
+	// a concurrent Cast completing between the pre-lock check and lock acquisition.
+	racing := &racingWorldStore{
+		WorldStore:  worldStore,
+		writID:      itemID,
+		injectAfter: 2, // 1st call = pre-lock check (passes), 2nd = post-lock re-read (races)
+	}
+
+	_, err = Tether(TetherOpts{
+		AgentName: "Meridian",
+		WritID:    itemID,
+		World:     "ember",
+	}, racing, sphereStore, nil)
+
+	if err == nil {
+		t.Fatal("expected Tether to return an error when writ was tethered between reads, got nil")
+	}
+	if !strings.Contains(err.Error(), "expected \"open\"") {
+		t.Errorf("expected error about writ status, got: %v", err)
+	}
+
+	// Verify no tether file was written for Meridian.
+	if tether.IsTetheredTo("ember", "Meridian", itemID, "envoy") {
+		t.Error("tether file must not exist after failed Tether")
+	}
+
+	// Verify agent state was not changed (should still be idle).
+	agent, err := sphereStore.GetAgent("ember/Meridian")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("agent state must remain 'idle' after failed Tether, got %q", agent.State)
 	}
 }
