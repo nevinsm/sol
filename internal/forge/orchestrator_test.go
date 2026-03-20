@@ -681,6 +681,50 @@ func TestActOnResultConflict(t *testing.T) {
 	if !foundResolution {
 		t.Error("expected resolution task to be created for conflict result")
 	}
+
+	// Verify MR was released to "ready" (it is blocked by the resolution task,
+	// so it won't be immediately re-claimed).
+	phase := worldStore.phaseUpdates["mr-001"]
+	if phase != store.MRReady {
+		t.Errorf("MR phase = %q, want 'ready' after successful resolution task creation", phase)
+	}
+}
+
+// TestActOnResultConflictResolutionTaskFails verifies that when CreateResolutionTask
+// fails the MR is marked failed rather than released back to "ready". Releasing to
+// "ready" without a blocker task causes an infinite retry loop until MaxAttempts is
+// exhausted.
+func TestActOnResultConflictResolutionTaskFails(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	// Do NOT add the writ to worldStore.items — CreateResolutionTask will call
+	// GetWrit, fail to find it, and return an error.
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+	worldStore.mrs = []store.MergeRequest{*mr}
+
+	result := &ForgeResult{
+		Result:  "conflict",
+		Summary: "Merge conflicts in main.go",
+	}
+
+	state.actOnResult(context.Background(), mr, result, 1)
+
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+
+	// MR must be marked failed — not released to "ready".
+	phase := worldStore.phaseUpdates["mr-001"]
+	if phase != store.MRFailed {
+		t.Errorf("MR phase = %q, want 'failed' when CreateResolutionTask fails", phase)
+	}
+	if !strings.Contains(state.lastError, "merge conflict") {
+		t.Errorf("lastError = %q, should contain 'merge conflict'", state.lastError)
+	}
 }
 
 func TestActOnResultPushVerificationFails(t *testing.T) {
