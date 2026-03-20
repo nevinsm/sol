@@ -1096,9 +1096,17 @@ func (s *Prefect) getSentineledWorlds() map[string]bool {
 		}
 		// Check if sentinel process is alive via PID file.
 		pid := sentinel.ReadPID(w.World)
-		if pid > 0 && IsRunning(pid) {
-			worlds[w.World] = true
+		if pid <= 0 || !IsRunning(pid) {
+			continue
 		}
+		// Also require a fresh heartbeat. A hung-but-alive sentinel produces
+		// no heartbeats; treat it as not sentineling so agents can be respawned
+		// while checkSentinelHealth handles restarting the hung process.
+		hb, _ := sentinel.ReadHeartbeat(w.World)
+		if hb == nil || hb.IsStale(2*s.cfg.SentinelHeartbeatMax) {
+			continue
+		}
+		worlds[w.World] = true
 	}
 	return worlds
 }

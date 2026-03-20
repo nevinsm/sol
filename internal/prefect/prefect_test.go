@@ -158,11 +158,12 @@ func writeTestToken(t *testing.T, solHome string) {
 
 func testConfig() Config {
 	return Config{
-		HeartbeatInterval:  50 * time.Millisecond, // Fast for tests.
-		MassDeathThreshold: 3,
-		MassDeathWindow:    30 * time.Second,
-		DegradedCooldown:   5 * time.Minute,
-		ForgeHeartbeatMax:  5 * time.Minute,
+		HeartbeatInterval:    50 * time.Millisecond, // Fast for tests.
+		MassDeathThreshold:   3,
+		MassDeathWindow:      30 * time.Second,
+		DegradedCooldown:     5 * time.Minute,
+		ForgeHeartbeatMax:    5 * time.Minute,
+		SentinelHeartbeatMax: 15 * time.Minute,
 	}
 }
 
@@ -693,6 +694,13 @@ func TestHeartbeatDefersToSentinel(t *testing.T) {
 	if err := sentinel.WritePID("haven", os.Getpid()); err != nil {
 		t.Fatalf("failed to write sentinel PID: %v", err)
 	}
+	// Write a fresh heartbeat so getSentineledWorlds considers this sentinel active.
+	if err := sentinel.WriteHeartbeat("haven", &sentinel.Heartbeat{
+		Timestamp: time.Now(),
+		Status:    "running",
+	}); err != nil {
+		t.Fatalf("failed to write sentinel heartbeat: %v", err)
+	}
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "haven", "outpost")
@@ -711,6 +719,51 @@ func TestHeartbeatDefersToSentinel(t *testing.T) {
 		if s == "sol-haven-Toast" {
 			t.Error("prefect should not respawn agents in sentineled worlds")
 		}
+	}
+}
+
+func TestHeartbeatRespawnsAgentWhenSentinelHung(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create a sentinel agent in working state with a live PID but a stale heartbeat
+	// (simulates a hung sentinel: process is alive but not writing heartbeats).
+	sphereStore.CreateAgent("sentinel", "haven", "sentinel")
+	sphereStore.UpdateAgentState("haven/sentinel", "working", "")
+	if err := sentinel.WritePID("haven", os.Getpid()); err != nil {
+		t.Fatalf("failed to write sentinel PID: %v", err)
+	}
+	// Write a heartbeat that is far in the past (beyond 2 * SentinelHeartbeatMax).
+	staleTime := time.Now().Add(-2 * cfg.SentinelHeartbeatMax - time.Minute)
+	if err := sentinel.WriteHeartbeat("haven", &sentinel.Heartbeat{
+		Timestamp: staleTime,
+		Status:    "running",
+	}); err != nil {
+		t.Fatalf("failed to write stale sentinel heartbeat: %v", err)
+	}
+
+	// Create a working agent with a dead session.
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.heartbeat()
+
+	// The agent SHOULD be respawned because the sentinel heartbeat is stale
+	// (hung sentinel — alive PID but no recent heartbeat).
+	started := mock.GetStarted()
+	found := false
+	for _, s := range started {
+		if s == "sol-haven-Toast" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("prefect should respawn agents when sentinel is hung (stale heartbeat despite live PID)")
 	}
 }
 
