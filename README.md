@@ -1,17 +1,27 @@
 # sol
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Run 10, 20, 30+ AI coding agents on a repository at the same time.
 
 Sol assigns work to agents, gives each one its own git worktree so they never step on each other, watches for stalls and crashes, merges completed work through quality gates, and recovers automatically when things break.
 
 It's a single Go binary backed by SQLite. No servers, no containers — just tmux sessions and the filesystem.
 
+## Why Sol
+
+- **Crash recovery** — agents keep running their tethered work if supervision dies; completed branches wait safely if the merge queue is down
+- **Quality gates** — every branch goes through automated validation before it lands
+- **Inspectability** — writs are SQLite rows, tethers are plain files, sessions are tmux; no black boxes
+- **Single binary** — no servers, no containers, no infrastructure beyond tmux and git
+- **Parallel isolation** — each agent gets its own git worktree; no conflicts, no stepping on each other
+
 ## Prerequisites
 
-- **Go 1.21+** (to build)
+- **Go 1.21+** (to build from source)
 - **tmux** (agent process containers)
 - **git** (worktrees, branching, merging)
-- **claude** CLI (AI agent sessions)
+- **claude** CLI — [Anthropic Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started)
 
 Run `sol doctor` after install to verify everything is in place.
 
@@ -62,24 +72,37 @@ Everything is inspectable. Writs live in SQLite — query them with `sqlite3`. T
 
 ## Concepts
 
+### Core
+
 | Concept | What it is |
 |---------|-----------|
 | **World** | A repository under management. Has its own database, agents, and worktrees. |
+| **Writ** | A unit of work assigned to an agent. Describes what needs to be done. |
 | **Agent** | A named identity (with work history and state) that runs in a tmux session. |
-| **Tether** | A directory with per-writ files that tells an agent what to work on. If the tether exists, the agent runs it. Survives crashes. |
 | **Cast** | Dispatch a writ: create worktree, write tether, start session. |
 | **Resolve** | Signal completion: push branch, update state, clear tether. |
+| **Forge** | Merge pipeline. Merges completed work through quality gates. |
+| **SOL_HOME** | Runtime root directory (env var, default `~/sol`). All state lives here. |
+
+### Supervision
+
+| Concept | What it is |
+|---------|-----------|
+| **Sentinel** | Per-world health monitor. Detects stalls and stuck agents. |
+| **Consul** | Sphere-level patrol. Recovers from failures across all worlds. |
+| **Prefect** | Top-level supervisor. Keeps sentinel, forge, and consul running. |
+
+### Advanced
+
+| Concept | What it is |
+|---------|-----------|
 | **Outpost** | An agent's workspace within a world (`$SOL_HOME/{world}/outposts/{agent}/`). |
 | **Envoy** | A persistent human-directed agent with its own worktree and brief (memory). |
 | **Governor** | A per-world coordinator that manages work distribution and strategy. |
-| **Sentinel** | Per-world health monitor. Detects stalls and stuck agents. |
-| **Forge** | Merge pipeline. Merges completed work through quality gates. |
-| **Consul** | Sphere-level patrol. Recovers from failures across all worlds. |
-| **Prefect** | Top-level supervisor. Keeps sentinel, forge, and consul running. |
 | **Caravan** | A batch of related writs dispatched as a group. |
 | **Brief** | An agent's persistent memory file (`.brief/memory.md`), maintained across sessions. |
 | **Managed Repo** | Sol's clone of your repository (`$SOL_HOME/{world}/repo/`). All worktrees branch from here. |
-| **SOL_HOME** | Runtime root directory (env var, default `~/sol`). All state lives here. |
+| **Tether** | A directory with per-writ files that tells an agent what to work on. If the tether exists, the agent runs it. Survives crashes. |
 
 ## Architecture
 
@@ -116,86 +139,9 @@ State on the filesystem:
 
 See [docs/cli.md](docs/cli.md) for the full CLI reference.
 
-## Project Structure
+## Contributing
 
-```
-sol/
-├── main.go                        Entry point
-├── Makefile                        build, test, install, clean
-├── cmd/                            Cobra command definitions
-│   ├── root.go                     Root command, version
-│   ├── init.go                     First-time setup (flag/interactive/guided)
-│   ├── doctor.go                   Prerequisite checks
-│   ├── world.go                    World lifecycle + sync
-│   ├── cast.go, prime.go, resolve.go  Dispatch pipeline
-│   ├── agent.go                    Agent management
-│   ├── writ.go, writ_dep.go        Writs and dependencies
-│   ├── session.go                  tmux session management
-│   ├── prefect.go                  Top-level orchestrator
-│   ├── forge.go                    Merge pipeline + toolbox
-│   ├── status.go                   World status
-│   ├── sentinel.go                 Per-world health monitor
-│   ├── envoy.go                    Persistent human-directed agents
-│   ├── governor.go                 Per-world coordinator
-│   ├── brief.go                    Brief injection hooks
-│   ├── feed.go, log_event.go       Event feed
-│   ├── chronicle.go                Event chronicle
-│   ├── mail.go                     Inter-agent messaging
-│   ├── workflow.go                 Workflow engine
-│   ├── caravan.go                  Batch dispatch
-│   ├── escalate.go, escalation.go  Escalation management
-│   ├── handoff.go                  Session continuity
-│   └── consul.go                   Sphere-level patrol
-├── internal/
-│   ├── config/                     SOL_HOME resolution, world config
-│   ├── store/                      SQLite: writs, agents, messages, escalations
-│   ├── session/                    tmux: start, stop, health, capture, inject
-│   ├── tether/                     Tether file read/write/clear
-│   ├── protocol/                   CLAUDE.md + tether script generation
-│   ├── namepool/                   Name generation
-│   ├── dispatch/                   Cast/prime/resolve core logic
-│   ├── prefect/                    Agent respawn, health checks
-│   ├── forge/                      Merge queue, quality gates
-│   ├── sentinel/                   Stall detection, AI assessment
-│   ├── status/                     World status gathering
-│   ├── events/                     JSONL event feed + chronicle
-│   ├── workflow/                   Directory-based state machine, workflows
-│   ├── escalation/                 Notifier interface, log/mail/webhook
-│   ├── handoff/                    Session continuity, capture/exec
-│   ├── consul/                     Sphere-level patrol, heartbeat
-│   ├── doctor/                     Prerequisite check engine
-│   ├── setup/                      Init flow, managed repo cloning
-│   ├── brief/                      Brief file management, size enforcement
-│   ├── envoy/                      Envoy lifecycle, worktree, hooks
-│   ├── governor/                   Governor lifecycle, hooks, world sync
-│   ├── worldexport/                World export operations
-│   └── worldsync/                  World sync operations
-├── test/integration/               End-to-end tests
-└── docs/
-    ├── manifesto.md                Design philosophy
-    ├── failure-modes.md            Crash recovery and degradation
-    ├── naming.md                   Naming glossary and migration reference
-    └── decisions/                  Architecture Decision Records
-```
-
-## Development
-
-```bash
-make build       # Build binary to bin/sol
-make test        # Run all unit tests
-make install     # Install to /usr/local/bin
-make clean       # Remove build artifacts
-```
-
-### Conventions
-
-- **Commits**: [Conventional Commits](https://www.conventionalcommits.org/) — `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`. Use scope when helpful: `feat(store): add label filtering`.
-- **Writ IDs**: `sol-` + 16 hex chars (e.g., `sol-a1b2c3d4e5f6a7b8`)
-- **Session names**: `sol-{world}-{agentName}` (e.g., `sol-myworld-Toast`)
-- **Timestamps**: RFC 3339 in UTC
-- **Error messages**: Include context — `"failed to open world database %q: %w"`
-- **SQLite connections**: Always set `journal_mode=WAL`, `busy_timeout=5000`, `foreign_keys=ON`
-- **World config**: `$SOL_HOME/{world}/world.toml` (per-world), `$SOL_HOME/sol.toml` (global)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, conventions, and architecture.
 
 ## Design Documents
 
@@ -205,4 +151,11 @@ make clean       # Remove build artifacts
 - [Principles](docs/principles.md) — Core design principles guiding sol's development.
 - [Workflows](docs/workflows.md) — Workflow definitions and usage patterns.
 - [Integration API](docs/integration-api.md) — Design sketch for stable CLI output and event webhooks.
+- [Configuration](docs/configuration.md) — world.toml and sol.toml reference.
+- [Operations](docs/operations.md) — Day-to-day operation guide.
+- [Troubleshooting](docs/troubleshooting.md) — Diagnosing and fixing common problems.
 - [Architecture Decision Records](docs/decisions/) — Records of significant architectural choices and the reasoning behind them.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
