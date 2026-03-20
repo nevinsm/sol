@@ -207,8 +207,20 @@ func Validate(m *Manifest, workflowDir ...string) error {
 	}
 
 	// All other types (workflow, agent, etc.) validate steps.
-	if len(m.Templates) > 0 && m.Type != "" {
+	if len(m.Templates) > 0 && m.Type != "expansion" {
 		return fmt.Errorf("type %q must not contain [[template]] entries", m.Type)
+	}
+	// Validate instructions files exist when workflow directory is known.
+	if len(workflowDir) > 0 && workflowDir[0] != "" {
+		dir := workflowDir[0]
+		for _, step := range m.Steps {
+			if step.Instructions != "" {
+				path := filepath.Join(dir, step.Instructions)
+				if _, err := os.Stat(path); err != nil {
+					return fmt.Errorf("step %q instructions file %q not found", step.ID, step.Instructions)
+				}
+			}
+		}
 	}
 	return validateDAG(m.Steps, "step")
 }

@@ -4146,3 +4146,59 @@ func TestValidateConvoyInstructionsFileExists(t *testing.T) {
 		t.Fatalf("Validate() should pass when instructions file exists: %v", err)
 	}
 }
+
+func TestValidateWorkflowStepInstructionsFileNotFound(t *testing.T) {
+	dir := t.TempDir()
+	m := &Manifest{
+		Steps: []StepDef{
+			{ID: "s1", Title: "Step 1", Instructions: "steps/missing.md"},
+		},
+	}
+
+	// Without dir, validation should pass (instructions paths not checked).
+	if err := Validate(m); err != nil {
+		t.Fatalf("Validate() without dir should pass: %v", err)
+	}
+
+	// With dir, validation should fail for missing instructions file.
+	err := Validate(m, dir)
+	if err == nil {
+		t.Fatal("Validate() with dir should fail for missing instructions file")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "s1") {
+		t.Errorf("error should mention step ID 's1', got: %v", err)
+	}
+}
+
+func TestValidateWorkflowStepInstructionsFileExists(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "steps"), 0o755)
+	os.WriteFile(filepath.Join(dir, "steps", "01-init.md"), []byte("# init"), 0o644)
+
+	m := &Manifest{
+		Steps: []StepDef{
+			{ID: "s1", Title: "Step 1", Instructions: "steps/01-init.md"},
+		},
+	}
+
+	if err := Validate(m, dir); err != nil {
+		t.Fatalf("Validate() should pass when instructions file exists: %v", err)
+	}
+}
+
+func TestValidateDefaultTypeWithTemplates(t *testing.T) {
+	// type = "" (default workflow) with [[template]] entries should be rejected.
+	m := &Manifest{
+		Templates: []Template{{ID: "t1", Title: "Template 1"}},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for default type with templates")
+	}
+	if got := err.Error(); got != `type "" must not contain [[template]] entries` {
+		t.Errorf("error: got %q", got)
+	}
+}
