@@ -53,6 +53,7 @@ func (r *Reader) Read(opts ReadOpts) ([]Event, error) {
 
 	var events []Event
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 1 MB max, matching trace.go
 	for scanner.Scan() {
 		var ev Event
 		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
@@ -144,6 +145,7 @@ opened:
 			}
 
 			scanner := bufio.NewScanner(f)
+			scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 1 MB max, matching trace.go
 			for scanner.Scan() {
 				var ev Event
 				if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
