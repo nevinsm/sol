@@ -6,20 +6,21 @@ For each fix designed in the previous step:
 
 1. Create a writ:
    ```
-   sol store create --title="<fix title>" \
+   sol writ create --title="<fix title>" \
      --description="<what to fix, where, why, how>" \
      --world=$SOL_WORLD
    ```
 
 2. Set up dependencies between items where needed:
    ```
-   sol store dep add <item_id> --needs <dependency_id>
+   sol writ dep add <from-id> <to-id>
    ```
 
 3. Commission a drydocked caravan grouping all fix items:
    ```
-   sol caravan commission --name "<descriptive name>" \
-     --items <id1>,<id2>,... --drydock
+   sol caravan create "<descriptive name>"
+   sol caravan add <caravan-id> <id1> <id2> ...
+   sol caravan commission <caravan-id>
    ```
 
 4. Report the caravan ID so the operator can review and launch it:
