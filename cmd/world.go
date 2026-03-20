@@ -850,6 +850,13 @@ With --force, also stops all outpost agent sessions immediately:
 				}); err != nil {
 					fmt.Fprintf(os.Stderr, "  warning: failed to return writ %s to open: %v\n", agent.ActiveWrit, err)
 				}
+
+				// Auto-resolve linked escalations (best-effort) — writ is abandoned.
+				if escs, escErr := sphereStore.ListEscalationsBySourceRef("writ:" + agent.ActiveWrit); escErr == nil {
+					for _, esc := range escs {
+						_ = sphereStore.ResolveEscalation(esc.ID)
+					}
+				}
 			}
 
 			// Set agent to idle, clear active_writ.
