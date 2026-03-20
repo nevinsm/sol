@@ -36,12 +36,13 @@ func runDash(cmd *cobra.Command, args []string) error {
 	mgr := session.New()
 
 	cfg := dash.Config{
-		SphereStore:  sphereStore,
-		WorldOpener:  gatedWorldOpener,
-		SessionCheck: mgr,
-		CaravanStore: sphereStore,
-		SessionMgr:   mgr,
-		SOLHome:      config.Home(),
+		SphereStore:      sphereStore,
+		EscalationLister: sphereStore,
+		WorldOpener:      gatedWorldOpener,
+		SessionCheck:     mgr,
+		CaravanStore:     sphereStore,
+		SessionMgr:       mgr,
+		SOLHome:          config.Home(),
 	}
 
 	// Determine view mode from args or auto-detection.
