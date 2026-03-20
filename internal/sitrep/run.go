@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -36,12 +35,12 @@ func Run(ctx context.Context, cfg config.SitrepSection, prompt string) (string, 
 	cmd := exec.CommandContext(ctx, assessCmd, "-p", "--model", model)
 	cmd.Stdin = strings.NewReader(prompt)
 
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = io.Discard
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("sitrep assessment failed: %w", err)
+		return "", fmt.Errorf("sitrep assessment failed: %w\n%s", err, strings.TrimSpace(stderr.String()))
 	}
 
 	return strings.TrimSpace(stdout.String()), nil
