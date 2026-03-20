@@ -2,6 +2,7 @@ package governor
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/nevinsm/sol/internal/brief"
@@ -67,6 +68,11 @@ func Stop(world string, sphereStore StopStore, mgr StopManager) error {
 	//    Falls back to immediate kill if no .brief/ directory exists.
 	if mgr.Exists(sessName) {
 		if err := brief.GracefulStop(sessName, BriefDir(world), mgr); err != nil {
+			// Best-effort: update agent state to idle even when stop fails.
+			// The session may already be dead; keeping state="working" triggers spurious Prefect respawns.
+			if stateErr := sphereStore.UpdateAgentState(agentID, store.AgentIdle, existing.ActiveWrit); stateErr != nil {
+				fmt.Fprintf(os.Stderr, "governor stop: failed to update agent state after stop error: %v\n", stateErr)
+			}
 			return fmt.Errorf("failed to stop governor for world %q: %w", world, err)
 		}
 	}

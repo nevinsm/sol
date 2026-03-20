@@ -110,6 +110,15 @@ var envoyStopCmd = &cobra.Command{
 			return err
 		}
 
+		// Hold the agent lock to prevent a concurrent Prefect respawn from racing
+		// with the Exists→stop sequence inside envoy.Stop (TOCTOU guard).
+		agentID := world + "/" + name
+		agentLock, err := dispatch.AcquireAgentLock(agentID)
+		if err != nil {
+			return fmt.Errorf("failed to stop envoy: %w", err)
+		}
+		defer agentLock.Release()
+
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return fmt.Errorf("failed to open sphere store: %w", err)
@@ -143,6 +152,15 @@ var envoyRestartCmd = &cobra.Command{
 			return err
 		}
 
+		// Hold the agent lock for the stop phase to prevent a concurrent Prefect
+		// respawn from racing with the Exists→stop sequence (TOCTOU guard).
+		agentID := world + "/" + name
+		agentLock, err := dispatch.AcquireAgentLock(agentID)
+		if err != nil {
+			return fmt.Errorf("failed to restart envoy: %w", err)
+		}
+		defer agentLock.Release() // safety: release if stopFn is never called
+
 		sessName := config.SessionName(world, name)
 		mgr := session.New()
 
@@ -150,6 +168,7 @@ var envoyRestartCmd = &cobra.Command{
 		return restartSession(mgr, sessName, "envoy",
 			fmt.Sprintf("Stopped envoy %q in world %q", name, world),
 			func() error {
+				agentLock.Release() // early release after stop, before start
 				sphereStore, err := store.OpenSphere()
 				if err != nil {
 					return err
@@ -315,6 +334,15 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 		if err != nil {
 			return fmt.Errorf("failed to resolve source repo: %w", err)
 		}
+
+		// Hold the agent lock to prevent a concurrent Prefect respawn from racing
+		// with the Exists→stop sequence inside envoy.Delete (TOCTOU guard).
+		agentID := envoyDeleteWorld + "/" + name
+		agentLock, err := dispatch.AcquireAgentLock(agentID)
+		if err != nil {
+			return fmt.Errorf("failed to delete envoy: %w", err)
+		}
+		defer agentLock.Release()
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {

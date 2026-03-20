@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
@@ -75,6 +76,15 @@ var governorStopCmd = &cobra.Command{
 			return err
 		}
 
+		// Hold the agent lock to prevent a concurrent Prefect respawn from racing
+		// with the Exists→stop sequence inside governor.Stop (TOCTOU guard).
+		agentID := world + "/governor"
+		agentLock, err := dispatch.AcquireAgentLock(agentID)
+		if err != nil {
+			return fmt.Errorf("failed to stop governor: %w", err)
+		}
+		defer agentLock.Release()
+
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return err
@@ -106,6 +116,15 @@ var governorRestartCmd = &cobra.Command{
 			return err
 		}
 
+		// Hold the agent lock for the stop phase to prevent a concurrent Prefect
+		// respawn from racing with the Exists→stop sequence (TOCTOU guard).
+		agentID := world + "/governor"
+		agentLock, err := dispatch.AcquireAgentLock(agentID)
+		if err != nil {
+			return fmt.Errorf("failed to restart governor: %w", err)
+		}
+		defer agentLock.Release() // safety: release if stopFn is never called
+
 		sessName := config.SessionName(world, "governor")
 		mgr := session.New()
 
@@ -113,6 +132,7 @@ var governorRestartCmd = &cobra.Command{
 		return restartSession(mgr, sessName, "governor",
 			fmt.Sprintf("Stopped governor for world %q", world),
 			func() error {
+				agentLock.Release() // early release after stop, before start
 				sphereStore, err := store.OpenSphere()
 				if err != nil {
 					return err
