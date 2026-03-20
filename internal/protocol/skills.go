@@ -51,9 +51,11 @@ var roleSkillsMap = map[string][]string{
 }
 
 // RoleSkills returns the skill names for a given role.
+// If the role is not recognized, it logs a warning to stderr and returns nil.
 func RoleSkills(role string) []string {
 	skills, ok := roleSkillsMap[role]
 	if !ok {
+		fmt.Fprintf(os.Stderr, "skills: unknown role %q — no skills installed\n", role)
 		return nil
 	}
 	// Return a copy to prevent mutation.
