@@ -19,14 +19,18 @@ import (
 
 // mockSessionManager tracks which sessions are "alive" and records starts/stops.
 type mockSessionManager struct {
-	alive   map[string]bool
-	started []string // session names that were started
-	stopped []string // session names that were stopped
-	listErr error    // if set, List() returns this error
+	alive     map[string]bool
+	createdAt map[string]time.Time // per-session tmux creation time; defaults to time.Now() if absent
+	started   []string             // session names that were started
+	stopped   []string             // session names that were stopped
+	listErr   error                // if set, List() returns this error
 }
 
 func newMockSessions() *mockSessionManager {
-	return &mockSessionManager{alive: make(map[string]bool)}
+	return &mockSessionManager{
+		alive:     make(map[string]bool),
+		createdAt: make(map[string]time.Time),
+	}
 }
 
 func (m *mockSessionManager) Exists(name string) bool {
@@ -39,9 +43,14 @@ func (m *mockSessionManager) List() ([]session.SessionInfo, error) {
 	}
 	var infos []session.SessionInfo
 	for name := range m.alive {
+		created, ok := m.createdAt[name]
+		if !ok {
+			created = time.Now()
+		}
 		infos = append(infos, session.SessionInfo{
 			Name:      name,
-			StartedAt: time.Now().Add(-1 * time.Hour),
+			StartedAt: created,
+			CreatedAt: created,
 			Alive:     true,
 		})
 	}
@@ -1433,16 +1442,15 @@ func TestDetectOrphanedSessionsKilledAfterThreshold(t *testing.T) {
 
 	sessions := newMockSessions()
 	sessions.alive["sol-"+worldName+"-GhostAgent"] = true
+	// Simulate the session having been created 31 minutes ago (past the grace period).
+	sessions.createdAt["sol-"+worldName+"-GhostAgent"] = time.Now().Add(-31 * time.Minute)
 
 	cfg := Config{SolHome: config.Home()}
 	d := New(cfg, sphereStore, sessions, nil, nil)
 
-	// First patrol: detect orphan, start tracking.
+	// First patrol: detect orphan, start tracking (count=1; grace period already
+	// expired but consecutive threshold not yet reached).
 	d.detectOrphanedSessions(context.Background())
-
-	// Simulate the grace period having passed by backdating first-seen.
-	entry := d.orphanedSessions["sol-"+worldName+"-GhostAgent"]
-	entry.firstSeen = time.Now().Add(-31 * time.Minute)
 
 	// Second patrol: grace period expired, count=2 → should be stopped.
 	stopped, err := d.detectOrphanedSessions(context.Background())
