@@ -39,16 +39,22 @@ func BackupDatabase(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create backup file %q: %w", backupPath, err)
 	}
-	defer dst.Close()
 
 	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
 		os.Remove(backupPath)
 		return "", fmt.Errorf("failed to copy database to backup %q: %w", backupPath, err)
 	}
 
 	if err := dst.Sync(); err != nil {
+		dst.Close()
 		os.Remove(backupPath)
 		return "", fmt.Errorf("failed to sync backup file %q: %w", backupPath, err)
+	}
+
+	if err := dst.Close(); err != nil {
+		os.Remove(backupPath)
+		return "", fmt.Errorf("failed to close backup file %q: %w", backupPath, err)
 	}
 
 	return backupPath, nil
