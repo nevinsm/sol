@@ -570,8 +570,10 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	// Outpost agents are ephemeral — delete the record to reclaim the name.
 	// Persistent agents update state based on remaining tethers.
 	if role == "outpost" {
-		if err := sphereStore.DeleteAgent(agentID); err != nil {
-			return nil, fmt.Errorf("failed to delete agent %q: %w", agentID, err)
+		if _, getErr := sphereStore.GetAgent(agentID); getErr == nil {
+			if err := sphereStore.DeleteAgent(agentID); err != nil {
+				return nil, fmt.Errorf("failed to delete agent %q: %w", agentID, err)
+			}
 		}
 	} else {
 		// Persistent agent: determine remaining tethers after this resolve.
