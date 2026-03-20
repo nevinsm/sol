@@ -249,7 +249,7 @@ func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr
 // assessMergeSession runs AI assessment on a merge session's captured output.
 // Returns "progressing", "stuck", or "idle".
 func (s *patrolState) assessMergeSession(ctx context.Context, sessionName, output string, mr *store.MergeRequest) string {
-	prompt := buildMergeAssessmentPrompt(mr, output)
+	prompt := buildMergeAssessmentPrompt(mr, output, s.pcfg.MonitorInterval)
 
 	assessCtx, cancel := context.WithTimeout(ctx, s.pcfg.AssessTimeout)
 	defer cancel()
@@ -302,10 +302,10 @@ func normalizeAssessment(s string) string {
 }
 
 // buildMergeAssessmentPrompt builds the AI assessment prompt for a merge session.
-func buildMergeAssessmentPrompt(mr *store.MergeRequest, capturedOutput string) string {
+func buildMergeAssessmentPrompt(mr *store.MergeRequest, capturedOutput string, monitorInterval time.Duration) string {
 	return fmt.Sprintf(`You are monitoring a forge merge session in a multi-agent orchestration
 system. The session is executing a merge of branch %q (writ %s).
-The session output has not changed for 3 minutes. Analyze the output and
+The session output has not changed for %s. Analyze the output and
 determine the session's status.
 
 Session output (last %d lines):
@@ -323,7 +323,7 @@ Status meanings:
 - "progressing": Session is actively working (e.g., running tests, compiling,
   resolving conflicts). No action needed despite unchanged output.
 - "stuck": Session appears confused, looping, or unable to make progress.
-- "idle": Session appears to have finished or is not doing anything.`, mr.Branch, mr.WritID, monitorCaptureLines, capturedOutput)
+- "idle": Session appears to have finished or is not doing anything.`, mr.Branch, mr.WritID, monitorInterval, monitorCaptureLines, capturedOutput)
 }
 
 // cleanupSession stops the merge session, removes result and injection files,
