@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/doctor"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -154,7 +155,7 @@ func InstallExcludes(repoPath string) error {
 		updated = content + "\n" + excludeBlock
 	}
 
-	if err := os.WriteFile(excludePath, []byte(updated), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(excludePath, []byte(updated), 0o644); err != nil {
 		return fmt.Errorf("failed to write %s: %w", excludePath, err)
 	}
 	return nil

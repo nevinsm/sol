@@ -473,7 +473,7 @@ func EnsureClaudeDefaults() error {
 	// Write statusline.sh (always overwrite — it's a sol-managed script,
 	// not user-customizable content).
 	statuslinePath := filepath.Join(dir, "statusline.sh")
-	if err := os.WriteFile(statuslinePath, defaults.StatuslineSh, 0o755); err != nil {
+	if err := fileutil.AtomicWrite(statuslinePath, defaults.StatuslineSh, 0o755); err != nil {
 		return fmt.Errorf("failed to write statusline.sh: %w", err)
 	}
 
@@ -485,7 +485,7 @@ func EnsureClaudeDefaults() error {
 		"{{STATUSLINE_PATH}}",
 		statuslinePath,
 	)
-	if err := os.WriteFile(settingsPath, []byte(settingsContent), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(settingsPath, []byte(settingsContent), 0o644); err != nil {
 		return fmt.Errorf("failed to write settings.json: %w", err)
 	}
 
@@ -550,7 +550,7 @@ func seedClaudeSettings(agentConfigDir string) {
 	data = mergeEnabledPlugins(data)
 
 	dst := filepath.Join(agentConfigDir, "settings.json")
-	if err := os.WriteFile(dst, data, 0o644); err != nil {
+	if err := fileutil.AtomicWrite(dst, data, 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: seedClaudeSettings: failed to write settings.json: %v\n", err)
 	}
 
@@ -562,7 +562,7 @@ func seedClaudeSettings(agentConfigDir string) {
 		return
 	}
 	localDst := filepath.Join(agentConfigDir, "settings.local.json")
-	if err := os.WriteFile(localDst, localData, 0o644); err != nil {
+	if err := fileutil.AtomicWrite(localDst, localData, 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: seedClaudeSettings: failed to write settings.local.json: %v\n", err)
 	}
 }
