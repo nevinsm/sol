@@ -177,16 +177,22 @@ func (g *Git) CheckConflicts(source, target string) ([]string, error) {
 		// Check for unmerged files (conflict indicator).
 		conflicts, err := g.GetConflictingFiles()
 		if err == nil && len(conflicts) > 0 {
-			_ = g.AbortMerge()
+			if abortErr := g.AbortMerge(); abortErr != nil {
+				return nil, fmt.Errorf("conflicts detected but merge abort failed (repo may be in MERGE_HEAD state, consider re-cloning): %w", abortErr)
+			}
 			return conflicts, nil
 		}
-		// Some other merge error.
-		_ = g.AbortMerge()
+		// Some other merge error — attempt cleanup.
+		if abortErr := g.AbortMerge(); abortErr != nil {
+			return nil, fmt.Errorf("merge failed and merge abort failed (repo may be in MERGE_HEAD state, consider re-cloning): %w", abortErr)
+		}
 		return nil, mergeErr
 	}
 
 	// Merge succeeded (no conflicts) — reset to clean up.
-	_ = g.ResetHard("HEAD")
+	if err := g.ResetHard("HEAD"); err != nil {
+		return nil, fmt.Errorf("merge cleanup reset failed (staged changes may persist, consider re-cloning): %w", err)
+	}
 	return nil, nil
 }
 
