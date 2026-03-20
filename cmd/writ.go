@@ -109,9 +109,10 @@ var writStatusRunE = func(cmd *cobra.Command, args []string) error {
 	if err := config.ValidateWritID(args[0]); err != nil {
 		return err
 	}
-	world, _ := cmd.Flags().GetString("world")
-	if world == "" {
-		return fmt.Errorf("--world is required")
+	worldFlag, _ := cmd.Flags().GetString("world")
+	world, err := config.ResolveWorld(worldFlag)
+	if err != nil {
+		return err
 	}
 	if err := config.RequireWorld(world); err != nil {
 		return err

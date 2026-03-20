@@ -88,7 +88,7 @@ Wake a sleeping world only when you need to query its governor or dispatch writs
 | `sol governor stop --world=<world>` | Stop a governor session when done — do not leave idle sessions running |
 | `sol writ create --world=<world> --title="..." --description="..."` | Create a writ |
 | `sol writ list --world=<world>` | List writs in a world |
-| `sol writ status <id>` | Show writ detail |
+| `sol writ status <id> --world=<world>` | Show writ detail (SOL_WORLD env var is also consulted) |
 | `sol caravan create "name" <id> [<id>...] --world=<world>` | Create a caravan |
 | `sol caravan add <caravan-id> <id> --world=<world>` | Add item to caravan |
 | `sol caravan list` | List all caravans |
