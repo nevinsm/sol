@@ -343,6 +343,18 @@ type patrolState struct {
 func (s *patrolState) patrol(ctx context.Context) {
 	s.patrolCount++
 
+	// 0. Recover — fix any MRs in "claimed" phase whose writ is "closed",
+	// which is the state left by a partial MarkMerged failure.
+	if n, err := s.forge.RecoverOrphanedMerged(); err != nil {
+		s.forge.logger.Error("orphaned MR recovery failed", "error", err)
+	} else if n > 0 {
+		s.fl.Log("RECOVER", fmt.Sprintf("recovered %d orphaned MR(s) to merged phase", n))
+	}
+
+	if ctx.Err() != nil {
+		return
+	}
+
 	// 1. Unblock — check if any blocked MRs can be unblocked.
 	unblocked, err := s.forge.CheckUnblocked()
 	if err != nil {

@@ -1066,3 +1066,181 @@ func TestMarkMergedMultipleWritLinkedEscalations(t *testing.T) {
 	}
 }
 
+// --- RecoverOrphanedMerged tests ---
+
+// TestRecoverOrphanedMergedFixesClaimedClosedWrit verifies that a claimed MR
+// whose writ is closed (the partial MarkMerged failure state) is recovered to
+// "merged" phase without dispatching a new session.
+func TestRecoverOrphanedMergedFixesClaimedClosedWrit(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID:     "sol-aaa11111",
+		Title:  "Test feature",
+		Status: store.WritClosed, // writ already closed — partial MarkMerged failure
+	}
+
+	sphereStore := newMockSphereStore()
+	// Pre-create an escalation for this MR (created by the partial failure).
+	sphereStore.CreateEscalation("low", "ember/forge",
+		"MR mr-00000001 not marked merged after writ sol-aaa11111 closed: database locked. The next forge patrol cycle will recover this automatically.",
+		"mr:mr-00000001")
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+	}
+
+	n, err := r.RecoverOrphanedMerged()
+	if err != nil {
+		t.Fatalf("RecoverOrphanedMerged() error: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("recovered = %d, want 1", n)
+	}
+
+	// Verify MR phase updated to merged.
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-00000001"]
+	worldStore.mu.Unlock()
+	if phase != store.MRMerged {
+		t.Errorf("MR phase = %q, want 'merged'", phase)
+	}
+
+	// Verify the escalation was resolved.
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	for _, esc := range sphereStore.escalations {
+		if esc.sourceRef == "mr:mr-00000001" && esc.status != "resolved" {
+			t.Errorf("escalation for mr-00000001 status = %q, want 'resolved'", esc.status)
+		}
+	}
+}
+
+// TestRecoverOrphanedMergedSkipsNonClosedWrit verifies that a claimed MR
+// whose writ is NOT closed is left untouched.
+func TestRecoverOrphanedMergedSkipsNonClosedWrit(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		// Claimed MR with writ in "working" — normal in-flight merge, leave it alone.
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+		// Claimed MR with writ in "done" — also leave it alone.
+		{ID: "mr-00000002", WritID: "sol-bbb22222", Branch: "outpost/Nova/sol-bbb22222", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Status: store.WritWorking}
+	worldStore.items["sol-bbb22222"] = &store.Writ{ID: "sol-bbb22222", Status: store.WritDone}
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worldStore:  worldStore,
+		sphereStore: newMockSphereStore(),
+		logger:      testLogger(),
+	}
+
+	n, err := r.RecoverOrphanedMerged()
+	if err != nil {
+		t.Fatalf("RecoverOrphanedMerged() error: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("recovered = %d, want 0 (no orphaned MRs)", n)
+	}
+
+	// Verify no phase updates were made.
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+	if len(worldStore.phaseUpdates) != 0 {
+		t.Errorf("expected 0 phase updates, got %d: %v", len(worldStore.phaseUpdates), worldStore.phaseUpdates)
+	}
+}
+
+// TestRecoverOrphanedMergedMultiple verifies that multiple orphaned MRs are
+// all recovered in a single call.
+func TestRecoverOrphanedMergedMultiple(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Phase: store.MRClaimed},
+		{ID: "mr-00000002", WritID: "sol-bbb22222", Phase: store.MRClaimed},
+		{ID: "mr-00000003", WritID: "sol-ccc33333", Phase: store.MRReady},   // ready — leave alone
+		{ID: "mr-00000004", WritID: "sol-ddd44444", Phase: store.MRClaimed}, // claimed but writ not closed
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Status: store.WritClosed}
+	worldStore.items["sol-bbb22222"] = &store.Writ{ID: "sol-bbb22222", Status: store.WritClosed}
+	worldStore.items["sol-ccc33333"] = &store.Writ{ID: "sol-ccc33333", Status: store.WritClosed}
+	worldStore.items["sol-ddd44444"] = &store.Writ{ID: "sol-ddd44444", Status: store.WritWorking}
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worldStore:  worldStore,
+		sphereStore: newMockSphereStore(),
+		logger:      testLogger(),
+	}
+
+	n, err := r.RecoverOrphanedMerged()
+	if err != nil {
+		t.Fatalf("RecoverOrphanedMerged() error: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("recovered = %d, want 2", n)
+	}
+
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+
+	// Both orphaned claimed MRs should be merged.
+	if phase := worldStore.phaseUpdates["mr-00000001"]; phase != store.MRMerged {
+		t.Errorf("mr-00000001 phase = %q, want 'merged'", phase)
+	}
+	if phase := worldStore.phaseUpdates["mr-00000002"]; phase != store.MRMerged {
+		t.Errorf("mr-00000002 phase = %q, want 'merged'", phase)
+	}
+
+	// Ready MR and claimed-but-non-closed MR should not be touched.
+	if _, ok := worldStore.phaseUpdates["mr-00000003"]; ok {
+		t.Error("mr-00000003 (ready) should not have phase updated")
+	}
+	if _, ok := worldStore.phaseUpdates["mr-00000004"]; ok {
+		t.Error("mr-00000004 (claimed, non-closed writ) should not have phase updated")
+	}
+}
+
+// TestRecoverOrphanedMergedNoOrphans verifies that when no orphaned MRs exist,
+// the function returns 0 and makes no changes.
+func TestRecoverOrphanedMergedNoOrphans(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Phase: store.MRReady},
+		{ID: "mr-00000002", WritID: "sol-bbb22222", Phase: store.MRMerged},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Status: store.WritOpen}
+	worldStore.items["sol-bbb22222"] = &store.Writ{ID: "sol-bbb22222", Status: store.WritClosed}
+
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worldStore:  worldStore,
+		sphereStore: newMockSphereStore(),
+		logger:      testLogger(),
+	}
+
+	n, err := r.RecoverOrphanedMerged()
+	if err != nil {
+		t.Fatalf("RecoverOrphanedMerged() error: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("recovered = %d, want 0", n)
+	}
+
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+	if len(worldStore.phaseUpdates) != 0 {
+		t.Errorf("expected 0 phase updates, got %d", len(worldStore.phaseUpdates))
+	}
+}
+
