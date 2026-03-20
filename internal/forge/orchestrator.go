@@ -422,10 +422,21 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 		s.fl.Log("CONFLICT", fmt.Sprintf("%s  %s", mr.Branch, truncate(result.Summary, 200)))
 		s.lastError = truncate(fmt.Sprintf("merge conflict: %s", mr.Branch), 200)
 		if _, err := s.forge.CreateResolutionTask(mr); err != nil {
-			s.forge.logger.Error("create-resolution failed", "mr", mr.ID, "error", err)
-		}
-		if err := s.forge.worldStore.UpdateMergeRequestPhase(mr.ID, "ready"); err != nil {
-			s.forge.logger.Error("release-conflict-claim failed", "mr", mr.ID, "error", err)
+			// Resolution task creation failed — do NOT release back to "ready".
+			// Without a blocker task the MR would be immediately re-claimed and
+			// hit the same conflict again, burning MaxAttempts in a tight loop.
+			// Mark it failed so an operator can investigate.
+			s.forge.logger.Error("create-resolution failed, marking MR failed", "mr", mr.ID, "error", err)
+			if markErr := s.forge.MarkFailed(mr.ID); markErr != nil {
+				s.forge.logger.Error("mark-failed after resolution task failure failed", "mr", mr.ID, "error", markErr)
+			}
+		} else {
+			// Resolution task created and MR is now blocked. Release from
+			// "claimed" back to "ready" so it can be re-attempted once the
+			// blocker task is resolved.
+			if err := s.forge.worldStore.UpdateMergeRequestPhase(mr.ID, "ready"); err != nil {
+				s.forge.logger.Error("release-conflict-claim failed", "mr", mr.ID, "error", err)
+			}
 		}
 		s.writeHeartbeat("idle", queueDepth-1)
 		s.emitPatrolEvent(queueDepth)
