@@ -231,11 +231,10 @@ func ResolveVariables(m *Manifest, provided map[string]string) (map[string]strin
 		if _, ok := resolved[name]; ok {
 			continue
 		}
-		if decl.Default != "" {
-			resolved[name] = decl.Default
-		} else if decl.Required {
+		if decl.Required {
 			return nil, fmt.Errorf("required variable %q not provided", name)
 		}
+		resolved[name] = decl.Default
 	}
 
 	return resolved, nil

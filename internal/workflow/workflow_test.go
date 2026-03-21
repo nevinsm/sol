@@ -161,6 +161,22 @@ func TestResolveVariables(t *testing.T) {
 	if err == nil {
 		t.Fatal("ResolveVariables() expected error for missing required variable")
 	}
+
+	// Optional variable with empty default resolves to empty string.
+	m2 := &Manifest{
+		Variables: map[string]VariableDecl{
+			"optional_var": {Required: false, Default: ""},
+		},
+	}
+	resolved, err = ResolveVariables(m2, map[string]string{})
+	if err != nil {
+		t.Fatalf("ResolveVariables() error for optional with empty default: %v", err)
+	}
+	if v, ok := resolved["optional_var"]; !ok {
+		t.Error("optional_var not present in resolved map")
+	} else if v != "" {
+		t.Errorf("optional_var: got %q, want %q", v, "")
+	}
 }
 
 func TestRenderStepInstructions(t *testing.T) {
