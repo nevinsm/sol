@@ -7,7 +7,7 @@ Review the packages listed in **Focus** for correctness in workflow execution, w
 ### Workflow (internal/workflow/)
 - **Manifest parsing**: Are workflow manifests parsed correctly? Mode field (inline/manifest)? Edge cases with optional fields?
 - **Three-tier resolution (ADR-0021)**: Does project → user → embedded fallback work correctly? Any tier that gets skipped?
-- **Variable substitution**: Are `{{variables}}` resolved correctly? What about undefined variables — error or silent empty string?
+- **Variable substitution**: Are template variables resolved correctly? What about undefined variables — error or silent empty string?
 - **Step execution**: Are dependencies respected? Can a step execute before its dependencies complete?
 - **State tracking**: Is workflow state (state.json) updated atomically? Can concurrent access corrupt it?
 - **Embedded workflows**: Are embedded manifests (internal/workflow/defaults/) correctly loaded via embed.FS?

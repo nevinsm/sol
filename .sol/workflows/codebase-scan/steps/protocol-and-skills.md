@@ -8,7 +8,7 @@ The protocol layer defines what agents see when they start — their identity, c
 
 ### Persona Generation
 - **Template accuracy**: Do generated personas match the agent role's actual capabilities? Any claims about commands that don't exist or behaviors that aren't implemented?
-- **Variable substitution**: Are all template variables resolved? Any raw `{{variable}}` leaking into agent prompts?
+- **Variable substitution**: Are all template variables resolved? Any raw double-brace tokens leaking into agent prompts?
 - **Role-specific content**: Does each role (outpost, envoy, governor, chancellor, forge-merge) get the correct persona? Any copy-paste errors between roles?
 
 ### Prompt Assembly
