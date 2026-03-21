@@ -509,7 +509,7 @@ func printShowJSON(m *workflow.Manifest, res *workflow.Resolution, validationErr
 		Name:        m.Name,
 		Type:        m.Type,
 		Description: m.Description,
-		Manifest:    m.Manifest,
+		Manifest:    m.Mode == "manifest",
 		Tier:        res.Tier,
 		Path:        res.Path,
 		Valid:       validationErr == nil,
@@ -552,8 +552,8 @@ func printShowHuman(m *workflow.Manifest, res *workflow.Resolution, validationEr
 	if m.Description != "" {
 		fmt.Printf("Description: %s\n", m.Description)
 	}
-	if m.Manifest {
-		fmt.Printf("Manifest:    true\n")
+	if m.Mode == "manifest" {
+		fmt.Printf("Mode:        manifest\n")
 	}
 	if validationErr != nil {
 		fmt.Printf("Validation:  INVALID — %s\n", validationErr)

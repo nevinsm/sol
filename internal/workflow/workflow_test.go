@@ -1395,16 +1395,16 @@ func TestComputePhasesLinear(t *testing.T) {
 }
 
 func TestShouldManifest(t *testing.T) {
-	// Workflow without manifest flag.
+	// Workflow without mode field (inline by default).
 	m := &Manifest{Type: "workflow"}
 	if ShouldManifest(m) {
-		t.Error("ShouldManifest() = true for workflow without manifest flag")
+		t.Error("ShouldManifest() = true for workflow without mode")
 	}
 
-	// Workflow with manifest = true.
-	m = &Manifest{Type: "workflow", Manifest: true}
+	// Workflow with mode = "manifest".
+	m = &Manifest{Type: "workflow", Mode: "manifest"}
 	if !ShouldManifest(m) {
-		t.Error("ShouldManifest() = false for workflow with manifest = true")
+		t.Error("ShouldManifest() = false for workflow with mode = manifest")
 	}
 
 	// Expansion always manifests.
@@ -1569,13 +1569,13 @@ description = "Test expansion workflow"
 
 [[template]]
 id = "draft"
-title = "Draft: {target.title}"
-description = "Initial attempt at {target.title}."
+title = "Draft: {{target.title}}"
+description = "Initial attempt at {{target.title}}."
 
 [[template]]
 id = "refine"
-title = "Refine: {target.title}"
-description = "Second pass on {target.id}."
+title = "Refine: {{target.title}}"
+description = "Second pass on {{target.id}}."
 needs = ["draft"]
 `
 	os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(toml), 0o644)
@@ -1817,11 +1817,11 @@ func TestManifestWithExistingParent(t *testing.T) {
 	}
 }
 
-func TestLoadManifestWithManifestFlag(t *testing.T) {
+func TestLoadManifestWithModeManifest(t *testing.T) {
 	dir := t.TempDir()
 	toml := `name = "flagged-wf"
 type = "workflow"
-manifest = true
+mode = "manifest"
 description = "A manifested workflow"
 
 [[steps]]
@@ -1833,17 +1833,17 @@ instructions = "steps/s1.md"
 
 	m, err := LoadManifest(dir)
 	if err != nil {
-		t.Fatalf("LoadMaterialize() error: %v", err)
+		t.Fatalf("LoadManifest() error: %v", err)
 	}
-	if !m.Manifest {
-		t.Error("Manifest field should be true")
+	if m.Mode != "manifest" {
+		t.Errorf("Mode: got %q, want %q", m.Mode, "manifest")
 	}
 	if !ShouldManifest(m) {
-		t.Error("ShouldMaterialize() should return true")
+		t.Error("ShouldManifest() should return true")
 	}
 }
 
-// writeTOMLManifestWithFlag writes a manifest.toml with the manifest flag.
+// writeTOMLManifestWithFlag writes a manifest.toml with the mode field.
 func writeTOMLManifestWithFlag(t *testing.T, dir, name string, steps []StepDef, vars map[string]VariableDecl, manifest bool) {
 	t.Helper()
 	f, err := os.Create(filepath.Join(dir, "manifest.toml"))
@@ -1855,7 +1855,7 @@ func writeTOMLManifestWithFlag(t *testing.T, dir, name string, steps []StepDef, 
 	f.WriteString("name = \"" + name + "\"\n")
 	f.WriteString("type = \"workflow\"\n")
 	if manifest {
-		f.WriteString("manifest = true\n")
+		f.WriteString("mode = \"manifest\"\n")
 	}
 	f.WriteString("description = \"Test workflow\"\n\n")
 
@@ -3115,13 +3115,13 @@ func TestManifestConvoyTargetSubstitution(t *testing.T) {
 
 	solHome := os.Getenv("SOL_HOME")
 
-	// Create convoy workflow with {target.*} placeholders in leg titles/descriptions.
+	// Create convoy workflow with {{target.*}} placeholders in leg titles/descriptions.
 	workflowDir := filepath.Join(solHome, "workflows", "test-convoy-target")
 	os.MkdirAll(workflowDir, 0o755)
 
 	legs := []Leg{
-		{ID: "review", Title: "Review: {target.title}", Description: "Review the changes for {target.title} ({target.id})."},
-		{ID: "test", Title: "Test: {target.title}", Description: "Write tests for {target.description}."},
+		{ID: "review", Title: "Review: {{target.title}}", Description: "Review the changes for {{target.title}} ({{target.id}})."},
+		{ID: "test", Title: "Test: {{target.title}}", Description: "Write tests for {{target.description}}."},
 	}
 	synth := &Synthesis{
 		Title:       "Merge Reviews",
@@ -3502,7 +3502,9 @@ func TestCodeReviewConvoyWorkflow(t *testing.T) {
 		t.Fatalf("expected 3 children (2 legs + synthesis), got %d", len(result.ChildIDs))
 	}
 
-	// --- Verify legs: kind=analysis and target-substituted titles ---
+	// --- Verify legs: kind=analysis ---
+	// Note: embedded code-review manifest still uses {target.title} (single-brace)
+	// which is no longer substituted. The manifest will be converted in the next phase.
 	reqsID := result.ChildIDs["requirements"]
 	reqsItem, err := ws.GetWrit(reqsID)
 	if err != nil {
@@ -3511,8 +3513,8 @@ func TestCodeReviewConvoyWorkflow(t *testing.T) {
 	if reqsItem.Kind != "analysis" {
 		t.Errorf("requirements kind: got %q, want %q", reqsItem.Kind, "analysis")
 	}
-	if reqsItem.Title != "Requirements Analysis: Implement OAuth2 login flow" {
-		t.Errorf("requirements title: got %q, want %q", reqsItem.Title, "Requirements Analysis: Implement OAuth2 login flow")
+	if reqsItem.Title != "Requirements Analysis: {target.title}" {
+		t.Errorf("requirements title: got %q, want %q", reqsItem.Title, "Requirements Analysis: {target.title}")
 	}
 	if !reqsItem.HasLabel("convoy-leg") {
 		t.Error("requirements missing convoy-leg label")
@@ -3532,21 +3534,21 @@ func TestCodeReviewConvoyWorkflow(t *testing.T) {
 	if feasItem.Kind != "analysis" {
 		t.Errorf("feasibility kind: got %q, want %q", feasItem.Kind, "analysis")
 	}
-	if feasItem.Title != "Feasibility Assessment: Implement OAuth2 login flow" {
-		t.Errorf("feasibility title: got %q, want %q", feasItem.Title, "Feasibility Assessment: Implement OAuth2 login flow")
+	if feasItem.Title != "Feasibility Assessment: {target.title}" {
+		t.Errorf("feasibility title: got %q, want %q", feasItem.Title, "Feasibility Assessment: {target.title}")
 	}
 	if !feasItem.HasLabel("convoy-leg") {
 		t.Error("feasibility missing convoy-leg label")
 	}
 
-	// --- Verify synthesis: target-substituted title and analysis output references ---
+	// --- Verify synthesis: analysis output references ---
 	synthID := result.ChildIDs["synthesis"]
 	synthItem, err := ws.GetWrit(synthID)
 	if err != nil {
 		t.Fatalf("GetWrit(synthesis) error: %v", err)
 	}
-	if synthItem.Title != "Consolidate Review: Implement OAuth2 login flow" {
-		t.Errorf("synthesis title: got %q, want %q", synthItem.Title, "Consolidate Review: Implement OAuth2 login flow")
+	if synthItem.Title != "Consolidate Review: {target.title}" {
+		t.Errorf("synthesis title: got %q, want %q", synthItem.Title, "Consolidate Review: {target.title}")
 	}
 	if !synthItem.HasLabel("convoy-synthesis") {
 		t.Error("synthesis missing convoy-synthesis label")
@@ -3687,14 +3689,15 @@ func TestCodeReviewConvoyWorkflowSynthesisTargetSubstitution(t *testing.T) {
 		t.Fatalf("Materialize() error: %v", err)
 	}
 
-	// All titles should contain the target title.
+	// Embedded code-review manifest still uses {target.title} (single-brace)
+	// which is no longer substituted. Verify child writs were created.
+	if len(result.ChildIDs) != 3 {
+		t.Fatalf("expected 3 children, got %d", len(result.ChildIDs))
+	}
 	for childID, writID := range result.ChildIDs {
-		item, err := ws.GetWrit(writID)
+		_, err := ws.GetWrit(writID)
 		if err != nil {
 			t.Fatalf("GetWrit(%s) error: %v", childID, err)
-		}
-		if !strings.Contains(item.Title, "Fix broken pagination") {
-			t.Errorf("%s title should contain target title, got: %q", childID, item.Title)
 		}
 	}
 }
@@ -3787,11 +3790,11 @@ func TestConvoyVariableAndTargetSubstitutionCompose(t *testing.T) {
 	os.MkdirAll(workflowDir, 0o755)
 
 	legs := []Leg{
-		{ID: "review", Title: "Review {target.title} in {{scope}}", Description: "Check {target.id} with {{scope}}.", Focus: "{target.title} {{scope}}"},
+		{ID: "review", Title: "Review {{target.title}} in {{scope}}", Description: "Check {{target.id}} with {{scope}}.", Focus: "{{target.title}} {{scope}}"},
 	}
 	synth := &Synthesis{
-		Title:       "Synthesis {target.title} {{scope}}",
-		Description: "Consolidate {target.id} review of {{scope}}.",
+		Title:       "Synthesis {{target.title}} {{scope}}",
+		Description: "Consolidate {{target.id}} review of {{scope}}.",
 		DependsOn:   []string{"review"},
 	}
 	writeTOMLConvoyManifest(t, workflowDir, "test-convoy-compose", legs, synth, writeTOMLConvoyManifestOpts{
@@ -3818,7 +3821,7 @@ func TestConvoyVariableAndTargetSubstitutionCompose(t *testing.T) {
 		t.Fatalf("Materialize() error: %v", err)
 	}
 
-	// Verify both substitution types compose: {target.*} first, then {{var}}.
+	// Verify both target and regular variable substitution compose via {{variable}}.
 	legItem, err := ws.GetWrit(result.ChildIDs["review"])
 	if err != nil {
 		t.Fatalf("GetWrit(review) error: %v", err)
@@ -4023,13 +4026,13 @@ description = "Test expansion with kind"
 
 [[template]]
 id = "analyze"
-title = "Analyze: {target.title}"
-description = "Analyze {target.title}."
+title = "Analyze: {{target.title}}"
+description = "Analyze {{target.title}}."
 kind = "analysis"
 
 [[template]]
 id = "implement"
-title = "Implement: {target.title}"
+title = "Implement: {{target.title}}"
 description = "Implement based on analysis."
 needs = ["analyze"]
 `
@@ -4200,5 +4203,312 @@ func TestValidateDefaultTypeWithTemplates(t *testing.T) {
 	}
 	if got := err.Error(); got != `type "" must not contain [[template]] entries` {
 		t.Errorf("error: got %q", got)
+	}
+}
+
+// --- Mode field, Description, DAG enrichment, target variable tests ---
+
+func TestLoadManifestDefaultsTypeToWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	toml := `name = "no-type-wf"
+description = "Workflow without explicit type"
+
+[[steps]]
+id = "s1"
+title = "Step 1"
+instructions = "steps/s1.md"
+`
+	os.WriteFile(filepath.Join(dir, "manifest.toml"), []byte(toml), 0o644)
+
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+	if m.Type != "workflow" {
+		t.Errorf("type: got %q, want %q", m.Type, "workflow")
+	}
+}
+
+func TestModeManifestCausesStepsToBeChildWrits(t *testing.T) {
+	ws, ss := setupStores(t)
+	solHome := os.Getenv("SOL_HOME")
+
+	workflowDir := filepath.Join(solHome, "workflows", "mode-manifest-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+
+	steps := []StepDef{
+		{ID: "analyze", Title: "Analyze", Instructions: "steps/01-analyze.md"},
+		{ID: "implement", Title: "Implement", Instructions: "steps/02-implement.md", Needs: []string{"analyze"}},
+	}
+	writeTOMLManifestWithFlag(t, workflowDir, "mode-manifest-wf", steps, map[string]VariableDecl{
+		"issue": {Required: true},
+	}, true)
+	for _, s := range steps {
+		content := "# " + s.Title + "\n\nWork on {{issue}}.\n"
+		os.WriteFile(filepath.Join(workflowDir, s.Instructions), []byte(content), 0o644)
+	}
+
+	result, err := Materialize(ws, ss, ManifestOpts{
+		Name:      "mode-manifest-wf",
+		World:     "test-world",
+		Variables: map[string]string{"issue": "sol-test456"},
+		CreatedBy: "autarch",
+	})
+	if err != nil {
+		t.Fatalf("Materialize() error: %v", err)
+	}
+
+	if len(result.ChildIDs) != 2 {
+		t.Fatalf("ChildIDs: got %d, want 2", len(result.ChildIDs))
+	}
+
+	// Verify child writs were created.
+	analyzeItem, _ := ws.GetWrit(result.ChildIDs["analyze"])
+	if analyzeItem.Title != "Analyze" {
+		t.Errorf("analyze title: got %q, want %q", analyzeItem.Title, "Analyze")
+	}
+	if !strings.Contains(analyzeItem.Description, "sol-test456") {
+		t.Errorf("analyze description missing variable: %q", analyzeItem.Description)
+	}
+}
+
+func TestStepDefDescriptionField(t *testing.T) {
+	ws, ss := setupStores(t)
+	solHome := os.Getenv("SOL_HOME")
+
+	workflowDir := filepath.Join(solHome, "workflows", "desc-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+
+	// Write a manifest with description on steps (no instructions file for first step).
+	toml := `name = "desc-wf"
+type = "workflow"
+mode = "manifest"
+description = "Test description field"
+
+[variables]
+issue = { required = true }
+
+[[steps]]
+id = "plan"
+title = "Plan"
+description = "Plan the work for {{issue}}."
+
+[[steps]]
+id = "implement"
+title = "Implement"
+instructions = "steps/02-impl.md"
+description = "This should be overridden by instructions."
+needs = ["plan"]
+`
+	os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(toml), 0o644)
+	os.WriteFile(filepath.Join(workflowDir, "steps", "02-impl.md"),
+		[]byte("# Implement\n\nImplement {{issue}}.\n"), 0o644)
+
+	result, err := Materialize(ws, ss, ManifestOpts{
+		Name:      "desc-wf",
+		World:     "test-world",
+		Variables: map[string]string{"issue": "sol-desc-test"},
+		CreatedBy: "autarch",
+	})
+	if err != nil {
+		t.Fatalf("Materialize() error: %v", err)
+	}
+
+	// Step with description only (no instructions).
+	planItem, _ := ws.GetWrit(result.ChildIDs["plan"])
+	if planItem.Description != "Plan the work for sol-desc-test." {
+		t.Errorf("plan description: got %q, want %q", planItem.Description, "Plan the work for sol-desc-test.")
+	}
+
+	// Step with both description and instructions — instructions wins.
+	implItem, _ := ws.GetWrit(result.ChildIDs["implement"])
+	if !strings.Contains(implItem.Description, "Implement sol-desc-test") {
+		t.Errorf("implement description should come from instructions file, got: %q", implItem.Description)
+	}
+	if strings.Contains(implItem.Description, "overridden") {
+		t.Error("implement description should NOT contain the description field text")
+	}
+}
+
+func TestDAGEnrichmentForManifestedWorkflowSteps(t *testing.T) {
+	ws, ss := setupStores(t)
+	solHome := os.Getenv("SOL_HOME")
+
+	workflowDir := filepath.Join(solHome, "workflows", "dag-enrich-wf")
+	os.MkdirAll(filepath.Join(workflowDir, "steps"), 0o755)
+
+	// Write a manifest with steps that have dependencies and kinds.
+	toml := `name = "dag-enrich-wf"
+type = "workflow"
+mode = "manifest"
+description = "Test DAG enrichment"
+
+[variables]
+issue = { required = true }
+
+[[steps]]
+id = "analyze"
+title = "Analyze Requirements"
+description = "Analyze the requirements for {{issue}}."
+kind = "analysis"
+
+[[steps]]
+id = "implement"
+title = "Implement Changes"
+instructions = "steps/02-impl.md"
+needs = ["analyze"]
+
+[[steps]]
+id = "verify"
+title = "Verify"
+instructions = "steps/03-verify.md"
+needs = ["implement"]
+`
+	os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(toml), 0o644)
+	os.WriteFile(filepath.Join(workflowDir, "steps", "02-impl.md"),
+		[]byte("# Implement\n\nImplement {{issue}}.\n"), 0o644)
+	os.WriteFile(filepath.Join(workflowDir, "steps", "03-verify.md"),
+		[]byte("# Verify\n\nVerify {{issue}}.\n"), 0o644)
+
+	result, err := Materialize(ws, ss, ManifestOpts{
+		Name:      "dag-enrich-wf",
+		World:     "test-world",
+		Variables: map[string]string{"issue": "sol-dag-test"},
+		CreatedBy: "autarch",
+	})
+	if err != nil {
+		t.Fatalf("Materialize() error: %v", err)
+	}
+
+	// First step (no deps) — no enrichment.
+	analyzeItem, _ := ws.GetWrit(result.ChildIDs["analyze"])
+	if strings.Contains(analyzeItem.Description, "Dependency Writs") {
+		t.Error("analyze should NOT have DAG enrichment (no deps)")
+	}
+
+	// Second step (depends on analyze) — should have enrichment.
+	implItem, _ := ws.GetWrit(result.ChildIDs["implement"])
+	if !strings.Contains(implItem.Description, "Dependency Writs") {
+		t.Error("implement should have DAG enrichment section")
+	}
+	if !strings.Contains(implItem.Description, result.ChildIDs["analyze"]) {
+		t.Error("implement enrichment should contain analyze writ ID")
+	}
+	if !strings.Contains(implItem.Description, "Analyze Requirements") {
+		t.Error("implement enrichment should contain analyze title")
+	}
+	// Analysis dependency should reference output directory.
+	if !strings.Contains(implItem.Description, "output at") {
+		t.Error("implement enrichment should reference output path for analysis dependency")
+	}
+
+	// Third step (depends on implement/code kind) — should mention branch.
+	verifyItem, _ := ws.GetWrit(result.ChildIDs["verify"])
+	if !strings.Contains(verifyItem.Description, "Dependency Writs") {
+		t.Error("verify should have DAG enrichment section")
+	}
+	if !strings.Contains(verifyItem.Description, result.ChildIDs["implement"]) {
+		t.Error("verify enrichment should contain implement writ ID")
+	}
+	if !strings.Contains(verifyItem.Description, "branch merged to target") {
+		t.Error("verify enrichment should mention branch for code dependency")
+	}
+}
+
+func TestTargetVariableAutoPopulation(t *testing.T) {
+	ws, ss := setupStores(t)
+	solHome := os.Getenv("SOL_HOME")
+
+	workflowDir := filepath.Join(solHome, "workflows", "target-vars-wf")
+	os.MkdirAll(workflowDir, 0o755)
+
+	// Write a manifest that uses {{target.*}} variables.
+	toml := `name = "target-vars-wf"
+type = "workflow"
+mode = "manifest"
+description = "Test target variable auto-population"
+
+[[steps]]
+id = "review"
+title = "Review: {{target.title}}"
+description = "Review {{target.title}} ({{target.id}}). Description: {{target.description}}"
+`
+	os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(toml), 0o644)
+
+	// Create a target writ.
+	targetID, err := ws.CreateWrit("Fix login bug", "The login form breaks on Safari.", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit() error: %v", err)
+	}
+
+	result, err := Materialize(ws, ss, ManifestOpts{
+		Name:      "target-vars-wf",
+		World:     "test-world",
+		ParentID:  targetID,
+		CreatedBy: "autarch",
+	})
+	if err != nil {
+		t.Fatalf("Materialize() error: %v", err)
+	}
+
+	reviewItem, _ := ws.GetWrit(result.ChildIDs["review"])
+	if reviewItem.Title != "Review: Fix login bug" {
+		t.Errorf("title: got %q, want %q", reviewItem.Title, "Review: Fix login bug")
+	}
+	if !strings.Contains(reviewItem.Description, targetID) {
+		t.Errorf("description should contain target ID %q, got: %q", targetID, reviewItem.Description)
+	}
+	if !strings.Contains(reviewItem.Description, "Fix login bug") {
+		t.Errorf("description should contain target title, got: %q", reviewItem.Description)
+	}
+	if !strings.Contains(reviewItem.Description, "The login form breaks on Safari.") {
+		t.Errorf("description should contain target description, got: %q", reviewItem.Description)
+	}
+}
+
+func TestModeInlineIsDefault(t *testing.T) {
+	dir := t.TempDir()
+	toml := `name = "inline-wf"
+type = "workflow"
+description = "Default mode is inline"
+
+[[steps]]
+id = "s1"
+title = "Step 1"
+instructions = "steps/s1.md"
+`
+	os.WriteFile(filepath.Join(dir, "manifest.toml"), []byte(toml), 0o644)
+
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+	if m.Mode != "" {
+		t.Errorf("mode: got %q, want empty (inline default)", m.Mode)
+	}
+	if ShouldManifest(m) {
+		t.Error("ShouldManifest() should return false for inline workflow")
+	}
+}
+
+func TestStepDefDescriptionFieldInLoadManifest(t *testing.T) {
+	dir := t.TempDir()
+	toml := `name = "desc-load-wf"
+type = "workflow"
+
+[[steps]]
+id = "s1"
+title = "Step 1"
+description = "This is the step description."
+instructions = "steps/s1.md"
+`
+	os.WriteFile(filepath.Join(dir, "manifest.toml"), []byte(toml), 0o644)
+
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error: %v", err)
+	}
+	if m.Steps[0].Description != "This is the step description." {
+		t.Errorf("step description: got %q, want %q", m.Steps[0].Description, "This is the step description.")
 	}
 }

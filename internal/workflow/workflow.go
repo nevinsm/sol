@@ -21,7 +21,7 @@ type Manifest struct {
 	Name        string                  `toml:"name"`
 	Type        string                  `toml:"type"`
 	Description string                  `toml:"description"`
-	Manifest    bool                    `toml:"manifest"` // default false; when true, steps become child writs
+	Mode        string                  `toml:"mode"` // "inline" (default) or "manifest"
 	Variables   map[string]VariableDecl `toml:"variables"`
 	Vars        map[string]VariableDecl `toml:"vars"`
 	Steps       []StepDef              `toml:"steps"`
@@ -41,9 +41,10 @@ type VariableDecl struct {
 type StepDef struct {
 	ID           string   `toml:"id"`
 	Title        string   `toml:"title"`
-	Instructions string   `toml:"instructions"` // relative path to .md file
-	Needs        []string `toml:"needs"`         // step IDs this depends on
-	Kind         string   `toml:"kind"`          // "code" (default) or "analysis"
+	Description  string   `toml:"description"`   // inline description; instructions overrides when set
+	Instructions string   `toml:"instructions"`   // relative path to .md file
+	Needs        []string `toml:"needs"`           // step IDs this depends on
+	Kind         string   `toml:"kind"`            // "code" (default) or "analysis"
 }
 
 // Template defines a child writ template in an expansion workflow.
@@ -121,6 +122,10 @@ func LoadManifest(workflowDir string) (*Manifest, error) {
 	var m Manifest
 	if _, err := toml.DecodeFile(path, &m); err != nil {
 		return nil, fmt.Errorf("failed to load manifest %q: %w", path, err)
+	}
+	// Default type to "workflow" when absent.
+	if m.Type == "" {
+		m.Type = "workflow"
 	}
 	return &m, nil
 }
@@ -856,9 +861,9 @@ type ManifestOpts struct {
 
 // ShouldManifest returns true if the workflow should be manifested.
 // Expansion and convoy workflows always manifest. Step-based workflows
-// manifest when the manifest flag is set.
+// manifest when mode is set to "manifest".
 func ShouldManifest(m *Manifest) bool {
-	return m.Type == "expansion" || m.Type == "convoy" || m.Manifest
+	return m.Type == "expansion" || m.Type == "convoy" || m.Mode == "manifest"
 }
 
 // ComputePhases returns the phase (dependency depth) for each item in a DAG.
@@ -913,15 +918,6 @@ type phaseable struct {
 func (p phaseable) dagID() string      { return p.id }
 func (p phaseable) dagNeeds() []string { return p.needs }
 
-// renderTemplateField substitutes {target.title}, {target.description},
-// and {target.id} in a template string.
-func renderTemplateField(s string, target *store.Writ) string {
-	s = strings.ReplaceAll(s, "{target.title}", target.Title)
-	s = strings.ReplaceAll(s, "{target.description}", target.Description)
-	s = strings.ReplaceAll(s, "{target.id}", target.ID)
-	return s
-}
-
 // Manifest materializes a workflow into child writs with a caravan.
 // Each step (workflow) or template (expansion) becomes a child writ.
 // Dependencies between children mirror the workflow's DAG. Children are
@@ -942,47 +938,49 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 	}
 
 	if !ShouldManifest(m) {
-		return nil, fmt.Errorf("workflow %q is not configured for manifestation (set manifest = true or use expansion type)", opts.Name)
+		return nil, fmt.Errorf("workflow %q is not configured for manifestation (set mode = \"manifest\" or use expansion type)", opts.Name)
 	}
 
-	// For convoy workflows with a ParentID, inject it as the "target" variable
-	// so that [vars] target = { required = true } declarations are satisfied.
 	vars := opts.Variables
-	if m.Type == "convoy" && opts.ParentID != "" {
-		if vars == nil {
-			vars = make(map[string]string)
-		}
-		if _, ok := vars["target"]; !ok {
-			vars["target"] = opts.ParentID
-		}
+	if vars == nil {
+		vars = make(map[string]string)
 	}
 
-	// Resolve variables (for workflow type step rendering).
+	parentID := opts.ParentID
+
+	// Load target writ and auto-populate target variables.
+	// When a ParentID is provided and the writ exists, populate
+	// {{target.title}}, {{target.description}}, and {{target.id}}.
+	if parentID != "" {
+		// For convoy workflows, also inject ParentID as the "target" variable
+		// so that [vars] target = { required = true } declarations are satisfied.
+		if m.Type == "convoy" {
+			if _, ok := vars["target"]; !ok {
+				vars["target"] = parentID
+			}
+		}
+
+		// Expansion requires a parent writ (target).
+		target, err := worldStore.GetWrit(parentID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get target writ %q: %w", parentID, err)
+		}
+		// Auto-populate target variables for standard {{variable}} substitution.
+		vars["target.title"] = target.Title
+		vars["target.description"] = target.Description
+		vars["target.id"] = target.ID
+	} else if m.Type == "expansion" {
+		return nil, fmt.Errorf("expansion workflow requires a parent writ (target)")
+	}
+
+	// Resolve variables (merges with defaults, checks required).
 	resolved, err := ResolveVariables(m, vars)
 	if err != nil {
 		return nil, err
 	}
 
-	parentID := opts.ParentID
-
-	// For expansion workflows, the parent must exist (it's the target).
-	// For workflow and convoy types, create a parent if not provided.
-	// If a parent is provided for convoy, load it as target for template substitution.
-	var target *store.Writ
-	if m.Type == "expansion" {
-		if parentID == "" {
-			return nil, fmt.Errorf("expansion workflow requires a parent writ (target)")
-		}
-		target, err = worldStore.GetWrit(parentID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get target writ %q: %w", parentID, err)
-		}
-	} else if parentID != "" && m.Type == "convoy" {
-		target, err = worldStore.GetWrit(parentID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get target writ %q: %w", parentID, err)
-		}
-	} else if parentID == "" {
+	// Create parent writ if not provided.
+	if parentID == "" {
 		parentID, err = worldStore.CreateWrit(
 			m.Name+": "+resolved["issue"],
 			m.Description,
@@ -997,7 +995,7 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 
 	// Build child items from steps or templates.
 	type childDef struct {
-		itemID   string
+		itemID      string
 		title       string
 		description string
 		needs       []string
@@ -1009,10 +1007,16 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 
 	if m.Type == "expansion" {
 		for _, tmpl := range m.Templates {
+			title := tmpl.Title
+			desc := tmpl.Description
+			for k, v := range resolved {
+				title = strings.ReplaceAll(title, "{{"+k+"}}", v)
+				desc = strings.ReplaceAll(desc, "{{"+k+"}}", v)
+			}
 			children = append(children, childDef{
-				itemID:   tmpl.ID,
-				title:       renderTemplateField(tmpl.Title, target),
-				description: renderTemplateField(tmpl.Description, target),
+				itemID:      tmpl.ID,
+				title:       title,
+				description: desc,
 				needs:       tmpl.Needs,
 				kind:        tmpl.Kind,
 			})
@@ -1023,11 +1027,6 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 			title := leg.Title
 			desc := leg.Description
 			focus := leg.Focus
-			if target != nil {
-				title = renderTemplateField(title, target)
-				desc = renderTemplateField(desc, target)
-				focus = renderTemplateField(focus, target)
-			}
 
 			// Apply {{variable}} substitution to leg fields.
 			for k, v := range resolved {
@@ -1055,7 +1054,7 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 				desc += "\n\nFocus: " + focus
 			}
 			children = append(children, childDef{
-				itemID:   leg.ID,
+				itemID:      leg.ID,
 				title:       title,
 				description: desc,
 				labels:      []string{"convoy-leg"},
@@ -1065,10 +1064,6 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 		// Synthesis description is enriched with leg references after leg items are created.
 		synthTitle := m.Synth.Title
 		synthDesc := m.Synth.Description
-		if target != nil {
-			synthTitle = renderTemplateField(synthTitle, target)
-			synthDesc = renderTemplateField(synthDesc, target)
-		}
 
 		// Apply {{variable}} substitution to synthesis fields.
 		for k, v := range resolved {
@@ -1091,7 +1086,7 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 		}
 
 		children = append(children, childDef{
-			itemID:   "synthesis",
+			itemID:      "synthesis",
 			title:       synthTitle,
 			description: synthDesc,
 			needs:       m.Synth.DependsOn,
@@ -1099,16 +1094,30 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 			kind:        m.Synth.Kind,
 		})
 	} else {
-		// Workflow type — render step instructions as descriptions.
+		// Workflow type — render step descriptions.
 		for _, step := range m.Steps {
-			rendered, err := RenderStepInstructions(res.Path, step, resolved)
-			if err != nil {
-				return nil, fmt.Errorf("failed to render step %q instructions: %w", step.ID, err)
+			title := step.Title
+			for k, v := range resolved {
+				title = strings.ReplaceAll(title, "{{"+k+"}}", v)
+			}
+			var desc string
+			if step.Instructions != "" {
+				rendered, err := RenderStepInstructions(res.Path, step, resolved)
+				if err != nil {
+					return nil, fmt.Errorf("failed to render step %q instructions: %w", step.ID, err)
+				}
+				desc = rendered
+			} else {
+				// Use description field with variable substitution.
+				desc = step.Description
+				for k, v := range resolved {
+					desc = strings.ReplaceAll(desc, "{{"+k+"}}", v)
+				}
 			}
 			children = append(children, childDef{
-				itemID:   step.ID,
-				title:       step.Title,
-				description: rendered,
+				itemID:      step.ID,
+				title:       title,
+				description: desc,
 				needs:       step.Needs,
 				kind:        step.Kind,
 			})
@@ -1129,54 +1138,85 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 
 		desc := c.description
 
-		// For convoy synthesis: enrich description with leg references
-		// (legs were created before synthesis in the children slice).
-		if m.Type == "convoy" && c.itemID == "synthesis" {
-			var legRefs strings.Builder
-			legRefs.WriteString("\n\n## Leg Writs\n")
-			hasCodeLegs := false
-			hasAnalysisLegs := false
-			for _, leg := range m.Legs {
-				legItemID := childIDs[leg.ID]
-				legRefs.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", leg.Title, legItemID, leg.Description))
-				kind := leg.Kind
-				if kind == "" {
-					kind = "code"
-				}
-				if kind == "analysis" {
-					hasAnalysisLegs = true
-				} else {
-					hasCodeLegs = true
-				}
-			}
-
-			// Build enrichment text based on leg kinds.
-			if hasCodeLegs && hasAnalysisLegs {
-				// Mixed: both code branches and analysis outputs.
-				legRefs.WriteString("\nAll code leg branches have been merged to the target branch. Their changes are available in your worktree.")
-				legRefs.WriteString("\n\nRead findings from analysis leg output directories:\n")
+		// DAG enrichment: for manifested steps with dependencies, inject
+		// dependency writ information into the description.
+		if len(c.needs) > 0 {
+			var depRefs strings.Builder
+			if m.Type == "convoy" && c.itemID == "synthesis" {
+				// Convoy synthesis enrichment (legacy format).
+				depRefs.WriteString("\n\n## Leg Writs\n")
+				hasCodeLegs := false
+				hasAnalysisLegs := false
 				for _, leg := range m.Legs {
+					legItemID := childIDs[leg.ID]
+					depRefs.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", leg.Title, legItemID, leg.Description))
 					kind := leg.Kind
 					if kind == "" {
 						kind = "code"
 					}
 					if kind == "analysis" {
-						legItemID := childIDs[leg.ID]
-						legRefs.WriteString(fmt.Sprintf("- %s: `%s`\n", leg.Title, config.WritOutputDir(opts.World, legItemID)))
+						hasAnalysisLegs = true
+					} else {
+						hasCodeLegs = true
 					}
 				}
-			} else if hasAnalysisLegs {
-				// All analysis: reference output directories only.
-				legRefs.WriteString("\nRead findings from leg output directories. Leg outputs are at:\n")
-				for _, leg := range m.Legs {
-					legItemID := childIDs[leg.ID]
-					legRefs.WriteString(fmt.Sprintf("- %s: `%s`\n", leg.Title, config.WritOutputDir(opts.World, legItemID)))
+
+				if hasCodeLegs && hasAnalysisLegs {
+					depRefs.WriteString("\nAll code leg branches have been merged to the target branch. Their changes are available in your worktree.")
+					depRefs.WriteString("\n\nRead findings from analysis leg output directories:\n")
+					for _, leg := range m.Legs {
+						kind := leg.Kind
+						if kind == "" {
+							kind = "code"
+						}
+						if kind == "analysis" {
+							legItemID := childIDs[leg.ID]
+							depRefs.WriteString(fmt.Sprintf("- %s: `%s`\n", leg.Title, config.WritOutputDir(opts.World, legItemID)))
+						}
+					}
+				} else if hasAnalysisLegs {
+					depRefs.WriteString("\nRead findings from leg output directories. Leg outputs are at:\n")
+					for _, leg := range m.Legs {
+						legItemID := childIDs[leg.ID]
+						depRefs.WriteString(fmt.Sprintf("- %s: `%s`\n", leg.Title, config.WritOutputDir(opts.World, legItemID)))
+					}
+				} else {
+					depRefs.WriteString("\nAll leg branches have been merged to the target branch. Their changes are available in your worktree.")
 				}
 			} else {
-				// All code: original message.
-				legRefs.WriteString("\nAll leg branches have been merged to the target branch. Their changes are available in your worktree.")
+				// General DAG enrichment for manifested workflow steps.
+				depRefs.WriteString("\n\n## Dependency Writs\n")
+				for _, need := range c.needs {
+					depWritID := childIDs[need]
+					// Find the child def for this dependency to get its kind.
+					var depKind string
+					for _, dc := range children {
+						if dc.itemID == need {
+							depKind = dc.kind
+							break
+						}
+					}
+					if depKind == "" {
+						depKind = "code"
+					}
+					// Find the title of the dependency.
+					var depTitle string
+					for _, dc := range children {
+						if dc.itemID == need {
+							depTitle = dc.title
+							break
+						}
+					}
+					depRefs.WriteString(fmt.Sprintf("- **%s** (%s)", depTitle, depWritID))
+					if depKind == "analysis" {
+						depRefs.WriteString(fmt.Sprintf(": output at `%s`", config.WritOutputDir(opts.World, depWritID)))
+					} else {
+						depRefs.WriteString(": branch merged to target")
+					}
+					depRefs.WriteString("\n")
+				}
 			}
-			desc += legRefs.String()
+			desc += depRefs.String()
 			children[i].description = desc
 		}
 

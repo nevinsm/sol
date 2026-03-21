@@ -318,12 +318,12 @@ description = "Test expansion workflow"
 
 [[template]]
 id = "analyze"
-title = "Analyze {target.title}"
+title = "Analyze {{target.title}}"
 description = "Analyze the target writ"
 
 [[template]]
 id = "implement"
-title = "Implement {target.title}"
+title = "Implement {{target.title}}"
 description = "Implement based on analysis"
 needs = ["analyze"]
 `

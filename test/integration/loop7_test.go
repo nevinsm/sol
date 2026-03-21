@@ -43,12 +43,12 @@ description = "E2E expansion workflow test"
 
 [[template]]
 id = "analyze"
-title = "Analyze {target.title}"
+title = "Analyze {{target.title}}"
 description = "Analyze the target writ to understand scope"
 
 [[template]]
 id = "implement"
-title = "Implement {target.title}"
+title = "Implement {{target.title}}"
 description = "Implement the solution based on analysis"
 needs = ["analyze"]
 `
@@ -137,7 +137,7 @@ needs = ["analyze"]
 	if !strings.Contains(primeResult.Output, "Feature Y") {
 		t.Errorf("prime output should contain target title 'Feature Y'; got:\n%s", primeResult.Output)
 	}
-	// Description (template description with {target.title} substituted) should appear.
+	// Description (template description) should appear.
 	if !strings.Contains(primeResult.Output, "Analyze the target writ") {
 		t.Errorf("prime output should contain analyze template description; got:\n%s", primeResult.Output)
 	}
