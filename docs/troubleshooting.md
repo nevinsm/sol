@@ -298,7 +298,7 @@ Look for:
 - **Merge conflicts:** The agent needs to rebase their branch. If the session is still active, it will handle this. If not, escalate the writ.
 - If a merge is permanently broken, mark it failed to unblock the queue:
   ```bash
-  sol forge mark-failed --world=<world> <writ-id>
+  sol forge mark-failed --world=<world> <mr-id>
   ```
 
 ---
@@ -323,7 +323,7 @@ Look for: a single failing item blocking all others, forge process errors, or a 
 
 2. If a specific item is permanently stuck:
    ```bash
-   sol forge mark-failed --world=<world> <writ-id>
+   sol forge mark-failed --world=<world> <mr-id>
    ```
 
 3. If the forge process itself is unhealthy, restart it:
