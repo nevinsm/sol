@@ -60,14 +60,17 @@ Write all findings to `review.md` in your writ output directory. Structure by se
 Each finding must include:
 1. One-line summary
 2. File path and line range
-3. Concrete impact (what a user would experience)
-4. Suggested fix approach
+3. **The actual code** — quote the specific lines that demonstrate the issue
+4. Concrete impact (what a user would experience)
+5. Suggested fix approach
 
 ## Constraints
 
 **DO NOT modify any source code.** This is a read-only analysis. Your only deliverable is `review.md`.
 
 **DO NOT fix things you find.** Document and move on.
+
+**Include the code.** Every finding must quote the specific lines from the source. If you cannot point to specific lines, the finding is not concrete enough to report.
 
 **Cross-reference docs/cli.md** against actual command implementations. Every command should be documented; every documented command should exist.
 

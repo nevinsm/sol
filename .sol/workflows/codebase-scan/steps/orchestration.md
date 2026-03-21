@@ -5,7 +5,7 @@ Review the packages listed in **Focus** for correctness in workflow execution, w
 ## What to look for
 
 ### Workflow (internal/workflow/)
-- **Manifest parsing**: Are all workflow types (workflow, convoy, formula) parsed correctly? Edge cases with optional fields?
+- **Manifest parsing**: Are workflow manifests parsed correctly? Mode field (inline/manifest)? Edge cases with optional fields?
 - **Three-tier resolution (ADR-0021)**: Does project → user → embedded fallback work correctly? Any tier that gets skipped?
 - **Variable substitution**: Are `{{variables}}` resolved correctly? What about undefined variables — error or silent empty string?
 - **Step execution**: Are dependencies respected? Can a step execute before its dependencies complete?
@@ -54,14 +54,17 @@ Write all findings to `review.md` in your writ output directory. Structure by se
 Each finding must include:
 1. One-line summary
 2. File path and line range
-3. Concrete failure scenario
-4. Suggested fix approach
+3. **The actual code** — quote the specific lines that demonstrate the issue
+4. Concrete failure scenario
+5. Suggested fix approach
 
 ## Constraints
 
 **DO NOT modify any source code.** This is a read-only analysis. Your only deliverable is `review.md`.
 
 **DO NOT fix things you find.** Document and move on.
+
+**Include the code.** Every finding must quote the specific lines from the source. If you cannot point to specific lines, the finding is not concrete enough to report.
 
 **Be specific.** Name the function, the line, the exact failure sequence.
 

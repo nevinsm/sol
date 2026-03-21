@@ -45,14 +45,17 @@ Write all findings to `review.md` in your writ output directory. Structure by se
 Each finding must include:
 1. One-line summary
 2. File path and line range
-3. Concrete impact (what breaks or confuses because of this issue)
-4. Suggested fix approach
+3. **The actual code** — quote the specific lines that demonstrate the issue (e.g., the skill text referencing a nonexistent flag, the Makefile target with the wrong path)
+4. Concrete impact (what breaks or confuses because of this issue)
+5. Suggested fix approach
 
 ## Constraints
 
 **DO NOT modify any files.** This is a read-only analysis. Your only deliverable is `review.md`.
 
 **DO NOT fix things you find.** Document and move on.
+
+**Include the code.** Every finding must quote the specific lines from the source. If you cannot point to specific lines, the finding is not concrete enough to report.
 
 **Cross-reference aggressively.** This leg is specifically about consistency between the meta-layer and the implementation. Every command reference in a skill or prompt should be verified against cmd/. Every workflow manifest should be validated against the workflow parser's expectations.
 

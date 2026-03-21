@@ -44,14 +44,17 @@ Write all findings to `review.md` in your writ output directory. Structure by se
 Each finding must include:
 1. One-line summary
 2. File path and line range (or section heading)
-3. What's wrong (what the doc says vs what the code does)
-4. Suggested fix approach
+3. **The actual text and code** — quote the documentation passage that's wrong AND the code it should match
+4. What's wrong (what the doc says vs what the code does)
+5. Suggested fix approach
 
 ## Constraints
 
 **DO NOT modify any documentation.** This is a read-only analysis. Your only deliverable is `review.md`.
 
 **DO NOT fix things you find.** Document and move on.
+
+**Include the evidence.** Every finding must quote both the wrong documentation passage and the code it should match. Side-by-side comparison makes the issue self-evident.
 
 **Cross-reference everything.** Every factual claim in documentation should be verified against the codebase. Don't take the docs at face value — that's the whole point of this review.
 

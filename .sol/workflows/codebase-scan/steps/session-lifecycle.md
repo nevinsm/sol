@@ -43,14 +43,17 @@ Write all findings to `review.md` in your writ output directory. Structure by se
 Each finding must include:
 1. One-line summary
 2. File path and line range
-3. Concrete failure scenario
-4. Suggested fix approach
+3. **The actual code** — quote the specific lines that demonstrate the issue
+4. Concrete failure scenario (not hypothetical — describe the sequence of events)
+5. Suggested fix approach
 
 ## Constraints
 
 **DO NOT modify any source code.** This is a read-only analysis. Your only deliverable is `review.md`.
 
 **DO NOT fix things you find.** Document and move on.
+
+**Include the code.** Every finding must quote the specific lines from the source. If you cannot point to specific lines, the finding is not concrete enough to report.
 
 **Be specific.** Name the function, the line, the exact failure sequence.
 

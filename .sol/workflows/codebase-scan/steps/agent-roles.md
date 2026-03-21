@@ -1,6 +1,6 @@
 # Agent Roles Review
 
-Review the packages listed in **Focus** for correctness in agent lifecycle management, persona generation, brief handling, and skill registration.
+Review the packages listed in **Focus** for correctness in agent lifecycle management, brief handling, and role-specific behavior.
 
 ## What to look for
 
@@ -8,6 +8,7 @@ Review the packages listed in **Focus** for correctness in agent lifecycle manag
 - **Lifecycle**: Create, delete, session start/stop — are all state transitions clean? Any dangling state after delete (worktree, tether, brief, database records)?
 - **Brief injection**: Is the brief correctly loaded and injected on session start? Size limits enforced?
 - **Concurrent access**: Can two operations on the same envoy race (e.g., handoff while a notification arrives)?
+- **Lock acquisition**: Are agent locks acquired before state mutations? Any TOCTOU gaps?
 
 ### Governor (internal/governor/)
 - **Session management**: Start, stop, query, summary — are these robust to the governor session being dead or unresponsive?
@@ -24,11 +25,6 @@ Review the packages listed in **Focus** for correctness in agent lifecycle manag
 - **Size management**: Is the 200-line cap enforced? What happens when the agent writes beyond it?
 - **Injection**: Is the injection hook wired correctly? Does it handle missing brief gracefully (clean start, not error)?
 
-### Skills (internal/skills/)
-- **Registration**: Are skills correctly discovered and registered? What happens with duplicate skill names?
-- **Skill file format**: Is the YAML frontmatter + markdown body parsed correctly? Malformed files handled?
-- **Lifecycle**: Are skills loaded once at startup or refreshed? If cached, is that a ZFC violation?
-
 ## Output
 
 Write all findings to `review.md` in your writ output directory. Structure by severity:
@@ -40,14 +36,17 @@ Write all findings to `review.md` in your writ output directory. Structure by se
 Each finding must include:
 1. One-line summary
 2. File path and line range
-3. Concrete failure scenario
-4. Suggested fix approach
+3. **The actual code** — quote the specific lines that demonstrate the issue
+4. Concrete failure scenario (not hypothetical — describe the sequence of events)
+5. Suggested fix approach
 
 ## Constraints
 
 **DO NOT modify any source code.** This is a read-only analysis. Your only deliverable is `review.md`.
 
 **DO NOT fix things you find.** Document and move on.
+
+**Include the code.** Every finding must quote the specific lines from the source. If you cannot point to specific lines, the finding is not concrete enough to report.
 
 **Be specific.** Name the function, the line, the exact failure sequence.
 
