@@ -270,7 +270,7 @@ Use envoys for ongoing collaborative work, research, or tasks that need continui
 
 **Starting an envoy session:**
 ```sh
-sol envoy start --world=myworld --agent=MyEnvoy
+sol envoy start MyEnvoy --world=myworld
 ```
 
 ---
