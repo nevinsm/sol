@@ -394,7 +394,7 @@ Copies an embedded workflow to the user or project tier so it can be customized.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--project` | bool | false | create in project tier (.sol/workflows/) |
-| `--type` | string | workflow | workflow type (workflow, expansion, or convoy) |
+| `--type` | string | workflow | workflow type |
 | `--world` | string | "" | world name |
 
 #### `sol workflow instantiate`
@@ -423,7 +423,7 @@ Copies an embedded workflow to the user or project tier so it can be customized.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
-| `--target` | string | "" | existing writ ID to manifest against (required for expansion workflows) |
+| `--target` | string | "" | existing writ ID to manifest against |
 | `--var` | stringSlice | [] | variable assignment (key=val) |
 | `--world` | string | "" | world name |
 

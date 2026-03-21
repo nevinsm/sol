@@ -18,7 +18,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0012 | Charmbracelet Libraries for Terminal UI | Accepted | Adopts lipgloss for terminal styling and huh for interactive prompts across autarch-facing commands |
 | 0013 | Brief System for Context Persistence | Accepted | Persistent agents maintain self-authored brief files injected via Claude Code hooks to carry context across sessions and compactions |
 | 0014 | Managed World Repository | Accepted | Each world maintains a managed git clone at `$SOL_HOME/{world}/repo/`; all worktrees branch from this clone |
-| 0015 | Workflow Manifest and Workflow Types | Accepted | Adds inline, manifested, and convoy execution modes and three workflow types (workflow, expansion, convoy) |
+| 0015 | Workflow Manifest and Workflow Types | Superseded by ADR-0032 | Adds inline, manifested, and convoy execution modes and three workflow types (workflow, expansion, convoy). Superseded: unified into single type with two modes. |
 | 0016 | Ledger as Sphere-Scoped OTel Receiver for Agent Token Tracking | Accepted | Adds `agent_history` and `token_usage` tables modeled on OTel span/metric hierarchy for per-agent token tracking |
 | 0017 | Workflow-Based Forge | Superseded by ADR-0027 | Replaced forge's free-form Claude patrol with a TOML workflow prescribing exact step sequences; superseded when Go process proved sufficient |
 | 0018 | Agent Config Directory Isolation | Accepted | Sets `CLAUDE_CONFIG_DIR` per agent to a world-scoped path, isolating auto-memory and session transcripts between agents |
@@ -42,4 +42,5 @@ Index of architecture decision records. Update this file when adding new ADRs.
 - **ADR-0005** (forge as Claude session + Go toolbox) — superseded by ADR-0027
 - **ADR-0017** (workflow-based forge) — superseded by ADR-0027
 - **ADR-0027** (forge as deterministic Go process) — superseded by ADR-0028
+- **ADR-0015** (workflow manifest and workflow types) — superseded by ADR-0032 (workflow type unification)
 - **ADR-0011** (senate as sphere-scoped planner) — accepted; component renamed to Chancellor in ADR-0029

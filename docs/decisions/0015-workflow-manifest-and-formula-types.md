@@ -1,7 +1,12 @@
 # ADR-0015: Workflow Manifest and Workflow Types
 
-Status: accepted
+Status: superseded by ADR-0032
 Date: 2026-03-04
+
+> **Note:** This ADR is superseded by [ADR-0032: Workflow Type Unification](0032-workflow-type-unification.md).
+> The three workflow types (workflow, expansion, convoy) described here have been
+> unified into a single workflow type with two modes (`inline` and `manifest`).
+> Convoy and expansion types have been removed.
 
 ## Context
 

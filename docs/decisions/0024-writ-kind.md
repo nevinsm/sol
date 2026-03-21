@@ -5,12 +5,12 @@ Date: 2026-03-08
 
 ## Context
 
-The code-review convoy workflow (Gitea #2) exposed a fundamental assumption
-in the resolve path: every writ produces code. Convoy legs that performed
-analysis — reviewing code, writing reports, assessing quality — produced
-findings but no meaningful git diff. When these legs resolved, the system
-created merge requests for empty branches. Gitea's squash-merge rejected
-them (empty commits), blocking the entire convoy.
+The code-review workflow (Gitea #2) exposed a fundamental assumption
+in the resolve path: every writ produces code. Manifested workflow steps that
+performed analysis — reviewing code, writing reports, assessing quality —
+produced findings but no meaningful git diff. When these steps resolved, the
+system created merge requests for empty branches. Gitea's squash-merge
+rejected them (empty commits), blocking the entire caravan.
 
 The root cause is structural: `sol resolve` always pushes a branch and
 creates a merge request. Analysis writs have no code to push. The resolve
@@ -81,8 +81,8 @@ GLASS-inspectable.
 Kind flows through the full lifecycle:
 
 1. **Creation**: `sol writ create --kind=analysis` (defaults to `code`)
-2. **Workflow manifest**: convoy legs and manifest steps carry kind from
-   workflow definitions to child writs
+2. **Workflow manifest**: manifest steps carry kind from workflow
+   definitions to child writs
 3. **Cast / persona**: `sol cast` reads kind and passes it to persona
    generation, which customizes instructions based on writ type
 4. **Resolve**: kind determines the resolve path as described above
@@ -109,8 +109,8 @@ before starting their own work.
 ## Consequences
 
 - **Non-code writs bypass forge entirely.** No empty branches, no failed
-  squash-merges, no blocked convoys. The convoy workflow that triggered
-  this work now completes cleanly.
+  squash-merges, no blocked caravans. The code-review workflow that
+  triggered this work now completes cleanly.
 - **"All Code through Forge" principle is preserved.** It was always scoped
   to code — code writs still flow through forge with quality gates. The
   principle's documentation is updated to make this scope explicit.
@@ -126,7 +126,7 @@ before starting their own work.
 - **Extensible to new kinds.** The system branches on `code` vs not-code,
   so adding a new kind (e.g., `review`, `planning`) requires no code
   changes — it automatically follows the non-code resolve path.
-- **Workflows can mix kinds.** A convoy can have code legs and
-  analysis legs. Each leg resolves according to its own kind. Phase gating
+- **Workflows can mix kinds.** A manifested workflow can have code steps and
+  analysis steps. Each step resolves according to its own kind. Phase gating
   works correctly — analysis writs closing counts as completion for phase
   advancement.

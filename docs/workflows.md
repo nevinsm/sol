@@ -8,7 +8,7 @@ manifests that sol can instantiate, dispatch, and track.
 ## Table of Contents
 
 - [What Workflows Are](#what-workflows-are)
-- [The Three Types](#the-three-types)
+- [Two Modes: Inline and Manifest](#two-modes-inline-and-manifest)
 - [TOML Schema Reference](#toml-schema-reference)
 - [Variable Syntax](#variable-syntax)
 - [Three-Tier Resolution](#three-tier-resolution)
@@ -23,8 +23,8 @@ manifests that sol can instantiate, dispatch, and track.
 A workflow is a directory containing a `manifest.toml` and optional
 instruction files. The manifest declares:
 
-- **Steps, templates, or legs** that define the work to be done.
-- **Dependencies** between those units (a DAG).
+- **Steps** that define the work to be done.
+- **Dependencies** between those steps (a DAG).
 - **Variables** that parameterize the workflow at instantiation time.
 
 ### Relationship to writs, caravans, and dispatch
@@ -42,7 +42,7 @@ Use **workflows** when:
 - The work follows a repeatable pattern (review, refine, investigate).
 - Multiple agents should work on different dimensions of the same problem.
 - Steps have dependencies that should be enforced automatically.
-- You want fresh agent context per step (manifested workflows).
+- You want fresh agent context per step (manifest mode).
 
 Use **manual writ creation** when:
 - The work is a one-off task with no repeatable structure.
@@ -51,26 +51,20 @@ Use **manual writ creation** when:
 
 ---
 
-## The Three Types
+## Two Modes: Inline and Manifest
 
-### Workflow
+Every workflow operates in one of two modes, controlled by the `mode`
+field in `manifest.toml`.
 
-Sequential steps with DAG ordering.
+### Inline mode (default)
 
-**Default mode (inline):** A single agent session receives all steps at
-prime time. The agent sees the full checklist and works through it.
-`sol workflow advance` checkpoints progress — if the session dies, it
-restarts from the last advance.
-
-**Manifested mode (`manifest = true`):** Each step becomes a child writ in
-a caravan. Each child is cast to a separate outpost session and goes through
-the full cast → resolve → forge pipeline independently. Branch continuity
-is maintained — each child inherits the previous step's merged commits.
+A single agent session receives all steps at prime time. The agent sees
+the full checklist and works through it. `sol workflow advance`
+checkpoints progress — if the session dies, it restarts from the last
+advance.
 
 ```toml
 name = "my-workflow"
-type = "workflow"
-manifest = true  # optional; default false (inline)
 
 [[steps]]
 id = "design"
@@ -84,79 +78,62 @@ instructions = "steps/02-implement.md"
 needs = ["design"]
 ```
 
-### Expansion
+**When to use inline mode:**
+- Linear work: load context, implement, verify.
+- Quality gates: design, implement, review, test.
+- Single session with full visibility — simple and fast.
 
-Template-based child writ generation against a target writ. Always
-manifested — there is no inline expansion. Each template entry becomes a
-child writ whose title and description are derived from the target writ
-via variable substitution.
+### Manifest mode
 
-Use case: iterative refinement where each pass gets fresh context. The
-rule-of-five pattern (draft → correctness → clarity → edge cases → polish)
-is the canonical example.
+Each step becomes a child writ in a caravan. Each child is cast to a
+separate outpost session and goes through the full cast, resolve, forge
+pipeline independently. Branch continuity is maintained — each child
+inherits the previous step's merged commits.
 
-```toml
-name = "my-expansion"
-type = "expansion"
-
-[[template]]
-id = "{target}.draft"
-title = "Draft: {target.title}"
-description = "Initial attempt at {target.title}."
-
-[[template]]
-id = "{target}.refine"
-title = "Refine: {target.title}"
-description = "Improve the draft of {target.title}."
-needs = ["{target}.draft"]
-```
-
-### Convoy
-
-Parallel fan-out with synthesis. Independent legs are dispatched
-simultaneously to separate outpost sessions. A synthesis step runs after
-all specified legs have merged, combining results into a consolidated
-output.
-
-Use case: multi-perspective analysis (code review, plan review, design
-exploration) where different dimensions benefit from independent,
-focused attention.
+Steps without dependencies on each other run in parallel (separate
+phases). Steps with `needs` wait for their dependencies to complete
+before being dispatched.
 
 ```toml
-name = "my-convoy"
-type = "convoy"
+name = "my-review"
+mode = "manifest"
 
-[[legs]]
-id = "security"
-title = "Security Analysis"
-description = "Evaluate security implications."
-focus = "Trust boundaries and attack surface."
+[[steps]]
+id = "requirements"
+title = "Requirements Analysis"
 kind = "analysis"
+description = "Review code changes for requirements completeness."
 
-[[legs]]
-id = "performance"
-title = "Performance Analysis"
-description = "Evaluate performance characteristics."
-focus = "Latency, throughput, and resource usage."
+[[steps]]
+id = "feasibility"
+title = "Feasibility Assessment"
 kind = "analysis"
+description = "Evaluate technical feasibility and architectural fit."
 
-[synthesis]
+[[steps]]
+id = "synthesis"
 title = "Consolidated Review"
-description = "Merge findings from all legs."
 kind = "analysis"
-depends_on = ["security", "performance"]
+description = "Consolidate findings from all analysis dimensions."
+needs = ["requirements", "feasibility"]
 ```
 
-### Which type should I use?
+**When to use manifest mode:**
+- Multi-step work needing fresh context per step.
+- Parallel analysis: review from multiple angles simultaneously.
+- Iterative refinement: draft then N revision passes.
+- Fan-out work with a merge/synthesis step.
 
-| Scenario | Type | Why |
+### When to use inline vs manifest mode
+
+| Scenario | Mode | Why |
 |----------|------|-----|
-| Linear work: load context → implement → verify | **workflow** (inline) | Single session, full visibility, simple. |
-| Multi-step work needing fresh context per step | **workflow** (manifested) | Each step gets a clean agent perspective. |
-| Iterative refinement: draft then N revision passes | **expansion** | Each pass builds on the previous, fresh context per pass. |
-| Parallel analysis: review from multiple angles | **convoy** | Independent legs run simultaneously, synthesis combines. |
-| Quality gates: design → implement → review → test | **workflow** (inline or manifested) | Sequential with dependencies. |
-| Fan-out work with a merge step | **convoy** | Legs are independent; synthesis depends on all legs. |
+| Linear work: load context, implement, verify | **inline** | Single session, full visibility, simple. |
+| Multi-step work needing fresh context per step | **manifest** | Each step gets a clean agent perspective. |
+| Iterative refinement: draft then N revision passes | **manifest** | Each pass builds on the previous, fresh context per pass. |
+| Parallel analysis: review from multiple angles | **manifest** | Independent steps run simultaneously, synthesis combines. |
+| Quality gates: design, implement, review, test | **inline** or **manifest** | Sequential with dependencies. |
+| Fan-out work with a merge step | **manifest** | Independent steps run in parallel; final step depends on all. |
 
 ---
 
@@ -169,9 +146,9 @@ Every workflow is defined by a `manifest.toml` file in its directory.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | yes | Workflow name. Must match `[a-zA-Z0-9][a-zA-Z0-9_-]*`. |
-| `type` | string | yes | One of `"workflow"`, `"expansion"`, or `"convoy"`. |
+| `type` | string | no | Defaults to `"workflow"`. |
+| `mode` | string | no | `"inline"` (default) or `"manifest"`. Controls execution mode. |
 | `description` | string | no | Human-readable description of the workflow's purpose. |
-| `manifest` | bool | no | Default `false`. When `true`, steps become child writs (workflow type only). Expansion and convoy always manifest. |
 
 ### Variables: `[variables]` or `[vars]`
 
@@ -190,16 +167,17 @@ base_branch = { default = "main", description = "Branch to base work from" }
 | `default` | string | Default value used when the variable is not provided. |
 | `description` | string | Human-readable description of the variable. |
 
-### Steps: `[[steps]]` (workflow type)
+### Steps: `[[steps]]`
 
-Workflow-type manifests use `[[steps]]` to define sequential work units.
-Each step references an instruction file containing markdown with variable
-substitution.
+All workflows use `[[steps]]` to define work units. In inline mode,
+steps are presented as a checklist. In manifest mode, each step becomes
+a child writ.
 
 ```toml
 [[steps]]
 id = "implement"
 title = "Implement the change"
+description = "Make the code changes described in the writ."
 instructions = "steps/02-implement.md"
 needs = ["design"]
 kind = "code"
@@ -209,88 +187,20 @@ kind = "code"
 |-------|------|----------|-------------|
 | `id` | string | yes | Unique identifier within the workflow. |
 | `title` | string | yes | Human-readable step name. |
-| `instructions` | string | yes | Relative path to the instruction markdown file. |
-| `needs` | string[] | no | Step IDs this step depends on. Empty means no dependencies (runs first). |
-| `kind` | string | no | `"code"` (default) or `"analysis"`. Propagated to child writs when manifested. |
-
-### Templates: `[[template]]` (expansion type)
-
-Expansion-type manifests use `[[template]]` to define child writ patterns
-generated against a target writ.
-
-```toml
-[[template]]
-id = "{target}.draft"
-title = "Draft: {target.title}"
-description = "Initial attempt at {target.title}."
-needs = ["{target}.previous"]
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | yes | Unique identifier. Supports `{target}` substitution (replaced with the target writ ID). |
-| `title` | string | yes | Human-readable name. Supports `{target.title}` substitution. |
-| `description` | string | no | Detailed description. Supports `{target.title}`, `{target.description}`, `{target.id}` substitution. |
-| `needs` | string[] | no | Template IDs this template depends on. Supports `{target}` in references. |
-
-### Legs: `[[legs]]` (convoy type)
-
-Convoy-type manifests use `[[legs]]` to define independent work dimensions
-dispatched in parallel.
-
-```toml
-[[legs]]
-id = "security"
-title = "Security Analysis: {target.title}"
-description = "Evaluate security implications."
-focus = "Trust boundaries and attack surface."
-kind = "analysis"
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | yes | Unique identifier within the convoy. |
-| `title` | string | yes | Human-readable name. Supports `{target.title}` substitution when a target writ is provided. |
-| `description` | string | no | Detailed description. Supports target substitutions. `focus` is appended to the description in the generated writ. |
-| `focus` | string | no | Guidance for the leg's focus area. Appended to the writ description as "Focus: {value}". |
-| `kind` | string | no | `"code"` (default) or `"analysis"`. Determines the resolve path for the leg's writ. |
-| `instructions` | string | no | Relative path to a `.md` file. When set, the file content replaces `description` on the generated writ (with `{{variable}}` substitution applied). If `focus` is also set, it is appended as a `## Focus` section. |
-
-### Synthesis: `[synthesis]` (convoy type)
-
-A single synthesis section defines the follow-up step that runs after
-all specified legs have completed and merged.
-
-```toml
-[synthesis]
-title = "Consolidated Review: {target.title}"
-description = "Read analysis findings from each leg. Produce a consolidated review."
-kind = "analysis"
-depends_on = ["security", "performance", "correctness"]
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `title` | string | yes | Human-readable name. Supports target substitutions. |
-| `description` | string | no | Detailed description. Supports target substitutions. Automatically enriched with leg writ references and output directory paths. |
-| `depends_on` | string[] | yes | Leg IDs that must complete before synthesis runs. |
-| `kind` | string | no | `"code"` (default) or `"analysis"`. |
-| `instructions` | string | no | Relative path to a `.md` file. When set, the file content replaces `description` on the generated writ (with `{{variable}}` substitution applied). Leg writ references are still appended automatically. |
+| `description` | string | no | Inline content for the step. When both `description` and `instructions` are set, `instructions` wins (file content replaces description). |
+| `instructions` | string | no | Relative path to an instruction markdown file. Variable substitution is applied to file contents. |
+| `needs` | string[] | no | Step IDs this step depends on. Empty means no dependencies (runs first). In manifest mode, steps without mutual dependencies run in parallel. |
+| `kind` | string | no | `"code"` (default) or `"analysis"`. Propagated to child writs when manifested. Determines the resolve path — code writs flow through forge, analysis writs close directly. |
 
 ---
 
 ## Variable Syntax
 
-Workflows support two variable substitution mechanisms for different
-contexts.
+Workflows use `{{variable}}` double-brace syntax for all variable
+substitution. Variables are replaced with their resolved values at
+instantiation time.
 
-### Workflow variables: `{{variable}}`
-
-Used in step instruction files (the `.md` files referenced by
-`instructions`). Double-brace syntax is replaced with the resolved
-variable value at instantiation time.
-
-**Declaration:**
+### Declaring variables
 
 ```toml
 [variables]
@@ -298,7 +208,7 @@ world = { required = true }
 gate_command = { default = "make build && make test" }
 ```
 
-**Usage in instruction files:**
+### Using variables in instruction files
 
 ```markdown
 # Run Quality Gates
@@ -308,55 +218,43 @@ Run the gate command for the {{world}} world:
     {{gate_command}}
 ```
 
-**Providing values:**
+### Providing values
 
 ```bash
 sol workflow manifest default-work --world=myworld \
   --var world=myworld
 ```
 
-### Target variables: `{target.*}`
+### Target variables
 
-Used in expansion templates and convoy legs/synthesis. Single-brace
-syntax references the target writ's properties. These are substituted
-when the workflow is manifested against a target writ.
+When `--target=<writ-id>` is provided to `sol workflow manifest`, the
+target writ is loaded and the following variables are auto-populated:
 
 | Variable | Substituted with |
 |----------|-----------------|
-| `{target}` | The target writ's ID (in template IDs and needs) |
-| `{target.id}` | The target writ's ID |
-| `{target.title}` | The target writ's title |
-| `{target.description}` | The target writ's description |
+| `{{target.id}}` | The target writ's ID |
+| `{{target.title}}` | The target writ's title |
+| `{{target.description}}` | The target writ's description |
 
-**Example (expansion):**
-
-```toml
-[[template]]
-id = "{target}.draft"
-title = "Draft: {target.title}"
-description = "Initial attempt at {target.title}. Full context: {target.description}"
-```
-
-**Example (convoy):**
+These participate in the standard `{{variable}}` substitution — no
+separate mechanism. Use them in step titles, descriptions, and
+instruction files:
 
 ```toml
-[[legs]]
-id = "requirements"
-title = "Requirements Analysis: {target.title}"
-description = "Review code changes for requirements completeness."
-
-[synthesis]
-title = "Consolidate Review: {target.title}"
-description = "Produce a consolidated review of {target.title}."
+[[steps]]
+id = "draft"
+title = "Draft: {{target.title}}"
+description = "Initial attempt at {{target.title}}. Full context: {{target.description}}"
 ```
 
 ### Variable resolution
 
 Variables are resolved in this order:
 
-1. **Provided values** — from `--var key=val` CLI flags.
-2. **Defaults** — from `default = "value"` in the manifest.
-3. **Required check** — error if a required variable has no value and no default.
+1. **Target auto-population** — from `--target` writ properties (`{{target.title}}`, etc.).
+2. **Provided values** — from `--var key=val` CLI flags.
+3. **Defaults** — from `default = "value"` in the manifest.
+4. **Required check** — error if a required variable has no value and no default.
 
 Both `[variables]` and `[vars]` sections are supported. If both declare
 the same key, the `[vars]` entry takes precedence.
@@ -435,8 +333,8 @@ Output shows which workflows are active and which are shadowed:
 
 ```
 NAME           TYPE        TIER       DESCRIPTION
-code-review    convoy      project    Custom project review
-code-review    convoy      embedded   Multi-perspective code review (shadowed)
+code-review    workflow    project    Custom project review
+code-review    workflow    embedded   Multi-perspective code review (shadowed)
 default-work   workflow    embedded   Standard outpost work execution
 ```
 
@@ -447,19 +345,16 @@ default-work   workflow    embedded   Standard outpost work execution
 ### Creating a new workflow
 
 ```bash
-# Create a workflow-type workflow in the user tier
+# Create a workflow in the user tier
 sol workflow init my-workflow
 
-# Create a convoy-type workflow in the user tier
-sol workflow init my-review --type=convoy
-
-# Create an expansion-type workflow in the project tier
-sol workflow init my-expansion --type=expansion --project --world=myworld
+# Create a workflow in the project tier
+sol workflow init my-review --project --world=myworld
 ```
 
-This scaffolds a directory with a `manifest.toml` and (for workflow type)
-a `steps/` directory with a placeholder step file. Edit `manifest.toml`
-to define your workflow.
+This scaffolds a directory with a `manifest.toml` and a `steps/`
+directory with a placeholder step file. Edit `manifest.toml` to define
+your workflow.
 
 ### Customizing an embedded workflow
 
@@ -490,8 +385,8 @@ sol workflow show --path ./my-workflow/
 sol workflow show default-work --json
 ```
 
-Output includes name, type, tier, path, variables, steps/templates/legs,
-and validation status.
+Output includes name, type, tier, path, variables, steps, and
+validation status.
 
 ### Listing available workflows
 
@@ -511,20 +406,19 @@ sol workflow list --world=myworld
 
 ### Manifesting a workflow
 
-Manifesting materializes a workflow into child writs grouped in a caravan.
-This is required for expansion and convoy types, and optional (with
-`manifest = true`) for workflow types.
+Manifesting materializes a workflow into child writs grouped in a
+caravan. This applies to workflows with `mode = "manifest"`.
 
 ```bash
-# Manifest a workflow
+# Manifest a workflow with variables
 sol workflow manifest thorough-work --world=myworld \
   --var issue=sol-a1b2c3d4
 
-# Manifest an expansion against a target writ
+# Manifest a workflow against a target writ
 sol workflow manifest rule-of-five --world=myworld \
   --target=sol-a1b2c3d4
 
-# Manifest a convoy against a target writ
+# Manifest a review workflow against a target writ
 sol workflow manifest code-review --world=myworld \
   --target=sol-a1b2c3d4
 
@@ -581,7 +475,7 @@ Sol ships with eight embedded workflows covering common work patterns.
 
 ### 1. default-work
 
-**Type:** workflow (inline, 3 steps)
+**Mode:** inline (3 steps)
 **Purpose:** Standard outpost work execution. Load context, implement,
 verify. The default pattern for straightforward coding tasks.
 
@@ -608,7 +502,7 @@ sol cast sol-a1b2c3d4 --workflow=default-work
 
 ### 2. thorough-work
 
-**Type:** workflow (inline, 5 steps)
+**Mode:** inline (5 steps)
 **Purpose:** Quality-focused work execution with design and review gates.
 Use when work quality matters more than speed — the extra design and
 review steps catch issues before they reach forge.
@@ -638,7 +532,7 @@ sol cast sol-a1b2c3d4 --workflow=thorough-work
 
 ### 3. deep-scan
 
-**Type:** workflow (inline, 5 steps)
+**Mode:** inline (5 steps)
 **Purpose:** Investigation pipeline to root cause. Takes a bug or issue
 through orientation, code survey, root cause isolation, documentation, and
 fix planning. Produces a fix caravan rather than fixing the issue directly.
@@ -668,7 +562,7 @@ sol cast sol-a1b2c3d4 --workflow=deep-scan
 
 ### 4. idea-to-plan
 
-**Type:** workflow (inline, 6 steps)
+**Mode:** inline (6 steps)
 **Purpose:** Planning pipeline from concept to writs. Takes a vague idea
 through requirements review, design exploration, and plan review to
 produce concrete writs ready for dispatch.
@@ -701,21 +595,21 @@ sol cast sol-a1b2c3d4 --workflow=idea-to-plan \
 
 ### 5. rule-of-five
 
-**Type:** expansion (5 templates)
+**Mode:** manifest (5 steps)
 **Purpose:** Five-pass iterative refinement. Each pass gets a fresh agent
 session: draft for breadth, then four focused revision passes for
-correctness, clarity, edge cases, and polish. Always manifested — each
-template becomes a child writ.
+correctness, clarity, edge cases, and polish. Each step becomes a child
+writ with branch continuity from the previous step.
 
-**Variables:** None declared. Uses target writ substitution.
+**Variables:** None declared. Uses `--target` for `{{target.title}}` substitution.
 
-**Templates:**
+**Steps:**
 
-1. `{target}.draft` — Draft: breadth over depth, get a working solution
-2. `{target}.refine-correctness` — Fix errors, bugs, and logical mistakes (needs: draft)
-3. `{target}.refine-clarity` — Improve readability, naming, and structure (needs: refine-correctness)
-4. `{target}.refine-edge-cases` — Handle boundary conditions and error paths (needs: refine-clarity)
-5. `{target}.refine-polish` — Final pass: tests, documentation, commit hygiene (needs: refine-edge-cases)
+1. `draft` — Draft: breadth over depth, get a working solution
+2. `refine-correctness` — Fix errors, bugs, and logical mistakes (needs: draft)
+3. `refine-clarity` — Improve readability, naming, and structure (needs: refine-correctness)
+4. `refine-edge-cases` — Handle boundary conditions and error paths (needs: refine-clarity)
+5. `refine-polish` — Final pass: tests, documentation, commit hygiene (needs: refine-edge-cases)
 
 **Example:**
 
@@ -728,7 +622,7 @@ sol workflow manifest rule-of-five --world=myworld \
 
 ### 6. code-review
 
-**Type:** convoy (2 legs + synthesis)
+**Mode:** manifest (3 steps)
 **Purpose:** Multi-perspective code review with parallel analysis and
 synthesis. Two independent review dimensions run simultaneously, then a
 synthesis step consolidates findings.
@@ -739,12 +633,11 @@ synthesis step consolidates findings.
 |----------|----------|---------|-------------|
 | `target` | yes | — | Writ ID of the code to review |
 
-**Legs:**
+**Steps:**
 
-1. `requirements` (analysis) — Review code changes for requirements completeness. Focus: success criteria, edge cases, scope.
-2. `feasibility` (analysis) — Evaluate technical feasibility and architectural fit. Focus: patterns, architectural concerns, maintainability.
-
-**Synthesis:** `Consolidate Review` (analysis) — Read analysis findings from each leg. Produce a consolidated review with prioritized action items, risks, and recommendations. Depends on: requirements, feasibility.
+1. `requirements` (analysis) — Requirements Analysis: review code changes for requirements completeness. Focus: success criteria, edge cases, scope.
+2. `feasibility` (analysis) — Feasibility Assessment: evaluate technical feasibility and architectural fit. Focus: patterns, architectural concerns, maintainability.
+3. `synthesis` (analysis) — Consolidate Review: read analysis findings from each step's output directory. Produce a consolidated review with prioritized action items, risks, and recommendations. (needs: requirements, feasibility)
 
 **Example:**
 
@@ -757,22 +650,21 @@ sol workflow manifest code-review --world=myworld \
 
 ### 7. plan-review
 
-**Type:** convoy (5 legs + synthesis)
+**Mode:** manifest (6 steps)
 **Purpose:** Parallel plan analysis with five independent review dimensions
 and a go/no-go synthesis. Useful for reviewing plans, PRDs, or proposals
 from multiple angles simultaneously.
 
-**Variables:** None declared. Uses target writ substitution.
+**Variables:** None declared. Uses `--target` for target substitution.
 
-**Legs:**
+**Steps:**
 
 1. `completeness` (analysis) — Assess coverage of goals, deliverables, acceptance criteria, resources, timeline.
 2. `sequencing` (analysis) — Evaluate step ordering, dependency relationships, parallelism opportunities.
 3. `risk` (analysis) — Identify technical, operational, and integration risks.
 4. `scope-creep` (analysis) — Compare stated objectives against proposed work, identify gold-plating.
 5. `testability` (analysis) — Assess whether each deliverable can be verified.
-
-**Synthesis:** `Go/No-Go Recommendation` (analysis) — Consolidate findings into a single go/no-go recommendation with concerns ranked by severity. Depends on: completeness, sequencing, risk, scope-creep, testability.
+6. `synthesis` (analysis) — Go/No-Go Recommendation: consolidate findings into a single go/no-go recommendation with concerns ranked by severity. (needs: completeness, sequencing, risk, scope-creep, testability)
 
 **Example:**
 
@@ -785,14 +677,14 @@ sol workflow manifest plan-review --world=myworld \
 
 ### 8. guided-design
 
-**Type:** convoy (6 legs + synthesis)
+**Mode:** manifest (7 steps)
 **Purpose:** Parallel design exploration across six dimensions with
 synthesis into a coherent design recommendation. Useful for ADR authoring
 and architecture writs.
 
-**Variables:** None declared. Uses target writ substitution.
+**Variables:** None declared. Uses `--target` for target substitution.
 
-**Legs:**
+**Steps:**
 
 1. `api-design` (analysis) — Explore API surface: endpoints, methods, request/response shapes, versioning, error conventions.
 2. `data-model` (analysis) — Explore data model: entities, relationships, storage, migration, query patterns.
@@ -800,8 +692,7 @@ and architecture writs.
 4. `scalability` (analysis) — Explore scalability: concurrency, resource usage, growth limits, caching, performance.
 5. `security` (analysis) — Explore security: authentication, authorization, input validation, secrets, attack surface.
 6. `integration` (analysis) — Explore integration points: dependencies, extension hooks, backward compatibility, migration.
-
-**Synthesis:** `Design Synthesis` (analysis) — Merge findings from all six legs into a coherent design recommendation. Identify tensions, propose trade-offs, produce a draft ADR or design document. Depends on: api-design, data-model, ux-interaction, scalability, security, integration.
+7. `synthesis` (analysis) — Design Synthesis: merge findings from all six dimensions into a coherent design recommendation. Identify tensions, propose trade-offs, produce a draft ADR or design document. (needs: api-design, data-model, ux-interaction, scalability, security, integration)
 
 **Example:**
 
@@ -821,7 +712,7 @@ in `sol workflow list`.
 
 ### codebase-scan (project-tier)
 
-**Type:** convoy (11 legs + synthesis)
+**Mode:** manifest (12 steps)
 **Purpose:** Comprehensive project-tier codebase review. Parallel analysis
 across all code, tests, documentation, and configuration dimensions, then
 synthesis into a consolidated findings report. Useful for full project
@@ -829,7 +720,7 @@ health checks and generating a prioritized fix caravan.
 
 **Variables:** None declared. No target substitution.
 
-**Legs:**
+**Steps:**
 
 1. `core-infra` (analysis) — Review core infrastructure: store, config, setup, fileutil, processutil, logutil, envfile, git, namepool.
 2. `session-lifecycle` (analysis) — Review session lifecycle: startup, dispatch, session, tether, adapter, handoff.
@@ -842,8 +733,7 @@ health checks and generating a prioritized fix caravan.
 9. `integration-tests` (analysis) — Review integration tests.
 10. `documentation` (analysis) — Review documentation.
 11. `build-and-agent-env` (analysis) — Review build system and agent environment: Makefile, go.mod, embedded workflows, skill files, prompts, config defaults.
-
-**Synthesis:** `Synthesize findings into fix caravan` (analysis) — Read all leg findings and synthesize into a consolidated review with prioritized action items. Depends on all 11 legs.
+12. `synthesis` (analysis) — Synthesize findings into fix caravan: read all step findings and synthesize into a consolidated review with prioritized action items. (needs: all 11 analysis steps)
 
 **Example:**
 
@@ -867,7 +757,7 @@ sol workflow init <name> [flags]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--type` | string | `workflow` | Workflow type: `workflow`, `expansion`, or `convoy` |
+| `--type` | string | `workflow` | Workflow type. |
 | `--project` | bool | `false` | Create in project tier (`.sol/workflows/`). Requires `--world`. |
 | `--world` | string | — | World name. Required with `--project`. |
 
@@ -877,8 +767,8 @@ sol workflow init <name> [flags]
 # Scaffold a workflow in the user tier
 sol workflow init deploy-pipeline
 
-# Scaffold a convoy in the project tier
-sol workflow init team-review --type=convoy --project --world=myworld
+# Scaffold a workflow in the project tier
+sol workflow init team-review --project --world=myworld
 ```
 
 ---
@@ -984,7 +874,7 @@ sol workflow manifest <workflow> [flags]
 |------|------|---------|-------------|
 | `--world` | string | — | World name. Required. |
 | `--var` | string[] | — | Variable assignment (`key=val`). Repeatable. |
-| `--target` | string | — | Existing writ ID to manifest against. Required for expansion workflows. |
+| `--target` | string | — | Existing writ ID to manifest against. Auto-populates `{{target.title}}`, `{{target.description}}`, `{{target.id}}` variables. |
 | `--json` | bool | `false` | Output as JSON. |
 
 **Examples:**
@@ -994,11 +884,11 @@ sol workflow manifest <workflow> [flags]
 sol workflow manifest thorough-work --world=myworld \
   --var issue=sol-a1b2c3d4
 
-# Manifest an expansion against a target writ
+# Manifest against a target writ
 sol workflow manifest rule-of-five --world=myworld \
   --target=sol-a1b2c3d4
 
-# Manifest a convoy against a target writ
+# Manifest a review workflow against a target writ
 sol workflow manifest code-review --world=myworld \
   --target=sol-a1b2c3d4
 ```
