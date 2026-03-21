@@ -916,12 +916,6 @@ func Prime(world, agentName, role string, worldStore WorldStore, compact ...bool
 			if err != nil {
 				return nil, err
 			}
-		} else if item.HasLabel("convoy-synthesis") {
-			// Convoy synthesis item — enrich context with leg info.
-			result, err = primeConvoySynthesis(world, agentName, item, worldStore)
-			if err != nil {
-				return nil, err
-			}
 		} else {
 			// No workflow — standard prime (existing behavior).
 			output := fmt.Sprintf(`=== WORK CONTEXT ===
@@ -1304,60 +1298,6 @@ then scan the queue with 'sol forge ready --world=%s --json'.
 	return &PrimeResult{Output: output}, nil
 }
 
-// primeConvoySynthesis returns enriched context for a convoy synthesis writ.
-// It lists all sibling leg writs, their titles, and their merge request branches.
-func primeConvoySynthesis(world, agentName string, item *store.Writ,
-	worldStore WorldStore) (*PrimeResult, error) {
-
-	var legSection strings.Builder
-	legSection.WriteString("## Convoy Legs\n")
-	legSection.WriteString("The following leg writs have been merged. Their changes are in your worktree.\n\n")
-
-	if item.ParentID != "" {
-		siblings, err := worldStore.ListChildWrits(item.ParentID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list sibling writs: %w", err)
-		}
-
-		for _, sib := range siblings {
-			if sib.ID == item.ID {
-				continue // skip the synthesis item itself
-			}
-			if !sib.HasLabel("convoy-leg") {
-				continue
-			}
-			// Look up the merge request to find the branch name.
-			branch := "(unknown)"
-			mrs, err := worldStore.ListMergeRequestsByWrit(sib.ID, "")
-			if err == nil && len(mrs) > 0 {
-				branch = mrs[0].Branch
-			}
-			legSection.WriteString(fmt.Sprintf("- **%s** (%s)\n  Branch: %s | Status: %s\n", sib.Title, sib.ID, branch, sib.Status))
-		}
-	}
-
-	output := fmt.Sprintf(`=== WORK CONTEXT ===
-Agent: %s (world: %s)
-Writ: %s
-Title: %s
-Status: %s
-
-%s
-Description:
-%s
-
-Instructions:
-This is a convoy synthesis step. All parallel legs have completed and their
-branches have been merged to the target branch. Your worktree contains all
-leg outputs. Synthesize the findings from all legs into a consolidated result.
-
-When complete, run: sol resolve
-If stuck, run: sol escalate "description"
-=== END CONTEXT ===`, agentName, world, item.ID, item.Title, item.Status,
-		legSection.String(), item.Description)
-
-	return &PrimeResult{Output: output}, nil
-}
 
 // DiscoverSourceRepo finds the git repo root from the current directory.
 func DiscoverSourceRepo() (string, error) {

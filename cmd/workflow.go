@@ -467,28 +467,6 @@ func printShowJSON(m *workflow.Manifest, res *workflow.Resolution, validationErr
 		Instructions string   `json:"instructions"`
 		Needs        []string `json:"needs,omitempty"`
 	}
-	type templateJSON struct {
-		ID          string   `json:"id"`
-		Title       string   `json:"title"`
-		Description string   `json:"description"`
-		Needs       []string `json:"needs,omitempty"`
-		Kind        string   `json:"kind,omitempty"`
-	}
-	type legJSON struct {
-		ID           string `json:"id"`
-		Title        string `json:"title"`
-		Description  string `json:"description"`
-		Focus        string `json:"focus,omitempty"`
-		Kind         string `json:"kind,omitempty"`
-		Instructions string `json:"instructions,omitempty"`
-	}
-	type synthesisJSON struct {
-		Title        string   `json:"title"`
-		Description  string   `json:"description"`
-		DependsOn    []string `json:"depends_on"`
-		Kind         string   `json:"kind,omitempty"`
-		Instructions string   `json:"instructions,omitempty"`
-	}
 	type output struct {
 		Name        string                `json:"name"`
 		Type        string                `json:"type"`
@@ -500,9 +478,6 @@ func printShowJSON(m *workflow.Manifest, res *workflow.Resolution, validationErr
 		Error       string                `json:"error,omitempty"`
 		Variables   map[string]varJSON    `json:"variables,omitempty"`
 		Steps       []stepJSON            `json:"steps,omitempty"`
-		Templates   []templateJSON        `json:"templates,omitempty"`
-		Legs        []legJSON             `json:"legs,omitempty"`
-		Synthesis   *synthesisJSON        `json:"synthesis,omitempty"`
 	}
 
 	out := output{
@@ -525,15 +500,6 @@ func printShowJSON(m *workflow.Manifest, res *workflow.Resolution, validationErr
 	}
 	for _, s := range m.Steps {
 		out.Steps = append(out.Steps, stepJSON{ID: s.ID, Title: s.Title, Instructions: s.Instructions, Needs: s.Needs})
-	}
-	for _, t := range m.Templates {
-		out.Templates = append(out.Templates, templateJSON{ID: t.ID, Title: t.Title, Description: t.Description, Needs: t.Needs, Kind: t.Kind})
-	}
-	for _, l := range m.Legs {
-		out.Legs = append(out.Legs, legJSON{ID: l.ID, Title: l.Title, Description: l.Description, Focus: l.Focus, Kind: l.Kind, Instructions: l.Instructions})
-	}
-	if m.Synth != nil {
-		out.Synthesis = &synthesisJSON{Title: m.Synth.Title, Description: m.Synth.Description, DependsOn: m.Synth.DependsOn, Kind: m.Synth.Kind, Instructions: m.Synth.Instructions}
 	}
 
 	return printJSON(out)
@@ -596,54 +562,6 @@ func printShowHuman(m *workflow.Manifest, res *workflow.Resolution, validationEr
 				line += fmt.Sprintf(" (needs: %s)", strings.Join(s.Needs, ", "))
 			}
 			fmt.Println(line)
-		}
-	}
-
-	// Templates (expansion type).
-	if len(m.Templates) > 0 {
-		fmt.Println()
-		fmt.Println("Templates:")
-		for i, t := range m.Templates {
-			line := fmt.Sprintf("  %d. %s — %s", i+1, t.ID, t.Title)
-			if t.Kind != "" {
-				line += fmt.Sprintf(" (%s)", t.Kind)
-			}
-			if len(t.Needs) > 0 {
-				line += fmt.Sprintf(" (needs: %s)", strings.Join(t.Needs, ", "))
-			}
-			fmt.Println(line)
-		}
-	}
-
-	// Legs (convoy type).
-	if len(m.Legs) > 0 {
-		fmt.Println()
-		fmt.Println("Legs:")
-		for i, l := range m.Legs {
-			line := fmt.Sprintf("  %d. %s — %s", i+1, l.ID, l.Title)
-			if l.Kind != "" {
-				line += fmt.Sprintf(" (%s)", l.Kind)
-			}
-			fmt.Println(line)
-			if l.Focus != "" {
-				fmt.Printf("     Focus: %s\n", l.Focus)
-			}
-			if l.Instructions != "" {
-				fmt.Printf("     Instructions: %s\n", l.Instructions)
-			}
-		}
-		if m.Synth != nil {
-			synthLine := fmt.Sprintf("\nSynthesis: %s", m.Synth.Title)
-			if m.Synth.Kind != "" {
-				synthLine += fmt.Sprintf(" (%s)", m.Synth.Kind)
-			}
-			fmt.Println(synthLine)
-			if len(m.Synth.DependsOn) > 0 {
-				fmt.Printf("  depends on: %s\n", strings.Join(m.Synth.DependsOn, ", "))
-			}
-			if m.Synth.Instructions != "" {
-				fmt.Printf("  instructions: %s\n", m.Synth.Instructions)
-			}
 		}
 	}
 
@@ -853,7 +771,7 @@ func init() {
 	workflowShowCmd.Flags().String("path", "", "load workflow from directory path instead of by name")
 
 	// init flags
-	workflowInitCmd.Flags().String("type", "workflow", "workflow type (workflow, expansion, or convoy)")
+	workflowInitCmd.Flags().String("type", "workflow", "workflow type")
 	workflowInitCmd.Flags().Bool("project", false, "create in project tier (.sol/workflows/)")
 	workflowInitCmd.Flags().String("world", "", "world name")
 
@@ -888,7 +806,7 @@ func init() {
 	// manifest flags
 	workflowManifestCmd.Flags().String("world", "", "world name")
 	workflowManifestCmd.Flags().StringSliceVar(&wfVars, "var", nil, "variable assignment (key=val)")
-	workflowManifestCmd.Flags().String("target", "", "existing writ ID to manifest against (required for expansion workflows)")
+	workflowManifestCmd.Flags().String("target", "", "existing writ ID to manifest against")
 	workflowManifestCmd.Flags().Bool("json", false, "output as JSON")
 
 	// list flags

@@ -1,7 +1,7 @@
 package integration
 
-// loop7_test.go — End-to-end integration tests for expansion and convoy
-// workflow types covering the full agent execution loop:
+// loop7_test.go — End-to-end integration tests for workflow types
+// covering the full agent execution loop:
 // materialize → cast → prime → resolve.
 
 import (
@@ -17,13 +17,13 @@ import (
 )
 
 // ============================================================
-// Expansion Workflow E2E Test
+// Sequential Step Workflow E2E Test
 // ============================================================
 
-// TestExpansionWorkflowE2E exercises the full agent execution loop for
-// expansion workflow child writs: materialize → cast → prime → advance
-// through phases → resolve closes child writs.
-func TestExpansionWorkflowE2E(t *testing.T) {
+// TestStepWorkflowE2E exercises the full agent execution loop for
+// workflow child writs with sequential dependencies:
+// materialize → cast → prime → advance through phases → resolve closes child writs.
+func TestStepWorkflowE2E(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -32,21 +32,24 @@ func TestExpansionWorkflowE2E(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// --- 1. Create expansion workflow manifest ---
-	workflowDir := filepath.Join(gtHome, "workflows", "e2e-expansion")
+	// --- 1. Create workflow manifest with sequential steps ---
+	workflowDir := filepath.Join(gtHome, "workflows", "e2e-sequential")
 	if err := os.MkdirAll(workflowDir, 0o755); err != nil {
 		t.Fatalf("create workflow dir: %v", err)
 	}
-	manifest := `name = "e2e-expansion"
-type = "expansion"
-description = "E2E expansion workflow test"
+	manifest := `name = "e2e-sequential"
+description = "E2E sequential workflow test"
+mode = "manifest"
 
-[[template]]
+[vars]
+target = { description = "Target writ", required = true }
+
+[[steps]]
 id = "analyze"
 title = "Analyze {{target.title}}"
 description = "Analyze the target writ to understand scope"
 
-[[template]]
+[[steps]]
 id = "implement"
 title = "Implement {{target.title}}"
 description = "Implement the solution based on analysis"
@@ -57,13 +60,13 @@ needs = ["analyze"]
 	}
 
 	// --- 2. Create parent (target) writ and materialize ---
-	parentID, err := worldStore.CreateWrit("Feature Y", "Parent feature for expansion", "autarch", 2, nil)
+	parentID, err := worldStore.CreateWrit("Feature Y", "Parent feature for workflow", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit (parent): %v", err)
 	}
 
 	result, err := workflow.Materialize(worldStore, sphereStore, workflow.ManifestOpts{
-		Name:      "e2e-expansion",
+		Name:      "e2e-sequential",
 		World:     "ember",
 		ParentID:  parentID,
 		CreatedBy: "autarch",
@@ -75,11 +78,11 @@ needs = ["analyze"]
 	// Verify child writs were created.
 	analyzeID, ok := result.ChildIDs["analyze"]
 	if !ok {
-		t.Fatal("missing child writ for 'analyze' template")
+		t.Fatal("missing child writ for 'analyze' step")
 	}
 	implementID, ok := result.ChildIDs["implement"]
 	if !ok {
-		t.Fatal("missing child writ for 'implement' template")
+		t.Fatal("missing child writ for 'implement' step")
 	}
 
 	// Verify phases: analyze=0, implement=1.
@@ -96,7 +99,7 @@ needs = ["analyze"]
 	}
 
 	// --- 3. Phase 0: Cast and resolve the analyze writ ---
-	const agentName = "ExpBot"
+	const agentName = "StepBot"
 
 	if _, err := sphereStore.CreateAgent(agentName, "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent (phase 0): %v", err)
@@ -137,9 +140,9 @@ needs = ["analyze"]
 	if !strings.Contains(primeResult.Output, "Feature Y") {
 		t.Errorf("prime output should contain target title 'Feature Y'; got:\n%s", primeResult.Output)
 	}
-	// Description (template description) should appear.
+	// Step description should appear.
 	if !strings.Contains(primeResult.Output, "Analyze the target writ") {
-		t.Errorf("prime output should contain analyze template description; got:\n%s", primeResult.Output)
+		t.Errorf("prime output should contain analyze step description; got:\n%s", primeResult.Output)
 	}
 
 	// Simulate work and resolve.
@@ -194,7 +197,7 @@ needs = ["analyze"]
 		t.Errorf("implement writ status after cast: got %q, want tethered", implementWrit.Status)
 	}
 
-	// Prime for implement writ — verify instructions injected.
+	// Prime for implement writ — verify description injected.
 	primeResult2, err := dispatch.Prime("ember", agentName, "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime (implement): %v", err)
@@ -203,7 +206,7 @@ needs = ["analyze"]
 		t.Errorf("prime output missing implement writ ID; got:\n%s", primeResult2.Output)
 	}
 	if !strings.Contains(primeResult2.Output, "Implement the solution based on analysis") {
-		t.Errorf("prime output should contain implement template description; got:\n%s", primeResult2.Output)
+		t.Errorf("prime output should contain implement step description; got:\n%s", primeResult2.Output)
 	}
 
 	// Simulate work and resolve.
@@ -252,13 +255,13 @@ needs = ["analyze"]
 }
 
 // ============================================================
-// Convoy Workflow E2E Test
+// DAG Workflow E2E Test
 // ============================================================
 
-// TestConvoyWorkflowE2E exercises the full agent execution loop for convoy
-// workflow writs: materialize → cast legs → prime injects leg instructions
-// → resolve legs → synthesis step cast/prime/resolve → cleanup.
-func TestConvoyWorkflowE2E(t *testing.T) {
+// TestDAGWorkflowE2E exercises the full agent execution loop for
+// workflow writs with DAG dependencies: parallel steps → synthesis step
+// that depends on all parallel steps.
+func TestDAGWorkflowE2E(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -267,37 +270,38 @@ func TestConvoyWorkflowE2E(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// --- 1. Create convoy workflow manifest ---
-	workflowDir := filepath.Join(gtHome, "workflows", "e2e-convoy")
+	// --- 1. Create workflow manifest with parallel steps and synthesis ---
+	workflowDir := filepath.Join(gtHome, "workflows", "e2e-dag")
 	if err := os.MkdirAll(workflowDir, 0o755); err != nil {
 		t.Fatalf("create workflow dir: %v", err)
 	}
-	manifest := `name = "e2e-convoy"
-type = "convoy"
-description = "E2E convoy workflow test"
+	manifest := `name = "e2e-dag"
+description = "E2E DAG workflow test"
+mode = "manifest"
 
-[[legs]]
+[[steps]]
 id = "alpha"
-title = "Alpha analysis leg"
+title = "Alpha analysis"
 description = "Analyze the alpha dimension of the problem"
 
-[[legs]]
+[[steps]]
 id = "beta"
-title = "Beta analysis leg"
+title = "Beta analysis"
 description = "Analyze the beta dimension of the problem"
 
-[synthesis]
+[[steps]]
+id = "synthesis"
 title = "Synthesis"
-description = "Synthesize findings from alpha and beta legs"
-depends_on = ["alpha", "beta"]
+description = "Synthesize findings from alpha and beta steps"
+needs = ["alpha", "beta"]
 `
 	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest.toml: %v", err)
 	}
 
-	// --- 2. Materialize the convoy workflow ---
+	// --- 2. Materialize the workflow ---
 	result, err := workflow.Materialize(worldStore, sphereStore, workflow.ManifestOpts{
-		Name:      "e2e-convoy",
+		Name:      "e2e-dag",
 		World:     "ember",
 		CreatedBy: "autarch",
 	})
@@ -307,21 +311,21 @@ depends_on = ["alpha", "beta"]
 
 	// Verify parent writ created automatically.
 	if result.ParentID == "" {
-		t.Fatal("Materialize convoy should create a parent writ")
+		t.Fatal("Materialize should create a parent writ")
 	}
 
 	// Verify child writs: alpha, beta (phase 0), synthesis (phase 1).
 	alphaID, ok := result.ChildIDs["alpha"]
 	if !ok {
-		t.Fatal("missing child writ for 'alpha' leg")
+		t.Fatal("missing child writ for 'alpha' step")
 	}
 	betaID, ok := result.ChildIDs["beta"]
 	if !ok {
-		t.Fatal("missing child writ for 'beta' leg")
+		t.Fatal("missing child writ for 'beta' step")
 	}
 	synthID, ok := result.ChildIDs["synthesis"]
 	if !ok {
-		t.Fatal("missing child writ for 'synthesis'")
+		t.Fatal("missing child writ for 'synthesis' step")
 	}
 
 	if result.Phases["alpha"] != 0 {
@@ -334,7 +338,7 @@ depends_on = ["alpha", "beta"]
 		t.Errorf("synthesis phase: got %d, want 1", result.Phases["synthesis"])
 	}
 
-	// Verify synthesis depends on both legs.
+	// Verify synthesis depends on both steps.
 	deps, err := worldStore.GetDependencies(synthID)
 	if err != nil {
 		t.Fatalf("GetDependencies(synthesis): %v", err)
@@ -344,10 +348,10 @@ depends_on = ["alpha", "beta"]
 		depSet[d] = true
 	}
 	if !depSet[alphaID] {
-		t.Error("synthesis should depend on alpha leg")
+		t.Error("synthesis should depend on alpha step")
 	}
 	if !depSet[betaID] {
-		t.Error("synthesis should depend on beta leg")
+		t.Error("synthesis should depend on beta step")
 	}
 
 	// Commission the caravan.
@@ -355,9 +359,9 @@ depends_on = ["alpha", "beta"]
 		t.Fatalf("commission caravan: %v", err)
 	}
 
-	const agentName = "ConvoyBot"
+	const agentName = "DAGBot"
 
-	// --- 3. Phase 0a: Cast alpha leg and verify prime injects leg instructions ---
+	// --- 3. Phase 0a: Cast alpha step and verify prime injects instructions ---
 	if _, err := sphereStore.CreateAgent(agentName, "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent (alpha): %v", err)
 	}
@@ -381,7 +385,7 @@ depends_on = ["alpha", "beta"]
 		t.Errorf("alpha writ status after cast: got %q, want tethered", alphaWrit.Status)
 	}
 
-	// Prime — verify leg instructions are injected.
+	// Prime — verify step instructions are injected.
 	alphaPrime, err := dispatch.Prime("ember", agentName, "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime (alpha): %v", err)
@@ -389,9 +393,9 @@ depends_on = ["alpha", "beta"]
 	if !strings.Contains(alphaPrime.Output, alphaID) {
 		t.Errorf("prime output missing alpha writ ID; got:\n%s", alphaPrime.Output)
 	}
-	// The leg's description should appear in prime output.
+	// The step's description should appear in prime output.
 	if !strings.Contains(alphaPrime.Output, "Analyze the alpha dimension") {
-		t.Errorf("prime output should contain alpha leg description; got:\n%s", alphaPrime.Output)
+		t.Errorf("prime output should contain alpha step description; got:\n%s", alphaPrime.Output)
 	}
 	if !strings.Contains(alphaPrime.Output, "sol resolve") {
 		t.Errorf("prime output should contain 'sol resolve'; got:\n%s", alphaPrime.Output)
@@ -417,7 +421,7 @@ depends_on = ["alpha", "beta"]
 		t.Errorf("alpha writ status after resolve: got %q, want done", alphaWrit.Status)
 	}
 
-	// --- 4. Phase 0b: Cast beta leg ---
+	// --- 4. Phase 0b: Cast beta step ---
 	// Recreate agent (previous record deleted by resolve).
 	if _, err := sphereStore.CreateAgent(agentName, "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent (beta): %v", err)
@@ -433,7 +437,7 @@ depends_on = ["alpha", "beta"]
 		t.Fatalf("Cast beta: %v", err)
 	}
 
-	// Prime for beta — verify leg instructions injected.
+	// Prime for beta — verify step instructions injected.
 	betaPrime, err := dispatch.Prime("ember", agentName, "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime (beta): %v", err)
@@ -442,7 +446,7 @@ depends_on = ["alpha", "beta"]
 		t.Errorf("prime output missing beta writ ID; got:\n%s", betaPrime.Output)
 	}
 	if !strings.Contains(betaPrime.Output, "Analyze the beta dimension") {
-		t.Errorf("prime output should contain beta leg description; got:\n%s", betaPrime.Output)
+		t.Errorf("prime output should contain beta step description; got:\n%s", betaPrime.Output)
 	}
 
 	// Simulate work and resolve beta.
@@ -465,7 +469,7 @@ depends_on = ["alpha", "beta"]
 		t.Errorf("beta writ status after resolve: got %q, want done", betaWrit.Status)
 	}
 
-	// --- 5. Phase 1: Cast synthesis writ (depends on completed legs) ---
+	// --- 5. Phase 1: Cast synthesis step (depends on completed steps) ---
 	// Recreate agent.
 	if _, err := sphereStore.CreateAgent(agentName, "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent (synthesis): %v", err)
@@ -498,7 +502,7 @@ depends_on = ["alpha", "beta"]
 	if !strings.Contains(synthPrime.Output, synthID) {
 		t.Errorf("prime output missing synthesis writ ID; got:\n%s", synthPrime.Output)
 	}
-	if !strings.Contains(synthPrime.Output, "Synthesize findings from alpha and beta legs") {
+	if !strings.Contains(synthPrime.Output, "Synthesize findings from alpha and beta steps") {
 		t.Errorf("prime output should contain synthesis description; got:\n%s", synthPrime.Output)
 	}
 
@@ -513,7 +517,7 @@ depends_on = ["alpha", "beta"]
 		t.Fatalf("Resolve synthesis: %v", err)
 	}
 
-	// --- 6. Verify cleanup: all convoy writs resolved ---
+	// --- 6. Verify cleanup: all workflow writs resolved ---
 	synthWrit, err = worldStore.GetWrit(synthID)
 	if err != nil {
 		t.Fatalf("GetWrit after resolve (synthesis): %v", err)

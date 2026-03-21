@@ -352,32 +352,6 @@ title = "Start"
 instructions = "steps/01-start.md"
 `
 
-const skeletonExpansion = `name = "{name}"
-type = "expansion"
-description = ""
-
-[[template]]
-id = "{target}.first"
-title = "First pass: {target.title}"
-description = ""
-`
-
-const skeletonConvoy = `name = "{name}"
-type = "convoy"
-description = ""
-
-[[legs]]
-id = "first"
-title = "First dimension"
-description = ""
-kind = "analysis"
-
-[synthesis]
-title = "Synthesis"
-description = ""
-depends_on = ["first"]
-`
-
 // defaultStepContent is the placeholder content for the initial step file.
 const defaultStepContent = `# Start
 
@@ -385,7 +359,7 @@ Describe what this step should do.
 `
 
 // Init creates a new workflow scaffold at the appropriate tier.
-// workflowType must be "workflow", "expansion", or "convoy".
+// workflowType must be "workflow".
 // If project is true, the workflow is created in the project tier at
 // {repoPath}/.sol/workflows/{name}/; otherwise it goes to the user tier
 // at $SOL_HOME/workflows/{name}/.
@@ -397,14 +371,10 @@ func Init(name, workflowType, repoPath string, project bool) (string, error) {
 	// Select skeleton template.
 	var skeleton string
 	switch workflowType {
-	case "workflow":
+	case "", "workflow":
 		skeleton = skeletonWorkflow
-	case "expansion":
-		skeleton = skeletonExpansion
-	case "convoy":
-		skeleton = skeletonConvoy
 	default:
-		return "", fmt.Errorf("invalid workflow type %q: must be workflow, expansion, or convoy", workflowType)
+		return "", fmt.Errorf("invalid workflow type %q: must be workflow", workflowType)
 	}
 
 	// Determine target directory.
@@ -437,18 +407,16 @@ func Init(name, workflowType, repoPath string, project bool) (string, error) {
 		return "", fmt.Errorf("failed to write manifest.toml: %w", err)
 	}
 
-	// For workflow type, create steps/ directory with placeholder step file.
-	if workflowType == "workflow" {
-		stepsDir := filepath.Join(dir, "steps")
-		if err := os.MkdirAll(stepsDir, 0o755); err != nil {
-			os.RemoveAll(dir)
-			return "", fmt.Errorf("failed to create steps directory: %w", err)
-		}
-		stepPath := filepath.Join(stepsDir, "01-start.md")
-		if err := os.WriteFile(stepPath, []byte(defaultStepContent), 0o644); err != nil {
-			os.RemoveAll(dir)
-			return "", fmt.Errorf("failed to write step file: %w", err)
-		}
+	// Create steps/ directory with placeholder step file.
+	stepsDir := filepath.Join(dir, "steps")
+	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
+		os.RemoveAll(dir)
+		return "", fmt.Errorf("failed to create steps directory: %w", err)
+	}
+	stepPath := filepath.Join(stepsDir, "01-start.md")
+	if err := os.WriteFile(stepPath, []byte(defaultStepContent), 0o644); err != nil {
+		os.RemoveAll(dir)
+		return "", fmt.Errorf("failed to write step file: %w", err)
 	}
 
 	return dir, nil

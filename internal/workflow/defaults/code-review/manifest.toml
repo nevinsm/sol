@@ -1,26 +1,25 @@
 name = "code-review"
-type = "convoy"
 description = "Multi-perspective code review with parallel analysis and synthesis."
+mode = "manifest"
 
 [vars]
 target = { description = "Writ ID of the code to review", required = true }
 
-[[legs]]
+[[steps]]
 id = "requirements"
-title = "Requirements Analysis: {target.title}"
+title = "Requirements Analysis: {{target.title}}"
 kind = "analysis"
-description = "Review the code changes for requirements completeness. Examine the branch, tests, and documentation."
-focus = "Are success criteria defined? Are edge cases handled? Is the scope well-bounded?"
+description = "Review the code changes for requirements completeness. Examine the branch, tests, and documentation.\n\nFocus: Are success criteria defined? Are edge cases handled? Is the scope well-bounded?"
 
-[[legs]]
+[[steps]]
 id = "feasibility"
-title = "Feasibility Assessment: {target.title}"
+title = "Feasibility Assessment: {{target.title}}"
 kind = "analysis"
-description = "Evaluate technical feasibility and architectural fit. Examine code structure, dependencies, and integration points."
-focus = "Does it follow existing patterns? Are there architectural concerns? Is it maintainable?"
+description = "Evaluate technical feasibility and architectural fit. Examine code structure, dependencies, and integration points.\n\nFocus: Does it follow existing patterns? Are there architectural concerns? Is it maintainable?"
 
-[synthesis]
-title = "Consolidate Review: {target.title}"
-description = "Read analysis findings from each leg output directory. Produce a consolidated review with prioritized action items, risks, and recommendations."
+[[steps]]
+id = "synthesis"
+title = "Consolidate Review: {{target.title}}"
 kind = "analysis"
-depends_on = ["requirements", "feasibility"]
+description = "Read analysis findings from each leg output directory. Produce a consolidated review with prioritized action items, risks, and recommendations."
+needs = ["requirements", "feasibility"]

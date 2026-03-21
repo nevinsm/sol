@@ -1,44 +1,40 @@
 name = "plan-review"
-type = "convoy"
 description = "Parallel plan analysis with five independent review dimensions and a go/no-go synthesis."
+mode = "manifest"
 
-[[legs]]
+[[steps]]
 id = "completeness"
 title = "Completeness Analysis"
-description = "Assess whether the plan covers all required elements: goals, deliverables, acceptance criteria, resource needs, and timeline."
-focus = "Are there gaps in what the plan promises to deliver versus what it actually specifies?"
+description = "Assess whether the plan covers all required elements: goals, deliverables, acceptance criteria, resource needs, and timeline.\n\nFocus: Are there gaps in what the plan promises to deliver versus what it actually specifies?"
 kind = "analysis"
 
-[[legs]]
+[[steps]]
 id = "sequencing"
 title = "Sequencing & Dependency Analysis"
-description = "Evaluate the ordering of steps and identify dependency relationships. Flag implicit dependencies, missing prerequisites, and parallelism opportunities."
-focus = "Can the steps execute in the proposed order without blocking or hidden prerequisites?"
+description = "Evaluate the ordering of steps and identify dependency relationships. Flag implicit dependencies, missing prerequisites, and parallelism opportunities.\n\nFocus: Can the steps execute in the proposed order without blocking or hidden prerequisites?"
 kind = "analysis"
 
-[[legs]]
+[[steps]]
 id = "risk"
 title = "Risk Assessment"
-description = "Identify technical, operational, and integration risks. Evaluate likelihood and impact. Flag single points of failure, untested assumptions, and rollback gaps."
-focus = "What can go wrong and how severe would the impact be?"
+description = "Identify technical, operational, and integration risks. Evaluate likelihood and impact. Flag single points of failure, untested assumptions, and rollback gaps.\n\nFocus: What can go wrong and how severe would the impact be?"
 kind = "analysis"
 
-[[legs]]
+[[steps]]
 id = "scope-creep"
 title = "Scope-Creep Detection"
-description = "Compare stated objectives against proposed work. Identify gold-plating, feature additions beyond requirements, and unnecessary complexity."
-focus = "Does any proposed work exceed what was actually requested or needed?"
+description = "Compare stated objectives against proposed work. Identify gold-plating, feature additions beyond requirements, and unnecessary complexity.\n\nFocus: Does any proposed work exceed what was actually requested or needed?"
 kind = "analysis"
 
-[[legs]]
+[[steps]]
 id = "testability"
 title = "Testability Review"
-description = "Assess whether each deliverable can be verified. Check for measurable acceptance criteria, test strategies, and observable outcomes."
-focus = "How will we know each step succeeded?"
+description = "Assess whether each deliverable can be verified. Check for measurable acceptance criteria, test strategies, and observable outcomes.\n\nFocus: How will we know each step succeeded?"
 kind = "analysis"
 
-[synthesis]
+[[steps]]
+id = "synthesis"
 title = "Go/No-Go Recommendation"
 description = "Consolidate findings from all five analysis dimensions into a single go/no-go recommendation. List specific concerns ranked by severity, required changes before proceeding, and conditional approvals."
 kind = "analysis"
-depends_on = ["completeness", "sequencing", "risk", "scope-creep", "testability"]
+needs = ["completeness", "sequencing", "risk", "scope-creep", "testability"]

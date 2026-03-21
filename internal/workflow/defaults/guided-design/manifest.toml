@@ -1,51 +1,46 @@
 name = "guided-design"
-type = "convoy"
 description = "Parallel design exploration across six dimensions with synthesis into a coherent design recommendation. Useful for ADR authoring and architecture writs."
+mode = "manifest"
 
-[[legs]]
+[[steps]]
 id = "api-design"
 title = "API Design Exploration"
-description = "Explore the public API surface: endpoints, methods, request/response shapes, versioning strategy, and error conventions."
-focus = "What should the API look like from a consumer's perspective?"
+description = "Explore the public API surface: endpoints, methods, request/response shapes, versioning strategy, and error conventions.\n\nFocus: What should the API look like from a consumer's perspective?"
 kind = "analysis"
 
-[[legs]]
+[[steps]]
 id = "data-model"
 title = "Data Model Exploration"
-description = "Explore the data model: entities, relationships, storage strategy, migration path, and query patterns."
-focus = "What data structures and storage decisions does this design require?"
+description = "Explore the data model: entities, relationships, storage strategy, migration path, and query patterns.\n\nFocus: What data structures and storage decisions does this design require?"
 kind = "analysis"
 
-[[legs]]
+[[steps]]
 id = "ux-interaction"
 title = "UX / Interaction Exploration"
-description = "Explore the user-facing interaction: CLI commands, flags, output format, feedback loops, and developer ergonomics."
-focus = "How will users interact with this feature and what does the experience feel like?"
+description = "Explore the user-facing interaction: CLI commands, flags, output format, feedback loops, and developer ergonomics.\n\nFocus: How will users interact with this feature and what does the experience feel like?"
 kind = "analysis"
 
-[[legs]]
+[[steps]]
 id = "scalability"
 title = "Scalability Exploration"
-description = "Explore scalability concerns: concurrency, resource usage, growth limits, caching strategy, and performance characteristics."
-focus = "What happens as load, data volume, or number of users grows?"
+description = "Explore scalability concerns: concurrency, resource usage, growth limits, caching strategy, and performance characteristics.\n\nFocus: What happens as load, data volume, or number of users grows?"
 kind = "analysis"
 
-[[legs]]
+[[steps]]
 id = "security"
 title = "Security Exploration"
-description = "Explore security implications: authentication, authorization, input validation, secrets handling, and attack surface."
-focus = "What are the trust boundaries and what could go wrong?"
+description = "Explore security implications: authentication, authorization, input validation, secrets handling, and attack surface.\n\nFocus: What are the trust boundaries and what could go wrong?"
 kind = "analysis"
 
-[[legs]]
+[[steps]]
 id = "integration"
 title = "Integration Surface Exploration"
-description = "Explore integration points: dependencies on existing components, extension hooks, backward compatibility, and migration from current behavior."
-focus = "How does this design connect to and affect the rest of the system?"
+description = "Explore integration points: dependencies on existing components, extension hooks, backward compatibility, and migration from current behavior.\n\nFocus: How does this design connect to and affect the rest of the system?"
 kind = "analysis"
 
-[synthesis]
+[[steps]]
+id = "synthesis"
 title = "Design Synthesis"
 description = "Merge findings from all six exploration legs into a coherent design recommendation. Identify tensions between dimensions, propose trade-offs, and produce a draft ADR or design document suitable for review."
 kind = "analysis"
-depends_on = ["api-design", "data-model", "ux-interaction", "scalability", "security", "integration"]
+needs = ["api-design", "data-model", "ux-interaction", "scalability", "security", "integration"]

@@ -294,9 +294,9 @@ func TestCLICaravanLifecycle(t *testing.T) {
 // Expansion Workflow Type Tests
 // ============================================================
 
-// TestExpansionWorkflowMaterialize verifies that an expansion workflow
-// creates child writs from templates, using a parent writ as the target.
-func TestExpansionWorkflowMaterialize(t *testing.T) {
+// TestSequentialWorkflowMaterialize verifies that a workflow with sequential
+// step dependencies creates child writs correctly, using a parent writ as the target.
+func TestSequentialWorkflowMaterialize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -307,21 +307,24 @@ func TestExpansionWorkflowMaterialize(t *testing.T) {
 		t.Fatalf("create .store dir: %v", err)
 	}
 
-	// Create expansion workflow at user tier.
-	workflowDir := filepath.Join(solHome, "workflows", "test-expansion")
+	// Create workflow with sequential steps at user tier.
+	workflowDir := filepath.Join(solHome, "workflows", "test-sequential")
 	if err := os.MkdirAll(workflowDir, 0o755); err != nil {
 		t.Fatalf("create workflow dir: %v", err)
 	}
-	manifest := `name = "test-expansion"
-type = "expansion"
-description = "Test expansion workflow"
+	manifest := `name = "test-sequential"
+description = "Test sequential workflow"
+mode = "manifest"
 
-[[template]]
+[vars]
+target = { description = "Target writ", required = true }
+
+[[steps]]
 id = "analyze"
 title = "Analyze {{target.title}}"
 description = "Analyze the target writ"
 
-[[template]]
+[[steps]]
 id = "implement"
 title = "Implement {{target.title}}"
 description = "Implement based on analysis"
@@ -345,20 +348,20 @@ needs = ["analyze"]
 	defer sphereStore.Close()
 
 	// Create a parent (target) writ.
-	parentID, err := worldStore.CreateWrit("Feature X", "The feature to expand upon", "autarch", 2, nil)
+	parentID, err := worldStore.CreateWrit("Feature X", "The feature to work on", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit (parent): %v", err)
 	}
 
-	// Materialize the expansion workflow.
+	// Materialize the workflow.
 	result, err := workflow.Materialize(worldStore, sphereStore, workflow.ManifestOpts{
-		Name:      "test-expansion",
+		Name:      "test-sequential",
 		World:     "ember",
 		ParentID:  parentID,
 		CreatedBy: "autarch",
 	})
 	if err != nil {
-		t.Fatalf("Materialize expansion: %v", err)
+		t.Fatalf("Materialize: %v", err)
 	}
 
 	// Verify caravan was created.
@@ -375,15 +378,15 @@ needs = ["analyze"]
 		t.Errorf("caravan status: got %q, want drydock", caravan.Status)
 	}
 
-	// Verify two child writs created (one per template).
+	// Verify two child writs created (one per step).
 	if len(result.ChildIDs) != 2 {
 		t.Errorf("child count: got %d, want 2", len(result.ChildIDs))
 	}
 	if _, ok := result.ChildIDs["analyze"]; !ok {
-		t.Error("missing child writ for 'analyze' template")
+		t.Error("missing child writ for 'analyze' step")
 	}
 	if _, ok := result.ChildIDs["implement"]; !ok {
-		t.Error("missing child writ for 'implement' template")
+		t.Error("missing child writ for 'implement' step")
 	}
 
 	// Verify title substitution: child title should contain the parent's title.
@@ -404,7 +407,7 @@ needs = ["analyze"]
 		t.Errorf("implement phase: got %d, want 1", result.Phases["implement"])
 	}
 
-	// Verify parent is unchanged (expansion uses existing parent, not creates one).
+	// Verify parent is unchanged (workflow uses existing parent).
 	if result.ParentID != parentID {
 		t.Errorf("parent ID: got %q, want %q", result.ParentID, parentID)
 	}
@@ -414,9 +417,10 @@ needs = ["analyze"]
 // Convoy Workflow Type Tests
 // ============================================================
 
-// TestConvoyWorkflowMaterialize verifies that a convoy workflow creates
-// parallel leg writs and a synthesis writ, all in a caravan.
-func TestConvoyWorkflowMaterialize(t *testing.T) {
+// TestCodeReviewWorkflowMaterialize verifies that the code-review workflow
+// (converted from convoy to unified model) creates parallel analysis writs
+// and a synthesis writ, all in a caravan.
+func TestCodeReviewWorkflowMaterialize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -427,31 +431,32 @@ func TestConvoyWorkflowMaterialize(t *testing.T) {
 		t.Fatalf("create .store dir: %v", err)
 	}
 
-	// Create convoy workflow at user tier.
-	workflowDir := filepath.Join(solHome, "workflows", "test-convoy")
+	// Create manifested workflow at user tier (equivalent to old convoy structure).
+	workflowDir := filepath.Join(solHome, "workflows", "test-manifest")
 	if err := os.MkdirAll(workflowDir, 0o755); err != nil {
 		t.Fatalf("create workflow dir: %v", err)
 	}
-	manifest := `name = "test-convoy"
-type = "convoy"
-description = "Test convoy workflow"
+	manifest := `name = "test-manifest"
+description = "Test manifested workflow"
+mode = "manifest"
 
-[[legs]]
+[[steps]]
 id = "alpha"
 title = "Alpha dimension"
-description = "First parallel leg"
+description = "First parallel step"
 kind = "analysis"
 
-[[legs]]
+[[steps]]
 id = "beta"
 title = "Beta dimension"
-description = "Second parallel leg"
+description = "Second parallel step"
 kind = "analysis"
 
-[synthesis]
+[[steps]]
+id = "synthesis"
 title = "Synthesis"
 description = "Combine alpha and beta"
-depends_on = ["alpha", "beta"]
+needs = ["alpha", "beta"]
 `
 	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest.toml: %v", err)
@@ -470,15 +475,15 @@ depends_on = ["alpha", "beta"]
 	}
 	defer sphereStore.Close()
 
-	// Materialize the convoy workflow (no parent — creates one automatically).
+	// Materialize the workflow (no parent — creates one automatically).
 	result, err := workflow.Materialize(worldStore, sphereStore, workflow.ManifestOpts{
-		Name:      "test-convoy",
+		Name:      "test-manifest",
 		World:     "ember",
-		Variables: map[string]string{"issue": "sol-convoy-test"},
+		Variables: map[string]string{"issue": "sol-manifest-test"},
 		CreatedBy: "autarch",
 	})
 	if err != nil {
-		t.Fatalf("Materialize convoy: %v", err)
+		t.Fatalf("Materialize: %v", err)
 	}
 
 	// Verify caravan was created.
@@ -488,7 +493,7 @@ depends_on = ["alpha", "beta"]
 
 	// Verify a parent writ was created automatically.
 	if result.ParentID == "" {
-		t.Error("Materialize convoy should create a parent writ")
+		t.Error("Materialize should create a parent writ")
 	}
 
 	// Verify three child writs: alpha, beta, synthesis.
@@ -496,16 +501,16 @@ depends_on = ["alpha", "beta"]
 		t.Errorf("child count: got %d, want 3 (alpha + beta + synthesis)", len(result.ChildIDs))
 	}
 	if _, ok := result.ChildIDs["alpha"]; !ok {
-		t.Error("missing child writ for 'alpha' leg")
+		t.Error("missing child writ for 'alpha' step")
 	}
 	if _, ok := result.ChildIDs["beta"]; !ok {
-		t.Error("missing child writ for 'beta' leg")
+		t.Error("missing child writ for 'beta' step")
 	}
 	if _, ok := result.ChildIDs["synthesis"]; !ok {
 		t.Error("missing child writ for 'synthesis'")
 	}
 
-	// Verify phases: legs are phase 0, synthesis is phase 1.
+	// Verify phases: parallel steps are phase 0, synthesis is phase 1.
 	if result.Phases["alpha"] != 0 {
 		t.Errorf("alpha phase: got %d, want 0", result.Phases["alpha"])
 	}
@@ -516,7 +521,7 @@ depends_on = ["alpha", "beta"]
 		t.Errorf("synthesis phase: got %d, want 1", result.Phases["synthesis"])
 	}
 
-	// Verify synthesis depends on both legs in the world store.
+	// Verify synthesis depends on both parallel steps in the world store.
 	synthID := result.ChildIDs["synthesis"]
 	alphaID := result.ChildIDs["alpha"]
 	betaID := result.ChildIDs["beta"]
@@ -530,10 +535,10 @@ depends_on = ["alpha", "beta"]
 		depSet[d] = true
 	}
 	if !depSet[alphaID] {
-		t.Error("synthesis should depend on alpha leg")
+		t.Error("synthesis should depend on alpha step")
 	}
 	if !depSet[betaID] {
-		t.Error("synthesis should depend on beta leg")
+		t.Error("synthesis should depend on beta step")
 	}
 }
 
@@ -911,20 +916,15 @@ func TestWorkflowTypeValidation(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name: "expansion requires templates not steps",
+			name: "expansion type is rejected",
 			manifest: `name = "bad-expansion"
 type = "expansion"
 description = ""
-
-[[steps]]
-id = "step1"
-title = "A step"
-instructions = "steps/01.md"
 `,
 			wantErr: true,
 		},
 		{
-			name: "convoy requires legs and synthesis",
+			name: "convoy type is rejected",
 			manifest: `name = "bad-convoy"
 type = "convoy"
 description = ""
@@ -932,35 +932,24 @@ description = ""
 			wantErr: true,
 		},
 		{
-			name: "valid expansion with templates",
-			manifest: `name = "good-expansion"
-type = "expansion"
+			name: "valid workflow with steps",
+			manifest: `name = "good-workflow"
 description = ""
 
-[[template]]
-id = "t1"
-title = "Template 1"
-description = ""
+[[steps]]
+id = "s1"
+title = "Step 1"
+description = "Do something"
 `,
 			wantErr: false,
 		},
 		{
-			name: "valid convoy with legs and synthesis",
-			manifest: `name = "good-convoy"
-type = "convoy"
+			name: "unknown type is rejected",
+			manifest: `name = "bad-type"
+type = "invalid"
 description = ""
-
-[[legs]]
-id = "leg1"
-title = "Leg 1"
-description = ""
-
-[synthesis]
-title = "Synthesis"
-description = ""
-depends_on = ["leg1"]
 `,
-			wantErr: false,
+			wantErr: true,
 		},
 	}
 

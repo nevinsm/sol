@@ -308,88 +308,29 @@ func TestInitWorkflowType(t *testing.T) {
 	}
 }
 
-func TestInitExpansionType(t *testing.T) {
+func TestInitExpansionTypeRejected(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	dir, err := Init("my-expansion", "expansion", "", false)
-	if err != nil {
-		t.Fatalf("Init() error: %v", err)
+	_, err := Init("my-expansion", "expansion", "", false)
+	if err == nil {
+		t.Fatal("Init() expected error for expansion type")
 	}
-
-	// Check manifest.toml content.
-	manifestData, err := os.ReadFile(filepath.Join(dir, "manifest.toml"))
-	if err != nil {
-		t.Fatalf("read manifest.toml: %v", err)
-	}
-	manifest := string(manifestData)
-	if !strings.Contains(manifest, `name = "my-expansion"`) {
-		t.Errorf("manifest missing name field")
-	}
-	if !strings.Contains(manifest, `type = "expansion"`) {
-		t.Errorf("manifest missing type field")
-	}
-	if !strings.Contains(manifest, `[[template]]`) {
-		t.Errorf("manifest missing template section")
-	}
-
-	// No steps/ directory for expansion type.
-	stepsDir := filepath.Join(dir, "steps")
-	if _, err := os.Stat(stepsDir); !os.IsNotExist(err) {
-		t.Errorf("steps/ directory should not exist for expansion type")
-	}
-
-	// Validate the manifest can be loaded.
-	m, err := LoadManifest(dir)
-	if err != nil {
-		t.Fatalf("LoadManifest() error: %v", err)
-	}
-	if err := Validate(m); err != nil {
-		t.Errorf("Validate() error: %v", err)
+	if !strings.Contains(err.Error(), "invalid workflow type") {
+		t.Errorf("error should mention invalid workflow type, got: %v", err)
 	}
 }
 
-func TestInitConvoyType(t *testing.T) {
+func TestInitConvoyTypeRejected(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	dir, err := Init("my-convoy", "convoy", "", false)
-	if err != nil {
-		t.Fatalf("Init() error: %v", err)
+	_, err := Init("my-convoy", "convoy", "", false)
+	if err == nil {
+		t.Fatal("Init() expected error for convoy type")
 	}
-
-	// Check manifest.toml content.
-	manifestData, err := os.ReadFile(filepath.Join(dir, "manifest.toml"))
-	if err != nil {
-		t.Fatalf("read manifest.toml: %v", err)
-	}
-	manifest := string(manifestData)
-	if !strings.Contains(manifest, `name = "my-convoy"`) {
-		t.Errorf("manifest missing name field")
-	}
-	if !strings.Contains(manifest, `type = "convoy"`) {
-		t.Errorf("manifest missing type field")
-	}
-	if !strings.Contains(manifest, `[[legs]]`) {
-		t.Errorf("manifest missing legs section")
-	}
-	if !strings.Contains(manifest, `[synthesis]`) {
-		t.Errorf("manifest missing synthesis section")
-	}
-
-	// No steps/ directory for convoy type.
-	stepsDir := filepath.Join(dir, "steps")
-	if _, err := os.Stat(stepsDir); !os.IsNotExist(err) {
-		t.Errorf("steps/ directory should not exist for convoy type")
-	}
-
-	// Validate the manifest can be loaded.
-	m, err := LoadManifest(dir)
-	if err != nil {
-		t.Fatalf("LoadManifest() error: %v", err)
-	}
-	if err := Validate(m); err != nil {
-		t.Errorf("Validate() error: %v", err)
+	if !strings.Contains(err.Error(), "invalid workflow type") {
+		t.Errorf("error should mention invalid workflow type, got: %v", err)
 	}
 }
 
@@ -527,15 +468,10 @@ instructions = "steps/01-start.md"
 func TestShowFromPathInvalidManifest(t *testing.T) {
 	dir := t.TempDir()
 
-	// Write an invalid manifest (convoy without synthesis).
+	// Write a manifest with a deprecated type.
 	manifest := `name = "bad-convoy"
 type = "convoy"
-description = "Missing synthesis"
-
-[[legs]]
-id = "first"
-title = "First"
-description = ""
+description = "Deprecated type"
 `
 	if err := os.WriteFile(filepath.Join(dir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -548,10 +484,10 @@ description = ""
 
 	err = Validate(m)
 	if err == nil {
-		t.Fatal("Validate() expected error for convoy without synthesis")
+		t.Fatal("Validate() expected error for convoy type")
 	}
-	if !strings.Contains(err.Error(), "synthesis") {
-		t.Errorf("error should mention synthesis, got: %v", err)
+	if !strings.Contains(err.Error(), "no longer supported") {
+		t.Errorf("error should mention 'no longer supported', got: %v", err)
 	}
 }
 

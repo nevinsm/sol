@@ -1,32 +1,32 @@
 name = "rule-of-five"
-type = "expansion"
 description = "Five-pass iterative refinement: draft, then four focused revision passes."
+mode = "manifest"
 
-[[template]]
-id = "{target}.draft"
-title = "Draft: {target.title}"
-description = "Initial attempt at {target.title}. Breadth over depth — get a working solution down."
+[[steps]]
+id = "draft"
+title = "Draft: {{target.title}}"
+description = "Initial attempt at {{target.title}}. Breadth over depth — get a working solution down."
 
-[[template]]
-id = "{target}.refine-correctness"
-title = "Refine 1 — Correctness: {target.title}"
+[[steps]]
+id = "refine-correctness"
+title = "Refine 1 — Correctness: {{target.title}}"
 description = "Fix errors, bugs, and logical mistakes in the draft."
-needs = ["{target}.draft"]
+needs = ["draft"]
 
-[[template]]
-id = "{target}.refine-clarity"
-title = "Refine 2 — Clarity: {target.title}"
+[[steps]]
+id = "refine-clarity"
+title = "Refine 2 — Clarity: {{target.title}}"
 description = "Improve readability, naming, and structure. Make the code obvious."
-needs = ["{target}.refine-correctness"]
+needs = ["refine-correctness"]
 
-[[template]]
-id = "{target}.refine-edge-cases"
-title = "Refine 3 — Edge Cases: {target.title}"
+[[steps]]
+id = "refine-edge-cases"
+title = "Refine 3 — Edge Cases: {{target.title}}"
 description = "Handle boundary conditions, error paths, and unusual inputs."
-needs = ["{target}.refine-clarity"]
+needs = ["refine-clarity"]
 
-[[template]]
-id = "{target}.refine-polish"
-title = "Refine 4 — Polish: {target.title}"
+[[steps]]
+id = "refine-polish"
+title = "Refine 4 — Polish: {{target.title}}"
 description = "Final pass. Tests, documentation, commit hygiene."
-needs = ["{target}.refine-edge-cases"]
+needs = ["refine-edge-cases"]

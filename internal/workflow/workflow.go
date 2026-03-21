@@ -25,9 +25,6 @@ type Manifest struct {
 	Variables   map[string]VariableDecl `toml:"variables"`
 	Vars        map[string]VariableDecl `toml:"vars"`
 	Steps       []StepDef              `toml:"steps"`
-	Templates   []Template             `toml:"template"`
-	Legs        []Leg                  `toml:"legs"`
-	Synth       *Synthesis             `toml:"synthesis"`
 }
 
 // VariableDecl declares a workflow variable.
@@ -45,35 +42,6 @@ type StepDef struct {
 	Instructions string   `toml:"instructions"`   // relative path to .md file
 	Needs        []string `toml:"needs"`           // step IDs this depends on
 	Kind         string   `toml:"kind"`            // "code" (default) or "analysis"
-}
-
-// Template defines a child writ template in an expansion workflow.
-type Template struct {
-	ID          string   `toml:"id"`
-	Title       string   `toml:"title"`
-	Description string   `toml:"description"`
-	Needs       []string `toml:"needs"`
-	Kind        string   `toml:"kind"` // "code" (default) or "analysis"
-}
-
-// Leg defines an independent work dimension in a convoy workflow.
-type Leg struct {
-	ID           string `toml:"id"`
-	Title        string `toml:"title"`
-	Description  string `toml:"description"`
-	Focus        string `toml:"focus"`
-	Kind         string `toml:"kind"`         // "code" (default) or "analysis"
-	Instructions string `toml:"instructions"` // relative path to .md file
-}
-
-// Synthesis defines the follow-up step in a convoy workflow that runs
-// after all specified legs have completed.
-type Synthesis struct {
-	Title        string   `toml:"title"`
-	Description  string   `toml:"description"`
-	DependsOn    []string `toml:"depends_on"`
-	Kind         string   `toml:"kind"`         // "code" (default) or "analysis"
-	Instructions string   `toml:"instructions"` // relative path to .md file
 }
 
 // Instance holds metadata about an instantiated workflow.
@@ -131,11 +99,9 @@ func LoadManifest(workflowDir string) (*Manifest, error) {
 }
 
 // Validate checks that a manifest is well-formed:
-// - Type is "workflow", "expansion", or "convoy"
-// - Workflow type has steps (not templates/legs); expansion has templates (not steps/legs)
-// - Convoy type has legs and synthesis (not steps/templates)
-// - All IDs are unique
-// - All "needs"/"depends_on" references point to existing IDs
+// - Type is "workflow" (or empty, which defaults to "workflow")
+// - All step IDs are unique
+// - All "needs" references point to existing step IDs
 // - No dependency cycles (DAG validation)
 // - When workflowDir is provided, instructions files exist on disk
 // Returns an error describing the first problem found.
@@ -143,78 +109,15 @@ func LoadManifest(workflowDir string) (*Manifest, error) {
 // instruction paths. When omitted, instruction paths are not validated.
 func Validate(m *Manifest, workflowDir ...string) error {
 	switch m.Type {
-	case "", "workflow", "expansion", "convoy": // valid types
+	case "", "workflow": // valid types
+	case "convoy":
+		return fmt.Errorf("workflow type %q is no longer supported; convert to unified workflow with [[steps]] and mode = \"manifest\"", m.Type)
+	case "expansion":
+		return fmt.Errorf("workflow type %q is no longer supported; convert to unified workflow with [[steps]] and mode = \"manifest\"", m.Type)
 	default:
-		return fmt.Errorf("unknown workflow type %q: must be workflow, expansion, or convoy", m.Type)
+		return fmt.Errorf("unknown workflow type %q: must be workflow", m.Type)
 	}
 
-	if m.Type == "expansion" {
-		if len(m.Steps) > 0 {
-			return fmt.Errorf("expansion workflow must not contain [[steps]] entries")
-		}
-		if len(m.Templates) == 0 {
-			return fmt.Errorf("expansion workflow requires at least one [[template]] entry")
-		}
-		// Convert templates to dagNodes for validation.
-		nodes := make([]dagNode, len(m.Templates))
-		for i, t := range m.Templates {
-			nodes[i] = dagNode{ID: t.ID, Needs: t.Needs}
-		}
-		return validateDAG(nodes, "template")
-	}
-
-	if m.Type == "convoy" {
-		if len(m.Steps) > 0 {
-			return fmt.Errorf("convoy workflow must not contain [[steps]] entries")
-		}
-		if len(m.Templates) > 0 {
-			return fmt.Errorf("convoy workflow must not contain [[template]] entries")
-		}
-		if len(m.Legs) == 0 {
-			return fmt.Errorf("convoy workflow requires at least one [[legs]] entry")
-		}
-		if m.Synth == nil {
-			return fmt.Errorf("convoy workflow requires a [synthesis] section")
-		}
-		// Validate unique leg IDs.
-		legIDs := make(map[string]bool, len(m.Legs))
-		for _, leg := range m.Legs {
-			if legIDs[leg.ID] {
-				return fmt.Errorf("duplicate leg ID %q", leg.ID)
-			}
-			legIDs[leg.ID] = true
-		}
-		// Validate synthesis depends_on references valid legs.
-		for _, dep := range m.Synth.DependsOn {
-			if !legIDs[dep] {
-				return fmt.Errorf("synthesis depends_on references unknown leg %q", dep)
-			}
-		}
-		// Validate instructions files exist when workflow directory is known.
-		if len(workflowDir) > 0 && workflowDir[0] != "" {
-			dir := workflowDir[0]
-			for _, leg := range m.Legs {
-				if leg.Instructions != "" {
-					path := filepath.Join(dir, leg.Instructions)
-					if _, err := os.Stat(path); err != nil {
-						return fmt.Errorf("leg %q instructions file %q not found", leg.ID, leg.Instructions)
-					}
-				}
-			}
-			if m.Synth.Instructions != "" {
-				path := filepath.Join(dir, m.Synth.Instructions)
-				if _, err := os.Stat(path); err != nil {
-					return fmt.Errorf("synthesis instructions file %q not found", m.Synth.Instructions)
-				}
-			}
-		}
-		return nil
-	}
-
-	// All other types (workflow, agent, etc.) validate steps.
-	if len(m.Templates) > 0 && m.Type != "expansion" {
-		return fmt.Errorf("type %q must not contain [[template]] entries", m.Type)
-	}
 	// Validate instructions files exist when workflow directory is known.
 	if len(workflowDir) > 0 && workflowDir[0] != "" {
 		dir := workflowDir[0]
@@ -860,10 +763,9 @@ type ManifestOpts struct {
 }
 
 // ShouldManifest returns true if the workflow should be manifested.
-// Expansion and convoy workflows always manifest. Step-based workflows
-// manifest when mode is set to "manifest".
+// Workflows manifest when mode is set to "manifest".
 func ShouldManifest(m *Manifest) bool {
-	return m.Type == "expansion" || m.Type == "convoy" || m.Mode == "manifest"
+	return m.Mode == "manifest"
 }
 
 // ComputePhases returns the phase (dependency depth) for each item in a DAG.
@@ -919,9 +821,9 @@ func (p phaseable) dagID() string      { return p.id }
 func (p phaseable) dagNeeds() []string { return p.needs }
 
 // Manifest materializes a workflow into child writs with a caravan.
-// Each step (workflow) or template (expansion) becomes a child writ.
-// Dependencies between children mirror the workflow's DAG. Children are
-// grouped in a caravan with phases derived from dependency depth.
+// Each step becomes a child writ. Dependencies between children mirror
+// the workflow's DAG. Children are grouped in a caravan with phases
+// derived from dependency depth.
 func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, opts ManifestOpts) (*ManifestResult, error) {
 	// Load workflow.
 	res, err := Resolve(opts.Name, config.RepoPath(opts.World))
@@ -938,7 +840,7 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 	}
 
 	if !ShouldManifest(m) {
-		return nil, fmt.Errorf("workflow %q is not configured for manifestation (set mode = \"manifest\" or use expansion type)", opts.Name)
+		return nil, fmt.Errorf("workflow %q is not configured for manifestation (set mode = \"manifest\")", opts.Name)
 	}
 
 	vars := opts.Variables
@@ -952,15 +854,12 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 	// When a ParentID is provided and the writ exists, populate
 	// {{target.title}}, {{target.description}}, and {{target.id}}.
 	if parentID != "" {
-		// For convoy workflows, also inject ParentID as the "target" variable
-		// so that [vars] target = { required = true } declarations are satisfied.
-		if m.Type == "convoy" {
-			if _, ok := vars["target"]; !ok {
-				vars["target"] = parentID
-			}
+		// Inject ParentID as the "target" variable so that
+		// [vars] target = { required = true } declarations are satisfied.
+		if _, ok := vars["target"]; !ok {
+			vars["target"] = parentID
 		}
 
-		// Expansion requires a parent writ (target).
 		target, err := worldStore.GetWrit(parentID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get target writ %q: %w", parentID, err)
@@ -969,8 +868,6 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 		vars["target.title"] = target.Title
 		vars["target.description"] = target.Description
 		vars["target.id"] = target.ID
-	} else if m.Type == "expansion" {
-		return nil, fmt.Errorf("expansion workflow requires a parent writ (target)")
 	}
 
 	// Resolve variables (merges with defaults, checks required).
@@ -993,7 +890,7 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 		}
 	}
 
-	// Build child items from steps or templates.
+	// Build child items from steps.
 	type childDef struct {
 		itemID      string
 		title       string
@@ -1005,123 +902,32 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 
 	var children []childDef
 
-	if m.Type == "expansion" {
-		for _, tmpl := range m.Templates {
-			title := tmpl.Title
-			desc := tmpl.Description
-			for k, v := range resolved {
-				title = strings.ReplaceAll(title, "{{"+k+"}}", v)
-				desc = strings.ReplaceAll(desc, "{{"+k+"}}", v)
-			}
-			children = append(children, childDef{
-				itemID:      tmpl.ID,
-				title:       title,
-				description: desc,
-				needs:       tmpl.Needs,
-				kind:        tmpl.Kind,
-			})
-		}
-	} else if m.Type == "convoy" {
-		// Convoy: legs are independent (phase 0), synthesis depends on legs (phase 1).
-		for _, leg := range m.Legs {
-			title := leg.Title
-			desc := leg.Description
-			focus := leg.Focus
-
-			// Apply {{variable}} substitution to leg fields.
-			for k, v := range resolved {
-				title = strings.ReplaceAll(title, "{{"+k+"}}", v)
-				desc = strings.ReplaceAll(desc, "{{"+k+"}}", v)
-				focus = strings.ReplaceAll(focus, "{{"+k+"}}", v)
-			}
-
-			// When instructions is set, load external .md file as description.
-			if leg.Instructions != "" {
-				instrPath := filepath.Join(res.Path, leg.Instructions)
-				data, err := os.ReadFile(instrPath)
-				if err != nil {
-					return nil, fmt.Errorf("failed to read leg %q instructions %q: %w", leg.ID, instrPath, err)
-				}
-				instrContent := string(data)
-				for k, v := range resolved {
-					instrContent = strings.ReplaceAll(instrContent, "{{"+k+"}}", v)
-				}
-				desc = instrContent
-				if focus != "" {
-					desc += "\n\n## Focus\n" + focus
-				}
-			} else if focus != "" {
-				desc += "\n\nFocus: " + focus
-			}
-			children = append(children, childDef{
-				itemID:      leg.ID,
-				title:       title,
-				description: desc,
-				labels:      []string{"convoy-leg"},
-				kind:        leg.Kind,
-			})
-		}
-		// Synthesis description is enriched with leg references after leg items are created.
-		synthTitle := m.Synth.Title
-		synthDesc := m.Synth.Description
-
-		// Apply {{variable}} substitution to synthesis fields.
+	for _, step := range m.Steps {
+		title := step.Title
 		for k, v := range resolved {
-			synthTitle = strings.ReplaceAll(synthTitle, "{{"+k+"}}", v)
-			synthDesc = strings.ReplaceAll(synthDesc, "{{"+k+"}}", v)
+			title = strings.ReplaceAll(title, "{{"+k+"}}", v)
 		}
-
-		// When instructions is set, load external .md file as description.
-		if m.Synth.Instructions != "" {
-			instrPath := filepath.Join(res.Path, m.Synth.Instructions)
-			data, err := os.ReadFile(instrPath)
+		var desc string
+		if step.Instructions != "" {
+			rendered, err := RenderStepInstructions(res.Path, step, resolved)
 			if err != nil {
-				return nil, fmt.Errorf("failed to read synthesis instructions %q: %w", instrPath, err)
+				return nil, fmt.Errorf("failed to render step %q instructions: %w", step.ID, err)
 			}
-			instrContent := string(data)
+			desc = rendered
+		} else {
+			// Use description field with variable substitution.
+			desc = step.Description
 			for k, v := range resolved {
-				instrContent = strings.ReplaceAll(instrContent, "{{"+k+"}}", v)
+				desc = strings.ReplaceAll(desc, "{{"+k+"}}", v)
 			}
-			synthDesc = instrContent
 		}
-
 		children = append(children, childDef{
-			itemID:      "synthesis",
-			title:       synthTitle,
-			description: synthDesc,
-			needs:       m.Synth.DependsOn,
-			labels:      []string{"convoy-synthesis"},
-			kind:        m.Synth.Kind,
+			itemID:      step.ID,
+			title:       title,
+			description: desc,
+			needs:       step.Needs,
+			kind:        step.Kind,
 		})
-	} else {
-		// Workflow type — render step descriptions.
-		for _, step := range m.Steps {
-			title := step.Title
-			for k, v := range resolved {
-				title = strings.ReplaceAll(title, "{{"+k+"}}", v)
-			}
-			var desc string
-			if step.Instructions != "" {
-				rendered, err := RenderStepInstructions(res.Path, step, resolved)
-				if err != nil {
-					return nil, fmt.Errorf("failed to render step %q instructions: %w", step.ID, err)
-				}
-				desc = rendered
-			} else {
-				// Use description field with variable substitution.
-				desc = step.Description
-				for k, v := range resolved {
-					desc = strings.ReplaceAll(desc, "{{"+k+"}}", v)
-				}
-			}
-			children = append(children, childDef{
-				itemID:      step.ID,
-				title:       title,
-				description: desc,
-				needs:       step.Needs,
-				kind:        step.Kind,
-			})
-		}
 	}
 
 	// Compute phases from the DAG.
@@ -1142,79 +948,35 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 		// dependency writ information into the description.
 		if len(c.needs) > 0 {
 			var depRefs strings.Builder
-			if m.Type == "convoy" && c.itemID == "synthesis" {
-				// Convoy synthesis enrichment (legacy format).
-				depRefs.WriteString("\n\n## Leg Writs\n")
-				hasCodeLegs := false
-				hasAnalysisLegs := false
-				for _, leg := range m.Legs {
-					legItemID := childIDs[leg.ID]
-					depRefs.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", leg.Title, legItemID, leg.Description))
-					kind := leg.Kind
-					if kind == "" {
-						kind = "code"
-					}
-					if kind == "analysis" {
-						hasAnalysisLegs = true
-					} else {
-						hasCodeLegs = true
+			depRefs.WriteString("\n\n## Dependency Writs\n")
+			for _, need := range c.needs {
+				depWritID := childIDs[need]
+				// Find the child def for this dependency to get its kind.
+				var depKind string
+				for _, dc := range children {
+					if dc.itemID == need {
+						depKind = dc.kind
+						break
 					}
 				}
-
-				if hasCodeLegs && hasAnalysisLegs {
-					depRefs.WriteString("\nAll code leg branches have been merged to the target branch. Their changes are available in your worktree.")
-					depRefs.WriteString("\n\nRead findings from analysis leg output directories:\n")
-					for _, leg := range m.Legs {
-						kind := leg.Kind
-						if kind == "" {
-							kind = "code"
-						}
-						if kind == "analysis" {
-							legItemID := childIDs[leg.ID]
-							depRefs.WriteString(fmt.Sprintf("- %s: `%s`\n", leg.Title, config.WritOutputDir(opts.World, legItemID)))
-						}
+				if depKind == "" {
+					depKind = "code"
+				}
+				// Find the title of the dependency.
+				var depTitle string
+				for _, dc := range children {
+					if dc.itemID == need {
+						depTitle = dc.title
+						break
 					}
-				} else if hasAnalysisLegs {
-					depRefs.WriteString("\nRead findings from leg output directories. Leg outputs are at:\n")
-					for _, leg := range m.Legs {
-						legItemID := childIDs[leg.ID]
-						depRefs.WriteString(fmt.Sprintf("- %s: `%s`\n", leg.Title, config.WritOutputDir(opts.World, legItemID)))
-					}
+				}
+				depRefs.WriteString(fmt.Sprintf("- **%s** (%s)", depTitle, depWritID))
+				if depKind == "analysis" {
+					depRefs.WriteString(fmt.Sprintf(": output at `%s`", config.WritOutputDir(opts.World, depWritID)))
 				} else {
-					depRefs.WriteString("\nAll leg branches have been merged to the target branch. Their changes are available in your worktree.")
+					depRefs.WriteString(": branch merged to target")
 				}
-			} else {
-				// General DAG enrichment for manifested workflow steps.
-				depRefs.WriteString("\n\n## Dependency Writs\n")
-				for _, need := range c.needs {
-					depWritID := childIDs[need]
-					// Find the child def for this dependency to get its kind.
-					var depKind string
-					for _, dc := range children {
-						if dc.itemID == need {
-							depKind = dc.kind
-							break
-						}
-					}
-					if depKind == "" {
-						depKind = "code"
-					}
-					// Find the title of the dependency.
-					var depTitle string
-					for _, dc := range children {
-						if dc.itemID == need {
-							depTitle = dc.title
-							break
-						}
-					}
-					depRefs.WriteString(fmt.Sprintf("- **%s** (%s)", depTitle, depWritID))
-					if depKind == "analysis" {
-						depRefs.WriteString(fmt.Sprintf(": output at `%s`", config.WritOutputDir(opts.World, depWritID)))
-					} else {
-						depRefs.WriteString(": branch merged to target")
-					}
-					depRefs.WriteString("\n")
-				}
+				depRefs.WriteString("\n")
 			}
 			desc += depRefs.String()
 			children[i].description = desc
