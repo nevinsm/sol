@@ -207,13 +207,16 @@ sol writ create --world=myworld --title="Refactor auth module" --kind=code --des
 A caravan is a named batch of related writs, potentially spanning multiple worlds, dispatched automatically by the consul.
 
 ```sh
-# Create a caravan
-sol caravan create --name="Q4 cleanup"
+# Create a caravan (positional name, not --name flag)
+sol caravan create "Q4 cleanup"
 
-# Add items (writs) to the caravan
-sol caravan add-item <caravan-id> --world=myworld --title="Remove deprecated API" --kind=code
-sol caravan add-item <caravan-id> --world=myworld --title="Update docs" --kind=code
-sol caravan add-item <caravan-id> --world=otherworld --title="Sync schema" --kind=code
+# Create writs first
+sol writ create --world=myworld --title="Remove deprecated API" --kind=code
+sol writ create --world=myworld --title="Update docs" --kind=code
+sol writ create --world=otherworld --title="Sync schema" --kind=code
+
+# Add writs to caravan by ID (command is "add", not "add-item")
+sol caravan add <caravan-id> <writ-id> [<writ-id> ...] --phase=0
 
 # Commission — lock the caravan and make items available for dispatch
 sol caravan commission <caravan-id>
@@ -224,11 +227,13 @@ Once commissioned, the consul's next patrol detects the ready items and dispatch
 **Phase-based sequencing:** Caravan items have a phase number (default 0). The consul only dispatches phase N+1 items after all phase N items are closed (merged). This lets you sequence dependent work:
 
 ```sh
-# Phase 0: run first
-sol caravan add-item <caravan-id> --world=myworld --title="Step 1: migrate DB" --phase=0
+# Create writs
+sol writ create --world=myworld --title="Step 1: migrate DB" --kind=code
+sol writ create --world=myworld --title="Step 2: update app" --kind=code
 
-# Phase 1: run after all phase-0 items are merged
-sol caravan add-item <caravan-id> --world=myworld --title="Step 2: update app" --phase=1
+# Add with phase assignment
+sol caravan add <caravan-id> <step1-writ-id> --phase=0
+sol caravan add <caravan-id> <step2-writ-id> --phase=1
 ```
 
 ### Workflows
@@ -265,7 +270,7 @@ Use envoys for ongoing collaborative work, research, or tasks that need continui
 
 **Starting an envoy session:**
 ```sh
-sol envoy cast --world=myworld --agent=MyEnvoy
+sol envoy start --world=myworld --agent=MyEnvoy
 ```
 
 ---
@@ -372,7 +377,7 @@ The sentinel patrols its world every 3 minutes. Each patrol it:
 
 The sentinel's heartbeat records: patrol count, agents checked, stalled agents found, and reaped agents. You can see this in `sol status myworld` under the Sentinel section.
 
-**Stall detection thresholds** are configured per-world (see [docs/configuration.md](configuration.md)). By default the sentinel runs 2 respawn attempts (`max_respawns = 2`) before escalating.
+The sentinel attempts up to 2 respawns per writ before escalating. The prefect allows up to 5 consecutive respawn attempts before permanently stalling an agent.
 
 When the sentinel marks an agent as stuck, it creates an escalation visible in `sol status`. You can view open escalations with `sol escalation list`.
 
@@ -418,8 +423,8 @@ In `$SOL_HOME/sol.toml`:
 
 ```toml
 [pricing]
-"claude-sonnet-4-5" = { input = 3.00, output = 15.00, cache_read = 0.30, cache_write = 3.75 }
-"claude-opus-4-5"   = { input = 15.00, output = 75.00, cache_read = 1.50, cache_write = 18.75 }
+"claude-sonnet-4-5" = { input = 3.00, output = 15.00, cache_read = 0.30, cache_creation = 3.75 }
+"claude-opus-4-5"   = { input = 15.00, output = 75.00, cache_read = 1.50, cache_creation = 18.75 }
 ```
 
 Prices are in USD per million tokens. Model names must match exactly what Claude Code reports in its telemetry.
