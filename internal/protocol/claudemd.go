@@ -315,10 +315,9 @@ type WritContext struct {
 
 // EnvoyClaudeMDContext holds the fields used to generate a CLAUDE.md for an envoy agent.
 type EnvoyClaudeMDContext struct {
-	AgentName      string
-	World          string
-	SolBinary      string // path to sol binary (for CLI references)
-	PersonaContent string // optional persona file content, appended as ## Persona section
+	AgentName string
+	World     string
+	SolBinary string // path to sol binary (for CLI references)
 
 	WritContext // embedded multi-writ fields for persistent agents
 }
@@ -366,10 +365,6 @@ only path for code to reach the target branch.
 		ctx.AgentName, ctx.World,
 		ctx.World, ctx.AgentName,
 	)
-
-	if ctx.PersonaContent != "" {
-		content += fmt.Sprintf("\n## Persona\n%s\n", strings.TrimSpace(ctx.PersonaContent))
-	}
 
 	// Append multi-writ section if tethered writs exist.
 	if len(ctx.TetheredWrits) > 0 {

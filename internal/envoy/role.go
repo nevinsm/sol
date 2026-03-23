@@ -19,6 +19,7 @@ func RoleConfig() startup.RoleConfig {
 		Hooks:               envoyHooks,
 		SystemPromptContent: protocol.EnvoySystemPrompt,
 		ReplacePrompt:       false, // append mode — keep default system prompt
+		PersonaFile:         func(w, a string) string { return PersonaPath(w, a) },
 		SkillInstaller:      envoySkillInstaller,
 		PrimeBuilder:        envoyPrime,
 	}
@@ -36,18 +37,10 @@ func envoySkillInstaller(world, agent string) []adapter.Skill {
 
 // envoyPersona generates the envoy CLAUDE.local.md content.
 func envoyPersona(world, agent string) ([]byte, error) {
-	// Read optional persona file.
-	var personaContent string
-	personaPath := PersonaPath(world, agent)
-	if data, err := os.ReadFile(personaPath); err == nil {
-		personaContent = string(data)
-	}
-
 	ctx := protocol.EnvoyClaudeMDContext{
-		AgentName:      agent,
-		World:          world,
-		SolBinary:      "sol",
-		PersonaContent: personaContent,
+		AgentName: agent,
+		World:     world,
+		SolBinary: "sol",
 	}
 
 	// Read tethered writs for multi-writ awareness.

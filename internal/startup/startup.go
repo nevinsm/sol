@@ -57,8 +57,9 @@ type RoleConfig struct {
 	Hooks   func(world, agent string) HookSet
 
 	// System prompt
-	SystemPromptContent string // if set, written via adapter.InjectSystemPrompt
-	ReplacePrompt       bool   // true = --system-prompt-file, false = --append-system-prompt-file
+	SystemPromptContent string                         // if set, written via adapter.InjectSystemPrompt
+	ReplacePrompt       bool                           // true = --system-prompt-file, false = --append-system-prompt-file
+	PersonaFile         func(world, agent string) string // returns path to persona file (or empty); content appended to system prompt
 
 	// Workflow
 	Workflow  string // workflow name to instantiate (empty = none)
@@ -182,7 +183,21 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}
 
-	// 2.6. Install system prompt content if provided.
+	// 2.6. Append persona file content to system prompt if available.
+	if cfg.PersonaFile != nil {
+		if pf := cfg.PersonaFile(world, agent); pf != "" {
+			if data, readErr := os.ReadFile(pf); readErr == nil && len(data) > 0 {
+				if cfg.SystemPromptContent != "" {
+					cfg.SystemPromptContent += "\n\n## Persona\n" + string(data)
+				} else {
+					cfg.SystemPromptContent = "## Persona\n" + string(data)
+				}
+			}
+			// Missing file is a no-op (persona files are optional).
+		}
+	}
+
+	// Install system prompt content if provided.
 	systemPromptFile := ""
 	if cfg.SystemPromptContent != "" {
 		systemPromptFile, err = a.InjectSystemPrompt(worktreeDir, cfg.SystemPromptContent, cfg.ReplacePrompt)

@@ -172,28 +172,8 @@ func TestGenerateEnvoyClaudeMDDefaultBinary(t *testing.T) {
 	}
 }
 
-func TestGenerateEnvoyClaudeMDWithPersona(t *testing.T) {
-	ctx := EnvoyClaudeMDContext{
-		AgentName:      "scout",
-		World:          "myworld",
-		SolBinary:      "sol",
-		PersonaContent: "You are thoughtful and concise.\nAlways explain your reasoning.",
-	}
-
-	content := GenerateEnvoyClaudeMD(ctx)
-
-	if !strings.Contains(content, "## Persona") {
-		t.Error("GenerateEnvoyClaudeMD missing Persona section")
-	}
-	if !strings.Contains(content, "You are thoughtful and concise.") {
-		t.Error("GenerateEnvoyClaudeMD missing persona content")
-	}
-	if !strings.Contains(content, "Always explain your reasoning.") {
-		t.Error("GenerateEnvoyClaudeMD missing second line of persona content")
-	}
-}
-
-func TestGenerateEnvoyClaudeMDWithoutPersona(t *testing.T) {
+func TestGenerateEnvoyClaudeMDNoPersonaSection(t *testing.T) {
+	// Persona content is now delivered via system prompt, not CLAUDE.local.md.
 	ctx := EnvoyClaudeMDContext{
 		AgentName: "scout",
 		World:     "myworld",
@@ -203,7 +183,24 @@ func TestGenerateEnvoyClaudeMDWithoutPersona(t *testing.T) {
 	content := GenerateEnvoyClaudeMD(ctx)
 
 	if strings.Contains(content, "## Persona") {
-		t.Error("GenerateEnvoyClaudeMD should not contain Persona section when PersonaContent is empty")
+		t.Error("GenerateEnvoyClaudeMD should not contain Persona section (persona is now in system prompt)")
+	}
+}
+
+func TestGenerateEnvoyClaudeMDIdentitySections(t *testing.T) {
+	ctx := EnvoyClaudeMDContext{
+		AgentName: "scout",
+		World:     "myworld",
+		SolBinary: "sol",
+	}
+
+	content := GenerateEnvoyClaudeMD(ctx)
+
+	if !strings.Contains(content, "## Identity") {
+		t.Error("GenerateEnvoyClaudeMD missing Identity section")
+	}
+	if !strings.Contains(content, "scout") {
+		t.Error("GenerateEnvoyClaudeMD missing agent name")
 	}
 }
 
@@ -243,13 +240,13 @@ func TestInstallEnvoyClaudeMD(t *testing.T) {
 	}
 }
 
-func TestInstallEnvoyClaudeMDWithPersona(t *testing.T) {
+func TestInstallEnvoyClaudeMDNoPersonaInOutput(t *testing.T) {
+	// Persona content is no longer embedded in CLAUDE.local.md — it goes to system prompt.
 	dir := t.TempDir()
 	ctx := EnvoyClaudeMDContext{
-		AgentName:      "scout",
-		World:          "myworld",
-		SolBinary:      "sol",
-		PersonaContent: "Be direct and action-oriented.",
+		AgentName: "scout",
+		World:     "myworld",
+		SolBinary: "sol",
 	}
 
 	if err := InstallEnvoyClaudeMD(dir, ctx); err != nil {
@@ -263,11 +260,8 @@ func TestInstallEnvoyClaudeMDWithPersona(t *testing.T) {
 	}
 
 	content := string(data)
-	if !strings.Contains(content, "## Persona") {
-		t.Error("CLAUDE.local.md missing Persona section")
-	}
-	if !strings.Contains(content, "Be direct and action-oriented.") {
-		t.Error("CLAUDE.local.md missing persona content")
+	if strings.Contains(content, "## Persona") {
+		t.Error("CLAUDE.local.md should not contain Persona section (persona is now in system prompt)")
 	}
 }
 
