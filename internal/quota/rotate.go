@@ -50,6 +50,7 @@ func Rotate(opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manage
 	result := &RotateResult{}
 
 	// Expire any limits whose resets_at has passed.
+	// ExpireLimits mutates state in-memory — only persist below if not dry-run.
 	result.Expired = state.ExpireLimits()
 
 	// Find limited accounts.
@@ -60,8 +61,10 @@ func Rotate(opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manage
 			if err := restartPausedSessions(state, opts, sphereStore, mgr, logger, result); err != nil {
 				return result, err
 			}
-			if err := Save(state); err != nil {
-				return result, fmt.Errorf("failed to save quota state: %w", err)
+			if !opts.DryRun {
+				if err := Save(state); err != nil {
+					return result, fmt.Errorf("failed to save quota state: %w", err)
+				}
 			}
 		}
 		return result, nil
@@ -93,8 +96,10 @@ func Rotate(opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manage
 	}
 
 	if len(affectedAgents) == 0 {
-		if err := Save(state); err != nil {
-			return result, fmt.Errorf("failed to save quota state: %w", err)
+		if !opts.DryRun {
+			if err := Save(state); err != nil {
+				return result, fmt.Errorf("failed to save quota state: %w", err)
+			}
 		}
 		return result, nil
 	}

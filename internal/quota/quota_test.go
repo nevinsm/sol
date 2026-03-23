@@ -101,9 +101,12 @@ func TestParseResetTime(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			// Result is in UTC, so check relative to now.
+			// Result must be in UTC.
 			if result.IsZero() {
 				t.Error("expected non-zero time")
+			}
+			if result.Location() != time.UTC {
+				t.Errorf("expected UTC location, got %v", result.Location())
 			}
 		})
 	}

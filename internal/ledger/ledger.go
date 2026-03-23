@@ -251,18 +251,43 @@ func (l *Ledger) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var totalRecords, failedRecords int
 	for _, rl := range req.ResourceLogs {
-		l.processResourceLogs(rl)
+		total, failed := l.processResourceLogs(rl)
+		totalRecords += total
+		failedRecords += failed
 	}
 
-	// OTLP expects an empty JSON response on success.
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("{}"))
+	if failedRecords > 0 && failedRecords == totalRecords {
+		// All records failed — signal to OTLP client to retry.
+		w.WriteHeader(http.StatusInternalServerError)
+		resp, _ := json.Marshal(map[string]any{
+			"error":          "all records failed",
+			"total_records":  totalRecords,
+			"failed_records": failedRecords,
+		})
+		_, _ = w.Write(resp)
+	} else if failedRecords > 0 {
+		// Partial failure — some records succeeded, some dropped.
+		w.WriteHeader(http.StatusPartialContent)
+		resp, _ := json.Marshal(map[string]any{
+			"partial_failure": map[string]any{
+				"total_records":  totalRecords,
+				"failed_records": failedRecords,
+			},
+		})
+		_, _ = w.Write(resp)
+	} else {
+		// All records succeeded (or no processable records).
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{}"))
+	}
 }
 
 // processResourceLogs handles a single ResourceLogs entry.
-func (l *Ledger) processResourceLogs(rl ResourceLogs) {
+// Returns total processable records and the number that failed.
+func (l *Ledger) processResourceLogs(rl ResourceLogs) (total, failed int) {
 	resAttrs := attributeMap(rl.Resource.Attributes)
 
 	agentName := resAttrs["agent.name"]
@@ -270,18 +295,25 @@ func (l *Ledger) processResourceLogs(rl ResourceLogs) {
 	writID := resAttrs["writ_id"]
 
 	if agentName == "" || world == "" {
-		return // skip events without required resource attributes
+		return 0, 0 // skip events without required resource attributes
 	}
 
 	for _, sl := range rl.ScopeLogs {
 		for _, rec := range sl.LogRecords {
-			l.processLogRecord(world, agentName, writID, rec)
+			total++
+			if err := l.processLogRecord(world, agentName, writID, rec); err != nil {
+				failed++
+			}
 		}
 	}
+
+	return total, failed
 }
 
 // processLogRecord processes a single log record, extracting token usage.
-func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord) {
+// Returns nil on success (including filtered-out records), or an error if
+// the record could not be persisted.
+func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord) error {
 	attrs := attributeMap(rec.Attributes)
 
 	// Filter for claude_code.api_request events.
@@ -294,7 +326,7 @@ func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord
 		eventName = attrs["event.name"]
 	}
 	if eventName != "claude_code.api_request" && eventName != "api_request" {
-		return
+		return nil // not a relevant event, skip without error
 	}
 
 	// Claude Code emits short attribute names ("model", "input_tokens", …).
@@ -304,7 +336,7 @@ func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord
 		model = attrs["gen_ai.response.model"]
 	}
 	if model == "" {
-		return // no model, skip
+		return nil // no model, skip without error
 	}
 
 	input := parseIntAttr(attrs, "input_tokens")
@@ -328,20 +360,20 @@ func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord
 	if err != nil {
 		l.logger.Printf("failed to ensure history for %s/%s: %v", world, agentName, err)
 		l.emitError("ensure_history", err)
-		return
+		return fmt.Errorf("ensure history: %w", err)
 	}
 
 	ws, err := l.worldStore(world)
 	if err != nil {
 		l.logger.Printf("failed to open world store %q: %v", world, err)
 		l.emitError("open_world_store", err)
-		return
+		return fmt.Errorf("open world store: %w", err)
 	}
 
 	if _, err := ws.WriteTokenUsage(historyID, model, input, output, cacheRead, cacheCreation); err != nil {
 		l.logger.Printf("failed to write token usage: %v", err)
 		l.emitError("write_token_usage", err)
-		return
+		return fmt.Errorf("write token usage: %w", err)
 	}
 
 	// Track counters for heartbeat.
@@ -352,6 +384,8 @@ func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord
 	l.mu.Lock()
 	l.worlds[world] = true
 	l.mu.Unlock()
+
+	return nil
 }
 
 // ensureHistory returns the agent_history ID for the session, creating one if needed.

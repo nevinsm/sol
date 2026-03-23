@@ -105,13 +105,13 @@ func parseResetTime(s string) (time.Time, error) {
 		hour = 0
 	}
 
-	now := time.Now()
-	reset := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+	now := time.Now().UTC()
+	reset := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, time.UTC)
 	if reset.Before(now) {
 		reset = reset.Add(24 * time.Hour)
 	}
 
-	return reset.UTC(), nil
+	return reset, nil
 }
 
 // statePath returns the path to the quota state file.
