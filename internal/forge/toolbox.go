@@ -1,16 +1,21 @@
 package forge
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// gitCommandTimeout is the timeout for git operations that may involve network access.
+const gitCommandTimeout = 60 * time.Second
 
 // pauseFlagPath returns the path to the forge pause flag file for a world.
 func pauseFlagPath(world string) string {
@@ -178,10 +183,14 @@ func (r *Forge) MarkMerged(mrID string) error {
 	}
 
 	// Clean up remote branch (best-effort).
-	exec.Command("git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
+	pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	defer pushCancel()
+	exec.CommandContext(pushCtx, "git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
 
 	// Clean up local branch (best-effort).
-	exec.Command("git", "-C", r.worktree, "branch", "-D", mr.Branch).Run()
+	branchCtx, branchCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	defer branchCancel()
+	exec.CommandContext(branchCtx, "git", "-C", r.worktree, "branch", "-D", mr.Branch).Run()
 
 	// Supersede prior failed MRs for the same writ (best-effort).
 	r.supersedeFailed(mrID, mr.WritID)
@@ -220,10 +229,14 @@ func (r *Forge) supersedeFailed(mergedMRID, writID string) {
 		}
 
 		// Delete remote branch (best-effort).
-		exec.Command("git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
+		delCtx, delCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+		exec.CommandContext(delCtx, "git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
+		delCancel()
 
 		// Delete local branch (best-effort).
-		exec.Command("git", "-C", r.worktree, "branch", "-D", mr.Branch).Run()
+		localCtx, localCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+		exec.CommandContext(localCtx, "git", "-C", r.worktree, "branch", "-D", mr.Branch).Run()
+		localCancel()
 
 		// Resolve escalations that reference this MR (best-effort).
 		r.resolveEscalationsForMR(mr.ID)
@@ -323,8 +336,12 @@ func (r *Forge) MarkFailed(mrID string) error {
 		}
 	}
 
-	// Delete remote branch (best-effort) to prevent accumulation of stale branches.
-	exec.Command("git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
+	// NOTE: We intentionally do NOT delete the remote branch on failure.
+	// The branch contains the only copy of the agent's work — if the outpost
+	// worktree has already been cleaned up, deleting the remote branch loses
+	// that work permanently. Stale branches from superseded failures are
+	// cleaned up in supersedeFailed when a subsequent MR for the same writ
+	// is merged.
 
 	r.logger.Info("marked failed and reopened", "mr", mrID,
 		"writ", mr.WritID, "branch", mr.Branch)
@@ -353,7 +370,9 @@ func (r *Forge) CreateResolutionTask(mr *store.MergeRequest) (string, error) {
 	}
 
 	// Get current target branch SHA.
-	out, err := exec.Command("git", "-C", r.worktree, "rev-parse",
+	revCtx, revCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	defer revCancel()
+	out, err := exec.CommandContext(revCtx, "git", "-C", r.worktree, "rev-parse",
 		"origin/"+r.cfg.TargetBranch).CombinedOutput()
 	targetSHA := strings.TrimSpace(string(out))
 	if err != nil {
