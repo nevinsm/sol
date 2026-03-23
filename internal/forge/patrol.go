@@ -440,7 +440,9 @@ func (s *patrolState) executeMergeSession(ctx context.Context, mr *store.MergeRe
 		s.forge.logger.Error("merge session failed", "mr", mr.ID, "error", err)
 		s.fl.Log("ERROR", fmt.Sprintf("merge session failed: %s", truncate(err.Error(), 200)))
 		s.lastError = truncate(fmt.Sprintf("merge session failed: %s", err.Error()), 200)
-		s.forge.Release(mr.ID)
+		if _, err := s.forge.Release(mr.ID); err != nil {
+			s.forge.logger.Error("failed to release MR after session failure", "mr", mr.ID, "error", err)
+		}
 		s.writeHeartbeat("idle", queueDepth-1)
 		s.emitPatrolEvent(queueDepth)
 		return
