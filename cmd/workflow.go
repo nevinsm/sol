@@ -618,7 +618,9 @@ var workflowManifestCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Caravan: %s\n", result.CaravanID)
-		fmt.Printf("Parent:  %s\n", result.ParentID)
+		if result.ParentID != "" {
+			fmt.Printf("Parent:  %s\n", result.ParentID)
+		}
 		fmt.Printf("Items:   %d\n", len(result.ChildIDs))
 
 		// Sort by phase for readable output.

@@ -776,7 +776,7 @@ type ManifestResult struct {
 type ManifestOpts struct {
 	Name  string
 	World       string
-	ParentID    string // if empty, a parent writ is created
+	ParentID    string // if empty, children have no parent; if set, used as parent for all children
 	Variables   map[string]string
 	CreatedBy   string
 }
@@ -893,20 +893,6 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 	resolved, err := ResolveVariables(m, vars)
 	if err != nil {
 		return nil, err
-	}
-
-	// Create parent writ if not provided.
-	if parentID == "" {
-		parentID, err = worldStore.CreateWrit(
-			m.Name+": "+resolved["issue"],
-			m.Description,
-			opts.CreatedBy,
-			0,
-			[]string{"manifest"},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create parent writ: %w", err)
-		}
 	}
 
 	// Build child items from steps.
@@ -1039,10 +1025,10 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 
 	// Create caravan and add children.
 	caravanName := opts.Name
-	if opts.ParentID != "" {
-		caravanName += ":" + opts.ParentID
-	} else {
+	if parentID != "" {
 		caravanName += ":" + parentID
+	} else {
+		caravanName += ":" + opts.World + ":" + fmt.Sprintf("%d", time.Now().UnixMilli())
 	}
 	caravanID, err := sphereStore.CreateCaravan(caravanName, opts.CreatedBy)
 	if err != nil {

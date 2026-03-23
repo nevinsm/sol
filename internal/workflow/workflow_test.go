@@ -1309,8 +1309,8 @@ func TestManifestWorkflow(t *testing.T) {
 	if result.CaravanID == "" {
 		t.Error("CaravanID is empty")
 	}
-	if result.ParentID == "" {
-		t.Error("ParentID is empty")
+	if result.ParentID != "" {
+		t.Errorf("ParentID should be empty when no target provided, got %q", result.ParentID)
 	}
 	if len(result.ChildIDs) != 3 {
 		t.Fatalf("ChildIDs: got %d, want 3", len(result.ChildIDs))
@@ -1329,8 +1329,8 @@ func TestManifestWorkflow(t *testing.T) {
 		if item.Title != stepDef.Title {
 			t.Errorf("step %q title: got %q, want %q", stepDef.ID, item.Title, stepDef.Title)
 		}
-		if item.ParentID != result.ParentID {
-			t.Errorf("step %q parent_id: got %q, want %q", stepDef.ID, item.ParentID, result.ParentID)
+		if item.ParentID != "" {
+			t.Errorf("step %q parent_id: got %q, want empty (no target provided)", stepDef.ID, item.ParentID)
 		}
 		if item.Status != "open" {
 			t.Errorf("step %q status: got %q, want open", stepDef.ID, item.Status)

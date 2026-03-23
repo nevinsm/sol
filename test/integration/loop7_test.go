@@ -309,9 +309,9 @@ needs = ["alpha", "beta"]
 		t.Fatalf("Materialize: %v", err)
 	}
 
-	// Verify parent writ created automatically.
-	if result.ParentID == "" {
-		t.Fatal("Materialize should create a parent writ")
+	// Verify no parent writ is auto-created (caravan provides grouping).
+	if result.ParentID != "" {
+		t.Errorf("ParentID should be empty when no target provided, got %q", result.ParentID)
 	}
 
 	// Verify child writs: alpha, beta (phase 0), synthesis (phase 1).

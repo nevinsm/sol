@@ -491,9 +491,9 @@ needs = ["alpha", "beta"]
 		t.Error("Materialize should create a caravan")
 	}
 
-	// Verify a parent writ was created automatically.
-	if result.ParentID == "" {
-		t.Error("Materialize should create a parent writ")
+	// Verify no parent writ is auto-created (caravan provides grouping).
+	if result.ParentID != "" {
+		t.Errorf("ParentID should be empty when no target provided, got %q", result.ParentID)
 	}
 
 	// Verify three child writs: alpha, beta, synthesis.
