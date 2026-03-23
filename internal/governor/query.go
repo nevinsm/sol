@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -65,10 +66,23 @@ func AcquireQueryLock(world string, timeout time.Duration) (*QueryLock, error) {
 	// calls f.Close() without any concurrent access to *os.File.
 	rawFd := int(f.Fd())
 
+	// closed is set to 1 when the timeout branch closes the fd.  The goroutine
+	// checks this after flock returns to detect fd-reuse: if the fd was closed
+	// and recycled by the OS, flock may succeed on the wrong file.  In that case
+	// the goroutine immediately unlocks to avoid leaking a stale lock.
+	var closed int32
+
 	type result struct{ err error }
 	ch := make(chan result, 1)
 	go func() {
-		ch <- result{syscall.Flock(rawFd, syscall.LOCK_EX)}
+		err := syscall.Flock(rawFd, syscall.LOCK_EX)
+		if err == nil && atomic.LoadInt32(&closed) == 1 {
+			// The fd was closed (and possibly recycled) before flock returned.
+			// We may have locked the wrong file — release immediately.
+			syscall.Flock(rawFd, syscall.LOCK_UN)
+			err = fmt.Errorf("query lock cancelled (fd closed during wait)")
+		}
+		ch <- result{err}
 	}()
 
 	select {
@@ -79,8 +93,9 @@ func AcquireQueryLock(world string, timeout time.Duration) (*QueryLock, error) {
 		}
 		return &QueryLock{file: f, path: lockPath}, nil
 	case <-time.After(timeout):
-		// Closing the file descriptor causes the blocked flock goroutine to
-		// return EBADF, which is sent to the buffered channel and discarded.
+		// Signal the goroutine that the fd is being closed before actually
+		// closing it, so the goroutine can detect fd-reuse on wakeup.
+		atomic.StoreInt32(&closed, 1)
 		f.Close()
 		return nil, fmt.Errorf("timed out waiting for query lock for world %q (another query may be in progress)", world)
 	}

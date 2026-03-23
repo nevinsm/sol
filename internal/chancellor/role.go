@@ -38,8 +38,8 @@ func chancellorPersona(_, _ string) ([]byte, error) {
 }
 
 // chancellorHooks returns the runtime-agnostic hook configuration for the chancellor.
-// The chancellor is sphere-level (no world), so world-dependent hooks (nudge drain,
-// sol prime --compact) are omitted.
+// The chancellor is sphere-level (no world), so sol prime --compact is omitted.
+// Nudge drain uses --agent=chancellor; SOL_AGENT is set in the session env by startup.
 func chancellorHooks(_, _ string) startup.HookSet {
 	return startup.HookSet{
 		SessionStart: []startup.HookCommand{
@@ -50,6 +50,9 @@ func chancellorHooks(_, _ string) startup.HookSet {
 		},
 		PreCompact: []startup.HookCommand{
 			{Command: "sol brief inject --path=.brief/memory.md --max-lines=200"},
+		},
+		TurnBoundary: []startup.HookCommand{
+			{Command: "sol nudge drain --agent=chancellor"},
 		},
 		Guards: append([]startup.Guard{
 			{Pattern: "Write|Edit", Command: protocol.AutoMemoryBlockCommand},

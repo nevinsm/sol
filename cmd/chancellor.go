@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/chancellor"
+	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -23,6 +24,13 @@ var chancellorStartCmd = &cobra.Command{
 	Short:        "Start the chancellor planning session",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Hold the agent lock to prevent concurrent start from prefect and user.
+		agentLock, err := dispatch.AcquireAgentLock("chancellor")
+		if err != nil {
+			return fmt.Errorf("failed to start chancellor: %w", err)
+		}
+		defer agentLock.Release()
+
 		mgr := session.New()
 
 		if err := chancellor.Start(mgr); err != nil {
@@ -43,6 +51,14 @@ var chancellorStopCmd = &cobra.Command{
 	Short:        "Stop the chancellor session",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Hold the agent lock to prevent a concurrent Prefect respawn from racing
+		// with the Exists→stop sequence inside chancellor.Stop (TOCTOU guard).
+		agentLock, err := dispatch.AcquireAgentLock("chancellor")
+		if err != nil {
+			return fmt.Errorf("failed to stop chancellor: %w", err)
+		}
+		defer agentLock.Release()
+
 		mgr := session.New()
 
 		if err := chancellor.Stop(mgr); err != nil {
