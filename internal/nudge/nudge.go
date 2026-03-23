@@ -83,6 +83,7 @@ func Enqueue(session string, msg Message) error {
 		}
 		path := filepath.Join(dir, filename)
 
+		// Atomically claim the filename with O_EXCL (prevents TOCTOU race).
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 		if err != nil {
 			if os.IsExist(err) {
@@ -90,18 +91,41 @@ func Enqueue(session string, msg Message) error {
 			}
 			return fmt.Errorf("failed to write nudge for %q: %w", session, err)
 		}
-		if _, wErr := f.Write(data); wErr != nil {
-			f.Close()
-			os.Remove(path) // clean up partial write
+		f.Close()
+
+		// Write content to a temp file, then rename over the claimed path.
+		// This ensures Drain never sees a partial JSON file.
+		tmpPath := path + ".tmp"
+		if wErr := writeAndSync(tmpPath, data); wErr != nil {
+			os.Remove(path)    // release claimed slot
+			os.Remove(tmpPath) // clean up temp file
 			return fmt.Errorf("failed to write nudge for %q: %w", session, wErr)
 		}
-		if err := f.Close(); err != nil {
-			os.Remove(path)
-			return fmt.Errorf("failed to write nudge for %q: %w", session, err)
+		if rErr := os.Rename(tmpPath, path); rErr != nil {
+			os.Remove(path)    // release claimed slot
+			os.Remove(tmpPath) // clean up temp file
+			return fmt.Errorf("failed to write nudge for %q: %w", session, rErr)
 		}
 		return nil
 	}
 	return fmt.Errorf("failed to write nudge for %q: too many timestamp collisions", session)
+}
+
+// writeAndSync writes data to a new file and fsyncs it for durability.
+func writeAndSync(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // Drain claims all pending messages for a session, reads them,
