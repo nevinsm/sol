@@ -916,6 +916,18 @@ func TestAgingThresholdLowSeverity(t *testing.T) {
 	}
 }
 
+func TestAgingThresholdLowSeverityZero(t *testing.T) {
+	// "low" severity with empty config returns (0, nil) — never re-notified.
+	e := EscalationSection{}
+	d, err := e.AgingThreshold("low")
+	if err != nil {
+		t.Fatalf("AgingThreshold(\"low\") with empty config error: %v", err)
+	}
+	if d != 0 {
+		t.Fatalf("AgingThreshold(\"low\") with empty config = %v, want 0", d)
+	}
+}
+
 func TestAgingThresholdUnknownSeverity(t *testing.T) {
 	e := DefaultEscalationConfig()
 	_, err := e.AgingThreshold("unknown")
