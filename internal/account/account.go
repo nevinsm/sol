@@ -20,6 +20,7 @@ type quotaState struct {
 
 // removeFromQuotaState removes a handle from quota.json.
 // Errors are intentionally ignored — quota state is best-effort.
+// Uses map[string]json.RawMessage to preserve all top-level fields during round-trip.
 func removeFromQuotaState(handle string) {
 	statePath := filepath.Join(config.RuntimeDir(), "quota.json")
 	lockPath := filepath.Join(config.RuntimeDir(), "quota.json.lock")
@@ -40,15 +41,32 @@ func removeFromQuotaState(handle string) {
 		return // file may not exist yet — nothing to clean up
 	}
 
-	var state quotaState
+	// Unmarshal into a generic map to preserve all top-level fields (e.g., paused_sessions).
+	var state map[string]json.RawMessage
 	if err := json.Unmarshal(data, &state); err != nil {
 		return
 	}
-	if _, exists := state.Accounts[handle]; !exists {
+
+	accountsRaw, exists := state["accounts"]
+	if !exists {
+		return // no accounts key — nothing to clean up
+	}
+
+	var accounts map[string]json.RawMessage
+	if err := json.Unmarshal(accountsRaw, &accounts); err != nil {
+		return
+	}
+	if _, exists := accounts[handle]; !exists {
 		return // nothing to remove
 	}
 
-	delete(state.Accounts, handle)
+	delete(accounts, handle)
+
+	updatedAccounts, err := json.Marshal(accounts)
+	if err != nil {
+		return
+	}
+	state["accounts"] = json.RawMessage(updatedAccounts)
 
 	updated, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
@@ -129,6 +147,40 @@ func (r *Registry) Save() error {
 		return fmt.Errorf("failed to write accounts registry: %w", err)
 	}
 	return nil
+}
+
+// LockedRegistryUpdate performs an atomic load-modify-save cycle on the account
+// registry under an exclusive file lock. This prevents concurrent operations
+// (e.g., two simultaneous `sol account add` calls) from racing on the
+// read-modify-write cycle and losing data.
+func LockedRegistryUpdate(fn func(*Registry) error) error {
+	dir := config.AccountsDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create accounts directory: %w", err)
+	}
+
+	lockPath := registryPath() + ".lock"
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to open registry lock file: %w", err)
+	}
+	defer lockFile.Close()
+
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("failed to acquire registry lock: %w", err)
+	}
+	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN) //nolint:errcheck
+
+	reg, err := LoadRegistry()
+	if err != nil {
+		return err
+	}
+
+	if err := fn(reg); err != nil {
+		return err
+	}
+
+	return reg.Save()
 }
 
 // Add registers a new account. Creates the account config directory.
