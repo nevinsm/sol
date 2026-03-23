@@ -91,7 +91,9 @@ func AcquireAgentLock(agentID string) (*AgentLock, error) {
 	return &AgentLock{file: f, path: lockPath}, nil
 }
 
-// Release releases the agent lock.
+// Release releases the agent lock. It is idempotent — calling Release on an
+// already-released lock is a no-op. This is important for the restart path
+// where both restartSession's unlockFn and a defer may call Release.
 func (l *AgentLock) Release() error {
 	if l == nil || l.file == nil {
 		return nil

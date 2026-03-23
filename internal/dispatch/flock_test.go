@@ -106,6 +106,76 @@ func TestReleaseIdempotent(t *testing.T) {
 	}
 }
 
+func TestAgentLockReleaseIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
+		t.Fatalf("failed to create runtime dir: %v", err)
+	}
+
+	lock, err := AcquireAgentLock("ember/Toast")
+	if err != nil {
+		t.Fatalf("acquire failed: %v", err)
+	}
+
+	if err := lock.Release(); err != nil {
+		t.Fatalf("first release failed: %v", err)
+	}
+
+	// Second release must be a no-op — this mirrors the restart path where
+	// both restartSession's unlockFn and defer agentLock.Release() fire.
+	if err := lock.Release(); err != nil {
+		t.Fatalf("second release should be idempotent, got: %v", err)
+	}
+
+	// Third call also safe (nil receiver edge case already covered by guard).
+	if err := lock.Release(); err != nil {
+		t.Fatalf("third release should be idempotent, got: %v", err)
+	}
+}
+
+func TestMergeSlotReleaseIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
+		t.Fatalf("failed to create runtime dir: %v", err)
+	}
+
+	lock, err := AcquireMergeSlotLock("ember")
+	if err != nil {
+		t.Fatalf("acquire failed: %v", err)
+	}
+
+	if err := lock.Release(); err != nil {
+		t.Fatalf("first release failed: %v", err)
+	}
+
+	if err := lock.Release(); err != nil {
+		t.Fatalf("second release should be idempotent, got: %v", err)
+	}
+}
+
+func TestProvisionLockReleaseIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
+		t.Fatalf("failed to create runtime dir: %v", err)
+	}
+
+	lock, err := AcquireProvisionLock("ember")
+	if err != nil {
+		t.Fatalf("acquire failed: %v", err)
+	}
+
+	if err := lock.Release(); err != nil {
+		t.Fatalf("first release failed: %v", err)
+	}
+
+	if err := lock.Release(); err != nil {
+		t.Fatalf("second release should be idempotent, got: %v", err)
+	}
+}
+
 // --- Merge slot lock tests ---
 
 func TestMergeSlotAcquireRelease(t *testing.T) {
