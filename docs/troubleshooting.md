@@ -223,7 +223,7 @@ ANTHROPIC_API_KEY=sk-ant-...   # set a real value
 **Fix:**
 - If the agent is genuinely stuck and not recoverable, kill the session and let it respawn:
   ```bash
-  sol session kill <agent-name>
+  sol session stop <agent-name>
   ```
   The prefect will respawn the session. The agent will resume from its last committed state.
 
@@ -408,5 +408,5 @@ Common causes:
 3. If the world exists in a broken state:
    ```bash
    sol world delete <world> --confirm
-   sol world init <world> --repo <repo-url>
+   sol world init <world> --source-repo <repo-url>
    ```
