@@ -1,24 +1,76 @@
 package store
 
-import "fmt"
+import (
+	"context"
+	"errors"
+	"fmt"
+)
 
 // AddCaravanDependency records that fromID depends on toID (fromID is blocked
 // until toID is closed). Both caravans must exist. Returns error on cycle detection.
+// Uses an IMMEDIATE transaction to prevent concurrent cycle creation.
 func (s *SphereStore) AddCaravanDependency(fromID, toID string) error {
 	if fromID == toID {
 		return fmt.Errorf("caravan %q cannot depend on itself", fromID)
 	}
 
+	ctx := context.Background()
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection: %w", err)
+	}
+	defer conn.Close()
+
+	// BEGIN IMMEDIATE acquires the write lock upfront, preventing concurrent
+	// writers from passing cycle detection before our INSERT is visible.
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+		}
+	}()
+
 	// Verify both caravans exist.
-	if _, err := s.GetCaravan(fromID); err != nil {
+	var exists int
+	err = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM caravans WHERE id = ?`, fromID).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("failed to check caravan %q: %w", fromID, err)
+	}
+	if exists == 0 {
 		return fmt.Errorf("caravan %q not found", fromID)
 	}
-	if _, err := s.GetCaravan(toID); err != nil {
+
+	err = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM caravans WHERE id = ?`, toID).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("failed to check caravan %q: %w", toID, err)
+	}
+	if exists == 0 {
 		return fmt.Errorf("caravan %q not found", toID)
 	}
 
-	// Check for cycles.
-	cycle, err := detectCycle(s.GetCaravanDependencies, fromID, toID)
+	// Check for cycles using transaction-scoped queries.
+	getDepsInTx := func(caravanID string) ([]string, error) {
+		rows, err := conn.QueryContext(ctx,
+			`SELECT to_id FROM caravan_dependencies WHERE from_id = ? ORDER BY to_id`, caravanID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get caravan dependencies for %q: %w", caravanID, err)
+		}
+		defer rows.Close()
+		var deps []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return nil, fmt.Errorf("failed to scan caravan dependency: %w", err)
+			}
+			deps = append(deps, id)
+		}
+		return deps, rows.Err()
+	}
+
+	cycle, err := detectCycle(getDepsInTx, fromID, toID)
 	if err != nil {
 		return fmt.Errorf("failed to check for cycles: %w", err)
 	}
@@ -26,13 +78,18 @@ func (s *SphereStore) AddCaravanDependency(fromID, toID string) error {
 		return fmt.Errorf("adding dependency %q → %q would create a cycle", fromID, toID)
 	}
 
-	_, err = s.db.Exec(
+	_, err = conn.ExecContext(ctx,
 		`INSERT OR IGNORE INTO caravan_dependencies (from_id, to_id) VALUES (?, ?)`,
 		fromID, toID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to add caravan dependency %q → %q: %w", fromID, toID, err)
 	}
+
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return fmt.Errorf("failed to commit caravan dependency: %w", err)
+	}
+	committed = true
 	return nil
 }
 
@@ -296,9 +353,14 @@ func (s *SphereStore) IsWritBlockedByCaravan(writID, world string,
 			for _, wid := range writIDs {
 				item, err := ws.GetWrit(wid)
 				if err != nil {
-					// If the writ is not found, treat it as blocking (conservative).
+					if errors.Is(err, ErrNotFound) {
+						// Writ not found — treat as blocking (conservative).
+						ws.Close()
+						return true, nil
+					}
+					// Actual database error — propagate.
 					ws.Close()
-					return true, nil
+					return false, fmt.Errorf("failed to get writ %q in world %q: %w", wid, w, err)
 				}
 				if item.Status != "closed" {
 					blocked = true

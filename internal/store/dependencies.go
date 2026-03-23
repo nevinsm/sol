@@ -1,17 +1,40 @@
 package store
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // AddDependency records that fromID depends on toID.
 // Both writs must exist. Returns error on cycle detection.
+// Uses an IMMEDIATE transaction to prevent concurrent cycle creation.
 func (s *WorldStore) AddDependency(fromID, toID string) error {
 	if fromID == toID {
 		return fmt.Errorf("writ %q cannot depend on itself", fromID)
 	}
 
+	ctx := context.Background()
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection: %w", err)
+	}
+	defer conn.Close()
+
+	// BEGIN IMMEDIATE acquires the write lock upfront, preventing concurrent
+	// writers from passing cycle detection before our INSERT is visible.
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+		}
+	}()
+
 	// Verify both writs exist.
 	var exists int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM writs WHERE id = ?`, fromID).Scan(&exists)
+	err = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM writs WHERE id = ?`, fromID).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("failed to check writ %q: %w", fromID, err)
 	}
@@ -19,7 +42,7 @@ func (s *WorldStore) AddDependency(fromID, toID string) error {
 		return fmt.Errorf("writ %q not found", fromID)
 	}
 
-	err = s.db.QueryRow(`SELECT COUNT(*) FROM writs WHERE id = ?`, toID).Scan(&exists)
+	err = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM writs WHERE id = ?`, toID).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("failed to check writ %q: %w", toID, err)
 	}
@@ -27,8 +50,26 @@ func (s *WorldStore) AddDependency(fromID, toID string) error {
 		return fmt.Errorf("writ %q not found", toID)
 	}
 
-	// Check for cycles.
-	cycle, err := detectCycle(s.GetDependencies, fromID, toID)
+	// Check for cycles using transaction-scoped queries.
+	getDepsInTx := func(itemID string) ([]string, error) {
+		rows, err := conn.QueryContext(ctx,
+			`SELECT to_id FROM dependencies WHERE from_id = ? ORDER BY to_id`, itemID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dependencies for %q: %w", itemID, err)
+		}
+		defer rows.Close()
+		var deps []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return nil, fmt.Errorf("failed to scan dependency: %w", err)
+			}
+			deps = append(deps, id)
+		}
+		return deps, rows.Err()
+	}
+
+	cycle, err := detectCycle(getDepsInTx, fromID, toID)
 	if err != nil {
 		return fmt.Errorf("failed to check for cycles: %w", err)
 	}
@@ -36,13 +77,18 @@ func (s *WorldStore) AddDependency(fromID, toID string) error {
 		return fmt.Errorf("adding dependency %q → %q would create a cycle", fromID, toID)
 	}
 
-	_, err = s.db.Exec(
+	_, err = conn.ExecContext(ctx,
 		`INSERT OR IGNORE INTO dependencies (from_id, to_id) VALUES (?, ?)`,
 		fromID, toID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to add dependency %q → %q: %w", fromID, toID, err)
 	}
+
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return fmt.Errorf("failed to commit dependency: %w", err)
+	}
+	committed = true
 	return nil
 }
 
@@ -163,4 +209,3 @@ func (s *WorldStore) HasOpenTransitiveDependents(writID string) (bool, error) {
 	}
 	return false, nil
 }
-
