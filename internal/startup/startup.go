@@ -175,6 +175,13 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}
 
+	// 2.1. Clean up stale .claude/CLAUDE.local.md from older code path.
+	// The canonical location is now {worktreeRoot}/CLAUDE.local.md (written above).
+	stalePath := filepath.Join(worktreeDir, ".claude", "CLAUDE.local.md")
+	if err := os.Remove(stalePath); err != nil && !os.IsNotExist(err) {
+		slog.Warn("startup: failed to remove stale .claude/CLAUDE.local.md", "path", stalePath, "error", err)
+	}
+
 	// 2.5. Install skills (.claude/skills/).
 	if cfg.SkillInstaller != nil {
 		skills := cfg.SkillInstaller(world, agent)
