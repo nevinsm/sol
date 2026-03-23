@@ -1,10 +1,12 @@
 package processutil
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -286,5 +288,102 @@ func TestGracefulKillInvalidPID(t *testing.T) {
 	err := GracefulKill(-1, time.Second)
 	if err == nil {
 		t.Fatal("GracefulKill() with invalid PID expected error, got nil")
+	}
+}
+
+// ----- Cross-process flock contention -----
+
+// TestFlockHelper is a helper "test" that acts as a child process for
+// TestCrossProcessFlockContention. It is never run directly by go test
+// (it skips unless the sentinel env var is set).
+func TestFlockHelper(t *testing.T) {
+	pidPath := os.Getenv("TEST_FLOCK_HELPER_PATH")
+	if pidPath == "" {
+		t.Skip("not invoked as flock helper process")
+	}
+
+	// Attempt to acquire flock via WritePID with our own PID.
+	err := WritePID(pidPath, os.Getpid())
+	if err != nil {
+		// Print the error so the parent can inspect it, then exit non-zero.
+		fmt.Fprintf(os.Stderr, "FLOCK_ERR: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stdout, "FLOCK_OK pid=%d\n", os.Getpid())
+	// Do NOT call ClearPID — let the parent verify the file contents.
+	// The flock is released automatically when this process exits.
+	os.Exit(0)
+}
+
+// TestCrossProcessFlockContention verifies that two processes racing for the
+// same pidfile flock get the correct behavior:
+//  1. Process A acquires the flock via WritePID.
+//  2. Process B (child) attempts WritePID on the same path — must fail.
+//  3. Process A calls ClearPID (releases flock, preserves inode).
+//  4. Process B (new child) retries WritePID — must succeed on the same inode.
+func TestCrossProcessFlockContention(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "contention.pid")
+
+	// Step 1: Parent acquires flock.
+	if err := WritePID(path, os.Getpid()); err != nil {
+		t.Fatalf("parent WritePID() error: %v", err)
+	}
+	t.Cleanup(func() { _ = ClearPID(path) })
+
+	// Record original inode.
+	info1, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error: %v", err)
+	}
+	ino1 := info1.Sys().(*syscall.Stat_t).Ino
+
+	// Step 2: Child attempts WritePID — should fail with EWOULDBLOCK.
+	cmd := exec.Command(os.Args[0], "-test.run=^TestFlockHelper$")
+	cmd.Env = append(os.Environ(), "TEST_FLOCK_HELPER_PATH="+path)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("child should fail while parent holds flock, output: %s", out)
+	}
+	if !strings.Contains(string(out), "another instance may be running") {
+		t.Fatalf("child error should mention flock contention, got: %s", out)
+	}
+
+	// Step 3: Parent releases flock (ClearPID truncates but preserves inode).
+	if err := ClearPID(path); err != nil {
+		t.Fatalf("ClearPID() error: %v", err)
+	}
+
+	// Step 4: New child retries — should succeed now that flock is released.
+	cmd2 := exec.Command(os.Args[0], "-test.run=^TestFlockHelper$")
+	cmd2.Env = append(os.Environ(), "TEST_FLOCK_HELPER_PATH="+path)
+	out2, err2 := cmd2.CombinedOutput()
+	if err2 != nil {
+		t.Fatalf("child should succeed after ClearPID, error: %v, output: %s", err2, out2)
+	}
+	if !strings.Contains(string(out2), "FLOCK_OK") {
+		t.Fatalf("child should report FLOCK_OK, got: %s", out2)
+	}
+
+	// Step 5: Verify same inode was used (file was never deleted/recreated).
+	info2, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() after child WritePID error: %v", err)
+	}
+	ino2 := info2.Sys().(*syscall.Stat_t).Ino
+	if ino1 != ino2 {
+		t.Fatalf("inode changed: %d → %d (expected same inode after ClearPID + child WritePID)", ino1, ino2)
+	}
+
+	// Step 6: Verify the child actually wrote its PID.
+	childPID, err := ReadPID(path)
+	if err != nil {
+		t.Fatalf("ReadPID() after child WritePID error: %v", err)
+	}
+	if childPID == 0 {
+		t.Fatal("ReadPID() returned 0 — child did not write its PID")
+	}
+	if childPID == os.Getpid() {
+		t.Fatal("ReadPID() returned parent PID — expected child PID")
 	}
 }
