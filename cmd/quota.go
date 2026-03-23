@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	quotaRotateWorld  string
-	quotaRotateDryRun bool
+	quotaRotateWorld   string
+	quotaRotateConfirm bool
 )
 
 var quotaCmd = &cobra.Command{
@@ -140,9 +140,11 @@ var quotaRotateCmd = &cobra.Command{
 		mgr := session.New()
 		logger := events.NewLogger(config.Home())
 
+		dryRun := !quotaRotateConfirm
+
 		result, err := quota.Rotate(quota.RotateOpts{
 			World:  world,
-			DryRun: quotaRotateDryRun,
+			DryRun: dryRun,
 		}, sphereStore, mgr, logger)
 		if err != nil {
 			return err
@@ -160,8 +162,8 @@ var quotaRotateCmd = &cobra.Command{
 		}
 
 		prefix := ""
-		if quotaRotateDryRun {
-			prefix = "[dry-run] "
+		if dryRun {
+			prefix = "[preview] "
 		}
 
 		for _, action := range result.Actions {
@@ -183,6 +185,11 @@ var quotaRotateCmd = &cobra.Command{
 		}
 
 		fmt.Printf("%s%d rotated, %d paused\n", prefix, rotated, paused)
+
+		if dryRun {
+			fmt.Println("\nRun with --confirm to execute.")
+			return &exitError{code: 1}
+		}
 		return nil
 	},
 }
@@ -199,5 +206,5 @@ func init() {
 
 	quotaCmd.AddCommand(quotaRotateCmd)
 	quotaRotateCmd.Flags().StringVar(&quotaRotateWorld, "world", "", "world name")
-	quotaRotateCmd.Flags().BoolVar(&quotaRotateDryRun, "dry-run", false, "show planned rotations without executing")
+	quotaRotateCmd.Flags().BoolVar(&quotaRotateConfirm, "confirm", false, "execute rotations (default is preview-only)")
 }

@@ -179,6 +179,22 @@ var writListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		// Validate --status value if provided.
+		if listStatus != "" {
+			validStatuses := []string{"open", "tethered", "working", "resolve", "done", "closed"}
+			valid := false
+			for _, s := range validStatuses {
+				if listStatus == s {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				return fmt.Errorf("invalid status %q: valid values are %s", listStatus, strings.Join(validStatuses, ", "))
+			}
+		}
+
 		s, err := store.OpenWorld(world)
 		if err != nil {
 			return fmt.Errorf("failed to open world store: %w", err)

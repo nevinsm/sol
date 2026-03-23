@@ -1858,7 +1858,7 @@ Manage account rate limit state
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | show planned rotations without executing |
+| `--confirm` | bool | false | execute rotations (default is preview-only) |
 | `--world` | string | "" | world name |
 
 #### `sol quota scan`
@@ -1890,7 +1890,7 @@ Schema version and migration management
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--backup` | bool | false | Create a backup of each database before migrating |
-| `--dry-run` | bool | false | Preview migrations without applying them |
+| `--confirm` | bool | false | Execute migrations (default is preview-only) |
 
 #### `sol schema status`
 

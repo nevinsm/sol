@@ -28,7 +28,7 @@ func init() {
 	schemaStatusCmd.Flags().BoolVar(&schemaStatusJSON, "json", false, "output as JSON")
 
 	schemaCmd.AddCommand(schemaMigrateCmd)
-	schemaMigrateCmd.Flags().Bool("dry-run", false, "Preview migrations without applying them")
+	schemaMigrateCmd.Flags().Bool("confirm", false, "Execute migrations (default is preview-only)")
 	schemaMigrateCmd.Flags().Bool("backup", false, "Create a backup of each database before migrating")
 }
 
@@ -174,8 +174,9 @@ var schemaMigrateCmd = &cobra.Command{
 	Short:        "Run schema migrations on all databases",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		confirm, _ := cmd.Flags().GetBool("confirm")
 		backup, _ := cmd.Flags().GetBool("backup")
+		dryRun := !confirm
 
 		storeDir := config.StoreDir()
 
@@ -213,6 +214,10 @@ var schemaMigrateCmd = &cobra.Command{
 			}
 		}
 
+		if dryRun {
+			fmt.Println("\nRun with --confirm to apply migrations.")
+			return &exitError{code: 1}
+		}
 		return nil
 	},
 }
