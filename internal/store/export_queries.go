@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"unicode/utf8"
 )
 
 // ExportMessagesForWorld returns all messages where the sender or recipient
@@ -17,7 +18,8 @@ func (s *SphereStore) ExportMessagesForWorld(world string) ([]Message, error) {
 	          WHERE (length(sender) > ? AND substr(sender, 1, ?) = ?)
 	             OR (length(recipient) > ? AND substr(recipient, 1, ?) = ?)
 	          ORDER BY created_at ASC`
-	return s.scanMessages(query, len(prefix), len(prefix), prefix, len(prefix), len(prefix), prefix)
+	prefixLen := utf8.RuneCountInString(prefix)
+	return s.scanMessages(query, prefixLen, prefixLen, prefix, prefixLen, prefixLen, prefix)
 }
 
 // ExportEscalationsForWorld returns all escalations where the source belongs to
@@ -31,7 +33,8 @@ func (s *SphereStore) ExportEscalationsForWorld(world string) ([]Escalation, err
 	          FROM escalations
 	          WHERE length(source) > ? AND substr(source, 1, ?) = ?
 	          ORDER BY created_at ASC`
-	return s.scanEscalations(query, len(prefix), len(prefix), prefix)
+	prefixLen := utf8.RuneCountInString(prefix)
+	return s.scanEscalations(query, prefixLen, prefixLen, prefix)
 }
 
 // ExportCaravanItemsForWorld returns all caravan items belonging to the given world.
