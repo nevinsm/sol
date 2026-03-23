@@ -228,9 +228,19 @@ func Run(p Params) (*Result, error) {
 		}
 	}
 
+	// cleanupClone removes the cloned repo directory on error.
+	// Called only when a source repo was cloned and a subsequent step fails,
+	// so re-running setup can succeed without manual cleanup.
+	cleanupClone := func() {
+		if p.SourceRepo != "" {
+			os.RemoveAll(config.RepoPath(p.WorldName))
+		}
+	}
+
 	// 5. Create world database.
 	worldStore, err := store.OpenWorld(p.WorldName)
 	if err != nil {
+		cleanupClone()
 		return nil, fmt.Errorf("failed to create world database: %w", err)
 	}
 	worldStore.Close()
@@ -238,10 +248,12 @@ func Run(p Params) (*Result, error) {
 	// 6. Register in sphere.db.
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
+		cleanupClone()
 		return nil, fmt.Errorf("failed to open sphere database: %w", err)
 	}
 	if err := sphereStore.RegisterWorld(p.WorldName, p.SourceRepo); err != nil {
 		sphereStore.Close()
+		cleanupClone()
 		return nil, fmt.Errorf("failed to register world: %w", err)
 	}
 	sphereStore.Close()
@@ -250,6 +262,7 @@ func Run(p Params) (*Result, error) {
 	cfg := config.DefaultWorldConfig()
 	cfg.World.SourceRepo = p.SourceRepo
 	if err := config.WriteWorldConfig(p.WorldName, cfg); err != nil {
+		cleanupClone()
 		return nil, fmt.Errorf("failed to write world config: %w", err)
 	}
 
