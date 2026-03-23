@@ -30,6 +30,10 @@ func init() {
 	schemaCmd.AddCommand(schemaMigrateCmd)
 	schemaMigrateCmd.Flags().Bool("confirm", false, "Execute migrations (default is preview-only)")
 	schemaMigrateCmd.Flags().Bool("backup", false, "Create a backup of each database before migrating")
+
+	// Deprecated --dry-run flag (no-op since dry-run is the default; kept for backward compatibility).
+	schemaMigrateCmd.Flags().Bool("dry-run", false, "deprecated: dry-run is now the default; use --confirm to execute")
+	schemaMigrateCmd.Flags().MarkDeprecated("dry-run", "dry-run is now the default behavior; use --confirm to execute")
 }
 
 // --- sol schema status ---

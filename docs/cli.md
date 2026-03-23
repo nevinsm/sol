@@ -1860,6 +1860,9 @@ Manage account rate limit state
 |------|------|---------|-------------|
 | `--confirm` | bool | false | execute rotations (default is preview-only) |
 | `--world` | string | "" | world name |
+| `--dry-run` | bool | false | **deprecated** — dry-run is now the default behavior; use `--confirm` to execute |
+
+> **Migration note:** The `--dry-run` flag was replaced by `--confirm` (commit 926df92). Preview mode is now the default — pass `--confirm` to execute. The old `--dry-run` flag is accepted but ignored with a deprecation warning.
 
 #### `sol quota scan`
 
@@ -1891,6 +1894,9 @@ Schema version and migration management
 |------|------|---------|-------------|
 | `--backup` | bool | false | Create a backup of each database before migrating |
 | `--confirm` | bool | false | Execute migrations (default is preview-only) |
+| `--dry-run` | bool | false | **deprecated** — dry-run is now the default behavior; use `--confirm` to execute |
+
+> **Migration note:** The `--dry-run` flag was replaced by `--confirm` (commit 926df92). Preview mode is now the default — pass `--confirm` to execute. The old `--dry-run` flag is accepted but ignored with a deprecation warning.
 
 #### `sol schema status`
 

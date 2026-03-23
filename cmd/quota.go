@@ -207,4 +207,8 @@ func init() {
 	quotaCmd.AddCommand(quotaRotateCmd)
 	quotaRotateCmd.Flags().StringVar(&quotaRotateWorld, "world", "", "world name")
 	quotaRotateCmd.Flags().BoolVar(&quotaRotateConfirm, "confirm", false, "execute rotations (default is preview-only)")
+
+	// Deprecated --dry-run flag (no-op since dry-run is the default; kept for backward compatibility).
+	quotaRotateCmd.Flags().Bool("dry-run", false, "deprecated: dry-run is now the default; use --confirm to execute")
+	quotaRotateCmd.Flags().MarkDeprecated("dry-run", "dry-run is now the default behavior; use --confirm to execute")
 }
