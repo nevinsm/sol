@@ -2,8 +2,10 @@ package consul
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,7 +14,9 @@ import (
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/escalation"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/logutil"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -185,6 +189,9 @@ func (d *Consul) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to set consul working: %w", err)
 	}
 
+	// Restore persisted state (orphan counters, debounce timestamps).
+	d.restoreState()
+
 	// shutdown writes the final heartbeat and sets agent state to idle.
 	shutdown := func() {
 		openEsc, _ := d.sphereStore.CountOpen()
@@ -322,6 +329,9 @@ func (d *Consul) Patrol(ctx context.Context) error {
 		d.logInfo("consul_error", map[string]any{"action": "write_heartbeat", "error": err.Error()})
 	}
 
+	// 7b. Persist durable state (orphan counters, debounce timestamps).
+	d.saveState()
+
 	// 8. Emit patrol event.
 	if d.logger != nil {
 		d.logger.Emit(events.EventConsulPatrol, "sphere/consul", "sphere/consul", "feed",
@@ -359,6 +369,85 @@ func (d *Consul) Patrol(ctx context.Context) error {
 }
 
 var errShutdown = fmt.Errorf("shutdown requested")
+
+// --- Persistent state ---
+//
+// consulState holds in-memory state that must survive consul restarts.
+// It is serialized to $SOL_HOME/consul/state.json after each patrol and
+// loaded on startup.
+
+// persistedOrphanEntry is the JSON-serializable form of orphanEntry.
+type persistedOrphanEntry struct {
+	Count int `json:"count"`
+}
+
+// consulState is the JSON-serializable consul state persisted across restarts.
+type consulState struct {
+	OrphanedSessions    map[string]*persistedOrphanEntry `json:"orphaned_sessions"`
+	LastEscalationAlert time.Time                        `json:"last_escalation_alert"`
+}
+
+// statePath returns the path to the consul persistent state file.
+func statePath(solHome string) string {
+	return filepath.Join(solHome, "consul", "state.json")
+}
+
+// loadState reads the persisted consul state from disk. Returns a zero-value
+// state if the file does not exist or cannot be parsed (best-effort).
+func loadState(solHome string) consulState {
+	var st consulState
+	data, err := os.ReadFile(statePath(solHome))
+	if err != nil {
+		return st
+	}
+	_ = json.Unmarshal(data, &st) // best-effort; corrupt file → zero state
+	return st
+}
+
+// saveState persists the current consul state to disk atomically.
+func (d *Consul) saveState() {
+	st := consulState{
+		OrphanedSessions:    make(map[string]*persistedOrphanEntry, len(d.orphanedSessions)),
+		LastEscalationAlert: d.lastEscalationAlert,
+	}
+	for name, entry := range d.orphanedSessions {
+		st.OrphanedSessions[name] = &persistedOrphanEntry{Count: entry.count}
+	}
+	data, err := json.Marshal(st)
+	if err != nil {
+		d.logInfo("consul_error", map[string]any{"action": "save_state", "error": err.Error()})
+		return
+	}
+	dir := filepath.Join(d.config.SolHome, "consul")
+	if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
+		d.logInfo("consul_error", map[string]any{"action": "save_state_dir", "error": mkErr.Error()})
+		return
+	}
+	if err := fileutil.AtomicWrite(statePath(d.config.SolHome), data, 0o644); err != nil {
+		d.logInfo("consul_error", map[string]any{"action": "save_state", "error": err.Error()})
+	}
+}
+
+// restoreState loads persisted state and applies it to the Consul instance.
+func (d *Consul) restoreState() {
+	st := loadState(d.config.SolHome)
+	if st.OrphanedSessions != nil {
+		for name, entry := range st.OrphanedSessions {
+			d.orphanedSessions[name] = &orphanEntry{count: entry.Count}
+		}
+	}
+	d.lastEscalationAlert = st.LastEscalationAlert
+}
+
+// isPrefectAlive checks whether the prefect process is running by reading its
+// PID file at $SOL_HOME/.runtime/prefect.pid and probing the process.
+func isPrefectAlive() bool {
+	pid, err := processutil.ReadPID(filepath.Join(config.RuntimeDir(), "prefect.pid"))
+	if err != nil || pid <= 0 {
+		return false
+	}
+	return processutil.IsRunning(pid)
+}
 
 // recoverStaleTethers finds and recovers stale tethers across all worlds.
 // For each stale tether:
@@ -419,6 +508,13 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 		// StaleTetherTimeout (15 min) has been abandoned.
 		if time.Since(agent.UpdatedAt) < d.config.StaleTetherTimeout {
 			continue // too recent, might still be starting or in active backoff
+		}
+
+		// Additional validation: if prefect is alive, its heartbeat write may
+		// simply be delayed. Require a wider safety margin (2x StaleTetherTimeout)
+		// when prefect is running to avoid racing with delayed heartbeat updates.
+		if isPrefectAlive() && time.Since(agent.UpdatedAt) < 2*d.config.StaleTetherTimeout {
+			continue // prefect alive — use wider margin to avoid false recovery
 		}
 
 		// This tether is stale — recover it.

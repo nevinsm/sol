@@ -1601,3 +1601,136 @@ func TestDetectOrphanedSessionsListError(t *testing.T) {
 		t.Errorf("stopped = %d, want 0", stopped)
 	}
 }
+
+// --- State persistence tests ---
+
+func TestOrphanCounterSurvivesRestart(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "orphan-persist"
+	sphereStore.RegisterWorld(worldName, "/tmp/repo")
+
+	sessions := newMockSessions()
+	sessions.alive["sol-"+worldName+"-GhostAgent"] = true
+	// Session created 31 minutes ago (past grace period).
+	sessions.createdAt["sol-"+worldName+"-GhostAgent"] = time.Now().Add(-31 * time.Minute)
+
+	cfg := Config{SolHome: solHome}
+
+	// First consul instance: detect orphan (count=1), then save state via patrol.
+	d1 := New(cfg, sphereStore, sessions, nil, nil)
+	d1.detectOrphanedSessions(context.Background())
+
+	entry, ok := d1.orphanedSessions["sol-"+worldName+"-GhostAgent"]
+	if !ok {
+		t.Fatal("expected orphan to be tracked after first detection")
+	}
+	if entry.count != 1 {
+		t.Errorf("count = %d, want 1", entry.count)
+	}
+
+	// Persist state (simulates what Patrol does).
+	d1.saveState()
+
+	// Second consul instance: restore state, then detect again.
+	d2 := New(cfg, sphereStore, sessions, nil, nil)
+	d2.restoreState()
+
+	// Verify the counter was restored.
+	entry2, ok := d2.orphanedSessions["sol-"+worldName+"-GhostAgent"]
+	if !ok {
+		t.Fatal("expected orphan counter to survive restart")
+	}
+	if entry2.count != 1 {
+		t.Errorf("restored count = %d, want 1", entry2.count)
+	}
+
+	// Second detection should bring count to 2, which meets the threshold.
+	stopped, err := d2.detectOrphanedSessions(context.Background())
+	if err != nil {
+		t.Fatalf("detectOrphanedSessions failed: %v", err)
+	}
+	if stopped != 1 {
+		t.Errorf("stopped = %d, want 1 (counter persisted, threshold met)", stopped)
+	}
+}
+
+func TestAlertDebounceSurvivesRestart(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	sessions := newMockSessions()
+	cfg := Config{
+		StaleTetherTimeout: 15 * time.Minute,
+		SolHome:            solHome,
+	}
+
+	// First consul: set a recent alert time and persist.
+	d1 := New(cfg, sphereStore, sessions, nil, nil)
+	d1.lastEscalationAlert = time.Now().Add(-10 * time.Minute) // 10 min ago
+	d1.saveState()
+
+	// Second consul: restore and check that debounce is preserved.
+	d2 := New(cfg, sphereStore, sessions, nil, nil)
+	d2.restoreState()
+
+	if d2.lastEscalationAlert.IsZero() {
+		t.Fatal("expected lastEscalationAlert to survive restart")
+	}
+	// Should be within the last 15 minutes (was set to 10 min ago).
+	if time.Since(d2.lastEscalationAlert) > 15*time.Minute {
+		t.Errorf("lastEscalationAlert age = %v, expected ~10 minutes", time.Since(d2.lastEscalationAlert))
+	}
+}
+
+func TestStatePersistenceNoFileReturnsDefaults(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sessions := newMockSessions()
+	cfg := Config{SolHome: solHome}
+
+	// No state file exists — should load zero-value defaults without error.
+	d := New(cfg, nil, sessions, nil, nil)
+	d.restoreState()
+
+	if len(d.orphanedSessions) != 0 {
+		t.Errorf("expected empty orphanedSessions, got %d entries", len(d.orphanedSessions))
+	}
+	if !d.lastEscalationAlert.IsZero() {
+		t.Errorf("expected zero lastEscalationAlert, got %v", d.lastEscalationAlert)
+	}
+}
+
+func TestStatePersistenceCorruptFile(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	// Write corrupt state file.
+	dir := filepath.Join(solHome, "consul")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "state.json"), []byte("{{not json}}"), 0o644)
+
+	sessions := newMockSessions()
+	cfg := Config{SolHome: solHome}
+
+	// Should handle gracefully — return zero defaults.
+	d := New(cfg, nil, sessions, nil, nil)
+	d.restoreState()
+
+	if len(d.orphanedSessions) != 0 {
+		t.Errorf("expected empty orphanedSessions on corrupt file, got %d entries", len(d.orphanedSessions))
+	}
+	if !d.lastEscalationAlert.IsZero() {
+		t.Errorf("expected zero lastEscalationAlert on corrupt file, got %v", d.lastEscalationAlert)
+	}
+}
