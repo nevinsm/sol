@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/session"
 )
 
@@ -65,25 +64,44 @@ func Enqueue(session string, msg Message) error {
 		msg.CreatedAt = time.Now().UTC()
 	}
 
-	ts := msg.CreatedAt.UnixMilli()
-	filename := fmt.Sprintf("%d.json", ts)
-	path := filepath.Join(dir, filename)
-
-	// Avoid collisions — append a counter if file exists.
-	for i := 1; fileExists(path); i++ {
-		filename = fmt.Sprintf("%d_%d.json", ts, i)
-		path = filepath.Join(dir, filename)
-	}
-
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal nudge message for %q: %w", session, err)
 	}
 
-	if err := fileutil.AtomicWrite(path, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write nudge for %q: %w", session, err)
+	ts := msg.CreatedAt.UnixMilli()
+
+	// Use O_CREATE|O_EXCL to atomically claim a unique filename,
+	// avoiding the TOCTOU race between fileExists and AtomicWrite.
+	const maxAttempts = 1000
+	for i := 0; i < maxAttempts; i++ {
+		var filename string
+		if i == 0 {
+			filename = fmt.Sprintf("%d.json", ts)
+		} else {
+			filename = fmt.Sprintf("%d_%d.json", ts, i)
+		}
+		path := filepath.Join(dir, filename)
+
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			if os.IsExist(err) {
+				continue // slot taken, try next
+			}
+			return fmt.Errorf("failed to write nudge for %q: %w", session, err)
+		}
+		if _, wErr := f.Write(data); wErr != nil {
+			f.Close()
+			os.Remove(path) // clean up partial write
+			return fmt.Errorf("failed to write nudge for %q: %w", session, wErr)
+		}
+		if err := f.Close(); err != nil {
+			os.Remove(path)
+			return fmt.Errorf("failed to write nudge for %q: %w", session, err)
+		}
+		return nil
 	}
-	return nil
+	return fmt.Errorf("failed to write nudge for %q: too many timestamp collisions", session)
 }
 
 // Drain claims all pending messages for a session, reads them,
@@ -307,7 +325,3 @@ func formatNotification(msg Message) string {
 	return fmt.Sprintf("[%s] %s", msg.Type, msg.Sender)
 }
 
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}

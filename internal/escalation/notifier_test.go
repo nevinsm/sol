@@ -490,7 +490,7 @@ func TestRouterBestEffort(t *testing.T) {
 
 // --- Router edge cases ---
 
-func TestRouterUnknownSeverityReturnsNil(t *testing.T) {
+func TestRouterUnknownSeverityReturnsError(t *testing.T) {
 	r := NewRouter()
 	recording := &recordingNotifier{}
 	r.AddRule("high", recording)
@@ -499,23 +499,29 @@ func TestRouterUnknownSeverityReturnsNil(t *testing.T) {
 	esc.Severity = "unknown-severity"
 	err := r.Route(context.Background(), esc)
 
-	if err != nil {
-		t.Fatalf("expected nil error for unknown severity, got %v", err)
+	if err == nil {
+		t.Fatal("expected error for unknown severity, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown escalation severity") {
+		t.Fatalf("expected error about unknown severity, got: %v", err)
 	}
 	if recording.called {
 		t.Fatal("expected no notifiers to fire for unknown severity")
 	}
 }
 
-func TestRouterEmptyRouterReturnsNil(t *testing.T) {
+func TestRouterEmptyRouterReturnsError(t *testing.T) {
 	r := NewRouter()
 
 	esc := testEscalation()
 	esc.Severity = "high"
 	err := r.Route(context.Background(), esc)
 
-	if err != nil {
-		t.Fatalf("expected nil error from empty router, got %v", err)
+	if err == nil {
+		t.Fatal("expected error from empty router, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown escalation severity") {
+		t.Fatalf("expected error about unknown severity, got: %v", err)
 	}
 }
 

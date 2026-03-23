@@ -2,6 +2,7 @@ package escalation
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/store"
@@ -28,11 +29,11 @@ func (r *Router) AddRule(severity string, notifiers ...Notifier) {
 // Route sends an escalation to all notifiers registered for its severity.
 // Returns the first error encountered, but continues notifying remaining
 // notifiers (best-effort delivery).
-// Returns nil if no rules match the severity.
+// Returns an error if the severity has no registered rules.
 func (r *Router) Route(ctx context.Context, esc store.Escalation) error {
 	notifiers, ok := r.rules[esc.Severity]
 	if !ok {
-		return nil
+		return fmt.Errorf("unknown escalation severity %q: no routing rules configured", esc.Severity)
 	}
 
 	var firstErr error

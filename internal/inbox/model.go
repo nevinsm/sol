@@ -40,8 +40,9 @@ type Model struct {
 	height int
 
 	// Data.
-	items    []InboxItem
-	fetchErr string // non-empty when the last fetch encountered errors
+	items     []InboxItem
+	fetchErr  string // non-empty when the last fetch encountered errors
+	actionErr string // non-empty when the last action encountered an error
 
 	// Navigation.
 	view         viewMode
@@ -115,11 +116,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case actionResultMsg:
 		if msg.err == nil {
+			m.actionErr = ""
 			m.highlights[msg.itemID] = highlightMaxLevel
 			// Start highlight decay if not already running.
 			cmds = append(cmds, highlightTickCmd())
 			// Immediate refresh to reflect changes.
 			cmds = append(cmds, m.refresh())
+		} else {
+			m.actionErr = msg.action + " failed: " + msg.err.Error()
 		}
 	}
 
@@ -208,9 +212,9 @@ func (m Model) View() string {
 		// Cursor is out of bounds — fall through to list view.
 		// (The Update handler transitions m.view to viewList on refreshMsg;
 		// this path is a safety fallback for any other code path.)
-		return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights, m.fetchErr)
+		return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights, m.fetchErr, m.actionErr)
 	default:
-		return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights, m.fetchErr)
+		return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights, m.fetchErr, m.actionErr)
 	}
 }
 
