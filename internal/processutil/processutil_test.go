@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -144,13 +145,69 @@ func TestClearPIDHappyPath(t *testing.T) {
 		t.Fatalf("WritePID() error: %v", err)
 	}
 
-	// ClearPID should release the lock and remove the file.
+	// ClearPID should release the lock and truncate the file (not delete it).
 	if err := ClearPID(path); err != nil {
 		t.Fatalf("ClearPID() error: %v", err)
 	}
 
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatal("PID file should be removed after ClearPID()")
+	// File should still exist but be empty (truncated).
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("PID file should still exist after ClearPID(), got: %v", err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("PID file should be truncated (size 0) after ClearPID(), got size %d", info.Size())
+	}
+}
+
+func TestClearPIDThenWritePIDSameInode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "self.pid")
+
+	// WritePID acquires flock on the file.
+	if err := WritePID(path, os.Getpid()); err != nil {
+		t.Fatalf("WritePID() error: %v", err)
+	}
+
+	// Get the inode of the file before ClearPID.
+	info1, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error: %v", err)
+	}
+
+	// ClearPID truncates and releases flock.
+	if err := ClearPID(path); err != nil {
+		t.Fatalf("ClearPID() error: %v", err)
+	}
+
+	// WritePID again should reuse the same file (same inode).
+	if err := WritePID(path, os.Getpid()); err != nil {
+		t.Fatalf("WritePID() after ClearPID() error: %v", err)
+	}
+	t.Cleanup(func() { _ = ClearPID(path) })
+
+	info2, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() after second WritePID error: %v", err)
+	}
+
+	// Verify same inode was reused (file was not deleted and recreated).
+	// On Linux, Sys() returns *syscall.Stat_t with an Ino field.
+	if s1, ok := info1.Sys().(*syscall.Stat_t); ok {
+		if s2, ok := info2.Sys().(*syscall.Stat_t); ok {
+			if s1.Ino != s2.Ino {
+				t.Fatalf("inode changed: %d → %d (expected same inode after ClearPID + WritePID)", s1.Ino, s2.Ino)
+			}
+		}
+	}
+
+	// Verify PID was written correctly.
+	pid, err := ReadPID(path)
+	if err != nil {
+		t.Fatalf("ReadPID() error: %v", err)
+	}
+	if pid != os.Getpid() {
+		t.Fatalf("ReadPID() = %d, want %d", pid, os.Getpid())
 	}
 }
 

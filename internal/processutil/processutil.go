@@ -117,10 +117,45 @@ func WritePID(path string, pid int) error {
 			return nil
 		}
 
-		// Acquire exclusive advisory lock for this process's lifetime.
-		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
-		if err != nil {
+		// Try to open the existing file and flock it first. This ensures we
+		// contend on the same inode as any previous holder (e.g. an orphan
+		// process), rather than creating a new file on a new inode where
+		// flock would vacuously succeed.
+		f, err := os.OpenFile(path, os.O_RDWR, 0o644)
+		if err == nil {
+			// File exists — try non-blocking flock on the EXISTING inode.
+			if flockErr := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); flockErr != nil {
+				f.Close()
+				return fmt.Errorf("failed to lock PID file %q (another instance may be running): %w", path, flockErr)
+			}
+			// Got the lock on existing inode. Truncate and write our PID.
+			if err := f.Truncate(0); err != nil {
+				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+				f.Close()
+				return fmt.Errorf("failed to truncate PID file %q: %w", path, err)
+			}
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+				f.Close()
+				return fmt.Errorf("failed to seek PID file %q: %w", path, err)
+			}
+			if _, err := fmt.Fprintf(f, "%d\n", pid); err != nil {
+				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+				f.Close()
+				return fmt.Errorf("failed to write PID file %q: %w", path, err)
+			}
+			if old, loaded := pidFiles.Swap(path, f); loaded {
+				old.(*os.File).Close()
+			}
+			return nil
+		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("failed to open PID file %q: %w", path, err)
+		}
+
+		// No existing file — create fresh and acquire flock.
+		f, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
+		if err != nil {
+			return fmt.Errorf("failed to create PID file %q: %w", path, err)
 		}
 		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 			f.Close()
@@ -151,21 +186,32 @@ func ReadPID(path string) (int, error) {
 		}
 		return 0, fmt.Errorf("failed to read PID file %q: %w", path, err)
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		// Empty/truncated file (e.g. after ClearPID) — treat as no PID.
+		return 0, nil
+	}
+	pid, err := strconv.Atoi(content)
 	if err != nil {
 		return 0, fmt.Errorf("invalid PID file content in %q: %w", path, err)
 	}
 	return pid, nil
 }
 
-// ClearPID releases any held flock on the PID file at path and removes it.
+// ClearPID releases any held flock on the PID file at path by truncating it.
+// The file is NOT deleted — this preserves the inode so future flock attempts
+// contend on the same inode, preventing orphan processes from accumulating.
 // It is safe to call when no lock is held or when the file does not exist.
 func ClearPID(path string) error {
 	if v, ok := pidFiles.LoadAndDelete(path); ok {
-		v.(*os.File).Close()
+		f := v.(*os.File)
+		_ = f.Truncate(0)
+		f.Close() // releases flock
+		return nil
 	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove PID file %q: %w", path, err)
+	// No held file handle — truncate via path (e.g. clearing a child's PID file).
+	if err := os.Truncate(path, 0); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to truncate PID file %q: %w", path, err)
 	}
 	return nil
 }

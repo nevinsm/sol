@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
@@ -1186,10 +1187,14 @@ source_repo = "/tmp/repo"
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.shutdown()
 
-	// Forge PID file should be cleaned up (process was dead).
+	// Forge PID file should be cleared (truncated to empty, not deleted).
 	pidPath := filepath.Join(os.Getenv("SOL_HOME"), "haven", "forge", "forge.pid")
-	if _, err := os.Stat(pidPath); err == nil {
-		t.Error("expected forge PID file to be cleaned up during shutdown")
+	pid, err := processutil.ReadPID(pidPath)
+	if err != nil {
+		t.Errorf("ReadPID() after shutdown error: %v", err)
+	}
+	if pid != 0 {
+		t.Errorf("expected forge PID to be 0 after shutdown, got %d", pid)
 	}
 }
 
@@ -1264,10 +1269,14 @@ source_repo = "/tmp/repo"
 		}
 	}
 
-	// Alpha's forge PID file should be cleaned up.
-	alphaPID := filepath.Join(os.Getenv("SOL_HOME"), "alpha", "forge", "forge.pid")
-	if _, err := os.Stat(alphaPID); err == nil {
-		t.Error("expected alpha forge PID file to be cleaned up during shutdown")
+	// Alpha's forge PID file should be cleared (truncated to empty, not deleted).
+	alphaPIDPath := filepath.Join(os.Getenv("SOL_HOME"), "alpha", "forge", "forge.pid")
+	alphaPIDVal, err := processutil.ReadPID(alphaPIDPath)
+	if err != nil {
+		t.Errorf("ReadPID() after shutdown error: %v", err)
+	}
+	if alphaPIDVal != 0 {
+		t.Errorf("expected alpha forge PID to be 0 after shutdown, got %d", alphaPIDVal)
 	}
 
 	// Beta's forge PID file should still exist (excluded from world filter).

@@ -152,9 +152,9 @@ func TestBrokerLifecycle(t *testing.T) {
 		t.Errorf("expected stop confirmation in broker stop output, got: %s", out)
 	}
 
-	// Verify PID file was removed.
-	if _, err := os.Stat(pidPath); !os.IsNotExist(err) {
-		t.Errorf("expected broker PID file to be removed after stop, but it still exists at %s", pidPath)
+	// Verify PID file was cleared (truncated to empty, not deleted).
+	if data, err := os.ReadFile(pidPath); err == nil && len(strings.TrimSpace(string(data))) > 0 {
+		t.Errorf("expected broker PID file to be cleared after stop, but it still has content %q at %s", string(data), pidPath)
 	}
 }
 
@@ -244,9 +244,9 @@ func TestLedgerLifecycle(t *testing.T) {
 		t.Errorf("expected stop confirmation in ledger stop output, got: %s", out)
 	}
 
-	// Verify PID file was removed.
-	if _, err := os.Stat(pidPath); !os.IsNotExist(err) {
-		t.Errorf("expected ledger PID file to be removed after stop, but it still exists at %s", pidPath)
+	// Verify PID file was cleared (truncated to empty, not deleted).
+	if data, err := os.ReadFile(pidPath); err == nil && len(strings.TrimSpace(string(data))) > 0 {
+		t.Errorf("expected ledger PID file to be cleared after stop, but it still has content %q at %s", string(data), pidPath)
 	}
 }
 
@@ -345,11 +345,11 @@ func TestSolUpDownSphere(t *testing.T) {
 		t.Fatalf("sol down failed: %v: %s", err, out)
 	}
 
-	// After sol down, all PID files should be gone.
+	// After sol down, all PID files should be cleared (truncated to empty, not deleted).
 	for _, daemon := range []string{"prefect", "consul", "chronicle", "ledger", "broker"} {
 		pidPath := filepath.Join(gtHome, ".runtime", daemon+".pid")
-		if _, err := os.Stat(pidPath); !os.IsNotExist(err) {
-			t.Errorf("expected %s PID file to be removed after sol down, still exists at %s", daemon, pidPath)
+		if data, err := os.ReadFile(pidPath); err == nil && len(strings.TrimSpace(string(data))) > 0 {
+			t.Errorf("expected %s PID file to be cleared after sol down, still has content %q at %s", daemon, string(data), pidPath)
 		}
 	}
 }
