@@ -9,24 +9,29 @@ import (
 // belongs to the given world (ID prefix "world/").
 // Used during world export to capture world-scoped message history.
 func (s *SphereStore) ExportMessagesForWorld(world string) ([]Message, error) {
-	prefix := world + "/%"
+	// Use exact prefix matching (substr) instead of LIKE to avoid
+	// case-insensitive matches and wildcard characters (%, _) in world names.
+	prefix := world + "/"
 	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at
 	          FROM messages
-	          WHERE sender LIKE ? OR recipient LIKE ?
+	          WHERE (length(sender) > ? AND substr(sender, 1, ?) = ?)
+	             OR (length(recipient) > ? AND substr(recipient, 1, ?) = ?)
 	          ORDER BY created_at ASC`
-	return s.scanMessages(query, prefix, prefix)
+	return s.scanMessages(query, len(prefix), len(prefix), prefix, len(prefix), len(prefix), prefix)
 }
 
 // ExportEscalationsForWorld returns all escalations where the source belongs to
 // the given world (ID prefix "world/").
 // Used during world export to capture world-scoped escalation history.
 func (s *SphereStore) ExportEscalationsForWorld(world string) ([]Escalation, error) {
-	prefix := world + "/%"
+	// Use exact prefix matching (substr) instead of LIKE to avoid
+	// case-insensitive matches and wildcard characters (%, _) in world names.
+	prefix := world + "/"
 	query := `SELECT id, severity, source, description, source_ref, status, acknowledged, last_notified_at, created_at, updated_at
 	          FROM escalations
-	          WHERE source LIKE ?
+	          WHERE length(source) > ? AND substr(source, 1, ?) = ?
 	          ORDER BY created_at ASC`
-	return s.scanEscalations(query, prefix)
+	return s.scanEscalations(query, len(prefix), len(prefix), prefix)
 }
 
 // ExportCaravanItemsForWorld returns all caravan items belonging to the given world.

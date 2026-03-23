@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
 )
@@ -27,7 +28,10 @@ func CloneWorldData(source, target string, includeHistory bool) error {
 	defer tgt.Close()
 
 	// Attach source database.
-	if _, err := tgt.db.Exec(fmt.Sprintf(`ATTACH DATABASE '%s' AS src`, srcPath)); err != nil {
+	// ATTACH DATABASE does not support parameterized paths — escape single
+	// quotes to prevent SQL injection from world names containing them.
+	escapedPath := strings.ReplaceAll(srcPath, "'", "''")
+	if _, err := tgt.db.Exec(fmt.Sprintf(`ATTACH DATABASE '%s' AS src`, escapedPath)); err != nil {
 		return fmt.Errorf("failed to attach source database %q: %w", source, err)
 	}
 	defer func() {
