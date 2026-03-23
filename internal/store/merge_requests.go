@@ -323,25 +323,45 @@ func (s *WorldStore) UpdateMergeRequestPhase(id, phase string) error {
 
 // BlockMergeRequest sets blocked_by on a merge request and ensures phase=ready.
 // A blocked MR is skipped during claiming.
+// Only MRs in ready or claimed phase can be blocked — terminal states (merged,
+// superseded) and failed are rejected to prevent accidentally resurrecting MRs.
 func (s *WorldStore) BlockMergeRequest(mrID, blockerWritID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := s.db.Exec(
 		`UPDATE merge_requests SET blocked_by = ?, phase = 'ready',
 		        claimed_by = NULL, claimed_at = NULL, updated_at = ?
-		 WHERE id = ?`,
+		 WHERE id = ? AND phase IN ('ready', 'claimed')`,
 		blockerWritID, now, mrID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to block merge request %q: %w", mrID, err)
 	}
-	return checkRowsAffected(result, "merge request", mrID)
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
+	if n == 0 {
+		// Distinguish not-found from invalid-transition.
+		var exists int
+		if err := s.db.QueryRow(`SELECT 1 FROM merge_requests WHERE id = ?`, mrID).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
+		}
+		var currentPhase string
+		_ = s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, mrID).Scan(&currentPhase)
+		return fmt.Errorf("merge request %q: cannot block from phase %q: %w",
+			mrID, currentPhase, ErrInvalidTransition)
+	}
+	return nil
 }
 
-// UnblockMergeRequest clears blocked_by and ensures phase=ready.
+// UnblockMergeRequest clears blocked_by, resets the attempt counter to 0,
+// and ensures phase=ready. Resetting attempts is critical: without it an MR
+// that was at attempt 2 when it hit a conflict would resume at attempt 2 after
+// resolution, leaving only one post-resolution attempt before permanent failure.
 func (s *WorldStore) UnblockMergeRequest(mrID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := s.db.Exec(
-		`UPDATE merge_requests SET blocked_by = NULL, phase = 'ready', updated_at = ?
+		`UPDATE merge_requests SET blocked_by = NULL, attempts = 0, phase = 'ready', updated_at = ?
 		 WHERE id = ?`,
 		now, mrID,
 	)

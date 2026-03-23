@@ -511,7 +511,9 @@ func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest)
 		refRange := fmt.Sprintf("%s..%s", s.preMergeRef, targetRef)
 		out, err = s.cmd.Run(ctx, worktree, "git", "log", refRange, "--oneline", "--grep", mr.WritID)
 	} else {
-		out, err = s.cmd.Run(ctx, worktree, "git", "log", targetRef, "--oneline", "--grep", mr.WritID)
+		// No pre-merge ref available — limit search to the last 100 commits to
+		// avoid false positives from historical writ mentions in older commits.
+		out, err = s.cmd.Run(ctx, worktree, "git", "log", targetRef, "-100", "--oneline", "--grep", mr.WritID)
 	}
 	if err != nil {
 		return fmt.Errorf("git log grep check failed: %w", err)

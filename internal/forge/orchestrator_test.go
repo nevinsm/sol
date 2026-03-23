@@ -971,10 +971,10 @@ func TestPatrolWithSessionManager(t *testing.T) {
 	// Mock git commands for push verification.
 	// Note: runMergeSession calls git rev-parse origin/main to capture the pre-merge
 	// ref. The mock returns nil/nil (empty success), so preMergeRef will be "", and
-	// tryVerifyPush falls back to searching all commits on origin/main.
+	// tryVerifyPush falls back to searching the last 100 commits on origin/main.
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git log origin/main --oneline --grep sol-aaa11111",
+	cmdRunner.SetResult("git log origin/main -100 --oneline --grep sol-aaa11111",
 		[]byte("abc1234 Fix auth flow (sol-aaa11111)"), nil)
 
 	// Use a goroutine to simulate the session completing: write result file,
