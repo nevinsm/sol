@@ -441,8 +441,8 @@ func (d *Consul) restoreState() {
 
 // isPrefectAlive checks whether the prefect process is running by reading its
 // PID file at $SOL_HOME/.runtime/prefect.pid and probing the process.
-func isPrefectAlive() bool {
-	pid, err := processutil.ReadPID(filepath.Join(config.RuntimeDir(), "prefect.pid"))
+func (d *Consul) isPrefectAlive() bool {
+	pid, err := processutil.ReadPID(filepath.Join(d.config.SolHome, ".runtime", "prefect.pid"))
 	if err != nil || pid <= 0 {
 		return false
 	}
@@ -513,7 +513,7 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 		// Additional validation: if prefect is alive, its heartbeat write may
 		// simply be delayed. Require a wider safety margin (2x StaleTetherTimeout)
 		// when prefect is running to avoid racing with delayed heartbeat updates.
-		if isPrefectAlive() && time.Since(agent.UpdatedAt) < 2*d.config.StaleTetherTimeout {
+		if d.isPrefectAlive() && time.Since(agent.UpdatedAt) < 2*d.config.StaleTetherTimeout {
 			continue // prefect alive — use wider margin to avoid false recovery
 		}
 
