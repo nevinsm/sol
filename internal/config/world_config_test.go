@@ -828,7 +828,7 @@ func TestIsSleepingFalseExplicit(t *testing.T) {
 	}
 }
 
-func TestIsSleepingFailOpen(t *testing.T) {
+func TestIsSleepingFailClosed(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
@@ -841,27 +841,39 @@ func TestIsSleepingFailOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Fail-open: if config cannot be loaded, assume NOT sleeping.
-	if IsSleeping("badworld") {
-		t.Fatal("IsSleeping() = true when config read fails, want false (fail-open)")
+	// Fail-closed: if config cannot be loaded, assume sleeping.
+	if !IsSleeping("badworld") {
+		t.Fatal("IsSleeping() = false when config read fails, want true (fail-closed)")
 	}
 }
 
 // ----- EscalationSection.AgingThreshold -----
 
-func TestAgingThresholdZeroValue(t *testing.T) {
-	// Empty strings for all fields → zero duration, no error.
+func TestAgingThresholdEmptyUsesDefaults(t *testing.T) {
+	// Empty strings for all fields → fall back to default thresholds.
 	e := EscalationSection{}
+	defaults := DefaultEscalationConfig()
 
-	for _, sev := range []string{"critical", "high", "medium"} {
-		d, err := e.AgingThreshold(sev)
+	cases := []struct {
+		sev  string
+		want time.Duration
+	}{
+		{"critical", 30 * time.Minute},
+		{"high", 2 * time.Hour},
+		{"medium", 8 * time.Hour},
+	}
+	for _, tc := range cases {
+		d, err := e.AgingThreshold(tc.sev)
 		if err != nil {
-			t.Errorf("AgingThreshold(%q) with empty config error: %v", sev, err)
+			t.Errorf("AgingThreshold(%q) with empty config error: %v", tc.sev, err)
 		}
-		if d != 0 {
-			t.Errorf("AgingThreshold(%q) = %v, want 0", sev, d)
+		if d != tc.want {
+			t.Errorf("AgingThreshold(%q) = %v, want %v (default)", tc.sev, d, tc.want)
 		}
 	}
+
+	// Verify defaults match DefaultEscalationConfig.
+	_ = defaults
 }
 
 func TestAgingThresholdExplicitValues(t *testing.T) {

@@ -60,7 +60,15 @@ func (e EscalationSection) AgingThreshold(severity string) (time.Duration, error
 		return 0, fmt.Errorf("unknown severity %q", severity)
 	}
 	if raw == "" {
-		return 0, nil
+		defaults := DefaultEscalationConfig()
+		switch severity {
+		case "critical":
+			raw = defaults.AgingCritical
+		case "high":
+			raw = defaults.AgingHigh
+		case "medium":
+			raw = defaults.AgingMedium
+		}
 	}
 	return time.ParseDuration(raw)
 }
@@ -328,11 +336,12 @@ func LoadGlobalConfig() (WorldConfig, error) {
 }
 
 // IsSleeping returns true if the world is marked as sleeping in its config.
-// Returns false if the config cannot be loaded (fail-open).
+// Returns true if the config cannot be loaded (fail-closed) — a malformed
+// world.toml should not allow the world to continue operating.
 func IsSleeping(world string) bool {
 	cfg, err := LoadWorldConfig(world)
 	if err != nil {
-		return false
+		return true
 	}
 	return cfg.World.Sleeping
 }
