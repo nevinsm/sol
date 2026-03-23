@@ -34,21 +34,19 @@ var accountAddCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		handle := args[0]
 
-		reg, err := account.LoadRegistry()
-		if err != nil {
-			return err
-		}
-
-		if err := reg.Add(handle, accountAddEmail, accountAddDescription); err != nil {
-			return err
-		}
-
-		if err := reg.Save(); err != nil {
+		var isDefault bool
+		if err := account.LockedRegistryUpdate(func(reg *account.Registry) error {
+			if err := reg.Add(handle, accountAddEmail, accountAddDescription); err != nil {
+				return err
+			}
+			isDefault = reg.Default == handle
+			return nil
+		}); err != nil {
 			return err
 		}
 
 		fmt.Printf("Added account %q\n", handle)
-		if reg.Default == handle {
+		if isDefault {
 			fmt.Printf("Set as default (first account)\n")
 		}
 		return nil
@@ -135,17 +133,18 @@ Requires --confirm to proceed; without it, prints what would be removed and exit
 	RunE: func(cmd *cobra.Command, args []string) error {
 		handle := args[0]
 
-		reg, err := account.LoadRegistry()
-		if err != nil {
-			return err
-		}
-
-		acct, exists := reg.Accounts[handle]
-		if !exists {
-			return fmt.Errorf("account %q not found", handle)
-		}
-
+		// Dry-run path: read-only, no lock needed.
 		if !accountRemoveConfirm {
+			reg, err := account.LoadRegistry()
+			if err != nil {
+				return err
+			}
+
+			acct, exists := reg.Accounts[handle]
+			if !exists {
+				return fmt.Errorf("account %q not found", handle)
+			}
+
 			fmt.Printf("This will permanently remove account %q:\n", handle)
 			if acct.Email != "" {
 				fmt.Printf("  - Email: %s\n", acct.Email)
@@ -161,11 +160,9 @@ Requires --confirm to proceed; without it, prints what would be removed and exit
 			return &exitError{code: 1}
 		}
 
-		if err := reg.Remove(handle); err != nil {
-			return err
-		}
-
-		if err := reg.Save(); err != nil {
+		if err := account.LockedRegistryUpdate(func(reg *account.Registry) error {
+			return reg.Remove(handle)
+		}); err != nil {
 			return err
 		}
 
@@ -182,13 +179,12 @@ var accountDefaultCmd = &cobra.Command{
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		reg, err := account.LoadRegistry()
-		if err != nil {
-			return err
-		}
-
-		// No argument: show current default.
+		// No argument: show current default (read-only, no lock needed).
 		if len(args) == 0 {
+			reg, err := account.LoadRegistry()
+			if err != nil {
+				return err
+			}
 			if reg.Default == "" {
 				fmt.Println("No default account set.")
 			} else {
@@ -199,11 +195,9 @@ var accountDefaultCmd = &cobra.Command{
 
 		// Set default.
 		handle := args[0]
-		if err := reg.SetDefault(handle); err != nil {
-			return err
-		}
-
-		if err := reg.Save(); err != nil {
+		if err := account.LockedRegistryUpdate(func(reg *account.Registry) error {
+			return reg.SetDefault(handle)
+		}); err != nil {
 			return err
 		}
 
