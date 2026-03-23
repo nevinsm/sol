@@ -3,6 +3,7 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -165,6 +166,20 @@ func (g *Git) MergeSquash(branch, message string) error {
 // the current branch without conflicts. Returns conflicting file names, or nil
 // if clean. Always cleans up — no actual changes persist.
 func (g *Git) CheckConflicts(source, target string) ([]string, error) {
+	// Save current branch/HEAD so we can restore it when done.
+	origRef, err := g.run("symbolic-ref", "--quiet", "HEAD")
+	if err != nil {
+		// Detached HEAD — fall back to commit SHA.
+		origRef, err = g.Rev("HEAD")
+		if err != nil {
+			return nil, fmt.Errorf("saving current HEAD: %w", err)
+		}
+	} else {
+		// Strip refs/heads/ prefix for checkout.
+		origRef = strings.TrimPrefix(origRef, "refs/heads/")
+	}
+	defer g.Checkout(origRef)
+
 	// Checkout the target branch.
 	if err := g.Checkout(target); err != nil {
 		return nil, fmt.Errorf("checkout target %s: %w", target, err)
@@ -189,9 +204,9 @@ func (g *Git) CheckConflicts(source, target string) ([]string, error) {
 		return nil, mergeErr
 	}
 
-	// Merge succeeded (no conflicts) — reset to clean up.
-	if err := g.ResetHard("HEAD"); err != nil {
-		return nil, fmt.Errorf("merge cleanup reset failed (staged changes may persist, consider re-cloning): %w", err)
+	// Merge succeeded (no conflicts) — abort to clean up MERGE_HEAD.
+	if err := g.AbortMerge(); err != nil {
+		return nil, fmt.Errorf("merge cleanup abort failed (MERGE_HEAD may linger, consider re-cloning): %w", err)
 	}
 	return nil, nil
 }
@@ -377,9 +392,5 @@ func (g *Git) LsRemote(remote, ref string) (string, error) {
 
 // isGitError checks if err is a *GitError and populates target.
 func isGitError(err error, target **GitError) bool {
-	if ge, ok := err.(*GitError); ok {
-		*target = ge
-		return true
-	}
-	return false
+	return errors.As(err, target)
 }
