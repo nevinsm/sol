@@ -86,7 +86,11 @@ func Dir(workflowName string) string {
 // LoadManifest reads and parses a workflow's manifest.toml.
 // workflowDir is the absolute path to the workflow directory.
 func LoadManifest(workflowDir string) (*Manifest, error) {
-	path := filepath.Join(workflowDir, "manifest.toml")
+	return loadManifestFile(filepath.Join(workflowDir, "manifest.toml"))
+}
+
+// loadManifestFile reads and parses a manifest TOML file at the given path.
+func loadManifestFile(path string) (*Manifest, error) {
 	var m Manifest
 	if _, err := toml.DecodeFile(path, &m); err != nil {
 		return nil, fmt.Errorf("failed to load manifest %q: %w", path, err)
@@ -96,6 +100,22 @@ func LoadManifest(workflowDir string) (*Manifest, error) {
 		m.Type = "workflow"
 	}
 	return &m, nil
+}
+
+// loadManifestSnapshot loads the manifest from the workflow instance snapshot,
+// falling back to re-resolving from disk for backward compatibility with
+// instances created before snapshot support.
+func loadManifestSnapshot(wfDir, workflowName, world string) (*Manifest, error) {
+	snapshotPath := filepath.Join(wfDir, "source-manifest.toml")
+	if _, err := os.Stat(snapshotPath); err == nil {
+		return loadManifestFile(snapshotPath)
+	}
+	// Fallback: re-resolve from disk.
+	res, err := Resolve(workflowName, config.RepoPath(world))
+	if err != nil {
+		return nil, err
+	}
+	return LoadManifest(res.Path)
 }
 
 // Validate checks that a manifest is well-formed:
@@ -331,6 +351,19 @@ func Instantiate(world, agentName, role, workflowName string,
 		os.RemoveAll(wfDir)
 	}
 
+	// Snapshot the manifest to the workflow directory so that Advance uses
+	// the version the workflow was started with, not whatever is on disk later.
+	srcManifestPath := filepath.Join(res.Path, "manifest.toml")
+	srcManifestData, err := os.ReadFile(srcManifestPath)
+	if err != nil {
+		rollback()
+		return nil, nil, fmt.Errorf("failed to read manifest for snapshot: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(wfDir, "source-manifest.toml"), srcManifestData, 0o644); err != nil {
+		rollback()
+		return nil, nil, fmt.Errorf("failed to snapshot manifest: %w", err)
+	}
+
 	// Build instance.
 	inst := &Instance{
 		Workflow:       workflowName,
@@ -468,12 +501,7 @@ func ListSteps(world, agentName, role string) ([]Step, error) {
 		return nil, nil
 	}
 
-	res, err := Resolve(inst.Workflow, config.RepoPath(world))
-	if err != nil {
-		return nil, err
-	}
-
-	m, err := LoadManifest(res.Path)
+	m, err := loadManifestSnapshot(wfDir, inst.Workflow, world)
 	if err != nil {
 		return nil, err
 	}
@@ -534,16 +562,12 @@ func Advance(world, agentName, role string) (nextStep *Step, done bool, err erro
 		state.Completed = append(state.Completed, state.CurrentStep)
 	}
 
-	// Load manifest to determine next ready steps.
+	// Load manifest from snapshot to determine next ready steps.
 	inst, err := ReadInstance(world, agentName, role)
 	if err != nil {
 		return nil, false, err
 	}
-	res, err := Resolve(inst.Workflow, config.RepoPath(world))
-	if err != nil {
-		return nil, false, err
-	}
-	m, err := LoadManifest(res.Path)
+	m, err := loadManifestSnapshot(wfDir, inst.Workflow, world)
 	if err != nil {
 		return nil, false, err
 	}
@@ -622,16 +646,12 @@ func Skip(world, agentName, role string) (nextStep *Step, done bool, err error) 
 	// Add to completed list (skipped steps don't block dependents).
 	state.Completed = append(state.Completed, state.CurrentStep)
 
-	// Load manifest to determine next ready steps.
+	// Load manifest from snapshot to determine next ready steps.
 	inst, err := ReadInstance(world, agentName, role)
 	if err != nil {
 		return nil, false, err
 	}
-	res, err := Resolve(inst.Workflow, config.RepoPath(world))
-	if err != nil {
-		return nil, false, err
-	}
-	m, err := LoadManifest(res.Path)
+	m, err := loadManifestSnapshot(wfDir, inst.Workflow, world)
 	if err != nil {
 		return nil, false, err
 	}
@@ -935,6 +955,14 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 		phaseItems[i] = phaseable{id: c.itemID, needs: c.needs}
 	}
 	phases := ComputePhases(phaseItems)
+
+	// Sort children in topological order (by phase, preserving declaration order
+	// within the same phase) so that dependency writs are created before their
+	// dependents. This ensures childIDs[need] is populated when enriching
+	// step descriptions with dependency writ IDs.
+	slices.SortStableFunc(children, func(a, b childDef) int {
+		return phases[a.itemID] - phases[b.itemID]
+	})
 
 	// Create child writs.
 	childIDs := make(map[string]string, len(children))
