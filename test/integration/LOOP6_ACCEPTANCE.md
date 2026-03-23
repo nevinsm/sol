@@ -26,41 +26,37 @@
 - [x] `sol caravan delete --confirm` permanently removes the caravan and outputs "Deleted" (`TestCLICaravanLifecycle`)
 - [x] A second `sol caravan delete --confirm` on the same caravan fails (caravan no longer exists) (`TestCLICaravanLifecycle`)
 
-## Expansion Workflow — Materialize
+## Sequential Workflow — Materialize
 
 ### Child Writ Creation
-- [x] `workflow.Materialize` for an expansion workflow creates one child writ per template entry (`TestExpansionWorkflowMaterialize`)
-- [x] Child writ titles have `{target.title}` substituted with the parent writ's title (`TestExpansionWorkflowMaterialize`)
-- [x] The parent writ is unchanged after materialization (expansion uses the existing parent, not creates one) (`TestExpansionWorkflowMaterialize`)
-- [x] `result.ParentID` equals the pre-existing parent writ ID (`TestExpansionWorkflowMaterialize`)
+- [x] `workflow.Materialize` for a sequential workflow creates one child writ per step (`TestSequentialWorkflowMaterialize`)
+- [x] Child writ titles have `{{target.title}}` substituted with the parent writ's title (`TestSequentialWorkflowMaterialize`)
+- [x] The parent writ is unchanged after materialization (workflow uses the existing parent, not creates one) (`TestSequentialWorkflowMaterialize`)
+- [x] `result.ParentID` equals the pre-existing parent writ ID (`TestSequentialWorkflowMaterialize`)
 
 ### Caravan and Phase Assignment
-- [x] Materialization creates a caravan in "drydock" state — commissioning is a separate caller step (`TestExpansionWorkflowMaterialize`)
-- [x] Templates without `needs` are assigned phase 0; templates with `needs` dependencies are assigned phase 1 (`TestExpansionWorkflowMaterialize`)
-- [x] `result.Phases` map reflects the dependency-derived phase for each template (`TestExpansionWorkflowMaterialize`)
+- [x] Materialization creates a caravan in "drydock" state — commissioning is a separate caller step (`TestSequentialWorkflowMaterialize`)
+- [x] Steps without `needs` are assigned phase 0; steps with `needs` dependencies are assigned phase 1 (`TestSequentialWorkflowMaterialize`)
+- [x] `result.Phases` map reflects the dependency-derived phase for each step (`TestSequentialWorkflowMaterialize`)
 
-## Convoy Workflow — Materialize
+## Code Review Workflow — Materialize
 
 ### Parent and Child Writ Creation
-- [x] `workflow.Materialize` for a convoy workflow auto-creates a parent writ when no `ParentID` is provided (`TestConvoyWorkflowMaterialize`)
-- [x] `result.ParentID` is non-empty after convoy materialization (`TestConvoyWorkflowMaterialize`)
-- [x] One child writ is created per leg plus one for the synthesis, totalling legs + 1 child writs (`TestConvoyWorkflowMaterialize`)
-- [x] `result.ChildIDs` contains entries for each leg ID and for "synthesis" (`TestConvoyWorkflowMaterialize`)
+- [x] `workflow.Materialize` for a manifested workflow auto-creates a parent writ when no `ParentID` is provided (`TestCodeReviewWorkflowMaterialize`)
+- [x] `result.ParentID` is non-empty after materialization (`TestCodeReviewWorkflowMaterialize`)
+- [x] One child writ is created per step, totalling all steps as child writs (`TestCodeReviewWorkflowMaterialize`)
+- [x] `result.ChildIDs` contains entries for each step ID including "synthesis" (`TestCodeReviewWorkflowMaterialize`)
 
 ### Phase and Dependency Assignment
-- [x] All leg writs are assigned phase 0 (run in parallel) (`TestConvoyWorkflowMaterialize`)
-- [x] The synthesis writ is assigned phase 1 (runs after legs complete) (`TestConvoyWorkflowMaterialize`)
-- [x] `worldStore.GetDependencies(synthID)` includes all leg writ IDs as dependencies of the synthesis writ (`TestConvoyWorkflowMaterialize`)
+- [x] Parallel steps (no `needs`) are assigned phase 0 (`TestCodeReviewWorkflowMaterialize`)
+- [x] The synthesis step is assigned phase 1 (runs after parallel steps complete) (`TestCodeReviewWorkflowMaterialize`)
+- [x] `worldStore.GetDependencies(synthID)` includes all parallel step writ IDs as dependencies of the synthesis writ (`TestCodeReviewWorkflowMaterialize`)
 
 ## Workflow Type Validation
 
-### Expansion Manifest Validation
-- [x] An expansion manifest that uses `[[steps]]` instead of `[[template]]` is rejected by `workflow.Validate` (`TestWorkflowTypeValidation`)
-- [x] An expansion manifest with valid `[[template]]` entries passes validation (`TestWorkflowTypeValidation`)
-
-### Convoy Manifest Validation
-- [x] A convoy manifest with no `[[legs]]` or `[synthesis]` is rejected by `workflow.Validate` (`TestWorkflowTypeValidation`)
-- [x] A convoy manifest with both `[[legs]]` and `[synthesis]` passes validation (`TestWorkflowTypeValidation`)
+### Manifest Validation
+- [x] A manifest workflow with valid `[[steps]]` entries passes validation (`TestWorkflowTypeValidation`)
+- [x] Invalid workflow configurations are rejected by `workflow.Validate` (`TestWorkflowTypeValidation`)
 
 ## `writ activate` — Context Switching
 
