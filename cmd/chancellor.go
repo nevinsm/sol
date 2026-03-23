@@ -65,7 +65,7 @@ var chancellorRestartCmd = &cobra.Command{
 		return restartSession(mgr, chancellor.SessionName, "chancellor",
 			"Stopped chancellor session",
 			func() error { return chancellor.Stop(mgr) },
-			chancellorStartCmd, args)
+			nil, chancellorStartCmd, args)
 	},
 }
 

@@ -168,14 +168,13 @@ var envoyRestartCmd = &cobra.Command{
 		return restartSession(mgr, sessName, "envoy",
 			fmt.Sprintf("Stopped envoy %q in world %q", name, world),
 			func() error {
-				agentLock.Release() // early release after stop, before start
 				sphereStore, err := store.OpenSphere()
 				if err != nil {
 					return err
 				}
 				defer sphereStore.Close()
 				return envoy.Stop(world, name, sphereStore, mgr)
-			}, envoyStartCmd, args)
+			}, agentLock.Release, envoyStartCmd, args)
 	},
 }
 

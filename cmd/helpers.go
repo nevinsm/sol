@@ -88,8 +88,10 @@ func debriefSubcommand(use, short string, argsValidator cobra.PositionalArgs,
 // the start phase. If stopFn is non-nil it is called to stop the component;
 // otherwise mgr.Stop(sessName) is used directly. label is used in the
 // default error message wrapping mgr.Stop. stoppedMsg is printed after a
-// successful stop.
-func restartSession(mgr *session.Manager, sessName, label, stoppedMsg string, stopFn func() error, startCmd *cobra.Command, args []string) error {
+// successful stop. If unlockFn is non-nil it is called after stop completes
+// but before start begins, ensuring any held lock covers the entire stop
+// operation.
+func restartSession(mgr *session.Manager, sessName, label, stoppedMsg string, stopFn func() error, unlockFn func() error, startCmd *cobra.Command, args []string) error {
 	if mgr.Exists(sessName) {
 		if stopFn != nil {
 			if err := stopFn(); err != nil {
@@ -101,6 +103,9 @@ func restartSession(mgr *session.Manager, sessName, label, stoppedMsg string, st
 			}
 		}
 		fmt.Println(stoppedMsg)
+	}
+	if unlockFn != nil {
+		_ = unlockFn()
 	}
 	return startCmd.RunE(startCmd, args)
 }

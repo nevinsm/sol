@@ -132,14 +132,13 @@ var governorRestartCmd = &cobra.Command{
 		return restartSession(mgr, sessName, "governor",
 			fmt.Sprintf("Stopped governor for world %q", world),
 			func() error {
-				agentLock.Release() // early release after stop, before start
 				sphereStore, err := store.OpenSphere()
 				if err != nil {
 					return err
 				}
 				defer sphereStore.Close()
 				return governor.Stop(world, sphereStore, mgr)
-			}, governorStartCmd, args)
+			}, agentLock.Release, governorStartCmd, args)
 	},
 }
 
