@@ -326,6 +326,7 @@ func (c *Chronicle) readNewEvents() ([]Event, int64, error) {
 
 	var events []Event
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024) // 1MB to match Reader and trace.Collect
 	for scanner.Scan() {
 		var ev Event
 		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
@@ -509,7 +510,19 @@ func (c *Chronicle) truncateIfNeeded() error {
 
 // truncateOnce removes the first 25% of the curated feed.
 func (c *Chronicle) truncateOnce() error {
-	// Read entire file.
+	// Acquire flock FIRST to prevent event loss from concurrent appendToFeed writes.
+	lockFile, err := os.OpenFile(c.config.FeedPath, os.O_RDONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open feed file for locking: %w", err)
+	}
+	defer lockFile.Close()
+
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("failed to lock feed file: %w", err)
+	}
+	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+
+	// Read entire file under the lock so no events are missed.
 	data, err := os.ReadFile(c.config.FeedPath)
 	if err != nil {
 		return fmt.Errorf("failed to read feed file: %w", err)
@@ -546,20 +559,6 @@ func (c *Chronicle) truncateOnce() error {
 		os.Remove(tmpName)
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
-
-	// Acquire flock on the curated feed during rename.
-	lockFile, err := os.OpenFile(c.config.FeedPath, os.O_RDONLY, 0644)
-	if err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("failed to open feed file for locking: %w", err)
-	}
-	defer lockFile.Close()
-
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("failed to lock feed file: %w", err)
-	}
-	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
 
 	if err := os.Rename(tmpName, c.config.FeedPath); err != nil {
 		os.Remove(tmpName)
