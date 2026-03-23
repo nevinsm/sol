@@ -18,7 +18,7 @@ It's a single Go binary backed by SQLite. No servers, no containers — just tmu
 
 ## Prerequisites
 
-- **Go 1.21+** (to build from source)
+- **Go 1.24+** (to build from source)
 - **tmux** (agent process containers)
 - **git** (worktrees, branching, merging)
 - **claude** CLI — [Anthropic Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started)
@@ -30,7 +30,7 @@ Run `sol doctor` after install to verify everything is in place.
 ```bash
 # Build and install
 make build
-make install  # copies bin/sol to /usr/local/bin
+make install  # copies sol to ~/.local/bin/sol
 
 # First-time setup — creates SOL_HOME and your first world
 sol init --name=myworld --source-repo=git@github.com:org/your-repo.git
