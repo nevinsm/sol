@@ -165,7 +165,7 @@ func (g *Git) MergeSquash(branch, message string) error {
 // CheckConflicts performs a dry-run merge to check if source can be merged into
 // the current branch without conflicts. Returns conflicting file names, or nil
 // if clean. Always cleans up — no actual changes persist.
-func (g *Git) CheckConflicts(source, target string) ([]string, error) {
+func (g *Git) CheckConflicts(source, target string) (conflicts []string, err error) {
 	// Save current branch/HEAD so we can restore it when done.
 	origRef, err := g.run("symbolic-ref", "--quiet", "HEAD")
 	if err != nil {
@@ -178,7 +178,11 @@ func (g *Git) CheckConflicts(source, target string) ([]string, error) {
 		// Strip refs/heads/ prefix for checkout.
 		origRef = strings.TrimPrefix(origRef, "refs/heads/")
 	}
-	defer g.Checkout(origRef)
+	defer func() {
+		if restoreErr := g.Checkout(origRef); restoreErr != nil && err == nil {
+			err = fmt.Errorf("conflict check succeeded but failed to restore branch %s: %w", origRef, restoreErr)
+		}
+	}()
 
 	// Checkout the target branch.
 	if err := g.Checkout(target); err != nil {
