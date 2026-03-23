@@ -228,41 +228,62 @@ func Run(p Params) (*Result, error) {
 		}
 	}
 
-	// cleanupClone removes the cloned repo directory on error.
-	// Called only when a source repo was cloned and a subsequent step fails,
+	// cleanups tracks rollback functions to call on error, in reverse order.
+	// Each step appends its undo action; on failure all prior steps are reversed
 	// so re-running setup can succeed without manual cleanup.
-	cleanupClone := func() {
-		if p.SourceRepo != "" {
-			os.RemoveAll(config.RepoPath(p.WorldName))
+	var cleanups []func()
+	runCleanups := func() {
+		for i := len(cleanups) - 1; i >= 0; i-- {
+			cleanups[i]()
 		}
+	}
+
+	if p.SourceRepo != "" {
+		cleanups = append(cleanups, func() {
+			os.RemoveAll(config.RepoPath(p.WorldName))
+		})
 	}
 
 	// 5. Create world database.
 	worldStore, err := store.OpenWorld(p.WorldName)
 	if err != nil {
-		cleanupClone()
+		runCleanups()
 		return nil, fmt.Errorf("failed to create world database: %w", err)
 	}
 	worldStore.Close()
 
+	worldDBPath := filepath.Join(config.StoreDir(), p.WorldName+".db")
+	cleanups = append(cleanups, func() {
+		os.Remove(worldDBPath)
+		os.Remove(worldDBPath + "-wal")
+		os.Remove(worldDBPath + "-shm")
+	})
+
 	// 6. Register in sphere.db.
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
-		cleanupClone()
+		runCleanups()
 		return nil, fmt.Errorf("failed to open sphere database: %w", err)
 	}
 	if err := sphereStore.RegisterWorld(p.WorldName, p.SourceRepo); err != nil {
 		sphereStore.Close()
-		cleanupClone()
+		runCleanups()
 		return nil, fmt.Errorf("failed to register world: %w", err)
 	}
 	sphereStore.Close()
+
+	cleanups = append(cleanups, func() {
+		if s, err := store.OpenSphere(); err == nil {
+			s.DeleteWorldData(p.WorldName)
+			s.Close()
+		}
+	})
 
 	// 7. Write world.toml.
 	cfg := config.DefaultWorldConfig()
 	cfg.World.SourceRepo = p.SourceRepo
 	if err := config.WriteWorldConfig(p.WorldName, cfg); err != nil {
-		cleanupClone()
+		runCleanups()
 		return nil, fmt.Errorf("failed to write world config: %w", err)
 	}
 
