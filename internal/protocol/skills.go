@@ -1036,9 +1036,11 @@ Options: %[3]s, %[4]s, %[5]s, %[6]s (JSON).
 |---------|-------------|
 | %[1]s caravan create "name" <id> [<id>...] --world=<world>%[2]s | Create caravan with items |
 | %[1]s caravan commission <id>%[2]s | Mark caravan as commissioned |
-| %[1]s caravan launch <id> --world=<world>%[2]s | Dispatch all ready items |
 | %[1]s caravan status [<caravan-id>]%[2]s | Check caravan progress |
 | %[1]s caravan dep add <caravan-id> <dep-id>%[2]s | Add inter-caravan dependency |
+
+Note: Dispatching caravans is a dispatch action — the autarch or governor
+handles it after approving the plan. The chancellor plans but does not dispatch.
 
 ## Common Patterns
 

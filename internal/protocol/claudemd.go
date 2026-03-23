@@ -99,6 +99,14 @@ func GenerateClaudeMD(ctx ClaudeMDContext) string {
 		}
 	}
 
+	// Build step 2 of the completion checklist based on kind.
+	var commitStep string
+	if codeWrit {
+		commitStep = "Stage and commit changes with clear commit messages."
+	} else {
+		commitStep = "Review your output directory for completeness and structure."
+	}
+
 	// Build quality gate instructions for the completion checklist.
 	var gateInstructions string
 	if codeWrit {
@@ -163,7 +171,7 @@ Your job is to execute the assigned writ.
 
 ## Completion Checklist
 1. %s
-2. Stage and commit changes with clear commit messages.
+2. %s
 3. Run `+"`sol resolve`"+` — MANDATORY FINAL STEP.
 
 %s
@@ -174,7 +182,7 @@ Your job is to execute the assigned writ.
 - Do not attempt to interact with other agents directly.
 - Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
 `, ctx.AgentName, ctx.World, modelSection, outputDirSection, depsSection, ctx.WritID, ctx.Title, ctx.Kind, ctx.Description,
-		gateInstructions, protocolSection, resilienceSection)
+		gateInstructions, commitStep, protocolSection, resilienceSection)
 }
 
 // generatePersistentWritSection renders the multi-writ section for persistent agent personas.

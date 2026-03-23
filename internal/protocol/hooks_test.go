@@ -38,6 +38,31 @@ func TestGuardHooksForgeHasDangerousCommands(t *testing.T) {
 	}
 }
 
+func TestGuardHooksDerivedFromRoleGuards(t *testing.T) {
+	// Verify that GuardHooks is consistent with RoleGuards for all roles.
+	// Since GuardHooks is now derived from RoleGuards, this test ensures
+	// the derivation logic is correct and no future change breaks it.
+	for _, role := range []string{"forge", "outpost", "governor", "envoy", "chancellor"} {
+		guards := RoleGuards(role)
+		hooks := GuardHooks(role)
+
+		if len(guards) != len(hooks) {
+			t.Fatalf("role %q: RoleGuards returned %d entries but GuardHooks returned %d",
+				role, len(guards), len(hooks))
+		}
+
+		for i, g := range guards {
+			h := hooks[i]
+			if h.Matcher != g.Pattern {
+				t.Errorf("role %q guard %d: matcher %q != pattern %q", role, i, h.Matcher, g.Pattern)
+			}
+			if len(h.Hooks) != 1 || h.Hooks[0].Command != g.Command {
+				t.Errorf("role %q guard %d: hook command mismatch", role, i)
+			}
+		}
+	}
+}
+
 func TestInstallHooksPreCompact(t *testing.T) {
 	dir := t.TempDir()
 

@@ -155,6 +155,34 @@ func TestInstallSkillsChancellor(t *testing.T) {
 	}
 }
 
+func TestChancellorWritPlanningNoDispatch(t *testing.T) {
+	ctx := SkillContext{
+		SolBinary: "sol",
+		Role:      "chancellor",
+	}
+
+	content := generateSkill("writ-planning", ctx)
+
+	// The chancellor prompt says "does NOT dispatch work". The writ-planning
+	// skill must not provide dispatch commands like caravan launch.
+	if contains(content, "caravan launch") {
+		t.Error("chancellor writ-planning skill should not include 'caravan launch' — chancellor does not dispatch")
+	}
+
+	// Should still have caravan creation/planning commands.
+	if !contains(content, "caravan create") {
+		t.Error("chancellor writ-planning skill should include 'caravan create'")
+	}
+	if !contains(content, "caravan commission") {
+		t.Error("chancellor writ-planning skill should include 'caravan commission'")
+	}
+
+	// Should note that dispatch is the autarch/governor's responsibility.
+	if !contains(content, "dispatch action") {
+		t.Error("chancellor writ-planning skill should explain that launching is a dispatch action")
+	}
+}
+
 func TestInstallSkillsCleansStale(t *testing.T) {
 	dir := t.TempDir()
 

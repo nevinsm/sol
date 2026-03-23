@@ -79,59 +79,18 @@ type HookHandler struct {
 }
 
 // GuardHooks returns PreToolUse matcher groups for sol guard commands.
-// These block dangerous commands (force push, rm -rf, etc.) and
-// workflow-bypass commands (push to main, gh pr create, manual branching).
-// The role parameter controls which guards apply:
-//   - "forge": force push, feature branching, rm -rf (forge uses git reset --hard in sync step)
-//   - "outpost": all dangerous-command guards + workflow-bypass guards
+// These are derived from RoleGuards to ensure the two representations
+// never drift apart. The role parameter controls which guards apply
+// (see RoleGuards for role-specific details).
 func GuardHooks(role string) []HookMatcherGroup {
-	// Common dangerous-command guards for all roles.
-	groups := []HookMatcherGroup{
-		{
-			Matcher: "Bash(git push --force*)|Bash(git push -f *)",
-			Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
-		},
-		{
-			Matcher: "Bash(git checkout -b*)|Bash(git switch -c*)",
-			Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
-		},
-		{
-			Matcher: "Bash(rm -rf /*)",
-			Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
-		},
+	guards := RoleGuards(role)
+	groups := make([]HookMatcherGroup, len(guards))
+	for i, g := range guards {
+		groups[i] = HookMatcherGroup{
+			Matcher: g.Pattern,
+			Hooks:   []HookHandler{{Type: "command", Command: g.Command}},
+		}
 	}
-
-	// Outpost agents get additional guards. Forge is exempt because it uses
-	// git reset --hard (sync step), pushes to main by design, etc.
-	if role != "forge" {
-		groups = append(groups,
-			HookMatcherGroup{
-				Matcher: "Bash(git reset --hard*)",
-				Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(git clean -f*)",
-				Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(git checkout -- *)",
-				Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(git restore .*)",
-				Hooks:   []HookHandler{{Type: "command", Command: "sol guard dangerous-command"}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(git push origin main*)|Bash(git push origin master*)",
-				Hooks:   []HookHandler{{Type: "command", Command: "sol guard workflow-bypass"}},
-			},
-			HookMatcherGroup{
-				Matcher: "Bash(gh pr create*)",
-				Hooks:   []HookHandler{{Type: "command", Command: "sol guard workflow-bypass"}},
-			},
-		)
-	}
-
 	return groups
 }
 

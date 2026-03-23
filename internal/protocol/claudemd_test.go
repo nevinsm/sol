@@ -505,6 +505,9 @@ func TestClaudeMDAnalysisKind(t *testing.T) {
 	if !strings.Contains(content, "Review your output") {
 		t.Error("analysis writ completion checklist should mention reviewing output")
 	}
+	if strings.Contains(content, "Stage and commit") {
+		t.Error("analysis writ completion checklist should not mention staging and committing")
+	}
 	if strings.Contains(content, "Commit early and often") {
 		t.Error("analysis writ should not have git-based session resilience advice")
 	}
