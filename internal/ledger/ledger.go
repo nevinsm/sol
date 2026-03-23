@@ -269,12 +269,12 @@ func (l *Ledger) handleLogs(w http.ResponseWriter, r *http.Request) {
 		})
 		_, _ = w.Write(resp)
 	} else if failedRecords > 0 {
-		// Partial failure — some records succeeded, some dropped.
-		w.WriteHeader(http.StatusPartialContent)
+		// Partial failure — HTTP 200 with partialSuccess body per OTLP spec.
+		w.WriteHeader(http.StatusOK)
 		resp, _ := json.Marshal(map[string]any{
-			"partial_failure": map[string]any{
-				"total_records":  totalRecords,
-				"failed_records": failedRecords,
+			"partialSuccess": map[string]any{
+				"rejectedLogRecords": failedRecords,
+				"errorMessage":       fmt.Sprintf("%d of %d log records rejected", failedRecords, totalRecords),
 			},
 		})
 		_, _ = w.Write(resp)
