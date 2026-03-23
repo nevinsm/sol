@@ -84,7 +84,7 @@ func Import(opts ImportOptions) (*ImportResult, error) {
 		return nil, fmt.Errorf("failed to create world directory: %w", err)
 	}
 	// Create role-specific directories based on agent records in the archive.
-	if err := createAgentDirs(archiveRoot, worldDir); err != nil {
+	if err := createAgentDirs(archiveRoot, worldName); err != nil {
 		os.RemoveAll(worldDir)
 		return nil, fmt.Errorf("failed to create agent directories: %w", err)
 	}
@@ -434,7 +434,7 @@ func readJSONFile(path string, target interface{}) error {
 
 // createAgentDirs reads agents.json from the archive and creates the
 // role-specific directories that each agent requires (envoys/, governors/, outposts/).
-func createAgentDirs(archiveRoot, worldDir string) error {
+func createAgentDirs(archiveRoot, worldName string) error {
 	sphereDir := filepath.Join(archiveRoot, "sphere-data")
 	agentsFile := filepath.Join(sphereDir, "agents.json")
 
@@ -447,28 +447,12 @@ func createAgentDirs(archiveRoot, worldDir string) error {
 	}
 
 	for _, a := range agents {
-		name := a.Name
-		dir := agentRoleDir(worldDir, name, a.Role)
+		dir := config.AgentDir(worldName, a.Name, a.Role)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("failed to create directory for agent %q: %w", name, err)
+			return fmt.Errorf("failed to create directory for agent %q: %w", a.Name, err)
 		}
 	}
 	return nil
-}
-
-// agentRoleDir returns the filesystem directory for an agent based on its role,
-// rooted at worldDir. This mirrors config.AgentDir but takes worldDir directly.
-func agentRoleDir(worldDir, agentName, role string) string {
-	switch role {
-	case "envoy":
-		return filepath.Join(worldDir, "envoys", agentName)
-	case "governor":
-		return filepath.Join(worldDir, "governor")
-	case "forge":
-		return filepath.Join(worldDir, "forge")
-	default:
-		return filepath.Join(worldDir, "outposts", agentName)
-	}
 }
 
 // copyDir recursively copies a directory tree from src to dst.
