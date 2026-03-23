@@ -83,6 +83,11 @@ func Import(opts ImportOptions) (*ImportResult, error) {
 	if err := os.MkdirAll(filepath.Join(worldDir, "outposts"), 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create world directory: %w", err)
 	}
+	// Create role-specific directories based on agent records in the archive.
+	if err := createAgentDirs(archiveRoot, worldDir); err != nil {
+		os.RemoveAll(worldDir)
+		return nil, fmt.Errorf("failed to create agent directories: %w", err)
+	}
 
 	// 5. Copy world.db into .store/{name}.db.
 	if err := config.EnsureDirs(); err != nil {
@@ -151,6 +156,15 @@ func Import(opts ImportOptions) (*ImportResult, error) {
 		os.Remove(dbDst)
 		os.RemoveAll(worldDir)
 		return nil, fmt.Errorf("failed to import sphere data: %w", err)
+	}
+
+	// 9. Restore writ-outputs/ directory (if present in archive).
+	writOutputsSrc := filepath.Join(archiveRoot, "writ-outputs")
+	if info, err := os.Stat(writOutputsSrc); err == nil && info.IsDir() {
+		writOutputsDst := filepath.Join(worldDir, "writ-outputs")
+		if err := copyDir(writOutputsSrc, writOutputsDst); err != nil {
+			return nil, fmt.Errorf("failed to restore writ-outputs: %w", err)
+		}
 	}
 
 	return &ImportResult{
@@ -416,6 +430,63 @@ func readJSONFile(path string, target interface{}) error {
 		return fmt.Errorf("failed to parse %s: %w", filepath.Base(path), err)
 	}
 	return nil
+}
+
+// createAgentDirs reads agents.json from the archive and creates the
+// role-specific directories that each agent requires (envoys/, governors/, outposts/).
+func createAgentDirs(archiveRoot, worldDir string) error {
+	sphereDir := filepath.Join(archiveRoot, "sphere-data")
+	agentsFile := filepath.Join(sphereDir, "agents.json")
+
+	var agents []ExportAgent
+	if err := readJSONFile(agentsFile, &agents); err != nil {
+		if os.IsNotExist(err) {
+			return nil // No agents to create dirs for.
+		}
+		return fmt.Errorf("failed to read agents.json for directory creation: %w", err)
+	}
+
+	for _, a := range agents {
+		name := a.Name
+		dir := agentRoleDir(worldDir, name, a.Role)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("failed to create directory for agent %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// agentRoleDir returns the filesystem directory for an agent based on its role,
+// rooted at worldDir. This mirrors config.AgentDir but takes worldDir directly.
+func agentRoleDir(worldDir, agentName, role string) string {
+	switch role {
+	case "envoy":
+		return filepath.Join(worldDir, "envoys", agentName)
+	case "governor":
+		return filepath.Join(worldDir, "governor")
+	case "forge":
+		return filepath.Join(worldDir, "forge")
+	default:
+		return filepath.Join(worldDir, "outposts", agentName)
+	}
+}
+
+// copyDir recursively copies a directory tree from src to dst.
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		return copyFile(path, target)
+	})
 }
 
 // copyFile copies a file from src to dst.

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
@@ -41,6 +42,9 @@ type ExportResult struct {
 //	    escalations.json
 //	    caravans.json
 //	    caravan_items.json
+//	  writ-outputs/          (if present)
+//	    {writID}/
+//	      ...
 func Export(opts ExportOptions) (*ExportResult, error) {
 	world := opts.World
 
@@ -259,6 +263,14 @@ func Export(opts ExportOptions) (*ExportResult, error) {
 		return nil, fmt.Errorf("failed to add caravan items: %w", err)
 	}
 
+	// 8. Write writ-outputs/ directory (if it exists).
+	writOutputsDir := filepath.Join(config.WorldDir(world), "writ-outputs")
+	if info, err := os.Stat(writOutputsDir); err == nil && info.IsDir() {
+		if err := exportWriteDir(tw, writOutputsDir, prefix+"writ-outputs/"); err != nil {
+			return nil, fmt.Errorf("failed to add writ-outputs: %w", err)
+		}
+	}
+
 	// Flush writers in order.
 	if err := tw.Close(); err != nil {
 		return nil, fmt.Errorf("failed to finalize tar: %w", err)
@@ -312,6 +324,33 @@ func exportWriteBytes(tw *tar.Writer, data []byte, archiveName string, modTime t
 	}
 	_, err := tw.Write(data)
 	return err
+}
+
+// exportWriteDir recursively adds a directory tree to the tar archive.
+// archivePrefix must end with "/".
+func exportWriteDir(tw *tar.Writer, srcDir, archivePrefix string) error {
+	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+		archiveName := archivePrefix + filepath.ToSlash(rel)
+		if info.IsDir() {
+			if !strings.HasSuffix(archiveName, "/") {
+				archiveName += "/"
+			}
+			return tw.WriteHeader(&tar.Header{
+				Typeflag: tar.TypeDir,
+				Name:     archiveName,
+				Mode:     0o755,
+				ModTime:  info.ModTime(),
+			})
+		}
+		return exportWriteFile(tw, path, archiveName)
+	})
 }
 
 // exportWriteJSON marshals v as indented JSON and writes it to the tar archive.

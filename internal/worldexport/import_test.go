@@ -245,6 +245,10 @@ gate_timeout = "5m"
 			ID: "testworld/Alpha", Name: "Alpha", World: "testworld",
 			Role: "outpost", State: "working", CreatedAt: now, UpdatedAt: now,
 		},
+		{
+			ID: "testworld/Herald", Name: "Herald", World: "testworld",
+			Role: "envoy", State: "idle", CreatedAt: now, UpdatedAt: now,
+		},
 	}
 
 	archivePath := createTestArchive(t, t.TempDir(), manifest, worldToml, worldDB, map[string]interface{}{
@@ -299,6 +303,140 @@ gate_timeout = "5m"
 	if world.Name != "testworld" {
 		t.Errorf("expected world name 'testworld', got %q", world.Name)
 	}
+
+	// Verify role-specific directories were created.
+	outpostDir := filepath.Join(gtHome, "testworld", "outposts", "Alpha")
+	if _, err := os.Stat(outpostDir); os.IsNotExist(err) {
+		t.Error("outposts/Alpha directory not created")
+	}
+	envoyDir := filepath.Join(gtHome, "testworld", "envoys", "Herald")
+	if _, err := os.Stat(envoyDir); os.IsNotExist(err) {
+		t.Error("envoys/Herald directory not created")
+	}
+}
+
+func TestImportWithWritOutputs(t *testing.T) {
+	gtHome := t.TempDir()
+	t.Setenv("SOL_HOME", gtHome)
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	worldDB := createWorldDB(t)
+	t.Setenv("SOL_HOME", gtHome)
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	manifest := Manifest{
+		Version:    1,
+		World:      "woworld",
+		ExportedAt: now,
+		SolVersion: "0.1.0",
+		SchemaVersions: SchemaVersions{
+			World:  store.CurrentWorldSchema,
+			Sphere: store.CurrentSphereSchema,
+		},
+	}
+
+	// Create archive with writ-outputs.
+	archivePath := createTestArchiveWithWritOutputs(t, t.TempDir(), manifest, "[world]\n", worldDB,
+		map[string]interface{}{
+			"agents.json":        []ExportAgent{},
+			"messages.json":      []ExportMessage{},
+			"escalations.json":   []ExportEscalation{},
+			"caravans.json":      []ExportCaravan{},
+			"caravan_items.json": []ExportCaravanItem{},
+		},
+		map[string]string{
+			"sol-abc123/report.txt": "analysis result",
+		},
+	)
+
+	result, err := Import(ImportOptions{ArchivePath: archivePath})
+	if err != nil {
+		t.Fatalf("Import() error: %v", err)
+	}
+
+	// Verify writ-outputs restored.
+	reportPath := filepath.Join(gtHome, result.World, "writ-outputs", "sol-abc123", "report.txt")
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("failed to read restored writ-output: %v", err)
+	}
+	if string(data) != "analysis result" {
+		t.Errorf("expected 'analysis result', got %q", string(data))
+	}
+}
+
+// createTestArchiveWithWritOutputs extends createTestArchive with writ-outputs.
+func createTestArchiveWithWritOutputs(t *testing.T, dir string, manifest Manifest, worldToml string, worldDB []byte, sphereData map[string]interface{}, writOutputs map[string]string) string {
+	t.Helper()
+	archivePath := filepath.Join(dir, "test-export.tar.gz")
+
+	f, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatalf("create archive file: %v", err)
+	}
+	defer f.Close()
+
+	gw := gzip.NewWriter(f)
+	defer gw.Close()
+
+	tw := tar.NewWriter(gw)
+	defer tw.Close()
+
+	prefix := "sol-export-" + manifest.World + "-test/"
+
+	tw.WriteHeader(&tar.Header{
+		Name:     prefix,
+		Typeflag: tar.TypeDir,
+		Mode:     0o755,
+	})
+
+	manifestJSON, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	writeArchiveFile(t, tw, prefix+"manifest.json", manifestJSON)
+	writeArchiveFile(t, tw, prefix+"world.toml", []byte(worldToml))
+	if worldDB != nil {
+		writeArchiveFile(t, tw, prefix+"world.db", worldDB)
+	}
+
+	if len(sphereData) > 0 {
+		tw.WriteHeader(&tar.Header{
+			Name:     prefix + "sphere-data/",
+			Typeflag: tar.TypeDir,
+			Mode:     0o755,
+		})
+		for name, data := range sphereData {
+			jsonData, err := json.MarshalIndent(data, "", "  ")
+			if err != nil {
+				t.Fatalf("marshal %s: %v", name, err)
+			}
+			writeArchiveFile(t, tw, prefix+"sphere-data/"+name, jsonData)
+		}
+	}
+
+	if len(writOutputs) > 0 {
+		tw.WriteHeader(&tar.Header{
+			Name:     prefix + "writ-outputs/",
+			Typeflag: tar.TypeDir,
+			Mode:     0o755,
+		})
+		for relPath, content := range writOutputs {
+			// Create parent dir entries.
+			parts := filepath.Dir(relPath)
+			if parts != "." {
+				tw.WriteHeader(&tar.Header{
+					Name:     prefix + "writ-outputs/" + parts + "/",
+					Typeflag: tar.TypeDir,
+					Mode:     0o755,
+				})
+			}
+			writeArchiveFile(t, tw, prefix+"writ-outputs/"+relPath, []byte(content))
+		}
+	}
+
+	return archivePath
 }
 
 func TestImportConflict(t *testing.T) {
