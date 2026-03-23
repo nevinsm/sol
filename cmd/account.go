@@ -122,9 +122,14 @@ var accountListCmd = &cobra.Command{
 
 // --- sol account remove ---
 
+var accountRemoveConfirm bool
+
 var accountRemoveCmd = &cobra.Command{
-	Use:          "remove <handle>",
-	Short:        "Remove a registered account",
+	Use:   "remove <handle>",
+	Short: "Remove a registered account",
+	Long: `Remove a registered account and its stored credentials.
+
+Requires --confirm to proceed; without it, prints what would be removed and exits.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -133,6 +138,27 @@ var accountRemoveCmd = &cobra.Command{
 		reg, err := account.LoadRegistry()
 		if err != nil {
 			return err
+		}
+
+		acct, exists := reg.Accounts[handle]
+		if !exists {
+			return fmt.Errorf("account %q not found", handle)
+		}
+
+		if !accountRemoveConfirm {
+			fmt.Printf("This will permanently remove account %q:\n", handle)
+			if acct.Email != "" {
+				fmt.Printf("  - Email: %s\n", acct.Email)
+			}
+			if acct.Description != "" {
+				fmt.Printf("  - Description: %s\n", acct.Description)
+			}
+			if reg.Default == handle {
+				fmt.Printf("  - This is the current default account\n")
+			}
+			fmt.Println()
+			fmt.Println("Run with --confirm to proceed.")
+			return &exitError{code: 1}
 		}
 
 		if err := reg.Remove(handle); err != nil {
@@ -308,6 +334,8 @@ func init() {
 	accountListCmd.Flags().BoolVar(&accountListJSON, "json", false, "output as JSON")
 
 	accountCmd.AddCommand(accountRemoveCmd)
+	accountRemoveCmd.Flags().BoolVar(&accountRemoveConfirm, "confirm", false,
+		"confirm removal")
 	accountCmd.AddCommand(accountDefaultCmd)
 	accountCmd.AddCommand(accountSetTokenCmd)
 	accountCmd.AddCommand(accountSetAPIKeyCmd)

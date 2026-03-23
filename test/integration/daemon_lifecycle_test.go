@@ -450,7 +450,7 @@ func TestAccountCLI(t *testing.T) {
 		t.Fatalf("account default bob failed: %v: %s", err, out)
 	}
 
-	out, err = runGT(t, gtHome, "account", "remove", "alice")
+	out, err = runGT(t, gtHome, "account", "remove", "--confirm", "alice")
 	if err != nil {
 		t.Fatalf("account remove alice failed: %v: %s", err, out)
 	}
@@ -459,7 +459,7 @@ func TestAccountCLI(t *testing.T) {
 	}
 
 	// Remove bob.
-	out, err = runGT(t, gtHome, "account", "remove", "bob")
+	out, err = runGT(t, gtHome, "account", "remove", "--confirm", "bob")
 	if err != nil {
 		t.Fatalf("account remove bob failed: %v: %s", err, out)
 	}
