@@ -53,6 +53,7 @@ type AnyValue struct {
 	StringValue string  `json:"stringValue,omitempty"`
 	IntValue    string  `json:"-"` // populated by UnmarshalJSON
 	DoubleValue float64 `json:"-"` // populated by UnmarshalJSON
+	DoubleSet   bool    `json:"-"` // true when doubleValue was present in JSON
 	BoolValue   *bool   `json:"-"` // populated by UnmarshalJSON (nil = not set)
 }
 
@@ -84,6 +85,7 @@ func (v *AnyValue) UnmarshalJSON(data []byte) error {
 		if s != "" {
 			if f, err := strconv.ParseFloat(s, 64); err == nil {
 				v.DoubleValue = f
+				v.DoubleSet = true
 			}
 		}
 	}
@@ -123,7 +125,7 @@ func attributeMap(attrs []KeyValue) map[string]string {
 			m[kv.Key] = kv.Value.StringValue
 		} else if kv.Value.IntValue != "" {
 			m[kv.Key] = kv.Value.IntValue
-		} else if kv.Value.DoubleValue != 0 {
+		} else if kv.Value.DoubleSet {
 			m[kv.Key] = fmt.Sprintf("%g", kv.Value.DoubleValue)
 		} else if kv.Value.BoolValue != nil {
 			m[kv.Key] = fmt.Sprintf("%t", *kv.Value.BoolValue)
