@@ -123,7 +123,9 @@ var governorRestartCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to restart governor: %w", err)
 		}
-		defer agentLock.Release() // safety: release if stopFn is never called
+		// Hold the lock through the entire stop→start cycle so prefect
+		// cannot respawn between stop and start.
+		defer agentLock.Release()
 
 		sessName := config.SessionName(world, "governor")
 		mgr := session.New()
@@ -138,7 +140,7 @@ var governorRestartCmd = &cobra.Command{
 				}
 				defer sphereStore.Close()
 				return governor.Stop(world, sphereStore, mgr)
-			}, agentLock.Release, governorStartCmd, args)
+			}, nil, governorStartCmd, args)
 	},
 }
 

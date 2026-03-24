@@ -159,7 +159,9 @@ var envoyRestartCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to restart envoy: %w", err)
 		}
-		defer agentLock.Release() // safety: release if stopFn is never called
+		// Hold the lock through the entire stop→start cycle so prefect
+		// cannot respawn between stop and start.
+		defer agentLock.Release()
 
 		sessName := config.SessionName(world, name)
 		mgr := session.New()
@@ -174,7 +176,7 @@ var envoyRestartCmd = &cobra.Command{
 				}
 				defer sphereStore.Close()
 				return envoy.Stop(world, name, sphereStore, mgr)
-			}, agentLock.Release, envoyStartCmd, args)
+			}, nil, envoyStartCmd, args)
 	},
 }
 
