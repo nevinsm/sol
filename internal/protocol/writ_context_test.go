@@ -309,9 +309,9 @@ func TestWritContextEmbeddingInEnvoyContext(t *testing.T) {
 		SolBinary: "sol",
 		WritContext: protocol.WritContext{
 			TetheredWrits: []protocol.WritSummary{
-				{ID: "sol-1234", Title: "Test", Kind: "code", Status: "tethered"},
+				{ID: "sol-1234000000000000", Title: "Test", Kind: "code", Status: "tethered"},
 			},
-			ActiveWritID: "sol-1234",
+			ActiveWritID: "sol-1234000000000000",
 			ActiveTitle:  "Test",
 			ActiveDesc:   "Test description",
 			ActiveKind:   "code",
@@ -324,7 +324,7 @@ func TestWritContextEmbeddingInEnvoyContext(t *testing.T) {
 		t.Fatal("expected non-empty generated content")
 	}
 	// The generated content should include the active writ section.
-	if !containsAll(content, "sol-1234", "Active Writ") {
+	if !containsAll(content, "sol-1234000000000000", "Active Writ") {
 		t.Error("envoy CLAUDE.md should contain active writ info from embedded WritContext")
 	}
 }
@@ -337,9 +337,9 @@ func TestWritContextEmbeddingInGovernorContext(t *testing.T) {
 		MirrorDir: "../repo",
 		WritContext: protocol.WritContext{
 			TetheredWrits: []protocol.WritSummary{
-				{ID: "sol-5678", Title: "Gov task", Kind: "code", Status: "tethered"},
+				{ID: "sol-5678000000000000", Title: "Gov task", Kind: "code", Status: "tethered"},
 			},
-			ActiveWritID: "sol-5678",
+			ActiveWritID: "sol-5678000000000000",
 			ActiveTitle:  "Gov task",
 			ActiveDesc:   "Governor task description",
 			ActiveKind:   "code",
@@ -351,7 +351,7 @@ func TestWritContextEmbeddingInGovernorContext(t *testing.T) {
 	if len(content) == 0 {
 		t.Fatal("expected non-empty generated content")
 	}
-	if !containsAll(content, "sol-5678", "Active Writ") {
+	if !containsAll(content, "sol-5678000000000000", "Active Writ") {
 		t.Error("governor CLAUDE.md should contain active writ info from embedded WritContext")
 	}
 }

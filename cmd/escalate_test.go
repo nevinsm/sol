@@ -124,7 +124,7 @@ func TestEscalateSourceRefFromTether(t *testing.T) {
 	t.Setenv("SOL_AGENT", "Toast")
 
 	// Write a tether file so the auto-detection can find it.
-	if err := tether.Write("testworld", "Toast", "sol-abc123def456", "outpost"); err != nil {
+	if err := tether.Write("testworld", "Toast", "sol-abc123def4560000", "outpost"); err != nil {
 		t.Fatalf("write tether: %v", err)
 	}
 
@@ -146,8 +146,8 @@ func TestEscalateSourceRefFromTether(t *testing.T) {
 	found := false
 	for _, e := range escs {
 		if e.Description == "merge failed" {
-			if e.SourceRef != "writ:sol-abc123def456" {
-				t.Fatalf("expected source_ref 'writ:sol-abc123def456', got %q", e.SourceRef)
+			if e.SourceRef != "writ:sol-abc123def4560000" {
+				t.Fatalf("expected source_ref 'writ:sol-abc123def4560000', got %q", e.SourceRef)
 			}
 			found = true
 			break
@@ -166,7 +166,7 @@ func TestEscalateExplicitSourceRefOverridesTether(t *testing.T) {
 	t.Setenv("SOL_AGENT", "Toast")
 
 	// Write a tether file.
-	if err := tether.Write("testworld", "Toast", "sol-abc123def456", "outpost"); err != nil {
+	if err := tether.Write("testworld", "Toast", "sol-abc123def4560000", "outpost"); err != nil {
 		t.Fatalf("write tether: %v", err)
 	}
 

@@ -332,9 +332,9 @@ func TestPatrolSkipsWhenWorldSleeping(t *testing.T) {
 	// Create a stalled agent (working state, no live session, tethered) —
 	// this would normally trigger a respawn.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
-	createWrit(t, worldStore, "sol-abc12345", "Test task")
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
+	createWrit(t, worldStore, "sol-abc1234500000000", "Test task")
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -366,12 +366,12 @@ func TestPatrolDetectsStalled(t *testing.T) {
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
-	createWrit(t, worldStore, "sol-abc12345", "Test task")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
+	createWrit(t, worldStore, "sol-abc1234500000000", "Test task")
 	// Session is NOT alive (not in mock.alive).
 
 	// Write tether so stalled detection sees non-empty tether directory.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -411,11 +411,11 @@ func TestPatrolMaxRespawns(t *testing.T) {
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
-	createWrit(t, worldStore, "sol-abc12345", "Test task")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
+	createWrit(t, worldStore, "sol-abc1234500000000", "Test task")
 
 	// Write tether so stalled detection sees non-empty tether directory.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -425,7 +425,7 @@ func TestPatrolMaxRespawns(t *testing.T) {
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 
 	// Pre-set respawn count to max.
-	w.respawnCounts[respawnKey{AgentID: "ember/Toast", WritID: "sol-abc12345"}] = 2
+	w.respawnCounts[respawnKey{AgentID: "ember/Toast", WritID: "sol-abc1234500000000"}] = 2
 
 	if err := w.patrol(context.Background()); err != nil {
 		t.Fatalf("patrol() error: %v", err)
@@ -438,7 +438,7 @@ func TestPatrolMaxRespawns(t *testing.T) {
 	}
 
 	// Writ should be open.
-	item, err := worldStore.GetWrit("sol-abc12345")
+	item, err := worldStore.GetWrit("sol-abc1234500000000")
 	if err != nil {
 		t.Fatalf("GetWrit() error: %v", err)
 	}
@@ -535,7 +535,7 @@ func TestProgressDetectionOutputChanged(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
 	mock.alive["sol-ember-Toast"] = true
 
 	assessCalled := false
@@ -564,7 +564,7 @@ func TestProgressDetectionOutputUnchanged(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "same output"
 
@@ -592,7 +592,7 @@ func TestAssessmentNudge(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "stuck output"
 
@@ -626,7 +626,7 @@ func TestAssessmentEscalate(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "error output"
 
@@ -667,7 +667,7 @@ func TestAssessmentNone(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "output"
 
@@ -699,7 +699,7 @@ func TestAssessmentLowConfidenceIgnored(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "output"
 
@@ -730,7 +730,7 @@ func TestAssessmentFailureNonBlocking(t *testing.T) {
 	cfg := testConfig()
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "output"
 
@@ -762,11 +762,11 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 	cfg.MaxRespawns = 2
 
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
-	createWrit(t, worldStore, "sol-abc12345", "Test task")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
+	createWrit(t, worldStore, "sol-abc1234500000000", "Test task")
 
 	// Write tether so stalled detection sees non-empty tether directory.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -823,7 +823,7 @@ func TestRespawnAttemptsTracking(t *testing.T) {
 		t.Errorf("agent state = %q, want %q after max respawns", agent.State, store.AgentIdle)
 	}
 
-	item, err := worldStore.GetWrit("sol-abc12345")
+	item, err := worldStore.GetWrit("sol-abc1234500000000")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -939,7 +939,7 @@ func TestReapIdleAgent(t *testing.T) {
 		now.Format(time.RFC3339), "ember/Toast")
 
 	// Create tether to verify cleanup.
-	if err := tether.Write("ember", "Toast", "sol-old-item", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-01d01e0000000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -995,14 +995,14 @@ func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
 
 	// Create a working agent with a dead session.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
-	createWrit(t, worldStore, "sol-abc12345", "Test task")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
+	createWrit(t, worldStore, "sol-abc1234500000000", "Test task")
 
 	// Create outpost directory with worktree and tether.
 	solHome := os.Getenv("SOL_HOME")
 	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -1018,7 +1018,7 @@ func TestReturnWorkToOpenCleansUpResources(t *testing.T) {
 	}
 
 	// Writ should be open.
-	item, err := worldStore.GetWrit("sol-abc12345")
+	item, err := worldStore.GetWrit("sol-abc1234500000000")
 	if err != nil {
 		t.Fatalf("GetWrit() error: %v", err)
 	}
@@ -1048,7 +1048,7 @@ func TestCleanupOrphanedWorktree(t *testing.T) {
 	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Ghost", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 	// Also create a tether.
-	if err := tether.Write("ember", "Ghost", "sol-orphaned", "outpost"); err != nil {
+	if err := tether.Write("ember", "Ghost", "sol-00000000000a0ced", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -1136,7 +1136,7 @@ func TestCleanupOrphanedTether(t *testing.T) {
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	// Agent is idle by default.
 
-	if err := tether.Write("ember", "Toast", "sol-stale-item", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-00005ea1e01e0000", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -1160,11 +1160,11 @@ func TestCleanupOrphanedTetherSkipsWorking(t *testing.T) {
 
 	// Create a working agent with a live session and tether.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-active")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-ac01ae0000000000")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "working output"
 
-	if err := tether.Write("ember", "Toast", "sol-active", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-ac01ae0000000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -1192,14 +1192,14 @@ func TestCleanupOrphanedTetherRaceWithCast(t *testing.T) {
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
 
 	// Write a tether file (simulating Cast() writing the tether).
-	if err := tether.Write("ember", "Toast", "sol-active-writ", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-ac01ae0000000001", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
 	// Now update agent to "working" AFTER the initial state — simulating
 	// Cast() completing the agent state update between sentinel's snapshot
 	// and cleanupOrphanedTethers execution.
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-active-writ")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-ac01ae0000000001")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "working output"
 
@@ -1227,7 +1227,7 @@ func TestCleanupOrphanedTethersIdleAgentPreserved(t *testing.T) {
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	// Agent stays idle — do NOT update to "working".
 
-	if err := tether.Write("ember", "Toast", "sol-stale-writ", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-00005ea1e0000001", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -1252,7 +1252,7 @@ func TestCleanupOrphanedTethersTrulyOrphaned(t *testing.T) {
 	cfg := testConfig()
 
 	// Write a tether for an agent that does NOT exist in the DB.
-	if err := tether.Write("ember", "Ghost", "sol-orphan-writ", "outpost"); err != nil {
+	if err := tether.Write("ember", "Ghost", "sol-000000000a0c0001", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -2863,17 +2863,17 @@ func TestPatrolReapsAgentTetheredToClosedWrit(t *testing.T) {
 
 	// Create a working agent with a live session tethered to a writ.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
-	createWrit(t, worldStore, "sol-abc12345", "Cancelled task")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
+	createWrit(t, worldStore, "sol-abc1234500000000", "Cancelled task")
 	mock.alive["sol-ember-Toast"] = true
 
 	// Write tether file on disk so patrol discovers it via tether.List().
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
 	// Close the writ with a reason.
-	if _, err := worldStore.CloseWrit("sol-abc12345", "superseded"); err != nil {
+	if _, err := worldStore.CloseWrit("sol-abc1234500000000", "superseded"); err != nil {
 		t.Fatalf("CloseWrit() error: %v", err)
 	}
 
@@ -2906,13 +2906,13 @@ func TestPatrolDoesNotReapAgentTetheredToOpenWrit(t *testing.T) {
 
 	// Create a working agent with a live session tethered to an open writ.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
-	createWrit(t, worldStore, "sol-abc12345", "Active task")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
+	createWrit(t, worldStore, "sol-abc1234500000000", "Active task")
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "working on task..."
 
 	// Write tether file on disk.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -2948,16 +2948,16 @@ func TestPatrolClosedWritReapLogsCloseReason(t *testing.T) {
 
 	// Create a working agent tethered to a closed writ.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
-	createWrit(t, worldStore, "sol-abc12345", "Cancelled task")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
+	createWrit(t, worldStore, "sol-abc1234500000000", "Cancelled task")
 	mock.alive["sol-ember-Toast"] = true
 
 	// Write tether file on disk.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
-	if _, err := worldStore.CloseWrit("sol-abc12345", "cancelled_by_governor"); err != nil {
+	if _, err := worldStore.CloseWrit("sol-abc1234500000000", "cancelled_by_governor"); err != nil {
 		t.Fatalf("CloseWrit() error: %v", err)
 	}
 
@@ -2990,23 +2990,23 @@ func TestPersistentAgentClosedTetherRemoved(t *testing.T) {
 
 	// Create a persistent (forge) agent with 3 tethered writs.
 	sphereStore.CreateAgent("forge", "ember", "forge")
-	sphereStore.UpdateAgentState("ember/forge", store.AgentWorking, "sol-writ-1")
+	sphereStore.UpdateAgentState("ember/forge", store.AgentWorking, "sol-0000000000000ee1")
 	mock.alive["sol-ember-forge"] = true
 	mock.captures["sol-ember-forge"] = "forge output"
 
-	createWrit(t, worldStore, "sol-writ-1", "Open writ 1")
-	createWrit(t, worldStore, "sol-writ-2", "Closed writ 2")
-	createWrit(t, worldStore, "sol-writ-3", "Open writ 3")
+	createWrit(t, worldStore, "sol-0000000000000ee1", "Open writ 1")
+	createWrit(t, worldStore, "sol-0000000000000ee2", "Closed writ 2")
+	createWrit(t, worldStore, "sol-0000000000000ee3", "Open writ 3")
 
 	// Write 3 tether files.
-	for _, wid := range []string{"sol-writ-1", "sol-writ-2", "sol-writ-3"} {
+	for _, wid := range []string{"sol-0000000000000ee1", "sol-0000000000000ee2", "sol-0000000000000ee3"} {
 		if err := tether.Write("ember", "forge", wid, "forge"); err != nil {
 			t.Fatalf("tether.Write(%s) error: %v", wid, err)
 		}
 	}
 
 	// Close writ 2.
-	if _, err := worldStore.CloseWrit("sol-writ-2", "superseded"); err != nil {
+	if _, err := worldStore.CloseWrit("sol-0000000000000ee2", "superseded"); err != nil {
 		t.Fatalf("CloseWrit() error: %v", err)
 	}
 
@@ -3025,8 +3025,8 @@ func TestPersistentAgentClosedTetherRemoved(t *testing.T) {
 		t.Fatalf("expected 2 tethers remaining, got %d: %v", len(remaining), remaining)
 	}
 	for _, wid := range remaining {
-		if wid == "sol-writ-2" {
-			t.Error("closed writ tether should have been removed, but sol-writ-2 still present")
+		if wid == "sol-0000000000000ee2" {
+			t.Error("closed writ tether should have been removed, but sol-0000000000000ee2 still present")
 		}
 	}
 
@@ -3052,15 +3052,15 @@ func TestOutpostClosedTetherFullReap(t *testing.T) {
 
 	// Create an outpost agent tethered to a closed writ.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc12345")
-	createWrit(t, worldStore, "sol-abc12345", "Closed task")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
+	createWrit(t, worldStore, "sol-abc1234500000000", "Closed task")
 	mock.alive["sol-ember-Toast"] = true
 
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
-	if _, err := worldStore.CloseWrit("sol-abc12345", "completed"); err != nil {
+	if _, err := worldStore.CloseWrit("sol-abc1234500000000", "completed"); err != nil {
 		t.Fatalf("CloseWrit() error: %v", err)
 	}
 
@@ -3095,7 +3095,7 @@ func TestOrphanedTetherDirectoryCleaned(t *testing.T) {
 
 	// Write multiple tether files for an agent that does NOT exist in the DB.
 	// This is a truly orphaned agent — deleted from DB but tether dir remains.
-	for _, wid := range []string{"sol-orphan-1", "sol-orphan-2", "sol-orphan-3"} {
+	for _, wid := range []string{"sol-000000000a0c0011", "sol-000000000a0c0022", "sol-000000000a0c0033"} {
 		if err := tether.Write("ember", "Ghost", wid, "outpost"); err != nil {
 			t.Fatalf("tether.Write(%s) error: %v", wid, err)
 		}
@@ -3692,7 +3692,7 @@ func TestCheckClosedWritTethers_GetWritError(t *testing.T) {
 
 	// Create an agent with a valid tether.
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
-	if err := tether.Write("ember", "Toast", "sol-getwrit1", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-9e000010e0000001", "outpost"); err != nil {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
@@ -3732,8 +3732,8 @@ func TestCheckClosedWritTethers_GetWritError(t *testing.T) {
 	if payload["action"] != "get_writ_for_closed_check" {
 		t.Errorf("event action = %q, want %q", payload["action"], "get_writ_for_closed_check")
 	}
-	if payload["writ"] != "sol-getwrit1" {
-		t.Errorf("event writ = %q, want %q", payload["writ"], "sol-getwrit1")
+	if payload["writ"] != "sol-9e000010e0000001" {
+		t.Errorf("event writ = %q, want %q", payload["writ"], "sol-9e000010e0000001")
 	}
 	errMsg, _ := payload["error"].(string)
 	if !strings.Contains(errMsg, "database connection lost") {

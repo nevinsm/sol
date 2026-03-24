@@ -132,9 +132,9 @@ func TestProtocolMessageFlow(t *testing.T) {
 
 	// Send AGENT_DONE protocol message.
 	payload := store.AgentDonePayload{
-		WritID: "sol-abc12345",
+		WritID: "sol-abc1234500000000",
 		AgentID:    "ember/Toast",
-		Branch:     "outpost/Toast/sol-abc12345",
+		Branch:     "outpost/Toast/sol-abc1234500000000",
 		World:        "ember",
 	}
 	msgID, err := sphereStore.SendProtocolMessage("ember/Toast", "ember/sentinel",
@@ -160,11 +160,11 @@ func TestProtocolMessageFlow(t *testing.T) {
 	if err := json.Unmarshal([]byte(msgs[0].Body), &parsed); err != nil {
 		t.Fatalf("parse protocol body: %v", err)
 	}
-	if parsed.WritID != "sol-abc12345" {
-		t.Errorf("writ_id: got %q, want %q", parsed.WritID, "sol-abc12345")
+	if parsed.WritID != "sol-abc1234500000000" {
+		t.Errorf("writ_id: got %q, want %q", parsed.WritID, "sol-abc1234500000000")
 	}
-	if parsed.Branch != "outpost/Toast/sol-abc12345" {
-		t.Errorf("branch: got %q, want %q", parsed.Branch, "outpost/Toast/sol-abc12345")
+	if parsed.Branch != "outpost/Toast/sol-abc1234500000000" {
+		t.Errorf("branch: got %q, want %q", parsed.Branch, "outpost/Toast/sol-abc1234500000000")
 	}
 
 	// Ack the message.
@@ -419,7 +419,7 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc1234500000000"); err != nil {
 		t.Fatalf("UpdateAgentState: %v", err)
 	}
 
@@ -428,13 +428,13 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 	if _, err := worldStore.DB().Exec(
 		`INSERT INTO writs (id, title, description, status, priority, created_by, created_at, updated_at)
 		 VALUES (?, ?, '', 'tethered', 3, 'test', ?, ?)`,
-		"sol-abc12345", "Test task", now, now,
+		"sol-abc1234500000000", "Test task", now, now,
 	); err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
 
 	// Write tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
@@ -493,7 +493,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc1234500000000"); err != nil {
 		t.Fatalf("UpdateAgentState: %v", err)
 	}
 
@@ -501,12 +501,12 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	if _, err := worldStore.DB().Exec(
 		`INSERT INTO writs (id, title, description, status, priority, created_by, created_at, updated_at)
 		 VALUES (?, ?, '', 'tethered', 3, 'test', ?, ?)`,
-		"sol-abc12345", "Test task", now, now,
+		"sol-abc1234500000000", "Test task", now, now,
 	); err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
 
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("tether.Write: %v", err)
 	}
 
@@ -572,7 +572,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 	}
 
 	// Writ should be open.
-	item, err := worldStore.GetWrit("sol-abc12345")
+	item, err := worldStore.GetWrit("sol-abc1234500000000")
 	if err != nil {
 		t.Fatalf("GetWrit: %v", err)
 	}
@@ -660,7 +660,7 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc1234500000000"); err != nil {
 		t.Fatalf("UpdateAgentState: %v", err)
 	}
 	mock.alive["sol-ember-Toast"] = true
@@ -723,7 +723,7 @@ func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc1234500000000"); err != nil {
 		t.Fatalf("UpdateAgentState: %v", err)
 	}
 	mock.alive["sol-ember-Toast"] = true
@@ -779,7 +779,7 @@ func TestSentinelAIAssessmentFailure(t *testing.T) {
 	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc12345"); err != nil {
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", "sol-abc1234500000000"); err != nil {
 		t.Fatalf("UpdateAgentState: %v", err)
 	}
 	mock.alive["sol-ember-Toast"] = true

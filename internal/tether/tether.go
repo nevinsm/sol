@@ -86,6 +86,11 @@ func List(world, agentName, role string) ([]string, error) {
 		if strings.HasSuffix(name, ".tmp") {
 			continue
 		}
+		// Skip junk files (.DS_Store, swap files, etc.) — only valid writ IDs.
+		if config.ValidateWritID(name) != nil {
+			slog.Debug("tether: skipping non-writ-ID file", "file", name, "agent", agentName, "world", world)
+			continue
+		}
 		ids = append(ids, name)
 	}
 	sort.Strings(ids)

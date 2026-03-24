@@ -48,7 +48,7 @@ func TestCapture(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -62,7 +62,7 @@ func TestCapture(t *testing.T) {
 		t.Fatalf("failed to write workflow state: %v", err)
 	}
 	// Minimal instance manifest for step counting.
-	instanceJSON := `{"workflow":"default-work","writ_id":"sol-abc12345","variables":{},"instantiated_at":"2026-02-27T10:00:00Z"}`
+	instanceJSON := `{"workflow":"default-work","writ_id":"sol-abc1234500000000","variables":{},"instantiated_at":"2026-02-27T10:00:00Z"}`
 	if err := os.WriteFile(filepath.Join(wfDir, "manifest.json"), []byte(instanceJSON), 0o644); err != nil {
 		t.Fatalf("failed to write workflow instance: %v", err)
 	}
@@ -88,8 +88,8 @@ func TestCapture(t *testing.T) {
 		t.Fatalf("Capture failed: %v", err)
 	}
 
-	if state.WritID != "sol-abc12345" {
-		t.Errorf("expected WritID sol-abc12345, got %q", state.WritID)
+	if state.WritID != "sol-abc1234500000000" {
+		t.Errorf("expected WritID sol-abc1234500000000, got %q", state.WritID)
 	}
 	if state.AgentName != "Toast" {
 		t.Errorf("expected AgentName Toast, got %q", state.AgentName)
@@ -118,7 +118,7 @@ func TestCaptureUsesExplicitWorktreeDir(t *testing.T) {
 	setupSolHome(t)
 
 	// Set up tether for an envoy.
-	if err := tether.Write("ember", "Alice", "sol-envoy12345", "envoy"); err != nil {
+	if err := tether.Write("ember", "Alice", "sol-e00012345abcdef0", "envoy"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -151,7 +151,7 @@ func TestCaptureNoWorkflow(t *testing.T) {
 	setupSolHome(t)
 
 	// Set up tether file only, no workflow.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -178,10 +178,10 @@ func TestCaptureWithActiveWrit(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up multiple tethers (persistent agent scenario).
-	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-00000000000000aa", "outpost"); err != nil {
 		t.Fatalf("failed to write tether 1: %v", err)
 	}
-	if err := tether.Write("ember", "Toast", "sol-writ-bbb", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-00000000000000bb", "outpost"); err != nil {
 		t.Fatalf("failed to write tether 2: %v", err)
 	}
 
@@ -198,7 +198,7 @@ func TestCaptureWithActiveWrit(t *testing.T) {
 	// Sphere store with active writ set to the second tether.
 	sphere := &mockSphereStore{
 		agents: map[string]*store.Agent{
-			"ember/Toast": {ID: "ember/Toast", Name: "Toast", World: "ember", ActiveWrit: "sol-writ-bbb"},
+			"ember/Toast": {ID: "ember/Toast", Name: "Toast", World: "ember", ActiveWrit: "sol-00000000000000bb"},
 		},
 	}
 
@@ -218,12 +218,12 @@ func TestCaptureWithActiveWrit(t *testing.T) {
 	}
 
 	// ActiveWritID should be set from DB.
-	if state.ActiveWritID != "sol-writ-bbb" {
-		t.Errorf("expected ActiveWritID sol-writ-bbb, got %q", state.ActiveWritID)
+	if state.ActiveWritID != "sol-00000000000000bb" {
+		t.Errorf("expected ActiveWritID sol-00000000000000bb, got %q", state.ActiveWritID)
 	}
 	// WritID should also be set to the active writ (not the first tether).
-	if state.WritID != "sol-writ-bbb" {
-		t.Errorf("expected WritID sol-writ-bbb (from active writ), got %q", state.WritID)
+	if state.WritID != "sol-00000000000000bb" {
+		t.Errorf("expected WritID sol-00000000000000bb (from active writ), got %q", state.WritID)
 	}
 	// Git log should have been captured (writ-specific context).
 	if len(state.RecentCommits) != 1 {
@@ -283,8 +283,8 @@ func TestCaptureNoActiveWrit(t *testing.T) {
 func TestResumeAfterHandoffRestoresActiveWrit(t *testing.T) {
 	// Verify that BuildResumeState includes active writ for resume restoration.
 	state := &State{
-		WritID:       "sol-writ-bbb",
-		ActiveWritID: "sol-writ-bbb",
+		WritID:       "sol-00000000000000bb",
+		ActiveWritID: "sol-00000000000000bb",
 		AgentName:    "Toast",
 		World:        "ember",
 		WorkflowStep: "implement",
@@ -292,11 +292,11 @@ func TestResumeAfterHandoffRestoresActiveWrit(t *testing.T) {
 
 	resumeState := state.BuildResumeState("compact")
 
-	if resumeState.ClaimedResource != "sol-writ-bbb" {
-		t.Errorf("expected ClaimedResource sol-writ-bbb, got %q", resumeState.ClaimedResource)
+	if resumeState.ClaimedResource != "sol-00000000000000bb" {
+		t.Errorf("expected ClaimedResource sol-00000000000000bb, got %q", resumeState.ClaimedResource)
 	}
-	if resumeState.NewActiveWrit != "sol-writ-bbb" {
-		t.Errorf("expected NewActiveWrit sol-writ-bbb, got %q", resumeState.NewActiveWrit)
+	if resumeState.NewActiveWrit != "sol-00000000000000bb" {
+		t.Errorf("expected NewActiveWrit sol-00000000000000bb, got %q", resumeState.NewActiveWrit)
 	}
 	if resumeState.Reason != "compact" {
 		t.Errorf("expected reason compact, got %q", resumeState.Reason)
@@ -309,15 +309,15 @@ func TestResumeAfterHandoffRestoresActiveWrit(t *testing.T) {
 func TestBuildResumeStateNoActiveWrit(t *testing.T) {
 	// When ActiveWritID is empty, NewActiveWrit should not be set.
 	state := &State{
-		WritID:    "sol-writ-aaa",
+		WritID:    "sol-00000000000000aa",
 		AgentName: "Toast",
 		World:     "ember",
 	}
 
 	resumeState := state.BuildResumeState("manual")
 
-	if resumeState.ClaimedResource != "sol-writ-aaa" {
-		t.Errorf("expected ClaimedResource sol-writ-aaa, got %q", resumeState.ClaimedResource)
+	if resumeState.ClaimedResource != "sol-00000000000000aa" {
+		t.Errorf("expected ClaimedResource sol-00000000000000aa, got %q", resumeState.ClaimedResource)
 	}
 	if resumeState.NewActiveWrit != "" {
 		t.Errorf("expected empty NewActiveWrit, got %q", resumeState.NewActiveWrit)
@@ -328,16 +328,16 @@ func TestCompactRecoveryWithActiveWrit(t *testing.T) {
 	setupSolHome(t)
 
 	// Set up tethers and active writ.
-	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-00000000000000aa", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
-	if err := tether.Write("ember", "Toast", "sol-writ-bbb", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-00000000000000bb", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	sphere := &mockSphereStore{
 		agents: map[string]*store.Agent{
-			"ember/Toast": {ID: "ember/Toast", Name: "Toast", World: "ember", ActiveWrit: "sol-writ-bbb"},
+			"ember/Toast": {ID: "ember/Toast", Name: "Toast", World: "ember", ActiveWrit: "sol-00000000000000bb"},
 		},
 	}
 
@@ -365,17 +365,17 @@ func TestCompactRecoveryWithActiveWrit(t *testing.T) {
 	}
 
 	// Active writ should be preserved through serialization.
-	if recovered.ActiveWritID != "sol-writ-bbb" {
-		t.Errorf("expected recovered ActiveWritID sol-writ-bbb, got %q", recovered.ActiveWritID)
+	if recovered.ActiveWritID != "sol-00000000000000bb" {
+		t.Errorf("expected recovered ActiveWritID sol-00000000000000bb, got %q", recovered.ActiveWritID)
 	}
-	if recovered.WritID != "sol-writ-bbb" {
-		t.Errorf("expected recovered WritID sol-writ-bbb, got %q", recovered.WritID)
+	if recovered.WritID != "sol-00000000000000bb" {
+		t.Errorf("expected recovered WritID sol-00000000000000bb, got %q", recovered.WritID)
 	}
 
 	// BuildResumeState from recovered state should include active writ.
 	resumeState := recovered.BuildResumeState("compact")
-	if resumeState.NewActiveWrit != "sol-writ-bbb" {
-		t.Errorf("expected NewActiveWrit sol-writ-bbb in resume state, got %q", resumeState.NewActiveWrit)
+	if resumeState.NewActiveWrit != "sol-00000000000000bb" {
+		t.Errorf("expected NewActiveWrit sol-00000000000000bb in resume state, got %q", resumeState.NewActiveWrit)
 	}
 }
 
@@ -383,24 +383,24 @@ func TestCaptureResumeStateWithActiveWrit(t *testing.T) {
 	setupSolHome(t)
 
 	// Tether exists but active writ in DB is different.
-	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-00000000000000aa", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	sphere := &mockSphereStore{
 		agents: map[string]*store.Agent{
-			"ember/Toast": {ID: "ember/Toast", Name: "Toast", World: "ember", ActiveWrit: "sol-writ-bbb"},
+			"ember/Toast": {ID: "ember/Toast", Name: "Toast", World: "ember", ActiveWrit: "sol-00000000000000bb"},
 		},
 	}
 
 	resumeState := CaptureResumeState("ember", "Toast", "outpost", "compact", sphere)
 
 	// Should use active writ from DB, not tether.
-	if resumeState.ClaimedResource != "sol-writ-bbb" {
-		t.Errorf("expected ClaimedResource sol-writ-bbb (from DB), got %q", resumeState.ClaimedResource)
+	if resumeState.ClaimedResource != "sol-00000000000000bb" {
+		t.Errorf("expected ClaimedResource sol-00000000000000bb (from DB), got %q", resumeState.ClaimedResource)
 	}
-	if resumeState.NewActiveWrit != "sol-writ-bbb" {
-		t.Errorf("expected NewActiveWrit sol-writ-bbb, got %q", resumeState.NewActiveWrit)
+	if resumeState.NewActiveWrit != "sol-00000000000000bb" {
+		t.Errorf("expected NewActiveWrit sol-00000000000000bb, got %q", resumeState.NewActiveWrit)
 	}
 }
 
@@ -408,15 +408,15 @@ func TestCaptureResumeStateWithoutSphere(t *testing.T) {
 	setupSolHome(t)
 
 	// Tether exists, no sphere store.
-	if err := tether.Write("ember", "Toast", "sol-writ-aaa", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-00000000000000aa", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
 	resumeState := CaptureResumeState("ember", "Toast", "outpost", "compact", nil)
 
 	// Should fall back to tether.
-	if resumeState.ClaimedResource != "sol-writ-aaa" {
-		t.Errorf("expected ClaimedResource sol-writ-aaa (from tether), got %q", resumeState.ClaimedResource)
+	if resumeState.ClaimedResource != "sol-00000000000000aa" {
+		t.Errorf("expected ClaimedResource sol-00000000000000aa (from tether), got %q", resumeState.ClaimedResource)
 	}
 	if resumeState.NewActiveWrit != "" {
 		t.Errorf("expected empty NewActiveWrit (no sphere), got %q", resumeState.NewActiveWrit)
@@ -426,7 +426,7 @@ func TestCaptureResumeStateWithoutSphere(t *testing.T) {
 func TestCaptureNoSummary(t *testing.T) {
 	setupSolHome(t)
 
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -448,7 +448,7 @@ func TestCaptureNoSummary(t *testing.T) {
 	if !strings.Contains(state.Summary, "Toast") {
 		t.Errorf("auto-generated summary missing agent name: %q", state.Summary)
 	}
-	if !strings.Contains(state.Summary, "sol-abc12345") {
+	if !strings.Contains(state.Summary, "sol-abc1234500000000") {
 		t.Errorf("auto-generated summary missing writ ID: %q", state.Summary)
 	}
 	if !strings.Contains(state.Summary, "abc1234") {
@@ -460,7 +460,7 @@ func TestWriteAndRead(t *testing.T) {
 	setupSolHome(t)
 
 	original := &State{
-		WritID:       "sol-abc12345",
+		WritID:       "sol-abc1234500000000",
 		AgentName:        "Toast",
 		World:            "ember",
 		Role:             "outpost",
@@ -546,7 +546,7 @@ func TestRemove(t *testing.T) {
 
 	// Write then remove.
 	state := &State{
-		WritID: "sol-abc12345",
+		WritID: "sol-abc1234500000000",
 		AgentName:  "Toast",
 		World:      "ember",
 		Role:       "outpost",
@@ -585,7 +585,7 @@ func TestHasHandoff(t *testing.T) {
 
 	// Write handoff.
 	state := &State{
-		WritID: "sol-abc12345",
+		WritID: "sol-abc1234500000000",
 		AgentName:  "Toast",
 		World:      "ember",
 		Role:       "outpost",
@@ -750,7 +750,7 @@ func TestExec(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -816,8 +816,8 @@ func TestExec(t *testing.T) {
 	if msg.Recipient != "ember/Toast" {
 		t.Errorf("expected recipient ember/Toast, got %q", msg.Recipient)
 	}
-	if msg.Subject != "HANDOFF: sol-abc12345" {
-		t.Errorf("expected subject 'HANDOFF: sol-abc12345', got %q", msg.Subject)
+	if msg.Subject != "HANDOFF: sol-abc1234500000000" {
+		t.Errorf("expected subject 'HANDOFF: sol-abc1234500000000', got %q", msg.Subject)
 	}
 	if msg.Priority != 2 {
 		t.Errorf("expected priority 2, got %d", msg.Priority)
@@ -831,7 +831,7 @@ func TestExecGetAgentFailureFallsBackToTether(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file — this is the fallback when GetAgent fails.
-	if err := tether.Write("ember", "Toast", "sol-tether999", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-0e0e099900000000", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -868,8 +868,8 @@ func TestExecGetAgentFailureFallsBackToTether(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Read handoff state failed: %v", err)
 	}
-	if state.WritID != "sol-tether999" {
-		t.Errorf("expected WritID sol-tether999 (from tether fallback), got %q", state.WritID)
+	if state.WritID != "sol-0e0e099900000000" {
+		t.Errorf("expected WritID sol-0e0e099900000000 (from tether fallback), got %q", state.WritID)
 	}
 	if state.ActiveWritID != "" {
 		t.Errorf("expected empty ActiveWritID (GetAgent failed), got %q", state.ActiveWritID)
@@ -884,8 +884,8 @@ func TestExecGetAgentFailureFallsBackToTether(t *testing.T) {
 	if len(ts.messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(ts.messages))
 	}
-	if ts.messages[0].Subject != "HANDOFF: sol-tether999" {
-		t.Errorf("expected subject 'HANDOFF: sol-tether999', got %q", ts.messages[0].Subject)
+	if ts.messages[0].Subject != "HANDOFF: sol-0e0e099900000000" {
+		t.Errorf("expected subject 'HANDOFF: sol-0e0e099900000000', got %q", ts.messages[0].Subject)
 	}
 }
 
@@ -946,7 +946,7 @@ func TestExecWithExplicitRole(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file for an envoy with active work.
-	if err := tether.Write("ember", "Alice", "sol-envoy12345", "envoy"); err != nil {
+	if err := tether.Write("ember", "Alice", "sol-e00012345abcdef0", "envoy"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -993,7 +993,7 @@ func TestCaptureGitStatusStashDiff(t *testing.T) {
 	setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1049,7 +1049,7 @@ func TestMarkConsumedAndHasHandoff(t *testing.T) {
 	setupSolHome(t)
 
 	state := &State{
-		WritID: "sol-abc12345",
+		WritID: "sol-abc1234500000000",
 		AgentName:  "Toast",
 		World:      "ember",
 		Role:       "outpost",
@@ -1156,7 +1156,7 @@ func TestExecWritesMarker(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1254,7 +1254,7 @@ func TestExecSkipsWhenResolveInProgress(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up tether file.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -1267,7 +1267,7 @@ func TestExecSkipsWhenResolveInProgress(t *testing.T) {
 	// Create resolve lock (simulating resolve in progress).
 	agentDir := filepath.Join(solHome, "ember", "outposts", "Toast")
 	lockPath := filepath.Join(agentDir, ".resolve_in_progress")
-	if err := os.WriteFile(lockPath, []byte("sol-abc12345"), 0o644); err != nil {
+	if err := os.WriteFile(lockPath, []byte("sol-abc1234500000000"), 0o644); err != nil {
 		t.Fatalf("failed to write resolve lock: %v", err)
 	}
 
@@ -1311,7 +1311,7 @@ func TestCooldownEnforced(t *testing.T) {
 	}
 
 	// Write a fresh marker for an outpost agent.
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
@@ -1545,7 +1545,7 @@ func TestExecNoBriefSaveForOutpost(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	// Set up outpost agent (no brief directory needed — they don't use briefs).
-	if err := tether.Write("ember", "Toast", "sol-abc12345", "outpost"); err != nil {
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
@@ -1975,7 +1975,7 @@ func TestExecStartupCompactUsesResume(t *testing.T) {
 	})
 
 	// Set up tether so resume state captures the writ.
-	if err := tether.Write(world, agentName, "sol-compact12345", roleName); err != nil {
+	if err := tether.Write(world, agentName, "sol-c00ac01234500000", roleName); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
@@ -2017,7 +2017,7 @@ func TestExecStartupCompactUsesResume(t *testing.T) {
 	}
 
 	// Should contain the claimed resource from tether.
-	if !strings.Contains(cmd, "sol-compact12345") {
+	if !strings.Contains(cmd, "sol-c00ac01234500000") {
 		t.Errorf("expected claimed resource in resume prime, got %q", cmd)
 	}
 }

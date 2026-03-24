@@ -415,9 +415,10 @@ func Respawn(role, world, agent string, opts LaunchOpts) (string, error) {
 		slog.Info("found resume state, using startup.Resume",
 			"agent", agent, "world", world, "reason", resumeState.Reason)
 		sessName, err := Resume(*cfg, world, agent, *resumeState, opts)
-		if err == nil {
-			ClearResumeState(world, agent, role)
-		}
+		// Always clear resume state — on success it's consumed, on failure
+		// it's stale and would cause every subsequent respawn to retry the
+		// same bad Resume.
+		ClearResumeState(world, agent, role)
 		return sessName, err
 	}
 
