@@ -356,6 +356,10 @@ func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord
 		cacheCreation = parseIntAttr(attrs, "gen_ai.usage.cache_creation_input_tokens")
 	}
 
+	// Extract optional cost and duration.
+	costUSD := parseFloatAttr(attrs, "cost_usd")
+	durationMS := parseIntPtrAttr(attrs, "duration_ms")
+
 	historyID, err := l.ensureHistory(world, agentName, writID)
 	if err != nil {
 		l.logger.Printf("failed to ensure history for %s/%s: %v", world, agentName, err)
@@ -370,7 +374,7 @@ func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord
 		return fmt.Errorf("open world store: %w", err)
 	}
 
-	if _, err := ws.WriteTokenUsage(historyID, model, input, output, cacheRead, cacheCreation); err != nil {
+	if _, err := ws.WriteTokenUsage(historyID, model, input, output, cacheRead, cacheCreation, costUSD, durationMS); err != nil {
 		l.logger.Printf("failed to write token usage: %v", err)
 		l.emitError("write_token_usage", err)
 		return fmt.Errorf("write token usage: %w", err)
@@ -453,4 +457,30 @@ func parseIntAttr(attrs map[string]string, key string) int64 {
 		return 0
 	}
 	return n
+}
+
+// parseFloatAttr parses a float attribute value, returning nil if absent or invalid.
+func parseFloatAttr(attrs map[string]string, key string) *float64 {
+	v, ok := attrs[key]
+	if !ok {
+		return nil
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return nil
+	}
+	return &f
+}
+
+// parseIntPtrAttr parses an integer attribute value, returning nil if absent or invalid.
+func parseIntPtrAttr(attrs map[string]string, key string) *int64 {
+	v, ok := attrs[key]
+	if !ok {
+		return nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return nil
+	}
+	return &n
 }

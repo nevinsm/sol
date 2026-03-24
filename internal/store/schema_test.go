@@ -191,8 +191,8 @@ func TestBackupDatabaseCapturesWALData(t *testing.T) {
 func TestCurrentSchemaConstants(t *testing.T) {
 	t.Parallel()
 	// Verify constants are positive and match the expected values.
-	if CurrentWorldSchema != 10 {
-		t.Fatalf("CurrentWorldSchema = %d, expected 10", CurrentWorldSchema)
+	if CurrentWorldSchema != 11 {
+		t.Fatalf("CurrentWorldSchema = %d, expected 11", CurrentWorldSchema)
 	}
 	if CurrentSphereSchema != 14 {
 		t.Fatalf("CurrentSphereSchema = %d, expected 14", CurrentSphereSchema)
@@ -254,7 +254,7 @@ func TestWorldSchemaV9Migration(t *testing.T) {
 	}
 	s.Close()
 
-	// Re-open via openWorldAt — should migrate to V10 (V9 adds kind/metadata/close_reason, V10 renames operator → autarch).
+	// Re-open via openWorldAt — should migrate to V11 (V9 adds kind/metadata/close_reason, V10 renames operator → autarch, V11 adds cost_usd/duration_ms).
 	s2 := openWorldAt(t, dbPath)
 
 	// Check schema version.
@@ -262,8 +262,8 @@ func TestWorldSchemaV9Migration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v != 10 {
-		t.Fatalf("expected schema version 10, got %d", v)
+	if v != 11 {
+		t.Fatalf("expected schema version 11, got %d", v)
 	}
 
 	// Verify existing writs got default values for new columns.

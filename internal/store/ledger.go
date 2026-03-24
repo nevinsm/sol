@@ -27,6 +27,8 @@ type TokenUsage struct {
 	OutputTokens        int64
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+	CostUSD             *float64
+	DurationMS          *int64
 }
 
 // TokenSummary holds aggregated token counts for a single model.
@@ -36,6 +38,8 @@ type TokenSummary struct {
 	OutputTokens        int64
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+	CostUSD             *float64
+	DurationMS          *int64
 }
 
 func generateHistoryID() (string, error) {
@@ -181,16 +185,17 @@ func (s *WorldStore) EndHistory(writID string) (string, error) {
 }
 
 // WriteTokenUsage inserts a token_usage record and returns its generated ID.
-func (s *WorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64) (string, error) {
+// costUSD and durationMS are optional — pass nil to omit.
+func (s *WorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64) (string, error) {
 	id, err := generateTokenUsageID()
 	if err != nil {
 		return "", err
 	}
 
 	_, err = s.db.Exec(
-		`INSERT INTO token_usage (id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, historyID, model, input, output, cacheRead, cacheCreation,
+		`INSERT INTO token_usage (id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, historyID, model, input, output, cacheRead, cacheCreation, costUSD, durationMS,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert token usage: %w", err)
@@ -198,22 +203,57 @@ func (s *WorldStore) WriteTokenUsage(historyID, model string, input, output, cac
 	return id, nil
 }
 
+// scanTokenSummary scans a TokenSummary including optional cost_usd and duration_ms.
+func scanTokenSummary(scanner interface{ Scan(...interface{}) error }, ts *TokenSummary) error {
+	var costUSD sql.NullFloat64
+	var durationMS sql.NullInt64
+	if err := scanner.Scan(&ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens, &costUSD, &durationMS); err != nil {
+		return err
+	}
+	if costUSD.Valid {
+		ts.CostUSD = &costUSD.Float64
+	}
+	if durationMS.Valid {
+		ts.DurationMS = &durationMS.Int64
+	}
+	return nil
+}
+
+// tokenSummaryColumns is the standard SELECT clause for aggregated token queries.
+const tokenSummaryColumns = `tu.model,
+		        SUM(tu.input_tokens),
+		        SUM(tu.output_tokens),
+		        SUM(tu.cache_read_tokens),
+		        SUM(tu.cache_creation_tokens),
+		        SUM(tu.cost_usd),
+		        SUM(tu.duration_ms)`
+
 // TokensForHistory returns aggregated token totals for a single history entry.
 func (s *WorldStore) TokensForHistory(historyID string) (*TokenSummary, error) {
 	var ts TokenSummary
+	var costUSD sql.NullFloat64
+	var durationMS sql.NullInt64
 	err := s.db.QueryRow(
 		`SELECT COALESCE(SUM(input_tokens),0),
 		        COALESCE(SUM(output_tokens),0),
 		        COALESCE(SUM(cache_read_tokens),0),
-		        COALESCE(SUM(cache_creation_tokens),0)
+		        COALESCE(SUM(cache_creation_tokens),0),
+		        SUM(cost_usd),
+		        SUM(duration_ms)
 		 FROM token_usage WHERE history_id = ?`, historyID,
-	).Scan(&ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens)
+	).Scan(&ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens, &costUSD, &durationMS)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tokens for history %q: %w", historyID, err)
 	}
 	total := ts.InputTokens + ts.OutputTokens + ts.CacheReadTokens + ts.CacheCreationTokens
 	if total == 0 {
 		return nil, nil
+	}
+	if costUSD.Valid {
+		ts.CostUSD = &costUSD.Float64
+	}
+	if durationMS.Valid {
+		ts.DurationMS = &durationMS.Int64
 	}
 	return &ts, nil
 }
@@ -222,11 +262,7 @@ func (s *WorldStore) TokensForHistory(historyID string) (*TokenSummary, error) {
 // grouped by model. Returns per-model totals.
 func (s *WorldStore) AggregateTokens(agentName string) ([]TokenSummary, error) {
 	rows, err := s.db.Query(
-		`SELECT tu.model,
-		        SUM(tu.input_tokens),
-		        SUM(tu.output_tokens),
-		        SUM(tu.cache_read_tokens),
-		        SUM(tu.cache_creation_tokens)
+		`SELECT `+tokenSummaryColumns+`
 		 FROM token_usage tu
 		 JOIN agent_history ah ON tu.history_id = ah.id
 		 WHERE ah.agent_name = ?
@@ -242,7 +278,7 @@ func (s *WorldStore) AggregateTokens(agentName string) ([]TokenSummary, error) {
 	var summaries []TokenSummary
 	for rows.Next() {
 		var ts TokenSummary
-		if err := rows.Scan(&ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens); err != nil {
+		if err := scanTokenSummary(rows, &ts); err != nil {
 			return nil, fmt.Errorf("failed to scan token summary: %w", err)
 		}
 		summaries = append(summaries, ts)
@@ -298,11 +334,7 @@ func (s *WorldStore) HistoryForWrit(writID string) ([]HistoryEntry, error) {
 // grouped by model. Returns per-model totals.
 func (s *WorldStore) TokensForWrit(writID string) ([]TokenSummary, error) {
 	rows, err := s.db.Query(
-		`SELECT tu.model,
-		        SUM(tu.input_tokens),
-		        SUM(tu.output_tokens),
-		        SUM(tu.cache_read_tokens),
-		        SUM(tu.cache_creation_tokens)
+		`SELECT `+tokenSummaryColumns+`
 		 FROM token_usage tu
 		 JOIN agent_history ah ON tu.history_id = ah.id
 		 WHERE ah.writ_id = ?
@@ -318,7 +350,7 @@ func (s *WorldStore) TokensForWrit(writID string) ([]TokenSummary, error) {
 	var summaries []TokenSummary
 	for rows.Next() {
 		var ts TokenSummary
-		if err := rows.Scan(&ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens); err != nil {
+		if err := scanTokenSummary(rows, &ts); err != nil {
 			return nil, fmt.Errorf("failed to scan token summary: %w", err)
 		}
 		summaries = append(summaries, ts)
@@ -333,11 +365,7 @@ func (s *WorldStore) TokensForWrit(writID string) ([]TokenSummary, error) {
 // Returns per-model totals across all agents and writs.
 func (s *WorldStore) TokensForWorld() ([]TokenSummary, error) {
 	rows, err := s.db.Query(
-		`SELECT tu.model,
-		        SUM(tu.input_tokens),
-		        SUM(tu.output_tokens),
-		        SUM(tu.cache_read_tokens),
-		        SUM(tu.cache_creation_tokens)
+		`SELECT `+tokenSummaryColumns+`
 		 FROM token_usage tu
 		 GROUP BY tu.model
 		 ORDER BY tu.model`,
@@ -350,7 +378,7 @@ func (s *WorldStore) TokensForWorld() ([]TokenSummary, error) {
 	var summaries []TokenSummary
 	for rows.Next() {
 		var ts TokenSummary
-		if err := rows.Scan(&ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens); err != nil {
+		if err := scanTokenSummary(rows, &ts); err != nil {
 			return nil, fmt.Errorf("failed to scan token summary: %w", err)
 		}
 		summaries = append(summaries, ts)
@@ -367,11 +395,7 @@ func (s *WorldStore) TokensForWorld() ([]TokenSummary, error) {
 func (s *WorldStore) TokensByWritForAgent(agentName string) (map[string][]TokenSummary, error) {
 	rows, err := s.db.Query(
 		`SELECT ah.writ_id,
-		        tu.model,
-		        SUM(tu.input_tokens),
-		        SUM(tu.output_tokens),
-		        SUM(tu.cache_read_tokens),
-		        SUM(tu.cache_creation_tokens)
+		        `+tokenSummaryColumns+`
 		 FROM token_usage tu
 		 JOIN agent_history ah ON tu.history_id = ah.id
 		 WHERE ah.agent_name = ?
@@ -388,8 +412,16 @@ func (s *WorldStore) TokensByWritForAgent(agentName string) (map[string][]TokenS
 	for rows.Next() {
 		var writID sql.NullString
 		var ts TokenSummary
-		if err := rows.Scan(&writID, &ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens); err != nil {
+		var costUSD sql.NullFloat64
+		var durationMS sql.NullInt64
+		if err := rows.Scan(&writID, &ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens, &costUSD, &durationMS); err != nil {
 			return nil, fmt.Errorf("failed to scan token summary: %w", err)
+		}
+		if costUSD.Valid {
+			ts.CostUSD = &costUSD.Float64
+		}
+		if durationMS.Valid {
+			ts.DurationMS = &durationMS.Int64
 		}
 		key := writID.String
 		result[key] = append(result[key], ts)
@@ -405,11 +437,7 @@ func (s *WorldStore) TokensByWritForAgent(agentName string) (map[string][]TokenS
 func (s *WorldStore) TokensSince(since time.Time) ([]TokenSummary, error) {
 	sinceStr := since.UTC().Format(time.RFC3339)
 	rows, err := s.db.Query(
-		`SELECT tu.model,
-		        SUM(tu.input_tokens),
-		        SUM(tu.output_tokens),
-		        SUM(tu.cache_read_tokens),
-		        SUM(tu.cache_creation_tokens)
+		`SELECT `+tokenSummaryColumns+`
 		 FROM token_usage tu
 		 JOIN agent_history ah ON tu.history_id = ah.id
 		 WHERE ah.started_at >= ?
@@ -425,7 +453,7 @@ func (s *WorldStore) TokensSince(since time.Time) ([]TokenSummary, error) {
 	var summaries []TokenSummary
 	for rows.Next() {
 		var ts TokenSummary
-		if err := rows.Scan(&ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens); err != nil {
+		if err := scanTokenSummary(rows, &ts); err != nil {
 			return nil, fmt.Errorf("failed to scan token summary: %w", err)
 		}
 		summaries = append(summaries, ts)
@@ -444,19 +472,42 @@ type AgentTokenSummary struct {
 	OutputTokens        int64
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+	CostUSD             *float64
+	DurationMS          *int64
 }
+
+// scanAgentTokenSummary scans an AgentTokenSummary including optional cost/duration.
+func scanAgentTokenSummary(scanner interface{ Scan(...interface{}) error }, ats *AgentTokenSummary) error {
+	var costUSD sql.NullFloat64
+	var durationMS sql.NullInt64
+	if err := scanner.Scan(&ats.AgentName, &ats.WritCount, &ats.InputTokens, &ats.OutputTokens, &ats.CacheReadTokens, &ats.CacheCreationTokens, &costUSD, &durationMS); err != nil {
+		return err
+	}
+	if costUSD.Valid {
+		ats.CostUSD = &costUSD.Float64
+	}
+	if durationMS.Valid {
+		ats.DurationMS = &durationMS.Int64
+	}
+	return nil
+}
+
+// agentTokenSummaryColumns is the standard SELECT clause for per-agent aggregated token queries.
+const agentTokenSummaryColumns = `ah.agent_name,
+		        COUNT(DISTINCT ah.writ_id),
+		        SUM(tu.input_tokens),
+		        SUM(tu.output_tokens),
+		        SUM(tu.cache_read_tokens),
+		        SUM(tu.cache_creation_tokens),
+		        SUM(tu.cost_usd),
+		        SUM(tu.duration_ms)`
 
 // TokensByAgentForWorld returns per-agent token summaries across all models.
 // Each entry aggregates all model usage for one agent. WritCount is the number
 // of distinct writs the agent has token records for.
 func (s *WorldStore) TokensByAgentForWorld() ([]AgentTokenSummary, error) {
 	rows, err := s.db.Query(
-		`SELECT ah.agent_name,
-		        COUNT(DISTINCT ah.writ_id),
-		        SUM(tu.input_tokens),
-		        SUM(tu.output_tokens),
-		        SUM(tu.cache_read_tokens),
-		        SUM(tu.cache_creation_tokens)
+		`SELECT `+agentTokenSummaryColumns+`
 		 FROM token_usage tu
 		 JOIN agent_history ah ON tu.history_id = ah.id
 		 GROUP BY ah.agent_name
@@ -470,7 +521,7 @@ func (s *WorldStore) TokensByAgentForWorld() ([]AgentTokenSummary, error) {
 	var summaries []AgentTokenSummary
 	for rows.Next() {
 		var ats AgentTokenSummary
-		if err := rows.Scan(&ats.AgentName, &ats.WritCount, &ats.InputTokens, &ats.OutputTokens, &ats.CacheReadTokens, &ats.CacheCreationTokens); err != nil {
+		if err := scanAgentTokenSummary(rows, &ats); err != nil {
 			return nil, fmt.Errorf("failed to scan agent token summary: %w", err)
 		}
 		summaries = append(summaries, ats)
@@ -486,12 +537,7 @@ func (s *WorldStore) TokensByAgentForWorld() ([]AgentTokenSummary, error) {
 func (s *WorldStore) TokensByAgentSince(since time.Time) ([]AgentTokenSummary, error) {
 	sinceStr := since.UTC().Format(time.RFC3339)
 	rows, err := s.db.Query(
-		`SELECT ah.agent_name,
-		        COUNT(DISTINCT ah.writ_id),
-		        SUM(tu.input_tokens),
-		        SUM(tu.output_tokens),
-		        SUM(tu.cache_read_tokens),
-		        SUM(tu.cache_creation_tokens)
+		`SELECT `+agentTokenSummaryColumns+`
 		 FROM token_usage tu
 		 JOIN agent_history ah ON tu.history_id = ah.id
 		 WHERE ah.started_at >= ?
@@ -507,7 +553,7 @@ func (s *WorldStore) TokensByAgentSince(since time.Time) ([]AgentTokenSummary, e
 	var summaries []AgentTokenSummary
 	for rows.Next() {
 		var ats AgentTokenSummary
-		if err := rows.Scan(&ats.AgentName, &ats.WritCount, &ats.InputTokens, &ats.OutputTokens, &ats.CacheReadTokens, &ats.CacheCreationTokens); err != nil {
+		if err := scanAgentTokenSummary(rows, &ats); err != nil {
 			return nil, fmt.Errorf("failed to scan agent token summary: %w", err)
 		}
 		summaries = append(summaries, ats)
@@ -525,11 +571,7 @@ func (s *WorldStore) TokensByWritForAgentSince(agentName string, since time.Time
 	sinceStr := since.UTC().Format(time.RFC3339)
 	rows, err := s.db.Query(
 		`SELECT ah.writ_id,
-		        tu.model,
-		        SUM(tu.input_tokens),
-		        SUM(tu.output_tokens),
-		        SUM(tu.cache_read_tokens),
-		        SUM(tu.cache_creation_tokens)
+		        `+tokenSummaryColumns+`
 		 FROM token_usage tu
 		 JOIN agent_history ah ON tu.history_id = ah.id
 		 WHERE ah.agent_name = ? AND ah.started_at >= ?
@@ -546,8 +588,16 @@ func (s *WorldStore) TokensByWritForAgentSince(agentName string, since time.Time
 	for rows.Next() {
 		var writID sql.NullString
 		var ts TokenSummary
-		if err := rows.Scan(&writID, &ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens); err != nil {
+		var costUSD sql.NullFloat64
+		var durationMS sql.NullInt64
+		if err := rows.Scan(&writID, &ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens, &costUSD, &durationMS); err != nil {
 			return nil, fmt.Errorf("failed to scan token summary: %w", err)
+		}
+		if costUSD.Valid {
+			ts.CostUSD = &costUSD.Float64
+		}
+		if durationMS.Valid {
+			ts.DurationMS = &durationMS.Int64
 		}
 		key := writID.String
 		result[key] = append(result[key], ts)
@@ -596,11 +646,7 @@ func (s *WorldStore) WorldTokenMetaSince(since time.Time) (agents int, writs int
 func (s *WorldStore) TokensForWritSince(writID string, since time.Time) ([]TokenSummary, error) {
 	sinceStr := since.UTC().Format(time.RFC3339)
 	rows, err := s.db.Query(
-		`SELECT tu.model,
-		        SUM(tu.input_tokens),
-		        SUM(tu.output_tokens),
-		        SUM(tu.cache_read_tokens),
-		        SUM(tu.cache_creation_tokens)
+		`SELECT `+tokenSummaryColumns+`
 		 FROM token_usage tu
 		 JOIN agent_history ah ON tu.history_id = ah.id
 		 WHERE ah.writ_id = ? AND ah.started_at >= ?
@@ -616,7 +662,7 @@ func (s *WorldStore) TokensForWritSince(writID string, since time.Time) ([]Token
 	var summaries []TokenSummary
 	for rows.Next() {
 		var ts TokenSummary
-		if err := rows.Scan(&ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens); err != nil {
+		if err := scanTokenSummary(rows, &ts); err != nil {
 			return nil, fmt.Errorf("failed to scan token summary: %w", err)
 		}
 		summaries = append(summaries, ts)

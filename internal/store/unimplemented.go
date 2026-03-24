@@ -258,7 +258,7 @@ func (UnimplementedWorldStore) MergeStatsForAgent(agentName string) (AgentMergeR
 
 // --- LedgerWriter ---
 
-func (UnimplementedWorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64) (string, error) {
+func (UnimplementedWorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64) (string, error) {
 	return "", fmt.Errorf("unimplemented: WriteTokenUsage")
 }
 

@@ -176,7 +176,7 @@ func TestRunCostWritWithTokenData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.WriteTokenUsage(h1, "claude-sonnet-4-6", 100000, 40000, 80000, 10000); err != nil {
+	if _, err := s.WriteTokenUsage(h1, "claude-sonnet-4-6", 100000, 40000, 80000, 10000, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -184,10 +184,10 @@ func TestRunCostWritWithTokenData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.WriteTokenUsage(h2, "claude-sonnet-4-6", 24532, 5201, 9100, 2340); err != nil {
+	if _, err := s.WriteTokenUsage(h2, "claude-sonnet-4-6", 24532, 5201, 9100, 2340, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.WriteTokenUsage(h2, "claude-haiku-3-5", 5000, 2000, 1000, 500); err != nil {
+	if _, err := s.WriteTokenUsage(h2, "claude-haiku-3-5", 5000, 2000, 1000, 500, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -249,7 +249,7 @@ func TestRunCostWritWithSinceFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.WriteTokenUsage(h1, "claude-sonnet-4-6", 50000, 20000, 30000, 5000); err != nil {
+	if _, err := s.WriteTokenUsage(h1, "claude-sonnet-4-6", 50000, 20000, 30000, 5000, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -258,7 +258,7 @@ func TestRunCostWritWithSinceFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.WriteTokenUsage(h2, "claude-sonnet-4-6", 10000, 5000, 3000, 1000); err != nil {
+	if _, err := s.WriteTokenUsage(h2, "claude-sonnet-4-6", 10000, 5000, 3000, 1000, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -318,7 +318,7 @@ func TestRunCostWritJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100); err != nil {
+	if _, err := s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 

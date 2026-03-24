@@ -36,30 +36,54 @@ func setupTestLedger(t *testing.T, worldName string) (*Ledger, *store.WorldStore
 }
 
 // makeOTLPBody builds an OTLP JSON body using Claude Code's actual attribute names.
+// IntValues are formatted as strings (the Go json.Marshal-compatible path).
 func makeOTLPBody(agentName, world, writID, eventName, model string, input, output, cacheRead, cacheCreation int64) []byte {
-	req := ExportLogsServiceRequest{
-		ResourceLogs: []ResourceLogs{{
-			Resource: Resource{
-				Attributes: []KeyValue{
-					{Key: "agent.name", Value: AnyValue{StringValue: agentName}},
-					{Key: "world", Value: AnyValue{StringValue: world}},
-					{Key: "writ_id", Value: AnyValue{StringValue: writID}},
+	return makeOTLPBodyRaw(agentName, world, writID, eventName, model, input, output, cacheRead, cacheCreation, nil, nil)
+}
+
+// makeOTLPBodyWithCost builds an OTLP JSON body with cost_usd and duration_ms attributes.
+func makeOTLPBodyWithCost(agentName, world, writID, eventName, model string, input, output, cacheRead, cacheCreation int64, costUSD float64, durationMS int64) []byte {
+	return makeOTLPBodyRaw(agentName, world, writID, eventName, model, input, output, cacheRead, cacheCreation, &costUSD, &durationMS)
+}
+
+func makeOTLPBodyRaw(agentName, world, writID, eventName, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64) []byte {
+	attrs := []map[string]interface{}{
+		{"key": "model", "value": map[string]interface{}{"stringValue": model}},
+		{"key": "input_tokens", "value": map[string]interface{}{"intValue": fmt.Sprintf("%d", input)}},
+		{"key": "output_tokens", "value": map[string]interface{}{"intValue": fmt.Sprintf("%d", output)}},
+		{"key": "cache_read_tokens", "value": map[string]interface{}{"intValue": fmt.Sprintf("%d", cacheRead)}},
+		{"key": "cache_creation_tokens", "value": map[string]interface{}{"intValue": fmt.Sprintf("%d", cacheCreation)}},
+	}
+	if costUSD != nil {
+		attrs = append(attrs, map[string]interface{}{"key": "cost_usd", "value": map[string]interface{}{"doubleValue": *costUSD}})
+	}
+	if durationMS != nil {
+		attrs = append(attrs, map[string]interface{}{"key": "duration_ms", "value": map[string]interface{}{"intValue": fmt.Sprintf("%d", *durationMS)}})
+	}
+
+	req := map[string]interface{}{
+		"resourceLogs": []interface{}{
+			map[string]interface{}{
+				"resource": map[string]interface{}{
+					"attributes": []interface{}{
+						map[string]interface{}{"key": "agent.name", "value": map[string]interface{}{"stringValue": agentName}},
+						map[string]interface{}{"key": "world", "value": map[string]interface{}{"stringValue": world}},
+						map[string]interface{}{"key": "writ_id", "value": map[string]interface{}{"stringValue": writID}},
+					},
+				},
+				"scopeLogs": []interface{}{
+					map[string]interface{}{
+						"logRecords": []interface{}{
+							map[string]interface{}{
+								"timeUnixNano": "1709740800000000000",
+								"body":         map[string]interface{}{"stringValue": eventName},
+								"attributes":   attrs,
+							},
+						},
+					},
 				},
 			},
-			ScopeLogs: []ScopeLogs{{
-				LogRecords: []LogRecord{{
-					TimeUnixNano: "1709740800000000000",
-					Body:         AnyValue{StringValue: eventName},
-					Attributes: []KeyValue{
-						{Key: "model", Value: AnyValue{StringValue: model}},
-						{Key: "input_tokens", Value: AnyValue{IntValue: fmt.Sprintf("%d", input)}},
-						{Key: "output_tokens", Value: AnyValue{IntValue: fmt.Sprintf("%d", output)}},
-						{Key: "cache_read_tokens", Value: AnyValue{IntValue: fmt.Sprintf("%d", cacheRead)}},
-						{Key: "cache_creation_tokens", Value: AnyValue{IntValue: fmt.Sprintf("%d", cacheCreation)}},
-					},
-				}},
-			}},
-		}},
+		},
 	}
 	b, _ := json.Marshal(req)
 	return b
@@ -68,29 +92,35 @@ func makeOTLPBody(agentName, world, writID, eventName, model string, input, outp
 // makeOTLPBodyGenAI builds an OTLP JSON body using OTel gen_ai.* attribute names
 // to verify the fallback path still works.
 func makeOTLPBodyGenAI(agentName, world, writID, eventName, model string, input, output, cacheRead, cacheCreation int64) []byte {
-	req := ExportLogsServiceRequest{
-		ResourceLogs: []ResourceLogs{{
-			Resource: Resource{
-				Attributes: []KeyValue{
-					{Key: "agent.name", Value: AnyValue{StringValue: agentName}},
-					{Key: "world", Value: AnyValue{StringValue: world}},
-					{Key: "writ_id", Value: AnyValue{StringValue: writID}},
+	req := map[string]interface{}{
+		"resourceLogs": []interface{}{
+			map[string]interface{}{
+				"resource": map[string]interface{}{
+					"attributes": []interface{}{
+						map[string]interface{}{"key": "agent.name", "value": map[string]interface{}{"stringValue": agentName}},
+						map[string]interface{}{"key": "world", "value": map[string]interface{}{"stringValue": world}},
+						map[string]interface{}{"key": "writ_id", "value": map[string]interface{}{"stringValue": writID}},
+					},
+				},
+				"scopeLogs": []interface{}{
+					map[string]interface{}{
+						"logRecords": []interface{}{
+							map[string]interface{}{
+								"timeUnixNano": "1709740800000000000",
+								"body":         map[string]interface{}{"stringValue": eventName},
+								"attributes": []interface{}{
+									map[string]interface{}{"key": "gen_ai.response.model", "value": map[string]interface{}{"stringValue": model}},
+									map[string]interface{}{"key": "gen_ai.usage.input_tokens", "value": map[string]interface{}{"intValue": fmt.Sprintf("%d", input)}},
+									map[string]interface{}{"key": "gen_ai.usage.output_tokens", "value": map[string]interface{}{"intValue": fmt.Sprintf("%d", output)}},
+									map[string]interface{}{"key": "gen_ai.usage.cache_read_input_tokens", "value": map[string]interface{}{"intValue": fmt.Sprintf("%d", cacheRead)}},
+									map[string]interface{}{"key": "gen_ai.usage.cache_creation_input_tokens", "value": map[string]interface{}{"intValue": fmt.Sprintf("%d", cacheCreation)}},
+								},
+							},
+						},
+					},
 				},
 			},
-			ScopeLogs: []ScopeLogs{{
-				LogRecords: []LogRecord{{
-					TimeUnixNano: "1709740800000000000",
-					Body:         AnyValue{StringValue: eventName},
-					Attributes: []KeyValue{
-						{Key: "gen_ai.response.model", Value: AnyValue{StringValue: model}},
-						{Key: "gen_ai.usage.input_tokens", Value: AnyValue{IntValue: fmt.Sprintf("%d", input)}},
-						{Key: "gen_ai.usage.output_tokens", Value: AnyValue{IntValue: fmt.Sprintf("%d", output)}},
-						{Key: "gen_ai.usage.cache_read_input_tokens", Value: AnyValue{IntValue: fmt.Sprintf("%d", cacheRead)}},
-						{Key: "gen_ai.usage.cache_creation_input_tokens", Value: AnyValue{IntValue: fmt.Sprintf("%d", cacheCreation)}},
-					},
-				}},
-			}},
-		}},
+		},
 	}
 	b, _ := json.Marshal(req)
 	return b
@@ -205,23 +235,23 @@ func TestHandleLogs_SkipsMissingResource(t *testing.T) {
 	l, _ := setupTestLedger(t, "testworld")
 
 	// No resource attributes — should be silently skipped.
-	otlpReq := ExportLogsServiceRequest{
-		ResourceLogs: []ResourceLogs{{
-			Resource: Resource{},
-			ScopeLogs: []ScopeLogs{{
-				LogRecords: []LogRecord{{
-					Body: AnyValue{StringValue: "claude_code.api_request"},
-					Attributes: []KeyValue{
-						{Key: "gen_ai.response.model", Value: AnyValue{StringValue: "claude-sonnet-4-6"}},
-						{Key: "gen_ai.usage.input_tokens", Value: AnyValue{IntValue: "100"}},
-					},
-				}},
-			}},
-		}},
-	}
-	body, _ := json.Marshal(otlpReq)
+	// Use raw JSON to test deserialization with intValue as string.
+	rawJSON := `{
+		"resourceLogs": [{
+			"resource": {},
+			"scopeLogs": [{
+				"logRecords": [{
+					"body": {"stringValue": "claude_code.api_request"},
+					"attributes": [
+						{"key": "gen_ai.response.model", "value": {"stringValue": "claude-sonnet-4-6"}},
+						{"key": "gen_ai.usage.input_tokens", "value": {"intValue": "100"}}
+					]
+				}]
+			}]
+		}]
+	}`
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader([]byte(rawJSON)))
 	w := httptest.NewRecorder()
 	l.handleLogs(w, req)
 
@@ -243,10 +273,17 @@ func TestHandleLogs_MethodNotAllowed(t *testing.T) {
 }
 
 func TestAttributeMap(t *testing.T) {
-	attrs := []KeyValue{
-		{Key: "agent.name", Value: AnyValue{StringValue: "Toast"}},
-		{Key: "count", Value: AnyValue{IntValue: "42"}},
-		{Key: "empty", Value: AnyValue{}},
+	// Test with raw JSON to exercise UnmarshalJSON.
+	rawJSON := `[
+		{"key": "agent.name", "value": {"stringValue": "Toast"}},
+		{"key": "count", "value": {"intValue": "42"}},
+		{"key": "score", "value": {"doubleValue": 3.14}},
+		{"key": "active", "value": {"boolValue": true}},
+		{"key": "empty", "value": {}}
+	]`
+	var attrs []KeyValue
+	if err := json.Unmarshal([]byte(rawJSON), &attrs); err != nil {
+		t.Fatal(err)
 	}
 
 	m := attributeMap(attrs)
@@ -255,6 +292,12 @@ func TestAttributeMap(t *testing.T) {
 	}
 	if m["count"] != "42" {
 		t.Fatalf("expected '42', got %q", m["count"])
+	}
+	if m["score"] != "3.14" {
+		t.Fatalf("expected '3.14', got %q", m["score"])
+	}
+	if m["active"] != "true" {
+		t.Fatalf("expected 'true', got %q", m["active"])
 	}
 	if _, ok := m["empty"]; ok {
 		t.Fatal("expected 'empty' key to be absent")
@@ -317,34 +360,34 @@ func TestHandleLogs_EventNameAttrFallback(t *testing.T) {
 	l.stores["testworld"] = ws
 
 	// Body is empty; event name is conveyed via the event.name attribute.
-	otlpReq := ExportLogsServiceRequest{
-		ResourceLogs: []ResourceLogs{{
-			Resource: Resource{
-				Attributes: []KeyValue{
-					{Key: "agent.name", Value: AnyValue{StringValue: "Toast"}},
-					{Key: "world", Value: AnyValue{StringValue: "testworld"}},
-					{Key: "writ_id", Value: AnyValue{StringValue: "sol-item01"}},
-				},
+	// Use raw JSON to test deserialization.
+	rawJSON := `{
+		"resourceLogs": [{
+			"resource": {
+				"attributes": [
+					{"key": "agent.name", "value": {"stringValue": "Toast"}},
+					{"key": "world", "value": {"stringValue": "testworld"}},
+					{"key": "writ_id", "value": {"stringValue": "sol-item01"}}
+				]
 			},
-			ScopeLogs: []ScopeLogs{{
-				LogRecords: []LogRecord{{
-					TimeUnixNano: "1709740800000000000",
-					Body:         AnyValue{},
-					Attributes: []KeyValue{
-						{Key: "event.name", Value: AnyValue{StringValue: "api_request"}},
-						{Key: "model", Value: AnyValue{StringValue: "claude-sonnet-4-6"}},
-						{Key: "input_tokens", Value: AnyValue{IntValue: "750"}},
-						{Key: "output_tokens", Value: AnyValue{IntValue: "250"}},
-						{Key: "cache_read_tokens", Value: AnyValue{IntValue: "0"}},
-						{Key: "cache_creation_tokens", Value: AnyValue{IntValue: "0"}},
-					},
-				}},
-			}},
-		}},
-	}
-	body, _ := json.Marshal(otlpReq)
+			"scopeLogs": [{
+				"logRecords": [{
+					"timeUnixNano": "1709740800000000000",
+					"body": {},
+					"attributes": [
+						{"key": "event.name", "value": {"stringValue": "api_request"}},
+						{"key": "model", "value": {"stringValue": "claude-sonnet-4-6"}},
+						{"key": "input_tokens", "value": {"intValue": "750"}},
+						{"key": "output_tokens", "value": {"intValue": "250"}},
+						{"key": "cache_read_tokens", "value": {"intValue": "0"}},
+						{"key": "cache_creation_tokens", "value": {"intValue": "0"}}
+					]
+				}]
+			}]
+		}]
+	}`
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader([]byte(rawJSON)))
 	w := httptest.NewRecorder()
 	l.handleLogs(w, req)
 
@@ -361,5 +404,208 @@ func TestHandleLogs_EventNameAttrFallback(t *testing.T) {
 	}
 	if summaries[0].InputTokens != 750 {
 		t.Fatalf("expected input_tokens 750, got %d", summaries[0].InputTokens)
+	}
+}
+
+// TestAnyValue_IntValueAsJSONNumber tests the exact failure case that broke all
+// ingestion: Claude Code's JS OTel exporter sends intValue as a JSON number
+// (e.g. {"intValue": 311}) instead of a JSON string ({"intValue": "311"}).
+func TestAnyValue_IntValueAsJSONNumber(t *testing.T) {
+	// This is exactly what Claude Code sends.
+	rawJSON := `{"intValue": 311}`
+	var v AnyValue
+	if err := json.Unmarshal([]byte(rawJSON), &v); err != nil {
+		t.Fatalf("failed to unmarshal intValue as JSON number: %v", err)
+	}
+	if v.IntValue != "311" {
+		t.Fatalf("expected IntValue '311', got %q", v.IntValue)
+	}
+
+	// Also verify the string form still works.
+	rawJSONStr := `{"intValue": "311"}`
+	var v2 AnyValue
+	if err := json.Unmarshal([]byte(rawJSONStr), &v2); err != nil {
+		t.Fatalf("failed to unmarshal intValue as JSON string: %v", err)
+	}
+	if v2.IntValue != "311" {
+		t.Fatalf("expected IntValue '311', got %q", v2.IntValue)
+	}
+}
+
+// TestAnyValue_DoubleValue tests parsing of doubleValue as both JSON number and string.
+func TestAnyValue_DoubleValue(t *testing.T) {
+	rawJSON := `{"doubleValue": 0.0042}`
+	var v AnyValue
+	if err := json.Unmarshal([]byte(rawJSON), &v); err != nil {
+		t.Fatalf("failed to unmarshal doubleValue as JSON number: %v", err)
+	}
+	if v.DoubleValue != 0.0042 {
+		t.Fatalf("expected DoubleValue 0.0042, got %f", v.DoubleValue)
+	}
+
+	// String form.
+	rawJSONStr := `{"doubleValue": "0.0042"}`
+	var v2 AnyValue
+	if err := json.Unmarshal([]byte(rawJSONStr), &v2); err != nil {
+		t.Fatalf("failed to unmarshal doubleValue as JSON string: %v", err)
+	}
+	if v2.DoubleValue != 0.0042 {
+		t.Fatalf("expected DoubleValue 0.0042, got %f", v2.DoubleValue)
+	}
+}
+
+// TestAnyValue_BoolValue tests parsing of boolValue.
+func TestAnyValue_BoolValue(t *testing.T) {
+	rawJSON := `{"boolValue": true}`
+	var v AnyValue
+	if err := json.Unmarshal([]byte(rawJSON), &v); err != nil {
+		t.Fatalf("failed to unmarshal boolValue: %v", err)
+	}
+	if v.BoolValue == nil || *v.BoolValue != true {
+		t.Fatalf("expected BoolValue true, got %v", v.BoolValue)
+	}
+
+	// String form.
+	rawJSONStr := `{"boolValue": "false"}`
+	var v2 AnyValue
+	if err := json.Unmarshal([]byte(rawJSONStr), &v2); err != nil {
+		t.Fatalf("failed to unmarshal boolValue as string: %v", err)
+	}
+	if v2.BoolValue == nil || *v2.BoolValue != false {
+		t.Fatalf("expected BoolValue false, got %v", v2.BoolValue)
+	}
+}
+
+// TestHandleLogs_CostAndDuration tests that cost_usd and duration_ms are
+// extracted and persisted.
+func TestHandleLogs_CostAndDuration(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	body := makeOTLPBodyWithCost("Toast", "testworld", "sol-item01", "claude_code.api_request",
+		"claude-sonnet-4-6", 1000, 500, 200, 100, 0.0042, 1500)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	l.handleLogs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify token usage with cost and duration.
+	summaries, err := ws.AggregateTokens("Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 token summary, got %d", len(summaries))
+	}
+	if summaries[0].CostUSD == nil {
+		t.Fatal("expected CostUSD to be set")
+	}
+	if *summaries[0].CostUSD != 0.0042 {
+		t.Fatalf("expected CostUSD 0.0042, got %f", *summaries[0].CostUSD)
+	}
+	if summaries[0].DurationMS == nil {
+		t.Fatal("expected DurationMS to be set")
+	}
+	if *summaries[0].DurationMS != 1500 {
+		t.Fatalf("expected DurationMS 1500, got %d", *summaries[0].DurationMS)
+	}
+}
+
+// TestHandleLogs_RealClaudeCodePayload tests with a payload format matching
+// what Claude Code's OTel-OTLP-Exporter-JavaScript/0.208.0 actually sends.
+// Key difference: intValue is a JSON number, not a string.
+func TestHandleLogs_RealClaudeCodePayload(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	// This is the exact format Claude Code sends — intValue as JSON numbers.
+	rawJSON := `{
+		"resourceLogs": [{
+			"resource": {
+				"attributes": [
+					{"key": "agent.name", "value": {"stringValue": "Nova"}},
+					{"key": "world", "value": {"stringValue": "testworld"}},
+					{"key": "writ_id", "value": {"stringValue": "sol-abc123"}}
+				]
+			},
+			"scopeLogs": [{
+				"logRecords": [{
+					"timeUnixNano": "1709740800000000000",
+					"body": {"stringValue": "claude_code.api_request"},
+					"attributes": [
+						{"key": "model", "value": {"stringValue": "claude-sonnet-4-20250514"}},
+						{"key": "input_tokens", "value": {"intValue": 15234}},
+						{"key": "output_tokens", "value": {"intValue": 3891}},
+						{"key": "cache_read_tokens", "value": {"intValue": 48210}},
+						{"key": "cache_creation_tokens", "value": {"intValue": 0}},
+						{"key": "cost_usd", "value": {"doubleValue": 0.0312}},
+						{"key": "duration_ms", "value": {"intValue": 4521}}
+					]
+				}]
+			}]
+		}]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader([]byte(rawJSON)))
+	w := httptest.NewRecorder()
+	l.handleLogs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	summaries, err := ws.AggregateTokens("Nova")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 token summary, got %d", len(summaries))
+	}
+	ts := summaries[0]
+	if ts.InputTokens != 15234 {
+		t.Fatalf("expected input_tokens 15234, got %d", ts.InputTokens)
+	}
+	if ts.OutputTokens != 3891 {
+		t.Fatalf("expected output_tokens 3891, got %d", ts.OutputTokens)
+	}
+	if ts.CacheReadTokens != 48210 {
+		t.Fatalf("expected cache_read_tokens 48210, got %d", ts.CacheReadTokens)
+	}
+	if ts.CacheCreationTokens != 0 {
+		t.Fatalf("expected cache_creation_tokens 0, got %d", ts.CacheCreationTokens)
+	}
+	if ts.CostUSD == nil {
+		t.Fatal("expected CostUSD to be set")
+	}
+	if *ts.CostUSD != 0.0312 {
+		t.Fatalf("expected CostUSD 0.0312, got %f", *ts.CostUSD)
+	}
+	if ts.DurationMS == nil {
+		t.Fatal("expected DurationMS to be set")
+	}
+	if *ts.DurationMS != 4521 {
+		t.Fatalf("expected DurationMS 4521, got %d", *ts.DurationMS)
+	}
+}
+
+// TestParseFloatAttr tests the parseFloatAttr helper.
+func TestParseFloatAttr(t *testing.T) {
+	attrs := map[string]string{
+		"cost": "0.0042",
+		"bad":  "abc",
+	}
+
+	if v := parseFloatAttr(attrs, "cost"); v == nil || *v != 0.0042 {
+		t.Fatalf("expected 0.0042, got %v", v)
+	}
+	if v := parseFloatAttr(attrs, "bad"); v != nil {
+		t.Fatalf("expected nil for invalid, got %v", v)
+	}
+	if v := parseFloatAttr(attrs, "missing"); v != nil {
+		t.Fatalf("expected nil for missing, got %v", v)
 	}
 }

@@ -102,7 +102,7 @@ type LedgerReader interface {
 
 // LedgerWriter provides write access to token usage records in a world database.
 type LedgerWriter interface {
-	WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64) (string, error)
+	WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64) (string, error)
 }
 
 // HistoryStore provides access to agent history records in a world database.

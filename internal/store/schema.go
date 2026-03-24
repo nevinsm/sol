@@ -8,7 +8,7 @@ import (
 
 // Current schema versions — the latest migration target for each database type.
 const (
-	CurrentWorldSchema  = 10
+	CurrentWorldSchema  = 11
 	CurrentSphereSchema = 14
 )
 
@@ -188,6 +188,9 @@ const worldSchemaV9 = "" // migration handled procedurally below
 // worldSchemaV10 renames created_by 'operator' → 'autarch' in writs.
 const worldSchemaV10 = "" // migration handled procedurally below
 
+// worldSchemaV11 adds cost_usd and duration_ms columns to token_usage.
+const worldSchemaV11 = "" // migration handled procedurally below
+
 func (s *WorldStore) migrateWorld() error {
 	v, err := s.SchemaVersion()
 	if err != nil {
@@ -322,6 +325,27 @@ func (s *WorldStore) migrateWorld() error {
 		// Rename identity: operator → autarch in writs.created_by.
 		if _, err := tx.Exec(`UPDATE writs SET created_by = 'autarch' WHERE created_by = 'operator'`); err != nil {
 			return fmt.Errorf("V10 migration: failed to rename operator → autarch in writs: %w", err)
+		}
+	}
+	if v < 11 {
+		// Add cost_usd and duration_ms columns to token_usage.
+		exists, err := columnExists(tx, "token_usage", "cost_usd")
+		if err != nil {
+			return fmt.Errorf("V11 migration: failed to check column token_usage.cost_usd: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(`ALTER TABLE token_usage ADD COLUMN cost_usd REAL`); err != nil {
+				return fmt.Errorf("failed to add token_usage.cost_usd column: %w", err)
+			}
+		}
+		exists, err = columnExists(tx, "token_usage", "duration_ms")
+		if err != nil {
+			return fmt.Errorf("V11 migration: failed to check column token_usage.duration_ms: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(`ALTER TABLE token_usage ADD COLUMN duration_ms INTEGER`); err != nil {
+				return fmt.Errorf("failed to add token_usage.duration_ms column: %w", err)
+			}
 		}
 	}
 	if _, err := tx.Exec("DELETE FROM schema_version"); err != nil {
