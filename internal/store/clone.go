@@ -96,8 +96,8 @@ func CloneWorldData(source, target string, includeHistory bool) error {
 		// Copy token usage.
 		if _, err := tx.Exec(`
 			INSERT INTO main.token_usage
-				(id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
-			SELECT id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens
+				(id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, runtime)
+			SELECT id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, runtime
 			FROM src.token_usage
 		`); err != nil {
 			return fmt.Errorf("failed to copy token usage: %w", err)
