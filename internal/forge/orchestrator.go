@@ -169,13 +169,28 @@ func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr
 	if interval <= 0 {
 		interval = 3 * time.Minute
 	}
+
+	// Initial fast check: detect sessions that complete quickly (e.g., fast
+	// merges, immediate failures) without waiting for the first full tick.
+	// Uses a short delay to let the session start up before first poll.
+	initialDelay := min(5*time.Second, interval)
+	timer := time.NewTimer(initialDelay)
+	defer timer.Stop()
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	firstCheck := true
 	for {
 		select {
 		case <-ctx.Done():
 			return sessionCancelled
+
+		case <-timer.C:
+			if !firstCheck {
+				continue
+			}
+			firstCheck = false
 
 		case <-ticker.C:
 			// Write heartbeat to show we're still alive.
@@ -365,15 +380,11 @@ func (s *patrolState) cleanupSession() {
 // Best-effort — errors are logged but not propagated since cleanup is
 // non-critical and supervisors already filter out forge-merge agents.
 func (s *patrolState) cleanupAgentRecord() {
-	agentID := s.forge.world + "/forge-merge"
-	sphereStore, err := store.OpenSphere()
-	if err != nil {
-		s.forge.logger.Warn("cleanup: failed to open sphere store for agent record", "error", err)
+	if s.forge.sphereStore == nil {
 		return
 	}
-	defer sphereStore.Close()
-
-	if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
+	agentID := s.forge.world + "/forge-merge"
+	if err := s.forge.sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
 		// Not found is fine — record may not exist if Launch was never called.
 		s.forge.logger.Debug("cleanup: failed to update agent record", "error", err)
 	}
@@ -525,9 +536,11 @@ func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest)
 		refRange := fmt.Sprintf("%s..%s", s.preMergeRef, targetRef)
 		out, err = s.cmd.Run(ctx, worktree, "git", "log", refRange, "--oneline", "--grep", mr.WritID)
 	} else {
-		// No pre-merge ref available — limit search to the last 100 commits to
+		// No pre-merge ref available — limit search to the last 50 commits to
 		// avoid false positives from historical writ mentions in older commits.
-		out, err = s.cmd.Run(ctx, worktree, "git", "log", targetRef, "-100", "--oneline", "--grep", mr.WritID)
+		// 50 is generous for a single merge push while narrow enough to exclude
+		// ancient history where the same writ ID may appear in unrelated commits.
+		out, err = s.cmd.Run(ctx, worktree, "git", "log", targetRef, "-50", "--oneline", "--grep", mr.WritID)
 	}
 	if err != nil {
 		return fmt.Errorf("git log grep check failed: %w", err)

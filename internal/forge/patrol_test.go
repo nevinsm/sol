@@ -548,7 +548,7 @@ func TestPatrolSessionPathSuccessfulMerge(t *testing.T) {
 	// back to searching all commits on origin/main (no range prefix).
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git log origin/main -100 --oneline --grep sol-sess1111",
+	cmdRunner.SetResult("git log origin/main -50 --oneline --grep sol-sess1111",
 		[]byte("abc1234 Session merge test (sol-sess1111)"), nil)
 	state.verifyRetryDelay = time.Millisecond
 
