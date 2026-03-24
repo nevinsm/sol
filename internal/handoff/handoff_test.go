@@ -717,6 +717,10 @@ func (m *mockSessionMgr) WaitForIdle(name string, timeout time.Duration) error {
 	return nil
 }
 
+func (m *mockSessionMgr) CountSessions(prefix string) (int, error) {
+	return 0, nil
+}
+
 type mockSphereStore struct {
 	messages   []msgCall
 	agents     map[string]*store.Agent // agent ID → agent (for GetAgent)

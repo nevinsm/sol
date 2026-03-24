@@ -1528,3 +1528,84 @@ func TestWaitForIdleResetOnBusy(t *testing.T) {
 		t.Errorf("expected ErrIdleTimeout when busy indicator present, got: %v", err)
 	}
 }
+
+func TestCountSessionsNoSessions(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	// Use a prefix that won't match any sessions created by other parallel tests.
+	count, err := mgr.CountSessions("count-nosess-xyz-")
+	if err != nil {
+		t.Fatalf("CountSessions returned error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0, got %d", count)
+	}
+}
+
+func TestCountSessionsSomeMatching(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	// Create sessions with a unique prefix for this test.
+	prefix := "count-some-"
+	matching := []string{prefix + "a", prefix + "b", prefix + "c"}
+	other := "other-count-x"
+
+	for _, name := range append(matching, other) {
+		workdir := t.TempDir()
+		err := mgr.Start(name, workdir, "sleep 300", nil, "outpost", "haven")
+		if err != nil {
+			t.Fatalf("Start %s failed: %v", name, err)
+		}
+		t.Cleanup(func() { _ = mgr.Stop(name, true) })
+		time.Sleep(200 * time.Millisecond) // let each session stabilize
+	}
+
+	count, err := mgr.CountSessions(prefix)
+	if err != nil {
+		t.Fatalf("CountSessions returned error: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("expected 3 matching sessions, got %d", count)
+	}
+}
+
+func TestCountSessionsNoneMatching(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	// Create a session that does NOT match the prefix we'll query.
+	err := mgr.Start("count-none-other", t.TempDir(), "sleep 300", nil, "outpost", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Stop("count-none-other", true) })
+
+	time.Sleep(300 * time.Millisecond)
+
+	count, err := mgr.CountSessions("count-none-nomatch-")
+	if err != nil {
+		t.Fatalf("CountSessions returned error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0, got %d", count)
+	}
+}
+
+func TestCountSessionsTmuxNotRunning(t *testing.T) {
+	// This test uses an isolated TMUX_TMPDIR with no tmux server
+	// to verify CountSessions returns 0 when tmux is not running.
+	tmpDir := t.TempDir()
+	t.Setenv("TMUX_TMPDIR", tmpDir)
+	t.Setenv("TMUX", "")
+
+	mgr := New()
+	count, err := mgr.CountSessions("sol-")
+	if err != nil {
+		t.Fatalf("expected no error when tmux not running, got: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 when tmux not running, got %d", count)
+	}
+}

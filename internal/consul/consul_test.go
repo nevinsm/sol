@@ -89,6 +89,10 @@ func (m *mockSessionManager) Cycle(name, workdir, cmd string, env map[string]str
 	return fmt.Errorf("cycle not supported in mock")
 }
 
+func (m *mockSessionManager) CountSessions(prefix string) (int, error) {
+	return 0, nil
+}
+
 // setupSolHome creates a temporary SOL_HOME and sets the env var.
 // Returns the path and a cleanup function.
 func setupSolHome(t *testing.T) string {

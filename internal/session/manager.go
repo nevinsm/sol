@@ -957,6 +957,28 @@ func (m *Manager) Exists(name string) bool {
 	return cmd.Run() == nil
 }
 
+// CountSessions returns the number of active tmux sessions whose names
+// start with the given prefix. Returns 0 (not an error) when the tmux
+// server is not running.
+func (m *Manager) CountSessions(prefix string) (int, error) {
+	cmd, cancel := tmuxCmd("list-sessions", "-F", "#{session_name}")
+	defer cancel()
+
+	out, err := cmd.Output()
+	if err != nil {
+		// tmux exits non-zero when no server is running — that means zero sessions.
+		return 0, nil
+	}
+
+	count := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line != "" && strings.HasPrefix(line, prefix) {
+			count++
+		}
+	}
+	return count, nil
+}
+
 // IsAtPrompt returns true if the session's pane currently shows the Claude
 // Code prompt prefix, indicating the agent is idle. This is a non-blocking
 // point-in-time snapshot — it does not poll or require consecutive checks.

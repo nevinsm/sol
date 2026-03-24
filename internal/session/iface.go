@@ -14,6 +14,7 @@ type SessionManager interface {
 	Cycle(name, workdir, cmd string, env map[string]string, role, world string) error
 	NudgeSession(name string, message string) error
 	WaitForIdle(name string, timeout time.Duration) error
+	CountSessions(prefix string) (int, error)
 }
 
 // Compile-time check: *Manager implements SessionManager.

@@ -75,6 +75,10 @@ func (m *mockSessionManager) Cycle(name, workdir, cmd string, env map[string]str
 	return fmt.Errorf("cycle not supported in mock")
 }
 
+func (m *mockSessionManager) CountSessions(prefix string) (int, error) {
+	return 0, nil
+}
+
 // --- Helper to set up real stores in temp dirs ---
 
 // writeTestToken writes a minimal api_key token to $SOL_HOME/.accounts/token.json
