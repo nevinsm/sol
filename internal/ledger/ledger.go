@@ -417,12 +417,23 @@ func (l *Ledger) ensureHistory(world, agentName, writID string) (string, error) 
 }
 
 // worldStore returns a cached store for the given world.
+// If the underlying database file has been deleted (e.g., world recreated),
+// the cached store is evicted and a fresh one is opened.
 func (l *Ledger) worldStore(world string) (*store.WorldStore, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	if s, ok := l.stores[world]; ok {
-		return s, nil
+		// Validate the cached store's DB file still exists.
+		dbPath := filepath.Join(config.StoreDir(), world+".db")
+		if _, err := os.Stat(dbPath); err != nil {
+			// DB file gone — evict stale cache entry and close the old store.
+			s.Close()
+			delete(l.stores, world)
+			l.logger.Printf("evicted stale store cache for world %q (db missing)", world)
+		} else {
+			return s, nil
+		}
 	}
 
 	s, err := store.OpenWorld(world)

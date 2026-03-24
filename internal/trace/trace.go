@@ -463,13 +463,14 @@ func absDuration(d time.Duration) time.Duration {
 	return d
 }
 
-// computeCost calculates token costs using pricing config.
+// computeCost calculates token costs, preferring DB-stored CostUSD when available
+// and falling back to pricing config for records without a stored cost.
 func computeCost(td *TraceData) *CostSummary {
 	if len(td.Tokens) == 0 {
 		return nil
 	}
 
-	// Load pricing config from sol.toml.
+	// Load pricing config from sol.toml as fallback.
 	cfg, err := config.LoadWorldConfig(td.World)
 	var pricing config.PricingConfig
 	if err == nil {
@@ -488,7 +489,11 @@ func computeCost(td *TraceData) *CostSummary {
 			CacheCreationTokens: t.CacheCreationTokens,
 		}
 
-		if pricing != nil {
+		// Prefer DB-stored CostUSD; fall back to config-based computation.
+		if t.CostUSD != nil {
+			mc.Cost = *t.CostUSD
+			totalCost += mc.Cost
+		} else if pricing != nil {
 			if p, ok := pricing[t.Model]; ok {
 				mc.Cost = float64(t.InputTokens)/1_000_000*p.Input +
 					float64(t.OutputTokens)/1_000_000*p.Output +
