@@ -1167,11 +1167,12 @@ func (s *Prefect) shutdown() {
 			} else {
 				stopped++
 			}
-		}
-		// Set agent to stalled (hooks persist for recovery).
-		if err := s.sphereStore.UpdateAgentState(agent.ID, "stalled", agent.ActiveWrit); err != nil {
-			s.logger.Error("failed to set agent stalled during shutdown",
-				"agent", agent.Name, "error", err)
+			// Only mark agents as stalled if they actually had a running session.
+			// Marking agents without sessions overwrites correct state set by sentinel.
+			if err := s.sphereStore.UpdateAgentState(agent.ID, "stalled", agent.ActiveWrit); err != nil {
+				s.logger.Error("failed to set agent stalled during shutdown",
+					"agent", agent.Name, "error", err)
+			}
 		}
 	}
 

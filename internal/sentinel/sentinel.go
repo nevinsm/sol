@@ -127,6 +127,7 @@ type Sentinel struct {
 	logger        *events.Logger
 	eventReader   EventReader       // reads raw events for frequency checks
 	respawnCounts            map[respawnKey]int
+	reconcileFailed          bool                 // true if event log was unreadable during reconciliation
 	lastCastTime             map[string]time.Time // dedup guard: writ ID → last cast time
 	resolutionDispatchCounts map[string]int       // blocker writ ID → dispatch attempt count
 	lastCaptures             map[string]string    // agent ID → hash of last captured output
@@ -268,8 +269,17 @@ func (w *Sentinel) reconcileRespawnCounts() {
 		Since:  time.Now().Add(-24 * time.Hour),
 	})
 	if err != nil {
-		// Best-effort: if we can't read events, start with empty counts.
-		// The first patrol will establish new counts.
+		// SAFETY: If the event log is unreadable (locked, corrupted), we must
+		// NOT start with zero counts — that would grant extra respawns beyond
+		// MaxRespawns. Instead, mark reconciliation as failed so handleStalled
+		// uses MaxRespawns as the conservative default for unknown agents.
+		w.reconcileFailed = true
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit", map[string]any{
+				"error":   err.Error(),
+				"context": "reconcileRespawnCounts: event log unreadable, using conservative respawn limits",
+			})
+		}
 		return
 	}
 
@@ -898,6 +908,13 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 func (w *Sentinel) handleStalled(agent store.Agent) error {
 	key := respawnKey{AgentID: agent.ID, WritID: agent.ActiveWrit}
 	attempts := w.respawnCounts[key]
+
+	// If event log reconciliation failed and we have no recorded attempts
+	// for this agent, use MaxRespawns as a conservative default to prevent
+	// granting extra respawns beyond the configured limit.
+	if w.reconcileFailed && attempts == 0 {
+		attempts = w.config.MaxRespawns
+	}
 
 	if attempts >= w.config.MaxRespawns {
 		return w.returnWorkToOpen(agent)
