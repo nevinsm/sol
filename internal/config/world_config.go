@@ -15,12 +15,19 @@ import (
 type WorldConfig struct {
 	World      WorldSection      `toml:"world" json:"world"`
 	Agents     AgentsSection     `toml:"agents" json:"agents"`
+	Sphere     SphereSection     `toml:"sphere" json:"sphere"`
 	Forge      ForgeSection      `toml:"forge" json:"forge"`
 	Ledger     LedgerSection     `toml:"ledger" json:"ledger"`
 	WritClean  WritCleanSection  `toml:"writ-clean" json:"writ-clean"`
 	Pricing    PricingConfig     `toml:"pricing" json:"pricing,omitempty"`
 	Escalation EscalationSection `toml:"escalation" json:"escalation"`
 	Sitrep     SitrepSection     `toml:"sitrep" json:"sitrep"`
+}
+
+// SphereSection holds sphere-level settings.
+// Configured only in sol.toml (not world.toml).
+type SphereSection struct {
+	MaxSessions int `toml:"max_sessions" json:"max_sessions"` // 0 = unlimited
 }
 
 // EscalationSection holds escalation management settings (sphere-level).
@@ -106,7 +113,8 @@ type RuntimesSection struct {
 
 // AgentsSection holds agent-related settings.
 type AgentsSection struct {
-	Capacity       int             `toml:"capacity" json:"capacity"`                                   // 0 = unlimited
+	Capacity       int             `toml:"capacity" json:"capacity"`                                   // Deprecated: use MaxActive. 0 = unlimited.
+	MaxActive      int             `toml:"max_active" json:"max_active"`                               // 0 = unlimited
 	NamePoolPath   string          `toml:"name_pool_path" json:"name_pool_path"`                       // empty = embedded default
 	ModelTier      string          `toml:"model_tier" json:"model_tier"`                               // "sonnet", "opus", "haiku"
 	Models         ModelsSection   `toml:"models,omitempty" json:"models,omitempty"`                   // per-role model overrides
@@ -275,6 +283,12 @@ func (c WorldConfig) Validate() error {
 	if c.Agents.Capacity < 0 {
 		return fmt.Errorf("agents.capacity must be >= 0, got %d", c.Agents.Capacity)
 	}
+	if c.Agents.MaxActive < 0 {
+		return fmt.Errorf("agents.max_active must be >= 0, got %d", c.Agents.MaxActive)
+	}
+	if c.Sphere.MaxSessions < 0 {
+		return fmt.Errorf("sphere.max_sessions must be >= 0, got %d", c.Sphere.MaxSessions)
+	}
 	if err := validModelTier("agents.model_tier", c.Agents.ModelTier); err != nil {
 		return err
 	}
@@ -321,6 +335,17 @@ func (c WorldConfig) Validate() error {
 	return nil
 }
 
+// DeprecationWarnings returns human-readable warnings for deprecated config
+// fields that are still set. Callers should print these to stderr so they
+// are visible to users without corrupting stdout output.
+func (c WorldConfig) DeprecationWarnings() []string {
+	var warnings []string
+	if c.Agents.Capacity != 0 && c.Agents.MaxActive == 0 {
+		warnings = append(warnings, "agents.capacity is deprecated, use agents.max_active instead")
+	}
+	return warnings
+}
+
 // LoadGlobalConfig loads sphere-level configuration from sol.toml.
 // Returns defaults if sol.toml does not exist.
 func LoadGlobalConfig() (WorldConfig, error) {
@@ -339,6 +364,17 @@ func LoadGlobalConfig() (WorldConfig, error) {
 		return cfg, fmt.Errorf("invalid global config: %w", err)
 	}
 	return cfg, nil
+}
+
+// LoadSphereConfig loads sphere-level configuration from sol.toml.
+// The [sphere] section is only loaded from sol.toml (not world.toml).
+// Returns a zero SphereSection if sol.toml does not exist.
+func LoadSphereConfig() (SphereSection, error) {
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		return SphereSection{}, err
+	}
+	return cfg.Sphere, nil
 }
 
 // IsSleeping returns true if the world is marked as sleeping in its config.

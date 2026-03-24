@@ -1049,3 +1049,221 @@ func TestLoadWorldConfigInvalidAgingDuration(t *testing.T) {
 		t.Fatalf("expected error to mention aging_critical, got: %v", err)
 	}
 }
+
+// ----- SphereSection -----
+
+func TestSphereConfigFromSolToml(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	content := "[sphere]\nmax_sessions = 5\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sphere, err := LoadSphereConfig()
+	if err != nil {
+		t.Fatalf("LoadSphereConfig() error: %v", err)
+	}
+	if sphere.MaxSessions != 5 {
+		t.Fatalf("max_sessions = %d, want 5", sphere.MaxSessions)
+	}
+}
+
+func TestSphereConfigDefaultsToZero(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	sphere, err := LoadSphereConfig()
+	if err != nil {
+		t.Fatalf("LoadSphereConfig() error: %v", err)
+	}
+	if sphere.MaxSessions != 0 {
+		t.Fatalf("max_sessions = %d, want 0 (default)", sphere.MaxSessions)
+	}
+}
+
+func TestValidateMaxSessionsNegative(t *testing.T) {
+	cfg := DefaultWorldConfig()
+	cfg.Sphere.MaxSessions = -1
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative max_sessions")
+	}
+	if !strings.Contains(err.Error(), "sphere.max_sessions") {
+		t.Fatalf("expected error to mention sphere.max_sessions, got: %v", err)
+	}
+}
+
+func TestValidateMaxSessionsValid(t *testing.T) {
+	for _, v := range []int{0, 1, 100} {
+		cfg := DefaultWorldConfig()
+		cfg.Sphere.MaxSessions = v
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("max_sessions=%d expected valid, got: %v", v, err)
+		}
+	}
+}
+
+// ----- MaxActive -----
+
+func TestMaxActiveFromSolToml(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	content := "[agents]\nmax_active = 8\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agents.MaxActive != 8 {
+		t.Fatalf("max_active = %d, want 8", cfg.Agents.MaxActive)
+	}
+}
+
+func TestMaxActiveWorldOverridesGlobal(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// sol.toml sets max_active = 10
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte("[agents]\nmax_active = 10\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// world.toml overrides to 3
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte("[agents]\nmax_active = 3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agents.MaxActive != 3 {
+		t.Fatalf("max_active = %d, want 3 (world override)", cfg.Agents.MaxActive)
+	}
+}
+
+func TestValidateMaxActiveNegative(t *testing.T) {
+	cfg := DefaultWorldConfig()
+	cfg.Agents.MaxActive = -1
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative max_active")
+	}
+	if !strings.Contains(err.Error(), "agents.max_active") {
+		t.Fatalf("expected error to mention agents.max_active, got: %v", err)
+	}
+}
+
+func TestValidateMaxActiveValid(t *testing.T) {
+	for _, v := range []int{0, 1, 50} {
+		cfg := DefaultWorldConfig()
+		cfg.Agents.MaxActive = v
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("max_active=%d expected valid, got: %v", v, err)
+		}
+	}
+}
+
+// ----- Capacity deprecation -----
+
+func TestCapacityStillParses(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	content := "[agents]\ncapacity = 5\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agents.Capacity != 5 {
+		t.Fatalf("capacity = %d, want 5", cfg.Agents.Capacity)
+	}
+}
+
+func TestCapacityAndMaxActiveCoexist(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Both set — no deprecation warning when max_active is set.
+	content := "[agents]\ncapacity = 5\nmax_active = 10\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agents.Capacity != 5 {
+		t.Fatalf("capacity = %d, want 5", cfg.Agents.Capacity)
+	}
+	if cfg.Agents.MaxActive != 10 {
+		t.Fatalf("max_active = %d, want 10", cfg.Agents.MaxActive)
+	}
+}
+
+func TestDeprecationWarningsCapacityWithoutMaxActive(t *testing.T) {
+	cfg := DefaultWorldConfig()
+	cfg.Agents.Capacity = 5
+	// max_active is 0 (unset) — should produce a deprecation warning.
+	warnings := cfg.DeprecationWarnings()
+	if len(warnings) == 0 {
+		t.Fatal("expected deprecation warning for capacity without max_active, got none")
+	}
+	if !strings.Contains(warnings[0], "agents.capacity") {
+		t.Fatalf("expected warning to mention agents.capacity, got: %v", warnings)
+	}
+}
+
+func TestDeprecationWarningsNoWarningWhenMaxActiveSet(t *testing.T) {
+	cfg := DefaultWorldConfig()
+	cfg.Agents.Capacity = 5
+	cfg.Agents.MaxActive = 10
+	// Both set — no deprecation warning.
+	warnings := cfg.DeprecationWarnings()
+	if len(warnings) != 0 {
+		t.Fatalf("expected no deprecation warnings, got: %v", warnings)
+	}
+}
+
+func TestDeprecationWarningsNoWarningWhenCapacityZero(t *testing.T) {
+	cfg := DefaultWorldConfig()
+	// capacity = 0 (default/unset) — no deprecation warning.
+	warnings := cfg.DeprecationWarnings()
+	if len(warnings) != 0 {
+		t.Fatalf("expected no deprecation warnings, got: %v", warnings)
+	}
+}
+
+func TestSphereInWorldConfigViaLoadWorldConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// sphere section in sol.toml should be loaded via LoadWorldConfig too.
+	content := "[sphere]\nmax_sessions = 12\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Sphere.MaxSessions != 12 {
+		t.Fatalf("sphere.max_sessions = %d, want 12", cfg.Sphere.MaxSessions)
+	}
+}
