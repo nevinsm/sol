@@ -105,8 +105,10 @@ func parseResetTime(s string) (time.Time, error) {
 		hour = 0
 	}
 
-	now := time.Now().UTC()
-	reset := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, time.UTC)
+	now := time.Now()
+	reset := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, time.Local)
+	// Convert to UTC for consistent storage.
+	reset = reset.UTC()
 	if reset.Before(now) {
 		reset = reset.Add(24 * time.Hour)
 	}
