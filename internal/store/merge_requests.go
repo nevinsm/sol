@@ -314,7 +314,9 @@ func (s *WorldStore) UpdateMergeRequestPhase(id, phase string) error {
 		}
 		// Row exists but its phase was not in the allowed source set.
 		var currentPhase string
-		_ = s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, id).Scan(&currentPhase)
+		if diagErr := s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, id).Scan(&currentPhase); diagErr != nil {
+			currentPhase = "(unknown)"
+		}
 		return fmt.Errorf("merge request %q: cannot transition from %q to %q: %w",
 			id, currentPhase, phase, ErrInvalidTransition)
 	}
@@ -347,7 +349,9 @@ func (s *WorldStore) BlockMergeRequest(mrID, blockerWritID string) error {
 			return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
 		}
 		var currentPhase string
-		_ = s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, mrID).Scan(&currentPhase)
+		if diagErr := s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, mrID).Scan(&currentPhase); diagErr != nil {
+			currentPhase = "(unknown)"
+		}
 		return fmt.Errorf("merge request %q: cannot block from phase %q: %w",
 			mrID, currentPhase, ErrInvalidTransition)
 	}
