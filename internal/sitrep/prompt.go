@@ -3,6 +3,7 @@ package sitrep
 import (
 	_ "embed"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,6 +73,21 @@ func formatDataPayload(data *CollectedData) string {
 	var b strings.Builder
 
 	b.WriteString(fmt.Sprintf("# System Data — Scope: %s\n\n", data.Scope))
+
+	// Escalations (high-priority, placed near the top).
+	if len(data.Escalations) > 0 {
+		b.WriteString("## Escalations\n\n")
+		for _, e := range data.Escalations {
+			age := formatAge(e.CreatedAt)
+			ref := e.SourceRef
+			if ref == "" {
+				ref = e.Source
+			}
+			b.WriteString(fmt.Sprintf("- [%s] %s — %s (source: %s, age: %s)\n",
+				e.Severity, e.ID, e.Description, ref, age))
+		}
+		b.WriteString("\n")
+	}
 
 	// Agents summary.
 	b.WriteString("## Agents\n\n")
@@ -314,4 +330,22 @@ func formatRelativeTime(t time.Time) string {
 		return fmt.Sprintf("%dd", days)
 	}
 	return fmt.Sprintf("%dd%dh", days, h)
+}
+
+// formatAge returns a human-readable duration since the given time.
+func formatAge(t time.Time) string {
+	d := time.Since(t)
+	if d < 0 {
+		d = 0
+	}
+
+	hours := d.Hours()
+	if hours < 1 {
+		return fmt.Sprintf("%dm", int(math.Max(1, d.Minutes())))
+	}
+	if hours < 24 {
+		return fmt.Sprintf("%dh", int(hours))
+	}
+	days := int(hours / 24)
+	return fmt.Sprintf("%dd", days)
 }

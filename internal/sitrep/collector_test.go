@@ -272,6 +272,69 @@ func TestCollectMergeRequestsFilteredToActionable(t *testing.T) {
 	}
 }
 
+func TestCollectEscalations(t *testing.T) {
+	sphere, opener := setupTestEnv(t)
+
+	// Create escalations with different severities.
+	_, err := sphere.CreateEscalation("critical", "forge", "Merge conflict on main", "mr:mr-abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = sphere.CreateEscalation("low", "sentinel", "Health check slow")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Also create a resolved escalation — should NOT appear.
+	resolvedID, err := sphere.CreateEscalation("high", "consul", "Stale tether detected")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphere.ResolveEscalation(resolvedID); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := sitrep.Collect(sphere, opener, sitrep.Scope{Sphere: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should contain only the 2 open escalations.
+	if len(data.Escalations) != 2 {
+		t.Errorf("expected 2 open escalations, got %d", len(data.Escalations))
+	}
+
+	// Should be sorted by severity (critical first, since ListEscalations sorts DESC).
+	if len(data.Escalations) >= 2 {
+		if data.Escalations[0].Severity != "critical" {
+			t.Errorf("expected first escalation to be critical, got %q", data.Escalations[0].Severity)
+		}
+		if data.Escalations[1].Severity != "low" {
+			t.Errorf("expected second escalation to be low, got %q", data.Escalations[1].Severity)
+		}
+	}
+
+	// Verify no resolved escalations.
+	for _, e := range data.Escalations {
+		if e.Status == "resolved" {
+			t.Errorf("found resolved escalation %q in collected data", e.ID)
+		}
+	}
+}
+
+func TestCollectEscalationsEmpty(t *testing.T) {
+	sphere, opener := setupTestEnv(t)
+
+	data, err := sitrep.Collect(sphere, opener, sitrep.Scope{Sphere: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data.Escalations) != 0 {
+		t.Errorf("expected 0 escalations, got %d", len(data.Escalations))
+	}
+}
+
 func TestCollectMRSummary(t *testing.T) {
 	sphere, opener := setupTestEnv(t)
 

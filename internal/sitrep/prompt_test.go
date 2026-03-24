@@ -154,6 +154,67 @@ func TestEjectAndLoad(t *testing.T) {
 	}
 }
 
+func TestFormatDataPayloadEscalations(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	now := time.Now().UTC()
+	data := &sitrep.CollectedData{
+		Scope: "sphere",
+		Escalations: []store.Escalation{
+			{ID: "esc-001", Severity: "critical", Source: "forge", Description: "Merge conflict on main", SourceRef: "mr:mr-abc123", Status: "open", CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: now},
+			{ID: "esc-002", Severity: "low", Source: "sentinel", Description: "Health check slow", Status: "open", CreatedAt: now.Add(-30 * time.Minute), UpdatedAt: now},
+		},
+		CaravanReadiness: map[string][]store.CaravanItemStatus{},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Section should exist.
+	if !strings.Contains(prompt, "## Escalations") {
+		t.Error("prompt should contain Escalations section")
+	}
+	// Should contain escalation details.
+	if !strings.Contains(prompt, "esc-001") {
+		t.Error("prompt should contain escalation ID esc-001")
+	}
+	if !strings.Contains(prompt, "critical") {
+		t.Error("prompt should contain severity 'critical'")
+	}
+	if !strings.Contains(prompt, "Merge conflict on main") {
+		t.Error("prompt should contain escalation description")
+	}
+	if !strings.Contains(prompt, "mr:mr-abc123") {
+		t.Error("prompt should contain source ref")
+	}
+	if !strings.Contains(prompt, "sentinel") {
+		t.Error("prompt should contain source for escalation without source_ref")
+	}
+}
+
+func TestFormatDataPayloadNoEscalations(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	data := &sitrep.CollectedData{
+		Scope:            "sphere",
+		CaravanReadiness: map[string][]store.CaravanItemStatus{},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Section should NOT exist when no escalations.
+	if strings.Contains(prompt, "## Escalations") {
+		t.Error("prompt should not contain Escalations section when there are none")
+	}
+}
+
 func TestFormatDataPayloadForgeStatus(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)

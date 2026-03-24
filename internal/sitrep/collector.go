@@ -63,12 +63,13 @@ type WorldData struct {
 
 // CollectedData holds all data gathered for a sitrep.
 type CollectedData struct {
-	Scope            string                                `json:"scope"` // "sphere" or world name
-	Agents           []store.Agent                         `json:"agents"`
-	Caravans         []store.Caravan                       `json:"caravans"`
-	CaravanReadiness map[string][]store.CaravanItemStatus  `json:"caravan_readiness,omitempty"`
-	ForgeStatuses    map[string]ForgeStatus                `json:"forge_statuses,omitempty"`
-	Worlds           []WorldData                           `json:"worlds"`
+	Scope            string                               `json:"scope"` // "sphere" or world name
+	Agents           []store.Agent                        `json:"agents"`
+	Escalations      []store.Escalation                   `json:"escalations,omitempty"`
+	Caravans         []store.Caravan                      `json:"caravans"`
+	CaravanReadiness map[string][]store.CaravanItemStatus `json:"caravan_readiness,omitempty"`
+	ForgeStatuses    map[string]ForgeStatus               `json:"forge_statuses,omitempty"`
+	Worlds           []WorldData                          `json:"worlds"`
 }
 
 // WorldOpener opens a world store by name.
@@ -93,6 +94,12 @@ func Collect(sphereStore *store.SphereStore, worldOpener WorldOpener, scope Scop
 			return nil, fmt.Errorf("failed to list agents for world %q: %w", scope.World, err)
 		}
 		data.Agents = agents
+	}
+
+	// Collect open escalations (non-fatal on error).
+	escalations, err := sphereStore.ListEscalations("open")
+	if err == nil {
+		data.Escalations = escalations
 	}
 
 	// Collect only actionable caravans (open + drydock).
