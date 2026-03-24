@@ -326,21 +326,25 @@ func EnsureClaudeConfigDir(worldDir, role, name, account string) (string, error)
 	// startup self-healing — if defaults were never created (e.g. SOL_HOME
 	// predates the init step that seeds them), create them now.
 	if err := EnsureClaudeDefaults(); err != nil {
-		fmt.Fprintf(os.Stderr, "config: failed to ensure claude defaults: %v\n", err)
+		return "", fmt.Errorf("failed to ensure claude defaults: %w", err)
 	}
 
 	// Copy settings.json from .claude-defaults/ (always-overwrite).
 	// Ensures config changes propagate to all agents on next session start.
-	seedClaudeSettings(dir)
+	if err := seedClaudeSettings(dir); err != nil {
+		return "", fmt.Errorf("failed to seed claude settings for %s: %w", name, err)
+	}
 
 	// Copy plugin metadata from .claude-defaults/plugins/ (always-overwrite).
 	// Ensures sphere-level plugins are available to all agents.
-	seedClaudePlugins(dir)
+	if err := seedClaudePlugins(dir); err != nil {
+		return "", fmt.Errorf("failed to seed claude plugins for %s: %w", name, err)
+	}
 
 	// Pre-seed onboarding state so Claude Code doesn't show interactive
 	// onboarding when using the agent-specific config dir.
 	if err := SeedOnboardingState(dir); err != nil {
-		fmt.Fprintf(os.Stderr, "config: failed to seed onboarding state for %s: %v\n", name, err)
+		return "", fmt.Errorf("failed to seed onboarding state for %s: %w", name, err)
 	}
 
 	return dir, nil
@@ -504,7 +508,7 @@ func EnsureClaudeDefaults() error {
 // Paths inside these files already point at .claude-defaults/plugins/
 // (cache/, marketplaces/) since that's where the config session installed them.
 // All agents share the same underlying plugin data.
-func seedClaudePlugins(agentConfigDir string) {
+func seedClaudePlugins(agentConfigDir string) error {
 	srcPluginsDir := filepath.Join(ClaudeDefaultsDir(), "plugins")
 	dstPluginsDir := filepath.Join(agentConfigDir, "plugins")
 
@@ -517,14 +521,14 @@ func seedClaudePlugins(agentConfigDir string) {
 			continue
 		}
 		if err := os.MkdirAll(dstPluginsDir, 0o755); err != nil {
-			// Can't create destination — skip silently.
-			continue
+			return fmt.Errorf("failed to create plugins dir %q: %w", dstPluginsDir, err)
 		}
 		dst := filepath.Join(dstPluginsDir, f)
-		if err := os.WriteFile(dst, data, 0o644); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: seedClaudePlugins: failed to write %s: %v\n", f, err)
+		if err := fileutil.AtomicWrite(dst, data, 0o644); err != nil {
+			return fmt.Errorf("failed to write %s: %w", f, err)
 		}
 	}
+	return nil
 }
 
 // seedClaudeSettings copies settings.json from .claude-defaults/ into the
@@ -538,12 +542,12 @@ func seedClaudePlugins(agentConfigDir string) {
 //
 // Also copies settings.local.json from .claude-defaults/ if present — this
 // is the user customization surface; sol never writes it, only distributes it.
-func seedClaudeSettings(agentConfigDir string) {
+func seedClaudeSettings(agentConfigDir string) error {
 	src := filepath.Join(ClaudeDefaultsDir(), "settings.json")
 	data, err := os.ReadFile(src)
 	if err != nil {
 		// No defaults template — skip silently.
-		return
+		return nil
 	}
 
 	// Merge enabledPlugins from installed_plugins.json into settings.json.
@@ -551,7 +555,7 @@ func seedClaudeSettings(agentConfigDir string) {
 
 	dst := filepath.Join(agentConfigDir, "settings.json")
 	if err := fileutil.AtomicWrite(dst, data, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: seedClaudeSettings: failed to write settings.json: %v\n", err)
+		return fmt.Errorf("failed to write settings.json: %w", err)
 	}
 
 	// Copy settings.local.json if present — user customizations layered on top.
@@ -559,12 +563,13 @@ func seedClaudeSettings(agentConfigDir string) {
 	localData, err := os.ReadFile(localSrc)
 	if err != nil {
 		// No user overrides file — skip silently.
-		return
+		return nil
 	}
 	localDst := filepath.Join(agentConfigDir, "settings.local.json")
 	if err := fileutil.AtomicWrite(localDst, localData, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: seedClaudeSettings: failed to write settings.local.json: %v\n", err)
+		return fmt.Errorf("failed to write settings.local.json: %w", err)
 	}
+	return nil
 }
 
 // mergeEnabledPlugins reads installed_plugins.json from .claude-defaults/plugins/
