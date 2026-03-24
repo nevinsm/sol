@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 )
 
 // World represents a registered world in the sphere database.
@@ -118,12 +119,13 @@ func (s *SphereStore) DeleteWorldData(world string) error {
 	// Use exact prefix matching (not LIKE) to avoid matching worlds with
 	// similar names (e.g. deleting "dev" must not affect "dev-staging").
 	worldPrefix := world + "/"
+	prefixLen := utf8.RuneCountInString(worldPrefix)
 	if _, err := tx.Exec(
 		`DELETE FROM messages WHERE
 			(length(sender) > ? AND substr(sender, 1, ?) = ?)
 			OR (length(recipient) > ? AND substr(recipient, 1, ?) = ?)`,
-		len(worldPrefix), len(worldPrefix), worldPrefix,
-		len(worldPrefix), len(worldPrefix), worldPrefix,
+		prefixLen, prefixLen, worldPrefix,
+		prefixLen, prefixLen, worldPrefix,
 	); err != nil {
 		return fmt.Errorf("failed to delete messages for world %q: %w", world, err)
 	}
@@ -131,7 +133,7 @@ func (s *SphereStore) DeleteWorldData(world string) error {
 	// Clean up escalations sourced from this world.
 	if _, err := tx.Exec(
 		`DELETE FROM escalations WHERE length(source) > ? AND substr(source, 1, ?) = ?`,
-		len(worldPrefix), len(worldPrefix), worldPrefix,
+		prefixLen, prefixLen, worldPrefix,
 	); err != nil {
 		return fmt.Errorf("failed to delete escalations for world %q: %w", world, err)
 	}

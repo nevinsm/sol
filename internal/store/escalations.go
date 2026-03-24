@@ -200,6 +200,8 @@ func (s *SphereStore) AckEscalation(id string) error {
 
 // ResolveEscalation marks an escalation as resolved.
 // Sets status="resolved", updated_at=now.
+// Also cleans up any pending mail notification messages for this escalation
+// (thread_id="esc:{id}") to prevent DB bloat from unread notifications.
 func (s *SphereStore) ResolveEscalation(id string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := s.db.Exec(
@@ -209,7 +211,19 @@ func (s *SphereStore) ResolveEscalation(id string) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve escalation %q: %w", id, err)
 	}
-	return checkRowsAffected(result, "escalation", id)
+	if err := checkRowsAffected(result, "escalation", id); err != nil {
+		return err
+	}
+
+	// Clean up pending mail messages for this escalation.
+	threadID := "esc:" + id
+	if _, err := s.db.Exec(
+		`DELETE FROM messages WHERE thread_id = ? AND delivery = 'pending'`,
+		threadID,
+	); err != nil {
+		return fmt.Errorf("failed to clean up pending mail for escalation %q: %w", id, err)
+	}
+	return nil
 }
 
 // UpdateEscalationLastNotified sets the last_notified_at timestamp to now.
@@ -221,6 +235,38 @@ func (s *SphereStore) UpdateEscalationLastNotified(id string) error {
 		return fmt.Errorf("failed to update last_notified_at for escalation %q: %w", id, err)
 	}
 	return checkRowsAffected(result, "escalation", id)
+}
+
+// CountResolvedEscalationsBefore returns the number of resolved escalations
+// with updated_at older than before.
+func (s *SphereStore) CountResolvedEscalationsBefore(before time.Time) (int, error) {
+	var count int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM escalations WHERE status = 'resolved' AND updated_at < ?`,
+		before.UTC().Format(time.RFC3339),
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count resolved escalations before %s: %w", before.Format(time.RFC3339), err)
+	}
+	return count, nil
+}
+
+// PurgeResolvedEscalations deletes resolved escalations with updated_at older
+// than before. Returns the number of deleted rows. Only deletes resolved
+// escalations — open and acknowledged escalations are never purged.
+func (s *SphereStore) PurgeResolvedEscalations(before time.Time) (int64, error) {
+	result, err := s.db.Exec(
+		`DELETE FROM escalations WHERE status = 'resolved' AND updated_at < ?`,
+		before.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to purge resolved escalations: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get escalation purge count: %w", err)
+	}
+	return n, nil
 }
 
 // CountOpen returns the number of open (unresolved) escalations.

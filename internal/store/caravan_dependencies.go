@@ -196,7 +196,10 @@ func (s *SphereStore) UnsatisfiedCaravanDependencies(caravanID string) ([]string
 		}
 		ids = append(ids, id)
 	}
-	return ids, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating unsatisfied caravan deps for %q: %w", caravanID, err)
+	}
+	return ids, nil
 }
 
 // IsWritBlockedByCaravanDeps checks whether a writ belongs to any
