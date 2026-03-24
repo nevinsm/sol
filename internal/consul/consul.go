@@ -15,6 +15,7 @@ import (
 	"github.com/nevinsm/sol/internal/escalation"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/fileutil"
+	"github.com/nevinsm/sol/internal/heartbeat"
 	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
@@ -32,6 +33,7 @@ type Config struct {
 	StaleTetherTimeout  time.Duration
 	HeartbeatDir        string        // path to heartbeat directory (default: $SOL_HOME/consul)
 	SolHome             string        // $SOL_HOME path
+	PrefectHeartbeatMax time.Duration // max prefect heartbeat age before treating as dead (default: 10 minutes)
 	EscalationWebhook   string        // webhook URL for escalation routing (optional)
 	EscalationThreshold int           // buildup alert threshold (default: 5)
 	EscalationConfig    config.EscalationSection // aging thresholds from sol.toml
@@ -42,6 +44,7 @@ func DefaultConfig() Config {
 	return Config{
 		PatrolInterval:      5 * time.Minute,
 		StaleTetherTimeout:  15 * time.Minute,
+		PrefectHeartbeatMax: 10 * time.Minute, // ~3x prefect's default 3-minute heartbeat interval
 		EscalationThreshold: 5,
 		EscalationConfig:    config.DefaultEscalationConfig(),
 	}
@@ -441,14 +444,41 @@ func (d *Consul) restoreState() {
 	d.lastEscalationAlert = st.LastEscalationAlert
 }
 
-// isPrefectAlive checks whether the prefect process is running by reading its
-// PID file at $SOL_HOME/.runtime/prefect.pid and probing the process.
+// isPrefectAlive checks whether the prefect process is alive and healthy.
+// It reads the prefect heartbeat file and returns false if the heartbeat is
+// stale (prefect is hung). Falls back to PID-only check when no heartbeat
+// file exists yet (prefect just started).
 func (d *Consul) isPrefectAlive() bool {
 	pid, err := processutil.ReadPID(filepath.Join(d.config.SolHome, ".runtime", "prefect.pid"))
 	if err != nil || pid <= 0 {
 		return false
 	}
-	return processutil.IsRunning(pid)
+	if !processutil.IsRunning(pid) {
+		return false
+	}
+
+	// Process is alive — check heartbeat freshness.
+	hbPath := filepath.Join(d.config.SolHome, ".runtime", "prefect-heartbeat.json")
+	var hb struct {
+		Timestamp time.Time `json:"timestamp"`
+		Status    string    `json:"status"`
+	}
+	if err := heartbeat.Read(hbPath, &hb); err != nil {
+		// No heartbeat file yet — prefect just started, trust PID check.
+		return true
+	}
+
+	// If prefect wrote a "stopping" heartbeat, treat as not alive.
+	if hb.Status == "stopping" {
+		return false
+	}
+
+	// Check staleness.
+	if heartbeat.IsStale(hb.Timestamp, d.config.PrefectHeartbeatMax) {
+		return false
+	}
+
+	return true
 }
 
 // recoverStaleTethers finds and recovers stale tethers across all worlds.

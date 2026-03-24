@@ -310,6 +310,21 @@ func (s *Prefect) heartbeat() {
 
 	s.logger.Info("heartbeat", "working_agents", len(workingAgents), "dead_sessions", deadCount)
 
+	// Write heartbeat file so consul can detect a hung prefect.
+	status := "running"
+	if s.degraded {
+		status = "degraded"
+	}
+	if err := WriteHeartbeat(&Heartbeat{
+		Timestamp:      time.Now().UTC(),
+		Status:         status,
+		HeartbeatCount: s.heartbeatCount,
+		WorkingAgents:  len(workingAgents),
+		DeadSessions:   deadCount,
+	}); err != nil {
+		s.logger.Error("failed to write heartbeat", "error", err)
+	}
+
 	// Best-effort log rotation — don't let rotation failure affect supervision.
 	logutil.TruncateIfNeeded(filepath.Join(config.RuntimeDir(), "prefect.log"), logutil.DefaultMaxLogSize)
 }
@@ -1133,6 +1148,15 @@ func (s *Prefect) getSleepingWorlds(agents []store.Agent) map[string]bool {
 func (s *Prefect) shutdown() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Write a "stopping" heartbeat so consul knows prefect is shutting down.
+	if err := WriteHeartbeat(&Heartbeat{
+		Timestamp:      time.Now().UTC(),
+		Status:         "stopping",
+		HeartbeatCount: s.heartbeatCount,
+	}); err != nil {
+		s.logger.Error("failed to write stopping heartbeat", "error", err)
+	}
 
 	workingAgents, err := s.sphereStore.ListAgents("", "working")
 	if err != nil {
