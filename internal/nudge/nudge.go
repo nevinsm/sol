@@ -343,9 +343,15 @@ func Deliver(sessionName string, msg Message) error {
 // formatNotification formats a Message into a human-readable notification string
 // suitable for injection into a Claude Code session.
 func formatNotification(msg Message) string {
+	var header string
 	if msg.Subject != "" {
-		return fmt.Sprintf("[%s] %s: %s", msg.Type, msg.Sender, msg.Subject)
+		header = fmt.Sprintf("[%s] %s: %s", msg.Type, msg.Sender, msg.Subject)
+	} else {
+		header = fmt.Sprintf("[%s] %s", msg.Type, msg.Sender)
 	}
-	return fmt.Sprintf("[%s] %s", msg.Type, msg.Sender)
+	if msg.Body != "" {
+		return header + "\n" + msg.Body
+	}
+	return header
 }
 

@@ -600,6 +600,16 @@ func TestFormatNotification(t *testing.T) {
 			msg:      Message{Sender: "forge", Type: "MR_READY"},
 			expected: "[MR_READY] forge",
 		},
+		{
+			name:     "with subject and body",
+			msg:      Message{Sender: "sentinel", Type: "HEALTH", Subject: "check failed", Body: "Disk usage at 95%\nMemory nominal"},
+			expected: "[HEALTH] sentinel: check failed\nDisk usage at 95%\nMemory nominal",
+		},
+		{
+			name:     "with body no subject",
+			msg:      Message{Sender: "consul", Type: "ALERT", Body: "orphaned tether detected"},
+			expected: "[ALERT] consul\norphaned tether detected",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
