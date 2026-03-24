@@ -78,6 +78,10 @@ func TestBuildPromptWithData(t *testing.T) {
 		"Implement feature X",
 		"Fix bug Y",
 		"mr-111",
+		// Age annotations.
+		"last updated just now",  // agent age
+		"updated just now",       // writ age
+		"created just now",       // MR ready age
 	}
 	for _, check := range checks {
 		if !strings.Contains(prompt, check) {
@@ -193,6 +197,13 @@ func TestFormatDataPayloadEscalations(t *testing.T) {
 	if !strings.Contains(prompt, "sentinel") {
 		t.Error("prompt should contain source for escalation without source_ref")
 	}
+	// Should contain age annotations.
+	if !strings.Contains(prompt, "opened 2h ago") {
+		t.Errorf("prompt should contain 'opened 2h ago' for 2-hour-old escalation, got:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "opened 30m ago") {
+		t.Errorf("prompt should contain 'opened 30m ago' for 30-minute-old escalation, got:\n%s", prompt)
+	}
 }
 
 func TestFormatDataPayloadNoEscalations(t *testing.T) {
@@ -274,8 +285,10 @@ func TestFormatDataPayloadForgeStatus(t *testing.T) {
 		"Implement feature X",
 		"Last merge: mr-merge1",
 		"Fix bug Y",
+		"(10m ago)",  // last merge age
 		"Last failure: mr-fail1",
 		"Broken thing",
+		"(2h ago)",   // last failure age
 	}
 	for _, check := range checks {
 		if !strings.Contains(prompt, check) {
@@ -491,5 +504,127 @@ func TestFormatDataPayloadBlockedMRs(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "blocked by: sol-bbb") {
 		t.Error("prompt should contain blocker ID")
+	}
+}
+
+func TestRelativeAgeSince(t *testing.T) {
+	now := time.Date(2026, 3, 24, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name     string
+		t        time.Time
+		expected string
+	}{
+		{"just now - 0 seconds", now, "just now"},
+		{"just now - 30 seconds", now.Add(-30 * time.Second), "just now"},
+		{"just now - 59 seconds", now.Add(-59 * time.Second), "just now"},
+		{"1 minute", now.Add(-1 * time.Minute), "1m ago"},
+		{"5 minutes", now.Add(-5 * time.Minute), "5m ago"},
+		{"30 minutes", now.Add(-30 * time.Minute), "30m ago"},
+		{"59 minutes", now.Add(-59 * time.Minute), "59m ago"},
+		{"1 hour", now.Add(-1 * time.Hour), "1h ago"},
+		{"2 hours", now.Add(-2 * time.Hour), "2h ago"},
+		{"23 hours", now.Add(-23 * time.Hour), "23h ago"},
+		{"1 day", now.Add(-24 * time.Hour), "1d ago"},
+		{"3 days", now.Add(-3 * 24 * time.Hour), "3d ago"},
+		{"7 days", now.Add(-7 * 24 * time.Hour), "7d ago"},
+		{"14 days", now.Add(-14 * 24 * time.Hour), "14d ago"},
+		{"future time", now.Add(5 * time.Minute), "just now"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sitrep.RelativeAgeSince(tt.t, now)
+			if got != tt.expected {
+				t.Errorf("RelativeAgeSince(%v, %v) = %q, want %q", tt.t, now, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestAgeStringsInFormattedOutput(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	now := time.Now().UTC()
+	claimedAt := now.Add(-5 * time.Minute)
+	data := &sitrep.CollectedData{
+		Scope: "test-world",
+		Agents: []store.Agent{
+			{ID: "test-world/Alpha", Name: "Alpha", World: "test-world", Role: "agent", State: "working", ActiveWrit: "sol-aaa", CreatedAt: now.Add(-1 * time.Hour), UpdatedAt: now.Add(-3 * time.Minute)},
+			{ID: "test-world/Beta", Name: "Beta", World: "test-world", Role: "agent", State: "stalled", ActiveWrit: "sol-bbb", CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: now.Add(-45 * time.Minute)},
+			{ID: "test-world/Gamma", Name: "Gamma", World: "test-world", Role: "agent", State: "idle", CreatedAt: now, UpdatedAt: now},
+		},
+		Escalations: []store.Escalation{
+			{ID: "esc-001", Severity: "critical", Source: "forge", Description: "Merge conflict", SourceRef: "mr:mr-abc", Status: "open", CreatedAt: now.Add(-90 * time.Minute), UpdatedAt: now},
+		},
+		CaravanReadiness: map[string][]store.CaravanItemStatus{},
+		Worlds: []sitrep.WorldData{
+			{
+				Name: "test-world",
+				Writs: []store.Writ{
+					{ID: "sol-aaa", Title: "Feature A", Status: "tethered", Priority: 1, Assignee: "Alpha", CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: now.Add(-10 * time.Minute)},
+					{ID: "sol-bbb", Title: "Feature B", Status: "open", Priority: 2, CreatedAt: now.Add(-1 * time.Hour), UpdatedAt: now.Add(-30 * time.Minute)},
+				},
+				MergeRequests: []store.MergeRequest{
+					{ID: "mr-001", WritID: "sol-aaa", Branch: "feat/a", Phase: "ready", CreatedAt: now.Add(-20 * time.Minute), UpdatedAt: now},
+					{ID: "mr-002", WritID: "sol-bbb", Branch: "feat/b", Phase: "claimed", ClaimedAt: &claimedAt, CreatedAt: now.Add(-15 * time.Minute), UpdatedAt: now},
+					{ID: "mr-003", WritID: "sol-aaa", Branch: "feat/a-v2", Phase: "failed", CreatedAt: now.Add(-1 * time.Hour), UpdatedAt: now.Add(-25 * time.Minute)},
+				},
+			},
+		},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Agent ages.
+	if !strings.Contains(prompt, "working (last updated 3m ago)") {
+		t.Errorf("prompt should contain working agent age\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "stalled (last updated 45m ago)") {
+		t.Errorf("prompt should contain stalled agent age\n%s", prompt)
+	}
+	// Idle agents should NOT have age.
+	if strings.Contains(prompt, "Gamma") && strings.Contains(prompt, "last updated") {
+		// Gamma is idle, so it should not appear in detail lines at all.
+		gammaIdx := strings.Index(prompt, "Gamma")
+		if gammaIdx >= 0 {
+			// Check 100 chars around Gamma for "last updated".
+			end := gammaIdx + 100
+			if end > len(prompt) {
+				end = len(prompt)
+			}
+			section := prompt[gammaIdx:end]
+			if strings.Contains(section, "last updated") {
+				t.Errorf("idle agent Gamma should not have age annotation")
+			}
+		}
+	}
+
+	// Writ ages.
+	if !strings.Contains(prompt, "p1, updated 10m ago") {
+		t.Errorf("prompt should contain writ age 'updated 10m ago'\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "p2, updated 30m ago") {
+		t.Errorf("prompt should contain writ age 'updated 30m ago'\n%s", prompt)
+	}
+
+	// MR ages.
+	if !strings.Contains(prompt, "created 20m ago") {
+		t.Errorf("prompt should contain MR ready age 'created 20m ago'\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "claimed 5m ago") {
+		t.Errorf("prompt should contain MR claimed age 'claimed 5m ago'\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "failed 25m ago") {
+		t.Errorf("prompt should contain MR failed age 'failed 25m ago'\n%s", prompt)
+	}
+
+	// Escalation age.
+	if !strings.Contains(prompt, "opened 1h ago") {
+		t.Errorf("prompt should contain escalation age 'opened 1h ago'\n%s", prompt)
 	}
 }

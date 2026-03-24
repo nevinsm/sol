@@ -79,12 +79,12 @@ func formatDataPayload(data *CollectedData) string {
 	if len(data.Escalations) > 0 {
 		b.WriteString("## Escalations\n\n")
 		for _, e := range data.Escalations {
-			age := formatAge(e.CreatedAt)
+			age := relativeAge(e.CreatedAt)
 			ref := e.SourceRef
 			if ref == "" {
 				ref = e.Source
 			}
-			b.WriteString(fmt.Sprintf("- [%s] %s — %s (source: %s, age: %s)\n",
+			b.WriteString(fmt.Sprintf("- [%s] %s — %s (source: %s, opened %s)\n",
 				e.Severity, e.ID, e.Description, ref, age))
 		}
 		b.WriteString("\n")
@@ -118,8 +118,9 @@ func formatDataPayload(data *CollectedData) string {
 			if writ == "" {
 				writ = "(none)"
 			}
-			b.WriteString(fmt.Sprintf("- %s [%s/%s]: %s — writ: %s\n",
-				a.Name, a.World, a.Role, a.State, writ))
+			age := relativeAge(a.UpdatedAt)
+			b.WriteString(fmt.Sprintf("- %s [%s/%s]: %s (last updated %s) — writ: %s\n",
+				a.Name, a.World, a.Role, a.State, age, writ))
 		}
 		if working > 0 || stalled > 0 {
 			b.WriteString("\n")
@@ -286,22 +287,22 @@ func formatDataPayload(data *CollectedData) string {
 
 		// Last merge.
 		if fs.LastMerge != nil {
-			ago := formatRelativeTime(fs.LastMerge.Timestamp)
+			age := relativeAge(fs.LastMerge.Timestamp)
 			title := fs.LastMerge.Title
 			if title == "" {
 				title = fs.LastMerge.Branch
 			}
-			b.WriteString(fmt.Sprintf("Last merge: %s — %s (%s ago)\n", fs.LastMerge.MRID, title, ago))
+			b.WriteString(fmt.Sprintf("Last merge: %s — %s (%s)\n", fs.LastMerge.MRID, title, age))
 		}
 
 		// Last failure.
 		if fs.LastFailure != nil {
-			ago := formatRelativeTime(fs.LastFailure.Timestamp)
+			age := relativeAge(fs.LastFailure.Timestamp)
 			title := fs.LastFailure.Title
 			if title == "" {
 				title = fs.LastFailure.Branch
 			}
-			b.WriteString(fmt.Sprintf("Last failure: %s — %s (%s ago)\n", fs.LastFailure.MRID, title, ago))
+			b.WriteString(fmt.Sprintf("Last failure: %s — %s (%s)\n", fs.LastFailure.MRID, title, age))
 		}
 
 		b.WriteString("\n")
@@ -338,8 +339,9 @@ func formatDataPayload(data *CollectedData) string {
 				if assignee == "" {
 					assignee = "unassigned"
 				}
-				b.WriteString(fmt.Sprintf("- [%s] %s: %s (%s, p%d)\n",
-					wr.Status, wr.ID, wr.Title, assignee, wr.Priority))
+				age := relativeAge(wr.UpdatedAt)
+				b.WriteString(fmt.Sprintf("- [%s] %s: %s (%s, p%d, updated %s)\n",
+					wr.Status, wr.ID, wr.Title, assignee, wr.Priority, age))
 			}
 			if activeWrits > 0 {
 				b.WriteString("\n")
@@ -366,8 +368,21 @@ func formatDataPayload(data *CollectedData) string {
 				if mr.Phase == "merged" || mr.Phase == "superseded" {
 					continue
 				}
-				b.WriteString(fmt.Sprintf("- [%s] %s for writ %s (branch: %s, attempts: %d)\n",
-					mr.Phase, mr.ID, mr.WritID, mr.Branch, mr.Attempts))
+				var ageLabel string
+				switch mr.Phase {
+				case "claimed":
+					if mr.ClaimedAt != nil {
+						ageLabel = fmt.Sprintf(", claimed %s", relativeAge(*mr.ClaimedAt))
+					} else {
+						ageLabel = fmt.Sprintf(", claimed %s", relativeAge(mr.UpdatedAt))
+					}
+				case "failed":
+					ageLabel = fmt.Sprintf(", failed %s", relativeAge(mr.UpdatedAt))
+				case "ready":
+					ageLabel = fmt.Sprintf(", created %s", relativeAge(mr.CreatedAt))
+				}
+				b.WriteString(fmt.Sprintf("- [%s] %s for writ %s (branch: %s, attempts: %d%s)\n",
+					mr.Phase, mr.ID, mr.WritID, mr.Branch, mr.Attempts, ageLabel))
 			}
 			b.WriteString("\n")
 		}
@@ -427,4 +442,33 @@ func formatAge(t time.Time) string {
 	}
 	days := int(hours / 24)
 	return fmt.Sprintf("%dd", days)
+}
+
+// relativeAge returns a concise human-readable age string for the given time.
+// It picks the most appropriate unit:
+//   - < 1 minute: "just now"
+//   - < 1 hour: "Xm ago"
+//   - < 24 hours: "Xh ago"
+//   - >= 24 hours: "Xd ago"
+func relativeAge(t time.Time) string {
+	return RelativeAgeSince(t, time.Now())
+}
+
+// RelativeAgeSince computes relative age against a given reference time (exported for testability).
+func RelativeAgeSince(t, now time.Time) string {
+	d := now.Sub(t)
+	if d < 0 {
+		d = 0
+	}
+	if d < time.Minute {
+		return "just now"
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+	days := int(d.Hours()) / 24
+	return fmt.Sprintf("%dd ago", days)
 }
