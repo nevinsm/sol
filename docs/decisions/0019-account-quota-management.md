@@ -94,7 +94,7 @@ When no accounts have remaining quota:
   API calls against an exhausted account.
 - **Governor is rotated but never paused** — the autarch may need it
   for manual intervention, and it should remain accessible.
-- **Senate is autarch-managed** — it is sphere-scoped with no sentinel
+- **Chancellor is autarch-managed** — it is sphere-scoped with no sentinel
   coverage, so the autarch handles its credentials directly.
 - The sentinel tracks each account's reset time and restarts paused
   agents when the earliest account becomes available again.

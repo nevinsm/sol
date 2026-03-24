@@ -14,7 +14,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0008 | World Lifecycle with Dual-Store Design | Accepted | `sol world init` is required before any world operation; configuration uses `world.toml` as file-primary source of truth with sphere DB as cache |
 | 0009 | Envoy as Context-Persistent Claude Session | Accepted | Envoy role provides persistent human-directed agents with durable context via agent-maintained brief files |
 | 0010 | Governor as Per-World Work Coordinator | Accepted | Governor is a per-world Claude session backed by Go subcommands for natural language work dispatch and caravan coordination |
-| 0011 | Senate as Sphere-Scoped Planning Session | Accepted (renamed to Chancellor by ADR-0029) | Sphere-scoped Claude session for cross-world writ planning and caravan creation; component renamed to Chancellor in ADR-0029 |
+| 0011 | Senate as Sphere-Scoped Planning Session | Superseded by ADR-0029 | Sphere-scoped Claude session for cross-world writ planning and caravan creation; component renamed to Chancellor in ADR-0029 |
 | 0012 | Charmbracelet Libraries for Terminal UI | Accepted | Adopts lipgloss for terminal styling and huh for interactive prompts across autarch-facing commands |
 | 0013 | Brief System for Context Persistence | Accepted | Persistent agents maintain self-authored brief files injected via Claude Code hooks to carry context across sessions and compactions |
 | 0014 | Managed World Repository | Accepted | Each world maintains a managed git clone at `$SOL_HOME/{world}/repo/`; all worktrees branch from this clone |
@@ -43,4 +43,4 @@ Index of architecture decision records. Update this file when adding new ADRs.
 - **ADR-0017** (workflow-based forge) — superseded by ADR-0027
 - **ADR-0027** (forge as deterministic Go process) — superseded by ADR-0028
 - **ADR-0015** (workflow manifest and workflow types) — superseded by ADR-0032 (workflow type unification)
-- **ADR-0011** (senate as sphere-scoped planner) — accepted; component renamed to Chancellor in ADR-0029
+- **ADR-0011** (senate as sphere-scoped planner) — superseded by ADR-0029 (Rename Senate to Chancellor)

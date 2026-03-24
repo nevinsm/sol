@@ -10,7 +10,7 @@ writ. This model served Arc 1–2 perfectly: each outpost gets cast a writ,
 executes it, resolves, and goes idle.
 
 Arc 3 introduced persistent agents — envoys (human-directed), governors
-(per-world coordinators), and the senate (sphere-scoped planner). These
+(per-world coordinators), and the chancellor (sphere-scoped planner). These
 agents maintain context across sessions and operate on multiple writs
 concurrently. An envoy might be actively working on a design review while
 two other writs are queued for its attention. A governor coordinates

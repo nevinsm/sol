@@ -46,7 +46,7 @@ Examples:
 - `/home/ubuntu/sol/sol-dev/.claude-config/envoys/Meridian/`
 - `/home/ubuntu/sol/sol-dev/.claude-config/governor/governor/`
 
-The senate (world-less) uses `<sol-home>/.claude-config/senate/senate/`.
+The chancellor (world-less) uses `<sol-home>/.claude-config/chancellor/chancellor/`.
 
 **Provisioning:**
 - The config directory is created (`mkdir -p`) before session start.

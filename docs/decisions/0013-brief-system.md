@@ -6,7 +6,7 @@ Arc: 3
 
 ## Context
 
-Envoys (ADR-0009), governors (ADR-0010), and the senate (ADR-0011) are all
+Envoys (ADR-0009), governors (ADR-0010), and the chancellor (ADR-0011) are all
 persistent Claude sessions that accumulate valuable context over their
 lifetime — decisions made, patterns discovered, autarch preferences learned.
 When a session ends (clean exit, crash, or context compaction), that knowledge
@@ -19,7 +19,7 @@ its own context persistence that:
 - Survives session restarts and crashes
 - Re-injects after context compaction (which discards earlier conversation)
 - Is GLASS-inspectable (the autarch can `cat` the file anytime)
-- Works across envoy, governor, and senate with shared infrastructure
+- Works across envoy, governor, and chancellor with shared infrastructure
 
 ## Options Considered
 
@@ -58,13 +58,13 @@ size management system.
 
 | File | Owner | Purpose |
 |------|-------|---------|
-| `.brief/memory.md` | envoy, governor, senate | Internal accumulated knowledge |
-| `.brief/world-summary.md` | governor only | External-facing world summary for senate and the autarch |
+| `.brief/memory.md` | envoy, governor, chancellor | Internal accumulated knowledge |
+| `.brief/world-summary.md` | governor only | External-facing world summary for chancellor and the autarch |
 
 The `memory.md` file is freeform — the agent organizes it naturally, same
 model as Claude Code's own MEMORY.md. The `world-summary.md` has prescribed
 sections (Project, Architecture, Priorities, Constraints) for consistency,
-since senate and the autarch depend on predictable structure.
+since chancellor and the autarch depend on predictable structure.
 
 **Injection via Claude Code hooks:**
 
@@ -103,7 +103,7 @@ accumulated knowledge.
 - GLASS-inspectable — `cat .brief/memory.md` shows exactly what the agent
   knows from previous sessions
 - Shared infrastructure — same hooks and CLI commands across envoy, governor,
-  and senate
+  and chancellor
 - Graceful degradation — missing brief = clean start, stale brief = reduced
   context (not failure), truncated brief = agent prompted to consolidate
 
@@ -118,7 +118,7 @@ accumulated knowledge.
 **Code changes:**
 - New `internal/brief/` package — injection (read, truncate, frame)
 - New `cmd/brief.go` — `sol brief inject`
-- `sol envoy start`, `sol governor start`, `sol senate start` — write
+- `sol envoy start`, `sol governor start`, `sol chancellor start` — write
   `.claude/settings.json` with hook configuration
-- `protocol` — `EnvoyClaudeMD()`, `GovernorClaudeMD()`, `SenateCLaudeMD()`
+- `protocol` — `EnvoyClaudeMD()`, `GovernorClaudeMD()`, `ChancellorClaudeMD()`
   include brief maintenance instructions

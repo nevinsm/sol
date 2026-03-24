@@ -1,6 +1,6 @@
 # ADR-0011: Senate as Sphere-Scoped Planning Session
 
-Status: accepted (component renamed to Chancellor in ADR-0029)
+Status: superseded by ADR-0029 (Rename Senate to Chancellor)
 Date: 2026-03-01
 Arc: 4
 

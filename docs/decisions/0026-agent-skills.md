@@ -32,7 +32,7 @@ Replace the monolithic CLI reference with role-scoped skills:
    - forge: 3 (forge-patrol, forge-toolbox, merge-operations)
    - governor: 5 (writ-dispatch, caravan-management, world-coordination, notification-handling, memories)
    - envoy: 8 (resolve-and-submit, writ-management, dispatch, session-management, status-monitoring, caravan-management, world-operations, memories)
-   - senate: 3 (world-queries, writ-planning, memories)
+   - chancellor: 3 (world-queries, writ-planning, memories)
 
 4. **Stale cleanup** — `InstallSkills` removes skill directories not in the current
    role set, handling role changes cleanly.
