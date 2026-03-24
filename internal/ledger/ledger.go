@@ -10,17 +10,22 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/nevinsm/sol/internal/adapter"
+	claudeadapter "github.com/nevinsm/sol/internal/adapter/claude"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// ExtractFunc extracts telemetry data from a log event.
+// Returns nil if the event is not relevant.
+type ExtractFunc func(eventName string, attrs map[string]string) *adapter.TelemetryRecord
 
 // DefaultPort is the standard OTLP HTTP port.
 const DefaultPort = 4318
@@ -48,9 +53,10 @@ type sessionKey struct {
 
 // Ledger receives OTLP HTTP log events and writes token usage to world databases.
 type Ledger struct {
-	config   Config
-	logger   *log.Logger
-	eventLog *events.Logger // optional event logger
+	config     Config
+	logger     *log.Logger
+	eventLog   *events.Logger // optional event logger
+	extractors map[string]ExtractFunc // service.name -> extract function
 
 	mu       sync.Mutex
 	sessions map[sessionKey]string    // sessionKey -> agent_history ID
@@ -69,13 +75,20 @@ func New(cfg Config, eventLog ...*events.Logger) *Ledger {
 	if len(eventLog) > 0 {
 		el = eventLog[0]
 	}
+
+	claude := claudeadapter.New()
+	extractors := map[string]ExtractFunc{
+		"claude-code": claude.ExtractTelemetry,
+	}
+
 	return &Ledger{
-		config:   cfg,
-		logger:   log.New(os.Stderr, "[ledger] ", log.LstdFlags),
-		eventLog: el,
-		sessions: make(map[sessionKey]string),
-		stores:   make(map[string]*store.WorldStore),
-		worlds:   make(map[string]bool),
+		config:     cfg,
+		logger:     log.New(os.Stderr, "[ledger] ", log.LstdFlags),
+		eventLog:   el,
+		extractors: extractors,
+		sessions:   make(map[sessionKey]string),
+		stores:     make(map[string]*store.WorldStore),
+		worlds:     make(map[string]bool),
 	}
 }
 
@@ -293,15 +306,22 @@ func (l *Ledger) processResourceLogs(rl ResourceLogs) (total, failed int) {
 	agentName := resAttrs["agent.name"]
 	world := resAttrs["world"]
 	writID := resAttrs["writ_id"]
+	serviceName := resAttrs["service.name"]
 
 	if agentName == "" || world == "" {
 		return 0, 0 // skip events without required resource attributes
 	}
 
+	// Look up extractor for this runtime. Unknown service names are silently skipped.
+	extract, ok := l.extractors[serviceName]
+	if !ok {
+		return 0, 0
+	}
+
 	for _, sl := range rl.ScopeLogs {
 		for _, rec := range sl.LogRecords {
 			total++
-			if err := l.processLogRecord(world, agentName, writID, rec); err != nil {
+			if err := l.processLogRecord(world, agentName, writID, serviceName, extract, rec); err != nil {
 				failed++
 			}
 		}
@@ -313,52 +333,20 @@ func (l *Ledger) processResourceLogs(rl ResourceLogs) (total, failed int) {
 // processLogRecord processes a single log record, extracting token usage.
 // Returns nil on success (including filtered-out records), or an error if
 // the record could not be persisted.
-func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord) error {
+func (l *Ledger) processLogRecord(world, agentName, writID, runtime string, extract ExtractFunc, rec LogRecord) error {
 	attrs := attributeMap(rec.Attributes)
 
-	// Filter for claude_code.api_request events.
-	// The event name may be in the body or in an attribute.
-	// Claude Code sets the body to "claude_code.api_request" and the
-	// event.name attribute to "api_request" (without the prefix).
-	// Accept both forms so we handle either path.
+	// Determine the event name from the body or event.name attribute.
 	eventName := rec.Body.StringValue
 	if eventName == "" {
 		eventName = attrs["event.name"]
 	}
-	if eventName != "claude_code.api_request" && eventName != "api_request" {
+
+	// Delegate to the runtime-specific extractor.
+	tr := extract(eventName, attrs)
+	if tr == nil {
 		return nil // not a relevant event, skip without error
 	}
-
-	// Claude Code emits short attribute names ("model", "input_tokens", …).
-	// Fall back to OTel gen_ai.* semantic convention names for forward compatibility.
-	model := attrs["model"]
-	if model == "" {
-		model = attrs["gen_ai.response.model"]
-	}
-	if model == "" {
-		return nil // no model, skip without error
-	}
-
-	input := parseIntAttr(attrs, "input_tokens")
-	if input == 0 {
-		input = parseIntAttr(attrs, "gen_ai.usage.input_tokens")
-	}
-	output := parseIntAttr(attrs, "output_tokens")
-	if output == 0 {
-		output = parseIntAttr(attrs, "gen_ai.usage.output_tokens")
-	}
-	cacheRead := parseIntAttr(attrs, "cache_read_tokens")
-	if cacheRead == 0 {
-		cacheRead = parseIntAttr(attrs, "gen_ai.usage.cache_read_input_tokens")
-	}
-	cacheCreation := parseIntAttr(attrs, "cache_creation_tokens")
-	if cacheCreation == 0 {
-		cacheCreation = parseIntAttr(attrs, "gen_ai.usage.cache_creation_input_tokens")
-	}
-
-	// Extract optional cost and duration.
-	costUSD := parseFloatAttr(attrs, "cost_usd")
-	durationMS := parseIntPtrAttr(attrs, "duration_ms")
 
 	historyID, err := l.ensureHistory(world, agentName, writID)
 	if err != nil {
@@ -374,7 +362,7 @@ func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord
 		return fmt.Errorf("open world store: %w", err)
 	}
 
-	if _, err := ws.WriteTokenUsage(historyID, model, input, output, cacheRead, cacheCreation, costUSD, durationMS); err != nil {
+	if _, err := ws.WriteTokenUsage(historyID, tr.Model, tr.InputTokens, tr.OutputTokens, tr.CacheReadTokens, tr.CacheCreationTokens, tr.CostUSD, tr.DurationMS, runtime); err != nil {
 		l.logger.Printf("failed to write token usage: %v", err)
 		l.emitError("write_token_usage", err)
 		return fmt.Errorf("write token usage: %w", err)
@@ -382,7 +370,7 @@ func (l *Ledger) processLogRecord(world, agentName, writID string, rec LogRecord
 
 	// Track counters for heartbeat.
 	l.requestCount.Add(1)
-	l.tokensIngested.Add(input + output + cacheRead + cacheCreation)
+	l.tokensIngested.Add(tr.InputTokens + tr.OutputTokens + tr.CacheReadTokens + tr.CacheCreationTokens)
 
 	// Track worlds written to.
 	l.mu.Lock()
@@ -446,41 +434,3 @@ func (l *Ledger) worldStore(world string) (*store.WorldStore, error) {
 	return s, nil
 }
 
-// parseIntAttr parses an integer attribute value, returning 0 on failure.
-func parseIntAttr(attrs map[string]string, key string) int64 {
-	v, ok := attrs[key]
-	if !ok {
-		return 0
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
-}
-
-// parseFloatAttr parses a float attribute value, returning nil if absent or invalid.
-func parseFloatAttr(attrs map[string]string, key string) *float64 {
-	v, ok := attrs[key]
-	if !ok {
-		return nil
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		return nil
-	}
-	return &f
-}
-
-// parseIntPtrAttr parses an integer attribute value, returning nil if absent or invalid.
-func parseIntPtrAttr(attrs map[string]string, key string) *int64 {
-	v, ok := attrs[key]
-	if !ok {
-		return nil
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		return nil
-	}
-	return &n
-}

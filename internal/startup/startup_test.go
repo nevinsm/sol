@@ -114,6 +114,10 @@ func (m *mockRuntimeAdapter) Name() string {
 	return "mock"
 }
 
+func (m *mockRuntimeAdapter) ExtractTelemetry(eventName string, attrs map[string]string) *adapter.TelemetryRecord {
+	return nil
+}
+
 // setupTestEnv creates a minimal SOL_HOME with a world config and sphere DB.
 func setupTestEnv(t *testing.T, world string) string {
 	t.Helper()

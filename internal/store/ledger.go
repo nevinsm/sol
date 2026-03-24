@@ -29,6 +29,7 @@ type TokenUsage struct {
 	CacheCreationTokens int64
 	CostUSD             *float64
 	DurationMS          *int64
+	Runtime             string
 }
 
 // TokenSummary holds aggregated token counts for a single model.
@@ -186,16 +187,22 @@ func (s *WorldStore) EndHistory(writID string) (string, error) {
 
 // WriteTokenUsage inserts a token_usage record and returns its generated ID.
 // costUSD and durationMS are optional — pass nil to omit.
-func (s *WorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64) (string, error) {
+// runtime identifies the source runtime (e.g. "claude-code") — pass "" to omit.
+func (s *WorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64, runtime string) (string, error) {
 	id, err := generateTokenUsageID()
 	if err != nil {
 		return "", err
 	}
 
+	var rt sql.NullString
+	if runtime != "" {
+		rt = sql.NullString{String: runtime, Valid: true}
+	}
+
 	_, err = s.db.Exec(
-		`INSERT INTO token_usage (id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, historyID, model, input, output, cacheRead, cacheCreation, costUSD, durationMS,
+		`INSERT INTO token_usage (id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, runtime)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, historyID, model, input, output, cacheRead, cacheCreation, costUSD, durationMS, rt,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert token usage: %w", err)

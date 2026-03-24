@@ -66,6 +66,7 @@ func makeOTLPBodyRaw(agentName, world, writID, eventName, model string, input, o
 			map[string]interface{}{
 				"resource": map[string]interface{}{
 					"attributes": []interface{}{
+						map[string]interface{}{"key": "service.name", "value": map[string]interface{}{"stringValue": "claude-code"}},
 						map[string]interface{}{"key": "agent.name", "value": map[string]interface{}{"stringValue": agentName}},
 						map[string]interface{}{"key": "world", "value": map[string]interface{}{"stringValue": world}},
 						map[string]interface{}{"key": "writ_id", "value": map[string]interface{}{"stringValue": writID}},
@@ -97,6 +98,7 @@ func makeOTLPBodyGenAI(agentName, world, writID, eventName, model string, input,
 			map[string]interface{}{
 				"resource": map[string]interface{}{
 					"attributes": []interface{}{
+						map[string]interface{}{"key": "service.name", "value": map[string]interface{}{"stringValue": "claude-code"}},
 						map[string]interface{}{"key": "agent.name", "value": map[string]interface{}{"stringValue": agentName}},
 						map[string]interface{}{"key": "world", "value": map[string]interface{}{"stringValue": world}},
 						map[string]interface{}{"key": "writ_id", "value": map[string]interface{}{"stringValue": writID}},
@@ -304,22 +306,6 @@ func TestAttributeMap(t *testing.T) {
 	}
 }
 
-func TestParseIntAttr(t *testing.T) {
-	attrs := map[string]string{
-		"count":   "42",
-		"invalid": "abc",
-	}
-
-	if v := parseIntAttr(attrs, "count"); v != 42 {
-		t.Fatalf("expected 42, got %d", v)
-	}
-	if v := parseIntAttr(attrs, "invalid"); v != 0 {
-		t.Fatalf("expected 0 for invalid, got %d", v)
-	}
-	if v := parseIntAttr(attrs, "missing"); v != 0 {
-		t.Fatalf("expected 0 for missing, got %d", v)
-	}
-}
 
 // TestHandleLogs_GenAIFallback verifies that gen_ai.* attribute names are
 // still accepted when Claude Code's short names are absent.
@@ -365,6 +351,7 @@ func TestHandleLogs_EventNameAttrFallback(t *testing.T) {
 		"resourceLogs": [{
 			"resource": {
 				"attributes": [
+					{"key": "service.name", "value": {"stringValue": "claude-code"}},
 					{"key": "agent.name", "value": {"stringValue": "Toast"}},
 					{"key": "world", "value": {"stringValue": "testworld"}},
 					{"key": "writ_id", "value": {"stringValue": "sol-item01"}}
@@ -527,6 +514,7 @@ func TestHandleLogs_RealClaudeCodePayload(t *testing.T) {
 		"resourceLogs": [{
 			"resource": {
 				"attributes": [
+					{"key": "service.name", "value": {"stringValue": "claude-code"}},
 					{"key": "agent.name", "value": {"stringValue": "Nova"}},
 					{"key": "world", "value": {"stringValue": "testworld"}},
 					{"key": "writ_id", "value": {"stringValue": "sol-abc123"}}
@@ -592,20 +580,242 @@ func TestHandleLogs_RealClaudeCodePayload(t *testing.T) {
 	}
 }
 
-// TestParseFloatAttr tests the parseFloatAttr helper.
-func TestParseFloatAttr(t *testing.T) {
-	attrs := map[string]string{
-		"cost": "0.0042",
-		"bad":  "abc",
+// TestExtractorRegistry_UnknownServiceName verifies that unknown service.name
+// values are silently skipped — no crash, no error, no history created.
+func TestExtractorRegistry_UnknownServiceName(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	// Use a service.name that has no registered extractor.
+	rawJSON := `{
+		"resourceLogs": [{
+			"resource": {
+				"attributes": [
+					{"key": "service.name", "value": {"stringValue": "unknown-runtime"}},
+					{"key": "agent.name", "value": {"stringValue": "Toast"}},
+					{"key": "world", "value": {"stringValue": "testworld"}},
+					{"key": "writ_id", "value": {"stringValue": "sol-item01"}}
+				]
+			},
+			"scopeLogs": [{
+				"logRecords": [{
+					"timeUnixNano": "1709740800000000000",
+					"body": {"stringValue": "claude_code.api_request"},
+					"attributes": [
+						{"key": "model", "value": {"stringValue": "some-model"}},
+						{"key": "input_tokens", "value": {"intValue": "1000"}},
+						{"key": "output_tokens", "value": {"intValue": "500"}}
+					]
+				}]
+			}]
+		}]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader([]byte(rawJSON)))
+	w := httptest.NewRecorder()
+	l.handleLogs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	if v := parseFloatAttr(attrs, "cost"); v == nil || *v != 0.0042 {
-		t.Fatalf("expected 0.0042, got %v", v)
+	// No history should be created for unknown runtime.
+	entries, err := ws.ListHistory("Toast")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if v := parseFloatAttr(attrs, "bad"); v != nil {
-		t.Fatalf("expected nil for invalid, got %v", v)
+	if len(entries) != 0 {
+		t.Fatalf("expected 0 history entries for unknown runtime, got %d", len(entries))
 	}
-	if v := parseFloatAttr(attrs, "missing"); v != nil {
-		t.Fatalf("expected nil for missing, got %v", v)
+}
+
+// TestExtractorRegistry_MissingServiceName verifies that events without
+// service.name are silently skipped.
+func TestExtractorRegistry_MissingServiceName(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	// No service.name in resource attributes.
+	rawJSON := `{
+		"resourceLogs": [{
+			"resource": {
+				"attributes": [
+					{"key": "agent.name", "value": {"stringValue": "Toast"}},
+					{"key": "world", "value": {"stringValue": "testworld"}},
+					{"key": "writ_id", "value": {"stringValue": "sol-item01"}}
+				]
+			},
+			"scopeLogs": [{
+				"logRecords": [{
+					"timeUnixNano": "1709740800000000000",
+					"body": {"stringValue": "claude_code.api_request"},
+					"attributes": [
+						{"key": "model", "value": {"stringValue": "claude-sonnet-4-6"}},
+						{"key": "input_tokens", "value": {"intValue": "1000"}},
+						{"key": "output_tokens", "value": {"intValue": "500"}}
+					]
+				}]
+			}]
+		}]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader([]byte(rawJSON)))
+	w := httptest.NewRecorder()
+	l.handleLogs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
 	}
+
+	// No history should be created without service.name.
+	entries, err := ws.ListHistory("Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected 0 history entries without service.name, got %d", len(entries))
+	}
+}
+
+// TestExtractorRegistry_ClaudeCodeDispatch verifies that the claude-code
+// extractor is correctly registered and dispatches events.
+func TestExtractorRegistry_ClaudeCodeDispatch(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	// Verify the extractor is registered.
+	if _, ok := l.extractors["claude-code"]; !ok {
+		t.Fatal("expected claude-code extractor to be registered")
+	}
+
+	// Send a valid event with service.name=claude-code.
+	body := makeOTLPBody("Toast", "testworld", "sol-item01", "claude_code.api_request",
+		"claude-sonnet-4-6", 1000, 500, 200, 100)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	l.handleLogs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	summaries, err := ws.AggregateTokens("Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 token summary, got %d", len(summaries))
+	}
+	if summaries[0].InputTokens != 1000 {
+		t.Fatalf("expected input_tokens 1000, got %d", summaries[0].InputTokens)
+	}
+}
+
+// TestClaudeExtractTelemetry_Direct tests the Claude adapter's ExtractTelemetry
+// method directly with various inputs.
+func TestClaudeExtractTelemetry_Direct(t *testing.T) {
+	l := New(DefaultConfig(t.TempDir()))
+	extract := l.extractors["claude-code"]
+
+	t.Run("accepts claude_code.api_request", func(t *testing.T) {
+		attrs := map[string]string{
+			"model":                 "claude-sonnet-4-6",
+			"input_tokens":         "1000",
+			"output_tokens":        "500",
+			"cache_read_tokens":    "200",
+			"cache_creation_tokens": "100",
+		}
+		tr := extract("claude_code.api_request", attrs)
+		if tr == nil {
+			t.Fatal("expected non-nil TelemetryRecord")
+		}
+		if tr.Model != "claude-sonnet-4-6" {
+			t.Fatalf("expected model 'claude-sonnet-4-6', got %q", tr.Model)
+		}
+		if tr.InputTokens != 1000 {
+			t.Fatalf("expected input 1000, got %d", tr.InputTokens)
+		}
+		if tr.OutputTokens != 500 {
+			t.Fatalf("expected output 500, got %d", tr.OutputTokens)
+		}
+	})
+
+	t.Run("accepts api_request", func(t *testing.T) {
+		attrs := map[string]string{
+			"model":          "claude-sonnet-4-6",
+			"input_tokens":  "100",
+			"output_tokens": "50",
+		}
+		tr := extract("api_request", attrs)
+		if tr == nil {
+			t.Fatal("expected non-nil TelemetryRecord")
+		}
+	})
+
+	t.Run("rejects unknown event", func(t *testing.T) {
+		attrs := map[string]string{
+			"model":          "claude-sonnet-4-6",
+			"input_tokens":  "100",
+			"output_tokens": "50",
+		}
+		tr := extract("some.other.event", attrs)
+		if tr != nil {
+			t.Fatal("expected nil for unknown event")
+		}
+	})
+
+	t.Run("rejects missing model", func(t *testing.T) {
+		attrs := map[string]string{
+			"input_tokens":  "100",
+			"output_tokens": "50",
+		}
+		tr := extract("claude_code.api_request", attrs)
+		if tr != nil {
+			t.Fatal("expected nil for missing model")
+		}
+	})
+
+	t.Run("gen_ai fallback", func(t *testing.T) {
+		attrs := map[string]string{
+			"gen_ai.response.model":                   "claude-sonnet-4-6",
+			"gen_ai.usage.input_tokens":               "1000",
+			"gen_ai.usage.output_tokens":              "500",
+			"gen_ai.usage.cache_read_input_tokens":    "200",
+			"gen_ai.usage.cache_creation_input_tokens": "100",
+		}
+		tr := extract("claude_code.api_request", attrs)
+		if tr == nil {
+			t.Fatal("expected non-nil TelemetryRecord")
+		}
+		if tr.Model != "claude-sonnet-4-6" {
+			t.Fatalf("expected model 'claude-sonnet-4-6', got %q", tr.Model)
+		}
+		if tr.InputTokens != 1000 {
+			t.Fatalf("expected input 1000, got %d", tr.InputTokens)
+		}
+		if tr.CacheReadTokens != 200 {
+			t.Fatalf("expected cache_read 200, got %d", tr.CacheReadTokens)
+		}
+	})
+
+	t.Run("cost and duration", func(t *testing.T) {
+		attrs := map[string]string{
+			"model":          "claude-sonnet-4-6",
+			"input_tokens":  "100",
+			"output_tokens": "50",
+			"cost_usd":      "0.0042",
+			"duration_ms":   "1500",
+		}
+		tr := extract("claude_code.api_request", attrs)
+		if tr == nil {
+			t.Fatal("expected non-nil TelemetryRecord")
+		}
+		if tr.CostUSD == nil || *tr.CostUSD != 0.0042 {
+			t.Fatalf("expected CostUSD 0.0042, got %v", tr.CostUSD)
+		}
+		if tr.DurationMS == nil || *tr.DurationMS != 1500 {
+			t.Fatalf("expected DurationMS 1500, got %v", tr.DurationMS)
+		}
+	})
 }

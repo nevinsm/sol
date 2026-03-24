@@ -8,7 +8,7 @@ import (
 
 // Current schema versions — the latest migration target for each database type.
 const (
-	CurrentWorldSchema  = 11
+	CurrentWorldSchema  = 12
 	CurrentSphereSchema = 14
 )
 
@@ -191,6 +191,9 @@ const worldSchemaV10 = "" // migration handled procedurally below
 // worldSchemaV11 adds cost_usd and duration_ms columns to token_usage.
 const worldSchemaV11 = "" // migration handled procedurally below
 
+// worldSchemaV12 adds runtime column to token_usage.
+const worldSchemaV12 = "" // migration handled procedurally below
+
 func (s *WorldStore) migrateWorld() error {
 	v, err := s.SchemaVersion()
 	if err != nil {
@@ -345,6 +348,18 @@ func (s *WorldStore) migrateWorld() error {
 		if !exists {
 			if _, err := tx.Exec(`ALTER TABLE token_usage ADD COLUMN duration_ms INTEGER`); err != nil {
 				return fmt.Errorf("failed to add token_usage.duration_ms column: %w", err)
+			}
+		}
+	}
+	if v < 12 {
+		// Add runtime column to token_usage (nullable TEXT).
+		exists, err := columnExists(tx, "token_usage", "runtime")
+		if err != nil {
+			return fmt.Errorf("V12 migration: failed to check column token_usage.runtime: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(`ALTER TABLE token_usage ADD COLUMN runtime TEXT`); err != nil {
+				return fmt.Errorf("failed to add token_usage.runtime column: %w", err)
 			}
 		}
 	}

@@ -2,6 +2,18 @@
 // for abstracting AI agent runtimes.
 package adapter
 
+// TelemetryRecord holds extracted telemetry data from a single log event.
+// Returned by ExtractTelemetry; nil means the event is not relevant.
+type TelemetryRecord struct {
+	Model               string
+	InputTokens         int64
+	OutputTokens        int64
+	CacheReadTokens     int64
+	CacheCreationTokens int64
+	CostUSD             *float64
+	DurationMS          *int64
+}
+
 // RuntimeAdapter abstracts the underlying AI agent runtime.
 // Each method corresponds to one concern in the startup.Launch sequence.
 type RuntimeAdapter interface {
@@ -43,6 +55,11 @@ type RuntimeAdapter interface {
 	//     ExtractTelemetry implementation in the ledger. The ledger uses
 	//     service.name as the routing key to select the correct extractor.
 	TelemetryEnv(port int, agent, world, activeWrit string) map[string]string
+
+	// ExtractTelemetry extracts token usage data from a log event.
+	// Returns nil if the event is not relevant (wrong event name, no token data).
+	// The adapter owns both event filtering and attribute extraction.
+	ExtractTelemetry(eventName string, attrs map[string]string) *TelemetryRecord
 
 	// Name returns the adapter's registered name (e.g. "claude").
 	Name() string
