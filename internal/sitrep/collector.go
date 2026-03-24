@@ -63,13 +63,15 @@ type WorldData struct {
 
 // CollectedData holds all data gathered for a sitrep.
 type CollectedData struct {
-	Scope            string                               `json:"scope"` // "sphere" or world name
-	Agents           []store.Agent                        `json:"agents"`
-	Escalations      []store.Escalation                   `json:"escalations,omitempty"`
-	Caravans         []store.Caravan                      `json:"caravans"`
-	CaravanReadiness map[string][]store.CaravanItemStatus `json:"caravan_readiness,omitempty"`
-	ForgeStatuses    map[string]ForgeStatus               `json:"forge_statuses,omitempty"`
-	Worlds           []WorldData                          `json:"worlds"`
+	Scope                  string                               `json:"scope"` // "sphere" or world name
+	Agents                 []store.Agent                        `json:"agents"`
+	Escalations            []store.Escalation                   `json:"escalations,omitempty"`
+	Caravans               []store.Caravan                      `json:"caravans"`
+	CaravanReadiness       map[string][]store.CaravanItemStatus `json:"caravan_readiness,omitempty"`
+	CaravanDeps            map[string][]string                  `json:"caravan_deps,omitempty"`
+	CaravanUnsatisfiedDeps map[string][]string                  `json:"caravan_unsatisfied_deps,omitempty"`
+	ForgeStatuses          map[string]ForgeStatus               `json:"forge_statuses,omitempty"`
+	Worlds                 []WorldData                          `json:"worlds"`
 }
 
 // WorldOpener opens a world store by name.
@@ -113,8 +115,10 @@ func Collect(sphereStore *store.SphereStore, worldOpener WorldOpener, scope Scop
 	}
 	data.Caravans = append(openCaravans, drydockCaravans...)
 
-	// Check readiness for all collected caravans (all are non-closed).
+	// Check readiness and dependencies for all collected caravans (all are non-closed).
 	data.CaravanReadiness = make(map[string][]store.CaravanItemStatus)
+	data.CaravanDeps = make(map[string][]string)
+	data.CaravanUnsatisfiedDeps = make(map[string][]string)
 	for _, c := range data.Caravans {
 		statuses, err := sphereStore.CheckCaravanReadiness(c.ID, worldOpener)
 		if err != nil {
@@ -122,6 +126,16 @@ func Collect(sphereStore *store.SphereStore, worldOpener WorldOpener, scope Scop
 			continue
 		}
 		data.CaravanReadiness[c.ID] = statuses
+
+		// Collect caravan dependencies (non-fatal on error).
+		deps, err := sphereStore.GetCaravanDependencies(c.ID)
+		if err == nil && len(deps) > 0 {
+			data.CaravanDeps[c.ID] = deps
+		}
+		unsatisfied, err := sphereStore.UnsatisfiedCaravanDependencies(c.ID)
+		if err == nil && len(unsatisfied) > 0 {
+			data.CaravanUnsatisfiedDeps[c.ID] = unsatisfied
+		}
 	}
 
 	// Collect world data and forge statuses.

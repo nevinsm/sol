@@ -342,6 +342,124 @@ func TestFormatDataPayloadForgeStatusPaused(t *testing.T) {
 	}
 }
 
+func TestFormatDataPayloadCaravanPhaseBreakdown(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	data := &sitrep.CollectedData{
+		Scope: "sphere",
+		Caravans: []store.Caravan{
+			{ID: "car-1", Name: "Arc 3", Status: "open"},
+		},
+		CaravanReadiness: map[string][]store.CaravanItemStatus{
+			"car-1": {
+				{WritID: "sol-aaa", World: "dev", Phase: 0, WritStatus: "closed", Ready: false},
+				{WritID: "sol-bbb", World: "dev", Phase: 0, WritStatus: "closed", Ready: false},
+				{WritID: "sol-ccc", World: "dev", Phase: 1, WritStatus: "done", Ready: false},
+				{WritID: "sol-ddd", World: "dev", Phase: 1, WritStatus: "open", Ready: true},
+				{WritID: "sol-eee", World: "dev", Phase: 2, WritStatus: "open", Ready: false},
+			},
+		},
+		CaravanDeps:            map[string][]string{},
+		CaravanUnsatisfiedDeps: map[string][]string{},
+		Worlds: []sitrep.WorldData{
+			{
+				Name: "dev",
+				Writs: []store.Writ{
+					{ID: "sol-aaa", Title: "Setup infra"},
+					{ID: "sol-bbb", Title: "Init DB"},
+					{ID: "sol-ccc", Title: "Build API"},
+					{ID: "sol-ddd", Title: "Add auth"},
+					{ID: "sol-eee", Title: "Deploy service"},
+				},
+			},
+		},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check phase breakdown is present.
+	checks := []string{
+		"Phase 0 (2 items): 2 closed, 0 done, 0 ready, 0 active, 0 blocked",
+		"Phase 1 (2 items): 0 closed, 1 done, 1 ready, 0 active, 0 blocked",
+		"Phase 2 (1 items): 0 closed, 0 done, 0 ready, 0 active, 1 blocked",
+		"ready: Add auth (sol-ddd)",
+	}
+	for _, check := range checks {
+		if !strings.Contains(prompt, check) {
+			t.Errorf("prompt should contain %q\ngot:\n%s", check, prompt)
+		}
+	}
+}
+
+func TestFormatDataPayloadCaravanDependencies(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	data := &sitrep.CollectedData{
+		Scope: "sphere",
+		Caravans: []store.Caravan{
+			{ID: "car-1", Name: "Health Scan", Status: "open"},
+			{ID: "car-2", Name: "Session Concurrency", Status: "open"},
+		},
+		CaravanReadiness:       map[string][]store.CaravanItemStatus{},
+		CaravanDeps:            map[string][]string{"car-2": {"car-1"}},
+		CaravanUnsatisfiedDeps: map[string][]string{"car-2": {"car-1"}},
+		Worlds:                 []sitrep.WorldData{},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Session Concurrency should show blocked by Health Scan.
+	if !strings.Contains(prompt, "Blocked by: Health Scan (unsatisfied)") {
+		t.Errorf("prompt should show unsatisfied dependency\ngot:\n%s", prompt)
+	}
+
+	// Health Scan should NOT show any dependency line.
+	// Find the Health Scan section and check it doesn't contain "Blocked" or "Dependencies".
+	healthIdx := strings.Index(prompt, "### Health Scan")
+	sessionIdx := strings.Index(prompt, "### Session Concurrency")
+	if healthIdx < 0 || sessionIdx < 0 {
+		t.Fatal("expected both caravan headers in prompt")
+	}
+	healthSection := prompt[healthIdx:sessionIdx]
+	if strings.Contains(healthSection, "Blocked by") || strings.Contains(healthSection, "Dependencies") {
+		t.Errorf("Health Scan should have no dependency line, got: %s", healthSection)
+	}
+}
+
+func TestFormatDataPayloadCaravanDepsSatisfied(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	data := &sitrep.CollectedData{
+		Scope: "sphere",
+		Caravans: []store.Caravan{
+			{ID: "car-1", Name: "Prereq", Status: "open"},
+			{ID: "car-2", Name: "Main Work", Status: "open"},
+		},
+		CaravanReadiness:       map[string][]store.CaravanItemStatus{},
+		CaravanDeps:            map[string][]string{"car-2": {"car-1"}},
+		CaravanUnsatisfiedDeps: map[string][]string{},
+		Worlds:                 []sitrep.WorldData{},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(prompt, "Dependencies: Prereq (all satisfied)") {
+		t.Errorf("prompt should show satisfied dependencies\ngot:\n%s", prompt)
+	}
+}
+
 func TestFormatDataPayloadBlockedMRs(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)

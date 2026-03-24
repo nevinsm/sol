@@ -571,3 +571,98 @@ func TestCollectForgeStatusSphereScope(t *testing.T) {
 		t.Error("expected forge status for bravo")
 	}
 }
+
+func TestCollectCaravanDependencies(t *testing.T) {
+	sphere, opener := setupTestEnv(t)
+
+	// Create two caravans.
+	idA, err := sphere.CreateCaravan("caravan-alpha", "autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphere.UpdateCaravanStatus(idA, "open"); err != nil {
+		t.Fatal(err)
+	}
+
+	idB, err := sphere.CreateCaravan("caravan-beta", "autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphere.UpdateCaravanStatus(idB, "open"); err != nil {
+		t.Fatal(err)
+	}
+
+	// A depends on B.
+	if err := sphere.AddCaravanDependency(idA, idB); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := sitrep.Collect(sphere, opener, sitrep.Scope{Sphere: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// CaravanDeps should contain A → [B].
+	if deps, ok := data.CaravanDeps[idA]; !ok {
+		t.Error("expected CaravanDeps to contain caravan-alpha")
+	} else if len(deps) != 1 || deps[0] != idB {
+		t.Errorf("expected CaravanDeps[%s] = [%s], got %v", idA, idB, deps)
+	}
+
+	// B has no deps.
+	if deps, ok := data.CaravanDeps[idB]; ok && len(deps) > 0 {
+		t.Errorf("expected no deps for caravan-beta, got %v", deps)
+	}
+
+	// B is open, so A has unsatisfied deps.
+	if unsatisfied, ok := data.CaravanUnsatisfiedDeps[idA]; !ok {
+		t.Error("expected CaravanUnsatisfiedDeps to contain caravan-alpha")
+	} else if len(unsatisfied) != 1 || unsatisfied[0] != idB {
+		t.Errorf("expected unsatisfied [%s], got %v", idB, unsatisfied)
+	}
+}
+
+func TestCollectCaravanDependenciesSatisfied(t *testing.T) {
+	sphere, opener := setupTestEnv(t)
+
+	// Create two caravans: A depends on B, B is closed.
+	idA, err := sphere.CreateCaravan("caravan-alpha", "autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphere.UpdateCaravanStatus(idA, "open"); err != nil {
+		t.Fatal(err)
+	}
+
+	idB, err := sphere.CreateCaravan("caravan-beta", "autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphere.UpdateCaravanStatus(idB, "open"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sphere.UpdateCaravanStatus(idB, "closed"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := sphere.AddCaravanDependency(idA, idB); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := sitrep.Collect(sphere, opener, sitrep.Scope{Sphere: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// CaravanDeps should still show the dependency.
+	if deps, ok := data.CaravanDeps[idA]; !ok {
+		t.Error("expected CaravanDeps to contain caravan-alpha")
+	} else if len(deps) != 1 || deps[0] != idB {
+		t.Errorf("expected deps [%s], got %v", idB, deps)
+	}
+
+	// But unsatisfied should be empty (B is closed).
+	if unsatisfied, ok := data.CaravanUnsatisfiedDeps[idA]; ok && len(unsatisfied) > 0 {
+		t.Errorf("expected no unsatisfied deps, got %v", unsatisfied)
+	}
+}

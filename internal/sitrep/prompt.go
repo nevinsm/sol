@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -144,28 +145,106 @@ func formatDataPayload(data *CollectedData) string {
 		b.WriteString(fmt.Sprintf("Total: %d (open: %d, drydock: %d, ready: %d, closed: %d)\n\n",
 			len(data.Caravans), open, drydock, ready, closed))
 
+		// Build a caravan ID → name lookup for dependency display.
+		caravanNames := make(map[string]string)
+		for _, c := range data.Caravans {
+			caravanNames[c.ID] = c.Name
+		}
+
+		// Build writ ID → title lookup from all worlds.
+		writTitles := make(map[string]string)
+		for _, w := range data.Worlds {
+			for _, wr := range w.Writs {
+				writTitles[wr.ID] = wr.Title
+			}
+		}
+
 		// Detail for non-closed caravans.
 		for _, c := range data.Caravans {
 			if c.Status == "closed" {
 				continue
 			}
 			b.WriteString(fmt.Sprintf("### %s (%s) — %s\n", c.Name, c.ID, c.Status))
-			if statuses, ok := data.CaravanReadiness[c.ID]; ok && len(statuses) > 0 {
-				var readyCount, doneCount, closedCount, activeCount int
-				for _, s := range statuses {
-					switch {
-					case s.WritStatus == "closed":
-						closedCount++
-					case s.WritStatus == "done":
-						doneCount++
-					case s.Ready:
-						readyCount++
-					case s.IsDispatched():
-						activeCount++
+
+			// Show caravan dependencies if present.
+			if unsatisfied, ok := data.CaravanUnsatisfiedDeps[c.ID]; ok && len(unsatisfied) > 0 {
+				var names []string
+				for _, depID := range unsatisfied {
+					if name, ok := caravanNames[depID]; ok {
+						names = append(names, name)
+					} else {
+						names = append(names, depID)
 					}
 				}
-				b.WriteString(fmt.Sprintf("Items: %d total — %d closed, %d done, %d ready, %d active\n",
-					len(statuses), closedCount, doneCount, readyCount, activeCount))
+				b.WriteString(fmt.Sprintf("Blocked by: %s (unsatisfied)\n", strings.Join(names, ", ")))
+			} else if deps, ok := data.CaravanDeps[c.ID]; ok && len(deps) > 0 {
+				var names []string
+				for _, depID := range deps {
+					if name, ok := caravanNames[depID]; ok {
+						names = append(names, name)
+					} else {
+						names = append(names, depID)
+					}
+				}
+				b.WriteString(fmt.Sprintf("Dependencies: %s (all satisfied)\n", strings.Join(names, ", ")))
+			}
+
+			// Phase-level breakdown.
+			if statuses, ok := data.CaravanReadiness[c.ID]; ok && len(statuses) > 0 {
+				// Group items by phase.
+				phaseItems := make(map[int][]store.CaravanItemStatus)
+				var phases []int
+				for _, s := range statuses {
+					if _, exists := phaseItems[s.Phase]; !exists {
+						phases = append(phases, s.Phase)
+					}
+					phaseItems[s.Phase] = append(phaseItems[s.Phase], s)
+				}
+				sort.Ints(phases)
+
+				for _, phase := range phases {
+					items := phaseItems[phase]
+					var closedCount, doneCount, readyCount, activeCount, blockedCount int
+					var readyWritIDs, failedWritIDs []string
+					for _, s := range items {
+						switch {
+						case s.WritStatus == "closed":
+							closedCount++
+						case s.WritStatus == "done":
+							doneCount++
+						case s.Ready:
+							readyCount++
+							readyWritIDs = append(readyWritIDs, s.WritID)
+						case s.IsDispatched():
+							activeCount++
+						default:
+							blockedCount++
+							if s.WritStatus == "failed" {
+								failedWritIDs = append(failedWritIDs, s.WritID)
+							}
+						}
+					}
+
+					b.WriteString(fmt.Sprintf("Phase %d (%d items): %d closed, %d done, %d ready, %d active, %d blocked\n",
+						phase, len(items), closedCount, doneCount, readyCount, activeCount, blockedCount))
+
+					// List ready writs by title.
+					for _, wid := range readyWritIDs {
+						title := writTitles[wid]
+						if title == "" {
+							title = wid
+						}
+						b.WriteString(fmt.Sprintf("  ready: %s (%s)\n", title, wid))
+					}
+					// List failed writs by title.
+					for _, wid := range failedWritIDs {
+						title := writTitles[wid]
+						if title == "" {
+							title = wid
+						}
+						b.WriteString(fmt.Sprintf("  failed: %s (%s)\n", title, wid))
+					}
+				}
 			}
 			b.WriteString("\n")
 		}
