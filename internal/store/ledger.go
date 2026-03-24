@@ -680,6 +680,105 @@ func (s *WorldStore) TokensForWritSince(writID string, since time.Time) ([]Token
 	return summaries, nil
 }
 
+// RuntimeTokenSummary holds aggregated token counts for a single runtime.
+type RuntimeTokenSummary struct {
+	Runtime             string
+	InputTokens         int64
+	OutputTokens        int64
+	CacheReadTokens     int64
+	CacheCreationTokens int64
+	CostUSD             *float64
+	DurationMS          *int64
+}
+
+// TokensByRuntimeForWorld returns per-runtime token summaries across all models
+// and agents. Each entry aggregates all usage for one runtime value.
+func (s *WorldStore) TokensByRuntimeForWorld() ([]RuntimeTokenSummary, error) {
+	rows, err := s.db.Query(
+		`SELECT COALESCE(tu.runtime, ''),
+		        SUM(tu.input_tokens),
+		        SUM(tu.output_tokens),
+		        SUM(tu.cache_read_tokens),
+		        SUM(tu.cache_creation_tokens),
+		        SUM(tu.cost_usd),
+		        SUM(tu.duration_ms)
+		 FROM token_usage tu
+		 GROUP BY tu.runtime
+		 ORDER BY tu.runtime`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate tokens by runtime: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []RuntimeTokenSummary
+	for rows.Next() {
+		var rts RuntimeTokenSummary
+		var costUSD sql.NullFloat64
+		var durationMS sql.NullInt64
+		if err := rows.Scan(&rts.Runtime, &rts.InputTokens, &rts.OutputTokens, &rts.CacheReadTokens, &rts.CacheCreationTokens, &costUSD, &durationMS); err != nil {
+			return nil, fmt.Errorf("failed to scan runtime token summary: %w", err)
+		}
+		if costUSD.Valid {
+			rts.CostUSD = &costUSD.Float64
+		}
+		if durationMS.Valid {
+			rts.DurationMS = &durationMS.Int64
+		}
+		summaries = append(summaries, rts)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating runtime token summaries: %w", err)
+	}
+	return summaries, nil
+}
+
+// TokensByRuntimeSince returns per-runtime token summaries for history entries
+// started at or after the given time.
+func (s *WorldStore) TokensByRuntimeSince(since time.Time) ([]RuntimeTokenSummary, error) {
+	sinceStr := since.UTC().Format(time.RFC3339)
+	rows, err := s.db.Query(
+		`SELECT COALESCE(tu.runtime, ''),
+		        SUM(tu.input_tokens),
+		        SUM(tu.output_tokens),
+		        SUM(tu.cache_read_tokens),
+		        SUM(tu.cache_creation_tokens),
+		        SUM(tu.cost_usd),
+		        SUM(tu.duration_ms)
+		 FROM token_usage tu
+		 JOIN agent_history ah ON tu.history_id = ah.id
+		 WHERE ah.started_at >= ?
+		 GROUP BY tu.runtime
+		 ORDER BY tu.runtime`,
+		sinceStr,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate tokens by runtime since %s: %w", sinceStr, err)
+	}
+	defer rows.Close()
+
+	var summaries []RuntimeTokenSummary
+	for rows.Next() {
+		var rts RuntimeTokenSummary
+		var costUSD sql.NullFloat64
+		var durationMS sql.NullInt64
+		if err := rows.Scan(&rts.Runtime, &rts.InputTokens, &rts.OutputTokens, &rts.CacheReadTokens, &rts.CacheCreationTokens, &costUSD, &durationMS); err != nil {
+			return nil, fmt.Errorf("failed to scan runtime token summary: %w", err)
+		}
+		if costUSD.Valid {
+			rts.CostUSD = &costUSD.Float64
+		}
+		if durationMS.Valid {
+			rts.DurationMS = &durationMS.Int64
+		}
+		summaries = append(summaries, rts)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating runtime token summaries: %w", err)
+	}
+	return summaries, nil
+}
+
 // AgentMergeRequestSummary holds aggregate merge stats for an agent's writs.
 type AgentMergeRequestSummary struct {
 	TotalMRs     int

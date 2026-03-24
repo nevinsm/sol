@@ -76,6 +76,9 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 					result.Tokens.InputTokens += ts.InputTokens
 					result.Tokens.OutputTokens += ts.OutputTokens
 					result.Tokens.CacheTokens += ts.CacheReadTokens + ts.CacheCreationTokens
+					if ts.CostUSD != nil {
+						result.Tokens.CostUSD += *ts.CostUSD
+					}
 				}
 			}
 			agents, _, tErr := ws.WorldTokenMetaSince(since)

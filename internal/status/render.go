@@ -659,12 +659,41 @@ func renderTokens(b *strings.Builder, t TokenInfo) {
 		formatCompactTokens(t.InputTokens),
 		formatCompactTokens(t.OutputTokens))
 
+	if t.CostUSD > 0 {
+		line += fmt.Sprintf(", %s", formatCost(t.CostUSD))
+	}
+
 	if t.AgentCount > 0 {
 		line += fmt.Sprintf("  %s  %d agents", style.Dim.Render("•"), t.AgentCount)
 	}
 
 	b.WriteString(line)
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+
+	// Per-runtime breakdown (only shown when multiple runtimes present).
+	if len(t.RuntimeBreakdown) > 0 {
+		for _, rt := range t.RuntimeBreakdown {
+			rtLine := fmt.Sprintf("    %s: %s in / %s out",
+				rt.Runtime,
+				formatCompactTokens(rt.InputTokens),
+				formatCompactTokens(rt.OutputTokens))
+			if rt.CostUSD > 0 {
+				rtLine += fmt.Sprintf(", %s", formatCost(rt.CostUSD))
+			}
+			b.WriteString(style.Dim.Render(rtLine))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
+}
+
+// formatCost formats a USD cost value for display.
+func formatCost(cost float64) string {
+	if cost < 0.01 {
+		return fmt.Sprintf("$%.4f", cost)
+	}
+	return fmt.Sprintf("$%.2f", cost)
 }
 
 func renderMergeQueue(b *strings.Builder, mq MergeQueueInfo) {

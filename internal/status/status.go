@@ -21,12 +21,23 @@ import (
 	"github.com/nevinsm/sol/internal/tether"
 )
 
+// RuntimeTokenInfo holds per-runtime token usage for display.
+type RuntimeTokenInfo struct {
+	Runtime      string  `json:"runtime"`
+	InputTokens  int64   `json:"input_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
+	CacheTokens  int64   `json:"cache_tokens"`
+	CostUSD      float64 `json:"cost_usd,omitempty"`
+}
+
 // TokenInfo holds aggregated token usage for a 24-hour rolling window.
 type TokenInfo struct {
-	InputTokens  int64 `json:"input_tokens"`
-	OutputTokens int64 `json:"output_tokens"`
-	CacheTokens  int64 `json:"cache_tokens"`  // cache_read + cache_creation combined
-	AgentCount   int   `json:"agent_count"`    // distinct agents with token data in window
+	InputTokens      int64              `json:"input_tokens"`
+	OutputTokens     int64              `json:"output_tokens"`
+	CacheTokens      int64              `json:"cache_tokens"`  // cache_read + cache_creation combined
+	AgentCount       int                `json:"agent_count"`    // distinct agents with token data in window
+	CostUSD          float64            `json:"cost_usd,omitempty"`
+	RuntimeBreakdown []RuntimeTokenInfo `json:"runtime_breakdown,omitempty"`
 }
 
 // WorldStatus holds the complete runtime state for a world.
@@ -791,6 +802,9 @@ func GatherTokens(result *WorldStatus, worldStore *store.WorldStore) {
 		result.Tokens.InputTokens += ts.InputTokens
 		result.Tokens.OutputTokens += ts.OutputTokens
 		result.Tokens.CacheTokens += ts.CacheReadTokens + ts.CacheCreationTokens
+		if ts.CostUSD != nil {
+			result.Tokens.CostUSD += *ts.CostUSD
+		}
 	}
 
 	agents, _, err := worldStore.WorldTokenMetaSince(since)
@@ -798,6 +812,27 @@ func GatherTokens(result *WorldStatus, worldStore *store.WorldStore) {
 		return
 	}
 	result.Tokens.AgentCount = agents
+
+	// Gather per-runtime breakdown (only populated when multiple runtimes present).
+	rtSummaries, err := worldStore.TokensByRuntimeSince(since)
+	if err != nil || len(rtSummaries) <= 1 {
+		return // single or no runtime — don't clutter display
+	}
+	for _, rts := range rtSummaries {
+		rti := RuntimeTokenInfo{
+			Runtime:      rts.Runtime,
+			InputTokens:  rts.InputTokens,
+			OutputTokens: rts.OutputTokens,
+			CacheTokens:  rts.CacheReadTokens + rts.CacheCreationTokens,
+		}
+		if rts.CostUSD != nil {
+			rti.CostUSD = *rts.CostUSD
+		}
+		if rti.Runtime == "" {
+			rti.Runtime = "unknown"
+		}
+		result.Tokens.RuntimeBreakdown = append(result.Tokens.RuntimeBreakdown, rti)
+	}
 }
 
 // GatherLedgerInfo reads ledger process state from PID file and heartbeat.
