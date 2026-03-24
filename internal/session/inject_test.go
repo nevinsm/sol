@@ -22,7 +22,7 @@ func TestInjectEnv_SetsVars(t *testing.T) {
 	mgr := setupTest(t)
 
 	const sessName = "injectenv-test"
-	if err := mgr.Start(sessName, "/tmp", "sleep 300", nil, "outpost", "testworld"); err != nil {
+	if err := mgr.Start(sessName, t.TempDir(), "sleep 300", nil, "outpost", "testworld"); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
 	t.Cleanup(func() { _ = mgr.Stop(sessName, true) })

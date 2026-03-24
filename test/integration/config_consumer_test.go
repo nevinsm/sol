@@ -32,8 +32,8 @@ func TestCastUsesConfigSourceRepo(t *testing.T) {
 	}
 	itemID = strings.TrimSpace(itemID)
 
-	// Run cast from /tmp (NOT the git repo) — should still work via config.
-	cmd := runGTWithDir(t, gtHome, "/tmp", "cast", itemID, "--world=myworld")
+	// Run cast from a non-repo directory — should still work via config.
+	cmd := runGTWithDir(t, gtHome, t.TempDir(), "cast", itemID, "--world=myworld")
 	if cmd.err != nil {
 		t.Fatalf("cast failed (should use config source_repo): %v: %s", cmd.err, cmd.out)
 	}

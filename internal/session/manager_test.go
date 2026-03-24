@@ -47,7 +47,7 @@ func TestStartStop(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-ss", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-ss", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestList(t *testing.T) {
 	names := []string{"list-a", "list-b", "list-c"}
 	for _, name := range names {
 		name := name
-		err := mgr.Start(name, "/tmp", "sleep 300", nil, "outpost", "haven")
+		err := mgr.Start(name, t.TempDir(), "sleep 300", nil, "outpost", "haven")
 		if err != nil {
 			t.Fatalf("Start %s failed: %v", name, err)
 		}
@@ -116,7 +116,7 @@ func TestCapture(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-cap", "/tmp", "echo 'hello world' && sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-cap", t.TempDir(), "echo 'hello world' && sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestInject(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start a session running cat which echoes stdin back
-	err := mgr.Start("test-inj", "/tmp", "cat", nil, "outpost", "haven")
+	err := mgr.Start("test-inj", t.TempDir(), "cat", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestHealthHealthy(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start a session that outputs text periodically
-	err := mgr.Start("test-hh", "/tmp", "while true; do echo tick; sleep 1; done", nil, "outpost", "haven")
+	err := mgr.Start("test-hh", t.TempDir(), "while true; do echo tick; sleep 1; done", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestHealthDead(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-hd", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-hd", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestExists(t *testing.T) {
 		t.Fatal("Exists should return false for nonexistent session")
 	}
 
-	err := mgr.Start("test-ex", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-ex", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -248,7 +248,8 @@ func TestMetadata(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-meta", "/tmp", "sleep 300", nil, "outpost", "haven")
+	workDir := t.TempDir()
+	err := mgr.Start("test-meta", workDir, "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -277,8 +278,8 @@ func TestMetadata(t *testing.T) {
 	if meta.World != "haven" {
 		t.Errorf("expected world 'haven', got %q", meta.World)
 	}
-	if meta.WorkDir != "/tmp" {
-		t.Errorf("expected workdir '/tmp', got %q", meta.WorkDir)
+	if meta.WorkDir != workDir {
+		t.Errorf("expected workdir %q, got %q", workDir, meta.WorkDir)
 	}
 	if meta.StartedAt.IsZero() {
 		t.Error("started_at should not be zero")
@@ -299,7 +300,7 @@ func TestDoubleStart(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-ds", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-ds", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("first Start failed: %v", err)
 	}
@@ -308,7 +309,7 @@ func TestDoubleStart(t *testing.T) {
 	// Let tmux stabilize
 	time.Sleep(300 * time.Millisecond)
 
-	err = mgr.Start("test-ds", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err = mgr.Start("test-ds", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err == nil {
 		t.Fatal("second Start should fail for duplicate session name")
 	}
@@ -385,7 +386,7 @@ func TestEnvVars(t *testing.T) {
 		"OTHER":  "world",
 	}
 
-	err := mgr.Start("test-env", "/tmp", "sleep 300", env, "outpost", "haven")
+	err := mgr.Start("test-env", t.TempDir(), "sleep 300", env, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start with env vars failed: %v", err)
 	}
@@ -471,7 +472,7 @@ func TestStartPrependsEnvToCommand(t *testing.T) {
 
 	// Start a session that prints the env var. If prependEnv works,
 	// the export runs before echo, making the var available.
-	err := mgr.Start("test-env-prepend", "/tmp",
+	err := mgr.Start("test-env-prepend", t.TempDir(),
 		"echo VAR_IS_$TEST_SOL_VAR && sleep 300", env, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -496,7 +497,7 @@ func TestCyclePrependsEnvToCommand(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start without env.
-	err := mgr.Start("test-cycle-prepend", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-cycle-prepend", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -509,7 +510,7 @@ func TestCyclePrependsEnvToCommand(t *testing.T) {
 	}
 
 	// Cycle with env — the new command should see the env var.
-	err = mgr.Cycle("test-cycle-prepend", "/tmp",
+	err = mgr.Cycle("test-cycle-prepend", t.TempDir(),
 		"echo CYCLE_IS_$CYCLE_VAR && sleep 300", env, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Cycle failed: %v", err)
@@ -531,7 +532,7 @@ func TestGracefulStop(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-gs", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-gs", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -574,7 +575,7 @@ func TestListWithStoppedSession(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-ls", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-ls", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -619,7 +620,7 @@ func TestHealthAgentDead(t *testing.T) {
 	// Start a session with a command that survives startup verification
 	// (1.5s) but exits shortly after. sleep 2 dies at 2s — past the
 	// verification window, so Start() succeeds.
-	err := mgr.Start("test-ad", "/tmp", "sleep 2", nil, "outpost", "haven")
+	err := mgr.Start("test-ad", t.TempDir(), "sleep 2", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -647,7 +648,7 @@ func TestStartDeadOnStartup(t *testing.T) {
 	mgr := setupTest(t)
 
 	// A command that exits immediately should be caught by startup verification.
-	err := mgr.Start("test-dead-startup", "/tmp", "echo done", nil, "outpost", "haven")
+	err := mgr.Start("test-dead-startup", t.TempDir(), "echo done", nil, "outpost", "haven")
 	if err == nil {
 		t.Fatal("Start should fail for a command that dies immediately")
 	}
@@ -669,7 +670,7 @@ func TestCycleDeadOnStartup(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start a long-lived session.
-	err := mgr.Start("test-cycle-dead-startup", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-cycle-dead-startup", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -679,7 +680,7 @@ func TestCycleDeadOnStartup(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	// Cycle to a command that exits immediately — should fail startup verification.
-	err = mgr.Cycle("test-cycle-dead-startup", "/tmp", "echo done", nil, "outpost", "haven")
+	err = mgr.Cycle("test-cycle-dead-startup", t.TempDir(), "echo done", nil, "outpost", "haven")
 	if err == nil {
 		t.Fatal("Cycle should fail for a command that dies immediately")
 	}
@@ -702,7 +703,8 @@ func TestGetMeta(t *testing.T) {
 	}
 
 	// Start a session and verify GetMeta returns correct metadata.
-	err = mgr.Start("test-get-meta", "/tmp", "sleep 300", nil, "outpost", "haven")
+	workDir := t.TempDir()
+	err = mgr.Start("test-get-meta", workDir, "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -727,8 +729,8 @@ func TestGetMeta(t *testing.T) {
 	if meta.World != "haven" {
 		t.Errorf("expected world 'haven', got %q", meta.World)
 	}
-	if meta.WorkDir != "/tmp" {
-		t.Errorf("expected workdir '/tmp', got %q", meta.WorkDir)
+	if meta.WorkDir != workDir {
+		t.Errorf("expected workdir %q, got %q", workDir, meta.WorkDir)
 	}
 	if !meta.Alive {
 		t.Error("GetMeta for live session should have Alive=true")
@@ -743,7 +745,7 @@ func TestMultipleStartStop(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start, stop, then start again with same name
-	err := mgr.Start("test-ms", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-ms", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("first Start failed: %v", err)
 	}
@@ -760,7 +762,7 @@ func TestMultipleStartStop(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Should be able to start again with same name
-	err = mgr.Start("test-ms", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err = mgr.Start("test-ms", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("second Start failed: %v", err)
 	}
@@ -782,7 +784,7 @@ func TestSessionInfoJSON(t *testing.T) {
 		PID:       12345,
 		Role:      "outpost",
 		World:     "haven",
-		WorkDir:   "/tmp",
+		WorkDir:   os.TempDir(),
 		StartedAt: time.Date(2026, 2, 25, 10, 30, 0, 0, time.UTC),
 		Alive:     true,
 	}
@@ -807,7 +809,7 @@ func TestHealthHung(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start a session that just sleeps (no output changes)
-	err := mgr.Start("test-hung", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-hung", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -849,7 +851,7 @@ func TestStartCreatesSessionsDir(t *testing.T) {
 		t.Fatal("sessions dir should not exist before Start")
 	}
 
-	err := mgr.Start("test-dir", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-dir", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -904,7 +906,7 @@ func BenchmarkExists(b *testing.B) {
 		killCancel()
 	})
 
-	_ = mgr.Start("bench", "/tmp", "sleep 300", nil, "outpost", "haven")
+	_ = mgr.Start("bench", b.TempDir(), "sleep 300", nil, "outpost", "haven")
 	time.Sleep(300 * time.Millisecond)
 
 	b.ResetTimer()
@@ -917,7 +919,7 @@ func TestStopCleansMetadataOnKillFailure(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-meta-clean", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-meta-clean", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -969,7 +971,7 @@ func TestCycle(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start a session running sleep.
-	err := mgr.Start("test-cycle", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-cycle", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -983,7 +985,7 @@ func TestCycle(t *testing.T) {
 	}
 
 	// Cycle to a new command.
-	err = mgr.Cycle("test-cycle", "/tmp", "sleep 600", nil, "outpost", "haven")
+	err = mgr.Cycle("test-cycle", t.TempDir(), "sleep 600", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Cycle failed: %v", err)
 	}
@@ -1014,7 +1016,7 @@ func TestCycleNonexistent(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Cycle("nonexistent", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Cycle("nonexistent", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err == nil {
 		t.Fatal("Cycle should fail for nonexistent session")
 	}
@@ -1027,7 +1029,7 @@ func TestCycleWithEnv(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-cycle-env", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-cycle-env", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -1039,7 +1041,7 @@ func TestCycleWithEnv(t *testing.T) {
 		"SOL_HOME":  "/tmp/sol",
 		"SOL_WORLD": "haven",
 	}
-	err = mgr.Cycle("test-cycle-env", "/tmp", "sleep 600", env, "outpost", "haven")
+	err = mgr.Cycle("test-cycle-env", t.TempDir(), "sleep 600", env, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Cycle with env failed: %v", err)
 	}
@@ -1293,7 +1295,7 @@ func TestNudgeSessionDelivers(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start a session running cat which echoes stdin back.
-	err := mgr.Start("test-nudge", "/tmp", "cat", nil, "outpost", "haven")
+	err := mgr.Start("test-nudge", t.TempDir(), "cat", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -1333,7 +1335,7 @@ func TestNudgeSessionSanitizes(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-nudge-san", "/tmp", "cat", nil, "outpost", "haven")
+	err := mgr.Start("test-nudge-san", t.TempDir(), "cat", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -1356,7 +1358,7 @@ func TestWaitForIdleDetectsPrompt(t *testing.T) {
 
 	// Start a session that prints the prompt character then sleeps.
 	// The prompt character appears in the pane, simulating an idle Claude Code.
-	err := mgr.Start("test-idle", "/tmp",
+	err := mgr.Start("test-idle", t.TempDir(),
 		"printf '\\n❯ ' && sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1377,7 +1379,7 @@ func TestWaitForIdleTimeout(t *testing.T) {
 	mgr := setupTest(t)
 
 	// Start a session that never shows the prompt — just sleeps.
-	err := mgr.Start("test-idle-to", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-idle-to", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -1413,7 +1415,7 @@ func TestWaitForIdleBusySession(t *testing.T) {
 
 	// Start a session that shows both prompt and "esc to interrupt" —
 	// simulating Claude Code actively running a tool while prompt is visible.
-	err := mgr.Start("test-idle-busy", "/tmp",
+	err := mgr.Start("test-idle-busy", t.TempDir(),
 		`printf '\n❯ \n⏵⏵ running tool · esc to interrupt\n' && sleep 300`,
 		nil, "outpost", "haven")
 	if err != nil {
@@ -1439,7 +1441,7 @@ func TestWaitForIdleTransientPrompt(t *testing.T) {
 	// once (one poll) doesn't satisfy the 2-consecutive-poll requirement.
 	// We use clear to wipe the tmux pane buffer, then print enough lines
 	// to push the prompt out of the 5-line capture window.
-	err := mgr.Start("test-idle-transient", "/tmp",
+	err := mgr.Start("test-idle-transient", t.TempDir(),
 		`printf '\n❯ \n' && sleep 0.1 && clear && echo working1 && echo working2 && echo working3 && echo working4 && echo working5 && sleep 300`,
 		nil, "outpost", "haven")
 	if err != nil {
@@ -1463,7 +1465,7 @@ func TestIsAtPromptTrue(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-prompt-t", "/tmp",
+	err := mgr.Start("test-prompt-t", t.TempDir(),
 		"printf '\\n❯ ' && sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1481,7 +1483,7 @@ func TestIsAtPromptFalse(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	err := mgr.Start("test-prompt-f", "/tmp", "sleep 300", nil, "outpost", "haven")
+	err := mgr.Start("test-prompt-f", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -1509,7 +1511,7 @@ func TestWaitForIdleResetOnBusy(t *testing.T) {
 
 	// Start a session that shows prompt with "esc to interrupt" on a separate line.
 	// This tests that the consecutive counter resets when busy is detected.
-	err := mgr.Start("test-idle-reset", "/tmp",
+	err := mgr.Start("test-idle-reset", t.TempDir(),
 		`printf '\n❯ \nesc to interrupt\n' && sleep 300`,
 		nil, "outpost", "haven")
 	if err != nil {

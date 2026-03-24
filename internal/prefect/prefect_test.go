@@ -436,7 +436,7 @@ func TestShutdownStopsSessions(t *testing.T) {
 	for _, name := range []string{"Toast", "Jasper"} {
 		sphereStore.CreateAgent(name, "haven", "outpost")
 		sphereStore.UpdateAgentState("haven/"+name, "working", "sol-"+name)
-		mock.Start("sol-haven-"+name, "/tmp", "echo", nil, "outpost", "haven")
+		mock.Start("sol-haven-"+name, os.TempDir(), "echo", nil, "outpost", "haven")
 	}
 
 	sup := New(cfg, sphereStore, mock, logger)
@@ -858,15 +858,15 @@ func TestShutdownSkipsEnvoyGovernor(t *testing.T) {
 	// Create working agents: one regular, one envoy, one governor — all with live sessions.
 	sphereStore.CreateAgent("Toast", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
-	mock.Start("sol-haven-Toast", "/tmp", "echo", nil, "outpost", "haven")
+	mock.Start("sol-haven-Toast", os.TempDir(), "echo", nil, "outpost", "haven")
 
 	sphereStore.CreateAgent("Scout", "haven", "envoy")
 	sphereStore.UpdateAgentState("haven/Scout", "working", "sol-envoy123")
-	mock.Start("sol-haven-Scout", "/tmp", "echo", nil, "envoy", "haven")
+	mock.Start("sol-haven-Scout", os.TempDir(), "echo", nil, "envoy", "haven")
 
 	sphereStore.CreateAgent("governor", "haven", "governor")
 	sphereStore.UpdateAgentState("haven/governor", "working", "")
-	mock.Start("sol-haven-governor", "/tmp", "echo", nil, "governor", "haven")
+	mock.Start("sol-haven-governor", os.TempDir(), "echo", nil, "governor", "haven")
 
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.shutdown()
@@ -933,11 +933,11 @@ func TestShutdownWorldsFilter(t *testing.T) {
 	// Create working agents with live sessions in two worlds.
 	sphereStore.CreateAgent("Toast", "alpha", "outpost")
 	sphereStore.UpdateAgentState("alpha/Toast", "working", "sol-aaa11111")
-	mock.Start("sol-alpha-Toast", "/tmp", "echo", nil, "outpost", "alpha")
+	mock.Start("sol-alpha-Toast", os.TempDir(), "echo", nil, "outpost", "alpha")
 
 	sphereStore.CreateAgent("Jasper", "beta", "outpost")
 	sphereStore.UpdateAgentState("beta/Jasper", "working", "sol-bbb22222")
-	mock.Start("sol-beta-Jasper", "/tmp", "echo", nil, "outpost", "beta")
+	mock.Start("sol-beta-Jasper", os.TempDir(), "echo", nil, "outpost", "beta")
 
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.shutdown()
@@ -1591,7 +1591,7 @@ func TestCheckSphereDaemonsSkipsAliveSession(t *testing.T) {
 	sup.startDaemonProcess = tracker.startDaemonProcess
 
 	// Chronicle has a tmux session, ledger has a PID file (both alive).
-	mock.Start("sol-chronicle", "/tmp", "sol chronicle run", nil, "chronicle", "")
+	mock.Start("sol-chronicle", os.TempDir(), "sol chronicle run", nil, "chronicle", "")
 	writePIDFile(t, "ledger", os.Getpid()) // our PID is known-alive
 	// Broker has no session (and no PID file) — should be restarted.
 

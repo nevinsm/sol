@@ -715,7 +715,7 @@ func TestCastFlockPreventsDoubleDispatch(t *testing.T) {
 	_, err = Cast(context.Background(), CastOpts{
 		WritID: itemID,
 		World:        "ember",
-		SourceRepo: "/tmp",
+		SourceRepo: t.TempDir(),
 	}, worldStore, sphereStore, mgr, nil)
 
 	if err == nil {
@@ -747,7 +747,7 @@ func TestCastItemNotOpen(t *testing.T) {
 		WritID: itemID,
 		World:        "ember",
 		AgentName:  "Toast",
-		SourceRepo: "/tmp",
+		SourceRepo: t.TempDir(),
 	}, worldStore, sphereStore, mgr, nil)
 
 	if err == nil {
@@ -777,7 +777,7 @@ func TestCastRejectsNonAgentRoles(t *testing.T) {
 				WritID: itemID,
 				World:      "ember",
 				AgentName:  "Toast",
-				SourceRepo: "/tmp",
+				SourceRepo: t.TempDir(),
 			}, worldStore, sphereStore, mgr, nil)
 
 			if err == nil {
@@ -817,7 +817,7 @@ func TestCastRejectsSleepingWorld(t *testing.T) {
 		WritID:     itemID,
 		World:      "ember",
 		AgentName:  "Toast",
-		SourceRepo: "/tmp",
+		SourceRepo: t.TempDir(),
 	}, worldStore, sphereStore, mgr, nil)
 
 	if err == nil {
@@ -852,7 +852,7 @@ func TestCastRejectsSleepingWorldPreloaded(t *testing.T) {
 		WritID:      itemID,
 		World:       "ember",
 		AgentName:   "Toast",
-		SourceRepo:  "/tmp",
+		SourceRepo:  t.TempDir(),
 		WorldConfig: &sleepingCfg,
 	}, worldStore, sphereStore, mgr, nil)
 

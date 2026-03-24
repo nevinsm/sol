@@ -311,7 +311,7 @@ func TestLaunchAdapterMethodOrder(t *testing.T) {
 
 	var callOrder []string
 	orderedAdapter := &mockRuntimeAdapter{
-		configResult:   adapter.ConfigResult{Dir: "/tmp", EnvVar: map[string]string{"CLAUDE_CONFIG_DIR": "/tmp"}},
+		configResult:   adapter.ConfigResult{Dir: os.TempDir(), EnvVar: map[string]string{"CLAUDE_CONFIG_DIR": os.TempDir()}},
 		buildCmdResult: "sleep 300",
 	}
 	// Override methods to record order.

@@ -398,7 +398,7 @@ func TestWorldInitWithoutSourceRepo(t *testing.T) {
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
 	// Run world init without --source-repo from a non-git directory.
-	cmd := runGTWithDir(t, gtHome, "/tmp", "world", "init", "myworld")
+	cmd := runGTWithDir(t, gtHome, t.TempDir(), "world", "init", "myworld")
 	if cmd.err != nil {
 		t.Fatalf("world init without --source-repo failed: %v: %s", cmd.err, cmd.out)
 	}
@@ -608,7 +608,7 @@ func TestWorldDeleteRefusesWithActiveSessions(t *testing.T) {
 	// Write session metadata so mgr.List() discovers it.
 	sessDir := filepath.Join(gtHome, ".runtime", "sessions")
 	os.MkdirAll(sessDir, 0o755)
-	meta := `{"name":"` + sessionName + `","role":"outpost","world":"deltest","workdir":"/tmp","started_at":"2026-01-01T00:00:00Z"}`
+	meta := `{"name":"` + sessionName + `","role":"outpost","world":"deltest","workdir":"` + t.TempDir() + `","started_at":"2026-01-01T00:00:00Z"}`
 	os.WriteFile(filepath.Join(sessDir, sessionName+".json"), []byte(meta), 0o644)
 
 	// Attempt to delete — should be refused.
