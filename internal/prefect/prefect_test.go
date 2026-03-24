@@ -78,6 +78,18 @@ func (m *mockSessions) List() ([]session.SessionInfo, error) {
 	return infos, nil
 }
 
+func (m *mockSessions) CountSessions(prefix string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for name := range m.alive {
+		if strings.HasPrefix(name, prefix) {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (m *mockSessions) Kill(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -2191,6 +2203,238 @@ func TestRespawnBackoffIncrementsOnFailure(t *testing.T) {
 		if backoffCount != i {
 			t.Errorf("backoff count = %d after respawn attempt %d, want %d", backoffCount, i, i)
 		}
+	}
+}
+
+// --- Concurrency limit tests ---
+
+func TestRespawnDeferredWhenWorldAtMaxActive(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create world config with max_active = 1.
+	worldDir := filepath.Join(os.Getenv("SOL_HOME"), "haven")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+[agents]
+max_active = 1
+`), 0o644)
+
+	sphereStore.RegisterWorld("haven", "/tmp/repo")
+
+	// Create two working agents.
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+	sphereStore.CreateAgent("Jam", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Jam", "working", "sol-def67890")
+
+	// Toast's session is alive (counts toward max_active), Jam's is dead.
+	mock.alive["sol-haven-Toast"] = true
+
+	// Create worktree for Jam so respawn path doesn't bail.
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Jam", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.heartbeat()
+
+	// Jam should NOT have been respawned — world is at capacity (1 active session, max_active = 1).
+	started := mock.GetStarted()
+	if len(started) != 0 {
+		t.Fatalf("expected 0 sessions started (world at max_active), got %d: %v", len(started), started)
+	}
+
+	// Jam should still be working (not dropped or failed).
+	agent, err := sphereStore.GetAgent("haven/Jam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.State != "working" {
+		t.Errorf("agent state = %q, want %q (should remain working, not dropped)", agent.State, "working")
+	}
+}
+
+func TestRespawnAllowedWhenBelowMaxActive(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create world config with max_active = 2.
+	worldDir := filepath.Join(os.Getenv("SOL_HOME"), "haven")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+[agents]
+max_active = 2
+`), 0o644)
+
+	sphereStore.RegisterWorld("haven", "/tmp/repo")
+
+	// One alive session, one dead — should be under limit.
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+	sphereStore.CreateAgent("Jam", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Jam", "working", "sol-def67890")
+
+	mock.alive["sol-haven-Toast"] = true
+	// Jam's session is dead.
+
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Jam", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.heartbeat()
+
+	// Jam should have been respawned — 1 active < max_active of 2.
+	started := mock.GetStarted()
+	if len(started) != 1 {
+		t.Fatalf("expected 1 session started, got %d", len(started))
+	}
+}
+
+func TestRespawnDeferredWhenSphereAtMaxSessions(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create sphere config with max_sessions = 1.
+	solHome := os.Getenv("SOL_HOME")
+	os.WriteFile(filepath.Join(solHome, "sol.toml"), []byte(`[sphere]
+max_sessions = 1
+`), 0o644)
+
+	// Create world config.
+	worldDir := filepath.Join(solHome, "haven")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+`), 0o644)
+
+	sphereStore.RegisterWorld("haven", "/tmp/repo")
+
+	// One working agent in world "haven".
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+
+	// Another working agent whose session is dead.
+	sphereStore.CreateAgent("Jam", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Jam", "working", "sol-def67890")
+
+	// Toast's session is alive — counts toward sphere max_sessions.
+	mock.alive["sol-haven-Toast"] = true
+
+	worktreeDir := filepath.Join(solHome, "haven", "outposts", "Jam", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.heartbeat()
+
+	// Jam should NOT have been respawned — sphere at capacity.
+	started := mock.GetStarted()
+	if len(started) != 0 {
+		t.Fatalf("expected 0 sessions started (sphere at max_sessions), got %d: %v", len(started), started)
+	}
+}
+
+func TestRespawnDeferredRetriesOnNextHeartbeat(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create world config with max_active = 1.
+	solHome := os.Getenv("SOL_HOME")
+	worldDir := filepath.Join(solHome, "haven")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+[agents]
+max_active = 1
+`), 0o644)
+
+	sphereStore.RegisterWorld("haven", "/tmp/repo")
+
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+	sphereStore.CreateAgent("Jam", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Jam", "working", "sol-def67890")
+
+	mock.alive["sol-haven-Toast"] = true
+
+	worktreeDir := filepath.Join(solHome, "haven", "outposts", "Jam", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, sphereStore, mock, logger)
+
+	// First heartbeat — deferred.
+	sup.heartbeat()
+	started := mock.GetStarted()
+	if len(started) != 0 {
+		t.Fatalf("heartbeat 1: expected 0 sessions started, got %d", len(started))
+	}
+
+	// Now remove Toast's session (simulating it finished), freeing capacity.
+	mock.Kill("sol-haven-Toast")
+	// Mark Toast idle so it's not counted as working.
+	sphereStore.UpdateAgentState("haven/Toast", "idle", "")
+
+	// Second heartbeat — should now respawn Jam.
+	sup.heartbeat()
+	started = mock.GetStarted()
+	if len(started) != 1 {
+		t.Fatalf("heartbeat 2: expected 1 session started after capacity freed, got %d", len(started))
+	}
+}
+
+func TestRespawnZeroLimitsAllowsUnlimited(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create world config with max_active = 0 (unlimited).
+	solHome := os.Getenv("SOL_HOME")
+	worldDir := filepath.Join(solHome, "haven")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+[agents]
+max_active = 0
+`), 0o644)
+
+	// Sphere config with max_sessions = 0 (unlimited).
+	os.WriteFile(filepath.Join(solHome, "sol.toml"), []byte(`[sphere]
+max_sessions = 0
+`), 0o644)
+
+	sphereStore.RegisterWorld("haven", "/tmp/repo")
+
+	// Create many active sessions and one dead agent.
+	for i := 0; i < 10; i++ {
+		name := fmt.Sprintf("Agent%d", i)
+		sphereStore.CreateAgent(name, "haven", "outpost")
+		sphereStore.UpdateAgentState("haven/"+name, "working", fmt.Sprintf("sol-writ%d", i))
+		mock.alive[fmt.Sprintf("sol-haven-%s", name)] = true
+	}
+
+	sphereStore.CreateAgent("DeadAgent", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/DeadAgent", "working", "sol-deadwrit")
+
+	worktreeDir := filepath.Join(solHome, "haven", "outposts", "DeadAgent", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.heartbeat()
+
+	// DeadAgent should have been respawned — no limits.
+	started := mock.GetStarted()
+	if len(started) != 1 {
+		t.Fatalf("expected 1 session started (unlimited), got %d", len(started))
 	}
 }
 

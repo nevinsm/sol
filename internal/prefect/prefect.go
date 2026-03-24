@@ -33,6 +33,7 @@ type SessionManager interface {
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 	Stop(name string, force bool) error
 	List() ([]session.SessionInfo, error)
+	CountSessions(prefix string) (int, error)
 }
 
 // SphereStore abstracts sphere database operations for testing.
@@ -275,6 +276,11 @@ func (s *Prefect) heartbeat() {
 				continue
 			}
 
+			// Check concurrency limits before respawning.
+			if s.isAtCapacity(agent.World) {
+				continue
+			}
+
 			s.respawn(agent)
 		}
 	}
@@ -440,6 +446,55 @@ func (s *Prefect) respawn(agent store.Agent) {
 			"restart":   restartCount,
 		})
 	}
+}
+
+// isAtCapacity checks whether concurrency limits (per-world max_active or
+// sphere-wide max_sessions) would be exceeded by starting another session.
+// Returns true if a limit is hit, logging the reason. The caller should skip
+// the respawn and retry on the next heartbeat cycle.
+// Must be called with s.mu held.
+func (s *Prefect) isAtCapacity(world string) bool {
+	// Check per-world max_active limit.
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err != nil {
+		s.logger.Error("failed to load world config for capacity check", "world", world, "error", err)
+		// Fail-open: if we can't load config, allow the respawn.
+		return false
+	}
+
+	maxActive := worldCfg.Agents.MaxActive
+	if maxActive > 0 {
+		worldPrefix := "sol-" + world + "-"
+		count, err := s.sessions.CountSessions(worldPrefix)
+		if err != nil {
+			s.logger.Error("failed to count world sessions", "world", world, "error", err)
+		} else if count >= maxActive {
+			s.logger.Info("respawn deferred: world at max_active capacity",
+				"world", world, "active", count, "max_active", maxActive)
+			return true
+		}
+	}
+
+	// Check sphere-wide max_sessions limit.
+	sphereCfg, err := config.LoadSphereConfig()
+	if err != nil {
+		s.logger.Error("failed to load sphere config for capacity check", "error", err)
+		return false
+	}
+
+	maxSessions := sphereCfg.MaxSessions
+	if maxSessions > 0 {
+		count, err := s.sessions.CountSessions("sol-")
+		if err != nil {
+			s.logger.Error("failed to count sphere sessions", "error", err)
+		} else if count >= maxSessions {
+			s.logger.Info("respawn deferred: sphere at max_sessions capacity",
+				"active", count, "max_sessions", maxSessions)
+			return true
+		}
+	}
+
+	return false
 }
 
 // checkConsul reads the consul heartbeat and restarts if stale.

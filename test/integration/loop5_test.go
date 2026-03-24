@@ -1204,6 +1204,18 @@ func (m *mockPrefectSessions) List() ([]session.SessionInfo, error) {
 	return infos, nil
 }
 
+func (m *mockPrefectSessions) CountSessions(prefix string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for name := range m.alive {
+		if strings.HasPrefix(name, prefix) {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (m *mockPrefectSessions) getStarted() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
