@@ -26,11 +26,16 @@ func RoleConfig() startup.RoleConfig {
 
 // governorSkillInstaller builds role-appropriate skills for the governor.
 func governorSkillInstaller(world, _ string) []adapter.Skill {
-	return protocol.BuildSkills(protocol.SkillContext{
+	skills, err := protocol.BuildSkills(protocol.SkillContext{
 		World:     world,
 		SolBinary: "sol",
 		Role:      "governor",
 	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		return nil
+	}
+	return skills
 }
 
 // governorPersona generates the governor CLAUDE.local.md content.

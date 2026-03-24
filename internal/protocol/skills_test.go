@@ -11,43 +11,58 @@ import (
 )
 
 func TestRoleSkillsOutpost(t *testing.T) {
-	skills := RoleSkills("outpost")
+	skills, err := RoleSkills("outpost")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(skills) != 2 {
 		t.Errorf("outpost should have 2 skills, got %d: %v", len(skills), skills)
 	}
 }
 
 func TestRoleSkillsGovernor(t *testing.T) {
-	skills := RoleSkills("governor")
+	skills, err := RoleSkills("governor")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(skills) != 6 {
 		t.Errorf("governor should have 6 skills, got %d: %v", len(skills), skills)
 	}
 }
 
 func TestRoleSkillsEnvoy(t *testing.T) {
-	skills := RoleSkills("envoy")
+	skills, err := RoleSkills("envoy")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(skills) != 10 {
 		t.Errorf("envoy should have 10 skills, got %d: %v", len(skills), skills)
 	}
 }
 
 func TestRoleSkillsChancellor(t *testing.T) {
-	skills := RoleSkills("chancellor")
+	skills, err := RoleSkills("chancellor")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(skills) != 5 {
 		t.Errorf("chancellor should have 5 skills, got %d: %v", len(skills), skills)
 	}
 }
 
 func TestRoleSkillsUnknown(t *testing.T) {
-	skills := RoleSkills("unknown")
+	skills, err := RoleSkills("unknown")
+	if err == nil {
+		t.Error("expected error for unknown role, got nil")
+	}
 	if skills != nil {
 		t.Errorf("unknown role should return nil, got %v", skills)
 	}
 }
 
 func TestRoleSkillsReturnsCopy(t *testing.T) {
-	skills1 := RoleSkills("outpost")
-	skills2 := RoleSkills("outpost")
+	skills1, _ := RoleSkills("outpost")
+	skills2, _ := RoleSkills("outpost")
 	skills1[0] = "mutated"
 	if skills2[0] == "mutated" {
 		t.Error("RoleSkills should return a copy, not a reference to the internal slice")
@@ -61,8 +76,11 @@ func TestBuildSkillsOutpost(t *testing.T) {
 		Role:      "outpost",
 	}
 
-	skills := BuildSkills(ctx)
-	names := RoleSkills("outpost")
+	skills, err := BuildSkills(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	names, _ := RoleSkills("outpost")
 	if len(skills) != len(names) {
 		t.Fatalf("expected %d skills, got %d", len(names), len(skills))
 	}
@@ -80,8 +98,11 @@ func TestBuildSkillsGovernor(t *testing.T) {
 		Role:      "governor",
 	}
 
-	skills := BuildSkills(ctx)
-	names := RoleSkills("governor")
+	skills, err := BuildSkills(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	names, _ := RoleSkills("governor")
 	if len(skills) != len(names) {
 		t.Fatalf("expected %d skills, got %d", len(names), len(skills))
 	}
@@ -95,8 +116,11 @@ func TestBuildSkillsEnvoy(t *testing.T) {
 		Role:      "envoy",
 	}
 
-	skills := BuildSkills(ctx)
-	names := RoleSkills("envoy")
+	skills, err := BuildSkills(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	names, _ := RoleSkills("envoy")
 	if len(skills) != len(names) {
 		t.Fatalf("expected %d skills, got %d", len(names), len(skills))
 	}
@@ -109,10 +133,28 @@ func TestBuildSkillsChancellor(t *testing.T) {
 		Role:      "chancellor",
 	}
 
-	skills := BuildSkills(ctx)
-	names := RoleSkills("chancellor")
+	skills, err := BuildSkills(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	names, _ := RoleSkills("chancellor")
 	if len(skills) != len(names) {
 		t.Fatalf("expected %d skills, got %d", len(names), len(skills))
+	}
+}
+
+func TestBuildSkillsUnknownRole(t *testing.T) {
+	ctx := SkillContext{
+		World: "testworld",
+		Role:  "nonexistent",
+	}
+
+	skills, err := BuildSkills(ctx)
+	if err == nil {
+		t.Error("expected error for unknown role, got nil")
+	}
+	if skills != nil {
+		t.Errorf("expected nil skills for unknown role, got %v", skills)
 	}
 }
 
@@ -151,7 +193,10 @@ func TestSkillContentHasWorldName(t *testing.T) {
 		Role:      "outpost",
 	}
 
-	skills := BuildSkills(ctx)
+	skills, err := BuildSkills(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Check resolve-and-handoff skill has meaningful content.
 	for _, s := range skills {
@@ -396,7 +441,8 @@ func TestSkillCommandReferencesExist(t *testing.T) {
 			Role:         role,
 			TargetBranch: "main",
 		}
-		for _, name := range RoleSkills(role) {
+		roleSkills, _ := RoleSkills(role)
+		for _, name := range roleSkills {
 			content := generateSkill(name, ctx)
 			matches := cmdRe.FindAllStringSubmatch(content, -1)
 			for _, m := range matches {

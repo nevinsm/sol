@@ -27,12 +27,17 @@ func RoleConfig() startup.RoleConfig {
 
 // envoySkillInstaller builds role-appropriate skills for envoy agents.
 func envoySkillInstaller(world, agent string) []adapter.Skill {
-	return protocol.BuildSkills(protocol.SkillContext{
+	skills, err := protocol.BuildSkills(protocol.SkillContext{
 		World:     world,
 		AgentName: agent,
 		SolBinary: "sol",
 		Role:      "envoy",
 	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		return nil
+	}
+	return skills
 }
 
 // envoyPersona generates the envoy CLAUDE.local.md content.

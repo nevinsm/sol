@@ -2,15 +2,17 @@ package protocol
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/nevinsm/sol/internal/adapter"
 )
 
 // BuildSkills generates skill content for the given context and returns it as
-// []adapter.Skill without writing to disk.
-func BuildSkills(ctx SkillContext) []adapter.Skill {
-	names := RoleSkills(ctx.Role)
+// []adapter.Skill without writing to disk. Returns an error if the role is unknown.
+func BuildSkills(ctx SkillContext) ([]adapter.Skill, error) {
+	names, err := RoleSkills(ctx.Role)
+	if err != nil {
+		return nil, err
+	}
 	result := make([]adapter.Skill, 0, len(names))
 	for _, name := range names {
 		content := generateSkill(name, ctx)
@@ -19,7 +21,7 @@ func BuildSkills(ctx SkillContext) []adapter.Skill {
 		}
 		result = append(result, adapter.Skill{Name: name, Content: content})
 	}
-	return result
+	return result, nil
 }
 
 // SkillContext holds common fields used when generating skill content for agents.
@@ -40,6 +42,19 @@ func (ctx SkillContext) sol() string {
 	return "sol"
 }
 
+func init() {
+	// Validate no duplicate skill names within any role.
+	for role, skills := range roleSkillsMap {
+		seen := make(map[string]bool, len(skills))
+		for _, name := range skills {
+			if seen[name] {
+				panic(fmt.Sprintf("skills: duplicate skill %q in role %q", name, role))
+			}
+			seen[name] = true
+		}
+	}
+}
+
 // roleSkillsMap defines which skills belong to each role.
 var roleSkillsMap = map[string][]string{
 	"outpost":  {"resolve-and-handoff", "memories"},
@@ -49,17 +64,16 @@ var roleSkillsMap = map[string][]string{
 }
 
 // RoleSkills returns the skill names for a given role.
-// If the role is not recognized, it logs a warning to stderr and returns nil.
-func RoleSkills(role string) []string {
+// Returns an error if the role is not recognized.
+func RoleSkills(role string) ([]string, error) {
 	skills, ok := roleSkillsMap[role]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "skills: unknown role %q — no skills installed\n", role)
-		return nil
+		return nil, fmt.Errorf("skills: unknown role %q — no skills installed", role)
 	}
 	// Return a copy to prevent mutation.
 	out := make([]string, len(skills))
 	copy(out, skills)
-	return out
+	return out, nil
 }
 
 

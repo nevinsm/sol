@@ -1,6 +1,9 @@
 package chancellor
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/startup"
@@ -22,10 +25,15 @@ func RoleConfig() startup.RoleConfig {
 
 // chancellorSkillInstaller builds role-appropriate skills for the chancellor.
 func chancellorSkillInstaller(_, _ string) []adapter.Skill {
-	return protocol.BuildSkills(protocol.SkillContext{
+	skills, err := protocol.BuildSkills(protocol.SkillContext{
 		SolBinary: "sol",
 		Role:      "chancellor",
 	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		return nil
+	}
+	return skills
 }
 
 // chancellorPersona generates the chancellor CLAUDE.local.md content.

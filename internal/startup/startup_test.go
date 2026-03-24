@@ -1198,10 +1198,14 @@ func TestLaunchInstallsSkills(t *testing.T) {
 		// Return real skills so the adapter can write them to disk.
 		SkillInstaller: func(w, a string) []adapter.Skill {
 			skillInstallerCalled = true
-			skillsReturned = protocol.BuildSkills(protocol.SkillContext{
+			skills, err := protocol.BuildSkills(protocol.SkillContext{
 				World: w,
 				Role:  "outpost",
 			})
+			if err != nil {
+				t.Fatalf("BuildSkills error: %v", err)
+			}
+			skillsReturned = skills
 			return skillsReturned
 		},
 	}
@@ -1232,7 +1236,7 @@ func TestLaunchInstallsSkills(t *testing.T) {
 	}
 
 	// Verify expected outpost skills exist.
-	expectedSkills := protocol.RoleSkills("outpost")
+	expectedSkills, _ := protocol.RoleSkills("outpost")
 	for _, name := range expectedSkills {
 		skillPath := filepath.Join(skillsDir, name, "SKILL.md")
 		if _, err := os.Stat(skillPath); err != nil {

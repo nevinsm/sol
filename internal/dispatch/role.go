@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/config"
@@ -44,14 +45,19 @@ func outpostSkillInstaller(world, agent string) []adapter.Skill {
 		outputDir = config.WritOutputDir(world, writID)
 	}
 
-	return protocol.BuildSkills(protocol.SkillContext{
-		SolBinary: "sol",
+	skills, err := protocol.BuildSkills(protocol.SkillContext{
+		SolBinary:    "sol",
 		World:        world,
 		AgentName:    agent,
 		Role:         "outpost",
 		QualityGates: worldCfg.Forge.QualityGates,
 		OutputDir:    outputDir,
 	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		return nil
+	}
+	return skills
 }
 
 // OutpostResumeState builds a startup.ResumeState for outpost compact recovery.
