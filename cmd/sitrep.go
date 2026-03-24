@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/sitrep"
@@ -44,21 +43,17 @@ func runSitrep(cmd *cobra.Command, args []string) error {
 
 	// Determine scope.
 	var scope sitrep.Scope
-	var scopeLabel string
 
 	if sphereFlag {
 		scope = sitrep.Scope{Sphere: true}
-		scopeLabel = "sphere"
 	} else {
 		// Try to resolve world from flag, env, or cwd.
 		world, err := config.ResolveWorld(worldFlag)
 		if err != nil {
 			// No world resolved — default to sphere scope.
 			scope = sitrep.Scope{Sphere: true}
-			scopeLabel = "sphere"
 		} else {
 			scope = sitrep.Scope{World: world}
-			scopeLabel = world
 		}
 	}
 
@@ -114,6 +109,14 @@ func runSitrep(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Raw mode: print the formatted prompt and exit (no AI call).
+	rawFlag, _ := cmd.Flags().GetBool("raw")
+	if rawFlag {
+		spin.stop()
+		fmt.Println(prompt)
+		return nil
+	}
+
 	// Run AI assessment.
 	spin.setLabel("Generating report...")
 	ctx := context.Background()
@@ -123,11 +126,6 @@ func runSitrep(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Print header + report.
-	header := fmt.Sprintf("Situation Report — %s — %s",
-		time.Now().UTC().Format("2006-01-02 15:04 UTC"), scopeLabel)
-	fmt.Println(header)
-	fmt.Println()
 	fmt.Println(report)
 
 	return nil
@@ -140,6 +138,7 @@ func init() {
 	sitrepCmd.Flags().Bool("sphere", false, "force sphere scope")
 	sitrepCmd.Flags().String("world", "", "target specific world")
 	sitrepCmd.Flags().Bool("json", false, "dump collected data as JSON (no AI call)")
+	sitrepCmd.Flags().Bool("raw", false, "print the formatted prompt and exit (no AI call)")
 
 	sitrepEjectCmd.Flags().Bool("force", false, "overwrite existing prompt")
 }

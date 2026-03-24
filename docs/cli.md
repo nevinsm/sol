@@ -118,6 +118,7 @@ AI-generated situation report
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | dump collected data as JSON (no AI call) |
+| `--raw` | bool | false | print the formatted prompt and exit (no AI call) |
 | `--sphere` | bool | false | force sphere scope |
 | `--world` | string | "" | target specific world |
 
