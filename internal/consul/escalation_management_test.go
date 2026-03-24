@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/escalation"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -73,8 +72,7 @@ func TestAgingAlertsFireForUnacknowledged(t *testing.T) {
 	setEscalationCreatedAt(t, sphereStore, escID3, time.Now().Add(-10*time.Hour))
 
 	sessions := newMockSessions()
-	router := escalation.NewRouter()
-	// No notifiers needed — we just test the return count and DB updates.
+	// nil router — routing is a no-op, so we just test the return count and DB updates.
 
 	cfg := Config{
 		StaleTetherTimeout: 15 * time.Minute,
@@ -82,7 +80,7 @@ func TestAgingAlertsFireForUnacknowledged(t *testing.T) {
 		EscalationConfig:   config.DefaultEscalationConfig(),
 	}
 
-	d := New(cfg, sphereStore, sessions, router, logger)
+	d := New(cfg, sphereStore, sessions, nil, logger)
 
 	renotified, err := d.checkAgingEscalations(context.Background())
 	if err != nil {

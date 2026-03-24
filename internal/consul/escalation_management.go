@@ -69,11 +69,13 @@ func (d *Consul) checkAgingEscalations(ctx context.Context) (int, error) {
 					"escalation_id": esc.ID,
 					"error":        routeErr.Error(),
 				})
-				// Continue — best-effort re-notification.
+				// Do NOT update last_notified_at — failed delivery should
+				// not delay the next retry. On-call must receive the alert.
+				continue
 			}
 		}
 
-		// Update last_notified_at in the database.
+		// Update last_notified_at in the database only after successful routing.
 		if updateErr := d.sphereStore.UpdateEscalationLastNotified(esc.ID); updateErr != nil {
 			d.logInfo("consul_error", map[string]any{
 				"action":       "update_last_notified",

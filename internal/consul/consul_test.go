@@ -1442,15 +1442,15 @@ func TestDetectOrphanedSessionsKilledAfterThreshold(t *testing.T) {
 
 	sessions := newMockSessions()
 	sessions.alive["sol-"+worldName+"-GhostAgent"] = true
-	// Simulate the session having been created 31 minutes ago (past the grace period).
-	sessions.createdAt["sol-"+worldName+"-GhostAgent"] = time.Now().Add(-31 * time.Minute)
 
 	cfg := Config{SolHome: config.Home()}
 	d := New(cfg, sphereStore, sessions, nil, nil)
 
-	// First patrol: detect orphan, start tracking (count=1; grace period already
-	// expired but consecutive threshold not yet reached).
+	// First patrol: detect orphan, start tracking (count=1).
 	d.detectOrphanedSessions(context.Background())
+
+	// Backdate firstSeen to simulate 31 minutes having passed since first detection.
+	d.orphanedSessions["sol-"+worldName+"-GhostAgent"].firstSeen = time.Now().Add(-31 * time.Minute)
 
 	// Second patrol: grace period expired, count=2 → should be stopped.
 	stopped, err := d.detectOrphanedSessions(context.Background())
@@ -1618,8 +1618,6 @@ func TestOrphanCounterSurvivesRestart(t *testing.T) {
 
 	sessions := newMockSessions()
 	sessions.alive["sol-"+worldName+"-GhostAgent"] = true
-	// Session created 31 minutes ago (past grace period).
-	sessions.createdAt["sol-"+worldName+"-GhostAgent"] = time.Now().Add(-31 * time.Minute)
 
 	cfg := Config{SolHome: solHome}
 
@@ -1634,6 +1632,9 @@ func TestOrphanCounterSurvivesRestart(t *testing.T) {
 	if entry.count != 1 {
 		t.Errorf("count = %d, want 1", entry.count)
 	}
+
+	// Backdate firstSeen to simulate 31 minutes having passed since first detection.
+	entry.firstSeen = time.Now().Add(-31 * time.Minute)
 
 	// Persist state (simulates what Patrol does).
 	d1.saveState()
