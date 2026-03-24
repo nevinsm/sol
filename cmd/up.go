@@ -274,8 +274,7 @@ func startSphereDaemons(solBin string, worlds []string) (bool, error) {
 	}
 
 	if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create runtime directory: %v\n", err)
-		return true, nil
+		return false, fmt.Errorf("failed to create runtime directory: %w", err)
 	}
 
 	type result struct {

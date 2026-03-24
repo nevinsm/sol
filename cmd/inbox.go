@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nevinsm/sol/internal/config"
@@ -57,7 +56,7 @@ func runInbox(cmd *cobra.Command, args []string) error {
 func runInboxJSON(sphereStore *store.SphereStore) error {
 	items, err := inbox.FetchItems(sphereStore)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "inbox: fetch error: %v\n", err)
+		return fmt.Errorf("inbox: fetch error: %w", err)
 	}
 
 	type jsonItem struct {
