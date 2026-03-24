@@ -154,6 +154,133 @@ func TestEjectAndLoad(t *testing.T) {
 	}
 }
 
+func TestFormatDataPayloadForgeStatus(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	now := time.Now().UTC()
+	data := &sitrep.CollectedData{
+		Scope:            "test-world",
+		CaravanReadiness: map[string][]store.CaravanItemStatus{},
+		ForgeStatuses: map[string]sitrep.ForgeStatus{
+			"test-world": {
+				Running:       true,
+				Paused:        false,
+				Merging:       true,
+				QueueReady:    3,
+				QueueFailed:   1,
+				QueueBlocked:  2,
+				MergedTotal:   15,
+				MergedLast1h:  2,
+				MergedLast24h: 8,
+				ClaimedMR: &sitrep.ForgeMRDetail{
+					ID:     "mr-claim1",
+					WritID: "sol-abc123",
+					Title:  "Implement feature X",
+					Branch: "feat/x",
+					Age:    "5m30s",
+				},
+				LastMerge: &sitrep.ForgeEvent{
+					MRID:      "mr-merge1",
+					Title:     "Fix bug Y",
+					Branch:    "fix/y",
+					Timestamp: now.Add(-10 * time.Minute),
+				},
+				LastFailure: &sitrep.ForgeEvent{
+					MRID:      "mr-fail1",
+					Title:     "Broken thing",
+					Branch:    "feat/broken",
+					Timestamp: now.Add(-2 * time.Hour),
+				},
+			},
+		},
+		Worlds: []sitrep.WorldData{
+			{Name: "test-world"},
+		},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checks := []string{
+		"## Forge: test-world",
+		"Process: running, merging: active",
+		"Queue: 3 ready, 1 failed, 2 blocked",
+		"Velocity: 2 merged in last hour, 8 in last 24h (15 total)",
+		"Claimed: mr-claim1",
+		"Implement feature X",
+		"Last merge: mr-merge1",
+		"Fix bug Y",
+		"Last failure: mr-fail1",
+		"Broken thing",
+	}
+	for _, check := range checks {
+		if !strings.Contains(prompt, check) {
+			t.Errorf("prompt should contain %q", check)
+		}
+	}
+}
+
+func TestFormatDataPayloadForgeStatusStopped(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	data := &sitrep.CollectedData{
+		Scope:            "test-world",
+		CaravanReadiness: map[string][]store.CaravanItemStatus{},
+		ForgeStatuses: map[string]sitrep.ForgeStatus{
+			"test-world": {
+				Running: false,
+				Paused:  false,
+				Merging: false,
+			},
+		},
+		Worlds: []sitrep.WorldData{
+			{Name: "test-world"},
+		},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(prompt, "Process: stopped, merging: inactive") {
+		t.Error("prompt should show stopped/inactive for non-running forge")
+	}
+}
+
+func TestFormatDataPayloadForgeStatusPaused(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	data := &sitrep.CollectedData{
+		Scope:            "test-world",
+		CaravanReadiness: map[string][]store.CaravanItemStatus{},
+		ForgeStatuses: map[string]sitrep.ForgeStatus{
+			"test-world": {
+				Running: true,
+				Paused:  true,
+				Merging: false,
+			},
+		},
+		Worlds: []sitrep.WorldData{
+			{Name: "test-world"},
+		},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(prompt, "Process: paused, merging: inactive") {
+		t.Error("prompt should show paused for running+paused forge")
+	}
+}
+
 func TestFormatDataPayloadBlockedMRs(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)

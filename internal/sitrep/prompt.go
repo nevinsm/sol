@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
@@ -154,6 +155,63 @@ func formatDataPayload(data *CollectedData) string {
 		}
 	}
 
+	// Forge status per world (placed before world detail sections).
+	for _, w := range data.Worlds {
+		fs, ok := data.ForgeStatuses[w.Name]
+		if !ok {
+			continue
+		}
+		b.WriteString(fmt.Sprintf("## Forge: %s\n\n", w.Name))
+
+		// Process state.
+		state := "stopped"
+		if fs.Running {
+			if fs.Paused {
+				state = "paused"
+			} else {
+				state = "running"
+			}
+		}
+		mergeState := "inactive"
+		if fs.Merging {
+			mergeState = "active"
+		}
+		b.WriteString(fmt.Sprintf("Process: %s, merging: %s\n", state, mergeState))
+
+		// Queue summary.
+		b.WriteString(fmt.Sprintf("Queue: %d ready, %d failed, %d blocked\n", fs.QueueReady, fs.QueueFailed, fs.QueueBlocked))
+
+		// Velocity.
+		b.WriteString(fmt.Sprintf("Velocity: %d merged in last hour, %d in last 24h (%d total)\n", fs.MergedLast1h, fs.MergedLast24h, fs.MergedTotal))
+
+		// Current claim.
+		if fs.ClaimedMR != nil {
+			b.WriteString(fmt.Sprintf("Claimed: %s — %s (writ %s, age: %s)\n", fs.ClaimedMR.ID, fs.ClaimedMR.Title, fs.ClaimedMR.WritID, fs.ClaimedMR.Age))
+		}
+
+		// Last merge.
+		if fs.LastMerge != nil {
+			ago := formatRelativeTime(fs.LastMerge.Timestamp)
+			title := fs.LastMerge.Title
+			if title == "" {
+				title = fs.LastMerge.Branch
+			}
+			b.WriteString(fmt.Sprintf("Last merge: %s — %s (%s ago)\n", fs.LastMerge.MRID, title, ago))
+		}
+
+		// Last failure.
+		if fs.LastFailure != nil {
+			ago := formatRelativeTime(fs.LastFailure.Timestamp)
+			title := fs.LastFailure.Title
+			if title == "" {
+				title = fs.LastFailure.Branch
+			}
+			b.WriteString(fmt.Sprintf("Last failure: %s — %s (%s ago)\n", fs.LastFailure.MRID, title, ago))
+		}
+
+		b.WriteString("\n")
+	}
+
 	// World data.
 	for _, w := range data.Worlds {
 		b.WriteString(fmt.Sprintf("## World: %s\n\n", w.Name))
@@ -231,4 +289,29 @@ func formatDataPayload(data *CollectedData) string {
 	}
 
 	return b.String()
+}
+
+// formatRelativeTime returns a human-readable duration since the given timestamp.
+func formatRelativeTime(t time.Time) string {
+	d := time.Since(t).Truncate(time.Second)
+	if d < time.Minute {
+		return d.String()
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		h := int(d.Hours())
+		m := int(d.Minutes()) % 60
+		if m == 0 {
+			return fmt.Sprintf("%dh", h)
+		}
+		return fmt.Sprintf("%dh%dm", h, m)
+	}
+	days := int(d.Hours()) / 24
+	h := int(d.Hours()) % 24
+	if h == 0 {
+		return fmt.Sprintf("%dd", days)
+	}
+	return fmt.Sprintf("%dd%dh", days, h)
 }

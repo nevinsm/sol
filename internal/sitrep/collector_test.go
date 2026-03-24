@@ -355,3 +355,156 @@ func TestCollectMRSummary(t *testing.T) {
 		t.Errorf("expected failed=1, got %d", wd.MRSummary["failed"])
 	}
 }
+
+func TestCollectForgeStatus(t *testing.T) {
+	sphere, opener := setupTestEnv(t)
+
+	if err := sphere.RegisterWorld("test-world", "/tmp/test"); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := store.OpenWorld("test-world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+
+	// Create writs and MRs in various phases.
+	writID1, err := ws.CreateWrit("Ready writ", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writID2, err := ws.CreateWrit("Claimed writ", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writID3, err := ws.CreateWrit("Failed writ", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writID4, err := ws.CreateWrit("Merged writ", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Ready MR.
+	if _, err := ws.CreateMergeRequest(writID1, "branch-ready", 2); err != nil {
+		t.Fatal(err)
+	}
+
+	// Claimed MR (ready → claimed).
+	claimedMR, err := ws.CreateMergeRequest(writID2, "branch-claimed", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateMergeRequestPhase(claimedMR, store.MRClaimed); err != nil {
+		t.Fatal(err)
+	}
+
+	// Failed MR (ready → claimed → failed).
+	failedMR, err := ws.CreateMergeRequest(writID3, "branch-failed", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateMergeRequestPhase(failedMR, store.MRClaimed); err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateMergeRequestPhase(failedMR, store.MRFailed); err != nil {
+		t.Fatal(err)
+	}
+
+	// Merged MR (ready → claimed → merged).
+	mergedMR, err := ws.CreateMergeRequest(writID4, "branch-merged", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateMergeRequestPhase(mergedMR, store.MRClaimed); err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateMergeRequestPhase(mergedMR, store.MRMerged); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := sitrep.Collect(sphere, opener, sitrep.Scope{World: "test-world"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ForgeStatuses should include the world.
+	fs, ok := data.ForgeStatuses["test-world"]
+	if !ok {
+		t.Fatal("expected forge status for test-world")
+	}
+
+	// Process state should be off (no real forge running in tests).
+	if fs.Running {
+		t.Error("expected running=false in test environment")
+	}
+	if fs.Paused {
+		t.Error("expected paused=false in test environment")
+	}
+	if fs.Merging {
+		t.Error("expected merging=false in test environment")
+	}
+
+	// Queue counts from MR data.
+	if fs.QueueReady != 1 {
+		t.Errorf("expected queue_ready=1, got %d", fs.QueueReady)
+	}
+	if fs.QueueFailed != 1 {
+		t.Errorf("expected queue_failed=1, got %d", fs.QueueFailed)
+	}
+	if fs.QueueBlocked != 0 {
+		t.Errorf("expected queue_blocked=0, got %d", fs.QueueBlocked)
+	}
+
+	// Merged counts.
+	if fs.MergedTotal != 1 {
+		t.Errorf("expected merged_total=1, got %d", fs.MergedTotal)
+	}
+
+	// Claimed MR detail.
+	if fs.ClaimedMR == nil {
+		t.Fatal("expected claimed MR detail")
+	}
+	if fs.ClaimedMR.Title != "Claimed writ" {
+		t.Errorf("expected claimed MR title %q, got %q", "Claimed writ", fs.ClaimedMR.Title)
+	}
+
+	// Last failure.
+	if fs.LastFailure == nil {
+		t.Fatal("expected last failure event")
+	}
+
+	// Last merge.
+	if fs.LastMerge == nil {
+		t.Fatal("expected last merge event")
+	}
+}
+
+func TestCollectForgeStatusSphereScope(t *testing.T) {
+	sphere, opener := setupTestEnv(t)
+
+	if err := sphere.RegisterWorld("alpha", "/tmp/alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sphere.RegisterWorld("bravo", "/tmp/bravo"); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := sitrep.Collect(sphere, opener, sitrep.Scope{Sphere: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Both worlds should have forge status entries.
+	if len(data.ForgeStatuses) != 2 {
+		t.Errorf("expected 2 forge statuses, got %d", len(data.ForgeStatuses))
+	}
+	if _, ok := data.ForgeStatuses["alpha"]; !ok {
+		t.Error("expected forge status for alpha")
+	}
+	if _, ok := data.ForgeStatuses["bravo"]; !ok {
+		t.Error("expected forge status for bravo")
+	}
+}
