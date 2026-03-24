@@ -98,3 +98,16 @@ func (s *SphereStore) ImportCaravanItem(caravanID, writID, world string, phase i
 	}
 	return nil
 }
+
+// ImportCaravanDependency inserts a caravan dependency record.
+func (s *SphereStore) ImportCaravanDependency(fromID, toID string) error {
+	_, err := s.db.Exec(
+		`INSERT OR IGNORE INTO caravan_dependencies (from_id, to_id)
+		 VALUES (?, ?)`,
+		fromID, toID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to import caravan dependency %q → %q: %w", fromID, toID, err)
+	}
+	return nil
+}

@@ -104,3 +104,40 @@ func (s *SphereStore) ExportCaravansForWorld(world string) ([]Caravan, error) {
 	}
 	return caravans, nil
 }
+
+// CaravanDependency represents a dependency relationship between two caravans.
+type CaravanDependency struct {
+	FromID string
+	ToID   string
+}
+
+// ExportCaravanDependenciesForWorld returns all caravan dependency relationships
+// where the dependent (from_id) caravan has at least one item in the given world.
+// Used during world export to preserve caravan sequencing guarantees.
+func (s *SphereStore) ExportCaravanDependenciesForWorld(world string) ([]CaravanDependency, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT cd.from_id, cd.to_id
+		 FROM caravan_dependencies cd
+		 JOIN caravan_items ci ON cd.from_id = ci.caravan_id
+		 WHERE ci.world = ?
+		 ORDER BY cd.from_id, cd.to_id`,
+		world,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to export caravan dependencies for world %q: %w", world, err)
+	}
+	defer rows.Close()
+
+	var deps []CaravanDependency
+	for rows.Next() {
+		var d CaravanDependency
+		if err := rows.Scan(&d.FromID, &d.ToID); err != nil {
+			return nil, fmt.Errorf("failed to scan caravan dependency: %w", err)
+		}
+		deps = append(deps, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating caravan dependencies: %w", err)
+	}
+	return deps, nil
+}

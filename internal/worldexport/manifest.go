@@ -111,3 +111,9 @@ type ExportCaravanItem struct {
 	World      string `json:"world"`
 	Phase      int    `json:"phase"`
 }
+
+// ExportCaravanDependency is the JSON-serializable representation of a caravan dependency.
+type ExportCaravanDependency struct {
+	FromID string `json:"from_id"`
+	ToID   string `json:"to_id"`
+}

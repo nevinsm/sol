@@ -4,8 +4,10 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -208,6 +210,11 @@ func importSphereData(s *store.SphereStore, archiveRoot, oldWorld, newWorld stri
 		return fmt.Errorf("failed to import caravan items: %w", err)
 	}
 
+	// Import caravan dependencies.
+	if err := importCaravanDependencies(s, sphereDir); err != nil {
+		return fmt.Errorf("failed to import caravan dependencies: %w", err)
+	}
+
 	return nil
 }
 
@@ -313,6 +320,25 @@ func importCaravanItems(s *store.SphereStore, sphereDir, oldWorld, newWorld stri
 		}
 		if err := s.ImportCaravanItem(ci.CaravanID, ci.WritID, world, ci.Phase); err != nil {
 			return fmt.Errorf("failed to import caravan item %q: %w", ci.WritID, err)
+		}
+	}
+	return nil
+}
+
+func importCaravanDependencies(s *store.SphereStore, sphereDir string) error {
+	var deps []ExportCaravanDependency
+	if err := readJSONFile(filepath.Join(sphereDir, "caravan_dependencies.json"), &deps); err != nil {
+		// Use errors.Is for wrapped errors (readJSONFile wraps os.ReadFile errors
+		// with fmt.Errorf %w, which os.IsNotExist does not unwrap).
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("failed to read caravan_dependencies.json: %w", err)
+	}
+
+	for _, d := range deps {
+		if err := s.ImportCaravanDependency(d.FromID, d.ToID); err != nil {
+			return fmt.Errorf("failed to import caravan dependency %q → %q: %w", d.FromID, d.ToID, err)
 		}
 	}
 	return nil

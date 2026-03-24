@@ -42,6 +42,7 @@ type ExportResult struct {
 //	    escalations.json
 //	    caravans.json
 //	    caravan_items.json
+//	    caravan_dependencies.json
 //	  writ-outputs/          (if present)
 //	    {writID}/
 //	      ...
@@ -98,6 +99,11 @@ func Export(opts ExportOptions) (*ExportResult, error) {
 	caravanItems, err := sphereStore.ExportCaravanItemsForWorld(world)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list caravan items for export: %w", err)
+	}
+
+	caravanDeps, err := sphereStore.ExportCaravanDependenciesForWorld(world)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list caravan dependencies for export: %w", err)
 	}
 
 	// 3. Create output archive file.
@@ -261,6 +267,18 @@ func Export(opts ExportOptions) (*ExportResult, error) {
 	}
 	if err := exportWriteJSON(tw, exportItems, prefix+"sphere-data/caravan_items.json", now); err != nil {
 		return nil, fmt.Errorf("failed to add caravan items: %w", err)
+	}
+
+	// Caravan dependencies.
+	exportDeps := make([]ExportCaravanDependency, len(caravanDeps))
+	for i, d := range caravanDeps {
+		exportDeps[i] = ExportCaravanDependency{
+			FromID: d.FromID,
+			ToID:   d.ToID,
+		}
+	}
+	if err := exportWriteJSON(tw, exportDeps, prefix+"sphere-data/caravan_dependencies.json", now); err != nil {
+		return nil, fmt.Errorf("failed to add caravan dependencies: %w", err)
 	}
 
 	// 8. Write writ-outputs/ directory (if it exists).
