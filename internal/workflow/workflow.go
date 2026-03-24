@@ -138,6 +138,12 @@ func Validate(m *Manifest, workflowDir ...string) error {
 		return fmt.Errorf("unknown workflow type %q: must be workflow", m.Type)
 	}
 
+	switch m.Mode {
+	case "", "inline", "manifest": // valid modes
+	default:
+		return fmt.Errorf("unknown workflow mode %q: must be inline or manifest", m.Mode)
+	}
+
 	// Validate instructions files exist when workflow directory is known.
 	if len(workflowDir) > 0 && workflowDir[0] != "" {
 		dir := workflowDir[0]

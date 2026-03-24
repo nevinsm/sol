@@ -1149,6 +1149,32 @@ func TestValidateExpansionTypeRejected(t *testing.T) {
 	}
 }
 
+func TestValidateUnknownMode(t *testing.T) {
+	// A typo in the mode field should be caught immediately.
+	m := &Manifest{
+		Mode: "manifset",
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for unknown workflow mode")
+	}
+	if got := err.Error(); got != `unknown workflow mode "manifset": must be inline or manifest` {
+		t.Errorf("error: got %q", got)
+	}
+}
+
+func TestValidateValidModes(t *testing.T) {
+	for _, mode := range []string{"", "inline", "manifest"} {
+		m := &Manifest{
+			Mode: mode,
+			Steps: []StepDef{{ID: "s1", Title: "step"}},
+		}
+		if err := Validate(m); err != nil {
+			t.Errorf("Validate() unexpected error for mode %q: %v", mode, err)
+		}
+	}
+}
+
 func TestResolveRuleOfFive(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
