@@ -1058,12 +1058,12 @@ func (w *Sentinel) handleOrphanedWorking(agent store.Agent) error {
 		// Outpost: clean up entirely.
 		// If resolve was in progress, the work was being submitted — MR may exist.
 		// If not, tether was lost. Either way, agent is stuck and useless.
-		w.cleanupAgentResources(agent.Name)
-		if err := w.sphereStore.DeleteAgent(agent.ID); err != nil {
-			return fmt.Errorf("failed to delete orphaned agent %s: %w", agent.ID, err)
-		}
+		//
+		// Order matters for crash safety: update writ FIRST so we never
+		// delete the agent record while the writ still references it
+		// (which would create an unrecoverable "ghost tether").
 
-		// If active writ exists and is still "tethered", return it to open.
+		// Step 1: If active writ exists and is still "tethered", return it to open.
 		if agent.ActiveWrit != "" && w.worldStore != nil {
 			item, err := w.worldStore.GetWrit(agent.ActiveWrit)
 			if err == nil && item.Status == "tethered" {
@@ -1071,19 +1071,19 @@ func (w *Sentinel) handleOrphanedWorking(agent store.Agent) error {
 					Status:   "open",
 					Assignee: "-",
 				}); updateErr != nil {
-					// Agent is already deleted — we can't fail the whole operation.
-					// Log so the orphaned writ is visible for manual recovery.
-					if w.logger != nil {
-						w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
-							"agent":  agent.ID,
-							"writ":   agent.ActiveWrit,
-							"action": "return_orphaned_writ_to_open",
-							"error":  updateErr.Error(),
-						})
-					}
+					// Agent record still exists — safe to return error and retry next patrol.
+					return fmt.Errorf("failed to return orphaned writ %s to open: %w", agent.ActiveWrit, updateErr)
 				}
 			}
 			// If writ is "done", leave it — MR pipeline will handle it.
+		}
+
+		// Step 2: Clean up agent resources (tether files, worktree).
+		w.cleanupAgentResources(agent.Name)
+
+		// Step 3: Delete agent record last — writ is already freed.
+		if err := w.sphereStore.DeleteAgent(agent.ID); err != nil {
+			return fmt.Errorf("failed to delete orphaned agent %s: %w", agent.ID, err)
 		}
 	} else {
 		// Persistent agent: set idle, clear active_writ.

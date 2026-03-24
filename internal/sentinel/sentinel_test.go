@@ -3610,31 +3610,21 @@ func TestHandleOrphanedWorking_UpdateWritError(t *testing.T) {
 		ActiveWrit: "sol-orphwrit1",
 	})
 
-	// Should not return an error — the agent is already deleted.
-	if err != nil {
-		t.Fatalf("handleOrphanedWorking() unexpected error: %v", err)
+	// Should return an error — agent record is preserved for retry on next patrol.
+	if err == nil {
+		t.Fatal("handleOrphanedWorking() expected error when writ update fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "database is locked") {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), "database is locked")
 	}
 
-	// Verify sentinel_error event was emitted.
-	evts := readEvents(t, cfg.SolHome, "sentinel_error")
-	if len(evts) == 0 {
-		t.Fatal("expected sentinel_error event for UpdateWrit failure, got none")
+	// Verify agent record still exists (not deleted) so retry is possible.
+	agent, getErr := sphereStore.GetAgent("ember/Toast")
+	if getErr != nil {
+		t.Fatalf("agent should still exist after writ update failure: %v", getErr)
 	}
-
-	// Verify the event payload contains the relevant details.
-	payload, ok := evts[0].Payload.(map[string]any)
-	if !ok {
-		t.Fatalf("expected map payload, got %T", evts[0].Payload)
-	}
-	if payload["action"] != "return_orphaned_writ_to_open" {
-		t.Errorf("event action = %q, want %q", payload["action"], "return_orphaned_writ_to_open")
-	}
-	if payload["writ"] != "sol-orphwrit1" {
-		t.Errorf("event writ = %q, want %q", payload["writ"], "sol-orphwrit1")
-	}
-	errMsg, _ := payload["error"].(string)
-	if !strings.Contains(errMsg, "database is locked") {
-		t.Errorf("event error = %q, want it to contain %q", errMsg, "database is locked")
+	if agent.ID != "ember/Toast" {
+		t.Errorf("agent ID = %q, want %q", agent.ID, "ember/Toast")
 	}
 }
 
