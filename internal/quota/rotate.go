@@ -197,7 +197,13 @@ func ResolveCurrentAccount(world, agentName, role string) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return parts[0]
+
+	// Validate the handle doesn't look like a path traversal.
+	handle := parts[0]
+	if handle == "" || handle == "." || handle == ".." || strings.Contains(handle, "/") {
+		return ""
+	}
+	return handle
 }
 
 // readAccountFile reads the .account metadata file from an agent config dir.
