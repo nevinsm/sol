@@ -151,6 +151,61 @@ func (l *MergeSlotLock) Release() error {
 	return nil
 }
 
+// SphereSessionLock holds an advisory flock that serializes session-start
+// operations across all worlds. This prevents concurrent Cast calls in
+// different worlds from both passing the sphere-wide max_sessions check
+// before either starts a session.
+//
+// Lock ordering: acquire the per-world ProvisionLock FIRST, then the
+// SphereSessionLock. This consistent ordering avoids deadlocks.
+//
+// Lock file: $SOL_HOME/.runtime/locks/sphere-session.lock
+// Uses LOCK_EX (blocking) so callers wait rather than error on contention.
+// The lock is held briefly — just long enough to count sessions and start
+// the new one.
+type SphereSessionLock struct {
+	file *os.File
+	path string
+}
+
+// AcquireSphereSessionLock takes a blocking exclusive advisory lock on the
+// sphere-wide session slot. This must be acquired AFTER any per-world
+// ProvisionLock to maintain consistent lock ordering and avoid deadlocks.
+func AcquireSphereSessionLock() (*SphereSessionLock, error) {
+	lockDir := filepath.Join(config.RuntimeDir(), "locks")
+	if err := os.MkdirAll(lockDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to acquire sphere session lock: %w", err)
+	}
+
+	lockPath := filepath.Join(lockDir, "sphere-session.lock")
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to acquire sphere session lock: %w", err)
+	}
+
+	// Blocking lock: wait for any concurrent session-start to finish.
+	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("failed to acquire sphere session lock: %w", err)
+	}
+
+	return &SphereSessionLock{file: f, path: lockPath}, nil
+}
+
+// Release releases the sphere session lock and removes the lock file.
+// It is idempotent — calling Release on an already-released lock is a no-op.
+func (l *SphereSessionLock) Release() error {
+	if l == nil || l.file == nil {
+		return nil
+	}
+	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	l.file.Close()
+	os.Remove(l.path)
+	l.file = nil
+	return nil
+}
+
 // ProvisionLock holds an advisory flock that serializes autoProvision calls
 // for a given world. This prevents concurrent Cast calls from both passing
 // the capacity check and both creating an agent, exceeding the world limit.
