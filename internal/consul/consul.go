@@ -741,14 +741,16 @@ func (d *Consul) dispatchWorldItems(ctx context.Context, caravanID, world string
 			return dispatched, ctx.Err()
 		}
 
-		// Don't re-dispatch items that have been worked on before.
-		// Existing MRs (any phase) mean the writ was dispatched, worked,
-		// and resolved at least once. Recovery is sentinel's domain.
+		// Check whether this writ has been dispatched before by looking at MRs.
+		// Skip re-dispatch only if at least one MR is in an active or successful
+		// phase ("ready", "claimed", "merged") — those are handled by forge/sentinel.
+		// Writs with only "failed" or "superseded" MRs need re-dispatch because
+		// the previous attempt did not produce a viable merge.
 		mrs, mrsErr := worldStore.ListMergeRequestsByWrit(st.WritID, "")
-		if mrsErr == nil && len(mrs) > 0 {
+		if mrsErr == nil && len(mrs) > 0 && hasActiveMR(mrs) {
 			if d.logger != nil {
 				d.logger.Emit("consul_skip_redispatch", "sphere/consul", "sphere/consul", "audit",
-					map[string]any{"writ": st.WritID, "reason": "existing_mrs"})
+					map[string]any{"writ": st.WritID, "reason": "active_mrs"})
 			}
 			continue
 		}
@@ -795,6 +797,20 @@ func (d *Consul) dispatchWorldItems(ctx context.Context, caravanID, world string
 	}
 
 	return dispatched, nil
+}
+
+// hasActiveMR returns true if at least one MR is in an active or successful
+// phase: "ready" (awaiting forge), "claimed" (forge processing), or "merged".
+// MRs in "failed" or "superseded" phase are terminal failures that require
+// re-dispatch to produce a new attempt.
+func hasActiveMR(mrs []store.MergeRequest) bool {
+	for _, mr := range mrs {
+		switch mr.Phase {
+		case "ready", "claimed", "merged":
+			return true
+		}
+	}
+	return false
 }
 
 // processLifecycleRequests reads and processes operator messages.

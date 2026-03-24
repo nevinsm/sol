@@ -711,7 +711,7 @@ func TestFeedStrandedCaravansAutoCloseAllMerged(t *testing.T) {
 	}
 }
 
-func TestFeedStrandedCaravansSkipsRedispatch(t *testing.T) {
+func TestFeedStrandedCaravansRedispatchesFailedMRs(t *testing.T) {
 	setupSolHome(t)
 
 	sphereStore, err := store.OpenSphere()
@@ -727,22 +727,28 @@ func TestFeedStrandedCaravansSkipsRedispatch(t *testing.T) {
 	}
 	defer worldStore.Close()
 
-	// Create a caravan with 2 open writs:
-	// - wi1: has existing MRs (was dispatched before, MR failed, writ reopened)
-	// - wi2: no MRs (fresh, never dispatched)
+	// Create a caravan with 3 open writs:
+	// - wi1: has only failed MRs → SHOULD be re-dispatched
+	// - wi2: no MRs (fresh, never dispatched) → SHOULD be dispatched
+	// - wi3: has an active "ready" MR → should NOT be re-dispatched
 	caravanID, _ := sphereStore.CreateCaravan("redispatch-caravan", "autarch")
 	sphereStore.UpdateCaravanStatus(caravanID, "open")
 
 	wi1, _ := worldStore.CreateWrit("redispatch-task-1", "desc1", "test", 1, nil)
 	wi2, _ := worldStore.CreateWrit("redispatch-task-2", "desc2", "test", 1, nil)
+	wi3, _ := worldStore.CreateWrit("redispatch-task-3", "desc3", "test", 1, nil)
 
 	sphereStore.CreateCaravanItem(caravanID, wi1, worldName, 0)
 	sphereStore.CreateCaravanItem(caravanID, wi2, worldName, 0)
+	sphereStore.CreateCaravanItem(caravanID, wi3, worldName, 0)
 
 	// wi1 has a failed MR — simulates forge marking MR as failed and reopening the writ.
-	mrID, _ := worldStore.CreateMergeRequest(wi1, "outpost/agent/worktree", 1)
+	mrID1, _ := worldStore.CreateMergeRequest(wi1, "outpost/agent/worktree1", 1)
 	worldStore.ClaimMergeRequest("forge")
-	worldStore.UpdateMergeRequestPhase(mrID, "failed")
+	worldStore.UpdateMergeRequestPhase(mrID1, "failed")
+
+	// wi3 has an active "ready" MR — forge should handle this.
+	worldStore.CreateMergeRequest(wi3, "outpost/agent/worktree3", 1)
 
 	sessions := newMockSessions()
 	cfg := Config{
@@ -763,15 +769,20 @@ func TestFeedStrandedCaravansSkipsRedispatch(t *testing.T) {
 		t.Fatalf("feedStrandedCaravans failed: %v", err)
 	}
 
-	// Only wi2 should be dispatched; wi1 should be skipped (existing MRs).
-	if fed != 1 {
-		t.Errorf("fed = %d, want 1 (only fresh item dispatched)", fed)
+	// wi1 (failed MRs only) and wi2 (no MRs) should be dispatched.
+	// wi3 (active MR) should be skipped.
+	if fed != 2 {
+		t.Errorf("fed = %d, want 2 (failed-MR + fresh items dispatched)", fed)
 	}
-	if len(dispatched) != 1 {
-		t.Fatalf("dispatch calls = %d, want 1", len(dispatched))
+	if len(dispatched) != 2 {
+		t.Fatalf("dispatch calls = %d, want 2", len(dispatched))
 	}
-	if dispatched[0].WritID != wi2 {
-		t.Errorf("dispatched writ = %s, want %s (fresh item)", dispatched[0].WritID, wi2)
+
+	// Verify wi3 was NOT dispatched.
+	for _, d := range dispatched {
+		if d.WritID == wi3 {
+			t.Errorf("wi3 (active MR) should not have been dispatched")
+		}
 	}
 }
 

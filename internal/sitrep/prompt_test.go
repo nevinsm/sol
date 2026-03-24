@@ -473,6 +473,167 @@ func TestFormatDataPayloadCaravanDepsSatisfied(t *testing.T) {
 	}
 }
 
+func TestFormatDataPayloadDispatchable(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	now := time.Now().UTC()
+	data := &sitrep.CollectedData{
+		Scope: "sphere",
+		Agents: []store.Agent{
+			{ID: "dev/Alpha", Name: "Alpha", World: "dev", Role: "outpost", State: "idle", CreatedAt: now, UpdatedAt: now},
+			{ID: "dev/Beta", Name: "Beta", World: "dev", Role: "outpost", State: "working", ActiveWrit: "sol-aaa", CreatedAt: now, UpdatedAt: now},
+			{ID: "dev/Gamma", Name: "Gamma", World: "dev", Role: "outpost", State: "idle", CreatedAt: now, UpdatedAt: now},
+		},
+		Caravans: []store.Caravan{
+			{ID: "car-1", Name: "Health Scan", Status: "open"},
+		},
+		CaravanReadiness: map[string][]store.CaravanItemStatus{
+			"car-1": {
+				{WritID: "sol-bbb", World: "dev", Phase: 2, WritStatus: "open", Ready: true},
+			},
+		},
+		CaravanDeps:            map[string][]string{},
+		CaravanUnsatisfiedDeps: map[string][]string{},
+		Worlds: []sitrep.WorldData{
+			{
+				Name: "dev",
+				ReadyToDispatch: []store.Writ{
+					{ID: "sol-bbb", Title: "Fix consul gaps", Status: "open", Priority: 2, CreatedAt: now, UpdatedAt: now},
+					{ID: "sol-ccc", Title: "Add metrics", Status: "open", Priority: 3, CreatedAt: now, UpdatedAt: now},
+				},
+				Writs: []store.Writ{
+					{ID: "sol-aaa", Title: "Active writ", Status: "tethered"},
+					{ID: "sol-bbb", Title: "Fix consul gaps", Status: "open"},
+					{ID: "sol-ccc", Title: "Add metrics", Status: "open"},
+				},
+			},
+		},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checks := []string{
+		"## Dispatchable",
+		"2 idle outpost agents, 2 writs ready for dispatch",
+		"Idle agents: Alpha, Gamma",
+		"Ready writs:",
+		"sol-bbb — Fix consul gaps [dev] (Phase 2, Health Scan caravan)",
+		"sol-ccc — Add metrics [dev]",
+	}
+	for _, check := range checks {
+		if !strings.Contains(prompt, check) {
+			t.Errorf("prompt should contain %q\ngot:\n%s", check, prompt)
+		}
+	}
+
+	// Dispatchable section should appear before Agents section.
+	dispIdx := strings.Index(prompt, "## Dispatchable")
+	agentIdx := strings.Index(prompt, "## Agents")
+	if dispIdx < 0 || agentIdx < 0 {
+		t.Fatal("expected both Dispatchable and Agents sections")
+	}
+	if dispIdx >= agentIdx {
+		t.Error("Dispatchable section should appear before Agents section")
+	}
+}
+
+func TestFormatDataPayloadDispatchableOmittedWhenEmpty(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	now := time.Now().UTC()
+	data := &sitrep.CollectedData{
+		Scope: "sphere",
+		Agents: []store.Agent{
+			// Working agent, not idle.
+			{ID: "dev/Alpha", Name: "Alpha", World: "dev", Role: "outpost", State: "working", ActiveWrit: "sol-aaa", CreatedAt: now, UpdatedAt: now},
+		},
+		CaravanReadiness: map[string][]store.CaravanItemStatus{},
+		Worlds: []sitrep.WorldData{
+			{
+				Name:            "dev",
+				ReadyToDispatch: []store.Writ{}, // No ready writs.
+				Writs:           []store.Writ{{ID: "sol-aaa", Title: "Active writ", Status: "tethered"}},
+			},
+		},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(prompt, "## Dispatchable") {
+		t.Error("Dispatchable section should be omitted when no idle agents and no ready writs")
+	}
+}
+
+func TestFormatDataPayloadDispatchableSingular(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	now := time.Now().UTC()
+	data := &sitrep.CollectedData{
+		Scope: "sphere",
+		Agents: []store.Agent{
+			{ID: "dev/Alpha", Name: "Alpha", World: "dev", Role: "outpost", State: "idle", CreatedAt: now, UpdatedAt: now},
+		},
+		CaravanReadiness: map[string][]store.CaravanItemStatus{},
+		Worlds: []sitrep.WorldData{
+			{
+				Name: "dev",
+				ReadyToDispatch: []store.Writ{
+					{ID: "sol-aaa", Title: "Fix bug", Status: "open", Priority: 2, CreatedAt: now, UpdatedAt: now},
+				},
+				Writs: []store.Writ{{ID: "sol-aaa", Title: "Fix bug", Status: "open"}},
+			},
+		},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(prompt, "1 idle outpost agent, 1 writ ready for dispatch") {
+		t.Errorf("prompt should use singular form\ngot:\n%s", prompt)
+	}
+}
+
+func TestFormatDataPayloadDispatchableIdleOnlyNoWrits(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	now := time.Now().UTC()
+	data := &sitrep.CollectedData{
+		Scope: "sphere",
+		Agents: []store.Agent{
+			{ID: "dev/Alpha", Name: "Alpha", World: "dev", Role: "outpost", State: "idle", CreatedAt: now, UpdatedAt: now},
+		},
+		CaravanReadiness: map[string][]store.CaravanItemStatus{},
+		Worlds: []sitrep.WorldData{
+			{Name: "dev", ReadyToDispatch: []store.Writ{}},
+		},
+	}
+
+	prompt, err := sitrep.BuildPrompt(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should still show section because there's an idle agent.
+	if !strings.Contains(prompt, "## Dispatchable") {
+		t.Error("Dispatchable section should appear when idle agents exist")
+	}
+	if !strings.Contains(prompt, "1 idle outpost agent, no writs ready") {
+		t.Errorf("prompt should show idle agents with no writs\ngot:\n%s", prompt)
+	}
+}
+
 func TestFormatDataPayloadBlockedMRs(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)

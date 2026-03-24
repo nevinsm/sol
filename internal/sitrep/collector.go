@@ -54,11 +54,12 @@ type ForgeStatus struct {
 
 // WorldData holds collected data for a single world.
 type WorldData struct {
-	Name          string               `json:"name"`
-	Writs         []store.Writ         `json:"writs"`
-	MergeRequests []store.MergeRequest `json:"merge_requests"`
-	BlockedMRs    []store.MergeRequest `json:"blocked_merge_requests"`
-	MRSummary     map[string]int       `json:"mr_summary,omitempty"`
+	Name            string               `json:"name"`
+	Writs           []store.Writ         `json:"writs"`
+	ReadyToDispatch []store.Writ         `json:"ready_to_dispatch,omitempty"`
+	MergeRequests   []store.MergeRequest `json:"merge_requests"`
+	BlockedMRs      []store.MergeRequest `json:"blocked_merge_requests"`
+	MRSummary       map[string]int       `json:"mr_summary,omitempty"`
 }
 
 // CollectedData holds all data gathered for a sitrep.
@@ -184,6 +185,12 @@ func collectWorldData(worldOpener WorldOpener, world string) (*WorldData, error)
 		return nil, fmt.Errorf("failed to list writs for world %q: %w", world, err)
 	}
 	wd.Writs = writs
+
+	// Collect writs ready for dispatch (open, no unsatisfied dependencies).
+	readyWrits, err := ws.ReadyWrits()
+	if err == nil {
+		wd.ReadyToDispatch = readyWrits
+	}
 
 	// Collect only actionable (non-terminal) merge requests for detail.
 	for _, phase := range []string{store.MRReady, store.MRClaimed, store.MRFailed} {

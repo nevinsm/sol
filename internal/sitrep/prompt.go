@@ -90,6 +90,110 @@ func formatDataPayload(data *CollectedData) string {
 		b.WriteString("\n")
 	}
 
+	// Dispatchable section — supply (idle agents) paired with demand (ready writs).
+	{
+		// Count idle outpost agents.
+		var idleAgents []store.Agent
+		for _, a := range data.Agents {
+			if a.State == "idle" && a.Role == "outpost" {
+				idleAgents = append(idleAgents, a)
+			}
+		}
+
+		// Collect all ready-to-dispatch writs across worlds.
+		type readyWrit struct {
+			store.Writ
+			World       string
+			CaravanName string
+			CaravanPhase int
+		}
+		var readyWrits []readyWrit
+		for _, w := range data.Worlds {
+			for _, wr := range w.ReadyToDispatch {
+				rw := readyWrit{Writ: wr, World: w.Name}
+				readyWrits = append(readyWrits, rw)
+			}
+		}
+
+		// Cross-reference with caravan readiness for annotations.
+		// Build a lookup: writID → (caravanName, phase).
+		type caravanRef struct {
+			Name  string
+			Phase int
+		}
+		writCaravan := make(map[string]caravanRef)
+		if data.CaravanReadiness != nil {
+			// Build caravan ID → name lookup.
+			caravanNames := make(map[string]string)
+			for _, c := range data.Caravans {
+				caravanNames[c.ID] = c.Name
+			}
+			for caravanID, statuses := range data.CaravanReadiness {
+				for _, s := range statuses {
+					if s.Ready {
+						name := caravanNames[caravanID]
+						if name == "" {
+							name = caravanID
+						}
+						writCaravan[s.WritID] = caravanRef{Name: name, Phase: s.Phase}
+					}
+				}
+			}
+		}
+
+		// Annotate ready writs with caravan context.
+		for i, rw := range readyWrits {
+			if ref, ok := writCaravan[rw.ID]; ok {
+				readyWrits[i].CaravanName = ref.Name
+				readyWrits[i].CaravanPhase = ref.Phase
+			}
+		}
+
+		// Only emit section if there's something to show.
+		if len(idleAgents) > 0 || len(readyWrits) > 0 {
+			b.WriteString("## Dispatchable\n\n")
+
+			// Supply/demand summary.
+			idleStr := fmt.Sprintf("%d idle outpost agents", len(idleAgents))
+			if len(idleAgents) == 0 {
+				idleStr = "no idle agents"
+			} else if len(idleAgents) == 1 {
+				idleStr = "1 idle outpost agent"
+			}
+			writStr := fmt.Sprintf("%d writs ready for dispatch", len(readyWrits))
+			if len(readyWrits) == 0 {
+				writStr = "no writs ready"
+			} else if len(readyWrits) == 1 {
+				writStr = "1 writ ready for dispatch"
+			}
+			b.WriteString(fmt.Sprintf("%s, %s\n\n", idleStr, writStr))
+
+			// List idle agents.
+			if len(idleAgents) > 0 {
+				b.WriteString("Idle agents: ")
+				names := make([]string, len(idleAgents))
+				for i, a := range idleAgents {
+					names[i] = a.Name
+				}
+				b.WriteString(strings.Join(names, ", "))
+				b.WriteString("\n\n")
+			}
+
+			// List ready writs.
+			if len(readyWrits) > 0 {
+				b.WriteString("Ready writs:\n")
+				for _, rw := range readyWrits {
+					line := fmt.Sprintf("- %s — %s [%s]", rw.ID, rw.Title, rw.World)
+					if rw.CaravanName != "" {
+						line += fmt.Sprintf(" (Phase %d, %s caravan)", rw.CaravanPhase, rw.CaravanName)
+					}
+					b.WriteString(line + "\n")
+				}
+				b.WriteString("\n")
+			}
+		}
+	}
+
 	// Agents summary.
 	b.WriteString("## Agents\n\n")
 	if len(data.Agents) == 0 {

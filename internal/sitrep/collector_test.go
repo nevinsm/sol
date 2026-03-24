@@ -666,3 +666,71 @@ func TestCollectCaravanDependenciesSatisfied(t *testing.T) {
 		t.Errorf("expected no unsatisfied deps, got %v", unsatisfied)
 	}
 }
+
+func TestCollectReadyToDispatch(t *testing.T) {
+	sphere, opener := setupTestEnv(t)
+
+	if err := sphere.RegisterWorld("test-world", "/tmp/test"); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := store.OpenWorld("test-world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+
+	// Create an open writ with no dependencies — should be ready.
+	readyID, err := ws.CreateWrit("Ready writ", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a tethered writ — should NOT be ready (not open).
+	tetheredID, err := ws.CreateWrit("Tethered writ", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateWrit(tetheredID, store.WritUpdates{Status: store.WritTethered}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := sitrep.Collect(sphere, opener, sitrep.Scope{World: "test-world"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data.Worlds) != 1 {
+		t.Fatalf("expected 1 world, got %d", len(data.Worlds))
+	}
+	wd := data.Worlds[0]
+
+	// ReadyToDispatch should contain only the open writ.
+	if len(wd.ReadyToDispatch) != 1 {
+		t.Fatalf("expected 1 ready writ, got %d", len(wd.ReadyToDispatch))
+	}
+	if wd.ReadyToDispatch[0].ID != readyID {
+		t.Errorf("expected ready writ ID %q, got %q", readyID, wd.ReadyToDispatch[0].ID)
+	}
+}
+
+func TestCollectReadyToDispatchEmpty(t *testing.T) {
+	sphere, opener := setupTestEnv(t)
+
+	if err := sphere.RegisterWorld("test-world", "/tmp/test"); err != nil {
+		t.Fatal(err)
+	}
+
+	// No writs — ReadyToDispatch should be empty.
+	data, err := sitrep.Collect(sphere, opener, sitrep.Scope{World: "test-world"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data.Worlds) != 1 {
+		t.Fatalf("expected 1 world, got %d", len(data.Worlds))
+	}
+	if len(data.Worlds[0].ReadyToDispatch) != 0 {
+		t.Errorf("expected 0 ready writs, got %d", len(data.Worlds[0].ReadyToDispatch))
+	}
+}
