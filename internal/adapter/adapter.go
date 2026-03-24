@@ -33,8 +33,15 @@ type RuntimeAdapter interface {
 	// abort before creating a tmux session that would immediately fail authentication.
 	CredentialEnv(cred Credential) (map[string]string, error)
 
-	// TelemetryEnv returns env vars for OTel telemetry.
+	// TelemetryEnv returns env vars for OTel telemetry export to the sol ledger.
 	// Returns empty map when port <= 0 (telemetry disabled).
+	//
+	// Telemetry contract for OTEL_RESOURCE_ATTRIBUTES:
+	//   - MUST set agent.name, world, and service.name.
+	//   - SHOULD set writ_id when the agent is tethered to a writ.
+	//   - service.name MUST match the key used to register the adapter's
+	//     ExtractTelemetry implementation in the ledger. The ledger uses
+	//     service.name as the routing key to select the correct extractor.
 	TelemetryEnv(port int, agent, world, activeWrit string) map[string]string
 
 	// Name returns the adapter's registered name (e.g. "claude").

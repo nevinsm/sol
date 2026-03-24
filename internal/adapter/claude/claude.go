@@ -290,6 +290,7 @@ func (a *Adapter) TelemetryEnv(port int, agent, world, activeWrit string) map[st
 	if activeWrit != "" {
 		attrs += ",writ_id=" + activeWrit
 	}
+	attrs += ",service.name=claude-code"
 	return map[string]string{
 		"CLAUDE_CODE_ENABLE_TELEMETRY":     "1",
 		"OTEL_LOGS_EXPORTER":               "otlp",
