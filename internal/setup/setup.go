@@ -182,6 +182,8 @@ func Run(p Params) (*Result, error) {
 	tomlPath := config.WorldConfigPath(p.WorldName)
 	if _, err := os.Stat(tomlPath); err == nil {
 		return nil, fmt.Errorf("world %q is already initialized", p.WorldName)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("cannot check world config %q: %w", tomlPath, err)
 	}
 
 	// 1. Doctor checks.
