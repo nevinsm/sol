@@ -236,6 +236,17 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	defer addCancel()
 	addCmd := exec.CommandContext(addCtx, "git", "-C", opts.SourceRepo, "worktree", "add", worktreeDir, "-b", branchName, "HEAD")
 	if out, err := addCmd.CombinedOutput(); err != nil {
+		// Branch exists from prior cast — reset it to HEAD so the new agent
+		// starts from current main, not wherever the previous agent left it.
+		resetCtx, resetCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
+		resetCmd := exec.CommandContext(resetCtx, "git", "-C", opts.SourceRepo, "branch", "-f", branchName, "HEAD")
+		if resetOut, resetErr := resetCmd.CombinedOutput(); resetErr != nil {
+			resetCancel()
+			return nil, fmt.Errorf("failed to reset branch %s to HEAD: %s: %w",
+				branchName, strings.TrimSpace(string(resetOut)), resetErr)
+		}
+		resetCancel()
+
 		addCtx2, addCancel2 := context.WithTimeout(ctx, GitWorktreeAddTimeout)
 		defer addCancel2()
 		addCmd2 := exec.CommandContext(addCtx2, "git", "-C", opts.SourceRepo, "worktree", "add", worktreeDir, branchName)

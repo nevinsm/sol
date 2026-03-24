@@ -2547,6 +2547,65 @@ func TestReCastPartialFailureRecovery(t *testing.T) {
 	}
 }
 
+func TestReCastResetsStalebranchToHEAD(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWrit("Re-cast task", "Test re-cast branch reset", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Create a temporary git repo to use as source.
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	// Simulate a prior cast: create the branch and advance it beyond HEAD of main.
+	branchName := fmt.Sprintf("outpost/%s/%s", "Toast", itemID)
+	runGit(t, repoDir, "branch", branchName)
+	runGit(t, repoDir, "checkout", branchName)
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "stale work from prior agent")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "more stale work")
+	// Switch back to the default branch so HEAD points there.
+	runGit(t, repoDir, "checkout", "-")
+
+	// Record the current HEAD of the repo (the commit the new cast should start at).
+	headCmd := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD")
+	headOut, err := headCmd.Output()
+	if err != nil {
+		t.Fatalf("failed to get HEAD: %v", err)
+	}
+	expectedCommit := strings.TrimSpace(string(headOut))
+
+	// The branch is now 2 commits ahead of HEAD. Cast should reset it.
+	result, err := Cast(context.Background(), CastOpts{
+		WritID:     itemID,
+		World:      "ember",
+		AgentName:  "Toast",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Cast (re-cast) failed: %v", err)
+	}
+
+	// Verify the worktree is at the expected commit (HEAD), not the stale branch tip.
+	wtHeadCmd := exec.Command("git", "-C", result.WorktreeDir, "rev-parse", "HEAD")
+	wtHeadOut, err := wtHeadCmd.Output()
+	if err != nil {
+		t.Fatalf("failed to get worktree HEAD: %v", err)
+	}
+	actualCommit := strings.TrimSpace(string(wtHeadOut))
+
+	if actualCommit != expectedCommit {
+		t.Errorf("re-cast worktree at wrong commit:\n  got:  %s\n  want: %s (repo HEAD)\nBranch was not reset to HEAD before worktree creation", actualCommit, expectedCommit)
+	}
+}
+
 // --- Envoy resolve tests ---
 
 func TestResolveEnvoyKeepsSession(t *testing.T) {
