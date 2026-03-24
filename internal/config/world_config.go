@@ -86,10 +86,11 @@ type WorldSection struct {
 // Each field overrides the top-level model_tier for that specific role.
 // Valid values are "sonnet", "opus", or "haiku". Empty means no override.
 type ModelsSection struct {
-	Outpost  string `toml:"outpost,omitempty" json:"outpost,omitempty"`
-	Envoy    string `toml:"envoy,omitempty" json:"envoy,omitempty"`
-	Governor string `toml:"governor,omitempty" json:"governor,omitempty"`
-	Forge    string `toml:"forge,omitempty" json:"forge,omitempty"`
+	Outpost    string `toml:"outpost,omitempty" json:"outpost,omitempty"`
+	Envoy      string `toml:"envoy,omitempty" json:"envoy,omitempty"`
+	Governor   string `toml:"governor,omitempty" json:"governor,omitempty"`
+	Forge      string `toml:"forge,omitempty" json:"forge,omitempty"`
+	Chancellor string `toml:"chancellor,omitempty" json:"chancellor,omitempty"`
 }
 
 // RuntimesSection holds per-role runtime overrides.
@@ -216,6 +217,8 @@ func (c WorldConfig) ResolveModel(role string) string {
 		override = c.Agents.Models.Governor
 	case "forge", "forge-merge":
 		override = c.Agents.Models.Forge
+	case "chancellor":
+		override = c.Agents.Models.Chancellor
 	}
 	if override != "" {
 		return override
@@ -287,6 +290,9 @@ func (c WorldConfig) Validate() error {
 	if err := validModelTier("agents.models.forge", c.Agents.Models.Forge); err != nil {
 		return err
 	}
+	if err := validModelTier("agents.models.chancellor", c.Agents.Models.Chancellor); err != nil {
+		return err
+	}
 	if c.Forge.GateTimeout != "" {
 		if _, err := time.ParseDuration(c.Forge.GateTimeout); err != nil {
 			return fmt.Errorf("forge.gate_timeout %q is not a valid duration: %w", c.Forge.GateTimeout, err)
@@ -341,6 +347,7 @@ func LoadGlobalConfig() (WorldConfig, error) {
 func IsSleeping(world string) bool {
 	cfg, err := LoadWorldConfig(world)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: treating world %q as sleeping due to config error: %v\n", world, err)
 		return true
 	}
 	return cfg.World.Sleeping
