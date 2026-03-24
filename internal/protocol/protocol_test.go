@@ -1,9 +1,6 @@
 package protocol
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -31,44 +28,6 @@ func TestGenerateClaudeMD(t *testing.T) {
 	for _, check := range checks {
 		if !strings.Contains(content, check) {
 			t.Errorf("GenerateClaudeMD missing %q", check)
-		}
-	}
-}
-
-func TestInstallClaudeMD(t *testing.T) {
-	dir := t.TempDir()
-	ctx := ClaudeMDContext{
-		AgentName:   "Toast",
-		World:       "myworld",
-		WritID:      "sol-a1b2c3d4",
-		Title:       "Add a README",
-		Description: "Create a README.md file",
-	}
-
-	if err := InstallClaudeMD(dir, ctx); err != nil {
-		t.Fatalf("InstallClaudeMD failed: %v", err)
-	}
-
-	path := filepath.Join(dir, "CLAUDE.local.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
-	}
-
-	content := string(data)
-	if !strings.Contains(content, "Toast") {
-		t.Error("CLAUDE.local.md missing agent name")
-	}
-	if !strings.Contains(content, "sol-a1b2c3d4") {
-		t.Error("CLAUDE.local.md missing writ ID")
-	}
-
-	// Verify skills installed.
-	skills := RoleSkills("outpost")
-	for _, name := range skills {
-		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
-		if _, err := os.Stat(skillPath); err != nil {
-			t.Errorf("outpost skill %q should be installed: %v", name, err)
 		}
 	}
 }
@@ -201,118 +160,6 @@ func TestGenerateEnvoyClaudeMDIdentitySections(t *testing.T) {
 	}
 	if !strings.Contains(content, "scout") {
 		t.Error("GenerateEnvoyClaudeMD missing agent name")
-	}
-}
-
-func TestInstallEnvoyClaudeMD(t *testing.T) {
-	dir := t.TempDir()
-	ctx := EnvoyClaudeMDContext{
-		AgentName: "scout",
-		World:     "myworld",
-		SolBinary: "sol",
-	}
-
-	if err := InstallEnvoyClaudeMD(dir, ctx); err != nil {
-		t.Fatalf("InstallEnvoyClaudeMD failed: %v", err)
-	}
-
-	path := filepath.Join(dir, "CLAUDE.local.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
-	}
-
-	content := string(data)
-	if !strings.Contains(content, "scout") {
-		t.Error("CLAUDE.local.md missing agent name")
-	}
-	if !strings.Contains(content, "myworld") {
-		t.Error("CLAUDE.local.md missing world name")
-	}
-
-	// Verify skills installed.
-	skills := RoleSkills("envoy")
-	for _, name := range skills {
-		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
-		if _, err := os.Stat(skillPath); err != nil {
-			t.Errorf("envoy skill %q should be installed: %v", name, err)
-		}
-	}
-}
-
-func TestInstallEnvoyClaudeMDNoPersonaInOutput(t *testing.T) {
-	// Persona content is no longer embedded in CLAUDE.local.md — it goes to system prompt.
-	dir := t.TempDir()
-	ctx := EnvoyClaudeMDContext{
-		AgentName: "scout",
-		World:     "myworld",
-		SolBinary: "sol",
-	}
-
-	if err := InstallEnvoyClaudeMD(dir, ctx); err != nil {
-		t.Fatalf("InstallEnvoyClaudeMD failed: %v", err)
-	}
-
-	path := filepath.Join(dir, "CLAUDE.local.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
-	}
-
-	content := string(data)
-	if strings.Contains(content, "## Persona") {
-		t.Error("CLAUDE.local.md should not contain Persona section (persona is now in system prompt)")
-	}
-}
-
-func TestInstallHooks(t *testing.T) {
-	dir := t.TempDir()
-
-	cfg := BaseHooks(HookOptions{
-		Role:             "outpost",
-		SessionStartCmds: []string{"sol prime --world=myworld --agent=Toast"},
-		PreCompactCmd:    "sol prime --world=myworld --agent=Toast --compact",
-		NudgeDrainCmd:    "sol nudge drain --world=myworld --agent=Toast",
-	})
-	if err := WriteHookSettings(dir, cfg); err != nil {
-		t.Fatalf("WriteHookSettings failed: %v", err)
-	}
-
-	// Verify no script file — values are inlined in the hook command.
-	scriptPath := filepath.Join(dir, ".claude", "hooks", "session-start.sh")
-	if _, err := os.Stat(scriptPath); !os.IsNotExist(err) {
-		t.Error("session-start.sh should not exist — values are inlined in hook command")
-	}
-
-	// Verify settings.local.json exists and has correct structure.
-	settingsPath := filepath.Join(dir, ".claude", "settings.local.json")
-	settingsData, err := os.ReadFile(settingsPath)
-	if err != nil {
-		t.Fatalf("failed to read settings.local.json: %v", err)
-	}
-
-	var hookCfg HookConfig
-	if err := json.Unmarshal(settingsData, &hookCfg); err != nil {
-		t.Fatalf("failed to parse settings.local.json: %v", err)
-	}
-
-	groups, ok := hookCfg.Hooks["SessionStart"]
-	if !ok {
-		t.Fatal("settings.local.json missing SessionStart hook")
-	}
-	if len(groups) != 1 {
-		t.Fatalf("expected 1 SessionStart matcher group, got %d", len(groups))
-	}
-	if len(groups[0].Hooks) != 1 {
-		t.Fatalf("expected 1 hook handler, got %d", len(groups[0].Hooks))
-	}
-	if groups[0].Hooks[0].Type != "command" {
-		t.Errorf("expected hook type 'command', got %q", groups[0].Hooks[0].Type)
-	}
-
-	wantCmd := "sol prime --world=myworld --agent=Toast"
-	if groups[0].Hooks[0].Command != wantCmd {
-		t.Errorf("hook command = %q, want %q", groups[0].Hooks[0].Command, wantCmd)
 	}
 }
 

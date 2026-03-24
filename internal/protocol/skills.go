@@ -3,14 +3,12 @@ package protocol
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/nevinsm/sol/internal/adapter"
 )
 
 // BuildSkills generates skill content for the given context and returns it as
 // []adapter.Skill without writing to disk.
-// The returned slice has the same skills that InstallSkills would write.
 func BuildSkills(ctx SkillContext) []adapter.Skill {
 	names := RoleSkills(ctx.Role)
 	result := make([]adapter.Skill, 0, len(names))
@@ -64,58 +62,6 @@ func RoleSkills(role string) []string {
 	return out
 }
 
-// InstallSkills generates and writes .claude/skills/{name}/SKILL.md for each
-// role-appropriate skill. Stale skill directories (from a previous role set)
-// are removed.
-//
-// NOTE: This function is test scaffolding only. Production startup uses
-// adapter.InstallSkills (via the adapter interface) which writes skill files
-// using []adapter.Skill slices built by BuildSkills. Do not add new callers —
-// use BuildSkills + adapter.InstallSkills instead.
-func InstallSkills(dir string, ctx SkillContext) error {
-	skillsDir := filepath.Join(dir, ".claude", "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create skills directory: %w", err)
-	}
-
-	skills := RoleSkills(ctx.Role)
-	currentSet := make(map[string]bool, len(skills))
-	for _, name := range skills {
-		currentSet[name] = true
-	}
-
-	// Clean up stale skill directories.
-	entries, err := os.ReadDir(skillsDir)
-	if err != nil {
-		return fmt.Errorf("failed to read skills directory: %w", err)
-	}
-	for _, e := range entries {
-		if e.IsDir() && !currentSet[e.Name()] {
-			stale := filepath.Join(skillsDir, e.Name())
-			if err := os.RemoveAll(stale); err != nil {
-				return fmt.Errorf("failed to remove stale skill %q: %w", e.Name(), err)
-			}
-		}
-	}
-
-	// Generate and write each skill.
-	for _, name := range skills {
-		content := generateSkill(name, ctx)
-		if content == "" {
-			continue
-		}
-		skillDir := filepath.Join(skillsDir, name)
-		if err := os.MkdirAll(skillDir, 0o755); err != nil {
-			return fmt.Errorf("failed to create skill dir %q: %w", name, err)
-		}
-		skillPath := filepath.Join(skillDir, "SKILL.md")
-		if err := os.WriteFile(skillPath, []byte(content), 0o644); err != nil {
-			return fmt.Errorf("failed to write skill %q: %w", name, err)
-		}
-	}
-
-	return nil
-}
 
 // generateSkill dispatches to the appropriate skill content generator.
 func generateSkill(name string, ctx SkillContext) string {

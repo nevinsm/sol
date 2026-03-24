@@ -54,66 +54,40 @@ func TestRoleSkillsReturnsCopy(t *testing.T) {
 	}
 }
 
-func TestInstallSkillsCreatesDirectories(t *testing.T) {
-	dir := t.TempDir()
+func TestBuildSkillsOutpost(t *testing.T) {
 	ctx := SkillContext{
 		World:     "testworld",
 		AgentName: "TestBot",
 		Role:      "outpost",
 	}
 
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
+	skills := BuildSkills(ctx)
+	names := RoleSkills("outpost")
+	if len(skills) != len(names) {
+		t.Fatalf("expected %d skills, got %d", len(names), len(skills))
 	}
-
-	// Verify skills directory exists.
-	skillsDir := filepath.Join(dir, ".claude", "skills")
-	info, err := os.Stat(skillsDir)
-	if err != nil {
-		t.Fatalf("skills directory should exist: %v", err)
-	}
-	if !info.IsDir() {
-		t.Error("skills should be a directory")
-	}
-
-	// Verify each skill has a SKILL.md file.
-	skills := RoleSkills("outpost")
-	for _, name := range skills {
-		skillPath := filepath.Join(skillsDir, name, "SKILL.md")
-		data, err := os.ReadFile(skillPath)
-		if err != nil {
-			t.Errorf("skill %q SKILL.md should exist: %v", name, err)
-			continue
-		}
-		if len(data) == 0 {
-			t.Errorf("skill %q SKILL.md should not be empty", name)
+	for _, s := range skills {
+		if s.Content == "" {
+			t.Errorf("skill %q should not be empty", s.Name)
 		}
 	}
 }
 
-func TestInstallSkillsGovernor(t *testing.T) {
-	dir := t.TempDir()
+func TestBuildSkillsGovernor(t *testing.T) {
 	ctx := SkillContext{
 		World:     "testworld",
 		SolBinary: "sol",
 		Role:      "governor",
 	}
 
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
-	}
-
-	skills := RoleSkills("governor")
-	for _, name := range skills {
-		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
-		if _, err := os.Stat(skillPath); err != nil {
-			t.Errorf("governor skill %q should exist: %v", name, err)
-		}
+	skills := BuildSkills(ctx)
+	names := RoleSkills("governor")
+	if len(skills) != len(names) {
+		t.Fatalf("expected %d skills, got %d", len(names), len(skills))
 	}
 }
 
-func TestInstallSkillsEnvoy(t *testing.T) {
-	dir := t.TempDir()
+func TestBuildSkillsEnvoy(t *testing.T) {
 	ctx := SkillContext{
 		World:     "testworld",
 		AgentName: "Echo",
@@ -121,37 +95,24 @@ func TestInstallSkillsEnvoy(t *testing.T) {
 		Role:      "envoy",
 	}
 
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
-	}
-
-	skills := RoleSkills("envoy")
-	for _, name := range skills {
-		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
-		if _, err := os.Stat(skillPath); err != nil {
-			t.Errorf("envoy skill %q should exist: %v", name, err)
-		}
+	skills := BuildSkills(ctx)
+	names := RoleSkills("envoy")
+	if len(skills) != len(names) {
+		t.Fatalf("expected %d skills, got %d", len(names), len(skills))
 	}
 }
 
-func TestInstallSkillsChancellor(t *testing.T) {
-	dir := t.TempDir()
+func TestBuildSkillsChancellor(t *testing.T) {
 	ctx := SkillContext{
 		World:     "testworld",
 		SolBinary: "sol",
 		Role:      "chancellor",
 	}
 
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
-	}
-
-	skills := RoleSkills("chancellor")
-	for _, name := range skills {
-		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
-		if _, err := os.Stat(skillPath); err != nil {
-			t.Errorf("chancellor skill %q should exist: %v", name, err)
-		}
+	skills := BuildSkills(ctx)
+	names := RoleSkills("chancellor")
+	if len(skills) != len(names) {
+		t.Fatalf("expected %d skills, got %d", len(names), len(skills))
 	}
 }
 
@@ -183,110 +144,35 @@ func TestChancellorWritPlanningNoDispatch(t *testing.T) {
 	}
 }
 
-func TestInstallSkillsCleansStale(t *testing.T) {
-	dir := t.TempDir()
-
-	// Install governor skills first.
-	govCtx := SkillContext{
-		World:     "testworld",
-		SolBinary: "sol",
-		Role:      "governor",
-	}
-	if err := InstallSkills(dir, govCtx); err != nil {
-		t.Fatalf("InstallSkills (governor) failed: %v", err)
-	}
-
-	// Verify governor skills exist.
-	govSkills := RoleSkills("governor")
-	for _, name := range govSkills {
-		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
-		if _, err := os.Stat(skillPath); err != nil {
-			t.Fatalf("governor skill %q should exist before cleanup: %v", name, err)
-		}
-	}
-
-	// Now install outpost skills — should clean up governor-only skills.
-	outpostCtx := SkillContext{
-		World:     "testworld",
-		AgentName: "TestBot",
-		Role:      "outpost",
-	}
-	if err := InstallSkills(dir, outpostCtx); err != nil {
-		t.Fatalf("InstallSkills (outpost) failed: %v", err)
-	}
-
-	// Verify governor-only skills are removed.
-	for _, name := range govSkills {
-		isOutpost := false
-		for _, os := range RoleSkills("outpost") {
-			if os == name {
-				isOutpost = true
-				break
-			}
-		}
-		if isOutpost {
-			continue
-		}
-		skillDir := filepath.Join(dir, ".claude", "skills", name)
-		if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
-			t.Errorf("stale governor skill %q should be removed after outpost install", name)
-		}
-	}
-
-	// Verify outpost skills exist.
-	outpostSkills := RoleSkills("outpost")
-	for _, name := range outpostSkills {
-		skillPath := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
-		if _, err := os.Stat(skillPath); err != nil {
-			t.Errorf("outpost skill %q should exist after install: %v", name, err)
-		}
-	}
-}
-
 func TestSkillContentHasWorldName(t *testing.T) {
-	dir := t.TempDir()
 	ctx := SkillContext{
 		World:     "myworld",
 		AgentName: "TestBot",
 		Role:      "outpost",
 	}
 
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
-	}
+	skills := BuildSkills(ctx)
 
-	// Check resolve-and-handoff skill exists and has meaningful content.
-	skillPath := filepath.Join(dir, ".claude", "skills", "resolve-and-handoff", "SKILL.md")
-	data, err := os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("failed to read skill: %v", err)
+	// Check resolve-and-handoff skill has meaningful content.
+	for _, s := range skills {
+		if s.Name == "resolve-and-handoff" {
+			if len(s.Content) < 50 {
+				t.Error("skill content should be substantial, not just a header")
+			}
+			return
+		}
 	}
-	content := string(data)
-
-	if len(content) < 50 {
-		t.Error("skill content should be substantial, not just a header")
-	}
+	t.Error("resolve-and-handoff skill not found")
 }
 
 func TestGovernorSkillContentHasNotifications(t *testing.T) {
-	dir := t.TempDir()
 	ctx := SkillContext{
 		World:     "myworld",
 		SolBinary: "sol",
 		Role:      "governor",
 	}
 
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
-	}
-
-	// Check notification-handling skill has notification types.
-	skillPath := filepath.Join(dir, ".claude", "skills", "notification-handling", "SKILL.md")
-	data, err := os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("failed to read skill: %v", err)
-	}
-	content := string(data)
+	content := generateSkill("notification-handling", ctx)
 
 	for _, notifType := range []string{"MAIL", "AGENT_DONE", "MERGED", "MERGE_FAILED"} {
 		if !contains(content, notifType) {
@@ -300,7 +186,6 @@ func TestGovernorSkillContentHasNotifications(t *testing.T) {
 }
 
 func TestEnvoySkillContentHasNotifications(t *testing.T) {
-	dir := t.TempDir()
 	ctx := SkillContext{
 		World:     "myworld",
 		AgentName: "Echo",
@@ -308,17 +193,7 @@ func TestEnvoySkillContentHasNotifications(t *testing.T) {
 		Role:      "envoy",
 	}
 
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
-	}
-
-	// Check notification-handling skill has envoy notification types.
-	skillPath := filepath.Join(dir, ".claude", "skills", "notification-handling", "SKILL.md")
-	data, err := os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("failed to read skill: %v", err)
-	}
-	content := string(data)
+	content := generateSkill("notification-handling", ctx)
 
 	for _, notifType := range []string{"MAIL", "MERGED", "MERGE_FAILED", "AGENT_DONE"} {
 		if !contains(content, notifType) {
@@ -333,7 +208,6 @@ func TestEnvoySkillContentHasNotifications(t *testing.T) {
 }
 
 func TestEnvoySkillContentHasMail(t *testing.T) {
-	dir := t.TempDir()
 	ctx := SkillContext{
 		World:     "myworld",
 		AgentName: "Echo",
@@ -341,17 +215,7 @@ func TestEnvoySkillContentHasMail(t *testing.T) {
 		Role:      "envoy",
 	}
 
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
-	}
-
-	// Check mail skill has key commands.
-	skillPath := filepath.Join(dir, ".claude", "skills", "mail", "SKILL.md")
-	data, err := os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("failed to read skill: %v", err)
-	}
-	content := string(data)
+	content := generateSkill("mail", ctx)
 
 	for _, cmd := range []string{"mail inbox", "mail read", "mail ack", "mail check", "mail send"} {
 		if !contains(content, cmd) {
@@ -361,7 +225,6 @@ func TestEnvoySkillContentHasMail(t *testing.T) {
 }
 
 func TestStatusMonitoringHasComponentStatus(t *testing.T) {
-	dir := t.TempDir()
 	ctx := SkillContext{
 		World:     "myworld",
 		AgentName: "Echo",
@@ -369,16 +232,7 @@ func TestStatusMonitoringHasComponentStatus(t *testing.T) {
 		Role:      "envoy",
 	}
 
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
-	}
-
-	skillPath := filepath.Join(dir, ".claude", "skills", "status-monitoring", "SKILL.md")
-	data, err := os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("failed to read skill: %v", err)
-	}
-	content := string(data)
+	content := generateSkill("status-monitoring", ctx)
 
 	// Should mention component status commands.
 	for _, component := range []string{"prefect status", "consul status", "sentinel status"} {
@@ -397,23 +251,13 @@ func TestStatusMonitoringHasComponentStatus(t *testing.T) {
 }
 
 func TestWorldCoordinationHasServiceManagement(t *testing.T) {
-	dir := t.TempDir()
 	ctx := SkillContext{
 		World:     "myworld",
 		SolBinary: "sol",
 		Role:      "governor",
 	}
 
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
-	}
-
-	skillPath := filepath.Join(dir, ".claude", "skills", "world-coordination", "SKILL.md")
-	data, err := os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("failed to read skill: %v", err)
-	}
-	content := string(data)
+	content := generateSkill("world-coordination", ctx)
 
 	// Should have service management section.
 	if !contains(content, "Service Management") {
@@ -428,7 +272,6 @@ func TestWorldCoordinationHasServiceManagement(t *testing.T) {
 }
 
 func TestWorldOperationsHasServiceLifecycle(t *testing.T) {
-	dir := t.TempDir()
 	ctx := SkillContext{
 		World:     "myworld",
 		AgentName: "Echo",
@@ -436,16 +279,7 @@ func TestWorldOperationsHasServiceLifecycle(t *testing.T) {
 		Role:      "envoy",
 	}
 
-	if err := InstallSkills(dir, ctx); err != nil {
-		t.Fatalf("InstallSkills failed: %v", err)
-	}
-
-	skillPath := filepath.Join(dir, ".claude", "skills", "world-operations", "SKILL.md")
-	data, err := os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("failed to read skill: %v", err)
-	}
-	content := string(data)
+	content := generateSkill("world-operations", ctx)
 
 	// Should have service lifecycle section.
 	if !contains(content, "Service Lifecycle") {
@@ -461,46 +295,30 @@ func TestWorldOperationsHasServiceLifecycle(t *testing.T) {
 
 func TestCaravanManagementRoleAware(t *testing.T) {
 	// Governor version
-	govDir := t.TempDir()
 	govCtx := SkillContext{
 		World:     "testworld",
 		SolBinary: "sol",
 		Role:      "governor",
 	}
-	if err := InstallSkills(govDir, govCtx); err != nil {
-		t.Fatalf("InstallSkills (governor) failed: %v", err)
-	}
-	govPath := filepath.Join(govDir, ".claude", "skills", "caravan-management", "SKILL.md")
-	govData, err := os.ReadFile(govPath)
-	if err != nil {
-		t.Fatalf("failed to read governor caravan skill: %v", err)
-	}
-	if !contains(string(govData), "coordinating") {
+	govContent := generateSkill("caravan-management", govCtx)
+	if !contains(govContent, "coordinating") {
 		t.Error("governor caravan-management should mention coordinating")
 	}
 
 	// Envoy version
-	envDir := t.TempDir()
 	envCtx := SkillContext{
 		World:     "testworld",
 		AgentName: "Echo",
 		SolBinary: "sol",
 		Role:      "envoy",
 	}
-	if err := InstallSkills(envDir, envCtx); err != nil {
-		t.Fatalf("InstallSkills (envoy) failed: %v", err)
-	}
-	envPath := filepath.Join(envDir, ".claude", "skills", "caravan-management", "SKILL.md")
-	envData, err := os.ReadFile(envPath)
-	if err != nil {
-		t.Fatalf("failed to read envoy caravan skill: %v", err)
-	}
-	if !contains(string(envData), "sequencing") {
+	envContent := generateSkill("caravan-management", envCtx)
+	if !contains(envContent, "sequencing") {
 		t.Error("envoy caravan-management should mention sequencing")
 	}
 
 	// Descriptions should differ
-	if string(govData) == string(envData) {
+	if govContent == envContent {
 		t.Error("governor and envoy caravan-management should have different descriptions")
 	}
 }

@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/nevinsm/sol/internal/protocol"
 )
 
 // writeTestToken writes a minimal api_key token so Start() can inject credentials in tests.
@@ -138,7 +136,20 @@ func TestStart(t *testing.T) {
 		t.Fatalf("hooks file not found: %v", err)
 	}
 
-	var cfg protocol.HookConfig
+	// hookConfig is a local type for deserializing settings.local.json in tests.
+	type hookHandler struct {
+		Type    string `json:"type"`
+		Command string `json:"command"`
+	}
+	type hookMatcherGroup struct {
+		Matcher string        `json:"matcher,omitempty"`
+		Hooks   []hookHandler `json:"hooks"`
+	}
+	type hookConfig struct {
+		Hooks map[string][]hookMatcherGroup `json:"hooks"`
+	}
+
+	var cfg hookConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatalf("failed to parse hooks JSON: %v", err)
 	}

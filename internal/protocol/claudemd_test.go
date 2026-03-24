@@ -1,8 +1,6 @@
 package protocol_test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -136,43 +134,6 @@ func TestGenerateGovernorClaudeMD(t *testing.T) {
 	// Verify guidelines.
 	if !strings.Contains(content, "You coordinate") {
 		t.Error("CLAUDE.md should contain coordination guideline")
-	}
-}
-
-func TestInstallGovernorClaudeMD(t *testing.T) {
-	govDir := t.TempDir()
-
-	ctx := protocol.GovernorClaudeMDContext{
-		World:     "testworld",
-		SolBinary: "sol",
-		MirrorDir: "../repo",
-	}
-
-	if err := protocol.InstallGovernorClaudeMD(govDir, ctx); err != nil {
-		t.Fatalf("InstallGovernorClaudeMD failed: %v", err)
-	}
-
-	// Verify CLAUDE.local.md written.
-	path := filepath.Join(govDir, "CLAUDE.local.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read CLAUDE.local.md: %v", err)
-	}
-	content := string(data)
-	if !strings.Contains(content, "testworld") {
-		t.Error("installed CLAUDE.local.md should contain world name")
-	}
-	if !strings.Contains(content, "Governor") {
-		t.Error("installed CLAUDE.local.md should contain 'Governor'")
-	}
-
-	// Verify skills installed.
-	skills := protocol.RoleSkills("governor")
-	for _, name := range skills {
-		skillPath := filepath.Join(govDir, ".claude", "skills", name, "SKILL.md")
-		if _, err := os.Stat(skillPath); err != nil {
-			t.Errorf("governor skill %q should be installed: %v", name, err)
-		}
 	}
 }
 
