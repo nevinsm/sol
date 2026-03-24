@@ -26,6 +26,10 @@ import (
 // and no more agents can be provisioned. Use errors.Is to check for this error.
 var ErrCapacityExhausted = errors.New("agent capacity exhausted")
 
+// ErrSphereCapacityExhausted is returned when the sphere-wide session limit
+// (sphere.max_sessions) has been reached. Use errors.Is to check for this error.
+var ErrSphereCapacityExhausted = errors.New("sphere session capacity exhausted")
+
 // Git operation timeout constants.
 const (
 	GitPushTimeout           = 60 * time.Second // network-bound

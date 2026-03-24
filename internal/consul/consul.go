@@ -661,6 +661,11 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 				dispatched, dispatchErr := d.dispatchWorldItems(ctx, caravan.ID, world, items)
 				caravanDispatched += dispatched
 				if dispatchErr != nil {
+					if errors.Is(dispatchErr, dispatch.ErrSphereCapacityExhausted) {
+						// Sphere-wide limit reached — stop ALL dispatch.
+						totalDispatched += caravanDispatched
+						return totalDispatched, nil
+					}
 					d.logInfo("consul_error", map[string]any{
 						"action":     "dispatch_world_items",
 						"caravan_id": caravan.ID,
@@ -763,7 +768,16 @@ func (d *Consul) dispatchWorldItems(ctx context.Context, caravanID, world string
 		}
 		result, err := d.dispatchFunc(ctx, castOpts, worldStore, d.sphereStore, d.sessions, d.logger)
 		if err != nil {
-			// Capacity exhausted — no point trying more items in this world.
+			// Sphere capacity exhausted — no point trying ANY world.
+			if errors.Is(err, dispatch.ErrSphereCapacityExhausted) {
+				d.logInfo("consul_sphere_capacity_full", map[string]any{
+					"caravan_id": caravanID,
+					"world":      world,
+					"error":      err.Error(),
+				})
+				return dispatched, err
+			}
+			// Per-world capacity exhausted — no point trying more items in this world.
 			if errors.Is(err, dispatch.ErrCapacityExhausted) {
 				d.logInfo("consul_capacity_full", map[string]any{
 					"caravan_id": caravanID,
