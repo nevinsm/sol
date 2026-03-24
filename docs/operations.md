@@ -175,7 +175,7 @@ This is useful for temporarily pausing work on a world without losing its state.
 sol world delete myworld --confirm
 ```
 
-Without `--confirm`, the command previews what would be deleted and exits 1. Pass `--confirm` to proceed. Use `--force` to stop active sessions before deleting (otherwise the command refuses if sessions are running).
+Without `--confirm`, the command previews what would be deleted and exits 1. Pass `--confirm` to proceed. The command refuses to delete if agent sessions are still running — stop them first.
 
 This removes the world directory, its database, worktrees, and the sphere registration. It cannot be undone.
 
