@@ -326,14 +326,28 @@ Status meanings:
 - "idle": Session appears to have finished or is not doing anything.`, mr.Branch, mr.WritID, monitorInterval, monitorCaptureLines, capturedOutput)
 }
 
-// cleanupSession stops the merge session, removes result and injection files,
-// and updates the agent record to idle.
+// cleanupSession stops the merge session, resets the worktree to a clean state,
+// removes result and injection files, and updates the agent record to idle.
 func (s *patrolState) cleanupSession() {
 	sessionName := mergeSessionName(s.forge.world)
 
 	// Stop the session if it's still running.
 	if s.forge.sessions != nil && s.forge.sessions.Exists(sessionName) {
 		s.forge.sessions.Stop(sessionName, true)
+	}
+
+	// Reset worktree to clean state. A crashed merge session may leave
+	// conflict markers, staged changes, or untracked build artifacts.
+	// Without this, the next merge session launches into a dirty worktree.
+	if s.forge.worktree != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "reset", "--hard"); err != nil {
+			s.forge.logger.Warn("cleanup: git reset --hard failed", "error", err)
+		}
+		if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "clean", "-fd"); err != nil {
+			s.forge.logger.Warn("cleanup: git clean -fd failed", "error", err)
+		}
 	}
 
 	// Remove result file.
