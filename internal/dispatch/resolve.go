@@ -385,6 +385,8 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 
 	// 7. Stop session after a brief delay to allow final output.
 	// Envoys and governors keep their session alive — they are human-supervised and persistent.
+	// We wait for completion to prevent worktree cleanup from racing with a re-cast
+	// that reuses the same agent name.
 	sessionKept := false
 	if agent.Role != "envoy" && agent.Role != "governor" && agent.Role != "forge" {
 		done := make(chan struct{})
@@ -399,6 +401,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 				cleanupWorktree(opts.World, worktreeDir)
 			}
 		}()
+		<-done
 	} else {
 		sessionKept = true
 	}
@@ -603,21 +606,23 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 		}
 	}
 
-	// 5. Clear tether.
+	// 5. Clear tether (best-effort — consul will recover stale tethers).
 	if role == "outpost" {
 		// Outpost: clear entire tether directory.
 		if err := tether.Clear(opts.World, opts.AgentName, role); err != nil {
-			return nil, fmt.Errorf("failed to clear tether: %w", err)
+			fmt.Fprintf(os.Stderr, "resolve: failed to clear tether (consul will recover): %v\n", err)
 		}
 	} else {
 		// Persistent: remove only the resolved writ's tether file.
 		if err := tether.ClearOne(opts.World, opts.AgentName, item.ID, role); err != nil {
-			return nil, fmt.Errorf("failed to clear tether: %w", err)
+			fmt.Fprintf(os.Stderr, "resolve: failed to clear tether (consul will recover): %v\n", err)
 		}
 	}
 
 	// 6. Stop session after a brief delay to allow final output.
 	// Envoys and governors keep their session alive — they are human-supervised and persistent.
+	// We wait for completion to prevent worktree cleanup from racing with a re-cast
+	// that reuses the same agent name.
 	sessionKept := false
 	if role != "envoy" && role != "governor" && role != "forge" {
 		done := make(chan struct{})
@@ -632,8 +637,14 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 				cleanupWorktree(opts.World, worktreeDir)
 			}
 		}()
+		<-done
 	} else {
 		sessionKept = true
+	}
+
+	// 7. Close history record for cycle-time tracking.
+	if _, err := worldStore.EndHistory(item.ID); err != nil {
+		fmt.Fprintf(os.Stderr, "resolve: failed to end history: %v\n", err)
 	}
 
 	if logger != nil {
