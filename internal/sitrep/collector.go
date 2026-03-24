@@ -21,6 +21,7 @@ type WorldData struct {
 	Writs           []store.Writ         `json:"writs"`
 	MergeRequests   []store.MergeRequest `json:"merge_requests"`
 	BlockedMRs      []store.MergeRequest `json:"blocked_merge_requests"`
+	MRSummary       map[string]int       `json:"mr_summary,omitempty"`
 }
 
 // CollectedData holds all data gathered for a sitrep.
@@ -56,24 +57,26 @@ func Collect(sphereStore *store.SphereStore, worldOpener WorldOpener, scope Scop
 		data.Agents = agents
 	}
 
-	// Collect caravans.
-	caravans, err := sphereStore.ListCaravans("")
+	// Collect only actionable caravans (open + drydock).
+	openCaravans, err := sphereStore.ListCaravans(store.CaravanOpen)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list caravans: %w", err)
+		return nil, fmt.Errorf("failed to list open caravans: %w", err)
 	}
-	data.Caravans = caravans
+	drydockCaravans, err := sphereStore.ListCaravans(store.CaravanDrydock)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list drydock caravans: %w", err)
+	}
+	data.Caravans = append(openCaravans, drydockCaravans...)
 
-	// Check readiness for all active (non-closed) caravans.
+	// Check readiness for all collected caravans (all are non-closed).
 	data.CaravanReadiness = make(map[string][]store.CaravanItemStatus)
-	for _, c := range caravans {
-		if c.Status != "closed" {
-			statuses, err := sphereStore.CheckCaravanReadiness(c.ID, worldOpener)
-			if err != nil {
-				// Non-fatal — skip readiness for this caravan.
-				continue
-			}
-			data.CaravanReadiness[c.ID] = statuses
+	for _, c := range data.Caravans {
+		statuses, err := sphereStore.CheckCaravanReadiness(c.ID, worldOpener)
+		if err != nil {
+			// Non-fatal — skip readiness for this caravan.
+			continue
 		}
+		data.CaravanReadiness[c.ID] = statuses
 	}
 
 	// Collect world data.
@@ -119,11 +122,25 @@ func collectWorldData(worldOpener WorldOpener, world string) (*WorldData, error)
 	}
 	wd.Writs = writs
 
-	mrs, err := ws.ListMergeRequests("")
-	if err != nil {
-		return nil, fmt.Errorf("failed to list merge requests for world %q: %w", world, err)
+	// Collect only actionable (non-terminal) merge requests for detail.
+	for _, phase := range []string{store.MRReady, store.MRClaimed, store.MRFailed} {
+		phaseMRs, err := ws.ListMergeRequests(phase)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list %s merge requests for world %q: %w", phase, world, err)
+		}
+		wd.MergeRequests = append(wd.MergeRequests, phaseMRs...)
 	}
-	wd.MergeRequests = mrs
+
+	// Compute MR summary counts by phase for scale context.
+	allMRs, err := ws.ListMergeRequests("")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list all merge requests for world %q: %w", world, err)
+	}
+	wd.MRSummary = make(map[string]int)
+	wd.MRSummary["total"] = len(allMRs)
+	for _, mr := range allMRs {
+		wd.MRSummary[mr.Phase]++
+	}
 
 	blockedMRs, err := ws.ListBlockedMergeRequests()
 	if err != nil {

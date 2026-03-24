@@ -130,3 +130,228 @@ func TestCollectSphereWithWorlds(t *testing.T) {
 		t.Errorf("expected 2 worlds, got %d", len(data.Worlds))
 	}
 }
+
+func TestCollectCaravansFilteredToActionable(t *testing.T) {
+	sphere, opener := setupTestEnv(t)
+
+	// Create caravans in different statuses.
+	openID, err := sphere.CreateCaravan("open-caravan", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// New caravans start as drydock; move to open.
+	if err := sphere.UpdateCaravanStatus(openID, "open"); err != nil {
+		t.Fatal(err)
+	}
+
+	drydockID, err := sphere.CreateCaravan("drydock-caravan", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = drydockID // stays drydock (default)
+
+	closedID, err := sphere.CreateCaravan("closed-caravan", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphere.UpdateCaravanStatus(closedID, "open"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sphere.UpdateCaravanStatus(closedID, "closed"); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := sitrep.Collect(sphere, opener, sitrep.Scope{Sphere: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should contain only open + drydock, not closed.
+	if len(data.Caravans) != 2 {
+		t.Errorf("expected 2 caravans (open + drydock), got %d", len(data.Caravans))
+	}
+
+	// Verify no closed caravans in results.
+	for _, c := range data.Caravans {
+		if c.Status == "closed" {
+			t.Errorf("found closed caravan %q in collected data", c.ID)
+		}
+	}
+}
+
+func TestCollectMergeRequestsFilteredToActionable(t *testing.T) {
+	sphere, opener := setupTestEnv(t)
+
+	if err := sphere.RegisterWorld("test-world", "/tmp/test"); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := store.OpenWorld("test-world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+
+	// Create writs to attach MRs to.
+	writID1, err := ws.CreateWrit("Writ 1", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writID2, err := ws.CreateWrit("Writ 2", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writID3, err := ws.CreateWrit("Writ 3", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writID4, err := ws.CreateWrit("Writ 4", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create MRs in various phases.
+	readyMR, err := ws.CreateMergeRequest(writID1, "branch-ready", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = readyMR // stays ready (default)
+
+	claimedMR, err := ws.CreateMergeRequest(writID2, "branch-claimed", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateMergeRequestPhase(claimedMR, store.MRClaimed); err != nil {
+		t.Fatal(err)
+	}
+
+	failedMR, err := ws.CreateMergeRequest(writID3, "branch-failed", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ready → claimed → failed
+	if err := ws.UpdateMergeRequestPhase(failedMR, store.MRClaimed); err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateMergeRequestPhase(failedMR, store.MRFailed); err != nil {
+		t.Fatal(err)
+	}
+
+	mergedMR, err := ws.CreateMergeRequest(writID4, "branch-merged", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ready → claimed → merged
+	if err := ws.UpdateMergeRequestPhase(mergedMR, store.MRClaimed); err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateMergeRequestPhase(mergedMR, store.MRMerged); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := sitrep.Collect(sphere, opener, sitrep.Scope{World: "test-world"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data.Worlds) != 1 {
+		t.Fatalf("expected 1 world, got %d", len(data.Worlds))
+	}
+	wd := data.Worlds[0]
+
+	// MergeRequests should contain only ready, claimed, failed (3 total).
+	if len(wd.MergeRequests) != 3 {
+		t.Errorf("expected 3 actionable MRs, got %d", len(wd.MergeRequests))
+	}
+
+	// Verify no merged/superseded MRs in detail list.
+	for _, mr := range wd.MergeRequests {
+		if mr.Phase == store.MRMerged || mr.Phase == store.MRSuperseded {
+			t.Errorf("found terminal MR phase %q in collected MergeRequests", mr.Phase)
+		}
+	}
+}
+
+func TestCollectMRSummary(t *testing.T) {
+	sphere, opener := setupTestEnv(t)
+
+	if err := sphere.RegisterWorld("test-world", "/tmp/test"); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := store.OpenWorld("test-world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+
+	// Create writs and MRs in various phases.
+	writID1, err := ws.CreateWrit("Writ 1", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writID2, err := ws.CreateWrit("Writ 2", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writID3, err := ws.CreateWrit("Writ 3", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ready MR
+	if _, err := ws.CreateMergeRequest(writID1, "branch-1", 2); err != nil {
+		t.Fatal(err)
+	}
+
+	// merged MR (ready → claimed → merged)
+	mr2, err := ws.CreateMergeRequest(writID2, "branch-2", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateMergeRequestPhase(mr2, store.MRClaimed); err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateMergeRequestPhase(mr2, store.MRMerged); err != nil {
+		t.Fatal(err)
+	}
+
+	// failed MR (ready → claimed → failed)
+	mr3, err := ws.CreateMergeRequest(writID3, "branch-3", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateMergeRequestPhase(mr3, store.MRClaimed); err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.UpdateMergeRequestPhase(mr3, store.MRFailed); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := sitrep.Collect(sphere, opener, sitrep.Scope{World: "test-world"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data.Worlds) != 1 {
+		t.Fatalf("expected 1 world, got %d", len(data.Worlds))
+	}
+	wd := data.Worlds[0]
+
+	// MRSummary should exist with correct counts.
+	if wd.MRSummary == nil {
+		t.Fatal("expected MRSummary to be non-nil")
+	}
+	if wd.MRSummary["total"] != 3 {
+		t.Errorf("expected total=3, got %d", wd.MRSummary["total"])
+	}
+	if wd.MRSummary["ready"] != 1 {
+		t.Errorf("expected ready=1, got %d", wd.MRSummary["ready"])
+	}
+	if wd.MRSummary["merged"] != 1 {
+		t.Errorf("expected merged=1, got %d", wd.MRSummary["merged"])
+	}
+	if wd.MRSummary["failed"] != 1 {
+		t.Errorf("expected failed=1, got %d", wd.MRSummary["failed"])
+	}
+}
