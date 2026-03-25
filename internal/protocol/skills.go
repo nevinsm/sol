@@ -317,7 +317,7 @@ Cast options: %[8]s (auto if omitted), %[9]s, %[10]s.
 
 **Normal dispatch:** %[1]s writ create%[3]s → %[1]s cast <id>%[3]s → await AGENT_DONE notification.
 
-**Batched work:** create all writs → %[1]s caravan create%[3]s → assign phases → %[1]s caravan commission%[3]s → consul dispatches ready items automatically.
+**Batched work:** create all writs → %[1]s caravan create%[3]s → use %[1]s writ dep add%[3]s for file-level conflicts → %[1]s caravan commission%[3]s → consul dispatches ready items automatically. Only use phases when entire batches must land before the next batch starts.
 
 **No idle agents:** writ stays in "ready" state — consul/sentinel picks it up on next patrol (every 5 min). No action needed.
 
@@ -350,6 +350,14 @@ func skillCaravanManagement(ctx SkillContext) string {
 
 A caravan is an ordered batch of writs across phases (0, 1, 2, ...). Items in the same phase run in parallel. Items in phase N are blocked until ALL items in phases < N are **closed** (fully merged, not just done). Phase assignment is manual; consul auto-dispatches ready items every 5 minutes.
 
+## Phases vs Dependencies
+
+**Phases** are for coarse-grained cross-world ordering or layering fundamentally different stages of work (e.g., "build infrastructure" then "deploy services"). All items in phase N must close before phase N+1 starts — this is a hard gate.
+
+**Writ dependencies** (` + "`sol writ dep add <from> <to>`" + `) are for fine-grained within-world ordering where only specific writs block specific other writs. Use dependencies when most writs in a batch can run in parallel but a few have file-level conflicts.
+
+**Rule of thumb:** If writs touch different files and have no logical dependency, put them in the same phase — even if some feel "less important." Priority controls urgency; phases control merge ordering. Don't use phases as a proxy for priority.
+
 ## Common Patterns
 
 **Setup:** create writs → ` + "`sol caravan create`" + ` → ` + "`sol caravan set-phase`" + ` for each → ` + "`sol caravan commission`" + `.
@@ -369,6 +377,10 @@ A caravan is an ordered batch of writs across phases (0, 1, 2, ...). Items in th
 ## Mental Model
 
 A caravan sequences your own multi-step work across phases. Items in the same phase can run in parallel; items in phase N wait until all prior-phase items are **closed** (fully merged). You are the single worker — resolve each phase and consul advances to the next.
+
+## Phases vs Dependencies
+
+**Phases** gate your work into sequential stages — useful when later work builds on earlier work across many files. **Writ dependencies** (` + "`sol writ dep add <from> <to>`" + `) handle targeted ordering where one writ's changes must merge before another starts, but the rest can proceed. Prefer dependencies over phases when only a few writs have conflicts — it avoids serializing unrelated work.
 
 ## Common Patterns
 
