@@ -44,8 +44,17 @@ func (a *Adapter) InjectPersona(worktreeDir string, content []byte) error {
 	return nil
 }
 
+// solManagedMarker is the filename placed inside sol-generated skill directories
+// to distinguish them from custom project skills. Only directories containing
+// this marker are candidates for stale-skill removal.
+const solManagedMarker = ".sol-managed"
+
 // InstallSkills writes skill files to {worktreeDir}/.claude/skills/{name}/SKILL.md.
-// Stale skill directories (present on disk but not in the skills list) are removed.
+// Stale sol-managed skill directories (present on disk but not in the skills list)
+// are removed. Non-sol directories (those without a .sol-managed marker) are preserved.
+//
+// Skills are written before stale directories are removed so that a write failure
+// (e.g. disk full) leaves the previous skills intact.
 func (a *Adapter) InstallSkills(worktreeDir string, skills []adapter.Skill) error {
 	skillsDir := filepath.Join(worktreeDir, ".claude", "skills")
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
@@ -58,21 +67,7 @@ func (a *Adapter) InstallSkills(worktreeDir string, skills []adapter.Skill) erro
 		current[s.Name] = true
 	}
 
-	// Remove stale skill directories.
-	entries, err := os.ReadDir(skillsDir)
-	if err != nil {
-		return fmt.Errorf("claude adapter: failed to read skills directory: %w", err)
-	}
-	for _, e := range entries {
-		if e.IsDir() && !current[e.Name()] {
-			stale := filepath.Join(skillsDir, e.Name())
-			if err := os.RemoveAll(stale); err != nil {
-				return fmt.Errorf("claude adapter: failed to remove stale skill %q: %w", e.Name(), err)
-			}
-		}
-	}
-
-	// Write each skill.
+	// Write each skill first — if this fails, old skills remain on disk.
 	for _, s := range skills {
 		skillDir := filepath.Join(skillsDir, s.Name)
 		if err := os.MkdirAll(skillDir, 0o755); err != nil {
@@ -81,6 +76,31 @@ func (a *Adapter) InstallSkills(worktreeDir string, skills []adapter.Skill) erro
 		skillPath := filepath.Join(skillDir, "SKILL.md")
 		if err := os.WriteFile(skillPath, []byte(s.Content), 0o644); err != nil {
 			return fmt.Errorf("claude adapter: failed to write skill %q: %w", s.Name, err)
+		}
+		// Mark directory as sol-managed.
+		markerPath := filepath.Join(skillDir, solManagedMarker)
+		if err := os.WriteFile(markerPath, nil, 0o644); err != nil {
+			return fmt.Errorf("claude adapter: failed to write sol-managed marker for skill %q: %w", s.Name, err)
+		}
+	}
+
+	// Remove stale sol-managed skill directories.
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return fmt.Errorf("claude adapter: failed to read skills directory: %w", err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() || current[e.Name()] {
+			continue
+		}
+		// Only remove directories that sol created (have the marker).
+		markerPath := filepath.Join(skillsDir, e.Name(), solManagedMarker)
+		if _, err := os.Stat(markerPath); err != nil {
+			continue // not sol-managed — preserve it
+		}
+		stale := filepath.Join(skillsDir, e.Name())
+		if err := os.RemoveAll(stale); err != nil {
+			return fmt.Errorf("claude adapter: failed to remove stale skill %q: %w", e.Name(), err)
 		}
 	}
 

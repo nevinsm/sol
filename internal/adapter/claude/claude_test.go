@@ -76,6 +76,11 @@ func TestInstallSkillsCreatesFiles(t *testing.T) {
 		if string(got) != s.Content {
 			t.Errorf("skill %q content mismatch:\ngot:  %q\nwant: %q", s.Name, got, s.Content)
 		}
+		// Verify sol-managed marker exists.
+		marker := filepath.Join(dir, ".claude", "skills", s.Name, ".sol-managed")
+		if _, err := os.Stat(marker); err != nil {
+			t.Errorf("skill %q missing .sol-managed marker: %v", s.Name, err)
+		}
 	}
 }
 
@@ -83,12 +88,15 @@ func TestInstallSkillsRemovesStale(t *testing.T) {
 	dir := t.TempDir()
 	a := newAdapter()
 
-	// Pre-seed a stale skill.
+	// Pre-seed a stale sol-managed skill.
 	staleDir := filepath.Join(dir, ".claude", "skills", "stale-skill")
 	if err := os.MkdirAll(staleDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(staleDir, "SKILL.md"), []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staleDir, ".sol-managed"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -102,7 +110,7 @@ func TestInstallSkillsRemovesStale(t *testing.T) {
 
 	// Stale should be gone.
 	if _, err := os.Stat(staleDir); !os.IsNotExist(err) {
-		t.Error("stale skill directory should have been removed")
+		t.Error("stale sol-managed skill directory should have been removed")
 	}
 
 	// Current should exist.
@@ -116,18 +124,75 @@ func TestInstallSkillsEmptyList(t *testing.T) {
 	dir := t.TempDir()
 	a := newAdapter()
 
-	// Pre-seed a skill.
+	// Pre-seed a sol-managed skill.
 	skillDir := filepath.Join(dir, ".claude", "skills", "old-skill")
 	_ = os.MkdirAll(skillDir, 0o755)
 	_ = os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("old"), 0o644)
+	_ = os.WriteFile(filepath.Join(skillDir, ".sol-managed"), nil, 0o644)
 
-	// Install empty list — all stale skills should be removed.
+	// Install empty list — all stale sol-managed skills should be removed.
 	if err := a.InstallSkills(dir, []adapter.Skill{}); err != nil {
 		t.Fatalf("InstallSkills failed: %v", err)
 	}
 
 	if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
-		t.Error("old skill should have been removed with empty input")
+		t.Error("old sol-managed skill should have been removed with empty input")
+	}
+}
+
+func TestInstallSkillsPreservesNonSolSkills(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Pre-seed a custom project skill (no .sol-managed marker).
+	customDir := filepath.Join(dir, ".claude", "skills", "custom-tool")
+	if err := os.MkdirAll(customDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(customDir, "SKILL.md"), []byte("# Custom\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Install sol skills — custom skill should be preserved.
+	skills := []adapter.Skill{
+		{Name: "memories", Content: "# Memories\n"},
+	}
+	if err := a.InstallSkills(dir, skills); err != nil {
+		t.Fatalf("InstallSkills failed: %v", err)
+	}
+
+	// Custom skill should still exist.
+	got, err := os.ReadFile(filepath.Join(customDir, "SKILL.md"))
+	if err != nil {
+		t.Fatalf("custom skill was deleted: %v", err)
+	}
+	if string(got) != "# Custom\n" {
+		t.Errorf("custom skill content changed: got %q", got)
+	}
+
+	// Sol skill should exist.
+	p := filepath.Join(dir, ".claude", "skills", "memories", "SKILL.md")
+	if _, err := os.Stat(p); err != nil {
+		t.Errorf("expected memories skill to exist: %v", err)
+	}
+}
+
+func TestInstallSkillsEmptyListPreservesNonSolSkills(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Pre-seed a custom project skill (no marker).
+	customDir := filepath.Join(dir, ".claude", "skills", "custom-tool")
+	_ = os.MkdirAll(customDir, 0o755)
+	_ = os.WriteFile(filepath.Join(customDir, "SKILL.md"), []byte("custom"), 0o644)
+
+	// Install empty list — custom skill should be preserved.
+	if err := a.InstallSkills(dir, []adapter.Skill{}); err != nil {
+		t.Fatalf("InstallSkills failed: %v", err)
+	}
+
+	if _, err := os.Stat(customDir); err != nil {
+		t.Errorf("custom skill should have been preserved: %v", err)
 	}
 }
 
