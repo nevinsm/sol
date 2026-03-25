@@ -11,20 +11,16 @@ import (
 
 var serviceCmd = &cobra.Command{
 	Use:     "service",
-	Short:   "Manage systemd user units for sol sphere daemons",
+	Short:   "Manage system service units for sol sphere daemons",
 	GroupID: groupProcesses,
 }
 
 var serviceInstallCmd = &cobra.Command{
 	Use:          "install",
-	Short:        "Generate and install systemd user units (enable but don't start)",
+	Short:        "Generate and install system service units (enable but don't start)",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := service.CheckLinux(); err != nil {
-			return err
-		}
-
 		solBin, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("failed to detect sol binary path: %w", err)
@@ -42,20 +38,17 @@ var serviceInstallCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, "Run: loginctl enable-linger")
 		}
 
-		fmt.Fprintln(os.Stderr, "\nUnits installed and enabled. Start with: sol service start")
+		fmt.Fprintln(os.Stderr, "\nService units installed and enabled. Start with: sol service start")
 		return nil
 	},
 }
 
 var serviceUninstallCmd = &cobra.Command{
 	Use:          "uninstall",
-	Short:        "Stop, disable, and remove systemd user units",
+	Short:        "Stop, disable, and remove system service units",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := service.CheckLinux(); err != nil {
-			return err
-		}
 		return service.Uninstall()
 	},
 }
@@ -66,9 +59,6 @@ var serviceStartCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := service.CheckLinux(); err != nil {
-			return err
-		}
 		return service.Start()
 	},
 }
@@ -79,9 +69,6 @@ var serviceStopCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := service.CheckLinux(); err != nil {
-			return err
-		}
 		return service.Stop()
 	},
 }
@@ -92,9 +79,6 @@ var serviceRestartCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := service.CheckLinux(); err != nil {
-			return err
-		}
 		return service.Restart()
 	},
 }
@@ -105,9 +89,6 @@ var serviceStatusCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := service.CheckLinux(); err != nil {
-			return err
-		}
 		return service.Status()
 	},
 }
