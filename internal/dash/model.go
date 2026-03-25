@@ -15,6 +15,12 @@ import (
 
 const refreshInterval = 3 * time.Second
 
+// tokenRefreshWorld is the cadence for token queries in world detail view.
+const tokenRefreshWorld = 15 * time.Second
+
+// tokenRefreshSphere is the cadence for token queries in sphere view.
+const tokenRefreshSphere = 30 * time.Second
+
 // animInterval is the animation tick cadence (~30 FPS).
 const animInterval = 33 * time.Millisecond
 
@@ -82,6 +88,9 @@ type highlightTickMsg time.Time
 type dataMsg struct {
 	sphere *status.SphereStatus
 	world  *status.WorldStatus
+
+	// tokensRefreshed indicates that token queries actually ran (not served from cache).
+	tokensRefreshed bool
 }
 
 // drillMsg signals that the sphere view wants to drill into a world.
@@ -120,6 +129,14 @@ type Model struct {
 	width     int
 	height    int
 	lastRefresh time.Time
+
+	// Connection cache — keeps world stores open across refresh cycles.
+	storeCache *worldStoreCache
+
+	// Token query throttling.
+	lastTokenRefresh time.Time
+	cachedSphereTokens status.TokenInfo
+	cachedWorldTokens  status.TokenInfo
 
 	// Data.
 	sphereData *status.SphereStatus
@@ -166,6 +183,7 @@ func NewModel(cfg Config) Model {
 		viewStack:       []viewMode{viewSphere},
 		world:           cfg.World,
 		config:          cfg,
+		storeCache:      newWorldStoreCache(cfg.WorldOpener),
 		feed:            newFeedModel(cfg.SOLHome, cfg.World),
 		prevAgentStates: make(map[string]string),
 		agentHighlights: make(map[string]int),
@@ -248,6 +266,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch msg.String() {
 		case "q", "ctrl+c":
+			m.storeCache.CloseAll()
 			return m, tea.Quit
 		case "r":
 			// In peek mode, r is handled by the peek view (force capture refresh).
@@ -280,6 +299,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Push world view onto the stack.
 		m.world = msg.world
 		m.worldData = nil // clear stale data
+		m.lastTokenRefresh = time.Time{} // force fresh token query
 		m.worldView = newWorldModel()
 		m.worldView.width = m.width
 		m.worldView.height = m.height
@@ -293,6 +313,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewStack = m.viewStack[:len(m.viewStack)-1]
 			m.world = ""
 			m.worldData = nil
+			m.lastTokenRefresh = time.Time{} // force fresh token query
 			// Clear feed world filter so sphere view shows all events,
 			// and reload since cached events may have been world-filtered.
 			m.feed.world = ""
@@ -484,11 +505,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastRefresh = time.Now()
 		if msg.sphere != nil {
 			m.trackSphereHighlights(msg.sphere)
+			// Update token cache when tokens were actually refreshed.
+			if msg.tokensRefreshed {
+				m.cachedSphereTokens = msg.sphere.Tokens
+				m.lastTokenRefresh = time.Now()
+			}
 			m.sphereData = msg.sphere
 			cmds = append(cmds, m.sphereView.updateData(m.sphereData))
 		}
 		if msg.world != nil {
 			m.trackWorldHighlights(msg.world)
+			// Update token cache when tokens were actually refreshed.
+			if msg.tokensRefreshed {
+				m.cachedWorldTokens = msg.world.Tokens
+				m.lastTokenRefresh = time.Now()
+			}
 			m.worldData = msg.world
 			cmds = append(cmds, m.worldView.updateData(m.worldData))
 		}
@@ -670,8 +701,17 @@ func (m *Model) decayHighlights() {
 
 // refresh gathers fresh data in a command.
 func (m Model) refresh() tea.Cmd {
+	// Capture cache and token state for the closure.
+	cache := m.storeCache
+	lastTokenRefresh := m.lastTokenRefresh
+	cachedSphereTokens := m.cachedSphereTokens
+	cachedWorldTokens := m.cachedWorldTokens
+
 	return func() tea.Msg {
 		var msg dataMsg
+
+		// Prune stale cache entries on each refresh.
+		cache.Prune()
 
 		// In peek mode, refresh the underlying view's data.
 		view := m.activeView()
@@ -696,14 +736,23 @@ func (m Model) refresh() tea.Cmd {
 			if count, err := m.config.SphereStore.CountPending(config.Autarch); err == nil && count > 0 {
 				result.MailCount = count
 			}
+
+			// Token throttling: GatherSphere already computed tokens.
+			// Override with cached values if within the throttle window.
+			if time.Since(lastTokenRefresh) < tokenRefreshSphere {
+				result.Tokens = cachedSphereTokens
+			} else {
+				msg.tokensRefreshed = true
+			}
+
 			msg.sphere = result
 
 		case viewWorld:
-			ws, err := m.config.WorldOpener(m.world)
+			ws, err := cache.Get(m.world)
 			if err != nil {
 				return msg
 			}
-			defer ws.Close()
+			// Do NOT close ws — the cache owns its lifecycle.
 
 			result, err := status.Gather(
 				m.world,
@@ -715,8 +764,17 @@ func (m Model) refresh() tea.Cmd {
 			if err != nil {
 				return msg
 			}
+			// GatherCaravans/buildCaravanInfo open and close their own stores
+			// for cross-world writ title lookups — use the original opener.
 			status.GatherCaravans(result, m.config.CaravanStore, m.config.WorldOpener)
-			status.GatherTokens(result, ws)
+
+			// Token throttling: only refresh tokens every tokenRefreshWorld.
+			if time.Since(lastTokenRefresh) >= tokenRefreshWorld {
+				status.GatherTokens(result, ws)
+				msg.tokensRefreshed = true
+			} else {
+				result.Tokens = cachedWorldTokens
+			}
 
 			// Load world config for max_active (non-fatal).
 			if worldCfg, err := config.LoadWorldConfig(m.world); err == nil {
