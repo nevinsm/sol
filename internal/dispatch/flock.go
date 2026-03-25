@@ -44,14 +44,15 @@ func AcquireWritLock(itemID string) (*WritLock, error) {
 	return &WritLock{file: f, path: lockPath}, nil
 }
 
-// Release releases the advisory lock and removes the lock file.
+// Release releases the advisory lock. The lock file is intentionally
+// preserved to maintain mutual exclusion — deleting it would allow a new
+// process to create a fresh inode and acquire a separate lock concurrently.
 func (l *WritLock) Release() error {
 	if l == nil || l.file == nil {
 		return nil
 	}
 	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
 	l.file.Close()
-	os.Remove(l.path)
 	l.file = nil
 	return nil
 }
@@ -100,7 +101,6 @@ func (l *AgentLock) Release() error {
 	}
 	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
 	l.file.Close()
-	os.Remove(l.path)
 	l.file = nil
 	return nil
 }
@@ -139,14 +139,14 @@ func AcquireMergeSlotLock(world string) (*MergeSlotLock, error) {
 	return &MergeSlotLock{file: f, path: lockPath}, nil
 }
 
-// Release releases the merge slot lock and removes the lock file.
+// Release releases the merge slot lock. The lock file is preserved to
+// maintain mutual exclusion across concurrent processes.
 func (l *MergeSlotLock) Release() error {
 	if l == nil || l.file == nil {
 		return nil
 	}
 	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
 	l.file.Close()
-	os.Remove(l.path)
 	l.file = nil
 	return nil
 }
@@ -193,7 +193,8 @@ func AcquireSphereSessionLock() (*SphereSessionLock, error) {
 	return &SphereSessionLock{file: f, path: lockPath}, nil
 }
 
-// Release releases the sphere session lock and removes the lock file.
+// Release releases the sphere session lock. The lock file is preserved to
+// maintain mutual exclusion across concurrent processes.
 // It is idempotent — calling Release on an already-released lock is a no-op.
 func (l *SphereSessionLock) Release() error {
 	if l == nil || l.file == nil {
@@ -201,7 +202,6 @@ func (l *SphereSessionLock) Release() error {
 	}
 	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
 	l.file.Close()
-	os.Remove(l.path)
 	l.file = nil
 	return nil
 }
@@ -240,14 +240,14 @@ func AcquireProvisionLock(world string) (*ProvisionLock, error) {
 	return &ProvisionLock{file: f, path: lockPath}, nil
 }
 
-// Release releases the provision lock and removes the lock file.
+// Release releases the provision lock. The lock file is preserved to
+// maintain mutual exclusion across concurrent processes.
 func (l *ProvisionLock) Release() error {
 	if l == nil || l.file == nil {
 		return nil
 	}
 	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
 	l.file.Close()
-	os.Remove(l.path)
 	l.file = nil
 	return nil
 }

@@ -180,9 +180,9 @@ func TestAcquireQueryLock(t *testing.T) {
 
 	lock.Release()
 
-	// Lock file should be removed after release.
-	if _, err := os.Stat(LockPath("myworld")); !os.IsNotExist(err) {
-		t.Error("lock file should be removed after Release")
+	// Lock file should persist after release to preserve mutual exclusion.
+	if _, err := os.Stat(LockPath("myworld")); os.IsNotExist(err) {
+		t.Error("expected lock file to persist after release")
 	}
 }
 

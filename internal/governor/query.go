@@ -101,14 +101,14 @@ func AcquireQueryLock(world string, timeout time.Duration) (*QueryLock, error) {
 	}
 }
 
-// Release releases the advisory lock and removes the lock file.
+// Release releases the advisory lock. The lock file is preserved to
+// maintain mutual exclusion across concurrent processes.
 func (l *QueryLock) Release() {
 	if l == nil || l.file == nil {
 		return
 	}
 	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
 	l.file.Close()
-	os.Remove(l.path)
 	l.file = nil
 }
 

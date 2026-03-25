@@ -32,9 +32,9 @@ func TestAcquireRelease(t *testing.T) {
 		t.Fatalf("Release failed: %v", err)
 	}
 
-	// Verify lock file removed.
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
-		t.Error("expected lock file to be removed after release")
+	// Lock file should persist after release to preserve mutual exclusion.
+	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		t.Error("expected lock file to persist after release")
 	}
 }
 
@@ -201,9 +201,9 @@ func TestSphereSessionLockAcquireRelease(t *testing.T) {
 		t.Fatalf("Release failed: %v", err)
 	}
 
-	// Verify lock file removed.
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
-		t.Error("expected lock file to be removed after release")
+	// Lock file should persist after release to preserve mutual exclusion.
+	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		t.Error("expected lock file to persist after release")
 	}
 }
 
@@ -303,9 +303,9 @@ func TestMergeSlotAcquireRelease(t *testing.T) {
 		t.Fatalf("Release failed: %v", err)
 	}
 
-	// Verify lock file removed.
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
-		t.Error("expected lock file to be removed after release")
+	// Lock file should persist after release to preserve mutual exclusion.
+	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		t.Error("expected lock file to persist after release")
 	}
 }
 
