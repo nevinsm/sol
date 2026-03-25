@@ -50,13 +50,25 @@ var highlightColors = [6]string{
 	"239", // level 5: brightest
 }
 
+// highlightStyles contains pre-computed styles for each highlight level.
+// Index 0 is an empty style (no highlight), 1-5 are progressively brighter backgrounds.
+// Pre-computed to avoid lipgloss.NewStyle() allocations on every render frame.
+var highlightStyles [6]lipgloss.Style
+
+func init() {
+	highlightStyles[0] = lipgloss.NewStyle()
+	for i := 1; i <= 5; i++ {
+		highlightStyles[i] = lipgloss.NewStyle().Background(lipgloss.Color(highlightColors[i]))
+	}
+}
+
 // highlightAtLevel returns a style with the background color for the given highlight level.
 // Returns an empty style for level 0 (no highlight).
 func highlightAtLevel(level int) lipgloss.Style {
 	if level <= 0 || level > 5 {
-		return lipgloss.NewStyle()
+		return highlightStyles[0]
 	}
-	return lipgloss.NewStyle().Background(lipgloss.Color(highlightColors[level]))
+	return highlightStyles[level]
 }
 
 // Health badge strings — same semantics as render.go.
@@ -100,11 +112,26 @@ const (
 	focusIndicator = "▸"
 )
 
+// widthCache caches lipgloss.Width results to avoid repeated ANSI parsing.
+// Safe without synchronization because bubbletea runs View() in a single goroutine.
+var widthCache = make(map[string]int)
+
+// cachedWidth returns the visible width of s, caching the result to avoid
+// repeated ANSI escape code parsing on the render hot path.
+func cachedWidth(s string) int {
+	if w, ok := widthCache[s]; ok {
+		return w
+	}
+	w := lipgloss.Width(s)
+	widthCache[s] = w
+	return w
+}
+
 // padRight pads s with spaces to reach the given visible width.
 // Unlike fmt.Sprintf("%-Ns"), this measures visible width excluding
 // ANSI escape codes, so styled strings align correctly.
 func padRight(s string, width int) string {
-	visible := lipgloss.Width(s)
+	visible := cachedWidth(s)
 	if visible >= width {
 		return s
 	}
@@ -292,19 +319,24 @@ func formatCost(cost float64) string {
 	return fmt.Sprintf("$%.2f", cost)
 }
 
+// feedHighlightStyles contains pre-computed styles for feed entry fade levels.
+// Index 4 is brightest (new!), index 0 is the normal dimStyle.
+// Pre-computed to avoid lipgloss.NewStyle() allocations on every render frame.
+var feedHighlightStyles [5]lipgloss.Style
+
+func init() {
+	feedHighlightStyles[0] = dimStyle
+	feedHighlightStyles[1] = lipgloss.NewStyle().Foreground(lipgloss.Color("245")) // medium gray
+	feedHighlightStyles[2] = lipgloss.NewStyle().Foreground(lipgloss.Color("250")) // light gray
+	feedHighlightStyles[3] = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))   // normal white
+	feedHighlightStyles[4] = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))  // bright white
+}
+
 // feedHighlightAtLevel returns a style for feed entries at the given fade level.
 // Level 4 is brightest (new!), level 0 is the normal dimStyle.
 func feedHighlightAtLevel(level int) lipgloss.Style {
-	switch level {
-	case 4:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("15"))  // bright white
-	case 3:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("7"))   // normal white
-	case 2:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("250")) // light gray
-	case 1:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("245")) // medium gray
-	default:
-		return dimStyle // level 0 — normal dim gray
+	if level < 0 || level > 4 {
+		return feedHighlightStyles[0]
 	}
+	return feedHighlightStyles[level]
 }
