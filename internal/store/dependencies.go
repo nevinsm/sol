@@ -180,6 +180,13 @@ func (s *WorldStore) IsReady(itemID string) (bool, error) {
 // writ clean to guard against cleaning output directories that are still
 // needed by downstream writs.
 func (s *WorldStore) HasOpenTransitiveDependents(writID string) (bool, error) {
+	// Use a read transaction for a consistent snapshot across all BFS queries.
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, fmt.Errorf("failed to begin transaction for transitive dependents check: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
 	visited := map[string]bool{}
 	queue := []string{writID}
 	for len(queue) > 0 {
@@ -190,14 +197,29 @@ func (s *WorldStore) HasOpenTransitiveDependents(writID string) (bool, error) {
 		}
 		visited[current] = true
 
-		dependents, err := s.GetDependents(current)
+		rows, err := tx.Query(
+			`SELECT from_id FROM dependencies WHERE to_id = ? ORDER BY from_id`, current)
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("failed to get dependents for %q: %w", current, err)
 		}
+		var dependents []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return false, fmt.Errorf("failed to scan dependent: %w", err)
+			}
+			dependents = append(dependents, id)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return false, fmt.Errorf("failed iterating dependents for %q: %w", current, err)
+		}
+
 		for _, depID := range dependents {
 			// Check if this dependent is open (not closed).
 			var status string
-			err := s.db.QueryRow(`SELECT status FROM writs WHERE id = ?`, depID).Scan(&status)
+			err := tx.QueryRow(`SELECT status FROM writs WHERE id = ?`, depID).Scan(&status)
 			if err != nil {
 				return false, fmt.Errorf("failed to check status of writ %q: %w", depID, err)
 			}

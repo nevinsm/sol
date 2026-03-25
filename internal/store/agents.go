@@ -61,6 +61,11 @@ func (s *SphereStore) EnsureAgent(name, world, role string) error {
 		}
 		return fmt.Errorf("failed to ensure agent %q: %w", id, createErr)
 	}
+	// If GetAgent failed with a real error (not just "not found"), surface it
+	// even though CreateAgent succeeded — this may indicate database corruption.
+	if getErr != nil && !errors.Is(getErr, ErrNotFound) {
+		return fmt.Errorf("failed to ensure agent %q: GetAgent failed (create succeeded): %w", id, getErr)
+	}
 	return nil
 }
 

@@ -475,6 +475,7 @@ func supersedeFailedMRsInTx(tx *sql.Tx, writID string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list failed MRs for writ %q: %w", writID, err)
 	}
+	defer rows.Close()
 
 	var ids []string
 	for rows.Next() {

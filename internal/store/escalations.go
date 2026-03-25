@@ -204,7 +204,14 @@ func (s *SphereStore) AckEscalation(id string) error {
 // (thread_id="esc:{id}") to prevent DB bloat from unread notifications.
 func (s *SphereStore) ResolveEscalation(id string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := s.db.Exec(
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction for resolve escalation %q: %w", id, err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	result, err := tx.Exec(
 		`UPDATE escalations SET status = 'resolved', updated_at = ? WHERE id = ?`,
 		now, id,
 	)
@@ -217,11 +224,15 @@ func (s *SphereStore) ResolveEscalation(id string) error {
 
 	// Clean up pending mail messages for this escalation.
 	threadID := "esc:" + id
-	if _, err := s.db.Exec(
+	if _, err := tx.Exec(
 		`DELETE FROM messages WHERE thread_id = ? AND delivery = 'pending'`,
 		threadID,
 	); err != nil {
 		return fmt.Errorf("failed to clean up pending mail for escalation %q: %w", id, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit resolve escalation %q: %w", id, err)
 	}
 	return nil
 }
