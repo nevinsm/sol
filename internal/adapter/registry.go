@@ -8,13 +8,3 @@ func Register(name string, a RuntimeAdapter) { adapters[name] = a }
 
 // Get retrieves an adapter by name. Returns false if not found.
 func Get(name string) (RuntimeAdapter, bool) { a, ok := adapters[name]; return a, ok }
-
-// Default returns the default adapter ("claude").
-// Panics if the claude adapter has not been registered.
-func Default() RuntimeAdapter {
-	a := adapters["claude"]
-	if a == nil {
-		panic("adapter: claude adapter not registered (missing blank import)")
-	}
-	return a
-}

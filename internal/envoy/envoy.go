@@ -280,7 +280,13 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		fmt.Fprintf(os.Stderr, "Note: envoy %q has a brief — it will be deleted (use 'sol envoy debrief' first to archive)\n", opts.Name)
 	}
 
-	// 5. Remove git worktree.
+	// 5. Delete the agent record BEFORE filesystem cleanup.
+	// If DB fails, nothing is cleaned up (no orphaned records for nonexistent envoys).
+	if err := sphereStore.DeleteAgent(agentID); err != nil {
+		return fmt.Errorf("failed to delete agent record: %w", err)
+	}
+
+	// 6. Remove git worktree.
 	worktreeDir := WorktreePath(opts.World, opts.Name)
 	if _, err := os.Stat(worktreeDir); err == nil {
 		rmCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
@@ -298,22 +304,17 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		}
 	}
 
-	// 6. Delete the envoy directory.
+	// 7. Delete the envoy directory.
 	envoyDir := EnvoyDir(opts.World, opts.Name)
 	if err := os.RemoveAll(envoyDir); err != nil {
 		return fmt.Errorf("failed to remove envoy directory %q: %w", envoyDir, err)
 	}
 
-	// 7. Delete the git branch (best-effort).
+	// 8. Delete the git branch (best-effort).
 	branch := fmt.Sprintf("envoy/%s/%s", opts.World, opts.Name)
 	branchCmd := exec.Command("git", "-C", opts.SourceRepo, "branch", "-D", branch)
 	if out, err := branchCmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: branch delete failed: %s\n", strings.TrimSpace(string(out)))
-	}
-
-	// 8. Delete the agent record.
-	if err := sphereStore.DeleteAgent(agentID); err != nil {
-		return fmt.Errorf("failed to delete agent record: %w", err)
 	}
 
 	return nil

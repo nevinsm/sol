@@ -266,8 +266,11 @@ func ResolveVariables(m *Manifest, provided map[string]string) (map[string]strin
 	return resolved, nil
 }
 
-// unresolvedVarRe matches any remaining {{...}} tokens after substitution.
-var unresolvedVarRe = regexp.MustCompile(`\{\{[^}]+\}\}`)
+// unresolvedVarRe matches remaining workflow variable tokens (e.g. {{issue}},
+// {{target.title}}) after substitution. Only matches the specific workflow
+// variable format (identifier with optional dot-separated segments), so Go
+// template syntax like {{.Name}} or {{range .Items}} is not flagged.
+var unresolvedVarRe = regexp.MustCompile(`\{\{[a-zA-Z_]\w*(?:\.\w+)*\}\}`)
 
 // RenderStepInstructions reads a step's instruction file and performs
 // variable substitution. Variables use {{variable}} syntax.

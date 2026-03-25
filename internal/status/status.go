@@ -361,11 +361,10 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 	result := &WorldStatus{World: world}
 
 	// 1. Check prefect (sphere-level).
+	// Treat PID read failure (e.g. corrupted PID file) as "not running"
+	// rather than a hard error — don't let a bad PID file prevent status display.
 	pid, err := prefect.ReadPID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read prefect PID: %w", err)
-	}
-	if pid != 0 && prefect.IsRunning(pid) {
+	if err == nil && pid != 0 && prefect.IsRunning(pid) {
 		result.Prefect = PrefectInfo{Running: true, PID: pid}
 	}
 
