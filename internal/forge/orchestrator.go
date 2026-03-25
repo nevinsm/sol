@@ -193,70 +193,73 @@ func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr
 			firstCheck = false
 
 		case <-ticker.C:
-			// Write heartbeat to show we're still alive.
-			s.writeHeartbeatWithMR("working", 0, mr)
+		}
 
-			// Fast path: result file means work is done, regardless of session state.
+		// Shared monitoring logic — runs after both timer and ticker fire.
+
+		// Write heartbeat to show we're still alive.
+		s.writeHeartbeatWithMR("working", 0, mr)
+
+		// Fast path: result file means work is done, regardless of session state.
+		resultPath := filepath.Join(s.forge.worktree, resultFileName)
+		if _, err := os.Stat(resultPath); err == nil {
+			s.fl.Log("SESSION", "result file detected, completing")
+			return sessionCompleted
+		}
+
+		// Check if session still exists.
+		if !s.forge.sessions.Exists(sessionName) {
+			s.fl.Log("SESSION", "merge session exited")
+			return sessionCompleted
+		}
+
+		// Capture output and hash.
+		output, err := s.forge.sessions.Capture(sessionName, monitorCaptureLines)
+		if err != nil {
+			s.forge.logger.Warn("failed to capture merge session output", "error", err)
+			continue
+		}
+
+		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(output)))
+
+		if lastHash == "" {
+			// First capture — establish baseline.
+			lastHash = hash
+			continue
+		}
+
+		if hash != lastHash {
+			// Output changed — session is making progress.
+			lastHash = hash
+			s.fl.Log("SESSION", "merge session progressing")
+			continue
+		}
+
+		// Output unchanged — assess with AI.
+		s.fl.Log("SESSION", "merge session output unchanged, assessing...")
+		assessment := s.assessMergeSession(ctx, sessionName, output, mr)
+
+		switch assessment {
+		case "progressing":
+			s.fl.Log("SESSION", "assessment: progressing, continuing to wait")
+			// Reset hash so we don't re-assess on the same output.
+			lastHash = hash
+		case "stuck":
+			s.fl.Log("SESSION", "assessment: stuck, stopping session")
+			return sessionStuck
+		case "idle":
+			s.fl.Log("SESSION", "assessment: idle, checking for result")
+			// Check if result file exists.
 			resultPath := filepath.Join(s.forge.worktree, resultFileName)
 			if _, err := os.Stat(resultPath); err == nil {
-				s.fl.Log("SESSION", "result file detected, completing")
 				return sessionCompleted
 			}
-
-			// Check if session still exists.
-			if !s.forge.sessions.Exists(sessionName) {
-				s.fl.Log("SESSION", "merge session exited")
-				return sessionCompleted
-			}
-
-			// Capture output and hash.
-			output, err := s.forge.sessions.Capture(sessionName, monitorCaptureLines)
-			if err != nil {
-				s.forge.logger.Warn("failed to capture merge session output", "error", err)
-				continue
-			}
-
-			hash := fmt.Sprintf("%x", sha256.Sum256([]byte(output)))
-
-			if lastHash == "" {
-				// First capture — establish baseline.
-				lastHash = hash
-				continue
-			}
-
-			if hash != lastHash {
-				// Output changed — session is making progress.
-				lastHash = hash
-				s.fl.Log("SESSION", "merge session progressing")
-				continue
-			}
-
-			// Output unchanged — assess with AI.
-			s.fl.Log("SESSION", "merge session output unchanged, assessing...")
-			assessment := s.assessMergeSession(ctx, sessionName, output, mr)
-
-			switch assessment {
-			case "progressing":
-				s.fl.Log("SESSION", "assessment: progressing, continuing to wait")
-				// Reset hash so we don't re-assess on the same output.
-				lastHash = hash
-			case "stuck":
-				s.fl.Log("SESSION", "assessment: stuck, stopping session")
-				return sessionStuck
-			case "idle":
-				s.fl.Log("SESSION", "assessment: idle, checking for result")
-				// Check if result file exists.
-				resultPath := filepath.Join(s.forge.worktree, resultFileName)
-				if _, err := os.Stat(resultPath); err == nil {
-					return sessionCompleted
-				}
-				// No result file and idle — likely stuck.
-				return sessionStuck
-			default:
-				// Unknown assessment — continue waiting.
-				s.fl.Log("SESSION", fmt.Sprintf("assessment: %s, continuing to wait", assessment))
-				lastHash = hash
-			}
+			// No result file and idle — likely stuck.
+			return sessionStuck
+		default:
+			// Unknown assessment — continue waiting.
+			s.fl.Log("SESSION", fmt.Sprintf("assessment: %s, continuing to wait", assessment))
+			lastHash = hash
 		}
 	}
 }
@@ -396,6 +399,16 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 	case "merged":
 		// Verify push landed by checking remote HEAD.
 		if err := s.verifyPush(ctx, mr); err != nil {
+			// If the context was cancelled (e.g. sol down / SIGTERM), don't mark
+			// a potentially-successful merge as failed. Release the MR so the
+			// next startup retries verification instead of re-dispatching work.
+			if ctx.Err() != nil {
+				s.fl.Log("SHUTDOWN", fmt.Sprintf("verification deferred for %s: context cancelled during push verification", mr.Branch))
+				if _, err := s.forge.Release(mr.ID); err != nil {
+					s.forge.logger.Error("release after cancelled verify failed", "mr", mr.ID, "error", err)
+				}
+				return
+			}
 			s.fl.Log("ERROR", fmt.Sprintf("push verification failed for %s: %s", mr.Branch, truncate(err.Error(), 200)))
 			s.lastError = truncate(fmt.Sprintf("push verification failed: %s", err.Error()), 200)
 			// MarkFailed instead of Release — retry destroys the good result
