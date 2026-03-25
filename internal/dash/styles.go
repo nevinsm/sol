@@ -263,6 +263,35 @@ func formatGovernorDetail(g status.GovernorInfo) string {
 	return ""
 }
 
+// formatCompactTokens formats a token count as a compact human-readable string.
+// Mirrors status.formatCompactTokens for use in dashboard views.
+func formatCompactTokens(n int64) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	if n < 1_000_000 {
+		v := float64(n) / 1000
+		if v < 9.95 {
+			return fmt.Sprintf("%.1fK", v)
+		}
+		return fmt.Sprintf("%.0fK", v)
+	}
+	v := float64(n) / 1_000_000
+	if v < 9.95 {
+		return fmt.Sprintf("%.1fM", v)
+	}
+	return fmt.Sprintf("%.0fM", v)
+}
+
+// formatCost formats a USD cost value for display.
+// Mirrors status.formatCost for use in dashboard views.
+func formatCost(cost float64) string {
+	if cost < 0.01 {
+		return fmt.Sprintf("$%.4f", cost)
+	}
+	return fmt.Sprintf("$%.2f", cost)
+}
+
 // feedHighlightAtLevel returns a style for feed entries at the given fade level.
 // Level 4 is brightest (new!), level 0 is the normal dimStyle.
 func feedHighlightAtLevel(level int) lipgloss.Style {

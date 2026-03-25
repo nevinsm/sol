@@ -3770,3 +3770,177 @@ func TestCaravanPeekViewLayout(t *testing.T) {
 		t.Error("caravan peek view should not have 'enter attach' footer")
 	}
 }
+
+func TestSphereViewRendersInbox(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+
+	data := &status.SphereStatus{
+		SOLHome:   "/home/test/sol",
+		Health:    "healthy",
+		Prefect:   status.PrefectInfo{Running: true, PID: 1234},
+		MailCount: 3,
+		Escalations: &status.EscalationSummary{
+			Total:      2,
+			BySeverity: map[string]int{"high": 1, "medium": 1},
+		},
+	}
+	sm.updateData(data)
+
+	output := sm.view(data, time.Now(), 0, false)
+
+	// Should show inbox with combined count (3 mail + 2 escalations = 5).
+	if !strings.Contains(output, "Inbox: 5 items need attention") {
+		t.Errorf("sphere view should show 'Inbox: 5 items need attention', got:\n%s", output)
+	}
+}
+
+func TestSphereViewInboxSingular(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+
+	data := &status.SphereStatus{
+		SOLHome:   "/home/test/sol",
+		Health:    "healthy",
+		Prefect:   status.PrefectInfo{Running: true, PID: 1234},
+		MailCount: 1,
+	}
+	sm.updateData(data)
+
+	output := sm.view(data, time.Now(), 0, false)
+
+	if !strings.Contains(output, "Inbox: 1 item needs attention") {
+		t.Errorf("sphere view should show singular 'item needs attention', got:\n%s", output)
+	}
+}
+
+func TestSphereViewInboxAbsentWhenZero(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+
+	data := &status.SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: status.PrefectInfo{Running: true, PID: 1234},
+	}
+	sm.updateData(data)
+
+	output := sm.view(data, time.Now(), 0, false)
+
+	if strings.Contains(output, "Inbox") {
+		t.Error("sphere view should not show Inbox when count is zero")
+	}
+}
+
+func TestSphereViewRendersTokenSummary(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+
+	data := &status.SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: status.PrefectInfo{Running: true, PID: 1234},
+		Tokens: status.TokenInfo{
+			InputTokens:  150000,
+			OutputTokens: 45000,
+			AgentCount:   5,
+			CostUSD:      12.50,
+		},
+	}
+	sm.updateData(data)
+
+	output := sm.view(data, time.Now(), 0, false)
+
+	checks := []string{
+		"Tokens (24h)",
+		"150K in",
+		"45K out",
+		"$12.50",
+		"5 agents",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("sphere view token summary missing %q", check)
+		}
+	}
+}
+
+func TestSphereViewTokensAbsentWhenZero(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+
+	data := &status.SphereStatus{
+		SOLHome: "/home/test/sol",
+		Health:  "healthy",
+		Prefect: status.PrefectInfo{Running: true, PID: 1234},
+	}
+	sm.updateData(data)
+
+	output := sm.view(data, time.Now(), 0, false)
+
+	if strings.Contains(output, "Tokens") {
+		t.Error("sphere view should not show Tokens section when there's no usage data")
+	}
+}
+
+func TestWorldViewRendersTokens(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:   "testworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 42},
+		Tokens: status.TokenInfo{
+			InputTokens:  2500000,
+			OutputTokens: 800000,
+			AgentCount:   3,
+			CostUSD:      7.25,
+			RuntimeBreakdown: []status.RuntimeTokenInfo{
+				{Runtime: "claude", InputTokens: 2000000, OutputTokens: 600000, CostUSD: 5.50},
+				{Runtime: "gpt-4", InputTokens: 500000, OutputTokens: 200000, CostUSD: 1.75},
+			},
+		},
+	}
+	wm.updateData(data)
+
+	output := wm.view(data, time.Now(), 0, nil, false)
+
+	checks := []string{
+		"Tokens (24h)",
+		"2.5M in",
+		"800K out",
+		"$7.25",
+		"3 agents",
+		"claude:",
+		"gpt-4:",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("world view token section missing %q", check)
+		}
+	}
+}
+
+func TestWorldViewTokensAbsentWhenZero(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:   "testworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 42},
+	}
+	wm.updateData(data)
+
+	output := wm.view(data, time.Now(), 0, nil, false)
+
+	if strings.Contains(output, "Tokens") {
+		t.Error("world view should not show Tokens section when there's no usage data")
+	}
+}

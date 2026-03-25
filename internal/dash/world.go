@@ -769,6 +769,9 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	// Merge Queue.
 	wm.renderMergeQueueSection(&b, data, pulseBright)
 
+	// Tokens (24h).
+	wm.renderTokenSection(&b, data.Tokens)
+
 	// Summary.
 	b.WriteString(wm.renderSummary(data))
 
@@ -1181,6 +1184,49 @@ func (wm worldModel) formatCaravanRow(c status.CaravanInfo, maxProgressWidth int
 		c.Name, progressStr,
 		dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
 	)
+}
+
+// renderTokenSection renders the token usage section for the world detail view.
+// Absent when there's no usage data.
+func (wm worldModel) renderTokenSection(b *strings.Builder, t status.TokenInfo) {
+	if t.InputTokens == 0 && t.OutputTokens == 0 && t.CacheTokens == 0 {
+		return
+	}
+
+	b.WriteString(headerStyle.Render("Tokens (24h)"))
+	b.WriteString("\n")
+
+	line := fmt.Sprintf("  %s in / %s out",
+		formatCompactTokens(t.InputTokens),
+		formatCompactTokens(t.OutputTokens))
+
+	if t.CostUSD > 0 {
+		line += fmt.Sprintf(", %s", formatCost(t.CostUSD))
+	}
+
+	if t.AgentCount > 0 {
+		line += fmt.Sprintf("  %s  %d agents", dimStyle.Render("•"), t.AgentCount)
+	}
+
+	b.WriteString(line)
+	b.WriteString("\n")
+
+	// Per-runtime breakdown (only shown when multiple runtimes present).
+	if len(t.RuntimeBreakdown) > 0 {
+		for _, rt := range t.RuntimeBreakdown {
+			rtLine := fmt.Sprintf("    %s: %s in / %s out",
+				rt.Runtime,
+				formatCompactTokens(rt.InputTokens),
+				formatCompactTokens(rt.OutputTokens))
+			if rt.CostUSD > 0 {
+				rtLine += fmt.Sprintf(", %s", formatCost(rt.CostUSD))
+			}
+			b.WriteString(dimStyle.Render(rtLine))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
 }
 
 func (wm worldModel) renderSummary(data *status.WorldStatus) string {

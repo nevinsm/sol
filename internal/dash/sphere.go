@@ -425,6 +425,12 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 		sm.renderCaravansSection(&b, data.Caravans)
 	}
 
+	// Token summary (aggregated across all worlds).
+	sm.renderTokenSummary(&b, data.Tokens)
+
+	// Inbox (escalations + mail) — absent when zero, matching sol status.
+	sm.renderInbox(&b, data)
+
 	// Inline "no active session" message.
 	if sm.showNoSession {
 		b.WriteString(warnStyle.Render("  no active session"))
@@ -702,6 +708,51 @@ func (sm sphereModel) renderFooter(lastRefresh time.Time) string {
 		return fmt.Sprintf("\n%s    %s\n", help, age)
 	}
 	return fmt.Sprintf("\n%s\n", help)
+}
+
+// renderTokenSummary renders a compact single-line token summary for the sphere view.
+// Absent when there's no usage data.
+func (sm sphereModel) renderTokenSummary(b *strings.Builder, t status.TokenInfo) {
+	if t.InputTokens == 0 && t.OutputTokens == 0 && t.CacheTokens == 0 {
+		return
+	}
+
+	b.WriteString(headerStyle.Render("Tokens (24h)"))
+	b.WriteString("\n")
+
+	line := fmt.Sprintf("  %s in / %s out",
+		formatCompactTokens(t.InputTokens),
+		formatCompactTokens(t.OutputTokens))
+
+	if t.CostUSD > 0 {
+		line += fmt.Sprintf(", %s", formatCost(t.CostUSD))
+	}
+
+	if t.AgentCount > 0 {
+		line += fmt.Sprintf("  %s  %d agents", dimStyle.Render("•"), t.AgentCount)
+	}
+
+	b.WriteString(line)
+	b.WriteString("\n\n")
+}
+
+// renderInbox renders the unified inbox count (escalations + mail).
+// Absent when there are no items, matching sol status behavior.
+func (sm sphereModel) renderInbox(b *strings.Builder, data *status.SphereStatus) {
+	inboxCount := data.MailCount
+	if data.Escalations != nil {
+		inboxCount += data.Escalations.Total
+	}
+	if inboxCount <= 0 {
+		return
+	}
+
+	label := "items need attention"
+	if inboxCount == 1 {
+		label = "item needs attention"
+	}
+	b.WriteString(fmt.Sprintf("Inbox: %d %s\n", inboxCount, label))
+	b.WriteString("\n")
 }
 
 // caravanPhaseSummary builds a compact phase description for a caravan.
