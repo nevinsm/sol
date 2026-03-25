@@ -563,8 +563,11 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 
 #### `sol writ list`
 
+By default, excludes closed writs. Use `--all` to include closed writs, or `--status=closed` to show only closed writs. The `--all` and `--status` flags are mutually exclusive.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | show all writs including closed |
 | `--assignee` | string | "" | filter by assignee |
 | `--json` | bool | false | output as JSON |
 | `--label` | string | "" | filter by label |

@@ -167,6 +167,7 @@ var (
 	listLabel    string
 	listAssignee string
 	listJSON     bool
+	listAll      bool
 )
 
 var writListCmd = &cobra.Command{
@@ -180,9 +181,14 @@ var writListCmd = &cobra.Command{
 			return err
 		}
 
+		// --all and --status are mutually exclusive.
+		if listAll && listStatus != "" {
+			return fmt.Errorf("--all and --status are mutually exclusive")
+		}
+
 		// Validate --status value if provided.
+		validStatuses := []string{"open", "tethered", "working", "resolve", "done", "closed"}
 		if listStatus != "" {
-			validStatuses := []string{"open", "tethered", "working", "resolve", "done", "closed"}
 			valid := false
 			for _, s := range validStatuses {
 				if listStatus == s {
@@ -201,11 +207,22 @@ var writListCmd = &cobra.Command{
 		}
 		defer s.Close()
 
+		// Determine filter behavior:
+		// - --status=X: filter to that single status
+		// - --all: no status filter (show everything including closed)
+		// - default: exclude closed writs
+		defaultFilter := false
 		filters := store.ListFilters{
-			Status:   store.WritStatus(listStatus),
 			Assignee: listAssignee,
 			Label:    listLabel,
 		}
+		if listStatus != "" {
+			filters.Status = store.WritStatus(listStatus)
+		} else if !listAll {
+			defaultFilter = true
+			filters.Statuses = []string{"open", "tethered", "working", "resolve", "done"}
+		}
+
 		items, err := s.ListWrits(filters)
 		if err != nil {
 			return fmt.Errorf("failed to list writs: %w", err)
@@ -215,7 +232,11 @@ var writListCmd = &cobra.Command{
 			return printJSON(items)
 		}
 		if len(items) == 0 {
-			fmt.Println("No writs found.")
+			if defaultFilter {
+				fmt.Println("No open writs found. Use --all to include closed writs.")
+			} else {
+				fmt.Println("No writs found.")
+			}
 			return nil
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
@@ -239,6 +260,7 @@ var writListCmd = &cobra.Command{
 func init() {
 	writListCmd.Flags().String("world", "", "world name")
 	writListCmd.Flags().StringVar(&listStatus, "status", "", "filter by status")
+	writListCmd.Flags().BoolVar(&listAll, "all", false, "show all writs including closed")
 	writListCmd.Flags().StringVar(&listLabel, "label", "", "filter by label")
 	writListCmd.Flags().StringVar(&listAssignee, "assignee", "", "filter by assignee")
 	writListCmd.Flags().BoolVar(&listJSON, "json", false, "output as JSON")

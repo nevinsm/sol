@@ -152,6 +152,93 @@ func TestCLIWritListJSON(t *testing.T) {
 	}
 }
 
+func TestCLIWritListDefaultFilter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	gtHome := t.TempDir()
+	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
+	initWorld(t, gtHome, "ember")
+
+	// Create two writs: one will stay open, one will be closed.
+	openOut, err := runGT(t, gtHome, "writ", "create", "--world=ember", "--title=open writ")
+	if err != nil {
+		t.Fatalf("create open writ: %v: %s", err, openOut)
+	}
+	openID := strings.TrimSpace(openOut)
+
+	closedOut, err := runGT(t, gtHome, "writ", "create", "--world=ember", "--title=closed writ")
+	if err != nil {
+		t.Fatalf("create closed writ: %v: %s", err, closedOut)
+	}
+	closedID := strings.TrimSpace(closedOut)
+
+	// Close the second writ.
+	_, err = runGT(t, gtHome, "writ", "close", "--world=ember", "--confirm", closedID)
+	if err != nil {
+		t.Fatalf("close writ: %v", err)
+	}
+
+	// Default list should show the open writ but not the closed one.
+	out, err := runGT(t, gtHome, "writ", "list", "--world=ember")
+	if err != nil {
+		t.Fatalf("writ list failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, openID) {
+		t.Errorf("default list should contain open writ %s, got: %s", openID, out)
+	}
+	if strings.Contains(out, closedID) {
+		t.Errorf("default list should not contain closed writ %s, got: %s", closedID, out)
+	}
+
+	// --all should show both writs.
+	out, err = runGT(t, gtHome, "writ", "list", "--world=ember", "--all")
+	if err != nil {
+		t.Fatalf("writ list --all failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, openID) {
+		t.Errorf("--all list should contain open writ %s, got: %s", openID, out)
+	}
+	if !strings.Contains(out, closedID) {
+		t.Errorf("--all list should contain closed writ %s, got: %s", closedID, out)
+	}
+
+	// --status=closed should show only the closed writ.
+	out, err = runGT(t, gtHome, "writ", "list", "--world=ember", "--status=closed")
+	if err != nil {
+		t.Fatalf("writ list --status=closed failed: %v: %s", err, out)
+	}
+	if strings.Contains(out, openID) {
+		t.Errorf("--status=closed should not contain open writ %s, got: %s", openID, out)
+	}
+	if !strings.Contains(out, closedID) {
+		t.Errorf("--status=closed should contain closed writ %s, got: %s", closedID, out)
+	}
+
+	// --all --status=open should error.
+	out, err = runGT(t, gtHome, "writ", "list", "--world=ember", "--all", "--status=open")
+	if err == nil {
+		t.Errorf("--all --status=open should error, got: %s", out)
+	}
+	if !strings.Contains(out, "mutually exclusive") {
+		t.Errorf("error should mention mutually exclusive, got: %s", out)
+	}
+
+	// Default list with no results should hint at --all.
+	// Close the open writ too so default filter returns empty.
+	_, err = runGT(t, gtHome, "writ", "close", "--world=ember", "--confirm", openID)
+	if err != nil {
+		t.Fatalf("close writ: %v", err)
+	}
+	out, err = runGT(t, gtHome, "writ", "list", "--world=ember")
+	if err != nil {
+		t.Fatalf("writ list (empty) failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "Use --all to include closed writs") {
+		t.Errorf("empty default list should hint at --all, got: %s", out)
+	}
+}
+
 func TestCLIAgentCreate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
