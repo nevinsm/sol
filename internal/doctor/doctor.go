@@ -6,11 +6,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
 	_ "modernc.org/sqlite"
 )
+
+const minTmuxMajor = 3
+const minTmuxMinor = 1
 
 // CheckResult represents the outcome of a single prerequisite check.
 type CheckResult struct {
@@ -46,7 +51,8 @@ func (r *Report) FailedCount() int {
 	return n
 }
 
-// CheckTmux verifies tmux is installed and executable.
+// CheckTmux verifies tmux is installed, executable, and meets the minimum
+// version requirement (3.1+).
 func CheckTmux() CheckResult {
 	path, err := exec.LookPath("tmux")
 	if err != nil {
@@ -68,11 +74,59 @@ func CheckTmux() CheckResult {
 		}
 	}
 	version := strings.TrimSpace(string(out))
+	return checkTmuxVersion(version, path)
+}
+
+// checkTmuxVersion validates the tmux version string against the minimum
+// required version. Extracted for testability.
+func checkTmuxVersion(version, path string) CheckResult {
+	major, minor, ok := parseTmuxVersion(version)
+	if !ok {
+		// Unparseable version — pass with warning rather than blocking.
+		return CheckResult{
+			Name:    "tmux",
+			Passed:  true,
+			Message: fmt.Sprintf("%s (%s) — warning: could not parse version, minimum %d.%d required", version, path, minTmuxMajor, minTmuxMinor),
+		}
+	}
+
+	if major < minTmuxMajor || (major == minTmuxMajor && minor < minTmuxMinor) {
+		return CheckResult{
+			Name:    "tmux",
+			Passed:  false,
+			Message: fmt.Sprintf("tmux %d.%d found, but sol requires tmux %d.%d or later", major, minor, minTmuxMajor, minTmuxMinor),
+			Fix:     "Upgrade tmux: 'brew upgrade tmux' (macOS) or 'apt install --only-upgrade tmux' (Linux)",
+		}
+	}
+
 	return CheckResult{
 		Name:    "tmux",
 		Passed:  true,
 		Message: fmt.Sprintf("%s (%s)", version, path),
 	}
+}
+
+// tmuxVersionRe matches version strings like "tmux 3.5a", "tmux 3.1",
+// or "tmux next-3.4". It captures the major.minor numeric portion.
+var tmuxVersionRe = regexp.MustCompile(`(\d+)\.(\d+)`)
+
+// parseTmuxVersion extracts the major and minor version from a tmux -V
+// output string. Returns (major, minor, true) on success, or (0, 0, false)
+// if the version cannot be parsed.
+func parseTmuxVersion(versionStr string) (int, int, bool) {
+	m := tmuxVersionRe.FindStringSubmatch(versionStr)
+	if m == nil {
+		return 0, 0, false
+	}
+	major, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0, 0, false
+	}
+	minor, err := strconv.Atoi(m[2])
+	if err != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
 }
 
 // CheckGit verifies git is installed and executable.

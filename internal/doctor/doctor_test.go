@@ -21,6 +21,65 @@ func TestCheckTmux(t *testing.T) {
 	}
 }
 
+func TestParseTmuxVersion(t *testing.T) {
+	tests := []struct {
+		input string
+		major int
+		minor int
+		ok    bool
+	}{
+		{"tmux 3.5a", 3, 5, true},
+		{"tmux 3.1", 3, 1, true},
+		{"tmux 2.9", 2, 9, true},
+		{"tmux 3.0", 3, 0, true},
+		{"tmux next-3.4", 3, 4, true},
+		{"tmux 10.2c", 10, 2, true},
+		{"tmux", 0, 0, false},
+		{"", 0, 0, false},
+		{"no version here", 0, 0, false},
+	}
+	for _, tt := range tests {
+		major, minor, ok := parseTmuxVersion(tt.input)
+		if ok != tt.ok || major != tt.major || minor != tt.minor {
+			t.Errorf("parseTmuxVersion(%q) = (%d, %d, %v), want (%d, %d, %v)",
+				tt.input, major, minor, ok, tt.major, tt.minor, tt.ok)
+		}
+	}
+}
+
+func TestCheckTmuxVersion(t *testing.T) {
+	tests := []struct {
+		version string
+		passed  bool
+		substr  string // expected substring in Message
+	}{
+		{"tmux 3.5a", true, "tmux 3.5a"},
+		{"tmux 3.1", true, "tmux 3.1"},
+		{"tmux 4.0", true, "tmux 4.0"},
+		{"tmux 3.0", false, "sol requires tmux 3.1 or later"},
+		{"tmux 2.9", false, "sol requires tmux 3.1 or later"},
+		{"tmux 1.8", false, "sol requires tmux 3.1 or later"},
+		{"tmux next-3.4", true, "tmux next-3.4"},
+		{"tmux next-2.0", false, "sol requires tmux 3.1 or later"},
+		{"weird-version", true, "could not parse version"},
+		{"", true, "could not parse version"},
+	}
+	for _, tt := range tests {
+		result := checkTmuxVersion(tt.version, "/usr/bin/tmux")
+		if result.Passed != tt.passed {
+			t.Errorf("checkTmuxVersion(%q): Passed=%v, want %v (msg: %s)",
+				tt.version, result.Passed, tt.passed, result.Message)
+		}
+		if !strings.Contains(result.Message, tt.substr) {
+			t.Errorf("checkTmuxVersion(%q): Message=%q, want substring %q",
+				tt.version, result.Message, tt.substr)
+		}
+		if !result.Passed && result.Fix == "" {
+			t.Errorf("checkTmuxVersion(%q): expected non-empty Fix when Passed=false", tt.version)
+		}
+	}
+}
+
 func TestCheckGit(t *testing.T) {
 	result := CheckGit()
 	if !result.Passed {
