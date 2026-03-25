@@ -147,10 +147,14 @@ func (r *Forge) EnsureWorktree() error {
 	return nil
 }
 
-// truncate returns the first n bytes of s, or s if shorter.
+// truncate returns the first n runes of s, or s if shorter.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n]
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n])
 }

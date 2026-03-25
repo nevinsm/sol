@@ -27,8 +27,13 @@ var (
 // FormatTokenInt formats a token count with comma separators.
 func FormatTokenInt(n int64) string {
 	s := fmt.Sprintf("%d", n)
+	prefix := ""
+	if s[0] == '-' {
+		prefix = "-"
+		s = s[1:]
+	}
 	if len(s) <= 3 {
-		return s
+		return prefix + s
 	}
 	var result []byte
 	for i, c := range s {
@@ -37,5 +42,5 @@ func FormatTokenInt(n int64) string {
 		}
 		result = append(result, byte(c))
 	}
-	return string(result)
+	return prefix + string(result)
 }

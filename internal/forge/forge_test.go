@@ -413,6 +413,34 @@ func run(t *testing.T, name string, args ...string) string {
 
 // --- Unit Tests ---
 
+func TestTruncate(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		n    int
+		want string
+	}{
+		{"ascii short", "hello", 10, "hello"},
+		{"ascii exact", "hello", 5, "hello"},
+		{"ascii truncate", "hello world", 5, "hello"},
+		{"empty", "", 5, ""},
+		{"zero limit", "hello", 0, ""},
+		{"emoji safe", "👋🌍🎉", 2, "👋🌍"},
+		{"multibyte no split", "café", 3, "caf"},
+		{"multibyte full", "café", 4, "café"},
+		{"chinese", "你好世界", 2, "你好"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncate(tt.s, tt.n)
+			if got != tt.want {
+				t.Errorf("truncate(%q, %d) = %q, want %q", tt.s, tt.n, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadQualityGates(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "quality-gates.txt")
