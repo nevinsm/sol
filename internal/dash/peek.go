@@ -144,7 +144,8 @@ func (pm *peekModel) enter(msg peekMsg) tea.Cmd {
 }
 
 // syncForgeFeed initializes or clears the forge-specific feed based on the
-// currently selected item.
+// currently selected item. Reuses the existing feed instance when the source
+// matches to avoid creating a new feed on every cursor movement.
 func (pm *peekModel) syncForgeFeed() {
 	if pm.cursor >= len(pm.items) {
 		pm.forgeFeed = nil
@@ -152,6 +153,10 @@ func (pm *peekModel) syncForgeFeed() {
 	}
 	item := pm.items[pm.cursor]
 	if item.isForge && pm.solHome != "" {
+		// Reuse existing forge feed if already initialized.
+		if pm.forgeFeed != nil {
+			return
+		}
 		fm := newFeedModelWithSource(pm.solHome, pm.world, "forge")
 		fm.loadInitial()
 		pm.forgeFeed = &fm
@@ -163,6 +168,7 @@ func (pm *peekModel) syncForgeFeed() {
 // syncSourceFeed initializes or clears the source-filtered feed based on the
 // currently selected item. Used for non-peekable items with a source field
 // (e.g., sphere processes) to show their event feed in the right panel.
+// Reuses the existing feed instance when the source matches.
 func (pm *peekModel) syncSourceFeed() {
 	if pm.cursor >= len(pm.items) {
 		pm.sourceFeed = nil
@@ -172,6 +178,10 @@ func (pm *peekModel) syncSourceFeed() {
 	// Only create a source feed for non-peekable items with a source that
 	// aren't handled by the dedicated forge feed.
 	if item.source != "" && !item.peekable && !item.isForge && pm.solHome != "" {
+		// Reuse existing source feed if the source matches.
+		if pm.sourceFeed != nil && pm.sourceFeed.source == item.source {
+			return
+		}
 		fm := newFeedModelWithSource(pm.solHome, pm.world, item.source)
 		fm.loadInitial()
 		pm.sourceFeed = &fm

@@ -513,18 +513,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.peekView.refreshItems(buildSpherePeekItems(m.sphereView))
 				}
 			}
-			// Refresh forge-specific feed if active.
+			// Only refresh the currently visible peek feed(s).
 			if m.peekView.forgeFeed != nil {
+				// Forge feed replaces the main feed at the bottom — only refresh forge.
 				m.peekView.forgeFeed.refresh()
-			}
-			// Refresh source-filtered feed if active.
-			if m.peekView.sourceFeed != nil {
-				m.peekView.sourceFeed.refresh()
+			} else {
+				// Main feed is visible at the bottom — refresh it.
+				m.feed.refresh()
+				// Source feed is shown in the right panel alongside the main feed.
+				if m.peekView.sourceFeed != nil {
+					m.peekView.sourceFeed.refresh()
+				}
 			}
 		}
 
-		// Refresh feed.
-		m.feed.refresh()
+		// Refresh main feed when not in peek mode.
+		if m.activeView() != viewPeek {
+			m.feed.refresh()
+		}
 
 		// Schedule next data tick.
 		cmds = append(cmds, dataTickCmd())
