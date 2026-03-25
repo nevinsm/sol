@@ -81,14 +81,6 @@ func renderListView(items []InboxItem, cursor int, scrollOffset int, width int, 
 		viewportHeight = 1
 	}
 
-	// Adjust scroll offset to keep cursor visible.
-	if cursor < scrollOffset {
-		scrollOffset = cursor
-	}
-	if cursor >= scrollOffset+viewportHeight {
-		scrollOffset = cursor - viewportHeight + 1
-	}
-
 	// Render visible items.
 	end := scrollOffset + viewportHeight
 	if end > len(items) {

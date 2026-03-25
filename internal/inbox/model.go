@@ -50,7 +50,8 @@ type Model struct {
 	scrollOffset int
 
 	// Action flash highlights (item ID -> decay level).
-	highlights map[string]int
+	highlights          map[string]int
+	highlightTickActive bool
 }
 
 // NewModel creates an inbox model.
@@ -78,6 +79,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
+		m.clampScroll()
 
 	case tea.KeyMsg:
 		switch m.view {
@@ -86,6 +88,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
+			m.clampScroll()
 		case viewDetail:
 			cmd := m.updateDetailKeys(msg)
 			if cmd != nil {
@@ -98,7 +101,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case highlightTickMsg:
 		m.decayHighlights()
-		cmds = append(cmds, highlightTickCmd())
+		if len(m.highlights) > 0 {
+			cmds = append(cmds, highlightTickCmd())
+		} else {
+			m.highlightTickActive = false
+		}
 
 	case refreshMsg:
 		m.items = msg.items
@@ -113,13 +120,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = max(0, len(m.items)-1)
 			m.view = viewList
 		}
+		m.clampScroll()
 
 	case actionResultMsg:
 		if msg.err == nil {
 			m.actionErr = ""
 			m.highlights[msg.itemID] = highlightMaxLevel
 			// Start highlight decay if not already running.
-			cmds = append(cmds, highlightTickCmd())
+			if !m.highlightTickActive {
+				m.highlightTickActive = true
+				cmds = append(cmds, highlightTickCmd())
+			}
 			// Immediate refresh to reflect changes.
 			cmds = append(cmds, m.refresh())
 		} else {
@@ -229,6 +240,17 @@ func (m Model) refresh() tea.Cmd {
 	return func() tea.Msg {
 		items, err := FetchItems(m.config.Store)
 		return refreshMsg{items: items, err: err}
+	}
+}
+
+// clampScroll adjusts scrollOffset so the cursor stays visible within the viewport.
+func (m *Model) clampScroll() {
+	viewportHeight := max(1, m.height-5)
+	if m.cursor < m.scrollOffset {
+		m.scrollOffset = m.cursor
+	}
+	if m.cursor >= m.scrollOffset+viewportHeight {
+		m.scrollOffset = m.cursor - viewportHeight + 1
 	}
 }
 
