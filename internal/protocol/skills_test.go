@@ -240,13 +240,20 @@ func TestEnvoySkillContentHasNotifications(t *testing.T) {
 
 	content := generateSkill("notification-handling", ctx)
 
-	for _, notifType := range []string{"MAIL", "MERGED", "MERGE_FAILED", "AGENT_DONE"} {
+	// Envoy receives MAIL notifications only.
+	if !contains(content, "MAIL") {
+		t.Error("envoy notification-handling skill should contain MAIL")
+	}
+
+	// MERGED, MERGE_FAILED, and AGENT_DONE go to governor, not envoy.
+	// The skill should mention them in the context of "not delivered to envoy".
+	for _, notifType := range []string{"MERGED", "MERGE_FAILED", "AGENT_DONE"} {
 		if !contains(content, notifType) {
-			t.Errorf("envoy notification-handling skill should contain %q", notifType)
+			t.Errorf("envoy notification-handling skill should mention %q (in note about governor delivery)", notifType)
 		}
 	}
 
-	// Envoy should NOT have governor-specific notification types.
+	// RECOVERY_NEEDED goes to autarch, not envoy — must not appear.
 	if contains(content, "RECOVERY_NEEDED") {
 		t.Error("envoy notification-handling skill should not contain RECOVERY_NEEDED")
 	}

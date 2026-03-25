@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/nevinsm/sol/internal/adapter"
 )
@@ -114,6 +115,7 @@ func generateSkill(name string, ctx SkillContext) string {
 	case "writ-planning":
 		return skillWritPlanning(ctx)
 	default:
+		fmt.Fprintf(os.Stderr, "protocol: unknown skill name %q\n", name)
 		return ""
 	}
 }
@@ -519,32 +521,24 @@ Always update your brief after handling notifications.
 func skillEnvoyNotificationHandling(_ SkillContext) string {
 	return `---
 name: notification-handling
-description: Handle system notifications — MAIL, MERGED, MERGE_FAILED, AGENT_DONE — and take appropriate action
+description: Handle system notifications — MAIL — and take appropriate action
 ---
 
 # Notification Handling
 
-Notifications arrive at each turn boundary via UserPromptSubmit hook — a file-based queue drained each turn. As an envoy you receive a focused subset; act on each promptly.
+Notifications arrive at each turn boundary via UserPromptSubmit hook — a file-based queue drained each turn. As an envoy you receive MAIL notifications; act on each promptly.
 
 Format: ` + "`[NOTIFICATION] TYPE: Subject — Body`" + `
 
 ## Notification Types
 
-**MAIL** — Operator sent a message via ` + "`sol mail send`" + `.
+**MAIL** — Operator or another agent sent a message via ` + "`sol mail send`" + `.
 - Fields: ` + "`subject`" + `, ` + "`body`" + `
-- Action: Read and acknowledge. The operator is communicating directly — respond to the content.
+- Action: Read and acknowledge. The sender is communicating directly — respond to the content.
 
-**MERGED** — Forge merged one of your resolved writs.
-- Fields: ` + "`writ_id`" + `, ` + "`merge_request_id`" + `
-- Action: Note the merge. If you have follow-up work, proceed.
+## Note on Other Notification Types
 
-**MERGE_FAILED** — Forge failed to merge your writ.
-- Fields: ` + "`writ_id`" + `, ` + "`merge_request_id`" + `, ` + "`reason`" + `
-- Action: (1) Investigate the failure reason. (2) ` + "`git checkout main && git pull`" + `. (3) Fix conflicts. (4) Re-resolve.
-
-**AGENT_DONE** — Another agent resolved a writ you dispatched.
-- Fields: ` + "`writ_id`" + `, ` + "`agent_name`" + `, ` + "`branch`" + `, ` + "`title`" + `, ` + "`merge_request_id`" + `
-- Action: Note the completion. Review the result if relevant to your current work.
+MERGED, MERGE_FAILED, and AGENT_DONE notifications are delivered to the governor, not to envoys. To track writ progress, use ` + "`sol writ show <id>`" + ` or ` + "`sol status`" + ` instead of waiting for notifications.
 
 Always update your brief after handling a notification.
 `
@@ -702,7 +696,7 @@ Cast options: %[4]s (auto if omitted), %[5]s, %[6]s.
 
 - **No agents available:** writ stays ready. If urgent, wait for AGENT_DONE notification before re-dispatching.
 - **Wrong agent selected:** %[1]s untether <id> --agent=<wrong>%[3]s then re-cast.
-- **Outpost gets stuck:** you receive a RECOVERY_NEEDED notification — re-dispatch or escalate if pattern repeats.
+- **Outpost gets stuck:** check writ status with ` + "`" + `sol writ show <id>` + "`" + ` — re-dispatch or escalate if pattern repeats.
 `, "`"+sol, world, "`",
 		"`--agent`",
 		"`--workflow`",
