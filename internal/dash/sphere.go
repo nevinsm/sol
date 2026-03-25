@@ -166,9 +166,11 @@ func (sm *sphereModel) syncProcessSpinner(name string, running bool) {
 }
 
 // updateAnim is called on each animation tick (~30 FPS).
-// Currently a no-op — spinners advance via their own spinner.TickMsg.
-// This hook exists for future pulse/fade effects.
-func (sm *sphereModel) updateAnim() {}
+// Returns true if any animation is actively affecting visible output
+// (running spinners or world spinners present).
+func (sm *sphereModel) updateAnim() bool {
+	return len(sm.processSpinners) > 0 || len(sm.worldSpinners) > 0
+}
 
 func (sm sphereModel) update(msg tea.KeyMsg, data *status.SphereStatus) (sphereModel, tea.Cmd) {
 	// Any key dismisses the "no active session" message.

@@ -426,25 +426,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case animTickMsg:
 		// Animation tick (~30 FPS) — drives visual state.
-		m.dirty = true
+		// Only set dirty when animation actually affects visible output.
 		m.pulsePhase = (m.pulsePhase + 1) % pulseFrames
+
+		// Track whether any feed has an active fade animation.
+		feedAnimating := m.feed.fadeLevel() > 0
 		m.feed.decayAnimation()
 
 		// Decay forge feed animation if active.
 		if m.peekView.forgeFeed != nil {
+			if m.peekView.forgeFeed.fadeLevel() > 0 {
+				feedAnimating = true
+			}
 			m.peekView.forgeFeed.decayAnimation()
 		}
 		// Decay source feed animation if active.
 		if m.peekView.sourceFeed != nil {
+			if m.peekView.sourceFeed.fadeLevel() > 0 {
+				feedAnimating = true
+			}
 			m.peekView.sourceFeed.decayAnimation()
 		}
 
 		// Route to active sub-view for spinner frame updates.
+		viewAnimating := false
 		switch m.activeView() {
 		case viewSphere:
-			m.sphereView.updateAnim()
+			viewAnimating = m.sphereView.updateAnim()
 		case viewWorld:
-			m.worldView.updateAnim()
+			viewAnimating = m.worldView.updateAnim()
+		}
+
+		// Check if highlights are actively fading.
+		highlightsActive := m.healthHighlight > 0 || len(m.agentHighlights) > 0
+
+		// Check if pulse phase affects visible output — only when a required
+		// process is down and pulsing in the current view.
+		pulseVisible := m.hasPulsingIndicator()
+
+		if viewAnimating || feedAnimating || highlightsActive || pulseVisible {
+			m.dirty = true
 		}
 
 		cmds = append(cmds, animTickCmd())
@@ -715,6 +736,54 @@ func (m Model) highlightTickCmd() tea.Cmd {
 // isPulseBright returns true during the bright phase of the pulse cycle.
 func (m Model) isPulseBright() bool {
 	return m.pulsePhase%pulseFrames < pulseFrames/2
+}
+
+// hasPulsingIndicator returns true if the pulse animation affects visible
+// output — i.e., any element uses pulsingStatusIndicator or pulseStyle
+// and we just crossed a pulse phase boundary (bright↔dim transition).
+func (m Model) hasPulsingIndicator() bool {
+	// Pulse only matters at the boundary where bright/dim transitions.
+	// Half-cycle boundary: phase 0 (dim→bright) and pulseFrames/2 (bright→dim).
+	if m.pulsePhase != 0 && m.pulsePhase != pulseFrames/2 {
+		return false
+	}
+
+	switch m.activeView() {
+	case viewSphere:
+		if m.sphereData == nil {
+			return false
+		}
+		// Required sphere processes pulse when down.
+		return !m.sphereData.Prefect.Running ||
+			!m.sphereData.Consul.Running ||
+			!m.sphereData.Broker.Running
+	case viewWorld:
+		if m.worldData == nil {
+			return false
+		}
+		// Required sphere processes in world view: Prefect, Broker.
+		if !m.worldData.Prefect.Running || !m.worldData.Broker.Running {
+			return true
+		}
+		// Stalled or dead-session agents/envoys also pulse.
+		for _, a := range m.worldData.Agents {
+			if a.State == "stalled" || (a.State == "working" && !a.SessionAlive) {
+				return true
+			}
+		}
+		for _, e := range m.worldData.Envoys {
+			if e.State == "stalled" || (e.State == "working" && !e.SessionAlive) {
+				return true
+			}
+		}
+		// Failed MRs pulse.
+		for _, mr := range m.worldData.MergeRequests {
+			if mr.Phase == "failed" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // sessionName returns the tmux session name for an agent in the current world.
