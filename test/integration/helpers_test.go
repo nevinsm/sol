@@ -14,6 +14,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -114,6 +115,9 @@ func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 
 	// 5. Isolated tmux server + stub session command + cleanup.
 	isolateTmux(t)
+
+	// 6. Kill any daemon processes spawned during the test.
+	t.Cleanup(func() { cleanupAllDaemons(t, gtHome) })
 
 	return gtHome, sourceRepo
 }
@@ -363,6 +367,70 @@ func (m *mockSessionChecker) List() ([]session.SessionInfo, error) {
 	return infos, nil
 }
 
+// killWorldDaemons kills sentinel and forge daemon processes for a specific world.
+// Safe to call even if PID files don't exist or processes already exited.
+func killWorldDaemons(t *testing.T, solHome, world string) {
+	t.Helper()
+	pidFiles := []string{
+		filepath.Join(solHome, world, "sentinel.pid"),
+		filepath.Join(solHome, world, "forge", "forge.pid"),
+	}
+	for _, pidFile := range pidFiles {
+		killDaemonByPIDFile(t, pidFile)
+	}
+}
+
+// cleanupAllDaemons finds and kills ALL sol daemon processes spawned by a test.
+// It scans both per-world PID files (sentinel, forge) and sphere-level PID files
+// (prefect, consul, chronicle, ledger, broker) under the given SOL_HOME.
+// Register this as t.Cleanup to ensure no leaked daemon processes after test exit.
+func cleanupAllDaemons(t *testing.T, solHome string) {
+	t.Helper()
+
+	// Sphere-level daemons in .runtime/
+	runtimeDir := filepath.Join(solHome, ".runtime")
+	sphereDaemons := []string{"prefect", "consul", "chronicle", "ledger", "broker"}
+	for _, name := range sphereDaemons {
+		killDaemonByPIDFile(t, filepath.Join(runtimeDir, name+".pid"))
+	}
+
+	// Per-world daemons: scan top-level directories in SOL_HOME for world dirs.
+	entries, err := os.ReadDir(solHome)
+	if err != nil {
+		// SOL_HOME may already be deleted by t.TempDir cleanup — that's fine.
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		worldDir := entry.Name()
+		killDaemonByPIDFile(t, filepath.Join(solHome, worldDir, "sentinel.pid"))
+		killDaemonByPIDFile(t, filepath.Join(solHome, worldDir, "forge", "forge.pid"))
+	}
+}
+
+// killDaemonByPIDFile reads a PID from the given file and gracefully kills the process.
+// Logs but does not fail on any errors (missing files, dead processes, etc.).
+func killDaemonByPIDFile(t *testing.T, pidFile string) {
+	t.Helper()
+	pid, err := processutil.ReadPID(pidFile)
+	if err != nil {
+		t.Logf("cleanupDaemon: reading %s: %v", pidFile, err)
+		return
+	}
+	if pid == 0 {
+		return
+	}
+	if !processutil.IsRunning(pid) {
+		return
+	}
+	t.Logf("cleanupDaemon: killing pid %d from %s", pid, pidFile)
+	if err := processutil.GracefulKill(pid, 2*time.Second); err != nil {
+		t.Logf("cleanupDaemon: killing pid %d: %v", pid, err)
+	}
+}
+
 // --- Arc 3.5 helpers ---
 
 // runGit runs a git command in the specified directory.
@@ -449,6 +517,9 @@ func setupTestEnvWithRepo(t *testing.T) (gtHome string, sourceRepo string) {
 
 	// Isolated tmux server + stub session command + cleanup.
 	isolateTmux(t)
+
+	// Kill any daemon processes spawned during the test.
+	t.Cleanup(func() { cleanupAllDaemons(t, gtHome) })
 
 	return gtHome, sourceRepo
 }

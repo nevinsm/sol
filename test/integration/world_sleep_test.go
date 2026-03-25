@@ -246,6 +246,9 @@ func TestWorldWakeVerifiesServices(t *testing.T) {
 	isolateTmux(t)
 	initWorld(t, gtHome, "wakeverify")
 
+	// Defense-in-depth: kill any daemons spawned by world wake.
+	t.Cleanup(func() { killWorldDaemons(t, gtHome, "wakeverify") })
+
 	// Sleep the world first.
 	out, err := runGT(t, gtHome, "world", "sleep", "wakeverify")
 	if err != nil {
@@ -301,6 +304,9 @@ func TestWorldSleepForceCrashRecoveryScenario(t *testing.T) {
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "crashtest", sourceRepo)
+
+	// Defense-in-depth: kill any daemons spawned by world wake.
+	t.Cleanup(func() { killWorldDaemons(t, gtHome, "crashtest") })
 
 	worldStore, sphereStore := openStores(t, "crashtest")
 
