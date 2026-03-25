@@ -201,20 +201,13 @@ func renderCost(b *strings.Builder, td *TraceData) {
 		}
 	}
 
-	if len(td.Cost.Models) > 1 || hasPricing {
-		if hasPricing {
-			fmt.Fprintf(tw, "  \t\t\t\t\tTotal: $%.2f\n", td.Cost.Total)
-		}
+	if len(td.Cost.Models) > 1 && hasPricing {
+		fmt.Fprintf(tw, "  \t\t\t\t\tTotal: $%.2f\n", td.Cost.Total)
 	}
 	tw.Flush()
 
 	if td.Cost.CycleTime != "" {
 		b.WriteString(fmt.Sprintf("  Cycle time: %s (cast → merge)\n", td.Cost.CycleTime))
-	}
-
-	if !hasPricing && len(td.Cost.Models) > 0 {
-		b.WriteString(dimStyle.Render("  (pricing not configured — set [pricing] in sol.toml)"))
-		b.WriteString("\n")
 	}
 }
 

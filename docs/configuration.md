@@ -147,22 +147,6 @@ Sitrep AI assessment settings.
 
 ---
 
-### `[pricing]`
-
-Token pricing configuration. Configured in `sol.toml` only (not inherited by per-world config). Maps model names (as they appear in token usage records) to per-token costs in dollars per million tokens.
-
-Each entry is a TOML table keyed by model name:
-
-```toml
-[pricing."<model-name>"]
-input         = <float>  # dollars per million input tokens
-output        = <float>  # dollars per million output tokens
-cache_read    = <float>  # dollars per million cache read tokens
-cache_creation = <float> # dollars per million cache creation tokens
-```
-
-Models with no pricing entry are excluded from cost calculations and reported as "unpriced".
-
 ---
 
 ## Annotated Examples
@@ -285,25 +269,4 @@ escalation_threshold = 5
 model          = "claude-sonnet-4-6"
 assess_command = "claude"
 timeout        = "60s"
-
-# Token pricing for cost tracking.
-# Keys are model names as they appear in token usage records.
-# Values are costs in dollars per million tokens.
-[pricing."claude-sonnet-4-5"]
-input          = 3.00
-output         = 15.00
-cache_read     = 0.30
-cache_creation = 3.75
-
-[pricing."claude-opus-4-5"]
-input          = 15.00
-output         = 75.00
-cache_read     = 1.50
-cache_creation = 18.75
-
-[pricing."claude-haiku-4-5"]
-input          = 0.80
-output         = 4.00
-cache_read     = 0.08
-cache_creation = 1.00
 ```

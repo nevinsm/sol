@@ -413,22 +413,6 @@ sol cost --since=7d               # filter to last 7 days
 sol cost --since=2026-01-01       # filter to since a date
 ```
 
-Token data is collected by the ledger (an OTLP receiver) and stored in the world database. Costs are computed from the pricing configuration in `sol.toml`.
+Token data is collected by the ledger (an OTLP receiver) and stored in the world database. Costs come from the API-reported `cost_usd` in telemetry data — no manual pricing configuration is needed.
 
-Without pricing configuration, `sol cost` shows raw token counts only. Add pricing to see dollar estimates.
-
-### Pricing configuration
-
-In `$SOL_HOME/sol.toml`:
-
-```toml
-[pricing]
-"claude-sonnet-4-5" = { input = 3.00, output = 15.00, cache_read = 0.30, cache_creation = 3.75 }
-"claude-opus-4-5"   = { input = 15.00, output = 75.00, cache_read = 1.50, cache_creation = 18.75 }
-```
-
-Prices are in USD per million tokens. Model names must match exactly what Claude Code reports in its telemetry.
-
-If `sol cost` shows `unpriced` for a model, it means that model name is not in your `[pricing]` table. The output will tell you which models are unpriced.
-
-For full pricing configuration reference, see [docs/configuration.md](configuration.md).
+Pre-ledger data without cost information shows `N/A` instead of a dollar amount.

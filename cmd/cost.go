@@ -79,23 +79,17 @@ func runCost(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--world and --caravan cannot be used together")
 	}
 
-	// Load pricing config.
-	pricing, err := config.LoadPricing()
-	if err != nil {
-		return fmt.Errorf("failed to load pricing: %w", err)
-	}
-
 	switch {
 	case costCaravan != "":
-		return runCostCaravan(pricing, since)
+		return runCostCaravan(since)
 	case costWrit != "":
-		return runCostWrit(pricing, since)
+		return runCostWrit(since)
 	case costAgent != "":
-		return runCostAgent(pricing, since)
+		return runCostAgent(since)
 	case costWorld != "":
-		return runCostWorld(pricing, since)
+		return runCostWorld(since)
 	default:
-		return runCostSphere(pricing, since)
+		return runCostSphere(since)
 	}
 }
 
@@ -134,30 +128,39 @@ func parseSinceFlag(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("invalid --since %q: expected duration (24h, 7d), date (2006-01-02), or RFC3339", s)
 }
 
+// sumCostUSD sums CostUSD from token summaries. Returns nil if any summary
+// has a nil CostUSD (partial totals are misleading).
+func sumCostUSD(summaries []store.TokenSummary) *float64 {
+	var total float64
+	for _, ts := range summaries {
+		if ts.CostUSD == nil {
+			return nil
+		}
+		total += *ts.CostUSD
+	}
+	return &total
+}
+
 // --- Sphere-level cost (default) ---
 
 // sphereCostRow holds per-world cost data for sphere view.
 type sphereCostRow struct {
-	World        string `json:"world"`
-	Agents       int    `json:"agents"`
-	Writs        int    `json:"writs"`
-	InputTokens  int64  `json:"input_tokens"`
-	OutputTokens int64  `json:"output_tokens"`
-	CacheTokens  int64  `json:"cache_tokens"`
-	Cost         *float64 `json:"cost,omitempty"`
-	Unpriced     []string `json:"unpriced,omitempty"`
+	World        string   `json:"world"`
+	Agents       int      `json:"agents"`
+	Writs        int      `json:"writs"`
+	InputTokens  int64    `json:"input_tokens"`
+	OutputTokens int64    `json:"output_tokens"`
+	CacheTokens  int64    `json:"cache_tokens"`
+	Cost         *float64 `json:"cost"`
 }
 
 type sphereCostResult struct {
-	Rows         []sphereCostRow `json:"worlds"`
-	TotalCost    *float64        `json:"total_cost,omitempty"`
-	AllUnpriced  []string        `json:"unpriced_models,omitempty"`
-	HasPricing   bool            `json:"has_pricing"`
-	PricingCount int             `json:"pricing_model_count"`
-	Period       string          `json:"period"`
+	Rows      []sphereCostRow `json:"worlds"`
+	TotalCost *float64        `json:"total_cost"`
+	Period    string          `json:"period"`
 }
 
-func runCostSphere(pricing config.PricingConfig, since *time.Time) error {
+func runCostSphere(since *time.Time) error {
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		return err
@@ -169,10 +172,9 @@ func runCostSphere(pricing config.PricingConfig, since *time.Time) error {
 		return err
 	}
 
-	hasPricing := len(pricing) > 0
 	var rows []sphereCostRow
 	var totalCost float64
-	allUnpriced := make(map[string]bool)
+	anyNilCost := false
 
 	for _, w := range worlds {
 		worldStore, err := store.OpenWorld(w.Name)
@@ -223,15 +225,12 @@ func runCostSphere(pricing config.PricingConfig, since *time.Time) error {
 			row.CacheTokens += ts.CacheReadTokens + ts.CacheCreationTokens
 		}
 
-		if hasPricing {
-			cfgSummaries := storeToConfigSummaries(summaries)
-			cost, unpriced := pricing.ComputeCost(cfgSummaries)
-			row.Cost = &cost
-			row.Unpriced = unpriced
-			totalCost += cost
-			for _, m := range unpriced {
-				allUnpriced[m] = true
-			}
+		rowCost := sumCostUSD(summaries)
+		row.Cost = rowCost
+		if rowCost == nil {
+			anyNilCost = true
+		} else {
+			totalCost += *rowCost
 		}
 
 		rows = append(rows, row)
@@ -243,78 +242,52 @@ func runCostSphere(pricing config.PricingConfig, since *time.Time) error {
 	}
 
 	result := sphereCostResult{
-		Rows:         rows,
-		HasPricing:   hasPricing,
-		PricingCount: len(pricing),
-		Period:       period,
+		Rows:   rows,
+		Period: period,
 	}
-	if hasPricing {
+	if !anyNilCost {
 		result.TotalCost = &totalCost
-	}
-	if len(allUnpriced) > 0 {
-		for m := range allUnpriced {
-			result.AllUnpriced = append(result.AllUnpriced, m)
-		}
-		sort.Strings(result.AllUnpriced)
 	}
 
 	if costJSON {
 		return printJSON(result)
 	}
 
-	renderSphereCost(result, hasPricing)
+	renderSphereCost(result)
 	return nil
 }
 
-func renderSphereCost(result sphereCostResult, hasPricing bool) {
+func renderSphereCost(result sphereCostResult) {
 	if len(result.Rows) == 0 {
 		fmt.Println("No token usage data found.")
 		return
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
-	if hasPricing {
-		fmt.Fprintf(tw, "World\tAgents\tWrits\tInput Tokens\tOutput Tokens\tCache Tokens\tCost\t\n")
-	} else {
-		fmt.Fprintf(tw, "World\tAgents\tWrits\tInput Tokens\tOutput Tokens\tCache Tokens\t\n")
-	}
+	fmt.Fprintf(tw, "World\tAgents\tWrits\tInput Tokens\tOutput Tokens\tCache Tokens\tCost\t\n")
 
 	for _, row := range result.Rows {
-		if hasPricing {
-			costStr := "unpriced"
-			if row.Cost != nil {
-				costStr = formatDollars(*row.Cost)
-			}
-			fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t%s\t\n",
-				row.World, row.Agents, row.Writs,
-				formatTokenInt(row.InputTokens),
-				formatTokenInt(row.OutputTokens),
-				formatTokenInt(row.CacheTokens),
-				costStr)
-		} else {
-			fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t\n",
-				row.World, row.Agents, row.Writs,
-				formatTokenInt(row.InputTokens),
-				formatTokenInt(row.OutputTokens),
-				formatTokenInt(row.CacheTokens))
+		costStr := "N/A"
+		if row.Cost != nil {
+			costStr = formatDollars(*row.Cost)
 		}
+		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t%s\t\n",
+			row.World, row.Agents, row.Writs,
+			formatTokenInt(row.InputTokens),
+			formatTokenInt(row.OutputTokens),
+			formatTokenInt(row.CacheTokens),
+			costStr)
 	}
 
-	if hasPricing && result.TotalCost != nil {
-		fmt.Fprintf(tw, "\t\t\t\t\tTotal:\t%s\t\n", formatDollars(*result.TotalCost))
+	totalStr := "N/A"
+	if result.TotalCost != nil {
+		totalStr = formatDollars(*result.TotalCost)
 	}
+	fmt.Fprintf(tw, "\t\t\t\t\tTotal:\t%s\t\n", totalStr)
 	tw.Flush()
 
 	fmt.Println()
 	fmt.Printf("Period: %s\n", result.Period)
-	if hasPricing {
-		fmt.Printf("Pricing: sol.toml (%d models configured)\n", result.PricingCount)
-	}
-
-	if len(result.AllUnpriced) > 0 {
-		fmt.Printf("\n%d unpriced model(s): %s. Add to [pricing] in sol.toml.\n",
-			len(result.AllUnpriced), strings.Join(result.AllUnpriced, ", "))
-	}
 }
 
 // --- World-level cost (--world) ---
@@ -325,19 +298,17 @@ type worldCostRow struct {
 	InputTokens  int64    `json:"input_tokens"`
 	OutputTokens int64    `json:"output_tokens"`
 	CacheTokens  int64    `json:"cache_tokens"`
-	Cost         *float64 `json:"cost,omitempty"`
+	Cost         *float64 `json:"cost"`
 }
 
 type worldCostResult struct {
-	World        string         `json:"world"`
-	Rows         []worldCostRow `json:"agents"`
-	TotalCost    *float64       `json:"total_cost,omitempty"`
-	AllUnpriced  []string       `json:"unpriced_models,omitempty"`
-	HasPricing   bool           `json:"has_pricing"`
-	Period       string         `json:"period"`
+	World     string         `json:"world"`
+	Rows      []worldCostRow `json:"agents"`
+	TotalCost *float64       `json:"total_cost"`
+	Period    string         `json:"period"`
 }
 
-func runCostWorld(pricing config.PricingConfig, since *time.Time) error {
+func runCostWorld(since *time.Time) error {
 	if err := config.RequireWorld(costWorld); err != nil {
 		return err
 	}
@@ -347,8 +318,6 @@ func runCostWorld(pricing config.PricingConfig, since *time.Time) error {
 		return err
 	}
 	defer worldStore.Close()
-
-	hasPricing := len(pricing) > 0
 
 	var agentSummaries []store.AgentTokenSummary
 	if since != nil {
@@ -362,7 +331,7 @@ func runCostWorld(pricing config.PricingConfig, since *time.Time) error {
 
 	var rows []worldCostRow
 	var totalCost float64
-	allUnpriced := make(map[string]bool)
+	anyNilCost := false
 
 	for _, ats := range agentSummaries {
 		row := worldCostRow{
@@ -371,22 +340,13 @@ func runCostWorld(pricing config.PricingConfig, since *time.Time) error {
 			InputTokens:  ats.InputTokens,
 			OutputTokens: ats.OutputTokens,
 			CacheTokens:  ats.CacheReadTokens + ats.CacheCreationTokens,
+			Cost:         ats.CostUSD,
 		}
 
-		if hasPricing {
-			// For accurate per-model pricing, query per-model breakdown for this agent.
-			var modelSummaries []store.TokenSummary
-			modelSummaries, err = worldStore.AggregateTokens(ats.AgentName)
-			if err != nil {
-				return err
-			}
-			cfgSummaries := storeToConfigSummaries(modelSummaries)
-			cost, unpriced := pricing.ComputeCost(cfgSummaries)
-			row.Cost = &cost
-			totalCost += cost
-			for _, m := range unpriced {
-				allUnpriced[m] = true
-			}
+		if ats.CostUSD == nil {
+			anyNilCost = true
+		} else {
+			totalCost += *ats.CostUSD
 		}
 
 		rows = append(rows, row)
@@ -398,72 +358,50 @@ func runCostWorld(pricing config.PricingConfig, since *time.Time) error {
 	}
 
 	result := worldCostResult{
-		World:      costWorld,
-		Rows:       rows,
-		HasPricing: hasPricing,
-		Period:     period,
+		World:  costWorld,
+		Rows:   rows,
+		Period: period,
 	}
-	if hasPricing {
+	if !anyNilCost {
 		result.TotalCost = &totalCost
-	}
-	if len(allUnpriced) > 0 {
-		for m := range allUnpriced {
-			result.AllUnpriced = append(result.AllUnpriced, m)
-		}
-		sort.Strings(result.AllUnpriced)
 	}
 
 	if costJSON {
 		return printJSON(result)
 	}
 
-	renderWorldCost(result, hasPricing)
+	renderWorldCost(result)
 	return nil
 }
 
-func renderWorldCost(result worldCostResult, hasPricing bool) {
+func renderWorldCost(result worldCostResult) {
 	if len(result.Rows) == 0 {
 		fmt.Printf("No token usage data found for world %q.\n", result.World)
 		return
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
-	if hasPricing {
-		fmt.Fprintf(tw, "Agent\tWrits\tInput Tokens\tOutput Tokens\tCache Tokens\tCost\t\n")
-	} else {
-		fmt.Fprintf(tw, "Agent\tWrits\tInput Tokens\tOutput Tokens\tCache Tokens\t\n")
-	}
+	fmt.Fprintf(tw, "Agent\tWrits\tInput Tokens\tOutput Tokens\tCache Tokens\tCost\t\n")
 
 	for _, row := range result.Rows {
-		if hasPricing {
-			costStr := "unpriced"
-			if row.Cost != nil {
-				costStr = formatDollars(*row.Cost)
-			}
-			fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\t%s\t\n",
-				row.Agent, row.Writs,
-				formatTokenInt(row.InputTokens),
-				formatTokenInt(row.OutputTokens),
-				formatTokenInt(row.CacheTokens),
-				costStr)
-		} else {
-			fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\t\n",
-				row.Agent, row.Writs,
-				formatTokenInt(row.InputTokens),
-				formatTokenInt(row.OutputTokens),
-				formatTokenInt(row.CacheTokens))
+		costStr := "N/A"
+		if row.Cost != nil {
+			costStr = formatDollars(*row.Cost)
 		}
+		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\t%s\t\n",
+			row.Agent, row.Writs,
+			formatTokenInt(row.InputTokens),
+			formatTokenInt(row.OutputTokens),
+			formatTokenInt(row.CacheTokens),
+			costStr)
 	}
 
-	if hasPricing && result.TotalCost != nil {
-		fmt.Fprintf(tw, "\t\t\t\tTotal:\t%s\t\n", formatDollars(*result.TotalCost))
+	totalStr := "N/A"
+	if result.TotalCost != nil {
+		totalStr = formatDollars(*result.TotalCost)
 	}
+	fmt.Fprintf(tw, "\t\t\t\tTotal:\t%s\t\n", totalStr)
 	tw.Flush()
-
-	if len(result.AllUnpriced) > 0 {
-		fmt.Printf("\n%d unpriced model(s): %s. Add to [pricing] in sol.toml.\n",
-			len(result.AllUnpriced), strings.Join(result.AllUnpriced, ", "))
-	}
 }
 
 // --- Agent-level cost (--agent --world) ---
@@ -475,20 +413,18 @@ type agentCostRow struct {
 	InputTokens  int64    `json:"input_tokens"`
 	OutputTokens int64    `json:"output_tokens"`
 	CacheTokens  int64    `json:"cache_tokens"`
-	Cost         *float64 `json:"cost,omitempty"`
+	Cost         *float64 `json:"cost"`
 }
 
 type agentCostResult struct {
-	World       string         `json:"world"`
-	Agent       string         `json:"agent"`
-	Rows        []agentCostRow `json:"writs"`
-	TotalCost   *float64       `json:"total_cost,omitempty"`
-	AllUnpriced []string       `json:"unpriced_models,omitempty"`
-	HasPricing  bool           `json:"has_pricing"`
-	Period      string         `json:"period"`
+	World     string         `json:"world"`
+	Agent     string         `json:"agent"`
+	Rows      []agentCostRow `json:"writs"`
+	TotalCost *float64       `json:"total_cost"`
+	Period    string         `json:"period"`
 }
 
-func runCostAgent(pricing config.PricingConfig, since *time.Time) error {
+func runCostAgent(since *time.Time) error {
 	if err := config.RequireWorld(costWorld); err != nil {
 		return err
 	}
@@ -498,8 +434,6 @@ func runCostAgent(pricing config.PricingConfig, since *time.Time) error {
 		return err
 	}
 	defer worldStore.Close()
-
-	hasPricing := len(pricing) > 0
 
 	var writTokens map[string][]store.TokenSummary
 	if since != nil {
@@ -520,7 +454,7 @@ func runCostAgent(pricing config.PricingConfig, since *time.Time) error {
 
 	var rows []agentCostRow
 	var totalCost float64
-	allUnpriced := make(map[string]bool)
+	anyNilCost := false
 
 	for _, writID := range writIDs {
 		summaries := writTokens[writID]
@@ -541,14 +475,12 @@ func runCostAgent(pricing config.PricingConfig, since *time.Time) error {
 			row.CacheTokens += ts.CacheReadTokens + ts.CacheCreationTokens
 		}
 
-		if hasPricing {
-			cfgSummaries := storeToConfigSummaries(summaries)
-			cost, unpriced := pricing.ComputeCost(cfgSummaries)
-			row.Cost = &cost
-			totalCost += cost
-			for _, m := range unpriced {
-				allUnpriced[m] = true
-			}
+		rowCost := sumCostUSD(summaries)
+		row.Cost = rowCost
+		if rowCost == nil {
+			anyNilCost = true
+		} else {
+			totalCost += *rowCost
 		}
 
 		rows = append(rows, row)
@@ -560,42 +492,31 @@ func runCostAgent(pricing config.PricingConfig, since *time.Time) error {
 	}
 
 	result := agentCostResult{
-		World:      costWorld,
-		Agent:      costAgent,
-		Rows:       rows,
-		HasPricing: hasPricing,
-		Period:     period,
+		World:  costWorld,
+		Agent:  costAgent,
+		Rows:   rows,
+		Period: period,
 	}
-	if hasPricing {
+	if !anyNilCost {
 		result.TotalCost = &totalCost
-	}
-	if len(allUnpriced) > 0 {
-		for m := range allUnpriced {
-			result.AllUnpriced = append(result.AllUnpriced, m)
-		}
-		sort.Strings(result.AllUnpriced)
 	}
 
 	if costJSON {
 		return printJSON(result)
 	}
 
-	renderAgentCost(result, hasPricing)
+	renderAgentCost(result)
 	return nil
 }
 
-func renderAgentCost(result agentCostResult, hasPricing bool) {
+func renderAgentCost(result agentCostResult) {
 	if len(result.Rows) == 0 {
 		fmt.Printf("No token usage data found for agent %q in world %q.\n", result.Agent, result.World)
 		return
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
-	if hasPricing {
-		fmt.Fprintf(tw, "Writ\tKind\tStatus\tInput\tOutput\tCache\tCost\t\n")
-	} else {
-		fmt.Fprintf(tw, "Writ\tKind\tStatus\tInput\tOutput\tCache\t\n")
-	}
+	fmt.Fprintf(tw, "Writ\tKind\tStatus\tInput\tOutput\tCache\tCost\t\n")
 
 	for _, row := range result.Rows {
 		wid := row.WritID
@@ -611,35 +532,24 @@ func renderAgentCost(result agentCostResult, hasPricing bool) {
 			status = "-"
 		}
 
-		if hasPricing {
-			costStr := "unpriced"
-			if row.Cost != nil {
-				costStr = formatDollars(*row.Cost)
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
-				wid, kind, status,
-				formatTokenInt(row.InputTokens),
-				formatTokenInt(row.OutputTokens),
-				formatTokenInt(row.CacheTokens),
-				costStr)
-		} else {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t\n",
-				wid, kind, status,
-				formatTokenInt(row.InputTokens),
-				formatTokenInt(row.OutputTokens),
-				formatTokenInt(row.CacheTokens))
+		costStr := "N/A"
+		if row.Cost != nil {
+			costStr = formatDollars(*row.Cost)
 		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
+			wid, kind, status,
+			formatTokenInt(row.InputTokens),
+			formatTokenInt(row.OutputTokens),
+			formatTokenInt(row.CacheTokens),
+			costStr)
 	}
 
-	if hasPricing && result.TotalCost != nil {
-		fmt.Fprintf(tw, "\t\t\t\tTotal:\t%s\t\n", formatDollars(*result.TotalCost))
+	totalStr := "N/A"
+	if result.TotalCost != nil {
+		totalStr = formatDollars(*result.TotalCost)
 	}
+	fmt.Fprintf(tw, "\t\t\t\tTotal:\t%s\t\n", totalStr)
 	tw.Flush()
-
-	if len(result.AllUnpriced) > 0 {
-		fmt.Printf("\n%d unpriced model(s): %s. Add to [pricing] in sol.toml.\n",
-			len(result.AllUnpriced), strings.Join(result.AllUnpriced, ", "))
-	}
 }
 
 // --- Writ-level cost (--writ --world) ---
@@ -650,22 +560,20 @@ type writCostRow struct {
 	OutputTokens        int64    `json:"output_tokens"`
 	CacheReadTokens     int64    `json:"cache_read_tokens"`
 	CacheCreationTokens int64    `json:"cache_creation_tokens"`
-	Cost                *float64 `json:"cost,omitempty"`
+	Cost                *float64 `json:"cost"`
 }
 
 type writCostResult struct {
-	WritID      string        `json:"writ_id"`
-	Title       string        `json:"title,omitempty"`
-	Kind        string        `json:"kind,omitempty"`
-	Status      string        `json:"status,omitempty"`
-	Rows        []writCostRow `json:"models"`
-	TotalCost   *float64      `json:"total_cost,omitempty"`
-	AllUnpriced []string      `json:"unpriced_models,omitempty"`
-	HasPricing  bool          `json:"has_pricing"`
-	Period      string        `json:"period"`
+	WritID    string        `json:"writ_id"`
+	Title     string        `json:"title,omitempty"`
+	Kind      string        `json:"kind,omitempty"`
+	Status    string        `json:"status,omitempty"`
+	Rows      []writCostRow `json:"models"`
+	TotalCost *float64      `json:"total_cost"`
+	Period    string        `json:"period"`
 }
 
-func runCostWrit(pricing config.PricingConfig, since *time.Time) error {
+func runCostWrit(since *time.Time) error {
 	if err := config.RequireWorld(costWorld); err != nil {
 		return err
 	}
@@ -682,8 +590,6 @@ func runCostWrit(pricing config.PricingConfig, since *time.Time) error {
 		return fmt.Errorf("writ %q not found in world %q", costWrit, costWorld)
 	}
 
-	hasPricing := len(pricing) > 0
-
 	var summaries []store.TokenSummary
 	if since != nil {
 		summaries, err = worldStore.TokensForWritSince(costWrit, *since)
@@ -696,7 +602,7 @@ func runCostWrit(pricing config.PricingConfig, since *time.Time) error {
 
 	var rows []writCostRow
 	var totalCost float64
-	allUnpriced := make(map[string]bool)
+	anyNilCost := false
 
 	for _, ts := range summaries {
 		row := writCostRow{
@@ -705,16 +611,13 @@ func runCostWrit(pricing config.PricingConfig, since *time.Time) error {
 			OutputTokens:        ts.OutputTokens,
 			CacheReadTokens:     ts.CacheReadTokens,
 			CacheCreationTokens: ts.CacheCreationTokens,
+			Cost:                ts.CostUSD,
 		}
 
-		if hasPricing {
-			cfgSummaries := storeToConfigSummaries([]store.TokenSummary{ts})
-			cost, unpriced := pricing.ComputeCost(cfgSummaries)
-			row.Cost = &cost
-			totalCost += cost
-			for _, m := range unpriced {
-				allUnpriced[m] = true
-			}
+		if ts.CostUSD == nil {
+			anyNilCost = true
+		} else {
+			totalCost += *ts.CostUSD
 		}
 
 		rows = append(rows, row)
@@ -726,33 +629,26 @@ func runCostWrit(pricing config.PricingConfig, since *time.Time) error {
 	}
 
 	result := writCostResult{
-		WritID:     costWrit,
-		Title:      writ.Title,
-		Kind:       writ.Kind,
-		Status:     string(writ.Status),
-		Rows:       rows,
-		HasPricing: hasPricing,
-		Period:     period,
+		WritID: costWrit,
+		Title:  writ.Title,
+		Kind:   writ.Kind,
+		Status: string(writ.Status),
+		Rows:   rows,
+		Period: period,
 	}
-	if hasPricing {
+	if !anyNilCost {
 		result.TotalCost = &totalCost
-	}
-	if len(allUnpriced) > 0 {
-		for m := range allUnpriced {
-			result.AllUnpriced = append(result.AllUnpriced, m)
-		}
-		sort.Strings(result.AllUnpriced)
 	}
 
 	if costJSON {
 		return printJSON(result)
 	}
 
-	renderWritCost(result, hasPricing)
+	renderWritCost(result)
 	return nil
 }
 
-func renderWritCost(result writCostResult, hasPricing bool) {
+func renderWritCost(result writCostResult) {
 	// Print writ header.
 	header := fmt.Sprintf("Writ: %s", result.WritID)
 	if result.Title != "" {
@@ -777,11 +673,7 @@ func renderWritCost(result writCostResult, hasPricing bool) {
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
-	if hasPricing {
-		fmt.Fprintf(tw, "Model\tInput\tOutput\tCache Read\tCache Create\tCost\t\n")
-	} else {
-		fmt.Fprintf(tw, "Model\tInput\tOutput\tCache Read\tCache Create\t\n")
-	}
+	fmt.Fprintf(tw, "Model\tInput\tOutput\tCache Read\tCache Create\tCost\t\n")
 
 	var totalInput, totalOutput, totalCacheRead, totalCacheCreate int64
 	for _, row := range result.Rows {
@@ -790,58 +682,35 @@ func renderWritCost(result writCostResult, hasPricing bool) {
 		totalCacheRead += row.CacheReadTokens
 		totalCacheCreate += row.CacheCreationTokens
 
-		if hasPricing {
-			costStr := "unpriced"
-			if row.Cost != nil {
-				costStr = formatDollars(*row.Cost)
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t\n",
-				row.Model,
-				formatTokenInt(row.InputTokens),
-				formatTokenInt(row.OutputTokens),
-				formatTokenInt(row.CacheReadTokens),
-				formatTokenInt(row.CacheCreationTokens),
-				costStr)
-		} else {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t\n",
-				row.Model,
-				formatTokenInt(row.InputTokens),
-				formatTokenInt(row.OutputTokens),
-				formatTokenInt(row.CacheReadTokens),
-				formatTokenInt(row.CacheCreationTokens))
+		costStr := "N/A"
+		if row.Cost != nil {
+			costStr = formatDollars(*row.Cost)
 		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t\n",
+			row.Model,
+			formatTokenInt(row.InputTokens),
+			formatTokenInt(row.OutputTokens),
+			formatTokenInt(row.CacheReadTokens),
+			formatTokenInt(row.CacheCreationTokens),
+			costStr)
 	}
 
 	// Totals row (only when more than one model).
 	if len(result.Rows) > 1 {
-		if hasPricing {
-			fmt.Fprintf(tw, "\t-------\t------\t------\t------\t------\t\n")
-			costStr := "$0.00"
-			if result.TotalCost != nil {
-				costStr = formatDollars(*result.TotalCost)
-			}
-			fmt.Fprintf(tw, "Total\t%s\t%s\t%s\t%s\t%s\t\n",
-				formatTokenInt(totalInput),
-				formatTokenInt(totalOutput),
-				formatTokenInt(totalCacheRead),
-				formatTokenInt(totalCacheCreate),
-				costStr)
-		} else {
-			fmt.Fprintf(tw, "\t-------\t------\t------\t------\t\n")
-			fmt.Fprintf(tw, "Total\t%s\t%s\t%s\t%s\t\n",
-				formatTokenInt(totalInput),
-				formatTokenInt(totalOutput),
-				formatTokenInt(totalCacheRead),
-				formatTokenInt(totalCacheCreate))
+		fmt.Fprintf(tw, "\t-------\t------\t------\t------\t------\t\n")
+		totalStr := "N/A"
+		if result.TotalCost != nil {
+			totalStr = formatDollars(*result.TotalCost)
 		}
+		fmt.Fprintf(tw, "Total\t%s\t%s\t%s\t%s\t%s\t\n",
+			formatTokenInt(totalInput),
+			formatTokenInt(totalOutput),
+			formatTokenInt(totalCacheRead),
+			formatTokenInt(totalCacheCreate),
+			totalStr)
 	}
 
 	tw.Flush()
-
-	if len(result.AllUnpriced) > 0 {
-		fmt.Printf("\n%d unpriced model(s): %s. Add to [pricing] in sol.toml.\n",
-			len(result.AllUnpriced), strings.Join(result.AllUnpriced, ", "))
-	}
 }
 
 // --- Caravan-level cost (--caravan) ---
@@ -855,20 +724,18 @@ type caravanCostRow struct {
 	InputTokens  int64    `json:"input_tokens"`
 	OutputTokens int64    `json:"output_tokens"`
 	CacheTokens  int64    `json:"cache_tokens"`
-	Cost         *float64 `json:"cost,omitempty"`
+	Cost         *float64 `json:"cost"`
 }
 
 type caravanCostResult struct {
 	CaravanID   string           `json:"caravan_id"`
 	CaravanName string           `json:"caravan_name"`
 	Rows        []caravanCostRow `json:"writs"`
-	TotalCost   *float64         `json:"total_cost,omitempty"`
-	AllUnpriced []string         `json:"unpriced_models,omitempty"`
-	HasPricing  bool             `json:"has_pricing"`
+	TotalCost   *float64         `json:"total_cost"`
 	Period      string           `json:"period"`
 }
 
-func runCostCaravan(pricing config.PricingConfig, since *time.Time) error {
+func runCostCaravan(since *time.Time) error {
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		return err
@@ -886,10 +753,9 @@ func runCostCaravan(pricing config.PricingConfig, since *time.Time) error {
 		return err
 	}
 
-	hasPricing := len(pricing) > 0
 	var rows []caravanCostRow
 	var totalCost float64
-	allUnpriced := make(map[string]bool)
+	anyNilCost := false
 
 	// Group items by world to minimize store opens.
 	byWorld := make(map[string][]store.CaravanItem)
@@ -933,14 +799,12 @@ func runCostCaravan(pricing config.PricingConfig, since *time.Time) error {
 				row.CacheTokens += ts.CacheReadTokens + ts.CacheCreationTokens
 			}
 
-			if hasPricing {
-				cfgSummaries := storeToConfigSummaries(summaries)
-				cost, unpriced := pricing.ComputeCost(cfgSummaries)
-				row.Cost = &cost
-				totalCost += cost
-				for _, m := range unpriced {
-					allUnpriced[m] = true
-				}
+			rowCost := sumCostUSD(summaries)
+			row.Cost = rowCost
+			if rowCost == nil {
+				anyNilCost = true
+			} else {
+				totalCost += *rowCost
 			}
 
 			rows = append(rows, row)
@@ -965,28 +829,21 @@ func runCostCaravan(pricing config.PricingConfig, since *time.Time) error {
 		CaravanID:   caravan.ID,
 		CaravanName: caravan.Name,
 		Rows:        rows,
-		HasPricing:  hasPricing,
 		Period:      period,
 	}
-	if hasPricing {
+	if !anyNilCost {
 		result.TotalCost = &totalCost
-	}
-	if len(allUnpriced) > 0 {
-		for m := range allUnpriced {
-			result.AllUnpriced = append(result.AllUnpriced, m)
-		}
-		sort.Strings(result.AllUnpriced)
 	}
 
 	if costJSON {
 		return printJSON(result)
 	}
 
-	renderCaravanCost(result, hasPricing)
+	renderCaravanCost(result)
 	return nil
 }
 
-func renderCaravanCost(result caravanCostResult, hasPricing bool) {
+func renderCaravanCost(result caravanCostResult) {
 	fmt.Printf("Caravan: %s (%s)\n\n", result.CaravanName, result.CaravanID)
 
 	if len(result.Rows) == 0 {
@@ -995,11 +852,7 @@ func renderCaravanCost(result caravanCostResult, hasPricing bool) {
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
-	if hasPricing {
-		fmt.Fprintf(tw, "Writ\tWorld\tPhase\tKind\tStatus\tInput\tOutput\tCache\tCost\t\n")
-	} else {
-		fmt.Fprintf(tw, "Writ\tWorld\tPhase\tKind\tStatus\tInput\tOutput\tCache\t\n")
-	}
+	fmt.Fprintf(tw, "Writ\tWorld\tPhase\tKind\tStatus\tInput\tOutput\tCache\tCost\t\n")
 
 	for _, row := range result.Rows {
 		kind := row.Kind
@@ -1011,35 +864,24 @@ func renderCaravanCost(result caravanCostResult, hasPricing bool) {
 			status = "-"
 		}
 
-		if hasPricing {
-			costStr := "unpriced"
-			if row.Cost != nil {
-				costStr = formatDollars(*row.Cost)
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
-				row.WritID, row.World, row.Phase, kind, status,
-				formatTokenInt(row.InputTokens),
-				formatTokenInt(row.OutputTokens),
-				formatTokenInt(row.CacheTokens),
-				costStr)
-		} else {
-			fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t\n",
-				row.WritID, row.World, row.Phase, kind, status,
-				formatTokenInt(row.InputTokens),
-				formatTokenInt(row.OutputTokens),
-				formatTokenInt(row.CacheTokens))
+		costStr := "N/A"
+		if row.Cost != nil {
+			costStr = formatDollars(*row.Cost)
 		}
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
+			row.WritID, row.World, row.Phase, kind, status,
+			formatTokenInt(row.InputTokens),
+			formatTokenInt(row.OutputTokens),
+			formatTokenInt(row.CacheTokens),
+			costStr)
 	}
 
-	if hasPricing && result.TotalCost != nil {
-		fmt.Fprintf(tw, "\t\t\t\t\t\tTotal:\t%s\t\n", formatDollars(*result.TotalCost))
+	totalStr := "N/A"
+	if result.TotalCost != nil {
+		totalStr = formatDollars(*result.TotalCost)
 	}
+	fmt.Fprintf(tw, "\t\t\t\t\t\tTotal:\t%s\t\n", totalStr)
 	tw.Flush()
-
-	if len(result.AllUnpriced) > 0 {
-		fmt.Printf("\n%d unpriced model(s): %s. Add to [pricing] in sol.toml.\n",
-			len(result.AllUnpriced), strings.Join(result.AllUnpriced, ", "))
-	}
 }
 
 // --- Helpers ---
@@ -1064,22 +906,6 @@ func resolveCaravan(sphereStore *store.SphereStore, idOrName string) (*store.Car
 	}
 
 	return nil, fmt.Errorf("caravan %q not found", idOrName)
-}
-
-// storeToConfigSummaries converts store.TokenSummary to config.TokenSummary
-// to avoid import cycles between the two packages.
-func storeToConfigSummaries(summaries []store.TokenSummary) []config.TokenSummary {
-	out := make([]config.TokenSummary, len(summaries))
-	for i, ts := range summaries {
-		out[i] = config.TokenSummary{
-			Model:               ts.Model,
-			InputTokens:         ts.InputTokens,
-			OutputTokens:        ts.OutputTokens,
-			CacheReadTokens:     ts.CacheReadTokens,
-			CacheCreationTokens: ts.CacheCreationTokens,
-		}
-	}
-	return out
 }
 
 // formatDollars formats a dollar amount for display.

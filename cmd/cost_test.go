@@ -91,15 +91,6 @@ func TestFormatDollars(t *testing.T) {
 	}
 }
 
-func TestStoreToConfigSummaries(t *testing.T) {
-	// Import store.TokenSummary is same package scope via cmd package.
-	// This test verifies the conversion helper doesn't panic on empty input.
-	result := storeToConfigSummaries(nil)
-	if len(result) != 0 {
-		t.Fatalf("expected empty result, got %d", len(result))
-	}
-}
-
 // setupCostTest creates a temporary SOL_HOME with a world and returns the
 // store, world name, and the SOL_HOME directory. Resets cost flag vars.
 func setupCostTest(t *testing.T) (*store.WorldStore, string, string) {
@@ -196,7 +187,7 @@ func TestRunCostWritWithTokenData(t *testing.T) {
 	costWrit = writID
 
 	output := captureStdout(t, func() {
-		if err := runCostWrit(nil, nil); err != nil {
+		if err := runCostWrit(nil); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -225,9 +216,52 @@ func TestRunCostWritWithTokenData(t *testing.T) {
 		t.Errorf("output missing Total row, got:\n%s", output)
 	}
 
-	// Verify no pricing nag.
-	if strings.Contains(output, "No pricing configured") {
-		t.Errorf("unexpected pricing nag in output:\n%s", output)
+	// Cost column always present — rows without CostUSD show N/A.
+	if !strings.Contains(output, "Cost") {
+		t.Errorf("output missing Cost column header, got:\n%s", output)
+	}
+	if !strings.Contains(output, "N/A") {
+		t.Errorf("expected N/A for nil CostUSD rows, got:\n%s", output)
+	}
+}
+
+func TestRunCostWritWithCostUSD(t *testing.T) {
+	s, world, _ := setupCostTest(t)
+
+	writID, err := s.CreateWritWithOpts(store.CreateWritOpts{
+		Title:     "Cost USD test",
+		CreatedBy: "autarch",
+		Kind:      "code",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now().Add(-1 * time.Hour)
+	h1, err := s.WriteHistory("Toast", writID, "cast", "", start, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cost := 1.23
+	if _, err := s.WriteTokenUsage(h1, "claude-sonnet-4-6", 100000, 40000, 80000, 10000, &cost, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	costWorld = world
+	costWrit = writID
+
+	output := captureStdout(t, func() {
+		if err := runCostWrit(nil); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	// Should show dollar amount, not N/A.
+	if !strings.Contains(output, "$1.23") {
+		t.Errorf("expected $1.23 in output, got:\n%s", output)
+	}
+	if strings.Contains(output, "N/A") {
+		t.Errorf("unexpected N/A when CostUSD is available, got:\n%s", output)
 	}
 }
 
@@ -268,7 +302,7 @@ func TestRunCostWritWithSinceFilter(t *testing.T) {
 
 	since := time.Now().Add(-24 * time.Hour)
 	output := captureStdout(t, func() {
-		if err := runCostWrit(nil, &since); err != nil {
+		if err := runCostWrit(&since); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -292,7 +326,7 @@ func TestRunCostWritUnknownWrit(t *testing.T) {
 	costWorld = world
 	costWrit = "sol-nonexistent00000"
 
-	err := runCostWrit(nil, nil)
+	err := runCostWrit(nil)
 	if err == nil {
 		t.Fatal("expected error for unknown writ ID")
 	}
@@ -327,7 +361,7 @@ func TestRunCostWritJSON(t *testing.T) {
 	costJSON = true
 
 	output := captureStdout(t, func() {
-		if err := runCostWrit(nil, nil); err != nil {
+		if err := runCostWrit(nil); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -345,9 +379,13 @@ func TestRunCostWritJSON(t *testing.T) {
 	if !strings.Contains(output, `"claude-sonnet-4-6"`) {
 		t.Errorf("JSON output missing model name, got:\n%s", output)
 	}
+	// cost field should be null for nil CostUSD (not omitted).
+	if !strings.Contains(output, `"cost": null`) && !strings.Contains(output, `"cost":null`) {
+		t.Errorf("JSON output should have null cost for nil CostUSD, got:\n%s", output)
+	}
 }
 
-func TestRenderWritCostNoPricingNag(t *testing.T) {
+func TestRenderWritCostAlwaysShowsCostColumn(t *testing.T) {
 	result := writCostResult{
 		WritID: "sol-abc123",
 		Title:  "Test writ",
@@ -360,25 +398,30 @@ func TestRenderWritCostNoPricingNag(t *testing.T) {
 				OutputTokens:        45201,
 				CacheReadTokens:     89100,
 				CacheCreationTokens: 12340,
+				Cost:                nil,
 			},
 		},
-		HasPricing: false,
-		Period:     "all time",
+		Period: "all time",
 	}
 
 	output := captureStdout(t, func() {
-		renderWritCost(result, false)
+		renderWritCost(result)
 	})
 
-	if strings.Contains(output, "No pricing configured") {
-		t.Errorf("unexpected pricing nag in output:\n%s", output)
+	// Cost column should always be present.
+	if !strings.Contains(output, "Cost") {
+		t.Errorf("output missing Cost column header, got:\n%s", output)
+	}
+	// Nil CostUSD should show N/A.
+	if !strings.Contains(output, "N/A") {
+		t.Errorf("expected N/A for nil CostUSD, got:\n%s", output)
 	}
 	if !strings.Contains(output, "claude-sonnet-4-6") {
 		t.Errorf("output missing model name, got:\n%s", output)
 	}
 }
 
-func TestRenderSphereCostNoPricingNag(t *testing.T) {
+func TestRenderSphereCostAlwaysShowsCostColumn(t *testing.T) {
 	result := sphereCostResult{
 		Rows: []sphereCostRow{
 			{World: "test", Agents: 1, Writs: 2, InputTokens: 1000, OutputTokens: 500},
@@ -387,15 +430,18 @@ func TestRenderSphereCostNoPricingNag(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		renderSphereCost(result, false)
+		renderSphereCost(result)
 	})
 
-	if strings.Contains(output, "No pricing configured") {
-		t.Errorf("unexpected pricing nag in sphere output:\n%s", output)
+	if !strings.Contains(output, "Cost") {
+		t.Errorf("output missing Cost column, got:\n%s", output)
+	}
+	if !strings.Contains(output, "N/A") {
+		t.Errorf("expected N/A for nil cost, got:\n%s", output)
 	}
 }
 
-func TestRenderWorldCostNoPricingNag(t *testing.T) {
+func TestRenderWorldCostAlwaysShowsCostColumn(t *testing.T) {
 	result := worldCostResult{
 		World: "test",
 		Rows: []worldCostRow{
@@ -405,15 +451,18 @@ func TestRenderWorldCostNoPricingNag(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		renderWorldCost(result, false)
+		renderWorldCost(result)
 	})
 
-	if strings.Contains(output, "No pricing configured") {
-		t.Errorf("unexpected pricing nag in world output:\n%s", output)
+	if !strings.Contains(output, "Cost") {
+		t.Errorf("output missing Cost column, got:\n%s", output)
+	}
+	if !strings.Contains(output, "N/A") {
+		t.Errorf("expected N/A for nil cost, got:\n%s", output)
 	}
 }
 
-func TestRenderAgentCostNoPricingNag(t *testing.T) {
+func TestRenderAgentCostAlwaysShowsCostColumn(t *testing.T) {
 	result := agentCostResult{
 		World: "test",
 		Agent: "Toast",
@@ -424,15 +473,18 @@ func TestRenderAgentCostNoPricingNag(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		renderAgentCost(result, false)
+		renderAgentCost(result)
 	})
 
-	if strings.Contains(output, "No pricing configured") {
-		t.Errorf("unexpected pricing nag in agent output:\n%s", output)
+	if !strings.Contains(output, "Cost") {
+		t.Errorf("output missing Cost column, got:\n%s", output)
+	}
+	if !strings.Contains(output, "N/A") {
+		t.Errorf("expected N/A for nil cost, got:\n%s", output)
 	}
 }
 
-func TestRenderCaravanCostNoPricingNag(t *testing.T) {
+func TestRenderCaravanCostAlwaysShowsCostColumn(t *testing.T) {
 	result := caravanCostResult{
 		CaravanID:   "cv-abc",
 		CaravanName: "test-caravan",
@@ -443,11 +495,14 @@ func TestRenderCaravanCostNoPricingNag(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		renderCaravanCost(result, false)
+		renderCaravanCost(result)
 	})
 
-	if strings.Contains(output, "No pricing configured") {
-		t.Errorf("unexpected pricing nag in caravan output:\n%s", output)
+	if !strings.Contains(output, "Cost") {
+		t.Errorf("output missing Cost column, got:\n%s", output)
+	}
+	if !strings.Contains(output, "N/A") {
+		t.Errorf("expected N/A for nil cost, got:\n%s", output)
 	}
 }
 
