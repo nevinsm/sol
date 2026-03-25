@@ -158,19 +158,21 @@ func Drain(session string) ([]Message, error) {
 		claimed = append(claimed, dst)
 	}
 
-	// Phase 2: read and delete claimed files.
+	// Phase 2: read, validate, and delete claimed files.
 	var messages []Message
 	for _, path := range claimed {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue // best-effort
 		}
-		os.Remove(path) // delete after reading
 
 		var msg Message
 		if err := json.Unmarshal(data, &msg); err != nil {
+			fmt.Fprintf(os.Stderr, "nudge: corrupt message %s: %v\n", filepath.Base(path), err)
+			os.Remove(path) // remove corrupt file after logging
 			continue
 		}
+		os.Remove(path) // remove after successful parse
 		if msg.isExpired(now) {
 			continue // discard expired
 		}
@@ -264,6 +266,18 @@ func Cleanup(session string) error {
 	for _, e := range entries {
 		name := e.Name()
 		path := filepath.Join(dir, name)
+
+		// Remove stale .tmp files left by crashed Enqueue calls.
+		if strings.HasSuffix(name, ".tmp") {
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			if now.Sub(info.ModTime()) > claimedOrphanAge {
+				os.Remove(path)
+			}
+			continue
+		}
 
 		// Requeue orphaned .claimed files.
 		if strings.HasSuffix(name, ".json.claimed") {
