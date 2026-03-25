@@ -639,6 +639,18 @@ func (m *Model) trackWorldHighlights(data *status.WorldStatus) {
 		}
 		m.prevAgentStates[a.Name] = a.State
 	}
+
+	// Prune stale entries for agents no longer in the current list.
+	current := make(map[string]bool, len(data.Agents))
+	for _, a := range data.Agents {
+		current[a.Name] = true
+	}
+	for name := range m.prevAgentStates {
+		if !current[name] {
+			delete(m.prevAgentStates, name)
+			delete(m.agentHighlights, name)
+		}
+	}
 }
 
 // decayHighlights decrements all highlight levels by one step.

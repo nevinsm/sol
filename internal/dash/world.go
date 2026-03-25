@@ -143,10 +143,18 @@ func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 	}
 
 	// Caravan progress bars.
+	currentCaravans := make(map[string]bool, len(data.Caravans))
 	for _, c := range data.Caravans {
+		currentCaravans[c.ID] = true
 		if _, ok := wm.caravanProgress[c.ID]; !ok {
 			p := progress.New(progress.WithDefaultGradient())
 			wm.caravanProgress[c.ID] = p
+		}
+	}
+	// Prune progress bars for caravans no longer in the current list.
+	for id := range wm.caravanProgress {
+		if !currentCaravans[id] {
+			delete(wm.caravanProgress, id)
 		}
 	}
 

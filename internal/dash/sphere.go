@@ -115,7 +115,9 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 	}
 
 	// Sync world spinners.
+	currentWorlds := make(map[string]bool, len(data.Worlds))
 	for _, w := range data.Worlds {
+		currentWorlds[w.Name] = true
 		if w.Working > 0 {
 			if _, ok := sm.worldSpinners[w.Name]; !ok {
 				s := spinner.New()
@@ -126,12 +128,26 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 			delete(sm.worldSpinners, w.Name)
 		}
 	}
+	// Prune spinners for worlds no longer in the current list.
+	for name := range sm.worldSpinners {
+		if !currentWorlds[name] {
+			delete(sm.worldSpinners, name)
+		}
+	}
 
 	// Sync caravan progress.
+	currentCaravans := make(map[string]bool, len(data.Caravans))
 	for _, c := range data.Caravans {
+		currentCaravans[c.ID] = true
 		if _, ok := sm.caravanProgress[c.ID]; !ok {
 			p := progress.New(progress.WithDefaultGradient())
 			sm.caravanProgress[c.ID] = p
+		}
+	}
+	// Prune progress bars for caravans no longer in the current list.
+	for id := range sm.caravanProgress {
+		if !currentCaravans[id] {
+			delete(sm.caravanProgress, id)
 		}
 	}
 
