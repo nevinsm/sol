@@ -67,7 +67,9 @@ environment variables when --world and --agent are not provided.`,
 		}
 
 		fmt.Printf("Done: %s (%s)\n", result.WritID, result.Title)
-		fmt.Printf("  Branch: %s\n", result.BranchName)
+		if result.BranchName != "" {
+			fmt.Printf("  Branch: %s\n", result.BranchName)
+		}
 		if result.MergeRequestID != "" {
 			fmt.Printf("  Merge request: %s (queued)\n", result.MergeRequestID)
 		}

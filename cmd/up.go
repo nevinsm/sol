@@ -476,9 +476,13 @@ func startWorldServicesBatch(solBin string, worlds []string) bool {
 func runDown(cmd *cobra.Command, _ []string) error {
 	worldOnly := cmd.Flags().Changed("world")
 
+	var hadFailure bool
+
 	// Sphere daemons (skipped with --world).
 	if !worldOnly {
-		stopSphereDaemons()
+		if stopSphereDaemons() {
+			hadFailure = true
+		}
 	}
 
 	// World services.
@@ -488,19 +492,27 @@ func runDown(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(worlds) > 0 {
-		stopWorldServicesBatch(worlds)
+		if stopWorldServicesBatch(worlds) {
+			hadFailure = true
+		}
 	}
 
 	// With --all, also stop envoys, governors, and chancellor.
 	if downAllFlag {
-		stopManagedSessions(worlds)
+		if stopManagedSessions(worlds) {
+			hadFailure = true
+		}
 	}
 
+	if hadFailure {
+		return fmt.Errorf("some components failed to stop (see errors above)")
+	}
 	return nil
 }
 
 // stopSphereDaemons stops sphere-level daemons and prints results.
-func stopSphereDaemons() {
+// Returns true if any daemon failed to stop.
+func stopSphereDaemons() bool {
 	mgr := session.New()
 
 	type result struct {
@@ -554,6 +566,7 @@ func stopSphereDaemons() {
 
 	// Print results.
 	fmt.Println()
+	hadFailure := false
 	for _, r := range results {
 		var indicator, detail string
 		switch r.status {
@@ -572,14 +585,17 @@ func stopSphereDaemons() {
 			if r.err != nil {
 				detail += upDim.Render("  " + r.err.Error())
 			}
+			hadFailure = true
 		}
 		fmt.Printf("  %s %-12s %s\n", indicator, r.name, detail)
 	}
 	fmt.Println()
+	return hadFailure
 }
 
 // stopWorldServicesBatch stops world services for the given worlds.
-func stopWorldServicesBatch(worlds []string) {
+// Returns true if any service failed to stop.
+func stopWorldServicesBatch(worlds []string) bool {
 	type result struct {
 		world, service, status string
 		err                    error
@@ -656,6 +672,7 @@ func stopWorldServicesBatch(worlds []string) {
 	}
 
 	// Print grouped by world.
+	hadFailure := false
 	currentWorld := ""
 	for _, r := range results {
 		if r.world != currentWorld {
@@ -677,17 +694,20 @@ func stopWorldServicesBatch(worlds []string) {
 			if r.err != nil {
 				detail += upDim.Render("  " + r.err.Error())
 			}
+			hadFailure = true
 		}
 		fmt.Printf("    %s %-12s %s\n", indicator, r.service, detail)
 	}
 	if len(results) > 0 {
 		fmt.Println()
 	}
+	return hadFailure
 }
 
 // stopManagedSessions stops envoy, governor, and chancellor sessions.
 // Called by sol down --all.
-func stopManagedSessions(worlds []string) {
+// Returns true if any session failed to stop.
+func stopManagedSessions(worlds []string) bool {
 	mgr := session.New()
 
 	type result struct {
@@ -736,6 +756,7 @@ func stopManagedSessions(worlds []string) {
 	results = append(results, r)
 
 	// Print results.
+	hadFailure := false
 	if len(results) > 0 {
 		fmt.Printf("  %s\n", upDim.Render("managed sessions"))
 		for _, r := range results {
@@ -754,9 +775,11 @@ func stopManagedSessions(worlds []string) {
 				if r.err != nil {
 					detail += upDim.Render("  " + r.err.Error())
 				}
+				hadFailure = true
 			}
 			fmt.Printf("    %s %-32s %s\n", indicator, label, detail)
 		}
 		fmt.Println()
 	}
+	return hadFailure
 }

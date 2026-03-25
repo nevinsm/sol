@@ -23,7 +23,7 @@ If a world is detected, shows sphere processes plus world detail combined.
 Otherwise, shows a sphere-level overview of all worlds and processes.
 With a world name, shows detailed status for that specific world.
 
-Exit codes with --json:
+Exit codes:
   Sphere-only (no world detected or specified): always exits 0
   World or combined (world detected from cwd or explicitly specified):
     0 = healthy
@@ -149,6 +149,9 @@ func runCombinedStatus(world string) error {
 	}
 
 	fmt.Print(status.RenderCombined(consulInfo, result, mailCount, escSummary))
+	if code := result.Health(); code != 0 {
+		return &exitError{code: code}
+	}
 	return nil
 }
 
@@ -195,6 +198,9 @@ func runWorldStatus(world string) error {
 	}
 
 	fmt.Print(status.RenderWorld(result))
+	if code := result.Health(); code != 0 {
+		return &exitError{code: code}
+	}
 	return nil
 }
 

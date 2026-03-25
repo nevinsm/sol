@@ -100,11 +100,9 @@ func TestStatusWorldDetail(t *testing.T) {
 		t.Fatalf("writ create failed: %v", err)
 	}
 
-	// Text mode always exits 0 (health exit codes are --json only).
-	out, err := runGT(t, gtHome, "status", "myworld")
-	if err != nil {
-		t.Fatalf("sol status myworld failed: %v: %s", err, out)
-	}
+	// Text mode may exit non-zero for degraded/unhealthy worlds (same as --json).
+	// Since prefect is not running in tests, this will be degraded (exit 2).
+	out, _ := runGT(t, gtHome, "status", "myworld")
 
 	if !strings.Contains(out, "myworld") {
 		t.Errorf("output missing world name: %s", out)
