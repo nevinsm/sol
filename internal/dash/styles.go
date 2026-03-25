@@ -198,6 +198,9 @@ func formatConsulDetail(c status.ConsulInfo) string {
 	if c.HeartbeatAge != "" {
 		parts += fmt.Sprintf(", last %s ago", c.HeartbeatAge)
 	}
+	if c.Stale {
+		parts += warnStyle.Render(" (stale)")
+	}
 	return parts
 }
 
@@ -245,7 +248,21 @@ func formatBrokerDetail(b status.BrokerInfo) string {
 	if !b.Running {
 		return ""
 	}
-	return fmt.Sprintf("%d patrols", b.PatrolCount)
+	parts := fmt.Sprintf("%d patrols", b.PatrolCount)
+	if b.HeartbeatAge != "" {
+		parts += fmt.Sprintf(", last %s ago", b.HeartbeatAge)
+	}
+	if b.Stale {
+		parts += warnStyle.Render(" (stale)")
+	}
+	// Show provider health when not healthy.
+	switch b.ProviderHealth {
+	case "degraded":
+		parts += warnStyle.Render(" [provider: degraded]")
+	case "down":
+		parts += errorStyle.Render(" [provider: down]")
+	}
+	return parts
 }
 
 func formatChancellorDetail(s status.ChancellorInfo) string {

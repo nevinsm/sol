@@ -46,7 +46,7 @@ var sphereProcessMap = map[string]sphereProcessInfo{
 // checkSystemdManaged checks if a sphere process is managed by systemd.
 func checkSystemdManaged(cliName string) bool {
 	unit := "sol-" + cliName + ".service"
-	return exec.Command("systemctl", "is-active", "--quiet", unit).Run() == nil
+	return exec.Command("systemctl", "--user", "is-active", "--quiet", unit).Run() == nil
 }
 
 // restartSphereProcess stops and re-launches a sphere process.
