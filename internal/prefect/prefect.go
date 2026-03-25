@@ -40,6 +40,7 @@ type SessionManager interface {
 type SphereStore interface {
 	ListAgents(world string, state string) ([]store.Agent, error)
 	UpdateAgentState(id, state, activeWrit string) error
+	CompareAndSetAgentState(id, expectedState, newState, activeWrit string) (bool, error)
 	ListWorlds() ([]store.World, error)
 }
 
@@ -270,8 +271,12 @@ func (s *Prefect) heartbeat() {
 			if s.degraded {
 				s.logger.Warn("session dead but degraded, setting stalled",
 					"agent", agent.Name, "world", agent.World)
-				if err := s.sphereStore.UpdateAgentState(agent.ID, "stalled", agent.ActiveWrit); err != nil {
+				updated, err := s.sphereStore.CompareAndSetAgentState(agent.ID, "working", "stalled", agent.ActiveWrit)
+				if err != nil {
 					s.logger.Error("failed to set agent stalled", "agent", agent.Name, "error", err)
+				} else if !updated {
+					s.logger.Info("agent state already changed, skipping stall",
+						"agent", agent.Name, "world", agent.World)
 				}
 				continue
 			}
@@ -676,7 +681,12 @@ func (s *Prefect) checkSentinelHealth(world string) {
 
 	// If no process running at all, start the sentinel.
 	if pid <= 0 || !IsRunning(pid) {
-		hb, _ := sentinel.ReadHeartbeat(world)
+		hb, err := sentinel.ReadHeartbeat(world)
+		if err != nil {
+			s.logger.Warn("failed to read sentinel heartbeat, skipping restart",
+				"world", world, "error", err)
+			return
+		}
 		if hb != nil && !hb.IsStale(s.cfg.SentinelHeartbeatMax) {
 			// Heartbeat is fresh but PID is gone — sentinel may have just exited.
 			// Give it a moment on the next cycle.

@@ -125,6 +125,39 @@ func (s *SphereStore) UpdateAgentState(id, state, activeWrit string) error {
 	return checkRowsAffected(result, "agent", id)
 }
 
+// CompareAndSetAgentState updates an agent's state and active_writ only if the
+// agent's current state matches expectedState. Returns (false, nil) if the agent
+// exists but its state has already changed (no row updated). Returns (true, nil)
+// on successful update.
+func (s *SphereStore) CompareAndSetAgentState(id, expectedState, newState, activeWrit string) (bool, error) {
+	if !validAgentStates[newState] {
+		return false, fmt.Errorf("invalid agent state %q", newState)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	var result sql.Result
+	var err error
+
+	if activeWrit == "" {
+		result, err = s.db.Exec(
+			`UPDATE agents SET state = ?, active_writ = NULL, updated_at = ? WHERE id = ? AND state = ?`,
+			newState, now, id, expectedState,
+		)
+	} else {
+		result, err = s.db.Exec(
+			`UPDATE agents SET state = ?, active_writ = ?, updated_at = ? WHERE id = ? AND state = ?`,
+			newState, activeWrit, now, id, expectedState,
+		)
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to compare-and-set agent %q state: %w", id, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to get rows affected for agent %q: %w", id, err)
+	}
+	return n > 0, nil
+}
+
 // ListAgents returns agents, optionally filtered by world and/or state.
 // When world is empty, agents across all worlds are returned.
 func (s *SphereStore) ListAgents(world string, state string) ([]Agent, error) {
