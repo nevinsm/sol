@@ -14,6 +14,7 @@ type ForgeResult struct {
 	Summary      string   `json:"summary"`                 // human-readable description of what happened
 	FilesChanged []string `json:"files_changed"`           // list of files modified during the merge
 	GateOutput   string   `json:"gate_output,omitempty"`   // quality gate stdout/stderr (if relevant)
+	NoOp         bool     `json:"no_op,omitempty"`         // true when merge had no changes
 }
 
 // resultFileName is the conventional name for the forge result file.
@@ -61,6 +62,9 @@ func ValidateResult(r *ForgeResult) error {
 	}
 	if r.Summary == "" {
 		return fmt.Errorf("forge result: missing required field \"summary\"")
+	}
+	if r.NoOp && r.Result != "merged" {
+		return fmt.Errorf("forge result: no_op is only valid with result \"merged\"")
 	}
 	return nil
 }

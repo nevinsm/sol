@@ -74,6 +74,15 @@ func BuildInjection(mr *store.MergeRequest, writ *store.Writ, cfg InjectionConfi
 	fmt.Fprintf(&b, "1. `git fetch origin && git reset --hard origin/%s`\n", targetBranch)
 	fmt.Fprintf(&b, "2. `git merge --squash origin/%s`\n", mr.Branch)
 	b.WriteString("3. If conflicts, resolve them\n")
+	b.WriteString("4. If `git merge --squash` produced no changes (nothing in the index after the merge), ")
+	b.WriteString("do not commit or push. Instead, review the writ's acceptance criteria against the current ")
+	b.WriteString("codebase on the target branch. If the criteria are already satisfied by code currently on ")
+	b.WriteString("the target branch, write `.forge-result.json` with ")
+	b.WriteString("`{\"result\": \"merged\", \"summary\": \"No-op: work already present on target branch — [brief explanation]\", ")
+	b.WriteString("\"files_changed\": [], \"no_op\": true}` and stop. ")
+	b.WriteString("If the criteria are NOT satisfied, write `.forge-result.json` with ")
+	b.WriteString("`{\"result\": \"failed\", \"summary\": \"Empty merge but acceptance criteria not met — [what's missing]\", ")
+	b.WriteString("\"files_changed\": []}` and stop.\n")
 	// Derive agent author from branch name for commit attribution.
 	// Branch formats: "outpost/{Name}/sol-xxx" or "envoy/{world}/{Name}/sol-xxx"
 	authorFlag := ""
@@ -88,18 +97,18 @@ func BuildInjection(mr *store.MergeRequest, writ *store.Writ, cfg InjectionConfi
 		email := strings.ToLower(role+"."+name) + "@sol.local"
 		authorFlag = fmt.Sprintf(` --author="%s <%s>"`, name, email)
 	}
-	fmt.Fprintf(&b, "4. Commit: `git commit --no-edit%s -m \"%s (%s)\"`\n", authorFlag, escapeCommitMessage(writ.Title), writ.ID)
+	fmt.Fprintf(&b, "5. Commit: `git commit --no-edit%s -m \"%s (%s)\"`\n", authorFlag, escapeCommitMessage(writ.Title), writ.ID)
 
 	if len(cfg.GateCommands) > 0 {
 		gateStr := strings.Join(cfg.GateCommands, " && ")
-		fmt.Fprintf(&b, "5. Run gates: `%s`\n", gateStr)
+		fmt.Fprintf(&b, "6. Run gates: `%s`\n", gateStr)
 	} else {
-		b.WriteString("5. No gates to run\n")
+		b.WriteString("6. No gates to run\n")
 	}
 
-	fmt.Fprintf(&b, "6. If pass: `git push origin HEAD:%s`\n", targetBranch)
-	b.WriteString("7. If fail: analyze and report\n")
-	b.WriteString("8. Write .forge-result.json with your result\n")
+	fmt.Fprintf(&b, "7. If pass: `git push origin HEAD:%s`\n", targetBranch)
+	b.WriteString("8. If fail: analyze and report\n")
+	b.WriteString("9. Write .forge-result.json with your result\n")
 
 	return b.String()
 }

@@ -397,29 +397,36 @@ func (s *patrolState) cleanupAgentRecord() {
 func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, result *ForgeResult, queueDepth int) {
 	switch result.Result {
 	case "merged":
-		// Verify push landed by checking remote HEAD.
-		if err := s.verifyPush(ctx, mr); err != nil {
-			// If the context was cancelled (e.g. sol down / SIGTERM), don't mark
-			// a potentially-successful merge as failed. Release the MR so the
-			// next startup retries verification instead of re-dispatching work.
-			if ctx.Err() != nil {
-				s.fl.Log("SHUTDOWN", fmt.Sprintf("verification deferred for %s: context cancelled during push verification", mr.Branch))
-				if _, err := s.forge.Release(mr.ID); err != nil {
-					s.forge.logger.Error("release after cancelled verify failed", "mr", mr.ID, "error", err)
+		if result.NoOp {
+			s.fl.Log("NO-OP", fmt.Sprintf("%s  %s", mr.ID, truncate(result.Summary, 200)))
+		}
+
+		// Verify push landed by checking remote HEAD — skip for no-op merges
+		// where there was no commit and no push.
+		if !result.NoOp {
+			if err := s.verifyPush(ctx, mr); err != nil {
+				// If the context was cancelled (e.g. sol down / SIGTERM), don't mark
+				// a potentially-successful merge as failed. Release the MR so the
+				// next startup retries verification instead of re-dispatching work.
+				if ctx.Err() != nil {
+					s.fl.Log("SHUTDOWN", fmt.Sprintf("verification deferred for %s: context cancelled during push verification", mr.Branch))
+					if _, err := s.forge.Release(mr.ID); err != nil {
+						s.forge.logger.Error("release after cancelled verify failed", "mr", mr.ID, "error", err)
+					}
+					return
 				}
+				s.fl.Log("ERROR", fmt.Sprintf("push verification failed for %s: %s", mr.Branch, truncate(err.Error(), 200)))
+				s.lastError = truncate(fmt.Sprintf("push verification failed: %s", err.Error()), 200)
+				// MarkFailed instead of Release — retry destroys the good result
+				// (CleanForgeResult runs on session start) and produces an empty diff
+				// if the push actually succeeded.
+				if err := s.forge.MarkFailed(mr.ID); err != nil {
+					s.forge.logger.Error("mark-failed after verify failure", "mr", mr.ID, "error", err)
+				}
+				s.writeHeartbeat("idle", queueDepth-1)
+				s.emitPatrolEvent(queueDepth)
 				return
 			}
-			s.fl.Log("ERROR", fmt.Sprintf("push verification failed for %s: %s", mr.Branch, truncate(err.Error(), 200)))
-			s.lastError = truncate(fmt.Sprintf("push verification failed: %s", err.Error()), 200)
-			// MarkFailed instead of Release — retry destroys the good result
-			// (CleanForgeResult runs on session start) and produces an empty diff
-			// if the push actually succeeded.
-			if err := s.forge.MarkFailed(mr.ID); err != nil {
-				s.forge.logger.Error("mark-failed after verify failure", "mr", mr.ID, "error", err)
-			}
-			s.writeHeartbeat("idle", queueDepth-1)
-			s.emitPatrolEvent(queueDepth)
-			return
 		}
 
 		if err := s.forge.MarkMerged(mr.ID); err != nil {

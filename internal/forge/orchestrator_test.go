@@ -472,6 +472,115 @@ func TestActOnResultMerged(t *testing.T) {
 	}
 }
 
+func TestActOnResultNoOpMergedSkipsVerifyPush(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+	worldStore.mrs = []store.MergeRequest{*mr}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Test change", Status: store.WritDone,
+	}
+
+	// No git commands mocked — verifyPush should NOT be called.
+	result := &ForgeResult{
+		Result:  "merged",
+		Summary: "No-op: work already present on target branch",
+		NoOp:    true,
+	}
+
+	state.actOnResult(context.Background(), mr, result, 1)
+
+	// Verify MR was marked as merged.
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-001"]
+	worldStore.mu.Unlock()
+
+	if phase != store.MRMerged {
+		t.Errorf("MR phase = %q, want 'merged'", phase)
+	}
+	if state.mergesTotal != 1 {
+		t.Errorf("mergesTotal = %d, want 1", state.mergesTotal)
+	}
+
+	// Verify no git fetch/log calls were made (verifyPush was skipped).
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	calls := cmdRunner.getCalls()
+	for _, call := range calls {
+		if call.Name == "git" && len(call.Args) > 0 && call.Args[0] == "fetch" &&
+			call.Dir == state.forge.worktree {
+			t.Error("verifyPush should not have been called for no-op merge")
+		}
+	}
+
+	// Verify NO-OP log message was written.
+	logData, _ := os.ReadFile(state.fl.logPath)
+	logStr := string(logData)
+	if !strings.Contains(logStr, "NO-OP") {
+		t.Error("expected NO-OP log message for no-op merge")
+	}
+}
+
+func TestActOnResultNormalMergedStillVerifiesPush(t *testing.T) {
+	// This is essentially the same as TestActOnResultMerged but explicit about
+	// NoOp=false to ensure normal merges still verify push.
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	mr := &store.MergeRequest{
+		ID:     "mr-002",
+		WritID: "sol-bbb22222",
+		Branch: "outpost/Toast/sol-bbb22222",
+	}
+	worldStore.mrs = []store.MergeRequest{*mr}
+	worldStore.items["sol-bbb22222"] = &store.Writ{
+		ID: "sol-bbb22222", Title: "Normal change", Status: store.WritDone,
+	}
+
+	// Mock git commands for push verification — these MUST be called.
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	state.preMergeRef = "deadbeef00000099"
+	cmdRunner.SetResult("git log deadbeef00000099..origin/main --oneline --grep sol-bbb22222",
+		[]byte("abc1234 Normal change (sol-bbb22222)"), nil)
+	cmdRunner.SetResult("git fetch origin main", nil, nil)
+
+	result := &ForgeResult{
+		Result:  "merged",
+		Summary: "Successfully merged",
+		NoOp:    false,
+	}
+
+	state.actOnResult(context.Background(), mr, result, 1)
+
+	// Verify push verification was called (git fetch origin on the worktree).
+	calls := cmdRunner.getCalls()
+	foundFetch := false
+	for _, call := range calls {
+		if call.Name == "git" && len(call.Args) > 0 && call.Args[0] == "fetch" &&
+			call.Dir == state.forge.worktree {
+			foundFetch = true
+			break
+		}
+	}
+	if !foundFetch {
+		t.Error("verifyPush should have been called for normal (non-no-op) merge")
+	}
+
+	// Verify MR was marked as merged.
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-002"]
+	worldStore.mu.Unlock()
+
+	if phase != store.MRMerged {
+		t.Errorf("MR phase = %q, want 'merged'", phase)
+	}
+}
+
 func TestActOnResultMergedUpdatesSourceRepo(t *testing.T) {
 	state, worldStore, _ := setupOrchestratorTest(t)
 	defer state.fl.Close()

@@ -114,6 +114,16 @@ func TestBuildInjection(t *testing.T) {
 		mustContain(t, result, `git commit --no-edit --author="Toast <outpost.toast@sol.local>" -m "feat: handle \"special\" cases (sol-222)"`)
 	})
 
+	t.Run("contains empty squash handling instructions", func(t *testing.T) {
+		result := BuildInjection(mr, writ, cfg)
+		mustContain(t, result, "no changes")
+		mustContain(t, result, "no_op")
+		mustContain(t, result, "do not commit or push")
+		mustContain(t, result, "acceptance criteria")
+		mustContain(t, result, "No-op: work already present on target branch")
+		mustContain(t, result, "Empty merge but acceptance criteria not met")
+	})
+
 	t.Run("includes writ ID in commit instruction", func(t *testing.T) {
 		result := BuildInjection(mr, writ, cfg)
 		// Commit instruction should include both title and writ ID.

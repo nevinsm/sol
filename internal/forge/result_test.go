@@ -44,6 +44,20 @@ func TestValidateResult(t *testing.T) {
 			result:  ForgeResult{Result: "merged"},
 			wantErr: `missing required field "summary"`,
 		},
+		{
+			name:   "valid no-op merged result",
+			result: ForgeResult{Result: "merged", Summary: "No-op: work already present", NoOp: true},
+		},
+		{
+			name:    "no_op invalid with failed result",
+			result:  ForgeResult{Result: "failed", Summary: "something", NoOp: true},
+			wantErr: `no_op is only valid with result "merged"`,
+		},
+		{
+			name:    "no_op invalid with conflict result",
+			result:  ForgeResult{Result: "conflict", Summary: "something", NoOp: true},
+			wantErr: `no_op is only valid with result "merged"`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -130,6 +144,46 @@ func TestReadResult(t *testing.T) {
 		}
 		if !contains(err.Error(), "invalid result") {
 			t.Errorf("error %q should mention invalid result", err.Error())
+		}
+	})
+
+	t.Run("reads valid no-op result file", func(t *testing.T) {
+		dir := t.TempDir()
+		result := ForgeResult{
+			Result:       "merged",
+			Summary:      "No-op: work already present on target branch",
+			FilesChanged: []string{},
+			NoOp:         true,
+		}
+		writeResultFile(t, dir, result)
+
+		got, err := ReadResult(dir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !got.NoOp {
+			t.Error("expected NoOp to be true")
+		}
+		if got.Result != "merged" {
+			t.Errorf("result = %q, want merged", got.Result)
+		}
+	})
+
+	t.Run("rejects no_op with non-merged result", func(t *testing.T) {
+		dir := t.TempDir()
+		// Write raw JSON to bypass Go-level validation
+		path := filepath.Join(dir, resultFileName)
+		data := []byte(`{"result":"failed","summary":"something","files_changed":[],"no_op":true}`)
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := ReadResult(dir)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !contains(err.Error(), "no_op is only valid") {
+			t.Errorf("error %q should mention no_op validity", err.Error())
 		}
 	})
 
