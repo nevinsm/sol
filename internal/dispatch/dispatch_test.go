@@ -5566,3 +5566,54 @@ func TestCastConcurrentSingleAgent(t *testing.T) {
 		t.Errorf("agent state = %q, want \"working\"", agent.State)
 	}
 }
+
+func TestResolveRejectsClosed(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWrit("Closed task", "This writ will be closed", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Close the writ before attempting resolve.
+	if _, err := worldStore.CloseWrit(itemID); err != nil {
+		t.Fatalf("failed to close writ: %v", err)
+	}
+
+	// Resolve should fail because the writ is already closed.
+	_, err = Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err == nil {
+		t.Fatal("expected Resolve to return an error for a closed writ, got nil")
+	}
+	if !strings.Contains(err.Error(), "already closed") {
+		t.Errorf("expected error to contain 'already closed', got: %v", err)
+	}
+
+	// Verify no MR was created for the closed writ.
+	mrs, err := worldStore.ListMergeRequestsByWrit(itemID, "")
+	if err != nil {
+		t.Fatalf("failed to list merge requests: %v", err)
+	}
+	if len(mrs) > 0 {
+		t.Errorf("expected no merge requests for closed writ, got %d", len(mrs))
+	}
+}

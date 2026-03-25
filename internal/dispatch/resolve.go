@@ -194,6 +194,11 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		return nil, fmt.Errorf("failed to get writ %q: %w", writID, err)
 	}
 
+	// Reject resolve on already-closed writs — no git ops, no MR creation.
+	if item.Status == "closed" {
+		return nil, fmt.Errorf("writ %s is already closed — cannot resolve", writID)
+	}
+
 	// Detect conflict-resolution tasks and handle separately.
 	if item.HasLabel("conflict-resolution") {
 		return resolveConflictResolution(ctx, opts, item, branchName, worktreeDir,
