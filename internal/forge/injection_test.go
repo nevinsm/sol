@@ -53,7 +53,7 @@ func TestBuildInjection(t *testing.T) {
 		// Check instructions.
 		mustContain(t, result, "git fetch origin && git reset --hard origin/main")
 		mustContain(t, result, "git merge --squash origin/outpost/Toast/sol-def456")
-		mustContain(t, result, `git commit --no-edit -m "feat: add widget support (sol-def456)"`)
+		mustContain(t, result, `git commit --no-edit --author="Toast <outpost.toast@sol.local>" -m "feat: add widget support (sol-def456)"`)
 		mustContain(t, result, "make build && make test")
 		mustContain(t, result, "git push origin HEAD:main")
 		mustContain(t, result, ".forge-result.json")
@@ -111,13 +111,30 @@ func TestBuildInjection(t *testing.T) {
 			Title: `feat: handle "special" cases`,
 		}
 		result := BuildInjection(mr, writQuotes, cfg)
-		mustContain(t, result, `git commit --no-edit -m "feat: handle \"special\" cases (sol-222)"`)
+		mustContain(t, result, `git commit --no-edit --author="Toast <outpost.toast@sol.local>" -m "feat: handle \"special\" cases (sol-222)"`)
 	})
 
 	t.Run("includes writ ID in commit instruction", func(t *testing.T) {
 		result := BuildInjection(mr, writ, cfg)
 		// Commit instruction should include both title and writ ID.
 		mustContain(t, result, "(sol-def456)")
+	})
+
+	t.Run("derives author from outpost branch", func(t *testing.T) {
+		result := BuildInjection(mr, writ, cfg)
+		mustContain(t, result, `--author="Toast <outpost.toast@sol.local>"`)
+	})
+
+	t.Run("derives author from envoy branch", func(t *testing.T) {
+		envoyMR := &store.MergeRequest{
+			ID:       "mr-envoy1",
+			WritID:   "sol-envoy1",
+			Branch:   "envoy/myworld/Polaris/sol-envoy1",
+			Phase:    "claimed",
+			Attempts: 1,
+		}
+		result := BuildInjection(envoyMR, writ, cfg)
+		mustContain(t, result, `--author="Polaris <envoy.polaris@sol.local>"`)
 	})
 }
 

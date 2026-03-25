@@ -1259,6 +1259,78 @@ func TestResolveHappyPath(t *testing.T) {
 	}
 }
 
+func TestResolveAuthorAttribution(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create a worktree directory with a git repo and a file to commit.
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+
+	// Create bare remote and capture its path for post-resolve inspection.
+	bareDir := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, worktreeDir, "clone", "--bare", ".", bareDir)
+	runGit(t, worktreeDir, "remote", "add", "origin", bareDir)
+
+	// Create an unstaged file so the resolve commit has content.
+	os.WriteFile(filepath.Join(worktreeDir, "README.md"), []byte("hello"), 0o644)
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	_, err = Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Check the git author on the resolve commit in the bare remote.
+	cmd := exec.Command("git", "-C", bareDir, "log", "-1", "--format=%an|%ae")
+	out, gitErr := cmd.CombinedOutput()
+	if gitErr != nil {
+		t.Fatalf("failed to read git log from bare remote: %v", gitErr)
+	}
+
+	parts := strings.SplitN(strings.TrimSpace(string(out)), "|", 2)
+	if len(parts) != 2 {
+		t.Fatalf("unexpected git log output: %s", string(out))
+	}
+	authorName := parts[0]
+	authorEmail := parts[1]
+
+	if authorName != "Toast" {
+		t.Errorf("expected GIT_AUTHOR_NAME=Toast, got %q", authorName)
+	}
+	if authorEmail != "outpost.toast@sol.local" {
+		t.Errorf("expected GIT_AUTHOR_EMAIL=outpost.toast@sol.local, got %q", authorEmail)
+	}
+}
+
 func TestResolveNoTether(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()

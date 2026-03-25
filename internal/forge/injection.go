@@ -74,7 +74,21 @@ func BuildInjection(mr *store.MergeRequest, writ *store.Writ, cfg InjectionConfi
 	fmt.Fprintf(&b, "1. `git fetch origin && git reset --hard origin/%s`\n", targetBranch)
 	fmt.Fprintf(&b, "2. `git merge --squash origin/%s`\n", mr.Branch)
 	b.WriteString("3. If conflicts, resolve them\n")
-	fmt.Fprintf(&b, "4. Commit: `git commit --no-edit -m \"%s (%s)\"`\n", escapeCommitMessage(writ.Title), writ.ID)
+	// Derive agent author from branch name for commit attribution.
+	// Branch formats: "outpost/{Name}/sol-xxx" or "envoy/{world}/{Name}/sol-xxx"
+	authorFlag := ""
+	if parts := strings.Split(mr.Branch, "/"); len(parts) >= 3 {
+		role := parts[0]
+		var name string
+		if role == "envoy" && len(parts) >= 4 {
+			name = parts[2] // envoy/{world}/{Name}/sol-xxx
+		} else {
+			name = parts[1] // outpost/{Name}/sol-xxx
+		}
+		email := strings.ToLower(role+"."+name) + "@sol.local"
+		authorFlag = fmt.Sprintf(` --author="%s <%s>"`, name, email)
+	}
+	fmt.Fprintf(&b, "4. Commit: `git commit --no-edit%s -m \"%s (%s)\"`\n", authorFlag, escapeCommitMessage(writ.Title), writ.ID)
 
 	if len(cfg.GateCommands) > 0 {
 		gateStr := strings.Join(cfg.GateCommands, " && ")

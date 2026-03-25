@@ -222,6 +222,10 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		commitCtx, commitCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
 		defer commitCancel()
 		commitCmd := exec.CommandContext(commitCtx, "git", "-C", worktreeDir, "commit", "-m", commitMsg)
+		commitCmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME="+agent.Name,
+			"GIT_AUTHOR_EMAIL="+strings.ToLower(agent.Role+"."+agent.Name)+"@sol.local",
+		)
 		commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
 
 		// git push: envoy pushes HEAD to a per-writ remote ref via refspec;
@@ -514,6 +518,10 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	commitCtx, commitCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
 	defer commitCancel()
 	commitCmd := exec.CommandContext(commitCtx, "git", "-C", worktreeDir, "commit", "-m", commitMsg)
+	commitCmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME="+opts.AgentName,
+		"GIT_AUTHOR_EMAIL="+strings.ToLower(role+"."+opts.AgentName)+"@sol.local",
+	)
 	commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
 
 	// Force push with lease — branch was rebased, needs force push.
