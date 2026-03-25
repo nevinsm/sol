@@ -8,6 +8,7 @@ import (
 	"github.com/nevinsm/sol/internal/brief"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/startup"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // --- Directory helpers ---
@@ -47,6 +48,12 @@ type StopManager interface {
 	brief.GracefulStopManager
 }
 
+// StopStore abstracts sphere store operations for Stop.
+type StopStore interface {
+	GetAgent(id string) (*store.Agent, error)
+	UpdateAgentState(id, state, activeWrit string) error
+}
+
 // --- Start ---
 
 // Start launches the chancellor session.
@@ -72,17 +79,32 @@ func Start(mgr SessionManager) error {
 
 // --- Stop ---
 
-// Stop terminates the chancellor session gracefully.
-// Unlike envoy.Stop and governor.Stop, which silently skip when no session is
-// running, this returns an error — chancellor has no agent record to reset to
-// idle, so a missing session is always unexpected and worth surfacing.
-func Stop(mgr StopManager) error {
+// Stop terminates the chancellor session gracefully and updates the agent
+// record to idle. Follows the same pattern as envoy.Stop and governor.Stop.
+func Stop(mgr StopManager, sphereStore StopStore) error {
+	agentID := "/chancellor"
+
+	// Read existing agent record to preserve active_writ across stop/start cycles.
+	existing, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		return fmt.Errorf("failed to stop chancellor: %w", err)
+	}
+
 	if !mgr.Exists(SessionName) {
 		return fmt.Errorf("no chancellor session running")
 	}
 
 	if err := brief.GracefulStop(SessionName, BriefDir(), mgr); err != nil {
+		// Best-effort: update agent state to idle even when stop fails.
+		if stateErr := sphereStore.UpdateAgentState(agentID, store.AgentIdle, existing.ActiveWrit); stateErr != nil {
+			fmt.Fprintf(os.Stderr, "chancellor stop: failed to update agent state after stop error: %v\n", stateErr)
+		}
 		return fmt.Errorf("failed to stop chancellor: %w", err)
+	}
+
+	// Update agent state to idle, preserving active_writ so restart context is retained.
+	if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, existing.ActiveWrit); err != nil {
+		return fmt.Errorf("failed to update chancellor agent state: %w", err)
 	}
 
 	return nil

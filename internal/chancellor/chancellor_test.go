@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // writeTestToken writes a minimal api_key token so Start() can inject credentials in tests.
@@ -63,6 +65,33 @@ func (m *mockSessionManager) Inject(name string, text string, submit bool) error
 
 func (m *mockSessionManager) Capture(name string, lines int) (string, error) {
 	return "", nil
+}
+
+type mockStopStore struct {
+	updated     map[string]store.AgentState
+	activeWrits map[string]string
+	getAgentErr error
+	updateErr   error
+}
+
+func (m *mockStopStore) GetAgent(id string) (*store.Agent, error) {
+	if m.getAgentErr != nil {
+		return nil, m.getAgentErr
+	}
+	return &store.Agent{ID: id, Role: "chancellor", State: store.AgentWorking}, nil
+}
+
+func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, activeWrit string) error {
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	if m.updated != nil {
+		m.updated[id] = state
+	}
+	if m.activeWrits != nil {
+		m.activeWrits[id] = activeWrit
+	}
+	return nil
 }
 
 // --- Tests ---
@@ -215,8 +244,12 @@ func TestStop(t *testing.T) {
 	t.Setenv("SOL_HOME", tmp)
 
 	mgr := &mockSessionManager{sessions: map[string]bool{SessionName: true}}
+	ss := &mockStopStore{
+		updated:     map[string]store.AgentState{},
+		activeWrits: map[string]string{},
+	}
 
-	err := Stop(mgr)
+	err := Stop(mgr, ss)
 	if err != nil {
 		t.Fatalf("Stop failed: %v", err)
 	}
@@ -225,6 +258,13 @@ func TestStop(t *testing.T) {
 	if mgr.sessions[SessionName] {
 		t.Error("session not stopped")
 	}
+
+	// Verify agent state updated to idle.
+	if state, ok := ss.updated["/chancellor"]; !ok {
+		t.Error("agent state not updated")
+	} else if state != store.AgentIdle {
+		t.Errorf("agent state = %q, want %q", state, store.AgentIdle)
+	}
 }
 
 func TestStopNoSession(t *testing.T) {
@@ -232,8 +272,11 @@ func TestStopNoSession(t *testing.T) {
 	t.Setenv("SOL_HOME", tmp)
 
 	mgr := &mockSessionManager{sessions: map[string]bool{}}
+	ss := &mockStopStore{
+		updated: map[string]store.AgentState{},
+	}
 
-	err := Stop(mgr)
+	err := Stop(mgr, ss)
 	if err == nil {
 		t.Fatal("expected error when no session running")
 	}

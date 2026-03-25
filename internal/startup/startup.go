@@ -363,6 +363,14 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 
 	fmt.Fprintf(os.Stderr, "startup: session %s started (role=%s, world=%s)\n", sessName, cfg.Role, world)
 
+	// Clear any stale resume state now that a session has started successfully.
+	// Respawn already clears after Resume, but Launch can be called directly
+	// (e.g. via handoff.Exec) — clearing here ensures no stale resume state
+	// survives regardless of entry path.
+	if err := ClearResumeState(world, agent, cfg.Role); err != nil {
+		slog.Warn("startup: failed to clear resume state after launch", "error", err)
+	}
+
 	return sessName, nil
 }
 

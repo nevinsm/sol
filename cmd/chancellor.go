@@ -8,6 +8,7 @@ import (
 	"github.com/nevinsm/sol/internal/chancellor"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -59,9 +60,15 @@ var chancellorStopCmd = &cobra.Command{
 		}
 		defer agentLock.Release()
 
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer sphereStore.Close()
+
 		mgr := session.New()
 
-		if err := chancellor.Stop(mgr); err != nil {
+		if err := chancellor.Stop(mgr, sphereStore); err != nil {
 			return err
 		}
 
@@ -80,7 +87,14 @@ var chancellorRestartCmd = &cobra.Command{
 		mgr := session.New()
 		return restartSession(mgr, chancellor.SessionName, "chancellor",
 			"Stopped chancellor session",
-			func() error { return chancellor.Stop(mgr) },
+			func() error {
+				sphereStore, err := store.OpenSphere()
+				if err != nil {
+					return err
+				}
+				defer sphereStore.Close()
+				return chancellor.Stop(mgr, sphereStore)
+			},
 			nil, chancellorStartCmd, args)
 	},
 }
