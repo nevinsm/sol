@@ -221,7 +221,7 @@ func importSphereData(s *store.SphereStore, archiveRoot, oldWorld, newWorld stri
 func importAgents(s *store.SphereStore, sphereDir, oldWorld, newWorld string, renaming bool) error {
 	var agents []ExportAgent
 	if err := readJSONFile(filepath.Join(sphereDir, "agents.json"), &agents); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("failed to read agents.json: %w", err)
@@ -244,7 +244,7 @@ func importAgents(s *store.SphereStore, sphereDir, oldWorld, newWorld string, re
 func importMessages(s *store.SphereStore, sphereDir, oldWorld, newWorld string, renaming bool) error {
 	var messages []ExportMessage
 	if err := readJSONFile(filepath.Join(sphereDir, "messages.json"), &messages); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("failed to read messages.json: %w", err)
@@ -268,7 +268,7 @@ func importMessages(s *store.SphereStore, sphereDir, oldWorld, newWorld string, 
 func importEscalations(s *store.SphereStore, sphereDir, oldWorld, newWorld string, renaming bool) error {
 	var escalations []ExportEscalation
 	if err := readJSONFile(filepath.Join(sphereDir, "escalations.json"), &escalations); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("failed to read escalations.json: %w", err)
@@ -290,7 +290,7 @@ func importEscalations(s *store.SphereStore, sphereDir, oldWorld, newWorld strin
 func importCaravans(s *store.SphereStore, sphereDir string) error {
 	var caravans []ExportCaravan
 	if err := readJSONFile(filepath.Join(sphereDir, "caravans.json"), &caravans); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("failed to read caravans.json: %w", err)
@@ -307,7 +307,7 @@ func importCaravans(s *store.SphereStore, sphereDir string) error {
 func importCaravanItems(s *store.SphereStore, sphereDir, oldWorld, newWorld string, renaming bool) error {
 	var items []ExportCaravanItem
 	if err := readJSONFile(filepath.Join(sphereDir, "caravan_items.json"), &items); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("failed to read caravan_items.json: %w", err)
@@ -466,7 +466,7 @@ func createAgentDirs(archiveRoot, worldName string) error {
 
 	var agents []ExportAgent
 	if err := readJSONFile(agentsFile, &agents); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil // No agents to create dirs for.
 		}
 		return fmt.Errorf("failed to read agents.json for directory creation: %w", err)
