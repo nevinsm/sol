@@ -108,7 +108,7 @@ func TestAgentCreateCapacityEnforced(t *testing.T) {
 
 	// Set capacity = 1.
 	writeWorldTOML(t, gtHome, "myworld", sourceRepo, map[string]string{
-		"agents": "capacity = 1",
+		"agents": "max_active = 1",
 	})
 
 	// First agent create → should succeed.
@@ -143,7 +143,7 @@ func TestAgentCreateCapacitySkipsNonAgentRoles(t *testing.T) {
 
 	// Set capacity = 1.
 	writeWorldTOML(t, gtHome, "myworld", sourceRepo, map[string]string{
-		"agents": "capacity = 1",
+		"agents": "max_active = 1",
 	})
 
 	// Create one outpost agent to fill capacity.

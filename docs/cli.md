@@ -16,7 +16,7 @@ Dispatch a writ to an outpost agent: create a worktree, tether the writ,
 and launch a Claude session.
 
 Selects an idle agent automatically unless --agent is specified. Respects
-world capacity limits and dispatch gates (sleeping worlds are rejected).
+world max_active limits and dispatch gates (sleeping worlds are rejected).
 
 With --workflow, instantiates a step-driven workflow for the agent. Variables
 can be passed with --var key=val. With --account, uses specific Claude OAuth
@@ -2011,7 +2011,7 @@ world.toml configuration reference:
   protected_branches = []         # additional protected branches (glob patterns OK)
 
   [agents]
-  capacity = 10                   # max concurrent agents (0 = unlimited)
+  max_active = 10                 # max concurrent agents (0 = unlimited)
   name_pool_path = ""             # custom name pool file (empty = built-in)
   model_tier = "sonnet"           # default model for all roles
 

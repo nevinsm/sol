@@ -39,10 +39,12 @@ Agent pool and model settings.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `capacity` | int | `0` | Maximum number of concurrent agents. `0` means unlimited. Must be `>= 0`. |
+| `max_active` | int | `0` | Maximum number of concurrent active agents per world. `0` means unlimited. Must be `>= 0`. |
 | `name_pool_path` | string | `""` | Path to a custom name pool file for agent names. Empty uses the embedded default pool. |
 | `model_tier` | string | `"sonnet"` | Default model tier for all agents. Valid values: `sonnet`, `opus`, `haiku`. |
 | `default_runtime` | string | `""` | Default runtime adapter for all agents. Valid values: `claude`. Empty falls back to `"claude"`. |
+
+> **Migration note:** The `agents.capacity` field was removed. Use `agents.max_active` instead. Existing configs with `capacity` will silently ignore the field.
 
 ---
 
@@ -74,6 +76,16 @@ Valid values for all fields: `claude`.
 | `governor` | string | `""` | Runtime for governor agents. |
 | `forge` | string | `""` | Runtime for forge agents. |
 | `chancellor` | string | `""` | Runtime for chancellor (cross-world planner) agents. |
+
+---
+
+### `[sphere]`
+
+Sphere-level concurrency settings. Configured only in `sol.toml` (not `world.toml`).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `max_sessions` | int | `0` | Maximum number of concurrent sessions across all worlds. `0` means unlimited. Must be `>= 0`. |
 
 ---
 
@@ -178,8 +190,8 @@ sleeping = false
 default_account = "team-backend"
 
 [agents]
-# Maximum concurrent agents (0 = unlimited).
-capacity = 4
+# Maximum concurrent active agents (0 = unlimited).
+max_active = 4
 
 # Path to a custom name pool file. Empty = use built-in pool.
 name_pool_path = ""
@@ -244,6 +256,10 @@ timeout = "60s"
 # $SOL_HOME/sol.toml
 # Sphere-level (global) configuration. Applies to all worlds unless
 # overridden by a per-world world.toml.
+
+[sphere]
+# Maximum concurrent sessions across all worlds (0 = unlimited).
+max_sessions = 0
 
 [agents]
 # Default model tier for all agents across all worlds.

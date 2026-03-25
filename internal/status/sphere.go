@@ -217,9 +217,9 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 		Sleeping:   config.IsSleeping(w.Name),
 	}
 
-	// Load world config for capacity (non-fatal if fails — DEGRADE).
+	// Load world config for max_active (non-fatal if fails — DEGRADE).
 	if worldCfg, err := config.LoadWorldConfig(w.Name); err == nil {
-		summary.Capacity = worldCfg.Agents.Capacity
+		summary.MaxActive = worldCfg.Agents.MaxActive
 	}
 
 	// Sleeping worlds: still count active agents/envoys, but skip

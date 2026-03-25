@@ -10,8 +10,8 @@ import (
 
 func TestDefaultWorldConfig(t *testing.T) {
 	cfg := DefaultWorldConfig()
-	if cfg.Agents.Capacity != 0 {
-		t.Fatalf("expected capacity 0, got %d", cfg.Agents.Capacity)
+	if cfg.Agents.MaxActive != 0 {
+		t.Fatalf("expected max_active 0, got %d", cfg.Agents.MaxActive)
 	}
 	if cfg.Agents.ModelTier != "sonnet" {
 		t.Fatalf("expected model_tier 'sonnet', got %q", cfg.Agents.ModelTier)
@@ -123,8 +123,8 @@ func TestLoadWorldConfigPartialOverride(t *testing.T) {
 	if cfg.World.Branch != "main" {
 		t.Fatalf("expected world.branch 'main' (default), got %q", cfg.World.Branch)
 	}
-	if cfg.Agents.Capacity != 0 {
-		t.Fatalf("expected capacity 0 (default), got %d", cfg.Agents.Capacity)
+	if cfg.Agents.MaxActive != 0 {
+		t.Fatalf("expected max_active 0 (default), got %d", cfg.Agents.MaxActive)
 	}
 }
 
@@ -132,13 +132,13 @@ func TestLoadWorldConfigSameSectionPartialOverride(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
-	// sol.toml sets both capacity and model_tier in [agents].
+	// sol.toml sets both max_active and model_tier in [agents].
 	globalPath := filepath.Join(dir, "sol.toml")
-	if err := os.WriteFile(globalPath, []byte("[agents]\ncapacity = 10\nmodel_tier = \"opus\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(globalPath, []byte("[agents]\nmax_active = 10\nmodel_tier = \"opus\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// world.toml overrides only model_tier in [agents] — capacity is not mentioned.
+	// world.toml overrides only model_tier in [agents] — max_active is not mentioned.
 	worldDir := filepath.Join(dir, "testworld")
 	if err := os.MkdirAll(worldDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -155,9 +155,9 @@ func TestLoadWorldConfigSameSectionPartialOverride(t *testing.T) {
 	if cfg.Agents.ModelTier != "haiku" {
 		t.Fatalf("expected model_tier 'haiku' (world override), got %q", cfg.Agents.ModelTier)
 	}
-	// capacity must be preserved from sol.toml, not zeroed.
-	if cfg.Agents.Capacity != 10 {
-		t.Fatalf("expected capacity 10 (preserved from sol.toml), got %d", cfg.Agents.Capacity)
+	// max_active must be preserved from sol.toml, not zeroed.
+	if cfg.Agents.MaxActive != 10 {
+		t.Fatalf("expected max_active 10 (preserved from sol.toml), got %d", cfg.Agents.MaxActive)
 	}
 }
 
@@ -201,7 +201,7 @@ func TestWriteWorldConfigRoundTrip(t *testing.T) {
 			Branch:     "develop",
 		},
 		Agents: AgentsSection{
-			Capacity:     10,
+			MaxActive:    10,
 			NamePoolPath: "/custom/names.txt",
 			ModelTier:    "opus",
 		},
@@ -221,8 +221,8 @@ func TestWriteWorldConfigRoundTrip(t *testing.T) {
 	if loaded.World.SourceRepo != original.World.SourceRepo {
 		t.Fatalf("source_repo: expected %q, got %q", original.World.SourceRepo, loaded.World.SourceRepo)
 	}
-	if loaded.Agents.Capacity != original.Agents.Capacity {
-		t.Fatalf("capacity: expected %d, got %d", original.Agents.Capacity, loaded.Agents.Capacity)
+	if loaded.Agents.MaxActive != original.Agents.MaxActive {
+		t.Fatalf("max_active: expected %d, got %d", original.Agents.MaxActive, loaded.Agents.MaxActive)
 	}
 	if loaded.Agents.NamePoolPath != original.Agents.NamePoolPath {
 		t.Fatalf("name_pool_path: expected %q, got %q", original.Agents.NamePoolPath, loaded.Agents.NamePoolPath)
@@ -515,22 +515,22 @@ func TestWorldConfigValidateModelTier(t *testing.T) {
 	}
 }
 
-func TestWorldConfigValidateCapacity(t *testing.T) {
+func TestWorldConfigValidateMaxActive(t *testing.T) {
 	valid := []int{0, 1, 100}
 	for _, cap := range valid {
 		cfg := DefaultWorldConfig()
-		cfg.Agents.Capacity = cap
+		cfg.Agents.MaxActive = cap
 		if err := cfg.Validate(); err != nil {
-			t.Errorf("expected capacity %d to be valid, got: %v", cap, err)
+			t.Errorf("expected max_active %d to be valid, got: %v", cap, err)
 		}
 	}
 
 	invalid := []int{-1, -100}
 	for _, cap := range invalid {
 		cfg := DefaultWorldConfig()
-		cfg.Agents.Capacity = cap
+		cfg.Agents.MaxActive = cap
 		if err := cfg.Validate(); err == nil {
-			t.Errorf("expected capacity %d to be invalid, got nil error", cap)
+			t.Errorf("expected max_active %d to be invalid, got nil error", cap)
 		}
 	}
 }
@@ -1174,31 +1174,14 @@ func TestValidateMaxActiveValid(t *testing.T) {
 	}
 }
 
-// ----- Capacity deprecation -----
+// ----- Capacity removal -----
 
-func TestCapacityStillParses(t *testing.T) {
+func TestCapacityFieldIgnored(t *testing.T) {
+	// After removing agents.capacity, configs using it should still load
+	// (TOML ignores unknown fields) but the value is not parsed.
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
-	content := "[agents]\ncapacity = 5\n"
-	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := LoadWorldConfig("testworld")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Agents.Capacity != 5 {
-		t.Fatalf("capacity = %d, want 5", cfg.Agents.Capacity)
-	}
-}
-
-func TestCapacityAndMaxActiveCoexist(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("SOL_HOME", dir)
-
-	// Both set — no deprecation warning when max_active is set.
 	content := "[agents]\ncapacity = 5\nmax_active = 10\n"
 	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -1208,41 +1191,14 @@ func TestCapacityAndMaxActiveCoexist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Agents.Capacity != 5 {
-		t.Fatalf("capacity = %d, want 5", cfg.Agents.Capacity)
-	}
+	// max_active should be parsed; capacity is ignored (no field in struct).
 	if cfg.Agents.MaxActive != 10 {
 		t.Fatalf("max_active = %d, want 10", cfg.Agents.MaxActive)
 	}
 }
 
-func TestDeprecationWarningsCapacityWithoutMaxActive(t *testing.T) {
+func TestDeprecationWarningsEmpty(t *testing.T) {
 	cfg := DefaultWorldConfig()
-	cfg.Agents.Capacity = 5
-	// max_active is 0 (unset) — should produce a deprecation warning.
-	warnings := cfg.DeprecationWarnings()
-	if len(warnings) == 0 {
-		t.Fatal("expected deprecation warning for capacity without max_active, got none")
-	}
-	if !strings.Contains(warnings[0], "agents.capacity") {
-		t.Fatalf("expected warning to mention agents.capacity, got: %v", warnings)
-	}
-}
-
-func TestDeprecationWarningsNoWarningWhenMaxActiveSet(t *testing.T) {
-	cfg := DefaultWorldConfig()
-	cfg.Agents.Capacity = 5
-	cfg.Agents.MaxActive = 10
-	// Both set — no deprecation warning.
-	warnings := cfg.DeprecationWarnings()
-	if len(warnings) != 0 {
-		t.Fatalf("expected no deprecation warnings, got: %v", warnings)
-	}
-}
-
-func TestDeprecationWarningsNoWarningWhenCapacityZero(t *testing.T) {
-	cfg := DefaultWorldConfig()
-	// capacity = 0 (default/unset) — no deprecation warning.
 	warnings := cfg.DeprecationWarnings()
 	if len(warnings) != 0 {
 		t.Fatalf("expected no deprecation warnings, got: %v", warnings)

@@ -601,14 +601,14 @@ func TestRenderEnvoyNudgeCount(t *testing.T) {
 	}
 }
 
-func TestRenderWorldsTableCapacity(t *testing.T) {
+func TestRenderWorldsTableMaxActive(t *testing.T) {
 	s := &SphereStatus{
 		SOLHome: "/home/test/sol",
 		Health:  "healthy",
 		Prefect: PrefectInfo{Running: true, PID: 1234},
 		Worlds: []WorldSummary{
-			{Name: "capped", Agents: 4, Capacity: 5, Working: 2, Health: "healthy"},
-			{Name: "unlimited", Agents: 3, Capacity: 0, Working: 1, Health: "healthy"},
+			{Name: "capped", Agents: 4, MaxActive: 5, Working: 2, Health: "healthy"},
+			{Name: "unlimited", Agents: 3, MaxActive: 0, Working: 1, Health: "healthy"},
 		},
 	}
 
@@ -624,33 +624,33 @@ func TestRenderWorldsTableCapacity(t *testing.T) {
 	}
 }
 
-func TestRenderWorldSummaryWithCapacity(t *testing.T) {
+func TestRenderWorldSummaryWithMaxActive(t *testing.T) {
 	ws := &WorldStatus{
-		World:    "haven",
-		Capacity: 5,
-		Prefect:  PrefectInfo{Running: true, PID: 42},
-		Summary:  Summary{Total: 3, Working: 2, Idle: 1},
+		World:     "haven",
+		MaxActive: 5,
+		Prefect:   PrefectInfo{Running: true, PID: 42},
+		Summary:   Summary{Total: 3, Working: 2, Idle: 1},
 	}
 
 	output := RenderWorld(ws)
 
-	if !strings.Contains(output, "capacity: 5") {
-		t.Error("RenderWorld with capacity should contain 'capacity: 5'")
+	if !strings.Contains(output, "max_active: 5") {
+		t.Error("RenderWorld with max_active should contain 'max_active: 5'")
 	}
 }
 
-func TestRenderWorldSummaryWithoutCapacity(t *testing.T) {
+func TestRenderWorldSummaryWithoutMaxActive(t *testing.T) {
 	ws := &WorldStatus{
-		World:    "haven",
-		Capacity: 0,
-		Prefect:  PrefectInfo{Running: true, PID: 42},
-		Summary:  Summary{Total: 3, Working: 2, Idle: 1},
+		World:     "haven",
+		MaxActive: 0,
+		Prefect:   PrefectInfo{Running: true, PID: 42},
+		Summary:   Summary{Total: 3, Working: 2, Idle: 1},
 	}
 
 	output := RenderWorld(ws)
 
-	if strings.Contains(output, "capacity") {
-		t.Error("RenderWorld without capacity should not contain 'capacity'")
+	if strings.Contains(output, "max_active") {
+		t.Error("RenderWorld without max_active should not contain 'max_active'")
 	}
 }
 

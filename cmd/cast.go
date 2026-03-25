@@ -26,7 +26,7 @@ var castCmd = &cobra.Command{
 and launch a Claude session.
 
 Selects an idle agent automatically unless --agent is specified. Respects
-world capacity limits and dispatch gates (sleeping worlds are rejected).
+world max_active limits and dispatch gates (sleeping worlds are rejected).
 
 With --workflow, instantiates a step-driven workflow for the agent. Variables
 can be passed with --var key=val. With --account, uses specific Claude OAuth

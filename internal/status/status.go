@@ -43,7 +43,7 @@ type TokenInfo struct {
 // WorldStatus holds the complete runtime state for a world.
 type WorldStatus struct {
 	World      string         `json:"world"`
-	Capacity   int            `json:"capacity"` // 0 = unlimited
+	MaxActive  int            `json:"max_active"` // 0 = unlimited
 	Prefect    PrefectInfo    `json:"prefect"`
 	Forge      ForgeInfo      `json:"forge"`
 	Chronicle  ChronicleInfo  `json:"chronicle"`
@@ -341,7 +341,7 @@ type WorldSummary struct {
 	SourceRepo string `json:"source_repo,omitempty"`
 	Sleeping   bool   `json:"sleeping,omitempty"`
 	Agents     int    `json:"agents"`
-	Capacity   int    `json:"capacity"` // 0 = unlimited
+	MaxActive  int    `json:"max_active"` // 0 = unlimited
 	Envoys     int    `json:"envoys"`
 	Governor   bool   `json:"governor"`
 	Working    int    `json:"working"`

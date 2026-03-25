@@ -113,7 +113,6 @@ type RuntimesSection struct {
 
 // AgentsSection holds agent-related settings.
 type AgentsSection struct {
-	Capacity       int             `toml:"capacity" json:"capacity"`                                   // Deprecated: use MaxActive. 0 = unlimited.
 	MaxActive      int             `toml:"max_active" json:"max_active"`                               // 0 = unlimited
 	NamePoolPath   string          `toml:"name_pool_path" json:"name_pool_path"`                       // empty = embedded default
 	ModelTier      string          `toml:"model_tier" json:"model_tier"`                               // "sonnet", "opus", "haiku"
@@ -280,9 +279,6 @@ func (c WorldConfig) Validate() error {
 	if c.World.SourceRepo != "" && c.World.Branch == "" {
 		return fmt.Errorf("world.branch must be non-empty when world.source_repo is set")
 	}
-	if c.Agents.Capacity < 0 {
-		return fmt.Errorf("agents.capacity must be >= 0, got %d", c.Agents.Capacity)
-	}
 	if c.Agents.MaxActive < 0 {
 		return fmt.Errorf("agents.max_active must be >= 0, got %d", c.Agents.MaxActive)
 	}
@@ -339,11 +335,7 @@ func (c WorldConfig) Validate() error {
 // fields that are still set. Callers should print these to stderr so they
 // are visible to users without corrupting stdout output.
 func (c WorldConfig) DeprecationWarnings() []string {
-	var warnings []string
-	if c.Agents.Capacity != 0 && c.Agents.MaxActive == 0 {
-		warnings = append(warnings, "agents.capacity is deprecated, use agents.max_active instead")
-	}
-	return warnings
+	return nil
 }
 
 // LoadGlobalConfig loads sphere-level configuration from sol.toml.

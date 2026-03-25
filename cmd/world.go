@@ -67,7 +67,7 @@ world.toml configuration reference:
   protected_branches = []         # additional protected branches (glob patterns OK)
 
   [agents]
-  capacity = 10                   # max concurrent agents (0 = unlimited)
+  max_active = 10                 # max concurrent agents (0 = unlimited)
   name_pool_path = ""             # custom name pool file (empty = built-in)
   model_tier = "sonnet"           # default model for all roles
 

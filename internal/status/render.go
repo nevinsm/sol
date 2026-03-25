@@ -308,8 +308,8 @@ func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 		}
 
 		agentCount := fmt.Sprintf("%d", w.Agents)
-		if w.Capacity > 0 {
-			agentCount = fmt.Sprintf("%d/%d", w.Agents, w.Capacity)
+		if w.MaxActive > 0 {
+			agentCount = fmt.Sprintf("%d/%d", w.Agents, w.MaxActive)
 		}
 		agents := agentCount
 		if w.Working > 0 || w.Stalled > 0 || w.Dead > 0 {
@@ -720,8 +720,8 @@ func renderMergeQueue(b *strings.Builder, mq MergeQueueInfo) {
 
 func renderWorldSummary(b *strings.Builder, ws *WorldStatus) {
 	parts := fmt.Sprintf("%d agents", ws.Summary.Total)
-	if ws.Capacity > 0 {
-		parts += fmt.Sprintf(" (capacity: %d)", ws.Capacity)
+	if ws.MaxActive > 0 {
+		parts += fmt.Sprintf(" (max_active: %d)", ws.MaxActive)
 	}
 	if len(ws.Envoys) > 0 {
 		parts += fmt.Sprintf(", %d envoys", len(ws.Envoys))
@@ -852,10 +852,10 @@ func RenderWorldConfig(world string, cfg config.WorldConfig) string {
 	}
 	b.WriteString(fmt.Sprintf("  Source repo:    %s\n", sourceDisplay))
 
-	if cfg.Agents.Capacity == 0 {
-		b.WriteString(fmt.Sprintf("  Agent capacity: %s\n", style.Dim.Render("unlimited")))
+	if cfg.Agents.MaxActive == 0 {
+		b.WriteString(fmt.Sprintf("  Max active:     %s\n", style.Dim.Render("unlimited")))
 	} else {
-		b.WriteString(fmt.Sprintf("  Agent capacity: %d\n", cfg.Agents.Capacity))
+		b.WriteString(fmt.Sprintf("  Max active:     %d\n", cfg.Agents.MaxActive))
 	}
 	b.WriteString(fmt.Sprintf("  Model tier:     %s\n", cfg.Agents.ModelTier))
 

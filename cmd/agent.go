@@ -43,13 +43,13 @@ var agentCreateCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
-		// Enforce capacity for outpost agents (role=outpost).
+		// Enforce max_active for outpost agents (role=outpost).
 		if agentCreateRole == "outpost" {
 			worldCfg, err := config.LoadWorldConfig(world)
 			if err != nil {
 				return fmt.Errorf("failed to load world config for %q: %w", world, err)
 			}
-			if worldCfg.Agents.Capacity > 0 {
+			if worldCfg.Agents.MaxActive > 0 {
 				agents, err := sphereStore.ListAgents(world, "")
 				if err != nil {
 					return fmt.Errorf("failed to list agents for world %q: %w", world, err)
@@ -60,8 +60,8 @@ var agentCreateCmd = &cobra.Command{
 						count++
 					}
 				}
-				if count >= worldCfg.Agents.Capacity {
-					return fmt.Errorf("world %s has reached agent capacity (%d)", world, worldCfg.Agents.Capacity)
+				if count >= worldCfg.Agents.MaxActive {
+					return fmt.Errorf("world %s has reached agent capacity (%d)", world, worldCfg.Agents.MaxActive)
 				}
 			}
 		}

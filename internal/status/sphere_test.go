@@ -584,20 +584,20 @@ func TestGatherSphereChroniclePIDFallback(t *testing.T) {
 	}
 }
 
-func TestWorldSummaryIncludesCapacity(t *testing.T) {
+func TestWorldSummaryIncludesMaxActive(t *testing.T) {
 	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	// Write a world.toml with capacity = 5.
+	// Write a world.toml with max_active = 5.
 	worldName := "capped"
 	worldDir := filepath.Join(config.Home(), worldName)
 	if err := os.MkdirAll(worldDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	configContent := `[agents]
-capacity = 5
+max_active = 5
 model_tier = "sonnet"
 `
 	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(configContent), 0o644); err != nil {
@@ -625,21 +625,21 @@ model_tier = "sonnet"
 		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
 	}
 	w := result.Worlds[0]
-	if w.Capacity != 5 {
-		t.Errorf("Capacity = %d, want 5", w.Capacity)
+	if w.MaxActive != 5 {
+		t.Errorf("MaxActive = %d, want 5", w.MaxActive)
 	}
 	if w.Agents != 2 {
 		t.Errorf("Agents = %d, want 2", w.Agents)
 	}
 }
 
-func TestWorldSummaryUnlimitedCapacity(t *testing.T) {
+func TestWorldSummaryUnlimitedMaxActive(t *testing.T) {
 	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
 	defer pidCleanup()
 
-	// No world.toml → capacity = 0 (unlimited/default).
+	// No world.toml → max_active = 0 (unlimited/default).
 	lister := &mockWorldLister{
 		worlds: []store.World{
 			{Name: "nocap"},
@@ -653,8 +653,8 @@ func TestWorldSummaryUnlimitedCapacity(t *testing.T) {
 	if len(result.Worlds) != 1 {
 		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
 	}
-	if result.Worlds[0].Capacity != 0 {
-		t.Errorf("Capacity = %d, want 0 (unlimited)", result.Worlds[0].Capacity)
+	if result.Worlds[0].MaxActive != 0 {
+		t.Errorf("MaxActive = %d, want 0 (unlimited)", result.Worlds[0].MaxActive)
 	}
 }
 
