@@ -3,7 +3,6 @@ package sitrep
 import (
 	_ "embed"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -503,49 +502,6 @@ func formatDataPayload(data *CollectedData) string {
 	}
 
 	return b.String()
-}
-
-// formatRelativeTime returns a human-readable duration since the given timestamp.
-func formatRelativeTime(t time.Time) string {
-	d := time.Since(t).Truncate(time.Second)
-	if d < time.Minute {
-		return d.String()
-	}
-	if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	}
-	if d < 24*time.Hour {
-		h := int(d.Hours())
-		m := int(d.Minutes()) % 60
-		if m == 0 {
-			return fmt.Sprintf("%dh", h)
-		}
-		return fmt.Sprintf("%dh%dm", h, m)
-	}
-	days := int(d.Hours()) / 24
-	h := int(d.Hours()) % 24
-	if h == 0 {
-		return fmt.Sprintf("%dd", days)
-	}
-	return fmt.Sprintf("%dd%dh", days, h)
-}
-
-// formatAge returns a human-readable duration since the given time.
-func formatAge(t time.Time) string {
-	d := time.Since(t)
-	if d < 0 {
-		d = 0
-	}
-
-	hours := d.Hours()
-	if hours < 1 {
-		return fmt.Sprintf("%dm", int(math.Max(1, d.Minutes())))
-	}
-	if hours < 24 {
-		return fmt.Sprintf("%dh", int(hours))
-	}
-	days := int(hours / 24)
-	return fmt.Sprintf("%dd", days)
 }
 
 // relativeAge returns a concise human-readable age string for the given time.
