@@ -24,18 +24,20 @@ import (
 // --- Mock session manager ---
 
 type mockSessionManager struct {
-	started    map[string]bool
-	stopped    map[string]bool
-	injected   map[string]string            // session → last injected text
-	startedEnv map[string]map[string]string // session → env vars
+	started       map[string]bool
+	stopped       map[string]bool
+	injected      map[string]string            // session → last injected text
+	startedEnv    map[string]map[string]string // session → env vars
+	sessionCounts map[string]int               // prefix → count for CountSessions
 }
 
 func newMockSessionManager() *mockSessionManager {
 	return &mockSessionManager{
-		started:    make(map[string]bool),
-		stopped:    make(map[string]bool),
-		injected:   make(map[string]string),
-		startedEnv: make(map[string]map[string]string),
+		started:       make(map[string]bool),
+		stopped:       make(map[string]bool),
+		injected:      make(map[string]string),
+		startedEnv:    make(map[string]map[string]string),
+		sessionCounts: make(map[string]int),
 	}
 }
 
@@ -76,6 +78,9 @@ func (m *mockSessionManager) Cycle(name, workdir, cmd string, env map[string]str
 }
 
 func (m *mockSessionManager) CountSessions(prefix string) (int, error) {
+	if count, ok := m.sessionCounts[prefix]; ok {
+		return count, nil
+	}
 	return 0, nil
 }
 
@@ -489,11 +494,11 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	// Set capacity = 1 via world config.
+	// Set max_active = 1 via world config.
 	solHome := os.Getenv("SOL_HOME")
 	worldDir := solHome + "/ember"
 	os.MkdirAll(worldDir, 0o755)
-	os.WriteFile(worldDir+"/world.toml", []byte("[agents]\ncapacity = 1\n"), 0o644)
+	os.WriteFile(worldDir+"/world.toml", []byte("[agents]\nmax_active = 1\n"), 0o644)
 
 	// Create first writ and cast — should auto-provision one agent.
 	item1, err := worldStore.CreateWrit("Item 1", "First item", "autarch", 2, nil)
@@ -514,6 +519,9 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 		t.Fatalf("first Cast failed: %v", err)
 	}
 
+	// Simulate 1 active session for this world (the one just cast).
+	mgr.sessionCounts["sol-ember-"] = 1
+
 	// Create second writ and cast — should fail with capacity error.
 	item2, err := worldStore.CreateWrit("Item 2", "Second item", "autarch", 2, nil)
 	if err != nil {
@@ -528,8 +536,8 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected capacity error on second cast")
 	}
-	if !strings.Contains(err.Error(), "reached agent capacity") {
-		t.Errorf("expected 'reached agent capacity' error, got: %v", err)
+	if !strings.Contains(err.Error(), "active session limit") {
+		t.Errorf("expected 'active session limit' error, got: %v", err)
 	}
 }
 
@@ -537,11 +545,11 @@ func TestCastCapacityExhaustedErrorSentinel(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
-	// Set capacity = 1 via world config.
+	// Set max_active = 1 via world config.
 	solHome := os.Getenv("SOL_HOME")
 	worldDir := solHome + "/ember"
 	os.MkdirAll(worldDir, 0o755)
-	os.WriteFile(worldDir+"/world.toml", []byte("[agents]\ncapacity = 1\n"), 0o644)
+	os.WriteFile(worldDir+"/world.toml", []byte("[agents]\nmax_active = 1\n"), 0o644)
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init")
@@ -560,6 +568,9 @@ func TestCastCapacityExhaustedErrorSentinel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Cast failed: %v", err)
 	}
+
+	// Simulate 1 active session for this world.
+	mgr.sessionCounts["sol-ember-"] = 1
 
 	// Second cast — should fail with ErrCapacityExhausted.
 	item2, err := worldStore.CreateWrit("Item 2", "Second item", "autarch", 2, nil)
@@ -4579,7 +4590,7 @@ func TestResolveContextCancelled(t *testing.T) {
 
 func TestErrCapacityExhausted(t *testing.T) {
 	// ErrCapacityExhausted should be detectable via errors.Is.
-	err := fmt.Errorf("world %q has reached agent capacity (%d): %w", "testworld", 5, ErrCapacityExhausted)
+	err := fmt.Errorf("world %q has reached active session limit (%d): %w", "testworld", 5, ErrCapacityExhausted)
 	if !errors.Is(err, ErrCapacityExhausted) {
 		t.Error("wrapped error should match ErrCapacityExhausted via errors.Is")
 	}
@@ -4588,6 +4599,134 @@ func TestErrCapacityExhausted(t *testing.T) {
 	plainErr := fmt.Errorf("some other error")
 	if errors.Is(plainErr, ErrCapacityExhausted) {
 		t.Error("unrelated error should not match ErrCapacityExhausted")
+	}
+}
+
+func TestErrSphereCapacityExhausted(t *testing.T) {
+	// ErrSphereCapacityExhausted should be detectable via errors.Is.
+	err := fmt.Errorf("sphere has reached session limit (%d): %w", 10, ErrSphereCapacityExhausted)
+	if !errors.Is(err, ErrSphereCapacityExhausted) {
+		t.Error("wrapped error should match ErrSphereCapacityExhausted via errors.Is")
+	}
+
+	// Plain error should not match.
+	plainErr := fmt.Errorf("some other error")
+	if errors.Is(plainErr, ErrSphereCapacityExhausted) {
+		t.Error("unrelated error should not match ErrSphereCapacityExhausted")
+	}
+
+	// Should not match ErrCapacityExhausted.
+	if errors.Is(err, ErrCapacityExhausted) {
+		t.Error("ErrSphereCapacityExhausted should not match ErrCapacityExhausted")
+	}
+}
+
+func TestAutoProvisionSphereCapacityExhausted(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	config.EnsureDirs()
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "sphere-cap-test"
+
+	// Write a names.txt pool.
+	worldDir := filepath.Join(solHome, worldName)
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "names.txt"), []byte("Alpha\nBeta\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate 5 active sessions sphere-wide.
+	mgr := newMockSessionManager()
+	mgr.sessionCounts["sol-"] = 5
+
+	// maxActive=0 (unlimited per-world), maxSessions=5 (sphere limit reached).
+	_, err = autoProvision(worldName, sphereStore, "", mgr, 0, 5)
+	if err == nil {
+		t.Fatal("expected autoProvision to fail when sphere capacity reached")
+	}
+	if !errors.Is(err, ErrSphereCapacityExhausted) {
+		t.Errorf("expected ErrSphereCapacityExhausted, got: %v", err)
+	}
+}
+
+func TestAutoProvisionPerWorldBeforeSphere(t *testing.T) {
+	// When both per-world and sphere limits are reached, the per-world
+	// error should be returned (checked first).
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	config.EnsureDirs()
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "both-cap-test"
+
+	worldDir := filepath.Join(solHome, worldName)
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "names.txt"), []byte("Alpha\nBeta\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := newMockSessionManager()
+	mgr.sessionCounts["sol-"+worldName+"-"] = 2
+	mgr.sessionCounts["sol-"] = 10
+
+	// Both limits reached — per-world (maxActive=2) checked before sphere (maxSessions=10).
+	_, err = autoProvision(worldName, sphereStore, "", mgr, 2, 10)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ErrCapacityExhausted) {
+		t.Errorf("expected ErrCapacityExhausted (per-world), got: %v", err)
+	}
+}
+
+func TestCastSphereCapacityExhausted(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Set max_active = 0 (unlimited per-world) and write sphere config.
+	solHome := os.Getenv("SOL_HOME")
+	worldDir := solHome + "/ember"
+	os.MkdirAll(worldDir, 0o755)
+	// Write sol.toml with sphere max_sessions = 2.
+	os.WriteFile(solHome+"/sol.toml", []byte("[sphere]\nmax_sessions = 2\n"), 0o644)
+
+	// Simulate 2 active sessions sphere-wide.
+	mgr.sessionCounts["sol-"] = 2
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	item1, err := worldStore.CreateWrit("Item 1", "First item", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	_, err = Cast(context.Background(), CastOpts{
+		WritID:     item1,
+		World:      "ember",
+		SourceRepo: repoDir,
+	}, worldStore, sphereStore, mgr, nil)
+	if err == nil {
+		t.Fatal("expected sphere capacity error")
+	}
+	if !errors.Is(err, ErrSphereCapacityExhausted) {
+		t.Errorf("expected ErrSphereCapacityExhausted, got: %v", err)
 	}
 }
 
@@ -4603,12 +4742,6 @@ func TestAutoProvisionCapacityExhaustedError(t *testing.T) {
 	defer sphereStore.Close()
 
 	worldName := "capped-test"
-	// Create 3 agents — capacity of 3 should be exhausted.
-	for _, name := range []string{"Alpha", "Beta", "Gamma"} {
-		if _, err := sphereStore.CreateAgent(name, worldName, "outpost"); err != nil {
-			t.Fatalf("failed to create agent: %v", err)
-		}
-	}
 
 	// Write a names.txt pool.
 	worldDir := filepath.Join(solHome, worldName)
@@ -4619,7 +4752,11 @@ func TestAutoProvisionCapacityExhaustedError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = autoProvision(worldName, sphereStore, "", 3)
+	// Simulate 3 active sessions — max_active of 3 should be exhausted.
+	mgr := newMockSessionManager()
+	mgr.sessionCounts["sol-"+worldName+"-"] = 3
+
+	_, err = autoProvision(worldName, sphereStore, "", mgr, 3, 0)
 	if err == nil {
 		t.Fatal("expected autoProvision to fail when at capacity")
 	}
@@ -4628,11 +4765,10 @@ func TestAutoProvisionCapacityExhaustedError(t *testing.T) {
 	}
 }
 
-func TestAutoProvisionConcurrentCapacityRace(t *testing.T) {
-	// Two concurrent autoProvision calls against a world at capacity-1 must
-	// result in exactly one success and one ErrCapacityExhausted failure.
-	// This exercises the provision lock that serializes the check-and-create
-	// window and prevents both goroutines from seeing the pre-limit count.
+func TestAutoProvisionConcurrentNameAllocation(t *testing.T) {
+	// Two concurrent autoProvision calls must each get a unique agent name.
+	// The provision lock serializes the check-and-create window so that
+	// both goroutines don't allocate the same name.
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	config.EnsureDirs()
@@ -4644,12 +4780,8 @@ func TestAutoProvisionConcurrentCapacityRace(t *testing.T) {
 	defer sphereStore.Close()
 
 	worldName := "race-test"
-	capacity := 2
-
-	// Pre-create one agent so the world is at capacity-1.
-	if _, err := sphereStore.CreateAgent("Existing", worldName, "outpost"); err != nil {
-		t.Fatalf("failed to pre-create agent: %v", err)
-	}
+	mgr := newMockSessionManager()
+	// No active sessions — both calls should succeed.
 
 	// Write a name pool with enough names for both goroutines.
 	worldDir := filepath.Join(solHome, worldName)
@@ -4666,10 +4798,10 @@ func TestAutoProvisionConcurrentCapacityRace(t *testing.T) {
 	}
 	ch := make(chan result, 2)
 
-	// Launch two concurrent autoProvision calls.
+	// Launch two concurrent autoProvision calls (no session limits).
 	for i := 0; i < 2; i++ {
 		go func() {
-			a, err := autoProvision(worldName, sphereStore, "", capacity)
+			a, err := autoProvision(worldName, sphereStore, "", mgr, 0, 0)
 			ch <- result{a, err}
 		}()
 	}
@@ -4677,32 +4809,25 @@ func TestAutoProvisionConcurrentCapacityRace(t *testing.T) {
 	r1 := <-ch
 	r2 := <-ch
 
-	successes := 0
-	capacityErrors := 0
 	for _, r := range []result{r1, r2} {
-		if r.err == nil {
-			successes++
-		} else if errors.Is(r.err, ErrCapacityExhausted) {
-			capacityErrors++
-		} else {
+		if r.err != nil {
 			t.Errorf("unexpected error: %v", r.err)
 		}
 	}
 
-	if successes != 1 {
-		t.Errorf("expected exactly 1 successful provision, got %d", successes)
-	}
-	if capacityErrors != 1 {
-		t.Errorf("expected exactly 1 capacity error, got %d", capacityErrors)
+	if r1.err == nil && r2.err == nil {
+		if r1.agent.Name == r2.agent.Name {
+			t.Errorf("both agents got the same name: %s", r1.agent.Name)
+		}
 	}
 
-	// Verify final agent count equals capacity exactly.
+	// Verify two agents were created.
 	agents, err := sphereStore.ListAgents(worldName, "")
 	if err != nil {
 		t.Fatalf("failed to list agents: %v", err)
 	}
-	if len(agents) != capacity {
-		t.Errorf("expected %d agents after concurrent provision, got %d", capacity, len(agents))
+	if len(agents) != 2 {
+		t.Errorf("expected 2 agents after concurrent provision, got %d", len(agents))
 	}
 }
 

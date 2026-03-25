@@ -58,9 +58,9 @@ func TestDispatchCapacityEnforced(t *testing.T) {
 		t.Fatalf("world init failed: %v: %s", err, out)
 	}
 
-	// Set capacity = 1.
+	// Set max_active = 1 (per-world session limit).
 	writeWorldTOML(t, gtHome, "myworld", sourceRepo, map[string]string{
-		"agents": "capacity = 1",
+		"agents": "max_active = 1",
 	})
 
 	// Create 2 writs.
@@ -87,8 +87,8 @@ func TestDispatchCapacityEnforced(t *testing.T) {
 	if cmd.err == nil {
 		t.Fatalf("second cast should have failed with capacity error, got: %s", cmd.out)
 	}
-	if !strings.Contains(cmd.out, "reached agent capacity") {
-		t.Fatalf("expected 'reached agent capacity' error, got: %s", cmd.out)
+	if !strings.Contains(cmd.out, "active session limit") {
+		t.Fatalf("expected 'active session limit' error, got: %s", cmd.out)
 	}
 }
 

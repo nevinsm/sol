@@ -22,8 +22,8 @@ import (
 	"github.com/nevinsm/sol/internal/workflow"
 )
 
-// ErrCapacityExhausted is returned when a world has reached its agent capacity
-// and no more agents can be provisioned. Use errors.Is to check for this error.
+// ErrCapacityExhausted is returned when a world has reached its per-world
+// active session limit (max_active). Use errors.Is to check for this error.
 var ErrCapacityExhausted = errors.New("agent capacity exhausted")
 
 // ErrSphereCapacityExhausted is returned when the sphere-wide session limit
@@ -159,8 +159,13 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 			return nil, fmt.Errorf("failed to find idle agent for world %q: %w", opts.World, err)
 		}
 		if agent == nil {
+			// Load sphere config for max_sessions limit.
+			sphereCfg, scErr := config.LoadSphereConfig()
+			if scErr != nil {
+				return nil, fmt.Errorf("failed to load sphere config: %w", scErr)
+			}
 			// Auto-provision a new agent from the name pool.
-			agent, err = autoProvision(opts.World, sphereStore, worldCfg.Agents.NamePoolPath, worldCfg.Agents.Capacity)
+			agent, err = autoProvision(opts.World, sphereStore, worldCfg.Agents.NamePoolPath, mgr, worldCfg.Agents.MaxActive, sphereCfg.MaxSessions)
 			if err != nil {
 				return nil, err
 			}
@@ -755,7 +760,7 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 // A per-world provision lock is held for the entire capacity-check + CreateAgent
 // sequence, so concurrent Cast calls cannot both pass the capacity check and
 // both create an agent (which would silently exceed the world limit).
-func autoProvision(world string, sphereStore SphereStore, namePoolPath string, capacity int) (*store.Agent, error) {
+func autoProvision(world string, sphereStore SphereStore, namePoolPath string, mgr SessionManager, maxActive int, maxSessions int) (*store.Agent, error) {
 	overridePath := namePoolPath
 	if overridePath == "" {
 		overridePath = filepath.Join(config.Home(), world, "names.txt")
@@ -774,14 +779,38 @@ func autoProvision(world string, sphereStore SphereStore, namePoolPath string, c
 	}
 	defer provLock.Release()
 
+	// Enforce per-world active session limit.
+	if maxActive > 0 {
+		worldPrefix := "sol-" + world + "-"
+		count, err := mgr.CountSessions(worldPrefix)
+		if err != nil {
+			return nil, fmt.Errorf("failed to count sessions for world %q: %w", world, err)
+		}
+		if count >= maxActive {
+			return nil, fmt.Errorf("world %q has reached active session limit (%d): %w", world, maxActive, ErrCapacityExhausted)
+		}
+	}
+
+	// Enforce sphere-wide session limit.
+	if maxSessions > 0 {
+		sphereLock, err := AcquireSphereSessionLock()
+		if err != nil {
+			return nil, fmt.Errorf("failed to acquire sphere session lock: %w", err)
+		}
+		defer sphereLock.Release()
+
+		count, err := mgr.CountSessions("sol-")
+		if err != nil {
+			return nil, fmt.Errorf("failed to count sphere sessions: %w", err)
+		}
+		if count >= maxSessions {
+			return nil, fmt.Errorf("sphere has reached session limit (%d): %w", maxSessions, ErrSphereCapacityExhausted)
+		}
+	}
+
 	agents, err := sphereStore.ListAgents(world, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents for world %q: %w", world, err)
-	}
-
-	// Enforce agent capacity.
-	if capacity > 0 && len(agents) >= capacity {
-		return nil, fmt.Errorf("world %q has reached agent capacity (%d): %w", world, capacity, ErrCapacityExhausted)
 	}
 
 	usedNames := make([]string, len(agents))
