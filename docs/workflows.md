@@ -729,7 +729,7 @@ health checks and generating a prioritized fix caravan.
 5. `protocol` (analysis) — Review the protocol layer.
 6. `support-systems` (analysis) — Review support systems: ledger, broker, nudge, chronicle, events, quota, doctor, escalation, inbox, account, trace.
 7. `cli` (analysis) — Review CLI commands.
-8. `orchestration` (analysis) — Review orchestration and presentation: workflow, worldexport, worldsync, status, dash, style, sitrep, docgen.
+8. `orchestration` (analysis) — Review orchestration and presentation: workflow, worldexport, worldsync, status, dash, style, docgen.
 9. `integration-tests` (analysis) — Review integration tests.
 10. `documentation` (analysis) — Review documentation.
 11. `build-and-agent-env` (analysis) — Review build system and agent environment: Makefile, go.mod, embedded workflows, skill files, prompts, config defaults.

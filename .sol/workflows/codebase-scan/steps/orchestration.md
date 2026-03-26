@@ -35,10 +35,6 @@ Review the packages listed in **Focus** for correctness in workflow execution, w
 - **Lipgloss usage**: Are styles defined consistently? Any hardcoded ANSI codes instead of lipgloss?
 - **Terminal compatibility**: Do styles degrade gracefully on terminals without color support?
 
-### Sitrep (internal/sitrep/)
-- **Report generation**: Is the situation report accurate and complete?
-- **Prompt template**: Is sitrep-prompt.md accurate? Does it match actual system state?
-
 ### Docgen (internal/docgen/)
 - **Generation accuracy**: Does generated documentation match actual CLI commands?
 - **Completeness**: Are all commands covered?

@@ -2,9 +2,6 @@ package defaults
 
 import _ "embed"
 
-// DefaultSitrepModel is the fallback model used by sitrep when no model is configured.
-const DefaultSitrepModel = "claude-sonnet-4-6"
-
 // StatuslineSh is the default statusline script for Claude Code sessions.
 //
 //go:embed statusline.sh

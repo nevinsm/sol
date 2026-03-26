@@ -135,18 +135,6 @@ Low-severity escalations are never re-notified regardless of this configuration.
 
 ---
 
-### `[sitrep]`
-
-Sitrep AI assessment settings.
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `model` | string | `"claude-sonnet-4-6"` | Claude model ID to use for sitrep assessments. |
-| `assess_command` | string | `"claude"` | Base CLI command used to invoke the sitrep assessment. |
-| `timeout` | string | `"60s"` | Maximum time allowed for a sitrep assessment. Must be a valid Go duration string. |
-
----
-
 ---
 
 ## Annotated Examples
@@ -221,15 +209,6 @@ port = 4318
 # Days to retain writ output directories. 0 = use default (15).
 retention_days = 15
 
-[sitrep]
-# Claude model ID for sitrep assessments.
-model = "claude-sonnet-4-6"
-
-# CLI command used to invoke sitrep assessments.
-assess_command = "claude"
-
-# Maximum time for a sitrep assessment.
-timeout = "60s"
 ```
 
 ---
@@ -265,8 +244,4 @@ aging_medium   = "8h"
 # Number of unresolved escalations that triggers a buildup alert.
 escalation_threshold = 5
 
-[sitrep]
-model          = "claude-sonnet-4-6"
-assess_command = "claude"
-timeout        = "60s"
 ```

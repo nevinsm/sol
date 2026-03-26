@@ -84,7 +84,7 @@ title = "Review CLI commands"
 kind = "analysis"
 instructions = "steps/cli.md"
 
-# internal/workflow/, worldexport/, worldsync/, status/, dash/, style/, sitrep/, docgen/
+# internal/workflow/, worldexport/, worldsync/, status/, dash/, style/, docgen/
 [[steps]]
 id = "orchestration"
 title = "Review orchestration and presentation"

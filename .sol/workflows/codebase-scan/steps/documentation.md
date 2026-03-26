@@ -31,7 +31,7 @@ Documentation that's wrong is worse than no documentation — it actively mislea
 
 ### Internal Documentation
 - **Acceptance test docs** (test/integration/LOOP*_ACCEPTANCE.md): Do they accurately describe what's tested?
-- **Inline prompt templates** (internal/sitrep/sitrep-prompt.md, etc.): Are they accurate?
+- **Inline prompt templates**: Are they accurate?
 
 ## Output
 

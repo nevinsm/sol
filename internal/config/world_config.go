@@ -20,7 +20,6 @@ type WorldConfig struct {
 	Ledger     LedgerSection     `toml:"ledger" json:"ledger"`
 	WritClean  WritCleanSection  `toml:"writ-clean" json:"writ-clean"`
 	Escalation EscalationSection `toml:"escalation" json:"escalation"`
-	Sitrep     SitrepSection     `toml:"sitrep" json:"sitrep"`
 }
 
 // SphereSection holds sphere-level settings.
@@ -136,13 +135,6 @@ type WritCleanSection struct {
 	RetentionDays int `toml:"retention_days" json:"retention_days"` // 0 = use default (15)
 }
 
-// SitrepSection holds sitrep AI assessment settings.
-type SitrepSection struct {
-	Model         string `toml:"model" json:"model"`                   // Claude model ID (default: "claude-sonnet-4-6")
-	AssessCommand string `toml:"assess_command" json:"assess_command"` // base command (default: "claude")
-	Timeout       string `toml:"timeout" json:"timeout"`               // duration string (default: "60s")
-}
-
 // DefaultWorldConfig returns a WorldConfig with built-in defaults.
 func DefaultWorldConfig() WorldConfig {
 	return WorldConfig{
@@ -159,11 +151,6 @@ func DefaultWorldConfig() WorldConfig {
 			Port: 4318, // ledger.DefaultPort — sphere-scoped, configurable in sol.toml
 		},
 		Escalation: DefaultEscalationConfig(),
-		Sitrep: SitrepSection{
-			Model:         "claude-sonnet-4-6",
-			AssessCommand: "claude",
-			Timeout:       "60s",
-		},
 	}
 }
 
@@ -305,11 +292,6 @@ func (c WorldConfig) Validate() error {
 	if c.Forge.GateTimeout != "" {
 		if _, err := time.ParseDuration(c.Forge.GateTimeout); err != nil {
 			return fmt.Errorf("forge.gate_timeout %q is not a valid duration: %w", c.Forge.GateTimeout, err)
-		}
-	}
-	if c.Sitrep.Timeout != "" {
-		if _, err := time.ParseDuration(c.Sitrep.Timeout); err != nil {
-			return fmt.Errorf("sitrep.timeout %q is not a valid duration: %w", c.Sitrep.Timeout, err)
 		}
 	}
 	if c.Escalation.AgingCritical != "" {

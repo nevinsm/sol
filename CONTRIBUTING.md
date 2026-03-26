@@ -78,7 +78,6 @@ sol/
 │   ├── service/                   Service lifecycle utilities
 │   ├── session/                   tmux: start, stop, health, capture, inject
 │   ├── setup/                     Init flow, managed repo cloning
-│   ├── sitrep/                    Situation report aggregation
 │   ├── startup/                   Agent startup sequencing
 │   ├── status/                    World status gathering
 │   ├── store/                     SQLite: writs, agents, messages, escalations
