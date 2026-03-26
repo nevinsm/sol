@@ -25,7 +25,6 @@ func TestInterfaceSatisfaction(t *testing.T) {
 	var _ LedgerReader = (*WorldStore)(nil)
 	var _ LedgerWriter = (*WorldStore)(nil)
 	var _ HistoryStore = (*WorldStore)(nil)
-	var _ AgentMemoryStore = (*WorldStore)(nil)
 
 	// SphereStore interface assertions (verified at compile time in interfaces.go):
 	var _ AgentReader = (*SphereStore)(nil)

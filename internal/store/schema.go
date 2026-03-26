@@ -8,7 +8,7 @@ import (
 
 // Current schema versions — the latest migration target for each database type.
 const (
-	CurrentWorldSchema  = 12
+	CurrentWorldSchema  = 13
 	CurrentSphereSchema = 14
 )
 
@@ -194,6 +194,9 @@ const worldSchemaV11 = "" // migration handled procedurally below
 // worldSchemaV12 adds runtime column to token_usage.
 const worldSchemaV12 = "" // migration handled procedurally below
 
+// worldSchemaV13 drops the agent_memories table (superseded by the brief system).
+const worldSchemaV13 = "" // migration handled procedurally below
+
 func (s *WorldStore) migrateWorld() error {
 	v, err := s.SchemaVersion()
 	if err != nil {
@@ -361,6 +364,12 @@ func (s *WorldStore) migrateWorld() error {
 			if _, err := tx.Exec(`ALTER TABLE token_usage ADD COLUMN runtime TEXT`); err != nil {
 				return fmt.Errorf("failed to add token_usage.runtime column: %w", err)
 			}
+		}
+	}
+	if v < 13 {
+		// Drop agent_memories table (superseded by the brief system).
+		if _, err := tx.Exec(`DROP TABLE IF EXISTS agent_memories`); err != nil {
+			return fmt.Errorf("V13 migration: failed to drop agent_memories table: %w", err)
 		}
 	}
 	if _, err := tx.Exec("DELETE FROM schema_version"); err != nil {

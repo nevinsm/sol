@@ -579,7 +579,7 @@ var worldCloneCmd = &cobra.Command{
 dependencies), and directory structure. Credentials and tethers are NOT copied.
 The new world gets a fresh agent pool.
 
-Agent state (history, memories) is excluded by default. Use --include-history
+Agent state (history, token usage) is excluded by default. Use --include-history
 to copy it.`,
 	Args:         cobra.ExactArgs(2),
 	SilenceUsage: true,
@@ -1057,7 +1057,7 @@ func init() {
 	worldDeleteCmd.Flags().BoolVar(&worldDeleteConfirm, "confirm", false,
 		"confirm deletion")
 	worldCloneCmd.Flags().BoolVar(&worldCloneIncludeHistory, "include-history", false,
-		"include agent history and memories in clone")
+		"include agent history and token usage in clone")
 	worldSyncCmd.Flags().StringVar(&worldSyncWorld, "world", "", "world name")
 	worldSyncCmd.Flags().BoolVar(&worldSyncAll, "all", false,
 		"also sync forge, envoys, and governor")

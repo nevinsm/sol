@@ -59,7 +59,7 @@ func TestInstallSkillsCreatesFiles(t *testing.T) {
 
 	skills := []adapter.Skill{
 		{Name: "resolve-and-handoff", Content: "# Resolve & Handoff\n"},
-		{Name: "memories", Content: "# Memories\n"},
+		{Name: "test-skill", Content: "# Test Skill\n"},
 	}
 
 	if err := a.InstallSkills(dir, skills); err != nil {
@@ -102,7 +102,7 @@ func TestInstallSkillsRemovesStale(t *testing.T) {
 
 	// Install one current skill.
 	skills := []adapter.Skill{
-		{Name: "memories", Content: "# Memories\n"},
+		{Name: "test-skill", Content: "# Test Skill\n"},
 	}
 	if err := a.InstallSkills(dir, skills); err != nil {
 		t.Fatalf("InstallSkills failed: %v", err)
@@ -114,7 +114,7 @@ func TestInstallSkillsRemovesStale(t *testing.T) {
 	}
 
 	// Current should exist.
-	p := filepath.Join(dir, ".claude", "skills", "memories", "SKILL.md")
+	p := filepath.Join(dir, ".claude", "skills", "test-skill", "SKILL.md")
 	if _, err := os.Stat(p); err != nil {
 		t.Errorf("expected memories skill to exist: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestInstallSkillsPreservesNonSolSkills(t *testing.T) {
 
 	// Install sol skills — custom skill should be preserved.
 	skills := []adapter.Skill{
-		{Name: "memories", Content: "# Memories\n"},
+		{Name: "test-skill", Content: "# Test Skill\n"},
 	}
 	if err := a.InstallSkills(dir, skills); err != nil {
 		t.Fatalf("InstallSkills failed: %v", err)
@@ -171,7 +171,7 @@ func TestInstallSkillsPreservesNonSolSkills(t *testing.T) {
 	}
 
 	// Sol skill should exist.
-	p := filepath.Join(dir, ".claude", "skills", "memories", "SKILL.md")
+	p := filepath.Join(dir, ".claude", "skills", "test-skill", "SKILL.md")
 	if _, err := os.Stat(p); err != nil {
 		t.Errorf("expected memories skill to exist: %v", err)
 	}

@@ -11,8 +11,8 @@ import (
 
 // CloneWorldData copies writs, labels, dependencies, and merge requests
 // from the source world database into the target world database. When
-// includeHistory is true, agent_history, token_usage, and agent_memories are
-// also copied. Both databases must already exist (target should be freshly
+// includeHistory is true, agent_history and token_usage are also copied.
+// Both databases must already exist (target should be freshly
 // created via OpenWorld).
 //
 // Credentials, tethers, and agent assignments are NOT copied — writs have
@@ -101,16 +101,6 @@ func CloneWorldData(source, target string, includeHistory bool) error {
 			FROM src.token_usage
 		`); err != nil {
 			return fmt.Errorf("failed to copy token usage: %w", err)
-		}
-
-		// Copy agent memories.
-		if _, err := tx.Exec(`
-			INSERT INTO main.agent_memories
-				(id, agent_name, key, value, created_at)
-			SELECT id, agent_name, key, value, created_at
-			FROM src.agent_memories
-		`); err != nil {
-			return fmt.Errorf("failed to copy agent memories: %w", err)
 		}
 	}
 

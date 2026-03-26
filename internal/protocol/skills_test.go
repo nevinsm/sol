@@ -15,8 +15,8 @@ func TestRoleSkillsOutpost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(skills) != 2 {
-		t.Errorf("outpost should have 2 skills, got %d: %v", len(skills), skills)
+	if len(skills) != 1 {
+		t.Errorf("outpost should have 1 skill, got %d: %v", len(skills), skills)
 	}
 }
 
@@ -25,8 +25,8 @@ func TestRoleSkillsGovernor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(skills) != 6 {
-		t.Errorf("governor should have 6 skills, got %d: %v", len(skills), skills)
+	if len(skills) != 5 {
+		t.Errorf("governor should have 5 skills, got %d: %v", len(skills), skills)
 	}
 }
 
@@ -35,8 +35,8 @@ func TestRoleSkillsEnvoy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(skills) != 10 {
-		t.Errorf("envoy should have 10 skills, got %d: %v", len(skills), skills)
+	if len(skills) != 9 {
+		t.Errorf("envoy should have 9 skills, got %d: %v", len(skills), skills)
 	}
 }
 
@@ -45,8 +45,8 @@ func TestRoleSkillsChancellor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(skills) != 5 {
-		t.Errorf("chancellor should have 5 skills, got %d: %v", len(skills), skills)
+	if len(skills) != 4 {
+		t.Errorf("chancellor should have 4 skills, got %d: %v", len(skills), skills)
 	}
 }
 

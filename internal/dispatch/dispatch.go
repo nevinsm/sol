@@ -58,7 +58,6 @@ type WorldStore interface {
 	ResetMergeRequestForRetry(mrID string) error
 	CloseWrit(id string, closeReason ...string) ([]string, error)
 	ListChildWrits(parentID string) ([]store.Writ, error)
-	ListAgentMemories(agentName string) ([]store.AgentMemory, error)
 	WriteHistory(agentName, writID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error)
 	EndHistory(writID string) (string, error)
 	GetDependencies(itemID string) ([]string, error)
@@ -984,21 +983,6 @@ If stuck, run: sol escalate "description"
 		bgSection := primeBackgroundWrits(activeWritID, allWritIDs, worldStore)
 		if bgSection != "" {
 			result.Output += bgSection
-		}
-	}
-
-	// Append agent memories if any exist.
-	if result != nil {
-		memories, memErr := worldStore.ListAgentMemories(agentName)
-		if memErr != nil {
-			fmt.Fprintf(os.Stderr, "prime: failed to read agent memories: %v\n", memErr)
-		} else if len(memories) > 0 {
-			var mb strings.Builder
-			mb.WriteString("\n\n## Agent Memories\n")
-			for _, m := range memories {
-				fmt.Fprintf(&mb, "- %s: %q\n", m.Key, m.Value)
-			}
-			result.Output += mb.String()
 		}
 	}
 

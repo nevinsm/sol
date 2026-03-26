@@ -11,7 +11,7 @@ import "time"
 //
 // World-scoped interfaces (implemented by *WorldStore):
 //   WritReader, WritWriter, MRReader, MRWriter, DepReader, DepWriter,
-//   LedgerReader, LedgerWriter, HistoryStore, AgentMemoryStore
+//   LedgerReader, LedgerWriter, HistoryStore
 //
 // Sphere-scoped interfaces (implemented by *SphereStore):
 //   AgentReader, AgentWriter, CaravanReader, CaravanWriter,
@@ -112,15 +112,6 @@ type HistoryStore interface {
 	ListHistory(agentName string) ([]HistoryEntry, error)
 	EndHistory(writID string) (string, error)
 	HistoryForWrit(writID string) ([]HistoryEntry, error)
-}
-
-// AgentMemoryStore provides access to per-agent key/value memories in a world database.
-type AgentMemoryStore interface {
-	SetAgentMemory(agentName, key, value string) error
-	ListAgentMemories(agentName string) ([]AgentMemory, error)
-	DeleteAgentMemory(agentName, key string) error
-	CountAgentMemories(agentName string) (int, error)
-	DeleteAllAgentMemories(agentName string) (int64, error)
 }
 
 // ——— Sphere-scoped interfaces ———
@@ -249,7 +240,6 @@ var (
 	_ LedgerReader       = (*WorldStore)(nil)
 	_ LedgerWriter       = (*WorldStore)(nil)
 	_ HistoryStore       = (*WorldStore)(nil)
-	_ AgentMemoryStore   = (*WorldStore)(nil)
 )
 
 // SphereStore must satisfy all sphere-scoped interfaces.

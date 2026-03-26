@@ -58,10 +58,10 @@ func init() {
 
 // roleSkillsMap defines which skills belong to each role.
 var roleSkillsMap = map[string][]string{
-	"outpost":  {"resolve-and-handoff", "memories"},
-	"governor": {"writ-dispatch", "caravan-management", "world-coordination", "notification-handling", "handoff", "memories"},
-	"envoy":    {"resolve-and-submit", "writ-management", "dispatch", "handoff", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail", "memories"},
-	"chancellor": {"world-queries", "writ-planning", "memories", "mail", "handoff"},
+	"outpost":    {"resolve-and-handoff"},
+	"governor":   {"writ-dispatch", "caravan-management", "world-coordination", "notification-handling", "handoff"},
+	"envoy":      {"resolve-and-submit", "writ-management", "dispatch", "handoff", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail"},
+	"chancellor": {"world-queries", "writ-planning", "mail", "handoff"},
 }
 
 // RoleSkills returns the skill names for a given role.
@@ -85,8 +85,6 @@ func generateSkill(name string, ctx SkillContext) string {
 		return skillResolveAndHandoff(ctx)
 	case "resolve-and-submit":
 		return skillResolveAndSubmit(ctx)
-	case "memories":
-		return skillMemories(ctx)
 	case "writ-dispatch":
 		return skillWritDispatch(ctx)
 	case "caravan-management":
@@ -233,47 +231,6 @@ description: Submit completed work through the forge pipeline — pushes branch,
 		"`sol writ list`",
 		ctx.World,
 		ctx.AgentName)
-}
-
-func skillMemories(ctx SkillContext) string {
-	sol := ctx.sol()
-	return fmt.Sprintf(`---
-name: memories
-description: Persist and recall durable knowledge across sessions — learned patterns, constraints, recurring gotchas
----
-
-# Agent Memories
-
-Memories are key-value pairs persisted in the sphere store and injected
-automatically during prime — every successor session sees them. Use memories
-for durable facts that remain true across many sessions: learned patterns,
-recurring gotchas, important constraints. For current work state (what you're
-doing right now, what's next), use your brief instead — the brief is for
-context, memories are for knowledge.
-
-Keep memories focused. Successor agents have limited context windows; a
-hundred vague memories are worse than ten sharp ones. Retire stale memories
-with %[3]s forget%[2]s when they're no longer useful.
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| %[1]s remember "key" "insight"%[2]s | Save with explicit key |
-| %[1]s remember "insight"%[2]s | Save with auto-generated key |
-| %[1]s memories%[2]s | Review stored memories |
-| %[1]s forget "key"%[2]s | Remove outdated memory |
-
-## Patterns
-
-**Saving a discovery:** After finding a non-obvious fact (a quirky build step,
-a brittle integration point), save it immediately:
-%[1]s remember "key" "insight"%[2]s
-
-**Pruning stale memories:** When a memory is no longer accurate, remove it
-before it misleads your successor:
-%[1]s memories%[2]s → review → %[1]s forget "old-key"%[2]s
-`, "`"+sol, "`", "`"+sol)
 }
 
 func skillWritDispatch(ctx SkillContext) string {

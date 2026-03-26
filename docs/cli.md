@@ -820,50 +820,6 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 |------|------|---------|-------------|
 | `--world` | string | "" | world name |
 
-### `sol forget`
-
-Delete a memory for the current agent
-
-Delete a memory by key, or all memories with --all.
-
-  sol forget "key"              — delete a single memory
-  sol forget --all              — preview what would be deleted
-  sol forget --all --confirm    — delete all memories for this agent
-
-**Usage:** `sol forget [key]`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--all` | bool | false | delete all memories for this agent |
-| `--confirm` | bool | false | confirm destructive action |
-| `--world` | string | "" | world name |
-
-### `sol memories`
-
-List all memories for the current agent
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name |
-
-### `sol remember`
-
-Persist a memory for the current agent
-
-Persist a key-value memory that survives across sessions.
-
-With two arguments: sol remember "key" "value"
-With one argument:  sol remember "value"  (key auto-generated from hash)
-
-**Usage:** `sol remember [key] <value>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name |
-
 ### `sol session`
 
 Manage tmux sessions for agents
@@ -1912,14 +1868,14 @@ Duplicate a world with copied configuration, database state (writs,
 dependencies), and directory structure. Credentials and tethers are NOT copied.
 The new world gets a fresh agent pool.
 
-Agent state (history, memories) is excluded by default. Use --include-history
+Agent state (history, token usage) is excluded by default. Use --include-history
 to copy it.
 
 **Usage:** `sol world clone <source> <target>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--include-history` | bool | false | include agent history and memories in clone |
+| `--include-history` | bool | false | include agent history and token usage in clone |
 
 #### `sol world delete`
 

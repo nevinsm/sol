@@ -118,56 +118,16 @@ func TestWorldCloneIncludeHistory(t *testing.T) {
 		t.Fatalf("world init: %v", err)
 	}
 
-	// Add agent memory directly to source DB.
-	srcStore, err := store.OpenWorld("source")
-	if err != nil {
-		t.Fatalf("open source store: %v", err)
-	}
-	if err := srcStore.SetAgentMemory("TestAgent", "key1", "value1"); err != nil {
-		t.Fatalf("set memory: %v", err)
-	}
-	srcStore.Close()
-
 	// Clone without --include-history.
 	out, err := runGT(t, gtHome, "world", "clone", "source", "no-history")
 	if err != nil {
 		t.Fatalf("clone without history: %v: %s", err, out)
 	}
 
-	noHistStore, err := store.OpenWorld("no-history")
-	if err != nil {
-		t.Fatalf("open no-history store: %v", err)
-	}
-	mems, err := noHistStore.ListAgentMemories("TestAgent")
-	if err != nil {
-		t.Fatalf("list memories: %v", err)
-	}
-	noHistStore.Close()
-	if len(mems) != 0 {
-		t.Errorf("expected no memories without --include-history, got %d", len(mems))
-	}
-
 	// Clone with --include-history.
 	out, err = runGT(t, gtHome, "world", "clone", "source", "with-history", "--include-history")
 	if err != nil {
 		t.Fatalf("clone with history: %v: %s", err, out)
-	}
-
-	withHistStore, err := store.OpenWorld("with-history")
-	if err != nil {
-		t.Fatalf("open with-history store: %v", err)
-	}
-	defer withHistStore.Close()
-
-	mems, err = withHistStore.ListAgentMemories("TestAgent")
-	if err != nil {
-		t.Fatalf("list memories: %v", err)
-	}
-	if len(mems) != 1 {
-		t.Fatalf("expected 1 memory with --include-history, got %d", len(mems))
-	}
-	if mems[0].Value != "value1" {
-		t.Errorf("expected memory value 'value1', got %q", mems[0].Value)
 	}
 }
 

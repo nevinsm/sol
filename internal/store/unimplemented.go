@@ -16,7 +16,6 @@ var (
 	_ HistoryStore     = UnimplementedWorldStore{}
 	_ LedgerReader     = UnimplementedWorldStore{}
 	_ LedgerWriter     = UnimplementedWorldStore{}
-	_ AgentMemoryStore = UnimplementedWorldStore{}
 )
 
 // Compile-time interface satisfaction checks for UnimplementedSphereStore.
@@ -260,28 +259,6 @@ func (UnimplementedWorldStore) MergeStatsForAgent(agentName string) (AgentMergeR
 
 func (UnimplementedWorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64, runtime string) (string, error) {
 	return "", fmt.Errorf("unimplemented: WriteTokenUsage")
-}
-
-// --- AgentMemoryStore ---
-
-func (UnimplementedWorldStore) SetAgentMemory(agentName, key, value string) error {
-	return fmt.Errorf("unimplemented: SetAgentMemory")
-}
-
-func (UnimplementedWorldStore) ListAgentMemories(agentName string) ([]AgentMemory, error) {
-	return nil, fmt.Errorf("unimplemented: ListAgentMemories")
-}
-
-func (UnimplementedWorldStore) DeleteAgentMemory(agentName, key string) error {
-	return fmt.Errorf("unimplemented: DeleteAgentMemory")
-}
-
-func (UnimplementedWorldStore) CountAgentMemories(agentName string) (int, error) {
-	return 0, fmt.Errorf("unimplemented: CountAgentMemories")
-}
-
-func (UnimplementedWorldStore) DeleteAllAgentMemories(agentName string) (int64, error) {
-	return 0, fmt.Errorf("unimplemented: DeleteAllAgentMemories")
 }
 
 func (UnimplementedWorldStore) Close() error {
