@@ -1,0 +1,44 @@
+name = "security-audit"
+description = "Parallel security review across five dimensions with prioritized findings synthesis. On-demand audit for a codebase area."
+mode = "manifest"
+
+[vars]
+scope = { description = "What to audit — file path, directory, package, or area description", required = true }
+focus = { description = "Optional focus area to emphasize", required = false }
+
+[[steps]]
+id = "dependency-audit"
+title = "Dependency Audit"
+kind = "analysis"
+description = "Audit dependencies for known vulnerabilities, outdated packages, and supply chain risks.\n\nScope: {{scope}}\n{{#focus}}Focus: {{focus}}{{/focus}}\n\nExamine:\n- Known CVEs in direct and transitive dependencies\n- Outdated packages with available security patches\n- Supply chain risks: typosquatting, compromised maintainers, unmaintained packages\n- Unnecessary dependencies that expand the attack surface\n- Dependency pinning and lock file hygiene\n- License compliance issues that may affect security posture"
+
+[[steps]]
+id = "secrets-scan"
+title = "Secrets Scan"
+kind = "analysis"
+description = "Scan for hardcoded secrets, credentials, and sensitive data exposure.\n\nScope: {{scope}}\n{{#focus}}Focus: {{focus}}{{/focus}}\n\nExamine:\n- Hardcoded passwords, API keys, and tokens in source code\n- Credentials in configuration files or environment defaults\n- Secrets in test fixtures, seed data, or example configs\n- Sensitive data logged or exposed in error messages\n- Private keys, certificates, or service account credentials in the repo\n- .gitignore gaps that could leak sensitive files"
+
+[[steps]]
+id = "owasp-surface"
+title = "OWASP Top 10 Review"
+kind = "analysis"
+description = "Review for OWASP Top 10 vulnerability categories.\n\nScope: {{scope}}\n{{#focus}}Focus: {{focus}}{{/focus}}\n\nExamine each category:\n- A01 Broken Access Control: missing authorization checks, IDOR, privilege escalation\n- A02 Cryptographic Failures: weak algorithms, plaintext storage, missing encryption\n- A03 Injection: SQL, NoSQL, OS command, LDAP injection vectors\n- A04 Insecure Design: missing threat modeling, insecure business logic\n- A05 Security Misconfiguration: default credentials, unnecessary features, verbose errors\n- A06 Vulnerable and Outdated Components: known CVEs, unsupported frameworks\n- A07 Identification and Authentication Failures: weak passwords, missing MFA, session fixation\n- A08 Software and Data Integrity Failures: insecure deserialization, unsigned updates\n- A09 Security Logging and Monitoring Failures: missing audit trails, unmonitored events\n- A10 Server-Side Request Forgery: unvalidated URLs, internal service access"
+
+[[steps]]
+id = "auth-authz"
+title = "Authentication & Authorization Review"
+kind = "analysis"
+description = "Review authentication and authorization mechanisms for weaknesses.\n\nScope: {{scope}}\n{{#focus}}Focus: {{focus}}{{/focus}}\n\nExamine:\n- Trust boundaries: where authentication is checked and where it is assumed\n- Privilege escalation paths: horizontal and vertical\n- Session management: creation, validation, expiration, revocation\n- Credential storage: hashing algorithms, salting, key derivation\n- Access control consistency: are checks applied uniformly across all entry points\n- Token handling: JWT validation, refresh token rotation, scope enforcement\n- Role and permission models: granularity, default permissions, least privilege"
+
+[[steps]]
+id = "input-validation"
+title = "Input Validation Review"
+kind = "analysis"
+description = "Review input handling and validation at system boundaries.\n\nScope: {{scope}}\n{{#focus}}Focus: {{focus}}{{/focus}}\n\nExamine:\n- Validation at system boundaries: API endpoints, file uploads, user input, IPC\n- Output encoding: HTML, URL, JavaScript, SQL context-appropriate encoding\n- Path traversal: file path construction, directory escapes, symlink following\n- Command injection: shell command construction, argument injection\n- SQL injection: parameterized queries vs string concatenation\n- Unsafe deserialization: untrusted data deserialization, type confusion\n- Content type validation: MIME type checks, file magic bytes, extension validation\n- Size and rate limits: request size bounds, upload limits, throttling"
+
+[[steps]]
+id = "synthesis"
+title = "Security Audit Synthesis"
+kind = "analysis"
+description = "Consolidate findings from all five audit dimensions into a prioritized security report.\n\nScope: {{scope}}\n{{#focus}}Focus: {{focus}}{{/focus}}\n\nRead findings from each audit leg and produce:\n- Executive summary with overall security posture assessment\n- Critical findings (P0): immediate action required — active vulnerabilities, exposed secrets, broken authentication\n- High-priority findings (P1): fix before next release — significant risks with clear exploit paths\n- Medium findings (P2): improvement opportunities — defense-in-depth gaps, hardening recommendations\n- Low findings (P3): best-practice suggestions — code hygiene, future-proofing\n- Remediation priorities: ordered list of recommended actions with effort estimates\n- Cross-cutting themes: patterns that appear across multiple audit dimensions"
+needs = ["dependency-audit", "secrets-scan", "owasp-surface", "auth-authz", "input-validation"]
