@@ -19,8 +19,9 @@ var briefCmd = &cobra.Command{
 }
 
 var briefInjectCmd = &cobra.Command{
-	Use:   "inject",
-	Short: "Inject brief into session context",
+	Use:    "inject",
+	Short:  "Inject brief into session context",
+	Hidden: true,
 	Long: `Read a brief file and output framed content for session injection.
 
 Used by Claude Code hooks to inject agent context on session start

@@ -72,6 +72,10 @@ func Generate(root *cobra.Command) string {
 		}
 	}
 
+	// Plumbing commands section — lists hidden commands so they're discoverable
+	// in docs even though they don't appear in --help output.
+	writePlumbingSection(&b, root)
+
 	return b.String()
 }
 
@@ -265,6 +269,39 @@ func collectSubcommands(cmd *cobra.Command) []*cobra.Command {
 		return subs[i].Name() < subs[j].Name()
 	})
 	return subs
+}
+
+// writePlumbingSection appends a section listing hidden (plumbing) commands.
+// These commands don't appear in --help but are documented here for reference.
+func writePlumbingSection(b *strings.Builder, root *cobra.Command) {
+	var plumbing []string
+
+	// Collect hidden top-level commands.
+	for _, cmd := range root.Commands() {
+		if cmd.Hidden {
+			plumbing = append(plumbing, cmd.CommandPath()+" — "+cmd.Short)
+		}
+		// Collect hidden subcommands.
+		for _, sub := range cmd.Commands() {
+			if sub.Hidden {
+				plumbing = append(plumbing, sub.CommandPath()+" — "+sub.Short)
+			}
+		}
+	}
+
+	if len(plumbing) == 0 {
+		return
+	}
+
+	sort.Strings(plumbing)
+
+	b.WriteString("---\n\n")
+	b.WriteString("## Plumbing Commands\n\n")
+	b.WriteString("These commands are hidden from `--help` output. They are internal commands used by Sol's orchestration layer and hooks. They remain fully functional when called directly.\n\n")
+	for _, p := range plumbing {
+		b.WriteString("- `" + p + "`\n")
+	}
+	b.WriteString("\n")
 }
 
 // escapeMarkdown escapes pipe characters in markdown table cells.

@@ -20,6 +20,7 @@ var mrCmd = &cobra.Command{
 var mrCreateCmd = &cobra.Command{
 	Use:          "create --world=W --branch=B --writ=ID",
 	Short:        "Create a merge request for an existing writ",
+	Hidden:       true,
 	Long:         "Plumbing command to manually queue a branch for forge review without going through sol resolve.",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

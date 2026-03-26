@@ -125,11 +125,25 @@ func TestGenerateIncludesCommands(t *testing.T) {
 	}
 }
 
-func TestGenerateExcludesHidden(t *testing.T) {
+func TestGenerateExcludesHiddenFromMainSections(t *testing.T) {
 	root := newTestRoot()
 	out := Generate(root)
-	if strings.Contains(out, "debug") {
-		t.Error("output should not contain hidden commands")
+
+	// Split at the Plumbing Commands section.
+	parts := strings.SplitN(out, "## Plumbing Commands", 2)
+	mainSection := parts[0]
+
+	// Hidden commands should not appear in the main sections.
+	if strings.Contains(mainSection, "debug") {
+		t.Error("main sections should not contain hidden commands")
+	}
+
+	// But the plumbing section should list them.
+	if len(parts) < 2 {
+		t.Fatal("expected a Plumbing Commands section")
+	}
+	if !strings.Contains(parts[1], "debug") {
+		t.Error("plumbing section should list hidden commands")
 	}
 }
 

@@ -545,6 +545,7 @@ func openForge(world string) (*forge.Forge, *store.WorldStore, *store.SphereStor
 var forgeReadyCmd = &cobra.Command{
 	Use:          "ready",
 	Short:        "List ready (unblocked) merge requests",
+	Hidden:       true,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeReadyWorld)
@@ -587,6 +588,7 @@ var forgeReadyCmd = &cobra.Command{
 var forgeBlockedCmd = &cobra.Command{
 	Use:          "blocked",
 	Short:        "List blocked merge requests",
+	Hidden:       true,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeBlockedWorld)
@@ -629,6 +631,7 @@ var forgeBlockedCmd = &cobra.Command{
 var forgeClaimCmd = &cobra.Command{
 	Use:          "claim",
 	Short:        "Claim the next ready unblocked merge request",
+	Hidden:       true,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeClaimWorld)
@@ -682,8 +685,9 @@ var forgeClaimCmd = &cobra.Command{
 }
 
 var forgeReleaseCmd = &cobra.Command{
-	Use:   "release <mr-id>",
-	Short: "Release a claimed merge request back to ready",
+	Use:    "release <mr-id>",
+	Short:  "Release a claimed merge request back to ready",
+	Hidden: true,
 	Long: `Release a claimed merge request, returning it to "ready" state for re-attempt.
 
 When forge claims an MR for processing, it transitions the MR to "claimed" state.
@@ -731,6 +735,7 @@ Exit codes:
 var forgeMarkMergedCmd = &cobra.Command{
 	Use:          "mark-merged <mr-id>",
 	Short:        "Mark a merge request as merged",
+	Hidden:       true,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -765,6 +770,7 @@ var forgeMarkMergedCmd = &cobra.Command{
 var forgeMarkFailedCmd = &cobra.Command{
 	Use:          "mark-failed <mr-id>",
 	Short:        "Mark a merge request as failed",
+	Hidden:       true,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -806,8 +812,9 @@ var forgeMarkFailedCmd = &cobra.Command{
 }
 
 var forgeCreateResolutionCmd = &cobra.Command{
-	Use:   "create-resolution <mr-id>",
-	Short: "Create a conflict resolution task and block the MR",
+	Use:    "create-resolution <mr-id>",
+	Short:  "Create a conflict resolution task and block the MR",
+	Hidden: true,
 	Long: `Create a resolution writ for a merge request that has conflicts, then block
 the MR until the resolution is complete. Attempts to auto-dispatch the
 resolution writ to an idle agent immediately.
@@ -892,6 +899,7 @@ manual resolution.`,
 var forgeCheckUnblockedCmd = &cobra.Command{
 	Use:          "check-unblocked",
 	Short:        "Check for resolved blockers and unblock MRs",
+	Hidden:       true,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeCheckUnblockedWorld)

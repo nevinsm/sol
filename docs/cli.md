@@ -122,7 +122,7 @@ If a world is detected, shows sphere processes plus world detail combined.
 Otherwise, shows a sphere-level overview of all worlds and processes.
 With a world name, shows detailed status for that specific world.
 
-Exit codes with --json:
+Exit codes:
   Sphere-only (no world detected or specified): always exits 0
   World or combined (world detected from cwd or explicitly specified):
     0 = healthy
@@ -312,58 +312,12 @@ Manage workflow instances
 
 | Command | Description |
 |---------|-------------|
-| `sol workflow advance` | Advance to the next workflow step |
-| `sol workflow current` | Print the current step's instructions |
-| `sol workflow eject` | Eject an embedded workflow for customization |
-| `sol workflow fail` | Mark the current workflow step and workflow as failed |
 | `sol workflow init` | Scaffold a new workflow |
 | `sol workflow instantiate` | Instantiate a workflow |
 | `sol workflow list` | List available workflows |
 | `sol workflow manifest` | Manifest a workflow into writs and a caravan |
 | `sol workflow show` | Display workflow details and resolution source |
-| `sol workflow skip` | Skip the current workflow step and advance to the next |
 | `sol workflow status` | Show workflow status |
-
-#### `sol workflow advance`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name |
-
-#### `sol workflow current`
-
-Print the current step's instructions from the active workflow.
-
-Used by agents to read their next step in a step-driven workflow loop.
-
-Exit codes:
-  0 - Active workflow step found
-  1 - No active workflow step
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name |
-
-#### `sol workflow eject`
-
-Copies an embedded workflow to the user or project tier so it can be customized. Use --force to refresh from embedded defaults (backs up existing).
-
-**Usage:** `sol workflow eject <name>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--force` | bool | false | overwrite existing workflow (backs up to {name}.bak-{timestamp}) |
-| `--project` | bool | false | eject to project tier instead of user tier (requires --world) |
-| `--world` | string | "" | world name |
-
-#### `sol workflow fail`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--world` | string | "" | world name |
 
 #### `sol workflow init`
 
@@ -413,13 +367,6 @@ Copies an embedded workflow to the user or project tier so it can be customized.
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
 | `--path` | string | "" | load workflow from directory path instead of by name |
-| `--world` | string | "" | world name |
-
-#### `sol workflow skip`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
 | `--world` | string | "" | world name |
 
 #### `sol workflow status`
@@ -539,8 +486,6 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 | `--world` | string | "" | world name |
 
 #### `sol writ list`
-
-By default, excludes closed writs. Use `--all` to include closed writs, or `--status=closed` to show only closed writs. The `--all` and `--status` flags are mutually exclusive.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -850,6 +795,14 @@ Manage tmux sessions for agents
 
 #### `sol session health`
 
+Check session health and report status via exit code.
+
+Exit codes:
+  0  healthy    — session alive with recent activity
+  1  dead       — tmux session does not exist
+  2  agent-dead — session exists but the agent process has exited
+  3  hung       — session exists but no output change within --max-inactivity
+
 **Usage:** `sol session health <name>`
 
 | Flag | Type | Default | Description |
@@ -1064,17 +1017,9 @@ Manage the merge pipeline forge
 |---------|-------------|
 | `sol forge attach` | Attach to the forge merge session (if active) |
 | `sol forge await` | Block until a nudge arrives or timeout expires |
-| `sol forge blocked` | List blocked merge requests |
-| `sol forge check-unblocked` | Check for resolved blockers and unblock MRs |
-| `sol forge claim` | Claim the next ready unblocked merge request |
-| `sol forge create-resolution` | Create a conflict resolution task and block the MR |
 | `sol forge log` | Show the forge log file |
-| `sol forge mark-failed` | Mark a merge request as failed |
-| `sol forge mark-merged` | Mark a merge request as merged |
 | `sol forge pause` | Pause the forge — stop claiming new MRs |
 | `sol forge queue` | Show the merge request queue |
-| `sol forge ready` | List ready (unblocked) merge requests |
-| `sol forge release` | Release a claimed merge request back to ready |
 | `sol forge restart` | Restart the forge (stop then start) |
 | `sol forge resume` | Resume the forge — start claiming MRs again |
 | `sol forge start` | Start the forge as a background process |
@@ -1101,64 +1046,11 @@ to the merge session, which only exists while a merge is in progress.
 | `--timeout` | int | 120 | max seconds to wait |
 | `--world` | string | "" | world name |
 
-#### `sol forge blocked`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
-
-#### `sol forge check-unblocked`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
-
-#### `sol forge claim`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
-
-#### `sol forge create-resolution`
-
-Create a resolution writ for a merge request that has conflicts, then block
-the MR until the resolution is complete. Attempts to auto-dispatch the
-resolution writ to an idle agent immediately.
-
-Used by the forge session when it encounters merge conflicts that need
-manual resolution.
-
-**Usage:** `sol forge create-resolution <mr-id>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
-
 #### `sol forge log`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--follow` | bool | false | follow the log file (like tail -f) |
-| `--world` | string | "" | world name |
-
-#### `sol forge mark-failed`
-
-**Usage:** `sol forge mark-failed <mr-id>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | "" | world name |
-
-#### `sol forge mark-merged`
-
-**Usage:** `sol forge mark-merged <mr-id>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
 | `--world` | string | "" | world name |
 
 #### `sol forge pause`
@@ -1178,35 +1070,6 @@ sol forge resume.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
-
-#### `sol forge ready`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
-
-#### `sol forge release`
-
-Release a claimed merge request, returning it to "ready" state for re-attempt.
-
-When forge claims an MR for processing, it transitions the MR to "claimed" state.
-If processing fails or is interrupted, "release" returns the MR to "ready" so it
-can be dispatched again on the next forge cycle.
-
-If the MR has exhausted its maximum attempt count, it is permanently marked
-"failed" instead of being returned to "ready". In this case the command prints
-a failure message and exits 1 so callers can distinguish the two outcomes.
-
-Exit codes:
-  0  MR returned to "ready" state (will be retried)
-  1  MR permanently failed (max attempts exceeded, will not be retried)
-
-**Usage:** `sol forge release <mr-id>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
 | `--world` | string | "" | world name |
 
 #### `sol forge restart`
@@ -1460,18 +1323,18 @@ Exit codes:
 
 ### `sol service`
 
-Manage systemd user units for sol sphere daemons
+Manage system service units for sol sphere daemons
 
 **Subcommands:**
 
 | Command | Description |
 |---------|-------------|
-| `sol service install` | Generate and install systemd user units (enable but don't start) |
+| `sol service install` | Generate and install system service units (enable but don't start) |
 | `sol service restart` | Restart all sol sphere daemon units |
 | `sol service start` | Start all sol sphere daemon units |
 | `sol service status` | Show status of sol sphere daemon units |
 | `sol service stop` | Stop all sol sphere daemon units |
-| `sol service uninstall` | Stop, disable, and remove systemd user units |
+| `sol service uninstall` | Stop, disable, and remove system service units |
 
 ### `sol up`
 
@@ -1639,32 +1502,6 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 | `--to` | string | "" | Recipient agent ID or "autarch" |
 | `--world` | string | "" | world name |
 
-### `sol nudge`
-
-Nudge queue operations
-
-**Subcommands:**
-
-| Command | Description |
-|---------|-------------|
-| `sol nudge count` | Print count of pending nudge messages |
-| `sol nudge drain` | Drain pending nudge messages for an agent session |
-| `sol nudge list` | View pending nudge queue messages |
-
-#### `sol nudge drain`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
-
-#### `sol nudge list`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-
 ---
 
 ## Setup & Diagnostics:
@@ -1705,7 +1542,15 @@ Manage Claude OAuth accounts
 
 #### `sol account remove`
 
+Remove a registered account and its stored credentials.
+
+Requires --confirm to proceed; without it, prints what would be removed and exits.
+
 **Usage:** `sol account remove <handle>`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--confirm` | bool | false | confirm removal |
 
 #### `sol account set-api-key`
 
@@ -1797,9 +1642,6 @@ Manage account rate limit state
 |------|------|---------|-------------|
 | `--confirm` | bool | false | execute rotations (default is preview-only) |
 | `--world` | string | "" | world name |
-| `--dry-run` | bool | false | **deprecated** — dry-run is now the default behavior; use `--confirm` to execute |
-
-> **Migration note:** The `--dry-run` flag was replaced by `--confirm` (commit 926df92). Preview mode is now the default — pass `--confirm` to execute. The old `--dry-run` flag is accepted but ignored with a deprecation warning.
 
 #### `sol quota scan`
 
@@ -1831,9 +1673,6 @@ Schema version and migration management
 |------|------|---------|-------------|
 | `--backup` | bool | false | Create a backup of each database before migrating |
 | `--confirm` | bool | false | Execute migrations (default is preview-only) |
-| `--dry-run` | bool | false | **deprecated** — dry-run is now the default behavior; use `--confirm` to execute |
-
-> **Migration note:** The `--dry-run` flag was replaced by `--confirm` (commit 926df92). Preview mode is now the default — pass `--confirm` to execute. The old `--dry-run` flag is accepted but ignored with a deprecation warning.
 
 #### `sol schema status`
 
@@ -2047,28 +1886,6 @@ those must be re-dispatched manually.
 
 ## Plumbing:
 
-### `sol brief`
-
-Manage agent brief files
-
-**Subcommands:**
-
-| Command | Description |
-|---------|-------------|
-| `sol brief inject` | Inject brief into session context |
-
-#### `sol brief inject`
-
-Read a brief file and output framed content for session injection.
-
-Used by Claude Code hooks to inject agent context on session start
-and after context compaction.
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--max-lines` | int | 200 | maximum lines before truncation |
-| `--path` | string | "" | path to brief file |
-
 ### `sol docs`
 
 Documentation tools
@@ -2092,116 +1909,6 @@ Generate docs/cli.md from the Cobra command tree. Use --check to validate withou
 #### `sol docs validate`
 
 Compare docs/cli.md against what the command tree would generate. Exits non-zero if discrepancies are found.
-
-### `sol guard`
-
-Block forbidden operations (PreToolUse hook)
-
-Block forbidden operations via Claude Code PreToolUse hooks.
-
-Guard commands exit with code 2 to BLOCK tool execution when a policy
-is violated. They're called before the tool runs, preventing the
-forbidden operation entirely.
-
-Available guards:
-  dangerous-command  - Block rm -rf /, force push, hard reset, git clean, checkout --
-  workflow-bypass    - Block PR creation, direct push to main, manual branching
-
-Example hook configuration:
-  {
-    "PreToolUse": [{
-      "matcher": "Bash(git push --force*)",
-      "hooks": [{"command": "sol guard dangerous-command"}]
-    }]
-  }
-
-**Subcommands:**
-
-| Command | Description |
-|---------|-------------|
-| `sol guard dangerous-command` | Block dangerous commands (rm -rf, force push, hard reset, etc.) |
-| `sol guard workflow-bypass` | Block commands that circumvent the forge merge pipeline |
-
-#### `sol guard dangerous-command`
-
-Block dangerous commands via Claude Code PreToolUse hooks.
-
-This guard blocks operations that could cause irreversible damage:
-  - git push --force/-f  (--force-with-lease and --force-if-includes are allowed)
-  - git reset --hard
-  - git clean -f / git clean -fd
-  - git checkout -- . / git restore .
-  - rm -rf /
-
-The guard reads the tool input from stdin (Claude Code hook protocol)
-and exits with code 2 to block dangerous operations.
-
-Exit codes:
-  0 - Operation allowed
-  2 - Operation BLOCKED
-
-#### `sol guard workflow-bypass`
-
-Block workflow-bypass operations via Claude Code PreToolUse hooks.
-
-This guard blocks commands that circumvent Sol's forge merge pipeline:
-  - git push origin main/master  (agents must use sol resolve → forge)
-  - gh pr create                 (Sol uses its own MR system)
-  - git checkout -b / git switch -c  (outposts have their branch assigned)
-
-Role exemptions:
-  Forge (SOL_ROLE=forge) is exempt since it needs to push to the target
-  branch for merges.
-
-Exit codes:
-  0 - Operation allowed
-  2 - Operation BLOCKED
-
-### `sol log-event`
-
-Log a custom event to the event feed (plumbing)
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--actor` | string | "" | who triggered the event (required) |
-| `--payload` | string | {} | JSON payload |
-| `--source` | string | sol | event source |
-| `--type` | string | "" | event type (required) |
-| `--visibility` | string | both | event visibility (feed, audit, or both) |
-
-### `sol mr`
-
-Merge request plumbing commands
-
-**Subcommands:**
-
-| Command | Description |
-|---------|-------------|
-| `sol mr create` | Create a merge request for an existing writ |
-
-#### `sol mr create`
-
-Plumbing command to manually queue a branch for forge review without going through sol resolve.
-
-**Usage:** `sol mr create --world=W --branch=B --writ=ID`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--branch` | string | "" | branch to merge (required) |
-| `--json` | bool | false | output as JSON |
-| `--priority` | int | 2 | priority (1=high, 2=normal, 3=low) |
-| `--world` | string | "" | world name |
-| `--writ` | string | "" | writ ID (required) |
-
-### `sol prime`
-
-Assemble and print execution context for an agent
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name |
-| `--compact` | bool | false | output a short focus reminder instead of the full prime |
-| `--world` | string | "" | world name |
 
 ---
 
@@ -2316,4 +2023,35 @@ You will need to start a new shell for this setup to take effect.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--no-descriptions` | bool | false | disable completion descriptions |
+
+---
+
+## Plumbing Commands
+
+These commands are hidden from `--help` output. They are internal commands used by Sol's orchestration layer and hooks. They remain fully functional when called directly.
+
+- `sol brief inject — Inject brief into session context`
+- `sol forge blocked — List blocked merge requests`
+- `sol forge check-unblocked — Check for resolved blockers and unblock MRs`
+- `sol forge claim — Claim the next ready unblocked merge request`
+- `sol forge create-resolution — Create a conflict resolution task and block the MR`
+- `sol forge mark-failed — Mark a merge request as failed`
+- `sol forge mark-merged — Mark a merge request as merged`
+- `sol forge ready — List ready (unblocked) merge requests`
+- `sol forge release — Release a claimed merge request back to ready`
+- `sol forge run — Run the forge patrol loop (internal — launched by forge start)`
+- `sol guard dangerous-command — Block dangerous commands (rm -rf, force push, hard reset, etc.)`
+- `sol guard workflow-bypass — Block commands that circumvent the forge merge pipeline`
+- `sol log-event — Log a custom event to the event feed (plumbing)`
+- `sol mr create — Create a merge request for an existing writ`
+- `sol nudge count — Print count of pending nudge messages`
+- `sol nudge drain — Drain pending nudge messages for an agent session`
+- `sol nudge list — View pending nudge queue messages`
+- `sol prime — Assemble and print execution context for an agent`
+- `sol workflow advance — Advance to the next workflow step`
+- `sol workflow current — Print the current step's instructions`
+- `sol workflow eject — Eject an embedded workflow for customization`
+- `sol workflow fail — Mark the current workflow step and workflow as failed`
+- `sol workflow skip — Skip the current workflow step and advance to the next`
+- `sol writ get — Show writ status`
 

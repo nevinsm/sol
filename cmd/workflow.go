@@ -64,8 +64,9 @@ var workflowInstantiateCmd = &cobra.Command{
 }
 
 var workflowCurrentCmd = &cobra.Command{
-	Use:   "current",
-	Short: "Print the current step's instructions",
+	Use:    "current",
+	Short:  "Print the current step's instructions",
+	Hidden: true,
 	Long: `Print the current step's instructions from the active workflow.
 
 Used by agents to read their next step in a step-driven workflow loop.
@@ -104,6 +105,7 @@ Exit codes:
 var workflowAdvanceCmd = &cobra.Command{
 	Use:          "advance",
 	Short:        "Advance to the next workflow step",
+	Hidden:       true,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -156,6 +158,7 @@ var workflowAdvanceCmd = &cobra.Command{
 var workflowSkipCmd = &cobra.Command{
 	Use:          "skip",
 	Short:        "Skip the current workflow step and advance to the next",
+	Hidden:       true,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -223,6 +226,7 @@ var workflowSkipCmd = &cobra.Command{
 var workflowFailCmd = &cobra.Command{
 	Use:          "fail",
 	Short:        "Mark the current workflow step and workflow as failed",
+	Hidden:       true,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -652,6 +656,7 @@ var workflowManifestCmd = &cobra.Command{
 var workflowEjectCmd = &cobra.Command{
 	Use:          "eject <name>",
 	Short:        "Eject an embedded workflow for customization",
+	Hidden:       true,
 	Long:         "Copies an embedded workflow to the user or project tier so it can be customized. Use --force to refresh from embedded defaults (backs up existing).",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,

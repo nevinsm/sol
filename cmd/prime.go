@@ -19,6 +19,7 @@ var primeCmd = &cobra.Command{
 	Use:          "prime",
 	Short:        "Assemble and print execution context for an agent",
 	GroupID:      groupPlumbing,
+	Hidden:       true,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(primeWorld)

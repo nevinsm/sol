@@ -27,6 +27,7 @@ var nudgeCmd = &cobra.Command{
 var nudgeListCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "View pending nudge queue messages",
+	Hidden:       true,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -64,6 +65,7 @@ var nudgeListCmd = &cobra.Command{
 var nudgeCountCmd = &cobra.Command{
 	Use:          "count",
 	Short:        "Print count of pending nudge messages",
+	Hidden:       true,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -85,6 +87,7 @@ var nudgeCountCmd = &cobra.Command{
 var nudgeDrainCmd = &cobra.Command{
 	Use:          "drain",
 	Short:        "Drain pending nudge messages for an agent session",
+	Hidden:       true,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
