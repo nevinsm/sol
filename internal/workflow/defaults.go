@@ -55,6 +55,7 @@ func ValidateName(name string) error {
 //go:embed defaults/deep-scan/steps/03-isolate.md
 //go:embed defaults/deep-scan/steps/04-document.md
 //go:embed defaults/deep-scan/steps/05-chart.md
+//go:embed defaults/prd-review/manifest.toml
 var defaultWorkflows embed.FS
 
 // knownDefaults lists workflow names that are embedded in the binary.
@@ -67,6 +68,7 @@ var knownDefaults = map[string]bool{
 	"thorough-work":  true,
 	"idea-to-plan":   true,
 	"deep-scan":      true,
+	"prd-review":     true,
 }
 
 // Tier indicates which tier resolved a workflow.
