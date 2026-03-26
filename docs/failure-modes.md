@@ -25,7 +25,6 @@ in-flight work continues. Recovery happens when services return.
 | Brief | `.brief/memory.md` file | None (file-based) | Read on next injection; missing = clean start | <1s |
 | Envoy | Worktree, tether dir, brief, resume state | Session memory | Brief re-injection + tether list + resume state | <30s |
 | Governor | Governor dir, tether dir, brief, world summary | Session memory | Brief re-injection + tether list + world sync | <30s |
-| Chancellor | Chancellor dir, tether dir, brief | Session memory | Brief re-injection + tether list | <30s |
 | Doctor | None (stateless) | N/A | No recovery needed | N/A |
 | Status | None (stateless) | N/A | No recovery needed | N/A |
 
@@ -43,7 +42,6 @@ halting.
 | Consul | Stale tethers accumulate. Caravans with ready work wait. Resolved on restart. |
 | Network/git remote | Agents work locally. `sol resolve` push phase retries. |
 | Ledger | Token tracking pauses. Agents continue — no work is gated on telemetry. |
-| Chancellor | Cross-world planning pauses. Per-world governors and agents continue independently. |
 | Governor | Per-world coordination pauses. Tethered agents continue executing. New writ dispatch waits. |
 
 ## Per-Component Details
@@ -219,25 +217,6 @@ can be re-derived from writ and caravan state in the database.
 **While down:** Tethered agents continue executing. New writ dispatch waits
 until the governor session is restored. Sentinel continues health monitoring
 independently.
-
-### Chancellor
-
-The chancellor is a sphere-scoped planning agent with a fixed tmux session
-(`sol-chancellor`), brief system, and multi-writ tethers. Similar failure profile
-to governor but at sphere scope.
-
-**State survives:** Chancellor directory (`$SOL_HOME/chancellor/`), tether directory,
-`.brief/memory.md`, agent record in sphere DB.
-
-**State lost:** Session conversation history and in-flight cross-world planning
-decisions.
-
-**Recovery:** Prefect detects the dead session and respawns it. On startup,
-brief is re-injected and tether directory is read to recover writ bindings.
-The chancellor resumes planning from last durable state. Cross-world coordination
-pauses during downtime — per-world governors and agents continue independently.
-
-**Recovery time:** <30s (prefect respawn + brief injection).
 
 ### Doctor
 

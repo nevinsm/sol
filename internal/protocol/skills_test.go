@@ -40,16 +40,6 @@ func TestRoleSkillsEnvoy(t *testing.T) {
 	}
 }
 
-func TestRoleSkillsChancellor(t *testing.T) {
-	skills, err := RoleSkills("chancellor")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(skills) != 4 {
-		t.Errorf("chancellor should have 4 skills, got %d: %v", len(skills), skills)
-	}
-}
-
 func TestRoleSkillsUnknown(t *testing.T) {
 	skills, err := RoleSkills("unknown")
 	if err == nil {
@@ -126,23 +116,6 @@ func TestBuildSkillsEnvoy(t *testing.T) {
 	}
 }
 
-func TestBuildSkillsChancellor(t *testing.T) {
-	ctx := SkillContext{
-		World:     "testworld",
-		SolBinary: "sol",
-		Role:      "chancellor",
-	}
-
-	skills, err := BuildSkills(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	names, _ := RoleSkills("chancellor")
-	if len(skills) != len(names) {
-		t.Fatalf("expected %d skills, got %d", len(names), len(skills))
-	}
-}
-
 func TestBuildSkillsUnknownRole(t *testing.T) {
 	ctx := SkillContext{
 		World: "testworld",
@@ -155,34 +128,6 @@ func TestBuildSkillsUnknownRole(t *testing.T) {
 	}
 	if skills != nil {
 		t.Errorf("expected nil skills for unknown role, got %v", skills)
-	}
-}
-
-func TestChancellorWritPlanningNoDispatch(t *testing.T) {
-	ctx := SkillContext{
-		SolBinary: "sol",
-		Role:      "chancellor",
-	}
-
-	content := generateSkill("writ-planning", ctx)
-
-	// The chancellor prompt says "does NOT dispatch work". The writ-planning
-	// skill must not provide dispatch commands like caravan launch.
-	if contains(content, "caravan launch") {
-		t.Error("chancellor writ-planning skill should not include 'caravan launch' — chancellor does not dispatch")
-	}
-
-	// Should still have caravan creation/planning commands.
-	if !contains(content, "caravan create") {
-		t.Error("chancellor writ-planning skill should include 'caravan create'")
-	}
-	if !contains(content, "caravan commission") {
-		t.Error("chancellor writ-planning skill should include 'caravan commission'")
-	}
-
-	// Should note that dispatch is the autarch/governor's responsibility.
-	if !contains(content, "dispatch action") {
-		t.Error("chancellor writ-planning skill should explain that launching is a dispatch action")
 	}
 }
 
@@ -426,7 +371,7 @@ func TestSkillCommandReferencesExist(t *testing.T) {
 	}
 
 	// Generate skill content for every role.
-	roles := []string{"outpost", "governor", "envoy", "chancellor"}
+	roles := []string{"outpost", "governor", "envoy"}
 
 	// cmdEntry tracks a unique subcommand and the flags referenced with it.
 	type cmdEntry struct {

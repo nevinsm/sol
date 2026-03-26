@@ -75,7 +75,6 @@ Valid values for all fields: `claude`.
 | `envoy` | string | `""` | Runtime for envoy agents. |
 | `governor` | string | `""` | Runtime for governor agents. |
 | `forge` | string | `""` | Runtime for forge agents. |
-| `chancellor` | string | `""` | Runtime for chancellor (cross-world planner) agents. |
 
 ---
 
@@ -187,7 +186,6 @@ outpost    = "claude"
 envoy      = "claude"
 governor   = "claude"
 forge      = "claude"
-chancellor = "claude"
 
 [forge]
 # Shell commands run as quality gates before merging.

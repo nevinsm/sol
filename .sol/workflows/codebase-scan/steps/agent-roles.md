@@ -15,11 +15,6 @@ Review the packages listed in **Focus** for correctness in agent lifecycle manag
 - **World summary**: Is the cached summary vs live query distinction correct? Stale summary detection?
 - **Query interface**: Are queries to the governor correctly routed and responses parsed?
 
-### Chancellor (internal/chancellor/)
-- **Cross-world coordination**: Does the chancellor correctly handle multi-world state? Any assumptions about single-world that break?
-- **Session lifecycle**: Start/stop behavior? Crash recovery?
-- **Scope boundaries**: Does the chancellor stay within its sphere-scoped role or leak into world-level concerns?
-
 ### Brief (internal/brief/)
 - **File operations**: Read/write atomicity? What happens if the brief file is corrupt or missing?
 - **Size management**: Is the 200-line cap enforced? What happens when the agent writes beyond it?

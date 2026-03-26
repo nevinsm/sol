@@ -212,7 +212,7 @@ func TestOptionalStatusIndicator(t *testing.T) {
 }
 
 func TestOptionalProcessesUseDimCircle(t *testing.T) {
-	// Verify that optional processes (Chronicle, Ledger, Chancellor) show dim ○
+	// Verify that optional processes (Chronicle, Ledger) show dim ○
 	// when not running, while required processes (Prefect, Consul, Broker)
 	// still show red ✗.
 	s := &SphereStatus{
@@ -223,7 +223,6 @@ func TestOptionalProcessesUseDimCircle(t *testing.T) {
 		Chronicle: ChronicleInfo{Running: false},
 		Ledger:    LedgerInfo{Running: false},
 		Broker:    BrokerInfo{Running: false},
-		Chancellor: ChancellorInfo{Running: false},
 	}
 
 	output := RenderSphere(s)

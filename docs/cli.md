@@ -919,28 +919,6 @@ Exit codes:
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
 
-### `sol chancellor`
-
-Manage the sphere-scoped planning session
-
-**Subcommands:**
-
-| Command | Description |
-|---------|-------------|
-| `sol chancellor attach` | Attach to the chancellor tmux session |
-| `sol chancellor brief` | Display the chancellor's brief |
-| `sol chancellor debrief` | Archive the chancellor's brief and reset |
-| `sol chancellor restart` | Restart the chancellor (stop then start) |
-| `sol chancellor start` | Start the chancellor planning session |
-| `sol chancellor status` | Show chancellor status |
-| `sol chancellor stop` | Stop the chancellor session |
-
-#### `sol chancellor status`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-
 ### `sol chronicle`
 
 Manage the event feed chronicle
@@ -1012,7 +990,7 @@ Stop sphere daemons and world services
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--all` | bool | false | also stop envoy, governor, and chancellor sessions |
+| `--all` | bool | false | also stop envoy and governor sessions |
 | `--world` | string | "" | stop only world services (optionally for a specific world) |
 
 ### `sol forge`

@@ -1,5 +1,7 @@
 # ADR-0029: Rename Senate to Chancellor
 
+Status: superseded by ADR-0035 (Remove Chancellor Role)
+
 ## Context
 
 The Senate component (ADR-0011) was introduced as a sphere-scoped cross-world planning agent managed by the autarch. The name "senate" implied a deliberative body of multiple members, which did not match the actual implementation: a single persistent AI session with sphere-level visibility and planning authority.

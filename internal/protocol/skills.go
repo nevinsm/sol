@@ -30,7 +30,7 @@ type SkillContext struct {
 	World        string
 	AgentName    string
 	SolBinary    string   // path to sol binary (defaults to "sol")
-	Role         string   // outpost, forge, governor, envoy, chancellor
+	Role         string   // outpost, forge, governor, envoy
 	TargetBranch string   // forge: target branch for merges
 	QualityGates []string // commands to run before resolving
 	OutputDir    string   // persistent output directory for writ
@@ -58,10 +58,9 @@ func init() {
 
 // roleSkillsMap defines which skills belong to each role.
 var roleSkillsMap = map[string][]string{
-	"outpost":    {"resolve-and-handoff"},
-	"governor":   {"writ-dispatch", "caravan-management", "world-coordination", "notification-handling", "handoff"},
-	"envoy":      {"resolve-and-submit", "writ-management", "dispatch", "handoff", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail"},
-	"chancellor": {"world-queries", "writ-planning", "mail", "handoff"},
+	"outpost":  {"resolve-and-handoff"},
+	"governor": {"writ-dispatch", "caravan-management", "world-coordination", "notification-handling", "handoff"},
+	"envoy":    {"resolve-and-submit", "writ-management", "dispatch", "handoff", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail"},
 }
 
 // RoleSkills returns the skill names for a given role.
@@ -108,10 +107,6 @@ func generateSkill(name string, ctx SkillContext) string {
 		return skillStatusMonitoring(ctx)
 	case "world-operations":
 		return skillWorldOperations(ctx)
-	case "world-queries":
-		return skillWorldQueries(ctx)
-	case "writ-planning":
-		return skillWritPlanning(ctx)
 	default:
 		fmt.Fprintf(os.Stderr, "protocol: unknown skill name %q\n", name)
 		return ""
@@ -848,151 +843,6 @@ explicit infrastructure work.
 %[1]s governor status --world=%[2]s%[3]s. The summary may still be readable
 even when the governor is idle — try that first.
 `, "`"+sol, world, "`")
-}
-
-func skillWorldQueries(ctx SkillContext) string {
-	sol := ctx.sol()
-	return fmt.Sprintf(`---
-name: world-queries
-description: Gather intelligence across worlds — briefs, summaries, and live governor queries in cost order
----
-
-# World Queries
-
-World queries let you gather intelligence across worlds before planning or
-advising the autarch. The key discipline is cost awareness: you have three
-tiers of context ranging from free to expensive, and good planning uses
-them in order.
-
-**Three tiers (cheapest to most expensive):**
-1. **Brief** (%[1]s$SOL_HOME/chancellor/.brief/memory.md%[2]s) — your own
-   accumulated knowledge. Free to read. Always check first.
-2. **World summaries** (%[3]s world summary <world>%[2]s) — governor-maintained
-   snapshots. Cheap — reads a file, doesn't wake anyone.
-3. **Live queries** (%[3]s world query <world> "question"%[2]s) — asks the
-   governor directly. Expensive — wakes the governor session if idle.
-
-A planning session that wakes 5 governors to ask questions already answered
-in their summaries is wasteful. Prefer summaries. Use live queries only for
-specific unknowns not covered by tier 1 or 2.
-
-## When to Use
-
-- Check your brief first for everything you already know about a world
-- Read world summaries for current-state snapshots before any planning work
-- Run live queries only when summaries don't answer your specific question
-- Batch live queries — if you need multiple things from one governor, ask once
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| %[3]s world list%[2]s | List all worlds |
-| %[3]s world summary <world>%[2]s | Read governor's world summary (cheap) |
-| %[3]s world query <world> "question"%[2]s | Query a governor directly (wakes session) |
-| %[3]s world export <world>%[2]s | Export full world state |
-
-## Common Patterns
-
-**Gathering context before a planning session:**
-Read brief → %[3]s world list%[2]s → %[3]s world summary <world>%[2]s for each
-relevant world → identify gaps → %[3]s world query%[2]s only for specific unknowns
-
-**Batching a live query:**
-Combine questions: %[3]s world query <world> "What agents are available, what
-writs are in progress, and are there any blockers?"%[2]s
-
-## Failure Modes
-
-**Governor not running:** %[3]s world query%[2]s fails or times out. Check
-%[3]s world status <world>%[2]s. The summary may still be readable even if
-the governor is idle — try that first.
-
-**Stale summary:** Summary hasn't been updated recently. If the timestamp looks
-old and you need current state, fall back to a live query. Note it in your
-brief so future sessions know.
-`, "`", "`", "`"+sol)
-}
-
-func skillWritPlanning(ctx SkillContext) string {
-	sol := ctx.sol()
-	return fmt.Sprintf(`---
-name: writ-planning
-description: Decompose initiatives into writs and caravans — plan, size, sequence, and present for approval
----
-
-# Writ Planning
-
-Writ planning translates an autarch's initiative into a structured set of
-writs and caravans ready for dispatch. The planning session itself is cheap —
-gather context from briefs and summaries, design the work breakdown, present
-for approval. Only dispatch after the autarch confirms the plan.
-
-## Planning Workflow
-
-1. **Gather context (tiers 1+2):** Read your brief, then read world summaries
-   for each relevant world. This costs nothing and covers most questions.
-2. **Identify gaps (tier 3):** Use live queries only for specific unknowns not
-   answered by summaries. Batch your questions per governor.
-3. **Decompose:** Break the initiative into writs. Identify dependencies, group
-   related work into caravans, assign to appropriate worlds.
-4. **Present for approval:** Show the autarch the plan before dispatching.
-   Dispatch only after explicit approval.
-
-## When to Use
-
-- When the autarch describes a multi-writ or multi-world initiative
-- When work needs phase sequencing (phase-gated caravans)
-- When scope is large enough that speculative dispatch would be risky
-
-## Creating Writs
-
-| Command | Description |
-|---------|-------------|
-| %[1]s writ create --world=<world> --title="..." --description="..."%[2]s | Create writ in any world |
-
-Options: %[3]s, %[4]s, %[5]s, %[6]s (JSON).
-
-## Managing Caravans
-
-| Command | Description |
-|---------|-------------|
-| %[1]s caravan create "name" <id> [<id>...] --world=<world>%[2]s | Create caravan with items |
-| %[1]s caravan commission <id>%[2]s | Mark caravan as commissioned |
-| %[1]s caravan status [<caravan-id>]%[2]s | Check caravan progress |
-| %[1]s caravan dep add <caravan-id> <dep-id>%[2]s | Add inter-caravan dependency |
-
-Note: Dispatching caravans is a dispatch action — the autarch or governor
-handles it after approving the plan. The chancellor plans but does not dispatch.
-
-## Common Patterns
-
-**Planning a phased initiative:**
-Brief → summaries → identify worlds and phases → create writs → group into
-caravans with phase gates → present to autarch → dispatch on approval
-
-**Simple multi-world task:**
-Summaries for each world → create one writ per world → single caravan →
-commission → present → launch
-
-## Failure Modes
-
-**Dispatching without approval** — Never dispatch speculatively. Present the
-plan, wait for autarch confirmation. If unavailable, save the plan to your
-brief and wait.
-
-**Over-querying governors** — If you're waking governors to answer questions
-their summaries already cover, stop. Re-read the summaries. Prefer stale
-summary data over expensive live queries for planning purposes.
-
-**Writ descriptions too thin** — Outpost agents execute from the description
-alone. A vague description produces vague work. Invest time in clear,
-complete writ descriptions before dispatch.
-`, "`"+sol, "`",
-		"`--priority` (1=high, 2=normal, 3=low)",
-		"`--label` (repeatable)",
-		"`--kind` (code or analysis)",
-		"`--metadata`")
 }
 
 // --- Helpers ---

@@ -7,7 +7,7 @@ import (
 )
 
 // PlanModeBlockCommand is the standard PreToolUse command to block EnterPlanMode
-// for roles that use brief memory (envoy, governor, chancellor).
+// for roles that use brief memory (envoy, governor).
 const PlanModeBlockCommand = `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`
 
 // OutpostPlanModeBlockCommand generates the PreToolUse command to block EnterPlanMode

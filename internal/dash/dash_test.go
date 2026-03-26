@@ -37,7 +37,6 @@ func TestSphereViewRendersProcesses(t *testing.T) {
 		"Chronicle",
 		"Ledger",
 		"Broker",
-		"Chancellor",
 	}
 
 	for _, check := range checks {
@@ -1688,7 +1687,6 @@ func TestWorldViewSphereProcessSpinners(t *testing.T) {
 		Chronicle: status.ChronicleInfo{Running: true},
 		Ledger:    status.LedgerInfo{Running: false},
 		Broker:    status.BrokerInfo{Running: true, PatrolCount: 3},
-		Chancellor: status.ChancellorInfo{Running: false},
 		Forge:     status.ForgeInfo{Running: true},
 		Sentinel:  status.SentinelInfo{Running: true},
 	}
@@ -1701,7 +1699,7 @@ func TestWorldViewSphereProcessSpinners(t *testing.T) {
 		}
 	}
 	// Non-running should not.
-	for _, name := range []string{"Ledger", "Chancellor"} {
+	for _, name := range []string{"Ledger"} {
 		if _, ok := wm.processSpinners[name]; ok {
 			t.Errorf("stopped sphere process %q should not have a spinner", name)
 		}
@@ -1840,11 +1838,6 @@ func TestProcessDetailFormats(t *testing.T) {
 	// Broker detail.
 	if d := formatBrokerDetail(status.BrokerInfo{Running: true, PatrolCount: 5}); d != "5 patrols" {
 		t.Errorf("broker detail = %q, want %q", d, "5 patrols")
-	}
-
-	// Chancellor detail.
-	if d := formatChancellorDetail(status.ChancellorInfo{Running: true, SessionName: "chancellor-sess"}); d != "chancellor-sess" {
-		t.Errorf("chancellor detail = %q, want %q", d, "chancellor-sess")
 	}
 
 	// Governor detail.
@@ -2177,7 +2170,6 @@ func TestProcessGridRendersThreeColumns(t *testing.T) {
 		{"Chronicle", true, false},
 		{"Ledger", false, false},
 		{"Broker", true, true},
-		{"Chancellor", false, false},
 	}
 
 	var b strings.Builder
@@ -2794,7 +2786,6 @@ func TestBuildSpherePeekItemsCopiesSource(t *testing.T) {
 		"Chronicle": "chronicle",
 		"Ledger":    "ledger",
 		"Broker":    "broker",
-		"Chancellor": "chancellor",
 	}
 	for _, item := range items {
 		wantSource, ok := expected[item.name]
@@ -3338,8 +3329,8 @@ func TestSphereRestartKeyOnWorldsSection(t *testing.T) {
 }
 
 func TestSphereProcessMapCoversAllProcesses(t *testing.T) {
-	// All 6 sphere processes should be in the map.
-	expected := []string{"Prefect", "Consul", "Chronicle", "Ledger", "Broker", "Chancellor"}
+	// All 5 sphere processes should be in the map.
+	expected := []string{"Prefect", "Consul", "Chronicle", "Ledger", "Broker"}
 	for _, name := range expected {
 		if _, ok := sphereProcessMap[name]; !ok {
 			t.Errorf("sphereProcessMap missing %q", name)

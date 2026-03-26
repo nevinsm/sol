@@ -49,7 +49,6 @@ type WorldStatus struct {
 	Chronicle  ChronicleInfo  `json:"chronicle"`
 	Ledger     LedgerInfo     `json:"ledger"`
 	Broker     BrokerInfo     `json:"broker"`
-	Chancellor ChancellorInfo `json:"chancellor"`
 	Sentinel   SentinelInfo   `json:"sentinel"`
 	Governor   GovernorInfo   `json:"governor"`
 	Agents     []AgentStatus  `json:"agents"`
@@ -288,12 +287,6 @@ type EscalationLister interface {
 	ListOpenEscalations() ([]store.Escalation, error)
 }
 
-// ChancellorInfo holds chancellor process state (sphere-level).
-type ChancellorInfo struct {
-	Running     bool   `json:"running"`
-	SessionName string `json:"session_name,omitempty"`
-}
-
 // EscalationSummary holds aggregated escalation counts for status display.
 type EscalationSummary struct {
 	Total      int            `json:"total"`
@@ -308,7 +301,6 @@ type SphereStatus struct {
 	Chronicle   ChronicleInfo       `json:"chronicle"`
 	Ledger      LedgerInfo          `json:"ledger"`
 	Broker      BrokerInfo          `json:"broker"`
-	Chancellor  ChancellorInfo      `json:"chancellor"`
 	Worlds      []WorldSummary      `json:"worlds"`
 	Tokens      TokenInfo           `json:"tokens"`
 	Caravans    []CaravanInfo       `json:"caravans,omitempty"`
@@ -421,12 +413,6 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 
 	// 2b2. Check broker (sphere-level).
 	result.Broker = GatherBrokerInfo()
-
-	// 2b3. Check chancellor (sphere-level).
-	const chancellorSessionName = "sol-chancellor"
-	if checker.Exists(chancellorSessionName) {
-		result.Chancellor = ChancellorInfo{Running: true, SessionName: chancellorSessionName}
-	}
 
 	// 2c. Check sentinel process (direct Go process with PID + heartbeat).
 	result.Sentinel = GatherSentinelInfo(world)

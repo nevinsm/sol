@@ -77,8 +77,6 @@ func RenderSphere(s *SphereStatus) string {
 	renderProcess(&b, "Broker", s.Broker.Running, true,
 		formatBrokerDetail(s.Broker))
 	renderBrokerTokenHealth(&b, s.Broker.TokenHealth)
-	renderProcess(&b, "Chancellor", s.Chancellor.Running, false,
-		formatChancellorDetail(s.Chancellor))
 	b.WriteString("\n")
 
 	// Worlds table.
@@ -274,13 +272,6 @@ func formatLedgerDetail(l LedgerInfo) string {
 		return "running"
 	}
 	return detail
-}
-
-func formatChancellorDetail(s ChancellorInfo) string {
-	if s.Running {
-		return s.SessionName
-	}
-	return ""
 }
 
 func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
@@ -765,8 +756,6 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 	renderProcess(&b, "Broker", ws.Broker.Running, true,
 		formatBrokerDetail(ws.Broker))
 	renderBrokerTokenHealth(&b, ws.Broker.TokenHealth)
-	renderProcess(&b, "Chancellor", ws.Chancellor.Running, false,
-		formatChancellorDetail(ws.Chancellor))
 	b.WriteString("\n")
 
 	// World processes (Forge, Sentinel, Governor — not Prefect/Chronicle).

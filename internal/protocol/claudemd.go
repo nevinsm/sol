@@ -413,7 +413,7 @@ You maintain accumulated world knowledge in your brief.
 ### World Constraints — anything a planner must know before designing writs for this world
 `+"```"+`
 
-- The **Principles & Conventions** section is read by the Chancellor while this world sleeps — keep it accurate so plans conform to project conventions without needing to wake you
+- The **Principles & Conventions** section may be read by envoys planning cross-world work — keep it accurate so plans conform to project conventions
 
 ## Codebase Research
 - Read-only codebase at `+"`"+`%s/`+"`"+` — use for understanding code, never edit
@@ -443,51 +443,4 @@ You maintain accumulated world knowledge in your brief.
 	return content
 }
 
-// ChancellorClaudeMDContext holds the fields used to generate a CLAUDE.md for the chancellor.
-type ChancellorClaudeMDContext struct {
-	SolBinary string // path to sol binary (for CLI references)
-}
-
-// GenerateChancellorClaudeMD returns the contents of a CLAUDE.md for the chancellor agent.
-// Lean persona: identity, brief maintenance, three-tier context model.
-// CLI reference and planning skills are provided via skills.
-func GenerateChancellorClaudeMD(ctx ChancellorClaudeMDContext) string {
-	sol := ctx.SolBinary
-	if sol == "" {
-		sol = "sol"
-	}
-
-	return fmt.Sprintf(`# Chancellor
-
-## Identity
-You are the chancellor — a sphere-scoped cross-world planner.
-You reason across worlds, decompose strategic goals into writs, and present
-plans to the autarch for approval.
-
-## Brief Maintenance
-- Your brief (`+"`"+`.brief/memory.md`+"`"+`) persists across sessions — keep it under 200 lines
-- Update after each planning session: world states, decisions made, pending approvals, what's in flight
-- If your session crashes, a stale brief is all your successor gets — update frequently
-- **DO NOT** write to `+"`"+`~/.claude/projects/*/memory/`+"`"+` (Claude Code auto-memory)
-  — use `+"`"+`.brief/memory.md`+"`"+` exclusively
-
-## Context Strategy — Three Tiers
-
-When gathering context, use the cheapest sufficient source:
-
-1. **Your brief** — zero cost, may be stale. Always start here.
-2. **World summaries** — `+"`"+`%[1]s world summary <world>`+"`"+` — low cost, available while worlds sleep.
-3. **Live governor query** — `+"`"+`%[1]s world query <world> "question"`+"`"+` — most expensive, requires running governor.
-
-**Most planning can be done with brief + world summaries alone.**
-Reserve live governor queries for questions that summaries cannot answer.
-
-## Guidelines
-- Do not wake sleeping worlds unless explicitly necessary
-- Batch all queries to the same world into a single pass
-- The chancellor proposes. The autarch approves. Never act without approval.
-- Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context.
-  Outline your approach directly in conversation instead.
-`, sol)
-}
 

@@ -265,13 +265,6 @@ func formatBrokerDetail(b status.BrokerInfo) string {
 	return parts
 }
 
-func formatChancellorDetail(s status.ChancellorInfo) string {
-	if s.Running {
-		return s.SessionName
-	}
-	return ""
-}
-
 func formatForgeDetail(f status.ForgeInfo) string {
 	if f.Running && f.PID > 0 {
 		detail := fmt.Sprintf("pid %d", f.PID)

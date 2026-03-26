@@ -724,7 +724,7 @@ health checks and generating a prioritized fix caravan.
 
 1. `core-infra` (analysis) — Review core infrastructure: store, config, setup, fileutil, processutil, logutil, envfile, git, namepool.
 2. `session-lifecycle` (analysis) — Review session lifecycle: startup, dispatch, session, tether, adapter, handoff.
-3. `agent-roles` (analysis) — Review agent roles: envoy, governor, chancellor, brief, skills.
+3. `agent-roles` (analysis) — Review agent roles: envoy, governor, brief, skills.
 4. `services` (analysis) — Review service components: forge, sentinel, consul, prefect, service, heartbeat.
 5. `protocol` (analysis) — Review the protocol layer.
 6. `support-systems` (analysis) — Review support systems: ledger, broker, nudge, chronicle, events, quota, doctor, escalation, inbox, account, trace.

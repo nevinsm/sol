@@ -95,7 +95,6 @@ type ModelsSection struct {
 	Envoy      string `toml:"envoy,omitempty" json:"envoy,omitempty"`
 	Governor   string `toml:"governor,omitempty" json:"governor,omitempty"`
 	Forge      string `toml:"forge,omitempty" json:"forge,omitempty"`
-	Chancellor string `toml:"chancellor,omitempty" json:"chancellor,omitempty"`
 }
 
 // RuntimesSection holds per-role runtime overrides.
@@ -106,7 +105,6 @@ type RuntimesSection struct {
 	Envoy      string `toml:"envoy,omitempty" json:"envoy,omitempty"`
 	Governor   string `toml:"governor,omitempty" json:"governor,omitempty"`
 	Forge      string `toml:"forge,omitempty" json:"forge,omitempty"`
-	Chancellor string `toml:"chancellor,omitempty" json:"chancellor,omitempty"`
 }
 
 // AgentsSection holds agent-related settings.
@@ -210,8 +208,6 @@ func (c WorldConfig) ResolveModel(role string) string {
 		override = c.Agents.Models.Governor
 	case "forge", "forge-merge":
 		override = c.Agents.Models.Forge
-	case "chancellor":
-		override = c.Agents.Models.Chancellor
 	}
 	if override != "" {
 		return override
@@ -237,8 +233,6 @@ func (c WorldConfig) ResolveRuntime(role string) string {
 		override = c.Agents.Runtimes.Governor
 	case "forge", "forge-merge":
 		override = c.Agents.Runtimes.Forge
-	case "chancellor":
-		override = c.Agents.Runtimes.Chancellor
 	}
 	if override != "" {
 		return override
@@ -284,9 +278,6 @@ func (c WorldConfig) Validate() error {
 		return err
 	}
 	if err := validModelTier("agents.models.forge", c.Agents.Models.Forge); err != nil {
-		return err
-	}
-	if err := validModelTier("agents.models.chancellor", c.Agents.Models.Chancellor); err != nil {
 		return err
 	}
 	if c.Forge.GateTimeout != "" {

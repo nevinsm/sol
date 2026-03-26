@@ -420,7 +420,7 @@ func TestResolveModelPartialOverride(t *testing.T) {
 
 func TestResolveRuntimeFallbackToClaude(t *testing.T) {
 	cfg := WorldConfig{}
-	for _, role := range []string{"outpost", "envoy", "governor", "forge", "chancellor", "unknown"} {
+	for _, role := range []string{"outpost", "envoy", "governor", "forge", "unknown"} {
 		got := cfg.ResolveRuntime(role)
 		if got != "claude" {
 			t.Errorf("ResolveRuntime(%q) with no config = %q, want %q", role, got, "claude")

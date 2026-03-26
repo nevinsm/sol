@@ -30,7 +30,6 @@ sol/
 │   ├── sentinel.go                Per-world health monitor
 │   ├── envoy.go                   Persistent human-directed agents
 │   ├── governor.go                Per-world coordinator
-│   ├── chancellor.go              Sphere-scoped planner
 │   ├── brief.go                   Brief injection hooks
 │   ├── feed.go, log_event.go      Event feed
 │   ├── chronicle.go               Event chronicle
@@ -47,7 +46,6 @@ sol/
 │   ├── adapter/                   RuntimeAdapter interface (AI runtime abstraction)
 │   ├── brief/                     Brief file management, size enforcement
 │   ├── broker/                    Token broker
-│   ├── chancellor/                Sphere-scoped cross-world planner
 │   ├── chronicle/                 Event log maintenance
 │   ├── config/                    SOL_HOME resolution, world config
 │   ├── consul/                    Sphere-level patrol, heartbeat

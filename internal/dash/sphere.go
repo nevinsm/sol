@@ -94,8 +94,6 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 	sm.syncProcessSpinner("Chronicle", data.Chronicle.Running)
 	sm.syncProcessSpinner("Ledger", data.Ledger.Running)
 	sm.syncProcessSpinner("Broker", data.Broker.Running)
-	sm.syncProcessSpinner("Chancellor", data.Chancellor.Running)
-
 	// Build process items for focused list navigation.
 	sm.processItems = []processItem{
 		{name: "Prefect", running: data.Prefect.Running, required: true, detail: formatPrefectDetail(data.Prefect), peekable: false, source: "prefect"},
@@ -103,7 +101,6 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 		{name: "Chronicle", running: data.Chronicle.Running, required: false, detail: formatChronicleDetail(data.Chronicle), peekable: false, source: "chronicle"},
 		{name: "Ledger", running: data.Ledger.Running, required: false, detail: formatLedgerDetail(data.Ledger), peekable: false, source: "ledger"},
 		{name: "Broker", running: data.Broker.Running, required: true, detail: formatBrokerDetail(data.Broker), peekable: false, source: "broker"},
-		{name: "Chancellor", running: data.Chancellor.Running, required: false, sessionName: data.Chancellor.SessionName, detail: formatChancellorDetail(data.Chancellor), peekable: data.Chancellor.SessionName != "", source: "chancellor"},
 	}
 
 	// Clamp cursor.
@@ -414,7 +411,6 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 			{"Chronicle", data.Chronicle.Running, false},
 			{"Ledger", data.Ledger.Running, false},
 			{"Broker", data.Broker.Running, true},
-			{"Chancellor", data.Chancellor.Running, false},
 		}
 		b.WriteString(headerStyle.Render("Processes"))
 		b.WriteString("\n")
