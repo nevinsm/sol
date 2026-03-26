@@ -5,42 +5,373 @@ mode = "manifest"
 [[steps]]
 id = "api-design"
 title = "API Design Exploration"
-description = "Explore the public API surface: endpoints, methods, request/response shapes, versioning strategy, and error conventions.\n\nFocus: What should the API look like from a consumer's perspective?"
+description = """
+Explore the public API surface: endpoints, methods, request/response shapes, versioning strategy, and error conventions.
+
+Focus: What should the API look like from a consumer's perspective?
+
+**Explore:**
+- Command-line interface: subcommands, flags, argument ordering, shell completion
+- Programmatic API: function signatures, return types, error types, context propagation
+- Versioning strategy: how will the API evolve without breaking consumers?
+- Pagination and streaming: how are large result sets handled?
+- Error response format: structured errors, error codes, actionable messages
+- Idempotency: which operations are safe to retry?
+- Rate limiting and backpressure: how does the API signal overload?
+- Input validation: where is validation performed, what are the error messages?
+- Naming conventions: consistency with existing commands/functions, discoverability
+- Configuration interface: files, environment variables, flags precedence
+- Help text and documentation: --help output, examples, man pages
+- Backward compatibility: what existing contracts must be preserved?
+
+**Questions to answer:**
+- How will users discover and learn this API without reading source code?
+- What is the happy path, and what are the most common error paths?
+- Does this follow existing CLI/API patterns in the codebase, or does it introduce new conventions?
+- What would make this API a joy to use vs. a source of frustration?
+
+**Output format:**
+```
+## Summary
+(1-2 paragraphs: what the API surface looks like and the key design choices)
+
+## Key Decisions Identified
+For each decision point:
+### Decision: <title>
+- **Options**: <list the viable approaches>
+- **Tradeoffs**: <what you gain/lose with each>
+- **Recommendation**: <preferred option and why>
+
+## Risks and Concerns
+- ...
+
+## Recommendations
+- ...
+```"""
 kind = "analysis"
 
 [[steps]]
 id = "data-model"
 title = "Data Model Exploration"
-description = "Explore the data model: entities, relationships, storage strategy, migration path, and query patterns.\n\nFocus: What data structures and storage decisions does this design require?"
+description = """
+Explore the data model: entities, relationships, storage strategy, migration path, and query patterns.
+
+Focus: What data structures and storage decisions does this design require?
+
+**Explore:**
+- Entities and relationships: what are the core objects and how do they relate?
+- Storage format and engine: SQLite, files, in-memory — what fits?
+- Schema design: fields, types, constraints, NOT NULL vs nullable, defaults
+- Indexing strategy: which queries need to be fast, what indices support them?
+- Query patterns: what are the read/write access patterns? Hot paths?
+- Denormalization tradeoffs: when is duplicating data worth the query simplicity?
+- Migration path: how do we get from current schema to new schema safely?
+- Data lifecycle: creation, updates, soft/hard deletion, archival, TTLs
+- Consistency guarantees: what level of consistency is required? WAL implications?
+- Data volume projections: how much data will accumulate over time?
+- Backup and recovery: how is data protected against loss?
+- Referential integrity: foreign keys, cascading deletes, orphan prevention
+
+**Questions to answer:**
+- What data needs to persist across restarts vs. what can be recomputed?
+- How will the data grow over time, and what is the retention strategy?
+- What are the most performance-critical query patterns?
+- How do we handle schema evolution without breaking existing data?
+
+**Output format:**
+```
+## Summary
+(1-2 paragraphs: data model overview and key storage decisions)
+
+## Key Decisions Identified
+For each decision point:
+### Decision: <title>
+- **Options**: <list the viable approaches>
+- **Tradeoffs**: <what you gain/lose with each>
+- **Recommendation**: <preferred option and why>
+
+## Risks and Concerns
+- ...
+
+## Recommendations
+- ...
+```"""
 kind = "analysis"
 
 [[steps]]
 id = "ux-interaction"
 title = "UX / Interaction Exploration"
-description = "Explore the user-facing interaction: CLI commands, flags, output format, feedback loops, and developer ergonomics.\n\nFocus: How will users interact with this feature and what does the experience feel like?"
+description = """
+Explore the user-facing interaction: CLI commands, flags, output format, feedback loops, and developer ergonomics.
+
+Focus: How will users interact with this feature and what does the experience feel like?
+
+**Explore:**
+- Mental model: how do users think about this concept? What metaphor fits?
+- Workflow integration: where does this fit in the user's daily workflow?
+- Progressive disclosure: simple by default, powerful when needed
+- Error experience: what happens when things go wrong? Are errors actionable?
+- Feedback and progress: how does the user know the system is working?
+- Output formatting: human-readable vs. machine-parseable, color, tables
+- Discoverability: --help, tab completion, examples, suggested next steps
+- Confirmation and safety: destructive operations need guards (--confirm pattern)
+- Defaults: what are sensible defaults that minimize required flags?
+- Consistency: does this feel like the rest of the tool or like a bolt-on?
+- Accessibility: does this work in all terminal environments? Screen readers?
+- Undo and recovery: can the user recover from mistakes?
+
+**Questions to answer:**
+- What is the user's goal when they reach for this feature?
+- What is the minimum viable interaction — fewest flags, simplest invocation?
+- How do we handle the spectrum from beginner to power user?
+- What would surprise or confuse a user encountering this for the first time?
+
+**Output format:**
+```
+## Summary
+(1-2 paragraphs: the interaction model and key UX choices)
+
+## Key Decisions Identified
+For each decision point:
+### Decision: <title>
+- **Options**: <list the viable approaches>
+- **Tradeoffs**: <what you gain/lose with each>
+- **Recommendation**: <preferred option and why>
+
+## Risks and Concerns
+- ...
+
+## Recommendations
+- ...
+```"""
 kind = "analysis"
 
 [[steps]]
 id = "scalability"
 title = "Scalability Exploration"
-description = "Explore scalability concerns: concurrency, resource usage, growth limits, caching strategy, and performance characteristics.\n\nFocus: What happens as load, data volume, or number of users grows?"
+description = """
+Explore scalability concerns: concurrency, resource usage, growth limits, caching strategy, and performance characteristics.
+
+Focus: What happens as load, data volume, or number of users grows?
+
+**Explore:**
+- Scale dimensions: data size, concurrent operations, number of agents/worlds/writs
+- Resource usage: memory footprint, CPU cost per operation, disk I/O patterns
+- Bottlenecks: what is the first thing to break under load?
+- Algorithmic complexity: are there O(n²) or worse operations hiding in the design?
+- Caching opportunities: what is expensive to compute but stable enough to cache?
+- Connection and file handle management: pools, limits, cleanup
+- Degradation modes: what happens at limits — crash, slow down, or shed load?
+- Lazy vs. eager: what should be computed on demand vs. precomputed?
+- Concurrency control: locks, mutexes, SQLite WAL contention, race conditions
+- Growth projections: what does 10x, 100x look like? Where does it break?
+- Cleanup and garbage collection: how are old resources reclaimed?
+- Monitoring hooks: what metrics should be tracked to detect scaling issues?
+
+**Questions to answer:**
+- What is the realistic upper bound for scale in this system's use case?
+- What is the first bottleneck that will be hit, and at what scale?
+- Where should we invest in optimization now vs. keep simple and optimize later?
+- What operations need to be constant-time regardless of data size?
+
+**Output format:**
+```
+## Summary
+(1-2 paragraphs: scalability profile and key concerns)
+
+## Key Decisions Identified
+For each decision point:
+### Decision: <title>
+- **Options**: <list the viable approaches>
+- **Tradeoffs**: <what you gain/lose with each>
+- **Recommendation**: <preferred option and why>
+
+## Risks and Concerns
+- ...
+
+## Recommendations
+- ...
+```"""
 kind = "analysis"
 
 [[steps]]
 id = "security"
 title = "Security Exploration"
-description = "Explore security implications: authentication, authorization, input validation, secrets handling, and attack surface.\n\nFocus: What are the trust boundaries and what could go wrong?"
+description = """
+Explore security implications: authentication, authorization, input validation, secrets handling, and attack surface.
+
+Focus: What are the trust boundaries and what could go wrong?
+
+**Explore:**
+- Trust boundaries: what trusts what? Where are the privilege transitions?
+- Credential storage: how are secrets, tokens, and API keys stored and accessed?
+- Input validation: where is untrusted input accepted? What sanitization is needed?
+- Audit logging: what security-relevant events should be logged?
+- Attack surface: what new inputs, outputs, or permissions does this introduce?
+- Threat model: who might misuse this and how? Malicious agents, compromised sessions?
+- File system security: permissions on created files, symlink attacks, path traversal
+- Process isolation: what runs with elevated privileges? Can it be reduced?
+- Secrets in logs: could sensitive data leak into logs, error messages, or status output?
+- Dependency risk: do new dependencies introduce supply chain risk?
+- Failure modes: what happens when a security check fails — fail open or fail closed?
+- Defense in depth: what layered protections exist beyond the primary control?
+
+**Questions to answer:**
+- What is the worst-case outcome if this feature is exploited or misused?
+- What new permissions, file access, or network access does this require?
+- How are inputs validated and sanitized before use?
+- Are there defense-in-depth opportunities beyond the primary security mechanism?
+
+**Output format:**
+```
+## Summary
+(1-2 paragraphs: security posture and key concerns)
+
+## Key Decisions Identified
+For each decision point:
+### Decision: <title>
+- **Options**: <list the viable approaches>
+- **Tradeoffs**: <what you gain/lose with each>
+- **Recommendation**: <preferred option and why>
+
+## Risks and Concerns
+- ...
+
+## Recommendations
+- ...
+```"""
 kind = "analysis"
 
 [[steps]]
 id = "integration"
 title = "Integration Surface Exploration"
-description = "Explore integration points: dependencies on existing components, extension hooks, backward compatibility, and migration from current behavior.\n\nFocus: How does this design connect to and affect the rest of the system?"
+description = """
+Explore integration points: dependencies on existing components, extension hooks, backward compatibility, and migration from current behavior.
+
+Focus: How does this design connect to and affect the rest of the system?
+
+**Explore:**
+- Existing components touched: what packages, modules, or files need changes?
+- Upstream dependencies: what does this feature need from existing components?
+- Downstream dependents: what existing features will depend on or be affected by this?
+- Migration path: how do we get from current state to new state without downtime?
+- Backward compatibility: what existing behavior, CLI contracts, or data formats must be preserved?
+- Feature flagging: can this be rolled out incrementally behind a flag?
+- Testing strategy: how do we verify integration without breaking existing tests?
+- Extension hooks: does this need to be extensible? What extension points are needed?
+- Configuration compatibility: do existing config files need migration or new fields?
+- Error propagation: how do errors in this component surface to callers?
+- Deployment coordination: does this require synchronized deployment of multiple components?
+- Rollback plan: how do we revert if integration causes problems in production?
+
+**Questions to answer:**
+- Where does this code live in the codebase, and does it follow existing package boundaries?
+- How does this affect existing workflows and user habits?
+- What needs to change in dependent or consuming code?
+- Can this be deployed and rolled back independently of other changes?
+
+**Output format:**
+```
+## Summary
+(1-2 paragraphs: integration surface and key compatibility considerations)
+
+## Key Decisions Identified
+For each decision point:
+### Decision: <title>
+- **Options**: <list the viable approaches>
+- **Tradeoffs**: <what you gain/lose with each>
+- **Recommendation**: <preferred option and why>
+
+## Risks and Concerns
+- ...
+
+## Recommendations
+- ...
+```"""
 kind = "analysis"
 
 [[steps]]
 id = "synthesis"
 title = "Design Synthesis"
-description = "Merge findings from all six exploration legs into a coherent design recommendation. Identify tensions between dimensions, propose trade-offs, and produce a draft ADR or design document suitable for review."
+description = """
+Merge findings from all six exploration legs into a coherent design recommendation.
+
+**Your task:**
+1. Read all six leg outputs (api-design, data-model, ux-interaction, scalability, security, integration)
+2. Extract key decisions, recommendations, risks, and concerns from each leg
+3. Identify tensions between dimensions — common conflicts include:
+   - Security vs. UX (more security often means more friction)
+   - Scalability vs. simplicity (optimization adds complexity)
+   - Flexibility vs. consistency (extension points can fragment behavior)
+   - Backward compatibility vs. clean design (legacy constraints limit options)
+   - Performance vs. correctness (caching, denormalization introduce staleness risk)
+4. Propose trade-off resolutions with explicit rationale
+5. Deduplicate cross-leg findings — issues raised by multiple legs are higher-confidence
+6. Produce a draft design document or ADR outline suitable for review
+
+**Output format:**
+```
+## Executive Summary
+(2-3 paragraphs: what we're building, the recommended approach, and key trade-offs)
+
+## Problem Statement
+(Clear statement of what we're solving and why)
+
+## Proposed Design
+
+### Overview
+(High-level approach: architecture, key components, information flow)
+
+### API / Interface
+(Consolidated from api-design and ux-interaction legs)
+
+### Data Model
+(Consolidated from data-model leg)
+
+### Key Components
+(Main pieces and how they fit together)
+
+## Decisions and Trade-offs
+
+### Decided
+For each resolved decision:
+- **Decision**: <what was decided>
+- **Rationale**: <why this option over alternatives>
+- **Dimensions involved**: <which legs informed this>
+
+### Tensions Identified
+For each cross-dimension tension:
+- **Tension**: <e.g., "Security requires confirmation prompts but UX wants minimal friction">
+- **Proposed resolution**: <how to balance>
+- **Rationale**: <why this balance is right>
+
+### Open Questions (requiring human input)
+- **Question**: <what needs to be decided>
+- **Options**: <viable choices>
+- **Recommendation**: <if one exists>
+- **Blocking**: yes/no — can implementation start without this answer?
+
+## Risks and Mitigations
+(Consolidated from security and scalability legs, plus integration risks)
+
+## Implementation Sketch
+(From integration leg — phased approach)
+
+### Phase 1: MVP
+- ...
+
+### Phase 2: Polish
+- ...
+
+### Phase 3: Future
+- ...
+
+## Cross-Leg Findings
+Issues or insights raised by 2+ dimensions (higher confidence):
+- <finding>: raised by <leg1>, <leg2>
+
+## Appendix: Dimension Summaries
+(One-paragraph summary from each leg for reference)
+```"""
 kind = "analysis"
 needs = ["api-design", "data-model", "ux-interaction", "scalability", "security", "integration"]
