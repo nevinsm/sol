@@ -82,7 +82,7 @@ func Rotate(opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manage
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	// Filter to outpost agents (not governor, envoy, forge).
+	// Filter to outpost agents (not envoy, forge).
 	var affectedAgents []store.Agent
 	for _, a := range agents {
 		if a.Role != "outpost" {

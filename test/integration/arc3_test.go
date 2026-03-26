@@ -473,53 +473,6 @@ func TestEnvoyHooksInstalled(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// Governor Lifecycle Tests
-// =============================================================================
-
-func TestGovernorStartStop(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not available")
-	}
-
-	gtHome, sourceRepo := setupTestEnv(t)
-	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
-
-	// Start governor.
-	out, err := runGT(t, gtHome, "governor", "start", "--world=myworld")
-	if err != nil {
-		t.Fatalf("governor start: %v: %s", err, out)
-	}
-	t.Cleanup(func() {
-		runGT(t, gtHome, "governor", "stop", "--world=myworld")
-	})
-
-	// Verify session exists.
-	ok := pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
-		return tmuxSessionExists("sol-myworld-governor")
-	})
-	if !ok {
-		t.Error("governor session not started")
-	}
-
-	// Stop governor.
-	out, err = runGT(t, gtHome, "governor", "stop", "--world=myworld")
-	if err != nil {
-		t.Fatalf("governor stop: %v: %s", err, out)
-	}
-
-	// Verify session gone.
-	ok = pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
-		return !tmuxSessionExists("sol-myworld-governor")
-	})
-	if !ok {
-		t.Error("governor session not stopped")
-	}
-}
-
 func TestWorldSync(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -603,89 +556,6 @@ func TestWorldSyncCreatesClone(t *testing.T) {
 	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "--is-inside-work-tree")
 	if _, err := cmd.CombinedOutput(); err != nil {
 		t.Error("managed repo is not a git repo")
-	}
-}
-
-func TestGovernorBriefAndSummary(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome, _ := setupTestEnv(t)
-	initWorld(t, gtHome, "myworld")
-
-	// Create governor directories manually (without starting a session).
-	govDir := filepath.Join(gtHome, "myworld", "governor")
-	briefDir := filepath.Join(govDir, ".brief")
-	os.MkdirAll(briefDir, 0o755)
-
-	// Write brief.
-	briefPath := filepath.Join(briefDir, "memory.md")
-	if err := os.WriteFile(briefPath, []byte("# Governor Brief\nWorld state summary.\n"), 0o644); err != nil {
-		t.Fatalf("write brief: %v", err)
-	}
-
-	// Write world summary.
-	summaryPath := filepath.Join(briefDir, "world-summary.md")
-	if err := os.WriteFile(summaryPath, []byte("# World Summary\n5 agents active.\n"), 0o644); err != nil {
-		t.Fatalf("write summary: %v", err)
-	}
-
-	// View brief.
-	out, err := runGT(t, gtHome, "governor", "brief", "--world=myworld")
-	if err != nil {
-		t.Fatalf("governor brief: %v: %s", err, out)
-	}
-	if !strings.Contains(out, "Governor Brief") {
-		t.Errorf("governor brief output missing content: %s", out)
-	}
-
-	// View summary.
-	out, err = runGT(t, gtHome, "governor", "summary", "--world=myworld")
-	if err != nil {
-		t.Fatalf("governor summary: %v: %s", err, out)
-	}
-	if !strings.Contains(out, "World Summary") {
-		t.Errorf("governor summary output missing content: %s", out)
-	}
-}
-
-func TestGovernorHooksInstalled(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not available")
-	}
-
-	gtHome, sourceRepo := setupTestEnv(t)
-	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
-
-	// Start governor.
-	out, err := runGT(t, gtHome, "governor", "start", "--world=myworld")
-	if err != nil {
-		t.Fatalf("governor start: %v: %s", err, out)
-	}
-	t.Cleanup(func() {
-		runGT(t, gtHome, "governor", "stop", "--world=myworld")
-	})
-
-	// Check hooks file.
-	govDir := filepath.Join(gtHome, "myworld", "governor")
-	settingsPath := filepath.Join(govDir, ".claude", "settings.local.json")
-	data, err := os.ReadFile(settingsPath)
-	if err != nil {
-		t.Fatalf("read settings.local.json: %v", err)
-	}
-
-	settingsStr := string(data)
-	if !strings.Contains(settingsStr, "brief inject") {
-		t.Errorf("hooks missing brief inject: %s", settingsStr)
-	}
-	if !strings.Contains(settingsStr, "sol world sync") {
-		t.Errorf("hooks missing world sync: %s", settingsStr)
-	}
-	if strings.Contains(settingsStr, "brief check-save") {
-		t.Errorf("hooks should not contain removed brief check-save hook: %s", settingsStr)
 	}
 }
 
@@ -926,41 +796,6 @@ func TestPrefectSkipsEnvoy(t *testing.T) {
 	}
 }
 
-func TestPrefectSkipsGovernor(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome, _ := setupTestEnv(t)
-	initWorld(t, gtHome, "myworld")
-
-	sphereStore, err := store.OpenSphere()
-	if err != nil {
-		t.Fatalf("open sphere store: %v", err)
-	}
-	defer sphereStore.Close()
-
-	// Create governor agent with state "working" and dead session.
-	if err := sphereStore.EnsureAgent("governor", "myworld", "governor"); err != nil {
-		t.Fatalf("create agent: %v", err)
-	}
-	if err := sphereStore.UpdateAgentState("myworld/governor", "working", ""); err != nil {
-		t.Fatalf("update agent state: %v", err)
-	}
-
-	mock := newMockSessionChecker()
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	p := prefect.New(prefect.DefaultConfig(), sphereStore, mock, logger)
-
-	p.Heartbeat()
-
-	mock.mu.Lock()
-	started := len(mock.started)
-	mock.mu.Unlock()
-	if started > 0 {
-		t.Errorf("expected 0 sessions started (governor should be skipped), got %d", started)
-	}
-}
-
 // =============================================================================
 // Status Display Tests
 // =============================================================================
@@ -987,34 +822,6 @@ func TestStatusWithEnvoys(t *testing.T) {
 	}
 }
 
-func TestStatusWithGovernor(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome, sourceRepo := setupTestEnv(t)
-	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
-
-	// Register governor agent without starting a session (avoid tmux dependency).
-	sphereStore, err := store.OpenSphere()
-	if err != nil {
-		t.Fatalf("open sphere store: %v", err)
-	}
-	defer sphereStore.Close()
-
-	if err := sphereStore.EnsureAgent("governor", "myworld", "governor"); err != nil {
-		t.Fatalf("create governor agent: %v", err)
-	}
-
-	out, err := runGT(t, gtHome, "status", "myworld")
-	if err != nil && strings.TrimSpace(out) == "" {
-		t.Fatalf("status command failed: %v\noutput: %s", err, out)
-	}
-
-	if !strings.Contains(out, "Governor") {
-		t.Errorf("status output missing 'Governor' in Processes: %s", out)
-	}
-}
-
 func TestStatusMixedRoles(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -1031,31 +838,17 @@ func TestStatusMixedRoles(t *testing.T) {
 	// Create envoy.
 	createEnvoy(t, gtHome, "myworld", "scout")
 
-	// Register governor.
-	sphereStore, err := store.OpenSphere()
-	if err != nil {
-		t.Fatalf("open sphere store: %v", err)
-	}
-	defer sphereStore.Close()
-
-	if err := sphereStore.EnsureAgent("governor", "myworld", "governor"); err != nil {
-		t.Fatalf("create governor agent: %v", err)
-	}
-
 	out, err := runGT(t, gtHome, "status", "myworld")
 	if err != nil && strings.TrimSpace(out) == "" {
 		t.Fatalf("status command failed: %v\noutput: %s", err, out)
 	}
 
-	// Verify all three sections present.
+	// Verify both sections present.
 	if !strings.Contains(out, "Outposts") {
 		t.Errorf("status missing 'Outposts' section: %s", out)
 	}
 	if !strings.Contains(out, "Envoys") {
 		t.Errorf("status missing 'Envoys' section: %s", out)
-	}
-	if !strings.Contains(out, "Governor") {
-		t.Errorf("status missing 'Governor' section: %s", out)
 	}
 }
 
@@ -1083,18 +876,8 @@ func TestStatusSphereWithNewColumns(t *testing.T) {
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
-	// Create envoy and governor.
+	// Create envoy.
 	createEnvoy(t, gtHome, "myworld", "scout")
-
-	sphereStore, err := store.OpenSphere()
-	if err != nil {
-		t.Fatalf("open sphere store: %v", err)
-	}
-	defer sphereStore.Close()
-
-	if err := sphereStore.EnsureAgent("governor", "myworld", "governor"); err != nil {
-		t.Fatalf("create governor agent: %v", err)
-	}
 
 	out, err := runGT(t, gtHome, "status")
 	if err != nil && strings.TrimSpace(out) == "" {
@@ -1103,9 +886,6 @@ func TestStatusSphereWithNewColumns(t *testing.T) {
 
 	if !strings.Contains(out, "ENVOYS") {
 		t.Errorf("sphere overview missing 'ENVOYS' column: %s", out)
-	}
-	if !strings.Contains(out, "GOV") {
-		t.Errorf("sphere overview missing 'GOV' column: %s", out)
 	}
 }
 
@@ -1116,18 +896,8 @@ func TestStatusJSONBackwardCompat(t *testing.T) {
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
-	// Create envoy and governor.
+	// Create envoy.
 	createEnvoy(t, gtHome, "myworld", "scout")
-
-	sphereStore, err := store.OpenSphere()
-	if err != nil {
-		t.Fatalf("open sphere store: %v", err)
-	}
-	defer sphereStore.Close()
-
-	if err := sphereStore.EnsureAgent("governor", "myworld", "governor"); err != nil {
-		t.Fatalf("create governor agent: %v", err)
-	}
 
 	out, err := runGT(t, gtHome, "status", "myworld", "--json")
 	if err != nil && strings.TrimSpace(out) == "" {
@@ -1142,9 +912,6 @@ func TestStatusJSONBackwardCompat(t *testing.T) {
 	// Verify new fields present.
 	if _, ok := result["envoys"]; !ok {
 		t.Errorf("JSON missing 'envoys' field: %s", out)
-	}
-	if _, ok := result["governor"]; !ok {
-		t.Errorf("JSON missing 'governor' field: %s", out)
 	}
 
 	// Verify backward-compatible fields still present.
@@ -1328,44 +1095,6 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 	}
 }
 
-func TestGovernorDispatchFlow(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not available")
-	}
-
-	gtHome, sourceRepo := setupTestEnv(t)
-	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
-
-	// Start governor.
-	out, err := runGT(t, gtHome, "governor", "start", "--world=myworld")
-	if err != nil {
-		t.Fatalf("governor start: %v: %s", err, out)
-	}
-	t.Cleanup(func() {
-		runGT(t, gtHome, "governor", "stop", "--world=myworld")
-	})
-
-	// Verify operator can observe via status.
-	out, _ = runGT(t, gtHome, "status", "myworld")
-	if !strings.Contains(out, "Governor") {
-		t.Errorf("status missing governor: %s", out)
-	}
-
-	// Stop governor.
-	out, err = runGT(t, gtHome, "governor", "stop", "--world=myworld")
-	if err != nil {
-		t.Fatalf("governor stop: %v: %s", err, out)
-	}
-
-	// Verify brief directory persists after stop.
-	briefDir := filepath.Join(gtHome, "myworld", "governor", ".brief")
-	if _, err := os.Stat(briefDir); os.IsNotExist(err) {
-		t.Error("governor brief directory should persist after stop")
-	}
-}
 
 // =============================================================================
 // Helpers
@@ -1377,18 +1106,6 @@ func createEnvoy(t *testing.T, solHome, world, name string) {
 	out, err := runGT(t, solHome, "envoy", "create", name, "--world="+world)
 	if err != nil {
 		t.Fatalf("create envoy %q: %v: %s", name, err, out)
-	}
-}
-
-// writeBrief writes a brief file at the given path.
-func writeBrief(t *testing.T, path, content string) {
-	t.Helper()
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir for brief: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write brief: %v", err)
 	}
 }
 
@@ -1412,18 +1129,4 @@ func extractCaravanID(t *testing.T, output string) string {
 	return ""
 }
 
-// extractAgentName extracts agent name from cast output.
-// Expected format: "Dispatched <id> -> <agent> (<session>)"
-func extractAgentName(t *testing.T, output string) string {
-	t.Helper()
-	// Look for the line with "-> <name>"
-	parts := strings.Split(output, "->")
-	if len(parts) < 2 {
-		t.Fatalf("could not extract agent name from cast output: %s", output)
-	}
-	fields := strings.Fields(strings.TrimSpace(parts[1]))
-	if len(fields) == 0 {
-		t.Fatalf("could not extract agent name from cast output: %s", output)
-	}
-	return fields[0]
-}
+

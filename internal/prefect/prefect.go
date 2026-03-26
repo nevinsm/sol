@@ -233,8 +233,8 @@ func (s *Prefect) heartbeat() {
 
 	deadCount := 0
 	for _, agent := range workingAgents {
-		// Skip human-supervised roles — envoys and governors are not auto-respawned.
-		if agent.Role == "envoy" || agent.Role == "governor" {
+		// Skip human-supervised roles — envoys are not auto-respawned.
+		if agent.Role == "envoy" {
 			continue
 		}
 
@@ -1239,8 +1239,8 @@ func (s *Prefect) shutdown() {
 	stopped := 0
 
 	for _, agent := range allAgents {
-		// Skip human-supervised roles — envoys and governors are persistent.
-		if agent.Role == "envoy" || agent.Role == "governor" {
+		// Skip human-supervised roles — envoys are persistent.
+		if agent.Role == "envoy" {
 			continue
 		}
 

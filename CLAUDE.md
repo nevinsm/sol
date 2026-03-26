@@ -39,7 +39,6 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Doctor**: Prerequisite check engine (`internal/doctor/`)
 - **Status**: Sphere overview + per-world detail, lipgloss-styled rendering
 - **Envoy**: Persistent human-directed agent with brief system (Arc 3, ADR-0009)
-- **Governor**: Per-world work coordinator — Claude session + sol CLI (Arc 3, ADR-0010)
 - **Brief**: Agent-maintained context files, hook-based injection (Arc 3, ADR-0013)
 
 ## Commits

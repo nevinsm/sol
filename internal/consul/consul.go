@@ -517,8 +517,8 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 		}
 
 		// Skip infrastructure roles (don't recover sentinel/forge/consul).
-		// Recover agents, envoys, and governors.
-		if agent.Role != "outpost" && agent.Role != "envoy" && agent.Role != "governor" {
+		// Recover agents and envoys.
+		if agent.Role != "outpost" && agent.Role != "envoy" {
 			continue
 		}
 
@@ -920,7 +920,7 @@ func (d *Consul) detectOrphanedSessions(ctx context.Context) (int, error) {
 		known[config.SessionName(agent.World, agent.Name)] = true
 	}
 
-	// 3c. Per-world infrastructure: sentinel, forge, governor.
+	// 3c. Per-world infrastructure: sentinel, forge.
 	worlds, err := d.sphereStore.ListWorlds()
 	if err != nil {
 		return 0, fmt.Errorf("failed to list worlds for orphan detection: %w", err)
@@ -929,7 +929,6 @@ func (d *Consul) detectOrphanedSessions(ctx context.Context) (int, error) {
 		// Sentinel is a direct Go process (no tmux session), so no session to mark as known.
 		known[fmt.Sprintf("sol-%s-forge", w.Name)] = true
 		known[config.SessionName(w.Name, "forge-merge")] = true
-		known[fmt.Sprintf("sol-%s-governor", w.Name)] = true
 	}
 
 	// 4. Detect orphans and apply grace period + consecutive threshold.

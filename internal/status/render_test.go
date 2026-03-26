@@ -270,48 +270,6 @@ func TestRenderWorldWithEnvoys(t *testing.T) {
 	}
 }
 
-func TestRenderWorldWithGovernor(t *testing.T) {
-	ws := &WorldStatus{
-		World:    "haven",
-		Prefect:  PrefectInfo{Running: true, PID: 42},
-		Governor: GovernorInfo{Running: true, SessionAlive: true, BriefAge: "2h"},
-		Summary:  Summary{},
-	}
-
-	output := RenderWorld(ws)
-
-	checks := []string{
-		"Governor",
-		"brief: 2h ago",
-	}
-
-	for _, check := range checks {
-		if !strings.Contains(output, check) {
-			t.Errorf("RenderWorld with governor missing %q", check)
-		}
-	}
-}
-
-func TestRenderWorldGovernorAlwaysShown(t *testing.T) {
-	// Governor should always appear in the process list, even when not running.
-	ws := &WorldStatus{
-		World:    "haven",
-		Prefect:  PrefectInfo{Running: true, PID: 42},
-		Governor: GovernorInfo{Running: false, SessionAlive: false},
-		Summary:  Summary{},
-	}
-
-	output := RenderWorld(ws)
-
-	if !strings.Contains(output, "Governor") {
-		t.Error("RenderWorld should show Governor even when not running")
-	}
-	// Should use dim ○ indicator (optional process), not red ✗.
-	if !strings.Contains(output, "○") {
-		t.Error("RenderWorld should show dim ○ for non-running optional Governor")
-	}
-}
-
 func TestRenderWorldNoEnvoys(t *testing.T) {
 	ws := &WorldStatus{
 		World:   "haven",
@@ -338,8 +296,8 @@ func TestRenderSphereNewColumns(t *testing.T) {
 		Health:  "healthy",
 		Prefect: PrefectInfo{Running: true, PID: 1234},
 		Worlds: []WorldSummary{
-			{Name: "alpha", Agents: 3, Envoys: 1, Governor: true, Working: 2, Forge: true, Sentinel: true, Health: "healthy"},
-			{Name: "beta", Agents: 2, Envoys: 0, Governor: false, Working: 1, Health: "healthy"},
+			{Name: "alpha", Agents: 3, Envoys: 1, Working: 2, Forge: true, Sentinel: true, Health: "healthy"},
+			{Name: "beta", Agents: 2, Envoys: 0, Working: 1, Health: "healthy"},
 		},
 	}
 
@@ -347,7 +305,6 @@ func TestRenderSphereNewColumns(t *testing.T) {
 
 	checks := []string{
 		"ENVOYS",
-		"GOV",
 		"alpha",
 		"beta",
 	}
@@ -356,11 +313,6 @@ func TestRenderSphereNewColumns(t *testing.T) {
 		if !strings.Contains(output, check) {
 			t.Errorf("RenderSphere new columns missing %q", check)
 		}
-	}
-
-	// Governor column should have ● for alpha.
-	if !strings.Contains(output, "●") {
-		t.Error("RenderSphere should show ● for active governor")
 	}
 }
 

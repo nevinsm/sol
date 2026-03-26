@@ -854,7 +854,7 @@ Exit codes:
 
 ### `sol tether`
 
-Bind a writ to a persistent agent (envoy, governor, forge)
+Bind a writ to a persistent agent (envoy, forge)
 
 Bind a writ to a persistent agent without creating a worktree or launching a session.
 Outpost agents must use sol cast instead.
@@ -990,7 +990,7 @@ Stop sphere daemons and world services
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--all` | bool | false | also stop envoy and governor sessions |
+| `--all` | bool | false | also stop envoy sessions |
 | `--world` | string | "" | stop only world services (optionally for a specific world) |
 
 ### `sol forge`
@@ -1100,85 +1100,6 @@ Exit codes:
 | `--world` | string | "" | world name |
 
 #### `sol forge sync`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | "" | world name |
-
-### `sol governor`
-
-Manage the per-world governor coordinator
-
-**Subcommands:**
-
-| Command | Description |
-|---------|-------------|
-| `sol governor attach` | Attach to the governor's tmux session |
-| `sol governor brief` | Display the governor's brief |
-| `sol governor debrief` | Archive the governor's brief and reset |
-| `sol governor restart` | Restart the governor (stop then start) |
-| `sol governor start` | Start the governor for a world |
-| `sol governor status` | Show governor status |
-| `sol governor stop` | Stop the governor for a world |
-| `sol governor summary` | Display the governor's world summary |
-| `sol governor sync` | Sync managed repo the governor reads from |
-
-#### `sol governor attach`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | "" | world name |
-
-#### `sol governor brief`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | "" | world name |
-
-#### `sol governor debrief`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | "" | world name |
-
-#### `sol governor restart`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | "" | world name |
-
-#### `sol governor start`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | "" | world name |
-
-#### `sol governor status`
-
-Show whether the governor session is running and its current state.
-
-Exit codes:
-  0 - Governor is running
-  1 - Governor is not running
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
-
-#### `sol governor stop`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | "" | world name |
-
-#### `sol governor summary`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | "" | world name |
-
-#### `sol governor sync`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1680,10 +1601,8 @@ Manage worlds
 | `sol world import` | Import a world from an export archive |
 | `sol world init` | Initialize a new world |
 | `sol world list` | List all worlds |
-| `sol world query` | Query a world's governor for information |
 | `sol world sleep` | Mark a world as sleeping and stop its services |
 | `sol world status` | Show world status with config |
-| `sol world summary` | Show a world's governor-maintained summary |
 | `sol world sync` | Sync the managed repo with its remote |
 | `sol world wake` | Mark a world as active and start its services |
 
@@ -1779,7 +1698,6 @@ world.toml configuration reference:
   [agents.models]                 # optional per-role model overrides
   outpost = "sonnet"              # overrides model_tier for outpost agents
   envoy = "opus"                  # overrides model_tier for envoy agents
-  governor = "opus"               # overrides model_tier for governor
   forge = "sonnet"                # overrides model_tier for forge
 
   [forge]
@@ -1801,24 +1719,10 @@ Valid model values: "sonnet", "opus", "haiku".
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
 
-#### `sol world query`
-
-Inject a question into the governor's tmux session and wait for a response.
-
-The governor reads the question from .query/pending.md, writes its answer to
-.query/response.md, and the CLI returns the response. If the governor is not
-running, returns an error (callers should fall back to the static world summary).
-
-**Usage:** `sol world query <name> <question>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--timeout` | int | 120 | seconds to wait for governor response |
-
 #### `sol world sleep`
 
-Mark a world as sleeping, which stops world services (sentinel, forge,
-governor) and activates dispatch gates that prevent new work from being cast.
+Mark a world as sleeping, which stops world services (sentinel, forge)
+and activates dispatch gates that prevent new work from being cast.
 
 With --force, also stops all outpost agent sessions immediately:
   - Injects a brief-save prompt and waits up to 30 seconds for stability
@@ -1840,21 +1744,17 @@ With --force, also stops all outpost agent sessions immediately:
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
 
-#### `sol world summary`
-
-**Usage:** `sol world summary <name>`
-
 #### `sol world sync`
 
 Fetch and pull latest changes from the source repo's origin.
 If the managed repo doesn't exist yet but source_repo is configured
 in world.toml, clones it first.
 
-With --all, also syncs forge worktree and notifies running envoy/governor sessions.
+With --all, also syncs forge worktree and notifies running envoy sessions.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--all` | bool | false | also sync forge, envoys, and governor |
+| `--all` | bool | false | also sync forge and envoys |
 | `--world` | string | "" | world name |
 
 #### `sol world wake`

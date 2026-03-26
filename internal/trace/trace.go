@@ -267,8 +267,8 @@ func collectTetherData(td *TraceData, world, writID string) {
 		}
 	}
 
-	// Check forge and governor tether dirs.
-	for _, role := range []string{"forge", "governor"} {
+	// Check forge tether dir.
+	for _, role := range []string{"forge"} {
 		agentDir := config.AgentDir(world, role, role)
 		tetherPath := filepath.Join(agentDir, ".tether", writID)
 		if _, err := os.Stat(tetherPath); err == nil {

@@ -341,7 +341,7 @@ func TestRequireWorldPreArc1(t *testing.T) {
 func TestResolveModelFallbackToDefault(t *testing.T) {
 	// No model_tier set → falls back to "sonnet".
 	cfg := WorldConfig{}
-	for _, role := range []string{"outpost", "agent", "envoy", "governor", "forge", "forge-merge", "unknown"} {
+	for _, role := range []string{"outpost", "agent", "envoy", "forge", "forge-merge", "unknown"} {
 		got := cfg.ResolveModel(role)
 		if got != "sonnet" {
 			t.Errorf("ResolveModel(%q) with no config = %q, want %q", role, got, "sonnet")
@@ -354,7 +354,7 @@ func TestResolveModelFallbackToModelTier(t *testing.T) {
 	cfg := WorldConfig{
 		Agents: AgentsSection{ModelTier: "opus"},
 	}
-	for _, role := range []string{"outpost", "agent", "envoy", "governor", "forge", "forge-merge", "unknown"} {
+	for _, role := range []string{"outpost", "agent", "envoy", "forge", "forge-merge", "unknown"} {
 		got := cfg.ResolveModel(role)
 		if got != "opus" {
 			t.Errorf("ResolveModel(%q) with model_tier=opus = %q, want %q", role, got, "opus")
@@ -367,10 +367,9 @@ func TestResolveModelPerRoleOverride(t *testing.T) {
 		Agents: AgentsSection{
 			ModelTier: "opus",
 			Models: ModelsSection{
-				Outpost:  "haiku",
-				Envoy:    "sonnet",
-				Governor: "opus",
-				Forge:    "haiku",
+				Outpost: "haiku",
+				Envoy:   "sonnet",
+				Forge:   "haiku",
 			},
 		},
 	}
@@ -380,9 +379,8 @@ func TestResolveModelPerRoleOverride(t *testing.T) {
 		want string
 	}{
 		{"outpost", "haiku"},
-		{"agent", "haiku"},   // "agent" maps to Outpost
+		{"agent", "haiku"},  // "agent" maps to Outpost
 		{"envoy", "sonnet"},
-		{"governor", "opus"},
 		{"forge", "haiku"},
 		{"forge-merge", "haiku"}, // "forge-merge" maps to Forge
 		{"unknown", "opus"},      // unknown role falls back to model_tier
@@ -420,7 +418,7 @@ func TestResolveModelPartialOverride(t *testing.T) {
 
 func TestResolveRuntimeFallbackToClaude(t *testing.T) {
 	cfg := WorldConfig{}
-	for _, role := range []string{"outpost", "envoy", "governor", "forge", "unknown"} {
+	for _, role := range []string{"outpost", "envoy", "forge", "unknown"} {
 		got := cfg.ResolveRuntime(role)
 		if got != "claude" {
 			t.Errorf("ResolveRuntime(%q) with no config = %q, want %q", role, got, "claude")
@@ -434,7 +432,7 @@ func TestResolveRuntimeDefaultRuntime(t *testing.T) {
 			DefaultRuntime: "claude",
 		},
 	}
-	for _, role := range []string{"outpost", "envoy", "governor"} {
+	for _, role := range []string{"outpost", "envoy"} {
 		got := cfg.ResolveRuntime(role)
 		if got != "claude" {
 			t.Errorf("ResolveRuntime(%q) with default_runtime=claude = %q, want %q", role, got, "claude")
@@ -464,9 +462,8 @@ func TestWorldConfigValidateModelsSection(t *testing.T) {
 		{},
 		{Outpost: "sonnet"},
 		{Envoy: "opus"},
-		{Governor: "haiku"},
 		{Forge: "sonnet"},
-		{Outpost: "haiku", Envoy: "opus", Governor: "sonnet", Forge: "haiku"},
+		{Outpost: "haiku", Envoy: "opus", Forge: "haiku"},
 	}
 	for _, m := range valid {
 		cfg := DefaultWorldConfig()
@@ -482,7 +479,6 @@ func TestWorldConfigValidateModelsSection(t *testing.T) {
 	}{
 		{ModelsSection{Outpost: "gpt-4"}, "agents.models.outpost"},
 		{ModelsSection{Envoy: "claude"}, "agents.models.envoy"},
-		{ModelsSection{Governor: "fast"}, "agents.models.governor"},
 		{ModelsSection{Forge: "slow"}, "agents.models.forge"},
 	}
 	for _, tc := range invalid {

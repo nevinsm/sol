@@ -271,36 +271,6 @@ func TestPopulateWritContextEmptyKindDefaultsToCode(t *testing.T) {
 	}
 }
 
-func TestPopulateWritContextGovernorRole(t *testing.T) {
-	ss, ws := setupWritContextEnv(t, "myworld", "governor", "governor")
-
-	writID, err := ws.CreateWrit("Governor task", "Governor work", "autarch", 2, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := tether.Write("myworld", "governor", writID, "governor"); err != nil {
-		t.Fatal(err)
-	}
-	if err := ss.UpdateAgentState("myworld/governor", "working", writID); err != nil {
-		t.Fatal(err)
-	}
-
-	ctx, err := protocol.PopulateWritContext("myworld", "governor", "governor")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(ctx.TetheredWrits) != 1 {
-		t.Fatalf("expected 1 tethered writ, got %d", len(ctx.TetheredWrits))
-	}
-	if ctx.ActiveWritID != writID {
-		t.Errorf("active writ ID = %q, want %q", ctx.ActiveWritID, writID)
-	}
-	if ctx.ActiveTitle != "Governor task" {
-		t.Errorf("active title = %q, want %q", ctx.ActiveTitle, "Governor task")
-	}
-}
-
 func TestWritContextEmbeddingInEnvoyContext(t *testing.T) {
 	// Verify that WritContext fields are accessible through embedding.
 	ctx := protocol.EnvoyClaudeMDContext{
@@ -326,33 +296,6 @@ func TestWritContextEmbeddingInEnvoyContext(t *testing.T) {
 	// The generated content should include the active writ section.
 	if !containsAll(content, "sol-1234000000000000", "Active Writ") {
 		t.Error("envoy CLAUDE.md should contain active writ info from embedded WritContext")
-	}
-}
-
-func TestWritContextEmbeddingInGovernorContext(t *testing.T) {
-	// Verify that WritContext fields are accessible through embedding.
-	ctx := protocol.GovernorClaudeMDContext{
-		World:     "myworld",
-		SolBinary: "sol",
-		MirrorDir: "../repo",
-		WritContext: protocol.WritContext{
-			TetheredWrits: []protocol.WritSummary{
-				{ID: "sol-5678000000000000", Title: "Gov task", Kind: "code", Status: "tethered"},
-			},
-			ActiveWritID: "sol-5678000000000000",
-			ActiveTitle:  "Gov task",
-			ActiveDesc:   "Governor task description",
-			ActiveKind:   "code",
-		},
-	}
-
-	content := protocol.GenerateGovernorClaudeMD(ctx)
-
-	if len(content) == 0 {
-		t.Fatal("expected non-empty generated content")
-	}
-	if !containsAll(content, "sol-5678000000000000", "Active Writ") {
-		t.Error("governor CLAUDE.md should contain active writ info from embedded WritContext")
 	}
 }
 

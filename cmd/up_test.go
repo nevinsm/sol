@@ -166,13 +166,7 @@ func TestResolveWorldsForDownNonexistent(t *testing.T) {
 	}
 }
 
-func TestWorldServicesExcludesGovernor(t *testing.T) {
-	for _, svc := range worldServices {
-		if svc == "governor" {
-			t.Error("worldServices should not include governor (human-managed)")
-		}
-	}
-
+func TestWorldServicesContents(t *testing.T) {
 	found := map[string]bool{}
 	for _, svc := range worldServices {
 		found[svc] = true

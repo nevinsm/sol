@@ -459,7 +459,7 @@ func readJSONFile(path string, target interface{}) error {
 }
 
 // createAgentDirs reads agents.json from the archive and creates the
-// role-specific directories that each agent requires (envoys/, governors/, outposts/).
+// role-specific directories that each agent requires (envoys/, outposts/).
 func createAgentDirs(archiveRoot, worldName string) error {
 	sphereDir := filepath.Join(archiveRoot, "sphere-data")
 	agentsFile := filepath.Join(sphereDir, "agents.json")

@@ -226,7 +226,7 @@ func TestRecoverStaleTethers(t *testing.T) {
 	}
 }
 
-func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
+func TestRecoverStaleTethersEnvoy(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	sphereStore, err := store.OpenSphere()
@@ -249,19 +249,12 @@ func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
 	worldStore.UpdateWrit(wiEnvoy, store.WritUpdates{Status: "tethered", Assignee: worldName + "/MyEnvoy"})
 	tether.Write(worldName, "MyEnvoy", wiEnvoy, "envoy")
 
-	// Governor: working, session dead, old timestamp → should be recovered.
-	sphereStore.CreateAgent("MyGovernor", worldName, "governor")
-	wiGov, _ := worldStore.CreateWrit("task-governor", "governor work", "test", 1, nil)
-	sphereStore.UpdateAgentState(worldName+"/MyGovernor", "working", wiGov)
-	worldStore.UpdateWrit(wiGov, store.WritUpdates{Status: "tethered", Assignee: worldName + "/MyGovernor"})
-	tether.Write(worldName, "MyGovernor", wiGov, "governor")
-
 	// Sentinel: working, session dead, old timestamp → should NOT be recovered.
 	sphereStore.CreateAgent("sentinel", worldName, "sentinel")
 	sphereStore.UpdateAgentState(worldName+"/sentinel", "working", "fake-sentinel-item")
 
 	// Make all agents old.
-	for _, id := range []string{worldName + "/MyEnvoy", worldName + "/MyGovernor", worldName + "/sentinel"} {
+	for _, id := range []string{worldName + "/MyEnvoy", worldName + "/sentinel"} {
 		sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
 			time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), id)
 	}
@@ -282,8 +275,8 @@ func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recoverStaleTethers failed: %v", err)
 	}
-	if recovered != 2 {
-		t.Errorf("recovered = %d, want 2 (envoy + governor)", recovered)
+	if recovered != 1 {
+		t.Errorf("recovered = %d, want 1 (envoy only)", recovered)
 	}
 
 	// Verify envoy was recovered.
@@ -295,15 +288,6 @@ func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
 		t.Errorf("envoy active_writ = %q, want empty", envoy.ActiveWrit)
 	}
 
-	// Verify governor was recovered.
-	gov, _ := sphereStore.GetAgent(worldName + "/MyGovernor")
-	if gov.State != "idle" {
-		t.Errorf("governor state = %q, want idle", gov.State)
-	}
-	if gov.ActiveWrit != "" {
-		t.Errorf("governor active_writ = %q, want empty", gov.ActiveWrit)
-	}
-
 	// Verify writs are back to open.
 	worldStore2, _ := store.OpenWorld(worldName)
 	defer worldStore2.Close()
@@ -311,10 +295,6 @@ func TestRecoverStaleTethersEnvoyAndGovernor(t *testing.T) {
 	itemEnvoy, _ := worldStore2.GetWrit(wiEnvoy)
 	if itemEnvoy.Status != "open" {
 		t.Errorf("envoy writ status = %q, want open", itemEnvoy.Status)
-	}
-	itemGov, _ := worldStore2.GetWrit(wiGov)
-	if itemGov.Status != "open" {
-		t.Errorf("governor writ status = %q, want open", itemGov.Status)
 	}
 
 	// Verify sentinel was NOT recovered.
@@ -1599,7 +1579,6 @@ func TestDetectOrphanedSessionsKnownNotFlagged(t *testing.T) {
 	sphereStore.CreateAgent("Toast", worldName, "outpost")
 	sphereStore.CreateAgent("sentinel", worldName, "sentinel")
 	sphereStore.CreateAgent("forge", worldName, "forge")
-	sphereStore.CreateAgent("governor", worldName, "governor")
 	sphereStore.CreateAgent("MyEnvoy", worldName, "envoy")
 	sphereStore.EnsureAgent("consul", "sphere", "consul")
 
@@ -1608,7 +1587,6 @@ func TestDetectOrphanedSessionsKnownNotFlagged(t *testing.T) {
 	// Note: sentinel is a direct process (no tmux session), so it's not listed here.
 	sessions.alive["sol-"+worldName+"-Toast"] = true
 	sessions.alive["sol-"+worldName+"-forge"] = true
-	sessions.alive["sol-"+worldName+"-governor"] = true
 	sessions.alive["sol-"+worldName+"-MyEnvoy"] = true
 	sessions.alive["sol-chronicle"] = true
 	sessions.alive["sol-broker"] = true

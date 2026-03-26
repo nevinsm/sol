@@ -11,9 +11,9 @@ import (
 
 // PopulateWritContext reads tethered writs and the active_writ from stores,
 // returning a WritContext with multi-writ fields populated. This is the shared
-// implementation used by both envoy and governor persona generation.
+// implementation used by envoy persona generation.
 //
-// The role parameter is the tether role (e.g., "envoy", "governor").
+// The role parameter is the tether role (e.g., "envoy").
 // If no tethers exist, an empty WritContext is returned with no error.
 func PopulateWritContext(world, agent, role string) (WritContext, error) {
 	var ctx WritContext

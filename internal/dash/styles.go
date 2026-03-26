@@ -293,13 +293,6 @@ func formatSentinelDetail(s status.SentinelInfo) string {
 	return ""
 }
 
-func formatGovernorDetail(g status.GovernorInfo) string {
-	if g.BriefAge != "" {
-		return "brief: " + g.BriefAge + " ago"
-	}
-	return ""
-}
-
 // formatCompactTokens formats a token count as a compact human-readable string.
 // Mirrors status.formatCompactTokens for use in dashboard views.
 func formatCompactTokens(n int64) string {

@@ -17,7 +17,7 @@ var (
 
 var tetherCmd = &cobra.Command{
 	Use:          "tether <writ-id>",
-	Short:        "Bind a writ to a persistent agent (envoy, governor, forge)",
+	Short:        "Bind a writ to a persistent agent (envoy, forge)",
 	Long:         "Bind a writ to a persistent agent without creating a worktree or launching a session.\nOutpost agents must use sol cast instead.",
 	GroupID:      groupAgents,
 	Args:         cobra.ExactArgs(1),

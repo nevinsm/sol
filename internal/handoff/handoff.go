@@ -406,7 +406,7 @@ func RemoveMarker(world, agentName, role string) error {
 }
 
 // BriefSavePrompt is the message injected into a session before handoff cycling
-// for roles that use briefs (envoy, governor).
+// for roles that use briefs (envoy).
 const BriefSavePrompt = "[sol] Session cycling due to context pressure. " +
 	"Update .brief/memory.md NOW with current state, decisions, and next steps."
 
@@ -462,7 +462,7 @@ func briefSave(sessionName string, mgr SessionManager,
 
 // roleUsesBrief returns true if the role maintains a brief (.brief/memory.md).
 func roleUsesBrief(role string) bool {
-	return role == "envoy" || role == "governor"
+	return role == "envoy"
 }
 
 // BuildResumeState extracts a startup.ResumeState from a captured handoff State.
@@ -522,7 +522,7 @@ type ExecOpts struct {
 	World       string
 	AgentName   string
 	Summary     string // optional agent-provided summary
-	Role        string // agent role: "outpost", "envoy", "governor", "forge" (default: "outpost")
+	Role        string // agent role: "outpost", "envoy", "forge" (default: "outpost")
 	WorktreeDir string // explicit worktree path (required for non-outpost roles)
 	Reason      string // handoff reason: "compact", "manual", "health-check" (default: "unknown")
 
@@ -542,7 +542,7 @@ type ExecOpts struct {
 // new session starts reliably because tmux handles the transition server-side.
 // Falls back to Stop+Start if Cycle fails.
 //
-// For non-outpost agents (envoy, governor, forge) without tethered work,
+// For non-outpost agents (envoy, forge) without tethered work,
 // steps 1-3 are skipped — the session is simply cycled, and the existing
 // SessionStart hook re-injects context from durable state.
 func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
@@ -657,7 +657,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		}
 
 		// No captured state available — read durable state from disk
-		// (workflow state, active writ) for roles like governor that may
+		// (workflow state, active writ) for roles that may
 		// have workflows without tethers.
 		resumeState = CaptureResumeState(opts.World, opts.AgentName, role, reason, sphereStore)
 	}
@@ -672,8 +672,8 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	}
 
 	// Cooldown: check marker timestamp to prevent restart storms.
-	// Forge and governor are exempt — they may need rapid cycling during active merge processing.
-	if role != "forge" && role != "governor" {
+	// Forge is exempt — it may need rapid cycling during active merge processing.
+	if role != "forge" {
 		markerTS, _, _ := ReadMarker(opts.World, opts.AgentName, role)
 		if !markerTS.IsZero() {
 			elapsed := time.Since(markerTS)

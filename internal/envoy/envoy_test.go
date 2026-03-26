@@ -514,13 +514,13 @@ func TestStopWrongRole(t *testing.T) {
 
 	ss := &mockStopStore{
 		agents: map[string]*store.Agent{
-			"myworld/governor": {ID: "myworld/governor", Name: "governor", World: "myworld", Role: "governor", State: store.AgentIdle},
+			"myworld/outpost-agent": {ID: "myworld/outpost-agent", Name: "outpost-agent", World: "myworld", Role: "outpost", State: store.AgentIdle},
 		},
 		updated: map[string]store.AgentState{},
 	}
 	mgr := &mockStopManager{sessions: map[string]bool{}}
 
-	err := Stop("myworld", "governor", ss, mgr)
+	err := Stop("myworld", "outpost-agent", ss, mgr)
 	if err == nil {
 		t.Fatal("expected error for wrong role, got nil")
 	}
@@ -528,7 +528,7 @@ func TestStopWrongRole(t *testing.T) {
 		t.Errorf("error should mention expected role, got %q", err.Error())
 	}
 	// Verify agent state was NOT updated.
-	if _, ok := ss.updated["myworld/governor"]; ok {
+	if _, ok := ss.updated["myworld/outpost-agent"]; ok {
 		t.Error("agent state should not have been updated for wrong-role agent")
 	}
 }

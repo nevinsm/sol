@@ -8,7 +8,6 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/forge"
-	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/setup"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -128,23 +127,7 @@ func SyncEnvoy(world, name string, mgr NotifyManager) error {
 	return nil
 }
 
-// SyncGovernor notifies a running governor session that the managed repo has been synced.
-// If the session is not running, this is a no-op.
-func SyncGovernor(world string, mgr NotifyManager) error {
-	sessName := config.SessionName(world, "governor")
-	if !mgr.Exists(sessName) {
-		return nil
-	}
-
-	msg := fmt.Sprintf("\n[sol] Managed repo synced. Latest code available in ../repo.\n")
-	if err := mgr.Inject(sessName, msg, true); err != nil {
-		return fmt.Errorf("failed to notify governor: %w", err)
-	}
-
-	return nil
-}
-
-// SyncAllComponents syncs the forge and notifies all envoys and the governor.
+// SyncAllComponents syncs the forge and notifies all envoys.
 // Called after the managed repo is already synced. Returns results for each component.
 func SyncAllComponents(world, targetBranch string, lister store.AgentReader, mgr NotifyManager) []SyncResult {
 	var results []SyncResult
@@ -168,13 +151,6 @@ func SyncAllComponents(world, targetBranch string, lister store.AgentReader, mgr
 		}
 	} else {
 		results = append(results, SyncResult{Component: "envoys", Err: fmt.Errorf("failed to list agents: %w", err)})
-	}
-
-	// Notify governor if its directory exists.
-	govDir := governor.GovernorDir(world)
-	if _, err := os.Stat(govDir); err == nil {
-		err := SyncGovernor(world, mgr)
-		results = append(results, SyncResult{Component: "governor", Err: err})
 	}
 
 	return results

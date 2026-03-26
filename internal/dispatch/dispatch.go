@@ -386,7 +386,6 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 // Outpost agents must use sol cast instead.
 var persistentRoles = map[string]bool{
 	"envoy":    true,
-	"governor": true,
 	"forge":    true,
 }
 
@@ -426,7 +425,7 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 		return nil, fmt.Errorf("failed to get agent %q: %w", agentID, err)
 	}
 	if !persistentRoles[agent.Role] {
-		return nil, fmt.Errorf("agent %q has role %q — only persistent roles (envoy, governor, forge) can use tether; outposts use sol cast", agentID, agent.Role)
+		return nil, fmt.Errorf("agent %q has role %q — only persistent roles (envoy, forge) can use tether; outposts use sol cast", agentID, agent.Role)
 	}
 
 	// 3. Acquire per-writ lock, then per-agent lock (consistent ordering).
@@ -678,7 +677,7 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 		return nil, fmt.Errorf("failed to update active writ: %w", err)
 	}
 
-	// 6. For persistent roles (envoy, governor), nudge the running session
+	// 6. For persistent roles (envoy), nudge the running session
 	// instead of cycling it — cycling destroys the live conversation.
 	if persistentRoles[agent.Role] && agent.Role != "forge" {
 		sessionName := config.SessionName(opts.World, opts.AgentName)
@@ -1005,17 +1004,12 @@ func primeCompact(world, agentName, role string, worldStore WorldStore) (*PrimeR
 		return nil, fmt.Errorf("failed to list tethers: %w", err)
 	}
 	if len(allWritIDs) == 0 {
-		// Persistent roles (envoy/governor) may have no tether during freeform
+		// Persistent roles (envoy) may have no tether during freeform
 		// conversation — return a role-appropriate grounding reminder.
 		if role == "envoy" {
 			return &PrimeResult{Output: fmt.Sprintf(
 				"[sol] Context compaction in progress. You are envoy %s in world %s.\nYour brief is at .brief/memory.md — consult it to re-orient.\nContinue the current conversation.",
 				agentName, world)}, nil
-		}
-		if role == "governor" {
-			return &PrimeResult{Output: fmt.Sprintf(
-				"[sol] Context compaction in progress. You are the governor of world %s.\nYour brief is at .brief/memory.md — consult it to re-orient.\nContinue the current conversation.",
-				world)}, nil
 		}
 		return &PrimeResult{Output: "[sol] Context compaction in progress. No active work tethered."}, nil
 	}

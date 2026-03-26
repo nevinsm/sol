@@ -402,15 +402,8 @@ func TestSyncAllComponents(t *testing.T) {
 	t.Setenv("SOL_HOME", solHome)
 	world := "testworld"
 
-	// Create governor directory so it gets synced.
-	govDir := filepath.Join(solHome, world, "governor")
-	if err := os.MkdirAll(govDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
 	mgr := newMockNotifyManager()
 	mgr.sessions["sol-testworld-Jimmy"] = true
-	mgr.sessions["sol-testworld-governor"] = true
 
 	lister := &mockAgentLister{
 		agents: []store.Agent{
@@ -421,16 +414,15 @@ func TestSyncAllComponents(t *testing.T) {
 
 	results := SyncAllComponents(world, "main", lister, mgr)
 
-	// Should have envoy:Jimmy and governor results (no forge since worktree doesn't exist).
-	if len(results) < 2 {
-		t.Fatalf("expected at least 2 results, got %d", len(results))
+	// Should have envoy:Jimmy result (no forge since worktree doesn't exist).
+	if len(results) < 1 {
+		t.Fatalf("expected at least 1 result, got %d", len(results))
 	}
 
 	components := map[string]bool{}
 	for _, r := range results {
 		components[r.Component] = true
 		if r.Err != nil {
-			// Governor and envoy notifications should succeed with mock.
 			t.Errorf("unexpected error for %s: %v", r.Component, r.Err)
 		}
 	}
@@ -438,12 +430,9 @@ func TestSyncAllComponents(t *testing.T) {
 	if !components["envoy:Jimmy"] {
 		t.Error("missing envoy:Jimmy result")
 	}
-	if !components["governor"] {
-		t.Error("missing governor result")
-	}
 
-	// Verify both sessions were notified.
-	if len(mgr.injected) != 2 {
-		t.Errorf("expected 2 Inject calls, got %d", len(mgr.injected))
+	// Verify envoy session was notified.
+	if len(mgr.injected) != 1 {
+		t.Errorf("expected 1 Inject call, got %d", len(mgr.injected))
 	}
 }

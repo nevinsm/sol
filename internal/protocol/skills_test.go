@@ -20,16 +20,6 @@ func TestRoleSkillsOutpost(t *testing.T) {
 	}
 }
 
-func TestRoleSkillsGovernor(t *testing.T) {
-	skills, err := RoleSkills("governor")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(skills) != 5 {
-		t.Errorf("governor should have 5 skills, got %d: %v", len(skills), skills)
-	}
-}
-
 func TestRoleSkillsEnvoy(t *testing.T) {
 	skills, err := RoleSkills("envoy")
 	if err != nil {
@@ -78,23 +68,6 @@ func TestBuildSkillsOutpost(t *testing.T) {
 		if s.Content == "" {
 			t.Errorf("skill %q should not be empty", s.Name)
 		}
-	}
-}
-
-func TestBuildSkillsGovernor(t *testing.T) {
-	ctx := SkillContext{
-		World:     "testworld",
-		SolBinary: "sol",
-		Role:      "governor",
-	}
-
-	skills, err := BuildSkills(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	names, _ := RoleSkills("governor")
-	if len(skills) != len(names) {
-		t.Fatalf("expected %d skills, got %d", len(names), len(skills))
 	}
 }
 
@@ -155,26 +128,6 @@ func TestSkillContentHasWorldName(t *testing.T) {
 	t.Error("resolve-and-handoff skill not found")
 }
 
-func TestGovernorSkillContentHasNotifications(t *testing.T) {
-	ctx := SkillContext{
-		World:     "myworld",
-		SolBinary: "sol",
-		Role:      "governor",
-	}
-
-	content := generateSkill("notification-handling", ctx)
-
-	for _, notifType := range []string{"MAIL", "AGENT_DONE", "MERGED", "MERGE_FAILED"} {
-		if !contains(content, notifType) {
-			t.Errorf("notification-handling skill should contain %q", notifType)
-		}
-	}
-	// RECOVERY_NEEDED goes to autarch, not governor — must not appear in governor skill.
-	if contains(content, "RECOVERY_NEEDED") {
-		t.Error("governor notification-handling skill should not contain RECOVERY_NEEDED")
-	}
-}
-
 func TestEnvoySkillContentHasNotifications(t *testing.T) {
 	ctx := SkillContext{
 		World:     "myworld",
@@ -188,14 +141,6 @@ func TestEnvoySkillContentHasNotifications(t *testing.T) {
 	// Envoy receives MAIL notifications only.
 	if !contains(content, "MAIL") {
 		t.Error("envoy notification-handling skill should contain MAIL")
-	}
-
-	// MERGED, MERGE_FAILED, and AGENT_DONE go to governor, not envoy.
-	// The skill should mention them in the context of "not delivered to envoy".
-	for _, notifType := range []string{"MERGED", "MERGE_FAILED", "AGENT_DONE"} {
-		if !contains(content, notifType) {
-			t.Errorf("envoy notification-handling skill should mention %q (in note about governor delivery)", notifType)
-		}
 	}
 
 	// RECOVERY_NEEDED goes to autarch, not envoy — must not appear.
@@ -247,27 +192,6 @@ func TestStatusMonitoringHasComponentStatus(t *testing.T) {
 	}
 }
 
-func TestWorldCoordinationHasServiceManagement(t *testing.T) {
-	ctx := SkillContext{
-		World:     "myworld",
-		SolBinary: "sol",
-		Role:      "governor",
-	}
-
-	content := generateSkill("world-coordination", ctx)
-
-	// Should have service management section.
-	if !contains(content, "Service Management") {
-		t.Error("world-coordination skill should contain Service Management section")
-	}
-	if !contains(content, "service status") {
-		t.Error("world-coordination skill should contain service status command")
-	}
-	if !contains(content, "down --all") {
-		t.Error("world-coordination skill should contain down --all command")
-	}
-}
-
 func TestWorldOperationsHasServiceLifecycle(t *testing.T) {
 	ctx := SkillContext{
 		World:     "myworld",
@@ -291,17 +215,6 @@ func TestWorldOperationsHasServiceLifecycle(t *testing.T) {
 }
 
 func TestCaravanManagementRoleAware(t *testing.T) {
-	// Governor version
-	govCtx := SkillContext{
-		World:     "testworld",
-		SolBinary: "sol",
-		Role:      "governor",
-	}
-	govContent := generateSkill("caravan-management", govCtx)
-	if !contains(govContent, "coordinating") {
-		t.Error("governor caravan-management should mention coordinating")
-	}
-
 	// Envoy version
 	envCtx := SkillContext{
 		World:     "testworld",
@@ -312,11 +225,6 @@ func TestCaravanManagementRoleAware(t *testing.T) {
 	envContent := generateSkill("caravan-management", envCtx)
 	if !contains(envContent, "sequencing") {
 		t.Error("envoy caravan-management should mention sequencing")
-	}
-
-	// Descriptions should differ
-	if govContent == envContent {
-		t.Error("governor and envoy caravan-management should have different descriptions")
 	}
 }
 
@@ -371,7 +279,7 @@ func TestSkillCommandReferencesExist(t *testing.T) {
 	}
 
 	// Generate skill content for every role.
-	roles := []string{"outpost", "governor", "envoy"}
+	roles := []string{"outpost", "envoy"}
 
 	// cmdEntry tracks a unique subcommand and the flags referenced with it.
 	type cmdEntry struct {

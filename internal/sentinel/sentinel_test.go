@@ -900,31 +900,6 @@ func TestSentinelIgnoresEnvoy(t *testing.T) {
 	}
 }
 
-func TestSentinelIgnoresGovernor(t *testing.T) {
-	sphereStore, _ := setupTestEnv(t)
-	mock := newMockSessions()
-	cfg := testConfig()
-
-	// Create a governor agent with a dead session.
-	sphereStore.CreateAgent("governor", "ember", "governor")
-	sphereStore.UpdateAgentState("ember/governor", store.AgentWorking, "")
-	// Session is NOT alive.
-
-	w := New(cfg, sphereStore, nil, mock, nil)
-
-	if err := w.patrol(context.Background()); err != nil {
-		t.Fatalf("patrol() error: %v", err)
-	}
-
-	// No sessions should have been started or stopped.
-	if started := mock.getStarted(); len(started) != 0 {
-		t.Errorf("expected 0 sessions started for governor, got %d: %v", len(started), started)
-	}
-	if stopped := mock.getStopped(); len(stopped) != 0 {
-		t.Errorf("expected 0 sessions stopped for governor, got %d: %v", len(stopped), stopped)
-	}
-}
-
 func TestReapIdleAgent(t *testing.T) {
 	sphereStore, _ := setupTestEnv(t)
 	mock := newMockSessions()
@@ -2472,8 +2447,6 @@ func setupAgentCredentials(t *testing.T, world, role, name, accountHandle string
 	switch role {
 	case "envoy":
 		configDir = filepath.Join(worldDir, ".claude-config", "envoys", name)
-	case "governor":
-		configDir = filepath.Join(worldDir, ".claude-config", "governor", name)
 	case "forge":
 		configDir = filepath.Join(worldDir, ".claude-config", "forge", name)
 	default:
@@ -2555,24 +2528,17 @@ func TestQuotaPatrolRotatesEntireWorld(t *testing.T) {
 	mock.alive["sol-ember-forge"] = true
 	mock.captures["sol-ember-forge"] = "Processing merge requests..."
 
-	sphereStore.CreateAgent("governor", "ember", "governor")
-	sphereStore.UpdateAgentState("ember/governor", store.AgentWorking, "")
-	setupAgentCredentials(t, "ember", "governor", "governor", "alice")
-	mock.alive["sol-ember-governor"] = true
-	mock.captures["sol-ember-governor"] = "Idle, waiting for work..."
-
 	// Also set up workdir so that Cycle can build command.
 	solHome := os.Getenv("SOL_HOME")
 	for _, dir := range []string{
 		filepath.Join(solHome, "ember", "outposts", "Toast", "worktree"),
 		filepath.Join(solHome, "ember", "forge", "worktree"),
-		filepath.Join(solHome, "ember", "governor"),
 	} {
 		os.MkdirAll(dir, 0o755)
 	}
 
 	// Register roles so the startup path succeeds.
-	for _, role := range []string{"outpost", "forge", "governor"} {
+	for _, role := range []string{"outpost", "forge"} {
 		r := role
 		startup.Register(r, startup.RoleConfig{
 			WorktreeDir: func(w, a string) string {
@@ -2581,7 +2547,7 @@ func TestQuotaPatrolRotatesEntireWorld(t *testing.T) {
 		})
 	}
 	t.Cleanup(func() {
-		for _, r := range []string{"outpost", "forge", "governor"} {
+		for _, r := range []string{"outpost", "forge"} {
 			startup.Register(r, startup.RoleConfig{})
 		}
 	})
@@ -2591,22 +2557,22 @@ func TestQuotaPatrolRotatesEntireWorld(t *testing.T) {
 	agents, _ := sphereStore.ListAgents("ember", "")
 	scanned, rotated, paused := w.quotaPatrol(agents)
 
-	if scanned != 3 {
-		t.Errorf("scanned = %d, want 3", scanned)
+	if scanned != 2 {
+		t.Errorf("scanned = %d, want 2", scanned)
 	}
-	// Toast is rate-limited; forge and governor are on alice too.
-	// All 3 should be cycled to bob.
-	if rotated != 3 {
-		t.Errorf("rotated = %d, want 3", rotated)
+	// Toast is rate-limited; forge is on alice too.
+	// Both should be cycled to bob.
+	if rotated != 2 {
+		t.Errorf("rotated = %d, want 2", rotated)
 	}
 	if paused != 0 {
 		t.Errorf("paused = %d, want 0", paused)
 	}
 
-	// All three sessions should have been cycled.
+	// Both sessions should have been cycled.
 	cycled := mock.getCycled()
-	if len(cycled) != 3 {
-		t.Errorf("cycled sessions = %d, want 3", len(cycled))
+	if len(cycled) != 2 {
+		t.Errorf("cycled sessions = %d, want 2", len(cycled))
 	}
 }
 
@@ -2625,24 +2591,18 @@ func TestQuotaPatrolPausesWhenNoAccountsAvailable(t *testing.T) {
 	mock.alive["sol-ember-Toast"] = true
 	mock.captures["sol-ember-Toast"] = "You've hit your usage limit"
 
-	sphereStore.CreateAgent("governor", "ember", "governor")
-	sphereStore.UpdateAgentState("ember/governor", store.AgentWorking, "")
-	setupAgentCredentials(t, "ember", "governor", "governor", "alice")
-	mock.alive["sol-ember-governor"] = true
-	mock.captures["sol-ember-governor"] = "Idle..."
-
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 
 	agents, _ := sphereStore.ListAgents("ember", "")
 	scanned, rotated, paused := w.quotaPatrol(agents)
 
-	if scanned != 2 {
-		t.Errorf("scanned = %d, want 2", scanned)
+	if scanned != 1 {
+		t.Errorf("scanned = %d, want 1", scanned)
 	}
 	if rotated != 0 {
 		t.Errorf("rotated = %d, want 0", rotated)
 	}
-	// Only Toast should be paused — governor is exempt.
+	// Toast should be paused — no alternative accounts available.
 	if paused != 1 {
 		t.Errorf("paused = %d, want 1", paused)
 	}
@@ -2650,36 +2610,6 @@ func TestQuotaPatrolPausesWhenNoAccountsAvailable(t *testing.T) {
 	stopped := mock.getStopped()
 	if len(stopped) != 1 || stopped[0] != "sol-ember-Toast" {
 		t.Errorf("stopped = %v, want [sol-ember-Toast]", stopped)
-	}
-}
-
-func TestQuotaPatrolGovernorNeverPaused(t *testing.T) {
-	sphereStore, worldStore := setupTestEnv(t)
-	mock := newMockSessions()
-	cfg := testConfig()
-
-	// Only one account — will be limited.
-	setupQuotaAccount(t, "alice")
-
-	// Only governor is running (on the limited account).
-	sphereStore.CreateAgent("governor", "ember", "governor")
-	sphereStore.UpdateAgentState("ember/governor", store.AgentWorking, "")
-	setupAgentCredentials(t, "ember", "governor", "governor", "alice")
-	mock.alive["sol-ember-governor"] = true
-	mock.captures["sol-ember-governor"] = "You've hit your usage limit"
-
-	w := New(cfg, sphereStore, worldStore, mock, nil)
-
-	agents, _ := sphereStore.ListAgents("ember", "")
-	_, _, paused := w.quotaPatrol(agents)
-
-	if paused != 0 {
-		t.Errorf("paused = %d, want 0 (governor never paused)", paused)
-	}
-
-	stopped := mock.getStopped()
-	if len(stopped) != 0 {
-		t.Errorf("stopped = %v, want empty (governor never stopped)", stopped)
 	}
 }
 

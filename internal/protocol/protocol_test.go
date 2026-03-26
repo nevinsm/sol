@@ -269,38 +269,3 @@ func TestGenerateClaudeMDOutpostNoBackgroundSection(t *testing.T) {
 	}
 }
 
-func TestGenerateGovernorClaudeMDMultiWrit(t *testing.T) {
-	ctx := GovernorClaudeMDContext{
-		World:     "myworld",
-		SolBinary: "sol",
-		MirrorDir: "../repo",
-		WritContext: WritContext{
-			TetheredWrits: []WritSummary{
-				{ID: "sol-aaa1", Title: "Plan feature X", Kind: "code", Status: "tethered"},
-				{ID: "sol-bbb2", Title: "Research Y", Kind: "analysis", Status: "tethered"},
-			},
-			ActiveWritID: "sol-aaa1",
-			ActiveTitle:  "Plan feature X",
-			ActiveDesc:   "Create writs for feature X",
-			ActiveKind:   "code",
-		},
-	}
-
-	content := GenerateGovernorClaudeMD(ctx)
-
-	if !strings.Contains(content, "## Active Writ") {
-		t.Error("missing Active Writ section")
-	}
-	if !strings.Contains(content, "Plan feature X") {
-		t.Error("missing active writ title")
-	}
-	if !strings.Contains(content, "## Background Writs") {
-		t.Error("missing Background Writs section")
-	}
-	if !strings.Contains(content, "Research Y") {
-		t.Error("missing background writ")
-	}
-	if !strings.Contains(content, "Governor (world: myworld)") {
-		t.Error("missing governor header")
-	}
-}

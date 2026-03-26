@@ -298,9 +298,8 @@ Once you have the world name (and optionally source repo), run:
 `, ctx.SolBinary, ctx.SolBinary, ctx.SOLHome)
 }
 
-// WritContext holds the multi-writ fields shared by persistent agent personas
-// (envoy and governor). Both EnvoyClaudeMDContext and GovernorClaudeMDContext
-// embed this struct so writ-population logic lives in one place.
+// WritContext holds the multi-writ fields shared by persistent agent personas.
+// EnvoyClaudeMDContext embeds this struct so writ-population logic lives in one place.
 type WritContext struct {
 	TetheredWrits []WritSummary // all tethered writs (for background listing)
 	ActiveWritID  string        // currently active writ ID (empty if none)
@@ -362,76 +361,6 @@ only path for code to reach the target branch.
 `,
 		ctx.AgentName, ctx.World,
 		ctx.World, ctx.AgentName,
-	)
-
-	// Append multi-writ section if tethered writs exist.
-	if len(ctx.TetheredWrits) > 0 {
-		content += generatePersistentWritSection(ctx.ActiveWritID, ctx.ActiveTitle, ctx.ActiveDesc,
-			ctx.ActiveKind, ctx.ActiveOutput, ctx.ActiveDeps, ctx.TetheredWrits)
-	}
-
-	return content
-}
-
-// GovernorClaudeMDContext holds the fields used to generate a CLAUDE.md for the governor.
-type GovernorClaudeMDContext struct {
-	World     string
-	SolBinary string // path to sol binary (for CLI references)
-	MirrorDir string // relative path to mirror for codebase research
-
-	WritContext // embedded multi-writ fields for persistent agents
-}
-
-// GenerateGovernorClaudeMD returns the contents of a CLAUDE.md for the governor agent.
-// Lean persona: identity, brief maintenance, codebase research.
-// Dispatch flow and notification handling are provided via skills.
-func GenerateGovernorClaudeMD(ctx GovernorClaudeMDContext) string {
-	content := fmt.Sprintf(`# Governor (world: %s)
-
-## Identity
-You are the governor of world %q — a work coordinator.
-You parse natural language requests into writs and dispatch them to agents.
-You maintain accumulated world knowledge in your brief.
-
-## Brief Maintenance
-- Your brief (`+"`"+`.brief/memory.md`+"`"+`) persists across sessions — keep it under 200 lines
-- Also maintain `+"`"+`.brief/world-summary.md`+"`"+` — a structured summary for external consumers
-- Update after significant decisions or discoveries, not just at session end — if your session crashes, a stale brief is all your successor gets
-- **DO NOT** write to `+"`"+`~/.claude/projects/*/memory/`+"`"+` (Claude Code auto-memory) — use `+"`"+`.brief/memory.md`+"`"+` exclusively
-- World summary format:
-
-`+"```"+`markdown
-# World Summary: %s
-## Project            — what this codebase is
-## Architecture       — key modules, patterns, tech stack
-## Priorities         — active work themes, what's in flight
-## Constraints        — known problem areas, things to avoid
-## Principles & Conventions
-### Conventions       — curated summary of key CLAUDE.md conventions (commit style, naming, exit codes, etc.)
-### ADR Decisions     — ADR numbers and one-line summaries that constrain implementation
-### Build & Test      — build commands, required test helpers, CI gates
-### World Constraints — anything a planner must know before designing writs for this world
-`+"```"+`
-
-- The **Principles & Conventions** section may be read by envoys planning cross-world work — keep it accurate so plans conform to project conventions
-
-## Codebase Research
-- Read-only codebase at `+"`"+`%s/`+"`"+` — use for understanding code, never edit
-- Sync latest before major research: `+"`"+`sol world sync --world=%s`+"`"+`
-- Use the codebase to write better writ descriptions
-
-## Guidelines
-- You coordinate — you don't write code
-- Create focused, well-scoped writs (one concern per item)
-- Include enough context in descriptions for an agent to work autonomously
-- Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
-- Use the codebase to verify your understanding before dispatching
-- When notifications arrive, handle them promptly — they represent state changes that may require action
-- After handling a notification, always update your brief to reflect the new state
-`,
-		ctx.World, ctx.World, // title, identity
-		ctx.World,                    // world summary heading
-		ctx.MirrorDir, ctx.World, // codebase research
 	)
 
 	// Append multi-writ section if tethered writs exist.

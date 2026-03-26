@@ -774,7 +774,7 @@ func TestCastItemNotOpen(t *testing.T) {
 }
 
 func TestCastRejectsNonAgentRoles(t *testing.T) {
-	for _, role := range []string{"envoy", "governor", "forge", "sentinel"} {
+	for _, role := range []string{"envoy", "forge", "sentinel"} {
 		t.Run(role, func(t *testing.T) {
 			worldStore, sphereStore := setupStores(t)
 			mgr := newMockSessionManager()
@@ -3686,11 +3686,9 @@ func TestResolveNonCodeWritSkipsForgeNudge(t *testing.T) {
 	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
-	// Start forge and governor sessions so we can verify nudges are NOT sent.
+	// Start forge session so we can verify nudge is NOT sent.
 	forgeSession := config.SessionName("ember", "forge")
 	mgr.started[forgeSession] = true
-	govSession := config.SessionName("ember", "governor")
-	mgr.started[govSession] = true
 
 	_, err = Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
@@ -3710,25 +3708,6 @@ func TestResolveNonCodeWritSkipsForgeNudge(t *testing.T) {
 		if msg.Type == "MR_READY" {
 			t.Error("expected no MR_READY nudge for non-code writ, but found one")
 		}
-	}
-
-	// Verify governor DID receive an AGENT_DONE nudge for non-code writ resolve.
-	// Governor should be notified when any writ completes, not just code writs.
-	govMsgs, err := nudge.List(govSession)
-	if err != nil {
-		t.Fatalf("failed to list governor nudge queue: %v", err)
-	}
-	foundAgentDone := false
-	for _, msg := range govMsgs {
-		if msg.Type == "AGENT_DONE" {
-			foundAgentDone = true
-			if !strings.Contains(msg.Body, itemID) {
-				t.Errorf("expected AGENT_DONE body to contain writ ID %q, got %q", itemID, msg.Body)
-			}
-		}
-	}
-	if !foundAgentDone {
-		t.Error("expected AGENT_DONE nudge for non-code writ resolve, but found none")
 	}
 }
 
@@ -5316,28 +5295,6 @@ func TestPrimeCompactEnvoyNoTether(t *testing.T) {
 	}
 }
 
-func TestPrimeCompactGovernorNoTether(t *testing.T) {
-	worldStore, _ := setupStores(t)
-
-	result, err := Prime("ember", "governor", "governor", worldStore, true)
-	if err != nil {
-		t.Fatalf("Prime compact failed: %v", err)
-	}
-
-	if !strings.Contains(result.Output, "[sol] Context compaction in progress") {
-		t.Error("output missing compaction header")
-	}
-	if !strings.Contains(result.Output, "You are the governor of world ember") {
-		t.Errorf("expected governor grounding reminder, got %q", result.Output)
-	}
-	if !strings.Contains(result.Output, ".brief/memory.md") {
-		t.Error("output missing brief path")
-	}
-	if strings.Contains(result.Output, "No active work tethered") {
-		t.Error("persistent role should not get generic no-tether message")
-	}
-}
-
 // --- Persistent role activation tests ---
 
 func TestActivateWritEnvoyNudgesInsteadOfCycle(t *testing.T) {
@@ -5435,58 +5392,6 @@ func TestActivateWritEnvoyNudgesInsteadOfCycle(t *testing.T) {
 	}
 	if !found {
 		t.Error("no writ-activate nudge found for the activated writ")
-	}
-}
-
-func TestActivateWritGovernorNudgesInsteadOfCycle(t *testing.T) {
-	worldStore, sphereStore := setupStores(t)
-	mgr := newMockSessionManager()
-
-	// Create writ.
-	writ1, err := worldStore.CreateWrit("Governor task", "A task", "autarch", 2, nil)
-	if err != nil {
-		t.Fatalf("failed to create writ: %v", err)
-	}
-	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Apex"}); err != nil {
-		t.Fatalf("failed to update writ: %v", err)
-	}
-
-	// Create governor agent.
-	if _, err := sphereStore.CreateAgent("Apex", "ember", "governor"); err != nil {
-		t.Fatalf("failed to create agent: %v", err)
-	}
-
-	// Tether writ.
-	if err := tether.Write("ember", "Apex", writ1, "governor"); err != nil {
-		t.Fatalf("failed to write tether: %v", err)
-	}
-
-	// Activate writ.
-	_, err = ActivateWrit(ActivateOpts{
-		World:     "ember",
-		AgentName: "Apex",
-		WritID:    writ1,
-	}, worldStore, sphereStore, mgr, nil)
-	if err != nil {
-		t.Fatalf("ActivateWrit failed: %v", err)
-	}
-
-	// Verify session was NOT cycled.
-	sessName := config.SessionName("ember", "Apex")
-	if mgr.stopped[sessName] {
-		t.Error("governor session should NOT be stopped on writ activation")
-	}
-
-	// Verify nudge was enqueued.
-	messages, err := nudge.List(sessName)
-	if err != nil {
-		t.Fatalf("failed to list nudge messages: %v", err)
-	}
-	if len(messages) == 0 {
-		t.Fatal("expected nudge message for governor activation")
-	}
-	if messages[0].Type != "writ-activate" {
-		t.Errorf("nudge type = %q, want \"writ-activate\"", messages[0].Type)
 	}
 }
 

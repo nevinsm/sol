@@ -207,12 +207,12 @@ func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, 
 		return fmt.Errorf("failed to start session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
 	}
 
-	// For human-supervised roles (envoy, governor), keep the pane alive after
+	// For human-supervised roles (envoy), keep the pane alive after
 	// the process exits so we can inspect the exit code and any error output.
 	// Without this, tmux destroys the session immediately and all crash
 	// evidence is lost. Not applied to regular agents because the prefect
 	// uses Exists() to detect dead sessions for auto-respawn.
-	if role == "envoy" || role == "governor" {
+	if role == "envoy" {
 		remain, remainCancel := tmuxCmd("set-option", "-t", tmuxExactTarget(name), "remain-on-exit", "on")
 		if out, err := remain.CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "session: failed to set remain-on-exit for %s: %s\n", name, strings.TrimSpace(string(out)))
@@ -254,7 +254,7 @@ func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, 
 	// bad flags, permission errors, and immediate crashes.
 	time.Sleep(startupVerifyDelay)
 	// Check if the session still exists — tmux destroys it when the process
-	// exits (unless remain-on-exit is set for envoy/governor roles).
+	// exits (unless remain-on-exit is set for envoy roles).
 	if !m.Exists(name) {
 		_ = os.Remove(metadataPath(name))
 		_ = os.Remove(captureHashPath(name))
@@ -581,10 +581,10 @@ func (m *Manager) Cycle(name, workdir, cmd string, env map[string]string, role, 
 	}
 
 	// Restore remain-on-exit to off for non-supervised roles (outpost, forge, etc.).
-	// envoy and governor need it on for crash inspection; all other roles should
+	// envoy needs it on for crash inspection; all other roles should
 	// have it off so a crashed process results in session.Dead (not AgentDead),
 	// which prefect/sentinel use to trigger respawn.
-	if role != "envoy" && role != "governor" {
+	if role != "envoy" {
 		clearRemain, clearRemainCancel := tmuxCmd("set-option", "-t", tmuxExactTarget(name), "remain-on-exit", "off")
 		if out, err := clearRemain.CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "session: failed to restore remain-on-exit for %s: %s\n", name, strings.TrimSpace(string(out)))

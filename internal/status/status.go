@@ -12,7 +12,6 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/forge"
-	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/ledger"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/prefect"
@@ -50,7 +49,6 @@ type WorldStatus struct {
 	Ledger     LedgerInfo     `json:"ledger"`
 	Broker     BrokerInfo     `json:"broker"`
 	Sentinel   SentinelInfo   `json:"sentinel"`
-	Governor   GovernorInfo   `json:"governor"`
 	Agents     []AgentStatus  `json:"agents"`
 	Envoys     []EnvoyStatus  `json:"envoys"`
 	MergeQueue    MergeQueueInfo    `json:"merge_queue"`
@@ -58,13 +56,6 @@ type WorldStatus struct {
 	Caravans      []CaravanInfo      `json:"caravans,omitempty"`
 	Tokens        TokenInfo          `json:"tokens"`
 	Summary       Summary            `json:"summary"`
-}
-
-// GovernorInfo holds governor process state.
-type GovernorInfo struct {
-	Running      bool   `json:"running"`
-	SessionAlive bool   `json:"session_alive"`
-	BriefAge     string `json:"brief_age,omitempty"`
 }
 
 // EnvoyStatus holds the combined state of one envoy agent.
@@ -224,8 +215,8 @@ type Summary struct {
 //   2 = degraded (prefect not running — sessions cannot be respawned)
 //
 // Forge state does not affect health — an absent forge just means
-// merges won't happen, the system is still operational. Envoy and
-// governor sessions are human-supervised and do not affect health.
+// merges won't happen, the system is still operational. Envoy
+// sessions are human-supervised and do not affect health.
 func (r *WorldStatus) Health() int {
 	if !r.Prefect.Running {
 		return 2
@@ -335,7 +326,6 @@ type WorldSummary struct {
 	Agents     int    `json:"agents"`
 	MaxActive  int    `json:"max_active"` // 0 = unlimited
 	Envoys     int    `json:"envoys"`
-	Governor   bool   `json:"governor"`
 	Working    int    `json:"working"`
 	Idle       int    `json:"idle"`
 	Stalled    int    `json:"stalled"`
@@ -417,10 +407,6 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 	// 2c. Check sentinel process (direct Go process with PID + heartbeat).
 	result.Sentinel = GatherSentinelInfo(world)
 
-	// 2d. Check governor.
-	govSessName := config.SessionName(world, "governor")
-	govSessAlive := checker.Exists(govSessName)
-
 	// 3. List all agents for this world.
 	agents, err := sphereStore.ListAgents(world, "")
 	if err != nil {
@@ -433,13 +419,6 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		sessAlive := checker.Exists(sessName)
 
 		switch agent.Role {
-		case "governor":
-			result.Governor = GovernorInfo{
-				Running:      govSessAlive,
-				SessionAlive: govSessAlive,
-				BriefAge:     briefAge(governor.BriefPath(world)),
-			}
-
 		case "envoy":
 			es := EnvoyStatus{
 				Name:         agent.Name,
@@ -493,7 +472,7 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		}
 	}
 
-	// 5. Compute summary counts (outpost agents only — envoys and governor
+	// 5. Compute summary counts (outpost agents only — envoys
 	// are human-supervised and do not affect health).
 	for _, as := range result.Agents {
 		result.Summary.Total++

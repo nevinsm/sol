@@ -654,77 +654,6 @@ func TestGatherMergeQueueEmpty(t *testing.T) {
 	}
 }
 
-func TestGatherWithGovernor(t *testing.T) {
-	setupTestHome(t)
-
-	pidCleanup := writePrefectPID(t, os.Getpid())
-	defer pidCleanup()
-
-	sphere := &mockSphereStore{
-		agents: []store.Agent{
-			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: store.AgentIdle},
-		},
-	}
-	world := &mockWorldStore{items: nil}
-	checker := &mockChecker{
-		alive: map[string]bool{
-			"sol-haven-governor": true,
-		},
-	}
-
-	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
-	if err != nil {
-		t.Fatalf("Gather() error: %v", err)
-	}
-
-	if !result.Governor.Running {
-		t.Error("Governor.Running = false, want true")
-	}
-	if !result.Governor.SessionAlive {
-		t.Error("Governor.SessionAlive = false, want true")
-	}
-	// Governor should not count as an outpost agent.
-	if result.Summary.Total != 0 {
-		t.Errorf("Summary.Total = %d, want 0 (governor not counted)", result.Summary.Total)
-	}
-	if len(result.Agents) != 0 {
-		t.Errorf("len(Agents) = %d, want 0", len(result.Agents))
-	}
-}
-
-func TestGatherGovernorRunningReflectsSession(t *testing.T) {
-	// When governor is registered in the DB but its session is dead,
-	// Running should be false (reflects session state, not registration).
-	setupTestHome(t)
-
-	pidCleanup := writePrefectPID(t, os.Getpid())
-	defer pidCleanup()
-
-	sphere := &mockSphereStore{
-		agents: []store.Agent{
-			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: store.AgentIdle},
-		},
-	}
-	world := &mockWorldStore{items: nil}
-	checker := &mockChecker{
-		alive: map[string]bool{
-			"sol-haven-governor": false, // session dead
-		},
-	}
-
-	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
-	if err != nil {
-		t.Fatalf("Gather() error: %v", err)
-	}
-
-	if result.Governor.Running {
-		t.Error("Governor.Running = true, want false (session dead)")
-	}
-	if result.Governor.SessionAlive {
-		t.Error("Governor.SessionAlive = true, want false")
-	}
-}
-
 func TestGatherWithEnvoys(t *testing.T) {
 	setupTestHome(t)
 
@@ -791,7 +720,6 @@ func TestGatherMixedRoles(t *testing.T) {
 			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: store.AgentWorking, ActiveWrit: "sol-a1b2c3d4"},
 			{ID: "haven/Crisp", Name: "Crisp", World: "haven", Role: "outpost", State: store.AgentIdle},
 			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: store.AgentWorking, ActiveWrit: "sol-11223344"},
-			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: store.AgentIdle},
 			{ID: "haven/forge", Name: "forge", World: "haven", Role: "forge", State: store.AgentIdle},
 		},
 	}
@@ -805,7 +733,6 @@ func TestGatherMixedRoles(t *testing.T) {
 		alive: map[string]bool{
 			"sol-haven-Toast":    true,
 			"sol-haven-Scout":    true,
-			"sol-haven-governor": true,
 			"sol-haven-forge":    true,
 		},
 	}
@@ -820,9 +747,6 @@ func TestGatherMixedRoles(t *testing.T) {
 	}
 	if len(result.Envoys) != 1 {
 		t.Errorf("len(Envoys) = %d, want 1", len(result.Envoys))
-	}
-	if !result.Governor.Running {
-		t.Error("Governor.Running = false, want true")
 	}
 	// Summary counts only outpost agents.
 	if result.Summary.Total != 2 {
@@ -871,7 +795,7 @@ func TestGatherEnvoyBriefAge(t *testing.T) {
 	}
 }
 
-func TestHealthIgnoresEnvoyGovernor(t *testing.T) {
+func TestHealthIgnoresEnvoy(t *testing.T) {
 	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
@@ -881,7 +805,6 @@ func TestHealthIgnoresEnvoyGovernor(t *testing.T) {
 		agents: []store.Agent{
 			{ID: "haven/Toast", Name: "Toast", World: "haven", Role: "outpost", State: store.AgentWorking, ActiveWrit: "sol-a1b2c3d4"},
 			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: store.AgentWorking, ActiveWrit: "sol-11223344"},
-			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: store.AgentIdle},
 		},
 	}
 	world := &mockWorldStore{
@@ -892,9 +815,8 @@ func TestHealthIgnoresEnvoyGovernor(t *testing.T) {
 	}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"sol-haven-Toast":    true,
-			"sol-haven-Scout":    false, // envoy dead — should NOT affect health
-			"sol-haven-governor": false, // governor dead — should NOT affect health
+			"sol-haven-Toast": true,
+			"sol-haven-Scout": false, // envoy dead — should NOT affect health
 		},
 	}
 
@@ -903,9 +825,9 @@ func TestHealthIgnoresEnvoyGovernor(t *testing.T) {
 		t.Fatalf("Gather() error: %v", err)
 	}
 
-	// Health should be 0 (healthy) — envoy/governor dead sessions ignored.
+	// Health should be 0 (healthy) — envoy dead sessions ignored.
 	if result.Health() != 0 {
-		t.Errorf("Health() = %d, want 0 (envoy/governor dead should not affect health)", result.Health())
+		t.Errorf("Health() = %d, want 0 (envoy dead should not affect health)", result.Health())
 	}
 	if result.Summary.Dead != 0 {
 		t.Errorf("Summary.Dead = %d, want 0 (only outpost agents counted)", result.Summary.Dead)

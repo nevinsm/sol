@@ -893,59 +893,6 @@ func TestExecGetAgentFailureFallsBackToTether(t *testing.T) {
 	}
 }
 
-func TestExecNoTetherCyclesSession(t *testing.T) {
-	solHome := setupSolHome(t)
-
-	// Create governor directory (no tether for governor).
-	govDir := filepath.Join(solHome, "ember", "governor")
-	if err := os.MkdirAll(govDir, 0o755); err != nil {
-		t.Fatalf("failed to create governor dir: %v", err)
-	}
-
-	registerMinimalRole(t, "governor", govDir)
-
-	mgr := &mockSessionMgr{}
-	ts := &mockSphereStore{}
-
-	err := Exec(ExecOpts{
-		World:         "ember",
-		AgentName:     "governor",
-		Role:          "governor",
-		WorktreeDir:   govDir,
-		StartupSphere: &mockStartupSphere{},
-	}, mgr, ts, nil)
-
-	if err != nil {
-		t.Fatalf("Exec failed for no-tether governor: %v", err)
-	}
-
-	// No handoff file should be written (no tether).
-	if HasHandoff("ember", "governor", "governor") {
-		t.Error("expected no handoff file for governor without tether")
-	}
-
-	// Session should be cycled (not stopped+started).
-	if len(mgr.stopped) != 0 {
-		t.Errorf("expected no Stop calls, got %v", mgr.stopped)
-	}
-	if len(mgr.started) != 0 {
-		t.Errorf("expected no Start calls, got %v", mgr.started)
-	}
-	if len(mgr.cycled) != 1 {
-		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
-	}
-	if mgr.cycled[0].Workdir != govDir {
-		t.Errorf("expected workdir %q, got %q", govDir, mgr.cycled[0].Workdir)
-	}
-	if mgr.cycled[0].Role != "governor" {
-		t.Errorf("expected role governor, got %q", mgr.cycled[0].Role)
-	}
-	// No mail sent (no tether).
-	if len(ts.messages) != 0 {
-		t.Errorf("expected 0 messages for no-tether handoff, got %d", len(ts.messages))
-	}
-}
-
 func TestExecWithExplicitRole(t *testing.T) {
 	solHome := setupSolHome(t)
 
@@ -1305,92 +1252,6 @@ func TestExecSkipsWhenResolveInProgress(t *testing.T) {
 	}
 }
 
-func TestCooldownEnforced(t *testing.T) {
-	solHome := setupSolHome(t)
-
-	// Create governor directory (no tether — exempt from cooldown).
-	govDir := filepath.Join(solHome, "ember", "governor")
-	if err := os.MkdirAll(govDir, 0o755); err != nil {
-		t.Fatalf("failed to create governor dir: %v", err)
-	}
-
-	// Write a fresh marker for an outpost agent.
-	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
-		t.Fatalf("failed to write tether: %v", err)
-	}
-	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
-	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
-		t.Fatalf("failed to create worktree dir: %v", err)
-	}
-
-	// Write a very recent marker (simulates just-completed handoff).
-	if err := WriteMarker("ember", "Toast", "outpost", "previous handoff"); err != nil {
-		t.Fatalf("WriteMarker failed: %v", err)
-	}
-
-	registerMinimalRole(t, "governor", govDir)
-
-	// Governor should NOT be affected by cooldown (exempt).
-	mgr := &mockSessionMgr{}
-	ts := &mockSphereStore{}
-	start := time.Now()
-	err := Exec(ExecOpts{
-		World:         "ember",
-		AgentName:     "governor",
-		Role:          "governor",
-		WorktreeDir:   govDir,
-		StartupSphere: &mockStartupSphere{},
-	}, mgr, ts, nil)
-	if err != nil {
-		t.Fatalf("governor Exec failed: %v", err)
-	}
-	if time.Since(start) > 5*time.Second {
-		t.Error("governor handoff should be exempt from cooldown")
-	}
-}
-
-func TestExecCycleFallback(t *testing.T) {
-	solHome := setupSolHome(t)
-
-	// Create governor directory (no tether).
-	govDir := filepath.Join(solHome, "ember", "governor")
-	if err := os.MkdirAll(govDir, 0o755); err != nil {
-		t.Fatalf("failed to create governor dir: %v", err)
-	}
-
-	registerMinimalRole(t, "governor", govDir)
-
-	mgr := &mockSessionMgr{cycleErr: fmt.Errorf("respawn-pane failed")}
-	ts := &mockSphereStore{}
-
-	err := Exec(ExecOpts{
-		World:         "ember",
-		AgentName:     "governor",
-		Role:          "governor",
-		WorktreeDir:   govDir,
-		StartupSphere: &mockStartupSphere{},
-	}, mgr, ts, nil)
-
-	if err != nil {
-		t.Fatalf("Exec should succeed with fallback: %v", err)
-	}
-
-	// Cycle was attempted but failed.
-	if len(mgr.cycled) != 0 {
-		t.Errorf("expected no successful Cycle calls, got %d", len(mgr.cycled))
-	}
-	// Fallback: Stop then Start.
-	if len(mgr.stopped) != 1 {
-		t.Errorf("expected 1 Stop call (fallback), got %d", len(mgr.stopped))
-	}
-	if len(mgr.started) != 1 {
-		t.Fatalf("expected 1 Start call (fallback), got %d", len(mgr.started))
-	}
-	if mgr.started[0].Role != "governor" {
-		t.Errorf("expected role governor, got %q", mgr.started[0].Role)
-	}
-}
-
 func TestExecEnvoyBriefSave(t *testing.T) {
 	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
 	solHome := setupSolHome(t)
@@ -1442,51 +1303,6 @@ func TestExecEnvoyBriefSave(t *testing.T) {
 	}
 	if mgr.cycled[0].Role != "envoy" {
 		t.Errorf("expected role envoy, got %q", mgr.cycled[0].Role)
-	}
-}
-
-func TestExecGovernorBriefSave(t *testing.T) {
-	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
-	solHome := setupSolHome(t)
-
-	// Set up governor with brief directory.
-	govDir := filepath.Join(solHome, "ember", "governor")
-	briefDir := filepath.Join(govDir, ".brief")
-	if err := os.MkdirAll(briefDir, 0o755); err != nil {
-		t.Fatalf("failed to create brief dir: %v", err)
-	}
-
-	registerMinimalRole(t, "governor", govDir)
-
-	mgr := &mockSessionMgr{
-		exists:         true,
-		captureResults: []string{"stable", "stable", "stable"},
-	}
-	ts := &mockSphereStore{}
-
-	err := Exec(ExecOpts{
-		World:         "ember",
-		AgentName:     "governor",
-		Role:          "governor",
-		WorktreeDir:   govDir,
-		StartupSphere: &mockStartupSphere{},
-	}, mgr, ts, nil)
-
-	if err != nil {
-		t.Fatalf("Exec failed: %v", err)
-	}
-
-	// Brief save prompt should have been sent via NudgeSession.
-	if len(mgr.nudged) != 1 {
-		t.Fatalf("expected 1 NudgeSession call for governor, got %d", len(mgr.nudged))
-	}
-	if mgr.nudged[0].Message != BriefSavePrompt {
-		t.Errorf("expected BriefSavePrompt, got %q", mgr.nudged[0].Message)
-	}
-
-	// Session should be cycled.
-	if len(mgr.cycled) != 1 {
-		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
 	}
 }
 

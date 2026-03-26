@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -134,12 +133,6 @@ func (r *Forge) Release(mrID string) (failed bool, err error) {
 		return false, err
 	}
 
-	// Nudge governor about push rejection (best-effort).
-	r.nudgeGovernor("PUSH_REJECTED",
-		fmt.Sprintf("MR %s push rejected (attempt %d/%d)", mrID, mr.Attempts, r.cfg.MaxAttempts),
-		fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"attempts":%d,"max_attempts":%d}`,
-			mr.WritID, mrID, mr.Branch, mr.Attempts, r.cfg.MaxAttempts))
-
 	return false, nil
 }
 
@@ -200,12 +193,6 @@ func (r *Forge) MarkMerged(mrID string) error {
 	r.resolveEscalationsForWrit(mr.WritID)
 
 	r.logger.Info("merged", "mr", mrID, "writ", mr.WritID, "branch", mr.Branch)
-
-	// Nudge governor that MR was merged (best-effort).
-	r.nudgeGovernor("MERGED",
-		fmt.Sprintf("MR %s merged", mrID),
-		fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`,
-			mr.WritID, mrID, mr.Branch, r.writTitle(mr.WritID)))
 
 	return nil
 }
@@ -282,7 +269,7 @@ func (r *Forge) resolveEscalationsForWrit(writID string) {
 }
 
 // MarkFailed sets MR phase to failed, reopens the writ for re-dispatch,
-// and creates an escalation so the governor knows work needs attention.
+// and creates an escalation for visibility.
 func (r *Forge) MarkFailed(mrID string) error {
 	mr, err := r.worldStore.GetMergeRequest(mrID)
 	if err != nil {
@@ -309,7 +296,7 @@ func (r *Forge) MarkFailed(mrID string) error {
 		return fmt.Errorf("failed to mark MR as failed: %w", err)
 	}
 
-	// Create escalation so the governor knows about the failure (best-effort).
+	// Create escalation for visibility (best-effort).
 	desc := fmt.Sprintf("Merge failed for MR %s (branch %s, writ %s).", mrID, mr.Branch, mr.WritID)
 	if reopenErr != nil {
 		desc += fmt.Sprintf(" Writ reopen also failed: %v", reopenErr)
@@ -346,12 +333,6 @@ func (r *Forge) MarkFailed(mrID string) error {
 
 	r.logger.Info("marked failed and reopened", "mr", mrID,
 		"writ", mr.WritID, "branch", mr.Branch)
-
-	// Nudge governor that merge failed (best-effort).
-	r.nudgeGovernor("MERGE_FAILED",
-		fmt.Sprintf("MR %s merge failed", mrID),
-		fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"reason":"merge failed, writ reopened"}`,
-			mr.WritID, mrID, mr.Branch))
 
 	return nil
 }
@@ -427,12 +408,6 @@ Instructions (follow every step in order):
 
 	r.logger.Info("created resolution task", "mr", mr.ID, "task", taskID,
 		"branch", mr.Branch)
-
-	// Nudge governor that MR is blocked on conflict resolution (best-effort).
-	r.nudgeGovernor("CONFLICT_BLOCKED",
-		fmt.Sprintf("MR %s blocked on conflict resolution", mr.ID),
-		fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"resolution_task_id":%q}`,
-			mr.WritID, mr.ID, mr.Branch, taskID))
 
 	return taskID, nil
 }
@@ -539,25 +514,6 @@ func (r *Forge) QualityGates() []string { return r.cfg.QualityGates }
 // GetWrit returns a writ by ID (convenience accessor).
 func (r *Forge) GetWrit(id string) (*store.Writ, error) {
 	return r.worldStore.GetWrit(id)
-}
-
-// nudgeGovernor enqueues a message to the governor's nudge queue.
-// Best-effort: logs and swallows errors, skips silently if no governor is configured.
-func (r *Forge) nudgeGovernor(msgType, subject, body string) {
-	govDir := config.AgentDir(r.world, "governor", "governor")
-	if _, err := os.Stat(govDir); err != nil {
-		return // no governor configured — skip silently
-	}
-	govSession := config.SessionName(r.world, "governor")
-	if err := nudge.Deliver(govSession, nudge.Message{
-		Sender:   "forge",
-		Type:     msgType,
-		Subject:  subject,
-		Body:     body,
-		Priority: "normal",
-	}); err != nil {
-		r.logger.Warn("failed to nudge governor", "type", msgType, "error", err)
-	}
 }
 
 // writTitle fetches the title of a writ, returning "" on error.

@@ -277,7 +277,7 @@ func formatLedgerDetail(l LedgerInfo) string {
 func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 	// Use tabwriter for alignment.
 	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "  WORLD\tAGENTS\tENVOYS\tGOV\tFORGE\tSENTINEL\tMR QUEUE\tHEALTH\n")
+	fmt.Fprintf(tw, "  WORLD\tAGENTS\tENVOYS\tFORGE\tSENTINEL\tMR QUEUE\tHEALTH\n")
 
 	for _, w := range worlds {
 		if w.Sleeping {
@@ -290,9 +290,9 @@ func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 			if w.Envoys > 0 {
 				envoys = fmt.Sprintf("%d", w.Envoys)
 			}
-			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				w.Name,
-				agents, envoys, style.Dim.Render("—"),
+				agents, envoys,
 				style.Dim.Render("—"), style.Dim.Render("—"), style.Dim.Render("—"),
 				sleepingBadge)
 			continue
@@ -316,11 +316,6 @@ func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 
 		envoys := fmt.Sprintf("%d", w.Envoys)
 
-		gov := style.Dim.Render("—")
-		if w.Governor {
-			gov = style.OK.Render("●")
-		}
-
 		forge := style.Dim.Render("—")
 		if w.Forge {
 			forge = style.OK.Render("✓")
@@ -341,8 +336,8 @@ func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
 
 		health := healthBadge(w.Health)
 
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			w.Name, agents, envoys, gov, forge, sentinel, mrQueue, health)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			w.Name, agents, envoys, forge, sentinel, mrQueue, health)
 	}
 	tw.Flush()
 }
@@ -415,8 +410,6 @@ func RenderWorld(ws *WorldStatus) string {
 	renderProcess(&b, "Broker", ws.Broker.Running, true,
 		formatBrokerDetail(ws.Broker))
 	renderBrokerTokenHealth(&b, ws.Broker.TokenHealth)
-	renderProcess(&b, "Governor", ws.Governor.Running, false,
-		formatGovernorDetail(ws.Governor))
 	b.WriteString("\n")
 
 	// Outposts (role=outpost only).
@@ -515,14 +508,6 @@ func formatSentinelDetail(s SentinelInfo) string {
 		return fmt.Sprintf("pid %d", s.PID)
 	}
 	return ""
-}
-
-func formatGovernorDetail(g GovernorInfo) string {
-	detail := ""
-	if g.BriefAge != "" {
-		detail = "brief: " + g.BriefAge + " ago"
-	}
-	return detail
 }
 
 // stateStyle maps an agent/envoy state to its styled display string.
@@ -758,15 +743,13 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 	renderBrokerTokenHealth(&b, ws.Broker.TokenHealth)
 	b.WriteString("\n")
 
-	// World processes (Forge, Sentinel, Governor — not Prefect/Chronicle).
+	// World processes (Forge, Sentinel — not Prefect/Chronicle).
 	b.WriteString(style.Header.Render("World Processes"))
 	b.WriteString("\n")
 	renderProcess(&b, "Forge", ws.Forge.Running, false,
 		formatForgeDetail(ws.Forge))
 	renderProcess(&b, "Sentinel", ws.Sentinel.Running, false,
 		formatSentinelDetail(ws.Sentinel))
-	renderProcess(&b, "Governor", ws.Governor.Running, false,
-		formatGovernorDetail(ws.Governor))
 	b.WriteString("\n")
 
 	// Outposts (role=outpost only).
@@ -850,16 +833,13 @@ func RenderWorldConfig(world string, cfg config.WorldConfig) string {
 
 	// Show per-role model overrides if any are configured.
 	m := cfg.Agents.Models
-	if m.Outpost != "" || m.Envoy != "" || m.Governor != "" || m.Forge != "" {
+	if m.Outpost != "" || m.Envoy != "" || m.Forge != "" {
 		b.WriteString("  Model overrides:\n")
 		if m.Outpost != "" {
 			b.WriteString(fmt.Sprintf("    outpost:      %s\n", m.Outpost))
 		}
 		if m.Envoy != "" {
 			b.WriteString(fmt.Sprintf("    envoy:        %s\n", m.Envoy))
-		}
-		if m.Governor != "" {
-			b.WriteString(fmt.Sprintf("    governor:     %s\n", m.Governor))
 		}
 		if m.Forge != "" {
 			b.WriteString(fmt.Sprintf("    forge:        %s\n", m.Forge))

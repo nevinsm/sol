@@ -35,7 +35,7 @@ var sphereDaemons = []sphereDaemon{
 }
 
 // worldServices are the per-world services started/stopped by sol up/down.
-// Governor is not auto-started (human-managed session).
+// Envoy is not auto-started (human-managed session).
 var worldServices = []string{"sentinel", "forge"}
 
 var (
@@ -73,7 +73,7 @@ func init() {
 
 	downCmd.Flags().StringVar(&downWorldFlag, "world", "", "stop only world services (optionally for a specific world)")
 	downCmd.Flags().Lookup("world").NoOptDefVal = ""
-	downCmd.Flags().BoolVar(&downAllFlag, "all", false, "also stop envoy and governor sessions")
+	downCmd.Flags().BoolVar(&downAllFlag, "all", false, "also stop envoy sessions")
 }
 
 // --- PID helpers ---
@@ -493,7 +493,7 @@ func runDown(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// With --all, also stop envoys and governors.
+	// With --all, also stop envoys.
 	if downAllFlag {
 		if stopManagedSessions(worlds) {
 			hadFailure = true
@@ -700,7 +700,7 @@ func stopWorldServicesBatch(worlds []string) bool {
 	return hadFailure
 }
 
-// stopManagedSessions stops envoy and governor sessions.
+// stopManagedSessions stops envoy sessions.
 // Called by sol down --all.
 // Returns true if any session failed to stop.
 func stopManagedSessions(worlds []string) bool {
@@ -712,13 +712,13 @@ func stopManagedSessions(worlds []string) bool {
 	}
 	var results []result
 
-	// Query sphere store for envoys and governors.
+	// Query sphere store for envoys.
 	sphereStore, err := store.OpenSphere()
 	if err == nil {
 		agents, err := sphereStore.ListAgents("", "")
 		if err == nil {
 			for _, a := range agents {
-				if a.Role != "envoy" && a.Role != "governor" {
+				if a.Role != "envoy" {
 					continue
 				}
 				r := result{role: a.Role, name: config.SessionName(a.World, a.Name)}

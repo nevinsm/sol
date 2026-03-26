@@ -174,7 +174,6 @@ func TestWorldViewRendersProcesses(t *testing.T) {
 		Forge:     status.ForgeInfo{Running: true, PID: 12345},
 		Sentinel:  status.SentinelInfo{Running: true, PID: 200, PatrolCount: 5},
 		Chronicle: status.ChronicleInfo{Running: true, PID: 100},
-		Governor:  status.GovernorInfo{Running: true, BriefAge: "5m"},
 	}
 	wm.updateData(data)
 
@@ -187,7 +186,7 @@ func TestWorldViewRendersProcesses(t *testing.T) {
 		"World Processes",
 		"Prefect",
 		"Chronicle",
-		"3/3 running", // world processes summary
+		"2/2 running", // world processes summary
 	}
 
 	for _, check := range checks {
@@ -1840,13 +1839,6 @@ func TestProcessDetailFormats(t *testing.T) {
 		t.Errorf("broker detail = %q, want %q", d, "5 patrols")
 	}
 
-	// Governor detail.
-	if d := formatGovernorDetail(status.GovernorInfo{Running: true, BriefAge: "10m"}); d != "brief: 10m ago" {
-		t.Errorf("governor detail = %q, want %q", d, "brief: 10m ago")
-	}
-	if d := formatGovernorDetail(status.GovernorInfo{Running: true}); d != "" {
-		t.Errorf("governor detail without brief age should be empty, got %q", d)
-	}
 }
 
 func TestFeedLoadInitial(t *testing.T) {

@@ -184,7 +184,7 @@ func sphereRestartCmd(processName string) tea.Cmd {
 // restartTarget describes an item to restart from the world view.
 type restartTarget struct {
 	name          string // display name (agent name or service name)
-	role          string // "outpost", "envoy", "forge", "sentinel", "governor"
+	role          string // "outpost", "envoy", "forge", "sentinel"
 	world         string
 	sessionName   string // tmux session name
 	confirmTitle  string // e.g. "Restart Toast?"
@@ -212,7 +212,7 @@ func worldRestartCmd(target restartTarget) tea.Cmd {
 		switch target.role {
 		case "outpost", "envoy":
 			err = restartAgent(target.world, target.name, target.role, target.sessionName)
-		case "forge", "sentinel", "governor":
+		case "forge", "sentinel":
 			err = restartService(target.world, target.role)
 		default:
 			err = fmt.Errorf("unknown restart target role %q", target.role)

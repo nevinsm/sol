@@ -407,7 +407,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	// This covers both outpost and persistent agents.
 	reaped := w.checkClosedWritTethers(agents, &reapedCount, &actionsTaken)
 
-	// Monitor outpost agents — envoys and governors are human-supervised,
+	// Monitor outpost agents — envoys are human-supervised,
 	// forge is supervised by prefect via heartbeat (ADR-0027).
 	var activeAgents []store.Agent
 	for _, a := range agents {
@@ -1222,7 +1222,7 @@ func (w *Sentinel) checkHandoffFrequency(agents []store.Agent) int {
 // quotaPatrol scans all live agent sessions for rate limits. If any are
 // detected, rotates the entire world to a fresh account (all agents get new
 // credentials). If no accounts are available, pauses autonomous agents
-// (outpost, forge, envoy) but leaves governor running.
+// (outpost, forge, envoy).
 // Returns (scanned, rotated, paused).
 func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 	// Build list of live agents with sessions (skip sentinel itself).
@@ -1306,11 +1306,7 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 		// No accounts available — pause autonomous agents on limited accounts.
 		var paused int
 		for _, la := range live {
-			// Governor is never paused — autarch may need it.
-			if la.agent.Role == "governor" {
-				continue
-			}
-			if !limitedAccounts[la.account] {
+				if !limitedAccounts[la.account] {
 				continue
 			}
 
@@ -1421,8 +1417,6 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 func agentWorkdir(world string, agent store.Agent) string {
 	base := config.AgentDir(world, agent.Name, agent.Role)
 	switch agent.Role {
-	case "governor":
-		return base
 	default:
 		return filepath.Join(base, "worktree")
 	}
@@ -1751,7 +1745,7 @@ func (w *Sentinel) escalateFailedRecast(mr store.MergeRequest, item *store.Writ,
 
 // dispatchOrphanedResolutions finds blocked MRs whose resolution writs are
 // open, unassigned, and older than 5 minutes, then dispatches them via castFn.
-// This catches conflict-resolution writs that the governor missed.
+// This catches conflict-resolution writs that were not dispatched.
 // Returns the number of writs dispatched.
 func (w *Sentinel) dispatchOrphanedResolutions() int {
 	if w.castFn == nil {
@@ -1795,7 +1789,7 @@ func (w *Sentinel) dispatchOrphanedResolutions() int {
 			continue
 		}
 
-		// Grace period: let governor handle the nudge first.
+		// Grace period: let other processes handle the nudge first.
 		if time.Since(writ.CreatedAt) < gracePeriod {
 			continue
 		}

@@ -109,7 +109,6 @@ func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 	// World process spinners.
 	wm.syncProcessSpinner("Forge", data.Forge.Running, spinnerForRole("world-process"))
 	wm.syncProcessSpinner("Sentinel", data.Sentinel.Running, spinnerForRole("world-process"))
-	wm.syncProcessSpinner("Governor", data.Governor.Running, spinnerForRole("world-process"))
 
 	// Agent spinners — working agents get spinners.
 	active := make(map[string]bool)
@@ -568,14 +567,6 @@ func buildWorldPeekItems(data *status.WorldStatus) []peekItem {
 		{"Forge", data.Forge.Running, forgeMergeSess, true, "forge"},
 		{"Sentinel", data.Sentinel.Running, "", false, "sentinel"},
 	}
-	if data.Governor.Running || data.Governor.SessionAlive {
-		worldProcs = append(worldProcs, proc{
-			name:    "Governor",
-			running: data.Governor.Running,
-			sessionName: fmt.Sprintf("sol-%s-governor", data.World),
-			source:  "governor",
-		})
-	}
 	for _, p := range worldProcs {
 		state := "stopped"
 		if p.running {
@@ -669,8 +660,6 @@ func (wm worldModel) handleRestart(data *status.WorldStatus) (worldModel, tea.Cm
 			target.confirmDetail = "Stop and restart the forge pipeline"
 		case "sentinel":
 			target.confirmDetail = "Stop and restart the health monitor"
-		case "governor":
-			target.confirmDetail = "Stop and restart the governor"
 		}
 
 	case sectionOutposts:
@@ -1371,12 +1360,11 @@ func scrollIndicator(offset, vpHeight, totalRows int) string {
 }
 
 // worldProcessList returns the list of world processes for the interactive section.
-// Always includes forge, sentinel, and governor regardless of running state.
+// Always includes forge and sentinel regardless of running state.
 func worldProcessList(data *status.WorldStatus) []processEntry {
 	return []processEntry{
 		{"Forge", data.Forge.Running, false},
 		{"Sentinel", data.Sentinel.Running, false},
-		{"Governor", data.Governor.Running, false},
 	}
 }
 

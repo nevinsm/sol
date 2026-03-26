@@ -836,38 +836,14 @@ func TestHeartbeatSkipsEnvoy(t *testing.T) {
 	}
 }
 
-func TestHeartbeatSkipsGovernor(t *testing.T) {
+
+func TestShutdownSkipsEnvoy(t *testing.T) {
 	sphereStore := setupTestEnv(t)
 	mock := newMockSessions()
 	logger := testLogger()
 	cfg := testConfig()
 
-	// Create a governor agent in working state with a dead session.
-	sphereStore.CreateAgent("governor", "haven", "governor")
-	sphereStore.UpdateAgentState("haven/governor", "working", "")
-
-	// Create governor directory (should not matter — should be skipped).
-	govDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "governor")
-	os.MkdirAll(govDir, 0o755)
-
-	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
-
-	// Should NOT have started any sessions.
-	started := mock.GetStarted()
-	if len(started) != 0 {
-		t.Fatalf("expected 0 sessions started for governor, got %d: %v", len(started), started)
-	}
-}
-
-
-func TestShutdownSkipsEnvoyGovernor(t *testing.T) {
-	sphereStore := setupTestEnv(t)
-	mock := newMockSessions()
-	logger := testLogger()
-	cfg := testConfig()
-
-	// Create working agents: one regular, one envoy, one governor — all with live sessions.
+	// Create working agents: one regular and one envoy — both with live sessions.
 	sphereStore.CreateAgent("Toast", "haven", "outpost")
 	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
 	mock.Start("sol-haven-Toast", os.TempDir(), "echo", nil, "outpost", "haven")
@@ -875,10 +851,6 @@ func TestShutdownSkipsEnvoyGovernor(t *testing.T) {
 	sphereStore.CreateAgent("Scout", "haven", "envoy")
 	sphereStore.UpdateAgentState("haven/Scout", "working", "sol-envoy123")
 	mock.Start("sol-haven-Scout", os.TempDir(), "echo", nil, "envoy", "haven")
-
-	sphereStore.CreateAgent("governor", "haven", "governor")
-	sphereStore.UpdateAgentState("haven/governor", "working", "")
-	mock.Start("sol-haven-governor", os.TempDir(), "echo", nil, "governor", "haven")
 
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.shutdown()
@@ -892,12 +864,9 @@ func TestShutdownSkipsEnvoyGovernor(t *testing.T) {
 		t.Errorf("stopped session = %q, want %q", stopped[0], "sol-haven-Toast")
 	}
 
-	// Envoy and governor sessions should still be alive.
+	// Envoy session should still be alive.
 	if !mock.Exists("sol-haven-Scout") {
 		t.Error("envoy session should not be stopped by shutdown")
-	}
-	if !mock.Exists("sol-haven-governor") {
-		t.Error("governor session should not be stopped by shutdown")
 	}
 }
 

@@ -62,81 +62,6 @@ func TestGuidedInitClaudeMD(t *testing.T) {
 	}
 }
 
-func TestGenerateGovernorClaudeMD(t *testing.T) {
-	ctx := protocol.GovernorClaudeMDContext{
-		World:     "myworld",
-		SolBinary: "sol",
-		MirrorDir: "../repo",
-	}
-
-	content := protocol.GenerateGovernorClaudeMD(ctx)
-
-	// Verify world name appears.
-	if !strings.Contains(content, "myworld") {
-		t.Error("CLAUDE.md should contain world name")
-	}
-
-	// Verify managed repo reference.
-	if !strings.Contains(content, "../repo/") {
-		t.Error("CLAUDE.md should contain managed repo directory reference")
-	}
-
-	// Verify world sync command (kept in codebase research section).
-	if !strings.Contains(content, "sol world sync --world=myworld") {
-		t.Error("CLAUDE.md should contain 'sol world sync --world=myworld'")
-	}
-
-	// Lean persona should NOT contain dispatch flow commands (moved to skills).
-	for _, cmd := range []string{
-		"sol store create",
-		"sol cast",
-		"sol caravan create",
-	} {
-		if strings.Contains(content, cmd) {
-			t.Errorf("lean governor CLAUDE.md should not contain dispatch command %q (moved to skills)", cmd)
-		}
-	}
-
-	// Lean persona should NOT contain notification handling section (moved to skills).
-	if strings.Contains(content, "## Notification Handling") {
-		t.Error("lean governor CLAUDE.md should not contain Notification Handling section (moved to skills)")
-	}
-
-	// Should NOT contain CLI reference link (replaced by skills).
-	if strings.Contains(content, ".claude/sol-cli-reference.md") {
-		t.Error("lean governor CLAUDE.md should not reference sol-cli-reference.md")
-	}
-
-	// Verify brief instructions still present.
-	if !strings.Contains(content, ".brief/memory.md") {
-		t.Error("CLAUDE.md should contain brief path reference")
-	}
-	if !strings.Contains(content, "200 lines") {
-		t.Error("CLAUDE.md should contain brief size guidance")
-	}
-
-	// Verify world summary format still present.
-	if !strings.Contains(content, ".brief/world-summary.md") {
-		t.Error("CLAUDE.md should contain world summary path")
-	}
-	if !strings.Contains(content, "## Project") {
-		t.Error("CLAUDE.md should contain world summary format sections")
-	}
-	if !strings.Contains(content, "## Architecture") {
-		t.Error("CLAUDE.md should contain world summary format sections")
-	}
-
-	// Verify identity section.
-	if !strings.Contains(content, "work coordinator") {
-		t.Error("CLAUDE.md should contain governor identity")
-	}
-
-	// Verify guidelines.
-	if !strings.Contains(content, "You coordinate") {
-		t.Error("CLAUDE.md should contain coordination guideline")
-	}
-}
-
 func TestEnvoyClaudeMDAutoMemoryProhibition(t *testing.T) {
 	ctx := protocol.EnvoyClaudeMDContext{
 		AgentName: "Echo",
@@ -151,23 +76,6 @@ func TestEnvoyClaudeMDAutoMemoryProhibition(t *testing.T) {
 	}
 	if !strings.Contains(content, ".brief/memory.md") {
 		t.Error("envoy CLAUDE.md should reference .brief/memory.md")
-	}
-}
-
-func TestGovernorClaudeMDAutoMemoryProhibition(t *testing.T) {
-	ctx := protocol.GovernorClaudeMDContext{
-		World:     "myworld",
-		SolBinary: "sol",
-		MirrorDir: "../repo",
-	}
-
-	content := protocol.GenerateGovernorClaudeMD(ctx)
-
-	if !strings.Contains(content, "DO NOT") || !strings.Contains(content, "auto-memory") {
-		t.Error("governor CLAUDE.md should contain auto-memory prohibition")
-	}
-	if !strings.Contains(content, ".brief/memory.md") {
-		t.Error("governor CLAUDE.md should reference .brief/memory.md")
 	}
 }
 

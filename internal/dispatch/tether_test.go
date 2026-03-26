@@ -92,37 +92,6 @@ func TestTetherPersistentAgent(t *testing.T) {
 	}
 }
 
-func TestTetherGovernor(t *testing.T) {
-	worldStore, sphereStore := setupStores(t)
-
-	itemID, err := worldStore.CreateWrit("Plan sprint", "Plan the sprint", "autarch", 2, nil)
-	if err != nil {
-		t.Fatalf("failed to create writ: %v", err)
-	}
-
-	if _, err := sphereStore.CreateAgent("governor", "ember", "governor"); err != nil {
-		t.Fatalf("failed to create agent: %v", err)
-	}
-
-	result, err := Tether(TetherOpts{
-		AgentName: "governor",
-		WritID:    itemID,
-		World:     "ember",
-	}, worldStore, sphereStore, nil)
-	if err != nil {
-		t.Fatalf("Tether failed: %v", err)
-	}
-
-	if result.AgentRole != "governor" {
-		t.Errorf("expected role governor, got %q", result.AgentRole)
-	}
-
-	// Verify tether file was written with governor role-aware path.
-	if !tether.IsTetheredTo("ember", "governor", itemID, "governor") {
-		t.Error("expected tether file to exist for governor")
-	}
-}
-
 func TestTetherSecondWrit(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
@@ -197,7 +166,7 @@ func TestTetherRejectsOutpost(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for outpost agent")
 	}
-	if want := `agent "ember/Toast" has role "outpost" — only persistent roles (envoy, governor, forge) can use tether; outposts use sol cast`; err.Error() != want {
+	if want := `agent "ember/Toast" has role "outpost" — only persistent roles (envoy, forge) can use tether; outposts use sol cast`; err.Error() != want {
 		t.Errorf("unexpected error:\n  got:  %v\n  want: %s", err, want)
 	}
 }
@@ -457,13 +426,13 @@ func TestTetherThenUntetherRoundTrip(t *testing.T) {
 		t.Fatalf("failed to create writ: %v", err)
 	}
 
-	if _, err := sphereStore.CreateAgent("governor", "ember", "governor"); err != nil {
+	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
 	// Tether.
 	_, err = Tether(TetherOpts{
-		AgentName: "governor",
+		AgentName: "Meridian",
 		WritID:    itemID,
 		World:     "ember",
 	}, worldStore, sphereStore, nil)
@@ -473,7 +442,7 @@ func TestTetherThenUntetherRoundTrip(t *testing.T) {
 
 	// Untether.
 	_, err = Untether(UntetherOpts{
-		AgentName: "governor",
+		AgentName: "Meridian",
 		WritID:    itemID,
 		World:     "ember",
 	}, worldStore, sphereStore, nil)
@@ -483,7 +452,7 @@ func TestTetherThenUntetherRoundTrip(t *testing.T) {
 
 	// Agent should be idle and retetherable.
 	_, err = Tether(TetherOpts{
-		AgentName: "governor",
+		AgentName: "Meridian",
 		WritID:    itemID,
 		World:     "ember",
 	}, worldStore, sphereStore, nil)

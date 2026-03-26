@@ -204,8 +204,6 @@ func (c WorldConfig) ResolveModel(role string) string {
 		override = c.Agents.Models.Outpost
 	case "envoy":
 		override = c.Agents.Models.Envoy
-	case "governor":
-		override = c.Agents.Models.Governor
 	case "forge", "forge-merge":
 		override = c.Agents.Models.Forge
 	}
@@ -229,8 +227,6 @@ func (c WorldConfig) ResolveRuntime(role string) string {
 		override = c.Agents.Runtimes.Outpost
 	case "envoy":
 		override = c.Agents.Runtimes.Envoy
-	case "governor":
-		override = c.Agents.Runtimes.Governor
 	case "forge", "forge-merge":
 		override = c.Agents.Runtimes.Forge
 	}
@@ -272,9 +268,6 @@ func (c WorldConfig) Validate() error {
 		return err
 	}
 	if err := validModelTier("agents.models.envoy", c.Agents.Models.Envoy); err != nil {
-		return err
-	}
-	if err := validModelTier("agents.models.governor", c.Agents.Models.Governor); err != nil {
 		return err
 	}
 	if err := validModelTier("agents.models.forge", c.Agents.Models.Forge); err != nil {

@@ -30,7 +30,7 @@ type SkillContext struct {
 	World        string
 	AgentName    string
 	SolBinary    string   // path to sol binary (defaults to "sol")
-	Role         string   // outpost, forge, governor, envoy
+	Role         string   // outpost, forge, envoy
 	TargetBranch string   // forge: target branch for merges
 	QualityGates []string // commands to run before resolving
 	OutputDir    string   // persistent output directory for writ
@@ -58,9 +58,8 @@ func init() {
 
 // roleSkillsMap defines which skills belong to each role.
 var roleSkillsMap = map[string][]string{
-	"outpost":  {"resolve-and-handoff"},
-	"governor": {"writ-dispatch", "caravan-management", "world-coordination", "notification-handling", "handoff"},
-	"envoy":    {"resolve-and-submit", "writ-management", "dispatch", "handoff", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail"},
+	"outpost": {"resolve-and-handoff"},
+	"envoy":   {"resolve-and-submit", "writ-management", "dispatch", "handoff", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail"},
 }
 
 // RoleSkills returns the skill names for a given role.
@@ -84,17 +83,10 @@ func generateSkill(name string, ctx SkillContext) string {
 		return skillResolveAndHandoff(ctx)
 	case "resolve-and-submit":
 		return skillResolveAndSubmit(ctx)
-	case "writ-dispatch":
-		return skillWritDispatch(ctx)
 	case "caravan-management":
 		return skillCaravanManagement(ctx)
-	case "world-coordination":
-		return skillWorldCoordination(ctx)
 	case "notification-handling":
-		if ctx.Role == "envoy" {
-			return skillEnvoyNotificationHandling(ctx)
-		}
-		return skillNotificationHandling(ctx)
+		return skillEnvoyNotificationHandling(ctx)
 	case "mail":
 		return skillMail(ctx)
 	case "writ-management":
@@ -130,7 +122,7 @@ description: Submit completed work and end your session — clears tether and en
 - **Code writs:** resolve pushes your branch, creates a merge request, clears the tether, and ends your session.
 - **Analysis writs (kind=analysis):** resolve closes the writ directly — no branch or MR is created. The session ends.
 
-**Session behavior:** For outpost agents, the session ends and the worktree is cleaned up after resolve. Persistent roles (envoy, governor) keep their session alive after resolve.
+**Session behavior:** For outpost agents, the session ends and the worktree is cleaned up after resolve. Persistent roles (envoy) keep their session alive after resolve.
 
 ## When to Use
 
@@ -228,66 +220,6 @@ description: Submit completed work through the forge pipeline — pushes branch,
 		ctx.AgentName)
 }
 
-func skillWritDispatch(ctx SkillContext) string {
-	sol := ctx.sol()
-	world := ctx.World
-	return fmt.Sprintf(`---
-name: writ-dispatch
-description: Create writs and dispatch work to outpost agents — size, prioritize, and send tasks
----
-
-# Writ Dispatch
-
-As governor, you create work and send it to agents — you never do the implementation yourself. A writ is the unit of work: size it so an outpost can complete it in a coherent session. Too large and agents lose focus mid-task; too small and dispatch/merge overhead exceeds the value of the work.
-
-## When to Use
-
-- Create writs for any discrete, self-contained task an outpost can execute
-- Use %[1]s cast%[3]s for disposable outposts (most tasks); use %[1]s tether%[3]s for persistent agents (envoy, governor)
-- Priority 1 = urgent/blocking, 2 = normal, 3 = background
-- Group related writs in a caravan when order matters (see caravan-management skill)
-
-## Creating Work
-
-| Command | Description |
-|---------|-------------|
-| %[1]s writ create --world=%[2]s --title="..." --description="..."%[3]s | Create a new writ |
-
-Options: %[4]s, %[5]s (repeatable), %[6]s, %[7]s (JSON).
-
-## Dispatching
-
-| Command | Description |
-|---------|-------------|
-| %[1]s cast <id> --world=%[2]s%[3]s | Dispatch writ to a disposable outpost |
-| %[1]s tether <id> --agent=<agent> --world=%[2]s%[3]s | Bind writ to a persistent agent |
-| %[1]s untether <id> --agent=<agent> --world=%[2]s%[3]s | Unbind writ from agent |
-
-Cast options: %[8]s (auto if omitted), %[9]s, %[10]s.
-
-## Common Patterns
-
-**Normal dispatch:** %[1]s writ create%[3]s → %[1]s cast <id>%[3]s → await AGENT_DONE notification.
-
-**Batched work:** create all writs → %[1]s caravan create%[3]s → use %[1]s writ dep add%[3]s for file-level conflicts → %[1]s caravan commission%[3]s → consul dispatches ready items automatically. Only use phases when entire batches must land before the next batch starts.
-
-**No idle agents:** writ stays in "ready" state — consul/sentinel picks it up on next patrol (every 5 min). No action needed.
-
-## Failure Modes
-
-- **No agents idle:** writ stays ready — consul dispatches on next patrol. Use %[1]s agent list%[3]s to check availability.
-- **Dispatched to wrong agent:** %[1]s untether <id> --agent=<wrong>%[3]s then re-cast.
-- **Writ too large:** agent loses coherence. Split into smaller writs and use a caravan to sequence them.
-`, "`"+sol, world, "`",
-		"`--priority` (1=high, 2=normal, 3=low)",
-		"`--label`",
-		"`--kind` (code or analysis)",
-		"`--metadata`",
-		"`--agent`",
-		"`--workflow`",
-		"`--account`")
-}
-
 func skillCaravanManagement(ctx SkillContext) string {
 	sol := ctx.sol()
 	world := ctx.World
@@ -295,34 +227,6 @@ func skillCaravanManagement(ctx SkillContext) string {
 	desc := "Commands for grouping and sequencing related writs."
 	var roleSection string
 	switch ctx.Role {
-	case "governor":
-		desc = "Commands for coordinating related writs across agents."
-		roleSection = `
-## Mental Model
-
-A caravan is an ordered batch of writs across phases (0, 1, 2, ...). Items in the same phase run in parallel. Items in phase N are blocked until ALL items in phases < N are **closed** (fully merged, not just done). Phase assignment is manual; consul auto-dispatches ready items every 5 minutes.
-
-## Phases vs Dependencies
-
-**Phases** are for coarse-grained cross-world ordering or layering fundamentally different stages of work (e.g., "build infrastructure" then "deploy services"). All items in phase N must close before phase N+1 starts — this is a hard gate.
-
-**Writ dependencies** (` + "`sol writ dep add <from> <to>`" + `) are for fine-grained within-world ordering where only specific writs block specific other writs. Use dependencies when most writs in a batch can run in parallel but a few have file-level conflicts.
-
-**Rule of thumb:** If writs touch different files and have no logical dependency, put them in the same phase — even if some feel "less important." Priority controls urgency; phases control merge ordering. Don't use phases as a proxy for priority.
-
-## Common Patterns
-
-**Setup:** create writs → ` + "`sol caravan create`" + ` → ` + "`sol caravan set-phase`" + ` for each → ` + "`sol caravan commission`" + `.
-
-**After AGENT_DONE:** ` + "`sol caravan status`" + ` to check progress; consul handles dispatch on next patrol (or ` + "`sol caravan launch`" + ` for immediate).
-
-**Stalled:** ` + "`sol caravan check <id>`" + ` shows which items are blocking — typically an item stuck in forge.
-
-## Failure Modes
-
-- **Phase won't advance:** all prior-phase items must be "closed" (merged), not just "done". Check forge queue for stuck MRs.
-- **No idle agents:** items stay ready; consul dispatches on next patrol cycle.
-- **` + "`sol caravan launch`" + ` with no agents:** exits with message, items stay ready.`
 	case "envoy":
 		desc = "Commands for sequencing your own multi-step work."
 		roleSection = `
@@ -379,109 +283,6 @@ description: %[5]s
 `, "`"+sol, world, "`", desc, fmDesc) + roleSection
 }
 
-func skillWorldCoordination(ctx SkillContext) string {
-	sol := ctx.sol()
-	world := ctx.World
-	return fmt.Sprintf(`---
-name: world-coordination
-description: Monitor agents, sync the repo, check service health, and escalate blockers
----
-
-# World Coordination
-
-As governor, you monitor agent states, keep the managed repo current, watch service health, and escalate what you cannot handle. You don't implement code — you orchestrate the agents that do.
-
-## When to Use
-
-- Check status before dispatching to verify agents are available and forge isn't backed up
-- Sync repo before dispatching work that depends on latest main
-- Escalate when the issue is outside your control (infrastructure, permissions, external services)
-- Handle locally when you can re-dispatch, adjust priorities, or unblock a stuck writ yourself
-
-## Status
-
-| Command | Description |
-|---------|-------------|
-| %[1]s status%[3]s | Sphere overview (processes, worlds, unread mail count) |
-| %[1]s status %[2]s%[3]s | World detail (agents, writs, forge, nudge queue depth) |
-| %[1]s agent list%[3]s | Agent states: working (active), idle (available), stuck (sentinel handles) |
-
-## World Sync
-
-| Command | Description |
-|---------|-------------|
-| %[1]s world sync --world=%[2]s%[3]s | Sync managed repo from upstream |
-
-## Service Management
-
-| Command | Description |
-|---------|-------------|
-| %[1]s sentinel status --world=%[2]s%[3]s | Check sentinel health |
-| %[1]s sentinel restart --world=%[2]s%[3]s | Restart sentinel |
-| %[1]s forge status %[2]s%[3]s | Check forge status |
-| %[1]s service status%[3]s | Show all sphere daemon status |
-| %[1]s down --all%[3]s | Stop all world services |
-
-## Escalation
-
-| Command | Description |
-|---------|-------------|
-| %[1]s escalate "description"%[3]s | Escalate to operator |
-
-## Common Patterns
-
-**Before dispatching:** %[1]s status %[2]s%[3]s → verify idle agents → %[1]s world sync%[3]s if work depends on latest main → cast.
-
-**After AGENT_DONE:** check caravan status → dispatch next-phase items → update brief.
-
-## Failure Modes
-
-- **Agent stuck:** sentinel respawns; sends RECOVERY_NEEDED after exhaustion. Re-dispatch or escalate if pattern repeats.
-- **Forge backlogged:** check %[1]s forge status %[2]s%[3]s — usually self-clears. Escalate if forge process is down.
-- **Sentinel/forge process down:** restart with commands above; escalate if restart fails (operator territory).
-`, "`"+sol, world, "`")
-}
-
-func skillNotificationHandling(ctx SkillContext) string {
-	sol := ctx.sol()
-	return fmt.Sprintf(`---
-name: notification-handling
-description: Handle system notifications — MAIL, AGENT_DONE, MERGED, MERGE_FAILED — and take appropriate action
----
-
-# Notification Handling
-
-Notifications arrive at each turn boundary via UserPromptSubmit hook — a file-based queue drained each turn. Each notification may require dispatching more work or updating caravan state.
-
-Format: %[1]s[NOTIFICATION] TYPE: Subject — Body%[1]s
-
-## When to Act
-
-Read notifications immediately at each turn. Most require a caravan status check and potentially dispatching next work.
-
-## Notification Types
-
-**MAIL** — Operator sent a message via %[2]s mail send%[1]s.
-- Fields: %[1]ssubject%[1]s, %[1]sbody%[1]s
-- Action: Read and respond. Check %[2]s mail inbox%[1]s for full context.
-
-**AGENT_DONE** — An outpost resolved a writ.
-- Fields: %[1]swrit_id%[1]s, %[1]sagent_name%[1]s, %[1]sbranch%[1]s, %[1]stitle%[1]s, %[1]smerge_request_id%[1]s
-- Action: (1) Note resolution. (2) %[2]s caravan status%[1]s if part of caravan. (3) Dispatch next ready work if agents idle. MR is already in forge queue — no merge action needed.
-
-**MERGED** — Forge successfully merged a writ.
-- Fields: %[1]swrit_id%[1]s, %[1]smerge_request_id%[1]s, %[1]stitle%[1]s
-- Action: (1) Check if this unblocks next-phase caravan items. (2) Dispatch newly-ready items. (3) Caravan auto-closes when all items merged. (4) Update brief.
-
-**MERGE_FAILED** — Forge failed to merge.
-- Fields: %[1]swrit_id%[1]s, %[1]smerge_request_id%[1]s, %[1]sreason%[1]s
-- Side effects: writ reopened, escalation created, agent set idle.
-- Action: (1) Check reason (conflicts or gate failure). (2) For conflicts: writ already open — re-dispatch. (3) For gate failure: investigate test/lint. (4) Re-dispatch when ready.
-
-Always update your brief after handling notifications.
-`, "`", "`"+sol)
-}
-
 func skillEnvoyNotificationHandling(_ SkillContext) string {
 	return `---
 name: notification-handling
@@ -499,10 +300,6 @@ Format: ` + "`[NOTIFICATION] TYPE: Subject — Body`" + `
 **MAIL** — Operator or another agent sent a message via ` + "`sol mail send`" + `.
 - Fields: ` + "`subject`" + `, ` + "`body`" + `
 - Action: Read and acknowledge. The sender is communicating directly — respond to the content.
-
-## Note on Other Notification Types
-
-MERGED, MERGE_FAILED, and AGENT_DONE notifications are delivered to the governor, not to envoys. To track writ progress, use ` + "`sol writ show <id>`" + ` or ` + "`sol status`" + ` instead of waiting for notifications.
 
 Always update your brief after handling a notification.
 `
@@ -770,7 +567,6 @@ Status indicators: %[4]s✓%[5]s = healthy/running, %[4]s○%[5]s = not running,
 | %[1]s chronicle status%[3]s | Chronicle status |
 | %[1]s ledger status%[3]s | Ledger OTLP receiver status |
 | %[1]s sentinel status --world=%[2]s%[3]s | Sentinel health for this world |
-| %[1]s governor status --world=%[2]s%[3]s | Governor status for this world |
 | %[1]s forge status %[2]s%[3]s | Forge status for this world |
 
 ## Common Patterns
@@ -788,14 +584,13 @@ func skillWorldOperations(ctx SkillContext) string {
 	world := ctx.World
 	return fmt.Sprintf(`---
 name: world-operations
-description: Sync the managed repo, inspect world health, and query the governor
+description: Sync the managed repo and inspect world health
 ---
 
 # World Operations
 
-World operations let you sync the managed repo, inspect world health, and
-query the governor. As an envoy, you'll mainly use world sync and governor
-queries. Service lifecycle commands (install, uninstall, down) are usually
+World operations let you sync the managed repo and inspect world health.
+Service lifecycle commands (install, uninstall, down) are usually
 operator territory — use them only if the operator has asked or you're doing
 explicit infrastructure work.
 
@@ -803,10 +598,7 @@ explicit infrastructure work.
 
 - **World sync:** Before starting work that depends on latest main, or when
   merge conflicts appear from an outdated base
-- **World summary:** When you need a current-state snapshot — reads a file,
-  doesn't wake the governor
-- **World query:** When you need live governor context not captured in the
-  summary — wakes the session if idle, so prefer summary when possible
+- **World status:** Check overall world health, agent states, forge queue
 
 ## Commands
 
@@ -814,8 +606,6 @@ explicit infrastructure work.
 |---------|-------------|
 | %[1]s world sync --world=%[2]s%[3]s | Sync managed repo from upstream |
 | %[1]s world status %[2]s%[3]s | World health overview |
-| %[1]s world summary %[2]s%[3]s | Read governor's world summary (cheap) |
-| %[1]s world query %[2]s "question"%[3]s | Query the governor directly (wakes session) |
 
 ## Service Lifecycle
 
@@ -832,16 +622,12 @@ explicit infrastructure work.
 %[1]s world sync --world=%[2]s%[3]s → pull latest in your worktree
 
 **Checking world state before dispatching:**
-%[1]s world summary %[2]s%[3]s → read snapshot → run %[1]s world query%[3]s only if you need live detail
+%[1]s world status %[2]s%[3]s → check agents, forge, sentinel status
 
 ## Failure Modes
 
 **Sync fails with conflict:** The managed repo has diverged. Check
 %[1]s world status %[2]s%[3]s and escalate if operator intervention is needed.
-
-**Governor not responding:** %[1]s world query%[3]s hangs or errors. Check
-%[1]s governor status --world=%[2]s%[3]s. The summary may still be readable
-even when the governor is idle — try that first.
 `, "`"+sol, world, "`")
 }
 

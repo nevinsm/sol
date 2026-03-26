@@ -7,7 +7,6 @@ import (
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/forge"
-	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -91,8 +90,6 @@ func worktreeDirForRole(world, agentName, role string) string {
 	switch role {
 	case "envoy":
 		return envoy.WorktreePath(world, agentName)
-	case "governor":
-		return governor.GovernorDir(world)
 	case "forge":
 		return forge.WorktreePath(world)
 	default:

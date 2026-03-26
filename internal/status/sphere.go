@@ -217,7 +217,7 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 	}
 
 	// Sleeping worlds: still count active agents/envoys, but skip
-	// forge/sentinel/governor/MR checks.
+	// forge/sentinel/MR checks.
 	if summary.Sleeping {
 		summary.Health = "sleeping"
 
@@ -228,7 +228,7 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 				switch a.Role {
 				case "envoy":
 					summary.Envoys++
-				case "forge", "sentinel", "consul", "governor":
+				case "forge", "sentinel", "consul":
 					continue
 				default: // "outpost"
 					summary.Agents++
@@ -258,17 +258,11 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 	sentinelPID := sentinel.ReadPID(w.Name)
 	summary.Sentinel = sentinelPID > 0 && prefect.IsRunning(sentinelPID)
 
-	// Check governor.
-	govSess := config.SessionName(w.Name, "governor")
-	govSessAlive := checker.Exists(govSess)
-
 	// Agent counts from sphere store, separated by role.
 	agents, err := sphereStore.ListAgents(w.Name, "")
 	if err == nil {
 		for _, a := range agents {
 			switch a.Role {
-			case "governor":
-				summary.Governor = govSessAlive
 			case "envoy":
 				summary.Envoys++
 			case "forge", "sentinel", "consul":

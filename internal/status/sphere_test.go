@@ -481,7 +481,7 @@ func writeBrokerHeartbeat(t *testing.T, hb *broker.Heartbeat) {
 	}
 }
 
-func TestGatherSphereWithEnvoysAndGovernor(t *testing.T) {
+func TestGatherSphereWithEnvoys(t *testing.T) {
 	setupTestHome(t)
 
 	pidCleanup := writePrefectPID(t, os.Getpid())
@@ -498,14 +498,12 @@ func TestGatherSphereWithEnvoysAndGovernor(t *testing.T) {
 			{ID: "haven/Crisp", Name: "Crisp", World: "haven", Role: "outpost", State: store.AgentIdle},
 			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: store.AgentWorking},
 			{ID: "haven/Ranger", Name: "Ranger", World: "haven", Role: "envoy", State: store.AgentIdle},
-			{ID: "haven/governor", Name: "governor", World: "haven", Role: "governor", State: store.AgentIdle},
 			{ID: "haven/forge", Name: "forge", World: "haven", Role: "forge", State: store.AgentIdle},
 		},
 	}
 	checker := &mockChecker{
 		alive: map[string]bool{
-			"sol-haven-Toast":    true,
-			"sol-haven-governor": true,
+			"sol-haven-Toast": true,
 		},
 	}
 
@@ -522,9 +520,6 @@ func TestGatherSphereWithEnvoysAndGovernor(t *testing.T) {
 	}
 	if w.Envoys != 2 {
 		t.Errorf("Envoys = %d, want 2", w.Envoys)
-	}
-	if !w.Governor {
-		t.Error("Governor = false, want true")
 	}
 	// Only outpost agents in working/idle counts.
 	if w.Working != 1 {
@@ -728,9 +723,6 @@ func TestGatherSphereSleepingWorldShowsAgentCounts(t *testing.T) {
 	}
 	if w.Sentinel {
 		t.Error("Sentinel = true, want false (suppressed for sleeping worlds)")
-	}
-	if w.Governor {
-		t.Error("Governor = true, want false (suppressed for sleeping worlds)")
 	}
 }
 

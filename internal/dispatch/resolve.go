@@ -12,7 +12,6 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
-	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -177,9 +176,6 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	case "envoy":
 		worktreeDir = envoy.WorktreePath(opts.World, opts.AgentName)
 		branchName = fmt.Sprintf("envoy/%s/%s/%s", opts.World, opts.AgentName, writID)
-	case "governor":
-		worktreeDir = governor.GovernorDir(opts.World)
-		branchName = fmt.Sprintf("governor/%s", opts.World)
 	case "forge":
 		worktreeDir = filepath.Join(config.Home(), opts.World, "forge", "worktree")
 		branchName = "forge/" + opts.World
@@ -206,7 +202,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	}
 
 	// Determine if this is a code writ. Non-code writs (analysis, etc.) skip
-	// git operations, MR creation, and forge/governor nudges entirely.
+	// git operations, MR creation, and forge nudges entirely.
 	isCodeWrit := item.Kind == "" || item.Kind == "code"
 
 	var mrID string
@@ -346,7 +342,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 
 	// 6. Update agent state.
 	// Outpost agents are ephemeral — delete the record to reclaim the name.
-	// Persistent roles (envoy, governor) keep their record and update state
+	// Persistent roles (envoy) keep their record and update state
 	// based on remaining tethers.
 	if agent.Role == "outpost" {
 		// Re-read agent to check if already deleted (idempotent re-run).
@@ -384,8 +380,8 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		}
 	}
 
-	// 6b. Clean up workflow if present (envoys and governors don't use workflow system).
-	if agent.Role != "envoy" && agent.Role != "governor" {
+	// 6b. Clean up workflow if present (envoys don't use workflow system).
+	if agent.Role != "envoy" {
 		if _, err := workflow.ReadState(opts.World, opts.AgentName, agent.Role); err == nil {
 			if removeErr := workflow.Remove(opts.World, opts.AgentName, agent.Role); removeErr != nil {
 				fmt.Fprintf(os.Stderr, "resolve: failed to clean up workflow: %v\n", removeErr)
@@ -394,11 +390,11 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	}
 
 	// 7. Stop session after a brief delay to allow final output.
-	// Envoys and governors keep their session alive — they are human-supervised and persistent.
+	// Envoys keep their session alive — they are human-supervised and persistent.
 	// We wait for completion to prevent worktree cleanup from racing with a re-cast
 	// that reuses the same agent name.
 	sessionKept := false
-	if agent.Role != "envoy" && agent.Role != "governor" && agent.Role != "forge" {
+	if agent.Role != "envoy" && agent.Role != "forge" {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
@@ -427,20 +423,6 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 			})
 		}
 
-		// Nudge governor that work is done (best-effort, smart delivery).
-		govSession := config.SessionName(opts.World, "governor")
-		govBody := fmt.Sprintf(`{"writ_id":%q,"agent_name":%q,"branch":%q,"title":%q,"merge_request_id":%q}`,
-			writID, opts.AgentName, branchName, item.Title, mrID)
-		if err := nudge.Deliver(govSession, nudge.Message{
-			Sender:   opts.AgentName,
-			Type:     "AGENT_DONE",
-			Subject:  fmt.Sprintf("Agent %s resolved %s", opts.AgentName, writID),
-			Body:     govBody,
-			Priority: "normal",
-		}); err != nil {
-			fmt.Fprintf(os.Stderr, "resolve: failed to nudge governor: %v\n", err)
-		}
-
 		// Nudge forge that a new MR is ready (best-effort, smart delivery).
 		// Only send when an MR was actually created — an empty mrID means push
 		// failed and no MR exists yet, so waking forge would be a no-op.
@@ -466,19 +448,6 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 			})
 		}
 
-		// Nudge governor that non-code work is done (best-effort, smart delivery).
-		govSession := config.SessionName(opts.World, "governor")
-		govBody := fmt.Sprintf(`{"writ_id":%q,"agent_name":%q,"kind":%q,"title":%q}`,
-			writID, opts.AgentName, item.Kind, item.Title)
-		if err := nudge.Deliver(govSession, nudge.Message{
-			Sender:   opts.AgentName,
-			Type:     "AGENT_DONE",
-			Subject:  fmt.Sprintf("Agent %s resolved %s", opts.AgentName, writID),
-			Body:     govBody,
-			Priority: "normal",
-		}); err != nil {
-			fmt.Fprintf(os.Stderr, "resolve: failed to nudge governor: %v\n", err)
-		}
 	}
 
 	// 9. Close history record for cycle-time tracking.
@@ -631,8 +600,8 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 		}
 	}
 
-	// 5b. Clean up workflow if present (envoys and governors don't use workflow system).
-	if role != "envoy" && role != "governor" {
+	// 5b. Clean up workflow if present (envoys don't use workflow system).
+	if role != "envoy" {
 		if _, err := workflow.ReadState(opts.World, opts.AgentName, role); err == nil {
 			if removeErr := workflow.Remove(opts.World, opts.AgentName, role); removeErr != nil {
 				fmt.Fprintf(os.Stderr, "resolve: failed to clean up workflow: %v\n", removeErr)
@@ -641,11 +610,11 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	}
 
 	// 6. Stop session after a brief delay to allow final output.
-	// Envoys and governors keep their session alive — they are human-supervised and persistent.
+	// Envoys keep their session alive — they are human-supervised and persistent.
 	// We wait for completion to prevent worktree cleanup from racing with a re-cast
 	// that reuses the same agent name.
 	sessionKept := false
-	if role != "envoy" && role != "governor" && role != "forge" {
+	if role != "envoy" && role != "forge" {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)

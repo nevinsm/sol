@@ -13,7 +13,6 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/forge"
-	"github.com/nevinsm/sol/internal/governor"
 	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/setup"
@@ -33,7 +32,6 @@ var (
 	worldDeleteConfirm       bool
 	worldSyncWorld           string
 	worldSyncAll             bool
-	worldQueryTimeout        int
 	worldCloneIncludeHistory bool
 	worldImportName          string
 	worldSleepForce          bool
@@ -74,7 +72,6 @@ world.toml configuration reference:
   [agents.models]                 # optional per-role model overrides
   outpost = "sonnet"              # overrides model_tier for outpost agents
   envoy = "opus"                  # overrides model_tier for envoy agents
-  governor = "opus"               # overrides model_tier for governor
   forge = "sonnet"                # overrides model_tier for forge
 
   [forge]
@@ -397,7 +394,7 @@ var worldSyncCmd = &cobra.Command{
 If the managed repo doesn't exist yet but source_repo is configured
 in world.toml, clones it first.
 
-With --all, also syncs forge worktree and notifies running envoy/governor sessions.`,
+With --all, also syncs forge worktree and notifies running envoy sessions.`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, err := config.ResolveWorld(worldSyncWorld)
@@ -460,114 +457,6 @@ With --all, also syncs forge worktree and notifies running envoy/governor sessio
 			}
 		}
 
-		return nil
-	},
-}
-
-var worldQueryCmd = &cobra.Command{
-	Use:          "query <name> <question>",
-	Short:        "Query a world's governor for information",
-	Long: `Inject a question into the governor's tmux session and wait for a response.
-
-The governor reads the question from .query/pending.md, writes its answer to
-.query/response.md, and the CLI returns the response. If the governor is not
-running, returns an error (callers should fall back to the static world summary).`,
-	Args:         cobra.MinimumNArgs(2),
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-		question := strings.Join(args[1:], " ")
-
-		if err := config.RequireWorld(world); err != nil {
-			return err
-		}
-
-		// Check governor session is running.
-		mgr := session.New()
-		sessName := config.SessionName(world, "governor")
-		if !mgr.Exists(sessName) {
-			return fmt.Errorf("governor not running for world %q (start with 'sol governor start --world=%s')", world, world)
-		}
-
-		// Acquire exclusive query lock — serializes concurrent queries so they
-		// do not overwrite each other's pending/response files.
-		lockTimeout := time.Duration(worldQueryTimeout) * time.Second
-		lock, lockErr := governor.AcquireQueryLock(world, lockTimeout)
-		if lockErr != nil {
-			return fmt.Errorf("failed to acquire query lock: %w", lockErr)
-		}
-		defer lock.Release()
-
-		// Clear any stale query files now that we hold the lock.
-		governor.ClearQuery(world)
-
-		// Write question to pending.md; nonce is used to detect stale responses.
-		nonce, err := governor.WritePending(world, question)
-		if err != nil {
-			return fmt.Errorf("failed to write query: %w", err)
-		}
-
-		// Inject notification into governor's tmux session.  The nonce must be
-		// echoed back on the first line of response.md so the client can reject
-		// responses from a previous timed-out query.
-		notification := fmt.Sprintf(
-			"A query has been submitted (ID: %s). Read the question from %s. "+
-				"Write your response to %s, starting with the exact line 'QUERY-ID: %s', "+
-				"then provide your full answer on the following lines. Then continue your work.",
-			nonce, governor.PendingPath(world), governor.ResponsePath(world), nonce)
-		if err := mgr.Inject(sessName, notification, true); err != nil {
-			governor.ClearQuery(world)
-			return fmt.Errorf("failed to inject query into governor session: %w", err)
-		}
-
-		// Poll for response with timeout.
-		timeout := time.Duration(worldQueryTimeout) * time.Second
-		deadline := time.Now().Add(timeout)
-		pollInterval := 2 * time.Second
-
-		for time.Now().Before(deadline) {
-			response, found, err := governor.ReadResponse(world, nonce)
-			if err != nil {
-				governor.ClearQuery(world)
-				return fmt.Errorf("failed to read query response: %w", err)
-			}
-			if found {
-				fmt.Print(response)
-				governor.ClearQuery(world)
-				return nil
-			}
-			time.Sleep(pollInterval)
-		}
-
-		governor.ClearQuery(world)
-		return fmt.Errorf("query timed out after %ds waiting for governor response in world %q", worldQueryTimeout, world)
-	},
-}
-
-var worldSummaryCmd = &cobra.Command{
-	Use:          "summary <name>",
-	Short:        "Show a world's governor-maintained summary",
-	Args:         cobra.ExactArgs(1),
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
-			return err
-		}
-
-		summaryPath := governor.WorldSummaryPath(world)
-		data, err := os.ReadFile(summaryPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Printf("No world summary found for world %q\n", world)
-				fmt.Printf("Start a governor first: sol governor start --world=%s\n", world)
-				return &exitError{code: 1}
-			}
-			return fmt.Errorf("failed to read world summary: %w", err)
-		}
-
-		fmt.Print(string(data))
 		return nil
 	},
 }
@@ -692,7 +581,7 @@ var worldSleepCmd = &cobra.Command{
 	Use:          "sleep <name>",
 	Short:        "Mark a world as sleeping and stop its services",
 	Long: `Mark a world as sleeping, which stops world services (sentinel, forge,
-governor) and activates dispatch gates that prevent new work from being cast.
+forge) and activates dispatch gates that prevent new work from being cast.
 
 With --force, also stops all outpost agent sessions immediately:
   - Injects a brief-save prompt and waits up to 30 seconds for stability
@@ -743,7 +632,7 @@ With --force, also stops all outpost agent sessions immediately:
 			}
 		}
 
-		for _, role := range []string{"forge", "governor"} {
+		for _, role := range []string{"forge"} {
 			sessName := config.SessionName(name, role)
 			if mgr.Exists(sessName) {
 				if err := mgr.Stop(sessName, false); err != nil {
@@ -820,7 +709,7 @@ With --force, also stops all outpost agent sessions immediately:
 			}
 
 			if agent.Role != "outpost" {
-				continue // skip non-outpost, non-envoy roles (governor, forge already stopped)
+				continue // skip non-outpost, non-envoy roles (forge already stopped)
 			}
 
 			if agent.State != "working" && agent.State != "stalled" {
@@ -1041,8 +930,6 @@ func init() {
 	worldCmd.AddCommand(worldDeleteCmd)
 	worldCmd.AddCommand(worldCloneCmd)
 	worldCmd.AddCommand(worldSyncCmd)
-	worldCmd.AddCommand(worldSummaryCmd)
-	worldCmd.AddCommand(worldQueryCmd)
 	worldCmd.AddCommand(worldSleepCmd)
 	worldCmd.AddCommand(worldWakeCmd)
 	worldCmd.AddCommand(worldImportCmd)
@@ -1060,9 +947,7 @@ func init() {
 		"include agent history and token usage in clone")
 	worldSyncCmd.Flags().StringVar(&worldSyncWorld, "world", "", "world name")
 	worldSyncCmd.Flags().BoolVar(&worldSyncAll, "all", false,
-		"also sync forge, envoys, and governor")
-	worldQueryCmd.Flags().IntVar(&worldQueryTimeout, "timeout", 120,
-		"seconds to wait for governor response")
+		"also sync forge and envoys")
 	worldImportCmd.Flags().StringVar(&worldImportName, "name", "",
 		"import under a different name (rewrites agent IDs and references)")
 	worldSleepCmd.Flags().BoolVar(&worldSleepForce, "force", false,

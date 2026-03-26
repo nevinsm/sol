@@ -527,7 +527,7 @@ func (sm sphereModel) renderProcessGrid(b *strings.Builder, procs []processEntry
 
 func (sm sphereModel) renderWorldsTable(b *strings.Builder, worlds []status.WorldSummary, showCursor bool) {
 	// Column headers.
-	b.WriteString("  " + padRight(dimStyle.Render("WORLD"), 16) + " " + padRight(dimStyle.Render("AGENTS"), 20) + " " + padRight(dimStyle.Render("HEALTH"), 14) + " " + padRight(dimStyle.Render("GOV"), 5) + " " + padRight(dimStyle.Render("FORGE"), 7) + " " + padRight(dimStyle.Render("SENTINEL"), 10) + " " + dimStyle.Render("MR QUEUE") + "\n")
+	b.WriteString("  " + padRight(dimStyle.Render("WORLD"), 16) + " " + padRight(dimStyle.Render("AGENTS"), 20) + " " + padRight(dimStyle.Render("HEALTH"), 14) + " " + padRight(dimStyle.Render("FORGE"), 7) + " " + padRight(dimStyle.Render("SENTINEL"), 10) + " " + dimStyle.Render("MR QUEUE") + "\n")
 
 	for i, w := range worlds {
 		line := sm.renderWorldRow(w)
@@ -547,7 +547,7 @@ func (sm sphereModel) renderWorldRow(w status.WorldSummary) string {
 		if w.Agents > 0 {
 			agents = fmt.Sprintf("%d", w.Agents)
 		}
-		return "  " + padRight(w.Name, 16) + " " + padRight(agents, 20) + " " + padRight(sleepingBadge, 14) + " " + padRight(dimStyle.Render("—"), 5) + " " + padRight(dimStyle.Render("—"), 7) + " " + padRight(dimStyle.Render("—"), 10) + " " + dimStyle.Render("—")
+		return "  " + padRight(w.Name, 16) + " " + padRight(agents, 20) + " " + padRight(sleepingBadge, 14) + " " + padRight(dimStyle.Render("—"), 7) + " " + padRight(dimStyle.Render("—"), 10) + " " + dimStyle.Render("—")
 	}
 
 	// Agents column with optional spinner.
@@ -564,11 +564,6 @@ func (sm sphereModel) renderWorldRow(w status.WorldSummary) string {
 	}
 	if s, ok := sm.worldSpinners[w.Name]; ok {
 		agents = s.View() + " " + agents
-	}
-
-	gov := dimStyle.Render("—")
-	if w.Governor {
-		gov = okStyle.Render("●")
 	}
 
 	forge := dimStyle.Render("—")
@@ -591,7 +586,7 @@ func (sm sphereModel) renderWorldRow(w status.WorldSummary) string {
 
 	health := healthBadge(w.Health)
 
-	return "  " + padRight(w.Name, 16) + " " + padRight(agents, 20) + " " + padRight(health, 14) + " " + padRight(gov, 5) + " " + padRight(forge, 7) + " " + padRight(sentinel, 10) + " " + mrQueue
+	return "  " + padRight(w.Name, 16) + " " + padRight(agents, 20) + " " + padRight(health, 14) + " " + padRight(forge, 7) + " " + padRight(sentinel, 10) + " " + mrQueue
 }
 
 // renderCaravansSection renders the Caravans section with Active/Drydocked subheadings.
