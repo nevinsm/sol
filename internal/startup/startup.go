@@ -17,7 +17,6 @@ import (
 	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
-	"github.com/nevinsm/sol/internal/workflow"
 )
 
 // HookSet is the runtime-agnostic hook configuration for a role session.
@@ -60,10 +59,6 @@ type RoleConfig struct {
 	SystemPromptContent string                         // if set, written via adapter.InjectSystemPrompt
 	ReplacePrompt       bool                           // true = --system-prompt-file, false = --append-system-prompt-file
 	PersonaFile         func(world, agent string) string // returns path to persona file (or empty); content appended to system prompt
-
-	// Workflow
-	Workflow  string // workflow name to instantiate (empty = none)
-	NeedsItem bool   // whether workflow requires a writ
 
 	// Skills
 	SkillInstaller func(world, agent string) []adapter.Skill // builds skills (adapter writes them)
@@ -116,10 +111,9 @@ func ConfigFor(role string) *RoleConfig {
 //  3. Install hooks (cfg.Hooks → adapter.InstallHooks)
 //  4+4.5. Ensure config dir + pre-trust (adapter.EnsureConfigDir)
 //  5. Ensure agent record in sphere store
-//  6. Instantiate workflow if cfg.Workflow is set
-//  7. Build prime context (cfg.PrimeBuilder)
-//  8. Build session command (adapter.BuildCommand)
-//  9. Start tmux session with env
+//  6. Build prime context (cfg.PrimeBuilder)
+//  7. Build session command (adapter.BuildCommand)
+//  8. Start tmux session with env
 func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName string, retErr error) {
 	sessName = config.SessionName(world, agent)
 
@@ -273,21 +267,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}()
 
-	// 6. Instantiate workflow if set.
-	if cfg.Workflow != "" {
-		// Instantiate if no workflow exists or previous one completed.
-		existingState, _ := workflow.ReadState(world, agent, cfg.Role)
-		if existingState == nil || existingState.Status == "done" {
-			vars := map[string]string{
-				"world": world,
-			}
-			if _, _, err := workflow.Instantiate(world, agent, cfg.Role, cfg.Workflow, vars); err != nil {
-				return "", fmt.Errorf("startup: failed to instantiate workflow %q: %w", cfg.Workflow, err)
-			}
-		}
-	}
-
-	// 7. Build prime context.
+	// 6. Build prime context.
 	prompt := ""
 	if cfg.PrimeBuilder != nil {
 		prompt = cfg.PrimeBuilder(world, agent)

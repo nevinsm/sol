@@ -22,7 +22,6 @@ import (
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
-	"github.com/nevinsm/sol/internal/workflow"
 )
 
 // Config holds sentinel configuration.
@@ -1931,9 +1930,6 @@ func (w *Sentinel) cleanupAgentResources(agentName string) {
 
 	// Remove handoff file.
 	handoff.Remove(w.config.World, agentName, "outpost") // best-effort
-
-	// Remove workflow directory.
-	workflow.Remove(w.config.World, agentName, "outpost") // best-effort
 
 	// Remove the outpost directory itself if empty.
 	outpostDir := filepath.Join(config.Home(), w.config.World, "outposts", agentName)

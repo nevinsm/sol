@@ -2,7 +2,6 @@ package dispatch
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -18,7 +17,6 @@ import (
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
-	"github.com/nevinsm/sol/internal/workflow"
 )
 
 // --- Mock session manager ---
@@ -925,134 +923,6 @@ func TestPrimeWithoutTether(t *testing.T) {
 
 	if result.Output != "No work tethered" {
 		t.Errorf("expected 'No work tethered', got %q", result.Output)
-	}
-}
-
-// --- Workflow prime tests ---
-
-// setupTestWorkflow creates a minimal workflow in $SOL_HOME/workflows/{name}/.
-func setupTestWorkflow(t *testing.T, name string) {
-	t.Helper()
-	workflowDir := filepath.Join(config.Home(), "workflows", name)
-	stepsDir := filepath.Join(workflowDir, "steps")
-	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
-		t.Fatalf("mkdir workflow: %v", err)
-	}
-
-	manifest := `name = "` + name + `"
-type = "workflow"
-
-[variables]
-[variables.issue]
-required = true
-[variables.base_branch]
-default = "main"
-
-[[steps]]
-id = "load-context"
-title = "Load work context"
-instructions = "steps/01-load.md"
-
-[[steps]]
-id = "implement"
-title = "Implement the change"
-instructions = "steps/02-impl.md"
-needs = ["load-context"]
-
-[[steps]]
-id = "verify"
-title = "Verify the implementation"
-instructions = "steps/03-verify.md"
-needs = ["implement"]
-`
-	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
-		t.Fatalf("write manifest: %v", err)
-	}
-	for _, f := range []struct{ name, content string }{
-		{"steps/01-load.md", "# Load\nRead the writ {{issue}}."},
-		{"steps/02-impl.md", "# Implement\nWrite code for {{issue}}."},
-		{"steps/03-verify.md", "# Verify\nRun tests for {{issue}}."},
-	} {
-		if err := os.WriteFile(filepath.Join(workflowDir, f.name), []byte(f.content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", f.name, err)
-		}
-	}
-}
-
-// advanceWorkflowStep simulates completing the current step by writing state/step JSON directly.
-func advanceWorkflowStep(t *testing.T, world, agentName, role string) {
-	t.Helper()
-	wfDir := workflow.InstanceDir(world, agentName, role)
-
-	// Read current state.
-	stateData, err := os.ReadFile(filepath.Join(wfDir, "state.json"))
-	if err != nil {
-		t.Fatalf("read state: %v", err)
-	}
-	var state workflow.State
-	if err := json.Unmarshal(stateData, &state); err != nil {
-		t.Fatalf("unmarshal state: %v", err)
-	}
-
-	// Mark the current step as complete.
-	completedID := state.CurrentStep
-	stepPath := filepath.Join(wfDir, "steps", completedID+".json")
-	stepData, err := os.ReadFile(stepPath)
-	if err != nil {
-		t.Fatalf("read step: %v", err)
-	}
-	var step workflow.Step
-	if err := json.Unmarshal(stepData, &step); err != nil {
-		t.Fatalf("unmarshal step: %v", err)
-	}
-	now := time.Now().UTC()
-	step.Status = "complete"
-	step.CompletedAt = &now
-	writeTestJSON(t, stepPath, step)
-
-	// Use the real Advance function to set the next step.
-	// But since we've already marked it, just update state directly.
-	state.Completed = append(state.Completed, completedID)
-
-	// Find next step: read all step files to find a "pending" one.
-	entries, _ := os.ReadDir(filepath.Join(wfDir, "steps"))
-	nextID := ""
-	for _, e := range entries {
-		if e.Name() == completedID+".json" {
-			continue
-		}
-		sd, _ := os.ReadFile(filepath.Join(wfDir, "steps", e.Name()))
-		var s workflow.Step
-		json.Unmarshal(sd, &s)
-		if s.Status == "pending" {
-			nextID = s.ID
-			break
-		}
-	}
-	if nextID != "" {
-		state.CurrentStep = nextID
-		// Mark next step as executing.
-		nextPath := filepath.Join(wfDir, "steps", nextID+".json")
-		nd, _ := os.ReadFile(nextPath)
-		var ns workflow.Step
-		json.Unmarshal(nd, &ns)
-		ns.Status = "executing"
-		ns.StartedAt = &now
-		writeTestJSON(t, nextPath, ns)
-	} else {
-		state.CurrentStep = ""
-	}
-	writeTestJSON(t, filepath.Join(wfDir, "state.json"), state)
-}
-
-func writeTestJSON(t *testing.T, path string, v any) {
-	t.Helper()
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		t.Fatalf("marshal json: %v", err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatalf("write json %s: %v", path, err)
 	}
 }
 

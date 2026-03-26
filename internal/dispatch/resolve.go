@@ -15,7 +15,6 @@ import (
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
-	"github.com/nevinsm/sol/internal/workflow"
 )
 
 // cleanupWorktree removes a git worktree and prunes stale references.
@@ -380,16 +379,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		}
 	}
 
-	// 6b. Clean up workflow if present (envoys don't use workflow system).
-	if agent.Role != "envoy" {
-		if _, err := workflow.ReadState(opts.World, opts.AgentName, agent.Role); err == nil {
-			if removeErr := workflow.Remove(opts.World, opts.AgentName, agent.Role); removeErr != nil {
-				fmt.Fprintf(os.Stderr, "resolve: failed to clean up workflow: %v\n", removeErr)
-			}
-		}
-	}
-
-	// 7. Stop session after a brief delay to allow final output.
+	// 6b. Stop session after a brief delay to allow final output.
 	// Envoys keep their session alive — they are human-supervised and persistent.
 	// We wait for completion to prevent worktree cleanup from racing with a re-cast
 	// that reuses the same agent name.
@@ -600,16 +590,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 		}
 	}
 
-	// 5b. Clean up workflow if present (envoys don't use workflow system).
-	if role != "envoy" {
-		if _, err := workflow.ReadState(opts.World, opts.AgentName, role); err == nil {
-			if removeErr := workflow.Remove(opts.World, opts.AgentName, role); removeErr != nil {
-				fmt.Fprintf(os.Stderr, "resolve: failed to clean up workflow: %v\n", removeErr)
-			}
-		}
-	}
-
-	// 6. Stop session after a brief delay to allow final output.
+	// 5b. Stop session after a brief delay to allow final output.
 	// Envoys keep their session alive — they are human-supervised and persistent.
 	// We wait for completion to prevent worktree cleanup from racing with a re-cast
 	// that reuses the same agent name.

@@ -2,46 +2,10 @@
 
 ## Workflow System
 
-### Instantiate and Advance
-- [x] `workflow.Instantiate` creates a workflow instance with status "running" and current_step set to the first step (`TestWorkflowInstantiateAndAdvance`)
-- [x] `workflow.ReadCurrentStep` returns the current step with variable substitution applied (`TestWorkflowInstantiateAndAdvance`)
-- [x] `workflow.Advance` moves to the next step in dependency order (`TestWorkflowInstantiateAndAdvance`)
-- [x] `workflow.Advance` returns done=true after the final step is completed (`TestWorkflowInstantiateAndAdvance`)
-- [x] `workflow.ReadState` returns status="done" and all steps in completed list after final advance (`TestWorkflowInstantiateAndAdvance`)
-
-### Crash Recovery
-- [x] Workflow state persisted to disk — ReadState after simulated crash returns correct current step (`TestWorkflowCrashRecovery`)
-- [x] Advance after crash continues from the persisted step, not from the beginning (`TestWorkflowCrashRecovery`)
-
-### Cast with Workflow
-- [x] `dispatch.Cast` with `--workflow` instantiates the workflow and creates `.workflow/` directory in outpost dir (`TestCastWithWorkflow`)
-- [x] `workflow.ReadState` returns non-nil state with correct current_step after cast with workflow (`TestCastWithWorkflow`)
-- [x] CLAUDE.local.md contains workflow step reference and advance instruction when cast with workflow (`TestCastWithWorkflow`)
-- [x] Cast with workflow emits `EventWorkflowInstantiate` (`TestCastWithWorkflow`)
-
-### Prime with Workflow
-- [x] `dispatch.Prime` with active workflow returns current step instructions in output (`TestPrimeWithWorkflow`)
-- [x] Prime output contains `sol workflow advance` command (`TestPrimeWithWorkflow`)
-- [x] Prime output contains `sol resolve` command (`TestPrimeWithWorkflow`)
-- [x] Prime output contains current step marker `[>]` and workflow name (`TestPrimeWithWorkflow`)
-- [x] Prime without workflow does not include workflow section or `sol workflow advance` (`TestPrimeWithoutWorkflow`)
-- [x] Prime without workflow includes standard instructions and writ ID (`TestPrimeWithoutWorkflow`)
-
-### Resolve Cleanup
-- [x] `dispatch.Resolve` removes `.workflow/` directory after completion (`TestDoneWithWorkflowCleanup`)
-
-### End-to-End Propulsion Loop
-- [x] Cast → Prime → Advance × N → Resolve flows end-to-end (`TestWorkflowPropulsionLoop`)
-- [x] Prime after each advance returns instructions for the current step (`TestWorkflowPropulsionLoop`)
-- [x] Resolve marks writ as "done" and cleans up `.workflow/` (`TestWorkflowPropulsionLoop`)
-- [x] All three events emitted: EventCast, EventWorkflowInstantiate, EventResolve (`TestWorkflowPropulsionLoop`)
-
-### CLI Smoke Tests
-- [x] `sol workflow instantiate --help` shows "Instantiate a workflow" (`TestCLIWorkflowInstantiateHelp`)
-- [x] `sol workflow current --help` shows "current step" (`TestCLIWorkflowCurrentHelp`)
-- [x] `sol workflow advance --help` shows "Advance" (`TestCLIWorkflowAdvanceHelp`)
-- [x] `sol workflow status --help` shows "workflow status" (`TestCLIWorkflowStatusHelp`)
-- [x] `sol cast --help` shows `--workflow` and `--var` flags (`TestCLICastWorkflowHelp`)
+> **Note:** Inline workflow execution (instantiate, advance, skip, fail, current, status)
+> has been removed. Workflows are now used exclusively for manifesting — decomposing work
+> into child writs via `sol workflow manifest`. Outpost execution guidance is provided by
+> the guidelines system.
 
 ## Caravan System
 

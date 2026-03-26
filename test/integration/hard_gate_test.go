@@ -45,9 +45,6 @@ func TestHardGateAllCommands(t *testing.T) {
 		{"forge blocked", []string{"forge", "blocked", "--world=noworld"}},
 		// sentinel commands
 		{"sentinel run", []string{"sentinel", "run", "--world=noworld"}},
-		// workflow commands
-		{"workflow current", []string{"workflow", "current", "--world=noworld", "--agent=test"}},
-		{"workflow status", []string{"workflow", "status", "--world=noworld", "--agent=test"}},
 		// world commands (that require existing world)
 		{"world status", []string{"world", "status", "noworld"}},
 		{"world delete", []string{"world", "delete", "--world=noworld", "--confirm"}},

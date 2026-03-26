@@ -82,7 +82,7 @@ sol/
 │   ├── style/                     Terminal styling (lipgloss helpers)
 │   ├── tether/                    Tether file read/write/clear
 │   ├── trace/                     Writ trace rendering
-│   ├── workflow/                  Directory-based state machine, workflows
+│   ├── workflow/                  Workflow manifesting and resolution
 │   ├── worldexport/               World export operations
 │   └── worldsync/                 World sync operations
 ├── test/integration/              End-to-end tests

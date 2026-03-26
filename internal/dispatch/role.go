@@ -22,7 +22,6 @@ func OutpostRoleConfig() startup.RoleConfig {
 		Hooks:               outpostHooks,
 		SystemPromptContent: protocol.OutpostSystemPrompt,
 		ReplacePrompt:       true, // full replace — outpost gets its own system prompt
-		NeedsItem:           true,
 		SkillInstaller:      outpostSkillInstaller,
 		PrimeBuilder:        outpostPrime,
 	}

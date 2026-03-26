@@ -40,10 +40,6 @@ const (
 	EventMailSent     = "mail_sent"     // message sent (reserved for Loop 5 Consul)
 
 	// Loop 4 events.
-	EventWorkflowInstantiate = "workflow_instantiate" // workflow instantiated for agent
-	EventWorkflowAdvance     = "workflow_advance"     // workflow step advanced
-	EventWorkflowComplete    = "workflow_complete"    // workflow completed all steps
-	EventWorkflowFail        = "workflow_fail"        // workflow failed due to step failure
 	EventCaravanCreated       = "caravan_created"       // caravan created
 	EventCaravanLaunched      = "caravan_launched"      // caravan items dispatched
 	EventCaravanClosed        = "caravan_closed"        // caravan auto-closed

@@ -10,7 +10,6 @@ import (
 	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/store"
-	"github.com/nevinsm/sol/internal/workflow"
 )
 
 // mockSessionStarter records Start calls.
@@ -164,8 +163,7 @@ func TestRegisterAndConfigFor(t *testing.T) {
 	t.Cleanup(func() { registry = origRegistry })
 
 	cfg := RoleConfig{
-		Role:     "testrole",
-		Workflow: "test-workflow",
+		Role: "testrole",
 	}
 	Register("testrole", cfg)
 
@@ -175,9 +173,6 @@ func TestRegisterAndConfigFor(t *testing.T) {
 	}
 	if got.Role != "testrole" {
 		t.Errorf("Role = %q, want %q", got.Role, "testrole")
-	}
-	if got.Workflow != "test-workflow" {
-		t.Errorf("Workflow = %q, want %q", got.Workflow, "test-workflow")
 	}
 
 	// Unregistered role returns nil.
@@ -788,70 +783,6 @@ func TestClearResumeStateIdempotent(t *testing.T) {
 	}
 }
 
-func TestLaunchReinstantiatesDoneWorkflow(t *testing.T) {
-	solHome := setupTestEnv(t, "haven")
-
-	// Create worktree.
-	worktreeDir := filepath.Join(solHome, "haven", "outposts", "TestBot", "worktree")
-	os.MkdirAll(worktreeDir, 0o755)
-
-	// Create an existing workflow with status "done" (simulate completed workflow).
-	wfDir := filepath.Join(solHome, "haven", "outposts", "TestBot", ".workflow")
-	os.MkdirAll(wfDir, 0o755)
-	os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(`{"current_step":"","completed":["load-context","implement"],"status":"done","started_at":"2025-01-01T00:00:00Z"}`), 0o644)
-
-	// Create a minimal test workflow.
-	testWfDir := filepath.Join(solHome, "workflows", "test-simple")
-	os.MkdirAll(filepath.Join(testWfDir, "steps"), 0o755)
-	os.WriteFile(filepath.Join(testWfDir, "manifest.toml"), []byte(`name = "test-simple"
-type = "workflow"
-description = "Minimal test workflow"
-
-[[steps]]
-id = "step-one"
-title = "Step One"
-instructions = "steps/01-step.md"
-`), 0o644)
-	os.WriteFile(filepath.Join(testWfDir, "steps", "01-step.md"), []byte("Do the thing.\n"), 0o644)
-
-	sphereStore, err := store.OpenSphere()
-	if err != nil {
-		t.Fatalf("failed to open sphere store: %v", err)
-	}
-	defer sphereStore.Close()
-
-	mock := &mockSessionStarter{}
-
-	cfg := RoleConfig{
-		Role:        "outpost",
-		WorktreeDir: func(w, a string) string { return filepath.Join(solHome, w, "outposts", a, "worktree") },
-		Workflow:    "test-simple",
-	}
-
-	_, err = Launch(cfg, "haven", "TestBot", LaunchOpts{
-		Sessions: mock,
-		Sphere:   sphereStore,
-	})
-	if err != nil {
-		t.Fatalf("Launch() error: %v", err)
-	}
-
-	// Verify workflow was re-instantiated (state.json should have status "running").
-	state, err := workflow.ReadState("haven", "TestBot", "outpost")
-	if err != nil {
-		t.Fatalf("ReadState() error: %v", err)
-	}
-	if state == nil {
-		t.Fatal("workflow state should exist after re-instantiation")
-	}
-	if state.Status != "running" {
-		t.Errorf("workflow status = %q, want %q", state.Status, "running")
-	}
-	if state.CurrentStep == "" {
-		t.Error("workflow should have a current step after re-instantiation")
-	}
-}
-
 func TestRespawnWithResumeState(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 	world := "haven"
@@ -1015,43 +946,6 @@ func TestRespawnSetsRespawnFlag(t *testing.T) {
 
 	if !sessionOpCalled {
 		t.Fatal("SessionOp was not called — launch pipeline did not complete")
-	}
-}
-
-func TestLaunchSkipsWorkflowIfActive(t *testing.T) {
-	solHome := setupTestEnv(t, "haven")
-
-	worktreeDir := filepath.Join(solHome, "haven", "forge", "worktree")
-	os.MkdirAll(worktreeDir, 0o755)
-
-	wfDir := filepath.Join(solHome, "haven", "forge", ".workflow")
-	os.MkdirAll(wfDir, 0o755)
-	os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(`{"current_step":"scan","completed":[],"status":"running","started_at":"2025-01-01T00:00:00Z"}`), 0o644)
-
-	sphereStore, err := store.OpenSphere()
-	if err != nil {
-		t.Fatalf("failed to open sphere store: %v", err)
-	}
-	defer sphereStore.Close()
-
-	mock := &mockSessionStarter{}
-
-	cfg := RoleConfig{
-		Role:        "forge",
-		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
-		Workflow:    "nonexistent-workflow",
-	}
-
-	_, err = Launch(cfg, "haven", "forge", LaunchOpts{
-		Sessions: mock,
-		Sphere:   sphereStore,
-	})
-	if err != nil {
-		t.Fatalf("Launch() error: %v", err)
-	}
-
-	if len(mock.started) != 1 {
-		t.Fatalf("expected 1 session start, got %d", len(mock.started))
 	}
 }
 

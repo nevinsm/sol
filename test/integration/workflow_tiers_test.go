@@ -129,13 +129,13 @@ func TestEmbeddedWorkflowFallback(t *testing.T) {
 	world := "ember"
 	repoPath := config.RepoPath(world)
 
-	// Ensure the repo path exists but has no project-level default-work.
+	// Ensure the repo path exists but has no project-level code-review.
 	if err := os.MkdirAll(filepath.Join(repoPath, ".sol", "workflows"), 0o755); err != nil {
 		t.Fatalf("create project workflows dir: %v", err)
 	}
 
 	// No user workflow either — embedded should be extracted and used.
-	res, err := workflow.Resolve("default-work", repoPath)
+	res, err := workflow.Resolve("code-review", repoPath)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -144,9 +144,9 @@ func TestEmbeddedWorkflowFallback(t *testing.T) {
 	}
 
 	// Verify the embedded workflow was extracted to user-level path.
-	extractedManifest := filepath.Join(solHome, "workflows", "default-work", "manifest.toml")
+	extractedManifest := filepath.Join(solHome, "workflows", "code-review", "manifest.toml")
 	if _, err := os.Stat(extractedManifest); os.IsNotExist(err) {
-		t.Error("embedded default-work should be extracted to $SOL_HOME/workflows/")
+		t.Error("embedded code-review should be extracted to $SOL_HOME/workflows/")
 	}
 }
 
@@ -164,11 +164,11 @@ func TestProjectShadowsEmbeddedDefault(t *testing.T) {
 	world := "ember"
 	repoPath := config.RepoPath(world)
 
-	// Create a custom default-work at project tier — should shadow the embedded one.
+	// Create a custom code-review at project tier — should shadow the embedded one.
 	projectBase := filepath.Join(repoPath, ".sol", "workflows")
-	makeWorkflow(t, projectBase, "default-work", "custom project default-work")
+	makeWorkflow(t, projectBase, "code-review", "custom project code-review")
 
-	res, err := workflow.Resolve("default-work", repoPath)
+	res, err := workflow.Resolve("code-review", repoPath)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -177,9 +177,9 @@ func TestProjectShadowsEmbeddedDefault(t *testing.T) {
 	}
 
 	// Verify embedded was NOT extracted (project took priority).
-	extractedManifest := filepath.Join(solHome, "workflows", "default-work", "manifest.toml")
+	extractedManifest := filepath.Join(solHome, "workflows", "code-review", "manifest.toml")
 	if _, err := os.Stat(extractedManifest); !os.IsNotExist(err) {
-		t.Error("embedded default-work should NOT be extracted when project tier matches")
+		t.Error("embedded code-review should NOT be extracted when project tier matches")
 	}
 
 	// Verify the resolved workflow has the project description.
@@ -187,8 +187,8 @@ func TestProjectShadowsEmbeddedDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadManifest: %v", err)
 	}
-	if m.Description != "custom project default-work" {
-		t.Errorf("description: got %q, want %q", m.Description, "custom project default-work")
+	if m.Description != "custom project code-review" {
+		t.Errorf("description: got %q, want %q", m.Description, "custom project code-review")
 	}
 }
 
@@ -209,7 +209,7 @@ func TestWorkflowListShowsCorrectTiers(t *testing.T) {
 	// Set up three tiers:
 	// - project-only: exists only at project tier
 	// - shared-workflow: exists at project AND user tiers (user is shadowed)
-	// - default-work: exists at project tier (shadows embedded)
+	// - code-review: exists at project tier (shadows embedded)
 	// - user-only: exists only at user tier
 	// - (embedded defaults exist automatically)
 	projectBase := filepath.Join(repoPath, ".sol", "workflows")
@@ -218,7 +218,7 @@ func TestWorkflowListShowsCorrectTiers(t *testing.T) {
 	makeWorkflow(t, projectBase, "project-only", "project-only workflow")
 	makeWorkflow(t, projectBase, "shared-workflow", "project tier shared")
 	makeWorkflow(t, userBase, "shared-workflow", "user tier shared")
-	makeWorkflow(t, projectBase, "default-work", "custom project default")
+	makeWorkflow(t, projectBase, "code-review", "custom project default")
 	makeWorkflow(t, userBase, "user-only", "user-only workflow")
 
 	entries, err := workflow.List(repoPath)
@@ -257,18 +257,18 @@ func TestWorkflowListShowsCorrectTiers(t *testing.T) {
 		t.Error("shared-workflow at user tier should be shadowed by project tier")
 	}
 
-	// default-work at project tier: not shadowed.
-	if e, ok := lookup[entryKey{"default-work", workflow.TierProject}]; !ok {
-		t.Error("default-work should appear at project tier")
+	// code-review at project tier: not shadowed.
+	if e, ok := lookup[entryKey{"code-review", workflow.TierProject}]; !ok {
+		t.Error("code-review should appear at project tier")
 	} else if e.Shadowed {
-		t.Error("default-work at project tier should NOT be shadowed")
+		t.Error("code-review at project tier should NOT be shadowed")
 	}
 
-	// default-work at embedded tier: IS shadowed by project.
-	if e, ok := lookup[entryKey{"default-work", workflow.TierEmbedded}]; !ok {
-		t.Error("default-work should appear at embedded tier")
+	// code-review at embedded tier: IS shadowed by project.
+	if e, ok := lookup[entryKey{"code-review", workflow.TierEmbedded}]; !ok {
+		t.Error("code-review should appear at embedded tier")
 	} else if !e.Shadowed {
-		t.Error("default-work at embedded tier should be shadowed by project tier")
+		t.Error("code-review at embedded tier should be shadowed by project tier")
 	}
 
 	// user-only at user tier: not shadowed.
@@ -335,107 +335,6 @@ func TestCastWithProjectGuidelines(t *testing.T) {
 	}
 	if !strings.Contains(content, itemID) {
 		t.Errorf(".guidelines.md should contain writ ID %s after variable substitution", itemID)
-	}
-}
-
-func TestInstantiateResolvesProjectTier(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store: %v", err)
-	}
-
-	world := "ember"
-	agent := "TierBot"
-
-	// Create workflow at both project and user tiers with different content.
-	repoPath := config.RepoPath(world)
-	projectBase := filepath.Join(repoPath, ".sol", "workflows")
-	userBase := filepath.Join(solHome, "workflows")
-
-	// Project tier workflow.
-	projectDir := filepath.Join(projectBase, "tier-test")
-	projectSteps := filepath.Join(projectDir, "steps")
-	if err := os.MkdirAll(projectSteps, 0o755); err != nil {
-		t.Fatalf("create project dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(projectDir, "manifest.toml"), []byte(`name = "tier-test"
-type = "workflow"
-description = "Project version"
-
-[variables]
-[variables.issue]
-required = true
-
-[[steps]]
-id = "p1"
-title = "Project Step"
-instructions = "steps/01.md"
-`), 0o644); err != nil {
-		t.Fatalf("write project manifest: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(projectSteps, "01.md"), []byte("PROJECT INSTRUCTIONS for {{issue}}\n"), 0o644); err != nil {
-		t.Fatalf("write project step: %v", err)
-	}
-
-	// User tier workflow (same name, different content).
-	userDir := filepath.Join(userBase, "tier-test")
-	userSteps := filepath.Join(userDir, "steps")
-	if err := os.MkdirAll(userSteps, 0o755); err != nil {
-		t.Fatalf("create user dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(userDir, "manifest.toml"), []byte(`name = "tier-test"
-type = "workflow"
-description = "User version"
-
-[variables]
-[variables.issue]
-required = true
-
-[[steps]]
-id = "u1"
-title = "User Step"
-instructions = "steps/01.md"
-`), 0o644); err != nil {
-		t.Fatalf("write user manifest: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(userSteps, "01.md"), []byte("USER INSTRUCTIONS for {{issue}}\n"), 0o644); err != nil {
-		t.Fatalf("write user step: %v", err)
-	}
-
-	// Create outpost dir for the agent.
-	agentDir := filepath.Join(solHome, world, "outposts", agent)
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		t.Fatalf("create agent dir: %v", err)
-	}
-
-	// Instantiate — should use project tier.
-	inst, state, err := workflow.Instantiate(world, agent, "outpost", "tier-test", map[string]string{"issue": "sol-abcd1234"})
-	if err != nil {
-		t.Fatalf("Instantiate: %v", err)
-	}
-
-	if inst.Workflow != "tier-test" {
-		t.Errorf("workflow: got %q, want tier-test", inst.Workflow)
-	}
-	if state.CurrentStep != "p1" {
-		t.Errorf("current step: got %q, want p1 (project tier)", state.CurrentStep)
-	}
-
-	// Read the step — instructions should be from project tier.
-	step, err := workflow.ReadCurrentStep(world, agent, "outpost")
-	if err != nil {
-		t.Fatalf("ReadCurrentStep: %v", err)
-	}
-	if !strings.Contains(step.Instructions, "PROJECT INSTRUCTIONS") {
-		t.Errorf("expected project-tier instructions, got: %s", step.Instructions)
-	}
-	if strings.Contains(step.Instructions, "USER INSTRUCTIONS") {
-		t.Error("should NOT contain user-tier instructions")
 	}
 }
 
@@ -586,10 +485,10 @@ func TestWorkflowListCLIShowsTiers(t *testing.T) {
 	}
 
 	// Embedded defaults should be present too.
-	if tier, ok := tierMap["default-work"]; !ok {
-		t.Error("default-work should appear in list")
+	if tier, ok := tierMap["code-review"]; !ok {
+		t.Error("code-review should appear in list")
 	} else if tier != workflow.TierEmbedded {
-		t.Errorf("default-work tier: got %q, want embedded", tier)
+		t.Errorf("code-review tier: got %q, want embedded", tier)
 	}
 }
 
@@ -603,10 +502,10 @@ func TestWorkflowListCLIShowsShadowed(t *testing.T) {
 	world := "ember"
 	initWorld(t, solHome, world)
 
-	// Create default-work at project tier to shadow the embedded one.
+	// Create code-review at project tier to shadow the embedded one.
 	repoPath := config.RepoPath(world)
 	projectBase := filepath.Join(repoPath, ".sol", "workflows")
-	makeWorkflow(t, projectBase, "default-work", "project override of default-work")
+	makeWorkflow(t, projectBase, "code-review", "project override of code-review")
 
 	// Run with --all to see shadowed entries.
 	out, err := runGT(t, solHome, "workflow", "list", "--world="+world, "--json", "--all")
@@ -619,10 +518,10 @@ func TestWorkflowListCLIShowsShadowed(t *testing.T) {
 		t.Fatalf("unmarshal: %v\nraw: %s", err, out)
 	}
 
-	// Find both default-work entries.
+	// Find both code-review entries.
 	var projectEntry, embeddedEntry *workflow.Entry
 	for i := range entries {
-		if entries[i].Name == "default-work" {
+		if entries[i].Name == "code-review" {
 			switch entries[i].Tier {
 			case workflow.TierProject:
 				projectEntry = &entries[i]
@@ -633,16 +532,16 @@ func TestWorkflowListCLIShowsShadowed(t *testing.T) {
 	}
 
 	if projectEntry == nil {
-		t.Fatal("default-work at project tier should appear with --all")
+		t.Fatal("code-review at project tier should appear with --all")
 	}
 	if projectEntry.Shadowed {
-		t.Error("project-tier default-work should NOT be shadowed")
+		t.Error("project-tier code-review should NOT be shadowed")
 	}
 
 	if embeddedEntry == nil {
-		t.Fatal("default-work at embedded tier should appear with --all")
+		t.Fatal("code-review at embedded tier should appear with --all")
 	}
 	if !embeddedEntry.Shadowed {
-		t.Error("embedded default-work should be shadowed by project tier")
+		t.Error("embedded code-review should be shadowed by project tier")
 	}
 }

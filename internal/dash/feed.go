@@ -280,10 +280,6 @@ func eventVerb(eventType string) string {
 		return "started session"
 	case events.EventSessionStop:
 		return "stopped session"
-	case events.EventWorkflowAdvance:
-		return "advanced workflow"
-	case events.EventWorkflowComplete:
-		return "completed workflow"
 	case events.EventCaravanCreated:
 		return "created caravan"
 	case events.EventCaravanLaunched:

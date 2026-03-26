@@ -108,9 +108,6 @@ func TestForgeMergeRoleConfig(t *testing.T) {
 	if cfg.SkillInstaller != nil {
 		t.Error("SkillInstaller should be nil — forge has no skills")
 	}
-	if cfg.NeedsItem != false {
-		t.Error("NeedsItem should be false")
-	}
 	if cfg.WorktreeDir == nil {
 		t.Error("WorktreeDir should be set")
 	}

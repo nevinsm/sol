@@ -45,26 +45,11 @@ func registerMinimalRole(t *testing.T, role, worktreeDir string) {
 }
 
 func TestCapture(t *testing.T) {
-	solHome := setupSolHome(t)
+	setupSolHome(t)
 
 	// Set up tether file.
 	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
-	}
-
-	// Set up workflow state.
-	wfDir := filepath.Join(solHome, "ember", "outposts", "Toast", ".workflow")
-	if err := os.MkdirAll(wfDir, 0o755); err != nil {
-		t.Fatalf("failed to create workflow dir: %v", err)
-	}
-	stateJSON := `{"current_step":"implement","completed":["plan"],"status":"running","started_at":"2026-02-27T10:00:00Z"}`
-	if err := os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(stateJSON), 0o644); err != nil {
-		t.Fatalf("failed to write workflow state: %v", err)
-	}
-	// Minimal instance manifest for step counting.
-	instanceJSON := `{"workflow":"default-work","writ_id":"sol-abc1234500000000","variables":{},"instantiated_at":"2026-02-27T10:00:00Z"}`
-	if err := os.WriteFile(filepath.Join(wfDir, "manifest.json"), []byte(instanceJSON), 0o644); err != nil {
-		t.Fatalf("failed to write workflow instance: %v", err)
 	}
 
 	// Mock session capture.
@@ -108,9 +93,6 @@ func TestCapture(t *testing.T) {
 	}
 	if len(state.RecentCommits) != 2 {
 		t.Errorf("expected 2 recent commits, got %d", len(state.RecentCommits))
-	}
-	if state.WorkflowStep != "implement" {
-		t.Errorf("expected workflow step 'implement', got %q", state.WorkflowStep)
 	}
 }
 

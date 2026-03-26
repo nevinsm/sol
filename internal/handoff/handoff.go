@@ -17,7 +17,6 @@ import (
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
-	"github.com/nevinsm/sol/internal/workflow"
 )
 
 // State captures an agent's context at the moment of handoff.
@@ -162,10 +161,9 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		}
 	}
 
-	// 4-6: Writ-specific context (git, workflow) only when a writ is active.
+	// 4-5: Writ-specific context (git) only when a writ is active.
 	var recentCommits []string
 	var gitStatus, gitStash, diffStat string
-	var workflowStep, workflowProgress, stepDescription string
 
 	if hasWrit {
 		// 4. Capture recent git commits from worktree.
@@ -184,29 +182,6 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		gitStatus = gitShort(worktreeDir, "status", "--short")
 		gitStash = gitShort(worktreeDir, "stash", "list")
 		diffStat = gitShort(worktreeDir, "diff", "--stat")
-
-		// 6. Read workflow state (if present).
-		wfState, err := workflow.ReadState(opts.World, opts.AgentName, role)
-		if err == nil && wfState != nil && wfState.Status == "running" {
-			workflowStep = wfState.CurrentStep
-			completed := len(wfState.Completed)
-			// Try to get total steps from instance.
-			instance, _ := workflow.ReadInstance(opts.World, opts.AgentName, role)
-			if instance != nil {
-				steps, _ := workflow.ListSteps(opts.World, opts.AgentName, role)
-				if steps != nil {
-					workflowProgress = fmt.Sprintf("%d/%d complete", completed, len(steps))
-				}
-			}
-			if workflowProgress == "" {
-				workflowProgress = fmt.Sprintf("%d steps complete", completed)
-			}
-			// Capture step title/description for richer context.
-			currentStep, _ := workflow.ReadCurrentStep(opts.World, opts.AgentName, role)
-			if currentStep != nil {
-				stepDescription = currentStep.Title
-			}
-		}
 	}
 
 	if recentCommits == nil {
@@ -236,13 +211,10 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		Summary:          summary,
 		RecentOutput:     recentOutput,
 		RecentCommits:    recentCommits,
-		WorkflowStep:     workflowStep,
-		WorkflowProgress: workflowProgress,
 		HandedOffAt:      time.Now().UTC(),
 		GitStatus:        gitStatus,
 		GitStash:         gitStash,
 		DiffStat:         diffStat,
-		StepDescription:  stepDescription,
 	}, nil
 }
 
@@ -481,21 +453,10 @@ func (s *State) BuildResumeState(reason string) startup.ResumeState {
 }
 
 // CaptureResumeState reads durable state from disk and returns a ResumeState
-// suitable for startup.Resume(). Reads workflow state and active writ (from DB
-// when sphere is provided, falling back to tether) to determine the agent's
-// current position.
+// suitable for startup.Resume(). Reads active writ (from DB when sphere is
+// provided, falling back to tether) to determine the agent's current position.
 func CaptureResumeState(world, agent, role, reason string, sphere SphereStore) startup.ResumeState {
 	state := startup.ResumeState{Reason: reason}
-
-	// Read workflow state.
-	wfState, _ := workflow.ReadState(world, agent, role)
-	if wfState != nil && wfState.Status == "running" {
-		state.CurrentStep = wfState.CurrentStep
-		step, _ := workflow.ReadCurrentStep(world, agent, role)
-		if step != nil {
-			state.StepDescription = step.Title
-		}
-	}
 
 	// Read active writ from DB (preferred) or tether (fallback).
 	if sphere != nil {

@@ -308,18 +308,17 @@ Update the phase of a single item, or use --all to update all items in the carav
 
 ### `sol workflow`
 
-Manage workflow instances
+Manage workflows
 
 **Subcommands:**
 
 | Command | Description |
 |---------|-------------|
+| `sol workflow eject` | Eject an embedded workflow for customization |
 | `sol workflow init` | Scaffold a new workflow |
-| `sol workflow instantiate` | Instantiate a workflow |
 | `sol workflow list` | List available workflows |
 | `sol workflow manifest` | Manifest a workflow into writs and a caravan |
 | `sol workflow show` | Display workflow details and resolution source |
-| `sol workflow status` | Show workflow status |
 
 #### `sol workflow init`
 
@@ -329,17 +328,6 @@ Manage workflow instances
 |------|------|---------|-------------|
 | `--project` | bool | false | create in project tier (.sol/workflows/) |
 | `--type` | string | workflow | workflow type |
-| `--world` | string | "" | world name |
-
-#### `sol workflow instantiate`
-
-**Usage:** `sol workflow instantiate <workflow>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--item` | string | "" | writ ID |
-| `--var` | stringSlice | [] | variable assignment (key=val) |
 | `--world` | string | "" | world name |
 
 #### `sol workflow list`
@@ -369,14 +357,6 @@ Manage workflow instances
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
 | `--path` | string | "" | load workflow from directory path instead of by name |
-| `--world` | string | "" | world name |
-
-#### `sol workflow status`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 ### `sol writ`
@@ -1936,11 +1916,7 @@ These commands are hidden from `--help` output. They are internal commands used 
 - `sol nudge drain — Drain pending nudge messages for an agent session`
 - `sol nudge list — View pending nudge queue messages`
 - `sol prime — Assemble and print execution context for an agent`
-- `sol workflow advance — Advance to the next workflow step`
-- `sol workflow current — Print the current step's instructions`
 - `sol workflow eject — Eject an embedded workflow for customization`
-- `sol workflow fail — Mark the current workflow step and workflow as failed`
-- `sol workflow skip — Skip the current workflow step and advance to the next`
 - `sol writ get — Show writ status`
 
 ---

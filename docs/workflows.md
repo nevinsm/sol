@@ -1,9 +1,8 @@
 # Workflow Authoring Guide
 
 > **Note:** For outpost execution guidance (how an agent works on a single writ),
-> see [Guidelines](#guidelines) below. Workflows are now used exclusively for
+> see [Guidelines](#guidelines) below. Workflows are used exclusively for
 > **manifesting** — decomposing work into multiple writs via `sol workflow manifest`.
-> The step-driven inline workflow mode is deprecated in favor of guidelines.
 
 Workflows are reusable work patterns that define how writs are created,
 sequenced, and executed. They encode repeatable processes — code review,
@@ -64,7 +63,6 @@ the writ ID. Additional variables can be passed with `--var key=val` on `sol cas
 ## Table of Contents
 
 - [What Workflows Are](#what-workflows-are)
-- [Two Modes: Inline and Manifest](#two-modes-inline-and-manifest)
 - [TOML Schema Reference](#toml-schema-reference)
 - [Variable Syntax](#variable-syntax)
 - [Three-Tier Resolution](#three-tier-resolution)
@@ -98,48 +96,14 @@ Use **workflows** when:
 - The work follows a repeatable pattern (review, refine, investigate).
 - Multiple agents should work on different dimensions of the same problem.
 - Steps have dependencies that should be enforced automatically.
-- You want fresh agent context per step (manifest mode).
+- You want fresh agent context per step.
 
 Use **manual writ creation** when:
 - The work is a one-off task with no repeatable structure.
 - You need full control over writ descriptions and dependencies.
 - The work doesn't decompose into a standard pattern.
 
----
-
-## Two Modes: Inline and Manifest
-
-Every workflow operates in one of two modes, controlled by the `mode`
-field in `manifest.toml`.
-
-### Inline mode (default)
-
-A single agent session receives all steps at prime time. The agent sees
-the full checklist and works through it. `sol workflow advance`
-checkpoints progress — if the session dies, it restarts from the last
-advance.
-
-```toml
-name = "my-workflow"
-
-[[steps]]
-id = "design"
-title = "Design the approach"
-instructions = "steps/01-design.md"
-
-[[steps]]
-id = "implement"
-title = "Implement the change"
-instructions = "steps/02-implement.md"
-needs = ["design"]
-```
-
-**When to use inline mode:**
-- Linear work: load context, implement, verify.
-- Quality gates: design, implement, review, test.
-- Single session with full visibility — simple and fast.
-
-### Manifest mode
+### How manifesting works
 
 Each step becomes a child writ in a caravan. Each child is cast to a
 separate outpost session and goes through the full cast, resolve, forge
@@ -174,22 +138,11 @@ description = "Consolidate findings from all analysis dimensions."
 needs = ["requirements", "feasibility"]
 ```
 
-**When to use manifest mode:**
+**Use cases:**
 - Multi-step work needing fresh context per step.
 - Parallel analysis: review from multiple angles simultaneously.
 - Iterative refinement: draft then N revision passes.
 - Fan-out work with a merge/synthesis step.
-
-### When to use inline vs manifest mode
-
-| Scenario | Mode | Why |
-|----------|------|-----|
-| Linear work: load context, implement, verify | **inline** | Single session, full visibility, simple. |
-| Multi-step work needing fresh context per step | **manifest** | Each step gets a clean agent perspective. |
-| Iterative refinement: draft then N revision passes | **manifest** | Each pass builds on the previous, fresh context per pass. |
-| Parallel analysis: review from multiple angles | **manifest** | Independent steps run simultaneously, synthesis combines. |
-| Quality gates: design, implement, review, test | **inline** or **manifest** | Sequential with dependencies. |
-| Fan-out work with a merge step | **manifest** | Independent steps run in parallel; final step depends on all. |
 
 ---
 
@@ -203,7 +156,7 @@ Every workflow is defined by a `manifest.toml` file in its directory.
 |-------|------|----------|-------------|
 | `name` | string | yes | Workflow name. Must match `[a-zA-Z0-9][a-zA-Z0-9_-]*`. |
 | `type` | string | no | Defaults to `"workflow"`. |
-| `mode` | string | no | `"inline"` (default) or `"manifest"`. Controls execution mode. |
+| `mode` | string | no | `"manifest"`. Controls execution mode. |
 | `description` | string | no | Human-readable description of the workflow's purpose. |
 
 ### Variables: `[variables]` or `[vars]`
@@ -225,9 +178,8 @@ base_branch = { default = "main", description = "Branch to base work from" }
 
 ### Steps: `[[steps]]`
 
-All workflows use `[[steps]]` to define work units. In inline mode,
-steps are presented as a checklist. In manifest mode, each step becomes
-a child writ.
+All workflows use `[[steps]]` to define work units. Each step becomes
+a child writ when manifested.
 
 ```toml
 [[steps]]
@@ -245,7 +197,7 @@ kind = "code"
 | `title` | string | yes | Human-readable step name. |
 | `description` | string | no | Inline content for the step. When both `description` and `instructions` are set, `instructions` wins (file content replaces description). |
 | `instructions` | string | no | Relative path to an instruction markdown file. Variable substitution is applied to file contents. |
-| `needs` | string[] | no | Step IDs this step depends on. Empty means no dependencies (runs first). In manifest mode, steps without mutual dependencies run in parallel. |
+| `needs` | string[] | no | Step IDs this step depends on. Empty means no dependencies (runs first). Steps without mutual dependencies run in parallel. |
 | `kind` | string | no | `"code"` (default) or `"analysis"`. Propagated to child writs when manifested. Determines the resolve path — code writs flow through forge, analysis writs close directly. |
 
 ---
@@ -277,8 +229,8 @@ Run the gate command for the {{world}} world:
 ### Providing values
 
 ```bash
-sol workflow manifest default-work --world=myworld \
-  --var world=myworld
+sol workflow manifest code-review --world=myworld \
+  --var target=sol-a1b2c3d4
 ```
 
 ### Target variables
@@ -391,7 +343,7 @@ Output shows which workflows are active and which are shadowed:
 NAME           TYPE        TIER       DESCRIPTION
 code-review    workflow    project    Custom project review
 code-review    workflow    embedded   Multi-perspective code review (shadowed)
-default-work   workflow    embedded   Standard outpost work execution
+rule-of-five   workflow    embedded   Five-pass iterative refinement
 ```
 
 ---
@@ -432,13 +384,13 @@ takes precedence over the embedded version due to tier resolution.
 
 ```bash
 # Show a workflow resolved by name
-sol workflow show default-work
+sol workflow show code-review
 
 # Show a workflow from a specific directory
 sol workflow show --path ./my-workflow/
 
 # Show with JSON output
-sol workflow show default-work --json
+sol workflow show code-review --json
 ```
 
 Output includes name, type, tier, path, variables, steps, and
@@ -466,10 +418,6 @@ Manifesting materializes a workflow into child writs grouped in a
 caravan. This applies to workflows with `mode = "manifest"`.
 
 ```bash
-# Manifest a workflow with variables
-sol workflow manifest thorough-work --world=myworld \
-  --var issue=sol-a1b2c3d4
-
 # Manifest a workflow against a target writ
 sol workflow manifest rule-of-five --world=myworld \
   --target=sol-a1b2c3d4
@@ -479,177 +427,15 @@ sol workflow manifest code-review --world=myworld \
   --target=sol-a1b2c3d4
 
 # Manifest with JSON output
-sol workflow manifest thorough-work --world=myworld \
-  --var issue=sol-a1b2c3d4 --json
+sol workflow manifest code-review --world=myworld \
+  --target=sol-a1b2c3d4 --json
 ```
-
-### Using workflows with cast
-
-When casting a writ to an agent, you can specify a workflow to instantiate:
-
-```bash
-sol cast sol-a1b2c3d4 --workflow=default-work --var base_branch=develop
-```
-
-The workflow is instantiated for the agent when the writ is cast. The
-agent's session receives step instructions at prime time.
-
-### Inline execution commands
-
-Agents executing inline workflows use these commands to progress through
-steps:
-
-```bash
-# Print the current step's instructions
-sol workflow current
-
-# Mark current step complete, advance to next
-sol workflow advance
-
-# Skip the current step (treated as completed for DAG purposes)
-sol workflow skip
-
-# Mark current step and workflow as failed (stops execution)
-sol workflow fail
-
-# Show workflow progress
-sol workflow status
-
-# Show workflow progress as JSON
-sol workflow status --json
-```
-
-These commands use `SOL_WORLD` and `SOL_AGENT` environment variables
-(set automatically in agent sessions) or accept `--world` and `--agent`
-flags.
-
----
 
 ## Embedded Workflow Catalog
 
-Sol ships with eight embedded workflows covering common work patterns.
+Sol ships with five embedded workflows covering common work patterns.
 
-### 1. default-work
-
-**Mode:** inline (3 steps)
-**Purpose:** Standard outpost work execution. Load context, implement,
-verify. The default pattern for straightforward coding tasks.
-
-**Variables:**
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `issue` | yes | — | The writ ID to work on |
-| `base_branch` | no | `"main"` | Branch to base work from |
-
-**Steps:**
-
-1. `load-context` — Load work context
-2. `implement` — Implement the change (needs: load-context)
-3. `verify` — Verify the implementation (needs: implement)
-
-**Example:**
-
-```bash
-sol cast sol-a1b2c3d4 --workflow=default-work
-```
-
----
-
-### 2. thorough-work
-
-**Mode:** inline (5 steps)
-**Purpose:** Quality-focused work execution with design and review gates.
-Use when work quality matters more than speed — the extra design and
-review steps catch issues before they reach forge.
-
-**Variables:**
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `issue` | yes | — | The writ ID to work on |
-| `base_branch` | no | `"main"` | Branch to base work from |
-
-**Steps:**
-
-1. `design` — Design the approach
-2. `implement` — Implement the change (needs: design)
-3. `review` — Review the implementation (needs: implement)
-4. `test` — Test thoroughly (needs: review)
-5. `submit` — Submit the work (needs: test)
-
-**Example:**
-
-```bash
-sol cast sol-a1b2c3d4 --workflow=thorough-work
-```
-
----
-
-### 3. deep-scan
-
-**Mode:** inline (5 steps)
-**Purpose:** Investigation pipeline to root cause. Takes a bug or issue
-through orientation, code survey, root cause isolation, documentation, and
-fix planning. Produces a fix caravan rather than fixing the issue directly.
-
-**Variables:**
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `issue` | yes | — | The writ ID to investigate |
-| `base_branch` | no | `"main"` | Branch to base investigation from |
-
-**Steps:**
-
-1. `orient` — Orient on the symptom
-2. `survey` — Survey the code area (needs: orient)
-3. `isolate` — Isolate root cause (needs: survey)
-4. `document` — Document findings and design fixes (needs: isolate)
-5. `chart` — Chart the fix caravan (needs: document)
-
-**Example:**
-
-```bash
-sol cast sol-a1b2c3d4 --workflow=deep-scan
-```
-
----
-
-### 4. idea-to-plan
-
-**Mode:** inline (6 steps)
-**Purpose:** Planning pipeline from concept to writs. Takes a vague idea
-through requirements review, design exploration, and plan review to
-produce concrete writs ready for dispatch.
-
-**Variables:**
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `idea` | yes | — | The idea or concept to plan |
-| `world` | yes | — | The world to create writs in |
-
-**Steps:**
-
-1. `understand-intent` — Understand the intent
-2. `review-requirements` — Review requirements (needs: understand-intent)
-3. `explore-design` — Explore design options (needs: review-requirements)
-4. `review-plan` — Review the plan (needs: explore-design)
-5. `create-writs` — Create writs (needs: review-plan)
-6. `summarize` — Summarize (needs: create-writs)
-
-**Example:**
-
-```bash
-sol cast sol-a1b2c3d4 --workflow=idea-to-plan \
-  --var idea="Add real-time notifications" \
-  --var world=myworld
-```
-
----
-
-### 5. rule-of-five
+### 1. rule-of-five
 
 **Mode:** manifest (5 steps)
 **Purpose:** Five-pass iterative refinement. Each pass gets a fresh agent
@@ -676,7 +462,7 @@ sol workflow manifest rule-of-five --world=myworld \
 
 ---
 
-### 6. code-review
+### 2. code-review
 
 **Mode:** manifest (3 steps)
 **Purpose:** Multi-perspective code review with parallel analysis and
@@ -704,7 +490,7 @@ sol workflow manifest code-review --world=myworld \
 
 ---
 
-### 7. plan-review
+### 3. plan-review
 
 **Mode:** manifest (6 steps)
 **Purpose:** Parallel plan analysis with five independent review dimensions
@@ -731,7 +517,7 @@ sol workflow manifest plan-review --world=myworld \
 
 ---
 
-### 8. guided-design
+### 4. guided-design
 
 **Mode:** manifest (7 steps)
 **Purpose:** Parallel design exploration across six dimensions with
@@ -951,122 +737,3 @@ sol workflow manifest code-review --world=myworld \
 
 ---
 
-### `sol workflow instantiate`
-
-Instantiate a workflow for an agent (internal, used by cast).
-
-```
-sol workflow instantiate <workflow> [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | — | World name. |
-| `--agent` | string | — | Agent name. Defaults to `SOL_AGENT` env. |
-| `--item` | string | — | Writ ID. Required. |
-| `--var` | string[] | — | Variable assignment (`key=val`). Repeatable. |
-
----
-
-### `sol workflow current`
-
-Print the current step's rendered instructions.
-
-```
-sol workflow current [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | — | World name. Defaults to `SOL_WORLD` env. |
-| `--agent` | string | — | Agent name. Defaults to `SOL_AGENT` env. |
-
-Exits with code 1 if no active workflow step.
-
----
-
-### `sol workflow advance`
-
-Mark the current step as complete and advance to the next ready step.
-
-```
-sol workflow advance [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | — | World name. Defaults to `SOL_WORLD` env. |
-| `--agent` | string | — | Agent name. Defaults to `SOL_AGENT` env. |
-
-Prints "Workflow complete." when all steps are done.
-
----
-
-### `sol workflow skip`
-
-Skip the current step and advance to the next. Skipped steps are treated
-as completed for DAG purposes — they don't block dependent steps.
-
-```
-sol workflow skip [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | — | World name. Defaults to `SOL_WORLD` env. |
-| `--agent` | string | — | Agent name. Defaults to `SOL_AGENT` env. |
-
----
-
-### `sol workflow fail`
-
-Mark the current step and the entire workflow as failed. Execution stops —
-no further steps are advanced.
-
-```
-sol workflow fail [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | — | World name. Defaults to `SOL_WORLD` env. |
-| `--agent` | string | — | Agent name. Defaults to `SOL_AGENT` env. |
-
----
-
-### `sol workflow status`
-
-Show workflow execution progress.
-
-```
-sol workflow status [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | — | World name. Defaults to `SOL_WORLD` env. |
-| `--agent` | string | — | Agent name. Defaults to `SOL_AGENT` env. |
-| `--json` | bool | `false` | Output as JSON. |
-
-**Human-readable output:**
-
-```
-Workflow: default-work (sol-a1b2c3d4)
-Status: running
-Progress: 1/3 steps complete
-
-Steps:
-  [x] load-context — Load work context
-  [>] implement — Implement the change (current)
-  [ ] verify — Verify the implementation
-```
-
-**Step status markers:**
-
-| Marker | Status |
-|--------|--------|
-| `[x]` | Complete |
-| `[>]` | Executing (current) |
-| `[s]` | Skipped |
-| `[!]` | Failed |
-| `[ ]` | Pending |

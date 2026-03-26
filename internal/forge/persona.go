@@ -165,8 +165,6 @@ func ForgeMergeRoleConfig(targetBranch string) startup.RoleConfig {
 		ReplacePrompt:       true,
 		SkillInstaller:      nil,      // no skills — tight scope
 		PrimeBuilder:        forgePrime,
-		Workflow:            "",
-		NeedsItem:           false,
 	}
 }
 

@@ -28,46 +28,19 @@ func ValidateName(name string) error {
 	return nil
 }
 
-//go:embed defaults/default-work/manifest.toml
-//go:embed defaults/default-work/steps/01-load-context.md
-//go:embed defaults/default-work/steps/02-implement.md
-//go:embed defaults/default-work/steps/03-verify.md
 //go:embed defaults/rule-of-five/manifest.toml
 //go:embed defaults/code-review/manifest.toml
 //go:embed defaults/plan-review/manifest.toml
 //go:embed defaults/guided-design/manifest.toml
-//go:embed defaults/thorough-work/manifest.toml
-//go:embed defaults/thorough-work/steps/01-design.md
-//go:embed defaults/thorough-work/steps/02-implement.md
-//go:embed defaults/thorough-work/steps/03-review.md
-//go:embed defaults/thorough-work/steps/04-test.md
-//go:embed defaults/thorough-work/steps/05-submit.md
-//go:embed defaults/idea-to-plan/manifest.toml
-//go:embed defaults/idea-to-plan/steps/01-understand-intent.md
-//go:embed defaults/idea-to-plan/steps/02-review-requirements.md
-//go:embed defaults/idea-to-plan/steps/03-explore-design.md
-//go:embed defaults/idea-to-plan/steps/04-review-plan.md
-//go:embed defaults/idea-to-plan/steps/05-create-writs.md
-//go:embed defaults/idea-to-plan/steps/06-summarize.md
-//go:embed defaults/deep-scan/manifest.toml
-//go:embed defaults/deep-scan/steps/01-orient.md
-//go:embed defaults/deep-scan/steps/02-survey.md
-//go:embed defaults/deep-scan/steps/03-isolate.md
-//go:embed defaults/deep-scan/steps/04-document.md
-//go:embed defaults/deep-scan/steps/05-chart.md
 //go:embed defaults/prd-review/manifest.toml
 var defaultWorkflows embed.FS
 
 // knownDefaults lists workflow names that are embedded in the binary.
 var knownDefaults = map[string]bool{
-	"default-work":   true,
 	"rule-of-five":   true,
 	"code-review":    true,
 	"plan-review":    true,
 	"guided-design":  true,
-	"thorough-work":  true,
-	"idea-to-plan":   true,
-	"deep-scan":      true,
 	"prd-review":     true,
 }
 
