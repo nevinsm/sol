@@ -9,6 +9,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/brief"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/persona"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -82,6 +83,7 @@ type CreateOpts struct {
 	World      string
 	Name       string
 	SourceRepo string // path to git repo for worktree
+	Persona    string // optional persona template name (resolved via three-tier lookup)
 }
 
 // DeleteOpts holds inputs for deleting an envoy.
@@ -140,6 +142,20 @@ func Create(opts CreateOpts, sphereStore SphereStore) error {
 	if err := os.MkdirAll(briefDir, 0o755); err != nil {
 		rollback()
 		return fmt.Errorf("failed to create envoy %q in world %q: %w", opts.Name, opts.World, err)
+	}
+
+	// 5. Resolve and write persona template (optional).
+	if opts.Persona != "" {
+		res, err := persona.Resolve(opts.Persona, opts.SourceRepo)
+		if err != nil {
+			rollback()
+			return fmt.Errorf("failed to resolve persona %q: %w", opts.Persona, err)
+		}
+		personaFile := PersonaPath(opts.World, opts.Name)
+		if err := os.WriteFile(personaFile, res.Content, 0o644); err != nil {
+			rollback()
+			return fmt.Errorf("failed to write persona file: %w", err)
+		}
 	}
 
 	return nil

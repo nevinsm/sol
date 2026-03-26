@@ -690,6 +690,14 @@ Manage persistent envoy agents
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--world` | string | "" | world name |
+| `--persona` | string | "" | persona template name (e.g. planner, engineer) |
+
+When `--persona` is provided, the named template is resolved via three-tier lookup
+(project → user → embedded) and written to the envoy's `persona.md` file. When
+omitted, no persona file is created (bare envoy — write your own persona.md).
+
+See [Persona Templates](#persona-templates) for details on built-in templates and
+customization.
 
 #### `sol envoy debrief`
 
@@ -2054,4 +2062,55 @@ These commands are hidden from `--help` output. They are internal commands used 
 - `sol workflow fail — Mark the current workflow step and workflow as failed`
 - `sol workflow skip — Skip the current workflow step and advance to the next`
 - `sol writ get — Show writ status`
+
+---
+
+## Persona Templates
+
+Persona templates provide reusable behavioral postures for envoy agents. Instead of
+writing a persona.md from scratch for each envoy, you can use `--persona=<name>` at
+creation time to start from a template.
+
+### Built-in templates
+
+| Name | Archetype | Description |
+|------|-----------|-------------|
+| `planner` | Polaris | Design partner — shapes work, defines scope/criteria/sequencing, reviews landed work. Does not implement code. |
+| `engineer` | Meridian | Senior engineer pairing with the operator — hands-on-keyboard, makes implementation judgment calls. |
+
+### Three-tier resolution
+
+When `--persona=<name>` is specified, the template is resolved via:
+
+1. **Project:** `{repo}/.sol/personas/{name}.md` — project-specific overrides
+2. **User:** `$SOL_HOME/personas/{name}.md` — operator customizations
+3. **Embedded:** built-in defaults compiled into the sol binary
+
+Resolution is first-match-wins. This means a project-level template shadows a
+user-level template of the same name, which in turn shadows the built-in default.
+
+### Creating custom templates
+
+To create a custom persona template available across all worlds:
+
+```bash
+mkdir -p $SOL_HOME/personas
+# Write your template
+cat > $SOL_HOME/personas/my-persona.md << 'EOF'
+# My Persona
+Your custom behavioral posture here.
+EOF
+
+# Use it
+sol envoy create MyEnvoy --world=myworld --persona=my-persona
+```
+
+For project-specific templates, place them in the repo at `.sol/personas/{name}.md`.
+
+### How it works
+
+The persona template is written to the envoy's `persona.md` file at creation time.
+On session start, the existing startup mechanism reads persona.md and injects it into
+the agent's system prompt. After creation, you can freely edit the persona.md to
+customize it for world-specific concerns — the template is just the starting point.
 

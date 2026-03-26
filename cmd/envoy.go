@@ -24,7 +24,10 @@ var envoyCmd = &cobra.Command{
 
 // --- sol envoy create ---
 
-var envoyCreateWorld string
+var (
+	envoyCreateWorld   string
+	envoyCreatePersona string
+)
 
 var envoyCreateCmd = &cobra.Command{
 	Use:          "create <name>",
@@ -57,6 +60,7 @@ var envoyCreateCmd = &cobra.Command{
 			World:      world,
 			Name:       name,
 			SourceRepo: sourceRepo,
+			Persona:    envoyCreatePersona,
 		}, sphereStore); err != nil {
 			return fmt.Errorf("failed to create envoy: %w", err)
 		}
@@ -499,6 +503,7 @@ func init() {
 
 	// envoy create flags
 	envoyCreateCmd.Flags().StringVar(&envoyCreateWorld, "world", "", "world name")
+	envoyCreateCmd.Flags().StringVar(&envoyCreatePersona, "persona", "", "persona template name (e.g. planner, engineer)")
 
 	// envoy start flags
 	envoyStartCmd.Flags().StringVar(&envoyStartWorld, "world", "", "world name")
