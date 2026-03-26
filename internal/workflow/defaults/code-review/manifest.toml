@@ -1,25 +1,425 @@
 name = "code-review"
-description = "Multi-perspective code review with parallel analysis and synthesis."
+description = "Comprehensive code review via parallel specialized reviewers with synthesis."
 mode = "manifest"
 
 [vars]
 target = { description = "Writ ID of the code to review", required = true }
 
-[[steps]]
-id = "requirements"
-title = "Requirements Analysis: {{target.title}}"
-kind = "analysis"
-description = "Review the code changes for requirements completeness. Examine the branch, tests, and documentation.\n\nFocus: Are success criteria defined? Are edge cases handled? Is the scope well-bounded?"
+# =============================================================================
+# Analysis Legs (7, all parallel, phase 0)
+# =============================================================================
 
 [[steps]]
-id = "feasibility"
-title = "Feasibility Assessment: {{target.title}}"
+id = "correctness"
+title = "Correctness Review: {{target.title}}"
 kind = "analysis"
-description = "Evaluate technical feasibility and architectural fit. Examine code structure, dependencies, and integration points.\n\nFocus: Does it follow existing patterns? Are there architectural concerns? Is it maintainable?"
+description = """
+Review the code changes for logical correctness and edge case handling.
+
+Examine the branch diff against main. Read every changed file carefully.
+
+**Look for:**
+- Logic errors and bugs — does the code do what it claims?
+- Off-by-one errors in loops, slices, and indices
+- Null/nil handling — are pointers checked before dereference?
+- Unhandled edge cases — empty inputs, zero values, max bounds
+- Race conditions in concurrent code — shared state without synchronization
+- Dead code or unreachable branches introduced by the change
+- Incorrect assumptions — comments that contradict the code
+- Integer overflow/underflow potential in arithmetic
+- Floating point comparison issues (== on floats)
+- Type assertion failures without ok-check in Go
+
+**Questions to answer:**
+- Does the code do what the writ description says it should?
+- What inputs could cause unexpected behavior or panics?
+- Are all code paths tested or obviously correct?
+- Are error returns checked consistently?
+- Could any goroutine leak or deadlock?
+
+Write findings as a prioritized list with file:line references.
+Use P0 (must fix), P1 (should fix), P2 (nice to fix) severity levels.
+"""
+
+[[steps]]
+id = "performance"
+title = "Performance Review: {{target.title}}"
+kind = "analysis"
+description = """
+Review the code changes for performance issues and efficiency.
+
+Examine the branch diff against main. Focus on hot paths and scalability.
+
+**Look for:**
+- O(n²) or worse algorithms where O(n) or O(n log n) is possible
+- Unnecessary allocations in hot paths — preallocate slices where size is known
+- N+1 query patterns — database or API calls inside loops
+- Blocking operations in async or concurrent contexts
+- Memory leaks or unbounded growth — maps that grow without eviction, goroutines that never exit
+- Excessive string concatenation — use strings.Builder or bytes.Buffer
+- Unoptimized regex — compiled once or recompiled on every call?
+- Missing caching opportunities for repeated expensive computations
+- Unnecessary file I/O or network calls that could be batched
+- Large structs passed by value instead of by pointer
+
+**Questions to answer:**
+- What happens at 10x, 100x, 1000x the current scale?
+- Are there obvious optimizations being missed?
+- Is performance being traded for readability appropriately?
+- Could any operation block the main path unnecessarily?
+- Are database queries using appropriate indices?
+
+Write findings with file:line references and estimated impact.
+"""
+
+[[steps]]
+id = "security"
+title = "Security Review: {{target.title}}"
+kind = "analysis"
+description = """
+Review the code changes for security vulnerabilities.
+
+Examine the branch diff against main. Think like an attacker.
+
+**Look for:**
+- Input validation gaps — user-supplied data used without sanitization
+- Authentication/authorization bypasses — missing checks on endpoints
+- Injection vulnerabilities — SQL, command injection, template injection
+- Sensitive data exposure — secrets in logs, error messages, or responses
+- Hardcoded secrets or credentials — API keys, passwords, tokens in source
+- Path traversal vulnerabilities — user input used in file paths without cleaning
+- SSRF (Server-Side Request Forgery) — user-controlled URLs fetched server-side
+- Insecure cryptographic usage — weak algorithms, poor random sources
+- OWASP Top 10 concerns relevant to the change
+- Improper error handling that leaks internal details to callers
+- Missing TLS/encryption for sensitive data in transit or at rest
+- File permissions that are too broad
+
+**Questions to answer:**
+- What can a malicious user do with this code?
+- What data could be exposed if this fails?
+- Are there defense-in-depth gaps?
+- Are secrets properly managed (env vars, config) not hardcoded?
+- Is user input treated as untrusted at all boundaries?
+
+Flag any P0 security issue prominently — these block merge.
+"""
+
+[[steps]]
+id = "elegance"
+title = "Elegance Review: {{target.title}}"
+kind = "analysis"
+description = """
+Review the code changes for design clarity and abstraction quality.
+
+Examine the branch diff against main. Consider maintainability and readability.
+
+**Look for:**
+- Unclear abstractions or naming — does the name reveal intent?
+- Functions doing too many things — violating single responsibility
+- Missing abstractions — repeated patterns that should be extracted
+- Over-engineered abstractions — unnecessary indirection or generality
+- Coupling that should be loose — concrete types where interfaces would be better
+- Dependencies that flow the wrong direction — lower layers importing higher
+- Unclear data flow or control flow — hard to trace execution
+- Magic numbers/strings without named constants or explanation
+- Inconsistent design patterns within the codebase
+- Violation of SOLID principles
+- Reinventing existing utilities — standard library or project helpers already exist
+
+**Questions to answer:**
+- Would a new team member understand this code without asking questions?
+- Does the structure match the problem domain?
+- Is the complexity justified by the requirements?
+- Are the right things public vs private?
+- Does the abstraction level stay consistent within each function?
+
+Focus on actionable suggestions, not style preferences.
+"""
+
+[[steps]]
+id = "resilience"
+title = "Resilience Review: {{target.title}}"
+kind = "analysis"
+description = """
+Review the code changes for error handling and failure mode coverage.
+
+Examine the branch diff against main. Think about what happens when things go wrong.
+
+**Look for:**
+- Swallowed errors — empty catch blocks, ignored error returns, _ = err patterns
+- Missing error propagation — errors logged but not returned to callers
+- Unclear error messages — "operation failed" with no context about what or why
+- Insufficient retry/backoff logic for transient failures
+- Missing timeout handling — HTTP calls, database queries, or exec without deadlines
+- Resource cleanup on failure — files, connections, temp dirs left open on error paths
+- Partial failure states — half-written data when an operation fails midway
+- Missing circuit breakers for external service calls
+- Unhelpful panic/crash behavior — panics in library code, panics without recovery
+- Recovery path gaps — what happens after a restart?
+- Defer misuse — deferred calls that depend on mutable state
+
+**Questions to answer:**
+- What happens when external services (database, API, filesystem) fail?
+- Can the system recover from partial failures without manual intervention?
+- Are errors actionable for operators — can they diagnose from the error message alone?
+- Is cleanup guaranteed even on error paths (defer, finally)?
+- Are timeouts set for all blocking operations?
+
+Prioritize resilience gaps that could cause data loss or require manual recovery.
+"""
+
+[[steps]]
+id = "style"
+title = "Style Review: {{target.title}}"
+kind = "analysis"
+description = """
+Review the code changes for convention compliance and consistency with the codebase.
+
+Examine the branch diff against main. Compare with existing patterns in the project.
+
+**Look for:**
+- Naming convention violations — Go conventions (mixedCaps, not snake_case), acronym casing
+- Formatting inconsistencies — should be handled by gofmt but check generated/template code
+- Import organization — standard library, external, internal grouping
+- Comment quality — missing doc comments on exported types/functions, outdated comments, stating the obvious
+- Documentation gaps for public APIs — exported functions without purpose description
+- Inconsistent patterns within the codebase — doing the same thing differently than neighbors
+- Log message quality and levels — appropriate use of info vs warn vs error
+- Test naming and organization — Test prefix, descriptive subtests
+- Error message formatting — lowercase, no punctuation, with context (Go convention)
+- Consistent use of project idioms — how does the rest of the codebase do this?
+
+**Questions to answer:**
+- Does this match the conventions documented in CLAUDE.md?
+- Would the existing codebase patterns approve of this style?
+- Is the code self-documenting where possible?
+- Are comments adding value or just restating code?
+- Do error messages follow the "failed to X: %w" convention?
+
+Reference specific codebase conventions when flagging issues.
+"""
+
+[[steps]]
+id = "smells"
+title = "Code Smells Review: {{target.title}}"
+kind = "analysis"
+description = """
+Review the code changes for anti-patterns and technical debt.
+
+Examine the branch diff against main. Think about what will cause pain during the next change.
+
+**Look for:**
+- Long methods — functions over 50 lines are suspicious, over 100 need justification
+- Deep nesting — more than 3 levels of indentation signals need for early returns or extraction
+- Shotgun surgery — a single logical change requiring edits in many unrelated files
+- Feature envy — a function that uses another package's data more than its own
+- Data clumps — the same group of parameters passed together repeatedly
+- Primitive obsession — using string/int where a named type would add clarity
+- God classes/functions — one type or function that does everything
+- Copy-paste code — duplicated logic that should be extracted (DRY violations)
+- TODO/FIXME accumulation — new TODOs added without tracking
+- Speculative generality — abstractions built for hypothetical future needs
+- Temporary fields — struct fields only set in some code paths
+- Long parameter lists — more than 4-5 params suggests a config struct
+
+**Questions to answer:**
+- What will cause pain during the next change in this area?
+- What would you refactor if you owned this code long-term?
+- Is technical debt being added or paid down by this change?
+- Are there patterns here that will be copy-pasted by future contributors?
+- Could any of these smells hide bugs?
+
+Distinguish between smells in new code (should fix) vs pre-existing (note but don't block).
+"""
+
+# =============================================================================
+# Verification Legs (3, all parallel, phase 0)
+# =============================================================================
+
+[[steps]]
+id = "wiring"
+title = "Wiring Review: {{target.title}}"
+kind = "analysis"
+description = """
+Detect dependencies, configs, or libraries that were added but not actually wired in.
+
+This catches subtle bugs where the implementer THINKS they integrated something,
+but the old implementation is still being used.
+
+Examine the branch diff against main. Cross-reference additions with actual usage.
+
+**Look for:**
+- New dependency in go.mod but never imported in any .go file
+- Package imported but only used in a subset of intended call sites
+- SDK or library added but old manual implementation remains
+  - e.g., added a logging library but still using fmt.Println for errors
+  - e.g., added a validation library but still using manual if-checks
+- Config/env var defined but never loaded or referenced
+  - New entry in world.toml schema but not read by any code
+  - Environment variable documented but not accessed via os.Getenv or config
+- Feature flags defined but never checked
+- Struct fields added but never set or read
+- Interface methods defined but not implemented (or implemented but not called)
+- Database migrations that add columns never referenced in queries
+
+**Questions to answer:**
+- Is every new dependency actually imported and used?
+- Are there old patterns that should have been replaced by the new dependency?
+- Is there dead config that suggests an incomplete migration?
+- Do all new struct fields participate in the logic?
+- Are all new interface methods exercised?
+
+Wiring gaps often indicate incomplete work — flag them clearly.
+"""
+
+[[steps]]
+id = "commit-discipline"
+title = "Commit Discipline Review: {{target.title}}"
+kind = "analysis"
+description = """
+Review the commit history on the branch for good practices.
+
+Good commits make the codebase easier to understand, bisect, and revert.
+
+Examine the git log for the branch. Read commit messages and diffs.
+
+**Look for:**
+- Giant "WIP" or "fix" commits
+  - Multiple unrelated changes in one commit
+  - Commits that touch 20+ files across different features
+  - Entire feature in a single monolithic commit
+
+- Poor commit messages
+  - "stuff", "update", "asdf", "fix", "wip"
+  - No context about WHY the change was made
+  - Messages that describe the what but not the why
+
+- Unatomic commits
+  - Feature + refactor + bugfix in the same commit
+  - Should be separable logical units
+  - Test changes mixed with implementation in ways that obscure the diff
+
+- Missing conventional commit prefixes (this project uses them)
+  - feat:, fix:, refactor:, test:, docs:, chore:
+  - Check CLAUDE.md for the project's conventions
+
+- Commit ordering issues
+  - Refactoring after the feature instead of before
+  - Test fixes for bugs introduced in earlier commits on the same branch
+
+**Questions to answer:**
+- Could this history be bisected effectively to find a regression?
+- Would a reviewer understand the progression of changes?
+- Are commits atomic — one logical change each?
+- Do commit messages follow the project's conventional commit format?
+- Is the branch telling a coherent story?
+"""
+
+[[steps]]
+id = "test-quality"
+title = "Test Quality Review: {{target.title}}"
+kind = "analysis"
+description = """
+Verify tests are actually testing something meaningful.
+
+Coverage numbers lie. A test that can't fail provides no value.
+
+Examine new and modified test files in the branch diff against main.
+
+**Look for:**
+- Weak assertions
+  - Only checking err == nil without verifying the actual result
+  - Only checking length > 0 without verifying contents
+  - Using reflect.DeepEqual without understanding what's being compared
+
+- Missing negative test cases
+  - Happy path only, no error cases tested
+  - No boundary testing (empty input, max values, nil)
+  - No invalid input testing
+  - No test for the "should fail" case
+
+- Tests that can't fail
+  - Mocked so heavily the test is meaningless
+  - Testing implementation details rather than behavior
+  - Assertions that are always true regardless of code changes
+  - t.Log() without t.Error() or t.Fatal()
+
+- Flaky test indicators
+  - Sleep/delay in tests without synchronization
+  - Time-dependent assertions (time.Now comparisons)
+  - Reliance on map ordering
+  - Port binding without dynamic allocation
+
+- Missing test coverage for new code
+  - New exported functions without any test
+  - New error paths without negative tests
+  - New branches (if/switch) without corresponding test cases
+
+**Questions to answer:**
+- Do these tests actually verify the behavior described in the writ?
+- Would a bug in the implementation cause a test failure?
+- Are edge cases and error paths tested?
+- Would these tests catch a regression if someone changes this code later?
+- Are test helpers and setup extracting common patterns?
+
+Distinguish between missing tests (should add) and weak tests (should strengthen).
+"""
+
+# =============================================================================
+# Synthesis (depends on all 10 legs, phase 1)
+# =============================================================================
 
 [[steps]]
 id = "synthesis"
-title = "Consolidate Review: {{target.title}}"
+title = "Review Synthesis: {{target.title}}"
 kind = "analysis"
-description = "Read analysis findings from each leg output directory. Produce a consolidated review with prioritized action items, risks, and recommendations."
-needs = ["requirements", "feasibility"]
+needs = ["correctness", "performance", "security", "elegance", "resilience", "style", "smells", "wiring", "commit-discipline", "test-quality"]
+description = """
+Combine all leg findings into a unified, prioritized review.
+
+Read all 10 analysis leg findings from the writ output directories. Each leg has
+written its findings as a prioritized list with severity levels.
+
+**Your task:**
+Produce a single consolidated review that synthesizes all findings.
+
+**Structure your output as:**
+
+1. **Executive Summary** — Overall assessment in 2-3 sentences. Is this ready to merge?
+   State a clear recommendation: merge as-is, merge with minor fixes, requires changes, or needs rework.
+
+2. **Critical Issues (P0)** — Must fix before merge. Collected from all legs.
+   Deduplicate: if multiple legs found the same issue, note which legs flagged it.
+   Include file:line references.
+
+3. **Major Issues (P1)** — Should fix before merge. Grouped by theme.
+   Deduplicate across legs. Note consensus (flagged by 3+ legs = high confidence).
+
+4. **Minor Issues (P2)** — Nice to fix. Brief list, don't belabor.
+
+5. **Wiring Gaps** — From the wiring leg: dependencies added but not used,
+   old implementations that should have been replaced, dead config.
+
+6. **Commit Quality** — From the commit-discipline leg: are commits atomic,
+   well-messaged, and following conventional commit format?
+
+7. **Test Quality** — From the test-quality leg: are tests meaningful,
+   are negative cases covered, any flaky indicators?
+
+8. **Positive Observations** — What's done well. Good patterns, clear code,
+   thorough tests. Be specific — this matters for morale and learning.
+
+9. **Recommendations** — Actionable next steps, prioritized by impact and effort.
+   Separate into "before merge" and "follow-up" categories.
+
+**Deduplication rules:**
+- Same issue found by multiple legs → list once, note all legs that found it
+- Similar issues → group together, note the different angles each leg brought
+- Conflicting assessments → present both views, recommend resolution
+
+**Prioritization:**
+- Impact × likelihood = priority
+- Security and correctness issues outrank style issues
+- Wiring gaps often indicate incomplete work — flag prominently
+"""

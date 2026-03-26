@@ -1784,9 +1784,9 @@ func TestResolveCodeReview(t *testing.T) {
 	if m.Mode != "manifest" {
 		t.Errorf("mode: got %q, want %q", m.Mode, "manifest")
 	}
-	// 2 parallel analysis steps + 1 synthesis step = 3 total
-	if len(m.Steps) != 3 {
-		t.Fatalf("steps: got %d, want 3", len(m.Steps))
+	// 10 parallel analysis steps + 1 synthesis step = 11 total
+	if len(m.Steps) != 11 {
+		t.Fatalf("steps: got %d, want 11", len(m.Steps))
 	}
 	if err := Validate(m); err != nil {
 		t.Fatalf("Validate() error on code-review: %v", err)
