@@ -223,7 +223,7 @@ func TestWriteTokenUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tuID, err := s.WriteTokenUsage(histID, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
+	tuID, err := s.WriteTokenUsage(histID, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,8 +249,8 @@ func TestTokensForHistory(t *testing.T) {
 	}
 
 	// Add some token usage.
-	s.WriteTokenUsage(histID, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
-	s.WriteTokenUsage(histID, "claude-opus-4-6", 2000, 800, 300, 50, nil, nil, "")
+	s.WriteTokenUsage(histID, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
+	s.WriteTokenUsage(histID, "claude-opus-4-6", 2000, 800, 300, 50, nil, nil, "", "")
 
 	ts, err = s.TokensForHistory(histID)
 	if err != nil {
@@ -286,12 +286,12 @@ func TestAggregateTokens(t *testing.T) {
 	h3, _ := s.WriteHistory("Jasper", "sol-item02", "cast", "", start3, nil)
 
 	// Toast uses sonnet in both sessions.
-	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
-	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50, nil, nil, "", "")
 	// Toast also uses opus in one session.
-	s.WriteTokenUsage(h1, "claude-opus-4-6", 500, 200, 0, 0, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-opus-4-6", 500, 200, 0, 0, nil, nil, "", "")
 	// Jasper uses sonnet.
-	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "")
+	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "", "")
 
 	// Aggregate for Toast.
 	summaries, err := s.AggregateTokens("Toast")
@@ -364,12 +364,12 @@ func TestTokensForWrit(t *testing.T) {
 	h3, _ := s.WriteHistory("Toast", "sol-item02", "cast", "", start3, nil)
 
 	// Both agents use sonnet on sol-item01.
-	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
-	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50, nil, nil, "", "")
 	// Toast also uses opus on sol-item01.
-	s.WriteTokenUsage(h1, "claude-opus-4-6", 500, 200, 0, 0, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-opus-4-6", 500, 200, 0, 0, nil, nil, "", "")
 	// Toast uses sonnet on sol-item02 (should not appear).
-	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 9000, 4000, 1000, 500, nil, nil, "")
+	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 9000, 4000, 1000, 500, nil, nil, "", "")
 
 	summaries, err := s.TokensForWrit("sol-item01")
 	if err != nil {
@@ -420,9 +420,9 @@ func TestTokensForWorld(t *testing.T) {
 	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
 	h2, _ := s.WriteHistory("Jasper", "sol-item02", "cast", "", start2, nil)
 
-	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
-	s.WriteTokenUsage(h1, "claude-opus-4-6", 500, 200, 0, 0, nil, nil, "")
-	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
+	s.WriteTokenUsage(h1, "claude-opus-4-6", 500, 200, 0, 0, nil, nil, "", "")
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "", "")
 
 	summaries, err := s.TokensForWorld()
 	if err != nil {
@@ -479,11 +479,11 @@ func TestTokensByWritForAgent(t *testing.T) {
 	h2, _ := s.WriteHistory("Toast", "sol-item02", "cast", "", start2, nil)
 	h3, _ := s.WriteHistory("Jasper", "sol-item01", "cast", "", start3, nil)
 
-	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
-	s.WriteTokenUsage(h1, "claude-opus-4-6", 500, 200, 0, 0, nil, nil, "")
-	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
+	s.WriteTokenUsage(h1, "claude-opus-4-6", 500, 200, 0, 0, nil, nil, "", "")
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50, nil, nil, "", "")
 	// Jasper's tokens should not appear in Toast's results.
-	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 9000, 4000, 1000, 500, nil, nil, "")
+	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 9000, 4000, 1000, 500, nil, nil, "", "")
 
 	result, err := s.TokensByWritForAgent("Toast")
 	if err != nil {
@@ -534,7 +534,7 @@ func TestTokensByWritForAgentNoWrit(t *testing.T) {
 	// History entry without a writ_id.
 	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
 	h, _ := s.WriteHistory("Toast", "", "respawn", "", start, nil)
-	s.WriteTokenUsage(h, "claude-sonnet-4-6", 500, 200, 0, 0, nil, nil, "")
+	s.WriteTokenUsage(h, "claude-sonnet-4-6", 500, 200, 0, 0, nil, nil, "", "")
 
 	result, err := s.TokensByWritForAgent("Toast")
 	if err != nil {
@@ -565,9 +565,9 @@ func TestTokensSince(t *testing.T) {
 	h2, _ := s.WriteHistory("Toast", "sol-item01", "resolve", "", start2, nil)
 	h3, _ := s.WriteHistory("Jasper", "sol-item02", "cast", "", start3, nil)
 
-	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
-	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50, nil, nil, "")
-	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50, nil, nil, "", "")
+	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "", "")
 
 	// Since 12:00 — should include h2 and h3 but not h1.
 	since := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
@@ -621,9 +621,9 @@ func TestTokensByAgentForWorld(t *testing.T) {
 	h2, _ := s.WriteHistory("Toast", "sol-item02", "cast", "", start2, nil)
 	h3, _ := s.WriteHistory("Jasper", "sol-item03", "cast", "", start3, nil)
 
-	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
-	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50, nil, nil, "")
-	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50, nil, nil, "", "")
+	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "", "")
 
 	summaries, err := s.TokensByAgentForWorld()
 	if err != nil {
@@ -681,8 +681,8 @@ func TestTokensByAgentSince(t *testing.T) {
 	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
 	h2, _ := s.WriteHistory("Jasper", "sol-item02", "cast", "", start2, nil)
 
-	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
-	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "", "")
 
 	// Since 12:00 — should only include Jasper.
 	since := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
@@ -711,8 +711,8 @@ func TestTokensByWritForAgentSince(t *testing.T) {
 	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
 	h2, _ := s.WriteHistory("Toast", "sol-item02", "cast", "", start2, nil)
 
-	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
-	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "", "")
 
 	// Since 12:00 — should only include sol-item02.
 	since := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
@@ -743,9 +743,9 @@ func TestWorldTokenMeta(t *testing.T) {
 	h2, _ := s.WriteHistory("Toast", "sol-item02", "cast", "", start2, nil)
 	h3, _ := s.WriteHistory("Jasper", "sol-item01", "cast", "", start3, nil)
 
-	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
-	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50, nil, nil, "")
-	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 2000, 800, 300, 50, nil, nil, "", "")
+	s.WriteTokenUsage(h3, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "", "")
 
 	agents, writs, err := s.WorldTokenMeta()
 	if err != nil {
@@ -782,8 +782,8 @@ func TestWorldTokenMetaSince(t *testing.T) {
 	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
 	h2, _ := s.WriteHistory("Jasper", "sol-item02", "cast", "", start2, nil)
 
-	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
-	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "", "")
 
 	since := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
 	agents, writs, err := s.WorldTokenMetaSince(since)
@@ -808,8 +808,8 @@ func TestTokensForWritSince(t *testing.T) {
 	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", start1, nil)
 	h2, _ := s.WriteHistory("Jasper", "sol-item01", "cast", "", start2, nil)
 
-	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "")
-	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "")
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, nil, nil, "", "")
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 3000, 1000, 500, 200, nil, nil, "", "")
 
 	// Since 12:00 — should only include h2.
 	since := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
@@ -822,6 +822,77 @@ func TestTokensForWritSince(t *testing.T) {
 	}
 	if summaries[0].InputTokens != 3000 {
 		t.Fatalf("input=%d, expected 3000", summaries[0].InputTokens)
+	}
+}
+
+func TestDailySpendByAccount(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	// Create history entries for today.
+	now := time.Now().UTC()
+	h1, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", now, nil)
+	h2, _ := s.WriteHistory("Jasper", "sol-item02", "cast", "", now, nil)
+
+	// Write token usage with account and cost.
+	cost1 := 5.50
+	cost2 := 3.25
+	cost3 := 1.00
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, &cost1, nil, "", "personal")
+	s.WriteTokenUsage(h1, "claude-sonnet-4-6", 1000, 500, 200, 100, &cost2, nil, "", "personal")
+	s.WriteTokenUsage(h2, "claude-sonnet-4-6", 1000, 500, 200, 100, &cost3, nil, "", "shared")
+
+	// Check personal account.
+	spend, err := s.DailySpendByAccount("personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spend != 8.75 {
+		t.Errorf("expected daily spend for personal = 8.75, got %f", spend)
+	}
+
+	// Check shared account.
+	spend, err = s.DailySpendByAccount("shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spend != 1.00 {
+		t.Errorf("expected daily spend for shared = 1.0, got %f", spend)
+	}
+
+	// Check unknown account.
+	spend, err = s.DailySpendByAccount("unknown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spend != 0 {
+		t.Errorf("expected daily spend for unknown = 0, got %f", spend)
+	}
+}
+
+func TestWriteTokenUsageWithAccount(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	now := time.Now().UTC()
+	h, _ := s.WriteHistory("Toast", "sol-item01", "cast", "", now, nil)
+
+	cost := 2.50
+	id, err := s.WriteTokenUsage(h, "claude-sonnet-4-6", 1000, 500, 200, 100, &cost, nil, "claude-code", "personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id == "" {
+		t.Fatal("expected non-empty token usage ID")
+	}
+
+	// Verify account is stored by checking DailySpendByAccount.
+	spend, err := s.DailySpendByAccount("personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spend != 2.50 {
+		t.Errorf("expected spend 2.50, got %f", spend)
 	}
 }
 

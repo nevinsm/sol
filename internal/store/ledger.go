@@ -188,7 +188,8 @@ func (s *WorldStore) EndHistory(writID string) (string, error) {
 // WriteTokenUsage inserts a token_usage record and returns its generated ID.
 // costUSD and durationMS are optional — pass nil to omit.
 // runtime identifies the source runtime (e.g. "claude-code") — pass "" to omit.
-func (s *WorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64, runtime string) (string, error) {
+// account identifies which account was billed — pass "" to omit.
+func (s *WorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64, runtime, account string) (string, error) {
 	id, err := generateTokenUsageID()
 	if err != nil {
 		return "", err
@@ -199,15 +200,41 @@ func (s *WorldStore) WriteTokenUsage(historyID, model string, input, output, cac
 		rt = sql.NullString{String: runtime, Valid: true}
 	}
 
+	var acct sql.NullString
+	if account != "" {
+		acct = sql.NullString{String: account, Valid: true}
+	}
+
 	_, err = s.db.Exec(
-		`INSERT INTO token_usage (id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, runtime)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, historyID, model, input, output, cacheRead, cacheCreation, costUSD, durationMS, rt,
+		`INSERT INTO token_usage (id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, runtime, account)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, historyID, model, input, output, cacheRead, cacheCreation, costUSD, durationMS, rt, acct,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert token usage: %w", err)
 	}
 	return id, nil
+}
+
+// DailySpendByAccount returns today's total cost_usd for a given account.
+// Uses UTC midnight as the day boundary. Returns 0 if no usage found.
+func (s *WorldStore) DailySpendByAccount(account string) (float64, error) {
+	today := time.Now().UTC().Truncate(24 * time.Hour).Format(time.RFC3339)
+	var total sql.NullFloat64
+	err := s.db.QueryRow(
+		`SELECT SUM(tu.cost_usd)
+		 FROM token_usage tu
+		 JOIN agent_history ah ON tu.history_id = ah.id
+		 WHERE tu.account = ? AND ah.started_at >= ?`,
+		account, today,
+	).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query daily spend for account %q: %w", account, err)
+	}
+	if total.Valid {
+		return total.Float64, nil
+	}
+	return 0, nil
 }
 
 // scanTokenSummary scans a TokenSummary including optional cost_usd and duration_ms.

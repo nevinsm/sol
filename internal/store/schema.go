@@ -8,7 +8,7 @@ import (
 
 // Current schema versions — the latest migration target for each database type.
 const (
-	CurrentWorldSchema  = 13
+	CurrentWorldSchema  = 14
 	CurrentSphereSchema = 14
 )
 
@@ -197,6 +197,9 @@ const worldSchemaV12 = "" // migration handled procedurally below
 // worldSchemaV13 drops the agent_memories table (superseded by the brief system).
 const worldSchemaV13 = "" // migration handled procedurally below
 
+// worldSchemaV14 adds account column to token_usage for budget attribution.
+const worldSchemaV14 = "" // migration handled procedurally below
+
 func (s *WorldStore) migrateWorld() error {
 	v, err := s.SchemaVersion()
 	if err != nil {
@@ -370,6 +373,18 @@ func (s *WorldStore) migrateWorld() error {
 		// Drop agent_memories table (superseded by the brief system).
 		if _, err := tx.Exec(`DROP TABLE IF EXISTS agent_memories`); err != nil {
 			return fmt.Errorf("V13 migration: failed to drop agent_memories table: %w", err)
+		}
+	}
+	if v < 14 {
+		// Add account column to token_usage for budget attribution.
+		exists, err := columnExists(tx, "token_usage", "account")
+		if err != nil {
+			return fmt.Errorf("V14 migration: failed to check column token_usage.account: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(`ALTER TABLE token_usage ADD COLUMN account TEXT`); err != nil {
+				return fmt.Errorf("failed to add token_usage.account column: %w", err)
+			}
 		}
 	}
 	if _, err := tx.Exec("DELETE FROM schema_version"); err != nil {

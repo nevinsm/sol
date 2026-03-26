@@ -105,7 +105,7 @@ func (m *mockRuntimeAdapter) CredentialEnv(cred adapter.Credential) (map[string]
 	return map[string]string{"ANTHROPIC_API_KEY": "test-key"}, nil
 }
 
-func (m *mockRuntimeAdapter) TelemetryEnv(port int, agent, world, activeWrit string) map[string]string {
+func (m *mockRuntimeAdapter) TelemetryEnv(port int, agent, world, activeWrit, account string) map[string]string {
 	m.calls = append(m.calls, "TelemetryEnv")
 	return map[string]string{}
 }

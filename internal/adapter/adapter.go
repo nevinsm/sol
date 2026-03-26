@@ -51,10 +51,11 @@ type RuntimeAdapter interface {
 	// Telemetry contract for OTEL_RESOURCE_ATTRIBUTES:
 	//   - MUST set agent.name, world, and service.name.
 	//   - SHOULD set writ_id when the agent is tethered to a writ.
+	//   - SHOULD set account when the session uses a specific account.
 	//   - service.name MUST match the key used to register the adapter's
 	//     ExtractTelemetry implementation in the ledger. The ledger uses
 	//     service.name as the routing key to select the correct extractor.
-	TelemetryEnv(port int, agent, world, activeWrit string) map[string]string
+	TelemetryEnv(port int, agent, world, activeWrit, account string) map[string]string
 
 	// ExtractTelemetry extracts token usage data from a log event.
 	// Returns nil if the event is not relevant (wrong event name, no token data).

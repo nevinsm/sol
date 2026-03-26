@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nevinsm/sol/internal/account"
+	"github.com/nevinsm/sol/internal/budget"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/heartbeat"
@@ -381,6 +383,20 @@ func (s *patrolState) patrol(ctx context.Context) {
 		s.forge.logger.Error("caravan block enforcement failed", "error", err)
 	} else if n > 0 {
 		s.fl.Log("BLOCK", fmt.Sprintf("blocked %d MRs by caravan deps", n))
+	}
+
+	// 2.6. Check account budget before spawning merge session.
+	worldCfg, cfgErr := config.LoadWorldConfig(s.forge.world)
+	if cfgErr == nil && len(worldCfg.Budget.Accounts) > 0 {
+		forgeAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
+		if forgeAccount != "" {
+			if err := budget.CheckAccountBudget(s.forge.worldStore, s.forge.sphereStore, forgeAccount, worldCfg.Budget); err != nil {
+				s.fl.Log("BUDGET", fmt.Sprintf("budget exhausted for account %q, skipping patrol", forgeAccount))
+				s.writeHeartbeat("idle", 0)
+				s.emitPatrolEvent(0)
+				return
+			}
+		}
 	}
 
 	// 3. Scan — list ready MRs.

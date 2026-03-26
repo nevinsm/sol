@@ -345,7 +345,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	if err != nil {
 		slog.Warn("startup: failed to load global config for ledger port", "error", err)
 	}
-	for k, v := range a.TelemetryEnv(globalCfg.Ledger.Port, agent, world, activeWrit) {
+	for k, v := range a.TelemetryEnv(globalCfg.Ledger.Port, agent, world, activeWrit, resolvedAccount) {
 		env[k] = v
 	}
 

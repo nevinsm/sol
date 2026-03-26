@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nevinsm/sol/internal/account"
+	"github.com/nevinsm/sol/internal/budget"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/handoff"
@@ -61,6 +63,7 @@ type WorldStore interface {
 	WriteHistory(agentName, writID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error)
 	EndHistory(writID string) (string, error)
 	GetDependencies(itemID string) ([]string, error)
+	DailySpendByAccount(account string) (float64, error)
 	Close() error
 }
 
@@ -72,6 +75,7 @@ type SphereStore interface {
 	ListAgents(world string, state string) ([]store.Agent, error)
 	CreateAgent(name, world, role string) (string, error)
 	DeleteAgent(id string) error
+	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
 	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
 	ResolveEscalation(id string) error
 	Close() error
@@ -123,6 +127,19 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	// 0b. Reject dispatch to sleeping worlds.
 	if worldCfg.World.Sleeping {
 		return nil, fmt.Errorf("world %q is sleeping: dispatch blocked", opts.World)
+	}
+
+	// 0c. Check account budget before dispatching.
+	if len(worldCfg.Budget.Accounts) > 0 {
+		castAccount := opts.Account
+		if castAccount == "" {
+			castAccount = account.ResolveAccount("", worldCfg.World.DefaultAccount)
+		}
+		if castAccount != "" {
+			if err := budget.CheckAccountBudget(worldStore, sphereStore, castAccount, worldCfg.Budget); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// 1. Acquire per-writ advisory lock to prevent double dispatch.

@@ -1170,6 +1170,125 @@ func TestValidateMaxActiveValid(t *testing.T) {
 	}
 }
 
+// ----- Budget validation -----
+
+func TestValidateBudgetValid(t *testing.T) {
+	cfg := DefaultWorldConfig()
+	cfg.Budget = BudgetSection{
+		Accounts: map[string]AccountBudget{
+			"personal": {DailyLimit: 25.0, AlertAt: 20.0},
+			"shared":   {DailyLimit: 100.0, AlertAt: 0}, // no alert
+			"open":     {DailyLimit: 0},                  // unlimited
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected valid budget config, got: %v", err)
+	}
+}
+
+func TestValidateBudgetAlertAtExceedsLimit(t *testing.T) {
+	cfg := DefaultWorldConfig()
+	cfg.Budget = BudgetSection{
+		Accounts: map[string]AccountBudget{
+			"personal": {DailyLimit: 25.0, AlertAt: 30.0},
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error when alert_at >= daily_limit")
+	}
+}
+
+func TestValidateBudgetAlertAtEqualsLimit(t *testing.T) {
+	cfg := DefaultWorldConfig()
+	cfg.Budget = BudgetSection{
+		Accounts: map[string]AccountBudget{
+			"personal": {DailyLimit: 25.0, AlertAt: 25.0},
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error when alert_at == daily_limit")
+	}
+}
+
+func TestValidateBudgetNegativeLimit(t *testing.T) {
+	cfg := DefaultWorldConfig()
+	cfg.Budget = BudgetSection{
+		Accounts: map[string]AccountBudget{
+			"personal": {DailyLimit: -1.0},
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for negative daily_limit")
+	}
+}
+
+func TestValidateBudgetNegativeAlertAt(t *testing.T) {
+	cfg := DefaultWorldConfig()
+	cfg.Budget = BudgetSection{
+		Accounts: map[string]AccountBudget{
+			"personal": {DailyLimit: 25.0, AlertAt: -1.0},
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for negative alert_at")
+	}
+}
+
+func TestValidateBudgetNoBudgetSection(t *testing.T) {
+	cfg := DefaultWorldConfig()
+	// No budget section at all — should be valid.
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected valid config with no budget section, got: %v", err)
+	}
+}
+
+func TestBudgetConfigParsing(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	content := `
+[world]
+branch = "main"
+
+[budget]
+[budget.accounts.personal]
+daily_limit = 25.0
+alert_at = 20.0
+
+[budget.accounts.shared]
+daily_limit = 100.0
+alert_at = 80.0
+`
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	if len(cfg.Budget.Accounts) != 2 {
+		t.Fatalf("expected 2 budget accounts, got %d", len(cfg.Budget.Accounts))
+	}
+
+	personal := cfg.Budget.Accounts["personal"]
+	if personal.DailyLimit != 25.0 {
+		t.Errorf("personal.daily_limit = %f, want 25.0", personal.DailyLimit)
+	}
+	if personal.AlertAt != 20.0 {
+		t.Errorf("personal.alert_at = %f, want 20.0", personal.AlertAt)
+	}
+
+	shared := cfg.Budget.Accounts["shared"]
+	if shared.DailyLimit != 100.0 {
+		t.Errorf("shared.daily_limit = %f, want 100.0", shared.DailyLimit)
+	}
+	if shared.AlertAt != 80.0 {
+		t.Errorf("shared.alert_at = %f, want 80.0", shared.AlertAt)
+	}
+}
+
 // ----- Capacity removal -----
 
 func TestCapacityFieldIgnored(t *testing.T) {

@@ -570,7 +570,7 @@ func TestCredentialEnvUnknown(t *testing.T) {
 
 func TestTelemetryEnvAllVarsPresent(t *testing.T) {
 	a := newAdapter()
-	env := a.TelemetryEnv(4318, "Toast", "myworld", "sol-abc123")
+	env := a.TelemetryEnv(4318, "Toast", "myworld", "sol-abc123", "")
 
 	expected := []string{
 		"CLAUDE_CODE_ENABLE_TELEMETRY",
@@ -588,7 +588,7 @@ func TestTelemetryEnvAllVarsPresent(t *testing.T) {
 
 func TestTelemetryEnvValues(t *testing.T) {
 	a := newAdapter()
-	env := a.TelemetryEnv(4318, "Toast", "myworld", "sol-abc123")
+	env := a.TelemetryEnv(4318, "Toast", "myworld", "sol-abc123", "")
 
 	if env["CLAUDE_CODE_ENABLE_TELEMETRY"] != "1" {
 		t.Errorf("expected CLAUDE_CODE_ENABLE_TELEMETRY=1, got %q", env["CLAUDE_CODE_ENABLE_TELEMETRY"])
@@ -617,7 +617,7 @@ func TestTelemetryEnvValues(t *testing.T) {
 
 func TestTelemetryEnvNoWritID(t *testing.T) {
 	a := newAdapter()
-	env := a.TelemetryEnv(4318, "Toast", "myworld", "")
+	env := a.TelemetryEnv(4318, "Toast", "myworld", "", "")
 
 	attrs := env["OTEL_RESOURCE_ATTRIBUTES"]
 	if strings.Contains(attrs, "writ_id") {
@@ -627,7 +627,7 @@ func TestTelemetryEnvNoWritID(t *testing.T) {
 
 func TestTelemetryEnvCustomPort(t *testing.T) {
 	a := newAdapter()
-	env := a.TelemetryEnv(9999, "Toast", "myworld", "")
+	env := a.TelemetryEnv(9999, "Toast", "myworld", "", "")
 
 	if env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] != "http://localhost:9999/v1/logs" {
 		t.Errorf("unexpected endpoint: %q", env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"])
@@ -636,9 +636,29 @@ func TestTelemetryEnvCustomPort(t *testing.T) {
 
 func TestTelemetryEnvDisabledWhenPortZero(t *testing.T) {
 	a := newAdapter()
-	env := a.TelemetryEnv(0, "Toast", "myworld", "sol-abc123")
+	env := a.TelemetryEnv(0, "Toast", "myworld", "sol-abc123", "")
 	if len(env) != 0 {
 		t.Errorf("expected empty map for port=0, got %v", env)
+	}
+}
+
+func TestTelemetryEnvWithAccount(t *testing.T) {
+	a := newAdapter()
+	env := a.TelemetryEnv(4318, "Toast", "myworld", "sol-abc123", "personal")
+
+	attrs := env["OTEL_RESOURCE_ATTRIBUTES"]
+	if !strings.Contains(attrs, "account=personal") {
+		t.Errorf("expected account in attributes: %q", attrs)
+	}
+}
+
+func TestTelemetryEnvNoAccount(t *testing.T) {
+	a := newAdapter()
+	env := a.TelemetryEnv(4318, "Toast", "myworld", "sol-abc123", "")
+
+	attrs := env["OTEL_RESOURCE_ATTRIBUTES"]
+	if strings.Contains(attrs, "account") {
+		t.Errorf("should not include account when empty: %q", attrs)
 	}
 }
 

@@ -98,11 +98,12 @@ type LedgerReader interface {
 	WorldTokenMeta() (agents int, writs int, err error)
 	WorldTokenMetaSince(since time.Time) (agents int, writs int, err error)
 	MergeStatsForAgent(agentName string) (AgentMergeRequestSummary, error)
+	DailySpendByAccount(account string) (float64, error)
 }
 
 // LedgerWriter provides write access to token usage records in a world database.
 type LedgerWriter interface {
-	WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64, runtime string) (string, error)
+	WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64, runtime, account string) (string, error)
 }
 
 // HistoryStore provides access to agent history records in a world database.

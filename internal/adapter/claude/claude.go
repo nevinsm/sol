@@ -390,13 +390,16 @@ func parseIntPtrAttr(attrs map[string]string, key string) *int64 {
 
 // TelemetryEnv returns the environment variables for OTLP telemetry reporting
 // to the sol ledger service.
-func (a *Adapter) TelemetryEnv(port int, agent, world, activeWrit string) map[string]string {
+func (a *Adapter) TelemetryEnv(port int, agent, world, activeWrit, account string) map[string]string {
 	if port <= 0 {
 		return map[string]string{}
 	}
 	attrs := fmt.Sprintf("agent.name=%s,world=%s", agent, world)
 	if activeWrit != "" {
 		attrs += ",writ_id=" + activeWrit
+	}
+	if account != "" {
+		attrs += ",account=" + account
 	}
 	attrs += ",service.name=claude-code"
 	return map[string]string{

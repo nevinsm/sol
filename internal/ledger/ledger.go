@@ -307,6 +307,7 @@ func (l *Ledger) processResourceLogs(rl ResourceLogs) (total, failed int) {
 	world := resAttrs["world"]
 	writID := resAttrs["writ_id"]
 	serviceName := resAttrs["service.name"]
+	account := resAttrs["account"]
 
 	if agentName == "" || world == "" {
 		return 0, 0 // skip events without required resource attributes
@@ -321,7 +322,7 @@ func (l *Ledger) processResourceLogs(rl ResourceLogs) (total, failed int) {
 	for _, sl := range rl.ScopeLogs {
 		for _, rec := range sl.LogRecords {
 			total++
-			if err := l.processLogRecord(world, agentName, writID, serviceName, extract, rec); err != nil {
+			if err := l.processLogRecord(world, agentName, writID, serviceName, account, extract, rec); err != nil {
 				failed++
 			}
 		}
@@ -333,7 +334,7 @@ func (l *Ledger) processResourceLogs(rl ResourceLogs) (total, failed int) {
 // processLogRecord processes a single log record, extracting token usage.
 // Returns nil on success (including filtered-out records), or an error if
 // the record could not be persisted.
-func (l *Ledger) processLogRecord(world, agentName, writID, runtime string, extract ExtractFunc, rec LogRecord) error {
+func (l *Ledger) processLogRecord(world, agentName, writID, runtime, account string, extract ExtractFunc, rec LogRecord) error {
 	attrs := attributeMap(rec.Attributes)
 
 	// Determine the event name from the body or event.name attribute.
@@ -362,7 +363,7 @@ func (l *Ledger) processLogRecord(world, agentName, writID, runtime string, extr
 		return fmt.Errorf("open world store: %w", err)
 	}
 
-	if _, err := ws.WriteTokenUsage(historyID, tr.Model, tr.InputTokens, tr.OutputTokens, tr.CacheReadTokens, tr.CacheCreationTokens, tr.CostUSD, tr.DurationMS, runtime); err != nil {
+	if _, err := ws.WriteTokenUsage(historyID, tr.Model, tr.InputTokens, tr.OutputTokens, tr.CacheReadTokens, tr.CacheCreationTokens, tr.CostUSD, tr.DurationMS, runtime, account); err != nil {
 		l.logger.Printf("failed to write token usage: %v", err)
 		l.emitError("write_token_usage", err)
 		return fmt.Errorf("write token usage: %w", err)

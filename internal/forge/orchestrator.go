@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nevinsm/sol/internal/account"
+	"github.com/nevinsm/sol/internal/budget"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/startup"
@@ -267,6 +269,18 @@ func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr
 // assessMergeSession runs AI assessment on a merge session's captured output.
 // Returns "progressing", "stuck", or "idle".
 func (s *patrolState) assessMergeSession(ctx context.Context, sessionName, output string, mr *store.MergeRequest) string {
+	// Check account budget before spawning AI callout.
+	worldCfg, cfgErr := config.LoadWorldConfig(s.forge.world)
+	if cfgErr == nil && len(worldCfg.Budget.Accounts) > 0 {
+		assessAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
+		if assessAccount != "" {
+			if err := budget.CheckAccountBudget(s.forge.worldStore, s.forge.sphereStore, assessAccount, worldCfg.Budget); err != nil {
+				s.forge.logger.Warn("forge assessment skipped due to budget", "account", assessAccount, "error", err)
+				return "progressing" // assume progressing when budget exhausted
+			}
+		}
+	}
+
 	prompt := buildMergeAssessmentPrompt(mr, output, s.pcfg.MonitorInterval)
 
 	assessCtx, cancel := context.WithTimeout(ctx, s.pcfg.AssessTimeout)

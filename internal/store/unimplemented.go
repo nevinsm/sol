@@ -255,9 +255,13 @@ func (UnimplementedWorldStore) MergeStatsForAgent(agentName string) (AgentMergeR
 	return AgentMergeRequestSummary{}, fmt.Errorf("unimplemented: MergeStatsForAgent")
 }
 
+func (UnimplementedWorldStore) DailySpendByAccount(account string) (float64, error) {
+	return 0, fmt.Errorf("unimplemented: DailySpendByAccount")
+}
+
 // --- LedgerWriter ---
 
-func (UnimplementedWorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64, runtime string) (string, error) {
+func (UnimplementedWorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64, runtime, account string) (string, error) {
 	return "", fmt.Errorf("unimplemented: WriteTokenUsage")
 }
 

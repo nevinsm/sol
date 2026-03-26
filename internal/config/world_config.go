@@ -20,6 +20,20 @@ type WorldConfig struct {
 	Ledger     LedgerSection     `toml:"ledger" json:"ledger"`
 	WritClean  WritCleanSection  `toml:"writ-clean" json:"writ-clean"`
 	Escalation EscalationSection `toml:"escalation" json:"escalation"`
+	Budget     BudgetSection     `toml:"budget" json:"budget"`
+}
+
+// BudgetSection holds per-account daily budget configuration.
+// Configured in sol.toml under [budget]. The entire section is optional;
+// missing section means no budget limits anywhere.
+type BudgetSection struct {
+	Accounts map[string]AccountBudget `toml:"accounts" json:"accounts"`
+}
+
+// AccountBudget holds daily budget limits for a single account.
+type AccountBudget struct {
+	DailyLimit float64 `toml:"daily_limit" json:"daily_limit"` // 0 = unlimited (default)
+	AlertAt    float64 `toml:"alert_at" json:"alert_at"`       // 0 = no alert
 }
 
 // SphereSection holds sphere-level settings.
@@ -291,6 +305,18 @@ func (c WorldConfig) Validate() error {
 	if c.Escalation.AgingMedium != "" {
 		if _, err := time.ParseDuration(c.Escalation.AgingMedium); err != nil {
 			return fmt.Errorf("escalation.aging_medium %q is not a valid duration: %w", c.Escalation.AgingMedium, err)
+		}
+	}
+	// Validate budget section.
+	for name, ab := range c.Budget.Accounts {
+		if ab.DailyLimit < 0 {
+			return fmt.Errorf("budget.accounts.%s.daily_limit must be >= 0, got %f", name, ab.DailyLimit)
+		}
+		if ab.AlertAt < 0 {
+			return fmt.Errorf("budget.accounts.%s.alert_at must be >= 0, got %f", name, ab.AlertAt)
+		}
+		if ab.AlertAt > 0 && ab.DailyLimit > 0 && ab.AlertAt >= ab.DailyLimit {
+			return fmt.Errorf("budget.accounts.%s.alert_at (%f) must be less than daily_limit (%f)", name, ab.AlertAt, ab.DailyLimit)
 		}
 	}
 	return nil
